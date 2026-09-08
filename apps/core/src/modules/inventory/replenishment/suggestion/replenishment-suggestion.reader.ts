@@ -91,6 +91,9 @@ export class ReplenishmentSuggestionReader {
     const drafts = await this.transferReader.findDraftPlannedBySku(trx, ids);
 
     const settings = await this.settingsReader.read(trx);
+    // 등급 규칙 3행(A · B · C)은 `db:seed:ref` 참조 시드다 — 없으면 readGradeAlphas 가 던져
+    // 제안 API 전체(`GET /replenishment/suggestions` · `/skus/:skuId`)가 500 이다.
+    // 스펙 §9 B 배포 순서: `db:migrate → db:seed:ref → sst deploy`.
     const gradeAlpha = await this.rulesReader.readGradeAlphas(trx);
     const profiles = await this.profileReader.readProfiles(ids, trx);
     const supplierObservations = await this.profileReader.readSupplierLeadTimes(trx);
@@ -108,6 +111,12 @@ export class ReplenishmentSuggestionReader {
       // 출발 창고가 판매 창고(또는 미정)면 옮길 구간이 없다 — 전사 축 합성에서 L2 와 통합 버퍼를 빼고,
       // 경로 규칙 · 관측도 넘기지 않는다(R1(i): transferCoverDays 는 hasRoute 로 게이팅되지 않으므로
       // 적용될 수 없는 경로 규칙의 커버 일수가 새어들지 않게 호출처가 계약을 지킨다).
+      //
+      // 전제(알려진 갈라짐): 이동 축 파라미터(L2 · 이동 커버)는 **공급사 기본 창고** 경로로 해석한다.
+      // 실제 이동 제안의 출발 창고는 조립기가 원장에서 고르므로(§7.2 「가장 큰 로케이션이 속한 창고」)
+      // 비판매 창고가 둘 이상 쓰이면 둘이 갈라져, 제안하지 않는 경로의 리드타임으로 계산될 수 있다.
+      // 라이브는 판매 창고 1 · 실질 출발지 1(중국)이라 현재는 일치한다 — 스펙 §11 의 재검토 트리거와
+      // 같은 계열이다. 고치려면 「파라미터 해석 → 조립」 순서를 뒤집어야 하므로 여기서 바꾸지 않는다.
       const hasRoute = sourceWarehouseId !== null && sourceWarehouseId !== sellableWarehouseId;
       const key = hasRoute && sourceWarehouseId !== null ? routeKey(sourceWarehouseId, sellableWarehouseId) : null;
 

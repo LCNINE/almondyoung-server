@@ -21,13 +21,18 @@ export function assembleSuggestions(inputs: SkuStockInput[], ctx: AssembleContex
   return rows;
 }
 
+/** 동률 타이브레이크는 코드순. `localeCompare()` 는 서버 로케일에 따라 순서가 달라지므로 쓰지 않는다. */
+function byCode(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function byUrgency(a: SuggestionRow, b: SuggestionRow): number {
   const da = a.sellable.daysOfCover;
   const db = b.sellable.daysOfCover;
-  if (da === null && db === null) return a.skuCode.localeCompare(b.skuCode);
+  if (da === null && db === null) return byCode(a.skuCode, b.skuCode);
   if (da === null) return 1;
   if (db === null) return -1;
-  return da - db || a.skuCode.localeCompare(b.skuCode);
+  return da - db || byCode(a.skuCode, b.skuCode);
 }
 
 function daysOfCover(position: number, dailyMean: number): number | null {

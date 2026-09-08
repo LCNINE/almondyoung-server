@@ -134,6 +134,30 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
     ]);
   });
 
+  // 이 픽스처가 TODO ①(전 창고 draft 합) 의 회귀를 잡는 유일한 것이다. 다른 창고의 재고(100)가
+  // 없으면 옛 로직의 오차가 「고른 창고에서 실제 채운 합」이라는 상한에 가려져 같은 답이 나온다 —
+  // 그래서 여기서는 다른 창고에 재고를 두고 draft 를 «고른» 창고에 건다.
+  // 전 창고 합 방식: 이동가능 = (200 + 100) − 150 = 150 → qty 100. 창고별 방식: 200 − 150 = 50.
+  it('고른 출발 창고의 draft 만 뺀다 — 다른 창고 재고가 그 차감을 가리지 않는다', () => {
+    const [row] = assembleSuggestions(
+      [
+        sku({
+          onHandSellable: 0,
+          onHandTotal: 300,
+          nonSellableOnHand: [
+            { warehouseId: CHINA, locationId: LOC_A, qty: 200 },
+            { warehouseId: 'wh-other', locationId: 'loc-o', qty: 100 },
+          ],
+          draftTransferPlanned: [{ fromWarehouseId: CHINA, qty: 150 }],
+        }),
+      ],
+      ctx,
+    );
+    expect(row.actions).toEqual([
+      { type: 'transfer', qty: 50, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 50 }] },
+    ]);
+  });
+
   it('로케이션이 여럿이면 큰 곳부터 채운다', () => {
     const [row] = assembleSuggestions(
       [
