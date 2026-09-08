@@ -2,31 +2,18 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables, DbTx } from './inventory.schema';
-import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../fulfillment/services/__support__';
+import { makeDb, inRollbackTx, seedHolder, seedSku, causeChainMessage } from '../../fulfillment/services/__support__';
 
 /**
  * A 단계 표 5개(스펙 §8.1)가 마이그레이션으로 존재하고 제약이 살아 있는지.
  * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- replenishment-schema.integration
+ *
+ * `causeChainMessage` 는 `__support__/cause-chain.ts` 공유 헬퍼 — B 단계
+ * (`replenishment-rules-schema.integration.spec.ts`)와 같은 것을 쓴다. (동일 컨벤션:
+ * outbound-v2-schema.integration.spec.ts 는 자기 도메인용 `expectViolation` 을 따로 쓴다 — 별도 정리 대상, 이 태스크 밖.)
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-
-/**
- * drizzle-orm 0.44.x 는 모든 쿼리 에러를 DrizzleQueryError 로 감싼다 — 최상위 `.message` 는
- * "Failed query: ...\nparams: ..." 뿐이고 실제 Postgres 메시지는 `.cause` 에만 남는다
- * (동일 컨벤션: outbound-v2-schema.integration.spec.ts 의 expectViolation). jest 의
- * `toThrow(regex)` 는 최상위 `.message` 만 보므로 그걸로는 절대 매치되지 않는다 — cause 체인을
- * 직접 걸어서 합친 문자열로 검사한다.
- */
-function causeChainMessage(error: unknown, depth = 5): string {
-  const parts: string[] = [];
-  let current: (Error & { cause?: unknown }) | undefined = error instanceof Error ? error : undefined;
-  for (let i = 0; current && i < depth; i += 1) {
-    parts.push(current.message);
-    current = current.cause instanceof Error ? current.cause : undefined;
-  }
-  return parts.join(' ');
-}
 
 describeIfDb('replenishment statistics schema (A)', () => {
   jest.setTimeout(60_000);
@@ -65,7 +52,9 @@ describeIfDb('replenishment statistics schema (A)', () => {
         .values({ skuId, demandDate: '2026-01-01', qty: 3, amount: 3000, source: 'core' });
       let caught: unknown;
       try {
-        await trx.insert(wmsTables.skuDemandDaily).values({ skuId, demandDate: '2026-01-01', qty: 1, amount: null, source: 'core' });
+        await trx
+          .insert(wmsTables.skuDemandDaily)
+          .values({ skuId, demandDate: '2026-01-01', qty: 1, amount: null, source: 'core' });
       } catch (error) {
         caught = error;
       }
@@ -76,7 +65,9 @@ describeIfDb('replenishment statistics schema (A)', () => {
       const { skuId } = await seedSku(trx, holderId);
       let caught: unknown;
       try {
-        await trx.insert(wmsTables.skuDemandDaily).values({ skuId, demandDate: '2026-01-02', qty: -1, amount: null, source: 'core' });
+        await trx
+          .insert(wmsTables.skuDemandDaily)
+          .values({ skuId, demandDate: '2026-01-02', qty: -1, amount: null, source: 'core' });
       } catch (error) {
         caught = error;
       }
@@ -125,7 +116,10 @@ describeIfDb('replenishment statistics schema (A)', () => {
         computedAt: new Date(),
       });
       await trx.delete(wmsTables.skus).where(sql`${wmsTables.skus.id} = ${skuId}`);
-      const rows = await trx.select().from(wmsTables.skuDemandProfiles).where(sql`${wmsTables.skuDemandProfiles.skuId} = ${skuId}`);
+      const rows = await trx
+        .select()
+        .from(wmsTables.skuDemandProfiles)
+        .where(sql`${wmsTables.skuDemandProfiles.skuId} = ${skuId}`);
       expect(rows).toEqual([]);
     });
   });
