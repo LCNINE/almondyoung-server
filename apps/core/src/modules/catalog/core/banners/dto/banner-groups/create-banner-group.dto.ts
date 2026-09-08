@@ -12,10 +12,11 @@ export class CreateBannerGroupDto {
   @MaxLength(255)
   title: string;
 
-  @ApiProperty({ description: '배너 그룹 카테고리', example: 'main' })
+  @ApiProperty({ description: '배너 그룹 카테고리', example: 'main', required: false })
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  category: string;
+  category?: string;
 
   @ApiProperty({ description: 'PC 이미지 너비(px)', example: 1920, required: false })
   @IsOptional()

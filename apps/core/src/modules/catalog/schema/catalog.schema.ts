@@ -882,7 +882,7 @@ export const bannerGroups = pgTable(
       .$defaultFn(() => uuidv7()),
     code: varchar('code', { length: 100 }).notNull().unique(),
     title: varchar('title', { length: 255 }).notNull(),
-    category: varchar('category', { length: 100 }).notNull(),
+    category: varchar('category', { length: 100 }),
     pcWidth: integer('pc_width'),
     pcHeight: integer('pc_height'),
     mobileWidth: integer('mobile_width'),

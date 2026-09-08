@@ -603,6 +603,13 @@
       "when": 1788834045373,
       "tag": "20260908022045_add-banner-list-fields",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788852109722,
+      "tag": "20260908072149_make-banner-group-category-nullable",
+      "breakpoints": true
     }
   ]
 }
