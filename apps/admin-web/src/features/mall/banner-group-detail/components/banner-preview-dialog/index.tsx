@@ -39,7 +39,12 @@ type Props = {
  */
 
 /** 스토어프론트 실측값 (px) */
-const PC_VIEWPORT = 1440;
+/**
+ * PC 는 배너 «높이» 가 고정이라 화면이 넓어질수록 비율이 가로로 길어지고 세로가 더
+ * 잘린다. 한 폭만 보여주면 넓은 화면에서 잘리는 걸 놓친다 — 좁은/보통/넓은 셋을 준다.
+ */
+const PC_VIEWPORTS = [1280, 1440, 1920] as const;
+const PC_VIEWPORT_DEFAULT = 1440;
 const PC_HEADER = 128;
 const MOBILE_VIEWPORT = 390;
 const MOBILE_HEADER = 104;
@@ -52,7 +57,8 @@ const LIST_CARD_WIDTH = 180;
 const LIST_CARD_TOP = 45;
 const LIST_ROW_HEIGHT = 60;
 /** 카드는 1020px 컨테이너 우측에서 10px 안쪽 (쿠팡과 동일) */
-const LIST_CARD_RIGHT = (PC_VIEWPORT - 1020) / 2 + 10;
+const listCardRight = (viewportWidth: number) =>
+  Math.max(0, (viewportWidth - 1020) / 2) + 10;
 /** 미리보기에서 그리는 칸 수 — 편집중인 한 칸 + 자리표시 */
 const LIST_PREVIEW_ROWS = 6;
 const LIST_PREVIEW_ACTIVE_ROW = 2;
@@ -72,11 +78,12 @@ export function BannerPreviewDialog({
   listLabel,
 }: Props) {
   const [device, setDevice] = useState<Device>('pc');
+  const [pcViewport, setPcViewport] = useState<number>(PC_VIEWPORT_DEFAULT);
 
   const isPc = device === 'pc';
   const slot = isPc ? pcSlot : mobileSlot;
   const src = resolvePublicFileUrl(isPc ? pcImageFileId : mobileImageFileId);
-  const viewport = isPc ? PC_VIEWPORT : MOBILE_VIEWPORT;
+  const viewport = isPc ? pcViewport : MOBILE_VIEWPORT;
 
   // 실제 뷰포트를 그대로 그린 뒤 통째로 축소한다 — 비율과 상대 크기가 함께 보존된다.
   // 다이얼로그 폭을 꽉 채우도록 배율을 잡아야 "화면에서 얼마나 큰지"가 느껴진다.
@@ -116,6 +123,22 @@ export function BannerPreviewDialog({
             <Smartphone className="mr-1 h-3.5 w-3.5" />
             모바일
           </Button>
+          {isPc && (
+            <div className="ml-2 flex items-center gap-1">
+              {PC_VIEWPORTS.map((v) => (
+                <Button
+                  key={v}
+                  type="button"
+                  size="sm"
+                  variant={pcViewport === v ? 'secondary' : 'ghost'}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setPcViewport(v)}
+                >
+                  {v}
+                </Button>
+              ))}
+            </div>
+          )}
           {slot && (
             <span className="text-muted-foreground ml-auto text-xs">
               {viewport}px 화면에서 배너 높이 {Math.round(bannerHeight)}px
@@ -166,6 +189,7 @@ export function BannerPreviewDialog({
                   <HeroListCard
                     listImageFileId={listImageFileId}
                     listLabel={listLabel}
+                    viewportWidth={viewport}
                   />
                 )}
               </div>
@@ -222,9 +246,11 @@ export function BannerPreviewDialog({
 function HeroListCard({
   listImageFileId,
   listLabel,
+  viewportWidth,
 }: {
   listImageFileId?: string | null;
   listLabel?: string;
+  viewportWidth: number;
 }) {
   const listSrc = resolvePublicFileUrl(listImageFileId);
 
@@ -234,7 +260,7 @@ function HeroListCard({
       style={{
         boxShadow: '0 4px 5px rgba(0, 0, 0, 0.3)',
         top: LIST_CARD_TOP,
-        right: LIST_CARD_RIGHT,
+        right: listCardRight(viewportWidth),
         width: LIST_CARD_WIDTH,
       }}
     >
