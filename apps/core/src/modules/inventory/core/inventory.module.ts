@@ -14,7 +14,6 @@ import { LedgerReconciliationController } from './controllers/ledger-reconciliat
 
 // Services
 import { StockEventService } from './services/stock-event.service';
-import { SafetyStockService } from './services/safety-stock.service';
 import { LocationService } from './services/location.service';
 import { InventoryCommandService } from './services/inventory-command.service';
 import { InventoryQueryService } from './services/inventory-query.service';
@@ -46,7 +45,6 @@ import { StockEventStore } from './repositories/stock-event.store';
   ],
   providers: [
     StockEventService,
-    SafetyStockService,
     LocationService,
     StockEventStore,
     InventoryCommandService,
@@ -62,7 +60,6 @@ import { StockEventStore } from './repositories/stock-event.store';
   ],
   exports: [
     StockEventService,
-    SafetyStockService,
     LocationService,
     StockEventStore,
     InventoryCommandService,

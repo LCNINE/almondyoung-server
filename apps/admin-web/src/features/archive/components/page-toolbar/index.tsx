@@ -34,7 +34,7 @@ type Props = {
   onToggleFavorite: () => void;
   onOpenHistory: () => void;
   onDelete: () => void;
-  /** 좁은 화면에서 문서 목록 드로어를 연다. 넓은 화면에는 목록이 이미 붙어 있어 쓰지 않는다. */
+  /** 좁은 화면에서 문서 목록 드로어를 연다. md 이상에는 목록이 이미 붙어 있어 쓰지 않는다. */
   onOpenNav: () => void;
 };
 
@@ -62,7 +62,7 @@ export function PageToolbar({
         size="icon"
         aria-label="문서 목록 열기"
         onClick={onOpenNav}
-        className="size-9 shrink-0 lg:hidden"
+        className="size-9 shrink-0 md:hidden"
       >
         <PanelsTopLeft className="size-4" aria-hidden />
       </Button>

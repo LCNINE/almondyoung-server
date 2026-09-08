@@ -71,9 +71,13 @@
   color: var(--muted-foreground);
 }
 
-/* 표가 화면보다 넓으면 페이지 전체가 아니라 표 안에서 가로로 스크롤돼야 한다. */
+/* 표가 화면보다 넓으면 페이지 전체가 아니라 표 안에서 가로로 스크롤돼야 한다.
+   스크롤 막대는 폭과 무관하게 늘 얇게 보인다 — 넘치는 표는 좁은 화면에서만 생기는 게
+   아니라서, 「옆으로 더 있다」는 신호가 데스크톱에도 있어야 한다. */
 .archive-block-editor .bn-block-content[data-content-type='table'] {
   overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 0.25rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -214,11 +218,15 @@
   .archive-block-editor [data-level='3'] {
     font-size: 1.0625rem;
   }
+}
 
-  /* 표는 좁은 화면에서 거의 항상 넘친다. 스크롤 막대를 늘 보이게 둬서
-     «옆으로 더 있다»는 것이 손대기 전에 보이게 한다. */
-  .archive-block-editor .bn-block-content[data-content-type='table'] {
-    scrollbar-width: thin;
-    padding-bottom: 0.25rem;
+/* 블록 핸들은 본문 «바깥» 왼쪽에 뜬다. 그 자리가 화면에 없으면 통째로 밖으로 나가
+   블록을 옮기거나 지울 방법이 사라진다 — 실제로 폰에서는 x=-36 이었다.
+   화면이 그 자리를 못 주는 폭에서는 본문이 왼쪽 여백을 내주고(컨테이너 `pl-11`),
+   두 버튼 중 「블록 추가」를 접어 26px 안에 들어가게 한다. 블록 추가는 슬래시 메뉴에
+   그대로 있으므로 없어지는 길이 아니다. */
+@media (max-width: 1159px) {
+  .archive-block-editor .bn-side-menu > button[aria-label='블록 추가'] {
+    display: none;
   }
 }

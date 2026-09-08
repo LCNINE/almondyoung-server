@@ -93,7 +93,8 @@ export function PageHeader({
         </div>
       ) : null}
 
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 sm:pt-8">
+      {/* 제목은 본문 첫 블록과 같은 좌측선에 서야 한다 — 여백 규칙을 본문과 맞춘다. */}
+      <div className="mx-auto max-w-3xl pl-11 pr-4 pt-6 sm:pr-6 sm:pt-8 min-[1160px]:pl-6">
         <div className="group/actions flex min-h-9 items-center gap-1">
           <IconPicker icon={icon} onChange={onIconChange} />
           {coverUrl ? null : (

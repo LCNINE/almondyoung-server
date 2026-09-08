@@ -273,6 +273,9 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
       expect(row.awaitingTransferQty).toBe(200); // 부천 진열 111 은 ②가 아니다
       expect(row.inTransitQty).toBe(50);
       expect(row.inTransitEta).toEqual(new Date('2026-08-20'));
+      // 전 창고 발주잔량 = 중국행 300 + 부천 직행 77. 기존 ①(onOrderQty)은 300 그대로.
+      expect(row.onOrderTotalQty).toBe(377);
+      expect(row.onOrderQty).toBe(300);
     });
   });
 

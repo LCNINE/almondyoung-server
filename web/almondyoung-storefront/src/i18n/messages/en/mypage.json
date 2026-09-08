@@ -1263,7 +1263,9 @@
       "policyNotice": "Points are awarded based on photos in the first submitted review. Attachments unrelated to the product may be deleted and rewards may be revoked.",
       "cancel": "Cancel",
       "submit": "Submit"
-    }
+    },
+    "rewardRate": "{percent}% of your purchase",
+    "rewardRateCapped": "{percent}% of your purchase (up to {amount} KRW)"
   },
   "page": {
     "trackDelivery": "Track Delivery",

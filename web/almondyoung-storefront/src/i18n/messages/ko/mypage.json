@@ -1275,7 +1275,9 @@
       "policyNotice": "최초 등록된 리뷰에 첨부된 사진 기준으로 포인트 적립되며, 상품과 무관한 첨부파일은 삭제 및 적립혜택이 회수됩니다.",
       "cancel": "취소",
       "submit": "등록"
-    }
+    },
+    "rewardRate": "구매금액의 {percent}%",
+    "rewardRateCapped": "구매금액의 {percent}% (최대 {amount}원)"
   },
   "shopSetting": {
     "pageTitle": "샵 설정",

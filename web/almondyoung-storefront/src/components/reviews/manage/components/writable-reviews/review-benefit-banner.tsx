@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
+import { toRewardDisplay } from "../../../utils/reward-policy"
 
 interface ReviewBenefitBannerProps {
   policies: RewardPolicy[]
@@ -13,20 +14,23 @@ export const ReviewBenefitBanner = ({
   reviewCount,
 }: ReviewBenefitBannerProps) => {
   const t = useTranslations("mypage.reviews")
-  if (policies.length === 0 || reviewCount === 0) return null
+  const reward = toRewardDisplay(policies)
 
-  const maxPerReview = Math.max(...policies.map((p) => p.rewardAmount))
-  const totalMaxAmount = maxPerReview * reviewCount
+  // 지급 안내가 없으면(활성 규칙 없음·비금전만) 배너를 띄우지 않는다 — 못 지킬 약속을 걸지 않는다.
+  if (reviewCount === 0 || reward.kind === "none") return null
+
+  const rewardLabel =
+    reward.kind === "fixed"
+      ? t("benefitBannerAmount", { amount: (reward.amount * reviewCount).toLocaleString() })
+      : reward.maxAmount !== null
+        ? t("rewardRateCapped", { percent: reward.percent, amount: reward.maxAmount.toLocaleString() })
+        : t("rewardRate", { percent: reward.percent })
 
   return (
     <div className="mb-4 rounded-xl border border-orange-100 bg-linear-to-r from-orange-50 to-amber-50 p-4">
       <p className="text-[15px] font-semibold text-gray-800">
         {t.rich("benefitBanner", {
-          amount: () => (
-            <span className="text-[#FF9500]">
-              {t("benefitBannerAmount", { amount: totalMaxAmount.toLocaleString() })}
-            </span>
-          ),
+          amount: () => <span className="text-[#FF9500]">{rewardLabel}</span>,
         })}
       </p>
     </div>

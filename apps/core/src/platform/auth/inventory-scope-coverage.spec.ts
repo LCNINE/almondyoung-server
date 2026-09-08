@@ -25,7 +25,7 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (67) ──────────────────────────────────────────
+  // ── inventory.operate (65) ──────────────────────────────────────────
   'GET /holders':                                            S.OPERATE,
   'GET /holders/:id':                                        S.OPERATE,
   'POST /inbound/cancel':                                    S.OPERATE,
@@ -50,8 +50,6 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/reservations/summary/:warehouseId':        S.OPERATE,
   'GET /inventory/returns':                                  S.OPERATE,
   'GET /inventory/returns/:id':                              S.OPERATE,
-  'GET /inventory/safety-stock-status/:skuId':               S.OPERATE,
-  'GET /inventory/safety-stock-warnings':                    S.OPERATE,
   'GET /inventory/sku-groups':                               S.OPERATE,
   'GET /inventory/sku-groups/:id':                           S.OPERATE,
   'GET /inventory/sku-groups/:id/members':                   S.OPERATE,
@@ -94,7 +92,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (57) ──────────────────────────────────────────
+  // ── inventory.manage (58) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -141,7 +139,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'DELETE /purchase-orders/cart/:itemId':                      S.MANAGE,
   'PUT /purchase-orders/cart/:itemId':                         S.MANAGE,
   'POST /purchase-orders/from-cart':                           S.MANAGE,
-  'GET /purchase-orders/suggestions/reorder':                  S.MANAGE,
+  'GET /replenishment/skus/:skuId':                            S.MANAGE,
+  'GET /replenishment/suggestions':                            S.MANAGE,
   'GET /supplier-categories':                                  S.MANAGE,
   'POST /supplier-categories':                                 S.MANAGE,
   'DELETE /supplier-categories/:id':                           S.MANAGE,

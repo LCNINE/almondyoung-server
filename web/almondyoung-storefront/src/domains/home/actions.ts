@@ -4,6 +4,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { getCategoryByHandle } from "@/lib/api/medusa/categories"
 import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
+import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
 
 type Params = {
   handle: string
@@ -25,6 +26,9 @@ const PB_PINS: Record<string, string> = {
   // 노몬드 / 노몬드 긴 마이크로 브러쉬 100p
   "b9og25": "bb8f3bba-b0ee-4af7-a40a-3be63ac4f3f3",
 }
+
+// 품절을 걷어내고도 limit 을 채우려면 넉넉히 받아야 한다.
+const OVERFETCH = 3
 
 // 0-based. 최소 보장 자리 — 이보다 아래면 2등 자리로 끌어올리고, 이미 더 위면 그대로 둔다.
 const PB_PIN_SLOT = 1
@@ -48,14 +52,16 @@ export async function getBestProductsByCategory({
   }
 
   const {
-    response: { products },
+    response: { products: fetched },
   } = await listProductsSorted({
     categoryId: collectCategoryIds(category),
     sortBy: "review_count",
     order: "desc",
-    limit,
+    limit: limit * OVERFETCH,
     regionId,
   })
+
+  const products = filterSoldOut(fetched).slice(0, limit)
 
   const pinHandle = PB_PINS[handle]
   if (!pinHandle) {
@@ -65,12 +71,14 @@ export async function getBestProductsByCategory({
   // 이미 상위권이면 추가 조회 없이 자리만 옮긴다.
   const pinned =
     products.find((p) => p.handle === pinHandle) ??
-    (
-      await listProducts({
-        queryParams: { handle: pinHandle, limit: 1 },
-        regionId,
-      })
-    ).response.products[0]
+    filterSoldOut(
+      (
+        await listProducts({
+          queryParams: { handle: pinHandle, limit: 1 },
+          regionId,
+        })
+      ).response.products
+    )[0]
 
   if (!pinned) {
     return products

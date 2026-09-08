@@ -229,7 +229,9 @@ export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
           }}
         />
 
-        <div className="mx-auto max-w-3xl px-4 pt-2 sm:px-6">
+        {/* 왼쪽 여백은 블록 핸들이 놓일 자리다 — 본문 바깥에 그 자리가 생기는 폭
+            (사이드바 288 + 본문 768 + 좌우 52씩 = 1160)부터는 여백을 도로 줄인다. */}
+        <div className="mx-auto max-w-3xl pl-11 pr-4 pt-2 sm:pr-6 min-[1160px]:pl-6">
           <PageEditor
             key={pageId}
             pageId={pageId}

@@ -7,6 +7,7 @@ import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { PRODUCT_LIST_FIELDS_WITH_CATEGORIES } from "@lib/data/product-fields"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
+import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { getTranslations } from "next-intl/server"
 import { TimeSaleSection } from "../../components/sections/time-sale-section"
@@ -36,7 +37,7 @@ export async function TimeSaleWrapper({
   ).slice(0, MAX_PRODUCTS)
 
   const {
-    response: { products },
+    response: { products: fetched },
   } = await listProducts({
     queryParams: {
       id: allProductIds,
@@ -47,6 +48,9 @@ export async function TimeSaleWrapper({
     regionId: region?.id,
   })
 
+  // 품절은 빼고 세일에 걸린 다음 상품을 당겨 올린다. 세일 상품 전체(MAX_PRODUCTS)를 이미
+  // 받아둔 뒤 세일별로 HOME_ROWS 만큼 자르므로 추가 조회 없이 칸이 채워진다.
+  const products = filterSoldOut(fetched)
   if (products.length === 0) return null
 
   const [customer, categories, t] = await Promise.all([

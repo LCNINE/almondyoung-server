@@ -21,6 +21,8 @@ interface ReviewResponseDto {
   likeCount: number
   dislikeCount: number
   adminComment: CommentResponseDto | null
+  /** 확정된 주간 베스트 리뷰. 상품 리뷰 목록에서만 채워진다 */
+  isBest?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -113,11 +115,19 @@ interface ReviewEligibilityListQueryDto {
 
 type ReviewRewardType = "TEXT" | "PHOTO"
 
+type ReviewRewardKind = "POINT_FIXED" | "POINT_RATE" | "BADGE"
+
 interface RewardPolicyResponseDto {
   reviewType: ReviewRewardType
+  /** 보상 종류. 관리자가 규칙을 켜지 않았으면 이 목록 자체가 비어 있다 */
+  rewardKind: ReviewRewardKind
+  /** 정액이면 지급액, 정률이면 상한(상한이 없으면 0) */
   rewardAmount: number
+  ratePercent: number | null
+  maxAmount: number | null
   minContentLength: number
   minMediaCount: number
+  expiresInDays: number | null
 }
 
 // ─── Q&A ───

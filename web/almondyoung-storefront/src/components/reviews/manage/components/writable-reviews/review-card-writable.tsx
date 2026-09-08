@@ -7,6 +7,7 @@ import type { WritableReview } from "../../types"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
+import { toRewardDisplay } from "../../../utils/reward-policy"
 
 interface ReviewCardWritableProps {
   review: WritableReview
@@ -31,7 +32,7 @@ export const ReviewCardWritable = ({
 
   const formattedExpiresAt = formatDate(review.expiresAt, DATE_FORMATS.KO_DOT)
 
-  const maxReward = Math.max(...rewardPolicies.map((p) => p.rewardAmount))
+  const reward = toRewardDisplay(rewardPolicies)
 
   return (
     <article className="w-full bg-[#FFFFFF]">
@@ -53,11 +54,18 @@ export const ReviewCardWritable = ({
             </h3>
             <div className="flex items-end justify-between">
               <div className="text-[#666666]">
-                {maxReward > 0 && (
+                {reward.kind !== "none" && (
                   <p className="text-sm">
                     {t("maxRewardPrefix")}{" "}
                     <span className="font-bold text-[#1A1A1A]">
-                      {t("maxRewardSuffix", { amount: maxReward.toLocaleString() })}
+                      {reward.kind === "fixed"
+                        ? t("maxRewardSuffix", { amount: reward.amount.toLocaleString() })
+                        : reward.maxAmount !== null
+                          ? t("rewardRateCapped", {
+                              percent: reward.percent,
+                              amount: reward.maxAmount.toLocaleString(),
+                            })
+                          : t("rewardRate", { percent: reward.percent })}
                     </span>
                   </p>
                 )}
