@@ -603,6 +603,13 @@
       "when": 1788840382716,
       "tag": "20260908040622_add-replenishment-statistics-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788875844772,
+      "tag": "20260908135724_add-replenishment-rule-tables",
+      "breakpoints": true
     }
   ]
 }

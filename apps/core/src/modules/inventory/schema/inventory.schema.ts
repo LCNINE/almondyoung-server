@@ -336,6 +336,7 @@ export const demandPatternEnum = pgEnum('demand_pattern', [
   'none',
 ]);
 export const demandGradeEnum = pgEnum('demand_grade', ['A', 'B', 'C']);
+export const replenishmentOverrideModeEnum = pgEnum('replenishment_override_mode', ['auto', 'excluded']);
 
 export const suppliers = pgTable('suppliers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -2002,6 +2003,84 @@ export const routeLeadTimeProfiles = pgTable(
 );
 
 /*───────────────────────────
+ * REPLENISHMENT — 규칙 층 (#743 B, 스펙 §6). 사람이 소유하는 입력. 마스터 표에 컬럼을 얹지 않는다(D6).
+ *──────────────────────────*/
+
+/** 등급별 목표 예측 실패율 α. 3행(A · B · C)은 시드가 채운다 — 등급은 모든 SKU 에 있어 α 가 빠지지 않는다. */
+export const replenishmentGradeRules = pgTable('replenishment_grade_rules', {
+  grade: demandGradeEnum('grade').primaryKey(),
+  alpha: doublePrecision('alpha').notNull(),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 공급사 L1 규칙. 관측(n ≥ min_lead_time_observations) 이 있으면 관측이 이긴다(§6 우선순위). */
+export const replenishmentSupplierRules = pgTable('replenishment_supplier_rules', {
+  supplierId: uuid('supplier_id')
+    .primaryKey()
+    .references(() => suppliers.id, { onDelete: 'restrict' }),
+  leadTimeDays: doublePrecision('lead_time_days').notNull(),
+  leadTimeStdDays: doublePrecision('lead_time_std_days'),
+  coverDays: integer('cover_days').notNull(),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 창고 쌍 L2 규칙. */
+export const replenishmentRouteRules = pgTable(
+  'replenishment_route_rules',
+  {
+    fromWarehouseId: uuid('from_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    toWarehouseId: uuid('to_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    leadTimeDays: doublePrecision('lead_time_days').notNull(),
+    leadTimeStdDays: doublePrecision('lead_time_std_days'),
+    coverDays: integer('cover_days').notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey(t.fromWarehouseId, t.toWarehouseId),
+    ckDistinct: check('ck_replenishment_route_rules_distinct', sql`${t.fromWarehouseId} <> ${t.toWarehouseId}`),
+  }),
+);
+
+/** SKU 예외. excluded 는 제안에서 빠진다(excluded_until 이 오늘보다 앞이면 auto). safety_stock 은 계산을 대체. */
+export const replenishmentSkuOverrides = pgTable(
+  'replenishment_sku_overrides',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    mode: replenishmentOverrideModeEnum('mode').notNull().default('auto'),
+    excludedUntil: date('excluded_until', { mode: 'string' }),
+    safetyStock: integer('safety_stock'),
+    alpha: doublePrecision('alpha'),
+    memo: varchar('memo', { length: 255 }),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxReplenishmentSkuOverridesMode: index('idx_replenishment_sku_overrides_mode').on(t.mode),
+    ckAlpha: check(
+      'ck_replenishment_sku_overrides_alpha',
+      sql`${t.alpha} IS NULL OR (${t.alpha} > 0 AND ${t.alpha} < 1)`,
+    ),
+    ckSafetyStock: check(
+      'ck_replenishment_sku_overrides_safety_stock',
+      sql`${t.safetyStock} IS NULL OR ${t.safetyStock} >= 0`,
+    ),
+  }),
+);
+
+/*───────────────────────────
  * PURCHASE ORDERS
  *──────────────────────────*/
 export const purchaseOrders = pgTable('purchase_orders', {
@@ -3302,6 +3381,12 @@ export const wmsTables = {
   skuDemandProfiles,
   supplierLeadTimeProfiles,
   routeLeadTimeProfiles,
+
+  // 재고 보충 규칙 층 (#743 B)
+  replenishmentGradeRules,
+  replenishmentSupplierRules,
+  replenishmentRouteRules,
+  replenishmentSkuOverrides,
 } as const;
 
 /*───────────────────────────
@@ -4359,6 +4444,13 @@ export type SkuDemandProfile = InferSelectModel<typeof skuDemandProfiles>;
 export type NewSkuDemandProfile = InferInsertModel<typeof skuDemandProfiles>;
 export type SupplierLeadTimeProfile = InferSelectModel<typeof supplierLeadTimeProfiles>;
 export type RouteLeadTimeProfile = InferSelectModel<typeof routeLeadTimeProfiles>;
+
+// Replenishment rule layer (#743 B)
+export type ReplenishmentGradeRule = InferSelectModel<typeof replenishmentGradeRules>;
+export type ReplenishmentSupplierRule = InferSelectModel<typeof replenishmentSupplierRules>;
+export type ReplenishmentRouteRule = InferSelectModel<typeof replenishmentRouteRules>;
+export type ReplenishmentSkuOverride = InferSelectModel<typeof replenishmentSkuOverrides>;
+export type NewReplenishmentSkuOverride = InferInsertModel<typeof replenishmentSkuOverrides>;
 
 export type SupplierCategory = InferSelectModel<typeof supplierCategories>;
 export type NewSupplierCategory = InferInsertModel<typeof supplierCategories>;
