@@ -1374,16 +1374,48 @@ export interface CartItemDto {
   };
 }
 
-export interface StockReorderSuggestionDto {
-  skuId: string;
-  skuName: string;
-  currentStock: number;
-  safetyStock: number;
-  shortfall: number;
-  suggestedOrder: number;
-  onOrderQty: number;
-  inTransferQty: number;
+// ===== 보충 제안 (replenishment, #743) =====
+
+export type SuggestionActionFilter = 'purchase' | 'transfer' | 'all';
+export type SuggestionFlag = 'default_lead_time' | 'supplier_unknown' | 'low_confidence' | 'legacy_only';
+
+export interface SuggestionSupplierDto { id: string; name: string }
+export interface SuggestionDemandDto { dailyMean: number; dailyStd: number }
+
+export interface CompanyAxisDto {
+  onHand: number; inTransfer: number; onOrder: number; reserved: number; position: number;
+  safetyStock: number; reorderPoint: number; targetLevel: number; leadTimeDays: number;
 }
+export interface SellableAxisDto {
+  warehouseId: string; onHand: number; reserved: number; inTransit: number; onOrderDirect: number; position: number;
+  safetyStock: number; reorderPoint: number; targetLevel: number; leadTimeDays: number; daysOfCover: number | null;
+}
+export interface TransferLineSuggestionDto { fromLocationId: string; quantity: number }
+export type SuggestionActionDto =
+  | { type: 'purchase'; qty: number; supplierId: string | null; sourceWarehouseId: string | null }
+  | { type: 'transfer'; qty: number; fromWarehouseId: string; toWarehouseId: string; lines: TransferLineSuggestionDto[] };
+
+export interface ReplenishmentSuggestionRowDto {
+  skuId: string; skuCode: string; skuName: string;
+  supplier: SuggestionSupplierDto | null;
+  pattern: 'smooth' | 'intermittent' | 'erratic' | 'lumpy' | 'insufficient' | 'none';
+  grade: 'A' | 'B' | 'C';
+  confidence: 'normal' | 'low';
+  demand: SuggestionDemandDto;
+  company: CompanyAxisDto;
+  sellable: SellableAxisDto;
+  actions: SuggestionActionDto[];
+  flags: SuggestionFlag[];
+  legacyReorderPoint: number;
+}
+export interface ReplenishmentSuggestionListDto { items: ReplenishmentSuggestionRowDto[]; evaluated: number }
+
+// ===== 이동 지시서 생성 =====
+export interface CreateTransferOrderLineRequest { skuId: string; fromLocationId: string; quantity: number }
+export interface CreateTransferOrderRequest {
+  fromWarehouseId: string; toWarehouseId: string; eta?: string; memo?: string; lines: CreateTransferOrderLineRequest[];
+}
+export interface CreateTransferOrderResponseDto { transferOrderId: string }
 
 // ===== 회수(Returns) =====
 

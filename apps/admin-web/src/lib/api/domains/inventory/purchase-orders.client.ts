@@ -16,7 +16,6 @@ import type {
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
   CartItemDto,
-  StockReorderSuggestionDto,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/purchase-orders`;
@@ -119,14 +118,6 @@ export const purchaseOrdersClient = {
     clear: async (type?: string): Promise<void> => {
       const qs = type ? `?type=${type}` : '';
       await client.delete(`${BASE}/cart${qs}`);
-    },
-  },
-
-  suggestions: {
-    reorder: async (warehouseId?: string): Promise<StockReorderSuggestionDto[]> => {
-      const qs = warehouseId ? `?warehouseId=${encodeURIComponent(warehouseId)}` : '';
-      const response = await client.get(`${BASE}/suggestions/reorder${qs}`);
-      return response.data;
     },
   },
 };

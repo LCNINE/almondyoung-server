@@ -134,8 +134,10 @@ export const inventoryQueryKeys = {
     ['purchase-orders', filters] as const,
   purchaseOrder: (id: string) => ['purchase-orders', id] as const,
   purchaseOrderCart: () => ['purchase-orders', 'cart'] as const,
-  reorderSuggestions: (warehouseId?: string) =>
-    ['purchase-orders', 'reorder', warehouseId] as const,
+
+  // 보충 제안(replenishment) 관련
+  replenishmentSuggestions: (action: string) => ['replenishment', 'suggestions', action] as const,
+  replenishmentSku: (skuId: string) => ['replenishment', 'sku', skuId] as const,
 
   // 회수(Returns) 관련
   returns: (filters?: ReturnFiltersDto) => ['inventory', 'returns', filters] as const,

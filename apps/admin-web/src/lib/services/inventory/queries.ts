@@ -21,6 +21,7 @@ import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-order
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
+import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
@@ -36,6 +37,7 @@ import type {
   ListPlanItemsQueryDto,
   ReturnFiltersDto,
   MovementHistoryQuery,
+  SuggestionActionFilter,
 } from '../../types/dto/inventory';
 
 export const useStockValuationSummary = () => {
@@ -458,14 +460,19 @@ export const usePurchaseOrderCart = () => {
   });
 };
 
-export const useReorderSuggestions = (warehouseId?: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.reorderSuggestions(warehouseId),
-    queryFn: () => purchaseOrdersClient.suggestions.reorder(warehouseId),
-    enabled: !!warehouseId,
-    staleTime: 5 * 60 * 1000,
+export const useReplenishmentSuggestions = (action: SuggestionActionFilter) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSuggestions(action),
+    queryFn: () => replenishmentClient.list(action),
+    staleTime: 60 * 1000,
   });
-};
+
+export const useReplenishmentSku = (skuId: string | null) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSku(skuId ?? ''),
+    queryFn: () => replenishmentClient.getSku(skuId as string),
+    enabled: !!skuId,
+  });
 
 // ===== 회수(Returns) =====
 
