@@ -147,6 +147,25 @@ describe('computeDemandProfile — 창과 분류', () => {
     expect(p.pattern).toBe('none');
   });
 
+  it('none: 신상품 — 유일한 이력이 오늘(분류 창은 어제까지, firstDate 도 오늘) → history 0, paramFrom > paramTo', () => {
+    const p = computeDemandProfile([{ date: '2026-09-08', qty: 4 }], '2026-09-08', windows, thresholds);
+    expect(p).toMatchObject({
+      pattern: 'none',
+      historyDays: 0,
+      demandEvents: 0,
+      adi: null,
+      cv2: null,
+      dailyMean: 0,
+      dailyStd: 0,
+      dailyMean90: 0,
+      sizeMean: null,
+      sizeStd: null,
+      intervalMean: null,
+      paramFrom: '2026-09-08',
+      paramTo: '2026-09-07',
+    });
+  });
+
   it('창 밖 점(오늘 · 창 이전)은 세지 않고, 같은 날 점은 합친다', () => {
     const p = computeDemandProfile(
       [
