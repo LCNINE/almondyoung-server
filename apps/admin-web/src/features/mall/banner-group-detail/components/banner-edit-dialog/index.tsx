@@ -19,7 +19,7 @@ import { useBannerGroup, useUpdateBanner } from '@/lib/services/products';
 import type { BannerDto, UpdateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { bannerImageGuide, HERO_GROUP_CODE } from '../../banner-image-guide';
-import { BannerListFields, heroListError } from '../banner-list-fields';
+import { heroListError } from '../banner-list-fields';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 type Props = {
@@ -184,14 +184,6 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
               setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
             }
           />
-
-          {isHero && (
-            <BannerListFields
-              idPrefix="be"
-              value={form}
-              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-            />
-          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">
