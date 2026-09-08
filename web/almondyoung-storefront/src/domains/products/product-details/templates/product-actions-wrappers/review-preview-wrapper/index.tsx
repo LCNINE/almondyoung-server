@@ -5,10 +5,13 @@ import type { RatingSummary } from "@/lib/types/ui/ugc"
 const PREVIEW_LIMIT = 12
 
 interface Props {
-  productId: string
+  /** PIM 마스터 id. 없으면 리뷰가 존재할 수 없으므로 조회 자체를 하지 않는다 */
+  productId: string | undefined
 }
 
 export async function ReviewPreviewWrapper({ productId }: Props) {
+  if (!productId) return null
+
   const [ratingSummary, reviewResult] = await Promise.all([
     getRatingSummary(productId).catch((): RatingSummary | null => null),
     getReviewsByProductId({

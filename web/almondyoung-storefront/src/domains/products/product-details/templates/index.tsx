@@ -45,6 +45,9 @@ export async function ProductTemplate({
   }
 
   const t = await getTranslations("productDetail.section")
+  // PIM 에 없는 상품(예: 렌탈)은 pimMasterId 가 없다. `as string` 으로 덮으면 undefined 가
+  // 그대로 쿼리에 실려 리뷰·Q&A API 가 상세 진입마다 400 을 낸다 — 타입으로 드러낸다.
+  const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
 
@@ -64,7 +67,7 @@ export async function ProductTemplate({
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
                 productId={product.id}
-                pimMasterId={product.metadata?.pimMasterId as string}
+                pimMasterId={pimMasterId}
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
@@ -80,14 +83,10 @@ export async function ProductTemplate({
             </div>
 
             <Suspense fallback={null}>
-              <ReviewPreviewWrapper
-                productId={product.metadata?.pimMasterId as string}
-              />
+              <ReviewPreviewWrapper productId={pimMasterId} />
             </Suspense>
 
-            <SectionTabsWrapper
-              productId={product.metadata?.pimMasterId as string}
-            >
+            <SectionTabsWrapper productId={pimMasterId}>
               {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
                   Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
@@ -106,7 +105,7 @@ export async function ProductTemplate({
                 <ErrorBoundary fallback={<div>{t("loadReviewFail")}</div>}>
                   <Suspense fallback={<ProductReviewSkeleton />}>
                     <ReviewSectionWrapper
-                      productId={product.metadata?.pimMasterId as string}
+                      productId={pimMasterId}
                       countryCode={countryCode}
                     />
                   </Suspense>
@@ -114,10 +113,10 @@ export async function ProductTemplate({
               </SectionTabPanel>
 
               {/* Q&A Tab Panel — QnA 기능을 닫은 동안 미노출 */}
-              {FEATURES.qna && (
+              {FEATURES.qna && pimMasterId && (
                 <SectionTabPanel value="qna">
                   <QnaList
-                    productId={product.metadata?.pimMasterId as string}
+                    productId={pimMasterId}
                     productName={product.title ?? ""}
                     productThumbnail={product.thumbnail ?? null}
                   />
@@ -132,7 +131,7 @@ export async function ProductTemplate({
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
                 productId={product.id}
-                pimMasterId={product.metadata?.pimMasterId as string}
+                pimMasterId={pimMasterId}
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
