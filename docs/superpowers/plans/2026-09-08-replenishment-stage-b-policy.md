@@ -91,6 +91,23 @@ import { makeDb, inRollbackTx, seedHolder, seedSku, seedWarehouseWithZone } from
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
+/**
+ * drizzle-orm 0.44.x 는 모든 쿼리 에러를 DrizzleQueryError 로 감싼다 — 최상위 `.message` 는
+ * "Failed query: ...\nparams: ..." 뿐이고 실제 Postgres 메시지는 `.cause` 에만 남는다. jest 의
+ * `toThrow(regex)` 는 최상위 `.message` 만 보므로 그걸로는 절대 매치되지 않는다 — A 단계
+ * (`replenishment-schema.integration.spec.ts`)가 이미 이 문제를 겪었고 같은 헬퍼로 풀었다.
+ * cause 체인을 직접 걸어서 합친 문자열로 검사한다.
+ */
+function causeChainMessage(error: unknown, depth = 5): string {
+  const parts: string[] = [];
+  let current: (Error & { cause?: unknown }) | undefined = error instanceof Error ? error : undefined;
+  for (let i = 0; current && i < depth; i += 1) {
+    parts.push(current.message);
+    current = current.cause instanceof Error ? current.cause : undefined;
+  }
+  return parts.join(' ');
+}
+
 describeIfDb('replenishment rule schema (B)', () => {
   jest.setTimeout(60_000);
   let client: postgres.Sql;
@@ -119,16 +136,24 @@ describeIfDb('replenishment rule schema (B)', () => {
       const [row] = await trx.insert(wmsTables.replenishmentSkuOverrides).values({ skuId }).returning();
       expect(row.mode).toBe('auto');
       expect(row.excludedUntil).toBeNull();
-      await expect(
-        trx.update(wmsTables.replenishmentSkuOverrides).set({ alpha: 1 }).where(eq(wmsTables.replenishmentSkuOverrides.skuId, skuId)),
-      ).rejects.toThrow(/chk_replenishment_sku_overrides_alpha/);
+      let caught: unknown;
+      try {
+        await trx.update(wmsTables.replenishmentSkuOverrides).set({ alpha: 1 }).where(eq(wmsTables.replenishmentSkuOverrides.skuId, skuId));
+      } catch (error) {
+        caught = error;
+      }
+      expect(causeChainMessage(caught)).toMatch(/ck_replenishment_sku_overrides_alpha/);
     });
     await inRollbackTx(db, async (trx: DbTx) => {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
-      await expect(trx.insert(wmsTables.replenishmentSkuOverrides).values({ skuId, safetyStock: -1 })).rejects.toThrow(
-        /chk_replenishment_sku_overrides_safety_stock/,
-      );
+      let caught: unknown;
+      try {
+        await trx.insert(wmsTables.replenishmentSkuOverrides).values({ skuId, safetyStock: -1 });
+      } catch (error) {
+        caught = error;
+      }
+      expect(causeChainMessage(caught)).toMatch(/ck_replenishment_sku_overrides_safety_stock/);
     });
     await inRollbackTx(db, async (trx: DbTx) => {
       const { holderId } = await seedHolder(trx);
@@ -144,13 +169,23 @@ describeIfDb('replenishment rule schema (B)', () => {
       const { warehouseId } = await seedWarehouseWithZone(trx);
       const [supplier] = await trx.insert(wmsTables.suppliers).values({ name: 'it-sup', defaultWarehouseId: warehouseId }).returning({ id: wmsTables.suppliers.id });
       await trx.insert(wmsTables.replenishmentSupplierRules).values({ supplierId: supplier.id, leadTimeDays: 30, coverDays: 30 });
-      await expect(trx.delete(wmsTables.suppliers).where(eq(wmsTables.suppliers.id, supplier.id))).rejects.toThrow(/foreign key/);
+      let caught: unknown;
+      try {
+        await trx.delete(wmsTables.suppliers).where(eq(wmsTables.suppliers.id, supplier.id));
+      } catch (error) {
+        caught = error;
+      }
+      expect(causeChainMessage(caught)).toMatch(/foreign key/);
     });
     await inRollbackTx(db, async (trx: DbTx) => {
       const { warehouseId } = await seedWarehouseWithZone(trx);
-      await expect(
-        trx.insert(wmsTables.replenishmentRouteRules).values({ fromWarehouseId: warehouseId, toWarehouseId: warehouseId, leadTimeDays: 14, coverDays: 14 }),
-      ).rejects.toThrow(/chk_replenishment_route_rules_distinct/);
+      let caught: unknown;
+      try {
+        await trx.insert(wmsTables.replenishmentRouteRules).values({ fromWarehouseId: warehouseId, toWarehouseId: warehouseId, leadTimeDays: 14, coverDays: 14 });
+      } catch (error) {
+        caught = error;
+      }
+      expect(causeChainMessage(caught)).toMatch(/ck_replenishment_route_rules_distinct/);
     });
   });
 
@@ -158,7 +193,13 @@ describeIfDb('replenishment rule schema (B)', () => {
     await inRollbackTx(db, async (trx: DbTx) => {
       await trx.delete(wmsTables.replenishmentGradeRules);
       await trx.insert(wmsTables.replenishmentGradeRules).values({ grade: 'A', alpha: 0.02 });
-      await expect(trx.insert(wmsTables.replenishmentGradeRules).values({ grade: 'A', alpha: 0.03 })).rejects.toThrow(/duplicate key/);
+      let caught: unknown;
+      try {
+        await trx.insert(wmsTables.replenishmentGradeRules).values({ grade: 'A', alpha: 0.03 });
+      } catch (error) {
+        caught = error;
+      }
+      expect(causeChainMessage(caught)).toMatch(/duplicate key/);
     });
   });
 });
@@ -223,7 +264,7 @@ export const replenishmentRouteRules = pgTable(
   },
   (t) => ({
     pk: primaryKey(t.fromWarehouseId, t.toWarehouseId),
-    chkDistinct: check('chk_replenishment_route_rules_distinct', sql`${t.fromWarehouseId} <> ${t.toWarehouseId}`),
+    ckDistinct: check('ck_replenishment_route_rules_distinct', sql`${t.fromWarehouseId} <> ${t.toWarehouseId}`),
   }),
 );
 
@@ -245,8 +286,8 @@ export const replenishmentSkuOverrides = pgTable(
   },
   (t) => ({
     idxReplenishmentSkuOverridesMode: index('idx_replenishment_sku_overrides_mode').on(t.mode),
-    chkAlpha: check('chk_replenishment_sku_overrides_alpha', sql`${t.alpha} IS NULL OR (${t.alpha} > 0 AND ${t.alpha} < 1)`),
-    chkSafetyStock: check('chk_replenishment_sku_overrides_safety_stock', sql`${t.safetyStock} IS NULL OR ${t.safetyStock} >= 0`),
+    ckAlpha: check('ck_replenishment_sku_overrides_alpha', sql`${t.alpha} IS NULL OR (${t.alpha} > 0 AND ${t.alpha} < 1)`),
+    ckSafetyStock: check('ck_replenishment_sku_overrides_safety_stock', sql`${t.safetyStock} IS NULL OR ${t.safetyStock} >= 0`),
   }),
 );
 ```
@@ -1147,6 +1188,7 @@ Claude-Session: https://claude.ai/code/session_01Y5Bthz8rSpjhTgrZTzGBED"
 - Create: `apps/core/src/modules/inventory/replenishment/controllers/replenishment-rules.controller.ts` + `.spec.ts`
 - Test: `apps/core/src/modules/inventory/replenishment/rules/replenishment-rules.integration.spec.ts`
 - Modify: `apps/core/src/modules/inventory/replenishment/replenishment.module.ts` · `apps/core/src/platform/auth/inventory-scope-coverage.spec.ts`
+- Modify (A 의 파일 — Step 8 「설정 단일 읽기」): `apps/core/src/modules/inventory/replenishment/demand/replenishment-refresh.job.ts` + `.spec.ts` · `demand/demand-profile.refresher.ts` + `.spec.ts` · `demand/lead-time-profile.refresher.ts` + `.spec.ts`
 
 **Interfaces:**
 - Consumes: 표 4개 (Task 1) + A 의 `replenishmentSettings` · `supplierLeadTimeProfiles` · `routeLeadTimeProfiles`, `ReplenishmentSettingsReader`(A).
@@ -2252,21 +2294,55 @@ describe('ReplenishmentRulesController', () => {
 
 (표의 정확한 정렬 규칙은 기존 이웃 행을 따른다 — 스펙 2번 테스트는 집합 동등만 본다.)
 
-- [ ] **Step 8: 통과 확인**
+- [ ] **Step 8: 설정 단일 읽기 — refresh job 이 한 번 읽어 세 단계에 넘긴다**
+
+지금(A)까지는 `replenishment_settings` 가 읽기 전용이라 무해했지만, 이 태스크가 위에서
+`PUT /replenishment/rules/settings` 를 연 순간부터는 아니다. `ReplenishmentRefreshJob.run()`
+· `DemandProfileRefresher.refreshAll()` · `LeadTimeProfileRefresher.refreshAll()` 이 각자
+제 트랜잭션에서 `settingsReader.read()` 를 따로 부른다 — 세 번. 한 야간 배치가 도는 몇 초~몇십 초
+사이에 운영자가 저장을 누르면, 단계마다 다른 창 길이 · 다른 등급 컷을 보게 되고 그 결과가 한
+런 안에서 섞인 프로필로 남는다. A 는 이미 `today` 를 `run()` 초입에서 한 번만 계산해 세 단계에
+그대로 넘기는 방식으로 이 문제를 피해뒀다(`kstDateOf(now)` 한 번 → `{ today }` 로 전파) — 그
+패턴을 `settings` 에도 그대로 적용한다: `run()` 이 한 번 읽고, 두 refresher 는 더 이상
+`ReplenishmentSettingsReader` 를 직접 부르지 않는다.
+
+- `replenishment-refresh.job.ts`: `run()` 초입에서 `const settings = await this.settingsReader.read();` 를
+  유지(이미 있음) 하되, 아래로 넘기지 않던 `profileRefresher.refreshAll({ today })` ·
+  `leadTimeRefresher.refreshAll({ today })` 호출에 `settings` 를 추가한다 — `{ today, settings }`.
+- `demand-profile.refresher.ts`: `refreshAll(input: { today: string }, tx?)` 를
+  `refreshAll(input: { today: string; settings: ReplenishmentSettings }, tx?)` 로 바꾸고, 본문의
+  `const settings = await this.settingsReader.read(trx);` 줄을 지우고 `input.settings` 를 쓴다.
+  생성자에서 이제 안 쓰는 `settingsReader: ReplenishmentSettingsReader` 의존을 제거한다(다른 데서
+  안 쓰면 — 이 클래스 안에서만 쓰였는지 먼저 grep 으로 확인).
+- `lead-time-profile.refresher.ts`: 위와 같은 변경(`refreshAll` 시그니처 · 내부 읽기 제거 ·
+  생성자 의존 제거).
+- 세 스펙 파일의 mock 도 맞춰 고친다 — `settingsReader.read` 를 스텁하던 자리 대신 테스트가
+  `refreshAll({ today, settings: fixtureSettings })` 로 직접 넘긴다. `replenishment-refresh.job.spec.ts`
+  는 `settingsReader.read` 가 정확히 1번만 불렸는지(세 번이 아니라) 검증하는 케이스를 추가한다.
+- `replenishment.module.ts` 의 providers 배열은 안 건드린다 — `ReplenishmentSettingsReader` 는
+  이 태스크의 규칙 Reader/Manager 가 여전히 쓴다.
+
+Run: `npx jest apps/core/src/modules/inventory/replenishment/demand`
+Expected: 세 스펙 전부 PASS, `settingsReader.read` 호출 횟수 검증 케이스 포함.
+
+- [ ] **Step 9: 통과 확인**
 
 ```bash
 COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- replenishment-rules.integration
-npx jest apps/core/src/modules/inventory/replenishment/controllers/replenishment-rules.controller.spec.ts apps/core/src/platform/auth/inventory-scope-coverage.spec.ts apps/core/src/platform/auth/scope-guard-binding.spec.ts apps/core/src/modules/inventory/replenishment-boundary.arch.spec.ts
+npx jest apps/core/src/modules/inventory/replenishment/controllers/replenishment-rules.controller.spec.ts apps/core/src/platform/auth/inventory-scope-coverage.spec.ts apps/core/src/platform/auth/scope-guard-binding.spec.ts apps/core/src/modules/inventory/replenishment-boundary.arch.spec.ts apps/core/src/modules/inventory/replenishment/demand
 npm run type-check
 ```
 
-Expected: 통합 7 PASS · 컨트롤러 3 PASS · 스코프 표 · 가드 바인딩 · 경계 PASS · type-check 0.
+Expected: 통합 7 PASS · 컨트롤러 3 PASS · 스코프 표 · 가드 바인딩 · 경계 · demand 스펙 전부 PASS · type-check 0.
 
-- [ ] **Step 9: 커밋**
+- [ ] **Step 10: 커밋**
 
 ```bash
 git add apps/core/src/modules/inventory/replenishment apps/core/src/platform/auth/inventory-scope-coverage.spec.ts
 git commit -m "feat(core): 재고 보충 규칙 CRUD 13라우트 — 전역 · 등급 · 공급사 · 경로 · SKU 예외 (#743 B)
+
+설정 PUT 이 생겨 런 도중 편집이 가능해지므로, 야간 배치 세 단계가 각자 읽던 설정을
+run() 초입 한 번으로 합쳐 today 와 같은 방식으로 전파한다.
 
 Claude-Session: https://claude.ai/code/session_01Y5Bthz8rSpjhTgrZTzGBED"
 ```

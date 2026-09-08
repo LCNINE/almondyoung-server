@@ -523,6 +523,15 @@ C 단계의 자리표시 규칙은 B 가 통째로 교체한다. A 를 B 와 떼
 3. `POST /replenishment/profiles/recompute?series=full`. 응답의 단계별 건수(시계열 upsert · 프로필 · 리드타임)를
    이슈 #743 에 적는다.
 4. 다음 날 크론(03:40 KST) 이 돌았는지 로그 확인(`replenishment-profile-refresh`).
+5. **variant→SKU 매칭을 추가하는 백필을 할 때마다 `?series=full` 재계산이 필요하다.** 야간 배치는
+   항상 최근 롤링 창(`demand_recompute_days`)만 다시 만들 뿐이라, 그 창보다 오래된 주문의 수요는
+   누군가 전체 재계산을 요청하기 전까지 반영되지 않고 아무것도 자동으로 트리거하지 않는다.
+   §1.1 이 기록한 「주문 34%가 `awaiting_matching`」이 바로 이 상황이다 — 예외가 아니라 평상시다.
+6. **`?series=full` 호출은 로드밸런서 60초 유휴 타임아웃을 넘겨 게이트웨이 타임아웃으로 끝나는 게
+   정상이다. 재시도하지 말 것.** 서버는 클라이언트가 포기한 뒤에도 계속 일하고, 각 단계는 독립적으로
+   커밋되며, 겹쳐 도는 두 번째 실행은 위 리드타임 refresher 수정(§4.4, upsert 로 병합)이 막는 바로 그
+   충돌 상황을 다시 만드는 것과 같다. 대신 `SELECT count(*), max(computed_at) FROM sku_demand_profiles`
+   로 완료를 확인하고, 단계별 건수는 다음 야간 배치 로그 줄에서 읽는다.
 
 ### 9.2 B 배포 후 사람 작업 (순서대로)
 
