@@ -61,14 +61,16 @@ describe('replenishment boundary (arch)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('순수 층(policy/ · suggestion.assembler · suggestion.types)은 Nest · drizzle 을 모른다', () => {
+  it('순수 층(policy/ · suggestion.assembler · suggestion.types · demand/calendar · demand-profile.calculator)은 Nest · drizzle 을 모른다', () => {
     const pure = collectTsFiles(REPLENISHMENT_DIR).filter(
       (file) =>
         file.includes(`${sep}policy${sep}`) ||
         file.endsWith('suggestion.assembler.ts') ||
-        file.endsWith('suggestion.types.ts'),
+        file.endsWith('suggestion.types.ts') ||
+        file.endsWith(`${sep}demand${sep}calendar.ts`) ||
+        file.endsWith('demand-profile.calculator.ts'),
     );
-    expect(pure.length).toBeGreaterThan(0);
+    expect(pure.length).toBeGreaterThanOrEqual(5);
     const violations = pure.flatMap((file) =>
       moduleSpecifiers(file)
         .filter((s) => FRAMEWORK.test(s))
