@@ -68,7 +68,8 @@ describe('replenishment boundary (arch)', () => {
         file.endsWith('suggestion.assembler.ts') ||
         file.endsWith('suggestion.types.ts') ||
         file.endsWith(`${sep}demand${sep}calendar.ts`) ||
-        file.endsWith('demand-profile.calculator.ts'),
+        file.endsWith('demand-profile.calculator.ts') ||
+        file.endsWith(`${sep}rules${sep}effective-parameters.ts`),
     );
     expect(pure.length).toBeGreaterThanOrEqual(5);
     const violations = pure.flatMap((file) =>
