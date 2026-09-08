@@ -21,7 +21,7 @@ const mallProductBreadcrumbs = [
 function getMallProductBreadcrumbLabel(pathname: string): string | null {
   return (
     mallProductBreadcrumbs.find(
-      ({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+      ({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`)
     )?.label ?? null
   );
 }
@@ -90,6 +90,12 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
       items.push({ label: '재고 현황' });
     } else if (pathname.includes('/product-registration')) {
       items.push({ label: '상품 등록' });
+    }
+    // 하위 경로가 먼저다 — 순서를 뒤집으면 규칙 화면도 「보충 제안」으로 표시된다.
+    else if (pathname.includes('/replenishment/rules')) {
+      items.push({ label: '보충 규칙' });
+    } else if (pathname.includes('/replenishment')) {
+      items.push({ label: '보충 제안' });
     }
   }
   // CS 관련 페이지들
