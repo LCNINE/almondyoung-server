@@ -109,7 +109,7 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
         observation: { observations: 3, meanDays: 11.5, stdDays: 2 },
       });
 
-      const rules = await reader.readSupplierRules(trx, [a.id, b.id]);
+      const rules = await reader.readSupplierRules([a.id, b.id], trx);
       expect(rules.get(a.id)?.coverDays).toBe(40);
       expect(rules.has(b.id)).toBe(false);
     });
@@ -130,9 +130,9 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
         trx,
       );
       expect(updated).toMatchObject({ supplierId: s.id, leadTimeDays: 20, leadTimeStdDays: null, coverDays: 30 });
-      expect((await reader.readSupplierRules(trx, [s.id])).size).toBe(1);
+      expect((await reader.readSupplierRules([s.id], trx)).size).toBe(1);
       await manager.deleteSupplierRule(s.id, trx);
-      expect((await reader.readSupplierRules(trx, [s.id])).size).toBe(0);
+      expect((await reader.readSupplierRules([s.id], trx)).size).toBe(0);
       await expect(manager.deleteSupplierRule(s.id, trx)).rejects.toThrow(/규칙/);
       await expect(
         manager.upsertSupplierRule(randomUUID(), { leadTimeDays: 1, leadTimeStdDays: null, coverDays: 1 }, trx),
@@ -207,18 +207,18 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
       );
       expect(row).toMatchObject({ skuId, mode: 'excluded', excludedUntil: '2026-12-31', memo: '시즌오프' });
 
-      const found = await reader.searchSkuOverrides(trx, skuCode.slice(3, 12).toLowerCase(), 50);
+      const found = await reader.searchSkuOverrides(skuCode.slice(3, 12).toLowerCase(), 50, trx);
       expect(found.map((r) => r.skuId)).toEqual([skuId]);
       expect(found[0]).toMatchObject({ skuCode, skuName: 'it-sku', mode: 'excluded' });
-      expect((await reader.readSkuOverrides(trx, [skuId])).get(skuId)?.mode).toBe('excluded');
-      expect((await reader.searchSkuOverridesById(trx, skuId))[0]).toMatchObject({ skuId, skuCode });
+      expect((await reader.readSkuOverrides([skuId], trx)).get(skuId)?.mode).toBe('excluded');
+      expect((await reader.searchSkuOverridesById(skuId, trx))[0]).toMatchObject({ skuId, skuCode });
 
       await manager.upsertSkuOverride(
         skuId,
         { mode: 'auto', excludedUntil: null, safetyStock: 40, alpha: 0.01, memo: null },
         trx,
       );
-      expect((await reader.readSkuOverrides(trx, [skuId])).get(skuId)).toMatchObject({
+      expect((await reader.readSkuOverrides([skuId], trx)).get(skuId)).toMatchObject({
         mode: 'auto',
         safetyStock: 40,
         alpha: 0.01,
@@ -226,7 +226,7 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
       });
 
       await manager.deleteSkuOverride(skuId, trx);
-      expect((await reader.readSkuOverrides(trx, [skuId])).size).toBe(0);
+      expect((await reader.readSkuOverrides([skuId], trx)).size).toBe(0);
       await expect(manager.deleteSkuOverride(skuId, trx)).rejects.toThrow(/예외/);
       await expect(manager.upsertSkuOverride(randomUUID(), { mode: 'auto' }, trx)).rejects.toThrow(/SKU/);
     });
@@ -261,7 +261,7 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
           trx,
         ),
       ).rejects.toThrow(/A · B · C/);
-      await manager.replaceGradeRules(
+      const replaced = await manager.replaceGradeRules(
         [
           { grade: 'C', alpha: 0.2 },
           { grade: 'A', alpha: 0.01 },
@@ -269,7 +269,31 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
         ],
         trx,
       );
+      // 입력이 C · A · B 순이어도 PUT 응답은 GET(listGradeRules) 과 같은 등급 오름차순이어야 한다 —
+      // 화면이 PUT 응답으로 표를 다시 그리므로 순서가 갈리면 행이 뒤섞여 보인다.
+      expect(replaced.map((r) => r.grade)).toEqual(['A', 'B', 'C']);
+      expect((await reader.listGradeRules(trx)).map((r) => r.grade)).toEqual(['A', 'B', 'C']);
       expect(await reader.readGradeAlphas(trx)).toEqual({ A: 0.01, B: 0.05, C: 0.2 });
+    });
+  });
+
+  // Manager 의 upsert 는 is_deleted = false 만 받는다. 목록이 이 조건을 안 걸면 "목록엔 뜨는데
+  // 고치려 하면 404" 인 행이 생긴다 — 두 경로가 같은 SKU 모집단을 봐야 한다.
+  it('삭제된 SKU 의 예외는 검색 · 단건 되읽기에서 빠지고, upsert 도 404', async () => {
+    await inRollbackTx(db, async (trx) => {
+      await seedRules(trx);
+      const { holderId } = await seedHolder(trx);
+      const { skuId, skuCode } = await seedSku(trx, holderId);
+      const { reader, manager } = build(trx);
+      const q = skuCode.slice(3, 12).toLowerCase();
+      await manager.upsertSkuOverride(skuId, { mode: 'excluded', memo: '시즌오프' }, trx);
+      expect((await reader.searchSkuOverrides(q, 50, trx)).map((r) => r.skuId)).toEqual([skuId]);
+
+      await trx.update(wmsTables.skus).set({ isDeleted: true }).where(eq(wmsTables.skus.id, skuId));
+
+      expect(await reader.searchSkuOverrides(q, 50, trx)).toEqual([]);
+      expect(await reader.searchSkuOverridesById(skuId, trx)).toEqual([]);
+      await expect(manager.upsertSkuOverride(skuId, { mode: 'auto' }, trx)).rejects.toThrow(/SKU/);
     });
   });
 

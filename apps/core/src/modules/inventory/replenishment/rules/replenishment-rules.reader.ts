@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { asc, eq, ilike, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import {
   wmsSchema,
@@ -54,10 +54,8 @@ const GRADES: DemandGrade[] = ['A', 'B', 'C'];
 /**
  * 규칙 4표 + 리드타임 프로필 2표 읽기 (스펙 §6). 쓰기는 Manager.
  *
- * 제안 계산이 쓰는 벌크 읽기(`readSupplierRules` · `readRouteRules` · `readSkuOverrides` ·
- * `searchSkuOverrides`)는 `tx` 를 **필수 첫 인자**로 받는다 — 한 제안 런의 모든 읽기가 같은
- * 스냅샷이어야 규칙이 런 중간에 갈리지 않는다(같은 이유로 A 의 `today` 도 한 번만 계산해 넘긴다).
- * 화면용 목록(`listGradeRules` · `listSupplierRows` · `listRouteRows`)만 `tx?` 다.
+ * 한 제안 런의 읽기가 같은 스냅샷을 보게 하는 건 **호출처가 `trx` 를 명시로 넘겨** 지킨다 —
+ * 여기서 `tx` 를 필수로 만들지 않는다(CLAUDE.md: 공개 메서드는 `tx?: DbTx` 를 마지막 인자로).
  */
 @Injectable()
 export class ReplenishmentRulesReader {
@@ -86,7 +84,7 @@ export class ReplenishmentRulesReader {
     );
   }
 
-  async readSupplierRules(tx: DbTx, supplierIds: string[]): Promise<Map<string, ReplenishmentSupplierRule>> {
+  async readSupplierRules(supplierIds: string[], tx?: DbTx): Promise<Map<string, ReplenishmentSupplierRule>> {
     const unique = [...new Set(supplierIds)];
     if (unique.length === 0) return new Map();
     return this.dbService.run(async (trx) => {
@@ -98,14 +96,14 @@ export class ReplenishmentRulesReader {
     }, tx);
   }
 
-  async readRouteRules(tx: DbTx): Promise<Map<string, ReplenishmentRouteRule>> {
+  async readRouteRules(tx?: DbTx): Promise<Map<string, ReplenishmentRouteRule>> {
     return this.dbService.run(async (trx) => {
       const rows = await trx.select().from(wmsTables.replenishmentRouteRules);
       return new Map(rows.map((r) => [routeKey(r.fromWarehouseId, r.toWarehouseId), r]));
     }, tx);
   }
 
-  async readSkuOverrides(tx: DbTx, skuIds: string[]): Promise<Map<string, ReplenishmentSkuOverride>> {
+  async readSkuOverrides(skuIds: string[], tx?: DbTx): Promise<Map<string, ReplenishmentSkuOverride>> {
     const unique = [...new Set(skuIds)];
     if (unique.length === 0) return new Map();
     return this.dbService.run(async (trx) => {
@@ -225,8 +223,12 @@ export class ReplenishmentRulesReader {
     }, tx);
   }
 
-  /** 예외가 걸린 SKU 목록. q 는 SKU 코드 · 이름 부분 일치(대소문자 무시). */
-  async searchSkuOverrides(tx: DbTx, q: string | undefined, limit: number): Promise<SkuOverrideRow[]> {
+  /**
+   * 예외가 걸린 SKU 목록. q 는 SKU 코드 · 이름 부분 일치(대소문자 무시).
+   * 삭제된 SKU 는 뺀다 — Manager 의 upsert 가 `is_deleted = false` 만 받으므로, 안 거르면
+   * 목록엔 뜨는데 고치려 하면 404 인 행이 생긴다.
+   */
+  async searchSkuOverrides(q: string | undefined, limit: number, tx?: DbTx): Promise<SkuOverrideRow[]> {
     return this.dbService.run(async (trx) => {
       const o = wmsTables.replenishmentSkuOverrides;
       const s = wmsTables.skus;
@@ -235,15 +237,15 @@ export class ReplenishmentRulesReader {
         .select({ override: o, skuCode: s.code, skuName: s.name })
         .from(o)
         .innerJoin(s, eq(s.id, o.skuId))
-        .where(pattern ? or(ilike(s.code, pattern), ilike(s.name, pattern)) : undefined)
+        .where(and(eq(s.isDeleted, false), pattern ? or(ilike(s.code, pattern), ilike(s.name, pattern)) : undefined))
         .orderBy(asc(s.code))
         .limit(limit);
       return rows.map((row) => ({ ...row.override, skuCode: row.skuCode, skuName: row.skuName }));
     }, tx);
   }
 
-  /** upsert 직후 화면에 돌려줄 한 행 — 코드 · 이름을 붙여서. */
-  async searchSkuOverridesById(tx: DbTx, skuId: string): Promise<SkuOverrideRow[]> {
+  /** upsert 직후 화면에 돌려줄 한 행 — 코드 · 이름을 붙여서. 삭제 필터는 위와 같다. */
+  async searchSkuOverridesById(skuId: string, tx?: DbTx): Promise<SkuOverrideRow[]> {
     return this.dbService.run(async (trx) => {
       const o = wmsTables.replenishmentSkuOverrides;
       const s = wmsTables.skus;
@@ -251,7 +253,7 @@ export class ReplenishmentRulesReader {
         .select({ override: o, skuCode: s.code, skuName: s.name })
         .from(o)
         .innerJoin(s, eq(s.id, o.skuId))
-        .where(eq(o.skuId, skuId));
+        .where(and(eq(o.skuId, skuId), eq(s.isDeleted, false)));
       return rows.map((row) => ({ ...row.override, skuCode: row.skuCode, skuName: row.skuName }));
     }, tx);
   }

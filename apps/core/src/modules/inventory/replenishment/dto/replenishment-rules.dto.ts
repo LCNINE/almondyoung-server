@@ -28,7 +28,10 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * α 는 (0, 1) **배타**다 — 정규 · 감마 분위수는 p = 0 · p = 1 에서 정의되지 않아
  * `policy/distributions.ts` 가 Error 를 던지고, 그게 그대로 새면 500 이 된다.
  * `@Min` / `@Max` 는 포함 경계라 이 범위를 표현하지 못한다.
- * `replenishment_sku_overrides` 의 `ck_replenishment_sku_overrides_alpha` 와 같은 조건이다.
+ *
+ * 2선 방어는 **SKU 예외에만** 있다 — `replenishment_sku_overrides` 의
+ * `ck_replenishment_sku_overrides_alpha` 가 같은 조건을 DB 에서 다시 건다. `replenishment_grade_rules.alpha`
+ * 에는 CHECK 제약이 없으므로 **등급 α 는 이 검증자가 유일한 방어선이다** — 지우지 말 것.
  */
 function IsOpenUnitInterval(options?: ValidationOptions) {
   return function registerOpenUnitInterval(target: object, propertyName: string): void {

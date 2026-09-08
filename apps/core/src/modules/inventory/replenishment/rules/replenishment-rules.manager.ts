@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, or } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import {
@@ -34,7 +34,9 @@ export class ReplenishmentRulesManager {
   async updateSettings(dto: UpdateReplenishmentSettingsDto, tx?: DbTx): Promise<ReplenishmentSettings> {
     return this.dbService.run(async (trx) => {
       const t = wmsTables.replenishmentSettings;
-      const [current] = await trx.select().from(t).where(eq(t.key, SETTINGS_KEY));
+      // FOR UPDATE — 이 PUT 은 read-modify-write 다. 잠그지 않으면 A컷만 보낸 요청과 B컷만 보낸
+      // 요청이 각자 저장된 반대쪽과 비교해 둘 다 통과하고, 커밋 뒤에는 A컷 ≥ B컷 이 남는다.
+      const [current] = await trx.select().from(t).where(eq(t.key, SETTINGS_KEY)).for('update');
       if (!current) throw new Error('replenishment_settings 가 비어 있다 — db:seed:ref 를 먼저 돌릴 것');
       // 부분 갱신이라 한쪽만 보낸 요청도 저장된 반대쪽과 함께 봐야 한다 — A컷 ≥ B컷 이면 등급 A 가 사라진다.
       const aCut = dto.gradeACut ?? current.gradeACut;
@@ -61,7 +63,8 @@ export class ReplenishmentRulesManager {
           .values({ grade: item.grade, alpha: item.alpha })
           .onConflictDoUpdate({ target: t.grade, set: { alpha: item.alpha, updatedAt: now } });
       }
-      return trx.select().from(t);
+      // GET(reader.listGradeRules)과 같은 정렬로 돌려준다 — 화면이 PUT 응답으로 표를 다시 그린다.
+      return trx.select().from(t).orderBy(asc(t.grade));
     }, tx);
   }
 

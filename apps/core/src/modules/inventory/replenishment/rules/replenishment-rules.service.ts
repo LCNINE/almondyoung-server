@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
+import { NotFoundError } from '@app/shared';
 import { wmsSchema, DbTx, ReplenishmentSettings } from '../../schema/inventory.schema';
 import { ReplenishmentSettingsReader } from '../demand/replenishment-settings.reader';
 import {
@@ -70,17 +71,16 @@ export class ReplenishmentRulesService {
     return this.manager.deleteRouteRule(from, to, tx);
   }
 
-  listSkuOverrides(q: string | undefined, limit: number, tx?: DbTx): Promise<SkuOverridesListDto> {
-    return this.dbService.run(
-      async (trx) => ({ items: (await this.reader.searchSkuOverrides(trx, q, limit)).map(toOverrideRowDto) }),
-      tx,
-    );
+  async listSkuOverrides(q: string | undefined, limit: number, tx?: DbTx): Promise<SkuOverridesListDto> {
+    return { items: (await this.reader.searchSkuOverrides(q, limit, tx)).map(toOverrideRowDto) };
   }
   upsertSkuOverride(skuId: string, dto: UpsertSkuOverrideDto, tx?: DbTx): Promise<SkuOverrideRowDto> {
     // 쓰기와 "코드 · 이름 붙인 되읽기" 가 한 트랜잭션이어야 화면이 방금 저장한 행을 그대로 받는다.
     return this.dbService.run(async (trx) => {
       await this.manager.upsertSkuOverride(skuId, dto, trx);
-      const [row] = await this.reader.searchSkuOverridesById(trx, skuId);
+      const [row] = await this.reader.searchSkuOverridesById(skuId, trx);
+      // 같은 트랜잭션이라 방금 쓴 행이 없을 수는 없지만, 없으면 undefined 를 매핑해 TypeError 가 된다.
+      if (!row) throw new NotFoundError(`SKU 예외 없음: ${skuId}`);
       return toOverrideRowDto(row);
     }, tx);
   }
