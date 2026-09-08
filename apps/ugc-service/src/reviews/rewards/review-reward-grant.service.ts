@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, gte, isNull, sql, SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, sql, SQL } from 'drizzle-orm';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { reviewRewardGrants, reviews, type UgcServiceSchema } from '../../db/schema';
 import { ReviewRewardRuleService, UgcTx } from './review-reward-rule.service';
@@ -20,6 +20,14 @@ import {
   ReviewRewardSkipReason,
   ReviewRewardTrigger,
 } from './reward-rule.types';
+
+/**
+ * 1인당 한도가 세는 상태. 회수된 건도 «기회를 이미 썼다»로 본다 — 위 loadUsage 주석 참조.
+ */
+const PER_USER_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED', 'REVOKED'];
+
+/** 전체 예산 한도가 세는 상태. 회수는 돈이 돌아온 것이라 예산도 돌려준다. */
+const BUDGET_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED'];
 
 export interface NewReviewRewardInput {
   reviewId: string;
@@ -320,6 +328,15 @@ export class ReviewRewardGrantService {
   /**
    * 한도 계산은 **같은 규칙이 지급한 건들**만 센다. 규칙마다 자기 한도를 갖는 편이
    * 관리자가 화면에서 읽은 대로 동작한다 — 여러 규칙의 지급이 서로의 한도를 깎으면 예측이 안 된다.
+   *
+   * 두 한도는 «목적이 달라» 회수(REVOKED)를 다르게 센다.
+   * - **1인당 한도는 남용 방지**다. 회수된 건도 세지 않으면 리뷰를 썼다 지우기만 해도 한도가
+   *   비워져 같은 사람이 무한히 다시 받는다. 지금 있는 회수 사유는 `REVIEW_DELETED`·`REVIEW_HIDDEN`
+   *   둘뿐이고 **둘 다 오지급 정정이 아니라 고객·운영자 사유**라, 기회를 되돌려 줄 이유가 없다.
+   * - **전체 예산 한도는 실제 지출 통제**다. 회수는 돈이 돌아온 것이므로 예산도 돌아와야 한다.
+   *   여기서 회수분까지 세면 쓰지도 않은 예산이 잠긴다.
+   *
+   * 오지급 정정용 회수 사유가 생기면 1인당 쪽에서 그 사유만 빼는 것이 다음 갈래다.
    */
   private async loadUsage(
     ruleId: string,
@@ -331,11 +348,11 @@ export class ReviewRewardGrantService {
     const empty: UsageFacts = { count: 0, amount: 0 };
 
     const perUser = limits.perUser
-      ? await this.aggregateGrants(ruleId, userId, periodStart(limits.perUser.period, now), tx)
+      ? await this.aggregateGrants(ruleId, userId, periodStart(limits.perUser.period, now), PER_USER_LIMIT_STATUSES, tx)
       : empty;
 
     const global = limits.global
-      ? await this.aggregateGrants(ruleId, null, periodStart(limits.global.period, now), tx)
+      ? await this.aggregateGrants(ruleId, null, periodStart(limits.global.period, now), BUDGET_LIMIT_STATUSES, tx)
       : empty;
 
     return { perUser, global };
@@ -345,9 +362,13 @@ export class ReviewRewardGrantService {
     ruleId: string,
     userId: string | null,
     since: Date | null,
+    statuses: readonly ReviewRewardGrantStatus[],
     tx: UgcTx,
   ): Promise<UsageFacts> {
-    const conditions: SQL[] = [eq(reviewRewardGrants.ruleId, ruleId), eq(reviewRewardGrants.status, 'GRANTED')];
+    const conditions: SQL[] = [
+      eq(reviewRewardGrants.ruleId, ruleId),
+      inArray(reviewRewardGrants.status, [...statuses]),
+    ];
     if (userId) conditions.push(eq(reviewRewardGrants.userId, userId));
     if (since) conditions.push(gte(reviewRewardGrants.createdAt, since));
 

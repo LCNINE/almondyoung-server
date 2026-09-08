@@ -1,4 +1,6 @@
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { ReviewRewardGrantService } from '../review-reward-grant.service';
+import { reviewRewardGrants } from '../../../db/schema';
 import { EvaluableRule } from '../reward-rule.evaluator';
 import { DEFAULT_REWARD_CONDITIONS, DEFAULT_REWARD_LIMITS, ReviewRewardSpec } from '../reward-rule.types';
 
@@ -8,7 +10,15 @@ type InsertedRow = Record<string, unknown>;
  * 트랜잭션 mock — insert 로 들어온 값만 모은다. 판정 자체는 evaluator 스펙이 검증하므로
  * 여기서는 「어떤 행이 원장에 남고 무엇이 발행 대상으로 나가는가」만 본다.
  */
-function makeTx(inserted: InsertedRow[], counts: { userReviews?: number; usage?: { count: number; amount: number } } = {}) {
+function makeTx(
+  inserted: InsertedRow[],
+  counts: {
+    userReviews?: number;
+    usage?: { count: number; amount: number };
+    /** 한도 집계 쿼리의 where 조건을 «부른 순서대로» 받아 간다 (1인당 → 전체 예산). */
+    usageWhere?: unknown[];
+  } = {},
+) {
   const usage = counts.usage ?? { count: 0, amount: 0 };
 
   return {
@@ -22,8 +32,9 @@ function makeTx(inserted: InsertedRow[], counts: { userReviews?: number; usage?:
     }),
     select: (columns?: Record<string, unknown>) => ({
       from: () => ({
-        where: () => {
+        where: (condition: unknown) => {
           if (columns && 'amount' in columns) {
+            counts.usageWhere?.push(condition);
             return Promise.resolve([{ count: usage.count, amount: usage.amount }]);
           }
           return Promise.resolve([{ value: counts.userReviews ?? 1 }]);
@@ -137,5 +148,49 @@ describe('ReviewRewardGrantService.revokeForReview', () => {
     const revoked = await service.revokeForReview(input.reviewId, 'REVIEW_DELETED', makeTx([]));
 
     expect(revoked).toEqual([{ grantId: 'grant-1', userId: 'user-1', amount: 500 }]);
+  });
+});
+
+/**
+ * 두 한도는 목적이 달라 회수(REVOKED)를 다르게 센다 — 1인당은 «기회를 이미 썼다»로 보고,
+ * 전체 예산은 «돈이 돌아왔다»로 본다. 집계 쿼리의 where 를 실제로 렌더해 못박는다.
+ * (여기서 「둘 다 GRANTED 만」으로 되돌아가면 리뷰를 썼다 지우기만 해도 1인당 한도가 비워진다.)
+ */
+describe('한도 집계가 세는 지급 상태', () => {
+  // 접속하지 않고 조건만 렌더한다 — 드라이버 자리는 비워 둔다.
+  const db = drizzle({} as never);
+  const renderParams = (condition: unknown) =>
+    db
+      .select()
+      .from(reviewRewardGrants)
+      .where(condition as never)
+      .toSQL().params;
+
+  const limitedRule = () =>
+    rule({ kind: 'POINT_FIXED', amount: 500, expiresInDays: 30 }, {
+      limits: {
+        perUser: { period: 'MONTH', maxCount: 100, maxAmount: null },
+        global: { period: 'MONTH', maxCount: 100, maxAmount: null },
+      },
+    });
+
+  it('1인당 한도는 회수된 건도 센다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    expect(renderParams(usageWhere[0])).toEqual(expect.arrayContaining(['GRANTED', 'REVOKED']));
+  });
+
+  it('전체 예산 한도는 회수된 건을 세지 않는다 — 회수분은 예산으로 돌아온다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    const budgetParams = renderParams(usageWhere[1]);
+    expect(budgetParams).toEqual(expect.arrayContaining(['GRANTED']));
+    expect(budgetParams).not.toEqual(expect.arrayContaining(['REVOKED']));
   });
 });
