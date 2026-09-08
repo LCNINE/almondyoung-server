@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
@@ -183,7 +183,7 @@ export class ReplenishmentStockReader {
       .from(lines)
       .innerJoin(orders, eq(orders.id, lines.poId))
       .innerJoin(suppliers, eq(suppliers.id, orders.supplierId))
-      .where(and(inArray(lines.skuId, skuIds), eq(lines.status, 'ordered')))
+      .where(and(inArray(lines.skuId, skuIds), eq(lines.status, 'ordered'), isNotNull(lines.orderedAt)))
       .orderBy(desc(lines.orderedAt));
 
     const result = new Map<string, { id: string; name: string }>();

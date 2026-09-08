@@ -19,10 +19,13 @@ export class ReplenishmentSuggestionService {
     private readonly reader: ReplenishmentSuggestionReader,
   ) {}
 
-  listSuggestions(filter: { action: SuggestionActionFilter }, tx?: DbTx): Promise<ReplenishmentSuggestionListDto> {
+  listSuggestions(
+    filter: { action: SuggestionActionFilter; limit?: number },
+    tx?: DbTx,
+  ): Promise<ReplenishmentSuggestionListDto> {
     return this.dbService.run(async (trx) => {
-      const { items, evaluated } = await this.reader.list(trx, filter);
-      return { items: items.map(toDto), evaluated };
+      const { items, evaluated, total } = await this.reader.list(trx, filter);
+      return { items: items.map(toDto), evaluated, total };
     }, tx);
   }
 

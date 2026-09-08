@@ -34,6 +34,9 @@ interface QtyWithEta {
  *
  * ②와 ③은 겹치지 않는다: 선적된 물량은 이미 IN_TRANSFER 로 옮겨져 ON_HAND 에서 빠졌다.
  *
+ * `onOrderTotalQty` — 창고 불문 pending 계획 잔량. ①의 비판매 조건을 지운 전사 축(#743)용
+ * 별도 항목이다. 판매창고행 = `onOrderTotalQty` − ①(`onOrderQty`).
+ *
  * 알려진 범위 한계: `toWarehouseId` 로 좁혀지는 것은 ③뿐이다. ①②는 비판매 창고 전체의 합이라
  * 판매 창고가 하나(부천)일 때만 "이 창고의 예정 물량" 과 같다. 둘 이상이 되면 같은 수량이 모든
  * 판매 창고에 중복 표시된다 — ①은 계획의 destination_warehouse_id 로 좁힐 여지가 있지만, ②는
@@ -104,6 +107,9 @@ export class InboundPipelineReader {
   /**
    * 전 창고 pending 계획 잔량. ①과 달리 판매 창고행(국내 직행 발주)도 센다 — 전사 축은
    * "회사가 이미 산 것" 전부가 필요하다. ①의 비판매 조건을 지우는 게 아니라 항목을 하나 더 낸다.
+   *
+   * TODO(#743 A+B): PO 당 계획 1개 불변식은 inbound.service 가 지킨다 — 수동 POST /inbound/plans 가
+   * 두 번째 계획을 만들면 여기서 이중 계상된다.
    */
   private async readOnOrderTotal(trx: DbTx, skuIds: string[]): Promise<Map<string, number>> {
     const items = wmsTables.inboundPlanItems;

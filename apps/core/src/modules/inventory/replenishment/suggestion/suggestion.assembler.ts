@@ -93,6 +93,9 @@ function levelsFor(input: SkuStockInput) {
 /**
  * 이동가능 = 비판매 ON_HAND − draft 지시서 planned. 큰 로케이션부터 채운다.
  * 이동량은 올리지 않는다 — 있는 만큼만 옮긴다(스펙 §5.3).
+ *
+ * TODO(#743 A+B, 스펙 §7.1): draftTransferPlanned 는 전 창고 합이다 — 비판매 창고가 둘 이상이면
+ * 창고 쌍으로 좁혀야 한다.
  */
 function planTransfer(input: SkuStockInput, ctx: AssembleContext, need: number): SuggestionAction | null {
   const movableTotal = input.nonSellableOnHand.reduce((sum, row) => sum + row.qty, 0) - input.draftTransferPlanned;

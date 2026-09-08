@@ -28,7 +28,7 @@ export class ReplenishmentSuggestionController {
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @ApiResponse({ status: 409, description: '판매 창고가 정확히 하나가 아닙니다.' })
   list(@Query() query: ListSuggestionsQueryDto): Promise<ReplenishmentSuggestionListDto> {
-    return this.service.listSuggestions({ action: query.action ?? 'all' });
+    return this.service.listSuggestions({ action: query.action ?? 'all', limit: query.limit ?? 200 });
   }
 
   @Get('skus/:skuId')

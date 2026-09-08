@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export const SUGGESTION_ACTION_FILTERS = ['purchase', 'transfer', 'all'] as const;
 export type SuggestionActionFilter = (typeof SUGGESTION_ACTION_FILTERS)[number];
@@ -9,6 +10,14 @@ export class ListSuggestionsQueryDto {
   @IsOptional()
   @IsIn(SUGGESTION_ACTION_FILTERS)
   action?: SuggestionActionFilter;
+
+  @ApiPropertyOptional({ description: '반환할 최대 행 수', default: 200, minimum: 1, maximum: 1000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  limit?: number;
 }
 
 export class SuggestionSupplierDto {
@@ -83,4 +92,5 @@ export class ReplenishmentSuggestionRowDto {
 export class ReplenishmentSuggestionListDto {
   @ApiProperty({ type: [ReplenishmentSuggestionRowDto] }) items: ReplenishmentSuggestionRowDto[];
   @ApiProperty({ description: '판정한 SKU 수 (excluded 제외)' }) evaluated: number;
+  @ApiProperty({ description: '조건에 맞는 SKU 총수 (limit 적용 전)' }) total: number;
 }

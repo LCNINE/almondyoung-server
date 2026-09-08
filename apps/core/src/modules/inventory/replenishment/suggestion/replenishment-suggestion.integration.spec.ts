@@ -249,6 +249,28 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
     });
   });
 
+  it('limit: 결과를 자르되 total 은 자르기 전(actionable) 개수를 낸다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      await trx.update(wmsTables.warehouses).set({ isSellable: false });
+      await seedWarehouseWithZone(trx); // 판매 창고 하나 (부천 역할, isSellable 기본 true)
+      const { holderId } = await seedHolder(trx);
+      const skuA = await seedSku(trx, holderId);
+      const skuB = await seedSku(trx, holderId);
+      await trx.update(wmsTables.skus).set({ safetyStock: 50 }).where(eq(wmsTables.skus.holderId, holderId));
+
+      const { service } = build(trx);
+      const full = await service.listSuggestions({ action: 'all' }, trx);
+      const limited = await service.listSuggestions({ action: 'all', limit: 1 }, trx);
+
+      const fullIds = full.items.map((r) => r.skuId);
+      expect(fullIds).toEqual(expect.arrayContaining([skuA.skuId, skuB.skuId]));
+      expect(full.items).toHaveLength(full.total);
+      expect(limited.items).toHaveLength(1);
+      expect(limited.total).toBe(full.total);
+      expect(limited.total).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('getSku: 없는 SKU 는 NotFoundError', async () => {
     await inRollbackTx(db, async (trx) => {
       await seedWorld(trx, 1);

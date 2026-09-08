@@ -20,17 +20,21 @@ export class ReplenishmentSuggestionReader {
     private readonly transferReader: WarehouseTransferReader,
   ) {}
 
-  /** actions 가 하나 이상인 행만. action 필터는 actions 를 좁힌 뒤 빈 행을 버린다. evaluated = 조립한 행 수. */
+  /**
+   * actions 가 하나 이상인 행만. action 필터는 actions 를 좁힌 뒤 빈 행을 버린다.
+   * evaluated = 조립한 행 수. total = 필터 적용 후(actionable) 전체 행 수 — limit 은 그 뒤에 자른다.
+   */
   async list(
     trx: DbTx,
-    filter: { action: SuggestionActionFilter },
-  ): Promise<{ items: SuggestionRow[]; evaluated: number }> {
+    filter: { action: SuggestionActionFilter; limit?: number },
+  ): Promise<{ items: SuggestionRow[]; evaluated: number; total: number }> {
     const rows = await this.assemble(trx);
     const wanted = filter.action === 'all' ? null : filter.action;
-    const items = rows
+    const actionable = rows
       .map((row) => (wanted ? { ...row, actions: row.actions.filter((a) => a.type === wanted) } : row))
       .filter((row) => row.actions.length > 0);
-    return { items, evaluated: rows.length };
+    const items = filter.limit != null ? actionable.slice(0, filter.limit) : actionable;
+    return { items, evaluated: rows.length, total: actionable.length };
   }
 
   /** 어떤 SKU 든 한 행. 없으면 NotFoundError. */
