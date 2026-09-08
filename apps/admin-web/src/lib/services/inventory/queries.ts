@@ -470,7 +470,10 @@ export const useReplenishmentSuggestions = (action: SuggestionActionFilter) =>
 export const useReplenishmentSku = (skuId: string | null) =>
   useQuery({
     queryKey: inventoryQueryKeys.replenishmentSku(skuId ?? ''),
-    queryFn: () => replenishmentClient.getSku(skuId as string),
+    queryFn: () => {
+      if (!skuId) throw new Error('skuId is required');
+      return replenishmentClient.getSku(skuId);
+    },
     enabled: !!skuId,
   });
 

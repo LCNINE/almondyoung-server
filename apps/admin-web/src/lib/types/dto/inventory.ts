@@ -1413,7 +1413,7 @@ export interface ReplenishmentSuggestionListDto { items: ReplenishmentSuggestion
 // ===== 이동 지시서 생성 =====
 export interface CreateTransferOrderLineRequest { skuId: string; fromLocationId: string; quantity: number }
 export interface CreateTransferOrderRequest {
-  fromWarehouseId: string; toWarehouseId: string; eta?: string; memo?: string; lines: CreateTransferOrderLineRequest[];
+  fromWarehouseId: string; toWarehouseId: string; eta?: string; memo?: string; actorId?: string; lines: CreateTransferOrderLineRequest[];
 }
 export interface CreateTransferOrderResponseDto { transferOrderId: string }
 
