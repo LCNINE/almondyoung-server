@@ -11,8 +11,10 @@ import {
   PO_TYPE_LABELS,
   SOURCE_LABELS,
   daysOfCoverLabel,
+  formatComputedAt,
   formatOptionalNumber,
   formatSegment,
+  formatSourced,
   httpStatusOf,
   purchaseAction,
   serverMessageOf,
@@ -203,7 +205,7 @@ describe('suggestion-model', () => {
     expect(formatOptionalNumber(0, 1)).toBe('0.0');
   });
 
-  it('리드타임 세그먼트 표기 — 평균 ± 표준편차 (출처), null 분기 없음', () => {
+  it('리드타임 세그먼트 표기 — 평균 ± 표준편차 (출처), SegmentSource 네 값 전부', () => {
     const seg: ResolvedSegmentDto = {
       meanDays: 12,
       stdDays: 3,
@@ -213,6 +215,30 @@ describe('suggestion-model', () => {
     expect(
       formatSegment({ meanDays: 0, stdDays: 0, source: 'global_default' })
     ).toBe('0.0일 ± 0.0 (전역 기본)');
+    expect(
+      formatSegment({ meanDays: 5, stdDays: 1, source: 'supplier_rule' })
+    ).toBe('5.0일 ± 1.0 (공급사 규칙)');
+    expect(
+      formatSegment({ meanDays: 8, stdDays: 2, source: 'route_rule' })
+    ).toBe('8.0일 ± 2.0 (경로 규칙)');
+  });
+
+  it('출처 있는 값 표기 — 값 + 단위? + (출처), 단위 생략 시 빈 문자열', () => {
+    expect(formatSourced({ value: 1.5, source: 'grade' })).toBe(
+      '1.5 (등급 규칙)'
+    );
+    expect(formatSourced({ value: 7, source: 'observation' }, '일')).toBe(
+      '7일 (관측)'
+    );
+    expect(formatSourced({ value: 0, source: 'override' }, '일')).toBe(
+      '0일 (SKU 예외)'
+    );
+  });
+
+  it('계산 시각 표기 — ISO 문자열을 ko-KR 로케일로', () => {
+    expect(formatComputedAt('2026-09-01T00:00:00.000Z')).toBe(
+      '2026. 9. 1. AM 12:00:00'
+    );
   });
 });
 

@@ -18,10 +18,11 @@ import type {
 import {
   FLAG_LABELS,
   PATTERN_LABELS,
-  SOURCE_LABELS,
   daysOfCoverLabel,
+  formatComputedAt,
   formatOptionalNumber,
   formatSegment,
+  formatSourced,
   summarizeActions,
 } from '../../suggestion-model';
 
@@ -102,10 +103,7 @@ function ProfileBlock({ profile }: { profile: SkuDemandProfileDto | null }) {
         label="이력 · 발생일"
         value={`${profile.historyDays}일 · ${profile.demandEvents}회 (${profile.classificationFrom}~${profile.classificationTo})`}
       />
-      <Row
-        label="계산 시각"
-        value={new Date(profile.computedAt).toLocaleString('ko-KR')}
-      />
+      <Row label="계산 시각" value={formatComputedAt(profile.computedAt)} />
     </div>
   );
 }
@@ -115,20 +113,11 @@ function ParametersBlock({ p }: { p: EffectiveParametersDto }) {
     <div>
       <p className="mb-1 text-sm font-semibold">적용 파라미터</p>
       {p.excluded && <Badge variant="destructive">제안 제외 (SKU 예외)</Badge>}
-      <Row
-        label="α"
-        value={`${p.alpha.value} (${SOURCE_LABELS[p.alpha.source]})`}
-      />
+      <Row label="α" value={formatSourced(p.alpha)} />
       <Row label="L1 공급사→출발" value={formatSegment(p.l1)} />
       <Row label="L2 출발→판매" value={formatSegment(p.l2)} />
-      <Row
-        label="발주 커버"
-        value={`${p.coverDays.value}일 (${SOURCE_LABELS[p.coverDays.source]})`}
-      />
-      <Row
-        label="이동 커버"
-        value={`${p.transferCoverDays.value}일 (${SOURCE_LABELS[p.transferCoverDays.source]})`}
-      />
+      <Row label="발주 커버" value={formatSourced(p.coverDays, '일')} />
+      <Row label="이동 커버" value={formatSourced(p.transferCoverDays, '일')} />
       {p.overrideSafetyStock !== null && (
         <Row label="안전재고 오버라이드" value={p.overrideSafetyStock} />
       )}

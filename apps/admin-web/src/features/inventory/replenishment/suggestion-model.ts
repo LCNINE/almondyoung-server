@@ -6,6 +6,7 @@ import type {
   PurchaseOrderType,
   ReplenishmentSuggestionRowDto,
   ResolvedSegmentDto,
+  SourcedNumberDto,
   SuggestionActionDto,
   SuggestionFlag,
 } from '@/lib/types/dto/inventory';
@@ -126,6 +127,19 @@ export function formatOptionalNumber(v: number | null, digits = 2): string {
  */
 export function formatSegment(s: ResolvedSegmentDto): string {
   return `${s.meanDays.toFixed(1)}일 ± ${s.stdDays.toFixed(1)} (${SOURCE_LABELS[s.source]})`;
+}
+
+/**
+ * 「값 + 단위? + (출처)」 공용 표기 — α(단위 없음) · 발주 커버 · 이동 커버(둘 다 `'일'`)
+ * 셋이 모두 이 모양이라 하나로 뺐다(#743 B Task 11 리뷰 R37).
+ */
+export function formatSourced(s: SourcedNumberDto, unit = ''): string {
+  return `${s.value}${unit} (${SOURCE_LABELS[s.source]})`;
+}
+
+/** SKU 드로어 프로필 블록의 `computedAt` 로케일 표기. */
+export function formatComputedAt(iso: string): string {
+  return new Date(iso).toLocaleString('ko-KR');
 }
 
 /**
