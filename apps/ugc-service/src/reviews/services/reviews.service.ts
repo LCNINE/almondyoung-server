@@ -768,15 +768,23 @@ export class ReviewsService {
       }[query.sort ?? 'latest'];
 
       // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
-      // 왕복을 하나 더 붙이지 않는다.
+      // 왕복을 하나 더 붙이지 않는다. 상관 서브쿼리는 반드시 exists(빌더) 로 짠다:
+      // 원시 sql 템플릿 안의 컬럼 참조는 테이블 이름이 안 붙어 `"id"` 로만 나가고,
+      // 서브쿼리 테이블에 같은 이름의 컬럼이 있으면 그쪽이 가려 항상 거짓이 된다.
       const data = await tx
         .select({
           review: reviews,
-          isBest: sql<boolean>`exists (
-            select 1 from ${reviewBestSelections}
-            where ${reviewBestSelections.reviewId} = ${reviews.id}
-              and ${reviewBestSelections.status} = 'CONFIRMED'
-          )`,
+          isBest: exists(
+            tx
+              .select({ _: sql`1` })
+              .from(reviewBestSelections)
+              .where(
+                and(
+                  eq(reviewBestSelections.reviewId, reviews.id),
+                  eq(reviewBestSelections.status, 'CONFIRMED'),
+                ),
+              ),
+          ),
         })
         .from(reviews)
         .where(whereClause)
@@ -886,15 +894,23 @@ export class ReviewsService {
       }[query.sort ?? 'latest'];
 
       // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
-      // 왕복을 하나 더 붙이지 않는다.
+      // 왕복을 하나 더 붙이지 않는다. 상관 서브쿼리는 반드시 exists(빌더) 로 짠다:
+      // 원시 sql 템플릿 안의 컬럼 참조는 테이블 이름이 안 붙어 `"id"` 로만 나가고,
+      // 서브쿼리 테이블에 같은 이름의 컬럼이 있으면 그쪽이 가려 항상 거짓이 된다.
       const data = await tx
         .select({
           review: reviews,
-          isBest: sql<boolean>`exists (
-            select 1 from ${reviewBestSelections}
-            where ${reviewBestSelections.reviewId} = ${reviews.id}
-              and ${reviewBestSelections.status} = 'CONFIRMED'
-          )`,
+          isBest: exists(
+            tx
+              .select({ _: sql`1` })
+              .from(reviewBestSelections)
+              .where(
+                and(
+                  eq(reviewBestSelections.reviewId, reviews.id),
+                  eq(reviewBestSelections.status, 'CONFIRMED'),
+                ),
+              ),
+          ),
         })
         .from(reviews)
         .where(whereClause)
@@ -1039,15 +1055,23 @@ export class ReviewsService {
       }[query.sort ?? 'latest'];
 
       // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
-      // 왕복을 하나 더 붙이지 않는다.
+      // 왕복을 하나 더 붙이지 않는다. 상관 서브쿼리는 반드시 exists(빌더) 로 짠다:
+      // 원시 sql 템플릿 안의 컬럼 참조는 테이블 이름이 안 붙어 `"id"` 로만 나가고,
+      // 서브쿼리 테이블에 같은 이름의 컬럼이 있으면 그쪽이 가려 항상 거짓이 된다.
       const data = await tx
         .select({
           review: reviews,
-          isBest: sql<boolean>`exists (
-            select 1 from ${reviewBestSelections}
-            where ${reviewBestSelections.reviewId} = ${reviews.id}
-              and ${reviewBestSelections.status} = 'CONFIRMED'
-          )`,
+          isBest: exists(
+            tx
+              .select({ _: sql`1` })
+              .from(reviewBestSelections)
+              .where(
+                and(
+                  eq(reviewBestSelections.reviewId, reviews.id),
+                  eq(reviewBestSelections.status, 'CONFIRMED'),
+                ),
+              ),
+          ),
         })
         .from(reviews)
         .where(whereClause)
