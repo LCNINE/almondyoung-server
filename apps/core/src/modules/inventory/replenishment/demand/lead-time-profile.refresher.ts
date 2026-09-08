@@ -49,34 +49,66 @@ export class LeadTimeProfileRefresher {
       const suppliers = await this.observeSuppliers(trx, windowFrom);
       await trx.delete(wmsTables.supplierLeadTimeProfiles);
       if (suppliers.length > 0) {
-        await trx.insert(wmsTables.supplierLeadTimeProfiles).values(
-          suppliers.map((r) => ({
-            supplierId: r.supplier_id,
-            observations: Number(r.n),
-            meanDays: Number(r.mean_days),
-            stdDays: r.std_days === null ? null : Number(r.std_days),
-            windowFrom,
-            windowTo,
-            computedAt,
-          })),
-        );
+        await trx
+          .insert(wmsTables.supplierLeadTimeProfiles)
+          .values(
+            suppliers.map((r) => ({
+              supplierId: r.supplier_id,
+              observations: Number(r.n),
+              meanDays: Number(r.mean_days),
+              stdDays: r.std_days === null ? null : Number(r.std_days),
+              windowFrom,
+              windowTo,
+              computedAt,
+            })),
+          )
+          // READ COMMITTED 에서 겹쳐 도는 두 런: 뒤 런의 DELETE 가 앞 런이 방금 커밋한 행을 못 잡고,
+          // 이어지는 bare INSERT 가 PK 충돌로 죽는다. 두 런 다 같은 이력에서 값을 뽑으므로 병합해도
+          // 결과가 한 런과 같다 — 그래서 삭제 못 지운 행 위에 upsert 로 덮어써도 안전하다.
+          .onConflictDoUpdate({
+            target: wmsTables.supplierLeadTimeProfiles.supplierId,
+            set: {
+              observations: sql`excluded.observations`,
+              meanDays: sql`excluded.mean_days`,
+              stdDays: sql`excluded.std_days`,
+              windowFrom: sql`excluded.window_from`,
+              windowTo: sql`excluded.window_to`,
+              computedAt,
+              updatedAt: computedAt,
+            },
+          });
       }
 
       const routes = await this.observeRoutes(trx, windowFrom);
       await trx.delete(wmsTables.routeLeadTimeProfiles);
       if (routes.length > 0) {
-        await trx.insert(wmsTables.routeLeadTimeProfiles).values(
-          routes.map((r) => ({
-            fromWarehouseId: r.from_warehouse_id,
-            toWarehouseId: r.to_warehouse_id,
-            observations: Number(r.n),
-            meanDays: Number(r.mean_days),
-            stdDays: r.std_days === null ? null : Number(r.std_days),
-            windowFrom,
-            windowTo,
-            computedAt,
-          })),
-        );
+        await trx
+          .insert(wmsTables.routeLeadTimeProfiles)
+          .values(
+            routes.map((r) => ({
+              fromWarehouseId: r.from_warehouse_id,
+              toWarehouseId: r.to_warehouse_id,
+              observations: Number(r.n),
+              meanDays: Number(r.mean_days),
+              stdDays: r.std_days === null ? null : Number(r.std_days),
+              windowFrom,
+              windowTo,
+              computedAt,
+            })),
+          )
+          // 위 supplier insert 와 같은 이유 — 겹쳐 도는 런의 PK 충돌을 병합으로 흡수한다.
+          .onConflictDoUpdate({
+            target: [wmsTables.routeLeadTimeProfiles.fromWarehouseId, wmsTables.routeLeadTimeProfiles.toWarehouseId],
+            set: {
+              observations: sql`excluded.observations`,
+              meanDays: sql`excluded.mean_days`,
+              stdDays: sql`excluded.std_days`,
+              windowFrom: sql`excluded.window_from`,
+              windowTo: sql`excluded.window_to`,
+              computedAt,
+              updatedAt: computedAt,
+            },
+          });
       }
 
       return { suppliers: suppliers.length, routes: routes.length, windowFrom, windowTo };

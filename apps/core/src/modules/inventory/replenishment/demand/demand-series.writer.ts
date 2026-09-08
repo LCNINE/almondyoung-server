@@ -54,6 +54,11 @@ export class DemandSeriesWriter {
         await trx
           .insert(daily)
           .values(part)
+          // PK 는 (sku_id, demand_date) 뿐이라 source 컬럼을 안 실어 — 같은 날짜에 sellmate 시드 행이
+          // 이미 있어도 이 upsert 는 그걸 core 값으로 덮어쓸 수 있다. 실무에서 안 터지는 건 D0 파티션
+          // 덕분이다(core 는 D0 이후만, sellmate 는 D0 이전만 쓴다 — rebuildCoreWindow 호출부 참고).
+          // 반대 방향(시드가 core 행을 덮는 것)은 import-demand-history.ts 의 upsert 가
+          // `WHERE sku_demand_daily.source <> 'core'` 로 명시적으로 막는다 — 이쪽엔 그 대칭 가드가 없다.
           .onConflictDoUpdate({
             target: [daily.skuId, daily.demandDate],
             set: { qty: sql`excluded.qty`, amount: sql`excluded.amount`, source: 'core', updatedAt: now },

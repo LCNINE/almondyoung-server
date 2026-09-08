@@ -8,6 +8,10 @@ import { addDays, kstDateOf } from './calendar';
 
 export type RefreshSeries = 'window' | 'full';
 
+/** run() 의 세 단계, 실행 순서 그대로. 실패 로그가 "어디까지 갔는지" 를 이름으로 남기는 데 쓴다. */
+export type RefreshStage = 'demandSeries' | 'profiles' | 'leadTimes';
+const STAGE_ORDER: RefreshStage[] = ['demandSeries', 'profiles', 'leadTimes'];
+
 export interface RefreshSummary {
   series: RefreshSeries;
   today: string;
@@ -37,8 +41,11 @@ export class ReplenishmentRefreshJob {
 
   @Cron('40 3 * * *', { name: 'replenishment-profile-refresh', timeZone: 'Asia/Seoul' })
   async nightly(): Promise<void> {
+    // run() 자체는 손대지 않고 단계 완료를 옆에서 기록만 한다 — 실패 시 "어느 단계까지 커밋됐는지"를
+    // 로그에 남기기 위함(운영 런북이 이 로그로 부분 실패와 전체 실패를 구별한다).
+    const completedStages: RefreshStage[] = [];
     try {
-      const summary = await this.run('window');
+      const summary = await this.run('window', new Date(), (stage) => completedStages.push(stage));
       this.logger.log(
         `✅ replenishment refresh: series ${summary.demandSeries.rows} rows (${summary.demandSeries.from}~${summary.demandSeries.to}), ` +
           `profiles ${summary.profiles.skus} skus ${JSON.stringify(summary.profiles.byPattern)}, ` +
@@ -47,11 +54,20 @@ export class ReplenishmentRefreshJob {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;
-      this.logger.error(`replenishment refresh job failed: ${message}`, stack);
+      const failedStage = STAGE_ORDER[completedStages.length] ?? 'unknown';
+      const completedText = completedStages.length > 0 ? completedStages.join(', ') : '없음';
+      this.logger.error(
+        `replenishment refresh job failed at stage "${failedStage}" (완료된 단계: ${completedText}): ${message}`,
+        stack,
+      );
     }
   }
 
-  async run(series: RefreshSeries, now: Date = new Date()): Promise<RefreshSummary> {
+  async run(
+    series: RefreshSeries,
+    now: Date = new Date(),
+    onStageDone?: (stage: RefreshStage) => void,
+  ): Promise<RefreshSummary> {
     const startedAt = now.toISOString();
     const today = kstDateOf(now);
     const settings = await this.settingsReader.read();
@@ -64,8 +80,11 @@ export class ReplenishmentRefreshJob {
             to: today,
             coreSince: settings.demandCoreSince,
           });
+    onStageDone?.('demandSeries');
     const profiles = await this.profileRefresher.refreshAll({ today });
+    onStageDone?.('profiles');
     const leadTimes = await this.leadTimeRefresher.refreshAll({ today });
+    onStageDone?.('leadTimes');
 
     return { series, today, startedAt, finishedAt: new Date().toISOString(), demandSeries, profiles, leadTimes };
   }

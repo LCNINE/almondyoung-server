@@ -71,4 +71,24 @@ describe('ReplenishmentRefreshJob', () => {
     await expect(job.nightly()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith(expect.stringContaining('profile boom'), expect.anything());
   });
+
+  it('nightly 실패 로그는 어느 단계가 죽었는지와 이미 끝난 단계를 함께 남긴다 — 중간 단계 실패', async () => {
+    const { job } = build({ profiles: { refreshAll: jest.fn().mockRejectedValue(new Error('profile boom')) } });
+    const error = jest.spyOn(job['logger'], 'error').mockImplementation(() => undefined);
+    await job.nightly();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringMatching(/stage "profiles".*완료된 단계: demandSeries.*profile boom/),
+      expect.anything(),
+    );
+  });
+
+  it('nightly 실패 로그는 첫 단계부터 죽으면 완료된 단계가 없다고 남긴다', async () => {
+    const { job } = build({ series: { rebuildCoreWindow: jest.fn().mockRejectedValue(new Error('series boom')) } });
+    const error = jest.spyOn(job['logger'], 'error').mockImplementation(() => undefined);
+    await job.nightly();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringMatching(/stage "demandSeries".*완료된 단계: 없음.*series boom/),
+      expect.anything(),
+    );
+  });
 });

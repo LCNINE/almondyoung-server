@@ -7,6 +7,8 @@ import { SeedCheckResult, SeedApplyResult } from '../lib/types';
  * ON CONFLICT DO NOTHING — 이미 있으면 운영자가 바꾼 값을 덮지 않는다.
  */
 export const REPLENISHMENT_SETTINGS_SEED = {
+  // 'default' 는 apps/core/.../replenishment-settings.reader.ts 의 SETTINGS_KEY 리터럴과 같은 값이어야 한다.
+  // 이 스크립트는 apps/core 를 import 할 수 없어 리터럴을 그대로 둔다.
   key: 'default',
   adiThreshold: 1.32,
   cv2Threshold: 0.49,

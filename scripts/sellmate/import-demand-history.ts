@@ -208,6 +208,8 @@ async function main() {
 
   const sql = postgres(DATABASE_URL, { max: 4 });
   try {
+    // 'default' 는 apps/core/.../replenishment-settings.reader.ts 의 SETTINGS_KEY 리터럴과 같은 값이어야 한다.
+    // 이 스크립트는 apps/core 를 import 할 수 없어 리터럴을 그대로 둔다.
     const [settings] = await sql<{ d0: string | null }[]>`
       SELECT demand_core_since::text AS d0 FROM replenishment_settings WHERE key = 'default'
     `;
@@ -273,6 +275,8 @@ async function main() {
         `;
       }
       if (settings.d0 === null && coreSince !== null) {
+        // 'default' 는 apps/core/.../replenishment-settings.reader.ts 의 SETTINGS_KEY 리터럴과 같은 값이어야 한다.
+        // 이 스크립트는 apps/core 를 import 할 수 없어 리터럴을 그대로 둔다.
         await tx`UPDATE replenishment_settings SET demand_core_since = ${coreSince}::date, updated_at = now() WHERE key = 'default' AND demand_core_since IS NULL`;
         console.log(`✔ demand_core_since = ${coreSince} 설정`);
       }
