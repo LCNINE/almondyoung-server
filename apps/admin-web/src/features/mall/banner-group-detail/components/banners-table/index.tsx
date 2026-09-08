@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +12,8 @@ import {
 } from '@/lib/services/products';
 import type { BannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { productQueryKeys } from '@/lib/services/products';
+import { localInputToIso } from '@/lib/utils/datetime';
 import { BannerCreateDialog } from '../banner-create-dialog';
 import { BannerEditDialog } from '../banner-edit-dialog';
 import { BannerDeleteDialog } from '../banner-delete-dialog';
@@ -30,6 +33,7 @@ export function BannersTable({ groupId }: Props) {
   const { data: group } = useBannerGroup(groupId);
   const deleteMutation = useDeleteBanner();
   const updateMutation = useUpdateBanner();
+  const queryClient = useQueryClient();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BannerDto | null>(null);
@@ -95,7 +99,12 @@ export function BannersTable({ groupId }: Props) {
         1500
       );
     } catch {
-      toast.error('순서 변경에 실패했습니다.');
+      // 두 건 중 한 건만 성공하면 sortOrder 가 겹쳐 조회마다 순서가 뒤집힌다.
+      // 화면을 서버 상태로 되돌려 무엇이 반영됐는지 보이게 한다
+      await queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannersByGroup(groupId),
+      });
+      toast.error('순서 변경에 실패했습니다. 목록을 다시 불러왔습니다.');
     }
   };
 
@@ -112,8 +121,8 @@ export function BannersTable({ groupId }: Props) {
               title: d.title,
               linkUrl: d.linkUrl,
               isActive: d.isActive,
-              displayStartAt: d.displayStartAt,
-              displayEndAt: d.displayEndAt,
+              displayStartAt: localInputToIso(d.displayStartAt),
+              displayEndAt: localInputToIso(d.displayEndAt),
             },
           });
         })

@@ -38,7 +38,7 @@ type Props = {
 export function HeroBannerList({ banners, current, onSelect }: Props) {
   const t = useTranslations("home.heroBanner")
   const scrollRef = useRef<HTMLDivElement>(null)
-  const rowRefs = useRef<(HTMLAnchorElement | null)[]>([])
+  const rowRefs = useRef<(HTMLElement | null)[]>([])
   const rafRef = useRef<number | null>(null)
   const [overflow, setOverflow] = useState({ up: false, down: false })
 
@@ -128,32 +128,14 @@ export function HeroBannerList({ banners, current, onSelect }: Props) {
       >
         {banners.map((banner, index) => {
           const isCurrent = index === current
-          return (
-            <Link
-              key={banner.id}
-              ref={(el) => {
-                rowRefs.current[index] = el
-              }}
-              href={banner.linkUrl ?? "#"}
-              target={
-                banner.linkUrl?.startsWith("http") ? "_blank" : undefined
-              }
-              rel={
-                banner.linkUrl?.startsWith("http")
-                  ? "noopener noreferrer"
-                  : undefined
-              }
-              onMouseEnter={() => onSelect(index, "hover")}
-              onFocus={() => onSelect(index, "hover")}
-              onClick={() => onSelect(index, "click")}
-              aria-current={isCurrent}
-              className={cn(
-                // 테두리를 항상 들고 있어야 선택될 때 칸 내용이 1px 밀리지 않는다
-                "flex items-center gap-2 border border-transparent px-[14px]",
-                isCurrent && "border-primary"
-              )}
-              style={{ height: ROW_HEIGHT }}
-            >
+          const isExternal = banner.linkUrl?.startsWith("http")
+          // 테두리를 항상 들고 있어야 선택될 때 칸 내용이 1px 밀리지 않는다
+          const rowClass = cn(
+            "flex items-center gap-2 border border-transparent px-[14px]",
+            isCurrent && "border-primary"
+          )
+          const rowBody = (
+            <>
               <span
                 className={cn(
                   "line-clamp-2 flex-1 text-sm leading-tight break-keep",
@@ -171,6 +153,47 @@ export function HeroBannerList({ banners, current, onSelect }: Props) {
                   className="h-12 w-12 shrink-0 object-contain"
                 />
               )}
+            </>
+          )
+
+          // 링크가 없는 배너를 href="#" 로 두면 눌렀을 때 맨 위로 튀고
+          // select_promotion 까지 집계된다. 고를 수는 있어야 하니 버튼으로 둔다
+          if (!banner.linkUrl) {
+            return (
+              <button
+                key={banner.id}
+                type="button"
+                ref={(el) => {
+                  rowRefs.current[index] = el
+                }}
+                onMouseEnter={() => onSelect(index, "hover")}
+                onFocus={() => onSelect(index, "hover")}
+                aria-current={isCurrent}
+                className={cn(rowClass, "w-full text-left")}
+                style={{ height: ROW_HEIGHT }}
+              >
+                {rowBody}
+              </button>
+            )
+          }
+
+          return (
+            <Link
+              key={banner.id}
+              ref={(el) => {
+                rowRefs.current[index] = el
+              }}
+              href={banner.linkUrl}
+              target={isExternal ? "_blank" : undefined}
+              rel={isExternal ? "noopener noreferrer" : undefined}
+              onMouseEnter={() => onSelect(index, "hover")}
+              onFocus={() => onSelect(index, "hover")}
+              onClick={() => onSelect(index, "click")}
+              aria-current={isCurrent}
+              className={rowClass}
+              style={{ height: ROW_HEIGHT }}
+            >
+              {rowBody}
             </Link>
           )
         })}

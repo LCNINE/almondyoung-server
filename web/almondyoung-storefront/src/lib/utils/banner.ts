@@ -45,6 +45,8 @@ export function isHeroListReady(
 ): boolean {
   return (
     banners.length > 0 &&
-    banners.every((b) => !!b.listImageFileId && !!b.listLabel)
+    // 어드민 검증(heroListError)이 trim 기준이라 여기도 맞춘다 —
+    // 공백만 든 문구가 통과하면 빈 칸으로 리스트가 켜진다
+    banners.every((b) => !!b.listImageFileId && !!b.listLabel?.trim())
   )
 }

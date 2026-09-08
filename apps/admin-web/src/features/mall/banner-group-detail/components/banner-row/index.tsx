@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { isoToLocalInput } from '@/lib/utils/datetime';
 import type { BannerDto } from '@/lib/types/dto/products';
 
 export type BannerDraft = {
@@ -186,7 +187,7 @@ export function BannerRow({
               onSelect={() =>
                 onChange({
                   displayStartAt:
-                    draft.displayStartAt ?? toLocalInput(new Date()),
+                    draft.displayStartAt ?? isoToLocalInput(new Date()),
                 })
               }
               label="기간 설정"
@@ -195,7 +196,7 @@ export function BannerRow({
               <div className="flex items-center gap-2">
                 <Input
                   type="datetime-local"
-                  value={toLocalInput(draft.displayStartAt)}
+                  value={isoToLocalInput(draft.displayStartAt)}
                   onChange={(e) =>
                     onChange({ displayStartAt: e.target.value || undefined })
                   }
@@ -204,7 +205,7 @@ export function BannerRow({
                 <span className="text-muted-foreground text-xs">~</span>
                 <Input
                   type="datetime-local"
-                  value={toLocalInput(draft.displayEndAt)}
+                  value={isoToLocalInput(draft.displayEndAt)}
                   onChange={(e) =>
                     onChange({ displayEndAt: e.target.value || undefined })
                   }
@@ -300,11 +301,4 @@ function Radio({
       <span className="text-[13px] text-[#1f2937]">{label}</span>
     </button>
   );
-}
-
-/** datetime-local 이 받는 `YYYY-MM-DDTHH:mm` 로 자른다 */
-function toLocalInput(v?: string | Date) {
-  if (!v) return '';
-  const d = typeof v === 'string' ? v : v.toISOString();
-  return d.slice(0, 16);
 }

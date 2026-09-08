@@ -22,8 +22,12 @@ type Props = {
   onOpenChange: (open: boolean) => void;
 };
 
-/** code 는 NOT NULL UNIQUE 인데 시안에는 입력칸이 없다 — 상세에서도 읽기 전용이라 여기서 짓는다 */
-const nextCode = () => `AY${Date.now().toString().slice(-6)}`;
+/**
+ * code 는 NOT NULL UNIQUE 인데 시안에는 입력칸이 없다 — 상세에서도 읽기 전용이라 여기서 짓는다.
+ * 타임스탬프 6자리만 쓰면 약 16분마다 같은 값이 돌아와 409 가 난다. 난수를 섞는다.
+ */
+const nextCode = () =>
+  `AY${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
 
 export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
   const [title, setTitle] = useState('');
