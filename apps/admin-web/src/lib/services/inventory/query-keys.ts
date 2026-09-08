@@ -21,13 +21,16 @@ import type {
 export const inventoryQueryKeys = {
   // 재고 관련
   stocks: ['stocks'] as const,
-  stockSummary: (query?: StockSummaryQuery) => ['stocks', 'summary', query] as const,
+  stockSummary: (query?: StockSummaryQuery) =>
+    ['stocks', 'summary', query] as const,
   skuTotalStock: (sku: string) => ['stocks', 'sku', sku, 'total'] as const,
   skuWarehouseStock: (sku: string, warehouseId: string) =>
     ['stocks', 'sku', sku, 'warehouse', warehouseId] as const,
-  stockHistory: (query: StockHistoryQuery) => ['stocks', 'history', query] as const,
+  stockHistory: (query: StockHistoryQuery) =>
+    ['stocks', 'history', query] as const,
   stockValuationSummary: ['stocks', 'valuation', 'summary'] as const,
-  stockValuationProducts: (query?: unknown) => ['stocks', 'valuation', 'products', query] as const,
+  stockValuationProducts: (query?: unknown) =>
+    ['stocks', 'valuation', 'products', query] as const,
 
   // SKU 관련
   skus: (query?: any) => ['skus', query] as const,
@@ -95,13 +98,17 @@ export const inventoryQueryKeys = {
   location: (id: string) => ['locations', 'detail', id] as const,
   locationColumns: (warehouseId: string, isActive?: boolean) =>
     ['locations', warehouseId, 'columns', isActive] as const,
-  locationRacks: (warehouseId: string, columnName?: string, isActive?: boolean) =>
-    ['locations', warehouseId, 'racks', columnName, isActive] as const,
+  locationRacks: (
+    warehouseId: string,
+    columnName?: string,
+    isActive?: boolean
+  ) => ['locations', warehouseId, 'racks', columnName, isActive] as const,
 
   // SKU 그룹 관련
   skuGroups: ['inventory', 'sku-groups'] as const,
   skuGroup: (id: string) => ['inventory', 'sku-groups', id] as const,
-  skuGroupMembers: (id: string) => ['inventory', 'sku-groups', id, 'members'] as const,
+  skuGroupMembers: (id: string) =>
+    ['inventory', 'sku-groups', id, 'members'] as const,
   ungroupedSkus: (params?: { limit?: number; offset?: number }) =>
     ['inventory', 'sku-groups', 'ungrouped', params] as const,
 
@@ -116,7 +123,8 @@ export const inventoryQueryKeys = {
   // 재고 실사 관련
   stocktakingSessions: (query?: StocktakingSessionQuery) =>
     ['inventory', 'stocktaking', 'sessions', query] as const,
-  stocktakingSession: (id: string) => ['inventory', 'stocktaking', 'sessions', id] as const,
+  stocktakingSession: (id: string) =>
+    ['inventory', 'stocktaking', 'sessions', id] as const,
   stocktakingVariances: (sessionId: string) =>
     ['inventory', 'stocktaking', 'sessions', sessionId, 'variances'] as const,
 
@@ -134,15 +142,20 @@ export const inventoryQueryKeys = {
     ['purchase-orders', filters] as const,
   purchaseOrder: (id: string) => ['purchase-orders', id] as const,
   purchaseOrderCart: () => ['purchase-orders', 'cart'] as const,
-  reorderSuggestions: (warehouseId?: string) =>
-    ['purchase-orders', 'reorder', warehouseId] as const,
+
+  // 보충 제안(replenishment) 관련
+  replenishmentSuggestions: (action: string, limit?: number) =>
+    ['replenishment', 'suggestions', action, limit ?? null] as const,
+  replenishmentSku: (skuId: string) => ['replenishment', 'sku', skuId] as const,
 
   // 회수(Returns) 관련
-  returns: (filters?: ReturnFiltersDto) => ['inventory', 'returns', filters] as const,
+  returns: (filters?: ReturnFiltersDto) =>
+    ['inventory', 'returns', filters] as const,
   return: (id: string) => ['inventory', 'returns', id] as const,
 
   // 즉시 이동(Movement) 관련
-  movementJob: (jobId: string) => ['inventory', 'movement', 'jobs', jobId] as const,
+  movementJob: (jobId: string) =>
+    ['inventory', 'movement', 'jobs', jobId] as const,
   movementHistory: (query?: MovementHistoryQuery) =>
     ['inventory', 'movement', 'history', query] as const,
 } as const;

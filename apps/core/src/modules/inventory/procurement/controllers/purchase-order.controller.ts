@@ -16,7 +16,6 @@ import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import { PurchaseOrderCartService } from '../services/purchase-order-cart.service';
-import { ReorderSuggestionReader } from '../services/reorder-suggestion.reader';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderLinesDto,
@@ -25,7 +24,6 @@ import {
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
   CartItemResponse,
-  StockReorderSuggestion,
   PurchaseOrderStatus,
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
@@ -46,7 +44,6 @@ export class PurchaseOrderController {
   constructor(
     private readonly purchaseOrderService: PurchaseOrderService,
     private readonly cartService: PurchaseOrderCartService,
-    private readonly reorderReader: ReorderSuggestionReader,
   ) {}
 
   // ========== 발주 관리 ==========
@@ -175,30 +172,6 @@ export class PurchaseOrderController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async clearCart(@Query('type') type: PurchaseOrderType | undefined, @User() user: JwtPayload): Promise<void> {
     return this.cartService.clearCart(type, user.userId);
-  }
-
-  // ========== 재주문 제안 ==========
-
-  @Get('suggestions/reorder')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({
-    summary: '재주문 제안 조회',
-    description: '안전재고 미만으로 떨어진 상품들의 재주문 제안 목록을 조회합니다',
-  })
-  @ApiQuery({
-    name: 'warehouseId',
-    type: String,
-    required: false,
-    description: '창고 ID (선택사항)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '재주문 제안 목록이 성공적으로 조회됨',
-    type: [StockReorderSuggestion],
-  })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async getReorderSuggestions(@Query('warehouseId') warehouseId?: string): Promise<StockReorderSuggestion[]> {
-    return this.reorderReader.getSuggestions(warehouseId);
   }
 
   // ========== 발주 상세 조회 및 관리 (동적 라우트) ==========

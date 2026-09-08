@@ -47,3 +47,8 @@ export const calculateStockStatus = (
 
   return { kind: "inStock" }
 }
+
+// 목록에서 품절 카드를 빼고 뒤 상품을 당겨 올린다. 호출부는 limit 보다 넉넉히 받아
+// 필터 뒤에 slice 해야 칸이 비지 않는다.
+export const filterSoldOut = (products: HttpTypes.StoreProduct[]) =>
+  products.filter((p) => calculateStockStatus(p).kind !== "soldOut")

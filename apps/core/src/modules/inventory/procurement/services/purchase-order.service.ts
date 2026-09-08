@@ -24,8 +24,8 @@ import { PurchaseOrderReader } from './purchase-order.reader';
  * 경계는 ADR-0032 가 소유한다 — 발주는 출발 창고 입고까지만 소유하고 거기서 종결하며,
  * 선적은 `transfer_orders` 가 독립 소유하고 발주와 링크하지 않는다.
  *
- * 카트(`PurchaseOrderCartService`)와 재주문 제안(`ReorderSuggestionReader`)은 컨트롤러가
- * 직접 주입받는다 — 이 포트를 거치지 않는다.
+ * 카트(`PurchaseOrderCartService`)는 컨트롤러가 직접 주입받는다 — 이 포트를 거치지 않는다.
+ * 재주문 제안은 `inventory/replenishment/` 로 나갔다(#743).
  */
 @Injectable()
 export class PurchaseOrderService {

@@ -20,6 +20,7 @@ import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-order
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
+import { warehouseTransfersClient } from '../../api/domains/inventory/warehouse-transfers.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -70,6 +71,7 @@ import type {
   InspectReturnDto,
   ProcessReturnDto,
   MoveBatchRequestDto,
+  CreateTransferOrderRequest,
 } from '../../types/dto/inventory';
 
 /**
@@ -685,6 +687,19 @@ export const useAddToCart = () => {
     mutationFn: (data: AddToCartRequest) => purchaseOrdersClient.cart.add(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+      // 카트에 담겨도 원장은 안 변하므로 제안이 사라지진 않지만, 목록의 신선도 기대를 맞춘다.
+      queryClient.invalidateQueries({ queryKey: ['replenishment'] });
+    },
+  });
+};
+
+export const useCreateTransferOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateTransferOrderRequest) => warehouseTransfersClient.create(data),
+    onSuccess: () => {
+      // 초안이 생기면 이동가능이 줄어 제안이 바뀐다.
+      queryClient.invalidateQueries({ queryKey: ['replenishment'] });
     },
   });
 };

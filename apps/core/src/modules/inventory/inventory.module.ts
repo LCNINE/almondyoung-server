@@ -15,6 +15,7 @@ import { StockValuationModule } from './stock-valuation/stock-valuation.module';
 import { SkuCatalogModule } from './sku-catalog/sku-catalog.module';
 import { ProductSellableQuantityModule } from './product-sellable-quantity/product-sellable-quantity.module';
 import { WarehouseTransferModule } from './warehouse-transfer/warehouse-transfer.module';
+import { ReplenishmentModule } from './replenishment/replenishment.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { WarehouseTransferModule } from './warehouse-transfer/warehouse-transfer
     WarehouseTransferModule,
     InboundModule,
     ProcurementModule,
+    ReplenishmentModule,
     MovementModule,
     StocktakingModule,
     SuppliersModule,
