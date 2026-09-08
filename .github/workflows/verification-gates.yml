@@ -40,6 +40,17 @@ jobs:
       - name: Install
         run: npm ci
 
+      # 루트 jest 는 `apps/admin-web/src/**/*.spec.ts` 를 **포함**하는데 루트 `npm ci` 는
+      # admin-web 의존성을 깔지 않는다. 그래서 admin-web 전용 패키지를 참조하는 spec 이
+      # 하나 생기면 CI 에서만 `Cannot find module` 로 죽는다 — 로컬은 `apps/admin-web/node_modules`
+      # 가 있어 통과하므로 **로컬 게이트가 구조적으로 못 잡는다.**
+      #
+      # 같은 부류가 세 번 터졌다: #701(한 건만 고침) → 09-03 `@tanstack`(#783) →
+      # 09-09 `sonner`(#743 B). 매번 인스턴스만 고쳐서 재발했으므로 여기서 부류를 막는다.
+      # 이 한 줄이면 CI 의 모듈 해석 조건이 로컬과 같아진다.
+      - name: Install admin-web deps
+        run: npm ci --prefix apps/admin-web
+
       # spec 을 포함한 전 범위 타입 검사. 기준선은 에러 0 이다.
       - name: Type check
         run: npm run type-check

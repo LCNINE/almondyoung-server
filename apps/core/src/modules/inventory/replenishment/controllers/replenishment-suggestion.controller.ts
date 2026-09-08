@@ -5,8 +5,8 @@ import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReplenishmentSuggestionService } from '../suggestion/replenishment-suggestion.service';
 import {
   ListSuggestionsQueryDto,
+  ReplenishmentSkuDetailDto,
   ReplenishmentSuggestionListDto,
-  ReplenishmentSuggestionRowDto,
 } from '../dto/replenishment-suggestion.dto';
 
 /**
@@ -22,7 +22,8 @@ export class ReplenishmentSuggestionController {
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '보충 제안 목록 — 발주 제안과 이동 제안',
-    description: 'actions 가 하나 이상인 SKU 만 낸다. 판매창고 (재고위치 − 재주문점) 오름차순.',
+    description:
+      'actions 가 하나 이상인 SKU 만 낸다. 예상 커버 일수(판매창고 재고위치 ÷ 일평균) 오름차순, 일평균 0 은 뒤.',
   })
   @ApiResponse({ status: 200, type: ReplenishmentSuggestionListDto })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
@@ -33,11 +34,14 @@ export class ReplenishmentSuggestionController {
 
   @Get('skus/:skuId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: 'SKU 한 건의 보충 판정 — 제안이 없어도 행을 준다' })
+  @ApiOperation({
+    summary: 'SKU 한 건의 보충 판정 — 제안이 없어도, 제외된 SKU 여도 행을 준다',
+    description: '프로필 드로어용. 수요 프로필과 적용된 유효 파라미터(α · L1 · L2 · 커버)를 함께 낸다.',
+  })
   @ApiParam({ name: 'skuId' })
-  @ApiResponse({ status: 200, type: ReplenishmentSuggestionRowDto })
+  @ApiResponse({ status: 200, type: ReplenishmentSkuDetailDto })
   @ApiResponse({ status: 404, description: 'SKU 없음' })
-  getSku(@Param('skuId') skuId: string): Promise<ReplenishmentSuggestionRowDto> {
+  getSku(@Param('skuId') skuId: string): Promise<ReplenishmentSkuDetailDto> {
     return this.service.getSku(skuId);
   }
 }

@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
-import { ReplenishmentSettingsReader } from './replenishment-settings.reader';
+import { wmsSchema, wmsTables, DbTx, ReplenishmentSettings } from '../../schema/inventory.schema';
 import { addDays } from './calendar';
 
 export interface LeadTimeRefreshResult {
@@ -31,19 +30,21 @@ interface RouteObsRow {
  * 리드타임 프로필 (스펙 §4.4). 관측 창은 최근 lead_time_window_days. 두 표를 통째로 다시 만든다 —
  * 프로필은 파생값이라 delete + insert 가 upsert 와 같고, 관측이 사라진 공급사 행이 남지 않는다.
  * 날짜 바인딩은 'YYYY-MM-DD' 문자열 + ::date (Date 객체 raw 바인딩 금지).
+ *
+ * `settings` 는 스스로 읽지 않고 잡이 넘긴 것을 쓴다 — 이유는 `DemandProfileRefresher` 와 같다
+ * (한 런 안에서 설정이 바뀌어 단계마다 다른 창을 보는 일을 막는다).
  */
 @Injectable()
 export class LeadTimeProfileRefresher {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly settingsReader: ReplenishmentSettingsReader,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  async refreshAll(input: { today: string }, tx?: DbTx): Promise<LeadTimeRefreshResult> {
+  async refreshAll(
+    input: { today: string; settings: ReplenishmentSettings },
+    tx?: DbTx,
+  ): Promise<LeadTimeRefreshResult> {
     return this.dbService.run(async (trx) => {
-      const settings = await this.settingsReader.read(trx);
       const windowTo = input.today;
-      const windowFrom = addDays(input.today, -settings.leadTimeWindowDays);
+      const windowFrom = addDays(input.today, -input.settings.leadTimeWindowDays);
       const computedAt = new Date();
 
       const suppliers = await this.observeSuppliers(trx, windowFrom);

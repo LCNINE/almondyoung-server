@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsSchema, wmsTables, DbTx, NewSkuDemandProfile } from '../../schema/inventory.schema';
-import { ReplenishmentSettingsReader } from './replenishment-settings.reader';
+import { wmsSchema, wmsTables, DbTx, NewSkuDemandProfile, ReplenishmentSettings } from '../../schema/inventory.schema';
 import { assignGrades, computeDemandProfile, DemandPoint } from './demand-profile.calculator';
 import { addDays } from './calendar';
 import { DemandPattern } from '../policy/classification';
@@ -23,17 +22,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
 /**
  * 야간 전 SKU 프로필 재계산 (스펙 §4.3). 통계 사실만 저장 — 안전재고 · 재주문점은 B 가 읽는 시점에 계산한다(D5).
  * SKU 500 개씩 시계열을 읽어 메모리를 묶고, 등급은 분류 창 매출 합 한 번으로 전 SKU 에 매긴다.
+ *
+ * `settings` 는 스스로 읽지 않고 잡이 넘긴 것을 쓴다 — B 가 `PUT /replenishment/rules/settings` 를
+ * 연 뒤로는 한 런이 도는 동안에도 설정이 바뀔 수 있어서, 단계마다 따로 읽으면 한 런의 결과가
+ * 서로 다른 창 길이 · 등급 컷으로 섞인다. `today` 를 잡이 한 번만 계산해 넘기는 것과 같은 이유다.
  */
 @Injectable()
 export class DemandProfileRefresher {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly settingsReader: ReplenishmentSettingsReader,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  async refreshAll(input: { today: string }, tx?: DbTx): Promise<ProfileRefreshResult> {
+  async refreshAll(
+    input: { today: string; settings: ReplenishmentSettings },
+    tx?: DbTx,
+  ): Promise<ProfileRefreshResult> {
     return this.dbService.run(async (trx) => {
-      const settings = await this.settingsReader.read(trx);
+      const { settings } = input;
       const windows = {
         today: input.today,
         classificationWindowDays: settings.classificationWindowDays,

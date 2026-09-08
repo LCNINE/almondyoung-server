@@ -32,6 +32,16 @@ export const REPLENISHMENT_SETTINGS_SEED = {
   defaultTransferCoverDays: 14,
 };
 
+/**
+ * 등급별 목표 예측 실패율 α 초기값 (#743 B, 스펙 §6 「초기값」). grade 가 PK — ON CONFLICT DO NOTHING
+ * 은 운영자가 규칙 화면에서 바꾼 값을 덮지 않는다.
+ */
+export const REPLENISHMENT_GRADE_RULE_SEEDS = [
+  { grade: 'A', alpha: 0.02 },
+  { grade: 'B', alpha: 0.05 },
+  { grade: 'C', alpha: 0.1 },
+] as const;
+
 export class ReplenishmentSeedStep extends SeedStep {
   readonly groups = ['baseline'] as const;
 
@@ -42,6 +52,12 @@ export class ReplenishmentSeedStep extends SeedStep {
   async check(): Promise<SeedCheckResult> {
     const existing = await this.findExistingKeys('replenishment_settings', [REPLENISHMENT_SETTINGS_SEED.key], 'key');
     const missing = existing.has(REPLENISHMENT_SETTINGS_SEED.key) ? 0 : 1;
+    const existingGrades = await this.findExistingKeys(
+      'replenishment_grade_rules',
+      REPLENISHMENT_GRADE_RULE_SEEDS.map((g) => g.grade),
+      'grade',
+    );
+    const missingGrades = REPLENISHMENT_GRADE_RULE_SEEDS.filter((g) => !existingGrades.has(g.grade));
     const items = [
       {
         entity: 'replenishment_settings',
@@ -50,13 +66,21 @@ export class ReplenishmentSeedStep extends SeedStep {
         missing,
         missingDetails: missing ? [REPLENISHMENT_SETTINGS_SEED.key] : [],
       },
+      {
+        entity: 'replenishment_grade_rules',
+        expected: REPLENISHMENT_GRADE_RULE_SEEDS.length,
+        existing: REPLENISHMENT_GRADE_RULE_SEEDS.length - missingGrades.length,
+        missing: missingGrades.length,
+        missingDetails: missingGrades.map((g) => g.grade),
+      },
     ];
-    const isFullySeeded = missing === 0;
+    const isFullySeeded = items.every((i) => i.missing === 0);
+    const totalMissing = items.reduce((sum, i) => sum + i.missing, 0);
     return {
       service: 'Replenishment',
       items,
       isFullySeeded,
-      summary: isFullySeeded ? 'All Replenishment seed data present' : `${missing} missing record(s)`,
+      summary: isFullySeeded ? 'All Replenishment seed data present' : `${totalMissing} missing record(s)`,
     };
   }
 
@@ -64,7 +88,7 @@ export class ReplenishmentSeedStep extends SeedStep {
     const start = Date.now();
     const s = REPLENISHMENT_SETTINGS_SEED;
     try {
-      this.logger.step(1, 1, 'Inserting replenishment settings');
+      this.logger.step(1, 2, 'Inserting replenishment settings');
       await this.db.execute(sql`
         INSERT INTO replenishment_settings (
           key, adi_threshold, cv2_threshold, classification_window_days,
@@ -85,11 +109,29 @@ export class ReplenishmentSeedStep extends SeedStep {
         )
         ON CONFLICT (key) DO NOTHING
       `);
+      this.logger.step(2, 2, 'Inserting grade rules');
+      for (const g of REPLENISHMENT_GRADE_RULE_SEEDS) {
+        await this.db.execute(sql`
+          INSERT INTO replenishment_grade_rules (grade, alpha) VALUES (${g.grade}, ${g.alpha})
+          ON CONFLICT (grade) DO NOTHING
+        `);
+      }
       this.logger.success('Replenishment seeding completed');
-      return { service: 'Replenishment', success: true, itemsApplied: 1, duration: Date.now() - start };
+      return {
+        service: 'Replenishment',
+        success: true,
+        itemsApplied: 1 + REPLENISHMENT_GRADE_RULE_SEEDS.length,
+        duration: Date.now() - start,
+      };
     } catch (error: any) {
       this.logger.error('Replenishment seeding failed', error);
-      return { service: 'Replenishment', success: false, itemsApplied: 0, duration: Date.now() - start, error: error.message };
+      return {
+        service: 'Replenishment',
+        success: false,
+        itemsApplied: 0,
+        duration: Date.now() - start,
+        error: error.message,
+      };
     }
   }
 }

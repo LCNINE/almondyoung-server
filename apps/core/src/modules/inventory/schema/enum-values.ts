@@ -39,6 +39,7 @@ import {
   demandSourceEnum,
   demandPatternEnum,
   demandGradeEnum,
+  replenishmentOverrideModeEnum,
 } from './inventory.schema';
 
 export const returnStatusValues = returnStatusEnum.enumValues;
@@ -160,3 +161,6 @@ export type DemandPatternEnum = (typeof demandPatternValues)[number];
 
 export const demandGradeValues = demandGradeEnum.enumValues;
 export type DemandGradeEnum = (typeof demandGradeValues)[number];
+
+export const replenishmentOverrideModeValues = replenishmentOverrideModeEnum.enumValues;
+export type ReplenishmentOverrideModeEnum = (typeof replenishmentOverrideModeValues)[number];

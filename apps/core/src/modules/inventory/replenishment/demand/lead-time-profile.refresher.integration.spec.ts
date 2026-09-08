@@ -135,8 +135,12 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
   }
 
   function build(trx: DbTx) {
-    const dbService = boundDbService(trx);
-    return new LeadTimeProfileRefresher(dbService, new ReplenishmentSettingsReader(dbService));
+    return new LeadTimeProfileRefresher(boundDbService(trx));
+  }
+
+  // 잡이 run() 초입에서 한 번 읽어 세 단계에 넘기는 그 값을, 스펙에서도 같은 Reader 로 읽어 넘긴다.
+  function readSettings(trx: DbTx) {
+    return new ReplenishmentSettingsReader(boundDbService(trx)).read(trx);
   }
 
   it('L1: 발주 라인 → 첫 입고. 관측 2건이면 평균 · 표본 표준편차, 1건이면 std null, 창 밖은 제외', async () => {
@@ -186,7 +190,7 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
         receivedAts: ['2025-01-10T00:00:00Z'],
       });
 
-      const result = await build(trx).refreshAll({ today: TODAY }, trx);
+      const result = await build(trx).refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       expect(result.windowFrom).toBe('2025-09-08');
       expect(result.windowTo).toBe(TODAY);
       expect(result.suppliers).toBeGreaterThanOrEqual(2);
@@ -227,7 +231,7 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
         receivedAts: ['2026-08-13T00:00:00Z'],
       });
 
-      await build(trx).refreshAll({ today: TODAY }, trx);
+      await build(trx).refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const rows = await trx
         .select()
         .from(wmsTables.routeLeadTimeProfiles)
@@ -269,8 +273,8 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
         receivedAts: ['2026-08-11T00:00:00Z'],
       });
       const refresher = build(trx);
-      await refresher.refreshAll({ today: TODAY }, trx);
-      await refresher.refreshAll({ today: TODAY }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const rows = await trx
         .select()
         .from(wmsTables.supplierLeadTimeProfiles)

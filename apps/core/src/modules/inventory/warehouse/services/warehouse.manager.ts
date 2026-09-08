@@ -86,15 +86,24 @@ export class WarehouseManager {
       throw new ConflictError('기본 창고는 삭제할 수 없습니다.');
     }
 
-    const inUse = await this.reader.isInUse(id);
-    if (inUse) {
-      throw new ConflictError('사용 중인 창고는 삭제할 수 없습니다.');
-    }
+    // 판정과 DELETE 를 한 트랜잭션에 둔다 — 따로 읽으면 "규칙 없음" 을 본 뒤 규칙이 들어와도
+    // 삭제가 그대로 진행되어, 막으려던 postgres 23503 이 결국 500 으로 새어 나온다.
+    const [deleted] = await this.dbService.run(async (trx) => {
+      const inUse = await this.reader.isInUse(id, trx);
+      if (inUse) {
+        throw new ConflictError('사용 중인 창고는 삭제할 수 없습니다.');
+      }
 
-    const [deleted] = await this.dbService.run(
-      async (trx) => trx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).returning(),
-      tx,
-    );
+      // 보충 경로 규칙의 두 FK 는 restrict 다(스펙 §8.1) — 여기서 세지 않으면 DELETE 가
+      // postgres 23503 으로 죽고 그건 ApplicationException 이 아니라 500 이다. 규칙 행을 같이
+      // 지우지 않는 것이 restrict 를 고른 이유이므로, 사람에게 무엇을 먼저 지울지 알린다.
+      const routeRules = await this.reader.countReplenishmentRouteRules(id, trx);
+      if (routeRules > 0) {
+        throw new ConflictError('보충 경로 규칙이 있어 삭제할 수 없습니다. 재고 보충 규칙 화면에서 먼저 삭제하세요.');
+      }
+
+      return trx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).returning();
+    }, tx);
 
     if (!deleted) {
       throw new NotFoundError(`창고를 찾을 수 없습니다: ${id}`);

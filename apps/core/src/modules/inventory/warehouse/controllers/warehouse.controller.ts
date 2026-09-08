@@ -73,7 +73,10 @@ export class WarehouseController {
   @ApiResponse({ status: 200, description: '창고가 삭제되었습니다.' })
   @ApiResponse({ status: 403, description: '창고 관리 권한이 없습니다.' })
   @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 409, description: '기본 창고이거나 사용 중인 창고는 삭제할 수 없습니다.' })
+  @ApiResponse({
+    status: 409,
+    description: '기본 창고 · 사용 중인 창고 · 보충 경로 규칙이 있는 창고는 삭제할 수 없습니다.',
+  })
   async remove(@Param('id') id: string) {
     return this.warehouseService.remove(id);
   }

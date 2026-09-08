@@ -1,14 +1,17 @@
-import { IsOptional, IsString, IsEnum, IsInt, Min, IsBoolean, IsDateString, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsIn, IsInt, Min, IsBoolean, IsDateString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { StockTypeEnum, stockTypeValues } from '../../schema/enum-values';
 
 export enum StockDisplayMode {
   ALL = 'all',
-  BELOW_SAFETY = 'below_safety',
   WITH_STOCK = 'with_stock',
   OUT_OF_STOCK = 'out_of_stock',
 }
+
+/** sku-catalog.reader 가 `wmsTables.skus[sortField]` 로 동적 접근하는 정렬 키. 실제 지원 키만 화이트리스트. */
+export const SKU_SORT_FIELDS = ['name', 'code', 'createdAt', 'updatedAt'] as const;
+export type SkuSortField = (typeof SKU_SORT_FIELDS)[number];
 
 export class AdvancedInventoryFiltersDto {
   // Basic search
@@ -161,13 +164,13 @@ export class AdvancedInventoryFiltersDto {
   // Sorting
   @ApiProperty({
     description: '정렬 필드 (Sort field)',
-    enum: ['name', 'code', 'createdAt', 'updatedAt', 'safetyStock'],
+    enum: SKU_SORT_FIELDS,
     required: false,
     example: 'createdAt',
   })
-  @IsString()
+  @IsIn(SKU_SORT_FIELDS)
   @IsOptional()
-  sortBy?: 'name' | 'code' | 'createdAt' | 'updatedAt' | 'safetyStock';
+  sortBy?: SkuSortField;
 
   @ApiProperty({
     description: '정렬 방향 (Sort order)',

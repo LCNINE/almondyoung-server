@@ -1,12 +1,31 @@
-export type SuggestionFlag = 'default_lead_time' | 'supplier_unknown' | 'low_confidence' | 'legacy_only';
+import { DemandPattern } from '../policy/classification';
+import { DemandGrade } from '../demand/demand-profile.calculator';
+
+export type SuggestionFlag = 'default_lead_time' | 'supplier_unknown' | 'low_confidence';
+
+export interface AxisLevels {
+  safetyStock: number;
+  reorderPoint: number;
+  targetLevel: number;
+  leadTimeDays: number;
+}
 
 export interface SkuStockInput {
   skuId: string;
   skuCode: string;
   skuName: string;
   supplier: { id: string; name: string } | null;
-  /** C 단계: skus.safety_stock. A+B 가 계산값으로 교체 */
-  safetyStock: number;
+  /** 공급사 default_warehouse_id — 발주 제안의 출발 창고 */
+  sourceWarehouseId: string | null;
+  pattern: DemandPattern;
+  grade: DemandGrade;
+  confidence: 'normal' | 'low';
+  demand: { dailyMean: number; dailyStd: number };
+  legacyReorderPoint: number;
+  /** 정책 층(B)이 축마다 계산한 수준. 조립기는 계산하지 않고 쓴다 */
+  levels: { company: AxisLevels; sellable: AxisLevels };
+  /** 파라미터 층이 정한 플래그 (default_lead_time · low_confidence). supplier_unknown 은 조립기가 붙인다 */
+  parameterFlags: SuggestionFlag[];
   lot: { moq: number | null; packingUnit: number | null };
   excluded: boolean;
   /** 전 창고 ON_HAND 합 (판매·비판매 모두) */
@@ -25,22 +44,18 @@ export interface SkuStockInput {
   onOrderTotal: number;
   onOrderNonSellable: number;
   inTransitToSellable: number;
-  /** draft 이동 지시서에 이미 실린 planned 합 */
-  draftTransferPlanned: number;
+  /** draft 이동 지시서에 이미 실린 planned 합 — 비판매 출발 창고별 */
+  draftTransferPlanned: Array<{ fromWarehouseId: string; qty: number }>;
 }
 
 export interface AssembleContext {
   sellableWarehouseId: string;
 }
 
-export interface AxisView {
+export interface AxisView extends AxisLevels {
   onHand: number;
   reserved: number;
   position: number;
-  safetyStock: number;
-  reorderPoint: number;
-  targetLevel: number;
-  leadTimeDays: number;
 }
 
 export interface CompanyAxis extends AxisView {
@@ -70,9 +85,9 @@ export interface SuggestionRow {
   skuCode: string;
   skuName: string;
   supplier: { id: string; name: string } | null;
-  pattern: 'insufficient';
-  grade: 'C';
-  confidence: 'low';
+  pattern: DemandPattern;
+  grade: DemandGrade;
+  confidence: 'normal' | 'low';
   demand: { dailyMean: number; dailyStd: number };
   company: CompanyAxis;
   sellable: SellableAxis;

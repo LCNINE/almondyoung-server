@@ -26,8 +26,8 @@ export class SuggestionSupplierDto {
 }
 
 export class SuggestionDemandDto {
-  @ApiProperty({ description: '일평균 수요. C 단계는 0' }) dailyMean: number;
-  @ApiProperty({ description: '일 수요 표준편차. C 단계는 0' }) dailyStd: number;
+  @ApiProperty({ description: '일평균 수요 (파라미터 창)' }) dailyMean: number;
+  @ApiProperty({ description: '일 수요 표준편차' }) dailyStd: number;
 }
 
 export class CompanyAxisDto {
@@ -53,7 +53,11 @@ export class SellableAxisDto {
   @ApiProperty() reorderPoint: number;
   @ApiProperty() targetLevel: number;
   @ApiProperty() leadTimeDays: number;
-  @ApiPropertyOptional({ nullable: true, description: '예상 커버 일수. C 단계는 null' }) daysOfCover: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '예상 커버 일수 = 판매창고 재고위치 ÷ 일평균. 일평균 0 이면 null',
+  })
+  daysOfCover: number | null;
 }
 
 export class TransferLineSuggestionDto {
@@ -71,7 +75,7 @@ export class SuggestionActionDto {
   @ApiPropertyOptional({ type: [TransferLineSuggestionDto] }) lines?: TransferLineSuggestionDto[];
 }
 
-export const SUGGESTION_FLAGS = ['default_lead_time', 'supplier_unknown', 'low_confidence', 'legacy_only'] as const;
+export const SUGGESTION_FLAGS = ['default_lead_time', 'supplier_unknown', 'low_confidence'] as const;
 
 export class ReplenishmentSuggestionRowDto {
   @ApiProperty() skuId: string;
@@ -86,11 +90,62 @@ export class ReplenishmentSuggestionRowDto {
   @ApiProperty({ type: SellableAxisDto }) sellable: SellableAxisDto;
   @ApiProperty({ type: [SuggestionActionDto] }) actions: SuggestionActionDto[];
   @ApiProperty({ enum: SUGGESTION_FLAGS, isArray: true }) flags: string[];
-  @ApiProperty({ description: '레거시 방식 재주문점 (μ_D·μ_L). C 단계는 안전재고와 같다' }) legacyReorderPoint: number;
+  @ApiProperty({ description: '레거시 방식 재주문점 (μ_D(90일)·μ_L 전사)' }) legacyReorderPoint: number;
 }
 
 export class ReplenishmentSuggestionListDto {
   @ApiProperty({ type: [ReplenishmentSuggestionRowDto] }) items: ReplenishmentSuggestionRowDto[];
   @ApiProperty({ description: '판정한 SKU 수 (excluded 제외)' }) evaluated: number;
   @ApiProperty({ description: '조건에 맞는 SKU 총수 (limit 적용 전)' }) total: number;
+}
+
+export class SkuDemandProfileDto {
+  @ApiProperty({ enum: ['smooth', 'intermittent', 'erratic', 'lumpy', 'insufficient', 'none'] }) pattern: string;
+  @ApiProperty({ enum: ['A', 'B', 'C'] }) grade: string;
+  @ApiPropertyOptional({ nullable: true }) adi: number | null;
+  @ApiPropertyOptional({ nullable: true }) cv2: number | null;
+  @ApiProperty() dailyMean: number;
+  @ApiProperty() dailyStd: number;
+  @ApiProperty() dailyMean90: number;
+  @ApiPropertyOptional({ nullable: true }) sizeMean: number | null;
+  @ApiPropertyOptional({ nullable: true }) sizeStd: number | null;
+  @ApiPropertyOptional({ nullable: true }) intervalMean: number | null;
+  @ApiProperty() historyDays: number;
+  @ApiProperty() demandEvents: number;
+  @ApiProperty() classificationFrom: string;
+  @ApiProperty() classificationTo: string;
+  @ApiProperty() paramFrom: string;
+  @ApiProperty() paramTo: string;
+  @ApiProperty() computedAt: string;
+}
+
+export class SourcedNumberDto {
+  @ApiProperty() value: number;
+  @ApiProperty({ enum: ['override', 'grade', 'observation', 'supplier_rule', 'route_rule', 'global_default'] })
+  source: string;
+}
+
+export class ResolvedSegmentDto {
+  @ApiProperty() meanDays: number;
+  @ApiProperty() stdDays: number;
+  @ApiProperty({ enum: ['observation', 'supplier_rule', 'route_rule', 'global_default'] }) source: string;
+}
+
+export class EffectiveParametersDto {
+  @ApiProperty() excluded: boolean;
+  @ApiProperty({ type: SourcedNumberDto }) alpha: SourcedNumberDto;
+  @ApiProperty({ type: ResolvedSegmentDto }) l1: ResolvedSegmentDto;
+  /** R1(i): 경로 규칙·관측이 없어도 전역 이동 기본으로 떨어지므로 null 이 아니다. */
+  @ApiProperty({ type: ResolvedSegmentDto }) l2: ResolvedSegmentDto;
+  @ApiProperty({ type: SourcedNumberDto }) coverDays: SourcedNumberDto;
+  @ApiProperty({ type: SourcedNumberDto }) transferCoverDays: SourcedNumberDto;
+  @ApiPropertyOptional({ nullable: true }) overrideSafetyStock: number | null;
+  @ApiProperty() usesDefaultLeadTime: boolean;
+}
+
+export class ReplenishmentSkuDetailDto extends ReplenishmentSuggestionRowDto {
+  @ApiPropertyOptional({ type: SkuDemandProfileDto, nullable: true, description: '야간 배치가 아직 안 돌았으면 null' })
+  profile: SkuDemandProfileDto | null;
+
+  @ApiProperty({ type: EffectiveParametersDto }) parameters: EffectiveParametersDto;
 }

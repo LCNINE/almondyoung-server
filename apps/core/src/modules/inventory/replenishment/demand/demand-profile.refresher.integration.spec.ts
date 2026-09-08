@@ -53,8 +53,13 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
   }
 
   function build(trx: DbTx) {
-    const dbService = boundDbService(trx);
-    return new DemandProfileRefresher(dbService, new ReplenishmentSettingsReader(dbService));
+    return new DemandProfileRefresher(boundDbService(trx));
+  }
+
+  // 잡이 run() 초입에서 한 번 읽어 세 단계에 넘기는 그 값을, 스펙에서도 같은 Reader 로 읽어 넘긴다.
+  // 그래서 아래 "설정의 창 길이를 따른다" 케이스는 여전히 DB 에 쓴 설정이 실제로 반영되는지를 본다.
+  function readSettings(trx: DbTx) {
+    return new ReplenishmentSettingsReader(boundDbService(trx)).read(trx);
   }
 
   async function readProfiles(trx: DbTx, skuIds: string[]) {
@@ -69,7 +74,7 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const silent = await seedSku(trx, holderId);
       await seedDaily(trx, steady.skuId, '2026-06-01', 99, 10, 1_000_000_000); // 로컬 DB 의 다른 SKU 를 압도
 
-      const result = await build(trx).refreshAll({ today: TODAY }, trx);
+      const result = await build(trx).refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       expect(result.skus).toBeGreaterThanOrEqual(2);
 
       const rows = await readProfiles(trx, [steady.skuId, silent.skuId]);
@@ -107,10 +112,10 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const { skuId } = await seedSku(trx, holderId);
       await seedDaily(trx, skuId, '2026-06-01', 99, 10, 10000);
       const refresher = build(trx);
-      await refresher.refreshAll({ today: TODAY }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const [first] = await readProfiles(trx, [skuId]);
       await new Promise((r) => setTimeout(r, 5));
-      await refresher.refreshAll({ today: TODAY }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const [second] = await readProfiles(trx, [skuId]);
       expect(second.pattern).toBe(first.pattern);
       expect(second.dailyMean).toBe(first.dailyMean);
@@ -128,7 +133,7 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const poor = await seedSku(trx, holderId);
       await seedDaily(trx, rich.skuId, '2026-06-01', 99, 10, 1_000_000_000); // 로컬 DB 의 다른 SKU 를 압도
       await seedDaily(trx, poor.skuId, '2026-06-01', 99, 10, null);
-      await build(trx).refreshAll({ today: TODAY }, trx);
+      await build(trx).refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const rows = await readProfiles(trx, [rich.skuId, poor.skuId]);
       expect(rows.find((r) => r.skuId === rich.skuId)?.grade).toBe('A');
       expect(rows.find((r) => r.skuId === poor.skuId)?.grade).toBe('C');
@@ -141,10 +146,10 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
       const refresher = build(trx);
-      await refresher.refreshAll({ today: TODAY }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       expect(await readProfiles(trx, [skuId])).toHaveLength(1);
       await trx.update(wmsTables.skus).set({ isDeleted: true }).where(eq(wmsTables.skus.id, skuId));
-      await refresher.refreshAll({ today: TODAY }, trx);
+      await refresher.refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       expect(await readProfiles(trx, [skuId])).toHaveLength(0);
     });
   });
@@ -159,7 +164,7 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
       await seedDaily(trx, skuId, '2026-06-01', 99, 10, 100);
-      await build(trx).refreshAll({ today: TODAY }, trx);
+      await build(trx).refreshAll({ today: TODAY, settings: await readSettings(trx) }, trx);
       const [row] = await readProfiles(trx, [skuId]);
       expect(row).toMatchObject({ classificationFrom: '2026-08-09', historyDays: 30, demandEvents: 30 });
     });
