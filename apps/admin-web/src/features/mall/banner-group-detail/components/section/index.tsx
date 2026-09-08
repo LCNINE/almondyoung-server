@@ -1,6 +1,5 @@
 'use client';
 
-/** 시안(Figma 10:40829) 규격 */
 export function BannerSection({
   title,
   action,

@@ -3,13 +3,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { useBannerGroups, useUpdateBannerGroup } from '@/lib/services/products';
 import type {
   BannerGroupDto,
   UpdateBannerGroupDto,
 } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { ActiveSwitch } from '@/components/common/active-switch';
 import { formatRatio } from '../../banner-image-guide';
 import {
   BANNER_GROUP_PRESETS,
@@ -18,7 +18,7 @@ import {
   matchPreset,
   renderedHeight,
 } from '../../../banner-groups/banner-group-presets';
-import { BannerSection, FieldLabel } from '../section';
+import { BannerSection, FieldLabel} from '../section';
 
 type Props = {
   group: BannerGroupDto;
@@ -98,7 +98,7 @@ export function GroupForm({ group }: Props) {
       action={
         <div className="ml-auto flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Switch
+            <ActiveSwitch
               id="isActive"
               checked={form.isActive ?? true}
               onCheckedChange={(checked) =>
@@ -172,33 +172,33 @@ export function GroupForm({ group }: Props) {
                     {visibleCategories.map((c) => {
                       const selected = form.category === c;
                       return (
-                        <button
+                        <Button
                           key={c}
                           type="button"
+                          size="sm"
+                          variant={selected ? 'default' : 'outline'}
+                          className="h-7 rounded-full border text-xs"
                           onClick={() =>
                             setForm((prev) => ({
                               ...prev,
                               category: selected ? undefined : c,
                             }))
                           }
-                          className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            selected
-                              ? 'border-[#007aff] bg-[#007aff]/10 font-medium text-[#007aff]'
-                              : 'border-[#e4e4e7] bg-white text-[#52525b] hover:border-[#c6c6c6]'
-                          }`}
                         >
                           {c}
-                        </button>
+                        </Button>
                       );
                     })}
                     {hiddenCount > 0 && (
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
                         onClick={() => setShowAllCategories(true)}
-                        className="text-muted-foreground hover:text-foreground rounded-full border border-dashed border-[#c6c6c6] px-2.5 py-1 text-xs"
                       >
                         +{hiddenCount}개 더
-                      </button>
+                      </Button>
                     )}
                     {showAllCategories &&
                       usedCategories.length > CATEGORY_CHIP_LIMIT && (
@@ -253,7 +253,7 @@ export function GroupForm({ group }: Props) {
                     type="button"
                     variant={preset?.label === p.label ? 'default' : 'outline'}
                     size="sm"
-                    className={`h-7 text-xs ${preset?.label === p.label ? '' : 'bg-white'}`}
+                    className="h-7 border text-xs"
                     title={p.hint}
                     onClick={() =>
                       setForm((prev) => ({

@@ -12,12 +12,13 @@ import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { ImageUploadField } from '@/components/common/image-upload-field';
 import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useBannerGroup, useCreateBanner } from '@/lib/services/products';
 import type { CreateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { ActiveSwitch } from '@/components/common/active-switch';
+
 import { bannerImageGuide, HERO_GROUP_CODE } from '../../banner-image-guide';
 import { BannerListFields, heroListError } from '../banner-list-fields';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
@@ -227,7 +228,7 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
           </div>
 
           <div className="flex items-center gap-3">
-            <Switch
+            <ActiveSwitch
               id="b-isActive"
               checked={form.isActive ?? true}
               onCheckedChange={(checked) =>

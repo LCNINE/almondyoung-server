@@ -4,66 +4,50 @@ import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { useCreateBannerGroup } from '@/lib/services/products';
-import type { CreateBannerGroupDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
-import { formatRatio } from '../../../banner-group-detail/banner-image-guide';
-import {
-  BANNER_GROUP_PRESETS,
-  MOBILE_VIEWPORT,
-  PC_VIEWPORT,
-  matchPreset,
-  renderedHeight,
-} from '../../banner-group-presets';
+import { ActiveSwitch } from '@/components/common/active-switch';
+
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-const EMPTY: CreateBannerGroupDto = { code: '', title: '', isActive: true };
+/** code 는 NOT NULL UNIQUE 인데 시안에는 입력칸이 없다 — 상세에서도 읽기 전용이라 여기서 짓는다 */
+const nextCode = () => `AY${Date.now().toString().slice(-6)}`;
 
 export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
-  const [form, setForm] = useState<CreateBannerGroupDto>(EMPTY);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [isActive, setIsActive] = useState(true);
   const createMutation = useCreateBannerGroup();
 
-  const set =
-    (key: keyof CreateBannerGroupDto) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({ ...prev, [key]: e.target.value || undefined }));
-
-  const setNum =
-    (key: keyof CreateBannerGroupDto) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({
-        ...prev,
-        [key]: e.target.value ? Number(e.target.value) : undefined,
-      }));
-
   const handleClose = () => {
-    setForm(EMPTY);
+    setTitle('');
+    setDescription('');
+    setIsActive(true);
     onOpenChange(false);
   };
 
   const handleSubmit = async () => {
-    if (!form.code?.trim()) {
-      toast.error('코드를 입력해 주세요.');
-      return;
-    }
-    if (!form.title?.trim()) {
-      toast.error('제목을 입력해 주세요.');
+    if (!title.trim()) {
+      toast.error('배너 그룹명을 입력해 주세요.');
       return;
     }
     try {
-      await createMutation.mutateAsync(form);
+      await createMutation.mutateAsync({
+        code: nextCode(),
+        title: title.trim(),
+        description: description.trim() || undefined,
+        isActive,
+      });
       toast.success('배너 그룹이 생성되었습니다.');
       handleClose();
     } catch {
@@ -73,181 +57,98 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>배너 그룹 생성</DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="code">
-              코드 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="code"
-              placeholder="예: MAIN_TOP"
-              value={form.code}
-              onChange={set('code')}
+        <div className="flex items-start gap-8 py-2">
+          <div className="grid flex-1 gap-6">
+            <Field
+              label="배너 그룹명"
+              hint="배너 그룹명을 입력하세요."
+              required
+              htmlFor="bg-title"
+            >
+              <Input
+                id="bg-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="배너 그룹명"
+                className="h-11 rounded-[6px] border-[#e4e4e7] shadow-none"
+              />
+            </Field>
+
+            <Field
+              label="배너 그룹 설명"
+              hint="배너 그룹의 설명을 입력하세요."
+              htmlFor="bg-description"
+            >
+              <Input
+                id="bg-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="그룹 설명"
+                className="h-11 rounded-[6px] border-[#e4e4e7] shadow-none"
+              />
+            </Field>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3 pt-7">
+            <Button variant="outline" className="h-10 px-6" onClick={handleClose}>
+              취소
+            </Button>
+            <Button
+              className="h-10 px-6"
+              onClick={handleSubmit}
+              disabled={createMutation.isPending}
+            >
+              저장
+            </Button>
+            <ActiveSwitch
+              checked={isActive}
+              onCheckedChange={setIsActive}
+              aria-label="생성 후 바로 노출"
             />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="title">
-              제목 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="title"
-              placeholder="배너 그룹 제목"
-              value={form.title}
-              onChange={set('title')}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="category">카테고리</Label>
-            <Input
-              id="category"
-              placeholder="예: main, event"
-              value={form.category ?? ''}
-              onChange={set('category')}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="description">설명</Label>
-            <Input
-              id="description"
-              value={form.description ?? ''}
-              onChange={set('description')}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label>규격 프리셋</Label>
-            <div className="flex flex-wrap gap-2">
-              {BANNER_GROUP_PRESETS.map((preset) => (
-                <Button
-                  key={preset.label}
-                  type="button"
-                  variant={
-                    matchPreset(form)?.label === preset.label ? 'default' : 'outline'
-                  }
-                  size="sm"
-                  title={preset.hint}
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      pcWidth: preset.pcWidth,
-                      pcHeight: preset.pcHeight,
-                      mobileWidth: preset.mobileWidth,
-                      mobileHeight: preset.mobileHeight,
-                    }))
-                  }
-                >
-                  {preset.label}
-                </Button>
-              ))}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {matchPreset(form)?.hint ??
-                '자리에 맞는 프리셋을 고르면 아래 사이즈가 채워집니다'}
-            </p>
-            <p className="text-muted-foreground text-xs">
-              입력하는 숫자는 <strong className="font-medium">비율</strong>입니다 —
-              1920×480 은 &ldquo;4:1 로 그려라&rdquo;는 뜻이고, 실제 높이는 화면 폭에
-              따라 정해집니다 ({PC_VIEWPORT}px 화면이면 360px).
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-1.5">
-              <Label>
-                PC 비율
-                {form.pcWidth && form.pcHeight ? (
-                  <span className="text-muted-foreground ml-1 font-normal">
-                    {formatRatio(form.pcWidth, form.pcHeight)} → 실제{' '}
-                    {renderedHeight(form.pcWidth, form.pcHeight, PC_VIEWPORT)}px
-                  </span>
-                ) : null}
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  type="number"
-                  placeholder="너비"
-                  value={form.pcWidth ?? ''}
-                  onChange={setNum('pcWidth')}
-                />
-                <Input
-                  type="number"
-                  placeholder="높이"
-                  value={form.pcHeight ?? ''}
-                  onChange={setNum('pcHeight')}
-                />
-              </div>
-            </div>
-            <div className="grid gap-1.5">
-              <Label>
-                모바일 비율
-                {form.mobileWidth && form.mobileHeight ? (
-                  <span className="text-muted-foreground ml-1 font-normal">
-                    {formatRatio(form.mobileWidth, form.mobileHeight)} → 실제{' '}
-                    {renderedHeight(
-                      form.mobileWidth,
-                      form.mobileHeight,
-                      MOBILE_VIEWPORT,
-                    )}
-                    px
-                  </span>
-                ) : null}
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  type="number"
-                  placeholder="너비"
-                  value={form.mobileWidth ?? ''}
-                  onChange={setNum('mobileWidth')}
-                />
-                <Input
-                  type="number"
-                  placeholder="높이"
-                  value={form.mobileHeight ?? ''}
-                  onChange={setNum('mobileHeight')}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="sortOrder">정렬순서</Label>
-            <Input
-              id="sortOrder"
-              type="number"
-              value={form.sortOrder ?? ''}
-              onChange={setNum('sortOrder')}
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Switch
-              id="isActive"
-              checked={form.isActive ?? true}
-              onCheckedChange={(checked) =>
-                setForm((prev) => ({ ...prev, isActive: checked }))
-              }
-            />
-            <Label htmlFor="isActive">활성</Label>
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
-            취소
-          </Button>
-          <Button onClick={handleSubmit} disabled={createMutation.isPending}>
-            생성
-          </Button>
+        <DialogFooter className="sm:justify-start">
+          <p className="text-muted-foreground text-xs">
+            배너 크기와 카테고리는 만든 뒤 상세 화면에서 정합니다.
+          </p>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  required,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint: string;
+  required?: boolean;
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[110px_1fr] items-center gap-4">
+      <label
+        htmlFor={htmlFor}
+        className="text-[15px] font-bold whitespace-nowrap text-[#1f2937]"
+      >
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </label>
+      <div>
+        <p className="text-muted-foreground mb-1.5 text-[13px]">{hint}</p>
+        {children}
+      </div>
+    </div>
   );
 }

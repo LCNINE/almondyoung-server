@@ -13,7 +13,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import {
   useBannersByGroup,
   useUpdateBannerGroup,
@@ -21,6 +20,8 @@ import {
 import type { BannerGroupDto } from '@/lib/types/dto/products';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { toast } from 'sonner';
+import { ActiveSwitch } from '@/components/common/active-switch';
+
 
 /** 시안(Figma 10:40814) 실측 */
 const THUMB_SLOTS = 3;
@@ -131,7 +132,7 @@ export function BannerGroupRow({ group }: Props) {
       </div>
 
       <div className="flex justify-center">
-        <Switch
+        <ActiveSwitch
           checked={group.isActive}
           disabled={updateMutation.isPending}
           onCheckedChange={handleToggle}
