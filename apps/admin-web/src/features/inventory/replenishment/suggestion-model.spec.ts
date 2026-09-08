@@ -1,7 +1,10 @@
 import type { ReplenishmentSuggestionRowDto } from '@/lib/types/dto/inventory';
 import {
   FLAG_LABELS,
+  PO_TYPE_LABELS,
+  httpStatusOf,
   purchaseAction,
+  serverMessageOf,
   summarizeActions,
   toCartPayload,
   toTransferPayload,
@@ -139,5 +142,26 @@ describe('suggestion-model', () => {
       'low_confidence',
       'supplier_unknown',
     ]);
+  });
+
+  it('발주 유형 라벨은 한국어다', () => {
+    expect(PO_TYPE_LABELS.foreign).toBe('해외');
+    expect(PO_TYPE_LABELS.domestic).toBe('국내');
+  });
+
+  it('httpStatusOf 는 axios 에러의 status 만 뽑고, 아니면 null', () => {
+    expect(httpStatusOf({ response: { status: 403 } })).toBe(403);
+    expect(httpStatusOf(new Error('boom'))).toBeNull();
+    expect(httpStatusOf(null)).toBeNull();
+    expect(httpStatusOf({ response: { status: '403' } })).toBeNull();
+  });
+
+  it('serverMessageOf 는 axios 에러의 response.data.message 만 뽑고, 아니면 null', () => {
+    expect(
+      serverMessageOf({ response: { data: { message: '창고를 확인하세요' } } })
+    ).toBe('창고를 확인하세요');
+    expect(serverMessageOf(new Error('boom'))).toBeNull();
+    expect(serverMessageOf(null)).toBeNull();
+    expect(serverMessageOf({ response: { data: { message: 42 } } })).toBeNull();
   });
 });

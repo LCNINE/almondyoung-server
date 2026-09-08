@@ -79,3 +79,33 @@ export const FLAG_LABELS: Record<SuggestionFlag, string> = {
   low_confidence: '신뢰도 낮음',
   legacy_only: '정적 안전재고',
 };
+
+export const PO_TYPE_LABELS: Record<PurchaseOrderType, string> = {
+  foreign: '해외',
+  domestic: '국내',
+};
+
+/** axios 에러의 `response.status`. 없으면 null — 응답 자체가 없는 네트워크 오류 등. */
+export function httpStatusOf(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) return null;
+  if (!('response' in error)) return null;
+  const { response } = error;
+  if (typeof response !== 'object' || response === null) return null;
+  if (!('status' in response)) return null;
+  const { status } = response;
+  return typeof status === 'number' ? status : null;
+}
+
+/** axios 에러의 `response.data.message`. 서버가 낸 문구가 아니면 null. */
+export function serverMessageOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  if (!('response' in error)) return null;
+  const { response } = error;
+  if (typeof response !== 'object' || response === null) return null;
+  if (!('data' in response)) return null;
+  const { data } = response;
+  if (typeof data !== 'object' || data === null) return null;
+  if (!('message' in data)) return null;
+  const { message } = data;
+  return typeof message === 'string' ? message : null;
+}

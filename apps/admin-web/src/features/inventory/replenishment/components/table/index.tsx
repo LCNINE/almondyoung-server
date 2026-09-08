@@ -18,13 +18,17 @@ import {
   useCreateTransferOrder,
 } from '@/lib/services/inventory';
 import type {
+  PurchaseOrderType,
   ReplenishmentSuggestionRowDto,
   SuggestionActionFilter,
 } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import {
   FLAG_LABELS,
+  PO_TYPE_LABELS,
+  httpStatusOf,
   purchaseAction,
+  serverMessageOf,
   summarizeActions,
   toCartPayload,
   toTransferPayload,
@@ -39,10 +43,17 @@ const FILTERS: Array<{ value: SuggestionActionFilter; label: string }> = [
   { value: 'transfer', label: '이동' },
 ];
 
+const PO_TYPES: Array<{ value: PurchaseOrderType; label: string }> = [
+  { value: 'foreign', label: PO_TYPE_LABELS.foreign },
+  { value: 'domestic', label: PO_TYPE_LABELS.domestic },
+];
+
 export function ReplenishmentTable() {
   const [action, setAction] = useState<SuggestionActionFilter>('all');
+  const [poType, setPoType] = useState<PurchaseOrderType>('foreign');
   const [detailSkuId, setDetailSkuId] = useState<string | null>(null);
-  const { data, isLoading, isError } = useReplenishmentSuggestions(action);
+  const { data, isLoading, isError, error } =
+    useReplenishmentSuggestions(action);
   const addToCart = useAddToCart();
   const createTransfer = useCreateTransferOrder();
 
@@ -50,9 +61,11 @@ export function ReplenishmentTable() {
     const purchase = purchaseAction(row);
     if (!purchase) return;
     try {
-      // C 단계엔 출발 창고 정보가 없어 유형을 해외로 둔다 — 카트에서 바꿀 수 있다.
-      await addToCart.mutateAsync(toCartPayload(row, purchase, 'foreign'));
-      toast.success(`${row.skuName} ${purchase.qty}개를 카트에 담았습니다.`);
+      // 발주 유형은 카트에서 못 바꾼다 — 여기서 고른 값이 그대로 PO 에 찍힌다.
+      await addToCart.mutateAsync(toCartPayload(row, purchase, poType));
+      toast.success(
+        `${row.skuName} ${purchase.qty}개를 ${PO_TYPE_LABELS[poType]} 발주 카트에 담았습니다.`
+      );
     } catch {
       toast.error('카트 담기에 실패했습니다.');
     }
@@ -68,10 +81,18 @@ export function ReplenishmentTable() {
       toast.success(
         `이동 지시서 초안을 만들었습니다 (${transferOrderId.slice(0, 8)}…).`
       );
-    } catch {
-      toast.error(
-        '이동 지시서 생성에 실패했습니다. 재고 원장 조정 권한이 필요합니다.'
-      );
+    } catch (e) {
+      const status = httpStatusOf(e);
+      const serverMessage = serverMessageOf(e);
+      if (status === 403) {
+        toast.error(
+          '이동 지시서 생성에 실패했습니다. 재고 원장 조정 권한이 필요합니다.'
+        );
+      } else if (serverMessage) {
+        toast.error(serverMessage);
+      } else {
+        toast.error('이동 지시서 생성에 실패했습니다.');
+      }
     }
   };
 
@@ -80,30 +101,49 @@ export function ReplenishmentTable() {
   return (
     <>
       <div className="flex items-center justify-between px-4 pt-4">
-        <Tabs
-          value={action}
-          onValueChange={(v) =>
-            setAction(FILTERS.find((f) => f.value === v)?.value ?? 'all')
-          }
-        >
-          <TabsList>
-            {FILTERS.map((f) => (
-              <TabsTrigger key={f.value} value={f.value}>
-                {f.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-4">
+          <Tabs
+            value={action}
+            onValueChange={(v) =>
+              setAction(FILTERS.find((f) => f.value === v)?.value ?? 'all')
+            }
+          >
+            <TabsList>
+              {FILTERS.map((f) => (
+                <TabsTrigger key={f.value} value={f.value}>
+                  {f.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Tabs
+            value={poType}
+            onValueChange={(v) =>
+              setPoType(PO_TYPES.find((t) => t.value === v)?.value ?? 'foreign')
+            }
+          >
+            <TabsList>
+              {PO_TYPES.map((t) => (
+                <TabsTrigger key={t.value} value={t.value}>
+                  발주 유형: {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
         {data && (
           <p className="text-xs text-muted-foreground">
-            판정 {data.evaluated} · 제안 {rows.length}
+            판정 {data.evaluated} · 제안 {data.total}
+            {data.total > rows.length ? ` · 상위 ${rows.length}개 표시` : ''}
           </p>
         )}
       </div>
 
       {isError ? (
         <p className="p-4 text-sm text-destructive">
-          제안을 불러오지 못했습니다. 판매 창고가 하나인지 확인하세요.
+          {httpStatusOf(error) === 409
+            ? '제안을 불러오지 못했습니다. 판매 창고가 하나인지 확인하세요.'
+            : '제안을 불러오지 못했습니다.'}
         </p>
       ) : isLoading ? (
         <p className="p-4 text-sm text-muted-foreground">로딩 중...</p>
@@ -168,7 +208,10 @@ export function ReplenishmentTable() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={addToCart.isPending}
+                      disabled={
+                        addToCart.isPending &&
+                        addToCart.variables?.skuId === row.skuId
+                      }
                       onClick={() => {
                         void handleCart(row);
                       }}
@@ -180,7 +223,11 @@ export function ReplenishmentTable() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={createTransfer.isPending}
+                      disabled={
+                        createTransfer.isPending &&
+                        createTransfer.variables?.lines?.[0]?.skuId ===
+                          row.skuId
+                      }
                       onClick={() => {
                         void handleTransfer(row);
                       }}

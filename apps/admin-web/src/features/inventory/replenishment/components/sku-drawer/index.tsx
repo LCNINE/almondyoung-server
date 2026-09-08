@@ -75,8 +75,14 @@ export function ReplenishmentSkuDrawer({ skuId, onOpenChange }: Props) {
         ) : (
           <div className="space-y-4">
             <div className="space-x-1">
-              <Badge variant="secondary">{data.pattern}</Badge>
-              <Badge variant="secondary">등급 {data.grade}</Badge>
+              {/* legacy_only 일 땐 pattern·grade 가 실제 판정이 아니라 C 단계 자리표시 상수
+                  (insufficient / C) 다 — 있는 그대로 보이면 판정처럼 오인된다. */}
+              {!data.flags.includes('legacy_only') && (
+                <>
+                  <Badge variant="secondary">{data.pattern}</Badge>
+                  <Badge variant="secondary">등급 {data.grade}</Badge>
+                </>
+              )}
               {data.flags.map((flag) => (
                 <Badge key={flag} variant="outline">
                   {FLAG_LABELS[flag]}
