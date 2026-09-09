@@ -348,17 +348,18 @@
       "ts"
     ],
     "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1",
       "^@app/auth-core(|/.*)$": "<rootDir>/libs/auth-core/src/$1",
       "^@app/authorization(|/.*)$": "<rootDir>/libs/authorization/src/$1",
+      "^@app/cron-once(|/.*)$": "<rootDir>/libs/cron-once/src/$1",
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
-      "^@packages/event-contracts(|/.*)$": "<rootDir>/packages/event-contracts$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
+      "^@packages/event-contracts(|/.*)$": "<rootDir>/packages/event-contracts$1",
       "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
       "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
-      "^apps/(.*)$": "<rootDir>/apps/$1",
-      "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1"
+      "^apps/(.*)$": "<rootDir>/apps/$1"
     },
     "modulePathIgnorePatterns": [
       "/apps/medusa/",
