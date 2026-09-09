@@ -6,6 +6,7 @@
 
 import { Injectable, Logger, OnApplicationShutdown, Inject, Optional } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
+import { stopConsumerLagCollectors } from '../consumers/consumer-lag.collector';
 
 @Injectable()
 export class GracefulShutdownService implements OnApplicationShutdown {
@@ -33,6 +34,9 @@ export class GracefulShutdownService implements OnApplicationShutdown {
     this.isShuttingDown = true;
 
     this.logger.log(`🛑 Graceful shutdown initiated (signal: ${signal || 'unknown'})`);
+
+    // lag 폴러(#815)는 DI 밖에 살아 자기 종료 훅이 없다 — 브로커 연결을 끊기 전에 여기서 멈춘다.
+    await stopConsumerLagCollectors();
 
     if (!this.kafkaClient) {
       this.logger.warn('No Kafka client found, skipping shutdown');

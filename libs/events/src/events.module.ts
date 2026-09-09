@@ -13,6 +13,7 @@ import {
   Transport,
 } from '@nestjs/microservices';
 import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
+import { Kafka } from 'kafkajs';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
@@ -39,6 +40,15 @@ import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
 import { KafkaTransport } from './transport/kafka.transport';
 import { DerivedConsumerConfig, deriveConsumerConfig, discoverEventHandlers } from './consumers/consumer-discovery';
 import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY } from './consumers/consumer-interceptors';
+import { ConsumerLagCollector, registerConsumerLagCollector } from './consumers/consumer-lag.collector';
+
+/**
+ * Nest `ServerKafka` 가 `consumer.groupId` 뒤에 붙이는 접미사 (`server-kafka.js:31`, `postfixId`
+ * 기본값). 브로커에 실재하는 그룹 이름은 `<groupId>-server` 다 — `startConsumer` 가 이 상수를
+ * `postfixId` 로 **명시**하고 lag 폴러(#815)도 같은 상수로 그룹 이름을 만든다. Nest 의 기본값이
+ * 바뀌어도 두 쪽이 갈라지지 않는다. 값은 지금 라이브 그룹 이름과 같다.
+ */
+export const KAFKA_CONSUMER_GROUP_POSTFIX = '-server';
 
 /**
  * Kafka 로 나가는 유일한 통로 (ADR-0029 §7). `KAFKA_CLIENT` 를 감싸며,
@@ -393,6 +403,7 @@ export class EventsModule {
       : {
           transport: Transport.KAFKA,
           options: {
+            postfixId: KAFKA_CONSUMER_GROUP_POSTFIX,
             client: {
               clientId: kafka.clientId,
               brokers: kafka.brokers,
@@ -436,7 +447,35 @@ export class EventsModule {
         `${derived.topics.length} topic(s): ${derived.topics.join(', ')}`,
     );
 
+    // lag 폴러(#815). 전략을 넘긴 경우(인메모리)는 붙을 브로커가 없으므로 토픽 부트스트랩과
+    // 같이 건너뛴다. 토픽 목록은 위에서 도출한 것 그대로다 — 손으로 나열하면 어긋난다.
+    if (!options.strategy) {
+      this.startConsumerLagPoller(kafka, `${options.groupId}${KAFKA_CONSUMER_GROUP_POSTFIX}`, derived);
+    }
+
     return derived;
+  }
+
+  /**
+   * admin 클라이언트는 `KAFKA_CLIENT`(producer 전용) 와 별개다 — `topic-bootstrap` 이 자기
+   * `Kafka` 인스턴스를 만드는 것과 같은 이유로, 소비자 연결에 admin 요청을 섞지 않는다.
+   * 첫 tick 은 기다리지 않는다(`void`): 브로커가 늦어도 부팅이 늦어지면 안 된다.
+   */
+  private static startConsumerLagPoller(kafka: KafkaConfig, groupId: string, derived: DerivedConsumerConfig): void {
+    const admin = new Kafka({
+      clientId: `${kafka.clientId}-lag`,
+      brokers: kafka.brokers,
+      ssl: kafka.ssl,
+      sasl: kafka.sasl,
+      retry: kafka.retry,
+    }).admin();
+    const collector = new ConsumerLagCollector(
+      admin,
+      groupId,
+      derived.streams.map((stream) => stream.topic),
+    );
+    registerConsumerLagCollector(collector);
+    void collector.start();
   }
 
   /**
