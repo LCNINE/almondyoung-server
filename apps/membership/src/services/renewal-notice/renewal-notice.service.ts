@@ -119,6 +119,9 @@ export class RenewalNoticeService {
           occurredAt: new Date().toISOString(),
         },
         tx,
+        // 계약 하나의 결제예정일 하나에 고지 한 번. 마커 테이블엔 유니크 제약이 없으므로
+        // 두 인스턴스가 겹쳤을 때 실제로 막아 주는 것은 이 키다 (#707).
+        `membership:renewal-notice:${target.contractId}:${billingDate}`,
       );
 
       await this.contractEventManager.addEvent(

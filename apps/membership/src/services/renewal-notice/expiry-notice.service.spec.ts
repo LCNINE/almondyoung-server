@@ -10,6 +10,7 @@ function makeService(
 ) {
   const enqueued: any[] = [];
   const markedIds: string[] = [];
+  const idempotencyKeys: (string | undefined)[] = [];
 
   const tx = {
     update: () => ({
@@ -27,14 +28,15 @@ function makeService(
 
   const billingReader = { findEntitlementsForExpiryNotice: jest.fn().mockResolvedValue(targets) } as any;
   const publisher = {
-    saveExpiryUpcoming: jest.fn(async (payload) => {
+    saveExpiryUpcoming: jest.fn(async (payload, _tx, idempotencyKey) => {
       enqueued.push(payload);
+      idempotencyKeys.push(idempotencyKey);
     }),
   } as any;
   const userContactClient = { findContacts: jest.fn().mockResolvedValue(contacts) } as any;
 
   const service = new ExpiryNoticeService(dbService, billingReader, publisher, userContactClient);
-  return { service, enqueued, markedIds, userContactClient };
+  return { service, enqueued, markedIds, userContactClient, idempotencyKeys };
 }
 
 const target: ExpiryNoticeTarget = {
@@ -57,6 +59,16 @@ describe('ExpiryNoticeService', () => {
     expect(enqueued[0].expiresAt).toBe('2026-08-26');
     expect(enqueued[0].noticeDaysBefore).toBe(7);
     expect(markedIds).toHaveLength(1);
+  });
+
+  // #707. 근거는 renewal-notice 쪽과 같다 — 마커 조회는 동시 실행을 막지 못한다.
+  it('자격·종료일당 하나인 멱등키를 실어 중복 발송을 아웃박스에서 막는다', async () => {
+    const contacts = new Map([['u1', { userId: 'u1', email: 'a@b.com', username: '홍길동' }]]);
+    const { service, idempotencyKeys } = makeService([target], contacts);
+
+    await service.notifyForExpiryDate('2026-08-26');
+
+    expect(idempotencyKeys).toEqual(['membership:expiry-notice:e1:2026-08-26']);
   });
 
   it('연락처가 없으면 발행도 마커도 남기지 않는다', async () => {

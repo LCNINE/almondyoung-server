@@ -69,15 +69,20 @@ export class DormantService {
 
       const userIds = targetUsers.map((user) => user.id);
 
-      await this.dbService.db
+      // 🔴 통지는 «읽은 목록» 이 아니라 «실제로 전환한 행» 을 따라간다 (#707).
+      // UPDATE 는 원래도 조건부였지만 발행 루프가 선행 SELECT 를 돌아, 배포 창에서 두
+      // 인스턴스가 겹치면 DB 는 멀쩡한 채 휴면 안내만 두 번 나갔다. RETURNING 으로 바꾸면
+      // 전환을 실제로 성립시킨 쪽만 발행한다.
+      const converted = await this.dbService.db
         .update(schema.users)
         .set({
           dormantAt: new Date(),
         })
-        .where(and(inArray(schema.users.id, userIds), isNull(schema.users.dormantAt)));
+        .where(and(inArray(schema.users.id, userIds), isNull(schema.users.dormantAt)))
+        .returning({ id: schema.users.id, email: schema.users.email });
 
       // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
-      for (const user of targetUsers) {
+      for (const user of converted) {
         try {
           await this.eventPublisher.publishEvent({
             eventType: 'UserDormantConverted',
@@ -93,9 +98,13 @@ export class DormantService {
         }
       }
 
-      totalProcessed += targetUsers.length;
+      // 집계도 실제 전환 건수로 센다 — 스캔 건수를 세면 다른 실행이 먼저 전환한 몫까지
+      // 자기가 한 것으로 보고하게 된다.
+      totalProcessed += converted.length;
       this.logger.log(`휴면 전환 진행 중: ${totalProcessed}건 처리됨`);
 
+      // 페이지네이션 종료 판정은 «스캔» 건수로 한다 — 전환 0건이어도 스캔이 가득 찼으면
+      // 다음 배치가 남아 있다.
       if (targetUsers.length < batchSize) {
         break;
       }

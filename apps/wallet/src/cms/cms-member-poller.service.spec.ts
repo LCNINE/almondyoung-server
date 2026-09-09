@@ -17,7 +17,8 @@ function makePoller(opts: {
 }) {
   const cmsMemberService = {
     findPendingMembers: jest.fn().mockResolvedValue([MEMBER]),
-    updateStatus: jest.fn().mockResolvedValue(undefined),
+    // #707: 선점에 성공했을 때만 true. 후속 처리(통지·인보이스 종결)가 이 반환값에 걸린다.
+    updateStatus: jest.fn().mockResolvedValue(true),
   };
   const cmsApi = {
     getMember: jest.fn().mockResolvedValue({
@@ -50,7 +51,7 @@ function makePoller(opts: {
     configService as never,
     publisher as never,
   );
-  return { poller, cmsMemberService, publisher, userContactClient };
+  return { poller, cmsMemberService, publisher, userContactClient, invoiceOutcomeService };
 }
 
 describe('CmsMemberPollerService — 심사 거절 통지', () => {
@@ -108,5 +109,38 @@ describe('CmsMemberPollerService — 심사 거절 통지', () => {
 
     await expect(poller.pollPendingMembers()).resolves.toBeUndefined();
     expect(cmsMemberService.updateStatus).toHaveBeenCalledWith('cms-row-1', 'FAILED', 'Q201', '생년월일 불일치');
+  });
+
+  // #707. 배포 창에서 태스크가 겹치면 두 인스턴스가 같은 PENDING 행을 읽는다. 조건부 UPDATE 가
+  // 한 쪽만 통과시키므로, 진 쪽은 «통지까지» 건너뛰어야 한다 — 아니면 거절 안내가 두 번 나간다.
+  it('상태 선점에 지면 거절 통지를 발행하지 않는다', async () => {
+    const { poller, publisher, userContactClient, cmsMemberService } = makePoller({ liveStatus: '신청실패' });
+    cmsMemberService.updateStatus.mockResolvedValue(false);
+
+    await poller.pollPendingMembers();
+
+    expect(cmsMemberService.updateStatus).toHaveBeenCalledWith('cms-row-1', 'FAILED', 'Q201', '생년월일 불일치');
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+    expect(userContactClient.findContacts).not.toHaveBeenCalled();
+  });
+
+  it('심사 통과도 선점에 지면 후속 처리를 건너뛴다 — 인보이스를 두 번 당기지 않는다', async () => {
+    const { poller, cmsMemberService, invoiceOutcomeService } = makePoller({ liveStatus: '신청완료' });
+    cmsMemberService.updateStatus.mockResolvedValue(false);
+
+    await poller.pollPendingMembers();
+
+    expect(invoiceOutcomeService.pullForwardMandatePending).not.toHaveBeenCalled();
+  });
+
+  it('발행하는 경우 멱등키를 실어 아웃박스 유니크 제약이 발동하게 한다', async () => {
+    const { poller, publisher } = makePoller({ liveStatus: '신청실패' });
+
+    await poller.pollPendingMembers();
+
+    expect(publisher.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: 'cms:member-rejected:cms-row-1' }),
+      expect.anything(),
+    );
   });
 });
