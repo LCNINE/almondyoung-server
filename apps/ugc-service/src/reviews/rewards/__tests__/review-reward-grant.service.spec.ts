@@ -183,6 +183,25 @@ describe('한도 집계가 세는 지급 상태', () => {
     expect(renderParams(usageWhere[0])).toEqual(expect.arrayContaining(['GRANTED', 'REVOKED']));
   });
 
+  it('1인당 한도는 판매자 귀책 취소로 회수된 건은 빼고 센다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    // 옛 코드는 사유를 보지 않고 REVOKED 를 전부 셌으므로 이 파라미터가 없다.
+    expect(renderParams(usageWhere[0])).toEqual(expect.arrayContaining(['ORDER_CANCELLED_NOT_USER_FAULT']));
+  });
+
+  it('고객 귀책 취소 회수는 1인당 한도에서 빠지지 않는다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    expect(renderParams(usageWhere[0])).not.toEqual(expect.arrayContaining(['ORDER_CANCELLED']));
+  });
+
   it('전체 예산 한도는 회수된 건을 세지 않는다 — 회수분은 예산으로 돌아온다', async () => {
     const usageWhere: unknown[] = [];
     const service = makeService([limitedRule()]);

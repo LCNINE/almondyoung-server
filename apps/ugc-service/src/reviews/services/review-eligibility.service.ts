@@ -69,6 +69,7 @@ export class ReviewEligibilityService {
       const status = query.status ?? 'available';
       if (status === 'available') {
         conditions.push(isNull(reviewEligibilities.consumedAt));
+        conditions.push(isNull(reviewEligibilities.revokedAt));
         conditions.push(gte(reviewEligibilities.expiresAt, new Date()));
       } else {
         conditions.push(isNotNull(reviewEligibilities.consumedAt));

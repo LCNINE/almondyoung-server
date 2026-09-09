@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, gte, inArray, isNull, sql, SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, notInArray, or, sql, SQL } from 'drizzle-orm';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { reviewRewardGrants, reviews, type UgcServiceSchema } from '../../db/schema';
 import { ReviewRewardRuleService, UgcTx } from './review-reward-rule.service';
@@ -26,8 +26,28 @@ import {
  */
 const PER_USER_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED', 'REVOKED'];
 
+/**
+ * 1인당 한도에서 «빼는» 회수 사유. 품절·결제실패·타임아웃 취소는 고객이 기회를 쓴 게
+ * 아니므로 돌려준다 (§13-2). 어뷰즈 축(고객 요청·관리자 취소, 리뷰 삭제·숨김)은 그대로 센다.
+ */
+const PER_USER_LIMIT_EXEMPT_REVOKE_REASONS: readonly ReviewRewardRevokeReason[] = ['ORDER_CANCELLED_NOT_USER_FAULT'];
+
 /** 전체 예산 한도가 세는 상태. 회수는 돈이 돌아온 것이라 예산도 돌려준다. */
 const BUDGET_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED'];
+
+/** 지급을 되돌린 이유. 원장의 `revoke_reason` 에 그대로 남는다. */
+export type ReviewRewardRevokeReason =
+  | 'REVIEW_DELETED'
+  | 'REVIEW_HIDDEN'
+  | 'ORDER_CANCELLED'
+  | 'ORDER_CANCELLED_NOT_USER_FAULT';
+
+export interface RevokedGrant {
+  grantId: string;
+  reviewId: string;
+  userId: string;
+  amount: number;
+}
 
 export interface NewReviewRewardInput {
   reviewId: string;
@@ -161,17 +181,28 @@ export class ReviewRewardGrantService {
    * 리뷰가 사라졌을 때의 회수. 지급된 포인트 원장 행을 REVOKED 로 바꾸고,
    * 취소해야 할 지급 건을 돌려준다 — 적립 받고 지우기를 막는 유일한 길이다.
    */
-  async revokeForReview(
-    reviewId: string,
-    reason: 'REVIEW_DELETED' | 'REVIEW_HIDDEN',
-    tx: UgcTx,
-  ): Promise<Array<{ grantId: string; userId: string; amount: number }>> {
+  async revokeForReview(reviewId: string, reason: ReviewRewardRevokeReason, tx: UgcTx): Promise<RevokedGrant[]> {
+    return this.revokeForReviews([reviewId], reason, tx);
+  }
+
+  /**
+   * 여러 리뷰의 지급을 한 번에 되돌린다. 주문 취소가 리뷰 여러 건을 한꺼번에 무효화한다.
+   *
+   * `status = 'GRANTED'` 만 갱신하므로 **같은 이벤트가 재전달돼도 두 번 회수되지 않는다** —
+   * 두 번째 호출은 0행을 돌려주고 취소 명령도 0건이 된다.
+   */
+  async revokeForReviews(reviewIds: string[], reason: ReviewRewardRevokeReason, tx: UgcTx): Promise<RevokedGrant[]> {
+    if (reviewIds.length === 0) {
+      return [];
+    }
+
     const revoked = await tx
       .update(reviewRewardGrants)
       .set({ status: 'REVOKED', revokedAt: new Date(), revokeReason: reason, updatedAt: new Date() })
-      .where(and(eq(reviewRewardGrants.reviewId, reviewId), eq(reviewRewardGrants.status, 'GRANTED')))
+      .where(and(inArray(reviewRewardGrants.reviewId, reviewIds), eq(reviewRewardGrants.status, 'GRANTED')))
       .returning({
         grantId: reviewRewardGrants.id,
+        reviewId: reviewRewardGrants.reviewId,
         userId: reviewRewardGrants.userId,
         amount: reviewRewardGrants.amount,
       });
@@ -348,7 +379,14 @@ export class ReviewRewardGrantService {
     const empty: UsageFacts = { count: 0, amount: 0 };
 
     const perUser = limits.perUser
-      ? await this.aggregateGrants(ruleId, userId, periodStart(limits.perUser.period, now), PER_USER_LIMIT_STATUSES, tx)
+      ? await this.aggregateGrants(
+          ruleId,
+          userId,
+          periodStart(limits.perUser.period, now),
+          PER_USER_LIMIT_STATUSES,
+          tx,
+          PER_USER_LIMIT_EXEMPT_REVOKE_REASONS,
+        )
       : empty;
 
     const global = limits.global
@@ -364,6 +402,7 @@ export class ReviewRewardGrantService {
     since: Date | null,
     statuses: readonly ReviewRewardGrantStatus[],
     tx: UgcTx,
+    exemptRevokeReasons: readonly ReviewRewardRevokeReason[] = [],
   ): Promise<UsageFacts> {
     const conditions: SQL[] = [
       eq(reviewRewardGrants.ruleId, ruleId),
@@ -371,6 +410,14 @@ export class ReviewRewardGrantService {
     ];
     if (userId) conditions.push(eq(reviewRewardGrants.userId, userId));
     if (since) conditions.push(gte(reviewRewardGrants.createdAt, since));
+    if (exemptRevokeReasons.length > 0) {
+      // 면제 사유로 회수된 건만 뺀다. 사유가 비어 있는 옛 행은 그대로 센다.
+      const notExempt = or(
+        isNull(reviewRewardGrants.revokeReason),
+        notInArray(reviewRewardGrants.revokeReason, [...exemptRevokeReasons]),
+      );
+      if (notExempt) conditions.push(notExempt);
+    }
 
     const [row] = await tx
       .select({
