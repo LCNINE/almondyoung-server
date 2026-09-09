@@ -17,10 +17,16 @@ ECS 롤링 배포는 매 배포마다 같은 앱의 태스크 두 개를 겹치�
   `cron_runs` 는 실행 로그 겸 판정 근거이며 보존 기간은 **7일**이다.
 - **앱의 크론은 `@nestjs/schedule` 의 `@Cron` 대신 `@app/cron-once` 의 `@CronOnce(expr, { name })` 를
   쓴다.** `name` 은 필수·앱 내 유일. 앱 루트 모듈은 `CronOnceModule` 을 import 한다.
-- **예외는 마커로 표시한다.** 겹쳐도 안전하고 오히려 스케일아웃해야 하는 폴러(`lease_until` /
-  `FOR UPDATE SKIP LOCKED` CAS 로 작업을 집는 core 의 워커 3개)는 `@Cron` 을 유지하되 바로 윗줄에
-  `// cron-overlap-safe: <근거>` 를 단다. 가드 스펙 `libs/cron-once/src/guards/cron-once-guard.spec.ts`
-  가 마커 없는 `@Cron`, 이름 중복, 모듈 누락을 막는다.
+- **예외는 마커로 표시한다.** 겹쳐도 안전하고 오히려 스케일아웃해야 하는 폴러, 즉 `lease_until` CAS
+  또는 `FOR UPDATE SKIP LOCKED` 로 작업을 집는 core 의 워커 3개 —
+  `bulk-session-job.worker.ts`(5초 폴러, `lease_until` CAS),
+  `form-export-job.worker.ts`(10초 폴러, `lease_until` CAS — 같은 파일의 일일 purge 크론은 CAS 가
+  아니라 `@CronOnce` 로 전환했다), `fulfillment-order-creation-backlog.worker.ts`(10초 폴러,
+  `FOR UPDATE SKIP LOCKED`) — 는 `@Cron` 을 유지하되 바로 윗줄에 `// cron-overlap-safe: <근거>` 를
+  단다. `fulfillment-order-reservation-retry.worker.ts` 는 예외가 아니다 — 크로스 인스턴스 CAS 가
+  없고 프로세스 내부 `isProcessing` 플래그와 락 없는 SELECT 뿐이라 `@CronOnce` 로 전환했다. 가드 스펙
+  `libs/cron-once/src/guards/cron-once-guard.spec.ts` 가 마커 없는 `@Cron`, 이름 중복, 모듈 누락을
+  막는다.
 - **주기 키는 벽시계가 아니다.** `cron-parser.prev()` 로 크론식·타임존에서 도출한다(+50ms 지터
   여유). 두 태스크의 시계가 한 주기 미만으로 어긋나면 같은 키를 낸다.
 - **선점 쿼리 실패는 건너뛴다(fail closed).** 본문은 어차피 DB 를 쓴다.
