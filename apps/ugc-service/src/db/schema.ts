@@ -235,6 +235,13 @@ export const reviewEligibilities = pgTable(
       onDelete: 'set null',
     }),
 
+    /**
+     * 주문 취소로 자격이 무효화된 시각. 만료(`expires_at`)를 앞당기는 방식은
+     * `POST /reviews` 가 만료를 보지 않아 구멍이 남으므로 별도 컬럼으로 둔다.
+     */
+    revokedAt: timestamp('revoked_at'),
+    revokeReason: varchar('revoke_reason', { length: 40 }),
+
     sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
 

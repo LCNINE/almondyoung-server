@@ -444,6 +444,8 @@ export class ReviewsService {
             eq(reviewEligibilities.userId, userId),
             eq(reviewEligibilities.productId, dto.productId),
             isNull(reviewEligibilities.consumedAt),
+            // 주문이 취소되면 자격이 회수된다 — 취소 뒤에도 리뷰가 써지면 회수 배관이 무의미해진다.
+            isNull(reviewEligibilities.revokedAt),
           ),
         );
 
