@@ -160,10 +160,20 @@ export class BusinessLicensesService {
       if (verification.status === 'lookup_failed') continue;
 
       const status = this.deriveStatus(verification);
-      await this.dbService.db
+      // 🔴 아직 under_review 인 행만 갱신하고, 실제로 갱신한 경우에만 발행한다 (#820).
+      // SELECT 와 여기 사이에 국세청 호출(타임아웃×재시도)이 끼어 있어, 그 창에서 관리자가
+      // rejected 를 찍으면 술어 없는 UPDATE 는 그 결정을 덮어쓴다 — 인스턴스가 하나여도 생긴다.
+      // 발행을 «읽은 목록» 에 걸면 배포 창에서 겹친 두 태스크가 승인 이벤트를 두 벌 낸다.
+      // user-service 는 아웃박스를 켜지 않아 멱등키가 없으므로 RETURNING 게이트가 유일한 방어선이다.
+      const [updated] = await this.dbService.db
         .update(businessLicenses)
         .set({ status, metadata: { ntsValidate: verification }, updatedAt: new Date() })
-        .where(eq(businessLicenses.id, row.id));
+        .where(and(eq(businessLicenses.id, row.id), eq(businessLicenses.status, 'under_review')))
+        .returning({ id: businessLicenses.id });
+      if (!updated) {
+        this.logger.log(`사업자 재검증: ${row.id} 는 그 사이 다른 곳에서 결정됐다 — 건너뜀`);
+        continue;
+      }
 
       this.logger.log(`사업자 재검증: ${row.id} → ${status}`);
 

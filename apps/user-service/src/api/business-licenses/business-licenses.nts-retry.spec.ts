@@ -1,5 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { AxiosError } from 'axios';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { of, throwError } from 'rxjs';
 import { BusinessLicensesService } from './business-licenses.service';
 
@@ -72,18 +74,41 @@ describe('진위확인 입력값 보존', () => {
 describe('조회 실패 건 재검증', () => {
   const okValidate = { status_code: 'OK', data: [{ valid: '01', status: { b_stt_cd: '01' } }] };
 
-  function makeDb(rows: unknown[]) {
-    const updates: Record<string, unknown>[] = [];
+  /**
+   * `returningRows` 는 UPDATE 마다 하나씩 소비된다. 비어 있으면 「한 행 갱신」으로 본다.
+   *
+   * ⚠️ 목의 update 체인에 `.returning()` 이 없으면 서비스가 TypeError 를 던진다. 이 메서드엔
+   * try/catch 가 없어 지금은 스펙이 빨개지지만, 누가 catch 를 두르면 초록인 채 라이브가
+   * 30분마다 죽는다 (#818 에서 dormant 가 정확히 그 상태였다).
+   */
+  function makeDb(rows: unknown[], returningRows: { id: string }[][] = []) {
+    const updates: { values: Record<string, unknown>; predicate: SQL }[] = [];
     const db = {
       select: () => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.resolve(rows) }) }) }),
       update: () => ({
         set: (values: Record<string, unknown>) => ({
-          where: () => Promise.resolve(updates.push(values)),
+          where: (predicate: SQL) => {
+            updates.push({ values, predicate });
+            return Object.assign(Promise.resolve(undefined), {
+              returning: () => Promise.resolve(returningRows.shift() ?? [{ id: 'updated' }]),
+            });
+          },
         }),
       }),
     };
     return { dbService: { db } as never, updates };
   }
+
+  function makeRevalidateService(dbService: never, post: jest.Mock, publishEvent: jest.Mock) {
+    return new BusinessLicensesService(
+      dbService,
+      { post } as unknown as HttpService,
+      { get: () => 'test-key' } as never,
+      { publishEvent } as never,
+    );
+  }
+
+  const renderPredicate = (predicate: SQL) => new PgDialect().sqlToQuery(predicate);
 
   function row(id: string, requested?: Record<string, string>) {
     return { id, userId: `user-${id}`, email: 'a@b.c', username: '홍길동', metadata: { ntsValidate: { requested } } };
@@ -103,18 +128,50 @@ describe('조회 실패 건 재검증', () => {
       row('recovered', { businessNumber: '1234567890', representativeName: '박', startDate: '20200101' }),
     ]);
 
-    const service = new BusinessLicensesService(
-      dbService,
-      { post } as unknown as HttpService,
-      { get: () => 'test-key' } as never,
-      { publishEvent } as never,
-    );
-    await service.revalidateFailedLookups();
+    await makeRevalidateService(dbService, post, publishEvent).revalidateFailedLookups();
 
     expect(updates).toHaveLength(1);
-    expect(updates[0].status).toBe('approved');
+    expect(updates[0].values.status).toBe('approved');
     expect(publishEvent).toHaveBeenCalledTimes(1);
     expect(publishEvent.mock.calls[0][0].aggregateId).toBe('user-recovered');
+  });
+
+  // #820 ①. SELECT 와 UPDATE 사이에 국세청 호출(타임아웃×재시도)이 끼어 있다. 그 창에서
+  // 관리자가 rejected 를 찍으면 술어 없는 UPDATE 가 그 결정을 approved 로 덮어쓴다 —
+  // 인스턴스가 하나여도 생기는 결함이라 태스크 겹침과 무관하다.
+  it('UPDATE 는 아직 under_review 인 행만 잡는다 — 관리자가 먼저 결정했으면 덮어쓰지 않는다', async () => {
+    const post = jest.fn().mockReturnValue(of({ data: okValidate }));
+    const { dbService, updates } = makeDb([
+      row('recovered', { businessNumber: '1234567890', representativeName: '박', startDate: '20200101' }),
+    ]);
+
+    await makeRevalidateService(dbService, post, jest.fn()).revalidateFailedLookups();
+
+    expect(updates).toHaveLength(1);
+    const { sql, params } = renderPredicate(updates[0].predicate);
+    expect(sql).toMatch(/"business_licenses"\."status" = \$\d/);
+    expect(params).toEqual(expect.arrayContaining(['recovered', 'under_review']));
+  });
+
+  // #820 ②. 발행 조건이 UPDATE 의 결과가 아니라 선행 SELECT 의 로컬 변수였다. 배포 롤링으로
+  // 태스크 둘이 겹치면 같은 행을 둘 다 읽고 둘 다 승인 이벤트를 발행한다. user-service 는
+  // 아웃박스를 켜지 않아 멱등키가 없다 — RETURNING 게이트가 유일한 방어선이다.
+  it('UPDATE 가 0행이면 승인 이벤트를 발행하지 않는다 — 다른 인스턴스나 관리자가 먼저 결정했다', async () => {
+    const post = jest.fn().mockReturnValue(of({ data: okValidate }));
+    const publishEvent = jest.fn<void, [{ aggregateId: string }]>();
+    const { dbService, updates } = makeDb(
+      [
+        row('lost', { businessNumber: '1234567890', representativeName: '박', startDate: '20200101' }),
+        row('won', { businessNumber: '1234567890', representativeName: '김', startDate: '20200101' }),
+      ],
+      [[], [{ id: 'won' }]],
+    );
+
+    await makeRevalidateService(dbService, post, publishEvent).revalidateFailedLookups();
+
+    expect(updates).toHaveLength(2);
+    expect(publishEvent).toHaveBeenCalledTimes(1);
+    expect(publishEvent.mock.calls[0][0].aggregateId).toBe('user-won');
   });
 });
 
