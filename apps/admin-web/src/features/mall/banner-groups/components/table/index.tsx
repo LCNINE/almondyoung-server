@@ -1,50 +1,38 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { DataTable } from '@/components/data-table';
-import { useDataTable } from '@/hooks/use-data-table';
-import { useBannerGroupsTableColumns } from '@/hooks/table/columns/use-banner-groups-table-columns';
-import { useBannerGroupsTableFilters } from '@/hooks/table/filters/use-banner-groups-table-filters';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useBannerGroups, useDeleteBannerGroup } from '@/lib/services/products';
 import type { BannerGroupDto } from '@/lib/types/dto/products';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { BannerGroupCreateDialog } from '../create-dialog';
 import { BannerGroupDeleteDialog } from '../delete-dialog';
-
-const PAGE_SIZE = 20;
+import { BannerGroupRow } from '../group-row';
+import { CategoryTabs } from '../category-tabs';
 
 export function BannerGroupsTable() {
-  const router = useRouter();
-  const { data, isLoading, isFetching } = useBannerGroups();
-  const filters = useBannerGroupsTableFilters();
+  const { data, isLoading } = useBannerGroups();
   const deleteMutation = useDeleteBannerGroup();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BannerGroupDto | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
 
-  const columns = useBannerGroupsTableColumns({
-    onDetail: (row) => router.push(`/mall/banner-groups/${row.id}`),
-    onDelete: setDeleteTarget,
-  });
-
-  const rows = data ?? [];
-  const total = rows.length;
-
-  const { table } = useDataTable({
-    data: rows,
-    columns,
-    count: total,
-    pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
-  });
+  const allGroups = data ?? [];
+  /** 시안의 고정 8개 대신 실제 category 값에서 뽑는다 — 자유 입력이라 늘고 준다 */
+  const categories = [...new Set(allGroups.map((g) => g.category))].filter(
+    (c): c is string => !!c
+  );
+  const rows = category
+    ? allGroups.filter((g) => g.category === category)
+    : allGroups;
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync({ id: deleteTarget.id });
-      toast.success('배너 그룹이 삭제되었습니다. 소속 배너도 함께 삭제됩니다.');
+      toast.success('배너 그룹이 삭제되었습니다.');
       setDeleteTarget(null);
     } catch {
       toast.error('삭제에 실패했습니다.');
@@ -52,22 +40,65 @@ export function BannerGroupsTable() {
   };
 
   return (
-    <>
-      <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          그룹 생성
+    <div className="px-8 py-6">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">
+          배너 그룹
+        </h2>
+        <Button
+          size="sm"
+          className="ml-auto bg-[#f29219] hover:bg-[#df7b00]"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="mr-1 h-4 w-4" />
+          그룹 만들기
         </Button>
       </div>
 
-      <DataTable
-        table={table}
-        isLoading={isLoading}
-        isFetching={isFetching}
-        count={total}
-        pageSize={PAGE_SIZE}
-        filters={filters}
-        noRecords={{ message: '등록된 배너 그룹이 없습니다.' }}
-      />
+      {categories.length > 1 && (
+        <CategoryTabs
+          categories={categories}
+          value={category}
+          onChange={setCategory}
+        />
+      )}
+
+      <div className="overflow-hidden rounded-[10px] border border-[#e4e4e7]">
+        <div className="grid grid-cols-[210px_1fr_200px_100px] items-center gap-6 border-b border-[#e4e4e7] bg-[#f9fafb] px-6 py-3 text-[14px] font-semibold text-[#1f2937]">
+          <span>등록된 배너</span>
+          <span>그룹 정보</span>
+          <span className="text-center">관리</span>
+          <span className="text-center">표시상태</span>
+        </div>
+
+        {isLoading ? (
+          <div className="text-muted-foreground bg-white p-10 text-center text-sm">
+            불러오는 중...
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="bg-white p-10 text-center">
+            <p className="text-muted-foreground text-sm">
+              등록된 배너 그룹이 없습니다.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => setCreateOpen(true)}
+            >
+              첫 그룹 만들기
+            </Button>
+          </div>
+        ) : (
+          rows.map((group) => (
+            <BannerGroupRow
+              key={group.id}
+              group={group}
+              onDelete={() => setDeleteTarget(group)}
+            />
+          ))
+        )}
+      </div>
 
       <BannerGroupCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 
@@ -80,6 +111,6 @@ export function BannerGroupsTable() {
           if (!open) setDeleteTarget(null);
         }}
       />
-    </>
+    </div>
   );
 }

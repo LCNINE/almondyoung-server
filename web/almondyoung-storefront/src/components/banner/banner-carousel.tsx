@@ -11,6 +11,7 @@ import { trackEvent } from "@/lib/analytics/gtag"
 import { Banner } from "@/lib/types/ui/pim"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { cn } from "@lib/utils"
+import { HeroBannerList } from "./hero-banner-list"
 import {
   Carousel,
   CarouselContent,
@@ -18,10 +19,15 @@ import {
   type CarouselApi,
 } from "@/components/ui/carousel"
 
-const promotionOf = (banner: Banner, index: number) => ({
+const promotionOf = (
+  banner: Banner,
+  index: number,
+  creativeName: string
+) => ({
   promotion_id: banner.id,
   promotion_name: banner.title,
   creative_slot: `main_hero_${index + 1}`,
+  creative_name: creativeName,
 })
 
 type BannerCarouselProps = {
@@ -30,17 +36,24 @@ type BannerCarouselProps = {
     pc: { width: number | null; height: number | null }
     mobile: { width: number | null; height: number | null }
   }
+  /** 그룹의 모든 배너에 리스트 정보가 채워졌을 때만 켠다 */
+  showList?: boolean
 }
 
 export function HeroBannerCarousel({
   banners,
   dimensions,
+  showList,
 }: BannerCarouselProps) {
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
+  /**
+   * 이 배너를 자동 롤링으로 보게 됐는지, 리스트에 마우스를 올려 보게 됐는지.
+   * view_promotion 을 쏘고 나면 auto 로 되돌려 다음 전환에 새로 판정한다.
+   */
+  const viewSourceRef = useRef<"auto" | "hover">("auto")
 
-  const pcWidth = dimensions.pc.width ?? 1920
   const pcHeight = dimensions.pc.height ?? 600
   const mobileWidth = dimensions.mobile.width ?? 750
   const mobileHeight = dimensions.mobile.height ?? 500
@@ -55,14 +68,43 @@ export function HeroBannerCarousel({
     })
   }, [api])
 
+  // 리스트는 배너 위에 얹힌 오버레이라 embla 의 hover 범위 밖이다. 리스트를 포함하는
+  // 바깥 div 의 hover 로 자동 롤링을 멈추고, 벗어나면 그 자리부터 재개한다
+  useEffect(() => {
+    const autoplay = api?.plugins()?.autoplay
+    if (!autoplay) return
+    if (isHovered) autoplay.stop()
+    else autoplay.play()
+  }, [api, isHovered])
+
   const viewed = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const banner = banners[current]
-    if (!banner || viewed.current.has(banner.id)) return
+    if (!banner) return
+    const source = viewSourceRef.current
+    viewSourceRef.current = "auto"
+    if (viewed.current.has(banner.id)) return
     viewed.current.add(banner.id)
-    trackEvent("view_promotion", promotionOf(banner, current))
+    trackEvent("view_promotion", promotionOf(banner, current, source))
   }, [banners, current])
+
+  const handleListSelect = useCallback(
+    (index: number, source: "hover" | "click") => {
+      if (source === "click") {
+        trackEvent(
+          "select_promotion",
+          promotionOf(banners[index], index, "list")
+        )
+        return
+      }
+      viewSourceRef.current = "hover"
+      // jump: true — Fade 플러그인의 전환을 건너뛴다. 마우스를 훑으면 페이드가
+      // 겹쳐 배너가 깜빡이는 것처럼 보인다
+      api?.scrollTo(index, true)
+    },
+    [api, banners]
+  )
 
   const scrollTo = useCallback(
     (index: number) => {
@@ -123,7 +165,10 @@ export function HeroBannerCarousel({
           Autoplay({
             delay: 4000,
             stopOnInteraction: false,
-            stopOnMouseEnter: true,
+            // embla 의 hover 판정 기준은 CarouselContent 안쪽 div 라, 그 위에 얹힌
+            // 리스트에 마우스를 올리면 오히려 mouseleave 로 잡혀 롤링이 재개된다.
+            // 리스트까지 감싸는 isHovered 로 아래에서 직접 멈춘다
+            stopOnMouseEnter: false,
           }),
           Fade(),
         ]}
@@ -133,11 +178,18 @@ export function HeroBannerCarousel({
           {banners.map((banner, index) => (
             <CarouselItem key={banner.id} className="pl-0">
               <div
-                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
+                /*
+                 * 모바일은 비율로, PC 는 «높이 고정» 으로 그린다 (쿠팡과 같다).
+                 * PC 를 비율로 두면 화면이 좁아질수록 배너가 납작해지는데,
+                 * 우측 리스트 카드는 45+6×60=405px 로 고정이라 1440px 화면에서
+                 * 카드가 배너 밖으로 삐져나간다. 높이를 고정하고 폭만 늘리면
+                 * 좁은 화면에서 좌우가 잘릴 뿐 카드는 늘 안에 들어온다.
+                 */
+                className="relative aspect-(--mobile-ratio) w-full md:aspect-auto md:h-(--pc-height)"
                 style={
                   {
                     "--mobile-ratio": `${mobileWidth}/${mobileHeight}`,
-                    "--pc-ratio": `${pcWidth}/${pcHeight}`,
+                    "--pc-height": `${pcHeight}px`,
                   } as React.CSSProperties
                 }
               >
@@ -145,7 +197,10 @@ export function HeroBannerCarousel({
                   <Link
                     href={banner.linkUrl}
                     onClick={() =>
-                      trackEvent("select_promotion", promotionOf(banner, index))
+                      trackEvent(
+                        "select_promotion",
+                        promotionOf(banner, index, "main")
+                      )
                     }
                     className="relative block h-full w-full"
                     target={
@@ -167,9 +222,17 @@ export function HeroBannerCarousel({
           ))}
         </CarouselContent>
 
-        {/* 좌우 화살표 - 호버 시에만 표시 */}
+        {showList && (
+          <HeroBannerList
+            banners={banners}
+            current={current}
+            onSelect={handleListSelect}
+          />
+        )}
+
+        {/* 좌우 화살표 - 호버 시에만 표시. 리스트가 뜨면 자리가 겹치고 역할도 겹친다 */}
         {banners.length > 1 && (
-          <div className="hidden lg:block">
+          <div className={cn("hidden lg:block", showList && "lg:hidden")}>
             <button
               onClick={scrollPrev}
               className={cn(
@@ -194,9 +257,14 @@ export function HeroBannerCarousel({
         )}
       </Carousel>
 
-      {/* 도트 인디케이터 */}
+      {/* 도트 인디케이터 — 리스트가 뜨는 큰 화면에서는 리스트가 그 역할을 한다 */}
       {banners.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+        <div
+          className={cn(
+            "absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2",
+            showList && "lg:hidden"
+          )}
+        >
           {banners.map((_, index) => (
             <button
               key={index}

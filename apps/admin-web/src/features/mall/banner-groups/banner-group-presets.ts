@@ -2,7 +2,8 @@
  * 배너 그룹 규격 프리셋.
  *
  * 그룹을 만들 때 PC/모바일 픽셀을 직접 적게 하면 무엇을 넣어야 할지 알 수가 없다.
- * 실제로 쓰이는 자리별로 검증된 값을 골라 넣게 한다.
+ * 스토어프론트에 «실재하는 자리»의 값만 둔다 — 없는 자리를 프리셋으로 제시하면
+ * 그 규격으로 그룹을 만들어도 화면에 그려주는 코드가 없다.
  */
 
 export type BannerGroupPreset = {
@@ -26,7 +27,7 @@ export const MOBILE_VIEWPORT = 390;
 export function renderedHeight(
   width: number | null | undefined,
   height: number | null | undefined,
-  viewportWidth: number,
+  viewportWidth: number
 ): number | null {
   if (!width || !height) return null;
   return Math.round(viewportWidth / (width / height));
@@ -45,34 +46,26 @@ export function matchPreset(size: {
         p.pcWidth === size.pcWidth &&
         p.pcHeight === size.pcHeight &&
         p.mobileWidth === size.mobileWidth &&
-        p.mobileHeight === size.mobileHeight,
+        p.mobileHeight === size.mobileHeight
     ) ?? null
   );
 }
 
 export const BANNER_GROUP_PRESETS: BannerGroupPreset[] = [
   {
-    label: '메인 히어로',
-    hint: '홈 최상단 대형 배너 (PC 3:1 · 모바일 2:1)',
+    label: '큰 히어로',
+    hint: '홈 최상단 대형 배너. 쿠팡과 같은 규격 (PC 1920×450 · 모바일 2.17:1)',
     pcWidth: 1920,
-    pcHeight: 640,
-    mobileWidth: 750,
-    mobileHeight: 375,
+    pcHeight: 450,
+    mobileWidth: 780,
+    mobileHeight: 360,
   },
   {
-    label: '중간 띠배너',
-    hint: '섹션 사이 가로 배너 (PC 4:1 · 모바일 2:1)',
+    label: '얇은 가로 띠',
+    hint: '안내·공지용 얇은 배너. 지금 멤버십 배너가 이 규격 (PC 10:1 · 모바일 2.2:1)',
     pcWidth: 1920,
-    pcHeight: 480,
-    mobileWidth: 750,
-    mobileHeight: 375,
-  },
-  {
-    label: '얇은 안내 배너',
-    hint: '공지·안내용 얇은 띠 (PC 10:1 · 모바일 2.2:1)',
-    pcWidth: 1920,
-    pcHeight: 192,
-    mobileWidth: 750,
-    mobileHeight: 338,
+    pcHeight: 187,
+    mobileWidth: 375,
+    mobileHeight: 169,
   },
 ];

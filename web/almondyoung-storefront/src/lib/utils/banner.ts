@@ -19,7 +19,9 @@ export function isBannerGroupVisible<
 export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
   const now = new Date().getTime()
 
-  return sortBy(banners, ["sortOrder"]).filter((banner) => {
+  // sortOrder 가 겹치는 배너가 실제로 있어서(라이브 MAIN_HERO 에 -1 이 둘),
+  // 동점을 등록순으로 깨야 조회할 때마다 순서가 뒤집히지 않는다
+  return sortBy(banners, ["sortOrder", "createdAt"]).filter((banner) => {
     const start = banner.displayStartAt
       ? new Date(banner.displayStartAt).getTime()
       : 0
@@ -29,4 +31,22 @@ export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
 
     return banner.isActive && start <= now && end >= now
   })
+}
+
+/**
+ * 히어로 우측 리스트를 띄울 수 있는지.
+ *
+ * 한 칸이라도 그림이나 문구가 비면 리스트 전체를 접고 예전 캐러셀로 돌아간다.
+ * 반쯤 빈 리스트를 고객에게 보이느니 배포와 데이터 입력을 분리하는 편이 낫다 —
+ * 운영자가 마지막 한 장을 채우는 순간 자동으로 새 디자인으로 넘어간다.
+ */
+export function isHeroListReady(
+  banners: Pick<BannerDto, "listImageFileId" | "listLabel">[]
+): boolean {
+  return (
+    banners.length > 0 &&
+    // 어드민 검증(heroListError)이 trim 기준이라 여기도 맞춘다 —
+    // 공백만 든 문구가 통과하면 빈 칸으로 리스트가 켜진다
+    banners.every((b) => !!b.listImageFileId && !!b.listLabel?.trim())
+  )
 }

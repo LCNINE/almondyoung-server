@@ -19,6 +19,8 @@ export class BannerMapper {
       description: entity.description,
       pcImageFileId: entity.pcImageFileId,
       mobileImageFileId: entity.mobileImageFileId,
+      listImageFileId: entity.listImageFileId,
+      listLabel: entity.listLabel,
       linkUrl: entity.linkUrl,
       linkedProductMasterIds: entity.linkedProductMasterIds,
       displayStartAt: DateMapper.toNullableString(entity.displayStartAt),

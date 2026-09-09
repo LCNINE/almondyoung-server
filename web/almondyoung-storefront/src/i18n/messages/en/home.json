@@ -61,6 +61,10 @@
     "next": "More brands",
     "all": "All"
   },
+  "heroBanner": {
+    "listPrev": "Show previous items",
+    "listNext": "Show next items"
+  },
   "timeSale": {
     "titleFirst": "Time",
     "titleSecond": "Sale",

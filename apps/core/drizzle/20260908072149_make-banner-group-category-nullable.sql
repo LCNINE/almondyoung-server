@@ -1,0 +1,1 @@
+ALTER TABLE "banner_groups" ALTER COLUMN "category" DROP NOT NULL;

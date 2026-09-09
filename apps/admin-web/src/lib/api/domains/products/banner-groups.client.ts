@@ -39,9 +39,8 @@ export const bannerGroupsClient = {
     return response.data;
   },
 
-  remove: async (id: string, deletedBy?: string): Promise<{ message: string }> => {
-    const params = deletedBy ? { deletedBy } : {};
-    const response = await client.delete(`${BASE}/${id}`, { params });
+  remove: async (id: string): Promise<{ message: string }> => {
+    const response = await client.delete(`${BASE}/${id}`);
     return response.data;
   },
 };

@@ -61,6 +61,10 @@
     "next": "다음 브랜드 보기",
     "all": "전체"
   },
+  "heroBanner": {
+    "listPrev": "이전 목록 보기",
+    "listNext": "다음 목록 보기"
+  },
   "timeSale": {
     "titleFirst": "타임",
     "titleSecond": "세일",

@@ -9,3 +9,16 @@ export function localInputToIso(value?: string | null): string | undefined {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
+
+/**
+ * ISO 8601(대개 UTC)을 `<input type="datetime-local">` 이 받는 로컬 시각
+ * `YYYY-MM-DDTHH:mm` 으로 바꾼다. 그냥 slice(0,16) 하면 UTC 문자열이 그대로
+ * 들어가 화면에 시차만큼 어긋난 시각이 보인다.
+ */
+export function isoToLocalInput(value?: string | Date | null): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}

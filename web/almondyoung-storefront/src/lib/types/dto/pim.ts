@@ -344,6 +344,8 @@ export interface BannerDto {
   description: string | null
   pcImageFileId: string
   mobileImageFileId: string
+  listImageFileId: string | null
+  listLabel: string | null
   linkUrl: string | null
   linkedProductMasterIds: string[] | null
   displayStartAt: string | null

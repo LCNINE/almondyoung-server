@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { Public } from '@app/authorization';
+import { Public, User, JwtPayload } from '@app/authorization';
 import { BannersService } from './banners.service';
 import {
   CreateBannerGroupDto,
@@ -84,14 +84,14 @@ export class BannerGroupsController {
     description: '배너 그룹과 포함된 모든 배너를 soft delete 합니다.',
   })
   @ApiParam({ name: 'id', description: '배너 그룹 ID' })
-  @ApiQuery({ name: 'deletedBy', required: false, description: '삭제자 ID' })
   @ApiResponse({ status: 200, description: '배너 그룹 삭제 성공' })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
   async deleteBannerGroup(
     @Param('id') id: string,
-    @Query('deletedBy') deletedBy?: string,
+    @User() user: JwtPayload | undefined,
   ): Promise<{ message: string }> {
-    await this.bannersService.deleteBannerGroup(id, deletedBy);
+    // 삭제자는 토큰에서 읽는다 — 클라이언트가 쿼리로 자기 신고하면 아무 값이나 들어온다
+    await this.bannersService.deleteBannerGroup(id, user?.id);
     return { message: 'Banner group deleted successfully' };
   }
 }

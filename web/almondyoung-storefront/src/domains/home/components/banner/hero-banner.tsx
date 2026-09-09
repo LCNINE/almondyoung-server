@@ -2,7 +2,11 @@ import { HeroBannerCarousel } from "@/components/banner/banner-carousel"
 import { getBannerGroupByCode } from "@/lib/api/pim/banner"
 import type { BannerDto } from "@/lib/types/dto/pim"
 import type { BannerGroup } from "@/lib/types/ui/pim"
-import { getActiveBanners, isBannerGroupVisible } from "@/lib/utils/banner"
+import {
+  getActiveBanners,
+  isBannerGroupVisible,
+  isHeroListReady,
+} from "@/lib/utils/banner"
 
 export async function HeroBanner() {
   const bannerGroup: BannerGroup | null = await getBannerGroupByCode(
@@ -23,6 +27,7 @@ export async function HeroBanner() {
     <div>
       <HeroBannerCarousel
         banners={activeBanners}
+        showList={isHeroListReady(activeBanners)}
         dimensions={{
           pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
           mobile: {

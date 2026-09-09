@@ -10,8 +10,8 @@ export class BannerGroupResponseDto {
   @ApiProperty({ description: '배너 그룹 제목' })
   title: string;
 
-  @ApiProperty({ description: '배너 그룹 카테고리' })
-  category: string;
+  @ApiProperty({ description: '배너 그룹 카테고리', required: false, nullable: true })
+  category: string | null;
 
   @ApiProperty({ description: 'PC 이미지 너비(px)', required: false, nullable: true })
   pcWidth: number | null;

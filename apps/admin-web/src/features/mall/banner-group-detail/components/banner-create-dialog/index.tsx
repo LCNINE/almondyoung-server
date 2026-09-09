@@ -11,14 +11,18 @@ import {
 import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { ImageUploadField } from '@/components/common/image-upload-field';
 import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
-import { useBannerGroup, useCreateBanner } from '@/lib/services/products';
+import {
+  useBannerGroup,
+  useBannersByGroup,
+  useCreateBanner,
+} from '@/lib/services/products';
 import type { CreateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
-import { bannerImageGuide } from '../../banner-image-guide';
+
+import { HERO_GROUP_CODE } from '../../banner-image-guide';
+import { BannerListFields, heroListError } from '../banner-list-fields';
+import { BannerImageDrop } from '../banner-image-drop';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 type Props = {
@@ -34,6 +38,7 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
   });
   const createMutation = useCreateBanner();
   const { data: group } = useBannerGroup(groupId);
+  const { data: siblings = [] } = useBannersByGroup(groupId);
 
   const pcSlot =
     group?.pcWidth && group?.pcHeight
@@ -44,16 +49,9 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
       ? { width: group.mobileWidth, height: group.mobileHeight }
       : null;
 
-  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight);
-  const mobileGuide = bannerImageGuide(group?.mobileWidth, group?.mobileHeight);
-
+  const isHero = group?.code === HERO_GROUP_CODE;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = !!(form.pcImageFileId || form.mobileImageFileId);
-
-  const set =
-    (key: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({ ...prev, [key]: e.target.value || undefined }));
 
   const handleClose = () => {
     setForm({ title: '', isActive: true });
@@ -61,17 +59,29 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!form.title?.trim()) {
-      toast.error('제목을 입력해 주세요.');
-      return;
-    }
-    // 두 이미지 모두 서버에서 필수다 — 없이 보내면 저장 시점에 실패한다.
     if (!form.pcImageFileId || !form.mobileImageFileId) {
-      toast.error('PC / 모바일 이미지를 모두 업로드해 주세요.');
+      toast.error('배너 이미지를 올려 주세요.');
       return;
     }
+    if (!form.title?.trim()) {
+      toast.error('배너 이름을 입력해 주세요.');
+      return;
+    }
+    // 히어로는 한 장이라도 리스트 칸이 비면 스토어프론트가 캐러셀로 되돌아간다 (ADR-0036 §4)
+    const listError = isHero ? heroListError(form) : null;
+    if (listError) {
+      toast.error(listError);
+      return;
+    }
+    /** 목록 맨 뒤에 붙인다 — 순서는 목록의 위/아래 버튼으로 바꾼다 */
+    const sortOrder =
+      siblings.reduce((max, b) => Math.max(max, b.sortOrder ?? 0), -1) + 1;
     try {
-      await createMutation.mutateAsync({ ...form, bannerGroupId: groupId });
+      await createMutation.mutateAsync({
+        ...form,
+        sortOrder,
+        bannerGroupId: groupId,
+      });
       toast.success('배너가 추가되었습니다.');
       handleClose();
     } catch {
@@ -81,144 +91,56 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>배너 추가</DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-title">
-              제목 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="b-title"
-              value={form.title}
-              onChange={set('title')}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-description">설명</Label>
-            <Input
-              id="b-description"
-              value={form.description ?? ''}
-              onChange={set('description')}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-linkUrl">링크 URL</Label>
-            <Input
-              id="b-linkUrl"
-              placeholder="https://"
-              value={form.linkUrl ?? ''}
-              onChange={set('linkUrl')}
-            />
-          </div>
-
-          <ImageUploadField
-            label="PC 이미지"
-            required
-            previewShape="wide"
-            slotRatio={pcSlot}
-            targetViewportWidth={1440}
-            description={
-              pcGuide && (
-                <>
-                  {pcGuide.spec}
-                  <br />
-                  {pcGuide.tip}
-                </>
-              )
-            }
+        <div className="grid gap-4 py-1">
+          <BannerImageDrop
             contextId={BANNER_IMAGE_CONTEXT_ID}
-            value={form.pcImageFileId}
-            onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, pcImageFileId: fileId ?? undefined }))
-            }
+            pcSlot={pcSlot}
+            mobileSlot={mobileSlot}
+            pcImageFileId={form.pcImageFileId}
+            mobileImageFileId={form.mobileImageFileId}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
           />
 
-          <ImageUploadField
-            label="모바일 이미지"
-            required
-            previewShape="wide"
-            slotRatio={mobileSlot}
-            previewMaxWidth={390}
-            targetViewportWidth={390}
-            description={
-              mobileGuide && (
-                <>
-                  {mobileGuide.spec}
-                  <br />
-                  {mobileGuide.tip}
-                </>
-              )
-            }
-            contextId={BANNER_IMAGE_CONTEXT_ID}
-            value={form.mobileImageFileId}
-            onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
-            }
+          {isHero && (
+            <BannerListFields
+              idPrefix="b"
+              value={form}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            />
+          )}
+
+          <Input
+            value={form.title}
+            onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+            placeholder="배너 이름 (관리용)"
+            className="h-11"
           />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="b-displayStartAt">노출 시작일</Label>
-              <Input
-                id="b-displayStartAt"
-                type="datetime-local"
-                value={form.displayStartAt ?? ''}
-                onChange={set('displayStartAt')}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="b-displayEndAt">노출 종료일</Label>
-              <Input
-                id="b-displayEndAt"
-                type="datetime-local"
-                value={form.displayEndAt ?? ''}
-                onChange={set('displayEndAt')}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-sortOrder">정렬순서</Label>
-            <Input
-              id="b-sortOrder"
-              type="number"
-              value={form.sortOrder ?? ''}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  sortOrder: e.target.value ? Number(e.target.value) : undefined,
-                }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Switch
-              id="b-isActive"
-              checked={form.isActive ?? true}
-              onCheckedChange={(checked) =>
-                setForm((prev) => ({ ...prev, isActive: checked }))
-              }
-            />
-            <Label htmlFor="b-isActive">활성</Label>
-          </div>
+          <Input
+            value={form.linkUrl ?? ''}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, linkUrl: e.target.value || undefined }))
+            }
+            placeholder="링크 주소 (선택)"
+            className="h-11"
+          />
         </div>
 
         <DialogFooter>
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
             className="mr-auto"
             disabled={!canPreview}
             onClick={() => setPreviewOpen(true)}
           >
             <Eye className="mr-1 h-4 w-4" />
-            화면 미리보기
+            미리보기
           </Button>
           <Button variant="outline" onClick={handleClose}>
             취소
@@ -237,6 +159,9 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
         mobileImageFileId={form.mobileImageFileId}
         pcSlot={pcSlot}
         mobileSlot={mobileSlot}
+        showList={isHero}
+        listImageFileId={form.listImageFileId}
+        listLabel={form.listLabel}
       />
     </Dialog>
   );

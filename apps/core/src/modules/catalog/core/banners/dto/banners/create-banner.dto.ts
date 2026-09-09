@@ -24,6 +24,17 @@ export class CreateBannerDto {
   @IsString()
   mobileImageFileId: string;
 
+  @ApiProperty({ description: '히어로 우측 리스트 칸의 그림 파일 ID', required: false })
+  @IsOptional()
+  @IsString()
+  listImageFileId?: string;
+
+  @ApiProperty({ description: '히어로 우측 리스트 칸에 노출되는 문구', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  listLabel?: string;
+
   @ApiProperty({ description: '클릭 시 이동할 URL', required: false })
   @IsOptional()
   @IsString()

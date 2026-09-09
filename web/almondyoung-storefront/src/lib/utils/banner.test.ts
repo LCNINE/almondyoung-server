@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { getActiveBanners, isBannerGroupVisible } from "./banner"
+import { getActiveBanners, isBannerGroupVisible, isHeroListReady } from "./banner"
 import type { BannerDto } from "../types/dto/pim"
 
 const banner = (over: Partial<BannerDto> = {}): BannerDto =>
@@ -61,5 +61,49 @@ describe("getActiveBanners", () => {
       banner({ id: "b1", sortOrder: -1 }),
     ])
     expect(result.map((b) => b.id)).toEqual(["b1", "b2"])
+  })
+})
+
+describe("isHeroListReady", () => {
+  const filled = { listImageFileId: "f1", listLabel: "티젠 특가" }
+
+  it("전부 채워져야 켠다", () => {
+    expect(isHeroListReady([filled, filled])).toBe(true)
+  })
+
+  it("한 칸이라도 그림이 없으면 끈다", () => {
+    expect(
+      isHeroListReady([filled, { listImageFileId: null, listLabel: "질레트" }])
+    ).toBe(false)
+  })
+
+  it("한 칸이라도 문구가 없으면 끈다", () => {
+    expect(
+      isHeroListReady([filled, { listImageFileId: "f2", listLabel: null }])
+    ).toBe(false)
+  })
+
+  it("배너가 없으면 끈다", () => {
+    expect(isHeroListReady([])).toBe(false)
+  })
+})
+
+describe("getActiveBanners — sortOrder 동점", () => {
+  const at = (id: string, sortOrder: number, createdAt: string) =>
+    ({
+      id,
+      sortOrder,
+      createdAt,
+      isActive: true,
+      displayStartAt: null,
+      displayEndAt: null,
+    }) as unknown as BannerDto
+
+  it("sortOrder 가 같으면 등록순으로 고정된다", () => {
+    const later = at("b", -1, "2026-07-14T00:00:00Z")
+    const earlier = at("a", -1, "2026-07-02T00:00:00Z")
+    // 입력 순서를 뒤집어도 결과가 같아야 한다
+    expect(getActiveBanners([later, earlier]).map((b) => b.id)).toEqual(["a", "b"])
+    expect(getActiveBanners([earlier, later]).map((b) => b.id)).toEqual(["a", "b"])
   })
 })
