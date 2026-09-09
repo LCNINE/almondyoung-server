@@ -24,7 +24,7 @@ CORE_URL="${PG}/core"
 #   3. 그중 무언가가 열린 핸들을 남겨 **테스트가 끝난 뒤에도 jest 가 종료하지 못했다.**
 #      결과를 다 찍고 48분을 매달린 것을 실측했다.
 # 좁히니 76초+무한대기 → 63초 정상종료가 됐다.
-DEFAULT_PATTERN='(apps/core|libs/events|scripts/fulfillment-v2)/.*integration'
+DEFAULT_PATTERN='(apps/core|libs/events|libs/cron-once|scripts/fulfillment-v2)/.*integration'
 PATTERN="${1:-$DEFAULT_PATTERN}"
 
 echo "── 1/3 compose postgres 기동"
