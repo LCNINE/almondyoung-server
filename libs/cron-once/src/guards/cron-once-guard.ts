@@ -22,7 +22,7 @@ const RAW_CRON = /^\s*@Cron\(/;
 const CRON_ONCE_START = /@CronOnce\(/;
 const NAME_IN_OPTIONS = /name:\s*'([^']+)'/;
 
-const appOf = (path: string): string | undefined => /^(apps\/[^/]+)\/src\//.exec(path)?.[1];
+const appOf = (path: string): string | undefined => /^((apps|libs)\/[^/]+)\/src\//.exec(path)?.[1];
 const isSpec = (path: string) => path.endsWith('.spec.ts');
 
 export function findGuardViolations(files: SourceFile[]): GuardViolation[] {
@@ -42,7 +42,12 @@ export function findGuardViolations(files: SourceFile[]): GuardViolation[] {
       if (RAW_CRON.test(text)) {
         const prev = lines[i - 1]?.trim() ?? '';
         if (!prev.startsWith(OVERLAP_SAFE_MARKER)) {
-          violations.push({ path, line: i + 1, rule: 'raw-cron-without-marker', detail: `@Cron without '${OVERLAP_SAFE_MARKER}' on the previous line — use @CronOnce (ADR-0036)` });
+          violations.push({
+            path,
+            line: i + 1,
+            rule: 'raw-cron-without-marker',
+            detail: `@Cron without '${OVERLAP_SAFE_MARKER}' on the previous line — use @CronOnce (ADR-0036)`,
+          });
         }
       }
       if (CRON_ONCE_START.test(text)) {
@@ -55,7 +60,12 @@ export function findGuardViolations(files: SourceFile[]): GuardViolation[] {
         namesByApp.set(app, seen);
         const first = seen.get(name);
         if (first) {
-          violations.push({ path, line: i + 1, rule: 'duplicate-name', detail: `@CronOnce name '${name}' already used in ${first}` });
+          violations.push({
+            path,
+            line: i + 1,
+            rule: 'duplicate-name',
+            detail: `@CronOnce name '${name}' already used in ${first}`,
+          });
         } else {
           seen.set(name, path);
         }
@@ -65,7 +75,12 @@ export function findGuardViolations(files: SourceFile[]): GuardViolation[] {
 
   for (const app of appsUsingCronOnce) {
     if (!appsImportingModule.has(app)) {
-      violations.push({ path: app, line: 0, rule: 'module-missing', detail: `${app} uses @CronOnce but never imports CronOnceModule — its crons would silently never run` });
+      violations.push({
+        path: app,
+        line: 0,
+        rule: 'module-missing',
+        detail: `${app} uses @CronOnce but never imports CronOnceModule — its crons would silently never run`,
+      });
     }
   }
   return violations;
