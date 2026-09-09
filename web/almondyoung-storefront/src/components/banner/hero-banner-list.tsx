@@ -58,9 +58,19 @@ export function HeroBannerList({ banners, current, onSelect }: Props) {
   }, [banners.length, syncOverflow])
 
   // 자동 롤링이 리스트 밖 배너로 넘어가면 그 칸을 보이는 곳까지 끌어온다.
-  // block: "nearest" 라 이미 보이는 칸(= 방금 마우스로 고른 칸)은 움직이지 않는다.
+  // scrollIntoView 는 block:"nearest" 여도 문서까지 함께 스크롤해서, 페이지를
+  // 내려둔 사용자를 롤링할 때마다 배너로 끌어올린다. 컨테이너만 직접 움직인다.
   useEffect(() => {
-    rowRefs.current[current]?.scrollIntoView({ block: "nearest" })
+    const el = scrollRef.current
+    const row = rowRefs.current[current]
+    if (!el || !row) return
+    const rowRect = row.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    if (rowRect.top < elRect.top) {
+      el.scrollTop += rowRect.top - elRect.top
+    } else if (rowRect.bottom > elRect.bottom) {
+      el.scrollTop += rowRect.bottom - elRect.bottom
+    }
   }, [current])
 
   const stopScroll = useCallback(() => {
