@@ -4,6 +4,7 @@
 
 - **Ⓐ 재고 동기화 (일일)** — 재고량을 WMS 로 강제 동기화하고 변동분 이벤트를 재발행해 **품절 처리**가 돌게 한다.
 - **Ⓑ 예약 정리 (일일, Ⓐ 직전)** — Medusa 에 영원히 남는 예약(reservation)을 걷어내고 `reserved` 카운터를 예약 원장과 정합시킨다. 안 하면 재고가 이중으로 깎인다.
+- **Ⓒ 상자 종결 (일일, Ⓐ 직후)** — core 에 열린 채 남은 출고 상자를 닫고 거기 붙들린 예약을 푼다. Ⓑ 가 Medusa 쪽이라면 Ⓒ 는 **core 쪽 같은 병**이다.
 - **①②③ 입고예정 (수시)** — **스토어프론트에 입고예정일을 표시**한다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
@@ -16,6 +17,7 @@
    │ Ⓑ clear-reservations   (스냅샷 이전 Medusa 예약 해제 — Ⓐ 보다 먼저)
    │ Ⓐ import-products → sync-stock → recalc-sellable   (재고 동기화 + 이벤트 발행)
    │      ↑ 반영값 = 현재재고 − 미발송주문수
+   │ Ⓒ close-shipped-shipments  (core 유령 예약 해제 — Ⓐ 다음)
    ▼
 core: skus / stock_events / stock_ledgers → ProductSellableQuantityChanged
    ▼
@@ -479,6 +481,60 @@ SELECT count(*) FROM event.outbox_events WHERE status = 'failed';  -- 0 이어�
 
 `published` 만 있고 `failed` 0 이면 Kafka 까지 나간 것이다. `pending` 이 안 줄면 live core 앱의 outbox 디스패처를 확인한다.
 
+## Ⓒ 상자 종결 (일일, Ⓐ 직후) — `scripts/sellmate/close-shipped-shipments.ts`
+
+셀메이트로 출고가 끝났는데 core 에 **열린 채 남은 상자(shipment)** 를 닫고, 거기 붙들린 확정 예약을 푼다.
+Ⓑ 가 Medusa 쪽 유령 예약이라면 이건 **core 쪽 같은 병**이다. 둘 다 원인은 하나 — 실물 출고를
+셀메이트에서 하니 WMS 출고 파이프라인이 돌지 않는다.
+
+```bash
+DRY_RUN=1 bash scripts/sellmate/run.sh live close-shipped-shipments .
+bash scripts/sellmate/run.sh live close-shipped-shipments .
+
+# ★ 이어서 반드시 — 안 하면 스토어프론트는 그대로 품절이다
+VARIANT_IDS=$(paste -sd, apps/core/tmp/closeout-variant-ids.txt) \
+  bash scripts/sellmate/run.sh live recalc-sellable .
+```
+
+**왜 쌓이나**: `scripts/ops/cellmate-local/mark-core-shipped.js` 가 `sales_orders` / `fulfillment_orders` /
+`fulfillment_order_items` 만 `shipped` 로 올리고 **`shipments` / `shipment_lines` 는 안 건드린다.**
+core 에서 `SHIPMENT_LINE` 예약이 풀리는 경로는 출고 확정(`consumeForDispatch`)뿐인데 그게 영영 안 온다.
+`stock_summary_view.available_qty = on_hand − confirmed 예약` 이 음수가 되고, 판매가능수량은
+창고별로 0 으로 잘려(`GREATEST(available,0)`) 합계 0 → **실재고가 있는 상품이 품절로 나간다.**
+
+**어드민에서 이렇게 보인다**: 재고조정 창의 "현재 수량" 은 `on_hand + defective + in_transfer` 라
+예약을 빼지 않는다. 그래서 **"재고 16개인데 판매 가능 수량 0 · 구성 SKU 재고 부족"** 이라는 모순된 화면이 된다.
+두 숫자는 같은 SKU 의 서로 다른 지표다.
+
+**순서가 중요하다 — 상자를 먼저 닫고 예약을 푼다.** 재시도 워커
+(`FulfillmentOrderReservationRetryWorker`, 10초 주기)의 후보 조건이 `shipment.status = 'draft'` 라,
+예약만 풀면 풀어준 재고를 같은 유령 라인이 도로 먹는다. 스크립트가 이 순서를 지킨다.
+
+**무엇을 남기나**: 한 상자에 걸린 FO 가 **전부** terminal(shipped/completed/canceled)일 때만 닫는다.
+합배송으로 진행 중 FO 가 하나라도 섞여 있으면 살아있는 출고 지시라 건드리지 않는다.
+진행 중 FO 의 예약도 그대로 둔다 — 그게 예약의 정당한 역할(주문 ~ 다음 `sync-stock` 사이의 oversell 홀드)이다.
+
+**멱등**: 대상이 없으면 `종결 대상 상자 0개` 로 끝난다. 하루에 여러 번 돌려도 안전하다.
+
+### 감시 지표 — 이 숫자가 늘면 Ⓒ 가 안 돌고 있다
+
+```sql
+-- core: 실재고가 있는데 예약에 막힌 SKU. Ⓒ 직후엔 "진행 중 주문이 잡은 정상분" 만 남는다
+SELECT count(*) AS 막힌_SKU, coalesce(sum(v.on_hand_qty),0) AS 묶인_실재고
+  FROM stock_summary_view v
+  JOIN warehouses w ON w.id = v.warehouse_id AND w.is_sellable
+ WHERE v.on_hand_qty > 0 AND v.available_qty <= 0;
+```
+
+2026-09-09 최초 정리 시점: 상자 1,264개 / 예약 2,303행(10,130개) 적체 → 막힌 SKU **164종 2,149개**.
+정리 후 9종 51개(전부 진행 중 주문). 8/24 부터 2주간 쌓인 양이다.
+
+### ⚠️ 근인은 아직 남아 있다
+
+Ⓒ 는 **매일 치우는 것**이지 원인을 없애는 게 아니다. 근인을 없애려면
+`mark-core-shipped.js` 가 출고 반영할 때 상자도 함께 닫아야 한다. 그 전까지는 Ⓒ 를 빼먹으면
+그날 출고분만큼 다시 쌓인다 (2026-09-09 실측: 정리 몇 시간 뒤 이미 상자 5개 / 예약 30행 재적체).
+
 ## ① 입고예정 적재 — `apps/core/scripts/import-inbound-plans.ts`
 
 셀메이트 입고예정(`입고예정일`/`입고예정수량`)을 core 발주+입고예정으로 적재.
@@ -877,6 +933,8 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
    apply 후 **Medusa 응답 캐시(1시간) → 스토어프론트 캐시 순서로** 깬다. 순서가 반대면 stale 이 다시
    굳어 헛수고다 (Ⓑ 섹션 "반영은 캐시 2겹" 참조)
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
+   2-B. **`Ⓒ close-shipped-shipments`** ← Ⓐ 직후. core 에 열린 채 남은 상자를 닫고 유령 예약을 푼다.
+   빼먹으면 실재고가 있는 상품이 계속 품절로 나간다. 끝나고 출력된 `VARIANT_IDS` 로 `recalc-sellable` 한 번 더.
 3. `① import-inbound-plans --apply` → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
 5. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
@@ -887,22 +945,24 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 **4→5→6 은 세트다.** 4 만 하고 5 를 빼면 한국상품이 품절되고, 6 을 빼면 아무것도 반영되지 않는다.
 
-**일일 운영은 Ⓐ 만** 돌리면 된다 (주문수집과 같이). ①②③ 은 입고예정/신규매칭이 생겼을 때.
+**일일 운영은 Ⓑ → Ⓐ → Ⓒ** 다 (주문수집과 같이). ①②③ 은 입고예정/신규매칭이 생겼을 때.
+Ⓑ 는 Medusa 예약, Ⓒ 는 core 예약 — **둘 다 있어야 한쪽만 풀린 채 품절로 남지 않는다.**
 
 ## Claude 에게 시키는 법
 
 다음처럼 요청하면 이 런북대로 진행한다:
 
-- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ** (clear-reservations → A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ → Ⓒ** (clear-reservations → A-1→A-2→A-3 → close-shipped-shipments → 영향 variant recalc). Ⓐ-0 제외 목록은 스크립트가 자동 적용
 - "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
 - **"`Medusa product not found` 가 잔뜩 떴어" / "재고동기화 했는데 며칠째 반영이 안 돼"** → 「반영이 늦을 때」의
   **대량 상품등록 절** — 신규 등록 상품의 재고 이벤트가 Medusa 상품 생성보다 먼저 처리된 **순서 문제**다.
   코드·매칭을 파기 전에 `inbox_events` 의 `metadata->>'origin'` 과 pending 구성부터 본다.
   조치는 재고 이벤트 **유예**(`next_attempt_at`) → 상품 생성 완료 확인 → **failed 되살리기**.
   ⚠️ `recalc-sellable` 로는 안 고쳐진다 (변동없음 스킵)
-- **"○○ 는 재고 있는데 왜 품절/일시품절이야?"** → **Ⓑ dry-run 이 1번**. `🧮 reserved 카운터 어긋남` 이 0칸이 아니면
-  거기서 끝이다 (Ⓐ·매칭·플래그 파볼 필요 없음). 순서: Ⓑ dry-run → 복구 handle 목록 뽑기 → `--apply` → revalidate.
-  0칸이면 그때 ②-C 진단표(Core판정)로 내려간다
+- **"○○ 는 재고 있는데 왜 품절/일시품절이야?"** → **예약 두 곳을 다 본다.** 어드민 품목 화면이
+  "구성 SKU 재고 부족" 인데 재고조정 창엔 수량이 있으면 **core 쪽(Ⓒ)** 이다 — 재고관리 > 재고 현황에서
+  그 SKU 의 `예약 수량`이 `현재 수량`보다 크면 확정이다. 그게 아니면 **Ⓑ dry-run**
+  (`🧮 reserved 카운터 어긋남` 이 0칸이 아니면 거기서 끝). 둘 다 0 이면 ②-C 진단표(Core판정)로 내려간다
 - "○○ 는 재고동기화 하지 마 / 품절로 둬" → **Ⓐ-0** — `excluded.ts` 에 등록(코드로 강제) + `--set-manual-oos` 로 품절 고정 + 런북 표 갱신
 - "셀메이트 입고예정 CSV `<경로>` core 에 반영해줘" → ①
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
