@@ -44,6 +44,19 @@ ECS 롤링 배포는 매 배포마다 같은 앱의 태스크 두 개를 겹치�
   있다. 한 프로세스에서 `@Cron` 이 겹치던 것과 같은 성질이라 여기서 다루지 않는다 — 그 크론이
   문제라면 본문 쪽 lease 로 막는다.
 - `setInterval` 폴러(#815 consumer lag 등)는 대상이 아니다.
+- **마이그레이션 없이 배포되면(`deploy → migrate` 로 순서를 어기면) 크래시가 아니라 `@CronOnce`
+  전부가 조용히 정지한다** — `cron_runs` 테이블이 없으니 매 틱 선점 쿼리가 실패하고, 러너는
+  fail-closed 라 본문을 건너뛴다. 크래시가 없으니 괜찮다로 읽히기 쉽지만, 식별 신호는 매 틱
+  반복되는 `claim failed` error 로그뿐이다.
+- 프로세스 내부 `isProcessing`/`isSweeping` 류 가드(재시도 워커, bulk-image sweep 등)는 **선점
+  뒤**에 평가된다. A 가 N 주기를 아직 돌리는 중에 N+1 틱이 오면 A 가 N+1 을 선점하고 본문이 즉시
+  return 해 `outcome='ok'` 로 마감된다 — B 는 그 주기를 못 돈다. 단일 인스턴스와 같은 결과라
+  회귀는 아니지만, 그 주기도 «선점된 것으로 소비» 되므로 `cron_runs` 는 «ok 인데 아무 일도
+  안 함» 을 그냥 «ok」로 적는다.
+- 롤링 배포 중 옛 태스크가 어떤 주기를 선점한 채 SIGTERM 을 맞으면 그 주기는 이미 소비되어
+  새 태스크가 대신 돌 수 없다. 일일 알림 크론(`renewal-notice` 10:00 · `expiry-notice` 10:30 ·
+  `billing-daily-scheduler` 09:00 — 셋 다 `timeZone` 없음, 곧 ECS 의 UTC)이 배포 시각과 겹치면
+  그날 알림이 부분 발송으로 끝날 수 있다. 배포를 그 창 밖으로 두는 것으로 충분하다.
 
 ## Rejected
 - **advisory lock 만** — 주기 키 없이는 짧은 작업에서 A 가 락을 놓은 뒤 B 가 몇 ms 늦게 발화하면

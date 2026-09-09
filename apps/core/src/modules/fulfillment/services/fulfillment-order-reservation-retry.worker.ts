@@ -41,8 +41,8 @@ export class FulfillmentOrderReservationRetryWorker {
     return tx ?? this.db;
   }
 
-  // grep -n "lease|SKIP LOCKED|claim|FOR UPDATE" 이 파일에 무근거 — findCandidates 는 잠금 없는
-  // SELECT 다. @CronOnce 로 주기당 한 번만 돌게 한다 (#821 controller ruling; @app/cron-once).
+  // findCandidates 는 잠금 없는 SELECT 라 인스턴스가 겹치면 같은 라인을 두 번 예약 시도한다 —
+  // 주기당 한 번만 돈다 (ADR-0036).
   @CronOnce(CronExpression.EVERY_10_SECONDS, { name: 'fulfillment-order-reservation-retry' })
   async retryUnfulfillable() {
     if (!this.workflowGate.shouldRunReservationRetry()) {
