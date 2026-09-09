@@ -31,6 +31,7 @@ export class BulkSessionJobWorker {
     return this.config.get<string>('PRODUCT_BULK_SESSION_WORKER_ENABLED') !== 'false';
   }
 
+  // cron-overlap-safe: lease_until CAS 로 작업을 집으므로 인스턴스가 겹쳐도 한 작업은 한 번만 처리된다. 스케일아웃 대상 폴러라 주기당 한 번으로 묶지 않는다 (ADR-0036).
   @Cron(CronExpression.EVERY_5_SECONDS)
   async tick(): Promise<void> {
     if (!this.enabled) return;

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { eq, sql } from 'drizzle-orm';
@@ -40,7 +41,9 @@ export class FulfillmentOrderReservationRetryWorker {
     return tx ?? this.db;
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  // grep -n "lease|SKIP LOCKED|claim|FOR UPDATE" 이 파일에 무근거 — findCandidates 는 잠금 없는
+  // SELECT 다. @CronOnce 로 주기당 한 번만 돌게 한다 (#821 controller ruling; @app/cron-once).
+  @CronOnce(CronExpression.EVERY_10_SECONDS, { name: 'fulfillment-order-reservation-retry' })
   async retryUnfulfillable() {
     if (!this.workflowGate.shouldRunReservationRetry()) {
       return;

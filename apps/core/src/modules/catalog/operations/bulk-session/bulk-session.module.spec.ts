@@ -136,7 +136,7 @@ describeIfDb('BulkSessionModule DI', () => {
     // provider 라, 새 소비자가 붙는 순간 등록 누락이 여기서만 드러난다.
     expect(moduleRef.get(BulkImageManager, { strict: false })).toBeInstanceOf(BulkImageManager);
 
-    // 정리 스윕. @Cron 은 provider 로 등록돼야 ScheduleExplorer 가 마운트한다 —
+    // 정리 스윕. @CronOnce(#821) 는 provider 로 등록돼야 CronOnceExplorer 가 마운트한다 —
     // 등록을 빠뜨리면 타입도 테스트도 초록인 채 **크론이 영영 안 돈다**.
     expect(moduleRef.get(BulkImageCleaner, { strict: false })).toBeInstanceOf(BulkImageCleaner);
 
@@ -150,7 +150,7 @@ describeIfDb('BulkSessionModule DI', () => {
 
     // 5단계 정리 스윕(Task 7/9). BulkSessionCleaner 가 해석된다는 건 그 생성자가 받는
     // DbService<PimSchema>/FormExportFileClient/ConfigService 3개 의존성도 함께 실제로
-    // 해석됐다는 뜻이다. @Cron 은 provider 로 등록돼야 ScheduleExplorer 가 마운트한다 —
+    // 해석됐다는 뜻이다. @CronOnce(#821) 는 provider 로 등록돼야 CronOnceExplorer 가 마운트한다 —
     // 등록을 빠뜨리면 타입도 테스트도 초록인 채 워크북이 영영 안 지워진다.
     expect(moduleRef.get(BulkSessionCleaner, { strict: false })).toBeInstanceOf(BulkSessionCleaner);
 

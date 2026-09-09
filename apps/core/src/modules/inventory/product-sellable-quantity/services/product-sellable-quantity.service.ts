@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
@@ -458,7 +459,7 @@ export class ProductSellableQuantityService {
     );
   }
 
-  @Cron(CronExpression.EVERY_MINUTE, {
+  @CronOnce(CronExpression.EVERY_MINUTE, {
     name: 'product-sellable-quantity-sales-period-refresh',
   })
   async refreshSalesPeriodProjectionsCron(): Promise<void> {

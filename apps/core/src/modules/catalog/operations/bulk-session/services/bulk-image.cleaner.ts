@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { InjectDb, DbService } from '@app/db';
 import { and, eq, isNotNull, notExists, sql } from 'drizzle-orm';
 import {
@@ -55,7 +56,7 @@ export class BulkImageCleaner {
     return this.config.get<string>('PRODUCT_BULK_SESSION_WORKER_ENABLED') !== 'false';
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @CronOnce(CronExpression.EVERY_MINUTE, { name: 'bulk-image-sweep' })
   async sweep(): Promise<void> {
     if (!this.enabled) return;
     if (this.isSweeping) {
