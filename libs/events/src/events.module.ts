@@ -27,6 +27,7 @@ import { SchemaValidationOptions } from '@packages/event-contracts/types';
 import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
+import { OutboxMetricsCollector } from './outbox/outbox-metrics.collector';
 import { OutboxWriter } from './outbox/outbox-writer.port';
 import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-dispatch-gate.port';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
@@ -260,6 +261,22 @@ export class EventsModule {
               ModuleRef,
               { token: OUTBOX_DISPATCH_GATE, optional: true },
             ],
+          },
+          {
+            // 적체 게이지 (#712). 아웃박스를 켠 앱에만 붙는다 — 테이블이 없는 앱에서 돌면 매
+            // tick 이 실패 로그만 남긴다. `SCHEDULE_ROOT` 는 바로 위 `enableOutbox` 분기가
+            // 이미 imports 에 넣으므로 `@Cron` 이 산다.
+            //
+            // 선언 토픽은 이 `forApp` 호출의 것뿐이다. 그것만으로는 부족하고(core 는 아웃박스를
+            // 켠 BC 가 하나인데 적재는 여럿이 한다), 나머지는 collector 가 첫 tick 에
+            // 테이블에서 훑는다.
+            provide: OutboxMetricsCollector,
+            useFactory: (dbService: DbService) =>
+              new OutboxMetricsCollector(
+                dbService,
+                publishes.map((stream) => stream.topic.topic),
+              ),
+            inject: [DbService],
           },
         ]
       : [];
