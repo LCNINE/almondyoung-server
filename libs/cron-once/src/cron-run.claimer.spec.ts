@@ -1,6 +1,7 @@
 import { DbService } from '@app/db';
 import { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { hostname } from 'node:os';
 import { CronRunClaimer } from './cron-run.claimer';
 
 /** drizzle `db.execute(sql\`…\`)` 의 postgres.js 결과는 행 배열이다. */
@@ -15,8 +16,8 @@ const makeDb = (rows: Record<string, unknown>[]) => {
  * 대신 drizzle 자신의 `PgDialect#sqlToQuery` 로 `{ sql, params }` 를 얻는다 — `sql.raw()` 로
  * 심은 중첩 SQL 청크(보존 기간 상수)도 이 경로로 정확히 펼쳐진다.
  */
-const queryOf = (execute: jest.Mock, call = 0) => {
-  const chunk = execute.mock.calls[call][0] as SQL;
+const queryOf = (execute: jest.Mock<Promise<unknown>, [SQL]>, call = 0) => {
+  const [chunk] = execute.mock.calls[call];
   const { sql: text, params } = new PgDialect().sqlToQuery(chunk);
   return { text, params };
 };
@@ -68,6 +69,6 @@ describe('CronRunClaimer', () => {
   it('instanceId 가 주입되지 않으면 호스트명을 쓴다', () => {
     const { dbService } = makeDb([]);
     const claimer = new CronRunClaimer(dbService, undefined);
-    expect(claimer.instanceId).toBe(require('node:os').hostname());
+    expect(claimer.instanceId).toBe(hostname());
   });
 });

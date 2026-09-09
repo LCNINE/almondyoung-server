@@ -24,7 +24,7 @@ export class CronOnceRunner {
       try {
         periodAt = computePeriodAt(meta.expression, now(), meta.timeZone);
       } catch (error) {
-        this.logger.error(`invalid schedule for ${meta.name}: ${meta.expression}`, error);
+        this.logger.error(`invalid schedule for ${meta.name}: ${meta.expression} — ${this.describe(error)}`);
         return;
       }
 
@@ -32,7 +32,7 @@ export class CronOnceRunner {
       try {
         claimed = await this.claimer.claim(meta.name, periodAt);
       } catch (error) {
-        this.logger.error(`claim failed, skipping ${meta.name}@${periodAt.toISOString()}`, error);
+        this.logger.error(`claim failed, skipping ${meta.name}@${periodAt.toISOString()} — ${this.describe(error)}`);
         return;
       }
       if (!claimed) {
@@ -45,13 +45,21 @@ export class CronOnceRunner {
         await body();
       } catch (error) {
         outcome = 'error';
-        this.logger.error(`${meta.name}@${periodAt.toISOString()} failed`, error);
+        this.logger.error(`${meta.name}@${periodAt.toISOString()} failed — ${this.describe(error)}`);
       }
       try {
         await this.claimer.finish(meta.name, periodAt, outcome);
       } catch (error) {
-        this.logger.error(`finish failed for ${meta.name}@${periodAt.toISOString()}`, error);
+        this.logger.error(`finish failed for ${meta.name}@${periodAt.toISOString()} — ${this.describe(error)}`);
       }
     };
+  }
+
+  /**
+   * nestjs-pino 를 거치면 `logger.error(msg, errorObject)` 의 두 번째 인자가 출력에서 통째로
+   * 사라진다(실측) — fail-closed 의 유일한 신호이므로 원인을 메시지 문자열 안에 심는다.
+   */
+  private describe(error: unknown): string {
+    return error instanceof Error ? (error.stack ?? error.message) : String(error);
   }
 }

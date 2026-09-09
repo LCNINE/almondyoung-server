@@ -7,7 +7,14 @@ import { CronOnce } from './cron-once.decorator';
 import { CronOnceModule } from './cron-once.module';
 import { CronRunClaimer } from './cron-run.claimer';
 
-/** 절대 발화하지 않는 크론식 — 등록만 검사한다. */
+/**
+ * «절대 발화하지 않는» 식이 아니다 — dom/dow 는 OR 라 2월의 매주 월요일에 발화하고, 실제로
+ * 다음 발화는 2027-02-01 이다(실측). 진짜 never(`'0 0 0 31 2 *'` 등 캘린더상 불가능한 day-of-month)
+ * 는 여기서 못 쓴다 — `cron` 의 `CronJob.start()` 가 8년 안에 발화일을 못 찾으면 그 자리에서
+ * throw 하는데(실측), `onApplicationBootstrap` 이 try/catch 없이 모든 job 을 `start()` 하므로
+ * 이 파일의 세 스펙이 전부 깨진다. 그래서 이 값은 «테스트가 도는 동안엔 발화할 일이 없을 만큼
+ * 먼» 값일 뿐이고, 이 스펙은 등록·시작만 검사한다.
+ */
 const NEVER = '0 0 0 29 2 1';
 
 const fakeDb = { provide: DbService, useValue: { db: { execute: jest.fn().mockResolvedValue([]) } } };
@@ -70,13 +77,27 @@ describe('CronOnceExplorer', () => {
     await expect(building.then((m) => m.init())).rejects.toThrow(/dup/);
   });
 
+  it('cron-parser 가 거부하는 식은 부팅에서 throw 한다 (cron 문법만 통과하는 프리셋 등)', async () => {
+    @Injectable()
+    class Broken {
+      @CronOnce('not a cron', { name: 'broken' })
+      async run(): Promise<void> {}
+    }
+    @Module({ imports: [SCHEDULE_ROOT, CronOnceModule, FakeDbModule], providers: [Broken] })
+    class Root {}
+
+    const building = Test.createTestingModule({ imports: [Root] }).compile();
+    await expect(building.then((m) => m.init())).rejects.toThrow(/broken/);
+  });
+
   it('등록된 콜백은 러너를 거친다 — 선점 실패면 본문이 안 돈다', async () => {
     const calls: string[] = [];
     @Injectable()
     class Jobs {
       @CronOnce(NEVER, { name: 'gated' })
-      async run(): Promise<void> {
+      run(): Promise<void> {
         calls.push('ran');
+        return Promise.resolve();
       }
     }
     @Module({ imports: [SCHEDULE_ROOT, CronOnceModule, FakeDbModule], providers: [Jobs] })
