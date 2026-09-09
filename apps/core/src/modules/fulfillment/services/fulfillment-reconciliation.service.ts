@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { sql } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
@@ -192,7 +192,7 @@ export class FulfillmentReconciliationService {
     return { checkedAt: new Date(), totalViolations: violations.length, counts, resourceIds, violations };
   }
 
-  @Cron('10 3 * * *', { name: 'fulfillment-v2-reconciliation', timeZone: 'Asia/Seoul' })
+  @CronOnce('10 3 * * *', { name: 'fulfillment-v2-reconciliation', timeZone: 'Asia/Seoul' })
   async scheduledReconcile(): Promise<void> {
     try {
       const report = await this.reconcile();

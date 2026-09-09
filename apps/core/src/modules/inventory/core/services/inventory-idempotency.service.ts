@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { and, eq, lt } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
@@ -75,7 +75,7 @@ export class InventoryIdempotencyService {
   }
 
   /** 멱등 기록 보존 크론 — 재전송 방어 window(30일) 초과분 정리. 야간 03:30 KST (스펙 §6). */
-  @Cron('30 3 * * *', { name: 'inventory-idempotency-purge', timeZone: 'Asia/Seoul' })
+  @CronOnce('30 3 * * *', { name: 'inventory-idempotency-purge', timeZone: 'Asia/Seoul' })
   async purgeExpired(): Promise<number> {
     const cutoff = new Date(Date.now() - InventoryIdempotencyService.RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const deleted = await this.dbService.run(async (trx) =>

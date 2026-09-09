@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { ClaimedExport, FormExportJobManager } from './form-export-job.manager';
 import { FormExportManager } from './form-export.manager';
 
@@ -30,6 +31,7 @@ export class FormExportJobWorker {
     return this.config.get<string>('FORM_EXPORT_WORKER_ENABLED') !== 'false';
   }
 
+  // cron-overlap-safe: lease_until CAS 로 작업을 집으므로 인스턴스가 겹쳐도 한 작업은 한 번만 처리된다. 스케일아웃 대상 폴러라 주기당 한 번으로 묶지 않는다 (ADR-0036).
   @Cron(CronExpression.EVERY_10_SECONDS)
   async tick(): Promise<void> {
     if (!this.enabled) return;
@@ -65,7 +67,7 @@ export class FormExportJobWorker {
   }
 
   /** 만료된 잡과 워크북을 정리한다. 하루 한 번이면 충분하다. */
-  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'form-export-job-purge' })
   async purge(): Promise<void> {
     if (!this.enabled) return;
     const removed = await this.manager.purgeExpired(new Date());

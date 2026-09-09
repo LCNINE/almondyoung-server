@@ -3,6 +3,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
+import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
 import { AuthorizationModule, authorizationSchema, JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
@@ -35,6 +36,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       schema: combinedSchema,
     }),
     SCHEDULE_ROOT,
+    CronOnceModule,
     ReviewsModule,
     QnaModule,
   ],

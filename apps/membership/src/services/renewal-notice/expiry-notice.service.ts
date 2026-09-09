@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { UserContactClient } from '@app/shared';
 import { addDays, format } from 'date-fns';
@@ -38,7 +38,7 @@ export class ExpiryNoticeService {
   /**
    * 매일 10시 30분 — 갱신 고지(10시)가 끝난 뒤에 돈다.
    */
-  @Cron('30 10 * * *')
+  @CronOnce('30 10 * * *', { name: 'expiry-notice' })
   async runExpiryNoticeScheduler(): Promise<void> {
     const targetDate = format(addDays(new Date(), NOTICE_DAYS_BEFORE), 'yyyy-MM-dd');
     try {

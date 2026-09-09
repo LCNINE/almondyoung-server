@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
 import { and, count, desc, eq, inArray, lt, lte } from 'drizzle-orm';
@@ -59,7 +59,7 @@ export class InvoiceExecutorService {
     private readonly invoiceOutcomeService: InvoiceOutcomeService,
   ) {}
 
-  @Cron('0 */10 * * * *')
+  @CronOnce('0 */10 * * * *', { name: 'invoice-execute' })
   async run(): Promise<void> {
     try {
       await this.processDueInvoices();

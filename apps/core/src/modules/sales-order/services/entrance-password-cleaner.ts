@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { and, asc, eq, inArray, isNotNull, max } from 'drizzle-orm';
@@ -95,7 +96,7 @@ export class EntrancePasswordCleaner {
     private readonly db: DbService<typeof wmsSchema>,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'entrance-password-sweep' })
   async sweep(): Promise<void> {
     if (this.isSweeping) {
       this.logger.debug('이전 공동현관 비번 파기 스윕 진행 중, 건너뜀');

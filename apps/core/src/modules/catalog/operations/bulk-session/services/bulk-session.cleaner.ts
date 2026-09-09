@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { InjectDb, DbService } from '@app/db';
 import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import { type PimSchema, productBulkSessions } from '../../../schema/catalog.schema';
@@ -39,7 +40,7 @@ export class BulkSessionCleaner {
     return this.config.get<string>('PRODUCT_BULK_SESSION_WORKER_ENABLED') !== 'false';
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'bulk-session-sweep' })
   async sweep(): Promise<void> {
     if (!this.enabled) return;
     if (this.isSweeping) {

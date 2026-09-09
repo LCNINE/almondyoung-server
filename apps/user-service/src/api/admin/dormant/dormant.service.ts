@@ -2,7 +2,8 @@ import { DbService, InjectDb } from '@app/db';
 import { PublisherFor, InjectPublisher } from '@app/events';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { userServiceSchema, type UserServiceSchema } from '../../../../database/drizzle/schema';
@@ -23,7 +24,7 @@ export class DormantService {
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  @CronOnce(CronExpression.EVERY_DAY_AT_2AM, { name: 'dormant-accounts' })
   async handleDormantAccounts() {
     this.logger.log('휴면 계정 전환/삭제 점검 시작');
 

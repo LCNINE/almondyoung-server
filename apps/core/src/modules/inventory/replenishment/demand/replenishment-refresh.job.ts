@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { ReplenishmentSettingsReader } from './replenishment-settings.reader';
 import { DemandSeriesWriter, DemandRebuildResult } from './demand-series.writer';
 import { DemandProfileRefresher, ProfileRefreshResult } from './demand-profile.refresher';
@@ -43,7 +43,7 @@ export class ReplenishmentRefreshJob {
     private readonly leadTimeRefresher: LeadTimeProfileRefresher,
   ) {}
 
-  @Cron('40 3 * * *', { name: 'replenishment-profile-refresh', timeZone: 'Asia/Seoul' })
+  @CronOnce('40 3 * * *', { name: 'replenishment-profile-refresh', timeZone: 'Asia/Seoul' })
   async nightly(): Promise<void> {
     // run() 자체는 손대지 않고 단계 완료를 옆에서 기록만 한다 — 실패 시 "어느 단계까지 커밋됐는지"를
     // 로그에 남기기 위함(운영 런북이 이 로그로 부분 실패와 전체 실패를 구별한다).

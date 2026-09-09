@@ -71,6 +71,7 @@
     "test:variant-preview:integration": "REQUIRE_VARIANT_PREVIEW_DB=1 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/variant_preview_scratch jest --runInBand --forceExit apps/core/src/modules/catalog/core/products/services/product-masters-variant-preview.integration.spec.ts",
     "test:form-export:integration": "REQUIRE_FORM_EXPORT_DB=1 dotenv -e apps/core/.env -- jest --testPathPattern=form-export.*integration",
     "test:bulk-session:integration": "REQUIRE_BULK_SESSION_DB=1 dotenv -e apps/core/.env -- jest --runInBand apps/core/src/modules/catalog/operations/bulk-session/services/bulk-session-lease.integration.spec.ts apps/core/src/modules/catalog/operations/bulk-session/services/bulk-session-merge.integration.spec.ts apps/core/src/modules/catalog/operations/bulk-session/services/bulk-session-image.integration.spec.ts apps/core/src/modules/catalog/operations/bulk-session/services/bulk-session-draft.integration.spec.ts apps/core/src/modules/catalog/operations/bulk-session/services/bulk-session-publish.integration.spec.ts",
+    "test:cron-once:integration": "REQUIRE_CRON_ONCE_DB=1 dotenv -e apps/core/.env -- jest --runInBand libs/cron-once/src/cron-once.integration.spec.ts",
     "test:seed-dev-core:integration": "SEED_DEV_CORE_URL=postgresql://postgres:postgres@localhost:5432/dev_core jest --runInBand scripts/local/seed-dev-core/seed.integration.spec.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",
     "generate:bulk-form-columns": "ts-node scripts/generate-bulk-form-columns.ts",
@@ -241,6 +242,7 @@
     "class-validator": "^0.14.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "cron-parser": "^4.9.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "dotenv": "^16.5.0",
@@ -348,17 +350,18 @@
       "ts"
     ],
     "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1",
       "^@app/auth-core(|/.*)$": "<rootDir>/libs/auth-core/src/$1",
       "^@app/authorization(|/.*)$": "<rootDir>/libs/authorization/src/$1",
+      "^@app/cron-once(|/.*)$": "<rootDir>/libs/cron-once/src/$1",
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
-      "^@packages/event-contracts(|/.*)$": "<rootDir>/packages/event-contracts$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
+      "^@packages/event-contracts(|/.*)$": "<rootDir>/packages/event-contracts$1",
       "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
       "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
-      "^apps/(.*)$": "<rootDir>/apps/$1",
-      "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1"
+      "^apps/(.*)$": "<rootDir>/apps/$1"
     },
     "modulePathIgnorePatterns": [
       "/apps/medusa/",

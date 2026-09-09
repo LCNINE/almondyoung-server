@@ -152,6 +152,8 @@ nest g lib <name>    # New shared library
 ```
 Never create new apps/libs by hand — always use the CLI.
 
+설치된 `@nestjs/cli` 11.0.17 은 `nest-cli.json` 의 `defaultLibraryPrefix` 를 읽지 않으므로 `nest g lib <name> --prefix @app --no-spec` 처럼 prefix 를 명시해야 한다 (2026-09-10 실측).
+
 ### Code Quality
 ```bash
 npm run lint      # ESLint with auto-fix
@@ -326,6 +328,18 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 - No `any` or `as` casting without documented justification and team approval
 - Nullable normalization: `string ?? ''`, `number ?? 0`, `date ?? undefined`
 - Use only enum values defined in schema
+
+### 크론 (`@app/cron-once`)
+
+앱의 크론은 `@nestjs/schedule` 의 `@Cron` 이 아니라 **`@CronOnce(expr, { name })`** 를 쓴다 (ADR-0036, #821).
+ECS 태스크가 겹쳐도(롤링 배포·`scaling.max > 1`) 한 주기가 클러스터 전체에서 한 번만 돌게, 앱 DB 의
+`cron_runs(name, period_at)` PK 를 `INSERT … ON CONFLICT DO NOTHING` 으로 선점한다. `name` 은 필수·앱 내
+유일이고, 앱 루트 모듈이 `CronOnceModule` 을 import 해야 한다 — 빠지면 크론이 **조용히 안 돈다**.
+
+겹쳐도 안전하고 스케일아웃해야 하는 폴러(`lease_until` CAS 워커)만 `@Cron` 을 유지하고 바로 윗줄에
+`// cron-overlap-safe: <근거>` 를 단다. `libs/cron-once/src/guards/cron-once-guard.spec.ts` 가 마커 없는
+`@Cron`·이름 중복·모듈 누락을 막는다. 크론 목록은 `grep -rn "@CronOnce(\|@Cron(" apps/*/src --include=*.ts | grep -v '\.spec\.'`
+로 도출한다. 로컬에서 겹침을 실측하려면 core 를 `PORT` 만 다르게 둘 띄우고 `cron_runs` 가 주기당 1행인지 본다.
 
 ### Events / Kafka (`@app/events`)
 - Transactional outbox pattern for reliable event publishing

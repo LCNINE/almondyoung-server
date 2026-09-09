@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { ReviewBestSelectionService } from './review-best-selection.service';
 
 /**
@@ -12,7 +12,7 @@ export class ReviewBestSelectionCron {
 
   constructor(private readonly bestSelectionService: ReviewBestSelectionService) {}
 
-  @Cron('0 4 * * 1', { name: 'generate-weekly-best-review-candidates', timeZone: 'Asia/Seoul' })
+  @CronOnce('0 4 * * 1', { name: 'generate-weekly-best-review-candidates', timeZone: 'Asia/Seoul' })
   async generateWeeklyCandidates() {
     try {
       const result = await this.bestSelectionService.generateCandidates();

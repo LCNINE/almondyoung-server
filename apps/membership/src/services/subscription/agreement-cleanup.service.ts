@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { format, subDays } from 'date-fns';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
@@ -50,7 +51,7 @@ export class AgreementCleanupService {
     private readonly contractReader: SubscriptionContractReader,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @CronOnce(CronExpression.EVERY_HOUR, { name: 'agreement-revoke-retry' })
   async retryPendingAgreementRevokes(): Promise<void> {
     const pending = await this.findPending();
     if (pending.length === 0) return;

@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
+import { CronOnceModule } from '@app/cron-once';
 import { AdminRealmGuard, AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
@@ -29,6 +30,8 @@ import { ArchiveModule } from './modules/archive/archive.module';
       envFilePath: ['.env', 'apps/core/.env'],
     }),
     LoggerModule.forRoot(loggerConfig),
+    // 크론 «주기당 한 번» 선점 (ADR-0036). SCHEDULE_ROOT 는 inventory.module 등이 이미 import 한다.
+    CronOnceModule,
     DbModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         connectionString: configService.get<string>('DATABASE_URL') ?? '',

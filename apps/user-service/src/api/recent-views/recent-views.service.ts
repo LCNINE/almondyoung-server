@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import * as schema from 'apps/user-service/database/drizzle/schema';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, desc, eq, lt } from 'drizzle-orm';
@@ -57,7 +57,7 @@ export class RecentViewsService {
    * 30일 이상 조회하지 않은 최근 본 상품 기록 삭제
    * 매일 새벽 3시 실행
    */
-  @Cron('0 3 * * *')
+  @CronOnce('0 3 * * *', { name: 'recent-views-cleanup' })
   async cleanupOldRecentViews(): Promise<void> {
     this.logger.log('30일 이상 조회하지 않은 최근 본 상품 삭제 작업 시작');
 

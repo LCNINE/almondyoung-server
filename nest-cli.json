@@ -12,15 +12,6 @@
   "monorepo": true,
   "root": "apps/core",
   "projects": {
-    "core": {
-      "type": "application",
-      "root": "apps/core",
-      "entryFile": "main",
-      "sourceRoot": "apps/core/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/core/tsconfig.app.json"
-      }
-    },
     "analytics": {
       "type": "application",
       "root": "apps/analytics",
@@ -37,6 +28,24 @@
       "sourceRoot": "apps/channel-adapter/src",
       "compilerOptions": {
         "tsConfigPath": "apps/channel-adapter/tsconfig.app.json"
+      }
+    },
+    "core": {
+      "type": "application",
+      "root": "apps/core",
+      "entryFile": "main",
+      "sourceRoot": "apps/core/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/core/tsconfig.app.json"
+      }
+    },
+    "cron-once": {
+      "type": "library",
+      "root": "libs/cron-once",
+      "entryFile": "index",
+      "sourceRoot": "libs/cron-once/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/cron-once/tsconfig.lib.json"
       }
     },
     "db": {
@@ -133,9 +142,7 @@
       "sourceRoot": "apps/wallet/src",
       "compilerOptions": {
         "tsConfigPath": "apps/wallet/tsconfig.app.json",
-        "assets": [
-          "html/**/*"
-        ]
+        "assets": ["html/**/*"]
       }
     }
   }
