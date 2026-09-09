@@ -13,6 +13,16 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type {
+  BestSelectionStatus,
+  ReviewRewardConditions,
+  ReviewRewardGrantStatus,
+  ReviewRewardKind,
+  ReviewRewardLimits,
+  ReviewRewardSkipReason,
+  ReviewRewardSpec,
+  ReviewRewardTrigger,
+} from '../reviews/rewards/reward-rule.types';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -211,12 +221,26 @@ export const reviewEligibilities = pgTable(
     orderId: varchar('order_id', { length: 255 }).notNull(),
     orderLineId: varchar('order_line_id', { length: 255 }).notNull(),
 
+    /**
+     * 주문 라인 결제금액(원). 정률 보상 정책의 모수다.
+     * 이 컬럼이 생기기 전 주문과, 금액을 못 넘겨받은 경로는 null 로 남는다 —
+     * null 을 0 으로 뭉개면 정률 정책이 조용히 0원을 지급하므로 판정에서 분리한다.
+     */
+    orderLineAmount: integer('order_line_amount'),
+
     eligibleAt: timestamp('eligible_at').notNull().defaultNow(),
     expiresAt: timestamp('expires_at').notNull(),
     consumedAt: timestamp('consumed_at'),
     consumedByReviewId: uuid('consumed_by_review_id').references(() => reviews.id, {
       onDelete: 'set null',
     }),
+
+    /**
+     * 주문 취소로 자격이 무효화된 시각. 만료(`expires_at`)를 앞당기는 방식은
+     * `POST /reviews` 가 만료를 보지 않아 구멍이 남으므로 별도 컬럼으로 둔다.
+     */
+    revokedAt: timestamp('revoked_at'),
+    revokeReason: varchar('revoke_reason', { length: 40 }),
 
     sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
@@ -233,6 +257,112 @@ export const reviewEligibilities = pgTable(
   ],
 );
 
+export const reviewRewardTriggerEnum = pgEnum('review_reward_trigger', ['ON_REVIEW_CREATED', 'WEEKLY_BEST']);
+
+export const reviewRewardKindEnum = pgEnum('review_reward_kind', ['NONE', 'POINT_FIXED', 'POINT_RATE', 'BADGE']);
+
+export const reviewRewardGrantStatusEnum = pgEnum('review_reward_grant_status', ['GRANTED', 'SKIPPED', 'REVOKED']);
+
+export const reviewBestSelectionStatusEnum = pgEnum('review_best_selection_status', [
+  'CANDIDATE',
+  'CONFIRMED',
+  'REJECTED',
+]);
+
+/**
+ * 리뷰 보상 규칙. 활성 규칙이 한 건도 없으면 아무 보상도 나가지 않는다 —
+ * active 의 기본값이 false 인 것은 그래서다.
+ */
+export const reviewRewardRules = pgTable(
+  'review_reward_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 100 }).notNull(),
+    description: text('description'),
+    trigger: reviewRewardTriggerEnum('trigger').notNull().$type<ReviewRewardTrigger>(),
+    active: boolean('active').notNull().default(false),
+    /** 큰 값이 먼저 평가된다 */
+    priority: integer('priority').notNull().default(0),
+    /** 이 규칙이 매칭되면 뒤 규칙을 보지 않는다. false 면 다음 규칙도 계속 평가 */
+    stopOnMatch: boolean('stop_on_match').notNull().default(true),
+    conditions: jsonb('conditions').$type<ReviewRewardConditions>().notNull(),
+    reward: jsonb('reward').$type<ReviewRewardSpec>().notNull(),
+    limits: jsonb('limits').$type<ReviewRewardLimits>().notNull(),
+    startsAt: timestamp('starts_at'),
+    endsAt: timestamp('ends_at'),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+    ...timestampColumns,
+  },
+  (table) => [
+    index('review_reward_rules_trigger_active').on(table.trigger, table.active),
+    index('review_reward_rules_priority').on(table.priority),
+  ],
+);
+
+/**
+ * 지급 원장. 지급된 건뿐 아니라 「왜 안 나갔는지」(SKIPPED + skipReason)도 남긴다.
+ * 한도 계산·회수·관리자 조회가 전부 이 표를 본다.
+ */
+export const reviewRewardGrants = pgTable(
+  'review_reward_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    ruleId: uuid('rule_id').references(() => reviewRewardRules.id, { onDelete: 'set null' }),
+    trigger: reviewRewardTriggerEnum('trigger').notNull().$type<ReviewRewardTrigger>(),
+    rewardKind: reviewRewardKindEnum('reward_kind').notNull().$type<ReviewRewardKind>(),
+    /** 포인트 금액. 비금전·미지급이면 0 */
+    amount: integer('amount').notNull().default(0),
+    expiresAt: timestamp('expires_at'),
+    status: reviewRewardGrantStatusEnum('status').notNull().$type<ReviewRewardGrantStatus>(),
+    skipReason: varchar('skip_reason', { length: 40 }).$type<ReviewRewardSkipReason>(),
+    selectionId: uuid('selection_id'),
+    revokedAt: timestamp('revoked_at'),
+    revokeReason: varchar('revoke_reason', { length: 40 }),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('review_reward_grants_review_trigger_unique').on(table.reviewId, table.trigger),
+    index('review_reward_grants_user_created').on(table.userId, table.createdAt),
+    index('review_reward_grants_status_created').on(table.status, table.createdAt),
+    index('review_reward_grants_rule').on(table.ruleId),
+  ],
+);
+
+/**
+ * 주간 베스트 리뷰 선정. 자동 집계가 후보(CANDIDATE)를 만들고,
+ * 관리자가 확정(CONFIRMED)해야 지급·뱃지가 나간다 — 추천수 조작을 사람이 거른다.
+ */
+export const reviewBestSelections = pgTable(
+  'review_best_selections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    ruleId: uuid('rule_id').references(() => reviewRewardRules.id, { onDelete: 'set null' }),
+    rank: integer('rank').notNull(),
+    helpfulCount: integer('helpful_count').notNull().default(0),
+    status: reviewBestSelectionStatusEnum('status').notNull().default('CANDIDATE').$type<BestSelectionStatus>(),
+    confirmedBy: uuid('confirmed_by'),
+    confirmedAt: timestamp('confirmed_at'),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('review_best_selections_period_review_unique').on(table.periodStart, table.reviewId),
+    index('review_best_selections_period').on(table.periodStart),
+    index('review_best_selections_status').on(table.status),
+    index('review_best_selections_review').on(table.reviewId),
+  ],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -240,6 +370,9 @@ export const ugcServiceSchema = {
   reactions,
   reviewEligibilities,
   reviewRewardPolicies,
+  reviewRewardRules,
+  reviewRewardGrants,
+  reviewBestSelections,
   questions,
   questionMedia,
   answers,

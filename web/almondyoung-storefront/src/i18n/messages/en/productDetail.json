@@ -211,6 +211,7 @@
     "sortRatingHigh": "Highest rated",
     "sortRatingLow": "Lowest rated",
     "sortSelectAria": "Select review sort order",
-    "filterPhotoOnly": "Photo reviews only"
+    "filterPhotoOnly": "Photo reviews only",
+    "bestBadge": "Best"
   }
 }

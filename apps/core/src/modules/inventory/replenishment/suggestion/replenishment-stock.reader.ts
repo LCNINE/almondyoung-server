@@ -9,10 +9,9 @@ export interface SkuMasterRow {
   skuId: string;
   skuCode: string;
   skuName: string;
-  safetyStock: number;
   moq: number | null;
   packingUnit: number | null;
-  supplier: { id: string; name: string } | null;
+  supplier: { id: string; name: string; defaultWarehouseId: string | null } | null;
 }
 
 export interface LedgerAggregate {
@@ -48,7 +47,6 @@ export class ReplenishmentStockReader {
           skuId: skus.id,
           skuCode: skus.code,
           skuName: skus.name,
-          safetyStock: skus.safetyStock,
           moq: skus.moq,
         })
         .from(skus)
@@ -63,7 +61,6 @@ export class ReplenishmentStockReader {
         skuId: row.skuId,
         skuCode: row.skuCode,
         skuName: row.skuName,
-        safetyStock: row.safetyStock,
         moq: row.moq ?? null,
         packingUnit: packing.get(row.skuId) ?? null,
         supplier: suppliers.get(row.skuId) ?? null,
@@ -168,7 +165,10 @@ export class ReplenishmentStockReader {
    * SKU 의 공급사 (스펙 §4.4): 가장 최근 `ordered` 발주 라인의 공급사 → 없으면 `sku_suppliers` 가
    * 정확히 하나일 때 그것 → 아니면 미정(null).
    */
-  private async resolveSuppliers(trx: DbTx, skuIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+  private async resolveSuppliers(
+    trx: DbTx,
+    skuIds: string[],
+  ): Promise<Map<string, { id: string; name: string; defaultWarehouseId: string | null }>> {
     const lines = wmsTables.purchaseOrderLines;
     const orders = wmsTables.purchaseOrders;
     const suppliers = wmsTables.suppliers;
@@ -178,6 +178,7 @@ export class ReplenishmentStockReader {
         skuId: lines.skuId,
         supplierId: suppliers.id,
         supplierName: suppliers.name,
+        supplierDefaultWarehouseId: suppliers.defaultWarehouseId,
         orderedAt: lines.orderedAt,
       })
       .from(lines)
@@ -186,24 +187,35 @@ export class ReplenishmentStockReader {
       .where(and(inArray(lines.skuId, skuIds), eq(lines.status, 'ordered'), isNotNull(lines.orderedAt)))
       .orderBy(desc(lines.orderedAt));
 
-    const result = new Map<string, { id: string; name: string }>();
+    const result = new Map<string, { id: string; name: string; defaultWarehouseId: string | null }>();
     for (const row of ordered) {
-      if (!result.has(row.skuId)) result.set(row.skuId, { id: row.supplierId, name: row.supplierName });
+      if (!result.has(row.skuId)) {
+        result.set(row.skuId, {
+          id: row.supplierId,
+          name: row.supplierName,
+          defaultWarehouseId: row.supplierDefaultWarehouseId,
+        });
+      }
     }
 
     const unresolved = skuIds.filter((id) => !result.has(id));
     if (unresolved.length === 0) return result;
 
     const links = await trx
-      .select({ skuId: wmsTables.skuSuppliers.skuId, supplierId: suppliers.id, supplierName: suppliers.name })
+      .select({
+        skuId: wmsTables.skuSuppliers.skuId,
+        supplierId: suppliers.id,
+        supplierName: suppliers.name,
+        supplierDefaultWarehouseId: suppliers.defaultWarehouseId,
+      })
       .from(wmsTables.skuSuppliers)
       .innerJoin(suppliers, eq(suppliers.id, wmsTables.skuSuppliers.supplierId))
       .where(inArray(wmsTables.skuSuppliers.skuId, unresolved));
 
-    const grouped = new Map<string, Array<{ id: string; name: string }>>();
+    const grouped = new Map<string, Array<{ id: string; name: string; defaultWarehouseId: string | null }>>();
     for (const row of links) {
       const list = grouped.get(row.skuId) ?? [];
-      list.push({ id: row.supplierId, name: row.supplierName });
+      list.push({ id: row.supplierId, name: row.supplierName, defaultWarehouseId: row.supplierDefaultWarehouseId });
       grouped.set(row.skuId, list);
     }
     for (const [skuId, list] of grouped) {

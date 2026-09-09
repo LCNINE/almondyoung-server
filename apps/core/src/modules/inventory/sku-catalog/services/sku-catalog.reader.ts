@@ -309,9 +309,6 @@ export class SkuCatalogReader {
 
       if (filters.displayMode && filters.warehouseId) {
         switch (filters.displayMode) {
-          case StockDisplayMode.BELOW_SAFETY:
-            conditions.push(sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`);
-            break;
           case StockDisplayMode.WITH_STOCK:
             conditions.push(sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`);
             break;

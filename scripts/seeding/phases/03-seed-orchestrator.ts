@@ -8,6 +8,7 @@ import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
+import { ReplenishmentSeedStep } from '../steps/replenishment.seed-step';
 import {
   UserServiceSeedStep,
   STOREFRONT_APP_CLIENT_SEED,
@@ -193,6 +194,7 @@ function buildSeedSteps(
     steps.push(new WmsSeedStep(coreDbUrl));
     steps.push(new PimSeedStep(coreDbUrl));
     steps.push(new ProductMatchingBackfillSeedStep(coreDbUrl));
+    steps.push(new ReplenishmentSeedStep(coreDbUrl));
   }
 
   const userEntry = registryMap.get('user-service');

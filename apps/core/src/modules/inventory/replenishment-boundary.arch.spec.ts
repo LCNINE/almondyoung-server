@@ -61,14 +61,20 @@ describe('replenishment boundary (arch)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('순수 층(policy/ · suggestion.assembler · suggestion.types)은 Nest · drizzle 을 모른다', () => {
+  it('순수 층(policy/ · suggestion.assembler · suggestion.types · demand/calendar · demand-profile.calculator)은 Nest · drizzle 을 모른다', () => {
     const pure = collectTsFiles(REPLENISHMENT_DIR).filter(
       (file) =>
         file.includes(`${sep}policy${sep}`) ||
         file.endsWith('suggestion.assembler.ts') ||
-        file.endsWith('suggestion.types.ts'),
+        file.endsWith('suggestion.types.ts') ||
+        file.endsWith(`${sep}demand${sep}calendar.ts`) ||
+        file.endsWith('demand-profile.calculator.ts') ||
+        file.endsWith(`${sep}rules${sep}effective-parameters.ts`),
     );
-    expect(pure.length).toBeGreaterThan(0);
+    // policy/ 4(rounding·classification·distributions·replenishment-policy) +
+    // suggestion.assembler·suggestion.types 2 + demand/calendar·demand-profile.calculator 2 +
+    // rules/effective-parameters 1 = 9. 하한이지 정확한 개수가 아니다 — 줄면 잡는다.
+    expect(pure.length).toBeGreaterThanOrEqual(9);
     const violations = pure.flatMap((file) =>
       moduleSpecifiers(file)
         .filter((s) => FRAMEWORK.test(s))

@@ -63,15 +63,23 @@ describe('admin menu navigation', () => {
     });
   });
 
-  it('재고관리 아래에 보충 제안이 발주관리 바로 다음에 있다', () => {
+  it('재고관리 아래에 보충 제안이 발주관리 바로 다음, 보충 규칙이 그 다음에 있다', () => {
     expect(getActiveMenuAndItem('/inventory/replenishment')).toEqual({
       menuId: 'inventory-product',
       itemId: 'inventory-replenishment',
+    });
+    // 하위 경로다 — 접두어 매칭이 `inventory-replenishment` 로 먼저 걸리면 안 된다.
+    expect(getActiveMenuAndItem('/inventory/replenishment/rules')).toEqual({
+      menuId: 'inventory-product',
+      itemId: 'inventory-replenishment-rules',
     });
     const inventory = getMenuById('inventory-product');
     const ids = (inventory?.children ?? []).map((item) => item.id);
     expect(ids.indexOf('inventory-replenishment')).toBe(
       ids.indexOf('inventory-purchase-orders') + 1
+    );
+    expect(ids.indexOf('inventory-replenishment-rules')).toBe(
+      ids.indexOf('inventory-replenishment') + 1
     );
   });
 });

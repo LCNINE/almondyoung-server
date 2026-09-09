@@ -313,6 +313,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/replenishment',
       },
       {
+        id: 'inventory-replenishment-rules',
+        title: '보충 규칙',
+        path: '/inventory/replenishment/rules',
+      },
+      {
         id: 'inventory-inbound',
         title: '입고 관리',
         path: '/inventory/inbound',
@@ -420,6 +425,11 @@ export const mainMenus: MainMenu[] = [
         id: 'review-management',
         title: '리뷰 관리',
         path: '/cs/reviews',
+      },
+      {
+        id: 'review-reward-policy',
+        title: '리뷰 보상 정책',
+        path: '/cs/reviews/rewards',
       },
       {
         id: 'qna-management',

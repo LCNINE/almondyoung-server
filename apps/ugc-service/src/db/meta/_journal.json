@@ -15,6 +15,20 @@
       "when": 1779244739804,
       "tag": "20260520023859_review-question-soft-delete",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788756683845,
+      "tag": "20260907045123_review-reward-rule-engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788852673094,
+      "tag": "20260908073113_add-eligibility-revocation",
+      "breakpoints": true
     }
   ]
 }

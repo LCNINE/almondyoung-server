@@ -81,8 +81,87 @@ describeIfDb('WarehouseTransferReader.findDraftPlannedBySku (DB integration)', (
       await manager.ship({ transferOrderId: shipped.transferOrderId, idempotencyKey: `ship-${randomUUID()}` }, trx);
 
       const result = await reader.findDraftPlannedBySku(trx, [skuId, otherSkuId]);
-      expect(result.get(skuId)).toBe(50);
+      expect(result.get(skuId)).toEqual([{ fromWarehouseId: source.warehouseId, qty: 50 }]);
       expect(result.has(otherSkuId)).toBe(false);
+    });
+  });
+
+  it('판매 창고에서 나가는 draft(반품 이동)는 세지 않고, 출발 창고별로 나눈다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const china = await seedWarehouseWithZone(trx);
+      await trx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(eq(wmsTables.warehouses.id, china.warehouseId));
+      const other = await seedWarehouseWithZone(trx);
+      await trx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(eq(wmsTables.warehouses.id, other.warehouseId));
+      const bucheon = await seedWarehouseWithZone(trx); // 판매 창고
+      const { holderId } = await seedHolder(trx);
+      const { skuId } = await seedSku(trx, holderId);
+      await receiveStock(w.command, trx, {
+        skuId,
+        warehouseId: china.warehouseId,
+        locationId: china.locationId,
+        quantity: 100,
+      });
+      await receiveStock(w.command, trx, {
+        skuId,
+        warehouseId: other.warehouseId,
+        locationId: other.locationId,
+        quantity: 100,
+      });
+      await receiveStock(w.command, trx, {
+        skuId,
+        warehouseId: bucheon.warehouseId,
+        locationId: bucheon.locationId,
+        quantity: 100,
+      });
+
+      const dbService = boundDbService(trx);
+      const manager = new WarehouseTransferManager(
+        dbService,
+        w.command,
+        w.location,
+        new InventoryIdempotencyService(dbService),
+      );
+      const reader = new WarehouseTransferReader(dbService);
+      await manager.createOrder(
+        {
+          fromWarehouseId: china.warehouseId,
+          toWarehouseId: bucheon.warehouseId,
+          lines: [{ skuId, fromLocationId: china.locationId, quantity: 10 }],
+        },
+        trx,
+      );
+      await manager.createOrder(
+        {
+          fromWarehouseId: other.warehouseId,
+          toWarehouseId: bucheon.warehouseId,
+          lines: [{ skuId, fromLocationId: other.locationId, quantity: 7 }],
+        },
+        trx,
+      );
+      // 부천 → 중국 반품 이동 초안 — 비판매 이동가능과 무관
+      await manager.createOrder(
+        {
+          fromWarehouseId: bucheon.warehouseId,
+          toWarehouseId: china.warehouseId,
+          lines: [{ skuId, fromLocationId: bucheon.locationId, quantity: 99 }],
+        },
+        trx,
+      );
+
+      const result = await reader.findDraftPlannedBySku(trx, [skuId]);
+      expect(result.get(skuId)).toEqual(
+        expect.arrayContaining([
+          { fromWarehouseId: china.warehouseId, qty: 10 },
+          { fromWarehouseId: other.warehouseId, qty: 7 },
+        ]),
+      );
+      expect(result.get(skuId)).toHaveLength(2);
     });
   });
 

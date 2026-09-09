@@ -211,6 +211,7 @@
     "sortRatingHigh": "별점높은순",
     "sortRatingLow": "별점낮은순",
     "sortSelectAria": "리뷰 정렬 기준 선택",
-    "filterPhotoOnly": "포토리뷰만 보기"
+    "filterPhotoOnly": "포토리뷰만 보기",
+    "bestBadge": "베스트"
   }
 }

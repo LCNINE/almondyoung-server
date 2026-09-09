@@ -99,14 +99,6 @@ export const useSkusTableColumns = (actions: RowActions) => {
           </span>
         ),
       }),
-      columnHelper.accessor('safetyStock', {
-        header: '안전재고',
-        cell: ({ getValue }) => (
-          <span className="tabular-nums text-xs">
-            {getValue().toLocaleString('ko-KR')}
-          </span>
-        ),
-      }),
       columnHelper.accessor('updatedAt', {
         header: '수정일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,

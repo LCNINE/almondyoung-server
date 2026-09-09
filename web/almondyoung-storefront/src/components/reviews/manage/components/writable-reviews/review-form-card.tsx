@@ -101,10 +101,15 @@ export const ReviewFormCard = ({
   const textPolicy = rewardPolicies.find((p) => p.reviewType === "TEXT")
   const photoPolicy = rewardPolicies.find((p) => p.reviewType === "PHOTO")
   const minContentLength = textPolicy?.minContentLength ?? 30
+
+  // 금액으로 말할 수 있는 것은 정액 규칙뿐이다. 정률은 주문마다 달라져 여기서 숫자로 쓰면
+  // 실제 지급액과 어긋나므로, 이 자리의 금액 안내는 정액일 때만 띄운다.
+  const fixedTextPolicy = textPolicy?.rewardKind === "POINT_FIXED" ? textPolicy : undefined
+  const fixedPhotoPolicy = photoPolicy?.rewardKind === "POINT_FIXED" ? photoPolicy : undefined
   const photoBonusAmount =
-    photoPolicy && textPolicy
-      ? photoPolicy.rewardAmount - textPolicy.rewardAmount
-      : (photoPolicy?.rewardAmount ?? 0)
+    fixedPhotoPolicy && fixedTextPolicy
+      ? fixedPhotoPolicy.rewardAmount - fixedTextPolicy.rewardAmount
+      : (fixedPhotoPolicy?.rewardAmount ?? 0)
 
   const schema = useMemo(
     () =>
@@ -299,13 +304,13 @@ export const ReviewFormCard = ({
                       />
                     </FormControl>
                     <div className="mt-1 flex items-center justify-between">
-                      {textPolicy ? (
+                      {fixedTextPolicy ? (
                         <p className="text-[12px] text-gray-400">
                           {tForm.rich("textRewardHint", {
                             min: minContentLength,
                             strong: () => (
                               <span className="font-medium text-[#FF9500]">
-                                {tForm("textRewardAmount", { amount: textPolicy.rewardAmount.toLocaleString() })}
+                                {tForm("textRewardAmount", { amount: fixedTextPolicy.rewardAmount.toLocaleString() })}
                               </span>
                             ),
                           })}
@@ -344,7 +349,7 @@ export const ReviewFormCard = ({
                     <p className="text-[15px] font-semibold text-gray-800">
                       {tForm("addPhoto")}
                     </p>
-                    {photoPolicy && photoBonusAmount > 0 && (
+                    {fixedPhotoPolicy && photoBonusAmount > 0 && (
                       <p className="mt-0.5 text-[13px] text-gray-500">
                         {tForm.rich("addPhotoHint", {
                           strong: () => (
@@ -367,7 +372,7 @@ export const ReviewFormCard = ({
                           max: MAX_PHOTO_COUNT,
                         })}
                       </p>
-                      {photoPolicy && photoBonusAmount > 0 && (
+                      {fixedPhotoPolicy && photoBonusAmount > 0 && (
                         <p className="text-[12px] font-medium text-emerald-500">
                           {tForm("photoBonusInline", { amount: photoBonusAmount.toLocaleString() })}
                         </p>

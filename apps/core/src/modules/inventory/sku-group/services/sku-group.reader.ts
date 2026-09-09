@@ -81,7 +81,6 @@ export class SkuGroupReader {
           id: skus.id,
           name: skus.name,
           code: skus.code,
-          safetyStock: skus.safetyStock,
           primaryLocationId: skus.primaryLocationId,
         })
         .from(skus)
@@ -92,7 +91,6 @@ export class SkuGroupReader {
         id: m.id,
         name: m.name,
         code: m.code,
-        safetyStock: m.safetyStock,
         primaryLocationId: m.primaryLocationId,
       }));
 
@@ -114,7 +112,6 @@ export class SkuGroupReader {
           id: skus.id,
           name: skus.name,
           code: skus.code,
-          safetyStock: skus.safetyStock,
           primaryLocationId: skus.primaryLocationId,
         })
         .from(skus)
@@ -127,7 +124,6 @@ export class SkuGroupReader {
         id: s.id,
         name: s.name,
         code: s.code,
-        safetyStock: s.safetyStock,
         primaryLocationId: s.primaryLocationId,
       }));
     }, tx);

@@ -21,6 +21,7 @@ export class ReviewMapper {
       createdAt: entity.createdAt.toISOString(),
       updatedAt: entity.updatedAt.toISOString(),
       adminComment: entity.adminComment ? ReviewMapper.toCommentResponse(entity.adminComment) : null,
+      isBest: entity.isBest ?? false,
     };
   }
 

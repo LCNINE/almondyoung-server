@@ -7,7 +7,7 @@ import { GlobalExceptionFilter } from '@app/shared';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
-import { mountEventChainContext } from '@app/events';
+import { createKafkaConfigFromEnv, EventsModule, mountEventChainContext } from '@app/events';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter(), {
@@ -63,6 +63,18 @@ async function bootstrap() {
       }
       done();
     });
+
+  // 주문 취소를 듣기 위한 첫 소비자. 구독 집합은 `@On` 에서 도출된다 (ADR-0029 §3).
+  // Kafka 설정이 없으면 소비 없이 HTTP 만 뜬다 — 로컬·테스트가 브로커 없이 돌아야 한다.
+  const kafkaConfig = createKafkaConfigFromEnv();
+  if (kafkaConfig) {
+    await EventsModule.startConsumer(app, {
+      groupId: process.env.KAFKA_GROUP_ID || 'ugc-service-consumer',
+      kafka: kafkaConfig,
+    });
+  } else {
+    console.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
+  }
 
   const port = process.env.PORT ?? 3031;
 
