@@ -20,7 +20,13 @@ export class CronOnceRunner {
 
   wrap(meta: CronOnceMetadata, body: () => Promise<unknown>, now: () => Date = () => new Date()): () => Promise<void> {
     return async () => {
-      const periodAt = computePeriodAt(meta.expression, now(), meta.timeZone);
+      let periodAt: Date;
+      try {
+        periodAt = computePeriodAt(meta.expression, now(), meta.timeZone);
+      } catch (error) {
+        this.logger.error(`invalid schedule for ${meta.name}: ${meta.expression}`, error);
+        return;
+      }
 
       let claimed: boolean;
       try {

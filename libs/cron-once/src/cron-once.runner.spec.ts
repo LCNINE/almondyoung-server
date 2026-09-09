@@ -2,12 +2,15 @@ import { Logger } from '@nestjs/common';
 import { CronRunClaimer } from './cron-run.claimer';
 import { CronOnceRunner } from './cron-once.runner';
 
-const makeClaimer = (claimResult: boolean | Error) => {
+const makeClaimer = (claimResult: boolean | Error, finishResult?: void | Error) => {
   const claim = jest.fn(async () => {
     if (claimResult instanceof Error) throw claimResult;
     return claimResult;
   });
-  const finish = jest.fn(async () => undefined);
+  const finish = jest.fn(async () => {
+    if (finishResult instanceof Error) throw finishResult;
+    return undefined;
+  });
   return { claimer: { claim, finish, instanceId: 'task-a' } as unknown as CronRunClaimer, claim, finish };
 };
 
@@ -65,5 +68,23 @@ describe('CronOnceRunner.wrap', () => {
     const seoul = { expression: '0 4 * * *', name: 'nightly', timeZone: 'Asia/Seoul' };
     await new CronOnceRunner(claimer).wrap(seoul, async () => undefined, () => new Date('2026-09-10T19:00:00.200Z'))();
     expect(claim).toHaveBeenCalledWith('nightly', new Date('2026-09-10T19:00:00.000Z'));
+  });
+
+  it('finish 가 실패하면 error 로그를 남기되 reject 하지 않는다', async () => {
+    const { claimer, finish } = makeClaimer(true, new Error('finish down'));
+    const body = jest.fn(async () => undefined);
+    await expect(new CronOnceRunner(claimer).wrap(META, body, NOW)()).resolves.toBeUndefined();
+    expect(body).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('probe'), expect.anything());
+  });
+
+  it('잘못된 크론식은 콜백을 reject 시키지 않는다', async () => {
+    const { claimer, claim } = makeClaimer(true);
+    const broken = { expression: 'not a cron', name: 'broken' };
+    const body = jest.fn(async () => undefined);
+    await expect(new CronOnceRunner(claimer).wrap(broken, body, NOW)()).resolves.toBeUndefined();
+    expect(claim).not.toHaveBeenCalled();
+    expect(body).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('broken'), expect.anything());
   });
 });
