@@ -42,7 +42,12 @@ export class PauseService {
     this.logger.log(`일시정지 자동 재개 대상 ${due.length}건`);
     for (const entitlement of due) {
       try {
-        await this.pauseManager.resumePause(entitlement.userId, entitlement);
+        // 선점에 진 실행은 아무것도 쓰지 않았으므로 «발행도 하지 않는다» (#707). 옛 구현은
+        // 읽어 온 목록을 그대로 돌며 발행해, 배포 창에서 두 인스턴스가 겹치면 같은 유저에게
+        // 재개 알림이 두 번 갔다.
+        const resumed = await this.pauseManager.resumePause(entitlement.userId, entitlement);
+        if (!resumed) continue;
+
         await this.membershipEventPublisher
           .publishStatusChanged({
             userId: entitlement.userId,
@@ -50,7 +55,9 @@ export class PauseService {
             occurredAt: new Date().toISOString(),
           })
           .catch((e: unknown) =>
-            this.logger.warn(`RESUMED 이벤트 발행 실패 (userId=${entitlement.userId}): ${e instanceof Error ? e.message : String(e)}`),
+            this.logger.warn(
+              `RESUMED 이벤트 발행 실패 (userId=${entitlement.userId}): ${e instanceof Error ? e.message : String(e)}`,
+            ),
           );
       } catch (err) {
         this.logger.error(
@@ -96,6 +103,11 @@ export class PauseService {
     }
 
     const result = await this.pauseManager.resumePause(userId, entitlement);
+    // 사용자가 두 번 눌렀거나 자동 재개 크론과 겹친 경우 — 이미 재개돼 있다. 여기서 다시
+    // 발행하면 알림만 한 번 더 간다.
+    if (!result) {
+      throw new Error('Subscription is already resumed');
+    }
 
     await this.membershipEventPublisher.publishStatusChanged({
       userId,

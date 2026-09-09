@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { addDays, differenceInDays } from 'date-fns';
@@ -128,10 +128,20 @@ export class PauseManager {
   /**
    * 구독 일시정지 재개
    *
+   * 🔴 **정지 자격을 «조건부로» 선점한 쪽만 재개한다** (#707). 옛 구현은 `entitlement.id` 만 보고
+   * 무조건 닫은 뒤 새 자격을 넣었다. `subscription_entitlement` 에는 "유저당 isCurrent 하나" 를
+   * 강제하는 제약이 없으므로, 자동 재개 크론이 두 인스턴스에서 겹치면(배포 창) **isCurrent=true 인
+   * 자격이 두 벌 생기고** `nextBillingDate` 가 두 번 밀려 한 주기가 통째로 건너뛰어진다.
+   * 무해한 통지 중복이 아니라 데이터 손상이라, 여기서 막는다.
+   *
+   * 선점에 진 호출은 `null` 을 돌려준다 — 이미 다른 실행이 재개를 끝냈다는 뜻이므로 호출자는
+   * 이벤트 발행을 건너뛴다. `handleExpiration`(billing-outcome.handler) 이 쓰는 것과 같은 관용구다.
+   *
    * @param userId - 사용자 ID
    * @param entitlement - 현재 일시정지된 권한
+   * @returns 재개 결과. 이미 다른 실행이 선점했으면 `null`
    */
-  async resumePause(userId: string, entitlement: any): Promise<ResumeResult> {
+  async resumePause(userId: string, entitlement: any): Promise<ResumeResult | null> {
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
       const now = new Date();
 
@@ -140,7 +150,26 @@ export class PauseManager {
       const actualPausedDays = Math.max(0, differenceInDays(now, pausedAt));
       const resumedEndsAt = addDays(new Date(entitlement.endsAt), actualPausedDays);
 
-      // 1. 이벤트 배치 생성
+      // 1. 정지 자격 선점 — 아직 «현재이면서 정지 중» 인 행만 닫는다. 0행이면 이미 재개된 것이라
+      //    아무것도 쓰지 않고 빠진다. 배치 생성보다 «먼저» 해야 고아 배치가 남지 않는다.
+      const [claimed] = await tx
+        .update(schema.subscriptionEntitlement)
+        .set({ isCurrent: false, closedAt: now })
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.id, entitlement.id),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+            isNotNull(schema.subscriptionEntitlement.pausedAt),
+          ),
+        )
+        .returning({ id: schema.subscriptionEntitlement.id });
+
+      if (!claimed) {
+        this.logger.log(`resumePause: 이미 재개됨 — 건너뜀 (userId=${userId}, entitlementId=${entitlement.id})`);
+        return null;
+      }
+
+      // 2. 이벤트 배치 생성 후 방금 닫은 행에 연결
       const [eventBatch] = await tx
         .insert(schema.eventBatches)
         .values({
@@ -149,14 +178,9 @@ export class PauseManager {
         })
         .returning();
 
-      // 2. 기존 entitlement 닫기
       await tx
         .update(schema.subscriptionEntitlement)
-        .set({
-          isCurrent: false,
-          closedAt: now,
-          closedBatchId: eventBatch.id,
-        })
+        .set({ closedBatchId: eventBatch.id })
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
       // 3. 새로운 entitlement 생성 (일시정지 해제 + 실제 정지 일수만큼 연장된 종료일)

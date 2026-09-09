@@ -117,26 +117,28 @@ export class CmsMemberService {
   }
 
   async findByUserId(userId: string): Promise<CmsMember[]> {
-    return this.dbService.db
-      .select()
-      .from(cmsMembers)
-      .where(eq(cmsMembers.userId, userId));
+    return this.dbService.db.select().from(cmsMembers).where(eq(cmsMembers.userId, userId));
   }
 
   async findPendingMembers(): Promise<CmsMember[]> {
-    return this.dbService.db
-      .select()
-      .from(cmsMembers)
-      .where(eq(cmsMembers.status, 'PENDING'));
+    return this.dbService.db.select().from(cmsMembers).where(eq(cmsMembers.status, 'PENDING'));
   }
 
+  /**
+   * 심사 결과를 반영한다.
+   *
+   * 🔴 **`PENDING` 인 행만 종결한다** (#707). 폴러가 두 인스턴스에서 겹치면(배포 창) 둘 다 같은
+   * PENDING 행을 읽고 둘 다 여기로 들어온다. 무조건 UPDATE 였을 때는 둘 다 성립해 그 뒤의
+   * 거절 통지가 두 번 발행됐다. 반환값이 `false` 면 다른 실행이 이미 종결한 것이므로 호출자는
+   * 후속 처리(통지·인보이스 종결)를 건너뛴다.
+   */
   async updateStatus(
     id: string,
     status: 'REGISTERED' | 'FAILED' | 'DELETED',
     resultCode?: string,
     resultMessage?: string,
-  ): Promise<void> {
-    await this.dbService.db
+  ): Promise<boolean> {
+    const claimed = await this.dbService.db
       .update(cmsMembers)
       .set({
         status,
@@ -144,14 +146,13 @@ export class CmsMemberService {
         resultMessage: resultMessage ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(cmsMembers.id, id));
+      .where(and(eq(cmsMembers.id, id), eq(cmsMembers.status, 'PENDING')))
+      .returning({ id: cmsMembers.id });
+
+    return claimed.length > 0;
   }
 
-  async updateBankAccount(
-    billingMethodId: string,
-    userId: string,
-    dto: CmsBankAccountInput,
-  ): Promise<CmsMember> {
+  async updateBankAccount(billingMethodId: string, userId: string, dto: CmsBankAccountInput): Promise<CmsMember> {
     const cmsMember = await this.findByBillingMethodId(billingMethodId);
     if (!cmsMember || cmsMember.userId !== userId) {
       throw new Error('CMS billing method not found or access denied');

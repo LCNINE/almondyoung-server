@@ -15,9 +15,12 @@ describe('DormantService', () => {
   let service: DormantService;
   let updateCalls: { set: Record<string, unknown> }[];
   let selectRows: unknown[][];
+  let returningRows: unknown[][];
+  let publishedEvents: { eventType: string; aggregateId: string }[];
 
   function makeDb() {
     updateCalls = [];
+    returningRows = [];
     // markDormantUsersAndNotify → permanentDelete 순으로 select 가 호출된다.
     // 각 루프가 빈 배열을 만나면 즉시 빠져나오도록 한 번씩만 결과를 준다.
     selectRows = [];
@@ -38,7 +41,17 @@ describe('DormantService', () => {
         update: jest.fn(() => ({
           set: jest.fn((set: Record<string, unknown>) => {
             updateCalls.push({ set });
-            return { where: jest.fn(async () => undefined) };
+            // `where` 는 그대로 await 되기도 하고 `.returning()` 이 이어지기도 한다.
+            // 둘 다 되게 Promise 에 returning 을 얹는다 — returning 을 빼면
+            // 서비스의 TypeError 가 handleDormantAccounts 의 catch 에 삼켜져
+            // 「스펙은 초록인데 라이브는 매일 밤 실패」가 된다 (#707 수정 중 실제로 겪음).
+            return {
+              where: jest.fn(() =>
+                Object.assign(Promise.resolve(undefined), {
+                  returning: jest.fn(async () => returningRows.shift() ?? []),
+                }),
+              ),
+            };
           }),
         })),
         delete: jest.fn(() => ({ where: jest.fn(async () => undefined) })),
@@ -47,11 +60,20 @@ describe('DormantService', () => {
   }
 
   beforeEach(async () => {
+    publishedEvents = [];
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DormantService,
         { provide: DbService, useValue: makeDb() },
-        { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
+        {
+          provide: 'STREAM_PUBLISHER_users.events.v1',
+          useValue: {
+            publishEvent: jest.fn((e: { eventType: string; aggregateId: string }) => {
+              publishedEvents.push(e);
+              return Promise.resolve();
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -64,6 +86,7 @@ describe('DormantService', () => {
 
   it('휴면 전환은 dormant_at 에 쓰고 deleted_at 은 건드리지 않는다', async () => {
     selectRows.push([{ id: 'u-1', email: 'a@b.c' }]);
+    returningRows.push([{ id: 'u-1', email: 'a@b.c' }]);
 
     await service.handleDormantAccounts();
 
@@ -76,6 +99,33 @@ describe('DormantService', () => {
     await service.handleDormantAccounts();
 
     expect(updateCalls).toHaveLength(0);
+  });
+
+  // #707. 배포 창에서 태스크가 겹치면 두 인스턴스가 같은 «미전환» 목록을 읽는다.
+  // UPDATE 는 원래도 조건부였으니 DB 는 멀쩡하지만, 통지가 읽은 목록을 따라가면
+  // 진 쪽도 발행해 휴면 안내가 두 번 나간다. 통지는 «전환한 행» 만 따라가야 한다.
+  it('통지는 실제로 전환한 행만 따라간다 — 스캔 목록이 아니다', async () => {
+    selectRows.push([
+      { id: 'u-1', email: 'a@b.c' },
+      { id: 'u-2', email: 'd@e.f' },
+    ]);
+    // 다른 인스턴스가 u-2 를 먼저 전환해 갔다 → 우리 UPDATE 는 u-1 만 잡는다.
+    returningRows.push([{ id: 'u-1', email: 'a@b.c' }]);
+
+    await service.handleDormantAccounts();
+
+    expect(publishedEvents).toEqual([
+      expect.objectContaining({ eventType: 'UserDormantConverted', aggregateId: 'u-1' }),
+    ]);
+  });
+
+  it('한 건도 전환하지 못하면 아무에게도 통지하지 않는다', async () => {
+    selectRows.push([{ id: 'u-1', email: 'a@b.c' }]);
+    returningRows.push([]);
+
+    await service.handleDormantAccounts();
+
+    expect(publishedEvents).toEqual([]);
   });
 
   it('스키마에 dormant_at 과 deleted_at 이 별도 컬럼으로 존재한다', () => {

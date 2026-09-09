@@ -101,6 +101,9 @@ export class ExpiryNoticeService {
           occurredAt: new Date().toISOString(),
         },
         tx,
+        // 자격 하나의 종료일 하나에 고지 한 번. 두 인스턴스가 겹쳐도 아웃박스 유니크 제약이
+        // 둘째를 삼킨다 (#707).
+        `membership:expiry-notice:${target.entitlementId}:${target.endsAt}`,
       );
 
       await tx
