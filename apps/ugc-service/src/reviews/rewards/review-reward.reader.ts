@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { reviewEligibilities, type UgcServiceSchema } from '../../db/schema';
 import { UgcTx } from './review-reward-rule.service';
 
@@ -34,6 +34,38 @@ export class ReviewRewardReader {
           })
           .from(reviewEligibilities)
           .where(and(eq(reviewEligibilities.orderId, orderId), isNull(reviewEligibilities.revokedAt))),
+      tx,
+    );
+  }
+
+  /**
+   * 그 주문의 «지정한 라인만». 반품은 부분이 기본이라 라인으로 좁히지 않으면 반품하지 않은
+   * 라인의 자격까지 죽는다. `order_line_id` 는 전역 unique 지만 주문 조건을 함께 걸어
+   * 잘못된 라인 목록이 다른 주문을 건드리지 못하게 한다.
+   */
+  async findLiveEligibilitiesByOrderLineIds(
+    orderId: string,
+    orderLineIds: string[],
+    tx?: UgcTx,
+  ): Promise<OrderEligibilityRow[]> {
+    if (orderLineIds.length === 0) return [];
+    return this.db.run(
+      async (trx) =>
+        trx
+          .select({
+            id: reviewEligibilities.id,
+            userId: reviewEligibilities.userId,
+            orderLineId: reviewEligibilities.orderLineId,
+            consumedByReviewId: reviewEligibilities.consumedByReviewId,
+          })
+          .from(reviewEligibilities)
+          .where(
+            and(
+              eq(reviewEligibilities.orderId, orderId),
+              inArray(reviewEligibilities.orderLineId, orderLineIds),
+              isNull(reviewEligibilities.revokedAt),
+            ),
+          ),
       tx,
     );
   }

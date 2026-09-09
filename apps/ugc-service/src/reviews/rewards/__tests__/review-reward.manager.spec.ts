@@ -26,7 +26,10 @@ function makeHarness(options: {
   } as never;
 
   const db = { run: (fn: (trx: unknown) => Promise<unknown>) => fn(tx) };
-  const reader = { findLiveEligibilitiesByOrderId: jest.fn().mockResolvedValue(options.eligibilities) };
+  const reader = {
+    findLiveEligibilitiesByOrderId: jest.fn().mockResolvedValue(options.eligibilities),
+    findLiveEligibilitiesByOrderLineIds: jest.fn().mockResolvedValue(options.eligibilities),
+  };
   const grantService = {
     revokeForReviews: jest.fn(async (reviewIds: string[], reason: string) => {
       revokeCalls.push({ reviewIds, reason });
@@ -113,5 +116,87 @@ describe('ReviewRewardManager.revokeForCancelledOrder', () => {
 
     expect(harness.revokeCalls[0].reason).toBe('ORDER_CANCELLED_NOT_USER_FAULT');
     expect(harness.eligibilityUpdates[0]).toMatchObject({ revokeReason: 'ORDER_CANCELLED_NOT_USER_FAULT' });
+  });
+});
+
+const fullReturn = {
+  channelOrderId: 'order_01',
+  reason: 'change_of_mind' as const,
+  returnedLines: [
+    { salesOrderLineId: 'sol-1', channelOrderItemId: 'line-1', orderedQuantity: 1, returnedQuantity: 1 },
+  ],
+};
+
+describe('ReviewRewardManager.revokeForReturnedOrder', () => {
+  it('전량 반품된 라인의 자격을 무효화하고, 소비된 자격의 지급은 회수한다', async () => {
+    const harness = makeHarness({
+      eligibilities: [{ id: 'elig-1', userId: 'user-1', orderLineId: 'line-1', consumedByReviewId: 'review-1' }],
+      invalidated: [{ id: 'elig-1', consumedByReviewId: 'review-1' }],
+      revoked: [{ grantId: 'grant-1', reviewId: 'review-1', userId: 'user-1', amount: 300 }],
+    });
+
+    const result = await harness.manager.revokeForReturnedOrder(fullReturn);
+
+    expect(result).toEqual({ skipped: null, invalidatedEligibilities: 0, revokedGrants: 1, skippedLines: [] });
+    expect(harness.eligibilityUpdates[0]).toMatchObject({ revokeReason: 'ORDER_RETURNED' });
+    expect(harness.cancelCommands).toEqual([
+      {
+        grantId: 'grant-1',
+        reviewId: 'review-1',
+        userId: 'user-1',
+        reasonCode: 'review-reward-cancel:order_returned',
+      },
+    ]);
+  });
+
+  it('반품하지 않은 라인은 조회 대상에서 빠진다 — 주문 전체를 회수하지 않는다', async () => {
+    const harness = makeHarness({ eligibilities: [], invalidated: [], revoked: [] });
+
+    await harness.manager.revokeForReturnedOrder({
+      ...fullReturn,
+      returnedLines: [
+        { salesOrderLineId: 'sol-1', channelOrderItemId: 'line-1', orderedQuantity: 1, returnedQuantity: 1 },
+        { salesOrderLineId: 'sol-2', channelOrderItemId: 'line-2', orderedQuantity: 2, returnedQuantity: 1 },
+      ],
+    });
+
+    expect(harness.reader.findLiveEligibilitiesByOrderLineIds).toHaveBeenCalledWith('order_01', ['line-1'], expect.anything());
+  });
+
+  it('회수할 라인이 하나도 없으면 조회조차 하지 않고, 제외 사유를 돌려준다', async () => {
+    const harness = makeHarness({ eligibilities: [], invalidated: [], revoked: [] });
+
+    const result = await harness.manager.revokeForReturnedOrder({
+      ...fullReturn,
+      returnedLines: [
+        { salesOrderLineId: 'sol-1', channelOrderItemId: 'line-1', orderedQuantity: 3, returnedQuantity: 1 },
+      ],
+    });
+
+    expect(result.skipped).toBe('NO_REVOCABLE_LINES');
+    expect(result.skippedLines).toEqual([{ salesOrderLineId: 'sol-1', skipReason: 'PARTIAL_QUANTITY' }]);
+    expect(harness.reader.findLiveEligibilitiesByOrderLineIds).not.toHaveBeenCalled();
+  });
+
+  it('재전달되면 추가 회수가 0건이다 — 이미 회수된 자격은 조회에서 빠진다', async () => {
+    const harness = makeHarness({ eligibilities: [], invalidated: [], revoked: [] });
+
+    const result = await harness.manager.revokeForReturnedOrder(fullReturn);
+
+    expect(result).toMatchObject({ skipped: null, invalidatedEligibilities: 0, revokedGrants: 0 });
+    expect(harness.cancelCommands).toEqual([]);
+  });
+
+  it('불량품 반품은 고객 귀책이 아닌 사유로 회수한다 — 1인당 한도가 돌아온다', async () => {
+    const harness = makeHarness({
+      eligibilities: [{ id: 'elig-1', userId: 'user-1', orderLineId: 'line-1', consumedByReviewId: 'review-1' }],
+      invalidated: [{ id: 'elig-1', consumedByReviewId: 'review-1' }],
+      revoked: [{ grantId: 'grant-1', reviewId: 'review-1', userId: 'user-1', amount: 300 }],
+    });
+
+    await harness.manager.revokeForReturnedOrder({ ...fullReturn, reason: 'defective' });
+
+    expect(harness.revokeCalls[0].reason).toBe('ORDER_RETURNED_NOT_USER_FAULT');
+    expect(harness.cancelCommands[0].reasonCode).toBe('review-reward-cancel:order_returned_not_user_fault');
   });
 });

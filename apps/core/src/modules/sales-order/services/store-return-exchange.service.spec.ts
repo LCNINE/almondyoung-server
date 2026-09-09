@@ -2,6 +2,9 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { StoreReturnExchangeService } from './store-return-exchange.service';
 
+/** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
+const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const ORDER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -224,7 +227,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
   });
@@ -243,7 +246,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
   });
@@ -269,7 +272,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
   });
@@ -288,7 +291,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const tx = (mockDb as any)._tx;
     tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
   });
@@ -331,7 +334,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     }));
     tx.select = makeEligibleReturnTxSelect(createdItem);
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
 
@@ -376,7 +379,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     }));
     tx.select = makeEligibleReturnTxSelect(createdItem);
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
 
@@ -391,7 +394,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
   });
@@ -401,7 +404,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const mockDb = makeMockDb(() => []);
     const tx = (mockDb as any)._tx;
     tx.select = makeEligibleReturnTxSelect({}, { attemptStatus: 'recalled', callOrder });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
       /recalled/,
@@ -415,7 +418,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const mockDb = makeMockDb(() => []);
     const tx = (mockDb as any)._tx;
     tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
       /배송 완료된 시도/,
@@ -426,7 +429,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const mockDb = makeMockDb(() => []);
     const tx = (mockDb as any)._tx;
     tx.select = makeEligibleReturnTxSelect({}, { salesOrderId: 'other-order' });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
       /소유 관계/,
@@ -438,7 +441,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const mockDb = makeMockDb(() => []);
     const tx = (mockDb as any)._tx;
     tx.select = makeEligibleReturnTxSelect({}, { shippedQuantity: 2, claimedQuantity: 2, callOrder });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
       /반품 가능 수량\(0\)/,
@@ -460,7 +463,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       }
       return [];
     });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(/반품 가능 수량\(0\)/);
   });
@@ -481,7 +484,7 @@ describe('StoreReturnExchangeService.createExchangeRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
   });
@@ -491,7 +494,7 @@ describe('StoreReturnExchangeService.createExchangeRequest', () => {
 
 describe('StoreReturnExchangeService.approveReturnRequest', () => {
   it('keeps historical nullable line/attempt links readable', () => {
-    const service = new StoreReturnExchangeService({ db: {} } as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService({ db: {} } as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
     const response = (service as any).toReturnResponseDto(makeReturnRequest(), [
       {
         salesOrderLineId: LINE_ID,
@@ -537,7 +540,7 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
       values: insertValues,
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.approveReturnRequest(RR_ID, 'admin-1', 'looks good');
 
@@ -567,7 +570,7 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
       }),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.approveReturnRequest(RR_ID, 'admin-1')).rejects.toThrow(ConflictException);
   });
@@ -602,7 +605,7 @@ describe('StoreReturnExchangeService.rejectReturnRequest', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.rejectReturnRequest(RR_ID, 'admin-1', 'not eligible');
 
@@ -639,7 +642,7 @@ describe('StoreReturnExchangeService.markCollectionPending', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.markCollectionPending(RR_ID, 'admin-1');
 
@@ -677,7 +680,7 @@ describe('StoreReturnExchangeService.markCollected', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.markCollected(RR_ID, 'admin-1');
 
@@ -720,6 +723,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
         limit: (n: number) => Promise.resolve(rows.slice(0, n)),
         where: () => terminal(rows),
         orderBy: () => terminal(rows),
+        groupBy: () => terminal(rows),
         innerJoin: () => terminal(rows),
         leftJoin: () => terminal(rows),
         for: () => terminal(rows),
@@ -761,7 +765,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     const rr = makeReturnRequest({ status: 'inspected' });
     // return items 없음 → refundAmount=0 → immediateComplete (Wallet 미호출, attemptReturnRefund 미위임).
     const tx = makeCompleteTx({ rr, so: { id: ORDER_ID, walletIntentId: null, totalAmount: 0, shippingFee: 0 } });
-    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.completeReturnRequest(RR_ID, 'admin-1');
 
@@ -783,7 +787,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       refunds: [{ refundId: 'refund-1', status: 'PENDING' }],
     });
 
-    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any);
+    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.completeReturnRequest(RR_ID, 'admin-1');
 
@@ -810,7 +814,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       determinate: true,
     });
 
-    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any);
+    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any, makeCoreOrdersPublisher() as never);
     await service.completeReturnRequest(RR_ID, 'admin-1');
 
     expect(walletClient.refundByIntent).toHaveBeenCalledWith(
@@ -836,7 +840,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       determinate: true,
     });
 
-    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any);
+    const service = new StoreReturnExchangeService(makeDbFromCompleteTx(tx) as any, walletClient as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.completeReturnRequest(RR_ID, 'admin-1');
 
@@ -883,7 +887,7 @@ describe('StoreReturnExchangeService exchange happy path', () => {
     const approvedEr = { ...er, status: 'approved', decidedAt: new Date(), updatedAt: new Date() };
 
     const mockDb = makeTxWithRow(er, approvedEr);
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.approveExchangeRequest(ER_ID, 'admin-1', 'ok');
 
@@ -896,7 +900,7 @@ describe('StoreReturnExchangeService exchange happy path', () => {
     const completedEr = { ...er, status: 'completed', completedAt, updatedAt: new Date() };
 
     const mockDb = makeTxWithRow(er, completedEr);
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     const result = await service.completeExchangeRequest(ER_ID, 'admin-1');
 
@@ -947,6 +951,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
         limit: (n: number) => Promise.resolve(rows.slice(0, n)),
         where: () => terminal(rows),
         orderBy: () => terminal(rows),
+        groupBy: () => terminal(rows),
         innerJoin: () => terminal(rows),
         leftJoin: () => terminal(rows),
         for: () => terminal(rows),
@@ -1000,7 +1005,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       errorMessage: 'm',
       determinate: true,
     });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never, makeCoreOrdersPublisher() as never);
 
     await service.retryReturnRefund(RR_ID, 'admin-1');
 
@@ -1026,7 +1031,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       kind: 'success',
       refunds: [{ refundId: 'r1', status: 'SUCCEEDED' }],
     });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never, makeCoreOrdersPublisher() as never);
 
     const result = await service.retryReturnRefund(RR_ID, 'admin-1');
 
@@ -1057,7 +1062,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
       errorMessage: 'm',
     });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never, makeCoreOrdersPublisher() as never);
 
     const result = await service.retryReturnRefund(RR_ID, 'admin-1');
     expect(result.status).toBe('completed');
@@ -1086,7 +1091,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       errorCode: 'IDEMPOTENCY_KEY_IN_FLIGHT',
       errorMessage: 'm',
     });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never, makeCoreOrdersPublisher() as never);
 
     const result = await service.retryReturnRefund(RR_ID, 'admin-1');
     expect(result.status).toBe('refund_pending');
@@ -1122,7 +1127,7 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       errorMessage: 'm',
       determinate: true,
     });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never, makeCoreOrdersPublisher() as never);
 
     // attemptReturnRefund 는 private — retryReturnRefund 의 outer refund_pending 가드(추가 select 1회)를
     // 거치지 않고 Phase A/B/C 만 정확히 재현하기 위해 직접 호출.
@@ -1155,13 +1160,13 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
         return term(rows);
       },
     }));
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, makeWalletClient() as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, makeWalletClient() as never, makeCoreOrdersPublisher() as never);
     await expect(service.retryReturnRefund(RR_ID, 'admin-1')).rejects.toThrow(BadRequestException);
   });
 
   it('refund_pending 아니면 ConflictException', async () => {
     const tx = makeTx({ rr: makeReturnRequest({ status: 'inspected' }) });
-    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, makeWalletClient() as never);
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, makeWalletClient() as never, makeCoreOrdersPublisher() as never);
     await expect(service.retryReturnRefund(RR_ID, 'admin-1')).rejects.toThrow(ConflictException);
   });
 });
@@ -1176,7 +1181,7 @@ describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)
   }
 
   it('할인 라인 부분반품 시 분자도 totalPrice 기준으로 비례(과대환불 없음)', () => {
-    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never);
+    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never, makeCoreOrdersPublisher() as never);
     // 라인A: qty2 unitPrice 10000 이나 totalPrice 12000(주문할인 반영, 8000 할인)
     // 라인B: qty1 unitPrice 5000 totalPrice 5000
     // 주문 totalAmount 17000, 배송비 0 → productSubtotal 17000
@@ -1191,7 +1196,7 @@ describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)
   });
 
   it('할인 없는 라인은 기존과 동일(unitPrice×qty = totalPrice)', () => {
-    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never);
+    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never, makeCoreOrdersPublisher() as never);
     const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
     const allLines = [
       { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 20000 },

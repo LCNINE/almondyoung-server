@@ -28,6 +28,9 @@ import {
   StoreReturnEligibilityResponseDto,
 } from '../dto/store-return-request.dto';
 import { StoreCreateExchangeRequestDto, StoreExchangeRequestResponseDto } from '../dto/store-exchange-request.dto';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
+import { SalesOrderReturnedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 import { classifyRefundOutcome } from './return-refund-classification';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
@@ -77,6 +80,8 @@ export class StoreReturnExchangeService {
     @InjectTypedDb<typeof inventorySchema>()
     private readonly db: { db: PostgresJsDatabase<typeof inventorySchema> },
     private readonly walletRefundClient: WalletRefundClient,
+    @InjectPublisher(CORE_ORDER_STREAM)
+    private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
   ) {}
 
   // ── Store: create return request ─────────────────────────────────────────
@@ -632,6 +637,119 @@ export class StoreReturnExchangeService {
     });
   }
 
+  /**
+   * 반품 완료를 아웃박스로 알린다. 반품 완료 «종점 3곳»이 전부 이 한 줄을 부른다 —
+   * `completeReturnRequest`(환불액 0 즉시 완료) · `attemptReturnRefund`(Wallet 환불 성공) ·
+   * `manualCompleteReturn`(관리자 수동 완료). 종점이 늘면 여기 호출도 같이 늘려야 한다.
+   *
+   * 멱등키가 `returnRequestId` 하나이므로 어느 종점을 거쳐도, 몇 번 재시도해도 이벤트는 한 번만
+   * 나간다(아웃박스 unique + `onConflictDoNothing`).
+   *
+   * **반품 완료와 같은 트랜잭션에서 적재한다** — 별도 커밋이면 「반품은 됐는데 알림만 유실」되는
+   * 창이 생긴다.
+   */
+  private async enqueueReturnCompletedEvent(
+    tx: DbTx,
+    returnRequest: ReturnRequestRow,
+    completedAt: Date,
+  ): Promise<void> {
+    const salesOrder = await tx
+      .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, returnRequest.salesOrderId))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    // 이 요청의 라인. 주문 라인을 못 찾는 항목은 수량 축을 알 수 없으므로 페이로드에서 «빼되
+    // 로그로 센다» — 0으로 뭉개면 소비자가 「전량 반품 아님」과 구별하지 못한다.
+    const requestLines = await tx
+      .select({
+        salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+        channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
+        orderedQuantity: wmsTables.salesOrderLines.quantity,
+      })
+      .from(returnExchangeTables.returnRequestItems)
+      .leftJoin(
+        wmsTables.salesOrderLines,
+        eq(wmsTables.salesOrderLines.id, returnExchangeTables.returnRequestItems.salesOrderLineId),
+      )
+      .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequest.id));
+
+    const resolved = requestLines.filter(
+      (line): line is { salesOrderLineId: string; channelOrderItemId: string | null; orderedQuantity: number } =>
+        line.orderedQuantity !== null,
+    );
+    const unresolved = requestLines.length - resolved.length;
+    if (unresolved > 0) {
+      this.logger.warn(
+        `[ReturnCompleted] ${unresolved} return line(s) of ${returnRequest.id} have no matching sales order line; excluded from SalesOrderReturned payload.`,
+      );
+    }
+    if (resolved.length === 0) {
+      this.logger.warn(`[ReturnCompleted] No resolvable lines for return ${returnRequest.id}; event not published.`);
+      return;
+    }
+
+    // 「이 건의 수량」이 아니라 **그 주문 라인의 완료된 반품 누적 수량**을 싣는다. 이 요청은 방금
+    // completed 로 바뀌었으므로 같은 트랜잭션의 이 집계에 이미 들어 있다. 나눠 반품해도, 이벤트가
+    // 재전달돼도 소비자가 상태 없이 같은 판정을 내릴 수 있게 하는 것이 이 필드의 목적이다.
+    const lineIds = resolved.map((line) => line.salesOrderLineId);
+    const cumulativeRows = await tx
+      .select({
+        salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+        total: sum(returnExchangeTables.returnRequestItems.quantity),
+      })
+      .from(returnExchangeTables.returnRequestItems)
+      .innerJoin(
+        returnExchangeTables.returnRequests,
+        eq(returnExchangeTables.returnRequests.id, returnExchangeTables.returnRequestItems.returnRequestId),
+      )
+      .where(
+        and(
+          eq(returnExchangeTables.returnRequests.status, 'completed'),
+          inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
+        ),
+      )
+      .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId);
+
+    const cumulativeByLine = new Map(cumulativeRows.map((row) => [row.salesOrderLineId, Number(row.total ?? 0)]));
+
+    const returnedLines = resolved
+      .map((line) => ({
+        salesOrderLineId: line.salesOrderLineId,
+        channelOrderItemId: line.channelOrderItemId ?? undefined,
+        orderedQuantity: line.orderedQuantity,
+        returnedQuantity: cumulativeByLine.get(line.salesOrderLineId) ?? 0,
+      }))
+      .filter((line) => line.returnedQuantity > 0);
+
+    if (returnedLines.length === 0) {
+      this.logger.warn(
+        `[ReturnCompleted] No completed return quantity for return ${returnRequest.id}; event not published.`,
+      );
+      return;
+    }
+
+    await this.coreOrders.enqueue(
+      {
+        idempotencyKey: `so-returned:${returnRequest.id}`,
+        eventType: 'SalesOrderReturned',
+        aggregateId: returnRequest.salesOrderId,
+        partitionKey: returnRequest.salesOrderId,
+        payload: {
+          orderId: returnRequest.salesOrderId,
+          channelOrderId: salesOrder?.channelOrderId ?? undefined,
+          returnRequestId: returnRequest.id,
+          reason: returnRequest.reasonCode,
+          reasonDetail: returnRequest.reasonDetail ?? undefined,
+          returnedAt: completedAt.toISOString(),
+          returnedLines,
+        } satisfies SalesOrderReturnedPayload,
+      },
+      tx,
+    );
+  }
+
   async completeReturnRequest(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
     // Phase 1: inspected → refund_pending (or completed). 금액 계산도 tx 내에서.
     const phase1 = await this.db.db.transaction(async (tx) => {
@@ -668,6 +786,9 @@ export class StoreReturnExchangeService {
         adminId,
         timestamp: now.toISOString(),
       });
+      if (immediateComplete) {
+        await this.enqueueReturnCompletedEvent(tx, rr, now);
+      }
 
       if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
         this.logger.warn(
@@ -800,6 +921,7 @@ export class StoreReturnExchangeService {
           .set({ status: 'completed', completedAt: now, updatedAt: now })
           .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
           .returning();
+        await this.enqueueReturnCompletedEvent(tx, rr, now);
         return completed;
       }
 
@@ -1038,6 +1160,7 @@ export class StoreReturnExchangeService {
         adminNote: adminNote ?? null,
         timestamp: now.toISOString(),
       });
+      await this.enqueueReturnCompletedEvent(tx, rr, now);
 
       return result;
     });

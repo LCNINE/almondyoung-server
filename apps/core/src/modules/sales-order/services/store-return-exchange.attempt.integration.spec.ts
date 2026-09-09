@@ -14,6 +14,9 @@ import {
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
 import { StoreReturnExchangeService } from './store-return-exchange.service';
 
+/** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
+const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
@@ -186,7 +189,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('keeps customer ownership on Store reads while allowing the scoped Admin read path', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       await expect(service.getReturnEligibility(graph.salesOrderId, randomUUID())).rejects.toThrow(
         /본인 주문만 접근할 수 있습니다/,
@@ -220,7 +223,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         salesOrderLineId: graph.salesOrderLineId,
         quantity: 1,
       });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       const eligibility = await service.adminGetReturnEligibility(graph.salesOrderId);
 
@@ -238,7 +241,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('permanently subtracts completed claims, while rejected/cancelled claims release eligibility', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
       const first = await service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph));
       await tx
         .update(returnExchangeTables.returnRequests)
@@ -292,7 +295,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         dispatchAttemptId: null,
         quantity: 1,
       });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       await expect(service.getReturnEligibility(graph.salesOrderId, graph.customerId)).resolves.toEqual({
         orderId: graph.salesOrderId,
@@ -335,7 +338,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         dispatchAttemptId: null,
         quantity: 1,
       });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       const eligibility = await service.getReturnEligibility(graph.salesOrderId, graph.customerId);
       expect(eligibility.items).toHaveLength(2);
@@ -370,7 +373,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('keeps eligibility pools separate across delivered redispatch attempts', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx, 2);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
       const first = await service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph, 0));
       await tx
         .update(returnExchangeTables.returnRequests)
@@ -405,7 +408,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
           recalledAt: new Date('2026-07-15T03:00:00.000Z'),
         })
         .where(eq(wmsTables.dispatchAttempts.id, graph.attempts[0].id));
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       await expect(service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph))).rejects.toThrow(
         /recalled/,
@@ -416,7 +419,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('serializes concurrent claims so exact attempt/line qty=1 succeeds only once', async () => {
     const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
     try {
-      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
       const results = await Promise.allSettled([
         service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
         service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
@@ -437,7 +440,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('allows an authenticated admin to create an exact-attempt return without customer impersonation', async () => {
     const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
     try {
-      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never);
+      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
       const created = await service.adminCreateReturnRequest(graph.salesOrderId, 'admin-operator-1', createDto(graph));
 
@@ -479,6 +482,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       const service = new StoreReturnExchangeService(
         { db: instrumentedDb } as never,
         { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
       );
 
       const recallPath = db.transaction(async (rawTx) => {

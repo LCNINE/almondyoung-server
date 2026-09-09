@@ -193,6 +193,25 @@ describe('한도 집계가 세는 지급 상태', () => {
     expect(renderParams(usageWhere[0])).toEqual(expect.arrayContaining(['ORDER_CANCELLED_NOT_USER_FAULT']));
   });
 
+  it('1인당 한도는 판매자 귀책 반품으로 회수된 건은 빼고 센다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    // 불량품을 받아 반품한 고객이 리뷰 기회까지 잃지 않게 한다. 취소 쪽과 같은 축이다.
+    expect(renderParams(usageWhere[0])).toEqual(expect.arrayContaining(['ORDER_RETURNED_NOT_USER_FAULT']));
+  });
+
+  it('단순 변심 반품 회수는 1인당 한도에서 빠지지 않는다', async () => {
+    const usageWhere: unknown[] = [];
+    const service = makeService([limitedRule()]);
+
+    await service.evaluateForNewReview(input, makeTx([], { usageWhere }));
+
+    expect(renderParams(usageWhere[0])).not.toEqual(expect.arrayContaining(['ORDER_RETURNED']));
+  });
+
   it('고객 귀책 취소 회수는 1인당 한도에서 빠지지 않는다', async () => {
     const usageWhere: unknown[] = [];
     const service = makeService([limitedRule()]);
