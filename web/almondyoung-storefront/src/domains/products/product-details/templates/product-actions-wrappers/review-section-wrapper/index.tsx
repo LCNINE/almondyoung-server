@@ -6,11 +6,24 @@ import type { RatingSummary } from "@/lib/types/ui/ugc"
 const ITEMS_PER_PAGE = 10
 
 interface Props {
-  productId: string
+  /** PIM 마스터 id. 없으면 리뷰가 존재할 수 없으므로 조회 없이 빈 목록을 그린다 */
+  productId: string | undefined
   countryCode: string
 }
 
 export async function ReviewSectionWrapper({ productId, countryCode }: Props) {
+  if (!productId) {
+    return (
+      <ReviewDetailCardList
+        countryCode={countryCode}
+        productId={undefined}
+        totalReviews={0}
+        averageRating={0}
+        initialReviews={[]}
+      />
+    )
+  }
+
   const [ratingSummary, reviewResult] = await Promise.all([
     getRatingSummary(productId).catch((): RatingSummary | null => null),
     getReviewsByProductId({

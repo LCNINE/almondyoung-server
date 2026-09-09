@@ -10,7 +10,14 @@ import {
   useUpdateReviewRewardRule,
 } from '@/lib/services/review-reward';
 import { RuleForm } from './rule-form';
-import { describeReward, emptyRuleForm, formatDateTime, REVIEW_TYPE_LABELS, TRIGGER_LABELS } from '../shared';
+import {
+  describeReward,
+  emptyRuleForm,
+  formatDateTime,
+  REVIEW_TYPE_LABELS,
+  rewardRuleNotice,
+  TRIGGER_LABELS,
+} from '../shared';
 
 function toFormValue(rule: ReviewRewardRuleDto): UpsertReviewRewardRuleDto {
   return {
@@ -64,7 +71,7 @@ export function RuleList() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeCount = rules?.filter((rule) => rule.active).length ?? 0;
+  const notice = rewardRuleNotice({ isError, rules });
 
   const handleError = (fallback: string) => (err: unknown) => {
     const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -76,10 +83,22 @@ export function RuleList() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-gray-900">보상 규칙</h2>
-          <p className="mt-1 text-xs text-gray-500">
-            활성 규칙이 <strong>{activeCount}건</strong>입니다.
-            {activeCount === 0 && ' 지금은 리뷰를 써도 아무 보상이 나가지 않습니다.'}
-          </p>
+          {/*
+            「보상이 안 나간다」는 단언은 «목록을 실제로 받아왔을 때만» 한다. 조회가 실패하면
+            rules 가 undefined 라 활성 0건과 구별되지 않는데, 이 화면의 존재 이유가 그 단언이다.
+          */}
+          {notice.kind === 'error' && (
+            <p className="mt-1 text-xs text-red-600">
+              규칙을 불러오지 못했습니다. <strong>보상이 나가는지 여부를 이 화면으로 판단할 수 없습니다.</strong>
+            </p>
+          )}
+          {notice.kind === 'loading' && <p className="mt-1 text-xs text-gray-400">규칙을 불러오는 중입니다.</p>}
+          {notice.kind === 'counted' && (
+            <p className="mt-1 text-xs text-gray-500">
+              활성 규칙이 <strong>{notice.activeCount}건</strong>입니다.
+              {notice.activeCount === 0 && ' 지금은 리뷰를 써도 아무 보상이 나가지 않습니다.'}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -111,7 +130,6 @@ export function RuleList() {
       )}
 
       {isLoading && <p className="text-xs text-gray-400">불러오는 중…</p>}
-      {isError && <p className="text-xs text-red-600">규칙을 불러오지 못했습니다.</p>}
 
       {rules && rules.length === 0 && !creating && (
         <p className="rounded border border-gray-200 bg-gray-50 px-3 py-4 text-xs text-gray-500">

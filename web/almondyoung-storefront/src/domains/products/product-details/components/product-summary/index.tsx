@@ -11,7 +11,8 @@ interface Props {
   brand: string
   productName: string
   productId: string
-  pimMasterId: string
+  /** PIM 마스터 id. PIM 에 없는 상품은 undefined */
+  pimMasterId: string | undefined
   countryCode: string
   customer: Customer | null
   isDigital?: boolean

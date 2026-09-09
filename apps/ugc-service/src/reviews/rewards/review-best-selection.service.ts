@@ -280,17 +280,6 @@ export class ReviewBestSelectionService {
       minRating: number | null;
     },
   ): Promise<Array<{ reviewId: string; userId: string; helpfulCount: number }>> {
-    const helpfulCount = sql<number>`(
-      select count(*) from ${reactions}
-      where ${reactions.targetType} = 'review'
-        and ${reactions.targetId} = ${reviews.id}
-        and ${reactions.reactionType} = 'helpful'
-    )`;
-
-    const mediaCount = sql<number>`(
-      select count(*) from ${reviewMedia} where ${reviewMedia.reviewId} = ${reviews.id}
-    )`;
-
     const conditions: SQL[] = [
       gte(reviews.createdAt, period.start),
       lt(reviews.createdAt, period.end),
@@ -305,25 +294,47 @@ export class ReviewBestSelectionService {
     if (spec.minRating !== null) {
       conditions.push(gte(reviews.rating, spec.minRating));
     }
-    if (spec.minMediaCount > 0) {
-      conditions.push(sql`${mediaCount} >= ${spec.minMediaCount}`);
-    }
-    if (spec.mode === 'HELPFUL_COUNT' && spec.minHelpfulCount > 0) {
-      conditions.push(sql`${helpfulCount} >= ${spec.minHelpfulCount}`);
-    }
 
-    const rows = await this.db.run((trx) =>
-      trx
+    const rows = await this.db.run((trx) => {
+      // 상관 서브쿼리는 빌더로 짠다. 원시 sql 템플릿 안의 컬럼 참조는 «쿼리에 테이블이 하나뿐일 때»
+      // 테이블 이름을 잃어 `"id"` 로만 나가고, 같은 fragment 라도 select 목록에서는 한정을 잃고
+      // where 절에서는 유지되는 식으로 갈린다. 안쪽 표에 같은 이름의 컬럼이 생기는 순간
+      // 조건이 조용히 항상 거짓이 된다 — 베스트 뱃지가 그렇게 사라졌었다.
+      const helpfulCount = sql<number>`(${trx
+        .select({ value: count() })
+        .from(reactions)
+        .where(
+          and(
+            eq(reactions.targetType, 'review'),
+            eq(reactions.targetId, reviews.id),
+            eq(reactions.reactionType, 'helpful'),
+          ),
+        )})`;
+
+      const mediaCount = sql<number>`(${trx
+        .select({ value: count() })
+        .from(reviewMedia)
+        .where(eq(reviewMedia.reviewId, reviews.id))})`;
+
+      const allConditions = [...conditions];
+      if (spec.minMediaCount > 0) {
+        allConditions.push(sql`${mediaCount} >= ${spec.minMediaCount}`);
+      }
+      if (spec.mode === 'HELPFUL_COUNT' && spec.minHelpfulCount > 0) {
+        allConditions.push(sql`${helpfulCount} >= ${spec.minHelpfulCount}`);
+      }
+
+      return trx
         .select({
           reviewId: reviews.id,
           userId: reviews.userId,
           helpfulCount: helpfulCount.as('helpful_count'),
         })
         .from(reviews)
-        .where(and(...conditions))
+        .where(and(...allConditions))
         .orderBy(spec.mode === 'RANDOM' ? sql`random()` : sql`helpful_count desc, ${reviews.createdAt} asc`)
-        .limit(spec.topN),
-    );
+        .limit(spec.topN);
+    });
 
     this.logger.debug(`규칙 ${ruleId}: 후보 ${rows.length}건`);
 

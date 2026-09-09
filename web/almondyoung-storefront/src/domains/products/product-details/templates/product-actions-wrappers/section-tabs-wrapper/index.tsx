@@ -5,7 +5,8 @@ import { SectionTabs } from "../../../components/section-nav"
 import { Suspense } from "react"
 
 interface Props {
-  productId: string
+  /** PIM 마스터 id. 없으면 뱃지 조회를 건너뛴다 — 뱃지는 원래도 0건이면 안 그린다 */
+  productId: string | undefined
   children: React.ReactNode
 }
 
@@ -28,7 +29,8 @@ export function SectionTabsWrapper({ productId, children }: Props) {
   )
 }
 
-async function ReviewCountBadge({ productId }: { productId: string }) {
+async function ReviewCountBadge({ productId }: { productId: string | undefined }) {
+  if (!productId) return null
   const summary: RatingSummary | null = await getRatingSummary(productId).catch(
     () => null
   )
@@ -40,7 +42,8 @@ async function ReviewCountBadge({ productId }: { productId: string }) {
   )
 }
 
-async function QnaCountBadge({ productId }: { productId: string }) {
+async function QnaCountBadge({ productId }: { productId: string | undefined }) {
+  if (!productId) return null
   const summary: QnaSummary | null = await getQnaSummary(productId).catch(
     () => null
   )

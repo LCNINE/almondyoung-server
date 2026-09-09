@@ -364,7 +364,11 @@ export function RuleForm({ value, submitting, onCancel, onSubmit }: RuleFormProp
           onChange={(spec) => setLimit('perUser', spec)}
         />
         <LimitEditor title="전체 예산" spec={form.limits.global} onChange={(spec) => setLimit('global', spec)} />
-        <p className="text-[11px] text-gray-500">한도는 <strong>이 규칙이 지급한 건</strong>만 세어 판정합니다.</p>
+        <p className="text-[11px] text-gray-500">
+          한도는 <strong>이 규칙이 지급한 건</strong>만 세어 판정합니다. 1인당 한도는{' '}
+          <strong>회수된 건도 셉니다</strong> — 리뷰를 썼다 지워 한도를 다시 받는 것을 막습니다. 전체 예산은 실제로
+          나간 돈만 세므로 회수분은 예산으로 돌아옵니다.
+        </p>
       </fieldset>
 
       <div className="flex flex-wrap items-end gap-2">
