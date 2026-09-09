@@ -29,6 +29,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 const PROBE = 'probe-cron-once-integration';
 const RUN_FOR_MS = 4_000;
+const GRACE_MS = 500;
 
 const counters = { a: 0, b: 0 };
 
@@ -82,6 +83,9 @@ describeIfDb('cron-once 선점 경쟁 (앱 컨텍스트 둘)', () => {
     // afterAll 에서 한 번만 한다.
     a.get(SchedulerRegistry).getCronJob(PROBE).stop();
     b.get(SchedulerRegistry).getCronJob(PROBE).stop();
+    // stop() 은 새 틱만 막는다 — 마지막 순간에 이미 시작된 틱이 claim() → body() → finish() 를
+    // 마칠 시간을 준다 (finish() 없인 outcome 이 NULL 로 남는다).
+    await new Promise((resolve) => setTimeout(resolve, GRACE_MS));
 
     const rows = (await admin.db.execute(sql`
       SELECT period_at, claimed_by, outcome FROM cron_runs WHERE name = ${PROBE} ORDER BY period_at
