@@ -13,6 +13,7 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { TxFor } from '@app/db';
 import type {
   BestSelectionStatus,
   ReviewRewardConditions,
@@ -379,3 +380,8 @@ export const ugcServiceSchema = {
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;
+
+/**
+ * 이 BC 의 트랜잭션 타입. 스키마 옆이 정본이다 — 모듈마다 다시 선언하면 서로를 import 하게 된다.
+ */
+export type UgcTx = TxFor<UgcServiceSchema>;

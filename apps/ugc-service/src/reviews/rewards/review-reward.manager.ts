@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, inArray, isNull } from 'drizzle-orm';
-import { reviewEligibilities, type UgcServiceSchema } from '../../db/schema';
+import { type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { ReviewRewardGrantService } from './review-reward-grant.service';
-import { ReviewRewardReader } from './review-reward.reader';
-import { UgcTx } from './review-reward-rule.service';
+import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
 import { ReviewRewardPublisher } from '../services/review-reward-publisher.service';
 import { CancellationInput, CancellationSkipReason, planCancellation } from './order-cancellation.policy';
 import { ReturnInput, ReturnLineSkipReason, ReturnSkipReason, planReturn } from './order-return.policy';
@@ -38,7 +36,7 @@ export class ReviewRewardManager {
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
-    private readonly reader: ReviewRewardReader,
+    private readonly permissionService: ReviewPermissionService,
     private readonly grantService: ReviewRewardGrantService,
     private readonly publisher: ReviewRewardPublisher,
   ) {}
@@ -53,7 +51,7 @@ export class ReviewRewardManager {
     }
 
     return this.db.run(async (trx) => {
-      const eligibilities = await this.reader.findLiveEligibilitiesByOrderId(plan.channelOrderId, trx);
+      const eligibilities = await this.permissionService.findLiveByOrderId(plan.channelOrderId, trx);
       if (eligibilities.length === 0) {
         return { skipped: null, invalidatedEligibilities: 0, revokedGrants: 0 };
       }
@@ -94,7 +92,7 @@ export class ReviewRewardManager {
     }
 
     return this.db.run(async (trx) => {
-      const eligibilities = await this.reader.findLiveEligibilitiesByOrderLineIds(
+      const eligibilities = await this.permissionService.findLiveByOrderLineIds(
         plan.channelOrderId,
         plan.orderLineIds,
         trx,
@@ -130,22 +128,11 @@ export class ReviewRewardManager {
     eligibilities: Array<{ id: string }>,
     revokeReason: ReviewRewardRevokeReason,
   ): Promise<{ touchedEligibilities: number; invalidatedEligibilities: number; revokedGrants: number }> {
-    const now = new Date();
-    // 소비된 자격도 회수 표시를 남긴다 — 리뷰는 유지하되 「취소·반품된 주문의 자격」임을 남기는 것이
-    // 감사 기록이다. 콘텐츠를 내릴지는 관리자가 화면에서 고른다(자동으로 내리지 않는다).
-    const invalidated = await trx
-      .update(reviewEligibilities)
-      .set({ revokedAt: now, revokeReason, updatedAt: now })
-      .where(
-        and(
-          inArray(
-            reviewEligibilities.id,
-            eligibilities.map((row) => row.id),
-          ),
-          isNull(reviewEligibilities.revokedAt),
-        ),
-      )
-      .returning({ id: reviewEligibilities.id, consumedByReviewId: reviewEligibilities.consumedByReviewId });
+    const invalidated = await this.permissionService.revoke(
+      eligibilities.map((row) => row.id),
+      revokeReason,
+      trx,
+    );
 
     const reviewIds = invalidated
       .map((row) => row.consumedByReviewId)

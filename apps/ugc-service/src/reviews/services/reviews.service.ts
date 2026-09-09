@@ -5,7 +5,6 @@ import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, ne,
 import {
   reviewBestSelections,
   reviewComments,
-  reviewEligibilities,
   reviewMedia,
   reviews,
   reactions,
@@ -20,6 +19,7 @@ import { type ReviewCommentEntity, type ReviewEntity, type ReviewStatus, type Re
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
 import { ReviewRewardGrantService } from '../rewards/review-reward-grant.service';
+import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
 import { ReviewRewardPublisher } from './review-reward-publisher.service';
 import { ReviewStatsPublisher } from './review-stats-publisher.service';
 import type { RatingDistribution } from '@packages/event-contracts/streams';
@@ -44,6 +44,7 @@ export class ReviewsService {
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
+    private readonly permissionService: ReviewPermissionService,
     private readonly rewardGrantService: ReviewRewardGrantService,
     private readonly rewardPublisher: ReviewRewardPublisher,
     private readonly statsPublisher: ReviewStatsPublisher,
@@ -431,27 +432,11 @@ export class ReviewsService {
 
   async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
     const result = await this.inTx(async (tx) => {
-      // 1. 리뷰 작성 자격 검증
-      const [eligibility] = await tx
-        .select({
-          id: reviewEligibilities.id,
-          orderLineAmount: reviewEligibilities.orderLineAmount,
-        })
-        .from(reviewEligibilities)
-        .where(
-          and(
-            eq(reviewEligibilities.id, dto.eligibilityId),
-            eq(reviewEligibilities.userId, userId),
-            eq(reviewEligibilities.productId, dto.productId),
-            isNull(reviewEligibilities.consumedAt),
-            // 주문이 취소되면 자격이 회수된다 — 취소 뒤에도 리뷰가 써지면 회수 배관이 무의미해진다.
-            isNull(reviewEligibilities.revokedAt),
-          ),
-        );
-
-      if (!eligibility) {
-        throw new BadRequestException('리뷰 작성 자격이 없습니다.');
-      }
+      // 1. 리뷰 작성 «권한» 확인 — 판정은 권한 모듈이 한다. 리뷰 모듈은 물어보기만 한다.
+      const eligibility = await this.permissionService.assertConsumable(
+        { permissionId: dto.eligibilityId, userId, productId: dto.productId },
+        tx,
+      );
 
       // 2. 리뷰 생성
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
@@ -468,15 +453,8 @@ export class ReviewsService {
 
       await this.insertReviewMedia(review.id, mediaFileIds, tx);
 
-      // 3. 자격 소비 처리
-      await tx
-        .update(reviewEligibilities)
-        .set({
-          consumedAt: new Date(),
-          consumedByReviewId: review.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(reviewEligibilities.id, eligibility.id));
+      // 3. 자격 소비 처리 — 리뷰 생성과 같은 트랜잭션이다.
+      await this.permissionService.markConsumed(eligibility.id, review.id, tx);
 
       // 보상 판정 → 원장 기록 → 적립 명령 적재까지 전부 이 트랜잭션 안이다.
       // 리뷰는 남았는데 지급 기록만 없거나, 기록은 있는데 명령이 유실되는 창을 두지 않는다.

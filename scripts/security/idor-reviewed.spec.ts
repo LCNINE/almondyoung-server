@@ -536,7 +536,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:603',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:584',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
@@ -559,13 +559,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/eligibilities': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/review-eligibility.service.ts:66',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:77',
     predicate: 'const conditions: SQL[] = [eq(reviewEligibilities.userId, userId)];',
     note: "userId는 컨트롤러의 @User('userId') 토큰값(review-eligibility.controller.ts:68), 쿼리 파라미터가 아님 — POST /reviews/eligibilities의 P0 패턴이 이 GET에는 없음.",
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:729',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:710',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
@@ -577,7 +577,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:553',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:534',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
@@ -589,13 +589,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:443',
-    predicate: 'eq(reviewEligibilities.userId, userId),',
-    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, eq(reviewEligibilities.userId, userId)로 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가.',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:129',
+    predicate: 'eq(reviewEligibilities.userId, input.userId),',
+    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, 권한 모듈의 assertConsumable 이 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가.',
   },
   'ugc-service POST /reviews/:id/reactions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:362',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:364',
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
