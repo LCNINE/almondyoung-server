@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { and, eq, inArray, lte } from 'drizzle-orm';
 import { WalletSchema, cmsWithdrawals } from '../schema';
@@ -35,7 +35,7 @@ export class CmsSettlementPollerService {
    * PENDING_SETTLEMENT 상태의 Intent에 대응하는 CMS 출금건의 결과를 폴링한다.
    * 매 30분 실행. 은행 영업시간 외에는 실행해도 무해 (결과가 없을 뿐).
    */
-  @Cron('0 */30 * * * *')
+  @CronOnce('0 */30 * * * *', { name: 'cms-settlement-poll' })
   async pollPendingSettlements(): Promise<void> {
     // paymentDate의 D+1 이상 경과한 건만 — 결과 확인 가능 시점
     const yesterday = kstYesterdayYyyymmdd();

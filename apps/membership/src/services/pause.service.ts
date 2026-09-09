@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { format } from 'date-fns';
 import { PauseReader } from './pause/pause.reader';
 import { PauseManager } from './pause/pause.manager';
@@ -33,7 +34,7 @@ export class PauseService {
    * 일시정지 종료일이 지난 권한을 자동으로 재개한다. 이 스케줄러가 없으면
    * 사용자가 수동 재개하지 않는 한 일시정지가 풀리지 않아 정기결제도 영구 중단된다.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @CronOnce(CronExpression.EVERY_HOUR, { name: 'pause-auto-resume' })
   async autoResumeExpiredPauses(): Promise<void> {
     const today = format(new Date(), 'yyyy-MM-dd');
     const due = await this.pauseReader.findEntitlementsDueForAutoResume(today);

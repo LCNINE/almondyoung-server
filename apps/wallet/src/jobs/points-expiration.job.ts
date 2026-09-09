@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { PointsAdminService } from '../admin/points-admin.service';
 
 const DEFAULT_CRON = '0 2 * * *'; // 매일 새벽 2시
@@ -10,7 +10,7 @@ export class PointsExpirationJob {
 
   constructor(private readonly pointsAdminService: PointsAdminService) {}
 
-  @Cron(process.env.WALLET_POINTS_EXPIRATION_CRON ?? DEFAULT_CRON)
+  @CronOnce(process.env.WALLET_POINTS_EXPIRATION_CRON ?? DEFAULT_CRON, { name: 'points-expiration' })
   async runScheduledExpiration(): Promise<void> {
     try {
       const result = await this.pointsAdminService.processExpiredPoints();

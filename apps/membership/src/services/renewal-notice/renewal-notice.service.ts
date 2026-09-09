@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { UserContactClient } from '@app/shared';
 import { addDays, format, parseISO } from 'date-fns';
@@ -43,7 +43,7 @@ export class RenewalNoticeService {
   /**
    * 매일 10시 — 정기결제 스케줄러(09시)와 겹치지 않게 한 시간 뒤에 돈다.
    */
-  @Cron('0 10 * * *')
+  @CronOnce('0 10 * * *', { name: 'renewal-notice' })
   async runRenewalNoticeScheduler(): Promise<void> {
     const targetDate = format(addDays(new Date(), NOTICE_DAYS_BEFORE), 'yyyy-MM-dd');
     try {
