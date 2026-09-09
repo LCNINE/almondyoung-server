@@ -40,11 +40,18 @@ type Props = {
 
 /** 스토어프론트 실측값 (px) */
 /**
- * PC 는 배너 «높이» 가 고정이라 화면이 넓어질수록 비율이 가로로 길어지고 세로가 더
- * 잘린다. 한 폭만 보여주면 넓은 화면에서 잘리는 걸 놓친다 — 좁은/보통/넓은 셋을 준다.
+ * PC 는 배너 «높이» 가 고정이라 폭이 좁아질수록 좌우가 더 잘린다. 잘리기 «시작하는»
+ * 폭은 이미지마다 다르므로 몇 개 폭만 찍어보면 그 사이에서 문구가 먹히는 걸 놓친다 —
+ * 연속으로 끌어보게 둔다.
  */
-const PC_VIEWPORTS = [1280, 1440, 1920] as const;
+const PC_VIEWPORT_MIN = 768;
+const PC_VIEWPORT_MAX = 1920;
 const PC_VIEWPORT_DEFAULT = 1440;
+/**
+ * xl 이상에서만 리스트가 뜨고, 그때만 배너가 «높이 고정» 이다 (banner-carousel.tsx).
+ * 그 아래는 이미지 비율대로 축소되므로 잘리지 않는다.
+ */
+const PC_FIXED_HEIGHT_MIN = 1280;
 const PC_HEADER = 128;
 const MOBILE_VIEWPORT = 390;
 const MOBILE_HEADER = 104;
@@ -91,7 +98,7 @@ export function BannerPreviewDialog({
   // 스토어프론트는 PC 를 높이 고정으로 그린다 (banner-carousel.tsx) — 미리보기도 같아야 한다.
   // 모바일만 비율대로 그린다.
   const bannerHeight = slot
-    ? isPc
+    ? isPc && viewport >= PC_FIXED_HEIGHT_MIN
       ? slot.height
       : viewport / (slot.width / slot.height)
     : 0;
@@ -124,20 +131,16 @@ export function BannerPreviewDialog({
             모바일
           </Button>
           {isPc && (
-            <div className="ml-2 flex items-center gap-1">
-              {PC_VIEWPORTS.map((v) => (
-                <Button
-                  key={v}
-                  type="button"
-                  size="sm"
-                  variant={pcViewport === v ? 'secondary' : 'ghost'}
-                  className="h-7 px-2 text-xs"
-                  onClick={() => setPcViewport(v)}
-                >
-                  {v}
-                </Button>
-              ))}
-            </div>
+            <input
+              type="range"
+              min={PC_VIEWPORT_MIN}
+              max={PC_VIEWPORT_MAX}
+              step={10}
+              value={pcViewport}
+              onChange={(e) => setPcViewport(Number(e.target.value))}
+              aria-label="화면 폭"
+              className="accent-primary ml-2 w-48"
+            />
           )}
           {slot && (
             <span className="text-muted-foreground ml-auto text-xs">
@@ -185,7 +188,7 @@ export function BannerPreviewDialog({
                     이미지를 먼저 업로드하세요
                   </div>
                 )}
-                {showList && isPc && (
+                {showList && isPc && viewport >= PC_FIXED_HEIGHT_MIN && (
                   <HeroListCard
                     listImageFileId={listImageFileId}
                     listLabel={listLabel}

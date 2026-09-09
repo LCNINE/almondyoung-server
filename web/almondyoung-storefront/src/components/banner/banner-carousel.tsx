@@ -54,6 +54,7 @@ export function HeroBannerCarousel({
    */
   const viewSourceRef = useRef<"auto" | "hover">("auto")
 
+  const pcWidth = dimensions.pc.width ?? 1920
   const pcHeight = dimensions.pc.height ?? 600
   const mobileWidth = dimensions.mobile.width ?? 750
   const mobileHeight = dimensions.mobile.height ?? 500
@@ -179,16 +180,20 @@ export function HeroBannerCarousel({
             <CarouselItem key={banner.id} className="pl-0">
               <div
                 /*
-                 * 모바일은 비율로, PC 는 «높이 고정» 으로 그린다 (쿠팡과 같다).
-                 * PC 를 비율로 두면 화면이 좁아질수록 배너가 납작해지는데,
-                 * 우측 리스트 카드는 45+6×60=405px 로 고정이라 1440px 화면에서
-                 * 카드가 배너 밖으로 삐져나간다. 높이를 고정하고 폭만 늘리면
-                 * 좁은 화면에서 좌우가 잘릴 뿐 카드는 늘 안에 들어온다.
+                 * 높이 고정은 «리스트 카드가 뜨는 폭에서만» 쓴다 (xl 이상, 쿠팡과 같다).
+                 * 카드는 45+6×60=405px 로 고정이라 배너를 비율로 두면 좁은 화면에서
+                 * 카드가 배너 밖으로 삐져나간다 — 그래서 높이를 고정하고 좌우가
+                 * 잘리는 걸 감수한다.
+                 *
+                 * 카드가 없는 md~xl 에서까지 고정 높이를 끌고 내려가면 감수할 이유가
+                 * 없는 잘림만 남는다. 1134px 에서 좌우 393px 씩 먹혀 배너 카피가
+                 * 잘려 나갔다. 그 구간은 이미지 비율대로 축소한다.
                  */
-                className="relative aspect-(--mobile-ratio) w-full md:aspect-auto md:h-(--pc-height)"
+                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio) xl:aspect-auto xl:h-(--pc-height)"
                 style={
                   {
                     "--mobile-ratio": `${mobileWidth}/${mobileHeight}`,
+                    "--pc-ratio": `${pcWidth}/${pcHeight}`,
                     "--pc-height": `${pcHeight}px`,
                   } as React.CSSProperties
                 }
@@ -232,7 +237,7 @@ export function HeroBannerCarousel({
 
         {/* 좌우 화살표 - 호버 시에만 표시. 리스트가 뜨면 자리가 겹치고 역할도 겹친다 */}
         {banners.length > 1 && (
-          <div className={cn("hidden lg:block", showList && "lg:hidden")}>
+          <div className={cn("hidden lg:block", showList && "xl:hidden")}>
             <button
               onClick={scrollPrev}
               className={cn(
@@ -262,7 +267,7 @@ export function HeroBannerCarousel({
         <div
           className={cn(
             "absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2",
-            showList && "lg:hidden"
+            showList && "xl:hidden"
           )}
         >
           {banners.map((_, index) => (

@@ -99,7 +99,7 @@ export function HeroBannerList({ banners, current, onSelect }: Props) {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-10 mx-auto hidden justify-end lg:flex"
+      className="pointer-events-none absolute inset-0 z-10 mx-auto hidden justify-end xl:flex"
       style={{ maxWidth: CONTAINER_MAX, paddingRight: CARD_RIGHT }}
     >
       <div
