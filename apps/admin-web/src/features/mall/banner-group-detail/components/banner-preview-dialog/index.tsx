@@ -276,7 +276,8 @@ function HeroListCard({
           >
             {isActive ? (
               <>
-                <span className="line-clamp-2 flex-1 text-sm leading-tight font-medium">
+                {/* 스토어프론트의 «선택된» 칸과 같은 굵기·줄바꿈이어야 몇 줄이 될지 맞는다 */}
+                <span className="line-clamp-2 flex-1 text-sm leading-tight font-bold break-keep">
                   {listLabel || '노출문구'}
                 </span>
                 {listSrc ? (

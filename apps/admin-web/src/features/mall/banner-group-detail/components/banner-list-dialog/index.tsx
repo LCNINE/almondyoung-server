@@ -77,7 +77,8 @@ export function BannerListDialog({ open, banner, onOpenChange }: Props) {
 
           <div>
             <p className="text-muted-foreground mb-2 text-xs">고객 화면에서</p>
-            <div className="overflow-hidden border border-[#e4e4e7] bg-white shadow-[0_4px_5px_rgba(0,0,0,0.3)]">
+            {/* 스토어프론트 칸 폭 180px — 넓으면 몇 줄이 될지가 실제와 어긋난다 */}
+            <div className="w-[180px] overflow-hidden border border-[#e4e4e7] bg-white shadow-[0_4px_5px_rgba(0,0,0,0.3)]">
               <div className="h-[60px] border border-transparent bg-[#f4f4f5]" />
               <div className="border-primary flex h-[60px] items-center gap-2 border px-[14px]">
                 <span className="line-clamp-2 flex-1 text-sm leading-tight font-bold break-keep">
