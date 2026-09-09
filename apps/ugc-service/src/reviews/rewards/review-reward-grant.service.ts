@@ -27,10 +27,14 @@ import {
 const PER_USER_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED', 'REVOKED'];
 
 /**
- * 1인당 한도에서 «빼는» 회수 사유. 품절·결제실패·타임아웃 취소는 고객이 기회를 쓴 게
- * 아니므로 돌려준다 (§13-2). 어뷰즈 축(고객 요청·관리자 취소, 리뷰 삭제·숨김)은 그대로 센다.
+ * 1인당 한도에서 «빼는» 회수 사유. 품절·결제실패·타임아웃 취소와 판매자 귀책 반품(불량·오배송 등)은
+ * 고객이 기회를 쓴 게 아니므로 돌려준다 (§13-2). 어뷰즈 축(고객 요청·관리자 취소, 단순 변심 반품,
+ * 리뷰 삭제·숨김)은 그대로 센다.
  */
-const PER_USER_LIMIT_EXEMPT_REVOKE_REASONS: readonly ReviewRewardRevokeReason[] = ['ORDER_CANCELLED_NOT_USER_FAULT'];
+const PER_USER_LIMIT_EXEMPT_REVOKE_REASONS: readonly ReviewRewardRevokeReason[] = [
+  'ORDER_CANCELLED_NOT_USER_FAULT',
+  'ORDER_RETURNED_NOT_USER_FAULT',
+];
 
 /** 전체 예산 한도가 세는 상태. 회수는 돈이 돌아온 것이라 예산도 돌려준다. */
 const BUDGET_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED'];
@@ -40,7 +44,9 @@ export type ReviewRewardRevokeReason =
   | 'REVIEW_DELETED'
   | 'REVIEW_HIDDEN'
   | 'ORDER_CANCELLED'
-  | 'ORDER_CANCELLED_NOT_USER_FAULT';
+  | 'ORDER_CANCELLED_NOT_USER_FAULT'
+  | 'ORDER_RETURNED'
+  | 'ORDER_RETURNED_NOT_USER_FAULT';
 
 export interface RevokedGrant {
   grantId: string;

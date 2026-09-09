@@ -435,6 +435,53 @@ const SalesOrderCancelledSchema = z.object({
     .optional(),
 });
 
+/**
+ * Core → 하류 반품 완료 이벤트
+ *
+ * 반품은 지금까지 아웃박스에 아무것도 넣지 않아 어떤 소비자도 알 수 없었다. 리뷰 자격·적립
+ * 회수가 「사서 → 리뷰 → 적립 → 반품」을 막으려면 그 사실이 밖으로 나가야 한다.
+ * 스트림: core.orders.events.v1
+ *
+ * 라인은 «사실»만 싣는다 — 무엇을 회수할지의 판정은 소비자가 한다.
+ * `returnedQuantity` 는 이번 반품 건이 아니라 **완료된 반품의 누적 수량**(이 건 포함)이다.
+ * 나눠 반품하거나 이벤트가 재전달돼도 소비자가 상태 없이 같은 판정을 내릴 수 있어야 한다.
+ */
+export interface SalesOrderReturnedPayload {
+  orderId: string;
+  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx'). 리뷰 자격이 걸린 주문 축이다. */
+  channelOrderId?: string;
+  returnRequestId: string;
+  reason: 'defective' | 'not_as_described' | 'change_of_mind' | 'wrong_item' | 'damaged_in_shipping' | 'other';
+  reasonDetail?: string;
+  returnedAt: string;
+  returnedLines: Array<{
+    salesOrderLineId: string;
+    /** Medusa 라인 item id. 채널 주문이 아니거나 매핑 전 주문이면 비어 있다 —
+     *  그 라인은 소비자가 라인 축으로 매칭할 수 없다. */
+    channelOrderItemId?: string;
+    orderedQuantity: number;
+    /** 완료된 반품의 누적 수량(이 건 포함). `orderedQuantity` 와 같으면 그 라인은 전량 반품이다. */
+    returnedQuantity: number;
+  }>;
+}
+
+const SalesOrderReturnedSchema = z.object({
+  orderId: z.string().min(1),
+  channelOrderId: z.string().optional(),
+  returnRequestId: z.string().min(1),
+  reason: z.enum(['defective', 'not_as_described', 'change_of_mind', 'wrong_item', 'damaged_in_shipping', 'other']),
+  reasonDetail: z.string().optional(),
+  returnedAt: z.string().datetime(),
+  returnedLines: z.array(
+    z.object({
+      salesOrderLineId: z.string().min(1),
+      channelOrderItemId: z.string().min(1).optional(),
+      orderedQuantity: z.number().int().positive(),
+      returnedQuantity: z.number().int().positive(),
+    }),
+  ),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -474,6 +521,10 @@ export const CORE_ORDER_STREAM = stream({
     SalesOrderCancelled: event<'SalesOrderCancelled', SalesOrderCancelledPayload>(
       'SalesOrderCancelled',
       SalesOrderCancelledSchema,
+    ),
+    SalesOrderReturned: event<'SalesOrderReturned', SalesOrderReturnedPayload>(
+      'SalesOrderReturned',
+      SalesOrderReturnedSchema,
     ),
   },
 });
