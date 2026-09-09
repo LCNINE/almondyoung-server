@@ -5,6 +5,7 @@ import type { MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
+import { recordOutboxFailed, recordOutboxPublished } from './outbox.metrics';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
 import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
 
@@ -291,6 +292,7 @@ export class OutboxDispatcher {
         })
         .where(eq(outbox_events.id, event.id));
 
+      recordOutboxPublished(event.topic);
       this.logger.log(`Event ${event.id} published: ${event.eventType}`);
     } catch (error) {
       await this.handleFailure(event, error);
@@ -318,6 +320,9 @@ export class OutboxDispatcher {
       })
       .where(eq(outbox_events.id, event.id));
 
+    // `final` 은 이 행이 더 이상 디스패치되지 않는다는 뜻이다 — 곧 재시도될 실패와 한 시계열에
+    // 섞이면 알람을 걸 수 없다.
+    recordOutboxFailed(event.topic, isFinalFailure);
     this.logger.error(`Event ${event.id} failed (${newRetryCount}/${this.config.maxRetries}): ${message}`);
   }
 
