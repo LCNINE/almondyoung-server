@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { FirebaseMembershipSyncService } from '../adapters/medusa/firebase-membership-sync.service';
 import { MembershipMedusaSyncService } from '../adapters/medusa/membership-medusa-sync.service';
@@ -28,7 +28,7 @@ export class MembershipDailySyncService {
     private readonly membershipMedusaSyncService: MembershipMedusaSyncService,
   ) {}
 
-  @Cron('0 2 * * *', { timeZone: 'Asia/Seoul' })
+  @CronOnce('0 2 * * *', { name: 'membership-daily-reconcile', timeZone: 'Asia/Seoul' })
   async reconcileMembership(): Promise<void> {
     this.logger.log('일일 멤버십 정합성 크론 시작');
 
@@ -68,7 +68,7 @@ export class MembershipDailySyncService {
    * 만료분 제거는 실시간 EXPIRED 이벤트 + reconcileMembership(cafe24) 가 담당하므로
    * 여기서는 add 만 한다(오제거 위험 회피).
    */
-  @Cron('30 2 * * *', { timeZone: 'Asia/Seoul' })
+  @CronOnce('30 2 * * *', { name: 'membership-daily-group-reconcile', timeZone: 'Asia/Seoul' })
   async reconcileAllActiveMembersToGroup(): Promise<void> {
     this.logger.log('전체 활성회원 그룹 정합화 크론 시작');
 
