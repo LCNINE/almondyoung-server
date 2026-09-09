@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, lt } from 'drizzle-orm';
 
@@ -22,7 +22,7 @@ export class ExpireEmailCodesService {
       );
   }
 
-  @Cron('0 0 * * *') // 매일 자정
+  @CronOnce('0 0 * * *', { name: 'email-verification-expire' }) // 매일 자정
   async cleanupExpiredVerifications() {
     this.logger.log('만료된 이메일 인증 코드 삭제 작업 시작');
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

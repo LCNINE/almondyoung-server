@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, eq, lt } from 'drizzle-orm';
@@ -30,7 +30,7 @@ export class ExpireExistingCodesService {
       );
   }
 
-  @Cron('0 0 * * *') // 매일 자정 실행
+  @CronOnce('0 0 * * *', { name: 'phone-verification-expire' }) // 매일 자정 실행
   async cleanupExpiredVerifications(tx?: DbTransaction) {
     this.logger.log('만료된 핸드폰 번호 인증 코드 삭제 작업 시작');
     const client = this.getClient(tx);

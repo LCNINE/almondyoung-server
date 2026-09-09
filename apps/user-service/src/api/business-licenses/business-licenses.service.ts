@@ -2,7 +2,8 @@ import { DbService, InjectDb } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { USER_STREAM } from '@packages/event-contracts';
@@ -122,7 +123,7 @@ export class BusinessLicensesService {
    * 걸린 정상 사업자가 사람 손을 기다리며 쌓이는 걸 막는 게 목적이다. 판정 기준은 신규 등록과
    * 같고(`deriveStatus`), 여전히 조회가 안 되면 손대지 않고 다음 사이클로 넘긴다.
    */
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @CronOnce(CronExpression.EVERY_30_MINUTES, { name: 'business-license-revalidate' })
   async revalidateFailedLookups(): Promise<void> {
     const since = new Date(Date.now() - REVALIDATE_WINDOW_MS);
 
