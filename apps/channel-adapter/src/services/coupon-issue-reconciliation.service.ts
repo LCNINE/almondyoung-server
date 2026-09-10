@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inboxEvents } from '../schema';
@@ -29,7 +29,7 @@ export class CouponIssueReconciliationService {
 
   constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
-  @Cron('0 3 * * *', { timeZone: 'Asia/Seoul' })
+  @CronOnce('0 3 * * *', { name: 'coupon-issue-reconcile', timeZone: 'Asia/Seoul' })
   async reconcile(): Promise<void> {
     await this.run();
   }
@@ -51,7 +51,7 @@ export class CouponIssueReconciliationService {
    * `processing` 을 이미 다시 물어간다(`inbox-worker.service.ts` 의 claim SQL). #488 `7-2` 의
    * 「pending/processing 은 리컨실 대상도 아님」은 그 절반이 이미 워커에 있다.
    */
-  @Cron('*/15 * * * *', { timeZone: 'Asia/Seoul' })
+  @CronOnce('*/15 * * * *', { name: 'coupon-issue-sweep-recent-failures', timeZone: 'Asia/Seoul' })
   async sweepRecentFailures(): Promise<void> {
     const since = new Date(Date.now() - FAST_LANE_LOOKBACK_MS);
 

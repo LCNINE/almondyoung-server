@@ -57,6 +57,13 @@
       "when": 1787902144079,
       "tag": "20260828072904_add-setting-operating-costs",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788980605927,
+      "tag": "20260909190325_add-cron-runs",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { eq, sql } from 'drizzle-orm';
@@ -40,7 +41,9 @@ export class FulfillmentOrderReservationRetryWorker {
     return tx ?? this.db;
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  // findCandidates 는 잠금 없는 SELECT 라 인스턴스가 겹치면 같은 라인을 두 번 예약 시도한다 —
+  // 주기당 한 번만 돈다 (ADR-0036).
+  @CronOnce(CronExpression.EVERY_10_SECONDS, { name: 'fulfillment-order-reservation-retry' })
   async retryUnfulfillable() {
     if (!this.workflowGate.shouldRunReservationRetry()) {
       return;

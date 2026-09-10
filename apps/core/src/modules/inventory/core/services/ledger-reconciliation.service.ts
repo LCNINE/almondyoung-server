@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { sql } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
@@ -199,7 +199,7 @@ export class LedgerReconciliationService {
    * 야간 전 카탈로그 대사. drift 를 로그 + Prometheus 게이지로 표면화.
    * 잡 자체 예외가 스케줄러를 죽이지 않도록 try/catch 로 감싼다.
    */
-  @Cron('0 3 * * *', { name: 'ledger-reconciliation', timeZone: 'Asia/Seoul' })
+  @CronOnce('0 3 * * *', { name: 'ledger-reconciliation', timeZone: 'Asia/Seoul' })
   async scheduledReconcile(): Promise<void> {
     try {
       const report = await this.reconcile();

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { UserContactClient } from '@app/shared';
@@ -42,7 +42,7 @@ export class CmsMemberPollerService {
    * 회원등록은 영업일 12:00 마감, 결과는 D+1에 확인 가능.
    * 평일 09:00, 12:00, 15:00 실행.
    */
-  @Cron('0 0 9,12,15 * * 1-5')
+  @CronOnce('0 0 9,12,15 * * 1-5', { name: 'cms-member-poll' })
   async pollPendingMembers(): Promise<void> {
     const pendingMembers = await this.cmsMemberService.findPendingMembers();
     if (pendingMembers.length === 0) return;

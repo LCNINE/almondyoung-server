@@ -42,7 +42,10 @@ describeIfDb('ReviewStatisticsService 페이지네이션 (실 Postgres)', () => 
   beforeAll(async () => {
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: ugcServiceSchema });
-    service = new ReviewStatisticsService({ db } as unknown as DbService<UgcServiceSchema>);
+    service = new ReviewStatisticsService(
+      { db } as unknown as DbService<UgcServiceSchema>,
+      { countIssuedInRange: async () => [{ eligibleCount: 0, consumedCount: 0 }] } as never,
+    );
 
     await db.insert(reviews).values([
       reviewRow(productA, 1, 2),

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { inboxEvents } from '../../schema';
@@ -31,7 +31,7 @@ export class InboxFailedRevivalService {
     private readonly medusaClient: MedusaClient,
   ) {}
 
-  @Cron('0 4 * * *', { timeZone: 'Asia/Seoul' })
+  @CronOnce('0 4 * * *', { name: 'inbox-failed-revival', timeZone: 'Asia/Seoul' })
   async reviveProductNotFoundFailures(): Promise<void> {
     // SELECT 와 UPDATE 가 같이 쓴다 — 그 사이 상태가 바뀐 행을 id 만으로 덮어쓰지 않기 위해.
     //

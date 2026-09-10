@@ -628,8 +628,15 @@
     {
       "idx": 89,
       "version": "7",
-      "when": 1789004013686,
-      "tag": "20260910013333_add-product-info-json",
+      "when": 1788979640993,
+      "tag": "20260909184720_add-cron-runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789006195469,
+      "tag": "20260910020955_add-product-info-json",
       "breakpoints": true
     }
   ]

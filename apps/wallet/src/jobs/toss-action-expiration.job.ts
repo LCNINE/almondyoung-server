@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { and, eq, lte } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
@@ -29,7 +29,7 @@ export class TossActionExpirationJob {
       Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_ACTION_EXPIRATION_BATCH_SIZE;
   }
 
-  @Cron(process.env.WALLET_TOSS_ACTION_EXPIRATION_CRON ?? DEFAULT_ACTION_EXPIRATION_CRON)
+  @CronOnce(process.env.WALLET_TOSS_ACTION_EXPIRATION_CRON ?? DEFAULT_ACTION_EXPIRATION_CRON, { name: 'toss-action-expiration' })
   async runScheduledExpiration(): Promise<void> {
     try {
       const result = await this.expireDueActions();

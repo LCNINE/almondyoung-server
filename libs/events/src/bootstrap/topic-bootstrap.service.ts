@@ -3,6 +3,13 @@ import { Kafka, type ITopicConfig } from 'kafkajs';
 import type { KafkaConfig, StreamConfig } from '@packages/event-contracts/types';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 
+/**
+ * 스트림이 `partitions` 를 선언하지 않았을 때 토픽을 만드는 파티션 수.
+ * `ConsumerLagCollector` 가 0 시리즈를 세울 때도 같은 값을 쓴다 — 여기서 만든 토픽의
+ * 파티션 수를 그쪽이 다시 추측하지 않도록 한 곳에 둔다.
+ */
+export const DEFAULT_TOPIC_PARTITIONS = 3;
+
 export interface TopicBootstrapOptions {
   kafka: KafkaConfig;
   streams: StreamConfig[];
@@ -26,7 +33,7 @@ export async function bootstrapKafkaTopics(options: TopicBootstrapOptions): Prom
     return;
   }
 
-  const defaultPartitions = options.numPartitions ?? 3;
+  const defaultPartitions = options.numPartitions ?? DEFAULT_TOPIC_PARTITIONS;
   const topicMap = new Map<string, number>();
   for (const stream of options.streams) {
     const partitions = stream.topic.partitions ?? defaultPartitions;

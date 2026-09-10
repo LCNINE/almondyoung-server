@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { format, subMinutes } from 'date-fns';
 import { SubscriptionException, SubscriptionNotFoundException } from '../../shared/exceptions/subscription.exceptions';
 import { BillingReader } from './billing.reader';
@@ -41,7 +42,7 @@ export class RecurringBillingService {
   /**
    * 매일 09시 정기결제 스케줄러 실행
    */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @CronOnce(CronExpression.EVERY_DAY_AT_9AM, { name: 'billing-daily-scheduler' })
   async runDailyBillingScheduler(): Promise<void> {
     this.logger.log('Starting daily billing scheduler...');
 
@@ -63,7 +64,7 @@ export class RecurringBillingService {
    * wallet 권위 상태를 되물어 스스로 정합화한다. 이벤트 기반 동기화의 불확실성을 SoT 미보유측(membership)이
    * 해소하는 경로. billing_events 유니크 멱등 마커 덕에 실제 이벤트와 레이스해도 안전하다.
    */
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @CronOnce(CronExpression.EVERY_30_MINUTES, { name: 'billing-reconcile-stuck' })
   async reconcileStuckBillings(): Promise<void> {
     const threshold = subMinutes(new Date(), RECONCILE_THRESHOLD_MINUTES);
     const stuck = await this.billingReader.findStuckBillingForReconcile(threshold);
@@ -134,7 +135,7 @@ export class RecurringBillingService {
    * membership 이 자기 소유 멱등키로 wallet 인보이스 권위 상태를 되물어(이벤트 평면과 독립된 조회 평면)
    * 터미널 결과를 직접 확정한다. 모든 결과 반영은 billing_events 멱등 마커라 실제 이벤트와 레이스해도 안전.
    */
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @CronOnce(CronExpression.EVERY_30_MINUTES, { name: 'billing-reconcile-stuck-invoices' })
   async reconcileStuckInvoices(): Promise<void> {
     const today = format(new Date(), 'yyyy-MM-dd');
     const targets = await this.billingReader.findInvoiceContractsForReconcile(today);
@@ -316,7 +317,7 @@ export class RecurringBillingService {
    * - autoRenewal=true + dunning 없음: BillingCharge 커맨드 발행 후 wallet 응답 미수신 stuck 상태
    * (dunning 진행 중인 카드거절 케이스는 handleFailure -> dunning -> terminateSubscription으로 처리)
    */
-  @Cron('0 * * * *')
+  @CronOnce('0 * * * *', { name: 'billing-expiration-check' })
   async runExpirationCheck(): Promise<void> {
     this.logger.log('Starting expiration check...');
 

@@ -13,6 +13,7 @@
 
 import { Controller, Injectable, INestApplication, OnModuleInit, UseInterceptors } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { register } from 'prom-client';
 import { event, getDLQTopicName, stream } from '@packages/event-contracts/types';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import type { DLQMessage } from '../dlq/dlq.types';
@@ -132,6 +133,15 @@ describe('startConsumer — 소비 집합 도출', () => {
   beforeEach(() => {
     calls.length = 0;
     broker.reset();
+  });
+
+  it('전략을 넘기면 lag 폴러를 만들지 않는다 — 붙을 브로커가 없다 (#815)', async () => {
+    // 폴러는 `start()` 에서 선언 파티션 수만큼 0 시리즈를 **동기적으로** 세우므로, 만들어졌다면
+    // 브로커 응답과 무관하게 시리즈가 있어야 한다. 없음 = 안 만들어짐.
+    const metric = register.getSingleMetric('events_consumer_lag');
+    const values = metric ? (await metric.get()).values : [];
+
+    expect(values.filter((v) => String(v.labels.group).startsWith('spec-consumer'))).toEqual([]);
   });
 
   it('구독 목록을 아무 데도 선언하지 않았는데 메시지가 핸들러까지 도달한다', async () => {

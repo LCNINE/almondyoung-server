@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
+import { CronOnceModule } from '@app/cron-once';
 import { ClsModule } from 'nestjs-cls';
 import {
   EventsModule,
@@ -134,6 +135,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       validate: validateChannelAdapterEnv,
     }),
     SCHEDULE_ROOT, // ← Cron 활성화
+    CronOnceModule,
     HttpModule,
     DbModule.forRoot({
       config: {

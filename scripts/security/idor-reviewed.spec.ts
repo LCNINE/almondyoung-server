@@ -536,7 +536,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:603',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:597',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
@@ -559,13 +559,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/eligibilities': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/review-eligibility.service.ts:66',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:78',
     predicate: 'const conditions: SQL[] = [eq(reviewEligibilities.userId, userId)];',
     note: "userId는 컨트롤러의 @User('userId') 토큰값(review-eligibility.controller.ts:68), 쿼리 파라미터가 아님 — POST /reviews/eligibilities의 P0 패턴이 이 GET에는 없음.",
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:729',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:723',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
@@ -577,7 +577,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:553',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:547',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
@@ -589,13 +589,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:443',
-    predicate: 'eq(reviewEligibilities.userId, userId),',
-    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, eq(reviewEligibilities.userId, userId)로 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가.',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:131',
+    predicate: 'eq(reviewEligibilities.userId, input.userId),',
+    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, 권한 모듈의 assertConsumable 이 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가.',
   },
   'ugc-service POST /reviews/:id/reactions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:362',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:364',
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
@@ -612,7 +612,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /business-licenses//me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:283',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:293',
     predicate: '.where(eq(businessLicenses.userId, userId))',
   },
   'user-service GET /cafe24/link': {
@@ -661,9 +661,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /business-licenses//me/business-number': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:541',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:538',
     predicate: '.where(eq(businessLicenses.userId, userId))',
-    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (541행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(306행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
+    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (538행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(316행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
   },
   'user-service POST //recent-views': {
     verdict: 'N/A',

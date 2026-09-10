@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { and, countDistinct, eq, gt, isNull, lte, or } from 'drizzle-orm';
@@ -33,7 +33,7 @@ export class MembershipDailySnapshotService {
    * 매일 KST 00:05 — 오늘 날짜의 스냅샷을 기록한다.
    * 00:00 정각을 피하는 것은 자정 경계에서 도착 중인 이벤트와의 경합을 줄이기 위해서다.
    */
-  @Cron('5 0 * * *', { timeZone: SEOUL_TZ })
+  @CronOnce('5 0 * * *', { name: 'membership-daily-snapshot', timeZone: SEOUL_TZ })
   async snapshotToday(): Promise<void> {
     const aggDate = toSeoulDateOnly(new Date());
     try {

@@ -3,6 +3,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
+import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
@@ -92,6 +93,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     }),
     HttpModule,
     SCHEDULE_ROOT,
+    CronOnceModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || '',

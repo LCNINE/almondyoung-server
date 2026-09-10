@@ -55,6 +55,7 @@ export class OutboxMetricsCollector {
     initOutboxTopicSeries(topic);
   }
 
+  // cron-overlap-safe: 겹쳐도 게이지에 같은 값을 두 번 쓸 뿐인 멱등 갱신이다(#707) — CronOnceModule 없는 앱에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('*/15 * * * * *')
   async refresh(): Promise<void> {
     try {

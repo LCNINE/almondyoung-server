@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
@@ -57,7 +57,7 @@ export class OrderPollerOrchestrator {
     private readonly salesChannelClient: SalesChannelClient,
   ) {}
 
-  @Cron('*/5 * * * *')
+  @CronOnce('*/5 * * * *', { name: 'order-poll' })
   async poll(): Promise<void> {
     // 캐시하지 않는다. 주기가 5분이고 provider 는 한 자릿수라 호출 비용이 무시할 만한 데다,
     // 캐시를 두면 "껐는데 왜 아직 도나" 라는 혼란 지점이 생긴다. 즉시 들어야 킬스위치다.

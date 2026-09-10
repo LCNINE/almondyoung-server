@@ -38,11 +38,13 @@ import { RealtimeQuery } from './features/traffic/read-model/realtime.query';
 import { BehaviorQuery } from './features/traffic/read-model/behavior.query';
 import { Ga4Client } from './features/traffic/ga4/ga4.client';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
+import { CronOnceModule } from '@app/cron-once';
 
 @Module({
   imports: [
     // 단 하나의 forRoot 결과를 공유해야 한다 — 직접 부르면 @Cron 이 두 번 등록된다 (#599)
     SCHEDULE_ROOT,
+    CronOnceModule,
     LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,

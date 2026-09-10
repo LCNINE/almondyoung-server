@@ -96,6 +96,7 @@ export class OutboxDispatcher {
     return this.dbService.db;
   }
 
+  // cron-overlap-safe: acquireEventBatch 가 FOR UPDATE SKIP LOCKED 로 배치를 선점해 겹쳐도 같은 행을 두 번 못 잡는다 — CronOnceModule 없는 앱(notification·file-service·search)에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('*/5 * * * * *')
   async dispatchPendingEvents() {
     try {
@@ -331,6 +332,7 @@ export class OutboxDispatcher {
     return new Date(Date.now() + delay * 1000);
   }
 
+  // cron-overlap-safe: PUBLISHED 행 DELETE 는 겹쳐도 같은 행을 다시 지우거나 0건일 뿐인 멱등 연산이다 — CronOnceModule 없는 앱에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('0 2 * * *')
   async cleanupOldEvents() {
     const cutoffDate = new Date();

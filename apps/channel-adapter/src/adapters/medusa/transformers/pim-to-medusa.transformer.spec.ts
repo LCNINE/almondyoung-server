@@ -161,6 +161,42 @@ describe('PimToMedusaTransformer', () => {
       expect(result.metadata.pimPurchaseConstraint).toBeNull();
     });
 
+    it('spreads productInfo into metadata — 스토어프론트 «상품정보» 표는 metadata 키를 그대로 행으로 그린다', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        productInfo: {
+          productNumber: 'MG-PIG-001',
+          weight: '79.1g',
+          dimensions: '직경 21.5mm × 길이 100mm',
+          origin: '대한민국',
+          capacity: '10ml',
+          expirationDate: '제조일로부터 30개월',
+          manufacturer: '미곤아카데미',
+          material: '티타늄 합금',
+          usage: '사용 전 충분히 흔들어 주세요',
+        },
+      });
+
+      expect(result.metadata.productNumber).toBe('MG-PIG-001');
+      expect(result.metadata.weight).toBe('79.1g');
+      expect(result.metadata.dimensions).toBe('직경 21.5mm × 길이 100mm');
+      expect(result.metadata.origin).toBe('대한민국');
+      expect(result.metadata.capacity).toBe('10ml');
+      expect(result.metadata.expirationDate).toBe('제조일로부터 30개월');
+      expect(result.metadata.manufacturer).toBe('미곤아카데미');
+      expect(result.metadata.material).toBe('티타늄 합금');
+      expect(result.metadata.usage).toBe('사용 전 충분히 흔들어 주세요');
+    });
+
+    it('leaves productInfo keys absent from metadata when the snapshot has none', () => {
+      // 키를 빈 문자열로라도 만들어 두면 표에 빈 행이 아니라 «값 없음» 이 박힌다.
+      const result = transformPimToMedusa({ ...mockSnapshot, productInfo: undefined });
+
+      expect(result.metadata).not.toHaveProperty('manufacturer');
+      expect(result.metadata).not.toHaveProperty('capacity');
+      expect(result.metadata).not.toHaveProperty('usage');
+    });
+
     it('assigns the default shipping profile to physical products', () => {
       const result = transformPimToMedusa(
         { ...mockSnapshot, fulfillmentKind: 'physical' },

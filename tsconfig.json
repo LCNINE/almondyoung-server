@@ -34,54 +34,24 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@app/authorization": [
-        "libs/authorization/src"
-      ],
-      "@app/authorization/*": [
-        "libs/authorization/src/*"
-      ],
-      "@app/db": [
-        "libs/db/src"
-      ],
-      "@app/db/*": [
-        "libs/db/src/*"
-      ],
-      "@app/events": [
-        "libs/events/src"
-      ],
-      "@app/events/*": [
-        "libs/events/src/*"
-      ],
-      "@app/shared": [
-        "libs/shared/src"
-      ],
-      "@app/shared/*": [
-        "libs/shared/src/*"
-      ],
-      "@packages/domain-types": [
-        "packages/domain-types"
-      ],
-      "@packages/domain-types/*": [
-        "packages/domain-types/*"
-      ],
-      "@packages/product-description": [
-        "packages/product-description"
-      ],
-      "@packages/product-description/*": [
-        "packages/product-description/*"
-      ],
-      "@packages/event-contracts": [
-        "packages/event-contracts"
-      ],
-      "@packages/event-contracts/*": [
-        "packages/event-contracts/*"
-      ],
-      "hms-api-wrapper": [
-        "packages/hms-api-wrapper/dist"
-      ],
-      "hms-api-wrapper/*": [
-        "packages/hms-api-wrapper/dist/*"
-      ]
+      "@app/authorization": ["libs/authorization/src"],
+      "@app/authorization/*": ["libs/authorization/src/*"],
+      "@app/cron-once": ["libs/cron-once/src"],
+      "@app/cron-once/*": ["libs/cron-once/src/*"],
+      "@app/db": ["libs/db/src"],
+      "@app/db/*": ["libs/db/src/*"],
+      "@app/events": ["libs/events/src"],
+      "@app/events/*": ["libs/events/src/*"],
+      "@app/shared": ["libs/shared/src"],
+      "@app/shared/*": ["libs/shared/src/*"],
+      "@packages/domain-types": ["packages/domain-types"],
+      "@packages/domain-types/*": ["packages/domain-types/*"],
+      "@packages/event-contracts": ["packages/event-contracts"],
+      "@packages/event-contracts/*": ["packages/event-contracts/*"],
+      "@packages/product-description": ["packages/product-description"],
+      "@packages/product-description/*": ["packages/product-description/*"],
+      "hms-api-wrapper": ["packages/hms-api-wrapper/dist"],
+      "hms-api-wrapper/*": ["packages/hms-api-wrapper/dist/*"]
     }
   }
 }

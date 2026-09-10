@@ -82,6 +82,7 @@ export const REVIEW_REWARD_SKIP_REASONS = [
   'PER_USER_LIMIT',
   'GLOBAL_LIMIT',
   'AMOUNT_ZERO',
+  'NON_ORDER_PROVIDER',
 ] as const;
 export type ReviewRewardSkipReason = (typeof REVIEW_REWARD_SKIP_REASONS)[number];
 

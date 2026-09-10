@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { QnaService } from './qna.service';
 
 @Injectable()
@@ -8,7 +8,7 @@ export class QnaCleanupCronService {
 
   constructor(private readonly qnaService: QnaService) {}
 
-  @Cron('0 3 * * *', {
+  @CronOnce('0 3 * * *', {
     name: 'cleanup-deleted-questions',
     timeZone: 'Asia/Seoul',
   })

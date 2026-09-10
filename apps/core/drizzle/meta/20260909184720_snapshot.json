@@ -1,5 +1,5 @@
 {
-  "id": "14ae8a18-45f3-4116-9998-abd2dde00711",
+  "id": "c562f3c9-ed98-4dd8-9bee-5da47a8caedd",
   "prevId": "e49fd31f-18d8-450d-91de-6424e41c0ec8",
   "version": "7",
   "dialect": "postgresql",
@@ -3504,12 +3504,6 @@
         "material": {
           "name": "material",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "product_info": {
-          "name": "product_info",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -22526,6 +22520,64 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cron_runs": {
+      "name": "cron_runs",
+      "schema": "",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_at": {
+          "name": "period_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_by": {
+          "name": "claimed_by",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "cron_runs_name_period_at_pk": {
+          "name": "cron_runs_name_period_at_pk",
+          "columns": [
+            "name",
+            "period_at"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
