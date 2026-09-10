@@ -63,7 +63,12 @@ export default function ReviewStatisticsTemplate() {
 
   const totals = data?.totals;
   const photoRate = totals && totals.reviewCount > 0 ? totals.photoReviewCount / totals.reviewCount : null;
-  const conversionRate = totals && totals.eligibleCount > 0 ? totals.consumedEligibleCount / totals.eligibleCount : null;
+  // 「리뷰 전환율」은 «구매 후 리뷰를 쓰는가» 를 묻는다 — 운영자가 그냥 준 자격은 그 모수가 아니다.
+  // 분모에 섞으면 투입분이 늘수록 전환율이 라벨과 무관하게 내려간다. 지급분은 hint 에 따로 낸다.
+  const conversionRate =
+    totals && totals.orderEligibleCount > 0
+      ? totals.orderConsumedEligibleCount / totals.orderEligibleCount
+      : null;
   const commentRate = totals && totals.reviewCount > 0 ? totals.adminCommentedCount / totals.reviewCount : null;
 
   return (
@@ -78,6 +83,11 @@ export default function ReviewStatisticsTemplate() {
             <KpiTile
               label="리뷰 수"
               value={formatCount(totals?.reviewCount)}
+              hint={
+                totals
+                  ? `자체 ${formatCount(totals.ownReviewCount)}건 · 이관 ${formatCount(totals.legacyReviewCount)}건`
+                  : undefined
+              }
               previous={
                 totals ? { current: totals.reviewCount, previous: totals.previousReviewCount } : undefined
               }
@@ -86,7 +96,12 @@ export default function ReviewStatisticsTemplate() {
             <KpiTile
               label="평균 평점"
               value={formatRating(totals?.averageRating)}
-              hint={totals?.previousAverageRating != null ? `전기간 ${formatRating(totals.previousAverageRating)}` : undefined}
+              hint={
+                totals
+                  ? `자체 ${formatRating(totals.ownAverageRating)} · 이관 ${formatRating(totals.legacyAverageRating)}` +
+                    (totals.previousAverageRating != null ? ` (전기간 ${formatRating(totals.previousAverageRating)})` : '')
+                  : undefined
+              }
               isLoading={isLoading}
             />
             <KpiTile
@@ -98,7 +113,14 @@ export default function ReviewStatisticsTemplate() {
             <KpiTile
               label="리뷰 전환율"
               value={formatPercent(conversionRate)}
-              hint={`작성 자격 ${formatCount(totals?.eligibleCount)}건 중 ${formatCount(totals?.consumedEligibleCount)}건 작성`}
+              hint={
+                totals
+                  ? `주문 자격 ${formatCount(totals.orderEligibleCount)}건 중 ${formatCount(totals.orderConsumedEligibleCount)}건 작성` +
+                    (totals.adminEligibleCount > 0
+                      ? ` · 운영자 지급 ${formatCount(totals.adminEligibleCount)}건 중 ${formatCount(totals.adminConsumedEligibleCount)}건 (전환율 제외)`
+                      : '')
+                  : undefined
+              }
               isLoading={isLoading}
             />
             <KpiTile

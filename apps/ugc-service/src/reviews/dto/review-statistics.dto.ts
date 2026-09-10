@@ -43,6 +43,14 @@ export class ReviewStatisticsTotalsDto {
   /** 기간 평균 평점 — 리뷰가 없으면 null */
   averageRating: number | null;
   previousAverageRating: number | null;
+  /** 그중 이 쇼핑몰에서 직접 작성된 리뷰 수 */
+  ownReviewCount: number;
+  /** 그중 이전 사이트에서 이관된 리뷰 수 */
+  legacyReviewCount: number;
+  /** 자체 작성분만의 평균 평점 — 자체 리뷰가 없으면 0 이 아니라 null */
+  ownAverageRating: number | null;
+  /** 이관분만의 평균 평점 — 이관 리뷰가 없으면 null */
+  legacyAverageRating: number | null;
   /** 사진이 1장 이상 붙은 리뷰 수 */
   photoReviewCount: number;
   /** 어드민 댓글이 달린 리뷰 수 */
@@ -51,6 +59,12 @@ export class ReviewStatisticsTotalsDto {
   eligibleCount: number;
   /** 그중 실제 리뷰로 소진된 수 — 리뷰를 지워도 소진 기록은 남는다 */
   consumedEligibleCount: number;
+  /** 주문에서 나온 자격 수 (`provider='order'`) */
+  orderEligibleCount: number;
+  orderConsumedEligibleCount: number;
+  /** 운영자가 직접 준 자격 수 (`provider='admin'`) — 구매 전환율과 섞으면 안 된다 */
+  adminEligibleCount: number;
+  adminConsumedEligibleCount: number;
 }
 
 export class RatingBucketDto {

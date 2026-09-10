@@ -3,6 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, exists, gte, isNull, lt, sql } from 'drizzle-orm';
 import { reactions, reviewComments, reviewMedia, reviews, type UgcServiceSchema } from '../../db/schema';
 import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
+import { isLegacySource, isOwnSource } from '../../source-system';
 import {
   AdminReviewStatisticsResponseDto,
   BestReviewDto,
@@ -45,6 +46,7 @@ const LOW_RATED_THRESHOLD = 3.5;
 const LOW_RATED_MIN_REVIEWS = 3;
 const BEST_REVIEWS_LIMIT = 5;
 
+
 @Injectable()
 export class ReviewStatisticsService {
   constructor(
@@ -79,6 +81,14 @@ export class ReviewStatisticsService {
     const base = periodWhere(fromTs, toExclusiveTs);
 
     const averageRatingExpr = sql<number | null>`avg(${reviews.rating})::float`;
+    // 출처별 내역은 «같은 스캔»에서 filter 집계로 뽑는다 — 왕복도 스캔도 늘리지 않는다.
+    // 자체 리뷰가 0건이면 평균은 0 이 아니라 NULL 이다: 「아직 없다」와 「0점이다」는 다른 사실이다.
+    const own = isOwnSource(reviews.sourceSystem);
+    const legacy = isLegacySource(reviews.sourceSystem);
+    const ownCountExpr = sql<number>`count(*) filter (where ${own})::int`;
+    const legacyCountExpr = sql<number>`count(*) filter (where ${legacy})::int`;
+    const ownAverageExpr = sql<number | null>`avg(${reviews.rating}) filter (where ${own})::float`;
+    const legacyAverageExpr = sql<number | null>`avg(${reviews.rating}) filter (where ${legacy})::float`;
     // created_at 은 UTC naive — 먼저 UTC 로 못박은 뒤 KST 로 옮겨야 달력 날짜가 맞다.
     const kstBucketExpr = sql<string>`to_char((${reviews.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM-DD')`;
 
@@ -107,7 +117,17 @@ export class ReviewStatisticsService {
       [lowRatedCount],
       [topProductsCount],
     ] = await Promise.all([
-      this.client.select({ reviewCount: count(), averageRating: averageRatingExpr }).from(reviews).where(base),
+      this.client
+        .select({
+          reviewCount: count(),
+          averageRating: averageRatingExpr,
+          ownReviewCount: ownCountExpr,
+          legacyReviewCount: legacyCountExpr,
+          ownAverageRating: ownAverageExpr,
+          legacyAverageRating: legacyAverageExpr,
+        })
+        .from(reviews)
+        .where(base),
       this.client
         .select({ reviewCount: count(), averageRating: averageRatingExpr })
         .from(reviews)
@@ -206,10 +226,18 @@ export class ReviewStatisticsService {
         previousReviewCount: previousTotals?.reviewCount ?? 0,
         averageRating: totals?.averageRating ?? null,
         previousAverageRating: previousTotals?.averageRating ?? null,
+        ownReviewCount: totals?.ownReviewCount ?? 0,
+        legacyReviewCount: totals?.legacyReviewCount ?? 0,
+        ownAverageRating: totals?.ownAverageRating ?? null,
+        legacyAverageRating: totals?.legacyAverageRating ?? null,
         photoReviewCount: photoTotals?.count ?? 0,
         adminCommentedCount: commentTotals?.count ?? 0,
         eligibleCount: eligibility?.eligibleCount ?? 0,
         consumedEligibleCount: eligibility?.consumedCount ?? 0,
+        orderEligibleCount: eligibility?.orderEligibleCount ?? 0,
+        orderConsumedEligibleCount: eligibility?.orderConsumedCount ?? 0,
+        adminEligibleCount: eligibility?.adminEligibleCount ?? 0,
+        adminConsumedEligibleCount: eligibility?.adminConsumedCount ?? 0,
       },
       ratingDistribution: fillRatingDistribution(distributionRows),
       series: seriesRows,
