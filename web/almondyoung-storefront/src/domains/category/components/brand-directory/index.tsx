@@ -4,9 +4,6 @@ import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnai
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 
-// 그룹당 노출 상한. 브랜드관 페이지는 목록이 목적이라 홈보다 넉넉히 둔다.
-const MAX_TILES = 60
-
 interface BrandDirectoryProps {
   /** 브랜드관 루트 또는 그룹(중간 분류) 카테고리 */
   category: StoreProductCategoryTree
@@ -20,7 +17,7 @@ interface BrandDirectoryProps {
  * 그리드로 보여줘 브랜드관답게 만든다. 홈 브랜드 섹션과 같은 타일 어휘를 쓴다.
  */
 export function BrandDirectory({ category, basePath }: BrandDirectoryProps) {
-  const { groups } = selectBrandTiles([category], category.handle, MAX_TILES)
+  const { groups } = selectBrandTiles([category], category.handle, Infinity)
   if (groups.length === 0) return null
 
   const prefix = basePath ? `/category/${basePath}` : `/category/${category.handle}`
