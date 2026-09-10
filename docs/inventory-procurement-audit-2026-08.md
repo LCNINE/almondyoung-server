@@ -331,7 +331,7 @@ A(전량 입고완료 status=confirmed) + B(pending) 상태에서 라인 수정
 | 항목 | 근거 |
 |---|---|
 | **죽은 코드**: `TransactionService` 를 `PurchaseOrderService` 가 주입만 하고 미호출 | service:30. ADR-0025 가 금지한 per-class tx 헬퍼의 잔재 |
-| **죽은 코드**: `AuditService`(339줄) 호출자 0곳 | `shared/services/audit.service.ts`. `SharedModule` 등록만 돼 있음 |
+| ~~**죽은 코드**: `AuditService` 호출자 0곳~~ **← 틀렸다. 2026-09-10 교정** | 도출 명령: `grep -rnE "this\.(audit\|auditService)\??\.[a-zA-Z]" --include=*.ts apps/core/src \| grep -v '\.spec\.ts' \| grep -v 'operations/audit/'`. 최초 집계가 `auditService.` 만 봐서 `this.audit` (fulfillment) 과 `this.audit?.` (sales-order, `@Optional()` 주입) 을 놓쳤다. **`purchase-order.service.ts` 에서 0곳인 것만 맞다.** 라이브 실측(2026-09-10)으로는 `audit_logs` 3,850행이 실제로 쌓여 있고 지금도 하루 20~79행씩 는다 — 99.4% 가 sales-order 경로다. 이 오분류 탓에 #744(전 행 +9h)가 ⚪ 로 밀려 있었다 |
 | **N+1**: 발주 1건당 라인 1쿼리 + 공급처 1쿼리 | service:487~. limit 50 이면 최대 101 쿼리 |
 | **중복 SKU → 500**: create/update 가 dedupe 안 함 | `purchase_order_lines` PK=(po_id, sku_id) 위반이 그대로 전파. 400 이어야 함 |
 | **카트 유니크 제약 없음**: select→update/insert 합산이 동시요청에 중복 행 생성 | schema:1909 에 index 인자 자체가 없음. `addToCart` service:547 |
@@ -369,6 +369,11 @@ if (!isSameSeoulDay(nowSeoul(), receiptRow.occurredAt)) {
 
 **고치는 법**: 첫 인자를 `new Date()` 로. 한 줄이지만 입고 취소 경로라 별도 테스트가
 필요하고 ①과 위험이 다르므로 묶지 않았다.
+
+> **후속 (2026-09-11)**: `3bcb7cca3` 이 이 건을 고쳤고(`isTodaySeoul` 도입), **#744 가
+> `nowSeoul` 자체를 삭제**했다 — 같은 부류가 `audit_logs` 전 행을 +9h 로 쌓고 있었기
+> 때문이다. 위 코드 인용은 당시 상태의 기록이며 현재 저장소에 `nowSeoul` 은 없다.
+> `scripts/jest/no-shifted-date-outside-time-util.spec.ts` 가 재도입을 막는다.
 
 ---
 
