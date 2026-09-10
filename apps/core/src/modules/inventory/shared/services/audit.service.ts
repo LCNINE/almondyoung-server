@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, auditEventTypeEnum, auditSeverityEnum, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { nowSeoul } from './time.util';
 import { eq, gte, lte, desc, and } from 'drizzle-orm';
 
 export interface AuditContext {
@@ -217,7 +216,7 @@ export class AuditService {
     this.logger.warn('Using deprecated logChange method. Please use log() method instead.');
 
     // 콘솔 로그 (기존 방식)
-    console.log(`[AUDIT][${category}]`, { ts: nowSeoul().toISOString(), ...payload });
+    console.log(`[AUDIT][${category}]`, { ts: new Date().toISOString(), ...payload });
 
     // 새로운 방식으로도 기록
     await this.log({
@@ -308,7 +307,9 @@ export class AuditService {
       ipAddress: context?.ipAddress,
       correlationId: context?.correlationId,
 
-      timestamp: nowSeoul(),
+      // #744 — 저장은 «진짜 순간»으로. 서울 벽시계 Date 를 넣으면 epoch 이 이미 옮겨져 있어
+      // `timestamptz` 직렬화에서 값이 한 번 더 밀린다 (라이브 UTC 에서 +9h, 3,850행 전량).
+      timestamp: new Date(),
     });
 
     const logLevel = this.mapSeverityToLogLevel(data.severity || 'INFO');

@@ -8,8 +8,8 @@ import { formatInTimeZone } from 'date-fns-tz';
  * 영업일 로직을 돌린다. 그 파일을 그대로 import 하지 않는 이유는 둘이다:
  * (1) app 경계를 넘는 import 라 nest 빌드 그래프가 core 를 analytics 번들로 끌고 온다
  *     (`@app/*` 처럼 tsconfig path 로 노출된 공유 지점이 아니다).
- * (2) 그 모듈은 `Date → 'YYYY-MM-DD'` 를 내주는 함수를 노출하지 않는다 (`toSeoulTime`/
- *     `isSameSeoulDay`/`nowSeoul` 뿐).
+ * (2) 그 모듈은 `Date → 'YYYY-MM-DD'` 를 내주는 함수를 노출하지 않는다 (boolean 을 내주는
+ *     `isSameSeoulDay`/`isTodaySeoul` 뿐 — 시프트된 Date 를 내주던 함수들은 #744 로 봉인됐다).
  * 그래서 오프셋을 손으로 더하는 대신 **같은 라이브러리(`date-fns-tz`)와 같은 타임존 상수**를
  * 쓴다. 손으로 더한 +9h 는 IANA DB 가 관리하는 역사적 오프셋(한국은 과거 DST 시행 이력이 있다)을
  * 무시하므로 채택하지 않는다.
