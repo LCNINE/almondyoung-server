@@ -45,7 +45,14 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">주문번호</label>
-                                <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.orderNo}</div>
+                                <div className="px-3 py-2 border rounded-md bg-gray-50">
+                                    {editedOrder.orderNo}
+                                    {editedOrder.channelOrderId !== editedOrder.orderNo && (
+                                        <span className="ml-2 font-mono text-[11px] text-gray-400">
+                                            {editedOrder.channelOrderId}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">주문 상태</label>
@@ -54,13 +61,53 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                         </div>
                     </div>
 
+                    {/*
+                      배송지에 적는 이름이 회원 이름과 다른 경우가 흔해, 배송지만 보고는 주문한 회원을
+                      알 수 없었다. 배송지와 «주문한 회원»을 같은 화면에 나란히 둔다.
+                    */}
                     <div className="mb-6">
-                        <h3 className="text-sm font-medium mb-3">수령자 정보</h3>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label className="block text-sm mb-1 text-gray-600">주문자</label>
-                                <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.customerName ?? '-'}</div>
+                        <h3 className="text-sm font-medium mb-3">주문한 회원</h3>
+                        {editedOrder.memberId ? (
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm mb-1 text-gray-600">회원 아이디</label>
+                                    <div className="px-3 py-2 border rounded-md bg-gray-50">
+                                        {editedOrder.memberLoginId ?? '-'}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm mb-1 text-gray-600">회원 이름</label>
+                                    <div className="px-3 py-2 border rounded-md bg-gray-50">
+                                        {editedOrder.memberName ?? '-'}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm mb-1 text-gray-600">이메일</label>
+                                    <div className="px-3 py-2 border rounded-md bg-gray-50 truncate" title={editedOrder.memberEmail ?? undefined}>
+                                        {editedOrder.memberEmail ?? '-'}
+                                    </div>
+                                </div>
+                                <div className="col-span-3">
+                                    <a
+                                        href={`/users/${editedOrder.memberId}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-sm text-blue-600 hover:underline"
+                                    >
+                                        회원 상세 열기 →
+                                    </a>
+                                </div>
                             </div>
+                        ) : (
+                            <div className="px-3 py-2 border rounded-md bg-gray-50 text-gray-500 text-sm">
+                                비회원(외부채널) 주문이라 연결된 회원이 없습니다.
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mb-6">
+                        <h3 className="text-sm font-medium mb-3">배송지 정보</h3>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">수령자</label>
                                 <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.receiverName ?? '-'}</div>

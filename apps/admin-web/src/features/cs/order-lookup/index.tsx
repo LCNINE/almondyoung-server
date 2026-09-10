@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
+import { formatCustomerOrderNo } from '@/features/order/history/utils/customer-order-no';
 
 // orderItemStatus enum → 한글 라벨
 const LINE_STATUS_LABEL: Record<string, string> = {
@@ -119,21 +120,27 @@ export default function CsOrderLookup() {
   }
 
   const addr = parseAddress(order.shippingAddress);
+  const customerOrderNo =
+    formatCustomerOrderNo(
+      order.displayOrderNo,
+      order.orderDate ? String(order.orderDate) : undefined,
+      order.channelOrderId
+    ) || orderNoParam;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <h1 className="text-lg font-semibold text-gray-900">CS 주문조회</h1>
-        <span className="text-sm text-gray-500">
-          {order.channelOrderId ?? orderNoParam}
-        </span>
+        <span className="text-sm text-gray-500">{customerOrderNo}</span>
       </div>
 
       {/* 주문 헤더 */}
       <section className="rounded-md border border-gray-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-700">주문 정보</h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Field label="주문번호" value={order.channelOrderId ?? orderNoParam} />
+          {/* CS 는 고객이 불러주는 번호로 대조하는 화면이라 내부 ID 가 아니라 고객 주문번호를 앞에 둔다. */}
+          <Field label="주문번호" value={customerOrderNo} />
+          <Field label="내부 주문 ID" value={order.channelOrderId ?? '-'} />
           <Field label="판매채널" value={formatChannel(order.salesChannel)} />
           <Field label="주문상태" value={order.status} />
           <Field

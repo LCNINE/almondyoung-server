@@ -82,6 +82,11 @@ export class CreateSalesOrderDto {
   @IsNotEmpty()
   salesChannel: string;
 
+  @ApiProperty({ description: '고객에게 보여주는 주문번호 (Medusa display_id 등)', required: false })
+  @IsString()
+  @IsOptional()
+  displayOrderNo?: string;
+
   @ApiProperty({ description: '고객 정보', type: CustomerDto, required: false })
   @ValidateNested()
   @Type(() => CustomerDto)

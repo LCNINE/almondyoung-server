@@ -24,6 +24,7 @@ async function insertOrder(
     customerName: string | null;
     customerPhone: string | null;
     salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl';
+    displayOrderNo: string | null;
     shippingAddress: unknown;
   }> = {},
 ): Promise<string> {
@@ -31,6 +32,7 @@ async function insertOrder(
     .insert(wmsTables.salesOrders)
     .values({
       channelOrderId: o.channelOrderId ?? `IT-${randomUUID().slice(0, 12)}`,
+      displayOrderNo: o.displayOrderNo ?? null,
       salesChannel: o.salesChannel ?? 'medusa',
       status: o.status ?? 'confirmed',
       shippingAddress: o.shippingAddress ?? { recipientName: 'RCPT', phone: '01000000000' },
@@ -201,6 +203,35 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
         keywordType: 'orderNo',
       });
       expect(orderNoRes.data.map((d: { id: string }) => d.id)).toEqual([byProduct]);
+    });
+  });
+
+  it('keyword: 고객 주문번호(display_order_no)를 표기 그대로 찾는다', async () => {
+    await run(async (tx, svc, tag) => {
+      // 고객이 부르는 번호. 관리자 목록은 20260910-3900, 알림은 #3900 으로 같은 주문을 가리킨다.
+      const target = await insertOrder(tx, {
+        channelOrderId: `${tag}-target`,
+        displayOrderNo: '3900',
+        orderDate: new Date('2026-09-10T01:00:00.000Z'),
+      });
+      // 부분일치로 검색하면 딸려 들어올 번호 — 등호로 걸러져야 한다.
+      await insertOrder(tx, { channelOrderId: `${tag}-noise`, displayOrderNo: '13900' });
+
+      for (const keyword of ['20260910-3900', '#3900', '3900', '03900']) {
+        const res = await listByKeyword(svc, tx, { keyword, keywordType: 'orderNo' });
+        expect(res.data.map((d: { id: string }) => d.id)).toEqual([target]);
+      }
+
+      // 내부 채널 주문 ID 로도 여전히 찾을 수 있어야 한다 (기존 동작 유지)
+      const byChannelId = await listByKeyword(svc, tx, {
+        keyword: `${tag}-target`,
+        keywordType: 'orderNo',
+      });
+      expect(byChannelId.data.map((d: { id: string }) => d.id)).toEqual([target]);
+
+      // 통합검색도 같은 번호를 찾아야 한다
+      const unified = await listByKeyword(svc, tx, { keyword: '20260910-3900', keywordType: 'all' });
+      expect(unified.data.map((d: { id: string }) => d.id)).toEqual([target]);
     });
   });
 

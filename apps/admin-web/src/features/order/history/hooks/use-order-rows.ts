@@ -5,7 +5,16 @@ import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { formatCustomerOrderNo } from '../utils/customer-order-no';
 export { filterRefundIssueRows } from './refund-filter.utils';
+
+/** 주문한 회원의 신원. user-service 조회가 실패하면 «없다» 가 아니라 «모른다» 라 전부 undefined. */
+type MemberInfo = {
+  username?: string;
+  loginId?: string;
+  email?: string;
+  phone?: string;
+};
 
 /** 테이블에서 1행 = 주문 라인 1개 */
 export type OrderLineRow = {
@@ -18,12 +27,21 @@ export type OrderLineRow = {
   isFirstOfOrder: boolean; // 동일 주문의 첫 번째 라인 여부 (셀 병합 기준)
 
   // 주문 헤더
+  /** 화면·검색·CS 에서 쓰는 «고객 주문번호». 자사몰은 20260910-3900, 외부채널은 채널 주문번호. */
   orderNo: string;
+  /** 내부 채널 주문 ID (Medusa order_01J…). 사람이 읽는 값이 아니라 참조·복사용으로만 둔다. */
+  channelOrderId: string;
   orderDate: string;
   channel: string;
   phone?: string;
-  customerName?: string; // 주문자
-  receiverName?: string; // 수령자
+  /** 배송지에 적힌 이름 (= core sales_orders.customer_name). 회원 이름과 다를 수 있다. */
+  receiverName?: string;
+  /** 배송지 이름과 별개인 «주문한 회원». 비-로그인 외부채널 주문은 전부 undefined. */
+  memberId?: string;
+  memberLoginId?: string;
+  memberName?: string;
+  memberEmail?: string;
+  customerName?: string; // 하위호환: 주문자 표기 (회원 이름 → 없으면 배송지 이름)
   address?: string;
   personalCustomsCode?: string; // 해외직구 개인통관고유부호 (해외직구 주문만)
   totalAmount?: number;
@@ -138,13 +156,14 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
   });
   const userIds = Array.from(allCustomerIds);
 
+  // 배송지 이름과 회원 이름이 다른 주문이 흔해서, 주문 행에서 회원을 바로 식별할 수 있어야 한다.
+  // 이미 돌던 조회(username/phone)와 «같은 응답»에 loginId·email 이 들어 있으므로 요청은 늘지 않는다.
   const userMapQuery = useQuery({
     queryKey: ['users', 'basic-map', [...userIds].sort().join(',')],
     enabled: userIds.length > 0,
     staleTime: 60 * 1000,
     queryFn: async () => {
-      if (!userIds.length)
-        return {} as Record<string, { username?: string; phone?: string }>;
+      if (!userIds.length) return {} as Record<string, MemberInfo>;
       const results = await Promise.all(
         userIds.map(async (uid) => {
           try {
@@ -152,16 +171,19 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
             return [
               uid,
               {
-                username: user.username ?? uid,
+                username: user.username ?? undefined,
+                loginId: user.loginId ?? undefined,
+                email: user.email ?? undefined,
                 phone: user.profile?.phoneNumber ?? undefined,
               },
             ] as const;
           } catch {
-            return [uid, { username: uid }] as const;
+            // 조회 실패는 «회원이 없다» 가 아니다 — 아이디를 지어내지 않고 비워 둔 채 넘긴다.
+            return [uid, {} as MemberInfo] as const;
           }
         })
       );
-      const map: Record<string, { username?: string; phone?: string }> = {};
+      const map: Record<string, MemberInfo> = {};
       results.forEach(([id, info]) => (map[id] = info));
       return map;
     },
@@ -190,15 +212,23 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       const customerId = detail?.customerId ?? listItem.customerId;
       const userInfo = customerId ? userMap[customerId] : undefined;
 
-      // 주문자 정보 (고객)
-      const customerName =
-        detail?.customerName ?? userInfo?.username ?? customerId ?? '';
-
-      // 수령자 정보 (shippingAddress에서 추출)
+      // 수령자 = 배송지에 적힌 이름. core 의 customer_name 도 사실 이 값이라 폴백으로 쓴다.
       const shippingAddress = detail?.shippingAddress;
-      const receiverName = shippingAddress?.recipientName ?? customerName;
+      const receiverName =
+        shippingAddress?.recipientName ?? detail?.customerName ?? undefined;
+      // 주문자 = 주문한 «회원». 배송지 이름과 다른 경우가 흔하므로 회원 이름을 우선한다.
+      // 비-로그인 외부채널 주문은 회원 자체가 없어 배송지 이름으로 되돌린다.
+      const customerName = userInfo?.username ?? receiverName ?? '';
       const phone =
         shippingAddress?.phone ?? detail?.customerPhone ?? userInfo?.phone;
+
+      const channelOrderId: string =
+        listItem.channelOrderId ?? detail?.channelOrderId ?? String(listItem.id);
+      const customerOrderNo = formatCustomerOrderNo(
+        listItem.displayOrderNo ?? detail?.displayOrderNo,
+        listItem.orderDate ?? listItem.createdAt,
+        channelOrderId
+      );
 
       const address = (() => {
         const sa = detail?.shippingAddress;
@@ -299,12 +329,17 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           orderLineCount,
           isFirstOfOrder: idx === 0,
 
-          orderNo: listItem.channelOrderId ?? String(listItem.id),
+          orderNo: customerOrderNo,
+          channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? detail?.salesChannel ?? 'medusa',
           phone,
           customerName,
           receiverName,
+          memberId: customerId ?? undefined,
+          memberLoginId: userInfo?.loginId,
+          memberName: userInfo?.username,
+          memberEmail: userInfo?.email ?? detail?.customerEmail ?? undefined,
           address,
           personalCustomsCode,
           totalAmount: detail?.totalAmount ?? listItem.totalAmount,
@@ -365,12 +400,17 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           lineIndex: 1,
           orderLineCount: 1,
           isFirstOfOrder: true,
-          orderNo: listItem.channelOrderId ?? String(listItem.id),
+          orderNo: customerOrderNo,
+          channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? 'medusa',
           phone,
           customerName,
           receiverName,
+          memberId: customerId ?? undefined,
+          memberLoginId: userInfo?.loginId,
+          memberName: userInfo?.username,
+          memberEmail: userInfo?.email ?? detail?.customerEmail ?? undefined,
           address,
           totalAmount: listItem.totalAmount,
           shippingFee: 0,

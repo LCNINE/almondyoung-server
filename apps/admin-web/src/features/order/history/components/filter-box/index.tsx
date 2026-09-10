@@ -140,12 +140,26 @@ export default function FilterBox() {
                 <input
                     type="text"
                     className="border rounded h-9 px-3 text-sm flex-1 min-w-[200px]"
-                    placeholder="검색어를 입력하세요"
+                    placeholder={
+                        local.keywordType === '주문번호'
+                            ? '20260910-3900 / 3900 / order_01J… 모두 가능'
+                            : '검색어를 입력하세요'
+                    }
                     value={local.keyword ?? ''}
                     onChange={(e) => setLocal({ ...local, keyword: e.target.value || undefined })}
                     onKeyDown={(e) => e.key === 'Enter' && onSearch()}
                 />
             </div>
+
+            {/* 조건이 조용히 걸려 0건이 나오던 일을 없애려면, 무시한다는 사실을 화면이 말해야 한다. */}
+            {local.keywordType === '주문번호' && (
+                <div className="flex items-center gap-3">
+                    <span className="w-14 shrink-0" />
+                    <p className="text-xs text-blue-700">
+                        주문번호 검색은 <b>기간·구분·취소제외 조건을 무시하고</b> 전체 기간에서 찾습니다.
+                    </p>
+                </div>
+            )}
 
             {/* 구분 */}
             <div className="flex items-center gap-3 flex-wrap">

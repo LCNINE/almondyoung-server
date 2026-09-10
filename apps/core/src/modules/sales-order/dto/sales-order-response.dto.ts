@@ -113,6 +113,12 @@ export class SalesOrderResponseDto {
   @ApiProperty({ description: '채널별 주문 ID' })
   channelOrderId: string;
 
+  @ApiProperty({
+    description: '고객에게 보여주는 주문번호 (Medusa display_id 등). 채널이 주지 않으면 null — 이때는 channelOrderId 가 곧 고객 주문번호다.',
+    nullable: true,
+  })
+  displayOrderNo: string | null;
+
   @ApiProperty({ description: '판매 채널', enum: SALES_CHANNELS })
   salesChannel: string;
 

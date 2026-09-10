@@ -48,6 +48,7 @@ import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { kstDayStart, kstDayEndInclusive, kstTodayRange } from '../utils/kst-date.util';
+import { extractDisplayOrderNo } from '../utils/display-order-no.util';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -213,6 +214,7 @@ export class SalesOrdersService {
           .insert(wmsTables.salesOrders)
           .values({
             channelOrderId: dto.channelOrderId,
+            displayOrderNo: dto.displayOrderNo ?? null,
             salesChannel: dto.salesChannel as 'naver' | 'medusa' | 'coupang' | '3pl',
             status: 'pending' as const,
             customerId: dto.customer?.id ?? null,
@@ -988,8 +990,17 @@ export class SalesOrdersService {
 
       // ── 키워드 검색 ──
       if (params.keyword && params.keyword.trim()) {
-        const kw = `%${params.keyword.trim()}%`;
-        const orderNoCond = or(ilike(S.salesOrders.channelOrderId, kw), sql`${S.salesOrders.id}::text ILIKE ${kw}`)!;
+        const raw = params.keyword.trim();
+        const kw = `%${raw}%`;
+        // 고객이 보는 주문번호는 «식별자»다. `%3900%` 로 부분일치시키면 13900·39001 이 딸려오므로
+        // 등호로 맞춘다. 운영자가 화면·알림에서 옮겨 적는 표기(`20260910-3900`, `#3900`, `3900`)를
+        // 모두 같은 번호로 읽도록 여기서 한 번만 정규화한다.
+        const displayNo = extractDisplayOrderNo(raw);
+        const orderNoCond = or(
+          ilike(S.salesOrders.channelOrderId, kw),
+          sql`${S.salesOrders.id}::text ILIKE ${kw}`,
+          ...(displayNo ? [eq(S.salesOrders.displayOrderNo, displayNo)] : []),
+        )!;
         const receiverCond = or(
           sql`${S.salesOrders.shippingAddress}->>'recipientName' ILIKE ${kw}`,
           ilike(S.salesOrders.customerName, kw),
@@ -1203,11 +1214,16 @@ export class SalesOrdersService {
   async createFromEvent(payload: OrderCreatedPayload, tx?: DbTx) {
     const dto: CreateSalesOrderDto = {
       channelOrderId: payload.externalOrderId ?? payload.orderId,
+      // 채널이 준 고객 주문번호. 안 주는 채널은 undefined → NULL (읽는 쪽이 channelOrderId 로 폴백).
+      ...(payload.displayOrderNo ? { displayOrderNo: payload.displayOrderNo } : {}),
       salesChannel: payload.salesChannel,
       customer: {
         // 미링크/비-로그인 주문은 customerId=null → DTO(id?: string)는 undefined로. 하위에서 ?? null 로 nullable 컬럼에 저장.
         id: payload.customerId ?? undefined,
+        // customer_name 은 «배송지에 적힌 이름»이다. 회원 이름과 다른 경우가 흔하므로
+        // 주문자 신원은 이 값이 아니라 customerId 로 user-service 에서 해석해야 한다.
         name: payload.shippingAddress.recipientName,
+        ...(payload.email ? { email: payload.email } : {}),
         phone: payload.shippingAddress.phone,
       },
       shippingAddress: this.convertShippingAddress(payload.shippingAddress),

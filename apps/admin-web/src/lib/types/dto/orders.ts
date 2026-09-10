@@ -77,6 +77,11 @@ export interface SalesOrderDto {
   status: SalesOrderStatus;
   salesChannel: OrderSalesChannel;
   channelOrderId: string;
+  /** 고객에게 보여주는 주문번호(Medusa display_id 등). 채널이 안 주면 null → channelOrderId 가 곧 고객 주문번호. */
+  displayOrderNo?: string | null;
+  /** 주문한 회원의 user-service UUID. 비-로그인 외부채널 주문은 null. */
+  customerId?: string | null;
+  /** 배송지에 적힌 이름. 회원 이름과 다를 수 있어 «주문자» 로 읽으면 안 된다. */
   customerName: string | null;
   customerEmail: string | null;
   customerPhone: string | null;

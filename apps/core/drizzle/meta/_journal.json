@@ -638,6 +638,13 @@
       "when": 1789006195469,
       "tag": "20260910020955_add-product-info-json",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1789009738549,
+      "tag": "20260910030858_add-sales-order-display-order-no",
+      "breakpoints": true
     }
   ]
 }

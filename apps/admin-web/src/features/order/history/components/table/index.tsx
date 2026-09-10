@@ -5,12 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
-import type {
-  SalesOrderBusinessTimelineItemDto,
-  SalesOrdersQuery,
-  OrderTypeGroup,
-  OrderKeywordType,
-} from '@/lib/types/dto/orders';
+import type { SalesOrderBusinessTimelineItemDto } from '@/lib/types/dto/orders';
+import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
@@ -35,38 +31,30 @@ import { MemoModal } from '../modals/memo-modal';
 import { CancelOrderModal } from '../modals/cancel-order-modal';
 import { ManualRefundCompleteModal } from '../modals/manual-refund-complete-modal';
 
-const PAGE_SIZE = 50;
-
-const KEYWORD_TYPE_MAP: Record<string, OrderKeywordType> = {
-  통합검색: 'all',
-  주문번호: 'orderNo',
-  수령자: 'receiver',
-  연락처: 'phone',
-  상품명: 'product',
-};
-
-function buildQuery(
-  filter: ReturnType<typeof useOrderHistoryFilter>['filter'],
-  page: number
-): SalesOrdersQuery {
-  const keyword = filter.keyword?.trim() || undefined;
-  // 환불이슈 모드는 '취소주문 중 환불 실패/수동'이므로 구분(typeGroup)·취소제외와 상충한다.
-  // 이 모드에선 구분/취소제외를 무시해 항상 정상 조회되게 한다.
-  const refundIssueOnly = filter.refundIssueOnly || undefined;
-  return {
-    channel: filter.channel as SalesOrdersQuery['channel'] | undefined,
-    startDate: filter.dateFrom,
-    endDate: filter.dateTo,
-    typeGroup: refundIssueOnly ? undefined : (filter.type as OrderTypeGroup),
-    // 취소/타임아웃 제외는 '전체' 구분일 때만 의미
-    excludeTerminal:
-      !refundIssueOnly && filter.type === 'all' ? filter.excludeTerminal : undefined,
-    refundIssueOnly,
-    keyword,
-    keywordType: keyword ? (KEYWORD_TYPE_MAP[filter.keywordType] ?? 'all') : undefined,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  };
+/* ── 내부 ID (참조·복사용) ─────────────────────────────────── */
+/**
+ * 화면의 주문번호는 고객이 보는 번호로 바뀌었지만, Medusa 어드민·로그와 대조할 땐 여전히
+ * 내부 채널 주문 ID 가 필요하다. 읽으라고 두는 값이 아니라 «집어가라»고 두는 값이라 작게 줄인다.
+ */
+function CopyableId({ value }: { value: string }) {
+  const short = value.length > 14 ? `${value.slice(0, 10)}…${value.slice(-4)}` : value;
+  return (
+    <span className="mt-0.5 inline-flex items-center gap-1">
+      <span className="font-mono text-[10px] text-gray-400" title={value}>
+        {short}
+      </span>
+      <button
+        type="button"
+        className="text-[10px] text-gray-400 hover:text-gray-700"
+        onClick={() => {
+          void navigator.clipboard.writeText(value);
+          toast.success('내부 주문 ID를 복사했습니다.');
+        }}
+      >
+        복사
+      </button>
+    </span>
+  );
 }
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
@@ -704,6 +692,10 @@ export default function OrderTable() {
             >
               {r.orderNo}
             </button>
+            {/* 내부 채널 주문 ID 는 사람이 읽는 값이 아니지만 Medusa·로그 대조에 필요해 남긴다. */}
+            {r.channelOrderId !== r.orderNo && (
+              <CopyableId value={r.channelOrderId} />
+            )}
             {r.phone && <div className="text-blue-500 mt-0.5">{r.phone}</div>}
           </div>
         ),
@@ -879,14 +871,28 @@ export default function OrderTable() {
       },
       {
         key: 'customerName',
-        label: '주문자/수령자',
+        label: '주문자(회원)/수령자',
         merged: true,
         render: (_, r) => (
           <div>
             {(r.customerName || r.receiverName) && (
               <div className="font-medium">
-                {r.customerName ?? '-'} / {r.receiverName ?? '-'}
+                {r.customerName || '-'} / {r.receiverName || '-'}
               </div>
+            )}
+            {/* 배송지 이름과 회원이 다른 주문이 흔해 회원 식별자를 같은 칸에 붙인다. */}
+            {r.memberId ? (
+              <a
+                href={`/users/${r.memberId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-0.5 block text-blue-600 hover:underline"
+                title={r.memberEmail ?? undefined}
+              >
+                {r.memberLoginId ?? r.memberEmail ?? '회원 상세'}
+              </a>
+            ) : (
+              <div className="mt-0.5 text-gray-400">비회원 주문</div>
             )}
             {r.totalAmount != null && (
               <div className="text-gray-500 mt-0.5">

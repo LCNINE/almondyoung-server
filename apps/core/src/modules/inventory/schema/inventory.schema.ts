@@ -1276,6 +1276,12 @@ export const salesOrders = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
+    /**
+     * 고객에게 보여주는 주문번호. Medusa 는 `display_id`("3900"), 외부 채널은 채널 주문번호가
+     * 곧 고객 주문번호라 굳이 복사하지 않고 NULL 로 둔다 (읽는 쪽이 channelOrderId 로 폴백).
+     * `channelOrderId` 가 `order_01J…` 라 CS·검색에서 쓸 수 없어 별도 컬럼으로 스냅샷한다.
+     */
+    displayOrderNo: varchar('display_order_no', { length: 64 }),
     salesChannel: salesChannelEnum('sales_channel').notNull(),
     status: orderStatusEnum('status').notNull().default('pending'),
 
@@ -1324,6 +1330,8 @@ export const salesOrders = pgTable(
   (t) => ({
     uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
     idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
+    // 주문번호 검색은 기간 조건을 빼고 도는 등호 조회다 — 인덱스가 없으면 전체 스캔이 된다.
+    idxDisplayOrderNo: index('idx_sales_orders_display_order_no').on(t.displayOrderNo),
   }),
 );
 
