@@ -7,16 +7,16 @@ import { CreateReviewEligibilityDto } from './dto/create-review-eligibility.dto'
 import {
   type OrderEligibilityRow,
   type ReviewEligibilityEntity,
+  type ReviewPermissionProvider,
   type RevokedEligibilityRow,
 } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 
-/** 리뷰를 쓸 권한을 «어떻게 얻었는가». 지금 발급 경로는 주문 하나뿐이다. */
-export type ReviewPermissionProvider = 'order';
-
 export interface ConsumablePermission {
   id: string;
   orderLineAmount: number | null;
+  /** 어떤 경로로 얻은 권한인지 — 보상 판정이 이걸로 갈린다. */
+  provider: ReviewPermissionProvider;
 }
 
 /**
@@ -48,6 +48,7 @@ export class ReviewPermissionService {
         orderId: dto.orderId,
         orderLineId: item.orderLineId,
         orderLineAmount: item.orderLineAmount ?? null,
+        provider: 'order' as const,
         eligibleAt: now,
         expiresAt,
         sourceSystem: 'almondyoung' as const,
@@ -121,6 +122,7 @@ export class ReviewPermissionService {
       .select({
         id: reviewEligibilities.id,
         orderLineAmount: reviewEligibilities.orderLineAmount,
+        provider: reviewEligibilities.provider,
       })
       .from(reviewEligibilities)
       .where(

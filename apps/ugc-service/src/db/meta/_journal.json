@@ -29,6 +29,13 @@
       "when": 1788852673094,
       "tag": "20260908073113_add-eligibility-revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788997483837,
+      "tag": "20260909234443_add-review-permission-provider",
+      "breakpoints": true
     }
   ]
 }

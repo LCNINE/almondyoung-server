@@ -13,8 +13,8 @@ export class ReviewEligibilityResponseDto {
   @ApiProperty({ description: '주문 ID' })
   orderId: string;
 
-  @ApiProperty({ description: '주문 라인 ID' })
-  orderLineId: string;
+  @ApiPropertyOptional({ description: '주문 라인 ID. 운영자가 직접 준 권한에는 없다', nullable: true })
+  orderLineId: string | null;
 
   @ApiProperty({
     description: '리뷰 작성 가능 일시 (ISO 8601)',

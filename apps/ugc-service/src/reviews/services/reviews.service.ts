@@ -448,6 +448,9 @@ export class ReviewsService {
           rating: dto.rating,
           content: dto.content,
           sourceSystem: SOURCE_SYSTEM,
+          // 권한 행을 가리킨다. 소비 표시(자격 → 리뷰)와 이 참조(리뷰 → 자격)가 같은 트랜잭션에서
+          // 채워져야 한쪽만 있는 행이 안 생긴다. 리뷰 표는 리뷰 모듈이 쓴다 — 권한 모듈은 안 만진다.
+          reviewPermissionId: eligibility.id,
         })
         .returning();
 
