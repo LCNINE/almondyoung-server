@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { nowSeoul } from '../../inventory/shared/services/time.util';
 
 @Injectable()
 export class PoliciesService {
@@ -21,10 +20,12 @@ export class PoliciesService {
         effectiveFrom: null,
         effectiveTo: null,
         updatedBy: null,
-        updatedAt: nowSeoul(),
+        updatedAt: new Date(),
       } as any;
     }
-    const now = nowSeoul();
+    // #744 — `effectiveFrom`/`effectiveTo` 는 `timestamptz` 에서 온 «진짜 순간»이므로
+    // 기준도 진짜 순간이어야 한다. 서울 벽시계와 견주면 창이 9시간 어긋난다.
+    const now = new Date();
     if (policy.effectiveFrom && policy.effectiveFrom > now) return policy;
     if (policy.effectiveTo && policy.effectiveTo < now) return policy;
     return policy;
