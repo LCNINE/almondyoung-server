@@ -24,6 +24,7 @@ import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
+import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
 
 type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 
@@ -35,6 +36,7 @@ export class ProductVariantsService {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly pricingCalculator: PricingCalculatorService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
+    private readonly versionReadLoader: ProductVersionReadLoader,
   ) {}
 
   private getClient(tx?: DbTransaction): DbClient {
@@ -68,19 +70,11 @@ export class ProductVariantsService {
     const offset = (page - 1) * limit;
     const includePrice = filters?.includePrice !== false;
 
-    // version이 지정되지 않으면 active 버전 사용
+    // version이 지정되지 않으면 열람 가능한 버전 — active 우선, 없으면 최신(draft 포함)
     let actualVersionId: string;
     if (versionId === undefined) {
-      const [activeVersion] = await client
-        .select({ id: productMasterVersions.id })
-        .from(productMasterVersions)
-        .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')))
-        .limit(1);
-
-      if (!activeVersion) {
-        throw new NotFoundException(`No active version found for master ${masterId}`);
-      }
-      actualVersionId = activeVersion.id;
+      const viewableVersion = await this.versionReadLoader.getViewableVersion(client, masterId);
+      actualVersionId = viewableVersion.id;
     } else {
       const [version] = await client
         .select({ id: productMasterVersions.id })

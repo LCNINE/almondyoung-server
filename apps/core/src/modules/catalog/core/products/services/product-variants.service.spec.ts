@@ -49,6 +49,7 @@ describe('ProductVariantsService draft variant updates', () => {
       {} as ConstructorParameters<typeof ProductVariantsService>[2],
       {} as ConstructorParameters<typeof ProductVariantsService>[3],
       {} as ConstructorParameters<typeof ProductVariantsService>[4],
+      {} as ConstructorParameters<typeof ProductVariantsService>[5],
     );
     service.productSellableQuantity = productSellableQuantity;
 
@@ -81,6 +82,7 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
   function makeService() {
     return new ProductVariantsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -198,6 +200,7 @@ describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
       {} as any, // priceCacheService
       {} as any, // pricingCalculator
       variantAssetLinkService as any,
+      {} as any,
     );
     return { service, variantAssetLinkService };
   }
@@ -265,5 +268,40 @@ describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
     expect(result.cowed).toBe(true);
     expect(result.variantId).not.toBe('old-variant');
     expect(variantAssetLinkService.cloneLinksForVariant).toHaveBeenCalledWith('old-variant', result.variantId, tx);
+  });
+});
+
+describe('ProductVariantsService.getVariantsByMaster 버전 선택', () => {
+  it('versionId 미지정이면 열람 가능한 버전을 쓴다 — 발행 전(draft-only) 상품도 품목 표가 그려진다', async () => {
+    const getViewableVersion = jest.fn().mockResolvedValue({ id: 'version-draft' });
+    const getCachedPriceSetsByVersion = jest.fn().mockResolvedValue([]);
+    const service = new ProductVariantsService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
+      { getCachedPriceSetsByVersion } as any,
+      {} as any,
+      {} as any,
+      { getViewableVersion } as any,
+    );
+
+    const tx = {
+      select: jest.fn(() => ({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => {
+              const rows: any = [{ count: 0 }];
+              rows.orderBy = () => ({ limit: () => ({ offset: () => [] }) });
+              return rows;
+            },
+          }),
+        }),
+      })),
+    } as unknown as DbTransaction;
+
+    const result = await service.getVariantsByMaster('master-1', undefined, undefined, tx);
+
+    expect(getViewableVersion).toHaveBeenCalledWith(tx, 'master-1');
+    expect(getCachedPriceSetsByVersion).toHaveBeenCalledWith('version-draft', tx);
+    expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
   });
 });

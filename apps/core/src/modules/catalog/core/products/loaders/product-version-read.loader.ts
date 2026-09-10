@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  DbClient,
   DbTransaction,
   ProductImage,
   ProductMasterVersion,
@@ -80,7 +81,7 @@ export class ProductVersionReadLoader {
    * getActiveVersion 과 달리 draft-only 신규 상품도 열람 가능하다. 편집/발행/채널 동기화처럼
    * 진짜 active 가 필요한 경로는 계속 getActiveVersion 을 쓴다.
    */
-  async getViewableVersion(tx: DbTransaction, masterId: string): Promise<ProductMasterVersion> {
+  async getViewableVersion(tx: DbClient, masterId: string): Promise<ProductMasterVersion> {
     const rows = await tx
       .select()
       .from(productMasterVersions)
