@@ -114,6 +114,49 @@ export class CmsBankAccountDto {
   phone: string;
 }
 
+export class CheckCmsAccountDto {
+  @ApiProperty({ description: '은행코드 3자리 (예: 004=국민, 088=신한)', example: '004' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{3}$/, { message: 'paymentCompany must be a 3-digit bank code' })
+  @Validate(IsValidCmsBankCodeConstraint)
+  @MaxLength(3)
+  paymentCompany: string;
+
+  @ApiProperty({ description: '계좌번호 (숫자만, 4~16자리)', maxLength: 16 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
+  @MaxLength(16)
+  paymentNumber: string;
+
+  @ApiProperty({ description: '생년월일 6자리(YYMMDD) 또는 사업자번호 10자리', maxLength: 10 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^(\d{6}|\d{10})$/, { message: 'payerNumber must be 6 or 10 digits' })
+  @Validate(IsValidPayerNumberConstraint)
+  @MaxLength(10)
+  payerNumber: string;
+}
+
+export class CheckCmsAccountResponseDto {
+  @ApiProperty({ description: '계좌·실명번호가 은행에서 확인되었는지' })
+  verified: boolean;
+
+  @ApiPropertyOptional({ description: '확인된 예금주명. 조회 실패 시 null', nullable: true })
+  payerName: string | null;
+
+  @ApiPropertyOptional({
+    description: 'MISMATCH=정보 불일치(등록 불가), UNAVAILABLE=실시간 확인 불가(등록은 계속 가능)',
+    enum: ['MISMATCH', 'UNAVAILABLE'],
+    nullable: true,
+  })
+  reason: 'MISMATCH' | 'UNAVAILABLE' | null;
+
+  @ApiPropertyOptional({ description: '고객에게 보여줄 안내 문구', nullable: true })
+  message: string | null;
+}
+
 export class BillingMethodResponseDto {
   @ApiProperty()
   id: string;

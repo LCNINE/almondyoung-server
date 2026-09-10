@@ -21,9 +21,12 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
 import { CmsMemberService } from '../cms/cms-member.service';
 import { CmsRegistrationService } from '../cms/cms-registration.service';
+import { CmsAccountCheckService } from '../cms/cms-account-check.service';
 import { isCmsOperationError } from '../cms/cms-errors';
 import {
   BillingMethodResponseDto,
+  CheckCmsAccountDto,
+  CheckCmsAccountResponseDto,
   CmsBankAccountDto,
   CmsBillingMethodStatusDto,
   RegisterCmsBillingMethodDto,
@@ -43,6 +46,7 @@ export class BillingMethodController {
     private readonly service: BillingMethodService,
     private readonly cmsMemberService: CmsMemberService,
     private readonly cmsRegistrationService: CmsRegistrationService,
+    private readonly cmsAccountCheckService: CmsAccountCheckService,
   ) {}
 
   private mapCmsError(error: unknown): never {
@@ -52,6 +56,31 @@ export class BillingMethodController {
 
     const message = error instanceof Error ? error.message : 'CMS 처리 중 오류가 발생했습니다.';
     throw new InternalServerErrorException(message);
+  }
+
+  @Post('cms/check-account')
+  @HttpCode(200)
+  @WalletJwtAuth()
+  @ApiOperation({
+    summary: '실시간 계좌조회 — 등록 전 계좌·실명번호 확인 (효성 FMS-TE-0057, 건당 유료)',
+    description:
+      '은행에 계좌번호와 실명번호(생년월일/사업자번호)가 실재하는지 즉시 확인하고 예금주명을 돌려준다. ' +
+      'verified=false + reason=MISMATCH 는 정보 불일치라 등록해도 D+1 에 거절되고, ' +
+      'reason=UNAVAILABLE 은 실시간 확인만 불가한 상태이므로 등록은 계속 진행할 수 있다.',
+  })
+  async checkCmsAccount(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CheckCmsAccountDto,
+  ): Promise<CheckCmsAccountResponseDto> {
+    const userId = req.jwtUserId!;
+    try {
+      const result = await this.cmsAccountCheckService.check(userId, dto);
+      return result.verified
+        ? { verified: true, payerName: result.payerName, reason: null, message: null }
+        : { verified: false, payerName: null, reason: result.reason, message: result.message };
+    } catch (e) {
+      this.mapCmsError(e);
+    }
   }
 
   @Post('cms')

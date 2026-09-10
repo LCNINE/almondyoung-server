@@ -261,6 +261,34 @@ export async function updateCmsBankAccount(
   }
 }
 
+export interface CmsAccountCheckResult {
+  verified: boolean;
+  payerName: string | null;
+  reason: 'MISMATCH' | 'UNAVAILABLE' | null;
+  message: string | null;
+}
+
+export async function checkCmsAccount(
+  dto: { paymentCompany: string; paymentNumber: string; payerNumber: string },
+  cookieHeader: string,
+): Promise<CmsAccountCheckResult> {
+  const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/check-account`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeader,
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify(dto),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `계좌 확인 실패 (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function approveNicepay(
   intentId: string,
   tid: string,

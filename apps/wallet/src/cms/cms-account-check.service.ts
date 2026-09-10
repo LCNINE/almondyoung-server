@@ -1,0 +1,126 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
+import { and, count, eq, gte } from 'drizzle-orm';
+import { WalletSchema, cmsAccountChecks } from '../schema';
+import { CmsApiClient, CmsAccountCheckData } from './cms-api.client';
+import { CmsOperationError } from './cms-errors';
+
+export interface CmsAccountCheckInput {
+  paymentCompany: string;
+  paymentNumber: string;
+  payerNumber: string;
+}
+
+export type CmsAccountCheckOutcome =
+  | { verified: true; payerName: string | null }
+  | { verified: false; reason: 'MISMATCH' | 'UNAVAILABLE'; message: string };
+
+/** 사용자별 시간당 조회 상한. 건당 50원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
+const MAX_CHECKS_PER_HOUR = 35;
+
+const MISMATCH_MESSAGE = '입력하신 계좌 정보와 예금주 정보가 일치하지 않습니다. 은행·계좌번호·생년월일을 확인해주세요.';
+const UNAVAILABLE_MESSAGE =
+  '지금은 계좌를 실시간으로 확인할 수 없습니다. 입력한 정보를 다시 확인한 뒤 계속 진행해주세요.';
+
+/**
+ * 효성 실시간 계좌조회(FMS-TE-0057). 등록 전에 계좌·실명번호를 확인해
+ * D+1 에 Q201(본인정보 불일치)로 돌아오던 실패를 입력 시점에 잡는다.
+ *
+ * 실패를 두 갈래로 나눈다 — 효성이 flag='N' 으로 «명시적 불일치»를 말한 경우만 등록을 막고,
+ * 그 밖의 실패(미지원 은행·장애·네트워크)는 UNAVAILABLE 로 내려 등록 자체는 계속 가능하게 한다.
+ * 문서의 지원 은행 목록에 카카오뱅크·토스뱅크가 없어, 조회 실패가 곧 「등록 불가」는 아니다.
+ */
+@Injectable()
+export class CmsAccountCheckService {
+  private readonly logger = new Logger(CmsAccountCheckService.name);
+
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly cmsApi: CmsApiClient,
+  ) {}
+
+  async check(userId: string, input: CmsAccountCheckInput): Promise<CmsAccountCheckOutcome> {
+    await this.assertUnderRateLimit(userId);
+
+    const verify = await this.cmsApi.verifyPayerNumber(input);
+
+    if (!verify.ok) {
+      // 4xx/5xx/네트워크 — 어느 쪽도 «계좌가 틀렸다»는 확답이 아니다.
+      this.logger.warn(
+        `Account check unavailable. userId=${userId} bank=${input.paymentCompany} code=${verify.error.code} message=${verify.error.message}`,
+      );
+      await this.record(userId, input.paymentCompany, null, false, verify.error.code, verify.error.message);
+      return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE };
+    }
+
+    const check = verify.data.check ?? {};
+    if (!this.isPass(check)) {
+      const code = check.result?.code ?? null;
+      const message = check.result?.message ?? null;
+      await this.record(userId, input.paymentCompany, check.paymentNumber ?? null, false, code, message);
+      return { verified: false, reason: 'MISMATCH', message: MISMATCH_MESSAGE };
+    }
+
+    const payerName = await this.lookupPayerName(input);
+    await this.record(
+      userId,
+      input.paymentCompany,
+      check.paymentNumber ?? null,
+      true,
+      check.result?.code ?? null,
+      null,
+    );
+    return { verified: true, payerName };
+  }
+
+  /** 예금주 이름은 부가 정보 — 실패해도 검증 결과(verified)를 뒤집지 않는다. */
+  private async lookupPayerName(input: CmsAccountCheckInput): Promise<string | null> {
+    const inquiry = await this.cmsApi.inquirePayerName({
+      paymentCompany: input.paymentCompany,
+      paymentNumber: input.paymentNumber,
+    });
+    if (!inquiry.ok) return null;
+    const check = inquiry.data.check ?? {};
+    if (!this.isPass(check)) return null;
+    return check.payerName ?? null;
+  }
+
+  private isPass(check: CmsAccountCheckData): boolean {
+    return check.result?.flag === 'Y';
+  }
+
+  private async assertUnderRateLimit(userId: string): Promise<void> {
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+    const [row] = await this.dbService.db
+      .select({ value: count() })
+      .from(cmsAccountChecks)
+      .where(and(eq(cmsAccountChecks.userId, userId), gte(cmsAccountChecks.createdAt, since)));
+
+    if ((row?.value ?? 0) >= MAX_CHECKS_PER_HOUR) {
+      throw new CmsOperationError(
+        'CMS_ACCOUNT_CHECK_RATE_LIMITED',
+        '계좌 확인 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+        429,
+        `userId=${userId} exceeded ${MAX_CHECKS_PER_HOUR}/hour`,
+      );
+    }
+  }
+
+  private async record(
+    userId: string,
+    paymentCompany: string,
+    maskedPaymentNumber: string | null,
+    verified: boolean,
+    resultCode: string | null,
+    resultMessage: string | null,
+  ): Promise<void> {
+    await this.dbService.db.insert(cmsAccountChecks).values({
+      userId,
+      paymentCompany,
+      maskedPaymentNumber: maskedPaymentNumber?.slice(0, 32) ?? null,
+      verified,
+      resultCode: resultCode?.slice(0, 16) ?? null,
+      resultMessage,
+    });
+  }
+}

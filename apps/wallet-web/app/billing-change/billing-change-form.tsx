@@ -4,14 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CreditCard, AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react';
-import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
+import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
-import { AccountHolderType, PayerNumberField } from '@/components/payer-number-field';
+import {
+  CmsAccountCheckState,
+  CmsAccountDetails,
+  CmsAccountFields,
+  emptyCmsAccountDetails,
+} from '@/components/cms-account-fields';
 import { isValidPayerNumber } from '@/lib/payer-number';
 import { buildReturnUrl } from '@/lib/return-url';
 
@@ -36,12 +39,9 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   // 신규 등록 시 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 쓰도록 returnUrl 에 싣는다.
   const [newBillingMethodId, setNewBillingMethodId] = useState<string | null>(null);
 
-  const [paymentCompany, setPaymentCompany] = useState('');
-  const [payerName, setPayerName] = useState('');
-  const [holderType, setHolderType] = useState<AccountHolderType>('personal');
-  const [payerNumber, setPayerNumber] = useState('');
-  const [paymentNumber, setPaymentNumber] = useState('');
-  const [phone, setPhone] = useState('');
+  const [details, setDetails] = useState<CmsAccountDetails>(emptyCmsAccountDetails);
+  const [checkState, setCheckState] = useState<CmsAccountCheckState>('idle');
+  const { paymentCompany, payerName, payerNumber, paymentNumber, phone, holderType } = details;
 
   const returnUrlWithFlag = (() => {
     try {
@@ -57,6 +57,10 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const handleDetailsSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    if (checkState === 'idle') {
+      setError('계좌 확인하기를 눌러 계좌를 먼저 확인해주세요.');
+      return;
+    }
     // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
     if (!isValidPayerNumber(payerNumber)) {
       setError(
@@ -324,90 +328,12 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
             </p>
 
             <form onSubmit={handleDetailsSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentCompany" className="text-xs text-muted-foreground">
-                  은행
-                </Label>
-                <select
-                  id="paymentCompany"
-                  value={paymentCompany}
-                  onChange={(e) => setPaymentCompany(e.target.value)}
-                  required
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">은행 선택</option>
-                  {CMS_BANKS.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="payerName" className="text-xs text-muted-foreground">
-                  예금주명
-                </Label>
-                <Input
-                  id="payerName"
-                  placeholder="홍길동"
-                  value={payerName}
-                  onChange={(e) => setPayerName(e.target.value)}
-                  maxLength={15}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentNumber" className="text-xs text-muted-foreground">
-                  계좌번호
-                </Label>
-                <Input
-                  id="paymentNumber"
-                  placeholder="숫자만 입력"
-                  value={paymentNumber}
-                  onChange={(e) => setPaymentNumber(e.target.value.replace(/\D/g, '').slice(0, 16))}
-                  inputMode="numeric"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="phone" className="text-xs text-muted-foreground">
-                  연락처
-                </Label>
-                <Input
-                  id="phone"
-                  placeholder="01012345678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 20))}
-                  inputMode="tel"
-                  required
-                />
-              </div>
-
-              <PayerNumberField
-                holderType={holderType}
-                onHolderTypeChange={setHolderType}
-                value={payerNumber}
-                onChange={setPayerNumber}
+              <CmsAccountFields
+                value={details}
+                onChange={setDetails}
+                checkState={checkState}
+                onCheckStateChange={setCheckState}
               />
-
-              {/* §5-1 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                <p className="mb-1 font-semibold text-amber-900">등록 전에 꼭 확인하세요</p>
-                <p>
-                  자동이체는 은행에 등록된 <strong>계좌주 본인 정보로만</strong> 등록됩니다.
-                </p>
-                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                  <li>예금주 성함이 신청 계좌의 실제 예금주와 같아야 합니다.</li>
-                  <li>생년월일(개인) 또는 사업자등록번호(법인)가 그 계좌 등록정보와 일치해야 합니다.</li>
-                  <li>본인 명의가 아닌 계좌(가족 계좌 등)로는 등록되지 않습니다.</li>
-                </ul>
-                <p className="mt-1.5">
-                  정보가 다르면 은행 확인 단계에서 <strong>등록이 거절</strong>되며, 다시 등록하셔야 합니다.
-                </p>
-              </div>
 
               {error && (
                 <Alert variant="destructive">
