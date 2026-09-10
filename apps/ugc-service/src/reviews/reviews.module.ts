@@ -16,6 +16,7 @@ import { ReviewRewardManager } from './rewards/review-reward.manager';
 import { OrderCancellationConsumer } from './rewards/order-cancellation.consumer';
 import { ReviewStatsPublisher } from './services/review-stats-publisher.service';
 import { ReviewPermissionsModule } from '../review-permissions/review-permissions.module';
+import { REVIEWS_OUTBOX_CONFIG } from './reviews-outbox.config';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReviewPermissionsModule } from '../review-permissions/review-permission
       policy: { validateOnConsume: true },
       // 적립 명령은 리뷰 트랜잭션과 같이 커밋돼야 한다 — 원장엔 지급인데 명령만 사라지는 창을 없앤다.
       enableOutbox: true,
+      outbox: REVIEWS_OUTBOX_CONFIG,
     }),
     ReviewPermissionsModule,
   ],

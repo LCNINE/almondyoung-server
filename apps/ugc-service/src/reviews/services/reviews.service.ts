@@ -64,6 +64,8 @@ export class ReviewsService {
   private readonly logger = new Logger(ReviewsService.name);
   private readonly bayesianPriorCount: number;
   private readonly fallbackPriorMean: number;
+  private readonly globalAverageTtlMs: number;
+  private globalAverageCache: { value: number; expiresAt: number } | null = null;
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
@@ -84,6 +86,10 @@ export class ReviewsService {
       Number.isFinite(fallbackPriorMean) && fallbackPriorMean >= 0 && fallbackPriorMean <= 5
         ? fallbackPriorMean
         : 3.5;
+
+    const globalAverageTtlMs = Number(this.configService.get('REVIEW_GLOBAL_AVERAGE_TTL_MS') ?? 600_000);
+    this.globalAverageTtlMs =
+      Number.isFinite(globalAverageTtlMs) && globalAverageTtlMs >= 0 ? globalAverageTtlMs : 600_000;
   }
 
   private get client() {
@@ -94,6 +100,44 @@ export class ReviewsService {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
+  /**
+   * 베이지안 사전평균으로 쓰는 «전체» 활성 리뷰 평균. 상품 필터가 없어 `reviews` 전체를
+   * Seq Scan 하는 쿼리이고(EXPLAIN 확인), 리뷰를 쓰거나 고치거나 지울 때마다 불렸다 —
+   * 라이브 모수 5만 건 위에서 그 비용이 매 쓰기에 붙는다.
+   *
+   * 이 값은 5만 건짜리 평균이라 하루 몇 건으로는 유의하게 움직이지 않는다. 그래서 프로세스
+   * 메모리에 TTL 로 들고 있는다. **캐시가 흔드는 것은 사전평균뿐이고 상품 단위 집계는 그대로**
+   * 매번 계산한다 — 그건 화면이 바로 읽는 값이라 늦으면 안 된다.
+   *
+   * 태스크가 여럿이면 각자 자기 캐시를 갖지만, 모두 같은 표를 근사하는 값이라 갈려도 무해하다.
+   */
+  private async loadGlobalAverageRating(tx: DbTransaction): Promise<number> {
+    const now = Date.now();
+    if (this.globalAverageCache && this.globalAverageCache.expiresAt > now) {
+      return this.globalAverageCache.value;
+    }
+
+    const [row] = await tx
+      .select({
+        reviewCount: count(),
+        ratingSum: sql<number>`COALESCE(SUM(${reviews.rating}), 0)::int`,
+      })
+      .from(reviews)
+      .where(and(eq(reviews.status, 'active'), isNull(reviews.deletedAt)));
+
+    const globalReviewCount = Number(row?.reviewCount ?? 0);
+    const globalRatingSum = Number(row?.ratingSum ?? 0);
+    const value = globalReviewCount > 0 ? globalRatingSum / globalReviewCount : this.fallbackPriorMean;
+
+    this.globalAverageCache = { value, expiresAt: now + this.globalAverageTtlMs };
+    return value;
+  }
+
+  /** 테스트가 프로세스 상태를 물려받지 않도록 비운다. 운영 경로에서는 부르지 않는다. */
+  resetGlobalAverageCache(): void {
+    this.globalAverageCache = null;
+  }
+
   private async aggregateReviewStats(productId: string, tx: DbTransaction): Promise<AggregatedReviewStats> {
     const rows = await tx
       .select({ rating: reviews.rating, count: count() })
@@ -101,13 +145,7 @@ export class ReviewsService {
       .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)))
       .groupBy(reviews.rating);
 
-    const globalStatsRows = await tx
-      .select({
-        reviewCount: count(),
-        ratingSum: sql<number>`COALESCE(SUM(${reviews.rating}), 0)::int`,
-      })
-      .from(reviews)
-      .where(and(eq(reviews.status, 'active'), isNull(reviews.deletedAt)));
+    const globalAverageRating = await this.loadGlobalAverageRating(tx);
 
     const distribution: RatingDistribution = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
     let reviewCount = 0;
@@ -121,11 +159,6 @@ export class ReviewsService {
     }
 
     const averageRating = reviewCount > 0 ? ratingSum / reviewCount : 0;
-    const globalStats = globalStatsRows[0];
-    const globalReviewCount = Number(globalStats?.reviewCount ?? 0);
-    const globalRatingSum = Number(globalStats?.ratingSum ?? 0);
-    const globalAverageRating =
-      globalReviewCount > 0 ? globalRatingSum / globalReviewCount : this.fallbackPriorMean;
 
     // Bayesian average: (v / (v + m)) * R + (m / (v + m)) * C
     // R: product average, v: product review count, C: global active-review average, m: prior count.
