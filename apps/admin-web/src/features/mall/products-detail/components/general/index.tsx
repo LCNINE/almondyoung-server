@@ -43,6 +43,7 @@ import {
   formatSelectedCategories,
   toBasicInformationFormValues,
   toBasicInformationUpdateDto,
+  PRODUCT_INFO_FIELDS,
   type BasicInformationFormValues,
   type SelectableCategory,
 } from './basic-information-model';
@@ -332,6 +333,56 @@ function ProductBasicInformationEditDrawer({
               </div>
 
               <div className="flex flex-col gap-3 p-3 border rounded-md">
+                <div className="flex flex-col gap-1">
+                  <Label>상품정보</Label>
+                  <p className="text-sm text-muted-foreground">
+                    스토어프론트 상품 상세의 «상품정보» 표에 그대로 실립니다.
+                    비워 두면 그 행은 빈칸으로 나갑니다.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {PRODUCT_INFO_FIELDS.map(
+                    ({ key, label, placeholder, multiline }) => (
+                      <div
+                        key={key}
+                        className={`flex flex-col gap-2 ${multiline ? 'col-span-2' : ''}`}
+                      >
+                        <Label htmlFor={`product-info-${key}`}>{label}</Label>
+                        {multiline ? (
+                          <Textarea
+                            id={`product-info-${key}`}
+                            value={values.productInfo[key] ?? ''}
+                            onChange={(event) =>
+                              setValue('productInfo', {
+                                ...values.productInfo,
+                                [key]: event.target.value,
+                              })
+                            }
+                            placeholder={placeholder}
+                            disabled={updateVersion.isPending}
+                            className="min-h-24"
+                          />
+                        ) : (
+                          <Input
+                            id={`product-info-${key}`}
+                            value={values.productInfo[key] ?? ''}
+                            onChange={(event) =>
+                              setValue('productInfo', {
+                                ...values.productInfo,
+                                [key]: event.target.value,
+                              })
+                            }
+                            placeholder={placeholder}
+                            disabled={updateVersion.isPending}
+                          />
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 p-3 border rounded-md">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col min-w-0 gap-1">
                     <Label>카테고리</Label>
@@ -548,6 +599,10 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: 'SEO 설명', value: data.seoDescription ?? '-' },
     { key: 'SEO 키워드', value: formatSeoKeywords(data.seoKeywords) },
     { key: '카테고리', value: formatSelectedCategories(data.categories) },
+    ...PRODUCT_INFO_FIELDS.map(({ key, label }) => ({
+      key: label,
+      value: data.productInfo?.[key]?.trim() || '-',
+    })),
     { key: '등록일', value: data.createdAt },
     { key: '수정일', value: data.updatedAt },
   ];

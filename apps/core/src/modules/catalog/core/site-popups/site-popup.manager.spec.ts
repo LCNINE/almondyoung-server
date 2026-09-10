@@ -141,17 +141,15 @@ describe('SitePopupManager 검증', () => {
   it('본문형인데 본문이 비면 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(manager.create({ title: '안내', contentType: 'rich_text' })).rejects.toThrow(
-      BadRequestError,
-    );
+    await expect(manager.create({ title: '안내', contentType: 'rich_text' })).rejects.toThrow(BadRequestError);
   });
 
   it('태그만 남은 본문도 빈 본문으로 본다', async () => {
     const { manager } = makeManager();
 
-    await expect(
-      manager.create({ title: '안내', contentType: 'rich_text', content: '<p><br></p>' }),
-    ).rejects.toThrow(BadRequestError);
+    await expect(manager.create({ title: '안내', contentType: 'rich_text', content: '<p><br></p>' })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 
   it('이미지만 넣은 본문은 빈 본문으로 보지 않는다', async () => {
@@ -169,33 +167,29 @@ describe('SitePopupManager 검증', () => {
   it('이미지형인데 PC 이미지가 없으면 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(manager.create({ title: '안내', contentType: 'image' })).rejects.toThrow(
-      BadRequestError,
-    );
+    await expect(manager.create({ title: '안내', contentType: 'image' })).rejects.toThrow(BadRequestError);
   });
 
   it('경로 지정인데 경로가 없으면 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(
-      manager.create({ ...VALID_CREATE, placement: 'paths', placementPaths: [] }),
-    ).rejects.toThrow(BadRequestError);
+    await expect(manager.create({ ...VALID_CREATE, placement: 'paths', placementPaths: [] })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 
   it('"/" 로 시작하지 않는 경로를 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(
-      manager.create({ ...VALID_CREATE, placement: 'paths', placementPaths: ['products'] }),
-    ).rejects.toThrow(BadRequestError);
+    await expect(manager.create({ ...VALID_CREATE, placement: 'paths', placementPaths: ['products'] })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 
   it('숨김 일수 방식인데 일수가 없으면 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(manager.create({ ...VALID_CREATE, dismissMode: 'days' })).rejects.toThrow(
-      BadRequestError,
-    );
+    await expect(manager.create({ ...VALID_CREATE, dismissMode: 'days' })).rejects.toThrow(BadRequestError);
   });
 
   it('게시 종료가 시작보다 앞서면 거부한다', async () => {
@@ -213,18 +207,13 @@ describe('SitePopupManager 검증', () => {
   it('javascript: 링크를 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(
-      // eslint-disable-next-line no-script-url
-      manager.create({ ...VALID_CREATE, linkUrl: 'javascript:alert(1)' }),
-    ).rejects.toThrow(BadRequestError);
+    await expect(manager.create({ ...VALID_CREATE, linkUrl: 'javascript:alert(1)' })).rejects.toThrow(BadRequestError);
   });
 
   it('프로토콜 상대 경로(//evil.com)를 거부한다', async () => {
     const { manager } = makeManager();
 
-    await expect(manager.create({ ...VALID_CREATE, linkUrl: '//evil.com' })).rejects.toThrow(
-      BadRequestError,
-    );
+    await expect(manager.create({ ...VALID_CREATE, linkUrl: '//evil.com' })).rejects.toThrow(BadRequestError);
   });
 
   it('사이트 내 경로와 http(s) 링크는 허용한다', async () => {
@@ -240,9 +229,9 @@ describe('SitePopupManager 검증', () => {
     const { manager, reader } = makeManager();
     reader.noticeExists.mockResolvedValue(false);
 
-    await expect(
-      manager.create({ ...VALID_CREATE, noticeId: '00000000-0000-0000-0000-000000000000' }),
-    ).rejects.toThrow(BadRequestError);
+    await expect(manager.create({ ...VALID_CREATE, noticeId: '00000000-0000-0000-0000-000000000000' })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 });
 
@@ -262,9 +251,7 @@ describe('SitePopupManager 부분 수정 병합 검증', () => {
       }),
     );
 
-    await expect(manager.update('popup-1', { contentType: 'rich_text' })).rejects.toThrow(
-      BadRequestError,
-    );
+    await expect(manager.update('popup-1', { contentType: 'rich_text' })).rejects.toThrow(BadRequestError);
   });
 
   it('이미지형 팝업의 PC 이미지만 비우면 거부한다', async () => {
@@ -300,9 +287,7 @@ describe('SitePopupManager 부분 수정 병합 검증', () => {
   });
 
   it('기존 게시기간에 어긋나는 종료 일시만 보내면 거부한다', async () => {
-    const { manager } = makeManager(
-      makeExisting({ displayStartAt: new Date('2026-09-01T00:00:00.000Z') }),
-    );
+    const { manager } = makeManager(makeExisting({ displayStartAt: new Date('2026-09-01T00:00:00.000Z') }));
 
     const dto: UpdateSitePopupDto = { displayEndAt: '2026-08-01T00:00:00.000Z' };
 

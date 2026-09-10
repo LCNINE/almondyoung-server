@@ -16,10 +16,7 @@ export class SitePopupsController {
   @ApiOperation({ summary: '팝업 공지 생성 (관리자)' })
   @ApiBody({ type: CreateSitePopupDto })
   @ApiResponse({ status: 201, type: SitePopupResponseDto })
-  async create(
-    @Body() dto: CreateSitePopupDto,
-    @User() user: { userId: string },
-  ): Promise<SitePopupResponseDto> {
+  async create(@Body() dto: CreateSitePopupDto, @User() user: { userId: string }): Promise<SitePopupResponseDto> {
     return this.sitePopupsService.create(dto, user?.userId);
   }
 
@@ -99,10 +96,7 @@ export class SitePopupsController {
   @ApiParam({ name: 'id', description: '팝업 ID' })
   @ApiResponse({ status: 200, description: '삭제 성공' })
   @ApiResponse({ status: 404, description: '팝업을 찾을 수 없음' })
-  async remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @User() user: { userId: string },
-  ): Promise<{ message: string }> {
+  async remove(@Param('id', ParseUUIDPipe) id: string, @User() user: { userId: string }): Promise<{ message: string }> {
     await this.sitePopupsService.remove(id, user?.userId);
     return { message: 'Site popup deleted successfully' };
   }

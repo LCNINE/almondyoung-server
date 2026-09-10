@@ -94,6 +94,18 @@ export interface ProductPurchaseConstraintSnapshot {
   lifetimeQuantityLimit: number | null;
 }
 
+export interface ProductInfo {
+  productNumber?: string;
+  weight?: string;
+  dimensions?: string;
+  origin?: string;
+  capacity?: string;
+  expirationDate?: string;
+  manufacturer?: string;
+  material?: string;
+  usage?: string;
+}
+
 export interface ProductSnapshot {
   masterId: string;
   versionId: string;
@@ -123,6 +135,8 @@ export interface ProductSnapshot {
     thumbnail?: string;
   }>;
   brand?: string;
+  /** 스토어프론트 «상품정보» 표. channel-adapter 가 Medusa product.metadata 로 그대로 펼친다. */
+  productInfo?: ProductInfo;
   tags?: string[];
   productType?: string;
   fulfillmentKind?: 'physical' | 'digital';
@@ -348,6 +362,18 @@ const ProductPurchaseConstraintSnapshotSchema = z.object({
   lifetimeQuantityLimit: z.number().int().positive().nullable(),
 });
 
+const ProductInfoSchema = z.object({
+  productNumber: z.string().optional(),
+  weight: z.string().optional(),
+  dimensions: z.string().optional(),
+  origin: z.string().optional(),
+  capacity: z.string().optional(),
+  expirationDate: z.string().optional(),
+  manufacturer: z.string().optional(),
+  material: z.string().optional(),
+  usage: z.string().optional(),
+});
+
 const ProductSnapshotSchema = z.object({
   masterId: z.string(),
   versionId: z.string(),
@@ -362,6 +388,7 @@ const ProductSnapshotSchema = z.object({
   seoKeywords: z.string().optional(),
   categories: z.array(ProductSnapshotCategorySchema).optional(),
   brand: z.string().optional(),
+  productInfo: ProductInfoSchema.optional(),
   tags: z.array(z.string()).optional(),
   productType: z.string().optional(),
   fulfillmentKind: z.enum(['physical', 'digital']).optional(),

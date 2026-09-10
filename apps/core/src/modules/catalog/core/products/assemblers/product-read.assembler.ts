@@ -10,10 +10,7 @@ import {
   TagReadModel,
   VariantReadModel,
 } from '../../../catalog.types';
-import {
-  type PimSchema,
-  productImages,
-} from '../../../schema/catalog.schema';
+import { type PimSchema, productImages } from '../../../schema/catalog.schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { TagReadLoader } from '../loaders/tag-read.loader';

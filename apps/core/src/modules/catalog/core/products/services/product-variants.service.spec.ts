@@ -164,9 +164,7 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
 
     expect(inserted).toHaveLength(0);
     expect(repointed).toHaveLength(0);
-    expect(inPlace).toEqual([
-      expect.objectContaining({ scopeTargetIds: ['new-variant', 'keep-variant'] }),
-    ]);
+    expect(inPlace).toEqual([expect.objectContaining({ scopeTargetIds: ['new-variant', 'keep-variant'] })]);
   });
 
   it('leaves a pricing rule untouched when it does not reference the cowed variant', async () => {
@@ -209,7 +207,9 @@ describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
     const tx: any = {
       select: jest
         .fn()
-        .mockReturnValueOnce(limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'variant-1' }]))
+        .mockReturnValueOnce(
+          limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'variant-1' }]),
+        )
         .mockReturnValueOnce(limitSelect([])), // no shared mapping
       update: jest.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) })),
     };
@@ -231,7 +231,9 @@ describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
     const tx: any = {
       select: jest
         .fn()
-        .mockReturnValueOnce(limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'old-variant' }]))
+        .mockReturnValueOnce(
+          limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'old-variant' }]),
+        )
         .mockReturnValueOnce(limitSelect([{ versionId: 'other-version' }])) // shared!
         .mockReturnValueOnce(
           limitSelect([

@@ -1,5 +1,6 @@
 import { DateMapper } from '../../../common/mappers';
 import { ProductDetailCategory, ProductDetailDto } from '../../../catalog.types';
+import type { ProductInfoJson } from '../../../schema/catalog.schema';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 import { ProductImageMapper } from './product-image.mapper';
 
@@ -23,6 +24,7 @@ export interface ProductVersionDetailResponseDto {
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
   isOverseas: boolean;
+  productInfo: ProductInfoJson | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   productType: string | null;
@@ -87,9 +89,10 @@ export class ProductVersionMapper {
       hideMembershipPriceForNonMembers: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
       isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
       isOverseas: detail.isOverseas ?? false,
+      productInfo: detail.productInfo ?? null,
       isMembershipOnly: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
       productType: detail.productType,
-      fulfillmentKind: (detail.fulfillmentKind ?? 'physical') as 'physical' | 'digital',
+      fulfillmentKind: detail.fulfillmentKind ?? 'physical',
       productCode: detail.productCode,
       alternativeName: detail.alternativeName,
       material: detail.material,

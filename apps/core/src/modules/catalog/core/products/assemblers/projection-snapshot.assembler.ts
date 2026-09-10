@@ -98,6 +98,7 @@ export class ProjectionSnapshotAssembler {
         thumbnail: category.thumbnailFileId ?? undefined,
       })),
       brand: version.brand ?? undefined,
+      productInfo: version.productInfo ?? undefined,
       tags: tags.map((tag) => tag.name),
       productType: version.productType ?? undefined,
       fulfillmentKind: version.fulfillmentKind ?? 'physical',

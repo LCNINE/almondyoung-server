@@ -56,10 +56,7 @@ function filePart(over: Partial<FilePart> = {}): FilePart {
 
 describe('readWorkbookUpload', () => {
   it('파일 바이트와 파일명, name 필드를 읽는다', async () => {
-    const { request } = fakeRequest([
-      filePart(),
-      { type: 'field', fieldname: 'name', value: '8월 개편' },
-    ]);
+    const { request } = fakeRequest([filePart(), { type: 'field', fieldname: 'name', value: '8월 개편' }]);
 
     await expect(readWorkbookUpload(request)).resolves.toEqual({
       buffer: Buffer.from('workbook'),
@@ -69,10 +66,7 @@ describe('readWorkbookUpload', () => {
   });
 
   it('필드 순서가 반대여도 (name 이 파일보다 먼저) 똑같이 읽는다', async () => {
-    const { request } = fakeRequest([
-      { type: 'field', fieldname: 'name', value: '8월 개편' },
-      filePart(),
-    ]);
+    const { request } = fakeRequest([{ type: 'field', fieldname: 'name', value: '8월 개편' }, filePart()]);
 
     await expect(readWorkbookUpload(request)).resolves.toMatchObject({ name: '8월 개편' });
   });
@@ -90,10 +84,7 @@ describe('readWorkbookUpload', () => {
   });
 
   it('200자를 넘는 name 은 400 이다 (CreateBulkSessionDto 와 같은 상한)', async () => {
-    const { request } = fakeRequest([
-      filePart(),
-      { type: 'field', fieldname: 'name', value: 'x'.repeat(201) },
-    ]);
+    const { request } = fakeRequest([filePart(), { type: 'field', fieldname: 'name', value: 'x'.repeat(201) }]);
 
     await expect(readWorkbookUpload(request)).rejects.toThrow(BadRequestException);
   });

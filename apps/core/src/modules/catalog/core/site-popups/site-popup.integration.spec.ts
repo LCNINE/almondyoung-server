@@ -126,15 +126,11 @@ describeIfDb('SitePopup 저장/조회 (PostgreSQL 통합)', () => {
       await manager.softDelete(created.id);
 
       await expect(reader.findById(created.id)).rejects.toThrow(NotFoundError);
-      expect(await reader.findPublic('guest')).not.toContainEqual(
-        expect.objectContaining({ id: created.id }),
-      );
+      expect(await reader.findPublic('guest')).not.toContainEqual(expect.objectContaining({ id: created.id }));
     });
 
     it('없는 팝업을 수정하면 404 다', async () => {
-      await expect(manager.update(randomUUID(), { title: title('nope') })).rejects.toThrow(
-        NotFoundError,
-      );
+      await expect(manager.update(randomUUID(), { title: title('nope') })).rejects.toThrow(NotFoundError);
     });
 
     it('없는 공지를 연결하면 DB 제약 이전에 400 으로 막힌다', async () => {
@@ -252,9 +248,7 @@ describeIfDb('SitePopup 저장/조회 (PostgreSQL 통합)', () => {
       expect(defaults.map((row) => row.id)).not.toContain(inactive.id);
 
       const withInactive = await reader.findAll({ q: TITLE_PREFIX, includeInactive: true });
-      expect(withInactive.map((row) => row.id)).toEqual(
-        expect.arrayContaining([active.id, inactive.id]),
-      );
+      expect(withInactive.map((row) => row.id)).toEqual(expect.arrayContaining([active.id, inactive.id]));
     });
 
     it('삭제한 팝업은 관리자 목록에도 남지 않는다', async () => {

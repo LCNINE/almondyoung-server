@@ -76,7 +76,9 @@ export function ShippingInfoBlock({
     : [
         {
           value: DEFAULT_SHIPPING_GROUP_CODE,
-          label: defaultGroup ? `기본 설정 사용 (${defaultGroup.name})` : '기본 설정 사용',
+          label: defaultGroup
+            ? `기본 설정 사용 (${defaultGroup.name})`
+            : '기본 설정 사용',
         },
       ];
 
@@ -123,8 +125,10 @@ export function ShippingInfoBlock({
       <div className="flex flex-col gap-2">
         <Label htmlFor="product-basic-shipping-group">배송비 그룹</Label>
         <FormSelect
-          value={isCustom ? (value || undefined) : DEFAULT_SHIPPING_GROUP_CODE}
-          onValueChange={(next) => onChange(next === DEFAULT_SHIPPING_GROUP_CODE ? '' : next)}
+          value={isCustom ? value || undefined : DEFAULT_SHIPPING_GROUP_CODE}
+          onValueChange={(next) =>
+            onChange(next === DEFAULT_SHIPPING_GROUP_CODE ? '' : next)
+          }
           options={options}
           placeholder="배송비 그룹 선택"
           disabled={disabled || !isCustom}
@@ -137,10 +141,14 @@ export function ShippingInfoBlock({
         {selected && (
           <div className="text-xs text-muted-foreground">
             <div>
-              · {SHIPPING_FEE_TYPE_LABELS[selected.policy.type] ?? selected.policy.type} —{' '}
-              {describeShippingGroupFee(selected)}
+              ·{' '}
+              {SHIPPING_FEE_TYPE_LABELS[selected.policy.type] ??
+                selected.policy.type}{' '}
+              — {describeShippingGroupFee(selected)}
             </div>
-            {describeShippingGroupArea(selected) && <div>· {describeShippingGroupArea(selected)}</div>}
+            {describeShippingGroupArea(selected) && (
+              <div>· {describeShippingGroupArea(selected)}</div>
+            )}
           </div>
         )}
         <Link
@@ -164,8 +172,8 @@ export function ShippingInfoBlock({
         </dd>
       </dl>
       <p className="text-xs text-muted-foreground">
-        배송방법·배송지역·배송기간은 선택한 배송비 그룹의 값입니다. 다르게 쓰려면 그룹을 하나 더
-        만들어 주세요.
+        배송방법·배송지역·배송기간은 선택한 배송비 그룹의 값입니다. 다르게
+        쓰려면 그룹을 하나 더 만들어 주세요.
       </p>
     </div>
   );

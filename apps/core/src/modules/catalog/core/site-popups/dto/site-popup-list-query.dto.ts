@@ -1,7 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
-import { SITE_POPUP_AUDIENCES, SITE_POPUP_PLACEMENTS, SitePopupAudience, SitePopupPlacement } from '../site-popup.constants';
+import {
+  SITE_POPUP_AUDIENCES,
+  SITE_POPUP_PLACEMENTS,
+  SitePopupAudience,
+  SitePopupPlacement,
+} from '../site-popup.constants';
 
 const toBool = ({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : value === 'true');
 

@@ -19,9 +19,11 @@ describe('ProductReadAssembler shared loader integration', () => {
           optionValueIds: [],
         },
       ]),
-      getImages: jest.fn().mockResolvedValue([
-        { id: 'image-1', versionId: 'version-1', fileId: 'file-primary', isPrimary: true, sortOrder: 1 },
-      ]),
+      getImages: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'image-1', versionId: 'version-1', fileId: 'file-primary', isPrimary: true, sortOrder: 1 },
+        ]),
       getCategories: jest.fn().mockResolvedValue([
         {
           id: 'category-1',
@@ -43,9 +45,9 @@ describe('ProductReadAssembler shared loader integration', () => {
       }),
     };
     const priceCacheService = {
-      getCachedPriceSetsByVersion: jest.fn().mockResolvedValue([
-        { variantId: 'variant-1', basePrice: 10000, membershipPrice: 9000, tieredPrices: [] },
-      ]),
+      getCachedPriceSetsByVersion: jest
+        .fn()
+        .mockResolvedValue([{ variantId: 'variant-1', basePrice: 10000, membershipPrice: 9000, tieredPrices: [] }]),
       getPriceSummariesByVersionIds: jest.fn().mockResolvedValue(new Map([['version-1', { minBasePrice: 10000 }]])),
     };
     const optionReadLoader = {

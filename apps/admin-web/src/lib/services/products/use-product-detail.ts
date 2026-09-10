@@ -7,6 +7,7 @@ import type {
   MasterVersionDetailDto,
   ProductDetailCategory,
   ProductImage,
+  ProductInfo,
   ProductMasterDetail,
   ProductOptionGroup,
   ProductVariantRow,
@@ -44,6 +45,7 @@ export type ProductDetailView = {
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
   shippingGroupCode: string | null;
+  productInfo: ProductInfo | null;
   categories: ProductDetailCategory[];
   createdAt: string;
   updatedAt: string;
@@ -87,6 +89,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
       master.hideMembershipPriceForNonMembers ?? master.isMembershipOnly,
     fulfillmentKind: master.fulfillmentKind ?? null,
     shippingGroupCode: master.shippingGroupCode ?? null,
+    productInfo: master.productInfo ?? null,
     categories: master.categories,
     createdAt: master.createdAt,
     updatedAt: master.updatedAt,
@@ -124,6 +127,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
       detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly,
     fulfillmentKind: detail.fulfillmentKind ?? null,
     shippingGroupCode: detail.shippingGroupCode ?? null,
+    productInfo: detail.productInfo ?? null,
     categories: detail.categories,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,

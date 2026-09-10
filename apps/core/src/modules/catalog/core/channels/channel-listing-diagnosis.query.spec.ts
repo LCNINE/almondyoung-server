@@ -29,8 +29,7 @@ describe('채널 리스팅 진단 쿼리 (#674)', () => {
     await connection.end({ timeout: 0 });
   });
 
-  const sqlOf = () =>
-    buildChannelListingDiagnosisQuery(client, 'item-1', eq(salesChannels.site, 'naver')).toSQL().sql;
+  const sqlOf = () => buildChannelListingDiagnosisQuery(client, 'item-1', eq(salesChannels.site, 'naver')).toSQL().sql;
 
   describe('쿼리 모양', () => {
     it('상태 술어를 하나도 걸지 않는다', () => {
@@ -102,9 +101,9 @@ describe('채널 리스팅 진단 쿼리 (#674)', () => {
     });
 
     it('삭제가 판매중지보다 앞선다 — 조치가 재매핑 하나이기 때문', () => {
-      expect(
-        causeFromDiagnosisRow({ ...healthy, masterDeletedAt: new Date(), variantStatus: 'inactive' }),
-      ).toBe('product_deleted');
+      expect(causeFromDiagnosisRow({ ...healthy, masterDeletedAt: new Date(), variantStatus: 'inactive' })).toBe(
+        'product_deleted',
+      );
     });
 
     it('리스팅 비활성이 채널 비활성보다 앞선다 — 더 좁은 조치가 먼저다', () => {

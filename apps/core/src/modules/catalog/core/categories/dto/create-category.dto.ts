@@ -1,5 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsString, IsOptional, IsUUID, IsInt, Min, MaxLength, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsBoolean,
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsInt,
+  Min,
+  MaxLength,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CategoryTagGroupLinkDto } from './category-tag-group-link.dto';
 

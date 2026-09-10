@@ -59,7 +59,14 @@ export class SalesChannelsController {
   @ApiOkResponsePaginated(SalesChannelDto, { description: '판매 채널 목록 조회 성공' })
   async getChannels(
     @Query()
-    query: { isActive?: string; type?: string; site?: string; search?: string; page?: string; limit?: string },
+    query: {
+      isActive?: string;
+      type?: string;
+      site?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    },
   ): Promise<PaginatedResponseDto<SalesChannelDto>> {
     const filters = {
       isActive: query.isActive ? query.isActive === 'true' : undefined,

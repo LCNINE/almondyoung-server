@@ -82,7 +82,10 @@ export function ProductCategorySelectionModal({
   }, [open, tree, selectedIds, primaryCategoryId]);
 
   const busy = disabled || isLoading;
-  const draftSelectedSet = useMemo(() => new Set(draft.selectedIds), [draft.selectedIds]);
+  const draftSelectedSet = useMemo(
+    () => new Set(draft.selectedIds),
+    [draft.selectedIds]
+  );
   const orderedIds = useMemo(() => orderedCategoryIds(tree), [tree]);
   const pathLabels = useMemo(() => buildCategoryPathLabels(tree), [tree]);
 
@@ -128,7 +131,9 @@ export function ProductCategorySelectionModal({
   useEffect(() => {
     if (!focusedNodeId) return;
     const rowId = categoryTreeRowId(focusedNodeId);
-    const row = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(rowId)}`);
+    const row = listRef.current?.querySelector<HTMLElement>(
+      `#${CSS.escape(rowId)}`
+    );
     row?.scrollIntoView({ block: 'nearest' });
   }, [focusedNodeId]);
 
@@ -161,7 +166,9 @@ export function ProductCategorySelectionModal({
     if (move.selectId) toggleSelect(move.selectId);
   };
 
-  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
     if (event.key !== 'ArrowDown' || sequence.length === 0) return;
     event.preventDefault();
     setFocusedNodeId(sequence[0]?.node.id ?? null);

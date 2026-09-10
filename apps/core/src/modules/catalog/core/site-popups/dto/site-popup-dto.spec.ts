@@ -112,11 +112,7 @@ describe('SitePopupListQueryDto', () => {
   });
 
   it('빈 값은 필터를 걸지 않은 것으로 본다', async () => {
-    const dto = await transform<SitePopupListQueryDto>(
-      { isActive: '', q: '   ' },
-      SitePopupListQueryDto,
-      'query',
-    );
+    const dto = await transform<SitePopupListQueryDto>({ isActive: '', q: '   ' }, SitePopupListQueryDto, 'query');
 
     expect(dto.isActive).toBeUndefined();
     expect(dto.q).toBe('');

@@ -310,9 +310,7 @@ describe('ProductMastersService.createMaster ownership', () => {
     expect(versionValues.draftOwnerId).toBe('user-123');
     expect(versionValues.createdBy).toBe('user-123');
 
-    const masterValues = insertedValues.find(
-      (v) => 'id' in v && !('masterId' in v) && !('variantName' in v)
-    );
+    const masterValues = insertedValues.find((v) => 'id' in v && !('masterId' in v) && !('variantName' in v));
     expect(masterValues.createdBy).toBe('user-123');
   });
 });

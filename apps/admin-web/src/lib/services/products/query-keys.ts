@@ -74,7 +74,6 @@ export const productQueryKeys = {
   channelsByType: (type: string) =>
     [...productQueryKeys.channels, 'type', type] as const,
 
-
   // 배너 그룹 관련
   bannerGroups: ['banner-groups'] as const,
   bannerGroupsList: (query: object) =>

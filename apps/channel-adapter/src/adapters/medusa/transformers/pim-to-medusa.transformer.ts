@@ -81,6 +81,8 @@ export function transformPimToMedusa(
     pimVersionId: snapshot.versionId,
     pimVersion: snapshot.version,
     brand: snapshot.brand,
+    // 스토어프론트 «상품정보» 표는 product.metadata 를 그대로 읽는다 (키 이름이 곧 표의 행).
+    ...(snapshot.productInfo ?? {}),
     seoTitle: snapshot.seoTitle,
     seoDescription: snapshot.seoDescription,
     seoKeywords: snapshot.seoKeywords,

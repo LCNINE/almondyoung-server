@@ -18,6 +18,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OptionDiffDto } from './option-diff.dto';
+import { ProductInfoDto } from './product-info.dto';
 
 export class UpdateProductMasterDto {
   @ApiProperty({
@@ -182,6 +183,17 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsBoolean()
   isOverseas?: boolean;
+
+  @ApiProperty({
+    description: '스토어프론트 «상품정보» 표에 표시할 값. null 이면 표를 통째로 비운다.',
+    type: ProductInfoDto,
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProductInfoDto)
+  productInfo?: ProductInfoDto | null;
 
   @ApiProperty({
     description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',

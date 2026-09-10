@@ -32,9 +32,7 @@ describe('SitePopupsController 접근 제어', () => {
   });
 
   it.each(adminHandlers)('%s 는 일반 회원 토큰으로도 막힌다', (handler) => {
-    expect(() => realmGuard.canActivate(contextFor(handler, { roles: ['user'] }))).toThrow(
-      ForbiddenException,
-    );
+    expect(() => realmGuard.canActivate(contextFor(handler, { roles: ['user'] }))).toThrow(ForbiddenException);
   });
 
   it.each(adminHandlers)('%s 는 관리자에게 열린다', (handler) => {

@@ -1,5 +1,6 @@
 import {
   canEditBasicInformation,
+  toProductInfoDto,
   flattenCategoryTree,
   formatSelectedCategories,
   toBasicInformationFormValues,
@@ -23,6 +24,7 @@ describe('basic information editing model', () => {
     isMembershipOnly: null,
     fulfillmentKind: null,
     shippingGroupCode: null,
+    productInfo: null,
     categories: [
       {
         id: 'cat-primary',
@@ -96,6 +98,7 @@ describe('basic information editing model', () => {
       isVisibleToMembersOnly: false,
       fulfillmentKind: 'physical',
       shippingGroupCode: '',
+      productInfo: {},
       categoryIds: ['cat-primary', 'cat-secondary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -117,6 +120,7 @@ describe('basic information editing model', () => {
         isVisibleToMembersOnly: true,
         fulfillmentKind: 'physical',
         shippingGroupCode: ' meal ',
+        productInfo: {},
         categoryIds: ['cat-secondary', 'cat-primary'],
         primaryCategoryId: 'cat-primary',
       })
@@ -136,6 +140,7 @@ describe('basic information editing model', () => {
       isVisibleToMembersOnly: true,
       fulfillmentKind: 'physical',
       shippingGroupCode: 'meal',
+      productInfo: null,
       categoryIds: ['cat-secondary', 'cat-primary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -155,6 +160,7 @@ describe('basic information editing model', () => {
         isVisibleToMembersOnly: false,
         fulfillmentKind: 'digital',
         shippingGroupCode: '   ',
+        productInfo: {},
         categoryIds: [],
         primaryCategoryId: 'cat-not-selected',
       })
@@ -174,6 +180,30 @@ describe('basic information editing model', () => {
       shippingGroupCode: null,
       categoryIds: [],
       primaryCategoryId: null,
+    });
+  });
+
+  describe('toProductInfoDto', () => {
+    it('keeps only the filled rows, trimmed', () => {
+      expect(
+        toProductInfoDto({
+          capacity: '  50ml  ',
+          manufacturer: '',
+          usage: '  롤링 후 세척  ',
+        })
+      ).toEqual({ capacity: '50ml', usage: '롤링 후 세척' });
+    });
+
+    it('returns null when nothing is filled — 이름만 고치고 저장해도 «변경됨» 으로 잡히지 않게', () => {
+      // 버전 비교가 JSON.stringify 라 `null` 과 `{}` 는 다르다. 여기서 {} 를 돌려주면
+      // productInfo 를 건드리지 않은 저장마다 diff 에 노이즈가 쌓인다.
+      expect(toProductInfoDto({})).toBeNull();
+      expect(toProductInfoDto({ capacity: '   ', usage: '' })).toBeNull();
+    });
+
+    it('returns null when every row is cleared — 그래야 실제로 지워진다', () => {
+      // undefined 를 돌려주면 요청 바디에서 키가 빠져 옛 값이 그대로 남는다(= 못 지운다).
+      expect(toProductInfoDto({ capacity: '', manufacturer: '' })).toBeNull();
     });
   });
 

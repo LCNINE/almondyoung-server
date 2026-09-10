@@ -35,6 +35,7 @@ import {
   notices,
   sitePopups,
   type PimSchema,
+  type ProductInfoJson,
 } from './schema/catalog.schema';
 
 // ===== TRANSACTION 타입 =====
@@ -248,6 +249,7 @@ export interface CreateMasterDto {
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
   isOverseas?: boolean;
+  productInfo?: ProductInfoJson | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
 

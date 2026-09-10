@@ -13,11 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AiPromptsService, type AiPromptPresetRecord } from './ai-prompts.service';
-import {
-  AiPromptPresetResponseDto,
-  CreateAiPromptPresetDto,
-  UpdateAiPromptPresetDto,
-} from './dto/ai-prompt.dto';
+import { AiPromptPresetResponseDto, CreateAiPromptPresetDto, UpdateAiPromptPresetDto } from './dto/ai-prompt.dto';
 
 function toDto(row: AiPromptPresetRecord): AiPromptPresetResponseDto {
   return {
@@ -77,16 +73,8 @@ export class AiPromptsController {
   })
   @ApiParam({ name: 'id', description: '양식 ID' })
   @ApiResponse({ status: HttpStatus.OK, type: AiPromptPresetResponseDto })
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateAiPromptPresetDto,
-  ): Promise<AiPromptPresetResponseDto> {
-    const row = await this.aiPromptsService.update(
-      id,
-      dto.requesterId,
-      dto.title,
-      dto.content,
-    );
+  async update(@Param('id') id: string, @Body() dto: UpdateAiPromptPresetDto): Promise<AiPromptPresetResponseDto> {
+    const row = await this.aiPromptsService.update(id, dto.requesterId, dto.title, dto.content);
     return toDto(row);
   }
 
@@ -99,10 +87,7 @@ export class AiPromptsController {
   @ApiParam({ name: 'id', description: '양식 ID' })
   @ApiQuery({ name: 'requesterId', description: '요청자 식별자' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT, description: '삭제 완료' })
-  async remove(
-    @Param('id') id: string,
-    @Query('requesterId') requesterId: string,
-  ): Promise<void> {
+  async remove(@Param('id') id: string, @Query('requesterId') requesterId: string): Promise<void> {
     if (!requesterId) throw new BadRequestException('requesterId is required');
 
     await this.aiPromptsService.remove(id, requesterId);

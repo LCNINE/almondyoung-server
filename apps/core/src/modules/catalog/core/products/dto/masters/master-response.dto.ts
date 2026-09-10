@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductTagDto } from './product-tag.dto';
 import { ProductImageDto } from '../products/product-image.dto';
+import { ProductInfoDto } from './product-info.dto';
 
 export class ProductMasterDto {
   @ApiProperty({ description: '제품 마스터 ID (UUID 형식)' })
@@ -53,6 +54,9 @@ export class ProductMasterDto {
 
   @ApiProperty({ description: '해외직구 상품 여부 (체크아웃 시 개인통관고유부호 필수)', nullable: true })
   isOverseas: boolean | null;
+
+  @ApiProperty({ description: '스토어프론트 «상품정보» 표', type: ProductInfoDto, nullable: true })
+  productInfo: ProductInfoDto | null;
 
   @ApiProperty({
     description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',

@@ -290,10 +290,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
   async function listPreviews(masterIds: string[]) {
     const result = await masters.getMasters({ page: 1, limit: 50, ids: masterIds, mode: 'all' });
     return new Map(
-      result.data.map((item) => [
-        item.product.id,
-        { aggregate: item.aggregate, name: item.product.version.name },
-      ]),
+      result.data.map((item) => [item.product.id, { aggregate: item.aggregate, name: item.product.version.name }]),
     );
   }
 
@@ -334,9 +331,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     const previews = (await listPreviews([product.masterId])).get(product.masterId)!.aggregate;
 
     expect(previews.variantCount).toBe(2);
-    expect(previews.variantPreviews.map((v) => v.name).sort()).toEqual(
-      ['블루 / 100ml', '블루 / 200ml'].sort(),
-    );
+    expect(previews.variantPreviews.map((v) => v.name).sort()).toEqual(['블루 / 100ml', '블루 / 200ml'].sort());
   });
 
   it('옵션 값 행을 공유하는 다른 상품이 같은 페이지에 있어도 표시명이 섞이지 않는다', async () => {

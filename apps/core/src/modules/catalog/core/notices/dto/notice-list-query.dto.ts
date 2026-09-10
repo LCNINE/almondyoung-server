@@ -2,8 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
-const toBool = ({ value }: { value: unknown }) =>
-  value === undefined || value === '' ? undefined : value === 'true';
+const toBool = ({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : value === 'true');
 
 export class NoticeListQueryDto {
   @ApiPropertyOptional({

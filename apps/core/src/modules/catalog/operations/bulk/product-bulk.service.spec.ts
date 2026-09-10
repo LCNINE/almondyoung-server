@@ -50,11 +50,13 @@ describe('ProductBulkService.bulkUpdatePolicy', () => {
   });
 
   it('스냅샷 조립 불가(BadRequestException) master 는 failed 로 수집하고 나머지는 계속한다', async () => {
-    const updateExposurePolicy = jest.fn().mockImplementation((masterId: string) =>
-      masterId === 'm2'
-        ? Promise.reject(new BadRequestException('활성 variant 가 없습니다'))
-        : Promise.resolve(undefined),
-    );
+    const updateExposurePolicy = jest
+      .fn()
+      .mockImplementation((masterId: string) =>
+        masterId === 'm2'
+          ? Promise.reject(new BadRequestException('활성 variant 가 없습니다'))
+          : Promise.resolve(undefined),
+      );
     const { service } = makeService(updateExposurePolicy);
     const result = await service.bulkUpdatePolicy({ productIds: ['m1', 'm2', 'm3'], isOverseas: true });
 
@@ -66,8 +68,6 @@ describe('ProductBulkService.bulkUpdatePolicy', () => {
   it('NotFound/BadRequest 외 에러는 rethrow 한다', async () => {
     const updateExposurePolicy = jest.fn().mockRejectedValue(new Error('db down'));
     const { service } = makeService(updateExposurePolicy);
-    await expect(
-      service.bulkUpdatePolicy({ productIds: ['m1'], isOverseas: true }),
-    ).rejects.toThrow('db down');
+    await expect(service.bulkUpdatePolicy({ productIds: ['m1'], isOverseas: true })).rejects.toThrow('db down');
   });
 });
