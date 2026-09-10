@@ -18,7 +18,7 @@ import { UpdateReviewDto } from '../dto/update-review.dto';
 import { type ReviewCommentEntity, type ReviewEntity, type ReviewStatus, type ReviewWithMediaEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
-import { ReviewRewardGrantService } from '../rewards/review-reward-grant.service';
+import { GrantedPoints, ReviewRewardGrantService } from '../rewards/review-reward-grant.service';
 import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
 import { ReviewRewardPublisher } from './review-reward-publisher.service';
 import { ReviewStatsPublisher } from './review-stats-publisher.service';
@@ -461,17 +461,31 @@ export class ReviewsService {
 
       // 보상 판정 → 원장 기록 → 적립 명령 적재까지 전부 이 트랜잭션 안이다.
       // 리뷰는 남았는데 지급 기록만 없거나, 기록은 있는데 명령이 유실되는 창을 두지 않는다.
-      const granted = await this.rewardGrantService.evaluateForNewReview(
-        {
-          reviewId: review.id,
-          userId,
-          contentLength: dto.content.length,
-          mediaCount: mediaFileIds.length,
-          rating: dto.rating,
-          orderLineAmount: eligibility.orderLineAmount,
-        },
-        tx,
-      );
+      //
+      // 주문에서 나온 권한이 아니면 판정 자체를 하지 않는다 — 운영자가 직접 준 권한으로 쓴 리뷰에
+      // 포인트가 나가면 우리가 우리에게 주는 것이 된다. 판정기 «안»이 아니라 호출 «앞»에서 가르는
+      // 이유는 정액 보상이 금액을 보지 않고 지급하기 때문이다(정률만 사유로 갈라진다).
+      // 조용히 건너뛰지 않고 원장에 사유를 남겨 「0원 지급」과 구별한다.
+      let granted: GrantedPoints | null = null;
+      if (eligibility.provider === 'order') {
+        granted = await this.rewardGrantService.evaluateForNewReview(
+          {
+            reviewId: review.id,
+            userId,
+            contentLength: dto.content.length,
+            mediaCount: mediaFileIds.length,
+            rating: dto.rating,
+            orderLineAmount: eligibility.orderLineAmount,
+          },
+          tx,
+        );
+      } else {
+        await this.rewardGrantService.recordSkippedForNewReview(
+          { reviewId: review.id, userId },
+          'NON_ORDER_PROVIDER',
+          tx,
+        );
+      }
 
       if (granted) {
         await this.rewardPublisher.enqueueEarnPointsCommand(

@@ -536,7 +536,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:587',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:597',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
@@ -565,7 +565,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:713',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:723',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
@@ -577,7 +577,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:537',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:547',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
