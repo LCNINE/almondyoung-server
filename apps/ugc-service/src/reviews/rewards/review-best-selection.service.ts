@@ -1,7 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, sql, SQL } from 'drizzle-orm';
-import { reactions, reviewBestSelections, reviewMedia, reviews, type UgcServiceSchema } from '../../db/schema';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notExists, sql, SQL } from 'drizzle-orm';
+import {
+  reactions,
+  reviewBestSelections,
+  reviewEligibilities,
+  reviewMedia,
+  reviews,
+  type UgcServiceSchema,
+} from '../../db/schema';
 import { ReviewRewardGrantService } from './review-reward-grant.service';
 import { ReviewRewardRuleService, UgcTx } from './review-reward-rule.service';
 import { ReviewRewardPublisher } from '../services/review-reward-publisher.service';
@@ -316,7 +323,20 @@ export class ReviewBestSelectionService {
         .from(reviewMedia)
         .where(eq(reviewMedia.reviewId, reviews.id))})`;
 
-      const allConditions = [...conditions];
+      // 주문에서 나온 권한으로 쓴 리뷰만 보상 대상이다 — `POST /reviews` 의 분기와 같은 경계를
+      // 두 번째 지급 트리거인 여기에도 세운다. `grantForBestSelection` 은 판정 없이 지급하므로
+      // 후보 선별이 유일한 관문이다. 권한 행이 «없는» 기존·이관 리뷰는 조건이 참이라 후보로 남는다.
+      const allConditions = [
+        ...conditions,
+        notExists(
+          trx
+            .select({ _: sql`1` })
+            .from(reviewEligibilities)
+            .where(
+              and(eq(reviewEligibilities.id, reviews.reviewPermissionId), ne(reviewEligibilities.provider, 'order')),
+            ),
+        ),
+      ];
       if (spec.minMediaCount > 0) {
         allConditions.push(sql`${mediaCount} >= ${spec.minMediaCount}`);
       }

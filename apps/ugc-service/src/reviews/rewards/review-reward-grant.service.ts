@@ -138,6 +138,23 @@ export class ReviewRewardGrantService {
   }
 
   /**
+   * 판정 자체를 하지 않고 「지급 대상이 아니다」로 끝내는 경우의 원장 기록.
+   * 규칙을 조회하지 않으므로 왕복이 늘지 않는다.
+   */
+  async recordSkippedForNewReview(
+    input: { reviewId: string; userId: string },
+    skipReason: ReviewRewardSkipReason,
+    tx: UgcTx,
+  ): Promise<void> {
+    await this.insertSkipped(
+      { reviewId: input.reviewId, userId: input.userId, ruleId: null, rewardKind: 'NONE' },
+      skipReason,
+      'ON_REVIEW_CREATED',
+      tx,
+    );
+  }
+
+  /**
    * 확정된 베스트 리뷰의 지급. selectionId 로 어느 회차 선정이었는지 남긴다.
    */
   async grantForBestSelection(
@@ -292,6 +309,28 @@ export class ReviewRewardGrantService {
     }, tx);
   }
 
+  /**
+   * 미지급을 원장에 남기는 유일한 자리. 판정을 «거치지 않고» 건너뛴 경우도 여기로 들어와야
+   * 「왜 0원인가」가 화면에서 사유로 읽힌다 — 조용히 건너뛰면 지급 대상이 아니었다는 사실이 사라진다.
+   */
+  private async insertSkipped(
+    row: { reviewId: string; userId: string; ruleId: string | null; rewardKind: ReviewRewardKind },
+    skipReason: ReviewRewardSkipReason,
+    trigger: ReviewRewardTrigger,
+    tx: UgcTx,
+  ): Promise<void> {
+    await tx.insert(reviewRewardGrants).values({
+      reviewId: row.reviewId,
+      userId: row.userId,
+      ruleId: row.ruleId,
+      trigger,
+      rewardKind: row.rewardKind,
+      amount: 0,
+      status: 'SKIPPED',
+      skipReason,
+    });
+  }
+
   private async persistDecision(
     input: NewReviewRewardInput,
     decision: RewardDecision,
@@ -305,16 +344,12 @@ export class ReviewRewardGrantService {
       // 규칙 자체가 없어서 안 나간 건 원장에 남기지 않는다 — 기본 상태를 로그로 채우지 않기 위해서다.
       if (decision.skipReason === 'NO_ACTIVE_RULE') return null;
 
-      await tx.insert(reviewRewardGrants).values({
-        reviewId: input.reviewId,
-        userId: input.userId,
-        ruleId: decision.ruleId,
+      await this.insertSkipped(
+        { reviewId: input.reviewId, userId: input.userId, ruleId: decision.ruleId, rewardKind: decision.rewardKind },
+        decision.skipReason,
         trigger,
-        rewardKind: decision.rewardKind,
-        amount: 0,
-        status: 'SKIPPED',
-        skipReason: decision.skipReason,
-      });
+        tx,
+      );
 
       return null;
     }

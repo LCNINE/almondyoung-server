@@ -11,8 +11,10 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { TxFor } from '@app/db';
 import type {
   BestSelectionStatus,
   ReviewRewardConditions,
@@ -23,6 +25,7 @@ import type {
   ReviewRewardSpec,
   ReviewRewardTrigger,
 } from '../reviews/rewards/reward-rule.types';
+import type { ReviewPermissionProvider } from '../review-permissions/types';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -68,6 +71,15 @@ export const reviews = pgTable(
     status: reviewStatusEnum('status').notNull().default('active'),
 
     sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
+
+    /**
+     * 이 리뷰를 쓸 «권한»으로 소비된 자격 행. 리뷰 모듈은 이 참조가 무슨 종류의 권한인지 모른다 —
+     * `provider` 는 권한 행이 들고 있고, 통계는 여기서 조인해 읽는다.
+     * 권한 행 없이 들어온 리뷰(이관분·구 데이터)가 있으므로 nullable 이다.
+     */
+    reviewPermissionId: uuid('review_permission_id').references((): AnyPgColumn => reviewEligibilities.id, {
+      onDelete: 'set null',
+    }),
 
     legacyAuthorName: varchar('legacy_author_name', { length: 100 }),
     legacyMemberId: varchar('legacy_member_id', { length: 100 }),
@@ -219,7 +231,24 @@ export const reviewEligibilities = pgTable(
     userId: uuid('user_id').notNull(),
     productId: varchar('product_id', { length: 255 }).notNull(),
     orderId: varchar('order_id', { length: 255 }).notNull(),
-    orderLineId: varchar('order_line_id', { length: 255 }).notNull(),
+
+    /**
+     * 이 권한을 «어떻게 얻었는가». pgEnum 이 아니라 varchar 인 것은 발급 경로가 늘어나는 축이라
+     * 값을 더할 때마다 `ALTER TYPE` 마이그레이션을 붙이지 않기 위해서다 — 값 검증은 TS 유니온이 한다.
+     */
+    provider: varchar('provider', { length: 20 }).notNull().default('order').$type<ReviewPermissionProvider>(),
+
+    /** 대량 투입분을 배치 단위로 되돌리기 위한 식별자. 주문 발급분에는 없다. */
+    batchId: varchar('batch_id', { length: 64 }),
+
+    /** 「어떤 근거로 줬는가」 — 주문 외 경로의 감사 기록이다. */
+    grantedReason: varchar('granted_reason', { length: 255 }),
+
+    /**
+     * 주문 라인. 주문에서 나온 권한만 갖는다 — 운영자가 직접 준 권한에는 주문 라인이 없다.
+     * 그래서 UNIQUE 도 「라인이 있는 행」에만 걸리는 부분 인덱스다(아래).
+     */
+    orderLineId: varchar('order_line_id', { length: 255 }),
 
     /**
      * 주문 라인 결제금액(원). 정률 보상 정책의 모수다.
@@ -249,7 +278,9 @@ export const reviewEligibilities = pgTable(
   },
   (table) => [
     uniqueIndex('review_eligibilities_source_unique').on(table.sourceSystem, table.sourceEventId),
-    uniqueIndex('review_eligibilities_order_line_unique').on(table.orderLineId),
+    uniqueIndex('review_eligibilities_order_line_unique')
+      .on(table.orderLineId)
+      .where(sql`${table.orderLineId} is not null`),
     index('review_eligibilities_user_product').on(table.userId, table.productId),
     index('review_eligibilities_order_id').on(table.orderId),
     index('review_eligibilities_consumed_at').on(table.consumedAt),
@@ -379,3 +410,8 @@ export const ugcServiceSchema = {
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;
+
+/**
+ * 이 BC 의 트랜잭션 타입. 스키마 옆이 정본이다 — 모듈마다 다시 선언하면 서로를 import 하게 된다.
+ */
+export type UgcTx = TxFor<UgcServiceSchema>;

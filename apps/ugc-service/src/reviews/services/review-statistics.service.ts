@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, exists, gte, isNull, lt, sql } from 'drizzle-orm';
-import { reactions, reviewComments, reviewEligibilities, reviewMedia, reviews, type UgcServiceSchema } from '../../db/schema';
+import { reactions, reviewComments, reviewMedia, reviews, type UgcServiceSchema } from '../../db/schema';
+import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
 import {
   AdminReviewStatisticsResponseDto,
   BestReviewDto,
@@ -46,7 +47,10 @@ const BEST_REVIEWS_LIMIT = 5;
 
 @Injectable()
 export class ReviewStatisticsService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<UgcServiceSchema>,
+    private readonly permissionService: ReviewPermissionService,
+  ) {}
 
   private get client() {
     return this.db.db;
@@ -169,13 +173,8 @@ export class ReviewStatisticsService {
         .from(reviewComments)
         .innerJoin(reviews, eq(reviewComments.reviewId, reviews.id))
         .where(base),
-      this.client
-        .select({
-          eligibleCount: count(),
-          consumedCount: sql<number>`count(*) filter (where ${reviewEligibilities.consumedAt} is not null)::int`,
-        })
-        .from(reviewEligibilities)
-        .where(and(gte(reviewEligibilities.eligibleAt, fromTs), lt(reviewEligibilities.eligibleAt, toExclusiveTs))),
+      // 자격 표는 권한 모듈이 소유한다 — 같은 Promise.all 안이라 왕복은 늘지 않는다.
+      this.permissionService.countIssuedInRange(fromTs, toExclusiveTs),
       this.client.select({ count: count() }).from(lowRatedQualified),
       this.client
         .select({ count: sql<number>`count(distinct ${reviews.productId})::int` })

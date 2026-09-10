@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DbService, InjectDb, TxFor } from '@app/db';
+import { DbService, InjectDb } from '@app/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { reviewRewardRules, type UgcServiceSchema } from '../../db/schema';
+import { reviewRewardRules, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { EvaluableRule } from './reward-rule.evaluator';
 import {
   ReviewRewardConditions,
@@ -10,7 +10,7 @@ import {
   ReviewRewardTrigger,
 } from './reward-rule.types';
 
-export type UgcTx = TxFor<UgcServiceSchema>;
+export type { UgcTx } from '../../db/schema';
 
 export interface ReviewRewardRuleRow {
   id: string;

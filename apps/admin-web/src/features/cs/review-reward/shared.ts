@@ -46,6 +46,7 @@ export const SKIP_REASON_LABELS: Record<string, string> = {
   PER_USER_LIMIT: '1인당 한도 초과',
   GLOBAL_LIMIT: '전체 예산 상한 초과',
   AMOUNT_ZERO: '계산 결과가 0원',
+  NON_ORDER_PROVIDER: '주문으로 얻은 권한이 아니라 지급 대상 아님',
   UNKNOWN: '사유 없음',
 };
 

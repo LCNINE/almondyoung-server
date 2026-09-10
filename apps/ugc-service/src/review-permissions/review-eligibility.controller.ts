@@ -1,19 +1,19 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
-import { UgcInternalAuth } from '../../shared/decorators/internal-auth.decorator';
+import { UgcInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { ReviewEligibilityListQueryDto } from '../dto/review-eligibility-query.dto';
-import { CreateReviewEligibilityDto } from '../dto/create-review-eligibility.dto';
-import { ReviewEligibilityResponseDto } from '../dto/review-eligibility-response.dto';
-import { ReviewMapper } from '../mappers';
-import { ReviewEligibilityService } from '../services/review-eligibility.service';
+import { ReviewEligibilityListQueryDto } from './dto/review-eligibility-query.dto';
+import { CreateReviewEligibilityDto } from './dto/create-review-eligibility.dto';
+import { ReviewEligibilityResponseDto } from './dto/review-eligibility-response.dto';
+import { ReviewPermissionMapper } from './review-permission.mapper';
+import { ReviewPermissionService } from './review-permission.service';
 
 @ApiTags('Reviews')
 @Controller('reviews/eligibilities')
 export class ReviewEligibilityController {
-  constructor(private readonly eligibilityService: ReviewEligibilityService) {}
+  constructor(private readonly permissionService: ReviewPermissionService) {}
 
   /**
    * 내부 서비스 전용: Medusa 구매확정(confirm-purchase) 시 서버에서 호출.
@@ -25,8 +25,8 @@ export class ReviewEligibilityController {
   @UgcInternalAuth()
   @ApiOperation({ summary: '구매확정 후 리뷰 작성 자격 등록 (내부 호출)' })
   async create(@Body() dto: CreateReviewEligibilityDto): Promise<ReviewEligibilityResponseDto[]> {
-    const created = await this.eligibilityService.create(dto);
-    return created.map((e) => ReviewMapper.toEligibilityResponse(e));
+    const created = await this.permissionService.create(dto);
+    return created.map((e) => ReviewPermissionMapper.toEligibilityResponse(e));
   }
 
   @Get()
@@ -68,10 +68,10 @@ export class ReviewEligibilityController {
     @User('userId') userId: string,
     @Query() query: ReviewEligibilityListQueryDto,
   ): Promise<PaginatedResponseDto<ReviewEligibilityResponseDto>> {
-    const result = await this.eligibilityService.listByUser(userId, query);
+    const result = await this.permissionService.listByUser(userId, query);
     return {
       ...result,
-      data: result.data.map((e) => ReviewMapper.toEligibilityResponse(e)),
+      data: result.data.map((e) => ReviewPermissionMapper.toEligibilityResponse(e)),
     };
   }
 }

@@ -36,6 +36,13 @@
       "when": 1788980608159,
       "tag": "20260909190328_add-cron-runs",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788997483837,
+      "tag": "20260909234443_add-review-permission-provider",
+      "breakpoints": true
     }
   ]
 }
