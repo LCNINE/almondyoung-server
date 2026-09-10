@@ -43,6 +43,7 @@ export function CmsAccountFields({ value, onChange, checkState, onCheckStateChan
 
   const canCheck =
     value.paymentCompany.length === 3 && value.paymentNumber.length >= 4 && isValidPayerNumber(value.payerNumber);
+  const isPayerNameLocked = checkState === 'verified' && Boolean(value.payerName);
 
   // 계좌를 특정하는 세 값 중 하나라도 바뀌면 직전 확인 결과는 무효다.
   const patch = (next: Partial<CmsAccountDetails>) => {
@@ -76,7 +77,9 @@ export function CmsAccountFields({ value, onChange, checkState, onCheckStateChan
         message?: string | null;
       };
       if (!res.ok) {
+        // 호출 상한(429)·인증·장애 — 어느 쪽도 «계좌가 틀렸다»는 확답이 아니므로 등록을 막지 않는다.
         setCheckError(data.error ?? '계좌 확인에 실패했습니다.');
+        onCheckStateChange('unavailable');
         return;
       }
       if (data.verified) {
@@ -143,8 +146,14 @@ export function CmsAccountFields({ value, onChange, checkState, onCheckStateChan
           <div>
             <p className="font-semibold text-emerald-900">계좌가 확인되었습니다</p>
             <p className="mt-0.5">
-              예금주 <strong>{value.payerName || '—'}</strong> 님의 계좌입니다. 이대로 등록하면 은행 확인 단계에서
-              거절되지 않습니다.
+              {value.payerName ? (
+                <>
+                  예금주 <strong>{value.payerName}</strong> 님의 계좌입니다. 이대로 등록하면 은행 확인 단계에서 거절되지
+                  않습니다.
+                </>
+              ) : (
+                <>예금주명만 조회되지 않았습니다. 계좌의 실제 예금주 성함을 아래에 직접 입력해주세요.</>
+              )}
             </p>
           </div>
         </div>
@@ -203,13 +212,13 @@ export function CmsAccountFields({ value, onChange, checkState, onCheckStateChan
           value={value.payerName}
           onChange={(e) => onChange({ ...value, payerName: e.target.value })}
           maxLength={15}
-          readOnly={checkState === 'verified'}
-          className={checkState === 'verified' ? 'bg-muted text-muted-foreground' : undefined}
+          // 조회로 «채워졌을 때만» 잠근다. 계좌는 확인됐는데 이름만 못 받아온 경우까지 잠그면
+          // 빈 값 + readOnly + required 가 되어 등록이 아예 막힌다.
+          readOnly={isPayerNameLocked}
+          className={isPayerNameLocked ? 'bg-muted text-muted-foreground' : undefined}
           required
         />
-        {checkState === 'verified' && (
-          <p className="text-[11px] text-muted-foreground">은행 조회로 확인된 예금주명입니다.</p>
-        )}
+        {isPayerNameLocked && <p className="text-[11px] text-muted-foreground">은행 조회로 확인된 예금주명입니다.</p>}
       </div>
 
       <div className="space-y-1.5">

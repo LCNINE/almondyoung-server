@@ -60,6 +60,35 @@ describe('CmsAccountCheckService', () => {
     expect(cmsApi.inquirePayerName).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['flag missing', {}],
+    ['flag null', { flag: null }],
+    ['unknown flag', { flag: 'X' }],
+  ])('does not call an unreadable response a mismatch (%s)', async (_label, result) => {
+    const { dbService } = makeDb();
+    const cmsApi = {
+      verifyPayerNumber: jest.fn().mockResolvedValue({ ok: true, data: { check: { result } } }),
+      inquirePayerName: jest.fn(),
+    };
+    const service = new CmsAccountCheckService(dbService as never, cmsApi as never);
+
+    // 응답을 해석하지 못한 것을 «계좌가 틀렸다»로 단정하면 멀쩡한 계좌가 차단된다.
+    expect(await service.check('user-1', input)).toMatchObject({ verified: false, reason: 'UNAVAILABLE' });
+  });
+
+  it('never stores an unmasked account number', async () => {
+    const { dbService, inserted } = makeDb();
+    const cmsApi = {
+      verifyPayerNumber: jest.fn().mockResolvedValue(pass({ paymentNumber: '1234567890' })),
+      inquirePayerName: jest.fn().mockResolvedValue(pass({ payerName: '홍길동' })),
+    };
+    const service = new CmsAccountCheckService(dbService as never, cmsApi as never);
+
+    await service.check('user-1', input);
+
+    expect(inserted[0].maskedPaymentNumber).toBeNull();
+  });
+
   it('treats a provider failure as UNAVAILABLE so unsupported banks can still register', async () => {
     const { dbService } = makeDb();
     const cmsApi = {

@@ -261,6 +261,8 @@ export async function updateCmsBankAccount(
   }
 }
 
+export type CmsAccountCheckError = Error & { statusCode?: number; code?: string };
+
 export interface CmsAccountCheckResult {
   verified: boolean;
   payerName: string | null;
@@ -284,7 +286,10 @@ export async function checkCmsAccount(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.message ?? `계좌 확인 실패 (${res.status})`);
+    const error = new Error(body?.message ?? `계좌 확인 실패 (${res.status})`) as CmsAccountCheckError;
+    error.statusCode = res.status;
+    error.code = body?.code as string | undefined;
+    throw error;
   }
   return res.json();
 }

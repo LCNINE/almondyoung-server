@@ -54,10 +54,19 @@ export class CmsAccountCheckService {
     }
 
     const check = verify.data.check ?? {};
-    if (!this.isPass(check)) {
+    const flag = check.result?.flag;
+    if (flag !== 'Y') {
       const code = check.result?.code ?? null;
       const message = check.result?.message ?? null;
       await this.record(userId, input.paymentCompany, check.paymentNumber ?? null, false, code, message);
+      // «틀렸다»는 확답은 flag='N' 뿐이다. flag 가 비어 있거나 모르는 값이면 응답을 해석하지
+      // 못한 것이므로 UNAVAILABLE 로 내린다 — 멀쩡한 계좌를 불일치로 단정해 막지 않는다.
+      if (flag !== 'N') {
+        this.logger.warn(
+          `Account check got an unreadable flag. userId=${userId} bank=${input.paymentCompany} flag=${String(flag)} code=${String(code)}`,
+        );
+        return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE };
+      }
       return { verified: false, reason: 'MISMATCH', message: MISMATCH_MESSAGE };
     }
 
@@ -117,7 +126,9 @@ export class CmsAccountCheckService {
     await this.dbService.db.insert(cmsAccountChecks).values({
       userId,
       paymentCompany,
-      maskedPaymentNumber: maskedPaymentNumber?.slice(0, 32) ?? null,
+      // 효성이 마스킹해 준 값만 남긴다. 마스킹이 안 된 채로 오면(응답 스키마 변경 등)
+      // 전체 계좌번호를 우리 DB 에 적재하게 되므로 차라리 버린다.
+      maskedPaymentNumber: maskedPaymentNumber?.includes('*') ? maskedPaymentNumber.slice(0, 32) : null,
       verified,
       resultCode: resultCode?.slice(0, 16) ?? null,
       resultMessage,

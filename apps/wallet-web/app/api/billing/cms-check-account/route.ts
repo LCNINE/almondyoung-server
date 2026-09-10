@@ -1,4 +1,4 @@
-import { checkCmsAccount } from '@/lib/wallet-api';
+import { CmsAccountCheckError, checkCmsAccount } from '@/lib/wallet-api';
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 
 export async function POST(request: Request) {
@@ -19,6 +19,8 @@ export async function POST(request: Request) {
     return Response.json(result, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : '계좌 확인 중 오류가 발생했습니다.';
-    return Response.json({ error: message }, { status: message.includes('(4') ? 400 : 502 });
+    // 백엔드가 준 상태코드를 그대로 넘긴다 — 특히 429(호출 상한)를 502 로 뭉개면 장애로 오인된다.
+    const statusCode = (err as CmsAccountCheckError)?.statusCode;
+    return Response.json({ error: message }, { status: statusCode && statusCode >= 400 ? statusCode : 502 });
   }
 }
