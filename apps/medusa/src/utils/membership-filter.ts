@@ -27,6 +27,8 @@ export type MembershipProduct = {
 export type MemberState = {
   customerId?: string;
   isMember: boolean;
+  /** 고객이 속한 customer group id 목록. pricing context 의 price list rule 매칭에 쓴다. */
+  groupIds: string[];
 };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -200,6 +202,7 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
     return {
       customerId,
       isMember: false,
+      groupIds: [],
     };
   }
 
@@ -216,6 +219,7 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
       return {
         customerId,
         isMember: false,
+        groupIds: [],
       };
     }
 
@@ -224,16 +228,18 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
       return {
         customerId,
         isMember: false,
+        groupIds: [],
       };
     }
 
-    const isMember = firstCustomer.groups.some((group) => {
-      return isRecord(group) && group.id === membershipGroupId;
-    });
+    const groupIds = firstCustomer.groups
+      .map((group) => (isRecord(group) && typeof group.id === 'string' ? group.id : null))
+      .filter((id): id is string => id !== null);
 
     return {
       customerId,
-      isMember,
+      isMember: groupIds.includes(membershipGroupId),
+      groupIds,
     };
   } catch (error) {
     console.error('[membership-filter] 멤버십 확인 실패:', error);
@@ -241,6 +247,7 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
     return {
       customerId,
       isMember: false,
+      groupIds: [],
     };
   }
 };

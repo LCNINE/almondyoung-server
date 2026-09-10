@@ -6,6 +6,7 @@ import {
   resolveMemberState,
   type MembershipProduct,
 } from '../../../utils/membership-filter';
+import { buildPricingContext } from '../../../utils/pricing-context';
 
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'review_count';
 type SortOrder = 'asc' | 'desc';
@@ -27,7 +28,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   try {
     const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-    const { isMember } = await resolveMemberState(req);
+    const { isMember, groupIds } = await resolveMemberState(req);
 
     const sortBy = (req.query.sort_by as SortBy) || 'sales_count';
     const order = (req.query.order as SortOrder) || 'desc';
@@ -68,9 +69,26 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       return res.json({ products: [], count: 0 });
     }
 
-    // pricing context 구성
+    // pricing context 구성. 이 라우트엔 코어의 setPricingContext 미들웨어가 안 붙으므로
+    // region_id 와 customer group 을 직접 채운다 — 안 채우면 price list rule 매칭이 통째로
+    // 건너뛰어져 «비회원의» calculated_price 까지 멤버십 price list 가격이 된다.
+    // 비회원에게 멤버십가를 보여주는 것 자체는 정상이고, 그건 metadata.membershipPrice 가
+    // 맡는다. 결제 기준가가 바뀌면 스토어프론트가 "이미 할인 적용됨"으로 읽어
+    // 멤버십할인가 뱃지를 못 그린다 (utils/pricing-context.ts 참조).
+    const { data: regions } = await query.graph({
+      entity: 'region',
+      fields: ['id'],
+      filters: { currency_code: currencyCode },
+    });
     const context: Record<string, unknown> = {};
-    const pricingContext = (req as any).pricingContext ?? { currency_code: currencyCode };
+    const pricingContext =
+      (req as any).pricingContext ??
+      buildPricingContext({
+        currencyCode,
+        // 스토어프론트가 region_id 를 쿼리로 넘기게 바꾼다.
+        regionId: (regions as Array<{ id?: string }> | undefined)?.[0]?.id,
+        customerGroupIds: groupIds,
+      });
     if (isPresent(pricingContext)) {
       context['variants'] = {
         calculated_price: QueryContext(pricingContext),
