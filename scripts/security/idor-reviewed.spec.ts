@@ -536,7 +536,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:597',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:603',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
@@ -565,7 +565,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:723',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:729',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
@@ -577,7 +577,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:547',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:553',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
@@ -589,9 +589,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:131',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:137',
     predicate: 'eq(reviewEligibilities.userId, input.userId),',
-    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, 권한 모듈의 assertConsumable 이 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가.',
+    note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, 권한 모듈의 consume 이 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가. 소유권 술어는 확인과 소비를 합친 조건부 UPDATE 의 WHERE 에 그대로 남아 있다.',
   },
   'ugc-service POST /reviews/:id/reactions': {
     verdict: 'SAFE',

@@ -98,8 +98,8 @@ describe('ReviewsService — stats 발행 통합', () => {
     statsPublisher = { publishProductReviewStatsChanged: jest.fn().mockResolvedValue(undefined) };
 
     const permissionService = {
-      assertConsumable: jest.fn().mockResolvedValue({ id: 'elig-1', orderLineAmount: null }),
-      markConsumed: jest.fn().mockResolvedValue(undefined),
+      consume: jest.fn().mockResolvedValue({ id: 'elig-1', orderLineAmount: null }),
+      linkConsumedReview: jest.fn().mockResolvedValue(undefined),
     } as any;
     const rewardGrantService = {
       evaluateForNewReview: jest.fn().mockResolvedValue(null),
@@ -239,8 +239,8 @@ describe('updateStatus — soft-deleted 리뷰 업데이트 방지', () => {
     };
 
     const permissionService = {
-      assertConsumable: jest.fn().mockResolvedValue({ id: 'elig-1', orderLineAmount: null }),
-      markConsumed: jest.fn().mockResolvedValue(undefined),
+      consume: jest.fn().mockResolvedValue({ id: 'elig-1', orderLineAmount: null }),
+      linkConsumedReview: jest.fn().mockResolvedValue(undefined),
     } as any;
     const rewardGrantService = {
       evaluateForNewReview: jest.fn().mockResolvedValue(null),

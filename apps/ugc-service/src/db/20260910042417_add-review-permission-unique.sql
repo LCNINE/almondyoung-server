@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "reviews_review_permission_unique" ON "reviews" USING btree ("review_permission_id") WHERE "reviews"."review_permission_id" is not null;

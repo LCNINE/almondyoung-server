@@ -43,6 +43,13 @@
       "when": 1788997483837,
       "tag": "20260909234443_add-review-permission-provider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789014257729,
+      "tag": "20260910042417_add-review-permission-unique",
+      "breakpoints": true
     }
   ]
 }

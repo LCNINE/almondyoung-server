@@ -432,8 +432,9 @@ export class ReviewsService {
 
   async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
     const result = await this.inTx(async (tx) => {
-      // 1. 리뷰 작성 «권한» 확인 — 판정은 권한 모듈이 한다. 리뷰 모듈은 물어보기만 한다.
-      const eligibility = await this.permissionService.assertConsumable(
+      // 1. 리뷰 작성 «권한» 선점 — 판정은 권한 모듈이 한다. 리뷰 모듈은 물어보기만 한다.
+      // 확인과 소비가 한 문장이라 겹친 요청 중 뒤에 온 쪽은 여기서 거절된다(이 트랜잭션이 롤백된다).
+      const eligibility = await this.permissionService.consume(
         { permissionId: dto.eligibilityId, userId, productId: dto.productId },
         tx,
       );
@@ -456,8 +457,9 @@ export class ReviewsService {
 
       await this.insertReviewMedia(review.id, mediaFileIds, tx);
 
-      // 3. 자격 소비 처리 — 리뷰 생성과 같은 트랜잭션이다.
-      await this.permissionService.markConsumed(eligibility.id, review.id, tx);
+      // 3. 선점한 자격에 이 리뷰를 잇는다 — 소비 판정은 1단계에서 이미 끝났고, 여기서는
+      // 참조만 채운다. 리뷰 생성과 같은 트랜잭션이다.
+      await this.permissionService.linkConsumedReview(eligibility.id, review.id, tx);
 
       // 보상 판정 → 원장 기록 → 적립 명령 적재까지 전부 이 트랜잭션 안이다.
       // 리뷰는 남았는데 지급 기록만 없거나, 기록은 있는데 명령이 유실되는 창을 두지 않는다.

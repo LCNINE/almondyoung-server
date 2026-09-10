@@ -57,7 +57,7 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
     const dbService = { db: { transaction: (fn: (t: unknown) => unknown) => fn(tx) } } as never;
     const service = new ReviewsService(
       dbService,
-      { assertConsumable: jest.fn(), markConsumed: jest.fn() } as never,
+      { consume: jest.fn(), linkConsumedReview: jest.fn() } as never,
       { calculateReward: jest.fn() } as never,
       { publishEarnPointsCommand: jest.fn() } as never,
       { publishProductReviewStatsChanged: jest.fn() } as never,
