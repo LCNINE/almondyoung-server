@@ -36,6 +36,10 @@ export * from './guards/event-type.guard';
 export * from './consumers/consumer-discovery';
 export * from './consumers/consumer-interceptors';
 
+// Consumer lag 관측 (#815) — 계기는 파사드, 폴러는 startConsumer 가 띄운다
+export * from './consumers/consumer-lag.metrics';
+export * from './consumers/consumer-lag.collector';
+
 // DLQ
 export * from './dlq/dlq.types';
 export * from './dlq/dlq-handler.service';

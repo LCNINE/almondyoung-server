@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { sql } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
@@ -139,7 +139,7 @@ export class FulfillmentReservationReconciliationService {
    * 야간 대사 — Task 10 원장 대사(03:00) 뒤 staggered. drift 를 게이지로 표면화하고 heal.
    * 잡 예외가 스케줄러를 죽이지 않도록 try/catch.
    */
-  @Cron('5 3 * * *', { name: 'zombie-reservation-reconciliation', timeZone: 'Asia/Seoul' })
+  @CronOnce('5 3 * * *', { name: 'zombie-reservation-reconciliation', timeZone: 'Asia/Seoul' })
   async scheduledReconcile(): Promise<void> {
     try {
       const result = await this.reconcileAndHeal();

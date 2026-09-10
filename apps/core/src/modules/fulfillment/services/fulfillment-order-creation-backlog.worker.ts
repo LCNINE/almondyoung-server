@@ -30,6 +30,7 @@ export class FulfillmentOrderCreationBacklogWorker {
     return this.dbService.db;
   }
 
+  // cron-overlap-safe: FOR UPDATE SKIP LOCKED 로 대기 행을 집고 status='processing' + locked_at 로 5분 lease 를 건다 (claimPending). 인스턴스가 겹쳐도 한 행은 한 번만 처리된다. 스케일아웃 대상 폴러라 주기당 한 번으로 묶지 않는다 (ADR-0036).
   @Cron(CronExpression.EVERY_10_SECONDS)
   async processPending() {
     if (!this.workflowGate.shouldRunFoCreation()) {

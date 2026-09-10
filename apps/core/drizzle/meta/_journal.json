@@ -624,6 +624,13 @@
       "when": 1788875844772,
       "tag": "20260908135724_add-replenishment-rule-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788979640993,
+      "tag": "20260909184720_add-cron-runs",
+      "breakpoints": true
     }
   ]
 }

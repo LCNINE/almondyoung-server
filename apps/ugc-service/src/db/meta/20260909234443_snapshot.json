@@ -1,6 +1,6 @@
 {
   "id": "bd58ddb1-640b-4cf5-8ae5-14638cac8d4c",
-  "prevId": "3b5d8d8e-a196-4ce7-9aca-0f40f6d5f1ab",
+  "prevId": "4defdb2d-2d3d-4238-9efe-022c30fb7ec8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2323,6 +2323,64 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cron_runs": {
+      "name": "cron_runs",
+      "schema": "",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_at": {
+          "name": "period_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_by": {
+          "name": "claimed_by",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "cron_runs_name_period_at_pk": {
+          "name": "cron_runs_name_period_at_pk",
+          "columns": [
+            "name",
+            "period_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

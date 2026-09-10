@@ -8,6 +8,7 @@ import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
+import { CronOnceModule } from '@app/cron-once';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { config } from 'dotenv';
 import { existsSync } from 'fs';
@@ -120,6 +121,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     }),
 
     SCHEDULE_ROOT,
+    CronOnceModule,
     AuthorizationModule.forRoot({
       microserviceName: 'user-service',
       scopes: [

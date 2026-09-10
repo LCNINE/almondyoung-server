@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { CronOnce } from '@app/cron-once';
 import { DbService } from '@app/db';
 import { and, eq, lt } from 'drizzle-orm';
 import { WalletSchema, checkoutSessions } from '../schema';
@@ -10,7 +10,7 @@ export class CheckoutSessionExpirationService {
 
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 
-  @Cron('0 */10 * * * *')
+  @CronOnce('0 */10 * * * *', { name: 'checkout-session-expiration' })
   async expireStale(): Promise<void> {
     const now = new Date();
 

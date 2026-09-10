@@ -142,27 +142,38 @@ describe('FormExportJobWorker.purge', () => {
 });
 
 /**
- * `@Cron` 데코레이터는 그 자체로는 아무 것도 하지 않는다 — 클래스가 Nest 컨테이너의
- * provider 로 등록돼야 `ScheduleModule` 의 `ScheduleExplorer`(discovery 로 전체 provider를
- * 훑는다)가 찾아 `SchedulerRegistry` 에 실제 cron job 으로 마운트한다. 이 스위트는 그
- * 배선이 실제로 동작하는지(브리프가 그렇다고 가정만 하고 검증하지 않은 지점) 실제
- * `@nestjs/schedule` 로 증명한다 — `.compile()` 만으로는 부족하고(onModuleInit/
- * onApplicationBootstrap 을 안 돈다) `.init()` 까지 불러야 ScheduleExplorer.explore() 와
- * SchedulerOrchestrator.mountCron() 이 실행된다.
+ * `tick` 은 여전히 네이티브 `@Cron`(스케일아웃 폴러, cron-overlap-safe 마커)이고 `purge` 는
+ * `@CronOnce`(#821)로 바뀌었다 — 각각 다른 explorer(`ScheduleExplorer`/`CronOnceExplorer`)가
+ * discovery 로 훑어 같은 `SchedulerRegistry` 에 마운트한다. 이 스위트는 그 배선이 실제로
+ * 동작하는지(브리프가 그렇다고 가정만 하고 검증하지 않은 지점) 실제 `@nestjs/schedule` +
+ * `@app/cron-once` 로 증명한다 — `.compile()` 만으로는 부족하고(onModuleInit/
+ * onApplicationBootstrap 을 안 돈다) `.init()` 까지 불러야 두 explorer 의 마운트가 실행된다.
  */
 describe('FormExportJobWorker 크론 등록', () => {
-  it('ScheduleModule.forRoot() 아래에서 tick·purge 두 크론잡이 실제로 마운트된다', async () => {
+  it('ScheduleModule.forRoot() + CronOnceModule 아래에서 tick·purge 두 크론잡이 실제로 마운트된다', async () => {
     const { Test } = await import('@nestjs/testing');
+    const { Global, Module } = await import('@nestjs/common');
     const { ScheduleModule, SchedulerRegistry } = await import('@nestjs/schedule');
+    const { CronOnceModule } = await import('@app/cron-once');
     const { ConfigService } = await import('@nestjs/config');
+    const { DbService } = await import('@app/db');
     const { FormExportJobManager } = await import('./form-export-job.manager');
     const { FormExportManager } = await import('./form-export.manager');
 
     const jobManager = { claim: jest.fn((): Promise<null> => Promise.resolve(null)) };
     const manager = { purgeExpired: jest.fn((): Promise<number> => Promise.resolve(0)) };
+    const db = { run: jest.fn(() => Promise.resolve([])), db: { execute: jest.fn(() => Promise.resolve([])) } };
+
+    // CronOnceModule 의 CronRunClaimer 는 자기 모듈 안에서 DbService 를 찾는다 — @Global()
+    // 은 «내가 export 하는 것을 남에게 보여준다» 방향으로만 작동하고, 반대로 이 테스트 루트의
+    // 로컬 provider 를 CronOnceModule 안으로 끌어오지는 않는다. 그래서 DbService mock 도
+    // 똑같이 전역 모듈로 감싸 넘긴다.
+    @Global()
+    @Module({ providers: [{ provide: DbService, useValue: db }], exports: [DbService] })
+    class FakeDbModule {}
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ScheduleModule.forRoot()],
+      imports: [ScheduleModule.forRoot(), FakeDbModule, CronOnceModule],
       providers: [
         FormExportJobWorker,
         { provide: FormExportJobManager, useValue: jobManager },

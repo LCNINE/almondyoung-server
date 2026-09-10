@@ -194,26 +194,36 @@ describe('SalesOrderModule 배선', () => {
 });
 
 /**
- * `@Cron` 데코레이터는 그 자체로는 아무 것도 하지 않는다 — 클래스가 Nest 컨테이너의
- * provider 로 등록돼야 `ScheduleModule` 의 `ScheduleExplorer` 가 찾아 실제 cron job 으로
- * 마운트한다. 파기가 "코드에는 있는데 안 도는" 상태로 배포되는 것이 이 태스크의 가장 나쁜
- * 결말이므로 배선 자체를 테스트로 고정한다.
+ * `@CronOnce` 데코레이터는 그 자체로는 아무 것도 하지 않는다(#821) — 클래스가 Nest 컨테이너의
+ * provider 로 등록돼야 `CronOnceModule` 의 `CronOnceExplorer` 가 찾아 `SchedulerRegistry` 에
+ * 실제 cron job 으로 마운트한다. 파기가 "코드에는 있는데 안 도는" 상태로 배포되는 것이 이
+ * 태스크의 가장 나쁜 결말이므로 배선 자체를 테스트로 고정한다.
  *
  * 여기서 `ScheduleModule.forRoot()` 를 부르는 것은 격리된 테스트 앱을 세우는 정상 사용이다
- * (#599 가드는 스펙을 제외한다). 프로덕션 배선은 `SCHEDULE_ROOT` 상수 하나를 공유하며,
- * core 에서는 `CoreInventoryModule` 이 이미 그걸 import 하고 있다.
+ * (#599 가드는 스펙을 제외한다). 프로덕션 배선은 `SCHEDULE_ROOT`·`CronOnceModule` 을 core
+ * `app.module.ts` 가 이미 import 하고 있다.
  */
 describe('EntrancePasswordCleaner 크론 등록', () => {
-  it('ScheduleModule.forRoot() 아래에서 스윕 크론잡이 실제로 마운트된다', async () => {
+  it('CronOnceModule 아래에서 스윕 크론잡이 실제로 마운트된다', async () => {
     const { Test } = await import('@nestjs/testing');
+    const { Global, Module } = await import('@nestjs/common');
     const { ScheduleModule, SchedulerRegistry } = await import('@nestjs/schedule');
+    const { CronOnceModule } = await import('@app/cron-once');
     const { DbService } = await import('@app/db');
 
-    const db = { run: jest.fn(() => Promise.resolve([])) };
+    const db = { run: jest.fn(() => Promise.resolve([])), db: { execute: jest.fn(() => Promise.resolve([])) } };
+
+    // CronOnceModule 의 CronRunClaimer 는 자기 모듈 안에서 DbService 를 찾는다 — @Global()
+    // 은 «내가 export 하는 것을 남에게 보여준다» 방향으로만 작동하고, 반대로 이 테스트 루트의
+    // 로컬 provider 를 CronOnceModule 안으로 끌어오지는 않는다. 그래서 DbService mock 도
+    // 똑같이 전역 모듈로 감싸 넘긴다.
+    @Global()
+    @Module({ providers: [{ provide: DbService, useValue: db }], exports: [DbService] })
+    class FakeDbModule {}
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ScheduleModule.forRoot()],
-      providers: [EntrancePasswordCleaner, { provide: DbService, useValue: db }],
+      imports: [ScheduleModule.forRoot(), FakeDbModule, CronOnceModule],
+      providers: [EntrancePasswordCleaner],
     }).compile();
 
     expect(moduleRef.get(SchedulerRegistry).getCronJobs().size).toBe(0);
