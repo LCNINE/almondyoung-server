@@ -249,7 +249,7 @@ export interface CreateMasterDto {
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
   isOverseas?: boolean;
-  productInfo?: ProductInfoJson;
+  productInfo?: ProductInfoJson | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
 

@@ -230,7 +230,7 @@ export type UpdateMasterVersionDto = {
   isMembershipOnly?: boolean;
   fulfillmentKind?: 'physical' | 'digital';
   shippingGroupCode?: string | null;
-  productInfo?: ProductInfo;
+  productInfo?: ProductInfo | null;
   optionDiff?: ProductOptionDiff;
 };
 

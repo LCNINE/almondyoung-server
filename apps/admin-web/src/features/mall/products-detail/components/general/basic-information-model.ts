@@ -207,12 +207,23 @@ export function flattenCategoryTree(
   });
 }
 
-/** 빈 값은 키째로 빼서 저장한다 — 스토어프론트 표는 값이 없는 행을 빈칸으로 그린다. */
-export function toProductInfoDto(values: ProductInfoValues): ProductInfoValues {
+/**
+ * 빈 값은 키째로 빼서 저장한다 — 스토어프론트 표는 값이 없는 행을 빈칸으로 그린다.
+ *
+ * 한 칸도 안 채웠으면 `{}` 가 아니라 **null** 이다. 두 가지를 동시에 지킨다:
+ * 이름만 고치고 저장한 상품이 `null → {}` 로 바뀌어 버전 비교에 «productInfo 변경됨»
+ * 으로 잡히지 않고(비교가 `JSON.stringify` 라 `"null" !== "{}"` 다), 값이 있던 상품을
+ * 전부 비워 저장하면 실제로 지워진다(키를 빼 버리면 옛 값이 그대로 남는다).
+ */
+export function toProductInfoDto(
+  values: ProductInfoValues
+): ProductInfoValues | null {
   const entries = PRODUCT_INFO_FIELDS.map(
     ({ key }) => [key, values[key]?.trim() ?? ''] as const
   ).filter(([, value]) => value.length > 0);
-  return Object.fromEntries(entries) as ProductInfoValues;
+  return entries.length > 0
+    ? (Object.fromEntries(entries) as ProductInfoValues)
+    : null;
 }
 
 export function toBasicInformationUpdateDto(
