@@ -30,15 +30,22 @@ export function KpiTile({
         ) : (
           <p className="text-2xl font-bold mt-1 text-gray-900 tabular-nums">{value}</p>
         )}
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          {rate != null && (
-            <span className={cn('font-medium tabular-nums', rate >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+        {rate != null && (
+          <div className="mt-1 flex items-center gap-2 text-xs">
+            <span
+              className={cn(
+                'font-medium tabular-nums whitespace-nowrap',
+                rate >= 0 ? 'text-emerald-600' : 'text-red-600',
+              )}
+            >
               {rate >= 0 ? '▲' : '▼'} {formatPercent(Math.abs(rate))}
             </span>
-          )}
-          {previous && rate != null && <span className="text-gray-400">전기간 대비</span>}
-          {hint && <span className="text-gray-400">{hint}</span>}
-        </div>
+            <span className="whitespace-nowrap text-gray-400">전기간 대비</span>
+          </div>
+        )}
+        {/* hint 는 «자기 줄»에 둔다. 증감 배지와 같은 flex 줄에 놓으면 셋이 서로를 쥐어짜
+            「전기간 대 / 비」처럼 낱말 중간에서 끊긴다(리뷰·이익·매출 타일에서 실측). */}
+        {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
       </CardContent>
     </Card>
   );
