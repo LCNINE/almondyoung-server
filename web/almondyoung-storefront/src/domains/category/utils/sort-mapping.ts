@@ -3,6 +3,8 @@ import type { SortOptions } from "@/domains/category/components/refinement-list/
 
 export const DEFAULT_CATEGORY_SORT: SortOptions = "review_count_desc"
 
+const NEW_ARRIVALS_CATEGORY_HANDLE = "xfpg5f"
+
 /** 한 번에 불러올 상품 수 */
 export const PAGE_SIZE_OPTIONS = [12, 24, 60] as const
 export const DEFAULT_PAGE_SIZE = 12
@@ -22,12 +24,17 @@ const CATEGORY_SORT_OPTIONS = new Set<SortOptions>([
   "created_at",
 ])
 
-export function normalizeCategorySort(sortBy?: string): SortOptions {
+export function normalizeCategorySort(
+  sortBy?: string,
+  categoryHandle?: string,
+): SortOptions {
   if (sortBy && CATEGORY_SORT_OPTIONS.has(sortBy as SortOptions)) {
     return sortBy as SortOptions
   }
 
-  return DEFAULT_CATEGORY_SORT
+  return categoryHandle === NEW_ARRIVALS_CATEGORY_HANDLE
+    ? "created_at"
+    : DEFAULT_CATEGORY_SORT
 }
 
 /**

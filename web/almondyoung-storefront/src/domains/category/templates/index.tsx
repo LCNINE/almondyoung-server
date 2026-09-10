@@ -30,7 +30,7 @@ export function CategoryTemplate({
   segments?: string[]
 }) {
   const t = useTranslations("category.products")
-  const sort = normalizeCategorySort(sortBy)
+  const sort = normalizeCategorySort(sortBy, category?.handle)
   const pageSize = normalizePageSize(limit)
 
   const hasChildren =
