@@ -18,13 +18,36 @@ import { UpdateReviewDto } from '../dto/update-review.dto';
 import { type ReviewCommentEntity, type ReviewEntity, type ReviewStatus, type ReviewWithMediaEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
-import { GrantedPoints, ReviewRewardGrantService } from '../rewards/review-reward-grant.service';
+import {
+  GrantedPoints,
+  ReviewRewardGrantService,
+  type ReviewRewardRevokeReason,
+} from '../rewards/review-reward-grant.service';
 import { ReviewPermissionService } from '../../review-permissions/review-permission.service';
 import { ReviewRewardPublisher } from './review-reward-publisher.service';
 import { ReviewStatsPublisher } from './review-stats-publisher.service';
+import {
+  stillMeetsEditableConditions,
+  type EditableReviewFacts,
+} from '../rewards/reward-rule.evaluator';
 import type { RatingDistribution } from '@packages/event-contracts/streams';
 
 const SOURCE_SYSTEM = 'almondyoung';
+
+/**
+ * 회수 사유 → wallet 이 원장에 남길 사유 코드. 파생하지 않고 표로 두는 것은
+ * `REVIEW_DELETED` 의 코드가 이 규약(`review-reward-cancel:<사유 소문자>`)보다 먼저 자리를 잡아
+ * 이미 라이브 원장에 남아 있기 때문이다 — 파생으로 바꾸면 과거 행과 갈린다.
+ */
+const REVOKE_REASON_CODES: Record<ReviewRewardRevokeReason, string> = {
+  REVIEW_DELETED: 'review-reward-cancel:deleted',
+  REVIEW_HIDDEN: 'review-reward-cancel:hidden',
+  REVIEW_EDITED_BELOW_THRESHOLD: 'review-reward-cancel:edited_below_threshold',
+  ORDER_CANCELLED: 'review-reward-cancel:order_cancelled',
+  ORDER_CANCELLED_NOT_USER_FAULT: 'review-reward-cancel:order_cancelled_not_user_fault',
+  ORDER_RETURNED: 'review-reward-cancel:order_returned',
+  ORDER_RETURNED_NOT_USER_FAULT: 'review-reward-cancel:order_returned_not_user_fault',
+};
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
 
@@ -414,8 +437,12 @@ export class ReviewsService {
   /**
    * 리뷰가 사라지면 지급도 되돌린다. 적립 받고 지우기를 막는 유일한 장치다.
    */
-  private async revokeRewards(reviewId: string, tx: DbTransaction): Promise<void> {
-    const revoked = await this.rewardGrantService.revokeForReview(reviewId, 'REVIEW_DELETED', tx);
+  private async revokeRewards(
+    reviewId: string,
+    tx: DbTransaction,
+    reason: ReviewRewardRevokeReason = 'REVIEW_DELETED',
+  ): Promise<void> {
+    const revoked = await this.rewardGrantService.revokeForReview(reviewId, reason, tx);
 
     for (const grant of revoked) {
       await this.rewardPublisher.enqueueCancelPointsCommand(
@@ -423,11 +450,36 @@ export class ReviewsService {
           grantId: grant.grantId,
           reviewId,
           userId: grant.userId,
-          reasonCode: 'review-reward-cancel:deleted',
+          reasonCode: REVOKE_REASON_CODES[reason],
         },
         tx,
       );
     }
+  }
+
+  /**
+   * 수정으로 «지급 조건을 잃었으면» 회수한다. 조건을 «얻는» 방향은 아무것도 하지 않는다 —
+   * 조건에 못 미치는 리뷰로 받아 두고 나중에 채워 올리는 길을 열지 않기 위해서다(사용자 결정 ㉮).
+   *
+   * 살아 있는 지급이 없으면 조회 한 번으로 끝난다 — 활성 규칙 0건인 지금 상태에서
+   * 이 경로가 리뷰 수정에 얹는 비용은 그 조회 «하나»다.
+   */
+  private async revokeRewardsIfEditedBelowThreshold(
+    reviewId: string,
+    facts: EditableReviewFacts,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const conditions = await this.rewardGrantService.findEditSensitiveConditions(reviewId, tx);
+    if (conditions.length === 0) {
+      return;
+    }
+
+    const lost = conditions.some((condition) => !stillMeetsEditableConditions(condition, facts));
+    if (!lost) {
+      return;
+    }
+
+    await this.revokeRewards(reviewId, tx, 'REVIEW_EDITED_BELOW_THRESHOLD');
   }
 
   async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
@@ -565,6 +617,12 @@ export class ReviewsService {
       }
 
       const resolvedMediaFileIds = hasMediaUpdate ? mediaFileIds : await this.fetchMediaFileIdsByReviewId(id, tx);
+
+      await this.revokeRewardsIfEditedBelowThreshold(
+        review.id,
+        { contentLength: review.content.length, mediaCount: resolvedMediaFileIds.length, rating: review.rating },
+        tx,
+      );
 
       const reactionCountMap = await this.fetchReactionCounts([id], tx);
       const counts = reactionCountMap.get(id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
@@ -981,6 +1039,14 @@ export class ReviewsService {
       }
 
       productId = review.productId;
+
+      // 숨긴 리뷰는 고객에게 안 보이므로 그 대가로 나간 적립금도 되돌린다. 「적립 받고 지우기」와
+      // 같은 축이다. `revokeForReviews` 가 GRANTED 만 갱신하므로 다시 숨겨도 회수는 한 번뿐이고,
+      // `active` 로 되돌려도 «재적립하지 않는다» — 재적립 경로가 없고, 1인당 한도가 REVOKED 도
+      // 세므로 되살리지 않아도 어뷰즈가 열리지 않는다.
+      if (status === 'hidden') {
+        await this.revokeRewards(review.id, tx, 'REVIEW_HIDDEN');
+      }
 
       const mediaFileIds = await this.fetchMediaFileIdsByReviewId(id, tx);
       const reactionCountMap = await this.fetchReactionCounts([id], tx);

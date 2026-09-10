@@ -34,6 +34,9 @@ export interface ReviewFacts {
   orderLineAmount: number | null;
 }
 
+/** 리뷰 «수정»으로 바뀔 수 있는 사실만. 재판정은 이 축들만 다시 본다. */
+export type EditableReviewFacts = Pick<ReviewFacts, 'contentLength' | 'mediaCount' | 'rating'>;
+
 export interface UsageFacts {
   count: number;
   amount: number;
@@ -79,6 +82,24 @@ export function matchesConditions(conditions: ReviewRewardConditions, facts: Rev
   if (conditions.everyNthReview !== null && conditions.everyNthReview > 0) {
     if (facts.userReviewSequence % conditions.everyNthReview !== 0) return false;
   }
+  return true;
+}
+
+/**
+ * 리뷰를 «수정»한 뒤에도 그 규칙의 조건을 여전히 만족하는지 본다. `matchesConditions` 와 달리
+ * 수정으로 «바뀔 수 있는 축»만 본다 — 본문 길이·미디어 수·별점, 그리고 그 둘에서 파생되는 리뷰 종류다.
+ *
+ * `everyNthReview` 를 빼는 것은 그 값이 「그 사용자의 몇 번째 리뷰인가」라서 수정으로 변하지 않기
+ * 때문이다. 여기서 같이 재보면 이미 지급이 끝난 순번 조건을 되짚어 «수정과 무관한 회수»가 생긴다.
+ * 정률의 주문금액도 같은 이유로 빠진다.
+ */
+export function stillMeetsEditableConditions(conditions: ReviewRewardConditions, facts: EditableReviewFacts): boolean {
+  const reviewType = resolveReviewType(facts.mediaCount);
+
+  if (conditions.reviewType !== 'ANY' && conditions.reviewType !== reviewType) return false;
+  if (facts.contentLength < conditions.minContentLength) return false;
+  if (facts.mediaCount < conditions.minMediaCount) return false;
+  if (conditions.minRating !== null && facts.rating < conditions.minRating) return false;
   return true;
 }
 
