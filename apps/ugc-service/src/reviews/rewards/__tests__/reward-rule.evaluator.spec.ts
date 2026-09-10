@@ -112,6 +112,26 @@ describe('computeReward', () => {
     expect(computeReward(rateRule, facts({ orderLineAmount: 1000 }), NOW)).toMatchObject({ amount: 50 });
   });
 
+  it('하한과 상한이 둘 다 있으면 결과가 그 사이로 잘린다 — 상한이 마지막이다', () => {
+    const rateRule = rule({
+      reward: { kind: 'POINT_RATE', ratePercent: 5, minAmount: 100, maxAmount: 300, expiresInDays: null },
+    });
+    // 하한만 걸리는 저가, 어느 쪽도 안 걸리는 중가, 상한만 걸리는 고가
+    expect(computeReward(rateRule, facts({ orderLineAmount: 1000 }), NOW)).toMatchObject({ amount: 100 });
+    expect(computeReward(rateRule, facts({ orderLineAmount: 4000 }), NOW)).toMatchObject({ amount: 200 });
+    expect(computeReward(rateRule, facts({ orderLineAmount: 20000 }), NOW)).toMatchObject({ amount: 300 });
+  });
+
+  it('상한이 하한보다 작은 규칙이 들어와도 상한을 넘겨 내보내지 않는다', () => {
+    // 이 조합은 `toUpsertRuleInput` 이 저장 단계에서 이미 막는다(reward-rule.mapper.ts).
+    // 그럼에도 여기서 못 박는 것은, 판정기가 그 가드보다 먼저 쓰인 데이터에도 노출되기 때문이다.
+    // 옛 코드는 상한을 하한으로 덮어써 500 을 내보냈다.
+    const impossible = rule({
+      reward: { kind: 'POINT_RATE', ratePercent: 5, minAmount: 500, maxAmount: 100, expiresInDays: null },
+    });
+    expect(computeReward(impossible, facts({ orderLineAmount: 20000 }), NOW)).toMatchObject({ amount: 100 });
+  });
+
   it('주문금액을 모르면 0원으로 뭉개지 않고 사유를 남긴다', () => {
     const rateRule = rule({
       reward: { kind: 'POINT_RATE', ratePercent: 5, minAmount: null, maxAmount: null, expiresInDays: null },
@@ -262,11 +282,68 @@ describe('toPublicGuides', () => {
       rewardKind: 'POINT_RATE',
       ratePercent: 5,
       maxAmount: 500,
-      rewardAmount: 500,
+      // 정률은 금액을 하나로 말할 수 없다 — 0 으로도 상한으로도 뭉개지 않는다.
+      rewardAmount: null,
     });
   });
 
   it('지급 없음 규칙은 안내하지 않는다', () => {
     expect(toPublicGuides([rule({ reward: { kind: 'NONE' } })], NOW)).toEqual([]);
+  });
+
+  it('안내는 «판정과 같은 기준»으로 고른다 — 금액이 아니라 우선순위 첫 매칭이다', () => {
+    const textOnly = { ...DEFAULT_REWARD_CONDITIONS, reviewType: 'TEXT' as const };
+    const 큰금액_낮은우선순위 = rule({
+      id: 'rule-big',
+      priority: 20,
+      conditions: textOnly,
+      reward: { kind: 'POINT_FIXED', amount: 1000, expiresInDays: null },
+    });
+    const 작은금액_높은우선순위 = rule({
+      id: 'rule-small',
+      priority: 100,
+      conditions: textOnly,
+      reward: { kind: 'POINT_FIXED', amount: 100, expiresInDays: null },
+    });
+
+    const guides = toPublicGuides([큰금액_낮은우선순위, 작은금액_높은우선순위], NOW);
+
+    // 실제 지급은 selectRule 이 우선순위로 고르므로 100 원이 나간다. 옛 코드는 안내만 1000 원이었다.
+    expect(guides).toHaveLength(1);
+    expect(guides[0].rewardAmount).toBe(100);
+    expect(selectRule([큰금액_낮은우선순위, 작은금액_높은우선순위], facts(), NOW).decision).toMatchObject({
+      status: 'GRANTED',
+      amount: 100,
+    });
+  });
+
+  it('상한 없는 정률이 정액과 겨뤄도 «금액 0» 취급으로 지지 않는다', () => {
+    const textOnly = { ...DEFAULT_REWARD_CONDITIONS, reviewType: 'TEXT' as const };
+    const 상한없는_정률 = rule({
+      id: 'rule-rate',
+      priority: 100,
+      conditions: textOnly,
+      reward: { kind: 'POINT_RATE', ratePercent: 5, minAmount: null, maxAmount: null, expiresInDays: null },
+    });
+    const 정액 = rule({
+      id: 'rule-fixed',
+      priority: 10,
+      conditions: textOnly,
+      reward: { kind: 'POINT_FIXED', amount: 500, expiresInDays: null },
+    });
+
+    // 옛 코드는 정률의 rewardAmount 를 `maxAmount ?? 0` 으로 봐서 우선순위와 무관하게 정액이 이겼다.
+    expect(toPublicGuides([상한없는_정률, 정액], NOW)[0]).toMatchObject({
+      rewardKind: 'POINT_RATE',
+      ratePercent: 5,
+    });
+  });
+
+  it('안내에 별점·N번째 조건이 실린다 — 화면이 「조건이 있다」를 말할 수 있어야 한다', () => {
+    const conditional = rule({
+      conditions: { ...DEFAULT_REWARD_CONDITIONS, reviewType: 'TEXT', minRating: 4, everyNthReview: 5 },
+    });
+
+    expect(toPublicGuides([conditional], NOW)[0]).toMatchObject({ minRating: 4, everyNthReview: 5 });
   });
 });

@@ -28,6 +28,16 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
+
+/** 금액 하나로 말할 수 있는 안내만 — 정액이면서 금액이 실제로 있는 것. */
+type FixedRewardPolicy = RewardPolicy & { rewardAmount: number }
+
+function asFixedRewardPolicy(policy: RewardPolicy | undefined): FixedRewardPolicy | undefined {
+  if (!policy || policy.rewardKind !== "POINT_FIXED" || policy.rewardAmount === null) {
+    return undefined
+  }
+  return { ...policy, rewardAmount: policy.rewardAmount }
+}
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { ReviewImageModal } from "@/components/reviews/ui/review-image-modal"
 
@@ -104,8 +114,9 @@ export const ReviewFormCard = ({
 
   // 금액으로 말할 수 있는 것은 정액 규칙뿐이다. 정률은 주문마다 달라져 여기서 숫자로 쓰면
   // 실제 지급액과 어긋나므로, 이 자리의 금액 안내는 정액일 때만 띄운다.
-  const fixedTextPolicy = textPolicy?.rewardKind === "POINT_FIXED" ? textPolicy : undefined
-  const fixedPhotoPolicy = photoPolicy?.rewardKind === "POINT_FIXED" ? photoPolicy : undefined
+  // 서버가 정률·BADGE 의 rewardAmount 를 null 로 내려보내므로 «금액이 있는지»까지 좁힌다.
+  const fixedTextPolicy = asFixedRewardPolicy(textPolicy)
+  const fixedPhotoPolicy = asFixedRewardPolicy(photoPolicy)
   const photoBonusAmount =
     fixedPhotoPolicy && fixedTextPolicy
       ? fixedPhotoPolicy.rewardAmount - fixedTextPolicy.rewardAmount

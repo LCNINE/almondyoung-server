@@ -121,12 +121,16 @@ interface RewardPolicyResponseDto {
   reviewType: ReviewRewardType
   /** 보상 종류. 관리자가 규칙을 켜지 않았으면 이 목록 자체가 비어 있다 */
   rewardKind: ReviewRewardKind
-  /** 정액이면 지급액, 정률이면 상한(상한이 없으면 0) */
-  rewardAmount: number
+  /** 정액이면 지급액. 정률·BADGE 는 금액을 하나로 말할 수 없어 null 이다 */
+  rewardAmount: number | null
   ratePercent: number | null
   maxAmount: number | null
   minContentLength: number
   minMediaCount: number
+  /** 별점 조건. null 이면 조건 없음 */
+  minRating: number | null
+  /** 「N 번째 리뷰마다」 조건. null 이면 매번 */
+  everyNthReview: number | null
   expiresInDays: number | null
 }
 

@@ -136,9 +136,11 @@ export function computeReward(rule: EvaluableRule, facts: ReviewFacts, now: Date
     return { status: 'SKIPPED', ruleId: rule.id, rewardKind: 'POINT_RATE', skipReason: 'ORDER_AMOUNT_UNKNOWN' };
   }
 
+  // 하한 → 상한 순서다. 뒤집으면 상한이 하한에 덮여 「상한 100·최소 500」 규칙이 500 을 내보낸다.
+  // `minAmount <= maxAmount` 는 규칙 저장 시점(RewardSpecDto)이 보장하므로 여기서 다시 보지 않는다.
   let amount = Math.floor((facts.orderLineAmount * reward.ratePercent) / 100);
-  if (reward.maxAmount !== null) amount = Math.min(amount, reward.maxAmount);
   if (reward.minAmount !== null) amount = Math.max(amount, reward.minAmount);
+  if (reward.maxAmount !== null) amount = Math.min(amount, reward.maxAmount);
 
   if (amount <= 0) {
     return { status: 'SKIPPED', ruleId: rule.id, rewardKind: 'POINT_RATE', skipReason: 'AMOUNT_ZERO' };
@@ -264,12 +266,20 @@ export function periodStart(period: ReviewRewardPeriod, now: Date): Date | null 
 export interface ReviewRewardGuide {
   reviewType: 'TEXT' | 'PHOTO';
   rewardKind: 'POINT_FIXED' | 'POINT_RATE' | 'BADGE';
-  /** 정액이면 그 금액, 정률이면 상한(상한이 없으면 0) */
-  rewardAmount: number;
+  /**
+   * 정액이면 그 금액. **정률·BADGE 는 null 이다** — 금액을 하나로 말할 수 없기 때문이다.
+   * 예전에는 정률에 `maxAmount ?? 0` 을 넣었는데, 그러면 상한 없는 정률이 「0원」으로 보인다.
+   * 계산할 수 없는 몫을 0 으로 뭉개면 화면이 못 지킬 약속을 걸거나 있는 혜택을 숨긴다.
+   */
+  rewardAmount: number | null;
   ratePercent: number | null;
   maxAmount: number | null;
   minContentLength: number;
   minMediaCount: number;
+  /** 별점 조건. null 이면 조건 없음 */
+  minRating: number | null;
+  /** 「N 번째 리뷰마다」 조건. null 이면 매번 */
+  everyNthReview: number | null;
   expiresInDays: number | null;
 }
 
@@ -279,6 +289,14 @@ export interface ReviewRewardGuide {
  *
  * 정률 규칙은 금액이 주문에 따라 달라지므로 상한·비율을 그대로 내보낸다.
  * 여기서 대표값 하나로 뭉개면 화면 문구가 실제 지급액과 어긋난다.
+ *
+ * 🔴 **규칙을 고르는 기준은 `selectRule` 과 같아야 한다** — 우선순위 순 «첫 매칭»이다.
+ * 예전에는 「금액이 가장 큰 것」을 골랐는데, 그러면 안내가 가리키는 규칙과 실제로 지급하는 규칙이
+ * 서로 달라져 화면 문구와 지급액이 조용히 갈린다. `sortRules` + `isRuleInWindow` 를 `selectRule`
+ * 과 공유하고, 이 함수는 그 순서에서 «처음 만난 것»을 그대로 쓴다.
+ *
+ * 조건(`minRating`·`everyNthReview`)은 여기서 «거르지» 않고 안내에 실어 보낸다 —
+ * 그 조건들은 리뷰를 쓰기 전에는 판정할 수 없으므로, 화면이 「조건이 있다」를 말할 수 있게만 한다.
  */
 export function toPublicGuides(rules: EvaluableRule[], now: Date): ReviewRewardGuide[] {
   const guides = new Map<string, ReviewRewardGuide>();
@@ -297,17 +315,18 @@ export function toPublicGuides(rules: EvaluableRule[], now: Date): ReviewRewardG
       const guide: ReviewRewardGuide = {
         reviewType,
         rewardKind: reward.kind,
-        rewardAmount:
-          reward.kind === 'POINT_FIXED' ? reward.amount : reward.kind === 'POINT_RATE' ? (reward.maxAmount ?? 0) : 0,
+        rewardAmount: reward.kind === 'POINT_FIXED' ? reward.amount : null,
         ratePercent: reward.kind === 'POINT_RATE' ? reward.ratePercent : null,
         maxAmount: reward.kind === 'POINT_RATE' ? reward.maxAmount : null,
         minContentLength: rule.conditions.minContentLength,
         minMediaCount: rule.conditions.minMediaCount,
+        minRating: rule.conditions.minRating,
+        everyNthReview: rule.conditions.everyNthReview,
         expiresInDays: reward.kind === 'POINT_FIXED' || reward.kind === 'POINT_RATE' ? reward.expiresInDays : null,
       };
 
-      const existing = guides.get(reviewType);
-      if (!existing || existing.rewardAmount < guide.rewardAmount) {
+      // 우선순위 순으로 돌고 있으므로 «먼저 들어온 것»이 곧 첫 매칭이다 — 금액으로 다시 겨루지 않는다.
+      if (!guides.has(reviewType)) {
         guides.set(reviewType, guide);
       }
     }
