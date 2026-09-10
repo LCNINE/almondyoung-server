@@ -144,7 +144,14 @@ export class MasterPricingController {
     }
 
     if (variantIdsParam) {
-      const ids = [...new Set(variantIdsParam.split(',').map((s) => s.trim()).filter(Boolean))];
+      const ids = [
+        ...new Set(
+          variantIdsParam
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        ),
+      ];
       if (ids.length === 0) {
         throw new HttpException('variantIds must contain at least one ID', HttpStatus.BAD_REQUEST);
       }

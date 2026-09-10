@@ -1245,6 +1245,7 @@ export class ProductVersionsService {
         'hideMembershipPriceForNonMembers',
         'isVisibleToMembersOnly',
         'isOverseas',
+        'productInfo',
         'isMembershipOnly',
         'productType',
         'fulfillmentKind',

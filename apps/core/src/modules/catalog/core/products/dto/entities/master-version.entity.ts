@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductInfoDto } from '../masters/product-info.dto';
 
 export class ProductVersionDto {
   @ApiProperty({ description: '버전 ID' })
@@ -48,6 +49,9 @@ export class ProductVersionDto {
 
   @ApiProperty({ description: '해외직구 상품 여부 (체크아웃 시 개인통관고유부호 필수)' })
   isOverseas: boolean;
+
+  @ApiProperty({ description: '스토어프론트 «상품정보» 표', type: ProductInfoDto, nullable: true })
+  productInfo: ProductInfoDto | null;
 
   @ApiProperty({
     description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',

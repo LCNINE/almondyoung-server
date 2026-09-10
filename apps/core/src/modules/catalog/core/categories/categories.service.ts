@@ -802,13 +802,7 @@ export class ProductCategoriesService {
       const siblingOrder = await this.loadSiblingOrder(parentId || null, txn);
       for (const [index, category] of updatedCategories.entries()) {
         const snapshot = this.buildCategorySnapshot(category);
-        await this.publishCategoryEvent(
-          category.id,
-          'updated',
-          snapshot,
-          txn,
-          index === 0 ? siblingOrder : undefined,
-        );
+        await this.publishCategoryEvent(category.id, 'updated', snapshot, txn, index === 0 ? siblingOrder : undefined);
       }
     };
 
@@ -935,9 +929,7 @@ export class ProductCategoriesService {
       .select({ id: pimSchema.productCategories.id })
       .from(pimSchema.productCategories)
       .where(
-        parentId
-          ? eq(pimSchema.productCategories.parentId, parentId)
-          : isNull(pimSchema.productCategories.parentId),
+        parentId ? eq(pimSchema.productCategories.parentId, parentId) : isNull(pimSchema.productCategories.parentId),
       )
       .orderBy(asc(pimSchema.productCategories.sortOrder), asc(pimSchema.productCategories.name));
 

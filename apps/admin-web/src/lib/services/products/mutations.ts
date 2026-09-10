@@ -193,19 +193,26 @@ export const useUpdateMaster = () => {
 /**
  * 멤버십가 공개 제한 변경 (draft 없이 즉시 적용)
  */
-export const useUpdateMembershipPriceVisibility = (masterId: string, versionId: string | null) => {
+export const useUpdateMembershipPriceVisibility = (
+  masterId: string,
+  versionId: string | null
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (hideMembershipPriceForNonMembers: boolean) =>
       products.masters.updateMembershipPriceVisibility(
         masterId,
-        hideMembershipPriceForNonMembers,
+        hideMembershipPriceForNonMembers
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(masterId),
+      });
       if (versionId) {
-        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.versionDetail(masterId, versionId),
+        });
       }
     },
   });
@@ -214,16 +221,26 @@ export const useUpdateMembershipPriceVisibility = (masterId: string, versionId: 
 /**
  * 멤버십 회원 전용 노출 변경 (draft 없이 즉시 적용)
  */
-export const useUpdateMembersOnlyVisibility = (masterId: string, versionId: string | null) => {
+export const useUpdateMembersOnlyVisibility = (
+  masterId: string,
+  versionId: string | null
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (isVisibleToMembersOnly: boolean) =>
-      products.masters.updateMembersOnlyVisibility(masterId, isVisibleToMembersOnly),
+      products.masters.updateMembersOnlyVisibility(
+        masterId,
+        isVisibleToMembersOnly
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(masterId),
+      });
       if (versionId) {
-        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.versionDetail(masterId, versionId),
+        });
       }
     },
   });
@@ -232,16 +249,23 @@ export const useUpdateMembersOnlyVisibility = (masterId: string, versionId: stri
 /**
  * 해외직구 여부 변경 (draft 없이 즉시 적용)
  */
-export const useUpdateOverseas = (masterId: string, versionId: string | null) => {
+export const useUpdateOverseas = (
+  masterId: string,
+  versionId: string | null
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (isOverseas: boolean) =>
       products.masters.updateOverseas(masterId, isOverseas),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(masterId),
+      });
       if (versionId) {
-        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.versionDetail(masterId, versionId),
+        });
       }
     },
   });
@@ -250,31 +274,45 @@ export const useUpdateOverseas = (masterId: string, versionId: string | null) =>
 /**
  * 배송비 그룹 변경 (draft 없이 즉시 적용)
  */
-export const useUpdateShippingGroup = (masterId: string, versionId: string | null) => {
+export const useUpdateShippingGroup = (
+  masterId: string,
+  versionId: string | null
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (shippingGroupCode: string | null) =>
       products.masters.updateShippingGroup(masterId, shippingGroupCode),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(masterId),
+      });
       if (versionId) {
-        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.versionDetail(masterId, versionId),
+        });
       }
     },
   });
 };
 
-export const useUpdateRequiresMembership = (masterId: string, versionId: string | null) => {
+export const useUpdateRequiresMembership = (
+  masterId: string,
+  versionId: string | null
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (requiresMembership: boolean) =>
       products.masters.updateRequiresMembership(masterId, requiresMembership),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(masterId),
+      });
       if (versionId) {
-        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.versionDetail(masterId, versionId),
+        });
       }
     },
   });
@@ -336,9 +374,12 @@ export const useUpdatePricingStrategy = () => {
 export const useCreateBannerGroup = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (dto: CreateBannerGroupDto) => products.bannerGroups.create(dto),
+    mutationFn: (dto: CreateBannerGroupDto) =>
+      products.bannerGroups.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannerGroups,
+      });
     },
   });
 };
@@ -349,8 +390,12 @@ export const useUpdateBannerGroup = () => {
     mutationFn: ({ id, dto }: { id: string; dto: UpdateBannerGroupDto }) =>
       products.bannerGroups.update(id, dto),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroup(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannerGroups,
+      });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannerGroup(variables.id),
+      });
     },
   });
 };
@@ -360,7 +405,9 @@ export const useDeleteBannerGroup = () => {
   return useMutation({
     mutationFn: ({ id }: { id: string }) => products.bannerGroups.remove(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannerGroups,
+      });
     },
   });
 };
@@ -395,8 +442,18 @@ export const useUpdateBanner = () => {
 export const useDeleteBanner = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, groupId, deletedBy }: { id: string; groupId: string; deletedBy?: string }) =>
-      products.banners.remove(id, deletedBy).then((res) => ({ ...res, groupId })),
+    mutationFn: ({
+      id,
+      groupId,
+      deletedBy,
+    }: {
+      id: string;
+      groupId: string;
+      deletedBy?: string;
+    }) =>
+      products.banners
+        .remove(id, deletedBy)
+        .then((res) => ({ ...res, groupId })),
     onSuccess: (data) => {
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.bannersByGroup(data.groupId),
@@ -424,7 +481,9 @@ export const useUpdateTagGroup = () => {
       products.tags.updateGroup(id, dto),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroup(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.tagGroup(variables.id),
+      });
     },
   });
 };
@@ -444,11 +503,18 @@ export const useDeleteTagGroup = () => {
 export const useCreateTagValue = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ groupId, dto }: { groupId: string; dto: CreateTagValueDto }) =>
-      products.tags.createValue(groupId, dto),
+    mutationFn: ({
+      groupId,
+      dto,
+    }: {
+      groupId: string;
+      dto: CreateTagValueDto;
+    }) => products.tags.createValue(groupId, dto),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.tagValues(data.groupId),
+      });
     },
   });
 };
@@ -456,10 +522,20 @@ export const useCreateTagValue = () => {
 export const useUpdateTagValue = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, groupId, dto }: { id: string; groupId: string; dto: UpdateTagValueDto }) =>
+    mutationFn: ({
+      id,
+      groupId,
+      dto,
+    }: {
+      id: string;
+      groupId: string;
+      dto: UpdateTagValueDto;
+    }) =>
       products.tags.updateValue(id, dto).then((res) => ({ ...res, groupId })),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.tagValues(data.groupId),
+      });
     },
   });
 };
@@ -471,7 +547,9 @@ export const useDeleteTagValue = () => {
       products.tags.removeValue(id).then(() => ({ groupId })),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.tagValues(data.groupId),
+      });
     },
   });
 };
@@ -528,8 +606,13 @@ function invalidateProductVersionLifecycleQueries(
 export const useCreateMasterDraftVersion = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ masterId, dto }: { masterId: string; dto: CreateDraftVersionDto }) =>
-      products.versions.createDraft(masterId, dto),
+    mutationFn: ({
+      masterId,
+      dto,
+    }: {
+      masterId: string;
+      dto: CreateDraftVersionDto;
+    }) => products.versions.createDraft(masterId, dto),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.masterVersions(variables.masterId),
@@ -553,7 +636,10 @@ export const useUpdateMasterVersion = () => {
     }) => products.versions.update(masterId, versionId, dto),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.versionDetail(variables.masterId, variables.versionId),
+        queryKey: productQueryKeys.versionDetail(
+          variables.masterId,
+          variables.versionId
+        ),
       });
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.master(variables.masterId),
@@ -715,15 +801,25 @@ export const useDeleteVersionPricingRules = () => {
 
 export const useCalculateVersionPrice = () => {
   return useMutation({
-    mutationFn: ({ versionId, dto }: { versionId: string; dto: CalculatePriceRequestDto }) =>
-      products.pricing.versions.calculate(versionId, dto),
+    mutationFn: ({
+      versionId,
+      dto,
+    }: {
+      versionId: string;
+      dto: CalculatePriceRequestDto;
+    }) => products.pricing.versions.calculate(versionId, dto),
   });
 };
 
 export const useCalculateMasterPrice = () => {
   return useMutation({
-    mutationFn: ({ masterId, dto }: { masterId: string; dto: CalculatePriceRequestDto }) =>
-      products.pricing.masters.calculate(masterId, dto),
+    mutationFn: ({
+      masterId,
+      dto,
+    }: {
+      masterId: string;
+      dto: CalculatePriceRequestDto;
+    }) => products.pricing.masters.calculate(masterId, dto),
   });
 };
 
@@ -736,7 +832,9 @@ export const useCreateChannelListing = () => {
       channelListingsClient.createChannelListing(data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelListingsByVariant(variables.variantId),
+        queryKey: productQueryKeys.channelListingsByVariant(
+          variables.variantId
+        ),
       });
     },
   });
@@ -748,7 +846,9 @@ export const useUpdateChannelListing = () => {
     mutationFn: ({ id, data }: { id: string; data: UpdateChannelListingDto }) =>
       channelListingsClient.updateChannelListing(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelListing(id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelListing(id),
+      });
       queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
     },
   });
@@ -757,7 +857,8 @@ export const useUpdateChannelListing = () => {
 export const useActivateChannelListing = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => channelListingsClient.activateChannelListing(id),
+    mutationFn: (id: string) =>
+      channelListingsClient.activateChannelListing(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
     },
@@ -767,7 +868,8 @@ export const useActivateChannelListing = () => {
 export const useDeactivateChannelListing = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => channelListingsClient.deactivateChannelListing(id),
+    mutationFn: (id: string) =>
+      channelListingsClient.deactivateChannelListing(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
     },
@@ -792,7 +894,9 @@ export const useCreateChannelCategory = () => {
     mutationFn: (data: CreateChannelCategoryDto) =>
       channelCategoriesClient.createChannelCategory(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelCategories,
+      });
     },
   });
 };
@@ -800,11 +904,20 @@ export const useCreateChannelCategory = () => {
 export const useUpdateChannelCategory = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateChannelCategoryDto }) =>
-      channelCategoriesClient.updateChannelCategory(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: UpdateChannelCategoryDto;
+    }) => channelCategoriesClient.updateChannelCategory(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategory(id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelCategories,
+      });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelCategory(id),
+      });
     },
   });
 };
@@ -812,9 +925,12 @@ export const useUpdateChannelCategory = () => {
 export const useDeleteChannelCategory = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => channelCategoriesClient.deleteChannelCategory(id),
+    mutationFn: (id: string) =>
+      channelCategoriesClient.deleteChannelCategory(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelCategories,
+      });
     },
   });
 };
@@ -880,7 +996,9 @@ export const useUpdateNotice = () => {
       products.notices.update(id, dto),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.notice(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.notice(variables.id),
+      });
     },
   });
 };
@@ -901,9 +1019,12 @@ export const useDeleteNotice = () => {
 export const useCreateShopListing = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (dto: CreateShopListingDto) => products.shopListings.create(dto),
+    mutationFn: (dto: CreateShopListingDto) =>
+      products.shopListings.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.shopListings,
+      });
     },
   });
 };
@@ -914,8 +1035,12 @@ export const useUpdateShopListing = () => {
     mutationFn: ({ id, dto }: { id: string; dto: UpdateShopListingDto }) =>
       products.shopListings.update(id, dto),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListing(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.shopListings,
+      });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.shopListing(variables.id),
+      });
     },
   });
 };
@@ -925,7 +1050,9 @@ export const useDeleteShopListing = () => {
   return useMutation({
     mutationFn: (id: string) => products.shopListings.remove(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.shopListings,
+      });
     },
   });
 };
@@ -949,7 +1076,9 @@ export const useUpdateSitePopup = () => {
       products.sitePopups.update(id, dto),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopup(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.sitePopup(variables.id),
+      });
     },
   });
 };
@@ -960,7 +1089,9 @@ export const useResetSitePopupDismissals = () => {
     mutationFn: (id: string) => products.sitePopups.resetDismissals(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopup(id) });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.sitePopup(id),
+      });
     },
   });
 };

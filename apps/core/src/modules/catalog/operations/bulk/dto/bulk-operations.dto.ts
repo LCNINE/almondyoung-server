@@ -1,4 +1,14 @@
-import { IsArray, IsString, IsOptional, IsEnum, IsInt, IsBoolean, Min, ArrayMaxSize, ArrayNotEmpty } from 'class-validator';
+import {
+  IsArray,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  IsBoolean,
+  Min,
+  ArrayMaxSize,
+  ArrayNotEmpty,
+} from 'class-validator';
 
 /** 한 번에 다룰 수 있는 상품 수. 양식 다운로드(MAX_FORM_EXPORT_PRODUCTS)와 같은 값이다. */
 export const MAX_BULK_PRODUCTS = 5000;

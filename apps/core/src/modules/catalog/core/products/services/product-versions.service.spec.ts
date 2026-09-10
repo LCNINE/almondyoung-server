@@ -524,11 +524,16 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
     jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
-    for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
-                     '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
-                     '_reconcileChannelListingsAfterPublish',
-                     '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
-                     '_emitActiveVersionChangedEvent'])
+    for (const m of [
+      '_validateVariantCodeUniqueness',
+      'validateProductCodeUniqueness',
+      '_reconcileMatchingsAfterPublish',
+      '_reconcileAssetLinksAfterPublish',
+      '_reconcileChannelListingsAfterPublish',
+      '_validateDigitalAssetLinks',
+      '_publishVariantChangeEvents',
+      '_emitActiveVersionChangedEvent',
+    ])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
@@ -554,11 +559,16 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
     jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
-    for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
-                     '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
-                     '_reconcileChannelListingsAfterPublish',
-                     '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
-                     '_emitActiveVersionChangedEvent'])
+    for (const m of [
+      '_validateVariantCodeUniqueness',
+      'validateProductCodeUniqueness',
+      '_reconcileMatchingsAfterPublish',
+      '_reconcileAssetLinksAfterPublish',
+      '_reconcileChannelListingsAfterPublish',
+      '_validateDigitalAssetLinks',
+      '_publishVariantChangeEvents',
+      '_emitActiveVersionChangedEvent',
+    ])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
@@ -599,7 +609,11 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       primaryCategoryId: null,
     });
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
-    purchaseConstraints.getForVersion.mockResolvedValue({ id: 'c1', requiresMembership: false, lifetimeQuantityLimit: 3 });
+    purchaseConstraints.getForVersion.mockResolvedValue({
+      id: 'c1',
+      requiresMembership: false,
+      lifetimeQuantityLimit: 3,
+    });
 
     await service.updateRequiresMembership('m1', true, {} as any);
 
@@ -618,9 +632,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       categoryIds: [],
       primaryCategoryId: null,
     });
-    jest
-      .spyOn(service as any, 'getActiveVersion')
-      .mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
 
     const where = jest.fn().mockResolvedValue(undefined);
     const set = jest.fn().mockReturnValue({ where });
@@ -970,7 +982,7 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
               projectRows(
                 rowsForTable(table).filter((row) => matchesWhere(row, condition)),
                 selection,
-              ) as Record<string, unknown>[],
+              ),
             ),
           ),
         })),
@@ -1120,17 +1132,17 @@ describe('planChannelListingReconciliation (#652)', () => {
     next: VariantOptionCombo[],
     listings: ReconcilableListing[],
     isDigital = false,
-  ): ChannelListingReconciliationPlan =>
-    planChannelListingReconciliation(candidates, next, listings, isDigital);
+  ): ChannelListingReconciliationPlan => planChannelListingReconciliation(candidates, next, listings, isDigital);
   const combo = (variantId: string, ...optionValueIds: string[]): VariantOptionCombo => ({
     variantId,
     optionValueIds,
   });
-  const listing = (
-    id: string,
-    variantId: string,
-    { external = true, isActive = true } = {},
-  ): ReconcilableListing => ({ id, variantId, isExternalMarketplace: external, isActive });
+  const listing = (id: string, variantId: string, { external = true, isActive = true } = {}): ReconcilableListing => ({
+    id,
+    variantId,
+    isExternalMarketplace: external,
+    isActive,
+  });
 
   it('옵션 조합이 같은 twin 이 새 버전에 있으면 그 variant 로 재지정한다', () => {
     expect(plan([combo('v-old', 'red', 'L')], [combo('v-new', 'L', 'red')], [listing('l-1', 'v-old')])).toEqual({
@@ -1236,7 +1248,7 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
   }
 
   const makeSvc = () => {
-    const service = Object.create(ProductVersionsService.prototype) as any;
+    const service = Object.create(ProductVersionsService.prototype);
     service.logger = { log: jest.fn(), debug: jest.fn(), warn: jest.fn() };
     return service;
   };

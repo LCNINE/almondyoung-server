@@ -23,8 +23,52 @@ export type BasicInformationDetail = {
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
   shippingGroupCode: string | null;
+  productInfo: ProductInfoValues | null;
   categories: ProductDetailCategory[];
 };
+
+// 스토어프론트 상품 상세의 «상품정보» 표. 키 이름이 곧 표의 행이라 이름을 바꾸면 표가 빈다.
+export type ProductInfoValues = {
+  productNumber?: string;
+  weight?: string;
+  dimensions?: string;
+  origin?: string;
+  capacity?: string;
+  expirationDate?: string;
+  manufacturer?: string;
+  material?: string;
+  usage?: string;
+};
+
+export const PRODUCT_INFO_FIELDS: Array<{
+  key: keyof ProductInfoValues;
+  label: string;
+  placeholder: string;
+  multiline?: boolean;
+}> = [
+  { key: 'productNumber', label: '상품번호', placeholder: '예: MG-PIG-001' },
+  { key: 'weight', label: '상품 무게', placeholder: '예: 79.1g' },
+  {
+    key: 'dimensions',
+    label: '상품 규격',
+    placeholder: '예: 직경 21.5mm × 길이 100mm',
+  },
+  { key: 'origin', label: '원산지', placeholder: '예: 대한민국' },
+  { key: 'capacity', label: '용량', placeholder: '예: 50ml' },
+  {
+    key: 'expirationDate',
+    label: '유효일자',
+    placeholder: '예: 제조일로부터 30개월',
+  },
+  { key: 'manufacturer', label: '제조사', placeholder: '예: 미곤아카데미' },
+  { key: 'material', label: '소재', placeholder: '예: 티타늄 합금' },
+  {
+    key: 'usage',
+    label: '사용방법',
+    placeholder: '사용 순서·주의사항',
+    multiline: true,
+  },
+];
 
 export type BasicInformationFormValues = {
   name: string;
@@ -43,6 +87,7 @@ export type BasicInformationFormValues = {
   fulfillmentKind: 'physical' | 'digital';
   /** 빈 문자열 = 기본 배송비 그룹. */
   shippingGroupCode: string;
+  productInfo: ProductInfoValues;
   categoryIds: string[];
   primaryCategoryId: string | null;
 };
@@ -85,8 +130,10 @@ export function toBasicInformationFormValues(
     name: detail.name,
     brand: detail.brand ?? '',
     supplierId: detail.supplierId ?? null,
-    supplyPriceText: detail.supplyPrice == null ? '' : String(detail.supplyPrice),
-    marketPriceText: detail.marketPrice == null ? '' : String(detail.marketPrice),
+    supplyPriceText:
+      detail.supplyPrice == null ? '' : String(detail.supplyPrice),
+    marketPriceText:
+      detail.marketPrice == null ? '' : String(detail.marketPrice),
     seoTitle: detail.seoTitle ?? '',
     seoDescription: detail.seoDescription ?? '',
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
@@ -99,6 +146,7 @@ export function toBasicInformationFormValues(
     isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
     fulfillmentKind: detail.fulfillmentKind ?? 'physical',
     shippingGroupCode: detail.shippingGroupCode ?? '',
+    productInfo: { ...(detail.productInfo ?? {}) },
     categoryIds: detail.categories.map((category) => category.id),
     primaryCategoryId:
       detail.categories.find((category) => category.isPrimary)?.id ?? null,
@@ -159,6 +207,14 @@ export function flattenCategoryTree(
   });
 }
 
+/** 빈 값은 키째로 빼서 저장한다 — 스토어프론트 표는 값이 없는 행을 빈칸으로 그린다. */
+export function toProductInfoDto(values: ProductInfoValues): ProductInfoValues {
+  const entries = PRODUCT_INFO_FIELDS.map(
+    ({ key }) => [key, values[key]?.trim() ?? ''] as const
+  ).filter(([, value]) => value.length > 0);
+  return Object.fromEntries(entries) as ProductInfoValues;
+}
+
 export function toBasicInformationUpdateDto(
   values: BasicInformationFormValues
 ): UpdateMasterVersionDto {
@@ -182,6 +238,7 @@ export function toBasicInformationUpdateDto(
     isVisibleToMembersOnly: values.isVisibleToMembersOnly,
     fulfillmentKind: values.fulfillmentKind,
     shippingGroupCode: trimToNullable(values.shippingGroupCode),
+    productInfo: toProductInfoDto(values.productInfo),
     categoryIds,
     primaryCategoryId:
       primaryCategoryId && categoryIds.includes(primaryCategoryId)

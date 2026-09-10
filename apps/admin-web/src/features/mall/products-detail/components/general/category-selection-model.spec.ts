@@ -14,7 +14,9 @@ const node = (
 
 const tree: CategoryTreeNodeLike[] = [
   node('cosmetics', '화장품', {
-    children: [node('skincare', '스킨케어', { children: [node('toner', '토너')] })],
+    children: [
+      node('skincare', '스킨케어', { children: [node('toner', '토너')] }),
+    ],
   }),
   node('food', '식품'),
 ];

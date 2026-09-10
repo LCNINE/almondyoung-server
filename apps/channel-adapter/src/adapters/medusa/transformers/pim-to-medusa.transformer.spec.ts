@@ -191,9 +191,9 @@ describe('PimToMedusaTransformer', () => {
 
     it('falls back to the default shipping group when the snapshot has none', () => {
       expect(transformPimToMedusa(mockSnapshot).metadata.shippingGroupCode).toBe('default');
-      expect(
-        transformPimToMedusa({ ...mockSnapshot, shippingGroupCode: '   ' }).metadata.shippingGroupCode,
-      ).toBe('default');
+      expect(transformPimToMedusa({ ...mockSnapshot, shippingGroupCode: '   ' }).metadata.shippingGroupCode).toBe(
+        'default',
+      );
     });
 
     it('should map base variant price and preserve price-list metadata', () => {

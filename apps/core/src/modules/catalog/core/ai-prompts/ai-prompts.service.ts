@@ -29,10 +29,7 @@ const DUPLICATE_TITLE_CODE = '23505';
 
 function isDuplicateTitle(err: unknown): boolean {
   return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: string }).code === DUPLICATE_TITLE_CODE
+    typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === DUPLICATE_TITLE_CODE
   );
 }
 
@@ -52,10 +49,7 @@ export class AiPromptsService {
 
   async find(id: string, tx?: DbTransaction): Promise<AiPromptPresetRecord | null> {
     return this.db.run(async (trx) => {
-      const [row] = await trx
-        .select()
-        .from(pimSchema.aiPromptPresets)
-        .where(eq(pimSchema.aiPromptPresets.id, id));
+      const [row] = await trx.select().from(pimSchema.aiPromptPresets).where(eq(pimSchema.aiPromptPresets.id, id));
 
       return row ?? null;
     }, tx);
@@ -147,12 +141,7 @@ export class AiPromptsService {
 
       await trx
         .delete(pimSchema.aiPromptPresets)
-        .where(
-          and(
-            eq(pimSchema.aiPromptPresets.id, id),
-            eq(pimSchema.aiPromptPresets.ownerId, requesterId),
-          ),
-        );
+        .where(and(eq(pimSchema.aiPromptPresets.id, id), eq(pimSchema.aiPromptPresets.ownerId, requesterId)));
     }, tx);
   }
 }

@@ -86,10 +86,7 @@ export class BannerGroupsController {
   @ApiParam({ name: 'id', description: '배너 그룹 ID' })
   @ApiResponse({ status: 200, description: '배너 그룹 삭제 성공' })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
-  async deleteBannerGroup(
-    @Param('id') id: string,
-    @User() user: JwtPayload | undefined,
-  ): Promise<{ message: string }> {
+  async deleteBannerGroup(@Param('id') id: string, @User() user: JwtPayload | undefined): Promise<{ message: string }> {
     // 삭제자는 토큰에서 읽는다 — 클라이언트가 쿼리로 자기 신고하면 아무 값이나 들어온다
     await this.bannersService.deleteBannerGroup(id, user?.id);
     return { message: 'Banner group deleted successfully' };

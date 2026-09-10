@@ -23,6 +23,7 @@ describe('basic information editing model', () => {
     isMembershipOnly: null,
     fulfillmentKind: null,
     shippingGroupCode: null,
+    productInfo: null,
     categories: [
       {
         id: 'cat-primary',
@@ -96,6 +97,7 @@ describe('basic information editing model', () => {
       isVisibleToMembersOnly: false,
       fulfillmentKind: 'physical',
       shippingGroupCode: '',
+      productInfo: {},
       categoryIds: ['cat-primary', 'cat-secondary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -117,6 +119,7 @@ describe('basic information editing model', () => {
         isVisibleToMembersOnly: true,
         fulfillmentKind: 'physical',
         shippingGroupCode: ' meal ',
+        productInfo: {},
         categoryIds: ['cat-secondary', 'cat-primary'],
         primaryCategoryId: 'cat-primary',
       })
@@ -136,6 +139,7 @@ describe('basic information editing model', () => {
       isVisibleToMembersOnly: true,
       fulfillmentKind: 'physical',
       shippingGroupCode: 'meal',
+      productInfo: {},
       categoryIds: ['cat-secondary', 'cat-primary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -155,6 +159,7 @@ describe('basic information editing model', () => {
         isVisibleToMembersOnly: false,
         fulfillmentKind: 'digital',
         shippingGroupCode: '   ',
+        productInfo: {},
         categoryIds: [],
         primaryCategoryId: 'cat-not-selected',
       })

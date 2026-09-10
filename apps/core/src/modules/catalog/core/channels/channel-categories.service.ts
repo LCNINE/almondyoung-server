@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { ChannelCategory, NewChannelCategory, UpdateChannelCategory, DbTransaction, DbClient } from '../../catalog.types';
+import {
+  ChannelCategory,
+  NewChannelCategory,
+  UpdateChannelCategory,
+  DbTransaction,
+  DbClient,
+} from '../../catalog.types';
 import { type PimSchema, channelCategories, salesChannels } from '../../schema/catalog.schema';
 import { eq, count, asc, sql } from 'drizzle-orm';
 

@@ -10,8 +10,7 @@ describe.each([
   ['BulkRestoreDto', BulkRestoreDto],
   ['BulkPolicyDto', BulkPolicyDto],
 ])('%s productIds 상한', (_name, Dto) => {
-  const validate = (productIds: string[]) =>
-    validateSync(plainToInstance(Dto as never, { productIds }));
+  const validate = (productIds: string[]) => validateSync(plainToInstance(Dto as never, { productIds }));
 
   it('빈 배열을 거부한다', () => {
     expect(validate([])).not.toHaveLength(0);

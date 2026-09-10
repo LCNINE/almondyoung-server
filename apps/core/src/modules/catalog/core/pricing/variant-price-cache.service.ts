@@ -3,7 +3,12 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, inArray, InferInsertModel, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import { productMasterVersions, productMasterVariants, productVariantPriceCache, pimSchema } from '../../schema/catalog.schema';
+import {
+  productMasterVersions,
+  productMasterVariants,
+  productVariantPriceCache,
+  pimSchema,
+} from '../../schema/catalog.schema';
 import { DbTransaction, PriceSummary } from '../../catalog.types';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { NewProductVariantPriceCache } from '../../catalog.types';

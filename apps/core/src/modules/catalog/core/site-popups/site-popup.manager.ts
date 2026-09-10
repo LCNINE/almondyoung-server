@@ -86,12 +86,7 @@ export class SitePopupManager {
     }, tx);
   }
 
-  async update(
-    id: string,
-    dto: UpdateSitePopupDto,
-    actorId?: string,
-    tx?: DbTransaction,
-  ): Promise<SitePopupEntity> {
+  async update(id: string, dto: UpdateSitePopupDto, actorId?: string, tx?: DbTransaction): Promise<SitePopupEntity> {
     return this.db.run(async (trx) => {
       const existing = await this.reader.findById(id, trx);
 
@@ -113,8 +108,7 @@ export class SitePopupManager {
         audience: dto.audience ?? (existing.audience as SitePopupAudience),
         dismissMode: dto.dismissMode ?? (existing.dismissMode as SitePopupDismissMode),
         dismissDays: pick(dto, 'dismissDays', existing.dismissDays),
-        displayStartAt:
-          dto.displayStartAt === undefined ? existing.displayStartAt : toDate(dto.displayStartAt),
+        displayStartAt: dto.displayStartAt === undefined ? existing.displayStartAt : toDate(dto.displayStartAt),
         displayEndAt: dto.displayEndAt === undefined ? existing.displayEndAt : toDate(dto.displayEndAt),
       };
 

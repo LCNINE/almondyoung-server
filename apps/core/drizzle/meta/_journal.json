@@ -624,6 +624,13 @@
       "when": 1788875844772,
       "tag": "20260908135724_add-replenishment-rule-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789004013686,
+      "tag": "20260910013333_add-product-info-json",
+      "breakpoints": true
     }
   ]
 }

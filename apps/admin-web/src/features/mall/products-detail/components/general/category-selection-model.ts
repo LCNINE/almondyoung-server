@@ -48,7 +48,10 @@ export function buildCategoryPathLabels(
   tree: CategoryTreeNodeLike[]
 ): Map<string, string> {
   const out = new Map<string, string>();
-  const walk = (nodes: CategoryTreeNodeLike[], pathSegments: string[]): void => {
+  const walk = (
+    nodes: CategoryTreeNodeLike[],
+    pathSegments: string[]
+  ): void => {
     for (const node of nodes) {
       const nextPath = [...pathSegments, node.name];
       out.set(node.id, nextPath.join(' / '));
@@ -74,7 +77,9 @@ export function createVisibilityPredicate(options: {
 
   return (node, pathSegments) => {
     const inactiveBlocked =
-      !node.isActive && !options.includeInactive && !options.selectedIds.has(node.id);
+      !node.isActive &&
+      !options.includeInactive &&
+      !options.selectedIds.has(node.id);
     if (inactiveBlocked) return false;
     if (!hasQuery) return true;
     return matchesCategory(node, pathSegments, options.query);

@@ -6,6 +6,19 @@
 // - apps/core/.../dto/masters/master-response.dto.ts  (ProductMasterDto)
 // - apps/core/.../dto/variants/variant-response.dto.ts (VariantWithPriceDto)
 
+/** 스토어프론트 상품 상세의 «상품정보» 표. 키 이름이 곧 표의 행이다. */
+export type ProductInfo = {
+  productNumber?: string;
+  weight?: string;
+  dimensions?: string;
+  origin?: string;
+  capacity?: string;
+  expirationDate?: string;
+  manufacturer?: string;
+  material?: string;
+  usage?: string;
+};
+
 export type ProductOptionValue = {
   id: string;
   optionGroupId: string;
@@ -53,11 +66,15 @@ export type ProductMasterDetail = {
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
   /** 멤버십 전용 구매 제약. null 이면 제약 없음. */
-  purchaseConstraint?: { requiresMembership: boolean; lifetimeQuantityLimit: number | null } | null;
+  purchaseConstraint?: {
+    requiresMembership: boolean;
+    lifetimeQuantityLimit: number | null;
+  } | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
   shippingGroupCode?: string | null;
+  productInfo?: ProductInfo | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -156,11 +173,15 @@ export type MasterVersionDetailDto = {
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
   /** 멤버십 전용 구매 제약. null 이면 제약 없음. */
-  purchaseConstraint?: { requiresMembership: boolean; lifetimeQuantityLimit: number | null } | null;
+  purchaseConstraint?: {
+    requiresMembership: boolean;
+    lifetimeQuantityLimit: number | null;
+  } | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
   shippingGroupCode?: string | null;
+  productInfo?: ProductInfo | null;
   parentVersionId: string | null;
   draftOwnerId: string | null;
   /** 일괄 세션이 이 draft 를 잠갔으면 그 세션 id. 있으면 발행·삭제가 409 다. */
@@ -209,6 +230,7 @@ export type UpdateMasterVersionDto = {
   isMembershipOnly?: boolean;
   fulfillmentKind?: 'physical' | 'digital';
   shippingGroupCode?: string | null;
+  productInfo?: ProductInfo;
   optionDiff?: ProductOptionDiff;
 };
 

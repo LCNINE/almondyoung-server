@@ -94,6 +94,18 @@ export interface ProductPurchaseConstraintSnapshot {
   lifetimeQuantityLimit: number | null;
 }
 
+export interface ProductInfo {
+  productNumber?: string;
+  weight?: string;
+  dimensions?: string;
+  origin?: string;
+  capacity?: string;
+  expirationDate?: string;
+  manufacturer?: string;
+  material?: string;
+  usage?: string;
+}
+
 export interface ProductSnapshot {
   masterId: string;
   versionId: string;
@@ -123,6 +135,8 @@ export interface ProductSnapshot {
     thumbnail?: string;
   }>;
   brand?: string;
+  /** 스토어프론트 «상품정보» 표. channel-adapter 가 Medusa product.metadata 로 그대로 펼친다. */
+  productInfo?: ProductInfo;
   tags?: string[];
   productType?: string;
   fulfillmentKind?: 'physical' | 'digital';

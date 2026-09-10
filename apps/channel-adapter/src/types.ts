@@ -557,6 +557,18 @@ export interface PimPurchaseConstraint {
 export type PimFulfillmentKind = 'physical' | 'digital';
 
 // PIM Active Version 스냅샷 (동기화 소스 데이터)
+export interface PimProductInfo {
+  productNumber?: string;
+  weight?: string;
+  dimensions?: string;
+  origin?: string;
+  capacity?: string;
+  expirationDate?: string;
+  manufacturer?: string;
+  material?: string;
+  usage?: string;
+}
+
 export interface PimProductSnapshot {
   // Master/Version 식별
   masterId: string;
@@ -595,6 +607,8 @@ export interface PimProductSnapshot {
     thumbnail?: string;
   }>;
   brand?: string;
+  /** 스토어프론트 «상품정보» 표. Medusa product.metadata 로 그대로 펼쳐진다. */
+  productInfo?: PimProductInfo;
   tags?: string[];
   productType?: string;
   fulfillmentKind?: PimFulfillmentKind;

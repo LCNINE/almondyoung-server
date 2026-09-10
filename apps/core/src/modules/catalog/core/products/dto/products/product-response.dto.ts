@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ProductMasterEntity } from '../entities/master.entity';
 import { ProductVersionDto } from '../entities/master-version.entity';
 import { ProductImageDto } from './product-image.dto';
+import { ProductInfoDto } from '../masters/product-info.dto';
 
 export class PriceSummaryDto {
   @ApiProperty({ description: '최소 일반가' })
@@ -79,6 +80,9 @@ export class ProductDto {
 
   @ApiProperty({ description: '해외직구 상품 여부 (체크아웃 시 개인통관고유부호 필수)' })
   isOverseas: boolean;
+
+  @ApiProperty({ description: '스토어프론트 «상품정보» 표', type: ProductInfoDto, nullable: true })
+  productInfo: ProductInfoDto | null;
 
   @ApiProperty({
     description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',
@@ -175,7 +179,10 @@ export class ProductSummaryDto {
   @ApiProperty({ description: '브랜드', nullable: true })
   brand: string | null;
 
-  @ApiProperty({ description: '품번코드 (product_code). 목록의 사람이 읽는 식별자 — masterId(UUID)와 다르다.', nullable: true })
+  @ApiProperty({
+    description: '품번코드 (product_code). 목록의 사람이 읽는 식별자 — masterId(UUID)와 다르다.',
+    nullable: true,
+  })
   productCode: string | null;
 
   @ApiProperty({ description: '공급가 (supply_price). 매입 단가.', nullable: true })

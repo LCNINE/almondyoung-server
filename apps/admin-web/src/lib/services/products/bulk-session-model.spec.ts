@@ -304,7 +304,10 @@ describe('matchFilesToImageRows', () => {
 describe('collectAllRequiredImages', () => {
   const makeRows = (count: number, offset = 0): BulkSessionImage[] =>
     Array.from({ length: count }, (_, i) =>
-      imageRow({ imageKey: `IMG-${offset + i}`, sourceValue: `${offset + i}.jpg` })
+      imageRow({
+        imageKey: `IMG-${offset + i}`,
+        sourceValue: `${offset + i}.jpg`,
+      })
     );
 
   function pagedFetcher(all: BulkSessionImage[]) {

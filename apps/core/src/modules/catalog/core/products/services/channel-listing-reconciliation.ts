@@ -80,9 +80,7 @@ export function planChannelListingReconciliation(
 
     // 새 버전이 같은 variant 행을 그대로 쓰면 CoW 가 없었던 것 — 옮길 곳이 없다.
     const isStale = !newVariantIds.has(candidate.variantId);
-    const twinVariantId = isStale
-      ? (newVariantIdByComboKey.get(comboKey(candidate.optionValueIds)) ?? null)
-      : null;
+    const twinVariantId = isStale ? (newVariantIdByComboKey.get(comboKey(candidate.optionValueIds)) ?? null) : null;
 
     for (const listing of affected) {
       const blockedByDigital = newVersionIsDigital && listing.isExternalMarketplace;

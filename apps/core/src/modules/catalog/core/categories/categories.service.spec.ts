@@ -127,9 +127,7 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
   }
 
   const productEvents = (productPublisher: { enqueue: jest.Mock }) =>
-    productPublisher.enqueue.mock.calls.filter(
-      ([params]) => params.eventType === 'ProductMasterActiveVersionChanged',
-    );
+    productPublisher.enqueue.mock.calls.filter(([params]) => params.eventType === 'ProductMasterActiveVersionChanged');
 
   it('addProductsToCategory: 새로 연결된 활성 버전만 스냅샷과 함께 재발행한다', async () => {
     const tx = makeTx([
@@ -173,10 +171,7 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
   });
 
   it('moveProductsToCategory: 이동한 활성 버전을 재발행한다', async () => {
-    const tx = makeTx([
-      [{ id: 'cat-2' }],
-      [{ versionId: 'v1', masterId: 'm1', version: 1 }],
-    ]);
+    const tx = makeTx([[{ id: 'cat-2' }], [{ versionId: 'v1', masterId: 'm1', version: 1 }]]);
     const { service, productPublisher } = makeService(tx);
 
     await service.moveProductsToCategory(['v1'], 'cat-2');
@@ -313,9 +308,7 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
     const [params] = productPublisher.enqueue.mock.calls.find(
       ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
     );
-    expect(params.payload.category.displaySettings).toEqual(
-      expect.objectContaining({ isVisibleToMembersOnly: true }),
-    );
+    expect(params.payload.category.displaySettings).toEqual(expect.objectContaining({ isVisibleToMembersOnly: true }));
   });
 
   it('플래그를 안 보내면 display_settings 를 건드리지 않는다', async () => {
@@ -350,10 +343,7 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       updatedAt: new Date('2026-07-27T00:00:00.000Z'),
     };
     // select 순서: 현재 display_settings → 대상의 조상(parentId 체인) → 자손(BFS) → 자손의 조상
-    const queue: unknown[][] = [
-      [{ displaySettings: rows.currentDisplaySettings ?? {} }],
-      rows.ancestors ?? [],
-    ];
+    const queue: unknown[][] = [[{ displaySettings: rows.currentDisplaySettings ?? {} }], rows.ancestors ?? []];
     const tx = {
       select: jest.fn(() => ({
         from: () => ({
@@ -489,7 +479,6 @@ describe('ProductCategoriesService 레거시 path 대응', () => {
   });
 });
 
-
 /**
  * ADR-0029 §5 이후 `CategoryChanged` 는 **적재 시점에 zod 파싱을 탄다.** 그 전까지 이 스키마는
  * 런타임에서 한 번도 실행된 적이 없었다 — 이 이벤트의 발행자는 아웃박스뿐이었고 아웃박스에는
@@ -624,11 +613,7 @@ describe('ProductCategoriesService siblingOrder', () => {
     const payload = categoryPayloads(productPublisher as any)[0];
     expect(payload.siblingOrder).toEqual([CAT_1, CAT_2, CAT_3]);
     // 적재 시점 zod 가 미선언 키를 조용히 떼어내므로, 계약을 여기서 태워 둔다.
-    expect(PRODUCT_STREAM.events.CategoryChanged.schema!.parse(payload).siblingOrder).toEqual([
-      CAT_1,
-      CAT_2,
-      CAT_3,
-    ]);
+    expect(PRODUCT_STREAM.events.CategoryChanged.schema!.parse(payload).siblingOrder).toEqual([CAT_1, CAT_2, CAT_3]);
   });
 
   it('정렬값을 같은 값으로 다시 보내면 형제 순서를 싣지 않는다', async () => {

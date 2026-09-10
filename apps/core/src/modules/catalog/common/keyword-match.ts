@@ -12,11 +12,7 @@ export function keywordMatch(keyword: string, columns: AnyColumn[]): SQL | undef
   return and(
     ...tokens.map((token) => {
       const pattern = `%${token.replace(/[\\%_]/g, '\\$&')}%`;
-      return or(
-        ...columns.map(
-          (column) => sql`regexp_replace(${column}, '[[:space:]]', '', 'g') ILIKE ${pattern}`,
-        ),
-      );
+      return or(...columns.map((column) => sql`regexp_replace(${column}, '[[:space:]]', '', 'g') ILIKE ${pattern}`));
     }),
   );
 }

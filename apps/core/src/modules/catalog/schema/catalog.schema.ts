@@ -22,6 +22,28 @@ import { eq, sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+// 스토어프론트 상품 상세의 «상품정보» 표. 키 이름은 storefront ProductInfo 와 1:1 로 맞춘다.
+export type ProductInfoJson = {
+  /** 상품번호 */
+  productNumber?: string;
+  /** 상품 무게 */
+  weight?: string;
+  /** 상품 규격 */
+  dimensions?: string;
+  /** 원산지 */
+  origin?: string;
+  /** 용량 */
+  capacity?: string;
+  /** 유효일자 */
+  expirationDate?: string;
+  /** 제조사 */
+  manufacturer?: string;
+  /** 소재 */
+  material?: string;
+  /** 사용방법 */
+  usage?: string;
+};
+
 // ===== CATEGORY JSONB TYPE DEFINITIONS =====
 export type CategoryDisplaySettings = {
   showOnMainCategory?: boolean;
@@ -179,6 +201,11 @@ export const productMasterVersions = pgTable(
     productCode: varchar('product_code', { length: 100 }),
     alternativeName: varchar('alternative_name', { length: 255 }),
     material: text('material'),
+
+    // 스토어프론트 상품 상세의 «상품정보» 표에 그대로 실리는 표시 전용 값들.
+    // 검색·필터 대상이 아니라 한 덩어리로만 읽고 쓰므로 컬럼을 아홉 개 늘리지 않고 jsonb 하나로 둔다.
+    // 키는 스토어프론트 ProductInfo 타입과 같은 이름을 쓴다 (channel-adapter 가 metadata 로 그대로 펼침).
+    productInfo: jsonb('product_info').$type<ProductInfoJson>(),
 
     // Classification
     salesClassification: varchar('sales_classification', { length: 100 }),

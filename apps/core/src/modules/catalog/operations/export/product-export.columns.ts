@@ -41,10 +41,20 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'brand', label: '브랜드', width: 16, value: (r) => r.brand },
   { key: 'supplierName', label: '공급처', width: 16, value: (r) => r.supplierName },
   { key: 'status', label: '판매상태', width: 10, value: (r) => STATUS_LABELS[r.status] ?? r.status },
-  { key: 'soldOutState', label: '품절상태', width: 10, value: (r) => SOLD_OUT_LABELS[r.soldOutState] ?? r.soldOutState },
+  {
+    key: 'soldOutState',
+    label: '품절상태',
+    width: 10,
+    value: (r) => SOLD_OUT_LABELS[r.soldOutState] ?? r.soldOutState,
+  },
   { key: 'optionGroupNames', label: '옵션제목', width: 20, value: (r) => r.optionGroupNames.join(' / ') || null },
   { key: 'variantCount', label: '옵션수', width: 8, value: (r) => r.variantCount },
-  { key: 'basePrice', label: '판매가', width: 14, value: (r) => range(r.priceSummary?.minBasePrice, r.priceSummary?.maxBasePrice) },
+  {
+    key: 'basePrice',
+    label: '판매가',
+    width: 14,
+    value: (r) => range(r.priceSummary?.minBasePrice, r.priceSummary?.maxBasePrice),
+  },
   {
     key: 'membershipPrice',
     label: '멤버십가',

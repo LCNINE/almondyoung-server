@@ -1,7 +1,4 @@
-import {
-  productMasterPurchaseConstraints,
-  productPurchaseConstraints,
-} from '../../schema/catalog.schema';
+import { productMasterPurchaseConstraints, productPurchaseConstraints } from '../../schema/catalog.schema';
 import { deleteEntitiesIfUnmapped } from './delete-if-unmapped';
 
 describe('deleteEntitiesIfUnmapped', () => {
