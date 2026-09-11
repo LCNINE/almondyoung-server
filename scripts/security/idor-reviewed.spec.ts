@@ -559,7 +559,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/eligibilities': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:85',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:89',
     predicate: 'const conditions: SQL[] = [eq(reviewEligibilities.userId, userId)];',
     note: "userId는 컨트롤러의 @User('userId') 토큰값(review-eligibility.controller.ts:68), 쿼리 파라미터가 아님 — POST /reviews/eligibilities의 P0 패턴이 이 GET에는 없음.",
   },
@@ -589,7 +589,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:144',
+    evidence: 'apps/ugc-service/src/review-permissions/review-permission.service.ts:150',
     predicate: 'eq(reviewEligibilities.userId, input.userId),',
     note: '바디의 dto.eligibilityId(타인 것 추측 가능)를 그대로 믿지 않고, 권한 모듈의 consume 이 토큰 userId 소유 자격인지 검증 — 자격 도용 후 리뷰 생성/포인트 적립 체인 재현 불가. 소유권 술어는 확인과 소비를 합친 조건부 UPDATE 의 WHERE 에 그대로 남아 있다.',
   },

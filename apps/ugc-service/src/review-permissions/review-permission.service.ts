@@ -36,7 +36,11 @@ export interface ConsumablePermission {
  */
 @Injectable()
 export class ReviewPermissionService {
-  private static readonly ELIGIBILITY_EXPIRATION_DAYS = 15; // 리뷰 자격 만료 기간
+  /**
+   * 리뷰 자격 만료 기간. 자동 구매확정이 「배송완료 후 N일」에 자격을 만들므로 고객이 쓸 창은
+   * 그 N일 «뒤»부터 시작한다 — 15일이면 배송 지연·명절을 못 버틴다.
+   */
+  private static readonly ELIGIBILITY_EXPIRATION_DAYS = 90;
 
   private readonly logger = new Logger(ReviewPermissionService.name);
 
@@ -126,7 +130,9 @@ export class ReviewPermissionService {
    * 한 문장이면 뒤에 온 쪽이 행 잠금을 기다린 뒤 `consumed_at is null` 을 다시 평가해
    * 0행을 받는다 — 그래서 잠금을 따로 잡을 필요가 없다.
    *
-   * 주문이 취소·반품되면 자격이 회수되므로 `revoked_at` 도 같이 본다.
+   * 주문이 취소·반품되면 자격이 회수되므로 `revoked_at` 도 같이 본다. 만료(`expires_at`)도
+   * «같은 문장 안»에서 본다 — 따로 SELECT 해서 미리 보면 위의 이중 소비 창이 다시 열린다.
+   * `listByUser` 가 목록에서 거르는 조건과 같아야 화면과 API 가 같은 것을 말한다.
    * 리뷰 참조(`consumed_by_review_id`)는 리뷰가 생긴 «뒤»에 `linkConsumedReview` 가 채운다 —
    * 그 컬럼이 `reviews.id` 를 참조하므로 아직 없는 리뷰를 먼저 가리킬 수 없다.
    */
@@ -145,6 +151,7 @@ export class ReviewPermissionService {
           eq(reviewEligibilities.productId, input.productId),
           isNull(reviewEligibilities.consumedAt),
           isNull(reviewEligibilities.revokedAt),
+          gte(reviewEligibilities.expiresAt, now),
         ),
       )
       .returning({
