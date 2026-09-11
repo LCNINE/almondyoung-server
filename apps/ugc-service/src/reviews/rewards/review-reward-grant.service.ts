@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, gte, inArray, isNull, notInArray, or, sql, SQL } from 'drizzle-orm';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { reviewRewardGrants, reviews, type UgcServiceSchema } from '../../db/schema';
+import { reviewRewardGrants, reviewRewardRules, reviews, type UgcServiceSchema } from '../../db/schema';
 import { ReviewRewardRuleService, UgcTx } from './review-reward-rule.service';
 import {
   applyLimits,
@@ -14,6 +14,7 @@ import {
   UsageFacts,
 } from './reward-rule.evaluator';
 import {
+  ReviewRewardConditions,
   ReviewRewardGrantStatus,
   ReviewRewardKind,
   ReviewRewardLimitSpec,
@@ -43,6 +44,8 @@ const BUDGET_LIMIT_STATUSES: readonly ReviewRewardGrantStatus[] = ['GRANTED'];
 export type ReviewRewardRevokeReason =
   | 'REVIEW_DELETED'
   | 'REVIEW_HIDDEN'
+  /** 수정으로 지급 조건을 잃었다. 조건을 «얻는» 방향은 회수도 추가지급도 하지 않는다. */
+  | 'REVIEW_EDITED_BELOW_THRESHOLD'
   | 'ORDER_CANCELLED'
   | 'ORDER_CANCELLED_NOT_USER_FAULT'
   | 'ORDER_RETURNED'
@@ -206,6 +209,31 @@ export class ReviewRewardGrantService {
    */
   async revokeForReview(reviewId: string, reason: ReviewRewardRevokeReason, tx: UgcTx): Promise<RevokedGrant[]> {
     return this.revokeForReviews([reviewId], reason, tx);
+  }
+
+  /**
+   * 이 리뷰를 «수정»했을 때 재판정 대상이 되는 지급의 조건을 가져온다 — 지급이 살아 있고
+   * (`GRANTED`), 리뷰 작성 시점에 조건으로 판정된 것(`ON_REVIEW_CREATED`)만이다.
+   * 주간 베스트 지급은 「뽑혔다」는 사실에 대한 것이라 본문을 고쳐도 되돌리지 않는다.
+   *
+   * 규칙이 지워진 지급(`rule_id` 가 null)은 조건을 알 수 없으므로 대상에서 빠진다 —
+   * 조건을 모르는 채로 회수하면 「줄었으니 회수」라는 더 거친 기준으로 돌아가는 것이다.
+   * 왕복을 늘리지 않으려고 규칙 조인까지 한 문장에 넣는다.
+   */
+  async findEditSensitiveConditions(reviewId: string, tx: UgcTx): Promise<ReviewRewardConditions[]> {
+    const rows = await tx
+      .select({ conditions: reviewRewardRules.conditions })
+      .from(reviewRewardGrants)
+      .innerJoin(reviewRewardRules, eq(reviewRewardRules.id, reviewRewardGrants.ruleId))
+      .where(
+        and(
+          eq(reviewRewardGrants.reviewId, reviewId),
+          eq(reviewRewardGrants.status, 'GRANTED'),
+          eq(reviewRewardGrants.trigger, 'ON_REVIEW_CREATED'),
+        ),
+      );
+
+    return rows.map((row) => row.conditions);
   }
 
   /**
@@ -403,8 +431,9 @@ export class ReviewRewardGrantService {
    *
    * 두 한도는 «목적이 달라» 회수(REVOKED)를 다르게 센다.
    * - **1인당 한도는 남용 방지**다. 회수된 건도 세지 않으면 리뷰를 썼다 지우기만 해도 한도가
-   *   비워져 같은 사람이 무한히 다시 받는다. 지금 있는 회수 사유는 `REVIEW_DELETED`·`REVIEW_HIDDEN`
-   *   둘뿐이고 **둘 다 오지급 정정이 아니라 고객·운영자 사유**라, 기회를 되돌려 줄 이유가 없다.
+   *   비워져 같은 사람이 무한히 다시 받는다. 리뷰 쪽 회수 사유(`REVIEW_DELETED`·`REVIEW_HIDDEN`·
+   *   `REVIEW_EDITED_BELOW_THRESHOLD`)는 **오지급 정정이 아니라 고객·운영자 사유**라 기회를
+   *   되돌려 줄 이유가 없고, 주문 쪽 사유 중 고객 귀책이 아닌 둘만 위 면제 목록으로 뺀다.
    * - **전체 예산 한도는 실제 지출 통제**다. 회수는 돈이 돌아온 것이므로 예산도 돌아와야 한다.
    *   여기서 회수분까지 세면 쓰지도 않은 예산이 잠긴다.
    *

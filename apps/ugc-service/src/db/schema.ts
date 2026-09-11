@@ -103,6 +103,14 @@ export const reviews = pgTable(
       .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
     index('reviews_user_id').on(table.userId),
     index('reviews_created_at').on(table.createdAt),
+    /**
+     * 「자격 하나로 리뷰 하나」를 DB 로 못 박는다. 앱의 조건부 UPDATE 가 이미 막지만,
+     * 다른 경로(스크립트·수동 투입)로도 뚫리지 않게 두는 마지막 관문이다.
+     * 권한 행 없이 들어온 이관·구 데이터가 다수라 NULL 은 제외하는 부분 인덱스다.
+     */
+    uniqueIndex('reviews_review_permission_unique')
+      .on(table.reviewPermissionId)
+      .where(sql`${table.reviewPermissionId} is not null`),
   ],
 );
 

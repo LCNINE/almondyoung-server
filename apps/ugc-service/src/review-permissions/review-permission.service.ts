@@ -111,20 +111,26 @@ export class ReviewPermissionService {
   }
 
   /**
-   * 리뷰를 쓸 수 있는지 판정한다. 못 쓰면 던진다 — 리뷰가 만들어지기 «전»에 막아야 한다.
+   * 자격을 «선점»한다 — 쓸 수 있는지 확인하는 일과 소비 표시가 조건부 UPDATE 한 문장이다.
+   * 못 쓰면 던진다: 리뷰가 만들어지기 «전»에 막아야 한다.
+   *
+   * 확인(SELECT)과 소비(UPDATE)를 두 문장으로 갈라 두면 READ COMMITTED 아래에서 겹친 두
+   * 요청이 «둘 다» 확인을 통과해 자격 하나로 리뷰가 둘 만들어진다(실 DB 로 재현했다).
+   * 한 문장이면 뒤에 온 쪽이 행 잠금을 기다린 뒤 `consumed_at is null` 을 다시 평가해
+   * 0행을 받는다 — 그래서 잠금을 따로 잡을 필요가 없다.
+   *
    * 주문이 취소·반품되면 자격이 회수되므로 `revoked_at` 도 같이 본다.
+   * 리뷰 참조(`consumed_by_review_id`)는 리뷰가 생긴 «뒤»에 `linkConsumedReview` 가 채운다 —
+   * 그 컬럼이 `reviews.id` 를 참조하므로 아직 없는 리뷰를 먼저 가리킬 수 없다.
    */
-  async assertConsumable(
+  async consume(
     input: { permissionId: string; userId: string; productId: string },
     tx: UgcTx,
   ): Promise<ConsumablePermission> {
+    const now = new Date();
     const [eligibility] = await tx
-      .select({
-        id: reviewEligibilities.id,
-        orderLineAmount: reviewEligibilities.orderLineAmount,
-        provider: reviewEligibilities.provider,
-      })
-      .from(reviewEligibilities)
+      .update(reviewEligibilities)
+      .set({ consumedAt: now, updatedAt: now })
       .where(
         and(
           eq(reviewEligibilities.id, input.permissionId),
@@ -133,7 +139,12 @@ export class ReviewPermissionService {
           isNull(reviewEligibilities.consumedAt),
           isNull(reviewEligibilities.revokedAt),
         ),
-      );
+      )
+      .returning({
+        id: reviewEligibilities.id,
+        orderLineAmount: reviewEligibilities.orderLineAmount,
+        provider: reviewEligibilities.provider,
+      });
 
     if (!eligibility) {
       throw new BadRequestException('리뷰 작성 자격이 없습니다.');
@@ -142,15 +153,14 @@ export class ReviewPermissionService {
     return eligibility;
   }
 
-  /** 자격을 소비 처리한다. 리뷰 생성과 «같은 트랜잭션»이어야 한다. */
-  async markConsumed(permissionId: string, reviewId: string, tx: UgcTx): Promise<void> {
+  /**
+   * 선점한 자격에 «어느 리뷰로 썼는지»를 잇는다. `consume` 과 «같은 트랜잭션»이어야 한다 —
+   * 조건이 없는 것은 소비 판정을 이미 `consume` 이 끝냈기 때문이다.
+   */
+  async linkConsumedReview(permissionId: string, reviewId: string, tx: UgcTx): Promise<void> {
     await tx
       .update(reviewEligibilities)
-      .set({
-        consumedAt: new Date(),
-        consumedByReviewId: reviewId,
-        updatedAt: new Date(),
-      })
+      .set({ consumedByReviewId: reviewId, updatedAt: new Date() })
       .where(eq(reviewEligibilities.id, permissionId));
   }
 

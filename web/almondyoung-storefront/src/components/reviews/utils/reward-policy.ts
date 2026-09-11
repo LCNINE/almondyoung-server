@@ -20,10 +20,12 @@ export function toRewardDisplay(
     ? policies.filter((policy) => policy.reviewType === reviewType)
     : policies
 
+  // 서버는 정률·BADGE 의 rewardAmount 를 null 로 내려보낸다 — 금액을 하나로 말할 수 없어서다.
+  // 0 으로 뭉개진 값을 걸러 내던 자리가 그대로 null 을 거르는 자리가 된다.
   const fixedAmounts = scoped
     .filter((policy) => policy.rewardKind === "POINT_FIXED")
     .map((policy) => policy.rewardAmount)
-    .filter((amount) => amount > 0)
+    .filter((amount): amount is number => amount !== null && amount > 0)
 
   if (fixedAmounts.length > 0) {
     return { kind: "fixed", amount: Math.max(...fixedAmounts) }

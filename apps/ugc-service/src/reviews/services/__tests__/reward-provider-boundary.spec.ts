@@ -49,6 +49,7 @@ function makeTx(inserted: InsertedRow[]) {
 }
 
 function makeService(provider: ReviewPermissionProvider, inserted: InsertedRow[]) {
+  const tx = makeTx(inserted);
   const grantService = new ReviewRewardGrantService(
     {} as never,
     {
@@ -57,14 +58,14 @@ function makeService(provider: ReviewPermissionProvider, inserted: InsertedRow[]
   );
 
   const permissionService = {
-    assertConsumable: jest.fn().mockResolvedValue({ id: PERMISSION_ID, orderLineAmount: 20000, provider }),
-    markConsumed: jest.fn().mockResolvedValue(undefined),
+    consume: jest.fn().mockResolvedValue({ id: PERMISSION_ID, orderLineAmount: 20000, provider }),
+    linkConsumedReview: jest.fn().mockResolvedValue(undefined),
   };
 
   const rewardPublisher = { enqueueEarnPointsCommand: jest.fn().mockResolvedValue(undefined) };
 
   const service = new ReviewsService(
-    { db: { transaction: (fn: (tx: never) => unknown) => fn(makeTx(inserted)) } } as never,
+    { db: { transaction: (fn: (tx: never) => unknown) => fn(tx) } } as never,
     permissionService as never,
     grantService,
     rewardPublisher as never,
@@ -72,7 +73,7 @@ function makeService(provider: ReviewPermissionProvider, inserted: InsertedRow[]
     { get: () => undefined } as never,
   );
 
-  return { service, rewardPublisher };
+  return { service, rewardPublisher, permissionService, tx };
 }
 
 const dto = { productId: 'prod-1', rating: 5, content: '내용'.repeat(20), eligibilityId: PERMISSION_ID } as never;
@@ -114,5 +115,42 @@ describe('리뷰 보상은 주문에서 나온 권한에만 나간다', () => {
 
   it('새 사유는 원장 컬럼 길이(40)를 넘지 않는다', () => {
     expect('NON_ORDER_PROVIDER'.length).toBeLessThanOrEqual(40);
+  });
+});
+
+/**
+ * 자격 소비를 «선점 UPDATE» 로 앞당기면서 `create` 안의 순서가 바뀌었다. 원장에는 지급으로
+ * 남았는데 적립 명령만 유실되는 창을 다시 열지 않도록, 「전부 같은 트랜잭션」을 못 박는다.
+ */
+describe('리뷰 작성은 자격 선점부터 적립 명령 적재까지 한 트랜잭션이다', () => {
+  it('자격 선점 · 리뷰 참조 연결 · 적립 명령 적재가 모두 같은 tx 를 받는다', async () => {
+    const inserted: InsertedRow[] = [];
+    const { service, rewardPublisher, permissionService, tx } = makeService('order', inserted);
+
+    await service.create('user-1', dto);
+
+    expect(permissionService.consume).toHaveBeenCalledWith(expect.anything(), tx);
+    expect(permissionService.linkConsumedReview).toHaveBeenCalledWith(PERMISSION_ID, REVIEW_ID, tx);
+    expect(rewardPublisher.enqueueEarnPointsCommand).toHaveBeenCalledWith(expect.anything(), tx);
+  });
+
+  it('자격 선점이 리뷰 insert 보다 «먼저» 일어난다 — 뒤에 온 요청은 리뷰를 만들기 전에 거절된다', async () => {
+    const inserted: InsertedRow[] = [];
+    const { service, permissionService } = makeService('order', inserted);
+    const order: string[] = [];
+
+    permissionService.consume.mockImplementation(() => {
+      order.push('consume');
+      return Promise.resolve({ id: PERMISSION_ID, orderLineAmount: 20000, provider: 'order' });
+    });
+    const originalPush = inserted.push.bind(inserted);
+    inserted.push = ((row: InsertedRow) => {
+      if ('rating' in row) order.push('insert-review');
+      return originalPush(row);
+    }) as never;
+
+    await service.create('user-1', dto);
+
+    expect(order).toEqual(['consume', 'insert-review']);
   });
 });
