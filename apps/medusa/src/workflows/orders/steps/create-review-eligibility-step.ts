@@ -19,6 +19,19 @@ type CreateReviewEligibilityInput = {
   items: OrderLineInput[];
 };
 
+/**
+ * 무엇을 했는지 «호출자가 읽을 수 있게» 돌려준다. 던지는 대신 이걸로 말한다 —
+ * 자동 구매확정 잡이 「자격이 실제로 생겼나」를 판정하려면 결과가 필요하다.
+ */
+export type CreateReviewEligibilityResult =
+  | { status: 'created'; orderId: string; almondUserId: string; itemCount: number }
+  | { status: 'skipped'; orderId: string; reason: string };
+
+/**
+ * ugc 왕복 상한. 없으면 ugc 가 매달릴 때 «결제 워크플로가 같이 매달린다» — 결제 경로다.
+ */
+const UGC_REQUEST_TIMEOUT_MS = 5_000;
+
 const toNumber = (value: unknown): number | undefined => {
   const n = typeof value === 'string' ? Number(value) : value;
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
@@ -46,22 +59,41 @@ export const lineAmount = (item: OrderLineInput): number | undefined => {
   return amount >= 0 ? amount : undefined;
 };
 
-export const createReviewEligibilityStep = createStep(
-  'create-review-eligibility',
-  async (input: CreateReviewEligibilityInput, { container }) => {
-    const ugcServiceUrl = process.env.UGC_SERVICE_URL;
-    if (!ugcServiceUrl) {
-      throw new Error('UGC_SERVICE_URL is not configured');
-    }
+/**
+ * 🔴 **이 함수는 던지지 않는다.**
+ *
+ * 구매확정 워크플로에서 이건 step 2 이고, 던지면 step 1(결제 캡처)의 보상 함수가 돌아
+ * `refundPaymentWorkflow` 로 «실제 환불»이 나간다. 리뷰 자격이 없는 것보다 고객 결제가
+ * 되돌려지는 쪽이 비교할 수 없이 나쁘고, 자동 구매확정 잡은 이 경로를 대량으로 밟으므로
+ * ugc 장애 한 번이 다발 환불이 된다. 그래서 모든 실패는 로그 + 조기 반환이다.
+ *
+ * 대신 자격이 «조용히 누락»될 수 있다 — 그건 발급이 멱등(`source_event_id` unique +
+ * `onConflictDoNothing`)이라는 점에 기대어 나중에 다시 시도해 메운다.
+ */
+export async function createReviewEligibility(
+  input: CreateReviewEligibilityInput,
+  container: { resolve: <T>(key: string) => T },
+): Promise<CreateReviewEligibilityResult> {
+  const skip = (reason: string, detail?: string): CreateReviewEligibilityResult => {
+    logger.warn(`Review eligibility skipped for order ${input.orderId}: ${reason}${detail ? ` — ${detail}` : ''}`);
+    return { status: 'skipped', orderId: input.orderId, reason };
+  };
 
-    // ugc 의 리뷰자격 등록은 내부 전용 라우트다(바디의 userId 를 그대로 신뢰한다).
-    // 키가 없으면 여기서 끊는다 — 헤더 없이 보내면 ugc 가 401 을 내고, 이 스텝은 워크플로의
-    // step 2 라 실패가 step 1(결제 캡처) 롤백으로 번진다. 조용히 빠뜨리는 게 가장 위험하다.
-    const ugcInternalKey = process.env.UGC_INTERNAL_KEY;
-    if (!ugcInternalKey) {
-      throw new Error('UGC_INTERNAL_KEY is not configured');
-    }
+  const ugcServiceUrl = process.env.UGC_SERVICE_URL;
+  if (!ugcServiceUrl) return skip('ugc_service_url_missing');
 
+  // ugc 의 리뷰자격 등록은 내부 전용 라우트다(바디의 userId 를 그대로 신뢰한다).
+  // 키가 없으면 보내 봐야 401 이므로 여기서 끊는다.
+  const ugcInternalKey = process.env.UGC_INTERNAL_KEY;
+  if (!ugcInternalKey) return skip('ugc_internal_key_missing');
+
+  const orderLines = input.items.filter((item) => item.id && item.product_id);
+  if (!orderLines.length) return skip('no_items');
+
+  let almondUserId: string;
+  let items: Array<{ productId: string; orderLineId: string; orderLineAmount?: number }>;
+
+  try {
     // customer metadata에서 almond_user_id 조회
     const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY);
     const { data: customers } = await query.graph({
@@ -70,16 +102,9 @@ export const createReviewEligibilityStep = createStep(
       filters: { id: input.customerId },
     });
 
-    const almondUserId = customers?.[0]?.metadata?.almond_user_id;
-    if (!almondUserId) {
-      throw new Error(`No almond_user_id found for customer ${input.customerId}`);
-    }
-
-    const orderLines = input.items.filter((item) => item.id && item.product_id);
-
-    if (!orderLines.length) {
-      throw new Error(`No items found for order ${input.orderId}`);
-    }
+    const resolvedUserId = customers?.[0]?.metadata?.almond_user_id;
+    if (!resolvedUserId) return skip('no_almond_user_id', `customer ${input.customerId}`);
+    almondUserId = resolvedUserId as string;
 
     // ugc 의 리뷰는 **PIM 마스터 id(UUID)** 로 키를 잡는다 — 상품 상세도 그 id 로 리뷰를 읽고
     // (`product.metadata.pimMasterId`), reviews.product_id 컬럼도 uuid 다. Medusa 의
@@ -99,7 +124,7 @@ export const createReviewEligibilityStep = createStep(
       }
     }
 
-    const items = orderLines
+    items = orderLines
       .map((item) => {
         const productId = masterIdByProductId.get(item.product_id);
         if (!productId) {
@@ -118,14 +143,13 @@ export const createReviewEligibilityStep = createStep(
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
+  } catch (err) {
+    return skip('lookup_failed', (err as Error)?.message);
+  }
 
-    // 마스터 id 를 못 찾은 주문은 리뷰 자격 없이 넘어간다. 여기서 던지면 워크플로 step 1 —
-    // 즉 **결제 캡처가 롤백**된다. 리뷰 자격이 없는 것보다 결제가 되돌려지는 쪽이 훨씬 나쁘다.
-    if (!items.length) {
-      logger.warn(`No PIM-backed items for order ${input.orderId}; skipping review eligibility`);
-      return new StepResponse({ orderId: input.orderId, almondUserId });
-    }
+  if (!items.length) return skip('no_pim_backed_items');
 
+  try {
     const response = await fetch(`${ugcServiceUrl}/reviews/eligibilities`, {
       method: 'POST',
       headers: {
@@ -137,14 +161,25 @@ export const createReviewEligibilityStep = createStep(
         orderId: input.orderId,
         items,
       }),
+      signal: AbortSignal.timeout(UGC_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`UGC service returned ${response.status}: ${body}`);
+      const body = await response.text().catch(() => '');
+      return skip(`ugc_error_${response.status}`, body);
     }
+  } catch (err) {
+    return skip('ugc_request_failed', (err as Error)?.message);
+  }
 
-    logger.info(`Review eligibility created for order ${input.orderId}, user ${almondUserId}`);
-    return new StepResponse({ orderId: input.orderId, almondUserId });
+  logger.info(`Review eligibility created for order ${input.orderId}, user ${almondUserId}`);
+  return { status: 'created', orderId: input.orderId, almondUserId, itemCount: items.length };
+}
+
+export const createReviewEligibilityStep = createStep(
+  'create-review-eligibility',
+  async (input: CreateReviewEligibilityInput, { container }) => {
+    const result = await createReviewEligibility(input, container as { resolve: <T>(key: string) => T });
+    return new StepResponse(result);
   },
 );
