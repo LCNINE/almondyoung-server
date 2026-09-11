@@ -1123,7 +1123,7 @@
     "welcomeStrong": "アモンドヤン メンバーシップ",
     "welcomeLineSuffix": " が",
     "welcomeLine3": "開始されました。",
-    "depositConfirmNotice": "入金確認は自動で行われ、最大10分ほどかかる場合があります。確認され次第、メンバーシップ特典が始まります。",
+    "depositConfirmNotice": "最大10分ほどかかる場合があります。確認され次第、メンバーシップ特典が始まります。",
     "recommendLinksTitle": "メンバーシップ おすすめリンク",
     "welcomeDeal": "100ウォン ウェルカムディール",
     "exclusiveProducts": "メンバーシップ特典商品を見る",
@@ -1136,7 +1136,12 @@
     "retryPayment": "再決済する",
     "pageTitle": "メンバーシップ登録",
     "plansLoadFailTitle": "メンバーシップ プラン情報の取得に失敗しました。",
-    "plansLoadFailDescription": "しばらくしてから再度お試しください。"
+    "plansLoadFailDescription": "しばらくしてから再度お試しください。",
+    "pendingMandateNotice": "ご登録の口座は銀行審査中のため、初回の引き落としは承認後に行われます。",
+    "recurringActiveNotice": "次回の決済日はメンバーシップ管理でご確認いただけます。",
+    "pendingMandateHeadline": "メンバーシップ特典は今すぐご利用いただけます",
+    "recurringActiveHeadline": "毎月ご登録の口座から自動で決済されます",
+    "depositConfirmHeadline": "入金確認は自動で行われます"
   },
   "membershipPaymentMethod": {
     "pageTitle": "決済方法管理",

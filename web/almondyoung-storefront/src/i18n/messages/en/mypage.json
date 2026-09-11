@@ -1123,7 +1123,7 @@
     "welcomeStrong": "Almondyoung Membership",
     "welcomeLineSuffix": " has",
     "welcomeLine3": "started.",
-    "depositConfirmNotice": "Deposit confirmation is automatic and may take up to about 10 minutes. Your membership benefits begin once confirmed.",
+    "depositConfirmNotice": "It may take up to about 10 minutes. Your membership benefits begin once confirmed.",
     "recommendLinksTitle": "Membership recommendations",
     "welcomeDeal": "Browse the 100 KRW welcome deal",
     "exclusiveProducts": "Browse membership deals",
@@ -1136,7 +1136,12 @@
     "retryPayment": "Retry payment",
     "pageTitle": "Membership subscription",
     "plansLoadFailTitle": "Failed to load membership plans.",
-    "plansLoadFailDescription": "Please try again later."
+    "plansLoadFailDescription": "Please try again later.",
+    "pendingMandateNotice": "Your account is still under bank review, so the first withdrawal happens once it's approved.",
+    "recurringActiveNotice": "You can check the next billing date in Membership settings.",
+    "pendingMandateHeadline": "Your membership benefits start right now",
+    "recurringActiveHeadline": "You'll be charged automatically each month",
+    "depositConfirmHeadline": "Deposit confirmation is automatic"
   },
   "membershipPaymentMethod": {
     "pageTitle": "Payment method",
