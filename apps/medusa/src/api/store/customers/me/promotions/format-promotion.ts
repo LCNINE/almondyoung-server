@@ -55,6 +55,15 @@ export type PromotionLike = {
 export type FormattedPromotion = {
   id: string;
   code: string;
+  /**
+   * 어드민이 붙인 「쿠폰 이름」 (#789). `promotion_meta` 에서 온다 — 엔진에는 이 개념이 없다.
+   * `visibility` 와 같은 이유로 **최상위**다.
+   *
+   * 🔴 **없을 때 `code` 로 채우지 않는다.** 폴백은 화면의 일이다 — 서버가 코드를 되돌려주면
+   * 화면이 「이름이 없다」와 「이름이 코드와 같다」를 구분하지 못해, 이름 없는 쿠폰에서
+   * 제목과 부제가 같은 문자열로 두 번 찍힌다.
+   */
+  name: string | null;
   type: string;
   status: string;
   is_automatic: boolean;
@@ -104,6 +113,8 @@ function minOrderAmount(promo: PromotionLike): number | null {
 /** `promotion_meta` 에서 온 값들. 호출부가 프로모션마다 조회하지 않도록 묶어서 받는다. */
 export type PromotionMetaView = {
   visibility: string;
+  /** 어드민이 붙인 쿠폰 이름 (#789). 선택 입력이라 없을 수 있다. */
+  name: string | null;
   maxDiscountAmount: number | null;
   /**
    * 이 고객에게 이 쿠폰이 언제까지인가. **사용 가능한 장이 있으면 그 중 가장 이른 만료**,
@@ -132,6 +143,7 @@ export function formatPromotion(
   return {
     id: promo.id,
     code: promo.code,
+    name: meta.name,
     type: promo.type,
     status: promo.status,
     is_automatic: promo.is_automatic,

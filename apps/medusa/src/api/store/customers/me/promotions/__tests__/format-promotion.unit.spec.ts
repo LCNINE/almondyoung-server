@@ -31,6 +31,7 @@ const NO_GRANTS: CouponGrantRow[] = [];
 
 const meta = (overrides: Partial<PromotionMetaView> = {}): PromotionMetaView => ({
   visibility: 'public',
+  name: null,
   maxDiscountAmount: null,
   expiresAt: null,
   validityDays: null,
@@ -145,12 +146,34 @@ describe('formatPromotion', () => {
       'is_automatic',
       'max_discount_amount',
       'min_order_amount',
+      'name',
       'status',
       'type',
       'usable_count',
       'validity_days',
       'visibility',
     ]);
+  });
+});
+
+// #789. 어드민이 붙인 「쿠폰 이름」이 스토어 응답에 없어서, 고객은 어느 화면에서도 코드를 봤다.
+// `visibility`·`max_discount_amount` 와 같은 이유로 **최상위**다 — `application_method` 는 엔진
+// 필드를 그대로 옮기는 자리라 우리 확장을 섞으면 출처가 안 갈린다.
+describe('쿠폰 이름(#789)', () => {
+  it('이름이 있으면 최상위 name 으로 나간다', () => {
+    const out = formatPromotion(basePromo, meta({ name: '신규 가입 축하 쿠폰' }), NO_GRANTS, NOW);
+    expect(out.name).toBe('신규 가입 축하 쿠폰');
+  });
+
+  it('이름이 없으면 null 이다 — 키를 빼지 않는다(화면이 `name ?? code` 폴백을 탄다)', () => {
+    expect(formatPromotion(basePromo, meta(), NO_GRANTS, NOW).name).toBeNull();
+  });
+
+  // 🔴 코드로 «서버가» 폴백하면 안 된다. 폴백은 화면의 일이다 — 서버가 코드를 name 으로
+  // 되돌려주면 「이름이 없다」와 「이름이 코드와 같다」를 화면이 구분할 수 없고, 이름 없는
+  // 쿠폰에서 제목과 부제가 같은 문자열로 두 번 찍힌다.
+  it('이름이 없을 때 코드로 대신 채우지 않는다', () => {
+    expect(formatPromotion(basePromo, meta(), NO_GRANTS, NOW).name).not.toBe('WELCOME10');
   });
 });
 

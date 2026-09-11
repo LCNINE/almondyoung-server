@@ -4,7 +4,7 @@ import { previewCouponCode, type CouponPreviewResult } from "@/lib/api/medusa/st
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { resolveExpiryDisplay } from "@/lib/utils/coupon-expiry"
 import { CouponClaimButton, type CouponClaimState } from "./_components/coupon-claim-button"
-import { shouldShowCap } from "@/lib/utils/coupon-discount"
+import { couponName, shouldShowCap } from "@/lib/utils/coupon-discount"
 
 interface PageProps {
   params: Promise<{ countryCode: string }>
@@ -79,6 +79,7 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
 
   const { promotion } = result
   const { discount, expires_at, validity_days } = promotion
+  const name = couponName(promotion.name)
 
   const discountBase = discount
     ? discount.type === "percentage"
@@ -110,11 +111,20 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
       <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
         <div className="h-1.5 bg-primary" />
         <div className="p-6 space-y-3">
-          <p className="font-mono text-xs text-muted-foreground">{promotion.code}</p>
+          {/* #789. 이름이 있으면 맨 위 제목이고, 코드는 만료일 아래 부제로 내려간다.
+              이름이 없으면 지금까지처럼 코드가 이 자리에 남는다. */}
+          {name ? (
+            <p className="text-sm font-semibold">{name}</p>
+          ) : (
+            <p className="font-mono text-xs text-muted-foreground">{promotion.code}</p>
+          )}
           {discountLabel && (
             <p className="text-3xl font-bold tracking-tight">{discountLabel}</p>
           )}
           <p className="text-sm text-muted-foreground">{expiryLabel}</p>
+          {name && (
+            <p className="font-mono text-xs text-muted-foreground">{promotion.code}</p>
+          )}
         </div>
       </div>
 

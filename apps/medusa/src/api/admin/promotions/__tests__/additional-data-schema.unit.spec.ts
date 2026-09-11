@@ -31,6 +31,24 @@ describe('additional_data 스키마', () => {
     expect(schema.safeParse({ visibility: 'bogus_value' }).success).toBe(false);
   });
 
+  // #789. 이름은 이제 «고객이 보는 제목»이다 — 스토어 응답 3곳으로 나가고, 카드·드롭다운은
+  // 한 줄에 truncate 로 가둔다. 상한이 없으면 어드민이 문단을 붙여 넣어도 400 이 안 나고,
+  // 그 결과는 잘린 제목과 「무엇이 잘렸는지 모르는」 운영자다. 길이는 여기서 막는다.
+  it('name 은 60자를 넘기면 거부한다 — 생성·수정 둘 다', () => {
+    const long = 'ㄱ'.repeat(61);
+    expect(
+      z.object(promotionAdditionalDataCreateShape).safeParse({ visibility: 'public', name: long }).success,
+    ).toBe(false);
+    expect(z.object(promotionAdditionalDataUpdateShape).safeParse({ name: long }).success).toBe(false);
+  });
+
+  it('60자까지는 받는다', () => {
+    const exact = 'ㄱ'.repeat(60);
+    expect(
+      z.object(promotionAdditionalDataCreateShape).safeParse({ visibility: 'public', name: exact }).success,
+    ).toBe(true);
+  });
+
   it('auto_issue_trigger 어휘도 닫혀 있다', () => {
     const schema = z.object(promotionAdditionalDataUpdateShape);
     expect(schema.safeParse({ auto_issue_trigger: 'customer_registered' }).success).toBe(true);

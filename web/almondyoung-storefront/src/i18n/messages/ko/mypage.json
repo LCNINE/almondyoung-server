@@ -57,6 +57,8 @@
     "wonDiscount": "{value}원 할인",
     "percentValue": "{value}%",
     "amountValue": "{amount}원",
+    "unitPercentDiscount": "% 할인",
+    "unitWonDiscount": "원 할인",
     "assignedSection": "발급받은 쿠폰",
     "claimSection": "발급받기 가능한 쿠폰",
     "claimButton": "발급받기",

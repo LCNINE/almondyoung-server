@@ -29,6 +29,15 @@ export type PromotionCampaignDto = {
 export type PromotionDto = {
   id: string
   code: string
+  /**
+   * 어드민이 붙인 「쿠폰 이름」 (#789). 없으면 `null` — 화면은 `couponName(name) ?? code` 로
+   * 제목을 정한다. **서버가 코드로 대신 채우지 않는다**(그러면 「이름 없음」과 「이름이
+   * 코드와 같음」이 구분되지 않아 제목·부제가 같은 문자열로 두 번 찍힌다).
+   *
+   * `?` 인 이유는 `expired_promotions` 와 같다 — 두 앱이 한 SST 스택이라 배포 순서를 정할
+   * 수단이 없고, 옛 medusa 가 도는 동안 이 키는 응답에 아예 없다.
+   */
+  name?: string | null
   type: string
   status: string
   is_automatic: boolean

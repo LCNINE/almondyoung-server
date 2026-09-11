@@ -136,6 +136,8 @@ export type CouponPreviewResult = {
   promotion?: {
     id: string
     code: string
+    /** 어드민이 붙인 쿠폰 이름 (#789). 없으면 null — 화면이 code 로 폴백한다. */
+    name?: string | null
     visibility: string
     discount: {
       type: string
@@ -186,6 +188,8 @@ export const claimCoupon = async (promotionId: string): Promise<void> => {
 export type CouponEventCoupon = {
   promotion_id: string
   code: string
+  /** 어드민이 붙인 쿠폰 이름 (#789). 없으면 null — 화면이 code 로 폴백한다. */
+  name?: string | null
   discount: {
     type: string
     value: number
