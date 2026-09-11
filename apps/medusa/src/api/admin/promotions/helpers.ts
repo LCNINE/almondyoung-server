@@ -127,6 +127,24 @@ export function resolveVisibility(metaRecord: unknown): CouponVisibilityValue {
 }
 
 /**
+ * 메타 레코드에서 어드민이 붙인 「쿠폰 이름」을 꺼낸다 (#789).
+ *
+ * 스토어 응답 **세 곳**이 이 이름을 내보낸다(`customers/me/promotions` ·
+ * `coupons/preview` · `events/:slug`). 각자 `meta?.name` 을 읽으면 trim 규칙이 갈리므로
+ * 판정은 여기 하나뿐이다 — `resolveVisibility` 와 같은 이유, 같은 자리다.
+ *
+ * 🔴 **공백뿐인 이름은 「없음」으로 접는다.** 어드민 폼이 자유 입력이라 실재하는 값인데,
+ * 그대로 내보내면 화면의 `name ?? code` 폴백이 참으로 걸려 제목이 **빈 줄**이 된다 —
+ * 코드조차 안 보이는, 고치기 전보다 나쁜 상태다.
+ */
+export function resolveCouponName(metaRecord: unknown): string | null {
+  const raw = (metaRecord as { name?: unknown } | null | undefined)?.name;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
  * 「이 쿠폰은 발급받은 고객만 쓸 수 있는가」. 카트 게이트와 주문 확정 백스톱이 묻는 질문이다.
  *
  * 옛 코드는 `visibility === 'assigned_only' || === 'claimable'` 였는데, 메타가 없으면

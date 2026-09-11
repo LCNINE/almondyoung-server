@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService, { type CouponGrantRow } from '../../../../../modules/promotion-meta/service';
 import {
+  resolveCouponName,
   resolveVisibility,
   VISIBILITY_WHEN_META_MISSING,
 } from '../../../../admin/promotions/helpers';
@@ -149,6 +150,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const raw = metaById.get(promotionId)?.validity_days;
     return raw != null ? Number(raw) : null;
   };
+  // 어드민이 붙인 쿠폰 이름 (#789). trim·공백 판정은 `resolveCouponName` 한 곳에만 있다 —
+  // 같은 이름을 내보내는 `coupons/preview`·`events/:slug` 와 규칙이 갈리면 안 된다.
+  const nameOf = (promotionId: string): string | null =>
+    resolveCouponName(metaById.get(promotionId));
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   // isAssigned 는 어느 버킷(assigned/expired vs public/claimable)에서 이 항목을 뽑았는지로
   // 정한다 — grants 존재 여부와 독립이다(format-promotion.ts 의 PromotionMetaView 주석 참고).
@@ -157,6 +162,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       promo,
       {
         visibility: visibilityOf(promo.id),
+        // 이름(#789)도 visibility·캡과 같은 메타 조회에서 온다 — `promotion_meta` 는
+        // `query.graph()` 에 링크돼 있지 않으므로 `promotionFields` 에 더할 수 없다.
+        name: nameOf(promo.id),
         maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
         expiresAt: expiresAtOf(promo.id),
         validityDays: validityDaysOf(promo.id),

@@ -9,7 +9,7 @@ import {
   type CouponClaimState,
   type CouponBlockReason,
 } from "@/app/[countryCode]/(main)/coupons/claim/_components/coupon-claim-button"
-import { shouldShowCap } from "@/lib/utils/coupon-discount"
+import { couponName, shouldShowCap } from "@/lib/utils/coupon-discount"
 
 interface PageProps {
   params: Promise<{ countryCode: string; slug: string }>
@@ -66,6 +66,9 @@ export default async function CouponEventPage({ params }: PageProps) {
   }
   const expiryLabel = (c: CouponEventCoupon) =>
     c.expires_at ? t("expiresAt", { date: formatDate(c.expires_at, DATE_FORMATS.KO_DOT) }) : t("unlimited")
+  // #789. 이름이 있으면 할인 위에 제목으로 얹는다 — 할인 크기는 그대로 둔다.
+  // 고객의 구매 판단 정보는 여전히 할인이다.
+  const nameLabel = (c: CouponEventCoupon) => couponName(c.name)
 
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-8">
@@ -99,10 +102,13 @@ export default async function CouponEventPage({ params }: PageProps) {
             <div className="h-1.5 bg-primary" />
             <div className="flex items-center justify-between gap-3 p-4">
               <div className="min-w-0 space-y-1">
+                {nameLabel(c) && (
+                  <p className="truncate text-sm font-semibold">{nameLabel(c)}</p>
+                )}
                 {discountLabel(c) && (
                   <p className="text-2xl font-bold tracking-tight">{discountLabel(c)}</p>
                 )}
-                <p className="font-mono text-xs text-muted-foreground">{c.code}</p>
+                <p className="truncate font-mono text-xs text-muted-foreground">{c.code}</p>
                 <p className="text-xs text-muted-foreground">{expiryLabel(c)}</p>
               </div>
               <div className="w-32 shrink-0">

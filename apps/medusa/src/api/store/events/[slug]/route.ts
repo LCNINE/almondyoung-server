@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../modules/promotion-meta/service';
-import { resolveVisibility } from '../../../admin/promotions/helpers';
+import { resolveCouponName, resolveVisibility } from '../../../admin/promotions/helpers';
 import { isIssuableToCustomer } from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
 import { grantsFor, hasUsableGrant, nextExpiryAt, grantsGovernUsage } from '../../../../modules/promotion-meta/grants';
@@ -135,6 +135,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return {
         promotion_id: promo.id,
         code: promo.code,
+        // 어드민이 붙인 쿠폰 이름 (#789). 이벤트 배너 페이지가 이 응답을 그대로 그린다.
+        name: resolveCouponName(meta),
         discount: am
           ? {
               type: am.type,

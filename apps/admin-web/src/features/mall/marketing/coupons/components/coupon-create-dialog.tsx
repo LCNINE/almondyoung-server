@@ -243,6 +243,10 @@ export function CouponCreateDialog({
   const isIssuedVisibility = visibility === 'claimable' || visibility === 'assigned_only';
 
   const isValid =
+    // #789. 이름은 이제 고객이 보는 제목이다 — 비우면 고객이 `S2SHIPFIX` 같은 코드를
+    // 그대로 읽게 되므로 코드 작명이 조용히 마케팅 문제가 된다.
+    // 서버 zod 는 여전히 optional 이다: `{ status }` 만 보내는 상태 토글이 깨지면 안 된다.
+    name.trim() &&
     code.trim() &&
     value &&
     (value as number) > 0 &&
@@ -259,7 +263,7 @@ export function CouponCreateDialog({
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <Label>쿠폰 이름</Label>
+            <Label>쿠폰 이름 <span className="text-destructive">*</span></Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}

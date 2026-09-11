@@ -57,6 +57,8 @@
     "wonDiscount": "{value} ウォン割引",
     "percentValue": "{value}%",
     "amountValue": "{amount}ウォン",
+    "unitPercentDiscount": "% 割引",
+    "unitWonDiscount": "ウォン割引",
     "assignedSection": "発行済みクーポン",
     "claimSection": "受け取り可能なクーポン",
     "claimButton": "受け取る",

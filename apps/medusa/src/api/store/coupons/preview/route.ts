@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../modules/promotion-meta/service';
-import { resolveVisibility } from '../../../admin/promotions/helpers';
+import { resolveCouponName, resolveVisibility } from '../../../admin/promotions/helpers';
 import {
   isIssuableToCustomer,
   requiresCustomerContext,
@@ -108,6 +108,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const baseInfo = {
     id: promotion.id,
     code: promotion.code,
+    // 어드민이 붙인 쿠폰 이름 (#789). 이 응답은 클레임 페이지와 체크아웃 「코드 직접 입력」
+    // 미리보기가 함께 쓴다 — 둘 다 코드만 보여주던 자리다.
+    name: resolveCouponName(meta),
     visibility,
     discount: promotion.application_method
       ? {

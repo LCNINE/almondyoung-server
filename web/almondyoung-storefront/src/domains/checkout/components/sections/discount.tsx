@@ -21,7 +21,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
-import { shouldShowCap } from "@/lib/utils/coupon-discount"
+import { couponName, shouldShowCap } from "@/lib/utils/coupon-discount"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { useTranslations } from "next-intl"
 import { useCallback, useState, useTransition } from "react"
@@ -157,6 +157,9 @@ export const DiscountSection = ({
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
   const totalDiscount = membershipDiscount + couponDiscount
 
+  // 어드민이 붙인 쿠폰 이름 (#789). 없으면 null 이고 화면은 할인 라벨로 폴백한다.
+  const promoName = (promo: Promotion) => couponName(promo.name)
+
   const formatPromoLabel = (promo: Promotion) => {
     const base =
       promo.application_method?.type === "percentage"
@@ -220,7 +223,8 @@ export const DiscountSection = ({
                           (p) => p.code === selectedCoupon
                         )
                         if (!promo) return selectedCoupon
-                        return formatPromoLabel(promo)
+                        // 이름이 있으면 이름이 제목이다 (#789). 코드는 이미 옆 칸에 있다.
+                        return promoName(promo) ?? formatPromoLabel(promo)
                       })()}
                 </span>
                 <span className="text-[11px] text-gray-500 lg:text-xs">
@@ -263,12 +267,28 @@ export const DiscountSection = ({
                 />
               </SelectTrigger>
               <SelectContent>
-                {promotions.map((promo) => (
-                  <SelectItem key={promo.id} value={promo.code}>
-                    {formatPromoLabel(promo)}
-                    {promo.code && ` (${promo.code})`}
-                  </SelectItem>
-                ))}
+                {promotions.map((promo) => {
+                  const name = promoName(promo)
+                  // 🔴 `value` 는 항상 코드다 — 카트에 붙이는 식별자이고 이름은 표시용이다.
+                  return (
+                    <SelectItem key={promo.id} value={promo.code}>
+                      {name ? (
+                        <span className="flex flex-col gap-0.5">
+                          <span className="truncate">{name}</span>
+                          <span className="text-[11px] text-gray-500">
+                            {formatPromoLabel(promo)}
+                            {promo.code && ` · ${promo.code}`}
+                          </span>
+                        </span>
+                      ) : (
+                        <>
+                          {formatPromoLabel(promo)}
+                          {promo.code && ` (${promo.code})`}
+                        </>
+                      )}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           )}
@@ -490,6 +510,7 @@ const DirectCouponInput = ({
     return td("errors.UNKNOWN")
   })()
 
+  const previewName = couponName(preview?.promotion?.name)
   const previewDiscount = preview?.promotion?.discount
   const discountLabel = (() => {
     if (!previewDiscount) return null
@@ -556,10 +577,15 @@ const DirectCouponInput = ({
             >
               {preview.valid || preview.claimable ? (
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-green-800">
-                      {discountLabel ?? td("confirmed")}
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    {/* 이름이 있으면 이름이 제목이고 할인은 아래 줄로 내려간다 (#789).
+                        없으면 지금까지처럼 할인이 제목이다. */}
+                    <span className="truncate font-medium text-green-800">
+                      {previewName ?? discountLabel ?? td("confirmed")}
                     </span>
+                    {previewName && discountLabel && (
+                      <span className="text-green-700">{discountLabel}</span>
+                    )}
                     {!preview.claimable && (
                       <span className="text-xs text-green-600">
                         {td("confirmHint")}

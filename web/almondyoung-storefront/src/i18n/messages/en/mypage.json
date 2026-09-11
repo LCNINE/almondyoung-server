@@ -57,6 +57,8 @@
     "wonDiscount": "{value} KRW off",
     "percentValue": "{value}%",
     "amountValue": "{amount} KRW",
+    "unitPercentDiscount": "% off",
+    "unitWonDiscount": "KRW off",
     "assignedSection": "My Assigned Coupons",
     "claimSection": "Available to Claim",
     "claimButton": "Claim",

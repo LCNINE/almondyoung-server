@@ -28,6 +28,15 @@ const isoDateTime = z.string().refine((v) => !Number.isNaN(new Date(v).getTime()
   message: 'must be a parseable ISO date-time string',
 });
 const validityDays = z.number().int().positive();
+/**
+ * 「쿠폰 이름」 (#789). 이제 **고객이 보는 제목**이라 상한이 필요하다 — 카드·체크아웃
+ * 드롭다운은 한 줄에 `truncate` 로 가두므로, 상한이 없으면 문단을 붙여 넣어도 400 이 안 나고
+ * 화면에서 조용히 잘린다. 운영자는 무엇이 잘렸는지 모른다.
+ *
+ * 🔴 `.optional()` 은 유지한다. 필수화는 **admin-web 폼에서만** 한다 — 여기서 required 로
+ * 바꾸면 `additional_data` 를 보내는 다른 경로(시드·스크립트·자동발급 훅)가 400 으로 깨진다.
+ */
+const couponName = z.string().max(60);
 
 /**
  * 생성용. `visibility` 만 **필수**다 — 이 값이 없으면 「발급 정책 없는 쿠폰」이 되고
@@ -39,7 +48,7 @@ const validityDays = z.number().int().positive();
  */
 export const promotionAdditionalDataCreateShape = {
   visibility,
-  name: z.string().optional(),
+  name: couponName.optional(),
   created_by: z.string().optional(),
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),
@@ -57,7 +66,7 @@ export const promotionAdditionalDataCreateShape = {
  */
 export const promotionAdditionalDataUpdateShape = {
   visibility: visibility.optional(),
-  name: z.string().optional(),
+  name: couponName.optional(),
   created_by: z.string().optional(),
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),

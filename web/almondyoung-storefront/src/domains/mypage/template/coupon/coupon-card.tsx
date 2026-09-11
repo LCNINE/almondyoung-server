@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
-import { shouldShowCap } from "@/lib/utils/coupon-discount"
+import { couponName, discountParts, shouldShowCap } from "@/lib/utils/coupon-discount"
 import { Copy, Check } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
@@ -65,6 +65,20 @@ export function CouponCard({
           amount: formatPrice(promo.application_method?.value ?? 0),
         })
 
+  // 레일은 숫자와 단위를 나눠 싣는다 (#790) — 「1,000원」이 한 덩어리로 들어가 88px 를
+  // 넘겨 접혔다. 「할인」 줄에 단위 글자가 합류할 뿐이라 카드 높이는 변하지 않는다.
+  const parts = discountParts(promo.application_method)
+  const unitLabel = parts
+    ? parts.unit === "percent"
+      ? t("unitPercentDiscount")
+      : t("unitWonDiscount")
+    : t("discount")
+
+  // #789. 이름이 있으면 그것이 제목이고, 코드는 아래 부제로 내려간다. 이름이 없으면
+  // 지금까지의 화면 그대로다 — 「받기 전」엔 코드가 쓸모없어 할인 라벨을 대신 보여준다.
+  const name = couponName(promo.name)
+  const title = name ?? (onClaim ? discountLabel : promo.code)
+
   return (
     <li
       className={`relative overflow-hidden rounded-2xl border shadow-sm ${
@@ -78,14 +92,14 @@ export function CouponCard({
           }`}
         >
           <span
-            className={`text-2xl font-bold tabular-nums leading-tight ${
+            className={`whitespace-nowrap text-2xl font-bold tabular-nums leading-tight ${
               expired ? "text-stone-400" : "text-amber-600"
             }`}
           >
-            {discountLabel}
+            {parts?.value ?? discountLabel}
           </span>
           <span className={`mt-1 text-xs ${expired ? "text-stone-400" : "text-amber-600/70"}`}>
-            {t("discount")}
+            {unitLabel}
           </span>
           {shouldShowCap(promo.application_method, promo.max_discount_amount) && (
             <span
@@ -100,22 +114,35 @@ export function CouponCard({
           )}
         </div>
 
-        <div className="flex flex-1 items-center justify-between gap-2 px-4 py-4">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-4 py-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              {/* 제목이 이름이면 sans 체다 — 코드일 때만 mono 로 「기계가 읽는 값」임을 드러낸다.
+                  `truncate` 가 없으면 긴 이름이 카드를 밀어 #790 과 같은 종류로 무너진다. */}
               <span
-                className={`font-mono text-sm font-semibold ${
+                className={`min-w-0 truncate text-sm font-semibold ${name ? "" : "font-mono"} ${
                   expired ? "text-stone-400" : "text-stone-800"
                 }`}
               >
-                {onClaim ? discountLabel : promo.code}
+                {title}
               </span>
               {!expired && promo.is_assigned && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                   {t("exclusive")}
                 </span>
               )}
             </div>
+            {/* 제목이 이름으로 올라갔을 때만 코드를 부제로 남긴다 — 이름이 없으면 제목이
+                이미 코드라, 같은 문자열이 두 줄로 찍힌다. */}
+            {name && (
+              <p
+                className={`truncate font-mono text-xs ${
+                  expired ? "text-stone-400" : "text-stone-500"
+                }`}
+              >
+                {promo.code}
+              </p>
+            )}
             <p className={`text-xs ${expired ? "text-stone-400" : "text-stone-500"}`}>{expiry}</p>
           </div>
 
