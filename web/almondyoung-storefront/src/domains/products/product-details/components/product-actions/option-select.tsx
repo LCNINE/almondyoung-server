@@ -36,6 +36,32 @@ function toOptionsMap(
   return Object.fromEntries(options.map((o) => [o.option_id, o.value]))
 }
 
+// Medusa 는 옵션값 순서를 저장하지 않고 사전순으로 돌려준다. 어드민에서 정한 순서는
+// channel-adapter 가 variant metadata 의 pimOptionRanks 로 실어 보낸다.
+function sortByPimRank(
+  values: string[],
+  optionId: string,
+  optionTitle: string | null | undefined,
+  variants: HttpTypes.StoreProductVariant[]
+): string[] {
+  const rankByValue = new Map<string, number>()
+  for (const variant of variants) {
+    const value = toOptionsMap(variant.options)[optionId]
+    if (value == null || rankByValue.has(value)) continue
+    const ranks = (variant.metadata as Record<string, unknown> | null)?.pimOptionRanks
+    const rank = optionTitle ? (ranks as Record<string, unknown>)?.[optionTitle] : undefined
+    if (typeof rank === "number") rankByValue.set(value, rank)
+  }
+
+  if (rankByValue.size === 0) return values
+
+  return [...values].sort((a, b) => {
+    const rankA = rankByValue.get(a) ?? Number.MAX_SAFE_INTEGER
+    const rankB = rankByValue.get(b) ?? Number.MAX_SAFE_INTEGER
+    return rankA !== rankB ? rankA - rankB : a.localeCompare(b)
+  })
+}
+
 function hasStock(variant: HttpTypes.StoreProductVariant): boolean {
   if (!variant.manage_inventory || variant.allow_backorder) return true
   return (variant.inventory_quantity ?? 0) > 0
@@ -59,7 +85,10 @@ export default function OptionSelect({
 }: OptionSelectProps) {
   const t = useTranslations("productDetail.options")
   const { visibleValues, outOfStockSet, comingSoonByValue, priceByValue } = useMemo(() => {
-    const allValues = (option.values ?? []).map((v) => v.value)
+    const rawValues = (option.values ?? []).map((v) => v.value)
+    const allValues = variants
+      ? sortByPimRank(rawValues, option.id, option.title, variants)
+      : rawValues
     if (!variants) {
       return {
         visibleValues: allValues,

@@ -73,6 +73,39 @@ describe('PimToMedusaTransformer', () => {
       expect(result.variants).toHaveLength(2);
     });
 
+    it('keeps option values in the order PIM sent them, not alphabetical', () => {
+      const result = transformPimToMedusa(mockSnapshot);
+
+      expect(result.options).toEqual([{ title: 'Color', values: ['Red', 'Blue'] }]);
+    });
+
+    it('appends option values missing from the snapshot groups after the ordered ones', () => {
+      const snapshot: PimProductSnapshot = {
+        ...mockSnapshot,
+        variants: [
+          ...mockSnapshot.variants,
+          {
+            id: 'var-003',
+            sku: 'SKU-003',
+            isDefault: false,
+            status: 'active',
+            optionCombination: [{ name: 'Color', value: 'Green' }],
+            basePrice: 10000,
+          },
+        ],
+      };
+
+      const result = transformPimToMedusa(snapshot);
+
+      expect(result.options).toEqual([{ title: 'Color', values: ['Red', 'Blue', 'Green'] }]);
+    });
+
+    it('carries the PIM option order into variant metadata — Medusa itself does not store it', () => {
+      const result = transformPimToMedusa(mockSnapshot);
+
+      expect(result.variants?.map((v) => v.metadata?.pimOptionRanks)).toEqual([{ Color: 0 }, { Color: 1 }]);
+    });
+
     it('accepts Core File UUIDs in thumbnail and image url compatibility fields', () => {
       const result = transformPimToMedusa({
         ...mockSnapshot,

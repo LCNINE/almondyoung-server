@@ -61,13 +61,19 @@ export function transformPimToMedusa(
     .filter((v) => !SKIP_VARIANTS_WITHOUT_PRICE || (v.basePrice !== undefined && v.basePrice !== null));
 
   // 4. 옵션 스키마/제목 목록 산출 (활성 variants 기준)
-  const { options, optionTitles, defaultOptionTitles, isOptionlessProduct } = buildOptionSchema(
+  const { options, optionTitles, defaultOptionTitles, isOptionlessProduct, valueRanks } = buildOptionSchema(
     snapshot.optionGroups || [],
     activeVariants,
   );
 
   // 5. Variants 변환 (이미 필터링된 activeVariants 사용)
-  const variants = transformVariants(activeVariants, optionTitles, defaultOptionTitles, isOptionlessProduct);
+  const variants = transformVariants(
+    activeVariants,
+    optionTitles,
+    defaultOptionTitles,
+    isOptionlessProduct,
+    valueRanks,
+  );
 
   const fulfillmentKind = snapshot.fulfillmentKind ?? 'physical';
   const requiresShipping = fulfillmentKind === 'physical';
@@ -155,6 +161,12 @@ function transformOptions(
   }));
 }
 
+// 옵션 제목 → (옵션값 → PIM 이 보낸 순서). 스냅샷에 없는 값은 순위가 없다.
+type OptionValueRanks = Map<string, Map<string, number>>;
+
+const rankOf = (ranks: OptionValueRanks, title: string, value: string): number =>
+  ranks.get(title)?.get(value) ?? Number.MAX_SAFE_INTEGER;
+
 // 옵션 스키마 구성: 옵션 제목 목록 + 각 옵션의 값 목록. Variants에 사용된 값도 포함시키며, 부족할 경우 기본 옵션값을 포함시켜 변환 시 옵션 개수 불일치 오류를 방지.
 function buildOptionSchema(
   optionGroups: PimProductSnapshot['optionGroups'],
@@ -164,8 +176,19 @@ function buildOptionSchema(
   optionTitles: string[];
   defaultOptionTitles: string[];
   isOptionlessProduct: boolean;
+  valueRanks: OptionValueRanks;
 } {
   const optionSets = new Map<string, Set<string>>();
+
+  // PIM 이 보낸 배열 순서가 어드민에서 정한 sortOrder 다. Medusa 는 옵션값 순서를 저장할 자리가
+  // 없어(product_option_value 에 rank 컬럼이 없다) 사전순으로 돌려주므로, 이 순위를 variant
+  // metadata 로 실어 보내 스토어프론트가 복원한다.
+  const valueRanks: OptionValueRanks = new Map();
+  optionGroups?.forEach((group) => {
+    const ranks = new Map<string, number>();
+    group.values.forEach((value, index) => ranks.set(value.name, index));
+    valueRanks.set(group.name, ranks);
+  });
 
   // 1) PIM 옵션 그룹에서 옵션 제목(name)만 초기화 (값은 variant 기준으로 수집)
   if (optionGroups && optionGroups.length > 0) {
@@ -206,6 +229,7 @@ function buildOptionSchema(
       optionTitles: [DEFAULT_OPTION_TITLE],
       defaultOptionTitles: [DEFAULT_OPTION_TITLE],
       isOptionlessProduct: true,
+      valueRanks,
     };
   }
 
@@ -228,7 +252,11 @@ function buildOptionSchema(
 
   const options = optionTitles.map((title) => ({
     title,
-    values: Array.from(optionSets.get(title) || []).sort(),
+    values: Array.from(optionSets.get(title) || []).sort((a, b) => {
+      const rankA = rankOf(valueRanks, title, a);
+      const rankB = rankOf(valueRanks, title, b);
+      return rankA !== rankB ? rankA - rankB : a.localeCompare(b);
+    }),
   }));
 
   return {
@@ -236,6 +264,7 @@ function buildOptionSchema(
     optionTitles,
     defaultOptionTitles: Array.from(defaultOptionTitles),
     isOptionlessProduct: false,
+    valueRanks,
   };
 }
 
@@ -245,6 +274,7 @@ function transformVariants(
   optionTitles: string[],
   defaultOptionTitles: string[],
   isOptionlessProduct: boolean,
+  valueRanks: OptionValueRanks,
 ): MedusaProductPayload['variants'] {
   const defaultableTitles = new Set(defaultOptionTitles || []);
 
@@ -273,6 +303,12 @@ function transformVariants(
           options[title] = DEFAULT_OPTION_VALUE;
         }
       });
+    }
+
+    const optionRanks: Record<string, number> = {};
+    for (const [title, value] of Object.entries(options)) {
+      const rank = valueRanks.get(title)?.get(value);
+      if (rank !== undefined) optionRanks[title] = rank;
     }
 
     const hasOptions = optionTitles.length > 0;
@@ -324,6 +360,8 @@ function transformVariants(
         pimVariantId: variant.id,
         variantCode: variant.variantCode,
         displayOrder: variant.displayOrder,
+        // 스토어프론트가 옵션 나열 순서를 복원하는 근거. Medusa 는 옵션값 순서를 보존하지 않는다.
+        pimOptionRanks: optionRanks,
         // Price List 동기화를 위해 원본 가격 정보 보존
         membershipPrice: variant.membershipPrice,
         tieredPrices: variant.tieredPrices,

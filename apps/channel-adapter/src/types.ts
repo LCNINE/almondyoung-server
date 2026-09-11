@@ -714,6 +714,9 @@ export interface MedusaProductPayload {
       pimVariantId: string;
       variantCode?: string;
       displayOrder?: number;
+      // 옵션 제목 → PIM 이 보낸 옵션값 순서. Medusa 가 옵션값 순서를 저장하지 않아
+      // 스토어프론트가 이걸로 나열 순서를 복원한다.
+      pimOptionRanks?: Record<string, number>;
       membershipPrice?: number;
       tieredPrices?: Array<{ minQuantity: number; price: number }>;
     };
