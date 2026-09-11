@@ -65,8 +65,8 @@ export class BillingMethodController {
     summary: '실시간 계좌조회 — 등록 전 계좌·실명번호 확인 (효성 FMS-TE-0057, 건당 유료)',
     description:
       '은행에 계좌번호와 실명번호(생년월일/사업자번호)가 실재하는지 즉시 확인하고 예금주명을 돌려준다. ' +
-      'verified=false + reason=MISMATCH 는 정보 불일치라 등록해도 D+1 에 거절되고, ' +
-      'reason=UNAVAILABLE 은 실시간 확인만 불가한 상태이므로 등록은 계속 진행할 수 있다.',
+      'verified=false 면 등록을 진행하지 않는다. reason=MISMATCH 는 정보가 틀린 것이라 ' +
+      '틀린 칸으로 되돌리고, reason=UNAVAILABLE 은 고칠 것이 없는 일시 장애라 재시도를 안내한다.',
   })
   async checkCmsAccount(
     @Req() req: AuthenticatedRequest,
