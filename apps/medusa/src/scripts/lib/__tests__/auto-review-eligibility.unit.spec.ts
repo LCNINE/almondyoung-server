@@ -132,8 +132,29 @@ describe('후보 조회 SQL', () => {
   it('🔴 SQL 창은 «가장 이른 기산점»인 주문일로 잡혀야 한다', () => {
     // 배송완료 유예로 잡으면 1·2단 대상이 창 밖으로 잘려 나간다.
     const start = candidateWindowStart(NOW).getTime();
-    const orderAgeCutoff = NOW.getTime() - (ELIGIBILITY_ORDER_AGE_DAYS + ELIGIBILITY_WINDOW_DAYS) * DAY;
+    const oldestTierCutoff = NOW.getTime() - (ELIGIBILITY_ORDER_AGE_DAYS + ELIGIBILITY_WINDOW_DAYS) * DAY;
 
-    expect(start).toBeLessThan(orderAgeCutoff);
+    expect(start).toBeLessThanOrEqual(oldestTierCutoff);
+  });
+
+  it('🔴 SQL 창이 판정 창보다 «넓으면» 안 된다 — 넓은 만큼이 매 틱 배치 슬롯을 먹는다', () => {
+    // `order by created_at asc` 라 창의 «가장 오래된» 쪽이 먼저 뽑히는데, 판정 창 밖은 전부
+    // outside_window 로 버려지고 표식도 안 남아 다음 틱에 또 온다. 창이 하루 넓으면 하루치
+    // 주문(실측 ~39건)이 상한 50의 대부분을 차지해 실제 발급이 굶는다.
+    const start = candidateWindowStart(NOW).getTime();
+    const judgeCutoff = NOW.getTime() - (ELIGIBILITY_ORDER_AGE_DAYS + ELIGIBILITY_WINDOW_DAYS) * DAY;
+
+    expect(start).toBe(judgeCutoff);
+  });
+
+  it('창 경계의 주문이 SQL 에도 들어오고 판정에서도 살아남는다 (두 창이 같은 지점이다)', () => {
+    const atBoundary = new Date(candidateWindowStart(NOW).getTime() + 1000);
+    const ageDays = (NOW.getTime() - atBoundary.getTime()) / DAY;
+
+    expect(judgeEligibility({ id: 'o1', created_at: atBoundary.toISOString(), attempts: null }, NOW)).toMatchObject({
+      eligible: true,
+      basis: 'order_age',
+    });
+    expect(ageDays).toBeLessThanOrEqual(ELIGIBILITY_ORDER_AGE_DAYS + ELIGIBILITY_WINDOW_DAYS);
   });
 });

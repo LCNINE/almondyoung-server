@@ -177,13 +177,18 @@ export const ELIGIBILITY_CANDIDATE_SQL = `
 `;
 
 /**
- * SQL 창의 하한.
+ * SQL 창의 하한 — **판정 창과 정확히 같은 지점**이어야 한다.
  *
- * 판정의 세 단 중 **가장 이른 기산점이 주문일**이므로 창도 주문일로 잡는다. 배송완료가 주문보다
- * 늦게 오므로 「배송완료 유예 + 창」만 잡으면 1·2단 대상이 창 밖으로 잘려 나간다 — 3단 기준으로
- * 잡아야 셋 다 안전하다. 하루 넉넉하게 둔다.
+ * 판정의 세 단 중 **가장 이른 기산점이 주문일**이므로 창도 주문일로 잡는다. 배송완료·출고는 주문
+ * «뒤»에 오니 그 둘의 유예는 이 창 안에 이미 들어온다 — 3단 기준으로 잡아야 셋 다 안전하다.
+ *
+ * 🔴 **여기에 여유를 «더하면» 안 된다.** 후보 SQL 이 `order by created_at asc` 라 창의 가장 오래된
+ * 쪽이 먼저 뽑히는데, 판정 창 밖은 전부 `outside_window` 로 버려지고 **표식도 안 남아 다음 틱에
+ * 또 온다.** 창이 하루 넓으면 하루치 주문(라이브 실측 ~39건)이 배치 상한 50의 대부분을 차지해
+ * 실제 발급이 굶는다 — 유입이 처리량을 넘겨 백로그가 영원히 안 줄어든다.
+ * 여유가 사는 것이 없다: 창 밖 판정의 결과는 언제나 「버린다」뿐이다.
  */
 export function candidateWindowStart(now: Date): Date {
   const maxGrace = Math.max(ELIGIBILITY_DELIVERED_DAYS, ELIGIBILITY_SHIPPED_DAYS, ELIGIBILITY_ORDER_AGE_DAYS);
-  return new Date(now.getTime() - (maxGrace + ELIGIBILITY_WINDOW_DAYS + 1) * DAY_MS);
+  return new Date(now.getTime() - (maxGrace + ELIGIBILITY_WINDOW_DAYS) * DAY_MS);
 }
