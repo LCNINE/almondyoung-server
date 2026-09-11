@@ -1,6 +1,8 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
+import type { CreateReviewEligibilityResult } from '../../../../../workflows/orders/steps/create-review-eligibility-step';
+import { ELIGIBILITY_ISSUED_METADATA_KEY } from '../../../../../scripts/lib/auto-review-eligibility';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 const MEMBERSHIP_INTERNAL_KEY = process.env.MEMBERSHIP_INTERNAL_KEY || '';
@@ -45,6 +47,31 @@ async function markWelcomeMembershipPurchased(
   } catch (err) {
     // 구매 기록 실패는 주문 자체를 실패시키지 않음 (로그만)
     console.error('[WelcomeMembership] markPurchased failed:', err);
+  }
+}
+
+/**
+ * 자격이 «실제로 생겼을 때만» 발급 표식을 남긴다 — 잡(`issueOne`)과 같은 규칙이다.
+ * `skipped` 인 주문에 표식을 남기면 그 주문은 잡의 후보에서 영영 빠져 자격을 못 받는다.
+ *
+ * 표식 실패가 구매확정을 실패시키면 안 된다(결제는 이미 끝났다). 그래서 로그만 남긴다 —
+ * 표식이 없으면 잡이 다음 틱에 한 번 더 왕복할 뿐이고, 발급은 `source_event_id` unique 로 멱등이다.
+ */
+async function markReviewEligibilityIssued(
+  container: { resolve: (key: string) => unknown },
+  orderId: string,
+  eligibility: CreateReviewEligibilityResult | undefined,
+) {
+  if (eligibility?.status !== 'created') return;
+  try {
+    const orderModule = container.resolve(Modules.ORDER) as {
+      updateOrders: (data: unknown) => Promise<unknown>;
+    };
+    await orderModule.updateOrders([
+      { id: orderId, metadata: { [ELIGIBILITY_ISSUED_METADATA_KEY]: new Date().toISOString() } },
+    ]);
+  } catch (err) {
+    console.error('[review-eligibility] failed to mark manually confirmed order:', err);
   }
 }
 
@@ -140,7 +167,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   // 결제 캡처 + 리뷰 자격 생성을 워크플로우로 트랜잭션 처리
-  await confirmPurchaseWorkflow(req.scope).run({
+  const { result: confirmResult } = await confirmPurchaseWorkflow(req.scope).run({
     input: {
       orderId,
       customerId,
@@ -148,6 +175,11 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
       items: order.items ?? [],
     },
   });
+
+  // 고객이 직접 확정해 자격이 생긴 주문에도 잡과 «같은» 표식을 남긴다. 안 남기면 자동 발급 잡이
+  // 창 안에 있는 그 주문을 매 틱 다시 집어 ugc 로 왕복한다 — 발급은 멱등이라 결과는 같지만
+  // 배치 상한(50)의 슬롯을 헛되이 먹는다.
+  void markReviewEligibilityIssued(req.scope, orderId, confirmResult?.eligibility);
 
   // 웰컴 멤버십 상품 구매 기록 (비동기, 주문 완료에 영향 없음)
   const productIds = (order.items ?? []).map((item) => item.product_id).filter(Boolean);

@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 
 // confirmPurchaseWorkflow 는 실제 캡처를 수행하므로 모킹한다. route 의 가드만 검증한다.
 jest.mock('@workflows/orders/workflows/confirm-purchase-workflow', () => ({
@@ -9,6 +9,7 @@ jest.mock('@workflows/orders/workflows/confirm-purchase-workflow', () => ({
 
 import { POST } from '../confirm-purchase/route';
 import { confirmPurchaseWorkflow } from '@workflows/orders/workflows/confirm-purchase-workflow';
+import { ELIGIBILITY_ISSUED_METADATA_KEY } from '../../../../../scripts/lib/auto-review-eligibility';
 
 type Order = Record<string, any>;
 
@@ -83,5 +84,85 @@ describe('POST /store/orders/:id/confirm-purchase — 무통장 입금확인중 
         order: expect.objectContaining({ payment_status: 'captured' }),
       }),
     );
+  });
+});
+
+describe('POST /store/orders/:id/confirm-purchase — 수동 확정 주문의 발급 표식', () => {
+  /**
+   * 표식이 없으면 자동 발급 잡이 이미 확정된 주문을 매 틱 다시 집어 ugc 로 왕복한다.
+   * 잡의 `issueOne` 과 «같은» 키·같은 조건(생성됐을 때만)이어야 한다.
+   */
+  function makeReqWithOrderModule(order: Order, eligibility: unknown, updateOrders = jest.fn()) {
+    const graph = jest.fn(async () => ({ data: [order] }));
+    (confirmPurchaseWorkflow as unknown as jest.Mock).mockReturnValue({
+      run: jest.fn().mockResolvedValue({ errors: [], result: { capturedIds: [], eligibility } }),
+    });
+    const req = {
+      params: { id: order.id },
+      auth_context: { actor_id: 'cust_1' },
+      scope: {
+        resolve: jest.fn((key: string) => {
+          if (key === ContainerRegistrationKeys.QUERY) return { graph };
+          if (key === Modules.ORDER) return { updateOrders };
+          return undefined;
+        }),
+      },
+    } as any;
+    return { req, updateOrders };
+  }
+
+  const baseOrder = {
+    id: 'order_manual',
+    customer_id: 'cust_1',
+    metadata: {},
+    items: [],
+    payment_collections: [{ id: 'pc_1', payments: [{ id: 'pay_1', captures: [{ id: 'cap_1' }] }] }],
+  };
+
+  it('자격이 실제로 생겼으면 잡과 같은 키로 표식을 남긴다', async () => {
+    const { req, updateOrders } = makeReqWithOrderModule(baseOrder, {
+      status: 'created',
+      orderId: 'order_manual',
+      almondUserId: 'u1',
+      itemCount: 1,
+    });
+
+    await POST(req, makeRes());
+    await new Promise((r) => setImmediate(r));
+
+    expect(updateOrders).toHaveBeenCalledWith([
+      {
+        id: 'order_manual',
+        metadata: { [ELIGIBILITY_ISSUED_METADATA_KEY]: expect.any(String) },
+      },
+    ]);
+  });
+
+  it('자격이 안 생겼으면(skipped) 표식을 남기지 않는다 — 남기면 그 주문은 영영 자격을 못 받는다', async () => {
+    const { req, updateOrders } = makeReqWithOrderModule(baseOrder, {
+      status: 'skipped',
+      orderId: 'order_manual',
+      reason: 'no_pim_backed_items',
+    });
+
+    await POST(req, makeRes());
+    await new Promise((r) => setImmediate(r));
+
+    expect(updateOrders).not.toHaveBeenCalled();
+  });
+
+  it('표식 기록이 실패해도 구매확정은 성공한다 — 결제는 이미 끝났다', async () => {
+    const updateOrders = jest.fn().mockRejectedValue(new Error('boom'));
+    const { req } = makeReqWithOrderModule(
+      baseOrder,
+      { status: 'created', orderId: 'order_manual', almondUserId: 'u1', itemCount: 1 },
+      updateOrders,
+    );
+    const res = makeRes();
+
+    await POST(req, res);
+    await new Promise((r) => setImmediate(r));
+
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

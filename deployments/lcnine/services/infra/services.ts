@@ -231,6 +231,14 @@ export function setup(infra: SharedInfra) {
   // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
   const invoiceBillingEnabled = 'true';
 
+  // 자동 리뷰 자격 발급 잡(apps/medusa/src/jobs/auto-review-eligibility.ts)의 유일한 스위치.
+  // 'true' 가 아니면 잡은 후보를 세고 로그만 남긴다 — 처음 켜는 순간 창 안의 주문이 한꺼번에
+  // 자격을 받으므로, 운영자가 «꺼진 채로 한 번 돌려 건수를 본 뒤» 켜라는 설계다.
+  // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
+  // 유예·창·배치 상한(ELIGIBILITY_{DELIVERED,SHIPPED,ORDER_AGE,WINDOW}_DAYS · ELIGIBILITY_BATCH)은
+  // 코드 기본값(7·10·30·30·50)을 쓴다. 바꿔야 하면 같은 방식으로 여기에 이름을 추가한다.
+  const eligibilityAutoIssue = 'false';
+
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
     DATABASE_URL: dbUrl('analytics'),
@@ -612,6 +620,7 @@ export function setup(infra: SharedInfra) {
       SEARCH_SERVICE_URL: url('search'),
       SEARCH_INTERNAL_KEY: searchInternalKey.value,
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
       // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
       // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
       STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
