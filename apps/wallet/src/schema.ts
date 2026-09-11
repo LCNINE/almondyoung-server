@@ -835,7 +835,7 @@ export const cmsAgreements = pgTable(
   (table) => [index('idx_cms_agreements_cms_member_id').on(table.cmsMemberId)],
 );
 
-// 실시간 계좌조회(FMS-TE-0057) 호출 기록. 건당 유료(50원)이고 계좌번호만으로 예금주 실명이
+// 실시간 계좌조회(FMS-TE-0057) 호출 기록. 건당 유료(100원)이고 계좌번호만으로 예금주 실명이
 // 나오므로, 감사 로그 겸 사용자별 시간당 호출 제한의 근거가 된다. 계좌번호는 효성이 마스킹해
 // 돌려준 형태(123****890)로만 남기고 실명번호·예금주명은 저장하지 않는다.
 export const cmsAccountChecks = pgTable(

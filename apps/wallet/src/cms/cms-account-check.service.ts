@@ -15,7 +15,7 @@ export type CmsAccountCheckOutcome =
   | { verified: true; payerName: string | null }
   | { verified: false; reason: 'MISMATCH' | 'UNAVAILABLE'; message: string };
 
-/** 사용자별 시간당 조회 상한. 건당 50원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
+/** 사용자별 시간당 조회 상한. 건당 100원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
 const MAX_CHECKS_PER_HOUR = 35;
 
 const MISMATCH_MESSAGE = '입력하신 계좌 정보와 예금주 정보가 일치하지 않습니다. 은행·계좌번호·생년월일을 확인해주세요.';

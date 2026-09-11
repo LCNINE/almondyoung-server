@@ -178,7 +178,7 @@ export class CmsApiClient {
   }
 
   // ─── 실시간 계좌조회 (FMS-TE-0057) ─────────────────────────────────────────
-  // 건당 유료(50원). 호출은 CmsAccountCheckService 를 통해서만 — 남용·비용 방어가 거기 있다.
+  // 건당 유료(100원). 호출은 CmsAccountCheckService 를 통해서만 — 남용·비용 방어가 거기 있다.
 
   /** 계좌번호 + 실명번호(생년월일/사업자번호) 유효성 검증. */
   async verifyPayerNumber(dto: {
