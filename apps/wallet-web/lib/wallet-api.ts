@@ -268,6 +268,7 @@ export interface CmsAccountCheckResult {
   payerName: string | null;
   reason: 'MISMATCH' | 'UNAVAILABLE' | null;
   message: string | null;
+  providerCode: string | null;
 }
 
 export async function checkCmsAccount(

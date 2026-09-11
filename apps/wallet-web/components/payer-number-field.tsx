@@ -3,6 +3,7 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { AlertCircle } from 'lucide-react';
 
 export type AccountHolderType = 'personal' | 'business';
 
@@ -11,11 +12,13 @@ interface PayerNumberFieldProps {
   onHolderTypeChange: (next: AccountHolderType) => void;
   value: string;
   onChange: (next: string) => void;
+  /** 은행 조회가 «이 칸이 틀렸다»고 답한 경우의 문구. */
+  error?: string;
 }
 
 const MAX_LENGTH: Record<AccountHolderType, number> = { personal: 6, business: 10 };
 
-export function PayerNumberField({ holderType, onHolderTypeChange, value, onChange }: PayerNumberFieldProps) {
+export function PayerNumberField({ holderType, onHolderTypeChange, value, onChange, error }: PayerNumberFieldProps) {
   const isPersonal = holderType === 'personal';
 
   return (
@@ -55,8 +58,16 @@ export function PayerNumberField({ holderType, onHolderTypeChange, value, onChan
           value={value}
           onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, MAX_LENGTH[holderType]))}
           inputMode="numeric"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'payerNumber-error' : undefined}
           required
         />
+        {error && (
+          <p id="payerNumber-error" className="flex items-start gap-1 text-[11px] leading-relaxed text-destructive">
+            <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+            {error}
+          </p>
+        )}
         <p className="min-h-[2.25rem] text-[11px] leading-relaxed text-muted-foreground">
           {isPersonal
             ? '주민등록번호 앞 6자리입니다. 사업자등록번호를 넣으면 은행 조회에서 거절됩니다.'

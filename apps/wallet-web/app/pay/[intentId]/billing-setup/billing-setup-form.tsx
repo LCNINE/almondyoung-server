@@ -6,16 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CheckCircle2, RefreshCw, AlertCircle, ChevronLeft } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react';
 import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
-import {
-  CmsAccountCheckState,
-  CmsAccountDetails,
-  CmsAccountFields,
-  emptyCmsAccountDetails,
-} from '@/components/cms-account-fields';
-import { isValidPayerNumber } from '@/lib/payer-number';
+import { CmsAccountDetails, CmsAccountFields, emptyCmsAccountDetails } from '@/components/cms-account-fields';
 import { buildReturnUrl } from '@/lib/return-url';
 
 interface BillingSetupFormProps {
@@ -38,25 +32,10 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   const [billingMethodId, setBillingMethodId] = useState<string | null>(null);
 
   const [details, setDetails] = useState<CmsAccountDetails>(emptyCmsAccountDetails);
-  const [checkState, setCheckState] = useState<CmsAccountCheckState>('idle');
-  const { paymentCompany, payerName, payerNumber, paymentNumber, phone, holderType } = details;
+  const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = details;
 
-  const handleDetailsSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const goToConsent = () => {
     setError(null);
-    if (checkState === 'idle') {
-      setError('계좌 확인하기를 눌러 계좌를 먼저 확인해주세요.');
-      return;
-    }
-    // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
-    if (!isValidPayerNumber(payerNumber)) {
-      setError(
-        holderType === 'personal'
-          ? '예금주 생년월일 6자리(YYMMDD)를 정확히 입력해주세요.'
-          : '사업자등록번호 10자리를 정확히 입력해주세요.',
-      );
-      return;
-    }
     setConsentPersonalInfo(false);
     setConsentThirdParty(false);
     setStep('consent');
@@ -103,24 +82,24 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
 
   if (done) {
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card
             className={
               agreementUploadFailed
-                ? 'border-amber-200 bg-amber-50/50 shadow-sm'
-                : 'border-emerald-200 bg-emerald-50/50 shadow-sm'
+                ? 'border-border bg-muted/60 shadow-sm'
+                : 'border-primary/20 bg-background shadow-sm'
             }
           >
             <CardContent className="flex items-start gap-3 p-6">
               <CheckCircle2
-                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-amber-500' : 'text-emerald-500'}`}
+                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-muted-foreground' : 'text-primary'}`}
               />
               <div>
-                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-amber-800' : 'text-emerald-800'}`}>
+                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-foreground' : 'text-foreground'}`}>
                   계좌 등록이 접수되었습니다
                 </p>
-                <p className={`mt-1 text-xs ${agreementUploadFailed ? 'text-amber-700' : 'text-emerald-700'}`}>
+                <p className="mt-1 text-xs text-muted-foreground">
                   {agreementUploadFailed
                     ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
                     : '효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다. 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.'}
@@ -143,7 +122,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
     const bankName = getBankName(paymentCompany);
     const allConsented = consentPersonalInfo && consentThirdParty;
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card className="shadow-sm">
             <CardContent className="p-6 space-y-5">
@@ -253,7 +232,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
 
   if (step === 'signature') {
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card className="shadow-sm">
             <CardContent className="p-6 space-y-4">
@@ -293,65 +272,41 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   }
 
   return (
-    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-4">
-        {mode !== 'initial' && (
-          <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
-            <CardContent className="flex items-start gap-3 p-4">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-              <div>
-                <p className="text-sm font-semibold text-emerald-800">첫 달 결제가 완료되었습니다!</p>
-                <p className="mt-0.5 text-xs text-emerald-700">아래 계좌를 등록하면 다음 달부터 자동으로 출금됩니다.</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="mb-5 flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">자동이체 계좌 등록</h2>
+    <div className="mx-auto w-full max-w-md bg-background">
+      {mode !== 'initial' && (
+        <div className="px-5 pt-4">
+          <div className="flex items-start gap-3 rounded-2xl bg-muted/60 p-4">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">첫 달 결제가 완료되었습니다</p>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                계좌를 등록하면 다음 달부터 자동으로 출금됩니다.
+              </p>
             </div>
-            <p className="mb-5 text-xs text-muted-foreground">계좌 정보 입력 후 전자서명 단계가 있습니다.</p>
-
-            <form onSubmit={handleDetailsSubmit} className="space-y-4">
-              <CmsAccountFields
-                value={details}
-                onChange={setDetails}
-                checkState={checkState}
-                onCheckStateChange={setCheckState}
-              />
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button type="submit" disabled={loading} className="w-full h-11 font-semibold">
-                다음 (전자서명)
-              </Button>
-            </form>
-
-            {mode !== 'initial' && (
-              <button
-                type="button"
-                onClick={() => router.replace(returnUrl)}
-                disabled={loading}
-                className="mt-4 w-full text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors disabled:opacity-50"
-              >
-                나중에 등록하기 (건너뛰기)
-              </button>
-            )}
-          </CardContent>
-        </Card>
-
-        <p className="text-center text-xs text-muted-foreground">
-          계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
-        </p>
-      </div>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">{error}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} homeHref={returnUrl} />
+      {mode !== 'initial' && (
+        <div className="px-5 pb-8">
+          <button
+            type="button"
+            onClick={() => router.replace(returnUrl)}
+            disabled={loading}
+            className="w-full text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+          >
+            나중에 등록하기
+          </button>
+        </div>
+      )}
     </div>
   );
 }
