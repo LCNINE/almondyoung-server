@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react';
+import { AlertCircle, Check, ChevronLeft, Info } from 'lucide-react';
 import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
 import { CmsAccountDetails, CmsAccountFields, emptyCmsAccountDetails } from '@/components/cms-account-fields';
@@ -95,45 +95,80 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   };
 
   if (done) {
+    const goBack = () =>
+      router.replace(
+        newBillingMethodId
+          ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
+          : returnUrlWithFlag,
+      );
+    // 뒤 4자리만 남긴다 — 「내가 등록한 그 계좌가 맞나」를 확인하는 데는 그걸로 충분하다.
+    const maskedAccount =
+      paymentNumber.length > 4 ? `${'•'.repeat(paymentNumber.length - 4)}${paymentNumber.slice(-4)}` : paymentNumber;
+    const rows = [
+      { label: '은행', value: getBankName(paymentCompany) },
+      { label: '계좌번호', value: maskedAccount },
+      { label: '예금주', value: payerName },
+      { label: '은행 심사', value: '1~2 영업일' },
+    ];
+
     return (
-      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-4">
-          <Card
-            className={
-              agreementUploadFailed
-                ? 'border-border bg-muted/60 shadow-sm'
-                : 'border-primary/20 bg-background shadow-sm'
-            }
-          >
-            <CardContent className="flex items-start gap-3 p-6">
-              <CheckCircle2
-                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-muted-foreground' : 'text-primary'}`}
-              />
-              <div>
-                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-foreground' : 'text-foreground'}`}>
-                  {isRegister ? '계좌 등록이 접수되었습니다' : '계좌 변경이 접수되었습니다'}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {agreementUploadFailed
-                    ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
-                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 확인 버튼을 눌러 돌아간 화면에서 멤버십 가입을 마무리해 주세요 — 가입 후에는 심사 승인과 함께 결제가 자동 출금됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'} 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.`}
-                </p>
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
+        <div className="flex-1 px-6 pt-16">
+          <div className="flex flex-col items-center">
+            <span
+              className={`flex size-14 items-center justify-center rounded-full ${
+                agreementUploadFailed ? 'bg-muted-foreground' : 'bg-primary'
+              }`}
+            >
+              <Check className="size-7 text-primary-foreground" strokeWidth={3} />
+            </span>
+            <h1 className="mt-5 text-[22px] font-bold tracking-tight text-foreground">
+              {agreementUploadFailed ? '계좌 등록 확인 필요' : isRegister ? '계좌 등록 완료' : '계좌 변경 완료'}
+            </h1>
+          </div>
+
+          <dl className="mt-9">
+            {rows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between border-b border-border py-4">
+                <dt className="text-[14px] text-muted-foreground">{row.label}</dt>
+                <dd className="text-[15px] font-bold tracking-tight text-foreground">{row.value}</dd>
               </div>
-            </CardContent>
-          </Card>
-          <Button
-            onClick={() =>
-              router.replace(
-                newBillingMethodId
-                  ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
-                  : returnUrlWithFlag,
-              )
-            }
-            className="w-full h-11 font-semibold"
-          >
-            확인
-          </Button>
+            ))}
+          </dl>
+
+          {/* 「은행 문자 = 승인 완료」로 오해하고 문의하는 일이 실제로 잦다. 다른 안내와 같은
+              불릿에 섞어두면 안 읽히므로 한 줄만 떼어 면으로 세운다. */}
+          {!agreementUploadFailed && (
+            <div className="mt-7 flex items-start gap-2.5 rounded-xl bg-muted p-4">
+              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+              <p className="text-[13px] leading-relaxed text-foreground">
+                은행에서 오는 <span className="font-bold">‘자동이체 등록 접수’ 문자는 최종 승인이 아닙니다.</span> 최종
+                결과는 결제수단 관리 화면에서 확인해주세요.
+              </p>
+            </div>
+          )}
+
+          {/* 여기까지 온 이유는 «멤버십 가입 중 결제수단이 없어서» 다. 다음 할 일이 그 가입을
+              마치는 것이라는 걸 맨 앞에 둔다 — 안내문 여러 줄 안에 묻어두면 읽히지 않는다. */}
+          <ul className="mt-5 space-y-2 text-[13px] leading-relaxed text-muted-foreground">
+            {agreementUploadFailed ? (
+              <li>· 동의자료 등록에 실패했습니다. 관리자 확인이 필요하니 고객센터로 문의해주세요.</li>
+            ) : (
+              <li>
+                ·{' '}
+                {isRegister
+                  ? '이어서 멤버십 가입을 마무리하면, 심사 승인과 함께 결제가 자동으로 출금됩니다.'
+                  : '심사가 끝나면 다음 결제부터 새 계좌로 자동 출금됩니다.'}
+              </li>
+            )}
+          </ul>
         </div>
+
+        <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
+          <Button onClick={goBack} className="h-14 w-full rounded-2xl text-[16px] font-semibold">
+            {agreementUploadFailed ? '확인' : isRegister ? '멤버십 가입 계속하기' : '확인'}
+          </Button>
+        </footer>
       </div>
     );
   }
@@ -301,7 +336,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
           </Alert>
         </div>
       )}
-      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} homeHref={returnUrl} />
+      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} />
     </div>
   );
 }

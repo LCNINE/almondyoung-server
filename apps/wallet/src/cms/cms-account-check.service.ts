@@ -17,21 +17,31 @@ export type CmsAccountCheckOutcome =
   // 고객 문의가 왔을 때 「무엇이 틀렸는지」를 되묻지 않고 바로 알 수 있게 그대로 내려준다.
   | { verified: false; reason: 'MISMATCH' | 'UNAVAILABLE'; message: string; providerCode: string | null };
 
+const WINDOW_MS = 60 * 60 * 1000;
+
+/** 남은 대기 시간을 고객이 읽는 말로. 「잠시 후」는 얼마나 기다려야 하는지 알려주지 못한다. */
+function formatWait(seconds: number): string {
+  if (seconds < 60) return `${seconds}초`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes < 60 ? `${minutes}분` : `${Math.ceil(minutes / 60)}시간`;
+}
+
 /** 사용자별 시간당 조회 상한. 건당 100원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
 const MAX_CHECKS_PER_HOUR = 10;
 
-const MISMATCH_MESSAGE = '입력하신 계좌 정보와 예금주 정보가 일치하지 않습니다. 은행·계좌번호·생년월일을 확인해주세요.';
+const MISMATCH_MESSAGE = '계좌 정보를 확인할 수 없어요. 은행·계좌번호·생년월일을 다시 확인해주세요.';
 
 /**
  * 효성은 «어느 항목이» 틀렸는지 코드로 알려준다. 뭉뚱그려 안내하면 고객이 멀쩡한 계좌번호를
  * 몇 번씩 고쳐 넣게 되고(유료 호출이 그만큼 늘고) 결국 CS 로 온다 — 실측한 코드만 옮긴다.
  */
-const MISMATCH_MESSAGE_BY_CODE: Record<string, string> = {
-  '1001': '계좌번호를 다시 확인해주세요. 해당 은행에 그런 계좌번호가 없습니다.',
-  '2001': '계좌에 등록된 생년월일(사업자번호)과 다릅니다. 계좌를 만들 때 쓴 정보로 입력해주세요.',
+const MISMATCH_MESSAGE_BY_CODE: Record<string, (payerNumber: string) => string> = {
+  '1001': () => '이 은행에 없는 계좌번호예요.',
+  // 6자리면 생년월일, 10자리면 사업자등록번호다. 무엇이 틀렸는지 그 이름 그대로 말한다.
+  '2001': (payerNumber) =>
+    payerNumber.length === 10 ? '계좌에 등록된 사업자등록번호와 달라요.' : '계좌에 등록된 생년월일과 달라요.',
 };
-const UNAVAILABLE_MESSAGE =
-  '지금은 계좌를 실시간으로 확인할 수 없습니다. 입력한 정보를 다시 확인한 뒤 계속 진행해주세요.';
+const UNAVAILABLE_MESSAGE = '지금은 은행에 확인할 수 없어요. 잠시 후 다시 시도해주세요.';
 
 /**
  * 효성 실시간 계좌조회(FMS-TE-0057). 등록 전에 계좌·실명번호를 확인해
@@ -84,7 +94,7 @@ export class CmsAccountCheckService {
       return {
         verified: false,
         reason: 'MISMATCH',
-        message: (code && MISMATCH_MESSAGE_BY_CODE[code]) ?? MISMATCH_MESSAGE,
+        message: (code && MISMATCH_MESSAGE_BY_CODE[code]?.(input.payerNumber)) ?? MISMATCH_MESSAGE,
         providerCode: code,
       };
     }
@@ -118,20 +128,29 @@ export class CmsAccountCheckService {
   }
 
   private async assertUnderRateLimit(userId: string): Promise<void> {
-    const since = new Date(Date.now() - 60 * 60 * 1000);
-    const [row] = await this.dbService.db
-      .select({ value: count() })
+    const since = new Date(Date.now() - WINDOW_MS);
+    const rows = await this.dbService.db
+      .select({ createdAt: cmsAccountChecks.createdAt })
       .from(cmsAccountChecks)
-      .where(and(eq(cmsAccountChecks.userId, userId), gte(cmsAccountChecks.createdAt, since)));
+      .where(and(eq(cmsAccountChecks.userId, userId), gte(cmsAccountChecks.createdAt, since)))
+      .orderBy(cmsAccountChecks.createdAt);
 
-    if ((row?.value ?? 0) >= MAX_CHECKS_PER_HOUR) {
-      throw new CmsOperationError(
-        'CMS_ACCOUNT_CHECK_RATE_LIMITED',
-        '계좌 확인 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
-        429,
-        `userId=${userId} exceeded ${MAX_CHECKS_PER_HOUR}/hour`,
-      );
-    }
+    if (rows.length < MAX_CHECKS_PER_HOUR) return;
+
+    // 「잠시 후」가 언제인지 고객이 알 수 있어야 한다. 창이 롤링이므로 슬롯은 «가장 오래된
+    // 호출»이 창 밖으로 나가는 순간 하나 열린다 — 그 시각을 그대로 알려준다.
+    const oldest = rows[rows.length - MAX_CHECKS_PER_HOUR].createdAt;
+    const retryAt = new Date(oldest.getTime() + WINDOW_MS);
+    const retryAfterSeconds = Math.max(1, Math.ceil((retryAt.getTime() - Date.now()) / 1000));
+
+    throw new CmsOperationError(
+      'CMS_ACCOUNT_CHECK_RATE_LIMITED',
+      // 「정보를 확인하고 오라」고 쓰지 않는다 — 이미 고쳐서 다시 누른 사람에게는 틀린 전제다.
+      // 상한 횟수 자체는 노출하지 않는다(남용자에게 여유분을 알려줄 이유가 없다).
+      `요청 횟수를 초과했어요. ${formatWait(retryAfterSeconds)} 뒤에 다시 해주세요.`,
+      429,
+      `userId=${userId} exceeded ${MAX_CHECKS_PER_HOUR}/hour, retryAfter=${retryAfterSeconds}s`,
+    );
   }
 
   private async record(

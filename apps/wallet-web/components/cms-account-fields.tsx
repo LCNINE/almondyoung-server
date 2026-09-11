@@ -8,6 +8,18 @@ import { AlertCircle, Check, ChevronLeft, Loader2, Pencil } from 'lucide-react';
 import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
 import { AccountHolderType } from '@/components/payer-number-field';
 import { isValidPayerNumber } from '@/lib/payer-number';
+import { redirectToWalletLogin } from '@/lib/auth-expired';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { STOREFRONT_ORIGIN } from '@/lib/return-url';
 
 export interface CmsAccountDetails {
   paymentCompany: string;
@@ -38,7 +50,8 @@ const STEP_BY_PROVIDER_CODE: Record<string, 'account' | 'payer'> = {
 
 type Step = 'bank' | 'account' | 'payer' | 'confirm';
 
-const STOREFRONT_ORIGIN = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? '/';
+/** 휴대폰 번호(01X-XXXX-XXXX). 자동이체 안내 문자가 여기로 가므로 유선번호는 받지 않는다. */
+const PHONE_PATTERN = /^01[016789]\d{7,8}$/;
 
 /**
  * 키보드를 뺀 «실제로 보이는» 높이. iOS Safari 는 키보드가 올라와도 레이아웃 뷰포트를 줄이지
@@ -70,8 +83,6 @@ interface CmsAccountFieldsProps {
   onChange: (next: CmsAccountDetails) => void;
   /** 모든 단계를 통과했다 — 부모가 동의 단계로 넘긴다. */
   onComplete: () => void;
-  /** 로고를 눌렀을 때 돌아갈 곳. 없으면 스토어프론트 홈. */
-  homeHref?: string;
 }
 
 /**
@@ -79,21 +90,38 @@ interface CmsAccountFieldsProps {
  * 은행 조회 → 확인. 마지막 입력이 끝나는 자리에서 바로 조회가 돌기 때문에,
  * 고객은 «등록했는데 이틀 뒤 거절» 대신 그 자리에서 결과를 본다.
  */
-export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsAccountFieldsProps) {
+export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFieldsProps) {
   const [step, setStep] = useState<Step>('bank');
   const { height: viewportHeight, keyboardOpen } = useViewportHeight();
   const payerNumberRef = useRef<HTMLInputElement>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** 조회가 끝났지만 은행이 확인해주지 못한 상태. 등록은 계속할 수 있다. */
-  const [unverified, setUnverified] = useState(false);
+  /** 직전에 «거절당한» 조합. 같은 값으로 또 유료 조회를 태우기 전에 한 번 되묻는다. */
+  const [lastRejected, setLastRejected] = useState<{
+    paymentCompany: string;
+    paymentNumber: string;
+    payerNumber: string;
+    field?: 'account' | 'payer';
+  } | null>(null);
+  const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
+  /** 연락처는 타이핑 중에 빨간 줄을 띄우면 방해다 — 칸을 벗어났거나 길이를 다 채웠을 때만 본다. */
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  /**
+   * 직전에 «확인에 성공한» 조합. 뒤로 갔다가 같은 값으로 다시 확인을 누르면 결과가 같은데도
+   * 건당 100원이 또 나간다 — 값이 그대로면 은행에 묻지 않고 그 결과를 재사용한다.
+   */
+  const [lastVerified, setLastVerified] = useState<{
+    paymentCompany: string;
+    paymentNumber: string;
+    payerNumber: string;
+    payerName: string;
+  } | null>(null);
 
   const patch = (next: Partial<CmsAccountDetails>) => onChange({ ...value, ...next });
 
   const runCheck = async () => {
     setChecking(true);
     setError(null);
-    setUnverified(false);
     try {
       const res = await fetch('/api/billing/cms-check-account', {
         method: 'POST',
@@ -114,35 +142,75 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
         providerCode?: string | null;
       };
 
+      // 세션이 끊긴 건 「계좌가 틀렸다」가 아니다 — 백엔드 원문을 칸 밑에 띄우지 말고
+      // 다른 화면들과 같이 로그인으로 보내 토큰을 되살린다.
+      if (res.status === 401) {
+        redirectToWalletLogin();
+        return;
+      }
       if (!res.ok) {
-        // 호출 상한(429)·인증·장애 — 어느 쪽도 «계좌가 틀렸다»는 확답이 아니므로 등록을 막지 않는다.
-        setError(data.error ?? '계좌를 확인하지 못했습니다.');
-        setUnverified(true);
-        setStep('confirm');
+        // 호출 상한(429)·장애. 확인이 안 된 채로 다음 화면에 보내면 고객은 등록된 줄 안다.
+        setError(data.error ?? '지금은 확인할 수 없어요. 잠시 후 다시 시도해주세요.');
         return;
       }
       if (data.verified) {
-        patch({ payerName: data.payerName ?? value.payerName });
+        const payerName = data.payerName ?? value.payerName;
+        patch({ payerName });
+        setLastVerified({
+          paymentCompany: value.paymentCompany,
+          paymentNumber: value.paymentNumber,
+          payerNumber: value.payerNumber,
+          payerName,
+        });
         setStep('confirm');
         return;
       }
 
-      const message = data.message ?? '계좌를 확인하지 못했습니다.';
+      const message = data.message ?? '계좌를 확인하지 못했어요.';
       const back = data.providerCode ? STEP_BY_PROVIDER_CODE[data.providerCode] : undefined;
       setError(message);
-      if (data.reason === 'MISMATCH' && back) {
-        setStep(back);
-        return;
+      if (data.reason === 'MISMATCH') {
+        setLastRejected({
+          paymentCompany: value.paymentCompany,
+          paymentNumber: value.paymentNumber,
+          payerNumber: value.payerNumber,
+          field: back,
+        });
+        if (back) setStep(back);
       }
-      setUnverified(true);
-      setStep('confirm');
+      // 불일치도 장애도 여기 머문다 — 은행이 확인해준 계좌만 다음으로 넘어간다.
     } catch {
-      setError('계좌 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
-      setUnverified(true);
-      setStep('confirm');
+      setError('확인 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setChecking(false);
     }
+  };
+
+  /** 직전에 거절당한 것과 «완전히 같은» 조합인가. 그대로 다시 물으면 결과도 같다. */
+  const isSameAsRejected =
+    lastRejected !== null &&
+    lastRejected.paymentCompany === value.paymentCompany &&
+    lastRejected.paymentNumber === value.paymentNumber &&
+    lastRejected.payerNumber === value.payerNumber;
+
+  /** 이미 확인에 성공한 그 조합 그대로인가. 그러면 은행에 다시 물을 이유가 없다. */
+  const isAlreadyVerified =
+    lastVerified !== null &&
+    lastVerified.paymentCompany === value.paymentCompany &&
+    lastVerified.paymentNumber === value.paymentNumber &&
+    lastVerified.payerNumber === value.payerNumber;
+
+  const requestCheck = () => {
+    if (isAlreadyVerified) {
+      patch({ payerName: lastVerified.payerName });
+      setStep('confirm');
+      return;
+    }
+    if (isSameAsRejected) {
+      setConfirmRetryOpen(true);
+      return;
+    }
+    void runCheck();
   };
 
   const back = () => {
@@ -153,6 +221,8 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
   };
 
   const isPersonal = value.holderType === 'personal';
+  const phoneInvalid = value.phone.length > 0 && !PHONE_PATTERN.test(value.phone);
+  const showPhoneError = phoneInvalid && (phoneTouched || value.phone.length >= 11);
 
   const canProceed =
     step === 'account'
@@ -160,14 +230,14 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
       : step === 'payer'
         ? isValidPayerNumber(value.payerNumber) && !checking
         : step === 'confirm'
-          ? Boolean(value.payerName) && value.phone.length >= 8
+          ? Boolean(value.payerName) && PHONE_PATTERN.test(value.phone)
           : false;
 
   // 엔터(모바일 키보드의 완료·이동)로도 그 단계의 주 버튼과 같은 일이 일어난다.
   const proceed = () => {
     if (!canProceed) return;
     if (step === 'account') setStep('payer');
-    else if (step === 'payer') void runCheck();
+    else if (step === 'payer') requestCheck();
     else if (step === 'confirm') onComplete();
   };
 
@@ -196,7 +266,7 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
         )}
         {/* 돌아갈 곳은 «왔던 화면»이다. 입력 도중 이탈이라 confirm 으로 한 번 묻는다. */}
         <a
-          href={homeHref ?? STOREFRONT_ORIGIN}
+          href={STOREFRONT_ORIGIN}
           onClick={(e) => {
             if (step !== 'bank' && !window.confirm('계좌 등록을 그만두시겠어요? 입력한 내용은 저장되지 않습니다.')) {
               e.preventDefault();
@@ -244,7 +314,7 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
               항상 보인다. 순서가 거꾸로인 건 사용자가 알아채지 못한다(집중하는 칸만 본다). */}
           <div className="mt-7 space-y-7">
             {step === 'payer' && (
-              <StackedField label={isPersonal ? '예금주 생년월일' : '사업자등록번호'}>
+              <StackedField label={isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}>
                 <div className="mb-3 grid grid-cols-2 gap-2">
                   {(['personal', 'business'] as const).map((type) => (
                     <button
@@ -274,14 +344,14 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
                     setError(null);
                     patch({ payerNumber: next.slice(0, isPersonal ? 6 : 10) });
                   }}
-                  placeholder={isPersonal ? 'YYMMDD' : '0000000000'}
+                  placeholder={isPersonal ? '예) 900101' : '예) 1234567890'}
                   invalid={Boolean(error)}
                 />
                 <FieldError message={error} />
                 <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
                   {isPersonal
-                    ? '계좌를 만들 때 등록한 생년월일이어야 은행에서 확인됩니다.'
-                    : '계좌가 사업자(상호) 명의일 때만 선택하세요. 대표자 개인 계좌라면 개인 명의입니다.'}
+                    ? '주민등록번호 앞 6자리예요. 계좌를 만들 때 등록한 번호와 같아야 합니다.'
+                    : '‘-’ 없이 10자리. 계좌가 사업자(상호) 명의일 때만 선택하세요.'}
                 </p>
               </StackedField>
             )}
@@ -315,7 +385,7 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
       )}
 
       {step === 'confirm' && (
-        <StepBody title={unverified ? '입력하신 계좌입니다' : '이 계좌가 맞나요?'}>
+        <StepBody title="이 계좌가 맞나요?">
           <div className="rounded-2xl bg-muted/60 p-5">
             {value.payerName && (
               <p className="text-[20px] font-bold tracking-tight text-foreground">{value.payerName}</p>
@@ -323,25 +393,14 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
             <p className={`text-sm text-muted-foreground ${value.payerName ? 'mt-1' : ''}`}>
               {getBankName(value.paymentCompany)} {value.paymentNumber}
             </p>
-            {!unverified && (
-              <p className="mt-3 flex items-center gap-1.5 text-[13px] font-medium text-primary">
-                <Check className="h-4 w-4" />
-                은행에서 확인된 계좌입니다
-              </p>
-            )}
+            <p className="mt-3 flex items-center gap-1.5 text-[13px] font-medium text-primary">
+              <Check className="h-4 w-4" />
+              은행에서 확인된 계좌입니다
+            </p>
           </div>
 
-          {unverified && (
-            <div className="flex items-start gap-2 rounded-xl bg-muted/60 p-4 text-[13px] leading-relaxed text-muted-foreground">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-              <div>
-                <p>{error ?? '지금은 계좌를 실시간으로 확인할 수 없습니다.'}</p>
-                <p className="mt-1">확인 없이도 등록할 수 있지만, 정보가 다르면 1~2 영업일 뒤에 거절됩니다.</p>
-              </div>
-            </div>
-          )}
-
-          {unverified && !value.payerName && (
+          {/* 계좌는 확인됐는데 이름만 못 받아온 경우. 잠그면 빈 값 + required 로 등록이 막힌다. */}
+          {!value.payerName && (
             <div className="space-y-2">
               <label htmlFor="payerName" className="text-[13px] font-medium text-foreground">
                 예금주명
@@ -363,15 +422,56 @@ export function CmsAccountFields({ value, onChange, onComplete, homeHref }: CmsA
             </label>
             <Input
               id="phone"
+              autoFocus
               value={value.phone}
-              onChange={(e) => patch({ phone: e.target.value.replace(/\D/g, '').slice(0, 20) })}
-              placeholder="01012345678"
+              onChange={(e) => patch({ phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+              onBlur={() => setPhoneTouched(true)}
+              placeholder="예) 01012345678"
               inputMode="tel"
+              aria-invalid={showPhoneError}
+              aria-describedby={showPhoneError ? 'phone-error' : undefined}
               className="h-12"
             />
+            {showPhoneError && (
+              <p id="phone-error" className="flex items-start gap-1.5 text-[13px] font-medium text-destructive">
+                <AlertCircle className="mt-[3px] size-4 shrink-0" />
+                <span>휴대폰 번호를 다시 확인해주세요.</span>
+              </p>
+            )}
           </div>
         </StepBody>
       )}
+
+      {/* 같은 값으로 다시 물으면 결과도 같다 — 건당 유료 호출을 한 번 더 태우기 전에 되묻는다.
+          무엇이 틀렸는지(계좌번호냐 생년월일이냐)까지 짚어줘야 고칠 데를 안다. */}
+      <AlertDialog open={confirmRetryOpen} onOpenChange={setConfirmRetryOpen}>
+        <AlertDialogContent className="max-w-[320px] rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[17px]">
+              {lastRejected?.field === 'account'
+                ? '계좌번호가 이전과 같아요'
+                : lastRejected?.field === 'payer'
+                  ? isPersonal
+                    ? '생년월일이 이전과 같아요'
+                    : '사업자등록번호가 이전과 같아요'
+                  : '입력하신 정보가 이전과 같아요'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[13px] leading-relaxed">
+              {lastRejected?.field === 'account'
+                ? '조금 전 이 계좌번호로 확인했을 때 은행에서 찾지 못했습니다. 그대로 다시 확인하면 결과도 같습니다.'
+                : lastRejected?.field === 'payer'
+                  ? '조금 전 이 번호로 확인했을 때 은행에 등록된 정보와 달랐습니다. 그대로 다시 확인하면 결과도 같습니다.'
+                  : '조금 전과 같은 정보입니다. 그대로 다시 확인하면 결과도 같습니다.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel className="h-11 rounded-xl">고쳐서 입력할게요</AlertDialogCancel>
+            <AlertDialogAction className="h-11 rounded-xl" onClick={() => void runCheck()}>
+              그대로 확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <footer className="shrink-0 bg-background px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
         {step !== 'bank' && (
@@ -445,9 +545,9 @@ function StackedInput({
 function FieldError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="flex items-start gap-1.5 text-[13px] leading-relaxed text-destructive">
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-      {message}
+    <p className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive">
+      <AlertCircle className="mt-[3px] size-4 shrink-0" />
+      <span>{message}</span>
     </p>
   );
 }

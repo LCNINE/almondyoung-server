@@ -294,7 +294,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
           </Alert>
         </div>
       )}
-      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} homeHref={returnUrl} />
+      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} />
       {mode !== 'initial' && (
         <div className="px-5 pb-8">
           <button

@@ -101,7 +101,7 @@ export default function AccountPreviewPage() {
 
   return (
     <div className="mx-auto w-full max-w-md">
-      <CmsAccountFields value={details} onChange={setDetails} onComplete={() => setDone(true)} homeHref="/" />
+      <CmsAccountFields value={details} onChange={setDetails} onComplete={() => setDone(true)} />
     </div>
   );
 }

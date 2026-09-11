@@ -1,9 +1,19 @@
+/**
+ * 돌아갈 곳을 모를 때의 기본값. wallet-web 은 결제 전용이라 자기 루트(UI 데모 페이지)로
+ * 보내면 «아무 데도 아닌 곳»에 떨구는 셈이다. 고객이 온 곳은 언제나 스토어프론트다.
+ */
+export const STOREFRONT_ORIGIN = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? '/';
+
+// safeReturnUrl 은 상대경로를 그대로 돌려주고 기본값도 '/' 라, 여기로 절대 URL 이 아닌 값이
+// 들어온다. new URL(상대경로) 는 던지므로 base 를 붙여 파싱하고 상대경로면 상대경로로 돌려준다.
+const RELATIVE_BASE = 'http://relative.invalid';
+
 export function buildReturnUrl(baseUrl: string, params: Record<string, string>): string {
-  const url = new URL(baseUrl);
+  const url = new URL(baseUrl, RELATIVE_BASE);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
-  return url.toString();
+  return url.origin === RELATIVE_BASE ? `${url.pathname}${url.search}${url.hash}` : url.toString();
 }
 
 function parseList(env: string | undefined): string[] {
