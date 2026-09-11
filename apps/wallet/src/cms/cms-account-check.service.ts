@@ -13,12 +13,23 @@ export interface CmsAccountCheckInput {
 
 export type CmsAccountCheckOutcome =
   | { verified: true; payerName: string | null }
-  | { verified: false; reason: 'MISMATCH' | 'UNAVAILABLE'; message: string };
+  // providerCode 는 효성이 준 원본 코드(1001=계좌번호오류, 2001=생년월일 불일치 …).
+  // 고객 문의가 왔을 때 「무엇이 틀렸는지」를 되묻지 않고 바로 알 수 있게 그대로 내려준다.
+  | { verified: false; reason: 'MISMATCH' | 'UNAVAILABLE'; message: string; providerCode: string | null };
 
 /** 사용자별 시간당 조회 상한. 건당 100원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
-const MAX_CHECKS_PER_HOUR = 35;
+const MAX_CHECKS_PER_HOUR = 10;
 
 const MISMATCH_MESSAGE = '입력하신 계좌 정보와 예금주 정보가 일치하지 않습니다. 은행·계좌번호·생년월일을 확인해주세요.';
+
+/**
+ * 효성은 «어느 항목이» 틀렸는지 코드로 알려준다. 뭉뚱그려 안내하면 고객이 멀쩡한 계좌번호를
+ * 몇 번씩 고쳐 넣게 되고(유료 호출이 그만큼 늘고) 결국 CS 로 온다 — 실측한 코드만 옮긴다.
+ */
+const MISMATCH_MESSAGE_BY_CODE: Record<string, string> = {
+  '1001': '계좌번호를 다시 확인해주세요. 해당 은행에 그런 계좌번호가 없습니다.',
+  '2001': '계좌에 등록된 생년월일(사업자번호)과 다릅니다. 계좌를 만들 때 쓴 정보로 입력해주세요.',
+};
 const UNAVAILABLE_MESSAGE =
   '지금은 계좌를 실시간으로 확인할 수 없습니다. 입력한 정보를 다시 확인한 뒤 계속 진행해주세요.';
 
@@ -50,7 +61,7 @@ export class CmsAccountCheckService {
         `Account check unavailable. userId=${userId} bank=${input.paymentCompany} code=${verify.error.code} message=${verify.error.message}`,
       );
       await this.record(userId, input.paymentCompany, null, false, verify.error.code, verify.error.message);
-      return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE };
+      return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE, providerCode: verify.error.code };
     }
 
     const check = verify.data.check ?? {};
@@ -65,9 +76,17 @@ export class CmsAccountCheckService {
         this.logger.warn(
           `Account check got an unreadable flag. userId=${userId} bank=${input.paymentCompany} flag=${String(flag)} code=${String(code)}`,
         );
-        return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE };
+        return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE, providerCode: code };
       }
-      return { verified: false, reason: 'MISMATCH', message: MISMATCH_MESSAGE };
+      this.logger.log(
+        `Account check mismatch. userId=${userId} bank=${input.paymentCompany} code=${String(code)} message=${String(message)}`,
+      );
+      return {
+        verified: false,
+        reason: 'MISMATCH',
+        message: (code && MISMATCH_MESSAGE_BY_CODE[code]) ?? MISMATCH_MESSAGE,
+        providerCode: code,
+      };
     }
 
     const payerName = await this.lookupPayerName(input);

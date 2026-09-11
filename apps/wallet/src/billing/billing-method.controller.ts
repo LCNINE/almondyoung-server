@@ -76,8 +76,14 @@ export class BillingMethodController {
     try {
       const result = await this.cmsAccountCheckService.check(userId, dto);
       return result.verified
-        ? { verified: true, payerName: result.payerName, reason: null, message: null }
-        : { verified: false, payerName: null, reason: result.reason, message: result.message };
+        ? { verified: true, payerName: result.payerName, reason: null, message: null, providerCode: null }
+        : {
+            verified: false,
+            payerName: null,
+            reason: result.reason,
+            message: result.message,
+            providerCode: result.providerCode,
+          };
     } catch (e) {
       this.mapCmsError(e);
     }

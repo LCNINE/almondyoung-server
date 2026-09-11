@@ -155,6 +155,12 @@ export class CheckCmsAccountResponseDto {
 
   @ApiPropertyOptional({ description: '고객에게 보여줄 안내 문구', nullable: true })
   message: string | null;
+
+  @ApiPropertyOptional({
+    description: '효성이 준 원본 결과 코드 (1001=계좌번호오류, 2001=생년월일/사업자번호 불일치). CS 진단용',
+    nullable: true,
+  })
+  providerCode: string | null;
 }
 
 export class BillingMethodResponseDto {
