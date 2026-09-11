@@ -78,3 +78,11 @@ export function safeReturnUrl(returnUrl: string | undefined | null, fallback = '
 
   return fallback;
 }
+
+/**
+ * returnUrl 로 «나간다». next/navigation 의 router 는 같은 앱 안에서만 이동하므로
+ * storefront 처럼 다른 origin 인 returnUrl 을 넘기면 아무 일도 일어나지 않는다.
+ */
+export function leaveToReturnUrl(url: string): void {
+  window.location.replace(url);
+}

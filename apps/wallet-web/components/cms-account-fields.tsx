@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Check, ChevronLeft, Loader2, Pencil } from 'lucide-react';
-import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
+import { AlertCircle, ChevronLeft, Info, Loader2, Pencil } from 'lucide-react';
+import { CMS_BANKS, formatAccountDigits, getAccountDigits, getBankName } from '@/lib/cms-banks';
 import { AccountHolderType } from '@/components/payer-number-field';
 import { isValidPayerNumber } from '@/lib/payer-number';
 import { redirectToWalletLogin } from '@/lib/auth-expired';
@@ -50,8 +50,17 @@ const STEP_BY_PROVIDER_CODE: Record<string, 'account' | 'payer'> = {
 
 type Step = 'bank' | 'account' | 'payer' | 'confirm';
 
+const STEP_ORDER: Step[] = ['bank', 'account', 'payer', 'confirm'];
+
 /** 휴대폰 번호(01X-XXXX-XXXX). 자동이체 안내 문자가 여기로 가므로 유선번호는 받지 않는다. */
 const PHONE_PATTERN = /^01[016789]\d{7,8}$/;
+
+function formatPhone(digits: string): string {
+  if (digits.length <= 3) return digits;
+  const mid = digits.startsWith('010') ? 7 : 6;
+  if (digits.length <= mid) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, mid)}-${digits.slice(mid)}`;
+}
 
 /**
  * 키보드를 뺀 «실제로 보이는» 높이. iOS Safari 는 키보드가 올라와도 레이아웃 뷰포트를 줄이지
@@ -92,6 +101,7 @@ interface CmsAccountFieldsProps {
  */
 export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFieldsProps) {
   const [step, setStep] = useState<Step>('bank');
+  const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const { height: viewportHeight, keyboardOpen } = useViewportHeight();
   const payerNumberRef = useRef<HTMLInputElement>(null);
   const [checking, setChecking] = useState(false);
@@ -118,6 +128,11 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   } | null>(null);
 
   const patch = (next: Partial<CmsAccountDetails>) => onChange({ ...value, ...next });
+
+  const go = (next: Step) => {
+    setDir(STEP_ORDER.indexOf(next) < STEP_ORDER.indexOf(step) ? 'back' : 'fwd');
+    setStep(next);
+  };
 
   const runCheck = async () => {
     setChecking(true);
@@ -162,7 +177,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
           payerNumber: value.payerNumber,
           payerName,
         });
-        setStep('confirm');
+        go('confirm');
         return;
       }
 
@@ -176,7 +191,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
           payerNumber: value.payerNumber,
           field: back,
         });
-        if (back) setStep(back);
+        if (back) go(back);
       }
       // 불일치도 장애도 여기 머문다 — 은행이 확인해준 계좌만 다음으로 넘어간다.
     } catch {
@@ -203,7 +218,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   const requestCheck = () => {
     if (isAlreadyVerified) {
       patch({ payerName: lastVerified.payerName });
-      setStep('confirm');
+      go('confirm');
       return;
     }
     if (isSameAsRejected) {
@@ -215,10 +230,20 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
   const back = () => {
     setError(null);
-    if (step === 'account') setStep('bank');
-    if (step === 'payer') setStep('account');
-    if (step === 'confirm') setStep('payer');
+    if (step === 'account') go('bank');
+    if (step === 'payer') go('account');
+    if (step === 'confirm') go('payer');
   };
+
+  const stepAnim =
+    dir === 'fwd'
+      ? 'animate-in fade-in slide-in-from-right-5 duration-300 ease-out'
+      : 'animate-in fade-in slide-in-from-left-5 duration-300 ease-out';
+  const progress = ((STEP_ORDER.indexOf(step) + 1) / STEP_ORDER.length) * 100;
+
+  const accountDigits = getAccountDigits(value.paymentCompany);
+  const accountLengthOk =
+    value.paymentNumber.length >= accountDigits.min && value.paymentNumber.length <= accountDigits.max;
 
   const isPersonal = value.holderType === 'personal';
   const phoneInvalid = value.phone.length > 0 && !PHONE_PATTERN.test(value.phone);
@@ -226,7 +251,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
   const canProceed =
     step === 'account'
-      ? value.paymentNumber.length >= 4
+      ? value.paymentNumber.length > 0
       : step === 'payer'
         ? isValidPayerNumber(value.payerNumber) && !checking
         : step === 'confirm'
@@ -236,8 +261,13 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   // 엔터(모바일 키보드의 완료·이동)로도 그 단계의 주 버튼과 같은 일이 일어난다.
   const proceed = () => {
     if (!canProceed) return;
-    if (step === 'account') setStep('payer');
-    else if (step === 'payer') requestCheck();
+    if (step === 'account') {
+      if (!accountLengthOk) {
+        setError(`${getBankName(value.paymentCompany)} 계좌번호는 ${formatAccountDigits(value.paymentCompany)}예요.`);
+        return;
+      }
+      go('payer');
+    } else if (step === 'payer') requestCheck();
     else if (step === 'confirm') onComplete();
   };
 
@@ -279,8 +309,15 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
         </a>
       </header>
 
+      <div className="h-[2px] shrink-0 bg-border/50">
+        <div
+          className="h-full rounded-r-full bg-primary/90 transition-[width] duration-500 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
       {step === 'bank' && (
-        <StepBody title="어느 은행 계좌인가요?">
+        <StepBody title="어느 은행 계좌인가요?" className={stepAnim}>
           <div className="-mx-1 grid grid-cols-3 gap-2">
             {CMS_BANKS.map((bank) => (
               <button
@@ -288,9 +325,9 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 type="button"
                 onClick={() => {
                   patch({ paymentCompany: bank.code });
-                  setStep('account');
+                  go('account');
                 }}
-                className={`flex h-[72px] flex-col items-center justify-center rounded-2xl border text-[13px] font-medium transition-colors ${
+                className={`flex h-[72px] flex-col items-center justify-center rounded-2xl border text-[13px] font-medium transition-all duration-150 active:scale-[0.96] ${
                   value.paymentCompany === bank.code
                     ? 'border-primary text-primary'
                     : 'border-transparent bg-muted/60 text-foreground hover:bg-muted'
@@ -304,7 +341,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
       )}
 
       {(step === 'account' || step === 'payer') && (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8 pt-2">
+        <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-10 pt-6 ${stepAnim}`}>
           <h1 className="text-[24px] font-bold leading-[1.35] tracking-tight text-foreground">
             계좌 정보를 입력해주세요
           </h1>
@@ -314,8 +351,8 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
               항상 보인다. 순서가 거꾸로인 건 사용자가 알아채지 못한다(집중하는 칸만 본다). */}
           <div className="mt-7 space-y-7">
             {step === 'payer' && (
-              <StackedField label={isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}>
-                <div className="mb-3 grid grid-cols-2 gap-2">
+              <div className="animate-in fade-in slide-in-from-top-3 duration-300 ease-out">
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                   {(['personal', 'business'] as const).map((type) => (
                     <button
                       key={type}
@@ -326,16 +363,17 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                         // 명의를 고른 다음 할 일은 번호 입력이다 — 손으로 한 번 더 탭하게 두지 않는다.
                         payerNumberRef.current?.focus();
                       }}
-                      className={`h-11 rounded-xl border text-sm font-medium transition-colors ${
-                        value.holderType === type
-                          ? 'border-primary text-primary'
-                          : 'border-transparent bg-muted/60 text-muted-foreground'
+                      className={`h-10 rounded-lg text-[14px] font-semibold transition-all duration-200 ${
+                        value.holderType === type ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
                       }`}
                     >
                       {type === 'personal' ? '개인 명의' : '사업자 명의'}
                     </button>
                   ))}
                 </div>
+                <p className="mt-5 mb-1 text-[13px] text-muted-foreground">
+                  {isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}
+                </p>
                 <StackedInput
                   autoFocus
                   inputRef={payerNumberRef}
@@ -353,7 +391,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                     ? '주민등록번호 앞 6자리예요. 계좌를 만들 때 등록한 번호와 같아야 합니다.'
                     : '‘-’ 없이 10자리. 계좌가 사업자(상호) 명의일 때만 선택하세요.'}
                 </p>
-              </StackedField>
+              </div>
             )}
 
             <StackedField label="계좌번호">
@@ -362,7 +400,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 value={value.paymentNumber}
                 onChange={(next) => {
                   setError(null);
-                  patch({ paymentNumber: next.slice(0, 16) });
+                  patch({ paymentNumber: next.slice(0, accountDigits.max) });
                 }}
                 placeholder="- 없이 숫자만 입력"
                 invalid={step === 'account' && Boolean(error)}
@@ -373,7 +411,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
             <StackedField label="은행">
               <button
                 type="button"
-                onClick={() => setStep('bank')}
+                onClick={() => go('bank')}
                 className="flex h-14 w-full items-center justify-between border-b border-border text-left text-[22px] font-semibold tracking-tight text-foreground"
               >
                 {getBankName(value.paymentCompany)}
@@ -385,18 +423,23 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
       )}
 
       {step === 'confirm' && (
-        <StepBody title="이 계좌가 맞나요?">
-          <div className="rounded-2xl bg-muted/60 p-5">
-            {value.payerName && (
-              <p className="text-[20px] font-bold tracking-tight text-foreground">{value.payerName}</p>
-            )}
-            <p className={`text-sm text-muted-foreground ${value.payerName ? 'mt-1' : ''}`}>
-              {getBankName(value.paymentCompany)} {value.paymentNumber}
-            </p>
-            <p className="mt-3 flex items-center gap-1.5 text-[13px] font-medium text-primary">
-              <Check className="h-4 w-4" />
-              은행에서 확인된 계좌입니다
-            </p>
+        <StepBody title="이 계좌가 맞나요?" className={stepAnim}>
+          <div className="animate-in fade-in zoom-in-95 flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-muted/30 p-5 duration-300 ease-out">
+            <div className="min-w-0">
+              {value.payerName && (
+                <p className="truncate text-[20px] font-bold tracking-tight text-foreground">{value.payerName}</p>
+              )}
+              <p className={`text-[14px] tabular-nums text-muted-foreground ${value.payerName ? 'mt-1' : ''}`}>
+                {getBankName(value.paymentCompany)} · {value.paymentNumber}
+              </p>
+            </div>
+            <Image
+              src="/images/badge-account-verified.png"
+              alt="은행에서 확인된 계좌"
+              width={160}
+              height={160}
+              className="animate-in zoom-in-50 fill-mode-both size-[60px] shrink-0 -rotate-6 rounded-full delay-200 duration-500"
+            />
           </div>
 
           {/* 계좌는 확인됐는데 이름만 못 받아온 경우. 잠그면 빈 값 + required 로 등록이 막힌다. */}
@@ -416,28 +459,32 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
             </div>
           )}
 
-          <div className="space-y-2">
-            <label htmlFor="phone" className="text-[13px] font-medium text-foreground">
-              연락처
-            </label>
-            <Input
-              id="phone"
-              autoFocus
-              value={value.phone}
-              onChange={(e) => patch({ phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
-              onBlur={() => setPhoneTouched(true)}
-              placeholder="예) 01012345678"
-              inputMode="tel"
-              aria-invalid={showPhoneError}
-              aria-describedby={showPhoneError ? 'phone-error' : undefined}
-              className="h-12"
-            />
-            {showPhoneError && (
-              <p id="phone-error" className="flex items-start gap-1.5 text-[13px] font-medium text-destructive">
-                <AlertCircle className="mt-[3px] size-4 shrink-0" />
-                <span>휴대폰 번호를 다시 확인해주세요.</span>
-              </p>
-            )}
+          <div className="pt-7">
+            <p className="mb-2 text-[17px] font-bold tracking-tight text-foreground">이 번호가 맞나요?</p>
+            <div>
+              <StackedInput
+                ariaLabel="연락처"
+                autoFocus={!value.phone}
+                value={value.phone}
+                onChange={(next) => {
+                  setPhoneTouched(false);
+                  patch({ phone: next.slice(0, 11) });
+                }}
+                onBlur={() => setPhoneTouched(true)}
+                format={formatPhone}
+                inputMode="tel"
+                placeholder="010-0000-0000"
+                invalid={showPhoneError}
+              />
+              {showPhoneError ? (
+                <FieldError message="휴대폰 번호를 다시 확인해주세요." />
+              ) : (
+                <p className="mt-3 flex items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                  <Info className="mt-[3px] size-3.5 shrink-0" />
+                  <span>이 번호로 자동이체 등록·출금 안내 문자가 갑니다.</span>
+                </p>
+              )}
+            </div>
           </div>
         </StepBody>
       )}
@@ -495,18 +542,26 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   );
 }
 
-function StepBody({ title, children }: { title: string; children: React.ReactNode }) {
+function StepBody({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8 pt-2">
+    <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-10 pt-6 ${className ?? ''}`}>
       <h1 className="text-[24px] font-bold leading-[1.35] tracking-tight text-foreground">{title}</h1>
-      <div className="mt-6 space-y-4">{children}</div>
+      <div className="mt-7 space-y-4">{children}</div>
     </div>
   );
 }
 
-function StackedField({ label, children }: { label: string; children: React.ReactNode }) {
+function StackedField({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div>
+    <div className={className}>
       <p className="mb-1 text-[13px] text-muted-foreground">{label}</p>
       {children}
     </div>
@@ -516,26 +571,36 @@ function StackedField({ label, children }: { label: string; children: React.Reac
 function StackedInput({
   value,
   onChange,
+  onBlur,
   placeholder,
   invalid,
   autoFocus,
   inputRef,
+  format,
+  inputMode = 'numeric',
+  ariaLabel,
 }: {
   value: string;
   onChange: (next: string) => void;
+  onBlur?: () => void;
   placeholder: string;
   invalid?: boolean;
   autoFocus?: boolean;
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  format?: (value: string) => string;
+  inputMode?: 'numeric' | 'tel';
+  ariaLabel?: string;
 }) {
   return (
     <Input
       ref={inputRef}
       autoFocus={autoFocus}
-      value={value}
+      value={format ? format(value) : value}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
+      onBlur={onBlur}
       placeholder={placeholder}
-      inputMode="numeric"
+      inputMode={inputMode}
+      aria-label={ariaLabel}
       aria-invalid={invalid}
       className="h-14 rounded-none border-0 border-b border-border bg-transparent px-0 !text-[22px] font-semibold tracking-tight shadow-none focus-visible:border-primary focus-visible:ring-0"
     />
@@ -545,7 +610,7 @@ function StackedInput({
 function FieldError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive">
+    <p className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive animate-in fade-in slide-in-from-top-1 duration-200">
       <AlertCircle className="mt-[3px] size-4 shrink-0" />
       <span>{message}</span>
     </p>
@@ -554,7 +619,11 @@ function FieldError({ message }: { message: string | null }) {
 
 function PrimaryButton({ disabled, children }: { disabled?: boolean; children: React.ReactNode }) {
   return (
-    <Button type="submit" disabled={disabled} className="h-14 w-full rounded-2xl text-[16px] font-semibold">
+    <Button
+      type="submit"
+      disabled={disabled}
+      className="h-14 w-full rounded-2xl text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
+    >
       {children}
     </Button>
   );

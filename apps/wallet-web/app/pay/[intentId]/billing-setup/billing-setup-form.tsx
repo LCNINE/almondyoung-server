@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,7 +9,7 @@ import { CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react';
 import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
 import { CmsAccountDetails, CmsAccountFields, emptyCmsAccountDetails } from '@/components/cms-account-fields';
-import { buildReturnUrl } from '@/lib/return-url';
+import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
 
 interface BillingSetupFormProps {
   returnUrl: string;
@@ -19,7 +18,6 @@ interface BillingSetupFormProps {
 }
 
 export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetupFormProps) {
-  const router = useRouter();
   // 'details' → 'consent' → 'signature' → done
   const [step, setStep] = useState<'details' | 'consent' | 'signature'>('details');
   const [consentPersonalInfo, setConsentPersonalInfo] = useState(false);
@@ -108,7 +106,9 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
             </CardContent>
           </Card>
           <Button
-            onClick={() => router.replace(billingMethodId ? buildReturnUrl(returnUrl, { billingMethodId }) : returnUrl)}
+            onClick={() =>
+              leaveToReturnUrl(billingMethodId ? buildReturnUrl(returnUrl, { billingMethodId }) : returnUrl)
+            }
             className="w-full h-11 font-semibold"
           >
             확인
@@ -299,7 +299,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
         <div className="px-5 pb-8">
           <button
             type="button"
-            onClick={() => router.replace(returnUrl)}
+            onClick={() => leaveToReturnUrl(returnUrl)}
             disabled={loading}
             className="w-full text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
           >
