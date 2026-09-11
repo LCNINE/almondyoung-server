@@ -185,7 +185,9 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
       }
       if (isStale()) return;
       if (data.verified) {
-        const payerName = data.payerName ?? value.payerName;
+        // 이름을 못 받았다고 직전 계좌의 예금주명을 물려주면 «다른 계좌 + 옛 이름» 으로
+        // 등록된다. 비워서 확인 화면에서 직접 채우게 한다.
+        const payerName = data.payerName ?? '';
         patch({ payerName });
         setLastVerified({
           paymentCompany: value.paymentCompany,

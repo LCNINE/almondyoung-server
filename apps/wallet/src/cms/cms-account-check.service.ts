@@ -120,21 +120,38 @@ export class CmsAccountCheckService {
       };
     }
 
-    const payerName = await this.lookupPayerName(input);
     await this.finalize(checkId!, check.paymentNumber ?? null, true, check.result?.code ?? null, null);
+    const payerName = await this.lookupPayerName(userId, input);
     return { verified: true, payerName };
   }
 
-  /** 예금주 이름은 부가 정보 — 실패해도 검증 결과(verified)를 뒤집지 않는다. */
-  private async lookupPayerName(input: CmsAccountCheckInput): Promise<string | null> {
+  /**
+   * 예금주 이름은 부가 정보 — 실패해도 검증 결과(verified)를 뒤집지 않는다.
+   * 다만 이것도 «별도 엔드포인트의 유료 호출»이라 상한을 같이 쓴다. 슬롯이 없으면
+   * 이름만 포기하고 검증 결과는 그대로 돌려준다.
+   */
+  private async lookupPayerName(userId: string, input: CmsAccountCheckInput): Promise<string | null> {
+    const slotId = await this.reserveSlot(userId, input.paymentCompany);
+    if (!slotId) return null;
+
     const inquiry = await this.cmsApi.inquirePayerName({
       paymentCompany: input.paymentCompany,
       paymentNumber: input.paymentNumber,
     });
-    if (!inquiry.ok) return null;
+    if (!inquiry.ok) {
+      await this.finalize(slotId, null, false, inquiry.error.code, inquiry.error.message);
+      return null;
+    }
     const check = inquiry.data.check ?? {};
-    if (!this.isPass(check)) return null;
-    return check.payerName ?? null;
+    const passed = this.isPass(check);
+    await this.finalize(
+      slotId,
+      check.paymentNumber ?? null,
+      passed,
+      check.result?.code ?? null,
+      check.result?.message ?? null,
+    );
+    return passed ? (check.payerName ?? null) : null;
   }
 
   private isPass(check: CmsAccountCheckData): boolean {

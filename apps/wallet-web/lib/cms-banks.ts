@@ -1,3 +1,5 @@
+// 자릿수(digits)는 wallet `apps/wallet/src/cms/cms-banks.ts` 의 CMS_BANK_ACCOUNT_DIGITS 와
+// 같은 값이어야 한다 — 서버 경계에서도 같은 기준으로 막는다.
 export const CMS_BANKS = [
   { code: '002', name: '산업은행', digits: [11, 14] },
   { code: '003', name: '기업은행', digits: [11, 14] },

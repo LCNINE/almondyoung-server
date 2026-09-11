@@ -1,7 +1,18 @@
-import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Validate } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  Validate,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsValidPayerNumberConstraint } from '../../cms/payer-number';
-import { IsValidCmsBankCodeConstraint } from '../../cms/cms-banks';
+import { IsValidCmsBankCodeConstraint, IsValidCmsAccountLengthConstraint } from '../../cms/cms-banks';
 
 // ─── Billing Method DTOs ────────────────────────────────────────────────────
 
@@ -103,6 +114,7 @@ export class CmsBankAccountDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
+  @Validate(IsValidCmsAccountLengthConstraint)
   @MaxLength(16)
   paymentNumber: string;
 

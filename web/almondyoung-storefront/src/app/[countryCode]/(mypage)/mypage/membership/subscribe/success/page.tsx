@@ -5,7 +5,6 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CartRefresher } from "./cart-refresher"
 import { BackButton } from "./back-button"
 
-/** 다뷰는 아직 받을 주소가 없어 링크 없이 카드만 보여준다. */
 const RECOMMEND_CARDS = [
   // 웰컴딜 재개 시 주석 해제
   // {
