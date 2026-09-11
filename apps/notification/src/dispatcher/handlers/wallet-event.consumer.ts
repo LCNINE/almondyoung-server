@@ -775,6 +775,49 @@ export class WalletEventConsumer {
    * 효성이 보내는 문자는 "신청 접수" 확인일 뿐 심사 결과가 아니다. 이 메일이 없으면 고객은
    * 마이페이지를 직접 열어보기 전까지 거절 사실을 모르고, 정기결제가 조용히 멈춘다.
    */
+  /**
+   * 계좌 심사 통과. 거절만 알리면 「조용한데 된 건가?」가 되어 결제수단 화면을 다시 열거나
+   * 문의가 온다 — 승인도 같은 무게로 알린다.
+   */
+  @On(PAYMENT_STREAM, 'cms.member.registered')
+  async onCmsMemberRegistered(
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'cms.member.registered'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'cms.member.registered'>,
+  ) {
+    this.logger.log(
+      `[Event] Received CmsMemberRegistered: ${payload.cmsMemberId} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      const eventMapping = await this.eventMappingService.getEventMapping('CMS_MEMBER_REGISTERED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for CMS_MEMBER_REGISTERED not found or inactive.`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        // 키 이름은 CMS_MEMBER_REGISTERED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
+        variables: {
+          name: payload.userName,
+          bankName: payload.bankName,
+          payerName: payload.payerName,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched CMS_MEMBER_REGISTERED notification for ${payload.userId}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process CMS_MEMBER_REGISTERED notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
   @On(PAYMENT_STREAM, 'cms.member.rejected')
   async onCmsMemberRejected(
     @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'cms.member.rejected'>,

@@ -8,6 +8,7 @@ import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, cmsMembers } from '../schema';
 import { CmsMemberService } from './cms-member.service';
+import { getCmsBankName } from './cms-banks';
 import { CmsApiClient } from './cms-api.client';
 import { interpretLiveCmsMemberStatus } from './cms-member-status';
 import { InvoiceOutcomeService } from '../invoices/invoice-outcome.service';
@@ -77,6 +78,7 @@ export class CmsMemberPollerService {
         // ADR-0027: 심사 통과 — MANDATE_PENDING 인보이스의 다음 시도를 즉시로 당겨 출금을 앞당긴다.
         await this.invoiceOutcomeService.pullForwardMandatePending(member.billingMethodId);
         this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
+        await this.notifyRegistered(member);
       } else if (liveStatus === 'FAILED') {
         if (!(await this.cmsMemberService.updateStatus(member.id, 'FAILED', resultCode, resultMessage))) {
           return;
@@ -104,6 +106,65 @@ export class CmsMemberPollerService {
    * 발행 실패가 심사 결과 반영을 되돌리면 안 되므로 여기서 삼킨다. 통지가 없으면 고객이
    * 마이페이지를 직접 열어보기 전까지 거절을 모르지만, 상태 자체는 이미 확정돼 있다.
    */
+  /**
+   * 심사 통과를 알린다. 승인만 조용하면 고객은 「된 건가?」 하고 결제수단 화면을 다시 열어보거나
+   * 문의한다 — 거절만 메일이 가던 비대칭을 메운다.
+   *
+   * 거절 통지와 같은 이유로 발행 실패는 삼킨다. 통지가 없어도 상태는 이미 확정돼 있고,
+   * 통지 실패가 심사 결과 반영을 되돌리면 안 된다.
+   */
+  private async notifyRegistered(member: {
+    id: string;
+    cmsMemberId: string;
+    billingMethodId: string;
+    userId: string;
+    paymentCompany: string;
+    payerName: string;
+  }): Promise<void> {
+    if (
+      !this.configService.get<string>('USER_SERVICE_URL') ||
+      !this.configService.get<string>('USER_SERVICE_INTERNAL_KEY')
+    ) {
+      this.logger.warn(`계좌 심사 승인 통지 스킵 — user-service 연동 미설정 (cmsMemberId=${member.cmsMemberId})`);
+      return;
+    }
+
+    try {
+      const contacts = await this.userContactClient.findContacts([member.userId]);
+      const contact = contacts.get(member.userId);
+      if (!contact?.email) {
+        this.logger.warn(`계좌 심사 승인 통지 스킵 — 연락처 없음 (userId=${member.userId})`);
+        return;
+      }
+
+      await this.dbService.run(async (trx) => {
+        await this.publisher.enqueue(
+          {
+            eventType: 'cms.member.registered',
+            aggregateId: member.id,
+            partitionKey: member.userId,
+            // 거절과 같은 이유 — 선점과 통지가 다른 트랜잭션이라 재시도로 두 번 들어올 수 있다.
+            idempotencyKey: `cms:member-registered:${member.id}`,
+            payload: {
+              cmsMemberId: member.cmsMemberId,
+              billingMethodId: member.billingMethodId,
+              userId: member.userId,
+              email: contact.email,
+              userName: contact.username,
+              paymentCompany: member.paymentCompany,
+              bankName: getCmsBankName(member.paymentCompany),
+              payerName: member.payerName,
+              occurredAt: new Date().toISOString(),
+            },
+          },
+          trx,
+        );
+      });
+    } catch (err) {
+      this.logger.error(`계좌 심사 승인 통지 발행 실패 (cmsMemberId=${member.cmsMemberId}): ${err}`);
+    }
+  }
+
   private async notifyRejected(
     member: { id: string; cmsMemberId: string; billingMethodId: string; userId: string },
     resultCode: string | undefined,

@@ -366,6 +366,22 @@ export interface CmsMemberRejectedPayload {
   occurredAt: string;
 }
 
+/** 심사 통과. 이제부터 실제로 출금이 걸린다는 사실을 고객에게 알린다. */
+export interface CmsMemberRegisteredPayload {
+  cmsMemberId: string;
+  billingMethodId: string;
+  userId: string;
+  /** 수신자 — notification 은 사용자 조회 경로가 없어 발행자가 싣는다 */
+  email: string;
+  userName: string;
+  /** 어느 계좌가 열렸는지 메일에 적는다 */
+  paymentCompany: string;
+  /** 고객에게 보여줄 은행 이름. 소비자가 코드표를 따로 들지 않도록 발행자가 풀어 싣는다. */
+  bankName: string;
+  payerName: string;
+  occurredAt: string;
+}
+
 export interface InvoiceVoidedPayload {
   invoiceId: string;
   subscriberType: string;
@@ -809,6 +825,21 @@ const CmsMemberRejectedSchema = z.object({
   occurredAt: z.string().min(1),
 });
 
+/** 거절과 대칭. 승인만 조용하면 고객은 「된 건가?」 하고 결제수단 화면을 다시 열어본다. */
+const CmsMemberRegisteredSchema = z.object({
+  cmsMemberId: z.string().min(1),
+  billingMethodId: z.string().min(1),
+  userId: z.string().min(1),
+  // 이 이벤트의 존재 이유가 "이 주소로 메일을 보내라" 이므로 형식까지 검증한다.
+  email: z.string().email(),
+  userName: z.string().min(1),
+  paymentCompany: z.string().min(1),
+  /** 고객에게 보여줄 은행 이름. 소비자가 코드표를 따로 들지 않도록 발행자가 풀어 싣는다. */
+  bankName: z.string().min(1),
+  payerName: z.string().min(1),
+  occurredAt: z.string().min(1),
+});
+
 const InvoiceVoidedSchema = z.object({
   invoiceId: z.string().min(1),
   subscriberType: z.string().min(1),
@@ -959,6 +990,10 @@ export const PAYMENT_STREAM = stream({
     'cms.member.rejected': event<'cms.member.rejected', CmsMemberRejectedPayload>(
       'cms.member.rejected',
       CmsMemberRejectedSchema,
+    ),
+    'cms.member.registered': event<'cms.member.registered', CmsMemberRegisteredPayload>(
+      'cms.member.registered',
+      CmsMemberRegisteredSchema,
     ),
 
     // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
