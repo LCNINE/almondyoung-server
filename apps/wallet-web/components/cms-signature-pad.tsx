@@ -70,6 +70,20 @@ export function CmsSignaturePad({ onComplete, disabled }: CmsSignaturePadProps) 
   };
 
   const handlePointerUp = () => {
+    // 획을 그리는 동안에는 «중점까지»만 이어진다. 그대로 끝내면 마지막 중점에서
+    // 손을 뗀 지점까지가 저장 이미지에서 빠진다 — 남은 구간을 마저 잇고 끝낸다.
+    const canvas = canvasRef.current;
+    if (isDrawing && canvas && lastMid.current && lastPos.current) {
+      const ctx = canvas.getContext('2d')!;
+      ctx.beginPath();
+      ctx.moveTo(lastMid.current.x, lastMid.current.y);
+      ctx.lineTo(lastPos.current.x, lastPos.current.y);
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 2.6 * (window.devicePixelRatio || 1);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
     setIsDrawing(false);
     lastPos.current = null;
     lastMid.current = null;

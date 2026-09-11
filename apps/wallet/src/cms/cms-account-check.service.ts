@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, count, eq, gte } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { WalletSchema, cmsAccountChecks } from '../schema';
 import { CmsApiClient, CmsAccountCheckData } from './cms-api.client';
 import { CmsOperationError } from './cms-errors';
@@ -44,6 +44,20 @@ const MISMATCH_MESSAGE_BY_CODE: Record<string, (payerNumber: string) => string> 
 const UNAVAILABLE_MESSAGE = '지금은 은행에 확인할 수 없어요. 잠시 후 다시 시도해주세요.';
 
 /**
+ * 감사 로그에 남겨도 되는 마스킹인지 본다. 「별표가 하나라도 있으면 통과」로는
+ * `123456*789` 처럼 대부분이 드러난 값이 그대로 적재된다 — 자릿수까지 본다.
+ */
+function maskedForAudit(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!/^[0-9*\-]+$/.test(trimmed)) return null;
+  // 별표 한두 개는 마스킹이 아니다 — `123456*789` 는 사실상 전체 계좌번호다.
+  const masked = (trimmed.match(/\*/g) ?? []).length;
+  if (masked < 4) return null;
+  return trimmed.slice(0, 32);
+}
+
+/**
  * 효성 실시간 계좌조회(FMS-TE-0057). 등록 전에 계좌·실명번호를 확인해
  * D+1 에 Q201(본인정보 불일치)로 돌아오던 실패를 입력 시점에 잡는다.
  *
@@ -61,7 +75,10 @@ export class CmsAccountCheckService {
   ) {}
 
   async check(userId: string, input: CmsAccountCheckInput): Promise<CmsAccountCheckOutcome> {
-    await this.assertUnderRateLimit(userId);
+    // 조회 → 호출 → 기록 순서로는 동시 요청이 전부 상한을 통과한다(건당 유료).
+    // 호출 «전에» 행을 원자적으로 선점하고, 결과는 그 행에 채운다.
+    const checkId = await this.reserveSlot(userId, input.paymentCompany);
+    if (!checkId) await this.throwRateLimited(userId);
 
     const verify = await this.cmsApi.verifyPayerNumber(input);
 
@@ -70,7 +87,7 @@ export class CmsAccountCheckService {
       this.logger.warn(
         `Account check unavailable. userId=${userId} bank=${input.paymentCompany} code=${verify.error.code} message=${verify.error.message}`,
       );
-      await this.record(userId, input.paymentCompany, null, false, verify.error.code, verify.error.message);
+      await this.finalize(checkId!, null, false, verify.error.code, verify.error.message);
       return { verified: false, reason: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE, providerCode: verify.error.code };
     }
 
@@ -79,7 +96,7 @@ export class CmsAccountCheckService {
     if (flag !== 'Y') {
       const code = check.result?.code ?? null;
       const message = check.result?.message ?? null;
-      await this.record(userId, input.paymentCompany, check.paymentNumber ?? null, false, code, message);
+      await this.finalize(checkId!, check.paymentNumber ?? null, false, code, message);
       // «틀렸다»는 확답은 flag='N' 뿐이다. flag 가 비어 있거나 모르는 값이면 응답을 해석하지
       // 못한 것이므로 UNAVAILABLE 로 내린다 — 멀쩡한 계좌를 불일치로 단정해 막지 않는다.
       if (flag !== 'N') {
@@ -100,14 +117,7 @@ export class CmsAccountCheckService {
     }
 
     const payerName = await this.lookupPayerName(input);
-    await this.record(
-      userId,
-      input.paymentCompany,
-      check.paymentNumber ?? null,
-      true,
-      check.result?.code ?? null,
-      null,
-    );
+    await this.finalize(checkId!, check.paymentNumber ?? null, true, check.result?.code ?? null, null);
     return { verified: true, payerName };
   }
 
@@ -127,7 +137,25 @@ export class CmsAccountCheckService {
     return check.result?.flag === 'Y';
   }
 
-  private async assertUnderRateLimit(userId: string): Promise<void> {
+  /**
+   * 창 안의 호출이 상한 미만일 때만 행을 만든다 — 세는 것과 만드는 것이 한 문장이라
+   * 동시 요청이 같은 슬롯을 두 번 가져갈 수 없다. 선점에 실패하면 null.
+   */
+  private async reserveSlot(userId: string, paymentCompany: string): Promise<string | null> {
+    const since = new Date(Date.now() - WINDOW_MS).toISOString();
+    const rows = await this.dbService.db.execute<{ id: string }>(sql`
+      INSERT INTO cms_account_checks (user_id, payment_company, verified)
+      SELECT ${userId}, ${paymentCompany}, false
+      WHERE (
+        SELECT count(*) FROM cms_account_checks
+        WHERE user_id = ${userId} AND created_at >= ${since}::timestamptz
+      ) < ${MAX_CHECKS_PER_HOUR}
+      RETURNING id
+    `);
+    return rows[0]?.id ?? null;
+  }
+
+  private async throwRateLimited(userId: string): Promise<never> {
     const since = new Date(Date.now() - WINDOW_MS);
     const rows = await this.dbService.db
       .select({ createdAt: cmsAccountChecks.createdAt })
@@ -135,11 +163,9 @@ export class CmsAccountCheckService {
       .where(and(eq(cmsAccountChecks.userId, userId), gte(cmsAccountChecks.createdAt, since)))
       .orderBy(cmsAccountChecks.createdAt);
 
-    if (rows.length < MAX_CHECKS_PER_HOUR) return;
-
     // 「잠시 후」가 언제인지 고객이 알 수 있어야 한다. 창이 롤링이므로 슬롯은 «가장 오래된
     // 호출»이 창 밖으로 나가는 순간 하나 열린다 — 그 시각을 그대로 알려준다.
-    const oldest = rows[rows.length - MAX_CHECKS_PER_HOUR].createdAt;
+    const oldest = rows[Math.max(0, rows.length - MAX_CHECKS_PER_HOUR)].createdAt;
     const retryAt = new Date(oldest.getTime() + WINDOW_MS);
     const retryAfterSeconds = Math.max(1, Math.ceil((retryAt.getTime() - Date.now()) / 1000));
 
@@ -153,23 +179,21 @@ export class CmsAccountCheckService {
     );
   }
 
-  private async record(
-    userId: string,
-    paymentCompany: string,
+  private async finalize(
+    checkId: string,
     maskedPaymentNumber: string | null,
     verified: boolean,
     resultCode: string | null,
     resultMessage: string | null,
   ): Promise<void> {
-    await this.dbService.db.insert(cmsAccountChecks).values({
-      userId,
-      paymentCompany,
-      // 효성이 마스킹해 준 값만 남긴다. 마스킹이 안 된 채로 오면(응답 스키마 변경 등)
-      // 전체 계좌번호를 우리 DB 에 적재하게 되므로 차라리 버린다.
-      maskedPaymentNumber: maskedPaymentNumber?.includes('*') ? maskedPaymentNumber.slice(0, 32) : null,
-      verified,
-      resultCode: resultCode?.slice(0, 16) ?? null,
-      resultMessage,
-    });
+    await this.dbService.db
+      .update(cmsAccountChecks)
+      .set({
+        maskedPaymentNumber: maskedForAudit(maskedPaymentNumber),
+        verified,
+        resultCode: resultCode?.slice(0, 16) ?? null,
+        resultMessage,
+      })
+      .where(eq(cmsAccountChecks.id, checkId));
   }
 }

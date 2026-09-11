@@ -129,12 +129,27 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
   const patch = (next: Partial<CmsAccountDetails>) => onChange({ ...value, ...next });
 
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
   const go = (next: Step) => {
     setDir(STEP_ORDER.indexOf(next) < STEP_ORDER.indexOf(step) ? 'back' : 'fwd');
     setStep(next);
   };
 
   const runCheck = async () => {
+    // 응답이 오는 사이 값이 바뀌었으면 그 응답은 «다른 조합»의 결과다. 그대로 반영하면
+    // 사용자가 방금 고친 값을 덮고 엉뚱한 계좌를 확인 화면에 보여준다.
+    const asked = {
+      paymentCompany: value.paymentCompany,
+      paymentNumber: value.paymentNumber,
+      payerNumber: value.payerNumber,
+    };
+    const isStale = () =>
+      asked.paymentCompany !== valueRef.current.paymentCompany ||
+      asked.paymentNumber !== valueRef.current.paymentNumber ||
+      asked.payerNumber !== valueRef.current.payerNumber;
+
     setChecking(true);
     setError(null);
     try {
@@ -168,6 +183,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
         setError(data.error ?? '지금은 확인할 수 없어요. 잠시 후 다시 시도해주세요.');
         return;
       }
+      if (isStale()) return;
       if (data.verified) {
         const payerName = data.payerName ?? value.payerName;
         patch({ payerName });
@@ -217,7 +233,9 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
   const requestCheck = () => {
     if (isAlreadyVerified) {
-      patch({ payerName: lastVerified.payerName });
+      // 조회는 통과했는데 이름을 못 받아온 경우가 있다. 그때 사용자가 직접 채운 이름을
+      // 빈 문자열로 덮으면 required 에 걸려 다시 막힌다.
+      if (lastVerified.payerName) patch({ payerName: lastVerified.payerName });
       go('confirm');
       return;
     }
@@ -324,7 +342,16 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 key={bank.code}
                 type="button"
                 onClick={() => {
-                  patch({ paymentCompany: bank.code });
+                  // 계좌번호·실명번호는 «그 은행의» 값이다. 은행만 갈아끼우면 이전 은행의
+                  // 값이 새 은행 것으로 보인다.
+                  setError(null);
+                  setLastVerified(null);
+                  setLastRejected(null);
+                  patch(
+                    bank.code === value.paymentCompany
+                      ? { paymentCompany: bank.code }
+                      : { paymentCompany: bank.code, paymentNumber: '', payerNumber: '', payerName: '' },
+                  );
                   go('account');
                 }}
                 className={`flex h-[72px] flex-col items-center justify-center rounded-2xl border text-[13px] font-medium transition-all duration-150 active:scale-[0.96] ${
@@ -376,6 +403,8 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 </p>
                 <StackedInput
                   autoFocus
+                  ariaLabel={isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}
+                  disabled={checking}
                   inputRef={payerNumberRef}
                   value={value.payerNumber}
                   onChange={(next) => {
@@ -397,6 +426,8 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
             <StackedField label="계좌번호">
               <StackedInput
                 autoFocus={step === 'account'}
+                ariaLabel="계좌번호"
+                disabled={checking}
                 value={value.paymentNumber}
                 onChange={(next) => {
                   setError(null);
@@ -579,6 +610,7 @@ function StackedInput({
   format,
   inputMode = 'numeric',
   ariaLabel,
+  disabled,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -590,6 +622,7 @@ function StackedInput({
   format?: (value: string) => string;
   inputMode?: 'numeric' | 'tel';
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <Input
@@ -602,6 +635,7 @@ function StackedInput({
       inputMode={inputMode}
       aria-label={ariaLabel}
       aria-invalid={invalid}
+      disabled={disabled}
       className="h-14 rounded-none border-0 border-b border-border bg-transparent px-0 !text-[22px] font-semibold tracking-tight shadow-none focus-visible:border-primary focus-visible:ring-0"
     />
   );

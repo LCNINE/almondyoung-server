@@ -11,14 +11,18 @@ function makeDb(recentCheckCount = 0) {
     inserted,
     dbService: {
       db: {
+        // 슬롯 선점 — 상한 미만일 때만 행 id 를 돌려준다(조건부 INSERT).
+        execute: () => Promise.resolve(recentCheckCount < 10 ? [{ id: 'check-1' }] : []),
         select: () => ({
           from: () => ({ where: () => ({ orderBy: () => Promise.resolve(recent) }) }),
         }),
-        insert: () => ({
-          values: (row: Record<string, unknown>) => {
-            inserted.push(row);
-            return Promise.resolve();
-          },
+        update: () => ({
+          set: (row: Record<string, unknown>) => ({
+            where: () => {
+              inserted.push(row);
+              return Promise.resolve();
+            },
+          }),
         }),
       },
     },

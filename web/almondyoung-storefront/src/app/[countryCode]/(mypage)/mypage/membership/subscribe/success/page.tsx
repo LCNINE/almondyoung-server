@@ -30,12 +30,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("metaSuccess") }
 }
 
-export default async function MembershipSuccessScreen({
-  searchParams,
-}: {
-  searchParams: Promise<{ flow?: string; mandate?: string }>
-}) {
-  await searchParams
+export default async function MembershipSuccessScreen() {
   const t = await getTranslations("mypage.membershipSubscribe")
   return (
     <div className="flex flex-col bg-white">
