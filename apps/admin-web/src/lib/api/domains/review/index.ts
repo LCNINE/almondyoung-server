@@ -106,10 +106,21 @@ export interface ReviewStatisticsTotals {
   previousReviewCount: number;
   averageRating: number | null;
   previousAverageRating: number | null;
+  /** 이 쇼핑몰에서 직접 작성된 리뷰 수 */
+  ownReviewCount: number;
+  /** 이전 사이트에서 이관된 리뷰 수 */
+  legacyReviewCount: number;
+  /** 자체 작성분만의 평균 — 자체 리뷰가 없으면 null (0 이 아니다) */
+  ownAverageRating: number | null;
+  legacyAverageRating: number | null;
   photoReviewCount: number;
   adminCommentedCount: number;
   eligibleCount: number;
   consumedEligibleCount: number;
+  orderEligibleCount: number;
+  orderConsumedEligibleCount: number;
+  adminEligibleCount: number;
+  adminConsumedEligibleCount: number;
 }
 
 export interface ReviewRatingBucket {

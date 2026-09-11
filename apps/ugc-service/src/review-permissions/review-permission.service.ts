@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { reviewEligibilities, type UgcServiceSchema, type UgcTx } from '../db/schema';
+import { OWN_SOURCE_SYSTEM } from '../source-system';
 import { ReviewEligibilityListQueryDto } from './dto/review-eligibility-query.dto';
 import { CreateReviewEligibilityDto } from './dto/create-review-eligibility.dto';
 import {
@@ -11,6 +12,16 @@ import {
   type RevokedEligibilityRow,
 } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
+
+/** 기간 내 자격 발급·소비 건수와 그 `provider` 내역. */
+export interface EligibilityRangeCounts {
+  eligibleCount: number;
+  consumedCount: number;
+  orderEligibleCount: number;
+  orderConsumedCount: number;
+  adminEligibleCount: number;
+  adminConsumedCount: number;
+}
 
 export interface ConsumablePermission {
   id: string;
@@ -31,10 +42,6 @@ export class ReviewPermissionService {
 
   constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
   async create(dto: CreateReviewEligibilityDto, tx?: UgcTx): Promise<ReviewEligibilityEntity[]> {
     return this.db.run(async (trx) => {
       const now = new Date();
@@ -51,7 +58,7 @@ export class ReviewPermissionService {
         provider: 'order' as const,
         eligibleAt: now,
         expiresAt,
-        sourceSystem: 'almondyoung' as const,
+        sourceSystem: OWN_SOURCE_SYSTEM,
         sourceEventId: `order:${dto.orderId}:${item.orderLineId}`,
       }));
 
@@ -235,14 +242,34 @@ export class ReviewPermissionService {
   /**
    * 기간 내 발급·소비 건수. 통계가 자격 표를 직접 읽지 않게 여기서 준다.
    * 호출자가 다른 집계와 `Promise.all` 로 묶으므로 왕복은 늘지 않는다.
+   *
+   * `provider` 로 내역을 같이 낸다 — 운영자가 직접 준 권한(`admin`)과 주문에서 나온 권한(`order`)은
+   * 「리뷰 전환율」이 말하는 것이 다르다. 합계 하나로만 주면 투입분이 구매 전환율을 밀어 올린다.
+   * 내역은 «같은 스캔»의 filter 집계라 왕복도 스캔도 늘지 않는다.
    */
-  countIssuedInRange(from: Date, toExclusive: Date): Promise<{ eligibleCount: number; consumedCount: number }[]> {
-    return this.client
-      .select({
-        eligibleCount: count(),
-        consumedCount: sql<number>`count(*) filter (where ${reviewEligibilities.consumedAt} is not null)::int`,
-      })
-      .from(reviewEligibilities)
-      .where(and(gte(reviewEligibilities.eligibleAt, from), lt(reviewEligibilities.eligibleAt, toExclusive)));
+  countIssuedInRange(from: Date, toExclusive: Date, tx?: UgcTx): Promise<EligibilityRangeCounts[]> {
+    const issuedInRange = and(
+      gte(reviewEligibilities.eligibleAt, from),
+      lt(reviewEligibilities.eligibleAt, toExclusive),
+    );
+    const consumed = sql`${reviewEligibilities.consumedAt} is not null`;
+    const isProvider = (provider: ReviewPermissionProvider) =>
+      sql`${reviewEligibilities.provider} = ${provider}`;
+
+    return this.db.run(
+      (trx) =>
+        trx
+          .select({
+            eligibleCount: count(),
+            consumedCount: sql<number>`count(*) filter (where ${consumed})::int`,
+            orderEligibleCount: sql<number>`count(*) filter (where ${isProvider('order')})::int`,
+            orderConsumedCount: sql<number>`count(*) filter (where ${isProvider('order')} and ${consumed})::int`,
+            adminEligibleCount: sql<number>`count(*) filter (where ${isProvider('admin')})::int`,
+            adminConsumedCount: sql<number>`count(*) filter (where ${isProvider('admin')} and ${consumed})::int`,
+          })
+          .from(reviewEligibilities)
+          .where(issuedInRange),
+      tx,
+    );
   }
 }

@@ -9,6 +9,7 @@ import {
   reviews,
   type UgcServiceSchema,
 } from '../../db/schema';
+import { isOwnSource } from '../../source-system';
 import { ReviewRewardGrantService } from './review-reward-grant.service';
 import { ReviewRewardRuleService, UgcTx } from './review-reward-rule.service';
 import { ReviewRewardPublisher } from '../services/review-reward-publisher.service';
@@ -294,7 +295,7 @@ export class ReviewBestSelectionService {
       isNull(reviews.deletedAt),
       isNotNull(reviews.userId),
       // 이관된 리뷰는 우리 회원의 작성분이 아니라 보상 대상이 아니다.
-      eq(reviews.sourceSystem, 'almondyoung'),
+      isOwnSource(reviews.sourceSystem),
       sql`char_length(${reviews.content}) >= ${spec.minContentLength}`,
     ];
 

@@ -26,6 +26,7 @@ import type {
   ReviewRewardTrigger,
 } from '../reviews/rewards/reward-rule.types';
 import type { ReviewPermissionProvider } from '../review-permissions/types';
+import { OWN_SOURCE_SYSTEM } from '../source-system';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -70,7 +71,7 @@ export const reviews = pgTable(
 
     status: reviewStatusEnum('status').notNull().default('active'),
 
-    sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
+    sourceSystem: varchar('source_system', { length: 30 }).notNull().default(OWN_SOURCE_SYSTEM),
 
     /**
      * 이 리뷰를 쓸 «권한»으로 소비된 자격 행. 리뷰 모듈은 이 참조가 무슨 종류의 권한인지 모른다 —
@@ -279,7 +280,7 @@ export const reviewEligibilities = pgTable(
     revokedAt: timestamp('revoked_at'),
     revokeReason: varchar('revoke_reason', { length: 40 }),
 
-    sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
+    sourceSystem: varchar('source_system', { length: 30 }).notNull().default(OWN_SOURCE_SYSTEM),
     sourceEventId: varchar('source_event_id', { length: 255 }),
 
     ...timestampColumns,

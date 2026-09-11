@@ -10,6 +10,7 @@ import {
   reactions,
   type UgcServiceSchema,
 } from '../../db/schema';
+import { OWN_SOURCE_SYSTEM } from '../../source-system';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
@@ -32,7 +33,7 @@ import {
 } from '../rewards/reward-rule.evaluator';
 import type { RatingDistribution } from '@packages/event-contracts/streams';
 
-const SOURCE_SYSTEM = 'almondyoung';
+
 
 /**
  * 회수 사유 → wallet 이 원장에 남길 사유 코드. 파생하지 않고 표로 두는 것은
@@ -533,7 +534,7 @@ export class ReviewsService {
           productId: dto.productId,
           rating: dto.rating,
           content: dto.content,
-          sourceSystem: SOURCE_SYSTEM,
+          sourceSystem: OWN_SOURCE_SYSTEM,
           // 권한 행을 가리킨다. 소비 표시(자격 → 리뷰)와 이 참조(리뷰 → 자격)가 같은 트랜잭션에서
           // 채워져야 한쪽만 있는 행이 안 생긴다. 리뷰 표는 리뷰 모듈이 쓴다 — 권한 모듈은 안 만진다.
           reviewPermissionId: eligibility.id,
@@ -635,7 +636,7 @@ export class ReviewsService {
       const [review] = await tx
         .update(reviews)
         .set(updateData)
-        .where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))
+        .where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM)))
         .returning();
 
       if (!review) {
@@ -692,7 +693,7 @@ export class ReviewsService {
           and(
             eq(reviews.id, id),
             eq(reviews.userId, userId),
-            eq(reviews.sourceSystem, SOURCE_SYSTEM),
+            eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM),
             isNull(reviews.deletedAt),
           ),
         )
@@ -967,9 +968,9 @@ export class ReviewsService {
       }
 
       if (query.source === 'own') {
-        conditions.push(eq(reviews.sourceSystem, SOURCE_SYSTEM));
+        conditions.push(eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM));
       } else if (query.source === 'legacy') {
-        conditions.push(ne(reviews.sourceSystem, SOURCE_SYSTEM));
+        conditions.push(ne(reviews.sourceSystem, OWN_SOURCE_SYSTEM));
       }
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
