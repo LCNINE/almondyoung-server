@@ -141,6 +141,14 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
     if (attempt.current?.combo !== combo) attempt.current = { combo, id: crypto.randomUUID() };
     return attempt.current.id;
   };
+  /**
+   * 장애(UNAVAILABLE)·상한(429)까지 같은 키로 두면 그 응답이 그대로 replay 된다 —
+   * 「잠시 후 다시」라고 안내해 놓고 영영 같은 답만 돌아온다. 다시 물어야 하는 결과는
+   * 키를 버려 다음 시도가 실제 호출이 되게 한다.
+   */
+  const forgetAttempt = () => {
+    attempt.current = null;
+  };
 
   const go = (next: Step) => {
     setDir(STEP_ORDER.indexOf(next) < STEP_ORDER.indexOf(step) ? 'back' : 'fwd');
@@ -191,6 +199,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
       }
       if (!res.ok) {
         // 호출 상한(429)·장애. 확인이 안 된 채로 다음 화면에 보내면 고객은 등록된 줄 안다.
+        forgetAttempt();
         setError(data.error ?? '지금은 확인할 수 없어요. 잠시 후 다시 시도해주세요.');
         return;
       }
@@ -209,6 +218,10 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
         go('confirm');
         return;
       }
+
+      // 「틀렸다」는 확답(MISMATCH)은 같은 조합이면 결과도 같으니 키를 유지한다.
+      // 장애는 다음에 달라질 수 있다.
+      if (data.reason !== 'MISMATCH') forgetAttempt();
 
       const message = data.message ?? '계좌를 확인하지 못했어요.';
       const back = data.providerCode ? STEP_BY_PROVIDER_CODE[data.providerCode] : undefined;

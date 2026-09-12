@@ -6,6 +6,7 @@ const input = { paymentCompany: '088', paymentNumber: '1234567890', payerNumber:
 function makeDb(recentCheckCount = 0) {
   const inserted: Record<string, unknown>[] = [];
   // 상한 판정은 «최근 1시간 내 호출 시각»을 읽는다 — 방금 찍힌 것처럼 채워 둔다.
+  // 세는 단위는 «유료 호출 건수»다(확인 한 번 성공 = 2건).
   const recent = Array.from({ length: recentCheckCount }, () => ({ createdAt: new Date() }));
   return {
     inserted,
@@ -17,7 +18,7 @@ function makeDb(recentCheckCount = 0) {
             execute: (query: { queryChunks?: unknown[] }) => {
               const isLock = JSON.stringify(query ?? {}).includes('advisory');
               if (isLock) return Promise.resolve([]);
-              return Promise.resolve(recentCheckCount < 10 ? [{ id: 'check-1' }] : []);
+              return Promise.resolve(recentCheckCount < 20 ? [{ id: 'check-1' }] : []);
             },
           }),
         select: () => ({
@@ -131,7 +132,7 @@ describe('CmsAccountCheckService', () => {
   });
 
   it('rejects once the hourly call limit is reached without spending a paid call', async () => {
-    const { dbService } = makeDb(10);
+    const { dbService } = makeDb(20);
     const cmsApi = { verifyPayerNumber: jest.fn(), inquirePayerName: jest.fn() };
     const service = new CmsAccountCheckService(dbService as never, cmsApi as never);
 

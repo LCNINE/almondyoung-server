@@ -26,8 +26,15 @@ function formatWait(seconds: number): string {
   return minutes < 60 ? `${minutes}분` : `${Math.ceil(minutes / 60)}시간`;
 }
 
-/** 사용자별 시간당 조회 상한. 건당 100원이고 계좌번호만으로 예금주 실명이 나오므로 상한이 필요하다. */
-const MAX_CHECKS_PER_HOUR = 10;
+/**
+ * 사용자별 시간당 «유료 호출» 상한. 건당 100원이고 계좌번호만으로 예금주 실명이 나오므로
+ * 상한이 필요하다.
+ *
+ * 세는 단위가 «확인 횟수»가 아니라 «호출 건수»인 이유: 확인 한 번이 성공하면
+ * verify-payer-number + inquire-payer-name 두 건이 나간다. 사용자 체감으로는 성공 기준
+ * 시간당 10회쯤이고, 실패(불일치)는 한 건만 쓰므로 그보다 여유가 있다.
+ */
+const MAX_CHECKS_PER_HOUR = 20;
 
 const MISMATCH_MESSAGE = '계좌 정보를 확인할 수 없어요. 은행·계좌번호·생년월일을 다시 확인해주세요.';
 
