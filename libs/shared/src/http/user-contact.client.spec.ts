@@ -23,6 +23,21 @@ describe('UserContactClient', () => {
     expect(result.get('u1')?.email).toBe('a@b.com');
   });
 
+  // HttpModule 은 어느 앱에서도 설정 없이 등록돼 있어 axios 기본값(=무제한)이 그대로 걸린다.
+  // wallet 은 이 조회를 선적용 가입의 agreement 생성 «요청 안에서» 부르므로, 상한이 없으면
+  // user-service 가 응답을 안 할 때 가입이 선 채로 멈추고 membership 의 재시도·void 도 멈춘다.
+  it('청크마다 상한을 건다 — 늦는 것도 실패로 끊는다', async () => {
+    const { client, httpService } = makeClient({
+      success: true,
+      data: [{ userId: 'u1', email: 'a@b.com', username: '홍길동' }],
+    });
+
+    await client.findContacts(['u1']);
+
+    const [, , config] = httpService.post.mock.calls[0];
+    expect(config.timeout).toBeGreaterThan(0);
+  });
+
   it('대상이 없으면 호출하지 않는다', async () => {
     const { client, httpService } = makeClient({ success: true, data: [] });
 
