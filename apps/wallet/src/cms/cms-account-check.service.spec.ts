@@ -11,8 +11,15 @@ function makeDb(recentCheckCount = 0) {
     inserted,
     dbService: {
       db: {
-        // 슬롯 선점 — 상한 미만일 때만 행 id 를 돌려준다(조건부 INSERT).
-        execute: () => Promise.resolve(recentCheckCount < 10 ? [{ id: 'check-1' }] : []),
+        // 슬롯 선점은 사용자 단위 advisory lock 안에서 조건부 INSERT 한다.
+        transaction: (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            execute: (query: { queryChunks?: unknown[] }) => {
+              const isLock = JSON.stringify(query ?? {}).includes('advisory');
+              if (isLock) return Promise.resolve([]);
+              return Promise.resolve(recentCheckCount < 10 ? [{ id: 'check-1' }] : []);
+            },
+          }),
         select: () => ({
           from: () => ({ where: () => ({ orderBy: () => Promise.resolve(recent) }) }),
         }),

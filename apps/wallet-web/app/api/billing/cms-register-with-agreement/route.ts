@@ -33,7 +33,9 @@ export async function POST(request: Request) {
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       const errMsg = (body?.message as string) ?? `등록 실패 (${res.status})`;
-      return Response.json({ error: errMsg }, { status: res.status >= 500 ? 502 : 400 });
+      // 4xx 는 그대로 넘긴다 — 전부 400 으로 뭉개면 세션 만료(401)를 «등록 실패» 로
+      // 보여주고 로그인으로 되살릴 기회를 잃는다.
+      return Response.json({ error: errMsg }, { status: res.status >= 500 ? 502 : res.status });
     }
 
     return Response.json(body, { status: 201 });

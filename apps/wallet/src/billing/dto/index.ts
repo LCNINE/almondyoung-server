@@ -139,6 +139,7 @@ export class CheckCmsAccountDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
+  @Validate(IsValidCmsAccountLengthConstraint)
   @MaxLength(16)
   paymentNumber: string;
 
@@ -159,7 +160,8 @@ export class CheckCmsAccountResponseDto {
   payerName: string | null;
 
   @ApiPropertyOptional({
-    description: 'MISMATCH=정보 불일치(등록 불가), UNAVAILABLE=실시간 확인 불가(등록은 계속 가능)',
+    description:
+      'MISMATCH=정보 불일치(틀린 칸 정정), UNAVAILABLE=실시간 확인 불가(재시도 안내). 둘 다 등록은 진행하지 않는다',
     enum: ['MISMATCH', 'UNAVAILABLE'],
     nullable: true,
   })

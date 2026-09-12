@@ -31,6 +31,9 @@ const MAX_CHECKS_PER_HOUR = 10;
 
 const MISMATCH_MESSAGE = '계좌 정보를 확인할 수 없어요. 은행·계좌번호·생년월일을 다시 확인해주세요.';
 
+/** 감사 로그에 남겨도 되는 «드러난» 계좌 자릿수. 효성 마스킹은 보통 앞뒤 3~4자리만 남긴다. */
+const MAX_EXPOSED_DIGITS = 8;
+
 /**
  * 효성은 «어느 항목이» 틀렸는지 코드로 알려준다. 뭉뚱그려 안내하면 고객이 멀쩡한 계좌번호를
  * 몇 번씩 고쳐 넣게 되고(유료 호출이 그만큼 늘고) 결국 CS 로 온다 — 실측한 코드만 옮긴다.
@@ -51,9 +54,11 @@ function maskedForAudit(value: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!/^[0-9*\-]+$/.test(trimmed)) return null;
-  // 별표 한두 개는 마스킹이 아니다 — `123456*789` 는 사실상 전체 계좌번호다.
+  // 별표 개수만 보면 `****1234567890` 처럼 앞뒤로 몰아 가린 값이 통과한다. 가려진 자리와
+  // «드러난 자리 수»를 함께 본다 — 감사에는 뒷자리 몇 개면 충분하다.
   const masked = (trimmed.match(/\*/g) ?? []).length;
-  if (masked < 4) return null;
+  const digits = (trimmed.match(/[0-9]/g) ?? []).length;
+  if (masked < 4 || digits > MAX_EXPOSED_DIGITS) return null;
   return trimmed.slice(0, 32);
 }
 
@@ -159,21 +164,28 @@ export class CmsAccountCheckService {
   }
 
   /**
-   * 창 안의 호출이 상한 미만일 때만 행을 만든다 — 세는 것과 만드는 것이 한 문장이라
-   * 동시 요청이 같은 슬롯을 두 번 가져갈 수 없다. 선점에 실패하면 null.
+   * 창 안의 호출이 상한 미만일 때만 행을 만든다. 선점에 실패하면 null.
+   *
+   * 조건부 INSERT 만으로는 부족하다 — Read Committed 에서 서브쿼리는 각자의 스냅샷을
+   * 읽으므로 동시 요청들이 같은 개수를 보고 모두 통과한다. 사용자 단위 advisory lock 으로
+   * 직렬화한다(트랜잭션이 끝나면 자동 해제). 잠그는 범위는 «선점»뿐이고 효성 호출은
+   * 트랜잭션 밖이라 오래 잡고 있지 않는다.
    */
   private async reserveSlot(userId: string, paymentCompany: string): Promise<string | null> {
     const since = new Date(Date.now() - WINDOW_MS).toISOString();
-    const rows = await this.dbService.db.execute<{ id: string }>(sql`
-      INSERT INTO cms_account_checks (user_id, payment_company, verified)
-      SELECT ${userId}, ${paymentCompany}, false
-      WHERE (
-        SELECT count(*) FROM cms_account_checks
-        WHERE user_id = ${userId} AND created_at >= ${since}::timestamptz
-      ) < ${MAX_CHECKS_PER_HOUR}
-      RETURNING id
-    `);
-    return rows[0]?.id ?? null;
+    return this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cms-account-check:${userId}`}))`);
+      const rows = await tx.execute<{ id: string }>(sql`
+        INSERT INTO cms_account_checks (user_id, payment_company, verified)
+        SELECT ${userId}, ${paymentCompany}, false
+        WHERE (
+          SELECT count(*) FROM cms_account_checks
+          WHERE user_id = ${userId} AND created_at >= ${since}::timestamptz
+        ) < ${MAX_CHECKS_PER_HOUR}
+        RETURNING id
+      `);
+      return rows[0]?.id ?? null;
+    });
   }
 
   private async throwRateLimited(userId: string): Promise<never> {
