@@ -29,7 +29,11 @@ export class BillingAgreementService {
     subscriberType: string,
     opts?: { allowPendingMandate?: boolean },
   ): Promise<BillingAgreement> {
-    await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId, opts);
+    const { cmsStatus } = await this.billingMethodService.assertSelectableForRecurringBilling(
+      userId,
+      billingMethodId,
+      opts,
+    );
 
     // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
     // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
@@ -50,7 +54,13 @@ export class BillingAgreementService {
       })
       .returning();
 
-    if (opts?.allowPendingMandate) {
+    // 「선적용이다」의 판정은 여기서 끝낸다 — 아래는 통지만 한다.
+    // ① allowPendingMandate 는 「PENDING 도 허용」이지 「PENDING 이다」가 아니다. 이미 승인된
+    //    계좌로 가입한 사람에게 심사 안내를 보내면 틀린 말이 된다.
+    // ② cmsMemberId 가 없으면 cms_members 행이 아예 없는 것이다. getUserCmsBillingMethodStatuses
+    //    는 그 경우에도 `member?.status ?? 'PENDING'` 으로 PENDING 을 돌려주므로(billing-method.service.ts),
+    //    상태만 보면 orphan 결제수단에도 「심사 중」 메일이 나간다.
+    if (opts?.allowPendingMandate && cmsStatus?.cmsMemberStatus === 'PENDING' && cmsStatus.cmsMemberId) {
       await this.notifyMandatePending(userId, billingMethodId, subscriberType, subscriberRef);
     }
 
@@ -64,8 +74,7 @@ export class BillingAgreementService {
    * "가입했는데 왜 돈이 안 빠지지" 가 CS 로 온다. 승인 메일(`cms.member.registered`)은
    * 1~2 영업일 뒤에 나가므로 이 공백을 못 메운다.
    *
-   * 심사가 이미 끝난 계좌(REGISTERED)로 가입하면 선적용이 아니므로 보내지 않는다 —
-   * allowPendingMandate 는 「PENDING 도 허용」이지 「PENDING 이다」가 아니다.
+   * 선적용인지의 판정은 호출자가 끝내고 들어온다.
    *
    * poller 의 승인·거절 통지와 같은 이유로 발행 실패는 삼킨다: 통지가 계약 생성을
    * 되돌리면 안 된다. (통지 유실 재시도는 #848 의 별도 처방)
@@ -86,10 +95,6 @@ export class BillingAgreementService {
     }
 
     try {
-      const statuses = await this.billingMethodService.getUserCmsBillingMethodStatuses(userId);
-      const status = statuses.find((row) => row.billingMethodId === billingMethodId);
-      if (status?.cmsMemberStatus !== 'PENDING') return;
-
       const contacts = await this.userContactClient.findContacts([userId]);
       const contact = contacts.get(userId);
       if (!contact?.email) {

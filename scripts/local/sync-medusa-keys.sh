@@ -28,9 +28,12 @@ put_env() {
   local file="$1" key="$2" value="$3"
   [ -f "$file" ] || fail "$file 이 없다 — env-templates 에서 먼저 복사할 것"
   if grep -q "^${key}=" "$file"; then
-    # value 에 / & 가 들어갈 수 있으므로 구분자를 | 로 두고 & 를 이스케이프한다
+    # value 에 / & 가 들어갈 수 있으므로 구분자를 | 로 두고 & 를 이스케이프한다.
+    # 🔴 `sed -i` 는 GNU 전용이다 — BSD(macOS) sed 는 -i 뒤를 «백업 접미사»로 먹어서
+    # 스크립트와 파일이 한 칸씩 밀린다(web/... 이 `w eb/...` 로 파싱돼 "No such file").
+    # 개발 머신이 macOS 라 perl 로 둔다. 둘 다에서 같게 동작한다.
     local escaped=${value//&/\\&}
-    sed -i "s|^${key}=.*|${key}=${escaped}|" "$file"
+    perl -pi -e "s|^\Q${key}\E=.*|${key}=${escaped}|" "$file"
   else
     printf '%s=%s\n' "$key" "$value" >> "$file"
   fi

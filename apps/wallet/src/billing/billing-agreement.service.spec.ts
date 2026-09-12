@@ -32,7 +32,7 @@ describe('BillingAgreementService recurring billing method guards', () => {
   it('validates explicit create billing method through recurring-billing selectability', async () => {
     const db = makeDb([agreement]);
     const billingMethodService = {
-      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ method: { id: 'method-1' } }),
       findLatestSelectableForRecurringBilling: jest.fn(),
     };
     const service = new BillingAgreementService(db as never, billingMethodService as never);
@@ -50,7 +50,7 @@ describe('BillingAgreementService recurring billing method guards', () => {
   it('선적용(allowPendingMandate) 옵션을 selectability 검증까지 전달한다', async () => {
     const db = makeDb([agreement]);
     const billingMethodService = {
-      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ method: { id: 'method-1' } }),
       findLatestSelectableForRecurringBilling: jest.fn(),
     };
     const service = new BillingAgreementService(db as never, billingMethodService as never);
@@ -79,7 +79,7 @@ describe('BillingAgreementService recurring billing method guards', () => {
   it('uses the latest selectable method for auto agreement creation', async () => {
     const db = makeDb([agreement]);
     const billingMethodService = {
-      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-selectable' }),
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ method: { id: 'method-selectable' } }),
       findLatestSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-selectable' }),
     };
     const service = new BillingAgreementService(db as never, billingMethodService as never);
@@ -124,7 +124,7 @@ describe('BillingAgreementService recurring billing method guards', () => {
   it('create 는 subscriber 충돌 시 REVOKED 행을 ACTIVE 로 되살리는 upsert 를 쓴다', async () => {
     const db = makeDb([agreement]);
     const billingMethodService = {
-      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ method: { id: 'method-1' } }),
       findLatestSelectableForRecurringBilling: jest.fn(),
     };
     const service = new BillingAgreementService(db as never, billingMethodService as never);
@@ -151,16 +151,18 @@ describe('BillingAgreementService 선적용 가입 통지', () => {
     updatedAt: new Date(),
   };
 
-  function makeDeps(cmsMemberStatus: string) {
+  function makeDeps(cmsMemberStatus: string, cmsMemberId: string | null = 'A4801367') {
     const enqueue = jest.fn().mockResolvedValue(undefined);
     return {
       enqueue,
       billingMethodService: {
-        assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+        // 판정에 쓴 상태를 assert 가 그대로 넘겨준다 — 통지 경로가 같은 조회를 다시 하지 않는다.
+        assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({
+          method: { id: 'method-1' },
+          cmsStatus: { billingMethodId: 'method-1', cmsMemberStatus, cmsMemberId },
+        }),
         findLatestSelectableForRecurringBilling: jest.fn(),
-        getUserCmsBillingMethodStatuses: jest
-          .fn()
-          .mockResolvedValue([{ billingMethodId: 'method-1', cmsMemberStatus }]),
+        getUserCmsBillingMethodStatuses: jest.fn(),
       },
       contacts: {
         findContacts: jest.fn().mockResolvedValue(new Map([['user-1', { email: 'a@b.com', username: '홍길동' }]])),
@@ -200,6 +202,26 @@ describe('BillingAgreementService 선적용 가입 통지', () => {
     await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
 
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('cms_members 행이 없는(orphan) 계좌에는 보내지 않는다', async () => {
+    // getUserCmsBillingMethodStatuses 는 회원 행이 없어도 `member?.status ?? 'PENDING'` 을 돌려준다.
+    // 상태만 보면 심사도 안 들어간 계좌에 「심사 중입니다」가 나간다.
+    const deps = makeDeps('PENDING', null);
+    const service = makeService(makeDb([agreement]), deps);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
+
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('판정에 쓴 상태를 재사용한다 — CMS 상태를 다시 조회하지 않는다', async () => {
+    const deps = makeDeps('PENDING');
+    const service = makeService(makeDb([agreement]), deps);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
+
+    expect(deps.billingMethodService.getUserCmsBillingMethodStatuses).not.toHaveBeenCalled();
   });
 
   it('통지 발행이 실패해도 계약 생성은 성립한다', async () => {
