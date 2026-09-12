@@ -198,6 +198,21 @@ describe('BillingAgreementService 선적용 가입 통지', () => {
     expect(params.payload.email).toBe('a@b.com');
   });
 
+  it('아웃박스 적재가 agreement INSERT 와 «같은» 트랜잭션을 쓴다', async () => {
+    // 「실패하면 같이 롤백된다」는 보장의 실체가 이것이다. 던지는지만 보면 enqueue 를
+    // run 바깥으로 옮겨도 스펙이 통과한다 — 넘어간 tx 핸들 자체를 본다.
+    const deps = makeDeps('PENDING');
+    const db = makeDb([agreement]);
+    const service = makeService(db, deps);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
+
+    const [, tx] = deps.enqueue.mock.calls[0];
+    expect(tx).toBe(db.db);
+    // 그 tx 로 agreement 도 들어갔는가 (같은 핸들이어야 한 트랜잭션이다)
+    expect(db.spies.insert).toHaveBeenCalled();
+  });
+
   it('이미 승인된 계좌면 선적용이 아니므로 발행하지 않는다', async () => {
     const deps = makeDeps('REGISTERED');
     const service = makeService(makeDb([agreement]), deps);
