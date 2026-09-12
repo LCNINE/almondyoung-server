@@ -123,6 +123,7 @@ import { CmsMemberPollerService } from './cms/cms-member-poller.service';
 import { CmsAgreementService } from './cms/cms-agreement.service';
 import { CmsAgreementController } from './cms/cms-agreement.controller';
 import { CmsRegistrationService } from './cms/cms-registration.service';
+import { CmsAccountCheckService } from './cms/cms-account-check.service';
 import { CmsBatchProvider } from './cms/cms-batch.provider';
 import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service';
 
@@ -532,6 +533,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CmsMemberPollerService,
     CmsAgreementService,
     CmsRegistrationService,
+    CmsAccountCheckService,
     CmsBatchProvider,
     CmsSettlementPollerService,
     UserContactClient,

@@ -134,6 +134,10 @@ template-data.json
 !web/*/public/**/*.png
 !web/*/public/**/*.jpeg
 !web/*/public/**/*.gif
+!apps/*/public/**/*.jpg
+!apps/*/public/**/*.png
+!apps/*/public/**/*.jpeg
+!apps/*/public/**/*.gif
 
 # Documentation files (test guides)
 *_TEST_GUIDE.md

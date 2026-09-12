@@ -1,19 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CheckCircle2, RefreshCw, AlertCircle, ChevronLeft } from 'lucide-react';
-import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
+import { CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react';
+import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
-import { AccountHolderType, PayerNumberField } from '@/components/payer-number-field';
-import { isValidPayerNumber } from '@/lib/payer-number';
-import { buildReturnUrl } from '@/lib/return-url';
+import {
+  CmsAccountDetails,
+  CmsAccountFields,
+  emptyCmsAccountDetails,
+  CmsVerifiedAccount,
+} from '@/components/cms-account-fields';
+import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { redirectToWalletLogin } from '@/lib/auth-expired';
 
 interface BillingSetupFormProps {
   returnUrl: string;
@@ -22,7 +24,6 @@ interface BillingSetupFormProps {
 }
 
 export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetupFormProps) {
-  const router = useRouter();
   // 'details' → 'consent' → 'signature' → done
   const [step, setStep] = useState<'details' | 'consent' | 'signature'>('details');
   const [consentPersonalInfo, setConsentPersonalInfo] = useState(false);
@@ -34,25 +35,14 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   // 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 곧바로 쓰도록 returnUrl 에 싣는다.
   const [billingMethodId, setBillingMethodId] = useState<string | null>(null);
 
-  const [paymentCompany, setPaymentCompany] = useState('');
-  const [payerName, setPayerName] = useState('');
-  const [holderType, setHolderType] = useState<AccountHolderType>('personal');
-  const [payerNumber, setPayerNumber] = useState('');
-  const [paymentNumber, setPaymentNumber] = useState('');
-  const [phone, setPhone] = useState('');
+  const [details, setDetails] = useState<CmsAccountDetails>(emptyCmsAccountDetails);
+  // 동의 단계로 넘어가면 CmsAccountFields 가 unmount 된다. 확인 결과를 여기 두어야
+  // 뒤로 돌아왔을 때 같은 계좌를 다시 유료 조회하지 않는다.
+  const [verifiedAccount, setVerifiedAccount] = useState<CmsVerifiedAccount | null>(null);
+  const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = details;
 
-  const handleDetailsSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const goToConsent = () => {
     setError(null);
-    // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
-    if (!isValidPayerNumber(payerNumber)) {
-      setError(
-        holderType === 'personal'
-          ? '예금주 생년월일 6자리(YYMMDD)를 정확히 입력해주세요.'
-          : '사업자등록번호 10자리를 정확히 입력해주세요.',
-      );
-      return;
-    }
     setConsentPersonalInfo(false);
     setConsentThirdParty(false);
     setStep('consent');
@@ -79,9 +69,14 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
         agreementUploadFailed?: boolean;
         id?: string;
       };
+      // 세션 만료는 「등록 실패」가 아니다 — 백엔드 원문을 띄우고 처음 화면으로
+      // 돌려보내는 대신 로그인으로 보내 토큰을 되살린다(billing-change 와 같은 처리).
+      if (res.status === 401) {
+        redirectToWalletLogin();
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? '계좌 등록에 실패했습니다. 정보를 다시 확인해주세요.');
-        setStep('details');
         return;
       }
       if (data.agreementUploadFailed) {
@@ -99,24 +94,24 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
 
   if (done) {
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card
             className={
               agreementUploadFailed
-                ? 'border-amber-200 bg-amber-50/50 shadow-sm'
-                : 'border-emerald-200 bg-emerald-50/50 shadow-sm'
+                ? 'border-border bg-muted/60 shadow-sm'
+                : 'border-primary/20 bg-background shadow-sm'
             }
           >
             <CardContent className="flex items-start gap-3 p-6">
               <CheckCircle2
-                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-amber-500' : 'text-emerald-500'}`}
+                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-muted-foreground' : 'text-primary'}`}
               />
               <div>
-                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-amber-800' : 'text-emerald-800'}`}>
+                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-foreground' : 'text-foreground'}`}>
                   계좌 등록이 접수되었습니다
                 </p>
-                <p className={`mt-1 text-xs ${agreementUploadFailed ? 'text-amber-700' : 'text-emerald-700'}`}>
+                <p className="mt-1 text-xs text-muted-foreground">
                   {agreementUploadFailed
                     ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
                     : '효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다. 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.'}
@@ -126,7 +121,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
           </Card>
           <Button
             onClick={() =>
-              router.replace(billingMethodId ? buildReturnUrl(returnUrl, { billingMethodId }) : returnUrl)
+              leaveToReturnUrl(billingMethodId ? buildReturnUrl(returnUrl, { billingMethodId }) : returnUrl)
             }
             className="w-full h-11 font-semibold"
           >
@@ -141,7 +136,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
     const bankName = getBankName(paymentCompany);
     const allConsented = consentPersonalInfo && consentThirdParty;
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card className="shadow-sm">
             <CardContent className="p-6 space-y-5">
@@ -251,7 +246,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
 
   if (step === 'signature') {
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Card className="shadow-sm">
             <CardContent className="p-6 space-y-4">
@@ -291,143 +286,47 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   }
 
   return (
-    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-4">
-        {mode !== 'initial' && (
-          <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
-            <CardContent className="flex items-start gap-3 p-4">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-              <div>
-                <p className="text-sm font-semibold text-emerald-800">첫 달 결제가 완료되었습니다!</p>
-                <p className="mt-0.5 text-xs text-emerald-700">아래 계좌를 등록하면 다음 달부터 자동으로 출금됩니다.</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="mb-5 flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">자동이체 계좌 등록</h2>
+    <div className="mx-auto w-full max-w-md bg-background">
+      {mode !== 'initial' && (
+        <div className="px-5 pt-4">
+          <div className="flex items-start gap-3 rounded-2xl bg-muted/60 p-4">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">첫 달 결제가 완료되었습니다</p>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                계좌를 등록하면 다음 달부터 자동으로 출금됩니다.
+              </p>
             </div>
-            <p className="mb-5 text-xs text-muted-foreground">계좌 정보 입력 후 전자서명 단계가 있습니다.</p>
-
-            <form onSubmit={handleDetailsSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentCompany" className="text-xs text-muted-foreground">
-                  은행
-                </Label>
-                <select
-                  id="paymentCompany"
-                  value={paymentCompany}
-                  onChange={(e) => setPaymentCompany(e.target.value)}
-                  required
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">은행 선택</option>
-                  {CMS_BANKS.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="payerName" className="text-xs text-muted-foreground">
-                  예금주명
-                </Label>
-                <Input
-                  id="payerName"
-                  placeholder="홍길동"
-                  value={payerName}
-                  onChange={(e) => setPayerName(e.target.value)}
-                  maxLength={15}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentNumber" className="text-xs text-muted-foreground">
-                  계좌번호
-                </Label>
-                <Input
-                  id="paymentNumber"
-                  placeholder="숫자만 입력"
-                  value={paymentNumber}
-                  onChange={(e) => setPaymentNumber(e.target.value.replace(/\D/g, '').slice(0, 16))}
-                  inputMode="numeric"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="phone" className="text-xs text-muted-foreground">
-                  연락처
-                </Label>
-                <Input
-                  id="phone"
-                  placeholder="01012345678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 20))}
-                  inputMode="tel"
-                  required
-                />
-              </div>
-
-              <PayerNumberField
-                holderType={holderType}
-                onHolderTypeChange={setHolderType}
-                value={payerNumber}
-                onChange={setPayerNumber}
-              />
-
-              {/* §5-1 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                <p className="mb-1 font-semibold text-amber-900">등록 전에 꼭 확인하세요</p>
-                <p>
-                  자동이체는 은행에 등록된 <strong>계좌주 본인 정보로만</strong> 등록됩니다.
-                </p>
-                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                  <li>예금주 성함이 신청 계좌의 실제 예금주와 같아야 합니다.</li>
-                  <li>생년월일(개인) 또는 사업자등록번호(법인)가 그 계좌 등록정보와 일치해야 합니다.</li>
-                  <li>본인 명의가 아닌 계좌(가족 계좌 등)로는 등록되지 않습니다.</li>
-                </ul>
-                <p className="mt-1.5">
-                  정보가 다르면 은행 확인 단계에서 <strong>등록이 거절</strong>되며, 다시 등록하셔야 합니다.
-                </p>
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button type="submit" disabled={loading} className="w-full h-11 font-semibold">
-                다음 (전자서명)
-              </Button>
-            </form>
-
-            {mode !== 'initial' && (
-              <button
-                type="button"
-                onClick={() => router.replace(returnUrl)}
-                disabled={loading}
-                className="mt-4 w-full text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors disabled:opacity-50"
-              >
-                나중에 등록하기 (건너뛰기)
-              </button>
-            )}
-          </CardContent>
-        </Card>
-
-        <p className="text-center text-xs text-muted-foreground">
-          계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
-        </p>
-      </div>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">{error}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+      <CmsAccountFields
+        value={details}
+        onChange={setDetails}
+        onComplete={goToConsent}
+        verified={verifiedAccount}
+        onVerifiedChange={setVerifiedAccount}
+      />
+      {mode !== 'initial' && (
+        <div className="px-5 pb-8">
+          <button
+            type="button"
+            onClick={() => leaveToReturnUrl(returnUrl)}
+            disabled={loading}
+            className="w-full text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+          >
+            나중에 등록하기
+          </button>
+        </div>
+      )}
     </div>
   );
 }

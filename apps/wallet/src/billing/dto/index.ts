@@ -1,7 +1,18 @@
-import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Validate } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  Validate,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsValidPayerNumberConstraint } from '../../cms/payer-number';
-import { IsValidCmsBankCodeConstraint } from '../../cms/cms-banks';
+import { IsValidCmsBankCodeConstraint, IsValidCmsAccountLengthConstraint } from '../../cms/cms-banks';
 
 // ─── Billing Method DTOs ────────────────────────────────────────────────────
 
@@ -103,6 +114,7 @@ export class CmsBankAccountDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
+  @Validate(IsValidCmsAccountLengthConstraint)
   @MaxLength(16)
   paymentNumber: string;
 
@@ -112,6 +124,57 @@ export class CmsBankAccountDto {
   @Matches(/^\d{8,20}$/, { message: 'phone must contain 8 to 20 digits' })
   @MaxLength(20)
   phone: string;
+}
+
+export class CheckCmsAccountDto {
+  @ApiProperty({ description: '은행코드 3자리 (예: 004=국민, 088=신한)', example: '004' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{3}$/, { message: 'paymentCompany must be a 3-digit bank code' })
+  @Validate(IsValidCmsBankCodeConstraint)
+  @MaxLength(3)
+  paymentCompany: string;
+
+  @ApiProperty({ description: '계좌번호 (숫자만, 4~16자리)', maxLength: 16 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
+  @Validate(IsValidCmsAccountLengthConstraint)
+  @MaxLength(16)
+  paymentNumber: string;
+
+  @ApiProperty({ description: '생년월일 6자리(YYMMDD) 또는 사업자번호 10자리', maxLength: 10 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^(\d{6}|\d{10})$/, { message: 'payerNumber must be 6 or 10 digits' })
+  @Validate(IsValidPayerNumberConstraint)
+  @MaxLength(10)
+  payerNumber: string;
+}
+
+export class CheckCmsAccountResponseDto {
+  @ApiProperty({ description: '계좌·실명번호가 은행에서 확인되었는지' })
+  verified: boolean;
+
+  @ApiPropertyOptional({ description: '확인된 예금주명. 조회 실패 시 null', nullable: true })
+  payerName: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'MISMATCH=정보 불일치(틀린 칸 정정), UNAVAILABLE=실시간 확인 불가(재시도 안내). 둘 다 등록은 진행하지 않는다',
+    enum: ['MISMATCH', 'UNAVAILABLE'],
+    nullable: true,
+  })
+  reason: 'MISMATCH' | 'UNAVAILABLE' | null;
+
+  @ApiPropertyOptional({ description: '고객에게 보여줄 안내 문구', nullable: true })
+  message: string | null;
+
+  @ApiPropertyOptional({
+    description: '효성이 준 원본 결과 코드 (1001=계좌번호오류, 2001=생년월일/사업자번호 불일치). CS 진단용',
+    nullable: true,
+  })
+  providerCode: string | null;
 }
 
 export class BillingMethodResponseDto {

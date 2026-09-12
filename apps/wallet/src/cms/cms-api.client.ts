@@ -60,6 +60,18 @@ export interface CmsWithdrawalSearchResponse {
   };
 }
 
+export interface CmsAccountCheckData {
+  paymentCompany?: string;
+  paymentNumber?: string;
+  payerName?: string;
+  fee?: number;
+  result?: { flag?: string | null; code?: string | null; message?: string | null };
+}
+
+export interface CmsAccountCheckResponse {
+  check: CmsAccountCheckData;
+}
+
 export interface CmsApiError {
   code: string;
   message: string;
@@ -163,6 +175,32 @@ export class CmsApiClient {
 
   async getMember(memberId: string): Promise<CmsApiResult<CmsMemberResponse>> {
     return this.get<CmsMemberResponse>(`${this.apiUrl}/v1/members/${memberId}`);
+  }
+
+  // ─── 실시간 계좌조회 (FMS-TE-0057) ─────────────────────────────────────────
+  // 건당 유료(100원). 호출은 CmsAccountCheckService 를 통해서만 — 남용·비용 방어가 거기 있다.
+
+  /** 계좌번호 + 실명번호(생년월일/사업자번호) 유효성 검증. */
+  async verifyPayerNumber(dto: {
+    paymentCompany: string;
+    paymentNumber: string;
+    payerNumber: string;
+  }): Promise<CmsApiResult<CmsAccountCheckResponse>> {
+    return this.post<CmsAccountCheckResponse>(
+      `${this.apiUrl}/v1/custs/${this.requiredCustId}/check/account/verify-payer-number`,
+      dto,
+    );
+  }
+
+  /** 계좌번호로 예금주 이름 조회. */
+  async inquirePayerName(dto: {
+    paymentCompany: string;
+    paymentNumber: string;
+  }): Promise<CmsApiResult<CmsAccountCheckResponse>> {
+    return this.post<CmsAccountCheckResponse>(
+      `${this.apiUrl}/v1/custs/${this.requiredCustId}/check/account/inquire-payer-name`,
+      dto,
+    );
   }
 
   // ─── 동의자료관리 ──────────────────────────────────────────────────────────

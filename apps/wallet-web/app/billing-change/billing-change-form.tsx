@@ -1,28 +1,30 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CreditCard, AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react';
-import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
+import { AlertCircle, Check, ChevronLeft, Info } from 'lucide-react';
+import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
-import { AccountHolderType, PayerNumberField } from '@/components/payer-number-field';
-import { isValidPayerNumber } from '@/lib/payer-number';
-import { buildReturnUrl } from '@/lib/return-url';
+import {
+  CmsAccountDetails,
+  CmsAccountFields,
+  emptyCmsAccountDetails,
+  CmsVerifiedAccount,
+} from '@/components/cms-account-fields';
+import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { redirectToWalletLogin } from '@/lib/auth-expired';
 
 interface BillingChangeFormProps {
   returnUrl: string;
   billingMethodId?: string;
+  initialPhone?: string;
   initialError?: string;
 }
 
-export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: BillingChangeFormProps) {
-  const router = useRouter();
+export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, initialError }: BillingChangeFormProps) {
   const isRegister = !billingMethodId;
   // register: 'details' → 'consent' → 'signature' → done
   // update:   'details' → 'consent' → 'signature' → done
@@ -36,12 +38,14 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   // 신규 등록 시 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 쓰도록 returnUrl 에 싣는다.
   const [newBillingMethodId, setNewBillingMethodId] = useState<string | null>(null);
 
-  const [paymentCompany, setPaymentCompany] = useState('');
-  const [payerName, setPayerName] = useState('');
-  const [holderType, setHolderType] = useState<AccountHolderType>('personal');
-  const [payerNumber, setPayerNumber] = useState('');
-  const [paymentNumber, setPaymentNumber] = useState('');
-  const [phone, setPhone] = useState('');
+  const [details, setDetails] = useState<CmsAccountDetails>({
+    ...emptyCmsAccountDetails,
+    phone: initialPhone ?? '',
+  });
+  // 동의 단계로 넘어가면 CmsAccountFields 가 unmount 된다. 확인 결과를 여기 두어야
+  // 뒤로 돌아왔을 때 같은 계좌를 다시 유료 조회하지 않는다.
+  const [verifiedAccount, setVerifiedAccount] = useState<CmsVerifiedAccount | null>(null);
+  const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = details;
 
   const returnUrlWithFlag = (() => {
     try {
@@ -54,18 +58,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
     }
   })();
 
-  const handleDetailsSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const goToConsent = () => {
     setError(null);
-    // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
-    if (!isValidPayerNumber(payerNumber)) {
-      setError(
-        holderType === 'personal'
-          ? '예금주 생년월일 6자리(YYMMDD)를 정확히 입력해주세요.'
-          : '사업자등록번호 10자리를 정확히 입력해주세요.',
-      );
-      return;
-    }
     setConsentPersonalInfo(false);
     setConsentThirdParty(false);
     setStep('consent');
@@ -92,9 +86,14 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
         agreementUploadFailed?: boolean;
         id?: string;
       };
+      // 세션 만료는 「등록 실패」가 아니다 — 백엔드 원문을 띄우고 처음 화면으로 돌려보내는 대신
+      // 계좌 확인 경로와 같이 로그인으로 보내 토큰을 되살린다.
+      if (res.status === 401) {
+        redirectToWalletLogin();
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? (isRegister ? '계좌 등록에 실패했습니다.' : '계좌 변경에 실패했습니다.'));
-        setStep('details');
         return;
       }
       if (data.agreementUploadFailed) {
@@ -105,52 +104,96 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
       setDone(true);
     } catch {
       setError(isRegister ? '계좌 등록 중 오류가 발생했습니다.' : '계좌 변경 중 오류가 발생했습니다.');
-      setStep('details');
     } finally {
       setLoading(false);
     }
   };
 
   if (done) {
+    const goBack = () =>
+      leaveToReturnUrl(
+        newBillingMethodId
+          ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
+          : returnUrlWithFlag,
+      );
+    // 뒤 4자리만 남긴다 — 「내가 등록한 그 계좌가 맞나」를 확인하는 데는 그걸로 충분하다.
+    const maskedAccount =
+      paymentNumber.length > 4 ? `${'•'.repeat(paymentNumber.length - 4)}${paymentNumber.slice(-4)}` : paymentNumber;
+    const rows = [
+      { label: '은행', value: getBankName(paymentCompany) },
+      { label: '계좌번호', value: maskedAccount },
+      { label: '예금주', value: payerName },
+      { label: '은행 심사', value: '1~2 영업일' },
+    ];
+
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-4">
-          <Card
-            className={
-              agreementUploadFailed
-                ? 'border-amber-200 bg-amber-50/50 shadow-sm'
-                : 'border-emerald-200 bg-emerald-50/50 shadow-sm'
-            }
-          >
-            <CardContent className="flex items-start gap-3 p-6">
-              <CheckCircle2
-                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-amber-500' : 'text-emerald-500'}`}
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
+        <div className="flex-1 px-6 pt-16">
+          <div className="flex flex-col items-center">
+            <span
+              className={`flex size-14 items-center justify-center rounded-full animate-in zoom-in-50 duration-500 ease-out ${
+                agreementUploadFailed ? 'bg-muted-foreground' : 'bg-primary'
+              }`}
+            >
+              <Check
+                className="size-7 text-primary-foreground animate-in zoom-in-50 fade-in delay-150 duration-300 fill-mode-both"
+                strokeWidth={3}
               />
-              <div>
-                <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-amber-800' : 'text-emerald-800'}`}>
-                  {isRegister ? '계좌 등록이 접수되었습니다' : '계좌 변경이 접수되었습니다'}
-                </p>
-                <p className={`mt-1 text-xs ${agreementUploadFailed ? 'text-amber-700' : 'text-emerald-700'}`}>
-                  {agreementUploadFailed
-                    ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
-                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 확인 버튼을 눌러 돌아간 화면에서 멤버십 가입을 마무리해 주세요 — 가입 후에는 심사 승인과 함께 결제가 자동 출금됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'} 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.`}
-                </p>
+            </span>
+            <h1 className="mt-5 text-[22px] font-bold tracking-tight text-foreground animate-in fade-in slide-in-from-bottom-2 delay-150 duration-500 fill-mode-both">
+              {agreementUploadFailed ? '계좌 등록 확인 필요' : isRegister ? '계좌 등록 완료' : '계좌 변경 완료'}
+            </h1>
+          </div>
+
+          <dl className="mt-9">
+            {rows.map((row, i) => (
+              <div
+                key={row.label}
+                className="flex items-center justify-between border-b border-border py-4 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                style={{ animationDelay: `${250 + i * 70}ms` }}
+              >
+                <dt className="text-[14px] text-muted-foreground">{row.label}</dt>
+                <dd className="text-[15px] font-bold tracking-tight text-foreground">{row.value}</dd>
               </div>
-            </CardContent>
-          </Card>
-          <Button
-            onClick={() =>
-              router.replace(
-                newBillingMethodId
-                  ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
-                  : returnUrlWithFlag,
-              )
-            }
-            className="w-full h-11 font-semibold"
-          >
-            확인
-          </Button>
+            ))}
+          </dl>
+
+          {/* 「은행 문자 = 승인 완료」로 오해하고 문의하는 일이 실제로 잦다. 다른 안내와 같은
+              불릿에 섞어두면 안 읽히므로 한 줄만 떼어 면으로 세운다. */}
+          {!agreementUploadFailed && (
+            <div className="mt-7 flex items-start gap-2.5 rounded-xl bg-muted p-4 animate-in fade-in duration-500 delay-[600ms] fill-mode-both">
+              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+              <p className="text-[13px] leading-relaxed text-foreground">
+                은행에서 오는 <span className="font-bold">‘자동이체 등록 접수’ 문자는 최종 승인이 아닙니다.</span> 최종
+                결과는 결제수단 관리 화면에서 확인해주세요.
+              </p>
+            </div>
+          )}
+
+          {/* 여기까지 온 이유는 «멤버십 가입 중 결제수단이 없어서» 다. 다음 할 일이 그 가입을
+              마치는 것이라는 걸 맨 앞에 둔다 — 안내문 여러 줄 안에 묻어두면 읽히지 않는다. */}
+          <ul className="mt-5 space-y-2 text-[13px] leading-relaxed text-muted-foreground">
+            {agreementUploadFailed ? (
+              <li>· 동의자료 등록에 실패했습니다. 관리자 확인이 필요하니 고객센터로 문의해주세요.</li>
+            ) : (
+              <li>
+                ·{' '}
+                {isRegister
+                  ? '이어서 멤버십 가입을 마무리하면, 심사 승인과 함께 결제가 자동으로 출금됩니다.'
+                  : '심사가 끝나면 다음 결제부터 새 계좌로 자동 출금됩니다.'}
+              </li>
+            )}
+          </ul>
         </div>
+
+        <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
+          <Button
+            onClick={goBack}
+            className="h-14 w-full rounded-2xl text-[16px] font-semibold animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[650ms] fill-mode-both"
+          >
+            {agreementUploadFailed ? '확인' : isRegister ? '멤버십 가입 계속하기' : '확인'}
+          </Button>
+        </footer>
       </div>
     );
   }
@@ -159,283 +202,205 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
     const bankName = getBankName(paymentCompany);
     const allConsented = consentPersonalInfo && consentThirdParty;
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-4">
-          <Card className="shadow-sm">
-            <CardContent className="p-6 space-y-5">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStep('details')}
-                  className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="이전 단계로"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <h2 className="text-sm font-semibold">자동이체 동의</h2>
-              </div>
+      <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-background">
+        <header className="relative flex h-14 shrink-0 items-center px-2">
+          <button
+            type="button"
+            onClick={() => setStep('details')}
+            className="rounded-full p-2 text-foreground/70 transition-colors hover:bg-muted"
+            aria-label="이전 단계로"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <Image
+            src="/images/almond-logo-black.png"
+            alt="아몬드영"
+            width={200}
+            height={150}
+            className="absolute left-1/2 h-5 w-auto -translate-x-1/2"
+          />
+        </header>
 
-              {/* 출금 계좌 확인 */}
-              <div className="rounded-md bg-muted/60 px-4 py-3 text-xs space-y-1">
-                <p className="font-semibold text-foreground mb-1.5">출금 계좌 확인</p>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">금융기관</span>
-                  <span>{bankName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">예금주</span>
-                  <span>{payerName}</span>
-                </div>
-              </div>
+        <div className="animate-in fade-in slide-in-from-right-5 min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pt-6 pb-8 duration-300 ease-out">
+          <h1 className="text-[24px] font-bold leading-[1.35] tracking-tight text-foreground">
+            자동이체에 동의해주세요
+          </h1>
 
-              {/* 개인정보 수집·이용 동의 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold">[필수] 개인정보 수집·이용 동의</p>
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground space-y-1">
-                  <p>아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 수집·이용합니다.</p>
-                  <table className="w-full mt-1 text-[10px]">
-                    <tbody>
-                      <tr>
-                        <td className="font-medium w-24 py-0.5 align-top">수집·이용 목적</td>
-                        <td>CMS 자동이체 서비스 신청 및 처리</td>
-                      </tr>
-                      <tr>
-                        <td className="font-medium py-0.5 align-top">수집 항목</td>
-                        <td>예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td>
-                      </tr>
-                      <tr>
-                        <td className="font-medium py-0.5 align-top">보유·이용 기간</td>
-                        <td>서비스 해지 후 5년</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p className="mt-1">동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.</p>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={consentPersonalInfo} onCheckedChange={(v) => setConsentPersonalInfo(!!v)} />
-                  <span className="text-xs">개인정보 수집·이용에 동의합니다.</span>
-                </label>
+          {/* 출금 계좌 확인 */}
+          <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <p className="text-[14px] font-bold tracking-tight text-foreground">출금 계좌 확인</p>
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-muted-foreground">금융기관</span>
+                <span className="text-[14px] font-semibold text-foreground">{bankName}</span>
               </div>
-
-              {/* 개인정보 제3자 제공 동의 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold">[필수] 개인정보 제3자 제공 동의</p>
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground space-y-1">
-                  <p>아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 제3자에게 제공합니다.</p>
-                  <table className="w-full mt-1 text-[10px]">
-                    <tbody>
-                      <tr>
-                        <td className="font-medium w-24 py-0.5 align-top">제공받는 자</td>
-                        <td>효성에프엠에스㈜, 금융결제원</td>
-                      </tr>
-                      <tr>
-                        <td className="font-medium py-0.5 align-top">제공 목적</td>
-                        <td>CMS 출금이체 서비스 처리 및 정산</td>
-                      </tr>
-                      <tr>
-                        <td className="font-medium py-0.5 align-top">제공 항목</td>
-                        <td>예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td>
-                      </tr>
-                      <tr>
-                        <td className="font-medium py-0.5 align-top">보유 기간</td>
-                        <td>서비스 해지 후 5년</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p className="mt-1">동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.</p>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={consentThirdParty} onCheckedChange={(v) => setConsentThirdParty(!!v)} />
-                  <span className="text-xs">개인정보 제3자 제공에 동의합니다.</span>
-                </label>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-muted-foreground">예금주</span>
+                <span className="text-[14px] font-semibold text-foreground">{payerName}</span>
               </div>
+            </div>
+          </div>
 
-              <Button
-                className="w-full h-11 font-semibold"
-                disabled={!allConsented}
-                onClick={() => setStep('signature')}
-              >
-                서명하러 가기
-              </Button>
-            </CardContent>
-          </Card>
-          <p className="text-center text-xs text-muted-foreground">
+          {/* 개인정보 수집·이용 동의 */}
+          <div className="space-y-2">
+            <p className="text-[14px] font-bold tracking-tight text-foreground">[필수] 개인정보 수집·이용 동의</p>
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+              <p className="text-[13px] leading-relaxed text-foreground/85">
+                아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 수집·이용합니다.
+              </p>
+              <dl className="mt-3.5 space-y-2.5 border-t border-border/60 pt-3.5">
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">
+                    수집·이용 목적
+                  </dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">
+                    CMS 자동이체 서비스 신청 및 처리
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">수집 항목</dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">
+                    예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">
+                    보유·이용 기간
+                  </dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">서비스 해지 후 5년</dd>
+                </div>
+              </dl>
+              <p className="mt-3.5 border-t border-border/60 pt-3.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={consentPersonalInfo} onCheckedChange={(v) => setConsentPersonalInfo(!!v)} />
+              <span className="text-[14px] font-medium text-foreground">개인정보 수집·이용에 동의합니다.</span>
+            </label>
+          </div>
+
+          {/* 개인정보 제3자 제공 동의 */}
+          <div className="space-y-2">
+            <p className="text-[14px] font-bold tracking-tight text-foreground">[필수] 개인정보 제3자 제공 동의</p>
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+              <p className="text-[13px] leading-relaxed text-foreground/85">
+                아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 제3자에게 제공합니다.
+              </p>
+              <dl className="mt-3.5 space-y-2.5 border-t border-border/60 pt-3.5">
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">제공받는 자</dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">효성에프엠에스㈜, 금융결제원</dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">제공 목적</dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">
+                    CMS 출금이체 서비스 처리 및 정산
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">제공 항목</dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">
+                    예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-[86px] shrink-0 text-[12.5px] leading-relaxed text-muted-foreground">보유 기간</dt>
+                  <dd className="flex-1 text-[12.5px] leading-relaxed text-foreground">서비스 해지 후 5년</dd>
+                </div>
+              </dl>
+              <p className="mt-3.5 border-t border-border/60 pt-3.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={consentThirdParty} onCheckedChange={(v) => setConsentThirdParty(!!v)} />
+              <span className="text-[14px] font-medium text-foreground">개인정보 제3자 제공에 동의합니다.</span>
+            </label>
+          </div>
+
+          <p className="pt-1 text-center text-[12.5px] text-muted-foreground">
             계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
           </p>
         </div>
+
+        <footer className="shrink-0 border-t border-border/60 bg-background px-5 pt-3 pb-[calc(1rem_+_env(safe-area-inset-bottom))]">
+          <Button
+            className="h-14 w-full rounded-2xl text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
+            disabled={!allConsented}
+            onClick={() => setStep('signature')}
+          >
+            서명하러 가기
+          </Button>
+        </footer>
       </div>
     );
   }
 
   if (step === 'signature') {
     return (
-      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-4">
-          <Card className="shadow-sm">
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('consent');
-                    setError(null);
-                  }}
-                  className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="이전 단계로"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <h2 className="text-sm font-semibold">전자서명</h2>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                자동이체 동의서에 서명해주세요. 서명 이미지는 효성 CMS에 동의자료로 제출되며, 미제출 시 심사에서 실패할
-                수 있습니다.
-              </p>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-              <CmsSignaturePad onComplete={handleSignatureComplete} disabled={loading} />
-            </CardContent>
-          </Card>
-          <p className="text-center text-xs text-muted-foreground">
-            계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
+      <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-background">
+        <header className="relative flex h-14 shrink-0 items-center px-2">
+          <button
+            type="button"
+            onClick={() => {
+              setStep('consent');
+              setError(null);
+            }}
+            className="rounded-full p-2 text-foreground/70 transition-colors hover:bg-muted"
+            aria-label="이전 단계로"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <Image
+            src="/images/almond-logo-black.png"
+            alt="아몬드영"
+            width={200}
+            height={150}
+            className="absolute left-1/2 h-5 w-auto -translate-x-1/2"
+          />
+        </header>
+
+        <div className="animate-in fade-in slide-in-from-right-5 flex min-h-0 flex-1 flex-col px-5 pt-6 pb-[calc(1rem_+_env(safe-area-inset-bottom))] duration-300 ease-out">
+          <h1 className="text-[24px] font-bold leading-[1.35] tracking-tight text-foreground">
+            마지막으로 서명해주세요
+          </h1>
+          <p className="mt-2.5 text-[14px] leading-relaxed text-muted-foreground">
+            자동이체 동의서에 들어가는 서명이에요. 은행 심사에 그대로 제출됩니다.
           </p>
+
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-[13px]">{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="mt-7 flex min-h-0 flex-1 flex-col">
+            <CmsSignaturePad onComplete={handleSignatureComplete} disabled={loading} />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-4">
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="mb-5 flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">{isRegister ? '자동이체 계좌 등록' : '정기결제 계좌 변경'}</h2>
-            </div>
-            <p className="mb-5 text-xs text-muted-foreground">
-              {isRegister
-                ? '등록한 계좌로 정기결제가 자동 출금됩니다. 계좌 정보 입력 후 전자서명 단계가 있습니다.'
-                : '새로 등록한 계좌로 다음 결제부터 자동 출금됩니다. 계좌 변경 시 기존 동의자료가 무효화되므로 전자서명 단계가 있습니다.'}
-            </p>
-
-            <form onSubmit={handleDetailsSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentCompany" className="text-xs text-muted-foreground">
-                  은행
-                </Label>
-                <select
-                  id="paymentCompany"
-                  value={paymentCompany}
-                  onChange={(e) => setPaymentCompany(e.target.value)}
-                  required
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">은행 선택</option>
-                  {CMS_BANKS.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="payerName" className="text-xs text-muted-foreground">
-                  예금주명
-                </Label>
-                <Input
-                  id="payerName"
-                  placeholder="홍길동"
-                  value={payerName}
-                  onChange={(e) => setPayerName(e.target.value)}
-                  maxLength={15}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="paymentNumber" className="text-xs text-muted-foreground">
-                  계좌번호
-                </Label>
-                <Input
-                  id="paymentNumber"
-                  placeholder="숫자만 입력"
-                  value={paymentNumber}
-                  onChange={(e) => setPaymentNumber(e.target.value.replace(/\D/g, '').slice(0, 16))}
-                  inputMode="numeric"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="phone" className="text-xs text-muted-foreground">
-                  연락처
-                </Label>
-                <Input
-                  id="phone"
-                  placeholder="01012345678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 20))}
-                  inputMode="tel"
-                  required
-                />
-              </div>
-
-              <PayerNumberField
-                holderType={holderType}
-                onHolderTypeChange={setHolderType}
-                value={payerNumber}
-                onChange={setPayerNumber}
-              />
-
-              {/* §5-1 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                <p className="mb-1 font-semibold text-amber-900">등록 전에 꼭 확인하세요</p>
-                <p>
-                  자동이체는 은행에 등록된 <strong>계좌주 본인 정보로만</strong> 등록됩니다.
-                </p>
-                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                  <li>예금주 성함이 신청 계좌의 실제 예금주와 같아야 합니다.</li>
-                  <li>생년월일(개인) 또는 사업자등록번호(법인)가 그 계좌 등록정보와 일치해야 합니다.</li>
-                  <li>본인 명의가 아닌 계좌(가족 계좌 등)로는 등록되지 않습니다.</li>
-                </ul>
-                <p className="mt-1.5">
-                  정보가 다르면 은행 확인 단계에서 <strong>등록이 거절</strong>되며, 다시 등록하셔야 합니다.
-                </p>
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button type="submit" disabled={loading} className="w-full h-11 font-semibold">
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    처리 중...
-                  </span>
-                ) : (
-                  '다음 (전자서명)'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {
-          <p className="text-center text-xs text-muted-foreground">
-            계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
-          </p>
-        }
-      </div>
+    <div className="mx-auto w-full max-w-md bg-background">
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">{error}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+      <CmsAccountFields
+        value={details}
+        onChange={setDetails}
+        onComplete={goToConsent}
+        verified={verifiedAccount}
+        onVerifiedChange={setVerifiedAccount}
+      />
     </div>
   );
 }

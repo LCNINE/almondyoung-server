@@ -835,6 +835,24 @@ export const cmsAgreements = pgTable(
   (table) => [index('idx_cms_agreements_cms_member_id').on(table.cmsMemberId)],
 );
 
+// 실시간 계좌조회(FMS-TE-0057) 호출 기록. 건당 유료(100원)이고 계좌번호만으로 예금주 실명이
+// 나오므로, 감사 로그 겸 사용자별 시간당 호출 제한의 근거가 된다. 계좌번호는 효성이 마스킹해
+// 돌려준 형태(123****890)로만 남기고 실명번호·예금주명은 저장하지 않는다.
+export const cmsAccountChecks = pgTable(
+  'cms_account_checks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    paymentCompany: varchar('payment_company', { length: 3 }).notNull(),
+    maskedPaymentNumber: varchar('masked_payment_number', { length: 32 }),
+    verified: boolean('verified').notNull(),
+    resultCode: varchar('result_code', { length: 16 }),
+    resultMessage: text('result_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_cms_account_checks_user_created').on(table.userId, table.createdAt)],
+);
+
 // ─── Invoice (미수금) Tables — ADR-0027 ──────────────────────────────────────
 // 정기결제 청구 1건의 진실 원천. 청구 스케줄·재시도·더닝·미수 판정을 wallet이 단일 소유하고,
 // membership 은 invoice 결과 이벤트(paid/failed/uncollectible)만 구독한다.
@@ -1026,6 +1044,7 @@ export const walletSchema = {
   cmsMembers,
   cmsWithdrawals,
   cmsAgreements,
+  cmsAccountChecks,
   invoices,
   subscriptionBillingMethods,
   paymentFeeRates,

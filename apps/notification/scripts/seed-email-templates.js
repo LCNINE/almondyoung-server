@@ -14,7 +14,8 @@ const postgres = require('postgres');
 const BRAND = '#ff6600'; // 스토어프론트 primary 와 통일 (옛 #f29219 폐기)
 
 /** 모든 메일이 공유하는 바깥 껍데기. 테이블 레이아웃 = 메일 클라이언트 호환용. */
-const layout = ({ heading, intro, highlight = '', outro }) => `<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:${BRAND};padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">${heading}</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">${intro}</td></tr>${highlight}<tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">${outro}</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>`;
+const layout = ({ heading, intro, highlight = '', outro }) =>
+  `<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:${BRAND};padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">${heading}</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">${intro}</td></tr>${highlight}<tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">${outro}</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>`;
 
 /** 큰 글씨 코드/아이디 박스 (인증코드, 아이디찾기) */
 const codeBox = (v, opts = {}) =>
@@ -127,8 +128,25 @@ const TEMPLATES = [
         ['입금기한', '{{dueDate}}'],
         ['입금금액', '{{amount}}원', true],
       ]),
+      outro: '입금기한이 지나면 주문이 자동으로 취소됩니다. 입금이 확인되면 주문 접수 안내를 다시 보내드립니다.',
+    }),
+  },
+  {
+    // 거절 메일(CMS_MEMBER_REJECTED_EMAIL)과 짝. 승인만 조용하면 고객은 「된 건가?」 하고
+    // 결제수단 화면을 다시 열거나 문의한다.
+    key: 'CMS_MEMBER_REGISTERED_EMAIL',
+    name: '자동이체 계좌 등록 완료',
+    subject: '[아몬드영] 자동이체 계좌 등록이 완료되었습니다',
+    vars: { name: 'string', bankName: 'string', payerName: 'string' },
+    body: layout({
+      heading: '계좌 등록 완료',
+      intro: '{{name}}님, 안녕하세요.<br/>신청해 주신 자동이체 계좌의 은행 확인이 끝나 등록이 완료되었습니다.',
+      highlight: infoCard([
+        ['은행', '{{bankName}}'],
+        ['예금주', '{{payerName}}'],
+      ]),
       outro:
-        '입금기한이 지나면 주문이 자동으로 취소됩니다. 입금이 확인되면 주문 접수 안내를 다시 보내드립니다.',
+        '앞으로 결제일에 이 계좌에서 자동으로 출금됩니다. 계좌를 바꾸거나 해지하시려면 마이페이지 > 결제수단 관리에서 변경하실 수 있습니다.',
     }),
   },
   {
@@ -147,13 +165,13 @@ const TEMPLATES = [
 
 (async () => {
   const apply = process.argv.includes('--apply');
-  const sql = postgres(process.env.DATABASE_URL, { ssl: process.env.DATABASE_URL.includes('sslmode=require') ? 'require' : false });
+  const sql = postgres(process.env.DATABASE_URL, {
+    ssl: process.env.DATABASE_URL.includes('sslmode=require') ? 'require' : false,
+  });
 
   for (const t of TEMPLATES) {
     const contents = { EMAIL: { ko: { subject: t.subject, body: t.body } } };
-    const schema = Object.fromEntries(
-      Object.entries(t.vars).map(([k, type]) => [k, { type, required: true }]),
-    );
+    const schema = Object.fromEntries(Object.entries(t.vars).map(([k, type]) => [k, { type, required: true }]));
     const [existing] = await sql`SELECT template_id FROM templates WHERE template_key = ${t.key}`;
 
     if (!apply) {

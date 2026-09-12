@@ -288,9 +288,7 @@ export class NotificationDispatcherService {
 
       if (channel === Channel.PUSH) {
         const explicitToken = userProfile.pushToken;
-        const tokensToSend: string[] = explicitToken
-          ? [explicitToken]
-          : await this.getActiveTokensForUser(userId);
+        const tokensToSend: string[] = explicitToken ? [explicitToken] : await this.getActiveTokensForUser(userId);
 
         if (tokensToSend.length === 0) {
           throw new Error(`No active FCM tokens for user ${userId}`);
@@ -312,8 +310,7 @@ export class NotificationDispatcherService {
             if (r.status !== 'fulfilled' || r.value.success) return null;
             const code = r.value.providerResponse?.code as string | undefined;
             const isInvalid =
-              code?.includes('invalid-registration-token') ||
-              code?.includes('registration-token-not-registered');
+              code?.includes('invalid-registration-token') || code?.includes('registration-token-not-registered');
             return isInvalid ? tokensToSend[i] : null;
           })
           .filter((t): t is string => t !== null);
@@ -578,7 +575,9 @@ export class NotificationDispatcherService {
     if (!usesProviderTemplate) {
       // 템플릿 시스템을 사용하지 않는 경우만 텍스트 치환
       if (variables && body) {
-        body = this.interpolate(body, variables);
+        // EMAIL 본문은 HTML 이다. 치환값에는 고객이 입력한 값(예금주명 등)이 섞이므로
+        // 그대로 넣으면 마크업이 깨지거나 링크가 주입된다.
+        body = this.interpolate(body, variables, channel === 'EMAIL');
       }
       if (variables && subject) {
         subject = this.interpolate(subject, variables);
@@ -596,12 +595,22 @@ export class NotificationDispatcherService {
   /**
    * {{variable}} 치환용 유틸
    */
-  private interpolate(template: string, variables: Record<string, any>): string {
+  private interpolate(template: string, variables: Record<string, any>, escapeHtml = false): string {
     return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, key) => {
       const value = this.resolvePath(variables, key);
       if (value === undefined || value === null) return '';
-      return String(value);
+      const text = String(value);
+      return escapeHtml ? this.escapeHtml(text) : text;
     });
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   private resolvePath(obj: any, path: string): any {

@@ -14,7 +14,7 @@ interface FloatingButtonsProps {
 }
 
 // 카카오 버튼을 숨길 경로
-const HIDE_KAKAO_PATHS = ["/cart", "/checkout"]
+const HIDE_KAKAO_PATHS = ["/cart", "/checkout", "/membership/subscribe/success"]
 
 export function FloatingButtons({
   showScrollTop = true,

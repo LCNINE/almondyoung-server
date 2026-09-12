@@ -1,13 +1,16 @@
 import { CmsMemberPollerService } from './cms-member-poller.service';
 
-// 심사 거절을 고객이 알 수 있는 유일한 경로가 이 발행이다 — mandate.rejected 는 인보이스가
+// 심사 결과를 고객이 알 수 있는 유일한 경로가 이 발행이다 — mandate.rejected 는 인보이스가
 // 있어야 나가므로 계좌만 등록한 사람(구독 전)은 그쪽으로 아무 통지도 못 받는다.
+// 승인·거절 둘 다 나가야 한다. 한쪽만 알리면 「조용한데 된 건가?」가 문의로 돌아온다.
 
 const MEMBER = {
   id: 'cms-row-1',
   cmsMemberId: 'A4801367',
   billingMethodId: 'bm-1',
   userId: 'user-1',
+  paymentCompany: '088',
+  payerName: '최수경',
 } as never;
 
 function makePoller(opts: {
@@ -54,7 +57,7 @@ function makePoller(opts: {
   return { poller, cmsMemberService, publisher, userContactClient, invoiceOutcomeService };
 }
 
-describe('CmsMemberPollerService — 심사 거절 통지', () => {
+describe('CmsMemberPollerService — 심사 결과 통지', () => {
   it('심사 실패면 수신자를 실어 cms.member.rejected 를 발행한다', async () => {
     const { poller, publisher } = makePoller({ liveStatus: '신청실패' });
 
@@ -73,12 +76,23 @@ describe('CmsMemberPollerService — 심사 거절 통지', () => {
     });
   });
 
-  it('심사 통과면 통지하지 않는다', async () => {
+  it('심사 통과면 은행 이름을 풀어 cms.member.registered 를 발행한다', async () => {
     const { poller, publisher } = makePoller({ liveStatus: '신청완료' });
 
     await poller.pollPendingMembers();
 
-    expect(publisher.enqueue).not.toHaveBeenCalled();
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    const [params] = publisher.enqueue.mock.calls[0];
+    expect(params.eventType).toBe('cms.member.registered');
+    expect(params.payload).toMatchObject({
+      cmsMemberId: 'A4801367',
+      userId: 'user-1',
+      email: 'a@b.com',
+      paymentCompany: '088',
+      // 소비자가 은행 코드표를 따로 들지 않도록 발행자가 이름까지 싣는다.
+      bankName: '신한은행',
+      payerName: '최수경',
+    });
   });
 
   it('연락처를 못 찾아도 심사 결과 반영은 그대로 두고 통지만 거른다', async () => {

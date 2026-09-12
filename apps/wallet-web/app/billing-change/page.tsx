@@ -1,9 +1,9 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getBillingMethods } from '@/lib/wallet-api';
+import { getBillingMethods, getMyBusinessLicense } from '@/lib/wallet-api';
 import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES, getBackendAuthCookie } from '@/lib/auth/session-cookies';
-import { safeReturnUrl } from '@/lib/return-url';
+import { STOREFRONT_ORIGIN, safeReturnUrl } from '@/lib/return-url';
 import { BillingChangeForm } from './billing-change-form';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,10 @@ export default async function BillingChangePage({ searchParams }: Props) {
     redirect(origin ? `${origin}${ensurePath}` : ensurePath);
   }
 
-  const methods = await getBillingMethods(await getBackendAuthCookie());
+  const [methods, profile] = await Promise.all([
+    getBillingMethods(await getBackendAuthCookie()),
+    getMyBusinessLicense(accessToken),
+  ]);
   const cmsBillingMethod = methods.find((m) => m.providerType === 'CMS_BATCH' && m.status === 'ACTIVE');
 
   const initialError =
@@ -39,8 +42,9 @@ export default async function BillingChangePage({ searchParams }: Props) {
 
   return (
     <BillingChangeForm
-      returnUrl={safeReturnUrl(returnUrl)}
+      returnUrl={safeReturnUrl(returnUrl, STOREFRONT_ORIGIN)}
       billingMethodId={cmsBillingMethod?.id}
+      initialPhone={profile?.phoneNumber ?? ''}
       initialError={initialError}
     />
   );
