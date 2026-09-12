@@ -15,6 +15,8 @@ import { TemplateVariableMapperService } from './services/template-variable-mapp
 import { MetadataController } from './controllers/metadata.controller';
 import { LogController } from './controllers/log.controller';
 import { MetricsController } from './controllers/metrics.controller';
+import { WebhookController } from './controllers/webhook.controller';
+import { ProviderModule } from '../provider/provider.module';
 
 @Module({
   imports: [
@@ -30,8 +32,11 @@ import { MetricsController } from './controllers/metrics.controller';
       schema: notificationTables,
     }),
     EventsModule,
+    // WebhookService 가 인증문자 구제(VerificationFallbackService)를 부른다.
+    // ProviderModule 은 SharedModule 을 import 하지 않으므로 순환이 아니다.
+    ProviderModule,
   ],
-  controllers: [MetadataController, LogController, MetricsController],
+  controllers: [MetadataController, LogController, MetricsController, WebhookController],
   providers: [
     NotificationLoggerService,
     AlertService,

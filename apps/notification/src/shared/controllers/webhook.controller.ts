@@ -8,7 +8,7 @@ import { ResendWebhookEvent } from '../../provider/providers/email/resend-webhoo
 
 @ApiTags('webhooks')
 // 호출자는 Resend/NHN 이라 사용자 JWT 가 없다. 인증 대신 **프로바이더 서명**이 게이트다
-// (svix-signature / X-Toast-Webhook-Signature — 각 핸들러가 검증).
+// (svix-signature / X-Nhn-Webhook-Signature — 각 핸들러가 검증).
 // 여기에 핸들러를 추가할 때 서명 검증을 빠뜨리면 무인증 엔드포인트가 된다.
 @Public()
 @Controller('webhooks')
@@ -122,8 +122,8 @@ export class WebhookController {
     description: 'NHN KakaoTalk 알림톡 서비스의 웹훅 이벤트를 처리합니다.',
   })
   @ApiHeader({
-    name: 'X-Toast-Webhook-Signature',
-    description: 'NHN 웹훅 서명 (프로덕션 환경 필수)',
+    name: 'X-Nhn-Webhook-Signature',
+    description: 'NHN 웹훅 서명 (프로덕션 환경 필수). 옛 이름 X-Toast-Webhook-Signature 도 받는다.',
     required: false,
   })
   @ApiBody({
@@ -152,12 +152,60 @@ export class WebhookController {
   async handleKakao(
     @Req() req: RawBodyRequest<FastifyRequest>,
     @Body() body: any,
-    @Headers('X-Toast-Webhook-Signature') signature?: string,
+    @Headers('X-Toast-Webhook-Signature') legacySignature?: string,
+    @Headers('X-Nhn-Webhook-Signature') signature?: string,
   ) {
     // Raw body가 있으면 string으로 사용, 없으면 parsed body 사용
     const payload = req.rawBody ? req.rawBody.toString('utf8') : body;
 
-    await this.webhookService.handleKakaoWebhook(payload, signature);
+    await this.webhookService.handleKakaoWebhook(payload, signature ?? legacySignature);
+    return { received: true };
+  }
+
+  @Post('sms')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'SMS 발송 결과 웹훅 처리',
+    description:
+      'NHN Cloud SMS 의 발송 결과를 받는다. 통신사 최종 판정(스팸 차단·착신 거절 등)은 발송 API 응답이 아니라 이 웹훅으로만 온다.',
+  })
+  @ApiHeader({
+    name: 'X-Nhn-Webhook-Signature',
+    description: 'NHN 웹훅 서명 (프로덕션 환경 필수). 옛 이름 X-Toast-Webhook-Signature 도 받는다.',
+    required: false,
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        hooksId: { type: 'string' },
+        webhookConfigId: { type: 'string' },
+        productName: { type: 'string', example: 'SMS' },
+        appKey: { type: 'string' },
+        event: {
+          type: 'string',
+          enum: ['MESSAGE_RESULT_UPDATE', 'INTERNATIONAL_DELIVERY_RECEIPT'],
+          example: 'MESSAGE_RESULT_UPDATE',
+        },
+        hooks: {
+          type: 'array',
+          items: { type: 'object' },
+        },
+      },
+      additionalProperties: true,
+    },
+  })
+  @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
+  @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
+  async handleSms(
+    @Req() req: RawBodyRequest<FastifyRequest>,
+    @Body() body: any,
+    @Headers('X-Toast-Webhook-Signature') legacySignature?: string,
+    @Headers('X-Nhn-Webhook-Signature') signature?: string,
+  ) {
+    const payload = req.rawBody ? req.rawBody.toString('utf8') : body;
+
+    await this.webhookService.handleSmsWebhook(payload, signature ?? legacySignature);
     return { received: true };
   }
 }

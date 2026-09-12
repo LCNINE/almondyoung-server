@@ -8,6 +8,7 @@ import { ProviderController } from './controllers/provider.controller';
 import { SmsInternalController } from './controllers/sms-internal.controller';
 import { ProviderManagerService } from './services/provider-manager.service';
 import { ProviderFactory } from './factories/provider.factory';
+import { VerificationFallbackService } from './services/verification-fallback.service';
 import { AlertService } from '../shared/services/alert.service';
 
 @Module({
@@ -24,10 +25,11 @@ import { AlertService } from '../shared/services/alert.service';
   providers: [
     ProviderManagerService,
     ProviderFactory,
+    VerificationFallbackService,
     AlertService, // SharedModule 의존성 제거, 직접 import
     // `InternalKeyGuard` 가 읽을 env 이름. notification 으로 들어오는 서비스 간 호출은 이 키를 쓴다.
     { provide: INTERNAL_KEY_ENV, useValue: 'NOTIFICATION_INTERNAL_KEY' },
   ],
-  exports: [ProviderManagerService],
+  exports: [ProviderManagerService, VerificationFallbackService],
 })
 export class ProviderModule {}

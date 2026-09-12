@@ -89,6 +89,10 @@ export function setup(infra: SharedInfra) {
   const nhnSmsSecretKey = new sst.Secret('NhnSmsSecretKey');
   // NHN 콘솔에 사전등록·승인된 발신번호. 하이픈 없이 (예: '18777184').
   const nhnSmsSendNo = new sst.Secret('NhnSmsSendNo');
+  // 알림톡·SMS 웹훅이 공유하는 서명값. NHN 콘솔의 웹훅 설정에 넣은 값과 같아야 한다.
+  const nhnWebhookSignature = new sst.Secret('NhnWebhookSignature');
+  // 인증문자가 단말에 도달하지 못했을 때 대신 보내는 알림톡 템플릿 코드 (카카오 심사 통과 후 설정).
+  const nhnVerificationTemplateCode = new sst.Secret('NhnVerificationTemplateCode');
   const notificationInternalKey = new sst.Secret('NotificationInternalKey');
   const resendApiKey = new sst.Secret('ResendApiKey');
   const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
@@ -313,6 +317,8 @@ export function setup(infra: SharedInfra) {
     NHN_SMS_API_URL: 'https://sms.api.nhncloudservice.com',
     NHN_SMS_APP_KEY: nhnSmsAppKey.value,
     NHN_SMS_SECRET_KEY: nhnSmsSecretKey.value,
+    NHN_WEBHOOK_SIGNATURE: nhnWebhookSignature.value,
+    NHN_VERIFICATION_TEMPLATE_CODE: nhnVerificationTemplateCode.value,
     NHN_SMS_SEND_NO: nhnSmsSendNo.value,
     // user-service 가 /internal/sms/send 를 부를 때 쓰는 키. auth 배포에도 같은 값이 필요하다.
     NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,

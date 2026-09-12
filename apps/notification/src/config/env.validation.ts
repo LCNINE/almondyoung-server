@@ -36,7 +36,11 @@ export const notificationEnvSchema = z.object({
   NHN_SMS_SECRET_KEY: z.string().optional(),
   NHN_SMS_SEND_NO: z.string().optional(),
   NHN_SMS_API_URL: z.string().url().optional(),
-  NHN_WEBHOOK_SIGNATURE: z.string().optional(), // NHN KakaoTalk 웹훅 서명
+  // 알림톡·SMS 웹훅이 같은 값을 쓴다. 비어 있으면 프로덕션에서 서명 검증이 통과만 하고 경고가 남는다.
+  NHN_WEBHOOK_SIGNATURE: z.string().optional(),
+  // 인증문자가 단말에 도달하지 못했을 때 대신 보내는 알림톡 템플릿 코드. 카카오 심사를 통과한 뒤
+  // 채워야 구제 경로가 동작한다 — 비어 있으면 실패를 감지해도 재발송하지 않고 경고만 남긴다.
+  NHN_VERIFICATION_TEMPLATE_CODE: z.string().optional(),
   DEFAULT_SMS_NUMBER: z.string().optional(),
 
   // Kakao Provider (Legacy Config)

@@ -9,6 +9,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { receipts, notificationLogs, notifications, templates } from '../../../database/schemas/notification-schema';
 import { ResendWebhookData, ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
 import { AlertService } from './alert.service';
+import { VerificationFallbackService } from '../../provider/services/verification-fallback.service';
 import { NotificationStatus } from '../enums';
 import { StructuredLogger } from '../utils/logger.utils';
 
@@ -21,6 +22,7 @@ export class WebhookService {
     @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
     private readonly configService: ConfigService,
     private readonly alertService: AlertService,
+    private readonly verificationFallback: VerificationFallbackService,
   ) {
     this.logger = new StructuredLogger(new Logger(WebhookService.name));
 
@@ -369,21 +371,7 @@ export class WebhookService {
   async handleKakaoWebhook(payload: string | any, signature?: string): Promise<void> {
     try {
       // 1. 서명 검증 (프로덕션 환경)
-      if (process.env.NODE_ENV === 'production') {
-        const expectedSignature = this.configService.get<string>('NHN_WEBHOOK_SIGNATURE');
-
-        if (!expectedSignature) {
-          this.logger.warn('NHN_WEBHOOK_SIGNATURE is not configured in production');
-        }
-
-        if (!signature) {
-          throw new UnauthorizedException('Missing Kakao webhook signature');
-        }
-
-        if (expectedSignature && signature !== expectedSignature) {
-          throw new UnauthorizedException('Invalid Kakao webhook signature');
-        }
-      }
+      this.verifyNhnSignature(signature);
 
       // 2. 페이로드 파싱
       let webhookData: any;
@@ -424,6 +412,55 @@ export class WebhookService {
 
       throw new Error(`Kakao webhook processing failed: ${error.message}`);
     }
+  }
+
+  /**
+   * NHN 웹훅 서명 검증. 알림톡·SMS 가 같은 헤더(`X-Toast-Webhook-Signature`)와 같은 설정값을 쓴다.
+   */
+  private verifyNhnSignature(signature?: string): void {
+    if (process.env.NODE_ENV !== 'production') {
+      return;
+    }
+
+    const expectedSignature = this.configService.get<string>('NHN_WEBHOOK_SIGNATURE');
+
+    if (!expectedSignature) {
+      this.logger.warn('NHN_WEBHOOK_SIGNATURE is not configured in production');
+    }
+
+    if (!signature) {
+      throw new UnauthorizedException('Missing NHN webhook signature');
+    }
+
+    if (expectedSignature && signature !== expectedSignature) {
+      throw new UnauthorizedException('Invalid NHN webhook signature');
+    }
+  }
+
+  /**
+   * NHN Cloud SMS 웹훅 — 발송 결과 수신.
+   *
+   * 통신사 최종 판정은 접수 응답이 아니라 여기로만 온다. 실패한 인증문자를 알림톡으로 구제하는
+   * 유일한 입구다 (`VerificationFallbackService`, 이슈 #849).
+   *
+   * 예외를 삼키지 않는다 — 500 을 돌려줘야 NHN 이 재시도한다.
+   */
+  async handleSmsWebhook(payload: string | any, signature?: string): Promise<void> {
+    this.verifyNhnSignature(signature);
+
+    const webhookData = typeof payload === 'string' ? JSON.parse(payload) : payload;
+
+    this.logger.log('SMS webhook received', {
+      event: webhookData.event,
+      hooksId: webhookData.hooksId,
+      appKey: webhookData.appKey,
+    });
+
+    if (webhookData.event !== 'MESSAGE_RESULT_UPDATE') {
+      return;
+    }
+
+    await this.verificationFallback.handleDeliveryResults(webhookData.hooks ?? []);
   }
 
   /**

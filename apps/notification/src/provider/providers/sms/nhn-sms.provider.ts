@@ -41,6 +41,22 @@ interface NHNSmsResponse {
   };
 }
 
+interface NHNSmsDetailResponse {
+  header: {
+    isSuccessful: boolean;
+    resultCode: number;
+    resultMessage: string;
+  };
+  body?: {
+    data?: Array<{
+      requestId: string;
+      recipientSeq: number;
+      recipientNo: string;
+      body: string;
+    }>;
+  };
+}
+
 // 단문(SMS) 한도. 넘으면 NHN 이 거부하므로 장문(MMS) 엔드포인트로 갈라 보낸다.
 const SMS_BODY_BYTE_LIMIT = 90;
 
@@ -155,12 +171,17 @@ export class NHNSmsProvider implements NotificationProvider {
     const endpoint = this.isLongMessage(body) ? 'mms' : 'sms';
 
     try {
+      // senderGroupingKey 는 발송 결과 웹훅에 그대로 돌아오는 몇 안 되는 필드다 (body·userId 는 안
+      // 온다). 이걸 붙여두지 않으면 웹훅에서 어떤 발송이 실패했는지 구분할 수 없다.
+      const senderGroupingKey = messages[0].metadata?.groupingKey;
+
       const response = await this.client.post<NHNSmsResponse>(
         `/sms/v3.0/appKeys/${this.config.appKey}/sender/${endpoint}`,
         {
           body,
           sendNo: this.config.sendNo,
           ...(endpoint === 'mms' ? { title: messages[0].subject || '아몬드영' } : {}),
+          ...(senderGroupingKey ? { senderGroupingKey } : {}),
           recipientList: messages.map((message) => ({
             recipientNo: this.formatPhoneNumber(message.to),
           })),
@@ -223,6 +244,41 @@ export class NHNSmsProvider implements NotificationProvider {
         error: axiosError?.response?.data?.header?.resultMessage || message || 'Unknown error',
         providerResponse: axiosError?.response?.data,
       }));
+    }
+  }
+
+  /**
+   * 발송한 본문을 되읽는다.
+   *
+   * 결과 웹훅은 `body` 를 주지 않는다 (requestId·recipientSeq·resultCode·그룹키뿐). 실패한 건을
+   * 다른 채널로 다시 보내려면 원문이 필요하므로 여기서 가져온다. 실패 건에만 부르므로 호출량은
+   * 발송량이 아니라 실패량에 비례한다.
+   *
+   * 단문(SMS) 만 조회한다 — 이 경로를 쓰는 건 90바이트 이하인 인증문자뿐이다. MMS 로 나간 건은
+   * 엔드포인트가 달라 여기서 못 찾고 `undefined` 가 된다.
+   */
+  async getSentBody(requestId: string, recipientSeq: number): Promise<string | undefined> {
+    try {
+      const response = await this.client.get<NHNSmsDetailResponse>(
+        `/sms/v3.0/appKeys/${this.config.appKey}/sender/sms/${requestId}`,
+      );
+
+      if (!response.data.header.isSuccessful) {
+        this.logger.error('Failed to read sent SMS body', {
+          requestId,
+          resultCode: response.data.header.resultCode,
+          resultMessage: response.data.header.resultMessage,
+        });
+        return undefined;
+      }
+
+      return response.data.body?.data?.find((row) => row.recipientSeq === recipientSeq)?.body;
+    } catch (error: unknown) {
+      this.logger.error('Failed to read sent SMS body', {
+        requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
     }
   }
 
