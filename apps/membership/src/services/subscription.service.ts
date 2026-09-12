@@ -639,9 +639,19 @@ export class SubscriptionService {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        await this.paymentClientService.createBillingAgreement(userId, contractId, billingMethodId, undefined, {
-          allowPendingMandate,
-        });
+        // HTTP 멱등키는 «시도마다» 다르게. wallet 의 HttpIdempotencyInterceptor 는 실패 응답도
+        // FAILED 로 저장하고 TTL 동안 그대로 replay 한다(idempotency.service.ts 의 FAILED 분기).
+        // 두 시도가 같은 키면 2회차가 핸들러에 닿지도 못하고 1회차의 500 을 되받으므로,
+        // 재시도가 이름만 남고 일시 장애가 곧바로 voidSubscription 으로 간다.
+        // 중복 방지는 도메인 쪽이 이미 한다 — agreement 는 subscriber 조합 upsert 이고,
+        // 아웃박스는 계약 단위 멱등키(uq_event_outbox_topic_event_idempotency)를 쓴다.
+        await this.paymentClientService.createBillingAgreement(
+          userId,
+          contractId,
+          billingMethodId,
+          `membership:billing-agreement:${userId}:${contractId}:attempt-${attempt}`,
+          { allowPendingMandate },
+        );
         return;
       } catch (err: unknown) {
         lastError = err;

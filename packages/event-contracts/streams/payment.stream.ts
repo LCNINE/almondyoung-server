@@ -366,6 +366,27 @@ export interface CmsMemberRejectedPayload {
   occurredAt: string;
 }
 
+/**
+ * 선적용 가입 성립 — 심사 중(PENDING) 계좌로 정기구독이 시작된 순간.
+ *
+ * 혜택은 지금부터 쓰지만 첫 출금은 심사 승인 뒤다. 앱 안에는 안내가 이미 둘 있다 — 가입 직후
+ * 토스트와, 멤버십 홈의 상시 배너(`billing.mandatePendingNotice`, member-details.tsx). 그런데 둘 다
+ * «고객이 그 화면을 열어야» 보인다. 「가입했는데 왜 돈이 안 빠지지」는 결제 내역을 안 열어본 채
+ * 며칠 뒤에 떠오르는 의문이라, 가입 시점에 손에 쥐어 주는 통지가 따로 필요하다.
+ *
+ * 승인(`cms.member.registered`)과는 시점이 다르다 — 이쪽은 가입 시점, 저쪽은 1~2 영업일 뒤.
+ */
+export interface MandatePendingPayload {
+  billingMethodId: string;
+  userId: string;
+  subscriberType: string;
+  subscriberRef: string;
+  /** 수신자 — notification 은 사용자 조회 경로가 없어 발행자가 싣는다 */
+  email: string;
+  userName: string;
+  occurredAt: string;
+}
+
 /** 심사 통과. 이제부터 실제로 출금이 걸린다는 사실을 고객에게 알린다. */
 export interface CmsMemberRegisteredPayload {
   cmsMemberId: string;
@@ -825,6 +846,17 @@ const CmsMemberRejectedSchema = z.object({
   occurredAt: z.string().min(1),
 });
 
+const MandatePendingSchema = z.object({
+  billingMethodId: z.string().min(1),
+  userId: z.string().min(1),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  // 이 이벤트의 존재 이유가 "이 주소로 메일을 보내라" 이므로 형식까지 검증한다.
+  email: z.string().email(),
+  userName: z.string().min(1),
+  occurredAt: z.string().min(1),
+});
+
 /** 거절과 대칭. 승인만 조용하면 고객은 「된 건가?」 하고 결제수단 화면을 다시 열어본다. */
 const CmsMemberRegisteredSchema = z.object({
   cmsMemberId: z.string().min(1),
@@ -995,6 +1027,7 @@ export const PAYMENT_STREAM = stream({
       'cms.member.registered',
       CmsMemberRegisteredSchema,
     ),
+    'mandate.pending': event<'mandate.pending', MandatePendingPayload>('mandate.pending', MandatePendingSchema),
 
     // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
     'payment.intent.created': event<'payment.intent.created', PaymentIntentEventPayload>(

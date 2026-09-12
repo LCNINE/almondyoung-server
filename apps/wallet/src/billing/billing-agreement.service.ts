@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { UserContactClient } from '@app/shared';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { and, eq } from 'drizzle-orm';
 import { WalletSchema, billingAgreements } from '../schema';
 import { BillingAgreement } from '../types';
@@ -12,6 +16,10 @@ export class BillingAgreementService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly billingMethodService: BillingMethodService,
+    private readonly userContactClient?: UserContactClient,
+    private readonly configService?: ConfigService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher?: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   async create(
@@ -21,28 +29,117 @@ export class BillingAgreementService {
     subscriberType: string,
     opts?: { allowPendingMandate?: boolean },
   ): Promise<BillingAgreement> {
-    await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId, opts);
+    const { cmsStatus } = await this.billingMethodService.assertSelectableForRecurringBilling(
+      userId,
+      billingMethodId,
+      opts,
+    );
 
-    // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
-    // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
-    // 평범한 INSERT 는 유니크 위반(→500)이 된다. 같은 subscriber 조합이 있으면 그 행을 ACTIVE 로 되살리는
-    // upsert 로 처리해 관리자 자동갱신 재활성(같은 계약 id 재사용)을 지원한다.
-    const rows = await this.dbService.db
-      .insert(billingAgreements)
-      .values({
-        userId,
-        billingMethodId,
-        subscriberRef,
-        subscriberType,
-        status: 'ACTIVE',
-      })
-      .onConflictDoUpdate({
-        target: [billingAgreements.subscriberType, billingAgreements.subscriberRef],
-        set: { userId, billingMethodId, status: 'ACTIVE', updatedAt: new Date() },
-      })
-      .returning();
+    // 「선적용이다」의 판정은 여기서 끝낸다 — 아래는 통지만 한다.
+    // ① allowPendingMandate 는 「PENDING 도 허용」이지 「PENDING 이다」가 아니다. 이미 승인된
+    //    계좌로 가입한 사람에게 심사 안내를 보내면 틀린 말이 된다.
+    // ② cmsMemberId 가 없으면 cms_members 행이 아예 없는 것이다. getUserCmsBillingMethodStatuses
+    //    는 그 경우에도 `member?.status ?? 'PENDING'` 으로 PENDING 을 돌려주므로(billing-method.service.ts),
+    //    상태만 보면 orphan 결제수단에도 「심사 중」 메일이 나간다.
+    const isPendingMandate =
+      opts?.allowPendingMandate === true && cmsStatus?.cmsMemberStatus === 'PENDING' && !!cmsStatus.cmsMemberId;
 
-    return rows[0];
+    // 연락처는 «트랜잭션 밖에서» 먼저 받아 둔다 — 외부 HTTP 를 트랜잭션 안에 두면
+    // user-service 가 느린 동안 agreement 행 잠금이 그만큼 길어진다.
+    const contact = isPendingMandate ? await this.resolvePendingMandateContact(userId, subscriberRef) : null;
+
+    return this.dbService.run(async (trx) => {
+      // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
+      // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
+      // 평범한 INSERT 는 유니크 위반(→500)이 된다. 같은 subscriber 조합이 있으면 그 행을 ACTIVE 로 되살리는
+      // upsert 로 처리해 관리자 자동갱신 재활성(같은 계약 id 재사용)을 지원한다.
+      const rows = await trx
+        .insert(billingAgreements)
+        .values({
+          userId,
+          billingMethodId,
+          subscriberRef,
+          subscriberType,
+          status: 'ACTIVE',
+        })
+        .onConflictDoUpdate({
+          target: [billingAgreements.subscriberType, billingAgreements.subscriberRef],
+          set: { userId, billingMethodId, status: 'ACTIVE', updatedAt: new Date() },
+        })
+        .returning();
+
+      // 아웃박스 적재를 agreement 와 «같은 트랜잭션»에 둔다. 밖에 두고 실패를 삼키면
+      // 아웃박스 행도 DLQ 메시지도 남지 않아 이 가입자의 안내 메일이 영구 누락된다 —
+      // 그때 agreement API 는 성공으로 끝나서 membership 의 재시도도 더는 돌지 않는다.
+      // 같이 묶으면 적재가 실패할 때 계약 생성도 실패하고, membership 이 재시도(2회)한 뒤
+      // voidSubscription 으로 되돌린다. 「통지가 계약을 되돌리면 안 된다」는 poller 의 규칙은
+      // 여기에 옮겨 오지 않는다 — 저쪽은 효성이 이미 확정한 심사 결과라 되돌릴 수가 없다.
+      if (contact) {
+        await this.publisher!.enqueue(
+          {
+            eventType: 'mandate.pending',
+            aggregateId: subscriberRef,
+            partitionKey: userId,
+            // 계약당 한 통. membership 은 agreement 생성을 2회까지 재시도하고, 이 INSERT 는
+            // upsert 라 같은 계약으로 다시 들어올 수 있다.
+            idempotencyKey: `cms:mandate-pending:${subscriberType}:${subscriberRef}`,
+            payload: {
+              billingMethodId,
+              userId,
+              subscriberType,
+              subscriberRef,
+              email: contact.email,
+              userName: contact.username,
+              occurredAt: new Date().toISOString(),
+            },
+          },
+          trx,
+        );
+      }
+
+      return rows[0];
+    });
+  }
+
+  /**
+   * 선적용 가입 안내 메일의 수신자를 찾는다. 못 찾으면 null — 메일만 포기하고 가입은 진행한다.
+   *
+   * 여기서 실패해도 계약을 막지 않는 이유: user-service 가 잠깐 흔들리는 동안 멤버십 가입이
+   * 통째로 거부되면, 알림 하나를 지키려다 돈이 오가는 경로를 세우는 것이 된다. 아웃박스 적재
+   * 실패와는 성질이 다르다 — 그쪽은 같은 DB 안이라 트랜잭션으로 묶을 수 있다.
+   *
+   * 다만 «실패로 끝나는 것»이 보장돼야 이 규칙이 성립한다. 이 호출은 가입 요청 안에 있어서,
+   * 늦기만 하고 끝나지 않으면 catch 로 오지 못하고 가입이 선 채로 멈춘다 — membership 의
+   * 재시도·void 도 같이 멈춘다. `UserContactClient` 가 청크마다 상한을 걸어 그걸 막는다.
+   *
+   * 그래서 이 갈래는 여전히 메일이 유실될 수 있다. 재시도 가능한 통지 상태로 남기는 처방은
+   * 이슈 #848 이 승인·거절 통지와 «함께» 다루기로 한 별도 작업이다.
+   */
+  private async resolvePendingMandateContact(
+    userId: string,
+    subscriberRef: string,
+  ): Promise<{ email: string; username: string } | null> {
+    if (!this.publisher || !this.userContactClient) return null;
+    if (
+      !this.configService?.get<string>('USER_SERVICE_URL') ||
+      !this.configService?.get<string>('USER_SERVICE_INTERNAL_KEY')
+    ) {
+      this.logger.warn(`선적용 가입 통지 스킵 — user-service 연동 미설정 (subscriberRef=${subscriberRef})`);
+      return null;
+    }
+
+    try {
+      const contacts = await this.userContactClient.findContacts([userId]);
+      const contact = contacts.get(userId);
+      if (!contact?.email) {
+        this.logger.warn(`선적용 가입 통지 스킵 — 연락처 없음 (userId=${userId})`);
+        return null;
+      }
+      return { email: contact.email, username: contact.username };
+    } catch (err) {
+      this.logger.error(`선적용 가입 통지 수신자 조회 실패 (subscriberRef=${subscriberRef}): ${err}`);
+      return null;
+    }
   }
 
   /**
@@ -181,10 +278,7 @@ export class BillingAgreementService {
       .select()
       .from(billingAgreements)
       .where(
-        and(
-          eq(billingAgreements.subscriberType, subscriberType),
-          eq(billingAgreements.subscriberRef, subscriberRef),
-        ),
+        and(eq(billingAgreements.subscriberType, subscriberType), eq(billingAgreements.subscriberRef, subscriberRef)),
       )
       .limit(1);
 
@@ -193,9 +287,7 @@ export class BillingAgreementService {
     }
 
     // 1) 마감 전 예정 출금 취소 (돈이 나가는 것을 애초에 막는다)
-    const cancelledWithdrawals = await this.billingMethodService.cancelPendingCmsWithdrawals(
-      agreement.billingMethodId,
-    );
+    const cancelledWithdrawals = await this.billingMethodService.cancelPendingCmsWithdrawals(agreement.billingMethodId);
 
     // 2) 약정 비활성화
     if (agreement.status === 'ACTIVE') {
@@ -207,10 +299,7 @@ export class BillingAgreementService {
       .select({ id: billingAgreements.id })
       .from(billingAgreements)
       .where(
-        and(
-          eq(billingAgreements.billingMethodId, agreement.billingMethodId),
-          eq(billingAgreements.status, 'ACTIVE'),
-        ),
+        and(eq(billingAgreements.billingMethodId, agreement.billingMethodId), eq(billingAgreements.status, 'ACTIVE')),
       );
 
     if (others.length > 0) {

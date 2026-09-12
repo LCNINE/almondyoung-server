@@ -146,3 +146,46 @@ describe('WalletEventConsumer — CMS 승인 안내', () => {
     expect(dispatcher.send).not.toHaveBeenCalled();
   });
 });
+
+// 선적용 메일도 같은 침묵 위험을 진다 — 게다가 이건 «가입 직후» 라, 안 나가면 고객은
+// 첫 출금이 없는 이유를 끝까지 모른다.
+describe('WalletEventConsumer — 선적용 가입 안내', () => {
+  const pendingPayload = {
+    billingMethodId: 'bm-1',
+    userId: 'user-1',
+    subscriberType: 'MEMBERSHIP',
+    subscriberRef: 'contract-1',
+    email: 'a@b.com',
+    userName: '정중식',
+    occurredAt: '2026-09-12T00:00:00.000Z',
+  };
+
+  function makePendingConsumer() {
+    const dispatcher = { send: jest.fn().mockResolvedValue(undefined) };
+    const eventMapping = {
+      getEventMapping: jest.fn().mockResolvedValue({
+        isActive: true,
+        defaultChannels: ['EMAIL'],
+        category: 'TRANSACTIONAL',
+        templateKey: 'MANDATE_PENDING_EMAIL',
+        eventKey: 'MANDATE_PENDING',
+        priority: 'HIGH',
+      }),
+    };
+    return { consumer: new WalletEventConsumer(dispatcher as never, eventMapping as never), dispatcher, eventMapping };
+  }
+
+  it('템플릿이 쓰는 이름 그대로 변수를 넘긴다', async () => {
+    const { consumer, dispatcher, eventMapping } = makePendingConsumer();
+    await consumer.onMandatePending({ correlationId: 'corr-1' } as never, pendingPayload as never);
+
+    const sent = dispatcher.send.mock.calls[0][0];
+    expect(eventMapping.getEventMapping).toHaveBeenCalledWith('MANDATE_PENDING');
+    // MANDATE_PENDING_EMAIL 의 {{...}} 와 한 글자라도 다르면 빈칸으로 나간다.
+    expect(Object.keys(sent.variables).sort()).toEqual(['membershipUrl', 'name']);
+    expect(sent.variables.name).toBe('정중식');
+    // 배너가 상시로 떠 있는 곳 — 결제수단 화면이 아니다.
+    expect(sent.variables.membershipUrl).toMatch(/\/mypage\/membership$/);
+    expect(sent.payload.email).toBe('a@b.com');
+  });
+});

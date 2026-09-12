@@ -831,6 +831,45 @@ export class WalletEventConsumer {
     }
   }
 
+  /**
+   * 선적용 가입 — 심사 중 계좌로 구독이 시작된 순간. 승인 메일은 1~2 영업일 뒤라
+   * 그 사이 "가입했는데 왜 출금이 없지" 를 이 메일이 막는다.
+   */
+  @On(PAYMENT_STREAM, 'mandate.pending')
+  async onMandatePending(
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'mandate.pending'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'mandate.pending'>,
+  ) {
+    this.logger.log(
+      `[Event] Received MandatePending: ${payload.subscriberRef} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      const eventMapping = await this.requireEventMapping('MANDATE_PENDING');
+      if (!eventMapping) return;
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        // 키 이름은 MANDATE_PENDING_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
+        variables: {
+          name: payload.userName,
+          membershipUrl: this.membershipUrl(),
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched MANDATE_PENDING notification for ${payload.userId}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process MANDATE_PENDING notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
   @On(PAYMENT_STREAM, 'cms.member.rejected')
   async onCmsMemberRejected(
     @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'cms.member.rejected'>,
@@ -910,9 +949,17 @@ export class WalletEventConsumer {
     }
   }
 
+  private storefrontBase(): string {
+    return process.env.STOREFRONT_URL ?? 'https://almondyoung.com';
+  }
+
   /** 계좌 등록 진입점. 여기서 wallet-web /billing-change 로 넘어간다. */
   private cmsRegisterUrl(): string {
-    const base = process.env.STOREFRONT_URL ?? 'https://almondyoung.com';
-    return `${base}/kr/mypage/membership/payment-method`;
+    return `${this.storefrontBase()}/kr/mypage/membership/payment-method`;
+  }
+
+  /** 심사 진행 상태 배너가 상시로 떠 있는 곳 — 메일을 지워도 여기서 다시 볼 수 있다. */
+  private membershipUrl(): string {
+    return `${this.storefrontBase()}/kr/mypage/membership`;
   }
 }

@@ -241,8 +241,63 @@ const CMS_REJECTED_EVENT = {
   priority: 'HIGH',
 };
 
-const NOTICE_TEMPLATES = [RENEWAL_NOTICE_TEMPLATE, EXPIRY_NOTICE_TEMPLATE, CMS_REJECTED_TEMPLATE];
-const NOTICE_EVENTS = [RENEWAL_NOTICE_EVENT, EXPIRY_NOTICE_EVENT, CMS_REJECTED_EVENT];
+/**
+ * 선적용 가입 안내 — 심사 중(PENDING) 계좌로 멤버십이 시작된 시점.
+ *
+ * 혜택은 지금부터 쓰지만 첫 출금은 심사 승인 뒤(1~2 영업일)다. 이 사실이 닿는 경로가
+ * 가입 직후 토스트와 마이페이지 배너뿐이라, 메일이 없으면 "가입했는데 왜 돈이 안 빠지지"
+ * 또는 "언제 빠지는 거지" 가 CS 로 온다.
+ *
+ * 승인 메일(CMS_MEMBER_REGISTERED_EMAIL)과 이틀 안에 연달아 나가므로 문구가 겹치지 않게 했다
+ * — 이쪽은 «지금 쓸 수 있다», 저쪽은 «이제 출금이 걸린다».
+ */
+const MANDATE_PENDING_TEMPLATE = {
+  templateId: FIXED_UUIDS.TEMPLATE_MANDATE_PENDING,
+  templateKey: 'MANDATE_PENDING_EMAIL',
+  name: '멤버십 선적용 안내',
+  category: 'TRANSACTIONAL',
+  // 언어 레이어(`EMAIL.ko`)가 필수다 — 위 CMS_REJECTED_TEMPLATE 주석 참고.
+  contents: {
+    EMAIL: {
+      ko: {
+        subject: '[아몬드영] 멤버십 혜택이 바로 시작되었습니다',
+        body: [
+          '<p>{{name}}님, 안녕하세요. 아몬드영입니다.</p>',
+          '<p>멤버십 가입이 완료되었습니다. <strong>혜택은 지금 바로 이용하실 수 있습니다.</strong></p>',
+          '<p>등록해 주신 자동이체 계좌는 현재 은행 확인이 진행 중입니다(영업일 기준 1~2일).',
+          ' <strong>확인이 끝나기 전에는 계좌에서 돈이 빠져나가지 않습니다.</strong></p>',
+          '<p>은행에서 받으신 ‘자동이체 등록 접수’ 문자는 접수 확인일 뿐 최종 승인이 아닙니다.',
+          ' 확인이 끝나면 승인 여부를 메일로 다시 안내드립니다.</p>',
+          '<p><a href="{{membershipUrl}}">멤버십 확인하기</a></p>',
+          '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
+          '<p>감사합니다.<br/>아몬드영 드림</p>',
+        ].join('\n'),
+      },
+    },
+  },
+  variablesSchema: {
+    name: { type: 'string', required: true },
+    membershipUrl: { type: 'string', required: true },
+  },
+};
+
+const MANDATE_PENDING_EVENT = {
+  eventKey: 'MANDATE_PENDING',
+  name: '멤버십 선적용 안내',
+  description: 'CMS 심사 중 계좌로 구독이 시작된 시점 — 혜택 선적용·첫 출금 시점 안내',
+  templateKey: MANDATE_PENDING_TEMPLATE.templateKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['EMAIL'],
+  priority: 'HIGH',
+};
+
+const NOTICE_TEMPLATES = [
+  RENEWAL_NOTICE_TEMPLATE,
+  EXPIRY_NOTICE_TEMPLATE,
+  CMS_REJECTED_TEMPLATE,
+  MANDATE_PENDING_TEMPLATE,
+];
+const NOTICE_EVENTS = [RENEWAL_NOTICE_EVENT, EXPIRY_NOTICE_EVENT, CMS_REJECTED_EVENT, MANDATE_PENDING_EVENT];
 
 const PROVIDER_IDS = [
   FIXED_UUIDS.PROVIDER_FCM_PUSH,

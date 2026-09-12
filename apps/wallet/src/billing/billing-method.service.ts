@@ -244,37 +244,41 @@ export class BillingMethodService {
       .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')));
   }
 
+  /**
+   * 판정에 쓴 CMS 상태를 «함께» 돌려준다 — 호출자가 같은 조회를 다시 하지 않게.
+   * CMS 가 아닌 수단은 조회 자체가 없으므로 `cmsStatus` 가 undefined 다.
+   */
   async assertSelectableForRecurringBilling(
     userId: string,
     billingMethodId: string,
     opts?: { allowPendingMandate?: boolean },
-  ): Promise<BillingMethod> {
+  ): Promise<{ method: BillingMethod; cmsStatus?: CmsBillingMethodStatusRow }> {
     const method = await this.findById(billingMethodId);
     if (!method || method.userId !== userId || method.status !== 'ACTIVE') {
       throw new Error('billing method not found or inactive');
     }
 
     if (method.providerType !== 'CMS_BATCH') {
-      return method;
+      return { method };
     }
 
     const statuses = await this.getUserCmsBillingMethodStatuses(userId);
-    const status = statuses.find((row) => row.billingMethodId === billingMethodId);
+    const cmsStatus = statuses.find((row) => row.billingMethodId === billingMethodId);
 
     // 선적용: 심사 중(PENDING) 계좌 허용 — 대기는 인보이스가 흡수, 거절은 mandate.rejected 로 회수.
     // FAILED/DELETED 는 거부.
     if (opts?.allowPendingMandate) {
-      if (!status || status.cmsMemberStatus === 'FAILED' || status.cmsMemberStatus === 'DELETED') {
+      if (!cmsStatus || cmsStatus.cmsMemberStatus === 'FAILED' || cmsStatus.cmsMemberStatus === 'DELETED') {
         throw new Error('CMS billing method is not ready for recurring billing');
       }
-      return method;
+      return { method, cmsStatus };
     }
 
-    if (!status?.isSelectableForRecurringBilling) {
+    if (!cmsStatus?.isSelectableForRecurringBilling) {
       throw new Error('CMS billing method is not ready for recurring billing');
     }
 
-    return method;
+    return { method, cmsStatus };
   }
 
   async findLatestSelectableForRecurringBilling(userId: string): Promise<BillingMethod | undefined> {
