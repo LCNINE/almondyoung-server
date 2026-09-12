@@ -132,6 +132,16 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   const valueRef = useRef(value);
   valueRef.current = value;
 
+  /**
+   * 같은 조합을 다시 묻는 동안에는 같은 시도 ID 를 쓴다. 매 호출 새 키를 보내면
+   * 타임아웃 뒤 재시도가 건당 유료 호출을 그대로 한 번 더 태운다.
+   */
+  const attempt = useRef<{ combo: string; id: string } | null>(null);
+  const attemptIdFor = (combo: string) => {
+    if (attempt.current?.combo !== combo) attempt.current = { combo, id: crypto.randomUUID() };
+    return attempt.current.id;
+  };
+
   const go = (next: Step) => {
     setDir(STEP_ORDER.indexOf(next) < STEP_ORDER.indexOf(step) ? 'back' : 'fwd');
     setStep(next);
@@ -161,6 +171,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
           paymentCompany: value.paymentCompany,
           paymentNumber: value.paymentNumber,
           payerNumber: value.payerNumber,
+          attemptId: attemptIdFor(`${asked.paymentCompany}:${asked.paymentNumber}:${asked.payerNumber}`),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -406,6 +417,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 <StackedInput
                   autoFocus
                   ariaLabel={isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}
+                  describedBy={error ? 'payer-number-error' : undefined}
                   disabled={checking}
                   inputRef={payerNumberRef}
                   value={value.payerNumber}
@@ -416,7 +428,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                   placeholder={isPersonal ? '예) 900101' : '예) 1234567890'}
                   invalid={Boolean(error)}
                 />
-                <FieldError message={error} />
+                <FieldError message={error} id="payer-number-error" />
                 <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
                   {isPersonal
                     ? '주민등록번호 앞 6자리예요. 계좌를 만들 때 등록한 번호와 같아야 합니다.'
@@ -429,6 +441,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
               <StackedInput
                 autoFocus={step === 'account'}
                 ariaLabel="계좌번호"
+                describedBy={step === 'account' && error ? 'payment-number-error' : undefined}
                 disabled={checking}
                 value={value.paymentNumber}
                 onChange={(next) => {
@@ -438,7 +451,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                 placeholder="- 없이 숫자만 입력"
                 invalid={step === 'account' && Boolean(error)}
               />
-              {step === 'account' && <FieldError message={error} />}
+              {step === 'account' && <FieldError message={error} id="payment-number-error" />}
             </StackedField>
 
             <StackedField label="은행">
@@ -613,6 +626,7 @@ function StackedInput({
   inputMode = 'numeric',
   ariaLabel,
   disabled,
+  describedBy,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -625,6 +639,7 @@ function StackedInput({
   inputMode?: 'numeric' | 'tel';
   ariaLabel?: string;
   disabled?: boolean;
+  describedBy?: string;
 }) {
   return (
     <Input
@@ -637,16 +652,20 @@ function StackedInput({
       inputMode={inputMode}
       aria-label={ariaLabel}
       aria-invalid={invalid}
+      aria-describedby={describedBy}
       disabled={disabled}
       className="h-14 rounded-none border-0 border-b border-border bg-transparent px-0 !text-[22px] font-semibold tracking-tight shadow-none focus-visible:border-primary focus-visible:ring-0"
     />
   );
 }
 
-function FieldError({ message }: { message: string | null }) {
+function FieldError({ message, id }: { message: string | null; id?: string }) {
   if (!message) return null;
   return (
-    <p className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive animate-in fade-in slide-in-from-top-1 duration-200">
+    <p
+      id={id}
+      className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive animate-in fade-in slide-in-from-top-1 duration-200"
+    >
       <AlertCircle className="mt-[3px] size-4 shrink-0" />
       <span>{message}</span>
     </p>

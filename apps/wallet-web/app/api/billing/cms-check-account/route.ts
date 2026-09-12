@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     return Response.json({ error: '잘못된 요청입니다.' }, { status: 400 });
   }
 
-  const { paymentCompany, paymentNumber, payerNumber } = body;
+  const { paymentCompany, paymentNumber, payerNumber, attemptId } = body;
   if (!paymentCompany || !paymentNumber || !payerNumber) {
     return Response.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
   }
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const cookieHeader = await getBackendAuthCookie();
 
   try {
-    const result = await checkCmsAccount({ paymentCompany, paymentNumber, payerNumber }, cookieHeader);
+    const result = await checkCmsAccount({ paymentCompany, paymentNumber, payerNumber }, cookieHeader, attemptId);
     return Response.json(result, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : '계좌 확인 중 오류가 발생했습니다.';

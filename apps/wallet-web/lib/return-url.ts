@@ -2,7 +2,11 @@
  * 돌아갈 곳을 모를 때의 기본값. wallet-web 은 결제 전용이라 자기 루트(UI 데모 페이지)로
  * 보내면 «아무 데도 아닌 곳»에 떨구는 셈이다. 고객이 온 곳은 언제나 스토어프론트다.
  */
-export const STOREFRONT_ORIGIN = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? '/';
+// 배포(services.ts)가 주입하는 이름은 NEXT_PUBLIC_STOREFRONT_URL 이다. _ORIGIN 만 읽던
+// 동안 라이브에서는 늘 undefined 라 '/'(wallet-web 루트)로 떨어졌다 — 로고 링크와
+// returnUrl fallback 이 storefront 가 아닌 곳으로 갔다. 두 이름을 모두 받는다.
+export const STOREFRONT_ORIGIN =
+  process.env.NEXT_PUBLIC_STOREFRONT_URL ?? process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? '/';
 
 // safeReturnUrl 은 상대경로를 그대로 돌려주고 기본값도 '/' 라, 여기로 절대 URL 이 아닌 값이
 // 들어온다. new URL(상대경로) 는 던지므로 base 를 붙여 파싱하고 상대경로면 상대경로로 돌려준다.

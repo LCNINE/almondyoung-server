@@ -76,7 +76,15 @@ export class CmsMemberPollerService {
           return;
         }
         // ADR-0027: 심사 통과 — MANDATE_PENDING 인보이스의 다음 시도를 즉시로 당겨 출금을 앞당긴다.
-        await this.invoiceOutcomeService.pullForwardMandatePending(member.billingMethodId);
+        // 인보이스 후속과 통지를 격리한다: 상태는 이미 REGISTERED 로 확정됐고 다음 폴링은
+        // PENDING 만 다시 가져오므로, 여기서 예외가 새면 승인 통지가 영구 누락된다.
+        try {
+          await this.invoiceOutcomeService.pullForwardMandatePending(member.billingMethodId);
+        } catch (error) {
+          this.logger.error(
+            `승인 후 인보이스 당기기 실패 — 통지는 계속한다. cmsMemberId=${member.cmsMemberId}: ${String(error)}`,
+          );
+        }
         this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
         await this.notifyRegistered(member);
       } else if (liveStatus === 'FAILED') {
@@ -85,11 +93,18 @@ export class CmsMemberPollerService {
         }
         // ADR-0027 §7. 심사 최종 거절 — 이 결제수단에 걸린 인보이스를 MANDATE_REJECTED 로 종결하고
         // mandate.rejected 를 발행해 subscriber(membership)가 선적용 자격을 회수하게 한다.
-        await this.invoiceOutcomeService.rejectMandateForBillingMethod(
-          member.billingMethodId,
-          resultCode ?? 'CMS_MEMBER_FAILED',
-          resultMessage ?? 'CMS 계좌 심사 거절',
-        );
+        try {
+          await this.invoiceOutcomeService.rejectMandateForBillingMethod(
+            member.billingMethodId,
+            resultCode ?? 'CMS_MEMBER_FAILED',
+            resultMessage ?? 'CMS 계좌 심사 거절',
+          );
+        } catch (error) {
+          // 거절은 고객이 «재등록»해야 하는 상태다. 통지를 놓치면 그 신호가 사라진다.
+          this.logger.error(
+            `거절 후 인보이스 종결 실패 — 통지는 계속한다. cmsMemberId=${member.cmsMemberId}: ${String(error)}`,
+          );
+        }
         this.logger.warn(`CMS member ${member.cmsMemberId} registration failed: ${resultMessage}`);
         await this.notifyRejected(member, resultCode, resultMessage);
       }

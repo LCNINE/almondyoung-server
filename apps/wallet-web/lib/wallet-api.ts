@@ -274,13 +274,16 @@ export interface CmsAccountCheckResult {
 export async function checkCmsAccount(
   dto: { paymentCompany: string; paymentNumber: string; payerNumber: string },
   cookieHeader: string,
+  // 같은 조합을 다시 묻는 재시도라면 같은 키로 와야 한다 — 매번 새 키를 만들면 타임아웃
+  // 한 번에 건당 유료 호출이 그대로 두 번 나간다.
+  idempotencyKey?: string,
 ): Promise<CmsAccountCheckResult> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/check-account`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': idempotencyKey ?? crypto.randomUUID(),
     },
     body: JSON.stringify(dto),
     cache: 'no-store',

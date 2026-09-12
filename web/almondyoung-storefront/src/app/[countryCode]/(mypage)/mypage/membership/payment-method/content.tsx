@@ -199,11 +199,7 @@ export default function MembershipPaymentMethodContent() {
                 t("pendingMandateSubscribeSuccess")
               : t("recurringStartedSuccess")
         )
-        router.push(
-          `/${countryCode}/mypage/membership/subscribe/success?flow=recurring${
-            opts?.pendingMandate ? "&mandate=pending" : ""
-          }`
-        )
+        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } catch (error) {
         if (isUnauthorizedError(error)) throw error
         toast.error(t("subscribeFail"))
