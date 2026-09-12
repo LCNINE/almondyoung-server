@@ -291,13 +291,59 @@ const MANDATE_PENDING_EVENT = {
   priority: 'HIGH',
 };
 
+/**
+ * CMS 자동이체 계좌 등록 «승인» 안내. 거절(CMS_REJECTED_TEMPLATE)과 짝이다.
+ *
+ * 본문은 `apps/notification/scripts/seed-email-templates.js` 의 CMS_MEMBER_REGISTERED_EMAIL 을
+ * 그대로 옮긴 것이다. 저 스크립트는 «템플릿만» 다루고 이벤트 매핑을 못 넣는데, 매핑이 없으면
+ * 메일이 조용히 안 나간다 — 2026-09-12 라이브가 정확히 그 상태였다(템플릿·매핑 둘 다 없었고,
+ * 승인 이벤트가 아직 한 번도 발행되지 않아 유실 전에 발견). 둘을 여기 한 자리에 둔다.
+ */
+const CMS_REGISTERED_TEMPLATE = {
+  templateId: FIXED_UUIDS.TEMPLATE_CMS_MEMBER_REGISTERED,
+  templateKey: 'CMS_MEMBER_REGISTERED_EMAIL',
+  name: '자동이체 계좌 등록 완료',
+  category: 'TRANSACTIONAL',
+  // 언어 레이어(`EMAIL.ko`)가 필수다 — 위 CMS_REJECTED_TEMPLATE 주석 참고.
+  contents: {
+    EMAIL: {
+      ko: {
+        subject: '[아몬드영] 자동이체 계좌 등록이 완료되었습니다',
+        body: '<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:#ff6600;padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">계좌 등록 완료</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">{{name}}님, 안녕하세요.<br/>신청해 주신 자동이체 계좌의 은행 확인이 끝나 등록이 완료되었습니다.</td></tr><tr><td style="padding-bottom:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:20px 24px;"><tr><td style="font-size:14px;color:#888888;padding:4px 0;">은행</td><td align="right" style="font-size:14px;font-weight:600;color:#111111;padding:4px 0;">{{bankName}}</td></tr><tr><td style="font-size:14px;color:#888888;padding:4px 0;">예금주</td><td align="right" style="font-size:14px;font-weight:600;color:#111111;padding:4px 0;">{{payerName}}</td></tr></table></td></tr><tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">앞으로 결제일에 이 계좌에서 자동으로 출금됩니다. 계좌를 바꾸거나 해지하시려면 마이페이지 > 결제수단 관리에서 변경하실 수 있습니다.</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>',
+      },
+    },
+  },
+  variablesSchema: {
+    name: { type: 'string', required: true },
+    bankName: { type: 'string', required: true },
+    payerName: { type: 'string', required: true },
+  },
+};
+
+const CMS_REGISTERED_EVENT = {
+  eventKey: 'CMS_MEMBER_REGISTERED',
+  name: '자동이체 계좌 등록 완료',
+  description: 'CMS 계좌 심사 통과 시 등록 완료 안내',
+  templateKey: CMS_REGISTERED_TEMPLATE.templateKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['EMAIL'],
+  priority: 'HIGH',
+};
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
   CMS_REJECTED_TEMPLATE,
   MANDATE_PENDING_TEMPLATE,
+  CMS_REGISTERED_TEMPLATE,
 ];
-const NOTICE_EVENTS = [RENEWAL_NOTICE_EVENT, EXPIRY_NOTICE_EVENT, CMS_REJECTED_EVENT, MANDATE_PENDING_EVENT];
+const NOTICE_EVENTS = [
+  RENEWAL_NOTICE_EVENT,
+  EXPIRY_NOTICE_EVENT,
+  CMS_REJECTED_EVENT,
+  MANDATE_PENDING_EVENT,
+  CMS_REGISTERED_EVENT,
+];
 
 const PROVIDER_IDS = [
   FIXED_UUIDS.PROVIDER_FCM_PUSH,
