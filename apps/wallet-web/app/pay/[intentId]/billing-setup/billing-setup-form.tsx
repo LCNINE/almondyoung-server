@@ -15,6 +15,7 @@ import {
   CmsVerifiedAccount,
 } from '@/components/cms-account-fields';
 import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { redirectToWalletLogin } from '@/lib/auth-expired';
 
 interface BillingSetupFormProps {
   returnUrl: string;
@@ -68,9 +69,14 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
         agreementUploadFailed?: boolean;
         id?: string;
       };
+      // 세션 만료는 「등록 실패」가 아니다 — 백엔드 원문을 띄우고 처음 화면으로
+      // 돌려보내는 대신 로그인으로 보내 토큰을 되살린다(billing-change 와 같은 처리).
+      if (res.status === 401) {
+        redirectToWalletLogin();
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? '계좌 등록에 실패했습니다. 정보를 다시 확인해주세요.');
-        setStep('details');
         return;
       }
       if (data.agreementUploadFailed) {

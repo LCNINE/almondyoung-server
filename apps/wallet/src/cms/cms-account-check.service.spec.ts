@@ -103,7 +103,7 @@ describe('CmsAccountCheckService', () => {
     expect(inserted[0].maskedPaymentNumber).toBeNull();
   });
 
-  it('treats a provider failure as UNAVAILABLE so unsupported banks can still register', async () => {
+  it('classifies a provider failure as UNAVAILABLE, not a mismatch — nothing for the customer to fix', async () => {
     const { dbService } = makeDb();
     const cmsApi = {
       verifyPayerNumber: jest

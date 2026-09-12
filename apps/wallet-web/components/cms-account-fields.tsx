@@ -386,15 +386,14 @@ export function CmsAccountFields({ value, onChange, onComplete, verified, onVeri
                 type="button"
                 onClick={() => {
                   // 계좌번호·실명번호는 «그 은행의» 값이다. 은행만 갈아끼우면 이전 은행의
-                  // 값이 새 은행 것으로 보인다.
+                  // 값이 새 은행 것으로 보인다. 반대로 같은 은행을 다시 고른 것뿐이라면
+                  // 아무것도 버리지 않는다 — 확인 캐시를 비우면 같은 계좌를 또 유료 조회한다.
                   setError(null);
-                  onVerifiedChange(null);
-                  setLastRejected(null);
-                  patch(
-                    bank.code === value.paymentCompany
-                      ? { paymentCompany: bank.code }
-                      : { paymentCompany: bank.code, paymentNumber: '', payerNumber: '', payerName: '' },
-                  );
+                  if (bank.code !== value.paymentCompany) {
+                    onVerifiedChange(null);
+                    setLastRejected(null);
+                    patch({ paymentCompany: bank.code, paymentNumber: '', payerNumber: '', payerName: '' });
+                  }
                   go('account');
                 }}
                 className={`flex h-[72px] flex-col items-center justify-center rounded-2xl border text-[13px] font-medium transition-all duration-150 active:scale-[0.96] ${
