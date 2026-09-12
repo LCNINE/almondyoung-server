@@ -13,6 +13,25 @@ import { IdempotencyService } from './idempotency.service';
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * 응답은 replay 를 위해 그대로 보관되므로, 보관해서는 안 될 값이 섞인 자리는 지우고 넣는다.
+ * 실시간 계좌조회는 예금주 실명을 돌려준다 — 조회 결과를 우리 DB 에 남기지 않는다는 게
+ * 이 API 의 전제다.
+ */
+const REDACTED_RESPONSE_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  'POST /v1/billing-methods/cms/check-account': ['payerName'],
+};
+
+function redactForStorage(operation: string, body: unknown): unknown {
+  const fields = REDACTED_RESPONSE_FIELDS[operation];
+  if (!fields || body === null || typeof body !== 'object' || Array.isArray(body)) return body;
+  const copy: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+  for (const field of fields) {
+    if (field in copy) copy[field] = null;
+  }
+  return copy;
+}
+
 @Injectable()
 export class HttpIdempotencyInterceptor implements NestInterceptor {
   constructor(private readonly idempotencyService: IdempotencyService) {}
@@ -64,7 +83,11 @@ export class HttpIdempotencyInterceptor implements NestInterceptor {
       mergeMap((responseBody) =>
         from(
           Promise.resolve(
-            this.idempotencyService.completeSuccess(decision.recordId, reply.statusCode || 200, responseBody),
+            this.idempotencyService.completeSuccess(
+              decision.recordId,
+              reply.statusCode || 200,
+              redactForStorage(operation, responseBody),
+            ),
           ),
         ).pipe(mergeMap(() => of(responseBody))),
       ),
