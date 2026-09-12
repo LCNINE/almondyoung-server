@@ -30,6 +30,13 @@ export default async function MembershipFormPage() {
   const monthlyPlan = plans.find((p) => p.plan.durationDays === 30)
   const yearlyPlan = plans.find((p) => p.plan.durationDays === 365)
 
+  const existingSubType =
+    currentSubscription?.plan?.durationDays === 30
+      ? ("monthly" as const)
+      : currentSubscription?.plan?.durationDays === 365
+        ? ("yearly" as const)
+        : null
+
   if (plansError || !monthlyPlan || !yearlyPlan) {
     return (
       <WithHeaderLayout
@@ -67,13 +74,7 @@ export default async function MembershipFormPage() {
         <MembershipForm
           monthlyPlan={monthlyPlan}
           yearlyPlan={yearlyPlan}
-          existingSubType={
-            currentSubscription?.plan?.durationDays === 30
-              ? "monthly"
-              : currentSubscription?.plan?.durationDays === 365
-                ? "yearly"
-                : null
-          }
+          existingSubType={existingSubType}
           availableBenefits={[]}
         />
       </MypageLayout>

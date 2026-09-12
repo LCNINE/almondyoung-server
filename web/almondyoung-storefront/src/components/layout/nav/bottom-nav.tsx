@@ -15,7 +15,12 @@ export function BottomNavigation() {
   const t = useTranslations("nav")
 
   // 결제 진입 화면은 하단 고정 CTA 가 같은 자리를 쓴다. success/fail 은 제외.
-  if (/\/checkout(\/membership)?$/.test(pathname ?? "")) return null
+  if (
+    /\/checkout(\/membership)?$|\/membership\/subscribe\/payment$/.test(
+      pathname ?? ""
+    )
+  )
+    return null
 
   // 홈이 가운데 오도록 카테고리 → 검색 → 홈 → 장바구니 → 마이 순서로 고정
   const navItems = [

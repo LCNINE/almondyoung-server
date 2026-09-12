@@ -2,7 +2,6 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
@@ -12,6 +11,13 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Drawer,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
 import {
   Form,
   FormControl,
@@ -38,9 +44,22 @@ import type {
   BillingMethodDto,
   CmsBillingMethodStatusDto,
 } from "@lib/types/dto/wallet"
-import { Calendar, Check, Clock, CreditCard, Gift, Info } from "lucide-react"
+import {
+  Calendar,
+  Check,
+  ChevronRight,
+  CreditCard,
+  Gift,
+  Info,
+} from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
-import React, { useEffect, useMemo, useState, useTransition } from "react"
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { useTranslations } from "next-intl"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -48,6 +67,15 @@ import { z } from "zod"
 
 // 순수 UI용 타입 정의
 type SubscriptionType = "monthly" | "yearly" | null
+
+// 플랜(월/연) × 결제방식(정기/1회) 4조합 중 실제로 가능한 3개만 평탄화한다.
+// 연간+정기는 미지원이라 조합으로 두면 비활성 선택지와 그 사유 안내가 따라붙는다.
+const PLAN_CHOICES = z.enum([
+  "monthly_recurring",
+  "monthly_one_time",
+  "yearly_one_time",
+])
+type PlanChoice = z.infer<typeof PLAN_CHOICES>
 
 // 정기결제(CMS 자동이체) 개통 여부 = 인보이스(선적용) 정기결제 플래그와 연동한다.
 // 플래그가 켜지면 월간 정기가입(선적용 인보이스 경로)이 폼에서 열리고, 꺼지면 one_time 만 노출한다.
@@ -76,22 +104,23 @@ type MembershipDiscountBenefit = MemberBenefitCommon & {
 type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 
 // 검증 메시지는 사용자 노출 문구라 호출부에서 i18n 메시지를 주입한다(CLAUDE.md zod 빌더 패턴).
-const buildSubscriptionSchema = (m: { selectType: string; agreeTerms: string }) =>
+const buildSubscriptionSchema = (m: {
+  selectType: string
+  agreeTerms: string
+}) =>
   z.object({
-    subscriptionType: z
-      .enum(["monthly", "yearly"])
-      .optional()
-      .refine((val) => val === "monthly" || val === "yearly", {
-        message: m.selectType,
-      }),
-    billingMode: z.enum(["recurring", "one_time"]),
+    choice: PLAN_CHOICES.optional().refine((val) => val !== undefined, {
+      message: m.selectType,
+    }),
     discountBenefitId: z.string().optional(),
     agreement: z.boolean().refine((value) => value === true, {
       message: m.agreeTerms,
     }),
   })
 
-type SubscriptionFormValues = z.infer<ReturnType<typeof buildSubscriptionSchema>>
+type SubscriptionFormValues = z.infer<
+  ReturnType<typeof buildSubscriptionSchema>
+>
 
 type MembershipFormProps = {
   monthlyPlan: {
@@ -148,8 +177,13 @@ export function MembershipForm({
       getCmsBillingMethodStatuses(),
     ])
       .then(([methods, cmsStatuses]) => {
-        setBillingMethods(methods.filter((m) => m.status === "ACTIVE"))
+        const active = methods.filter((m) => m.status === "ACTIVE")
+        setBillingMethods(active)
         setCmsBillingStatuses(cmsStatuses)
+        // 은행 확인이 끝난 계좌를 우선, 없으면 심사 중인 것이라도 고른다.
+        const usable =
+          active.find((m) => m.cmsMemberStatus !== "PENDING") ?? active[0]
+        if (usable) setSelectedBillingMethodId(usable.id)
       })
       .catch(() => {})
   }, [])
@@ -168,20 +202,26 @@ export function MembershipForm({
   })
 
   const formDefaultValues = {
-    subscriptionType:
-      existingSubType === "monthly" || existingSubType === "yearly"
-        ? existingSubType
-        : undefined,
-    billingMode: RECURRING_ENABLED
-      ? ("recurring" as const)
-      : ("one_time" as const),
+    choice:
+      existingSubType === "yearly"
+        ? ("yearly_one_time" as PlanChoice)
+        : existingSubType === "monthly"
+          ? ((RECURRING_ENABLED
+              ? "monthly_recurring"
+              : "monthly_one_time") as PlanChoice)
+          : undefined,
     agreement: false,
   }
 
   // 가입 결과 토스트/검증 메시지는 payment-method 화면과 동일 문구라 같은 네임스페이스를 공유한다.
   const tPm = useTranslations("mypage.membershipPaymentMethod")
+  const t = useTranslations("mypage.membershipSubscribeForm")
   const subscriptionSchema = useMemo(
-    () => buildSubscriptionSchema({ selectType: tPm("selectSubscriptionType"), agreeTerms: tPm("agreeTermsRequired") }),
+    () =>
+      buildSubscriptionSchema({
+        selectType: tPm("selectSubscriptionType"),
+        agreeTerms: tPm("agreeTermsRequired"),
+      }),
     [tPm]
   )
 
@@ -192,6 +232,16 @@ export function MembershipForm({
   })
 
   const [isSubmitting, startTransition] = useTransition()
+  const planSectionRef = useRef<HTMLElement>(null)
+  const agreementSectionRef = useRef<HTMLDivElement>(null)
+
+  // 버튼 문구로 미충족을 알리는 대신, 제출 시 해당 항목으로 스크롤한다.
+  function onInvalid(errors: Record<string, unknown>) {
+    const target = errors.choice
+      ? planSectionRef.current
+      : agreementSectionRef.current
+    target?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
 
   function onSubmit(data: SubscriptionFormValues) {
     // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
@@ -199,26 +249,30 @@ export function MembershipForm({
     startTransition(async () => {
       try {
         if (!user) {
-          toast.error("로그인이 필요합니다.")
+          toast.error(tPm("loginRequired"))
           return
         }
-        if (!data.subscriptionType) {
-          toast.error("구독 유형을 선택해주세요.")
+        if (!data.choice) {
+          toast.error(tPm("selectSubscriptionType"))
           return
         }
 
         const selectedPlanId =
-          data.subscriptionType === "monthly"
-            ? monthlyPlan.plan.id
-            : yearlyPlan.plan.id
+          data.choice === "yearly_one_time"
+            ? yearlyPlan.plan.id
+            : monthlyPlan.plan.id
 
-        const billingMode = data.billingMode
+        const billingMode =
+          data.choice === "monthly_recurring" ? "recurring" : "one_time"
+        // 등록된 수단은 정기결제에서만 쓴다. 1회결제는 항상 새 결제창으로 간다.
+        const methodId =
+          billingMode === "recurring" ? selectedBillingMethodId : null
 
-        if (selectedBillingMethodId) {
+        if (methodId) {
           const attemptId = crypto.randomUUID()
           const res = await subscribeWithBillingMethod(
             selectedPlanId,
-            selectedBillingMethodId,
+            methodId,
             billingMode,
             attemptId
           )
@@ -231,7 +285,7 @@ export function MembershipForm({
                 : tPm("recurringStartedSuccess")
             )
           } else {
-            toast.success("멤버십 가입이 완료되었습니다.")
+            toast.success(tPm("membershipJoinedSuccess"))
           }
           router.push(`/${countryCode}/mypage/membership/subscribe/success`)
         } else {
@@ -276,9 +330,7 @@ export function MembershipForm({
           toast.error(error.message)
         } else {
           toast.error(
-            error instanceof Error
-              ? error.message
-              : "멤버십 등록에 실패했습니다."
+            error instanceof Error ? error.message : tPm("membershipJoinFailed")
           )
         }
         console.error(error)
@@ -294,48 +346,51 @@ export function MembershipForm({
   // 선적용(인보이스 경로)이 켜지면 심사 중 계좌도 가입 가능 — PENDING 이 제출을 막지 않는다.
   const pendingBlocksSubmit = hasPendingMethods && !invoiceBillingEnabled
 
-  const billingMode = form.watch("billingMode")
-  const subscriptionType = form.watch("subscriptionType")
-  // 정기결제 비활성화 조건: 기능 스위치 OFF 이거나 연간 플랜(1회 결제만 지원).
-  const recurringDisabled = !RECURRING_ENABLED || subscriptionType === "yearly"
+  const choice = form.watch("choice")
+  const subscriptionType: SubscriptionType = !choice
+    ? null
+    : choice === "yearly_one_time"
+      ? "yearly"
+      : "monthly"
+  const billingMode: "recurring" | "one_time" =
+    choice === "monthly_recurring" ? "recurring" : "one_time"
 
   // 무료체험은 정기결제(recurring)일 때만, 선택한 플랜의 trialDays 기준으로 안내한다.
   // (availableBenefits는 현재 비어 전달되므로 trialBenefits는 0이고, 플랜 trialDays가 실제 기준)
   // 재가입자는 서버가 무료체험을 제거하므로 실제 적용 일수는 가입 응답 effectiveTrialDays로 확정된다.
-  const selectedPlan = subscriptionType === "yearly" ? yearlyPlan : monthlyPlan
-  const totalTrialDays =
-    billingMode === "recurring"
-      ? (selectedPlan?.plan?.trialDays ?? 0) +
-        trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
-      : 0
-
-  useEffect(() => {
-    if (billingMode === "one_time") {
-      setSelectedBillingMethodId(null)
-    }
-  }, [billingMode])
-
-  useEffect(() => {
-    if (recurringDisabled) {
-      form.setValue("billingMode", "one_time")
-    }
-  }, [recurringDisabled, form])
+  const monthlyTrialDays =
+    (monthlyPlan?.plan?.trialDays ?? 0) +
+    trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
+  const totalTrialDays = billingMode === "recurring" ? monthlyTrialDays : 0
 
   function getSubmitButtonLabel() {
-    if (!form.watch("agreement")) return tPm("agreeTermsRequired")
-
-    if (billingMode === "recurring") {
-      if (selectedBillingMethodId) {
-        return totalTrialDays > 0 ? tPm("startWithTrial", { days: totalTrialDays }) : tPm("startRecurring")
-      }
-      if (pendingBlocksSubmit) return tPm("recurringAfterReview")
-      return invoiceBillingEnabled ? tPm("registerAndStart") : tPm("applyAutoDebitReview")
+    if (!choice) return t("ctaEmpty")
+    if (billingMode === "recurring" && !selectedBillingMethodId) {
+      return invoiceBillingEnabled
+        ? tPm("registerAndStart")
+        : tPm("applyAutoDebitReview")
     }
-
-    if (selectedBillingMethodId) return tPm("subscribeWithThisMethod")
-    return tPm("payWithNewMethod")
+    if (totalTrialDays > 0)
+      return tPm("startWithTrial", { days: totalTrialDays })
+    return t("ctaPay", { price: finalPrice.toLocaleString() })
   }
-  const hasPrice = subscriptionType == "monthly" || subscriptionType == "yearly"
+  const hasPrice = choice !== undefined
+  // 누르면 이 화면을 떠나는가. 떠나는 경우엔 버튼 밑에 다음 화면을 미리 알린다.
+  const nextStepNote = !choice
+    ? null
+    : billingMode === "recurring" && !selectedBillingMethodId
+      ? pendingBlocksSubmit
+        ? tPm("recurringAfterReview")
+        : t("nextRegister")
+      : billingMode === "one_time"
+        ? t("nextPay")
+        : null
+  const planLabel =
+    choice === "monthly_recurring"
+      ? t("planLabelRecurring")
+      : choice === "monthly_one_time"
+        ? t("planLabelMonthly")
+        : t("planLabelYearly")
   let firstPrice =
     subscriptionType === "monthly"
       ? monthlyPlan.plan.price
@@ -355,458 +410,221 @@ export function MembershipForm({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-4 md:px-0"
+        onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+        className="mx-auto flex max-w-xl flex-col px-4 pt-4 md:px-0"
       >
-        {/* 1. 플랜 선택 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>플랜 선택</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FormField
-              control={form.control}
-              name="subscriptionType"
-              render={({ field }) => (
-                <FormItem className="space-y-3">
-                  <FormControl>
-                    <div className="flex flex-col gap-3">
+        {/* 1. 플랜 선택 — 결제방식까지 합친 단일 리스트 */}
+        <Section title={t("sectionPlan")} first innerRef={planSectionRef}>
+          <FormField
+            control={form.control}
+            name="choice"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormControl>
+                  <div className="flex flex-col gap-3">
+                    {RECURRING_ENABLED && (
                       <PlanOption
-                        selected={field.value === "monthly"}
-                        onSelect={() => field.onChange("monthly")}
-                        title="월간 결제"
+                        selected={field.value === "monthly_recurring"}
+                        onSelect={() => field.onChange("monthly_recurring")}
+                        title={t("planRecurring")}
+                        subNote={
+                          monthlyTrialDays > 0
+                            ? t("planRecurringTrialDesc", {
+                                days: monthlyTrialDays,
+                              })
+                            : t("planRecurringDesc")
+                        }
                         price={`${monthlyPlan.plan.price.toLocaleString()}원`}
-                        unit="/ 월"
+                        unit={t("unitMonth")}
+                        badge={t("badgeRecommend")}
+                        badgeTone="emerald"
+                        note={
+                          invoiceBillingEnabled
+                            ? t("noteRecurringInvoice")
+                            : t("noteRecurringCms")
+                        }
                       />
-                      <PlanOption
-                        selected={field.value === "yearly"}
-                        onSelect={() => field.onChange("yearly")}
-                        title="연간 결제"
-                        price={`${yearlyPlan.plan.price.toLocaleString()}원`}
-                        unit="/ 연"
-                        badge="2달 무료"
-                        subNote={`월 ${yearlyMonthly.toLocaleString()}원 꼴`}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        {/* 2. 결제 방식 — 정기결제가 켜졌을 때만 노출. OFF 상태에선 항상 1회결제라 카드 자체를 숨김 */}
-        {RECURRING_ENABLED && (
-          <Card>
-            <CardHeader>
-              <CardTitle>결제 방식</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <FormField
-                control={form.control}
-                name="billingMode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <div className="flex flex-col gap-2">
-                        <button
-                          type="button"
-                          disabled={recurringDisabled}
-                          className={cn(
-                            "flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
-                            recurringDisabled
-                              ? "border-border bg-muted cursor-not-allowed opacity-50"
-                              : field.value === "recurring"
-                                ? "bg-primary/5 border-primary"
-                                : "bg-popover hover:bg-accent border-border"
-                          )}
-                          onClick={() =>
-                            !recurringDisabled && field.onChange("recurring")
-                          }
-                        >
-                          <div className="flex items-center gap-3">
-                            <Gift className="h-5 w-5 shrink-0 text-emerald-500" />
-                            <div className="flex flex-col">
-                              <p className="text-sm font-bold">
-                                정기결제 (자동갱신)
-                              </p>
-                              <p className="text-muted-foreground text-xs">
-                                {totalTrialDays > 0
-                                  ? `${totalTrialDays}일 무료 체험 후 `
-                                  : ""}
-                                등록하신 자동이체 수단으로 매월 결제
-                              </p>
-                            </div>
-                            {!recurringDisabled && (
-                              <Badge className="ml-auto shrink-0 bg-emerald-500 text-white">
-                                추천
-                              </Badge>
-                            )}
-                          </div>
-                        </button>
-                        {!recurringDisabled && field.value === "recurring" && (
-                          <p className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                            {invoiceBillingEnabled ? (
-                              <>
-                                가입 즉시 멤버십이 적용됩니다. 새 자동이체 계좌는
-                                은행 확인(1~2영업일) 후 첫 결제가 출금되며, 확인이
-                                거절되면 멤버십이 해지될 수 있습니다.
-                              </>
-                            ) : (
-                              <>
-                                새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에{" "}
-                                <strong>1~2영업일</strong>이 걸립니다. 즉시
-                                이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.
-                              </>
-                            )}
-                          </p>
-                        )}
-                        {subscriptionType === "yearly" ? (
-                          <p className="text-muted-foreground text-xs px-1">
-                            연간 플랜은 1회 결제만 지원합니다.
-                          </p>
-                        ) : !RECURRING_ENABLED ? (
-                          <p className="text-muted-foreground text-xs px-1">
-                            현재 정기결제는 준비 중입니다. 한번만 결제로 이용해
-                            주세요.
-                          </p>
-                        ) : null}
-                        <button
-                          type="button"
-                          className={cn(
-                            "bg-popover hover:bg-accent flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
-                            field.value === "one_time"
-                              ? "border-primary bg-primary/5"
-                              : "border-border"
-                          )}
-                          onClick={() => field.onChange("one_time")}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Calendar className="h-5 w-5 shrink-0 text-gray-500" />
-                            <div className="flex flex-col">
-                              <p className="text-sm font-bold">한번만 결제</p>
-                              <p className="text-muted-foreground text-xs">
-                                결제 즉시 구독 시작, 자동갱신 없음
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 3. 정기결제 결제수단 — recurring 선택 + 등록수단 있을 때만 */}
-        {billingMode === "recurring" && billingMethods.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>결제 수단</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-muted-foreground text-sm">
-                등록된 정기결제 수단으로 무료체험을 시작하거나, 새 결제수단을
-                등록할 수 있습니다.
-              </p>
-              {billingMethods.map((method) => (
-                <div
-                  key={method.id}
-                  onClick={() =>
-                    setSelectedBillingMethodId(
-                      selectedBillingMethodId === method.id ? null : method.id
-                    )
-                  }
-                  className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors",
-                    selectedBillingMethodId === method.id
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-accent"
-                  )}
-                >
-                  <CreditCard className="h-5 w-5 shrink-0 text-gray-500" />
-                  <div className="flex flex-1 flex-col gap-0.5">
-                    <p className="text-sm font-semibold">
-                      {method.displayName ?? "등록된 자동이체 수단"}
-                    </p>
-                    <span className="w-fit rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                      {providerLabel(method.providerType)}
-                    </span>
-                    {method.cmsMemberStatus === "PENDING" && (
-                      <span className="w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                        은행 확인 중 · 가입 즉시 적용, 승인 후 출금
-                      </span>
                     )}
+                    <PlanOption
+                      selected={field.value === "monthly_one_time"}
+                      onSelect={() => field.onChange("monthly_one_time")}
+                      title={t("planMonthlyOnce")}
+                      subNote={t("planMonthlyOnceDesc")}
+                      price={`${monthlyPlan.plan.price.toLocaleString()}원`}
+                      unit={t("unitOnce")}
+                    />
+                    <PlanOption
+                      selected={field.value === "yearly_one_time"}
+                      onSelect={() => field.onChange("yearly_one_time")}
+                      title={t("planYearly")}
+                      subNote={t("planYearlyDesc", {
+                        price: yearlyMonthly.toLocaleString(),
+                      })}
+                      price={`${yearlyPlan.plan.price.toLocaleString()}원`}
+                      unit={t("unitYear")}
+                      badge={t("badgeTwoMonthsFree")}
+                    />
                   </div>
-                  {selectedBillingMethodId === method.id && (
-                    <span className="text-primary text-xs font-semibold">
-                      선택됨
-                    </span>
-                  )}
-                </div>
-              ))}
-              <div
-                onClick={() => setSelectedBillingMethodId(null)}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors",
-                  selectedBillingMethodId === null
-                    ? "border-primary bg-primary/5"
-                    : "hover:bg-accent"
-                )}
-              >
-                <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
-                <p className="text-sm text-gray-600">
-                  {invoiceBillingEnabled
-                    ? "새 자동이체 계좌 등록 후 바로 시작"
-                    : "새 자동이체 계좌 심사 신청 후 시작"}
-                </p>
-                {selectedBillingMethodId === null && (
-                  <span className="text-primary ml-auto text-xs font-semibold">
-                    선택됨
-                  </span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </Section>
 
         {/* 할인/무료기간 혜택 — 있을 때만 */}
-        {(totalTrialDays !== 0 || discountCount != 0) && (
-          <Card>
-            <CardHeader>
-              <CardTitle>혜택</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {totalTrialDays !== 0 && (
-                <>
-                  <h3 className="mb-2 text-base font-bold text-[#1a1c20]">
-                    무료 기간
-                  </h3>
-                  <Table>
-                    <TableBody>
-                      {trialBenefits.map((trialBenefit) => (
-                        <TableRow key={trialBenefit.id}>
-                          <TableCell className="py-2">
-                            {trialBenefit.title}
-                          </TableCell>
-                          <TableCell className="w-4 py-2 whitespace-nowrap">
-                            {trialBenefit.days}일
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  <div className="border-primary flex w-full items-center justify-between rounded-md border-2 p-3">
-                    <div className="flex flex-row items-center gap-4">
-                      <Gift className="h-5 w-5" />
-                      <p className="text-base font-bold">
-                        총 {totalTrialDays}일
-                      </p>
-                    </div>
+        {(trialBenefits.length !== 0 || discountCount != 0) && (
+          <Section title={t("sectionBenefit")}>
+            {trialBenefits.length !== 0 && (
+              <>
+                <h3 className="text-foreground mb-2 text-base font-bold">
+                  {t("benefitFreePeriod")}
+                </h3>
+                <Table>
+                  <TableBody>
+                    {trialBenefits.map((trialBenefit) => (
+                      <TableRow key={trialBenefit.id}>
+                        <TableCell className="py-2">
+                          {trialBenefit.title}
+                        </TableCell>
+                        <TableCell className="w-4 py-2 whitespace-nowrap">
+                          {trialBenefit.days}일
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="border-primary flex w-full items-center justify-between rounded-md border-2 p-3">
+                  <div className="flex flex-row items-center gap-4">
+                    <Gift className="h-5 w-5" />
+                    <p className="text-base font-bold">
+                      {t("benefitTotalDays", { days: totalTrialDays })}
+                    </p>
                   </div>
-                </>
-              )}
+                </div>
+              </>
+            )}
 
-              {discountCount != 0 && (
-                <>
-                  <h3 className="mt-4 mb-2 text-lg font-bold">할인 선택</h3>
-                  <FormField
-                    control={form.control}
-                    name="discountBenefitId"
-                    render={({ field }) => (
-                      <FormItem className="space-y-3">
-                        <FormControl>
-                          <div className="flex flex-col gap-2">
-                            {discountBenefits.map((discountBenefit) => (
-                              <div
-                                key={discountBenefit.id}
-                                className={cn(
-                                  "bg-popover hover:bg-accent flex w-full items-center justify-between rounded-md border-2 p-3",
-                                  field.value === discountBenefit.id &&
-                                    "border-primary"
-                                )}
-                                onClick={() =>
-                                  field.onChange(
-                                    field.value === discountBenefit.id
-                                      ? undefined
-                                      : discountBenefit.id
-                                  )
-                                }
-                              >
-                                <div className="flex flex-row items-center gap-4">
-                                  <Calendar className="h-5 w-5" />
-                                  <div className="flex flex-col">
-                                    <p className="text-base font-bold">
-                                      {discountBenefit.title}
-                                    </p>
-                                    <p className="text-muted-foreground text-sm">
-                                      {discountBenefit.maxUses}개월간{" "}
-                                      {discountBenefit.percentage}% 할인
-                                    </p>
-                                  </div>
+            {discountCount != 0 && (
+              <>
+                <h3 className="mt-4 mb-2 text-lg font-bold">
+                  {t("benefitDiscountTitle")}
+                </h3>
+                <FormField
+                  control={form.control}
+                  name="discountBenefitId"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormControl>
+                        <div className="flex flex-col gap-2">
+                          {discountBenefits.map((discountBenefit) => (
+                            <div
+                              key={discountBenefit.id}
+                              className={cn(
+                                "border-border hover:bg-muted active:bg-secondary flex w-full cursor-pointer items-center justify-between rounded-md border-2 p-3 transition-colors",
+                                field.value === discountBenefit.id &&
+                                  "border-primary"
+                              )}
+                              onClick={() =>
+                                field.onChange(
+                                  field.value === discountBenefit.id
+                                    ? undefined
+                                    : discountBenefit.id
+                                )
+                              }
+                            >
+                              <div className="flex flex-row items-center gap-4">
+                                <Calendar className="h-5 w-5" />
+                                <div className="flex flex-col">
+                                  <p className="text-base font-bold">
+                                    {discountBenefit.title}
+                                  </p>
+                                  <p className="text-muted-foreground text-sm">
+                                    {t("benefitDiscountDesc", {
+                                      months: discountBenefit.maxUses,
+                                      percent: discountBenefit.percentage,
+                                    })}
+                                  </p>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
+                            </div>
+                          ))}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
+          </Section>
         )}
 
-        {/* 4. 결제 요약 + 안내 + 동의 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>결제 확인</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* 요약 — 선택한 플랜 + 결제 방식(정기결제/1회 결제)을 그대로 반영한다 */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                {hasPrice
-                  ? `${
-                      subscriptionType === "monthly" ? "월간 결제" : "연간 결제"
-                    } · ${
-                      billingMode === "recurring"
-                        ? "정기결제 (매월 자동결제)"
-                        : "1회 결제"
-                    }`
-                  : "구독 유형을 선택하세요"}
-              </span>
-              {hasPrice && (
-                <span className="text-lg font-bold">
-                  {finalPrice.toLocaleString()}원
-                  {billingMode === "recurring" && (
-                    <span className="text-xs font-normal text-gray-500">
-                      {" "}
-                      / 월
-                    </span>
-                  )}
+        {/* 4. 결제 금액 — 요약 한 줄이 아니라 내역. 헤더의 큰 숫자와 중복되지 않게. */}
+        <Section title={t("sectionAmount")}>
+          {hasPrice ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{planLabel}</span>
+                <span className="text-foreground">
+                  {firstPrice.toLocaleString()}원
                 </span>
+              </div>
+              {selectedDiscount && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {selectedDiscount.title}
+                  </span>
+                  <span className="text-primary">
+                    -{(firstPrice - discountPrice).toLocaleString()}원
+                  </span>
+                </div>
+              )}
+              {billingMode === "recurring" && (
+                <BillingMethodRow
+                  methods={billingMethods}
+                  selectedId={selectedBillingMethodId}
+                  onSelect={setSelectedBillingMethodId}
+                  invoiceBillingEnabled={invoiceBillingEnabled}
+                />
+              )}
+              <div className="border-border flex items-baseline justify-between border-t pt-3">
+                <span className="text-foreground text-[15px] font-bold">
+                  {t("amountTotal")}
+                </span>
+                <span className="text-foreground text-xl font-bold">
+                  {finalPrice.toLocaleString()}원
+                </span>
+              </div>
+              {billingMode === "recurring" && (
+                <p className="text-muted-foreground text-xs">
+                  {totalTrialDays > 0
+                    ? t("amountRecurringTrialNote", { days: totalTrialDays })
+                    : t("amountRecurringNote")}
+                </p>
+              )}
+              {selectedDiscount && (
+                <p className="text-muted-foreground text-xs">
+                  {t("amountAfterDiscount", {
+                    price: firstPrice.toLocaleString(),
+                  })}
+                </p>
               )}
             </div>
-            {selectedDiscount && (
-              <p className="-mt-2 text-right text-xs text-gray-400">
-                할인 종료 후 {firstPrice.toLocaleString()}원
-              </p>
-            )}
+          ) : (
+            <p className="text-muted-foreground text-sm">{t("amountEmpty")}</p>
+          )}
+        </Section>
 
-            {/* 무통장입금(1회 결제) 입금 확인 지연 안내 — 접이식 밖에 항상 노출 */}
-            {billingMode === "one_time" && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <Clock className="mt-0.5 size-4 shrink-0" />
-                <p>{tPm("bankTransferDelay")}</p>
-              </div>
-            )}
-
-            {/* 청약철회 제한 고지 — 접이식 밖에 항상 노출 */}
-            <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-              <Info className="mt-0.5 size-4 shrink-0" />
-              <p>
-                결제 후 7일 이내라도{" "}
-                <span className="font-medium text-gray-800">
-                  멤버십가로 상품을 구매하시면 청약철회가 제한
-                </span>
-                됩니다.
-                {subscriptionType === "yearly" &&
-                  " 연간 플랜은 중도 해지 시 이용한 기간을 정산해 남은 금액을 환불합니다."}
-              </p>
-            </div>
-
-            {/* 결제/환불 안내 (접이식) */}
-            <details className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-              <summary className="cursor-pointer font-medium text-gray-600 select-none">
-                결제 · 환불 안내
-              </summary>
-              <ul className="mt-2 list-disc space-y-1 pl-4">
-                {billingMode === "recurring" ? (
-                  <>
-                    <li>
-                      등록하신 자동이체 수단으로 매월 자동 결제되며, 해지 전까지
-                      갱신됩니다.
-                    </li>
-                    <li>
-                      결제 후 7일 이내이고 멤버십 혜택(멤버십가 구매·웰컴딜 등)을
-                      한 번도 사용하지 않은 경우,{" "}
-                      <span className="font-medium text-gray-700">
-                        청약철회로 결제액 전액을 환불
-                      </span>
-                      받으실 수 있습니다(즉시 이용 종료).
-                    </li>
-                    <li>
-                      그 외의 경우 이미 결제한 기간은 종료일까지 그대로 이용하시고
-                      다음 결제일부터 청구되지 않습니다. 이번 주기 요금은 이용한
-                      기간에 대한 대가이므로 환불되지 않습니다.
-                    </li>
-                    <li>
-                      서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
-                      수 있습니다.
-                    </li>
-                  </>
-                ) : subscriptionType === "yearly" ? (
-                  <>
-                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
-                    <li>
-                      결제 후 7일 이내이고 멤버십 혜택을 한 번도 사용하지 않은
-                      경우,{" "}
-                      <span className="font-medium text-gray-700">
-                        청약철회로 결제액 전액을 환불
-                      </span>
-                      받으실 수 있습니다.
-                    </li>
-                    <li>
-                      연간 플랜은 12개월 이용을 전제로 2개월분을 할인한
-                      가격입니다. 중도 해지 시{" "}
-                      <span className="font-medium text-gray-700">
-                        이용한 기간을 월간 정가로 정산해 남은 금액을 환불
-                      </span>
-                      합니다. (환불액 = 결제액 − 이용 개월수 × 월간 정가 − 사용한
-                      멤버십 할인 혜택액)
-                    </li>
-                    <li>
-                      이용 개월수는 30일 단위로 계산하며 시작일이 포함된 달도 1개월로
-                      셉니다. 정산 결과 환불액이 0원 이하가 되면 환불은 없습니다.
-                    </li>
-                    <li>
-                      서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
-                      수 있습니다.
-                    </li>
-                  </>
-                ) : (
-                  <>
-                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
-                    <li>
-                      결제 후 7일 이내이고 멤버십 혜택을 한 번도 사용하지 않은
-                      경우,{" "}
-                      <span className="font-medium text-gray-700">
-                        청약철회로 결제액 전액을 환불
-                      </span>
-                      받으실 수 있습니다.
-                    </li>
-                    <li>
-                      그 외의 경우 결제한 기간의 종료일까지 이용하실 수 있으며,
-                      해당 기간 요금은 이용한 기간에 대한 대가이므로 환불되지
-                      않습니다.
-                    </li>
-                    <li>
-                      서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
-                      수 있습니다.
-                    </li>
-                  </>
-                )}
-              </ul>
-            </details>
-
-            {/* 통합 동의 */}
+        {/* 안내 + 동의 — 제목 없이 CTA 바로 위에 붙인다 */}
+        <div className="border-muted md:border-border -mx-4 space-y-3 border-t-8 px-4 py-6 md:mx-0 md:border-t md:px-0">
+          <PaymentNoticeSheet
+            billingMode={billingMode}
+            subscriptionType={subscriptionType}
+            invoiceBillingEnabled={invoiceBillingEnabled}
+            bankTransferDelay={tPm("bankTransferDelay")}
+          />
+          <div ref={agreementSectionRef}>
             <FormField
               control={form.control}
               name="agreement"
@@ -820,33 +638,343 @@ export function MembershipForm({
                 />
               )}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* 결제 버튼 — 폼 흐름 끝 (모바일 전역 하단 네비와 충돌 피하려 고정바 미사용) */}
-        <Button
-          className="h-12 w-full text-base"
-          disabled={
-            !form.watch("agreement") ||
-            !form.watch("subscriptionType") ||
-            isSubmitting ||
-            (billingMode === "recurring" &&
-              !selectedBillingMethodId &&
-              pendingBlocksSubmit)
-          }
-          type="submit"
-        >
-          {isSubmitting ? (
-            <span className="flex items-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              처리중...
-            </span>
-          ) : (
-            getSubmitButtonLabel()
+        {/* 결제 버튼 — 하단 고정. 이 경로에서는 bottom-nav 가 스스로 숨는다(bottom-nav.tsx) */}
+        <div className="border-border bg-background sticky bottom-0 z-40 -mx-4 mt-1 border-t px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:mx-0 md:border-0 md:px-0">
+          <Button
+            className="h-[52px] w-full rounded-xl text-base font-bold"
+            disabled={
+              isSubmitting ||
+              (billingMode === "recurring" &&
+                !selectedBillingMethodId &&
+                pendingBlocksSubmit)
+            }
+            type="submit"
+          >
+            {isSubmitting ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                {t("ctaProcessing")}
+              </span>
+            ) : (
+              getSubmitButtonLabel()
+            )}
+          </Button>
+          {nextStepNote && (
+            <p className="text-muted-foreground mt-2 text-center text-xs">
+              {nextStepNote}
+            </p>
           )}
-        </Button>
+        </div>
       </form>
     </Form>
+  )
+}
+
+// 결제수단은 「고르는 화면」이 아니라 결제 금액의 한 줄이다. 대부분은 계좌가 하나뿐이라
+// 고를 일이 없는데, 섹션으로 두면 플랜을 탭할 때마다 블록이 끼어들어 아래가 밀렸다.
+function BillingMethodRow({
+  methods,
+  selectedId,
+  onSelect,
+  invoiceBillingEnabled,
+}: {
+  methods: BillingMethodDto[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  invoiceBillingEnabled: boolean
+}) {
+  const t = useTranslations("mypage.membershipSubscribeForm")
+  const [open, setOpen] = useState(false)
+  const selected = methods.find((m) => m.id === selectedId)
+  const newMethodLabel = invoiceBillingEnabled
+    ? t("methodNew")
+    : t("methodNewReview")
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground shrink-0">{t("rowMethod")}</span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="text-foreground truncate">
+            {selected
+              ? (selected.displayName ?? t("methodFallback"))
+              : newMethodLabel}
+          </span>
+          {selected?.cmsMemberStatus === "PENDING" && (
+            <span className="bg-secondary text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium">
+              {t("methodPendingBadge")}
+            </span>
+          )}
+          {methods.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-muted-foreground hover:text-foreground active:bg-secondary -mr-1 flex shrink-0 cursor-pointer items-center rounded px-1 py-0.5 text-xs font-medium transition-colors"
+            >
+              {t("methodChange")}
+              <ChevronRight className="size-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerContent className="max-h-[85vh]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle className="text-foreground text-lg font-bold">
+              {t("sheetMethodTitle")}
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="space-y-2 overflow-y-auto px-6 pb-[max(24px,env(safe-area-inset-bottom))]">
+            {methods.map((method) => (
+              <MethodPickerRow
+                key={method.id}
+                selected={selectedId === method.id}
+                onSelect={() => {
+                  onSelect(method.id)
+                  setOpen(false)
+                }}
+                title={method.displayName ?? t("methodFallback")}
+                caption={providerLabel(method.providerType)}
+                note={
+                  method.cmsMemberStatus === "PENDING"
+                    ? t("methodPendingNote")
+                    : undefined
+                }
+              />
+            ))}
+            <MethodPickerRow
+              selected={selectedId === null}
+              onSelect={() => {
+                onSelect(null)
+                setOpen(false)
+              }}
+              title={newMethodLabel}
+              note={t("methodNewNote")}
+            />
+          </div>
+        </DrawerContent>
+      </Drawer>
+    </>
+  )
+}
+
+function MethodPickerRow({
+  selected,
+  onSelect,
+  title,
+  caption,
+  note,
+}: {
+  selected: boolean
+  onSelect: () => void
+  title: string
+  caption?: string
+  note?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "active:bg-secondary flex w-full cursor-pointer items-center gap-3 rounded-lg border-2 p-3 text-left transition-colors",
+        selected ? "border-primary" : "border-border hover:bg-muted"
+      )}
+    >
+      <CreditCard className="text-muted-foreground h-5 w-5 shrink-0" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-sm font-semibold">{title}</p>
+        {caption && (
+          <span className="bg-secondary text-muted-foreground w-fit rounded px-1.5 py-0.5 text-[10px] font-medium">
+            {caption}
+          </span>
+        )}
+        {note && <span className="text-muted-foreground text-xs">{note}</span>}
+      </div>
+      {selected && (
+        <Check className="text-primary size-5 shrink-0" strokeWidth={3} />
+      )}
+    </button>
+  )
+}
+
+// 결제 전 고지는 전부 여기로 모은다. 본문에 경고 박스 둘과 <details> 를 나란히 쌓으면
+// 셋 다 같은 무게로 보여서 결국 아무것도 안 읽힌다.
+function PaymentNoticeSheet({
+  billingMode,
+  subscriptionType,
+  invoiceBillingEnabled,
+  bankTransferDelay,
+}: {
+  billingMode: "recurring" | "one_time"
+  subscriptionType: SubscriptionType
+  invoiceBillingEnabled: boolean
+  bankTransferDelay: string
+}) {
+  const t = useTranslations("mypage.membershipSubscribeForm")
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="hover:bg-muted active:bg-secondary -mx-2 flex w-[calc(100%+16px)] items-center gap-2.5 rounded-lg px-2 py-3 text-left transition-colors"
+      >
+        <Info className="text-muted-foreground size-[18px] shrink-0" />
+        <span className="text-foreground flex-1 text-sm font-medium">
+          {t("noticeTrigger")}
+        </span>
+        <ChevronRight className="text-muted-foreground size-[18px] shrink-0" />
+      </button>
+
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerContent className="max-h-[85vh]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle className="text-foreground text-lg font-bold">
+              {t("noticeTrigger")}
+            </DrawerTitle>
+          </DrawerHeader>
+
+          <PaymentNoticeBody
+            billingMode={billingMode}
+            subscriptionType={subscriptionType}
+            invoiceBillingEnabled={invoiceBillingEnabled}
+            bankTransferDelay={bankTransferDelay}
+          />
+
+          <DrawerFooter className="px-6 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full"
+              onClick={() => setOpen(false)}
+            >
+              확인
+            </Button>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+    </>
+  )
+}
+
+// 결제·환불·청약철회 고지 «본문». 시트 껍데기와 분리해 문구를 한 벌만 둔다.
+export function PaymentNoticeBody({
+  billingMode,
+  subscriptionType,
+  invoiceBillingEnabled,
+  bankTransferDelay,
+}: {
+  billingMode: "recurring" | "one_time"
+  subscriptionType: SubscriptionType
+  invoiceBillingEnabled: boolean
+  bankTransferDelay: string
+}) {
+  const t = useTranslations("mypage.membershipSubscribeForm")
+  // 고지 문구 안의 강조는 <b>…</b> 로 메시지에 들어 있다 (CLAUDE.md §11 리치 텍스트).
+  const b = (chunks: React.ReactNode) => (
+    <span className="text-foreground font-medium">{chunks}</span>
+  )
+
+  return (
+    <div className="text-muted-foreground space-y-5 overflow-y-auto px-6 pb-8 text-sm">
+      <NoticeSection title={t("noticeWithdrawTitle")}>
+        <p>
+          {t.rich("noticeWithdrawBody", { b })}
+          {subscriptionType === "yearly" && (
+            <> {t("noticeWithdrawYearlySuffix")}</>
+          )}
+        </p>
+      </NoticeSection>
+
+      {billingMode === "one_time" && (
+        <NoticeSection title={t("noticeBankTitle")}>
+          <p>{bankTransferDelay}</p>
+        </NoticeSection>
+      )}
+
+      {billingMode === "recurring" && (
+        <NoticeSection title={t("noticeMandateTitle")}>
+          <p>
+            {invoiceBillingEnabled
+              ? t("noticeMandateInvoice")
+              : t.rich("noticeMandateCms", { b })}
+          </p>
+        </NoticeSection>
+      )}
+
+      <NoticeSection title={t("noticeRefundTitle")}>
+        <ul className="list-disc space-y-2 pl-4">
+          {billingMode === "recurring" ? (
+            <>
+              <li>{t("refundRecurring1")}</li>
+              <li>{t.rich("refundRecurring2", { b })}</li>
+              <li>{t("refundRecurring3")}</li>
+            </>
+          ) : subscriptionType === "yearly" ? (
+            <>
+              <li>{t("refundOnce1")}</li>
+              <li>{t.rich("refundOnce2", { b })}</li>
+              <li>{t.rich("refundYearly1", { b })}</li>
+              <li>{t("refundYearly2")}</li>
+            </>
+          ) : (
+            <>
+              <li>{t("refundOnce1")}</li>
+              <li>{t.rich("refundOnce2", { b })}</li>
+              <li>{t("refundOnce3")}</li>
+            </>
+          )}
+          <li>{t("refundCommon")}</li>
+        </ul>
+      </NoticeSection>
+    </div>
+  )
+}
+
+function NoticeSection({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section>
+      <h4 className="text-foreground mb-1.5 text-[13px] font-bold">{title}</h4>
+      <div className="leading-relaxed">{children}</div>
+    </section>
+  )
+}
+
+// 토스식 섹션 구분 — 카드 테두리 대신 모바일은 8px 회색 밴드, 데스크톱은 얇은 선.
+// 카드로 감싸면 5개 블록이 전부 같은 무게로 보여서 정보 계층이 사라진다.
+function Section({
+  title,
+  first,
+  innerRef,
+  children,
+}: {
+  title: string
+  first?: boolean
+  innerRef?: React.Ref<HTMLElement>
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      ref={innerRef}
+      className={cn(
+        "-mx-4 px-4 py-6 md:mx-0 md:px-0",
+        first ? "pt-2" : "border-muted md:border-border border-t-8 md:border-t"
+      )}
+    >
+      <h2 className="text-foreground mb-3 text-[17px] font-bold">{title}</h2>
+      {children}
+    </section>
   )
 }
 
@@ -857,7 +985,10 @@ interface PlanOptionProps {
   price: string
   unit: string
   badge?: string
+  badgeTone?: "primary" | "emerald"
   subNote?: string
+  /** 고른 뒤에만 칸 안에 붙는 주의사항. 목록 밖에 두면 검증 에러처럼 읽힌다. */
+  note?: string
 }
 
 function PlanOption({
@@ -867,38 +998,56 @@ function PlanOption({
   price,
   unit,
   badge,
+  badgeTone = "primary",
   subNote,
+  note,
 }: PlanOptionProps) {
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg border-2 p-4 text-left transition-colors",
-        selected
-          ? "border-primary bg-primary/5"
-          : "border-border bg-popover hover:bg-accent"
+        "active:bg-secondary w-full cursor-pointer rounded-lg border-2 p-4 text-left transition-colors",
+        selected ? "border-primary" : "border-border hover:bg-muted"
       )}
     >
-      <span
-        className={cn(
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
-          selected ? "border-primary bg-primary text-white" : "border-gray-300"
-        )}
-      >
-        {selected && <Check className="h-3 w-3" strokeWidth={3} />}
-      </span>
-      <div className="flex flex-1 flex-col">
-        <div className="flex items-center gap-2">
-          <p className="text-base font-bold">{title}</p>
-          {badge && <Badge className="bg-primary text-white">{badge}</Badge>}
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+            selected ? "border-primary bg-primary text-white" : "border-border"
+          )}
+        >
+          {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+        </span>
+        <div className="flex flex-1 flex-col">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-bold">{title}</p>
+            {badge && (
+              <Badge
+                className={cn(
+                  "text-white",
+                  badgeTone === "emerald" ? "bg-emerald-500" : "bg-primary"
+                )}
+              >
+                {badge}
+              </Badge>
+            )}
+          </div>
+          {subNote && (
+            <p className="text-muted-foreground text-xs">{subNote}</p>
+          )}
         </div>
-        {subNote && <p className="text-muted-foreground text-xs">{subNote}</p>}
+        <div className="text-right">
+          <p className="text-base font-bold">{price}</p>
+          <p className="text-muted-foreground text-xs">{unit}</p>
+        </div>
       </div>
-      <div className="text-right">
-        <p className="text-base font-bold">{price}</p>
-        <p className="text-muted-foreground text-xs">{unit}</p>
-      </div>
+      {selected && note && (
+        <p className="border-border text-muted-foreground mt-3 border-t pt-2.5 text-xs leading-relaxed">
+          {note}
+        </p>
+      )}
     </button>
   )
 }
@@ -918,45 +1067,49 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
   yearlyPrice,
   billingMode,
 }) => {
+  const t = useTranslations("mypage.membershipSubscribeForm")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
   return (
-    <FormItem className="flex flex-row items-center gap-2.5 space-y-0 rounded-lg border p-3.5">
-      <FormControl>
-        <Checkbox
-          id="agreement"
-          checked={value}
-          onCheckedChange={(checked) => onChange(checked === true)}
-        />
-      </FormControl>
-      <Label
-        htmlFor="agreement"
-        className="flex-1 cursor-pointer text-sm leading-snug font-normal text-gray-700"
-      >
-        이용약관 및 결제·환불 정책에 동의합니다
-      </Label>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault()
-          setIsDialogOpen(true)
-        }}
-        className="text-primary shrink-0 text-xs font-semibold whitespace-nowrap underline underline-offset-2"
-      >
-        전문 보기
-      </button>
+    <FormItem className="space-y-1.5">
+      <div className="border-border flex flex-row items-center gap-2.5 rounded-lg border p-3.5">
+        <FormControl>
+          <Checkbox
+            id="agreement"
+            checked={value}
+            onCheckedChange={(checked) => onChange(checked === true)}
+          />
+        </FormControl>
+        <Label
+          htmlFor="agreement"
+          className="text-foreground flex-1 cursor-pointer text-sm leading-snug font-normal"
+        >
+          {t("agree")}
+        </Label>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            setIsDialogOpen(true)
+          }}
+          className="text-primary shrink-0 text-xs font-semibold whitespace-nowrap underline underline-offset-2"
+        >
+          {t("agreeView")}
+        </button>
+      </div>
+      <FormMessage />
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-md">
           <DialogHeader className="space-y-1 px-6 pt-6 pb-4 text-left">
-            <DialogTitle className="text-lg font-bold text-[#1a1c20]">
-              아몬드영 멤버십 이용약관
+            <DialogTitle className="text-foreground text-lg font-bold">
+              {t("termsTitle")}
             </DialogTitle>
-            <DialogDescription className="text-[13px] text-[#868b94]">
-              이용약관 및 결제·환불 정책 전문입니다.
+            <DialogDescription className="text-muted-foreground text-[13px]">
+              {t("termsDesc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[58vh] overflow-y-auto border-y border-[#dcdee3] bg-[#f7f8f9] px-6 py-5">
+          <div className="border-border bg-muted max-h-[58vh] overflow-y-auto border-y px-6 py-5">
             <TermsAndConditions
               monthlyPrice={monthlyPrice}
               yearlyPrice={yearlyPrice}
@@ -965,13 +1118,13 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
           </div>
           <DialogFooter className="p-4">
             <Button
-              className="h-[52px] w-full rounded-xl bg-[#ff6600] text-base font-bold text-white hover:bg-[#e14d00]"
+              className="h-[52px] w-full rounded-xl text-base font-bold"
               onClick={() => {
                 onChange(true)
                 setIsDialogOpen(false)
               }}
             >
-              확인하고 동의하기
+              {t("agreeConfirm")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -979,4 +1132,3 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
     </FormItem>
   )
 }
-
