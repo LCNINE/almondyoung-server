@@ -39,7 +39,11 @@ describe('BillingAgreementService recurring billing method guards', () => {
 
     await service.create('user-1', 'method-1', 'sub-1', 'membership');
 
-    expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith('user-1', 'method-1', undefined);
+    expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith(
+      'user-1',
+      'method-1',
+      undefined,
+    );
     expect(db.spies.insert).toHaveBeenCalled();
   });
 
@@ -132,5 +136,79 @@ describe('BillingAgreementService recurring billing method guards', () => {
     expect(arg.set).toMatchObject({ status: 'ACTIVE', billingMethodId: 'method-1', userId: 'user-1' });
     expect(Array.isArray(arg.target)).toBe(true);
     expect(arg.target).toHaveLength(2);
+  });
+});
+
+describe('BillingAgreementService 선적용 가입 통지', () => {
+  const agreement = {
+    id: 'agreement-1',
+    userId: 'user-1',
+    billingMethodId: 'method-1',
+    subscriberRef: 'sub-1',
+    subscriberType: 'MEMBERSHIP',
+    status: 'ACTIVE',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  function makeDeps(cmsMemberStatus: string) {
+    const enqueue = jest.fn().mockResolvedValue(undefined);
+    return {
+      enqueue,
+      billingMethodService: {
+        assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+        findLatestSelectableForRecurringBilling: jest.fn(),
+        getUserCmsBillingMethodStatuses: jest
+          .fn()
+          .mockResolvedValue([{ billingMethodId: 'method-1', cmsMemberStatus }]),
+      },
+      contacts: {
+        findContacts: jest.fn().mockResolvedValue(new Map([['user-1', { email: 'a@b.com', username: '홍길동' }]])),
+      },
+      config: { get: jest.fn().mockReturnValue('set') },
+    };
+  }
+
+  function makeService(db: ReturnType<typeof makeDb>, deps: ReturnType<typeof makeDeps>) {
+    const dbService = { ...db, run: (fn: (trx: unknown) => unknown) => fn({}) };
+    return new BillingAgreementService(
+      dbService as never,
+      deps.billingMethodService as never,
+      deps.contacts as never,
+      deps.config as never,
+      { enqueue: deps.enqueue } as never,
+    );
+  }
+
+  it('심사 중(PENDING) 계좌로 가입하면 mandate.pending 을 계약당 한 번 발행한다', async () => {
+    const deps = makeDeps('PENDING');
+    const service = makeService(makeDb([agreement]), deps);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
+
+    expect(deps.enqueue).toHaveBeenCalledTimes(1);
+    const params = deps.enqueue.mock.calls[0][0];
+    expect(params.eventType).toBe('mandate.pending');
+    expect(params.idempotencyKey).toBe('cms:mandate-pending:MEMBERSHIP:sub-1');
+    expect(params.payload.email).toBe('a@b.com');
+  });
+
+  it('이미 승인된 계좌면 선적용이 아니므로 발행하지 않는다', async () => {
+    const deps = makeDeps('REGISTERED');
+    const service = makeService(makeDb([agreement]), deps);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true });
+
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('통지 발행이 실패해도 계약 생성은 성립한다', async () => {
+    const deps = makeDeps('PENDING');
+    deps.enqueue.mockRejectedValue(new Error('outbox down'));
+    const service = makeService(makeDb([agreement]), deps);
+
+    await expect(
+      service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true }),
+    ).resolves.toEqual(agreement);
   });
 });

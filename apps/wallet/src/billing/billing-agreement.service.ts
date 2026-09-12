@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { UserContactClient } from '@app/shared';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { and, eq } from 'drizzle-orm';
 import { WalletSchema, billingAgreements } from '../schema';
 import { BillingAgreement } from '../types';
@@ -12,6 +16,10 @@ export class BillingAgreementService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly billingMethodService: BillingMethodService,
+    private readonly userContactClient?: UserContactClient,
+    private readonly configService?: ConfigService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher?: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   async create(
@@ -42,7 +50,78 @@ export class BillingAgreementService {
       })
       .returning();
 
+    if (opts?.allowPendingMandate) {
+      await this.notifyMandatePending(userId, billingMethodId, subscriberType, subscriberRef);
+    }
+
     return rows[0];
+  }
+
+  /**
+   * 선적용 가입 성립을 고객에게 알린다 — 「혜택은 지금부터, 첫 출금은 심사 승인 후」.
+   *
+   * 이 사실이 닿는 경로는 가입 직후 토스트와 마이페이지 배너뿐이라, 메일이 없으면
+   * "가입했는데 왜 돈이 안 빠지지" 가 CS 로 온다. 승인 메일(`cms.member.registered`)은
+   * 1~2 영업일 뒤에 나가므로 이 공백을 못 메운다.
+   *
+   * 심사가 이미 끝난 계좌(REGISTERED)로 가입하면 선적용이 아니므로 보내지 않는다 —
+   * allowPendingMandate 는 「PENDING 도 허용」이지 「PENDING 이다」가 아니다.
+   *
+   * poller 의 승인·거절 통지와 같은 이유로 발행 실패는 삼킨다: 통지가 계약 생성을
+   * 되돌리면 안 된다. (통지 유실 재시도는 #848 의 별도 처방)
+   */
+  private async notifyMandatePending(
+    userId: string,
+    billingMethodId: string,
+    subscriberType: string,
+    subscriberRef: string,
+  ): Promise<void> {
+    if (!this.publisher || !this.userContactClient) return;
+    if (
+      !this.configService?.get<string>('USER_SERVICE_URL') ||
+      !this.configService?.get<string>('USER_SERVICE_INTERNAL_KEY')
+    ) {
+      this.logger.warn(`선적용 가입 통지 스킵 — user-service 연동 미설정 (subscriberRef=${subscriberRef})`);
+      return;
+    }
+
+    try {
+      const statuses = await this.billingMethodService.getUserCmsBillingMethodStatuses(userId);
+      const status = statuses.find((row) => row.billingMethodId === billingMethodId);
+      if (status?.cmsMemberStatus !== 'PENDING') return;
+
+      const contacts = await this.userContactClient.findContacts([userId]);
+      const contact = contacts.get(userId);
+      if (!contact?.email) {
+        this.logger.warn(`선적용 가입 통지 스킵 — 연락처 없음 (userId=${userId})`);
+        return;
+      }
+
+      await this.dbService.run(async (trx) => {
+        await this.publisher!.enqueue(
+          {
+            eventType: 'mandate.pending',
+            aggregateId: subscriberRef,
+            partitionKey: userId,
+            // 계약당 한 통. membership 은 agreement 생성을 2회까지 재시도하고, 이 INSERT 는
+            // upsert 라 같은 계약으로 다시 들어올 수 있다.
+            idempotencyKey: `cms:mandate-pending:${subscriberType}:${subscriberRef}`,
+            payload: {
+              billingMethodId,
+              userId,
+              subscriberType,
+              subscriberRef,
+              email: contact.email,
+              userName: contact.username,
+              occurredAt: new Date().toISOString(),
+            },
+          },
+          trx,
+        );
+      });
+    } catch (err) {
+      this.logger.error(`선적용 가입 통지 발행 실패 (subscriberRef=${subscriberRef}): ${err}`);
+    }
   }
 
   /**
@@ -181,10 +260,7 @@ export class BillingAgreementService {
       .select()
       .from(billingAgreements)
       .where(
-        and(
-          eq(billingAgreements.subscriberType, subscriberType),
-          eq(billingAgreements.subscriberRef, subscriberRef),
-        ),
+        and(eq(billingAgreements.subscriberType, subscriberType), eq(billingAgreements.subscriberRef, subscriberRef)),
       )
       .limit(1);
 
@@ -193,9 +269,7 @@ export class BillingAgreementService {
     }
 
     // 1) 마감 전 예정 출금 취소 (돈이 나가는 것을 애초에 막는다)
-    const cancelledWithdrawals = await this.billingMethodService.cancelPendingCmsWithdrawals(
-      agreement.billingMethodId,
-    );
+    const cancelledWithdrawals = await this.billingMethodService.cancelPendingCmsWithdrawals(agreement.billingMethodId);
 
     // 2) 약정 비활성화
     if (agreement.status === 'ACTIVE') {
@@ -207,10 +281,7 @@ export class BillingAgreementService {
       .select({ id: billingAgreements.id })
       .from(billingAgreements)
       .where(
-        and(
-          eq(billingAgreements.billingMethodId, agreement.billingMethodId),
-          eq(billingAgreements.status, 'ACTIVE'),
-        ),
+        and(eq(billingAgreements.billingMethodId, agreement.billingMethodId), eq(billingAgreements.status, 'ACTIVE')),
       );
 
     if (others.length > 0) {
