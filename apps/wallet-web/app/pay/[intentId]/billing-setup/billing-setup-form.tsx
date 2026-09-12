@@ -8,7 +8,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react';
 import { getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
-import { CmsAccountDetails, CmsAccountFields, emptyCmsAccountDetails } from '@/components/cms-account-fields';
+import {
+  CmsAccountDetails,
+  CmsAccountFields,
+  emptyCmsAccountDetails,
+  CmsVerifiedAccount,
+} from '@/components/cms-account-fields';
 import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
 
 interface BillingSetupFormProps {
@@ -30,6 +35,9 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   const [billingMethodId, setBillingMethodId] = useState<string | null>(null);
 
   const [details, setDetails] = useState<CmsAccountDetails>(emptyCmsAccountDetails);
+  // 동의 단계로 넘어가면 CmsAccountFields 가 unmount 된다. 확인 결과를 여기 두어야
+  // 뒤로 돌아왔을 때 같은 계좌를 다시 유료 조회하지 않는다.
+  const [verifiedAccount, setVerifiedAccount] = useState<CmsVerifiedAccount | null>(null);
   const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = details;
 
   const goToConsent = () => {
@@ -294,7 +302,13 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
           </Alert>
         </div>
       )}
-      <CmsAccountFields value={details} onChange={setDetails} onComplete={goToConsent} />
+      <CmsAccountFields
+        value={details}
+        onChange={setDetails}
+        onComplete={goToConsent}
+        verified={verifiedAccount}
+        onVerifiedChange={setVerifiedAccount}
+      />
       {mode !== 'initial' && (
         <div className="px-5 pb-8">
           <button

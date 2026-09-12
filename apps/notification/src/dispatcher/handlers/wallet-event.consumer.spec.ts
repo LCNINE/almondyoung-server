@@ -130,11 +130,19 @@ describe('WalletEventConsumer — CMS 승인 안내', () => {
     expect(eventMapping.getEventMapping).toHaveBeenCalledWith('CMS_MEMBER_REGISTERED');
   });
 
-  it('매핑이 없거나 꺼져 있으면 보내지 않는다', async () => {
-    for (const mapping of [null, { isActive: false }]) {
-      const { consumer, dispatcher } = makeRegisteredConsumer(mapping);
-      await consumer.onCmsMemberRegistered({ correlationId: 'corr-1' } as never, registeredPayload as never);
-      expect(dispatcher.send).not.toHaveBeenCalled();
-    }
+  it('꺼둔 매핑이면 조용히 넘긴다', async () => {
+    const { consumer, dispatcher } = makeRegisteredConsumer({ isActive: false });
+    await consumer.onCmsMemberRegistered({ correlationId: 'corr-1' } as never, registeredPayload as never);
+    expect(dispatcher.send).not.toHaveBeenCalled();
+  });
+
+  it('매핑을 못 읽으면 끊어서 재시도에 맡긴다', async () => {
+    // getEventMapping 은 DB 장애도 null 로 준다. 조용히 넘기면 이벤트가 ack 되어
+    // 승인 메일이 영영 사라진다.
+    const { consumer, dispatcher } = makeRegisteredConsumer(null);
+    await expect(
+      consumer.onCmsMemberRegistered({ correlationId: 'corr-1' } as never, registeredPayload as never),
+    ).rejects.toThrow(/CMS_MEMBER_REGISTERED/);
+    expect(dispatcher.send).not.toHaveBeenCalled();
   });
 });

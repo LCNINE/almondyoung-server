@@ -87,11 +87,26 @@ function useViewportHeight(): { height?: number; keyboardOpen: boolean } {
   return { height, keyboardOpen };
 }
 
+/** 은행이 확인해 준 조합. 같은 값을 다시 물으면 건당 100원이 또 나가므로 재사용한다. */
+export interface CmsVerifiedAccount {
+  paymentCompany: string;
+  paymentNumber: string;
+  payerNumber: string;
+  payerName: string;
+  attemptId: string;
+}
+
 interface CmsAccountFieldsProps {
   value: CmsAccountDetails;
   onChange: (next: CmsAccountDetails) => void;
   /** 모든 단계를 통과했다 — 부모가 동의 단계로 넘긴다. */
   onComplete: () => void;
+  /**
+   * 확인 결과는 부모가 들고 있어야 한다. 동의 단계로 넘어가면 이 컴포넌트가 unmount 되는데,
+   * 캐시가 여기 있으면 뒤로 돌아왔을 때 같은 계좌를 다시 유료 조회한다.
+   */
+  verified: CmsVerifiedAccount | null;
+  onVerifiedChange: (next: CmsVerifiedAccount | null) => void;
 }
 
 /**
@@ -99,11 +114,12 @@ interface CmsAccountFieldsProps {
  * 은행 조회 → 확인. 마지막 입력이 끝나는 자리에서 바로 조회가 돌기 때문에,
  * 고객은 «등록했는데 이틀 뒤 거절» 대신 그 자리에서 결과를 본다.
  */
-export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFieldsProps) {
+export function CmsAccountFields({ value, onChange, onComplete, verified, onVerifiedChange }: CmsAccountFieldsProps) {
   const [step, setStep] = useState<Step>('bank');
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const { height: viewportHeight, keyboardOpen } = useViewportHeight();
   const payerNumberRef = useRef<HTMLInputElement>(null);
+  const paymentNumberRef = useRef<HTMLInputElement>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** 직전에 «거절당한» 조합. 같은 값으로 또 유료 조회를 태우기 전에 한 번 되묻는다. */
@@ -116,16 +132,6 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
   const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
   /** 연락처는 타이핑 중에 빨간 줄을 띄우면 방해다 — 칸을 벗어났거나 길이를 다 채웠을 때만 본다. */
   const [phoneTouched, setPhoneTouched] = useState(false);
-  /**
-   * 직전에 «확인에 성공한» 조합. 뒤로 갔다가 같은 값으로 다시 확인을 누르면 결과가 같은데도
-   * 건당 100원이 또 나간다 — 값이 그대로면 은행에 묻지 않고 그 결과를 재사용한다.
-   */
-  const [lastVerified, setLastVerified] = useState<{
-    paymentCompany: string;
-    paymentNumber: string;
-    payerNumber: string;
-    payerName: string;
-  } | null>(null);
 
   const patch = (next: Partial<CmsAccountDetails>) => onChange({ ...value, ...next });
 
@@ -162,6 +168,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
       paymentCompany: value.paymentCompany,
       paymentNumber: value.paymentNumber,
       payerNumber: value.payerNumber,
+      attemptId: attemptIdFor(`${value.paymentCompany}:${value.paymentNumber}:${value.payerNumber}`),
     };
     const isStale = () =>
       asked.paymentCompany !== valueRef.current.paymentCompany ||
@@ -179,7 +186,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
           paymentCompany: value.paymentCompany,
           paymentNumber: value.paymentNumber,
           payerNumber: value.payerNumber,
-          attemptId: attemptIdFor(`${asked.paymentCompany}:${asked.paymentNumber}:${asked.payerNumber}`),
+          attemptId: asked.attemptId,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -197,23 +204,26 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
         redirectToWalletLogin();
         return;
       }
+      // 응답을 «어떻게든» 쓰기 전에 본다 — 값이 바뀐 뒤 도착한 실패까지 현재 조합의
+      // 오류로 띄우거나, 지금 조합의 시도 ID 를 남의 응답 때문에 버리게 된다.
+      if (isStale()) return;
       if (!res.ok) {
         // 호출 상한(429)·장애. 확인이 안 된 채로 다음 화면에 보내면 고객은 등록된 줄 안다.
         forgetAttempt();
         setError(data.error ?? '지금은 확인할 수 없어요. 잠시 후 다시 시도해주세요.');
         return;
       }
-      if (isStale()) return;
       if (data.verified) {
         // 이름을 못 받았다고 직전 계좌의 예금주명을 물려주면 «다른 계좌 + 옛 이름» 으로
         // 등록된다. 비워서 확인 화면에서 직접 채우게 한다.
         const payerName = data.payerName ?? '';
         patch({ payerName });
-        setLastVerified({
-          paymentCompany: value.paymentCompany,
-          paymentNumber: value.paymentNumber,
-          payerNumber: value.payerNumber,
+        onVerifiedChange({
+          paymentCompany: asked.paymentCompany,
+          paymentNumber: asked.paymentNumber,
+          payerNumber: asked.payerNumber,
           payerName,
+          attemptId: asked.attemptId,
         });
         go('confirm');
         return;
@@ -252,16 +262,16 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
   /** 이미 확인에 성공한 그 조합 그대로인가. 그러면 은행에 다시 물을 이유가 없다. */
   const isAlreadyVerified =
-    lastVerified !== null &&
-    lastVerified.paymentCompany === value.paymentCompany &&
-    lastVerified.paymentNumber === value.paymentNumber &&
-    lastVerified.payerNumber === value.payerNumber;
+    verified !== null &&
+    verified.paymentCompany === value.paymentCompany &&
+    verified.paymentNumber === value.paymentNumber &&
+    verified.payerNumber === value.payerNumber;
 
   const requestCheck = () => {
     if (isAlreadyVerified) {
       // 조회는 통과했는데 이름을 못 받아온 경우가 있다. 그때 사용자가 직접 채운 이름을
       // 빈 문자열로 덮으면 required 에 걸려 다시 막힌다.
-      if (lastVerified.payerName) patch({ payerName: lastVerified.payerName });
+      if (verified.payerName) patch({ payerName: verified.payerName });
       go('confirm');
       return;
     }
@@ -278,6 +288,13 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
     if (step === 'payer') go('account');
     if (step === 'confirm') go('payer');
   };
+
+  // 입력은 account·payer 단계에 걸쳐 계속 마운트돼 있어 autoFocus 가 두 번째부터는 안 먹는다.
+  // 1001/2001 로 칸을 되돌렸을 때 키보드 사용자가 그 칸에서 이어 칠 수 있어야 한다.
+  useEffect(() => {
+    if (step === 'account') paymentNumberRef.current?.focus();
+    if (step === 'payer') payerNumberRef.current?.focus();
+  }, [step]);
 
   const stepAnim =
     dir === 'fwd'
@@ -371,7 +388,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                   // 계좌번호·실명번호는 «그 은행의» 값이다. 은행만 갈아끼우면 이전 은행의
                   // 값이 새 은행 것으로 보인다.
                   setError(null);
-                  setLastVerified(null);
+                  onVerifiedChange(null);
                   setLastRejected(null);
                   patch(
                     bank.code === value.paymentCompany
@@ -428,7 +445,6 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
                   {isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}
                 </p>
                 <StackedInput
-                  autoFocus
                   ariaLabel={isPersonal ? '예금주 생년월일 6자리' : '사업자등록번호 10자리'}
                   describedBy={error ? 'payer-number-error' : undefined}
                   disabled={checking}
@@ -452,7 +468,7 @@ export function CmsAccountFields({ value, onChange, onComplete }: CmsAccountFiel
 
             <StackedField label="계좌번호">
               <StackedInput
-                autoFocus={step === 'account'}
+                inputRef={paymentNumberRef}
                 ariaLabel="계좌번호"
                 describedBy={step === 'account' && error ? 'payment-number-error' : undefined}
                 disabled={checking}

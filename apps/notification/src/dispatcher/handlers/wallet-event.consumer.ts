@@ -779,6 +779,22 @@ export class WalletEventConsumer {
    * 계좌 심사 통과. 거절만 알리면 「조용한데 된 건가?」가 되어 결제수단 화면을 다시 열거나
    * 문의가 온다 — 승인도 같은 무게로 알린다.
    */
+  /**
+   * getEventMapping 은 DB 조회 예외까지 null 로 바꾼다 — 「매핑이 없다」와 「못 읽었다」가
+   * 구분되지 않는다. 그대로 return 하면 이벤트가 소비 완료로 ack 되어, 배포 직후 시드가
+   * 아직 안 돌았거나 DB 가 잠깐 흔들린 순간의 승인·거절 메일이 영영 사라진다.
+   * 못 읽은 것은 끊어서 재시도에 맡기고, 비활성은 «꺼두기로 한 것»이라 그대로 넘긴다.
+   */
+  private async requireEventMapping(eventKey: string) {
+    const mapping = await this.eventMappingService.getEventMapping(eventKey);
+    if (!mapping) throw new Error(`Event mapping not found or unreadable: ${eventKey}`);
+    if (!mapping.isActive) {
+      this.logger.warn(`Event mapping for ${eventKey} is inactive — skipped.`);
+      return null;
+    }
+    return mapping;
+  }
+
   @On(PAYMENT_STREAM, 'cms.member.registered')
   async onCmsMemberRegistered(
     @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'cms.member.registered'>,
@@ -788,11 +804,8 @@ export class WalletEventConsumer {
       `[Event] Received CmsMemberRegistered: ${payload.cmsMemberId} (correlationId: ${envelope.correlationId})`,
     );
     try {
-      const eventMapping = await this.eventMappingService.getEventMapping('CMS_MEMBER_REGISTERED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for CMS_MEMBER_REGISTERED not found or inactive.`);
-        return;
-      }
+      const eventMapping = await this.requireEventMapping('CMS_MEMBER_REGISTERED');
+      if (!eventMapping) return;
 
       const sendDto: SendNotificationDto = {
         userId: payload.userId,
@@ -827,11 +840,8 @@ export class WalletEventConsumer {
       `[Event] Received CmsMemberRejected: ${payload.cmsMemberId} (correlationId: ${envelope.correlationId})`,
     );
     try {
-      const eventMapping = await this.eventMappingService.getEventMapping('CMS_MEMBER_REJECTED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for CMS_MEMBER_REJECTED not found or inactive.`);
-        return;
-      }
+      const eventMapping = await this.requireEventMapping('CMS_MEMBER_REJECTED');
+      if (!eventMapping) return;
 
       const sendDto: SendNotificationDto = {
         userId: payload.userId,
