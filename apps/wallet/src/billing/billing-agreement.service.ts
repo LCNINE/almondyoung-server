@@ -35,74 +35,46 @@ export class BillingAgreementService {
       opts,
     );
 
-    // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
-    // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
-    // 평범한 INSERT 는 유니크 위반(→500)이 된다. 같은 subscriber 조합이 있으면 그 행을 ACTIVE 로 되살리는
-    // upsert 로 처리해 관리자 자동갱신 재활성(같은 계약 id 재사용)을 지원한다.
-    const rows = await this.dbService.db
-      .insert(billingAgreements)
-      .values({
-        userId,
-        billingMethodId,
-        subscriberRef,
-        subscriberType,
-        status: 'ACTIVE',
-      })
-      .onConflictDoUpdate({
-        target: [billingAgreements.subscriberType, billingAgreements.subscriberRef],
-        set: { userId, billingMethodId, status: 'ACTIVE', updatedAt: new Date() },
-      })
-      .returning();
-
     // 「선적용이다」의 판정은 여기서 끝낸다 — 아래는 통지만 한다.
     // ① allowPendingMandate 는 「PENDING 도 허용」이지 「PENDING 이다」가 아니다. 이미 승인된
     //    계좌로 가입한 사람에게 심사 안내를 보내면 틀린 말이 된다.
     // ② cmsMemberId 가 없으면 cms_members 행이 아예 없는 것이다. getUserCmsBillingMethodStatuses
     //    는 그 경우에도 `member?.status ?? 'PENDING'` 으로 PENDING 을 돌려주므로(billing-method.service.ts),
     //    상태만 보면 orphan 결제수단에도 「심사 중」 메일이 나간다.
-    if (opts?.allowPendingMandate && cmsStatus?.cmsMemberStatus === 'PENDING' && cmsStatus.cmsMemberId) {
-      await this.notifyMandatePending(userId, billingMethodId, subscriberType, subscriberRef);
-    }
+    const isPendingMandate =
+      opts?.allowPendingMandate === true && cmsStatus?.cmsMemberStatus === 'PENDING' && !!cmsStatus.cmsMemberId;
 
-    return rows[0];
-  }
+    // 연락처는 «트랜잭션 밖에서» 먼저 받아 둔다 — 외부 HTTP 를 트랜잭션 안에 두면
+    // user-service 가 느린 동안 agreement 행 잠금이 그만큼 길어진다.
+    const contact = isPendingMandate ? await this.resolvePendingMandateContact(userId, subscriberRef) : null;
 
-  /**
-   * 선적용 가입 성립을 고객에게 알린다 — 「혜택은 지금부터, 첫 출금은 심사 승인 후」.
-   *
-   * 이 사실이 닿는 경로는 가입 직후 토스트와 마이페이지 배너뿐이라, 메일이 없으면
-   * "가입했는데 왜 돈이 안 빠지지" 가 CS 로 온다. 승인 메일(`cms.member.registered`)은
-   * 1~2 영업일 뒤에 나가므로 이 공백을 못 메운다.
-   *
-   * 선적용인지의 판정은 호출자가 끝내고 들어온다.
-   *
-   * poller 의 승인·거절 통지와 같은 이유로 발행 실패는 삼킨다: 통지가 계약 생성을
-   * 되돌리면 안 된다. (통지 유실 재시도는 #848 의 별도 처방)
-   */
-  private async notifyMandatePending(
-    userId: string,
-    billingMethodId: string,
-    subscriberType: string,
-    subscriberRef: string,
-  ): Promise<void> {
-    if (!this.publisher || !this.userContactClient) return;
-    if (
-      !this.configService?.get<string>('USER_SERVICE_URL') ||
-      !this.configService?.get<string>('USER_SERVICE_INTERNAL_KEY')
-    ) {
-      this.logger.warn(`선적용 가입 통지 스킵 — user-service 연동 미설정 (subscriberRef=${subscriberRef})`);
-      return;
-    }
+    return this.dbService.run(async (trx) => {
+      // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
+      // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
+      // 평범한 INSERT 는 유니크 위반(→500)이 된다. 같은 subscriber 조합이 있으면 그 행을 ACTIVE 로 되살리는
+      // upsert 로 처리해 관리자 자동갱신 재활성(같은 계약 id 재사용)을 지원한다.
+      const rows = await trx
+        .insert(billingAgreements)
+        .values({
+          userId,
+          billingMethodId,
+          subscriberRef,
+          subscriberType,
+          status: 'ACTIVE',
+        })
+        .onConflictDoUpdate({
+          target: [billingAgreements.subscriberType, billingAgreements.subscriberRef],
+          set: { userId, billingMethodId, status: 'ACTIVE', updatedAt: new Date() },
+        })
+        .returning();
 
-    try {
-      const contacts = await this.userContactClient.findContacts([userId]);
-      const contact = contacts.get(userId);
-      if (!contact?.email) {
-        this.logger.warn(`선적용 가입 통지 스킵 — 연락처 없음 (userId=${userId})`);
-        return;
-      }
-
-      await this.dbService.run(async (trx) => {
+      // 아웃박스 적재를 agreement 와 «같은 트랜잭션»에 둔다. 밖에 두고 실패를 삼키면
+      // 아웃박스 행도 DLQ 메시지도 남지 않아 이 가입자의 안내 메일이 영구 누락된다 —
+      // 그때 agreement API 는 성공으로 끝나서 membership 의 재시도도 더는 돌지 않는다.
+      // 같이 묶으면 적재가 실패할 때 계약 생성도 실패하고, membership 이 재시도(2회)한 뒤
+      // voidSubscription 으로 되돌린다. 「통지가 계약을 되돌리면 안 된다」는 poller 의 규칙은
+      // 여기에 옮겨 오지 않는다 — 저쪽은 효성이 이미 확정한 심사 결과라 되돌릴 수가 없다.
+      if (contact) {
         await this.publisher!.enqueue(
           {
             eventType: 'mandate.pending',
@@ -123,9 +95,46 @@ export class BillingAgreementService {
           },
           trx,
         );
-      });
+      }
+
+      return rows[0];
+    });
+  }
+
+  /**
+   * 선적용 가입 안내 메일의 수신자를 찾는다. 못 찾으면 null — 메일만 포기하고 가입은 진행한다.
+   *
+   * 여기서 실패해도 계약을 막지 않는 이유: user-service 가 잠깐 흔들리는 동안 멤버십 가입이
+   * 통째로 거부되면, 알림 하나를 지키려다 돈이 오가는 경로를 세우는 것이 된다. 아웃박스 적재
+   * 실패와는 성질이 다르다 — 그쪽은 같은 DB 안이라 트랜잭션으로 묶을 수 있다.
+   *
+   * 그래서 이 갈래는 여전히 메일이 유실될 수 있다. 재시도 가능한 통지 상태로 남기는 처방은
+   * 이슈 #848 이 승인·거절 통지와 «함께» 다루기로 한 별도 작업이다.
+   */
+  private async resolvePendingMandateContact(
+    userId: string,
+    subscriberRef: string,
+  ): Promise<{ email: string; username: string } | null> {
+    if (!this.publisher || !this.userContactClient) return null;
+    if (
+      !this.configService?.get<string>('USER_SERVICE_URL') ||
+      !this.configService?.get<string>('USER_SERVICE_INTERNAL_KEY')
+    ) {
+      this.logger.warn(`선적용 가입 통지 스킵 — user-service 연동 미설정 (subscriberRef=${subscriberRef})`);
+      return null;
+    }
+
+    try {
+      const contacts = await this.userContactClient.findContacts([userId]);
+      const contact = contacts.get(userId);
+      if (!contact?.email) {
+        this.logger.warn(`선적용 가입 통지 스킵 — 연락처 없음 (userId=${userId})`);
+        return null;
+      }
+      return { email: contact.email, username: contact.username };
     } catch (err) {
-      this.logger.error(`선적용 가입 통지 발행 실패 (subscriberRef=${subscriberRef}): ${err}`);
+      this.logger.error(`선적용 가입 통지 수신자 조회 실패 (subscriberRef=${subscriberRef}): ${err}`);
+      return null;
     }
   }
 

@@ -11,8 +11,12 @@ function makeDb(rows: Record<string, unknown>[] = []) {
   const where = jest.fn().mockReturnValue({ limit });
   const select = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) });
 
+  const db = { insert, update, select };
   return {
-    db: { insert, update, select },
+    // create 는 이제 agreement INSERT 와 아웃박스 적재를 한 트랜잭션에 둔다.
+    // trx 는 같은 목을 그대로 쓴다.
+    db,
+    run: (fn: (trx: unknown) => unknown) => fn(db),
     spies: { insert, update, returning, onConflictDoUpdate, values },
   };
 }
@@ -172,9 +176,8 @@ describe('BillingAgreementService 선적용 가입 통지', () => {
   }
 
   function makeService(db: ReturnType<typeof makeDb>, deps: ReturnType<typeof makeDeps>) {
-    const dbService = { ...db, run: (fn: (trx: unknown) => unknown) => fn({}) };
     return new BillingAgreementService(
-      dbService as never,
+      db as never,
       deps.billingMethodService as never,
       deps.contacts as never,
       deps.config as never,
@@ -224,13 +227,28 @@ describe('BillingAgreementService 선적용 가입 통지', () => {
     expect(deps.billingMethodService.getUserCmsBillingMethodStatuses).not.toHaveBeenCalled();
   });
 
-  it('통지 발행이 실패해도 계약 생성은 성립한다', async () => {
+  it('아웃박스 적재가 실패하면 계약 생성도 실패한다 — 메일이 조용히 사라지지 않게', async () => {
+    // 밖에서 삼키면 아웃박스 행도 DLQ 메시지도 안 남고, agreement API 는 성공으로 끝나
+    // membership 의 재시도까지 멈춘다. 같은 트랜잭션이라 여기서 던져야 한다.
     const deps = makeDeps('PENDING');
     deps.enqueue.mockRejectedValue(new Error('outbox down'));
     const service = makeService(makeDb([agreement]), deps);
 
     await expect(
       service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true }),
+    ).rejects.toThrow('outbox down');
+  });
+
+  it('연락처 조회가 실패하면 메일만 포기하고 가입은 성립한다', async () => {
+    // user-service 가 잠깐 흔들린다고 멤버십 가입을 막으면, 알림 하나를 지키려다
+    // 돈이 오가는 경로를 세우는 것이 된다.
+    const deps = makeDeps('PENDING');
+    deps.contacts.findContacts.mockRejectedValue(new Error('user-service 401'));
+    const service = makeService(makeDb([agreement]), deps);
+
+    await expect(
+      service.create('user-1', 'method-1', 'sub-1', 'MEMBERSHIP', { allowPendingMandate: true }),
     ).resolves.toEqual(agreement);
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 });
