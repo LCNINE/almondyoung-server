@@ -30,6 +30,7 @@ import { SkuCatalogService } from '../../apps/core/src/modules/inventory/sku-cat
 import { InboundService } from '../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { InventoryIdempotencyService } from '../../apps/core/src/modules/inventory/core/services/inventory-idempotency.service';
 import { PurchaseOrderClosureAdapter } from '../../apps/core/src/modules/inventory/procurement/services/purchase-order-closure.adapter';
+import { InboundReceiptKernel } from '../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
@@ -83,6 +84,7 @@ async function main() {
     eventStore,
     idempotency,
     new PurchaseOrderClosureAdapter(),
+    new InboundReceiptKernel(command, location, eventStore),
   );
 
   try {

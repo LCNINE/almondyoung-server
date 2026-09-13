@@ -299,6 +299,9 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
           method: 'individual',
           reason: 'individual_inbound',
         });
+
+        // 의도한 변경(계획서 Global Constraints 2): 응답 회차가 합계 반영 후 행이다. 현행은 0 이었다.
+        expect(result.receipt.totalQuantity).toBe(4);
       });
     });
 

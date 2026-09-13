@@ -10,7 +10,6 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { earliestExpectedDate } from '../../shared/dates/earliest-expected-date';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
@@ -34,6 +33,7 @@ import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
 import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
+import { InboundReceiptKernel } from '../kernel/inbound-receipt.kernel';
 
 @Injectable()
 export class InboundService {
@@ -48,6 +48,7 @@ export class InboundService {
     private readonly idempotency: InventoryIdempotencyService,
     @Inject(PURCHASE_ORDER_CLOSURE)
     private readonly poClosure: PurchaseOrderClosurePort,
+    private readonly receiptKernel: InboundReceiptKernel,
   ) {}
 
   private get db() {
@@ -84,250 +85,107 @@ export class InboundService {
     return (row?.qty as number) ?? 0;
   }
 
-  // 간편입고: 지정 창고/로케이션에 여러 SKU를 즉시 입고
+  // 간편입고: 지정 창고의 입고기본존에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
-    const { warehouseId, items } = dto;
-    return this.idempotency.withIdempotency('inbound.simple', dto.idempotencyKey, dto, async (tx) => {
-      // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
-      await this.locationService.ensureSystemLocations(warehouseId, tx);
-      const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-      if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-      const effectiveLocationId = inboundZone.id;
-      // 회차(journal + receipt) 생성
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'simple',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
-      let totalQty = 0;
-      const lines: InboundReceiptLine[] = [];
-      for (const [i, item] of items.entries()) {
-        const sku = await this.skuCatalogService.findById(item.skuId, tx);
-        if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
-
-        const { eventId } = await this.commandService.receive(
+    return this.idempotency.withIdempotency(
+      'inbound.simple',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist(
+          dto.items.map((item) => item.skuId),
+          tx,
+        );
+        return this.receiptKernel.recordArrival(
           {
-            skuId: item.skuId,
-            toWarehouseId: warehouseId,
-            toLocationId: effectiveLocationId,
-            quantity: item.quantity,
-            occurredAt: new Date(),
+            source: 'direct',
+            method: 'simple',
+            warehouseId: dto.warehouseId,
             reason: 'simple_inbound',
-            journalId: journal.id,
-            idempotencyKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
+            lines: dto.items.map((item, i) => ({
+              skuId: item.skuId,
+              quantity: item.quantity,
+              memo: item.memo,
+              eventKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
+            })),
           },
           tx,
         );
-
-        const [line] = await tx
-          .insert(wmsTables.inboundReceiptLines)
-          .values({
-            receiptId: receipt.id,
-            skuId: item.skuId,
-            quantity: item.quantity,
-            originLocationId: effectiveLocationId,
-            eventId: eventId ?? null,
-            memo: item.memo,
-          })
-          .returning();
-
-        lines.push(line);
-        totalQty += item.quantity;
-      }
-
-      const [updatedReceipt] = await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
-        .returning();
-
-      // 작업 로그 기록 (회차 레벨)
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity: totalQty,
-        method: 'simple',
-        reason: 'simple_inbound',
-      });
-
-      return { receipt: updatedReceipt, lines };
-    }, tx);
+      },
+      tx,
+    );
   }
 
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
   async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
-    const { warehouseId, items } = dto;
-    return this.idempotency.withIdempotency('inbound.simple-fullscan', dto.idempotencyKey, dto, async (tx) => {
-      await this.locationService.ensureSystemLocations(warehouseId, tx);
-      const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-      if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-      const effectiveLocationId = inboundZone.id;
-
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'simple_fullscan',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
-      let totalQty = 0;
-      const lines: InboundReceiptLine[] = [];
-      for (const [i, item] of items.entries()) {
-        const sku = await this.skuCatalogService.findById(item.skuId, tx);
-        if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
-        const { eventId } = await this.commandService.receive(
+    return this.idempotency.withIdempotency(
+      'inbound.simple-fullscan',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist(
+          dto.items.map((item) => item.skuId),
+          tx,
+        );
+        return this.receiptKernel.recordArrival(
           {
-            skuId: item.skuId,
-            toWarehouseId: warehouseId,
-            toLocationId: effectiveLocationId,
-            quantity: item.quantity,
-            occurredAt: new Date(),
+            source: 'direct',
+            method: 'simple_fullscan',
+            warehouseId: dto.warehouseId,
             reason: 'simple_inbound_fullscan',
-            journalId: journal.id,
-            idempotencyKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
+            lines: dto.items.map((item, i) => ({
+              skuId: item.skuId,
+              quantity: item.quantity,
+              memo: item.memo,
+              eventKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
+            })),
           },
           tx,
         );
-        const [line] = await tx
-          .insert(wmsTables.inboundReceiptLines)
-          .values({
-            receiptId: receipt.id,
-            skuId: item.skuId,
-            quantity: item.quantity,
-            originLocationId: effectiveLocationId,
-            eventId: eventId ?? null,
-            memo: item.memo,
-          })
-          .returning();
-        lines.push(line);
-        totalQty += item.quantity;
-      }
-      const [updatedReceipt] = await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
-        .returning();
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity: totalQty,
-        method: 'simple_fullscan',
-        reason: 'simple_inbound_fullscan',
-      });
-      return { receipt: updatedReceipt, lines };
-    }, tx);
+      },
+      tx,
+    );
   }
 
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
   async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
-    const { warehouseId, skuId, quantity } = dto;
-    return this.idempotency.withIdempotency('inbound.individual', dto.idempotencyKey, dto, async (tx) => {
-      let effectiveLocationId = dto.locationId ?? null;
-      if (!effectiveLocationId) {
-        await this.locationService.ensureSystemLocations(warehouseId, tx);
-        const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-        if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-        effectiveLocationId = inboundZone.id;
-      }
+    return this.idempotency.withIdempotency(
+      'inbound.individual',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist([dto.skuId], tx);
+        const { receipt, lines } = await this.receiptKernel.recordArrival(
+          {
+            source: 'direct',
+            method: 'individual',
+            warehouseId: dto.warehouseId,
+            locationId: dto.locationId ?? null,
+            reason: 'individual_inbound',
+            // 개별입고의 현행 이벤트 키는 순번이 없다 — 문자열을 그대로 보존한다.
+            lines: [
+              {
+                skuId: dto.skuId,
+                quantity: dto.quantity,
+                memo: dto.memo,
+                eventKey: `inbound.individual:${dto.idempotencyKey}`,
+              },
+            ],
+          },
+          tx,
+        );
+        return { receipt, line: lines[0] };
+      },
+      tx,
+    );
+  }
 
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'individual',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
+  /** 입고 전 SKU 존재 확인 — 현행 404 계약(`SKU ${id} not found`)을 유지한다. */
+  private async assertSkusExist(skuIds: string[], tx: DbTx): Promise<void> {
+    for (const skuId of skuIds) {
       const sku = await this.skuCatalogService.findById(skuId, tx);
       if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
-
-      const { eventId } = await this.commandService.receive(
-        {
-          skuId,
-          toWarehouseId: warehouseId,
-          toLocationId: effectiveLocationId,
-          quantity,
-          occurredAt: new Date(),
-          reason: 'individual_inbound',
-          journalId: journal.id,
-          idempotencyKey: `inbound.individual:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      const [line] = await tx
-        .insert(wmsTables.inboundReceiptLines)
-        .values({
-          receiptId: receipt.id,
-          skuId,
-          quantity,
-          originLocationId: effectiveLocationId,
-          eventId: eventId ?? null,
-          memo: dto.memo,
-        })
-        .returning();
-
-      await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: quantity })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity,
-        method: 'individual',
-        reason: 'individual_inbound',
-      });
-
-      return { receipt, line };
-    }, tx);
+    }
   }
 
   // 입고 예정 목록 조회 (이중 입고 계획 지원)

@@ -68,6 +68,7 @@ export function makeInboundService(database: Database): InboundService {
     eventStore,
     idempotency,
     new PurchaseOrderClosureAdapter(),
+    new InboundReceiptKernel(command, location, eventStore),
   );
 }
 
