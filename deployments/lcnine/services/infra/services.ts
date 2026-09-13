@@ -9,6 +9,8 @@ export function setup(infra: SharedInfra) {
     cluster,
     db,
     dbUrl,
+    redis,
+    redisUrl,
     baseDomain,
     domain,
     url,
@@ -520,44 +522,87 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  createService('Medusa', {
+  // ─── Medusa — store / admin 두 서비스 (ADR-0037, #855) ───
+  // 호스트는 medusa. 하나. ALB 룰은 `/admin/*` → MedusaAdmin(priority 205) 하나뿐이고 나머지
+  // (/store, /auth, /hooks, /health, /app)는 아래 store 기본 타깃(priority 210)이 받는다.
+  // 리소스 이름 'Medusa' 를 store 에 남긴 이유: ALB 타깃그룹·Cloud Map 이름(관측 discovery.dns)이
+  // 교체 없이 유지된다. 롤백은 이 두 블록과 shared.ts 의 Redis 블록을 되돌리는 것.
+  const medusaEnv = {
+    DATABASE_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/medusa?sslmode=disable`,
+    // product_sort_index.review_count 주기 동기화(sync-product-sort-index)가 ugc 리뷰 수를 읽는 소스.
+    UGC_SOURCE_DB_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/ugc?sslmode=disable`,
+    // 공유 ElastiCache Valkey (ADR-0037). DB 인덱스 분리는 사이드카 시절과 동일 (0: 이벤트버스·워크플로·락, 1: 캐시).
+    REDIS_URL: redisUrl(0),
+    CACHE_REDIS_URL: redisUrl(1),
+    MEDUSA_FF_CACHING: 'true',
+    // Auth
+    JWT_SECRET: medusaJwtSecret.value,
+    COOKIE_SECRET: medusaCookieSecret.value,
+    JWT_EXPIRES_IN: '30d',
+    // TEMP(시연용): my-auth provider가 user-service 발급 토큰을 jwt.verify하므로
+    // IdP 스택의 AUTH_SECRET과 동일한 값을 주입.
+    AUTH_SECRET: idpAuthSecret,
+    MEDUSA_API_KEY: medusaApiKey.value,
+    // CORS
+    STORE_CORS: [
+      // 컷오버 후 storefront 정식 origin = apex(almondyoung.com). www 는 apex 로 301.
+      storefrontUrl,
+      url('www'),
+      'http://localhost:8001',
+    ].join(','),
+    ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
+    AUTH_CORS: [url('medusa'), storefrontUrl, url('www'), 'http://localhost:8001'].join(','),
+    // Internal service URLs
+    FRONTEND_URL: storefrontUrl,
+    USER_SERVICE_URL: idpUserServiceUrl,
+    MEDUSA_BACKEND_URL: url('medusa'),
+    // OIDC: medusa-config.js 는 AUTH_WEB_URL 이 truthy 일 때만 user-service-sso provider 를 등록한다.
+    // 아래 5개는 모두 set 되어야 storefront 의 /auth/customer/user-service-sso 가 동작.
+    AUTH_WEB_URL: idpAuthWebUrl,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+    OIDC_CLIENT_ID: 'medusa-storefront',
+    OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
+    OIDC_SCOPES: 'openid email profile',
+    SSO_DEFAULT_CALLBACK_URL: $interpolate`${storefrontUrl}/kr/callback/oidc`,
+    WALLET_BASE_URL: url('wallet'),
+    WALLET_API_KEY: walletApiKey.value,
+    ALMOND_PAYMENT_ENDPOINT: url('wallet'),
+    MEMBERSHIP_SERVICE_URL: url('membership'),
+    MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
+    UGC_SERVICE_URL: url('ugc'),
+    UGC_INTERNAL_KEY: ugcInternalKey.value,
+    SEARCH_SERVICE_URL: url('search'),
+    SEARCH_INTERNAL_KEY: searchInternalKey.value,
+    MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+    ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
+    // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
+    // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
+    STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
+    STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+    // S3
+    S3_FILE_URL: 'https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com',
+    S3_ACCESS_KEY_ID: awsS3AccessKeyId.value,
+    S3_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
+    S3_REGION: 'ap-northeast-2',
+    S3_BUCKET: 'almondyoung-medusa-digital-asset',
+    // Admin & logging
+    MEDUSA_ADMIN_ONBOARDING_TYPE: 'default',
+    LOG_LEVEL: 'info',
+  };
+
+  const medusaCommon = {
     // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
-    architecture: 'arm64',
+    architecture: 'arm64' as const,
     dockerfile: 'apps/medusa/Dockerfile',
     domainSlug: 'medusa',
     port: 9000,
-    priority: 210,
-    link: [db],
-    // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
-    // 0.5 → 1 vCPU: 스케일아웃(max 2) 대신 수직 확장. valkey 사이드카가 태스크 로컬
-    // 상태(세션 + BullMQ 큐)라 태스크가 2개면 세션 공유가 깨지고 큐도 갈라진다.
+    link: [db, redis],
+    // 사이드카가 빠져 2GB 근거가 사라졌다. Medusa 단독 시절 1GB 로 돌았다 (2026-09-13 결정).
+    // 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
     cpu: '1 vCPU',
-    // 1 GB → 2 GB: valkey 사이드카(256MB cap) 동거분 확보. 메모리 0.5GB당 ~$1.5/월이라
-    // ElastiCache 제거(-$17.5/월) 대비 미미. Medusa 단독 시절 1GB 로 돌았음을 참고.
-    memory: '2 GB',
-    // max 1 고정: valkey 가 사이드카인 한 스케일아웃 금지 (위 cpu 주석 참조).
+    memory: '1 GB',
+    // 스케일아웃은 ADR-0037 의 목표가 아니다. 막던 사유(사이드카)는 사라졌으니 필요하면 store 만 올린다.
     scaling: { min: 1, max: 1 },
-    // ElastiCache 대체: 같은 태스크의 valkey 사이드카 (shared.ts 의 Redis 제거 주석 참조).
-    // - noeviction: event-bus/workflow-engine 이 BullMQ 큐로 쓰므로 키 eviction 은 유실 사고.
-    //   가득 차면 쓰기 에러가 나게 두는 편이 안전 (256MB, 데모 트래픽 기준 여유).
-    // - appendonly no + save '': 디스크 영속 불필요 (재시작 유실 허용이 이 설계의 전제).
-    sidecars: [
-      {
-        name: 'valkey',
-        image: 'valkey/valkey:8-alpine',
-        command: [
-          'valkey-server',
-          '--maxmemory',
-          '256mb',
-          '--maxmemory-policy',
-          'noeviction',
-          '--appendonly',
-          'no',
-          '--save',
-          '',
-        ],
-      },
-    ],
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url('medusa'),
@@ -571,6 +616,28 @@ export function setup(infra: SharedInfra) {
         unhealthyThreshold: 5,
       },
     },
+  };
+
+  // store — 손님 읽기·체크아웃·결제 웹훅(/hooks). subscriber·job·BullMQ 워커를 띄우지 않는다.
+  // migrate 는 admin 이 돈다 (Medusa schema migration 은 잠금이 없어 동시 실행이 경쟁한다).
+  createService('Medusa', {
+    ...medusaCommon,
+    priority: 210,
+    transform: {
+      service: { healthCheckGracePeriodSeconds: 600 },
+    },
+    environment: {
+      ...medusaEnv,
+      MEDUSA_WORKER_MODE: 'server',
+      MEDUSA_RUN_DB_MIGRATE: 'false',
+    },
+  });
+
+  // admin — /admin/* API + 백그라운드 전부(subscriber·cron·워크플로 엔진). ECS Exec·백필은 여기.
+  createService('MedusaAdmin', {
+    ...medusaCommon,
+    priority: 205,
+    pathPattern: '/admin/*',
     transform: {
       service: {
         healthCheckGracePeriodSeconds: 600,
@@ -580,66 +647,11 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      DATABASE_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/medusa?sslmode=disable`,
-      // product_sort_index.review_count 주기 동기화(sync-product-sort-index)가 ugc 리뷰 수를 읽는 소스.
-      UGC_SOURCE_DB_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/ugc?sslmode=disable`,
-      // valkey 사이드카 (같은 태스크, localhost). DB 인덱스 분리는 ElastiCache 시절과 동일.
-      REDIS_URL: 'redis://localhost:6379/0',
-      CACHE_REDIS_URL: 'redis://localhost:6379/1',
-      MEDUSA_FF_CACHING: 'true',
-      // Auth
-      JWT_SECRET: medusaJwtSecret.value,
-      COOKIE_SECRET: medusaCookieSecret.value,
-      JWT_EXPIRES_IN: '30d',
-      // TEMP(시연용): my-auth provider가 user-service 발급 토큰을 jwt.verify하므로
-      // IdP 스택의 AUTH_SECRET과 동일한 값을 주입.
-      AUTH_SECRET: idpAuthSecret,
-      MEDUSA_API_KEY: medusaApiKey.value,
-      // CORS
-      STORE_CORS: [
-        // 컷오버 후 storefront 정식 origin = apex(almondyoung.com). www 는 apex 로 301.
-        storefrontUrl,
-        url('www'),
-        'http://localhost:8001',
-      ].join(','),
-      ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
-      AUTH_CORS: [url('medusa'), storefrontUrl, url('www'), 'http://localhost:8001'].join(','),
-      // Internal service URLs
-      FRONTEND_URL: storefrontUrl,
-      USER_SERVICE_URL: idpUserServiceUrl,
-      MEDUSA_BACKEND_URL: url('medusa'),
-      // OIDC: medusa-config.js 는 AUTH_WEB_URL 이 truthy 일 때만 user-service-sso provider 를 등록한다.
-      // 아래 5개는 모두 set 되어야 storefront 의 /auth/customer/user-service-sso 가 동작.
-      AUTH_WEB_URL: idpAuthWebUrl,
-      OIDC_ISSUER_URL: idpUserServiceUrl,
-      OIDC_CLIENT_ID: 'medusa-storefront',
-      OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
-      OIDC_SCOPES: 'openid email profile',
-      SSO_DEFAULT_CALLBACK_URL: $interpolate`${storefrontUrl}/kr/callback/oidc`,
-      WALLET_BASE_URL: url('wallet'),
-      WALLET_API_KEY: walletApiKey.value,
-      ALMOND_PAYMENT_ENDPOINT: url('wallet'),
-      MEMBERSHIP_SERVICE_URL: url('membership'),
-      MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
-      UGC_SERVICE_URL: url('ugc'),
-      UGC_INTERNAL_KEY: ugcInternalKey.value,
-      SEARCH_SERVICE_URL: url('search'),
-      SEARCH_INTERNAL_KEY: searchInternalKey.value,
-      MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
-      ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
-      // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
-      // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
-      STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
-      STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
-      // S3
-      S3_FILE_URL: 'https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com',
-      S3_ACCESS_KEY_ID: awsS3AccessKeyId.value,
-      S3_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
-      S3_REGION: 'ap-northeast-2',
-      S3_BUCKET: 'almondyoung-medusa-digital-asset',
-      // Admin & logging
-      MEDUSA_ADMIN_ONBOARDING_TYPE: 'default',
-      LOG_LEVEL: 'info',
+      ...medusaEnv,
+      // baseEnv 가 domainSlug 로 넣는 OTEL_SERVICE_NAME('medusa') 을 덮어써 Grafana 에서 store 와 갈라 본다.
+      // 닫기 판정이 «store 의» CPU·p95 라 구분이 필수다.
+      OTEL_SERVICE_NAME: 'medusa-admin',
+      MEDUSA_WORKER_MODE: 'shared',
     },
   });
 
@@ -721,7 +733,6 @@ export function setup(infra: SharedInfra) {
     console.log("STOREFRONT_BLOCKED_IP " + __ip);
     return { statusCode: 403, statusDescription: "Forbidden" };
   }`;
-
 
   // ─── storefront 액세스 로그 (정부망 IP '발견'용, live 전용) ───
   // 위 차단 Function 은 "이미 막은 IP"만 CloudWatch 에 남긴다. 아직 blocklist 에 없는
