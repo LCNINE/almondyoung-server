@@ -229,5 +229,30 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
       const { lineId } = await seedCommittedLine();
       await expectLineLockedDuring(lineId, (tx) => kernel.cancelLine({ receiptLineId: lineId }, tx));
     });
+
+    it('putaway 는 회차 라인을 FOR UPDATE 로 잠근다', async () => {
+      const { lineId, shelfId } = await seedCommittedLine();
+      await expectLineLockedDuring(lineId, (tx) =>
+        kernel.putaway(
+          {
+            receiptLineId: lineId,
+            toLocationId: shelfId,
+            quantity: 1,
+            eventKey: `kernel-lock-spec:putaway:${randomUUID()}`,
+          },
+          tx,
+        ),
+      );
+    });
+
+    it('returnLine 은 회차 라인을 FOR UPDATE 로 잠근다', async () => {
+      const { lineId } = await seedCommittedLine();
+      await expectLineLockedDuring(lineId, (tx) =>
+        kernel.returnLine(
+          { receiptLineId: lineId, quantity: 1, eventKey: `kernel-lock-spec:return:${randomUUID()}` },
+          tx,
+        ),
+      );
+    });
   });
 });

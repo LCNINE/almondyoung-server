@@ -69,21 +69,6 @@ export class InboundService {
     }, tx);
   }
 
-  private async getOnHandQuantity(
-    tx: DbTx,
-    params: { skuId: string; warehouseId: string; locationId: string },
-  ): Promise<number> {
-    const row = await tx.query.stockLedgers.findFirst({
-      where: and(
-        eq(wmsTables.stockLedgers.skuId, params.skuId),
-        eq(wmsTables.stockLedgers.warehouseId, params.warehouseId),
-        eq(wmsTables.stockLedgers.locationId, params.locationId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-      ),
-    });
-    return (row?.qty as number) ?? 0;
-  }
-
   // 간편입고: 지정 창고의 입고기본존에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
     return this.idempotency.withIdempotency(
@@ -903,144 +888,46 @@ export class InboundService {
 
   // 즉시 적치(원위치 → 목적지)
   async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.putaway', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-
-      const originLocationId = line.originLocationId!;
-      if (!originLocationId) throw new BadRequestException('origin location missing');
-
-      // 목적지 로케이션 검증: 존재/활성/동일 창고
-      const dest = await tx.query.locations.findFirst({
-        where: eq(wmsTables.locations.id, dto.toLocationId),
-      });
-      if (!dest) throw new NotFoundException('destination location not found');
-      if (!dest.isActive) throw new BadRequestException('destination location is inactive');
-      if (dest.warehouseId !== receipt.warehouseId)
-        throw new BadRequestException('destination location must be in the same warehouse');
-
-      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
-      if (dto.quantity <= 0 || dto.quantity > originAvailable) {
-        throw new BadRequestException('quantity exceeds origin available');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND 수량 확인
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < dto.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin');
-      }
-
-      // 내부 이동: 원본 위치 → 목표 위치 (즉시)
-      const moveResult = await this.commandService.moveInternal(
-        {
-          skuId: line.skuId,
-          warehouseId: receipt.warehouseId,
-          fromLocationId: originLocationId,
-          toLocationId: dto.toLocationId,
-          quantity: dto.quantity,
-          reason: 'putaway_internal_move',
-          idempotencyKey: `inbound.putaway:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ putawayFromOriginQty: line.putawayFromOriginQty + dto.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'PUTAWAY',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        toLocationId: dto.toLocationId,
-        quantity: dto.quantity,
-        eventId: moveResult.eventId ?? null,
-      });
-
-      return { success: true };
-    }, tx);
+    return this.idempotency.withIdempotency(
+      'inbound.putaway',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.receiptKernel.putaway(
+          {
+            receiptLineId: dto.lineId,
+            toLocationId: dto.toLocationId,
+            quantity: dto.quantity,
+            eventKey: `inbound.putaway:${dto.idempotencyKey}`,
+          },
+          tx,
+        );
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 회송
   async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.return', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-      const originLocationId = line.originLocationId!;
-      // 선행 제약: 적치가 존재하면 회송 불가 (원위치로 모두 되돌린 후 처리)
-      if ((line.putawayFromOriginQty ?? 0) > 0) {
-        throw new BadRequestException('cannot return: putaway exists; move all back to origin first');
-      }
-      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
-      if (dto.quantity <= 0 || dto.quantity > originAvailable) {
-        throw new BadRequestException('quantity exceeds origin available');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND 수량 확인
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < dto.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin');
-      }
-
-      const event = await this.eventStore.createEvent(
-        {
-          skuId: line.skuId,
-          fromWarehouseId: receipt.warehouseId,
-          fromLocationId: originLocationId,
-          fromState: 'ON_HAND',
-          transitionType: 'ADJUST_DOWN',
-          quantity: dto.quantity,
-          occurredAt: new Date(),
-          reason: 'RETURN',
-          idempotencyKey: `inbound.return:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ returnedQty: line.returnedQty + dto.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'RETURN',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        quantity: dto.quantity,
-        reason: dto.reason,
-        eventId: event?.id ?? null,
-      });
-
-      return { success: true };
-    }, tx);
+    return this.idempotency.withIdempotency(
+      'inbound.return',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.receiptKernel.returnLine(
+          {
+            receiptLineId: dto.lineId,
+            quantity: dto.quantity,
+            reason: dto.reason,
+            eventKey: `inbound.return:${dto.idempotencyKey}`,
+          },
+          tx,
+        );
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 입고취소

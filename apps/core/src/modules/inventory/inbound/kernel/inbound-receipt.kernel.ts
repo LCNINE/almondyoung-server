@@ -39,6 +39,20 @@ export interface CancelLineInput {
   quantity?: number;
 }
 
+export interface PutawayInput {
+  receiptLineId: string;
+  toLocationId: string;
+  quantity: number;
+  eventKey: string;
+}
+
+export interface ReturnLineInput {
+  receiptLineId: string;
+  quantity: number;
+  reason?: string;
+  eventKey: string;
+}
+
 /**
  * 입고 커널 — 창고에 물건이 들어온 사실과 그 뒤 현장 처리를 소유한다(스펙 §3).
  *
@@ -209,6 +223,125 @@ export class InboundReceiptKernel {
     }
 
     return line;
+  }
+
+  /** 즉시 적치 — 원위치(입고 로케이션)에서 같은 창고의 목적지로 내부 이동. 정산에 영향 없음. */
+  async putaway(input: PutawayInput, tx: DbTx): Promise<void> {
+    const line = await this.lockLine(input.receiptLineId, tx);
+    const receipt = await this.loadReceipt(line.receiptId, tx);
+    const originLocationId = this.requireOrigin(line);
+
+    // 목적지 로케이션 검증: 존재/활성/동일 창고
+    const [dest] = await tx
+      .select()
+      .from(wmsTables.locations)
+      .where(eq(wmsTables.locations.id, input.toLocationId))
+      .limit(1);
+    if (!dest) throw new NotFoundException('destination location not found');
+    if (!dest.isActive) throw new BadRequestException('destination location is inactive');
+    if (dest.warehouseId !== receipt.warehouseId) {
+      throw new BadRequestException('destination location must be in the same warehouse');
+    }
+
+    const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
+    if (input.quantity <= 0 || input.quantity > originAvailable) {
+      throw new BadRequestException('quantity exceeds origin available');
+    }
+
+    // 실원장 검증: 원위치 ON_HAND 수량 확인
+    const onHand = await this.onHandAt(
+      { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
+      tx,
+    );
+    if (onHand < input.quantity) {
+      throw new BadRequestException('insufficient on-hand at origin');
+    }
+
+    const moveResult = await this.command.moveInternal(
+      {
+        skuId: line.skuId,
+        warehouseId: receipt.warehouseId,
+        fromLocationId: originLocationId,
+        toLocationId: input.toLocationId,
+        quantity: input.quantity,
+        reason: 'putaway_internal_move',
+        idempotencyKey: input.eventKey,
+      },
+      tx,
+    );
+
+    await tx
+      .update(wmsTables.inboundReceiptLines)
+      .set({ putawayFromOriginQty: line.putawayFromOriginQty + input.quantity })
+      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+    await tx.insert(wmsTables.inboundWorkLogs).values({
+      type: 'PUTAWAY',
+      receiptId: receipt.id,
+      lineId: line.id,
+      skuId: line.skuId,
+      warehouseId: receipt.warehouseId,
+      fromLocationId: originLocationId,
+      toLocationId: input.toLocationId,
+      quantity: input.quantity,
+      eventId: moveResult.eventId ?? null,
+    });
+  }
+
+  /** 회송 — 원위치 잔량에서 차감(ADJUST_DOWN). 발주 정산은 바꾸지 않는다(스펙 §3.3). */
+  async returnLine(input: ReturnLineInput, tx: DbTx): Promise<void> {
+    const line = await this.lockLine(input.receiptLineId, tx);
+    const receipt = await this.loadReceipt(line.receiptId, tx);
+    const originLocationId = this.requireOrigin(line);
+
+    // 선행 제약: 적치가 존재하면 회송 불가 (원위치로 모두 되돌린 후 처리)
+    if ((line.putawayFromOriginQty ?? 0) > 0) {
+      throw new BadRequestException('cannot return: putaway exists; move all back to origin first');
+    }
+    const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
+    if (input.quantity <= 0 || input.quantity > originAvailable) {
+      throw new BadRequestException('quantity exceeds origin available');
+    }
+
+    const onHand = await this.onHandAt(
+      { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
+      tx,
+    );
+    if (onHand < input.quantity) {
+      throw new BadRequestException('insufficient on-hand at origin');
+    }
+
+    const event = await this.eventStore.createEvent(
+      {
+        skuId: line.skuId,
+        fromWarehouseId: receipt.warehouseId,
+        fromLocationId: originLocationId,
+        fromState: 'ON_HAND',
+        transitionType: 'ADJUST_DOWN',
+        quantity: input.quantity,
+        occurredAt: new Date(),
+        reason: 'RETURN',
+        idempotencyKey: input.eventKey,
+      },
+      tx,
+    );
+
+    await tx
+      .update(wmsTables.inboundReceiptLines)
+      .set({ returnedQty: line.returnedQty + input.quantity })
+      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+    await tx.insert(wmsTables.inboundWorkLogs).values({
+      type: 'RETURN',
+      receiptId: receipt.id,
+      lineId: line.id,
+      skuId: line.skuId,
+      warehouseId: receipt.warehouseId,
+      fromLocationId: originLocationId,
+      quantity: input.quantity,
+      reason: input.reason,
+      eventId: event?.id ?? null,
+    });
   }
 
   private async resolveLocation(warehouseId: string, locationId: string | null, tx: DbTx): Promise<string> {
