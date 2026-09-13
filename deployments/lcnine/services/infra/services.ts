@@ -597,10 +597,11 @@ export function setup(infra: SharedInfra) {
     domainSlug: 'medusa',
     port: 9000,
     link: [db, redis],
-    // 사이드카가 빠져 2GB 근거가 사라졌다. Medusa 단독 시절 1GB 로 돌았다 (2026-09-13 결정).
+    // Fargate 는 1 vCPU 에 최소 2 GB 를 요구한다 (1 GB 는 sst deploy 가 거부 — 2026-09-13 실측).
+    // 0.5 vCPU / 1 GB 로 줄이면 CPU 병목인 Medusa 의 목적을 해치므로 1 vCPU / 2 GB 를 유지한다.
     // 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
     cpu: '1 vCPU',
-    memory: '1 GB',
+    memory: '2 GB',
     // 스케일아웃은 ADR-0037 의 목표가 아니다. 막던 사유(사이드카)는 사라졌으니 필요하면 store 만 올린다.
     scaling: { min: 1, max: 1 },
     buildArgs: {

@@ -75,7 +75,9 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
   전부 기다리지 않는다. 기준선에 필요한 최소판 — 샘플러를 코드에 명시하고 Medusa 의
   `instrument.db`·`query` 를 끄는 것 — 만 #855 에 선행한다. tail sampling 은 #713 의 후속이다.
 - *2026-09-13 구현 결정(#855)*:
-  - 두 태스크 모두 `arm64` `1 vCPU / 1 GB`, `scaling { min: 1, max: 1 }`. 사이드카가 빠져 2GB 근거가 사라졌다.
+  - 두 태스크 모두 `arm64` `1 vCPU / 2 GB`, `scaling { min: 1, max: 1 }`. 처음엔 사이드카가 빠졌다고
+    1 GB 로 정했으나 **Fargate 가 1 vCPU 에 최소 2 GB 를 요구**해 `sst deploy` 가 거부했다(2026-09-13 실측).
+    0.5 vCPU 로 내리면 CPU 병목인 Medusa 의 목적을 해치므로 메모리를 올리는 쪽을 택했다.
   - `db:migrate` 는 **admin 컨테이너만** 돈다 (`MEDUSA_RUN_DB_MIGRATE=false` 를 store 에). Medusa 의
     schema migration 에는 잠금이 없다 — `@medusajs/framework/dist/migrations/run-migration-scripts.js` 의
     락은 data-script 전용. 롤링 배포 중 새 store 태스크가 admin 의 migrate 보다 먼저 뜰 수 있으나,
