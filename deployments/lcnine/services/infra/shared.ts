@@ -67,11 +67,17 @@ export function setup(opts?: { baseDomain?: string }) {
   const dbUrl = (dbName: string) =>
     $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/${dbName}?sslmode=require`;
 
-  // ─── Redis: ElastiCache 제거됨 ───
-  // 유일한 컨슈머가 Medusa(replica 1 고정)라 ElastiCache(cache.t4g.micro, $17.5/월) 대신
-  // Medusa 태스크 안에 valkey 사이드카 컨테이너를 띄워 localhost 로 붙는다 (services.ts 참조).
-  // 캐시/이벤트버스 용도라 태스크 재시작 시 데이터 유실은 허용. Medusa 를 다시 스케일아웃하거나
-  // 다른 서비스가 Redis 를 쓰게 되면 ElastiCache 를 복원할 것.
+  // ─── Redis (ElastiCache Valkey, 노드형) ───
+  // ADR-0037 (#855): Medusa 를 store/admin 두 서비스로 나누면서 사이드카 valkey 를 버리고
+  // 공유 Redis 를 복원한다 (2026-07 의 「ElastiCache 제거」 결정을 번복). 클러스터 모드는 끈다 —
+  // Medusa 의 Redis 모듈 다섯이 전부 단일 노드 ioredis 클라이언트이고 BullMQ 키에 해시태그가 없어
+  // 클러스터 프로토콜(Serverless 포함)에서는 CROSSSLOT 위험 (ADR-0037 추기). sst.aws.Redis 는
+  // 기본이 클러스터 모드 «켬»(nodes: 1)이라 cluster: false 를 명시해야 한다.
+  // 영속 정책은 노드형 기본값(스냅샷 없음). 인스턴스는 SST 기본 t4g.micro.
+  const redis = new sst.aws.Redis('Redis', { vpc, engine: 'valkey', cluster: false });
+  const encodedRedisPassword = redis.password?.apply((p) => encodeURIComponent(p));
+  const redisUrl = (dbIndex: number) =>
+    $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
   // ─── Search: OpenSearch 도메인 제거됨 ───
   // search 서비스는 Railway(opensearch-development.up.railway.app)를 사용한다 (services.ts searchEnv).
@@ -123,7 +129,10 @@ export function setup(opts?: { baseDomain?: string }) {
       architecture?: 'x86_64' | 'arm64'; // 기본 x86_64. arm64(Graviton) = 동일 성능 ~20% 저렴.
       // 메인 앱 옆에 붙는 보조 컨테이너 (예: Medusa 의 valkey). 지정 시 image/environment 는
       // 'main' 컨테이너로 내려가고 ALB 룰도 'main' 으로 향한다. 같은 태스크라 localhost 로 통신.
-      sidecars?: { name: string; image: string; command?: string[] }[],
+      sidecars?: { name: string; image: string; command?: string[] }[];
+      // 같은 호스트 안에서 경로로 갈라 붙는 서비스 (예: Medusa admin 의 `/admin/*`).
+      // hostHeader 조건에 pathPattern 조건을 AND 로 더한다. priority 를 기본 서비스보다 작게 줘야 먼저 매칭된다.
+      pathPattern?: string;
     },
   ) =>
     new sst.aws.Service(name, {
@@ -196,7 +205,10 @@ export function setup(opts?: { baseDomain?: string }) {
           else if (orig != null) Object.assign(args, orig);
         },
         listenerRule: (args: Record<string, any>) => {
-          args.conditions = [{ hostHeader: { values: [domain(opts.domainSlug)] } }];
+          args.conditions = [
+            { hostHeader: { values: [domain(opts.domainSlug)] } },
+            ...(opts.pathPattern ? [{ pathPattern: { values: [opts.pathPattern] } }] : []),
+          ];
         },
       },
     });
@@ -288,6 +300,8 @@ export function setup(opts?: { baseDomain?: string }) {
     cluster,
     db,
     dbUrl,
+    redis,
+    redisUrl,
     baseDomain,
     domain,
     url,
