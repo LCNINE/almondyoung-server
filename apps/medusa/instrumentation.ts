@@ -5,6 +5,7 @@ import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { RedactingLogExporter } from './src/observability/redacting-log-exporter';
 import { RedactingSpanExporter } from './src/observability/redacting-span-exporter';
 import { startMetricsServer } from './src/observability/metrics-server';
+import { createTraceSampler } from './src/observability/trace-sampler';
 
 export function register() {
   // Prometheus /metrics (:PORT+10000). OTLP endpoint 유무와 무관하게 연다 — 아래 early return 앞에 둔다.
@@ -35,11 +36,17 @@ export function register() {
     serviceName: process.env.OTEL_SERVICE_NAME ?? 'almond-young-medusa',
     exporter,
     logRecordProcessors: [new BatchLogRecordProcessor(logExporter)],
+    // 샘플링은 기본값(전량)에 기대지 않고 명시한다 — 정책·비율·근거는 src/observability/trace-sampler.ts (#710).
+    sampler: createTraceSampler(),
     instrument: {
       http: true,
       workflows: true,
-      query: true,
-      db: true,
+      // query/db 는 끈다 (#710). 둘이 span 수의 지배 항이다 — query 는 graph/remote query 마다,
+      // db 는 SQL 문마다 span 을 만든다. 단일 태스크가 CPU 포화 상태(#852·#853)라 이 계측이
+      // 가장 무겁게 걸리는 곳이고, #855(store/admin 분리)의 전후 비교에서 교란 변수를 빼야 한다.
+      // 느린 쿼리 추적이 필요해지면 샘플링 비율 안에서 다시 켜고, 그 결정을 여기에 적는다.
+      query: false,
+      db: false,
     },
   });
 }
