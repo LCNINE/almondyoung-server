@@ -74,6 +74,21 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
   교란 변수다. *2026-09-13 추기*: #710 의 결정 셋(비율 vs tail·`db`/`query` 계측·인제스트 상한)을
   전부 기다리지 않는다. 기준선에 필요한 최소판 — 샘플러를 코드에 명시하고 Medusa 의
   `instrument.db`·`query` 를 끄는 것 — 만 #855 에 선행한다. tail sampling 은 #713 의 후속이다.
+- *2026-09-13 구현 결정(#855)*:
+  - 두 태스크 모두 `arm64` `1 vCPU / 1 GB`, `scaling { min: 1, max: 1 }`. 사이드카가 빠져 2GB 근거가 사라졌다.
+  - `db:migrate` 는 **admin 컨테이너만** 돈다 (`MEDUSA_RUN_DB_MIGRATE=false` 를 store 에). Medusa 의
+    schema migration 에는 잠금이 없다 — `@medusajs/framework/dist/migrations/run-migration-scripts.js` 의
+    락은 data-script 전용. 롤링 배포 중 새 store 태스크가 admin 의 migrate 보다 먼저 뜰 수 있으나,
+    Medusa 마이그레이션은 additive 라 읽기 경로에 무해하다.
+  - dev 스테이지도 같은 구성이다 (dev 는 현재 미사용, 토폴로지를 갈라 둘 이유가 없다).
+  - SST 리소스 이름은 store 가 기존 `Medusa` 를 물려받고 admin 이 `MedusaAdmin` 이다 — 타깃그룹·Cloud Map
+    이름이 유지돼 관측 배선(`discovery.dns "medusa"`)이 안 끊긴다. 관측은 `medusa-admin` job 이 추가된다
+    (`libs/shared/src/observability/scrape-targets.ts`).
+  - Serverless 를 쓰지 않는 두 번째 이유가 SST 에도 있다 — `sst.aws.Redis` 는 기본이 클러스터 모드 «켬»
+    (`cluster: { nodes: 1 }`)이라 `cluster: false` 를 명시해야 한다.
+  - 배선 가드: `apps/medusa/src/__tests__/worker-mode-wiring.unit.spec.ts` 가 `MEDUSA_WORKER_MODE`·
+    `MEDUSA_RUN_DB_MIGRATE` 를 앱이 읽는지 지킨다. 구현 계획은
+    `docs/superpowers/plans/2026-09-13-medusa-store-admin-split.md`.
 
 ## Consequences
 - 월 비용이 오른다 — 두 번째 Fargate 태스크 + 관리형 Redis. 추정치는 설계 §5D, 실측치는 배포 후

@@ -112,6 +112,7 @@
 
 - **07-07 추가 절감 −$7.3/월 (clip-live Backend Spot):** clip-live ECS Backend 서비스를 Fargate Spot으로 전환 — ECS `capacityProviderStrategy = FARGATE_SPOT`(weight 1)로 실deploy 검증 완료(16:21). on-demand $10.36 → Spot 약 $3.1. clip의 RDS·ALB·NAT은 Spot 대상이 아니라 Backend Fargate만 전환 가능했음. **중단 위험:** 스팟 회수 시 단일 태스크가 재기동돼 짧은 다운 가능 — 무중단이 필요해지면 base 1 FARGATE 혼합 고려.
 - **직전 라운드 절감 −$123/월 내역(07-05):** OpenSearch 도메인 −$42.3 · RDS t4g.small −$37.2 · WAF 제거 −$20 · ElastiCache→valkey −$17.5 · 퍼블릭 IP 2개 −$7.3 · UserService ARM64 −$2.1 · Redis 시크릿 −$0.4, 상쇄분 Medusa 메모리 1→2GB +$3.0.
+- **2026-09-13 번복:** ADR-0037 (#855) 이 ElastiCache Valkey 노드형(`cache.t4g.micro`)을 복원하고 Medusa 를 store/admin 두 태스크로 나눴다 (사이드카 valkey 제거, 각 1 vCPU/1 GB). 실측치는 다음 비용 보고서에.
 - **모니터링 항목:** RDS t4g.small 메모리 압박(스왑·커넥션 실패)과 Medusa valkey 256MB 상한(noeviction — 가득 차면 쓰기 에러). 문제 시 각각 t4g.medium 원복 / maxmemory 상향으로 대응.
 - **증가 추세 항목:** S3($16→$34/월)는 여전히 증가 중 — 버전·미완료 멀티파트·고아 버킷 정리 필요. ECR은 lifecycle 적용으로 감소 전환 예상.
 - **남은 백로그 (~$119/월 추가 여지):** auth ALB 통합 −$24 · IdpDb 논리DB 통합 −$18 · Alloy 태스크 제거(OTLP 직접 전송) −$10 · FileService 번들 편입 −$7 · NAT 1대화 −$7 · clip-live 추가 정리(같은 플레이북) −$53 (Backend Spot −$7 반영 완료).
