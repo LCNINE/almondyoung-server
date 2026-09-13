@@ -5,6 +5,7 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+import { createTraceSampler } from './trace-sampler';
 
 export interface StartTelemetryOptions {
   /** OTEL_SERVICE_NAME 미설정 시 사용할 기본 서비스명. */
@@ -54,6 +55,8 @@ export function startTelemetry(options: StartTelemetryOptions): void {
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? options.serviceName,
     }),
+    // 샘플링은 기본값(전량)에 기대지 않고 명시한다 — 정책·비율·근거는 trace-sampler.ts (#710).
+    sampler: createTraceSampler(),
     traceExporter: new OTLPTraceExporter({
       url: `${endpoint}/v1/traces`,
       headers,
