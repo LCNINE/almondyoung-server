@@ -139,6 +139,14 @@ export const inboundMethodEnum = pgEnum('inbound_method', [
   'planned', // 입고예정검수 기반 실입고
 ]);
 export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['posted', 'voided']);
+/**
+ * 회차 라인이 문서 정산에 묶였는가. 커널은 **어느 문서인지는 모르고** 묶였다는 사실만 안다 —
+ * 연결은 문서 쪽 링크 테이블이 든다(스펙 §3.2).
+ * 처음부터 두 값으로 만든다: drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고,
+ * `ALTER TYPE … ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서 쓸 수 없다(스펙 §5.1 D9).
+ * `purchase_order` 를 쓰는 코드는 PR-B 에서 생긴다.
+ */
+export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', ['direct', 'purchase_order']);
 export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
 
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
@@ -2360,6 +2368,7 @@ export const inboundReceiptLines = pgTable(
     returnedQty: integer('returned_qty').notNull().default(0),
     canceledQty: integer('canceled_qty').notNull().default(0),
     putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
+    source: inboundReceiptSourceEnum('source').notNull().default('direct'),
     // optional link to plan item
     planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

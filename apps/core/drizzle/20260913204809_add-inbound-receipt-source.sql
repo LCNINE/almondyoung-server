@@ -1,0 +1,2 @@
+CREATE TYPE "public"."inbound_receipt_source" AS ENUM('direct', 'purchase_order');--> statement-breakpoint
+ALTER TABLE "inbound_receipt_lines" ADD COLUMN "source" "inbound_receipt_source" DEFAULT 'direct' NOT NULL;

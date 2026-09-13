@@ -192,6 +192,8 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
           { skuId: skuA.id, quantity: 3, originLocationId: zoneId, memo: '첫 줄' },
           { skuId: skuB.id, quantity: 2, originLocationId: zoneId, memo: null },
         ]);
+        // PR-A 부터 회차 라인은 출처를 든다. 간편입고는 문서에 묶이지 않는다.
+        expect(result.lines.map((l) => l.source)).toEqual(['direct', 'direct']);
 
         const journalId = result.receipt.journalId ?? '';
         const [journal] = await tx
