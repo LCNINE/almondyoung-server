@@ -26,6 +26,9 @@ module.exports = defineConfig({
       },
     },
     redisUrl: process.env.REDIS_URL,
+    // ADR-0037 (#855): store 인스턴스는 `server`(API 만, subscriber·job·BullMQ 워커 없음),
+    // admin 인스턴스는 `shared`. 미지정(로컬·테스트) 은 shared.
+    workerMode: process.env.MEDUSA_WORKER_MODE || 'shared',
     http: {
       storeCors: process.env.STORE_CORS || '',
       adminCors: process.env.ADMIN_CORS || '',

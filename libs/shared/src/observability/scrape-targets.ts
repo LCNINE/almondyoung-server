@@ -127,6 +127,15 @@ export const SCRAPE_TARGETS: readonly ScrapeTarget[] = [
     serviceName: 'Medusa',
     dnsSuffixEnv: 'METRICS_DNS_SUFFIX_SERVICES',
   },
+  {
+    // ADR-0037 (#855): 같은 앱(apps/medusa)의 두 번째 ECS 서비스. job 으로 store/admin 을 가른다.
+    job: 'medusa-admin',
+    appDir: 'medusa',
+    metricsServer: 'own',
+    metricsPort: 19000,
+    serviceName: 'MedusaAdmin',
+    dnsSuffixEnv: 'METRICS_DNS_SUFFIX_SERVICES',
+  },
 ];
 
 /**

@@ -242,7 +242,7 @@ prometheus.scrape "user_service" {
 
 // Medusa (#775). 다른 앱과 달리 Nest 가 아니지만 같은 규칙이다 — apps/medusa/src/observability/metrics-server.ts
 // 가 PORT(9000)+10000 에 /metrics 를 연다. 쿠폰 자동발급 카운터(coupon_auto_issue_total 등)가 여기서 나온다.
-// 🔴 port 는 그 파생 규칙과 같아야 한다. Medusa 는 scaling max 1 이라 target 은 항상 하나다.
+// 🔴 port 는 그 파생 규칙과 같아야 한다. store 는 scaling max 1 이라 target 은 하나다. admin 은 아래 별도 job.
 discovery.dns "medusa" {
 	names = ["Medusa." + sys.env("METRICS_DNS_SUFFIX_SERVICES")]
 	type  = "A"
@@ -252,6 +252,22 @@ discovery.dns "medusa" {
 prometheus.scrape "medusa" {
 	targets         = discovery.dns.medusa.targets
 	job_name        = "medusa"
+	metrics_path    = "/metrics"
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
+}
+
+// Medusa admin (ADR-0037, #855). 같은 이미지의 두 번째 ECS 서비스 — /admin/* 와 백그라운드(subscriber·cron).
+// job 을 갈라야 «store 의» CPU·지연을 따로 본다 (닫기 판정이 store 다).
+discovery.dns "medusa_admin" {
+	names = ["MedusaAdmin." + sys.env("METRICS_DNS_SUFFIX_SERVICES")]
+	type  = "A"
+	port  = 19000
+}
+
+prometheus.scrape "medusa_admin" {
+	targets         = discovery.dns.medusa_admin.targets
+	job_name        = "medusa-admin"
 	metrics_path    = "/metrics"
 	scrape_interval = "60s"
 	forward_to      = [prometheus.relabel.service_labels.receiver]

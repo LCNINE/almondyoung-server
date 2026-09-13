@@ -14,7 +14,9 @@ npx sst deploy --stage live --target Medusa
 
 ## 왜 재시작으로 낫나 — 자기지속(self-sustaining) 포화
 
-Medusa 는 **태스크 1개**로만 돈다 (valkey 사이드카 때문에 스케일아웃 불가). 이 1 vCPU 가 밀리기 시작하면:
+Medusa 는 store(`Medusa`)·admin(`MedusaAdmin`) 두 서비스이고 각각 **태스크 1개**다 (ADR-0037). 사이트 전반이
+느리면 store 를, 관리자 화면·대량등록만 느리면 admin 을 재배포한다 (`--target MedusaAdmin`). 옛 「valkey
+사이드카 때문에 스케일아웃 불가」 전제는 2026-09-13 에 사라졌다. 한 태스크의 1 vCPU 가 밀리기 시작하면:
 
 ```
 요청이 느려짐 → 처리 중 요청이 내부에 쌓임 → 동시성이 올라가 더 느려짐 → …
