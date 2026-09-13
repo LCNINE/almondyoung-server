@@ -8,7 +8,10 @@
 > 진단 [`docs/inventory-procurement-audit-2026-08.md`](../../inventory-procurement-audit-2026-08.md) · #724 · #745
 >
 > 2026-09-13~14 세션의 논의로 확정했다. 결정마다 기각한 대안을 같이 적는다 — 다음 사람이
-> 같은 대안을 다시 제안하지 않게.
+> 같은 대안을 다시 제안하지 않게. 2026-09-14 1차 리뷰(Standards·Spec 두 축)를 반영했다.
+>
+> ⚠️ **이 문서의 코드 좌표(`파일:줄`)는 `9e8dff7e4` 기준이다.** PR-A 가 `inbound.service.ts` 를 크게 바꾸므로
+> 그 뒤로는 줄 번호가 낡는다 — 심볼 이름으로 찾을 것.
 
 ## 1. 배경 — 무엇이 문제였나
 
@@ -18,8 +21,8 @@
 | # | 결함 | 근거 |
 |---|---|---|
 | ㄱ | **분할 발주의 두 번째 입고가 입고 대기 목록에서 사라진다.** A 라인을 실행·전량 입고해 계획이 닫힌 뒤 B 라인을 실행하면, `ensurePlanForPurchaseOrder` 가 상태를 보지 않고 닫힌 계획을 재사용하고(`inbound.service.ts:754-760`) 다시 열지 않는다. `GET /inbound/pending` 은 `pending` 계획만 본다(`:339`) | 코드 |
-| ㄴ | **입고 뒤 남은 라인을 「불가」로 끝내면 발주가 「확정됨」에 영원히 머문다.** `markLineUnavailable` 은 헤더 재계산만 하고(`purchase-order.manager.ts:229`), 종결 판정(`closePlanIfDone`)은 입고 경로에서만 불린다. 입고가 있어 취소도 409 다 | 코드 |
-| ㄷ | **당일 입고 취소가 닫힌 계획·「입고완료」 발주를 되돌리지 않는다.** 품목의 받은 수량만 복원한다(`inbound.service.ts:1249-1267`) | 코드 |
+| ㄴ | **입고 뒤 남은 라인을 「불가」로 끝내면 발주가 「확정됨」에 영원히 머문다.** `markLineUnavailable` 은 헤더 재계산만 하고(`purchase-order.manager.ts:229`), 종결 판정(`closePlanIfDone`)은 입고 모듈의 두 경로 — 수령(`inbound.service.ts:907`)과 잎 종결(`:988`) — 에서만 불린다. 조달 쪽 라인 종결은 그 판정을 부르지 않는다. 입고가 있어 취소도 409 다 | 코드 |
+| ㄷ | **당일 입고 취소가 닫힌 계획·「입고완료」 발주를 되돌리지 않는다.** 품목의 받은 수량과 품목 status 는 복원하지만(`inbound.service.ts:1249-1267`, status 는 `:1263`), 계획 헤더와 발주 헤더는 그대로다 | 코드 |
 
 셋의 뿌리는 같다 — **정산이 입고 모듈에서 발주로 역류하는 3층 파생**(`items → plan → PO`)이고,
 8월의 ABBA 교착(FK 암묵 락, 항목 7 스펙 §9)도 같은 경계에서 났다.
@@ -43,7 +46,8 @@ ADR-0032 가 이중 계획을 폐기하면서 할 일이 사라졌는데 구조�
 
 ### 「발주는 수령을 소유하지 않는다」도 결정이 아니었다
 
-ADR-0032 결정 4 는 **호출 방향**만 정했다. 수령이 입고 모듈에 있는 것은 항목 5 분리 때 진단 문서가
+ADR-0032 결정 4 는 **호출 방향**(조달 → 입고 포트 둘)과 **파생 방향**(`items → plan → PO` 단방향, 역방향 호출 없음,
+`0032:66`)을 정했다. **수령을 어느 모듈이 가질지는 논하지 않았다.** 수령이 입고 모듈에 있는 것은 항목 5 분리 때 진단 문서가
 「inbound ← 실행만 남음」으로 한 모듈 시절의 배치를 그대로 둔 결과다. 그 사이 창고간이동은 자기 문서가
 출발·도착·수령을 모두 소유하는 독립 모듈(`warehouse-transfer/`)로 나왔다.
 
@@ -60,16 +64,18 @@ ADR-0032 결정 4 는 **호출 방향**만 정했다. 수령이 입고 모듈에
 | D7 | **초과 수령은 거절한다.** 넘는 분량은 간편입고 | 허용 — 실무에서 초과 발송을 본 적이 없고, 거절하면 `received_qty ≤ ordered_qty` 를 DB 가 잠근다 |
 | D8 | **기존 간편·전수·개별입고도 커널로 옮긴다** | 옮기지 않기 — 커널이 다섯 번째 사본이 된다 |
 | D9 | **라인의 입고 진행은 enum 값이 아니라 카운터에서 파생한다** (§5) | `po_line_status` 에 `received`·`short_closed` 추가 — §5 참조 |
+| D10 | **`received` 에서 나가는 길은 당일 수령 취소 하나다.** 라인 수정·실행·불가·발주 취소·예정일 수정은 `received`·`cancelled` 에서 막는다 | `received` 발주에 요청 라인을 넣어 `created` 로 되돌리기 — 종결된 발주에 요청 라인을 되살리는 셈(현행 드로어 주석의 결정) |
+| D11 | **`isTerminal` 을 지우고 술어 둘로 나눈다** — 편집 관문 `acceptsChanges` · 파생 동결 `isDerivationFrozen` (§5.3) | `isTerminal` 의 뜻만 `cancelled` 로 좁히기 — 옛 뜻으로 쓴 호출이 컴파일을 통과한 채 조용히 틀어진다 |
 
 ## 3. 입고 커널의 경계
 
-현행 입고 모듈에는 「회차 생성 → 원장 `RECEIVE` → 회차 라인 → 합계 → 작업 로그」가 **네 벌** 복제돼 있다
-(`inbound.service.ts:88-331` 간편·전수·개별, `:821-930` 예정 입고). 원장 조작 자체는 이미 한 층 아래
-`InventoryCommandService` 에 있으므로, 커널이 새로 갖는 것은 **회차 층**이다.
+현행 입고 모듈에는 「저널(`stock_journals`, `sourceType='inbound'`) → 회차 → 원장 `RECEIVE` → 회차 라인 → 합계 →
+작업 로그」가 **네 벌** 복제돼 있다(`inbound.service.ts:88-331` 간편·전수·개별, `:821-930` 예정 입고). 원장 조작
+자체는 이미 한 층 아래 `InventoryCommandService` 에 있으므로, 커널이 새로 갖는 것은 **저널·회차 층**이다.
 
 | 커널(입고 모듈)이 한다 | 커널은 하지 않는다 → 문서가 한다 |
 |---|---|
-| 회차·회차 라인 생성 (창고, 입고 로케이션 — 비우면 입고기본존, 방식, SKU·수량·메모) | 예정 수량·받은 누계·종결 판단 |
+| 저널·회차·회차 라인 생성 (창고, 입고 로케이션 — 비우면 입고기본존, 방식, SKU·수량·메모) | 예정 수량·받은 누계·종결 판단 |
 | 도착의 원장 이벤트 작성 | 초과 수령 검증 |
 | 사후 현장 처리: 적치 · 회송 · 당일 취소 · 메모 | 문서 행 잠금과 상태 전이 |
 | 작업 로그 · 멱등 · 회차/로그/적치 대기 조회 | 발주·이동 테이블 import (의존은 **문서 → 커널** 한 방향) |
@@ -84,7 +90,10 @@ ADR-0032 결정 4 는 **호출 방향**만 정했다. 수령이 입고 모듈에
 
 - 회차 라인은 **어느 문서인지 모르고, 문서에 묶였다는 사실만** 안다 — `source` (`direct` | `purchase_order`).
 - 연결은 조달 모듈의 링크 테이블 `purchase_order_receipt_lines` 가 든다(§4.2). DB FK 방향도 문서 → 커널이다.
-- 이동 지시서의 `transfer_order_receipt_lines` 가 이미 이 모양이다 — 편입 시 그대로 링크 테이블이 된다.
+- 이동 지시서의 `transfer_order_receipt_lines` 가 문서 쪽 수령 행이라는 점에서 같은 자리다. 다만 그 테이블은
+  `received_qty`·`lost_qty`·`receive_event_id`·`lost_event_id`·`to_location_id` 를 **자체로 들고 있다** — 편입 시
+  수령분 컬럼은 커널 회차 라인으로 이관하고 분실분(`lost_*`, 원장 SCRAP)만 문서에 남기는 이관이 필요하다.
+  「그대로 링크 테이블이 된다」가 아니다.
 
 ### 3.3 정산을 바꾸는 사후 작업만 문서를 거친다
 
@@ -93,7 +102,9 @@ ADR-0032 결정 4 는 **호출 방향**만 정했다. 수령이 입고 모듈에
 | 적치 | 커널 직행 | 영향 없음 |
 | 회송 | 커널 직행 | **바꾸지 않는다** (현행 유지 — 돌려보내도 발주상으로는 받은 것이다) |
 | 당일 취소 — `source = direct` | 커널 직행 (`POST /inbound/cancel`) | 해당 없음 |
-| 당일 취소 — `source = purchase_order` | **조달 경유** (§6). 커널 라우트는 거절하고 출처 문서로 안내한다 | 받은 누계를 되돌리고 헤더를 재파생 |
+| 당일 취소 — `source = purchase_order` | **조달 경유** (§6). 커널 라우트로 들어오면 거절하고 출처 문서로 안내한다 | 받은 누계를 되돌리고 헤더를 재파생 |
+
+source 검증은 **커널 `cancelLine` 한 곳**에만 산다(§8). 라우트는 자기가 다룰 source 를 인자로 넘기기만 한다.
 
 ## 4. 데이터 모델
 
@@ -116,6 +127,10 @@ ADR-0032 결정 4 는 **호출 방향**만 정했다. 수령이 입고 모듈에
 CHECK (received_qty >= 0 AND received_qty <= COALESCE(ordered_qty, 0))
 -- 잔량 포기는 실발주된 라인에만 있다
 CHECK (closed_at IS NULL OR status = 'ordered')
+-- 실발주 수량은 실발주된 라인에만, 그리고 반드시 있다. 지금은 코드 주석뿐인 규칙이다
+-- (`purchase_order_lines.ordered_qty` 주석). 이게 없으면 남은 수량 계산의 `received_qty < ordered_qty`
+-- 가 NULL 로 평가돼 「받을 게 없음」으로 오판된다 — 백필 ③·헤더 파생·파이프라인이 전부 그 식을 쓴다.
+CHECK ((status = 'ordered') = (ordered_qty IS NOT NULL))
 ```
 
 `expected_arrival` 은 그대로 두고 **입고예정일의 유일한 거처**가 된다(D5). 품목 사본이 사라지므로 발주 목록과
@@ -139,11 +154,16 @@ CHECK (closed_at IS NULL OR status = 'ordered')
 - 삭제(PR-C): `plan_item_id`. `inbound_work_logs.plan_item_id` 도 삭제.
 - 수령 방식 `inbound_method` 는 기존 `planned`(「입고예정검수 기반 실입고」)를 발주 입고에 그대로 쓴다. 문서 종류는
   `source` 가 들므로 enum 값을 늘리지 않는다.
+- ⚠️ 그러면 `inbound_receipts.method = 'planned'` 와 `inbound_receipt_lines.source = 'purchase_order'` 가 **같은 사실을
+  두 축으로** 가리킨다. 두 컬럼이 다른 테이블에 있어 DB CHECK 로 묶을 수 없으므로, **두 컬럼을 쓰는 곳을 커널 하나로
+  한정하고 커널 입력을 판별 유니온으로 받는다**(§8). 어긋난 조합은 타입이 막는다. 이동 지시서 편입 때(도착도 예정
+  입고다) 두 축의 관계를 다시 정한다.
 
 ### 4.4 삭제 (PR-C)
 
 `inbound_plan_items` · `inbound_plans` · enum `plan_type` · 회차 라인과 작업 로그의 `plan_item_id` ·
-`PurchaseOrderClosurePort`·`PurchaseOrderClosureAdapter`·`inbound-plan-closure.rules.ts`(코드는 PR-B 에서 삭제).
+`PurchaseOrderClosurePort`·`PurchaseOrderClosureAdapter`·`inbound-plan-closure.rules.ts`·`purchase-order-closure.rules.ts`
+(→ `purchase-order-status.rules.ts` 로 대체, §5.3)·admin-web `isTerminalPoStatus` (코드는 PR-B 에서 삭제).
 
 ## 5. 상태 모델
 
@@ -179,19 +199,74 @@ requested ──실행──▶ ordered ──┬── 입고 대기   received
 
 | 헤더 | 조건 |
 |---|---|
-| `cancelled` | 사람의 결정. 모든 라인 `received_qty = 0` 일 때만 (현행 규칙 유지) — **유일한 고정 종결** |
+| `cancelled` | 사람의 결정(§5.3 관문). **유일한 고정 종결** |
 | `created` | `requested` 라인이 하나라도 있다 |
 | `received` | `requested` 0 ∧ `ordered` 라인 ≥ 1 ∧ 남은 수량 있는 라인 0 |
 | `confirmed` | 그 외 — 받을 게 남았거나, 전 라인이 `unavailable` |
 
 - 라인을 바꾸는 **모든** 조작(실행 · 불가 · 수령 · 수령 취소 · 잔량 포기)이 끝에서 이 함수를 부른다.
   파생 경로가 하나라 결함 ㄱ·ㄴ·ㄷ 이 설 자리가 없다.
-- `received` 는 더 이상 고정 종결이 아니다 — 당일 수령 취소로 `confirmed` 로 돌아갈 수 있다.
+- `received` 는 더 이상 고정 종결이 아니다 — 당일 수령 취소로 `confirmed` 로 돌아갈 수 있다. **그것이 `received` 에서
+  나가는 유일한 길이다**(D10). `received` 발주는 라인 수정·실행을 받지 않으므로 요청 라인이 생겨 `created` 로
+  되돌아가는 경로는 없다.
 - `received` 의 뜻은 ADR-0032 대로 **「출발 창고 입고 완료」**다. 한 가지 더 명시한다 — 실발주한 라인이 전부
   잔량 포기(받은 것 0 포함)여도 `received` 다. 즉 「입고완료」는 **「더 받을 것이 없다」**이다. 화면 문구는 이
   뜻을 드러내야 한다(범위 밖 — 묶음 2 에서 다룬다).
 - 헤더 도착예정일 = **남은 수량이 있는 라인** 중 가장 이른 `expected_arrival`
   (`shared/dates/earliest-expected-date.ts` 의 `purchaseOrderExpectedArrival` 필터를 바꾼다).
+
+### 5.3 상태 관문 — 술어 둘 (D11)
+
+현행 `isTerminal`(`purchase-order-closure.rules.ts:8`, 호출 `purchase-order.manager.ts:254`·`:369`·`:422`·`:488`)과
+admin-web 거울 `isTerminalPoStatus`(`line-execution-model.ts:57`)는 **두 뜻**으로 쓰인다 — 편집 금지와 파생 동결.
+지금은 두 집합이 우연히 `{received, cancelled}` 로 같아서 버텼지만, 이 설계에서 갈라진다.
+
+| 뜻 | 새 집합 |
+|---|---|
+| 편집 금지 | `received`, `cancelled` |
+| 파생 동결 | `cancelled` 만 |
+
+**`isTerminal` 과 `isTerminalPoStatus` 를 지운다 — 뜻만 바꿔 재정의하지 않는다.** 같은 이름에 뜻만 좁히면 옛 뜻을
+전제로 쓴 호출(진행 중 브랜치·주석)이 컴파일을 통과한 채 조용히 틀어진다. 지우면 타입체커가 호출 지점을 전부
+나열하고 지점마다 둘 중 하나를 고르게 한다. `cancelled` 만 남는 쪽을 상태 기계 용어로 `isTerminal` 이라 부르는 게
+정확하긴 하지만, 바로 그 이유로 이름을 재사용하지 않는다.
+
+목적으로 이름 붙이고 **exhaustive 표**로 정의한다 — 상태값이 늘면 두 표 모두 컴파일 에러로 결정을 강제한다(8/27
+라벨 맵 사고의 교훈). 서버(`procurement/services/purchase-order-status.rules.ts` — 헤더 파생 함수와 같은 파일)와
+admin-web(`line-execution-model.ts`)에 **같은 표를 각자** 둔다(트리마다 별칭 해석이 달라 공유 패키지를 쓰지 않는 선례).
+
+```ts
+/** 편집 관문 — 라인 수정 · 라인 실행 · 불가 · 발주 취소 · 예정일 수정 */
+const ACCEPTS_CHANGES: Record<PurchaseOrderStatus, boolean> =
+  { created: true, confirmed: true, received: false, cancelled: false };
+export const acceptsChanges = (s: PurchaseOrderStatus) => ACCEPTS_CHANGES[s];
+
+/** 파생 동결 — 헤더 파생 함수가 손대지 않는 상태 */
+const DERIVATION_FROZEN: Record<PurchaseOrderStatus, boolean> =
+  { created: false, confirmed: false, received: false, cancelled: true };
+export const isDerivationFrozen = (s: PurchaseOrderStatus) => DERIVATION_FROZEN[s];
+```
+
+조작마다 어느 관문을 쓰는지 — **두 술어 어디에도 걸리면 안 되는 조작이 있어서** 표로 박는다.
+
+| 조작 | 헤더 관문 | 라인 수준 검사 |
+|---|---|---|
+| 라인 수정 · 실행 · 불가 | `acceptsChanges` | `requested` 인가 |
+| 발주 취소 | `acceptsChanges` | 모든 라인 `received_qty = 0` |
+| 예정일 수정 | `acceptsChanges` | `requested` 이거나 남은 수량 > 0 |
+| 수령 · 잔량 포기 | 없음 — `cancelled` 면 문구용 409 만 | 남은 수량 > 0 |
+| **수령 취소** | **없음** — `received` 에서 나가는 유일한 길이라 막으면 안 된다 | 커널이 당일·전량·적치·회송 전 검사 |
+| 헤더 파생 | `isDerivationFrozen` | — |
+
+**발주 취소 규칙은 의미가 바뀌지 않는다.** 현행도 회차 존재가 아니라 `inbound_plan_items.received_qty > 0` 을
+본다(`purchase-order.manager.ts:268-273`). 당일 취소가 그 수량을 되돌리므로 **현행도 입고를 전부 당일 취소한 발주는
+취소할 수 있다.** 새 규칙(모든 라인 `received_qty = 0`)은 같은 뜻이다. 그 경우 취소된 회차의 링크 행은 **이력으로
+남는다**(발주·회차 삭제 경로가 없으므로 `RESTRICT` 가 막을 일은 없다). 곁들여, 현행 취소는 계획·품목을 잠그지 않아
+경합을 주석으로 감수했는데(`:262-267`) 새 모델에서는 취소도 발주 행 → 라인 순으로 잠그므로 그 경합이 사라진다.
+
+admin-web 이득: 현행 `canCancel` 은 「부분 입고된 발주를 화면이 걸러내지 못해 사용자가 409 를 만난다」는 한계를
+주석에 적고 있다(`line-execution-model.ts:67-72`). 새 응답은 라인에 `receivedQty` 를 실으므로
+`canCancel = acceptsChanges(status) && lines.every(l => l.receivedQty === 0)` 로 서버와 같은 판정을 한다.
 
 ## 6. API 표면
 
@@ -203,7 +278,7 @@ requested ──실행──▶ ordered ──┬── 입고 대기   received
 | **수령 취소** | `POST /purchase-orders/receipt-lines/:receiptLineId/cancel` | OPERATE | 당일 · 전량 · 적치·회송 전. 발주 id 는 링크에서 찾는다 — 이력 화면은 회차 라인 id 만 안다 |
 | **잔량 포기** | `POST /purchase-orders/:poId/lines/:skuId/short-close` | MANAGE | 남은 수량 > 0 인 라인. 받은 것 0 이어도 된다(공급처 미발송) |
 | **예정일 수정** | `PATCH /purchase-orders/:poId/lines/:skuId/expected-arrival` | MANAGE | `requested`, 또는 남은 수량 > 0 인 `ordered`. `null` 로 비울 수 있다 |
-| 생성·라인 수정·실행·불가·취소 | 기존 | MANAGE | 라인 수정(`PUT :id/lines`)이 재삽입에서 `expected_arrival` 을 누락하던 결함(`purchase-order.manager.ts:507-514`)을 같이 고친다 |
+| 생성·라인 수정·실행·불가·취소 | 기존 | MANAGE | 라인 수정(`PUT :id/lines`)이 `expected_arrival` 을 잃던 결함을 같이 고친다 — **DTO 와 Manager 둘 다**다. `UpdatePurchaseOrderLineDto` 에 필드 자체가 없고(`purchase-order.dto.ts:74-89`) 재삽입(`purchase-order.manager.ts:514-521`)도 싣지 않는다 |
 
 수령 요청:
 
@@ -216,22 +291,27 @@ requested ──실행──▶ ordered ──┬── 입고 대기   received
 }
 ```
 
-거절 — **한국어 메시지**(현장·MD 가 직접 읽는다):
+거절 — **한국어 메시지**(현장·MD 가 직접 읽는다). 검증은 **층을 나눈다**(CLAUDE.md 계층 규약): DB 를 보지 않는
+형태 검증은 DTO(class-validator), DB 를 보는 검증은 **Manager 에서 `@app/shared` 도메인 예외**로. 컨트롤러는 검증하지
+않고 위임만 한다.
 
-| 조건 | 상태 | 문구 방향 |
-|---|---|---|
-| 요청 창고 ≠ 발주 출발 창고 | 400 | 「이 발주는 ○○창고에서 받습니다」 |
-| 한 요청 안의 중복 SKU | 400 | 「같은 품목이 두 번 들어 있습니다」 |
-| 발주가 `cancelled` | 409 | 「취소된 발주입니다」 |
-| 라인이 `requested` / `unavailable` | 409 | 「아직 주문 전인 품목입니다」 / 「발주 불가로 종결된 품목입니다」 |
-| 라인이 전량 입고 / 잔량 포기 | 409 | 「이미 전량 입고된 품목입니다」 / 「잔량 포기된 품목입니다」 |
-| 수량 > 남은 수량 | 409 | 「남은 수량 N개를 넘습니다 — 넘는 분량은 간편입고로 받으세요」 |
+| 조건 | 층 | 상태 | 문구 방향 |
+|---|---|---|---|
+| 수량이 1 이상 정수가 아님 · 라인 0개 | DTO | 400 | 「수량은 1 이상이어야 합니다」 등 |
+| 한 요청 안의 중복 SKU | DTO | 400 | 「같은 품목이 두 번 들어 있습니다」 |
+| 요청 창고 ≠ 발주 출발 창고 | Manager | 400 (`BadRequestError`) | 「이 발주는 ○○창고에서 받습니다」 |
+| 발주가 `cancelled` | Manager | 409 (`ConflictError`) | 「취소된 발주입니다」 |
+| 라인이 `requested` / `unavailable` | Manager | 409 | 「아직 주문 전인 품목입니다」 / 「발주 불가로 종결된 품목입니다」 |
+| 라인이 전량 입고 / 잔량 포기 | Manager | 409 | 「이미 전량 입고된 품목입니다」 / 「잔량 포기된 품목입니다」 |
+| 수량 > 남은 수량 | Manager | 409 | 「남은 수량 N개를 넘습니다 — 넘는 분량은 간편입고로 받으세요」 |
 
 ### 6.2 커널 (`inbound.controllers.ts`)
 
 - 유지: `simple` · `simple-fullscan` · `individual` · `putaway` · `return` · `cancel` · `lines/:lineId/memo` ·
   `verify-barcode` · 회차/로그/적치 대기 조회.
-- `POST /inbound/cancel` 은 `source ≠ direct` 라인을 409 로 거절한다(「발주 입고는 발주에서 취소하세요」).
+- `POST /inbound/cancel` 은 `cancelLine(…, { source: 'direct' })` 를 부르기만 한다. `source ≠ direct` 라인의 409
+  (「발주 입고는 발주에서 취소하세요」)는 **커널이 낸다** — 라우트에 따로 검증을 두지 않는다. 이 409 는 **PR-B 부터**
+  생긴다(§11 PR-A 창 참조).
 - 회차·이력 응답에서 `planItemId` 를 빼고 `source` 를 싣는다 — 화면이 취소 라우트를 고르는 근거다.
 - **삭제**: `GET /inbound/pending` · `POST /inbound/plans/items` · `GET /inbound/plans/items` ·
   `POST /inbound/plans/receive` · `POST /inbound/plans/:planId/items/:itemId/close`.
@@ -253,9 +333,20 @@ requested ──실행──▶ ordered ──┬── 입고 대기   received
 - **커널은 발주 행·라인을 절대 잠그지 않는다.** 역방향 간선이 없으므로 8월 교착의 부류가 생길 수 없다.
 - 커널 단독 조작(적치 · 회송 · direct 취소)은 **회차 라인만** 잠근다.
 - 곁들여 고친다: 현행 적치·회송·취소는 회차 라인을 잠그지 않고 읽는다(`inbound.service.ts:1050`·`:1125`·`:1192`
-  의 `findFirst`). 적치와 취소가 동시에 들어오면 카운터 검증이 샌다 → 커널에서 `FOR UPDATE`.
+  의 `tx.query.…findFirst`). 적치와 취소가 동시에 들어오면 카운터 검증이 샌다 → 커널에서
+  `trx.select().from().where().for('update')`. `db.query.*` 는 CLAUDE.md Inventory 규칙이 금지한 API 이기도 하다.
 - 발주 수령 취소: 발주 행 → 라인 → 커널 `cancelLine`(회차 라인 `FOR UPDATE`). 같은 회차 라인의 적치와는 회차 라인
   락에서만 만나므로 사이클이 없다.
+
+**FK 가 거는 암묵 락도 센다** — 8/27 교착은 명시적 `FOR UPDATE` 만 세고 FK 검사의 `FOR KEY SHARE` 를 안 세서
+났다(항목 7 스펙 §9).
+
+- 링크 행 insert 가 거는 `FOR KEY SHARE` 의 대상은 둘뿐이다: **같은 트랜잭션이 이미 `FOR UPDATE` 로 잡은 발주 라인**과
+  **같은 트랜잭션이 방금 만든 회차 라인**(커밋 전이라 다른 트랜잭션에 보이지 않는다). 새 대기 간선이 생기지 않는다.
+- 커널의 회차 라인 insert 가 부모 회차·SKU·로케이션에 거는 `FOR KEY SHARE` 는 현행 간편입고와 같다 — 새로 생기는
+  간선이 아니다.
+- 수령 취소가 회차 라인에 거는 `NO KEY UPDATE`(수량 카운터 UPDATE)는 링크 행의 FK 가 요구하는 `KEY SHARE` 와 충돌하지
+  않는다.
 
 ### 7.2 멱등
 
@@ -267,24 +358,40 @@ requested ──실행──▶ ordered ──┬── 입고 대기   received
 ## 8. 커널 인터페이스 (입고 모듈이 export)
 
 ```ts
-recordArrival(tx: DbTx, input: {
-  warehouseId: string;
-  locationId?: string;                                   // 비우면 입고기본존
-  method: 'simple' | 'simple_fullscan' | 'individual' | 'planned';
-  source: 'direct' | 'purchase_order';
-  reason: string;                                        // 원장 이벤트 reason (현행 값 보존)
-  idempotencyKey: string;                                // 원장 이벤트 키의 뿌리
-  lines: { skuId: string; quantity: number; memo?: string }[];
-}): Promise<{ receiptId: string; lines: { receiptLineId: string; skuId: string; quantity: number }[] }>;
+/** 출처가 방식을 정한다 — method·source 를 따로 받으면 어긋난 조합을 막을 곳이 없다(§4.3). */
+type ArrivalOrigin =
+  | { source: 'direct'; method: 'simple' | 'simple_fullscan' | 'individual' }
+  | { source: 'purchase_order' };                          // 커널이 method='planned' 로 기록한다
 
-cancelLine(tx: DbTx, receiptLineId: string, expected: { source: 'direct' | 'purchase_order' }):
-  Promise<{ skuId: string; quantity: number }>;
-  // 라인의 source 가 expected.source 와 다르면 거절한다.
-  // POST /inbound/cancel 은 'direct' 로만, 조달은 'purchase_order' 로만 부른다.
+recordArrival(
+  input: ArrivalOrigin & {
+    warehouseId: string;
+    locationId?: string;                                   // 비우면 입고기본존
+    reason: string;                                        // 원장 이벤트 reason (현행 값 보존)
+    idempotencyKey: string;                                // 원장 이벤트 키의 뿌리
+    lines: { skuId: string; quantity: number; memo?: string }[];
+  },
+  tx: DbTx,
+): Promise<{ receiptId: string; lines: { receiptLineId: string; skuId: string; quantity: number }[] }>;
+
+cancelLine(
+  receiptLineId: string,
+  expected: { source: 'direct' | 'purchase_order' },
+  tx: DbTx,
+): Promise<{ skuId: string; quantity: number }>;
+// 라인의 source 가 expected.source 와 다르면 거절한다 — source 검증은 여기 한 곳뿐이다.
+// POST /inbound/cancel 은 'direct' 로만, 조달은 'purchase_order' 로만 부른다.
 ```
 
-적치 · 회송 · 메모 · 조회는 커널 자신의 라우트로 둔다. 간편·전수·개별입고는 라우트·응답·원장 reason·멱등 스코프를
-그대로 두고 내부만 `recordArrival` 호출로 바꾼다(D8).
+**`tx` 는 마지막 인자이고 필수다 — CLAUDE.md Transaction Propagation 규약(«Public methods: `tx?: DbTx` as last
+param»)의 예외로 둔다.** 이유: 커널은 **항상 호출자의 트랜잭션 안에서만** 돌아야 한다. 선택 인자면 호출자가 빠뜨렸을 때
+커널이 제 트랜잭션을 따로 열어, 원장·회차는 커밋되고 문서 정산은 롤백되는 식으로 **원자성이 조용히 깨진다.** 필수로
+두면 그 실수가 컴파일 에러다. 선례: `PurchaseOrderClosurePort.onPlanClosed(poId, tx: DbTx)` — 같은 이유로 필수·마지막
+인자였다. 커널은 `DbService` 로 트랜잭션을 열지 않는다(`dbService.run` 미사용).
+
+간편·전수·개별입고는 라우트·응답·원장 reason·멱등 스코프를 그대로 두고, 이미 열려 있는
+`withIdempotency(…, async (tx) => …)` 안에서 `recordArrival(…, tx)` 를 부르도록 내부만 바꾼다(D8). 적치 · 회송 · 메모 ·
+조회는 커널 자신의 라우트로 둔다.
 
 ## 9. 읽기 쪽
 
@@ -330,8 +437,17 @@ cancelLine(tx: DbTx, receiptLineId: string, expected: { source: 'direct' | 'purc
 
 - `recordArrival` · `cancelLine` 추출, 간편·전수·개별입고를 커널 호출로. 적치·회송·취소의 회차 라인 `FOR UPDATE`.
 - 마이그레이션: enum `inbound_receipt_source ('direct','purchase_order')` 생성 + `inbound_receipt_lines.source` 추가
-  (기본 `direct`). additive.
+  (기본 `direct`). additive. `CREATE TYPE` 은 같은 트랜잭션 안에서 바로 쓸 수 있으므로(§5.1 D9 의 함정은 `ADD VALUE`
+  에만 해당) PR-A·PR-B 마이그레이션이 한 번의 `migrate` 로 같이 돌아도 안전하다.
 - 예정 입고 경로(`receiveFromPlan`·`closePlanItem`)는 **건드리지 않는다** — PR-B 에서 통째로 사라진다.
+- **「동작 보존」의 범위를 명시한다**: 라우트·요청·응답·원장 이벤트·멱등 스코프·에러 코드가 보존 대상이다. 내부 조회
+  API 는 바뀐다 — 적치·회송·취소가 `tx.query.…findFirst`(금지 API)에서 `select … for('update')` 로 간다. 동시 요청의
+  카운터 검증이 새지 않게 되는 것은 의도한 **동작 강화**다.
+- **PR-A → PR-B 창의 공백**: PR-A 동안 옛 `receiveFromPlan` 은 `source` 를 안 채우므로 발주 입고 회차 라인도
+  `source='direct'`(기본값)로 쌓인다. 그래서 커널 `cancelLine` 의 source 가드는 **PR-B 에서 켠다** — PR-A 에서 켜면
+  옛 예정 입고의 당일 취소가 거절된다. PR-A 동안 `/inbound/cancel` 은 현행대로 품목 수량·상태를 복원한다
+  (`inbound.service.ts:1249-1267` 보존). 그 기간에 쌓인 회차 라인의 `source` 는 PR-B 백필 ② 가 `plan_item_id` 로
+  바로잡는다.
 - 순서: **`migrate → deploy`**.
 - 분리 이유: 라이브에서 쓰일 수 있는 경로의 리팩터링을 발주 재설계와 섞지 않는다 — diff 가 「동작이 안 바뀌었다」로만
   읽혀야 한다.
@@ -356,7 +472,30 @@ CREATE TABLE purchase_order_receipt_lines (
 -- stock_summary_view 재생성 (§9)
 
 -- 백필 (custom). 옛 행이 없으면 전부 no-op 이다. 기존 enum 값만 쓴다(§5.1 D9).
--- ① 옛 품목 → 발주 라인 정산
+
+-- ⓪ 가드 — 백필이 결정적이지 않은 데이터면 요란하게 멈춘다.
+--    `inbound_plan_items` 에는 (plan_id, sku_id) UNIQUE 가 없고, `inbound_plans.linked_purchase_order_id` 도 UNIQUE 가
+--    아니다. `ensurePlanForPurchaseOrder` 주석(`inbound.service.ts:736-740`)이 「과거 이중계획 사고 탓에 라이브에 PO
+--    하나에 계획이 둘 붙은 행이 남아 있을 수 있다」고 적는다. 그런 데이터에서 ① 의 UPDATE … FROM 은 다중 매치 중
+--    임의 행을 채택하고 ② 는 양쪽 회차를 모두 링크해 §4.2 불변식을 즉시 깬다. 합산으로 우회하면 옛 destination
+--    계획의 수령을 이중으로 센다(ADR-0032 결정 1 의 사고). 그래서 자동 해석하지 않고 사람에게 넘긴다.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM inbound_plan_items ipi JOIN inbound_plans ip ON ip.id = ipi.plan_id
+    GROUP BY ip.linked_purchase_order_id, ipi.sku_id HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'backfill guard: 한 발주·SKU 에 입고예정 품목이 둘 이상이다 — 사전 확인 쿼리 (P1) 로 행을 보고 사람이 정리할 것';
+  END IF;
+  IF EXISTS (SELECT 1 FROM inbound_plans WHERE plan_type = 'destination') THEN
+    RAISE EXCEPTION 'backfill guard: destination 계획이 남아 있다 — 사전 확인 쿼리 (P2) 로 행을 보고 사람이 정리할 것';
+  END IF;
+  IF EXISTS (SELECT 1 FROM purchase_order_lines WHERE (status = 'ordered') <> (ordered_qty IS NOT NULL)) THEN
+    RAISE EXCEPTION 'backfill guard: status 와 ordered_qty 가 어긋난 발주 라인이 있다 — 사전 확인 쿼리 (P3)';
+  END IF;
+END $$;
+
+-- ① 옛 품목 → 발주 라인 정산 (⓪ 이 다중 매치를 막았으므로 결정적이다)
 UPDATE purchase_order_lines pol
 SET received_qty  = ipi.received_qty,
     closed_reason = ipi.closed_reason,
@@ -383,7 +522,10 @@ SET status = CASE
                WHERE l.po_id = po.id AND l.status = 'ordered')
    AND NOT EXISTS (SELECT 1 FROM purchase_order_lines l
                    WHERE l.po_id = po.id AND l.status = 'ordered'
-                     AND l.closed_at IS NULL AND l.received_qty < l.ordered_qty) THEN 'received'
+                     AND l.closed_at IS NULL
+                     -- COALESCE: ordered_qty 가 NULL 이면 `<` 가 NULL 이 되어 「받을 게 없음」으로 오판한다.
+                     -- ⓪ 가드가 그런 행을 막지만, 식 자체도 NULL 에 안전하게 쓴다.
+                     AND l.received_qty < COALESCE(l.ordered_qty, 0)) THEN 'received'
   ELSE 'confirmed'
 END::po_status
 WHERE po.status <> 'cancelled';
@@ -394,7 +536,29 @@ ALTER TABLE purchase_order_lines ADD CONSTRAINT ck_po_lines_received
   CHECK (received_qty >= 0 AND received_qty <= COALESCE(ordered_qty, 0));
 ALTER TABLE purchase_order_lines ADD CONSTRAINT ck_po_lines_closed
   CHECK (closed_at IS NULL OR status = 'ordered');
+ALTER TABLE purchase_order_lines ADD CONSTRAINT ck_po_lines_ordered_qty
+  CHECK ((status = 'ordered') = (ordered_qty IS NOT NULL));
 ```
+
+**PR-B 마이그레이션 전 사전 확인 쿼리** — 셋 다 0행이면 ⓪ 가드를 통과한다. 0행이 아니면 migrate 전에 사람이 행을
+보고 정리한다(가드가 멈추기 전에 알 수 있게).
+
+```sql
+-- (P1) 한 발주·SKU 에 품목이 둘 이상
+SELECT ip.linked_purchase_order_id, ipi.sku_id, count(*)
+FROM inbound_plan_items ipi JOIN inbound_plans ip ON ip.id = ipi.plan_id
+GROUP BY 1, 2 HAVING count(*) > 1;
+-- (P2) 옛 destination 계획
+SELECT id, linked_purchase_order_id FROM inbound_plans WHERE plan_type = 'destination';
+-- (P3) status 와 ordered_qty 가 어긋난 라인
+SELECT po_id, sku_id, status, ordered_qty FROM purchase_order_lines
+WHERE (status = 'ordered') <> (ordered_qty IS NOT NULL);
+```
+
+⚠️ **`migration-safety.yml` 은 이 마이그레이션에 라벨을 붙이지 못한다** — 패턴이 `DROP COLUMN|DROP TABLE|ALTER COLUMN
+… TYPE|SET NOT NULL|RENAME …` 이라 `ADD CONSTRAINT … CHECK`(기존 행을 좁히는 변경)와 `RAISE EXCEPTION` 가드를 못
+잡는다. **PR-B 본문에 사람이 적는다**: 「기존 행을 좁히는 CHECK 3개와 백필 가드가 있다 — 사전 확인 쿼리 P1~P3 결과를
+붙인다」.
 
 코드: §6 의 라우트 · §5 의 파생 통합 · §9 의 읽기 전환 · 종결 포트·어댑터·옛 입고예정 코드 삭제 · admin-web · 창고 앱 ·
 dev 시드(`scripts/local/seed-dev-core/inbound.ts`) · **셀메이트 import(`apps/core/scripts/import-inbound-plans.ts`) 삭제**.
@@ -407,6 +571,12 @@ dev 시드(`scripts/local/seed-dev-core/inbound.ts`) · **셀메이트 import(`a
 
 - `schema.ts` 에서 삭제 → 생성 마이그레이션: `inbound_plan_items` · `inbound_plans` · enum `plan_type` DROP,
   `inbound_receipt_lines.plan_item_id` · `inbound_work_logs.plan_item_id` DROP COLUMN.
+- **문장 순서보다 `CASCADE` 를 본다.** 이 저장소의 drizzle 생성 SQL 은 `DROP TABLE "…" CASCADE` 다(선례
+  `20260630125603_cluster-a-box-workflow.sql`). 그래서 FK 를 먼저 끊지 않아도 순서 때문에 실패하지는 않는다 — 대신
+  **CASCADE 가 조용히 끌고 가는 의존 객체**가 위험이다. 적용 전에 확인한다:
+  `SELECT classid::regclass, objid, deptype FROM pg_depend WHERE refobjid IN ('inbound_plans'::regclass, 'inbound_plan_items'::regclass);`
+  — FK 제약(두 `plan_item_id` 컬럼의 것)과 테이블 자신의 부속(시퀀스·인덱스·타입) 외에 VIEW 등이 나오면 멈춘다.
+  (`stock_summary_view` 는 PR-B 에서 이 테이블들을 안 읽게 재생성됐어야 한다.)
 - 순서: **`deploy → migrate`**.
 - **적용 전 확인 쿼리** — 셋 다 0행이어야 한다. §12 #13 의 스펙이 같은 쿼리를 쓴다.
 
@@ -440,7 +610,8 @@ HAVING pol.received_qty <> COALESCE(SUM(irl.quantity - irl.canceled_qty), 0);
 
 | # | 잠그는 것 | 수단 |
 |---|---|---|
-| 1 | 헤더 파생 규칙(네 상태 · `cancelled` 고정 · `received → confirmed` 역행 · 전부 잔량 포기 = `received`) | 순수 함수 단위 스펙 (`closure.rules` 두 벌 대체) |
+| 1 | 헤더 파생 규칙(네 상태 · `cancelled` 고정 · `received → confirmed` 역행 · 전부 잔량 포기 = `received`) + **관문 술어 4×2 표**(§5.3) | 순수 함수 단위 스펙 (`closure.rules` 두 벌 대체) |
+| 1a | 관문 적용 — `received` 발주의 라인 수정·실행·불가·취소·예정일 수정 거절, **`received` 발주의 수령 취소는 통과** | 통합 |
 | 2 | **결함 ㄱ·ㄴ·ㄷ 회귀** — ㄱ A 실행·전량 입고 → B 실행 → B 가 입고 대기에 뜬다 · ㄴ A 입고 뒤 B 불가 → `received` · ㄷ `received` 발주의 수령 당일 취소 → `confirmed` + 목록 재등장 | 실 DB 통합 |
 | 3 | 수령 한 번 = 회차 1 + 원장 `RECEIVE` + 링크 + `received_qty`; 파리티 `received_qty = Σ(링크 회차 라인 − 취소)` | 통합 |
 | 4 | 초과 수령 409 **+ DB CHECK 가 직접 UPDATE 를 거절** | 통합 |
@@ -448,12 +619,12 @@ HAVING pol.received_qty <> COALESCE(SUM(irl.quantity - irl.canceled_qty), 0);
 | 6 | 동시성 — 같은 라인 동시 수령 두 건(합계 초과 불가) · 수령 vs 잔량 포기 · 수령 vs 라인 실행 · 적치 vs 취소. **40P01 없음 + 결과 정합** | 격리 DB · 커넥션 둘 (항목 7 교착 재현 방식) |
 | 7 | 멱등 — 같은 키 재시도 = 회차 1개 | 통합 |
 | 8 | **읽기 파리티** — 입고 대기 잔량 = VIEW `inbound_pending_qty` = 파이프라인 ①·전사; 헤더 도착예정일 = 목록 예정일 | 통합 |
-| 9 | 커널 경계 — 커널 소스의 조달·이동 import 0 · `/inbound/cancel` 이 `source ≠ direct` 거절 | arch 스펙(`inventory-write-boundary.arch.spec.ts` 선례) + 통합 |
+| 9 | 커널 경계 — (a) `inbound/` 가 `procurement/`·`warehouse-transfer/` 를 import 하지 않는다 · (b) 입고가 조달 테이블에 쓰지 않는다 · (c) `/inbound/cancel` 이 `source ≠ direct` 거절 | (a) import 방향 arch 스펙 — 선례 `replenishment-boundary.arch.spec.ts:27-55` 의 `moduleSpecifiers` · (b) `inventory-write-boundary.arch.spec.ts` 의 `PO_FORBIDDEN` 을 `purchaseOrders` 에서 **`purchaseOrderLines`·`purchaseOrderReceiptLines` 까지** 넓힌다(지금은 헤더만 잡는다) · (c) 통합 |
 | 10 | PR-A 동작 보존 — 기존 간편·전수·개별·멱등·당일 취소 스펙이 **수정 없이** 통과 | 기존 스펙 |
 | 11 | 라우트 표면 | `inventory-scope-coverage.spec.ts` |
 | 12 | 스토어프론트 동기화 SQL 이 실제 DB 에서 돈다 (컬럼 삭제로 조용히 깨지는 부류) | 통합에서 SQL 1회 실행 |
-| 13 | 백필 — **옛 모델 시드가 든 `dev_core`** 에 PR-B 마이그레이션 적용 → §11 PR-C 확인 쿼리 3종 0행 | 수동 + 쿼리 |
-| 14 | admin-web 입고 진행 문구 · 버튼 노출 조건 | `line-execution-model.spec.ts` (순수 `.ts`) |
+| 13 | 백필 — **옛 모델 시드가 든 `dev_core`** 에 사전 확인 쿼리 P1~P3 → PR-B 마이그레이션 적용 → §11 PR-C 확인 쿼리 3종 0행. 그리고 **⓪ 가드가 실제로 멈추는지** — 격리 DB 에 한 발주·SKU 품목 둘을 심고 migrate 가 `RAISE EXCEPTION` 으로 실패함을 본다 | 수동 + 쿼리 |
+| 14 | admin-web 입고 진행 문구 · 버튼 노출 조건 · 관문 표(서버와 같은 4×2) · `canCancel` 이 `receivedQty` 로 부분 입고를 거른다 | `line-execution-model.spec.ts` (순수 `.ts`) |
 | 15 | 창고 앱 입고 대기 목록 · 수령 화면 | 기존 화면 테스트 갱신 |
 
 **대체·삭제하는 기존 스펙**: `purchase-order-single-plan` · `purchase-order-closure`(어댑터) · `inbound-plan-port-invariant` ·
@@ -472,9 +643,16 @@ HAVING pol.received_qty <> COALESCE(SUM(irl.quantity - irl.canceled_qty), 0);
 ## 13. 문서 · 이슈 갱신
 
 - **ADR-0039 신설** — 「문서가 수령 정산을 소유하고, 현장 입고는 공통 커널이 한다」. ADR-0032 결정 1·4 대체, 결정 2·3
-  유지. 기각 대안은 §2 표. (번호는 착수 시 `ls docs/adr` 로 재확인 — 이 저장소는 번호 충돌 전력이 있다.)
+  유지. 기각 대안은 §2 표. (2026-09-14 확인: 마지막 번호 0038, 0039 는 비어 있다. 중복 전력 0027×3·0028×2 가 있으니
+  착수 시 `ls docs/adr` 로 재확인.)
 - **ADR-0032** — 대체된 결정 1·4 에 표시.
-- **#724 본문** — 닫는 조건 2 의 「`items → plan → PO` 파생」 문장을 이 모델로 교정.
+- **`CONTEXT.md`(용어집)** — `CONTEXT.md:72` 의 「입고 계획 … 한 발주에 계획은 하나뿐이다」 정의를 폐지하고 _Avoid_ 줄의
+  「한 발주에 입고 계획을 둘 만들기」를 걷어낸다. 새로 정의할 용어: **입고예정**(= 남은 수량이 있는 실발주 라인) ·
+  **회차**(한 번의 입고 기록, 커널 소유) · **입고 커널** · **잔량 포기** · **수령 취소**. 발주 `received` 의 뜻에
+  「더 받을 것이 없다」를 덧붙인다(§5.2). `docs/agents/domain.md:5` 의 「CONTEXT.md·docs/adr 가 아직 없다」는 문장도 낡았으니
+  같이 고친다.
+- **#724 본문** — `items → plan → PO` 문장은 닫는 조건 2(「`received` 가 파생된다」 한 줄)가 아니라 **§4 「항목 7 —
+  `received` 파생」 절**과 작업 순서 표 4번 행에 있다. 그 둘을 이 모델로 교정한다.
 - **#745 본문** — 항목 6(`parentPlanId` drop)이 PR-C 에 흡수됐다고 표시.
 - **런북** `docs/runbooks/selmate-stock-pipeline.md` — ① import 삭제, ③ 동기화 원천 변경.
 - 이 작업의 이슈를 열고 이 문서 머리의 자리표시 줄을 링크로 바꾼다.
