@@ -159,7 +159,10 @@ describe('스크레이프 대상 정본 (scrape-targets.ts)', () => {
         .map((entry) => entry.name)
         .sort();
 
-      const accounted = [...SCRAPE_TARGETS.map((t) => t.appDir), ...UNSCRAPED_APPS.map((a) => a.appDir)].sort();
+      // 한 앱이 ECS 서비스 여럿으로 뜨면(medusa → Medusa/MedusaAdmin, ADR-0037) appDir 이 겹친다. 집합으로 비교.
+      const accounted = [
+        ...new Set([...SCRAPE_TARGETS.map((t) => t.appDir), ...UNSCRAPED_APPS.map((a) => a.appDir)]),
+      ].sort();
 
       // 새 앱을 만들면 여기서 실패한다 — 스크레이프할지 말지를 «결정하게» 만드는 장치다.
       expect(appDirs).toEqual(accounted);
