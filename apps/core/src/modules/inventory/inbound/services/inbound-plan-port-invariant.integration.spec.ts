@@ -53,6 +53,7 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       {} as never,
       {} as never,
       new PurchaseOrderClosureAdapter(),
+      {} as never,
     );
   }
 

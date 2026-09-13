@@ -645,6 +645,13 @@
       "when": 1789009738549,
       "tag": "20260910030858_add-sales-order-display-order-no",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789332489404,
+      "tag": "20260913204809_add-inbound-receipt-source",
+      "breakpoints": true
     }
   ]
 }

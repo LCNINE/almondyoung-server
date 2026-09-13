@@ -15,6 +15,7 @@ function build() {
     {} as never,
     idempotency,
     new PurchaseOrderClosureAdapter(),
+    {} as never,
   );
   return { svc, withIdempotency };
 }

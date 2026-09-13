@@ -9,6 +9,7 @@ import {
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { PurchaseOrderClosureAdapter } from '../../../apps/core/src/modules/inventory/procurement/services/purchase-order-closure.adapter';
+import { InboundReceiptKernel } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
 import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
 import { SkuCatalogManager } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
@@ -115,6 +116,7 @@ async function main(): Promise<void> {
       wired.eventStore,
       idempotency,
       new PurchaseOrderClosureAdapter(),
+      new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
     );
 
     // ShipmentPlanningService 는 wireLogistics 의 Wired 밖이라 (다른 BC 조합에서는 안 쓰이는

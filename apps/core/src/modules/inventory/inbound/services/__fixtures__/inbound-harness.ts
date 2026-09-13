@@ -13,6 +13,7 @@ import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/o
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
 import { PurchaseOrderClosureAdapter } from '../../../procurement/services/purchase-order-closure.adapter';
+import { InboundReceiptKernel } from '../../kernel/inbound-receipt.kernel';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
 
@@ -67,7 +68,13 @@ export function makeInboundService(database: Database): InboundService {
     eventStore,
     idempotency,
     new PurchaseOrderClosureAdapter(),
+    new InboundReceiptKernel(command, location, eventStore),
   );
+}
+
+export function makeInboundReceiptKernel(database: Database): InboundReceiptKernel {
+  const { command, location, eventStore } = buildWiring(database);
+  return new InboundReceiptKernel(command, location, eventStore);
 }
 
 export function makeInboundPutawayReader(database: Database): InboundPutawayReader {

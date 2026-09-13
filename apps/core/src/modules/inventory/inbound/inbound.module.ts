@@ -7,6 +7,7 @@ import { PurchaseOrderClosureAdapter } from '../procurement/services/purchase-or
 import { InboundController } from './controllers/inbound.controllers';
 import { InboundService } from './services/inbound.service';
 import { InboundPutawayReader } from './services/inbound-putaway.reader';
+import { InboundReceiptKernel } from './kernel/inbound-receipt.kernel';
 
 @Module({
   imports: [CoreInventoryModule, SkuCatalogModule, SharedModule],
@@ -14,11 +15,12 @@ import { InboundPutawayReader } from './services/inbound-putaway.reader';
   providers: [
     InboundService,
     InboundPutawayReader,
+    InboundReceiptKernel,
     // 어댑터 파일은 procurement/ 에 살지만 등록은 여기서 한다 — ProcurementModule 을
     // import 하면 모듈 순환이 생긴다(procurement 가 이미 InboundModule 을 import 한다).
     // 클래스 파일 하나만 가리키므로 순환이 아니고 forwardRef 도 필요 없다.
     { provide: PURCHASE_ORDER_CLOSURE, useClass: PurchaseOrderClosureAdapter },
   ],
-  exports: [InboundService],
+  exports: [InboundService, InboundReceiptKernel],
 })
 export class InboundModule {}

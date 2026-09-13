@@ -83,6 +83,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       {} as never,
       {} as never,
       new PurchaseOrderClosureAdapter(),
+      {} as never,
     );
   }
 

@@ -10,7 +10,6 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { earliestExpectedDate } from '../../shared/dates/earliest-expected-date';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
@@ -30,10 +29,10 @@ import {
   ListPlanItemsQueryDto,
   InboundPendingListResponse,
 } from '../dto/simple-inbound.dto';
-import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
 import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
+import { InboundReceiptKernel } from '../kernel/inbound-receipt.kernel';
 
 @Injectable()
 export class InboundService {
@@ -48,6 +47,7 @@ export class InboundService {
     private readonly idempotency: InventoryIdempotencyService,
     @Inject(PURCHASE_ORDER_CLOSURE)
     private readonly poClosure: PurchaseOrderClosurePort,
+    private readonly receiptKernel: InboundReceiptKernel,
   ) {}
 
   private get db() {
@@ -69,265 +69,107 @@ export class InboundService {
     }, tx);
   }
 
-  private async getOnHandQuantity(
-    tx: DbTx,
-    params: { skuId: string; warehouseId: string; locationId: string },
-  ): Promise<number> {
-    const row = await tx.query.stockLedgers.findFirst({
-      where: and(
-        eq(wmsTables.stockLedgers.skuId, params.skuId),
-        eq(wmsTables.stockLedgers.warehouseId, params.warehouseId),
-        eq(wmsTables.stockLedgers.locationId, params.locationId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-      ),
-    });
-    return (row?.qty as number) ?? 0;
-  }
-
-  // 간편입고: 지정 창고/로케이션에 여러 SKU를 즉시 입고
+  // 간편입고: 지정 창고의 입고기본존에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
-    const { warehouseId, items } = dto;
-    return this.idempotency.withIdempotency('inbound.simple', dto.idempotencyKey, dto, async (tx) => {
-      // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
-      await this.locationService.ensureSystemLocations(warehouseId, tx);
-      const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-      if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-      const effectiveLocationId = inboundZone.id;
-      // 회차(journal + receipt) 생성
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'simple',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
-      let totalQty = 0;
-      const lines: InboundReceiptLine[] = [];
-      for (const [i, item] of items.entries()) {
-        const sku = await this.skuCatalogService.findById(item.skuId, tx);
-        if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
-
-        const { eventId } = await this.commandService.receive(
+    return this.idempotency.withIdempotency(
+      'inbound.simple',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist(
+          dto.items.map((item) => item.skuId),
+          tx,
+        );
+        return this.receiptKernel.recordArrival(
           {
-            skuId: item.skuId,
-            toWarehouseId: warehouseId,
-            toLocationId: effectiveLocationId,
-            quantity: item.quantity,
-            occurredAt: new Date(),
+            source: 'direct',
+            method: 'simple',
+            warehouseId: dto.warehouseId,
             reason: 'simple_inbound',
-            journalId: journal.id,
-            idempotencyKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
+            lines: dto.items.map((item, i) => ({
+              skuId: item.skuId,
+              quantity: item.quantity,
+              memo: item.memo,
+              eventKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
+            })),
           },
           tx,
         );
-
-        const [line] = await tx
-          .insert(wmsTables.inboundReceiptLines)
-          .values({
-            receiptId: receipt.id,
-            skuId: item.skuId,
-            quantity: item.quantity,
-            originLocationId: effectiveLocationId,
-            eventId: eventId ?? null,
-            memo: item.memo,
-          })
-          .returning();
-
-        lines.push(line);
-        totalQty += item.quantity;
-      }
-
-      const [updatedReceipt] = await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
-        .returning();
-
-      // 작업 로그 기록 (회차 레벨)
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity: totalQty,
-        method: 'simple',
-        reason: 'simple_inbound',
-      });
-
-      return { receipt: updatedReceipt, lines };
-    }, tx);
+      },
+      tx,
+    );
   }
 
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
   async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
-    const { warehouseId, items } = dto;
-    return this.idempotency.withIdempotency('inbound.simple-fullscan', dto.idempotencyKey, dto, async (tx) => {
-      await this.locationService.ensureSystemLocations(warehouseId, tx);
-      const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-      if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-      const effectiveLocationId = inboundZone.id;
-
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'simple_fullscan',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
-      let totalQty = 0;
-      const lines: InboundReceiptLine[] = [];
-      for (const [i, item] of items.entries()) {
-        const sku = await this.skuCatalogService.findById(item.skuId, tx);
-        if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
-        const { eventId } = await this.commandService.receive(
+    return this.idempotency.withIdempotency(
+      'inbound.simple-fullscan',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist(
+          dto.items.map((item) => item.skuId),
+          tx,
+        );
+        return this.receiptKernel.recordArrival(
           {
-            skuId: item.skuId,
-            toWarehouseId: warehouseId,
-            toLocationId: effectiveLocationId,
-            quantity: item.quantity,
-            occurredAt: new Date(),
+            source: 'direct',
+            method: 'simple_fullscan',
+            warehouseId: dto.warehouseId,
             reason: 'simple_inbound_fullscan',
-            journalId: journal.id,
-            idempotencyKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
+            lines: dto.items.map((item, i) => ({
+              skuId: item.skuId,
+              quantity: item.quantity,
+              memo: item.memo,
+              eventKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
+            })),
           },
           tx,
         );
-        const [line] = await tx
-          .insert(wmsTables.inboundReceiptLines)
-          .values({
-            receiptId: receipt.id,
-            skuId: item.skuId,
-            quantity: item.quantity,
-            originLocationId: effectiveLocationId,
-            eventId: eventId ?? null,
-            memo: item.memo,
-          })
-          .returning();
-        lines.push(line);
-        totalQty += item.quantity;
-      }
-      const [updatedReceipt] = await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
-        .returning();
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity: totalQty,
-        method: 'simple_fullscan',
-        reason: 'simple_inbound_fullscan',
-      });
-      return { receipt: updatedReceipt, lines };
-    }, tx);
+      },
+      tx,
+    );
   }
 
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
   async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
-    const { warehouseId, skuId, quantity } = dto;
-    return this.idempotency.withIdempotency('inbound.individual', dto.idempotencyKey, dto, async (tx) => {
-      let effectiveLocationId = dto.locationId ?? null;
-      if (!effectiveLocationId) {
-        await this.locationService.ensureSystemLocations(warehouseId, tx);
-        const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
-        if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
-        effectiveLocationId = inboundZone.id;
-      }
+    return this.idempotency.withIdempotency(
+      'inbound.individual',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.assertSkusExist([dto.skuId], tx);
+        const { receipt, lines } = await this.receiptKernel.recordArrival(
+          {
+            source: 'direct',
+            method: 'individual',
+            warehouseId: dto.warehouseId,
+            locationId: dto.locationId ?? null,
+            reason: 'individual_inbound',
+            // 개별입고의 현행 이벤트 키는 순번이 없다 — 문자열을 그대로 보존한다.
+            lines: [
+              {
+                skuId: dto.skuId,
+                quantity: dto.quantity,
+                memo: dto.memo,
+                eventKey: `inbound.individual:${dto.idempotencyKey}`,
+              },
+            ],
+          },
+          tx,
+        );
+        return { receipt, line: lines[0] };
+      },
+      tx,
+    );
+  }
 
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({
-          sourceType: 'inbound',
-        })
-        .returning();
-
-      const [receipt] = await tx
-        .insert(wmsTables.inboundReceipts)
-        .values({
-          method: 'individual',
-          warehouseId,
-          locationId: effectiveLocationId,
-          occurredAt: new Date(),
-          status: 'posted',
-          totalQuantity: 0,
-          journalId: journal.id,
-        })
-        .returning();
-
+  /** 입고 전 SKU 존재 확인 — 현행 404 계약(`SKU ${id} not found`)을 유지한다. */
+  private async assertSkusExist(skuIds: string[], tx: DbTx): Promise<void> {
+    for (const skuId of skuIds) {
       const sku = await this.skuCatalogService.findById(skuId, tx);
       if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
-
-      const { eventId } = await this.commandService.receive(
-        {
-          skuId,
-          toWarehouseId: warehouseId,
-          toLocationId: effectiveLocationId,
-          quantity,
-          occurredAt: new Date(),
-          reason: 'individual_inbound',
-          journalId: journal.id,
-          idempotencyKey: `inbound.individual:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      const [line] = await tx
-        .insert(wmsTables.inboundReceiptLines)
-        .values({
-          receiptId: receipt.id,
-          skuId,
-          quantity,
-          originLocationId: effectiveLocationId,
-          eventId: eventId ?? null,
-          memo: dto.memo,
-        })
-        .returning();
-
-      await tx
-        .update(wmsTables.inboundReceipts)
-        .set({ totalQuantity: quantity })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'INBOUND',
-        receiptId: receipt.id,
-        warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity,
-        method: 'individual',
-        reason: 'individual_inbound',
-      });
-
-      return { receipt, line };
-    }, tx);
+    }
   }
 
   // 입고 예정 목록 조회 (이중 입고 계획 지원)
@@ -1046,253 +888,82 @@ export class InboundService {
 
   // 즉시 적치(원위치 → 목적지)
   async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.putaway', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-
-      const originLocationId = line.originLocationId!;
-      if (!originLocationId) throw new BadRequestException('origin location missing');
-
-      // 목적지 로케이션 검증: 존재/활성/동일 창고
-      const dest = await tx.query.locations.findFirst({
-        where: eq(wmsTables.locations.id, dto.toLocationId),
-      });
-      if (!dest) throw new NotFoundException('destination location not found');
-      if (!dest.isActive) throw new BadRequestException('destination location is inactive');
-      if (dest.warehouseId !== receipt.warehouseId)
-        throw new BadRequestException('destination location must be in the same warehouse');
-
-      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
-      if (dto.quantity <= 0 || dto.quantity > originAvailable) {
-        throw new BadRequestException('quantity exceeds origin available');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND 수량 확인
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < dto.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin');
-      }
-
-      // 내부 이동: 원본 위치 → 목표 위치 (즉시)
-      const moveResult = await this.commandService.moveInternal(
-        {
-          skuId: line.skuId,
-          warehouseId: receipt.warehouseId,
-          fromLocationId: originLocationId,
-          toLocationId: dto.toLocationId,
-          quantity: dto.quantity,
-          reason: 'putaway_internal_move',
-          idempotencyKey: `inbound.putaway:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ putawayFromOriginQty: line.putawayFromOriginQty + dto.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'PUTAWAY',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        toLocationId: dto.toLocationId,
-        quantity: dto.quantity,
-        eventId: moveResult.eventId ?? null,
-      });
-
-      return { success: true };
-    }, tx);
+    return this.idempotency.withIdempotency(
+      'inbound.putaway',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.receiptKernel.putaway(
+          {
+            receiptLineId: dto.lineId,
+            toLocationId: dto.toLocationId,
+            quantity: dto.quantity,
+            eventKey: `inbound.putaway:${dto.idempotencyKey}`,
+          },
+          tx,
+        );
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 회송
   async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.return', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-      const originLocationId = line.originLocationId!;
-      // 선행 제약: 적치가 존재하면 회송 불가 (원위치로 모두 되돌린 후 처리)
-      if ((line.putawayFromOriginQty ?? 0) > 0) {
-        throw new BadRequestException('cannot return: putaway exists; move all back to origin first');
-      }
-      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
-      if (dto.quantity <= 0 || dto.quantity > originAvailable) {
-        throw new BadRequestException('quantity exceeds origin available');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND 수량 확인
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < dto.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin');
-      }
-
-      const event = await this.eventStore.createEvent(
-        {
-          skuId: line.skuId,
-          fromWarehouseId: receipt.warehouseId,
-          fromLocationId: originLocationId,
-          fromState: 'ON_HAND',
-          transitionType: 'ADJUST_DOWN',
-          quantity: dto.quantity,
-          occurredAt: new Date(),
-          reason: 'RETURN',
-          idempotencyKey: `inbound.return:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ returnedQty: line.returnedQty + dto.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'RETURN',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        quantity: dto.quantity,
-        reason: dto.reason,
-        eventId: event?.id ?? null,
-      });
-
-      return { success: true };
-    }, tx);
+    return this.idempotency.withIdempotency(
+      'inbound.return',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        await this.receiptKernel.returnLine(
+          {
+            receiptLineId: dto.lineId,
+            quantity: dto.quantity,
+            reason: dto.reason,
+            eventKey: `inbound.return:${dto.idempotencyKey}`,
+          },
+          tx,
+        );
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 입고취소
   async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.cancel', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-      const originLocationId = line.originLocationId!;
+    return this.idempotency.withIdempotency(
+      'inbound.cancel',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        const line = await this.receiptKernel.cancelLine({ receiptLineId: dto.lineId, quantity: dto.quantity }, tx);
 
-      // 전량 취소만 허용
-      if (dto.quantity !== line.quantity) {
-        throw new BadRequestException('must cancel the full received quantity of the line');
-      }
-
-      // 선행 제약: 적치/회송 존재 시 취소 불가
-      if ((line.putawayFromOriginQty ?? 0) > 0) {
-        throw new BadRequestException('cannot cancel: putaway exists; move all back to origin first');
-      }
-      if ((line.returnedQty ?? 0) > 0) {
-        throw new BadRequestException('cannot cancel: returns exist; cancel returns first');
-      }
-      if ((line.canceledQty ?? 0) > 0) {
-        throw new BadRequestException('already canceled');
-      }
-
-      // 당일 제한(Asia/Seoul 기준)
-      const receiptRow = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receiptRow) throw new NotFoundException('inbound receipt not found');
-      if (!isTodaySeoul(receiptRow.occurredAt)) {
-        throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND가 전량 있어야 함
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < line.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin to cancel');
-      }
-
-      // 이벤트 레벨: 원 입고 이벤트 역분개(reversal)
-      if (!line.eventId) {
-        throw new BadRequestException('original receive eventId missing; cannot perform reversal');
-      }
-      const rev = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
-
-      // 라인 전량 취소 기록(감사 용도)
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ canceledQty: line.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
-      // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
-      if (line.planItemId) {
-        const planItem = await tx.query.inboundPlanItems.findFirst({
-          where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
-        });
-        if (planItem) {
-          const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
-          await tx
-            .update(wmsTables.inboundPlanItems)
-            .set({
-              receivedQty: restored,
-              // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
-              // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
-              status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
-            })
-            .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+        // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
+        // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
+        // PR-B 에서 발주 수령 취소(`POST /purchase-orders/receipt-lines/:id/cancel`)로 대체되며 사라진다.
+        if (line.planItemId) {
+          const planItem = await tx.query.inboundPlanItems.findFirst({
+            where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
+          });
+          if (planItem) {
+            const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
+            await tx
+              .update(wmsTables.inboundPlanItems)
+              .set({
+                receivedQty: restored,
+                // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
+                // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
+                status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
+              })
+              .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+          }
         }
-      }
 
-      // 작업 로그 기록
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'CANCEL',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        quantity: line.quantity,
-        reason: 'CANCEL',
-        eventId: rev?.id ?? null,
-      });
-
-      // 모든 라인이 취소되면 헤더를 voided 처리하여 receipts 기반 조회에서 제외
-      const lines = await tx.query.inboundReceiptLines.findMany({
-        where: eq(wmsTables.inboundReceiptLines.receiptId, line.receiptId),
-      });
-      const allCanceled = lines.every((l) => (l.canceledQty ?? 0) >= (l.quantity ?? 0));
-      if (allCanceled) {
-        await tx
-          .update(wmsTables.inboundReceipts)
-          .set({ status: 'voided', totalQuantity: 0 })
-          .where(eq(wmsTables.inboundReceipts.id, line.receiptId));
-      }
-
-      return { success: true };
-    }, tx);
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 입고 실적 조회

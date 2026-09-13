@@ -82,6 +82,7 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       {} as never,
       {} as never,
       new PurchaseOrderClosureAdapter(),
+      {} as never,
     );
     return buildPurchaseOrderPort(dbService, inboundService);
   }
