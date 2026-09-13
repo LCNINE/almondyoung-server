@@ -29,7 +29,6 @@ import {
   ListPlanItemsQueryDto,
   InboundPendingListResponse,
 } from '../dto/simple-inbound.dto';
-import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
 import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
@@ -1046,111 +1045,38 @@ export class InboundService {
 
   // 입고취소
   async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
-    return this.idempotency.withIdempotency('inbound.cancel', dto.idempotencyKey, dto, async (tx) => {
-      const line = await tx.query.inboundReceiptLines.findFirst({
-        where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
-      });
-      if (!line) throw new NotFoundException('inbound line not found');
-      const receipt = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receipt) throw new NotFoundException('inbound receipt not found');
-      const originLocationId = line.originLocationId!;
+    return this.idempotency.withIdempotency(
+      'inbound.cancel',
+      dto.idempotencyKey,
+      dto,
+      async (tx) => {
+        const line = await this.receiptKernel.cancelLine({ receiptLineId: dto.lineId, quantity: dto.quantity }, tx);
 
-      // 전량 취소만 허용
-      if (dto.quantity !== line.quantity) {
-        throw new BadRequestException('must cancel the full received quantity of the line');
-      }
-
-      // 선행 제약: 적치/회송 존재 시 취소 불가
-      if ((line.putawayFromOriginQty ?? 0) > 0) {
-        throw new BadRequestException('cannot cancel: putaway exists; move all back to origin first');
-      }
-      if ((line.returnedQty ?? 0) > 0) {
-        throw new BadRequestException('cannot cancel: returns exist; cancel returns first');
-      }
-      if ((line.canceledQty ?? 0) > 0) {
-        throw new BadRequestException('already canceled');
-      }
-
-      // 당일 제한(Asia/Seoul 기준)
-      const receiptRow = await tx.query.inboundReceipts.findFirst({
-        where: eq(wmsTables.inboundReceipts.id, line.receiptId),
-      });
-      if (!receiptRow) throw new NotFoundException('inbound receipt not found');
-      if (!isTodaySeoul(receiptRow.occurredAt)) {
-        throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
-      }
-
-      // 실원장 검증: 원위치 ON_HAND가 전량 있어야 함
-      const onHand = await this.getOnHandQuantity(tx, {
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        locationId: originLocationId,
-      });
-      if (onHand < line.quantity) {
-        throw new BadRequestException('insufficient on-hand at origin to cancel');
-      }
-
-      // 이벤트 레벨: 원 입고 이벤트 역분개(reversal)
-      if (!line.eventId) {
-        throw new BadRequestException('original receive eventId missing; cannot perform reversal');
-      }
-      const rev = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
-
-      // 라인 전량 취소 기록(감사 용도)
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ canceledQty: line.quantity })
-        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
-
-      // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
-      // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
-      if (line.planItemId) {
-        const planItem = await tx.query.inboundPlanItems.findFirst({
-          where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
-        });
-        if (planItem) {
-          const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
-          await tx
-            .update(wmsTables.inboundPlanItems)
-            .set({
-              receivedQty: restored,
-              // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
-              // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
-              status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
-            })
-            .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+        // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
+        // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
+        // PR-B 에서 발주 수령 취소(`POST /purchase-orders/receipt-lines/:id/cancel`)로 대체되며 사라진다.
+        if (line.planItemId) {
+          const planItem = await tx.query.inboundPlanItems.findFirst({
+            where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
+          });
+          if (planItem) {
+            const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
+            await tx
+              .update(wmsTables.inboundPlanItems)
+              .set({
+                receivedQty: restored,
+                // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
+                // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
+                status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
+              })
+              .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+          }
         }
-      }
 
-      // 작업 로그 기록
-      await tx.insert(wmsTables.inboundWorkLogs).values({
-        type: 'CANCEL',
-        receiptId: receipt.id,
-        lineId: line.id,
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        quantity: line.quantity,
-        reason: 'CANCEL',
-        eventId: rev?.id ?? null,
-      });
-
-      // 모든 라인이 취소되면 헤더를 voided 처리하여 receipts 기반 조회에서 제외
-      const lines = await tx.query.inboundReceiptLines.findMany({
-        where: eq(wmsTables.inboundReceiptLines.receiptId, line.receiptId),
-      });
-      const allCanceled = lines.every((l) => (l.canceledQty ?? 0) >= (l.quantity ?? 0));
-      if (allCanceled) {
-        await tx
-          .update(wmsTables.inboundReceipts)
-          .set({ status: 'voided', totalQuantity: 0 })
-          .where(eq(wmsTables.inboundReceipts.id, line.receiptId));
-      }
-
-      return { success: true };
-    }, tx);
+        return { success: true };
+      },
+      tx,
+    );
   }
 
   // 입고 실적 조회
