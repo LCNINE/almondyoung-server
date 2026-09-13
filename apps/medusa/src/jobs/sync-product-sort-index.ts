@@ -5,8 +5,8 @@ import syncProductSortIndex from '../scripts/sync-product-sort-index';
 // review_count 는 ugc 이벤트를 Medusa 가 직접 소비하지 못해(=Kafka 미연동) 이 주기 job 이 유일한 적재 경로다.
 // 동작은 `medusa exec ./src/scripts/sync-product-sort-index` 와 동일.
 //
-// ponytail: 현재 Medusa 가 worker_mode 미분리(shared) + 2인스턴스라 이 job 이 인스턴스마다 중복 실행될 수 있다.
-//           upsert 라 결과는 멱등(중복 무해)이며 하루 1회/저부하라 방치. 중복을 없애려면 worker 인스턴스를 분리할 것.
+// ADR-0037 (#855): 백그라운드(job·subscriber)는 admin 인스턴스(`workerMode: shared`) 하나만 돌린다.
+//           store 는 `server` 라 이 job 을 로드하지 않는다 — 인스턴스 중복 실행 문제는 구조로 사라졌다.
 export default async function syncProductSortIndexJob(container: MedusaContainer) {
   await syncProductSortIndex({ container, args: [] });
 }

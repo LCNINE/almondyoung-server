@@ -81,4 +81,6 @@ EXPOSE 9000
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
 # --execute-safe-links: link sync 가 interactive prompt 에서 멈추지 않도록 안전한 액션만 자동 실행
-CMD ["sh", "-c", "yarn medusa db:migrate --execute-safe-links && yarn start"]
+# MEDUSA_RUN_DB_MIGRATE=false: store 인스턴스는 migrate 를 건너뛴다 (ADR-0037 — Medusa schema
+# migration 은 잠금이 없어 두 컨테이너가 동시에 돌면 경쟁한다. admin 하나만 돈다).
+CMD ["sh", "-c", "if [ \"$MEDUSA_RUN_DB_MIGRATE\" != \"false\" ]; then yarn medusa db:migrate --execute-safe-links; fi && yarn start"]
