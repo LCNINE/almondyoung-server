@@ -30,17 +30,40 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
 미뤄 두었다. 2026-09-13 에 그 비용을 수용하기로 결정했다.
 
 ## Decision
-- **공유 Redis 를 복원한다.** 기본 후보는 설계 §5D 의 ElastiCache Serverless(Valkey). 노드형과의
-  비용 비교는 #855 에서 한 번 하고, 결과를 이 ADR 에 추기한다. 사이드카의 `appendonly no` +
-  `save ''`(재시작 시 인플라이트 큐 유실 허용) 전제는 공유 캐시에서 폐기한다 — 영속 정책은
-  관리형 기본값을 따르고, 큐 유실을 «설계의 전제»로 두지 않는다.
+- **공유 Redis 를 복원한다 — 노드형 ElastiCache(Valkey, `cache.t4g.micro`, 클러스터 모드 끔).**
+  2026-07 에 제거한 바로 그 구성이다(`deployments/lcnine/services/infra/shared.ts` 의 Redis 제거 주석).
+  설계 §5D 가 제안한 Serverless 는 채택하지 않는다 — *2026-09-13 추기*:
+  - Serverless 는 클러스터 모드 프로토콜 위에 있다. Medusa 의 Redis 모듈 다섯(`event-bus-redis`·
+    `workflow-engine-redis`·`locking-redis`·`cache-redis`·`caching-redis`)은 전부 loader 에서
+    `new ioredis(url)` 로 **단일 노드 클라이언트**를 만든다. 도출:
+    `grep -rn "new ioredis" apps/medusa/node_modules/@medusajs/*-redis/dist`.
+  - `event-bus-redis` 의 BullMQ 프리픽스는 클래스 이름으로 고정돼 있고 해시태그가 없다. BullMQ 의
+    Lua 스크립트는 한 큐의 여러 키를 한 번에 만지므로 키가 슬롯별로 갈리면 CROSSSLOT 으로 죽는다.
+    설계 §5D 는 이 호환성을 검토하지 않았다.
+  - 비용 차이는 몇 달러다. «되는지 모르는» 쪽을 그 값에 고르지 않는다. Serverless 로 바꾸려면
+    BullMQ 가 클러스터 모드 Valkey 에 붙는 것을 로컬에서 먼저 실증하고 이 ADR 을 개정한다.
+  - 영속 정책은 노드형 기본값(스냅샷 없음)을 따른다. 사이드카의 `appendonly no` + `save ''` 전제와
+    신뢰도 등급은 같으나, 큐 유실을 «설계의 전제»로 두지는 않는다 — 태스크 재시작이 아니라
+    캐시 노드 장애에서만 유실된다.
 - **Medusa 를 두 서비스로 나눈다.**
-  - **store** — `workerMode: server`. `/store/*` 와 `/auth/*` 만 받는다. subscriber·scheduled job·
-    워크플로 비동기 단계를 돌리지 않는다. 스토어프론트의 `MEDUSA_BACKEND_URL` 이 여기를 본다.
+  - **store** — `workerMode: server`. `/admin/*` 를 **제외한 전부**를 받는다 — `/store/*`·`/auth/*`·
+    `/hooks/*`·`/health`. subscriber·scheduled job·워크플로 비동기 단계를 돌리지 않는다.
+    스토어프론트의 `MEDUSA_BACKEND_URL` 이 여기를 본다.
+    *2026-09-13 추기*: `/hooks/*` 를 store 에 두는 이유 — wallet 의 결제 웹훅이
+    `/hooks/payment/...` 를 치고(`services.ts` 의 `WALLET_MEDUSA_WEBHOOK_URL`),
+    `apps/medusa/src/api/hooks/payment-events` 는 `completeCartWorkflow`·`cancelOrderWorkflow`·
+    `capturePaymentWorkflow` 를 돌린다. 손님의 결제 완료 그 자체라 체크아웃과 같은 인스턴스에서
+    격리돼야 한다. #829 가 관측한 「일괄삭제와 겹친 결제 콜백 504」가 이 배치로 사라지는 사례다.
   - **admin** — `workerMode: shared`. `/admin/*` 와 백그라운드 전부(subscriber·cron·워크플로 엔진).
     channel-adapter·admin-web·타임세일 크론·백필이 여기를 본다.
   - 라우팅은 **ALB 리스너 룰의 경로 조건**으로 한다(`/admin/*` → admin). `createService` 가 이미
     `transform.listenerRule` 로 host 조건을 덮어쓰므로 같은 자리에 붙인다.
+  - **호스트는 하나다(`medusa.`), 경로 룰만 갈린다** — *2026-09-13 추기*. 룰은 `/admin/*` → admin
+    **하나뿐**이고 나머지는 store 기본 타깃이다. 그래서 channel-adapter·admin-web·wallet·
+    스토어프론트 어느 호출자도 URL 을 바꾸지 않는다. 호스트를 둘로 가르면 스토어프론트 배포(이
+    저장소 밖)까지 같은 창에 맞춰야 하고 롤백 지점이 둘이 된다. 두 번째 `createService` 가 별도
+    슬러그(예: `medusa-admin`)를 갖더라도 그 호스트는 ECS Exec·백필 같은 내부 용도로만 쓰고
+    호출자에게 노출하지 않는다.
 - **`max: 2` + shared 하나는 채택하지 않는다.** ALB 라운드로빈이라 스토어프론트 요청이 여전히
   대량등록과 같은 이벤트 루프에 줄을 선다. 비용이 같은데 격리가 없다 (설계 §5D 「대안 기각」).
 - **`workerMode` 분리만으로는 부족하다.** admin API 가 실행하는 워크플로는 요청을 받은
@@ -48,7 +71,9 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
 - **쓰기 비용 자체는 별도로 줄인다** — #856(상품 N 건 묶음 동기화 라우트). 분리는 격리를, 묶음은
   admin 인스턴스의 비용을 N 분의 1 로 줄이는 독립 효과를 갖는다. 둘은 서로를 대체하지 않는다.
 - **전후 비교는 #710(트레이스 샘플링) 정리 뒤 같은 측정 창에서 한다.** 무샘플링 계측이 CPU 수치의
-  교란 변수다.
+  교란 변수다. *2026-09-13 추기*: #710 의 결정 셋(비율 vs tail·`db`/`query` 계측·인제스트 상한)을
+  전부 기다리지 않는다. 기준선에 필요한 최소판 — 샘플러를 코드에 명시하고 Medusa 의
+  `instrument.db`·`query` 를 끄는 것 — 만 #855 에 선행한다. tail sampling 은 #713 의 후속이다.
 
 ## Consequences
 - 월 비용이 오른다 — 두 번째 Fargate 태스크 + 관리형 Redis. 추정치는 설계 §5D, 실측치는 배포 후
@@ -61,8 +86,8 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
 - `locking-redis`·`workflow-engine-redis`·`event-bus-redis`·`cache-redis`·`caching-redis` 가 전부
   같은 공유 Redis 를 본다(`medusa-config.js`). 인덱스 분리는 ElastiCache 시절과 같다.
 - 배포는 SST 한 스택이다 — 「A 먼저」를 실행할 수단이 없다([[sst-single-stack-no-deploy-order]]).
-  Redis 복원 → 두 서비스 생성 → 호출자 URL 전환을 **한 배포**로 묶고, 롤백은 `services.ts` 의
-  해당 블록 되돌리기다. 옛 사이드카 valkey 의 인플라이트 큐는 전환 시점에 유실된다 — 대량등록이
+  Redis 복원 → 두 서비스 생성 → 경로 룰 추가를 **한 배포**로 묶고, 롤백은 `services.ts` 의
+  해당 블록 되돌리기다. 호출자 URL 전환은 없다(위 「호스트는 하나다」). 옛 사이드카 valkey 의 인플라이트 큐는 전환 시점에 유실된다 — 대량등록이
   돌지 않는 시각에 배포한다(#852 의 구간 도출 SQL 로 확인).
 - Medusa ECS Exec(`--container main`)·백필 스크립트는 admin 서비스를 대상으로 한다.
 - 닫기 판정: 대량등록 세션 구간의 **store** CPU·ALB p95 가 비-대량 구간과 구분되지 않는다
