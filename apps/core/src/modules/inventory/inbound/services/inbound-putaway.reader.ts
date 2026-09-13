@@ -22,7 +22,7 @@ export class InboundPutawayReader {
     const { warehouseId, days } = params;
 
     return this.dbService.run(async (trx) => {
-      // putawayFromOrigin 의 originAvailable 검증식과 같은 식이다(inbound.service.ts:846).
+      // `InboundReceiptKernel.putaway` 의 `originAvailable` 검증식과 같은 식이다.
       // 화면이 제안하는 수량과 서버가 허용하는 수량이 어긋날 수 없게 하나로 둔다.
       const pendingQty = sql<number>`(
         ${wmsTables.inboundReceiptLines.quantity}

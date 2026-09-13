@@ -24,6 +24,9 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
   let kernel: InboundReceiptKernel;
 
   beforeAll(() => {
+    // `max: 1` 은 판별력을 위한 설정이다 — 커널 하위 호출이 `tx` 를 안 넘기고 자기 커넥션을 새로 열면
+    // (=호출자 트랜잭션 밖에 쓰면) 그 커넥션도 이 풀에서 빌려야 해서, 유일한 커넥션을 쥔 채 대기 중인
+    // `tx` 때문에 즉시 걸린다. 그러면 조용히 트랜잭션 밖에 쓰는 대신 스펙이 멎어(hang) 타임아웃으로 드러난다.
     client = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(client, { schema: wmsSchema });
     kernel = makeInboundReceiptKernel(db);
@@ -184,11 +187,13 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
 
   /**
    * `hold` 를 연 트랜잭션 안에서 실행해 둔 채로, 다른 커넥션이 같은 회차 라인을 NOWAIT 로 잠가 본다.
-   * 탐침은 `FOR UPDATE` 가 아니라 `FOR KEY SHARE` 를 쓴다 — `hold` 트랜잭션은 명시적 잠금 말고도
-   * `canceled_qty` UPDATE(FOR NO KEY UPDATE 암묵 락)와 라인을 FK 로 참조하는 작업 로그 INSERT
-   * (FOR KEY SHARE 암묵 락)를 하므로, `FOR UPDATE NOWAIT` 탐침은 `.for('update')` 유무와 무관하게
-   * 항상 55P03 이 나서 판별력이 없다. `FOR KEY SHARE` 는 `FOR UPDATE` 하고만 충돌하므로, 55P03 이면
-   * 그건 오직 `cancelLine` 이 명시적으로 잡은 행 잠금 탓이다. 끝나면 롤백한다.
+   * `cancelLine`·`putaway`·`returnLine` 세 호출 모두 이 헬퍼로 잰다. 탐침은 `FOR UPDATE` 가 아니라
+   * `FOR KEY SHARE` 를 쓴다 — held 호출은 명시적 잠금 말고도 자신의 수량 카운터 UPDATE(`canceled_qty`·
+   * `putaway_from_origin_qty`·`returned_qty` 는 key 컬럼이 아니라 FOR NO KEY UPDATE 암묵 락)와 라인을
+   * FK 로 참조하는 작업 로그 INSERT(FOR KEY SHARE 암묵 락)를 하는데, 이 둘은 `FOR KEY SHARE` 탐침과
+   * 충돌하지 않는다. 그래서 `FOR UPDATE NOWAIT` 탐침을 썼다면 `.for('update')` 유무와 무관하게 항상
+   * 55P03 이 나서 판별력이 없었을 것이다. `FOR KEY SHARE` 는 `FOR UPDATE` 하고만 충돌하므로, 55P03 이면
+   * 그건 오직 커널이 명시적으로 잡은 행 잠금 탓이다. 끝나면 롤백한다.
    */
   async function expectLineLockedDuring(lineId: string, hold: (tx: DbTx) => Promise<unknown>) {
     let entered: () => void = () => undefined;

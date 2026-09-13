@@ -35,7 +35,11 @@ export function moduleSpecifiers(file: string): string[] {
   return specifiers;
 }
 
-/** 파일을 읽어 `/* … *\/` 블록·`// …` 라인 주석을 지운 텍스트를 돌려준다(문서 안의 키워드 오탐 방지). */
+/**
+ * 파일을 읽어 `/* … *\/` 블록·`// …` 라인 주석을 지운 텍스트를 돌려준다(문서 안의 키워드 오탐 방지).
+ * `//` 제거는 문자열 리터럴을 모른다 — 같은 줄의 문자열 안에 `//` 가 있으면 그 지점부터 줄 나머지가
+ * 함께 잘려나간다.
+ */
 export function readCodeWithoutComments(file: string): string {
   const source = readFileSync(file, 'utf8');
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');

@@ -346,7 +346,11 @@ admin-web 이득: 현행 `canCancel` 은 「부분 입고된 발주를 화면이
 - 커널의 회차 라인 insert 가 부모 회차·SKU·로케이션에 거는 `FOR KEY SHARE` 는 현행 간편입고와 같다 — 새로 생기는
   간선이 아니다.
 - 수령 취소가 회차 라인에 거는 `NO KEY UPDATE`(수량 카운터 UPDATE)는 링크 행의 FK 가 요구하는 `KEY SHARE` 와 충돌하지
-  않는다.
+  않는다 — 다만 이건 절반만 맞다. 커널의 `cancelLine`(및 `putaway`·`returnLine`)은 그 전에 이미 회차 라인에
+  **명시적 `FOR UPDATE`** 를 걸어 두는데, 이건 `KEY SHARE` 와 충돌한다. 그런데도 새 대기 간선이 안 생기는 이유는
+  따로 있다: 링크 행 insert 는 **회차 라인을 만든 바로 그 트랜잭션 안에서만** 일어난다(다른 트랜잭션이 이미
+  존재하는 회차 라인을 링크 행의 FK 로 참조·삽입하는 경로가 없다) — 그래서 `FOR UPDATE` 를 쥔 트랜잭션과 링크
+  insert 의 `KEY SHARE` 가 서로 다른 트랜잭션으로 갈라져 대기하는 상황 자체가 생기지 않는다.
 
 ### 7.2 멱등
 
@@ -382,6 +386,20 @@ cancelLine(
 // 라인의 source 가 expected.source 와 다르면 거절한다 — source 검증은 여기 한 곳뿐이다.
 // POST /inbound/cancel 은 'direct' 로만, 조달은 'purchase_order' 로만 부른다.
 ```
+
+> **PR-A 실제 시그니처.** 위 스케치는 그대로 두고, PR-A 가 실제로 낸 모양만 여기 적는다 — PR-B 계획은
+> 스케치가 아니라 이 실제 코드를 근거로 쓴다.
+>
+> - `recordArrival(input: { source: 'direct'; method; warehouseId; locationId?; reason; lines: { skuId;
+>   quantity; memo?; eventKey }[] }, tx) → { receipt; lines }` — 원장 이벤트 키를 커널이 뿌리+순번으로
+>   합성하는 대신, **라인별 `eventKey` 를 호출자가 그대로 넘긴다.** 개별입고의 현행 키
+>   `inbound.individual:${key}` 에는 순번이 없어(간편입고의 `:${i}` 와 다르다) 스케치의 "뿌리 하나 +
+>   커널이 순번을 붙이는" 방식으로는 보존할 수 없었다. 반환도 스케치의 id 요약이 아니라 **행 전체**다 —
+>   기존 응답이 행 전체를 돌려줬기 때문이다.
+> - `cancelLine({ receiptLineId, quantity? }, tx) → 잠근 시점의 라인` — source 가드와 `expected` 파라미터는
+>   아직 없다(PR-A 창에서는 source 검사를 켜지 않는다, Global Constraints). PR-B 가 추가한다.
+> - `putaway({ receiptLineId, toLocationId, quantity, eventKey }, tx): Promise<void>`
+> - `returnLine({ receiptLineId, quantity, reason?, eventKey }, tx): Promise<void>`
 
 **`tx` 는 마지막 인자이고 필수다 — CLAUDE.md Transaction Propagation 규약(«Public methods: `tx?: DbTx` as last
 param»)의 예외로 둔다.** 이유: 커널은 **항상 호출자의 트랜잭션 안에서만** 돌아야 한다. 선택 인자면 호출자가 빠뜨렸을 때

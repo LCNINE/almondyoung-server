@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 로컬 compose core DB 대상 통합 테스트 러너 (dev 스테이지 폐기 대체).
-# 대부분의 spec 은 rollback-only 라 DB 를 더럽히지 않는다 (커밋형 lock/refund 2개는 unique 접미사 행을 남김 — docs/local-dev.md 참고). Kafka 불필요(outbox mock).
+# 대부분의 spec 은 rollback-only 라 DB 를 더럽히지 않는다 (커밋형 spec 은 unique 접미사 행을 남김 — 목록은 docs/local-dev.md 참고). Kafka 불필요(outbox mock).
 #
 # 사용법: npm run test:core:integration:local            # core DB 를 쓰는 통합 스펙 전체
 #         npm run test:core:integration:local -- receive.integration   # 패턴 지정

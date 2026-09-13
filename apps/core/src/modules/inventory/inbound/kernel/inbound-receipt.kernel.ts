@@ -64,7 +64,8 @@ export interface ReturnLineInput {
  * 원장·회차는 커밋되고 문서 정산은 롤백되는 식으로 원자성이 조용히 깨진다. 스펙 §8.
  *
  * 🔴 **잠금 순서**: 호출자(문서)가 문서 행 → 문서 라인을 먼저 잡고 커널을 부른다. 커널은 회차 라인과
- * 원장만 잠그고 문서 행을 절대 잠그지 않는다 — 역방향 간선이 없으므로 교착 사이클이 생기지 않는다(스펙 §7.1).
+ * 원장을 잠그고(`cancelLine` 은 전량 취소로 회차를 voided 처리할 때 회차 헤더도 UPDATE 로 잠근다),
+ * 문서 행은 절대 잠그지 않는다 — 역방향 간선이 없으므로 교착 사이클이 생기지 않는다(스펙 §7.1).
  *
  * 예외는 현행 Nest 예외와 메시지를 글자 그대로 옮긴다 — 응답 `error` 필드 보존(계획서 Global Constraints).
  */
@@ -76,7 +77,13 @@ export class InboundReceiptKernel {
     private readonly eventStore: StockEventStore,
   ) {}
 
-  /** 도착 한 번 = 저널 1 · 회차 1 · 라인 N · RECEIVE 이벤트 N · 작업 로그 1. */
+  /**
+   * 도착 한 번 = 저널 1 · 회차 1 · 라인 N · RECEIVE 이벤트 N · 작업 로그 1.
+   *
+   * 커널은 SKU 존재를 검증하지 않는다 — 호출자가 검증한다. 검증 없이 부르면 `InventoryCommandService.receive`
+   * 가 400 `SKU not found: <id>` 로 거절한다(단, `InboundService` 는 그 전에 이미 404 `SKU ${id} not found`
+   * 로 거절해 왔다 — 현행 계약이 그렇다).
+   */
   async recordArrival(input: RecordArrivalInput, tx: DbTx): Promise<RecordArrivalResult> {
     const locationId = await this.resolveLocation(input.warehouseId, input.locationId ?? null, tx);
 
@@ -352,6 +359,7 @@ export class InboundReceiptKernel {
     return inboundZone.id;
   }
 
+  /** 커널 조작마다 **첫 DB 문장**이어야 한다(회차 라인 잠금 → 원장 잠금 순서; 뒤바뀌면 적치·취소가 교착할 수 있다). */
   private async lockLine(receiptLineId: string, tx: DbTx): Promise<InboundReceiptLine> {
     const [line] = await tx
       .select()

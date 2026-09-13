@@ -399,7 +399,7 @@ DB suite는 아래를 포함한다.
 
 실패 시 첫 번째 깨진 보존식과 scenario 번호를 먼저 확인한다. commit형 concurrency fixture가 중간에 강제 종료되어 행을 남겼다면 `docker compose down -v` 후 다시 실행한다. release 증거에는 위 세 명령, Docker/DB 이미지 버전, commit SHA를 함께 기록한다.
 
-**커밋형 caveat**: `unified-reservation.service.lock.integration.spec.ts`(동시 락)·`store-return-exchange.refund.integration.spec.ts` 2개는 롤백 불가라 unique 접미사 행을 남긴다. pristine 이 필요하면 `docker compose down -v && docker compose up -d` 후 `npm run db:migrate:local`.
+**커밋형 caveat**: `unified-reservation.service.lock.integration.spec.ts`(동시 락)·`store-return-exchange.refund.integration.spec.ts`·`inbound-receipt.kernel.integration.spec.ts`(잠금 스펙, `seedCommittedLine`) 3개는 롤백 불가라 unique 접미사 행을 남긴다. 마지막은 잠금 스펙이 두 커넥션으로 같은 행을 봐야 해서 시드를 커밋한다. pristine 이 필요하면 `docker compose down -v && docker compose up -d` 후 `npm run db:migrate:local`.
 
 ## 아직 로컬화 안 된 것
 
