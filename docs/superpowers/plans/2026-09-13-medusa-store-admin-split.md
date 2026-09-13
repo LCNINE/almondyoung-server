@@ -15,7 +15,7 @@
 - 호스트는 `medusa.` 하나. 룰은 `/admin/*` → admin **하나뿐**. 호출자 URL 변경 없음.
 - store 는 `workerMode: server`, admin 은 `shared`. `/hooks/*` 는 store.
 - Redis 는 **노드형** Valkey `cache.t4g.micro`, 클러스터 모드 끔 (ADR 추기). Serverless 금지.
-- 두 태스크 모두 `arm64`, `1 vCPU / 1 GB`, `scaling { min: 1, max: 1 }` (2026-09-13 사람 결정).
+- 두 태스크 모두 `arm64`, `1 vCPU / 2 GB`, `scaling { min: 1, max: 1 }` (2026-09-13 사람 결정은 1 GB 였으나 Fargate 가 1 vCPU 에 최소 2 GB 를 요구해 deploy 가 거부 → 2 GB).
 - `db:migrate` 는 admin 만 (2026-09-13 사람 결정). Medusa 는 schema migration 에 잠금이 없다 — `run-migration-scripts.js` 의 락은 data-script 전용.
 - dev 스테이지도 같은 구성 (2026-09-13 사람 결정, dev 는 현재 미사용).
 - 관측 정본은 `libs/shared/src/observability/scrape-targets.ts` — 표와 `config.alloy` 를 같이 고친다.
@@ -201,9 +201,9 @@ git commit -m "infra(services): 공유 Redis(valkey 노드형) 복원, createSer
     domainSlug: 'medusa',
     port: 9000,
     link: [db, redis],
-    // 사이드카가 빠져 2GB 근거가 사라졌다. Medusa 단독 시절 1GB 로 돌았다 (2026-09-13 결정).
+    // Fargate 는 1 vCPU 에 최소 2 GB 를 요구한다 (1 GB 는 deploy 가 거부).
     cpu: '1 vCPU',
-    memory: '1 GB',
+    memory: '2 GB',
     scaling: { min: 1, max: 1 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
@@ -354,7 +354,7 @@ git commit -m "observability: Medusa admin 서비스를 11번째 스크레이프
 
 ```markdown
 - *2026-09-13 구현 결정(#855)*:
-  - 두 태스크 모두 `arm64` `1 vCPU / 1 GB`, `scaling { min: 1, max: 1 }`. 사이드카가 빠져 2GB 근거가 사라졌다.
+  - 두 태스크 모두 `arm64` `1 vCPU / 2 GB`, `scaling { min: 1, max: 1 }`. Fargate 가 1 vCPU 에 최소 2 GB 를 요구한다.
   - `db:migrate` 는 **admin 컨테이너만** 돈다 (`MEDUSA_RUN_DB_MIGRATE=false` 를 store 에). Medusa 의
     schema migration 에는 잠금이 없다 — `@medusajs/framework/dist/migrations/run-migration-scripts.js` 의
     락은 data-script 전용. 롤링 배포 중 새 store 태스크가 admin 의 migrate 보다 먼저 뜰 수 있으나,
