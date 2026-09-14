@@ -33,6 +33,18 @@ const PO_FORBIDDEN = [
   /\.(insert|update|delete)\(\s*(wmsTables\.)?(purchaseOrders|purchaseOrderLines|purchaseOrderReceiptLines)\b/,
 ];
 
+function findForbiddenWrites(file: string, source: string, patterns: RegExp[]): string[] {
+  const violations: string[] = [];
+  for (const pattern of patterns) {
+    const globalPattern = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+    for (const match of source.matchAll(globalPattern)) {
+      const lineNumber = source.slice(0, match.index).split('\n').length;
+      violations.push(`${file}:${lineNumber}  ${match[0].replace(/\s+/g, ' ').trim()}`);
+    }
+  }
+  return violations;
+}
+
 describe('inventory write boundary (arch)', () => {
   it('StockEventStore 외부에서 stockEvents/stockLedgers 직접 쓰기 금지', () => {
     const violations: string[] = [];
@@ -51,12 +63,24 @@ describe('inventory write boundary (arch)', () => {
     const violations: string[] = [];
     for (const file of collectTsFiles(INVENTORY_ROOT)) {
       if (file.includes(`${sep}procurement${sep}`)) continue;
-      readFileSync(file, 'utf8')
-        .split('\n')
-        .forEach((line, i) => {
-          if (PO_FORBIDDEN.some((re) => re.test(line))) violations.push(`${file}:${i + 1}  ${line.trim()}`);
-        });
+      violations.push(...findForbiddenWrites(file, readFileSync(file, 'utf8'), PO_FORBIDDEN));
     }
     expect(violations).toEqual([]);
+  });
+
+  it('발주 쓰기 가드는 한 줄과 여러 줄 호출을 시작 행과 함께 찾는다', () => {
+    const source = [
+      'await tx.update(wmsTables.purchaseOrders).set({ status });',
+      'await tx',
+      '  .update(',
+      '    wmsTables.purchaseOrderLines,',
+      '  )',
+      '  .set({ receivedQty });',
+    ].join('\n');
+
+    expect(findForbiddenWrites('fixture.ts', source, PO_FORBIDDEN)).toEqual([
+      'fixture.ts:1  .update(wmsTables.purchaseOrders',
+      'fixture.ts:3  .update( wmsTables.purchaseOrderLines',
+    ]);
   });
 });

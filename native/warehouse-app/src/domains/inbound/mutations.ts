@@ -4,6 +4,7 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import type {
   CancelInboundInput,
   CancelPurchaseOrderReceiptInput,
+  CancelPurchaseOrderReceiptResult,
   PutawayInput,
   ReceivePurchaseOrderInput,
   ReceivePurchaseOrderResult,
@@ -54,7 +55,7 @@ export function useCancelPurchaseOrderReceipt() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ receiptLineId, idempotencyKey }: CancelPurchaseOrderReceiptInput) =>
-      api.request<{ success: boolean }>({
+      api.request<CancelPurchaseOrderReceiptResult>({
         method: 'POST',
         path: `/purchase-orders/receipt-lines/${receiptLineId}/cancel`,
         body: { idempotencyKey },

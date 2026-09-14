@@ -43,6 +43,13 @@ export interface CancelPurchaseOrderReceiptInput {
   idempotencyKey: string;
 }
 
+export interface CancelPurchaseOrderReceiptResult {
+  poId: string;
+  skuId: string;
+  quantity: number;
+  receiptLineId: string;
+}
+
 export interface SimpleInboundInput {
   warehouseId: string;
   items: Array<{ skuId: string; quantity: number; memo?: string }>;
