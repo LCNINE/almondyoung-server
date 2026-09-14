@@ -19,11 +19,12 @@ import { InventoryIdempotencyService } from '../../core/services/inventory-idemp
 import { WarehouseTransferManager } from '../../warehouse-transfer/services/warehouse-transfer.manager';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
 import { InboundPipelineReader } from './inbound-pipeline.reader';
+import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 
 /**
  * 부천(판매 창고) 관점의 공급 파이프라인 3단계를 고정한다.
  *
- *   ① 발주 잔량  — 비판매 창고로 입고 예정인 pending 계획
+ *   ① 발주 잔량  — 비판매 창고로 입고 예정인 남은 실발주 라인
  *   ② 이동 대기  — 비판매 창고 ON_HAND (아직 선적 안 됨)  ← 사각지대
  *   ③ 이동 중    — 선적됐으나 도착·분실 정산이 안 끝난 잔량
  *
@@ -64,7 +65,11 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
 
   function buildReader(trx: DbTx): InboundPipelineReader {
     const dbService = boundDbService(trx);
-    return new InboundPipelineReader(dbService, new WarehouseTransferReader(dbService));
+    return new InboundPipelineReader(
+      dbService,
+      new WarehouseTransferReader(dbService),
+      new PurchaseOrderExpectedArrivalReader(dbService),
+    );
   }
 
   function buildTransferManager(trx: DbTx): WarehouseTransferManager {
@@ -93,16 +98,12 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   }
 
   /**
-   * 미도착 발주(source plan) 한 건. `inbound_plans.linked_purchase_order_id` 가
-   * NOT NULL + FK 라 공급사·발주를 먼저 넣어야 한다.
-   *
-   * 계획의 `destination_warehouse_id` 는 입고 창고와 다른 별도의 판매 창고로 둔다 —
-   * 판독이 `warehouse_id`(실제 입고 창고)가 아니라 `destination_warehouse_id` 로
-   * 집계하면 이 픽스처에서 0 이 나와 스펙이 그 회귀를 잡는다(Task 7).
+   * 미도착 발주 한 건. destination 은 입고 창고와 다른 판매 창고로 둔다 — 판독이
+   * sourceWarehouseId 대신 destinationWarehouseId 로 집계하면 이 픽스처에서 0 이 난다.
    */
   async function seedPendingSourcePlan(
     trx: DbTx,
-    input: { skuId: string; warehouseId: string; qty: number; expectedDate: Date },
+    input: { skuId: string; warehouseId: string; qty: number; expectedDate?: Date },
   ): Promise<void> {
     const suffix = randomUUID().slice(0, 8);
     const [finalDestination] = await trx
@@ -125,29 +126,15 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         requiresTransfer: true,
       })
       .returning({ id: wmsTables.purchaseOrders.id });
-    await trx
-      .insert(wmsTables.purchaseOrderLines)
-      .values({ poId: po.id, skuId: input.skuId, quantity: input.qty, unitPrice: 1000 });
-
-    const [plan] = await trx
-      .insert(wmsTables.inboundPlans)
-      .values({
-        planType: 'source',
-        status: 'pending',
-        warehouseId: input.warehouseId,
-        destinationWarehouseId: finalDestination.id,
-        linkedPurchaseOrderId: po.id,
-        requiresTransfer: true,
-      })
-      .returning({ id: wmsTables.inboundPlans.id });
-    // 예정일은 계획이 아니라 아이템이 갖는다(#724 항목 9).
-    await trx.insert(wmsTables.inboundPlanItems).values({
-      planId: plan.id,
+    await trx.insert(wmsTables.purchaseOrderLines).values({
+      poId: po.id,
       skuId: input.skuId,
-      expectedQty: input.qty,
+      quantity: input.qty,
+      unitPrice: 1000,
+      status: 'ordered',
+      orderedQty: input.qty,
       receivedQty: 0,
-      status: 'pending',
-      expectedDate: input.expectedDate.toISOString().slice(0, 10),
+      expectedArrival: input.expectedDate?.toISOString().slice(0, 10),
     });
   }
 
@@ -170,13 +157,11 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   }
 
   /**
-   * ①의 ETA 검증용 — 계획만 만들고 아이템은 비워둔다. 계획은 날짜를 갖지 않으므로
-   * 예정일은 각 테스트가 아이템에 직접 심는다(#724 항목 9).
+   * ①의 ETA 검증용 — 비판매 출발 창고와 SKU를 만든다.
    */
-  async function seedNonSellableInboundPlan(
+  async function seedNonSellablePurchaseOrderWorld(
     trx: DbTx,
-  ): Promise<{ planId: string; skuIds: string[]; sellableWarehouseId: string }> {
-    const suffix = randomUUID().slice(0, 8);
+  ): Promise<{ sourceWarehouseId: string; skuIds: string[]; sellableWarehouseId: string }> {
     // seedWarehouseWithZone 은 기본이 판매 창고다 — 출발 창고만 비판매로 뒤집는다(중국 역할).
     const source = await seedWarehouseWithZone(trx);
     await trx
@@ -187,35 +172,7 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     const { holderId } = await seedHolder(trx);
     const { skuId } = await seedSku(trx, holderId);
 
-    const [supplier] = await trx
-      .insert(wmsTables.suppliers)
-      .values({ name: `it-supplier-${suffix}`, defaultWarehouseId: source.warehouseId })
-      .returning({ id: wmsTables.suppliers.id });
-    const [po] = await trx
-      .insert(wmsTables.purchaseOrders)
-      .values({
-        type: 'foreign',
-        supplierId: supplier.id,
-        status: 'confirmed',
-        sourceWarehouseId: source.warehouseId,
-        destinationWarehouseId: dest.warehouseId,
-        requiresTransfer: true,
-      })
-      .returning({ id: wmsTables.purchaseOrders.id });
-
-    const [plan] = await trx
-      .insert(wmsTables.inboundPlans)
-      .values({
-        planType: 'source',
-        status: 'pending',
-        warehouseId: source.warehouseId,
-        destinationWarehouseId: dest.warehouseId,
-        linkedPurchaseOrderId: po.id,
-        requiresTransfer: true,
-      })
-      .returning({ id: wmsTables.inboundPlans.id });
-
-    return { planId: plan.id, skuIds: [skuId], sellableWarehouseId: dest.warehouseId };
+    return { sourceWarehouseId: source.warehouseId, skuIds: [skuId], sellableWarehouseId: dest.warehouseId };
   }
 
   it('세 단계를 각각 수량과 예정일로 낸다', async () => {
@@ -320,28 +277,21 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     });
   });
 
-  it('①의 ETA 는 계획 날짜가 아니라 아이템 예정일 중 최소다', async () => {
+  it('①의 ETA 는 남은 발주 라인 예정일 중 최소다', async () => {
     await inRollback(async (trx) => {
-      // 비판매 창고(중국)로 들어오는 계획 하나에, 예정일이 다른 아이템 둘.
-      const fx = await seedNonSellableInboundPlan(trx);
-      await trx.insert(wmsTables.inboundPlanItems).values([
-        {
-          planId: fx.planId,
-          skuId: fx.skuIds[0],
-          expectedQty: 5,
-          receivedQty: 0,
-          status: 'pending',
-          expectedDate: '2026-09-20',
-        },
-        {
-          planId: fx.planId,
-          skuId: fx.skuIds[0],
-          expectedQty: 3,
-          receivedQty: 0,
-          status: 'pending',
-          expectedDate: '2026-09-17',
-        },
-      ]);
+      const fx = await seedNonSellablePurchaseOrderWorld(trx);
+      await seedPendingSourcePlan(trx, {
+        skuId: fx.skuIds[0],
+        warehouseId: fx.sourceWarehouseId,
+        qty: 5,
+        expectedDate: new Date('2026-09-20'),
+      });
+      await seedPendingSourcePlan(trx, {
+        skuId: fx.skuIds[0],
+        warehouseId: fx.sourceWarehouseId,
+        qty: 3,
+        expectedDate: new Date('2026-09-17'),
+      });
 
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
       expect(rows[0].onOrderQty).toBe(8);
@@ -349,14 +299,14 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     });
   });
 
-  // 예전엔 계획 예정일로 떨어졌다. 계획이 날짜를 갖지 않게 된 뒤로는 떨어질 곳이
-  // 없다 — 아이템이 날짜를 모르면 파이프라인도 모르는 것이 맞다.
-  it('아이템 예정일이 없으면 ETA 도 없다', async () => {
+  it('라인 예정일이 없으면 ETA 도 없다', async () => {
     await inRollback(async (trx) => {
-      const fx = await seedNonSellableInboundPlan(trx);
-      await trx
-        .insert(wmsTables.inboundPlanItems)
-        .values([{ planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 4, receivedQty: 0, status: 'pending' }]);
+      const fx = await seedNonSellablePurchaseOrderWorld(trx);
+      await seedPendingSourcePlan(trx, {
+        skuId: fx.skuIds[0],
+        warehouseId: fx.sourceWarehouseId,
+        qty: 4,
+      });
 
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
       expect(rows[0].onOrderQty).toBe(4);

@@ -22,6 +22,8 @@ import { InboundPipelineReader } from '../../stock-projection/services/inbound-p
 import { StockProjectionService } from '../../stock-projection/services/stock-projection.service';
 import { StockProjectionReader } from '../../stock-projection/services/stock-projection.reader';
 import { StockProjectionManager } from '../../stock-projection/services/stock-projection.manager';
+import { ExpectedArrivalsReader } from '../../stock-projection/services/expected-arrivals.reader';
+import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 import { ReplenishmentSettingsReader, SETTINGS_KEY } from '../demand/replenishment-settings.reader';
 import { DemandProfileReader } from '../demand/demand-profile.reader';
 import { ReplenishmentRulesReader } from '../rules/replenishment-rules.reader';
@@ -61,11 +63,13 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
   function build(trx: DbTx) {
     const dbService = boundDbService(trx);
     const transferReader = new WarehouseTransferReader(dbService);
-    const pipeline = new InboundPipelineReader(dbService, transferReader);
+    const purchaseOrders = new PurchaseOrderExpectedArrivalReader(dbService);
+    const pipeline = new InboundPipelineReader(dbService, transferReader, purchaseOrders);
     const projection = new StockProjectionService(
       new StockProjectionReader(dbService, w.eventStore),
       new StockProjectionManager(dbService as never),
       pipeline,
+      new ExpectedArrivalsReader(purchaseOrders),
       dbService,
     );
     const manager = new WarehouseTransferManager(
@@ -116,7 +120,7 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
     return { china, bucheon, skuId, holderId };
   }
 
-  async function seedPendingPlan(
+  async function seedOutstandingPurchaseOrder(
     trx: DbTx,
     input: { skuId: string; warehouseId: string; destinationWarehouseId: string; qty: number },
   ) {
@@ -135,21 +139,14 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
         requiresTransfer: input.warehouseId !== input.destinationWarehouseId,
       })
       .returning({ id: wmsTables.purchaseOrders.id });
-    await trx.insert(wmsTables.purchaseOrderLines).values({ poId: po.id, skuId: input.skuId, quantity: input.qty });
-    const [plan] = await trx
-      .insert(wmsTables.inboundPlans)
-      .values({
-        planType: 'source',
-        status: 'pending',
-        warehouseId: input.warehouseId,
-        destinationWarehouseId: input.destinationWarehouseId,
-        linkedPurchaseOrderId: po.id,
-        requiresTransfer: input.warehouseId !== input.destinationWarehouseId,
-      })
-      .returning({ id: wmsTables.inboundPlans.id });
-    await trx
-      .insert(wmsTables.inboundPlanItems)
-      .values({ planId: plan.id, skuId: input.skuId, expectedQty: input.qty, receivedQty: 0, status: 'pending' });
+    await trx.insert(wmsTables.purchaseOrderLines).values({
+      poId: po.id,
+      skuId: input.skuId,
+      quantity: input.qty,
+      status: 'ordered',
+      orderedQty: input.qty,
+      receivedQty: 0,
+    });
   }
 
   it('장면 1: 중국 有 · 부천 부족 → 이동만', async () => {
@@ -253,7 +250,7 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
       );
       await manager.ship({ transferOrderId, idempotencyKey: `ship-${randomUUID()}` }, trx);
       // 전사 축엔 발주잔량 100 이 추가로 옴
-      await seedPendingPlan(trx, {
+      await seedOutstandingPurchaseOrder(trx, {
         skuId,
         warehouseId: china.warehouseId,
         destinationWarehouseId: bucheon.warehouseId,

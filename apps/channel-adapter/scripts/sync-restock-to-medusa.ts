@@ -2,11 +2,9 @@
 /**
  * sync-restock-to-medusa.ts
  *
- * core inbound_plans(입고예정) → Medusa variant.metadata.{inboundDate, inboundApproximate} 직접 동기화.
+ * core 남은 수량이 있는 발주 라인 → Medusa variant.metadata.{inboundDate, inboundApproximate} 직접 동기화.
  * 스토어프론트가 품절 시 "○월 ○일 입고 예정" 표시에 사용 (restock-notice.tsx 가 이 키를 읽음).
- * import-inbound-plans.ts 로 입고예정을 core 에 넣은 뒤, 이 스크립트로 Medusa 에 반영한다.
- *
- * 입고예정일 = 해당 variant 구성 sku 들의 source plan 중 가장 이른 expected_date.
+ * 입고예정일 = 해당 variant 구성 sku 들의 남은 발주 라인 중 가장 이른 expected_arrival.
  * inboundApproximate = 해외 발주(po.type='foreign')면 true (한국 공급처는 정확).
  *
  * 기본 dry-run, --apply 로 실제 반영.
@@ -32,21 +30,21 @@ interface RestockRow {
   approximate: boolean;
 }
 
-// variant 구성 sku 들의 입고예정(source plan) 을 집계: 가장 이른 날짜 + 해외 여부.
-const RESTOCK_SQL = `
+// variant 구성 sku 들의 남은 발주 라인을 집계: 가장 이른 날짜 + 해외 여부.
+export const RESTOCK_SQL = `
   SELECT pmv.master_id, pm.variant_id,
-         MIN(ip.expected_date) AS expected_date,
+         MIN(pol.expected_arrival) AS expected_date,
          bool_or(po.type = 'foreign') AS approximate
-  FROM inbound_plan_items ipi
-  JOIN inbound_plans ip ON ip.id = ipi.plan_id
-  JOIN purchase_orders po ON po.id = ip.linked_purchase_order_id
-  JOIN product_variant_sku_links pvsl ON pvsl.sku_id = ipi.sku_id
+  FROM purchase_order_lines pol
+  JOIN purchase_orders po ON po.id = pol.po_id
+  JOIN product_variant_sku_links pvsl ON pvsl.sku_id = pol.sku_id
   JOIN product_matchings pm ON pm.id = pvsl.product_matching_id
   JOIN product_master_variants pmv ON pmv.variant_id = pm.variant_id
-  WHERE ipi.status = 'pending'
-    AND ip.plan_type = 'source'
-    AND ip.expected_date IS NOT NULL
-    AND (ipi.expected_qty - ipi.received_qty) > 0
+  WHERE pol.status = 'ordered'
+    AND pol.closed_at IS NULL
+    AND pol.received_qty < COALESCE(pol.ordered_qty, 0)
+    AND po.status <> 'cancelled'
+    AND pol.expected_arrival IS NOT NULL
   GROUP BY pmv.master_id, pm.variant_id
 `;
 
@@ -112,6 +110,11 @@ async function main() {
           if ((prev.inboundDate ?? null) === inboundDate && Boolean(prev.inboundApproximate) === inboundApproximate) {
             continue; // 이미 동일
           }
+          if (!apply) {
+            console.log(
+              `   PLAN variant ${variant.id}: inboundDate=${inboundDate}, inboundApproximate=${inboundApproximate}`,
+            );
+          }
           updates.push({ id: variant.id, metadata: { ...prev, inboundDate, inboundApproximate } });
           updatedVariants++;
         }
@@ -138,7 +141,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (require.main === module) {
+  void main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

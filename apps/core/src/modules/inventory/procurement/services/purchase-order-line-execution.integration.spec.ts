@@ -14,6 +14,7 @@ import { InboundPipelineReader } from '../../stock-projection/services/inbound-p
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
 import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { outstandingQty } from './purchase-order-status.rules';
+import { PurchaseOrderExpectedArrivalReader } from './purchase-order-expected-arrival.reader';
 
 /**
  * 포트 조립. 3계층(#724 항목 5-b) 이후 `PurchaseOrderService` 는 위임만 하므로 통합
@@ -38,7 +39,7 @@ function buildPurchaseOrderPort(
  * 확정되고, 아예 못 사는 라인도 생긴다. 한 라인을 나눠 사는 일은 없다(단방향 종결).
  *
  * 라인 실행 경로는 하나뿐이다 — 예전엔 상태 API 로 위장한 일괄 확정 경로가 따로 있어
- * 두 경로가 각자 `inbound_plan_items` 를 썼고, 두 화면을 번갈아 쓰는 운영자에게
+ * 두 경로가 각자 입고 예정 데이터를 만들었고, 두 화면을 번갈아 쓰는 운영자에게
  * 입고예정이 두 벌로 잡히는 사고가 이미 한 번 났다(purchase-order-single-plan 스펙).
  * 그 상태 API 는 #724 항목 7 로 제거됐다 — 종결은 이제 입고/취소가 파생으로 소유한다.
  *
@@ -581,14 +582,17 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
   // 그 가드는 "종결 라인은 건드리지 않고 요청 라인만 갈아끼운다"는 촘촘한 규칙으로
   // 바뀌었으므로 더 이상 거부하지 않는다. 아래 두 테스트가 새 규칙을 고정한다.
 
-  // Task 7 에서 InboundPipelineReader 가 발주 라인을 읽게 되면 skip 을 푼다
-  it.skip('부분 실행이 파이프라인 ①에 실발주분만큼만 나타난다', async () => {
+  it('부분 실행이 파이프라인 ①에 실발주분만큼만 나타난다', async () => {
     await inRollbackTx(db, async (trx) => {
       // 해외 발주: 출발=중국(비판매) ≠ 목적지=부천(판매)
       const fx = await seedForeignPoWithThreeLines(trx);
       const service = buildService(trx);
       const dbService = boundDbService(trx);
-      const reader = new InboundPipelineReader(dbService, new WarehouseTransferReader(dbService));
+      const reader = new InboundPipelineReader(
+        dbService,
+        new WarehouseTransferReader(dbService),
+        new PurchaseOrderExpectedArrivalReader(dbService),
+      );
 
       await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx); // 요청 10 → 6개만
       await service.markLineUnavailable(fx.poId, fx.skuIds[1], { reason: '품절' }, ACTOR, trx);

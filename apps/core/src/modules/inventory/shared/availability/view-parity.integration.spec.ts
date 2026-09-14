@@ -12,8 +12,8 @@ import { readWarehouseAvailability } from './warehouse-availability';
  *
  * 이 스펙이 존재하는 이유: 뷰는 오래 `on_hand − reserved − transit_out` 이었고,
  * transit_out 은 (a) 출발 창고에서만 빼고 도착 창고에 더하지 않아 사내 이동만으로
- * 전사 판매가능수량을 줄였으며 (b) inbound_plan_items 를 읽는데 실제 창고간이동은
- * stock_journals 를 써서 이동이 끝나도 줄지 않았다. 그 항을 제거한 뒤,
+ * 전사 판매가능수량을 줄였으며 (b) 옛 계획을 읽는데 실제 창고간이동은 stock_journals 를
+ * 써서 이동이 끝나도 줄지 않았다. 그 항을 제거한 뒤,
  * 아무도 다시 넣지 못하게 이 테스트가 막는다.
  *
  * transit_out 은 이제 `transfer_order_lines` 의 미도착 잔량을 도착 창고 기준으로 읽는다.
@@ -141,7 +141,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
       await seedNonOnHandLedgers(trx, fx);
 
-      // 도착 창고 + 발주(=inbound_plans.linkedPurchaseOrderId 가 NOT NULL FK 라 필요)
+      // 도착 창고 + 발주
       const [destWarehouse] = await trx
         .insert(wmsTables.warehouses)
         .values({ name: `it-dest-${randomUUID().slice(0, 8)}` })
@@ -150,31 +150,21 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         .insert(wmsTables.purchaseOrders)
         .values({
           type: 'domestic',
+          status: 'confirmed',
           sourceWarehouseId: fx.warehouseId,
           destinationWarehouseId: destWarehouse.id,
           requiresTransfer: true,
         })
         .returning();
 
-      // 출발 창고 입고 예정 4개. inbound_pending 은 "그 창고에 실제로 입고될 예정"이라
-      // 계획의 warehouse_id(=출발 창고) 에 붙는다.
-      const [plan] = await trx
-        .insert(wmsTables.inboundPlans)
-        .values({
-          warehouseId: fx.warehouseId,
-          planType: 'source',
-          destinationWarehouseId: destWarehouse.id,
-          linkedPurchaseOrderId: po.id,
-          requiresTransfer: true,
-          status: 'pending',
-        })
-        .returning();
-      await trx.insert(wmsTables.inboundPlanItems).values({
-        planId: plan.id,
+      // 출발 창고 입고 예정 4개. inbound_pending 은 sourceWarehouseId 에 붙는다.
+      await trx.insert(wmsTables.purchaseOrderLines).values({
+        poId: po.id,
         skuId: fx.skuId,
-        expectedQty: 4,
+        quantity: 4,
+        orderedQty: 4,
         receivedQty: 0,
-        status: 'pending',
+        status: 'ordered',
       });
 
       // 떠났지만 아직 도착하지 않은 이동 3개. 이 행이 transit_out 항을 만드는 데이터다 —

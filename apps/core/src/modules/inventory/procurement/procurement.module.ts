@@ -9,6 +9,7 @@ import { PurchaseOrderReader } from './services/purchase-order.reader';
 import { PurchaseOrderManager } from './services/purchase-order.manager';
 import { PurchaseOrderHeaderDeriver } from './services/purchase-order-header.deriver';
 import { PurchaseOrderReceivingManager } from './services/purchase-order-receiving.manager';
+import { PurchaseOrderExpectedArrivalReader } from './services/purchase-order-expected-arrival.reader';
 
 /**
  * 조달(발주) 모듈. 경계는 ADR-0032 가 소유한다.
@@ -34,6 +35,7 @@ import { PurchaseOrderReceivingManager } from './services/purchase-order-receivi
     PurchaseOrderManager,
     PurchaseOrderHeaderDeriver,
     PurchaseOrderReceivingManager,
+    PurchaseOrderExpectedArrivalReader,
   ],
   exports: [
     PurchaseOrderService,
@@ -42,6 +44,7 @@ import { PurchaseOrderReceivingManager } from './services/purchase-order-receivi
     PurchaseOrderManager,
     PurchaseOrderHeaderDeriver,
     PurchaseOrderReceivingManager,
+    PurchaseOrderExpectedArrivalReader,
   ],
 })
 export class ProcurementModule {}

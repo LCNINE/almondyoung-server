@@ -7,6 +7,7 @@ import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { StockProjectionReader } from './stock-projection.reader';
 import { StockProjectionManager } from './stock-projection.manager';
 import { InboundPipelineReader } from './inbound-pipeline.reader';
+import { ExpectedArrivalsReader } from './expected-arrivals.reader';
 
 @Injectable()
 export class StockProjectionService {
@@ -14,6 +15,7 @@ export class StockProjectionService {
     private readonly reader: StockProjectionReader,
     private readonly manager: StockProjectionManager,
     private readonly inboundPipeline: InboundPipelineReader,
+    private readonly expectedArrivals: ExpectedArrivalsReader,
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
@@ -54,6 +56,10 @@ export class StockProjectionService {
     tx?: DbTx,
   ): Promise<InboundPipelineResponseDto> {
     return this.dbService.run(async (trx) => ({ items: await this.inboundPipeline.read(trx, input) }), tx);
+  }
+
+  listExpectedArrivals(warehouseId: string, tx?: DbTx) {
+    return this.expectedArrivals.listByWarehouse(warehouseId, tx);
   }
 
   cancelEvent(eventId: string, reason: string) {
