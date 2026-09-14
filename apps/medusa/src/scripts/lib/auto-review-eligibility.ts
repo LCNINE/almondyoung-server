@@ -17,9 +17,16 @@
  */
 
 /**
- * 1단 — 배송완료가 찍힌 주문. 쿠팡의 자동 구매확정이 배송완료 +7일이고 네이버가 ≈8일이다.
+ * 1단 — 배송완료가 찍힌 주문. **유예 없이 즉시.**
+ *
+ * 🔴 «배송완료 +7일」이 아니다. 7일은 쿠팡의 **자동 구매확정** 값이고, 국내 표준은 리뷰 작성을
+ * 구매확정과 묶지 않는다 — 쿠팡·네이버 모두 **구매확정 전에도 배송완료 즉시** 리뷰를 쓸 수 있다.
+ * 두 축을 뒤섞으면 「받았는데 일주일 더 기다려야 쓴다」가 되고, 그건 어느 플랫폼도 안 한다.
+ *
+ * 아래 두 단에 유예가 있는 것은 그 둘이 **배송완료를 «대신»하는 대용 축**이기 때문이다.
+ * 1단은 수령이 확인된 축이라 대용에 붙는 안전 여유가 필요 없다.
  */
-export const ELIGIBILITY_DELIVERED_DAYS = readDays('ELIGIBILITY_DELIVERED_DAYS', 7);
+export const ELIGIBILITY_DELIVERED_DAYS = readDays('ELIGIBILITY_DELIVERED_DAYS', 0);
 
 /**
  * 2단 — 배송완료 없이 출고 투영만 있는 주문. 출고 → 배송완료가 보통 2~3일이라 1단과 거의 같은
@@ -62,7 +69,9 @@ function readDays(key: string, fallback: number): number {
   const raw = process.env[key];
   if (!raw) return fallback;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  // 🔴 `>= 0` 이다. 1단 유예가 0(배송완료 즉시)이라 `> 0` 이면 env 로 0 을 줄 때 조용히
+  // 기본값으로 되돌아간다 — 「설정했는데 안 먹는」 쪽이 「0 을 못 주는」 쪽보다 나쁘다.
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
