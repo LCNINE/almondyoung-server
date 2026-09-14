@@ -40,6 +40,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { ProductAiPanel } from '@/features/mall/product-ai/product-ai-panel';
 
 const iconMap = {
   BookOpen,
@@ -293,6 +294,9 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
 
         {/* 사용자 정보 */}
         <div className="flex items-center">
+          {myRoles?.roles?.some(({ role }) =>
+            ['admin', 'master'].includes(role.name)
+          ) && <ProductAiPanel />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

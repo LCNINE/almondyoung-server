@@ -1,0 +1,115 @@
+.trigger {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  margin-left: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 15px;
+  background: linear-gradient(110deg, #60adfa, #9dcdf7 52%, #c6c3e6);
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 55%),
+    0 2px 8px rgb(91 153 210 / 16%);
+  transition: box-shadow 200ms ease;
+}
+
+.trigger::before {
+  position: absolute;
+  left: 14%;
+  top: 32%;
+  width: 62%;
+  height: 145%;
+  background: radial-gradient(
+    ellipse,
+    #fff 0%,
+    #e9fff9 24%,
+    rgb(233 255 249 / 0%) 68%
+  );
+  filter: blur(5px);
+  content: '';
+  pointer-events: none;
+  animation: white-drift 9s ease-in-out infinite;
+}
+
+.trigger::after {
+  position: absolute;
+  right: -18%;
+  top: -40%;
+  width: 80%;
+  height: 175%;
+  background: radial-gradient(
+    ellipse,
+    #f7e4ce 0%,
+    #e5dbf6 35%,
+    rgb(229 219 246 / 0%) 72%
+  );
+  filter: blur(6px);
+  content: '';
+  pointer-events: none;
+  animation: pastel-drift 13s ease-in-out infinite;
+}
+
+.triggerContent {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgb(36 71 110 / 45%);
+  white-space: nowrap;
+}
+
+.trigger:hover {
+  box-shadow: 0 3px 12px rgb(91 153 210 / 26%);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid #559de5;
+  outline-offset: 3px;
+}
+
+@keyframes white-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  35% {
+    transform: translate(38%, -30%);
+  }
+  70% {
+    transform: translate(-24%, -12%);
+  }
+}
+
+@keyframes pastel-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  40% {
+    transform: translate(-45%, 25%);
+  }
+  75% {
+    transform: translate(-15%, -12%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger::before,
+  .trigger::after {
+    animation: none;
+  }
+
+  .trigger {
+    transition: none;
+  }
+}

@@ -1,25 +1,83 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import Image from 'next/image';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MessageSquarePlus, Send } from 'lucide-react';
+import {
+  Send,
+  Trash2,
+  Pencil,
+  X,
+  Copy,
+  Check,
+  ThumbsUp,
+  ThumbsDown,
+  Square,
+  ArrowDown,
+  MessageSquare,
+  History,
+  Loader2,
+  MessageSquarePlus,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { productAiClient } from '@/lib/api/domains/products/product-ai.client';
+import {
+  productAiClient,
+  type ProductAiMessage,
+} from '@/lib/api/domains/products/product-ai.client';
 import styles from './product-ai-chat.module.css';
+import { useChatScroll } from './use-chat-scroll';
 
 const starterQuestions = [
-  '상품등록에 필요한 정보를 하나씩 물어봐 주세요',
-  '대표카테고리가 뭐예요?',
-  '맞는 카테고리가 없으면 어떻게 하나요?',
-  '판매가·멤버십가·공급가는 어떻게 다른가요?',
-  '색상·사이즈 옵션은 어떻게 구성하나요?',
-  '기존 재고와 매칭하려면 무엇이 필요한가요?',
-  '매칭할 재고가 없으면 새로 만들어야 하나요?',
-  '대표·부가·상세페이지 이미지는 어떻게 준비하나요?',
-  'SEO 제목·태그·키워드는 어떻게 작성하나요?',
+  {
+    topic: '시작하기',
+    icon: '✦',
+    label: '어떤 도움을 받을 수 있나요?',
+    question: '지금 도와줄 수 있는 일과 아직 지원하지 않는 일을 알려주세요.',
+  },
+  {
+    topic: '가격 · 멤버십',
+    icon: '₩',
+    label: '가격 기준을 정리하고 싶어요',
+    question: '판매가·멤버십가·공급가는 어떻게 다른가요?',
+  },
+  {
+    topic: '재고',
+    icon: '▦',
+    label: '기존 재고와 연결하려면?',
+    question: '기존 재고와 매칭하려면 무엇이 필요한가요?',
+  },
+  {
+    topic: '카테고리',
+    icon: '⌘',
+    label: '분류 기준이 궁금해요',
+    question: '대표카테고리는 무엇이고 어떻게 선택하나요?',
+  },
+  {
+    topic: '콘텐츠',
+    icon: '✎',
+    label: '이미지는 어떻게 준비하죠?',
+    question: '대표·부가·상세페이지 이미지는 어떻게 준비하나요?',
+  },
+  {
+    topic: '검색 · SEO',
+    icon: '⌕',
+    label: '검색에 잘 보이게 하려면?',
+    question: 'SEO 제목·태그·키워드는 어떻게 작성하나요?',
+  },
+  {
+    topic: '상품',
+    icon: '+',
+    label: '새 상품을 준비하고 있어요',
+    question: '상품등록에 필요한 정보를 하나씩 물어봐 주세요.',
+  },
+  {
+    topic: '옵션',
+    icon: '◇',
+    label: '색상과 사이즈를 구성해요',
+    question: '색상·사이즈 옵션은 어떻게 구성하나요?',
+  },
 ];
 
 function errorMessage(error: unknown) {
@@ -32,11 +90,55 @@ export default function ProductAiChat() {
   const router = useRouter();
   const pathname = usePathname();
   const sessionId = useSearchParams().get('sessionId');
+  return (
+    <ProductAiChatContent
+      sessionId={sessionId}
+      onSessionChange={(id) =>
+        router.replace(
+          id ? `${pathname}?sessionId=${encodeURIComponent(id)}` : pathname
+        )
+      }
+    />
+  );
+}
+
+export function ProductAiChatContent({
+  sessionId,
+  onSessionChange,
+  embedded = false,
+  active = true,
+  render,
+}: {
+  sessionId: string | null;
+  onSessionChange: (id: string | null) => void;
+  embedded?: boolean;
+  active?: boolean;
+  render?: (content: ReactNode) => ReactNode;
+}) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [streamText, setStreamText] = useState('');
+  const [interrupted, setInterrupted] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [userStopped, setUserStopped] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [feedbackBusy, setFeedbackBusy] = useState<string | null>(null);
+  const activeReply = useRef<{
+    sessionId: string;
+    messageId: string;
+    abort: AbortController;
+    stopped: boolean;
+  } | null>(null);
+
   const pending = useRef<{
     sessionId: string | null;
     content: string;
@@ -44,13 +146,15 @@ export default function ProductAiChat() {
     createRequestId: string;
   } | null>(null);
   const sending = useRef(false);
+  const stopRequested = useRef(false);
   const sessions = useQuery({
     queryKey: ['product-ai', 'sessions', page],
     queryFn: () => productAiClient.list(page),
+    enabled: active,
   });
   const conversation = useQuery({
     queryKey: ['product-ai', 'conversation', sessionId],
-    enabled: Boolean(sessionId),
+    enabled: active && Boolean(sessionId),
     queryFn: async () => {
       const [session, messages] = await Promise.all([
         productAiClient.get(sessionId!),
@@ -59,11 +163,24 @@ export default function ProductAiChat() {
       return { session, messages };
     },
     refetchInterval: (query) =>
-      query.state.data?.session.replyStatus === 'running' ? 2_000 : false,
+      active && query.state.data?.session.replyStatus === 'running'
+        ? 2_000
+        : false,
   });
   const session = conversation.data?.session;
   const status = session?.replyStatus;
+  const messages = conversation.data?.messages ?? [];
+  const lastUserIndex = messages.findLastIndex(
+    (message) => message.role === 'user'
+  );
+  const scroll = useChatScroll(sessionId, messages[lastUserIndex]?.id);
+
   const awaitingReply = status === 'pending' || status === 'running';
+  const showStopped =
+    userStopped ||
+    (!generating &&
+      session?.replyError ===
+        '답변 생성을 중지했습니다. 다시 생성하거나 새 메시지를 보내세요.');
   const canRetry =
     Boolean(session?.lastUserMessageId) &&
     (status === 'pending' ||
@@ -77,22 +194,223 @@ export default function ProductAiChat() {
   }
 
   function selectSession(id: string | null) {
-    if (sending.current) return;
+    if (sending.current || stopping) return;
     setError(null);
     setText('');
     pending.current = null;
-    router.replace(
-      id ? `${pathname}?sessionId=${encodeURIComponent(id)}` : pathname
+    setShowHistory(false);
+    setStreamText('');
+    setInterrupted(false);
+    setUserStopped(false);
+    onSessionChange(id);
+  }
+
+  async function receiveReply(id: string, messageId: string) {
+    const request = {
+      sessionId: id,
+      messageId,
+      abort: new AbortController(),
+      stopped: false,
+    };
+    activeReply.current = request;
+    setGenerating(true);
+    setStreamText('');
+    setInterrupted(false);
+    setUserStopped(false);
+    let accumulated = '';
+    let frame: number | null = null;
+    try {
+      await productAiClient.respondStream(
+        id,
+        messageId,
+        (delta) => {
+          accumulated += delta;
+          if (frame === null)
+            frame = requestAnimationFrame(() => {
+              setStreamText(accumulated);
+              frame = null;
+            });
+        },
+        request.abort.signal
+      );
+      await refresh();
+      setStreamText('');
+    } catch (cause) {
+      setStreamText(accumulated);
+      setInterrupted(true);
+      if (!request.stopped) throw cause;
+    } finally {
+      if (frame !== null) cancelAnimationFrame(frame);
+      activeReply.current = null;
+      setGenerating(false);
+    }
+  }
+
+  async function stopReply() {
+    const request = activeReply.current;
+    if (request?.stopped) return;
+    stopRequested.current = true;
+    setUserStopped(true);
+    setError(null);
+    if (!request) return;
+    request.stopped = true;
+    setUserStopped(true);
+    setError(null);
+    request.abort.abort();
+    setStopping(true);
+    try {
+      await productAiClient.cancel(request.sessionId, request.messageId);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      request.abort.abort();
+      setStopping(false);
+      await refresh();
+    }
+  }
+
+  useEffect(() => {
+    if (!active || (!busy && !generating)) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void stopReply();
+    };
+    window.addEventListener('keydown', onEscape, true);
+    return () => window.removeEventListener('keydown', onEscape, true);
+  }, [active, busy, generating]);
+
+  useEffect(() => () => activeReply.current?.abort.abort(), []);
+
+  async function copyAnswer(message: ProductAiMessage) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedId(message.id);
+    } catch {
+      setError(
+        '복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해 주세요.'
+      );
+    }
+  }
+
+  async function rateAnswer(message: ProductAiMessage, rating: 'up' | 'down') {
+    if (!sessionId || feedbackBusy) return;
+    setFeedbackBusy(message.id);
+    try {
+      await productAiClient.feedback(
+        sessionId,
+        message.id,
+        message.feedback === rating ? null : rating
+      );
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setFeedbackBusy(null);
+    }
+  }
+
+  function renderMessage(message: ProductAiMessage) {
+    return (
+      <article
+        key={message.id}
+        className={`max-w-[92%] rounded-xl px-4 py-3 text-sm ${message.role === 'user' ? 'ml-auto rounded-br-sm bg-blue-50 text-slate-800' : 'mr-auto rounded-bl-sm bg-slate-50 text-slate-800'}`}
+      >
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          {message.role === 'user' ? '나' : '아몬드영 AI'}
+        </p>
+        <p className="whitespace-pre-wrap break-words leading-6">
+          {message.content}
+        </p>
+        {message.role === 'assistant' && (
+          <>
+            {!!message.sources?.length && (
+              <div className="mt-3 border-t pt-2">
+                <p className="mb-1 text-[11px] text-slate-400">
+                  참고한 운영 가이드 · 실시간 상품 조회 아님
+                </p>
+                {message.sources
+                  .filter((source) =>
+                    source.href.startsWith('/mall/product-ai/guide#')
+                  )
+                  .map((source) => (
+                    <Link
+                      key={source.id}
+                      href={source.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mr-2 inline-block text-xs text-blue-600 underline underline-offset-2"
+                    >
+                      {source.title}
+                    </Link>
+                  ))}
+              </div>
+            )}
+            <div className="mt-2 flex gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                aria-label={copiedId === message.id ? '복사됨' : '답변 복사'}
+                onClick={() => void copyAnswer(message)}
+              >
+                {copiedId === message.id ? (
+                  <Check size={14} />
+                ) : (
+                  <Copy size={14} />
+                )}
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                disabled={Boolean(feedbackBusy)}
+                aria-label="도움이 됐어요"
+                aria-pressed={message.feedback === 'up'}
+                onClick={() => void rateAnswer(message, 'up')}
+              >
+                <ThumbsUp
+                  size={14}
+                  className={message.feedback === 'up' ? 'text-blue-600' : ''}
+                />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                disabled={Boolean(feedbackBusy)}
+                aria-label="도움이 안 됐어요"
+                aria-pressed={message.feedback === 'down'}
+                onClick={() => void rateAnswer(message, 'down')}
+              >
+                <ThumbsDown
+                  size={14}
+                  className={message.feedback === 'down' ? 'text-blue-600' : ''}
+                />
+              </Button>
+            </div>
+          </>
+        )}
+      </article>
     );
   }
 
   async function send(message = text) {
     const content = message.trim();
-    if (!content || sending.current || awaitingReply || (sessionId && !session))
+    if (
+      !content ||
+      stopping ||
+      sending.current ||
+      awaitingReply ||
+      (sessionId && !session)
+    )
       return;
+    stopRequested.current = false;
     sending.current = true;
     setBusy(true);
     setError(null);
+    setUserStopped(false);
     if (
       !pending.current ||
       pending.current.content !== content ||
@@ -120,60 +438,141 @@ export default function ProductAiChat() {
       });
       setText('');
       pending.current = null;
-      router.replace(`${pathname}?sessionId=${target.id}`);
+      onSessionChange(target.id);
       await refresh();
-      await productAiClient.respond(target.id, sent.message.id);
+      if (stopRequested.current) {
+        await productAiClient.cancel(target.id, sent.message.id);
+        return;
+      }
+      await receiveReply(target.id, sent.message.id);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (!stopRequested.current) setError(errorMessage(cause));
     } finally {
-      await refresh();
-      sending.current = false;
-      setBusy(false);
+      try {
+        await refresh();
+      } finally {
+        sending.current = false;
+        setBusy(false);
+      }
     }
   }
 
   async function retryReply() {
-    if (!session?.lastUserMessageId || sending.current) return;
+    if (!session?.lastUserMessageId || sending.current || stopping) return;
+    stopRequested.current = false;
     sending.current = true;
     setBusy(true);
     setError(null);
+    setUserStopped(false);
     try {
-      await productAiClient.respond(session.id, session.lastUserMessageId);
+      await receiveReply(session.id, session.lastUserMessageId);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (!stopRequested.current) setError(errorMessage(cause));
     } finally {
-      await refresh();
-      sending.current = false;
-      setBusy(false);
+      try {
+        await refresh();
+      } finally {
+        sending.current = false;
+        setBusy(false);
+      }
     }
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          상품등록 도우미
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          상품 정보를 함께 정리하고 궁금한 용어를 물어보세요. 실제 상품
-          저장·파일 첨부는 아직 지원하지 않습니다.
-        </p>
-      </header>
-      <div className="grid min-h-[65vh] gap-4 md:grid-cols-[230px_1fr]">
+  async function renameSession(id: string) {
+    if (renaming || !editTitle.trim()) return;
+    setRenaming(true);
+    try {
+      await productAiClient.rename(id, editTitle.trim());
+      setEditingId(null);
+      await queryClient.invalidateQueries({ queryKey: ['product-ai'] });
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function deleteSession(id: string) {
+    if (deleting || busy) return;
+    setDeleting(id);
+    try {
+      await productAiClient.remove(id);
+      if (sessionId === id) selectSession(null);
+      queryClient.removeQueries({
+        queryKey: ['product-ai', 'conversation', id],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['product-ai', 'sessions'],
+      });
+      if (sessions.data?.items.length === 1 && page > 1) setPage(page - 1);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  const content = (
+    <div
+      className={
+        embedded
+          ? 'flex min-h-0 flex-1 flex-col'
+          : 'mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6'
+      }
+    >
+      {!embedded && (
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">아몬드영 AI</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            운영 중 궁금한 점, 아몬드영 AI와 함께 정리해 보세요.
+          </p>
+        </header>
+      )}
+      {embedded && (
+        <div className="flex gap-2 border-b px-3 py-2 sm:hidden">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowHistory(!showHistory)}
+            aria-expanded={showHistory}
+          >
+            <History size={16} /> 대화 목록
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => selectSession(null)}
+          >
+            <MessageSquarePlus size={16} /> 새 대화
+          </Button>
+        </div>
+      )}
+      <div
+        className={
+          embedded
+            ? 'grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[200px_1fr]'
+            : 'grid min-h-[65vh] gap-4 md:grid-cols-[230px_1fr]'
+        }
+      >
         <aside
-          className="rounded-xl border bg-muted/20 p-3"
+          className={
+            embedded
+              ? `${showHistory ? 'block' : 'hidden'} min-h-0 overflow-y-auto border-r border-indigo-100/70 bg-[#f4f5fc] p-3 sm:block`
+              : 'rounded-xl border bg-muted/20 p-3'
+          }
           aria-label="저장된 대화"
         >
           <Button
             variant="outline"
-            className="w-full justify-start gap-2"
+            className="h-10 w-full justify-center gap-2 rounded-full border-0 bg-gradient-to-r from-blue-600 to-violet-500 text-white shadow-md shadow-indigo-200/50 hover:opacity-90"
             disabled={busy}
             onClick={() => selectSession(null)}
           >
             <MessageSquarePlus size={16} />새 대화
           </Button>
           <p className="mb-2 mt-5 text-xs font-medium text-muted-foreground">
-            내 상품등록 대화
+            최근 대화
           </p>
           {sessions.isPending ? <p className="text-sm">불러오는 중…</p> : null}
           {sessions.error ? (
@@ -188,19 +587,104 @@ export default function ProductAiChat() {
           ) : null}
           <div className="space-y-1">
             {sessions.data?.items.map((item) => (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                disabled={busy}
-                aria-current={sessionId === item.id ? 'page' : undefined}
-                onClick={() => selectSession(item.id)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm disabled:opacity-50 ${sessionId === item.id ? 'bg-primary/10 font-medium' : 'hover:bg-muted'}`}
+                className="group flex items-center gap-1 rounded-lg hover:bg-white/80"
               >
-                <span className="block truncate">{item.title}</span>
-              </button>
+                {editingId === item.id ? (
+                  <form
+                    className="flex min-w-0 flex-1 items-center"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void renameSession(item.id);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      aria-label="대화 제목"
+                      maxLength={200}
+                      value={editTitle}
+                      disabled={renaming}
+                      onChange={(event) => setEditTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setEditingId(null);
+                        }
+                      }}
+                      className="min-w-0 flex-1 rounded border bg-white px-2 py-1 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      aria-label="제목 저장"
+                      disabled={renaming || !editTitle.trim()}
+                      className="p-1"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="제목 수정 취소"
+                      disabled={renaming}
+                      onClick={() => setEditingId(null)}
+                      className="p-1"
+                    >
+                      <X size={14} />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-current={sessionId === item.id ? 'page' : undefined}
+                      onClick={() => selectSession(item.id)}
+                      className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm disabled:opacity-50 ${sessionId === item.id ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/80'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <MessageSquare
+                          size={14}
+                          className="shrink-0 text-slate-400"
+                        />
+                        <span className="truncate">{item.title}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || Boolean(deleting)}
+                      aria-label={`${item.title} 제목 수정`}
+                      title="제목 수정"
+                      onClick={() => {
+                        setEditingId(item.id);
+                        setEditTitle(item.title);
+                      }}
+                      className="shrink-0 rounded-md p-1 text-slate-400 hover:text-slate-700"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || Boolean(deleting)}
+                  onClick={() => void deleteSession(item.id)}
+                  aria-label={`${item.title} 대화 삭제`}
+                  title="대화 삭제"
+                  className="shrink-0 rounded-md p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 focus-visible:ring-2 focus-visible:ring-blue-200 disabled:opacity-40"
+                >
+                  {deleting === item.id ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </div>
             ))}
           </div>
-          <div className="mt-4 flex items-center justify-between gap-2">
+          <div
+            className={`${page > 1 || sessions.data?.hasMore ? 'flex' : 'hidden'} mt-4 items-center justify-between gap-2`}
+          >
             <Button
               size="sm"
               variant="ghost"
@@ -221,59 +705,99 @@ export default function ProductAiChat() {
           </div>
         </aside>
         <section
-          className="flex min-w-0 flex-col rounded-xl border bg-background"
-          aria-label="상품등록 대화"
+          className={
+            embedded
+              ? `${showHistory ? 'hidden sm:flex' : 'flex'} min-h-0 min-w-0 flex-col bg-[#fcfcff]`
+              : 'flex min-w-0 flex-col rounded-xl border bg-background'
+          }
+          aria-label="AI 대화"
         >
-          <div className="border-b px-5 py-3 font-medium">
-            {session?.title ?? '새 상품등록 대화'}
-          </div>
+          {sessionId && (
+            <div className="truncate border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-600">
+              {session?.title ?? '대화 불러오는 중'}
+            </div>
+          )}
           <div
-            className="flex max-h-[60vh] min-h-64 flex-1 flex-col gap-4 overflow-y-auto p-5"
+            className={
+              embedded
+                ? 'flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4'
+                : 'flex max-h-[60vh] min-h-64 flex-1 flex-col gap-4 overflow-y-auto p-5'
+            }
             aria-label="메시지 목록"
+            ref={scroll.viewportRef}
+            onScroll={scroll.onScroll}
+            onWheel={scroll.onUserScrollIntent}
+            onTouchMove={scroll.onUserScrollIntent}
+            onKeyDown={(event) => {
+              if (
+                [
+                  'ArrowUp',
+                  'ArrowDown',
+                  'PageUp',
+                  'PageDown',
+                  'Home',
+                  'End',
+                  ' ',
+                ].includes(event.key)
+              )
+                scroll.onUserScrollIntent();
+            }}
+            tabIndex={0}
+            style={{ overflowAnchor: 'none' }}
           >
             {!sessionId ? (
-              <div className="my-auto space-y-3 text-sm text-muted-foreground">
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none relative isolate mx-auto mb-6 flex h-40 w-40 shrink-0 items-center justify-center sm:h-48 sm:w-48"
-                >
-                  <div className={styles.brandGlow} />
-                  <div className="absolute inset-6 rounded-full bg-background/80 blur-md" />
-                  <Image
-                    src="/images/almondyoung-symbol.webp"
-                    alt=""
-                    width={128}
-                    height={128}
-                    className="relative h-28 w-28 opacity-35 sm:h-32 sm:w-32"
-                  />
+              <div className={styles.welcome}>
+                <div className={styles.welcomeHeading}>
+                  <span className={styles.eyebrow}>AI ASSISTANT</span>
+                  <h2>
+                    안녕하세요,
+                    <br />
+                    무엇을 도와드릴까요?
+                  </h2>
                 </div>
-                <p className="text-base font-medium text-foreground">
-                  어떤 상품을 등록할까요?
-                </p>
-                <p>
-                  상품명, 옵션, 가격 등 알고 계신 내용을 편하게 적어주세요.
-                  대화는 자동으로 저장됩니다.
-                </p>
-                <p className="text-xs">
-                  아래 질문을 누르면 바로 전송되고 도우미가 답해드려요.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {starterQuestions.map((question) => (
-                    <Button
-                      key={question}
-                      type="button"
-                      variant="outline"
-                      disabled={busy || awaitingReply}
-                      className="h-auto max-w-full whitespace-normal py-2 text-left"
-                      onClick={() => {
-                        setText(question);
-                        void send(question);
-                      }}
-                    >
-                      {question}
-                    </Button>
+                <div className={styles.questionCloud} aria-label="추천 질문">
+                  {[
+                    starterQuestions.slice(0, 3),
+                    starterQuestions.slice(3, 6),
+                    starterQuestions.slice(6),
+                  ].map((questions, row) => (
+                    <div className={styles.questionRow} key={row}>
+                      <div className={styles.questionTrack}>
+                        {[false, true].map((duplicate) => (
+                          <div
+                            className={styles.questionGroup}
+                            key={String(duplicate)}
+                            aria-hidden={duplicate || undefined}
+                          >
+                            {questions.map(
+                              ({ topic, icon, label, question }) => (
+                                <button
+                                  key={topic}
+                                  type="button"
+                                  tabIndex={duplicate ? -1 : undefined}
+                                  disabled={busy || stopping || awaitingReply}
+                                  className={styles.suggestion}
+                                  onClick={() => {
+                                    setText(question);
+                                    void send(question);
+                                  }}
+                                >
+                                  <span aria-hidden="true">{icon}</span>
+                                  {label}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
+                <p className={styles.scopeNote}>
+                  궁금한 점을 편하게 물어보세요.
+                  <br />
+                  아몬드영 AI와 함께 하나씩 풀어가요.
+                </p>
               </div>
             ) : null}
             {sessionId && conversation.isPending ? (
@@ -284,36 +808,80 @@ export default function ProductAiChat() {
                 {errorMessage(conversation.error)}
               </p>
             ) : null}
-            {conversation.data?.messages.map((message) => (
-              <article
-                key={message.id}
-                className={`max-w-[92%] rounded-xl px-4 py-3 text-sm ${message.role === 'user' ? 'ml-auto bg-primary/10' : 'mr-auto bg-muted/50'}`}
+            {messages.slice(0, Math.max(0, lastUserIndex)).map(renderMessage)}
+            {lastUserIndex >= 0 && (
+              <div
+                ref={scroll.turnRef}
+                style={{ minHeight: scroll.turnMinHeight }}
+                className="flex shrink-0 flex-col gap-4"
               >
-                <p className="mb-1 text-xs font-medium text-muted-foreground">
-                  {message.role === 'user' ? '나' : '상품등록 도우미'}
-                </p>
-                <p className="whitespace-pre-wrap break-words leading-6">
-                  {message.content}
-                </p>
-              </article>
-            ))}
-            {busy || status === 'running' ? (
-              <p
-                role="status"
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-              >
-                <Loader2 className="animate-spin" size={15} />
-                답변을 준비하고 있습니다…
+                {messages.slice(lastUserIndex).map(renderMessage)}
+                {streamText && messages.at(-1)?.role !== 'assistant' && (
+                  <article className="mr-auto max-w-[92%] rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                    <p className="mb-1 text-xs text-slate-400">
+                      {interrupted
+                        ? '중단된 답변 · 저장되지 않음'
+                        : '아몬드영 AI · 작성 중'}
+                    </p>
+                    <p className="whitespace-pre-wrap break-words leading-6">
+                      {streamText}
+                    </p>
+                  </article>
+                )}
+                {!userStopped &&
+                !interrupted &&
+                !error &&
+                !session?.replyError &&
+                (generating || status === 'running') ? (
+                  <p
+                    role="status"
+                    className="flex items-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <Loader2 className="animate-spin" size={15} />
+                    답변을 준비하고 있습니다…
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 px-3 pb-3 pt-2">
+            {scroll.showLatest && (
+              <div className="mb-2 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={scroll.toLatest}
+                >
+                  <ArrowDown size={14} /> 최신 답변
+                </Button>
+              </div>
+            )}
+            {(busy || generating) && !userStopped && (
+              <div className="mb-2 flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void stopReply()}
+                  disabled={stopping}
+                >
+                  <Square size={12} />{' '}
+                  {stopping ? '중지 중…' : '생성 중지 · Esc'}
+                </Button>
+              </div>
+            )}
+
+            {showStopped && !error ? (
+              <p role="status" className="mb-3 text-sm text-muted-foreground">
+                답변 생성을 중지했어요. 다시 생성하거나 새 메시지를 보내세요.
               </p>
             ) : null}
-          </div>
-          <div className="border-t p-4">
-            {error || session?.replyError ? (
+            {error || (!generating && !showStopped && session?.replyError) ? (
               <p role="alert" className="mb-3 text-sm text-destructive">
                 {error ?? session?.replyError}
               </p>
             ) : null}
-            {canRetry ? (
+            {canRetry && !generating ? (
               <Button
                 className="mb-3"
                 variant="outline"
@@ -328,33 +896,43 @@ export default function ProductAiChat() {
                 event.preventDefault();
                 void send();
               }}
-              className="flex items-end gap-2"
+              className={styles.composer}
             >
               <Textarea
-                aria-label="상품등록 요청"
+                aria-label="AI에게 메시지"
                 value={text}
                 maxLength={20_000}
-                disabled={busy || awaitingReply}
+                disabled={busy || stopping || awaitingReply}
                 onChange={(event) => setText(event.target.value)}
-                placeholder="상품명, 옵션, 가격 또는 궁금한 점을 입력하세요"
-                className="min-h-24 resize-y"
+                placeholder="아몬드영 AI에게 편하게 물어보세요…"
+                className="min-h-28 max-h-44 resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0"
               />
-              <Button
-                type="submit"
-                disabled={
-                  busy ||
-                  awaitingReply ||
-                  !text.trim() ||
-                  Boolean(sessionId && !session)
-                }
-                aria-label="메시지 보내기"
-              >
-                <Send size={16} />
-              </Button>
+              <div className="flex items-center justify-between px-3 pb-3">
+                <span className="text-[11px] text-slate-400">
+                  {text.length.toLocaleString()} / 20,000
+                </span>
+                <Button
+                  type="submit"
+                  disabled={
+                    busy ||
+                    awaitingReply ||
+                    !text.trim() ||
+                    Boolean(sessionId && !session)
+                  }
+                  aria-label="메시지 보내기"
+                  className="h-8 shrink-0 gap-1.5 rounded-full bg-indigo-100 px-3 text-blue-600 shadow-none hover:bg-indigo-200 disabled:opacity-40"
+                >
+                  <Send size={14} /> 보내기
+                </Button>
+              </div>
             </form>
+            <p className="mt-2.5 text-center text-[11px] text-slate-400">
+              대화는 자동 저장됩니다 · 현재는 정보 정리와 안내를 도와드려요
+            </p>
           </div>
         </section>
       </div>
     </div>
   );
+  return render ? render(content) : content;
 }

@@ -124,6 +124,17 @@ export async function forwardRequest(
     });
   }
 
+  if (upstream.headers.get('Content-Type')?.includes('text/event-stream')) {
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
+
   const data = await upstream.arrayBuffer();
 
   return new Response(data, {

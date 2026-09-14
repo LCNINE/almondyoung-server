@@ -1,28 +1,160 @@
-.brandGlow {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent,
-    rgb(240 167 73 / 32%),
-    rgb(255 218 167 / 48%),
-    rgb(81 45 43 / 12%),
-    rgb(240 167 73 / 28%),
-    transparent
-  );
-  filter: blur(18px);
-  animation: brand-orbit 28s linear infinite;
+.suggestion {
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
-@keyframes brand-orbit {
+.suggestion:hover:not(:disabled) {
+  border-color: #a2b4ed;
+  background: #f3f6ff;
+}
+
+.suggestion:focus-visible {
+  outline: 2px solid #8db5eb;
+  outline-offset: 2px;
+}
+
+.suggestion:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(120deg, #69a5ff, #a783f4, #d3c0ef) border-box;
+  box-shadow: 0 3px 14px rgb(97 120 215 / 12%);
+}
+
+.composer:focus-within {
+  box-shadow: 0 0 0 3px rgb(168 202 243 / 18%);
+}
+
+.welcome {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 400px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: radial-gradient(
+    ellipse 100% 68% at 50% 100%,
+    #91aaf7 0%,
+    #a7b9fa 44%,
+    #e7def7 70%,
+    transparent 88%
+  );
+}
+.welcomeHeading {
+  padding: clamp(32px, 7vh, 76px) 12px 80px;
+  text-align: center;
+}
+.eyebrow {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: white;
+  color: #9694a2;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.welcomeHeading h2 {
+  margin-top: 18px;
+  color: #323542;
+  font-size: clamp(23px, 3vw, 30px);
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: -0.05em;
+}
+.questionCloud {
+  margin-top: auto;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.questionRow {
+  overflow: hidden;
+  padding: 3px 0;
+}
+.questionTrack {
+  display: flex;
+  width: max-content;
+  animation: questionFlow 65s linear infinite;
+}
+.questionRow:nth-child(2) .questionTrack {
+  animation-direction: reverse;
+  animation-duration: 75s;
+}
+.questionRow:nth-child(3) .questionTrack {
+  animation-duration: 58s;
+}
+.questionGroup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 9px;
+}
+.suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  max-width: none;
+  padding: 10px 15px;
+  border: 1px solid rgb(255 255 255 / 80%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 94%);
+  color: #646575;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgb(79 94 149 / 5%);
+}
+.suggestion > span {
+  color: #8e91ab;
+  font-size: 15px;
+}
+.questionCloud:hover .questionTrack,
+.questionCloud:focus-within .questionTrack {
+  animation-play-state: paused;
+}
+.scopeNote {
+  margin: 14px 10px 20px;
+  text-align: center;
+  color: #505e8b;
+  font-size: 10px;
+  line-height: 1.8;
+}
+@keyframes questionFlow {
+  from {
+    transform: translateX(0);
+  }
   to {
-    transform: rotate(360deg);
+    transform: translateX(-50%);
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .brandGlow {
-    animation: none;
+  .questionTrack {
+    animation: none !important;
+    width: auto;
+  }
+  .questionGroup {
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 0 10px;
+  }
+  .questionGroup[aria-hidden='true'] {
+    display: none;
   }
 }

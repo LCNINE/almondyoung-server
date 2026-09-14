@@ -19,6 +19,7 @@
       }
     ],
     "paths": {
+      "@packages/product-ai/*": ["../../packages/product-ai/*"],
       "@/*": ["./src/*"],
       "@packages/web-observability": ["../../packages/web-observability"],
       "@packages/web-observability/*": ["../../packages/web-observability/*"],

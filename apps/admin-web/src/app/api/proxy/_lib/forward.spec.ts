@@ -38,6 +38,30 @@ describe('forwardRequest', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it('SSE는 마지막 응답을 기다리지 않고 첫 조각부터 전달한다', async () => {
+    let upstream!: ReadableStreamDefaultController<Uint8Array>;
+    const cancel = jest.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        upstream = controller;
+      },
+      cancel,
+    });
+    mockedFetch.mockResolvedValue(
+      new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const response = await forwardRequest(fakeRequest(), 'http://upstream', [
+      'stream',
+    ]);
+    const reader = response.body!.getReader();
+    upstream.enqueue(new TextEncoder().encode('data: first\n\n'));
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe(
+      'data: first\n\n'
+    );
+    await reader.cancel();
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it('passThroughRedirects 면 302 와 Location 을 브라우저에 그대로 넘긴다', async () => {
     // 큰 이미지의 S3 302 를 따라가 본문을 나르면 Lambda 응답 상한에 걸려 502 가 난다
     mockedFetch.mockResolvedValue(

@@ -1,6 +1,8 @@
 'use client';
 
-import { client } from '../../client';
+import { client, refreshAccessToken } from '../../client';
+import { readSseData } from '@packages/product-ai/sse';
+import type { ProductAiSource } from '@packages/product-ai/guides';
 
 export type ProductAiSession = {
   id: string;
@@ -17,11 +19,88 @@ export type ProductAiMessage = {
   sequence: number;
   role: 'user' | 'assistant';
   content: string;
+  feedback: 'up' | 'down' | null;
+  sources: ProductAiSource[];
 };
 const RESPONSE_REQUEST_CONFIG = { timeout: 25_000, retry: 0 };
 const BASE = '/proxy/api/product-ai/sessions';
 
 export const productAiClient = {
+  async rename(id: string, title: string) {
+    return (
+      await client.put(
+        `${BASE}/${id}/title`,
+        { title },
+        RESPONSE_REQUEST_CONFIG
+      )
+    ).data;
+  },
+  async remove(id: string) {
+    await client.delete(`${BASE}/${id}`, RESPONSE_REQUEST_CONFIG);
+  },
+  async feedback(id: string, messageId: string, rating: 'up' | 'down' | null) {
+    return (
+      await client.put(
+        `${BASE}/${id}/messages/${messageId}/feedback`,
+        { rating },
+        RESPONSE_REQUEST_CONFIG
+      )
+    ).data;
+  },
+  async cancel(id: string, messageId: string) {
+    return (
+      await client.post(
+        `${BASE}/${id}/cancel`,
+        { messageId },
+        RESPONSE_REQUEST_CONFIG
+      )
+    ).data;
+  },
+  async respondStream(
+    id: string,
+    messageId: string,
+    onDelta: (text: string) => void,
+    signal: AbortSignal
+  ) {
+    const request = () =>
+      fetch(`/api${BASE}/${id}/respond-stream`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({ messageId }),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+      });
+    let response = await request();
+    if (response.status === 401) {
+      await refreshAccessToken();
+      response = await request();
+    }
+    if (
+      !response.ok ||
+      !response.body ||
+      !response.headers.get('Content-Type')?.includes('text/event-stream')
+    )
+      throw new Error('AI 답변을 시작하지 못했습니다. 다시 시도해 주세요.');
+    let completed = false;
+    for await (const data of readSseData(response.body)) {
+      const event = JSON.parse(data);
+      if (event.type === 'delta' && typeof event.text === 'string')
+        onDelta(event.text);
+      if (event.type === 'error')
+        throw new Error('답변이 중단되었습니다. 다시 시도해 주세요.');
+      if (event.type === 'done') {
+        completed = true;
+        break;
+      }
+    }
+    if (!completed)
+      throw new Error(
+        '연결이 끊겼습니다. 저장된 대화를 확인하고 다시 시도해 주세요.'
+      );
+  },
   async list(page: number) {
     return (
       await client.get<{ items: ProductAiSession[]; hasMore: boolean }>(BASE, {
