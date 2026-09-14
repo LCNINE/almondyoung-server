@@ -6,10 +6,21 @@ import { ProductAiProvider } from './providers/product-ai.provider';
 import { ProductAiReplyService } from './services/product-ai.reply.service';
 import { ProductsModule } from '../../core/products/products.module';
 import { ProductAiDraftService } from './services/product-ai-draft.service';
+import { ProductAiSalesService } from './services/product-ai-sales.service';
+import { PricingModule } from '../../core/pricing/pricing.module';
+import { CategoriesModule } from '../../core/categories/categories.module';
+import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, PricingModule, CategoriesModule, ProductMatchingModule],
   controllers: [ProductAiController],
-  providers: [ProductAiImageService, ProductAiService, ProductAiProvider, ProductAiReplyService, ProductAiDraftService],
+  providers: [
+    ProductAiSalesService,
+    ProductAiImageService,
+    ProductAiService,
+    ProductAiProvider,
+    ProductAiReplyService,
+    ProductAiDraftService,
+  ],
 })
 export class ProductAiModule {}

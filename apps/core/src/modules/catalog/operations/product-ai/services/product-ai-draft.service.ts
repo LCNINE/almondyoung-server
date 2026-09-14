@@ -9,7 +9,11 @@ import {
   type PimSchema,
 } from '../../../schema/catalog.schema';
 import { ProductMastersService } from '../../../core/products/services/product-masters.service';
-import { draftImageIds, productAiDraftSchema, renderDraftHtml } from '@packages/product-ai/draft';
+import { draftImageIds, productAiDraftSchema, renderDraftHtml, renderDraftMarkdown } from '@packages/product-ai/draft';
+import { type DbTransaction } from '../../../catalog.types';
+import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import { ProductAiSalesService } from './product-ai-sales.service';
+import { salesProblems } from '@packages/product-ai/sales';
 import { ProductAiImageService, type ProductAiFileAuth } from './product-ai-image.service';
 
 @Injectable()
@@ -18,9 +22,17 @@ export class ProductAiDraftService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly masters: ProductMastersService,
     private readonly images: ProductAiImageService,
+    private readonly sales: ProductAiSalesService,
+    private readonly versions: ProductVersionsService,
   ) {}
 
-  async save(ownerId: string, sessionId: string, messageId: string, auth: ProductAiFileAuth) {
+  async save(
+    ownerId: string,
+    sessionId: string,
+    messageId: string,
+    auth: ProductAiFileAuth,
+    options: { publish?: boolean; roles?: string[]; tx?: DbTransaction; signal?: AbortSignal } = {},
+  ) {
     // A session owns one draft. Locking also makes repeated clicks and lost-response retries idempotent.
     return this.db.run(async (tx) => {
       const [session] = await tx
@@ -35,7 +47,11 @@ export class ProductAiDraftService {
         )
         .for('update');
       if (!session) throw new NotFoundException('대화를 찾을 수 없습니다.');
-      if (session.savedProduct?.messageId === messageId) return session.savedProduct;
+      if (
+        session.savedProduct?.messageId === messageId &&
+        (!options.publish || session.savedProduct.status === 'active')
+      )
+        return session.savedProduct;
       const [message] = await tx
         .select()
         .from(productAiMessages)
@@ -52,6 +68,13 @@ export class ProductAiDraftService {
       const parsed = productAiDraftSchema.safeParse(message.productDraft);
       if (!parsed.success) throw new BadRequestException('상품 초안을 다시 생성해 주세요.');
       const draft = parsed.data;
+      if (options.publish) {
+        const problems = salesProblems(draft.sales);
+        if (!draft.thumbnailFileId) problems.push('대표 이미지를 선택해 주세요.');
+        if (draft.pendingItems.length) problems.push(draft.pendingItems[0]);
+        if (problems.length) throw new BadRequestException(problems[0]);
+      }
+      if (draft.sales) await this.sales.validate(draft.sales, options.roles ?? [], Boolean(options.publish), tx);
       const messages = await tx
         .select({ attachments: productAiMessages.attachments })
         .from(productAiMessages)
@@ -84,14 +107,18 @@ export class ProductAiDraftService {
           previous.masterId !== session.savedProduct!.masterId)
       )
         throw new ConflictException('이 상품은 더 이상 수정 가능한 내 초안이 아닙니다. 상품 화면에서 확인해 주세요.');
-      const files = await this.images.copyForProduct(imageIds, auth, AbortSignal.timeout(20_000));
+      const signal = options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
+        : AbortSignal.timeout(20_000);
+      const files = await this.images.copyForProduct(imageIds, auth, signal);
+      signal.throwIfAborted();
       const descriptionHtml = renderDraftHtml(draft, new Map([...files].map(([id, file]) => [id, file.url])));
       const version = previous ?? (await this.masters.createMaster(ownerId, tx));
       await this.masters.updateVersion(
         version.id,
         {
           name: draft.name,
-          description: draft.description,
+          description: renderDraftMarkdown(draft, new Map([...files].map(([id, file]) => [id, file.fileId]))),
           descriptionHtml,
           seoTitle: draft.seoTitle,
           seoDescription: draft.seoDescription,
@@ -101,12 +128,29 @@ export class ProductAiDraftService {
         },
         tx,
       );
-      const savedProduct = { masterId: version.masterId, versionId: version.id, messageId };
+      const [previousMessage] = session.savedProduct
+        ? await tx
+            .select({ draft: productAiMessages.productDraft })
+            .from(productAiMessages)
+            .where(eq(productAiMessages.id, session.savedProduct.messageId))
+        : [];
+      if (draft.sales)
+        await this.sales.apply(version.id, version.masterId, draft.sales, previousMessage?.draft?.sales, tx);
+      await tx.update(productAiMessages).set({ productDraft: draft }).where(eq(productAiMessages.id, messageId));
+      signal.throwIfAborted();
+      if (options.publish) await this.versions.publishVersion(version.id, tx);
+      signal.throwIfAborted();
+      const savedProduct = {
+        masterId: version.masterId,
+        versionId: version.id,
+        messageId,
+        status: options.publish ? ('active' as const) : ('draft' as const),
+      };
       await tx
         .update(productAiSessions)
         .set({ savedProduct, updatedAt: new Date() })
         .where(eq(productAiSessions.id, sessionId));
       return savedProduct;
-    });
+    }, options.tx);
   }
 }

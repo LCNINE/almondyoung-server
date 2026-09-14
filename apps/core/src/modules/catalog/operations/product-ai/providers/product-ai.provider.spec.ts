@@ -73,17 +73,41 @@ describe('ProductAiProvider (OpenAI)', () => {
     const answer = await provider.reply(history, { onDraft, onDelta });
     expect(onDraft).toHaveBeenCalledWith(draft);
     expect(onDelta).toHaveBeenCalledWith(answer);
-    expect(answer).toContain('미리보기');
+    expect(answer).toContain('상품 정보');
+  });
+  it('검색 결과를 tool output으로 전달하고 후속 답변을 생성한다', async () => {
+    const onLookup = jest.fn().mockResolvedValue([{ id: 'category-id', name: '스티커' }]);
+    const request = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'completed',
+          output: [
+            {
+              type: 'function_call',
+              call_id: 'lookup-1',
+              name: 'search_product_references',
+              arguments: JSON.stringify({ kind: 'categories', query: '스티커' }),
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(Response.json(completed('스티커 카테고리를 찾았어요.')));
+    await expect(provider.reply(history, { onDraft: jest.fn(), onLookup })).resolves.toContain('찾았어요');
+    expect(onLookup).toHaveBeenCalledWith({ kind: 'categories', query: '스티커' });
+    expect(JSON.parse(request.mock.calls[1][1]!.body as string).input.at(-1)).toMatchObject({
+      type: 'function_call_output',
+      call_id: 'lookup-1',
+      output: JSON.stringify([{ id: 'category-id', name: '스티커' }]),
+    });
   });
   it('완료되지 않은 도구 호출은 미리보기로 저장하지 않는다', async () => {
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValue(
-        Response.json({
-          status: 'incomplete',
-          output: [{ type: 'function_call', name: 'prepare_product_draft', arguments: '{}' }],
-        }),
-      );
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      Response.json({
+        status: 'incomplete',
+        output: [{ type: 'function_call', name: 'prepare_product_draft', arguments: '{}' }],
+      }),
+    );
     const onDraft = jest.fn();
     await expect(provider.reply(history, { onDraft })).rejects.toThrow();
     expect(onDraft).not.toHaveBeenCalled();

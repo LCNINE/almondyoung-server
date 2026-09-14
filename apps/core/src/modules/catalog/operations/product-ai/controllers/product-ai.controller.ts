@@ -31,20 +31,26 @@ export class ProductAiController {
   @HttpCode(200)
   @ApiOperation({ summary: '미리보기의 상세페이지·SEO를 내 상품 초안에 저장 (발행하지 않음)' })
   saveDraft(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiMessageParamsDto,
     @Req() request: FastifyRequest,
   ) {
-    return this.drafts.save(user.userId, params.id, params.messageId, {
-      cookie: request.headers.cookie,
-      authorization: request.headers.authorization,
-    });
+    return this.drafts.save(
+      user.userId,
+      params.id,
+      params.messageId,
+      {
+        cookie: request.headers.cookie,
+        authorization: request.headers.authorization,
+      },
+      { roles: user.roles },
+    );
   }
 
   @Put(':id/title')
   @ApiOperation({ summary: '내 대화 제목 변경' })
   rename(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RenameProductAiSessionDto,
   ) {
@@ -54,7 +60,7 @@ export class ProductAiController {
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: '내 대화 소프트 삭제' })
-  async remove(@User() user: { userId: string }, @Param() params: ProductAiSessionParamsDto) {
+  async remove(@User() user: { userId: string; roles?: string[] }, @Param() params: ProductAiSessionParamsDto) {
     await this.service.remove(user.userId, params.id);
   }
 
@@ -62,7 +68,7 @@ export class ProductAiController {
   @HttpCode(200)
   @ApiOperation({ summary: '현재 AI 답변 생성 중지' })
   cancel(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RespondProductAiDto,
   ) {
@@ -72,7 +78,7 @@ export class ProductAiController {
   @Put(':id/messages/:messageId/feedback')
   @ApiOperation({ summary: '내 대화의 AI 답변 평가 저장/취소' })
   feedback(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiMessageParamsDto,
     @Body() body: ProductAiFeedbackDto,
   ) {
@@ -82,7 +88,7 @@ export class ProductAiController {
   @Post(':id/respond-stream')
   @ApiOperation({ summary: 'AI 답변 스트리밍. done은 저장 완료 후 전송' })
   async stream(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RespondProductAiDto,
     @Res() reply: FastifyReply,
@@ -106,6 +112,7 @@ export class ProductAiController {
       const result = await this.replies.respond(user.userId, params.id, body.messageId, {
         signal: abort.signal,
         fileAuth: { cookie: request.headers.cookie, authorization: request.headers.authorization },
+        roles: user.roles,
         onDelta: (text) => emit({ type: 'delta', text }),
       });
       emit({ type: 'done', status: result.status });
@@ -121,38 +128,39 @@ export class ProductAiController {
   @HttpCode(200)
   @ApiOperation({ summary: '저장된 사용자 메시지에 AI 답변 생성/재시도' })
   respond(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RespondProductAiDto,
     @Req() request: FastifyRequest,
   ) {
     return this.replies.respond(user.userId, params.id, body.messageId, {
       fileAuth: { cookie: request.headers.cookie, authorization: request.headers.authorization },
+      roles: user.roles,
     });
   }
 
   @Post()
   @ApiOperation({ summary: '상품등록 대화 작업 생성 (requestId로 중복 방지)' })
-  create(@User() user: { userId: string }, @Body() body: CreateProductAiSessionDto) {
+  create(@User() user: { userId: string; roles?: string[] }, @Body() body: CreateProductAiSessionDto) {
     return this.service.create(user.userId, body);
   }
 
   @Get()
   @ApiOperation({ summary: '내 상품등록 대화 작업 목록' })
-  list(@User() user: { userId: string }, @Query() query: ListProductAiSessionsQueryDto) {
+  list(@User() user: { userId: string; roles?: string[] }, @Query() query: ListProductAiSessionsQueryDto) {
     return this.service.list(user.userId, query);
   }
 
   @Get(':id')
   @ApiOperation({ summary: '내 상품등록 작업 조회' })
-  get(@User() user: { userId: string }, @Param() params: ProductAiSessionParamsDto) {
+  get(@User() user: { userId: string; roles?: string[] }, @Param() params: ProductAiSessionParamsDto) {
     return this.service.get(user.userId, params.id);
   }
 
   @Get(':id/messages')
   @ApiOperation({ summary: '대화 이력 조회 (after 순번 이후)' })
   messages(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Query() query: ListProductAiMessagesQueryDto,
   ) {
@@ -163,7 +171,7 @@ export class ProductAiController {
   @HttpCode(200)
   @ApiOperation({ summary: '사용자 메시지 저장. respond로 AI 답변을 요청한다.' })
   append(
-    @User() user: { userId: string },
+    @User() user: { userId: string; roles?: string[] },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: AppendProductAiMessageDto,
     @Req() request: FastifyRequest,

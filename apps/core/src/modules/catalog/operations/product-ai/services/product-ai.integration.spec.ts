@@ -11,7 +11,25 @@ import { ProductAiReplyService } from './product-ai.reply.service';
 import { eq } from 'drizzle-orm';
 import { ProductAiDraftService } from './product-ai-draft.service';
 import { ProductMastersService } from '../../../core/products/services/product-masters.service';
+import { ProductAiSalesService } from './product-ai-sales.service';
+import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
 import type { ProductAiDraft } from '@packages/product-ai/draft';
+
+const referenceId = '550e8400-e29b-41d4-a716-446655440000';
+const completeSales = {
+  marketPrice: 5000,
+  supplyPrice: 1000,
+  salePrice: 3000,
+  membershipPrice: 2500,
+  membershipPricing: 'custom' as const,
+  options: [],
+  categories: [{ id: referenceId, name: '스티커', parentId: null }],
+  primaryCategoryIndex: 0,
+  tagValueIds: [],
+  inventory: [
+    { optionValues: [], skuId: referenceId, newSkuName: null, quantity: 1, salePrice: null, membershipPrice: null },
+  ],
+};
 
 // 기본 DATABASE_URL은 사용하지 않는다. 로컬 PostgreSQL에 매 실행 독립 DB를 만들고 제거한다.
 const testUrl = process.env.PRODUCT_AI_TEST_DATABASE_URL;
@@ -26,8 +44,16 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
   let db: DbService<PimSchema>;
   let service: ProductAiService;
   let replies: ProductAiReplyService;
+  const sales = {
+    canCreateSku: jest.fn().mockResolvedValue(false),
+    lookup: jest.fn().mockResolvedValue([]),
+    validate: jest.fn(),
+    apply: jest.fn(),
+  };
+  const drafts = { save: jest.fn().mockResolvedValue({ status: 'active' }) };
   const provider = { reply: jest.fn().mockResolvedValue('판매가는 얼마인가요?') };
   beforeEach(() => {
+    drafts.save.mockClear();
     provider.reply.mockReset().mockResolvedValue('판매가는 얼마인가요?');
   });
   let connectionString: string;
@@ -70,7 +96,13 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     }
     db = new DbService({ connectionString }, catalogSchema);
     service = new ProductAiService(db, new ProductAiImageService());
-    replies = new ProductAiReplyService(db, provider, new ProductAiImageService());
+    replies = new ProductAiReplyService(
+      db,
+      provider,
+      new ProductAiImageService(),
+      sales as unknown as ProductAiSalesService,
+      drafts as unknown as ProductAiDraftService,
+    );
   });
 
   afterAll(async () => {
@@ -117,11 +149,89 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     const images = new ProductAiImageService();
     const copies = jest.spyOn(images, 'copyForProduct').mockResolvedValue(new Map());
     return {
-      service: new ProductAiDraftService(db, masters as unknown as ProductMastersService, images),
+      service: new ProductAiDraftService(
+        db,
+        masters as unknown as ProductMastersService,
+        images,
+        sales as unknown as ProductAiSalesService,
+        { publishVersion: jest.fn() } as unknown as ProductVersionsService,
+      ),
       masters,
       copies,
     };
   }
+  it('직접 등록 요청만 발행하며 재시도는 다시 발행하지 않는다', async () => {
+    const session = await createSession();
+    const { message } = await service.appendUserMessage(owner, session.id, input('등록해줘'));
+    const imageId = randomUUID();
+    // Seed a validated attachment without accessing the external file service.
+    const { productAiMessages } = await import('../../../schema/catalog.schema');
+    await db.db
+      .update(productAiMessages)
+      .set({ attachments: [{ fileId: imageId, fileName: 'test.png', mimeType: 'image/png', size: 1 }] })
+      .where(eq(productAiMessages.id, message.id));
+    const imageSpy = jest
+      .spyOn(ProductAiImageService.prototype, 'load')
+      .mockResolvedValue(new Map([[imageId, 'data:image/png;base64,eA==']]));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft({ ...draft, thumbnailFileId: imageId, sales: completeSales, pendingItems: [] });
+      return '미리보기';
+    });
+    try {
+      await replies.respond(owner, session.id, message.id, { roles: ['master'] });
+      expect(drafts.save).toHaveBeenCalledTimes(1);
+      expect((drafts.save.mock.calls[0] as unknown[])[4]).toMatchObject({ publish: true, roles: ['master'] });
+      await replies.respond(owner, session.id, message.id);
+      expect(drafts.save).toHaveBeenCalledTimes(1);
+      expect((await service.messages(owner, session.id, { after: 0, limit: 100 })).items.at(-1)?.content).toContain(
+        '발행을 완료',
+      );
+    } finally {
+      imageSpy.mockRestore();
+    }
+  });
+  it('발행 처리 실패나 중지 시 성공 답변을 커밋하지 않는다', async () => {
+    const session = await createSession();
+    const { message } = await service.appendUserMessage(owner, session.id, input('등록해줘'));
+    const imageId = randomUUID();
+    const { productAiMessages } = await import('../../../schema/catalog.schema');
+    await db.db
+      .update(productAiMessages)
+      .set({ attachments: [{ fileId: imageId, fileName: 'test.png', mimeType: 'image/png', size: 1 }] })
+      .where(eq(productAiMessages.id, message.id));
+    const imageSpy = jest
+      .spyOn(ProductAiImageService.prototype, 'load')
+      .mockResolvedValue(new Map([[imageId, 'data:image/png;base64,eA==']]));
+    const abort = new AbortController();
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft({ ...draft, thumbnailFileId: imageId, sales: completeSales, pendingItems: [] });
+      return '미리보기';
+    });
+    drafts.save.mockImplementationOnce(async () => {
+      abort.abort();
+      return { status: 'active' };
+    });
+    try {
+      await expect(replies.respond(owner, session.id, message.id, { signal: abort.signal })).rejects.toThrow();
+      expect((await service.messages(owner, session.id, { after: 0, limit: 100 })).items).toHaveLength(1);
+      expect((await service.get(owner, session.id)).replyStatus).toBe('failed');
+    } finally {
+      imageSpy.mockRestore();
+    }
+  });
+  it('가격/재고가 미정인 등록 요청은 질문으로 남기고 발행하지 않는다', async () => {
+    const session = await createSession();
+    const { message } = await service.appendUserMessage(owner, session.id, input('등록해줘'));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft(draft);
+      return '준비';
+    });
+    await replies.respond(owner, session.id, message.id);
+    expect(drafts.save).not.toHaveBeenCalled();
+    expect((await service.messages(owner, session.id, { after: 0, limit: 100 })).items.at(-1)?.content).toContain(
+      '등록 전에',
+    );
+  });
   it('모델이 대화 밖의 이미지 ID를 만들면 미리보기를 저장하지 않는다', async () => {
     const session = await createSession();
     const { message } = await service.appendUserMessage(owner, session.id, input('미리보기 만들어줘'));
