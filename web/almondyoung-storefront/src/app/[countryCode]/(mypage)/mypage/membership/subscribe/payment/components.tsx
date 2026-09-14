@@ -445,14 +445,16 @@ export function MembershipForm({
                         }
                       />
                     )}
-                    <PlanOption
-                      selected={field.value === "monthly_one_time"}
-                      onSelect={() => field.onChange("monthly_one_time")}
-                      title={t("planMonthlyOnce")}
-                      subNote={t("planMonthlyOnceDesc")}
-                      price={`${monthlyPlan.plan.price.toLocaleString()}원`}
-                      unit={t("unitOnce")}
-                    />
+                    {!RECURRING_ENABLED && (
+                      <PlanOption
+                        selected={field.value === "monthly_one_time"}
+                        onSelect={() => field.onChange("monthly_one_time")}
+                        title={t("planMonthlyOnce")}
+                        subNote={t("planMonthlyOnceDesc")}
+                        price={`${monthlyPlan.plan.price.toLocaleString()}원`}
+                        unit={t("unitOnce")}
+                      />
+                    )}
                     <PlanOption
                       selected={field.value === "yearly_one_time"}
                       onSelect={() => field.onChange("yearly_one_time")}
