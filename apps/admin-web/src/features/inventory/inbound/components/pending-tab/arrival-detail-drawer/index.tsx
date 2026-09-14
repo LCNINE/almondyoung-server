@@ -27,6 +27,13 @@ import {
 } from '@/lib/services/inventory';
 import type { ExpectedArrivalDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
+import {
+  getReceiveDraft,
+  receiveDraftKey,
+  updateReceiveDraft,
+  type ReceiveDraftField,
+  type ReceiveDraftState,
+} from './receive-state-model';
 
 type Props = {
   row: ExpectedArrivalDto | null;
@@ -35,19 +42,14 @@ type Props = {
   onOpenChange: (open: boolean) => void;
 };
 
-type ReceiveState = Record<
-  string,
-  { quantity: number; locationId: string; memo: string }
->;
-
 export function ArrivalDetailDrawer({
   row,
   warehouseId,
   open,
   onOpenChange,
 }: Props) {
-  const [receiveState, setReceiveState] = useState<ReceiveState>({});
-  const [activeSkuId, setActiveSkuId] = useState<string | null>(null);
+  const [receiveState, setReceiveState] = useState<ReceiveDraftState>({});
+  const [activeLineKey, setActiveLineKey] = useState<string | null>(null);
   const [closingLine, setClosingLine] = useState<{
     skuId: string;
     skuName: string;
@@ -62,17 +64,21 @@ export function ArrivalDetailDrawer({
 
   const updateReceive = (
     skuId: string,
-    field: 'quantity' | 'locationId' | 'memo',
+    outstandingQty: number,
+    field: ReceiveDraftField,
     value: string | number
   ) => {
-    setReceiveState((previous) => {
-      const current = previous[skuId] ?? {
-        quantity: 1,
-        locationId: '',
-        memo: '',
-      };
-      return { ...previous, [skuId]: { ...current, [field]: value } };
-    });
+    if (!row) return;
+    setReceiveState((previous) =>
+      updateReceiveDraft(
+        previous,
+        row.documentId,
+        skuId,
+        outstandingQty,
+        field,
+        value
+      )
+    );
   };
 
   const handleReceive = async (
@@ -81,11 +87,12 @@ export function ArrivalDetailDrawer({
     outstandingQty: number
   ) => {
     if (!row || !warehouseId) return;
-    const state = receiveState[skuId] ?? {
-      quantity: outstandingQty,
-      locationId: '',
-      memo: '',
-    };
+    const state = getReceiveDraft(
+      receiveState,
+      row.documentId,
+      skuId,
+      outstandingQty
+    );
     try {
       await receiveMutation.mutateAsync({
         poId: row.documentId,
@@ -96,7 +103,7 @@ export function ArrivalDetailDrawer({
         ],
       });
       toast.success(`${skuName} 입고 완료`);
-      setActiveSkuId(null);
+      setActiveLineKey(null);
     } catch (e: unknown) {
       toast.error(getServerDenyMessage(e, '입고 처리에 실패했습니다.'));
     }
@@ -154,12 +161,14 @@ export function ArrivalDetailDrawer({
             <div className="flex flex-col gap-3">
               <span className="text-sm font-medium">SKU별 입고 처리</span>
               {row.lines.map((line) => {
-                const isExpanded = activeSkuId === line.skuId;
-                const state = receiveState[line.skuId] ?? {
-                  quantity: line.outstandingQty,
-                  locationId: '',
-                  memo: '',
-                };
+                const lineKey = receiveDraftKey(row.documentId, line.skuId);
+                const isExpanded = activeLineKey === lineKey;
+                const state = getReceiveDraft(
+                  receiveState,
+                  row.documentId,
+                  line.skuId,
+                  line.outstandingQty
+                );
 
                 return (
                   <div key={line.skuId} className="rounded-md border p-3">
@@ -179,7 +188,7 @@ export function ArrivalDetailDrawer({
                           size="sm"
                           variant="outline"
                           onClick={() =>
-                            setActiveSkuId(isExpanded ? null : line.skuId)
+                            setActiveLineKey(isExpanded ? null : lineKey)
                           }
                         >
                           {isExpanded ? '닫기' : '입고'}
@@ -212,6 +221,7 @@ export function ArrivalDetailDrawer({
                               onChange={(event) =>
                                 updateReceive(
                                   line.skuId,
+                                  line.outstandingQty,
                                   'quantity',
                                   Number(event.target.value)
                                 )
@@ -228,6 +238,7 @@ export function ArrivalDetailDrawer({
                               onChange={(event) =>
                                 updateReceive(
                                   line.skuId,
+                                  line.outstandingQty,
                                   'locationId',
                                   event.target.value
                                 )
@@ -243,6 +254,7 @@ export function ArrivalDetailDrawer({
                             onChange={(event) =>
                               updateReceive(
                                 line.skuId,
+                                line.outstandingQty,
                                 'memo',
                                 event.target.value
                               )

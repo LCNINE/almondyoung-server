@@ -16,3 +16,8 @@ import { inventoryQueryKeys } from './query-keys';
 export function lineExecutionInvalidationKeys(id: string): readonly (readonly unknown[])[] {
   return [inventoryQueryKeys.purchaseOrdersRoot, inventoryQueryKeys.inbounds, inventoryQueryKeys.expectedArrivalsRoot];
 }
+
+/** direct 입고 작업 뒤 필터가 다른 이력·작업로그 쿼리를 모두 다시 읽는다. */
+export function inboundOperationInvalidationKeys(): readonly (readonly unknown[])[] {
+  return [inventoryQueryKeys.inbounds];
+}

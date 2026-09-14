@@ -6,22 +6,24 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useInboundPendingTableColumns } from '@/hooks/table/columns/use-inbound-pending-table-columns';
 import { useInboundPendingTableQuery } from '@/hooks/table/query/use-inbound-pending-table-query';
 import { useExpectedArrivals } from '@/lib/services/inventory';
-import type { ExpectedArrivalDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import { ArrivalDetailDrawer } from './arrival-detail-drawer';
 import { ReceiveDialog } from '../receive-dialog';
+import { selectArrivalById } from '../detail-selection-model';
 
 export function PendingTab() {
   const { warehouseId } = useInboundPendingTableQuery();
   const { data, isLoading, isFetching } = useExpectedArrivals(warehouseId);
 
-  const [detailRow, setDetailRow] = useState<ExpectedArrivalDto | null>(null);
-  const [receiveOpen, setReceiveOpen] = useState(false);
-
-  const columns = useInboundPendingTableColumns({ onDetail: setDetailRow });
-
   const rows = data?.arrivals ?? [];
   const total = rows.length;
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detailRow = selectArrivalById(rows, detailId);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+
+  const columns = useInboundPendingTableColumns({
+    onDetail: (row) => setDetailId(row.documentId),
+  });
 
   const { table } = useDataTable({
     data: rows,
@@ -60,7 +62,7 @@ export function PendingTab() {
         warehouseId={data?.warehouseId ?? ''}
         open={!!detailRow}
         onOpenChange={(open) => {
-          if (!open) setDetailRow(null);
+          if (!open) setDetailId(null);
         }}
       />
 

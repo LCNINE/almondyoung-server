@@ -4,7 +4,10 @@
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
-import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
+import {
+  inboundOperationInvalidationKeys,
+  lineExecutionInvalidationKeys,
+} from './line-execution-invalidation';
 import { isCustomError } from '../../api/customError';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
@@ -810,7 +813,7 @@ export const usePutaway = () => {
   return useIdempotentMutation({
     mutationFn: (data: PutawayRequestDto, idempotencyKey) => inboundClient.putaway({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -820,7 +823,7 @@ export const useReturnInbound = () => {
   return useIdempotentMutation({
     mutationFn: (data: ReturnInboundDto, idempotencyKey) => inboundClient.return({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -830,7 +833,7 @@ export const useCancelInbound = () => {
   return useIdempotentMutation({
     mutationFn: (data: CancelInboundDto, idempotencyKey) => inboundClient.cancel({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -841,7 +844,7 @@ export const useUpdateInboundLineMemo = () => {
     mutationFn: ({ lineId, data }: { lineId: string; data: UpdateInboundLineMemoDto }) =>
       inboundClient.lines.memo(lineId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };

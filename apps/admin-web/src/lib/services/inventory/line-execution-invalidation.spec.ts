@@ -1,5 +1,8 @@
 import { inventoryQueryKeys } from './query-keys';
-import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
+import {
+  inboundOperationInvalidationKeys,
+  lineExecutionInvalidationKeys,
+} from './line-execution-invalidation';
 
 describe('lineExecutionInvalidationKeys', () => {
   const keys = lineExecutionInvalidationKeys('po-1');
@@ -23,5 +26,14 @@ describe('lineExecutionInvalidationKeys', () => {
 
   it('expected-arrivals 루트 키가 포함된다', () => {
     expect(keys).toContainEqual(inventoryQueryKeys.expectedArrivalsRoot);
+  });
+});
+
+describe('inboundOperationInvalidationKeys', () => {
+  it('필터 객체가 다른 이력·작업로그를 모두 덮는 입고 루트 키를 반환한다', () => {
+    const keys = inboundOperationInvalidationKeys();
+
+    expect(keys).toContainEqual(inventoryQueryKeys.inbounds);
+    expect(keys.some((key) => key.length > 1 && key.at(-1) === undefined)).toBe(false);
   });
 });
