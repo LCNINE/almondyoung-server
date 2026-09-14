@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -15,7 +15,10 @@ import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider, useWarehouse } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
-import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
+import {
+  ScanProvider,
+  useScanBus,
+} from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayPendingResult } from './types';
@@ -57,13 +60,18 @@ const QUEUE: PutawayPendingResult = {
   ],
 };
 
-const SELECTED = { 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }) };
+const SELECTED = {
+  'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+};
 
 /** ScanEvent 는 at 이 필수다. */
 function ScanButton({ code }: { code: string }) {
   const bus = useScanBus();
   return (
-    <button type="button" onClick={() => bus.emit({ code, source: 'hid', at: 1 })}>
+    <button
+      type="button"
+      onClick={() => bus.emit({ code, source: 'hid', at: 1 })}
+    >
       scan-{code}
     </button>
   );
@@ -76,7 +84,10 @@ function ScanButton({ code }: { code: string }) {
 function SwitchWarehouseButton() {
   const { setWarehouse } = useWarehouse();
   return (
-    <button type="button" onClick={() => setWarehouse({ id: 'w-2', name: '다른창고' })}>
+    <button
+      type="button"
+      onClick={() => setWarehouse({ id: 'w-2', name: '다른창고' })}
+    >
       switch-warehouse
     </button>
   );
@@ -84,6 +95,15 @@ function SwitchWarehouseButton() {
 
 interface RenderOpts {
   queue?: PutawayPendingResult;
+  scanQueue?: PutawayPendingResult;
+  scanQueueError?: boolean;
+  scanQueuePending?: Promise<PutawayPendingResult>;
+  scanQueueSequence?: Array<
+    PutawayPendingResult | Promise<PutawayPendingResult>
+  >;
+  pageFailures?: number;
+  pages?: Record<string, PutawayPendingResult>;
+  calls?: string[];
   /** 큐 응답을 즉시 주지 않고 이 프라미스가 풀릴 때까지 pending 상태로 둔다 — 로딩 중 스캔 재현용. */
   queuePending?: Promise<PutawayPendingResult>;
   /** 큐 조회 자체가 실패하는 시나리오 — 조회 실패 중 스캔 재현용. */
@@ -95,24 +115,64 @@ interface RenderOpts {
    * 보다 우선한다.
    */
   queueSequence?: Array<PutawayPendingResult | Promise<PutawayPendingResult>>;
-  barcode?: Record<string, Array<{ id: string }> | Promise<Array<{ id: string }>>>;
+  barcode?: Record<
+    string,
+    Array<{ id: string }> | Promise<Array<{ id: string }>>
+  >;
   /** 검색어(부분 문자열)로 대상 로케이션 후보를 내려주는 목 — 적치 완료 시나리오용. */
   locations?: Record<string, Array<{ id: string; code: string }>>;
 }
 
 function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   let queueCallCount = 0;
+  let scanCallCount = 0;
+  let pageFailures = opts?.pageFailures ?? 0;
   const client: ApiClient = {
     request: (async (o: { path: string }) => {
       if (o.path.startsWith('/inbound/putaway/pending')) {
+        opts?.calls?.push(o.path);
+        const params = new URL(o.path, 'http://localhost').searchParams;
+        const cursor = params.get('cursor');
+        if (cursor) {
+          if (pageFailures-- > 0) throw new Error('GET next page → 500');
+          if (!opts?.pages?.[cursor]) throw new Error('Unknown cursor');
+          return opts.pages[cursor];
+        }
+        const skuIds = params.get('skuIds');
+        if (skuIds) {
+          if (opts?.scanQueueSequence) {
+            const idx = Math.min(
+              scanCallCount++,
+              opts.scanQueueSequence.length - 1
+            );
+            return opts.scanQueueSequence[idx];
+          }
+          if (params.has('days'))
+            throw new Error('Scans must search all dates');
+          if (opts?.scanQueueError) throw new Error('GET putaway scan → 500');
+          if (opts?.scanQueuePending) return opts.scanQueuePending;
+          if (opts?.scanQueue) return opts.scanQueue;
+          const items = (opts?.queue ?? QUEUE).items.filter((i) =>
+            skuIds.split(',').includes(i.skuId)
+          );
+          return {
+            total: items.length,
+            truncated: false,
+            nextCursor: null,
+            items,
+          };
+        }
         if (opts?.queueSequence) {
           const idx = Math.min(queueCallCount, opts.queueSequence.length - 1);
           queueCallCount += 1;
           return opts.queueSequence[idx];
         }
         if (opts?.queuePending) return opts.queuePending;
-        if (opts?.queueError) throw new Error('GET /inbound/putaway/pending → 500');
+        if (opts?.queueError)
+          throw new Error('GET /inbound/putaway/pending → 500');
         return opts?.queue ?? QUEUE;
       }
       if (o.path.startsWith('/inventory/skus?barcode=')) {
@@ -123,7 +183,9 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
       }
       if (o.path.startsWith('/locations/warehouses/')) {
         const path = decodeURIComponent(o.path);
-        const found = Object.entries(opts?.locations ?? {}).find(([term]) => path.includes(term));
+        const found = Object.entries(opts?.locations ?? {}).find(([term]) =>
+          path.includes(term)
+        );
         if (found) return { items: found[1], total: found[1].length };
         return { items: [], total: 0 };
       }
@@ -162,12 +224,257 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
     </SessionProvider>
   );
   render(<RouterProvider router={router} />, { wrapper });
+  return qc;
 }
 
 describe('PutawayQueueScreen', () => {
+  it('200건 목록 밖·기간 밖 상품도 서버 검색으로 적치한다', async () => {
+    const calls: string[] = [];
+    renderScreen(SELECTED, {
+      queue: { total: 200, truncated: true, items: [QUEUE.items[0]] },
+      barcode: { '5555': [{ id: 's-2' }] },
+      scanQueue: {
+        total: 1,
+        truncated: false,
+        nextCursor: null,
+        items: [QUEUE.items[1]],
+      },
+      calls,
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-5555' }));
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toHaveTextContent('USB-C 케이블 1m');
+    const lookup = calls.find((path) => path.includes('skuIds='));
+    expect(lookup).toBeDefined();
+    expect(new URL(lookup!, 'http://localhost').searchParams.has('days')).toBe(
+      false
+    );
+  });
+
+  it('더 보기로 목록 밖 입고 건을 선택할 수 있다', async () => {
+    renderScreen(SELECTED, {
+      queue: {
+        total: 1,
+        truncated: true,
+        nextCursor: 'next-page',
+        items: [QUEUE.items[0]],
+      },
+      pages: {
+        'next-page': {
+          total: 1,
+          truncated: false,
+          nextCursor: null,
+          items: [QUEUE.items[1]],
+        },
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: '더 보기' })
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: /USB-C 케이블/ })
+    );
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toHaveTextContent('USB-C 케이블 1m');
+  });
+
+  it('같은 상품의 다음 페이지 입고 건도 선택할 수 있다', async () => {
+    renderScreen(SELECTED, {
+      barcode: { '8801': [{ id: 's-1' }] },
+      scanQueue: {
+        total: 1,
+        truncated: true,
+        nextCursor: 'scan-next',
+        items: [QUEUE.items[0]],
+      },
+      pages: {
+        'scan-next': {
+          total: 1,
+          truncated: false,
+          nextCursor: null,
+          items: [
+            {
+              ...QUEUE.items[0],
+              lineId: 'later-line',
+              originLocationCode: 'LATER-ZONE',
+            },
+          ],
+        },
+      },
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: '적치 대상 선택',
+    });
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '더 보기' })
+    );
+    await userEvent.click(
+      await within(dialog).findByRole('button', { name: /LATER-ZONE/ })
+    );
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toHaveTextContent('LATER-ZONE');
+  });
+
+  it('상품별 대기 조회가 실패하면 없음으로 처리하지 않고 다시 확인할 수 있다', async () => {
+    renderScreen(SELECTED, {
+      barcode: { '8801': [{ id: 's-1' }] },
+      scanQueueError: true,
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
+    expect(
+      await screen.findByRole('button', { name: '다시 확인' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: '적치' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('상품 검색 중 새 스캔을 하면 앞선 상품 응답은 화면을 열지 않는다', async () => {
+    let resolveFirst!: (result: PutawayPendingResult) => void;
+    const pending = new Promise<PutawayPendingResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+    renderScreen(SELECTED, {
+      barcode: { '8801': [{ id: 's-1' }] },
+      scanQueuePending: pending,
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
+    await screen.findByText('적치 대기를 확인하고 있어요.');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
+    await screen.findByText('등록되지 않은 바코드예요.');
+    await act(async () => {
+      resolveFirst({
+        total: 1,
+        truncated: false,
+        nextCursor: null,
+        items: [QUEUE.items[0]],
+      });
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('구형 서버가 상품 필터를 무시해도 다른 상품의 적치 화면을 열지 않는다', async () => {
+    renderScreen(SELECTED, {
+      barcode: { '5555': [{ id: 's-2' }] },
+      scanQueue: { total: 1, truncated: false, items: [QUEUE.items[0]] },
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-5555' }));
+    expect(
+      await screen.findByRole('button', { name: '다시 확인' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: '적치' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('다음 페이지 실패 시 기존 목록을 유지하고 같은 페이지를 다시 조회한다', async () => {
+    renderScreen(SELECTED, {
+      queue: {
+        total: 1,
+        truncated: true,
+        nextCursor: 'retry-page',
+        items: [QUEUE.items[0]],
+      },
+      pages: {
+        'retry-page': {
+          total: 1,
+          truncated: false,
+          nextCursor: null,
+          items: [QUEUE.items[1]],
+        },
+      },
+      pageFailures: 1,
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: '더 보기' })
+    );
+    const retry = await screen.findByRole('button', { name: '다시 확인' });
+    expect(
+      screen.getByRole('button', { name: /무선마우스 블랙/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/적치할 항목이 없어요/)).not.toBeInTheDocument();
+    await userEvent.click(retry);
+    expect(
+      await screen.findByRole('button', { name: /USB-C 케이블/ })
+    ).toBeInTheDocument();
+  });
+
+  it('같은 상품을 다시 스캔하면 이전 잔량 대신 서버 재확인을 기다린다', async () => {
+    let resolveSecond!: (result: PutawayPendingResult) => void;
+    const pending = new Promise<PutawayPendingResult>((resolve) => {
+      resolveSecond = resolve;
+    });
+    renderScreen(SELECTED, {
+      barcode: { '8801': [{ id: 's-1' }] },
+      scanQueueSequence: [
+        {
+          total: 1,
+          truncated: false,
+          nextCursor: null,
+          items: [QUEUE.items[0]],
+        },
+        pending,
+      ],
+    });
+    await screen.findByText('무선마우스 블랙');
+    await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
+    await screen.findByRole('dialog', { name: '적치' });
+    await userEvent.click(screen.getByRole('button', { name: '나중에' }));
+    await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
+    await screen.findByText('적치 대기를 확인하고 있어요.');
+    expect(
+      screen.queryByRole('dialog', { name: '적치' })
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      resolveSecond({
+        total: 0,
+        truncated: false,
+        nextCursor: null,
+        items: [],
+      });
+    });
+    expect(
+      await screen.findByText('이 상품은 적치 대기가 없어요.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: '적치' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('빈 목록의 재조회가 실패하면 과거 결과로 대기 없음을 단정하지 않는다', async () => {
+    const opts: RenderOpts = {
+      queue: { total: 0, truncated: false, nextCursor: null, items: [] },
+    };
+    const qc = renderScreen(SELECTED, opts);
+    await screen.findByText(/적치할 항목이 없어요/);
+    opts.queueError = true;
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: ['putaway-pending'] });
+    });
+    await screen.findByRole('alert');
+    expect(screen.queryByText(/적치할 항목이 없어요/)).not.toBeInTheDocument();
+  });
+
   it('창고가 없으면 창고 선택을 요구한다', async () => {
     renderScreen();
-    expect(await screen.findByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('창고를 먼저 선택해 주세요.')
+    ).toBeInTheDocument();
   });
 
   it('대기 라인을 잔여수량·출발지와 함께 보여준다', async () => {
@@ -183,7 +490,9 @@ describe('PutawayQueueScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
 
-    expect(await screen.findByRole('dialog', { name: '적치' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toBeInTheDocument();
   });
 
   it('큐에 여러 건인 상품을 스캔하면 후보 목록을 보여준다', async () => {
@@ -194,7 +503,12 @@ describe('PutawayQueueScreen', () => {
         truncated: false,
         items: [
           { ...QUEUE.items[0] },
-          { ...QUEUE.items[0], lineId: 'l-3', pendingQty: 50, receivedAt: '2026-07-26T05:02:00.000Z' },
+          {
+            ...QUEUE.items[0],
+            lineId: 'l-3',
+            pendingQty: 50,
+            receivedAt: '2026-07-26T05:02:00.000Z',
+          },
         ],
       },
       barcode: { '8801': [{ id: 's-1' }] },
@@ -205,8 +519,12 @@ describe('PutawayQueueScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
 
-    expect(await screen.findByText('어느 건을 적치할까요?')).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: '적치' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('어느 건을 적치할까요?')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: '적치' })
+    ).not.toBeInTheDocument();
   });
 
   it('큐에 없는 상품을 스캔하면 없다고 알린다', async () => {
@@ -215,22 +533,32 @@ describe('PutawayQueueScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
 
-    expect(await screen.findByText('이 상품은 적치 대기가 없어요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('이 상품은 적치 대기가 없어요.')
+    ).toBeInTheDocument();
   });
 
   it('큐가 비면 기간 필터가 걸려 있음을 함께 알린다', async () => {
-    renderScreen(SELECTED, { queue: { total: 0, truncated: false, items: [] } });
+    renderScreen(SELECTED, {
+      queue: { total: 0, truncated: false, items: [] },
+    });
     expect(await screen.findByText(/적치할 항목이 없어요/)).toBeInTheDocument();
-    expect(await screen.findByText(/기간 필터를 넓혀 보세요/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/기간 필터를 넓혀 보세요/)
+    ).toBeInTheDocument();
   });
 
   it("'전체' 필터에서 큐가 비면 기간을 넓히라는 말은 하지 않는다", async () => {
-    renderScreen(SELECTED, { queue: { total: 0, truncated: false, items: [] } });
+    renderScreen(SELECTED, {
+      queue: { total: 0, truncated: false, items: [] },
+    });
     // 기본 필터(최근 1일)에서 '전체'로 바꾼 뒤에도 빈 결과라면 더 넓힐 기간이 없다.
     await userEvent.click(await screen.findByRole('button', { name: '전체' }));
 
     expect(await screen.findByText(/적치할 항목이 없어요/)).toBeInTheDocument();
-    expect(screen.queryByText(/기간 필터를 넓혀 보세요/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/기간 필터를 넓혀 보세요/)
+    ).not.toBeInTheDocument();
   });
 
   it('후보 목록이 떠 있는 동안 재스캔으로 1건이 좁혀지면 후보 목록이 닫히고 시트만 남는다', async () => {
@@ -242,7 +570,12 @@ describe('PutawayQueueScreen', () => {
         truncated: false,
         items: [
           { ...QUEUE.items[0] },
-          { ...QUEUE.items[0], lineId: 'l-3', pendingQty: 50, receivedAt: '2026-07-26T05:02:00.000Z' },
+          {
+            ...QUEUE.items[0],
+            lineId: 'l-3',
+            pendingQty: 50,
+            receivedAt: '2026-07-26T05:02:00.000Z',
+          },
           { ...QUEUE.items[1] },
         ],
       },
@@ -251,11 +584,15 @@ describe('PutawayQueueScreen', () => {
     await screen.findAllByText('무선마우스 블랙');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
-    expect(await screen.findByText('어느 건을 적치할까요?')).toBeInTheDocument();
+    expect(
+      await screen.findByText('어느 건을 적치할까요?')
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-5555' }));
 
-    expect(await screen.findByRole('dialog', { name: '적치' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toBeInTheDocument();
     expect(screen.queryByText('어느 건을 적치할까요?')).not.toBeInTheDocument();
 
     // 시트를 닫아도 낡은 후보 목록이 되살아나지 않는다.
@@ -271,20 +608,36 @@ describe('PutawayQueueScreen', () => {
     await screen.findByText('무선마우스 블랙');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
-    expect(await screen.findByText('이 상품은 적치 대기가 없어요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('이 상품은 적치 대기가 없어요.')
+    ).toBeInTheDocument();
 
     // 안내 대신 목록에서 다른 항목을 직접 골라 적치를 진행한다.
-    await userEvent.click(screen.getByRole('button', { name: /무선마우스 블랙/ }));
-    expect(await screen.findByRole('dialog', { name: '적치' })).toBeInTheDocument();
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: /무선마우스 블랙/ })
+    );
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('대상 로케이션 검색'), 'DST01');
-    await waitFor(() => expect(screen.getByRole('button', { name: '적치' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
     await userEvent.click(screen.getByRole('button', { name: '적치' }));
 
     // 적치 완료로 시트가 닫힌 뒤에도 방금 끝낸 작업에 낡은 안내가 붙어 보이면 안 된다.
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '적치' })).not.toBeInTheDocument());
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: '적치' })
+      ).not.toBeInTheDocument()
+    );
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
   });
 
   it('기간 필터를 바꾸면 낡은 안내가 지워진다', async () => {
@@ -292,10 +645,14 @@ describe('PutawayQueueScreen', () => {
     await screen.findByText('무선마우스 블랙');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
-    expect(await screen.findByText('이 상품은 적치 대기가 없어요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('이 상품은 적치 대기가 없어요.')
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '최근 7일' }));
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
   });
 
   it('기간 필터를 바꾸면 미등록 바코드 오류 배너도 지워진다', async () => {
@@ -305,10 +662,14 @@ describe('PutawayQueueScreen', () => {
     await screen.findByText('무선마우스 블랙');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
-    expect(await screen.findByText('등록되지 않은 바코드예요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('등록되지 않은 바코드예요.')
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '최근 7일' }));
-    expect(screen.queryByText('등록되지 않은 바코드예요.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('등록되지 않은 바코드예요.')
+    ).not.toBeInTheDocument();
   });
 
   it('바코드 조회가 왕복하는 중에 창고가 바뀌면 "적치 대기가 없어요"라고 단언하지 않는다', async () => {
@@ -322,9 +683,11 @@ describe('PutawayQueueScreen', () => {
       resolveBarcode = res;
     });
     let resolveOtherWarehouseQueue!: (v: PutawayPendingResult) => void;
-    const otherWarehouseQueuePending = new Promise<PutawayPendingResult>((res) => {
-      resolveOtherWarehouseQueue = res;
-    });
+    const otherWarehouseQueuePending = new Promise<PutawayPendingResult>(
+      (res) => {
+        resolveOtherWarehouseQueue = res;
+      }
+    );
 
     renderScreen(SELECTED, {
       queueSequence: [QUEUE, otherWarehouseQueuePending],
@@ -337,43 +700,64 @@ describe('PutawayQueueScreen', () => {
 
     // 바코드 왕복 중에 창고를 바꾼다 — 새 창고의 쿼리가 나가고, 아직 안 풀려서
     // pending 상태로 들어간다(placeholderData 가 없으므로 items 도 일시적으로 빈다).
-    await userEvent.click(screen.getByRole('button', { name: 'switch-warehouse' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'switch-warehouse' })
+    );
 
     // 이제야 바코드 응답이 도착한다 — onSuccess 시점엔 큐가 다시 "준비 안 됨"이다.
-    resolveBarcode([{ id: 's-1' }]);
-
-    expect(await screen.findByText('목록을 아직 못 불러왔어요. 잠시 후 다시 스캔해 주세요.')).toBeInTheDocument();
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveBarcode([{ id: 's-1' }]);
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
 
     resolveOtherWarehouseQueue(QUEUE);
   });
 
-  it('큐가 아직 안 왔을 때 스캔하면 "적치 대기가 없어요"라고 단언하지 않는다', async () => {
+  it('일반 목록 로딩 중에도 상품별 서버 조회로 적치할 수 있다', async () => {
     let resolveQueue!: (v: PutawayPendingResult) => void;
     const queuePending = new Promise<PutawayPendingResult>((res) => {
       resolveQueue = res;
     });
-    renderScreen(SELECTED, { queuePending, barcode: { '8801': [{ id: 's-1' }] } });
+    renderScreen(SELECTED, {
+      queuePending,
+      barcode: { '8801': [{ id: 's-1' }] },
+    });
 
     // 큐가 아직 도착하지 않은 채로 스캔한다 — 이 시점의 items 는 빈 배열이다.
     // findByRole 로 라우터 마운트를 기다린 뒤 클릭한다(큐 응답 자체는 여전히 pending).
-    await userEvent.click(await screen.findByRole('button', { name: 'scan-8801' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'scan-8801' })
+    );
 
-    expect(await screen.findByText('목록을 아직 못 불러왔어요. 잠시 후 다시 스캔해 주세요.')).toBeInTheDocument();
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toHaveTextContent('무선마우스 블랙');
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
 
     resolveQueue(QUEUE);
     await screen.findByText('무선마우스 블랙');
   });
 
-  it('큐 조회가 실패했을 때 스캔하면 "적치 대기가 없어요"라고 단언하지 않는다', async () => {
-    renderScreen(SELECTED, { queueError: true, barcode: { '8801': [{ id: 's-1' }] } });
+  it('일반 목록 조회 실패와 관계없이 상품별 서버 조회로 적치할 수 있다', async () => {
+    renderScreen(SELECTED, {
+      queueError: true,
+      barcode: { '8801': [{ id: 's-1' }] },
+    });
     await screen.findByRole('alert');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-8801' }));
 
-    expect(await screen.findByText('목록을 아직 못 불러왔어요. 잠시 후 다시 스캔해 주세요.')).toBeInTheDocument();
-    expect(screen.queryByText('이 상품은 적치 대기가 없어요.')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: '적치' })
+    ).toHaveTextContent('무선마우스 블랙');
+    expect(
+      screen.queryByText('이 상품은 적치 대기가 없어요.')
+    ).not.toBeInTheDocument();
   });
 
   it('로딩 중에는 건수를 감춘다', async () => {
@@ -397,10 +781,16 @@ describe('PutawayQueueScreen', () => {
     await screen.findByText('무선마우스 블랙');
 
     await userEvent.click(screen.getByRole('button', { name: 'scan-9999' }));
-    expect(await screen.findByText('등록되지 않은 바코드예요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('등록되지 않은 바코드예요.')
+    ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /무선마우스 블랙/ }));
+    await userEvent.click(
+      screen.getByRole('button', { name: /무선마우스 블랙/ })
+    );
     await screen.findByRole('dialog', { name: '적치' });
-    expect(screen.queryByText('등록되지 않은 바코드예요.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('등록되지 않은 바코드예요.')
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { InboundController } from './inbound.controllers';
 import type { InboundService } from '../services/inbound.service';
@@ -23,6 +24,54 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
     return { controller, listPending };
   }
 
+  it.each(['bad', '', ['00000000-0000-4000-8000-000000000001']])(
+    'rejects malformed warehouseId (case %#)',
+    async (warehouseId) => {
+      const { controller } = makeController();
+      await expect(controller.listPutawayPending(warehouseId as string, undefined)).rejects.toThrow(
+        BadRequestException,
+      );
+    },
+  );
+
+  it('rejects repeated days query parameters', async () => {
+    const { controller } = makeController();
+    await expect(
+      controller.listPutawayPending('00000000-0000-4000-8000-000000000001', ['1'] as unknown as string),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it.each([
+    '',
+    'not-a-uuid',
+    `${randomUUID()},`,
+    `${randomUUID()},bad`,
+    Array.from({ length: 101 }, () => randomUUID()).join(','),
+  ])('rejects malformed or unbounded skuIds (case %#)', async (skuIds) => {
+    const { controller } = makeController();
+    await expect(
+      controller.listPutawayPending('00000000-0000-4000-8000-000000000001', undefined, skuIds),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('normalizes and deduplicates multiple barcode SKU matches', async () => {
+    const { controller, listPending } = makeController();
+    const first = randomUUID();
+    const second = randomUUID();
+    await controller.listPutawayPending(
+      '00000000-0000-4000-8000-000000000001',
+      undefined,
+      `${first.toUpperCase()},${second},${first}`,
+      'opaque-cursor',
+    );
+    expect(listPending).toHaveBeenCalledWith({
+      warehouseId: '00000000-0000-4000-8000-000000000001',
+      days: undefined,
+      skuIds: [first, second],
+      cursor: 'opaque-cursor',
+    });
+  });
+
   it('warehouseId 가 없으면 400', async () => {
     const { controller } = makeController();
     await expect(controller.listPutawayPending(undefined, undefined)).rejects.toThrow(BadRequestException);
@@ -30,39 +79,59 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
 
   it("'1e21' 처럼 지수표기 문자열은 400 이다(parseInt 로 조용히 1 을 받지 않는다)", async () => {
     const { controller } = makeController();
-    await expect(controller.listPutawayPending('w-1', '1e21')).rejects.toThrow(BadRequestException);
+    await expect(controller.listPutawayPending('00000000-0000-4000-8000-000000000001', '1e21')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it("'12abc' 처럼 숫자 뒤에 쓰레기가 붙은 문자열도 400 이다(parseInt 로 조용히 12 를 받지 않는다)", async () => {
     const { controller } = makeController();
-    await expect(controller.listPutawayPending('w-1', '12abc')).rejects.toThrow(BadRequestException);
+    await expect(controller.listPutawayPending('00000000-0000-4000-8000-000000000001', '12abc')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('365 초과는 400', async () => {
     const { controller } = makeController();
-    await expect(controller.listPutawayPending('w-1', '366')).rejects.toThrow(BadRequestException);
+    await expect(controller.listPutawayPending('00000000-0000-4000-8000-000000000001', '366')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('365 는 통과한다', async () => {
     const { controller, listPending } = makeController();
-    await controller.listPutawayPending('w-1', '365');
-    expect(listPending).toHaveBeenCalledWith({ warehouseId: 'w-1', days: 365 });
+    await controller.listPutawayPending('00000000-0000-4000-8000-000000000001', '365');
+    expect(listPending).toHaveBeenCalledWith({
+      warehouseId: '00000000-0000-4000-8000-000000000001',
+      days: 365,
+      skuIds: undefined,
+      cursor: undefined,
+    });
   });
 
   it('정수가 아닌 문자열은 400', async () => {
     const { controller } = makeController();
-    await expect(controller.listPutawayPending('w-1', 'abc')).rejects.toThrow(BadRequestException);
+    await expect(controller.listPutawayPending('00000000-0000-4000-8000-000000000001', 'abc')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('0 이하는 400', async () => {
     const { controller } = makeController();
-    await expect(controller.listPutawayPending('w-1', '0')).rejects.toThrow(BadRequestException);
+    await expect(controller.listPutawayPending('00000000-0000-4000-8000-000000000001', '0')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('days 미지정이면 전체 기간으로 리더를 호출한다', async () => {
     const { controller, listPending } = makeController();
-    await controller.listPutawayPending('w-1', undefined);
-    expect(listPending).toHaveBeenCalledWith({ warehouseId: 'w-1', days: undefined });
+    await controller.listPutawayPending('00000000-0000-4000-8000-000000000001', undefined);
+    expect(listPending).toHaveBeenCalledWith({
+      warehouseId: '00000000-0000-4000-8000-000000000001',
+      days: undefined,
+      skuIds: undefined,
+      cursor: undefined,
+    });
   });
 });
 

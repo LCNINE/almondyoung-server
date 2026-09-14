@@ -110,6 +110,8 @@ export interface PutawayPendingItem {
 }
 
 export interface PutawayPendingResult {
+  /** Opaque continuation token. Absent only on older servers. */
+  nextCursor?: string | null;
   total: number;
   /** LIMIT(200)에 걸려 잘렸는지 여부. true 면 백로그가 더 있다. */
   truncated: boolean;

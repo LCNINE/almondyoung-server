@@ -1,14 +1,59 @@
-import { Injectable } from '@nestjs/common';
-import { and, asc, eq, gte, sql } from 'drizzle-orm';
+import { createHash } from 'crypto';
+import { isUUID } from 'class-validator';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 핸드헬드 화면이 전량 렌더한다 — `전체` 필터가 역사적 백로그를 통째로 부르지
-// 않게 상한을 둔다. LIMIT+1 로 가져와 실제 count 쿼리 없이 잘림 여부를 안다.
+// Each page remains bounded for handheld clients; LIMIT+1 detects another page.
 const PENDING_LIMIT = 200;
+
+interface PendingQuery {
+  warehouseId: string;
+  days?: number;
+  skuIds?: string[];
+  cursor?: string;
+}
+
+interface PendingCursor {
+  v: 1;
+  scope: string;
+  at: string;
+  id: string;
+  since: string | null;
+}
+
+function validTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.(?:\d{3}|\d{6})Z$/.test(value)) return false;
+  const date = new Date(value);
+  return (
+    Number.isFinite(date.getTime()) && date.getUTCFullYear() > 0 && date.toISOString() === `${value.slice(0, 23)}Z`
+  );
+}
+
+function decodeCursor(token: string, scope: string, days?: number): PendingCursor {
+  try {
+    if (typeof token !== 'string' || token.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(token)) throw new Error();
+    const bytes = Buffer.from(token, 'base64url');
+    if (bytes.toString('base64url') !== token) throw new Error();
+    const value = JSON.parse(bytes.toString('utf8')) as PendingCursor;
+    if (
+      value?.v !== 1 ||
+      value.scope !== scope ||
+      !validTimestamp(value.at) ||
+      typeof value.id !== 'string' ||
+      !isUUID(value.id) ||
+      (days === undefined ? value.since !== null : !validTimestamp(value.since))
+    )
+      throw new Error();
+    return value;
+  } catch {
+    throw new BadRequestException('Invalid cursor for this putaway query');
+  }
+}
 
 /**
  * 적치 대기 조회. inbound.service.ts 에 두지 않는 이유는 그 파일이 이미 1100줄이
@@ -18,8 +63,24 @@ const PENDING_LIMIT = 200;
 export class InboundPutawayReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  async listPending(params: { warehouseId: string; days?: number }, tx?: DbTx): Promise<PutawayPendingListDto> {
-    const { warehouseId, days } = params;
+  async listPending(params: PendingQuery, tx?: DbTx): Promise<PutawayPendingListDto> {
+    const { warehouseId, days, skuIds } = params;
+    const scope = createHash('sha256')
+      .update(
+        JSON.stringify([
+          warehouseId.toLowerCase(),
+          days ?? null,
+          [...new Set(skuIds?.map((id) => id.toLowerCase()))].sort(),
+        ]),
+      )
+      .digest('hex');
+    const cursor = params.cursor === undefined ? undefined : decodeCursor(params.cursor, scope, days);
+    // Keep the rolling lower bound fixed while paging through a query.
+    const since = cursor
+      ? cursor.since
+      : days === undefined
+        ? null
+        : new Date(Date.now() - days * DAY_MS).toISOString();
 
     return this.dbService.run(async (trx) => {
       // `InboundReceiptKernel.putaway` 의 `originAvailable` 검증식과 같은 식이다.
@@ -41,6 +102,8 @@ export class InboundPutawayReader {
           originLocationId: wmsTables.locations.id,
           originLocationCode: wmsTables.locations.code,
           receivedAt: wmsTables.inboundReceipts.occurredAt,
+          // Date truncates PostgreSQL microseconds: encode the database value itself.
+          cursorAt: sql<string>`to_char(${wmsTables.inboundReceipts.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         })
         .from(wmsTables.inboundReceiptLines)
         .innerJoin(wmsTables.inboundReceipts, eq(wmsTables.inboundReceipts.id, wmsTables.inboundReceiptLines.receiptId))
@@ -67,8 +130,10 @@ export class InboundPutawayReader {
             eq(wmsTables.locations.isSystem, true),
             sql`${pendingQty} > 0`,
             sql`${wmsTables.stockLedgers.qty} > 0`,
-            days !== undefined
-              ? gte(wmsTables.inboundReceipts.occurredAt, new Date(Date.now() - days * DAY_MS))
+            skuIds !== undefined ? inArray(wmsTables.inboundReceiptLines.skuId, skuIds) : undefined,
+            since !== null ? gte(wmsTables.inboundReceipts.occurredAt, new Date(since)) : undefined,
+            cursor
+              ? sql`(${wmsTables.inboundReceipts.occurredAt}, ${wmsTables.inboundReceiptLines.id}) > (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
               : undefined,
           ),
         )
@@ -81,7 +146,13 @@ export class InboundPutawayReader {
       const truncated = rows.length > PENDING_LIMIT;
       const limited = truncated ? rows.slice(0, PENDING_LIMIT) : rows;
 
+      const last = limited[limited.length - 1];
       return {
+        nextCursor: truncated
+          ? Buffer.from(
+              JSON.stringify({ v: 1, scope, at: last.cursorAt, id: last.lineId, since } satisfies PendingCursor),
+            ).toString('base64url')
+          : null,
         total: limited.length,
         truncated,
         items: limited.map((row) => ({

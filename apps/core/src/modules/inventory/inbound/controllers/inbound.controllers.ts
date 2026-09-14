@@ -1,5 +1,6 @@
 import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
 import { Controller, Post, Body, Get, Query, Param, BadRequestException, Headers, UseGuards } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
@@ -228,23 +229,39 @@ export class InboundController {
     example: 1,
     description: '최근 N일 (rolling, now − N×24h). 1~365, 미지정 시 전체 기간',
   })
+  @ApiQuery({ name: 'skuIds', required: false, description: '조회할 SKU UUID 목록 (쉼표 구분, 최대 100개)' })
+  @ApiQuery({ name: 'cursor', required: false, description: '동일 조회의 다음 페이지 토큰' })
+  @ApiResponse({ status: 400, description: '잘못된 조회 조건 또는 페이지 토큰' })
   @ApiResponse({ status: 200, type: PutawayPendingListDto })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listPutawayPending(
     @Query('warehouseId') warehouseId?: string,
     @Query('days') days?: string,
+    @Query('skuIds') skuIds?: string,
+    @Query('cursor') cursor?: string,
   ): Promise<PutawayPendingListDto> {
-    if (!warehouseId) throw new BadRequestException('warehouseId is required');
+    if (typeof warehouseId !== 'string' || !isUUID(warehouseId)) {
+      throw new BadRequestException('warehouseId must be a UUID');
+    }
     // parseInt 는 '12abc' → 12, '1e21' → 1 처럼 숫자 아닌 접미사를 조용히 잘라먹는다
     // — 순수 숫자 문자열만 허용해 그런 입력을 정직하게 400 으로 거절한다.
-    if (days !== undefined && !/^\d+$/.test(days)) {
+    if (days !== undefined && (typeof days !== 'string' || !/^\d+$/.test(days))) {
       throw new BadRequestException('days must be a positive integer between 1 and 365');
     }
     const parsedDays = days === undefined ? undefined : parseInt(days, 10);
     if (parsedDays !== undefined && (parsedDays < 1 || parsedDays > 365)) {
       throw new BadRequestException('days must be a positive integer between 1 and 365');
     }
-    return this.putawayReader.listPending({ warehouseId, days: parsedDays });
+    let parsedSkuIds: string[] | undefined;
+    if (skuIds !== undefined) {
+      if (typeof skuIds !== 'string') throw new BadRequestException('skuIds must be comma-separated UUIDs');
+      const ids = skuIds.split(',');
+      if (ids.length > 100 || ids.some((id) => !isUUID(id))) {
+        throw new BadRequestException('skuIds must contain between 1 and 100 UUIDs');
+      }
+      parsedSkuIds = [...new Set(ids.map((id) => id.toLowerCase()))];
+    }
+    return this.putawayReader.listPending({ warehouseId, days: parsedDays, skuIds: parsedSkuIds, cursor });
   }
 
   @Post('putaway')
