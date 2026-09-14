@@ -20,6 +20,16 @@ describe('judgeEligibility — 세 단', () => {
     ).toMatchObject({ eligible: true, basis: 'delivered' });
   });
 
+  it('🔴 1단은 유예가 «없다» — 배송완료가 방금 찍혔으면 그 자리에서 발급한다', () => {
+    // 국내 표준은 리뷰 작성을 구매확정과 묶지 않는다(쿠팡·네이버 모두 구매확정 «전»에도 쓸 수 있다).
+    // 「배송완료 +7일」은 자동 구매확정 값이라 이 축에 쓰면 안 된다 — 한 번 그렇게 섞인 적이 있어
+    // 값이 아니라 «동작»으로 못 박는다. 위 테스트들은 전부 상수에 상대적이라 이걸 못 잡는다.
+    expect(judgeEligibility(order([{ status: 'delivered', deliveredAt: daysAgo(0) }], 99), NOW)).toMatchObject({
+      eligible: true,
+      basis: 'delivered',
+    });
+  });
+
   it('2단: 배송완료가 없으면 출고 투영 축으로, 더 긴 유예를 쓴다', () => {
     const justOverDelivered = daysAgo(ELIGIBILITY_DELIVERED_DAYS + 1);
 
@@ -96,18 +106,23 @@ describe('judgeEligibility — 세 단', () => {
   });
 
   it('가장 늦은 시도를 기준으로 삼는다', () => {
+    // 유예값에 기대지 않고 «기산점 자체»로 본다 — 앞 시도(40일 전)를 쓰면 창 밖이고,
+    // 뒤 시도(10일 전)를 쓰면 발급이다. `basisAt` 을 직접 확인해 어느 쪽을 골랐는지 못 박는다.
+    // (옛 판은 「1일 전이면 within_grace」로 증명했는데, 그건 유예가 7 일 때만 성립하는 근거였다.)
+    const latest = daysAgo(10);
+
     expect(
       judgeEligibility(
         order(
           [
-            { status: 'delivered', deliveredAt: daysAgo(ELIGIBILITY_DELIVERED_DAYS + 20) },
-            { status: 'delivered', deliveredAt: daysAgo(1) },
+            { status: 'delivered', deliveredAt: daysAgo(40) },
+            { status: 'delivered', deliveredAt: latest },
           ],
           999,
         ),
         NOW,
       ),
-    ).toMatchObject({ eligible: false, reason: 'within_grace' });
+    ).toMatchObject({ eligible: true, basis: 'delivered', basisAt: new Date(latest) });
   });
 });
 
