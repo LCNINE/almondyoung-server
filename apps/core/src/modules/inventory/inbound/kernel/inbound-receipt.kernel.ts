@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
@@ -8,6 +8,8 @@ import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { isTodaySeoul } from '../../shared/services/time.util';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
+export type InboundReceiptSource = 'direct' | 'purchase_order';
+export type ArrivalOrigin = { source: 'direct'; method: DirectArrivalMethod } | { source: 'purchase_order' };
 
 export interface ArrivalLineInput {
   skuId: string;
@@ -17,16 +19,14 @@ export interface ArrivalLineInput {
   eventKey: string;
 }
 
-export interface RecordArrivalInput {
-  source: 'direct';
-  method: DirectArrivalMethod;
+export type RecordArrivalInput = ArrivalOrigin & {
   warehouseId: string;
   /** 비우면 입고기본존. 지정값은 검증하지 않는다(현행 개별입고와 같다). */
   locationId?: string | null;
   /** 원장 이벤트와 작업 로그의 reason. */
   reason: string;
   lines: ArrivalLineInput[];
-}
+};
 
 export interface RecordArrivalResult {
   receipt: InboundReceipt;
@@ -37,6 +37,7 @@ export interface CancelLineInput {
   receiptLineId: string;
   /** 넘기면 라인 수량과 같은지 본다 — 당일 취소는 전량만 허용한다(현행 `/inbound/cancel` 계약). */
   quantity?: number;
+  expected: { source: InboundReceiptSource };
 }
 
 export interface PutawayInput {
@@ -64,7 +65,7 @@ export interface ReturnLineInput {
  * 원장·회차는 커밋되고 문서 정산은 롤백되는 식으로 원자성이 조용히 깨진다. 스펙 §8.
  *
  * 🔴 **잠금 순서**: 호출자(문서)가 문서 행 → 문서 라인을 먼저 잡고 커널을 부른다. 커널은 회차 라인과
- * 원장을 잠그고(`cancelLine` 은 전량 취소로 회차를 voided 처리할 때 회차 헤더도 UPDATE 로 잠근다),
+ * 원장을 잠그고(`cancelLine` 은 회차 헤더를 `FOR NO KEY UPDATE` 로 잠근다),
  * 문서 행은 절대 잠그지 않는다 — 역방향 간선이 없으므로 교착 사이클이 생기지 않는다(스펙 §7.1).
  *
  * 예외는 현행 Nest 예외와 메시지를 글자 그대로 옮긴다 — 응답 `error` 필드 보존(계획서 Global Constraints).
@@ -86,13 +87,14 @@ export class InboundReceiptKernel {
    */
   async recordArrival(input: RecordArrivalInput, tx: DbTx): Promise<RecordArrivalResult> {
     const locationId = await this.resolveLocation(input.warehouseId, input.locationId ?? null, tx);
+    const method = input.source === 'direct' ? input.method : 'planned';
 
     const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'inbound' }).returning();
 
     const [receipt] = await tx
       .insert(wmsTables.inboundReceipts)
       .values({
-        method: input.method,
+        method,
         warehouseId: input.warehouseId,
         locationId,
         occurredAt: new Date(),
@@ -148,7 +150,7 @@ export class InboundReceiptKernel {
       warehouseId: input.warehouseId,
       toLocationId: locationId,
       quantity: totalQuantity,
-      method: input.method,
+      method,
       reason: input.reason,
     });
 
@@ -160,11 +162,15 @@ export class InboundReceiptKernel {
    * 회차 라인을 **FOR UPDATE** 로 잠근다 — 현행은 잠그지 않고 읽어 적치·회송과 동시에 들어오면 카운터
    * 검증이 샜다(스펙 §7.1).
    *
-   * PR-A 에서는 source 를 검사하지 않는다 — 옛 예정 입고 라인도 `direct` 로 쌓이는 기간이라서다(스펙 §11 PR-A 창).
-   * 반환은 **잠근 시점(갱신 전)의 라인**이다. 호출자가 예정 연계(`planItemId`)를 되돌리는 데 쓴다(PR-B 에서 사라진다).
+   * source 검증은 여기 한 곳뿐이다(스펙 §3.3·§8). 반환은 **잠근 시점(갱신 전)의 라인**이다.
    */
   async cancelLine(input: CancelLineInput, tx: DbTx): Promise<InboundReceiptLine> {
     const line = await this.lockLine(input.receiptLineId, tx);
+    if (line.source !== input.expected.source) {
+      throw new ConflictException(
+        line.source === 'purchase_order' ? '발주 입고는 발주에서 취소하세요' : '이 회차 라인은 직접 입고가 아닙니다',
+      );
+    }
     const receipt = await this.loadReceipt(line.receiptId, tx);
     const originLocationId = this.requireOrigin(line);
 
@@ -371,12 +377,18 @@ export class InboundReceiptKernel {
     return line;
   }
 
+  /**
+   * 회차 헤더를 `FOR NO KEY UPDATE` 로 잠근다 — 형제 라인 두 건이 동시에 취소될 때 둘 다
+   * 「아직 남은 형제가 있다」고 읽어 voided 를 놓치는 경합을 직렬화한다.
+   * `FOR UPDATE` 가 아니다: 적치·작업 로그 insert 의 FK `KEY SHARE` 와 교착한다(스펙 §7.1).
+   */
   private async loadReceipt(receiptId: string, tx: DbTx): Promise<InboundReceipt> {
     const [receipt] = await tx
       .select()
       .from(wmsTables.inboundReceipts)
       .where(eq(wmsTables.inboundReceipts.id, receiptId))
-      .limit(1);
+      .limit(1)
+      .for('no key update');
     if (!receipt) throw new NotFoundException('inbound receipt not found');
     return receipt;
   }

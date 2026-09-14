@@ -65,11 +65,11 @@ export class InboundReceiptLineDto {
   putawayFromOriginQty: number;
 
   @ApiProperty({
-    description: '입고예정 아이템 ID',
-    example: '550e8400-e29b-41d4-a716-446655440040',
-    nullable: true,
+    description: '입고 출처',
+    enum: ['direct', 'purchase_order'],
+    example: 'direct',
   })
-  planItemId: string | null;
+  source: 'direct' | 'purchase_order';
 
   @ApiProperty({
     description: '생성 일시',
@@ -119,10 +119,10 @@ export class BaseInboundReceiptDto {
 
   @ApiProperty({
     description: '상태',
-    enum: ['posted', 'draft', 'cancelled'],
+    enum: ['posted', 'voided'],
     example: 'posted',
   })
-  status: string;
+  status: 'posted' | 'voided';
 
   @ApiProperty({
     description: '총 수량',
@@ -164,4 +164,17 @@ export class SimpleInboundResponseDto extends BaseInboundReceiptDto {
     type: [InboundReceiptLineDto],
   })
   lines: InboundReceiptLineDto[];
+}
+
+export class InboundReceiptHistoryItemDto extends BaseInboundReceiptDto {
+  @ApiProperty({ description: '회차의 전체 입고 라인', type: [InboundReceiptLineDto] })
+  lines: InboundReceiptLineDto[];
+}
+
+export class InboundReceiptHistoryResponseDto {
+  @ApiProperty({ description: '필터에 맞는 회차 수', example: 2 })
+  total: number;
+
+  @ApiProperty({ type: [InboundReceiptHistoryItemDto] })
+  items: InboundReceiptHistoryItemDto[];
 }

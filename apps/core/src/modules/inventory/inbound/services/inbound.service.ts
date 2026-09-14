@@ -33,6 +33,8 @@ import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
 import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
 import { InboundReceiptKernel } from '../kernel/inbound-receipt.kernel';
+import { InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
+import { InboundReceiptLineMapper, InboundReceiptMapper } from '../mappers/inbound.mapper';
 
 @Injectable()
 export class InboundService {
@@ -339,7 +341,7 @@ export class InboundService {
     }, tx);
   }
 
-  // 입고내역(현황) 조회 - (sku, quantity, occurredAt, method)
+  // 회차별 입고내역 조회 — 페이지는 헤더 기준, 선택된 회차는 전체 라인을 반환한다.
   async listInboundReceipts(
     params: {
       skuId?: string;
@@ -351,41 +353,61 @@ export class InboundService {
       offset?: number;
     },
     tx?: DbTx,
-  ) {
+  ): Promise<InboundReceiptHistoryResponseDto> {
     const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
+    return this.dbService.run(async (tx) => {
+      const receiptIdsForSku = skuId
+        ? tx
+            .select({ id: wmsTables.inboundReceiptLines.receiptId })
+            .from(wmsTables.inboundReceiptLines)
+            .where(eq(wmsTables.inboundReceiptLines.skuId, skuId))
+        : undefined;
+      const receiptWhere = and(
+        eq(wmsTables.inboundReceipts.status, 'posted'),
+        warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+        method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
+        receiptIdsForSku ? inArray(wmsTables.inboundReceipts.id, receiptIdsForSku) : undefined,
+        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+        endDate
+          ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+          : undefined,
+      );
 
-    const rows = await this.db
-      .select({
-        receiptId: wmsTables.inboundReceipts.id,
-        method: wmsTables.inboundReceipts.method,
-        occurredAt: wmsTables.inboundReceipts.occurredAt,
-        warehouseId: wmsTables.inboundReceipts.warehouseId,
-        locationId: wmsTables.inboundReceipts.locationId,
-        skuId: wmsTables.inboundReceiptLines.skuId,
-        quantity: wmsTables.inboundReceiptLines.quantity,
-      })
-      .from(wmsTables.inboundReceipts)
-      .leftJoin(
-        wmsTables.inboundReceiptLines,
-        eq(wmsTables.inboundReceiptLines.receiptId, wmsTables.inboundReceipts.id),
-      )
-      .where(
-        and(
-          eq(wmsTables.inboundReceipts.status, 'posted'),
-          warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
-          method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
-          skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
-          startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
-          endDate
-            ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
-            : undefined,
-        ),
-      )
-      .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
-      .limit(limit)
-      .offset(offset);
+      const [{ total }] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(wmsTables.inboundReceipts)
+        .where(receiptWhere);
+      const receipts = await tx
+        .select()
+        .from(wmsTables.inboundReceipts)
+        .where(receiptWhere)
+        .orderBy(desc(wmsTables.inboundReceipts.occurredAt), desc(wmsTables.inboundReceipts.id))
+        .limit(limit)
+        .offset(offset);
+      const receiptIds = receipts.map((receipt) => receipt.id);
+      const lines =
+        receiptIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(wmsTables.inboundReceiptLines)
+              .where(inArray(wmsTables.inboundReceiptLines.receiptId, receiptIds))
+              .orderBy(wmsTables.inboundReceiptLines.createdAt, wmsTables.inboundReceiptLines.id);
+      const linesByReceipt = new Map<string, typeof lines>();
+      for (const line of lines) {
+        const receiptLines = linesByReceipt.get(line.receiptId) ?? [];
+        receiptLines.push(line);
+        linesByReceipt.set(line.receiptId, receiptLines);
+      }
 
-    return { total: rows.length, items: rows };
+      return {
+        total,
+        items: receipts.map((receipt) => ({
+          ...InboundReceiptMapper.toBaseDto(receipt),
+          lines: (linesByReceipt.get(receipt.id) ?? []).map(InboundReceiptLineMapper.toDto),
+        })),
+      };
+    }, tx);
   }
 
   // 입고 작업 타임라인 조회
@@ -937,28 +959,10 @@ export class InboundService {
       dto.idempotencyKey,
       dto,
       async (tx) => {
-        const line = await this.receiptKernel.cancelLine({ receiptLineId: dto.lineId, quantity: dto.quantity }, tx);
-
-        // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
-        // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
-        // PR-B 에서 발주 수령 취소(`POST /purchase-orders/receipt-lines/:id/cancel`)로 대체되며 사라진다.
-        if (line.planItemId) {
-          const planItem = await tx.query.inboundPlanItems.findFirst({
-            where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
-          });
-          if (planItem) {
-            const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
-            await tx
-              .update(wmsTables.inboundPlanItems)
-              .set({
-                receivedQty: restored,
-                // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
-                // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
-                status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
-              })
-              .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
-          }
-        }
+        await this.receiptKernel.cancelLine(
+          { receiptLineId: dto.lineId, quantity: dto.quantity, expected: { source: 'direct' } },
+          tx,
+        );
 
         return { success: true };
       },

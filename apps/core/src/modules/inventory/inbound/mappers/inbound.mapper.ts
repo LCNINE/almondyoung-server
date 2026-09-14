@@ -19,7 +19,7 @@ export class InboundReceiptLineMapper {
       returnedQty: line.returnedQty,
       canceledQty: line.canceledQty,
       putawayFromOriginQty: line.putawayFromOriginQty,
-      planItemId: line.planItemId,
+      source: line.source,
       createdAt: line.createdAt.toISOString(),
       updatedAt: line.updatedAt.toISOString(),
     };

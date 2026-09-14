@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { InboundController } from './inbound.controllers';
 import type { InboundService } from '../services/inbound.service';
 import type { InboundPutawayReader } from '../services/inbound-putaway.reader';
+import type { InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
 
 /**
  * GET /inbound/putaway/pending 의 days 파싱 경계 검증.
@@ -85,5 +86,29 @@ describe('InboundController — 계획 생성 라우트', () => {
 
   it('POST /inbound/plans/receive 핸들러는 남아 있다 (창고 Tauri 앱의 실입고 경로)', () => {
     expect(typeof (InboundController.prototype as unknown as Handlers).receiveFromPlan).toBe('function');
+  });
+});
+
+describe('InboundController.listInboundReceipts — 회차별 이력 계약', () => {
+  it('기존 query를 보존하고 limit/offset을 숫자로 바꿔 typed grouped response를 반환한다', async () => {
+    const response: InboundReceiptHistoryResponseDto = { total: 0, items: [] };
+    const listInboundReceipts = jest.fn().mockResolvedValue(response);
+    const controller = new InboundController(
+      { listInboundReceipts } as unknown as InboundService,
+      {} as unknown as InboundPutawayReader,
+    );
+
+    await expect(
+      controller.listInboundReceipts('sku-1', 'warehouse-1', 'planned', '2026-09-01', '2026-09-14', '20', '40'),
+    ).resolves.toBe(response);
+    expect(listInboundReceipts).toHaveBeenCalledWith({
+      skuId: 'sku-1',
+      warehouseId: 'warehouse-1',
+      method: 'planned',
+      startDate: '2026-09-01',
+      endDate: '2026-09-14',
+      limit: 20,
+      offset: 40,
+    });
   });
 });

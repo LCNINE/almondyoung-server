@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
@@ -46,6 +46,28 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
 
   class Rollback extends Error {}
 
+  function deferred() {
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 5_000): Promise<T> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
   async function seedWarehouseAndSku(tx: DbTx, suffix: string) {
     const [warehouse] = await tx
       .insert(wmsTables.warehouses)
@@ -59,10 +81,28 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
       .insert(wmsTables.skus)
       .values({ name: 'kernel sku', code: `KERNEL-${suffix}`, holderId: holder.id })
       .returning();
-    return { warehouseId: warehouse.id, skuId: sku.id };
+    return { warehouseId: warehouse.id, holderId: holder.id, skuId: sku.id };
   }
 
   describe('recordArrival', () => {
+    it('source=purchase_order 도착은 method=planned 로 기록되고 라인 source 가 purchase_order 다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fx = await seedWarehouseAndSku(tx, randomUUID());
+        const result = await kernel.recordArrival(
+          {
+            source: 'purchase_order',
+            warehouseId: fx.warehouseId,
+            reason: 'planned_inbound',
+            lines: [{ skuId: fx.skuId, quantity: 4, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+
+        expect(result.receipt.method).toBe('planned');
+        expect(result.lines[0]?.source).toBe('purchase_order');
+      });
+    });
+
     it('합계를 반영한 회차와 source 를 든 라인을 돌려주고, 라인별 eventKey 를 그대로 쓴다', async () => {
       await inRollbackTx(db, async (tx) => {
         const suffix = randomUUID();
@@ -154,12 +194,57 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
     });
   });
 
-  /** 커밋된 창고·SKU·로케이션·간편입고 5개. 잠금 스펙 전용 — 행이 남는다. */
-  async function seedCommittedLine() {
+  describe('cancelLine source 가드', () => {
+    it('expected.source 와 라인 source 가 다르면 source 에 맞는 409로 거절한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fx = await seedWarehouseAndSku(tx, randomUUID());
+        const po = await kernel.recordArrival(
+          {
+            source: 'purchase_order',
+            warehouseId: fx.warehouseId,
+            reason: 'planned_inbound',
+            lines: [{ skuId: fx.skuId, quantity: 1, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+        await expect(
+          kernel.cancelLine({ receiptLineId: po.lines[0]?.id ?? '', expected: { source: 'direct' } }, tx),
+        ).rejects.toMatchObject({ status: 409, message: '발주 입고는 발주에서 취소하세요' });
+
+        const direct = await kernel.recordArrival(
+          {
+            source: 'direct',
+            method: 'simple',
+            warehouseId: fx.warehouseId,
+            reason: 'simple_inbound',
+            lines: [{ skuId: fx.skuId, quantity: 1, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+        await expect(
+          kernel.cancelLine({ receiptLineId: direct.lines[0]?.id ?? '', expected: { source: 'purchase_order' } }, tx),
+        ).rejects.toMatchObject({ status: 409, message: '이 회차 라인은 직접 입고가 아닙니다' });
+        await expect(
+          kernel.cancelLine({ receiptLineId: direct.lines[0]?.id ?? '', expected: { source: 'direct' } }, tx),
+        ).resolves.toMatchObject({ id: direct.lines[0]?.id });
+      });
+    });
+  });
+
+  /** 잠금 스펙용 커밋형 회차. 각 테스트가 FK 역순으로 직접 정리한다. */
+  async function seedCommittedReceipt(lineCount = 1) {
     const suffix = randomUUID();
     return db.transaction(async (trx) => {
       const tx = trx as unknown as DbTx;
-      const { warehouseId, skuId } = await seedWarehouseAndSku(tx, suffix);
+      const { warehouseId, holderId, skuId } = await seedWarehouseAndSku(tx, suffix);
+      const skuIds = [skuId];
+      if (lineCount > 1) {
+        const [secondSku] = await tx
+          .insert(wmsTables.skus)
+          .values({ name: 'kernel sibling sku', code: `KERNEL-SIBLING-${suffix}`, holderId })
+          .returning();
+        skuIds.push(secondSku.id);
+      }
       const [shelf] = await tx
         .insert(wmsTables.locations)
         .values({
@@ -171,18 +256,114 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
           isActive: true,
         })
         .returning();
-      const { lines } = await kernel.recordArrival(
+      const { receipt, lines } = await kernel.recordArrival(
         {
           source: 'direct',
           method: 'simple',
           warehouseId,
           reason: 'kernel_lock_spec',
-          lines: [{ skuId, quantity: 5, eventKey: `kernel-lock-spec:${suffix}` }],
+          lines: skuIds.map((id, index) => ({
+            skuId: id,
+            quantity: 5,
+            eventKey: `kernel-lock-spec:${suffix}:${index}`,
+          })),
         },
         tx,
       );
-      return { lineId: lines[0]?.id ?? '', shelfId: shelf.id };
+      return {
+        receiptId: receipt.id,
+        journalId: receipt.journalId ?? '',
+        lineIds: lines.map((line) => line.id),
+        shelfId: shelf.id,
+        warehouseId,
+        holderId,
+        skuIds,
+      };
     });
+  }
+
+  type CommittedReceipt = Awaited<ReturnType<typeof seedCommittedReceipt>>;
+
+  async function cleanupCommittedReceipt(fixture: CommittedReceipt) {
+    await db.transaction(async (trx) => {
+      const tx = trx as unknown as DbTx;
+      await tx.delete(wmsTables.inboundWorkLogs).where(eq(wmsTables.inboundWorkLogs.receiptId, fixture.receiptId));
+      await tx
+        .delete(wmsTables.inboundReceiptLines)
+        .where(eq(wmsTables.inboundReceiptLines.receiptId, fixture.receiptId));
+      await tx.delete(wmsTables.inboundReceipts).where(eq(wmsTables.inboundReceipts.id, fixture.receiptId));
+      await tx.delete(wmsTables.stockLedgers).where(inArray(wmsTables.stockLedgers.skuId, fixture.skuIds));
+      await tx.delete(wmsTables.stockEvents).where(inArray(wmsTables.stockEvents.skuId, fixture.skuIds));
+      await tx.delete(wmsTables.stockJournals).where(eq(wmsTables.stockJournals.id, fixture.journalId));
+      await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.warehouseId, fixture.warehouseId));
+      await tx.delete(wmsTables.skus).where(inArray(wmsTables.skus.id, fixture.skuIds));
+      await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, fixture.holderId));
+      await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, fixture.warehouseId));
+    });
+  }
+
+  async function expectHeaderLockedDuring(fixture: CommittedReceipt) {
+    const acquired = deferred();
+    const release = deferred();
+    const held = db.transaction(async (trx) => {
+      await kernel.cancelLine(
+        { receiptLineId: fixture.lineIds[0] ?? '', expected: { source: 'direct' } },
+        trx as unknown as DbTx,
+      );
+      acquired.resolve();
+      await release.promise;
+      throw new Rollback('intentional rollback');
+    });
+
+    await withTimeout(
+      Promise.race([
+        acquired.promise,
+        held.then(() => {
+          throw new Error('held cancel completed before acquiring the test barrier');
+        }),
+      ]),
+      'held cancel acquisition',
+    );
+    try {
+      await expect(
+        probe`SELECT id FROM inbound_receipts WHERE id = ${fixture.receiptId} FOR NO KEY UPDATE NOWAIT`,
+      ).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      release.resolve();
+      await withTimeout(
+        held.catch((error: unknown) => {
+          if (!(error instanceof Rollback)) throw error;
+        }),
+        'held cancel release',
+      );
+    }
+    await expect(held).rejects.toThrow(Rollback);
+  }
+
+  async function waitUntilBlockedBy(pids: number[], blockerPid: number) {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const rows = await probe<
+        { pid: number; blockers: number[]; waitEventType: string | null; query: string }[]
+      >`SELECT pid,
+               pg_blocking_pids(pid) AS blockers,
+               wait_event_type AS "waitEventType",
+               query
+          FROM pg_stat_activity
+         WHERE pid IN ${probe(pids)}`;
+      const bothWaitingOnReceiptHeader =
+        rows.length === pids.length &&
+        rows.every(
+          (row) =>
+            row.waitEventType === 'Lock' &&
+            row.blockers.length > 0 &&
+            row.query.includes('inbound_receipts') &&
+            row.query.toLowerCase().includes('for no key update'),
+        );
+      if (bothWaitingOnReceiptHeader && rows.some((row) => row.blockers.includes(blockerPid))) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`cancel workers did not both block behind pid ${blockerPid}`);
   }
 
   /**
@@ -224,40 +405,158 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
       // 탐침 단언이 실패해도(=잠그지 않음) hold 를 반드시 풀어준다 — 안 풀면 잡고 있던 커넥션이
       // 다음 훅까지 안 끝나 러너가 상한 시간까지 멎는다(잠금 없는 뮤테이션에서 실측: 121s 타임아웃).
       release();
-      await held.catch(() => undefined);
+      await withTimeout(
+        held.catch((error: unknown) => {
+          if (!(error instanceof Rollback)) throw error;
+        }),
+        'held line release',
+      );
     }
     await expect(held).rejects.toThrow(Rollback);
   }
 
   describe('회차 라인 잠금 (스펙 §7.1)', () => {
     it('cancelLine 은 회차 라인을 FOR UPDATE 로 잠근다', async () => {
-      const { lineId } = await seedCommittedLine();
-      await expectLineLockedDuring(lineId, (tx) => kernel.cancelLine({ receiptLineId: lineId }, tx));
+      const fixture = await seedCommittedReceipt();
+      try {
+        await expectLineLockedDuring(fixture.lineIds[0] ?? '', (tx) =>
+          kernel.cancelLine({ receiptLineId: fixture.lineIds[0] ?? '', expected: { source: 'direct' } }, tx),
+        );
+      } finally {
+        await cleanupCommittedReceipt(fixture);
+      }
     });
 
     it('putaway 는 회차 라인을 FOR UPDATE 로 잠근다', async () => {
-      const { lineId, shelfId } = await seedCommittedLine();
-      await expectLineLockedDuring(lineId, (tx) =>
-        kernel.putaway(
-          {
-            receiptLineId: lineId,
-            toLocationId: shelfId,
-            quantity: 1,
-            eventKey: `kernel-lock-spec:putaway:${randomUUID()}`,
-          },
-          tx,
-        ),
-      );
+      const fixture = await seedCommittedReceipt();
+      try {
+        await expectLineLockedDuring(fixture.lineIds[0] ?? '', (tx) =>
+          kernel.putaway(
+            {
+              receiptLineId: fixture.lineIds[0] ?? '',
+              toLocationId: fixture.shelfId,
+              quantity: 1,
+              eventKey: `kernel-lock-spec:putaway:${randomUUID()}`,
+            },
+            tx,
+          ),
+        );
+      } finally {
+        await cleanupCommittedReceipt(fixture);
+      }
     });
 
     it('returnLine 은 회차 라인을 FOR UPDATE 로 잠근다', async () => {
-      const { lineId } = await seedCommittedLine();
-      await expectLineLockedDuring(lineId, (tx) =>
-        kernel.returnLine(
-          { receiptLineId: lineId, quantity: 1, eventKey: `kernel-lock-spec:return:${randomUUID()}` },
-          tx,
-        ),
-      );
+      const fixture = await seedCommittedReceipt();
+      try {
+        await expectLineLockedDuring(fixture.lineIds[0] ?? '', (tx) =>
+          kernel.returnLine(
+            {
+              receiptLineId: fixture.lineIds[0] ?? '',
+              quantity: 1,
+              eventKey: `kernel-lock-spec:return:${randomUUID()}`,
+            },
+            tx,
+          ),
+        );
+      } finally {
+        await cleanupCommittedReceipt(fixture);
+      }
+    });
+  });
+
+  describe('회차 헤더 잠금 (스펙 §7.1)', () => {
+    it('cancelLine 은 형제 라인이 남아 있어도 헤더를 FOR NO KEY UPDATE 로 잠근다', async () => {
+      const fixture = await seedCommittedReceipt(2);
+      try {
+        await expectHeaderLockedDuring(fixture);
+      } finally {
+        await cleanupCommittedReceipt(fixture);
+      }
+    });
+
+    it('서로 다른 형제 라인의 동시 취소를 직렬화해 헤더를 voided 로 만든다', async () => {
+      const fixture = await seedCommittedReceipt(2);
+      const blockerClient = postgres(DATABASE_URL as string, { max: 1 });
+      const workerAClient = postgres(DATABASE_URL as string, { max: 1 });
+      const workerBClient = postgres(DATABASE_URL as string, { max: 1 });
+      const blockerDb = drizzle(blockerClient, { schema: wmsSchema });
+      const workerADb = drizzle(workerAClient, { schema: wmsSchema });
+      const workerBDb = drizzle(workerBClient, { schema: wmsSchema });
+      const blockerAcquired = deferred();
+      const blockerRelease = deferred();
+      let blocker: Promise<unknown> | undefined;
+      let cancelA: Promise<unknown> | undefined;
+      let cancelB: Promise<unknown> | undefined;
+      try {
+        const [{ pid: blockerPid }] = await blockerClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+        const [{ pid: workerAPid }] = await workerAClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+        const [{ pid: workerBPid }] = await workerBClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+
+        blocker = blockerDb.transaction(async (trx) => {
+          await trx
+            .select({ id: wmsTables.inboundReceipts.id })
+            .from(wmsTables.inboundReceipts)
+            .where(eq(wmsTables.inboundReceipts.id, fixture.receiptId))
+            .for('no key update');
+          blockerAcquired.resolve();
+          await blockerRelease.promise;
+        });
+        await withTimeout(blockerAcquired.promise, 'header blocker acquisition');
+
+        cancelA = workerADb.transaction((trx) =>
+          kernel.cancelLine(
+            { receiptLineId: fixture.lineIds[0] ?? '', expected: { source: 'direct' } },
+            trx as unknown as DbTx,
+          ),
+        );
+        cancelB = workerBDb.transaction((trx) =>
+          kernel.cancelLine(
+            { receiptLineId: fixture.lineIds[1] ?? '', expected: { source: 'direct' } },
+            trx as unknown as DbTx,
+          ),
+        );
+
+        let waitFailure: unknown;
+        try {
+          await waitUntilBlockedBy([workerAPid, workerBPid], blockerPid);
+        } catch (error) {
+          waitFailure = error;
+        } finally {
+          blockerRelease.resolve();
+          await withTimeout(blocker, 'header blocker release');
+        }
+        const cancelOutcomes = await withTimeout(
+          Promise.allSettled([cancelA, cancelB]),
+          'concurrent sibling cancellation',
+        );
+        if (waitFailure) throw waitFailure;
+        const rejected = cancelOutcomes.find(
+          (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
+        );
+        if (rejected) throw rejected.reason;
+
+        const [receipt] = await db
+          .select({ status: wmsTables.inboundReceipts.status, totalQuantity: wmsTables.inboundReceipts.totalQuantity })
+          .from(wmsTables.inboundReceipts)
+          .where(eq(wmsTables.inboundReceipts.id, fixture.receiptId));
+        const [{ canceledQuantity }] = await db
+          .select({ canceledQuantity: sql<number>`sum(${wmsTables.inboundReceiptLines.canceledQty})::int` })
+          .from(wmsTables.inboundReceiptLines)
+          .where(eq(wmsTables.inboundReceiptLines.receiptId, fixture.receiptId));
+        expect(receipt).toEqual({ status: 'voided', totalQuantity: 0 });
+        expect(canceledQuantity).toBe(10);
+      } finally {
+        blockerRelease.resolve();
+        await withTimeout(
+          Promise.allSettled(
+            [blocker, cancelA, cancelB].filter((promise): promise is Promise<unknown> => !!promise),
+          ),
+          'concurrency worker cleanup',
+        );
+        await Promise.all([blockerClient.end(), workerAClient.end(), workerBClient.end()]);
+        await cleanupCommittedReceipt(fixture);
+      }
     });
   });
 });

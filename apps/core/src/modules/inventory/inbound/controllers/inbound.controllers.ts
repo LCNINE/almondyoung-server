@@ -17,7 +17,11 @@ import {
 } from '../dto/simple-inbound.dto';
 import { ClosePlanItemDto } from '../dto/close-plan-item.dto';
 import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
-import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
+import {
+  InboundReceiptHistoryResponseDto,
+  IndividualInboundResponseDto,
+  SimpleInboundResponseDto,
+} from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
 
 interface JwtPayload {
@@ -121,7 +125,7 @@ export class InboundController {
 
   @Get('receipts')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '입고내역(현황) 조회 - (sku, quantity, occurredAt, method)' })
+  @ApiOperation({ summary: '회차별 입고내역 조회 - 전체 라인 포함' })
   @ApiQuery({ name: 'skuId', required: false })
   @ApiQuery({ name: 'warehouseId', required: false })
   @ApiQuery({ name: 'method', required: false, enum: ['individual', 'simple', 'simple_fullscan', 'planned'] })
@@ -129,6 +133,11 @@ export class InboundController {
   @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
+  @ApiResponse({
+    status: 200,
+    description: '회차별 입고내역이 성공적으로 조회되었습니다.',
+    type: InboundReceiptHistoryResponseDto,
+  })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listInboundReceipts(
     @Query('skuId') skuId?: string,
@@ -138,7 +147,7 @@ export class InboundController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
-  ) {
+  ): Promise<InboundReceiptHistoryResponseDto> {
     return this.inboundService.listInboundReceipts({
       skuId,
       warehouseId,
