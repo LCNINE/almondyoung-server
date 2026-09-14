@@ -18,7 +18,6 @@ import {
   poStatusEnum,
   inboundStatusEnum,
   stockTypeEnum,
-  planTypeEnum,
   stocktakingStatusEnum,
   inboundMethodEnum,
   inboundReceiptStatusEnum,
@@ -98,9 +97,6 @@ export type InboundStatusEnum = (typeof inboundStatusValues)[number];
 
 export const stockTypeValues = stockTypeEnum.enumValues;
 export type StockTypeEnum = (typeof stockTypeValues)[number];
-
-export const planTypeValues = planTypeEnum.enumValues;
-export type PlanTypeEnum = (typeof planTypeValues)[number];
 
 export const stocktakingStatusValues = stocktakingStatusEnum.enumValues;
 export type StocktakingStatusEnum = (typeof stocktakingStatusValues)[number];
