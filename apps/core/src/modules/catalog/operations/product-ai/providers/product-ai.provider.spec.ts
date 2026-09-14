@@ -46,4 +46,34 @@ describe('ProductAiProvider', () => {
     await expect(provider.reply(history)).rejects.toThrow('설정');
     expect(request).not.toHaveBeenCalled();
   });
+
+  it('실제 text_delta를 즉시 전달하고 message_stop 이후 완료한다', async () => {
+    const frames = [
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: '안녕' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: '하세요' } },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+      { type: 'message_stop' },
+    ];
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('')));
+    const onDelta = jest.fn();
+    await expect(provider.reply(history, { onDelta })).resolves.toBe('안녕하세요');
+    expect(onDelta.mock.calls).toEqual([['안녕'], ['하세요']]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).stream).toBe(true);
+  });
+
+  it.each(['max_tokens', 'end_turn'])(
+    '종료 이벤트가 없는 스트림은 저장할 답변으로 반환하지 않는다: %s',
+    async (stopReason) => {
+      jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(
+          new Response(
+            `data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: '일부' } })}\n\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: stopReason } })}\n\n`,
+          ),
+        );
+      await expect(provider.reply(history, { onDelta: jest.fn() })).rejects.toThrow('완성되지');
+    },
+  );
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "product_ai_sessions" ADD COLUMN "deleted_at" timestamp with time zone;

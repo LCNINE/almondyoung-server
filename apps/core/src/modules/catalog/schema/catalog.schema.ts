@@ -1430,6 +1430,7 @@ export const productAiSessions = pgTable(
   'product_ai_sessions',
   {
     id: uuid('id').primaryKey().$defaultFn(uuidv7),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     ownerId: uuid('owner_id').notNull(),
     requestId: uuid('request_id').notNull(),
     title: varchar('title', { length: 200 }).notNull(),
@@ -1463,6 +1464,8 @@ export const productAiMessages = pgTable(
     sequence: integer('sequence').notNull(),
     role: varchar('role', { length: 20 }).$type<'user' | 'assistant'>().notNull(),
     content: text('content').notNull(),
+    feedback: varchar('feedback', { length: 10 }).$type<'up' | 'down'>(),
+    sources: jsonb('sources').$type<import('@packages/product-ai/guides').ProductAiSource[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1470,6 +1473,10 @@ export const productAiMessages = pgTable(
     uniqueIndex('product_ai_messages_session_sequence_unique').on(table.sessionId, table.sequence),
     check('product_ai_messages_sequence_positive', sql`${table.sequence} > 0`),
     check('product_ai_messages_role_valid', sql`${table.role} in ('user', 'assistant')`),
+    check(
+      'product_ai_messages_feedback_valid',
+      sql`${table.feedback} is null or (${table.role} = 'assistant' and ${table.feedback} in ('up', 'down'))`,
+    ),
   ],
 );
 

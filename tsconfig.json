@@ -34,6 +34,7 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
+      "@packages/product-ai/*": ["packages/product-ai/*"],
       "@app/authorization": ["libs/authorization/src"],
       "@app/authorization/*": ["libs/authorization/src/*"],
       "@app/cron-once": ["libs/cron-once/src"],

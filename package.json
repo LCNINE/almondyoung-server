@@ -350,6 +350,7 @@
       "ts"
     ],
     "moduleNameMapper": {
+      "^@packages/product-ai/(.*)$": "<rootDir>/packages/product-ai/$1",
       "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1",
       "^@app/auth-core(|/.*)$": "<rootDir>/libs/auth-core/src/$1",
       "^@app/authorization(|/.*)$": "<rootDir>/libs/authorization/src/$1",
@@ -383,6 +384,7 @@
       "<rootDir>/apps/",
       "<rootDir>/libs/",
       "<rootDir>/packages/product-description/",
+      "<rootDir>/packages/product-ai/",
       "<rootDir>/packages/domain-types/",
       "<rootDir>/packages/event-contracts/",
       "<rootDir>/scripts/"

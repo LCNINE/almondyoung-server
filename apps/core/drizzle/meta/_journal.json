@@ -666,6 +666,20 @@
       "when": 1789360638062,
       "tag": "20260914043718_add-product-ai-replies",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789364025279,
+      "tag": "20260914053345_product-ai-feedback-sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789364972336,
+      "tag": "20260914054932_product-ai-soft-delete",
+      "breakpoints": true
     }
   ]
 }

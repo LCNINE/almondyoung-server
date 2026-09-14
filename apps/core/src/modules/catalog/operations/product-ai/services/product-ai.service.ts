@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { isNull, and, asc, desc, eq, gt } from 'drizzle-orm';
 import { type PimSchema, productAiMessages, productAiSessions } from '../../../schema/catalog.schema';
 import type {
   AppendProductAiMessageInput,
@@ -25,6 +25,7 @@ export class ProductAiService {
         .select()
         .from(productAiSessions)
         .where(and(eq(productAiSessions.ownerId, ownerId), eq(productAiSessions.requestId, data.requestId)));
+      if (existing.deletedAt) throw new NotFoundException('삭제된 대화입니다. 새 대화를 시작해 주세요.');
       if (existing.title !== data.title) {
         throw new ConflictException('같은 요청 ID로 다른 작업을 생성할 수 없습니다.');
       }
@@ -32,12 +33,37 @@ export class ProductAiService {
     });
   }
 
+  async rename(ownerId: string, sessionId: string, title: string) {
+    const [session] = await this.db.db
+      .update(productAiSessions)
+      .set({ title, updatedAt: new Date() })
+      .where(
+        and(
+          eq(productAiSessions.id, sessionId),
+          eq(productAiSessions.ownerId, ownerId),
+          isNull(productAiSessions.deletedAt),
+        ),
+      )
+      .returning();
+    if (!session) throw new NotFoundException('대화를 찾을 수 없습니다.');
+    return session;
+  }
+
+  async remove(ownerId: string, sessionId: string) {
+    const [session] = await this.db.db
+      .update(productAiSessions)
+      .set({ deletedAt: new Date(), replyStatus: 'idle', replyLeaseId: null, replyLeaseUntil: null, replyError: null })
+      .where(and(eq(productAiSessions.id, sessionId), eq(productAiSessions.ownerId, ownerId)))
+      .returning({ id: productAiSessions.id });
+    if (!session) throw new NotFoundException('대화를 찾을 수 없습니다.');
+  }
+
   async list(ownerId: string, query: ListProductAiSessionsQuery) {
     const { page, limit } = query;
     const rows = await this.db.db
       .select()
       .from(productAiSessions)
-      .where(eq(productAiSessions.ownerId, ownerId))
+      .where(and(eq(productAiSessions.ownerId, ownerId), isNull(productAiSessions.deletedAt)))
       .orderBy(desc(productAiSessions.updatedAt), desc(productAiSessions.id))
       .offset((page - 1) * limit)
       .limit(limit + 1);
@@ -48,7 +74,13 @@ export class ProductAiService {
     const [session] = await this.db.db
       .select()
       .from(productAiSessions)
-      .where(and(eq(productAiSessions.id, sessionId), eq(productAiSessions.ownerId, ownerId)));
+      .where(
+        and(
+          eq(productAiSessions.id, sessionId),
+          eq(productAiSessions.ownerId, ownerId),
+          isNull(productAiSessions.deletedAt),
+        ),
+      );
     if (!session) throw new NotFoundException('상품등록 작업을 찾을 수 없습니다.');
     return session;
   }
@@ -66,13 +98,36 @@ export class ProductAiService {
     return { items, nextAfter: items.at(-1)?.sequence ?? after, hasMore: rows.length > limit };
   }
 
+  async feedback(ownerId: string, sessionId: string, messageId: string, rating: 'up' | 'down' | null) {
+    await this.get(ownerId, sessionId);
+    const [updated] = await this.db.db
+      .update(productAiMessages)
+      .set({ feedback: rating })
+      .where(
+        and(
+          eq(productAiMessages.id, messageId),
+          eq(productAiMessages.sessionId, sessionId),
+          eq(productAiMessages.role, 'assistant'),
+        ),
+      )
+      .returning({ id: productAiMessages.id, feedback: productAiMessages.feedback });
+    if (!updated) throw new NotFoundException('답변을 찾을 수 없습니다.');
+    return updated;
+  }
+
   async appendUserMessage(ownerId: string, sessionId: string, data: AppendProductAiMessageInput) {
     return this.db.run(async (tx) => {
       // 한 작업의 입력을 직렬화한다. 모델 호출은 이 트랜잭션 안에서 실행하지 않는다.
       const [session] = await tx
         .select()
         .from(productAiSessions)
-        .where(and(eq(productAiSessions.id, sessionId), eq(productAiSessions.ownerId, ownerId)))
+        .where(
+          and(
+            eq(productAiSessions.id, sessionId),
+            eq(productAiSessions.ownerId, ownerId),
+            isNull(productAiSessions.deletedAt),
+          ),
+        )
         .for('update');
       if (!session) throw new NotFoundException('상품등록 작업을 찾을 수 없습니다.');
 

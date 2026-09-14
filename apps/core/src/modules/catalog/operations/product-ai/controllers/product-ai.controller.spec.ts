@@ -20,7 +20,9 @@ describe('ProductAiController HTTP 입력 검증', () => {
     get: jest.fn().mockResolvedValue({}),
     create: jest.fn().mockResolvedValue({}),
     appendUserMessage: jest.fn().mockResolvedValue({}),
+    feedback: jest.fn().mockResolvedValue({}),
   };
+  const replies = { respond: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'failed' }) };
 
   beforeAll(async () => {
     const [roleGuard] = Reflect.getMetadata(GUARDS_METADATA, ProductAiController);
@@ -28,7 +30,7 @@ describe('ProductAiController HTTP 입력 검증', () => {
       controllers: [ProductAiController],
       providers: [
         { provide: ProductAiService, useValue: service },
-        { provide: ProductAiReplyService, useValue: { respond: jest.fn() } },
+        { provide: ProductAiReplyService, useValue: replies },
       ],
     })
       .overrideGuard(roleGuard)
@@ -47,6 +49,34 @@ describe('ProductAiController HTTP 입력 검증', () => {
   beforeEach(() => jest.clearAllMocks());
   afterAll(async () => {
     await app?.close();
+  });
+
+  it('스트림을 완료할 때까지 delta를 보내고 저장 처리 반환 뒤 done을 보낸다', async () => {
+    const messageId = randomUUID();
+    replies.respond.mockImplementationOnce(async (_owner, _id, _message, options) => {
+      options.onDelta('실시간 답변');
+      return { status: 'idle' };
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/product-ai/sessions/${sessionId}/respond-stream`,
+      payload: { messageId },
+    });
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    expect(response.body).toContain('"type":"delta","text":"실시간 답변"');
+    expect(response.body.indexOf('"type":"done"')).toBeGreaterThan(response.body.indexOf('"type":"delta"'));
+  });
+
+  it('feedback 입력에 타인 소유권이나 임의 rating을 넣을 수 없다', async () => {
+    for (const payload of [{ rating: 'up', ownerId: randomUUID() }, { rating: 'unknown' }]) {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/product-ai/sessions/${sessionId}/messages/${randomUUID()}/feedback`,
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    expect(service.feedback).not.toHaveBeenCalled();
   });
 
   it('Swagger 쿼리와 요청 본문을 Zod DTO에서 생성한다', () => {

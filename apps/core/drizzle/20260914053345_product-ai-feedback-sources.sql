@@ -1,0 +1,3 @@
+ALTER TABLE "product_ai_messages" ADD COLUMN "feedback" varchar(10);--> statement-breakpoint
+ALTER TABLE "product_ai_messages" ADD COLUMN "sources" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "product_ai_messages" ADD CONSTRAINT "product_ai_messages_feedback_valid" CHECK ("product_ai_messages"."feedback" is null or ("product_ai_messages"."role" = 'assistant' and "product_ai_messages"."feedback" in ('up', 'down')));

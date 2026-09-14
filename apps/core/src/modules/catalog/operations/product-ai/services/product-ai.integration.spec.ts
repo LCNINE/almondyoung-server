@@ -49,6 +49,12 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
       await migrationClient.unsafe(
         readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914043718_add-product-ai-replies.sql'), 'utf8'),
       );
+      await migrationClient.unsafe(
+        readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914053345_product-ai-feedback-sources.sql'), 'utf8'),
+      );
+      await migrationClient.unsafe(
+        readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914054932_product-ai-soft-delete.sql'), 'utf8'),
+      );
     } finally {
       await migrationClient.end();
     }
@@ -67,6 +73,64 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     return service.create(owner, { requestId: randomUUID(), title: '미곤 상품등록' });
   }
   const input = (content: string, expectedRevision = 0) => ({ requestId: randomUUID(), expectedRevision, content });
+
+  it('본인만 제목을 수정하고 소프트 삭제한 대화는 조회하거나 이어갈 수 없다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('안녕'));
+    await expect(service.rename(otherOwner, session.id, '변경')).rejects.toThrow(NotFoundException);
+    await expect(service.remove(otherOwner, session.id)).rejects.toThrow(NotFoundException);
+    await service.rename(owner, session.id, '새 제목');
+    expect((await service.get(owner, session.id)).title).toBe('새 제목');
+    await service.remove(owner, session.id);
+    await service.remove(owner, session.id);
+    expect((await service.list(owner, { page: 1, limit: 100 })).items.some((row) => row.id === session.id)).toBe(false);
+    await expect(service.get(owner, session.id)).rejects.toThrow(NotFoundException);
+    await expect(service.messages(owner, session.id, { after: 0, limit: 50 })).rejects.toThrow(NotFoundException);
+    await expect(service.rename(owner, session.id, '복구 시도')).rejects.toThrow(NotFoundException);
+    await expect(service.appendUserMessage(owner, session.id, input('다시', 1))).rejects.toThrow(NotFoundException);
+    await expect(replies.respond(owner, session.id, sent.message.id)).rejects.toThrow(NotFoundException);
+    const [stored] = await db.db.select().from(productAiSessions).where(eq(productAiSessions.id, session.id));
+    expect(stored.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('답변 피드백과 사용한 가이드를 저장하고 타인/사용자 메시지 평가는 거절한다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('대표카테고리가 뭐예요?'));
+    await replies.respond(owner, session.id, sent.message.id);
+    const history = await service.messages(owner, session.id, { after: 0, limit: 50 });
+    const answer = history.items.at(-1)!;
+    expect(answer.sources[0].id).toBe('category-v1');
+    await expect(service.feedback(otherOwner, session.id, answer.id, 'up')).rejects.toThrow(NotFoundException);
+    await expect(service.feedback(owner, session.id, sent.message.id, 'up')).rejects.toThrow(NotFoundException);
+    await service.feedback(owner, session.id, answer.id, 'up');
+    expect((await service.messages(owner, session.id, { after: 0, limit: 50 })).items.at(-1)?.feedback).toBe('up');
+    await service.feedback(owner, session.id, answer.id, null);
+    expect((await service.messages(owner, session.id, { after: 0, limit: 50 })).items.at(-1)?.feedback).toBeNull();
+  });
+
+  it('생성 중지 후 늦은 답변을 저장하지 않고 새 메시지를 받을 수 있다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('가격 안내'));
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    provider.reply.mockImplementationOnce(() => {
+      started();
+      return new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const response = replies.respond(owner, session.id, sent.message.id).catch((error) => error);
+    await ready;
+    await expect(replies.cancel(otherOwner, session.id, sent.message.id)).rejects.toThrow(NotFoundException);
+    await replies.cancel(owner, session.id, sent.message.id);
+    finish('저장되면 안 되는 답변');
+    expect(await response).toBeInstanceOf(ServiceUnavailableException);
+    expect((await service.messages(owner, session.id, { after: 0, limit: 50 })).items).toHaveLength(1);
+    await service.appendUserMessage(owner, session.id, input('다른 질문', 1));
+  });
 
   it('동시 생성 재시도는 같은 작업을 돌려주고 다른 내용은 거절한다', async () => {
     const data = { requestId: randomUUID(), title: '동시 생성' };
