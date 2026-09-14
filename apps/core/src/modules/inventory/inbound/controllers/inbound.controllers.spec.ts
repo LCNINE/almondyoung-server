@@ -66,12 +66,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
   });
 });
 
-/**
- * `POST /inbound/plans` 는 호출자가 0이었다 — #739 가 admin-web 「계획 등록」 탭을 지웠고
- * Tauri 앱이 쓰는 것은 `plans/receive`(POST) 와 `plans/:planId`(GET) 로 다른 라우트다.
- *
- * 입고예정은 발주 라인이 소유하고, 수령은 발주 라우트가 소유한다(PR-B).
- */
+/** 입고예정은 발주 라인이 소유하고, 수령은 발주 라우트가 소유한다(PR-B). */
 describe('InboundController — 계획 생성 라우트', () => {
   type Handlers = Record<string, unknown>;
 
@@ -79,7 +74,7 @@ describe('InboundController — 계획 생성 라우트', () => {
     expect((InboundController.prototype as unknown as Handlers).createPlan).toBeUndefined();
   });
 
-  it.each(['receiveFromPlan', 'getInboundPending', 'addInboundPlanItems', 'listInboundPlanItems', 'closePlanItem'])(
+  it.each(['receiveFromPlan', 'getInboundPending', 'addPlanItems', 'listPlanItems', 'closePlanItem'])(
     '%s 핸들러는 없다 — 입고예정은 발주 라인이고 수령은 발주 라우트가 소유한다(PR-B)',
     (handler) => {
       expect((InboundController.prototype as unknown as Handlers)[handler]).toBeUndefined();
