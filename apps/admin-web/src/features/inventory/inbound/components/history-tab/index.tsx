@@ -7,7 +7,7 @@ import { useInboundHistoryTableColumns } from '@/hooks/table/columns/use-inbound
 import { useInboundHistoryTableFilters } from '@/hooks/table/filters/use-inbound-history-table-filters';
 import { useInboundHistoryTableQuery } from '@/hooks/table/query/use-inbound-history-table-query';
 import { useInboundReceipts } from '@/lib/services/inventory';
-import type { InboundReceiptDto } from '@/lib/types/dto/inventory';
+import type { InboundReceiptHistoryDto } from '@/lib/types/dto/inventory';
 import { ReceiptDetailDrawer } from './receipt-detail-drawer';
 
 const PAGE_SIZE = 20;
@@ -16,7 +16,7 @@ export function HistoryTab() {
   const { searchParams } = useInboundHistoryTableQuery();
   const { data, isLoading, isFetching } = useInboundReceipts(searchParams);
 
-  const [detailRow, setDetailRow] = useState<InboundReceiptDto | null>(null);
+  const [detailRow, setDetailRow] = useState<InboundReceiptHistoryDto | null>(null);
 
   const columns = useInboundHistoryTableColumns({ onDetail: setDetailRow });
   const filters = useInboundHistoryTableFilters();

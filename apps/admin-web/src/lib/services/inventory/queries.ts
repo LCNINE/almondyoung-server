@@ -19,6 +19,7 @@ import { holdersClient } from '../../api/domains/inventory/holders.client';
 import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
+import { expectedArrivalsClient } from '../../api/domains/inventory/expected-arrivals.client';
 import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
 import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
@@ -34,7 +35,6 @@ import type {
   InboundReceiptsQuery,
   InboundWorkLogsQuery,
   InboundStatusQuery,
-  ListPlanItemsQueryDto,
   ReturnFiltersDto,
   MovementHistoryQuery,
   SuggestionActionFilter,
@@ -208,10 +208,11 @@ export const useWarehouseStockSummary = (warehouseId: string) => {
 };
 
 // 입고 관련 쿼리
-export const useInboundPending = (warehouseId?: string) => {
+export const useExpectedArrivals = (warehouseId: string | undefined) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inboundPending(warehouseId),
-    queryFn: () => inboundClient.pending(warehouseId),
+    queryKey: inventoryQueryKeys.expectedArrivals(warehouseId ?? ''),
+    queryFn: () => expectedArrivalsClient.list(warehouseId ?? ''),
+    enabled: !!warehouseId,
   });
 };
 
@@ -233,13 +234,6 @@ export const useInboundStatus = (query?: InboundStatusQuery) => {
   return useQuery({
     queryKey: inventoryQueryKeys.inboundStatus(query),
     queryFn: () => inboundClient.status(query),
-  });
-};
-
-export const useInboundPlanItems = (query?: ListPlanItemsQueryDto) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.inboundPlanItems(query),
-    queryFn: () => inboundClient.plans.listItems(query),
   });
 };
 

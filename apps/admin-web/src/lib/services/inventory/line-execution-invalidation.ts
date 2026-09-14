@@ -8,17 +8,11 @@ import { inventoryQueryKeys } from './query-keys';
  * 루트가 목록·상세 쿼리를 서브트리로 전부 덮으므로 `purchaseOrder(poId)` 를
  * 따로 무효화하는 건 중복이라 뺐다.
  *
- * 입고 쿼리가 목록에 있는 이유: 라인 실행은 발주만 바꾸는 게 아니다. core 가
- * 첫 실행에서 ensurePlanForPurchaseOrder 로 입고 계획을 만들고, 이후 실행마다
- * 계획 아이템을 붙인다. 발주 키만 무효화하면 입고 대기 화면이 옛 목록을 보여준다.
- *
- * `id` 파라미터는 지금은 안 쓰지만 시그니처에 남겨둔다 — 호출부가 이미 넘기고
- * 있고, 나중에 발주별로 무효화를 좁혀야 할 때(예: 다른 발주 캐시는 건드리지
- * 않기) 다시 필요해질 수 있다. 이름을 `poId` 가 아니라 `id` 로 둔 이유: 이 함수는
- * 안 쓰는 인자라 호출부마다 실제로 다른 종류의 id 를 넘긴다 — `useCancelPurchaseOrder`
- * 는 poId, `useClosePlanItem`/`useReceiveFromPlan` 은 planId/planItemId 를 넘긴다.
- * 어차피 쓰지 않으므로 어느 쪽을 넘겨도 동작은 같다(최종 전체 리뷰 발견 M3).
+ * 입고 이력과 expected-arrivals 도 함께 갱신한다. 수령·취소·잔량 포기는 발주와
+ * 입고 회차, 대기 문서 수를 한 번에 바꿀 수 있다.
+ * `id` 는 현재 루트 키만 무효화해 사용하지 않지만 호출부 계약과 이후 발주별 캐시
+ * 축소를 위해 유지한다.
  */
 export function lineExecutionInvalidationKeys(id: string): readonly (readonly unknown[])[] {
-  return [inventoryQueryKeys.purchaseOrdersRoot, inventoryQueryKeys.inbounds];
+  return [inventoryQueryKeys.purchaseOrdersRoot, inventoryQueryKeys.inbounds, inventoryQueryKeys.expectedArrivalsRoot];
 }

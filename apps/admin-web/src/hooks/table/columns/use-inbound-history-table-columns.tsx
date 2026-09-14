@@ -3,11 +3,11 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { DateCell } from '@/components/table/table-cells/common';
-import type { InboundReceiptDto } from '@/lib/types/dto/inventory';
+import type { InboundReceiptHistoryDto } from '@/lib/types/dto/inventory';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-const columnHelper = createColumnHelper<InboundReceiptDto>();
+const columnHelper = createColumnHelper<InboundReceiptHistoryDto>();
 
 const METHOD_LABELS: Record<string, string> = {
   individual: '개별입고',
@@ -31,7 +31,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type RowActions = {
-  onDetail: (row: InboundReceiptDto) => void;
+  onDetail: (row: InboundReceiptHistoryDto) => void;
 };
 
 export const useInboundHistoryTableColumns = (actions: RowActions) => {

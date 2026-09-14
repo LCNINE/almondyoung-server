@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useInboundWorkLogs } from '@/lib/services/inventory';
-import type { InboundReceiptDto, InboundReceiptLineDto } from '@/lib/types/dto/inventory';
+import type { InboundReceiptHistoryDto, InboundReceiptLineDto } from '@/lib/types/dto/inventory';
 import { PutawayDialog } from '../../line-action-menu/putaway-dialog';
 import { ReturnDialog } from '../../line-action-menu/return-dialog';
 import { CancelDialog } from '../../line-action-menu/cancel-dialog';
@@ -29,7 +29,7 @@ const WORK_LOG_TYPE_LABELS: Record<string, string> = {
 type LineAction = 'putaway' | 'return' | 'cancel' | 'memo';
 
 type Props = {
-  row: InboundReceiptDto | null;
+  row: InboundReceiptHistoryDto | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -56,9 +56,6 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
 
   if (!row) return null;
 
-  const lines: InboundReceiptLineDto[] = (row as unknown as { lines?: InboundReceiptLineDto[]; line?: InboundReceiptLineDto }).lines
-    ?? ((row as unknown as { line?: InboundReceiptLineDto }).line ? [(row as unknown as { line: InboundReceiptLineDto }).line] : []);
-
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -83,10 +80,10 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
 
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">입고 라인</span>
-              {lines.length === 0 ? (
+              {row.lines.length === 0 ? (
                 <p className="text-sm text-muted-foreground">라인 정보 없음</p>
               ) : (
-                lines.map((line) => (
+                row.lines.map((line) => (
                   <div key={line.id} className="rounded-md border p-3">
                     <div className="flex items-start justify-between">
                       <div className="flex flex-col gap-0.5 text-sm">
@@ -144,6 +141,7 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
       />
       <CancelDialog
         line={activeLine}
+        source={activeLine?.source ?? null}
         open={activeAction === 'cancel'}
         onOpenChange={(o) => { if (!o) closeAction(); }}
       />

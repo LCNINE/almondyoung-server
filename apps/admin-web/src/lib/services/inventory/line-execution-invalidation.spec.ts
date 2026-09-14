@@ -20,4 +20,8 @@ describe('lineExecutionInvalidationKeys', () => {
     // 입고 키는 전부 ['inbounds', ...] 로 시작하므로 루트 하나로 서브트리를 덮는다.
     expect(keys).toContainEqual(inventoryQueryKeys.inbounds);
   });
+
+  it('expected-arrivals 루트 키가 포함된다', () => {
+    expect(keys).toContainEqual(inventoryQueryKeys.expectedArrivalsRoot);
+  });
 });

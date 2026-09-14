@@ -28,6 +28,7 @@ import type {
   PurchaseOrderDto,
   PurchaseOrderType,
   CreatePurchaseOrderLineRequest,
+  UpdatePurchaseOrderLineRequest,
 } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import { Plus, Trash2 } from 'lucide-react';
@@ -48,7 +49,7 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
   const [supplierId, setSupplierId] = useState('');
   const [expectedArrival, setExpectedArrival] = useState('');
   const [destinationWarehouseId, setDestinationWarehouseId] = useState('');
-  const [lines, setLines] = useState<CreatePurchaseOrderLineRequest[]>([{ ...EMPTY_LINE }]);
+  const [lines, setLines] = useState<UpdatePurchaseOrderLineRequest[]>([{ ...EMPTY_LINE }]);
 
   const { data: suppliers } = useSuppliers();
   const { data: warehouses } = useWarehouses();
@@ -66,6 +67,7 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
               skuId: l.skuId,
               quantity: l.quantity,
               unitPrice: l.unitPrice ?? undefined,
+              expectedArrival: l.expectedArrival ?? undefined,
             }))
           : [{ ...EMPTY_LINE }]
       );
@@ -80,7 +82,7 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
 
   const handleLineChange = (
     index: number,
-    field: keyof CreatePurchaseOrderLineRequest,
+    field: keyof UpdatePurchaseOrderLineRequest,
     value: string | number
   ) => {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));

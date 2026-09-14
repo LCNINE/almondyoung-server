@@ -16,6 +16,13 @@ import type {
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
   CartItemDto,
+  WithIdempotencyKey,
+  ReceivePurchaseOrderRequest,
+  PurchaseOrderReceiptResponseDto,
+  CancelPurchaseOrderReceiptLineRequest,
+  PurchaseOrderReceiptCancelResponseDto,
+  ShortClosePurchaseOrderLineRequest,
+  UpdatePurchaseOrderLineExpectedArrivalRequest,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/purchase-orders`;
@@ -91,6 +98,39 @@ export const purchaseOrdersClient = {
 
   cancel: async (id: string, data: CancelPurchaseOrderRequest): Promise<PurchaseOrderDto> => {
     const response = await client.post(`${BASE}/${encodeURIComponent(id)}/cancel`, data);
+    return response.data;
+  },
+
+  receive: async (
+    poId: string,
+    data: WithIdempotencyKey<ReceivePurchaseOrderRequest>
+  ): Promise<PurchaseOrderReceiptResponseDto> => {
+    const response = await client.post(`${BASE}/${encodeURIComponent(poId)}/receipts`, data, {
+      headers: { 'Idempotency-Key': data.idempotencyKey },
+    });
+    return response.data;
+  },
+
+  cancelReceiptLine: async (
+    data: WithIdempotencyKey<CancelPurchaseOrderReceiptLineRequest>
+  ): Promise<PurchaseOrderReceiptCancelResponseDto> => {
+    const response = await client.post(
+      `${BASE}/receipt-lines/${encodeURIComponent(data.receiptLineId)}/cancel`,
+      { idempotencyKey: data.idempotencyKey },
+      { headers: { 'Idempotency-Key': data.idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  shortCloseLine: async (poId: string, skuId: string, data: ShortClosePurchaseOrderLineRequest): Promise<PurchaseOrderDto> => {
+    const response = await client.post(`${BASE}/${encodeURIComponent(poId)}/lines/${encodeURIComponent(skuId)}/short-close`, data);
+    return response.data;
+  },
+
+  updateLineExpectedArrival: async (
+    poId: string, skuId: string, data: UpdatePurchaseOrderLineExpectedArrivalRequest
+  ): Promise<PurchaseOrderDto> => {
+    const response = await client.patch(`${BASE}/${encodeURIComponent(poId)}/lines/${encodeURIComponent(skuId)}/expected-arrival`, data);
     return response.data;
   },
 
