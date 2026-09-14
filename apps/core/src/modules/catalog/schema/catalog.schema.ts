@@ -1425,7 +1425,49 @@ export const aiPromptPresets = pgTable(
 );
 
 // Catalog BC 스키마 (ex-PIM)
+// AI 등록 작업은 카탈로그 초안과 별도로 보관한다. 대화 저장 자체는 상품을 생성/발행하지 않는다.
+export const productAiSessions = pgTable(
+  'product_ai_sessions',
+  {
+    id: uuid('id').primaryKey().$defaultFn(uuidv7),
+    ownerId: uuid('owner_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    revision: integer('revision').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('product_ai_sessions_owner_request_unique').on(table.ownerId, table.requestId),
+    index('product_ai_sessions_owner_updated_idx').on(table.ownerId, table.updatedAt, table.id),
+    check('product_ai_sessions_revision_nonnegative', sql`${table.revision} >= 0`),
+  ],
+);
+
+export const productAiMessages = pgTable(
+  'product_ai_messages',
+  {
+    id: uuid('id').primaryKey().$defaultFn(uuidv7),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => productAiSessions.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id').notNull(),
+    sequence: integer('sequence').notNull(),
+    role: varchar('role', { length: 20 }).$type<'user' | 'assistant'>().notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('product_ai_messages_session_request_unique').on(table.sessionId, table.requestId),
+    uniqueIndex('product_ai_messages_session_sequence_unique').on(table.sessionId, table.sequence),
+    check('product_ai_messages_sequence_positive', sql`${table.sequence} > 0`),
+    check('product_ai_messages_role_valid', sql`${table.role} in ('user', 'assistant')`),
+  ],
+);
+
 export const catalogSchema = {
+  productAiSessions,
+  productAiMessages,
   aiPromptPresets,
   productCategories,
   productMasters,

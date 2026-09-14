@@ -19,6 +19,7 @@ import { BulkModule } from './operations/bulk/bulk.module';
 import { ProductExportModule } from './operations/export/product-export.module';
 import { AuditModule } from './operations/audit/audit.module';
 import { BulkSessionModule } from './operations/bulk-session/bulk-session.module';
+import { ProductAiModule } from './operations/product-ai/product-ai.module';
 
 // Analytics modules
 import { DashboardModule } from './analytics/dashboard/dashboard.module';
@@ -47,6 +48,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ProductExportModule,
     AuditModule,
     BulkSessionModule,
+    ProductAiModule,
     // Analytics
     DashboardModule,
   ],

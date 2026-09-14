@@ -652,6 +652,13 @@
       "when": 1789332489404,
       "tag": "20260913204809_add-inbound-receipt-source",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789359360476,
+      "tag": "20260914041600_add-product-ai-sessions",
+      "breakpoints": true
     }
   ]
 }
