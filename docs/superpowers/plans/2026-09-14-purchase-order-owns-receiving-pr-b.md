@@ -15,7 +15,7 @@
 아래 DB 관측은 첨부 원문의 기록이다. 현재 실행에서 재측정하여 검증 보고서에 남긴다. 라이브 PR-A migrate → deploy 완료는 사용자 확인 사항이다.
 
 - 스펙 §11 사전 확인 쿼리 **P1~P3 는 `dev_core`·`core` 양쪽 모두 0행**. 두 DB 모두 `inbound_plans` 0 · `inbound_plan_items` 0 · `purchase_orders` 0 이라 백필 ①~③ 은 로컬에서 no-op 이다. 라이브는 사용자가 돌린다(쿼리는 §11 그대로).
-- PR-A 마이그레이션(`20260913204809_add-inbound-receipt-source`)은 `dev_core`·`core` 에 적용돼 있다(`inbound_receipt_lines.source` 존재). `core` 의 `__drizzle_migrations` 는 91행, `dev_core` 는 93행 — 통합 러너가 매번 `drizzle-kit migrate` 를 돌리므로 `core` 쪽은 신경 쓰지 않는다.
+- PR-A 마이그레이션(`20260913204809_add-inbound-receipt-source`)은 `dev_core`·`core` 에 적용돼 있다(`inbound_receipt_lines.source` 존재). `core` 의 `__drizzle_migrations` 는 91행, `dev_core` 는 93행이었다. 이는 실행 전 관측 기록이며, PR-B 검증은 아래의 작업 전용 DB 결정으로 대체한다.
 - PR-A 의 dev 스모크(admin-web `/inventory/inbound` 5항목)는 **미실행** — Task 13 스모크에 합친다.
 - 현재 워크트리: `/home/pauseb/Documents/Codex/2026-09-14/files-mentioned-by-the-user-2026/work/po-receiving-pr-b`, 브랜치 `feat/purchase-order-owns-receiving-codex`. 2026-09-14 `git pull --ff-only origin develop` 확인, base `c4705d274`. 기존 잠긴 PR-B 워크트리는 보존한다.
 
@@ -33,7 +33,7 @@
 - **CLAUDE.md Inventory Query Rules:** `db.query.*`·`with` 관계 금지, `any`/`as` 캐스팅 금지(정당화 주석 없이), `@InjectTypedDb<typeof wmsSchema>()`.
 - **마이그레이션 2파일**(Task 1): 생성 DDL 1 + `--custom` 백필 1. `db:generate` 는 **메인 세션 또는 사람**이 돌린다 — 서브에이전트는 돌리지 못한다. 배포 순서 **`migrate → deploy`**. `migration-safety.yml` 은 `ADD CONSTRAINT … CHECK`·`RAISE EXCEPTION` 을 라벨링하지 못하므로 PR 본문에 사람이 적는다.
 - **기존 결함으로 알려진 것(회귀 아님):** `simple`·`simple-fullscan`·`individual` 의 HTTP 멱등 재전송이 500 — jsonb 재생값의 Date 가 문자열인데 `inbound.mapper.ts:23-41` 이 `.toISOString()` 을 부른다. base 부터 있다. 스모크에서 재전송을 보면 PR-B 회귀로 오인하지 말 것(수정은 범위 밖).
-- **통합 스펙 실행:** `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <패턴>` (워크트리에서 `COMPOSE_PROJECT_NAME` 필수). 통합 러너는 `core` DB, `apps/core/.env` 는 `dev_core` — 마이그레이션은 양쪽에 적용한다. 스펙 안에서 `dotenv.config()` 금지, `describeIfDb` 가드 필수. 같은 물리 DB 를 쓰는 커밋형 스펙은 시드 행을 스스로 지운다.
+- **통합 스펙 실행:** 작업 전용 구현 DB에 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand <패턴>`으로 직접 실행한다. 마이그레이션도 같은 `DATABASE_URL`을 명시해 별도로 적용한다. 공유 `core`·`dev_core`와 이를 하드코딩한 통합 러너는 쓰지 않는다. 스펙 안에서 `dotenv.config()` 금지, `describeIfDb` 가드 필수. 같은 물리 DB 를 쓰는 커밋형 스펙은 시드 행을 스스로 지운다.
 - **행 잠금 테스트 탐침:** `FOR UPDATE NOWAIT` 는 같은 tx 의 UPDATE/FK 에도 걸려 판별이 안 된다. **`FOR KEY SHARE NOWAIT`**(라인 잠금 확인) 또는 **`FOR NO KEY UPDATE NOWAIT`**(헤더 잠금 확인 — KEY SHARE 와는 충돌하지 않으므로 FK 오탐이 없다)로 탐침하고, **잠금을 제거한 변이에서 RED 가 되는지**를 한 번 확인한다. 탐침 실패 시 held tx 는 `finally` 에서 반드시 푼다.
 - **develop 기준선 RED 8 suite**(2026-08-25 실측, `core-integration-tests-local` 메모): `product-masters-variant-preview` · `bulk-session-draft` · `bulk-session-publish` · `shipment-planning` · `inventory-command.service.adjust` · `unified-reservation.service.lifecycle` · `unified-reservation.service.lock` · `stocktaking-uniques`. PR-A 시점엔 10개였다 — Task 13 에서 base 를 다시 재서 대조한다.
 - **게이트:** `npm run type-check` 0 · `npx jest --maxWorkers=2` 실패 0 · `cd apps/admin-web && npx tsc --noEmit` 0 · `npm run test:admin-web` 0 · 창고 앱 `npm test` 0 · core 통합 전체 develop 대비 새 실패 0.
@@ -298,7 +298,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
  * 여기서는 custom 파일의 첫 문장(DO 블록)만 떼어 **롤백 트랜잭션 안에서** 다시 실행한다 —
  * 한 발주·SKU 에 품목 둘을 심으면 RAISE EXCEPTION 이 나야 한다.
  *
- * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- backfill-guard
+ * 실행: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand backfill-guard
  */
 describeIfDb('PR-B 백필 가드 ⓪ (DB integration)', () => {
   jest.setTimeout(60_000);
@@ -348,13 +348,13 @@ describeIfDb('PR-B 백필 가드 ⓪ (DB integration)', () => {
 
 - [ ] **Step 7: 러너로 적용·검증**
 
-Run: `npm run type-check && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "backfill-guard|view-parity"`
-Expected: type-check 0 · 러너 3/3 단계에서 새 마이그레이션 2건 적용 · `backfill-guard` 2 PASS · `view-parity` 는 **옛 `inbound_plan_items` 를 시드해서 RED** 가 된다(`view-parity.integration.spec.ts:144-219`). 이 RED 는 Task 7 이 고친다 — 여기서는 마이그레이션이 적용됐다는 신호로만 본다(VIEW 가 옛 테이블을 안 읽으므로 `inboundPending` 이 0).
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx drizzle-kit migrate --config apps/core/drizzle.config.ts && npm run type-check && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand "backfill-guard|view-parity"`
+Expected: 작업 전용 DB에 새 마이그레이션 2건 적용 · type-check 0 · `backfill-guard` 2 PASS · `view-parity` 는 **옛 `inbound_plan_items` 를 시드해서 RED** 가 된다(`view-parity.integration.spec.ts:144-219`). 이 RED 는 Task 7 이 고친다 — 여기서는 마이그레이션이 적용됐다는 신호로만 본다(VIEW 가 옛 테이블을 안 읽으므로 `inboundPending` 이 0).
 
-- [ ] **Step 8: dev DB 에도 적용** (`apps/core/.env` 는 `dev_core`)
+- [ ] **Step 8: controller 소유 smoke DB 에도 적용** (`127.0.0.1:55439/dev_core`)
 
-Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dev_core npx drizzle-kit migrate --config apps/core/drizzle.config.ts`
-Expected: 2건 적용. 확인: `docker exec -i almondyoung-server-postgres-1 psql -U postgres -d dev_core -c "\d purchase_order_receipt_lines" -c "select conname from pg_constraint where conrelid='purchase_order_lines'::regclass and contype='c'"` → 테이블 존재 · CHECK 3개.
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:55439/dev_core npx drizzle-kit migrate --config apps/core/drizzle.config.ts`
+Expected: 2건 적용. 확인: `PGPASSWORD=postgres psql -h localhost -p 55439 -U postgres -d dev_core -c "\d purchase_order_receipt_lines" -c "select conname from pg_constraint where conrelid='purchase_order_lines'::regclass and contype='c'"` → 테이블 존재 · CHECK 3개.
 
 - [ ] **Step 9: 커밋** — `schema.ts` + SQL 2 + `meta/` + 가드 스펙을 **한 커밋에**.
 
@@ -713,7 +713,7 @@ git commit -m "feat(procurement): 발주 상태 규칙 — 관문 술어 둘(acc
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- purchase-order-line-execution`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand purchase-order-line-execution`
 Expected: 컴파일 에러(`purchaseOrderExpectedArrival` 경로·`isTerminal`·응답 필드 없음)로 suite 자체가 FAIL.
 
 - [ ] **Step 3: `PurchaseOrderHeaderDeriver`**
@@ -835,7 +835,7 @@ export class PurchaseOrderHeaderDeriver {
 
 - [ ] **Step 7: 통과 확인**
 
-Run: `npm run type-check && npx jest apps/core/src/modules/inventory/procurement && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- purchase-order-line-execution`
+Run: `npm run type-check && npx jest apps/core/src/modules/inventory/procurement && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand purchase-order-line-execution`
 Expected: type-check 0 · 단위 PASS · 통합 PASS(skip 1 — 파이프라인 ①).
 
 - [ ] **Step 8: 커밋**
@@ -951,7 +951,7 @@ export interface CancelLineInput { receiptLineId: string; quantity?: number; exp
     }
   });
 ```
-이 세 번째 테스트는 **커밋형**(시드가 커밋된다) — 파일의 기존 `seedCommittedLine()`(`:158`)이 같은 방식이므로 그 정리 규약(있으면 따르고, 없으면 러너 DB `core` 가 픽스처 전용이라 남겨도 된다는 `core-integration-tests-local` 메모 근거)을 그대로 따른다. `deferred()` 는 `inbound-plan-concurrent-create.integration.spec.ts:52-60` 의 것을 옮겨온다(그 파일은 Task 6 에서 지워진다). 기존 `expectLineLockedDuring`(`:198`)이 라인 잠금 탐침 선례다 — 헤더 탐침만 `FOR NO KEY UPDATE NOWAIT` 로 다르다.
+이 세 번째 테스트는 **커밋형**(시드가 커밋된다) — 파일의 기존 `seedCommittedLine()`(`:158`)과 같은 방식이지만 작업 전용 구현 DB에서도 반복 실행할 수 있도록 시드 행을 FK 순서로 스스로 지운다. `deferred()` 는 `inbound-plan-concurrent-create.integration.spec.ts:52-60` 의 것을 옮겨온다(그 파일은 Task 6 에서 지워진다). 기존 `expectLineLockedDuring`(`:198`)이 라인 잠금 탐침 선례다 — 헤더 탐침만 `FOR NO KEY UPDATE NOWAIT` 로 다르다.
 
 - [ ] **Step 2: 실패 확인**
 
@@ -992,7 +992,7 @@ Expected: FAIL — `source: 'purchase_order'` 는 `'direct'` 에 할당 불가 �
 
 - [ ] **Step 5: 통과 + 잠금 변이 확인**
 
-Run: `npm run type-check && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "inbound-receipt.kernel|arrival-characterization|same-day-cancel"`
+Run: `npm run type-check && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand "inbound-receipt.kernel|arrival-characterization|same-day-cancel"`
 Expected: 모두 PASS (특성화 스펙은 **단언 수정 없이** 초록 — §12 #10).
 
 변이: `loadReceipt` 의 `.for('no key update')` 를 잠시 지우고 같은 명령 → 세 번째 새 테스트만 RED(`55P03` 대신 undefined). 되돌린다.
@@ -1045,7 +1045,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 /**
  * 발주가 수령을 소유한다 (스펙 §12 #1a·#2·#3·#4·#5·#7).
- * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- purchase-order-receiving.integration
+ * 실행: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand purchase-order-receiving.integration
  */
 describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
   jest.setTimeout(120_000);
@@ -1216,7 +1216,7 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- purchase-order-receiving.integration`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand purchase-order-receiving.integration`
 Expected: 컴파일 실패(모듈 없음).
 
 - [ ] **Step 3: DTO**
@@ -1499,7 +1499,7 @@ export class PurchaseOrderReceivingManager {
 
 - [ ] **Step 6: 통과 확인**
 
-Run: `npm run type-check && npx jest apps/core/src/platform/auth/inventory-scope-coverage && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "purchase-order-receiving.integration|purchase-order-line-execution"`
+Run: `npm run type-check && npx jest apps/core/src/platform/auth/inventory-scope-coverage && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand "purchase-order-receiving.integration|purchase-order-line-execution"`
 Expected: 모두 PASS (11 + 기존).
 
 - [ ] **Step 7: 커밋**
@@ -1678,7 +1678,7 @@ GET /inventory/expected-arrivals?warehouseId=<uuid>  (OPERATE, ParseUUIDPipe)
 /**
  * 읽기 파리티(스펙 §12 #8) + 스토어프론트 동기화 SQL 실행(#12).
  * 입고 대기 잔량 = VIEW inbound_pending_qty = 파이프라인 ①(비판매 출발 창고)·전사 합계 = 헤더 도착예정일.
- * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- expected-arrivals-parity
+ * 실행: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand expected-arrivals-parity
  */
 describeIfDb('입고예정 읽기 파리티 (DB integration)', () => {
   // 시드: 비판매 출발 창고(중국 역할)·판매 창고(부천 역할)·공급처·SKU 2 — 해외 발주(출발=비판매, 목적=판매) 라인 A ordered 10 ETA 2026-09-20, 라인 B ordered 5 ETA 2026-09-15, B 는 2 수령(receivedQty 직접 UPDATE 로 충분 — 회차는 파리티 대상이 아니다). 그리고 국내 발주(출발=판매 창고) 라인 A ordered 7. 취소된 발주 하나에 ordered 라인 3 을 심어 어디에도 안 잡히는지 본다.
@@ -1705,7 +1705,7 @@ describeIfDb('입고예정 읽기 파리티 (DB integration)', () => {
 `expected_date`·`approximate`를 확인하고, 결과를 바꿀 수 있는 더 이른 closed 라인과 cancelled 발주를 함께 심어 제외를 증명한다.
 `RESTOCK_SQL` import 는 `apps/channel-adapter/scripts/sync-restock-to-medusa` 상대 경로(`../../../../../../channel-adapter/scripts/sync-restock-to-medusa`) — jest `moduleNameMapper` 에 걸리지 않는 상대 경로라 tsconfig path 문제가 없다. 스크립트 상단의 `dotenv`/env 읽기가 import 시점에 실행되면 안 되므로 Step 5 에서 `main()` 가드를 건다.
 
-Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- expected-arrivals-parity`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand expected-arrivals-parity`
 Expected: 컴파일 FAIL.
 
 - [ ] **Step 2: 조달 SQL 조각 + reader**
@@ -1865,7 +1865,7 @@ git commit -m "feat(stock-projection): GET /inventory/expected-arrivals(중립 �
 
 - [ ] **Step 2: 실행**
 
-Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- purchase-order-receiving.concurrency`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand purchase-order-receiving.concurrency`
 Expected: 4 PASS. 실패하면(특히 40P01) 잠금 순서 위반이다 — Manager 의 `lockHeader`→`lockLines` 순서와 커널이 발주 테이블을 안 만지는지부터 본다. 두 번 더 돌려 플레이키가 아닌지 확인한다.
 
 - [ ] **Step 3: 커밋**
@@ -1925,7 +1925,7 @@ describeIfDb('POST /inbound/cancel 은 발주 입고 라인을 거절한다', ()
 ```
 `svc = makeInboundService(db)`, `kernel = makeInboundReceiptKernel(db)`. Nest `ConflictException` 은 `getStatus()` 가 409 — `toMatchObject({ status: 409 })` 대신 `expect(e.getStatus()).toBe(409)` 로 잡아도 된다.
 
-Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- cancel-source-guard`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand cancel-source-guard`
 Expected: PASS.
 
 - [ ] **Step 3: 커밋**

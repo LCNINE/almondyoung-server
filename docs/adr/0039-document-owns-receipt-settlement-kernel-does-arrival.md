@@ -37,7 +37,7 @@ Accepted (2026-09-14). ADR-0032 결정 1·4와
 
 ## Consequences
 
-- 잠금 순서는 `purchase_orders` 행 → `purchase_order_lines` 행(`sku_id` 오름차순) → 커널의 회차 라인·회차 헤더다. 커널은 발주 행과 라인을 잠그지 않는다.
+- 잠금 순서는 `purchase_orders` 행 `FOR UPDATE` → `purchase_order_lines` 행 `FOR UPDATE`(`sku_id` 오름차순) → 커널의 회차 라인 `FOR UPDATE` · 회차 헤더 `FOR NO KEY UPDATE`다. 커널은 발주 행·라인을 절대 잠그지 않고, 회차 헤더에 `FOR UPDATE`를 걸지 않는다. 후자는 적치 작업 로그의 FK `KEY SHARE`와 교착한다.
 - 커널의 public 메서드는 마지막 인자로 필수 `tx`를 받는다.
 - 회차 라인의 `source` 가드는 커널 한 곳에서 적용한다.
 - 발주 `received`는 **더 받을 것이 없다**는 뜻이다. 모든 실발주 라인이 전량 입고됐거나 잔량 포기됐다.
