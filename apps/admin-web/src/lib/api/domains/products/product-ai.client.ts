@@ -1,5 +1,11 @@
 'use client';
 
+import type { ProductAiAttachment } from '@packages/product-ai/images';
+import type {
+  ProductAiDraft,
+  ProductAiSavedProduct,
+} from '@packages/product-ai/draft';
+
 import { client, refreshAccessToken } from '../../client';
 import { readSseData } from '@packages/product-ai/sse';
 import type { ProductAiSource } from '@packages/product-ai/guides';
@@ -13,12 +19,15 @@ export type ProductAiSession = {
   replyLeaseUntil: string | null;
   replyError: string | null;
   updatedAt: string;
+  savedProduct: ProductAiSavedProduct | null;
 };
 export type ProductAiMessage = {
   id: string;
   sequence: number;
   role: 'user' | 'assistant';
+  attachments: ProductAiAttachment[];
   content: string;
+  productDraft: ProductAiDraft | null;
   feedback: 'up' | 'down' | null;
   sources: ProductAiSource[];
 };
@@ -26,6 +35,15 @@ const RESPONSE_REQUEST_CONFIG = { timeout: 25_000, retry: 0 };
 const BASE = '/proxy/api/product-ai/sessions';
 
 export const productAiClient = {
+  async saveDraft(id: string, messageId: string) {
+    return (
+      await client.post<ProductAiSavedProduct>(
+        `${BASE}/${id}/messages/${messageId}/save-draft`,
+        {},
+        RESPONSE_REQUEST_CONFIG
+      )
+    ).data;
+  },
   async rename(id: string, title: string) {
     return (
       await client.put(
@@ -135,7 +153,12 @@ export const productAiClient = {
   },
   async send(
     id: string,
-    input: { requestId: string; expectedRevision: number; content: string }
+    input: {
+      requestId: string;
+      expectedRevision: number;
+      content: string;
+      imageIds?: string[];
+    }
   ) {
     return (
       await client.post<{ message: ProductAiMessage; revision: number }>(

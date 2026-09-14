@@ -9,6 +9,7 @@ import {
   Trash2,
   Pencil,
   Plus,
+  Paperclip,
   X,
   Copy,
   Check,
@@ -29,6 +30,8 @@ import {
 } from '@/lib/api/domains/products/product-ai.client';
 import styles from './product-ai-chat.module.css';
 import { useChatScroll } from './use-chat-scroll';
+import { useChatImages } from './use-chat-images';
+import { ProductAiDraftPreview } from './product-ai-draft-preview';
 
 const starterQuestions = [
   {
@@ -125,6 +128,10 @@ export function ProductAiChatContent({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const attachments = useChatImages(setError);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const [draggingImages, setDraggingImages] = useState(false);
+  const dragDepth = useRef(0);
   const [showHistory, setShowHistory] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [interrupted, setInterrupted] = useState(false);
@@ -145,6 +152,7 @@ export function ProductAiChatContent({
     content: string;
     requestId: string;
     createRequestId: string;
+    imageIds: string[];
   } | null>(null);
   const sending = useRef(false);
   const stopRequested = useRef(false);
@@ -177,6 +185,13 @@ export function ProductAiChatContent({
   const scroll = useChatScroll(sessionId, messages[lastUserIndex]?.id);
 
   const awaitingReply = status === 'pending' || status === 'running';
+  const attachmentBlocked =
+    busy || stopping || awaitingReply || attachments.uploading;
+
+  useEffect(() => {
+    dragDepth.current = 0;
+    setDraggingImages(false);
+  }, [active, sessionId]);
   const showStopped =
     userStopped ||
     (!generating &&
@@ -195,9 +210,10 @@ export function ProductAiChatContent({
   }
 
   function selectSession(id: string | null) {
-    if (sending.current || stopping) return;
+    if (sending.current || stopping || attachments.uploading) return;
     setError(null);
     setText('');
+    attachments.clear();
     pending.current = null;
     setShowHistory(false);
     setStreamText('');
@@ -324,8 +340,44 @@ export function ProductAiChatContent({
         <p className="whitespace-pre-wrap break-words leading-6">
           {message.content}
         </p>
+        {!!message.attachments?.length && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {message.attachments.map((file) => (
+              <a
+                key={file.fileId}
+                href={`/api/proxy/file/files/${file.fileId}/open`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={file.fileName}
+              >
+                {/* Authenticated file-service redirect; never feed private images through a public image optimizer. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/proxy/file/files/${file.fileId}/open`}
+                  alt={file.fileName}
+                  className="h-24 w-24 rounded-lg border object-cover"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        )}
         {message.role === 'assistant' && (
           <>
+            {message.productDraft && sessionId && (
+              <ProductAiDraftPreview
+                draft={message.productDraft}
+                sessionId={sessionId}
+                messageId={message.id}
+                savedProduct={session?.savedProduct ?? null}
+                canSave={
+                  !busy &&
+                  !awaitingReply &&
+                  session?.revision === message.sequence
+                }
+                onSaved={refresh}
+              />
+            )}
             {!!message.sources?.length && (
               <div className="mt-3 border-t pt-2">
                 <p className="mb-1 text-[11px] text-slate-400">
@@ -398,9 +450,18 @@ export function ProductAiChatContent({
   }
 
   async function send(message = text) {
-    const content = message.trim();
+    const content =
+      message.trim() ||
+      (attachments.images.length
+        ? '첨부한 이미지에서 상품 정보를 정리하고 필요한 정보를 질문해 주세요.'
+        : '');
+    const imageIds = attachments.images.flatMap((image) =>
+      image.fileId ? [image.fileId] : []
+    );
     if (
       !content ||
+      attachments.uploading ||
+      attachments.hasUnreadyImages ||
       stopping ||
       sending.current ||
       awaitingReply ||
@@ -415,13 +476,15 @@ export function ProductAiChatContent({
     if (
       !pending.current ||
       pending.current.content !== content ||
-      pending.current.sessionId !== sessionId
+      pending.current.sessionId !== sessionId ||
+      JSON.stringify(pending.current.imageIds) !== JSON.stringify(imageIds)
     ) {
       pending.current = {
         sessionId,
         content,
         requestId: crypto.randomUUID(),
         createRequestId: crypto.randomUUID(),
+        imageIds,
       };
     }
     const request = pending.current;
@@ -436,8 +499,10 @@ export function ProductAiChatContent({
         requestId: request.requestId,
         expectedRevision: target.revision,
         content,
+        imageIds: request.imageIds,
       });
       setText('');
+      attachments.clear();
       pending.current = null;
       onSessionChange(target.id);
       await refresh();
@@ -712,10 +777,19 @@ export function ProductAiChatContent({
         <section
           className={
             embedded
-              ? `${showHistory ? 'hidden sm:flex' : 'flex'} min-h-0 min-w-0 flex-col bg-[#fcfcff]`
-              : 'flex min-w-0 flex-col rounded-xl border bg-background'
+              ? `${showHistory ? 'hidden sm:flex' : 'flex'} relative min-h-0 min-w-0 flex-col bg-[#fcfcff]`
+              : 'relative flex min-w-0 flex-col rounded-xl border bg-background'
           }
           aria-label="AI 대화"
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes('Files')) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'none';
+          }}
+          onDrop={(event) => {
+            if (event.dataTransfer.types.includes('Files'))
+              event.preventDefault();
+          }}
         >
           {sessionId && (
             <div className="truncate border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-600">
@@ -901,13 +975,170 @@ export function ProductAiChatContent({
                 event.preventDefault();
                 void send();
               }}
-              className={styles.composer}
+              className={`relative ${styles.composer}`}
+              onDragEnter={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                event.stopPropagation();
+                dragDepth.current += 1;
+                setDraggingImages(true);
+              }}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                event.stopPropagation();
+                event.dataTransfer.dropEffect = attachmentBlocked
+                  ? 'none'
+                  : 'copy';
+              }}
+              onDragLeave={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.stopPropagation();
+                dragDepth.current = Math.max(0, dragDepth.current - 1);
+                if (dragDepth.current === 0) setDraggingImages(false);
+              }}
+              onDrop={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                event.stopPropagation();
+                dragDepth.current = 0;
+                setDraggingImages(false);
+                if (attachmentBlocked) return;
+                setError(null);
+                void attachments.add(Array.from(event.dataTransfer.files));
+              }}
             >
+              {draggingImages && (
+                <div
+                  role="status"
+                  className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/95 p-3 text-center text-indigo-700"
+                >
+                  <Paperclip size={32} aria-hidden="true" />
+                  <p className="font-semibold">
+                    {attachmentBlocked
+                      ? '진행 중인 작업이 끝나면 이미지를 첨부해 주세요'
+                      : '이미지를 여기에 놓아주세요'}
+                  </p>
+                  <p className="text-xs text-indigo-500">
+                    JPG·PNG·WebP · 장당 5MB · 최대 4장
+                  </p>
+                </div>
+              )}
+              {!!attachments.images.length && (
+                <div className="flex flex-wrap gap-2 px-3 pt-3">
+                  {attachments.images.map((file) => (
+                    <div key={file.id} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={file.preview}
+                        alt={file.fileName}
+                        className="h-20 w-20 rounded-lg border object-cover"
+                      />
+                      {file.status !== 'ready' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-slate-950/50 text-white backdrop-blur-[1px]">
+                          {file.status === 'error' ? (
+                            <button
+                              type="button"
+                              disabled={attachmentBlocked}
+                              title={file.error}
+                              aria-label={`${file.fileName} 업로드 재시도`}
+                              className="rounded-md px-1 py-2 text-xs font-semibold hover:bg-white/15 disabled:opacity-50"
+                              onClick={() => {
+                                setError(null);
+                                void attachments.retry(file.id);
+                              }}
+                            >
+                              업로드 실패
+                              <br />
+                              다시 시도
+                            </button>
+                          ) : file.status === 'queued' ? (
+                            <span className="text-xs">대기 중</span>
+                          ) : file.progress === null ||
+                            file.progress === 100 ? (
+                            <>
+                              <Loader2
+                                size={28}
+                                className="animate-spin"
+                                aria-hidden="true"
+                              />
+                              <span role="status" className="text-[10px]">
+                                {file.progress === 100
+                                  ? '저장 중'
+                                  : '업로드 중'}
+                              </span>
+                            </>
+                          ) : (
+                            <div
+                              role="progressbar"
+                              aria-label={`${file.fileName} 업로드`}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={file.progress}
+                              className="relative h-11 w-11"
+                            >
+                              <svg
+                                viewBox="0 0 44 44"
+                                className="h-full w-full -rotate-90"
+                                aria-hidden="true"
+                              >
+                                <circle
+                                  cx="22"
+                                  cy="22"
+                                  r="19"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                  opacity="0.25"
+                                />
+                                <circle
+                                  cx="22"
+                                  cy="22"
+                                  r="19"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                  pathLength="100"
+                                  strokeDasharray="100"
+                                  strokeDashoffset={100 - file.progress}
+                                  className="transition-[stroke-dashoffset] duration-150 motion-reduce:transition-none"
+                                />
+                              </svg>
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold tabular-nums">
+                                {file.progress}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busy || attachments.uploading}
+                        onClick={() => attachments.remove(file.id)}
+                        aria-label={`${file.fileName} 첨부 제거`}
+                        className="absolute -right-1 -top-1 rounded-full border bg-white p-1 text-slate-500 shadow-sm"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <Textarea
                 aria-label="AI에게 메시지"
                 value={text}
                 maxLength={20_000}
                 disabled={busy || stopping || awaitingReply}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData.files).filter(
+                    (file) => file.type.startsWith('image/')
+                  );
+                  if (files.length) {
+                    event.preventDefault();
+                    if (!attachmentBlocked) void attachments.add(files);
+                  }
+                }}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => {
                   if (
@@ -923,7 +1154,35 @@ export function ProductAiChatContent({
                 placeholder="아몬드영 AI에게 편하게 물어보세요…"
                 className="min-h-28 max-h-44 resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0"
               />
-              <div className="flex items-center justify-between px-3 pb-3">
+              <div className="flex items-center justify-between gap-2 px-3 pb-3">
+                <input
+                  ref={imageInput}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  className="hidden"
+                  aria-label="첨부 이미지 선택"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = '';
+                    void attachments.add(files);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={attachmentBlocked || attachments.images.length >= 4}
+                  onClick={() => imageInput.current?.click()}
+                  aria-label="이미지 첨부"
+                  title="JPG·PNG·WebP, 장당 5MB, 최대 4장"
+                  className="inline-flex items-center gap-1 rounded-md p-1.5 text-xs text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  {attachments.uploading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Paperclip size={16} />
+                  )}
+                  {attachments.uploading ? '업로드 중…' : '이미지'}
+                </button>
                 <span className="text-[11px] text-slate-400">
                   {text.length.toLocaleString()} / 20,000
                 </span>
@@ -932,7 +1191,9 @@ export function ProductAiChatContent({
                   disabled={
                     busy ||
                     awaitingReply ||
-                    !text.trim() ||
+                    attachments.uploading ||
+                    attachments.hasUnreadyImages ||
+                    (!text.trim() && !attachments.images.length) ||
                     Boolean(sessionId && !session)
                   }
                   aria-label="메시지 보내기"
@@ -943,7 +1204,7 @@ export function ProductAiChatContent({
               </div>
             </form>
             <p className="mt-2.5 text-center text-[11px] text-slate-400">
-              대화는 자동 저장됩니다 · 현재는 정보 정리와 안내를 도와드려요
+              대화는 자동 저장됩니다 · 상품 초안은 미리보기에서 저장할 수 있어요
             </p>
           </div>
         </section>

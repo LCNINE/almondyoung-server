@@ -16,9 +16,10 @@ import { refreshAccessToken } from './client';
  */
 export async function fetchWithRefresh(
   input: string,
-  init?: RequestInit
+  init?: RequestInit,
+  request: (input: string, init?: RequestInit) => Promise<Response> = fetch
 ): Promise<Response> {
-  const res = await fetch(input, init);
+  const res = await request(input, init);
   if (res.status !== 401) return res;
 
   try {
@@ -28,7 +29,7 @@ export async function fetchWithRefresh(
     return res;
   }
 
-  const retried = await fetch(input, init);
+  const retried = await request(input, init);
   if (retried.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:session-expired'));
   }

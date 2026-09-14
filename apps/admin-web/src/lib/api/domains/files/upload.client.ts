@@ -2,6 +2,7 @@
 
 import { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID } from '@packages/product-description';
 import { fetchWithRefresh } from '../../fetch-with-refresh';
+import { uploadWithProgress } from './upload-progress';
 import {
   MAX_UPLOAD_BYTES,
   compressImageForUpload,
@@ -57,6 +58,8 @@ export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {
   contextId: string;
+  /** Actual bytes sent; 100 means transmission finished, before server confirmation. */
+  onProgress?: (percent: number | null) => void;
   isPublic?: boolean;
   metadata?: Record<string, unknown>;
   /**
@@ -85,9 +88,14 @@ async function readServerErrorMessage(res: Response): Promise<string | null> {
   return null;
 }
 
-async function rejectionFrom(res: Response, fallback: string): Promise<UploadRejectedError> {
+async function rejectionFrom(
+  res: Response,
+  fallback: string
+): Promise<UploadRejectedError> {
   const message = await readServerErrorMessage(res);
-  return new UploadRejectedError(message ? `파일 업로드가 거부되었습니다. (${message})` : fallback);
+  return new UploadRejectedError(
+    message ? `파일 업로드가 거부되었습니다. (${message})` : fallback
+  );
 }
 
 type PresignResponse = {
@@ -99,55 +107,75 @@ type PresignResponse = {
 
 async function uploadDirect(
   file: File,
-  { contextId, isPublic, metadata }: Omit<UploadFileOptions, 'compress'>
+  {
+    contextId,
+    isPublic,
+    metadata,
+    onProgress,
+  }: Omit<UploadFileOptions, 'compress'>
 ): Promise<FileUploadResponse> {
-  const presignRes = await fetchWithRefresh('/api/proxy/file/files/upload/presign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({
-      contextId,
-      fileName: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      ...(isPublic !== undefined ? { isPublic } : {}),
-      ...(metadata !== undefined ? { metadata } : {}),
-    }),
-  });
+  const presignRes = await fetchWithRefresh(
+    '/api/proxy/file/files/upload/presign',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        contextId,
+        fileName: file.name,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        ...(isPublic !== undefined ? { isPublic } : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
+      }),
+    }
+  );
 
   if (!presignRes.ok) {
     // 400/403 은 검증 거부. 404(구버전 서버·직접 업로드 미지원)와 5xx·네트워크는
     // 호출부에서 프록시 업로드로 폴백한다.
     if (presignRes.status === 400 || presignRes.status === 403) {
-      throw await rejectionFrom(presignRes, `파일 업로드가 거부되었습니다. (status: ${presignRes.status})`);
+      throw await rejectionFrom(
+        presignRes,
+        `파일 업로드가 거부되었습니다. (status: ${presignRes.status})`
+      );
     }
     throw new Error(`presign failed (status: ${presignRes.status})`);
   }
 
   const presign = (await presignRes.json()) as PresignResponse;
 
-  // 스토리지 직접 PUT — 프록시·인증 쿠키와 무관한 외부 요청이라 raw fetch 를 쓴다.
+  // 스토리지 직접 PUT에는 인증 쿠키를 보내지 않는다. 진행률 요청 시 XHR을 사용한다.
   // headers 는 서명에 포함돼 있어 그대로 실어야 한다.
-  const putRes = await fetch(presign.uploadUrl, {
+  const putInit: RequestInit = {
     method: 'PUT',
     headers: presign.headers,
     body: file,
-  });
+  };
+  const putRes = onProgress
+    ? await uploadWithProgress(presign.uploadUrl, putInit, onProgress)
+    : await fetch(presign.uploadUrl, putInit);
 
   if (!putRes.ok) {
     throw new Error(`direct upload PUT failed (status: ${putRes.status})`);
   }
 
-  const confirmRes = await fetchWithRefresh('/api/proxy/file/files/upload/confirm', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ fileId: presign.fileId }),
-  });
+  const confirmRes = await fetchWithRefresh(
+    '/api/proxy/file/files/upload/confirm',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ fileId: presign.fileId }),
+    }
+  );
 
   if (!confirmRes.ok) {
     if (confirmRes.status === 400 || confirmRes.status === 403) {
-      throw await rejectionFrom(confirmRes, `파일 업로드가 거부되었습니다. (status: ${confirmRes.status})`);
+      throw await rejectionFrom(
+        confirmRes,
+        `파일 업로드가 거부되었습니다. (status: ${confirmRes.status})`
+      );
     }
     throw new Error(`confirm failed (status: ${confirmRes.status})`);
   }
@@ -157,7 +185,12 @@ async function uploadDirect(
 
 async function uploadViaProxy(
   file: File,
-  { contextId, isPublic, metadata }: Omit<UploadFileOptions, 'compress'>
+  {
+    contextId,
+    isPublic,
+    metadata,
+    onProgress,
+  }: Omit<UploadFileOptions, 'compress'>
 ): Promise<FileUploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
@@ -169,11 +202,18 @@ async function uploadViaProxy(
     formData.append('metadata', JSON.stringify(metadata));
   }
 
-  const res = await fetchWithRefresh('/api/proxy/file/files/upload', {
+  const init: RequestInit = {
     method: 'POST',
     body: formData, // Content-Type(multipart boundary)은 브라우저가 자동 설정 — 직접 지정 금지
     credentials: 'include', // 인증 쿠키 → forward.ts 가 file-service 로 전달
-  });
+  };
+  const res = await fetchWithRefresh(
+    '/api/proxy/file/files/upload',
+    init,
+    onProgress
+      ? (url, options) => uploadWithProgress(url, options, onProgress)
+      : undefined
+  );
 
   if (!res.ok) {
     throw new Error(`파일 업로드에 실패했습니다. (status: ${res.status})`);
@@ -184,7 +224,7 @@ async function uploadViaProxy(
 
 export async function uploadFileToFileService(
   file: File,
-  { contextId, isPublic, metadata, compress }: UploadFileOptions
+  { contextId, isPublic, metadata, compress, onProgress }: UploadFileOptions
 ): Promise<FileUploadResponse> {
   let toUpload = file;
   if (compress !== false) {
@@ -192,7 +232,12 @@ export async function uploadFileToFileService(
   }
 
   try {
-    return await uploadDirect(toUpload, { contextId, isPublic, metadata });
+    return await uploadDirect(toUpload, {
+      contextId,
+      isPublic,
+      metadata,
+      onProgress,
+    });
   } catch (e) {
     if (e instanceof UploadRejectedError) {
       throw e;
@@ -209,7 +254,12 @@ export async function uploadFileToFileService(
       );
     }
 
-    return uploadViaProxy(toUpload, { contextId, isPublic, metadata });
+    return uploadViaProxy(toUpload, {
+      contextId,
+      isPublic,
+      metadata,
+      onProgress,
+    });
   }
 }
 
@@ -234,14 +284,19 @@ export async function uploadRichTextImage(
  * 비공개 파일의 `url` 은 인증 없이 못 여는 주소이므로, 본문에 넣을 주소는 서명 URL 로 302 해 주는
  * 열람 경로다. 그래야 편집기 안에서 «평범한 링크»로 열린다.
  */
-export async function uploadRichTextAttachment(file: File): Promise<{ url: string; fileId: string }> {
+export async function uploadRichTextAttachment(
+  file: File
+): Promise<{ url: string; fileId: string }> {
   const uploaded = await uploadFileToFileService(file, {
     contextId: ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
     // 이미지가 아니면 어차피 변환 대상이 아니지만, 의도를 코드로 남긴다.
     compress: false,
   });
 
-  return { url: `/api/proxy/file/files/${uploaded.id}/open`, fileId: uploaded.id };
+  return {
+    url: `/api/proxy/file/files/${uploaded.id}/open`,
+    fileId: uploaded.id,
+  };
 }
 
 export async function getFileSignedUrlFromFileService(
