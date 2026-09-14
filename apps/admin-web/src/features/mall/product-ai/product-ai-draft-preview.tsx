@@ -62,7 +62,7 @@ export function ProductAiDraftPreview({
     <div className="mt-4 overflow-hidden rounded-xl border border-indigo-100 bg-white text-slate-800">
       <div className="border-b border-indigo-50 bg-indigo-50/50 px-4 py-3">
         <p className="text-xs font-medium text-indigo-600">
-          상품 초안 미리보기
+          {result?.status === 'active' ? '등록·발행 완료' : '상품 미리보기'}
         </p>
         <p className="mt-1 font-semibold">{draft.name}</p>
         <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">
@@ -97,24 +97,85 @@ export function ProductAiDraftPreview({
             ))}
           </div>
         )}
+        {draft.sales && (
+          <div className="rounded-xl bg-slate-50 p-3 text-xs">
+            <dl className="grid grid-cols-2 gap-3">
+              {Object.entries({
+                판매가: draft.sales.salePrice,
+                멤버십가:
+                  draft.sales.membershipPricing === 'same'
+                    ? draft.sales.salePrice
+                    : draft.sales.membershipPrice,
+                시장가: draft.sales.marketPrice,
+                공급가: draft.sales.supplyPrice,
+              }).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-slate-500">{label}</dt>
+                  <dd className="mt-1 font-semibold">
+                    {value == null ? '미정' : `${value.toLocaleString()}원`}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3">
+              옵션:{' '}
+              {draft.sales.options === null
+                ? '미정'
+                : draft.sales.options.length
+                  ? draft.sales.options
+                      .map(
+                        (group) => `${group.name}: ${group.values.join(', ')}`
+                      )
+                      .join(' / ')
+                  : '없음'}
+            </p>
+            <p className="mt-2">
+              카테고리:{' '}
+              {draft.sales.categories
+                .map(
+                  (category, index) =>
+                    `${category.name}${category.id ? '' : ' (새로 생성)'}${index === draft.sales?.primaryCategoryIndex ? ' · 대표' : ''}`
+                )
+                .join(', ') || '미정'}
+            </p>
+            <p className="mt-2">재고 연결</p>
+            {draft.sales.inventory.map((item, index) => (
+              <p key={index} className="mt-1 text-slate-600">
+                {item.optionValues.join(' / ') || '기본 상품'} →{' '}
+                {item.newSkuName
+                  ? `${item.newSkuName} (새 품목 생성 · 입고 수량 0)`
+                  : item.skuId}{' '}
+                · 구성 {item.quantity}개
+                {item.salePrice
+                  ? ` · 판매가 ${item.salePrice.toLocaleString()}원`
+                  : ''}
+                {item.membershipPrice
+                  ? ` · 멤버십가 ${item.membershipPrice.toLocaleString()}원`
+                  : ''}
+              </p>
+            ))}
+          </div>
+        )}
         <details open>
           <summary className="cursor-pointer text-sm font-medium">
             상세페이지
           </summary>
-          <div className="mt-2 max-h-80 space-y-4 overflow-y-auto rounded-lg border bg-white p-3">
+          <div className="mt-3 max-h-[32rem] space-y-8 overflow-y-auto rounded-xl border bg-white px-5 py-7">
             {draft.sections.map((section, index) =>
               section.kind === 'image' ? (
                 <figure key={index}>
                   {thumbnail(
                     section.fileId,
                     section.alt,
-                    'h-auto max-w-full rounded-md'
+                    'mx-auto h-auto max-w-full rounded-lg'
                   )}
                 </figure>
               ) : (
                 <section key={index}>
                   {section.heading && (
-                    <h3 className="mb-1 font-semibold">{section.heading}</h3>
+                    <h3 className="mb-3 text-base font-semibold">
+                      {section.heading}
+                    </h3>
                   )}
                   <p className="whitespace-pre-wrap text-sm leading-6">
                     {section.body}
@@ -142,8 +203,13 @@ export function ProductAiDraftPreview({
               <dd>{draft.seoKeywords.join(', ') || '없음'}</dd>
             </div>
             <div>
-              <dt className="text-slate-500">운영 태그 제안 (별도 설정)</dt>
-              <dd>{draft.tags.join(', ') || '없음'}</dd>
+              <dt className="text-slate-500">운영 태그</dt>
+              <dd>
+                {draft.tags.join(', ') || '없음'}
+                {draft.sales?.tagValueIds.length
+                  ? ` · ${draft.sales.tagValueIds.length}개 연결`
+                  : ' (제안)'}
+              </dd>
             </div>
           </dl>
         </details>
@@ -158,21 +224,23 @@ export function ProductAiDraftPreview({
           </div>
         )}
         <p className="text-xs text-slate-500">
-          상품명·설명·이미지·SEO를 초안에 저장합니다.
-          가격·옵션·재고·카테고리·운영 태그는 상품 편집 화면에서 설정해 주세요.
+          상품명·설명·이미지·SEO를 초안에 저장합니다. 입력한
+          가격·옵션·카테고리·재고 연결도 함께 반영합니다.
         </p>
         {result ? (
           <Link
             className="inline-block text-sm font-medium text-indigo-600 underline"
             href={buildDraftEditPath(result.masterId, result.versionId)}
           >
-            저장된 상품 초안 열기 ↗
+            {result.status === 'active'
+              ? '발행한 상품 열기 ↗'
+              : '저장된 상품 초안 열기 ↗'}
           </Link>
         ) : (
           <>
             <p className="text-xs text-slate-500">
               저장하면 사용한 이미지를 상품용 공개 파일로 복사합니다. 상품은
-              발행되지 않습니다.
+              초안으로 저장됩니다. 발행하려면 채팅에 “등록해줘”라고 입력하세요.
             </p>
             <Button
               type="button"

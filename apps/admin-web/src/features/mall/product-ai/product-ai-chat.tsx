@@ -1204,7 +1204,7 @@ export function ProductAiChatContent({
               </div>
             </form>
             <p className="mt-2.5 text-center text-[11px] text-slate-400">
-              대화는 자동 저장됩니다 · 상품 초안은 미리보기에서 저장할 수 있어요
+              대화는 자동 저장됩니다 · “등록해줘”라고 하면 정보 확인 후 발행해요
             </p>
           </div>
         </section>

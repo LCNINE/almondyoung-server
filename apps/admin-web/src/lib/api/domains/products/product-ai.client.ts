@@ -89,7 +89,7 @@ export const productAiClient = {
           Accept: 'text/event-stream',
         },
         body: JSON.stringify({ messageId }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(180_000)]),
       });
     let response = await request();
     if (response.status === 401) {
