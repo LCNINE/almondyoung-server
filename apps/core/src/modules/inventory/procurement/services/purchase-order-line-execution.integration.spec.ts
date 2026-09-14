@@ -26,6 +26,8 @@ function buildPurchaseOrderPort(
   return new PurchaseOrderService(
     new PurchaseOrderManager(dbService, reader, new PurchaseOrderHeaderDeriver()),
     reader,
+    // 이 픽스처는 기존 라인 실행 포트만 검증한다. 수령 호출은 전용 통합 스펙에서 실제 배선으로 검증한다.
+    {} as never,
   );
 }
 
