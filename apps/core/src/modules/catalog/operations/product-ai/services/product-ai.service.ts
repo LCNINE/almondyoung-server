@@ -1,13 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import { type PimSchema, productAiMessages, productAiSessions } from '../../schema/catalog.schema';
+import { type PimSchema, productAiMessages, productAiSessions } from '../../../schema/catalog.schema';
 import type {
   AppendProductAiMessageInput,
   CreateProductAiSessionInput,
   ListProductAiSessionsQuery,
   ListProductAiMessagesQuery,
-} from './product-ai.schema';
+} from '../dto/product-ai.schema';
 
 @Injectable()
 export class ProductAiService {
@@ -87,6 +87,9 @@ export class ProductAiService {
         }
         return { message: existing, revision: session.revision };
       }
+      if (session.replyStatus === 'pending' || session.replyStatus === 'running') {
+        throw new ConflictException('이전 메시지의 AI 답변을 먼저 확인해 주세요.');
+      }
       if (session.revision !== data.expectedRevision) {
         throw new ConflictException('다른 입력이 먼저 저장되었습니다. 대화를 새로 불러온 뒤 다시 보내주세요.');
       }
@@ -104,7 +107,13 @@ export class ProductAiService {
         .returning();
       await tx
         .update(productAiSessions)
-        .set({ revision, updatedAt: new Date() })
+        .set({
+          revision,
+          updatedAt: new Date(),
+          replyStatus: 'pending',
+          lastUserMessageId: message.id,
+          replyError: null,
+        })
         .where(eq(productAiSessions.id, sessionId));
       return { message, revision };
     });

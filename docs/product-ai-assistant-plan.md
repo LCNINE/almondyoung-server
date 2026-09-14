@@ -46,6 +46,20 @@ Core의 기존 API prefix 뒤에 다음 경로를 사용한다.
 낡은 revision으로 새 메시지를 보내면 409다. UI는 미전송 내용을 보존하고 이력을 갱신해야 한다.
 메시지는 20,000자, 조회는 최대 100개로 제한한다. 타인 작업은 존재 여부와 무관하게 404다.
 
+### 요청 검증/Swagger 구성
+
+Core의 `createGlobalValidationPipe()`가 DTO 종류를 구분한다. `createZodDto(schema)`로 만든
+클래스는 Zod로, 기존 class-validator DTO는 기존 ValidationPipe 설정으로 검증한다.
+두 파이프를 연달아 실행하지 않으므로 Zod DTO의 필드가 whitelist에 의해 지워지지 않는다.
+
+상품 AI의 `dto/product-ai.dto.ts`가 스키마를 DTO 클래스로 연결한다.
+컨트롤러에서는 `@Query() query: ListProductAiMessagesQueryDto`, `@Body() body: ...Dto`,
+`@Param() params: ProductAiSessionParamsDto`만 선언한다. 런타임에 클래스가 필요하므로
+컨트롤러의 DTO import는 `import type`으로 바꾸지 않는다.
+
+Swagger 문서는 DTO 스키마에서 생성하고 main.ts에서 `cleanupOpenApiDoc`으로 정리한다.
+상품 AI 쿼리에 별도 `@ApiQuery`를 중복 작성하지 않는다. 기존 클래스 DTO의 문서화 방식은 유지한다.
+
 ### 배포/검증
 
 Core migration `20260914041600_add-product-ai-sessions.sql`을 코드 배포 전에 적용한다.
@@ -58,10 +72,34 @@ Core migration `20260914041600_add-product-ai-sessions.sql`을 코드 배포 전
 `yarn test --runInBand --testPathPattern=product-ai.integration.spec.ts` 실행.
 테스트는 로컬 호스트만 허용하며 독립 DB를 생성/삭제한다. 지정하지 않으면 통합 테스트는 skip된다.
 
-## 2단계: 채팅과 AI의 첫 업무 연결
+## 2단계 A: 채팅과 AI 응답 연결 (구현)
+
+- `/mall/product-ai`에서 새 대화, 내 대화 목록, 이력 재개, 메시지 전송, AI 답변 재시도를 제공한다.
+- 상품 목록/상세의 `상품등록 AI` 링크로 진입한다. 현재 화면의 미저장 폼이나 상품은 자동 전송하지 않는다.
+- `POST /product-ai/sessions/:id/respond {messageId}`가 서버에 저장된 사용자 메시지에 답변한다.
+- 생성 주체를 신뢰할 수 있도록 모델 호출과 assistant 저장을 Core에서 함께 처리한다.
+  BFF에는 모델 답변을 입력받아 저장하는 공개 API를 만들지 않는다.
+- 메시지 저장 후 상태는 pending → running → idle 또는 failed다. 실패 시 사용자 메시지는 유지된다.
+- 같은 답변의 중복 요청은 진행 상태/완료 상태만 돌려준다. 응답 생성 리스는 60초이며,
+  서버 중단 후 만료되면 사용자가 재시도할 수 있다. 이전 실행의 늦은 답변은 리스 ID로 차단한다.
+- 이 단계는 완료된 답변을 표시하고 진행 상태를 폴링한다. clip의 SSE/도구 이벤트는 실제 도구 실행 단계에서 연결한다.
+- 실제 상품 저장·파일 첨부·현재 상품 자동 참조는 아직 제공하지 않으며 화면과 시스템 지침에 명시한다.
+
+### 실행 설정과 확인 범위
+
+- Core에 `ANTHROPIC_API_KEY` 설정이 필요하다. 기존 admin-web 환경변수만으로 Core에 전달되지 않는다.
+- 선택 설정 `PRODUCT_AI_MODEL`; 기본값은 기존 코드와 같은 `claude-sonnet-5`다.
+- HTTP Messages API를 사용하므로 Core에 SDK 의존성은 추가하지 않는다.
+- 모델 요청 제한 20초, 출력 1,500토큰. 기존 BFF 프록시의 30초 제한 안에서 오류를 반환한다.
+- 이력은 최대 200개/100,000자다. 조용히 이전 지시를 잘라내지 않고 초과 시 새 대화를 안내한다.
+- migration `20260914043718_add-product-ai-replies.sql`을 1단계 migration 이후 적용한다.
+- PostgreSQL 통합 테스트는 모델을 대역으로 교체한다. 실제 유료 모델 요청이나 운영 DB 변경은 수행하지 않았다.
+- 테스트는 메시지 복구, 소유권, 중복 응답, 실패 재시도, 동시 실행, 리스 만료 복구와 응답 잘림 처리를 검증한다.
+
+## 2단계 B: AI의 첫 상품 작업 연결 (다음)
 
 - 목록/상세 공통 채팅 패널, 작업 목록과 재개, 미저장 폼 변경 처리.
-- 사용자 메시지 저장 후 AI 응답을 서버에서 기록. BFF의 기존 AI SDK를 재사용한다.
+- Core의 AI 응답 처리에 실제 업무 도구를 연결한다.
 - 사용자/assistant/tool 이력의 출처를 서버가 보장한다. 브라우저가 보낸 assistant나 도구 결과를 신뢰하지 않는다.
 - 실행 중 사용자 추가 입력, 네트워크 중단, AI 호출 재시도의 상태/리스/중복 실행 처리.
 - 기존 상품 조회, 업무 설명, 실제 상품 초안 생성·수정까지 한 흐름으로 검증한다.

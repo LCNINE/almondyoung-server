@@ -1434,6 +1434,14 @@ export const productAiSessions = pgTable(
     requestId: uuid('request_id').notNull(),
     title: varchar('title', { length: 200 }).notNull(),
     revision: integer('revision').notNull().default(0),
+    replyStatus: varchar('reply_status', { length: 20 })
+      .$type<'idle' | 'pending' | 'running' | 'failed'>()
+      .notNull()
+      .default('idle'),
+    lastUserMessageId: uuid('last_user_message_id'),
+    replyLeaseId: uuid('reply_lease_id'),
+    replyLeaseUntil: timestamp('reply_lease_until', { withTimezone: true }),
+    replyError: text('reply_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

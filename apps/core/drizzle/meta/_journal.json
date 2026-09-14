@@ -659,6 +659,13 @@
       "when": 1789359360476,
       "tag": "20260914041600_add-product-ai-sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789360638062,
+      "tag": "20260914043718_add-product-ai-replies",
+      "breakpoints": true
     }
   ]
 }

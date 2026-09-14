@@ -1,10 +1,14 @@
 import { randomUUID } from 'crypto';
-import { type ExecutionContext, ValidationPipe } from '@nestjs/common';
+import { type ExecutionContext } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { createGlobalValidationPipe } from '../../../../../platform/http/validation-pipe';
+import { cleanupOpenApiDoc } from 'nestjs-zod';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ProductAiController } from './product-ai.controller';
-import { ProductAiService } from './product-ai.service';
+import { ProductAiService } from '../services/product-ai.service';
+import { ProductAiReplyService } from '../services/product-ai.reply.service';
 
 describe('ProductAiController HTTP 입력 검증', () => {
   let app: NestFastifyApplication;
@@ -22,7 +26,10 @@ describe('ProductAiController HTTP 입력 검증', () => {
     const [roleGuard] = Reflect.getMetadata(GUARDS_METADATA, ProductAiController);
     const module = await Test.createTestingModule({
       controllers: [ProductAiController],
-      providers: [{ provide: ProductAiService, useValue: service }],
+      providers: [
+        { provide: ProductAiService, useValue: service },
+        { provide: ProductAiReplyService, useValue: { respond: jest.fn() } },
+      ],
     })
       .overrideGuard(roleGuard)
       .useValue({
@@ -33,13 +40,44 @@ describe('ProductAiController HTTP 입력 검증', () => {
       })
       .compile();
     app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createGlobalValidationPipe());
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });
   beforeEach(() => jest.clearAllMocks());
   afterAll(async () => {
     await app?.close();
+  });
+
+  it('Swagger 쿼리와 요청 본문을 Zod DTO에서 생성한다', () => {
+    const document = cleanupOpenApiDoc(SwaggerModule.createDocument(app, new DocumentBuilder().build()));
+    const operation = document.paths['/product-ai/sessions/{id}/messages'].get!;
+    expect(operation.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'id', in: 'path', required: true }),
+        expect.objectContaining({
+          name: 'after',
+          in: 'query',
+          required: false,
+          schema: expect.objectContaining({ default: 0, minimum: 0 }),
+        }),
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: expect.objectContaining({ default: 50, minimum: 1, maximum: 100 }),
+        }),
+      ]),
+    );
+    expect(document.components?.schemas?.CreateProductAiSessionDto).toEqual(
+      expect.objectContaining({
+        required: ['requestId'],
+        properties: expect.objectContaining({
+          requestId: expect.objectContaining({ type: 'string', format: 'uuid' }),
+          title: expect.objectContaining({ default: '새 상품등록', maxLength: 200 }),
+        }),
+      }),
+    );
   });
 
   it('목록의 문자열 쿼리를 숫자로 바꿔 서비스에 전달한다', async () => {

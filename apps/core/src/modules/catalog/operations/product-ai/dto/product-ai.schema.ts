@@ -17,6 +17,8 @@ export const appendProductAiMessageSchema = z
   .strict();
 
 export const productAiSessionIdSchema = z.uuid();
+export const respondProductAiSchema = z.object({ messageId: z.uuid() }).strict();
+export type RespondProductAiInput = z.infer<typeof respondProductAiSchema>;
 export const productAiListQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).max(100_000).default(1),

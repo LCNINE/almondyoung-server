@@ -1,6 +1,7 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
@@ -67,7 +68,7 @@ async function bootstrap() {
     .setDescription('Almondyoung 통합 서버 — Catalog, Inventory, Sales Order, Fulfillment, Product Matching')
     .setVersion('1.0.0')
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+  const document = cleanupOpenApiDoc(SwaggerModule.createDocument(app, config));
   SwaggerModule.setup('docs', app, document, {
     yamlDocumentUrl: '/docs.yaml',
   });

@@ -2,10 +2,12 @@ import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import * as postgres from 'postgres';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { catalogSchema, type PimSchema } from '../../schema/catalog.schema';
+import { catalogSchema, productAiSessions, type PimSchema } from '../../../schema/catalog.schema';
 import { ProductAiService } from './product-ai.service';
+import { ProductAiReplyService } from './product-ai.reply.service';
+import { eq } from 'drizzle-orm';
 
 // 기본 DATABASE_URL은 사용하지 않는다. 로컬 PostgreSQL에 매 실행 독립 DB를 만들고 제거한다.
 const testUrl = process.env.PRODUCT_AI_TEST_DATABASE_URL;
@@ -19,6 +21,11 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
   let admin: postgres.Sql;
   let db: DbService<PimSchema>;
   let service: ProductAiService;
+  let replies: ProductAiReplyService;
+  const provider = { reply: jest.fn().mockResolvedValue('판매가는 얼마인가요?') };
+  beforeEach(() => {
+    provider.reply.mockReset().mockResolvedValue('판매가는 얼마인가요?');
+  });
   let connectionString: string;
   let createdDatabase = false;
 
@@ -39,11 +46,15 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
         'utf8',
       );
       await migrationClient.unsafe(migration);
+      await migrationClient.unsafe(
+        readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914043718_add-product-ai-replies.sql'), 'utf8'),
+      );
     } finally {
       await migrationClient.end();
     }
     db = new DbService({ connectionString }, catalogSchema);
     service = new ProductAiService(db);
+    replies = new ProductAiReplyService(db, provider);
   });
 
   afterAll(async () => {
@@ -105,9 +116,11 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
 
   it('별도 서버 연결에서도 대화가 복구되고 순번 커서로 빠짐없이 조회된다', async () => {
     const session = await createSession();
-    await service.appendUserMessage(owner, session.id, input('상품등록해줘'));
-    await service.appendUserMessage(owner, session.id, input('회원가 9000원', 1));
-    await service.appendUserMessage(owner, session.id, input('대표카테고리가 뭐야?', 2));
+    const firstMessage = await service.appendUserMessage(owner, session.id, input('상품등록해줘'));
+    await replies.respond(owner, session.id, firstMessage.message.id);
+    const secondMessage = await service.appendUserMessage(owner, session.id, input('회원가 9000원', 2));
+    await replies.respond(owner, session.id, secondMessage.message.id);
+    await service.appendUserMessage(owner, session.id, input('대표카테고리가 뭐야?', 4));
     const reopenedDb = new DbService({ connectionString }, catalogSchema);
     try {
       const reopened = new ProductAiService(reopenedDb);
@@ -115,11 +128,85 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
       expect(first.items.map((item) => item.sequence)).toEqual([1, 2]);
       expect(first.hasMore).toBe(true);
       const next = await reopened.messages(owner, session.id, { after: first.nextAfter, limit: 50 });
-      expect(next.items.map((item) => item.content)).toEqual(['대표카테고리가 뭐야?']);
+      expect(next.items.map((item) => item.content)).toEqual([
+        '회원가 9000원',
+        '판매가는 얼마인가요?',
+        '대표카테고리가 뭐야?',
+      ]);
       expect(next.hasMore).toBe(false);
-      expect((await reopened.get(owner, session.id)).revision).toBe(3);
+      expect((await reopened.get(owner, session.id)).revision).toBe(5);
     } finally {
       await reopenedDb.onModuleDestroy();
     }
+  });
+  it('완료 응답 재요청은 모델을 다시 호출하거나 답변을 중복 저장하지 않는다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('안녕하세요'));
+    await replies.respond(owner, session.id, sent.message.id);
+    await replies.respond(owner, session.id, sent.message.id);
+    expect(provider.reply).toHaveBeenCalledTimes(1);
+    expect((await service.messages(owner, session.id, { after: 0, limit: 50 })).items.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+    ]);
+  });
+
+  it('타인과 다른 메시지에 대한 응답 요청은 모델 호출 전에 차단한다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('안녕하세요'));
+    await expect(replies.respond(otherOwner, session.id, sent.message.id)).rejects.toThrow(NotFoundException);
+    await expect(replies.respond(owner, session.id, randomUUID())).rejects.toThrow(ConflictException);
+    expect(provider.reply).not.toHaveBeenCalled();
+  });
+
+  it('실패는 저장되고 재시도하면 기존 사용자 메시지에 답변을 이어 붙인다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('상품등록'));
+    provider.reply.mockRejectedValueOnce(new Error('provider secret diagnostic'));
+    await expect(replies.respond(owner, session.id, sent.message.id)).rejects.toThrow(ServiceUnavailableException);
+    expect((await service.get(owner, session.id)).replyStatus).toBe('failed');
+    expect((await service.get(owner, session.id)).replyError).not.toContain('secret');
+    await replies.respond(owner, session.id, sent.message.id);
+    expect((await service.get(owner, session.id)).replyStatus).toBe('idle');
+    expect((await service.get(owner, session.id)).revision).toBe(2);
+  });
+
+  it('실행 중에는 새 입력과 중복 모델 호출을 차단한다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('상품등록'));
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    provider.reply.mockImplementationOnce(() => {
+      started();
+      return new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const response = replies.respond(owner, session.id, sent.message.id);
+    await startedPromise;
+    try {
+      expect(await replies.respond(owner, session.id, sent.message.id)).toEqual({ status: 'running' });
+      await expect(service.appendUserMessage(owner, session.id, input('다른 지시', 1))).rejects.toThrow(
+        ConflictException,
+      );
+      expect(provider.reply).toHaveBeenCalledTimes(1);
+    } finally {
+      finish('답변입니다');
+      await response;
+    }
+  });
+
+  it('서버 중단으로 만료된 실행은 재시도로 복구한다', async () => {
+    const session = await createSession();
+    const sent = await service.appendUserMessage(owner, session.id, input('상품등록'));
+    await db.db
+      .update(productAiSessions)
+      .set({ replyStatus: 'running', replyLeaseId: randomUUID(), replyLeaseUntil: new Date(0) })
+      .where(eq(productAiSessions.id, session.id));
+    await replies.respond(owner, session.id, sent.message.id);
+    expect((await service.get(owner, session.id)).replyStatus).toBe('idle');
   });
 });
