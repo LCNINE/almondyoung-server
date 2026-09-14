@@ -2,8 +2,9 @@ import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, sql } from 'drizzle-orm';
+import { HttpStatus } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
+import { ApplicationException, BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { Database, inRollbackTx, makeInboundReceiptKernel } from '../../inbound/services/__fixtures__/inbound-harness';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
@@ -59,15 +60,14 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
   interface Fixture {
     poId: string;
     warehouseId: string;
+    warehouseName: string;
     skuIds: string[];
   }
 
   async function seedPoWithThreeLines(trx: DbTx): Promise<Fixture> {
     const suffix = randomUUID().slice(0, 8);
-    const [warehouse] = await trx
-      .insert(wmsTables.warehouses)
-      .values({ name: `receive-wh-${suffix}` })
-      .returning();
+    const warehouseName = `receive-wh-${suffix}`;
+    const [warehouse] = await trx.insert(wmsTables.warehouses).values({ name: warehouseName }).returning();
     const [supplier] = await trx
       .insert(wmsTables.suppliers)
       .values({ name: `receive-supplier-${suffix}`, defaultWarehouseId: warehouse.id })
@@ -98,7 +98,7 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
     await trx
       .insert(wmsTables.purchaseOrderLines)
       .values(skuIds.map((skuId) => ({ poId: po.id, skuId, quantity: 10 })));
-    return { poId: po.id, warehouseId: warehouse.id, skuIds };
+    return { poId: po.id, warehouseId: warehouse.id, warehouseName, skuIds };
   }
 
   async function seedOrderedPo(trx: DbTx): Promise<Fixture> {
@@ -139,6 +139,183 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
         and(eq(wmsTables.purchaseOrderReceiptLines.poId, poId), eq(wmsTables.purchaseOrderReceiptLines.skuId, skuId)),
       );
     return Number(row.sum);
+  }
+
+  type DomainErrorConstructor = new (message: string) => ApplicationException;
+  type Managers = ReturnType<typeof buildManagers>;
+
+  interface RejectionRequest {
+    poId: string;
+    warehouseId: string;
+    skuId: string;
+    quantity: number;
+    message: string;
+  }
+
+  interface ReceiveRejectionCase {
+    name: string;
+    errorType: DomainErrorConstructor;
+    status: number;
+    arrange: (trx: DbTx, fixture: Fixture, managers: Managers) => Promise<RejectionRequest>;
+  }
+
+  const RECEIVE_REJECTION_CASES: ReceiveRejectionCase[] = [
+    {
+      name: '창고 불일치',
+      errorType: BadRequestError,
+      status: HttpStatus.BAD_REQUEST,
+      arrange: async (trx, fixture) => {
+        const [otherWarehouse] = await trx
+          .insert(wmsTables.warehouses)
+          .values({ name: `receive-other-${randomUUID().slice(0, 8)}` })
+          .returning();
+        return {
+          poId: fixture.poId,
+          warehouseId: otherWarehouse.id,
+          skuId: fixture.skuIds[0],
+          quantity: 1,
+          message: `이 발주는 ${fixture.warehouseName}에서 받습니다`,
+        };
+      },
+    },
+    {
+      name: '없는 발주',
+      errorType: NotFoundError,
+      status: HttpStatus.NOT_FOUND,
+      arrange: async (_trx, fixture) => {
+        const poId = randomUUID();
+        return {
+          poId,
+          warehouseId: fixture.warehouseId,
+          skuId: fixture.skuIds[0],
+          quantity: 1,
+          message: `발주를 찾을 수 없습니다: ${poId}`,
+        };
+      },
+    },
+    {
+      name: '취소된 발주',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture, { poManager }) => {
+        await poManager.cancelPurchaseOrder(fixture.poId, { reason: '운영 취소' }, USER_ID);
+        return {
+          poId: fixture.poId,
+          warehouseId: fixture.warehouseId,
+          skuId: fixture.skuIds[0],
+          quantity: 1,
+          message: '취소된 발주입니다',
+        };
+      },
+    },
+    {
+      name: '발주에 없는 SKU',
+      errorType: NotFoundError,
+      status: HttpStatus.NOT_FOUND,
+      arrange: async (_trx, fixture) => {
+        const skuId = randomUUID();
+        return {
+          poId: fixture.poId,
+          warehouseId: fixture.warehouseId,
+          skuId,
+          quantity: 1,
+          message: `발주에 없는 품목입니다: ${skuId}`,
+        };
+      },
+    },
+    {
+      name: '주문 전 라인',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture) => ({
+        poId: fixture.poId,
+        warehouseId: fixture.warehouseId,
+        skuId: fixture.skuIds[2],
+        quantity: 1,
+        message: `아직 주문 전인 품목입니다: ${fixture.skuIds[2]}`,
+      }),
+    },
+    {
+      name: '발주 불가 라인',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture, { poManager }) => {
+        await poManager.markLineUnavailable(fixture.poId, fixture.skuIds[2], { reason: '단종' }, USER_ID);
+        return {
+          poId: fixture.poId,
+          warehouseId: fixture.warehouseId,
+          skuId: fixture.skuIds[2],
+          quantity: 1,
+          message: `발주 불가로 종결된 품목입니다: ${fixture.skuIds[2]}`,
+        };
+      },
+    },
+    {
+      name: '잔량 포기 라인',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture, { receiving }) => {
+        await receiving.shortCloseLine(fixture.poId, fixture.skuIds[0], { reason: '미발송' }, USER_ID);
+        return {
+          poId: fixture.poId,
+          warehouseId: fixture.warehouseId,
+          skuId: fixture.skuIds[0],
+          quantity: 1,
+          message: `잔량 포기된 품목입니다: ${fixture.skuIds[0]}`,
+        };
+      },
+    },
+    {
+      name: '전량 입고 라인',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture, { receiving }) => {
+        await receiving.receive(fixture.poId, {
+          idempotencyKey: randomUUID(),
+          warehouseId: fixture.warehouseId,
+          lines: [{ skuId: fixture.skuIds[0], quantity: 10 }],
+        });
+        return {
+          poId: fixture.poId,
+          warehouseId: fixture.warehouseId,
+          skuId: fixture.skuIds[0],
+          quantity: 1,
+          message: `이미 전량 입고된 품목입니다: ${fixture.skuIds[0]}`,
+        };
+      },
+    },
+    {
+      name: '남은 수량 초과',
+      errorType: ConflictError,
+      status: HttpStatus.CONFLICT,
+      arrange: async (_trx, fixture) => ({
+        poId: fixture.poId,
+        warehouseId: fixture.warehouseId,
+        skuId: fixture.skuIds[0],
+        quantity: 11,
+        message: '남은 수량 10개를 넘습니다 — 넘는 분량은 간편입고로 받으세요',
+      }),
+    },
+  ];
+
+  async function expectDomainRejection(
+    action: Promise<unknown>,
+    errorType: DomainErrorConstructor,
+    message: string,
+    status: number,
+  ): Promise<void> {
+    let thrown: unknown;
+    try {
+      await action;
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(errorType);
+    if (!(thrown instanceof ApplicationException)) {
+      throw thrown ?? new Error('요청이 거절되지 않았습니다');
+    }
+    expect(thrown.message).toBe(message);
+    expect(thrown.getHttpStatus()).toBe(status);
   }
 
   it('수령 한 번이 회차·RECEIVE 이벤트·링크·receivedQty를 원자적으로 기록한다', async () => {
@@ -295,44 +472,31 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
     });
   });
 
-  it('초과 수령과 창고 불일치·주문 전·없는 발주/SKU를 한국어 도메인 오류로 거절한다', async () => {
+  it.each(RECEIVE_REJECTION_CASES)(
+    '수령 거절: $name은 구체 예외·정확한 한국어 메시지·HTTP $status를 돌려준다',
+    async ({ arrange, errorType, status }) => {
+      await inRollbackTx(db, async (trx) => {
+        const fixture = await seedOrderedPo(trx);
+        const managers = buildManagers(trx);
+        const request = await arrange(trx, fixture, managers);
+
+        await expectDomainRejection(
+          managers.receiving.receive(request.poId, {
+            idempotencyKey: randomUUID(),
+            warehouseId: request.warehouseId,
+            lines: [{ skuId: request.skuId, quantity: request.quantity }],
+          }),
+          errorType,
+          request.message,
+          status,
+        );
+      });
+    },
+  );
+
+  it('DB CHECK도 발주 라인의 초과 수령을 23514로 거절한다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fixture = await seedOrderedPo(trx);
-      const { receiving } = buildManagers(trx);
-      const key = () => randomUUID();
-      const [otherWarehouse] = await trx
-        .insert(wmsTables.warehouses)
-        .values({ name: `receive-other-${randomUUID().slice(0, 8)}` })
-        .returning();
-
-      await expect(
-        receiving.receive(fixture.poId, {
-          idempotencyKey: key(),
-          warehouseId: otherWarehouse.id,
-          lines: [{ skuId: fixture.skuIds[0], quantity: 1 }],
-        }),
-      ).rejects.toBeInstanceOf(BadRequestError);
-      await expect(
-        receiving.receive(fixture.poId, {
-          idempotencyKey: key(),
-          warehouseId: fixture.warehouseId,
-          lines: [{ skuId: fixture.skuIds[2], quantity: 1 }],
-        }),
-      ).rejects.toMatchObject({ message: expect.stringContaining('아직 주문 전인 품목입니다') });
-      await expect(
-        receiving.receive(fixture.poId, {
-          idempotencyKey: key(),
-          warehouseId: fixture.warehouseId,
-          lines: [{ skuId: randomUUID(), quantity: 1 }],
-        }),
-      ).rejects.toBeInstanceOf(NotFoundError);
-      await expect(
-        receiving.receive(fixture.poId, {
-          idempotencyKey: key(),
-          warehouseId: fixture.warehouseId,
-          lines: [{ skuId: fixture.skuIds[0], quantity: 11 }],
-        }),
-      ).rejects.toMatchObject({ message: '남은 수량 10개를 넘습니다 — 넘는 분량은 간편입고로 받으세요' });
       await trx.execute(sql`SAVEPOINT received_check`);
       await expect(
         trx
@@ -346,13 +510,6 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
           ),
       ).rejects.toMatchObject({ cause: { code: '23514', constraint_name: 'ck_po_lines_received' } });
       await trx.execute(sql`ROLLBACK TO SAVEPOINT received_check`);
-      await expect(
-        receiving.receive(randomUUID(), {
-          idempotencyKey: key(),
-          warehouseId: fixture.warehouseId,
-          lines: [{ skuId: fixture.skuIds[0], quantity: 1 }],
-        }),
-      ).rejects.toMatchObject({ message: expect.stringContaining('발주를 찾을 수 없습니다') });
     });
   });
 
