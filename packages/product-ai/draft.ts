@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { productAiSalesSchema } from './sales';
+import { createProductImageDirective } from '../product-description';
 
 export const productAiDraftSchema = z
   .object({
@@ -20,11 +22,33 @@ export const productAiDraftSchema = z
       .min(1)
       .max(30),
     pendingItems: z.array(z.string().max(300)).max(20),
+    sales: productAiSalesSchema.nullable().optional(),
   })
   .strict();
 
 export type ProductAiDraft = z.infer<typeof productAiDraftSchema>;
-export type ProductAiSavedProduct = { masterId: string; versionId: string; messageId: string };
+export type ProductAiSavedProduct = {
+  masterId: string;
+  versionId: string;
+  messageId: string;
+  status?: 'draft' | 'active';
+};
+
+export const productAiDraftToolSchema = productAiDraftSchema.extend({ sales: productAiSalesSchema.nullable() });
+
+// The product editor and storefront consume Markdown with trusted file-ID directives.
+export function renderDraftMarkdown(draft: ProductAiDraft, fileIds: Map<string, string>): string {
+  const escape = (text: string) => text.replace(/[\\`*_{}\[\]()#+.!<>:|~-]/g, '\\$&');
+  return draft.sections
+    .map((section) => {
+      if (section.kind === 'text')
+        return `${section.heading ? `## ${escape(section.heading)}\n\n` : ''}${escape(section.body)}`;
+      const fileId = fileIds.get(section.fileId);
+      if (!fileId || !z.uuid().safeParse(fileId).success) throw new Error('상품 이미지 파일을 확인해 주세요.');
+      return createProductImageDirective({ fileId, alt: section.alt.replace(/[\r\n]/g, ' ') });
+    })
+    .join('\n\n');
+}
 
 export function draftImageIds(draft: ProductAiDraft): string[] {
   return [
