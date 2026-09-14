@@ -63,7 +63,7 @@ function databaseUrl(databaseName: string): string {
 }
 
 function ownedDatabaseName(label: string): string {
-  return `pr_b_t1_${label}_${process.pid}_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+  return `pr_c_t1_pr_b_${label}_${process.pid}_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
 }
 
 function quotedIdentifier(value: string): string {
@@ -360,13 +360,15 @@ describeIfDb('purchase-order receiving PR-B migration acceptance (isolated Postg
 
       await applyMigrations(client, chain.throughPrB);
 
-      const lineRows = await client<Array<{
-        po_id: string;
-        received_qty: number;
-        closed_reason: string | null;
-        closed_at: string | null;
-        closed_by: string | null;
-      }>>`SELECT po_id, received_qty, closed_reason, closed_at, closed_by
+      const lineRows = await client<
+        Array<{
+          po_id: string;
+          received_qty: number;
+          closed_reason: string | null;
+          closed_at: string | null;
+          closed_by: string | null;
+        }>
+      >`SELECT po_id, received_qty, closed_reason, closed_at, closed_by
              FROM purchase_order_lines
             ORDER BY po_id`;
       const lines = new Map(lineRows.map((row) => [row.po_id, row]));
@@ -512,14 +514,26 @@ function firstBackfillGuardStatement(): string {
 
 describeIfDb('purchase-order receiving backfill precondition guard re-execution', () => {
   jest.setTimeout(60_000);
+  let admin: postgres.Sql;
   let client: postgres.Sql;
+  let databaseName: string;
 
-  beforeAll(() => {
-    client = openClient(DATABASE_URL as string);
+  beforeAll(async () => {
+    admin = openClient(databaseUrl('postgres'));
+    databaseName = ownedDatabaseName('guard_reexecution');
+    await admin.unsafe(`CREATE DATABASE ${quotedIdentifier(databaseName)} TEMPLATE template0`);
+    client = openClient(databaseUrl(databaseName));
+    await applyMigrations(client, migrationChain().beforePrB);
   });
 
   afterAll(async () => {
-    await client.end();
+    if (client) await client.end();
+    if (!admin) return;
+    await admin`SELECT pg_terminate_backend(pid)
+                  FROM pg_stat_activity
+                 WHERE datname = ${databaseName} AND pid <> pg_backend_pid()`;
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${quotedIdentifier(databaseName)}`);
+    await admin.end();
   });
 
   it('raises P1 when one purchase-order SKU has two legacy plan items', async () => {

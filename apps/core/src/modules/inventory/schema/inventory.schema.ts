@@ -120,9 +120,6 @@ export const inboundStatusEnum = pgEnum('inbound_status', [
 ]);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
-// 이중 입고 계획을 위한 새 enum
-export const planTypeEnum = pgEnum('plan_type', ['source', 'destination']);
-
 // Stocktaking status enum
 export const stocktakingStatusEnum = pgEnum('stocktaking_status', [
   'draft', // 작성 중 - Being created
@@ -2329,75 +2326,6 @@ export const inboundReceipts = pgTable(
   }),
 );
 
-export const inboundPlans = pgTable(
-  'inbound_plans',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    // 예정일은 계획이 아니라 아이템이 갖는다(#724 항목 9) — inbound_plan_items.expected_date.
-    // 계획을 쪼개는 것은 "해외 발주는 계획 하나" 불변식이 금지하므로 예정일을 내렸다.
-
-    // 기존 warehouseId는 입고될 창고 (source)
-    warehouseId: uuid('warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'cascade' })
-      .notNull(),
-
-    // 이중 입고 계획을 위한 새 필드들
-    planType: planTypeEnum('plan_type').notNull().default('destination'), // 'source' | 'destination'
-    parentPlanId: uuid('parent_plan_id').references((): AnyPgColumn => inboundPlans.id), // destination → source 참조
-    linkedPurchaseOrderId: uuid('linked_purchase_order_id')
-      .references(() => purchaseOrders.id)
-      .notNull(), // 원본 발주 추적
-
-    // 기존 필드들 (하위 호환성 유지)
-    destinationWarehouseId: uuid('destination_warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'restrict' })
-      .notNull(), // 최종 목적지 창고 (stockSummary 집계 기준)
-    requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
-
-    status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    // wh_date 인덱스는 사라졌다 — 창고 접두는 아래 warehouse_type_status 가 덮는다.
-    index('idx_inbound_plans_destination').on(t.destinationWarehouseId),
-    // 이중 입고 계획을 위한 새 인덱스들
-    index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
-    index('idx_inbound_plans_parent').on(t.parentPlanId),
-    index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
-  ],
-);
-
-export const inboundPlanItems = pgTable(
-  'inbound_plan_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    planId: uuid('plan_id')
-      .references(() => inboundPlans.id, { onDelete: 'cascade' })
-      .notNull(),
-    skuId: uuid('sku_id')
-      .references(() => skus.id, { onDelete: 'restrict' })
-      .notNull(),
-    expectedQty: integer('expected_qty').notNull(),
-    receivedQty: integer('received_qty').notNull().default(0),
-    status: inboundStatusEnum('status').notNull().default('pending'),
-    /** 품목별 도착예정일. 계획 단위(inbound_plans.expected_date)로는 라인마다 다른 ETA 를 담을 수 없다. */
-    expectedDate: date('expected_date', { mode: 'string' }),
-    /** 잔량 포기 기록. status='short_closed' 인 행에서만 채워진다. */
-    closedReason: text('closed_reason'),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
-    closedBy: uuid('closed_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
-    idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
-    // 기간 필터가 계획이 아니라 아이템 예정일을 본다(listInboundPlanItems).
-    idxInboundPlanItemsExpectedDate: index('idx_inbound_plan_items_expected_date').on(t.expectedDate),
-  }),
-);
-
 export const inboundReceiptLines = pgTable(
   'inbound_receipt_lines',
   {
@@ -2417,8 +2345,6 @@ export const inboundReceiptLines = pgTable(
     canceledQty: integer('canceled_qty').notNull().default(0),
     putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
     source: inboundReceiptSourceEnum('source').notNull().default('direct'),
-    // optional link to plan item
-    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -2439,7 +2365,6 @@ export const inboundWorkLogs = pgTable(
     timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
     receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
     lineId: uuid('line_id').references(() => inboundReceiptLines.id, { onDelete: 'set null' }),
-    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
     fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
@@ -3398,8 +3323,6 @@ export const wmsTables = {
   purchaseOrderCart,
   inboundReceipts,
   inboundReceiptLines,
-  inboundPlans,
-  inboundPlanItems,
   inboundWorkLogs,
   movementJobs,
   movementJobLines,
@@ -3554,7 +3477,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   // Purchase/Inbound relations
   purchaseOrderLines: many(purchaseOrderLines),
   purchaseOrderCart: many(purchaseOrderCart),
-  inboundPlanItems: many(inboundPlanItems),
   inboundReceiptLines: many(inboundReceiptLines),
   // Movement relations
   movementJobLines: many(movementJobLines),
@@ -3642,10 +3564,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
   outboundBatches: many(outboundBatches),
   movementJobs: many(movementJobs),
   inboundReceipts: many(inboundReceipts),
-  inboundPlans: many(inboundPlans),
-  inboundPlansAsDestination: many(inboundPlans, {
-    relationName: 'destinationWarehouse',
-  }),
   purchaseOrdersAsSource: many(purchaseOrders, {
     relationName: 'sourceWarehouse',
   }),
@@ -4170,7 +4088,6 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
     references: [warehouses.id],
     relationName: 'destinationWarehouse',
   }),
-  inboundPlans: many(inboundPlans),
 }));
 
 export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
@@ -4208,40 +4125,6 @@ export const inboundReceiptsRelations = relations(inboundReceipts, ({ one, many 
   lines: many(inboundReceiptLines),
 }));
 
-export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [inboundPlans.warehouseId],
-    references: [warehouses.id],
-  }),
-  destinationWarehouse: one(warehouses, {
-    fields: [inboundPlans.destinationWarehouseId],
-    references: [warehouses.id],
-    relationName: 'destinationWarehouse',
-  }),
-  linkedPurchaseOrder: one(purchaseOrders, {
-    fields: [inboundPlans.linkedPurchaseOrderId],
-    references: [purchaseOrders.id],
-  }),
-  parentPlan: one(inboundPlans, {
-    fields: [inboundPlans.parentPlanId],
-    references: [inboundPlans.id],
-    relationName: 'parentChildPlans',
-  }),
-  items: many(inboundPlanItems),
-}));
-
-export const inboundPlanItemsRelations = relations(inboundPlanItems, ({ one, many }) => ({
-  plan: one(inboundPlans, {
-    fields: [inboundPlanItems.planId],
-    references: [inboundPlans.id],
-  }),
-  sku: one(skus, {
-    fields: [inboundPlanItems.skuId],
-    references: [skus.id],
-  }),
-  receiptLines: many(inboundReceiptLines),
-}));
-
 export const inboundReceiptLinesRelations = relations(inboundReceiptLines, ({ one }) => ({
   receipt: one(inboundReceipts, {
     fields: [inboundReceiptLines.receiptId],
@@ -4258,10 +4141,6 @@ export const inboundReceiptLinesRelations = relations(inboundReceiptLines, ({ on
   stockEvent: one(stockEvents, {
     fields: [inboundReceiptLines.eventId],
     references: [stockEvents.id],
-  }),
-  planItem: one(inboundPlanItems, {
-    fields: [inboundReceiptLines.planItemId],
-    references: [inboundPlanItems.id],
   }),
 }));
 
@@ -4462,8 +4341,6 @@ export const wmsRelations = {
 
   // Inbound Relations
   inboundReceiptsRelations,
-  inboundPlansRelations,
-  inboundPlanItemsRelations,
   inboundReceiptLinesRelations,
 
   // Movement Relations
@@ -4679,12 +4556,6 @@ export type NewInboundReceipt = InferInsertModel<typeof inboundReceipts>;
 
 export type InboundReceiptLine = InferSelectModel<typeof inboundReceiptLines>;
 export type NewInboundReceiptLine = InferInsertModel<typeof inboundReceiptLines>;
-
-export type InboundPlan = InferSelectModel<typeof inboundPlans>;
-export type NewInboundPlan = InferInsertModel<typeof inboundPlans>;
-
-export type InboundPlanItem = InferSelectModel<typeof inboundPlanItems>;
-export type NewInboundPlanItem = InferInsertModel<typeof inboundPlanItems>;
 
 export type InboundWorkLog = InferSelectModel<typeof inboundWorkLogs>;
 export type NewInboundWorkLog = InferInsertModel<typeof inboundWorkLogs>;

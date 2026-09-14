@@ -666,6 +666,20 @@
       "when": 1789355343259,
       "tag": "20260914030903_backfill-purchase-order-receiving",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789400689029,
+      "tag": "20260914154449_guard-purchase-order-receiving-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789400895203,
+      "tag": "20260914154815_drop-legacy-inbound-plans",
+      "breakpoints": true
     }
   ]
 }
