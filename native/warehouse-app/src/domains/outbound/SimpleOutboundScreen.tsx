@@ -11,7 +11,10 @@ import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { NumberPad } from '../../core/design/NumberPad';
 import { ApiError } from '../../core/data/httpClient';
-import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
+import {
+  SCAN_STORAGE_MESSAGE,
+  useWorkScanQueue,
+} from '../../core/hardware/scan/useWorkScanQueue';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { clearLastBox } from './lastBox';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from './mutations';
@@ -133,6 +136,9 @@ function SimpleOutboundScreenContent({
       </ul>
 
       {notice !== null && <p role="alert">{notice}</p>}
+      {scanQueue.storageError() ? (
+        <p role="alert">{SCAN_STORAGE_MESSAGE}</p>
+      ) : null}
       {scanQueue.error() ? (
         <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
           처리 내역 확인
@@ -160,7 +166,7 @@ function SimpleOutboundScreenContent({
             <Button
               type="button"
               className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              disabled={scanQueue.size() > 0}
+              disabled={scanQueue.blocked()}
               onClick={() => {
                 setQuantity(0);
                 setPadOpen(true);
@@ -173,7 +179,7 @@ function SimpleOutboundScreenContent({
             type="button"
             className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
             onClick={() => setForceOpen(true)}
-            disabled={force.isPending || scanQueue.size() > 0}
+            disabled={force.isPending || scanQueue.blocked()}
           >
             강제출고
           </Button>

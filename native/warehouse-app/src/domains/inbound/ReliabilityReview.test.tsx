@@ -1,8 +1,11 @@
 import 'fake-indexeddb/auto';
 import { createOperationRunner } from '../../core/operations/operationRunner';
-import { createOperationStore } from '../../core/operations/operationStore';
+import {
+  createOperationStore,
+  type OperationStore,
+} from '../../core/operations/operationStore';
 import { OperationContext } from '../../core/operations/OperationContext';
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -74,7 +77,8 @@ function renderScreen(
   calls: Call[],
   gate?: Promise<void>,
   database?: string,
-  mode: 'quick' | 'po' = 'quick'
+  mode: 'quick' | 'po' = 'quick',
+  configureStore?: (store: OperationStore) => void
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -111,6 +115,7 @@ function renderScreen(
     }) as unknown as ApiClient['request'],
   };
   const store = createOperationStore(database ?? crypto.randomUUID());
+  configureStore?.(store);
   const runtime = database
     ? {
         store,
@@ -164,6 +169,56 @@ function renderScreen(
   return render(<RouterProvider router={router} />, { wrapper });
 }
 
+it('keeps registration blocked after a scan cannot be saved, then recovers that scan without rescanning', async () => {
+  let diskFull = false;
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, crypto.randomUUID(), 'quick', (store) => {
+    const draft = store.draft;
+    vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
+      if (diskFull && id.includes(':scan:') && update)
+        throw new DOMException('disk full', 'QuotaExceededError');
+      return draft(id, update);
+    });
+  });
+  const user = userEvent.setup();
+  await screen.findByText('간편입고');
+  await waitFor(() =>
+    expect(
+      screen.queryByText('작업을 불러오고 있어요.')
+    ).not.toBeInTheDocument()
+  );
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+  );
+  diskFull = true;
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByRole('button', { name: '다시 확인' });
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    /화면을 유지.*저장 공간.*다시 찍지 마세요/
+  );
+  expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
+  expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1');
+  expect(calls.filter((c) => c.path === '/inbound/simple')).toHaveLength(0);
+
+  diskFull = false;
+  await user.click(screen.getByRole('button', { name: '다시 확인' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('2')
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+  );
+  await user.click(screen.getByRole('button', { name: '등록' }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
+      {
+        items: [{ skuId: 's1', quantity: 2 }],
+      }
+    )
+  );
+});
+
 it('REVIEW: two physical scans while lookup is pending must count twice', async () => {
   let release!: () => void;
   const gate = new Promise<void>((r) => {
@@ -187,6 +242,47 @@ it('REVIEW: two physical scans while lookup is pending must count twice', async 
     expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('2')
   );
   expect(calls.filter((c) => c.path.includes('barcode=8801'))).toHaveLength(2);
+});
+
+it('does not register a restored partial cart while saved scans cannot be read', async () => {
+  const database = crypto.randomUUID();
+  const store = createOperationStore(database);
+  await store.draft('actor|local:draft:quick-inbound:w-1', () => ({
+    cart: [
+      { skuId: 's1', skuCode: 'CT-001', skuName: '코튼셔츠', quantity: 1 },
+    ],
+    staged: [],
+    seen: ['first-scan'],
+    key: 'restored-receipt',
+  }));
+  await store.draft('actor|local:scan:quick-inbound:w-1', () => [
+    { id: 'second-scan', data: '8801' },
+  ]);
+  let unavailable = true;
+  let cartReconciled = false;
+  renderScreen([], undefined, database, 'quick', (store) => {
+    const draft = store.draft;
+    vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
+      if (unavailable && id.includes(':scan:') && !update)
+        throw new DOMException('storage unavailable', 'UnknownError');
+      const value = await draft(id, update);
+      if (id.includes(':draft:') && update) cartReconciled = true;
+      return value;
+    });
+  });
+  const user = userEvent.setup();
+  await screen.findByRole('button', { name: '다시 확인' });
+  await screen.findByLabelText('코튼셔츠 수량');
+  await waitFor(() => expect(cartReconciled).toBe(true));
+  expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
+  unavailable = false;
+  await user.click(screen.getByRole('button', { name: '다시 확인' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('2')
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+  );
 });
 
 it('restores accepted scan counts after remount without sending inventory again', async () => {

@@ -13,7 +13,10 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { NumberPad } from '../../core/design/NumberPad';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
-import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
+import {
+  SCAN_STORAGE_MESSAGE,
+  useWorkScanQueue,
+} from '../../core/hardware/scan/useWorkScanQueue';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
@@ -190,7 +193,9 @@ function QuickInboundScreenContent() {
       ) : null}
       {scanQueue.error() ? (
         <p role="alert">
-          상품을 확인하지 못했어요.{' '}
+          {scanQueue.storageError()
+            ? SCAN_STORAGE_MESSAGE
+            : '상품을 확인하지 못했어요.'}{' '}
           <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
             다시 확인
           </Button>
@@ -292,7 +297,7 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 수량`}
                       className="text-lg font-semibold text-gray-900 underline"
-                      disabled={scanQueue.size() > 0 || submit.isPending}
+                      disabled={scanQueue.blocked() || submit.isPending}
                       onClick={() =>
                         setEditing(editing === row.skuId ? null : row.skuId)
                       }
@@ -303,7 +308,7 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 삭제`}
                       className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
-                      disabled={scanQueue.size() > 0 || submit.isPending}
+                      disabled={scanQueue.blocked() || submit.isPending}
                       onClick={() =>
                         void setCart((prev) =>
                           prev.filter((r) => r.skuId !== row.skuId)
@@ -314,7 +319,7 @@ function QuickInboundScreenContent() {
                     </button>
                   </div>
                   {editing === row.skuId &&
-                  scanQueue.size() === 0 &&
+                  !scanQueue.blocked() &&
                   !submit.isPending ? (
                     <NumberPad
                       value={row.quantity}
@@ -345,7 +350,7 @@ function QuickInboundScreenContent() {
               !reconciled ||
               !draft.ready ||
               !!draft.error ||
-              scanQueue.size() > 0 ||
+              scanQueue.blocked() ||
               cart.length === 0 ||
               cart.some((r) => r.quantity < 1) ||
               submit.isPending

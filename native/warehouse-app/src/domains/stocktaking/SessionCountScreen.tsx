@@ -9,7 +9,10 @@ import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { NumberPad } from '../../core/design/NumberPad';
 import { cn } from '../../core/design/cn';
 import { useScanner } from '../../core/hardware/scan/useScanner';
-import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
+import {
+  SCAN_STORAGE_MESSAGE,
+  useWorkScanQueue,
+} from '../../core/hardware/scan/useWorkScanQueue';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useStocktakingSession } from './queries';
 import {
@@ -177,7 +180,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
   }
   async function changeLocation() {
     if (
-      scanQueue.size() ||
+      scanQueue.blocked() ||
       updateCount.isPending ||
       resetCount.isPending ||
       changingLocation.current
@@ -211,7 +214,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
     acceptScan(event.code);
   });
   const busy =
-    scanQueue.size() > 0 ||
+    scanQueue.blocked() ||
     updateCount.isPending ||
     resetCount.isPending ||
     switchingLocation;
@@ -239,7 +242,9 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
       )}
       {!!(scanQueue.error() || draft.error) && (
         <p role="alert">
-          작업을 확인하지 못했어요.{' '}
+          {scanQueue.storageError()
+            ? SCAN_STORAGE_MESSAGE
+            : '작업을 확인하지 못했어요.'}{' '}
           <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
             처리 내역 확인
           </Button>
