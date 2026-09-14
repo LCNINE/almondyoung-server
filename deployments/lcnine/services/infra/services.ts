@@ -129,6 +129,8 @@ export function setup(infra: SharedInfra) {
   const anthropicApiKey = new sst.Secret('AnthropicApiKey');
   // 검색어·상품명 임베딩용 OpenAI API key. 없으면 벡터 없이 키워드 검색만 동작한다.
   const openAiApiKey = new sst.Secret('OpenAiApiKey');
+  // Core 공용 AI 챗봇 전용 키. 검색 서비스의 OpenAiApiKey와 분리한다.
+  const productAiOpenAiApiKey = new sst.Secret('ProductAiOpenAiApiKey', '');
 
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
@@ -437,6 +439,8 @@ export function setup(infra: SharedInfra) {
       // 서버 간 내부 라우트(`/internal/*`)를 여는 공유 키. 사람 JWT 가 없는 호출자(channel-adapter)가
       // 이 값을 Authorization 헤더로 보낸다. 미설정이면 InternalKeyGuard 가 전부 거부한다.
       CORE_INTERNAL_KEY: coreInternalKey.value,
+      PRODUCT_AI_OPENAI_API_KEY: productAiOpenAiApiKey.value,
+      PRODUCT_AI_MODEL: 'gpt-4.1-mini',
       // 고객 주문 취소 후 Wallet 자동 환불 연결
       WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,

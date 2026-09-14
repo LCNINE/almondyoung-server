@@ -159,3 +159,16 @@ Core migration `20260914041600_add-product-ai-sessions.sql`을 코드 배포 전
 - 삭제는 sessions.deleted_at 기반 소프트 삭제다. 목록/조회/메시지 추가/답변 생성/제목 수정에서 제외하며, 진행 중인 답변 lease를 해제해 늦은 저장을 차단한다.
 - 메시지는 보존한다. 복구 UI 및 영구 삭제 보존기간 정책은 아직 구현하지 않았다.
 - `20260914054932_product-ai-soft-delete.sql` 마이그레이션이 필요하다. 임시 테스트 DB에서 검증했으며 공유 DB에는 적용하지 않았다.
+
+
+### OpenAI 연결
+
+상품 AI 공급자는 OpenAI Responses API를 사용한다. `apps/core/.env`에 챗봇 전용 키를 설정하고 Core를 재시작한다.
+
+```env
+PRODUCT_AI_OPENAI_API_KEY=발급받은_챗봇_전용_키
+PRODUCT_AI_MODEL=gpt-4.1-mini
+```
+
+검색 서비스의 키는 자동으로 재사용하지 않는다. 기본 모델은 gpt-4.1-mini, store:false로 호출한다. 기존 서버 20초 제한과 Esc 취소 전달을 유지한다. 실제 모델 이용 가능 여부는 발급 프로젝트 권한에 따라 확인해야 한다.
+공식 API 지침: https://developers.openai.com/api/docs/guides/streaming-responses

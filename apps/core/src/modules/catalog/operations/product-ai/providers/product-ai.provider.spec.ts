@@ -1,79 +1,89 @@
 import { ProductAiProvider } from './product-ai.provider';
 
-describe('ProductAiProvider', () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
+describe('ProductAiProvider (OpenAI)', () => {
+  const originalKey = process.env.PRODUCT_AI_OPENAI_API_KEY;
   const originalModel = process.env.PRODUCT_AI_MODEL;
   const provider = new ProductAiProvider();
   const history = [{ role: 'user' as const, content: '대표카테고리가 뭐야?' }];
+  const completed = (text: string, status = 'completed') => ({
+    status,
+    output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
+  });
+  const stream = (events: object[]) =>
+    new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''));
   beforeEach(() => {
-    process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.PRODUCT_AI_OPENAI_API_KEY = 'test-key';
     process.env.PRODUCT_AI_MODEL = 'test-model';
   });
   afterEach(() => {
     jest.restoreAllMocks();
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
+    if (originalKey === undefined) delete process.env.PRODUCT_AI_OPENAI_API_KEY;
+    else process.env.PRODUCT_AI_OPENAI_API_KEY = originalKey;
     if (originalModel === undefined) delete process.env.PRODUCT_AI_MODEL;
     else process.env.PRODUCT_AI_MODEL = originalModel;
   });
-  it('서버 설정과 저장된 대화만 모델에 전달하고 완료 답변만 반환한다', async () => {
-    const request = jest.spyOn(global, 'fetch').mockResolvedValue(
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: '선택한 카테고리 중 대표 하나입니다.' }],
-      }),
-    );
+  it('전용 키로 Responses API를 호출하고 대화의 공급자 저장을 끈다', async () => {
+    const request = jest.spyOn(global, 'fetch').mockResolvedValue(Response.json(completed('대표 하나입니다.')));
     await expect(provider.reply(history)).resolves.toContain('대표');
-    expect(request.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/messages');
+    expect(request.mock.calls[0][0]).toBe('https://api.openai.com/v1/responses');
+    expect(request.mock.calls[0][1]!.headers).toEqual(expect.objectContaining({ Authorization: 'Bearer test-key' }));
     const body = JSON.parse(request.mock.calls[0][1]!.body as string);
-    expect(body.messages).toEqual(history);
+    expect(body.input).toEqual(history);
     expect(body.model).toBe('test-model');
+    expect(body.store).toBe(false);
     expect(body.tools).toBeUndefined();
   });
-  it.each(['max_tokens', 'refusal', 'tool_use'])('불완전한 종료 %s를 성공 답변으로 저장하지 않는다', async (reason) => {
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValue(Response.json({ stop_reason: reason, content: [{ type: 'text', text: '일부 답변' }] }));
+  it.each(['incomplete', 'failed', 'in_progress'])('불완전한 응답 %s를 저장하지 않는다', async (status) => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(Response.json(completed('일부', status)));
     await expect(provider.reply(history)).rejects.toThrow('완성되지');
   });
-  it('공급자 에러 응답의 내부 내용을 노출하지 않는다', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(Response.json({ error: 'sensitive diagnostic' }, { status: 500 }));
-    await expect(provider.reply(history)).rejects.toThrow('잠시 후');
+  it.each([
+    [401, '키'],
+    [403, '권한'],
+    [404, '모델'],
+    [429, '한도'],
+    [500, '잠시 후'],
+  ])('오류 %s를 안전한 메시지로 반환한다', async (status, message) => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(Response.json({ error: 'sensitive diagnostic' }, { status: Number(status) }));
+    await expect(provider.reply(history)).rejects.toThrow(String(message));
   });
-  it('API 키가 없으면 외부 호출 없이 실패한다', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  it('전용 키가 없으면 검색 서비스 키로 대체하지 않고 외부 호출 없이 실패한다', async () => {
+    delete process.env.PRODUCT_AI_OPENAI_API_KEY;
     const request = jest.spyOn(global, 'fetch');
     await expect(provider.reply(history)).rejects.toThrow('설정');
     expect(request).not.toHaveBeenCalled();
   });
-
-  it('실제 text_delta를 즉시 전달하고 message_stop 이후 완료한다', async () => {
-    const frames = [
-      { type: 'content_block_delta', delta: { type: 'text_delta', text: '안녕' } },
-      { type: 'content_block_delta', delta: { type: 'text_delta', text: '하세요' } },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
-      { type: 'message_stop' },
-    ];
-    const fetchMock = jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValue(new Response(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('')));
+  it('텍스트 델타를 전달하고 완료 이벤트를 확인한다', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      stream([
+        { type: 'response.output_text.delta', delta: '안녕' },
+        { type: 'response.output_text.delta', delta: '하세요' },
+        { type: 'response.completed', response: completed('안녕하세요') },
+      ]),
+    );
     const onDelta = jest.fn();
     await expect(provider.reply(history, { onDelta })).resolves.toBe('안녕하세요');
     expect(onDelta.mock.calls).toEqual([['안녕'], ['하세요']]);
-    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).stream).toBe(true);
   });
-
-  it.each(['max_tokens', 'end_turn'])(
-    '종료 이벤트가 없는 스트림은 저장할 답변으로 반환하지 않는다: %s',
-    async (stopReason) => {
+  it.each(['response.incomplete', 'response.failed', 'error', 'response.output_text.done'])(
+    '완료 없는 스트림 %s는 저장하지 않는다',
+    async (type) => {
       jest
         .spyOn(global, 'fetch')
-        .mockResolvedValue(
-          new Response(
-            `data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: '일부' } })}\n\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: stopReason } })}\n\n`,
-          ),
-        );
+        .mockResolvedValue(stream([{ type: 'response.output_text.delta', delta: '일부' }, { type }]));
       await expect(provider.reply(history, { onDelta: jest.fn() })).rejects.toThrow('완성되지');
     },
   );
+  it('Esc 중지 신호가 공급자 요청에도 전달된다', async () => {
+    const abort = new AbortController();
+    const request = jest.spyOn(global, 'fetch').mockImplementation(async (_url, options) => {
+      abort.abort();
+      options!.signal!.throwIfAborted();
+      return Response.json(completed('도달하지 않음'));
+    });
+    await expect(provider.reply(history, { signal: abort.signal })).rejects.toThrow();
+    expect(request.mock.calls[0][1]!.signal!.aborted).toBe(true);
+  });
 });

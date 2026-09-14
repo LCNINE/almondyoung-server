@@ -8,6 +8,7 @@ import {
   Send,
   Trash2,
   Pencil,
+  Plus,
   X,
   Copy,
   Check,
@@ -565,11 +566,15 @@ export function ProductAiChatContent({
         >
           <Button
             variant="outline"
-            className="h-10 w-full justify-center gap-2 rounded-full border-0 bg-gradient-to-r from-blue-600 to-violet-500 text-white shadow-md shadow-indigo-200/50 hover:opacity-90"
+            className="h-10 w-full justify-center gap-2 rounded-full border-0 bg-gradient-to-r from-[#2855ff] to-[#a343ff] px-4 text-base font-semibold text-white shadow-md shadow-indigo-200/60 transition-opacity hover:text-white hover:opacity-90"
+            aria-label="새 대화"
             disabled={busy}
             onClick={() => selectSession(null)}
           >
-            <MessageSquarePlus size={16} />새 대화
+            <Plus size={16} strokeWidth={2.5} />
+            <span>
+              New <span className="italic">Chat</span>
+            </span>
           </Button>
           <p className="mb-2 mt-5 text-xs font-medium text-muted-foreground">
             최근 대화
@@ -904,6 +909,17 @@ export function ProductAiChatContent({
                 maxLength={20_000}
                 disabled={busy || stopping || awaitingReply}
                 onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== 'Enter' ||
+                    event.shiftKey ||
+                    event.nativeEvent.isComposing ||
+                    event.nativeEvent.keyCode === 229
+                  )
+                    return;
+                  event.preventDefault();
+                  if (!event.repeat) event.currentTarget.form?.requestSubmit();
+                }}
                 placeholder="아몬드영 AI에게 편하게 물어보세요…"
                 className="min-h-28 max-h-44 resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0"
               />
