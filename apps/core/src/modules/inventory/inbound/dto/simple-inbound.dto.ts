@@ -7,14 +7,10 @@ import {
   IsNumber,
   Min,
   IsOptional,
-  IsDateString,
   IsString,
   MaxLength,
-  Validate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { IsCalendarDateConstraint } from '../../shared/dto/calendar-date.validator';
 
 export class SimpleInboundItemDto {
   @ApiProperty({ description: 'SKU ID' })
@@ -146,175 +142,9 @@ export class CancelInboundDto {
   idempotencyKey: string;
 }
 
-export class CreateInboundPlanDto {
-  // 예정일은 계획이 아니라 **아이템**이 갖는다(#724 항목 9). 계획 단위 컬럼으로는
-  // 라인마다 다른 ETA 를 담을 수 없었고, 계획을 쪼개는 것은 "해외 발주는 계획 하나"
-  // 불변식이 금지한다.
-
-  @ApiPropertyOptional({ description: '(무시됨) 입고 창고는 연결된 발주에서 도출한다' })
-  @IsUUID()
-  @IsOptional()
-  warehouseId?: string;
-
-  @ApiProperty({ description: '(무시됨) 최종 목적지 창고 ID — 연결된 발주에서 도출한다', required: false })
-  @IsUUID()
-  @IsOptional()
-  destinationWarehouseId?: string;
-
-  @ApiProperty({ description: '연결된 발주 ID' })
-  @IsUUID()
-  @IsNotEmpty()
-  linkedPurchaseOrderId: string;
-
-  @ApiProperty({
-    description: '(무시됨) 계획 타입 — 해외/국내 여부는 연결된 발주에서 도출한다 (source: 중국창고, destination: 최종창고)',
-    enum: ['source', 'destination'],
-    required: false,
-    default: 'destination',
-  })
-  @IsOptional()
-  @IsString()
-  planType?: 'source' | 'destination';
-
-  @ApiProperty({ description: '(무시됨) 창고간 이동 필요 여부 — 연결된 발주에서 도출한다', required: false, default: false })
-  @IsOptional()
-  requiresTransfer?: boolean;
-
-  @ApiProperty({ description: '부모 계획 ID (destination 계획인 경우 source 계획 참조)', required: false })
-  @IsUUID()
-  @IsOptional()
-  parentPlanId?: string;
-}
-
-export class InboundPlanItemInputDto {
-  @ApiProperty({ description: 'SKU ID' })
-  @IsUUID()
-  @IsNotEmpty()
-  skuId: string;
-
-  @ApiProperty({ description: '예정 수량', minimum: 1 })
-  @IsNumber()
-  @Min(1)
-  expectedQty: number;
-
-  /**
-   * `@Matches(/^\d{4}-\d{2}-\d{2}$/)` 는 모양만 본다 — '2026-13-45'·'2026-02-31'·
-   * 윤년 아닌 해의 '2026-02-29' 를 전부 통과시키고, 그 값이 `date` 컬럼에 닿으면
-   * Postgres 가 `date/time field value out of range` 로 트랜잭션을 500 으로 죽인다.
-   * 왕복 비교로 달력까지 보는 IsCalendarDateConstraint 로 좁힌다(calendar-date.validator.ts).
-   */
-  @ApiPropertyOptional({ description: '품목별 도착예정일 (YYYY-MM-DD)' })
-  @IsOptional()
-  @Validate(IsCalendarDateConstraint)
-  expectedDate?: string;
-}
-
-export class AddInboundPlanItemsDto {
-  @ApiProperty({ description: '입고예정 ID' })
-  @IsUUID()
-  @IsNotEmpty()
-  planId: string;
-
-  @ApiProperty({ type: [InboundPlanItemInputDto] })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => InboundPlanItemInputDto)
-  items: InboundPlanItemInputDto[];
-}
-
-export class ReceiveFromPlanDto {
-  @ApiProperty({ description: '입고예정 아이템 ID' })
-  @IsUUID()
-  @IsNotEmpty()
-  planItemId: string;
-
-  @ApiProperty({ description: '실입고 수량', minimum: 1 })
-  @IsNumber()
-  @Min(1)
-  quantity: number;
-
-  @ApiProperty({ description: '입고 로케이션 ID(옵션)', required: false })
-  @IsUUID()
-  @IsOptional()
-  locationId?: string;
-
-  @ApiProperty({ description: '입고 메모', required: false })
-  @IsOptional()
-  memo?: string;
-
-  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(90)
-  idempotencyKey: string;
-}
-
 export class UpdateInboundLineMemoDto {
   @ApiProperty({ description: '메모 내용', maxLength: 255 })
   @IsString()
   @MaxLength(255)
   memo: string;
-}
-
-export class ListPlanItemsQueryDto {
-  @ApiProperty({ description: '시작일 (YYYY-MM-DD)', required: false })
-  @IsOptional()
-  @IsDateString()
-  startDate?: string;
-
-  @ApiProperty({ description: '종료일 (YYYY-MM-DD)', required: false })
-  @IsOptional()
-  @IsDateString()
-  endDate?: string;
-
-  @ApiProperty({ description: '창고 ID', required: false })
-  @IsOptional()
-  @IsUUID()
-  warehouseId?: string;
-
-  @ApiProperty({ description: 'SKU ID', required: false })
-  @IsOptional()
-  @IsUUID()
-  skuId?: string;
-}
-
-// 이중 입고 계획을 위한 새 응답 DTO
-export interface InboundPendingResponse {
-  planId: string;
-  planType: 'source' | 'destination';
-  warehouseId: string;
-  expectedDate: Date | null;
-
-  // 연관 정보
-  isLinkedPlan: boolean; // destination plan 여부
-  sourcePlanStatus?: string; // 중국 plan 상태 (destination plan인 경우)
-
-  // 발주 정보
-  purchaseOrder: {
-    id: string;
-    type: 'domestic' | 'foreign';
-    supplier?: SupplierResponseDto;
-  };
-
-  // 아이템 목록
-  items: Array<{
-    planItemId: string;
-    skuId: string;
-    skuName: string;
-    skuCode: string;
-    expectedQty: number;
-    receivedQty: number;
-    pendingQty: number;
-  }>;
-
-  // 집계 정보
-  totalQuantity: number;
-  totalPendingQuantity: number;
-}
-
-export interface InboundPendingListResponse {
-  warehouseId?: string;
-  totalPendingPlans: number;
-  totalPendingQuantity: number;
-  pendingPlans: InboundPendingResponse[];
 }

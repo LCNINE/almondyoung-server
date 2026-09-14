@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-# 입고예정 파이프라인(import-inbound-plans / match-sku-to-variant / sync-restock-to-medusa)을
+# 입고예정 파이프라인(match-sku-to-variant / sync-restock-to-medusa)을
 # live/dev RDS 로 실행하는 러너. run.sh 와 같은 방식으로 시크릿을 런타임 조회해
 # CORE_DB_URL / MEDUSA_DB_URL 을 주입한다(비번은 transcript 에 안 찍음).
 #
 # 전제: 해당 stage 의 sst tunnel 이 떠 있어야 함.
 #
 # 사용:
-#   bash scripts/sellmate/inbound-run.sh live import-inbound   <csv> [--apply]
 #   bash scripts/sellmate/inbound-run.sh live match-sku        <csv> [--limit N] [--apply]
 #   MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 #     bash scripts/sellmate/inbound-run.sh live sync-restock   [--apply]
 set -euo pipefail
 
-STAGE="${1:?사용: inbound-run.sh <dev|live> <import-inbound|match-sku|sync-restock> [args]}"
-STEP="${2:?스텝(import-inbound|match-sku|sync-restock) 필요}"
+STAGE="${1:?사용: inbound-run.sh <dev|live> <match-sku|sync-restock> [args]}"
+STEP="${2:?스텝(match-sku|sync-restock) 필요}"
 shift 2
 
 REGION="ap-northeast-2"
@@ -68,9 +67,6 @@ echo "🔌 core @ ${MASK}:5432 (시크릿 ${SECRET_ID})"
 cd "$(dirname "$0")/../.."
 
 case "$STEP" in
-  import-inbound)
-    exec npx tsx apps/core/scripts/import-inbound-plans.ts "$@"
-    ;;
   match-sku)
     MEDUSA_DB_URL=$(build_url medusa "public.product")
     export MEDUSA_DB_URL

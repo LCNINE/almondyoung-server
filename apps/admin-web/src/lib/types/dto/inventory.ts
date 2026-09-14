@@ -387,7 +387,6 @@ export type InboundMethod =
   | 'planned';
 export type InboundWorkLogType = 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL';
 export type InboundReceiptStatus = 'posted' | 'draft' | 'cancelled' | 'voided';
-export type InboundPlanType = 'source' | 'destination';
 
 // 요청 DTOs
 export interface SimpleInboundDto {
@@ -428,33 +427,6 @@ export interface UpdateInboundLineMemoDto {
   memo: string;
 }
 
-export interface CreateInboundPlanDto {
-  expectedDate: string;
-  warehouseId: string;
-  destinationWarehouseId?: string;
-  linkedPurchaseOrderId: string;
-  planType?: InboundPlanType;
-  requiresTransfer?: boolean;
-  parentPlanId?: string;
-}
-
-export interface InboundPlanItemInputDto {
-  skuId: string;
-  expectedQty: number;
-}
-
-export interface AddInboundPlanItemsDto {
-  planId: string;
-  items: InboundPlanItemInputDto[];
-}
-
-export interface ReceiveFromPlanDto {
-  planItemId: string;
-  quantity: number;
-  locationId?: string;
-  memo?: string;
-}
-
 export interface VerifyBarcodeRequest {
   barcode: string;
   expectedSkuId?: string;
@@ -491,13 +463,6 @@ export interface InboundStatusQuery {
   offset?: number;
 }
 
-export interface ListPlanItemsQueryDto {
-  startDate?: string;
-  endDate?: string;
-  warehouseId?: string;
-  skuId?: string;
-}
-
 // 응답 DTOs
 export interface InboundReceiptLineDto {
   id: string;
@@ -510,7 +475,7 @@ export interface InboundReceiptLineDto {
   returnedQty: number;
   canceledQty: number;
   putawayFromOriginQty: number;
-  planItemId: string | null;
+  source: 'direct' | 'purchase_order';
   createdAt: string;
   updatedAt: string;
 }
@@ -536,9 +501,14 @@ export interface SimpleInboundResponseDto extends InboundReceiptDto {
   lines: InboundReceiptLineDto[];
 }
 
+export interface InboundReceiptHistoryDto extends InboundReceiptDto {
+  status: 'posted' | 'voided';
+  lines: InboundReceiptLineDto[];
+}
+
 export interface InboundReceiptsResponse {
   total: number;
-  items: InboundReceiptDto[];
+  items: InboundReceiptHistoryDto[];
 }
 
 export interface InboundWorkLogDto {
@@ -569,62 +539,31 @@ export interface VerifyBarcodeResponseDto {
   message?: string;
 }
 
-export interface InboundPlanItemDto {
-  planItemId: string;
-  planId: string;
-  skuId: string;
-  skuCode?: string;
-  skuName?: string;
-  expectedQty: number;
-  receivedQty: number;
-  status: 'pending' | 'confirmed';
-  createdAt: string;
-}
-
-export interface InboundPlanItemsResponse {
-  total: number;
-  items: InboundPlanItemDto[];
-}
-
-export interface ReceiveFromPlanResponseDto {
-  success: boolean;
-  receiptId: string;
-}
-
-export interface InboundPendingItemDto {
+export interface ExpectedArrivalLineDto {
   skuId: string;
   skuName: string;
   skuCode: string;
-  expectedQty: number;
+  orderedQty: number;
   receivedQty: number;
-  pendingQty: number;
+  outstandingQty: number;
+  expectedArrival: string | null;
 }
 
-export interface InboundPendingDto {
-  planId: string;
-  planType: InboundPlanType;
-  warehouseId: string;
+export interface ExpectedArrivalDto {
+  source: 'purchase_order';
+  documentId: string;
+  type: PurchaseOrderType;
+  supplier: { id: string; name: string } | null;
   expectedDate: string | null;
-  isLinkedPlan: boolean;
-  sourcePlanStatus?: string;
-  purchaseOrder: {
-    id: string;
-    type: 'domestic' | 'foreign';
-    supplier?: {
-      id: string;
-      name: string;
-    };
-  };
-  items: InboundPendingItemDto[];
-  totalQuantity: number;
-  totalPendingQuantity: number;
+  totalOutstandingQuantity: number;
+  lines: ExpectedArrivalLineDto[];
 }
 
-export interface InboundPendingListResponseDto {
-  warehouseId?: string;
-  totalPendingPlans: number;
-  totalPendingQuantity: number;
-  pendingPlans: InboundPendingDto[];
+export interface ExpectedArrivalsResponseDto {
+  warehouseId: string;
+  totalDocuments: number;
+  totalOutstandingQuantity: number;
+  arrivals: ExpectedArrivalDto[];
 }
 
 export interface InboundLineMemoResponse {
@@ -1260,6 +1199,11 @@ export interface PurchaseOrderLineDto {
   orderedAt: string | null;
   orderedBy: string | null;
   unavailableReason: string | null;
+  receivedQty: number;
+  outstandingQty: number;
+  receivingProgress: ReceivingProgress | null;
+  closedReason: string | null;
+  closedAt: string | null;
   sku?: {
     name: string;
     barcode: string | null;
@@ -1299,6 +1243,10 @@ export interface CreatePurchaseOrderLineRequest {
   unitPrice?: number;
 }
 
+export interface UpdatePurchaseOrderLineRequest extends CreatePurchaseOrderLineRequest {
+  expectedArrival?: string;
+}
+
 export interface CreatePurchaseOrderRequest {
   type: PurchaseOrderType;
   supplierId: string;
@@ -1308,7 +1256,7 @@ export interface CreatePurchaseOrderRequest {
 }
 
 export interface UpdatePurchaseOrderLinesRequest {
-  lines: CreatePurchaseOrderLineRequest[];
+  lines: UpdatePurchaseOrderLineRequest[];
 }
 
 export interface OrderPurchaseOrderLineRequest {
@@ -1328,9 +1276,47 @@ export interface CancelPurchaseOrderRequest {
   reason: string;
 }
 
-export interface ClosePlanItemRequest {
-  /** 더 기다리지 않기로 한 이유. 필수, 최대 500자. */
+export type ReceivingProgress = 'awaiting' | 'received' | 'short_closed';
+
+export interface ReceivePurchaseOrderLineRequest {
+  skuId: string;
+  quantity: number;
+  memo?: string;
+}
+
+export interface ReceivePurchaseOrderRequest {
+  warehouseId: string;
+  locationId?: string;
+  lines: ReceivePurchaseOrderLineRequest[];
+}
+
+export interface PurchaseOrderReceiptLineResultDto {
+  receiptLineId: string;
+  skuId: string;
+  quantity: number;
+}
+
+export interface PurchaseOrderReceiptResponseDto {
+  receiptId: string;
+  poId: string;
+  lines: PurchaseOrderReceiptLineResultDto[];
+}
+
+export interface CancelPurchaseOrderReceiptLineRequest { receiptLineId: string }
+
+export interface PurchaseOrderReceiptCancelResponseDto {
+  poId: string;
+  skuId: string;
+  quantity: number;
+  receiptLineId: string;
+}
+
+export interface ShortClosePurchaseOrderLineRequest {
   reason: string;
+}
+
+export interface UpdatePurchaseOrderLineExpectedArrivalRequest {
+  expectedArrival: string | null;
 }
 
 export interface AddToCartRequest {

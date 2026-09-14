@@ -10,6 +10,9 @@ export type LineProgress = {
   requested: number;
   ordered: number;
   unavailable: number;
+  awaiting: number;
+  received: number;
+  shortClosed: number;
 };
 
 export function summarizeLines(lines: PurchaseOrderLineDto[]): LineProgress {
@@ -17,9 +20,12 @@ export function summarizeLines(lines: PurchaseOrderLineDto[]): LineProgress {
     (acc, line) => {
       acc.total += 1;
       acc[line.status] += 1;
+      if (line.receivingProgress === 'awaiting') acc.awaiting += 1;
+      if (line.receivingProgress === 'received') acc.received += 1;
+      if (line.receivingProgress === 'short_closed') acc.shortClosed += 1;
       return acc;
     },
-    { total: 0, requested: 0, ordered: 0, unavailable: 0 }
+    { total: 0, requested: 0, ordered: 0, unavailable: 0, awaiting: 0, received: 0, shortClosed: 0 }
   );
 }
 
@@ -27,6 +33,8 @@ export function formatLineProgress(progress: LineProgress): string {
   if (progress.total === 0) return '라인 없음';
   const parts = [`${progress.ordered}/${progress.total} 실행`];
   if (progress.unavailable > 0) parts.push(`${progress.unavailable} 불가`);
+  if (progress.ordered > 0) parts.push(`입고 ${progress.received}/${progress.ordered}`);
+  if (progress.shortClosed > 0) parts.push(`포기 ${progress.shortClosed}`);
   return parts.join(' · ');
 }
 
@@ -45,34 +53,46 @@ export function sortLinesForExecution(lines: PurchaseOrderLineDto[]): PurchaseOr
   });
 }
 
-/**
- * received/cancelled 는 종결 상태다. core 의 isTerminal 과 대칭이다 —
- * lockPurchaseOrderForLineExecution 이 이 두 상태의 라인 실행을 400 으로 막으므로,
- * 화면은 버튼을 눌러 실패를 보여주는 대신 아예 감춘다.
- *
- * cancelled 를 빠뜨렸던 적이 있다(최종 전체 리뷰 발견 I1) — 그때는 취소된 발주에
- * PUT /:id/lines(라인 일괄 수정)가 admin-web 안내대로 통과해, 종결된 발주의 라인만
- * 조용히 바뀌었다.
- */
-export function isTerminalPoStatus(poStatus: PurchaseOrderStatus): boolean {
-  return poStatus === 'received' || poStatus === 'cancelled';
-}
+const ACCEPTS_CHANGES: Record<PurchaseOrderStatus, boolean> = {
+  created: true,
+  confirmed: true,
+  received: false,
+  cancelled: false,
+};
+export const acceptsChanges = (s: PurchaseOrderStatus): boolean => ACCEPTS_CHANGES[s];
+
+const DERIVATION_FROZEN: Record<PurchaseOrderStatus, boolean> = {
+  created: false,
+  confirmed: false,
+  received: false,
+  cancelled: true,
+};
+export const isDerivationFrozen = (s: PurchaseOrderStatus): boolean => DERIVATION_FROZEN[s];
 
 export function canExecuteLines(poStatus: PurchaseOrderStatus): boolean {
-  return !isTerminalPoStatus(poStatus);
+  return acceptsChanges(poStatus);
 }
 
 /**
- * 입고가 시작된 발주는 취소가 아니라 잔량 포기로 닫는다 — core 가 409 로 막는다
- * (이미 입고 있음). 종결 상태에서도 당연히 취소할 수 없다.
- *
- * ⚠️ 이 조건은 "부분 입고" 를 걸러내지 못한다 — 부분 입고된 발주는 status 가
- * `confirmed` 로 남아 있어 이 함수가 true 를 반환하고, 버튼이 뜬 채 사용자가 core
- * 의 409 를 직접 만난다. core 응답을 먼저 읽지 않고는 화면만으로 판별할 수 없다
- * (진행 중인 입고 여부는 라인 목록에 없다).
+ * 새 응답은 라인에 `receivedQty` 를 실으므로 서버와 같은 판정을 한다.
  */
-export function canCancel(poStatus: PurchaseOrderStatus): boolean {
-  return !isTerminalPoStatus(poStatus);
+export function canCancel(po: Pick<PurchaseOrderDto, 'status' | 'lines'>): boolean {
+  return acceptsChanges(po.status) && po.lines.every((line) => line.receivedQty === 0);
+}
+
+export function canShortClose(poStatus: PurchaseOrderStatus, line: PurchaseOrderLineDto): boolean {
+  return poStatus !== 'cancelled' && line.outstandingQty > 0;
+}
+
+export function canEditExpectedArrival(poStatus: PurchaseOrderStatus, line: PurchaseOrderLineDto): boolean {
+  return acceptsChanges(poStatus) && (line.status === 'requested' || line.outstandingQty > 0);
+}
+
+export function formatLineReceiving(line: PurchaseOrderLineDto): string | null {
+  if (line.receivingProgress === 'awaiting') return `받음 ${line.receivedQty} (남음 ${line.outstandingQty})`;
+  if (line.receivingProgress === 'received') return '전량 입고';
+  if (line.receivingProgress === 'short_closed') return '잔량 포기';
+  return null;
 }
 
 export function isLineExecutable(

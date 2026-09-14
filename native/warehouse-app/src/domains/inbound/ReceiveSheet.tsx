@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../core/design/Button';
 import { NumberPad } from '../../core/design/NumberPad';
 import { cn } from '../../core/design/cn';
-import type { PendingPlanItem } from './types';
+import type { ExpectedArrivalLine } from './types';
 
 /**
  * 예정 항목 하나의 실입고 수량을 확정한다.
@@ -18,9 +18,8 @@ export function ReceiveSheet({
   error,
   onSubmit,
   onCancel,
-  actionsHidden = false,
 }: {
-  item: PendingPlanItem;
+  item: ExpectedArrivalLine;
   /**
    * 부모가 스캔마다 더해 주는 누적치. 시트를 스캔으로 열었다면 그 스캔 자체가
    * 이미 1 회로 반영된 값(예: packingUnit)으로 도착하고, 목록의 [입고] 버튼으로
@@ -33,11 +32,8 @@ export function ReceiveSheet({
   error?: string | null;
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
-  /** 위에 확인 다이얼로그가 떠 있는 동안 true. 다이얼로그도 [취소]/[입고] 를
-   *  쓰므로, 이 시트의 버튼을 감춰 접근성 이름 충돌과 배경 조작을 동시에 막는다. */
-  actionsHidden?: boolean;
 }) {
-  const [qty, setQty] = useState(item.pendingQty);
+  const [qty, setQty] = useState(item.outstandingQty);
 
   // 마운트 시점의 scanBump 를 기준선으로 잡는다. 시트를 스캔으로 열었으면 이
   // 값이 이미 0 보다 크지만(그 스캔이 첫 개수), 프리필을 밀어내면 안 되므로
@@ -51,7 +47,7 @@ export function ReceiveSheet({
     }
   }, [scanBump]);
 
-  const over = qty > item.pendingQty;
+  const over = qty > item.outstandingQty;
 
   return (
     <div
@@ -65,7 +61,7 @@ export function ReceiveSheet({
           <div className="font-semibold text-gray-800">{item.skuName}</div>
           <div className="font-mono text-xs text-gray-500">{item.skuCode}</div>
           <div className="mt-1 text-xs text-gray-500">
-            예정 {item.expectedQty} · 입고 {item.receivedQty} · 잔여 {item.pendingQty}
+            발주 {item.orderedQty} · 입고 {item.receivedQty} · 남은 {item.outstandingQty}
           </div>
         </div>
 
@@ -86,7 +82,7 @@ export function ReceiveSheet({
           <NumberPad value={qty} onChange={setQty} />
           {over ? (
             <p className="text-xs text-amber-700">
-              잔여({item.pendingQty})보다 {qty - item.pendingQty}개 많아요.
+              남은 수량 {item.outstandingQty}개를 넘습니다 — 넘는 분량은 간편입고로 받으세요
             </p>
           ) : null}
         </section>
@@ -97,20 +93,23 @@ export function ReceiveSheet({
           </p>
         ) : null}
 
-        {actionsHidden ? null : (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-              onClick={onCancel}
-            >
-              취소
-            </Button>
-            <Button type="button" className="flex-1" disabled={qty < 1 || pending} onClick={() => onSubmit(qty)}>
-              입고
-            </Button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            onClick={onCancel}
+          >
+            취소
+          </Button>
+          <Button
+            type="button"
+            className="flex-1"
+            disabled={qty < 1 || over || pending}
+            onClick={() => onSubmit(qty)}
+          >
+            입고
+          </Button>
+        </div>
       </div>
     </div>
   );

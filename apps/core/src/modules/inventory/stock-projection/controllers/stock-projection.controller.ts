@@ -23,6 +23,7 @@ import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/sto
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
+import { ExpectedArrivalsResponseDto } from '../dto/expected-arrivals.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
 
 // skuIds 는 쉼표 구분 문자열도 받아서 데코레이터 파이프를 걸 수 없다 — 분해한 뒤
@@ -145,6 +146,20 @@ export class StockProjectionController {
     }
 
     return this.stockProjection.getInboundPipeline({ skuIds: ids, toWarehouseId: warehouseId });
+  }
+
+  @Get('/expected-arrivals')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({
+    summary: '입고 대기 목록 — 남은 수량이 있는 문서(지금은 발주)별 묶음',
+    description: '옛 GET /inbound/pending 을 대체한다(PR-B).',
+  })
+  @ApiQuery({ name: 'warehouseId', required: true })
+  @ApiResponse({ status: 200, type: ExpectedArrivalsResponseDto })
+  async listExpectedArrivals(
+    @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
+  ): Promise<ExpectedArrivalsResponseDto> {
+    return this.stockProjection.listExpectedArrivals(warehouseId);
   }
 
   @Get('/stocks/history')

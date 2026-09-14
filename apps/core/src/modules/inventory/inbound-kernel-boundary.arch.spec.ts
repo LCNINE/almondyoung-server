@@ -2,6 +2,7 @@ import { join } from 'path';
 import { collectTsFiles, moduleSpecifiers, readCodeWithoutComments } from './arch-spec.helpers';
 
 const KERNEL_DIR = join(__dirname, 'inbound', 'kernel');
+const INBOUND_DIR = join(__dirname, 'inbound');
 const DOCUMENT_MODULES = /(^|\/)(procurement|warehouse-transfer)(\/|$)/;
 
 /**
@@ -22,6 +23,15 @@ describe('inbound receipt kernel boundary (arch)', () => {
 
   it('커널은 procurement/ · warehouse-transfer/ 를 import 하지 않는다', () => {
     const violations = files.flatMap((file) =>
+      moduleSpecifiers(file)
+        .filter((s) => DOCUMENT_MODULES.test(s))
+        .map((s) => `${file}: ${s}`),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('inbound/ 전체가 procurement/ · warehouse-transfer/ 를 import 하지 않는다 — 의존은 문서 → 커널 한 방향 (§12 #9a)', () => {
+    const violations = collectTsFiles(INBOUND_DIR).flatMap((file) =>
       moduleSpecifiers(file)
         .filter((s) => DOCUMENT_MODULES.test(s))
         .map((s) => `${file}: ${s}`),

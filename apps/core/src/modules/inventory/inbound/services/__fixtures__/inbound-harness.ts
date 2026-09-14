@@ -12,7 +12,6 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
-import { PurchaseOrderClosureAdapter } from '../../../procurement/services/purchase-order-closure.adapter';
 import { InboundReceiptKernel } from '../../kernel/inbound-receipt.kernel';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
@@ -26,12 +25,14 @@ export type Database = PostgresJsDatabase<typeof wmsSchema>;
  * 시드 픽스처는 일부러 여기 두지 않는다 — 스펙마다 필요한 행이 달라서
  * 공유하면 과매개변수 함수가 되고 인라인보다 읽기 어려워진다.
  */
-function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
-  return {
+export function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
+  const adapter: Pick<DbService<typeof wmsSchema>, 'db' | 'run'> = {
     db: database,
-    run: (<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) =>
-      tx ? fn(tx) : database.transaction((trx) => fn(trx as unknown as DbTx))) as never,
-  } as unknown as DbService<typeof wmsSchema>;
+    run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) => (tx ? fn(tx) : database.transaction(fn)),
+  };
+  // Task 8 review 승인: 실제 DbService 생성자는 별도 pool을 열기 때문에, 테스트가 쓰는 db/run 포트만 만든 뒤
+  // private lifecycle 필드를 가진 concrete class 경계에서 한 번만 좁혀 쓴다.
+  return adapter as unknown as DbService<typeof wmsSchema>;
 }
 
 /**
@@ -63,11 +64,8 @@ export function makeInboundService(database: Database): InboundService {
   return new InboundService(
     dbService,
     skuCatalog as never,
-    command,
-    location,
     eventStore,
     idempotency,
-    new PurchaseOrderClosureAdapter(),
     new InboundReceiptKernel(command, location, eventStore),
   );
 }

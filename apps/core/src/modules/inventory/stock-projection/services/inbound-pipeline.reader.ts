@@ -4,12 +4,13 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { inSellableWarehouse } from '../../shared/availability/sellable-warehouses';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
+import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 
 export interface InboundPipelineRow {
   skuId: string;
   onOrderQty: number;
   onOrderEta: Date | null;
-  /** 창고 불문 pending 계획 잔량. 전사 축(#743)이 쓴다. 판매창고행 = onOrderTotalQty − onOrderQty. */
+  /** 창고 불문 실발주 라인 잔량. 전사 축(#743)이 쓴다. 판매창고행 = onOrderTotalQty − onOrderQty. */
   onOrderTotalQty: number;
   awaitingTransferQty: number;
   inTransitQty: number;
@@ -24,7 +25,7 @@ interface QtyWithEta {
 /**
  * 대상 창고(판매 창고) 관점의 공급 파이프라인.
  *
- * ① 발주 잔량   — 비판매 창고로 입고 예정인 pending 계획
+ * ① 발주 잔량   — 비판매 창고로 입고 예정인 남은 수량이 있는 실발주 라인
  * ② 이동 대기   — 비판매 창고 ON_HAND (아직 선적되지 않음)
  * ③ 이동 중     — 선적됐으나 도착·분실 정산이 남은 지시서 잔량
  *
@@ -34,7 +35,7 @@ interface QtyWithEta {
  *
  * ②와 ③은 겹치지 않는다: 선적된 물량은 이미 IN_TRANSFER 로 옮겨져 ON_HAND 에서 빠졌다.
  *
- * `onOrderTotalQty` — 창고 불문 pending 계획 잔량. ①의 비판매 조건을 지운 전사 축(#743)용
+ * `onOrderTotalQty` — 창고 불문 실발주 라인 잔량. ①의 비판매 조건을 지운 전사 축(#743)용
  * 별도 항목이다. 판매창고행 = `onOrderTotalQty` − ①(`onOrderQty`).
  *
  * 알려진 범위 한계: `toWarehouseId` 로 좁혀지는 것은 ③뿐이다. ①②는 비판매 창고 전체의 합이라
@@ -47,6 +48,7 @@ export class InboundPipelineReader {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly transferReader: WarehouseTransferReader,
+    private readonly purchaseOrders: PurchaseOrderExpectedArrivalReader,
   ) {}
 
   /** 요청한 SKU 마다 한 행. 파이프라인이 비어 있는 SKU 도 0 으로 낸다 — 빠지면 화면이 그 칸을 못 그린다. */
@@ -72,56 +74,18 @@ export class InboundPipelineReader {
     }, tx);
   }
 
-  /** ① 아직 중국에도 안 들어온 발주 잔량. 예정일은 가장 이른 계획일. */
+  /** ① 아직 중국에도 안 들어온 발주 잔량. 예정일은 가장 이른 라인 ETA. */
   private async readOnOrder(trx: DbTx, skuIds: string[]): Promise<Map<string, QtyWithEta>> {
-    const items = wmsTables.inboundPlanItems;
-    const plans = wmsTables.inboundPlans;
-
-    const rows = await trx
-      .select({
-        skuId: items.skuId,
-        qty: sql<number>`SUM(${items.expectedQty} - ${items.receivedQty})::int`,
-        // 예정일의 진실은 아이템이다 — 라인마다 ETA 가 다를 수 있는데 계획 날짜는
-        // 계획 단위라 그걸 담지 못한다. 아이템 예정일이 없으면(수동 생성 계획 등)
-        // 계획 날짜로 떨어진다. `date` 컬럼이라 드라이버가 'YYYY-MM-DD' 를 준다.
-        eta: sql<string | null>`MIN(${items.expectedDate})`,
-      })
-      .from(items)
-      .innerJoin(plans, eq(plans.id, items.planId))
-      .where(
-        and(
-          eq(items.status, 'pending'),
-          // 입고될 창고 기준이다 — 최종 목적지(destination_warehouse_id)로 집계하면
-          // Task 7 이 닫은 이중 계상이 되살아난다. 판매 창고로 바로 들어오는 국내 발주
-          // (planType='destination')는 ①이 아니다 — 그건 이미 입고예정에 잡힌다.
-          not(inSellableWarehouse(plans.warehouseId)),
-          inArray(items.skuId, skuIds),
-        ),
-      )
-      .groupBy(items.skuId);
-
-    // 'YYYY-MM-DD' 는 UTC 자정으로 결정적으로 파싱된다 — TZ 함정이 없다.
-    return new Map(rows.map((row) => [row.skuId, { qty: Number(row.qty), eta: row.eta ? new Date(row.eta) : null }]));
+    return this.purchaseOrders.sumOutstandingBySku(skuIds, 'non_sellable_source', trx);
   }
 
   /**
-   * 전 창고 pending 계획 잔량. ①과 달리 판매 창고행(국내 직행 발주)도 센다 — 전사 축은
+   * 전 창고 실발주 라인 잔량. ①과 달리 판매 창고행(국내 직행 발주)도 센다 — 전사 축은
    * "회사가 이미 산 것" 전부가 필요하다. ①의 비판매 조건을 지우는 게 아니라 항목을 하나 더 낸다.
-   *
-   * TODO(#743 A+B): PO 당 계획 1개 불변식은 inbound.service 가 지킨다 — 수동 POST /inbound/plans 가
-   * 두 번째 계획을 만들면 여기서 이중 계상된다.
    */
   private async readOnOrderTotal(trx: DbTx, skuIds: string[]): Promise<Map<string, number>> {
-    const items = wmsTables.inboundPlanItems;
-    const rows = await trx
-      .select({
-        skuId: items.skuId,
-        qty: sql<number>`SUM(${items.expectedQty} - ${items.receivedQty})::int`,
-      })
-      .from(items)
-      .where(and(eq(items.status, 'pending'), inArray(items.skuId, skuIds)))
-      .groupBy(items.skuId);
-    return new Map(rows.map((row) => [row.skuId, Number(row.qty)]));
+    const outstanding = await this.purchaseOrders.sumOutstandingBySku(skuIds, 'all', trx);
+    return new Map([...outstanding].map(([skuId, row]) => [skuId, row.qty]));
   }
 
   /** ② 비판매 창고에 도착해 있으나 아직 이동 지시서에 실리지 않은 물량. 예정일이라 할 것이 없다. */

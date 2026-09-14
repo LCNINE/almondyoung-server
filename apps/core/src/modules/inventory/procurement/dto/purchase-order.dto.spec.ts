@@ -7,7 +7,6 @@ import {
   UpdatePurchaseOrderLineDto,
 } from './purchase-order.dto';
 import { OrderPurchaseOrderLineDto } from './purchase-order/execute-line.dto';
-import { InboundPlanItemInputDto } from '../../inbound/dto/simple-inbound.dto';
 
 /**
  * 발주 관련 DTO 의 날짜 필드(`expectedArrival` / `expectedDate`) 계약을 고정한다.
@@ -23,10 +22,6 @@ import { InboundPlanItemInputDto } from '../../inbound/dto/simple-inbound.dto';
  * 모양이 맞아 통과하고 Postgres 가 `date/time field value out of range` 로 죽인다(500).
  * 두 데코레이터를 겹쳐도 '2026-02-31'·윤년 아닌 '2026-02-29' 는 둘 다 통과한다. 그래서
  * 모양·범위·달력을 한 번에 보는 **왕복 비교** 검증자를 쓴다(calendar-date.validator.ts).
- *
- * `InboundPlanItemInputDto.expectedDate`(inbound_plan_items.expected_date, 같은 `date`
- * 컬럼)는 애초에 모양만 보는 `@Matches`를 그대로 쓰고 있어 같은 계열의 500 을 그대로
- * 재현했다 — 여기서 같은 왕복 비교 검증자로 맞춰 이 스펙에 편입한다.
  *
  * 통합 스펙으로는 못 잡는다 — 그쪽은 서비스를 직접 불러 ValidationPipe 를 지나지 않는다.
  * DTO 데코레이터가 실제로 도는 곳은 HTTP 경계뿐이라, 검증 자체를 단위로 확인한다.
@@ -63,11 +58,11 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
     return dto;
   }
 
-  function planItemDto(expectedDate?: string): InboundPlanItemInputDto {
-    const dto = new InboundPlanItemInputDto();
+  function updateLineDto(expectedArrival?: string): UpdatePurchaseOrderLineDto {
+    const dto = new UpdatePurchaseOrderLineDto();
     dto.skuId = '33333333-3333-4333-8333-333333333333';
-    dto.expectedQty = 1;
-    dto.expectedDate = expectedDate;
+    dto.quantity = 1;
+    dto.expectedArrival = expectedArrival;
     return dto;
   }
 
@@ -75,7 +70,7 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
     ['CreatePurchaseOrderDto', createDto, 'expectedArrival'],
     ['CreatePurchaseOrderFromCartDto', fromCartDto, 'expectedArrival'],
     ['OrderPurchaseOrderLineDto', orderLineDto, 'expectedArrival'],
-    ['InboundPlanItemInputDto', planItemDto, 'expectedDate'],
+    ['UpdatePurchaseOrderLineDto', updateLineDto, 'expectedArrival'],
   ];
 
   describe.each(builders)('%s', (_name, build, property) => {
@@ -138,7 +133,7 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
 /**
  * `PUT /:id/lines` 에 빈 배열을 보내면 라인 전체를 지운 것으로 처리된다
  * (updatePurchaseOrderLines 4단계). requested 라인이 하나도 안 남으면
- * refreshHeaderStatus 가 이를 confirmed 로 읽는다 — admin-web 은 화면에서 항상
+ * headerDeriver 가 이를 confirmed 로 읽는다 — admin-web 은 화면에서 항상
  * 라인을 하나 이상 유지하지만 API 는 그 제약이 없었다. 최소 1개를 DTO 가 막는다.
  */
 describe('UpdatePurchaseOrderLinesDto', () => {

@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -30,6 +31,14 @@ import {
 import { PurchaseOrderResponseDto } from '../dto/purchase-order/purchase-order-response.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
+import {
+  CancelPurchaseOrderReceiptLineDto,
+  PurchaseOrderReceiptCancelResponseDto,
+  PurchaseOrderReceiptResponseDto,
+  ReceivePurchaseOrderDto,
+  ShortClosePurchaseOrderLineDto,
+  UpdateLineExpectedArrivalDto,
+} from '../dto/purchase-order/receiving.dto';
 
 interface JwtPayload {
   userId: string;
@@ -246,6 +255,56 @@ export class PurchaseOrderController {
     @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.markLineUnavailable(poId, skuId, dto, user.userId);
+  }
+
+  @Post(':poId/receipts')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '발주 수령 — 한 회차에 여러 SKU. 멱등키 필수' })
+  @ApiResponse({ status: 201, type: PurchaseOrderReceiptResponseDto })
+  @ApiResponse({ status: 409, description: '취소된 발주 · 주문 전/불가/전량 입고/잔량 포기 품목 · 남은 수량 초과' })
+  async receive(
+    @Param('poId') poId: string,
+    @Body() dto: ReceivePurchaseOrderDto,
+  ): Promise<PurchaseOrderReceiptResponseDto> {
+    return this.purchaseOrderService.receive(poId, dto);
+  }
+
+  @Post('receipt-lines/:receiptLineId/cancel')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '발주 수령 취소 — 당일·전량·적치/회송 전' })
+  @ApiResponse({ status: 200, type: PurchaseOrderReceiptCancelResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async cancelReceiptLine(
+    @Param('receiptLineId') receiptLineId: string,
+    @Body() dto: CancelPurchaseOrderReceiptLineDto,
+  ): Promise<PurchaseOrderReceiptCancelResponseDto> {
+    return this.purchaseOrderService.cancelReceiptLine(receiptLineId, dto);
+  }
+
+  @Post(':poId/lines/:skuId/short-close')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '잔량 포기 — 남은 수량이 있는 실발주 라인' })
+  @ApiResponse({ status: 200, type: PurchaseOrderResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async shortCloseLine(
+    @Param('poId') poId: string,
+    @Param('skuId') skuId: string,
+    @Body() dto: ShortClosePurchaseOrderLineDto,
+    @User() user: JwtPayload,
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.shortCloseLine(poId, skuId, dto, user.userId);
+  }
+
+  @Patch(':poId/lines/:skuId/expected-arrival')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '라인 도착예정일 수정 — YYYY-MM-DD 또는 null' })
+  @ApiResponse({ status: 200, type: PurchaseOrderResponseDto })
+  async updateLineExpectedArrival(
+    @Param('poId') poId: string,
+    @Param('skuId') skuId: string,
+    @Body() dto: UpdateLineExpectedArrivalDto,
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.updateLineExpectedArrival(poId, skuId, dto);
   }
 
   @Post(':id/cancel')

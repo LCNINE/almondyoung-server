@@ -78,7 +78,6 @@ function renderScreen(calls: Call[]) {
         }
         return { items: [], total: 0 };
       }
-      if (o.path.startsWith('/inbound/pending')) return { totalPendingPlans: 0, totalPendingQuantity: 0, pendingPlans: [] };
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };

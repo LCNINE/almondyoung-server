@@ -9,13 +9,18 @@ import type {
   PurchaseOrderLineStatus,
 } from '@/lib/types/dto/inventory';
 import {
+  canEditExpectedArrival,
   canExecuteLines,
+  canShortClose,
+  formatLineReceiving,
   isLineExecutable,
   sortLinesForExecution,
   toCalendarDate,
 } from '../../line-execution-model';
 import { OrderLineDialog } from '../line-execution/order-dialog';
 import { MarkLineUnavailableDialog } from '../line-execution/unavailable-dialog';
+import { ShortCloseLineDialog } from '../line-execution/short-close-dialog';
+import { ExpectedArrivalDialog } from '../line-execution/expected-arrival-dialog';
 
 const LINE_STATUS_LABELS: Record<PurchaseOrderLineStatus, string> = {
   requested: '요청됨',
@@ -32,7 +37,7 @@ const LINE_STATUS_VARIANTS: Record<
   unavailable: 'destructive',
 };
 
-type LineAction = 'order' | 'unavailable';
+type LineAction = 'order' | 'unavailable' | 'short-close' | 'expected-arrival';
 
 export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
   const [activeLine, setActiveLine] = useState<PurchaseOrderLineDto | null>(null);
@@ -84,11 +89,12 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
                   <span>
                     요청 {line.quantity}
                     {line.orderedQty != null && ` → 실발주 ${line.orderedQty}`}
+                    {formatLineReceiving(line) && ` · ${formatLineReceiving(line)}`}
+                    {line.expectedArrival && ` · 도착예정 ${toCalendarDate(line.expectedArrival)}`}
                   </span>
                   {line.unitPrice != null && (
                     <span>단가 {line.unitPrice.toLocaleString('ko-KR')}원</span>
                   )}
-                  {line.expectedArrival && <span>도착예정 {toCalendarDate(line.expectedArrival)}</span>}
                 </div>
 
                 {line.unavailableReason && (
@@ -104,16 +110,18 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
                 )}
               </div>
 
-              {isLineExecutable(po.status, line) && (
-                <div className="flex shrink-0 gap-1">
-                  <Button size="sm" variant="outline" onClick={() => openAction(line, 'order')}>
-                    실행
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => openAction(line, 'unavailable')}>
-                    불가
-                  </Button>
-                </div>
-              )}
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                {isLineExecutable(po.status, line) && (<>
+                  <Button size="sm" variant="outline" onClick={() => openAction(line, 'order')}>실행</Button>
+                  <Button size="sm" variant="ghost" onClick={() => openAction(line, 'unavailable')}>불가</Button>
+                </>)}
+                {canEditExpectedArrival(po.status, line) && (
+                  <Button size="sm" variant="outline" onClick={() => openAction(line, 'expected-arrival')}>예정일 수정</Button>
+                )}
+                {canShortClose(po.status, line) && (
+                  <Button size="sm" variant="ghost" onClick={() => openAction(line, 'short-close')}>잔량 포기</Button>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -135,6 +143,8 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
           if (!o) closeAction();
         }}
       />
+      <ExpectedArrivalDialog po={po} line={activeLine} open={activeAction === 'expected-arrival'} onOpenChange={(o) => { if (!o) closeAction(); }} />
+      <ShortCloseLineDialog po={po} line={activeLine} open={activeAction === 'short-close'} onOpenChange={(o) => { if (!o) closeAction(); }} />
     </>
   );
 }

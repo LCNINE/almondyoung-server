@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { eq, ne, and, gt, inArray } from 'drizzle-orm';
+import { eq, ne, and, inArray } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import {
@@ -12,33 +12,23 @@ import {
 } from '../dto/purchase-order.dto';
 import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
-import { InboundService } from '../../inbound/services/inbound.service';
-import { isTerminal } from './purchase-order-closure.rules';
+import { acceptsChanges } from './purchase-order-status.rules';
+import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { PurchaseOrderReader } from './purchase-order.reader';
 
 /**
  * 발주의 검증·비즈니스 로직·DB 쓰기가 전부 여기 산다.
  *
  * 🔴 **잠금 순서 불변식: PO 행 → 라인(`purchase_order_lines`) 행. 어느 경로든 이
- * 순서로만 잠근다.** "라인" 은 발주 라인(`purchase_order_lines`)만 가리킨다 —
- * 입고 아이템(`inbound_plan_items`)은 다른 테이블이고 다른 규칙을 따른다: 취소
- * (`cancelPurchaseOrder`)가 읽는 것은 후자이며, 그건 잠그지 않고 MVCC 스냅샷으로만
- * 읽는다(§ 아래 해당 메서드 주석 참조). 이 파일에 발주 쓰기를 추가하는 편집은 PO
- * 행을 먼저 잡는다. 순서가 뒤집히면 두 경로가 만나는 순간 Postgres 가 ABBA 교착으로
+ * 순서로만 잠근다.** 이 파일에 발주 쓰기를 추가하는 편집은 PO 행을 먼저 잡는다.
+ * 순서가 뒤집히면 두 경로가 만나는 순간 Postgres 가 ABBA 교착으로
  * 한쪽을 40P01 로 죽이고, 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라
  * **500** 으로 나간다. 취득 지점 3곳에 테스트가 없고 이 주석만이 방어선이다 —
  * 지우지 말 것.
  *
  * 경계는 ADR-0032 가 소유한다:
  * - 발주는 공급사 → 출발 창고 입고까지만 소유하고 거기서 종결한다.
- * - `inbound/` 로 나가는 호출은 `ensurePlanForPurchaseOrder` · `addInboundPlanItems` 둘뿐이다.
- *   라인이 살아있는 동안의 헤더 상태(`created`/`confirmed`)는 `refreshHeaderStatus` 로
- *   라인에서만 파생된다.
- * - 역방향(계획 종결 → 발주 종결) 통보는 존재하되 `PurchaseOrderClosurePort` 를 통해서만
- *   들어온다(`shared/ports/purchase-order-closure.port.ts`) — **호출 방향**은
- *   inbound → procurement 지만 **모듈 의존 방향**은 그대로 procurement → inbound
- *   한쪽이다. 이 포트를 우회해 `inbound/` 가 여기 메서드를 직접 부르게 하거나, 여기서
- *   `inbound/` 내부를 아는 새 파생 경로를 만들지 않는다 — 그 이유는 포트 파일이 설명한다.
+ * - 조달은 입고 모듈의 **커널**만 부른다(`PurchaseOrderReceivingManager`).
  * - `warehouse-transfer/` 를 부르지 않는다. 선적은 이동 지시서가 독립 소유한다.
  *
  * 조회는 `PurchaseOrderReader` 가 소유한다 — 쓰기 후 응답을 만들 때 그 리더를 부른다.
@@ -50,8 +40,8 @@ export class PurchaseOrderManager {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly inboundService: InboundService,
     private readonly reader: PurchaseOrderReader,
+    private readonly headerDeriver: PurchaseOrderHeaderDeriver,
   ) {}
 
   /**
@@ -180,8 +170,7 @@ export class PurchaseOrderManager {
    *
    * 실행 순간 수량·단가·도착예정일이 확정된다. 요청 수량(`quantity`)은 덮어쓰지 않는다 —
    * 요청 10 / 실발주 6 이 둘 다 남아야 "왜 4개가 비었나" 를 나중에 답할 수 있다.
-   * 계획은 **첫 실행에서** 생긴다. 발주서 생성 시점이 아니다 — 아직 주문 안 했으니
-   * 입고 예정도 없다.
+   * 발주서 생성 시점에는 아직 주문하지 않았으므로 입고 예정도 없다.
    */
   async orderLine(
     poId: string,
@@ -192,7 +181,7 @@ export class PurchaseOrderManager {
   ): Promise<PurchaseOrderResponse> {
     return this.dbService.run(async (trx) => {
       await this.executeLineOrder(trx, poId, skuId, dto, userId);
-      await this.refreshHeaderStatus(trx, poId);
+      await this.headerDeriver.refresh(poId, trx);
       return this.reader.findById(poId, trx);
     }, tx);
   }
@@ -222,7 +211,7 @@ export class PurchaseOrderManager {
         })
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
-      await this.refreshHeaderStatus(trx, poId);
+      await this.headerDeriver.refresh(poId, trx);
       return this.reader.findById(poId, trx);
     }, tx);
   }
@@ -234,7 +223,7 @@ export class PurchaseOrderManager {
    * 잔량 포기(잎 종결)로 닫는다(#724 항목 7 스펙 §2.1·§2.2).
    * 전 라인이 `unavailable` 인 발주도 자동으로 취소되지 않는다. 닫을지는 사람이 정한다.
    *
-   * 🔴 잠금 순서: PO 행부터 잡는다. 라인은 읽지 않고 아이템만 읽는다.
+   * 🔴 잠금 순서: PO 행부터 잡고 라인을 `sku_id` 오름차순으로 잠근다.
    */
   async cancelPurchaseOrder(
     poId: string,
@@ -251,29 +240,18 @@ export class PurchaseOrderManager {
         .for('update');
       if (!header) throw new NotFoundError(`Purchase order not found: ${poId}`);
 
-      if (isTerminal(header.status)) {
+      if (!acceptsChanges(header.status)) {
         throw new ConflictError(`Purchase order is already ${header.status}; it cannot be cancelled`);
       }
 
-      // 🔴 알려진 경합(고의로 안 막음, 판정 완료): 여기서 계획/아이템 행을 잠그지 않는다.
-      // 이 SELECT 는 MVCC 스냅샷 읽기라 다른 트랜잭션의 미커밋 입고를 기다리지 않고
-      // 그냥 못 본다 — 그 입고가 우리가 위에서 잡은 PO 행 락과 무관하게 진행 중이면,
-      // 이 취소는 "입고 없음" 으로 읽고 통과한 뒤 그 입고가 뒤이어 커밋될 수 있다.
-      // 막으려면 취소도 계획/아이템 행을 잠가야 하는데, 취소는 PO 를 먼저 잡으므로
-      // 그러면 순서가 `PO → 계획` 이 되어 입고 경로(`아이템 → 계획 → PO`)와 ABBA
-      // 교착이 생긴다 — 그 대가가 이 경합보다 나쁘다고 판단했다(도메인 예외가 아니라
-      // 40P01 드라이버 에러 → 500). 이 경합이 실현되면 `cancelled` 상태에
-      // `received_qty > 0` 인 아이템이 남는다 — 조용하지 않고 눈에 보이며, 재고의
-      // 진실은 어차피 stock_ledgers 원장이 갖는다. 그래서 여기서는 잠그지 않는다.
-      const [received] = await trx
-        .select({ id: wmsTables.inboundPlanItems.id })
-        .from(wmsTables.inboundPlanItems)
-        .innerJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlans.id, wmsTables.inboundPlanItems.planId))
-        .where(
-          and(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId), gt(wmsTables.inboundPlanItems.receivedQty, 0)),
-        )
-        .limit(1);
-      if (received) {
+      // 잠금 순서 불변식: 발주 행(위) → 라인 행. 옛 모델은 계획을 잠그지 않아 경합을 감수했다 — 사라졌다.
+      const lines = await trx
+        .select({ receivedQty: wmsTables.purchaseOrderLines.receivedQty })
+        .from(wmsTables.purchaseOrderLines)
+        .where(eq(wmsTables.purchaseOrderLines.poId, poId))
+        .orderBy(wmsTables.purchaseOrderLines.skuId)
+        .for('update');
+      if (lines.some((line) => line.receivedQty > 0)) {
         throw new ConflictError('Purchase order already has receipts; close the remaining items instead');
       }
 
@@ -293,8 +271,7 @@ export class PurchaseOrderManager {
   }
 
   /**
-   * 라인 실행의 알맹이. 라인별 실행(`orderLine`)과 일괄 확정이 **둘 다 여기로 온다** —
-   * 계획 아이템을 쓰는 자리를 하나로 두기 위해서다.
+   * 라인 실행의 알맹이. 라인별 실행(`orderLine`)과 일괄 확정이 **둘 다 여기로 온다**.
    *
    * 헤더 status 갱신과 응답 조립은 호출자가 한다. 일괄 확정은 라인마다 헤더를 다시
    * 계산할 이유가 없고(마지막에 한 번이면 된다), 응답도 한 번만 필요하다.
@@ -331,23 +308,14 @@ export class PurchaseOrderManager {
         orderedBy: userId,
       })
       .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
-
-    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, tx);
-    await this.inboundService.addInboundPlanItems(
-      {
-        planId: plan.id,
-        items: [{ skuId, expectedQty: dto.orderedQty, expectedDate: effectiveArrival ?? undefined }],
-      },
-      tx,
-    );
   }
 
   /**
    * 라인을 건드리기 전에 발주 헤더를 잠그고 상태를 확인한다.
    *
    * **락 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
-   * 일괄 확정은 헤더 UPDATE(와 ensurePlanForPurchaseOrder 의 FOR UPDATE)로 PO 행을
-   * 먼저 잡고 루프에서 라인을 잠근다. 라인별 실행이 라인을 먼저 잠그면 순서가 뒤집혀
+   * 일괄 확정은 헤더 UPDATE 로 PO 행을 먼저 잡고 루프에서 라인을 잠근다.
+   * 라인별 실행이 라인을 먼저 잠그면 순서가 뒤집혀
    * (ABBA) 두 경로가 만나는 순간 Postgres 가 한쪽을 40P01 로 죽인다 — 그건 도메인
    * 예외가 아니라 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 그래서 라인별
    * 경로도 여기서 PO 행부터 잡는다.
@@ -361,13 +329,8 @@ export class PurchaseOrderManager {
       .for('update');
 
     if (!po) throw new NotFoundError(`Purchase order not found: ${poId}`);
-    // 종결(received/cancelled)은 입고 경로/사람이 소유한 상태다(스펙 §5 헤더 status
-    // 파생표). 여기서 막지 않으면 라인 실행이 계획에 아이템을 더 붙여
-    // inbound_pending_qty 를 부풀리고, refreshHeaderStatus 는 종결 상태를 보면 일찍
-    // 반환하므로 그 뒤로는 아무것도 이 상태를 되돌리지 못한다. drizzle enum 컬럼은
-    // 문자열 유니온이라 TS enum 멤버가 아니라 리터럴로 비교한다(no-unsafe-enum-comparison).
-    if (isTerminal(po.status)) {
-      throw new BadRequestError(`Cannot execute purchase order lines with status: ${po.status}`);
+    if (!acceptsChanges(po.status)) {
+      throw new ConflictError(`Cannot execute purchase order lines with status: ${po.status}`);
     }
   }
 
@@ -375,10 +338,8 @@ export class PurchaseOrderManager {
    * 아직 실행되지 않은 라인만 내준다. 종결된 라인은 재실행도 번복도 안 된다.
    *
    * `FOR UPDATE` 로 **라인 행**을 잠근다 — 라인이 실행의 단위이므로 락도 라인에 건다.
-   * 락이 없으면 같은 라인을 동시에 실행하는 두 트랜잭션이 둘 다 상태 검사를 통과해
-   * 계획 아이템을 두 번 꽂는다(`inbound_plan_items` 에는 (plan_id, sku_id) 유니크가
-   * 없어 DB 가 막아주지 않는다). 뒤에 온 쪽은 여기서 앞선 트랜잭션의 커밋을 기다렸다가
-   * 'ordered' 를 보고 409 로 끝난다.
+   * 락이 없으면 같은 라인을 동시에 실행하는 두 트랜잭션이 둘 다 상태 검사를 통과한다.
+   * 뒤에 온 쪽은 여기서 앞선 트랜잭션의 커밋을 기다렸다가 'ordered' 를 보고 409 로 끝난다.
    */
   private async loadRequestedLine(
     tx: DbTx,
@@ -404,44 +365,11 @@ export class PurchaseOrderManager {
   }
 
   /**
-   * 헤더 `status` 를 라인에서 다시 계산한다.
-   *
-   * 진실은 라인이고 컬럼은 캐시다. `partially_ordered` 같은 새 enum 값은 넣지 않는다 —
-   * "부분" 은 라인이 이미 표현하고, enum 값 추가는 admin-web 선배포를 요구해 단계만 늘린다.
-   * 종결 2개(`received`/`cancelled`)는 각각 입고 경로/사람이 소유하므로 여기서
-   * 건드리지 않는다(조기 반환이 `isTerminal` 로 둘 다 막는다).
-   */
-  private async refreshHeaderStatus(tx: DbTx, poId: string): Promise<void> {
-    const [header] = await tx
-      .select({ status: wmsTables.purchaseOrders.status })
-      .from(wmsTables.purchaseOrders)
-      .where(eq(wmsTables.purchaseOrders.id, poId))
-      .limit(1);
-    // 종결 2개(received/cancelled)는 파생의 밖에 있다. 파생이 이 둘을 되돌리면
-    // 취소된 발주가 라인 실행으로 살아난다.
-    if (!header || isTerminal(header.status)) return;
-
-    const [pending] = await tx
-      .select({ skuId: wmsTables.purchaseOrderLines.skuId })
-      .from(wmsTables.purchaseOrderLines)
-      .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.status, 'requested')))
-      .limit(1);
-
-    const next = pending ? 'created' : 'confirmed';
-    if (next === header.status) return;
-
-    await tx
-      .update(wmsTables.purchaseOrders)
-      .set({ status: next, updatedAt: new Date() })
-      .where(eq(wmsTables.purchaseOrders.id, poId));
-  }
-
-  /**
    * 발주 라인 수정 (created/confirmed 모두 가능)
    * - created: 자유롭게 수정 가능
    * - confirmed: 종결된(ordered/unavailable) 라인은 그대로 두고, 아직 requested 인
-   *   라인만 갈아끼운다. 종결된 라인은 이미 계획에 아이템으로 붙어 있어 요청 수량을
-   *   바꾸면 실행 기록(status/ordered_qty/ordered_at/ordered_by/expected_arrival/
+   *   라인만 갈아끼운다. 종결된 라인의 요청 수량을 바꾸면
+   *   실행 기록(status/ordered_qty/ordered_at/ordered_by/expected_arrival/
    *   unavailable_reason)과 어긋난다.
    */
   async updatePurchaseOrderLines(
@@ -452,7 +380,7 @@ export class PurchaseOrderManager {
     return this.dbService.run(async (trx) => {
       // 1. PO 존재 확인 + 잠금(FOR UPDATE).
       //
-      // 아래 4~5 단계가 라인 행을 지웠다 다시 넣고, refreshHeaderStatus 가 그 결과로
+      // 아래 4~5 단계가 라인 행을 지웠다 다시 넣고, headerDeriver 가 그 결과로
       // PO 행을 UPDATE 한다 — 즉 이 메서드는 "라인을 먼저 건드리고 PO 행을 나중에
       // 쓴다". lockPurchaseOrderForLineExecution 옆에 적힌 락 순서 불변식(PO 행 →
       // 라인 행)을 지키려면, 라인을 건드리기 전에 여기서 PO 행부터 잠가야 한다 —
@@ -461,15 +389,10 @@ export class PurchaseOrderManager {
       // 죽인다. 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라 500 으로 나간다.
       //
       // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 심사 게이트가
-      // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + received 거부)은 이 메서드가
+      // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + 종결 거부)은 이 메서드가
       // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 **메시지**가 다르기
       // 때문이다 — 그 helper 는 "Cannot execute purchase order lines with status: ..." 를
-      // 던지는데, 이 메서드는 라인 수정 엔드포인트에 맞는 "Cannot modify purchase order
-      // lines after fully received" 를 유지해야 한다. 예외 타입은 둘 다 BadRequestError 로
-      // 통일됐다(#724 항목 5-c). 합치는 건 API 응답 메시지를 바꾸는 일이라 범위 밖이다.
-      //
-      // ⚠️ 이 거부는 의미상 409(ConflictError)에 가깝지만 지금 400 이고, 바꾸면 API 계약
-      // 변경이라 그대로 둔다 — #745.
+      // 던지는데, 이 메서드는 라인 수정 엔드포인트에 맞는 메시지를 유지해야 한다.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -482,15 +405,12 @@ export class PurchaseOrderManager {
       }
 
       // 2. 종결(received/cancelled) 상태는 수정 불가. inventory 전체에서 남았던
-      //    유일한 `=== 'received'` 비교였다 — cancelled 발주가 이 문을 통과해 라인이
-      //    조용히 바뀌었다(최종 전체 리뷰 발견 I1). refreshHeaderStatus 는 isTerminal
-      //    로 조기 반환하므로 헤더 status 는 cancelled 로 남은 채 라인만 바뀐다.
-      if (isTerminal(po.status)) {
-        throw new BadRequestError('Cannot modify purchase order lines after fully received');
+      //    acceptsChanges 한 곳에서 같은 관문을 적용한다.
+      if (!acceptsChanges(po.status)) {
+        throw new ConflictError('Cannot modify purchase order lines after fully received');
       }
 
-      // 3. 종결된 라인(ordered/unavailable)은 건드리지 않는다. 그 라인은 이미 계획에
-      //    아이템으로 붙어 있고, 요청 수량을 바꾸면 실행 기록과 어긋난다.
+      // 3. 종결된 라인(ordered/unavailable)은 건드리지 않는다. 요청 수량을 바꾸면 실행 기록과 어긋난다.
       const closed = await trx
         .select({ skuId: wmsTables.purchaseOrderLines.skuId })
         .from(wmsTables.purchaseOrderLines)
@@ -510,16 +430,13 @@ export class PurchaseOrderManager {
             skuId: line.skuId,
             quantity: line.quantity,
             unitPrice: line.unitPrice ?? null,
+            expectedArrival: line.expectedArrival ?? null,
           })),
         );
       }
 
-      // 5. 계획 아이템 재동기화는 없다. 종결된 라인만 계획에 붙어 있고 그 라인은 위에서
-      //    건드리지 않았으므로 아이템도 그대로다. 예전 syncInboundPlanItems 는 pending
-      //    아이템만 지우고 새 라인 전체를 재삽입해서, 이미 입고된 수량을 pending 으로
-      //    한 벌 더 만들었다(진단 문서 ④). 라인 생명주기가 생긴 지금은 재동기화할
-      //    대상 자체가 없다 — 종결 라인은 계획에 붙었고 건드리지 않으니까.
-      await this.refreshHeaderStatus(trx, poId);
+      // 5. 라인 교체 뒤 헤더를 같은 트랜잭션에서 한 번 재파생한다.
+      await this.headerDeriver.refresh(poId, trx);
 
       this.logger.log(`Updated ${updateDto.lines.length} lines for PO ${poId}`);
 

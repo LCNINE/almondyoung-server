@@ -4,7 +4,10 @@
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
-import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
+import {
+  inboundOperationInvalidationKeys,
+  lineExecutionInvalidationKeys,
+} from './line-execution-invalidation';
 import { isCustomError } from '../../api/customError';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
@@ -55,7 +58,6 @@ import type {
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
   CancelPurchaseOrderRequest,
-  ClosePlanItemRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -66,7 +68,10 @@ import type {
   ReturnInboundDto,
   CancelInboundDto,
   UpdateInboundLineMemoDto,
-  ReceiveFromPlanDto,
+  ReceivePurchaseOrderRequest,
+  CancelPurchaseOrderReceiptLineRequest,
+  ShortClosePurchaseOrderLineRequest,
+  UpdatePurchaseOrderLineExpectedArrivalRequest,
   CreateReturnDto,
   ReceiveReturnDto,
   InspectReturnDto,
@@ -88,6 +93,7 @@ import type {
 function useIdempotentMutation<TVars, TData>(opts: {
   mutationFn: (vars: TVars, idempotencyKey: string) => Promise<TData>;
   onSuccess?: (data: TData, vars: TVars) => void;
+  onSettled?: (data: TData | undefined, error: Error | null, vars: TVars) => void;
 }) {
   const keyRef = useRef<string>(crypto.randomUUID());
   return useMutation({
@@ -101,6 +107,7 @@ function useIdempotentMutation<TVars, TData>(opts: {
         keyRef.current = crypto.randomUUID();
       }
     },
+    onSettled: (data, error, vars) => opts.onSettled?.(data, error, vars),
   });
 }
 
@@ -664,24 +671,48 @@ export const useCancelPurchaseOrder = () => {
   });
 };
 
-export const useClosePlanItem = () => {
+export const useReceivePurchaseOrder = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      planId,
-      itemId,
-      data,
-    }: {
-      planId: string;
-      itemId: string;
-      data: ClosePlanItemRequest;
-    }) => inboundClient.closePlanItem(planId, itemId, data),
-    // 잎 종결은 발주 헤더까지 파생으로 밀 수 있다 — 입고 키만 무효화하면
-    // 발주 목록이 옛 상태를 보여준다. 라인 실행과 같은 키 묶음을 쓴다.
-    onSettled: (_res, _err, { planId }) => {
-      for (const queryKey of lineExecutionInvalidationKeys(planId)) {
+  return useIdempotentMutation({
+    mutationFn: ({ poId, ...data }: ReceivePurchaseOrderRequest & { poId: string }, idempotencyKey) =>
+      purchaseOrdersClient.receive(poId, { ...data, idempotencyKey }),
+    onSettled: (_res, _err, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) {
         queryClient.invalidateQueries({ queryKey });
       }
+    },
+  });
+};
+
+export const useCancelPurchaseOrderReceiptLine = () => {
+  const queryClient = useQueryClient();
+  return useIdempotentMutation({
+    mutationFn: (data: CancelPurchaseOrderReceiptLineRequest, idempotencyKey) =>
+      purchaseOrdersClient.cancelReceiptLine({ ...data, idempotencyKey }),
+    onSettled: (_res, _err, { receiptLineId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(receiptLineId)) queryClient.invalidateQueries({ queryKey });
+    },
+  });
+};
+
+export const useShortClosePurchaseOrderLine = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ poId, skuId, data }: { poId: string; skuId: string; data: ShortClosePurchaseOrderLineRequest }) =>
+      purchaseOrdersClient.shortCloseLine(poId, skuId, data),
+    onSettled: (_res, _err, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) queryClient.invalidateQueries({ queryKey });
+    },
+  });
+};
+
+export const useUpdatePurchaseOrderLineExpectedArrival = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ poId, skuId, data }: { poId: string; skuId: string; data: UpdatePurchaseOrderLineExpectedArrivalRequest }) =>
+      purchaseOrdersClient.updateLineExpectedArrival(poId, skuId, data),
+    onSettled: (_res, _err, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -777,32 +808,12 @@ export const useVerifyBarcode = () => {
   });
 };
 
-export const useReceiveFromPlan = () => {
-  const queryClient = useQueryClient();
-  return useIdempotentMutation({
-    mutationFn: (data: ReceiveFromPlanDto, idempotencyKey) => inboundClient.plans.receive({ ...data, idempotencyKey }),
-    // 입고가 이제 계획(2층)뿐 아니라 발주(3층, purchase_orders.status)까지 파생으로
-    // 밀 수 있다 — 전량 입고 직후 이 무효화가 없으면 발주 화면이 옛 상태(confirmed)
-    // 로 남는다(최종 전체 리뷰 발견 M1). 형제인 useClosePlanItem 은 이미 양쪽을
-    // 무효화한다 — 여기도 lineExecutionInvalidationKeys 로 맞춘다. 그 함수는 id
-    // 인자를 쓰지 않으므로(항상 같은 루트 키 묶음을 반환) planItemId 를 그대로
-    // 넘겨도 무방하다.
-    onSuccess: (_res, data) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
-      for (const queryKey of lineExecutionInvalidationKeys(data.planItemId)) {
-        queryClient.invalidateQueries({ queryKey });
-      }
-    },
-  });
-};
-
 export const usePutaway = () => {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
     mutationFn: (data: PutawayRequestDto, idempotencyKey) => inboundClient.putaway({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -812,7 +823,7 @@ export const useReturnInbound = () => {
   return useIdempotentMutation({
     mutationFn: (data: ReturnInboundDto, idempotencyKey) => inboundClient.return({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -822,7 +833,7 @@ export const useCancelInbound = () => {
   return useIdempotentMutation({
     mutationFn: (data: CancelInboundDto, idempotencyKey) => inboundClient.cancel({ ...data, idempotencyKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };
@@ -833,7 +844,7 @@ export const useUpdateInboundLineMemo = () => {
     mutationFn: ({ lineId, data }: { lineId: string; data: UpdateInboundLineMemoDto }) =>
       inboundClient.lines.memo(lineId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+      for (const queryKey of inboundOperationInvalidationKeys()) queryClient.invalidateQueries({ queryKey });
     },
   });
 };

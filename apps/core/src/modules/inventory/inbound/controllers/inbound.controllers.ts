@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Get, Query, Param, BadRequestException, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { InboundService } from '../services/inbound.service';
 import { InboundPutawayReader } from '../services/inbound-putaway.reader';
@@ -10,21 +10,15 @@ import {
   PutawayRequestDto,
   ReturnInboundDto,
   CancelInboundDto,
-  AddInboundPlanItemsDto,
-  ListPlanItemsQueryDto,
-  ReceiveFromPlanDto,
   UpdateInboundLineMemoDto,
 } from '../dto/simple-inbound.dto';
-import { ClosePlanItemDto } from '../dto/close-plan-item.dto';
 import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
-import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
+import {
+  InboundReceiptHistoryResponseDto,
+  IndividualInboundResponseDto,
+  SimpleInboundResponseDto,
+} from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
-
-interface JwtPayload {
-  userId: string;
-  email: string;
-  roles: string[];
-}
 
 @ApiTags('Inbound')
 @Controller('inbound')
@@ -82,16 +76,6 @@ export class InboundController {
     private readonly putawayReader: InboundPutawayReader,
   ) {}
 
-  @Get('pending')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '입고 예정 목록 조회' })
-  @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID' })
-  @ApiResponse({ status: 200, description: '입고 예정 목록이 성공적으로 조회되었습니다.' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async getInboundPending(@Query('warehouseId') warehouseId?: string) {
-    return this.inboundService.getInboundPending(warehouseId);
-  }
-
   @Get('history')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 실적 조회' })
@@ -121,7 +105,7 @@ export class InboundController {
 
   @Get('receipts')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '입고내역(현황) 조회 - (sku, quantity, occurredAt, method)' })
+  @ApiOperation({ summary: '회차별 입고내역 조회 - 전체 라인 포함' })
   @ApiQuery({ name: 'skuId', required: false })
   @ApiQuery({ name: 'warehouseId', required: false })
   @ApiQuery({ name: 'method', required: false, enum: ['individual', 'simple', 'simple_fullscan', 'planned'] })
@@ -129,6 +113,11 @@ export class InboundController {
   @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
+  @ApiResponse({
+    status: 200,
+    description: '회차별 입고내역이 성공적으로 조회되었습니다.',
+    type: InboundReceiptHistoryResponseDto,
+  })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listInboundReceipts(
     @Query('skuId') skuId?: string,
@@ -138,7 +127,7 @@ export class InboundController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
-  ) {
+  ): Promise<InboundReceiptHistoryResponseDto> {
     return this.inboundService.listInboundReceipts({
       skuId,
       warehouseId,
@@ -267,56 +256,5 @@ export class InboundController {
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async cancelInbound(@Body() dto: CancelInboundDto) {
     return this.inboundService.cancelInbound(dto);
-  }
-
-  // 예정 CRUD 및 연계
-  //
-  // `POST plans`(입고예정 생성)는 제거됐다 — 호출자 0이었고, 계획을 만드는 유일한 경로는
-  // 발주 라인 실행(`ensurePlanForPurchaseOrder`)이다. 그 경로만이 "한 발주에 계획 하나"
-  // 불변식(ADR-0032 결정 1)을 PO 행 FOR UPDATE 로 잠그는데, 공개 라우트는 그 락을 거치지
-  // 않아 수동 API 로 이중계획을 만들 여지가 남아 있었다. `InboundService.createInboundPlan`
-  // 메서드 자체는 남는다.
-  @Post('plans/items')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '입고예정 아이템 추가' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async addPlanItems(@Body() dto: AddInboundPlanItemsDto) {
-    return this.inboundService.addInboundPlanItems(dto);
-  }
-
-  @Get('plans/items')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '입고예정 아이템 조회(헤더 무시, 아이템 기준)' })
-  @ApiQuery({ name: 'startDate', required: false })
-  @ApiQuery({ name: 'endDate', required: false })
-  @ApiQuery({ name: 'warehouseId', required: false })
-  @ApiQuery({ name: 'skuId', required: false })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async listPlanItems(@Query() query: ListPlanItemsQueryDto) {
-    return this.inboundService.listInboundPlanItems(query);
-  }
-
-  @Post('plans/receive')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '입고예정 아이템 기반 실입고 처리' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async receiveFromPlan(@Body() dto: ReceiveFromPlanDto) {
-    return this.inboundService.receiveFromPlan(dto);
-  }
-
-  @Post('plans/:planId/items/:itemId/close')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '입고예정 아이템 잔량 포기 종결' })
-  @ApiParam({ name: 'planId', description: '입고 계획 ID' })
-  @ApiParam({ name: 'itemId', description: '입고예정 아이템 ID' })
-  @ApiResponse({ status: 201, description: '아이템이 종결됨' })
-  @ApiResponse({ status: 409, description: '이미 종결된 아이템' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async closePlanItem(
-    @Param('itemId') itemId: string,
-    @Body() dto: ClosePlanItemDto,
-    @User() user: JwtPayload,
-  ) {
-    return this.inboundService.closePlanItem(itemId, dto, user.userId);
   }
 }

@@ -12,6 +12,15 @@ import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purcha
 import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { PurchaseOrderReader } from './purchase-order.reader';
+import { PurchaseOrderReceivingManager } from './purchase-order-receiving.manager';
+import {
+  CancelPurchaseOrderReceiptLineDto,
+  PurchaseOrderReceiptCancelResponseDto,
+  PurchaseOrderReceiptResponseDto,
+  ReceivePurchaseOrderDto,
+  ShortClosePurchaseOrderLineDto,
+  UpdateLineExpectedArrivalDto,
+} from '../dto/purchase-order/receiving.dto';
 
 /**
  * 발주 포트. **위임만 한다** — 검증·비즈니스 로직·쓰기는 `PurchaseOrderManager`,
@@ -32,6 +41,7 @@ export class PurchaseOrderService {
   constructor(
     private readonly manager: PurchaseOrderManager,
     private readonly reader: PurchaseOrderReader,
+    private readonly receiving: PurchaseOrderReceivingManager,
   ) {}
 
   // ========== 쓰기 (Manager 소유) ==========
@@ -83,6 +93,37 @@ export class PurchaseOrderService {
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.manager.updatePurchaseOrderLines(poId, updateDto, tx);
+  }
+
+  receive(poId: string, dto: ReceivePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderReceiptResponseDto> {
+    return this.receiving.receive(poId, dto, tx);
+  }
+
+  cancelReceiptLine(
+    receiptLineId: string,
+    dto: CancelPurchaseOrderReceiptLineDto,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderReceiptCancelResponseDto> {
+    return this.receiving.cancelReceiptLine(receiptLineId, dto, tx);
+  }
+
+  shortCloseLine(
+    poId: string,
+    skuId: string,
+    dto: ShortClosePurchaseOrderLineDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.receiving.shortCloseLine(poId, skuId, dto, userId, tx);
+  }
+
+  updateLineExpectedArrival(
+    poId: string,
+    skuId: string,
+    dto: UpdateLineExpectedArrivalDto,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.receiving.updateLineExpectedArrival(poId, skuId, dto, tx);
   }
 
   // ========== 조회 (Reader 소유) ==========

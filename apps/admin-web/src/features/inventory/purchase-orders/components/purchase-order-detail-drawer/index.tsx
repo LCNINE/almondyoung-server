@@ -62,11 +62,8 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   // 요청 라인이 하나도 없으면 수정할 대상이 없다 — 새 SKU 를 얹는 것도
   // 종결된 발주에 요청 라인을 되살리는 셈이라 막는다.
   const canEditLines = canExecuteLines(po.status) && progress.requested > 0;
-  // 판단(어떤 상태에서 취소 가능한가)은 line-execution-model.canCancel 이 소유한다.
-  // ⚠️ 부분 입고된 발주는 status 가 여전히 confirmed 라 버튼이 뜨고, 사용자는
-  // core 의 409(이미 입고 있음)를 직접 만난다 — 버튼을 숨겨서 막는 게 아니다
-  // (canCancel 의 jsdoc 참조, 최종 전체 리뷰 발견 M4).
-  const showCancelButton = canCancel(po.status);
+  // 판단(상태와 라인별 수령 누계)은 line-execution-model.canCancel 이 소유한다.
+  const showCancelButton = canCancel(po);
 
   const handleCancelOpenChange = (nextOpen: boolean) => {
     // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setCancelOpen(true)

@@ -11,8 +11,6 @@ import type {
   ReturnInboundDto,
   CancelInboundDto,
   UpdateInboundLineMemoDto,
-  ReceiveFromPlanDto,
-  ReceiveFromPlanResponseDto,
   VerifyBarcodeRequest,
   VerifyBarcodeResponseDto,
   InboundReceiptsQuery,
@@ -20,13 +18,9 @@ import type {
   InboundWorkLogsQuery,
   InboundWorkLogsResponse,
   InboundStatusQuery,
-  ListPlanItemsQueryDto,
-  InboundPlanItemsResponse,
-  InboundPendingListResponseDto,
   InboundActionResponse,
   InboundLineMemoResponse,
   WithIdempotencyKey,
-  ClosePlanItemRequest,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/inbound`;
@@ -59,12 +53,6 @@ export const inboundClient = {
 
   verifyBarcode: async (data: VerifyBarcodeRequest): Promise<VerifyBarcodeResponseDto> => {
     const response = await client.post(`${BASE}/verify-barcode`, data);
-    return response.data;
-  },
-
-  pending: async (warehouseId?: string): Promise<InboundPendingListResponseDto> => {
-    const qs = warehouseId ? `?warehouseId=${encodeURIComponent(warehouseId)}` : '';
-    const response = await client.get(`${BASE}/pending${qs}`);
     return response.data;
   },
 
@@ -101,18 +89,6 @@ export const inboundClient = {
     return response.data;
   },
 
-  closePlanItem: async (
-    planId: string,
-    itemId: string,
-    data: ClosePlanItemRequest
-  ): Promise<{ success: true }> => {
-    const response = await client.post(
-      `${BASE}/plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}/close`,
-      data
-    );
-    return response.data;
-  },
-
   lines: {
     memo: async (
       lineId: string,
@@ -122,21 +98,6 @@ export const inboundClient = {
         `${BASE}/lines/${encodeURIComponent(lineId)}/memo`,
         data
       );
-      return response.data;
-    },
-  },
-
-  plans: {
-    listItems: async (
-      query?: ListPlanItemsQueryDto
-    ): Promise<InboundPlanItemsResponse> => {
-      const qs = buildQueryString((query ?? {}) as Record<string, unknown>);
-      const response = await client.get(`${BASE}/plans/items${qs ? `?${qs}` : ''}`);
-      return response.data;
-    },
-
-    receive: async (data: WithIdempotencyKey<ReceiveFromPlanDto>): Promise<ReceiveFromPlanResponseDto> => {
-      const response = await client.post(`${BASE}/plans/receive`, data);
       return response.data;
     },
   },

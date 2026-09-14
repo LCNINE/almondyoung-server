@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createRouter,
@@ -17,7 +17,8 @@ import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import { ScanProvider } from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
-import { PendingPlanListScreen } from './PendingPlanListScreen';
+import type { ExpectedArrivalsResult } from './types';
+import { ExpectedArrivalListScreen } from './ExpectedArrivalListScreen';
 
 const session = {
   bootstrap: async () => {},
@@ -28,38 +29,29 @@ const session = {
   subscribe: () => () => {},
 } satisfies Session;
 
-const PENDING = {
-  totalPendingPlans: 2,
-  totalPendingQuantity: 20,
-  pendingPlans: [
+const ARRIVALS: ExpectedArrivalsResult = {
+  warehouseId: 'w-1',
+  totalDocuments: 1,
+  totalOutstandingQuantity: 12,
+  arrivals: [
     {
-      planId: 'p-1',
-      warehouseId: 'w-1',
-      expectedDate: '2026-07-28T00:00:00.000Z',
-      purchaseOrder: { id: 'po-1', type: 'domestic', supplier: { id: 'sup-1', name: '르아리컴퍼니' } },
-      items: [
+      source: 'purchase_order',
+      documentId: 'po-1',
+      type: 'domestic',
+      supplier: { id: 's-1', name: '알몬드상사' },
+      expectedDate: '2026-09-20',
+      totalOutstandingQuantity: 12,
+      lines: [
         {
-          planItemId: 'pi-1',
-          skuId: 's1',
-          skuName: '코튼셔츠',
-          skuCode: 'CT-001',
-          expectedQty: 20,
-          receivedQty: 0,
-          pendingQty: 20,
+          skuId: 'sku-1',
+          skuName: '아몬드 1kg',
+          skuCode: 'A-1',
+          orderedQty: 20,
+          receivedQty: 8,
+          outstandingQty: 12,
+          expectedArrival: '2026-09-20',
         },
       ],
-      totalQuantity: 20,
-      totalPendingQuantity: 20,
-    },
-    // 전량 입고된 예정: 서버가 plan.status 를 안 닫아서 items 가 빈 채로 계속 내려온다
-    {
-      planId: 'p-done',
-      warehouseId: 'w-1',
-      expectedDate: '2026-07-20T00:00:00.000Z',
-      purchaseOrder: { id: 'po-2', type: 'domestic', supplier: { id: 'sup-2', name: '다른업체' } },
-      items: [],
-      totalQuantity: 0,
-      totalPendingQuantity: 0,
     },
   ],
 };
@@ -68,7 +60,7 @@ function renderScreen(prefsSeed?: Record<string, string>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const client: ApiClient = {
     request: (async (o: { path: string }) => {
-      if (o.path.startsWith('/inbound/pending')) return PENDING;
+      if (o.path.startsWith('/inventory/expected-arrivals')) return ARRIVALS;
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
@@ -77,7 +69,7 @@ function renderScreen(prefsSeed?: Record<string, string>) {
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    component: PendingPlanListScreen,
+    component: ExpectedArrivalListScreen,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([indexRoute]),
@@ -99,22 +91,22 @@ function renderScreen(prefsSeed?: Record<string, string>) {
 
 const SELECTED = { 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }) };
 
-describe('PendingPlanListScreen', () => {
+describe('ExpectedArrivalListScreen', () => {
   it('창고가 없으면 창고 선택을 요구한다', async () => {
     renderScreen();
     expect(await screen.findByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
   });
 
-  it('예정을 발주처와 잔여수량으로 보여준다', async () => {
+  it('창고별 GET /inventory/expected-arrivals 를 부르고 발주 카드를 남은 수량과 함께 보여준다', async () => {
     renderScreen(SELECTED);
-    expect(await screen.findByText('르아리컴퍼니')).toBeInTheDocument();
-    expect(screen.getByText('잔여 20')).toBeInTheDocument();
+    expect(await screen.findByText('알몬드상사')).toBeInTheDocument();
+    expect(screen.getByText('남은 12')).toBeInTheDocument();
   });
 
-  it('잔여 항목이 없는 예정은 감춘다', async () => {
+  it('카드는 /inbound/purchase-orders/$poId 로 간다', async () => {
     renderScreen(SELECTED);
-    await waitFor(() => expect(screen.getByText('르아리컴퍼니')).toBeInTheDocument());
-    expect(screen.queryByText('다른업체')).not.toBeInTheDocument();
+    const card = await screen.findByRole('link', { name: /알몬드상사/ });
+    expect(card).toHaveAttribute('href', '/inbound/purchase-orders/po-1');
   });
 
   it('간편입고 진입점을 제공한다', async () => {

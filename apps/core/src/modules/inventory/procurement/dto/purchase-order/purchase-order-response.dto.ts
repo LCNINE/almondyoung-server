@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PurchaseOrderStatus, PurchaseOrderType } from '../purchase-order.dto';
 import { SupplierResponseDto } from '../../../suppliers/dto/supplier-response.dto';
+import { ReceivingProgress } from '../../services/purchase-order-status.rules';
 
 export type PurchaseOrderLineStatus = 'requested' | 'ordered' | 'unavailable';
 
@@ -29,6 +30,24 @@ export class PurchaseOrderLineDto {
   @ApiPropertyOptional({ nullable: true }) orderedAt: Date | null;
   @ApiPropertyOptional({ nullable: true }) orderedBy: string | null;
   @ApiPropertyOptional({ nullable: true }) unavailableReason: string | null;
+
+  /** 받은 누계 (실발주 라인만 0 보다 클 수 있다) */
+  @ApiProperty()
+  receivedQty: number;
+
+  /** 남은 수량 = ordered ∧ 잔량 포기 아님 일 때 orderedQty − receivedQty, 아니면 0 */
+  @ApiProperty()
+  outstandingQty: number;
+
+  /** 입고 진행 — 카운터 파생(D9). requested/unavailable 은 null */
+  @ApiProperty({ enum: ['awaiting', 'received', 'short_closed'], nullable: true })
+  receivingProgress: ReceivingProgress | null;
+
+  @ApiProperty({ nullable: true })
+  closedReason: string | null;
+
+  @ApiProperty({ nullable: true })
+  closedAt: Date | null;
 
   @ApiPropertyOptional({ type: PurchaseOrderLineSkuDto })
   sku?: PurchaseOrderLineSkuDto;

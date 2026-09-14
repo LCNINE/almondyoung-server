@@ -6,15 +6,14 @@ import { NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { PurchaseOrderResponse, PurchaseOrderStatus, PurchaseOrderType } from '../dto/purchase-order.dto';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { purchaseOrderExpectedArrival } from '../../shared/dates/earliest-expected-date';
+import { lineReceivingProgress, outstandingQty, purchaseOrderExpectedArrival } from './purchase-order-status.rules';
 
 /**
  * 발주 조회. **읽기 전용** — 이 파일에 쓰기를 넣지 않는다.
  *
  * 헤더의 `expectedArrival` 은 컬럼이 아니라 **`ordered` 라인 ETA 의 MIN 파생**이다
  * (`purchaseOrderExpectedArrival`). 아직 실행 안 된 발주는 그래서 비어 있는 게 정상이다.
- * 산식을 바꾸려면 파리티 통합 스펙(헤더 ETA == 그 발주에서 파생된 입고 계획 예정일)을
- * 먼저 읽을 것 — 그게 이 값의 유일한 잠금장치다.
+ * 산식을 바꾸려면 남은 수량이 있는 라인의 최소 ETA 를 검증하는 통합 스펙을 먼저 읽는다.
  *
  * 잠금 순서 불변식(PO 행 → 라인 행)은 쓰기 경로의 규약이라 여기엔 해당이 없다. 다만
  * **이 파일에 `.for('update')` 를 추가하는 순간 해당된다** — 그러면 Manager 로 옮길 것.
@@ -52,6 +51,9 @@ export class PurchaseOrderReader {
           orderedAt: wmsTables.purchaseOrderLines.orderedAt,
           orderedBy: wmsTables.purchaseOrderLines.orderedBy,
           unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
+          receivedQty: wmsTables.purchaseOrderLines.receivedQty,
+          closedReason: wmsTables.purchaseOrderLines.closedReason,
+          closedAt: wmsTables.purchaseOrderLines.closedAt,
           skuName: wmsTables.skus.name,
           skuBarcode: sql<string>`(
                       SELECT barcode FROM sku_barcodes
@@ -93,6 +95,11 @@ export class PurchaseOrderReader {
           orderedAt: line.orderedAt,
           orderedBy: line.orderedBy,
           unavailableReason: line.unavailableReason,
+          receivedQty: line.receivedQty,
+          outstandingQty: outstandingQty(line),
+          receivingProgress: lineReceivingProgress(line),
+          closedReason: line.closedReason,
+          closedAt: line.closedAt,
           sku: {
             name: line.skuName ?? '삭제된 상품',
             barcode: line.skuBarcode ?? '',
@@ -149,6 +156,9 @@ export class PurchaseOrderReader {
               orderedAt: wmsTables.purchaseOrderLines.orderedAt,
               orderedBy: wmsTables.purchaseOrderLines.orderedBy,
               unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
+              receivedQty: wmsTables.purchaseOrderLines.receivedQty,
+              closedReason: wmsTables.purchaseOrderLines.closedReason,
+              closedAt: wmsTables.purchaseOrderLines.closedAt,
               skuName: wmsTables.skus.name,
               skuBarcode: sql<string>`(
                       SELECT barcode FROM sku_barcodes
@@ -191,6 +201,11 @@ export class PurchaseOrderReader {
           orderedAt: line.orderedAt,
           orderedBy: line.orderedBy,
           unavailableReason: line.unavailableReason,
+          receivedQty: line.receivedQty,
+          outstandingQty: outstandingQty(line),
+          receivingProgress: lineReceivingProgress(line),
+          closedReason: line.closedReason,
+          closedAt: line.closedAt,
           sku: {
             name: line.skuName ?? '',
             barcode: line.skuBarcode ?? '',

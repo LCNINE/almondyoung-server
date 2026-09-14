@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { NotFoundError } from '@app/shared';
 import { PurchaseOrderManager } from './purchase-order.manager';
+import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderType } from '../dto/purchase-order.dto';
 
@@ -36,8 +37,8 @@ describe('PurchaseOrderManager 공급사 기본 창고', () => {
     const dbService = dbServiceReturning({ defaultWarehouseId: null });
     const manager = new PurchaseOrderManager(
       dbService as never,
-      {} as never,
       new PurchaseOrderReader(dbService as never),
+      new PurchaseOrderHeaderDeriver(),
     );
 
     await expect(manager.createPurchaseOrder(dto as never)).rejects.toThrow(/입고 창고/);

@@ -29,7 +29,6 @@ import { SkuCatalogManager } from '../../apps/core/src/modules/inventory/sku-cat
 import { SkuCatalogService } from '../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { InboundService } from '../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { InventoryIdempotencyService } from '../../apps/core/src/modules/inventory/core/services/inventory-idempotency.service';
-import { PurchaseOrderClosureAdapter } from '../../apps/core/src/modules/inventory/procurement/services/purchase-order-closure.adapter';
 import { InboundReceiptKernel } from '../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
@@ -74,16 +73,12 @@ async function main() {
   const reader = new SkuCatalogReader(dbService);
   const manager = new SkuCatalogManager(dbService, reader);
   const skuCatalog = new SkuCatalogService(reader, manager);
-  // InboundService 가 요청 멱등 래퍼 + 발주 종결 파생 포트를 추가로 받게 바뀌었다.
   const idempotency = new InventoryIdempotencyService(dbService);
   const inbound = new InboundService(
     dbService,
     skuCatalog,
-    command,
-    location,
     eventStore,
     idempotency,
-    new PurchaseOrderClosureAdapter(),
     new InboundReceiptKernel(command, location, eventStore),
   );
 

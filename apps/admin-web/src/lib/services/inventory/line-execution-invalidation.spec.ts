@@ -1,5 +1,8 @@
 import { inventoryQueryKeys } from './query-keys';
-import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
+import {
+  inboundOperationInvalidationKeys,
+  lineExecutionInvalidationKeys,
+} from './line-execution-invalidation';
 
 describe('lineExecutionInvalidationKeys', () => {
   const keys = lineExecutionInvalidationKeys('po-1');
@@ -19,5 +22,18 @@ describe('lineExecutionInvalidationKeys', () => {
     // 첫 라인 실행이 core ensurePlanForPurchaseOrder 로 입고 계획을 만든다.
     // 입고 키는 전부 ['inbounds', ...] 로 시작하므로 루트 하나로 서브트리를 덮는다.
     expect(keys).toContainEqual(inventoryQueryKeys.inbounds);
+  });
+
+  it('expected-arrivals 루트 키가 포함된다', () => {
+    expect(keys).toContainEqual(inventoryQueryKeys.expectedArrivalsRoot);
+  });
+});
+
+describe('inboundOperationInvalidationKeys', () => {
+  it('필터 객체가 다른 이력·작업로그를 모두 덮는 입고 루트 키를 반환한다', () => {
+    const keys = inboundOperationInvalidationKeys();
+
+    expect(keys).toContainEqual(inventoryQueryKeys.inbounds);
+    expect(keys.some((key) => key.length > 1 && key.at(-1) === undefined)).toBe(false);
   });
 });

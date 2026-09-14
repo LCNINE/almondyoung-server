@@ -25,21 +25,3 @@ export function earliestExpectedDate(dates: (string | null)[]): Date | null {
   const earliest = present.reduce((min, date) => (date < min ? date : min));
   return new Date(`${earliest}T00:00:00.000Z`);
 }
-
-/**
- * 발주 헤더의 도착예정일. **실발주된(`ordered`) 라인만** 본다.
- *
- * `unavailable` 라인은 영영 오지 않고, `requested` 라인은 아직 주문조차 하지 않았다 —
- * 둘 다 입고 계획에 아이템이 없다(`executeLineOrder` 만 아이템을 쓴다). 계획과 **같은
- * 집합**을 보게 해서 발주 목록과 입고 대기가 갈리지 않도록 한다.
- *
- * 대가는 아직 한 라인도 실행 안 된 발주가 「입고 예정일」을 비운다는 것이다. 그건
- * 이 도메인이 이미 택한 원칙과 같다 — *"계획은 첫 실행에서 생긴다. 발주서 생성
- * 시점이 아니다 — 아직 주문 안 했으니 입고 예정도 없다"* (`orderLine` docstring).
- *
- * 산식이 한쪽만 바뀌는 것은 `purchase-order-line-execution` 통합 스펙의 파리티
- * 단언(헤더 도착예정일 == 계획 예정일)이 막는다.
- */
-export function purchaseOrderExpectedArrival(lines: { status: string; expectedArrival: string | null }[]): Date | null {
-  return earliestExpectedDate(lines.filter((line) => line.status === 'ordered').map((line) => line.expectedArrival));
-}

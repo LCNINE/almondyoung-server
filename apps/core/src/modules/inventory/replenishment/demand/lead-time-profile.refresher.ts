@@ -116,16 +116,15 @@ export class LeadTimeProfileRefresher {
     }, tx);
   }
 
-  /** L1: 발주 라인 ordered_at → 같은 PO 계획의 같은 SKU 아이템에 붙은 첫 posted 입고. */
+  /** L1: 발주 라인 ordered_at → 링크된 첫 posted 회차. */
   private async observeSuppliers(trx: DbTx, windowFrom: string): Promise<SupplierObsRow[]> {
     const result = await trx.execute(sql`
       WITH first_receipt AS (
-        SELECT ip.linked_purchase_order_id AS po_id, ipi.sku_id, MIN(ir.occurred_at) AS received_at
-        FROM inbound_plans ip
-        JOIN inbound_plan_items ipi ON ipi.plan_id = ip.id
-        JOIN inbound_receipt_lines irl ON irl.plan_item_id = ipi.id
+        SELECT porl.po_id, porl.sku_id, MIN(ir.occurred_at) AS received_at
+        FROM purchase_order_receipt_lines porl
+        JOIN inbound_receipt_lines irl ON irl.id = porl.receipt_line_id AND irl.canceled_qty < irl.quantity
         JOIN inbound_receipts ir ON ir.id = irl.receipt_id AND ir.status = 'posted'
-        GROUP BY ip.linked_purchase_order_id, ipi.sku_id
+        GROUP BY porl.po_id, porl.sku_id
       ),
       obs AS (
         SELECT po.supplier_id,

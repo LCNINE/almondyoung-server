@@ -55,7 +55,7 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
     return s.id;
   }
 
-  /** ordered 발주 라인 + 연결 계획 아이템 + posted 입고들. 반환: 없음 (관측 하나) */
+  /** ordered 발주 라인 + 연결된 posted 입고들. 반환: 없음 (관측 하나) */
   async function seedOrderedAndReceived(
     trx: DbTx,
     input: {
@@ -85,20 +85,6 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
       orderedQty: 10,
       orderedAt: new Date(input.orderedAt),
     });
-    const [plan] = await trx
-      .insert(wmsTables.inboundPlans)
-      .values({
-        planType: 'destination',
-        status: 'pending',
-        warehouseId: input.warehouseId,
-        destinationWarehouseId: input.warehouseId,
-        linkedPurchaseOrderId: po.id,
-      })
-      .returning({ id: wmsTables.inboundPlans.id });
-    const [item] = await trx
-      .insert(wmsTables.inboundPlanItems)
-      .values({ planId: plan.id, skuId: input.skuId, expectedQty: 10, receivedQty: 0, status: 'pending' })
-      .returning({ id: wmsTables.inboundPlanItems.id });
     for (const at of input.receivedAts) {
       const [receipt] = await trx
         .insert(wmsTables.inboundReceipts)
@@ -110,9 +96,13 @@ describeIfDb('LeadTimeProfileRefresher (DB integration)', () => {
           totalQuantity: 5,
         })
         .returning({ id: wmsTables.inboundReceipts.id });
-      await trx
+      const [line] = await trx
         .insert(wmsTables.inboundReceiptLines)
-        .values({ receiptId: receipt.id, skuId: input.skuId, quantity: 5, planItemId: item.id });
+        .values({ receiptId: receipt.id, skuId: input.skuId, quantity: 5, source: 'purchase_order' })
+        .returning({ id: wmsTables.inboundReceiptLines.id });
+      await trx
+        .insert(wmsTables.purchaseOrderReceiptLines)
+        .values({ poId: po.id, skuId: input.skuId, receiptLineId: line.id });
     }
   }
 

@@ -1,9 +1,14 @@
 import type { PurchaseOrderDto, PurchaseOrderLineDto } from '@/lib/types/dto/inventory';
 import {
+  acceptsChanges,
   buildOrderLinePayload,
   canCancel,
+  canEditExpectedArrival,
   canExecuteLines,
+  canShortClose,
   formatLineProgress,
+  formatLineReceiving,
+  isDerivationFrozen,
   isLineExecutable,
   orderDialogDefaults,
   partitionLinesForEdit,
@@ -23,6 +28,11 @@ function line(overrides: Partial<PurchaseOrderLineDto> = {}): PurchaseOrderLineD
     orderedAt: null,
     orderedBy: null,
     unavailableReason: null,
+    receivedQty: 0,
+    outstandingQty: 0,
+    receivingProgress: null,
+    closedReason: null,
+    closedAt: null,
     ...overrides,
   };
 }
@@ -49,23 +59,23 @@ describe('summarizeLines / formatLineProgress', () => {
       line({ skuId: 'c', status: 'requested' }),
     ]);
 
-    expect(progress).toEqual({ total: 3, requested: 1, ordered: 1, unavailable: 1 });
+    expect(progress).toEqual({ total: 3, requested: 1, ordered: 1, unavailable: 1, awaiting: 0, received: 0, shortClosed: 0 });
   });
 
   it('불가가 있으면 진행 문구에 함께 적는다', () => {
-    expect(formatLineProgress({ total: 5, requested: 1, ordered: 3, unavailable: 1 })).toBe(
-      '3/5 실행 · 1 불가'
+    expect(formatLineProgress({ total: 5, requested: 1, ordered: 3, unavailable: 1, awaiting: 0, received: 0, shortClosed: 0 })).toBe(
+      '3/5 실행 · 1 불가 · 입고 0/3'
     );
   });
 
   it('불가가 없으면 실행분만 적는다', () => {
-    expect(formatLineProgress({ total: 2, requested: 2, ordered: 0, unavailable: 0 })).toBe(
+    expect(formatLineProgress({ total: 2, requested: 2, ordered: 0, unavailable: 0, awaiting: 0, received: 0, shortClosed: 0 })).toBe(
       '0/2 실행'
     );
   });
 
   it('라인이 없으면 그렇게 말한다', () => {
-    expect(formatLineProgress({ total: 0, requested: 0, ordered: 0, unavailable: 0 })).toBe(
+    expect(formatLineProgress({ total: 0, requested: 0, ordered: 0, unavailable: 0, awaiting: 0, received: 0, shortClosed: 0 })).toBe(
       '라인 없음'
     );
   });
@@ -107,17 +117,51 @@ describe('canExecuteLines / isLineExecutable', () => {
   });
 });
 
+describe('관문 표 (서버 purchase-order-status.rules 와 같은 4×2)', () => {
+  it.each([['created', true, false], ['confirmed', true, false], ['received', false, false], ['cancelled', false, true]] as const)(
+    '%s → acceptsChanges=%s · isDerivationFrozen=%s', (s, a, f) => { expect(acceptsChanges(s)).toBe(a); expect(isDerivationFrozen(s)).toBe(f); });
+});
+
 describe('canCancel', () => {
-  it('종결(received/cancelled) 발주는 취소할 수 없다', () => {
-    expect(canCancel('received')).toBe(false);
-    expect(canCancel('cancelled')).toBe(false);
+  it('부분 입고된 발주는 화면에서 걸러진다 — receivedQty 로 판정', () => {
+    expect(canCancel(po({ status: 'confirmed', lines: [line({ status: 'ordered', orderedQty: 10, receivedQty: 3, outstandingQty: 7, receivingProgress: 'awaiting' })] }))).toBe(false);
   });
 
-  it('created/confirmed 발주는 취소할 수 있다', () => {
-    // ⚠️ confirmed 는 부분 입고 중일 수도 있다 — 그 경우 core 가 409 로 막는다.
-    // 이 함수는 화면만으로 그 구분을 못 한다(jsdoc 참조).
-    expect(canCancel('created')).toBe(true);
-    expect(canCancel('confirmed')).toBe(true);
+  it('입고 0 이면 취소 가능, received/cancelled 는 불가', () => {
+    expect(canCancel(po({ status: 'confirmed', lines: [line({ status: 'ordered', orderedQty: 10, outstandingQty: 10, receivingProgress: 'awaiting' })] }))).toBe(true);
+    expect(canCancel(po({ status: 'received', lines: [] }))).toBe(false);
+    expect(canCancel(po({ status: 'cancelled', lines: [] }))).toBe(false);
+  });
+});
+
+describe('canShortClose / canEditExpectedArrival / formatLineReceiving', () => {
+  const awaiting = line({ status: 'ordered', orderedQty: 10, receivedQty: 3, outstandingQty: 7, receivingProgress: 'awaiting' });
+  const done = line({ status: 'ordered', orderedQty: 10, receivedQty: 10, outstandingQty: 0, receivingProgress: 'received' });
+  const closed = line({ status: 'ordered', orderedQty: 10, receivedQty: 0, outstandingQty: 0, receivingProgress: 'short_closed', closedReason: 'x' });
+
+  it('잔량 포기는 남은 수량 > 0 인 라인, cancelled 발주 제외', () => {
+    expect(canShortClose('confirmed', awaiting)).toBe(true);
+    expect(canShortClose('confirmed', done)).toBe(false);
+    expect(canShortClose('received', awaiting)).toBe(true);
+    expect(canShortClose('cancelled', awaiting)).toBe(false);
+  });
+
+  it('예정일 수정은 requested 또는 남은 수량 > 0, 그리고 acceptsChanges', () => {
+    expect(canEditExpectedArrival('created', line())).toBe(true);
+    expect(canEditExpectedArrival('confirmed', awaiting)).toBe(true);
+    expect(canEditExpectedArrival('confirmed', done)).toBe(false);
+    expect(canEditExpectedArrival('received', awaiting)).toBe(false);
+  });
+
+  it('입고 진행 문구', () => {
+    expect(formatLineReceiving(awaiting)).toBe('받음 3 (남음 7)');
+    expect(formatLineReceiving(done)).toBe('전량 입고');
+    expect(formatLineReceiving(closed)).toBe('잔량 포기');
+    expect(formatLineReceiving(line())).toBeNull();
+  });
+
+  it('라인 진행 문구에 입고 진행이 붙는다', () => {
+    expect(formatLineProgress(summarizeLines([awaiting, done, closed, line({ status: 'unavailable' })]))).toBe('3/4 실행 · 1 불가 · 입고 1/3 · 포기 1');
   });
 });
 

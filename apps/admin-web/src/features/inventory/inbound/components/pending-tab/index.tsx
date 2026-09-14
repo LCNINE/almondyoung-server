@@ -5,30 +5,32 @@ import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useInboundPendingTableColumns } from '@/hooks/table/columns/use-inbound-pending-table-columns';
 import { useInboundPendingTableQuery } from '@/hooks/table/query/use-inbound-pending-table-query';
-import { useInboundPending } from '@/lib/services/inventory';
-import type { InboundPendingDto } from '@/lib/types/dto/inventory';
+import { useExpectedArrivals } from '@/lib/services/inventory';
 import { Button } from '@/components/ui/button';
-import { PlanDetailDrawer } from './plan-detail-drawer';
+import { ArrivalDetailDrawer } from './arrival-detail-drawer';
 import { ReceiveDialog } from '../receive-dialog';
+import { selectArrivalById } from '../detail-selection-model';
 
 export function PendingTab() {
   const { warehouseId } = useInboundPendingTableQuery();
-  const { data, isLoading, isFetching } = useInboundPending(warehouseId);
+  const { data, isLoading, isFetching } = useExpectedArrivals(warehouseId);
 
-  const [detailRow, setDetailRow] = useState<InboundPendingDto | null>(null);
+  const rows = data?.arrivals ?? [];
+  const total = rows.length;
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detailRow = selectArrivalById(rows, detailId);
   const [receiveOpen, setReceiveOpen] = useState(false);
 
-  const columns = useInboundPendingTableColumns({ onDetail: setDetailRow });
-
-  const rows = data?.pendingPlans ?? [];
-  const total = rows.length;
+  const columns = useInboundPendingTableColumns({
+    onDetail: (row) => setDetailId(row.documentId),
+  });
 
   const { table } = useDataTable({
     data: rows,
     columns,
     count: total,
     pageSize: 50,
-    getRowId: (row) => row.planId,
+    getRowId: (row) => row.documentId,
   });
 
   const defaultWarehouseId = warehouseId ?? '';
@@ -41,7 +43,7 @@ export function PendingTab() {
         </Button>
         {data && (
           <span className="text-sm text-muted-foreground">
-            대기 계획 {data.totalPendingPlans}건 / 미입고 {data.totalPendingQuantity.toLocaleString()}개
+            입고 대기 {data.totalDocuments}건 / 남은 수량 {data.totalOutstandingQuantity.toLocaleString()}개
           </span>
         )}
       </div>
@@ -52,14 +54,15 @@ export function PendingTab() {
         isFetching={isFetching}
         count={total}
         pageSize={50}
-        noRecords={{ message: '대기 중인 입고 계획이 없습니다.' }}
+        noRecords={{ message: '입고 대기 중인 발주가 없습니다.' }}
       />
 
-      <PlanDetailDrawer
+      <ArrivalDetailDrawer
         row={detailRow}
+        warehouseId={data?.warehouseId ?? ''}
         open={!!detailRow}
         onOpenChange={(open) => {
-          if (!open) setDetailRow(null);
+          if (!open) setDetailId(null);
         }}
       />
 
