@@ -12,7 +12,10 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
-import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
+import {
+  SCAN_STORAGE_MESSAGE,
+  useWorkScanQueue,
+} from '../../core/hardware/scan/useWorkScanQueue';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
@@ -258,13 +261,17 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       ) : null}
       {scanQueue.error() ? (
         <p role="alert">
-          상품을 확인하지 못했어요.{' '}
+          {scanQueue.storageError()
+            ? SCAN_STORAGE_MESSAGE
+            : '상품을 확인하지 못했어요.'}{' '}
           <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
             다시 확인
           </Button>
-          <Button onClick={() => void scanQueue.rejectHead()}>
-            이 스캔 제외
-          </Button>
+          {!scanQueue.storageError() && (
+            <Button onClick={() => void scanQueue.rejectHead()}>
+              이 스캔 제외
+            </Button>
+          )}
         </p>
       ) : null}
       {notice ? (
@@ -383,7 +390,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
           scanBump={scanBump}
           pending={
             receive.isPending ||
-            scanQueue.size() > 0 ||
+            scanQueue.blocked() ||
             !draft.ready ||
             !reconciled
           }
