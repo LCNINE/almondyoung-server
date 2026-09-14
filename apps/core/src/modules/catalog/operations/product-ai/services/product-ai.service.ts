@@ -1,4 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ProductAiImageService, type ProductAiFileAuth } from './product-ai-image.service';
+import { PRODUCT_AI_IMAGES_PER_SESSION, PRODUCT_AI_IMAGES_TOTAL_BYTES } from '@packages/product-ai/images';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { isNull, and, asc, desc, eq, gt } from 'drizzle-orm';
 import { type PimSchema, productAiMessages, productAiSessions } from '../../../schema/catalog.schema';
@@ -11,7 +13,10 @@ import type {
 
 @Injectable()
 export class ProductAiService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly images: ProductAiImageService,
+  ) {}
 
   async create(ownerId: string, data: CreateProductAiSessionInput) {
     return this.db.run(async (tx) => {
@@ -115,7 +120,14 @@ export class ProductAiService {
     return updated;
   }
 
-  async appendUserMessage(ownerId: string, sessionId: string, data: AppendProductAiMessageInput) {
+  async appendUserMessage(
+    ownerId: string,
+    sessionId: string,
+    data: AppendProductAiMessageInput,
+    auth: ProductAiFileAuth = {},
+  ) {
+    await this.get(ownerId, sessionId);
+    const attachments = await this.images.inspect(data.imageIds ?? [], auth);
     return this.db.run(async (tx) => {
       // 한 작업의 입력을 직렬화한다. 모델 호출은 이 트랜잭션 안에서 실행하지 않는다.
       const [session] = await tx
@@ -137,7 +149,11 @@ export class ProductAiService {
         .where(and(eq(productAiMessages.sessionId, sessionId), eq(productAiMessages.requestId, data.requestId)));
       // 응답을 잃은 요청의 재시도는 revision 검사보다 먼저 처리한다.
       if (existing) {
-        if (existing.role !== 'user' || existing.content !== data.content) {
+        if (
+          existing.role !== 'user' ||
+          existing.content !== data.content ||
+          JSON.stringify(existing.attachments.map((file) => file.fileId)) !== JSON.stringify(data.imageIds ?? [])
+        ) {
           throw new ConflictException('같은 요청 ID로 다른 메시지를 저장할 수 없습니다.');
         }
         return { message: existing, revision: session.revision };
@@ -149,6 +165,21 @@ export class ProductAiService {
         throw new ConflictException('다른 입력이 먼저 저장되었습니다. 대화를 새로 불러온 뒤 다시 보내주세요.');
       }
 
+      if (attachments.length) {
+        const previous = await tx
+          .select({ attachments: productAiMessages.attachments })
+          .from(productAiMessages)
+          .where(eq(productAiMessages.sessionId, sessionId));
+        const all = previous.flatMap((row) => row.attachments).concat(attachments);
+        if (
+          all.length > PRODUCT_AI_IMAGES_PER_SESSION ||
+          all.reduce((sum, file) => sum + file.size, 0) > PRODUCT_AI_IMAGES_TOTAL_BYTES
+        ) {
+          throw new BadRequestException(
+            '대화당 이미지 12장·합계 20MB까지 첨부할 수 있습니다. 새 대화를 시작해 주세요.',
+          );
+        }
+      }
       const revision = session.revision + 1;
       const [message] = await tx
         .insert(productAiMessages)
@@ -157,6 +188,7 @@ export class ProductAiService {
           requestId: data.requestId,
           sequence: revision,
           role: 'user',
+          attachments,
           content: data.content,
         })
         .returning();

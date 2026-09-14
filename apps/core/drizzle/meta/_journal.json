@@ -680,6 +680,20 @@
       "when": 1789364972336,
       "tag": "20260914054932_product-ai-soft-delete",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789369017359,
+      "tag": "20260914065657_product-ai-image-attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1789371510084,
+      "tag": "20260914073828_product-ai-draft-preview",
+      "breakpoints": true
     }
   ]
 }

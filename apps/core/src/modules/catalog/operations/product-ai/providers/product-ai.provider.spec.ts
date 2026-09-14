@@ -1,4 +1,5 @@
 import { ProductAiProvider } from './product-ai.provider';
+import type { ProductAiDraft } from '@packages/product-ai/draft';
 
 describe('ProductAiProvider (OpenAI)', () => {
   const originalKey = process.env.PRODUCT_AI_OPENAI_API_KEY;
@@ -32,6 +33,60 @@ describe('ProductAiProvider (OpenAI)', () => {
     expect(body.model).toBe('test-model');
     expect(body.store).toBe(false);
     expect(body.tools).toBeUndefined();
+  });
+  it('이미지가 포함된 사용자 메시지를 Responses 이미지 입력으로 전달한다', async () => {
+    const image = 'data:image/png;base64,aGVsbG8=';
+    const request = jest.spyOn(global, 'fetch').mockResolvedValue(Response.json(completed('이미지 확인')));
+    await provider.reply([{ ...history[0], imageUrls: [image] }]);
+    const body = JSON.parse(request.mock.calls[0][1]!.body as string);
+    expect(body.input[0].content).toEqual([
+      { type: 'input_text', text: history[0].content },
+      { type: 'input_image', image_url: image, detail: 'auto' },
+    ]);
+  });
+  it('완성된 미리보기 도구 인수를 검증하고 콜백으로 전달한다', async () => {
+    const draft: ProductAiDraft = {
+      name: '냥이 스티커',
+      description: '고양이 그림 스티커',
+      seoTitle: '냥이 스티커',
+      seoDescription: '고양이 그림 스티커를 만나보세요.',
+      seoKeywords: ['고양이 스티커'],
+      tags: ['스티커'],
+      thumbnailFileId: null,
+      additionalImageFileIds: [],
+      sections: [{ kind: 'text', heading: '냥이 스티커', body: '고양이 캐릭터 그림입니다.' }],
+      pendingItems: ['가격 확인'],
+    };
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      stream([
+        {
+          type: 'response.completed',
+          response: {
+            status: 'completed',
+            output: [{ type: 'function_call', name: 'prepare_product_draft', arguments: JSON.stringify(draft) }],
+          },
+        },
+      ]),
+    );
+    const onDraft = jest.fn();
+    const onDelta = jest.fn();
+    const answer = await provider.reply(history, { onDraft, onDelta });
+    expect(onDraft).toHaveBeenCalledWith(draft);
+    expect(onDelta).toHaveBeenCalledWith(answer);
+    expect(answer).toContain('미리보기');
+  });
+  it('완료되지 않은 도구 호출은 미리보기로 저장하지 않는다', async () => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        Response.json({
+          status: 'incomplete',
+          output: [{ type: 'function_call', name: 'prepare_product_draft', arguments: '{}' }],
+        }),
+      );
+    const onDraft = jest.fn();
+    await expect(provider.reply(history, { onDraft })).rejects.toThrow();
+    expect(onDraft).not.toHaveBeenCalled();
   });
   it.each(['incomplete', 'failed', 'in_progress'])('불완전한 응답 %s를 저장하지 않는다', async (status) => {
     jest.spyOn(global, 'fetch').mockResolvedValue(Response.json(completed('일부', status)));

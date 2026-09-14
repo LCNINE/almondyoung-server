@@ -1440,6 +1440,7 @@ export const productAiSessions = pgTable(
       .notNull()
       .default('idle'),
     lastUserMessageId: uuid('last_user_message_id'),
+    savedProduct: jsonb('saved_product').$type<import('@packages/product-ai/draft').ProductAiSavedProduct>(),
     replyLeaseId: uuid('reply_lease_id'),
     replyLeaseUntil: timestamp('reply_lease_until', { withTimezone: true }),
     replyError: text('reply_error'),
@@ -1464,6 +1465,11 @@ export const productAiMessages = pgTable(
     sequence: integer('sequence').notNull(),
     role: varchar('role', { length: 20 }).$type<'user' | 'assistant'>().notNull(),
     content: text('content').notNull(),
+    productDraft: jsonb('product_draft').$type<import('@packages/product-ai/draft').ProductAiDraft>(),
+    attachments: jsonb('attachments')
+      .$type<import('@packages/product-ai/images').ProductAiAttachment[]>()
+      .notNull()
+      .default([]),
     feedback: varchar('feedback', { length: 10 }).$type<'up' | 'down'>(),
     sources: jsonb('sources').$type<import('@packages/product-ai/guides').ProductAiSource[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

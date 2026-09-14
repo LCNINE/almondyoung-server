@@ -1,5 +1,5 @@
-import { Body, Delete, Controller, Get, HttpCode, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
+import { Body, Delete, Controller, Get, HttpCode, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, User } from '@app/authorization';
 import {
@@ -15,6 +15,7 @@ import {
 } from '../dto/product-ai.dto';
 import { ProductAiService } from '../services/product-ai.service';
 import { ProductAiReplyService } from '../services/product-ai.reply.service';
+import { ProductAiDraftService } from '../services/product-ai-draft.service';
 
 @ApiTags('Product AI')
 @UseGuards(RolesGuard('master', 'admin'))
@@ -23,7 +24,22 @@ export class ProductAiController {
   constructor(
     private readonly service: ProductAiService,
     private readonly replies: ProductAiReplyService,
+    private readonly drafts: ProductAiDraftService,
   ) {}
+
+  @Post(':id/messages/:messageId/save-draft')
+  @HttpCode(200)
+  @ApiOperation({ summary: '미리보기의 상세페이지·SEO를 내 상품 초안에 저장 (발행하지 않음)' })
+  saveDraft(
+    @User() user: { userId: string },
+    @Param() params: ProductAiMessageParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.drafts.save(user.userId, params.id, params.messageId, {
+      cookie: request.headers.cookie,
+      authorization: request.headers.authorization,
+    });
+  }
 
   @Put(':id/title')
   @ApiOperation({ summary: '내 대화 제목 변경' })
@@ -70,6 +86,7 @@ export class ProductAiController {
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RespondProductAiDto,
     @Res() reply: FastifyReply,
+    @Req() request: FastifyRequest,
   ) {
     await this.service.get(user.userId, params.id);
     const abort = new AbortController();
@@ -88,6 +105,7 @@ export class ProductAiController {
       emit({ type: 'start' });
       const result = await this.replies.respond(user.userId, params.id, body.messageId, {
         signal: abort.signal,
+        fileAuth: { cookie: request.headers.cookie, authorization: request.headers.authorization },
         onDelta: (text) => emit({ type: 'delta', text }),
       });
       emit({ type: 'done', status: result.status });
@@ -106,8 +124,11 @@ export class ProductAiController {
     @User() user: { userId: string },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: RespondProductAiDto,
+    @Req() request: FastifyRequest,
   ) {
-    return this.replies.respond(user.userId, params.id, body.messageId);
+    return this.replies.respond(user.userId, params.id, body.messageId, {
+      fileAuth: { cookie: request.headers.cookie, authorization: request.headers.authorization },
+    });
   }
 
   @Post()
@@ -145,7 +166,11 @@ export class ProductAiController {
     @User() user: { userId: string },
     @Param() params: ProductAiSessionParamsDto,
     @Body() body: AppendProductAiMessageDto,
+    @Req() request: FastifyRequest,
   ) {
-    return this.service.appendUserMessage(user.userId, params.id, body);
+    return this.service.appendUserMessage(user.userId, params.id, body, {
+      cookie: request.headers.cookie,
+      authorization: request.headers.authorization,
+    });
   }
 }

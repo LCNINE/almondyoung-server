@@ -1,3 +1,4 @@
+import { ProductAiImageService } from './product-ai-image.service';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -8,6 +9,9 @@ import { catalogSchema, productAiSessions, type PimSchema } from '../../../schem
 import { ProductAiService } from './product-ai.service';
 import { ProductAiReplyService } from './product-ai.reply.service';
 import { eq } from 'drizzle-orm';
+import { ProductAiDraftService } from './product-ai-draft.service';
+import { ProductMastersService } from '../../../core/products/services/product-masters.service';
+import type { ProductAiDraft } from '@packages/product-ai/draft';
 
 // 기본 DATABASE_URL은 사용하지 않는다. 로컬 PostgreSQL에 매 실행 독립 DB를 만들고 제거한다.
 const testUrl = process.env.PRODUCT_AI_TEST_DATABASE_URL;
@@ -55,12 +59,18 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
       await migrationClient.unsafe(
         readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914054932_product-ai-soft-delete.sql'), 'utf8'),
       );
+      await migrationClient.unsafe(
+        readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914065657_product-ai-image-attachments.sql'), 'utf8'),
+      );
+      await migrationClient.unsafe(
+        readFileSync(join(process.cwd(), 'apps/core/drizzle/20260914073828_product-ai-draft-preview.sql'), 'utf8'),
+      );
     } finally {
       await migrationClient.end();
     }
     db = new DbService({ connectionString }, catalogSchema);
-    service = new ProductAiService(db);
-    replies = new ProductAiReplyService(db, provider);
+    service = new ProductAiService(db, new ProductAiImageService());
+    replies = new ProductAiReplyService(db, provider, new ProductAiImageService());
   });
 
   afterAll(async () => {
@@ -73,6 +83,109 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     return service.create(owner, { requestId: randomUUID(), title: '미곤 상품등록' });
   }
   const input = (content: string, expectedRevision = 0) => ({ requestId: randomUUID(), expectedRevision, content });
+
+  const draft: ProductAiDraft = {
+    name: '냥이 스티커',
+    description: '고양이 스티커',
+    seoTitle: '냥이 스티커',
+    seoDescription: '고양이 그림 스티커',
+    seoKeywords: ['스티커'],
+    tags: [],
+    thumbnailFileId: null,
+    additionalImageFileIds: [],
+    sections: [{ kind: 'text', heading: '소개', body: '<script>alert(1)</script>' }],
+    pendingItems: ['가격 미정'],
+  };
+  async function prepareDraft() {
+    const session = await createSession();
+    const { message } = await service.appendUserMessage(owner, session.id, input('상세페이지 초안 만들어줘'));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft(draft);
+      return '미리보기 준비';
+    });
+    await replies.respond(owner, session.id, message.id);
+    const history = await service.messages(owner, session.id, { after: 0, limit: 100 });
+    return { session, message: history.items.at(-1)! };
+  }
+  function draftSaver() {
+    const version = { id: randomUUID(), masterId: randomUUID(), status: 'draft', draftOwnerId: owner };
+    const masters = {
+      createMaster: jest.fn().mockResolvedValue(version),
+      updateVersion: jest.fn().mockResolvedValue(version),
+      getVersionById: jest.fn().mockResolvedValue(version),
+    };
+    const images = new ProductAiImageService();
+    const copies = jest.spyOn(images, 'copyForProduct').mockResolvedValue(new Map());
+    return {
+      service: new ProductAiDraftService(db, masters as unknown as ProductMastersService, images),
+      masters,
+      copies,
+    };
+  }
+  it('모델이 대화 밖의 이미지 ID를 만들면 미리보기를 저장하지 않는다', async () => {
+    const session = await createSession();
+    const { message } = await service.appendUserMessage(owner, session.id, input('미리보기 만들어줘'));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft({ ...draft, thumbnailFileId: randomUUID() });
+      return '미리보기';
+    });
+    await expect(replies.respond(owner, session.id, message.id)).rejects.toThrow('첨부 이미지');
+    const history = await service.messages(owner, session.id, { after: 0, limit: 100 });
+    expect(history.items).toHaveLength(1);
+  });
+  it('미리보기를 보존하고 동시 저장/응답 유실 재시도에도 상품은 한 번만 생성한다', async () => {
+    const prepared = await prepareDraft();
+    expect(prepared.message.productDraft).toEqual(draft);
+    const saver = draftSaver();
+    const results = await Promise.all([
+      saver.service.save(owner, prepared.session.id, prepared.message.id, {}),
+      saver.service.save(owner, prepared.session.id, prepared.message.id, {}),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(saver.masters.createMaster).toHaveBeenCalledTimes(1);
+    expect(saver.masters.updateVersion.mock.calls[0][1].descriptionHtml).toContain('&lt;script&gt;');
+    expect(saver.masters.updateVersion.mock.calls[0][1]).not.toHaveProperty('status');
+  });
+  it('타인이나 이전 대화 버전의 미리보기는 상품을 만들지 못한다', async () => {
+    const prepared = await prepareDraft();
+    const saver = draftSaver();
+    await expect(saver.service.save(otherOwner, prepared.session.id, prepared.message.id, {})).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await service.appendUserMessage(owner, prepared.session.id, input('내용 수정', 2));
+    await expect(saver.service.save(owner, prepared.session.id, prepared.message.id, {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(saver.masters.createMaster).not.toHaveBeenCalled();
+    expect(saver.copies).not.toHaveBeenCalled();
+  });
+  it('상품 저장 실패 시 완료 표시를 남기지 않아 재시도할 수 있다', async () => {
+    const prepared = await prepareDraft();
+    const saver = draftSaver();
+    saver.masters.updateVersion.mockRejectedValueOnce(new Error('write failed'));
+    await expect(saver.service.save(owner, prepared.session.id, prepared.message.id, {})).rejects.toThrow(
+      'write failed',
+    );
+    expect((await service.get(owner, prepared.session.id)).savedProduct).toBeNull();
+  });
+
+  it('첨부 ID를 저장하며 같은 요청의 다른 첨부로 재시도할 수 없다', async () => {
+    const file = { fileId: randomUUID(), fileName: '상품.png', mimeType: 'image/png', size: 100 };
+    const inspect = jest.spyOn(ProductAiImageService.prototype, 'inspect').mockResolvedValue([file]);
+    try {
+      const session = await createSession();
+      const data = { ...input('사진을 읽어줘'), imageIds: [file.fileId] };
+      const first = await service.appendUserMessage(owner, session.id, data);
+      expect(first.message.attachments).toEqual([file]);
+      expect((await service.appendUserMessage(owner, session.id, data)).message.id).toBe(first.message.id);
+      await expect(service.appendUserMessage(owner, session.id, { ...data, imageIds: [randomUUID()] })).rejects.toThrow(
+        ConflictException,
+      );
+      expect((await service.messages(owner, session.id, { after: 0, limit: 50 })).items[0].attachments).toEqual([file]);
+    } finally {
+      inspect.mockRestore();
+    }
+  });
 
   it('본인만 제목을 수정하고 소프트 삭제한 대화는 조회하거나 이어갈 수 없다', async () => {
     const session = await createSession();
@@ -187,7 +300,7 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     await service.appendUserMessage(owner, session.id, input('대표카테고리가 뭐야?', 4));
     const reopenedDb = new DbService({ connectionString }, catalogSchema);
     try {
-      const reopened = new ProductAiService(reopenedDb);
+      const reopened = new ProductAiService(reopenedDb, new ProductAiImageService());
       const first = await reopened.messages(owner, session.id, { after: 0, limit: 2 });
       expect(first.items.map((item) => item.sequence)).toEqual([1, 2]);
       expect(first.hasMore).toBe(true);

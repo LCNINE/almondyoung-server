@@ -9,6 +9,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ProductAiController } from './product-ai.controller';
 import { ProductAiService } from '../services/product-ai.service';
 import { ProductAiReplyService } from '../services/product-ai.reply.service';
+import { ProductAiDraftService } from '../services/product-ai-draft.service';
 
 describe('ProductAiController HTTP 입력 검증', () => {
   let app: NestFastifyApplication;
@@ -31,6 +32,7 @@ describe('ProductAiController HTTP 입력 검증', () => {
       providers: [
         { provide: ProductAiService, useValue: service },
         { provide: ProductAiReplyService, useValue: replies },
+        { provide: ProductAiDraftService, useValue: { save: jest.fn() } },
       ],
     })
       .overrideGuard(roleGuard)

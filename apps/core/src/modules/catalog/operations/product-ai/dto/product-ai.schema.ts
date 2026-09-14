@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PRODUCT_AI_IMAGES_PER_MESSAGE } from '@packages/product-ai/images';
 
 export const createProductAiSessionSchema = z
   .object({
@@ -13,6 +14,11 @@ export const appendProductAiMessageSchema = z
     requestId: z.uuid(),
     expectedRevision: z.number().int().min(0).max(2_147_483_646),
     content: z.string().trim().min(1).max(20_000),
+    imageIds: z
+      .array(z.uuid())
+      .max(PRODUCT_AI_IMAGES_PER_MESSAGE)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
   })
   .strict();
 
