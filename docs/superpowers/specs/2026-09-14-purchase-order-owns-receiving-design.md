@@ -1,7 +1,7 @@
 # 발주가 자기 수령을 소유하고, 현장 입고는 공통 커널이 한다
 
 > 이 문서는 **설계**만 소유한다. 실행 계획은 `docs/superpowers/plans/` 로 따로 나간다.
-> 이 작업의 이슈는 스펙 리뷰가 끝난 뒤 연다 — 열리면 이 줄을 이슈 링크로 바꾼다.
+> 추적 이슈: [#871](https://github.com/LCNINE/almondyoung-server/issues/871) · PR-B: [#872](https://github.com/LCNINE/almondyoung-server/pull/872).
 >
 > 선행 문서: [ADR-0032](../../adr/0032-procurement-inbound-transfer-boundaries.md) (결정 1·4 를 대체한다) ·
 > [항목 7 스펙](2026-08-27-purchase-order-closure-derivation-design.md) (파생 사슬을 대체한다) ·

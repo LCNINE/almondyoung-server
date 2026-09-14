@@ -48,4 +48,5 @@ Accepted (2026-09-14). ADR-0032 결정 1·4와
 
 - `docs/superpowers/specs/2026-09-14-purchase-order-owns-receiving-design.md`
 - PR-A: #867
-- PR-B: (머지 후 번호)
+- 추적 이슈: [#871](https://github.com/LCNINE/almondyoung-server/issues/871)
+- PR-B: [#872](https://github.com/LCNINE/almondyoung-server/pull/872)
