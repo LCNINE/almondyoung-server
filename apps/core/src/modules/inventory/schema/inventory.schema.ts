@@ -1143,7 +1143,7 @@ export const stockSummary = pgView('stock_summary_view', {
         COALESCE(reserved.qty, 0) as reserved_qty,
         -- 가용재고 = ON_HAND 합 − confirmed 예약 합 (ADR-0001).
         -- transit_out 을 다시 빼지 말 것: 출발 창고에서만 빠지고 도착 창고에 더해지지 않아
-        -- 사내 이동만으로 전사 판매가능수량이 줄고, inbound_plan_items 기반이라 실제 이동
+        -- 사내 이동만으로 전사 판매가능수량이 줄고, 옛 inbound_plan_items 기반이었을 때 실제 이동
         -- (stock_journals)이 끝나도 줄지 않는다. 등가성은 view-parity.integration.spec.ts 가 고정한다.
         COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) as available_qty,
 
@@ -1184,13 +1184,18 @@ export const stockSummary = pgView('stock_summary_view', {
         GROUP BY sku_id, warehouse_id
     ) reserved ON s.id = reserved.sku_id AND w.id = reserved.warehouse_id
     LEFT JOIN (
-        -- 그 창고에 실제로 입고될 예정 수량. destination_warehouse_id 로 집계하면
-        -- source/destination 두 계획이 같은 창고에 잡혀 이중 계상된다.
-        SELECT ipi.sku_id, ip.warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
-        FROM inbound_plan_items ipi
-        INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
-        WHERE ipi.status = 'pending'
-        GROUP BY ipi.sku_id, ip.warehouse_id
+        -- 입고예정 = 남은 수량이 있는 실발주 라인(스펙 §5.1). 출발 창고(source_warehouse_id) 기준이다.
+        -- 술어는 procurement/services/purchase-order-outstanding.sql.ts 와 같은 식이어야 한다 —
+        -- 파리티는 expected-arrivals-parity.integration.spec.ts 가 고정한다. COALESCE: CHECK 처럼 NULL 을 통과시키지 않기 위해.
+        SELECT pol.sku_id, po.source_warehouse_id AS warehouse_id,
+               SUM(COALESCE(pol.ordered_qty, 0) - pol.received_qty) as qty
+        FROM purchase_order_lines pol
+        INNER JOIN purchase_orders po ON po.id = pol.po_id
+        WHERE pol.status = 'ordered'
+          AND pol.closed_at IS NULL
+          AND pol.received_qty < COALESCE(pol.ordered_qty, 0)
+          AND po.status::text <> 'cancelled'
+        GROUP BY pol.sku_id, po.source_warehouse_id
     ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.warehouse_id
     LEFT JOIN (
         -- 미도착 이동 잔량. 도착 창고 기준이다 — 옛 정의는 inbound_plan_items 를 읽어
@@ -2157,10 +2162,53 @@ export const purchaseOrderLines = pgTable(
     orderedAt: timestamp('ordered_at', { withTimezone: true }),
     orderedBy: uuid('ordered_by'),
     unavailableReason: text('unavailable_reason'),
+    /**
+     * 받은 누계. **발주 행 잠금 안에서만** 갱신한다(스펙 §4.1·§7.1). 정본은 링크된 회차 라인의
+     * `quantity − canceled_qty` 합이고 이 컬럼은 그 캐시다 — 파리티는 통합 스펙이 고정한다.
+     */
+    receivedQty: integer('received_qty').notNull().default(0),
+    /** 잔량 포기 사유. `closedAt` 이 null 이 아니면 잔량 포기된 라인이다. */
+    closedReason: text('closed_reason'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     pk: primaryKey(t.poId, t.skuId),
+    // 실발주 전에는 받을 수 없고, 실발주를 넘겨 받을 수 없다(D7). CHECK 는 NULL 을 통과시키므로 COALESCE.
+    ckReceived: check(
+      'ck_po_lines_received',
+      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= COALESCE(${t.orderedQty}, 0)`,
+    ),
+    // 잔량 포기는 실발주된 라인에만 있다.
+    ckClosed: check('ck_po_lines_closed', sql`${t.closedAt} IS NULL OR ${t.status} = 'ordered'`),
+    // 실발주 수량은 실발주된 라인에만, 그리고 반드시 있다 — 지금까지 주석뿐이던 규칙.
+    ckOrderedQty: check('ck_po_lines_ordered_qty', sql`(${t.status} = 'ordered') = (${t.orderedQty} IS NOT NULL)`),
+  }),
+);
+
+/**
+ * 발주 라인 ↔ 커널 회차 라인 링크(조달 소유, 스펙 §4.2). 수량은 복사하지 않는다 — 회차 라인의
+ * `quantity`·`canceled_qty` 가 진실이다. 취소된 회차의 링크 행도 이력으로 남는다.
+ * FK 방향은 문서 → 커널이다. `ON DELETE RESTRICT`: 발주·회차 삭제 경로가 없다.
+ */
+export const purchaseOrderReceiptLines = pgTable(
+  'purchase_order_receipt_lines',
+  {
+    poId: uuid('po_id').notNull(),
+    skuId: uuid('sku_id').notNull(),
+    receiptLineId: uuid('receipt_line_id')
+      .primaryKey()
+      .references(() => inboundReceiptLines.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    fkLine: foreignKey({
+      columns: [t.poId, t.skuId],
+      foreignColumns: [purchaseOrderLines.poId, purchaseOrderLines.skuId],
+      name: 'fk_po_receipt_lines_line',
+    }).onDelete('restrict'),
+    ixLine: index('ix_po_receipt_lines_line').on(t.poId, t.skuId),
   }),
 );
 
@@ -3346,6 +3394,7 @@ export const wmsTables = {
   holidays,
   purchaseOrders,
   purchaseOrderLines,
+  purchaseOrderReceiptLines,
   purchaseOrderCart,
   inboundReceipts,
   inboundReceiptLines,
@@ -4617,6 +4666,9 @@ export type NewPurchaseOrder = InferInsertModel<typeof purchaseOrders>;
 
 export type PurchaseOrderLine = InferSelectModel<typeof purchaseOrderLines>;
 export type NewPurchaseOrderLine = InferInsertModel<typeof purchaseOrderLines>;
+
+export type PurchaseOrderReceiptLine = InferSelectModel<typeof purchaseOrderReceiptLines>;
+export type NewPurchaseOrderReceiptLine = InferInsertModel<typeof purchaseOrderReceiptLines>;
 
 export type PurchaseOrderCart = InferSelectModel<typeof purchaseOrderCart>;
 export type NewPurchaseOrderCart = InferInsertModel<typeof purchaseOrderCart>;

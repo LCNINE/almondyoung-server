@@ -45,6 +45,7 @@
 
 다음 보완은 아래 예제보다 우선한다. 설계의 기능 범위는 §11 PR-B 그대로다.
 
+- **T1 최초 설치:** VIEW와 custom 백필의 `po.status` 비교는 `::text`로 비교한다. 과거 `ALTER TYPE ... ADD VALUE cancelled`와 PR-B를 빈 DB에 한 트랜잭션으로 적용할 때의 unsafe enum 사용을 피하는 동등한 술어다. 실제 전체 이력 신규 설치 테스트를 추가한다.
 - **T1 백필 정합성 가드:** 백필 마지막에 PR-C 확인 쿼리 3종에 해당하는 orphan 품목·미이관 회차·카운터/링크 합 불일치가 하나라도 있으면 `RAISE EXCEPTION`으로 트랜잭션 전체를 롤백한다. 옛 cache를 임의로 고치지 않으며, 불일치 시 사람이 정리할 수 있도록 가드 원인을 명시한다. CHECK는 기존 계획대로 생성 DDL에 둔다.
 - **T1 백필 증거:** 가드 DO 블록만 호출하는 기존 테스트 외에, PR-A 스키마까지 적용한 작업 전용 DB에 정상 옛 모델(부분 수령, 취소된 회차, 잔량 포기, cancelled 헤더 포함)을 시드한다. P1~P3 0행 → 실제 PR-B DDL+백필 실행 → PR-C 확인 쿼리 3종 0행, source·카운터·헤더 상태를 단언한다. 중복 품목·destination·status/ordered_qty 불일치는 각각 실제 migrate 실패를 확인한다. 작업 전용 DB만 생성/삭제하며 공용 core/dev_core를 리셋하지 않는다.
 - **T3/T5 생성자 배선:** T3는 `purchase-order.manager.spec.ts`와 `purchase-order-line-execution.integration.spec.ts`를 포함한 모든 생존 `new PurchaseOrderManager`를 `(dbService, reader, deriver)`로 맞춘다. T5는 모든 생존 `new PurchaseOrderService`에 receiving 의존성을 추가한다. 각 변경의 type-check로 누락을 확인한다.
@@ -192,7 +193,7 @@ export type NewPurchaseOrderReceiptLine = InferInsertModel<typeof purchaseOrderR
         WHERE pol.status = 'ordered'
           AND pol.closed_at IS NULL
           AND pol.received_qty < COALESCE(pol.ordered_qty, 0)
-          AND po.status <> 'cancelled'
+          AND po.status::text <> 'cancelled'
         GROUP BY pol.sku_id, po.source_warehouse_id
     ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.warehouse_id
 ```
@@ -276,7 +277,7 @@ SET "status" = CASE
                      AND l."received_qty" < COALESCE(l."ordered_qty", 0)) THEN 'received'
   ELSE 'confirmed'
 END::po_status
-WHERE po."status" <> 'cancelled';
+WHERE po."status"::text <> 'cancelled';
 ```
 
 - [ ] **Step 6: 가드 ⓪ 가 실제로 멈추는지 — 격리 DB 스펙(§12 #13)**
