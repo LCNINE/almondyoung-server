@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
+import { Button } from '../../core/design/Button';
+import { PutawayScanResults } from './PutawayScanResults';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
@@ -8,9 +10,6 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
 import type { PutawayPendingItem } from './types';
-
-// 서버 리더의 LIMIT(200)과 같은 값 — truncated 안내 문구에 실제 상한을 보여준다.
-const PENDING_DISPLAY_LIMIT = 200;
 
 const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
   { value: 1, label: '최근 1일' },
@@ -31,7 +30,10 @@ export function PutawayQueueScreen() {
   // 스냅샷이다. 백그라운드 refetch 로 pendingQty 가 바뀌어도 작업자가 입력
   // 중인 수량은 지워지지 않는다(서버가 실제 잔량을 재검증하므로 낡아도 안전).
   const [target, setTarget] = useState<PutawayPendingItem | null>(null);
-  const [candidates, setCandidates] = useState<PutawayPendingItem[] | null>(null);
+  const [scan, setScan] = useState<{ id: number; skuIds: string[] } | null>(
+    null
+  );
+  const scanId = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
 
@@ -39,68 +41,42 @@ export function PutawayQueueScreen() {
   const byBarcode = useSkuByBarcode();
   const items = queue.data?.items ?? [];
 
-  // 안내(notice)와 미등록 바코드 오류 배너(byBarcode.reset)는 항상 같이
-  // 지운다 — 한쪽만 지우면 낡은 문구/배너가 다음 상태에 남아 보인다.
-  const clearScanFeedback = () => {
+  const resetBarcode = byBarcode.reset;
+  const clearScanFeedback = useCallback(() => {
+    scanId.current += 1;
     setNotice(null);
-    byBarcode.reset();
-  };
+    setScan(null);
+    resetBarcode();
+  }, [resetBarcode]);
 
-  // items 는 이 렌더의 스냅샷이라 스캔 시점과 byBarcode 응답 시점 사이(왕복 중)
-  // days 나 창고가 바뀌면 onSuccess 클로저는 옛 값을 본다 — ref 로 항상 최신
-  // 값을 읽는다. isSuccess 도 items 와 한 ref 에 같이 미러링한다 — 따로
-  // 두면 "그 사이 큐가 pending 으로 떨어졌다"는 사실과 "그때 items 가 무엇
-  // 이었나"가 서로 다른 시점의 값으로 섞여, 큐가 아직 준비 안 된 순간에도
-  // (placeholderData 가 없어 data 가 undefined 로 비므로) items=[] 를 "결과
-  // 없음"으로 오판하게 된다.
-  const queueRef = useRef({ isSuccess: queue.isSuccess, items });
-  queueRef.current = { isSuccess: queue.isSuccess, items };
-
-  // 기간 필터가 바뀌면 items 가 통째로 바뀌므로 그 이전 스캔에 대한 안내도
-  // 미등록 바코드 오류 배너도 더는 근거가 없다 — 둘 다 clearScanFeedback 으로
-  // 같이 지운다(한쪽만 지우면 다른 쪽이 새 필터 결과 위에 낡은 채로 남는다).
+  // Leaving this search context also cancels late barcode lookup results.
   useEffect(() => {
     clearScanFeedback();
-  }, [days]);
+  }, [days, warehouseId, clearScanFeedback]);
+  useEffect(
+    () => () => {
+      scanId.current += 1;
+    },
+    []
+  );
 
-  // 스캔은 큐를 좁히는 지름길이다. 서버가 아니라 이미 받은 목록에서 거르므로
-  // "큐에 없음"과 "조회 실패"를 화면이 구분해 말할 수 있다.
-  useScanner((e) => {
-    if (target) return;
-    // 새 스캔은 이전 화면 상태를 전부 무효화한다 — 안내 문구도, 아직 열려
-    // 있는 후보 목록도 이 스캔이 정한 새 결과로 교체돼야 한다. 안 지우면
-    // 후보 다이얼로그가 열려 있는 채로 다음 스캔이 1건으로 좁혀졌을 때
-    // 시트와 다이얼로그가 동시에 화면에 남는다.
+  useScanner((event) => {
+    if (target || !warehouseId) return;
     clearScanFeedback();
-    setCandidates(null);
-    // 큐가 아직 안 왔거나(로딩) 조회에 실패했으면 items 는 [] 다 — 그 상태로
-    // 스캔을 걸러버리면 "이 상품은 적치 대기가 없어요"가 거짓이 된다("없음"과
-    // "아직 모름"은 다른 사실이다). 준비 안 된 상태에서는 아예 거르지 않는다.
-    if (!queue.isSuccess) {
-      setNotice('목록을 아직 못 불러왔어요. 잠시 후 다시 스캔해 주세요.');
-      return;
-    }
-    byBarcode.mutate(e.code, {
+    const id = scanId.current;
+    setNotice('상품을 확인하고 있어요.');
+    byBarcode.mutate(event.code, {
       onSuccess: (skus) => {
-        // 스캔 시점엔 큐가 준비돼 있었더라도, 바코드 조회가 왕복하는 사이
-        // days/창고가 바뀌어 큐가 다시 pending 으로 떨어졌을 수 있다 — 그 경우
-        // items 는 일시적으로 [] 인데, 그걸 "결과 없음"으로 오판하면 안 된다.
-        // 응답이 도착한 지금 시점의 준비 상태를 다시 확인한다.
-        if (!queueRef.current.isSuccess) {
-          setNotice('목록을 아직 못 불러왔어요. 잠시 후 다시 스캔해 주세요.');
+        if (id !== scanId.current) return;
+        if (!skus.length) {
+          setNotice('등록되지 않은 바코드예요.');
           return;
         }
-        const ids = new Set(skus.map((s) => s.id));
-        const hits = queueRef.current.items.filter((i) => ids.has(i.skuId));
-        if (hits.length === 0) {
-          setNotice('이 상품은 적치 대기가 없어요.');
-          return;
-        }
-        if (hits.length === 1) {
-          setTarget(hits[0]);
-          return;
-        }
-        setCandidates(hits);
+        setNotice(null);
+        setScan({ id, skuIds: skus.map((sku) => sku.id) });
+      },
+      onError: () => {
+        if (id === scanId.current) setNotice(null);
       },
     });
   });
@@ -123,7 +99,11 @@ export function PutawayQueueScreen() {
       <ScreenHeader
         title="적치"
         backTo="/"
-        right={queue.isSuccess ? `${items.length}${queue.data.truncated ? '건+' : '건'}` : undefined}
+        right={
+          queue.isSuccess
+            ? `${items.length}${queue.data?.truncated ? '건+' : '건'}`
+            : undefined
+        }
       />
 
       <div className="flex gap-2">
@@ -144,7 +124,9 @@ export function PutawayQueueScreen() {
         ))}
       </div>
 
-      <p className="text-sm text-gray-500">상품 바코드를 스캔하거나 목록에서 고르세요.</p>
+      <p className="text-sm text-gray-500">
+        상품 바코드를 스캔하거나 목록에서 고르세요.
+      </p>
 
       {notice ? (
         <p role="status" className="text-sm text-amber-700">
@@ -161,13 +143,17 @@ export function PutawayQueueScreen() {
         <p role="alert" className="text-sm text-red-600">
           {errorMessage(queue.error, 'putaway')}
         </p>
-      ) : queue.isLoading ? (
+      ) : null}
+      {queue.isLoading ? (
         <p className="text-sm text-gray-500">불러오는 중…</p>
-      ) : items.length === 0 ? (
+      ) : null}
+      {queue.isSuccess && !queue.isFetching && items.length === 0 ? (
         <p className="text-sm text-gray-500">
-          적치할 항목이 없어요.{days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
+          적치할 항목이 없어요.
+          {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
         </p>
-      ) : (
+      ) : null}
+      {items.length > 0 && (
         <ul className="space-y-2">
           {items.map((item) => (
             <li key={item.lineId}>
@@ -182,7 +168,9 @@ export function PutawayQueueScreen() {
                 }}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gray-800">{item.skuName}</span>
+                  <span className="block truncate font-medium text-gray-800">
+                    {item.skuName}
+                  </span>
                   <span className="block text-xs text-gray-500">
                     {item.originLocationCode} · {formatTime(item.receivedAt)}
                   </span>
@@ -196,50 +184,48 @@ export function PutawayQueueScreen() {
         </ul>
       )}
 
-      {queue.data?.truncated ? (
+      {queue.hasNextPage && !queue.isFetchNextPageError ? (
+        <Button
+          onClick={() => void queue.fetchNextPage()}
+          disabled={queue.isFetching}
+        >
+          {queue.isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+        </Button>
+      ) : null}
+      {queue.isError ? (
+        <Button
+          onClick={() =>
+            void (queue.isFetchNextPageError
+              ? queue.fetchNextPage()
+              : queue.refetch())
+          }
+          disabled={queue.isFetching}
+        >
+          다시 확인
+        </Button>
+      ) : null}
+      {queue.data?.truncated && !queue.hasNextPage ? (
         <p className="text-xs text-amber-700">
-          오래된 순으로 {PENDING_DISPLAY_LIMIT}건만 표시 중이에요. 기간을 좁혀서 나머지를 확인하세요.
+          나머지 적치 대기를 확인하려면 관리자에게 앱과 서버 업데이트를 요청해
+          주세요.
         </p>
       ) : null}
 
-      {candidates ? (
-        <div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-label="적치 대상 선택"
-        >
-          <div className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-lg">
-            <h2 className="font-semibold text-gray-800">어느 건을 적치할까요?</h2>
-            <ul className="space-y-2">
-              {candidates.map((c) => (
-                <li key={c.lineId}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 p-3 text-left active:bg-gray-50"
-                    onClick={() => {
-                      clearScanFeedback();
-                      setTarget(c);
-                      setCandidates(null);
-                    }}
-                  >
-                    <span className="flex-1 text-sm text-gray-700">
-                      {formatTime(c.receivedAt)} 입고 · {c.originLocationCode}
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900">{c.pendingQty}개</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="w-full rounded-md border border-gray-300 py-2 text-sm text-gray-700"
-              onClick={() => setCandidates(null)}
-            >
-              닫기
-            </button>
-          </div>
-        </div>
+      {scan && warehouseId ? (
+        <PutawayScanResults
+          key={scan.id}
+          warehouseId={warehouseId}
+          skuIds={scan.skuIds}
+          onSelect={(item) => {
+            clearScanFeedback();
+            setTarget(item);
+          }}
+          onEmpty={() => {
+            clearScanFeedback();
+            setNotice('이 상품은 적치 대기가 없어요.');
+          }}
+          onClose={clearScanFeedback}
+        />
       ) : null}
 
       {target ? (

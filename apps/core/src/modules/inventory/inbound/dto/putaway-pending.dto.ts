@@ -27,11 +27,17 @@ export class PutawayPendingItemDto {
 }
 
 export class PutawayPendingListDto {
-  @ApiProperty({ description: '반환된 건수 (LIMIT 이 걸리면 실제 백로그보다 작을 수 있다 — truncated 로 확인)', example: 2 })
+  @ApiProperty({
+    description: '반환된 건수 (LIMIT 이 걸리면 실제 백로그보다 작을 수 있다 — truncated 로 확인)',
+    example: 2,
+  })
   total: number;
 
   @ApiProperty({ description: 'LIMIT(200)에 걸려 잘렸는지 여부. true 면 백로그가 더 있다.', example: false })
   truncated: boolean;
+
+  @ApiProperty({ description: '다음 페이지 토큰. 더 없으면 null', type: String, nullable: true })
+  nextCursor: string | null;
 
   @ApiProperty({ description: '적치 대기 라인', type: [PutawayPendingItemDto] })
   items: PutawayPendingItemDto[];

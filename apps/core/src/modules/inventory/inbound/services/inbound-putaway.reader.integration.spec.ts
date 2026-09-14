@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
+import { BadRequestException } from '@nestjs/common';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundService } from './inbound.service';
 import { InboundPutawayReader } from './inbound-putaway.reader';
@@ -71,6 +72,175 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
       .returning();
     return loc;
   }
+
+  it('finds every barcode SKU match beyond the unfiltered first 200, including old receipts', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const [target, alias] = await tx
+        .insert(wmsTables.skus)
+        .values([
+          { name: 'Scanned target', code: `TARGET-${randomUUID()}`, holderId: sku.holderId },
+          { name: 'Same barcode', code: `ALIAS-${randomUUID()}`, holderId: sku.holderId },
+        ])
+        .returning();
+      const backlog = await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: Array.from({ length: 201 }, () => ({ skuId: sku.id, quantity: 1 })),
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      await tx
+        .update(wmsTables.inboundReceipts)
+        .set({ occurredAt: new Date('2020-01-01T00:00:00Z') })
+        .where(eq(wmsTables.inboundReceipts.id, backlog.receipt.id));
+      const scanned = await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: [
+            { skuId: target.id, quantity: 4 },
+            { skuId: alias.id, quantity: 7 },
+          ],
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      await tx
+        .update(wmsTables.inboundReceipts)
+        .set({ occurredAt: new Date('2021-01-01T00:00:00Z') })
+        .where(eq(wmsTables.inboundReceipts.id, scanned.receipt.id));
+
+      const result = await reader.listPending({ warehouseId: warehouse.id, skuIds: [target.id, alias.id] }, tx);
+      expect(result.total).toBe(2);
+      expect(result.items.map((item) => item.skuId).sort()).toEqual([target.id, alias.id].sort());
+      expect(result.items.map((item) => item.pendingQty).sort()).toEqual([4, 7]);
+      expect(result.truncated).toBe(false);
+      expect(result.nextCursor).toBeNull();
+      const absent = await reader.listPending({ warehouseId: warehouse.id, skuIds: [randomUUID()] }, tx);
+      expect(absent).toEqual({ total: 0, items: [], truncated: false, nextCursor: null });
+    });
+  });
+
+  it('paginates a SKU with microsecond timestamp ties after completed earlier lines disappear', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const received = await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: Array.from({ length: 203 }, () => ({ skuId: sku.id, quantity: 1 })),
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      await tx
+        .update(wmsTables.inboundReceipts)
+        .set({ occurredAt: sql`'2026-09-15 00:00:00.123456+00'::timestamptz` })
+        .where(eq(wmsTables.inboundReceipts.id, received.receipt.id));
+      const expectedIds = received.lines.map((line) => line.id).sort();
+      const first = await reader.listPending({ warehouseId: warehouse.id, skuIds: [sku.id] }, tx);
+      expect(first.items.map((item) => item.lineId)).toEqual(expectedIds.slice(0, 200));
+      expect(first.truncated).toBe(true);
+      expect(typeof first.nextCursor).toBe('string');
+      const beforeCompletion = await reader.listPending(
+        { warehouseId: warehouse.id, skuIds: [sku.id], cursor: first.nextCursor! },
+        tx,
+      );
+      expect(beforeCompletion.items.map((item) => item.lineId)).toEqual(expectedIds.slice(200));
+      await tx
+        .update(wmsTables.inboundReceiptLines)
+        .set({ putawayFromOriginQty: 1 })
+        .where(inArray(wmsTables.inboundReceiptLines.id, expectedIds.slice(0, 200)));
+      const second = await reader.listPending(
+        { warehouseId: warehouse.id, skuIds: [sku.id], cursor: first.nextCursor! },
+        tx,
+      );
+      expect(second.items.map((item) => item.lineId)).toEqual(expectedIds.slice(200));
+      expect(second.total).toBe(3);
+      expect(second.truncated).toBe(false);
+      expect(second.nextCursor).toBeNull();
+    });
+  });
+
+  it('keeps the rolling days cutoff stable between pages', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const received = await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: Array.from({ length: 201 }, () => ({ skuId: sku.id, quantity: 1 })),
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      await tx
+        .update(wmsTables.inboundReceipts)
+        .set({ occurredAt: new Date('2026-09-14T12:00:00.000Z') })
+        .where(eq(wmsTables.inboundReceipts.id, received.receipt.id));
+      const now = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-09-15T00:00:00.000Z').getTime());
+      try {
+        const first = await reader.listPending({ warehouseId: warehouse.id, days: 1 }, tx);
+        expect(first.items).toHaveLength(200);
+        now.mockReturnValue(new Date('2026-09-16T00:00:00.000Z').getTime());
+        const second = await reader.listPending({ warehouseId: warehouse.id, days: 1, cursor: first.nextCursor! }, tx);
+        expect(second.items.map((item) => item.lineId)).toEqual(
+          received.lines
+            .map((line) => line.id)
+            .sort()
+            .slice(200),
+        );
+        const refreshed = await reader.listPending({ warehouseId: warehouse.id, days: 1 }, tx);
+        expect(refreshed.items).toEqual([]);
+      } finally {
+        now.mockRestore();
+      }
+    });
+  });
+
+  it('rejects malformed cursors and cursors from a different warehouse, days, or SKU query', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: Array.from({ length: 201 }, () => ({ skuId: sku.id, quantity: 1 })),
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      const first = await reader.listPending({ warehouseId: warehouse.id }, tx);
+      for (const cursor of [
+        '',
+        'garbage',
+        'e30',
+        Buffer.from(JSON.stringify({ v: 1, at: 'invalid' })).toString('base64url'),
+      ]) {
+        await expect(reader.listPending({ warehouseId: warehouse.id, cursor }, tx)).rejects.toThrow(
+          BadRequestException,
+        );
+      }
+      const payload = JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString('utf8')) as Record<
+        string,
+        unknown
+      >;
+      for (const changed of [
+        { at: '2026-02-30T00:00:00.000000Z' },
+        { at: '0000-01-01T00:00:00.000000Z' },
+        { id: 'bad' },
+        { since: 'invalid' },
+      ]) {
+        const cursor = Buffer.from(JSON.stringify({ ...payload, ...changed })).toString('base64url');
+        await expect(reader.listPending({ warehouseId: warehouse.id, cursor }, tx)).rejects.toThrow(
+          BadRequestException,
+        );
+      }
+      for (const changed of [{ warehouseId: randomUUID() }, { days: 7 }, { skuIds: [sku.id] }]) {
+        await expect(
+          reader.listPending({ warehouseId: warehouse.id, ...changed, cursor: first.nextCursor! }, tx),
+        ).rejects.toThrow(BadRequestException);
+      }
+    });
+  });
 
   it('시스템 존에 남은 미적치 라인을 잔량과 출발지와 함께 돌려준다', async () => {
     await inRollbackTx(db, async (tx) => {
