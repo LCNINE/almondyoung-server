@@ -10,7 +10,7 @@ import {
   productAiMessagesQuerySchema,
 } from './product-ai.schema';
 
-function parseProductAiInput<T>(schema: z.ZodType<T>, input: unknown): T {
+function parseProductAiInput(schema: z.ZodType, input: unknown): unknown {
   return new ZodValidationPipe(schema).transform(input, { type: 'query' });
 }
 
