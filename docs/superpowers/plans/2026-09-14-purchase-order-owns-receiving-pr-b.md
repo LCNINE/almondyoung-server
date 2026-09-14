@@ -1514,6 +1514,11 @@ git commit -m "feat(procurement): 발주 수령·수령 취소·잔량 포기·�
 ---
 ### Task 6: 옛 입고예정 경로 삭제 — 서비스 메서드 · 라우트 5 · DTO · 포트 · 규칙 · 셀메이트 import · 스펙 · dev 시드
 
+> **실행 보완 (2026-09-14):** 삭제 라우트의 실제 controller handler는 `addPlanItems`·`listPlanItems`다.
+> Task 6 시점 scope는 operate 64/manage 72이고, Task 7의 expected-arrivals 추가 뒤 operate 65/manage 72가 된다.
+> DB 검증은 공유 `core`·`dev_core`가 아니라 작업 전용 DB에서 명시적 `DATABASE_URL`과 direct Jest로 실행한다.
+> seed 통합은 controller가 확인한 전용 `127.0.0.1:55439/dev_core`에 `SEED_DEV_CORE_URL`을 주입해 실행한다.
+
 **Files:**
 - Modify: `inbound/services/inbound.service.ts` (삭제: `getInboundPending` `:176-341` · `createInboundPlan` `:507-574` · `ensurePlanForPurchaseOrder` `:576-608` · `addInboundPlanItems` `:610-627` · `listInboundPlanItems` `:629-661` · `receiveFromPlan` `:663-779` · `closePlanItem` `:781-863` · `closePlanIfDone` `:865-888`; `listInboundWorkLogs:414` 의 `planItemId` 컬럼; 생성자 `:41-51`)
 - Modify: `inbound/controllers/inbound.controllers.ts` (삭제 `:85-93` pending · `:272-322` plans 4 라우트와 `JwtPayload`·`User` import)
@@ -1531,7 +1536,7 @@ git commit -m "feat(procurement): 발주 수령·수령 취소·잔량 포기·�
 
 `inbound.controllers.spec.ts:86-88` 의 「`POST /inbound/plans/receive` 핸들러는 남아 있다」 → 반대로:
 ```ts
-  it.each(['receiveFromPlan', 'getInboundPending', 'addInboundPlanItems', 'listInboundPlanItems', 'closePlanItem'])(
+  it.each(['receiveFromPlan', 'getInboundPending', 'addPlanItems', 'listPlanItems', 'closePlanItem'])(
     '%s 핸들러는 없다 — 입고예정은 발주 라인이고 수령은 발주 라우트가 소유한다(PR-B)',
     (handler) => {
       expect((InboundController.prototype as unknown as Handlers)[handler]).toBeUndefined();
@@ -1563,7 +1568,7 @@ Expected: 컨트롤러 스펙 5건 FAIL(핸들러가 아직 있다) · 멱등 �
 
 `purchase-order.dto.spec.ts:27` 의 `InboundPlanItemInputDto` import 와 그 케이스(`expectedDate` 검증)를 지운다 — 남은 세 DTO 케이스는 그대로.
 
-`inventory-scope-coverage.spec.ts`: `'GET /inbound/pending'`·`'GET /inbound/plans/items'`·`'POST /inbound/plans/receive'`(operate) · `'POST /inbound/plans/:planId/items/:itemId/close'`·`'POST /inbound/plans/items'`(manage) 5행 삭제. 헤더 주석 숫자 최종화(Task 5·7 의 추가분까지 합산: operate **65 − 3 + 2(Task 5) + 1(Task 7) = 65**, manage **72 − 2 + 2 = 72**).
+`inventory-scope-coverage.spec.ts`: `'GET /inbound/pending'`·`'GET /inbound/plans/items'`·`'POST /inbound/plans/receive'`(operate) · `'POST /inbound/plans/:planId/items/:itemId/close'`·`'POST /inbound/plans/items'`(manage) 5행 삭제. Task 6 커밋의 헤더 주석은 operate **64**, manage **72**다. Task 7에서 expected-arrivals operate 라우트가 추가되면 operate **65**, manage **72**가 된다.
 
 - [ ] **Step 3: dev 시드를 새 모델로**
 
@@ -1613,10 +1618,11 @@ Expected: 컨트롤러 스펙 5건 FAIL(핸들러가 아직 있다) · 멱등 �
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `npm run type-check && npx jest --maxWorkers=2 apps/core/src/modules/inventory apps/core/src/platform/auth && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "inbound|purchase-order|inventory-idempotency"`
+Run: `npm run type-check && npx jest --maxWorkers=2 apps/core/src/modules/inventory apps/core/src/platform/auth && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand "inbound|purchase-order|inventory-idempotency"`
 Expected: type-check 0 · 단위 0 실패 · 통합 새 실패 0. 그리고 `grep -rn "inboundPlans\|inboundPlanItems\|planItemId\|PURCHASE_ORDER_CLOSURE\|receiveFromPlan" apps/core/src scripts/ --include=*.ts` 의 결과가 **`inventory.schema.ts`(테이블·컬럼·relations)·`inbound-pipeline.reader.ts`·`lead-time-profile.refresher.ts`·`view-parity.integration.spec.ts`·`inbound-pipeline.integration.spec.ts`·`replenishment-suggestion.integration.spec.ts`·`lead-time-profile.refresher.integration.spec.ts`** 에만 남는다(Task 7 이 지운다).
 
-dev 시드 재실행: `npm run dev:core:reset` → 성공. `npm run test:seed-dev-core:integration` → PASS.
+dev 시드 검증은 controller가 소유한 전용 컨테이너 `127.0.0.1:55439/dev_core`에서 실행한다. 컨테이너 포트를 확인한 뒤 TTY에서
+`SEED_DEV_CORE_URL=postgresql://postgres:postgres@localhost:55439/dev_core npx jest --runInBand scripts/local/seed-dev-core/seed.integration.spec.ts`를 실행하고, 자식 reset의 비기본 대상 확인 프롬프트에는 정확한 작업 전용 DB임을 확인한 뒤 답한다. 공유 `dev_core`를 reset하는 명령은 쓰지 않는다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1629,6 +1635,11 @@ InboundService 생성자 5인자. dev 시드는 발주 수령 Manager 로 20/60 
 
 ---
 ### Task 7: 읽기 전환 — 중립 `GET /inventory/expected-arrivals` · 파이프라인 ①·전사 · 리드타임 · 스토어프론트 동기화 · 파리티 스펙 (§9 · §12 #8·#12)
+
+> **실행 보완 (2026-09-14):** `RESTOCK_SQL` 통합은 실제 상품 부모·variant·매칭·SKU 링크를 최소 fixture로
+> 넣고, 채워진 예정일·`approximate`와 closed/cancelled 제외를 단언한다. dry-run은 변경 예정 variant의
+> `id`·`inboundDate`·`inboundApproximate`를 출력하되 credential은 출력하지 않는다. `--apply` 실검증은 하지 않는다.
+> DB 스펙은 작업 전용 DB에 명시적 `DATABASE_URL`을 주입한 direct Jest `--runInBand`로 실행한다.
 
 **Files:**
 - Create: `procurement/services/purchase-order-outstanding.sql.ts`
@@ -1677,12 +1688,22 @@ describeIfDb('입고예정 읽기 파리티 (DB integration)', () => {
   it('취소된 발주의 ordered 라인은 어디에도 잡히지 않는다', async () => {});
   it('#12 스토어프론트 동기화 SQL 이 실제 DB 에서 돈다', async () => {
     // sync-restock-to-medusa.ts 에서 RESTOCK_SQL 을 export 해 import 한다(스크립트 본문은 `require.main === module` 가드).
+    // product master/version/variant, product matching, SKU link와 필요한 부모를 실제로 시드한다.
+    // 열린 라인은 가장 이른 expected_date와 foreign 여부를 반환하고, closed 라인·cancelled 발주는 제외돼야 한다.
     const rows = await trx.execute(sql.raw(RESTOCK_SQL));
-    expect(Array.isArray(rows)).toBe(true);   // product_* 조인이라 시드가 없으면 0행 — 실행 자체가 검증 대상이다
+    const expected = [
+      { master_id: masterId, variant_id: variantA, expected_date: '2026-09-18', approximate: true },
+      { master_id: masterId, variant_id: variantB, expected_date: '2026-09-15', approximate: true },
+    ];
+    expect([...rows].sort((a, b) => a.variant_id.localeCompare(b.variant_id))).toEqual(
+      expected.sort((a, b) => a.variant_id.localeCompare(b.variant_id)),
+    );
   });
 });
 ```
-각 it 의 본문은 위 주석의 수치를 단언으로 옮긴다. `RESTOCK_SQL` import 는 `apps/channel-adapter/scripts/sync-restock-to-medusa` 상대 경로(`../../../../../../channel-adapter/scripts/sync-restock-to-medusa`) — jest `moduleNameMapper` 에 걸리지 않는 상대 경로라 tsconfig path 문제가 없다. 스크립트 상단의 `dotenv`/env 읽기가 import 시점에 실행되면 안 되므로 Step 5 에서 `main()` 가드를 건다.
+각 it 의 본문은 위 주석의 수치를 단언으로 옮긴다. `RESTOCK_SQL` 케이스는 비어 있지 않은 결과의 실제
+`expected_date`·`approximate`를 확인하고, 결과를 바꿀 수 있는 더 이른 closed 라인과 cancelled 발주를 함께 심어 제외를 증명한다.
+`RESTOCK_SQL` import 는 `apps/channel-adapter/scripts/sync-restock-to-medusa` 상대 경로(`../../../../../../channel-adapter/scripts/sync-restock-to-medusa`) — jest `moduleNameMapper` 에 걸리지 않는 상대 경로라 tsconfig path 문제가 없다. 스크립트 상단의 `dotenv`/env 읽기가 import 시점에 실행되면 안 되므로 Step 5 에서 `main()` 가드를 건다.
 
 Run: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- expected-arrivals-parity`
 Expected: 컴파일 FAIL.
@@ -1796,10 +1817,11 @@ DTO 클래스는 `inbound-pipeline.dto.ts` 스타일로 `@ApiProperty`. 컨트�
   GROUP BY pmv.master_id, pm.variant_id
 ```
 헤더 주석 `:5` 의 「입고예정(source plan)」 → 「남은 수량이 있는 발주 라인」. 실행 본문을 `async function main()` 으로 감싸고 파일 끝에 `if (require.main === module) void main();` — 스펙이 SQL 만 import 할 수 있게. env 읽기(`CORE_DB_URL` 등)가 `main()` 안으로 들어가야 한다.
+dry-run에는 적용 예정인 각 variant의 `{ id, inboundDate, inboundApproximate }`만 출력한다. credential과 전체 metadata는 출력하지 않으며, `--apply`를 켜지 않아도 수정한 예정일을 검토할 수 있어야 한다.
 
 - [ ] **Step 6: 통과 확인**
 
-Run: `npm run type-check && npx jest apps/core/src/platform/auth/inventory-scope-coverage apps/core/src/modules/inventory/stock-projection && COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "expected-arrivals-parity|inbound-pipeline|replenishment-suggestion|view-parity|lead-time-profile|purchase-order-line-execution"`
+Run: `npm run type-check && npx jest apps/core/src/platform/auth/inventory-scope-coverage apps/core/src/modules/inventory/stock-projection && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand "expected-arrivals-parity|inbound-pipeline|replenishment-suggestion|view-parity|lead-time-profile|purchase-order-line-execution"`
 Expected: 모두 PASS. `grep -rn "inboundPlans\|inboundPlanItems\|planItemId\|inbound_plan" apps/core/src scripts/ apps/channel-adapter --include=*.ts` 결과가 **`inventory.schema.ts` 와 `purchase-order-receiving-backfill-guard.integration.spec.ts` 뿐**이어야 한다.
 
 - [ ] **Step 7: 커밋**
@@ -2157,15 +2179,15 @@ Expected: 전부 0 실패.
 
 - [ ] **Step 2: core 통합 전체와 develop 기준선 비교**
 
-기준선을 **이 세션에서 다시 잰다**(메모의 8 suite 는 8/25 것, PR-A 는 10 이었다):
-1. 메인 체크아웃(`/home/pauseb/workspace/almondyoung-server`, develop `c4705d274`)에서 `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local 2>&1 | grep -E "^(FAIL|PASS)" | sort > $SCRATCH/base.txt` — 사용자가 돌리거나, 워크트리 세션이면 `git worktree` 가 아니라 **메인 체크아웃에서 별도 셸**로.
-2. 이 브랜치에서 같은 명령 → `$SCRATCH/head.txt`.
+기준선을 **이 세션에서 다시 잰다**(메모의 8 suite 는 8/25 것, PR-A 는 10 이었다). 공유 `core`·`dev_core`를 reset하거나 migrate하지 않고, 각각 새로 준비한 작업 전용 DB에 같은 마이그레이션 이력을 적용한다:
+1. 메인 체크아웃(`/home/pauseb/workspace/almondyoung-server`, develop `c4705d274`)에서 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_base_20260914 npx jest --runInBand 2>&1 | grep -E "^(FAIL|PASS)" | sort > $SCRATCH/base.txt` — 사용자가 돌리거나, 워크트리 세션이면 `git worktree` 가 아니라 **메인 체크아웃에서 별도 셸**로.
+2. 이 브랜치에서 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_b_codex_head_20260914 npx jest --runInBand 2>&1 | grep -E "^(FAIL|PASS)" | sort > $SCRATCH/head.txt`.
 3. `diff base.txt head.txt` — **FAIL 이 새로 생긴 suite 0**. 삭제된 suite 는 diff 에 `PASS` 가 사라진 것으로 나온다(정상).
 결과 요약(통과/실패 suite 수·삭제 suite 목록·기준선 대비 차이)을 PR 본문에 붙인다 — CI 는 DB 스펙을 skip 한다.
 
 - [ ] **Step 3: dev 스모크 — PR-A 5항목 + PR-B 시나리오** (브라우저 + 창고 앱)
 
-준비: `dev_core` 에 마이그레이션 적용됨(Task 1 Step 8) · `npm run dev:core:reset`(Task 6 시드) · core 를 **직접 재시작**(`--watch` 가 실제 프로세스에 안 붙은 전력) · admin-web dev · 창고 앱 `npm run dev`(또는 `tauri:dev`).
+준비: controller가 확인한 전용 `127.0.0.1:55439/dev_core`에 마이그레이션 적용 · `SEED_DEV_CORE_URL=postgresql://postgres:postgres@localhost:55439/dev_core npx jest --runInBand scripts/local/seed-dev-core/seed.integration.spec.ts`를 TTY로 실행해 시드 검증 · core를 그 DB로 **직접 재시작**(`--watch`가 실제 프로세스에 안 붙은 전력) · admin-web dev · 창고 앱 `npm run dev`(또는 `tauri:dev`). 공유 `dev_core`는 reset하지 않는다.
 
 **PR-A 이월(`/inventory/inbound`):**
 1. 간편입고 2품목 → 이력 탭에 회차 1건·수량 합계
@@ -2183,7 +2205,7 @@ Expected: 전부 0 실패.
 11. admin 드로어 B [잔량 포기] 사유 입력 → 발주 「입고완료」 — **결함 ㄴ**
 12. 이력 탭에서 A 회차 라인 [취소](source=purchase_order 분기) → 발주 「확정됨」 복귀 · 입고 대기 재등장 — **결함 ㄷ**
 13. 앱에서 A 에 11 입력 → 시트가 막고 「남은 수량 10개를 넘습니다 — …」 문구
-14. admin [예정일 수정] → 목록·드로어 반영, 그리고 `CORE_DB_URL=postgresql://postgres:postgres@localhost:5432/dev_core MEDUSA_API_URL=http://localhost:9000 MEDUSA_API_KEY=x npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/sync-restock-to-medusa.ts`(dry-run) 출력에 그 날짜
+14. admin [예정일 수정] → 목록·드로어 반영, 그리고 `CORE_DB_URL=postgresql://postgres:postgres@localhost:55439/dev_core MEDUSA_API_URL=http://localhost:9000 MEDUSA_API_KEY=x npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/sync-restock-to-medusa.ts`(dry-run) 출력에 그 날짜
 15. `/inventory/status` 「입고 예정」 컬럼이 남은 수량과 같다(VIEW)
 
 체크리스트 결과(✅/❌ + 메모)를 PR 본문에 남긴다. ❌ 는 고치고 다시 본다.

@@ -2,7 +2,7 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-This repo uses a **single-context** layout: one `CONTEXT.md` and one `docs/adr/` at the repo root. (Neither exists yet — `/grill-with-docs` will create them lazily as terms and decisions get resolved.)
+This repo uses a **single-context** layout: one `CONTEXT.md` and one `docs/adr/` at the repo root. Both exist at the repo root.
 
 ## Before exploring, read these
 

@@ -23,17 +23,16 @@ core: skus / stock_events / stock_ledgers → ProductSellableQuantityChanged
    ▼
 channel-adapter inbox → Medusa 재고 반영 (품절 처리)
 
-셀메이트 재고 CSV (같은 파일)
-   │
-   │ ① import-inbound-plans.ts          (core 에 입고예정 적재)
+core 발주 입력
    ▼
-core: inbound_plans / inbound_plan_items  (발주+입고예정, 해외=중국 2-plan)
-   │
-   │ ② match-sku-to-variant.ts           (셀메이트 sku ↔ Medusa variant 매칭)
+core: purchase_orders / purchase_order_lines (발주 라인이 입고예정, ADR-0039) ─┐
+                                                                               │
+셀메이트 재고 CSV                                                              │
+   │ ② match-sku-to-variant.ts           (셀메이트 재고 CSV의 sku ↔ Medusa variant 매칭)
    ▼
-core: product_variant_sku_links          (SKU 구성 매칭, admin "매칭"과 동일)
+core: product_variant_sku_links          (SKU 구성 매칭, admin "매칭"과 동일) ─┘
    │
-   │ ③ sync-restock-to-medusa.ts         (입고예정 → Medusa variant.metadata)
+   │ ③ sync-restock-to-medusa.ts         (발주 라인 남은 수량·예정일 → Medusa variant.metadata)
    ▼
 Medusa: variant.metadata.inboundDate / inboundApproximate
    │
@@ -66,9 +65,9 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
     전부 `=""` 라는 **한 그룹**으로 뭉쳤다(서로 다른 상품 70개 SKU). 그 잔재는 아직 DB 에 남아 있다.
   - 셀메이트가 **마이너스 재고**(`-1`)를 내보내는 행이 있다. `sync-stock` 은 0 으로 추정하지 않고 중단한다 —
     셀메이트에서 실재고를 정정하는 게 원칙이고, 급하면 그 셀만 0 으로 고친 사본으로 돌린다.
-- **러너 사용 권장**: 아래 ①②③ 은 `CORE_DB_URL` 을 손으로 만드는 예시지만, 실제로는 러너가 RDS 엔드포인트·시크릿을 런타임 조회해 주입한다. 비번이 transcript 에 안 남는다.
+- **러너 사용 권장**: 아래 ②③ 은 `CORE_DB_URL` 을 손으로 만드는 예시지만, 실제로는 러너가 RDS 엔드포인트·시크릿을 런타임 조회해 주입한다. 비번이 transcript 에 안 남는다.
   - `scripts/sellmate/run.sh <stage> <import-products|sync-stock|recalc-sellable|check> <경로>`
-  - `scripts/sellmate/inbound-run.sh <stage> <import-inbound|match-sku|sync-restock> [args]`
+  - `scripts/sellmate/inbound-run.sh <stage> <match-sku|sync-restock> [args]`
 
 ## Ⓐ-0 동기화 금지 목록 — `scripts/sellmate/excluded.ts`
 
@@ -535,18 +534,9 @@ SELECT count(*) AS 막힌_SKU, coalesce(sum(v.on_hand_qty),0) AS 묶인_실재�
 `mark-core-shipped.js` 가 출고 반영할 때 상자도 함께 닫아야 한다. 그 전까지는 Ⓒ 를 빼먹으면
 그날 출고분만큼 다시 쌓인다 (2026-09-09 실측: 정리 몇 시간 뒤 이미 상자 5개 / 예약 30행 재적체).
 
-## ① 입고예정 적재 — `apps/core/scripts/import-inbound-plans.ts`
+## ① 입고예정 적재
 
-셀메이트 입고예정(`입고예정일`/`입고예정수량`)을 core 발주+입고예정으로 적재.
-
-```bash
-CORE_DB_URL="postgresql://postgres:<pw>@<live-host>:5432/core?sslmode=require" \
-  npx ts-node -r tsconfig-paths/register apps/core/scripts/import-inbound-plans.ts <csv> [--apply]
-```
-
-- 기본 dry-run(insert→rollback, 리포트만), `--apply` 로 커밋.
-- 바코드 숫자정규화로 `sku_barcodes` 매칭. 입고예정일별로 PO 1건, 중국 공급처=해외 2-plan(source+destination).
-- 멱등: 같은 (sku, 예정일) 로 pending plan 있으면 skip.
+① 입고예정 적재는 폐지됐다(D6, 2026-09-14). 예정일은 core 발주 입력으로만 들어온다.
 
 ## ② SKU 매칭 — `apps/channel-adapter/scripts/match-sku-to-variant.ts`
 
@@ -779,7 +769,7 @@ dry-run 이 찍는 `skip` 카운터로 원인이 갈린다:
 | `카페코드_medusa에없음` | 셀메이트에만 있는 상품 / Medusa 미등록      | 상품 등록 여부 확인                               |
 | `sku_없음`              | 바코드가 `sku_barcodes` 에 없음             | **Ⓐ A-1 `import-products` 를 먼저 돌렸는지 확인** |
 
-## ③ 입고예정 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
+## ③ 발주 라인 남은 수량·예정일 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
 
 매칭된 variant 의 입고예정일을 Medusa `variant.metadata` 에 직접 쓴다(restock-notice UI 가 읽음).
 
@@ -789,7 +779,7 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 ```
 
 - 기본 dry-run. `--apply` 로 Medusa 반영.
-- variant 구성 sku 의 source plan 중 **가장 이른 expected_date** + 해외 발주면 `inboundApproximate=true`.
+- variant 구성 sku 의 남은 수량이 있는 발주 라인 중 가장 이른 `expected_arrival` + 해외 발주면 `inboundApproximate=true`.
 - 멱등: 이미 같은 inboundDate 면 skip. Medusa 502(일시) 나면 재실행하면 이어서 채워짐.
 - **stale 제거가 기본 동작이다** — 입고완료/취소로 예정이 사라진 variant 의 `inboundDate` 를 지운다.
   그래서 handle 별 조회가 아니라 **전 상품을 페이지네이션으로 훑는다**(예정이 사라진 상품은 handle 로는 영영 안 만나므로).
@@ -935,17 +925,16 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
    2-B. **`Ⓒ close-shipped-shipments`** ← Ⓐ 직후. core 에 열린 채 남은 상자를 닫고 유령 예약을 푼다.
    빼먹으면 실재고가 있는 상품이 계속 품절로 나간다. 끝나고 출력된 `VARIANT_IDS` 로 `recalc-sellable` 한 번 더.
-3. `① import-inbound-plans --apply` → core 입고예정
-4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
-5. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
+3. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
+4. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
    (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
-6. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
-7. `③ sync-restock-to-medusa --apply` → Medusa metadata
-8. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
+5. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
+6. `③ sync-restock-to-medusa --apply` → Medusa metadata
+7. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
 
-**4→5→6 은 세트다.** 4 만 하고 5 를 빼면 한국상품이 품절되고, 6 을 빼면 아무것도 반영되지 않는다.
+**3→4→5 는 세트다.** 3 만 하고 4 를 빼면 한국상품이 품절되고, 5 를 빼면 아무것도 반영되지 않는다.
 
-**일일 운영은 Ⓑ → Ⓐ → Ⓒ** 다 (주문수집과 같이). ①②③ 은 입고예정/신규매칭이 생겼을 때.
+**일일 운영은 Ⓑ → Ⓐ → Ⓒ** 다 (주문수집과 같이). ②③ 은 입고예정/신규매칭이 생겼을 때.
 Ⓑ 는 Medusa 예약, Ⓒ 는 core 예약 — **둘 다 있어야 한쪽만 풀린 채 품절로 남지 않는다.**
 
 ## Claude 에게 시키는 법
