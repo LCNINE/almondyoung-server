@@ -25,16 +25,13 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (67) ──────────────────────────────────────────
+  // ── inventory.operate (64) ──────────────────────────────────────────
   'GET /holders':                                            S.OPERATE,
   'GET /holders/:id':                                        S.OPERATE,
   'POST /inbound/cancel':                                    S.OPERATE,
   'GET /inbound/history':                                    S.OPERATE,
   'POST /inbound/individual':                                S.OPERATE,
   'POST /inbound/lines/:lineId/memo':                        S.OPERATE,
-  'GET /inbound/pending':                                    S.OPERATE,
-  'GET /inbound/plans/items':                                S.OPERATE,
-  'POST /inbound/plans/receive':                             S.OPERATE,
   'POST /inbound/putaway':                                   S.OPERATE,
   'GET /inbound/putaway/pending':                            S.OPERATE,
   'GET /inbound/receipts':                                   S.OPERATE,
@@ -94,7 +91,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (74) ──────────────────────────────────────────
+  // ── inventory.manage (72) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -103,8 +100,6 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /holders':                                             S.MANAGE,
   'DELETE /holders/:id':                                       S.MANAGE,
   'PUT /holders/:id':                                          S.MANAGE,
-  'POST /inbound/plans/:planId/items/:itemId/close':           S.MANAGE,
-  'POST /inbound/plans/items':                                 S.MANAGE,
   'POST /inventory/sku-groups':                                S.MANAGE,
   'DELETE /inventory/sku-groups/:id':                          S.MANAGE,
   'PUT /inventory/sku-groups/:id':                             S.MANAGE,

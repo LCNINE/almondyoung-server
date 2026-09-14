@@ -73,16 +73,12 @@ async function main() {
   const reader = new SkuCatalogReader(dbService);
   const manager = new SkuCatalogManager(dbService, reader);
   const skuCatalog = new SkuCatalogService(reader, manager);
-  // InboundService 가 요청 멱등 래퍼 + 발주 종결 파생 포트를 추가로 받게 바뀌었다.
   const idempotency = new InventoryIdempotencyService(dbService);
   const inbound = new InboundService(
     dbService,
     skuCatalog,
-    command,
-    location,
     eventStore,
     idempotency,
-    { onPlanClosed: async () => undefined },
     new InboundReceiptKernel(command, location, eventStore),
   );
 

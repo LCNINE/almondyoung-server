@@ -48,11 +48,8 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
     inbound = new InboundService(
       dbService,
       skuCatalog,
-      command,
-      location,
       eventStore,
       idempotency,
-      { onPlanClosed: async () => undefined },
       new InboundReceiptKernel(command, location, eventStore),
     );
   });

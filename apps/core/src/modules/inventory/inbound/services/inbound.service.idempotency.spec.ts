@@ -6,16 +6,7 @@ function build() {
   const withIdempotency = jest.fn().mockResolvedValue(SENTINEL);
   const idempotency = { withIdempotency } as never;
   // 나머지 의존성은 withIdempotency 모킹으로 본문이 실행되지 않으므로 도달하지 않음
-  const svc = new InboundService(
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    idempotency,
-    { onPlanClosed: async () => undefined },
-    {} as never,
-  );
+  const svc = new InboundService({} as never, {} as never, {} as never, idempotency, {} as never);
   return { svc, withIdempotency };
 }
 
@@ -27,7 +18,6 @@ const CASES: Array<{ method: keyof InboundService; endpoint: string; dto: Record
     dto: { warehouseId: 'w', items: [], idempotencyKey: 'k' },
   },
   { method: 'individualInbound', endpoint: 'inbound.individual', dto: { idempotencyKey: 'k' } },
-  { method: 'receiveFromPlan', endpoint: 'inbound.plans.receive', dto: { idempotencyKey: 'k' } },
   { method: 'putawayFromOrigin', endpoint: 'inbound.putaway', dto: { idempotencyKey: 'k' } },
   { method: 'returnInbound', endpoint: 'inbound.return', dto: { idempotencyKey: 'k' } },
   { method: 'cancelInbound', endpoint: 'inbound.cancel', dto: { idempotencyKey: 'k' } },

@@ -70,12 +70,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
  * `POST /inbound/plans` 는 호출자가 0이었다 — #739 가 admin-web 「계획 등록」 탭을 지웠고
  * Tauri 앱이 쓰는 것은 `plans/receive`(POST) 와 `plans/:planId`(GET) 로 다른 라우트다.
  *
- * 계획을 만드는 유일한 경로는 발주 라인 실행(`ensurePlanForPurchaseOrder`)이며, 그 경로만이
- * "한 발주에 계획 하나" 불변식(ADR-0032 결정 1)을 PO 행 FOR UPDATE 로 잠근다. 공개 라우트는
- * 그 락을 거치지 않으므로 수동 API 로 이중계획을 만들 여지가 남아 있었다.
- *
- * `InboundService.createInboundPlan` 메서드 자체는 남는다 — `ensurePlanForPurchaseOrder`
- * 가 그걸 부른다.
+ * 입고예정은 발주 라인이 소유하고, 수령은 발주 라우트가 소유한다(PR-B).
  */
 describe('InboundController — 계획 생성 라우트', () => {
   type Handlers = Record<string, unknown>;
@@ -84,9 +79,12 @@ describe('InboundController — 계획 생성 라우트', () => {
     expect((InboundController.prototype as unknown as Handlers).createPlan).toBeUndefined();
   });
 
-  it('POST /inbound/plans/receive 핸들러는 남아 있다 (창고 Tauri 앱의 실입고 경로)', () => {
-    expect(typeof (InboundController.prototype as unknown as Handlers).receiveFromPlan).toBe('function');
-  });
+  it.each(['receiveFromPlan', 'getInboundPending', 'addInboundPlanItems', 'listInboundPlanItems', 'closePlanItem'])(
+    '%s 핸들러는 없다 — 입고예정은 발주 라인이고 수령은 발주 라우트가 소유한다(PR-B)',
+    (handler) => {
+      expect((InboundController.prototype as unknown as Handlers)[handler]).toBeUndefined();
+    },
+  );
 });
 
 describe('InboundController.listInboundReceipts — 회차별 이력 계약', () => {

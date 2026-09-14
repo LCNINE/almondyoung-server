@@ -83,45 +83,26 @@ describeIfDb('InboundService.cancelInbound 당일 판정 (PostgreSQL integration
       .insert(wmsTables.skus)
       .values({ name: 'sdc sku', code: `SDC-${suffix}`, holderId: holder.id })
       .returning();
-    const [supplier] = await tx
-      .insert(wmsTables.suppliers)
-      .values({ name: `sdc-supplier-${suffix.slice(0, 8)}` })
-      .returning();
-    const [po] = await tx
-      .insert(wmsTables.purchaseOrders)
-      .values({
-        supplierId: supplier.id,
-        type: 'domestic',
-        sourceWarehouseId: warehouse.id,
-        destinationWarehouseId: warehouse.id,
-      })
-      .returning();
-    const [plan] = await tx
-      .insert(wmsTables.inboundPlans)
-      .values({
+    const received = await svc.simpleInbound(
+      {
         warehouseId: warehouse.id,
-        destinationWarehouseId: warehouse.id,
-        linkedPurchaseOrderId: po.id,
-        status: 'pending',
-      })
-      .returning();
-    const [item] = await tx
-      .insert(wmsTables.inboundPlanItems)
-      .values({ planId: plan.id, skuId: sku.id, expectedQty: 20, receivedQty: 0, status: 'pending' })
-      .returning();
-
-    const received = await svc.receiveFromPlan({ planItemId: item.id, quantity: 20, idempotencyKey: randomUUID() }, tx);
+        items: [{ skuId: sku.id, quantity: 20 }],
+        idempotencyKey: randomUUID(),
+      },
+      tx,
+    );
+    const lineId = received.lines[0].id;
 
     // 영수증 시각을 못 박는다 — 실행 시각이 판정에 새어 들어오면 스펙이 거짓말한다.
     const line = await tx.query.inboundReceiptLines.findFirst({
-      where: eq(wmsTables.inboundReceiptLines.id, received.lineId),
+      where: eq(wmsTables.inboundReceiptLines.id, lineId),
     });
     await tx
       .update(wmsTables.inboundReceipts)
       .set({ occurredAt })
       .where(eq(wmsTables.inboundReceipts.id, line!.receiptId));
 
-    return { lineId: received.lineId };
+    return { lineId };
   }
 
   it('서울 기준 같은 날이면 KST 23:00 에도 취소된다', async () => {

@@ -62,11 +62,8 @@ export function makeInboundService(database: Database): InboundService {
   return new InboundService(
     dbService,
     skuCatalog as never,
-    command,
-    location,
     eventStore,
     idempotency,
-    { onPlanClosed: async () => undefined },
     new InboundReceiptKernel(command, location, eventStore),
   );
 }
