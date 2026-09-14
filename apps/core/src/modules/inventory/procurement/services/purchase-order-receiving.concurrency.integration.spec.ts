@@ -3,17 +3,16 @@ import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
-import { DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { Database, makeInboundReceiptKernel } from '../../inbound/services/__fixtures__/inbound-harness';
+import { Database, dbServiceFor, makeInboundReceiptKernel } from '../../inbound/services/__fixtures__/inbound-harness';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderReceivingManager } from './purchase-order-receiving.manager';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 /** 발주 수령의 커밋형 두 커넥션 경합 계약 (설계 §12 #6). */
@@ -30,8 +29,8 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
   const ACTOR_ID = randomUUID();
 
   beforeAll(() => {
-    client = postgres(DATABASE_URL as string, { max: 4 });
-    probe = postgres(DATABASE_URL as string, { max: 1 });
+    client = postgres(DATABASE_URL, { max: 4 });
+    probe = postgres(DATABASE_URL, { max: 1 });
     db = drizzle(client, { schema: wmsSchema });
     mgrA = buildReceivingManager(db);
     mgrB = buildReceivingManager(db);
@@ -48,15 +47,6 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
   afterAll(async () => {
     await Promise.all([client.end(), probe.end()]);
   });
-
-  function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
-    return {
-      db: database,
-      run: (<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) =>
-        tx ? fn(tx) : database.transaction((trx) => fn(trx as unknown as DbTx))) as never,
-      // DbService 는 Nest 생명주기 메서드도 갖지만 이 통합 스펙은 db/run 포트만 사용한다.
-    } as unknown as DbService<typeof wmsSchema>;
-  }
 
   function buildReceivingManager(database: Database): PurchaseOrderReceivingManager {
     const dbService = dbServiceFor(database);
@@ -90,27 +80,26 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
   async function seedCommitted(): Promise<Fixture> {
     const suffix = randomUUID();
     const fixture = await db.transaction(async (trx) => {
-      const tx = trx as unknown as DbTx;
-      const [warehouse] = await tx
+      const [warehouse] = await trx
         .insert(wmsTables.warehouses)
         .values({ name: `cc-po-warehouse-${suffix}` })
         .returning();
-      const [supplier] = await tx
+      const [supplier] = await trx
         .insert(wmsTables.suppliers)
         .values({ name: `cc-po-supplier-${suffix}`, defaultWarehouseId: warehouse.id })
         .returning();
-      const [holder] = await tx
+      const [holder] = await trx
         .insert(wmsTables.holders)
         .values({ name: `cc-po-holder-${suffix}` })
         .returning();
-      const [skuA, skuB] = await tx
+      const [skuA, skuB] = await trx
         .insert(wmsTables.skus)
         .values([
           { name: `cc-po-sku-a-${suffix}`, code: `CC-PO-A-${suffix}`, holderId: holder.id },
           { name: `cc-po-sku-b-${suffix}`, code: `CC-PO-B-${suffix}`, holderId: holder.id },
         ])
         .returning();
-      const [putawayLocation] = await tx
+      const [putawayLocation] = await trx
         .insert(wmsTables.locations)
         .values({
           warehouseId: warehouse.id,
@@ -121,7 +110,7 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
           isActive: true,
         })
         .returning();
-      const [po] = await tx
+      const [po] = await trx
         .insert(wmsTables.purchaseOrders)
         .values({
           type: 'domestic',
@@ -132,7 +121,7 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
           requiresTransfer: false,
         })
         .returning();
-      await tx.insert(wmsTables.purchaseOrderLines).values([
+      await trx.insert(wmsTables.purchaseOrderLines).values([
         { poId: po.id, skuId: skuA.id, quantity: 10, status: 'ordered', orderedQty: 10 },
         { poId: po.id, skuId: skuB.id, quantity: 10, status: 'requested' },
       ]);
@@ -159,13 +148,12 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
 
   async function cleanupFixture(fixture: Fixture): Promise<void> {
     await db.transaction(async (trx) => {
-      const tx = trx as unknown as DbTx;
-      const receipts = await tx
+      const receipts = await trx
         .select({ id: wmsTables.inboundReceipts.id, journalId: wmsTables.inboundReceipts.journalId })
         .from(wmsTables.inboundReceipts)
         .where(eq(wmsTables.inboundReceipts.warehouseId, fixture.warehouseId));
       const receiptIds = receipts.map((receipt) => receipt.id);
-      const events = await tx
+      const events = await trx
         .select({ journalId: wmsTables.stockEvents.journalId })
         .from(wmsTables.stockEvents)
         .where(
@@ -182,23 +170,23 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
         ),
       ];
 
-      await tx.delete(wmsTables.inboundWorkLogs).where(eq(wmsTables.inboundWorkLogs.warehouseId, fixture.warehouseId));
-      await tx
+      await trx.delete(wmsTables.inboundWorkLogs).where(eq(wmsTables.inboundWorkLogs.warehouseId, fixture.warehouseId));
+      await trx
         .delete(wmsTables.purchaseOrderReceiptLines)
         .where(eq(wmsTables.purchaseOrderReceiptLines.poId, fixture.poId));
       if (receiptIds.length > 0) {
-        await tx
+        await trx
           .delete(wmsTables.inboundReceiptLines)
           .where(inArray(wmsTables.inboundReceiptLines.receiptId, receiptIds));
       }
-      await tx.delete(wmsTables.inboundReceipts).where(eq(wmsTables.inboundReceipts.warehouseId, fixture.warehouseId));
+      await trx.delete(wmsTables.inboundReceipts).where(eq(wmsTables.inboundReceipts.warehouseId, fixture.warehouseId));
       if (fixture.idempotencyKeys.length > 0) {
-        await tx
+        await trx
           .delete(wmsTables.inventoryIdempotencyRequests)
           .where(inArray(wmsTables.inventoryIdempotencyRequests.key, fixture.idempotencyKeys));
       }
-      await tx.delete(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.warehouseId, fixture.warehouseId));
-      await tx
+      await trx.delete(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.warehouseId, fixture.warehouseId));
+      await trx
         .delete(wmsTables.stockEvents)
         .where(
           or(
@@ -207,15 +195,15 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
           ),
         );
       if (journalIds.length > 0) {
-        await tx.delete(wmsTables.stockJournals).where(inArray(wmsTables.stockJournals.id, journalIds));
+        await trx.delete(wmsTables.stockJournals).where(inArray(wmsTables.stockJournals.id, journalIds));
       }
-      await tx.delete(wmsTables.purchaseOrderLines).where(eq(wmsTables.purchaseOrderLines.poId, fixture.poId));
-      await tx.delete(wmsTables.purchaseOrders).where(eq(wmsTables.purchaseOrders.id, fixture.poId));
-      await tx.delete(wmsTables.suppliers).where(eq(wmsTables.suppliers.id, fixture.supplierId));
-      await tx.delete(wmsTables.skus).where(inArray(wmsTables.skus.id, [fixture.skuA, fixture.skuB]));
-      await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, fixture.holderId));
-      await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.warehouseId, fixture.warehouseId));
-      await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, fixture.warehouseId));
+      await trx.delete(wmsTables.purchaseOrderLines).where(eq(wmsTables.purchaseOrderLines.poId, fixture.poId));
+      await trx.delete(wmsTables.purchaseOrders).where(eq(wmsTables.purchaseOrders.id, fixture.poId));
+      await trx.delete(wmsTables.suppliers).where(eq(wmsTables.suppliers.id, fixture.supplierId));
+      await trx.delete(wmsTables.skus).where(inArray(wmsTables.skus.id, [fixture.skuA, fixture.skuB]));
+      await trx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, fixture.holderId));
+      await trx.delete(wmsTables.locations).where(eq(wmsTables.locations.warehouseId, fixture.warehouseId));
+      await trx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, fixture.warehouseId));
     });
   }
 
@@ -285,45 +273,63 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
     operationA: () => Promise<T>,
     operationB: () => Promise<U>,
   ): Promise<[PromiseSettledResult<T>, PromiseSettledResult<U>]> {
-    const blockerClient = postgres(DATABASE_URL as string, { max: 1 });
-    const acquired = deferred();
-    const release = deferred();
-    const [{ pid: blockerPid }] = await blockerClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
-    let operations: [Promise<T>, Promise<U>] | undefined;
-    const blocker = blockerClient.begin(async (tx) => {
-      await tx`SELECT id FROM purchase_orders WHERE id = ${fixture.poId} FOR UPDATE`;
-      acquired.resolve();
-      await release.promise;
-    });
-
+    const blockerClient = postgres(DATABASE_URL, { max: 1 });
     try {
-      await withTimeout(
-        Promise.race([
-          acquired.promise,
-          blocker.then(() => {
-            throw new Error('purchase order blocker completed before the barrier was acquired');
-          }),
-        ]),
-        'purchase order blocker acquisition',
-      );
-      operations = [operationA(), operationB()];
-      let waitFailure: unknown;
+      const blockerDb = drizzle(blockerClient, { schema: wmsSchema });
+      const acquired = deferred();
+      const release = deferred();
+      const [{ pid: blockerPid }] = await blockerClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+      let operations: [Promise<T>, Promise<U>] | undefined;
+      const blocker = blockerDb.transaction(async (trx) => {
+        await trx
+          .select({ id: wmsTables.purchaseOrders.id })
+          .from(wmsTables.purchaseOrders)
+          .where(eq(wmsTables.purchaseOrders.id, fixture.poId))
+          .for('update');
+        acquired.resolve();
+        await release.promise;
+      });
+
       try {
-        await waitUntilBlockedBy(blockerPid, 2, 'purchase_orders');
-      } catch (error) {
-        waitFailure = error;
+        await withTimeout(
+          Promise.race([
+            acquired.promise,
+            blocker.then(() => {
+              throw new Error('purchase order blocker completed before the barrier was acquired');
+            }),
+          ]),
+          'purchase order blocker acquisition',
+        );
+        operations = [operationA(), operationB()];
+        let waitFailure: unknown;
+        try {
+          await waitUntilBlockedBy(blockerPid, 2, 'purchase_orders');
+        } catch (error) {
+          waitFailure = error;
+        } finally {
+          release.resolve();
+        }
+        const [blockerResults, operationResults] = await withTimeout(
+          Promise.all([Promise.allSettled([blocker]), Promise.allSettled(operations)]),
+          'purchase order contention',
+        );
+        if (waitFailure instanceof Error) throw waitFailure;
+        if (waitFailure) throw new Error('purchase order wait observer rejected with a non-Error value');
+        const blockerFailure = blockerResults.find(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+        if (blockerFailure) {
+          if (blockerFailure.reason instanceof Error) throw blockerFailure.reason;
+          throw new Error('purchase order blocker rejected with a non-Error value');
+        }
+        return operationResults;
       } finally {
         release.resolve();
-        await withTimeout(blocker, 'purchase order blocker release');
+        const cleanup: Promise<unknown>[] = [blocker];
+        if (operations) cleanup.push(...operations);
+        await withTimeout(Promise.allSettled(cleanup), 'purchase order worker cleanup');
       }
-      const outcomes = await withTimeout(Promise.allSettled(operations), 'purchase order contention');
-      if (waitFailure instanceof Error) throw waitFailure;
-      if (waitFailure) throw new Error('purchase order wait observer rejected with a non-Error value');
-      return outcomes;
     } finally {
-      release.resolve();
-      if (operations) await withTimeout(Promise.allSettled(operations), 'purchase order worker cleanup');
-      await withTimeout(blocker, 'purchase order blocker cleanup');
       await blockerClient.end();
     }
   }
@@ -332,47 +338,50 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
     heldAction: (tx: DbTx, heldDb: Database) => Promise<T>,
     waitingAction: () => Promise<U>,
   ): Promise<[PromiseSettledResult<T>, PromiseSettledResult<U>]> {
-    const heldClient = postgres(DATABASE_URL as string, { max: 1 });
-    const heldDb = drizzle(heldClient, { schema: wmsSchema });
-    const acquired = deferred();
-    const release = deferred();
-    const [{ pid: heldPid }] = await heldClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
-    let waiting: Promise<U> | undefined;
-    const held = heldDb.transaction(async (trx) => {
-      const result = await heldAction(trx as unknown as DbTx, heldDb);
-      acquired.resolve();
-      await release.promise;
-      return result;
-    });
-
+    const heldClient = postgres(DATABASE_URL, { max: 1 });
     try {
-      await withTimeout(
-        Promise.race([
-          acquired.promise,
-          held.then(() => {
-            throw new Error('held operation completed before the barrier was acquired');
-          }),
-        ]),
-        'held operation acquisition',
-      );
-      waiting = waitingAction();
-      let waitFailure: unknown;
+      const heldDb = drizzle(heldClient, { schema: wmsSchema });
+      const acquired = deferred();
+      const release = deferred();
+      const [{ pid: heldPid }] = await heldClient<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+      let waiting: Promise<U> | undefined;
+      const held = heldDb.transaction(async (trx) => {
+        const result = await heldAction(trx, heldDb);
+        acquired.resolve();
+        await release.promise;
+        return result;
+      });
+
       try {
-        await waitUntilBlockedBy(heldPid, 1, 'inbound_receipt_lines');
-      } catch (error) {
-        waitFailure = error;
+        await withTimeout(
+          Promise.race([
+            acquired.promise,
+            held.then(() => {
+              throw new Error('held operation completed before the barrier was acquired');
+            }),
+          ]),
+          'held operation acquisition',
+        );
+        waiting = waitingAction();
+        let waitFailure: unknown;
+        try {
+          await waitUntilBlockedBy(heldPid, 1, 'inbound_receipt_lines');
+        } catch (error) {
+          waitFailure = error;
+        } finally {
+          release.resolve();
+        }
+        const outcomes = await withTimeout(Promise.allSettled([held, waiting]), 'receipt line contention');
+        if (waitFailure instanceof Error) throw waitFailure;
+        if (waitFailure) throw new Error('receipt line wait observer rejected with a non-Error value');
+        return outcomes;
       } finally {
         release.resolve();
+        const cleanup: Promise<unknown>[] = [held];
+        if (waiting) cleanup.push(waiting);
+        await withTimeout(Promise.allSettled(cleanup), 'receipt line worker cleanup');
       }
-      const outcomes = await withTimeout(Promise.allSettled([held, waiting]), 'receipt line contention');
-      if (waitFailure instanceof Error) throw waitFailure;
-      if (waitFailure) throw new Error('receipt line wait observer rejected with a non-Error value');
-      return outcomes;
     } finally {
-      release.resolve();
-      const cleanup: Promise<unknown>[] = [held];
-      if (waiting) cleanup.push(waiting);
-      await withTimeout(Promise.allSettled(cleanup), 'receipt line worker cleanup');
       await heldClient.end();
     }
   }
@@ -558,7 +567,7 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
             )
           : await runHeldFirst(
               (tx) => mgrA.cancelReceiptLine(receiptLineId, { idempotencyKey: cancelKey }, tx),
-              () => db.transaction((trx) => putaway(db, trx as unknown as DbTx)),
+              () => db.transaction((trx) => putaway(db, trx)),
             );
 
       expect(results[0].status).toBe('fulfilled');
