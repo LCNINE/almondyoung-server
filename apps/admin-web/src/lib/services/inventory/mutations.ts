@@ -525,22 +525,16 @@ export const useUpdateLineCount = () => {
 };
 
 export const useGenerateAdjustments = () => {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ sessionId, data }: { sessionId: string; data?: GenerateAdjustmentsRequest }) =>
       stocktakingClient.generateAdjustments(sessionId, data),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.stocktakingVariances(vars.sessionId),
-      });
-    },
   });
 };
 
 export const useCompleteStocktakingSession = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => stocktakingClient.completeSession(id),
+    mutationFn: ({ sessionId, data }: { sessionId: string; data: { idempotencyKey: string; previewToken: string } }) => stocktakingClient.completeSession(sessionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'stocktaking', 'sessions'] });
     },
