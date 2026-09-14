@@ -240,10 +240,29 @@ export function setup(infra: SharedInfra) {
   // 자동 리뷰 자격 발급 잡(apps/medusa/src/jobs/auto-review-eligibility.ts)의 유일한 스위치.
   // 'true' 가 아니면 잡은 후보를 세고 로그만 남긴다 — 처음 켜는 순간 창 안의 주문이 한꺼번에
   // 자격을 받으므로, 운영자가 «꺼진 채로 한 번 돌려 건수를 본 뒤» 켜라는 설계다.
-  // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
-  // 유예·창·배치 상한(ELIGIBILITY_{DELIVERED,SHIPPED,ORDER_AGE,WINDOW}_DAYS · ELIGIBILITY_BATCH)은
-  // 코드 기본값(7·10·30·30·50)을 쓴다. 바꿔야 하면 같은 방식으로 여기에 이름을 추가한다.
-  const eligibilityAutoIssue = 'false';
+  // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다.
+  // 유예·창(ELIGIBILITY_{DELIVERED,SHIPPED,ORDER_AGE,WINDOW}_DAYS)은 코드 기본값(0·10·30·30)을 쓴다.
+  const eligibilityAutoIssue = 'true';
+
+  // 한 틱이 «보는» 주문 수 상한. 이건 정책이 아니라 실행시간 안전장치다 — 발급 루프가 직렬이라
+  // (건당 query.graph 3 + ugc 왕복 1 + 표식 update 1) 상한이 없으면 한 회차가 무한정 길어진다.
+  //
+  // 🔴 상한은 «판정 전» 후보에 걸린다(`limit ?` 이 ELIGIBILITY_CANDIDATE_SQL 끝에 있다).
+  // 후보에는 아직 유예가 안 찬 주문도 섞여 있으므로, 이 값은 «대상 수»가 아니라 «후보 수»에
+  // 대고 읽어야 한다. 두 수는 잡이 남기는 로그 줄이 그대로 준다:
+  //   [review-eligibility] … would issue for <대상> of <후보> scanned
+  //
+  // 이 값은 «상시» 크론의 값이다 — 하루에 새로 대상 밴드로 들어오는 양(= ORDER_AGE 일 전의
+  // 하루 주문량)에 배수 여유를 둔 크기면 된다. 그 값이 바뀌면 위 로그 줄로 다시 재고 고친다.
+  //
+  // 🔴 처음 켤 때 밀려 있는 백로그는 이 값으로 소급하지 않는다 — 일회성 소급과 상시 크론은
+  // 다른 관심사이고, 일회성 이벤트 크기를 상시 설정에 박으면 그 뒤로 영원히 남는다.
+  // 소급은 운영자가 컨테이너에서 env 를 덮어 한 번 돌린다(발급은 source_event_id unique 라
+  // 멱등이므로 몇 번 돌려도 결과가 같다):
+  //   ELIGIBILITY_BATCH=<후보 수보다 큰 값> npx medusa exec ./src/scripts/auto-review-eligibility.ts
+  // 그러면 로그가 그 자리에서 issued/failed 를 준다. 돌리지 않고 두어도 이 상한이 하루에
+  // 한 틱씩 백로그를 줄여 간다.
+  const eligibilityBatch = '200';
 
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
@@ -575,6 +594,7 @@ export function setup(infra: SharedInfra) {
     SEARCH_INTERNAL_KEY: searchInternalKey.value,
     MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
     ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
+    ELIGIBILITY_BATCH: eligibilityBatch,
     // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
     // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
     STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
