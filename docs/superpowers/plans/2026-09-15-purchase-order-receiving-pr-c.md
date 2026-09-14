@@ -37,6 +37,8 @@
 | `apps/core/drizzle/*_drop-legacy-inbound-plans.sql` + meta | schema 생성 contract DDL, 미적용 CASCADE를 RESTRICT로 강화 |
 | `apps/core/src/modules/inventory/schema/purchase-order-receiving-backfill-guard.integration.spec.ts` | 현재 DB 의존 재실행 suite를 과거 체인의 격리 DB로 이동 |
 | `apps/core/src/modules/inventory/schema/purchase-order-receiving-contract.integration.spec.ts` | 실제 migration chain, 데이터·VIEW 보존, 거절 및 rollback 검증 |
+| `apps/core/src/modules/inventory/procurement/procurement.module.ts` | ADR-0039의 현재 조달 경계와 `received` 의미를 설명 |
+| `web/almondyoung-storefront/src/domains/products/product-details/components/product-actions/restock-notice.tsx` | 재입고 metadata의 현재 발주 라인 원천을 설명 |
 | `docs/runbooks/purchase-order-receiving-contract.md` | 라이브 적용 전 쿼리/의존성 검사, deploy → migrate, 검증·복구 경계 |
 | `docs/superpowers/specs/2026-09-14-purchase-order-owns-receiving-design.md` | 과거 미확인 설명에 확인 시점·실제 검증 기록 추가 |
 
@@ -46,7 +48,7 @@
 
 **Interfaces:** PR-B 체인의 끝은 `_backfill-purchase-order-receiving`. 신규 custom tag suffix는 `_guard-purchase-order-receiving-contract`, DDL suffix는 `_drop-legacy-inbound-plans`. 컨트롤러가 custom 파일을 먼저 생성하고, 구현자가 schema를 정리한 뒤 DDL을 생성한다. 구현자는 생성 요청 시 진행 상태를 파일에 기록하고 컨트롤러에 알린다.
 
-- [ ] **Step 1: 실제 DB 테스트를 먼저 작성하고 RED 확인.** `purchase-order-receiving-backfill-guard.integration.spec.ts`의 `readMigrationFiles` + `PgDialect.migrate`, unique DB 이름, finally cleanup 방식을 따른다. PR-B까지만 적용한 임시 DB에 source 계획/품목, 대응 발주 라인, direct 및 purchase_order 회차, 작업 로그를 만든다. 기대하는 실패는 contract가 없어서 옛 테이블/컬럼이 남거나 잘못된 데이터가 거절되지 않는 것이다. 테스트를 건너뛰거나 텍스트 검색만으로 대체하지 않는다.
+- [x] **Step 1: 실제 DB 테스트를 먼저 작성하고 RED 확인.** `purchase-order-receiving-backfill-guard.integration.spec.ts`의 `readMigrationFiles` + `PgDialect.migrate`, unique DB 이름, finally cleanup 방식을 따른다. PR-B까지만 적용한 임시 DB에 source 계획/품목, 대응 발주 라인, direct 및 purchase_order 회차, 작업 로그를 만든다. 기대하는 실패는 contract가 없어서 옛 테이블/컬럼이 남거나 잘못된 데이터가 거절되지 않는 것이다. 테스트를 건너뛰거나 텍스트 검색만으로 대체하지 않는다.
 
 ```ts
 expect(await client`SELECT to_regclass('public.inbound_plans') AS name`).toEqual([{ name: null }]);
@@ -56,7 +58,7 @@ expect(await client`SELECT to_regtype('public.plan_type') AS name`).toEqual([{ n
 
 행/컬럼 존재 확인 외에 발주·발주 라인·수령 라인·링크·작업 로그와 재고 VIEW 정의/OID·조회 결과가 변경되지 않았음을 전후 비교한다. 테스트는 clean empty chain도 끝까지 적용한다.
 
-- [ ] **Step 2: 컨트롤러에게 custom migration 생성 요청.** 컨트롤러 명령:
+- [x] **Step 2: 컨트롤러에게 custom migration 생성 요청.** 컨트롤러 명령:
 
 ```sh
 npm run db:generate:core -- --custom --name guard-purchase-order-receiving-contract
@@ -83,7 +85,7 @@ HAVING pol.received_qty <> COALESCE(SUM(irl.quantity - irl.canceled_qty), 0);
 
 각 위반을 다른 fixture로 만들고 예외와 schema/data/migration journal rollback을 단언한다. 누계 fixture는 취소량도 포함한다. 별도 커넥션이 purchase_order_lines에 ROW EXCLUSIVE를 보유한 상태에서 실제 guard+DDL 실행이 10초 lock_timeout으로 거절되고 schema/data/journal이 PR-B 그대로인지 검증한다. 테스트 finally에서 잠금을 해제한다. migration journal은 PR-B backfill → PR-C guard → PR-C DDL 연속 순서를 단언하고 두 PR-C migration은 항상 한 migrate 호출에 넣는다.
 
-- [ ] **Step 3: schema와 enum export를 제거하고 DDL 생성 요청.** 두 테이블 정의 및 해당 enum, receipt/work log `planItemId`, table registry, sku/warehouse/purchase order 역관계, 옛 관계 정의/registry, `InboundPlan`/`NewInboundPlan`/`InboundPlanItem`/`NewInboundPlanItem`, enum-values를 정리한다. 이후 컨트롤러 실행:
+- [x] **Step 3: schema와 enum export를 제거하고 DDL 생성 요청.** 두 테이블 정의 및 해당 enum, receipt/work log `planItemId`, table registry, sku/warehouse/purchase order 역관계, 옛 관계 정의/registry, `InboundPlan`/`NewInboundPlan`/`InboundPlanItem`/`NewInboundPlanItem`, enum-values를 정리한다. 이후 컨트롤러 실행:
 
 ```sh
 npm run db:generate:core -- --name drop-legacy-inbound-plans
@@ -100,22 +102,22 @@ ALTER TABLE "inbound_work_logs" DROP COLUMN "plan_item_id" RESTRICT;
 DROP TYPE "public"."plan_type" RESTRICT;
 ```
 
-- [ ] **Step 4: 의존성 안전성/전환 양쪽 검증.** 옛 계획 테이블 VIEW, 두 제거 컬럼 중 하나를 참조하는 VIEW, `plan_type`을 쓰는 외부 컬럼, 예상 밖 FK를 각각 만들어 migrate가 의존성 오류로 실패하고 모든 데이터·객체·적용 이력이 그대로임을 검증한다. 정상 케이스는 `stock_summary_view` 및 기존 모든 VIEW가 보존된다. 새 schema를 쓰는 Drizzle insert/select가 PR-B DB(deploy 후 migrate 전)와 contract DB 모두에서 작동함을 검증한다. PR-B의 역사 테스트는 기존 경계에서 계속 통과해야 한다. 기존 backfill-guard spec의 두 번째 describe는 현재 DATABASE_URL에 옛 테이블을 삽입하므로 격리된 pre-PR-B DB로 옮기거나 기존 격리 suite에 합친다. 두 기존 단언(P1 거절/정상 통과)을 보존한다.
+- [x] **Step 4: 의존성 안전성/전환 양쪽 검증.** 옛 계획 테이블 VIEW, 두 제거 컬럼 중 하나를 참조하는 VIEW, `plan_type`을 쓰는 외부 컬럼, 예상 밖 FK를 각각 만들어 migrate가 의존성 오류로 실패하고 모든 데이터·객체·적용 이력이 그대로임을 검증한다. 정상 케이스는 `stock_summary_view` 및 기존 모든 VIEW가 보존된다. 새 schema를 쓰는 Drizzle insert/select가 PR-B DB(deploy 후 migrate 전)와 contract DB 모두에서 작동함을 검증한다. PR-B의 역사 테스트는 기존 경계에서 계속 통과해야 한다. 기존 backfill-guard spec의 두 번째 describe는 현재 DATABASE_URL에 옛 테이블을 삽입하므로 격리된 pre-PR-B DB로 옮기거나 기존 격리 suite에 합친다. 두 기존 단언(P1 거절/정상 통과)을 보존한다.
 
 ```sh
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_c_base_20260915 npx jest --runInBand --testPathPattern='purchase-order-receiving-(contract|backfill-guard).integration'
 npm run type-check
 ```
 
-- [ ] **Step 5: 자체 리뷰 후 schema+SQL+meta+tests 함께 커밋.** `git diff --check`, targeted 테스트, 생성 journal 순서와 이전 파일 불변 확인. 커밋: `refactor(inventory): 옛 입고계획 DB 구조를 안전하게 제거한다`. report에 명령/실제 결과/RED-GREEN 증거와 남은 우려를 남긴다. 컨트롤러는 별도 Sol reviewer로 스펙 준수와 품질을 검토한다.
+- [x] **Step 5: 자체 리뷰 후 schema+SQL+meta+tests 함께 커밋.** `git diff --check`, targeted 테스트, 생성 journal 순서와 이전 파일 불변 확인. 커밋: `refactor(inventory): 옛 입고계획 DB 구조를 안전하게 제거한다`. report에 명령/실제 결과/RED-GREEN 증거와 남은 우려를 남긴다. 컨트롤러는 별도 Sol reviewer로 스펙 준수와 품질을 검토한다.
 
 ### Task 2: 운영 절차와 최종 회귀 검증
 
-**Files:** 새 runbook, spec의 라이브 관측 설명, 이 계획의 완료 체크/검증 기록.
+**Files:** 새 runbook, spec의 라이브 관측 설명, procurement/restock의 설명 주석, 이 계획의 완료 체크/검증 기록.
 
 **Interfaces:** Task 1의 신규 migration 2개와 통합 테스트를 사용한다. 과거 PR-B 결과는 시점이 명시된 관측이고 앞으로 실행할 명령과 구분한다.
 
-- [ ] **Step 1: 런북에 deploy → migrate 절차와 읽기 전용 preflight SQL을 기록.** Task 1의 정합성 세 SELECT를 각각 그대로 복사하고 결과가 모두 0행이어야 한다고 적는다. `pg_depend` 조회는 `pg_describe_object(classid,objid,objsubid)`와 ref object/subid를 포함하여 두 테이블·두 컬럼·enum의 의존성을 읽을 수 있게 한다. FK 2개와 삭제 테이블 자체 부속 외에 VIEW·외부 FK·타입 이용자가 있으면 중단한다. stock_summary_view는 발주 라인을 참조해야 한다. migrate가 RESTRICT로 최종 방어함도 설명한다.
+- [x] **Step 1: 런북에 deploy → migrate 절차와 읽기 전용 preflight SQL을 기록.** Task 1의 정합성 세 SELECT를 각각 그대로 복사하고 결과가 모두 0행이어야 한다고 적는다. `pg_depend` 조회는 `pg_describe_object(classid,objid,objsubid)`와 ref object/subid를 포함하여 두 테이블·두 컬럼·enum의 의존성을 읽을 수 있게 한다. FK 2개와 삭제 테이블 자체 부속 외에 VIEW·외부 FK·타입 이용자가 있으면 중단한다. stock_summary_view는 발주 라인을 참조해야 한다. migrate가 RESTRICT로 최종 방어함도 설명한다.
 
 ```sql
 SELECT pg_describe_object(classid, objid, objsubid) AS dependent,
@@ -126,9 +128,9 @@ WHERE refobjid IN ('public.inbound_plans'::regclass, 'public.inbound_plan_items'
 
 테이블 의존성만으로 컬럼/enum 검사가 끝났다고 하지 않는다. 라이브 적용은 후속 지시 때 배포 완료 확인 → 쓰기 안정화/최신 백업 확인 → 세 검사 및 의존성 확인 → 명시적 migrate → 두 테이블/enum/두 컬럼 부재와 세 생존 영역(발주, 수령, 재고 VIEW) 보존 확인 순서다. 기존 destination ZIP으로 source를 복구할 수 없음을 명시하고 삭제 전 source 테이블/컬럼의 최신 백업 또는 전체 DB 복구 지점을 운영자가 확보하도록 한다.
 
-- [ ] **Step 2: spec의 낡은 라이브 설명 보완.** §11 PR-B의 “라이브에 이 경로를 쓰는 데이터가 없다”는 가정과 §15의 미측정 설명을 과거 시점의 설명으로 표시하고 위 확인 사실을 추가한다. CSV import 경로 확인과 실제 개별 행 출처의 불확실성을 구분한다. PR-B 적용 SQL은 수정하지 않는다.
+- [x] **Step 2: spec의 낡은 라이브 설명 보완.** §11 PR-B의 “라이브에 이 경로를 쓰는 데이터가 없다”는 가정과 §15의 미측정 설명을 과거 시점의 설명으로 표시하고 위 확인 사실을 추가한다. CSV import 경로 확인과 실제 개별 행 출처의 불확실성을 구분한다. PR-B 적용 SQL은 수정하지 않는다.
 
-- [ ] **Step 3: 최종 검증.** 컨트롤러와 분담하여 type-check, DB 없는 전체 Jest, admin-web tsc/순수 테스트, 창고 앱 기존 테스트, Core build를 실행한다. 로컬 통합 러너의 동일 패턴을 작업 전용 base/head DB에 적용하여 비교한다. `test:core:integration:local`은 공유 core에 migrate하므로 직접 사용하지 않고 동등 명령과 차이를 결과에 적는다.
+- [x] **Step 3: 최종 검증.** 컨트롤러와 분담하여 type-check, DB 없는 전체 Jest, admin-web tsc/순수 테스트, 창고 앱 기존 테스트, Core build를 실행한다. 로컬 통합 러너의 동일 패턴을 작업 전용 base/head DB에 적용하여 비교한다. `test:core:integration:local`은 공유 core에 migrate하므로 직접 사용하지 않고 동등 명령과 차이를 결과에 적는다.
 
 ```sh
 npm run type-check
@@ -171,3 +173,19 @@ cd native/warehouse-app && npm test -- --run
 
 - Sol 계획 리뷰의 역사 테스트 격리, 두 migration 단일 트랜잭션/연속 순서, SHARE lock 6개와 실제 경합 rollback 검증, 빠진 최종 명령을 반영했다. 중복되는 guard mutation 검증은 실제 SQL 거절/rollback 검증으로 대체했다.
 - 검증 기준 해석: CLAUDE.md의 0실패 요구는 root type-check와 DB 없는 Jest에 적용한다. 별도 Core 실 DB 통합에는 스펙 §12의 명시적 “develop 기준선 대비 새 실패 0”을 적용한다. 두 검증 층을 혼동하지 않는다.
+
+## 실제 검증 기록
+
+- Task 1 commit `a7af70349`: 독립 리뷰 지적 0건. schema snapshot은 두 테이블·enum·두 컬럼/FK만 제거했고 기존
+  VIEW는 유지했으며 migration chain이 연속함을 확인했다.
+- 컨트롤러 검증: root type-check, DB 없는 Jest(602 suites/5,312 tests), Core build, admin-web tests
+  (112 suites/960 tests)와 tsc, 창고 앱 tests(64 files/326 tests), consume-validation gate 모두 exit 0.
+- 실 DB 통합: PR-B base 9 failed/94 passed suites, PR-C head 8 failed/96 passed suites. 실패 이름 비교에서 새 실패
+  0건이며 base-only stock valuation 실패의 비재현을 PR-C 개선으로 간주하지 않는다. 계약 targeted 역사/PR-C suite는
+  2 suites/21 tests 통과했다. 공유 DB를 migrate하는 wrapper 대신 동일 Jest pattern을 격리 DB에 실행했다.
+- 2026-09-15 Task 2: 빈 migration prefix에서 PR-B까지 적용한 `pr_c_t2_20260915`에서 런북 정합성 3종이 각각
+  0행이고 5개 제거 대상의 dependency inventory가 예상한 두 외부 FK와 삭제 객체 자체 부속만 출력함을 확인했다.
+  읽기 전용 `pr_c_head_20260915` postcheck는 두 테이블·enum·두 컬럼 부재, `stock_summary_view` 존재,
+  `purchase_order_lines` 참조, 옛 계획 참조 부재를 확인했다. 작업 DB는 검증 후 삭제했다.
+- 이번 세션에는 라이브 DB 조회·migration·deploy, 브라우저/창고 앱 수동 smoke, push 또는 PR 생성이 없다. Task 2
+  Step 4의 컨트롤러 review와 Step 5는 아직 완료되지 않았다.

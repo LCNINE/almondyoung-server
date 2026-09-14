@@ -582,8 +582,11 @@ WHERE (status = 'ordered') <> (ordered_qty IS NOT NULL);
 dev 시드(`scripts/local/seed-dev-core/inbound.ts`) · **셀메이트 import(`apps/core/scripts/import-inbound-plans.ts`) 삭제**.
 옛 테이블은 남지만 아무도 읽고 쓰지 않는다.
 
-순서: **`migrate → deploy`**. 롤링 중 옛 태스크가 옛 경로로 입고예정을 쓰면 새 모델에 반영되지 않지만, 라이브에 이
-경로를 쓰는 데이터가 없다.
+순서: **`migrate → deploy`**. 롤링 중 옛 태스크가 옛 경로로 입고예정을 쓰면 새 모델에 반영되지 않는다. 설계 당시에는
+라이브에 이 경로를 쓰는 데이터가 없다고 가정했다. 이후 2026-09-14 23:55 KST PR-B 라이브 적용에서 destination 계획
+135건·품목 1,775건을 백업 후 삭제하고 source 계획 182건·품목 2,533건과 대응 발주 182건·라인 2,533건을 보존했다.
+옛 셀메이트 CSV import가 발주와 입고계획을 함께 만들던 코드 경로는 확인했지만, 각 라이브 행의 정확한 실행 출처는
+확정하지 않았다.
 
 ### PR-C — contract (PR-B 배포 완료 뒤)
 
@@ -687,10 +690,11 @@ HAVING pol.received_qty <> COALESCE(SUM(irl.quantity - irl.canceled_qty), 0);
 | #745 나머지(멱등 · 카트 유니크 · 중복 SKU 500 · N+1) | #745 |
 | 목록 건수·검색 · SKU 피커 · 한국어 DTO 메시지 전반 · MD 역할 · 발주서/통화/주문 채널 필드 · 운영 매뉴얼 | 리테일 준비도 논의의 묶음 2~5 |
 
-## 15. 확인하지 못한 사실
+## 15. 설계 당시 확인하지 못한 사실과 후속 확인
 
-- **라이브 행 수** — `inbound_plans`·`inbound_plan_items`·`purchase_orders`·`inbound_receipt_lines.plan_item_id` 가 비어
-  있는지 이번 세션에 재지 못했다(라이브 읽기가 거절됐다). 방증: 8/26 기준 `purchase_orders` 0행(#724), 스토어프론트 동기화가
-  8/26 부터 깨져 있음. 설계는 **행이 있어도 옮기고 없으면 no-op** 이 되게 짰으므로 결론은 바뀌지 않는다 — 다만 PR-C 전
-  확인 쿼리는 반드시 돌린다.
+- **라이브 행 수** — 설계 세션에는 라이브 읽기가 거절되어 측정하지 못했다. 이후 2026-09-14 23:55 KST PR-B 적용
+  기록에서 destination 계획 135건·품목 1,775건 삭제, source 계획 182건·품목 2,533건과 발주 182건·라인 2,533건
+  보존, §11 PR-C 정합성 3종 0행을 확인했다. 이는 그 시점의 증거이며 PR-C 적용 직전 재검사와 최신 source/전체 DB
+  복구 지점을 대신하지 않는다. 당시 destination ZIP은 삭제한 destination 행의 백업일 뿐 source/전체 DB 백업이 아니다.
+  옛 셀메이트 CSV import 코드 경로는 확인했지만 보존된 개별 행의 정확한 출처는 확정하지 않았다.
 - **간편·전수·개별입고의 라이브 사용 여부** — 모른다. PR-A 를 따로 떼는 이유다.

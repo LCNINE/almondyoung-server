@@ -17,7 +17,7 @@ export function hasStockNotice(variants: Props["variants"]) {
 
 // 품절 옵션들 중 가장 이른 입고예정일을 고른다.
 // 데이터(variant.metadata.inboundDate)가 없으면 null → 아무것도 렌더하지 않음.
-// metadata 는 core inbound_plans → Medusa variant.metadata 동기화로 채워짐 (sync-restock-to-medusa.ts).
+// metadata 는 미수령 수량이 남은 core 발주 라인 → Medusa variant.metadata 동기화로 채워짐 (sync-restock-to-medusa.ts).
 //
 // 지난 날짜는 후보에서 뺀다. 동기화가 stale 값을 남기면(입고완료/취소 후 미삭제)
 // "재입고 : 2026년 7월 14일 예정" 처럼 이미 지난 날을 안내하게 된다. 그 경우엔
