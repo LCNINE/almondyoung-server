@@ -48,13 +48,13 @@ export class SmsSenderService {
     return this.client;
   }
 
-  async send(to: string, content: string): Promise<void> {
+  async send(to: string, content: string, channel?: 'SMS' | 'KAKAO'): Promise<void> {
     let response: { success: boolean; error?: string; provider?: string };
 
     try {
       const { data } = await this.getClient().post<{ success: boolean; error?: string; provider?: string }>(
         '/internal/sms/send',
-        { to, content },
+        { to, content, ...(channel ? { channel } : {}) },
       );
       response = data;
     } catch (error: unknown) {
@@ -70,7 +70,7 @@ export class SmsSenderService {
       });
 
       throw new PhoneVerificationException({
-        message: '인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요',
+        message: this.failureMessage(channel),
         errorCode: 'SMS_SEND_FAILED',
         httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
       });
@@ -82,10 +82,22 @@ export class SmsSenderService {
       this.logger.error('SMS 발송 실패', { provider: response.provider, error: response.error });
 
       throw new PhoneVerificationException({
-        message: '인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요',
+        message: this.failureMessage(channel),
         errorCode: 'SMS_SEND_FAILED',
         httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
       });
     }
+  }
+
+  /**
+   * 채널별로 사유를 갈라 준다.
+   *
+   * 고객이 카카오톡으로 받기를 눌렀는데 "인증번호 발송에 실패했습니다" 만 뜨면, 방금 자기가 고른
+   * 채널이 실패한 건지 문자가 또 실패한 건지 구분할 수 없다.
+   */
+  private failureMessage(channel?: 'SMS' | 'KAKAO'): string {
+    return channel === 'KAKAO'
+      ? '카카오톡으로 인증번호를 보내지 못했습니다. 문자로 다시 받아보세요'
+      : '인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요';
   }
 }

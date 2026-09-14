@@ -34,7 +34,7 @@ export class SendMessageService {
   }
 
   async sendVerificationCode(sendVerificationCodeDto: SendVerificationCodeDto, tx?: DbTransaction) {
-    const { phoneNumber, purpose } = sendVerificationCodeDto;
+    const { phoneNumber, purpose, channel } = sendVerificationCodeDto;
     const _purpose = purpose ?? 'phone_verify';
 
     return this.inTx(async (trx) => {
@@ -81,12 +81,12 @@ export class SendMessageService {
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
       });
 
-      // 5. SMS 발송 (notification 서비스에 위임)
+      // 5. 발송 (notification 서비스에 위임)
       // Note: 외부 API 호출이 트랜잭션 내부에 있음
-      // SMS 실패 시 DB도 함께 롤백됨
-      await this.smsSender.send(phoneNumber, `[아몬드영] 인증번호: ${code}`);
+      // 발송 실패 시 DB도 함께 롤백됨
+      await this.smsSender.send(phoneNumber, `[아몬드영] 인증번호: ${code}`, channel);
 
-      return '인증번호가 발송되었습니다';
+      return channel === 'KAKAO' ? '카카오톡으로 인증번호를 보냈습니다' : '인증번호가 발송되었습니다';
     }, tx);
   }
 

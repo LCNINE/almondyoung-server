@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { sendRecoveryCodeAction } from "@/app/actions"
 import { BirthdayInput } from "@/components/birthday-input"
+import { MessageCircle } from "lucide-react"
 import { PhoneNumberInput } from "@/components/phone-number-input"
 import {
   AvailabilityStatus,
@@ -13,7 +14,10 @@ import {
 import type { StepValues } from "@/components/signup/types"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { NICKNAME_RULE, useNicknameAvailability } from "@/hooks/use-availability"
+import {
+  NICKNAME_RULE,
+  useNicknameAvailability,
+} from "@/hooks/use-availability"
 import {
   FloatingField,
   FloatingLabelInput,
@@ -40,20 +44,28 @@ export function ProfileStep({
     nicknameAvailability.status === "taken" ||
     nicknameAvailability.status === "invalid"
   const [codeSent, setCodeSent] = React.useState(false)
-  const [sending, setSending] = React.useState(false)
+  // 어느 채널을 보내는 중인지까지 들고 있어야 한다. 참/거짓 하나면 카카오톡을 누를 때
+  // 문자 재발송 버튼까지 로딩 상태로 바뀐다.
+  const [sending, setSending] = React.useState<null | "SMS" | "KAKAO">(null)
   const [sendError, setSendError] = React.useState<string | null>(null)
   const [sendMessage, setSendMessage] = React.useState<string | null>(null)
 
-  const sendCode = async () => {
+  const sendCode = async (channel?: "KAKAO") => {
     const form = formRef.current
     if (!form) return
-    setSending(true)
+    setSending(channel ?? "SMS")
     setSendError(null)
     setSendMessage(null)
     const fd = new FormData(form)
+    if (channel) fd.set("channel", channel)
     const res = await sendRecoveryCodeAction(fd)
-    setSending(false)
+    setSending(null)
     if (res.ok) {
+      // 새 코드를 발급받았으므로 입력칸에 남은 옛 코드를 지운다. 그대로 두면 고객이 방금 받은
+      // 코드 대신 만료된 코드를 제출하게 된다.
+      const codeInput = form.elements.namedItem("code")
+      if (codeInput instanceof HTMLInputElement) codeInput.value = ""
+
       setCodeSent(true)
       setSendMessage(res.message)
     } else {
@@ -136,14 +148,18 @@ export function ProfileStep({
         <Button
           type="button"
           variant={codeSent ? "outline" : "default"}
-          onClick={sendCode}
-          disabled={sending}
+          onClick={() => sendCode()}
+          disabled={sending !== null}
           className={cn(
-            "h-14 shrink-0 rounded-lg px-4",
-            sending && "disabled:bg-primary disabled:text-primary-foreground"
+            // 최소 너비를 잡는다. 내용이 「인증번호 받기」 → 스피너 → 「재발송」 으로 바뀌는데
+            // 너비를 내용에 맡기면 그때마다 옆 입력칸이 늘었다 줄어 화면이 흔들린다.
+            // 고정(w-)이 아니라 최소(min-w-)인 이유: 문구가 길어지면 넘치는 대신 늘어나야 한다.
+            "h-14 min-w-[132px] shrink-0 rounded-lg px-4",
+            sending === "SMS" &&
+              "disabled:bg-primary disabled:text-primary-foreground"
           )}
         >
-          {sending ? (
+          {sending === "SMS" ? (
             <Spinner className="size-5" />
           ) : codeSent ? (
             "재발송"
@@ -169,16 +185,33 @@ export function ProfileStep({
           onInput={(e) => e.currentTarget.setCustomValidity("")}
         />
       )}
-      {sendMessage && (
-        <FieldDescription className="text-[#079171]">
-          {sendMessage}
-        </FieldDescription>
+      {codeSent && (
+        <div className="flex flex-col gap-2">
+          <FieldDescription>문자가 오지 않나요?</FieldDescription>
+          <button
+            type="button"
+            onClick={() => sendCode("KAKAO")}
+            disabled={sending !== null}
+            className="inline-flex h-11 cursor-pointer items-center gap-2 self-start rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <MessageCircle className="size-4 fill-current" strokeWidth={0} />
+            {sending === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
+          </button>
+        </div>
       )}
-      {sendError && (
-        <FieldDescription className="text-destructive">
-          {sendError}
-        </FieldDescription>
-      )}
+      {/*
+        결과 문구는 조건부로 붙였다 떼면 발송할 때마다 아래 내용이 밀렸다 당겨져 화면이 흔들린다.
+        자리를 항상 차지하게 두고 내용만 바꾼다.
+      */}
+      <FieldDescription
+        className={cn(
+          "min-h-5",
+          sendError ? "text-destructive" : "text-[#079171]"
+        )}
+        role={sendError ? "alert" : undefined}
+      >
+        {sendError ?? sendMessage ?? ""}
+      </FieldDescription>
 
       <StepFooter
         onBack={onBack}

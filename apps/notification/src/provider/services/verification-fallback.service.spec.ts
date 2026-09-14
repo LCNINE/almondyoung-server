@@ -5,8 +5,8 @@ import { ProviderManagerService } from './provider-manager.service';
 import { PHONE_VERIFICATION_GROUPING_KEY, VerificationFallbackService } from './verification-fallback.service';
 
 /**
- * 이 서비스가 지켜야 하는 건 두 가지다: 실패한 인증문자를 «반드시» 구제하는 것과, 인증문자가
- * 아닌 것을 «절대» 인증번호로 재발송하지 않는 것. 후자가 깨지면 엉뚱한 숫자가 고객에게 간다.
+ * 이 서비스가 지켜야 하는 건 두 가지다: 실패한 인증문자를 반드시 구제하는 것과, 인증문자가
+ * 아닌 것을 절대 인증번호로 재발송하지 않는 것. 후자가 깨지면 엉뚱한 숫자가 고객에게 간다.
  */
 describe('VerificationFallbackService', () => {
   const SENT_BODY = '[아몬드영] 인증번호: 483920';
@@ -24,7 +24,7 @@ describe('VerificationFallbackService', () => {
     ...overrides,
   });
 
-  // `undefined` 를 넘기면 기본 매개변수가 되살아나므로 «설정 없음» 은 null 로 표현한다.
+  // `undefined` 를 넘기면 기본 매개변수가 되살아나므로 설정 없음은 null 로 표현한다.
   const build = (templateCode: string | null = 'ALMOND_VERIFY_001') => {
     kakaoSend = jest.fn().mockResolvedValue({ success: true, messageId: 'kakao-1' });
     getSentBody = jest.fn().mockResolvedValue(SENT_BODY);
@@ -91,5 +91,42 @@ describe('VerificationFallbackService', () => {
 
     expect(getSentBody).not.toHaveBeenCalled();
     expect(kakaoSend).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 고객이 문자가 오지 않는다며 카카오톡을 고른 경로. 통신사 스팸보관함행은 발송 결과가 성공으로
+   * 돌아와 서버가 감지할 수 없으므로, 이 경로가 사각지대를 메우는 유일한 수단이다.
+   */
+  describe('sendByAlimtalk', () => {
+    it('인증번호를 템플릿 파라미터로 넘겨 알림톡을 보낸다', async () => {
+      build();
+
+      await expect(service.sendByAlimtalk('01012345678', '483920')).resolves.toEqual(
+        expect.objectContaining({ success: true }),
+      );
+      expect(kakaoSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '01012345678',
+          metadata: { templateCode: 'ALMOND_VERIFY_001', templateParameters: { code: '483920' } },
+        }),
+      );
+    });
+
+    it('템플릿 코드가 없으면 보내지 않고 실패를 돌려준다', async () => {
+      build(null);
+
+      await expect(service.sendByAlimtalk('01012345678', '483920')).resolves.toEqual(
+        expect.objectContaining({ success: false }),
+      );
+      expect(kakaoSend).not.toHaveBeenCalled();
+    });
+
+    it('isConfigured 가 템플릿 코드 설정 여부를 알려준다', () => {
+      build();
+      expect(service.isConfigured()).toBe(true);
+
+      build(null);
+      expect(service.isConfigured()).toBe(false);
+    });
   });
 });

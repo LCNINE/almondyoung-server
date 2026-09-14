@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class SendSmsDto {
   @ApiProperty({ description: '수신 번호. E.164(+8210…) 와 로컬 표기(01012345678) 둘 다 받는다.' })
@@ -12,6 +12,18 @@ export class SendSmsDto {
   @IsNotEmpty()
   @MaxLength(2000)
   content: string;
+
+  @ApiProperty({
+    description:
+      '발송 채널. 생략하면 SMS. KAKAO 는 고객이 「인증번호가 오지 않아요」로 카카오톡 발송을 고른 경우에 쓴다 — ' +
+      '본문에서 인증번호를 꺼내 알림톡 템플릿으로 보낸다.',
+    enum: ['SMS', 'KAKAO'],
+    required: false,
+    default: 'SMS',
+  })
+  @IsIn(['SMS', 'KAKAO'])
+  @IsOptional()
+  channel?: 'SMS' | 'KAKAO';
 }
 
 export class SendSmsResponseDto {
