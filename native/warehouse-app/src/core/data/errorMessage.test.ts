@@ -78,6 +78,26 @@ describe('inbound 문맥', () => {
   });
 });
 
+describe('po-receive 문맥', () => {
+  it('발주 수령 400 은 창고 선택을 확인하게 한다', () => {
+    expect(
+      errorMessage(new Error('POST /purchase-orders/po-1/receipts → 400'), 'po-receive')
+    ).toBe('이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.');
+  });
+
+  it('발주 수령 404 는 목록 새로고침을 안내한다', () => {
+    expect(
+      errorMessage(new Error('POST /purchase-orders/po-1/receipts → 404'), 'po-receive')
+    ).toBe('발주를 찾을 수 없어요. 목록을 새로고침 해주세요.');
+  });
+
+  it('발주 수령 409 는 서버 메시지를 그대로 보인다', () => {
+    expect(errorMessage(new ConflictError('이미 전량 입고된 품목입니다: sku-1'), 'po-receive')).toBe(
+      '이미 전량 입고된 품목입니다: sku-1'
+    );
+  });
+});
+
 describe('outbound 문맥', () => {
   it('출고 문맥의 403 은 강제출고 권한 안내를 준다', () => {
     expect(errorMessage(new Error('POST /x → 403'), 'outbound')).toBe(

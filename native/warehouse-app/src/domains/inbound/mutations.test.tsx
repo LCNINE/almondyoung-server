@@ -6,7 +6,13 @@ import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
-import { useReceiveFromPlan, useSimpleInbound, usePutaway, useCancelInbound } from './mutations';
+import {
+  useCancelInbound,
+  useCancelPurchaseOrderReceipt,
+  usePutaway,
+  useReceivePurchaseOrder,
+  useSimpleInbound,
+} from './mutations';
 
 const session = {
   bootstrap: async () => {},
@@ -35,7 +41,14 @@ function setup(calls: Call[]) {
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
-      return { success: true, receiptId: 'r-1', lineId: 'ln-1', id: 'r-1', lines: [] };
+      return {
+        success: true,
+        receiptId: 'r-1',
+        lineId: 'ln-1',
+        id: 'r-1',
+        poId: 'po-1',
+        lines: [{ receiptLineId: 'rl-1', skuId: 'sku-1', quantity: 12 }],
+      };
     }) as unknown as ApiClient['request'],
   };
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -48,31 +61,45 @@ function setup(calls: Call[]) {
   return { wrapper, invalidated };
 }
 
-describe('useReceiveFromPlan', () => {
+describe('useReceivePurchaseOrder', () => {
   it('멱등키를 본문과 헤더 양쪽에 싣는다', async () => {
     const calls: Call[] = [];
     const { wrapper } = setup(calls);
-    const { result } = renderHook(() => useReceiveFromPlan(), { wrapper });
+    const { result } = renderHook(() => useReceivePurchaseOrder(), { wrapper });
 
-    result.current.mutate({ planItemId: 'pi-1', quantity: 20, idempotencyKey: 'key-1' });
+    result.current.mutate({
+      poId: 'po-1',
+      warehouseId: 'w-1',
+      lines: [{ skuId: 'sku-1', quantity: 12 }],
+      idempotencyKey: 'key-1',
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(calls[0].path).toBe('/inbound/plans/receive');
+    expect(calls[0].path).toBe('/purchase-orders/po-1/receipts');
     expect(calls[0].method).toBe('POST');
     expect(calls[0].idempotencyKey).toBe('key-1');
-    expect(calls[0].body).toMatchObject({ planItemId: 'pi-1', quantity: 20, idempotencyKey: 'key-1' });
+    expect(calls[0].body).toMatchObject({
+      warehouseId: 'w-1',
+      lines: [{ skuId: 'sku-1', quantity: 12 }],
+      idempotencyKey: 'key-1',
+    });
   });
 
   it('원장이 움직였으므로 재고 캐시까지 무효화한다', async () => {
     const calls: Call[] = [];
     const { wrapper, invalidated } = setup(calls);
-    const { result } = renderHook(() => useReceiveFromPlan(), { wrapper });
+    const { result } = renderHook(() => useReceivePurchaseOrder(), { wrapper });
 
-    result.current.mutate({ planItemId: 'pi-1', quantity: 1, idempotencyKey: 'k' });
+    result.current.mutate({
+      poId: 'po-1',
+      warehouseId: 'w-1',
+      lines: [{ skuId: 'sku-1', quantity: 1 }],
+      idempotencyKey: 'k',
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     const keys = invalidated.map((k) => k[0]);
-    expect(keys).toContain('inbound-pending');
+    expect(keys).toContain('expected-arrivals');
     expect(keys).toContain('location-contents');
     expect(keys).toContain('sku-warehouse-stock');
     expect(keys).toContain('sku-stock-summary');
@@ -91,7 +118,7 @@ describe('useReceiveFromPlan', () => {
     const client: ApiClient = {
       request: (async (o: Call) => {
         calls.push(o);
-        throw new Error('POST /inbound/plans/receive → 500');
+        throw new Error('POST /purchase-orders/po-1/receipts → 500');
       }) as unknown as ApiClient['request'],
     };
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -101,12 +128,31 @@ describe('useReceiveFromPlan', () => {
         </QueryClientProvider>
       </SessionProvider>
     );
-    const { result } = renderHook(() => useReceiveFromPlan(), { wrapper });
+    const { result } = renderHook(() => useReceivePurchaseOrder(), { wrapper });
 
-    result.current.mutate({ planItemId: 'pi-1', quantity: 1, idempotencyKey: 'k' });
+    result.current.mutate({
+      poId: 'po-1',
+      warehouseId: 'w-1',
+      lines: [{ skuId: 'sku-1', quantity: 1 }],
+      idempotencyKey: 'k',
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(invalidated.map((k) => k[0])).toContain('inbound-pending');
+    expect(invalidated.map((k) => k[0])).toContain('expected-arrivals');
+  });
+
+  it('발주 입고 취소는 receiptLineId 를 경로에 넣고 멱등키를 본문과 헤더에 싣는다', async () => {
+    const calls: Call[] = [];
+    const { wrapper } = setup(calls);
+    const { result } = renderHook(() => useCancelPurchaseOrderReceipt(), { wrapper });
+
+    result.current.mutate({ receiptLineId: 'rl-1', idempotencyKey: 'cancel-key-1' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls[0].path).toBe('/purchase-orders/receipt-lines/rl-1/cancel');
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].idempotencyKey).toBe('cancel-key-1');
+    expect(calls[0].body).toEqual({ idempotencyKey: 'cancel-key-1' });
   });
 });
 

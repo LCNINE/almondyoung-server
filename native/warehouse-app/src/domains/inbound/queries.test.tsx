@@ -6,7 +6,7 @@ import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
-import { usePendingPlans, usePutawayPending } from './queries';
+import { useExpectedArrivals, usePutawayPending } from './queries';
 
 const session = {
   bootstrap: async () => {},
@@ -28,24 +28,25 @@ function wrapperWith(client: ApiClient) {
   );
 }
 
-describe('usePendingPlans', () => {
+describe('useExpectedArrivals', () => {
   it('warehouseId 로 GET 경로를 만든다', async () => {
     const request = vi.fn(async (_o: { path: string }) => ({
-      totalPendingPlans: 1,
-      totalPendingQuantity: 20,
-      pendingPlans: [],
+      warehouseId: 'w-1',
+      totalDocuments: 0,
+      totalOutstandingQuantity: 0,
+      arrivals: [],
     }));
     const client: ApiClient = { request: request as unknown as ApiClient['request'] };
-    const { result } = renderHook(() => usePendingPlans('w-1'), { wrapper: wrapperWith(client) });
+    const { result } = renderHook(() => useExpectedArrivals('w-1'), { wrapper: wrapperWith(client) });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(request.mock.calls[0][0].path).toBe('/inbound/pending?warehouseId=w-1');
+    expect(request.mock.calls[0][0].path).toBe('/inventory/expected-arrivals?warehouseId=w-1');
   });
 
   it('warehouseId 가 없으면 요청하지 않는다', () => {
     const request = vi.fn(async () => ({}));
     const client: ApiClient = { request: request as unknown as ApiClient['request'] };
-    renderHook(() => usePendingPlans(null), { wrapper: wrapperWith(client) });
+    renderHook(() => useExpectedArrivals(null), { wrapper: wrapperWith(client) });
     expect(request).not.toHaveBeenCalled();
   });
 });

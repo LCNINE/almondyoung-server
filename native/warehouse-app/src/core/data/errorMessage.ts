@@ -8,6 +8,7 @@ export type ErrorContext =
   | 'movement'
   | 'inbound'
   | 'inbound-cancel'
+  | 'po-receive'
   | 'putaway'
   | 'outbound';
 
@@ -20,6 +21,10 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   // 취소는 서버가 "적치 존재"·"당일 아님"·"전량 아님"을 모두 400 으로 낸다.
   // 현장에서 실제로 부딪히는 건 앞의 둘이고, 앱은 전량만 보내므로 셋째는 안 난다.
   'inbound-cancel': { 400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.' },
+  'po-receive': {
+    400: '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.',
+    404: '발주를 찾을 수 없어요. 목록을 새로고침 해주세요.',
+  },
   // 적치는 출발지가 입고기본존이 아닐 수 있다(반품기본존·재작업존도 시스템 존이다).
   // inbound 문맥의 "입고기본존 재고가 부족해요" 를 그대로 쓰면 거짓말이 된다.
   putaway: {
@@ -50,6 +55,7 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (error instanceof ConflictError) {
+    if (context === 'po-receive') return error.message;
     if (context === 'outbound' && error.code) {
       const specific = OUTBOUND_CONFLICT_MESSAGES[error.code];
       if (specific) return specific;

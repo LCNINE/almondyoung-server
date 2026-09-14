@@ -1,47 +1,46 @@
-/** GET /inbound/pending 의 items[] 한 행. */
-export interface PendingPlanItem {
-  planItemId: string;
+export interface ExpectedArrivalLine {
   skuId: string;
   skuName: string;
   skuCode: string;
-  expectedQty: number;
+  orderedQty: number;
   receivedQty: number;
-  pendingQty: number;
+  outstandingQty: number;
+  expectedArrival: string | null;
 }
 
-/** GET /inbound/pending 의 pendingPlans[] 한 행 중 현장에서 쓰는 필드만. */
-export interface PendingPlan {
-  planId: string;
-  warehouseId: string;
-  /** ISO 문자열. 서버는 Date 로 두지만 JSON 을 건너오며 문자열이 된다. */
+export interface ExpectedArrival {
+  source: 'purchase_order';
+  documentId: string;
+  type: 'domestic' | 'foreign';
+  supplier: { id: string; name: string } | null;
   expectedDate: string | null;
-  purchaseOrder: {
-    id: string;
-    type: 'domestic' | 'foreign';
-    supplier?: { id: string; name: string } | null;
-  };
-  items: PendingPlanItem[];
-  totalQuantity: number;
-  totalPendingQuantity: number;
+  totalOutstandingQuantity: number;
+  lines: ExpectedArrivalLine[];
 }
 
-export interface PendingPlanListResult {
-  totalPendingPlans: number;
-  totalPendingQuantity: number;
-  pendingPlans: PendingPlan[];
+export interface ExpectedArrivalsResult {
+  warehouseId: string;
+  totalDocuments: number;
+  totalOutstandingQuantity: number;
+  arrivals: ExpectedArrival[];
 }
 
-export interface ReceiveFromPlanInput {
-  planItemId: string;
-  quantity: number;
-  memo?: string;
+export interface ReceivePurchaseOrderInput {
+  poId: string;
+  warehouseId: string;
+  lines: Array<{ skuId: string; quantity: number; memo?: string }>;
   idempotencyKey: string;
 }
 
-export interface ReceiveFromPlanResult {
-  success: boolean;
+export interface ReceivePurchaseOrderResult {
   receiptId: string;
-  lineId: string;
+  poId: string;
+  lines: Array<{ receiptLineId: string; skuId: string; quantity: number }>;
+}
+
+export interface CancelPurchaseOrderReceiptInput {
+  receiptLineId: string;
+  idempotencyKey: string;
 }
 
 export interface SimpleInboundInput {
@@ -113,7 +112,7 @@ export interface PutawayPendingResult {
 /**
  * PutawaySheet 의 입력. 입고 직후 화면과 적치 큐가 공유한다.
  * originLocationId 가 선택인 이유: 입고 직후 경로는 그 값을 모른다
- * (ReceiveFromPlanResult·SimpleInboundLine 어느 쪽도 로케이션을 안 돌려준다).
+ * (ReceivePurchaseOrderResult·SimpleInboundLine 어느 쪽도 로케이션을 안 돌려준다).
  * 없으면 "출발지를 대상지 후보에서 제외" 가드를 걸지 않는다.
  */
 export interface PutawayTarget {

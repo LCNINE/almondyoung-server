@@ -20,7 +20,7 @@ import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
 import { MovementRoute } from './routes/MovementRoute';
 import { InboundRoute } from './routes/InboundRoute';
-import { PlanReceiveRoute } from './routes/PlanReceiveRoute';
+import { PurchaseOrderReceiveRoute } from './routes/PurchaseOrderReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
@@ -122,10 +122,10 @@ const inboundRoute = createRoute({
   path: '/inbound',
   component: InboundRoute,
 });
-const inboundPlanRoute = createRoute({
+const inboundPurchaseOrderRoute = createRoute({
   getParentRoute: () => authedRoute,
-  path: '/inbound/plans/$planId',
-  component: PlanReceiveRoute,
+  path: '/inbound/purchase-orders/$poId',
+  component: PurchaseOrderReceiveRoute,
 });
 const inboundQuickRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -187,7 +187,7 @@ export const routeTree = rootRoute.addChildren([
     stocktakingVariancesRoute,
     movementRoute,
     inboundRoute,
-    inboundPlanRoute,
+    inboundPurchaseOrderRoute,
     inboundQuickRoute,
     pickingRoute,
     putawayRoute,

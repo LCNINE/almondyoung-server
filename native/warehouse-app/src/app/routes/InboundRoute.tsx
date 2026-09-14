@@ -1,5 +1,5 @@
-import { PendingPlanListScreen } from '../../domains/inbound/PendingPlanListScreen';
+import { ExpectedArrivalListScreen } from '../../domains/inbound/ExpectedArrivalListScreen';
 
 export function InboundRoute() {
-  return <PendingPlanListScreen />;
+  return <ExpectedArrivalListScreen />;
 }

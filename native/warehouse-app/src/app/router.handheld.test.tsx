@@ -105,8 +105,13 @@ describe('handheld hub navigation', () => {
     const client: ApiClient = {
       request: (async (opts: { path: string }) => {
         if (opts.path === '/inventory/warehouses') return [];
-        if (opts.path.startsWith('/inbound/pending')) {
-          return { totalPendingPlans: 0, totalPendingQuantity: 0, pendingPlans: [] };
+        if (opts.path.startsWith('/inventory/expected-arrivals')) {
+          return {
+            warehouseId: 'w-1',
+            totalDocuments: 0,
+            totalOutstandingQuantity: 0,
+            arrivals: [],
+          };
         }
         return { data: [], total: 0 };
       }) as unknown as ApiClient['request'],

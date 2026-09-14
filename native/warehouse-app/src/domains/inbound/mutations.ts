@@ -3,19 +3,20 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type {
   CancelInboundInput,
+  CancelPurchaseOrderReceiptInput,
   PutawayInput,
-  ReceiveFromPlanInput,
-  ReceiveFromPlanResult,
+  ReceivePurchaseOrderInput,
+  ReceivePurchaseOrderResult,
   SimpleInboundInput,
   SimpleInboundResult,
 } from './types';
 
 /**
- * 네 뮤테이션 모두 원장을 움직인다. 예정 잔여·로케이션 내용물·SKU 재고가 전부
+ * 다섯 뮤테이션 모두 원장을 움직인다. 예정 잔여·로케이션 내용물·SKU 재고가 전부
  * 어긋나므로 한 곳에 묶어 부른다.
  */
 function invalidateAfterLedgerWrite(qc: QueryClient) {
-  void qc.invalidateQueries({ queryKey: ['inbound-pending'] });
+  void qc.invalidateQueries({ queryKey: ['expected-arrivals'] });
   void qc.invalidateQueries({ queryKey: ['location-contents'] });
   void qc.invalidateQueries({ queryKey: ['sku-warehouse-stock'] });
   void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
@@ -25,24 +26,39 @@ function invalidateAfterLedgerWrite(qc: QueryClient) {
 }
 
 /**
- * POST /inbound/plans/receive — 예정 아이템 기반 실입고.
- * 서버는 예정 초과를 막지 않는다(경고는 화면 책임). 로케이션을 안 넘기면
- * 입고기본존으로 들어가고, 목적지는 이어지는 putaway 가 정한다.
+ * POST /purchase-orders/:poId/receipts — 발주 라인 기반 실입고.
+ * 서버도 발주 잔여 초과를 거절하며, 화면은 작업자가 제출하기 전에 상한을 알린다.
  *
  * onSettled 인 이유: 서버가 커밋한 뒤 응답만 유실되면 onSuccess 는 영영 안
  * 불린다. 그 상태로 예정 목록에 돌아오면 이미 입고된 수량이 잔여로 남아 보이고
  * 작업자가 한 번 더 찍는다.
  */
-export function useReceiveFromPlan() {
+export function useReceivePurchaseOrder() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: ReceiveFromPlanInput) =>
-      api.request<ReceiveFromPlanResult>({
+    mutationFn: ({ poId, ...input }: ReceivePurchaseOrderInput) =>
+      api.request<ReceivePurchaseOrderResult>({
         method: 'POST',
-        path: '/inbound/plans/receive',
+        path: `/purchase-orders/${poId}/receipts`,
         body: input,
         idempotencyKey: input.idempotencyKey,
+      }),
+    onSettled: () => invalidateAfterLedgerWrite(qc),
+  });
+}
+
+/** POST /purchase-orders/receipt-lines/:receiptLineId/cancel — 발주 입고 라인 취소. */
+export function useCancelPurchaseOrderReceipt() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ receiptLineId, idempotencyKey }: CancelPurchaseOrderReceiptInput) =>
+      api.request<{ success: boolean }>({
+        method: 'POST',
+        path: `/purchase-orders/receipt-lines/${receiptLineId}/cancel`,
+        body: { idempotencyKey },
+        idempotencyKey,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });
