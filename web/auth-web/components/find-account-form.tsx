@@ -326,16 +326,18 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
               {error}
             </p>
           )}
-          <FieldDescription>문자가 오지 않나요?</FieldDescription>
-          <button
-            type="button"
-            onClick={() => sendCode("KAKAO")}
-            disabled={pending}
-            className="inline-flex h-11 cursor-pointer items-center gap-2 self-start rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <MessageCircle className="size-4 fill-current" strokeWidth={0} />
-            {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
-          </button>
+          <div className="flex items-center justify-between gap-3">
+            <FieldDescription>문자가 오지 않나요?</FieldDescription>
+            <button
+              type="button"
+              onClick={() => sendCode("KAKAO")}
+              disabled={pending}
+              className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <MessageCircle className="size-4 fill-current" strokeWidth={0} />
+              {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
+            </button>
+          </div>
         </div>
       )}
 
