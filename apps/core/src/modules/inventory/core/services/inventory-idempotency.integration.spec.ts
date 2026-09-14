@@ -1,9 +1,17 @@
+import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { ScopeGuard } from '@app/authorization';
+import * as request from 'supertest';
+import { InboundController } from '../../inbound/controllers/inbound.controllers';
+import { InboundPutawayReader } from '../../inbound/services/inbound-putaway.reader';
+import { MovementController } from '../../movement/controllers/movement.controller';
 import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { eq, and } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { randomUUID } from 'crypto';
+import { MovementService } from '../../movement/services/movement.service';
 import { ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -28,9 +36,11 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let inbound: InboundService;
   let idempotency: InventoryIdempotencyService;
+  let movement: MovementService;
+  let app: INestApplication;
 
-  beforeAll(() => {
-    sql = postgres(DATABASE_URL as string, { max: 1 });
+  beforeAll(async () => {
+    sql = postgres(DATABASE_URL as string, { max: 4 });
     db = drizzle(sql, { schema: wmsSchema });
     const dbService = {
       db,
@@ -45,6 +55,7 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
     const skuManager = new SkuCatalogManager(dbService, skuReader);
     const skuCatalog = new SkuCatalogService(skuReader, skuManager);
     idempotency = new InventoryIdempotencyService(dbService);
+    movement = new MovementService(dbService, eventStore, idempotency);
     inbound = new InboundService(
       dbService,
       skuCatalog,
@@ -52,8 +63,27 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
       idempotency,
       new InboundReceiptKernel(command, location, eventStore),
     );
+    const module = await Test.createTestingModule({
+      controllers: [InboundController, MovementController],
+      providers: [
+        { provide: InboundService, useValue: inbound },
+        { provide: MovementService, useValue: movement },
+        { provide: InboundPutawayReader, useValue: {} },
+      ],
+    })
+      .overrideGuard(ScopeGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    app = module.createNestApplication();
+    app.use((req: any, _res: unknown, next: () => void) => {
+      req.user = { id: '00000000-0000-4000-8000-000000000001' };
+      next();
+    });
+    app.useLogger(false);
+    await app.init();
   });
   afterAll(async () => {
+    await app.close();
     await sql.end();
   });
 
@@ -184,5 +214,102 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].response).toEqual(r1);
     });
+  });
+  it('v2 inbound concurrent replay records one receipt and authenticated actor', async () => {
+    const { wh, sku } = await db.transaction((tx) => seed(tx));
+    const actorId = randomUUID();
+    const dto = {
+      contractVersion: 2,
+      warehouseId: wh.id,
+      items: [{ skuId: sku.id, quantity: 5 }],
+      idempotencyKey: randomUUID(),
+    };
+    const [first, replay] = await Promise.all([
+      inbound.simpleInbound(dto, undefined, actorId),
+      inbound.simpleInbound(dto, undefined, actorId),
+    ]);
+    expect(JSON.parse(JSON.stringify(first))).toEqual(JSON.parse(JSON.stringify(replay)));
+    const receipts = await db
+      .select()
+      .from(wmsTables.inboundReceipts)
+      .where(eq(wmsTables.inboundReceipts.warehouseId, wh.id));
+    expect(receipts).toHaveLength(1);
+    const [journal] = await db
+      .select()
+      .from(wmsTables.stockJournals)
+      .where(eq(wmsTables.stockJournals.id, receipts[0].journalId!));
+    expect(journal.actorId).toBe(actorId);
+    await expect(inbound.simpleInbound(dto, undefined, randomUUID())).rejects.toThrow(ConflictError);
+    const events = await db.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, sku.id));
+    expect(events).toHaveLength(1);
+  });
+
+  it('v2 movement preserves warehouse total, records authenticated actor, and replays once', async () => {
+    const { wh, sku } = await db.transaction((tx) => seed(tx));
+    const arrival = await inbound.simpleInbound({
+      warehouseId: wh.id,
+      items: [{ skuId: sku.id, quantity: 5 }],
+      idempotencyKey: randomUUID(),
+    });
+    const [dest] = await db
+      .insert(wmsTables.locations)
+      .values({ warehouseId: wh.id, code: `V2-${randomUUID()}`, locationType: 'zone' })
+      .returning();
+    const actorId = randomUUID();
+    const dto = {
+      contractVersion: 2,
+      actorId: randomUUID(),
+      warehouseId: wh.id,
+      idempotencyKey: randomUUID(),
+      lines: [{ skuId: sku.id, quantity: 3, fromLocationId: arrival.receipt.locationId!, toLocationId: dest.id }],
+    };
+    const [first, replay] = await Promise.all([
+      movement.moveImmediately(dto, actorId),
+      movement.moveImmediately(dto, actorId),
+    ]);
+    expect(first.job.id).toBe(replay.job.id);
+    expect(first.job.actorId).toBe(actorId);
+    const ledgers = await db
+      .select()
+      .from(wmsTables.stockLedgers)
+      .where(and(eq(wmsTables.stockLedgers.skuId, sku.id), eq(wmsTables.stockLedgers.stockState, 'ON_HAND')));
+    expect(ledgers.find((line) => line.locationId === dest.id)?.qty).toBe(3);
+    expect(ledgers.find((line) => line.locationId === arrival.receipt.locationId)?.qty).toBe(2);
+    await expect(movement.moveImmediately(dto, randomUUID())).rejects.toThrow(ConflictError);
+  });
+  it.each([1, 2])('HTTP inbound variants serialize committed JSONB replay for contract %s', async (contractVersion) => {
+    for (const route of ['simple', 'simple-fullscan', 'individual']) {
+      const { wh, sku } = await db.transaction((tx) => seed(tx));
+      const dto = {
+        contractVersion,
+        warehouseId: wh.id,
+        idempotencyKey: randomUUID(),
+        ...(route === 'individual' ? { skuId: sku.id, quantity: 2 } : { items: [{ skuId: sku.id, quantity: 2 }] }),
+      };
+      const first = await request(app.getHttpServer()).post(`/inbound/${route}`).send(dto).expect(201);
+      const replay = await request(app.getHttpServer()).post(`/inbound/${route}`).send(dto).expect(201);
+      expect(replay.body).toEqual(first.body);
+    }
+  });
+  it('HTTP movement serializes the original committed result on replay', async () => {
+    const { wh, sku } = await db.transaction((tx) => seed(tx));
+    const arrival = await inbound.simpleInbound({
+      warehouseId: wh.id,
+      items: [{ skuId: sku.id, quantity: 2 }],
+      idempotencyKey: randomUUID(),
+    });
+    const [dest] = await db
+      .insert(wmsTables.locations)
+      .values({ warehouseId: wh.id, code: `HTTP-${randomUUID()}`, locationType: 'zone' })
+      .returning();
+    const dto = {
+      contractVersion: 2,
+      warehouseId: wh.id,
+      idempotencyKey: randomUUID(),
+      lines: [{ skuId: sku.id, quantity: 2, fromLocationId: arrival.receipt.locationId!, toLocationId: dest.id }],
+    };
+    const first = await request(app.getHttpServer()).post('/movement/move').send(dto).expect(201);
+    const replay = await request(app.getHttpServer()).post('/movement/move').send(dto).expect(201);
+    expect(replay.body).toEqual(first.body);
   });
 });

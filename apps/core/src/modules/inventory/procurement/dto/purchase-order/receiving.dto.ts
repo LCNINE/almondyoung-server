@@ -1,3 +1,4 @@
+import { WarehouseOperationVersionDto } from '../../../core/services/warehouse-operation-contract';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -55,7 +56,7 @@ export class ReceivePurchaseOrderLineDto {
   memo?: string;
 }
 
-export class ReceivePurchaseOrderDto {
+export class ReceivePurchaseOrderDto extends WarehouseOperationVersionDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -79,7 +80,7 @@ export class ReceivePurchaseOrderDto {
   lines: ReceivePurchaseOrderLineDto[];
 }
 
-export class CancelPurchaseOrderReceiptLineDto {
+export class CancelPurchaseOrderReceiptLineDto extends WarehouseOperationVersionDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

@@ -1,3 +1,4 @@
+import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
 import {
   Controller,
   Post,
@@ -9,6 +10,7 @@ import {
   Body,
   Query,
   HttpCode,
+  Headers,
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
@@ -265,8 +267,10 @@ export class PurchaseOrderController {
   async receive(
     @Param('poId') poId: string,
     @Body() dto: ReceivePurchaseOrderDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
   ): Promise<PurchaseOrderReceiptResponseDto> {
-    return this.purchaseOrderService.receive(poId, dto);
+    return this.purchaseOrderService.receive(poId, dto, undefined, warehouseOperationContext(dto, user, headerKey));
   }
 
   @Post('receipt-lines/:receiptLineId/cancel')
@@ -277,8 +281,15 @@ export class PurchaseOrderController {
   async cancelReceiptLine(
     @Param('receiptLineId') receiptLineId: string,
     @Body() dto: CancelPurchaseOrderReceiptLineDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
   ): Promise<PurchaseOrderReceiptCancelResponseDto> {
-    return this.purchaseOrderService.cancelReceiptLine(receiptLineId, dto);
+    return this.purchaseOrderService.cancelReceiptLine(
+      receiptLineId,
+      dto,
+      undefined,
+      warehouseOperationContext(dto, user, headerKey),
+    );
   }
 
   @Post(':poId/lines/:skuId/short-close')

@@ -1,3 +1,4 @@
+import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { Injectable } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
@@ -42,11 +43,16 @@ export class PurchaseOrderReceivingManager {
     private readonly reader: PurchaseOrderReader,
   ) {}
 
-  async receive(poId: string, dto: ReceivePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderReceiptResponseDto> {
+  async receive(
+    poId: string,
+    dto: ReceivePurchaseOrderDto,
+    tx?: DbTx,
+    actorId?: string,
+  ): Promise<PurchaseOrderReceiptResponseDto> {
     return this.idempotency.withIdempotency(
-      'purchase_order.receive',
+      warehouseEndpoint('purchase_order.receive', dto),
       dto.idempotencyKey,
-      { poId, ...dto },
+      warehouseRequest({ poId, ...dto } as ReceivePurchaseOrderDto, actorId),
       async (trx) => {
         const po = await this.lockHeader(trx, poId);
         if (po.status === 'cancelled') throw new ConflictError('취소된 발주입니다');
@@ -80,6 +86,7 @@ export class PurchaseOrderReceivingManager {
         const arrival = await this.kernel.recordArrival(
           {
             source: 'purchase_order',
+            actorId,
             warehouseId: dto.warehouseId,
             locationId: dto.locationId,
             reason: 'planned_inbound',
@@ -87,7 +94,7 @@ export class PurchaseOrderReceivingManager {
               skuId: line.skuId,
               quantity: line.quantity,
               memo: line.memo,
-              eventKey: `purchase_order.receive:${dto.idempotencyKey}:${index}`,
+              eventKey: `${warehouseEndpoint('purchase_order.receive', dto)}:${dto.idempotencyKey}:${index}`,
             })),
           },
           trx,
@@ -125,11 +132,14 @@ export class PurchaseOrderReceivingManager {
     receiptLineId: string,
     dto: CancelPurchaseOrderReceiptLineDto,
     tx?: DbTx,
+    actorId?: string,
   ): Promise<PurchaseOrderReceiptCancelResponseDto> {
     return this.idempotency.withIdempotency(
-      'purchase_order.receipt.cancel',
+      warehouseEndpoint('purchase_order.receipt.cancel', dto),
       dto.idempotencyKey,
-      { receiptLineId },
+      dto.contractVersion === 2
+        ? warehouseRequest({ ...dto, receiptLineId } as CancelPurchaseOrderReceiptLineDto, actorId)
+        : { receiptLineId },
       async (trx) => {
         const [link] = await trx
           .select()

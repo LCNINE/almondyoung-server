@@ -18,3 +18,16 @@ describe('MovementService 멱등 래퍼 배선', () => {
     expect(result).toBe(SENTINEL);
   });
 });
+
+describe('MovementService v2 actor binding', () => {
+  it('separates the v2 namespace and fingerprints authenticated actor', async () => {
+    const { svc, withIdempotency } = build();
+    const call = svc.moveImmediately.bind(svc) as (...args: unknown[]) => Promise<unknown>;
+    await call(
+      { contractVersion: 2, warehouseId: 'w', lines: [], actorId: 'spoof', idempotencyKey: 'k' },
+      'authenticated',
+    );
+    expect(withIdempotency.mock.calls[0][0]).toBe('movement.move.v2');
+    expect(withIdempotency.mock.calls[0][2]).toEqual({ actorId: 'authenticated', warehouseId: 'w', lines: [] });
+  });
+});

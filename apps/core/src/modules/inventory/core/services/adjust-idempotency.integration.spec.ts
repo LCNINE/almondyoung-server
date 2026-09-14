@@ -12,6 +12,7 @@ import { LocationService } from './location.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
+import { InventoryIdempotencyService } from './inventory-idempotency.service';
 import { StockEventService } from './stock-event.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -24,7 +25,7 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
   let controller: InventoryController;
 
   beforeAll(() => {
-    sql = postgres(DATABASE_URL as string, { max: 1 });
+    sql = postgres(DATABASE_URL as string, { max: 4 });
     db = drizzle(sql, { schema: wmsSchema });
     const dbService = {
       db,
@@ -37,7 +38,7 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
     const command = new InventoryCommandService(dbService, eventStore, outbox, location);
     const unifiedReservation = new UnifiedReservationService(dbService, sellable);
     const stockEvent = new StockEventService(dbService, eventStore, command, unifiedReservation);
-    controller = new InventoryController(stockEvent, command);
+    controller = new InventoryController(stockEvent, command, new InventoryIdempotencyService(dbService));
   });
   afterAll(async () => {
     await sql.end();
@@ -188,5 +189,68 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
     await controller.adjustStockQuantity(body);
 
     expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(6); // 10-2-2
+  });
+  it('v2 rejects reuse with changed delta without an additional ledger write', async () => {
+    const { warehouse, sku, loc } = await seed();
+    const body = {
+      contractVersion: 2,
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: 5,
+      reason: 'found',
+      idempotencyKey: randomUUID(),
+    };
+    const call = controller.adjustStockQuantity.bind(controller) as (...args: unknown[]) => Promise<unknown>;
+    await call(body, { id: '00000000-0000-4000-8000-000000000001' });
+    await expect(call({ ...body, delta: 6 }, { id: '00000000-0000-4000-8000-000000000001' })).rejects.toMatchObject({
+      message: expect.any(String),
+    });
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(5);
+  });
+
+  it.each(['warehouseId', 'locationId', 'skuId', 'delta', 'reason', 'actor'])(
+    'v2 conflicts on changed %s and preserves quantity',
+    async (field) => {
+      const { warehouse, sku, loc } = await seed();
+      const dto = {
+        contractVersion: 2,
+        idempotencyKey: randomUUID(),
+        skuId: sku.id,
+        warehouseId: warehouse.id,
+        locationId: loc.id,
+        delta: 5,
+        reason: 'found',
+      };
+      const actor = { id: randomUUID() };
+      await controller.adjustStockQuantity(dto, actor);
+      const changed = field === 'actor' ? dto : { ...dto, [field]: field === 'delta' ? -5 : randomUUID() };
+      const attempt = controller.adjustStockQuantity(changed, field === 'actor' ? { id: randomUUID() } : actor);
+      await expect(attempt).rejects.toMatchObject({ getErrorCode: expect.any(Function) });
+      expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(5);
+    },
+  );
+
+  it('v2 concurrent delivery applies once and replay survives depleted stock', async () => {
+    const { warehouse, sku, loc } = await seed();
+    const dto = {
+      contractVersion: 2,
+      idempotencyKey: randomUUID(),
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: 5,
+      reason: 'found',
+    };
+    const actor = { id: randomUUID() };
+    const [a, b] = await Promise.all([
+      controller.adjustStockQuantity(dto, actor),
+      controller.adjustStockQuantity(dto, actor),
+    ]);
+    expect(a).toEqual(b);
+    const down = { ...dto, idempotencyKey: randomUUID(), delta: -5 };
+    const result = await controller.adjustStockQuantity(down, actor);
+    await expect(controller.adjustStockQuantity(down, actor)).resolves.toEqual(result);
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(0);
   });
 });

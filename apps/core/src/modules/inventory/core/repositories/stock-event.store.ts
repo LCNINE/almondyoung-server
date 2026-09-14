@@ -6,7 +6,10 @@ import { and, or, eq, lte, gte, isNull, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from '../../schema/enum-values';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import {
+  acquireStockAvailabilityLock,
+  acquireStockAvailabilityLocks,
+} from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '../services/batch-controlled-stock.guard';
 
@@ -131,6 +134,9 @@ export class StockEventStore {
       // Guard here (after the idempotency claim, before projection) so direct
       // callers cannot bypass batch custody protection and exact replays remain
       // no-ops even if availability changed after the original event.
+      // Dispatch authorization owns its source row before taking the stock lock.
+      // Other transitions claim both warehouse pairs before any one-sided guard.
+      if (!input.batchSessionDispatch) await this.lockProjection(trx, event);
       await this.assertBatchControlledRemovalAllowed(event, input.batchSessionDispatch, trx);
 
       // 2) 레저 갱신 (from -= qty, to += qty)
@@ -154,6 +160,23 @@ export class StockEventStore {
     }, tx);
   }
 
+  /** Every projection, including receipts and reversals, shares the count baseline lock. */
+  private async lockProjection(
+    tx: DbTx,
+    event: {
+      skuId: string;
+      fromWarehouseId?: string | null;
+      toWarehouseId?: string | null;
+    },
+  ) {
+    await acquireStockAvailabilityLocks(
+      tx,
+      [event.fromWarehouseId, event.toWarehouseId]
+        .filter((warehouseId): warehouseId is string => Boolean(warehouseId))
+        .map((warehouseId) => ({ skuId: event.skuId, warehouseId })),
+    );
+  }
+
   /** 내부용: 레저 가/감산 (음수 금지 정책은 여기서 체크 가능) */
   private async applyProjection(
     tx: DbTx,
@@ -168,6 +191,7 @@ export class StockEventStore {
       quantity: number;
     },
   ) {
+    await this.lockProjection(tx, params);
     const now = new Date();
 
     // fromState 감소
@@ -593,7 +617,8 @@ export class StockEventStore {
       }
 
       // 역분개가 ON_HAND 를 순감소시키면(RECEIVE/ADJUST_UP 등 취소) 예약 불변식 가드.
-      // 락·가드는 감소 방향만 — 증가·창고내이동(net-0)은 면제(작업 10 §5 락 면제 경로와 일관).
+      // All directions share the projection lock; only net decrements need the reservation guard.
+      await this.lockProjection(trx, original);
       const dec = reversalOnHandDecrement(original);
       if (dec) {
         await acquireStockAvailabilityLock(trx, dec.skuId, dec.warehouseId);

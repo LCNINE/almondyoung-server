@@ -37,7 +37,10 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
-    const dbService = { db } as unknown as DbService<typeof wmsSchema>;
+    const dbService = {
+      db,
+      run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) => (tx ? fn(tx) : db.transaction(fn)),
+    } as unknown as DbService<typeof wmsSchema>;
     const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     const eventStore = new StockEventStore(dbService, sellable);

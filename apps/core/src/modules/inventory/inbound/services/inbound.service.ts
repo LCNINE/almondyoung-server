@@ -1,3 +1,4 @@
+import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -42,11 +43,11 @@ export class InboundService {
   }
 
   // 간편입고: 지정 창고의 입고기본존에 여러 SKU를 즉시 입고
-  async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
+  async simpleInbound(dto: SimpleInboundDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.simple',
+      warehouseEndpoint('inbound.simple', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.assertSkusExist(
           dto.items.map((item) => item.skuId),
@@ -55,6 +56,7 @@ export class InboundService {
         return this.receiptKernel.recordArrival(
           {
             source: 'direct',
+            actorId,
             method: 'simple',
             warehouseId: dto.warehouseId,
             reason: 'simple_inbound',
@@ -62,7 +64,7 @@ export class InboundService {
               skuId: item.skuId,
               quantity: item.quantity,
               memo: item.memo,
-              eventKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
+              eventKey: `${warehouseEndpoint('inbound.simple', dto)}:${dto.idempotencyKey}:${i}`,
             })),
           },
           tx,
@@ -73,11 +75,11 @@ export class InboundService {
   }
 
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
-  async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
+  async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.simple-fullscan',
+      warehouseEndpoint('inbound.simple-fullscan', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.assertSkusExist(
           dto.items.map((item) => item.skuId),
@@ -86,6 +88,7 @@ export class InboundService {
         return this.receiptKernel.recordArrival(
           {
             source: 'direct',
+            actorId,
             method: 'simple_fullscan',
             warehouseId: dto.warehouseId,
             reason: 'simple_inbound_fullscan',
@@ -93,7 +96,7 @@ export class InboundService {
               skuId: item.skuId,
               quantity: item.quantity,
               memo: item.memo,
-              eventKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
+              eventKey: `${warehouseEndpoint('inbound.simple-fullscan', dto)}:${dto.idempotencyKey}:${i}`,
             })),
           },
           tx,
@@ -104,16 +107,17 @@ export class InboundService {
   }
 
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
-  async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
+  async individualInbound(dto: IndividualInboundDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.individual',
+      warehouseEndpoint('inbound.individual', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.assertSkusExist([dto.skuId], tx);
         const { receipt, lines } = await this.receiptKernel.recordArrival(
           {
             source: 'direct',
+            actorId,
             method: 'individual',
             warehouseId: dto.warehouseId,
             locationId: dto.locationId ?? null,
@@ -124,7 +128,7 @@ export class InboundService {
                 skuId: dto.skuId,
                 quantity: dto.quantity,
                 memo: dto.memo,
-                eventKey: `inbound.individual:${dto.idempotencyKey}`,
+                eventKey: `${warehouseEndpoint('inbound.individual', dto)}:${dto.idempotencyKey}`,
               },
             ],
           },
@@ -322,18 +326,18 @@ export class InboundService {
   }
 
   // 즉시 적치(원위치 → 목적지)
-  async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
+  async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.putaway',
+      warehouseEndpoint('inbound.putaway', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.receiptKernel.putaway(
           {
             receiptLineId: dto.lineId,
             toLocationId: dto.toLocationId,
             quantity: dto.quantity,
-            eventKey: `inbound.putaway:${dto.idempotencyKey}`,
+            eventKey: `${warehouseEndpoint('inbound.putaway', dto)}:${dto.idempotencyKey}`,
           },
           tx,
         );
@@ -344,18 +348,18 @@ export class InboundService {
   }
 
   // 회송
-  async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
+  async returnInbound(dto: ReturnInboundDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.return',
+      warehouseEndpoint('inbound.return', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.receiptKernel.returnLine(
           {
             receiptLineId: dto.lineId,
             quantity: dto.quantity,
             reason: dto.reason,
-            eventKey: `inbound.return:${dto.idempotencyKey}`,
+            eventKey: `${warehouseEndpoint('inbound.return', dto)}:${dto.idempotencyKey}`,
           },
           tx,
         );
@@ -366,11 +370,11 @@ export class InboundService {
   }
 
   // 입고취소
-  async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
+  async cancelInbound(dto: CancelInboundDto, tx?: DbTx, actorId?: string) {
     return this.idempotency.withIdempotency(
-      'inbound.cancel',
+      warehouseEndpoint('inbound.cancel', dto),
       dto.idempotencyKey,
-      dto,
+      warehouseRequest(dto, actorId),
       async (tx) => {
         await this.receiptKernel.cancelLine(
           { receiptLineId: dto.lineId, quantity: dto.quantity, expected: { source: 'direct' } },

@@ -1,6 +1,28 @@
-import { Controller, Get, Post, Put, Param, Body, HttpCode, HttpStatus, Query, UseGuards } from '@nestjs/common';
+import { CompleteSessionDto } from '../dto/complete-session.dto';
+import { ResetCountDto } from '../dto/reset-count.dto';
+import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import {
+  WarehouseOperationDto,
+  WarehouseActor,
+  warehouseOperationContext,
+  warehouseRequest,
+} from '../../core/services/warehouse-operation-contract';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Param,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Query,
+  Headers,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { StocktakingService } from '../services/stocktaking.service';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
@@ -15,7 +37,10 @@ import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 @Controller('stocktaking')
 @UseGuards(ScopeGuard)
 export class StocktakingController {
-  constructor(private readonly stocktakingService: StocktakingService) {}
+  constructor(
+    private readonly stocktakingService: StocktakingService,
+    private readonly idempotency: InventoryIdempotencyService,
+  ) {}
 
   @Get('sessions')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -63,7 +88,19 @@ export class StocktakingController {
   @ApiOperation({ summary: '위치 바코드 스캔 (Scan location barcode)' })
   @ApiResponse({ status: 200, description: 'Location scanned, expected items loaded' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async scanLocation(@Body() dto: ScanLocationDto) {
+  async scanLocation(
+    @Body() dto: ScanLocationDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (actorId)
+      return this.idempotency.withIdempotency(
+        'stocktaking.scan-location.v2',
+        dto.idempotencyKey!,
+        warehouseRequest(dto, actorId),
+        (tx) => this.stocktakingService.scanLocation(dto, tx),
+      );
     return this.stocktakingService.scanLocation(dto);
   }
 
@@ -73,7 +110,19 @@ export class StocktakingController {
   @ApiOperation({ summary: '상품 바코드 스캔 (Scan product barcode)' })
   @ApiResponse({ status: 200, description: 'Product scanned, count updated' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async scanProduct(@Body() dto: ScanProductDto) {
+  async scanProduct(
+    @Body() dto: ScanProductDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (actorId)
+      return this.idempotency.withIdempotency(
+        'stocktaking.scan-product.v2',
+        dto.idempotencyKey!,
+        warehouseRequest(dto, actorId),
+        (tx) => this.stocktakingService.scanProduct(dto, tx),
+      );
     return this.stocktakingService.scanProduct(dto);
   }
 
@@ -83,8 +132,40 @@ export class StocktakingController {
   @ApiParam({ name: 'id', description: 'Line ID' })
   @ApiResponse({ status: 200, description: 'Count updated' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async updateCount(@Param('id') id: string, @Body() dto: UpdateCountDto) {
+  async updateCount(
+    @Param('id') id: string,
+    @Body() dto: UpdateCountDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (actorId)
+      return this.idempotency.withIdempotency(
+        'stocktaking.update-count.v2',
+        dto.idempotencyKey!,
+        warehouseRequest({ ...dto, lineId: id } as UpdateCountDto, actorId),
+        (tx) => this.stocktakingService.updateCount(id, dto, tx),
+      );
     return this.stocktakingService.updateCount(id, dto);
+  }
+
+  @Post('lines/:id/reset-count')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  async resetCount(
+    @Param('id') id: string,
+    @Body() dto: ResetCountDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (!actorId) throw new BadRequestException('앱을 업데이트해 주세요.');
+    return this.idempotency.withIdempotency(
+      'stocktaking.reset-count.v2',
+      dto.idempotencyKey!,
+      warehouseRequest({ ...dto, lineId: id } as ResetCountDto, actorId),
+      (tx) => this.stocktakingService.resetCount(id, dto, tx),
+    );
   }
 
   @Get('sessions/:id/variances')
@@ -115,7 +196,20 @@ export class StocktakingController {
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Session completed with summary' })
   @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
-  async completeSession(@Param('id') id: string) {
+  async completeSession(
+    @Param('id') id: string,
+    @Body() dto: CompleteSessionDto = {},
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (actorId)
+      return this.idempotency.withIdempotency(
+        'stocktaking.complete.v2',
+        dto.idempotencyKey!,
+        warehouseRequest({ ...dto, sessionId: id } as WarehouseOperationDto, actorId),
+        (tx) => this.stocktakingService.completeSession(id, tx, dto),
+      );
     return this.stocktakingService.completeSession(id);
   }
 

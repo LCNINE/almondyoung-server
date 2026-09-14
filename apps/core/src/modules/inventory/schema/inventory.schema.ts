@@ -2230,6 +2230,7 @@ export const purchaseOrderCart = pgTable('purchase_order_cart', {
  *──────────────────────────*/
 // Stocktaking sessions table
 export const stocktakingSessions = pgTable('stocktaking_sessions', {
+  revision: integer('revision').notNull().default(1),
   id: uuid('id').primaryKey().defaultRandom(),
   warehouseId: uuid('warehouse_id')
     .references(() => warehouses.id, { onDelete: 'restrict' })
@@ -2258,6 +2259,8 @@ export const stocktakingLines = pgTable(
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'restrict' }),
     expectedQuantity: integer('expected_quantity').notNull(),
     countedQuantity: integer('counted_quantity'),
+    revision: integer('revision').notNull().default(1),
+    countBaselineVersion: integer('count_baseline_version'),
     variance: integer('variance'), // Calculated: countedQuantity - expectedQuantity
     scannedBarcode: varchar('scanned_barcode', { length: 64 }),
     status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, counted, verified

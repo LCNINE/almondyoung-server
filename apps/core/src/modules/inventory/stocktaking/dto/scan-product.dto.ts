@@ -1,7 +1,8 @@
+import { WarehouseOperationDto } from '../../core/services/warehouse-operation-contract';
 import { IsNotEmpty, IsUUID, IsString, IsInt, Min, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class ScanProductDto {
+export class ScanProductDto extends WarehouseOperationDto {
   @ApiProperty({ description: 'Session ID' })
   @IsUUID()
   @IsNotEmpty()

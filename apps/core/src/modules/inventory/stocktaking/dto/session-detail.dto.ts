@@ -2,6 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import type { StocktakingStatus } from './list-sessions-query.dto';
 
 export class StocktakingLineDto {
+  @ApiProperty() lineRevision: number;
+  @ApiProperty({ nullable: true }) countBaselineVersion: number | null;
   @ApiProperty() lineId: string;
   @ApiProperty() skuId: string;
   @ApiProperty() skuCode: string;
@@ -24,6 +26,7 @@ export class StocktakingProgressDto {
 }
 
 export class StocktakingSessionDetailDto {
+  @ApiProperty() sessionRevision: number;
   @ApiProperty() id: string;
   @ApiProperty() warehouseId: string;
   @ApiProperty() sessionName: string;

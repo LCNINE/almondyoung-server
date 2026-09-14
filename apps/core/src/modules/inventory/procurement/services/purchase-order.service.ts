@@ -95,16 +95,22 @@ export class PurchaseOrderService {
     return this.manager.updatePurchaseOrderLines(poId, updateDto, tx);
   }
 
-  receive(poId: string, dto: ReceivePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderReceiptResponseDto> {
-    return this.receiving.receive(poId, dto, tx);
+  receive(
+    poId: string,
+    dto: ReceivePurchaseOrderDto,
+    tx?: DbTx,
+    actorId?: string,
+  ): Promise<PurchaseOrderReceiptResponseDto> {
+    return this.receiving.receive(poId, dto, tx, actorId);
   }
 
   cancelReceiptLine(
     receiptLineId: string,
     dto: CancelPurchaseOrderReceiptLineDto,
     tx?: DbTx,
+    actorId?: string,
   ): Promise<PurchaseOrderReceiptCancelResponseDto> {
-    return this.receiving.cancelReceiptLine(receiptLineId, dto, tx);
+    return this.receiving.cancelReceiptLine(receiptLineId, dto, tx, actorId);
   }
 
   shortCloseLine(

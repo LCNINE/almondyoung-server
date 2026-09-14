@@ -1,3 +1,7 @@
+import { CompleteSessionDto } from '../dto/complete-session.dto';
+import { stocktakingPreviewToken, ReviewedCount } from './stocktaking-preview-token';
+import { ResetCountDto } from '../dto/reset-count.dto';
+import { StocktakingConflict } from './stocktaking-conflict';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
@@ -98,6 +102,7 @@ export class StocktakingService {
         .update(stocktakingSessions)
         .set({
           status: 'in_progress',
+          revision: sql`${stocktakingSessions.revision} + 1`,
           startedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -114,7 +119,7 @@ export class StocktakingService {
     return this.dbService.run(async (tx) => {
       const { locations, stockLedgers, skus, stocktakingLines } = wmsTables;
 
-      await this.assertInProgress(tx, dto.sessionId);
+      const session = await this.assertInProgress(tx, dto.sessionId);
 
       // Find location by barcode/code
       const location = await tx.select().from(locations).where(eq(locations.code, dto.locationBarcode)).limit(1);
@@ -122,6 +127,8 @@ export class StocktakingService {
       if (!location[0]) {
         throw new NotFoundException(`Location ${dto.locationBarcode} not found`);
       }
+
+      await this.assertLocation(tx, location[0].id, session.warehouseId);
 
       // Get current stock at this location (ON_HAND only)
       const stockAtLocation = await tx
@@ -156,7 +163,12 @@ export class StocktakingService {
       }));
 
       if (linesToCreate.length > 0) {
-        await tx.insert(stocktakingLines).values(linesToCreate).onConflictDoNothing();
+        const added = await tx
+          .insert(stocktakingLines)
+          .values(linesToCreate)
+          .onConflictDoNothing()
+          .returning({ id: stocktakingLines.id });
+        if (added.length) session.revision = await this.bumpSession(tx, session.id);
       }
 
       // insert 결과가 아니라 재조회로 응답을 만든다 — onConflictDoNothing 은 기존 라인을
@@ -164,6 +176,8 @@ export class StocktakingService {
       const lines = await tx
         .select({
           lineId: stocktakingLines.id,
+          lineRevision: stocktakingLines.revision,
+          countBaselineVersion: stocktakingLines.countBaselineVersion,
           skuId: stocktakingLines.skuId,
           skuName: skus.name,
           skuCode: skus.code,
@@ -184,6 +198,7 @@ export class StocktakingService {
       return {
         locationId: location[0].id,
         locationCode: location[0].code,
+        sessionRevision: session.revision,
         expectedItems: lines,
       };
     }, tx);
@@ -193,135 +208,194 @@ export class StocktakingService {
    * Scan product barcode during counting
    */
   async scanProduct(dto: ScanProductDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
-      const { skus, skuBarcodes, stocktakingLines } = wmsTables;
-
-      await this.assertInProgress(tx, dto.sessionId);
-
-      // Find SKU by barcode
-      const barcodeResult = await tx
-        .select({
-          skuId: skuBarcodes.skuId,
-        })
-        .from(skuBarcodes)
-        .where(eq(skuBarcodes.barcode, dto.productBarcode))
+    return this.dbService.run(async (trx) => {
+      const session = await this.assertInProgress(trx, dto.sessionId);
+      await this.assertLocation(trx, dto.locationId, session.warehouseId);
+      const [barcode] = await trx
+        .select({ skuId: wmsTables.skuBarcodes.skuId })
+        .from(wmsTables.skuBarcodes)
+        .where(eq(wmsTables.skuBarcodes.barcode, dto.productBarcode))
         .limit(1);
-
-      if (!barcodeResult[0]) {
-        throw new NotFoundException(`SKU with barcode ${dto.productBarcode} not found`);
-      }
-
-      const sku = await tx.select().from(skus).where(eq(skus.id, barcodeResult[0].skuId)).limit(1);
-
-      if (!sku[0]) {
-        throw new NotFoundException(`SKU not found`);
-      }
-
-      // Find or create stocktaking line
-      // .for('update') — 동시 스캔이 같은 라인을 read-modify-write 할 때 두
-      // 트랜잭션이 같은 countedQuantity 를 읽고 둘 다 +1 을 써서 한 증가분이
-      // 사라지는 것(lost update)을 막는다.
-      const existingLine = await tx
+      if (!barcode) throw new NotFoundException('등록되지 않은 바코드예요.');
+      await acquireStockAvailabilityLocks(trx, [{ skuId: barcode.skuId, warehouseId: session.warehouseId }]);
+      const ledger = await this.readLedger(trx, barcode.skuId, session.warehouseId, dto.locationId);
+      const [existing] = await trx
         .select()
-        .from(stocktakingLines)
+        .from(wmsTables.stocktakingLines)
         .where(
           and(
-            eq(stocktakingLines.sessionId, dto.sessionId),
-            eq(stocktakingLines.skuId, sku[0].id),
-            eq(stocktakingLines.locationId, dto.locationId),
+            eq(wmsTables.stocktakingLines.sessionId, dto.sessionId),
+            eq(wmsTables.stocktakingLines.skuId, barcode.skuId),
+            eq(wmsTables.stocktakingLines.locationId, dto.locationId),
           ),
         )
-        .limit(1)
         .for('update');
-
-      if (existingLine[0]) {
-        // Update existing line
-        const newCount = (existingLine[0].countedQuantity ?? 0) + (dto.quantity ?? 1);
-        const variance = newCount - existingLine[0].expectedQuantity;
-
-        await tx
-          .update(stocktakingLines)
-          .set({
-            countedQuantity: newCount,
-            variance,
-            scannedBarcode: dto.productBarcode,
-            countedAt: new Date(),
-            status: 'counted',
-            updatedAt: new Date(),
-          })
-          .where(eq(stocktakingLines.id, existingLine[0].id));
-
-        return {
-          lineId: existingLine[0].id,
-          skuId: sku[0].id,
-          countedQuantity: newCount,
-          expectedQuantity: existingLine[0].expectedQuantity,
-          variance,
-        };
-      } else {
-        // Create new line (unexpected item)
-        const result = await tx
-          .insert(stocktakingLines)
-          .values({
-            sessionId: dto.sessionId,
-            skuId: sku[0].id,
-            locationId: dto.locationId,
-            expectedQuantity: 0,
-            countedQuantity: dto.quantity ?? 1,
-            variance: dto.quantity ?? 1,
-            scannedBarcode: dto.productBarcode,
-            countedAt: new Date(),
-            status: 'counted',
-          })
-          .returning();
-
-        return {
-          lineId: result[0].id,
-          skuId: sku[0].id,
-          countedQuantity: dto.quantity ?? 1,
-          expectedQuantity: 0,
-          variance: dto.quantity ?? 1,
-        };
-      }
+      const baseline = existing ? this.countBaseline(existing, ledger.version) : ledger.version;
+      const quantity = (existing?.countedQuantity ?? 0) + (dto.quantity ?? 1);
+      if (!Number.isSafeInteger(quantity) || (dto.quantity ?? 1) < 1)
+        throw new BadRequestException('수량이 올바르지 않아요.');
+      const expectedQuantity = existing?.expectedQuantity ?? ledger.qty;
+      const values = {
+        countedQuantity: quantity,
+        variance: quantity - expectedQuantity,
+        countBaselineVersion: baseline,
+        scannedBarcode: dto.productBarcode,
+        countedAt: new Date(),
+        updatedAt: new Date(),
+        status: 'counted',
+      };
+      const [line] = existing
+        ? await trx
+            .update(wmsTables.stocktakingLines)
+            .set({ ...values, revision: existing.revision + 1 })
+            .where(eq(wmsTables.stocktakingLines.id, existing.id))
+            .returning()
+        : await trx
+            .insert(wmsTables.stocktakingLines)
+            .values({
+              ...values,
+              expectedQuantity,
+              sessionId: dto.sessionId,
+              skuId: barcode.skuId,
+              locationId: dto.locationId,
+            })
+            .returning();
+      const sessionRevision = await this.bumpSession(trx, session.id);
+      return this.countResponse(line, sessionRevision);
     }, tx);
   }
 
-  /**
-   * Update count manually
-   */
   async updateCount(lineId: string, dto: UpdateCountDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
-      const { stocktakingLines } = wmsTables;
-
-      const line = await tx.select().from(stocktakingLines).where(eq(stocktakingLines.id, lineId)).limit(1);
-
-      if (!line[0]) {
-        throw new NotFoundException(`Line ${lineId} not found`);
-      }
-
-      await this.assertInProgress(tx, line[0].sessionId);
-
-      const variance = dto.countedQuantity - line[0].expectedQuantity;
-
-      await tx
-        .update(stocktakingLines)
+    return this.dbService.run(async (trx) => {
+      const { session, line, ledger } = await this.lockCountLine(trx, lineId);
+      if (dto.contractVersion === 2 && dto.expectedRevision !== line.revision)
+        throw new StocktakingConflict('STOCKTAKING_REVISION_CONFLICT');
+      const baseline = this.countBaseline(line, ledger.version);
+      if (!Number.isSafeInteger(dto.countedQuantity) || dto.countedQuantity < 0)
+        throw new BadRequestException('수량이 올바르지 않아요.');
+      const [updated] = await trx
+        .update(wmsTables.stocktakingLines)
         .set({
           countedQuantity: dto.countedQuantity,
-          variance,
+          variance: dto.countedQuantity - line.expectedQuantity,
           notes: dto.notes,
+          countBaselineVersion: baseline,
+          revision: line.revision + 1,
           countedAt: new Date(),
+          updatedAt: new Date(),
           status: 'counted',
+        })
+        .where(eq(wmsTables.stocktakingLines.id, line.id))
+        .returning();
+      return this.countResponse(updated, await this.bumpSession(trx, session.id));
+    }, tx);
+  }
+
+  async resetCount(lineId: string, dto: ResetCountDto, tx?: DbTx) {
+    return this.dbService.run(async (trx) => {
+      const { session, line, ledger } = await this.lockCountLine(trx, lineId);
+      if (dto.expectedRevision !== line.revision) throw new StocktakingConflict('STOCKTAKING_REVISION_CONFLICT');
+      const [updated] = await trx
+        .update(wmsTables.stocktakingLines)
+        .set({
+          countedQuantity: null,
+          variance: null,
+          countedAt: null,
+          scannedBarcode: null,
+          status: 'pending',
+          expectedQuantity: ledger.qty,
+          countBaselineVersion: ledger.version,
+          revision: line.revision + 1,
           updatedAt: new Date(),
         })
-        .where(eq(stocktakingLines.id, lineId));
-
-      return {
-        lineId,
-        countedQuantity: dto.countedQuantity,
-        expectedQuantity: line[0].expectedQuantity,
-        variance,
-      };
+        .where(eq(wmsTables.stocktakingLines.id, line.id))
+        .returning();
+      return this.countResponse(updated, await this.bumpSession(trx, session.id));
     }, tx);
+  }
+
+  private countBaseline(line: typeof wmsTables.stocktakingLines.$inferSelect, currentVersion: number): number {
+    if (line.countBaselineVersion === null) {
+      if (line.countedQuantity !== null) throw new StocktakingConflict('STOCKTAKING_RECOUNT_REQUIRED');
+      return currentVersion;
+    }
+    if (line.countBaselineVersion !== currentVersion) throw new StocktakingConflict('STOCKTAKING_RECOUNT_REQUIRED');
+    return line.countBaselineVersion;
+  }
+
+  private countResponse(line: typeof wmsTables.stocktakingLines.$inferSelect, sessionRevision: number) {
+    return {
+      lineId: line.id,
+      skuId: line.skuId,
+      countedQuantity: line.countedQuantity,
+      expectedQuantity: line.expectedQuantity,
+      variance: line.variance,
+      lineRevision: line.revision,
+      sessionRevision,
+      countBaselineVersion: line.countBaselineVersion,
+    };
+  }
+
+  private async bumpSession(tx: DbTx, sessionId: string): Promise<number> {
+    const [session] = await tx
+      .update(wmsTables.stocktakingSessions)
+      .set({
+        revision: sql`${wmsTables.stocktakingSessions.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(wmsTables.stocktakingSessions.id, sessionId))
+      .returning({ revision: wmsTables.stocktakingSessions.revision });
+    return session.revision;
+  }
+
+  private async assertLocation(tx: DbTx, locationId: string | null, warehouseId: string): Promise<void> {
+    if (locationId === null) return;
+    const [location] = await tx
+      .select()
+      .from(wmsTables.locations)
+      .where(eq(wmsTables.locations.id, locationId))
+      .limit(1);
+    if (!location || location.warehouseId !== warehouseId || !location.isActive)
+      throw new BadRequestException('이 창고에서 사용할 수 없는 위치예요.');
+  }
+
+  /** Read identity without a row lock, then acquire session -> stock availability -> line locks. */
+  private async lockCountLine(tx: DbTx, lineId: string) {
+    const [identity] = await tx
+      .select()
+      .from(wmsTables.stocktakingLines)
+      .where(eq(wmsTables.stocktakingLines.id, lineId))
+      .limit(1);
+    if (!identity) throw new NotFoundException('실사 상품을 찾을 수 없어요.');
+    const session = await this.assertInProgress(tx, identity.sessionId);
+    await this.assertLocation(tx, identity.locationId, session.warehouseId);
+    await acquireStockAvailabilityLocks(tx, [{ skuId: identity.skuId, warehouseId: session.warehouseId }]);
+    const [line] = await tx
+      .select()
+      .from(wmsTables.stocktakingLines)
+      .where(eq(wmsTables.stocktakingLines.id, lineId))
+      .for('update');
+    if (!line) throw new NotFoundException('실사 상품을 찾을 수 없어요.');
+    const ledger = await this.readLedger(tx, line.skuId, session.warehouseId, line.locationId);
+    return { session, line, ledger };
+  }
+
+  private async readLedger(tx: DbTx, skuId: string, warehouseId: string, locationId: string | null) {
+    const [ledger] = await tx
+      .select({ qty: wmsTables.stockLedgers.qty, version: wmsTables.stockLedgers.version })
+      .from(wmsTables.stockLedgers)
+      .where(
+        and(
+          eq(wmsTables.stockLedgers.skuId, skuId),
+          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+          locationId
+            ? eq(wmsTables.stockLedgers.locationId, locationId)
+            : sql`${wmsTables.stockLedgers.locationId} IS NULL`,
+        ),
+      )
+      .limit(1);
+    return ledger ?? { qty: 0, version: 0 };
   }
 
   /**
@@ -342,6 +416,8 @@ export class StocktakingService {
       const rows = await tx
         .select({
           lineId: stocktakingLines.id,
+          lineRevision: stocktakingLines.revision,
+          countBaselineVersion: stocktakingLines.countBaselineVersion,
           skuId: stocktakingLines.skuId,
           skuCode: skus.code,
           skuName: skus.name,
@@ -362,6 +438,7 @@ export class StocktakingService {
 
       return {
         id: session.id,
+        sessionRevision: session.revision,
         warehouseId: session.warehouseId,
         sessionName: session.sessionName,
         status: session.status,
@@ -388,6 +465,8 @@ export class StocktakingService {
       const lines = await tx
         .select({
           lineId: stocktakingLines.id,
+          lineRevision: stocktakingLines.revision,
+          countBaselineVersion: stocktakingLines.countBaselineVersion,
           locationCode: locations.code,
           skuName: skus.name,
           skuCode: skus.code,
@@ -418,6 +497,18 @@ export class StocktakingService {
    */
   async generateAdjustments(sessionId: string, dto: GenerateAdjustmentsDto, tx?: DbTx) {
     return this.dbService.run(async (tx) => {
+      if (dto.contractVersion === 2) {
+        // V2 always reviews every registered line; a caller's variance filter is not completion scope.
+        const review = await this.reviewCounts(tx, sessionId);
+        return {
+          adjustmentsCreated: review.preview.length,
+          eventsPosted: 0,
+          message: '수량을 확인했어요.',
+          preview: review.preview,
+          previewToken: review.previewToken,
+          sessionRevision: review.session.revision,
+        };
+      }
       const { stocktakingLines, stocktakingSessions } = wmsTables;
 
       const [session] = await tx
@@ -469,7 +560,7 @@ export class StocktakingService {
   /**
    * 실사 완료 — variance 라인을 원장에 원자 적용(adjustUp/adjustDown, 라이브 delta)하고 세션 종결.
    */
-  async completeSession(sessionId: string, tx?: DbTx) {
+  async completeSession(sessionId: string, tx?: DbTx, dto?: CompleteSessionDto) {
     return this.dbService.run(async (tx) => {
       const { stocktakingSessions, stocktakingLines, stocktakingAdjustments } = wmsTables;
 
@@ -481,28 +572,41 @@ export class StocktakingService {
       if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
       if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
 
-      const lines = await tx
-        .select()
-        .from(stocktakingLines)
-        .where(
-          and(
-            eq(stocktakingLines.sessionId, sessionId),
-            sql`${stocktakingLines.variance} IS NOT NULL AND ${stocktakingLines.variance} != 0`,
-            sql`${stocktakingLines.countedQuantity} IS NOT NULL`,
-          ),
-        )
-        .for('update');
+      const review = dto?.contractVersion === 2 ? await this.reviewCounts(tx, sessionId) : undefined;
+      if (review && (!dto?.previewToken || dto.previewToken !== review.previewToken))
+        throw new StocktakingConflict('STOCKTAKING_PREVIEW_STALE');
+      let lines = review?.lines;
+      if (!lines) {
+        lines = await tx
+          .select()
+          .from(stocktakingLines)
+          .where(
+            and(
+              eq(stocktakingLines.sessionId, sessionId),
+              sql`${stocktakingLines.variance} IS NOT NULL AND ${stocktakingLines.variance} != 0`,
+              sql`${stocktakingLines.countedQuantity} IS NOT NULL`,
+            ),
+          );
+        await acquireStockAvailabilityLocks(
+          tx,
+          lines.map((line) => ({ skuId: line.skuId, warehouseId: session.warehouseId })),
+        );
+        // Session lock serializes every count mutation; stock locks precede line locks on all paths.
+        if (lines.length)
+          await tx
+            .select({ id: stocktakingLines.id })
+            .from(stocktakingLines)
+            .where(eq(stocktakingLines.sessionId, sessionId))
+            .for('update');
+      }
 
-      // 변경 라인 전체 (sku, warehouse) 락 일괄 획득 — 라인별 adjustDown 락 누적의 데드락 방지
-      await acquireStockAvailabilityLocks(
-        tx,
-        lines.map((line) => ({ skuId: line.skuId, warehouseId: session.warehouseId })),
-      );
-
+      const reviewedCounts = new Map(review?.reviewed.map((count) => [count.lineId, count]));
       let adjustmentsApplied = 0;
       for (const line of lines) {
         const counted = line.countedQuantity ?? 0;
-        const currentOnHand = await this.computeOnHand(tx, line.skuId, session.warehouseId, line.locationId);
+        const currentOnHand = review
+          ? reviewedCounts.get(line.id)!.currentOnHand
+          : await this.computeOnHand(tx, line.skuId, session.warehouseId, line.locationId);
         const delta = counted - currentOnHand;
 
         if (delta !== 0) {
@@ -575,7 +679,12 @@ export class StocktakingService {
       const completedAt = new Date();
       await tx
         .update(stocktakingSessions)
-        .set({ status: 'completed', completedAt, updatedAt: completedAt })
+        .set({
+          status: 'completed',
+          completedAt,
+          updatedAt: completedAt,
+          revision: sql`${stocktakingSessions.revision} + 1`,
+        })
         .where(eq(stocktakingSessions.id, sessionId));
 
       return {
@@ -589,6 +698,65 @@ export class StocktakingService {
         },
       };
     }, tx);
+  }
+
+  /** Completion and preview use the same session -> stock -> line lock order and state. */
+  private async reviewCounts(tx: DbTx, sessionId: string) {
+    const session = await this.assertInProgress(tx, sessionId);
+    const identities = await tx
+      .select()
+      .from(wmsTables.stocktakingLines)
+      .where(eq(wmsTables.stocktakingLines.sessionId, sessionId));
+    await acquireStockAvailabilityLocks(
+      tx,
+      identities.map((line) => ({ skuId: line.skuId, warehouseId: session.warehouseId })),
+    );
+    const lines = await tx
+      .select()
+      .from(wmsTables.stocktakingLines)
+      .where(eq(wmsTables.stocktakingLines.sessionId, sessionId))
+      .orderBy(wmsTables.stocktakingLines.id)
+      .for('update');
+    const reviewed: ReviewedCount[] = [];
+    const preview: AdjustmentPreviewItem[] = [];
+    for (const line of lines) {
+      if (line.countedQuantity === null) throw new StocktakingConflict('STOCKTAKING_COUNT_REQUIRED');
+      await this.assertLocation(tx, line.locationId, session.warehouseId);
+      const ledger = await this.readLedger(tx, line.skuId, session.warehouseId, line.locationId);
+      const baselineVersion = this.countBaseline(line, ledger.version);
+      reviewed.push({
+        lineId: line.id,
+        lineRevision: line.revision,
+        baselineVersion,
+        currentLedgerVersion: ledger.version,
+        countedQuantity: line.countedQuantity,
+        currentOnHand: ledger.qty,
+      });
+      const delta = line.countedQuantity - ledger.qty;
+      if (delta) {
+        const sku = await tx.query.skus.findFirst({ where: eq(wmsTables.skus.id, line.skuId) });
+        const location = await tx.query.locations.findFirst({ where: eq(wmsTables.locations.id, line.locationId!) });
+        preview.push({
+          lineId: line.id,
+          skuId: line.skuId,
+          skuName: sku?.name,
+          skuCode: sku?.code,
+          locationCode: location?.code,
+          locationId: line.locationId,
+          countedQuantity: line.countedQuantity,
+          currentOnHand: ledger.qty,
+          delta,
+          adjustmentType: delta > 0 ? 'INCREASE' : 'DECREASE',
+        });
+      }
+    }
+    return {
+      session,
+      lines,
+      reviewed,
+      preview,
+      previewToken: stocktakingPreviewToken(session.id, session.revision, reviewed),
+    };
   }
 
   private async computeOnHand(
@@ -613,16 +781,17 @@ export class StocktakingService {
     return row?.qty ?? 0;
   }
 
-  private async assertInProgress(tx: DbTx, sessionId: string): Promise<void> {
+  private async assertInProgress(tx: DbTx, sessionId: string) {
     const { stocktakingSessions } = wmsTables;
     const [session] = await tx
-      .select({ status: stocktakingSessions.status })
+      .select()
       .from(stocktakingSessions)
       .where(eq(stocktakingSessions.id, sessionId))
       .limit(1)
       .for('update');
     if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
     if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
+    return session;
   }
 
   async cancelSession(sessionId: string, tx?: DbTx) {

@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
+import { Controller, Post, Body, Get, Param, Query, Headers, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
@@ -22,8 +23,13 @@ export class MovementController {
     type: MovementJobWithLinesDto,
   })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async moveImmediately(@Body() dto: MoveBatchDto): Promise<MovementJobWithLinesDto> {
-    const result = await this.movementService.moveImmediately(dto);
+  async moveImmediately(
+    @Body() dto: MoveBatchDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ): Promise<MovementJobWithLinesDto> {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    const result = await this.movementService.moveImmediately(dto, actorId);
     return MovementJobMapper.toWithLinesDto(result.job, result.lines);
   }
 

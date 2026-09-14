@@ -1,3 +1,4 @@
+import { WarehouseOperationConflict } from './warehouse-operation-contract';
 import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { CronOnce } from '@app/cron-once';
@@ -61,11 +62,13 @@ export class InventoryIdempotencyService {
       // 스펙 §4.2: hash 불일치("키 재사용")를 처리 중 판정보다 먼저 검사한다 — 다른 본문으로
       // 키를 재사용한 요청은 처리 중 여부와 무관하게 항상 재사용 오류로 귀결돼야 한다.
       if (existing && existing.requestHash !== requestHash) {
+        if (endpoint.endsWith('.v2')) throw new WarehouseOperationConflict('OPERATION_PAYLOAD_MISMATCH');
         throw new ConflictError(`idempotencyKey 재사용: 같은 키로 다른 요청 본문 (${endpoint}, key=${key})`);
       }
       // ON CONFLICT 가 빈 결과 = 경쟁 tx 커밋 완료 → READ COMMITTED 에서 row 가시.
       // 미가시(경쟁 tx 진행 중 등 이례 상황)면 처리 중으로 간주.
       if (!existing || existing.response === null) {
+        if (endpoint.endsWith('.v2')) throw new WarehouseOperationConflict('OPERATION_IN_PROGRESS');
         throw new ConflictError(`동일 요청이 처리 중입니다: ${endpoint} (key=${key})`);
       }
       // jsonb round-trip 값 — 저장 시점 handler 반환값과 동형이라는 계약. jsonb 조회 타입이

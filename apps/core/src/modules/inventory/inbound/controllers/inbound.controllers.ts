@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, Query, Param, BadRequestException, UseGuards } from '@nestjs/common';
+import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
+import { Controller, Post, Body, Get, Query, Param, BadRequestException, Headers, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { InboundService } from '../services/inbound.service';
 import { InboundPutawayReader } from '../services/inbound-putaway.reader';
@@ -29,8 +30,13 @@ export class InboundController {
   @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })
   @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.', type: SimpleInboundResponseDto })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async simpleInbound(@Body() dto: SimpleInboundDto) {
-    const result = await this.inboundService.simpleInbound(dto);
+  async simpleInbound(
+    @Body() dto: SimpleInboundDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    const result = await this.inboundService.simpleInbound(dto, undefined, actorId);
     return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
   }
 
@@ -43,8 +49,13 @@ export class InboundController {
     type: SimpleInboundResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async simpleInboundFullscan(@Body() dto: SimpleInboundDto) {
-    const result = await this.inboundService.simpleInboundFullscan(dto);
+  async simpleInboundFullscan(
+    @Body() dto: SimpleInboundDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    const result = await this.inboundService.simpleInboundFullscan(dto, undefined, actorId);
     return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
   }
 
@@ -66,8 +77,13 @@ export class InboundController {
     type: IndividualInboundResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async individualInbound(@Body() dto: IndividualInboundDto) {
-    const result = await this.inboundService.individualInbound(dto);
+  async individualInbound(
+    @Body() dto: IndividualInboundDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    const result = await this.inboundService.individualInbound(dto, undefined, actorId);
     return InboundReceiptMapper.toIndividualResponseDto(result.receipt, result.line);
   }
 
@@ -236,8 +252,13 @@ export class InboundController {
   @ApiOperation({ summary: '입고 적치(즉시 이동): 원위치에서 목적지로 즉시 이동' })
   @ApiResponse({ status: 201, description: '적치가 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async putaway(@Body() dto: PutawayRequestDto) {
-    return this.inboundService.putawayFromOrigin(dto);
+  async putaway(
+    @Body() dto: PutawayRequestDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    return this.inboundService.putawayFromOrigin(dto, undefined, actorId);
   }
 
   @Post('return')
@@ -245,8 +266,13 @@ export class InboundController {
   @ApiOperation({ summary: '입고 회송: 원위치 잔량에서 차감' })
   @ApiResponse({ status: 201, description: '회송이 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async returnInbound(@Body() dto: ReturnInboundDto) {
-    return this.inboundService.returnInbound(dto);
+  async returnInbound(
+    @Body() dto: ReturnInboundDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    return this.inboundService.returnInbound(dto, undefined, actorId);
   }
 
   @Post('cancel')
@@ -254,7 +280,12 @@ export class InboundController {
   @ApiOperation({ summary: '입고 취소: 오입고 정정, 원위치 잔량에서 차감' })
   @ApiResponse({ status: 201, description: '입고취소가 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async cancelInbound(@Body() dto: CancelInboundDto) {
-    return this.inboundService.cancelInbound(dto);
+  async cancelInbound(
+    @Body() dto: CancelInboundDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    return this.inboundService.cancelInbound(dto, undefined, actorId);
   }
 }

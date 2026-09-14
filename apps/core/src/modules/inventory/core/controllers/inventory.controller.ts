@@ -1,6 +1,8 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { InventoryIdempotencyService } from '../services/inventory-idempotency.service';
+import { WarehouseActor, warehouseOperationContext, warehouseRequest } from '../services/warehouse-operation-contract';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Headers, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { StockEventService } from '../services/stock-event.service';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -14,6 +16,7 @@ export class InventoryController {
   constructor(
     private readonly stockEventService: StockEventService,
     private readonly commandService: InventoryCommandService,
+    private readonly idempotency: InventoryIdempotencyService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════
@@ -28,7 +31,31 @@ export class InventoryController {
   @ApiResponse({ status: 400, description: '잘못된 요청 또는 유효성 검사 실패.' })
   @ApiResponse({ status: 404, description: '활성 재고 항목을 찾을 수 없음.' })
   @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
-  async adjustStockQuantity(@Body() adjustDto: AdjustStockDto) {
+  async adjustStockQuantity(
+    @Body() adjustDto: AdjustStockDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(adjustDto, user, headerKey);
+    if (actorId) {
+      if (!Number.isSafeInteger(adjustDto.delta) || adjustDto.delta === 0)
+        throw new BadRequestException('수량이 올바르지 않아요.');
+      const input = {
+        skuId: adjustDto.skuId,
+        warehouseId: adjustDto.warehouseId,
+        locationId: adjustDto.locationId,
+        reason: adjustDto.reason,
+        idempotencyKey: `v2:${adjustDto.idempotencyKey}`,
+        quantity: Math.abs(adjustDto.delta),
+      };
+      return this.idempotency.withIdempotency(
+        'inventory.adjust.v2',
+        adjustDto.idempotencyKey!,
+        warehouseRequest(adjustDto, actorId),
+        (tx) =>
+          adjustDto.delta > 0 ? this.commandService.adjustUp(input, tx) : this.commandService.adjustDown(input, tx),
+      );
+    }
     if (adjustDto.delta > 0) {
       return this.commandService.adjustUp({
         skuId: adjustDto.skuId,

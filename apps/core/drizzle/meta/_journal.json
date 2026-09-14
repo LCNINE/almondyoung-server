@@ -680,6 +680,13 @@
       "when": 1789400895203,
       "tag": "20260914154815_drop-legacy-inbound-plans",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789411103705,
+      "tag": "20260914183823_stocktaking-count-baseline",
+      "breakpoints": true
     }
   ]
 }
