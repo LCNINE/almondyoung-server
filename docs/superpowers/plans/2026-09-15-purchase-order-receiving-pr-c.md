@@ -179,7 +179,9 @@ cd native/warehouse-app && npm test -- --run
 - Task 1 commit `a7af70349`: 독립 리뷰 지적 0건. schema snapshot은 두 테이블·enum·두 컬럼/FK만 제거했고 기존
   VIEW는 유지했으며 migration chain이 연속함을 확인했다.
 - 컨트롤러 검증: root type-check, DB 없는 Jest(602 suites/5,312 tests), Core build, admin-web tests
-  (112 suites/960 tests)와 tsc, 창고 앱 tests(64 files/326 tests), consume-validation gate 모두 exit 0.
+  (112 suites/960 tests)와 tsc, 창고 앱 tests(64 files/326 tests), consume-validation gate 모두 exit 0. 첫 parallel
+  Jest 실행은 통과했지만 worker teardown 경고가 한 번 있었고, 이어서 `--runInBand --detectOpenHandles`로 같은 전체
+  suite를 실행해 같은 602 suites/5,312 tests 통과 및 경고 비재현을 확인했다.
 - 실 DB 통합: PR-B base 9 failed/94 passed suites, PR-C head 8 failed/96 passed suites. 실패 이름 비교에서 새 실패
   0건이며 base-only stock valuation 실패의 비재현을 PR-C 개선으로 간주하지 않는다. 계약 targeted 역사/PR-C suite는
   2 suites/21 tests 통과했다. 공유 DB를 migrate하는 wrapper 대신 동일 Jest pattern을 격리 DB에 실행했다.

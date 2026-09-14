@@ -37,3 +37,23 @@
 - core migration의 `.env` URL override 함정 때문에 live target 증거가 없는 성공 로그는 적용 증거가 아니다. 적용 후
   live postcheck가 필요하다.
 - 문서에 남은 두 WMS API HTML은 PR-B 이전 snapshot이며 별도 문서 부채다.
+
+## Final review fix wave
+
+- `docs/runbooks/purchase-order-receiving-contract.md`: migration 명령을 저장소 root canonical form
+  `npm run db:migrate -- --stage live --deployment lcnine-services --yes`로 수정했다. 실제 registry 기준 아홉 Drizzle
+  서비스 범위와 `runSchemaSync`의 서비스별 catch-and-continue를 공개하고, 실행 전 pending set을 Core PR-C 두 개/나머지
+  0개로 제한했다. exit 0 대신 아홉 서비스 각각의 성공 로그, 실패 로그 부재, live Core의 두 migration
+  history/hash와 postcheck를 성공 조건으로 명시했다.
+- `docs/superpowers/specs/2026-09-14-purchase-order-owns-receiving-design.md` §10.1: 구버전 창고 앱의 기능 손실이
+  없다는 설계 당시 가정을 폐기했다. 설치된 구버전은 404로 예정 입고 기능을 잃을 수 있고 설치/사용/update 상태는
+  확인하지 않았으며 native binary가 SST 서버 배포 기록에 포함되지 않는다고 기록했다.
+- `docs/superpowers/plans/2026-09-15-purchase-order-receiving-pr-c.md`: 최초 parallel Jest worker teardown 경고와
+  동일 전체 suite의 serial `--detectOpenHandles` 통과/비재현을 실제 검증 기록에 추가했다.
+- 근거 확인: `scripts/seeding/lib/service-registry.ts`, `scripts/seeding/lib/sst-shell-relaunch.ts`,
+  `scripts/seeding/phases/02-schema-sync.ts`, `scripts/seeding/migrate.ts`, Core journal과 두 migration SHA-256을 읽어 문서의
+  명령·범위·오류 처리·history/hash를 대조했다. registry의 Drizzle 대상은 문서와 같은 9개였고 journal의 PR-C
+  `created_at`은 `1789400689029`, `1789400895203`, 파일 SHA-256은 각각 문서의
+  `1f22efdc...888ab`, `9695e02d...823ba`와 일치했다.
+- `rg`로 옛 수동 `sst shell` 명령과 §10.1의 거짓 no-data/no-loss 문장이 제거됐고 canonical 명령과 서비스별 실패
+  판정 문장이 존재함을 확인했다. `git diff --check`는 exit 0이었다. live 명령과 broad test는 실행하지 않았다.

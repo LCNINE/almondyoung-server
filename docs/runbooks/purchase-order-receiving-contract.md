@@ -136,16 +136,46 @@ ORDER BY object;
 
 ## 5. 명시적 migration
 
-백업 시각, preflight 3종 0행, 의존성 판정, 생존 영역 기준값을 기록한 뒤에만 승인된 live shell에서 core migration을
-명시적으로 실행한다. 표준 형식은 다음과 같다.
+백업 시각, preflight 3종 0행, 의존성 판정, 생존 영역 기준값을 기록한 뒤에만 저장소 root에서 다음 canonical 명령을
+실행한다. 이 entrypoint가 `--stage`와 `--deployment`를 읽어 `deployments/lcnine/services`에서 SST shell을 다시 연다.
 
 ```sh
-sst shell --stage live -- npm run db:migrate -- --deployment lcnine-services --yes
+npm run db:migrate -- --stage live --deployment lcnine-services --yes
 ```
 
-`apps/core/drizzle.config.ts`가 로컬 `apps/core/.env`의 `DATABASE_URL`을 다시 읽을 수 있다는 기존 운영 함정이 있다.
-core migration 로그가 live DB를 대상으로 했다는 증거가 없으면 성공으로 판정하지 말고 중단한다. migration 뒤의
-아래 live 조회가 최종 적용 증거다.
+이 명령은 Core 전용이 아니다. `scripts/seeding/lib/service-registry.ts`의 `lcnine-services` registry 중 Drizzle config가
+있는 **core, analytics, channel-adapter, membership, notification, ugc-service, search, wallet, file-service**를 차례로
+migrate한다. 이 파일의 현재 registry를 실행 시점의 범위 정본으로 다시 확인한다. `medusa`도 registry에 있지만 Drizzle
+config가 없어 이 명령의 대상은 아니다.
+
+실행 전 각 대상 DB의 live `drizzle.__drizzle_migrations`와 해당 서비스 journal을 대조한다. 이 작업의 허용 pending
+set은 다음과 같아야 한다.
+
+- Core: `20260914154449_guard-purchase-order-receiving-contract`,
+  `20260914154815_drop-legacy-inbound-plans` 두 개만 pending
+- 나머지 등록 Drizzle 서비스: pending migration 0개
+
+다른 pending migration이 있거나 Core의 두 파일 중 하나가 이미 단독 적용된 상태면 이 작업으로 묶어 실행하지 말고
+중단한다. 실행 직전 확정한 registry, 서비스별 live 최신 history, journal 비교 결과를 배포 기록에 남긴다.
+
+`scripts/seeding/phases/02-schema-sync.ts`는 서비스별 오류를 catch한 뒤 다음 서비스로 계속 진행하며 오류를 다시 던지지
+않는다. 따라서 전체 프로세스의 exit 0이나 마지막 한 줄만으로 성공을 판정할 수 없다. 아홉 서비스 각각의
+`── Migrating: <service> ──` 블록과 성공 출력을 보관하고, `Failed to migrate: <service>`가 한 건도 없으며 마지막
+`Schemas migrated:` 목록에 아홉 서비스가 모두 있는지 확인한다. 한 서비스라도 증거가 없으면 실패로 취급한다.
+
+또한 `apps/core/drizzle.config.ts`가 로컬 `apps/core/.env`의 `DATABASE_URL`을 다시 읽을 수 있다는 기존 운영 함정이
+있다. Core 로그가 live DB를 대상으로 했다는 증거가 없으면 성공으로 판정하지 않는다. 마지막으로 live Core에서 다음
+history/hash 조회와 §6 postcheck를 실행해야 적용 완료다. 결과는 아래 두 행과 정확히 같아야 한다.
+
+```sql
+SELECT created_at, hash
+FROM drizzle.__drizzle_migrations
+WHERE created_at IN (1789400689029, 1789400895203)
+ORDER BY created_at;
+
+-- 1789400689029 | 1f22efdc3d3a9846fc1058fe60c565b2a1e0fcbf8be923fae5105fba099888ab
+-- 1789400895203 | 9695e02d0ed5ba194a837dcfc77cde74720483d9a8aba12c9d66e1d032a823ba
+```
 
 ## 6. 적용 후 확인
 
