@@ -1,0 +1,28 @@
+.brandGlow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    rgb(240 167 73 / 32%),
+    rgb(255 218 167 / 48%),
+    rgb(81 45 43 / 12%),
+    rgb(240 167 73 / 28%),
+    transparent
+  );
+  filter: blur(18px);
+  animation: brand-orbit 28s linear infinite;
+}
+
+@keyframes brand-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brandGlow {
+    animation: none;
+  }
+}

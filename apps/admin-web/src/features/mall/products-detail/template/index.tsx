@@ -24,6 +24,12 @@ type Props = {
 export default function ProductsDetailTemplate({ masterId, versionId }: Props) {
   return (
     <div className="flex flex-col w-full gap-y-3">
+      <Link
+        href="/mall/product-ai"
+        className="fixed bottom-6 right-6 z-40 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-lg"
+      >
+        상품등록 AI
+      </Link>
       <div className="flex items-center justify-end gap-2">
         <CreateDraftAction masterId={masterId} versionId={versionId} />
         <Link

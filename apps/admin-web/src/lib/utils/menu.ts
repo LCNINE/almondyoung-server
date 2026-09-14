@@ -222,6 +222,7 @@ export const mainMenus: MainMenu[] = [
     children: [
       { id: 'product-dashboard', title: '대시보드' },
       { id: 'product-list', title: '목록', path: '/mall/products-list' },
+      { id: 'product-ai', title: '상품등록 AI', path: '/mall/product-ai' },
       {
         id: 'product-registration',
         title: '등록',
