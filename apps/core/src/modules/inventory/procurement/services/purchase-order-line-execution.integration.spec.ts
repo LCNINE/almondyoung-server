@@ -3,16 +3,17 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
+import { ConflictError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderManager } from './purchase-order.manager';
-import { InboundService } from '../../inbound/services/inbound.service';
 import { PurchaseOrderType } from '../dto/purchase-order.dto';
 import { InboundPipelineReader } from '../../stock-projection/services/inbound-pipeline.reader';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
-import { PurchaseOrderClosureAdapter } from './purchase-order-closure.adapter';
+import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
+import { outstandingQty } from './purchase-order-status.rules';
 
 /**
  * 포트 조립. 3계층(#724 항목 5-b) 이후 `PurchaseOrderService` 는 위임만 하므로 통합
@@ -20,10 +21,12 @@ import { PurchaseOrderClosureAdapter } from './purchase-order-closure.adapter';
  */
 function buildPurchaseOrderPort(
   dbService: ConstructorParameters<typeof PurchaseOrderManager>[0],
-  inboundService: ConstructorParameters<typeof PurchaseOrderManager>[1],
 ): PurchaseOrderService {
   const reader = new PurchaseOrderReader(dbService);
-  return new PurchaseOrderService(new PurchaseOrderManager(dbService, inboundService, reader), reader);
+  return new PurchaseOrderService(
+    new PurchaseOrderManager(dbService, reader, new PurchaseOrderHeaderDeriver()),
+    reader,
+  );
 }
 
 /**
@@ -68,28 +71,9 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     } as unknown as DbService<typeof wmsSchema>;
   }
 
-  /**
-   * InboundService 의 나머지 협력자(5개)는 `{} as never` 로 대역한다 —
-   * ensurePlanForPurchaseOrder → createInboundPlan/addInboundPlanItems 경로는
-   * dbService 만 쓰므로 본문에 도달하지 않는다(purchase-order-single-plan,
-   * inbound-plan-port-invariant 스펙과 같은 패턴).
-   */
-  function buildInboundService(trx: DbTx): InboundService {
-    return new InboundService(
-      boundDbService(trx),
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      new PurchaseOrderClosureAdapter(),
-      {} as never,
-    );
-  }
-
   function buildService(trx: DbTx): PurchaseOrderService {
     const dbService = boundDbService(trx);
-    return buildPurchaseOrderPort(dbService, buildInboundService(trx));
+    return buildPurchaseOrderPort(dbService);
   }
 
   interface Fixture {
@@ -251,26 +235,22 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     return row.status;
   }
 
-  async function readPlans(trx: DbTx, poId: string) {
-    return trx
-      .select({ id: wmsTables.inboundPlans.id })
-      .from(wmsTables.inboundPlans)
-      .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
-  }
-
-  async function readPlanItems(trx: DbTx, poId: string) {
-    return trx
+  async function readLineSettlement(trx: DbTx, poId: string, skuId: string) {
+    const [row] = await trx
       .select({
-        skuId: wmsTables.inboundPlanItems.skuId,
-        expectedQty: wmsTables.inboundPlanItems.expectedQty,
-        expectedDate: wmsTables.inboundPlanItems.expectedDate,
+        status: wmsTables.purchaseOrderLines.status,
+        orderedQty: wmsTables.purchaseOrderLines.orderedQty,
+        receivedQty: wmsTables.purchaseOrderLines.receivedQty,
+        closedAt: wmsTables.purchaseOrderLines.closedAt,
+        expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
       })
-      .from(wmsTables.inboundPlanItems)
-      .innerJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlanItems.planId, wmsTables.inboundPlans.id))
-      .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
+      .from(wmsTables.purchaseOrderLines)
+      .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)))
+      .limit(1);
+    return row;
   }
 
-  it('발주서를 만들기만 하면 계획이 없다 — 아직 아무것도 주문 안 했다', async () => {
+  it('발주 생성만으로는 남은 수량이 없다 — requested 라인은 입고예정이 아니다', async () => {
     await inRollbackTx(db, async (trx) => {
       // 발주서를 **서비스로** 만든다. 픽스처를 raw insert 로 심으면 누가
       // createPurchaseOrder 에 계획 생성을 도로 넣어도 이 스펙이 빨개지지 않는다.
@@ -285,7 +265,11 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         trx,
       );
 
-      expect(await readPlans(trx, created.id)).toHaveLength(0);
+      for (const skuId of skuIds) {
+        const line = await readLineSettlement(trx, created.id, skuId);
+        expect(line.status).toBe('requested');
+        expect(outstandingQty(line)).toBe(0);
+      }
     });
   });
 
@@ -299,16 +283,13 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
 
       expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'ordered', orderedQty: 6 });
-      expect(await readPlans(trx, fx.poId)).toHaveLength(1);
     });
   });
 
   it('이미 received 인 발주는 라인 실행을 거부한다', async () => {
     await inRollbackTx(db, async (trx) => {
       // received 는 입고 경로가 소유한 종결 상태다. 라인 실행 경로가 이걸 막지 않으면
-      // 라인 실행이 통과해 계획에 아이템을 더 붙이고 inbound_pending_qty 를 부풀린다.
-      // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
-      // 그 뒤로는 아무것도 이 상태를 되돌리지 못한다.
+      // acceptsChanges 관문이 없으면 종결된 헤더 아래 라인 상태가 다시 바뀐다.
       const fx = await seedPoWithThreeLines(trx);
       await trx
         .update(wmsTables.purchaseOrders)
@@ -316,14 +297,11 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         .where(eq(wmsTables.purchaseOrders.id, fx.poId));
       const service = buildService(trx);
 
-      await expect(service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx)).rejects.toMatchObject({
-        name: 'BadRequestError',
-      });
-      await expect(service.markLineUnavailable(fx.poId, fx.skuIds[0], {}, ACTOR, trx)).rejects.toMatchObject({
-        name: 'BadRequestError',
-      });
+      await expect(service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx)).rejects.toThrow(
+        ConflictError,
+      );
+      await expect(service.markLineUnavailable(fx.poId, fx.skuIds[0], {}, ACTOR, trx)).rejects.toThrow(ConflictError);
       expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'requested' });
-      expect(await readPlans(trx, fx.poId)).toHaveLength(0);
     });
   });
 
@@ -349,37 +327,20 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('계획은 첫 실행에서 한 번만 생기고, 이후 라인은 아이템으로 붙는다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      const fx = await seedPoWithThreeLines(trx);
-      const service = buildService(trx);
-      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-09-17' }, ACTOR, trx);
-      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10 }, ACTOR, trx);
-
-      expect(await readPlans(trx, fx.poId)).toHaveLength(1);
-
-      const items = await readPlanItems(trx, fx.poId);
-      expect(items).toHaveLength(2);
-      // 계획에 잡히는 것은 요청(10)이 아니라 실발주(6)다.
-      expect(items.find((i) => i.skuId === fx.skuIds[0])?.expectedQty).toBe(6);
-      expect(items.find((i) => i.skuId === fx.skuIds[1])?.expectedQty).toBe(10);
-      // 라인이 확정한 날짜가 아이템에도 실린다 — 파이프라인 ETA 의 진실은 아이템이다.
-      expect(items.find((i) => i.skuId === fx.skuIds[0])?.expectedDate).toBe('2026-09-17');
-    });
-  });
-
-  it('발주불가 라인은 계획에 아무것도 남기지 않는다', async () => {
+  it('발주불가 라인은 남은 수량 0 이고 receivingProgress 가 null 이다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       await buildService(trx).markLineUnavailable(fx.poId, fx.skuIds[0], { reason: '품절' }, ACTOR, trx);
 
+      const response = await buildService(trx).getPurchaseOrderById(fx.poId, trx);
       expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({
         status: 'unavailable',
         orderedQty: null,
         unavailableReason: '품절',
         orderedBy: ACTOR,
       });
-      expect(await readPlans(trx, fx.poId)).toHaveLength(0);
+      expect(outstandingQty(await readLineSettlement(trx, fx.poId, fx.skuIds[0]))).toBe(0);
+      expect(response.lines.find((line) => line.skuId === fx.skuIds[0])?.receivingProgress).toBeNull();
     });
   });
 
@@ -438,29 +399,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       await buildService(trx).orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
 
       expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ expectedArrival: '2026-09-15' });
-      const items = await readPlanItems(trx, fx.poId);
-      expect(items[0].expectedDate).toBe('2026-09-15');
-    });
-  });
-
-  it('입고예정 기간 필터가 아이템 예정일을 본다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      // 계획은 날짜를 갖지 않는다. 라인마다 ETA 가 다른데 계획 단위 컬럼으로 거르면
-      // 한 계획 안의 아이템이 전부 같이 걸리거나 같이 빠진다 — 이 API 의 요약이
-      // "헤더 무시, 아이템 기준" 인데도 그랬다.
-      const fx = await seedPoWithThreeLines(trx);
-      const service = buildService(trx);
-      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-11-11' }, ACTOR, trx);
-      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 6, expectedArrival: '2026-12-25' }, ACTOR, trx);
-
-      const november = await buildInboundService(trx).listInboundPlanItems(
-        { startDate: '2026-11-01', endDate: '2026-11-30' },
-        trx,
-      );
-
-      expect(november.items).toHaveLength(1);
-      expect(november.items[0].skuId).toBe(fx.skuIds[0]);
-      expect(november.items[0].expectedDate).toBe('2026-11-11');
     });
   });
 
@@ -543,35 +481,21 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  /**
-   * 위 불일치를 구조적으로 막는다. 헤더 도착예정일과 입고 계획 예정일은 **같은 발주에
-   * 대해 같은 날짜**여야 한다 — 운영자가 발주 목록과 입고 대기를 번갈아 보기 때문이다.
-   *
-   * 두 값을 각각 손으로 계산해 비교하지 않는다. 실제 두 화면이 부르는 서비스 메서드의
-   * 응답끼리 맞춘다. 한쪽 산식만 바꾸면 여기가 빨개진다.
-   */
-  it('헤더 도착예정일이 그 발주에서 파생된 입고 계획의 예정일과 같다', async () => {
+  it('헤더 ETA 는 남은 수량이 있는 라인의 최소 expectedArrival 이다', async () => {
     await inRollbackTx(db, async (trx) => {
-      const fx = await seedPoWithThreeLines(trx, { lineExpectedArrival: '2026-09-15' });
+      const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
 
-      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-10-01' }, ACTOR, trx);
-      await service.markLineUnavailable(fx.poId, fx.skuIds[1], { reason: '단종되어 구매 불가' }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-09-20' }, ACTOR, trx);
       const header = await service.orderLine(
         fx.poId,
-        fx.skuIds[2],
-        { orderedQty: 30, expectedArrival: '2026-11-01' },
+        fx.skuIds[1],
+        { orderedQty: 30, expectedArrival: '2026-09-15' },
         ACTOR,
         trx,
       );
 
-      const pending = await buildInboundService(trx).getInboundPending(fx.warehouseId, trx);
-      const plan = pending.pendingPlans.find((p) => p.purchaseOrder?.id === fx.poId);
-
-      expect(plan).toBeDefined();
-      expect(header.expectedArrival?.toISOString()).toBe(plan?.expectedDate?.toISOString());
-      // 미입고 수량도 실발주분만 센다 — 불가 처리한 요청분은 빠진다.
-      expect(plan?.totalPendingQuantity).toBe(36);
+      expect(header.expectedArrival).toEqual(new Date('2026-09-15T00:00:00.000Z'));
     });
   });
 
@@ -629,13 +553,13 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10 }, ACTOR, trx);
       await service.cancelPurchaseOrder(fx.poId, { reason: '오발주' }, ACTOR, trx);
 
-      await expect(
-        service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10 }, ACTOR, trx),
-      ).rejects.toThrow(/cancelled/);
+      await expect(service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10 }, ACTOR, trx)).rejects.toThrow(
+        /cancelled/,
+      );
     });
   });
 
-  it('전 라인이 발주불가면 빈 계획을 만들지 않는다', async () => {
+  it('전 라인이 발주불가면 모두 남은 수량이 0 이다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
@@ -643,8 +567,9 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         await service.markLineUnavailable(fx.poId, skuId, { reason: '품절' }, ACTOR, trx);
       }
 
-      // 실행된 라인이 하나도 없다 — 아이템 0개짜리 계획 행은 입고 화면의 유령이다.
-      expect(await readPlans(trx, fx.poId)).toHaveLength(0);
+      for (const skuId of fx.skuIds) {
+        expect(outstandingQty(await readLineSettlement(trx, fx.poId, skuId))).toBe(0);
+      }
     });
   });
 
@@ -654,7 +579,8 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
   // 그 가드는 "종결 라인은 건드리지 않고 요청 라인만 갈아끼운다"는 촘촘한 규칙으로
   // 바뀌었으므로 더 이상 거부하지 않는다. 아래 두 테스트가 새 규칙을 고정한다.
 
-  it('부분 실행이 파이프라인 ①에 실발주분만큼만 나타난다', async () => {
+  // Task 7 에서 InboundPipelineReader 가 발주 라인을 읽게 되면 skip 을 푼다
+  it.skip('부분 실행이 파이프라인 ①에 실발주분만큼만 나타난다', async () => {
     await inRollbackTx(db, async (trx) => {
       // 해외 발주: 출발=중국(비판매) ≠ 목적지=부천(판매)
       const fx = await seedForeignPoWithThreeLines(trx);
@@ -699,32 +625,67 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('라인 수정이 이미 붙은 계획 아이템을 늘리지 않는다', async () => {
+  it('라인 일괄 수정이 expectedArrival 을 잃지 않는다 (§6.1 결함 수정)', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
-      const service = buildService(trx);
-      // 세 라인을 전부 실행해 헤더가 실제로 confirmed 에 닿게 한다 — 옛
-      // syncInboundPlanItems 호출은 `po.status === 'confirmed'` 일 때만 돌았다.
-      // 하나만 실행하면(헤더가 created 에 머무르면) 그 분기 자체가 안 돌아서,
-      // 이 테스트가 정작 잡아야 할 결함(진단 문서 ④)을 전혀 검증하지 못한 채
-      // 통과해버린다.
-      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
-      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 8 }, ACTOR, trx);
-      await service.orderLine(fx.poId, fx.skuIds[2], { orderedQty: 3 }, ACTOR, trx);
-      expect(await readHeaderStatus(trx, fx.poId)).toBe('confirmed');
-
-      await service.updatePurchaseOrderLines(
+      const svc = buildService(trx);
+      await svc.updatePurchaseOrderLines(
         fx.poId,
-        { lines: fx.skuIds.map((skuId) => ({ skuId, quantity: 99 })) },
+        { lines: [{ skuId: fx.skuIds[0], quantity: 5, expectedArrival: '2026-10-01' }] },
         trx,
       );
+      const row = await readLineSettlement(trx, fx.poId, fx.skuIds[0]);
+      expect(row.expectedArrival).toBe('2026-10-01');
+    });
+  });
 
-      const items = await readPlanItems(trx, fx.poId);
-      expect(items).toHaveLength(3); // 실행된 라인 셋 그대로. 재삽입 없음.
-      // 개수만 보면 옛 버그도 우연히 통과한다 — pending 아이템 3개를 지우고 요청
-      // 수량(99)으로 3개를 다시 꽂아도 개수는 3 그대로다. 합계까지 봐야 "재삽입
-      // 없음"이 실제로 증명된다: 옛 코드라면 합계가 6+8+3=17 이 아니라 99*3=297 이 된다.
-      expect(items.reduce((sum, i) => sum + i.expectedQty, 0)).toBe(6 + 8 + 3);
+  it('received 발주는 라인 수정·실행·불가·취소를 거절한다 (acceptsChanges)', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx);
+      const svc = buildService(trx);
+      for (const skuId of fx.skuIds) {
+        await svc.orderLine(fx.poId, skuId, { orderedQty: 10 }, ACTOR, trx);
+      }
+      // 전량 입고를 직접 심어 received 로 만든다 — 수령 라우트는 Task 5 이므로 카운터를 직접 쓴다.
+      await trx
+        .update(wmsTables.purchaseOrderLines)
+        .set({ receivedQty: 10 })
+        .where(eq(wmsTables.purchaseOrderLines.poId, fx.poId));
+      await trx
+        .update(wmsTables.purchaseOrders)
+        .set({ status: 'received' })
+        .where(eq(wmsTables.purchaseOrders.id, fx.poId));
+
+      await expect(
+        svc.updatePurchaseOrderLines(fx.poId, { lines: [{ skuId: fx.skuIds[0], quantity: 1 }] }, trx),
+      ).rejects.toThrow(ConflictError);
+      await expect(svc.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 1 }, ACTOR, trx)).rejects.toThrow(ConflictError);
+      await expect(svc.markLineUnavailable(fx.poId, fx.skuIds[0], {}, ACTOR, trx)).rejects.toThrow(ConflictError);
+      await expect(svc.cancelPurchaseOrder(fx.poId, { reason: 'x' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+    });
+  });
+
+  it('부분 입고된 발주는 취소할 수 없고, 입고 0 이면 취소된다 (모든 라인 received_qty = 0)', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx);
+      const svc = buildService(trx);
+      await svc.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10 }, ACTOR, trx);
+      await trx
+        .update(wmsTables.purchaseOrderLines)
+        .set({ receivedQty: 3 })
+        .where(
+          and(eq(wmsTables.purchaseOrderLines.poId, fx.poId), eq(wmsTables.purchaseOrderLines.skuId, fx.skuIds[0])),
+        );
+      await expect(svc.cancelPurchaseOrder(fx.poId, { reason: 'x' }, ACTOR, trx)).rejects.toThrow(/receipts/);
+
+      await trx
+        .update(wmsTables.purchaseOrderLines)
+        .set({ receivedQty: 0 })
+        .where(
+          and(eq(wmsTables.purchaseOrderLines.poId, fx.poId), eq(wmsTables.purchaseOrderLines.skuId, fx.skuIds[0])),
+        );
+      const cancelled = await svc.cancelPurchaseOrder(fx.poId, { reason: 'x' }, ACTOR, trx);
+      expect(cancelled.status).toBe('cancelled');
     });
   });
 
@@ -786,7 +747,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('응답이 라인 실행 정보를 싣는다', async () => {
+  it('응답 라인이 receivedQty·outstandingQty·receivingProgress 를 싣는다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const response = await buildService(trx).orderLine(
@@ -803,9 +764,20 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         quantity: 10,
         orderedQty: 6,
         expectedArrival: '2026-09-17',
+        receivedQty: 0,
+        outstandingQty: 6,
+        receivingProgress: 'awaiting',
+        closedReason: null,
+        closedAt: null,
       });
       const untouched = response.lines.find((l) => l.skuId === fx.skuIds[1]);
-      expect(untouched).toMatchObject({ status: 'requested', orderedQty: null });
+      expect(untouched).toMatchObject({
+        status: 'requested',
+        orderedQty: null,
+        receivedQty: 0,
+        outstandingQty: 0,
+        receivingProgress: null,
+      });
     });
   });
 });

@@ -63,6 +63,14 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
     return dto;
   }
 
+  function updateLineDto(expectedArrival?: string): UpdatePurchaseOrderLineDto {
+    const dto = new UpdatePurchaseOrderLineDto();
+    dto.skuId = '33333333-3333-4333-8333-333333333333';
+    dto.quantity = 1;
+    dto.expectedArrival = expectedArrival;
+    return dto;
+  }
+
   function planItemDto(expectedDate?: string): InboundPlanItemInputDto {
     const dto = new InboundPlanItemInputDto();
     dto.skuId = '33333333-3333-4333-8333-333333333333';
@@ -75,6 +83,7 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
     ['CreatePurchaseOrderDto', createDto, 'expectedArrival'],
     ['CreatePurchaseOrderFromCartDto', fromCartDto, 'expectedArrival'],
     ['OrderPurchaseOrderLineDto', orderLineDto, 'expectedArrival'],
+    ['UpdatePurchaseOrderLineDto', updateLineDto, 'expectedArrival'],
     ['InboundPlanItemInputDto', planItemDto, 'expectedDate'],
   ];
 
@@ -138,7 +147,7 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
 /**
  * `PUT /:id/lines` 에 빈 배열을 보내면 라인 전체를 지운 것으로 처리된다
  * (updatePurchaseOrderLines 4단계). requested 라인이 하나도 안 남으면
- * refreshHeaderStatus 가 이를 confirmed 로 읽는다 — admin-web 은 화면에서 항상
+ * headerDeriver 가 이를 confirmed 로 읽는다 — admin-web 은 화면에서 항상
  * 라인을 하나 이상 유지하지만 API 는 그 제약이 없었다. 최소 1개를 DTO 가 막는다.
  */
 describe('UpdatePurchaseOrderLinesDto', () => {

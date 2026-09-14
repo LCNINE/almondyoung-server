@@ -8,7 +8,6 @@ import {
   wireLogistics,
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
-import { PurchaseOrderClosureAdapter } from '../../../apps/core/src/modules/inventory/procurement/services/purchase-order-closure.adapter';
 import { InboundReceiptKernel } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
 import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
@@ -102,7 +101,7 @@ async function main(): Promise<void> {
 
     // InboundService 는 Nest DI 없이도 손으로 조립 가능한 정도(협력자 6개, 전부 dbService 하나만
     // 필요)라 여기서 직접 생성한다 — wireLogistics 가 이미 command/location/eventStore 를 만들어
-    // 두었으니 SkuCatalogService·InventoryIdempotencyService·PurchaseOrderClosureAdapter 만
+    // 두었으니 SkuCatalogService·InventoryIdempotencyService 만
     // 추가로 조립하면 된다.
     const skuCatalogReader = new SkuCatalogReader(dbService);
     const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
@@ -115,7 +114,7 @@ async function main(): Promise<void> {
       wired.location,
       wired.eventStore,
       idempotency,
-      new PurchaseOrderClosureAdapter(),
+      { onPlanClosed: async () => undefined },
       new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
     );
 

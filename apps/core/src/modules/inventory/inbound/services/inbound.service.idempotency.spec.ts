@@ -1,5 +1,4 @@
 import { InboundService } from './inbound.service';
-import { PurchaseOrderClosureAdapter } from '../../procurement/services/purchase-order-closure.adapter';
 
 const SENTINEL = { sentinel: true };
 
@@ -14,7 +13,7 @@ function build() {
     {} as never,
     {} as never,
     idempotency,
-    new PurchaseOrderClosureAdapter(),
+    { onPlanClosed: async () => undefined },
     {} as never,
   );
   return { svc, withIdempotency };
@@ -22,7 +21,11 @@ function build() {
 
 const CASES: Array<{ method: keyof InboundService; endpoint: string; dto: Record<string, unknown> }> = [
   { method: 'simpleInbound', endpoint: 'inbound.simple', dto: { warehouseId: 'w', items: [], idempotencyKey: 'k' } },
-  { method: 'simpleInboundFullscan', endpoint: 'inbound.simple-fullscan', dto: { warehouseId: 'w', items: [], idempotencyKey: 'k' } },
+  {
+    method: 'simpleInboundFullscan',
+    endpoint: 'inbound.simple-fullscan',
+    dto: { warehouseId: 'w', items: [], idempotencyKey: 'k' },
+  },
   { method: 'individualInbound', endpoint: 'inbound.individual', dto: { idempotencyKey: 'k' } },
   { method: 'receiveFromPlan', endpoint: 'inbound.plans.receive', dto: { idempotencyKey: 'k' } },
   { method: 'putawayFromOrigin', endpoint: 'inbound.putaway', dto: { idempotencyKey: 'k' } },

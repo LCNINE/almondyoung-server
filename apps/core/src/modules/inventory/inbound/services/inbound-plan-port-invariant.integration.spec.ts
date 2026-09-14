@@ -6,7 +6,6 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { InboundService } from './inbound.service';
-import { PurchaseOrderClosureAdapter } from '../../procurement/services/purchase-order-closure.adapter';
 
 /**
  * 계획 생성 포트가 해외/국내 불변식을 스스로 지키는지 고정한다.
@@ -52,7 +51,7 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       {} as never,
       {} as never,
       {} as never,
-      new PurchaseOrderClosureAdapter(),
+      { onPlanClosed: async () => undefined },
       {} as never,
     );
   }

@@ -85,11 +85,16 @@ export class UpdatePurchaseOrderLineDto {
   @IsOptional()
   @IsNumber()
   unitPrice?: number;
+
+  @ApiPropertyOptional({ description: '도착예정일 (YYYY-MM-DD)' })
+  @IsOptional()
+  @Validate(IsCalendarDateConstraint)
+  expectedArrival?: string;
 }
 
 export class UpdatePurchaseOrderLinesDto {
   // 빈 배열을 허용하면 라인 전체가 지워지고, requested 라인이 하나도 안 남아
-  // refreshHeaderStatus 가 이를 confirmed 로 읽는다 — PUT 한 번으로 조용히
+  // headerDeriver 가 이를 confirmed 로 읽는다 — PUT 한 번으로 조용히
   // "확정"되는 셈이다. admin-web 은 화면에서 이미 최소 1개를 강제하지만 그건
   // 클라이언트 쪽 방어일 뿐이라 API 에도 최소 크기를 건다.
   @ApiProperty({ type: [UpdatePurchaseOrderLineDto], description: '발주 라인 목록' })

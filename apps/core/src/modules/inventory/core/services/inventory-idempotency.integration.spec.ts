@@ -16,7 +16,6 @@ import { SkuCatalogReader } from '../../sku-catalog/services/sku-catalog.reader'
 import { SkuCatalogManager } from '../../sku-catalog/services/sku-catalog.manager';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { InboundService } from '../../inbound/services/inbound.service';
-import { PurchaseOrderClosureAdapter } from '../../procurement/services/purchase-order-closure.adapter';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -53,7 +52,7 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
       location,
       eventStore,
       idempotency,
-      new PurchaseOrderClosureAdapter(),
+      { onPlanClosed: async () => undefined },
       new InboundReceiptKernel(command, location, eventStore),
     );
   });

@@ -12,7 +12,6 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
-import { PurchaseOrderClosureAdapter } from '../../../procurement/services/purchase-order-closure.adapter';
 import { InboundReceiptKernel } from '../../kernel/inbound-receipt.kernel';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
@@ -67,7 +66,7 @@ export function makeInboundService(database: Database): InboundService {
     location,
     eventStore,
     idempotency,
-    new PurchaseOrderClosureAdapter(),
+    { onPlanClosed: async () => undefined },
     new InboundReceiptKernel(command, location, eventStore),
   );
 }
