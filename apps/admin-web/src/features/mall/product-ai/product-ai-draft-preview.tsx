@@ -10,6 +10,7 @@ import type {
 import { productAiClient } from '@/lib/api/domains/products/product-ai.client';
 import { buildDraftEditPath } from '@/features/mall/my-drafts/lib/draft-edit-path';
 import { Button } from '@/components/ui/button';
+import { publicationNextStep } from '@packages/product-ai/publication';
 
 export function ProductAiDraftPreview({
   draft,
@@ -18,6 +19,10 @@ export function ProductAiDraftPreview({
   savedProduct,
   canSave,
   onSaved,
+  publicationRequested,
+  onContinue,
+  currentDraft,
+  canContinue,
 }: {
   draft: ProductAiDraft;
   sessionId: string;
@@ -25,14 +30,21 @@ export function ProductAiDraftPreview({
   savedProduct: ProductAiSavedProduct | null;
   canSave: boolean;
   onSaved: () => Promise<void>;
+  publicationRequested: boolean;
+  onContinue: (prompt: string) => void;
+  currentDraft: boolean;
+  canContinue: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<ProductAiSavedProduct | null>(null);
   const result =
     saved ?? (savedProduct?.messageId === messageId ? savedProduct : null);
+  const awaitingPublication =
+    publicationRequested && savedProduct?.status !== 'active';
+  const nextStep = awaitingPublication ? publicationNextStep(draft) : null;
   async function save() {
-    if (saving || !canSave) return;
+    if (saving || !canSave || awaitingPublication) return;
     setSaving(true);
     setError(null);
     try {
@@ -62,7 +74,11 @@ export function ProductAiDraftPreview({
     <div className="mt-4 overflow-hidden rounded-xl border border-indigo-100 bg-white text-slate-800">
       <div className="border-b border-indigo-50 bg-indigo-50/50 px-4 py-3">
         <p className="text-xs font-medium text-indigo-600">
-          {result?.status === 'active' ? '등록·발행 완료' : '상품 미리보기'}
+          {result?.status === 'active'
+            ? '등록·발행 완료'
+            : awaitingPublication && currentDraft
+              ? '발행 전 확인이 필요해요'
+              : '상품 미리보기'}
         </p>
         <p className="mt-1 font-semibold">{draft.name}</p>
         <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">
@@ -70,6 +86,29 @@ export function ProductAiDraftPreview({
         </p>
       </div>
       <div className="space-y-3 p-4">
+        {awaitingPublication && currentDraft && (
+          <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-medium">
+              등록 요청을 받았어요 · 아직 발행되지 않았어요
+            </p>
+            <p>
+              {nextStep?.question ?? '대화에서 다음 등록 단계를 확인해 주세요.'}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canContinue}
+              onClick={() =>
+                onContinue(
+                  nextStep?.prompt ??
+                    '현재 상품의 발행을 막는 항목과 다음 단계를 알려줘.'
+                )
+              }
+            >
+              {nextStep?.label ?? '다음 등록 단계 확인'}
+            </Button>
+          </div>
+        )}
         {(draft.thumbnailFileId || draft.additionalImageFileIds.length > 0) && (
           <div className="flex flex-wrap gap-3">
             {draft.thumbnailFileId && (
@@ -138,7 +177,9 @@ export function ProductAiDraftPreview({
                 )
                 .join(', ') || '미정'}
             </p>
-            <p className="mt-2">재고 연결</p>
+            <p className="mt-2">
+              재고 연결{draft.sales.inventory.length ? '' : ': 미정'}
+            </p>
             {draft.sales.inventory.map((item, index) => (
               <p key={index} className="mt-1 text-slate-600">
                 {item.optionValues.join(' / ') || '기본 상품'} →{' '}
@@ -213,7 +254,7 @@ export function ProductAiDraftPreview({
             </div>
           </dl>
         </details>
-        {draft.pendingItems.length > 0 && (
+        {!awaitingPublication && draft.pendingItems.length > 0 && (
           <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
             <p className="font-medium">추가로 확인할 내용</p>
             <ul className="mt-1 list-inside list-disc">
@@ -223,11 +264,13 @@ export function ProductAiDraftPreview({
             </ul>
           </div>
         )}
-        <p className="text-xs text-slate-500">
-          상품명·설명·이미지·SEO를 초안에 저장합니다. 입력한
-          가격·옵션·카테고리·재고 연결도 함께 반영합니다.
-        </p>
-        {result ? (
+        {awaitingPublication ? (
+          !currentDraft && (
+            <p className="text-xs text-slate-500">
+              이전 미리보기입니다. 최신 답변에서 등록 절차를 이어가 주세요.
+            </p>
+          )
+        ) : result ? (
           <Link
             className="inline-block text-sm font-medium text-indigo-600 underline"
             href={buildDraftEditPath(result.masterId, result.versionId)}
@@ -238,6 +281,10 @@ export function ProductAiDraftPreview({
           </Link>
         ) : (
           <>
+            <p className="text-xs text-slate-500">
+              상품명·설명·이미지·SEO와 입력한 가격·옵션·카테고리·재고 연결을
+              초안에 저장합니다.
+            </p>
             <p className="text-xs text-slate-500">
               저장하면 사용한 이미지를 상품용 공개 파일로 복사합니다. 상품은
               초안으로 저장됩니다. 발행하려면 채팅에 “등록해줘”라고 입력하세요.

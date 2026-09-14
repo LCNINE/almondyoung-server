@@ -15,7 +15,8 @@ import { ProductAiProvider } from '../providers/product-ai.provider';
 import { selectProductAiGuides } from '@packages/product-ai/guides';
 import type { ProductAiReplyOptions } from '../providers/product-ai.provider';
 import { draftImageIds, type ProductAiDraft } from '@packages/product-ai/draft';
-import { requestsPublication, hasPublicationIntent, salesProblems } from '@packages/product-ai/sales';
+import { requestsPublication, hasPublicationIntent } from '@packages/product-ai/sales';
+import { publicationProblems, publicationNextStep } from '@packages/product-ai/publication';
 import { ProductAiSalesService } from './product-ai-sales.service';
 import { ProductAiDraftService } from './product-ai-draft.service';
 
@@ -183,13 +184,7 @@ export class ProductAiReplyService {
       signal.throwIfAborted();
       // Missing fields are a normal conversation step, not an execution failure.
       const prepared = productDraft as ProductAiDraft | null;
-      const problems = prepared
-        ? [
-            ...salesProblems(prepared.sales),
-            ...(!prepared.thumbnailFileId ? ['대표 이미지를 선택해 주세요.'] : []),
-            ...prepared.pendingItems,
-          ]
-        : [];
+      const problems = prepared ? publicationProblems(prepared) : [];
       if (prepared?.sales && publishRequested) {
         const unreviewedCategory = prepared.sales.categories.some(
           (category) =>
@@ -211,7 +206,7 @@ export class ProductAiReplyService {
           problems.unshift('아래 새 카테고리·재고 품목 생성 계획을 확인한 뒤 “등록해줘”라고 말씀해 주세요.');
       }
       if (publishRequested && prepared && problems.length) {
-        content = `등록 전에 확인할 내용이 있어요. ${problems[0]}`;
+        content = `등록 요청은 받았어요. 아직 발행되지 않았습니다. ${publicationNextStep(prepared, problems)!.question}`;
       }
       return await this.db.run(async (tx) => {
         const [session] = await tx

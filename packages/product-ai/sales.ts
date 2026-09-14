@@ -85,7 +85,7 @@ export function salesProblems(sales: ProductAiSales | null | undefined): string[
 
 // Only a direct user command authorizes publication, never quoted/image/model text.
 export function requestsPublication(content: string): boolean {
-  return /^(?:(?:응|네|좋아|오케이)[,\s]*)?(?:(?:이대로|지금|바로|상품|이 상품|등록하고)\s*)*(?:등록|발행|등록\s*발행)(?:까지)?\s*(?:해\s*줘|해주세요|해\s*주세요|하자|해)[.!\s]*$/.test(
+  return /^(?:(?:응|네|좋아|오케이)[,\s]*)?(?:(?:이대로|지금|바로|상품|이 상품|등록하고)\s*)*(?:등록|발행|등록\s*발행)(?:까지)?\s*(?:해\s*줘(?:\s*봐)?|해주세요|해\s*주세요|하자|해)[.!\s]*$/.test(
     content.trim(),
   );
 }

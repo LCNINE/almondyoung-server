@@ -229,8 +229,36 @@ describeWithDb('상품등록 대화 PostgreSQL 저장/복구', () => {
     await replies.respond(owner, session.id, message.id);
     expect(drafts.save).not.toHaveBeenCalled();
     expect((await service.messages(owner, session.id, { after: 0, limit: 100 })).items.at(-1)?.content).toContain(
-      '등록 전에',
+      '등록 요청은 받았어요. 아직 발행되지 않았습니다.',
     );
+  });
+  it('등록 요청을 유지하며 카테고리 선택 다음에는 재고 연결을 안내한다', async () => {
+    const session = await createSession();
+    const first = await service.appendUserMessage(owner, session.id, input('등록해줘봐'));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      options.onDraft({
+        ...draft,
+        sales: { ...completeSales, categories: [], primaryCategoryIndex: null, inventory: [] },
+        pendingItems: ['카테고리', '재고'],
+      });
+      return '준비';
+    });
+    await replies.respond(owner, session.id, first.message.id);
+    const firstAnswer = (await service.messages(owner, session.id, { after: 0, limit: 100 })).items.at(-1)!;
+    expect(firstAnswer.content).toContain('어떤 카테고리로 등록할까요?');
+    expect(firstAnswer.productDraft?.sales?.supplyPrice).toBe(1000);
+
+    const second = await service.appendUserMessage(owner, session.id, input('스티커를 대표카테고리로 할게', 2));
+    provider.reply.mockImplementationOnce(async (_history, options) => {
+      expect(JSON.parse(options.draftContext).publishRequested).toBe(true);
+      options.onDraft({ ...draft, sales: { ...completeSales, inventory: [] }, pendingItems: ['재고'] });
+      return '준비';
+    });
+    await replies.respond(owner, session.id, second.message.id);
+    const secondAnswer = (await service.messages(owner, session.id, { after: 0, limit: 100 })).items.at(-1)!;
+    expect(secondAnswer.content).toContain('어떤 재고 품목에 연결할까요?');
+    expect(secondAnswer.content).not.toContain('초안');
+    expect(drafts.save).not.toHaveBeenCalled();
   });
   it('모델이 대화 밖의 이미지 ID를 만들면 미리보기를 저장하지 않는다', async () => {
     const session = await createSession();

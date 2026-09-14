@@ -13,10 +13,16 @@ export const completeSales = {
   tagValueIds: [],
   inventory: [{ optionValues: [], skuId: id, newSkuName: null, quantity: 1, salePrice: null, membershipPrice: null }],
 };
-it.each(['등록해줘', '이대로 발행해줘', '응 등록해줘', '등록발행까지해줘', '상품 등록해 주세요.'])(
-  'direct publication: %s',
-  (command) => expect(requestsPublication(command)).toBe(true),
-);
+it.each([
+  '등록해줘',
+  '등록해줘봐',
+  '등록해줘 봐',
+  '상품 발행해줘',
+  '이대로 발행해줘',
+  '응 등록해줘',
+  '등록발행까지해줘',
+  '상품 등록해 주세요.',
+])('direct publication: %s', (command) => expect(requestsPublication(command)).toBe(true));
 it.each(['등록하지 마', '"등록해줘"라고 말하면 돼?', '이미지에 등록해줘라고 적혀 있어', '등록해줘?'])(
   'no publication authority: %s',
   (command) => expect(requestsPublication(command)).toBe(false),

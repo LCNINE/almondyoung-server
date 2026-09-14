@@ -32,6 +32,7 @@ import styles from './product-ai-chat.module.css';
 import { useChatScroll } from './use-chat-scroll';
 import { useChatImages } from './use-chat-images';
 import { ProductAiDraftPreview } from './product-ai-draft-preview';
+import { hasPublicationIntent } from '@packages/product-ai/sales';
 
 const starterQuestions = [
   {
@@ -179,6 +180,10 @@ export function ProductAiChatContent({
   const session = conversation.data?.session;
   const status = session?.replyStatus;
   const messages = conversation.data?.messages ?? [];
+  const publicationRequested = hasPublicationIntent(messages);
+  const latestDraftId = messages.findLast(
+    (message) => message.productDraft
+  )?.id;
   const lastUserIndex = messages.findLastIndex(
     (message) => message.role === 'user'
   );
@@ -370,6 +375,15 @@ export function ProductAiChatContent({
                 sessionId={sessionId}
                 messageId={message.id}
                 savedProduct={session?.savedProduct ?? null}
+                publicationRequested={publicationRequested}
+                currentDraft={message.id === latestDraftId}
+                canContinue={
+                  !busy &&
+                  !stopping &&
+                  !awaitingReply &&
+                  !attachments.hasUnreadyImages
+                }
+                onContinue={(prompt) => void send(prompt)}
                 canSave={
                   !busy &&
                   !awaitingReply &&
