@@ -64,6 +64,17 @@ export function fileContextMatchesSeed(row: FileContextSeedRow | undefined, seed
 
 export const FILE_CONTEXTS: FileContextSeed[] = [
   {
+    id: 'product-ai-image',
+    name: 'AI Chat Image',
+    description: 'AI 대화 비공개 첨부 이미지',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 5242880,
+    pathPrefix: 'ai-chat/images',
+    isActive: true,
+  },
+  {
     id: 'banner-image',
     name: 'Banner Image',
     description: '배너 이미지',
