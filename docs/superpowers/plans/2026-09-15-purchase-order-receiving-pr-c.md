@@ -145,9 +145,9 @@ cd native/warehouse-app && npm test -- --run
 
 계약 변경에 대한 수령/취소/잔량종결/입고대기/stock VIEW/동기화 SQL의 실제 DB 회귀 테스트를 유지한다. 이번 PR은 화면 변경이 없으므로 기존 PR-B 화면 스모크를 재실행했다는 주장은 하지 않으며 DB 변경 후 업무 동작은 통합 테스트 증거로 보고한다. root type-check와 DB 없는 전체 Jest, admin 검사, 창고 앱, Core build는 모두 exit 0이어야 한다. 별도 실 DB 통합은 스펙 §12가 명시한 develop 대비 새 실패 0 기준을 적용하고 base와 실패 테스트 이름을 대조한다. 최종 검색에서 runtime 참조는 0건이어야 한다. 역사 SQL/test/docs와 설명 주석은 분류하여 남긴다.
 
-- [ ] **Step 4: 문서 검증 후 커밋.** `docs(inventory): PR-C 적용 전 검사와 배포 절차를 기록한다`. 각 명령의 실제 결과와 미실행 항목을 기록한다. task review 및 whole-branch review를 Sol로 수행하고 중요 지적을 수정·재검토한다.
+- [x] **Step 4: 문서 검증 후 커밋.** `docs(inventory): PR-C 적용 전 검사와 배포 절차를 기록한다`. 각 명령의 실제 결과와 미실행 항목을 기록한다. task review 및 whole-branch review를 Sol로 수행하고 중요 지적을 수정·재검토한다.
 
-- [ ] **Step 5: 컨트롤러가 검증된 브랜치를 push하고 develop 대상 PR 생성.** PR 본문에 제거 대상, 선행 라이브 완료 기록, 테스트 결과/base 비교, destructive migration, **deploy → migrate**, **이번 세션 live 미적용**, 이후 재검사/백업 조건을 적는다. #871에 관련 링크를 걸되 이 세션에서 merge하거나 배포하지 않는다.
+- [x] **Step 5: 컨트롤러가 검증된 브랜치를 push하고 develop 대상 PR 생성.** PR 본문에 제거 대상, 선행 라이브 완료 기록, 테스트 결과/base 비교, destructive migration, **deploy → migrate**, **이번 세션 live 미적용**, 이후 재검사/백업 조건을 적는다. #871에 관련 링크를 걸되 이 세션에서 merge하거나 배포하지 않는다.
 
 ## 계획 자체 검토
 
@@ -189,5 +189,8 @@ cd native/warehouse-app && npm test -- --run
   0행이고 5개 제거 대상의 dependency inventory가 예상한 두 외부 FK와 삭제 객체 자체 부속만 출력함을 확인했다.
   읽기 전용 `pr_c_head_20260915` postcheck는 두 테이블·enum·두 컬럼 부재, `stock_summary_view` 존재,
   `purchase_order_lines` 참조, 옛 계획 참조 부재를 확인했다. 작업 DB는 검증 후 삭제했다.
-- 이번 세션에는 라이브 DB 조회·migration·deploy, 브라우저/창고 앱 수동 smoke, push 또는 PR 생성이 없다. Task 2
-  Step 4의 컨트롤러 review와 Step 5는 아직 완료되지 않았다.
+- 이번 세션에는 라이브 DB 조회·migration·deploy, 브라우저/창고 앱 수동 smoke를 실행하지 않았다.
+- Sol의 task review와 whole-branch review를 완료했다. 최종 문서 지적 두 건은 `177f94a2a`에서 수정했고 scoped
+  re-review에서 모두 해결됐으며 남은 지적은 없다.
+- 브랜치를 push하고 develop 대상 [PR #873](https://github.com/LCNINE/almondyoung-server/pull/873)을 생성했다.
+  라이브 배포·migration은 머지 후 별도 지시로 수행한다.
