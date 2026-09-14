@@ -42,12 +42,27 @@ export class SmsInternalController {
       metadata: { groupingKey: PHONE_VERIFICATION_GROUPING_KEY },
     });
 
+    if (result.success) this.rememberIssuedCode(dto);
+
     return {
       success: result.success,
       messageId: result.messageId,
       error: result.error,
       provider: provider.getName(),
     };
+  }
+
+  /**
+   * 발송에 **성공했을 때만** 최신 코드로 기록한다. 늦게 도착한 SMS 실패 웹훅이 이미 대체된 코드를
+   * 알림톡으로 다시 보내는 것을 막는 기준이다.
+   *
+   * 실패한 발송을 기록하면 안 된다 — user-service 는 발송 실패 시 트랜잭션을 롤백해 새 코드를
+   * 없애므로, 그때 유효한 건 여전히 직전 코드다. 실패한 코드를 최신으로 적어두면 그 직전 코드의
+   * 정당한 구제까지 막힌다.
+   */
+  private rememberIssuedCode(dto: SendSmsDto): void {
+    const code = extractVerificationCode(dto.content);
+    if (code) this.verificationFallback.rememberIssuedCode(dto.to, code);
   }
 
   /**
@@ -68,6 +83,8 @@ export class SmsInternalController {
     }
 
     const result = await this.verificationFallback.sendByAlimtalk(dto.to, code);
+
+    if (result.success) this.verificationFallback.rememberIssuedCode(dto.to, code);
 
     return {
       success: result.success,

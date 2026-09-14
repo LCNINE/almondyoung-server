@@ -58,8 +58,14 @@ export function ProfileStep({
     setSendMessage(null)
     const fd = new FormData(form)
     if (channel) fd.set("channel", channel)
-    const res = await sendRecoveryCodeAction(fd)
-    setSending(null)
+
+    let res
+    try {
+      res = await sendRecoveryCodeAction(fd)
+    } finally {
+      setSending(null)
+    }
+
     if (res.ok) {
       // 새 코드를 발급받았으므로 입력칸에 남은 옛 코드를 지운다. 그대로 두면 고객이 방금 받은
       // 코드 대신 만료된 코드를 제출하게 된다.
@@ -201,11 +207,13 @@ export function ProfileStep({
       )}
       {/*
         결과 문구는 조건부로 붙였다 떼면 발송할 때마다 아래 내용이 밀렸다 당겨져 화면이 흔들린다.
-        자리를 항상 차지하게 두고 내용만 바꾼다.
+        자리를 항상 차지하게 두고 내용만 바꾼다. 높이는 두 줄분 — 실패 문구는 한 줄에 안 들어간다.
+        leading-5 는 FieldDescription 기본 leading-normal(21px)이 min-h-5(20px)와 1px 어긋나
+        문구가 바뀔 때마다 화면이 미세하게 튀는 것을 막는다.
       */}
       <FieldDescription
         className={cn(
-          "min-h-5",
+          "min-h-10 leading-5",
           sendError ? "text-destructive" : "text-[#079171]"
         )}
         role={sendError ? "alert" : undefined}

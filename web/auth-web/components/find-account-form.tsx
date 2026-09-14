@@ -321,11 +321,9 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
             minLength={6}
             maxLength={6}
           />
-          {errorField === "code" && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
+          <p className="min-h-5 text-sm text-destructive" role="alert">
+            {errorField === "code" ? error : ""}
+          </p>
           <div className="flex items-center justify-between gap-3">
             <FieldDescription>문자가 오지 않나요?</FieldDescription>
             <button
@@ -343,7 +341,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
 
       <p
         className={cn(
-          "min-h-5 text-sm",
+          "min-h-10 text-sm",
           error && !errorField ? "text-destructive" : "text-muted-foreground"
         )}
         role={error && !errorField ? "alert" : undefined}

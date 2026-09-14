@@ -16,6 +16,9 @@ export const PHONE_VERIFICATION_GROUPING_KEY = 'phone-verification';
 /** NHN 수신 결과 코드. `1000` 만 단말 도달이고 나머지(스팸 3012·착신거절 3006 등)는 전부 미도달이다. */
 const RESULT_CODE_SUCCESS = '1000';
 
+/** 인증번호 유효시간(3분)과 맞춘다. 이보다 오래된 기억은 비교 기준이 되지 못하므로 버린다. */
+const ISSUED_CODE_TTL_MS = 3 * 60 * 1000;
+
 /**
  * 본문에서 인증번호를 꺼낸다.
  *
@@ -27,6 +30,12 @@ const VERIFICATION_CODE_PATTERN = /인증번호:\s*(\d{4,8})/;
 /** 발송 본문에서 인증번호만 꺼낸다. 포맷이 어긋나면 undefined — 호출자가 발송을 포기해야 한다. */
 export function extractVerificationCode(body: string): string | undefined {
   return body.match(VERIFICATION_CODE_PATTERN)?.[1];
+}
+
+/** 발송 요청의 `+8210…` 과 결과 웹훅의 `010…` 이 같은 키가 되도록 맞춘다. */
+function normalizeRecipientNo(recipientNo: string): string {
+  const digits = recipientNo.replace(/[^\d]/g, '');
+  return digits.startsWith('82') ? '0' + digits.substring(2) : digits;
 }
 
 interface SmsResultHook {
@@ -52,11 +61,36 @@ interface SmsResultHook {
 export class VerificationFallbackService {
   private readonly logger: StructuredLogger;
 
+  /**
+   * 번호별 마지막 발급 코드. 웹훅이 5~16초 늦게 오는 사이 고객이 재발송이나 카카오톡을 누르면
+   * 옛 코드는 이미 만료돼 있으므로, 그걸로 구제하지 않기 위해 비교 기준을 들고 있는다.
+   *
+   * ponytail: 프로세스 메모리. notification 은 태스크 1개 고정이라 충분하고, 기억이 없으면
+   * 예전처럼 그냥 구제한다. 스케일아웃하면 Redis 로 옮긴다.
+   */
+  private readonly issuedCodes = new Map<string, { code: string; at: number }>();
+
   constructor(
     private readonly providerManager: ProviderManagerService,
     private readonly configService: ConfigService,
   ) {
     this.logger = new StructuredLogger(new Logger(VerificationFallbackService.name));
+  }
+
+  /** 인증문자를 내보내는 경로가 전부 불러야 한다. 안 부르면 그 번호는 비교 기준이 없다. */
+  rememberIssuedCode(recipientNo: string, code: string): void {
+    const now = Date.now();
+    for (const [key, entry] of this.issuedCodes) {
+      if (now - entry.at > ISSUED_CODE_TTL_MS) this.issuedCodes.delete(key);
+    }
+    this.issuedCodes.set(normalizeRecipientNo(recipientNo), { code, at: now });
+  }
+
+  /** 모르면 undefined — 기억이 없는 번호는 예전처럼 그냥 구제한다. */
+  private latestIssuedCode(recipientNo: string): string | undefined {
+    const entry = this.issuedCodes.get(normalizeRecipientNo(recipientNo));
+    if (!entry) return undefined;
+    return Date.now() - entry.at > ISSUED_CODE_TTL_MS ? undefined : entry.code;
   }
 
   async handleDeliveryResults(hooks: SmsResultHook[]): Promise<void> {
@@ -130,6 +164,16 @@ export class VerificationFallbackService {
     const code = body ? extractVerificationCode(body) : undefined;
     if (!code) {
       this.logger.warn('Could not extract a verification code from the sent body', {
+        requestId,
+        recipientNo,
+        resultCode,
+      });
+      return;
+    }
+
+    const latest = this.latestIssuedCode(recipientNo);
+    if (latest !== undefined && latest !== code) {
+      this.logger.log('Skipped KakaoTalk fallback — the code has already been superseded', {
         requestId,
         recipientNo,
         resultCode,

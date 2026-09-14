@@ -21,7 +21,7 @@ export class SmsSenderService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  private getClient(): AxiosInstance {
+  private getClient(channel?: 'SMS' | 'KAKAO'): AxiosInstance {
     if (this.client) return this.client;
 
     const baseURL = this.configService.get<string>('NOTIFICATION_SERVICE_URL');
@@ -30,7 +30,7 @@ export class SmsSenderService {
     if (!baseURL || !internalKey) {
       this.logger.error('NOTIFICATION_SERVICE_URL / NOTIFICATION_INTERNAL_KEY 가 설정되지 않았다');
       throw new PhoneVerificationException({
-        message: '인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요',
+        message: this.failureMessage(channel),
         errorCode: 'SMS_SEND_NOT_CONFIGURED',
         httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
       });
@@ -52,7 +52,7 @@ export class SmsSenderService {
     let response: { success: boolean; error?: string; provider?: string };
 
     try {
-      const { data } = await this.getClient().post<{ success: boolean; error?: string; provider?: string }>(
+      const { data } = await this.getClient(channel).post<{ success: boolean; error?: string; provider?: string }>(
         '/internal/sms/send',
         { to, content, ...(channel ? { channel } : {}) },
       );

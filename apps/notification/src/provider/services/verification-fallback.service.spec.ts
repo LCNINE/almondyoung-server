@@ -84,6 +84,28 @@ describe('VerificationFallbackService', () => {
     expect(kakaoSend).not.toHaveBeenCalled();
   });
 
+  /**
+   * 결과 웹훅은 접수 5~16초 뒤에 온다. 그 사이 고객이 재발송이나 카카오톡으로 받기를 누르면
+   * 옛 코드는 이미 만료돼 있으므로, 그걸 알림톡으로 보내면 고객이 죽은 번호를 입력하게 된다.
+   */
+  it('이미 새 코드가 발급된 번호는 옛 코드로 구제하지 않는다', async () => {
+    build();
+    service.rememberIssuedCode('01012345678', '111111');
+
+    await service.handleDeliveryResults([hook()]);
+
+    expect(kakaoSend).not.toHaveBeenCalled();
+  });
+
+  it('기억된 코드와 같으면 그대로 구제한다', async () => {
+    build();
+    service.rememberIssuedCode('+821012345678', '483920');
+
+    await service.handleDeliveryResults([hook()]);
+
+    expect(kakaoSend).toHaveBeenCalledTimes(1);
+  });
+
   it('템플릿 코드가 설정되지 않았으면 조회조차 하지 않는다', async () => {
     build(null);
 
