@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { WorkArea } from '../../core/operations/WorkBoundary';
+import { useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   localStoragePrefs,
@@ -9,6 +10,8 @@ import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { NumberPad } from '../../core/design/NumberPad';
+import { ApiError } from '../../core/data/httpClient';
+import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { clearLastBox } from './lastBox';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from './mutations';
@@ -28,7 +31,7 @@ function initialProgress(
   }));
 }
 
-export function SimpleOutboundScreen({
+function SimpleOutboundScreenContent({
   shipmentId,
   shipment,
   prefs = localStoragePrefs,
@@ -48,32 +51,46 @@ export function SimpleOutboundScreen({
   const scan = useSimpleOutboundScan();
   const force = useForceSimpleOutbound();
 
-  // idempotency-key 는 스캔 1회당 하나다. 재시도(httpClient 의 409 1회 재시도)가
-  // 이중 계상되지 않게 같은 키를 그대로 쓴다.
-  const submit = (barcode: string, quantity: number) => {
-    if (shipped) return;
-    setNotice(null);
-    scan.mutate(
-      { shipmentId, barcode, quantity, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (state) => {
-          setProgress(state.lines);
-          if (state.status === 'shipped') {
-            setShipped(true);
-            clearLastBox(prefs);
-          }
-        },
-        onError: (error) => setNotice(errorMessage(error, 'outbound')),
+  const shippedRef = useRef(false);
+  const quantityRef = useRef(quantity);
+  quantityRef.current = quantity;
+  const scanQueue = useWorkScanQueue<{ barcode: string; quantity: number }>(
+    async (input, id) => {
+      if (shippedRef.current) {
+        setNotice('출고가 완료된 박스예요. 다음 송장을 확인해 주세요.');
+        return;
       }
-    );
-  };
-
-  // 수량은 스캔 1회에만 적용된다 — 다음 상품에 옛 값이 새어들지 않도록 매 스캔 후 1로 되돌린다.
+      try {
+        const state = await scan.mutateAsync({
+          shipmentId,
+          ...input,
+          idempotencyKey: id,
+        });
+        setNotice(null);
+        setProgress(state.lines);
+        if (state.status === 'shipped') {
+          shippedRef.current = true;
+          setShipped(true);
+          clearLastBox(prefs);
+        }
+      } catch (error) {
+        setNotice(errorMessage(error, 'outbound'));
+        if (!(error instanceof ApiError && error.outcome === 'rejected'))
+          throw error;
+      }
+    },
+    `outbound:${shipmentId}`
+  );
   useScanner((event) => {
-    const scanQuantity = quantity < 1 ? 1 : quantity;
+    if (forceOpen || force.isPending) {
+      setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
+      return;
+    }
+    const scanQuantity = Math.max(1, quantityRef.current);
+    quantityRef.current = 1;
     setQuantity(1);
     setPadOpen(false);
-    submit(event.code, scanQuantity);
+    scanQueue.enqueue({ barcode: event.code, quantity: scanQuantity });
   });
 
   if (!shipment) {
@@ -116,6 +133,11 @@ export function SimpleOutboundScreen({
       </ul>
 
       {notice !== null && <p role="alert">{notice}</p>}
+      {scanQueue.error() ? (
+        <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
+          처리 내역 확인
+        </Button>
+      ) : null}
 
       {shipped ? (
         <section className="space-y-2">
@@ -138,6 +160,7 @@ export function SimpleOutboundScreen({
             <Button
               type="button"
               className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              disabled={scanQueue.size() > 0}
               onClick={() => {
                 setQuantity(0);
                 setPadOpen(true);
@@ -150,7 +173,7 @@ export function SimpleOutboundScreen({
             type="button"
             className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
             onClick={() => setForceOpen(true)}
-            disabled={force.isPending}
+            disabled={force.isPending || scanQueue.size() > 0}
           >
             강제출고
           </Button>
@@ -185,5 +208,15 @@ export function SimpleOutboundScreen({
         }}
       />
     </div>
+  );
+}
+
+export function SimpleOutboundScreen(
+  props: Parameters<typeof SimpleOutboundScreenContent>[0]
+) {
+  return (
+    <WorkArea kind="outbound">
+      <SimpleOutboundScreenContent {...props} />
+    </WorkArea>
   );
 }

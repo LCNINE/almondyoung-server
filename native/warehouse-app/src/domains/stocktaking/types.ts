@@ -1,7 +1,9 @@
-export type StocktakingStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
+export type StocktakingStatus =
+  'draft' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface StocktakingSession {
   id: string;
+  sessionRevision?: number;
   warehouseId: string;
   sessionName: string;
   status: StocktakingStatus;
@@ -12,6 +14,8 @@ export interface StocktakingSession {
 }
 
 export interface StocktakingLine {
+  lineRevision?: number;
+  countBaselineVersion?: number | null;
   lineId: string;
   skuId: string;
   skuCode: string;
@@ -34,6 +38,8 @@ export interface StocktakingSessionDetail extends StocktakingSession {
 
 /** POST /stocktaking/scan-location 의 expectedItems[] (Task 3 에서 확장됨). */
 export interface ScanLocationItem {
+  lineRevision?: number;
+  countBaselineVersion?: number | null;
   lineId: string;
   skuId: string;
   skuName: string;
@@ -45,6 +51,7 @@ export interface ScanLocationItem {
 }
 
 export interface ScanLocationResult {
+  sessionRevision?: number;
   locationId: string;
   locationCode: string;
   expectedItems: ScanLocationItem[];
@@ -52,6 +59,8 @@ export interface ScanLocationResult {
 
 /** POST /stocktaking/scan-product — countedQuantity 는 갱신 후 절대값. */
 export interface ScanProductResult {
+  lineRevision?: number;
+  countBaselineVersion?: number | null;
   lineId: string;
   skuId: string;
   countedQuantity: number;
@@ -81,6 +90,8 @@ export interface AdjustmentPreview {
 }
 
 export interface GenerateAdjustmentsResult {
+  sessionRevision: number;
+  previewToken: string;
   adjustmentsCreated: number;
   eventsPosted: number;
   message: string;

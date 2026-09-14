@@ -49,7 +49,9 @@ function setup() {
 }
 
 function invalidatedKeys(invalidate: ReturnType<typeof vi.spyOn>): string {
-  return invalidate.mock.calls.map((c: unknown[]) => JSON.stringify(c[0])).join('|');
+  return invalidate.mock.calls
+    .map((c: unknown[]) => JSON.stringify(c[0]))
+    .join('|');
 }
 
 describe('stocktaking mutations', () => {
@@ -57,7 +59,10 @@ describe('stocktaking mutations', () => {
     const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useCreateSession(), { wrapper });
 
-    await result.current.mutateAsync({ warehouseId: 'w-1', sessionName: '2026-07-23 실사' });
+    await result.current.mutateAsync({
+      warehouseId: 'w-1',
+      sessionName: '2026-07-23 실사',
+    });
 
     expect(calls[0]).toMatchObject({
       path: '/stocktaking/sessions',
@@ -71,21 +76,30 @@ describe('stocktaking mutations', () => {
     const { calls, wrapper } = setup();
     const { result } = renderHook(() => useStartSession(), { wrapper });
     await result.current.mutateAsync('s-1');
-    expect(calls[0]).toMatchObject({ path: '/stocktaking/sessions/s-1/start', method: 'POST' });
+    expect(calls[0]).toMatchObject({
+      path: '/stocktaking/sessions/s-1/start',
+      method: 'POST',
+    });
   });
 
   it('세션을 취소한다', async () => {
     const { calls, wrapper } = setup();
     const { result } = renderHook(() => useCancelSession(), { wrapper });
     await result.current.mutateAsync('s-1');
-    expect(calls[0]).toMatchObject({ path: '/stocktaking/sessions/s-1/cancel', method: 'POST' });
+    expect(calls[0]).toMatchObject({
+      path: '/stocktaking/sessions/s-1/cancel',
+      method: 'POST',
+    });
   });
 
   it('로케이션을 스캔한다', async () => {
     const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useScanLocation(), { wrapper });
 
-    await result.current.mutateAsync({ sessionId: 's-1', locationBarcode: 'A-01-02' });
+    await result.current.mutateAsync({
+      sessionId: 's-1',
+      locationBarcode: 'A-01-02',
+    });
 
     expect(calls[0]).toMatchObject({
       path: '/stocktaking/scan-location',
@@ -112,7 +126,12 @@ describe('stocktaking mutations', () => {
     expect(calls[0]).toMatchObject({
       path: '/stocktaking/scan-product',
       method: 'POST',
-      body: { sessionId: 's-1', locationId: 'l-1', productBarcode: '880', quantity: 3 },
+      body: {
+        sessionId: 's-1',
+        locationId: 'l-1',
+        productBarcode: '880',
+        quantity: 3,
+      },
     });
     // 카운트가 바뀌었으니 캐시된 차이 목록은 더 이상 신뢰할 수 없다 — 무효화해야
     // VarianceReviewScreen 이 재조회 전까지 완료 게이트를 열지 않는다(FIX 1).
@@ -128,7 +147,9 @@ describe('stocktaking mutations', () => {
         throw new Error('응답 유실 → 500');
       }) as unknown as ApiClient['request'],
     };
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
     const wrapper = ({ children }: { children: ReactNode }) => (
       <SessionProvider session={session}>
@@ -140,7 +161,12 @@ describe('stocktaking mutations', () => {
     const { result } = renderHook(() => useScanProduct(), { wrapper });
 
     await expect(
-      result.current.mutateAsync({ sessionId: 's-1', locationId: 'l-1', productBarcode: '880', quantity: 1 })
+      result.current.mutateAsync({
+        sessionId: 's-1',
+        locationId: 'l-1',
+        productBarcode: '880',
+        quantity: 1,
+      })
     ).rejects.toThrow();
 
     expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
@@ -151,7 +177,12 @@ describe('stocktaking mutations', () => {
     const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useUpdateCount(), { wrapper });
 
-    await result.current.mutateAsync({ sessionId: 's-1', lineId: 'line-1', countedQuantity: 12 });
+    await result.current.mutateAsync({
+      sessionId: 's-1',
+      lineId: 'line-1',
+      countedQuantity: 12,
+      expectedRevision: 1,
+    });
 
     expect(calls[0]).toMatchObject({
       path: '/stocktaking/lines/line-1/count',
@@ -178,9 +209,15 @@ describe('stocktaking mutations', () => {
     const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useCompleteSession(), { wrapper });
 
-    await result.current.mutateAsync('s-1');
+    await result.current.mutateAsync({
+      sessionId: 's-1',
+      previewToken: 'token',
+    });
 
-    expect(calls[0]).toMatchObject({ path: '/stocktaking/sessions/s-1/complete', method: 'POST' });
+    expect(calls[0]).toMatchObject({
+      path: '/stocktaking/sessions/s-1/complete',
+      method: 'POST',
+    });
     const keys = invalidatedKeys(invalidate);
     expect(keys).toContain('stocktaking-variances');
     expect(keys).toContain('sku-warehouse-stock');

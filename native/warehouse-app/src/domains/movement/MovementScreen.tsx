@@ -1,3 +1,4 @@
+import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -20,14 +21,16 @@ interface LocationRef {
   code: string;
 }
 
-export function MovementScreen() {
+function MovementScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
 
   // (a) 출발지
   const [source, setSource] = useState<LocationRef | null>(null);
   const [sourceTerm, setSourceTerm] = useState('');
   // (c) 품목 이동 시트
-  const [activeItem, setActiveItem] = useState<LocationContentItem | null>(null);
+  const [activeItem, setActiveItem] = useState<LocationContentItem | null>(
+    null
+  );
   const [dest, setDest] = useState<LocationRef | null>(null);
   const [destTerm, setDestTerm] = useState('');
   const [qty, setQty] = useState(0);
@@ -35,11 +38,16 @@ export function MovementScreen() {
   const [otherReason, setOtherReason] = useState('');
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() =>
+    crypto.randomUUID()
+  );
 
   const contents = useLocationContents(source?.id);
   const sourceSearch = useLocationSearch(warehouseId, source ? '' : sourceTerm);
-  const destSearch = useLocationSearch(warehouseId, !activeItem || dest ? '' : destTerm);
+  const destSearch = useLocationSearch(
+    warehouseId,
+    !activeItem || dest ? '' : destTerm
+  );
   const move = useMoveStock();
 
   // 스캔은 모드에 따라 라우팅된다: 시트가 열려 있고 대상지 미정이면 대상지로,
@@ -58,7 +66,9 @@ export function MovementScreen() {
     if (source) return;
     const term = sourceTerm.trim();
     if (!term) return;
-    const exact = (sourceSearch.data?.items ?? []).filter((i) => i.code === term);
+    const exact = (sourceSearch.data?.items ?? []).filter(
+      (i) => i.code === term
+    );
     if (exact.length === 1) {
       setSource({ id: exact[0].id, code: exact[0].code });
       setSourceTerm('');
@@ -85,9 +95,19 @@ export function MovementScreen() {
   const keyPayloadRef = useRef({ skuId: '', from: '', to: '', qty: 0 });
   useEffect(() => {
     if (!activeItem || !source) return;
-    const next = { skuId: activeItem.skuId, from: source.id, to: dest?.id ?? '', qty };
+    const next = {
+      skuId: activeItem.skuId,
+      from: source.id,
+      to: dest?.id ?? '',
+      qty,
+    };
     const prev = keyPayloadRef.current;
-    if (prev.skuId === next.skuId && prev.from === next.from && prev.to === next.to && prev.qty === next.qty) {
+    if (
+      prev.skuId === next.skuId &&
+      prev.from === next.from &&
+      prev.to === next.to &&
+      prev.qty === next.qty
+    ) {
       return;
     }
     keyPayloadRef.current = next;
@@ -102,7 +122,12 @@ export function MovementScreen() {
     setQty(item.quantity);
     setReason(null);
     setOtherReason('');
-    keyPayloadRef.current = { skuId: item.skuId, from: source.id, to: '', qty: item.quantity };
+    keyPayloadRef.current = {
+      skuId: item.skuId,
+      from: source.id,
+      to: '',
+      qty: item.quantity,
+    };
     setIdempotencyKey(crypto.randomUUID());
   }
 
@@ -118,7 +143,8 @@ export function MovementScreen() {
   const movable = (contents.data?.items ?? []).filter(
     (i) => i.stockState === 'ON_HAND' && i.quantity > 0
   );
-  const effectiveReason = reason === OTHER ? otherReason.trim() : reason ?? '';
+  const effectiveReason =
+    reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
     Boolean(activeItem) &&
     Boolean(source) &&
@@ -183,7 +209,9 @@ export function MovementScreen() {
         <>
           <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
             <span className="text-xs text-gray-500">출발</span>
-            <span className="flex-1 font-medium text-gray-800">{source.code}</span>
+            <span className="flex-1 font-medium text-gray-800">
+              {source.code}
+            </span>
             <button
               type="button"
               className="text-xs text-blue-700 underline"
@@ -205,7 +233,9 @@ export function MovementScreen() {
             ) : contents.isLoading ? (
               <p className="text-sm text-gray-500">불러오는 중…</p>
             ) : movable.length === 0 ? (
-              <p className="text-sm text-gray-500">이 로케이션에는 이동할 재고가 없어요.</p>
+              <p className="text-sm text-gray-500">
+                이 로케이션에는 이동할 재고가 없어요.
+              </p>
             ) : (
               <ul className="space-y-2">
                 {movable.map((item) => (
@@ -214,11 +244,20 @@ export function MovementScreen() {
                     className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
                   >
                     <span className="flex-1">
-                      <span className="block font-medium text-gray-800">{item.skuName}</span>
-                      <span className="block font-mono text-xs text-gray-500">{item.skuCode}</span>
+                      <span className="block font-medium text-gray-800">
+                        {item.skuName}
+                      </span>
+                      <span className="block font-mono text-xs text-gray-500">
+                        {item.skuCode}
+                      </span>
                     </span>
-                    <span className="text-lg font-semibold text-gray-900">{item.quantity}</span>
-                    <Button className="px-3 py-1.5 text-xs" onClick={() => openSheet(item)}>
+                    <span className="text-lg font-semibold text-gray-900">
+                      {item.quantity}
+                    </span>
+                    <Button
+                      className="px-3 py-1.5 text-xs"
+                      onClick={() => openSheet(item)}
+                    >
                       이동
                     </Button>
                   </li>
@@ -238,8 +277,12 @@ export function MovementScreen() {
         >
           <div className="max-h-[90vh] w-full max-w-sm space-y-4 overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
             <div>
-              <div className="font-semibold text-gray-800">{activeItem.skuName}</div>
-              <div className="font-mono text-xs text-gray-500">{activeItem.skuCode}</div>
+              <div className="font-semibold text-gray-800">
+                {activeItem.skuName}
+              </div>
+              <div className="font-mono text-xs text-gray-500">
+                {activeItem.skuCode}
+              </div>
               <div className="mt-1 text-xs text-gray-500">
                 출발 {source.code} · 현재 ON_HAND {activeItem.quantity}
               </div>
@@ -259,15 +302,21 @@ export function MovementScreen() {
               </div>
               <NumberPad value={qty} onChange={setQty} />
               {qty > activeItem.quantity ? (
-                <p className="text-xs text-red-600">현재 수량({activeItem.quantity})을 초과할 수 없어요.</p>
+                <p className="text-xs text-red-600">
+                  현재 수량({activeItem.quantity})을 초과할 수 없어요.
+                </p>
               ) : null}
             </section>
 
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700">대상 로케이션</h3>
+              <h3 className="text-sm font-semibold text-gray-700">
+                대상 로케이션
+              </h3>
               {dest ? (
                 <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
-                  <span className="flex-1 font-medium text-gray-800">{dest.code}</span>
+                  <span className="flex-1 font-medium text-gray-800">
+                    {dest.code}
+                  </span>
                   <button
                     type="button"
                     className="text-xs text-blue-700 underline"
@@ -311,7 +360,9 @@ export function MovementScreen() {
                           <button
                             type="button"
                             className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
-                            onClick={() => setDest({ id: loc.id, code: loc.code })}
+                            onClick={() =>
+                              setDest({ id: loc.id, code: loc.code })
+                            }
                           >
                             {loc.code}
                           </button>
@@ -324,7 +375,10 @@ export function MovementScreen() {
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-gray-700">
-                사유 <span className="text-xs font-normal text-gray-400">(선택)</span>
+                사유{' '}
+                <span className="text-xs font-normal text-gray-400">
+                  (선택)
+                </span>
               </h3>
               <div className="flex flex-wrap gap-2">
                 {MOVE_REASONS.map((r) => (
@@ -411,5 +465,13 @@ export function MovementScreen() {
         }}
       />
     </div>
+  );
+}
+
+export function MovementScreen() {
+  return (
+    <WorkArea kind="movement">
+      <MovementScreenContent />
+    </WorkArea>
   );
 }

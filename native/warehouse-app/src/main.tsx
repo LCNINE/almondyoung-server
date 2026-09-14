@@ -1,3 +1,4 @@
+import { DeveloperModeProvider } from './core/diagnostics/DeveloperModeProvider';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -38,13 +39,15 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <SessionProvider session={session}>
         <ApiClientProvider>
-          <ScanProvider>
-            <WarehouseProvider>
-              <Bootstrap session={session}>
-                <RouterProvider router={router} />
-              </Bootstrap>
-            </WarehouseProvider>
-          </ScanProvider>
+          <DeveloperModeProvider>
+            <ScanProvider>
+              <WarehouseProvider>
+                <Bootstrap session={session}>
+                  <RouterProvider router={router} />
+                </Bootstrap>
+              </WarehouseProvider>
+            </ScanProvider>
+          </DeveloperModeProvider>
         </ApiClientProvider>
       </SessionProvider>
     </QueryClientProvider>

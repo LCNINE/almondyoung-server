@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi } from 'vitest';
 import { useEffect } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -37,16 +38,20 @@ function Probe() {
 describe('ApiClientProvider', () => {
   it('builds a client from the session and attaches the token', async () => {
     render(
-      <SessionProvider session={session}>
-        <ApiClientProvider>
-          <Probe />
-        </ApiClientProvider>
-      </SessionProvider>
+      <QueryClientProvider client={new QueryClient()}>
+        <SessionProvider session={session}>
+          <ApiClientProvider>
+            <Probe />
+          </ApiClientProvider>
+        </SessionProvider>
+      </QueryClientProvider>
     );
     expect(screen.getByText('probe')).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     // mock.calls[0] is typed unknown[]; assert the [url, init] tuple shape we passed.
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls.find((call) =>
+      String(call[0]).endsWith('/ping')
+    )! as [string, RequestInit];
     // apiBaseUrl varies per box (this box has a gitignored .env.local for
     // live Phase 1a testing); assert relative to it rather than hardcoding.
     expect(url).toBe(`${apiBaseUrl}/ping`);

@@ -42,6 +42,8 @@ const VARIANCES = [
 ];
 
 const PREVIEW = {
+  previewToken: 'reviewed-token',
+  sessionRevision: 1,
   adjustmentsCreated: 1,
   eventsPosted: 0,
   message: '1개 조정이 미리보기로 계산되었습니다 (완료 시 적용).',
@@ -102,7 +104,11 @@ function renderScreen(
  * "신선한 성공" 과 "무효화된 stale" 을 구별할 수 없다.
  */
 function renderWithClient(client: ApiClient, existingQc?: QueryClient) {
-  const qc = existingQc ?? new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } });
+  const qc =
+    existingQc ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 10_000 } },
+    });
   const rootRoute = createRootRoute({ component: Outlet });
   const index = createRoute({
     getParentRoute: () => rootRoute,
@@ -130,7 +136,10 @@ function renderWithClient(client: ApiClient, existingQc?: QueryClient) {
       </QueryClientProvider>
     </SessionProvider>
   );
-  return { ...render(<RouterProvider router={router as never} />, { wrapper: wrap }), qc };
+  return {
+    ...render(<RouterProvider router={router as never} />, { wrapper: wrap }),
+    qc,
+  };
 }
 
 describe('VarianceReviewScreen', () => {
@@ -143,21 +152,29 @@ describe('VarianceReviewScreen', () => {
 
   it('미리보기 전에는 완료 버튼이 비활성이다', async () => {
     renderScreen([]);
-    expect(await screen.findByRole('button', { name: /실사 완료/ })).toBeDisabled();
+    expect(
+      await screen.findByRole('button', { name: /실사 완료/ })
+    ).toBeDisabled();
   });
 
   it('미리보기를 받으면 완료가 열리고 delta 를 보여준다', async () => {
     renderScreen([]);
-    await userEvent.click(await screen.findByRole('button', { name: '조정 미리보기' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: '조정 미리보기' })
+    );
 
     expect(await screen.findByTestId('preview-line-1')).toHaveTextContent('-1');
     expect(screen.getByText(/현재 6/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+    );
   });
 
   it('미리보기가 실패하면 완료 버튼은 계속 비활성이고 오류가 보인다', async () => {
     renderScreen([], { failGenerate: true });
-    await userEvent.click(await screen.findByRole('button', { name: '조정 미리보기' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: '조정 미리보기' })
+    );
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.'
@@ -168,28 +185,40 @@ describe('VarianceReviewScreen', () => {
   it('완료는 확인 다이얼로그를 거쳐 complete 를 부른다', async () => {
     const calls: Call[] = [];
     renderScreen(calls);
-    await userEvent.click(await screen.findByRole('button', { name: '조정 미리보기' }));
-    await userEvent.click(await screen.findByRole('button', { name: /실사 완료/ }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: '조정 미리보기' })
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: /실사 완료/ })
+    );
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('되돌릴 수 없어요');
     await userEvent.click(screen.getByRole('button', { name: '완료' }));
 
-    expect(calls.some((c) => c.path === '/stocktaking/sessions/s-1/complete')).toBe(true);
+    expect(
+      calls.some((c) => c.path === '/stocktaking/sessions/s-1/complete')
+    ).toBe(true);
     expect(await screen.findByText('세션목록')).toBeInTheDocument();
   });
 
   it('차이가 0건이면 미리보기 없이 완료할 수 있다', async () => {
     renderScreen([], { variances: [] });
     expect(await screen.findByText(/차이가 없어요/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+    );
   });
 
   it('완료된 세션은 읽기 전용이다', async () => {
     renderScreen([], { status: 'completed' });
     expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '조정 미리보기' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /실사 완료/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '조정 미리보기' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /실사 완료/ })
+    ).not.toBeInTheDocument();
   });
 
   it('무효화된(stale) 차이 캐시는 재조회가 끝나기 전까지 완료를 열지 않는다', async () => {
@@ -202,7 +231,8 @@ describe('VarianceReviewScreen', () => {
     let resolveRefetch: ((v: unknown[]) => void) | undefined;
     const client: ApiClient = {
       request: (async (o: Call) => {
-        if (o.path === '/stocktaking/sessions/s-1') return detailWith('in_progress');
+        if (o.path === '/stocktaking/sessions/s-1')
+          return detailWith('in_progress');
         if (o.path === '/stocktaking/sessions/s-1/variances') {
           varianceCalls += 1;
           if (varianceCalls === 1) return [];
@@ -210,13 +240,17 @@ describe('VarianceReviewScreen', () => {
             resolveRefetch = resolve;
           });
         }
+        if (o.path.endsWith('/generate-adjustments'))
+          return { ...PREVIEW, preview: [] };
         return {};
       }) as unknown as ApiClient['request'],
     };
     const { qc } = renderWithClient(client);
 
     expect(await screen.findByText(/차이가 없어요/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+    );
 
     // 다른 화면(SessionCountScreen)에서의 카운팅 뮤테이션이 캐시를 무효화했다고
     // 가정한다 — 쿼리가 여전히 마운트돼 있으므로 즉시 재조회가 걸린다.
@@ -228,8 +262,10 @@ describe('VarianceReviewScreen', () => {
 
     resolveRefetch?.([]);
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(async () => {
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+      );
     });
   });
 
@@ -246,7 +282,8 @@ describe('VarianceReviewScreen', () => {
     let resolveRefetch: ((v: unknown[]) => void) | undefined;
     const client: ApiClient = {
       request: (async (o: Call) => {
-        if (o.path === '/stocktaking/sessions/s-1') return detailWith('in_progress');
+        if (o.path === '/stocktaking/sessions/s-1')
+          return detailWith('in_progress');
         if (o.path === '/stocktaking/sessions/s-1/variances') {
           varianceCalls += 1;
           if (varianceCalls === 1) return [];
@@ -254,16 +291,22 @@ describe('VarianceReviewScreen', () => {
             resolveRefetch = resolve;
           });
         }
+        if (o.path.endsWith('/generate-adjustments'))
+          return { ...PREVIEW, preview: [] };
         return {};
       }) as unknown as ApiClient['request'],
     };
     const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: 10_000, refetchOnMount: false } },
+      defaultOptions: {
+        queries: { retry: false, staleTime: 10_000, refetchOnMount: false },
+      },
     });
 
     const first = renderWithClient(client, qc);
     expect(await screen.findByText(/차이가 없어요/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+    );
 
     // 화면을 떠난다 — 이 시점엔 옵저버가 없다.
     first.unmount();
@@ -291,8 +334,10 @@ describe('VarianceReviewScreen', () => {
     expect(screen.getByRole('button', { name: /실사 완료/ })).toBeDisabled();
 
     resolveRefetch?.([]);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    await waitFor(async () => {
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
+      );
     });
   });
 });

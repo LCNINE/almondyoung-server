@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router';
+import {
+  RouterProvider,
+  createRouter,
+  createMemoryHistory,
+} from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
 import { WarehouseProvider } from './warehouse-context';
 import { createMemoryPrefs } from '../core/data/devicePrefs';
@@ -102,10 +105,9 @@ describe('router guard integration', () => {
     ).toBeInTheDocument();
   });
 
-  it('closes the diagnostics dead-end: home -> diagnostics -> home', async () => {
+  it('keeps diagnostics off the ordinary work home', async () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
-    const user = userEvent.setup();
     // DiagnosticsScreen calls useScanner(), which requires a ScanProvider in
     // the tree — renderApp() above doesn't include one, so this case renders
     // locally instead of reusing that helper.
@@ -123,26 +125,17 @@ describe('router guard integration', () => {
       await screen.findByRole('link', { name: /재고조회/ })
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: /진단/ }));
-
     expect(
-      await screen.findByRole('heading', { name: /diagnostics/i })
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole('link', { name: /home/i })
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('link', { name: /home/i }));
-
-    expect(
-      await screen.findByRole('link', { name: /재고조회/ })
-    ).toBeInTheDocument();
+      screen.queryByRole('link', { name: /진단/ })
+    ).not.toBeInTheDocument();
   });
 
   it('/picking 과 /packing 은 /outbound 로 보낸다', async () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
     const router = renderAppRouter(['/picking'], session);
-    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound'));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe('/outbound')
+    );
   });
 });
