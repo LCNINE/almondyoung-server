@@ -1,3 +1,4 @@
+import { WarehouseOperationVersionDto } from '../../core/services/warehouse-operation-contract';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
@@ -38,7 +39,7 @@ export class MoveLineDto {
   memo?: string;
 }
 
-export class MoveBatchDto {
+export class MoveBatchDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '창고 ID' })
   @IsUUID()
   warehouseId!: string;

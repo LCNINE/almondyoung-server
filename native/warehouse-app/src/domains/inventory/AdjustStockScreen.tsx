@@ -1,3 +1,4 @@
+import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -15,7 +16,7 @@ import { useAdjustStock, ADJUST_REASONS } from './useAdjustStock';
 
 const OTHER = '기타';
 
-export function AdjustStockScreen({
+function AdjustStockScreenContent({
   skuId,
   initialLocationId,
 }: {
@@ -28,7 +29,9 @@ export function AdjustStockScreen({
   const stock = useSkuWarehouseStock(skuId, warehouseId);
   const adjust = useAdjustStock();
 
-  const [locationId, setLocationId] = useState<string | undefined>(initialLocationId);
+  const [locationId, setLocationId] = useState<string | undefined>(
+    initialLocationId
+  );
   const [term, setTerm] = useState('');
   const [delta, setDelta] = useState(0);
   const [reason, setReason] = useState<string | null>(null);
@@ -40,12 +43,16 @@ export function AdjustStockScreen({
   // 전역 중복제거를 하므로, 같은 마운트에서의 다음 제출이 이전 성공 키를
   // 재사용하면 백엔드가 조용히 no-op 한다 — 화면은 성공을 보여주는데 재고는
   // 안 움직인다. 이동(navigate)에 기대지 않고 여기서 구조적으로 막는다.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() =>
+    crypto.randomUUID()
+  );
 
   const search = useLocationSearch(warehouseId, term);
 
   // 스캔한 로케이션 코드는 검색으로 해석한다(코드 → id 경로가 이것뿐이다).
-  useScanner((e) => setTerm(e.code));
+  useScanner((e) => {
+    if (!adjust.isPending) setTerm(e.code);
+  });
 
   const rows = stock.data?.details ?? [];
   const selected = useMemo(() => {
@@ -53,27 +60,41 @@ export function AdjustStockScreen({
     const fromStock = rows.find((r) => r.locationId === locationId);
     if (fromStock) return { id: locationId, code: fromStock.locationCode };
     const fromSearch = search.data?.items.find((i) => i.id === locationId);
-    return fromSearch ? { id: fromSearch.id, code: fromSearch.code } : { id: locationId, code: locationId };
+    return fromSearch
+      ? { id: fromSearch.id, code: fromSearch.code }
+      : { id: locationId, code: locationId };
   }, [locationId, rows, search.data]);
 
   const currentOnHand = useMemo(
     () =>
       rows
-        .filter((r) => r.locationId === locationId && r.stockState === 'ON_HAND')
+        .filter(
+          (r) => r.locationId === locationId && r.stockState === 'ON_HAND'
+        )
         .reduce((sum, r) => sum + r.quantity, 0),
     [rows, locationId]
   );
 
-  const effectiveReason = reason === OTHER ? otherReason.trim() : (reason ?? '');
+  const effectiveReason =
+    reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
-    isSet && Boolean(warehouseId) && Boolean(locationId) && delta !== 0 && effectiveReason.length > 0;
+    isSet &&
+    Boolean(warehouseId) &&
+    Boolean(locationId) &&
+    delta !== 0 &&
+    effectiveReason.length > 0;
 
   // 키가 어떤 payload 에 묶여 있는지 추적한다. "요청은 커밋됐는데 응답만
   // 유실"된 뒤 작업자가 delta·로케이션을 고쳐 재제출하면, 키가 그대로면
   // 백엔드가 이걸 이전 요청의 replay 로 보고 성공을 돌려주면서 실제로는
   // 옛(틀린) 금액을 적용한다 — payload 가 바뀌면 키를 회전시켜 막는다. 바뀌지
   // 않은 채 재시도하는 것(진짜 재시도)은 여전히 같은 키를 재사용해야 한다.
-  const keyPayloadRef = useRef({ skuId, locationId, delta, reason: effectiveReason });
+  const keyPayloadRef = useRef({
+    skuId,
+    locationId,
+    delta,
+    reason: effectiveReason,
+  });
   useEffect(() => {
     const prev = keyPayloadRef.current;
     const next = { skuId, locationId, delta, reason: effectiveReason };
@@ -106,7 +127,9 @@ export function AdjustStockScreen({
       {detail.data ? (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="font-semibold text-gray-800">{detail.data.name}</div>
-          <div className="font-mono text-xs text-gray-500">{detail.data.code}</div>
+          <div className="font-mono text-xs text-gray-500">
+            {detail.data.code}
+          </div>
         </div>
       ) : null}
 
@@ -114,9 +137,14 @@ export function AdjustStockScreen({
         <h2 className="text-sm font-semibold text-gray-700">로케이션</h2>
         {selected ? (
           <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
-            <span className="flex-1 font-medium text-gray-800">{selected.code}</span>
+            <span className="flex-1 font-medium text-gray-800">
+              {selected.code}
+            </span>
             <span className="text-xs text-gray-500">현재 ON_HAND</span>
-            <span data-testid="current-onhand" className="text-lg font-semibold text-gray-900">
+            <span
+              data-testid="current-onhand"
+              className="text-lg font-semibold text-gray-900"
+            >
               {currentOnHand}
             </span>
             <button
@@ -196,7 +224,9 @@ export function AdjustStockScreen({
               onClick={() => setReason(r)}
               className={cn(
                 'rounded-full border px-3 py-1.5 text-sm',
-                reason === r ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700'
+                reason === r
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-300 bg-white text-gray-700'
               )}
             >
               {r}
@@ -242,7 +272,14 @@ export function AdjustStockScreen({
           setConfirming(false);
           if (!warehouseId || !locationId) return;
           adjust.mutate(
-            { skuId, warehouseId, locationId, delta, reason: effectiveReason, idempotencyKey },
+            {
+              skuId,
+              warehouseId,
+              locationId,
+              delta,
+              reason: effectiveReason,
+              idempotencyKey,
+            },
             {
               onSuccess: () => {
                 // 성공했을 때만 회전한다 — 실패 후 재시도는 같은 키를 재사용해야 한다.
@@ -254,5 +291,15 @@ export function AdjustStockScreen({
         }}
       />
     </div>
+  );
+}
+
+export function AdjustStockScreen(
+  props: Parameters<typeof AdjustStockScreenContent>[0]
+) {
+  return (
+    <WorkArea kind="adjust">
+      <AdjustStockScreenContent {...props} />
+    </WorkArea>
   );
 }

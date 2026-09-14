@@ -1096,11 +1096,16 @@ export interface StartStocktakingSessionResponse {
 }
 
 export interface ScanLocationRequest {
+  idempotencyKey: string;
   sessionId: string;
   locationBarcode: string;
 }
 
 export interface ScanLocationExpectedItem {
+  lineId: string;
+  lineRevision: number;
+  countBaselineVersion: number | null;
+  countedQuantity: number | null;
   skuId: string;
   skuName: string;
   skuCode: string;
@@ -1109,12 +1114,14 @@ export interface ScanLocationExpectedItem {
 }
 
 export interface ScanLocationResponse {
+  sessionRevision: number;
   locationId: string;
   locationCode: string;
   expectedItems: ScanLocationExpectedItem[];
 }
 
 export interface ScanProductRequest {
+  idempotencyKey: string;
   sessionId: string;
   locationId: string;
   productBarcode: string;
@@ -1122,6 +1129,9 @@ export interface ScanProductRequest {
 }
 
 export interface ScanProductResponse {
+  lineRevision: number;
+  sessionRevision: number;
+  countBaselineVersion: number;
   lineId: string;
   skuId: string;
   countedQuantity: number;
@@ -1130,11 +1140,16 @@ export interface ScanProductResponse {
 }
 
 export interface UpdateLineCountRequest {
+  idempotencyKey: string;
+  expectedRevision: number;
   countedQuantity: number;
   notes?: string;
 }
 
 export interface UpdateLineCountResponse {
+  lineRevision: number;
+  sessionRevision: number;
+  countBaselineVersion: number;
   lineId: string;
   countedQuantity: number;
   expectedQuantity: number;
@@ -1146,6 +1161,20 @@ export interface GenerateAdjustmentsRequest {
 }
 
 export interface GenerateAdjustmentsResponse {
+  sessionRevision: number;
+  previewToken: string;
+  preview: Array<{
+    lineId: string;
+    skuId: string;
+    skuName?: string;
+    skuCode?: string;
+    locationCode?: string;
+    locationId: string | null;
+    countedQuantity: number;
+    currentOnHand: number;
+    delta: number;
+    adjustmentType: 'INCREASE' | 'DECREASE';
+  }>;
   adjustmentsCreated: number;
   eventsPosted: number;
   message: string;
@@ -1160,6 +1189,25 @@ export interface CompleteStocktakingSessionResponse {
     discrepanciesFound: number;
     adjustmentsApplied: number;
   };
+}
+
+export interface CompleteStocktakingSessionRequest {
+  idempotencyKey: string;
+  previewToken: string;
+}
+
+export interface ResetStocktakingCountRequest {
+  idempotencyKey: string;
+  expectedRevision: number;
+}
+
+export interface ResetStocktakingCountResponse {
+  lineId: string;
+  countedQuantity: null;
+  expectedQuantity: number;
+  lineRevision: number;
+  sessionRevision: number;
+  countBaselineVersion: number;
 }
 
 export interface StocktakingSessionQuery {
@@ -1302,7 +1350,9 @@ export interface PurchaseOrderReceiptResponseDto {
   lines: PurchaseOrderReceiptLineResultDto[];
 }
 
-export interface CancelPurchaseOrderReceiptLineRequest { receiptLineId: string }
+export interface CancelPurchaseOrderReceiptLineRequest {
+  receiptLineId: string;
+}
 
 export interface PurchaseOrderReceiptCancelResponseDto {
   poId: string;

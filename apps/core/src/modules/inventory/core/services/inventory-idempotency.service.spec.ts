@@ -66,8 +66,11 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
 
   it('중복 키 + 같은 해시 + 응답 존재: handler 를 실행하지 않고 저장 응답을 반환한다', async () => {
     const stored: Row = {
-      id: 'row-1', endpoint: 'inbound.simple', key: 'k-1',
-      requestHash: computeRequestHash(dto), response: { receiptId: 'r-1' },
+      id: 'row-1',
+      endpoint: 'inbound.simple',
+      key: 'k-1',
+      requestHash: computeRequestHash(dto),
+      response: { receiptId: 'r-1' },
     };
     const { trx } = makeTrx({ existing: [stored] });
     const svc = build(trx);
@@ -79,8 +82,11 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
 
   it('중복 키 + 다른 해시: ConflictError(키 재사용)', async () => {
     const stored: Row = {
-      id: 'row-1', endpoint: 'inbound.simple', key: 'k-1',
-      requestHash: computeRequestHash({ other: true }), response: { receiptId: 'r-1' },
+      id: 'row-1',
+      endpoint: 'inbound.simple',
+      key: 'k-1',
+      requestHash: computeRequestHash({ other: true }),
+      response: { receiptId: 'r-1' },
     };
     const { trx } = makeTrx({ existing: [stored] });
     const svc = build(trx);
@@ -89,12 +95,32 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
 
   it('중복 키 + response null(처리 중): ConflictError', async () => {
     const stored: Row = {
-      id: 'row-1', endpoint: 'inbound.simple', key: 'k-1',
-      requestHash: computeRequestHash(dto), response: null,
+      id: 'row-1',
+      endpoint: 'inbound.simple',
+      key: 'k-1',
+      requestHash: computeRequestHash(dto),
+      response: null,
     };
     const { trx } = makeTrx({ existing: [stored] });
     const svc = build(trx);
     await expect(svc.withIdempotency('inbound.simple', 'k-1', dto, jest.fn())).rejects.toThrow(ConflictError);
+  });
+
+  it.each([
+    { hash: computeRequestHash(dto), response: null, code: 'OPERATION_IN_PROGRESS' },
+    { hash: computeRequestHash({ other: true }), response: null, code: 'OPERATION_PAYLOAD_MISMATCH' },
+  ])('v2 returns $code without exposing the key', async ({ hash, response, code }) => {
+    const { trx } = makeTrx({
+      existing: [{ id: 'row', endpoint: 'inventory.adjust.v2', key: 'private-key', requestHash: hash, response }],
+    });
+    try {
+      await build(trx).withIdempotency('inventory.adjust.v2', 'private-key', dto, jest.fn());
+      throw new Error('expected conflict');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).getErrorCode()).toBe(code);
+      expect((error as Error).message).not.toContain('private-key');
+    }
   });
 
   it('신규 키: handler 가 null/undefined 로 resolve 하면 throw 하고 응답을 저장하지 않는다', async () => {

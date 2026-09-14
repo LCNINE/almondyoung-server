@@ -34,7 +34,7 @@ describe('createApiClient', () => {
     });
   });
 
-  it('retries once on 409 then throws with a conflict error', async () => {
+  it('does not blindly retry a domain conflict', async () => {
     const doFetch = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(409, { message: 'version conflict' }))
@@ -50,22 +50,21 @@ describe('createApiClient', () => {
     await expect(
       client.request({ path: '/x', idempotencyKey: 'k' })
     ).rejects.toThrow(/conflict/i);
-    expect(doFetch).toHaveBeenCalledTimes(2);
+    expect(doFetch).toHaveBeenCalledTimes(1);
   });
 
   // GlobalExceptionFilter 는 `{ success:false, error: <domain code>, message }` 를 응답 바디로
   // 낸다. errorMessage(context) 가 SKU_NOT_IN_SHIPMENT·OVERSCAN 등을 구분하려면 ConflictError
   // 가 그 `error` 코드를 들고 있어야 한다 — 지금까지는 message 만 살아남고 코드는 버려졌다.
   it('carries the server error code on a persisting 409', async () => {
-    const doFetch = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(409, {
-          success: false,
-          error: 'SIMPLE_OUTBOUND_OVERSCAN',
-          message: 'Scan exceeds the remaining allocated quantity for this SKU by 1',
-        })
-      );
+    const doFetch = vi.fn().mockResolvedValue(
+      jsonResponse(409, {
+        success: false,
+        error: 'SIMPLE_OUTBOUND_OVERSCAN',
+        message:
+          'Scan exceeds the remaining allocated quantity for this SKU by 1',
+      })
+    );
     const client = createApiClient({
       baseUrl: 'https://api.test',
       getToken: async () => 'TOK',
@@ -83,4 +82,24 @@ describe('createApiClient', () => {
       'Scan exceeds the remaining allocated quantity for this SKU by 1'
     );
   });
+});
+it('preserves unknown or malformed errors as uncertain', () => {
+  expect(new ConflictError('unknown').outcome).toBe('uncertain');
+  expect(
+    new ConflictError('changed', 'OPERATION_PAYLOAD_MISMATCH').outcome
+  ).toBe('uncertain');
+  expect(
+    new ConflictError('too many', 'SIMPLE_OUTBOUND_OVERSCAN').outcome
+  ).toBe('rejected');
+});
+
+it('classifies known barcode and unfinished-count refusals without trapping work', () => {
+  for (const code of [
+    'SIMPLE_OUTBOUND_BARCODE_UNKNOWN',
+    'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+    'STOCKTAKING_COUNT_REQUIRED',
+    'BAD_REQUEST',
+    'CONFLICT',
+  ])
+    expect(new ConflictError('refused', code).outcome).toBe('rejected');
 });

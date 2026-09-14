@@ -26,32 +26,40 @@ describe('errorMessage', () => {
 
 describe('errorMessage with context', () => {
   it('바코드 문맥의 404 는 미등록 바코드로 안내한다', () => {
-    expect(errorMessage(new Error('GET /inventory/skus → 404'), 'barcode')).toBe(
-      '등록되지 않은 바코드예요.'
-    );
+    expect(
+      errorMessage(new Error('GET /inventory/skus → 404'), 'barcode')
+    ).toBe('등록되지 않은 바코드예요.');
   });
 
   it('로케이션 문맥의 404 는 로케이션으로 안내한다', () => {
-    expect(errorMessage(new Error('POST /stocktaking/scan-location → 404'), 'location')).toBe(
-      '로케이션을 찾을 수 없어요.'
-    );
+    expect(
+      errorMessage(
+        new Error('POST /stocktaking/scan-location → 404'),
+        'location'
+      )
+    ).toBe('로케이션을 찾을 수 없어요.');
   });
 
   it('실사 문맥의 400 은 세션 상태를 짚어준다', () => {
-    expect(errorMessage(new Error('POST /stocktaking/scan-product → 400'), 'stocktaking')).toBe(
-      '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.'
-    );
+    expect(
+      errorMessage(
+        new Error('POST /stocktaking/scan-product → 400'),
+        'stocktaking'
+      )
+    ).toBe('실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.');
   });
 
   it('이동 문맥의 400 은 출발지 부족을 짚어준다', () => {
-    expect(errorMessage(new Error('POST /movement/move → 400'), 'movement')).toBe(
-      '출발지 재고가 부족해요. 다시 확인해 주세요.'
-    );
+    expect(
+      errorMessage(new Error('POST /movement/move → 400'), 'movement')
+    ).toBe('출발지 재고가 부족해요. 다시 확인해 주세요.');
   });
 
   it('문맥이 없으면 기존 문구를 유지한다', () => {
     expect(errorMessage(new Error('GET /x → 404'))).toBe('찾을 수 없어요.');
-    expect(errorMessage(new Error('GET /x → 400'))).toBe('요청이 올바르지 않아요.');
+    expect(errorMessage(new Error('GET /x → 400'))).toBe(
+      '요청이 올바르지 않아요.'
+    );
   });
 
   it('문맥이 있어도 401/403/5xx 는 공통 문구를 쓴다', () => {
@@ -66,35 +74,44 @@ describe('errorMessage with context', () => {
 
 describe('inbound 문맥', () => {
   it('적치 실패(400)는 입고기본존 재고를 짚어준다', () => {
-    expect(errorMessage(new Error('POST /inbound/putaway → 400'), 'inbound')).toBe(
-      '입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.'
-    );
+    expect(
+      errorMessage(new Error('POST /inbound/putaway → 400'), 'inbound')
+    ).toBe('입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.');
   });
 
   it('취소 실패(400)는 적치/당일 제약을 함께 안내한다', () => {
-    expect(errorMessage(new Error('POST /inbound/cancel → 400'), 'inbound-cancel')).toBe(
-      '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.'
-    );
+    expect(
+      errorMessage(new Error('POST /inbound/cancel → 400'), 'inbound-cancel')
+    ).toBe('이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.');
   });
 });
 
 describe('po-receive 문맥', () => {
   it('발주 수령 400 은 창고 선택을 확인하게 한다', () => {
     expect(
-      errorMessage(new Error('POST /purchase-orders/po-1/receipts → 400'), 'po-receive')
+      errorMessage(
+        new Error('POST /purchase-orders/po-1/receipts → 400'),
+        'po-receive'
+      )
     ).toBe('이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.');
   });
 
   it('발주 수령 404 는 목록 새로고침을 안내한다', () => {
     expect(
-      errorMessage(new Error('POST /purchase-orders/po-1/receipts → 404'), 'po-receive')
+      errorMessage(
+        new Error('POST /purchase-orders/po-1/receipts → 404'),
+        'po-receive'
+      )
     ).toBe('발주를 찾을 수 없어요. 목록을 새로고침 해주세요.');
   });
 
-  it('발주 수령 409 는 서버 메시지를 그대로 보인다', () => {
-    expect(errorMessage(new ConflictError('이미 전량 입고된 품목입니다: sku-1'), 'po-receive')).toBe(
-      '이미 전량 입고된 품목입니다: sku-1'
-    );
+  it('발주 수령 충돌은 내부 식별자 없이 안내한다', () => {
+    expect(
+      errorMessage(
+        new ConflictError('이미 전량 입고된 품목입니다: sku-1'),
+        'po-receive'
+      )
+    ).toBe('다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.');
   });
 });
 
@@ -116,43 +133,63 @@ describe('outbound 문맥', () => {
   // 뭉개지지 않는다 — 스펙 §6.3 문구를 그대로 쓴다.
   it('이 송장에 없는 상품 스캔은 전용 문구를 준다', () => {
     expect(
-      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT'), 'outbound')
+      errorMessage(
+        new ConflictError('x', 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT'),
+        'outbound'
+      )
     ).toBe('이 송장에 없는 상품이에요');
   });
 
   it('과다 스캔은 전용 문구를 준다', () => {
-    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'), 'outbound')).toBe(
-      '이 상품은 이미 필요한 수량을 다 채웠어요'
-    );
+    expect(
+      errorMessage(
+        new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'),
+        'outbound'
+      )
+    ).toBe('이 상품은 이미 필요한 수량을 다 채웠어요');
   });
 
   it('오늘 배치에 없는 송장은 전용 문구를 준다', () => {
     expect(
-      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_WORK_ITEM_MISSING'), 'outbound')
+      errorMessage(
+        new ConflictError('x', 'SIMPLE_OUTBOUND_WORK_ITEM_MISSING'),
+        'outbound'
+      )
     ).toBe('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
   });
 
   it('다른 작업자가 이미 잡은 박스는 전용 문구를 준다', () => {
     expect(
-      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER'), 'outbound')
+      errorMessage(
+        new ConflictError('x', 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER'),
+        'outbound'
+      )
     ).toBe('다른 작업자가 이 박스를 작업 중이에요');
   });
 
   it('개별피킹이 아닌 배치는 전용 문구를 준다', () => {
     expect(
-      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED'), 'outbound')
-    ).toBe('이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요');
+      errorMessage(
+        new ConflictError('x', 'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED'),
+        'outbound'
+      )
+    ).toBe(
+      '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요'
+    );
   });
 
   it('모르는 코드는 기존 공용 충돌 문구를 유지한다', () => {
-    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'), 'outbound')).toBe(
-      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
-    );
+    expect(
+      errorMessage(
+        new ConflictError('x', 'UNRECOGNIZED_DOMAIN_CONFLICT'),
+        'outbound'
+      )
+    ).toBe('다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.');
   });
 
   it('outbound 문맥이 아니면 코드가 있어도 공용 충돌 문구를 유지한다', () => {
-    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'))).toBe(
-      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
-    );
+    expect(
+      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'))
+    ).toBe('다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.');
   });
 });

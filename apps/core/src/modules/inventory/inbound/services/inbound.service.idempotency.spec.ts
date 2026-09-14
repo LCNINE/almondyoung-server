@@ -32,3 +32,13 @@ describe('InboundService 멱등 래퍼 배선', () => {
     expect(result).toBe(SENTINEL);
   });
 });
+
+describe('InboundService v2 actor binding', () => {
+  it('separates the v2 namespace and fingerprints authenticated actor', async () => {
+    const { svc, withIdempotency } = build();
+    const call = svc.simpleInbound.bind(svc) as (...args: unknown[]) => Promise<unknown>;
+    await call({ contractVersion: 2, warehouseId: 'w', items: [], idempotencyKey: 'k' }, undefined, 'authenticated');
+    expect(withIdempotency.mock.calls[0][0]).toBe('inbound.simple.v2');
+    expect(withIdempotency.mock.calls[0][2]).toEqual({ actorId: 'authenticated', warehouseId: 'w', items: [] });
+  });
+});

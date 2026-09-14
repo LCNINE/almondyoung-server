@@ -66,7 +66,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
     const loc = (
       await db
         .insert(wmsTables.locations)
-        .values({ warehouseId: wh.id, code: `L-${randomUUID().slice(0, 8)}`, locationType: 'standard' })
+        .values({ warehouseId: wh.id, code: `L-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
         .returning()
     )[0];
     await db
@@ -87,6 +87,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
     const results = await Promise.allSettled([
       svc.reserveStock({
         targetType: 'SHIPMENT_LINE',
+        requestedAt: new Date(),
         targetId: lineA,
         shipmentLineId: lineA,
         skuId: sku.id,
@@ -95,6 +96,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
       }),
       svc.reserveStock({
         targetType: 'SHIPMENT_LINE',
+        requestedAt: new Date(),
         targetId: lineB,
         shipmentLineId: lineB,
         skuId: sku.id,
@@ -109,7 +111,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
 
     // cleanup
     await db.delete(wmsTables.stockReservations).where(eqSku(sku.id));
-    await db.delete(wmsTables.stockLedgers).where(eqSku(sku.id));
+    await db.delete(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, sku.id));
   });
 });
 

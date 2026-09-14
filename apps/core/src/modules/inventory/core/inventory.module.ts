@@ -1,3 +1,4 @@
+import { WarehouseWorkContextController } from './controllers/warehouse-work-context.controller';
 import { Module } from '@nestjs/common';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { SharedModule } from '../shared/shared.module';
@@ -35,6 +36,7 @@ import { StockEventStore } from './repositories/stock-event.store';
   imports: [SCHEDULE_ROOT, SharedModule, ProductSellableQuantityModule],
   controllers: [
     InventoryController,
+    WarehouseWorkContextController,
     LocationController,
     SkuManagersController,
     ManagerSkusController,

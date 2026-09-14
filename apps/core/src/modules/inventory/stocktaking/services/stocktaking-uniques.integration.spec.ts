@@ -52,7 +52,7 @@ describeIfDb('stocktaking uniques (DB integration, rollback-only)', () => {
       .returning();
     const [location] = await tx
       .insert(wmsTables.locations)
-      .values({ warehouseId: warehouse.id, code: `IT-LOC-${randomUUID().slice(0, 8)}`, locationType: 'standard' })
+      .values({ warehouseId: warehouse.id, code: `IT-LOC-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
       .returning();
     const [session] = await tx
       .insert(wmsTables.stocktakingSessions)

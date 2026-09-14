@@ -3,6 +3,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { ApplicationException } from './application.exception';
 
 interface ErrorResponse {
+  code?: string;
   error?: string;
   message?: string | string[];
   errors?: unknown;
@@ -55,6 +56,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const errorObject = {
       success: false,
       error: errorCode,
+      code: errorCode,
       message: message,
       ...(errors !== undefined && { errors }),
       ...(process.env.NODE_ENV !== 'production' &&
@@ -72,6 +74,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private getErrorCode(status: number, errorResponse: ErrorResponse): string {
+    if (errorResponse?.code) return errorResponse.code;
     if (errorResponse?.error) {
       return errorResponse.error;
     }

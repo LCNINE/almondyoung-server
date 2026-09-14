@@ -1,3 +1,4 @@
+import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
@@ -17,7 +18,7 @@ export interface LocationRef {
  * 시트가 열려 있는 동안 스캔은 전부 로케이션 코드로 해석된다(상품 바코드는
  * 이 시점에 의미가 없다).
  */
-export function PutawaySheet({
+function PutawaySheetContent({
   target,
   warehouseId,
   lastDest,
@@ -33,7 +34,9 @@ export function PutawaySheet({
   const [dest, setDest] = useState<LocationRef | null>(null);
   const [quantity, setQuantity] = useState(target.pendingQty);
   const [term, setTerm] = useState('');
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() =>
+    crypto.randomUUID()
+  );
   const search = useLocationSearch(warehouseId, dest ? '' : term);
   const putaway = usePutaway();
 
@@ -43,8 +46,11 @@ export function PutawaySheet({
   // 사실이라 화면이 구분해 말해야 한다(작업자가 출발지 라벨을 대상지로 스캔한
   // 경우가 실제로 생긴다).
   const rawLocationResults = search.data?.items ?? [];
-  const candidateLocations = rawLocationResults.filter((i) => i.id !== target.originLocationId);
-  const onlyOriginMatched = rawLocationResults.length > 0 && candidateLocations.length === 0;
+  const candidateLocations = rawLocationResults.filter(
+    (i) => i.id !== target.originLocationId
+  );
+  const onlyOriginMatched =
+    rawLocationResults.length > 0 && candidateLocations.length === 0;
 
   useScanner((e) => {
     if (!dest) setTerm(e.code);
@@ -82,11 +88,20 @@ export function PutawaySheet({
   // 멱등키 회전: 대상지나 수량이 바뀌면 새 키. "커밋됐는데 응답만 유실" 뒤 값을
   // 고쳐 재제출할 때 옛 payload 를 같은 키로 replay 하면 서버가 옛 결과를 돌려주고
   // 화면은 새 값이 반영된 줄 안다 — 원장과 화면이 갈린다.
-  const keyPayloadRef = useRef({ lineId: target.lineId, to: '', qty: target.pendingQty });
+  const keyPayloadRef = useRef({
+    lineId: target.lineId,
+    to: '',
+    qty: target.pendingQty,
+  });
   useEffect(() => {
     const next = { lineId: target.lineId, to: dest?.id ?? '', qty: quantity };
     const prev = keyPayloadRef.current;
-    if (prev.lineId === next.lineId && prev.to === next.to && prev.qty === next.qty) return;
+    if (
+      prev.lineId === next.lineId &&
+      prev.to === next.to &&
+      prev.qty === next.qty
+    )
+      return;
     keyPayloadRef.current = next;
     setIdempotencyKey(crypto.randomUUID());
   }, [target.lineId, dest, quantity]);
@@ -101,7 +116,9 @@ export function PutawaySheet({
       <div className="max-h-[90vh] w-full max-w-sm space-y-4 overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
         <div>
           <div className="font-semibold text-gray-800">{target.skuName}</div>
-          <div className="font-mono text-xs text-gray-500">{target.skuCode}</div>
+          <div className="font-mono text-xs text-gray-500">
+            {target.skuCode}
+          </div>
           <div className="mt-1 text-xs text-gray-500">
             {target.originLocationCode} · 잔여 {target.pendingQty}개
           </div>
@@ -128,8 +145,14 @@ export function PutawaySheet({
           <h3 className="text-sm font-semibold text-gray-700">대상 로케이션</h3>
           {dest ? (
             <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
-              <span className="flex-1 font-medium text-gray-800">{dest.code}</span>
-              <button type="button" className="text-xs text-blue-700 underline" onClick={() => setDest(null)}>
+              <span className="flex-1 font-medium text-gray-800">
+                {dest.code}
+              </span>
+              <button
+                type="button"
+                className="text-xs text-blue-700 underline"
+                onClick={() => setDest(null)}
+              >
                 변경
               </button>
             </div>
@@ -201,7 +224,12 @@ export function PutawaySheet({
           <Button
             type="button"
             className="flex-1"
-            disabled={!dest || putaway.isPending || quantity < 1 || quantity > target.pendingQty}
+            disabled={
+              !dest ||
+              putaway.isPending ||
+              quantity < 1 ||
+              quantity > target.pendingQty
+            }
             onClick={() => {
               if (!dest) return;
               putaway.mutate(
@@ -220,5 +248,13 @@ export function PutawaySheet({
         </div>
       </div>
     </div>
+  );
+}
+
+export function PutawaySheet(props: Parameters<typeof PutawaySheetContent>[0]) {
+  return (
+    <WorkArea kind="inbound">
+      <PutawaySheetContent {...props} />
+    </WorkArea>
   );
 }

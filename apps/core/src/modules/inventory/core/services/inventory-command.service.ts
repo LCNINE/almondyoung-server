@@ -6,7 +6,10 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
 import { LocationService } from './location.service';
 import { eq, and, gt, asc } from 'drizzle-orm';
-import { acquireStockAvailabilityLock, acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import {
+  acquireStockAvailabilityLock,
+  acquireStockAvailabilityLocks,
+} from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 
@@ -273,8 +276,13 @@ export class InventoryCommandService {
       .select({
         id: wmsTables.dispatchAttemptSources.id,
         stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+        skuId: wmsTables.shipmentLines.skuId,
       })
       .from(wmsTables.dispatchAttemptSources)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
+      )
       .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, input.dispatchAttemptId))
       .orderBy(wmsTables.dispatchAttemptSources.id);
     if (sourceRows.length === 0 || sourceRows.some((source) => !source.stockEventId)) {
@@ -282,6 +290,13 @@ export class InventoryCommandService {
     }
 
     const occurredAt = input.occurredAt ?? new Date();
+    await acquireStockAvailabilityLocks(
+      tx,
+      sourceRows.map((source) => ({
+        skuId: source.skuId,
+        warehouseId: attemptWarehouse.warehouseId,
+      })),
+    );
     const sources: ShipmentDispatchEventReversal[] = [];
     for (const source of sourceRows) {
       sources.push(
@@ -327,11 +342,7 @@ export class InventoryCommandService {
       // 떠난 재고는 출발 선반이 아니라 운송중존에 둔다. stock_ledgers.location_id 가
       // NOT NULL 이라 어딘가에는 매달려야 하고, 출발 선반에 두면 적치·재고조사가 틀어진다.
       await this.locationService.ensureSystemLocations(input.fromWarehouseId, trx);
-      const transitZone = await this.locationService.getSystemLocationByRole(
-        input.fromWarehouseId,
-        'transit_out',
-        trx,
-      );
+      const transitZone = await this.locationService.getSystemLocationByRole(input.fromWarehouseId, 'transit_out', trx);
       if (!transitZone) throw new BadRequestException('운송중존이 존재하지 않습니다.');
 
       const event = await this.eventStore.createEvent(
@@ -478,8 +489,7 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
-      // 0. 조기 멱등 흡수 — SKU/위치 조회보다 먼저. adjustUp 에는 락이 없으므로
-      //    exec 진입 직후에 검사한다.
+      // 0. 조기 멱등 흡수 — SKU/위치 조회 및 원장 프로젝션 락보다 먼저 검사한다.
       if (input.idempotencyKey) {
         const existingId = await this.findEventIdByIdempotencyKey(trx, input.idempotencyKey);
         if (existingId) return { eventId: existingId };

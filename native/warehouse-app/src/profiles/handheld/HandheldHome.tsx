@@ -1,3 +1,4 @@
+import { useDeveloperMode } from '../../core/diagnostics/DeveloperModeProvider';
 import { Link } from '@tanstack/react-router';
 import {
   Search,
@@ -12,17 +13,36 @@ import {
 import { TileGrid, HubTile } from '../../core/design/HubTile';
 
 export function HandheldHome() {
+  const developer = useDeveloperMode();
   return (
     <div data-testid="handheld-home" className="space-y-4">
       <TileGrid>
-        <Link to="/inventory"><HubTile icon={Search} label="재고조회" /></Link>
-        <Link to="/stocktaking"><HubTile icon={ClipboardCheck} label="실사" /></Link>
-        <Link to="/movement"><HubTile icon={ArrowLeftRight} label="이동" /></Link>
-        <Link to="/putaway"><HubTile icon={ClipboardList} label="적치" /></Link>
-        <Link to="/inbound"><HubTile icon={PackagePlus} label="입고/검수" /></Link>
-        <Link to="/outbound"><HubTile icon={ListChecks} label="출고작업" /></Link>
-        <Link to="/diagnostics"><HubTile icon={Wrench} label="진단" /></Link>
-        <Link to="/settings"><HubTile icon={Settings} label="설정" /></Link>
+        <Link to="/inventory">
+          <HubTile icon={Search} label="재고조회" />
+        </Link>
+        <Link to="/stocktaking">
+          <HubTile icon={ClipboardCheck} label="실사" />
+        </Link>
+        <Link to="/movement">
+          <HubTile icon={ArrowLeftRight} label="이동" />
+        </Link>
+        <Link to="/putaway">
+          <HubTile icon={ClipboardList} label="적치" />
+        </Link>
+        <Link to="/inbound">
+          <HubTile icon={PackagePlus} label="입고/검수" />
+        </Link>
+        <Link to="/outbound">
+          <HubTile icon={ListChecks} label="출고작업" />
+        </Link>
+        {developer.enabled && (
+          <Link to="/diagnostics">
+            <HubTile icon={Wrench} label="개발자 진단" />
+          </Link>
+        )}
+        <Link to="/settings">
+          <HubTile icon={Settings} label="설정" />
+        </Link>
       </TileGrid>
     </div>
   );

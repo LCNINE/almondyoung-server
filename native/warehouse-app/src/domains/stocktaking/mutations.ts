@@ -37,7 +37,11 @@ export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateSessionInput) =>
-      api.request<StocktakingSession>({ method: 'POST', path: '/stocktaking/sessions', body: input }),
+      api.request<StocktakingSession>({
+        method: 'POST',
+        path: '/stocktaking/sessions',
+        body: input,
+      }),
     onSuccess: () => invalidateList(qc),
   });
 }
@@ -48,7 +52,10 @@ export function useStartSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) =>
-      api.request<unknown>({ method: 'POST', path: `/stocktaking/sessions/${sessionId}/start` }),
+      api.request<unknown>({
+        method: 'POST',
+        path: `/stocktaking/sessions/${sessionId}/start`,
+      }),
     onSuccess: (_data, sessionId) => {
       invalidateList(qc);
       invalidateSession(qc, sessionId);
@@ -62,7 +69,10 @@ export function useCancelSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) =>
-      api.request<unknown>({ method: 'POST', path: `/stocktaking/sessions/${sessionId}/cancel` }),
+      api.request<unknown>({
+        method: 'POST',
+        path: `/stocktaking/sessions/${sessionId}/cancel`,
+      }),
     onSuccess: (_data, sessionId) => {
       invalidateList(qc);
       invalidateSession(qc, sessionId);
@@ -71,6 +81,7 @@ export function useCancelSession() {
 }
 
 export interface ScanLocationInput {
+  idempotencyKey?: string;
   sessionId: string;
   locationBarcode: string;
 }
@@ -84,6 +95,7 @@ export function useScanLocation() {
       api.request<ScanLocationResult>({
         method: 'POST',
         path: '/stocktaking/scan-location',
+        idempotencyKey: input.idempotencyKey,
         body: input,
       }),
     // onSuccess 가 아니라 onSettled — 서버에서 커밋은 됐는데 응답만 유실되면
@@ -97,6 +109,7 @@ export function useScanLocation() {
 }
 
 export interface ScanProductInput {
+  idempotencyKey?: string;
   sessionId: string;
   locationId: string;
   productBarcode: string;
@@ -113,6 +126,7 @@ export function useScanProduct() {
       api.request<ScanProductResult>({
         method: 'POST',
         path: '/stocktaking/scan-product',
+        idempotencyKey: input.idempotencyKey,
         body: input,
       }),
     // onSettled — 이유는 useScanLocation 과 같다(scanProduct 도 카운트에 영향).
@@ -124,6 +138,7 @@ export function useScanProduct() {
 }
 
 export interface UpdateCountInput {
+  expectedRevision: number;
   sessionId: string;
   lineId: string;
   /** 절대값 세팅(정정용). scan-product 의 증가 연산과 다르다. */
@@ -140,7 +155,11 @@ export function useUpdateCount() {
       api.request<ScanProductResult>({
         method: 'PUT',
         path: `/stocktaking/lines/${input.lineId}/count`,
-        body: { countedQuantity: input.countedQuantity, notes: input.notes },
+        body: {
+          countedQuantity: input.countedQuantity,
+          notes: input.notes,
+          expectedRevision: input.expectedRevision,
+        },
       }),
     // onSettled — 이유는 useScanLocation 과 같다(절대값 세팅도 카운트에 영향).
     onSettled: (_data, _error, input) => {
@@ -158,7 +177,7 @@ export function useGenerateAdjustments() {
       api.request<GenerateAdjustmentsResult>({
         method: 'POST',
         path: `/stocktaking/sessions/${sessionId}/generate-adjustments`,
-        body: {},
+        body: { contractVersion: 2 },
       }),
   });
 }
@@ -168,15 +187,42 @@ export function useCompleteSession() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (sessionId: string) =>
-      api.request<unknown>({ method: 'POST', path: `/stocktaking/sessions/${sessionId}/complete` }),
-    onSuccess: (_data, sessionId) => {
+    mutationFn: (input: { sessionId: string; previewToken: string }) =>
+      api.request<unknown>({
+        method: 'POST',
+        path: `/stocktaking/sessions/${input.sessionId}/complete`,
+        body: { previewToken: input.previewToken },
+      }),
+    onSuccess: (_data, { sessionId }) => {
       invalidateList(qc);
       invalidateSession(qc, sessionId);
-      void qc.invalidateQueries({ queryKey: ['stocktaking-variances', sessionId] });
+      void qc.invalidateQueries({
+        queryKey: ['stocktaking-variances', sessionId],
+      });
       // 원장이 실제로 움직였으므로 재고 화면도 새로 읽어야 한다.
       void qc.invalidateQueries({ queryKey: ['sku-warehouse-stock'] });
       void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
+    },
+  });
+}
+
+export function useResetCount() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      sessionId: string;
+      lineId: string;
+      expectedRevision: number;
+    }) =>
+      api.request<ScanProductResult>({
+        method: 'POST',
+        path: `/stocktaking/lines/${input.lineId}/reset-count`,
+        body: { expectedRevision: input.expectedRevision },
+      }),
+    onSettled: (_data, _error, input) => {
+      invalidateSession(qc, input.sessionId);
+      invalidateVariances(qc, input.sessionId);
     },
   });
 }

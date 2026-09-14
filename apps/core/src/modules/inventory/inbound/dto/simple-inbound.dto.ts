@@ -1,3 +1,4 @@
+import { WarehouseOperationVersionDto } from '../../core/services/warehouse-operation-contract';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsUUID,
@@ -28,7 +29,7 @@ export class SimpleInboundItemDto {
   memo?: string;
 }
 
-export class SimpleInboundDto {
+export class SimpleInboundDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '타겟 창고 ID' })
   @IsUUID()
   @IsNotEmpty()
@@ -47,7 +48,7 @@ export class SimpleInboundDto {
   idempotencyKey: string;
 }
 
-export class IndividualInboundDto {
+export class IndividualInboundDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '타겟 창고 ID' })
   @IsUUID()
   @IsNotEmpty()
@@ -79,7 +80,7 @@ export class IndividualInboundDto {
   idempotencyKey: string;
 }
 
-export class PutawayRequestDto {
+export class PutawayRequestDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '입고 라인 ID' })
   @IsUUID()
   @IsNotEmpty()
@@ -102,7 +103,7 @@ export class PutawayRequestDto {
   idempotencyKey: string;
 }
 
-export class ReturnInboundDto {
+export class ReturnInboundDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '입고 라인 ID' })
   @IsUUID()
   @IsNotEmpty()
@@ -124,7 +125,7 @@ export class ReturnInboundDto {
   idempotencyKey: string;
 }
 
-export class CancelInboundDto {
+export class CancelInboundDto extends WarehouseOperationVersionDto {
   @ApiProperty({ description: '입고 라인 ID' })
   @IsUUID()
   @IsNotEmpty()

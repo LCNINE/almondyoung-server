@@ -1,7 +1,8 @@
-import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsInt, Min, Max, NotEquals, IsString, IsOptional, MaxLength } from 'class-validator';
+import { WarehouseOperationDto } from '../../services/warehouse-operation-contract';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class AdjustStockDto {
+export class AdjustStockDto extends WarehouseOperationDto {
   @ApiProperty({ description: 'SKU ID' })
   @IsUUID()
   @IsNotEmpty()
@@ -18,7 +19,10 @@ export class AdjustStockDto {
   locationId?: string;
 
   @ApiProperty({ description: '변경할 수량(양수=가산, 음수=감산)' })
-  @IsNumber()
+  @IsInt()
+  @Min(-Number.MAX_SAFE_INTEGER)
+  @Max(Number.MAX_SAFE_INTEGER)
+  @NotEquals(0)
   @IsNotEmpty()
   delta: number;
 
@@ -26,13 +30,4 @@ export class AdjustStockDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
-
-  @ApiProperty({
-    description: '요청 멱등 키 — 클라이언트 생성 UUID. 같은 조정의 재시도는 같은 값을 재사용한다.',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(90)
-  idempotencyKey?: string;
 }

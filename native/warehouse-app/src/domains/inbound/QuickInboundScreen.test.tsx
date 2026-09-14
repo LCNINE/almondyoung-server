@@ -15,7 +15,10 @@ import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
-import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
+import {
+  ScanProvider,
+  useScanBus,
+} from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
@@ -53,28 +56,39 @@ interface Call {
 function ScanButton({ code }: { code: string }) {
   const bus = useScanBus();
   return (
-    <button type="button" onClick={() => bus.emit({ code, source: 'hid', at: 1 })}>
+    <button
+      type="button"
+      onClick={() => bus.emit({ code, source: 'hid', at: 1 })}
+    >
       스캔:{code}
     </button>
   );
 }
 
 function renderScreen(calls: Call[]) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
-        return { id: 'r-1', lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }] };
+        return {
+          id: 'r-1',
+          lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
+        };
       }
       if (o.path === '/inbound/putaway') return { success: true };
       if (o.path.startsWith('/locations/warehouses/')) {
         // 검색어가 한글이면 URLSearchParams 가 percent-encode 한다 — 디코드해서 비교한다.
         const path = decodeURIComponent(o.path);
         if (path.includes('B-05')) {
-          return { items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }], total: 1 };
+          return {
+            items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }],
+            total: 1,
+          };
         }
         return { items: [], total: 0 };
       }
@@ -139,7 +153,9 @@ describe('QuickInboundScreen', () => {
     // 박스 바코드(20개입)를 찍으면 1 → 21
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
 
-    await waitFor(() => expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('21'));
+    await waitFor(() =>
+      expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('21')
+    );
   });
 
   it('등록하면 카트가 적치 대기 목록으로 바뀐다', async () => {
@@ -183,8 +199,12 @@ describe('QuickInboundScreen', () => {
     expect(await screen.findByText('적치 대기')).toBeInTheDocument();
 
     // 등록 직후 스냅샷 — 이 다음의 스캔이 이 상태를 조금이라도 바꾸면 가드가 뚫린 것이다.
-    const lookupCallsBefore = calls.filter((c) => c.path.startsWith('/inventory/skus?barcode=')).length;
-    const putawayButtonsBefore = screen.getAllByRole('button', { name: '적치' }).length;
+    const lookupCallsBefore = calls.filter((c) =>
+      c.path.startsWith('/inventory/skus?barcode=')
+    ).length;
+    const putawayButtonsBefore = screen.getAllByRole('button', {
+      name: '적치',
+    }).length;
 
     // 등록 후 재스캔(미등록 바코드). 가드가 없으면 lookup 이 다시 실행되고 응답이 빈 배열이라
     // "등록되지 않은 바코드예요" 알림까지 뜬다 — 가드가 있으면 useScanner 콜백 첫 줄에서
@@ -198,7 +218,8 @@ describe('QuickInboundScreen', () => {
       waitFor(
         () => {
           expect(
-            calls.filter((c) => c.path.startsWith('/inventory/skus?barcode=')).length
+            calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+              .length
           ).toBeGreaterThan(lookupCallsBefore);
         },
         { timeout: 300 }
@@ -206,8 +227,10 @@ describe('QuickInboundScreen', () => {
     ).rejects.toThrow();
 
     // 적치 대기 목록도 그대로다 — 새 행 없음, 기존 행 수량 불변, 미등록 바코드 알림도 없음.
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '적치' })).toHaveLength(putawayButtonsBefore);
+    expect(screen.getByRole('alert')).toHaveTextContent('현재 작업을 마친 뒤');
+    expect(screen.getAllByRole('button', { name: '적치' })).toHaveLength(
+      putawayButtonsBefore
+    );
     expect(screen.getByText('20')).toBeInTheDocument();
   });
 
@@ -225,8 +248,13 @@ describe('QuickInboundScreen', () => {
     // 1차 부분 적치: 20개 중 12개.
     await user.click(screen.getByRole('button', { name: '적치' }));
     let sheet = await screen.findByRole('dialog', { name: '적치' });
-    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
-    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    await user.type(
+      within(sheet).getByLabelText('대상 로케이션 검색'),
+      'B-05-03'
+    );
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled()
+    );
     // 프리필 20 → 지우기·지우기 → 0 → '1' '2' = 12.
     await user.click(within(sheet).getByRole('button', { name: '지우기' }));
     await user.click(within(sheet).getByRole('button', { name: '지우기' }));
@@ -246,8 +274,13 @@ describe('QuickInboundScreen', () => {
 
     // 2차 부분 적치: 남은 8개 중 5개. 누적(17) vs 대입(5)을 가른다 — 완료(20)는
     // 아직 아니므로 완료 배지가 뜨면 안 된다.
-    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
-    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    await user.type(
+      within(sheet).getByLabelText('대상 로케이션 검색'),
+      'B-05-03'
+    );
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled()
+    );
     await user.click(within(sheet).getByRole('button', { name: '지우기' }));
     await user.click(within(sheet).getByRole('button', { name: '지우기' }));
     await user.click(within(sheet).getByRole('button', { name: '5' }));

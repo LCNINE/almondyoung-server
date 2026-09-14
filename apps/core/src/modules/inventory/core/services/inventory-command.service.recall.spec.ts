@@ -3,6 +3,7 @@ import { InventoryCommandService } from './inventory-command.service';
 
 function queuedTx(rows: unknown[]) {
   return {
+    execute: jest.fn().mockResolvedValue([]),
     select: jest.fn(() => {
       const value = rows.shift();
       const chain: Record<string, unknown> = {};
@@ -44,8 +45,18 @@ describe('InventoryCommandService shipment dispatch reversal', () => {
       [{ id: journalId, sourceType: 'SHIPMENT_RECALL', sourceId: operationId, actorId }],
       [{ warehouseId: '10000000-0000-4000-8000-000000000006' }],
       [
-        { id: '10000000-0000-4000-8000-000000000021', stockEventId: sourceEvent1 },
-        { id: '10000000-0000-4000-8000-000000000022', stockEventId: sourceEvent2 },
+        {
+          id: '10000000-0000-4000-8000-000000000021',
+          stockEventId: sourceEvent1,
+          skuId: '10000000-0000-4000-8000-000000000041',
+          warehouseId: '10000000-0000-4000-8000-000000000006',
+        },
+        {
+          id: '10000000-0000-4000-8000-000000000022',
+          stockEventId: sourceEvent2,
+          skuId: '10000000-0000-4000-8000-000000000041',
+          warehouseId: '10000000-0000-4000-8000-000000000006',
+        },
       ],
     ]);
     eventStore.reverseShipmentDispatchEvent

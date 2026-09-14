@@ -5,6 +5,7 @@ import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { isTodaySeoul } from '../../shared/services/time.util';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
@@ -20,6 +21,7 @@ export interface ArrivalLineInput {
 }
 
 export type RecordArrivalInput = ArrivalOrigin & {
+  actorId?: string;
   warehouseId: string;
   /** 비우면 입고기본존. 지정값은 검증하지 않는다(현행 개별입고와 같다). */
   locationId?: string | null;
@@ -86,10 +88,21 @@ export class InboundReceiptKernel {
    * 로 거절해 왔다 — 현행 계약이 그렇다).
    */
   async recordArrival(input: RecordArrivalInput, tx: DbTx): Promise<RecordArrivalResult> {
+    // Claim every SKU before the first projection, including opposite input line orders.
+    await acquireStockAvailabilityLocks(
+      tx,
+      input.lines.map((line) => ({
+        skuId: line.skuId,
+        warehouseId: input.warehouseId,
+      })),
+    );
     const locationId = await this.resolveLocation(input.warehouseId, input.locationId ?? null, tx);
     const method = input.source === 'direct' ? input.method : 'planned';
 
-    const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'inbound' }).returning();
+    const [journal] = await tx
+      .insert(wmsTables.stockJournals)
+      .values({ sourceType: 'inbound', actorId: input.actorId })
+      .returning();
 
     const [receipt] = await tx
       .insert(wmsTables.inboundReceipts)

@@ -20,7 +20,9 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   inbound: { 400: '입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.' },
   // 취소는 서버가 "적치 존재"·"당일 아님"·"전량 아님"을 모두 400 으로 낸다.
   // 현장에서 실제로 부딪히는 건 앞의 둘이고, 앱은 전량만 보내므로 셋째는 안 난다.
-  'inbound-cancel': { 400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.' },
+  'inbound-cancel': {
+    400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.',
+  },
   'po-receive': {
     400: '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.',
     404: '발주를 찾을 수 없어요. 목록을 새로고침 해주세요.',
@@ -45,9 +47,14 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  SIMPLE_OUTBOUND_BARCODE_UNKNOWN:
+    '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
+  SIMPLE_OUTBOUND_PLAN_INVALIDATED:
+    '출고 계획이 바뀌었어요. 송장을 다시 확인해 주세요.',
   SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT: '이 송장에 없는 상품이에요',
   SIMPLE_OUTBOUND_OVERSCAN: '이 상품은 이미 필요한 수량을 다 채웠어요',
-  SIMPLE_OUTBOUND_WORK_ITEM_MISSING: '이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요',
+  SIMPLE_OUTBOUND_WORK_ITEM_MISSING:
+    '이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요',
   SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: '다른 작업자가 이 박스를 작업 중이에요',
   SIMPLE_OUTBOUND_METHOD_UNSUPPORTED:
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
@@ -55,7 +62,14 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (error instanceof ConflictError) {
-    if (context === 'po-receive') return error.message;
+    if (error.code === 'STOCKTAKING_COUNT_REQUIRED')
+      return '아직 세지 않은 상품이 있어요. 모든 수량을 확인해 주세요.';
+    if (error.code === 'STOCKTAKING_RECOUNT_REQUIRED')
+      return '실사 중 재고가 바뀌었어요. 해당 상품을 다시 세어 주세요.';
+    if (error.code === 'STOCKTAKING_REVISION_CONFLICT')
+      return '다른 작업자가 수량을 변경했어요. 최신 수량을 확인해 주세요.';
+    if (error.code === 'STOCKTAKING_PREVIEW_STALE')
+      return '검토한 뒤 수량이 바뀌었어요. 조정 내용을 다시 확인해 주세요.';
     if (context === 'outbound' && error.code) {
       const specific = OUTBOUND_CONFLICT_MESSAGES[error.code];
       if (specific) return specific;
@@ -71,7 +85,8 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
       const specific = CONTEXTUAL[context][status];
       if (specific) return specific;
     }
-    if (status === 401 || status === 403) return '권한이 없어요. 다시 로그인해 주세요.';
+    if (status === 401 || status === 403)
+      return '권한이 없어요. 다시 로그인해 주세요.';
     if (status !== undefined && status >= 500) {
       return '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.';
     }

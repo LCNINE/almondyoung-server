@@ -15,7 +15,7 @@ const stub: Session = {
 } satisfies Session;
 
 describe('DiagnosticsScreen', () => {
-  it('mounts and shows the diagnostics sections + logout', () => {
+  it('hides diagnostics unless developer mode is explicitly enabled', () => {
     render(
       <SessionProvider session={stub}>
         <ScanProvider>
@@ -23,15 +23,10 @@ describe('DiagnosticsScreen', () => {
         </ScanProvider>
       </SessionProvider>
     );
-    expect(screen.getByText('Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText(/관리자 권한이 필요해요/)).toBeInTheDocument();
+    expect(screen.queryByText('Diagnostics')).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /camera scan/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /test print/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /^logout$/i })
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: /camera scan/i })
+    ).not.toBeInTheDocument();
   });
 });

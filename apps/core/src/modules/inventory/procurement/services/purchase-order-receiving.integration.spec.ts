@@ -569,4 +569,28 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
       ).rejects.toBeInstanceOf(ConflictError);
     });
   });
+  it('v2 receipt records the authenticated actor and rejects another actor reusing its key', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedOrderedPo(trx);
+      const { receiving } = buildManagers(trx);
+      const dto = {
+        contractVersion: 2,
+        idempotencyKey: randomUUID(),
+        warehouseId: fx.warehouseId,
+        lines: [{ skuId: fx.skuIds[0], quantity: 2 }],
+      };
+      const call = receiving.receive.bind(receiving) as (...args: unknown[]) => Promise<any>;
+      const first = await call(fx.poId, dto, undefined, USER_ID);
+      const [receipt] = await trx
+        .select()
+        .from(wmsTables.inboundReceipts)
+        .where(eq(wmsTables.inboundReceipts.id, first.receiptId));
+      const [journal] = await trx
+        .select()
+        .from(wmsTables.stockJournals)
+        .where(eq(wmsTables.stockJournals.id, receipt.journalId!));
+      expect(journal.actorId).toBe(USER_ID);
+      await expect(call(fx.poId, dto, undefined, randomUUID())).rejects.toMatchObject({ message: expect.any(String) });
+    });
+  });
 });

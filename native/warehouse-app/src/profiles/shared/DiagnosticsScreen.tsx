@@ -1,3 +1,5 @@
+import { useDeveloperMode } from '../../core/diagnostics/DeveloperModeProvider';
+import { readDiagnostics } from '../../core/diagnostics/operationDiagnostics';
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../../core/design/Button';
@@ -8,6 +10,14 @@ import type { ScanEvent } from '../../core/hardware/scan/ScanProvider';
 import { useSession, useIsAuthenticated } from '../../app/session-context';
 
 export function DiagnosticsScreen() {
+  const developer = useDeveloperMode();
+  return developer.enabled ? (
+    <AuthorizedDiagnostics />
+  ) : (
+    <p>설정에서 개발자 모드를 켜 주세요. 관리자 권한이 필요해요.</p>
+  );
+}
+function AuthorizedDiagnostics() {
   const [scans, setScans] = useState<ScanEvent[]>([]);
   const [status, setStatus] = useState('');
   const emit = useScanEmit();
@@ -23,9 +33,7 @@ export function DiagnosticsScreen() {
         <h2 className="font-medium">Scans (HID + camera)</h2>
         <ul className="mt-1 max-h-40 overflow-auto text-sm">
           {scans.map((s, i) => (
-            <li key={i}>
-              [{s.source}] {s.code}
-            </li>
+            <li key={i}>[{s.source}] 입력 확인</li>
           ))}
         </ul>
         <Button
@@ -73,6 +81,12 @@ export function DiagnosticsScreen() {
         </Button>
       </section>
 
+      <section>
+        <h2>작업 진단</h2>
+        <pre className="overflow-auto text-xs">
+          {JSON.stringify(readDiagnostics(), null, 2)}
+        </pre>
+      </section>
       <p className="text-sm text-gray-600">{status}</p>
     </div>
   );
