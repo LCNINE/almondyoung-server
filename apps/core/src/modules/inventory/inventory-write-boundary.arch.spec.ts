@@ -27,9 +27,11 @@ const LEDGER_FORBIDDEN = [
   /\.update\(\s*(wmsTables\.)?stockLedgers\b/,
 ];
 
-// 발주 헤더는 조달이 소유한다(ADR-0032 결정 4 · #724 항목 7 스펙 §5). 입고가 직접 쓰면
-// received 진입 규칙이 두 모듈로 갈라지고 잠금 취득 지점이 하나 늘어난다.
-const PO_FORBIDDEN = [/\.(insert|update)\(\s*(wmsTables\.)?purchaseOrders\b/];
+// 발주 헤더·라인·수령 링크는 조달이 소유한다(ADR-0039). 입고·중립 층이 직접 쓰면
+// received_qty 정산이 두 모듈로 갈라지고 잠금 취득 지점이 하나 늘어난다.
+const PO_FORBIDDEN = [
+  /\.(insert|update|delete)\(\s*(wmsTables\.)?(purchaseOrders|purchaseOrderLines|purchaseOrderReceiptLines)\b/,
+];
 
 describe('inventory write boundary (arch)', () => {
   it('StockEventStore 외부에서 stockEvents/stockLedgers 직접 쓰기 금지', () => {
@@ -45,7 +47,7 @@ describe('inventory write boundary (arch)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('procurement/ 밖에서 purchaseOrders 직접 쓰기 금지', () => {
+  it('procurement/ 밖에서 발주 헤더·라인·수령 링크 쓰기 금지', () => {
     const violations: string[] = [];
     for (const file of collectTsFiles(INVENTORY_ROOT)) {
       if (file.includes(`${sep}procurement${sep}`)) continue;
