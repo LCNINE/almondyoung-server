@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { createScanBuffer } from './scanBuffer';
 
 export interface ScanEvent {
@@ -41,11 +35,29 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const buffer = createScanBuffer();
     function onKeyDown(ev: KeyboardEvent) {
+      const target = ev.target;
+      if (
+        ev.defaultPrevented ||
+        ev.isComposing ||
+        (target instanceof HTMLElement &&
+          (target.isContentEditable ||
+            target.closest('input, textarea, select, [inert]')))
+      ) {
+        buffer.reset();
+        return;
+      }
       const code = buffer.feed(ev.key, performance.now());
       if (code) bus.emit({ code, source: 'hid', at: Date.now() });
     }
+    const reset = () => buffer.reset();
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('focusin', reset);
+    window.addEventListener('focusout', reset);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('focusin', reset);
+      window.removeEventListener('focusout', reset);
+    };
   }, [bus]);
 
   return <ScanContext.Provider value={bus}>{children}</ScanContext.Provider>;

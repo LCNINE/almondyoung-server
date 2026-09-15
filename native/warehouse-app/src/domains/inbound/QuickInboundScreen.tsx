@@ -11,6 +11,10 @@ import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
+import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
+import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import { NumberPad } from '../../core/design/NumberPad';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import {
@@ -122,6 +126,10 @@ function QuickInboundScreenContent() {
     };
   }, [runtime, draft.ready, idempotencyKey]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [quantityText, setQuantityText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  useUnsavedWork(editing !== null || saving);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [putawayFor, setPutawayFor] = useState<FreshLine | null>(null);
@@ -164,12 +172,67 @@ function QuickInboundScreenContent() {
   }, `quick-inbound:${warehouseId}`);
   useScanner((e) => {
     if (putawayFor) return;
-    if (stagedMode || submit.isPending || !draft.ready) {
+    if (
+      stagedMode ||
+      submit.isPending ||
+      !draft.ready ||
+      editing ||
+      savingRef.current
+    ) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;
     }
     scanQueue.enqueue(e.code);
   });
+
+  async function chooseSku(sku: SelectedSku) {
+    if (savingRef.current || editing || scanQueue.blocked() || submit.isPending)
+      return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const current = await draft.read();
+      const row = current.cart.find((item) => item.skuId === sku.id);
+      if (!row)
+        await setCart((prev) => [
+          ...prev,
+          {
+            skuId: sku.id,
+            skuCode: sku.code,
+            skuName: sku.name,
+            quantity: 1,
+          },
+        ]);
+      setQuantityText(String(row?.quantity ?? 1));
+      setEditing(sku.id);
+    } catch {
+      setNotice(
+        '상품을 저장하지 못했어요. 저장 공간을 확인한 뒤 다시 선택해 주세요.'
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+  async function saveQuantity() {
+    const quantity = parseQuantity(quantityText, 1);
+    if (!editing || quantity === null || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await setCart((prev) =>
+        prev.map((row) => (row.skuId === editing ? { ...row, quantity } : row))
+      );
+      setEditing(null);
+    } catch {
+      setNotice(
+        '수량을 저장하지 못했어요. 입력을 유지한 채 다시 저장해 주세요.'
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
 
   if (!isSet) {
     return (
@@ -262,9 +325,21 @@ function QuickInboundScreenContent() {
           <Button
             type="button"
             className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            onClick={() => {
-              setStaged([]);
-              setCart([]);
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await draft.update(() => ({
+                  cart: [],
+                  staged: [],
+                  seen: [],
+                  key: crypto.randomUUID(),
+                }));
+              } catch {
+                setNotice('새 입고를 시작하지 못했어요. 다시 시도해 주세요.');
+              } finally {
+                setSaving(false);
+              }
             }}
           >
             새 입고 시작
@@ -272,10 +347,27 @@ function QuickInboundScreenContent() {
         </section>
       ) : (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">스캔한 품목</h2>
+          <h2 className="text-sm font-semibold text-gray-700">입고할 품목</h2>
+          <p className="text-xs text-gray-500">
+            발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
+          </p>
+          <SkuPicker
+            disabled={
+              !draft.ready ||
+              saving ||
+              !!editing ||
+              scanQueue.blocked() ||
+              submit.isPending
+            }
+            onSelect={(sku) => void chooseSku(sku)}
+          />
+          <BarcodeInput
+            disabled={!draft.ready || saving || !!editing || submit.isPending}
+            onSubmit={(code) => scanQueue.enqueue(code)}
+          />
           {cart.length === 0 ? (
             <p className="text-sm text-gray-500">
-              상품 바코드를 스캔해 주세요.
+              상품을 검색해서 선택하거나 바코드를 입력해 주세요.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -297,10 +389,16 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 수량`}
                       className="text-lg font-semibold text-gray-900 underline"
-                      disabled={scanQueue.blocked() || submit.isPending}
-                      onClick={() =>
-                        setEditing(editing === row.skuId ? null : row.skuId)
+                      disabled={
+                        scanQueue.blocked() ||
+                        submit.isPending ||
+                        saving ||
+                        !!editing
                       }
+                      onClick={() => {
+                        setQuantityText(String(row.quantity));
+                        setEditing(row.skuId);
+                      }}
                     >
                       {row.quantity}
                     </button>
@@ -308,12 +406,29 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 삭제`}
                       className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
-                      disabled={scanQueue.blocked() || submit.isPending}
-                      onClick={() =>
-                        void setCart((prev) =>
-                          prev.filter((r) => r.skuId !== row.skuId)
-                        )
+                      disabled={
+                        scanQueue.blocked() ||
+                        submit.isPending ||
+                        saving ||
+                        !!editing
                       }
+                      onClick={async () => {
+                        if (savingRef.current) return;
+                        savingRef.current = true;
+                        setSaving(true);
+                        try {
+                          await setCart((prev) =>
+                            prev.filter((r) => r.skuId !== row.skuId)
+                          );
+                        } catch {
+                          setNotice(
+                            '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
+                          );
+                        } finally {
+                          savingRef.current = false;
+                          setSaving(false);
+                        }
+                      }}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
                     </button>
@@ -321,16 +436,35 @@ function QuickInboundScreenContent() {
                   {editing === row.skuId &&
                   !scanQueue.blocked() &&
                   !submit.isPending ? (
-                    <NumberPad
-                      value={row.quantity}
-                      onChange={(next) =>
-                        setCart((prev) =>
-                          prev.map((r) =>
-                            r.skuId === row.skuId ? { ...r, quantity: next } : r
-                          )
-                        )
-                      }
-                    />
+                    <div className="space-y-2">
+                      <QuantityInput
+                        label="입고 수량 직접 입력"
+                        value={quantityText}
+                        onChange={setQuantityText}
+                        min={1}
+                        disabled={saving}
+                      />
+                      <fieldset disabled={saving}>
+                        <NumberPad
+                          value={parseQuantity(quantityText, 0) ?? 0}
+                          onChange={(next) => setQuantityText(String(next))}
+                        />
+                      </fieldset>
+                      <Button
+                        disabled={
+                          saving || parseQuantity(quantityText, 1) === null
+                        }
+                        onClick={() => void saveQuantity()}
+                      >
+                        수량 저장
+                      </Button>
+                      <Button
+                        disabled={saving}
+                        onClick={() => setEditing(null)}
+                      >
+                        수정 취소
+                      </Button>
+                    </div>
                   ) : null}
                 </li>
               ))}
@@ -348,6 +482,8 @@ function QuickInboundScreenContent() {
             className="w-full"
             disabled={
               !reconciled ||
+              !!editing ||
+              saving ||
               !draft.ready ||
               !!draft.error ||
               scanQueue.blocked() ||

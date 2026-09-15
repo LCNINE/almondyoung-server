@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../core/design/Button';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
 import { cn } from '../../core/design/cn';
 import type { ExpectedArrivalLine } from './types';
@@ -27,7 +28,11 @@ export function ReceiveSheet({
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
 }) {
-  const [qty, setQty] = useState(scanBump > 0 ? scanBump : item.outstandingQty);
+  const [quantityText, setQuantityText] = useState(
+    String(scanBump > 0 ? scanBump : item.outstandingQty)
+  );
+  const qty = parseQuantity(quantityText, 1) ?? 0;
+  const setQty = (next: number) => setQuantityText(String(next));
 
   const baselineRef = useRef(scanBump);
   useEffect(() => {
@@ -70,12 +75,19 @@ export function ReceiveSheet({
             {qty}
           </div>
           <fieldset disabled={pending}>
+            <QuantityInput
+              label="입고 수량 직접 입력"
+              value={quantityText}
+              onChange={setQuantityText}
+              min={1}
+              max={item.outstandingQty}
+            />
             <NumberPad value={qty} onChange={setQty} />
           </fieldset>
           {over ? (
             <p className="text-xs text-amber-700">
-              남은 수량 {item.outstandingQty}개를 넘습니다 — 넘는 분량은
-              간편입고로 받으세요
+              남은 수량 {item.outstandingQty}개를 넘습니다. 발주 수량을 확인해
+              주세요.
             </p>
           ) : null}
         </section>

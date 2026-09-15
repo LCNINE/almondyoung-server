@@ -20,3 +20,16 @@ it('does not confirm a malformed success response used for inventory counts', ()
     })
   ).not.toThrow();
 });
+
+it('새 실사 상품 추가의 손상된 응답을 확인 완료로 만들지 않는다', () => {
+  expect(() =>
+    validateOperationResult('/stocktaking/count-items', {})
+  ).toThrow();
+  expect(() =>
+    validateOperationResult('/stocktaking/count-items', {
+      lineId: 'l',
+      countedQuantity: 0,
+      lineRevision: 1,
+    })
+  ).not.toThrow();
+});

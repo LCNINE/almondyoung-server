@@ -7,7 +7,10 @@ import { apiBaseUrl, apiAuthMode } from '../../app/config';
 import { useQueryClient } from '@tanstack/react-query';
 import { createOperationRunner } from '../operations/operationRunner';
 import { createOperationStore } from '../operations/operationStore';
-import { OperationContext } from '../operations/OperationContext';
+import {
+  OperationContext,
+  type WorkCapabilities,
+} from '../operations/OperationContext';
 import { WorkBoundary } from '../operations/WorkBoundary';
 import { invalidateInventory } from './invalidateInventory';
 
@@ -59,6 +62,28 @@ export function ApiClientProvider({
       boundScope = scope;
       return scope;
     };
+    const getCapabilities = async (): Promise<WorkCapabilities> => {
+      const scope = await getScope();
+      const token = await session.getAccessToken();
+      const contextApi = createApiClient({
+        baseUrl: apiBaseUrl,
+        getToken: async () => token,
+        authMode: apiAuthMode,
+      });
+      const context = await contextApi.request<{
+        actorId: string;
+        operationContractVersion: number;
+        capabilities?: WorkCapabilities;
+      }>({ path: '/inventory/work-context' });
+      if (
+        !session.isAuthenticated() ||
+        context.operationContractVersion !== 2 ||
+        JSON.stringify([apiBaseUrl, context.actorId]) !== scope ||
+        token !== (await session.getAccessToken())
+      )
+        throw new Error('로그인을 다시 확인해 주세요.');
+      return context.capabilities ?? {};
+    };
     const store = createOperationStore();
     const runner = createOperationRunner({
       api: raw,
@@ -73,7 +98,7 @@ export function ApiClientProvider({
       },
       onConfirmed: () => invalidateInventory(qc),
     });
-    return { runner, store, getScope };
+    return { runner, store, getScope, getCapabilities };
   }, [client, session, qc, authenticated]);
   return (
     <ApiClientContext.Provider value={client ?? runtime!.runner}>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ScanProvider } from './ScanProvider';
 import { useScanner } from './useScanner';
 
@@ -23,4 +23,20 @@ describe('ScanProvider', () => {
     for (const k of ['9', '9', '1', '2', 'Enter']) fireKey(k);
     expect(onScan).toHaveBeenCalledWith('9912');
   });
+});
+
+it('검색·수량 입력과 Enter를 상품 스캔으로 소비하지 않는다', () => {
+  const onScan = vi.fn();
+  render(
+    <ScanProvider>
+      <Probe onScan={onScan} />
+      <input aria-label="검색" />
+    </ScanProvider>
+  );
+  const input = screen.getByLabelText('검색');
+  for (const key of ['9', '9', '1', '2', 'Enter'])
+    fireEvent.keyDown(input, { key });
+  expect(onScan).not.toHaveBeenCalled();
+  for (const key of ['8', '8', '0', '1', 'Enter']) fireKey(key);
+  expect(onScan.mock.calls).toEqual([['8801']]);
 });

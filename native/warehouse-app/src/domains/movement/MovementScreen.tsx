@@ -4,6 +4,7 @@ import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { cn } from '../../core/design/cn';
@@ -33,7 +34,9 @@ function MovementScreenContent() {
   );
   const [dest, setDest] = useState<LocationRef | null>(null);
   const [destTerm, setDestTerm] = useState('');
-  const [qty, setQty] = useState(0);
+  const [quantityText, setQuantityText] = useState(String(0));
+  const qty = parseQuantity(quantityText, 1) ?? 0;
+  const setQty = (next: number) => setQuantityText(String(next));
   const [reason, setReason] = useState<string | null>(null);
   const [otherReason, setOtherReason] = useState('');
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
@@ -300,6 +303,13 @@ function MovementScreenContent() {
               >
                 {qty}
               </div>
+              <QuantityInput
+                label="이동 수량 직접 입력"
+                value={quantityText}
+                onChange={setQuantityText}
+                min={1}
+                max={activeItem.quantity}
+              />
               <NumberPad value={qty} onChange={setQty} />
               {qty > activeItem.quantity ? (
                 <p className="text-xs text-red-600">

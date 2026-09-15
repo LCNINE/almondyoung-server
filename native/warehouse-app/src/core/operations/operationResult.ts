@@ -50,6 +50,7 @@ export function validateOperationResult(path: string, value: unknown): void {
         (line) => typeof line.lineId === 'string' && integer(line.lineRevision)
       );
   else if (
+    path === '/stocktaking/count-items' ||
     path === '/stocktaking/scan-product' ||
     /^\/stocktaking\/lines\/[^/]+\/(count|reset-count)$/.test(path)
   )
