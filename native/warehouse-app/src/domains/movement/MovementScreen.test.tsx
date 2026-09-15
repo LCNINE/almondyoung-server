@@ -26,7 +26,7 @@ import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { ScanProvider } from '../../core/hardware/scan/ScanProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { MovementScreen } from './MovementScreen';
 
@@ -76,13 +76,29 @@ function makeClient(
       if (opts.path.startsWith('/locations/warehouses/')) {
         if (opts.path.includes('A-01')) {
           return {
-            items: [{ id: 'l-src', code: 'A-01-02', displayName: 'A-01-02' }],
+            items: [
+              {
+                id: 'l-src',
+                code: 'A-01-02',
+                displayName: 'A-01-02',
+                isActive: false,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }
         if (opts.path.includes('B-05')) {
           return {
-            items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }],
+            items: [
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }
@@ -248,6 +264,151 @@ describe('MovementScreen', () => {
     });
   });
 
+  it('구형 서버가 돌려준 비활성·속성 누락 목적지는 클릭과 완전일치 자동선택에서 제외한다', async () => {
+    const base = makeClient([]);
+    const client: ApiClient = {
+      request: async (request) => {
+        if (
+          request.path.startsWith('/locations/warehouses/') &&
+          request.path.includes('LEGACY')
+        ) {
+          return {
+            items: [
+              {
+                id: 'l-inactive',
+                code: 'LEGACY-INACTIVE',
+                displayName: 'LEGACY-INACTIVE',
+                isActive: false,
+                isSystem: false,
+              },
+              { id: 'l-missing', code: 'LEGACY', displayName: 'LEGACY' },
+              {
+                id: 'l-system',
+                code: 'LEGACY-SYSTEM',
+                displayName: 'LEGACY-SYSTEM',
+                isActive: true,
+                isSystem: true,
+              },
+            ],
+            total: 3,
+          } as never;
+        }
+        return base.request(request);
+      },
+    };
+    renderScreen(client);
+    await pickSource();
+    await userEvent.click(screen.getByRole('button', { name: '이동' }));
+    await userEvent.type(screen.getByLabelText('대상 로케이션 검색'), 'LEGACY');
+
+    expect(
+      await screen.findByRole('button', { name: 'LEGACY-SYSTEM' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'LEGACY-INACTIVE' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'LEGACY' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '이동하기' })).toBeDisabled();
+  });
+
+  it('비활성 목적지 확정 거절 뒤 목적지만 지우고 이동 입력을 보존한다', async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
+    const base = makeClient(calls);
+    const client: ApiClient = {
+      request: async (request) => {
+        if (request.path === '/movement/move') {
+          calls.push(request);
+          throw new ConflictError(
+            'inactive destination',
+            'MOVEMENT_DESTINATION_INACTIVE'
+          );
+        }
+        return base.request(request);
+      },
+    };
+    renderScreen(client);
+    await pickSource();
+    await userEvent.click(screen.getByRole('button', { name: '이동' }));
+    await userEvent.type(screen.getByLabelText('대상 로케이션 검색'), 'B-05');
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'B-05-03' })
+    );
+    await userEvent.clear(screen.getByLabelText('이동 수량 직접 입력 (낱개)'));
+    await userEvent.type(
+      screen.getByLabelText('이동 수량 직접 입력 (낱개)'),
+      '5'
+    );
+    await userEvent.click(screen.getByRole('button', { name: '기타' }));
+    await userEvent.type(screen.getByLabelText('사유 직접 입력'), '진열 변경');
+    await userEvent.click(screen.getByRole('button', { name: '이동하기' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '재고 이동' })).getByRole(
+        'button',
+        { name: '이동' }
+      )
+    );
+
+    expect(
+      await screen.findByText(
+        '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('대상 로케이션 검색')).toBeInTheDocument();
+    expect(screen.getByLabelText('이동 수량 직접 입력 (낱개)')).toHaveValue(
+      '5'
+    );
+    expect(screen.getByLabelText('사유 직접 입력')).toHaveValue('진열 변경');
+    const sheet = screen.getByRole('dialog', { name: '품목 이동' });
+    expect(within(sheet).getByText('코튼셔츠')).toBeInTheDocument();
+    expect(within(sheet).getByText(/출발 A-01-02/)).toBeInTheDocument();
+  });
+
+  it('결과를 확인하지 못한 이동 요청은 목적지와 입력을 그대로 둔다', async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
+    const base = makeClient(calls);
+    const client: ApiClient = {
+      request: async (request) => {
+        if (request.path === '/movement/move') {
+          calls.push(request);
+          throw new ConflictError('unknown conflict', 'UNKNOWN_CONFLICT');
+        }
+        return base.request(request);
+      },
+    };
+    renderScreen(client);
+    await pickSource();
+    await userEvent.click(screen.getByRole('button', { name: '이동' }));
+    await userEvent.type(screen.getByLabelText('대상 로케이션 검색'), 'B-05');
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'B-05-03' })
+    );
+    await userEvent.clear(screen.getByLabelText('이동 수량 직접 입력 (낱개)'));
+    await userEvent.type(
+      screen.getByLabelText('이동 수량 직접 입력 (낱개)'),
+      '5'
+    );
+    await userEvent.click(screen.getByRole('button', { name: '이동하기' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '재고 이동' })).getByRole(
+        'button',
+        { name: '이동' }
+      )
+    );
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.path === '/movement/move')).toBe(true)
+    );
+    expect(
+      screen.queryByLabelText('대상 로케이션 검색')
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('B-05-03')).toBeInTheDocument();
+    expect(screen.getByLabelText('이동 수량 직접 입력 (낱개)')).toHaveValue(
+      '5'
+    );
+  });
+
   it('quantity 0 인 ON_HAND 행은 이동 목록에서 제외된다', async () => {
     const contents = {
       locationId: 'l-src',
@@ -281,7 +442,15 @@ describe('MovementScreen', () => {
         if (opts.path.startsWith('/locations/warehouses/')) {
           if (opts.path.includes('A-01')) {
             return {
-              items: [{ id: 'l-src', code: 'A-01-02', displayName: 'A-01-02' }],
+              items: [
+                {
+                  id: 'l-src',
+                  code: 'A-01-02',
+                  displayName: 'A-01-02',
+                  isActive: false,
+                  isSystem: false,
+                },
+              ],
               total: 1,
             };
           }

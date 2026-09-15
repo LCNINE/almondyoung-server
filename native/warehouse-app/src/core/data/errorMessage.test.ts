@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { errorMessage } from './errorMessage';
-import { ConflictError } from './httpClient';
+import { ApiError, ConflictError } from './httpClient';
 
 describe('errorMessage', () => {
   it('maps a ConflictError to a retry message', () => {
@@ -53,6 +53,19 @@ describe('errorMessage with context', () => {
     expect(
       errorMessage(new Error('POST /movement/move → 400'), 'movement')
     ).toBe('출발지 재고가 부족해요. 다시 확인해 주세요.');
+  });
+
+  it('비활성 이동 목적지는 다른 목적지를 다시 고르게 안내한다', () => {
+    expect(
+      errorMessage(
+        new ApiError(
+          'inactive destination',
+          409,
+          'MOVEMENT_DESTINATION_INACTIVE'
+        ),
+        'movement'
+      )
+    ).toBe('사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.');
   });
 
   it('문맥이 없으면 기존 문구를 유지한다', () => {

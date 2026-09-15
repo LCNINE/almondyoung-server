@@ -93,6 +93,16 @@ it('preserves unknown or malformed errors as uncertain', () => {
   ).toBe('rejected');
 });
 
+it('classifies only the named inactive movement destination conflict as rejected', () => {
+  expect(
+    new ApiError('inactive destination', 409, 'MOVEMENT_DESTINATION_INACTIVE')
+      .outcome
+  ).toBe('rejected');
+  expect(new ApiError('other conflict', 409, 'OTHER_409').outcome).toBe(
+    'uncertain'
+  );
+});
+
 it('classifies known barcode and unfinished-count refusals without trapping work', () => {
   for (const code of [
     'SIMPLE_OUTBOUND_BARCODE_UNKNOWN',

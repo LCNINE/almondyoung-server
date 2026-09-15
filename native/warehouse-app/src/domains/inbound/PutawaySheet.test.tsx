@@ -34,6 +34,13 @@ const TARGET: PutawayTarget = {
   originLocationId: 'l-origin',
 };
 
+const LAST_DEST = {
+  id: 'l-prev',
+  code: 'A-01-01',
+  isActive: true,
+  isSystem: false,
+} as const;
+
 interface Call {
   path: string;
   method?: string;
@@ -55,29 +62,69 @@ function makeClient(
         if (path.includes('입고기본존')) {
           return {
             items: [
-              { id: 'l-origin', code: '입고기본존', displayName: '입고기본존' },
-              { id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' },
+              {
+                id: 'l-origin',
+                code: '입고기본존',
+                displayName: '입고기본존',
+                isActive: true,
+                isSystem: true,
+              },
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
             ],
             total: 2,
           };
         }
         if (path.includes('B-05')) {
           return {
-            items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }],
+            items: [
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }
         if (path.includes('C-09')) {
           return {
-            items: [{ id: 'l-dst2', code: 'C-09-01', displayName: 'C-09-01' }],
+            items: [
+              {
+                id: 'l-dst2',
+                code: 'C-09-01',
+                displayName: 'C-09-01',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }
         if (path.includes('INB')) {
           return {
             items: [
-              { id: 'l-origin', code: '입고기본존', displayName: '입고기본존' },
-              { id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' },
+              {
+                id: 'l-origin',
+                code: '입고기본존',
+                displayName: '입고기본존',
+                isActive: true,
+                isSystem: true,
+              },
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
             ],
             total: 2,
           };
@@ -87,7 +134,56 @@ function makeClient(
         if (path.includes('ONLYORIGIN')) {
           return {
             items: [
-              { id: 'l-origin', code: '입고기본존', displayName: '입고기본존' },
+              {
+                id: 'l-origin',
+                code: '입고기본존',
+                displayName: '입고기본존',
+                isActive: true,
+                isSystem: true,
+              },
+            ],
+            total: 1,
+          };
+        }
+        if (path.includes('LEGACY')) {
+          return {
+            items: [
+              {
+                id: 'l-inactive',
+                code: 'LEGACY-INACTIVE',
+                displayName: 'LEGACY-INACTIVE',
+                isActive: false,
+                isSystem: false,
+              },
+              {
+                id: 'l-system',
+                code: 'LEGACY-SYSTEM',
+                displayName: 'LEGACY-SYSTEM',
+                isActive: true,
+                isSystem: true,
+              },
+              { id: 'l-missing', code: 'LEGACY', displayName: 'LEGACY' },
+              {
+                id: 'l-valid',
+                code: 'LEGACY-VALID',
+                displayName: 'LEGACY-VALID',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
+            total: 4,
+          };
+        }
+        if (path.includes('UNSAFEONLY')) {
+          return {
+            items: [
+              {
+                id: 'l-inactive',
+                code: 'UNSAFEONLY',
+                displayName: 'UNSAFEONLY',
+                isActive: false,
+                isSystem: false,
+              },
             ],
             total: 1,
           };
@@ -169,7 +265,7 @@ describe('PutawaySheet', () => {
 
   it('직전 대상지 버튼으로 한 번에 고른다', async () => {
     const user = userEvent.setup();
-    renderSheet({ lastDest: { id: 'l-prev', code: 'A-01-01' } });
+    renderSheet({ lastDest: LAST_DEST });
 
     await user.click(
       screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
@@ -183,10 +279,7 @@ describe('PutawaySheet', () => {
   it('적치하면 lineId·대상지·수량을 보내고 onDone 을 부른다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    const { onDone } = renderSheet(
-      { lastDest: { id: 'l-prev', code: 'A-01-01' } },
-      calls
-    );
+    const { onDone } = renderSheet({ lastDest: LAST_DEST }, calls);
 
     await user.click(
       screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
@@ -196,9 +289,7 @@ describe('PutawaySheet', () => {
     );
     await user.click(screen.getByRole('button', { name: '적치' }));
 
-    await waitFor(() =>
-      expect(onDone).toHaveBeenCalledWith({ id: 'l-prev', code: 'A-01-01' }, 50)
-    );
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(LAST_DEST, 50));
     const putaway = calls.find((c) => c.path === '/inbound/putaway');
     expect(putaway?.body).toMatchObject({
       lineId: 'ln-1',
@@ -259,7 +350,7 @@ describe('PutawaySheet', () => {
   it('값이 안 바뀐 재시도는 같은 멱등키를 유지한다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderSheet({ lastDest: { id: 'l-prev', code: 'A-01-01' } }, calls, {
+    renderSheet({ lastDest: LAST_DEST }, calls, {
       failPutawayOnce: true,
     });
 
@@ -285,7 +376,7 @@ describe('PutawaySheet', () => {
   it('target 이 바뀌면(언마운트 없이) 이전 라인의 대상지가 새 라인에 남지 않는다', async () => {
     const user = userEvent.setup();
     const { rerender } = renderSheet({
-      lastDest: { id: 'l-prev', code: 'A-01-01' },
+      lastDest: LAST_DEST,
     });
 
     await user.click(
@@ -311,7 +402,7 @@ describe('PutawaySheet', () => {
       <PutawaySheet
         target={nextTarget}
         warehouseId="w-1"
-        lastDest={{ id: 'l-prev', code: 'A-01-01' }}
+        lastDest={LAST_DEST}
         onDone={vi.fn()}
         onCancel={vi.fn()}
       />
@@ -330,7 +421,7 @@ describe('PutawaySheet', () => {
 
   it('잔여 수량을 프리필하고 초과 입력이면 적치를 막는다', async () => {
     const user = userEvent.setup();
-    renderSheet({ lastDest: { id: 'l-prev', code: 'A-01-01' } });
+    renderSheet({ lastDest: LAST_DEST });
 
     expect(screen.getByText(/입고기본존 · 잔여 50개/)).toBeInTheDocument();
 
@@ -360,6 +451,42 @@ describe('PutawaySheet', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('구형 서버의 비활성·시스템·속성 누락 결과는 클릭과 완전일치 자동선택에서 제외한다', async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.type(screen.getByLabelText('대상 로케이션 검색'), 'LEGACY');
+
+    expect(
+      await screen.findByRole('button', { name: 'LEGACY-VALID' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'LEGACY-INACTIVE' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'LEGACY-SYSTEM' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'LEGACY' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '적치' })).toBeDisabled();
+  });
+
+  it('속성이 안전하지 않은 직전 대상지는 재사용 버튼을 노출하지 않는다', () => {
+    renderSheet({
+      lastDest: {
+        id: 'l-system',
+        code: '입고기본존',
+        isActive: true,
+        isSystem: true,
+      },
+    });
+
+    expect(
+      screen.queryByRole('button', { name: '직전 대상지 입고기본존 사용' })
+    ).not.toBeInTheDocument();
+  });
+
   it('검색 결과가 출발지뿐이면 못 찾음이 아니라 출발지라고 알린다', async () => {
     const user = userEvent.setup();
     renderSheet();
@@ -373,6 +500,29 @@ describe('PutawaySheet', () => {
       screen.queryByRole('button', { name: '입고기본존' })
     ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '적치' })).toBeDisabled();
+  });
+
+  it('안전하지 않은 결과뿐이면 출발지라고 잘못 안내하지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderSheet({}, calls);
+
+    await user.type(
+      screen.getByLabelText('대상 로케이션 검색'),
+      'UNSAFEONLY'
+    );
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.path.includes('UNSAFEONLY'))).toBe(true)
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByText('여기가 출발지예요. 다른 로케이션을 고르세요.')
+      ).not.toBeInTheDocument()
+    );
+    expect(
+      screen.queryByRole('button', { name: 'UNSAFEONLY' })
+    ).not.toBeInTheDocument();
   });
 
   it('검색 결과가 0건이면 출발지 안내 문구를 보여주지 않는다', async () => {
@@ -421,7 +571,7 @@ describe('PutawaySheet', () => {
   it('수량을 바꾸면 멱등키가 회전한다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderSheet({ lastDest: { id: 'l-prev', code: 'A-01-01' } }, calls);
+    renderSheet({ lastDest: LAST_DEST }, calls);
 
     await user.click(
       screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })

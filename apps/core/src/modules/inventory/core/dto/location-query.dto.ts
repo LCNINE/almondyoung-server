@@ -1,7 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsBoolean, IsInt, IsEnum, Min, Max } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 import { LocationType } from '../types';
+
+function parseOptionalBoolean(value: unknown): unknown {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return value;
+}
 
 export class LocationQueryDto {
   @ApiPropertyOptional({
@@ -30,6 +36,12 @@ export class LocationQueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: '시스템 로케이션 여부 필터' })
+  @IsOptional()
+  @Transform(({ value }: TransformFnParams) => parseOptionalBoolean(value))
+  @IsBoolean()
+  isSystem?: boolean;
 
   @ApiPropertyOptional({ description: '검색어 (코드나 이름)', example: 'A-01' })
   @IsOptional()

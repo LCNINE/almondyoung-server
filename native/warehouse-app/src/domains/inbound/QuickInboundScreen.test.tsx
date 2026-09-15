@@ -144,7 +144,15 @@ async function renderScreen(
         const path = decodeURIComponent(o.path);
         if (path.includes('B-05')) {
           return {
-            items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }],
+            items: [
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }

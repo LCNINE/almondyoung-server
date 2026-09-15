@@ -56,8 +56,24 @@ function fixture(capability = true) {
       if (r.path.startsWith('/locations/warehouses/'))
         return {
           items: r.path.includes('B-02')
-            ? [{ id: 'dest-2', code: 'B-02', displayName: 'B-02' }]
-            : [{ id: 'dest-1', code: 'A-01', displayName: 'A-01' }],
+            ? [
+                {
+                  id: 'dest-2',
+                  code: 'B-02',
+                  displayName: 'B-02',
+                  isActive: true,
+                  isSystem: false,
+                },
+              ]
+            : [
+                {
+                  id: 'dest-1',
+                  code: 'A-01',
+                  displayName: 'A-01',
+                  isActive: true,
+                  isSystem: false,
+                },
+              ],
           total: 1,
         } as never;
       if (r.path === '/inbound/cancel') {
@@ -127,7 +143,12 @@ function fixture(capability = true) {
                   originLocationCode: '입고존',
                 }}
                 warehouseId="w-1"
-                lastDest={{ id: 'dest-1', code: 'A-01' }}
+                lastDest={{
+                  id: 'dest-1',
+                  code: 'A-01',
+                  isActive: true,
+                  isSystem: false,
+                }}
                 onDone={onDone}
                 onCancel={() => {}}
               />
@@ -174,7 +195,15 @@ it('다른 기기의 부분 적치는 입력을 보존하고 최신 잔량을 �
   expect(f.posts).toHaveLength(0);
   await userEvent.click(screen.getByRole('button', { name: '적치' }));
   await waitFor(() =>
-    expect(f.onDone).toHaveBeenCalledWith({ id: 'dest-1', code: 'A-01' }, 4)
+    expect(f.onDone).toHaveBeenCalledWith(
+      {
+        id: 'dest-1',
+        code: 'A-01',
+        isActive: true,
+        isSystem: false,
+      },
+      4
+    )
   );
   expect(f.posts).toHaveLength(1);
 });
@@ -264,7 +293,10 @@ it('상태 조회 404도 취소나 완료로 추정하지 않고 입력을 보�
     expect(screen.getByRole('button', { name: '적치' })).toBeDisabled()
   );
   await waitFor(() =>
-    expect(screen.getAllByText('입고 라인을 찾을 수 없어요. 새로고침 해주세요.').length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText('입고 라인을 찾을 수 없어요. 새로고침 해주세요.')
+        .length
+    ).toBeGreaterThan(0)
   );
   expect(f.posts).toHaveLength(0);
   expect(screen.getByLabelText('적치 수량 직접 입력 (낱개)')).toHaveValue('10');

@@ -83,7 +83,20 @@ const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
     '같은 창고의 일반 로케이션을 선택해 주세요.',
 };
 
+const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
+  MOVEMENT_DESTINATION_INACTIVE:
+    '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.',
+};
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
+    context === 'movement' &&
+    error.code &&
+    MOVEMENT_WORKFLOW_MESSAGES[error.code]
+  )
+    return MOVEMENT_WORKFLOW_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     error.outcome === 'rejected' &&

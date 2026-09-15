@@ -338,6 +338,9 @@ export class LocationService {
     if (query.isActive !== undefined) {
       conditions.push(eq(wmsTables.locations.isActive, query.isActive));
     }
+    if (query.isSystem !== undefined) {
+      conditions.push(eq(wmsTables.locations.isSystem, query.isSystem));
+    }
     if (query.search) {
       conditions.push(
         sql`(${wmsTables.locations.code} ILIKE ${'%' + query.search + '%'} OR ${wmsTables.locations.displayName} ILIKE ${'%' + query.search + '%'})`,

@@ -1,7 +1,74 @@
 import { DbService } from '@app/db';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { wmsSchema } from '../../schema/inventory.schema';
 import { SYSTEM_LOCATION_DEFAULTS, SYSTEM_LOCATION_ROLES } from '../constants/warehouse.constants';
+import { LocationQueryDto } from '../dto/location-query.dto';
 import { LocationService } from './location.service';
+
+describe('LocationQueryDto', () => {
+  it.each([
+    ['true', true],
+    ['false', false],
+    [undefined, undefined],
+  ])('parses isSystem=%s as %s', (raw, expected) => {
+    const dto = plainToInstance(LocationQueryDto, { isSystem: raw });
+
+    expect(validateSync(dto)).toHaveLength(0);
+    expect(dto.isSystem).toBe(expected);
+  });
+});
+
+describe('LocationService search filters', () => {
+  it.each([true, false])('applies isSystem=%s to both items and total', async (isSystem) => {
+    const captured: { items?: unknown; total?: unknown } = {};
+    const itemBuilder: Record<string, jest.Mock> = {};
+    itemBuilder.from = jest.fn(() => itemBuilder);
+    itemBuilder.leftJoin = jest.fn(() => itemBuilder);
+    itemBuilder.where = jest.fn((predicate: unknown) => {
+      captured.items = predicate;
+      return itemBuilder;
+    });
+    itemBuilder.orderBy = jest.fn(() => itemBuilder);
+    itemBuilder.limit = jest.fn(() => itemBuilder);
+    itemBuilder.offset = jest.fn().mockResolvedValue([
+      {
+        location: {
+          id: 'location-1',
+          code: 'A-01-01',
+          displayName: 'A-01-01',
+          isActive: true,
+          isSystem,
+        },
+        rack: null,
+        column: null,
+      },
+    ]);
+    const totalBuilder: Record<string, jest.Mock> = {};
+    totalBuilder.from = jest.fn(() => totalBuilder);
+    totalBuilder.leftJoin = jest.fn(() => totalBuilder);
+    totalBuilder.where = jest.fn((predicate: unknown) => {
+      captured.total = predicate;
+      return Promise.resolve([{ total: 1 }]);
+    });
+    const db = {
+      select: jest.fn((selection: Record<string, unknown>) => ('total' in selection ? totalBuilder : itemBuilder)),
+    };
+    const service = new LocationService({ db } as unknown as DbService<typeof wmsSchema>);
+
+    const result = await service.getLocations('warehouse-1', { isSystem });
+
+    const dialect = new PgDialect();
+    const itemsQuery = dialect.sqlToQuery(captured.items as never);
+    const totalQuery = dialect.sqlToQuery(captured.total as never);
+    expect(itemsQuery).toEqual(totalQuery);
+    expect(itemsQuery.sql).toContain('"is_system" =');
+    expect(itemsQuery.params).toContain(isSystem);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
+  });
+});
 
 describe('LocationService system locations', () => {
   it('bootstraps all four required roles with conflict-safe inserts', async () => {
