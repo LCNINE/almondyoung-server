@@ -45,6 +45,8 @@ import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tr
 import { ShipmentShortPickService } from './services/shipment-short-pick.service';
 import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
+import { LocationOutboundService } from './services/location-outbound.service';
+import { LocationOutboundController } from './controllers/location-outbound.controller';
 import { SimpleOutboundService } from './services/simple-outbound.service';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 
@@ -97,6 +99,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
   ],
   controllers: [
     SimpleOutboundController,
+    LocationOutboundController,
     FulfillmentsController,
     OutboundBatchV2Controller,
     PickingV2Controller,
@@ -142,6 +145,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     AggregateThenSortPickingStrategy,
     PickToTotePickingStrategy,
     SimpleOutboundService,
+    LocationOutboundService,
     ShipmentWaybillReader,
     {
       provide: PICKING_STRATEGIES,

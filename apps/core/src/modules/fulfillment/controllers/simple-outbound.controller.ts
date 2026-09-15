@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -38,9 +39,14 @@ export class SimpleOutboundController {
   @Get('by-waybill')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '운송장번호로 박스와 라인 진행 조회 (단순출고 진입점)' })
-  async byWaybill(@Query('trackingNo') trackingNo?: string): Promise<ShipmentByWaybillResult> {
+  async byWaybill(
+    @Query('trackingNo') trackingNo?: string,
+    @Query('warehouseId', new ParseUUIDPipe({ optional: true })) warehouseId?: string,
+  ): Promise<ShipmentByWaybillResult> {
     if (!trackingNo?.trim()) throw new BadRequestException('trackingNo is required');
-    return this.waybills.byTrackingNo(trackingNo);
+    return warehouseId === undefined
+      ? this.waybills.byTrackingNo(trackingNo)
+      : this.waybills.byTrackingNo(trackingNo, warehouseId);
   }
 
   @Post(':shipmentId/simple-outbound-scans')

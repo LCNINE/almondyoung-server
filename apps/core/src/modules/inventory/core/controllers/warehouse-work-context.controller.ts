@@ -12,7 +12,7 @@ export class WarehouseWorkContextController {
     return {
       actorId: authenticatedWarehouseActor(user),
       operationContractVersion: 2 as const,
-      capabilities: { stocktakingAddCountItem: true as const },
+      capabilities: { stocktakingAddCountItem: true as const, locationOutbound: true as const },
     };
   }
 
