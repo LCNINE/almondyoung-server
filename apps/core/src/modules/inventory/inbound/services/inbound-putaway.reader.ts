@@ -1,9 +1,14 @@
 import { createHash } from 'crypto';
 import { isUUID } from 'class-validator';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { receiptFactsCtes, ReceiptFactsRow, receiptStateFromFacts } from './inbound-receipt-state.reader';
+import {
+  inboundPendingQuantitySql,
+  inboundReceiptInvalidSql,
+} from '../../shared/availability/inbound-origin-availability';
 import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -16,6 +21,7 @@ interface PendingQuery {
   days?: number;
   skuIds?: string[];
   cursor?: string;
+  originLocationId?: string;
 }
 
 interface PendingCursor {
@@ -64,12 +70,13 @@ export class InboundPutawayReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   async listPending(params: PendingQuery, tx?: DbTx): Promise<PutawayPendingListDto> {
-    const { warehouseId, days, skuIds } = params;
+    const { warehouseId, days, skuIds, originLocationId } = params;
     const scope = createHash('sha256')
       .update(
         JSON.stringify([
           warehouseId.toLowerCase(),
           days ?? null,
+          originLocationId?.toLowerCase() ?? null,
           [...new Set(skuIds?.map((id) => id.toLowerCase()))].sort(),
         ]),
       )
@@ -83,65 +90,30 @@ export class InboundPutawayReader {
         : new Date(Date.now() - days * DAY_MS).toISOString();
 
     return this.dbService.run(async (trx) => {
-      // `InboundReceiptKernel.putaway` 의 `originAvailable` 검증식과 같은 식이다.
-      // 화면이 제안하는 수량과 서버가 허용하는 수량이 어긋날 수 없게 하나로 둔다.
-      const pendingQty = sql<number>`(
-        ${wmsTables.inboundReceiptLines.quantity}
-        - ${wmsTables.inboundReceiptLines.putawayFromOriginQty}
-        - ${wmsTables.inboundReceiptLines.returnedQty}
-        - ${wmsTables.inboundReceiptLines.canceledQty}
-      )`;
-
-      const rows = await trx
-        .select({
-          lineId: wmsTables.inboundReceiptLines.id,
-          skuId: wmsTables.skus.id,
-          skuName: wmsTables.skus.name,
-          skuCode: wmsTables.skus.code,
-          pendingQty,
-          originLocationId: wmsTables.locations.id,
-          originLocationCode: wmsTables.locations.code,
-          receivedAt: wmsTables.inboundReceipts.occurredAt,
-          // Date truncates PostgreSQL microseconds: encode the database value itself.
-          cursorAt: sql<string>`to_char(${wmsTables.inboundReceipts.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-        })
-        .from(wmsTables.inboundReceiptLines)
-        .innerJoin(wmsTables.inboundReceipts, eq(wmsTables.inboundReceipts.id, wmsTables.inboundReceiptLines.receiptId))
-        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.inboundReceiptLines.skuId))
-        .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.inboundReceiptLines.originLocationId))
-        // 원장 쪽 잔량 검증 — 카운터(putawayFromOriginQty 등)만으로는 못 잡는
-        // "이동 화면으로 원위치를 이미 비운" 라인을 걸러낸다. 같은 SKU·같은
-        // 출발지의 다른 라인이 이 원장 행을 공유할 수 있으므로 pendingQty 를
-        // 원장 qty 로 클램프하지 않는다 — qty > 0 필터만 건다.
-        .innerJoin(
-          wmsTables.stockLedgers,
-          and(
-            eq(wmsTables.stockLedgers.skuId, wmsTables.inboundReceiptLines.skuId),
-            eq(wmsTables.stockLedgers.warehouseId, wmsTables.inboundReceipts.warehouseId),
-            eq(wmsTables.stockLedgers.locationId, wmsTables.inboundReceiptLines.originLocationId),
-            eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-          ),
-        )
-        .where(
-          and(
-            eq(wmsTables.inboundReceipts.status, 'posted'),
-            eq(wmsTables.inboundReceipts.warehouseId, warehouseId),
-            // 임시로 쌓아둔 것만 할 일이다. 처음부터 최종 위치로 입고된 라인은 제자리다.
-            eq(wmsTables.locations.isSystem, true),
-            sql`${pendingQty} > 0`,
-            sql`${wmsTables.stockLedgers.qty} > 0`,
-            skuIds !== undefined ? inArray(wmsTables.inboundReceiptLines.skuId, skuIds) : undefined,
-            since !== null ? gte(wmsTables.inboundReceipts.occurredAt, new Date(since)) : undefined,
-            cursor
-              ? sql`(${wmsTables.inboundReceipts.occurredAt}, ${wmsTables.inboundReceiptLines.id}) > (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
-              : undefined,
-          ),
-        )
-        // occurredAt 은 영수증 단위라 한 영수증의 모든 라인이 동률이다. LIMIT 이
-        // 정렬을 load-bearing 하게 만드므로(어느 200건이 살아남는지가 정렬에
-        // 달림) 2차 정렬키 없이는 실행마다 순서가 달라질 수 있다.
-        .orderBy(asc(wmsTables.inboundReceipts.occurredAt), asc(wmsTables.inboundReceiptLines.id))
-        .limit(PENDING_LIMIT + 1);
+      const filters = [
+        sql`ir.status = 'posted'`,
+        sql`ir.warehouse_id = ${warehouseId}::uuid`,
+        // Include malformed legacy rows even when their pending counter is nonpositive.
+        sql`(origin.is_system = true OR ${inboundReceiptInvalidSql})`,
+        sql`(${inboundPendingQuantitySql} > 0 OR ${inboundReceiptInvalidSql})`,
+        ...(originLocationId ? [sql`irl.origin_location_id = ${originLocationId}::uuid`] : []),
+        ...(skuIds !== undefined
+          ? [
+              skuIds.length
+                ? sql`irl.sku_id IN (${sql.join(
+                    skuIds.map((id) => sql`${id}::uuid`),
+                    sql`, `,
+                  )})`
+                : sql`false`,
+            ]
+          : []),
+        ...(since ? [sql`ir.occurred_at >= ${since}::timestamptz`] : []),
+        ...(cursor ? [sql`(ir.occurred_at, irl.id) > (${cursor.at}::timestamptz, ${cursor.id}::uuid)`] : []),
+      ];
+      const rows = (await trx.execute(sql`
+        WITH ${receiptFactsCtes(sql.join(filters, sql` AND `), sql`ORDER BY ir.occurred_at, irl.id LIMIT ${PENDING_LIMIT + 1}`)}
+        SELECT * FROM facts ORDER BY "receivedAt", "lineId"
+      `)) as unknown as ReceiptFactsRow[];
 
       const truncated = rows.length > PENDING_LIMIT;
       const limited = truncated ? rows.slice(0, PENDING_LIMIT) : rows;
@@ -155,16 +127,22 @@ export class InboundPutawayReader {
           : null,
         total: limited.length,
         truncated,
-        items: limited.map((row) => ({
-          lineId: row.lineId,
-          skuId: row.skuId,
-          skuName: row.skuName,
-          skuCode: row.skuCode,
-          pendingQty: Number(row.pendingQty),
-          originLocationId: row.originLocationId,
-          originLocationCode: row.originLocationCode,
-          receivedAt: row.receivedAt.toISOString(),
-        })),
+        items: limited.map((row) => {
+          const { canPutaway, putawayBlockReason } = receiptStateFromFacts(row);
+          return {
+            lineId: row.lineId,
+            source: row.source,
+            canPutaway,
+            putawayBlockReason,
+            skuId: row.skuId,
+            skuName: row.skuName,
+            skuCode: row.skuCode,
+            pendingQty: Number(row.pendingQty),
+            originLocationId: row.originLocationId,
+            originLocationCode: row.originLocationCode,
+            receivedAt: new Date(row.receivedAt).toISOString(),
+          };
+        }),
       };
     }, tx);
   }

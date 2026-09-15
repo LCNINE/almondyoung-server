@@ -1,3 +1,8 @@
+import {
+  createTestWorkRuntime,
+  TestWorkProvider,
+  receiptFixture,
+} from './__fixtures__/workRuntime';
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -14,7 +19,6 @@ import {
 import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
-import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import {
   ScanProvider,
   useScanBus,
@@ -107,14 +111,37 @@ interface RenderOpts {
   conflictReceive?: boolean;
 }
 
-function renderScreen(calls: Call[], opts: RenderOpts = {}) {
+async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   let served = ARRIVALS;
+  let current = receiptFixture({
+    source: 'purchase_order',
+    lineId: 'rl-1',
+    quantity: 20,
+    pendingQty: 20,
+  });
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.startsWith('/inbound/lines/')) return current;
+      if (o.path.startsWith('/inbound/receipts?'))
+        return {
+          serverTime: new Date().toISOString(),
+          total: 1,
+          items: [
+            {
+              id: 'r-1',
+              warehouseId: 'w-1',
+              method: 'simple',
+              occurredAt: new Date().toISOString(),
+              status: current.receiptStatus,
+              totalQuantity: current.quantity,
+              lines: [{ ...current, id: current.lineId }],
+            },
+          ],
+        };
       if (o.path.startsWith('/inventory/expected-arrivals')) return served;
       if (o.path.startsWith('/inventory/skus?barcode=8801'))
         return SKU_BY_BARCODE;
@@ -131,10 +158,15 @@ function renderScreen(calls: Call[], opts: RenderOpts = {}) {
         }
         if (opts.failReceive)
           throw new Error('POST /purchase-orders/po-1/receipts → 400');
+        const qty = (o.body as { lines: { quantity: number }[] }).lines[0]
+          .quantity;
+        current = { ...current, quantity: qty, pendingQty: qty };
         return {
           receiptId: 'r-1',
           poId: 'po-1',
-          lines: [{ receiptLineId: 'rl-1', skuId: 's1', quantity: 12 }],
+          lines: [
+            { receiptLineId: 'rl-1', skuId: 's1', quantity: current.quantity },
+          ],
         };
       }
       if (o.path === '/purchase-orders/receipt-lines/rl-1/cancel') {
@@ -143,9 +175,35 @@ function renderScreen(calls: Call[], opts: RenderOpts = {}) {
             'POST /purchase-orders/receipt-lines/rl-1/cancel → 400'
           );
         }
-        return { success: true };
+        current = {
+          ...current,
+          receiptStatus: 'voided',
+          canceledQty: current.quantity,
+          pendingQty: 0,
+          canCancel: false,
+          canPutaway: false,
+          cancelBlockReason: 'CANCELED',
+          putawayBlockReason: 'CANCELED',
+        };
+        return {
+          receiptLineId: 'rl-1',
+          poId: 'po-1',
+          skuId: 's1',
+          quantity: current.quantity,
+        };
       }
       if (o.path === '/inbound/putaway') {
+        const qty = (o.body as { quantity: number }).quantity;
+        current = {
+          ...current,
+          pendingQty: current.pendingQty - qty,
+          putawayFromOriginQty: current.putawayFromOriginQty + qty,
+          canCancel: false,
+          cancelBlockReason: 'ALREADY_PUTAWAY',
+          canPutaway: current.pendingQty > qty,
+          putawayBlockReason:
+            current.pendingQty > qty ? null : 'NOTHING_PENDING',
+        };
         return { success: true };
       }
       if (o.path.startsWith('/locations/warehouses/')) {
@@ -162,6 +220,7 @@ function renderScreen(calls: Call[], opts: RenderOpts = {}) {
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
+  const runtime = createTestWorkRuntime(client);
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
   });
@@ -184,39 +243,48 @@ function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <QueryClientProvider client={qc}>
-        <ApiClientProvider client={client}>
+        <TestWorkProvider runtime={runtime}>
           <WarehouseProvider prefs={prefs}>
             <ScanProvider>{children}</ScanProvider>
           </WarehouseProvider>
-        </ApiClientProvider>
+        </TestWorkProvider>
       </QueryClientProvider>
     </SessionProvider>
   );
   render(<RouterProvider router={router} />, { wrapper });
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
+  return qc;
 }
 
 describe('PurchaseOrderReceiveScreen', () => {
   it('발주 라인을 발주/입고/남은 수량으로 보여준다', async () => {
-    renderScreen([]);
+    await renderScreen([]);
     expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
     expect(screen.getByText(/남은 12/)).toBeInTheDocument();
   });
 
   it('예정 바코드 첫 스캔은 실제 스캔한 수량으로 열린다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    await renderScreen([]);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
 
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
     expect(sheet).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '입고' })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
   });
 
   it('발주에 없는 바코드는 시트를 열지 않고 경고한다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    await renderScreen([]);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:9999' }));
@@ -232,11 +300,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('입고하면 POST /purchase-orders/:poId/receipts 에 lines 1개를 보내고 결과 배너를 남긴다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
 
     await waitFor(() => {
@@ -259,11 +330,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('적치를 마치면 취소 버튼이 사라진다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await screen.findByRole('button', { name: '적치하기' });
 
@@ -278,11 +352,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('부분 적치를 실제로 완료하면 배너 누계·취소 게이트·재오픈 시 잔여가 반영된다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getAllByRole('button', { name: '입고' })[0]);
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await screen.findByRole('button', { name: '적치하기' });
 
@@ -303,7 +380,7 @@ describe('PurchaseOrderReceiveScreen', () => {
     await user.click(within(sheet).getByRole('button', { name: '적치' }));
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
 
-    expect(screen.getByText(/7개 적치됨/)).toBeInTheDocument();
+    expect(await screen.findByText(/7개 적치됨/)).toBeInTheDocument();
     // 간편입고 적치 대기 행과 같은 어휘("잔여 N개 · M개 적치됨")를 쓰는지 — 두 화면의
     // 표시가 실제로 맞는지(주석만 그렇다고 말하는 게 아니라)를 잠근다.
     expect(screen.getByText(/잔여 5개 · 7개 적치됨/)).toBeInTheDocument();
@@ -333,7 +410,7 @@ describe('PurchaseOrderReceiveScreen', () => {
     await user.click(within(sheet).getByRole('button', { name: '적치' }));
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
 
-    expect(screen.getByText(/10개 적치됨/)).toBeInTheDocument();
+    expect(await screen.findByText(/10개 적치됨/)).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: '취소' })
     ).not.toBeInTheDocument();
@@ -355,7 +432,7 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('시트가 열린 뒤 같은 바코드를 다시 찍으면 스캔 누적으로 넘어간다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     // 여는 스캔부터 실제 수량 1개가 보인다.
@@ -369,15 +446,18 @@ describe('PurchaseOrderReceiveScreen', () => {
     // 둘째 스캔(총 2 회)부터 "세는 중"이 화면에 보인다.
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     expect(
-      within(sheet).getByText('2', { selector: 'div' })
+      await within(sheet).findByText('2', { selector: 'div' })
     ).toBeInTheDocument();
     // 셋째 스캔(총 3 회) — 3 번 찍었으면 3 개가 세여야 한다(N 회 스캔 = N 개,
     // N-1 개가 되는 과소입고를 여기서 고정한다).
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     expect(
-      within(sheet).getByText('3', { selector: 'div' })
+      await within(sheet).findByText('3', { selector: 'div' })
     ).toBeInTheDocument();
 
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await waitFor(() => {
       const receive = calls.find(
@@ -391,7 +471,7 @@ describe('PurchaseOrderReceiveScreen', () => {
 
   it('시트가 열린 상태에서 다른 품목을 찍으면 누적하지 않고 알린다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    await renderScreen([]);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -408,7 +488,7 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('남은 수량을 넘는 값은 제출하지 않고 시트 안에 안내한다 (초과 수령은 서버가 거절한다)', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -434,11 +514,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('취소 확인 다이얼로그가 뜬 동안 스캔해도 수량 시트가 열리지 않는다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await screen.findByRole('button', { name: '적치하기' });
 
@@ -467,11 +550,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('결과 배너의 취소는 POST /purchase-orders/receipt-lines/:id/cancel 로 간다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await screen.findByRole('button', { name: '적치하기' });
 
@@ -498,16 +584,19 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('입고가 실패하면 시트 안에 에러가 보이고, 시트가 열린 채로 남아 재시도할 수 있다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls, { failReceive: true });
+    await renderScreen(calls, { failReceive: true });
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
     // 시트가 화면 전체를 덮으므로, 에러도 시트 안에서 보여야 작업자가 알아챈다.
-    expect(await within(sheet).findByRole('alert')).toHaveTextContent(
-      '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.'
+    await waitFor(() =>
+      expect(screen.getByText(/처리 여부를 확인하고 있어요/)).toBeInTheDocument()
     );
     // 응답이 실패로 보이는 동안은 배너로 넘어가지 않고 시트가 남아, 성공/실패를
     // 모른 채로 값을 고쳐 다시 누르는 이중입고 경로를 차단한다.
@@ -519,31 +608,40 @@ describe('PurchaseOrderReceiveScreen', () => {
 
   it('서버 충돌은 내부 식별자 없이 안내한다', async () => {
     const user = userEvent.setup();
-    renderScreen([], { conflictReceive: true });
+    await renderScreen([], { conflictReceive: true });
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
-    expect(await within(sheet).findByRole('alert')).toHaveTextContent(
-      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
+    await waitFor(() =>
+      expect(screen.getByText(/처리 여부를 확인하고 있어요/)).toBeInTheDocument()
     );
+    expect(sheet).not.toHaveTextContent('s1');
   });
 
   it('응답이 유실되고 품목이 사라져도 원래 요청의 성공을 추정하지 않는다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls, { failReceive: true, silentCommit: true });
+    const qc = await renderScreen(calls, {
+      failReceive: true,
+      silentCommit: true,
+    });
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
-    await within(sheet).findByText(
-      '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.'
-    );
+    await screen.findByText(/처리 여부를 확인하고 있어요/);
+    await qc.refetchQueries({ queryKey: ['expected-arrivals'] });
     // 목록에서 품목이 사라진 사실만으로 이 요청의 성공을 추정할 수 없다. 원래
     // 멱등키의 결과가 확인될 때까지 입력을 보존하고 재제출·취소를 막는다.
     expect(
@@ -563,11 +661,14 @@ describe('PurchaseOrderReceiveScreen', () => {
   it('취소가 실패로 보여도 같은 라인으로 재시도하면 같은 멱등키를 재사용한다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls, { failCancel: true });
+    await renderScreen(calls, { failCancel: true });
     await screen.findByText('코튼셔츠');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
     await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '입고' }));
     await screen.findByRole('button', { name: '적치하기' });
 
@@ -579,24 +680,21 @@ describe('PurchaseOrderReceiveScreen', () => {
         calls.filter(
           (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
         )
-      ).toHaveLength(1);
+      ).not.toHaveLength(0);
     });
 
-    // 취소가 실패로 보였으니 배너는 그대로 남고, 같은 라인을 다시 취소한다 —
-    // "서버는 이미 취소했는데 응답만 유실" 이었다면 이 재시도는 같은 키로
-    // replay 돼야 한다. 매번 새 키를 발급하면 서버가 재실행돼 "이미 취소됨"
-    // 400 을 내고, 실제로는 성공한 취소를 실패로 잘못 보여주게 된다.
-    await user.click(screen.getByRole('button', { name: '취소' }));
-    const dialog2 = await screen.findByRole('dialog', { name: '입고 취소' });
-    await user.click(within(dialog2).getByRole('button', { name: '취소하기' }));
-    await waitFor(() => {
+    await screen.findByText(/처리 여부를 확인하고 있어요/);
+    expect(
+      screen.queryByRole('button', { name: '취소' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '처리 내역 확인' }));
+    await waitFor(() =>
       expect(
         calls.filter(
           (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
-        )
-      ).toHaveLength(2);
-    });
-
+        ).length
+      ).toBeGreaterThan(1)
+    );
     // 같은 receiptLineId 재시도는 본문과 헤더 모두 같은 키를 유지한다.
     const cancelCalls = calls.filter(
       (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'

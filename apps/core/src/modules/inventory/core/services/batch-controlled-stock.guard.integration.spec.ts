@@ -1,3 +1,4 @@
+import { makeInboundReceiptKernel } from '../../inbound/services/__fixtures__/inbound-harness';
 import { outbox_events } from '@app/events';
 import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { randomUUID } from 'crypto';
@@ -423,6 +424,55 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
         .from(wmsTables.dispatchAttemptSources)
         .where(eq(wmsTables.dispatchAttemptSources.id, fixture.dispatchSource.id));
       expect(source.stockEventId).toBeNull();
+    });
+  });
+  it('exact dispatch authorization preserves pending receipts and cannot authorize overlapping historical stock', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedAuthorizedDispatch(tx);
+      await tx
+        .update(wmsTables.locations)
+        .set({ isSystem: true, systemRole: 'inbound_default' })
+        .where(eq(wmsTables.locations.id, fixture.source.id));
+      await makeInboundReceiptKernel(db).recordArrival(
+        {
+          source: 'direct',
+          method: 'simple',
+          warehouseId: fixture.warehouse.id,
+          locationId: fixture.source.id,
+          reason: 'pending alongside custody',
+          lines: [{ skuId: fixture.sku.id, quantity: 3, eventKey: randomUUID() }],
+        },
+        tx,
+      );
+      const input = {
+        skuId: fixture.sku.id,
+        warehouseId: fixture.warehouse.id,
+        locationId: fixture.source.id,
+        quantity: 4,
+        journalId: fixture.journal.id,
+        idempotencyKey: randomUUID(),
+        batchSessionDispatch: { sessionId: fixture.session.id, dispatchAttemptSourceId: fixture.dispatchSource.id },
+        deferSellableProjection: true,
+      };
+      await expectConflictCode(
+        tx.transaction(async (sp) => {
+          // Historical overlap: on-hand covers pending alone but not pending + custody.
+          await sp
+            .update(wmsTables.stockLedgers)
+            .set({ qty: 6 })
+            .where(eq(wmsTables.stockLedgers.skuId, fixture.sku.id));
+          await command.ship(input, sp);
+        }),
+        'INBOUND_ORIGIN_STOCK_INCONSISTENT',
+      );
+      const result = await command.ship(input, tx);
+      expect(await onHand(tx, fixture.sku.id, fixture.warehouse.id, fixture.source.id)).toBe(3);
+      expect((await command.ship(input, tx)).eventId).toBe(result.eventId);
+      const [receiptLine] = await tx
+        .select()
+        .from(wmsTables.inboundReceiptLines)
+        .where(eq(wmsTables.inboundReceiptLines.skuId, fixture.sku.id));
+      expect(receiptLine).toMatchObject({ quantity: 3, putawayFromOriginQty: 0, returnedQty: 0, canceledQty: 0 });
     });
   });
 });

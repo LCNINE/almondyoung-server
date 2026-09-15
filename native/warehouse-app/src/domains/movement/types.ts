@@ -6,6 +6,8 @@ export interface LocationContentItem {
   /** ON_HAND | DEFECTIVE | IN_TRANSFER. 이동 대상은 ON_HAND 뿐이다. */
   stockState: string;
   quantity: number;
+  inboundPendingQty: number;
+  generallyMovableQty: number;
 }
 
 /** GET /inventory/stocks/location/:locationId 응답. */

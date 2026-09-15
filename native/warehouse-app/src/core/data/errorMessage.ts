@@ -74,7 +74,23 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
 };
 
+const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
+  INBOUND_ORIGIN_STOCK_PROTECTED:
+    '이 상품은 적치 대기 중이에요. 적치에서 처리해 주세요.',
+  INBOUND_ORIGIN_STOCK_INCONSISTENT:
+    '입고 기록과 현재 재고가 맞지 않아요. 입고내역과 실물을 확인해 주세요.',
+  INBOUND_PUTAWAY_DESTINATION_INVALID:
+    '같은 창고의 일반 로케이션을 선택해 주세요.',
+};
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
+    error.code &&
+    INBOUND_WORKFLOW_MESSAGES[error.code]
+  )
+    return INBOUND_WORKFLOW_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     context === 'outbound' &&

@@ -231,7 +231,15 @@ describeIfDb('purchase-order receiving PR-C contract migration (isolated Postgre
       expect(after.workLogs).toEqual(before.workLogs);
       expect(after.views).toEqual(before.views);
       expect(after.stockSummary).toEqual(before.stockSummary);
-      expect(after.journal).toHaveLength(before.journal.length + 2);
+      // throughContract includes the current chain, including migrations added
+      // after PR-C. Check its identities and retain the applied PR-B prefix.
+      expect(after.journal.slice(0, before.journal.length)).toEqual(before.journal);
+      expect(after.journal.map(({ hash, created_at }) => ({ hash, created_at: String(created_at) }))).toEqual(
+        harness.chain.throughContract.map((migration) => ({
+          hash: migration.hash,
+          created_at: String(migration.folderMillis),
+        })),
+      );
     });
   });
 

@@ -1,3 +1,4 @@
+import type { ReceiptActionBlockReason } from './inbound-receipt-state.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InboundReceiptLineDto {
@@ -175,6 +176,15 @@ export type InboundCancelBlockReason =
   | 'MISSING_ORIGIN_OR_EVENT';
 
 export class InboundReceiptHistoryLineDto extends InboundReceiptLineDto {
+  @ApiProperty({ description: '미처리 입고 수량' })
+  pendingQty: number;
+
+  @ApiProperty({ description: '조회 시점의 적치 가능 여부' })
+  canPutaway: boolean;
+
+  @ApiProperty({ description: '적치 차단 사유', nullable: true })
+  putawayBlockReason: ReceiptActionBlockReason | null;
+
   @ApiProperty({ description: '상품 코드' })
   skuCode: string;
 

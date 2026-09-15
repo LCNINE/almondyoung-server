@@ -18,7 +18,11 @@ export class WarehouseWorkContextController {
       actorId,
       operationContractVersion: 2 as const,
       permissions: { forceDispatch: granted.includes(FULFILLMENT_SCOPE.DISPATCH_FORCE) },
-      capabilities: { stocktakingAddCountItem: true as const, locationOutbound: true as const },
+      capabilities: {
+        stocktakingAddCountItem: true as const,
+        locationOutbound: true as const,
+        inboundWorkflowConsistency: true as const,
+      },
     };
   }
 

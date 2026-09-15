@@ -314,10 +314,11 @@ export class BatchSessionRecoveryService {
         tx,
         { lock: true, excludingSessionId: session.id },
       );
-      if (availability.onHandQty < availability.batchControlledQty + source.qty) {
+      if (source.qty > availability.generallyAvailableQty) {
         issues.push(
           `source ${source.skuId}/${source.sourceLocationId} cannot restore controlled=${source.qty}; ` +
-            `onHand=${availability.onHandQty}, otherControlled=${availability.batchControlledQty}`,
+            `onHand=${availability.onHandQty}, otherControlled=${availability.batchControlledQty}, ` +
+            `inboundPending=${availability.inboundPendingQty}, generallyAvailable=${availability.generallyAvailableQty}`,
         );
       }
     }

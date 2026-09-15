@@ -1,3 +1,4 @@
+import { isActionablePutaway } from './types';
 import { useEffect } from 'react';
 import { Button } from '../../core/design/Button';
 import { usePutawayPending } from './queries';
@@ -7,17 +8,21 @@ import type { PutawayPendingItem } from './types';
 export function PutawayScanResults({
   warehouseId,
   skuIds,
+  originLocationId,
+  supported,
   onSelect,
   onEmpty,
   onClose,
 }: {
   warehouseId: string;
   skuIds: string[];
+  originLocationId?: string;
+  supported: boolean;
   onSelect: (item: PutawayPendingItem) => void;
   onEmpty: () => void;
   onClose: () => void;
 }) {
-  const query = usePutawayPending(warehouseId, 'all', skuIds);
+  const query = usePutawayPending(warehouseId, 'all', skuIds, originLocationId);
   const items = query.data?.items ?? [];
   // Cached results from an earlier scan are not enough to conclude absence or
   // choose a receipt. Every newly mounted scan must finish its own refresh.
@@ -27,8 +32,13 @@ export function PutawayScanResults({
     if (!ready || query.data?.truncated) return;
     const matches = query.data?.items ?? [];
     if (matches.length === 0) onEmpty();
-    else if (matches.length === 1) onSelect(matches[0]);
-  }, [ready, query.data, onEmpty, onSelect]);
+    else if (
+      matches.length === 1 &&
+      supported &&
+      isActionablePutaway(matches[0])
+    )
+      onSelect(matches[0]);
+  }, [ready, query.data, onEmpty, onSelect, supported]);
 
   return (
     <div
@@ -68,6 +78,7 @@ export function PutawayScanResults({
                 <button
                   type="button"
                   className="w-full space-y-1 rounded-lg border border-gray-200 p-3 text-left active:bg-gray-50"
+                  disabled={!ready || !supported || !isActionablePutaway(item)}
                   onClick={() => onSelect(item)}
                 >
                   <span className="block font-medium">{item.skuName}</span>

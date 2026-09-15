@@ -1,3 +1,4 @@
+import { receiptFixture } from './__fixtures__/workRuntime';
 import 'fake-indexeddb/auto';
 import { createOperationRunner } from '../../core/operations/operationRunner';
 import {
@@ -79,7 +80,8 @@ function renderScreen(
   database?: string,
   mode: 'quick' | 'po' = 'quick',
   configureStore?: (store: OperationStore) => void,
-  receiptCanceled = false
+  receiptCanceled = false,
+  serverPutawayQty = 0
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -87,6 +89,22 @@ function renderScreen(
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.startsWith('/inbound/lines/'))
+        return receiptFixture({
+          source: mode === 'po' ? 'purchase_order' : 'direct',
+          quantity: 10,
+          pendingQty: receiptCanceled ? 0 : 10 - serverPutawayQty,
+          putawayFromOriginQty: serverPutawayQty,
+          canceledQty: receiptCanceled ? 10 : 0,
+          canPutaway: !receiptCanceled,
+          putawayBlockReason: receiptCanceled ? 'CANCELED' : null,
+          canCancel: !receiptCanceled && !serverPutawayQty,
+          cancelBlockReason: receiptCanceled
+            ? 'CANCELED'
+            : serverPutawayQty
+              ? 'ALREADY_PUTAWAY'
+              : null,
+        });
       if (o.path.startsWith('/inbound/receipts?'))
         return {
           serverTime: new Date().toISOString(),
@@ -105,7 +123,15 @@ function renderScreen(
                   skuId: 's1',
                   skuCode: 'CT-001',
                   skuName: '코튼셔츠',
-                  quantity: 20,
+                  quantity: serverPutawayQty ? 10 : 20,
+                  pendingQty: receiptCanceled
+                    ? 0
+                    : serverPutawayQty
+                      ? 10 - serverPutawayQty
+                      : 20,
+                  canPutaway: !receiptCanceled,
+                  putawayBlockReason: receiptCanceled ? 'CANCELED' : null,
+                  originLocationId: 'l-origin',
                   source: 'direct',
                   originLocationCode: 'INBOUND',
                   canCancel: !receiptCanceled,
@@ -114,7 +140,7 @@ function renderScreen(
                     : null,
                   canceledQty: receiptCanceled ? 20 : 0,
                   returnedQty: 0,
-                  putawayFromOriginQty: 0,
+                  putawayFromOriginQty: serverPutawayQty,
                 },
               ],
             },
@@ -154,6 +180,7 @@ function renderScreen(
     ? {
         store,
         getScope: async () => 'actor|local',
+        getCapabilities: async () => ({ inboundWorkflowConsistency: true }),
         runner: createOperationRunner({
           api: client,
           store,
@@ -296,21 +323,24 @@ it('does not register a restored partial cart while saved scans cannot be read',
     { id: 'second-scan', data: '8801' },
   ]);
   let unavailable = true;
-  let cartReconciled = false;
   renderScreen([], undefined, database, 'quick', (store) => {
     const draft = store.draft;
     vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
       if (unavailable && id.includes(':scan:') && !update)
         throw new DOMException('storage unavailable', 'UnknownError');
       const value = await draft(id, update);
-      if (id.includes(':draft:') && update) cartReconciled = true;
       return value;
     });
   });
   const user = userEvent.setup();
   await screen.findByRole('button', { name: '다시 확인' });
   await screen.findByLabelText('코튼셔츠 수량');
-  await waitFor(() => expect(cartReconciled).toBe(true));
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
   expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
   unavailable = false;
   await user.click(screen.getByRole('button', { name: '다시 확인' }));
@@ -398,10 +428,18 @@ for (const mode of ['quick', 'po'] as const) {
     });
     await store.finish('putaway-key', 'confirmed', { success: true });
     const calls: Call[] = [];
-    const first = renderScreen(calls, undefined, database, mode);
+    const first = renderScreen(
+      calls,
+      undefined,
+      database,
+      mode,
+      undefined,
+      false,
+      3
+    );
     await screen.findByText(/잔여 7개 · 3개 적치됨/);
     first.unmount();
-    renderScreen(calls, undefined, database, mode);
+    renderScreen(calls, undefined, database, mode, undefined, false, 3);
     await screen.findByText(/잔여 7개 · 3개 적치됨/);
     expect(calls.filter((c) => c.path === '/inbound/putaway')).toHaveLength(0);
   });

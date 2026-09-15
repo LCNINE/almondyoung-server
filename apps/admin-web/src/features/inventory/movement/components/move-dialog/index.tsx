@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { movementErrorMessage } from './error-message';
 import {
   Dialog,
   DialogContent,
@@ -32,17 +33,28 @@ export function MoveDialog({ open, onOpenChange }: Props) {
   ]);
 
   const addLine = () =>
-    setLines((prev) => [...prev, { skuId: '', fromLocationId: '', toLocationId: '', quantity: 1 }]);
-  const removeLine = (idx: number) => setLines((prev) => prev.filter((_, i) => i !== idx));
+    setLines((prev) => [
+      ...prev,
+      { skuId: '', fromLocationId: '', toLocationId: '', quantity: 1 },
+    ]);
+  const removeLine = (idx: number) =>
+    setLines((prev) => prev.filter((_, i) => i !== idx));
   const updateLine = (idx: number, patch: Partial<MoveBatchLineDto>) =>
-    setLines((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)));
+    setLines((prev) =>
+      prev.map((line, i) => (i === idx ? { ...line, ...patch } : line))
+    );
 
   const handleSubmit = async () => {
     if (!warehouseId.trim()) {
       toast.error('창고 ID를 입력해주세요.');
       return;
     }
-    if (lines.some((l) => !l.skuId.trim() || !l.fromLocationId.trim() || !l.toLocationId.trim())) {
+    if (
+      lines.some(
+        (l) =>
+          !l.skuId.trim() || !l.fromLocationId.trim() || !l.toLocationId.trim()
+      )
+    ) {
       toast.error('모든 라인의 SKU ID, 출발/도착 위치를 입력해주세요.');
       return;
     }
@@ -58,9 +70,11 @@ export function MoveDialog({ open, onOpenChange }: Props) {
       setWarehouseId('');
       setActorId('');
       setMemo('');
-      setLines([{ skuId: '', fromLocationId: '', toLocationId: '', quantity: 1 }]);
-    } catch {
-      toast.error('이동에 실패했습니다.');
+      setLines([
+        { skuId: '', fromLocationId: '', toLocationId: '', quantity: 1 },
+      ]);
+    } catch (error) {
+      toast.error(movementErrorMessage(error));
     }
   };
 
@@ -102,7 +116,12 @@ export function MoveDialog({ open, onOpenChange }: Props) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>이동 라인</Label>
-              <Button type="button" size="sm" variant="outline" onClick={addLine}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addLine}
+              >
                 <Plus className="mr-1 h-3 w-3" /> 라인 추가
               </Button>
             </div>
@@ -114,7 +133,10 @@ export function MoveDialog({ open, onOpenChange }: Props) {
               <span />
             </div>
             {lines.map((line, idx) => (
-              <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_4rem_2rem] gap-1">
+              <div
+                key={idx}
+                className="grid grid-cols-[1fr_1fr_1fr_4rem_2rem] gap-1"
+              >
                 <Input
                   placeholder="SKU ID"
                   className="text-xs h-8"
@@ -125,20 +147,26 @@ export function MoveDialog({ open, onOpenChange }: Props) {
                   placeholder="출발 위치 ID"
                   className="text-xs h-8"
                   value={line.fromLocationId}
-                  onChange={(e) => updateLine(idx, { fromLocationId: e.target.value })}
+                  onChange={(e) =>
+                    updateLine(idx, { fromLocationId: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="도착 위치 ID"
                   className="text-xs h-8"
                   value={line.toLocationId}
-                  onChange={(e) => updateLine(idx, { toLocationId: e.target.value })}
+                  onChange={(e) =>
+                    updateLine(idx, { toLocationId: e.target.value })
+                  }
                 />
                 <Input
                   type="number"
                   min={1}
                   className="text-xs h-8"
                   value={line.quantity}
-                  onChange={(e) => updateLine(idx, { quantity: Number(e.target.value) })}
+                  onChange={(e) =>
+                    updateLine(idx, { quantity: Number(e.target.value) })
+                  }
                 />
                 <Button
                   type="button"
@@ -156,7 +184,9 @@ export function MoveDialog({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            취소
+          </Button>
           <Button onClick={handleSubmit} disabled={mutation.isPending}>
             {mutation.isPending ? '처리 중…' : '이동 실행'}
           </Button>

@@ -1,5 +1,11 @@
+import { Link } from '@tanstack/react-router';
+import {
+  useWorkCapabilities,
+  assertInboundWorkflowCapability,
+} from '../../core/operations/useWorkCapabilities';
+import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
@@ -24,6 +30,8 @@ interface LocationRef {
 
 function MovementScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
+  // Invalidate captured preflight intent synchronously, before React renders an edit.
+  const intentRevision = useRef(0);
 
   // (a) 출발지
   const [source, setSource] = useState<LocationRef | null>(null);
@@ -32,19 +40,50 @@ function MovementScreenContent() {
   const [activeItem, setActiveItem] = useState<LocationContentItem | null>(
     null
   );
-  const [dest, setDest] = useState<LocationRef | null>(null);
+  const [dest, setDestValue] = useState<LocationRef | null>(null);
   const [destTerm, setDestTerm] = useState('');
-  const [quantityText, setQuantityText] = useState(String(0));
+  const [quantityText, setQuantityTextValue] = useState(String(0));
   const qty = parseQuantity(quantityText, 1) ?? 0;
   const setQty = (next: number) => setQuantityText(String(next));
-  const [reason, setReason] = useState<string | null>(null);
-  const [otherReason, setOtherReason] = useState('');
+  const [reason, setReasonValue] = useState<string | null>(null);
+  const [otherReason, setOtherReasonValue] = useState('');
+  const setDest = useCallback((next: LocationRef | null) => {
+    intentRevision.current += 1;
+    setDestValue(next);
+  }, []);
+  const setQuantityText = useCallback((next: string) => {
+    intentRevision.current += 1;
+    setQuantityTextValue(next);
+  }, []);
+  const setReason = useCallback((next: string | null) => {
+    intentRevision.current += 1;
+    setReasonValue(next);
+  }, []);
+  const setOtherReason = useCallback((next: string) => {
+    intentRevision.current += 1;
+    setOtherReasonValue(next);
+  }, []);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
     crypto.randomUUID()
   );
 
+  const runtime = useWorkRuntime();
+  const capabilities = useWorkCapabilities();
+  const supported =
+    !!runtime &&
+    capabilities.isSuccess &&
+    capabilities.data.inboundWorkflowConsistency === true;
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionLock = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const contents = useLocationContents(source?.id);
   const sourceSearch = useLocationSearch(warehouseId, source ? '' : sourceTerm);
   const destSearch = useLocationSearch(
@@ -90,7 +129,7 @@ function MovementScreenContent() {
       setDest({ id: exact[0].id, code: exact[0].code });
       setDestTerm('');
     }
-  }, [destSearch.data, destTerm, activeItem, dest, source]);
+  }, [destSearch.data, destTerm, activeItem, dest, source, setDest]);
 
   // 멱등키 회전: payload(품목·출발·대상·수량)가 바뀌면 새 키를 발급한다.
   // "요청은 커밋됐는데 응답만 유실" 뒤 값을 고쳐 재제출하면 옛 payload 를
@@ -118,23 +157,25 @@ function MovementScreenContent() {
   }, [activeItem, source, dest, qty]);
 
   function openSheet(item: LocationContentItem) {
-    if (!source) return;
+    if (!source || !supported || !(item.generallyMovableQty > 0)) return;
+    intentRevision.current += 1;
     setActiveItem(item);
     setDest(null);
     setDestTerm('');
-    setQty(item.quantity);
+    setQty(item.generallyMovableQty);
     setReason(null);
     setOtherReason('');
     keyPayloadRef.current = {
       skuId: item.skuId,
       from: source.id,
       to: '',
-      qty: item.quantity,
+      qty: item.generallyMovableQty,
     };
     setIdempotencyKey(crypto.randomUUID());
   }
 
   function closeSheet() {
+    intentRevision.current += 1;
     setActiveItem(null);
     setDest(null);
     setDestTerm('');
@@ -149,17 +190,22 @@ function MovementScreenContent() {
   const effectiveReason =
     reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
+    supported &&
     Boolean(activeItem) &&
     Boolean(source) &&
     Boolean(dest) &&
     dest?.id !== source?.id &&
     qty >= 1 &&
-    qty <= (activeItem?.quantity ?? 0);
+    qty <= (activeItem?.generallyMovableQty ?? 0);
 
   if (!isSet) {
     return (
       <div className="space-y-4">
         <ScreenHeader title="재고 이동" backTo="/" />
+        {!supported && (
+          <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+        )}
+        {actionError && <p role="alert">{actionError}</p>}
         <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
           <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
@@ -171,6 +217,10 @@ function MovementScreenContent() {
   return (
     <div className="space-y-5">
       <ScreenHeader title="재고 이동" backTo="/" />
+      {!supported && (
+        <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+      )}
+      {actionError && <p role="alert">{actionError}</p>}
 
       {!source ? (
         <section className="space-y-2">
@@ -257,7 +307,19 @@ function MovementScreenContent() {
                     <span className="text-lg font-semibold text-gray-900">
                       {item.quantity}
                     </span>
+                    {item.inboundPendingQty > 0 && (
+                      <Link
+                        to="/putaway"
+                        search={{
+                          skuId: item.skuId,
+                          originLocationId: source.id,
+                        }}
+                      >
+                        적치하기
+                      </Link>
+                    )}
                     <Button
+                      disabled={!supported || !(item.generallyMovableQty > 0)}
                       className="px-3 py-1.5 text-xs"
                       onClick={() => openSheet(item)}
                     >
@@ -287,7 +349,8 @@ function MovementScreenContent() {
                 {activeItem.skuCode}
               </div>
               <div className="mt-1 text-xs text-gray-500">
-                출발 {source.code} · 현재 ON_HAND {activeItem.quantity}
+                출발 {source.code} · 현재 {activeItem.quantity}개 · 이동 가능{' '}
+                {activeItem.generallyMovableQty}개
               </div>
             </div>
 
@@ -296,7 +359,7 @@ function MovementScreenContent() {
               <div
                 className={cn(
                   'rounded-lg border p-2 text-center text-2xl font-semibold',
-                  qty >= 1 && qty <= activeItem.quantity
+                  qty >= 1 && qty <= activeItem.generallyMovableQty
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
                     : 'border-gray-200 bg-white text-gray-400'
                 )}
@@ -308,12 +371,13 @@ function MovementScreenContent() {
                 value={quantityText}
                 onChange={setQuantityText}
                 min={1}
-                max={activeItem.quantity}
+                max={activeItem.generallyMovableQty}
               />
               <NumberPad value={qty} onChange={setQty} />
-              {qty > activeItem.quantity ? (
+              {qty > activeItem.generallyMovableQty ? (
                 <p className="text-xs text-red-600">
-                  현재 수량({activeItem.quantity})을 초과할 수 없어요.
+                  이동 가능 수량({activeItem.generallyMovableQty})을 초과할 수
+                  없어요.
                 </p>
               ) : null}
             </section>
@@ -451,27 +515,49 @@ function MovementScreenContent() {
         message={`${source?.code ?? ''} → ${dest?.code ?? ''}, ${activeItem?.skuName ?? '상품'} ${qty}개 이동합니다.`}
         confirmLabel="이동"
         onCancel={() => setConfirming(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirming(false);
-          if (!activeItem || !source || !dest || !warehouseId) return;
-          move.mutate(
-            {
-              warehouseId,
-              skuId: activeItem.skuId,
-              fromLocationId: source.id,
-              toLocationId: dest.id,
-              quantity: qty,
-              reason: effectiveReason || undefined,
-              idempotencyKey,
-            },
-            {
-              onSuccess: () => {
-                setLastDest(dest);
-                setIdempotencyKey(crypto.randomUUID());
-                closeSheet();
+          if (
+            !activeItem ||
+            !source ||
+            !dest ||
+            !warehouseId ||
+            !runtime ||
+            !canSubmit ||
+            actionLock.current
+          )
+            return;
+          actionLock.current = true;
+          const revision = intentRevision.current;
+          try {
+            await assertInboundWorkflowCapability(runtime);
+            if (!mounted.current || revision !== intentRevision.current) return;
+            await move.mutateAsync(
+              {
+                warehouseId,
+                skuId: activeItem.skuId,
+                fromLocationId: source.id,
+                toLocationId: dest.id,
+                quantity: qty,
+                reason: effectiveReason || undefined,
+                idempotencyKey,
               },
-            }
-          );
+              {
+                onSuccess: () => {
+                  if (!mounted.current || revision !== intentRevision.current)
+                    return;
+                  setLastDest(dest);
+                  setIdempotencyKey(crypto.randomUUID());
+                  closeSheet();
+                },
+              }
+            );
+          } catch (error) {
+            if (mounted.current && revision === intentRevision.current)
+              setActionError(errorMessage(error, 'movement'));
+          } finally {
+            actionLock.current = false;
+          }
         }}
       />
     </div>
@@ -479,9 +565,10 @@ function MovementScreenContent() {
 }
 
 export function MovementScreen() {
+  const { warehouseId } = useWarehouse();
   return (
     <WorkArea kind="movement">
-      <MovementScreenContent />
+      <MovementScreenContent key={warehouseId} />
     </WorkArea>
   );
 }

@@ -1,8 +1,11 @@
+import { receiptFeedback } from './receiptFeedback';
+import { useReceiptReconciliation } from './useReceiptReconciliation';
+import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
+import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
-import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -12,9 +15,7 @@ import { useCancelInbound, useCancelPurchaseOrderReceipt } from './mutations';
 import {
   ReceiptHistoryError,
   recentReceiptDates,
-  receiptHistoryPath,
   useReceiptHistory,
-  validateReceiptHistory,
   type ReceiptHistoryResult,
   type ReceiptHistoryLine,
   type ReceiptStatus,
@@ -34,7 +35,12 @@ function HistoryContent({
   warehouseId: string;
   warehouseName: string;
 }) {
-  const api = useApiClient();
+  const capabilities = useWorkCapabilities();
+  const runtime = useWorkRuntime();
+  const supported =
+    !!runtime &&
+    capabilities.isSuccess &&
+    capabilities.data.inboundWorkflowConsistency === true;
   const [dates, setDates] = useState(() => recentReceiptDates());
   const [status, setStatus] = useState<ReceiptStatus>('all');
   const [sku, setSku] = useState<SelectedSku | null>(null);
@@ -84,6 +90,11 @@ function HistoryContent({
     line: ReceiptHistoryLine;
     key: string;
   } | null>(null);
+  const receipt = useReceiptReconciliation({
+    lineId: selection?.line.id ?? null,
+    warehouseId,
+    expectedSource: selection?.line.source ?? 'direct',
+  });
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,37 +105,19 @@ function HistoryContent({
     setBusy(true);
     setNotice(null);
     try {
-      const latest = await api.request<unknown>({
-        path: receiptHistoryPath({
-          warehouseId,
-          receiptId: selection.receiptId,
-          status: 'all',
-          limit: 1,
-          offset: 0,
-        }),
-      });
-      validateReceiptHistory(latest);
-      const receipt = latest.items.find(
-        (item) =>
-          item.id === selection.receiptId && item.warehouseId === warehouseId
-      );
-      const line = receipt?.lines.find((item) => item.id === selection.line.id);
-      if (
-        !line?.canCancel ||
-        line.quantity !== selection.line.quantity ||
-        line.source !== selection.line.source
-      )
+      const line = await receipt.refresh();
+      if (!line.canCancel || line.quantity !== selection.line.quantity)
         throw new ReceiptHistoryError(
           '입고 상태가 바뀌었어요. 최신 내역을 확인해 주세요.'
         );
       if (line.source === 'purchase_order')
         await po.mutateAsync({
-          receiptLineId: line.id,
+          receiptLineId: line.lineId,
           idempotencyKey: selection.key,
         });
       else
         await direct.mutateAsync({
-          lineId: line.id,
+          lineId: line.lineId,
           quantity: line.quantity,
           idempotencyKey: selection.key,
         });
@@ -145,6 +138,9 @@ function HistoryContent({
   return (
     <div className="space-y-4">
       <ScreenHeader title="입고내역" backTo="/inbound" />
+      {!supported && (
+        <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+      )}
       <p>
         {warehouseName} · 서울 기준 {dates.startDate} ~ {dates.endDate} ·{' '}
         {status === 'all'
@@ -279,7 +275,7 @@ function HistoryContent({
                         {line.canCancel && current ? (
                           <Button
                             aria-label={`${line.skuName} 입고 취소`}
-                            disabled={busy || !!selection}
+                            disabled={busy || !!selection || !supported}
                             onClick={() =>
                               setSelection({
                                 receiptId: receipt.id,
@@ -341,6 +337,22 @@ function HistoryContent({
             }}
           >
             <h2 className="font-semibold">입고 취소 확인</h2>
+            {!receipt.ready && (
+              <div>
+                <p role="status">입고 상태를 다시 확인해 주세요.</p>
+                <Button onClick={() => void receipt.refresh().catch(() => {})}>
+                  다시 확인
+                </Button>
+              </div>
+            )}
+            {receipt.error && (
+              <p role="alert">{receiptFeedback(receipt.error, 'inbound')}</p>
+            )}
+            {receipt.ready && !receipt.state?.canCancel && (
+              <p role="alert">
+                입고 상태가 바뀌었어요. 최신 내역을 확인해 주세요.
+              </p>
+            )}
             <p>
               {warehouseName} / {selection.line.originLocationCode}의{' '}
               {selection.line.skuName} {selection.line.quantity}개를 전량
@@ -352,7 +364,10 @@ function HistoryContent({
             <Button disabled={busy} onClick={() => setSelection(null)}>
               돌아가기
             </Button>
-            <Button disabled={busy} onClick={() => void confirmCancel()}>
+            <Button
+              disabled={busy || !receipt.ready || !receipt.state?.canCancel}
+              onClick={() => void confirmCancel()}
+            >
               전량 취소
             </Button>
           </section>

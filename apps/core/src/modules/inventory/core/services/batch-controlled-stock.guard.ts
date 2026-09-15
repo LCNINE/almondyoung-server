@@ -1,11 +1,13 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { readInboundOriginAvailability } from '../../shared/availability/inbound-origin-availability';
 import { DbTx, wmsTables } from '../../schema/inventory.schema';
 
 export interface BatchControlledStockAvailability {
   onHandQty: number;
   stockVersion: number | null;
   batchControlledQty: number;
+  inboundPendingQty: number;
   generallyAvailableQty: number;
 }
 
@@ -68,13 +70,18 @@ export class BatchControlledStockGuard {
       )
       .where(and(...sessionPredicates));
 
-    const onHandQty = ledgerRows[0]?.qty ?? 0;
+    const inbound = await readInboundOriginAvailability(tx, input);
+    const onHandQty = inbound.onHandQty;
     const batchControlledQty = Number(controlled?.qty ?? 0);
+    if (inbound.invalidReceipt || onHandQty < inbound.pendingQty + batchControlledQty) {
+      throw new ConflictException({ code: 'INBOUND_ORIGIN_STOCK_INCONSISTENT' });
+    }
     return {
       onHandQty,
       stockVersion: ledgerRows[0]?.version ?? null,
       batchControlledQty,
-      generallyAvailableQty: Math.max(0, onHandQty - batchControlledQty),
+      inboundPendingQty: inbound.pendingQty,
+      generallyAvailableQty: Math.max(0, onHandQty - batchControlledQty - inbound.pendingQty),
     };
   }
 
@@ -85,8 +92,11 @@ export class BatchControlledStockGuard {
     const availability = await this.getAvailability(input, tx, { lock: true });
     if (input.quantity > availability.generallyAvailableQty) {
       throw new ConflictException({
-        code: 'BATCH_CONTROLLED_STOCK',
-        message: `Source stock is controlled by an active batch session`,
+        code: availability.inboundPendingQty > 0 ? 'INBOUND_ORIGIN_STOCK_PROTECTED' : 'BATCH_CONTROLLED_STOCK',
+        message:
+          availability.inboundPendingQty > 0
+            ? 'Source stock belongs to pending inbound receipts'
+            : 'Source stock is controlled by an active batch session',
         skuId: input.skuId,
         warehouseId: input.warehouseId,
         sourceLocationId: input.sourceLocationId,

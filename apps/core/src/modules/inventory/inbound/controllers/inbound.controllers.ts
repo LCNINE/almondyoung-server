@@ -5,6 +5,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { InboundService } from '../services/inbound.service';
+import { InboundReceiptStateReader } from '../services/inbound-receipt-state.reader';
+import { ReceiptLineState } from '../dto/inbound-receipt-state.dto';
 import { InboundPutawayReader } from '../services/inbound-putaway.reader';
 import {
   SimpleInboundDto,
@@ -92,7 +94,25 @@ export class InboundController {
   constructor(
     private readonly inboundService: InboundService,
     private readonly putawayReader: InboundPutawayReader,
+    private readonly receiptStateReader: InboundReceiptStateReader,
   ) {}
+
+  @Get('lines/:lineId/state')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '입고 라인의 현재 처리 상태' })
+  @ApiQuery({ name: 'warehouseId', required: true })
+  @ApiResponse({ status: 200, type: ReceiptLineState })
+  @ApiResponse({ status: 403, description: '권한 또는 창고 범위가 맞지 않습니다.' })
+  async getReceiptLineState(
+    @Param('lineId') lineId: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<ReceiptLineState> {
+    if (typeof lineId !== 'string' || !isUUID(lineId)) throw new BadRequestException('lineId must be a UUID');
+    if (typeof warehouseId !== 'string' || !isUUID(warehouseId))
+      throw new BadRequestException('warehouseId must be a UUID');
+    // The reader compares the actual receipt warehouse, including canceled/voided lines.
+    return this.receiptStateReader.getLineState({ lineId, warehouseId });
+  }
 
   @Get('history')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -214,6 +234,7 @@ export class InboundController {
     description: '최근 N일 (rolling, now − N×24h). 1~365, 미지정 시 전체 기간',
   })
   @ApiQuery({ name: 'skuIds', required: false, description: '조회할 SKU UUID 목록 (쉼표 구분, 최대 100개)' })
+  @ApiQuery({ name: 'originLocationId', required: false, description: '원위치 UUID' })
   @ApiQuery({ name: 'cursor', required: false, description: '동일 조회의 다음 페이지 토큰' })
   @ApiResponse({ status: 400, description: '잘못된 조회 조건 또는 페이지 토큰' })
   @ApiResponse({ status: 200, type: PutawayPendingListDto })
@@ -223,6 +244,7 @@ export class InboundController {
     @Query('days') days?: string,
     @Query('skuIds') skuIds?: string,
     @Query('cursor') cursor?: string,
+    @Query('originLocationId') originLocationId?: string,
   ): Promise<PutawayPendingListDto> {
     if (typeof warehouseId !== 'string' || !isUUID(warehouseId)) {
       throw new BadRequestException('warehouseId must be a UUID');
@@ -245,7 +267,16 @@ export class InboundController {
       }
       parsedSkuIds = [...new Set(ids.map((id) => id.toLowerCase()))];
     }
-    return this.putawayReader.listPending({ warehouseId, days: parsedDays, skuIds: parsedSkuIds, cursor });
+    if (originLocationId !== undefined && (typeof originLocationId !== 'string' || !isUUID(originLocationId))) {
+      throw new BadRequestException('originLocationId must be a UUID');
+    }
+    return this.putawayReader.listPending({
+      warehouseId,
+      days: parsedDays,
+      skuIds: parsedSkuIds,
+      cursor,
+      originLocationId,
+    });
   }
 
   @Post('putaway')

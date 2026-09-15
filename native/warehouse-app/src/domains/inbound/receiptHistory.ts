@@ -1,5 +1,9 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import {
+  receiptActionBlockReasons,
+  type ReceiptActionBlockReason,
+} from './receiptState';
 export class ReceiptHistoryError extends Error {}
 export type ReceiptStatus = 'posted' | 'voided' | 'all';
 export interface ReceiptHistoryLine {
@@ -10,9 +14,13 @@ export interface ReceiptHistoryLine {
   quantity: number;
   source: 'direct' | 'purchase_order';
   originLocationCode: string | null;
+  originLocationId?: string | null;
   canceledQty: number;
   returnedQty: number;
   putawayFromOriginQty: number;
+  pendingQty?: number;
+  canPutaway?: boolean;
+  putawayBlockReason?: ReceiptActionBlockReason | null;
   canCancel: boolean;
   cancelBlockReason: string | null;
 }
@@ -61,8 +69,38 @@ export function validateReceiptHistory(
 ): asserts value is ReceiptHistoryResult {
   const object = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v);
-  const count = (v: unknown) =>
-    typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+  const integer = (v: unknown): v is number =>
+    typeof v === 'number' && Number.isSafeInteger(v);
+  const count = (v: unknown) => integer(v) && v >= 0;
+  const diagnosticPolicy = (line: Record<string, unknown>) => {
+    const invalid =
+      (line.quantity as number) <= 0 ||
+      [
+        line.canceledQty,
+        line.returnedQty,
+        line.putawayFromOriginQty,
+        line.pendingQty,
+      ].some((v) => typeof v === 'number' && v < 0) ||
+      (line.canceledQty as number) +
+        (line.returnedQty as number) +
+        (line.putawayFromOriginQty as number) >
+        (line.quantity as number);
+    if (!invalid) return true;
+    const reasons: Record<string, string> = {
+      CANCELED: 'ALREADY_CANCELED',
+      MISSING_ORIGIN_OR_EVENT: 'MISSING_ORIGIN_OR_EVENT',
+      ORIGIN_STOCK_INCONSISTENT: 'INSUFFICIENT_ORIGIN_STOCK',
+    };
+    return (
+      line.canCancel === false &&
+      line.canPutaway === false &&
+      integer(line.pendingQty) &&
+      typeof line.putawayBlockReason === 'string' &&
+      Object.hasOwn(reasons, line.putawayBlockReason) &&
+      (line.cancelBlockReason === reasons[line.putawayBlockReason] ||
+        line.cancelBlockReason === line.putawayBlockReason)
+    );
+  };
   const date = (v: unknown) =>
     typeof v === 'string' && Number.isFinite(Date.parse(v));
   if (
@@ -88,11 +126,34 @@ export function validateReceiptHistory(
             typeof line.skuCode === 'string' &&
             typeof line.skuName === 'string' &&
             ['direct', 'purchase_order'].includes(String(line.source)) &&
-            count(line.quantity) &&
-            count(line.canceledQty) &&
-            count(line.returnedQty) &&
-            count(line.putawayFromOriginQty) &&
+            integer(line.quantity) &&
+            integer(line.canceledQty) &&
+            integer(line.returnedQty) &&
+            integer(line.putawayFromOriginQty) &&
+            diagnosticPolicy(line) &&
             typeof line.canCancel === 'boolean' &&
+            (line.canCancel
+              ? line.cancelBlockReason === null
+              : typeof line.cancelBlockReason === 'string' &&
+                [
+                  ...receiptActionBlockReasons,
+                  'ALREADY_CANCELED',
+                  'PUTAWAY_EXISTS',
+                  'INSUFFICIENT_ORIGIN_STOCK',
+                ].includes(line.cancelBlockReason)) &&
+            ((line.pendingQty === undefined &&
+              line.canPutaway === undefined &&
+              line.putawayBlockReason === undefined) ||
+              (integer(line.pendingQty) &&
+                typeof line.canPutaway === 'boolean' &&
+                (line.canPutaway
+                  ? line.putawayBlockReason === null
+                  : receiptActionBlockReasons.includes(
+                      line.putawayBlockReason as ReceiptActionBlockReason
+                    )))) &&
+            (line.originLocationId === undefined ||
+              line.originLocationId === null ||
+              typeof line.originLocationId === 'string') &&
             (line.originLocationCode === null ||
               typeof line.originLocationCode === 'string') &&
             (line.cancelBlockReason === null ||

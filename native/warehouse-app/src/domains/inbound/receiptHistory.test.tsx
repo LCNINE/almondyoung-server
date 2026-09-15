@@ -37,3 +37,112 @@ it('구형 또는 손상된 표시 응답을 취소 가능한 이력으로 쓰�
     })
   ).not.toThrow();
 });
+
+const historyLine = {
+  id: 'line',
+  skuId: 'sku',
+  skuCode: 'SKU',
+  skuName: '상품',
+  quantity: 5,
+  source: 'direct',
+  originLocationCode: 'INBOUND',
+  canceledQty: 0,
+  returnedQty: 0,
+  putawayFromOriginQty: 0,
+  canCancel: true,
+  cancelBlockReason: null,
+};
+function historyWith(line: unknown) {
+  return {
+    total: 1,
+    serverTime: '2026-09-16T00:00:00Z',
+    items: [
+      {
+        id: 'receipt',
+        warehouseId: 'warehouse',
+        method: 'direct',
+        occurredAt: '2026-09-16T00:00:00Z',
+        status: 'posted',
+        totalQuantity: 5,
+        lines: [line],
+      },
+    ],
+  };
+}
+it('accepts optional current putaway policy without inventing eligibility for old responses', () => {
+  const old = historyWith(historyLine);
+  validateReceiptHistory(old);
+  expect(old.items[0].lines[0]).not.toHaveProperty('canPutaway');
+  expect(() =>
+    validateReceiptHistory(
+      historyWith({
+        ...historyLine,
+        pendingQty: -2,
+        canCancel: false,
+        cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK',
+        canPutaway: false,
+        putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+      })
+    )
+  ).not.toThrow();
+});
+it.each([
+  { canPutaway: 'true' },
+  { pendingQty: NaN },
+  { putawayBlockReason: 'UNKNOWN' },
+])('rejects damaged optional current policy %#', (fields) => {
+  expect(() =>
+    validateReceiptHistory(historyWith({ ...historyLine, ...fields }))
+  ).toThrow();
+});
+
+const blockedFacts = {
+  ...historyLine,
+  putawayFromOriginQty: -1,
+  pendingQty: 6,
+  canCancel: false,
+  cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK',
+  canPutaway: false,
+  putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+};
+it.each(['quantity', 'canceledQty', 'returnedQty', 'putawayFromOriginQty'])(
+  'retains negative %s as blocked diagnostic facts',
+  (field) => {
+    expect(() =>
+      validateReceiptHistory(historyWith({ ...blockedFacts, [field]: -1 }))
+    ).not.toThrow();
+  }
+);
+it.each([
+  { quantity: NaN },
+  { quantity: 1.5 },
+  { quantity: undefined },
+  { canCancel: true },
+  { canPutaway: true },
+  { canPutaway: undefined },
+  { putawayBlockReason: null },
+  { putawayBlockReason: 'UNKNOWN' },
+  { cancelBlockReason: null },
+  { cancelBlockReason: 'UNKNOWN' },
+])('rejects malformed or actionable diagnostic facts %#', (patch) => {
+  expect(() =>
+    validateReceiptHistory(historyWith({ ...blockedFacts, ...patch }))
+  ).toThrow();
+});
+
+it.each([
+  { canPutaway: true, putawayBlockReason: 'NOTHING_PENDING', pendingQty: 5 },
+  { canPutaway: false, putawayBlockReason: null, pendingQty: 5 },
+  { canPutaway: true, putawayBlockReason: null },
+  { canCancel: true, cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK' },
+  { canCancel: false, cancelBlockReason: null },
+])('rejects contradictory or incomplete action policy %#', (fields) => {
+  expect(() =>
+    validateReceiptHistory(historyWith({ ...historyLine, ...fields }))
+  ).toThrow();
+});
+it('requires nonnegative list totals even when raw receipt counters are diagnostic', () => {
+  expect(() =>
+    validateReceiptHistory({ ...historyWith(blockedFacts), total: -1 })
+  ).toThrow();
+});

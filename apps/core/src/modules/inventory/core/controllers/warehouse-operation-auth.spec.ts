@@ -1,3 +1,4 @@
+import { InboundReceiptStateReader } from '../../inbound/services/inbound-receipt-state.reader';
 import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
@@ -62,6 +63,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
           StockEventService,
           InboundService,
           InboundPutawayReader,
+          InboundReceiptStateReader,
           MovementService,
           StocktakingService,
         ].map((provide) => ({ provide, useValue: {} })),
@@ -88,7 +90,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     expect(response.body).toEqual({
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
-      capabilities: { stocktakingAddCountItem: true, locationOutbound: true },
+      capabilities: { stocktakingAddCountItem: true, locationOutbound: true, inboundWorkflowConsistency: true },
       permissions: { forceDispatch: false },
     });
   });
@@ -160,6 +162,11 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .send({ contractVersion: 2 })
       .expect(403);
     expect(mutation).not.toHaveBeenCalled();
+  });
+  it('denies anonymous current receipt state before lookup', async () => {
+    await request(app.getHttpServer() as Server)
+      .get('/inbound/lines/00000000-0000-4000-8000-000000000002/state?warehouseId=00000000-0000-4000-8000-000000000003')
+      .expect(403);
   });
   const dto = {
     contractVersion: 2,

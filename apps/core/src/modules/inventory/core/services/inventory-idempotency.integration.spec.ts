@@ -1,3 +1,6 @@
+import { Server } from 'http';
+import { Request } from 'express';
+import { InboundReceiptStateReader } from '../../inbound/services/inbound-receipt-state.reader';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { ScopeGuard } from '@app/authorization';
@@ -69,13 +72,14 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
         { provide: InboundService, useValue: inbound },
         { provide: MovementService, useValue: movement },
         { provide: InboundPutawayReader, useValue: {} },
+        { provide: InboundReceiptStateReader, useValue: {} },
       ],
     })
       .overrideGuard(ScopeGuard)
       .useValue({ canActivate: () => true })
       .compile();
     app = module.createNestApplication();
-    app.use((req: any, _res: unknown, next: () => void) => {
+    app.use((req: Request & { user?: { id: string } }, _res: unknown, next: () => void) => {
       req.user = { id: '00000000-0000-4000-8000-000000000001' };
       next();
     });
@@ -246,9 +250,16 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
 
   it('v2 movement preserves warehouse total, records authenticated actor, and replays once', async () => {
     const { wh, sku } = await db.transaction((tx) => seed(tx));
-    const arrival = await inbound.simpleInbound({
+    // Replay tests use free shelf stock; system-origin arrivals must go through putaway.
+    const [source] = await db
+      .insert(wmsTables.locations)
+      .values({ warehouseId: wh.id, code: `SOURCE-${randomUUID()}`, locationType: 'zone' })
+      .returning();
+    const arrival = await inbound.individualInbound({
       warehouseId: wh.id,
-      items: [{ skuId: sku.id, quantity: 5 }],
+      skuId: sku.id,
+      quantity: 5,
+      locationId: source.id,
       idempotencyKey: randomUUID(),
     });
     const [dest] = await db
@@ -286,16 +297,29 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
         idempotencyKey: randomUUID(),
         ...(route === 'individual' ? { skuId: sku.id, quantity: 2 } : { items: [{ skuId: sku.id, quantity: 2 }] }),
       };
-      const first = await request(app.getHttpServer()).post(`/inbound/${route}`).send(dto).expect(201);
-      const replay = await request(app.getHttpServer()).post(`/inbound/${route}`).send(dto).expect(201);
+      const first = await request(app.getHttpServer() as Server)
+        .post(`/inbound/${route}`)
+        .send(dto)
+        .expect(201);
+      const replay = await request(app.getHttpServer() as Server)
+        .post(`/inbound/${route}`)
+        .send(dto)
+        .expect(201);
       expect(replay.body).toEqual(first.body);
     }
   });
   it('HTTP movement serializes the original committed result on replay', async () => {
     const { wh, sku } = await db.transaction((tx) => seed(tx));
-    const arrival = await inbound.simpleInbound({
+    // Replay tests use free shelf stock; system-origin arrivals must go through putaway.
+    const [source] = await db
+      .insert(wmsTables.locations)
+      .values({ warehouseId: wh.id, code: `SOURCE-${randomUUID()}`, locationType: 'zone' })
+      .returning();
+    const arrival = await inbound.individualInbound({
       warehouseId: wh.id,
-      items: [{ skuId: sku.id, quantity: 2 }],
+      skuId: sku.id,
+      quantity: 2,
+      locationId: source.id,
       idempotencyKey: randomUUID(),
     });
     const [dest] = await db
@@ -308,8 +332,14 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
       idempotencyKey: randomUUID(),
       lines: [{ skuId: sku.id, quantity: 2, fromLocationId: arrival.receipt.locationId!, toLocationId: dest.id }],
     };
-    const first = await request(app.getHttpServer()).post('/movement/move').send(dto).expect(201);
-    const replay = await request(app.getHttpServer()).post('/movement/move').send(dto).expect(201);
+    const first = await request(app.getHttpServer() as Server)
+      .post('/movement/move')
+      .send(dto)
+      .expect(201);
+    const replay = await request(app.getHttpServer() as Server)
+      .post('/movement/move')
+      .send(dto)
+      .expect(201);
     expect(replay.body).toEqual(first.body);
   });
 });

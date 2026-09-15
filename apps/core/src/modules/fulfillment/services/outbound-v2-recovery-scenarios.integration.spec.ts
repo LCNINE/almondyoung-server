@@ -358,6 +358,75 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     );
   }
 
+  it.each([10, 2])(
+    'recovery restores only free stock beside pending receipts (replay %i, free 2)',
+    async (replayQty) => {
+      await inRollbackTx(async (tx) => {
+        const f = await seedReadyPlan(tx, replayQty);
+        const services = serviceSet(db);
+        const session = await services.sessions.startSession(f.batch.id, f.plan.id, tx);
+        await tx
+          .update(wmsTables.locations)
+          .set({ isSystem: true, systemRole: 'inbound_default' })
+          .where(eq(wmsTables.locations.id, f.sourceLocation.id));
+        await tx.update(wmsTables.stockLedgers).set({ qty: 12 }).where(eq(wmsTables.stockLedgers.skuId, f.sku.id));
+        const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'inbound' }).returning();
+        const [receipt] = await tx
+          .insert(wmsTables.inboundReceipts)
+          .values({
+            warehouseId: f.warehouse.id,
+            journalId: journal.id,
+            occurredAt: new Date(),
+            method: 'simple',
+            status: 'posted',
+            totalQuantity: 10,
+          })
+          .returning();
+        await tx.insert(wmsTables.inboundReceiptLines).values({
+          receiptId: receipt.id,
+          skuId: f.sku.id,
+          quantity: 10,
+          originLocationId: f.sourceLocation.id,
+          source: 'direct',
+        });
+        // Damage only the live projection. startSession produced the immutable HAND_IN.
+        await tx
+          .delete(wmsTables.batchInventorySessionBalances)
+          .where(eq(wmsTables.batchInventorySessionBalances.sessionId, session.id));
+        expect(await services.recovery.reconcile(session.id, tx)).toMatchObject({ recoveryRequired: true });
+        const snapshot = async () => ({
+          stock: await tx.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.sku.id)),
+          events: await tx
+            .select()
+            .from(wmsTables.batchInventorySessionEvents)
+            .where(eq(wmsTables.batchInventorySessionEvents.sessionId, session.id)),
+          balances: await tx
+            .select()
+            .from(wmsTables.batchInventorySessionBalances)
+            .where(eq(wmsTables.batchInventorySessionBalances.sessionId, session.id)),
+        });
+        const before = await snapshot();
+        const result = await services.recovery.rebuildFromEvents(session.id, tx);
+        if (replayQty > 2) {
+          expect(result).toMatchObject({ healthy: false, recoveryRequired: true });
+          expect(result.issues.join(' ')).toContain('inboundPending=10');
+          expect(await snapshot()).toEqual(before);
+          const [after] = await tx
+            .select()
+            .from(wmsTables.batchInventorySessions)
+            .where(eq(wmsTables.batchInventorySessions.id, session.id));
+          expect(after.status).toBe('recovery_required');
+        } else {
+          expect(result).toMatchObject({ healthy: true, recoveryRequired: false });
+          const after = await snapshot();
+          expect(after.stock).toEqual(before.stock);
+          expect(after.events).toEqual(before.events);
+          expect(after.balances).toEqual([expect.objectContaining({ qty: 2, custodyType: 'AT_SOURCE' })]);
+        }
+      });
+    },
+  );
+
   it('16 rejects general movement from a batch-controlled source and preserves stock, session, and FOI demand', async () => {
     await inRollbackTx(async (tx) => {
       const fixture = await seedReadyPlan(tx);

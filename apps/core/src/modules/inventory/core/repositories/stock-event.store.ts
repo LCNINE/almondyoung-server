@@ -10,6 +10,7 @@ import {
   acquireStockAvailabilityLock,
   acquireStockAvailabilityLocks,
 } from '../../shared/locks/stock-availability-lock';
+import { assertInboundOriginRemovalAllowed } from '../../shared/availability/inbound-origin-availability';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '../services/batch-controlled-stock.guard';
 
@@ -193,6 +194,14 @@ export class StockEventStore {
   ) {
     await this.lockProjection(tx, params);
     const now = new Date();
+    if (hasOnHandSourceDecrement(params)) {
+      await assertInboundOriginRemovalAllowed(tx, {
+        skuId: params.skuId,
+        warehouseId: params.fromWarehouseId!,
+        sourceLocationId: params.fromLocationId!,
+        quantity: params.quantity,
+      });
+    }
 
     // fromState 감소
     if (params.fromState) {
@@ -628,7 +637,18 @@ export class StockEventStore {
       // Warehouse-net-zero reversal can still move an exact source location.
       // Batch custody is location-grained, so protect every reverse ON_HAND
       // source even when the warehouse reservation invariant is exempt.
-      if (original.toState === 'ON_HAND' && original.toWarehouseId && original.toLocationId) {
+      if (
+        original.toWarehouseId &&
+        original.toLocationId &&
+        hasOnHandSourceDecrement({
+          fromState: original.toState,
+          fromWarehouseId: original.toWarehouseId,
+          fromLocationId: original.toLocationId,
+          toState: original.fromState,
+          toWarehouseId: original.fromWarehouseId,
+          toLocationId: original.fromLocationId,
+        })
+      ) {
         await acquireStockAvailabilityLock(trx, original.skuId, original.toWarehouseId);
         await this.batchControlledStock.assertRemovalAllowed(
           {
@@ -691,7 +711,7 @@ export class StockEventStore {
     authorization: BatchSessionDispatchAuthorization | undefined,
     tx: DbTx,
   ): Promise<void> {
-    if (event.fromState !== 'ON_HAND' || !event.fromWarehouseId || !event.fromLocationId) {
+    if (!event.fromWarehouseId || !event.fromLocationId || !hasOnHandSourceDecrement(event)) {
       if (authorization) {
         throw this.batchDispatchConflict(
           'BATCH_DISPATCH_EVENT_MISMATCH',
@@ -986,4 +1006,24 @@ export function reversalOnHandDecrement(original: {
   if (original.toState !== 'ON_HAND' || original.toWarehouseId == null) return null;
   if (original.fromState === 'ON_HAND' && original.fromWarehouseId === original.toWarehouseId) return null;
   return { skuId: original.skuId, warehouseId: original.toWarehouseId, quantity: original.quantity };
+}
+
+/** Location-grained net decrease, including state changes within one location. */
+function hasOnHandSourceDecrement(event: {
+  fromState: StockStateEnum | null;
+  fromWarehouseId: string | null;
+  fromLocationId: string | null;
+  toState: StockStateEnum | null;
+  toWarehouseId: string | null;
+  toLocationId: string | null;
+}): boolean {
+  return (
+    event.fromState === 'ON_HAND' &&
+    Boolean(event.fromWarehouseId && event.fromLocationId) &&
+    !(
+      event.toState === 'ON_HAND' &&
+      event.fromWarehouseId === event.toWarehouseId &&
+      event.fromLocationId === event.toLocationId
+    )
+  );
 }

@@ -1,3 +1,8 @@
+import {
+  createTestWorkRuntime,
+  TestWorkProvider,
+  receiptFixture,
+} from './__fixtures__/workRuntime';
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -14,7 +19,6 @@ import {
 import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider, useWarehouse } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
-import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import {
   ScanProvider,
   useScanBus,
@@ -38,6 +42,9 @@ const QUEUE: PutawayPendingResult = {
   truncated: false,
   items: [
     {
+      source: 'direct',
+      canPutaway: true,
+      putawayBlockReason: null,
       lineId: 'l-1',
       skuId: 's-1',
       skuName: '무선마우스 블랙',
@@ -48,6 +55,9 @@ const QUEUE: PutawayPendingResult = {
       receivedAt: '2026-07-26T00:14:00.000Z',
     },
     {
+      source: 'direct',
+      canPutaway: true,
+      putawayBlockReason: null,
       lineId: 'l-2',
       skuId: 's-2',
       skuName: 'USB-C 케이블 1m',
@@ -94,6 +104,7 @@ function SwitchWarehouseButton() {
 }
 
 interface RenderOpts {
+  search?: { skuId?: string; originLocationId?: string };
   queue?: PutawayPendingResult;
   scanQueue?: PutawayPendingResult;
   scanQueueError?: boolean;
@@ -132,6 +143,19 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
   let pageFailures = opts?.pageFailures ?? 0;
   const client: ApiClient = {
     request: (async (o: { path: string }) => {
+      if (o.path.startsWith('/inbound/lines/')) {
+        const id = o.path.split('/')[3];
+        const line =
+          [
+            ...(opts?.queue ?? QUEUE).items,
+            ...(opts?.scanQueue?.items ?? []),
+          ].find((i) => i.lineId === id) ?? QUEUE.items[0];
+        return receiptFixture({
+          ...line,
+          lineId: id,
+          quantity: line.pendingQty,
+        });
+      }
       if (o.path.startsWith('/inbound/putaway/pending')) {
         opts?.calls?.push(o.path);
         const params = new URL(o.path, 'http://localhost').searchParams;
@@ -193,6 +217,7 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
+  const runtime = createTestWorkRuntime(client);
   const prefs = createMemoryPrefs(prefsSeed);
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const indexRoute = createRoute({
@@ -204,7 +229,7 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
         <ScanButton code="9999" />
         <ScanButton code="5555" />
         <SwitchWarehouseButton />
-        <PutawayQueueScreen />
+        <PutawayQueueScreen {...opts?.search} />
       </>
     ),
   });
@@ -215,11 +240,11 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <QueryClientProvider client={qc}>
-        <ApiClientProvider client={client}>
+        <TestWorkProvider runtime={runtime}>
           <WarehouseProvider prefs={prefs}>
             <ScanProvider>{children}</ScanProvider>
           </WarehouseProvider>
-        </ApiClientProvider>
+        </TestWorkProvider>
       </QueryClientProvider>
     </SessionProvider>
   );
@@ -793,4 +818,72 @@ describe('PutawayQueueScreen', () => {
       screen.queryByText('등록되지 않은 바코드예요.')
     ).not.toBeInTheDocument();
   });
+});
+
+it('이동 링크는 전체 기간과 원위치를 유지하며 후보 선택 없이 전송하지 않는다', async () => {
+  const calls: string[] = [];
+  renderScreen(SELECTED, {
+    calls,
+    search: { skuId: 's-1', originLocationId: 'loc-origin' },
+    queue: {
+      ...QUEUE,
+      items: [{ ...QUEUE.items[0], receivedAt: '2024-01-01T00:00:00.000Z' }],
+    },
+  });
+  await screen.findByText('무선마우스 블랙');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(calls).toHaveLength(1);
+  const params = new URL(calls[0], 'http://local').searchParams;
+  expect(params.has('days')).toBe(false);
+  expect(params.get('skuIds')).toBe('s-1');
+  expect(params.get('originLocationId')).toBe('loc-origin');
+});
+it('원위치가 없는 구형 입고를 숨기지 않고 조작을 막는다', async () => {
+  renderScreen(SELECTED, {
+    queue: {
+      ...QUEUE,
+      items: [
+        {
+          ...QUEUE.items[0],
+          originLocationId: null,
+          originLocationCode: null,
+          canPutaway: false,
+          putawayBlockReason: 'MISSING_ORIGIN_OR_EVENT',
+        },
+      ],
+    },
+  });
+  const row = await screen.findByRole('button', { name: /무선마우스 블랙/ });
+  expect(row).toBeDisabled();
+  expect(row).toHaveTextContent('원위치 확인 필요');
+});
+it('잘못된 출처를 받은 후보로 상세 적치를 열지 않는다', async () => {
+  renderScreen(SELECTED, {
+    queue: {
+      ...QUEUE,
+      items: [{ ...QUEUE.items[0], source: 'unknown' as never }],
+    },
+  });
+  const row = await screen.findByRole('button', { name: /무선마우스 블랙/ });
+  await userEvent.click(row);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('distinguishes all-period candidates by their Seoul date and time', async () => {
+  await renderScreen(SELECTED, {
+    search: { skuId: 's-1', originLocationId: 'loc-origin' },
+    queue: {
+      ...QUEUE,
+      items: [
+        { ...QUEUE.items[0], receivedAt: '2026-07-25T15:14:00.000Z' },
+        {
+          ...QUEUE.items[0],
+          lineId: 'another-day',
+          receivedAt: '2026-07-26T15:14:00.000Z',
+        },
+      ],
+    },
+  });
+  expect(await screen.findByText(/2026.07.26 00:14/)).toBeInTheDocument();
+  expect(screen.getByText(/2026.07.27 00:14/)).toBeInTheDocument();
 });

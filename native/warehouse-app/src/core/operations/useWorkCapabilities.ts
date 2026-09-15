@@ -4,6 +4,7 @@ import {
   useWorkRuntime,
   type WorkCapabilities,
   type WorkPermissions,
+  type WorkRuntime,
 } from './OperationContext';
 export function useCapabilityReader() {
   const runtime = useWorkRuntime();
@@ -46,4 +47,10 @@ export function useWorkPermissions() {
     staleTime: 0,
     retry: false,
   });
+}
+
+/** Non-mutating gate, shared by movement and receipt follow-up actions. */
+export async function assertInboundWorkflowCapability(runtime: WorkRuntime) {
+  if ((await runtime.getCapabilities?.())?.inboundWorkflowConsistency !== true)
+    throw new Error('앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.');
 }
