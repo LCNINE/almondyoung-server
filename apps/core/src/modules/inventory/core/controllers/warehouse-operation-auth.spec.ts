@@ -1,3 +1,4 @@
+import { InboundReceiptStateReader } from '../../inbound/services/inbound-receipt-state.reader';
 import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
@@ -62,6 +63,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
           StockEventService,
           InboundService,
           InboundPutawayReader,
+          InboundReceiptStateReader,
           MovementService,
           StocktakingService,
         ].map((provide) => ({ provide, useValue: {} })),

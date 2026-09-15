@@ -5,16 +5,13 @@ import { SharedModule } from '../shared/shared.module';
 import { InboundController } from './controllers/inbound.controllers';
 import { InboundService } from './services/inbound.service';
 import { InboundPutawayReader } from './services/inbound-putaway.reader';
+import { InboundReceiptStateReader } from './services/inbound-receipt-state.reader';
 import { InboundReceiptKernel } from './kernel/inbound-receipt.kernel';
 
 @Module({
   imports: [CoreInventoryModule, SkuCatalogModule, SharedModule],
   controllers: [InboundController],
-  providers: [
-    InboundService,
-    InboundPutawayReader,
-    InboundReceiptKernel,
-  ],
+  providers: [InboundService, InboundPutawayReader, InboundReceiptStateReader, InboundReceiptKernel],
   exports: [InboundService, InboundReceiptKernel],
 })
 export class InboundModule {}

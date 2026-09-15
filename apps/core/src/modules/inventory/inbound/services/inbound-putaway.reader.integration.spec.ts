@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { BadRequestException } from '@nestjs/common';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundService } from './inbound.service';
@@ -66,6 +66,56 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
       .returning();
     return loc;
   }
+
+  it('filters origin before LIMIT and binds cursor to the origin, preserving blocked claims across all pages', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const first = await svc.simpleInbound(
+        {
+          warehouseId: warehouse.id,
+          items: Array.from({ length: 201 }, () => ({ skuId: sku.id, quantity: 1 })),
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      const [otherOrigin] = await tx
+        .select()
+        .from(wmsTables.locations)
+        .where(
+          and(eq(wmsTables.locations.warehouseId, warehouse.id), eq(wmsTables.locations.systemRole, 'outbound_rework')),
+        );
+      const second = await svc.individualInbound(
+        {
+          warehouseId: warehouse.id,
+          skuId: sku.id,
+          quantity: 7,
+          locationId: otherOrigin.id,
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      const filtered = await reader.listPending({ warehouseId: warehouse.id, originLocationId: otherOrigin.id }, tx);
+      expect(filtered.items.map((row) => row.lineId)).toEqual([second.line.id]);
+      expect(filtered.items[0]).toMatchObject({ source: 'direct', pendingQty: 7, canPutaway: true });
+      await tx.execute(
+        sql`DELETE FROM stock_ledgers WHERE sku_id = ${sku.id} AND location_id = ${first.lines[0].originLocationId}`,
+      );
+      const params = { warehouseId: warehouse.id, originLocationId: first.lines[0].originLocationId! };
+      const page = await reader.listPending(params, tx);
+      expect(page.items).toHaveLength(200);
+      expect(
+        page.items.every((row) => row.pendingQty === 1 && row.putawayBlockReason === 'ORIGIN_STOCK_INCONSISTENT'),
+      ).toBe(true);
+      const tail = await reader.listPending({ ...params, cursor: page.nextCursor! }, tx);
+      expect(tail.items).toHaveLength(1);
+      expect(tail.items[0].putawayBlockReason).toBe('ORIGIN_STOCK_INCONSISTENT');
+      for (const originLocationId of [undefined, otherOrigin.id]) {
+        await expect(
+          reader.listPending({ warehouseId: warehouse.id, originLocationId, cursor: page.nextCursor! }, tx),
+        ).rejects.toThrow(BadRequestException);
+      }
+    });
+  });
 
   it('finds every barcode SKU match beyond the unfiltered first 200, including old receipts', async () => {
     await inRollbackTx(db, async (tx) => {
@@ -381,7 +431,7 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
     });
   });
 
-  it('과거에 원위치가 비워진 불일치 데이터의 현재 reader 동작을 기록한다', async () => {
+  it('원위치가 비워진 과거 미처리 행을 숨기지 않고 불일치를 표시한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { warehouse, sku } = await seed(tx);
 
@@ -407,7 +457,13 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
       expect(lineAfterMove?.putawayFromOriginQty).toBe(0);
 
       const after = await reader.listPending({ warehouseId: warehouse.id }, tx);
-      expect(after.total).toBe(0);
+      expect(after.total).toBe(1);
+      expect(after.items[0]).toMatchObject({
+        pendingQty: 20,
+        canPutaway: false,
+        putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+        source: 'direct',
+      });
     });
   });
 

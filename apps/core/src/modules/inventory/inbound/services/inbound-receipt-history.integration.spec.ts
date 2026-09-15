@@ -137,7 +137,7 @@ describeIfDb('InboundService.listInboundReceipts 회차별 이력 (PostgreSQL in
             returnedQty: 0,
             putawayFromOriginQty: 0,
             canCancel: false,
-            cancelBlockReason: 'NOT_TODAY',
+            cancelBlockReason: 'MISSING_ORIGIN_OR_EVENT',
           },
         ],
       });

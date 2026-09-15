@@ -1,3 +1,4 @@
+import { InboundReceiptStateReader } from '../services/inbound-receipt-state.reader';
 import { randomUUID } from 'crypto';
 import { BadRequestException, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -24,7 +25,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
   function makeController() {
     const listPending = jest.fn().mockResolvedValue({ total: 0, truncated: false, items: [] });
     const putawayReader = { listPending } as unknown as InboundPutawayReader;
-    const controller = new InboundController({} as unknown as InboundService, putawayReader);
+    const controller = new InboundController({} as unknown as InboundService, putawayReader, {} as never);
     return { controller, listPending };
   }
 
@@ -73,6 +74,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: undefined,
       skuIds: [first, second],
       cursor: 'opaque-cursor',
+      originLocationId: undefined,
     });
   });
 
@@ -110,6 +112,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: 365,
       skuIds: undefined,
       cursor: undefined,
+      originLocationId: undefined,
     });
   });
 
@@ -135,6 +138,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: undefined,
       skuIds: undefined,
       cursor: undefined,
+      originLocationId: undefined,
     });
   });
 });
@@ -166,6 +170,7 @@ describe('InboundController.listInboundReceipts — 회차별 이력 계약', ()
     const controller = new InboundController(
       { listInboundReceipts } as unknown as InboundService,
       {} as unknown as InboundPutawayReader,
+      {} as never,
     );
 
     await expect(
@@ -206,6 +211,7 @@ describe('GET /inbound/receipts — 조회 조건 검증', () => {
       providers: [
         { provide: InboundService, useValue: { listInboundReceipts } },
         { provide: InboundPutawayReader, useValue: {} },
+        { provide: InboundReceiptStateReader, useValue: {} },
       ],
     })
       .overrideGuard(ScopeGuard)
@@ -290,5 +296,36 @@ describe('GET /inbound/receipts — 조회 조건 검증', () => {
       limit: 100,
       offset: 0,
     });
+  });
+});
+
+describe('InboundController receipt line state contract', () => {
+  it.each(['bad', '', ['00000000-0000-4000-8000-000000000001']])('rejects malformed lineId %#', async (value) => {
+    const controller = new InboundController({} as never, {} as never, {} as never);
+    await expect(controller.getReceiptLineState(value as string, randomUUID())).rejects.toThrow(BadRequestException);
+  });
+  it.each([undefined, 'bad', '', ['00000000-0000-4000-8000-000000000001']])(
+    'rejects malformed warehouseId %#',
+    async (value) => {
+      const controller = new InboundController({} as never, {} as never, {} as never);
+      await expect(controller.getReceiptLineState(randomUUID(), value as string)).rejects.toThrow(BadRequestException);
+    },
+  );
+  it('reads a line directly without requiring receiptId', async () => {
+    const lineId = randomUUID(),
+      warehouseId = randomUUID();
+    const state = { lineId, warehouseId, source: 'purchase_order', canceledQty: 3, pendingQty: 0 };
+    const controller = new InboundController(
+      {} as never,
+      {} as never,
+      { getLineState: () => Promise.resolve(state) } as never,
+    );
+    expect(await controller.getReceiptLineState(lineId, warehouseId)).toEqual(state);
+  });
+  it('rejects malformed origin filters', async () => {
+    const controller = new InboundController({} as never, {} as never, {} as never);
+    await expect(controller.listPutawayPending(randomUUID(), undefined, undefined, undefined, 'bad')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 });
