@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { wmsTables } from '../../schema/inventory.schema';
 import { lockWorkLocations } from '../../shared/locks/location-work-lock';
@@ -142,32 +143,43 @@ describeIfDb('movement location policy (PostgreSQL)', () => {
   });
 
   it('system bootstrap reactivates legacy rows and remains idempotent after the lock-order change', async () => {
-    await inRollbackTx(database.db, async (tx) => {
-      const f = await seed(tx);
-      await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
-      const before = await tx
-        .select()
-        .from(wmsTables.locations)
-        .where(eq(wmsTables.locations.warehouseId, f.warehouseId));
-      const system = before.filter((location) => location.isSystem);
-      expect(system).toHaveLength(4);
-      for (const location of system) {
-        await tx.update(wmsTables.locations).set({ isActive: false }).where(eq(wmsTables.locations.id, location.id));
-      }
-      await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
-      await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
-      const after = await tx
-        .select()
-        .from(wmsTables.locations)
-        .where(eq(wmsTables.locations.warehouseId, f.warehouseId));
-      expect(
-        after
-          .filter((location) => location.isSystem)
-          .map((location) => location.id)
-          .sort(),
-      ).toEqual(system.map((location) => location.id).sort());
-      expect(after.filter((location) => location.isSystem).every((location) => location.isActive)).toBe(true);
-    });
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await inRollbackTx(database.db, async (tx) => {
+        const f = await seed(tx);
+        await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
+        const before = await tx
+          .select()
+          .from(wmsTables.locations)
+          .where(eq(wmsTables.locations.warehouseId, f.warehouseId));
+        const system = before.filter((location) => location.isSystem);
+        expect(system).toHaveLength(4);
+        for (const location of system) {
+          await tx.update(wmsTables.locations).set({ isActive: false }).where(eq(wmsTables.locations.id, location.id));
+        }
+        await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
+        await f.wiring.location.ensureSystemLocations(f.warehouseId, tx);
+        const after = await tx
+          .select()
+          .from(wmsTables.locations)
+          .where(eq(wmsTables.locations.warehouseId, f.warehouseId));
+        expect(
+          after
+            .filter((location) => location.isSystem)
+            .map((location) => location.id)
+            .sort(),
+        ).toEqual(system.map((location) => location.id).sort());
+        expect(after.filter((location) => location.isSystem).every((location) => location.isActive)).toBe(true);
+        expect(warn).toHaveBeenCalledTimes(4);
+        for (const location of system) {
+          expect(warn).toHaveBeenCalledWith(
+            `Inactive system location reactivated for ${f.warehouseId}: ${location.systemRole}`,
+          );
+        }
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it.each(['system', 'inactive', 'same', 'missing', 'warehouse'] as const)(

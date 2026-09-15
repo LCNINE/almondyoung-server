@@ -15,7 +15,7 @@ import {
 } from './__support__/movement-location-policy-fixtures';
 
 // The blocker connection can observe its peer: no sleeps used as evidence of a lock.
-async function waitForLocationBlock(tx: DbTx, waiterPid: number, blockerPid: number) {
+async function waitForBlock(tx: DbTx, waiterPid: number, blockerPid: number, queryPart = 'locations') {
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
     // pg_stat_activity is cached per transaction unless explicitly refreshed.
@@ -23,10 +23,10 @@ async function waitForLocationBlock(tx: DbTx, waiterPid: number, blockerPid: num
     const rows = await tx.execute<{ blocked: boolean; query: string }>(sql`
       SELECT ${blockerPid} = ANY(pg_blocking_pids(pid)) AS blocked, query
       FROM pg_stat_activity WHERE pid = ${waiterPid}`);
-    if (rows[0]?.blocked && rows[0].query.includes('locations')) return;
+    if (rows[0]?.blocked && rows[0].query.includes(queryPart)) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error('peer did not block on the location row');
+  throw new Error(`peer did not block on ${queryPart}`);
 }
 
 describeIfDb('movement / putaway location concurrency (two PostgreSQL connections)', () => {
@@ -136,7 +136,7 @@ describeIfDb('movement / putaway location concurrency (two PostgreSQL connection
               () => ({ succeeded: true }),
               (error: unknown) => error,
             );
-          await waitForLocationBlock(tx, peer.pid, holder.pid);
+          await waitForBlock(tx, peer.pid, holder.pid);
         });
         expect(await work).toMatchObject(
           purpose === 'movement'
@@ -178,7 +178,7 @@ describeIfDb('movement / putaway location concurrency (two PostgreSQL connection
           update = second.db.transaction((other) =>
             other.update(wmsTables.locations).set({ isActive: false }).where(eq(wmsTables.locations.id, f.dest.id)),
           );
-          await waitForLocationBlock(tx, peer.pid, holder.pid);
+          await waitForBlock(tx, peer.pid, holder.pid);
         });
         await update;
         await first.db.transaction(async (tx) => {
@@ -257,7 +257,7 @@ describeIfDb('movement / putaway location concurrency (two PostgreSQL connection
             (value) => ({ value }),
             (error: unknown) => ({ error, cause: error instanceof Error ? error.cause : undefined }),
           );
-        await waitForLocationBlock(tx, peer.pid, holder.pid);
+        await waitForBlock(tx, peer.pid, holder.pid);
         await wiringFor(tx).movement.moveImmediately({
           ...f.dto,
           lines: [{ ...f.dto.lines[0], fromLocationId: low, toLocationId: high }],
@@ -269,6 +269,56 @@ describeIfDb('movement / putaway location concurrency (two PostgreSQL connection
       expect(state.events.filter((e) => e.transitionType === 'MOVE')).toHaveLength(1);
     } finally {
       await arrival;
+      await cleanup(f);
+    }
+  });
+
+  it('adjustUp without a location waits for stock before system bootstrap while movement completes', async () => {
+    const f = await committedFixture('movement');
+    let adjustment: Promise<unknown> | undefined;
+    try {
+      const system = await first.db.transaction(async (tx) => {
+        const w = wiringFor(tx);
+        await w.location.ensureSystemLocations(f.warehouseId, tx);
+        return w.location.getSystemLocationByRole(f.warehouseId, 'inbound_default', tx);
+      });
+      const [peer] = await second.sql<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      await first.db.transaction(async (tx) => {
+        const [holder] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+        // Pause movement after stock acquisition, before it claims the system destination.
+        await acquireStockAvailabilityLocks(tx, [{ skuId: f.skuId, warehouseId: f.warehouseId }]);
+        adjustment = second.db
+          .transaction((other) =>
+            wiringFor(other).command.adjustUp(
+              {
+                skuId: f.skuId,
+                warehouseId: f.warehouseId,
+                quantity: 3,
+                idempotencyKey: randomUUID(),
+              },
+              other,
+            ),
+          )
+          .then(
+            (value) => ({ value }),
+            (error: unknown) => ({ error, cause: error instanceof Error ? error.cause : undefined }),
+          );
+        await waitForBlock(tx, peer.pid, holder.pid, 'pg_advisory_xact_lock');
+        // With the old order, adjustment already owned system UPDATE locks and
+        // waited for our stock lock; this real movement then completed the cycle.
+        await wiringFor(tx).movement.moveImmediately({
+          ...f.dto,
+          lines: [{ ...f.dto.lines[0], toLocationId: system.id }],
+        });
+      });
+      expect(await adjustment).toMatchObject({ value: { eventId: expect.any(String) } });
+      const state = await first.db.transaction((tx) => snapshot(tx, f));
+      expect(state.ledgers.find((l) => l.locationId === system.id)?.qty).toBe(5);
+      expect(state.ledgers.find((l) => l.locationId === f.locationId)?.qty).toBe(3);
+      expect(state.events.filter((e) => e.transitionType === 'MOVE')).toHaveLength(1);
+      expect(state.events.filter((e) => e.transitionType === 'ADJUST_UP')).toHaveLength(1);
+    } finally {
+      await adjustment;
       await cleanup(f);
     }
   });
