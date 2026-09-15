@@ -41,3 +41,22 @@ export function toRewardDisplay(
 
   return { kind: "none" }
 }
+
+/** 리뷰 폼 하단 안내 문구의 i18n 키. */
+export type ReviewPolicyNoticeKey = "policyNotice" | "policyNoticeNoReward"
+
+/**
+ * 안내 문구를 고른다.
+ *
+ * 기본 문구는 「사진 기준으로 포인트가 적립되고, 무관한 첨부는 적립이 회수된다」고 말한다 —
+ * 지급이 하나도 없는 상태(활성 규칙 없음·비금전만)에서 그대로 띄우면 못 지킬 약속이 된다.
+ * 그때는 첨부물 안내만 남긴 문구로 바꾼다. 배너·카드가 쓰는 기준(`toRewardDisplay`)과 같은 축이라
+ * 한 화면 안에서 「적립 안내는 없는데 적립을 말하는 주의문구만 있는」 상태가 생기지 않는다.
+ */
+export function reviewPolicyNoticeKey(
+  policies: RewardPolicy[]
+): ReviewPolicyNoticeKey {
+  return toRewardDisplay(policies).kind === "none"
+    ? "policyNoticeNoReward"
+    : "policyNotice"
+}
