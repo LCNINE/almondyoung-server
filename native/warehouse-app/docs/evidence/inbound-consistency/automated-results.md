@@ -21,6 +21,28 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/inbound_workflow_cons
 - 원본 JSON/텍스트 로그: `/tmp/inbound-final-{native,core}.{json,log}`, `/tmp/inbound-final-{build,lint,core-tsc}.log`. 로그는 로컬 scratch이고 이 문서의 표가 추적되는 결과 기록이다.
 - Core 로그에는 기존 서비스 LOG/DEBUG와 auth 실패 주입에서 발생하는 예상 ScopeGuard ERROR가 포함된다. 테스트 실패/skip으로 숨긴 것은 없으며 로그가 완전히 조용하다고 주장하지 않는다.
 
+## PR gate 실행 조건
+
+최초 PR gate에서 앱 전용 TypeScript 검사로는 잡지 못한 통합 spec 타입 오류 2건과 native 의존성 설치 누락이 드러났다. DB 없는 전체 Jest 실행에서는 HTTP 통합 suite의 실행 조건과 새 상태 조회 라우트의 스코프 배정표 누락도 확인했다. fixture 타입과 배정표를 수정하고, CI에 `npm ci --prefix native/warehouse-app`을 추가했다.
+
+이후 검증에는 앱 전용 검사에 더해 CI와 같은 루트 검사 범위를 사용한다.
+
+```bash
+npm run type-check
+env -u DATABASE_URL npx jest --ci --silent --maxWorkers=2
+npm run audit:consume-validation -- --gate
+```
+
+`maxWorkers=2`는 로컬 자원 제한이며 검사 대상은 CI와 같다. DB 없는 일반 gate는 저장소 규칙대로 DB 통합 suite를 skip한다. HTTP 수용 검사는 마이그레이션된 전용 로컬 DB를 지정해 별도로 실행한다.
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/inbound_workflow_consistency_test corepack yarn test:inbound-workflow:integration
+```
+
+이 전용 명령은 `REQUIRE_INBOUND_WORKFLOW_DB=1`을 설정한다. DB 환경변수가 없으면 실패하므로 수용 검사를 실수로 skip해서 통과시킬 수 없다. 수정한 planning/state/HTTP 통합 suite는 실제 DB에서 44개 모두 통과했고, 전용 HTTP 명령도 9개 모두 통과했다. DB 없이 전용 명령을 실행했을 때 exit 1로 실패하는 것도 확인했다.
+
+수정 후 루트 타입 검사와 소비 검증 gate는 exit 0이다. 전체 Jest는 612 suite / 5,475 tests 통과, 145 suite / 1,204 tests skip, 실패 0이다. 종료 시 worker 강제 종료 경고가 있어 로그가 경고 없이 끝났다는 의미는 아니다. 로그는 `/tmp/inbound-gate-{typecheck,unit-final,consume,db,required-db,required-db-pass,scope}.log`에 보관했다.
+
 ## Native 파일별 결과
 
 파일 경로는 `native/warehouse-app/` 기준이다. JSON의 중첩 describe suite 수 대신 실제 `testResults` 파일 수를 사용한다.

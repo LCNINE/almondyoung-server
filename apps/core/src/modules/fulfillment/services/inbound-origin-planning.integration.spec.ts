@@ -461,6 +461,9 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
         .select()
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.skuId, f.skuId));
+      if (!item?.salesOrderId || !item.salesOrderLineId) {
+        throw new Error('Expected the seeded shipment to retain its sales order and line for cleanup.');
+      }
       const [sku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuId));
       await tx.execute(
         sqlQuery`DELETE FROM batch_inventory_session_events WHERE session_id IN (SELECT id FROM batch_inventory_sessions WHERE batch_id = ${f.batchId})`,
@@ -488,7 +491,7 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, f.shipmentId));
       await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       await tx.delete(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, item.fulfillmentOrderId));
-      await tx.delete(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.id, item.salesOrderLineId!));
+      await tx.delete(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.id, item.salesOrderLineId));
       await tx.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, item.salesOrderId));
       await tx.delete(wmsTables.inboundWorkLogs).where(eq(wmsTables.inboundWorkLogs.warehouseId, f.warehouseId));
       await tx.execute(

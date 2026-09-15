@@ -311,7 +311,6 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
       await makeInboundReceiptKernel(db).recordArrival(
         {
           source: 'purchase_order',
-          method: 'planned',
           reason: 'other',
           warehouseId: f.warehouse.id,
           lines: [{ skuId: f.sku.id, quantity: 5, eventKey: randomUUID() }],

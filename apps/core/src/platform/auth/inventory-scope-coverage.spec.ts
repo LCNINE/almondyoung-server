@@ -34,6 +34,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inbound/history': S.OPERATE,
   'POST /inbound/individual': S.OPERATE,
   'POST /inbound/lines/:lineId/memo': S.OPERATE,
+  'GET /inbound/lines/:lineId/state': S.OPERATE,
   'POST /inbound/putaway': S.OPERATE,
   'GET /inbound/putaway/pending': S.OPERATE,
   'GET /inbound/receipts': S.OPERATE,
