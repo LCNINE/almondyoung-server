@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../core/design/Button';
 import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
@@ -11,6 +11,7 @@ export function ReceiveSheet({
   scanBump,
   pending,
   error,
+  statusContent,
   onSubmit,
   onCancel,
 }: {
@@ -25,6 +26,8 @@ export function ReceiveSheet({
   /** 직전 제출 실패 메시지. 시트가 화면 전체를 덮으므로 실패는 여기서 보여줘야
    *  보인다 — 뒤에 깔린 알림은 시트에 가려 작업자가 못 본다. */
   error?: string | null;
+  /** 조회·복원 안내와 복구 조작. 입력 잠금 fieldset 밖에서 계속 조작할 수 있다. */
+  statusContent?: ReactNode;
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
 }) {
@@ -97,6 +100,8 @@ export function ReceiveSheet({
             {error}
           </p>
         ) : null}
+
+        {statusContent}
 
         <div className="flex gap-2">
           <Button

@@ -531,7 +531,7 @@ describe('PurchaseOrderReceiveScreen', () => {
     );
   });
 
-  it('실패로 보인 요청이 실제로는 커밋됐으면(응답만 유실) 재조회 후 시트를 닫아 이중입고를 막는다', async () => {
+  it('응답이 유실되고 품목이 사라져도 원래 요청의 성공을 추정하지 않는다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
     renderScreen(calls, { failReceive: true, silentCommit: true });
@@ -541,16 +541,23 @@ describe('PurchaseOrderReceiveScreen', () => {
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
-    // 실패로 보이는 응답이라도 에러는 먼저 보인다.
-    await within(sheet).findByRole('alert');
-    // onSettled 무효화로 재조회하면 서버는 이미 이 항목을 다 받은 것으로 응답한다
-    // (예정 목록에서 사라짐) — 시트가 옛 잔여를 계속 보여주며 재제출을 유도하면
-    // 안 되므로 스스로 닫혀야 한다.
-    await waitFor(() => {
-      expect(
-        screen.queryByRole('dialog', { name: '입고 수량' })
-      ).not.toBeInTheDocument();
-    });
+    await within(sheet).findByText(
+      '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.'
+    );
+    // 목록에서 품목이 사라진 사실만으로 이 요청의 성공을 추정할 수 없다. 원래
+    // 멱등키의 결과가 확인될 때까지 입력을 보존하고 재제출·취소를 막는다.
+    expect(
+      await within(sheet).findByText(
+        '발주 상태가 바뀌었어요. 입고내역을 확인해 주세요.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: '입고 수량' })
+    ).toBeInTheDocument();
+    expect(within(sheet).getByRole('button', { name: '입고' })).toBeDisabled();
+    expect(
+      within(sheet).queryByRole('button', { name: '입력 취소' })
+    ).not.toBeInTheDocument();
   });
 
   it('취소가 실패로 보여도 같은 라인으로 재시도하면 같은 멱등키를 재사용한다', async () => {

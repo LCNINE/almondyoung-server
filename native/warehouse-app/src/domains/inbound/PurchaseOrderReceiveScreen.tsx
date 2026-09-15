@@ -28,6 +28,14 @@ import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { ReceiveSheet } from './ReceiveSheet';
 import type { ExpectedArrivalLine, FreshLine } from './types';
 
+function createReadinessGate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release, open: false };
+}
+
 function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const { warehouseId, isSet } = useWarehouse();
   const arrivals = useExpectedArrivals(warehouseId);
@@ -132,20 +140,41 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   // 시트는 열릴 때 스냅샷(active)을 잡지만, 표시는 매 렌더 lines 에서 같은
   // skuId 를 다시 찾아 쓴다 — onSettled 무효화로 잔여/입고 수량이 바뀌어도
-  // 시트가 옛 숫자를 계속 보여주면 "응답만 유실됐지 실제로는 커밋된" 제출 뒤
-  // 작업자가 고쳐서 다시 누르는 이중입고로 이어진다. lines 에서 사라졌다면(전량
-  // 도달로 서버가 confirmed 로 굳힌 경우) 스냅샷으로 폴백만 하고, 아래 effect 가
-  // 시트를 닫는다.
-  const activeItem = active
-    ? (lines.find((line) => line.skuId === active.skuId) ?? active)
-    : null;
-  const activeStillPending = active
-    ? lines.some((line) => line.skuId === active.skuId)
-    : true;
-
+  // 시트가 옛 숫자를 계속 보여주면 현재 발주 상태를 오해하게 된다. 다만 품목
+  // 소실이나 잔량 감소만으로 제출 성공을 추정하지 않고, 저장된 스냅샷과 수량은
+  // 명시적인 확인 또는 취소 때까지 보존한다.
+  const currentActiveItem = active
+    ? lines.find((line) => line.skuId === active.skuId)
+    : undefined;
+  const activeItem = active ? (currentActiveItem ?? active) : null;
+  const activeStateChanged =
+    !!active &&
+    (!currentActiveItem ||
+      currentActiveItem.outstandingQty < active.outstandingQty);
+  const arrivalsReady = arrivals.isSuccess && !arrivals.isFetching;
+  const scansCanRun =
+    draft.ready &&
+    reconciled &&
+    arrivalsReady &&
+    !!purchaseOrder &&
+    lines.length > 0 &&
+    !activeStateChanged;
+  const scansCanRunRef = useRef(scansCanRun);
+  scansCanRunRef.current = scansCanRun;
+  const scanGateRef = useRef(createReadinessGate());
+  if (!scansCanRun && scanGateRef.current.open) {
+    scanGateRef.current = createReadinessGate();
+  }
   useEffect(() => {
-    if (active && !activeStillPending && !receive.isPending) closeSheet();
-  }, [active, activeStillPending]);
+    if (!scansCanRun) return;
+    scanGateRef.current.open = true;
+    scanGateRef.current.release();
+  }, [scansCanRun]);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  async function waitForScanReadiness() {
+    while (!scansCanRunRef.current) await scanGateRef.current.promise;
+  }
 
   // 취소도 같은 회전 규칙을 따라야 한다. receiptLineId 가 있는 한 payload 는
   // 배너가 떠 있는 동안 고정이므로, 재시도는 새 키가 아니라 같은
@@ -202,10 +231,12 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const activeRef = useRef(active);
   activeRef.current = active;
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
+    await waitForScanReadiness();
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];
+    await waitForScanReadiness();
     const matched = sku
-      ? lines.find((line) => line.skuId === sku.id)
+      ? linesRef.current.find((line) => line.skuId === sku.id)
       : undefined;
     if (!sku || !matched) {
       setNotice('이 발주에 없는 품목이에요.');
@@ -239,6 +270,50 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     setActive(null);
     setScanBump(0);
   }
+
+  const canDiscardInput =
+    !draft.value.submitted &&
+    scanQueue.ready &&
+    scanQueue.size() === 0 &&
+    !scanQueue.error() &&
+    !draft.error;
+  const discardInput = canDiscardInput ? (
+    <Button
+      type="button"
+      className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+      onClick={closeSheet}
+    >
+      입력 취소
+    </Button>
+  ) : null;
+  const sheetStatus = !arrivalsReady ? (
+    arrivals.isError ? (
+      <div className="space-y-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <p role="alert">발주 정보를 확인하지 못했어요.</p>
+        <div className="flex gap-2">
+          <Button type="button" onClick={() => void arrivals.refetch()}>
+            다시 확인
+          </Button>
+          {discardInput}
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-2 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+        <p role="status">발주 정보를 확인하고 있어요.</p>
+        {discardInput}
+      </div>
+    )
+  ) : activeStateChanged ? (
+    <div className="space-y-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+      <p role="alert">발주 상태가 바뀌었어요. 입고내역을 확인해 주세요.</p>
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => void arrivals.refetch()}>
+          다시 확인
+        </Button>
+        {discardInput}
+      </div>
+    </div>
+  ) : null;
 
   if (!isSet) {
     return (
@@ -392,11 +467,14 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             receive.isPending ||
             scanQueue.blocked() ||
             !draft.ready ||
-            !reconciled
+            !reconciled ||
+            !arrivalsReady ||
+            activeStateChanged
           }
           error={
             receive.isError ? errorMessage(receive.error, 'po-receive') : null
           }
+          statusContent={sheetStatus}
           onCancel={closeSheet}
           onSubmit={(quantity) => submitReceive(activeItem, quantity)}
         />
@@ -467,9 +545,13 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 export function PurchaseOrderReceiveScreen(
   props: Parameters<typeof PurchaseOrderReceiveScreenContent>[0]
 ) {
+  const { warehouseId } = useWarehouse();
   return (
     <WorkArea kind="inbound">
-      <PurchaseOrderReceiveScreenContent {...props} />
+      <PurchaseOrderReceiveScreenContent
+        key={`${warehouseId ?? 'no-warehouse'}:${props.poId}`}
+        {...props}
+      />
     </WorkArea>
   );
 }
