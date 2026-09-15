@@ -388,6 +388,24 @@ describe('picking plan layer — layer 1 pure functions', () => {
       });
     });
 
+    it('classifies a missing plan as PLAN_IDENTITY_CHANGED', async () => {
+      const { check } = stalenessFixture([[]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_IDENTITY_CHANGED',
+        message: 'Picking plan identity no longer matches the discrete batch',
+      });
+    });
+
+    it('classifies a batch mismatch as PLAN_IDENTITY_CHANGED', async () => {
+      const { check } = stalenessFixture([[{ ...FRESH_PLAN, batchId: 'other-batch' }]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_IDENTITY_CHANGED',
+        message: 'Picking plan identity no longer matches the discrete batch',
+      });
+    });
+
     it('classifies a non-draft plan as PLAN_NOT_DRAFT', async () => {
       const { check } = stalenessFixture([[{ ...FRESH_PLAN, status: 'active' }]]);
 
@@ -399,6 +417,26 @@ describe('picking plan layer — layer 1 pure functions', () => {
 
     it('classifies a changed manifest snapshot as SHIPMENT_SNAPSHOT_CHANGED', async () => {
       const changedMembers = [{ ...FRESH_MEMBERS[0], manifestVersion: 2 }, FRESH_MEMBERS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'SHIPMENT_SNAPSHOT_CHANGED',
+        message: 'Shipment membership, manifest version, or reservation version changed after planning',
+      });
+    });
+
+    it('classifies a changed membership as SHIPMENT_SNAPSHOT_CHANGED', async () => {
+      const changedMembers = [{ ...FRESH_MEMBERS[0], shipmentId: 'shipment-other' }, FRESH_MEMBERS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'SHIPMENT_SNAPSHOT_CHANGED',
+        message: 'Shipment membership, manifest version, or reservation version changed after planning',
+      });
+    });
+
+    it('classifies a changed reservation snapshot as SHIPMENT_SNAPSHOT_CHANGED', async () => {
+      const changedMembers = [{ ...FRESH_MEMBERS[0], reservationVersion: 2 }, FRESH_MEMBERS[1]];
       const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
 
       await expect(check()).resolves.toEqual({
