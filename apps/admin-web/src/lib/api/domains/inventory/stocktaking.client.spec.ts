@@ -70,6 +70,48 @@ describe('admin stocktaking reviewed contract', () => {
       },
     });
   });
+  it.each([
+    'INBOUND_ORIGIN_STOCK_PROTECTED',
+    'INBOUND_ORIGIN_STOCK_INCONSISTENT',
+    'INBOUND_PUTAWAY_DESTINATION_INVALID',
+  ])(
+    'clears definite %s rejection from the actual CustomError envelope',
+    async (code) => {
+      const error = new CustomError({
+        message: 'rejected',
+        statusCode: 409,
+        response: { code },
+      });
+      (client.post as jest.Mock).mockRejectedValueOnce(error);
+      await expect(
+        stocktakingClient.completeSession('session', {
+          previewToken: 'preview',
+          idempotencyKey: 'key',
+        })
+      ).rejects.toBe(error);
+      expect(localStorage.length).toBe(0);
+    }
+  );
+  it.each([401, 403, 408, 429, 500, 409])(
+    'keeps uncertain CustomError status %s in storage',
+    async (statusCode) => {
+      const code =
+        statusCode === 409 ? 'UNKNOWN' : 'INBOUND_ORIGIN_STOCK_PROTECTED';
+      const error = new CustomError({
+        message: 'uncertain',
+        statusCode,
+        response: { code },
+      });
+      (client.post as jest.Mock).mockRejectedValueOnce(error);
+      await expect(
+        stocktakingClient.completeSession('session', {
+          previewToken: 'preview',
+          idempotencyKey: 'key',
+        })
+      ).rejects.toBe(error);
+      expect(localStorage.length).toBe(1);
+    }
+  );
   it('always requests the v2 full-session preview', async () => {
     await stocktakingClient.generateAdjustments('session');
     expect(client.post).toHaveBeenCalledWith(

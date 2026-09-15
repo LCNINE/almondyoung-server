@@ -1,5 +1,9 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import {
+  receiptActionBlockReasons,
+  type ReceiptActionBlockReason,
+} from './receiptState';
 export class ReceiptHistoryError extends Error {}
 export type ReceiptStatus = 'posted' | 'voided' | 'all';
 export interface ReceiptHistoryLine {
@@ -13,6 +17,9 @@ export interface ReceiptHistoryLine {
   canceledQty: number;
   returnedQty: number;
   putawayFromOriginQty: number;
+  pendingQty?: number;
+  canPutaway?: boolean;
+  putawayBlockReason?: ReceiptActionBlockReason | null;
   canCancel: boolean;
   cancelBlockReason: string | null;
 }
@@ -93,6 +100,16 @@ export function validateReceiptHistory(
             count(line.returnedQty) &&
             count(line.putawayFromOriginQty) &&
             typeof line.canCancel === 'boolean' &&
+            (line.pendingQty === undefined ||
+              (typeof line.pendingQty === 'number' &&
+                Number.isSafeInteger(line.pendingQty))) &&
+            (line.canPutaway === undefined ||
+              typeof line.canPutaway === 'boolean') &&
+            (line.putawayBlockReason === undefined ||
+              line.putawayBlockReason === null ||
+              receiptActionBlockReasons.includes(
+                line.putawayBlockReason as ReceiptActionBlockReason
+              )) &&
             (line.originLocationCode === null ||
               typeof line.originLocationCode === 'string') &&
             (line.cancelBlockReason === null ||

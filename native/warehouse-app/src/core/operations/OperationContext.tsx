@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { OperationRunner } from './operationRunner';
 import type { OperationStore } from './operationStore';
 export interface WorkCapabilities {
+  inboundWorkflowConsistency?: boolean;
   stocktakingAddCountItem?: boolean;
   locationOutbound?: boolean;
 }

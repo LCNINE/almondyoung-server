@@ -19,6 +19,9 @@ const rejectedCodes = new Set([
   'STOCKTAKING_REVISION_CONFLICT',
   'STOCKTAKING_PREVIEW_STALE',
   'STOCKTAKING_COUNT_REQUIRED',
+  'INBOUND_ORIGIN_STOCK_PROTECTED',
+  'INBOUND_ORIGIN_STOCK_INCONSISTENT',
+  'INBOUND_PUTAWAY_DESTINATION_INVALID',
 ]);
 
 async function actorContext() {
@@ -82,8 +85,7 @@ export function stocktakingFailure(error: unknown): {
   message?: string;
 } {
   const wrapped = error as
-    | { response?: { status?: number; data?: unknown } }
-    | undefined;
+    { response?: { status?: number; data?: unknown } } | undefined;
   const status = isCustomError(error)
     ? error.statusCode
     : wrapped?.response?.status;
@@ -127,7 +129,9 @@ async function transmit<T>(
     const { status, code } = stocktakingFailure(error);
     if (
       [400, 404, 422].includes(status ?? 0) ||
-      (code && rejectedCodes.has(code))
+      ([400, 404, 409, 422].includes(status ?? 0) &&
+        code &&
+        rejectedCodes.has(code))
     )
       localStorage.removeItem(storageKey);
     throw error;

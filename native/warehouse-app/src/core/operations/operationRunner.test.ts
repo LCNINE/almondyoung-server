@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
 import { createOperationRunner } from './operationRunner';
 import { ApiError, type ApiClient } from '../data/httpClient';
+import { errorMessage } from '../data/errorMessage';
 
 describe('durable requests', () => {
   it('replays same operation after commit and lost response without applying twice', async () => {
@@ -633,3 +634,74 @@ describe('location force resolution', () => {
     expect((await store.get('force-key'))?.status).toBe('confirmed');
   });
 });
+
+describe('inbound workflow rejection outcomes', () => {
+  const codes = [
+    'INBOUND_ORIGIN_STOCK_PROTECTED',
+    'INBOUND_ORIGIN_STOCK_INCONSISTENT',
+    'INBOUND_PUTAWAY_DESTINATION_INVALID',
+  ];
+  it.each(codes)(
+    'settles %s from the original saved request as rejected',
+    async (code) => {
+      const store = createOperationStore(crypto.randomUUID());
+      const runner = createOperationRunner({
+        store,
+        getScope: async () => 'a',
+        api: {
+          request: async () => {
+            throw new ApiError('rejected', 409, code);
+          },
+        },
+      });
+      expect(new ApiError('rejected', 409, code).outcome).toBe('rejected');
+      await expect(
+        runner.request({
+          path: '/movement/move',
+          method: 'POST',
+          body: { warehouseId: 'w' },
+          idempotencyKey: 'original',
+        })
+      ).rejects.toMatchObject({ code, outcome: 'rejected' });
+      expect((await store.get('original'))?.status).toBe('rejected');
+    }
+  );
+  it.each([401, 403, 408, 429, 500])(
+    'keeps protected code with status %s uncertain',
+    (status) => {
+      expect(new ApiError('unknown', status, codes[0]).outcome).toBe(
+        'uncertain'
+      );
+    }
+  );
+  it('does not treat an unknown 409 as a rejection', () => {
+    expect(new ApiError('unknown', 409, 'UNRECOGNIZED_CODE').outcome).toBe(
+      'uncertain'
+    );
+  });
+});
+
+it.each([
+  [
+    'INBOUND_ORIGIN_STOCK_PROTECTED',
+    '이 상품은 적치 대기 중이에요. 적치에서 처리해 주세요.',
+  ],
+  [
+    'INBOUND_ORIGIN_STOCK_INCONSISTENT',
+    '입고 기록과 현재 재고가 맞지 않아요. 입고내역과 실물을 확인해 주세요.',
+  ],
+  [
+    'INBOUND_PUTAWAY_DESTINATION_INVALID',
+    '같은 창고의 일반 로케이션을 선택해 주세요.',
+  ],
+])(
+  'guides %s even when replay settles it as ApiError status 400',
+  (code, message) => {
+    expect(
+      errorMessage(
+        new ApiError('작업이 반영되지 않았어요.', 400, code),
+        'movement'
+      )
+    ).toBe(message);
+  }
+);
