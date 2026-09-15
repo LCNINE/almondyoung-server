@@ -221,6 +221,9 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
       screen.queryByText('작업을 불러오고 있어요.')
     ).not.toBeInTheDocument()
   );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
   await waitFor(() =>
     expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
@@ -434,4 +437,58 @@ it('취소 후 재시작한 간편입고는 취소 이력을 확인하고 적치
         c.path.includes('status=all')
     )
   ).toBe(true);
+});
+
+it('keeps confirmed inbound cart locked until original key reconciliation completes', async () => {
+  const database = crypto.randomUUID();
+  const store = createOperationStore(database);
+  await store.draft('actor|local:draft:quick-inbound:w-1', () => ({
+    cart: [
+      { skuId: 's1', skuCode: 'CT-001', skuName: '코튼셔츠', quantity: 20 },
+    ],
+    staged: [],
+    seen: [],
+    key: 'confirmed-receipt',
+    receiptId: null,
+  }));
+  await store.begin({
+    id: 'confirmed-receipt',
+    scope: 'actor|local',
+    resource: '/inbound/simple:w-1',
+    method: 'POST',
+    path: '/inbound/simple',
+    bodyJson: '{}',
+    createdAt: Date.now(),
+  });
+  await store.finish('confirmed-receipt', 'confirmed', {
+    id: 'r-1',
+    lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, database, 'quick', (localStore) => {
+    const get = localStore.get;
+    vi.spyOn(localStore, 'get').mockImplementation(async (id) => {
+      if (id === 'confirmed-receipt') await gate;
+      return get(id);
+    });
+  });
+  const quantity = await screen.findByLabelText('코튼셔츠 수량');
+  expect(quantity).toBeDisabled();
+  expect(screen.getByLabelText('코튼셔츠 삭제')).toBeDisabled();
+  expect(screen.getByLabelText('바코드 입력')).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await screen.findByText('적치 대기');
+  expect(calls.filter((c) => c.path === '/inbound/simple')).toHaveLength(0);
+  expect(
+    (await store.draft<{ key: string }>('actor|local:draft:quick-inbound:w-1'))
+      ?.key
+  ).toBe('confirmed-receipt');
 });

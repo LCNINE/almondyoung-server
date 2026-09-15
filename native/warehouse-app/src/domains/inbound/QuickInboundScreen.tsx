@@ -72,14 +72,16 @@ function QuickInboundScreenContent() {
       staged: typeof reduce === 'function' ? reduce(prev.staged) : reduce,
     }));
   const runtime = useWorkRuntime();
-  const [reconciled, setReconciled] = useState(!runtime);
+  const [reconciledKey, setReconciledKey] = useState<string | null>(null);
+  const reconciled = !runtime || reconciledKey === idempotencyKey;
+  const reconcileRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     if (!runtime || !draft.ready) return;
     let live = true;
     let generation = 0;
     const reconcile = async () => {
       const thisGeneration = ++generation;
-      if (live) setReconciled(false);
+      if (live) setReconciledKey(null);
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
       if (op?.status === 'confirmed' && current.staged.length === 0) {
@@ -194,10 +196,11 @@ function QuickInboundScreenContent() {
           };
         }),
       }));
-      if (live && thisGeneration === generation) setReconciled(true);
+      if (live && thisGeneration === generation) setReconciledKey(current.key);
     };
+    reconcileRef.current = reconcile;
     void reconcile().catch(() => {
-      if (live) setReconciled(false);
+      if (live) setReconciledKey(null);
     });
     const off = runtime.runner.subscribe(
       () => void reconcile().catch(() => {})
@@ -211,7 +214,11 @@ function QuickInboundScreenContent() {
   const [quantityText, setQuantityText] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  useUnsavedWork(editing !== null || saving);
+  useUnsavedWork(
+    editing !== null ||
+      saving ||
+      (!reconciled && cart.length > 0 && staged.length === 0)
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   const [putawayFor, setPutawayFor] = useState<FreshLine | null>(null);
@@ -220,6 +227,11 @@ function QuickInboundScreenContent() {
   const stagedMode = staged.length > 0;
 
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
+    // Restored physical inputs must wait for the original receipt result too.
+    if (runtime) {
+      if (!reconcileRef.current) throw new Error('입고 상태를 확인해 주세요.');
+      await reconcileRef.current();
+    }
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];
     if (!sku) {
@@ -230,6 +242,8 @@ function QuickInboundScreenContent() {
     setNotice(null);
     await draft.update((prev) => {
       if (prev.seen.includes(eventId)) return prev;
+      if (prev.staged.length > 0)
+        throw new Error('이미 입고된 작업이에요. 입고내역을 확인해 주세요.');
       const found = prev.cart.find((r) => r.skuId === sku.id);
       const cart = found
         ? prev.cart.map((r) =>
@@ -258,6 +272,7 @@ function QuickInboundScreenContent() {
       stagedMode ||
       submit.isPending ||
       !draft.ready ||
+      !reconciled ||
       editing ||
       savingRef.current
     ) {
@@ -268,7 +283,15 @@ function QuickInboundScreenContent() {
   });
 
   async function chooseSku(sku: SelectedSku) {
-    if (savingRef.current || editing || scanQueue.blocked() || submit.isPending)
+    if (
+      !reconciled ||
+      !draft.ready ||
+      stagedMode ||
+      savingRef.current ||
+      editing ||
+      scanQueue.blocked() ||
+      submit.isPending
+    )
       return;
     savingRef.current = true;
     setSaving(true);
@@ -298,7 +321,8 @@ function QuickInboundScreenContent() {
   }
   async function saveQuantity() {
     const quantity = parseQuantity(quantityText, 1);
-    if (!editing || quantity === null || savingRef.current) return;
+    if (!reconciled || !editing || quantity === null || savingRef.current)
+      return;
     savingRef.current = true;
     setSaving(true);
     try {
@@ -333,6 +357,14 @@ function QuickInboundScreenContent() {
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!draft.ready ? <p role="status">작업을 불러오고 있어요.</p> : null}
+      {draft.ready && !reconciled && !stagedMode && (
+        <p role="status">
+          이전 입고 결과를 확인하고 있어요. 확인 후 계속 입력할 수 있어요.
+          <Button onClick={() => void reconcileRef.current?.().catch(() => {})}>
+            입고 상태 다시 확인
+          </Button>
+        </p>
+      )}
       {draft.error ? (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
       ) : null}
@@ -418,8 +450,10 @@ function QuickInboundScreenContent() {
           <Button
             type="button"
             className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            disabled={saving}
+            disabled={saving || !reconciled || !!draft.error}
             onClick={async () => {
+              if (!reconciled || savingRef.current) return;
+              savingRef.current = true;
               setSaving(true);
               try {
                 await draft.update(() => ({
@@ -432,6 +466,7 @@ function QuickInboundScreenContent() {
               } catch {
                 setNotice('새 입고를 시작하지 못했어요. 다시 시도해 주세요.');
               } finally {
+                savingRef.current = false;
                 setSaving(false);
               }
             }}
@@ -448,6 +483,7 @@ function QuickInboundScreenContent() {
           <SkuPicker
             disabled={
               !draft.ready ||
+              !reconciled ||
               saving ||
               !!editing ||
               scanQueue.blocked() ||
@@ -456,7 +492,13 @@ function QuickInboundScreenContent() {
             onSelect={(sku) => void chooseSku(sku)}
           />
           <BarcodeInput
-            disabled={!draft.ready || saving || !!editing || submit.isPending}
+            disabled={
+              !draft.ready ||
+              !reconciled ||
+              saving ||
+              !!editing ||
+              submit.isPending
+            }
             onSubmit={(code) => scanQueue.enqueue(code)}
           />
           {cart.length === 0 ? (
@@ -484,12 +526,15 @@ function QuickInboundScreenContent() {
                       aria-label={`${row.skuName} 수량`}
                       className="text-lg font-semibold text-gray-900 underline"
                       disabled={
+                        !reconciled ||
+                        !draft.ready ||
                         scanQueue.blocked() ||
                         submit.isPending ||
                         saving ||
                         !!editing
                       }
                       onClick={() => {
+                        if (!reconciled) return;
                         setQuantityText(String(row.quantity));
                         setEditing(row.skuId);
                       }}
@@ -501,13 +546,15 @@ function QuickInboundScreenContent() {
                       aria-label={`${row.skuName} 삭제`}
                       className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
                       disabled={
+                        !reconciled ||
+                        !draft.ready ||
                         scanQueue.blocked() ||
                         submit.isPending ||
                         saving ||
                         !!editing
                       }
                       onClick={async () => {
-                        if (savingRef.current) return;
+                        if (!reconciled || savingRef.current) return;
                         savingRef.current = true;
                         setSaving(true);
                         try {
@@ -546,7 +593,9 @@ function QuickInboundScreenContent() {
                       </fieldset>
                       <Button
                         disabled={
-                          saving || parseQuantity(quantityText, 1) === null
+                          !reconciled ||
+                          saving ||
+                          parseQuantity(quantityText, 1) === null
                         }
                         onClick={() => void saveQuantity()}
                       >
