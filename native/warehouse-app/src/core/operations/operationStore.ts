@@ -36,6 +36,9 @@ export function createOperationStore(name = 'almondwms-work-v2') {
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+    }).catch((error) => {
+      opening = undefined;
+      throw error;
     }));
   async function transaction<T>(
     mode: IDBTransactionMode,

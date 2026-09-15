@@ -431,7 +431,9 @@ it.each(['other shipment', 'other source', 'scope failure'])(
       });
       await f.store.finish('foreign', 'sending');
     }
-    await act(async () => f.runner.restore());
+    if (kind === 'scope failure')
+      act(() => window.dispatchEvent(new Event('online')));
+    else await act(async () => f.runner.restore());
     const input = screen.getByLabelText('출고 상품 바코드');
     await waitFor(() => expect(input).toBeDisabled());
     expect(input.closest('[inert]')).not.toBeNull();
