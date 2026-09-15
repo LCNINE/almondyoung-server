@@ -3,15 +3,45 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
+import { and, eq, sql, gte, lt, lte, desc, inArray } from 'drizzle-orm';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto } from '../dto/simple-inbound.dto';
 import { InboundReceiptKernel } from '../kernel/inbound-receipt.kernel';
-import { InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
+import { InboundCancelBlockReason, InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
 import { InboundReceiptLineMapper, InboundReceiptMapper } from '../mappers/inbound.mapper';
+import type { InboundReceiptMethod, InboundReceiptStatusFilter } from '../dto/inbound-receipts-query.dto';
+import { isTodaySeoul } from '../../shared/services/time.util';
+
+type ReceiptHistoryLineState = {
+  canceledQty: number;
+  putawayFromOriginQty: number;
+  returnedQty: number;
+  quantity: number;
+  originLocationId: string | null;
+};
+
+function cancelBlockReason(
+  line: ReceiptHistoryLineState,
+  receiptOccurredAt: Date,
+  serverTime: Date,
+  eventExists: boolean,
+  originOnHand: number,
+): InboundCancelBlockReason | null {
+  if (line.canceledQty > 0) return 'ALREADY_CANCELED';
+  if (!isTodaySeoul(receiptOccurredAt, serverTime)) return 'NOT_TODAY';
+  if (line.putawayFromOriginQty > 0) return 'PUTAWAY_EXISTS';
+  if (line.returnedQty > 0) return 'RETURN_EXISTS';
+  if (!line.originLocationId || !eventExists) return 'MISSING_ORIGIN_OR_EVENT';
+  if (originOnHand < line.quantity) return 'INSUFFICIENT_ORIGIN_STOCK';
+  return null;
+}
+
+function ledgerKey(skuId: string, warehouseId: string, locationId: string): string {
+  return `${skuId}:${warehouseId}:${locationId}`;
+}
 
 @Injectable()
 export class InboundService {
@@ -153,7 +183,9 @@ export class InboundService {
     params: {
       skuId?: string;
       warehouseId?: string;
-      method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+      receiptId?: string;
+      method?: InboundReceiptMethod;
+      status?: InboundReceiptStatusFilter;
       startDate?: string;
       endDate?: string;
       limit?: number;
@@ -161,7 +193,11 @@ export class InboundService {
     },
     tx?: DbTx,
   ): Promise<InboundReceiptHistoryResponseDto> {
-    const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
+    const { skuId, warehouseId, receiptId, method, status, startDate, endDate, limit = 50, offset = 0 } = params;
+    if (receiptId && !warehouseId) {
+      throw new BadRequestException('warehouseId is required when filtering by receiptId');
+    }
+    const serverTime = new Date();
     return this.dbService.run(async (tx) => {
       const receiptIdsForSku = skuId
         ? tx
@@ -170,13 +206,17 @@ export class InboundService {
             .where(eq(wmsTables.inboundReceiptLines.skuId, skuId))
         : undefined;
       const receiptWhere = and(
-        eq(wmsTables.inboundReceipts.status, 'posted'),
+        status === 'all' ? undefined : eq(wmsTables.inboundReceipts.status, status ?? 'posted'),
         warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+        receiptId ? eq(wmsTables.inboundReceipts.id, receiptId) : undefined,
         method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
         receiptIdsForSku ? inArray(wmsTables.inboundReceipts.id, receiptIdsForSku) : undefined,
-        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(`${startDate}T00:00:00+09:00`)) : undefined,
         endDate
-          ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+          ? lt(
+              wmsTables.inboundReceipts.occurredAt,
+              new Date(new Date(`${endDate}T00:00:00+09:00`).getTime() + 86_400_000),
+            )
           : undefined,
       );
 
@@ -192,26 +232,86 @@ export class InboundService {
         .limit(limit)
         .offset(offset);
       const receiptIds = receipts.map((receipt) => receipt.id);
-      const lines =
+      const lineRows =
         receiptIds.length === 0
           ? []
           : await tx
-              .select()
+              .select({
+                line: wmsTables.inboundReceiptLines,
+                skuCode: wmsTables.skus.code,
+                skuName: wmsTables.skus.name,
+                originLocationCode: wmsTables.locations.code,
+                originalEventId: wmsTables.stockEvents.id,
+              })
               .from(wmsTables.inboundReceiptLines)
+              .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.inboundReceiptLines.skuId))
+              .leftJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.inboundReceiptLines.originLocationId))
+              .leftJoin(wmsTables.stockEvents, eq(wmsTables.stockEvents.id, wmsTables.inboundReceiptLines.eventId))
               .where(inArray(wmsTables.inboundReceiptLines.receiptId, receiptIds))
               .orderBy(wmsTables.inboundReceiptLines.createdAt, wmsTables.inboundReceiptLines.id);
-      const linesByReceipt = new Map<string, typeof lines>();
-      for (const line of lines) {
-        const receiptLines = linesByReceipt.get(line.receiptId) ?? [];
-        receiptLines.push(line);
-        linesByReceipt.set(line.receiptId, receiptLines);
+
+      const skuIds = [...new Set(lineRows.map(({ line }) => line.skuId))];
+      const warehouseIds = [...new Set(receipts.map((receipt) => receipt.warehouseId))];
+      const originLocationIds = [
+        ...new Set(lineRows.flatMap(({ line }) => (line.originLocationId ? [line.originLocationId] : []))),
+      ];
+      const ledgers =
+        skuIds.length === 0 || warehouseIds.length === 0 || originLocationIds.length === 0
+          ? []
+          : await tx
+              .select({
+                skuId: wmsTables.stockLedgers.skuId,
+                warehouseId: wmsTables.stockLedgers.warehouseId,
+                locationId: wmsTables.stockLedgers.locationId,
+                qty: wmsTables.stockLedgers.qty,
+              })
+              .from(wmsTables.stockLedgers)
+              .where(
+                and(
+                  inArray(wmsTables.stockLedgers.skuId, skuIds),
+                  inArray(wmsTables.stockLedgers.warehouseId, warehouseIds),
+                  inArray(wmsTables.stockLedgers.locationId, originLocationIds),
+                  eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+                ),
+              );
+      const onHandByGrain = new Map(
+        ledgers.map((ledger) => [ledgerKey(ledger.skuId, ledger.warehouseId, ledger.locationId), ledger.qty]),
+      );
+      const receiptById = new Map(receipts.map((receipt) => [receipt.id, receipt]));
+      const linesByReceipt = new Map<string, typeof lineRows>();
+      for (const row of lineRows) {
+        const receiptLines = linesByReceipt.get(row.line.receiptId) ?? [];
+        receiptLines.push(row);
+        linesByReceipt.set(row.line.receiptId, receiptLines);
       }
 
       return {
+        serverTime: serverTime.toISOString(),
         total,
         items: receipts.map((receipt) => ({
           ...InboundReceiptMapper.toBaseDto(receipt),
-          lines: (linesByReceipt.get(receipt.id) ?? []).map(InboundReceiptLineMapper.toDto),
+          lines: (linesByReceipt.get(receipt.id) ?? []).map((row) => {
+            const lineReceipt = receiptById.get(row.line.receiptId);
+            if (!lineReceipt) throw new Error(`receipt ${row.line.receiptId} missing from selected page`);
+            const originOnHand = row.line.originLocationId
+              ? (onHandByGrain.get(ledgerKey(row.line.skuId, lineReceipt.warehouseId, row.line.originLocationId)) ?? 0)
+              : 0;
+            const blockReason = cancelBlockReason(
+              row.line,
+              lineReceipt.occurredAt,
+              serverTime,
+              row.originalEventId !== null,
+              originOnHand,
+            );
+            return {
+              ...InboundReceiptLineMapper.toDto(row.line),
+              skuCode: row.skuCode,
+              skuName: row.skuName,
+              originLocationCode: row.originLocationCode,
+              canCancel: blockReason === null,
+              cancelBlockReason: blockReason,
+            };
+          }),
         })),
       };
     }, tx);
