@@ -6,13 +6,7 @@ import { BadRequestException } from '@nestjs/common';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundService } from './inbound.service';
 import { InboundPutawayReader } from './inbound-putaway.reader';
-import {
-  Database,
-  inRollbackTx,
-  makeInboundPutawayReader,
-  makeInboundService,
-  makeInventoryCommandService,
-} from './__fixtures__/inbound-harness';
+import { Database, inRollbackTx, makeInboundPutawayReader, makeInboundService } from './__fixtures__/inbound-harness';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -387,10 +381,9 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
     });
   });
 
-  it('적치 대신 이동 화면으로 원위치를 이미 비운 라인은 카운터가 그대로여도 큐에서 빠진다', async () => {
+  it('과거에 원위치가 비워진 불일치 데이터의 현재 reader 동작을 기록한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { warehouse, sku } = await seed(tx);
-      const shelf = await seedPlainZone(tx, warehouse.id);
 
       const received = await svc.simpleInbound(
         {
@@ -403,23 +396,10 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
 
       const before = await reader.listPending({ warehouseId: warehouse.id }, tx);
       expect(before.total).toBe(1);
-      const originLocationId = before.items[0].originLocationId;
 
-      // 적치(putawayFromOrigin)를 거치지 않고 이동 화면과 같은 경로(moveInternal)로
-      // 원위치 재고를 다른 로케이션으로 옮긴다. putawayFromOriginQty 는 이 경로를
-      // 모르므로 그대로 0 이다 — 카운터만 보던 예전 쿼리라면 여전히 "잔여 20"으로
-      // 나왔을 라인이다.
-      const command = makeInventoryCommandService(db);
-      await command.moveInternal(
-        {
-          skuId: sku.id,
-          warehouseId: warehouse.id,
-          fromLocationId: originLocationId,
-          toLocationId: shelf.id,
-          quantity: 20,
-        },
-        tx,
-      );
+      // Historical corruption fixture only. The final stock guard now rejects general
+      // movement of this pending receipt; Task 4 will expose this row as inconsistent.
+      await tx.update(wmsTables.stockLedgers).set({ qty: 0 }).where(eq(wmsTables.stockLedgers.skuId, sku.id));
 
       const lineAfterMove = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, received.lines[0].id),

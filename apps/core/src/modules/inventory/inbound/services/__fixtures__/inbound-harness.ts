@@ -12,6 +12,7 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
+import { MovementService } from '../../../movement/services/movement.service';
 import { InboundReceiptKernel } from '../../kernel/inbound-receipt.kernel';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
@@ -37,11 +38,10 @@ export function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
 
 /**
  * InboundService 조립에 필요한 하위 서비스 일체 — command(InventoryCommandService)
- * 를 스펙에서 직접 써야 할 때(예: moveInternal 로 원장을 서비스 우회 이동시켜
- * putawayFromOriginQty 와 원장을 일부러 어긋나게 하는 시나리오) 매번 손으로
+ * 를 스펙에서 직접 써야 할 때(예: 일반 이동이 입고 대기를 보호하는지 검증) 매번 손으로
  * 다시 조립하면 여기 배선이 갈라질 위험이 있다 — 한 곳에서만 만든다.
  */
-function buildWiring(database: Database) {
+export function buildWiring(database: Database) {
   const dbService = dbServiceFor(database);
   const guard = new BatchControlledStockGuard();
   const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
@@ -60,19 +60,19 @@ function buildWiring(database: Database) {
 }
 
 export function makeInboundService(database: Database): InboundService {
-  const { dbService, skuCatalog, command, location, eventStore, idempotency } = buildWiring(database);
+  const { dbService, skuCatalog, command, location, eventStore, idempotency, guard } = buildWiring(database);
   return new InboundService(
     dbService,
     skuCatalog as never,
     eventStore,
     idempotency,
-    new InboundReceiptKernel(command, location, eventStore),
+    new InboundReceiptKernel(command, location, eventStore, guard),
   );
 }
 
 export function makeInboundReceiptKernel(database: Database): InboundReceiptKernel {
-  const { command, location, eventStore } = buildWiring(database);
-  return new InboundReceiptKernel(command, location, eventStore);
+  const { command, location, eventStore, guard } = buildWiring(database);
+  return new InboundReceiptKernel(command, location, eventStore, guard);
 }
 
 export function makeInboundPutawayReader(database: Database): InboundPutawayReader {
@@ -80,8 +80,7 @@ export function makeInboundPutawayReader(database: Database): InboundPutawayRead
 }
 
 /**
- * `InboundService.putawayFromOrigin` 을 거치지 않고 원장만 이동시키고 싶을 때
- * 쓴다 — "적치 대신 이동 화면으로 옮겼다" 시나리오 재현용. `InboundService` 가
+ * 일반 재고 명령의 입고 대기 보호와 자유 재고 처리를 검증할 때 쓴다. `InboundService` 가
  * 내부에서 쓰는 것과 같은 배선(buildWiring)에서 뽑으므로 두 서비스가 서로 다른
  * dbService/이벤트스토어를 보는 일이 없다.
  */
@@ -99,4 +98,9 @@ export async function inRollbackTx(database: Database, fn: (tx: DbTx) => Promise
       throw new Rollback('intentional rollback');
     }),
   ).rejects.toThrow(Rollback);
+}
+
+export function makeMovementService(database: Database): MovementService {
+  const { dbService, eventStore, idempotency } = buildWiring(database);
+  return new MovementService(dbService, eventStore, idempotency);
 }
