@@ -310,7 +310,9 @@ async function fixture(
     runner,
     reopen: mountView,
     firstArrivals,
-    answerNextArrivals(value: ExpectedArrivalsResult) {
+    answerNextArrivals(
+      value: ExpectedArrivalsResult | Promise<ExpectedArrivalsResult>
+    ) {
       arrivalReaders.set('w-1', async () => value);
     },
     answerArrivalsFor(warehouseId: string, value: ExpectedArrivalsResult) {
@@ -1563,4 +1565,53 @@ it('does not turn a double-click on failed quantity saving into an automatic sec
   expect(f.input).toHaveValue('10');
   expect(f.input).toBeDisabled();
   expect((await f.draft())?.quantity).toBeUndefined();
+});
+
+it('retries a failed arrivals query on the page before a queued first scan opens a sheet', async () => {
+  const queued = { id: 'first-scan-before-arrivals', data: '880000000001' };
+  const f = await fixture(emptyDraft, [queued]);
+  await screen.findByRole('heading', { name: '발주 품목' });
+  expect(
+    screen.queryByRole('dialog', { name: '입고 수량' })
+  ).not.toBeInTheDocument();
+  await act(async () =>
+    f.firstArrivals.reject(new Error('arrivals unavailable'))
+  );
+
+  const retry = await screen.findByRole('button', { name: '다시 확인' });
+  expect(retry).toBeEnabled();
+  expect(
+    screen.queryByRole('dialog', { name: '입고 수량' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  expect(await f.savedScans()).toEqual([queued]);
+  expect((await f.draft())?.active).toBeNull();
+  expect(f.lookupCodes).toEqual([]);
+
+  const retriedArrivals = deferred<ExpectedArrivalsResult>();
+  f.answerNextArrivals(retriedArrivals.promise);
+  await userEvent.click(retry);
+  expect(
+    await screen.findByText('발주 정보를 확인하고 있어요.')
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '입력 취소' })
+  ).not.toBeInTheDocument();
+  expect(await f.savedScans()).toEqual([queued]);
+  await act(async () => retriedArrivals.resolve(arrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(input).toHaveValue('1');
+  expect(await f.savedScans()).toEqual([]);
+  expect(await f.draft()).toMatchObject({
+    active: lineA,
+    quantity: { text: '1', source: 'scanned' },
+    seen: [queued.id],
+  });
+  expect(f.lookupCodes).toEqual(['880000000001']);
+  expect(
+    f.requests.filter((r) => r.path === '/purchase-orders/po-1/receipts')
+  ).toHaveLength(0);
 });

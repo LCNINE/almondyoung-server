@@ -464,15 +464,16 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       }
     />
   ) : null;
-  const discardInput = canDiscardInput ? (
-    <Button
-      type="button"
-      className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-      onClick={() => void discardDraftInput()}
-    >
-      입력 취소
-    </Button>
-  ) : null;
+  const discardInput =
+    activeItem && canDiscardInput ? (
+      <Button
+        type="button"
+        className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+        onClick={() => void discardDraftInput()}
+      >
+        입력 취소
+      </Button>
+    ) : null;
   const sheetStatus = !arrivalsReady ? (
     arrivals.isError ? (
       <div className="space-y-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
@@ -592,7 +593,9 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">발주 품목</h2>
-        {arrivals.isError ? (
+        {!activeItem && !arrivalsReady ? (
+          sheetStatus
+        ) : arrivals.isError ? (
           <p role="alert" className="text-sm text-red-600">
             {errorMessage(arrivals.error, 'po-receive')}
           </p>
