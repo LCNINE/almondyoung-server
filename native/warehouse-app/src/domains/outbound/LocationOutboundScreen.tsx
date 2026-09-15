@@ -141,6 +141,9 @@ function LocationWork({
         idempotencyKey: id,
       });
       apply(result);
+      // A confirmed queue replay returns its original response snapshot.
+      // Keep the queue blocked until current source progress is reconciled.
+      await refresh();
       setNotice(null);
     } catch (e) {
       setNotice(errorMessage(e, 'outbound'));

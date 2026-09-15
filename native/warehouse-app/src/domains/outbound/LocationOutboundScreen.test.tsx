@@ -5,7 +5,7 @@ import {
 } from '../../core/operations/OperationContext';
 import { createOperationStore } from '../../core/operations/operationStore';
 import { createOperationRunner } from '../../core/operations/operationRunner';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -285,4 +285,86 @@ it('초기 조회 뒤에 복구된 스캔 생략 출고가 완료되면 최신 �
   await screen.findByRole('button', { name: 'A 선택' });
   await runtime.runner.retryPending();
   expect(await screen.findByText('출고완료')).toBeInTheDocument();
+});
+
+it('확정된 스캔 복구 후에도 최신 위치 잔량을 다시 읽는다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  await store.draft('scope:draft:location-outbound:s', () => ({
+    startKey: 'start',
+    started: true,
+    sourceId: 'A',
+  }));
+  const input = {
+    warehouseId: 'w',
+    sourceLocationId: 'A',
+    barcode: '8801',
+    quantity: 1,
+  };
+  await store.draft('scope:scan:location-outbound-scans:s', () => [
+    { id: 'scan', data: input },
+  ]);
+  await store.begin({
+    id: 'scan',
+    scope: 'scope',
+    resource: '/shipments/s',
+    path: '/shipments/s/location-outbound-scans',
+    method: 'POST',
+    bodyJson: JSON.stringify(input),
+    createdAt: Date.now(),
+  });
+  await store.finish('scan', 'confirmed', state);
+  let releaseCached!: () => void;
+  const cachedGate = new Promise<void>((r) => {
+    releaseCached = r;
+  });
+  const originalBegin = store.begin;
+  vi.spyOn(store, 'begin').mockImplementation(async (input) => {
+    const cached = await originalBegin(input);
+    await cachedGate;
+    return cached;
+  });
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((r) => {
+    releaseRead = r;
+  });
+  let reads = 0;
+  const fresh = {
+    ...state,
+    sources: [
+      { ...state.sources[0], pickedQty: 1, remainingQty: 0 },
+      state.sources[1],
+    ],
+  };
+  const api: ApiClient = {
+    request: async <T,>(opts: Parameters<ApiClient['request']>[0]) => {
+      if (opts.path.includes('location-outbound-state')) {
+        reads++;
+        await readGate;
+        return fresh as T;
+      }
+      throw new Error('Unexpected request ' + opts.path);
+    },
+  };
+  const runner = createOperationRunner({
+    api,
+    store,
+    getScope: async () => 'scope',
+    wait: async () => {},
+  });
+  const runtime = {
+    store,
+    runner,
+    getScope: async () => 'scope',
+    getCapabilities: async () => ({ locationOutbound: true }),
+  };
+  mount(runner.request, 'w', runtime);
+  await waitFor(() => expect(reads).toBe(1));
+  releaseCached();
+  await screen.findByRole('button', { name: 'A 선택' });
+  releaseRead();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'A 선택' })
+    ).not.toBeInTheDocument()
+  );
 });
