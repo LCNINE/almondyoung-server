@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서의 「설계」와 「합격 기준」. 기존 요구사항은 `native/warehouse-app/docs/inventory-accuracy-acceptance.md`도 참고한다.
 
-**Status:** 2026-09-16 구현 및 로컬 통합 검증 완료. 기준 `9def17e0e` → 코드 `48b675d04`, 브랜치 `codex/po-inbound-demo-fixes`. 앱 511 tests 및 실제 HTTP/DB 입고→적치→이동→출고 재고 대사 통과. Windows/PDA 실기기 항목은 미검증으로 기록한다. 승인된 수량 정책은 **직접 입력 10 + 낱개 스캔 1 = 11**이다.
+**Status:** 2026-09-16 구현 및 로컬 통합 검증 완료. 기준 `9def17e0e` → 코드 `658c78132`, 브랜치 `codex/po-inbound-demo-fixes`. 앱 512 tests 및 실제 HTTP/DB 입고→적치→이동→출고 재고 대사 통과. Windows/PDA 실기기 항목은 미검증으로 기록한다. 승인된 수량 정책은 **직접 입력 10 + 낱개 스캔 1 = 11**이다.
 
 ## Global Constraints
 
@@ -268,7 +268,8 @@ DATABASE_URL="$WAREHOUSE_PO_TEST_DATABASE_URL" corepack yarn test --runInBand --
 - Task2 창 내부 오류 복구: `22fee3ff6`.
 - Task3 수량·저장 순서 통합: `48b675d04`. PO 전용 `usePoReceiptQuantity`로 저장 처리를 분리하고 NumberPad에 선택형 최신값 조회를 추가했다. 기존 사용처 기본 동작은 회귀 통과했다.
 - 브라우저 관찰에 따라 PO 직접 입력의 Enter는 입력 완료/포커스 해제로 처리했다. 공통 스캐너는 입력칸을 무시하는 기존 정책을 유지한다. 직접 입력 후 Enter 또는 입력칸 밖 클릭이 한 번 필요하다.
-- 자동 검사: 앱 85 files / 511 tests, build 통과, lint 오류 0(기존 경고 22개). Core 6 suites / 83 tests 통과, skip 없음.
+- 자동 검사: 앱 85 files / 512 tests, build 통과, lint 오류 0(기존 경고 22개). Core 6 suites / 83 tests 통과, skip 없음.
 - 실제 로컬 DB: `warehouse_po_demo_fixes_20260916`, 마이그레이션 98/98. 입고 11, 부분 적치 4 후 재시작/잔여 7, 적치 완료 11, 이동 3, 출고 3, 최종 A=8/B=0. 별도 SKU 성공 응답 유실 후 동일 키/본문 재확인, 입고 라인·재고 이벤트 각 1건.
 - 실기기 검사를 수행했다는 의미로 체크하지 않는다. 위 실기기 작업은 계획에 허용된 대체 절차인 **미검증 기록**을 완료한 것이다. 현장 시연 준비 완료 판정은 보류한다.
 - 상세 기록: `native/warehouse-app/docs/inventory-accuracy-acceptance.md`의 2026-09-16 절.
+- 최종 검토 보완: `658c78132`에서 수량 창이 열리기 전 첫 스캔 대기 중 조회 실패에도 페이지 재시도를 제공했다. runtime 37개 및 실제 브라우저의 저장 스캔 복원→재조회→수량 1 확인. 최종 범위 재검토에서 모든 지적 해결, 새 결함 없음.
