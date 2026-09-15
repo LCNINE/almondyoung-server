@@ -568,6 +568,9 @@ describe('SessionCountScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '열기' })).toBeEnabled()
     );
+    // The DOM can commit before the scanner subscription effect catches up.
+    // Flush hydration effects before emitting the synchronous physical scan burst.
+    await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: '스캔:A-01-02' }));
     fireEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
     fireEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
