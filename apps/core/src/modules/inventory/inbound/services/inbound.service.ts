@@ -233,6 +233,9 @@ export class InboundService {
               skuCode: row.skuCode,
               skuName: row.skuName,
               originLocationCode: row.originLocationCode,
+              pendingQty: state.pendingQty,
+              canPutaway: state.canPutaway,
+              putawayBlockReason: state.putawayBlockReason,
               canCancel: state.canCancel,
               cancelBlockReason: toHistoryCancelBlockReason(state.cancelBlockReason),
             };

@@ -1,7 +1,5 @@
-import {
-  confirmedPutawayQuantity,
-  withConfirmedPutaway,
-} from './confirmedPutaway';
+import { receiptFeedback } from './receiptFeedback';
+import { useReceiptReconciliation } from './useReceiptReconciliation';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { ReceivePurchaseOrderResult } from './types';
@@ -42,7 +40,7 @@ import {
   PoReceiveScanNotAppliedError,
   PoReceiveSkuNotInOrderError,
 } from './poReceiveScanError';
-import type { FreshLine } from './types';
+import type { FreshLine, PutawayTarget } from './types';
 
 function createReadinessGate() {
   let release!: () => void;
@@ -72,6 +70,13 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   );
   const quantity = usePoReceiptQuantity(draft);
   const { active, fresh } = draft.value;
+  const receipt = useReceiptReconciliation({
+    lineId: fresh?.lineId ?? null,
+    warehouseId,
+    expectedSource: 'purchase_order',
+  });
+  const [followupError, setFollowupError] = useState<string | null>(null);
+  const followupLock = useRef(false);
   const submitLock = useRef(false);
   const unsavedSubmission = useRef<PoReceiveDraft['submitted']>(null);
   const [submissionSaveFailed, setSubmissionSaveFailed] = useState(false);
@@ -123,18 +128,6 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
           );
         }
       }
-      const latest = await draft.read();
-      if (latest.fresh) {
-        const lineId = latest.fresh.lineId;
-        const quantity = await confirmedPutawayQuantity(runtime, lineId);
-        await draft.update((prev) => ({
-          ...prev,
-          fresh:
-            prev.fresh?.lineId === lineId
-              ? withConfirmedPutaway(prev.fresh, quantity)
-              : prev.fresh,
-        }));
-      }
       if (live) setReconciled(true);
     };
     void reconcile().catch(() => {
@@ -150,7 +143,9 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   }, [runtime, draft.ready, draft.value.submitted?.key]);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [putawayOpen, setPutawayOpen] = useState(false);
+  const [putawayTarget, setPutawayTarget] = useState<PutawayTarget | null>(
+    null
+  );
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState(false);
 
@@ -359,7 +354,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     });
   }, `po-inbound:${warehouseId}:${poId}`);
   useScanner((e) => {
-    if (putawayOpen) return;
+    if (putawayTarget) return;
     if (
       cancelConfirm ||
       receive.isPending ||
@@ -520,7 +515,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"
@@ -542,22 +537,51 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {fresh ? (
         <div className="space-y-2 rounded-lg border border-green-300 bg-green-50 p-3">
           <p className="text-sm text-green-900">
-            {fresh.skuName} {fresh.quantity}개 입고됨
-            {/* 간편입고 적치 대기 행과 같은 어휘("잔여 N개 · M개 적치됨")를 쓴다 —
-                두 화면의 부분 적치 진행 표시를 맞추기로 한 결정. */}
-            {fresh.putawayDoneQty >= fresh.quantity
-              ? ' · 적치 완료'
-              : fresh.putawayDoneQty > 0
-                ? ` · 잔여 ${fresh.quantity - fresh.putawayDoneQty}개 · ${fresh.putawayDoneQty}개 적치됨`
-                : ''}
+            {receipt.ready && receipt.state ? (
+              receipt.state.canceledQty > 0 ||
+              receipt.state.receiptStatus === 'voided' ? (
+                <>
+                  {fresh.skuName} <span>취소됨</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {fresh.skuName} {receipt.state.quantity}개 입고됨
+                  </span>
+                  {receipt.state.putawayFromOriginQty === receipt.state.quantity
+                    ? ' · 적치 완료'
+                    : receipt.state.returnedQty > 0
+                      ? ` · 잔여 ${receipt.state.pendingQty}개 · ${receipt.state.putawayFromOriginQty}개 적치됨 · ${receipt.state.returnedQty}개 회송됨`
+                      : receipt.state.putawayFromOriginQty > 0
+                        ? ` · 잔여 ${receipt.state.pendingQty}개 · ${receipt.state.putawayFromOriginQty}개 적치됨`
+                        : ''}
+                </>
+              )
+            ) : (
+              ' · 입고 상태 확인 필요'
+            )}
           </p>
           <div className="flex gap-2">
-            {fresh.putawayDoneQty < fresh.quantity ? (
+            {receipt.ready &&
+            receipt.state?.canPutaway &&
+            receipt.state.originLocationId ? (
               <Button
                 type="button"
                 className="flex-1 py-1.5 text-xs"
                 disabled={!reconciled || !!draft.error}
-                onClick={() => setPutawayOpen(true)}
+                onClick={() => {
+                  if (receipt.state?.originLocationId)
+                    setPutawayTarget({
+                      lineId: fresh.lineId,
+                      skuName: fresh.skuName,
+                      skuCode: fresh.skuCode,
+                      source: 'purchase_order',
+                      pendingQty: receipt.state.pendingQty,
+                      originLocationId: receipt.state.originLocationId,
+                      originLocationCode:
+                        receipt.state.originLocationCode ?? '원위치',
+                    });
+                }}
               >
                 적치하기
               </Button>
@@ -566,7 +590,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                 부분 적치도 그 조건에 걸리므로 누계가 0 일 때만 노출한다.
                 확인 다이얼로그가 뜬 동안은 감춘다 — 다이얼로그도 [취소] 버튼을 쓰므로
                 접근성 이름이 겹치고, 배너 쪽은 어차피 조작할 대상이 아니다. */}
-            {fresh.putawayDoneQty === 0 && !cancelConfirm ? (
+            {receipt.ready && receipt.state?.canCancel && !cancelConfirm ? (
               <Button
                 type="button"
                 className="flex-1 border border-red-300 bg-white py-1.5 text-xs text-red-700 hover:bg-red-50"
@@ -583,6 +607,19 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
               닫기
             </Button>
           </div>
+          {!receipt.ready && (
+            <div>
+              <p role="status">입고 상태를 확인해 주세요.</p>
+              <Button onClick={() => void receipt.refresh().catch(() => {})}>
+                다시 확인
+              </Button>
+            </div>
+          )}
+          {(followupError || receipt.error) && (
+            <p role="alert">
+              {followupError ?? receiptFeedback(receipt.error, 'inbound')}
+            </p>
+          )}
           {cancel.isError ? (
             <p role="alert" className="text-xs text-red-700">
               {errorMessage(cancel.error, 'inbound-cancel')}
@@ -764,50 +801,42 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         confirmLabel="취소하기"
         danger
         onCancel={() => setCancelConfirm(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
+          if (!fresh || followupLock.current) return;
+          followupLock.current = true;
           setCancelConfirm(false);
-          if (!fresh) return;
-          cancel.mutate(
-            {
-              receiptLineId: fresh.lineId,
-              idempotencyKey: cancelKeyFor(fresh.lineId),
-            },
-            {
-              onSuccess: () => {
-                cancelKeyRef.current = null;
-                setFresh(null);
-              },
+          setFollowupError(null);
+          try {
+            const latest = await receipt.refresh();
+            if (!latest.canCancel || latest.quantity !== fresh.quantity) {
+              setFollowupError(
+                '입고 상태가 바뀌었어요. 최신 내역을 확인해 주세요.'
+              );
+              return;
             }
-          );
+            await cancel.mutateAsync({
+              receiptLineId: latest.lineId,
+              idempotencyKey: cancelKeyFor(latest.lineId),
+            });
+            await receipt.refresh();
+          } catch (error) {
+            setFollowupError(receiptFeedback(error, 'inbound-cancel'));
+          } finally {
+            followupLock.current = false;
+          }
         }}
       />
 
-      {putawayOpen && fresh ? (
+      {putawayTarget ? (
         <PutawaySheet
-          target={{
-            lineId: fresh.lineId,
-            skuName: fresh.skuName,
-            skuCode: fresh.skuCode,
-            pendingQty: fresh.quantity - fresh.putawayDoneQty,
-            originLocationCode: '입고기본존',
-          }}
+          target={putawayTarget}
           warehouseId={warehouseId}
           lastDest={lastDest}
-          onCancel={() => setPutawayOpen(false)}
-          onDone={async (dest, quantity) => {
+          onCancel={() => setPutawayTarget(null)}
+          onDone={async (dest) => {
             setLastDest(dest);
-            const confirmed = runtime
-              ? await confirmedPutawayQuantity(runtime, fresh.lineId)
-              : null;
-            await setFresh((prev) =>
-              prev?.lineId === fresh.lineId
-                ? withConfirmedPutaway(
-                    prev,
-                    confirmed ?? prev.putawayDoneQty + quantity
-                  )
-                : prev
-            );
-            setPutawayOpen(false);
+            setPutawayTarget(null);
+            await receipt.refresh().catch(() => {});
           }}
         />
       ) : null}

@@ -1,3 +1,5 @@
+import { InboundHistoryScreen } from './InboundHistoryScreen';
+import { PutawaySheet } from './PutawaySheet';
 import 'fake-indexeddb/auto';
 import {
   act,
@@ -152,7 +154,7 @@ type Draft = {
     source: 'suggested' | 'manual' | 'scanned';
   } | null;
   seen: string[];
-  fresh: null;
+  fresh: import('./types').FreshLine | null;
   submitted: null | {
     target: ExpectedArrivalLine;
     quantity: number;
@@ -211,10 +213,82 @@ async function fixture(
     ['880000000002', async () => [skuB]],
     ['880000000003', async () => [skuOutsideOrder]],
   ]);
+  let receiptState = {
+    lineId: 'receipt-line-1',
+    receiptId: 'receipt-1',
+    warehouseId: 'w-1',
+    source: 'purchase_order',
+    receiptStatus: 'posted',
+    skuId: 'sku-a',
+    skuCode: 'ALMOND-A',
+    skuName: '아몬드 셔츠',
+    originLocationId: 'origin-1',
+    originLocationCode: '입고기본존',
+    quantity: 3,
+    pendingQty: 3,
+    putawayFromOriginQty: 0,
+    returnedQty: 0,
+    canceledQty: 0,
+    canPutaway: true,
+    putawayBlockReason: null as string | null,
+    canCancel: true,
+    cancelBlockReason: null as string | null,
+  };
   const requests: Parameters<ApiClient['request']>[0][] = [];
   const api: ApiClient = {
     request: async <T,>(request: Parameters<ApiClient['request']>[0]) => {
       requests.push(request);
+      if (request.path.startsWith('/inbound/lines/')) return receiptState as T;
+      if (request.path.startsWith('/inbound/receipts?'))
+        return {
+          serverTime: new Date().toISOString(),
+          total: 1,
+          items: [
+            {
+              id: 'receipt-1',
+              warehouseId: 'w-1',
+              method: 'simple',
+              occurredAt: new Date().toISOString(),
+              status: receiptState.receiptStatus,
+              totalQuantity: 3,
+              lines: [{ ...receiptState, id: receiptState.lineId }],
+            },
+          ],
+        } as T;
+      if (
+        request.path === '/purchase-orders/receipt-lines/receipt-line-1/cancel'
+      ) {
+        receiptState = {
+          ...receiptState,
+          receiptStatus: 'voided',
+          pendingQty: 0,
+          canceledQty: 3,
+          canPutaway: false,
+          putawayBlockReason: 'CANCELED',
+          canCancel: false,
+          cancelBlockReason: 'CANCELED',
+        };
+        return {
+          receiptLineId: 'receipt-line-1',
+          poId: 'po-1',
+          skuId: 'sku-a',
+          quantity: 3,
+        } as T;
+      }
+      if (request.path === '/inbound/putaway') {
+        const qty = (request.body as { quantity: number }).quantity;
+        receiptState = {
+          ...receiptState,
+          pendingQty: receiptState.pendingQty - qty,
+          putawayFromOriginQty: receiptState.putawayFromOriginQty + qty,
+          canCancel: false,
+          cancelBlockReason: 'ALREADY_PUTAWAY',
+          canPutaway: receiptState.pendingQty > qty,
+          putawayBlockReason:
+            receiptState.pendingQty > qty ? null : 'NOTHING_PENDING',
+        };
+        return { success: true } as T;
+      }
       if (request.path.startsWith('/inventory/expected-arrivals')) {
         const warehouseId = new URLSearchParams(request.path.split('?')[1]).get(
           'warehouseId'
@@ -231,6 +305,11 @@ async function fixture(
       if (request.path === '/purchase-orders/po-1/receipts') {
         const body = request.body as {
           lines: Array<{ skuId: string; quantity: number }>;
+        };
+        receiptState = {
+          ...receiptState,
+          quantity: body.lines[0].quantity,
+          pendingQty: body.lines[0].quantity,
         };
         return {
           receiptId: 'receipt-1',
@@ -254,6 +333,7 @@ async function fixture(
     wait: async () => {},
   });
   const runtime: WorkRuntime = {
+    getCapabilities: async () => ({ inboundWorkflowConsistency: true }),
     store,
     runner,
     getScope: async () => 'scope',
@@ -264,7 +344,11 @@ async function fixture(
       mutations: { retry: false },
     },
   });
-  const mountView = (warehouseId = 'w-1', poId = 'po-1') => {
+  const mountView = (
+    warehouseId = 'w-1',
+    poId = 'po-1',
+    content?: React.ReactNode
+  ) => {
     const prefs = createMemoryPrefs({
       'almondwms.warehouse': JSON.stringify({
         id: warehouseId,
@@ -275,7 +359,7 @@ async function fixture(
     const index = createRoute({
       getParentRoute: () => root,
       path: '/',
-      component: () => <PurchaseOrderReceiveScreen poId={poId} />,
+      component: () => content ?? <PurchaseOrderReceiveScreen poId={poId} />,
     });
     const router = createRouter({
       routeTree: root.addChildren([index]),
@@ -304,6 +388,9 @@ async function fixture(
   return {
     ...view,
     store,
+    setReceiptState: (change: Partial<typeof receiptState>) => {
+      receiptState = { ...receiptState, ...change };
+    },
     queryClient,
     lookupCodes,
     requests,
@@ -1614,4 +1701,194 @@ it('retries a failed arrivals query on the page before a queued first scan opens
   expect(
     f.requests.filter((r) => r.path === '/purchase-orders/po-1/receipts')
   ).toHaveLength(0);
+});
+
+it('다른 화면에서 확정 취소한 원래 PO fresh 초안을 재개하면 현재 취소됨을 표시한다', async () => {
+  const f = await fixture(
+    {
+      active: null,
+      scanBump: 0,
+      seen: [],
+      submitted: null,
+      fresh: {
+        lineId: 'receipt-line-1',
+        skuId: 'sku-a',
+        skuCode: 'ALMOND-A',
+        skuName: '아몬드 셔츠',
+        quantity: 3,
+        putawayDoneQty: 0,
+      },
+    },
+    [],
+    async (store) => {
+      await store.begin({
+        resource: 'inbound',
+        id: 'original-cancel',
+        scope: 'scope',
+        path: '/purchase-orders/receipt-lines/receipt-line-1/cancel',
+        method: 'POST',
+        bodyJson: '{}',
+        createdAt: Date.now(),
+      });
+      await store.finish('original-cancel', 'confirmed', {
+        receiptLineId: 'receipt-line-1',
+        quantity: 3,
+      });
+    }
+  );
+  f.setReceiptState({
+    receiptStatus: 'voided',
+    pendingQty: 0,
+    canceledQty: 3,
+    canPutaway: false,
+    putawayBlockReason: 'CANCELED',
+    canCancel: false,
+    cancelBlockReason: 'CANCELED',
+  });
+  f.firstArrivals.resolve(arrivals);
+  expect(await screen.findByText('취소됨')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치하기' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '취소' })
+  ).not.toBeInTheDocument();
+  expect(
+    (await f.store.draft<Draft>('scope:draft:po-inbound:w-1:po-1'))?.fresh
+      ?.lineId
+  ).toBe('receipt-line-1');
+});
+
+it('입고내역의 실제 취소 실행 후 이전 PO 초안을 재개하면 취소된 현재 상태를 읽는다', async () => {
+  const f = await fixture({
+    active: null,
+    scanBump: 0,
+    seen: [],
+    submitted: null,
+    fresh: {
+      lineId: 'receipt-line-1',
+      skuId: 'sku-a',
+      skuCode: 'ALMOND-A',
+      skuName: '아몬드 셔츠',
+      quantity: 3,
+      putawayDoneQty: 0,
+    },
+  });
+  f.firstArrivals.resolve(arrivals);
+  await screen.findByRole('button', { name: '적치하기' });
+  f.unmount();
+  const history = f.reopen('w-1', 'po-1', <InboundHistoryScreen />);
+  await userEvent.click(
+    await screen.findByRole('button', { name: '아몬드 셔츠 입고 취소' })
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '전량 취소' })).toBeEnabled()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '전량 취소' }));
+  await screen.findByText('입고를 취소했어요.');
+  history.unmount();
+  f.reopen();
+  expect(await screen.findByText('취소됨')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치하기' })
+  ).not.toBeInTheDocument();
+  const cancel = f.requests.filter(
+    (r) => r.method === 'POST' && r.path.endsWith('/cancel')
+  );
+  expect(cancel).toHaveLength(1);
+  expect((await f.store.get(cancel[0].idempotencyKey!))?.status).toBe(
+    'confirmed'
+  );
+});
+it('별도 적치 화면에서 처리한 후 PO를 재개하면 서버의 현재 적치 누계를 표시한다', async () => {
+  const f = await fixture({
+    active: null,
+    scanBump: 0,
+    seen: [],
+    submitted: null,
+    fresh: {
+      lineId: 'receipt-line-1',
+      skuId: 'sku-a',
+      skuCode: 'ALMOND-A',
+      skuName: '아몬드 셔츠',
+      quantity: 3,
+      putawayDoneQty: 0,
+    },
+  });
+  f.firstArrivals.resolve(arrivals);
+  await screen.findByRole('button', { name: '적치하기' });
+  f.unmount();
+  const putaway = f.reopen(
+    'w-1',
+    'po-1',
+    <PutawaySheet
+      target={{
+        lineId: 'receipt-line-1',
+        source: 'purchase_order',
+        skuName: '아몬드 셔츠',
+        skuCode: 'ALMOND-A',
+        pendingQty: 3,
+        originLocationId: 'origin-1',
+        originLocationCode: '입고기본존',
+      }}
+      warehouseId="w-1"
+      lastDest={{ id: 'dest-1', code: 'A-01' }}
+      onDone={() => {}}
+      onCancel={() => {}}
+    />
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '직전 대상지 A-01 사용' })
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '적치' }));
+  await waitFor(() =>
+    expect(
+      f.requests.filter(
+        (r) => r.method === 'POST' && r.path === '/inbound/putaway'
+      )
+    ).toHaveLength(1)
+  );
+  await waitFor(async () =>
+    expect(await f.store.pending('scope')).toHaveLength(0)
+  );
+  putaway.unmount();
+  f.reopen();
+  await screen.findByText(/적치 완료/);
+  expect(
+    screen.queryByRole('button', { name: '적치하기' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '취소' })
+  ).not.toBeInTheDocument();
+});
+
+it('전량 회송된 PO 입고를 적치 완료로 표시하지 않는다', async () => {
+  const f = await fixture({
+    active: null,
+    scanBump: 0,
+    seen: [],
+    submitted: null,
+    fresh: {
+      lineId: 'receipt-line-1',
+      skuId: 'sku-a',
+      skuCode: 'ALMOND-A',
+      skuName: '아몬드 셔츠',
+      quantity: 3,
+      putawayDoneQty: 0,
+    },
+  });
+  f.setReceiptState({
+    pendingQty: 0,
+    returnedQty: 3,
+    canPutaway: false,
+    putawayBlockReason: 'NOTHING_PENDING',
+    canCancel: false,
+    cancelBlockReason: 'RETURN_EXISTS',
+  });
+  f.firstArrivals.resolve(arrivals);
+  expect(await screen.findByText(/3개 회송됨/)).toBeInTheDocument();
+  expect(screen.queryByText(/적치 완료/)).not.toBeInTheDocument();
 });

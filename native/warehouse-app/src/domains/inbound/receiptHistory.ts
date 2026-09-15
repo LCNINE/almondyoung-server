@@ -14,6 +14,7 @@ export interface ReceiptHistoryLine {
   quantity: number;
   source: 'direct' | 'purchase_order';
   originLocationCode: string | null;
+  originLocationId?: string | null;
   canceledQty: number;
   returnedQty: number;
   putawayFromOriginQty: number;
@@ -110,6 +111,9 @@ export function validateReceiptHistory(
               receiptActionBlockReasons.includes(
                 line.putawayBlockReason as ReceiptActionBlockReason
               )) &&
+            (line.originLocationId === undefined ||
+              line.originLocationId === null ||
+              typeof line.originLocationId === 'string') &&
             (line.originLocationCode === null ||
               typeof line.originLocationCode === 'string') &&
             (line.cancelBlockReason === null ||

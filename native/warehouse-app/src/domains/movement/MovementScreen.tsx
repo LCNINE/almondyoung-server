@@ -1,3 +1,9 @@
+import { Link } from '@tanstack/react-router';
+import {
+  useWorkCapabilities,
+  assertInboundWorkflowCapability,
+} from '../../core/operations/useWorkCapabilities';
+import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -45,6 +51,21 @@ function MovementScreenContent() {
     crypto.randomUUID()
   );
 
+  const runtime = useWorkRuntime();
+  const capabilities = useWorkCapabilities();
+  const supported =
+    !!runtime &&
+    capabilities.isSuccess &&
+    capabilities.data.inboundWorkflowConsistency === true;
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionLock = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const contents = useLocationContents(source?.id);
   const sourceSearch = useLocationSearch(warehouseId, source ? '' : sourceTerm);
   const destSearch = useLocationSearch(
@@ -118,18 +139,18 @@ function MovementScreenContent() {
   }, [activeItem, source, dest, qty]);
 
   function openSheet(item: LocationContentItem) {
-    if (!source) return;
+    if (!source || !supported || !(item.generallyMovableQty > 0)) return;
     setActiveItem(item);
     setDest(null);
     setDestTerm('');
-    setQty(item.quantity);
+    setQty(item.generallyMovableQty);
     setReason(null);
     setOtherReason('');
     keyPayloadRef.current = {
       skuId: item.skuId,
       from: source.id,
       to: '',
-      qty: item.quantity,
+      qty: item.generallyMovableQty,
     };
     setIdempotencyKey(crypto.randomUUID());
   }
@@ -149,17 +170,22 @@ function MovementScreenContent() {
   const effectiveReason =
     reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
+    supported &&
     Boolean(activeItem) &&
     Boolean(source) &&
     Boolean(dest) &&
     dest?.id !== source?.id &&
     qty >= 1 &&
-    qty <= (activeItem?.quantity ?? 0);
+    qty <= (activeItem?.generallyMovableQty ?? 0);
 
   if (!isSet) {
     return (
       <div className="space-y-4">
         <ScreenHeader title="재고 이동" backTo="/" />
+        {!supported && (
+          <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+        )}
+        {actionError && <p role="alert">{actionError}</p>}
         <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
           <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
@@ -171,6 +197,10 @@ function MovementScreenContent() {
   return (
     <div className="space-y-5">
       <ScreenHeader title="재고 이동" backTo="/" />
+      {!supported && (
+        <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+      )}
+      {actionError && <p role="alert">{actionError}</p>}
 
       {!source ? (
         <section className="space-y-2">
@@ -257,7 +287,19 @@ function MovementScreenContent() {
                     <span className="text-lg font-semibold text-gray-900">
                       {item.quantity}
                     </span>
+                    {item.inboundPendingQty > 0 && (
+                      <Link
+                        to="/putaway"
+                        search={{
+                          skuId: item.skuId,
+                          originLocationId: source.id,
+                        }}
+                      >
+                        적치하기
+                      </Link>
+                    )}
                     <Button
+                      disabled={!supported || !(item.generallyMovableQty > 0)}
                       className="px-3 py-1.5 text-xs"
                       onClick={() => openSheet(item)}
                     >
@@ -287,7 +329,8 @@ function MovementScreenContent() {
                 {activeItem.skuCode}
               </div>
               <div className="mt-1 text-xs text-gray-500">
-                출발 {source.code} · 현재 ON_HAND {activeItem.quantity}
+                출발 {source.code} · 현재 {activeItem.quantity}개 · 이동 가능{' '}
+                {activeItem.generallyMovableQty}개
               </div>
             </div>
 
@@ -296,7 +339,7 @@ function MovementScreenContent() {
               <div
                 className={cn(
                   'rounded-lg border p-2 text-center text-2xl font-semibold',
-                  qty >= 1 && qty <= activeItem.quantity
+                  qty >= 1 && qty <= activeItem.generallyMovableQty
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
                     : 'border-gray-200 bg-white text-gray-400'
                 )}
@@ -308,12 +351,13 @@ function MovementScreenContent() {
                 value={quantityText}
                 onChange={setQuantityText}
                 min={1}
-                max={activeItem.quantity}
+                max={activeItem.generallyMovableQty}
               />
               <NumberPad value={qty} onChange={setQty} />
-              {qty > activeItem.quantity ? (
+              {qty > activeItem.generallyMovableQty ? (
                 <p className="text-xs text-red-600">
-                  현재 수량({activeItem.quantity})을 초과할 수 없어요.
+                  이동 가능 수량({activeItem.generallyMovableQty})을 초과할 수
+                  없어요.
                 </p>
               ) : null}
             </section>
@@ -451,27 +495,45 @@ function MovementScreenContent() {
         message={`${source?.code ?? ''} → ${dest?.code ?? ''}, ${activeItem?.skuName ?? '상품'} ${qty}개 이동합니다.`}
         confirmLabel="이동"
         onCancel={() => setConfirming(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirming(false);
-          if (!activeItem || !source || !dest || !warehouseId) return;
-          move.mutate(
-            {
-              warehouseId,
-              skuId: activeItem.skuId,
-              fromLocationId: source.id,
-              toLocationId: dest.id,
-              quantity: qty,
-              reason: effectiveReason || undefined,
-              idempotencyKey,
-            },
-            {
-              onSuccess: () => {
-                setLastDest(dest);
-                setIdempotencyKey(crypto.randomUUID());
-                closeSheet();
+          if (
+            !activeItem ||
+            !source ||
+            !dest ||
+            !warehouseId ||
+            !runtime ||
+            !canSubmit ||
+            actionLock.current
+          )
+            return;
+          actionLock.current = true;
+          try {
+            await assertInboundWorkflowCapability(runtime);
+            if (!mounted.current) return;
+            await move.mutateAsync(
+              {
+                warehouseId,
+                skuId: activeItem.skuId,
+                fromLocationId: source.id,
+                toLocationId: dest.id,
+                quantity: qty,
+                reason: effectiveReason || undefined,
+                idempotencyKey,
               },
-            }
-          );
+              {
+                onSuccess: () => {
+                  setLastDest(dest);
+                  setIdempotencyKey(crypto.randomUUID());
+                  closeSheet();
+                },
+              }
+            );
+          } catch (error) {
+            setActionError(errorMessage(error, 'movement'));
+          } finally {
+            actionLock.current = false;
+          }
         }}
       />
     </div>
@@ -479,9 +541,10 @@ function MovementScreenContent() {
 }
 
 export function MovementScreen() {
+  const { warehouseId } = useWarehouse();
   return (
     <WorkArea kind="movement">
-      <MovementScreenContent />
+      <MovementScreenContent key={warehouseId} />
     </WorkArea>
   );
 }

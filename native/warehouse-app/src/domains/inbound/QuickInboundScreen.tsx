@@ -1,8 +1,5 @@
-import {
-  confirmedPutawayQuantity,
-  confirmedCanceledQuantity,
-  withConfirmedPutaway,
-} from './confirmedPutaway';
+import { assertInboundWorkflowCapability } from '../../core/operations/useWorkCapabilities';
+import { useSession } from '../../app/session-context';
 import { Link } from '@tanstack/react-router';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { receiptHistoryPath, validateReceiptHistory } from './receiptHistory';
@@ -31,7 +28,7 @@ import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
-import type { FreshLine } from './types';
+import type { FreshLine, PutawayTarget } from './types';
 
 interface CartRow {
   skuId: string;
@@ -64,14 +61,11 @@ function QuickInboundScreenContent() {
       cart: typeof reduce === 'function' ? reduce(prev.cart) : reduce,
       key: crypto.randomUUID(),
     }));
-  const setStaged = (
-    reduce: FreshLine[] | ((prev: FreshLine[]) => FreshLine[])
-  ) =>
-    draft.update((prev) => ({
-      ...prev,
-      staged: typeof reduce === 'function' ? reduce(prev.staged) : reduce,
-    }));
   const runtime = useWorkRuntime();
+  const session = useSession();
+  const [currentLines, setCurrentLines] = useState<
+    import('./receiptHistory').ReceiptHistoryLine[]
+  >([]);
   const [reconciled, setReconciled] = useState(!runtime);
   const reconcileRef = useRef<(() => Promise<void>) | null>(null);
   const reconciliation = useRef<Promise<void> | null>(null);
@@ -82,8 +76,11 @@ function QuickInboundScreenContent() {
     const reconcile = async () => {
       const thisGeneration = ++generation;
       if (live) setReconciled(false);
+      const scope = await runtime.getScope();
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
+      if (op && op.scope !== scope)
+        throw new Error('로그인을 다시 확인해 주세요.');
       if (op && op.status !== 'confirmed' && op.status !== 'rejected')
         throw new Error('입고 처리 여부를 먼저 확인해 주세요.');
       if (op?.status === 'confirmed' && current.staged.length === 0) {
@@ -109,39 +106,6 @@ function QuickInboundScreenContent() {
         }));
       }
       const latest = await draft.read();
-      const quantities = new Map(
-        await Promise.all(
-          latest.staged.map(
-            async (line) =>
-              [
-                line.lineId,
-                await confirmedPutawayQuantity(runtime, line.lineId),
-              ] as const
-          )
-        )
-      );
-      const canceled = new Map(
-        await Promise.all(
-          latest.staged.map(
-            async (line) =>
-              [
-                line.lineId,
-                await confirmedCanceledQuantity(runtime, line.lineId),
-              ] as const
-          )
-        )
-      );
-      if ([...canceled.values()].some((quantity) => quantity > 0))
-        await draft.update((prev) => ({
-          ...prev,
-          staged: prev.staged.map((line) => ({
-            ...line,
-            canceledQty: Math.max(
-              line.canceledQty ?? 0,
-              canceled.get(line.lineId) ?? 0
-            ),
-          })),
-        }));
       const receiptId =
         latest.receiptId ??
         (op?.status === 'confirmed'
@@ -149,6 +113,9 @@ function QuickInboundScreenContent() {
           : undefined);
       let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
       if (latest.staged.length) {
+        if ((await runtime.store.pending(scope)).length)
+          throw new Error('처리 내역을 먼저 확인해 주세요.');
+        await assertInboundWorkflowCapability(runtime);
         if (!receiptId || !warehouseId)
           throw new Error('입고내역에서 상태를 확인해 주세요.');
         const history = await api.request<unknown>({
@@ -173,31 +140,17 @@ function QuickInboundScreenContent() {
           throw new Error('입고내역을 확인해 주세요.');
         historyLines = receipt.lines;
       }
+      if (
+        !live ||
+        thisGeneration !== generation ||
+        !session.isAuthenticated() ||
+        (await runtime.getScope()) !== scope
+      )
+        return;
+      if ((await runtime.store.pending(scope)).length)
+        throw new Error('처리 내역을 먼저 확인해 주세요.');
       if (!live || thisGeneration !== generation) return;
-      await draft.update((prev) => ({
-        ...prev,
-        receiptId: receiptId ?? null,
-        staged: prev.staged.map((line) => {
-          const currentLine = historyLines.find(
-            (item) => item.id === line.lineId
-          );
-          return {
-            ...withConfirmedPutaway(
-              line,
-              Math.max(
-                quantities.get(line.lineId) ?? 0,
-                currentLine?.putawayFromOriginQty ?? 0
-              )
-            ),
-            canceledQty: Math.max(
-              currentLine?.canceledQty ?? 0,
-              line.canceledQty ?? 0,
-              canceled.get(line.lineId) ?? 0
-            ),
-            returnedQty: currentLine?.returnedQty ?? line.returnedQty,
-          };
-        }),
-      }));
+      setCurrentLines(historyLines);
       if (live && thisGeneration === generation) setReconciled(true);
     };
     const runReconcile = () => {
@@ -210,11 +163,18 @@ function QuickInboundScreenContent() {
     const off = runtime.runner.subscribe(
       () => void runReconcile().catch(() => {})
     );
+    const offSession = session.subscribe(() => {
+      ++generation;
+      setCurrentLines([]);
+      setReconciled(false);
+      void runReconcile().catch(() => {});
+    });
     return () => {
       live = false;
+      offSession();
       off();
     };
-  }, [runtime, draft.ready, api, warehouseId]);
+  }, [runtime, draft.ready, api, warehouseId, session]);
   const [editing, setEditing] = useState<string | null>(null);
   const [quantityText, setQuantityText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -226,7 +186,7 @@ function QuickInboundScreenContent() {
   );
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [putawayFor, setPutawayFor] = useState<FreshLine | null>(null);
+  const [putawayFor, setPutawayFor] = useState<PutawayTarget | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   // 적치 대기 목록으로 넘어간 뒤에는 스캔이 카트를 건드리면 안 된다.
   const stagedMode = staged.length > 0;
@@ -359,7 +319,7 @@ function QuickInboundScreenContent() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!draft.ready ? <p role="status">작업을 불러오고 있어요.</p> : null}
@@ -408,50 +368,82 @@ function QuickInboundScreenContent() {
             </p>
           )}
           <ul className="space-y-2">
-            {staged.map((line) => (
-              <li
-                key={line.lineId}
-                className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gray-800">
-                    {line.skuName}
-                  </span>
-                  <span className="block font-mono text-xs text-gray-500">
-                    {line.skuCode}
-                  </span>
-                  {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
-                      시각적으로 구분되지 않는 문제를 막는다. */}
-                  {line.putawayDoneQty > 0 &&
-                  line.putawayDoneQty < line.quantity ? (
-                    <span className="block text-xs text-gray-500">
-                      잔여 {line.quantity - line.putawayDoneQty}개 ·{' '}
-                      {line.putawayDoneQty}개 적치됨
+            {staged.map((saved) => {
+              const current = currentLines.find(
+                (item) => item.id === saved.lineId
+              );
+              const line = {
+                ...saved,
+                putawayDoneQty: current?.putawayFromOriginQty ?? 0,
+                canceledQty: current?.canceledQty ?? 0,
+                returnedQty: current?.returnedQty ?? 0,
+              };
+              return (
+                <li
+                  key={line.lineId}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-gray-800">
+                      {line.skuName}
                     </span>
-                  ) : null}
-                </span>
-                <span className="text-lg font-semibold text-gray-900">
-                  {line.quantity}
-                </span>
-                {(line.canceledQty ?? 0) > 0 ? (
-                  <span>취소됨</span>
-                ) : (line.returnedQty ?? 0) > 0 ? (
-                  <span>회송됨</span>
-                ) : line.putawayDoneQty >= line.quantity ? (
-                  <span className="shrink-0 text-xs font-semibold text-green-700">
-                    완료
+                    <span className="block font-mono text-xs text-gray-500">
+                      {line.skuCode}
+                    </span>
+                    {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
+                      시각적으로 구분되지 않는 문제를 막는다. */}
+                    {line.putawayDoneQty > 0 &&
+                    line.putawayDoneQty < line.quantity ? (
+                      <span className="block text-xs text-gray-500">
+                        잔여 {current?.pendingQty}개 · {line.putawayDoneQty}개
+                        적치됨
+                      </span>
+                    ) : null}
                   </span>
-                ) : (
-                  <Button
-                    className="shrink-0 px-3 py-1.5 text-xs"
-                    disabled={!reconciled || !!draft.error}
-                    onClick={() => setPutawayFor(line)}
-                  >
-                    적치
-                  </Button>
-                )}
-              </li>
-            ))}
+                  <span className="text-lg font-semibold text-gray-900">
+                    {line.quantity}
+                  </span>
+                  {(line.canceledQty ?? 0) > 0 ? (
+                    <span>취소됨</span>
+                  ) : (line.returnedQty ?? 0) > 0 ? (
+                    <span>회송됨</span>
+                  ) : line.putawayDoneQty >= line.quantity ? (
+                    <span className="shrink-0 text-xs font-semibold text-green-700">
+                      완료
+                    </span>
+                  ) : (
+                    <Button
+                      className="shrink-0 px-3 py-1.5 text-xs"
+                      disabled={
+                        !reconciled ||
+                        !!draft.error ||
+                        !current?.canPutaway ||
+                        !current.originLocationId
+                      }
+                      onClick={() => {
+                        if (
+                          current?.canPutaway &&
+                          current.originLocationId &&
+                          current.pendingQty !== undefined
+                        )
+                          setPutawayFor({
+                            lineId: line.lineId,
+                            skuName: line.skuName,
+                            skuCode: line.skuCode,
+                            source: current.source,
+                            pendingQty: current.pendingQty,
+                            originLocationId: current.originLocationId,
+                            originLocationCode:
+                              current.originLocationCode ?? '원위치',
+                          });
+                      }}
+                    >
+                      적치
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           <Button
             type="button"
@@ -681,32 +673,14 @@ function QuickInboundScreenContent() {
 
       {putawayFor ? (
         <PutawaySheet
-          target={{
-            lineId: putawayFor.lineId,
-            skuName: putawayFor.skuName,
-            skuCode: putawayFor.skuCode,
-            pendingQty: putawayFor.quantity - putawayFor.putawayDoneQty,
-            originLocationCode: '입고기본존',
-          }}
+          target={putawayFor}
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayFor(null)}
-          onDone={async (dest, quantity) => {
+          onDone={async (dest) => {
             setLastDest(dest);
-            const confirmed = runtime
-              ? await confirmedPutawayQuantity(runtime, putawayFor.lineId)
-              : null;
-            await setStaged((prev) =>
-              prev.map((l) =>
-                l.lineId === putawayFor.lineId
-                  ? withConfirmedPutaway(
-                      l,
-                      confirmed ?? l.putawayDoneQty + quantity
-                    )
-                  : l
-              )
-            );
             setPutawayFor(null);
+            await reconcileRef.current?.().catch(() => {});
           }}
         />
       ) : null}

@@ -36,25 +36,40 @@ describe('useExpectedArrivals', () => {
       totalOutstandingQuantity: 0,
       arrivals: [],
     }));
-    const client: ApiClient = { request: request as unknown as ApiClient['request'] };
-    const { result } = renderHook(() => useExpectedArrivals('w-1'), { wrapper: wrapperWith(client) });
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
+    const { result } = renderHook(() => useExpectedArrivals('w-1'), {
+      wrapper: wrapperWith(client),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(request.mock.calls[0][0].path).toBe('/inventory/expected-arrivals?warehouseId=w-1');
+    expect(request.mock.calls[0][0].path).toBe(
+      '/inventory/expected-arrivals?warehouseId=w-1'
+    );
   });
 
   it('warehouseId 가 없으면 요청하지 않는다', () => {
     const request = vi.fn(async () => ({}));
-    const client: ApiClient = { request: request as unknown as ApiClient['request'] };
-    renderHook(() => useExpectedArrivals(null), { wrapper: wrapperWith(client) });
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
+    renderHook(() => useExpectedArrivals(null), {
+      wrapper: wrapperWith(client),
+    });
     expect(request).not.toHaveBeenCalled();
   });
 });
 
 describe('usePutawayPending', () => {
   it('days 를 쿼리스트링에 싣는다', async () => {
-    const request = vi.fn(async (_o: { path: string }) => ({ total: 0, items: [] }));
-    const client: ApiClient = { request: request as unknown as ApiClient['request'] };
+    const request = vi.fn(async (_o: { path: string }) => ({
+      total: 0,
+      items: [],
+    }));
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
     const { result } = renderHook(() => usePutawayPending('w-1', 1), {
       wrapper: wrapperWith(client),
     });
@@ -66,20 +81,59 @@ describe('usePutawayPending', () => {
   });
 
   it("days 가 'all' 이면 파라미터를 빼고 보낸다", async () => {
-    const request = vi.fn(async (_o: { path: string }) => ({ total: 0, items: [] }));
-    const client: ApiClient = { request: request as unknown as ApiClient['request'] };
+    const request = vi.fn(async (_o: { path: string }) => ({
+      total: 0,
+      items: [],
+    }));
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
     const { result } = renderHook(() => usePutawayPending('w-1', 'all'), {
       wrapper: wrapperWith(client),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(request.mock.calls[0][0].path).toBe('/inbound/putaway/pending?warehouseId=w-1');
+    expect(request.mock.calls[0][0].path).toBe(
+      '/inbound/putaway/pending?warehouseId=w-1'
+    );
   });
 
   it('창고가 없으면 요청하지 않는다', () => {
     const request = vi.fn(async () => ({ total: 0, items: [] }));
-    const client: ApiClient = { request: request as unknown as ApiClient['request'] };
-    renderHook(() => usePutawayPending(null, 1), { wrapper: wrapperWith(client) });
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
+    renderHook(() => usePutawayPending(null, 1), {
+      wrapper: wrapperWith(client),
+    });
     expect(request).not.toHaveBeenCalled();
   });
+});
+
+it('원위치와 SKU 필터를 모든 커서 페이지에 유지한다', async () => {
+  const paths: string[] = [];
+  const client: ApiClient = {
+    request: async (r) => {
+      paths.push(r.path);
+      return {
+        total: 0,
+        truncated: false,
+        items: [],
+        nextCursor: paths.length === 1 ? 'next' : null,
+      } as never;
+    },
+  };
+  const { result } = renderHook(
+    () => usePutawayPending('w-1', 'all', ['sku-1'], 'origin-1'),
+    { wrapper: wrapperWith(client) }
+  );
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  await result.current.fetchNextPage();
+  expect(paths).toHaveLength(2);
+  for (const path of paths) {
+    const q = new URL(path, 'http://local').searchParams;
+    expect(q.get('originLocationId')).toBe('origin-1');
+    expect(q.get('skuIds')).toBe('sku-1');
+    expect(q.has('days')).toBe(false);
+  }
 });

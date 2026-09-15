@@ -1,3 +1,4 @@
+import { validatePutawaySearch } from '../domains/inbound/putawaySearch';
 import {
   createRootRouteWithContext,
   createRoute,
@@ -156,6 +157,7 @@ const pickingRoute = createRoute({
 const putawayRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/putaway',
+  validateSearch: validatePutawaySearch,
   component: PutawayRoute,
 });
 

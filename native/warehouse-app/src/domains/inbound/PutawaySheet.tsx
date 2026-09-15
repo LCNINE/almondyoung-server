@@ -1,3 +1,5 @@
+import { receiptFeedback } from './receiptFeedback';
+import { useReceiptReconciliation } from './useReceiptReconciliation';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -42,6 +44,60 @@ function PutawaySheetContent({
   );
   const search = useLocationSearch(warehouseId, dest ? '' : term);
   const putaway = usePutaway();
+  const receipt = useReceiptReconciliation({
+    lineId: target.lineId,
+    warehouseId,
+    expectedSource: target.source,
+  });
+  const [reviewedPending, setReviewedPending] = useState(target.pendingQty);
+  const [notice, setNotice] = useState<string | null>(null);
+  const submitLock = useRef(false);
+  const [checking, setChecking] = useState(false);
+  const pendingQty = receipt.state?.pendingQty ?? reviewedPending;
+  const activeIdentity = useRef('');
+  activeIdentity.current = `${warehouseId}:${target.lineId}`;
+  async function submitPutaway() {
+    if (!dest || submitLock.current) return;
+    submitLock.current = true;
+    setChecking(true);
+    setNotice(null);
+    const identity = activeIdentity.current;
+    try {
+      const latest = await receipt.refresh();
+      if (identity !== activeIdentity.current) return;
+      if (
+        !latest.canPutaway ||
+        latest.originLocationId !== target.originLocationId ||
+        dest.id === latest.originLocationId
+      ) {
+        setNotice(
+          '지금은 적치할 수 없어요. 입고내역과 원위치를 확인해 주세요.'
+        );
+        return;
+      }
+      if (latest.pendingQty !== reviewedPending) {
+        setReviewedPending(latest.pendingQty);
+        setNotice(
+          `잔량이 바뀌었어요. 현재 ${latest.pendingQty}개예요. 입력한 수량을 확인한 뒤 다시 적치해 주세요.`
+        );
+        return;
+      }
+      if (quantity < 1 || quantity > latest.pendingQty) return;
+      await putaway.mutateAsync({
+        lineId: target.lineId,
+        toLocationId: dest.id,
+        quantity,
+        idempotencyKey,
+      });
+      if (identity === activeIdentity.current) onDone(dest, quantity);
+    } catch (error) {
+      if (identity === activeIdentity.current)
+        setNotice(receiptFeedback(error, 'putaway'));
+    } finally {
+      submitLock.current = false;
+      setChecking(false);
+    }
+  }
 
   // 검색 결과에서 출발지를 뺀 후보 목록 — 렌더와 자동선택 이펙트가 같은
   // 필터를 공유한다. rawResults 가 있는데(검색은 됐는데) candidateLocations 가
@@ -86,7 +142,11 @@ function PutawaySheetContent({
     setDest(null);
     setTerm('');
     setQuantity(target.pendingQty);
-  }, [target.lineId, target.pendingQty]);
+    setReviewedPending(target.pendingQty);
+    setNotice(null);
+    // A new target resets input; a refreshed quantity for the same target never does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.lineId, warehouseId]);
 
   // 멱등키 회전: 대상지나 수량이 바뀌면 새 키. "커밋됐는데 응답만 유실" 뒤 값을
   // 고쳐 재제출할 때 옛 payload 를 같은 키로 replay 하면 서버가 옛 결과를 돌려주고
@@ -115,6 +175,9 @@ function PutawaySheetContent({
       role="dialog"
       aria-modal="true"
       aria-label="적치"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.preventDefault();
+      }}
     >
       <div className="max-h-[90vh] w-full max-w-sm space-y-4 overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
         <div>
@@ -123,7 +186,7 @@ function PutawaySheetContent({
             {target.skuCode}
           </div>
           <div className="mt-1 text-xs text-gray-500">
-            {target.originLocationCode} · 잔여 {target.pendingQty}개
+            {target.originLocationCode} · 잔여 {pendingQty}개
           </div>
         </div>
 
@@ -136,7 +199,7 @@ function PutawaySheetContent({
             <button
               type="button"
               className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-700"
-              onClick={() => setQuantity(target.pendingQty)}
+              onClick={() => setQuantity(pendingQty)}
             >
               전량
             </button>
@@ -146,7 +209,7 @@ function PutawaySheetContent({
             value={quantityText}
             onChange={setQuantityText}
             min={1}
-            max={target.pendingQty}
+            max={pendingQty}
           />
           <NumberPad value={quantity} onChange={setQuantity} />
         </section>
@@ -168,7 +231,7 @@ function PutawaySheetContent({
             </div>
           ) : (
             <>
-              {lastDest ? (
+              {lastDest && lastDest.id !== target.originLocationId ? (
                 <button
                   type="button"
                   className="w-full rounded-md border border-blue-300 bg-blue-50 p-2 text-sm text-blue-700"
@@ -217,6 +280,23 @@ function PutawaySheetContent({
           )}
         </section>
 
+        {notice && <p role="alert">{notice}</p>}
+        {!receipt.ready && (
+          <div>
+            <p role="status">입고 상태를 다시 확인해 주세요.</p>
+            <Button onClick={() => void receipt.refresh().catch(() => {})}>
+              다시 확인
+            </Button>
+          </div>
+        )}
+        {receipt.error && (
+          <p role="alert">{receiptFeedback(receipt.error, 'putaway')}</p>
+        )}
+        {receipt.ready && !receipt.state?.canPutaway && (
+          <p role="alert">
+            지금은 적치할 수 없어요. 입고내역과 원위치를 확인해 주세요.
+          </p>
+        )}
         {putaway.isError ? (
           <p role="alert" className="text-sm text-red-600">
             {errorMessage(putaway.error, 'putaway')}
@@ -236,22 +316,14 @@ function PutawaySheetContent({
             className="flex-1"
             disabled={
               !dest ||
+              !receipt.ready ||
+              !receipt.state?.canPutaway ||
+              checking ||
               putaway.isPending ||
               quantity < 1 ||
-              quantity > target.pendingQty
+              quantity > pendingQty
             }
-            onClick={() => {
-              if (!dest) return;
-              putaway.mutate(
-                {
-                  lineId: target.lineId,
-                  toLocationId: dest.id,
-                  quantity,
-                  idempotencyKey,
-                },
-                { onSuccess: () => onDone(dest, quantity) }
-              );
-            }}
+            onClick={() => void submitPutaway()}
           >
             적치
           </Button>
