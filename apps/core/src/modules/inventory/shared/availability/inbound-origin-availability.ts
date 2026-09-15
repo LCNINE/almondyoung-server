@@ -61,10 +61,13 @@ export async function readInboundOriginAvailability(
       ), 0) AS pending_qty,
       COALESCE((
         SELECT BOOL_OR(
-          irl.quantity
-            - irl.putaway_from_origin_qty
-            - irl.returned_qty
-            - irl.canceled_qty < 0
+          irl.quantity <= 0
+          OR irl.putaway_from_origin_qty < 0
+          OR irl.returned_qty < 0
+          OR irl.canceled_qty < 0
+          OR irl.putaway_from_origin_qty
+            + irl.returned_qty
+            + irl.canceled_qty > irl.quantity
           OR origin.id IS NULL
           OR origin.warehouse_id <> ir.warehouse_id
         )

@@ -257,6 +257,33 @@ describeIfDb('inbound origin availability (PostgreSQL integration)', () => {
     });
   });
 
+  it.each([
+    { quantity: 10, putaway: -1, canceled: 0, returned: 1, pending: 10 },
+    { quantity: 10, putaway: 1, canceled: -1, returned: 0, pending: 10 },
+    { quantity: 10, putaway: 1, canceled: 0, returned: -1, pending: 10 },
+    { quantity: 0, putaway: 0, canceled: 0, returned: 0, pending: 0 },
+  ])('상쇄되어 잔량이 정상처럼 보여도 잘못된 개별 수량을 판정한다: %j', async (c) => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const { line, key } = await receiveAtDefault(tx, warehouse.id, sku.id, 10);
+      await tx
+        .update(wmsTables.inboundReceiptLines)
+        .set({
+          quantity: c.quantity,
+          putawayFromOriginQty: c.putaway,
+          canceledQty: c.canceled,
+          returnedQty: c.returned,
+        })
+        .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+      expect(await readInboundOriginAvailability(tx, key)).toEqual({
+        onHandQty: 10,
+        pendingQty: c.pending,
+        invalidReceipt: true,
+      });
+    });
+  });
+
   it('회차 창고와 맞지 않는 원위치는 invalidReceipt로 보고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { warehouse, otherWarehouse, sku, otherSku } = await seed(tx);
