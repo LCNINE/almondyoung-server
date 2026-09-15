@@ -780,6 +780,12 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 
 - 기본 dry-run. `--apply` 로 Medusa 반영.
 - variant 구성 sku 의 남은 수량이 있는 발주 라인 중 가장 이른 `expected_arrival` + 해외 발주면 `inboundApproximate=true`.
+- **후보는 오늘 이후 예정일만이다** (`pol.expected_arrival >= CURRENT_DATE`). 기한이 지난 미수령
+  라인을 후보에 두면 `MIN()` 이 그걸 집어 과거 날짜가 박히고, storefront 가 stale 로 버려
+  **진짜 입고예정이 있는 상품이 그냥 품절로 보인다.** 2026-09-15 live 실측으로 variant **137개**가
+  이 상태였다(7월짜리 미수령 라인 하나가 10월 입고를 덮음). 미래 라인이 하나도 없는 variant 는
+  행 자체가 안 나와 아래 stale 제거가 걷어간다.
+  `apps/channel-adapter/scripts/sync-restock-to-medusa.spec.ts` 가 이 조건을 지킨다.
 - 멱등: 이미 같은 inboundDate 면 skip. Medusa 502(일시) 나면 재실행하면 이어서 채워짐.
 - **stale 제거가 기본 동작이다** — 입고완료/취소로 예정이 사라진 variant 의 `inboundDate` 를 지운다.
   그래서 handle 별 조회가 아니라 **전 상품을 페이지네이션으로 훑는다**(예정이 사라진 상품은 handle 로는 영영 안 만나므로).

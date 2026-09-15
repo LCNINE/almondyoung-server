@@ -4,7 +4,8 @@
  *
  * core 남은 수량이 있는 발주 라인 → Medusa variant.metadata.{inboundDate, inboundApproximate} 직접 동기화.
  * 스토어프론트가 품절 시 "○월 ○일 입고 예정" 표시에 사용 (restock-notice.tsx 가 이 키를 읽음).
- * 입고예정일 = 해당 variant 구성 sku 들의 남은 발주 라인 중 가장 이른 expected_arrival.
+ * 입고예정일 = 해당 variant 구성 sku 들의 남은 발주 라인 중 가장 이른 expected_arrival
+ * (오늘 이후만 — 기한 지난 라인은 후보에서 제외한다, RESTOCK_SQL 주석 참조).
  * inboundApproximate = 해외 발주(po.type='foreign')면 true (한국 공급처는 정확).
  *
  * 기본 dry-run, --apply 로 실제 반영.
@@ -31,6 +32,12 @@ interface RestockRow {
 }
 
 // variant 구성 sku 들의 남은 발주 라인을 집계: 가장 이른 날짜 + 해외 여부.
+//
+// 기한이 지난 라인은 후보에서 뺀다(`>= CURRENT_DATE`). 안 빼면 MIN 이 그걸 집어
+// 과거 날짜가 metadata 에 박히고, storefront `pickEarliestRestock` 이 stale 로 버려
+// **진짜 입고예정이 있는 상품이 그냥 품절로 보인다** — 2026-09-15 live 실측으로
+// variant 137개가 이 상태였다(7월짜리 미수령 라인 하나가 10월 입고를 덮음).
+// 미래 라인이 하나도 없는 variant 는 행 자체가 사라지므로 아래 stale 제거가 걷어간다.
 export const RESTOCK_SQL = `
   SELECT pmv.master_id, pm.variant_id,
          MIN(pol.expected_arrival) AS expected_date,
@@ -44,7 +51,7 @@ export const RESTOCK_SQL = `
     AND pol.closed_at IS NULL
     AND pol.received_qty < COALESCE(pol.ordered_qty, 0)
     AND po.status <> 'cancelled'
-    AND pol.expected_arrival IS NOT NULL
+    AND pol.expected_arrival >= CURRENT_DATE
   GROUP BY pmv.master_id, pm.variant_id
 `;
 
