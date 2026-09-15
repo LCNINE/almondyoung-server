@@ -53,7 +53,9 @@ function fixture(capability = true) {
       }
       if (r.path.startsWith('/locations/warehouses/'))
         return {
-          items: [{ id: 'dest-1', code: 'A-01', displayName: 'A-01' }],
+          items: r.path.includes('B-02')
+            ? [{ id: 'dest-2', code: 'B-02', displayName: 'B-02' }]
+            : [{ id: 'dest-1', code: 'A-01', displayName: 'A-01' }],
           total: 1,
         } as never;
       if (r.path === '/inbound/cancel') {
@@ -281,3 +283,47 @@ it('중복 클릭은 진행 중인 현재 상태 조회를 공유하며 한 번�
   await waitFor(() => expect(f.onDone).toHaveBeenCalledTimes(1));
   expect(f.posts).toHaveLength(1);
 });
+
+for (const change of ['quantity', 'destination'] as const) {
+  it(`적치 직전 상태 확인 중 ${change} 변경은 입력을 보존하고 옛 전송을 취소한다`, async () => {
+    const f = fixture();
+    await userEvent.click(
+      screen.getByRole('button', { name: '직전 대상지 A-01 사용' })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
+    let release!: (value: ReceiptLineState) => void;
+    const gate = new Promise<ReceiptLineState>((resolve) => {
+      release = resolve;
+    });
+    f.delayRead(gate);
+    await userEvent.click(screen.getByRole('button', { name: '적치' }));
+    if (change === 'quantity')
+      fireEvent.change(screen.getByLabelText('적치 수량 직접 입력 (낱개)'), {
+        target: { value: '4' },
+      });
+    else {
+      await userEvent.click(screen.getByRole('button', { name: '변경' }));
+      await userEvent.type(screen.getByLabelText('대상 로케이션 검색'), 'B-02');
+      await screen.findByText('B-02');
+    }
+    await act(async () => {
+      release(state);
+      await gate;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(f.posts).toHaveLength(0);
+    expect(screen.getByLabelText('적치 수량 직접 입력 (낱개)')).toHaveValue(
+      change === 'quantity' ? '4' : '10'
+    );
+    await userEvent.click(screen.getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(f.posts).toHaveLength(1));
+    expect(f.posts[0]).toMatchObject({
+      body: {
+        quantity: change === 'quantity' ? 4 : 10,
+        toLocationId: change === 'destination' ? 'dest-2' : 'dest-1',
+      },
+    });
+  });
+}

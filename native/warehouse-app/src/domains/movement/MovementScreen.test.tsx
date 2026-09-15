@@ -4,7 +4,14 @@ import {
 } from '../inbound/__fixtures__/workRuntime';
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -124,7 +131,10 @@ function renderScreen(
       </QueryClientProvider>
     </SessionProvider>
   );
-  return render(<RouterProvider router={router as never} />, { wrapper: wrap });
+  return {
+    ...render(<RouterProvider router={router as never} />, { wrapper: wrap }),
+    runtime,
+  };
 }
 
 // 출발지 A-01-02 를 골라 내용물 모드로 진입시키는 공통 절차.
@@ -408,3 +418,53 @@ it('capability가 없는 서버에서는 새 일반 이동을 열지 않는다',
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
 });
+
+for (const change of ['cancel-reopen', 'quantity'] as const) {
+  it(`capability 확인 중 ${change} 후 옛 이동 요청을 보내지 않는다`, async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
+    const f = renderScreen(makeClient(calls));
+    await pickSource();
+    await userEvent.click(screen.getByRole('button', { name: '이동' }));
+    await userEvent.type(
+      screen.getByLabelText('대상 로케이션 검색'),
+      'B-05-03'
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '이동하기' })).toBeEnabled()
+    );
+    let release!: (value: { inboundWorkflowConsistency: boolean }) => void;
+    const gate = new Promise<{ inboundWorkflowConsistency: boolean }>(
+      (resolve) => {
+        release = resolve;
+      }
+    );
+    f.runtime.getCapabilities = () => gate;
+    await userEvent.click(screen.getByRole('button', { name: '이동하기' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '재고 이동' })).getByRole(
+        'button',
+        { name: '이동' }
+      )
+    );
+    if (change === 'cancel-reopen') {
+      await userEvent.click(screen.getByRole('button', { name: '취소' }));
+      await userEvent.click(screen.getByRole('button', { name: '이동' }));
+    } else
+      fireEvent.change(screen.getByLabelText('이동 수량 직접 입력 (낱개)'), {
+        target: { value: '4' },
+      });
+    await act(async () => {
+      release({ inboundWorkflowConsistency: true });
+      await gate;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+    expect(
+      screen.getByRole('dialog', { name: '품목 이동' })
+    ).toBeInTheDocument();
+    if (change === 'quantity')
+      expect(screen.getByLabelText('이동 수량 직접 입력 (낱개)')).toHaveValue(
+        '4'
+      );
+  });
+}

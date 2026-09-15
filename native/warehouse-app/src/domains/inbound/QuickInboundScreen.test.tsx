@@ -69,7 +69,10 @@ function ScanButton({ code }: { code: string }) {
   );
 }
 
-async function renderScreen(calls: Call[]) {
+async function renderScreen(
+  calls: Call[],
+  restored?: Partial<ReturnType<typeof receiptFixture>>
+) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -78,6 +81,7 @@ async function renderScreen(calls: Call[]) {
     lineId: 'ln-1',
     quantity: 20,
     pendingQty: 20,
+    ...restored,
   });
   const client: ApiClient = {
     request: (async (o: Call) => {
@@ -138,6 +142,23 @@ async function renderScreen(calls: Call[]) {
     }) as unknown as ApiClient['request'],
   };
   const runtime = createTestWorkRuntime(client);
+  if (restored)
+    await runtime.store.draft('fixture:draft:quick-inbound:w-1', () => ({
+      receiptId: 'r-1',
+      cart: [],
+      staged: [
+        {
+          lineId: current.lineId,
+          skuId: current.skuId,
+          skuCode: current.skuCode,
+          skuName: current.skuName,
+          quantity: current.quantity,
+          putawayDoneQty: 0,
+        },
+      ],
+      seen: [],
+      key: 'restored-receipt',
+    }));
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
   });
@@ -387,3 +408,28 @@ it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선�
     )
   );
 });
+
+for (const returned of [3, 10]) {
+  it(`회송 ${returned}개인 입고는 회송 누계와 서버의 잔여 적치 정책을 따로 표시한다`, async () => {
+    await renderScreen([], {
+      quantity: 10,
+      pendingQty: 10 - returned,
+      returnedQty: returned,
+      canPutaway: returned < 10,
+      putawayBlockReason: returned < 10 ? null : 'NOTHING_PENDING',
+      canCancel: false,
+      cancelBlockReason: 'RETURN_EXISTS',
+    });
+    expect(await screen.findByText(`${returned}개 회송됨`)).toBeInTheDocument();
+    if (returned < 10) {
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled();
+      await userEvent.click(screen.getByRole('button', { name: '적치' }));
+      expect(
+        await screen.findByRole('dialog', { name: '적치' })
+      ).toHaveTextContent('잔여 7개');
+    } else
+      expect(
+        screen.queryByRole('button', { name: '적치' })
+      ).not.toBeInTheDocument();
+  });
+}

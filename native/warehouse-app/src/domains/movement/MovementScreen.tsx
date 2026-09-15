@@ -5,7 +5,7 @@ import {
 } from '../../core/operations/useWorkCapabilities';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
@@ -30,6 +30,8 @@ interface LocationRef {
 
 function MovementScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
+  // Invalidate captured preflight intent synchronously, before React renders an edit.
+  const intentRevision = useRef(0);
 
   // (a) 출발지
   const [source, setSource] = useState<LocationRef | null>(null);
@@ -38,13 +40,29 @@ function MovementScreenContent() {
   const [activeItem, setActiveItem] = useState<LocationContentItem | null>(
     null
   );
-  const [dest, setDest] = useState<LocationRef | null>(null);
+  const [dest, setDestValue] = useState<LocationRef | null>(null);
   const [destTerm, setDestTerm] = useState('');
-  const [quantityText, setQuantityText] = useState(String(0));
+  const [quantityText, setQuantityTextValue] = useState(String(0));
   const qty = parseQuantity(quantityText, 1) ?? 0;
   const setQty = (next: number) => setQuantityText(String(next));
-  const [reason, setReason] = useState<string | null>(null);
-  const [otherReason, setOtherReason] = useState('');
+  const [reason, setReasonValue] = useState<string | null>(null);
+  const [otherReason, setOtherReasonValue] = useState('');
+  const setDest = useCallback((next: LocationRef | null) => {
+    intentRevision.current += 1;
+    setDestValue(next);
+  }, []);
+  const setQuantityText = useCallback((next: string) => {
+    intentRevision.current += 1;
+    setQuantityTextValue(next);
+  }, []);
+  const setReason = useCallback((next: string | null) => {
+    intentRevision.current += 1;
+    setReasonValue(next);
+  }, []);
+  const setOtherReason = useCallback((next: string) => {
+    intentRevision.current += 1;
+    setOtherReasonValue(next);
+  }, []);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
@@ -140,6 +158,7 @@ function MovementScreenContent() {
 
   function openSheet(item: LocationContentItem) {
     if (!source || !supported || !(item.generallyMovableQty > 0)) return;
+    intentRevision.current += 1;
     setActiveItem(item);
     setDest(null);
     setDestTerm('');
@@ -156,6 +175,7 @@ function MovementScreenContent() {
   }
 
   function closeSheet() {
+    intentRevision.current += 1;
     setActiveItem(null);
     setDest(null);
     setDestTerm('');
@@ -508,9 +528,10 @@ function MovementScreenContent() {
           )
             return;
           actionLock.current = true;
+          const revision = intentRevision.current;
           try {
             await assertInboundWorkflowCapability(runtime);
-            if (!mounted.current) return;
+            if (!mounted.current || revision !== intentRevision.current) return;
             await move.mutateAsync(
               {
                 warehouseId,
@@ -523,6 +544,8 @@ function MovementScreenContent() {
               },
               {
                 onSuccess: () => {
+                  if (!mounted.current || revision !== intentRevision.current)
+                    return;
                   setLastDest(dest);
                   setIdempotencyKey(crypto.randomUUID());
                   closeSheet();
@@ -530,7 +553,8 @@ function MovementScreenContent() {
               }
             );
           } catch (error) {
-            setActionError(errorMessage(error, 'movement'));
+            if (mounted.current && revision === intentRevision.current)
+              setActionError(errorMessage(error, 'movement'));
           } finally {
             actionLock.current = false;
           }

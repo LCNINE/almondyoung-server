@@ -1,7 +1,7 @@
 import { receiptFeedback } from './receiptFeedback';
 import { useReceiptReconciliation } from './useReceiptReconciliation';
 import { WorkArea } from '../../core/operations/WorkBoundary';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
@@ -34,8 +34,20 @@ function PutawaySheetContent({
   onDone: (dest: LocationRef, quantity: number) => void;
   onCancel: () => void;
 }) {
-  const [dest, setDest] = useState<LocationRef | null>(null);
-  const [quantityText, setQuantityText] = useState(String(target.pendingQty));
+  // Invalidate captured preflight intent synchronously, before React renders an edit.
+  const intentRevision = useRef(0);
+  const [dest, setDestValue] = useState<LocationRef | null>(null);
+  const [quantityText, setQuantityTextValue] = useState(
+    String(target.pendingQty)
+  );
+  const setDest = useCallback((next: LocationRef | null) => {
+    intentRevision.current += 1;
+    setDestValue(next);
+  }, []);
+  const setQuantityText = useCallback((next: string) => {
+    intentRevision.current += 1;
+    setQuantityTextValue(next);
+  }, []);
   const quantity = parseQuantity(quantityText, 1) ?? 0;
   const setQuantity = (next: number) => setQuantityText(String(next));
   const [term, setTerm] = useState('');
@@ -62,9 +74,16 @@ function PutawaySheetContent({
     setChecking(true);
     setNotice(null);
     const identity = activeIdentity.current;
+    const revision = intentRevision.current;
     try {
       const latest = await receipt.refresh();
       if (identity !== activeIdentity.current) return;
+      if (revision !== intentRevision.current) {
+        setNotice(
+          '입력이 바뀌었어요. 수량과 대상지를 확인한 뒤 다시 적치해 주세요.'
+        );
+        return;
+      }
       if (
         !latest.canPutaway ||
         latest.originLocationId !== target.originLocationId ||
@@ -89,7 +108,11 @@ function PutawaySheetContent({
         quantity,
         idempotencyKey,
       });
-      if (identity === activeIdentity.current) onDone(dest, quantity);
+      if (
+        identity === activeIdentity.current &&
+        revision === intentRevision.current
+      )
+        onDone(dest, quantity);
     } catch (error) {
       if (identity === activeIdentity.current)
         setNotice(receiptFeedback(error, 'putaway'));
@@ -307,7 +330,10 @@ function PutawaySheetContent({
           <Button
             type="button"
             className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            onClick={onCancel}
+            onClick={() => {
+              intentRevision.current += 1;
+              onCancel();
+            }}
           >
             나중에
           </Button>

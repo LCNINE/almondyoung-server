@@ -399,19 +399,22 @@ function QuickInboundScreenContent() {
                         적치됨
                       </span>
                     ) : null}
+                    {line.returnedQty > 0 && (
+                      <span className="block text-xs text-gray-500">
+                        {line.returnedQty}개 회송됨
+                      </span>
+                    )}
                   </span>
                   <span className="text-lg font-semibold text-gray-900">
                     {line.quantity}
                   </span>
                   {(line.canceledQty ?? 0) > 0 ? (
                     <span>취소됨</span>
-                  ) : (line.returnedQty ?? 0) > 0 ? (
-                    <span>회송됨</span>
                   ) : line.putawayDoneQty >= line.quantity ? (
                     <span className="shrink-0 text-xs font-semibold text-green-700">
                       완료
                     </span>
-                  ) : (
+                  ) : current?.canPutaway || !reconciled ? (
                     <Button
                       className="shrink-0 px-3 py-1.5 text-xs"
                       disabled={
@@ -440,7 +443,7 @@ function QuickInboundScreenContent() {
                     >
                       적치
                     </Button>
-                  )}
+                  ) : null}
                 </li>
               );
             })}
