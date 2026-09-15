@@ -12,6 +12,14 @@ import { BarcodeService } from '../../inventory/shared/services/barcode.service'
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
+// A structured key keeps new nested commands disjoint from every legacy string key.
+export type OutboundCommandKey = string | { contract: 'location'; operation: 'start' | 'scan' | 'force'; key: string };
+function nestedCommandKey(key: OutboundCommandKey, step: string): string {
+  return typeof key === 'string'
+    ? `simple:${key}:${step}`
+    : `location-outbound:${JSON.stringify([key.operation, key.key, step])}`;
+}
+
 export interface SimpleOutboundActor {
   id: string;
   roles: string[];
@@ -70,7 +78,7 @@ export class SimpleOutboundService {
   async prepare(
     shipmentId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<SimpleOutboundContext> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.prepare');
@@ -182,7 +190,7 @@ export class SimpleOutboundService {
       csCaseId?: string;
       note?: string;
       actor: SimpleOutboundActor;
-      idempotencyKey: string;
+      idempotencyKey: OutboundCommandKey;
       authorization: ScopeAuthorizationDecision | undefined;
     },
     trx: DbTx,
@@ -205,7 +213,7 @@ export class SimpleOutboundService {
           shipmentId: context.shipmentId,
           actor: { id: input.actor.id, roles: input.actor.roles },
           expectedLeaseVersion: workItem.leaseVersion,
-          idempotencyKey: `simple:${input.idempotencyKey}:complete`,
+          idempotencyKey: nestedCommandKey(input.idempotencyKey, 'complete'),
         },
         trx,
       );
@@ -217,7 +225,7 @@ export class SimpleOutboundService {
         csCaseId: input.csCaseId,
         note: input.note,
         actor: { id: input.actor.id, roles: input.actor.roles },
-        idempotencyKey: `simple:${input.idempotencyKey}:force`,
+        idempotencyKey: nestedCommandKey(input.idempotencyKey, 'force'),
         authorization: input.authorization,
       },
       trx,
@@ -229,7 +237,7 @@ export class SimpleOutboundService {
   private async forcePickRemaining(
     context: SimpleOutboundContext,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<void> {
     const allocations = await tx
@@ -280,7 +288,7 @@ export class SimpleOutboundService {
           quantity: missing,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: context.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:force-pick:${allocation.id}`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, `force-pick:${allocation.id}`),
         },
         tx,
       );
@@ -306,7 +314,7 @@ export class SimpleOutboundService {
     skuId: string,
     quantity: number,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
     source?: { sourceLocationId: string; shipmentLineId?: string },
   ): Promise<void> {
@@ -383,7 +391,7 @@ export class SimpleOutboundService {
           quantity: take,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: context.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:pick:${allocation.id}`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, `pick:${allocation.id}`),
         },
         tx,
       );
@@ -436,7 +444,7 @@ export class SimpleOutboundService {
   async settleIfFullyPicked(
     context: SimpleOutboundContext,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<{ dispatchAttemptId: string | null } | null> {
     const lines = await tx
@@ -477,7 +485,7 @@ export class SimpleOutboundService {
           shipmentId: context.shipmentId,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: beforeComplete.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:complete`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, 'complete'),
         },
         tx,
       );
@@ -495,7 +503,7 @@ export class SimpleOutboundService {
       await this.batches.claimPacker(
         context.workItemId,
         { expectedLeaseVersion: beforePack.leaseVersion },
-        `simple:${idempotencyKey}:claim-packer`,
+        nestedCommandKey(idempotencyKey, 'claim-packer'),
         { id: actor.id, roles: actor.roles },
         tx,
       );
@@ -506,7 +514,7 @@ export class SimpleOutboundService {
       {
         entries: pending,
         actor: { id: actor.id, roles: actor.roles },
-        idempotencyKey: `simple:${idempotencyKey}:inspect`,
+        idempotencyKey: nestedCommandKey(idempotencyKey, 'inspect'),
       },
       tx,
     );
@@ -610,7 +618,7 @@ export class SimpleOutboundService {
   private async ensurePlan(
     batchId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<string> {
     // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
@@ -642,7 +650,7 @@ export class SimpleOutboundService {
         batchId,
         shipmentIds: members.map((member) => member.shipmentId),
         actorId: actor.id,
-        idempotencyKey: `simple:${idempotencyKey}:plan`,
+        idempotencyKey: nestedCommandKey(idempotencyKey, 'plan'),
       },
       tx,
     );
@@ -656,7 +664,7 @@ export class SimpleOutboundService {
     batchId: string,
     planId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<string> {
     // 마찬가지로 락 없는 fast-path 조회다 — 실질적인 동시성 보장은 아래 `this.picking.start()`
@@ -675,7 +683,7 @@ export class SimpleOutboundService {
     if (existing) return existing.id;
 
     const started = await this.picking.start(
-      { batchId, planId, actorId: actor.id, idempotencyKey: `simple:${idempotencyKey}:start` },
+      { batchId, planId, actorId: actor.id, idempotencyKey: nestedCommandKey(idempotencyKey, 'start') },
       tx,
     );
     if (started.state !== 'started') {
@@ -687,7 +695,7 @@ export class SimpleOutboundService {
   private async ensurePickerClaim(
     workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<number> {
     const leaseActive = workItem.leaseExpiresAt !== null && workItem.leaseExpiresAt.getTime() > Date.now();
@@ -706,7 +714,7 @@ export class SimpleOutboundService {
     const claimed = await this.batches.claimPicker(
       workItem.id,
       { expectedLeaseVersion: workItem.leaseVersion },
-      `simple:${idempotencyKey}:claim-picker`,
+      nestedCommandKey(idempotencyKey, 'claim-picker'),
       { id: actor.id, roles: actor.roles },
       tx,
     );

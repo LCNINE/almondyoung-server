@@ -247,38 +247,41 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       expect(line).toMatchObject({ forced: true, inspectedQty: 3 });
     });
   });
-  it('isolates the same external key across legacy scan, location scan, and location force', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const f = await seedPickableShipment(tx, 4);
-      const service = wiring.assembleLocationOutbound(tx);
-      const actor = { id: f.actorId, roles: ['logistics_worker'] };
-      const key = randomUUID();
-      await wiring
-        .assembleSimpleOutbound(tx)
-        .scan(f.shipmentId, { barcode: f.barcode, quantity: 1, actor, idempotencyKey: key }, tx);
-      const state = await service.scan(
-        f.shipmentId,
-        { warehouseId: f.warehouseId, sourceLocationId: f.locationId, barcode: f.barcode, quantity: 1 },
-        actor,
-        key,
-        tx,
-      );
-      expect(state.sources[0].pickedQty).toBe(2);
-      const done = await service.force(
-        f.shipmentId,
-        {
-          warehouseId: f.warehouseId,
-          reason: 'confirmed',
-          items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 2 }],
-        },
-        actor,
-        key,
-        authorization,
-        tx,
-      );
-      expect(done.status).toBe('shipped');
-    });
-  });
+  it.each(['', 'location:scan:', 'location:force:'])(
+    'isolates legacy key prefix %s from location scan and force',
+    async (legacyPrefix) => {
+      await inRollbackTx(db, async (tx) => {
+        const f = await seedPickableShipment(tx, 4);
+        const service = wiring.assembleLocationOutbound(tx);
+        const actor = { id: f.actorId, roles: ['logistics_worker'] };
+        const key = randomUUID();
+        await wiring
+          .assembleSimpleOutbound(tx)
+          .scan(f.shipmentId, { barcode: f.barcode, quantity: 1, actor, idempotencyKey: `${legacyPrefix}${key}` }, tx);
+        const state = await service.scan(
+          f.shipmentId,
+          { warehouseId: f.warehouseId, sourceLocationId: f.locationId, barcode: f.barcode, quantity: 1 },
+          actor,
+          key,
+          tx,
+        );
+        expect(state.sources[0].pickedQty).toBe(2);
+        const done = await service.force(
+          f.shipmentId,
+          {
+            warehouseId: f.warehouseId,
+            reason: 'confirmed',
+            items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 2 }],
+          },
+          actor,
+          key,
+          authorization,
+          tx,
+        );
+        expect(done.status).toBe('shipped');
+      });
+    },
+  );
 
   it('rolls back preceding picks, completion and command records if force dispatch fails', async () => {
     await inRollbackTx(db, async (tx) => {

@@ -13,6 +13,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import {
+  OutboundCommandKey,
   SimpleOutboundActor,
   SimpleOutboundContext,
   SimpleOutboundService,
@@ -47,6 +48,11 @@ export interface LocationOutboundState extends SimpleOutboundState {
 }
 type ReadContext = { shipmentId: string; workItemId: string | null; sessionId: string | null; planId: string | null };
 export const LOCATION_OUTBOUND_MAX_QUANTITY = 2147483647;
+const locationCommandKey = (operation: 'start' | 'scan' | 'force', key: string): OutboundCommandKey => ({
+  contract: 'location',
+  operation,
+  key,
+});
 
 @Injectable()
 export class LocationOutboundService {
@@ -71,7 +77,7 @@ export class LocationOutboundService {
       idempotencyKey,
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, `location:start:${idempotencyKey}`, trx);
+        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('start', idempotencyKey), trx);
         return this.loadState(context, input.warehouseId, trx);
       },
       tx,
@@ -143,12 +149,25 @@ export class LocationOutboundService {
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
         await this.assertSource(input.sourceLocationId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, `location:scan:${idempotencyKey}`, trx);
+        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('scan', idempotencyKey), trx);
         const skuId = await this.simple.resolveSkuId(input.barcode, trx);
-        await this.simple.pickScanned(context, skuId, input.quantity, actor, `location:scan:${idempotencyKey}`, trx, {
-          sourceLocationId: input.sourceLocationId,
-        });
-        const settled = await this.simple.settleIfFullyPicked(context, actor, `location:scan:${idempotencyKey}`, trx);
+        await this.simple.pickScanned(
+          context,
+          skuId,
+          input.quantity,
+          actor,
+          locationCommandKey('scan', idempotencyKey),
+          trx,
+          {
+            sourceLocationId: input.sourceLocationId,
+          },
+        );
+        const settled = await this.simple.settleIfFullyPicked(
+          context,
+          actor,
+          locationCommandKey('scan', idempotencyKey),
+          trx,
+        );
         return {
           ...(await this.loadState(context, input.warehouseId, trx)),
           dispatchAttemptId: settled?.dispatchAttemptId ?? null,
@@ -185,7 +204,7 @@ export class LocationOutboundService {
       idempotencyKey,
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, `location:force:${idempotencyKey}`, trx);
+        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('force', idempotencyKey), trx);
         const state = await this.loadState(context, input.warehouseId, trx);
         const remaining = state.sources.filter((source) => source.remainingQty > 0);
         const tuples = new Map(input.items.map((item) => [this.tuple(item), item.quantity]));
@@ -206,14 +225,14 @@ export class LocationOutboundService {
             source.skuId,
             source.remainingQty,
             actor,
-            `location:force:${idempotencyKey}`,
+            locationCommandKey('force', idempotencyKey),
             trx,
             { sourceLocationId: source.sourceLocationId, shipmentLineId: source.shipmentLineId },
           );
         }
         const forced = await this.simple.completeAndForceDispatch(
           context,
-          { reason: input.reason, actor, idempotencyKey: `location:force:${idempotencyKey}`, authorization },
+          { reason: input.reason, actor, idempotencyKey: locationCommandKey('force', idempotencyKey), authorization },
           trx,
         );
         return {
