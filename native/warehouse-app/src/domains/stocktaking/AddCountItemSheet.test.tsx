@@ -107,7 +107,9 @@ it('확정된 추가 요청은 재등록 없이 원래 키로 목록 복구를 �
     store,
     getScope: async () => 'scope',
   });
-  const done = vi.fn(async () => {});
+  const done = vi
+    .fn(async () => {})
+    .mockRejectedValueOnce(new Error('projection unavailable'));
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   const get = store.get;
@@ -143,6 +145,10 @@ it('확정된 추가 요청은 재등록 없이 원래 키로 목록 복구를 �
   expect(await screen.findByLabelText(/새 상품 실물 총수량/)).toBeDisabled();
   release();
   await waitFor(() => expect(done).toHaveBeenCalledWith('saved-key'));
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(2));
   expect(
     (request as ReturnType<typeof vi.fn>).mock.calls.some(
       ([opts]) => opts.path === '/stocktaking/count-items'

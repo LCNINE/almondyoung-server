@@ -191,6 +191,18 @@ export function AddCountItemSheet({
         ) : (
           error && <p role="alert">{error}</p>
         )}
+        {!hydrated && error && (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void restoreRef
+                .current()
+                .catch((e) => setError(errorMessage(e, 'stocktaking')))
+            }
+          >
+            처리 내역 확인
+          </Button>
+        )}
         <Button
           disabled={locked || saving > 0}
           onClick={() =>
