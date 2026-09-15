@@ -1,3 +1,5 @@
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
+import { useLocationSearch } from '../warehouse/useLocationSearch';
 import { AddCountItemSheet } from './AddCountItemSheet';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
@@ -69,6 +71,10 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         : null;
   }, [draft.ready, place]);
   const [manualCode, setManualCode] = useState('');
+  const locationSearch = useLocationSearch(
+    detail.data?.warehouseId ?? null,
+    place ? '' : manualCode
+  );
   const [editing, setEditing] = useState<EditingLine | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -100,15 +106,26 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         prev
           ? {
               ...prev,
-              expectedItems: prev.expectedItems.map((item) => {
-                const line = detail.data!.lines.find(
-                  (line) => line.lineId === item.lineId
-                );
-                return line &&
-                  (line.lineRevision ?? 0) > (item.lineRevision ?? 0)
-                  ? { ...item, ...line }
-                  : item;
-              }),
+              expectedItems: [
+                ...prev.expectedItems.map((item) => {
+                  const line = detail.data!.lines.find(
+                    (line) => line.lineId === item.lineId
+                  );
+                  return line &&
+                    (line.lineRevision ?? 0) > (item.lineRevision ?? 0)
+                    ? { ...item, ...line }
+                    : item;
+                }),
+                ...detail
+                  .data!.lines.filter(
+                    (line) =>
+                      line.locationId === prev.locationId &&
+                      !prev.expectedItems.some(
+                        (item) => item.lineId === line.lineId
+                      )
+                  )
+                  .map((line) => ({ ...line, barcode: line.scannedBarcode })),
+              ],
             }
           : prev
       )
@@ -127,6 +144,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         locationId: result.locationId,
       };
     setManualCode('');
+    return result;
   }
   const scanQueue = useWorkScanQueue<CountScan>(async (input, id) => {
     setNotice(null);
@@ -291,6 +309,21 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
               열기
             </Button>
           </form>
+          {locationSearch.isError && (
+            <p role="alert">로케이션을 찾지 못했어요.</p>
+          )}
+          <ul>
+            {(locationSearch.data?.items ?? []).map((location) => (
+              <li key={location.id}>
+                <Button
+                  disabled={busy || locationSearch.isFetching || !draft.ready}
+                  onClick={() => acceptScan(location.code, true)}
+                >
+                  {location.code} 열기
+                </Button>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : (
         <section className="space-y-3">
@@ -306,6 +339,11 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
             상품 바코드를 스캔하면 1개씩 올라가요. 박스 단위는 수량 입력을
             쓰세요.
           </p>
+          <BarcodeInput
+            label="실사 상품 바코드"
+            disabled={busy || !draft.ready}
+            onSubmit={(code) => acceptScan(code)}
+          />
           <Button
             disabled={busy || !draft.ready}
             onClick={() => setAdding(true)}
@@ -393,6 +431,10 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
           sessionId={sessionId}
           place={place}
           onCancel={() => setAdding(false)}
+          onConflict={async (skuId) => {
+            const latest = await enterLocation(place.locationCode);
+            return latest.expectedItems.find((item) => item.skuId === skuId);
+          }}
           onExisting={(item) => {
             setAdding(false);
             if (item.lineRevision === undefined) {
