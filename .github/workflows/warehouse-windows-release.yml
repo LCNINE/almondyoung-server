@@ -1,0 +1,101 @@
+name: Warehouse Windows installer
+
+# The branch trigger enables the first build before this workflow reaches the
+# default branch. Subsequent builds can be started manually with a selected ref.
+on:
+  workflow_dispatch:
+  push:
+    branches: [build/warehouse-windows-release]
+    paths:
+      - native/warehouse-app/**
+      - .github/workflows/warehouse-windows-release.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warehouse-windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: native/warehouse-app
+    env:
+      CARGO_TERM_COLOR: always
+      VITE_API_BASE_URL: https://core.almondyoung.com
+      VITE_API_AUTH_MODE: bearer
+      VITE_OIDC_ISSUER: https://user.almondyoung.com
+      VITE_OIDC_AUTHORIZE: https://auth.almondyoung.com/oauth/authorize
+      VITE_OIDC_CLIENT_ID: warehouse-app
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: native/warehouse-app/package-lock.json
+
+      - name: Set up stable Rust for Windows MSVC
+        run: |
+          rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup override set stable
+
+      - name: Install warehouse-app dependencies
+        run: npm ci
+
+      - name: Build NSIS installer
+        # Tauri runs the existing frontend build hook. Arguments after -- go to
+        # Cargo, so dependency resolution must agree with the committed lockfile.
+        run: npx --no-install tauri build --ci --no-sign --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+
+      - name: Collect installer, checksum, and build metadata
+        id: artifact
+        run: |
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $shortSha = $env:GITHUB_SHA.Substring(0, 12)
+          $artifactName = "warehouse-app-$($config.version)-windows-x64-$shortSha"
+          "name=$artifactName" >> $env:GITHUB_OUTPUT
+          $output = Join-Path $env:RUNNER_TEMP $artifactName
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $installers = @(Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe)
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer, found $($installers.Count)" }
+          Copy-Item $installers[0].FullName -Destination $output
+          $hash = (Get-FileHash $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installers[0].Name)" | Set-Content (Join-Path $output SHA256SUMS.txt) -Encoding utf8
+          [ordered]@{
+            product = $config.productName
+            version = $config.version
+            commit = $env:GITHUB_SHA
+            ref = $env:GITHUB_REF
+            target = 'x86_64-pc-windows-msvc'
+            installer = $installers[0].Name
+            sha256 = $hash
+            signed = $false
+            builtAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+            runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            rust = (rustc --version)
+            node = (node --version)
+            apiBaseUrl = $env:VITE_API_BASE_URL
+            apiAuthMode = $env:VITE_API_AUTH_MODE
+            oidcIssuer = $env:VITE_OIDC_ISSUER
+            oidcAuthorize = $env:VITE_OIDC_AUTHORIZE
+            oidcClientId = $env:VITE_OIDC_CLIENT_ID
+          } | ConvertTo-Json | Set-Content (Join-Path $output build-info.json) -Encoding utf8
+
+      - name: Upload installer for manual distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/${{ steps.artifact.outputs.name }}/
+          if-no-files-found: error
+          retention-days: 30
