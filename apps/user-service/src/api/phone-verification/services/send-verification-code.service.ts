@@ -10,7 +10,7 @@ import { ExpireExistingCodesService } from './expire-existing-codes';
 import { SmsSenderService } from './sms-sender.service';
 
 /**
- * 발송 제한은 **전화번호 기준**으로 센다.
+ * 발송 제한은 **전화번호 기준**으로, 문자와 카카오톡을 각각 따로 센다.
  *
  * 컨트롤러의 ThrottlerGuard 는 `req.ip` 로 세는데, 이 API 를 부르는 건 브라우저가 아니라
  * auth-web / storefront 의 서버(Lambda)다. 그래서 user-service 에는 최종 사용자 IP 가 아니라
@@ -36,15 +36,17 @@ export class SendMessageService {
   async sendVerificationCode(sendVerificationCodeDto: SendVerificationCodeDto, tx?: DbTransaction) {
     const { phoneNumber, purpose, channel } = sendVerificationCodeDto;
     const _purpose = purpose ?? 'phone_verify';
+    const _channel = channel ?? 'SMS';
 
     return this.inTx(async (trx) => {
-      // 0. 이 번호로 최근 1분 내 발송 횟수 확인 (IP 가 아니라 번호 기준 — 위 주석 참고)
+      // 0. 이 번호·채널로 최근 1분 내 발송 횟수 확인 (IP 가 아니라 번호 기준 — 위 주석 참고)
       const recentSends = await trx
         .select({ id: userServiceSchema.phoneVerifications.id })
         .from(userServiceSchema.phoneVerifications)
         .where(
           and(
             eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
+            eq(userServiceSchema.phoneVerifications.channel, _channel),
             gt(userServiceSchema.phoneVerifications.createdAt, new Date(Date.now() - RESEND_WINDOW_MS)),
           ),
         )
@@ -52,7 +54,7 @@ export class SendMessageService {
 
       if (recentSends.length >= RESEND_LIMIT) {
         throw new PhoneVerificationException({
-          message: '인증번호는 1분에 3회까지 요청할 수 있습니다. 잠시 후 다시 시도해주세요',
+          message: '인증번호 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.',
           errorCode: 'RESEND_LIMIT_EXCEEDED',
           httpStatus: HttpStatus.TOO_MANY_REQUESTS,
         });
@@ -78,15 +80,16 @@ export class SendMessageService {
         phoneNumber,
         code: code.toString(),
         purpose: _purpose,
+        channel: _channel,
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
       });
 
       // 5. 발송 (notification 서비스에 위임)
       // Note: 외부 API 호출이 트랜잭션 내부에 있음
       // 발송 실패 시 DB도 함께 롤백됨
-      await this.smsSender.send(phoneNumber, `[아몬드영] 인증번호: ${code}`, channel);
+      await this.smsSender.send(phoneNumber, `[아몬드영] 인증번호: ${code}`, _channel);
 
-      return channel === 'KAKAO' ? '카카오톡으로 인증번호를 보냈습니다' : '인증번호가 발송되었습니다';
+      return _channel === 'KAKAO' ? '카카오톡으로 인증번호를 보냈습니다' : '인증번호가 발송되었습니다';
     }, tx);
   }
 
