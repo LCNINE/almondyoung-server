@@ -10,6 +10,8 @@ export function ReceiveSheet({
   item,
   scanBump,
   pending,
+  inputDisabled = false,
+  cancelDisabled = false,
   error,
   statusContent,
   onSubmit,
@@ -23,6 +25,8 @@ export function ReceiveSheet({
    */
   scanBump: number;
   pending: boolean;
+  inputDisabled?: boolean;
+  cancelDisabled?: boolean;
   /** 직전 제출 실패 메시지. 시트가 화면 전체를 덮으므로 실패는 여기서 보여줘야
    *  보인다 — 뒤에 깔린 알림은 시트에 가려 작업자가 못 본다. */
   error?: string | null;
@@ -77,7 +81,7 @@ export function ReceiveSheet({
           >
             {qty}
           </div>
-          <fieldset disabled={pending}>
+          <fieldset disabled={pending || inputDisabled}>
             <QuantityInput
               label="입고 수량 직접 입력"
               value={quantityText}
@@ -107,7 +111,7 @@ export function ReceiveSheet({
           <Button
             type="button"
             className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            disabled={pending}
+            disabled={pending || cancelDisabled}
             onClick={onCancel}
           >
             취소

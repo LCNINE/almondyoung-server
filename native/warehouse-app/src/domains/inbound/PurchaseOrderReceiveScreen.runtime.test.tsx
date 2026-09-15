@@ -379,6 +379,98 @@ it('persists new scans in order while the list is loading and prevents discardin
   expect(f.lookupCodes).toEqual(['880000000001', '880000000001']);
 });
 
+it('turns a queued scan into a recoverable unapplied error when the restored line changed', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 3,
+      seen: ['a1', 'a2', 'a3'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-4', data: '880000000001' }]
+  );
+  const reduced = {
+    ...arrivals,
+    totalOutstandingQuantity: 9,
+    arrivals: [
+      {
+        ...arrivals.arrivals[0],
+        totalOutstandingQuantity: 9,
+        lines: [{ ...lineA, receivedQty: 8, outstandingQty: 2 }, lineB],
+      },
+    ],
+  };
+
+  await act(async () => f.firstArrivals.resolve(reduced));
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await screen.findByText('상품을 확인하지 못했어요.');
+  expect(f.lookupCodes).toEqual([]);
+  expect(await f.savedScans()).toEqual([
+    { id: 'scan-4', data: '880000000001' },
+  ]);
+  expect(
+    screen.getByRole('button', { name: '이 스캔 제외' })
+  ).toBeInTheDocument();
+  expect(await f.draft()).toMatchObject({
+    active: lineA,
+    scanBump: 3,
+    seen: ['a1', 'a2', 'a3'],
+  });
+
+  f.answerNextArrivals(arrivals);
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '다시 확인' })
+  );
+  await waitFor(() =>
+    expect(
+      within(sheet).queryByText('발주 상태가 바뀌었어요.')
+    ).not.toBeInTheDocument()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '다시 확인' }));
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect(
+    await within(sheet).findByText('4', { selector: 'div' })
+  ).toBeInTheDocument();
+  expect((await f.draft())?.seen).toEqual(['a1', 'a2', 'a3', 'scan-4']);
+});
+
+it('removes an already-applied queue record even when the authoritative line later changed', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 4,
+      seen: ['a1', 'a2', 'a3', 'scan-4'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-4', data: '880000000001' }]
+  );
+  const reduced = {
+    ...arrivals,
+    totalOutstandingQuantity: 9,
+    arrivals: [
+      {
+        ...arrivals.arrivals[0],
+        totalOutstandingQuantity: 9,
+        lines: [{ ...lineA, receivedQty: 8, outstandingQty: 2 }, lineB],
+      },
+    ],
+  };
+
+  await act(async () => f.firstArrivals.resolve(reduced));
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect(f.lookupCodes).toEqual([]);
+  expect(
+    screen.queryByText('상품을 확인하지 못했어요.')
+  ).not.toBeInTheDocument();
+  expect(await f.draft()).toMatchObject({
+    active: lineA,
+    scanBump: 4,
+    seen: ['a1', 'a2', 'a3', 'scan-4'],
+  });
+});
+
 it('keeps a submitted draft when the line disappears without confirmation of its original key', async () => {
   const submitted = { target: lineA, quantity: 3, key: 'receive-key' };
   const f = await fixture({
@@ -412,6 +504,41 @@ it('keeps a submitted draft when the line disappears without confirmation of its
     active: lineA,
     scanBump: 3,
     submitted,
+  });
+});
+
+it('locks edits and cancellation but retries an unresolved submission with its original body and key', async () => {
+  const submitted = { target: lineA, quantity: 3, key: 'receive-key' };
+  const f = await fixture({
+    active: lineA,
+    scanBump: 3,
+    seen: ['a1', 'a2', 'a3'],
+    fresh: null,
+    submitted,
+  });
+
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  const retry = within(sheet).getByRole('button', { name: '입고' });
+  await waitFor(() => expect(retry).toBeEnabled());
+  expect(
+    within(sheet).getByLabelText('입고 수량 직접 입력 (낱개)')
+  ).toBeDisabled();
+  expect(within(sheet).getByRole('button', { name: '1' })).toBeDisabled();
+  expect(within(sheet).getByRole('button', { name: '취소' })).toBeDisabled();
+
+  await userEvent.click(retry);
+  expect(await screen.findByText('아몬드 셔츠 3개 입고됨')).toBeInTheDocument();
+  const calls = f.requests.filter(
+    (request) => request.path === '/purchase-orders/po-1/receipts'
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0].idempotencyKey).toBe('receive-key');
+  expect(calls[0].body).toEqual({
+    warehouseId: 'w-1',
+    lines: [{ skuId: 'sku-a', quantity: 3 }],
+    contractVersion: 2,
+    idempotencyKey: 'receive-key',
   });
 });
 
@@ -466,6 +593,63 @@ it('moves a submitted draft to putaway only when its original operation key is c
       quantity: 3,
       putawayDoneQty: 0,
     },
+  });
+});
+
+it('reconciles a response-lost operation through the runner with its saved body and key', async () => {
+  const submitted = { target: lineA, quantity: 3, key: 'receive-key' };
+  const body = {
+    warehouseId: 'w-1',
+    lines: [{ skuId: 'sku-a', quantity: 3 }],
+    contractVersion: 2,
+    idempotencyKey: 'receive-key',
+  };
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 3,
+      seen: ['a1', 'a2', 'a3'],
+      fresh: null,
+      submitted,
+    },
+    [],
+    async (store) => {
+      await store.begin({
+        id: 'receive-key',
+        scope: 'scope',
+        resource: '/purchase-orders/po-1',
+        path: '/purchase-orders/po-1/receipts',
+        method: 'POST',
+        bodyJson: JSON.stringify(body),
+        createdAt: Date.now(),
+      });
+      await store.finish('receive-key', 'sending');
+      await store.finish('receive-key', 'uncertain');
+    }
+  );
+
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  await waitFor(() =>
+    expect(f.runner.getSnapshot().map((operation) => operation.id)).toContain(
+      'receive-key'
+    )
+  );
+  await act(async () => f.runner.retryPending());
+
+  expect(await screen.findByText('아몬드 셔츠 3개 입고됨')).toBeInTheDocument();
+  const calls = f.requests.filter(
+    (request) => request.path === '/purchase-orders/po-1/receipts'
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({
+    method: 'POST',
+    idempotencyKey: 'receive-key',
+    body,
+    bodyJson: JSON.stringify(body),
+  });
+  expect(await f.store.get('receive-key')).toMatchObject({
+    status: 'confirmed',
+    bodyJson: JSON.stringify(body),
   });
 });
 
