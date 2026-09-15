@@ -316,7 +316,14 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
             {(locationSearch.data?.items ?? []).map((location) => (
               <li key={location.id}>
                 <Button
-                  disabled={busy || locationSearch.isFetching || !draft.ready}
+                  disabled={
+                    busy ||
+                    !manualCode.trim() ||
+                    locationSearch.isFetching ||
+                    locationSearch.isPlaceholderData ||
+                    locationSearch.isError ||
+                    !draft.ready
+                  }
                   onClick={() => acceptScan(location.code, true)}
                 >
                   {location.code} 열기

@@ -108,6 +108,13 @@ it('확정된 추가 요청은 재등록 없이 원래 키로 목록 복구를 �
     getScope: async () => 'scope',
   });
   const done = vi.fn(async () => {});
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const get = store.get;
+  vi.spyOn(store, 'get').mockImplementation(async (id) => {
+    await gate;
+    return get(id);
+  });
   render(
     <SessionProvider session={session}>
       <QueryClientProvider client={new QueryClient()}>
@@ -133,6 +140,8 @@ it('확정된 추가 요청은 재등록 없이 원래 키로 목록 복구를 �
       </QueryClientProvider>
     </SessionProvider>
   );
+  expect(await screen.findByLabelText(/새 상품 실물 총수량/)).toBeDisabled();
+  release();
   await waitFor(() => expect(done).toHaveBeenCalledWith('saved-key'));
   expect(
     (request as ReturnType<typeof vi.fn>).mock.calls.some(

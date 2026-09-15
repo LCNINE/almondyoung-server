@@ -52,6 +52,7 @@ export function AddCountItemSheet({
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
   useUnsavedWork(true);
+  const restoreRef = useRef<() => Promise<void>>(async () => {});
   const finishRef = useRef(onDone);
   finishRef.current = onDone;
   useEffect(() => {
@@ -64,10 +65,11 @@ export function AddCountItemSheet({
       if (!loaded) {
         desired.current = saved;
         setInput(saved);
-        setHydrated(true);
         loaded = true;
       }
       const op = runtime ? await runtime.store.get(saved.key) : null;
+      if (!live) return;
+      setHydrated(!op || op.status === 'rejected');
       if (op?.status === 'confirmed' && !busyRef.current) {
         busyRef.current = true;
         setBusy(true);
@@ -82,6 +84,7 @@ export function AddCountItemSheet({
         }
       }
     }
+    restoreRef.current = restore;
     void restore().catch((e) => {
       if (live) setError(errorMessage(e, 'stocktaking'));
     });
