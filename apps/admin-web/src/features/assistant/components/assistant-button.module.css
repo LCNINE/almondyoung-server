@@ -1,0 +1,212 @@
+.button {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 24px minmax(0, 0fr);
+  align-items: center;
+  gap: 0;
+  height: 32px;
+  padding: 4px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #fdfefe, #e3e8ee);
+  box-shadow:
+    inset 0 0 0 1px #dce1e8,
+    inset 0 1px 0 #ffffff,
+    0 2px 5px #22304414;
+  cursor: pointer;
+  transform-origin: right center;
+  transition:
+    grid-template-columns 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    gap 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease,
+    transform 0.2s ease;
+}
+
+.button::before {
+  content: '';
+  position: absolute;
+  inset: 1.5px;
+  border: 0.5px solid #ffffff;
+  border-radius: inherit;
+  background: linear-gradient(180deg, #ffffffb3, #eff2f680);
+  pointer-events: none;
+}
+
+.button:hover,
+.button:focus-visible {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 6px;
+  padding-right: 12px;
+  animation: button-spring 0.55s ease-out;
+  box-shadow:
+    inset 0 0 0 1px #cfd7e1,
+    inset 0 1px 0 #ffffff,
+    0 3px 8px #2230441a;
+}
+
+.button:active {
+  animation: none;
+  transform: scale(0.985);
+}
+
+.button:focus-visible {
+  outline: 2px solid #ff9147;
+  outline-offset: 3px;
+}
+
+.knob {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  transform: scale(1.25);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  background: linear-gradient(145deg, #ffffff, #f5f7fa 45%, #e3e8ef);
+  box-shadow:
+    inset 0 0 0 0.5px #ffffff,
+    inset 0 -1px 1px #c7d0dd80,
+    0 0 5px #9dbfdf33;
+}
+
+/* A thin reflective edge with localized light blooms, inside a fixed circle. */
+.ring {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 32px;
+  height: 32px;
+  max-width: none;
+  pointer-events: none;
+  border-radius: 50%;
+  overflow: hidden;
+  clip-path: circle(50% at 50% 50%);
+  -webkit-mask: radial-gradient(circle, transparent 11.5px, #000 12px, #000 13.5px, transparent 15px);
+  mask: radial-gradient(circle, transparent 11.5px, #000 12px, #000 13.5px, transparent 15px);
+}
+
+.ring::before,
+.ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: ring-orbit 5s linear infinite;
+}
+
+.ring::before {
+  filter: saturate(1.15);
+  background: conic-gradient(
+    #8693a8 0deg,
+    #4779d8 14deg,
+    #4de2ee 24deg,
+    #e6ffff 32deg,
+    #ffffff 40deg 57deg,
+    #ffefa6 66deg,
+    #e9a651 74deg,
+    #b577a1 83deg,
+    #79869c 94deg,
+    #c2cbd6 118deg,
+    #8291a6 148deg,
+    #647084 174deg,
+    #465779 200deg,
+    #4669d1 210deg,
+    #52d9ee 219deg,
+    #ffffec 229deg 235deg,
+    #ffdd78 243deg,
+    #d5865e 251deg,
+    #887797 261deg,
+    #8493a8 278deg,
+    #aebcca 310deg,
+    #e5eaf0 334deg,
+    #8693a8 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 12px, #000 12.35px, #000 13.1px, transparent 13.5px);
+  mask: radial-gradient(circle, transparent 12px, #000 12.35px, #000 13.1px, transparent 13.5px);
+}
+
+.ring::after {
+  background:
+    radial-gradient(circle at 78% 22%, #ffffff 0.8px, #fff0bcc7 1.8px, transparent 4.2px),
+    radial-gradient(circle at 22% 78%, #ffffff 0.6px, #a6e4ffb3 1.6px, transparent 4px);
+  filter: blur(0.45px);
+}
+
+.logo {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  /* Keep the mark at 16px while the collapsed ring fills the button rim. */
+  transform: scale(0.8);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  filter: drop-shadow(0 1px 1px #64748b38);
+}
+
+.button:hover .knob,
+.button:focus-visible .knob,
+.button:hover .logo,
+.button:focus-visible .logo {
+  transform: scale(1);
+}
+
+.label {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-6px);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: #434a56;
+  white-space: nowrap;
+  transition:
+    opacity 0.2s ease,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.button:hover .label,
+.button:focus-visible .label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@keyframes ring-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes button-spring {
+  0% {
+    transform: scale(0.96, 0.98);
+  }
+  55% {
+    transform: scale(1.035, 1.015);
+  }
+  78% {
+    transform: scale(0.992, 0.998);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .knob,
+  .logo,
+  .label {
+    transition: none;
+  }
+
+  .button,
+  .ring::before,
+  .ring::after {
+    animation: none;
+  }
+}
