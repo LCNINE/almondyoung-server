@@ -26,6 +26,9 @@ export function StationHome() {
         <Link to="/inbound">
           <HubTile icon={PackagePlus} label="입고" />
         </Link>
+        <Link to="/inbound/history">
+          <HubTile icon={ClipboardList} label="입고내역" />
+        </Link>
         <Link to="/putaway">
           <HubTile icon={ClipboardList} label="적치" />
         </Link>

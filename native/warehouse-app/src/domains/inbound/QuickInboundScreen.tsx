@@ -2,6 +2,9 @@ import {
   confirmedPutawayQuantity,
   withConfirmedPutaway,
 } from './confirmedPutaway';
+import { Link } from '@tanstack/react-router';
+import { useApiClient } from '../../core/data/ApiClientProvider';
+import { receiptHistoryPath, validateReceiptHistory } from './receiptHistory';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { SimpleInboundResult } from './types';
 import { WorkArea } from '../../core/operations/WorkBoundary';
@@ -39,9 +42,11 @@ interface CartRow {
 function QuickInboundScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
+  const api = useApiClient();
   const submit = useSimpleInbound();
 
   const initialDraft = useRef({
+    receiptId: null as string | null,
     cart: [] as CartRow[],
     staged: [] as FreshLine[],
     seen: [] as string[],
@@ -70,13 +75,17 @@ function QuickInboundScreenContent() {
   useEffect(() => {
     if (!runtime || !draft.ready) return;
     let live = true;
+    let generation = 0;
     const reconcile = async () => {
+      const thisGeneration = ++generation;
+      if (live) setReconciled(false);
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
       if (op?.status === 'confirmed' && current.staged.length === 0) {
         const result = op.result as SimpleInboundResult;
         await draft.update((prev) => ({
           ...prev,
+          receiptId: result.id,
           staged:
             prev.key !== current.key || prev.staged.length > 0
               ? prev.staged
@@ -106,13 +115,59 @@ function QuickInboundScreenContent() {
           )
         )
       );
+      const receiptId =
+        latest.receiptId ??
+        (op?.status === 'confirmed'
+          ? (op.result as SimpleInboundResult).id
+          : undefined);
+      let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
+      if (latest.staged.length) {
+        if (!receiptId || !warehouseId)
+          throw new Error('입고내역에서 상태를 확인해 주세요.');
+        const history = await api.request<unknown>({
+          path: receiptHistoryPath({
+            warehouseId,
+            receiptId,
+            status: 'all',
+            limit: 1,
+            offset: 0,
+          }),
+        });
+        validateReceiptHistory(history);
+        const receipt = history.items.find(
+          (item) => item.id === receiptId && item.warehouseId === warehouseId
+        );
+        if (
+          !receipt ||
+          latest.staged.some(
+            (line) => !receipt.lines.some((item) => item.id === line.lineId)
+          )
+        )
+          throw new Error('입고내역을 확인해 주세요.');
+        historyLines = receipt.lines;
+      }
+      if (!live || thisGeneration !== generation) return;
       await draft.update((prev) => ({
         ...prev,
-        staged: prev.staged.map((line) =>
-          withConfirmedPutaway(line, quantities.get(line.lineId) ?? 0)
-        ),
+        receiptId: receiptId ?? null,
+        staged: prev.staged.map((line) => {
+          const currentLine = historyLines.find(
+            (item) => item.id === line.lineId
+          );
+          return {
+            ...withConfirmedPutaway(
+              line,
+              Math.max(
+                quantities.get(line.lineId) ?? 0,
+                currentLine?.putawayFromOriginQty ?? 0
+              )
+            ),
+            canceledQty: currentLine?.canceledQty ?? line.canceledQty,
+            returnedQty: currentLine?.returnedQty ?? line.returnedQty,
+          };
+        }),
       }));
-      if (live) setReconciled(true);
+      if (live && thisGeneration === generation) setReconciled(true);
     };
     void reconcile().catch(() => {
       if (live) setReconciled(false);
@@ -124,7 +179,7 @@ function QuickInboundScreenContent() {
       live = false;
       off();
     };
-  }, [runtime, draft.ready, idempotencyKey]);
+  }, [runtime, draft.ready, idempotencyKey, api, warehouseId]);
   const [editing, setEditing] = useState<string | null>(null);
   const [quantityText, setQuantityText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -280,6 +335,13 @@ function QuickInboundScreenContent() {
             입고는 끝났어요. 각 품목을 선반에 꽂으면서 대상 로케이션을 찍어
             주세요.
           </p>
+          <Link to="/inbound/history">입고내역 · 취소</Link>
+          {!reconciled && (
+            <p role="alert">
+              입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
+              대기 목록에서 이어서 작업해 주세요.
+            </p>
+          )}
           <ul className="space-y-2">
             {staged.map((line) => (
               <li
@@ -306,7 +368,11 @@ function QuickInboundScreenContent() {
                 <span className="text-lg font-semibold text-gray-900">
                   {line.quantity}
                 </span>
-                {line.putawayDoneQty >= line.quantity ? (
+                {(line.canceledQty ?? 0) > 0 ? (
+                  <span>취소됨</span>
+                ) : (line.returnedQty ?? 0) > 0 ? (
+                  <span>회송됨</span>
+                ) : line.putawayDoneQty >= line.quantity ? (
                   <span className="shrink-0 text-xs font-semibold text-green-700">
                     완료
                   </span>
@@ -330,6 +396,7 @@ function QuickInboundScreenContent() {
               setSaving(true);
               try {
                 await draft.update(() => ({
+                  receiptId: null,
                   cart: [],
                   staged: [],
                   seen: [],
@@ -505,8 +572,10 @@ function QuickInboundScreenContent() {
                 {
                   onSuccess: async (result) => {
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
-                    await setStaged(
-                      result.lines.map((line) => {
+                    await draft.update((prev) => ({
+                      ...prev,
+                      receiptId: result.id,
+                      staged: result.lines.map((line) => {
                         const row = cart.find((r) => r.skuId === line.skuId);
                         return {
                           lineId: line.id,
@@ -516,8 +585,8 @@ function QuickInboundScreenContent() {
                           quantity: line.quantity,
                           putawayDoneQty: 0,
                         };
-                      })
-                    );
+                      }),
+                    }));
                   },
                 }
               );

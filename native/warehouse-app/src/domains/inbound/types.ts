@@ -84,6 +84,8 @@ export interface CancelInboundInput {
 
 /** 입고 직후 화면에 남는 "방금 만든 라인" — 적치·취소의 대상. */
 export interface FreshLine {
+  canceledQty?: number;
+  returnedQty?: number;
   lineId: string;
   skuId: string;
   skuName: string;

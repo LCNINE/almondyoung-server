@@ -78,7 +78,8 @@ function renderScreen(
   gate?: Promise<void>,
   database?: string,
   mode: 'quick' | 'po' = 'quick',
-  configureStore?: (store: OperationStore) => void
+  configureStore?: (store: OperationStore) => void,
+  receiptCanceled = false
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -86,6 +87,39 @@ function renderScreen(
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.startsWith('/inbound/receipts?'))
+        return {
+          serverTime: new Date().toISOString(),
+          total: 1,
+          items: [
+            {
+              id: 'r-1',
+              warehouseId: 'w-1',
+              method: 'simple',
+              occurredAt: new Date().toISOString(),
+              status: receiptCanceled ? 'voided' : 'posted',
+              totalQuantity: 20,
+              lines: [
+                {
+                  id: 'ln-1',
+                  skuId: 's1',
+                  skuCode: 'CT-001',
+                  skuName: '코튼셔츠',
+                  quantity: 20,
+                  source: 'direct',
+                  originLocationCode: 'INBOUND',
+                  canCancel: !receiptCanceled,
+                  cancelBlockReason: receiptCanceled
+                    ? 'ALREADY_CANCELED'
+                    : null,
+                  canceledQty: receiptCanceled ? 20 : 0,
+                  returnedQty: 0,
+                  putawayFromOriginQty: 0,
+                },
+              ],
+            },
+          ],
+        };
       if (o.path.startsWith('/inventory/expected-arrivals'))
         return { arrivals: [] };
       if (o.path.startsWith('/inventory/skus?barcode=880')) {
@@ -328,7 +362,13 @@ for (const mode of ['quick', 'po'] as const) {
       `actor|local:draft:${mode === 'quick' ? 'quick-inbound:w-1' : 'po-inbound:w-1:po-1'}`,
       () =>
         mode === 'quick'
-          ? { cart: [], staged: [line], seen: [], key: 'receipt-key' }
+          ? {
+              cart: [],
+              staged: [line],
+              seen: [],
+              key: 'receipt-key',
+              receiptId: 'r-1',
+            }
           : {
               active: null,
               scanBump: 0,
@@ -360,3 +400,38 @@ for (const mode of ['quick', 'po'] as const) {
     expect(calls.filter((c) => c.path === '/inbound/putaway')).toHaveLength(0);
   });
 }
+
+it('취소 후 재시작한 간편입고는 취소 이력을 확인하고 적치를 열지 않는다', async () => {
+  const database = crypto.randomUUID();
+  const store = createOperationStore(database);
+  await store.draft('actor|local:draft:quick-inbound:w-1', () => ({
+    cart: [],
+    staged: [
+      {
+        lineId: 'ln-1',
+        skuId: 's1',
+        skuName: '코튼셔츠',
+        skuCode: 'CT-001',
+        quantity: 20,
+        putawayDoneQty: 0,
+      },
+    ],
+    seen: [],
+    key: 'receipt-key',
+    receiptId: 'r-1',
+  }));
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, database, 'quick', undefined, true);
+  expect(await screen.findByText('취소됨')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치' })
+  ).not.toBeInTheDocument();
+  expect(
+    calls.some(
+      (c) =>
+        c.path.includes('receiptId=r-1') &&
+        c.path.includes('warehouseId=w-1') &&
+        c.path.includes('status=all')
+    )
+  ).toBe(true);
+});
