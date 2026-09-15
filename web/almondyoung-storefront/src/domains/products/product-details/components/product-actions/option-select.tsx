@@ -6,11 +6,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { formatDate } from "@/lib/utils/format-date"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
 import { pickComingSoon } from "./coming-soon"
+import { pickEarliestRestock } from "./restock"
 import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 
 // 표시할 옵션 값이 이 개수를 초과하면 칩 대신 드롭다운으로 전환
@@ -84,7 +86,7 @@ export default function OptionSelect({
   selectedValues,
 }: OptionSelectProps) {
   const t = useTranslations("productDetail.options")
-  const { visibleValues, outOfStockSet, comingSoonByValue, priceByValue } = useMemo(() => {
+  const { visibleValues, outOfStockSet, comingSoonByValue, restockByValue, priceByValue } = useMemo(() => {
     const rawValues = (option.values ?? []).map((v) => v.value)
     const allValues = variants
       ? sortByPimRank(rawValues, option.id, option.title, variants)
@@ -94,6 +96,7 @@ export default function OptionSelect({
         visibleValues: allValues,
         outOfStockSet: new Set<string>(),
         comingSoonByValue: {} as Record<string, { date: string | null }>,
+        restockByValue: {} as Record<string, { date: string }>,
         priceByValue: {} as Record<string, number>,
       }
     }
@@ -107,6 +110,9 @@ export default function OptionSelect({
     const visible: string[] = []
     const outOfStock = new Set<string>()
     const comingSoonByValue: Record<string, { date: string | null }> = {}
+    // 품절 옵션의 입고예정일. 품절 칩은 누를 수 없어 RestockNotice 가 영영 안 뜨므로
+    // (선택된 variant 만 보는 컴포넌트다) 날짜를 칩 라벨에 직접 적는다.
+    const restockByValue: Record<string, { date: string }> = {}
     // 값 → 최저가 대비 추가금(extra). 최저가 옵션은 0.
     const priceByValue: Record<string, number> = {}
 
@@ -125,8 +131,13 @@ export default function OptionSelect({
       visible.push(value)
       if (!matchingVariants.some(hasStock)) {
         outOfStock.add(value)
+        // 출시예정이 재입고보다 우선 — 한 번도 안 나온 상품에 "입고" 는 틀린 안내다.
         const comingSoon = pickComingSoon(matchingVariants)
         if (comingSoon) comingSoonByValue[value] = comingSoon
+        else {
+          const restock = pickEarliestRestock(matchingVariants)
+          if (restock) restockByValue[value] = { date: restock.date }
+        }
       }
 
       // ponytail: 옵션값이 variant 1개에만 매핑될 때만 가격 표기. 다중옵션 상품은
@@ -139,7 +150,7 @@ export default function OptionSelect({
       }
     }
 
-    return { visibleValues: visible, outOfStockSet: outOfStock, comingSoonByValue, priceByValue }
+    return { visibleValues: visible, outOfStockSet: outOfStock, comingSoonByValue, restockByValue, priceByValue }
   }, [option, variants, selectedOptions])
 
   // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
@@ -155,7 +166,18 @@ export default function OptionSelect({
   const renderValueLabel = (value: string, isOutOfStock: boolean) => {
     if (!isOutOfStock) return value
     const comingSoon = comingSoonByValue[value]
-    if (!comingSoon) return t("outOfStockSuffix", { value })
+    if (!comingSoon) {
+      const restock = restockByValue[value]
+      if (!restock) return t("outOfStockSuffix", { value })
+      return (
+        <span className="flex flex-col items-center leading-tight">
+          {value}
+          <span className="text-[11px] opacity-70">
+            {t("optionRestockShort", { date: formatDate(restock.date, "M/d") })}
+          </span>
+        </span>
+      )
+    }
     if (everyValueComingSoon) return value
     return (
       <span className="inline-flex items-center gap-1.5">

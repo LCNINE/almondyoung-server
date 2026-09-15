@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
-import { pickEarliestRestock } from "@/domains/products/product-details/components/product-actions/restock-notice"
+import { pickEarliestRestock } from "@/domains/products/product-details/components/product-actions/restock"
 import { HttpTypes } from "@medusajs/types"
 import { Calendar } from "lucide-react"
 import { useTranslations } from "next-intl"
