@@ -9,7 +9,11 @@ export class WarehouseWorkContextController {
   @Get('work-context')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   workContext(@User() user: WarehouseActor) {
-    return { actorId: authenticatedWarehouseActor(user), operationContractVersion: 2 as const };
+    return {
+      actorId: authenticatedWarehouseActor(user),
+      operationContractVersion: 2 as const,
+      capabilities: { stocktakingAddCountItem: true as const },
+    };
   }
 
   @Get('diagnostics-access')

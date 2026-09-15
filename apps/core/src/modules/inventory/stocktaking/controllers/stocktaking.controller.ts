@@ -32,6 +32,7 @@ import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
 import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
+import { AddCountItemDto } from '../dto/add-count-item.dto';
 
 @ApiTags('Stocktaking')
 @Controller('stocktaking')
@@ -124,6 +125,27 @@ export class StocktakingController {
         (tx) => this.stocktakingService.scanProduct(dto, tx),
       );
     return this.stocktakingService.scanProduct(dto);
+  }
+
+  @Post('count-items')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: 'SKU로 실사 상품 추가 (Add stocktaking item by SKU)' })
+  @ApiResponse({ status: 200, description: 'Count item created' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  async addCountItem(
+    @Body() dto: AddCountItemDto,
+    @User() user?: WarehouseActor,
+    @Headers('idempotency-key') headerKey?: string,
+  ) {
+    const actorId = warehouseOperationContext(dto, user, headerKey);
+    if (!actorId) throw new BadRequestException('앱을 업데이트해 주세요.');
+    return this.idempotency.withIdempotency(
+      'stocktaking.add-count-item.v2',
+      dto.idempotencyKey!,
+      warehouseRequest(dto, actorId),
+      (tx) => this.stocktakingService.addCountItem(dto, tx),
+    );
   }
 
   @Put('lines/:id/count')
