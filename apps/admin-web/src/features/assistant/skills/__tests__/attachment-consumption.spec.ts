@@ -72,7 +72,6 @@ function fakeCtx(attachments: SkillAttachment[], options: FakeOptions = {}): Ski
     coreHeaders: async () => ({}),
     coreApiUrl: 'http://core',
     fileServiceUrl: 'http://files',
-    selfUrl: 'http://admin',
     attachments,
   };
 }
@@ -140,6 +139,13 @@ describe('upload_product_image 의 첨부 소비', () => {
     const result = await productImage.execute({}, ctx);
     expect(consumed(result)).toEqual(['E1']);
     expect((result as { failed: unknown[] }).failed).toHaveLength(1);
+  });
+
+  it('파일명은 대소문자·경로를 무시하고 찾는다', async () => {
+    const ctx = fakeCtx([att('G1', 'IMG_01.png')]);
+
+    const result = await productImage.execute({ fileName: 'photos/img_01.PNG' }, ctx);
+    expect(consumed(result)).toEqual(['G1']);
   });
 
   it('파일명을 지정하면 그 첨부만 소비한다', async () => {

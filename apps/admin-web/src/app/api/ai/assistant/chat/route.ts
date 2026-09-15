@@ -7,11 +7,14 @@ import {
   runTool,
 } from '@/features/assistant/skills/registry';
 import type { SkillAttachment } from '@/features/assistant/skills/types';
+import { closeDanglingToolCalls } from '../_lib/conversation';
 
 export const runtime = 'nodejs';
 
 /** 한 요청 안에서 도는 도구 호출 횟수 상한. 모델이 같은 도구를 물고 늘어져도 여기서 끊긴다. */
 const MAX_TURNS = 12;
+
+const TIME_BUDGET_MS = 40_000;
 
 /**
  * 클라이언트가 돌려보내는 대화. 텍스트뿐 아니라 도구 호출·결과까지 그대로 싣는다.
@@ -75,7 +78,6 @@ export async function POST(request: Request) {
     fileServiceUrl: (
       process.env.FILE_SERVICE_URL ?? 'http://localhost:3080'
     ).replace(/\/+$/, ''),
-    selfUrl: new URL(request.url).origin,
     // 도구 안에서 조회 → 저장으로 이어질 때, 취소 이후 저장이 나가는 것을 막는다.
     signal: request.signal,
     attachments,
@@ -132,12 +134,23 @@ export async function POST(request: Request) {
       const snapshot = () => ({
         toolCalls,
         consumedIds: [...consumedIds],
-        conversation: messages.filter((m) => m.role !== 'system'),
+        conversation: closeDanglingToolCalls(
+          messages.filter((m) => m.role !== 'system')
+        ),
       });
+
+      const startedAt = Date.now();
 
       try {
         for (let turn = 0; turn < MAX_TURNS; turn += 1) {
           if (aborted()) return finish('aborted', snapshot());
+          if (turn > 0 && Date.now() - startedAt > TIME_BUDGET_MS) {
+            return finish('done', {
+              message:
+                '시간이 오래 걸려 여기서 멈췄습니다. 이어서 진행하려면 "계속"이라고 말씀해 주세요.',
+              ...snapshot(),
+            });
+          }
 
           // 스트리밍으로 받아 텍스트를 곧바로 흘려보낸다. 도구를 여러 번 도는
           // 작업은 20초 넘게 걸려서, 침묵이 길면 고장으로 읽힌다.

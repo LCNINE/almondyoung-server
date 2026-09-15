@@ -1,5 +1,12 @@
+import type { ComposeRequest } from '@/app/api/ai/product-description/_lib/compose';
 import type { Skill, SkillTool } from '../types';
-import { core, toolError, uploadToFileService } from '../types';
+import {
+  RequestAbortedError,
+  core,
+  normalizeFileName,
+  toolError,
+  uploadToFileService,
+} from '../types';
 
 /** 상품 이미지는 이 컨텍스트로 올라간다 (file_contexts 시드와 같은 값). */
 const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
@@ -107,7 +114,7 @@ const createProduct: SkillTool = {
   definition: {
     name: 'create_product',
     description:
-      '새 상품을 만든다. 빈 Master 와 Draft v1 이 생기고 내용은 아직 비어 있다 — 이어서 update_product_draft 로 채우고 publish_product_version 으로 발행해야 쇼핑몰에 보인다. 반환값의 masterId 와 versionId 를 다음 호출에 쓴다.',
+      '새 상품을 만든다. 빈 Master 와 Draft v1 이 생기고 내용은 아직 비어 있다 — 이어서 update_product_draft 로 채우고 publish_product_version 으로 발행해야 쇼핑몰에 보인다. 반환값의 masterId 와 id 를 다음 호출에 쓴다 — 응답의 id 가 새 Draft 의 versionId 다(versionId 라는 필드는 없다).',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   async execute(_input, ctx) {
@@ -119,7 +126,7 @@ const createDraft: SkillTool = {
   definition: {
     name: 'create_product_draft',
     description:
-      '기존 상품을 고치기 위해 현재 Active 버전을 복사한 새 Draft 를 만든다. **Active 버전은 직접 수정할 수 없으므로** 기존 상품 수정은 항상 여기서 시작한다. 반환된 versionId 를 update_product_draft 에 쓴다.',
+      '기존 상품을 고치기 위해 현재 Active 버전을 복사한 새 Draft 를 만든다. **Active 버전은 직접 수정할 수 없으므로** 기존 상품 수정은 항상 여기서 시작한다. 반환값의 id 가 새 Draft 의 versionId 다 — 그 값을 update_product_draft 에 쓴다.',
     input_schema: {
       type: 'object',
       properties: { masterId: { type: 'string' } },
@@ -325,28 +332,41 @@ const writeDescription: SkillTool = {
       );
     }
 
-    const headers = await ctx.coreHeaders({ 'Content-Type': 'application/json' });
+    const [{ requireAiClient }, { extractProductFacts }, { composeProductDescription }] =
+      await Promise.all([
+        import('@/app/api/ai/product-description/_lib/anthropic'),
+        import('@/app/api/ai/product-description/_lib/extract'),
+        import('@/app/api/ai/product-description/_lib/compose'),
+      ]);
 
-    const extracted = await fetch(`${ctx.selfUrl}/api/ai/product-description/extract`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ fileIds }),
-    });
+    const guard = await requireAiClient();
+    if (guard.error) {
+      const body = (await guard.error.json().catch(() => ({}))) as { message?: string };
+      return toolError(body.message ?? 'AI 설명 생성을 쓸 수 없다');
+    }
+
+    const extracted = await extractProductFacts(
+      guard.client,
+      fileIds.filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ctx.signal
+    );
+    if (ctx.signal?.aborted) throw new RequestAbortedError();
     if (!extracted.ok) {
       const body = (await extracted.json().catch(() => ({}))) as { message?: string };
       return toolError(body.message ?? `상세 정보 추출 실패 (${extracted.status})`);
     }
-    const { result } = (await extracted.json()) as { result: unknown };
+    const { result } = (await extracted.json()) as { result: ComposeRequest['result'] };
 
-    const composed = await fetch(`${ctx.selfUrl}/api/ai/product-description/compose`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
+    const composed = await composeProductDescription(
+      guard.client,
+      {
         result,
         productName: str(input, 'productName') ?? undefined,
         hint: str(input, 'hint') ?? undefined,
-      }),
-    });
+      },
+      ctx.signal
+    );
+    if (ctx.signal?.aborted) throw new RequestAbortedError();
     if (!composed.ok) {
       const body = (await composed.json().catch(() => ({}))) as { message?: string };
       return toolError(body.message ?? `상세 본문 생성 실패 (${composed.status})`);
@@ -477,8 +497,10 @@ const setPrice: SkillTool = {
       ['salePrice', salePrice],
       ['memberPrice', memberPrice],
     ] as const) {
-      if (v !== undefined && (!Number.isInteger(v) || v < 0)) {
-        return toolError(`${label} 은 0 이상 정수여야 한다`);
+      if (v !== undefined && (!Number.isInteger(v) || v < 1)) {
+        return toolError(
+          `${label} 은 1 이상 정수여야 한다. 0원(무료)은 가격 규칙으로 설정할 수 없으므로 사용자에게 여기서는 처리할 수 없다고 안내한다.`
+        );
       }
     }
     if (salePrice === undefined && memberPrice === undefined && !clearMember) {
@@ -518,6 +540,12 @@ const setPrice: SkillTool = {
       operationValue: value,
     });
 
+    const nextBase =
+      salePrice !== undefined ? [override('base_price', salePrice)] : baseNow.map(toRuleInput);
+    if (nextBase.length === 0) {
+      return toolError('판매가가 아직 없다. salePrice 를 함께 넘겨야 저장된다.');
+    }
+
     const nextMember = clearMember
       ? []
       : memberPrice !== undefined
@@ -527,10 +555,7 @@ const setPrice: SkillTool = {
     return core(ctx, `/versions/${versionId}/pricing/rules`, {
       method: 'PUT',
       body: JSON.stringify({
-        basePriceRules:
-          salePrice !== undefined
-            ? [override('base_price', salePrice)]
-            : baseNow.map(toRuleInput),
+        basePriceRules: nextBase,
         membershipPriceRules: nextMember,
         // 수량별 할인은 이 도구가 다루지 않는다 — 항상 원래대로 되싣는다.
         tieredPriceRules: tieredNow.map(toRuleInput),
@@ -590,7 +615,7 @@ const uploadImage: SkillTool = {
 
     const only = str(input, 'fileName');
     const targets = only
-      ? images.filter((a) => a.fileName === only)
+      ? images.filter((a) => normalizeFileName(a.fileName) === normalizeFileName(only))
       : images;
     if (targets.length === 0) {
       return toolError(`첨부 중에 ${only} 이(가) 없다`);

@@ -67,7 +67,6 @@ function fakeCtx(options: { abortDuringGet?: boolean } = {}) {
     coreHeaders: async () => ({}),
     coreApiUrl: 'http://core',
     fileServiceUrl: 'http://files',
-    selfUrl: 'http://admin',
     signal: controller.signal,
     attachments: [],
   };

@@ -7,8 +7,6 @@ export type SkillContext = {
   coreHeaders: (extra?: Record<string, string>) => Promise<Record<string, string>>;
   coreApiUrl: string;
   fileServiceUrl: string;
-  /** admin-web 자신의 origin. 기존 상세페이지 AI 라우트를 그대로 쓰려고 둔다. */
-  selfUrl: string;
   /**
    * 사용자가 Esc 로 요청을 끊으면 abort 된다. 도구 안에서 여러 번 호출할 때
    * (조회 뒤 저장 같은) 취소 이후에 변경 요청이 나가는 것을 막는다.

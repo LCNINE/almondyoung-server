@@ -123,12 +123,6 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   /**
-   * 보냈지만 아직 업로드에 쓰이지 않은 첨부. 입력창에서는 치우고(보낸 것처럼 보이게)
-   * 다음 요청에 조용히 함께 보낸다 — 어시스턴트가 "카테고리 뭘로 할까요" 하고 되물었을 때
-   * 사용자가 같은 이미지를 다시 고르지 않아도 되도록.
-   */
-  const carriedRef = useRef<Attachment[]>([]);
-  /**
    * 서버가 돌려준 대화 원본(도구 호출·결과 포함). 화면용 messages 와 달리
    * 이전 턴에 받은 fileId 같은 것이 들어 있어서, 다음 요청에 그대로 보내야
    * 모델이 이미 올린 이미지를 다시 달라고 하지 않는다.
@@ -181,13 +175,11 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     setDragging(false);
   }, [open, pending]);
 
-  /** 첨부를 완전히 버린다 — 입력창과 다음 요청에 따라갈 대기 목록 양쪽에서. */
   function resetConversation() {
     setMessages([]);
     setFiles([]);
     setInput('');
     setError(null);
-    carriedRef.current = [];
     conversationRef.current = [];
     sessionIdRef.current = null;
     setCurrentSessionId(null);
@@ -238,7 +230,6 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     sessionIdRef.current = sessionId;
     setCurrentSessionId(sessionId);
     pendingSession.current = null;
-    carriedRef.current = [];
     setFiles([]);
     setInput('');
     setError(null);
@@ -246,7 +237,6 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
 
   function dropAttachment(id: string) {
     setFiles((previous) => previous.filter((a) => a.id !== id));
-    carriedRef.current = carriedRef.current.filter((a) => a.id !== id);
   }
 
   function attachFiles(selected: File[]) {
@@ -323,6 +313,7 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     const text = input.trim();
     if ((!text && files.length === 0) || pending || loadingHistory) return;
 
+    const shownBefore = messages.length;
     const outgoing: Message = {
       role: 'user',
       content: text,
@@ -345,13 +336,6 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     // 업로드 도구가 실제로 썼다고 알려줄 때(consumedAttachments)만 비운다.
     setError(null);
     setPending(true);
-
-    // 이번에 새로 고른 것 + 아직 안 쓰인 이전 첨부를 함께 보낸다.
-    const sending = [
-      ...carriedRef.current.filter((c) => !files.some((f) => f.id === c.id)),
-      ...files,
-    ];
-    carriedRef.current = sending;
 
     /**
      * 이 턴이 저장될 세션을 «여기서 고정»한다.
@@ -400,7 +384,7 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
 
     const body = new FormData();
     body.append('messages', JSON.stringify(history));
-    for (const { id, file } of sending) {
+    for (const { id, file } of files) {
       body.append('files', file);
       body.append('fileIds', id);
     }
@@ -409,12 +393,56 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     setFiles([]);
 
     function restoreDraft(message: string) {
-      setMessages((previous) => previous.slice(0, -1));
+      setMessages((previous) => previous.slice(0, shownBefore));
       setInput(text);
       setFiles(files);
-      const returned = new Set(files.map((a) => a.id));
-      carriedRef.current = carriedRef.current.filter((a) => !returned.has(a.id));
       setError(message);
+    }
+
+    // 답변을 받는 즉시 화면에 흘린다. 도구를 여러 번 도는 작업은 20초가 넘어서
+    // 아무것도 안 보이면 고장으로 읽힌다.
+    //
+    // 다만 말풍선은 «보여줄 것이 생겼을 때» 만든다. 미리 넣어두면 첫 글자가
+    // 오기 전까지 빈 말풍선이 떠 있고, 아래 "처리하고 있어요" 와 겹쳐 보인다.
+    let bubbleAdded = false;
+    const ensureBubble = () => {
+      if (bubbleAdded) return;
+      bubbleAdded = true;
+      setMessages((previous) => [...previous, { role: 'assistant', content: '' }]);
+    };
+
+    const updateLast = (patch: Partial<Message>) => {
+      ensureBubble();
+      setMessages((previous) => {
+        const next = [...previous];
+        next[next.length - 1] = { ...next[next.length - 1], ...patch };
+        return next;
+      });
+    };
+
+    let streamedText = '';
+    let toolStarted = false;
+
+    function finishInterrupted(message: string) {
+      setError(message);
+      const conversation = [
+        ...history,
+        {
+          role: 'assistant',
+          content: `${streamedText}\n\n(응답이 중간에 끊겼다. 이 요청에서 이미 실행된 도구가 있을 수 있으니 다시 실행하기 전에 조회로 확인한다.)`,
+        },
+      ];
+      conversationRef.current = conversation;
+      if (bubbleAdded) updateLast({ runningTool: undefined });
+      enqueueSave(async () => {
+        const id = await turnSession;
+        if (!id) return;
+        await appendMessage(id, {
+          role: 'assistant',
+          content: streamedText,
+          contentBlocks: conversation,
+        });
+      });
     }
 
     try {
@@ -435,37 +463,16 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
         return;
       }
 
-      // 답변을 받는 즉시 화면에 흘린다. 도구를 여러 번 도는 작업은 20초가 넘어서
-      // 아무것도 안 보이면 고장으로 읽힌다.
-      //
-      // 다만 말풍선은 «보여줄 것이 생겼을 때» 만든다. 미리 넣어두면 첫 글자가
-      // 오기 전까지 빈 말풍선이 떠 있고, 아래 "처리하고 있어요" 와 겹쳐 보인다.
-      let bubbleAdded = false;
-      const ensureBubble = () => {
-        if (bubbleAdded) return;
-        bubbleAdded = true;
-        setMessages((previous) => [...previous, { role: 'assistant', content: '' }]);
-      };
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let streamedText = '';
+      let settled = false;
       let data: {
         message?: string;
         toolCalls?: { name: string; input?: unknown; result?: unknown }[];
         consumedIds?: string[];
         conversation?: unknown[];
       } = {};
-
-      const updateLast = (patch: Partial<Message>) => {
-        ensureBubble();
-        setMessages((previous) => {
-          const next = [...previous];
-          next[next.length - 1] = { ...next[next.length - 1], ...patch };
-          return next;
-        });
-      };
 
       while (true) {
         const { value, done } = await reader.read();
@@ -485,13 +492,22 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
             streamedText += parsed.text as string;
             updateLast({ content: streamedText });
           } else if (event === 'tool') {
+            toolStarted = true;
             updateLast({ runningTool: parsed.status === 'running' ? parsed.name : undefined });
           } else {
             // done · aborted · error 는 모두 마지막 상태를 싣고 온다.
+            settled = true;
             data = parsed;
             if (event === 'error') setError(parsed.message ?? '요청을 처리하지 못했습니다.');
           }
         }
+      }
+
+      if (!settled) {
+        finishInterrupted(
+          '응답이 중간에 끊겼습니다. 일부 작업이 이미 반영됐을 수 있으니 확인한 뒤 다시 요청해 주세요.'
+        );
+        return;
       }
 
       if (Array.isArray(data.conversation)) {
@@ -520,19 +536,20 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
       });
 
       const consumed = data.consumedIds ?? [];
-      if (consumed.length > 0) {
-        carriedRef.current = carriedRef.current.filter(
-          (a) => !consumed.includes(a.id)
-        );
-      }
+      const unused = files.filter((a) => !consumed.includes(a.id));
+      setFiles((previous) => [...unused, ...previous]);
     } catch (error) {
-      if ((error as Error)?.name === 'AbortError') {
+      if (toolStarted) {
+        finishInterrupted(
+          (error as Error)?.name === 'AbortError'
+            ? '중단했습니다. 멈추기 전에 실행된 작업은 이미 반영됐을 수 있으니 확인해 주세요.'
+            : '연결이 끊겼습니다. 일부 작업이 이미 반영됐을 수 있으니 확인한 뒤 다시 요청해 주세요.'
+        );
+      } else if ((error as Error)?.name === 'AbortError') {
         // 사용자가 Esc 로 멈춘 것이다. 실패가 아니므로 보낸 말과 첨부를 되돌린다.
-        setMessages((previous) => previous.slice(0, -1));
+        setMessages((previous) => previous.slice(0, shownBefore));
         setInput(text);
         setFiles(files);
-        const returned = new Set(files.map((a) => a.id));
-        carriedRef.current = carriedRef.current.filter((a) => !returned.has(a.id));
         // conversationRef 는 건드리지 않는다. 이번 턴은 서버 응답을 받아야 들어가므로
         // 여기서 자르면 직전에 성공한 턴이 날아간다.
       } else {

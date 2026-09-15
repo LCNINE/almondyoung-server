@@ -29,7 +29,6 @@ function ctx(): SkillContext {
     coreHeaders: async () => ({}),
     coreApiUrl: 'http://core',
     fileServiceUrl: 'http://files',
-    selfUrl: 'http://admin',
     attachments: [],
   };
 }
