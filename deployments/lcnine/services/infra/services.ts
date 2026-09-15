@@ -129,6 +129,9 @@ export function setup(infra: SharedInfra) {
   const anthropicApiKey = new sst.Secret('AnthropicApiKey');
   // 검색어·상품명 임베딩용 OpenAI API key. 없으면 벡터 없이 키워드 검색만 동작한다.
   const openAiApiKey = new sst.Secret('OpenAiApiKey');
+  // admin-web AI 어시스턴트(챗봇)용 OpenAI API key. 없으면 챗봇이 503 을 낸다.
+  // 위 OpenAiApiKey(임베딩용)와 «다른 키»다 — 용도가 갈리므로 secret 도 나눈다.
+  const productAiOpenAiApiKey = new sst.Secret('ProductAiOpenAiApiKey');
 
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
@@ -718,6 +721,7 @@ export function setup(infra: SharedInfra) {
       // 저장할 수 없다. NEXT_PUBLIC_ 이라 빌드 타임에 박히므로 값이 바뀌면 재빌드가 필요하다.
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       ANTHROPIC_API_KEY: anthropicApiKey.value,
+      PRODUCT_AI_OPENAI_API_KEY: productAiOpenAiApiKey.value,
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
       OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
