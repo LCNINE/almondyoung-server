@@ -229,10 +229,26 @@ it('preserves an uncertain outbound operation when login restores saved work', a
   });
 });
 
-it('ignores a late account A scope result after logout and account B login', async () => {
+it('keeps account B scan allowance after a late account A scope result', async () => {
   let resolveAccountA!: (response: Response) => void;
   const accountA = new Promise<Response>((resolve) => {
     resolveAccountA = resolve;
+  });
+  const accountBScope = JSON.stringify([apiBaseUrl, 'worker-b']);
+  const store = createOperationStore();
+  await store.begin({
+    id: 'account-b-scan',
+    scope: accountBScope,
+    resource: '/shipments/shipment-b',
+    method: 'POST',
+    path: '/shipments/shipment-b/location-outbound-scans',
+    bodyJson: JSON.stringify({
+      warehouseId: 'warehouse-b',
+      sourceLocationId: 'location-b',
+      barcode: '8801',
+      quantity: 1,
+    }),
+    createdAt: Date.now(),
   });
   fetchHandler = async (...args) => {
     const authorization = new Headers(args[1]?.headers).get('Authorization');
@@ -245,8 +261,16 @@ it('ignores a late account A scope result after logout and account B login', asy
   };
   activeToken = 'token-a';
   renderBoundary(
-    <WorkArea kind="inbound">
-      <button>계정 작업</button>
+    <WorkArea
+      kind="outbound"
+      scanAllowance={{
+        path: '/shipments/shipment-b/location-outbound-scans',
+        operationId: 'account-b-scan',
+        warehouseId: 'warehouse-b',
+        sourceLocationId: 'location-b',
+      }}
+    >
+      <button>계정 B 스캔</button>
     </WorkArea>
   );
 
@@ -266,7 +290,7 @@ it('ignores a late account A scope result after logout and account B login', asy
     await session.login();
   });
   await waitFor(() =>
-    expect(screen.getByText('계정 작업').closest('[inert]')).toBeNull()
+    expect(screen.getByText('계정 B 스캔').closest('[inert]')).toBeNull()
   );
 
   await act(async () => {
@@ -280,7 +304,11 @@ it('ignores a late account A scope result after logout and account B login', asy
     await accountA;
   });
 
-  expect(screen.getByText('계정 작업').closest('[inert]')).toBeNull();
+  expect(screen.getByText('계정 B 스캔').closest('[inert]')).toBeNull();
+  expect(await store.get('account-b-scan')).toMatchObject({
+    scope: accountBScope,
+    status: 'queued',
+  });
   expect(
     screen.queryByText(
       '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
