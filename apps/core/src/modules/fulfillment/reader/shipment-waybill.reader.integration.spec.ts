@@ -116,6 +116,32 @@ describeIfDb('ShipmentWaybillReader', () => {
     });
   });
 
+  it('완료 송장은 활성 작업 없이 shipped로 조회된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const service = assembleSimpleOutbound(tx);
+      const state = await service.scan(
+        fixture.shipmentId,
+        {
+          barcode: fixture.barcode,
+          quantity: 1,
+          actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      expect(state.status).toBe('shipped');
+      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      expect(await reader.byTrackingNo(fixture.trackingNo)).toMatchObject({
+        shipmentId: fixture.shipmentId,
+        shipmentStatus: 'shipped',
+        workItemId: null,
+        batchId: null,
+        workItemStatus: null,
+      });
+    });
+  });
+
   it('없는 운송장번호는 404 다', async () => {
     await inRollbackTx(db, async (tx) => {
       const reader = new ShipmentWaybillReader(ambientDbService(tx));

@@ -4,6 +4,8 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { AuthorizationService, ScopeGuard } from '@app/authorization';
 import * as request from 'supertest';
+import { LocationOutboundController } from '../../../fulfillment/controllers/location-outbound.controller';
+import { LocationOutboundService } from '../../../fulfillment/services/location-outbound.service';
 import { WarehouseWorkContextController } from './warehouse-work-context.controller';
 import { InventoryController } from './inventory.controller';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -26,6 +28,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     const module = await Test.createTestingModule({
       controllers: [
         WarehouseWorkContextController,
+        LocationOutboundController,
         InventoryController,
         InboundController,
         MovementController,
@@ -33,6 +36,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       ],
       providers: [
         ScopeGuard,
+        { provide: LocationOutboundService, useValue: { force: mutation } },
         {
           provide: AuthorizationService,
           useValue: {
@@ -40,10 +44,14 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
               Promise.resolve(
                 new Set(
                   roles.includes('manager')
-                    ? ['inventory.operate', 'inventory.manage', 'inventory.adjust']
-                    : roles.includes('worker')
-                      ? ['inventory.operate']
-                      : [],
+                    ? ['inventory.operate', 'inventory.manage', 'inventory.adjust', 'fulfillment.dispatch.force']
+                    : roles.includes('mapped_master')
+                      ? ['master']
+                      : roles.includes('custom_force')
+                        ? ['inventory.operate', 'fulfillment.dispatch.force']
+                        : roles.includes('worker')
+                          ? ['inventory.operate']
+                          : [],
                 ),
               ),
           },
@@ -81,7 +89,50 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
       capabilities: { stocktakingAddCountItem: true, locationOutbound: true },
+      permissions: { forceDispatch: false },
     });
+  });
+  it.each([
+    ['worker', false],
+    ['manager', true],
+    ['custom_force', true],
+    ['master', true],
+    ['mapped_master', true],
+  ])('matches the actual force guard for %s', async (role, forceDispatch) => {
+    const context = await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', role)
+      .expect(200);
+    expect(context.body).toHaveProperty('permissions', { forceDispatch });
+    await request(app.getHttpServer() as Server)
+      .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
+      .set('x-test-role', role)
+      .set('Idempotency-Key', 'check-force')
+      .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
+      .expect(forceDispatch ? 201 : 403);
+  });
+  it('keeps ordinary work available but denies force when its permission preview lookup fails', async () => {
+    const source = app.get(AuthorizationService);
+    const lookup = jest
+      .spyOn(source, 'getScopesByRoles')
+      .mockResolvedValueOnce(new Set(['inventory.operate']))
+      .mockRejectedValueOnce(new Error('mapping lookup unavailable'))
+      .mockRejectedValueOnce(new Error('mapping lookup unavailable'));
+    try {
+      const context = await request(app.getHttpServer() as Server)
+        .get('/inventory/work-context')
+        .set('x-test-role', 'manager')
+        .expect(200);
+      expect(context.body).toHaveProperty('permissions', { forceDispatch: false });
+      await request(app.getHttpServer() as Server)
+        .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
+        .set('x-test-role', 'manager')
+        .send({})
+        .expect(403);
+      expect(mutation).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
   });
   it('fails closed for anonymous work context and ordinary worker diagnostics', async () => {
     await request(app.getHttpServer() as Server)

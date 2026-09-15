@@ -18,9 +18,15 @@ import {
 } from '../../core/hardware/scan/useWorkScanQueue';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
-import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
+import {
+  useWorkCapabilities,
+  useWorkPermissions,
+} from '../../core/operations/useWorkCapabilities';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
-import { WorkArea } from '../../core/operations/WorkBoundary';
+import {
+  WorkArea,
+  useWorkAreaBlocked,
+} from '../../core/operations/WorkBoundary';
 import { clearLastBox } from './lastBox';
 import {
   useLocationOutbound,
@@ -46,6 +52,7 @@ function LocationWork({
   const shipmentId = shipment.shipmentId;
   const runtime = useWorkRuntime();
   const capabilities = useWorkCapabilities();
+  const permissions = useWorkPermissions();
   const operations = useLocationOutbound();
   const initial = useRef({
     startKey: crypto.randomUUID(),
@@ -95,12 +102,16 @@ function LocationWork({
     let live = true;
     let requested = false;
     let running = false;
+    let initialRecovery = true;
     async function recover() {
       requested = true;
       if (running || busyRef.current) return;
       running = true;
-      busyRef.current = true;
-      setBusy(true);
+      const locksIntake = initialRecovery;
+      if (locksIntake) {
+        busyRef.current = true;
+        setBusy(true);
+      }
       try {
         // A restored operation can finish while the first read is in flight.
         // Keep its notification so we read the committed state afterward.
@@ -117,8 +128,11 @@ function LocationWork({
         if (live) setNotice(errorMessage(e, 'outbound'));
       } finally {
         running = false;
-        busyRef.current = false;
-        if (live) setBusy(false);
+        initialRecovery = false;
+        if (locksIntake) {
+          busyRef.current = false;
+          if (live) setBusy(false);
+        }
       }
     }
     void recover().catch((e) => {
@@ -133,7 +147,12 @@ function LocationWork({
     };
   }, [draft.ready, runtime]);
   const queue = useWorkScanQueue<ScanInput>(async (input, id) => {
-    if (workRef.current?.status === 'shipped') return;
+    if (workRef.current?.status === 'shipped') {
+      setNotice(
+        '출고가 이미 완료되어 남은 스캔은 반영되지 않았어요. 포장 수량을 다시 확인해 주세요.'
+      );
+      return;
+    }
     try {
       const result = await operations.scan.mutateAsync({
         shipmentId,
@@ -154,7 +173,26 @@ function LocationWork({
   const source = work?.sources.find(
     (item) => item.sourceLocationId === draft.value.sourceId
   );
+  const scanAllowance = source
+    ? {
+        path: `/shipments/${shipmentId}/location-outbound-scans`,
+        operationId: queue.head()?.id,
+        warehouseId,
+        sourceLocationId: source.sourceLocationId,
+      }
+    : undefined;
+  const areaBlocked = useWorkAreaBlocked('outbound');
+  const scanAreaBlocked = useWorkAreaBlocked('outbound', scanAllowance);
+  const intakeBlocked =
+    busy ||
+    !queue.ready ||
+    !!queue.error() ||
+    forceOpen ||
+    !draft.ready ||
+    !!draft.error ||
+    scanAreaBlocked;
   const blocked =
+    areaBlocked ||
     busy ||
     queue.blocked() ||
     operations.force.isPending ||
@@ -163,6 +201,7 @@ function LocationWork({
   async function chooseSource(id: string) {
     if (
       blocked ||
+      queue.blocked() ||
       forceOpen ||
       busyRef.current ||
       !work?.sources.some(
@@ -199,7 +238,8 @@ function LocationWork({
       !work ||
       work.status === 'shipped' ||
       busyRef.current ||
-      forceOpen ||
+      intakeBlocked ||
+      !!queue.error() ||
       mode !== 'product' ||
       !source ||
       count === null ||
@@ -217,16 +257,24 @@ function LocationWork({
     });
     editQuantity('1');
   }
-  useScanner((event) => {
-    if (forceOpen || busyRef.current) return;
-    if (mode === 'location') chooseCode(event.code);
-    else acceptProduct(event.code);
-  });
+  const scanHandler = useRef<(code: string) => void>(() => {});
+  scanHandler.current = (code) => {
+    // The subscription may still be from a previous render. Always evaluate
+    // the current source and lock policy, including synchronous queue failures.
+    if (intakeBlocked || busyRef.current || queue.error()) return;
+    if (mode === 'location') chooseCode(code);
+    else acceptProduct(code);
+  };
+  useScanner((event) => scanHandler.current(event.code));
   const skuName = (skuId: string) =>
     shipment.lines.find((line) => line.skuId === skuId)?.skuName ??
     '상품 확인 필요';
   const remaining = work?.sources.filter((item) => item.remainingQty > 0) ?? [];
   const supported = capabilities.data?.locationOutbound === true;
+  const canForce =
+    permissions.isSuccess &&
+    !permissions.isFetching &&
+    permissions.data.forceDispatch === true;
   const canConfirm =
     remaining.length > 0 ||
     (!!work?.lines.length &&
@@ -243,11 +291,16 @@ function LocationWork({
     );
   return (
     <div className="space-y-4">
-      <ScreenHeader title="출고작업" backTo="/outbound" />
+      <WorkArea kind="outbound">
+        <ScreenHeader title="출고작업" backTo="/outbound" />
+      </WorkArea>
       <p>
         {shipment.carrier} {shipment.trackingNo} · {shipment.recipientMasked}
       </p>
       {notice && <p role="alert">{notice}</p>}
+      {(busy || !draft.ready || !queue.ready) && !queue.error() && (
+        <p role="status">작업을 확인하고 있어요. 잠시만 기다려 주세요.</p>
+      )}
       {!supported && !capabilities.isPending && (
         <p role="alert">
           위치를 확인하는 출고를 사용하려면 서버 연결과 업데이트를 확인해
@@ -257,6 +310,16 @@ function LocationWork({
       )}
       {!!draft.error && (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
+      )}
+      {!!queue.error() && (
+        <p role="alert">
+          {queue.storageError()
+            ? SCAN_STORAGE_MESSAGE
+            : '출고 처리 내역을 먼저 확인해 주세요.'}
+          <Button onClick={() => void queue.retryHead().catch(() => {})}>
+            처리 내역 확인
+          </Button>
+        </p>
       )}
       {!work ? (
         <Button
@@ -299,9 +362,11 @@ function LocationWork({
       ) : work.status === 'shipped' ? (
         <section>
           <p className="text-xl font-semibold">출고완료</p>
-          <Link to="/outbound">
-            <Button>다음 송장 스캔</Button>
-          </Link>
+          <WorkArea kind="outbound">
+            <Link to="/outbound" disabled={blocked}>
+              <Button disabled={blocked}>다음 송장 스캔</Button>
+            </Link>
+          </WorkArea>
         </section>
       ) : (
         <>
@@ -317,188 +382,196 @@ function LocationWork({
               </li>
             ))}
           </ul>
-          {mode === 'location' ? (
-            <OutboundSourcePicker
-              sources={work.sources}
-              disabled={blocked || forceOpen}
-              onSelect={(id) => void chooseSource(id)}
-              onCode={chooseCode}
-            />
-          ) : (
-            <div className="flex gap-3">
-              <p>
-                출발 위치: {source?.sourceLocationCode ?? '다시 선택해 주세요'}
-              </p>
-              <Button
+          <WorkArea kind="outbound">
+            {mode === 'location' ? (
+              <OutboundSourcePicker
+                sources={work.sources}
                 disabled={blocked || forceOpen}
-                onClick={() => setMode('location')}
+                onSelect={(id) => void chooseSource(id)}
+                onCode={chooseCode}
+              />
+            ) : (
+              <div className="flex gap-3">
+                <p>
+                  출발 위치:{' '}
+                  {source?.sourceLocationCode ?? '다시 선택해 주세요'}
+                </p>
+                <Button
+                  disabled={blocked || forceOpen}
+                  onClick={() => {
+                    if (!queue.blocked() && !busyRef.current)
+                      setMode('location');
+                  }}
+                >
+                  위치 변경
+                </Button>
+              </div>
+            )}
+          </WorkArea>
+          <WorkArea kind="outbound" scanAllowance={scanAllowance}>
+            <QuantityInput
+              label="다음 스캔 수량"
+              value={quantity}
+              onChange={editQuantity}
+              min={1}
+              disabled={intakeBlocked}
+            />
+            <BarcodeInput
+              label="출고 상품 바코드"
+              disabled={!source || mode !== 'product' || intakeBlocked}
+              onSubmit={acceptProduct}
+            />
+          </WorkArea>
+          <WorkArea kind="outbound">
+            {canForce ? (
+              <Button
+                disabled={blocked || !canConfirm}
+                onClick={() => {
+                  if (queue.blocked() || busyRef.current) return;
+                  setForceOpen(true);
+                  setReason('');
+                  setCounts({});
+                  setForceKey(crypto.randomUUID());
+                }}
               >
-                위치 변경
+                스캔 생략 확인
               </Button>
-            </div>
-          )}
-          <QuantityInput
-            label="다음 스캔 수량"
-            value={quantity}
-            onChange={editQuantity}
-            min={1}
-            disabled={blocked || forceOpen}
-          />
-          <BarcodeInput
-            label="출고 상품 바코드"
-            disabled={
-              !source ||
-              mode !== 'product' ||
-              busy ||
-              forceOpen ||
-              !!draft.error
-            }
-            onSubmit={acceptProduct}
-          />
-          {!!queue.error() && (
-            <p role="alert">
-              {queue.storageError()
-                ? SCAN_STORAGE_MESSAGE
-                : '출고 처리 내역을 먼저 확인해 주세요.'}
-              <Button onClick={() => void queue.retryHead().catch(() => {})}>
-                처리 내역 확인
-              </Button>
-            </p>
-          )}
-          <Button
-            disabled={blocked || !canConfirm}
-            onClick={() => {
-              setForceOpen(true);
-              setReason('');
-              setCounts({});
-              setForceKey(crypto.randomUUID());
-            }}
-          >
-            스캔 생략 확인
-          </Button>
-          <Button
-            disabled={blocked || forceOpen}
-            onClick={() => {
-              busyRef.current = true;
-              setBusy(true);
-              void refresh()
-                .catch((e) => setNotice(errorMessage(e, 'outbound')))
-                .finally(() => {
-                  busyRef.current = false;
-                  setBusy(false);
-                });
-            }}
-          >
-            작업 새로고침
-          </Button>
+            ) : (
+              <p>
+                스캔 생략 출고는 관리자 권한이 필요해요. 권한을 확인할 수 없으면
+                연결과 로그인을 확인해 주세요.
+              </p>
+            )}
+            <Button
+              disabled={blocked || forceOpen}
+              onClick={() => {
+                busyRef.current = true;
+                setBusy(true);
+                void refresh()
+                  .catch((e) => setNotice(errorMessage(e, 'outbound')))
+                  .finally(() => {
+                    busyRef.current = false;
+                    setBusy(false);
+                  });
+              }}
+            >
+              작업 새로고침
+            </Button>
+          </WorkArea>
         </>
       )}
       {forceOpen && work && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-label="위치별 실물 확인"
-            className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-xl bg-white p-5"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') e.preventDefault();
-            }}
-          >
-            <h2 className="font-semibold">위치별 실물 확인</h2>
-            {remaining.length === 0 && (
-              <p>
-                모든 수량이 피킹되어 있어요. 포장 실물을 확인한 뒤 출고를 완료해
-                주세요.
-              </p>
-            )}
-            <p>각 위치에서 확인한 남은 낱개 수량을 입력해 주세요.</p>
-            {remaining.map((item) => (
-              <QuantityInput
-                key={`${item.shipmentLineId}:${item.sourceLocationId}`}
-                label={`${skuName(item.skuId)} · ${item.sourceLocationCode} 실물 수량 (${item.remainingQty}개 남음)`}
-                value={
-                  counts[`${item.shipmentLineId}:${item.sourceLocationId}`] ??
-                  ''
-                }
-                min={1}
-                max={item.remainingQty}
-                disabled={busy}
-                onChange={(value) => {
-                  setCounts((prev) => ({
-                    ...prev,
-                    [`${item.shipmentLineId}:${item.sourceLocationId}`]: value,
-                  }));
-                  setForceKey(crypto.randomUUID());
-                }}
-              />
-            ))}
-            <label className="block">
-              스캔 생략 사유
-              <input
-                aria-label="스캔 생략 사유"
-                className="w-full rounded border p-2"
-                value={reason}
-                disabled={busy}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setForceKey(crypto.randomUUID());
-                }}
-              />
-            </label>
-            <Button disabled={busy} onClick={() => setForceOpen(false)}>
-              취소
-            </Button>
-            <Button
-              disabled={busy || !forceValid}
-              onClick={async () => {
-                if (busyRef.current) return;
-                busyRef.current = true;
-                setBusy(true);
-                try {
-                  const latest = await operations.read(shipmentId, warehouseId);
-                  if (
-                    outboundRemainingSignature(latest) !==
-                    outboundRemainingSignature(work)
-                  ) {
-                    apply(latest);
-                    setForceOpen(false);
-                    setNotice(
-                      '남은 수량이 바뀌었어요. 최신 위치별 수량을 다시 확인해 주세요.'
-                    );
-                    return;
-                  }
-                  const state = await operations.force.mutateAsync({
-                    shipmentId,
-                    warehouseId,
-                    reason: reason.trim(),
-                    items: remaining.map((item) => ({
-                      shipmentLineId: item.shipmentLineId,
-                      sourceLocationId: item.sourceLocationId,
-                      quantity: parseQuantity(
-                        counts[
-                          `${item.shipmentLineId}:${item.sourceLocationId}`
-                        ],
-                        1
-                      )!,
-                    })),
-                    idempotencyKey: forceKey,
-                  });
-                  apply(state);
-                  setForceOpen(false);
-                } catch (e) {
-                  setNotice(errorMessage(e, 'outbound'));
-                  setForceOpen(false);
-                  await refresh().catch(() => {});
-                } finally {
-                  busyRef.current = false;
-                  setBusy(false);
-                }
+        <WorkArea kind="outbound">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-label="위치별 실물 확인"
+              className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-xl bg-white p-5"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.preventDefault();
               }}
             >
-              확인한 수량 출고
-            </Button>
-          </section>
-        </div>
+              <h2 className="font-semibold">위치별 실물 확인</h2>
+              {remaining.length === 0 && (
+                <p>
+                  모든 수량이 피킹되어 있어요. 포장 실물을 확인한 뒤 출고를
+                  완료해 주세요.
+                </p>
+              )}
+              <p>각 위치에서 확인한 남은 낱개 수량을 입력해 주세요.</p>
+              {remaining.map((item) => (
+                <QuantityInput
+                  key={`${item.shipmentLineId}:${item.sourceLocationId}`}
+                  label={`${skuName(item.skuId)} · ${item.sourceLocationCode} 실물 수량 (${item.remainingQty}개 남음)`}
+                  value={
+                    counts[`${item.shipmentLineId}:${item.sourceLocationId}`] ??
+                    ''
+                  }
+                  min={1}
+                  max={item.remainingQty}
+                  disabled={busy}
+                  onChange={(value) => {
+                    setCounts((prev) => ({
+                      ...prev,
+                      [`${item.shipmentLineId}:${item.sourceLocationId}`]:
+                        value,
+                    }));
+                    setForceKey(crypto.randomUUID());
+                  }}
+                />
+              ))}
+              <label className="block">
+                스캔 생략 사유
+                <input
+                  aria-label="스캔 생략 사유"
+                  className="w-full rounded border p-2"
+                  value={reason}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setForceKey(crypto.randomUUID());
+                  }}
+                />
+              </label>
+              <Button disabled={busy} onClick={() => setForceOpen(false)}>
+                취소
+              </Button>
+              <Button
+                disabled={busy || !forceValid}
+                onClick={async () => {
+                  if (busyRef.current) return;
+                  busyRef.current = true;
+                  setBusy(true);
+                  try {
+                    const latest = await operations.read(
+                      shipmentId,
+                      warehouseId
+                    );
+                    if (
+                      outboundRemainingSignature(latest) !==
+                      outboundRemainingSignature(work)
+                    ) {
+                      apply(latest);
+                      setForceOpen(false);
+                      setNotice(
+                        '남은 수량이 바뀌었어요. 최신 위치별 수량을 다시 확인해 주세요.'
+                      );
+                      return;
+                    }
+                    const state = await operations.force.mutateAsync({
+                      shipmentId,
+                      warehouseId,
+                      reason: reason.trim(),
+                      items: remaining.map((item) => ({
+                        shipmentLineId: item.shipmentLineId,
+                        sourceLocationId: item.sourceLocationId,
+                        quantity: parseQuantity(
+                          counts[
+                            `${item.shipmentLineId}:${item.sourceLocationId}`
+                          ],
+                          1
+                        )!,
+                      })),
+                      idempotencyKey: forceKey,
+                    });
+                    apply(state);
+                    setForceOpen(false);
+                  } catch (e) {
+                    setNotice(errorMessage(e, 'outbound'));
+                    setForceOpen(false);
+                    await refresh().catch(() => {});
+                  } finally {
+                    busyRef.current = false;
+                    setBusy(false);
+                  }
+                }}
+              >
+                확인한 수량 출고
+              </Button>
+            </section>
+          </div>
+        </WorkArea>
       )}
     </div>
   );
@@ -514,7 +587,7 @@ export function LocationOutboundScreen({
 }) {
   const { warehouseId } = useWarehouse();
   return (
-    <WorkArea kind="outbound">
+    <>
       {!shipment ||
       shipment.shipmentId !== shipmentId ||
       !warehouseId ||
@@ -536,6 +609,6 @@ export function LocationOutboundScreen({
           prefs={prefs}
         />
       )}
-    </WorkArea>
+    </>
   );
 }

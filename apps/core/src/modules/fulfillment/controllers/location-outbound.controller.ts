@@ -84,6 +84,18 @@ export class LocationOutboundController {
     );
   }
 
+  @Post(':shipmentId/location-outbound-force-resolutions')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  resolveForce(
+    @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
+    @Body() dto: LocationOutboundConfirmDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.outbound.resolveForce(shipmentId, dto, this.actor(user), this.key(key));
+  }
+
   private actor(user: AuthenticatedUser) {
     const id = user?.userId ?? user?.id ?? user?.sub;
     if (!id) throw new UnauthorizedException('Authenticated actor is required');

@@ -46,6 +46,21 @@ export interface LocationOutboundState extends SimpleOutboundState {
   warehouseId: string;
   sources: OutboundSourceLine[];
 }
+export type LocationOutboundForceRejection = {
+  outcome: 'rejected';
+  code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED';
+};
+export type LocationOutboundForceResolution =
+  | { outcome: 'confirmed'; result: LocationOutboundState }
+  | LocationOutboundForceRejection;
+type LocationOutboundForceCommandResult = LocationOutboundState | LocationOutboundForceRejection;
+const FORCE_NOT_APPLIED: LocationOutboundForceRejection = {
+  outcome: 'rejected',
+  code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+};
+function isForceRejection(result: LocationOutboundForceCommandResult): result is LocationOutboundForceRejection {
+  return 'outcome' in result && result.outcome === 'rejected' && result.code === FORCE_NOT_APPLIED.code;
+}
 type ReadContext = { shipmentId: string; workItemId: string | null; sessionId: string | null; planId: string | null };
 export const LOCATION_OUTBOUND_MAX_QUANTITY = 2147483647;
 const locationCommandKey = (operation: 'start' | 'scan' | 'force', key: string): OutboundCommandKey => ({
@@ -192,14 +207,11 @@ export class LocationOutboundService {
         message: 'Force dispatch scope is required',
       });
     }
-    if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.trim().length > 500)
-      throw new BadRequestException('reason must be between 1 and 500 characters');
-    if (!Array.isArray(input.items)) throw new BadRequestException('items is required');
-    for (const item of input.items) this.assertQuantity(item.quantity);
-    return this.execute(
+    const normalized = this.normalizeForceInput(input);
+    const result = await this.execute<LocationOutboundConfirmInput, LocationOutboundForceCommandResult>(
       'force',
       shipmentId,
-      { ...input, reason: input.reason.trim() },
+      normalized,
       actor,
       idempotencyKey,
       async (trx) => {
@@ -242,15 +254,57 @@ export class LocationOutboundService {
       },
       tx,
     );
+    if (isForceRejection(result)) {
+      throw this.conflict(
+        FORCE_NOT_APPLIED.code,
+        'The original force command was closed without applying inventory changes',
+      );
+    }
+    return result;
   }
 
-  private execute<TInput extends StartLocationOutboundInput>(
+  /** Resolves the original actor-bound command under its existing unique key; never dispatches. */
+  async resolveForce(
+    shipmentId: string,
+    input: LocationOutboundConfirmInput,
+    actor: LocationOutboundActor,
+    idempotencyKey: string,
+    tx?: DbTx,
+  ): Promise<LocationOutboundForceResolution> {
+    const result = await this.execute<LocationOutboundConfirmInput, LocationOutboundForceCommandResult>(
+      'force',
+      shipmentId,
+      this.normalizeForceInput(input),
+      actor,
+      idempotencyKey,
+      async (trx) => {
+        await this.assertWarehouse(shipmentId, input.warehouseId, trx);
+        return FORCE_NOT_APPLIED;
+      },
+      tx,
+    );
+    return isForceRejection(result) ? result : { outcome: 'confirmed', result };
+  }
+
+  private normalizeForceInput(input: LocationOutboundConfirmInput): LocationOutboundConfirmInput {
+    if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.trim().length > 500)
+      throw new BadRequestException('reason must be between 1 and 500 characters');
+    if (!Array.isArray(input.items)) throw new BadRequestException('items is required');
+    for (const item of input.items) this.assertQuantity(item.quantity);
+    // Preserve the original force hash contract, including the submitted item order.
+    return { ...input, reason: input.reason.trim() };
+  }
+
+  private execute<
+    TInput extends StartLocationOutboundInput,
+    TResult extends LocationOutboundForceCommandResult = LocationOutboundState,
+  >(
     command: string,
     shipmentId: string,
     input: TInput,
     actor: LocationOutboundActor,
     key: string,
-    handler: (tx: DbTx) => Promise<LocationOutboundState>,
+    handler: (tx: DbTx) => Promise<TResult>,
     tx?: DbTx,
   ) {
     if (!actor?.id) throw new UnauthorizedException('Authenticated actor is required');
@@ -270,7 +324,7 @@ export class LocationOutboundService {
                 response,
                 resourceType: 'shipment',
                 resourceId: shipmentId,
-                attemptId: response.dispatchAttemptId ?? undefined,
+                attemptId: 'dispatchAttemptId' in response ? (response.dispatchAttemptId ?? undefined) : undefined,
               };
             },
             savepoint,

@@ -136,11 +136,22 @@ export function createOperationStore(name = 'almondwms-work-v2') {
     id: string,
     status: OperationStatus,
     result?: unknown,
-    errorCode?: string
+    errorCode?: string,
+    ownership?: { scope: string; ownerId: string }
   ) =>
     transaction<void>('readwrite', (s, done) => {
       const r = s.get(id);
       r.onsuccess = () => {
+        if (
+          ownership &&
+          (!r.result ||
+            r.result.scope !== ownership.scope ||
+            r.result.ownerId !== ownership.ownerId ||
+            (r.result.leaseExpiresAt ?? 0) <= Date.now())
+        ) {
+          s.transaction.abort();
+          return;
+        }
         if (r.result && !['confirmed', 'rejected'].includes(r.result.status))
           s.put({
             ...r.result,

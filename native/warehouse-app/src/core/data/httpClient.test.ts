@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ConflictError, createApiClient } from './httpClient';
+import { ApiError, ConflictError, createApiClient } from './httpClient';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -102,4 +102,16 @@ it('classifies known barcode and unfinished-count refusals without trapping work
     'CONFLICT',
   ])
     expect(new ConflictError('refused', code).outcome).toBe('rejected');
+});
+
+it('only classifies explicit force non-application as rejected and preserves generic auth uncertainty', () => {
+  expect(
+    new ConflictError('not applied', 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
+      .outcome
+  ).toBe('rejected');
+  for (const status of [401, 403])
+    expect(
+      new ApiError('forbidden', status, 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
+        .outcome
+    ).toBe('uncertain');
 });
