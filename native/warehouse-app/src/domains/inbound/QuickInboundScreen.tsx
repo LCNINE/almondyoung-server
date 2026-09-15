@@ -72,18 +72,20 @@ function QuickInboundScreenContent() {
       staged: typeof reduce === 'function' ? reduce(prev.staged) : reduce,
     }));
   const runtime = useWorkRuntime();
-  const [reconciledKey, setReconciledKey] = useState<string | null>(null);
-  const reconciled = !runtime || reconciledKey === idempotencyKey;
+  const [reconciled, setReconciled] = useState(!runtime);
   const reconcileRef = useRef<(() => Promise<void>) | null>(null);
+  const reconciliation = useRef<Promise<void> | null>(null);
   useEffect(() => {
     if (!runtime || !draft.ready) return;
     let live = true;
     let generation = 0;
     const reconcile = async () => {
       const thisGeneration = ++generation;
-      if (live) setReconciledKey(null);
+      if (live) setReconciled(false);
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
+      if (op && op.status !== 'confirmed' && op.status !== 'rejected')
+        throw new Error('입고 처리 여부를 먼저 확인해 주세요.');
       if (op?.status === 'confirmed' && current.staged.length === 0) {
         const result = op.result as SimpleInboundResult;
         await draft.update((prev) => ({
@@ -196,20 +198,23 @@ function QuickInboundScreenContent() {
           };
         }),
       }));
-      if (live && thisGeneration === generation) setReconciledKey(current.key);
+      if (live && thisGeneration === generation) setReconciled(true);
     };
-    reconcileRef.current = reconcile;
-    void reconcile().catch(() => {
-      if (live) setReconciledKey(null);
-    });
+    const runReconcile = () => {
+      const pending = reconcile();
+      reconciliation.current = pending;
+      return pending;
+    };
+    reconcileRef.current = runReconcile;
+    void runReconcile().catch(() => {});
     const off = runtime.runner.subscribe(
-      () => void reconcile().catch(() => {})
+      () => void runReconcile().catch(() => {})
     );
     return () => {
       live = false;
       off();
     };
-  }, [runtime, draft.ready, idempotencyKey, api, warehouseId]);
+  }, [runtime, draft.ready, api, warehouseId]);
   const [editing, setEditing] = useState<string | null>(null);
   const [quantityText, setQuantityText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -229,8 +234,9 @@ function QuickInboundScreenContent() {
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
     // Restored physical inputs must wait for the original receipt result too.
     if (runtime) {
-      if (!reconcileRef.current) throw new Error('입고 상태를 확인해 주세요.');
-      await reconcileRef.current();
+      if (!reconciliation.current)
+        throw new Error('입고 상태를 확인해 주세요.');
+      await reconciliation.current;
     }
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];

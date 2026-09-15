@@ -335,6 +335,9 @@ it('restores accepted scan counts after remount without sending inventory again'
       screen.queryByText('작업을 불러오고 있어요.')
     ).not.toBeInTheDocument()
   );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -491,4 +494,47 @@ it('keeps confirmed inbound cart locked until original key reconciliation comple
     (await store.draft<{ key: string }>('actor|local:draft:quick-inbound:w-1'))
       ?.key
   ).toBe('confirmed-receipt');
+});
+
+it('retains consecutive scans after initial receipt reconciliation', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let block = false;
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, crypto.randomUUID(), 'quick', (localStore) => {
+    const get = localStore.get;
+    vi.spyOn(localStore, 'get').mockImplementation(async (id) => {
+      if (block) await gate;
+      return get(id);
+    });
+  });
+  const user = userEvent.setup();
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1')
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  block = true;
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  // Once the original receipt was checked, local scans must not reopen that check.
+  expect(screen.getByLabelText('바코드 입력')).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await act(async () => {
+    block = false;
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('3')
+  );
 });
