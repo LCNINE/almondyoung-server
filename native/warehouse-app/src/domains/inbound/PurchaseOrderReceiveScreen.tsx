@@ -26,7 +26,14 @@ import {
 } from './mutations';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { ReceiveSheet } from './ReceiveSheet';
-import { PoReceiveScanNotAppliedError } from './poReceiveScanError';
+import { ReceiveScanRecovery } from './ReceiveScanRecovery';
+import {
+  PoReceiveBarcodeNotFoundError,
+  PoReceiveConfirmedUnappliedError,
+  PoReceiveDifferentSkuError,
+  PoReceiveScanNotAppliedError,
+  PoReceiveSkuNotInOrderError,
+} from './poReceiveScanError';
 import type { ExpectedArrivalLine, FreshLine } from './types';
 
 function createReadinessGate() {
@@ -275,13 +282,19 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     const matched = sku
       ? linesRef.current.find((line) => line.skuId === sku.id)
       : undefined;
-    if (!sku || !matched) {
+    if (!sku) {
+      if (current.active) throw new PoReceiveBarcodeNotFoundError();
+      setNotice('이 발주에 없는 품목이에요.');
+      return;
+    }
+    if (!matched) {
+      if (current.active) throw new PoReceiveSkuNotInOrderError();
       setNotice('이 발주에 없는 품목이에요.');
       return;
     }
     const step = scanIncrement(sku, code);
     if (current.active && current.active.skuId !== sku.id) {
-      throw new Error('다른 품목이에요. 지금 수량을 먼저 확인해 주세요.');
+      throw new PoReceiveDifferentSkuError();
     }
     setNotice(null);
     await draft.update((prev) => ({
@@ -324,6 +337,63 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       return;
     closeSheet();
   }
+  const recoveryLock = useRef(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryActionError, setRecoveryActionError] = useState<string | null>(
+    null
+  );
+  const scanError = scanQueue.error();
+  useEffect(() => setRecoveryActionError(null), [scanError]);
+  async function runScanRecovery(
+    action: () => Promise<void>,
+    failureMessage: string
+  ) {
+    if (recoveryLock.current) return;
+    recoveryLock.current = true;
+    setRecoveryBusy(true);
+    setRecoveryActionError(null);
+    try {
+      await action();
+    } catch {
+      setRecoveryActionError(failureMessage);
+    } finally {
+      recoveryLock.current = false;
+      setRecoveryBusy(false);
+    }
+  }
+  const scanRecovery = scanError ? (
+    <ReceiveScanRecovery
+      message={
+        recoveryActionError ??
+        (scanQueue.storageError()
+          ? SCAN_STORAGE_MESSAGE
+          : scanError instanceof PoReceiveConfirmedUnappliedError
+            ? scanError.message
+            : '상품을 확인하지 못했어요. 다시 확인해 주세요.')
+      }
+      busy={recoveryBusy}
+      canRetry={
+        !(scanError instanceof PoReceiveConfirmedUnappliedError) ||
+        scanError instanceof PoReceiveScanNotAppliedError
+      }
+      canExclude={
+        scanError instanceof PoReceiveConfirmedUnappliedError &&
+        !draft.value.submitted
+      }
+      onRetry={() =>
+        void runScanRecovery(
+          () => scanQueue.retryHead(),
+          '상품을 다시 확인하지 못했어요. 잠시 후 다시 확인해 주세요.'
+        )
+      }
+      onExclude={() =>
+        void runScanRecovery(
+          () => scanQueue.rejectHead(),
+          '이 스캔을 제외하지 못했어요. 저장 공간을 확인한 뒤 다시 시도해 주세요.'
+        )
+      }
+    />
+  ) : null;
   const discardInput = canDiscardInput ? (
     <Button
       type="button"
@@ -388,21 +458,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {draft.error ? (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
       ) : null}
-      {scanQueue.error() ? (
-        <p role="alert">
-          {scanQueue.storageError()
-            ? SCAN_STORAGE_MESSAGE
-            : '상품을 확인하지 못했어요.'}{' '}
-          <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
-            다시 확인
-          </Button>
-          {!scanQueue.storageError() && (
-            <Button onClick={() => void scanQueue.rejectHead()}>
-              이 스캔 제외
-            </Button>
-          )}
-        </p>
-      ) : null}
+      {!activeItem ? scanRecovery : null}
       {notice ? (
         <p
           role="alert"
@@ -531,6 +587,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             receive.isError ? errorMessage(receive.error, 'po-receive') : null
           }
           statusContent={sheetStatus}
+          recovery={scanRecovery}
           onCancel={() => void discardDraftInput()}
           onSubmit={(quantity) =>
             submitReceive(

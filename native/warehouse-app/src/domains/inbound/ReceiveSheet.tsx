@@ -14,6 +14,7 @@ export function ReceiveSheet({
   cancelDisabled = false,
   error,
   statusContent,
+  recovery,
   onSubmit,
   onCancel,
 }: {
@@ -32,6 +33,8 @@ export function ReceiveSheet({
   error?: string | null;
   /** 조회·복원 안내와 복구 조작. 입력 잠금 fieldset 밖에서 계속 조작할 수 있다. */
   statusContent?: ReactNode;
+  /** 현재 스캔 오류 복구. 입력 잠금 fieldset 밖에서 계속 조작할 수 있다. */
+  recovery?: ReactNode;
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
 }) {
@@ -106,6 +109,8 @@ export function ReceiveSheet({
         ) : null}
 
         {statusContent}
+
+        {recovery}
 
         <div className="flex gap-2">
           <Button

@@ -110,6 +110,21 @@ const skuB = {
     },
   ],
 };
+const skuOutsideOrder = {
+  id: 'sku-c',
+  code: 'ALMOND-C',
+  name: '아몬드 재킷',
+  currentStock: 2,
+  safetyStock: 1,
+  barcodes: [
+    {
+      id: 'barcode-c',
+      barcode: '880000000003',
+      isPrimary: true,
+      packingUnit: null,
+    },
+  ],
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -142,11 +157,29 @@ async function fixture(
   await store.draft('scope:draft:po-inbound:w-1:po-1', () => savedDraft);
   await store.draft('scope:scan:po-inbound:w-1:po-1', () => savedScans);
   await setupStore?.(store);
+  const persistedDraft = store.draft.bind(store);
+  let scanWriteFailures = 0;
+  store.draft = ((id: string, update?: (value: unknown) => unknown) => {
+    if (
+      scanWriteFailures > 0 &&
+      id === 'scope:scan:po-inbound:w-1:po-1' &&
+      update
+    ) {
+      scanWriteFailures -= 1;
+      return Promise.reject(new Error('scan storage unavailable'));
+    }
+    return persistedDraft(id, update);
+  }) as typeof store.draft;
   const firstArrivals = deferred<ExpectedArrivalsResult>();
   const arrivalReaders = new Map<string, () => Promise<ExpectedArrivalsResult>>(
     [['w-1', () => firstArrivals.promise]]
   );
   const lookupCodes: string[] = [];
+  const lookupReaders = new Map<string, () => Promise<(typeof skuA)[]>>([
+    ['880000000001', async () => [skuA]],
+    ['880000000002', async () => [skuB]],
+    ['880000000003', async () => [skuOutsideOrder]],
+  ]);
   const requests: Parameters<ApiClient['request']>[0][] = [];
   const api: ApiClient = {
     request: async <T,>(request: Parameters<ApiClient['request']>[0]) => {
@@ -162,9 +195,7 @@ async function fixture(
       if (request.path.startsWith('/inventory/skus?barcode=')) {
         const code = decodeURIComponent(request.path.split('barcode=')[1]);
         lookupCodes.push(code);
-        if (code === '880000000001') return [skuA] as T;
-        if (code === '880000000002') return [skuB] as T;
-        return [] as T;
+        return ((await lookupReaders.get(code)?.()) ?? []) as T;
       }
       if (request.path === '/purchase-orders/po-1/receipts') {
         const body = request.body as {
@@ -254,6 +285,12 @@ async function fixture(
     answerArrivalsFor(warehouseId: string, value: ExpectedArrivalsResult) {
       arrivalReaders.set(warehouseId, async () => value);
     },
+    answerLookupFor(code: string, read: () => Promise<(typeof skuA)[]>) {
+      lookupReaders.set(code, read);
+    },
+    failNextScanWrite() {
+      scanWriteFailures += 1;
+    },
     draft: (warehouseId = 'w-1', poId = 'po-1') =>
       store.draft<Draft>(`scope:draft:po-inbound:${warehouseId}:${poId}`),
     savedScans: () =>
@@ -262,6 +299,273 @@ async function fixture(
       ),
   };
 }
+
+it('excludes a different purchase-order SKU inside the open sheet and continues the current SKU', async () => {
+  const f = await fixture(
+    {
+      active: null,
+      scanBump: 0,
+      seen: [],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-a-1', data: '880000000001' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await waitFor(() =>
+    expect(
+      within(sheet).getByText('1', { selector: 'div' })
+    ).toBeInTheDocument()
+  );
+
+  act(() => emitScan('880000000002'));
+  expect(
+    await within(sheet).findByText(
+      '다른 상품을 찍었어요. 현재 상품 수량은 유지됩니다.'
+    )
+  ).toBeInTheDocument();
+  const exclude = within(sheet).getByRole('button', {
+    name: '이 스캔 제외',
+  });
+  expect(exclude).toBeEnabled();
+  expect(within(sheet).getByRole('button', { name: '입고' })).toBeDisabled();
+
+  await userEvent.click(exclude);
+  await waitFor(() =>
+    expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+  expect(await f.draft()).toMatchObject({
+    active: lineA,
+    scanBump: 1,
+  });
+  expect(
+    f.requests.filter(
+      (request) => request.path === '/purchase-orders/po-1/receipts'
+    )
+  ).toHaveLength(0);
+
+  act(() => emitScan('880000000001'));
+  await waitFor(() =>
+    expect(
+      within(sheet).getByText('2', { selector: 'div' })
+    ).toBeInTheDocument()
+  );
+  await userEvent.click(within(sheet).getByRole('button', { name: '입고' }));
+  await screen.findByText('아몬드 셔츠 2개 입고됨');
+  const receiptRequests = f.requests.filter(
+    (request) => request.path === '/purchase-orders/po-1/receipts'
+  );
+  expect(receiptRequests).toHaveLength(1);
+  expect(receiptRequests[0].body).toMatchObject({
+    lines: [{ skuId: 'sku-a', quantity: 2 }],
+  });
+});
+
+it('retries a barcode lookup failure inside the sheet and applies the scan once', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-a-2', data: '880000000001' }]
+  );
+  let lookupAttempts = 0;
+  f.answerLookupFor('880000000001', async () => {
+    lookupAttempts += 1;
+    if (lookupAttempts === 1) throw new Error('lookup unavailable');
+    return [skuA];
+  });
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByText(
+    '상품을 확인하지 못했어요. 다시 확인해 주세요.'
+  );
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+
+  const retriedLookup = deferred<(typeof skuA)[]>();
+  f.answerLookupFor('880000000001', () => retriedLookup.promise);
+  const retry = within(sheet).getByRole('button', { name: '다시 확인' });
+  await userEvent.click(retry);
+  expect(retry).toBeDisabled();
+  expect(await f.savedScans()).toEqual([
+    { id: 'scan-a-2', data: '880000000001' },
+  ]);
+
+  await act(async () => retriedLookup.resolve([skuA]));
+  await waitFor(() =>
+    expect(
+      within(sheet).getByText('2', { selector: 'div' })
+    ).toBeInTheDocument()
+  );
+  expect(await f.savedScans()).toEqual([]);
+  expect((await f.draft())?.seen).toEqual(['scan-a-1', 'scan-a-2']);
+});
+
+it('retries a failed scan save without allowing the unsaved event to be excluded', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted: null,
+    },
+    []
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await waitFor(() =>
+    expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+
+  f.failNextScanWrite();
+  act(() => emitScan('880000000001'));
+  await within(sheet).findByText(/스캔을 저장하지 못했어요/);
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  expect(within(sheet).getByRole('button', { name: '입고' })).toBeDisabled();
+
+  f.failNextScanWrite();
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '다시 확인' })
+  );
+  expect(within(sheet).getByRole('alert')).toHaveTextContent(
+    '스캔을 저장하지 못했어요.'
+  );
+
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '다시 확인' })
+  );
+  await waitFor(() =>
+    expect(
+      within(sheet).getByText('2', { selector: 'div' })
+    ).toBeInTheDocument()
+  );
+  expect((await f.draft())?.seen).toHaveLength(2);
+});
+
+it('retains a confirmed-unapplied head when excluding it cannot be saved', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-b-1', data: '880000000002' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  const exclude = await within(sheet).findByRole('button', {
+    name: '이 스캔 제외',
+  });
+  f.failNextScanWrite();
+  await userEvent.click(exclude);
+
+  await within(sheet).findByText(
+    '이 스캔을 제외하지 못했어요. 저장 공간을 확인한 뒤 다시 시도해 주세요.'
+  );
+  expect(await f.savedScans()).toEqual([
+    { id: 'scan-b-1', data: '880000000002' },
+  ]);
+  expect(exclude).toBeEnabled();
+  expect(within(sheet).getByRole('button', { name: '입고' })).toBeDisabled();
+
+  await userEvent.click(exclude);
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled();
+  expect(await f.draft()).toMatchObject({ scanBump: 1 });
+});
+
+it('identifies an unregistered barcode inside the open sheet before exclusion', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-unknown', data: '999999999999' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByText(
+    '등록되지 않은 바코드예요. 현재 상품 수량은 유지됩니다.'
+  );
+  expect(
+    within(sheet).getByRole('button', { name: '이 스캔 제외' })
+  ).toBeEnabled();
+  expect(
+    within(sheet).queryByRole('button', { name: '다시 확인' })
+  ).not.toBeInTheDocument();
+  expect(await f.draft()).toMatchObject({ scanBump: 1 });
+});
+
+it('identifies a registered SKU outside this purchase order before exclusion', async () => {
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted: null,
+    },
+    [{ id: 'scan-c-1', data: '880000000003' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByText(
+    '이 발주에 없는 상품이에요. 현재 상품 수량은 유지됩니다.'
+  );
+  expect(
+    within(sheet).getByRole('button', { name: '이 스캔 제외' })
+  ).toBeEnabled();
+  expect(await f.savedScans()).toEqual([
+    { id: 'scan-c-1', data: '880000000003' },
+  ]);
+  expect(await f.draft()).toMatchObject({ scanBump: 1 });
+});
+
+it('does not allow excluding a scan while the receipt request is unresolved', async () => {
+  const submitted = { target: lineA, quantity: 1, key: 'receive-key' };
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 1,
+      seen: ['scan-a-1'],
+      fresh: null,
+      submitted,
+    },
+    [{ id: 'scan-b-1', data: '880000000002' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByText(
+    '다른 상품을 찍었어요. 현재 상품 수량은 유지됩니다.'
+  );
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  expect(await f.savedScans()).toEqual([
+    { id: 'scan-b-1', data: '880000000002' },
+  ]);
+  expect(await f.draft()).toMatchObject({ submitted, scanBump: 1 });
+});
 
 it('preserves the restored quantity while the purchase-order list is still loading', async () => {
   const f = await fixture({
@@ -404,14 +708,19 @@ it('turns a queued scan into a recoverable unapplied error when the restored lin
 
   await act(async () => f.firstArrivals.resolve(reduced));
   const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
-  await screen.findByText('상품을 확인하지 못했어요.');
+  await within(sheet).findByText(
+    '발주 상태가 바뀌어 이 스캔을 반영하지 못했어요. 입고내역을 확인해 주세요.'
+  );
   expect(f.lookupCodes).toEqual([]);
   expect(await f.savedScans()).toEqual([
     { id: 'scan-4', data: '880000000001' },
   ]);
   expect(
-    screen.getByRole('button', { name: '이 스캔 제외' })
+    within(sheet).getByRole('button', { name: '이 스캔 제외' })
   ).toBeInTheDocument();
+  expect(
+    within(sheet).getAllByRole('button', { name: '다시 확인' })
+  ).toHaveLength(2);
   expect(await f.draft()).toMatchObject({
     active: lineA,
     scanBump: 3,
@@ -420,14 +729,16 @@ it('turns a queued scan into a recoverable unapplied error when the restored lin
 
   f.answerNextArrivals(arrivals);
   await userEvent.click(
-    within(sheet).getByRole('button', { name: '다시 확인' })
+    within(sheet).getAllByRole('button', { name: '다시 확인' })[0]
   );
   await waitFor(() =>
     expect(
       within(sheet).queryByText('발주 상태가 바뀌었어요.')
     ).not.toBeInTheDocument()
   );
-  await userEvent.click(screen.getByRole('button', { name: '다시 확인' }));
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '다시 확인' })
+  );
   await waitFor(async () => expect(await f.savedScans()).toEqual([]));
   expect(
     await within(sheet).findByText('4', { selector: 'div' })
