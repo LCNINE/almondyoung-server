@@ -156,7 +156,7 @@ function PutawaySheetContent({
       setDest({ id: exact[0].id, code: exact[0].code });
       setTerm('');
     }
-  }, [search.data, term, dest, target.originLocationId]);
+  }, [search.data, term, dest, target.originLocationId, setDest]);
 
   // target 이 바뀌면(부모가 언마운트 없이 다음 라인으로 넘기는 경우) 이전 라인에서
   // 고른 대상지가 그대로 남아있으면 안 된다 — 새 라인을 작업자가 아직 아무것도

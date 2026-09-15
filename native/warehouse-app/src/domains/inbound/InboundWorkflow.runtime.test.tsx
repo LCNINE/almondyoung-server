@@ -44,11 +44,13 @@ function fixture(capability = true) {
   let current = { ...state };
   const posts: unknown[] = [];
   let nextRead: Promise<ReceiptLineState> | undefined;
+  let delayedReadStarted = false;
   const api: ApiClient = {
     request: async (r) => {
       if (r.path.startsWith('/inbound/lines/')) {
         const read = nextRead;
         nextRead = undefined;
+        if (read) delayedReadStarted = true;
         return (read ? await read : current) as never;
       }
       if (r.path.startsWith('/locations/warehouses/'))
@@ -138,6 +140,7 @@ function fixture(capability = true) {
   return {
     ...view,
     posts,
+    delayedReadStarted: () => delayedReadStarted,
     store,
     runner,
     onDone,
@@ -253,9 +256,16 @@ it('상태 조회 404도 취소나 완료로 추정하지 않고 입력을 보�
     })
   );
   await userEvent.click(screen.getByRole('button', { name: '적치' }));
+  await waitFor(() => expect(f.delayedReadStarted()).toBe(true));
   await act(async () => {
-    reject(new ApiError('not found', 404));
+    reject(new ApiError('GET /inbound/lines/line-1/state → 404', 404));
   });
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '적치' })).toBeDisabled()
+  );
+  await waitFor(() =>
+    expect(screen.getAllByText('입고 라인을 찾을 수 없어요. 새로고침 해주세요.').length).toBeGreaterThan(0)
+  );
   expect(f.posts).toHaveLength(0);
   expect(screen.getByLabelText('적치 수량 직접 입력 (낱개)')).toHaveValue('10');
 });

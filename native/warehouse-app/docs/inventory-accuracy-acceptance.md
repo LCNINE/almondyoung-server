@@ -350,3 +350,83 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 세 결함(R1/R2/R3)과 작업별 검토에서 발견한 복구 경계 상황을 수정했다. 로컬에서 준비된 데이터로 입고·부분 적치·이동·출고 전체 흐름을 시연할 수 있음을 확인했다. 실제 현장 시연 준비 완료로 판정하지는 않는다. 지정 Windows/PDA의 로그인·HID·터치와 네이티브 재실행, 시연 서버의 배포 버전 확인이 남는다.
 
 코드 커밋: `61404c577`, `136753210`, `249db4bb2`, `22fee3ff6`, `48b675d04`, `658c78132`. 서버·마이그레이션 변경은 없으며 로컬 브랜치에 보존한다. 모든 작업별 검토는 spec/quality 승인 상태다. 전체 브랜치 최종 검토의 첫 스캔 조회 복구 지적도 수정 후 재검토에서 해결됨으로 확인했고, 남은 지적은 없다. 검증용 HTTP/DB fixture는 제품 배포물에 포함하지 않는다.
+
+## 2026-09-16 입고 대기 보호와 현재 상태 일관성
+
+브랜치: `codex/inbound-workflow-consistency`. 기능 기준: `d18b1a940`, Task 8 시작: `57b52222b`.
+위의 과거 수치는 이전 작업 기록이다. 이번 결과는 아래 최종 실행에서 새로 수집했다.
+
+### 구현과 계약 공개
+
+- 공통 원장 쓰기 경계에서 입고 대기를 보호한다. 일반 이동·출고·감소 조정·실사·역분개가 미처리 입고를 소비할 수 없으며, 자유 재고와 정상 적치·취소·회송은 계속 처리한다. 입고 누계를 원장보다 먼저 같은 트랜잭션에서 갱신하고 이후 실패 시 전부 롤백한다.
+- 단일 현재 상태 조회와 공통 정책을 입고내역·적치 대기·간편/발주 입고 재개에 사용한다. 미확인 요청은 원래 키·본문·사용자/API 범위로 확인한 뒤 현재 서버 상태를 읽는다. 일반 이동 화면은 입고 대기를 명시적인 적치 후보 선택으로 연결한다.
+- 최종 HTTP 검사에서 서버의 `capabilities.inboundWorkflowConsistency: true`, 실제 이동 거절, 현재 상태 조회를 함께 확인했다. capability 없이 새 앱은 입고 일관성 작업을 허용하지 않는다.
+- 과거 데이터 감사는 PostgreSQL read-only 트랜잭션을 사용한다. 이유와 원장·입고·이벤트 근거를 보고하며, 자동 FIFO 귀속이나 누계 보정은 하지 않는다.
+
+### 실제 로컬 HTTP 대사
+
+`inbound-workflow-http.integration.spec.ts`는 실제 listen한 Nest 서버, ScopeGuard, DTO 검증, GlobalExceptionFilter, 실제 입고/이동 서비스·커널·원장 저장소·PostgreSQL을 사용한다. native의 실제 `createApiClient`, `ApiError`, operation runner와 operation store를 연결했다. 인증 신원/역할 매핑만 로컬 합성 fixture이고, Tauri 전송은 Node fetch로 대체했다. IndexedDB는 기존 `fake-indexeddb` 패키지를 사용한다.
+
+| 시나리오 | 실제 확인 결과 |
+|---|---|
+| capability → 입고10 → 일반 이동1 | capability true, HTTP 409의 `INBOUND_ORIGIN_STOCK_PROTECTED`가 native에서 확정 거절됨. pending 작업0, 원장10·입고 대기10 유지 |
+| 동일 원위치 적치 / 과거 원장 부족 fixture | `INBOUND_PUTAWAY_DESTINATION_INVALID`와 `INBOUND_ORIGIN_STOCK_INCONSISTENT`도 각각 한 번의 요청으로 거절 종결. 원장 부족 상태 조회는 대기10을 숨기지 않고 적치 불가를 반환 |
+| 취소 커밋 뒤 성공 응답 유실 | 같은 키·본문의 미확인 기록 보존 → 새 store/runner로 복원 → 원래 요청 재생으로 확정 → 현재 상태에서 취소10·대기0·적치/취소 불가 확인. 추가 재생까지 원장 이벤트는 입고1+취소1만 존재 |
+| 조회 권한·창고 | 익명 조회403, 다른 창고 조회403. 별도 controller auth 검사에서도 익명 상태 조회와 v2 사용자 결합을 확인 |
+
+이 HTTP 검사는 서비스 응답 mock이 아니다. 새 store/runner 생성은 영속 복구의 소프트웨어 검사이며 실제 OS 프로세스 강제 종료나 PDA 검증을 뜻하지 않는다. UI가 최신 취소/다른 기기 적치 상태를 사용하는지는 별도 React runtime 회귀에서 검사했다.
+
+### 최종 자동 검사
+
+최종 파일별 실행 수·실패·skip, 전체 명령과 기존 lint 경고 목록은 [자동 검사 상세](evidence/inbound-consistency/automated-results.md)에 기록했다. Native의 JSON reporter는 중첩 describe도 suite로 세므로 파일 수는 `testResults` 89개를 기준으로 한다.
+
+| 검사 | 최종 결과 |
+|---|---|
+| warehouse-app 전체 | 89 files / 587 tests 통과, 실패·skip·unhandled error 0. `--maxWorkers=2`로 실행 |
+| Core/관리자/감사/실제 HTTP 회귀 | 28 files / 419 tests 통과, 실패·skip 0. 실제 HTTP3개와 감사33개 포함 |
+| native production build | TypeScript 및 Vite 통과. JS 579.34 kB, 기존 500 kB 초과 chunk 경고 유지 |
+| native lint | exit0, 오류0, 기존 경고22개. 새 경고5개 해소; 기준선과 파일별 경고 수 동일 |
+| Core TypeScript | `corepack yarn tsc --noEmit -p apps/core/tsconfig.app.json` 통과 |
+| 작업 중 영향 검사 | native 5 files / 64 tests, HTTP+auth 2 suites / 29 tests, 마이그레이션 계약 1 suite / 12 tests 통과. 전체 검사와 겹치므로 합산하지 않음 |
+
+전용 DB는 `postgresql://postgres:postgres@127.0.0.1:5432/inbound_workflow_consistency_test`이며 기존 마이그레이션을 적용한 로컬 테스트 DB다. 마이그레이션 계약 suite는 같은 로컬 PostgreSQL에 고유한 `pr_c_t1_*` 임시 DB를 생성하고 삭제한다. 운영/shared DB·운영 `.env`를 사용하지 않았고 새 의존성·테이블·스키마 변경은 없다.
+
+첫 전체 앱 실행은 586/587 통과와 unhandled rejection 1건이었다. 이미 존재하는 비활성 버튼을 즉시 검사하던 assertion과 소비자가 붙기 전에 deferred GET을 reject하던 테스트를 실제 준비 완료/조회 시작을 기다리도록 수정했다. GET 실패가 표시되고 입력이 보존되며 POST가 없는 것까지 확인한다. 빠르게 교체되는 PO 안내 DOM도 조회와 assertion을 같은 `waitFor` 안에서 검사한다. 전역 timeout 증가나 unhandled error 무시는 하지 않았다.
+
+첫 넓은 서버 실행은 418/419 통과였다. 기존 migration 테스트가 PR-B 이후 적용 수를 `+2`로 고정해 이미 존재하는 stocktaking baseline migration을 누락했다. 스키마나 적용 목록은 바꾸지 않고, 적용된 전체 migration의 hash·timestamp 일치와 기존 journal prefix 보존을 검사하도록 강화했다. 해당 12개 검사와 최종 전체 회귀를 다시 실행했다.
+
+### A1–A12 대응
+
+| 기준 | 확인한 증거 | 판정 |
+|---|---|---|
+| A1 일반 이동 거절 | `inbound-origin-protection.integration`, 실제 HTTP 거절/원장 대사, `MovementScreen` | 로컬 통과 |
+| A2 적치·선반 이동·새 입고 | origin protection와 receipt kernel의 원장/누계/새 잔량 검사 | 로컬 통과 |
+| A3 여러 입고의 라인 귀속 | origin availability/protection 및 putaway reader의 다중 회차 검사 | 로컬 통과 |
+| A4 취소·회송 원자성 | kernel·purchase-order receiving·origin protection의 원장/로그/정산 실패 롤백 | 로컬 통과 |
+| A5 모든 원장 감소 경계 | origin protection의 직접 이벤트·역분개·조정·실사·이송/출고 검사 | 로컬 통과 |
+| A6 자유 물량·일반 선반·회수 | availability/protection 및 batch-controlled stock guard 검사 | 로컬 통과 |
+| A7 출고 계획·세션 취득 | `inbound-origin-planning`, location/simple outbound, batch-controlled stock guard | 로컬 통과 |
+| A8 양방향 DB 경합 | origin protection concurrency의 3쌍과 origin planning의 적치↔세션 취득 1쌍, 모두 양방향 독립 연결·실제 잠금 대기 검사 | 로컬 통과 |
+| A9 취소/다른 기기 적치 후 재개 | `PurchaseOrderReceiveScreen.runtime`, `InboundWorkflow.runtime`, reconciliation hook 및 HTTP 취소 재생 | 로컬 통과 |
+| A10 미확인·응답 역전·인증/저장 실패 | native operation runner, reconciliation hook, 실제 HTTP의 새 거절3종 및 원래 취소 키 복원 | 로컬 통과 |
+| A11 많은 후보·오래된 입고·원위치/창고 | putaway reader 및 `PutawayQueueScreen`, controller 권한/UUID, 구형 capability 검사 | 로컬 통과 |
+| A12 기존 불일치와 읽기 전용 감사 | current state/pending projection 및 감사33개 검사. INSERT/UPDATE/DELETE의 DB read-only 거절과 실행 전후 불변 확인 | 로컬 통과 |
+
+### 실제 컴포넌트 화면 증거
+
+아래 이미지는 제품 React 컴포넌트와 실제 로컬 IndexedDB/runner를 사용한 브라우저 캡처다. API는 **읽기 전용 응답 fixture**이며 실제 HTTP/DB 대사의 증거와 구분한다.
+
+| 화면 | 확인한 표시 |
+|---|---|
+| [일반 이동](evidence/inbound-consistency/movement-after.png) | 입고 대기10/자유0 fixture에서 일반 이동 비활성, 적치하기 경로 표시 |
+| [적치 후보](evidence/inbound-consistency/putaway-candidates-after.png) | 선택 상품·원위치의 전체 기간 후보2건, 잔여6/4 |
+| [발주 재개](evidence/inbound-consistency/po-after.png) | 복원한 입고가 ‘취소됨’으로 표시되고 해당 입고의 적치/취소 조작 없음 |
+
+### 현장 인수와 운영 적용
+
+- [ ] Windows/PDA에서 정상 입고→적치→이동, 취소→재개를 확인한다.
+- [ ] 실제 HID 연속 입력과 포커스/Enter, 터치, 네이티브 재시작·강제 종료·Wi-Fi 단절을 확인한다.
+- [ ] 대상 창고의 읽기 전용 감사와 실물 대사를 완료한다. 미해결 후보가 있는 창고는 시험 운영에 넣지 않는다.
+- [ ] Core/앱 버전 전환과 지정 계정·기기의 제한된 시험 운영을 완료한다.
+
+**로컬 소프트웨어 검증을 완료했다. 기기가 없어 현장 인수·운영 준비 완료로 판정하지 않는다.** 운영 배포·기존 데이터 보정·push·merge는 수행하지 않았다. [전환 runbook](../../../docs/runbooks/inbound-origin-consistency.md)의 창고 작업 중지→감사→실물 대사→미확인 원본 보존→Core/앱 전환→재검사 순서를 따른다.

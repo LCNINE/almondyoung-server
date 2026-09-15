@@ -277,7 +277,9 @@ describe('PurchaseOrderReceiveScreen', () => {
 
     const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
     expect(sheet).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '입고' })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
   });
 
   it('발주에 없는 바코드는 시트를 열지 않고 경고한다', async () => {
@@ -593,9 +595,9 @@ describe('PurchaseOrderReceiveScreen', () => {
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
     // 시트가 화면 전체를 덮으므로, 에러도 시트 안에서 보여야 작업자가 알아챈다.
-    expect(
-      await screen.findByText(/처리 여부를 확인하고 있어요/)
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/처리 여부를 확인하고 있어요/)).toBeInTheDocument()
+    );
     // 응답이 실패로 보이는 동안은 배너로 넘어가지 않고 시트가 남아, 성공/실패를
     // 모른 채로 값을 고쳐 다시 누르는 이중입고 경로를 차단한다.
     expect(
@@ -616,9 +618,9 @@ describe('PurchaseOrderReceiveScreen', () => {
     );
     await user.click(within(sheet).getByRole('button', { name: '입고' }));
 
-    expect(
-      await screen.findByText(/처리 여부를 확인하고 있어요/)
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/처리 여부를 확인하고 있어요/)).toBeInTheDocument()
+    );
     expect(sheet).not.toHaveTextContent('s1');
   });
 

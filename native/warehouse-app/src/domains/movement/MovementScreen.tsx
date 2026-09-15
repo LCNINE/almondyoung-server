@@ -129,7 +129,7 @@ function MovementScreenContent() {
       setDest({ id: exact[0].id, code: exact[0].code });
       setDestTerm('');
     }
-  }, [destSearch.data, destTerm, activeItem, dest, source]);
+  }, [destSearch.data, destTerm, activeItem, dest, source, setDest]);
 
   // 멱등키 회전: payload(품목·출발·대상·수량)가 바뀌면 새 키를 발급한다.
   // "요청은 커밋됐는데 응답만 유실" 뒤 값을 고쳐 재제출하면 옛 payload 를

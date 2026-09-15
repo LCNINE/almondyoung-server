@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- Test-only fixture shares data/runtime builders with its provider; it is never a Fast Refresh application entry. */
 import { WorkBoundary } from '../../../core/operations/WorkBoundary';
 import 'fake-indexeddb/auto';
 import type { ReactNode } from 'react';

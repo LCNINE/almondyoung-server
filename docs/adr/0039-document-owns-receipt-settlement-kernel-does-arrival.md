@@ -44,6 +44,15 @@ Accepted (2026-09-14). ADR-0032 결정 1·4와
 - 옛 `inbound_plans`·`inbound_plan_items` 테이블과 관련 컬럼은 PR-C에서 삭제한다.
 - 이동 지시서를 공통 커널에 편입하는 일은 이 결정의 범위 밖이다.
 
+## 2026-09-16 입고 대기 보호 보완
+
+- `StockEventStore.applyProjection`은 stock availability 잠금 아래 최종 ON_HAND 순감소를 검사한다. posted 회차의 시스템 원위치별 `quantity - putawayFromOriginQty - returnedQty - canceledQty`를 합산하고, 활성 출고 custody와 함께 보호한다. 일반 선반 직접입고와 입고 대기에 속하지 않은 자유 재고는 별도이며, 현재 원장에 맞춰 입고 누계를 줄이지 않는다.
+- 적치·회송·취소는 원래 입고 잔량과 custody를 실재고가 충족하는지 먼저 검사하고, 처리할 입고 누계를 같은 트랜잭션에서 먼저 변경한 뒤 원장을 이동/역분개한다. 남은 다른 입고의 물량은 최종 가드가 계속 보호한다. 이후 원장·업무 로그·발주 정산 어느 단계가 실패해도 누계까지 모두 롤백한다. 발주가 정산을 소유하고 커널은 필수 `tx`를 받는 의존 방향은 유지한다.
+- 잠금 순서는 발주 헤더 → 발주 라인 → 입고 라인 → 입고 헤더 `FOR NO KEY UPDATE`를 유지한다. 취소는 원 RECEIVE 이벤트 → stock availability 순서로 잠가 기존 역분개와 일치시킨다. 적치/회송은 입고 잠금 다음 stock을 취득한다. stock 잠금을 가진 공통 가드는 입고를 일반 SELECT로 읽으며 입고 행 잠금을 추가하지 않는다.
+- 적치 대상은 같은 창고의 활성 일반 위치다. 출발 위치와 같거나 시스템 위치면 거절한다. DTO 플래그나 사유로 보호를 우회하지 않는다. 새 출고 계획과 세션 취득은 입고 대기를 제외한 자유 수량만 사용하며 경제적 예약 정의는 바꾸지 않는다.
+- `capabilities.inboundWorkflowConsistency`는 보호·현재 상태 조회·영속 재확인 계약을 함께 검증한 서버에서 공개한다. 과거 확정 응답의 재생은 현재 상태를 뜻하지 않으므로, 클라이언트는 원래 키/본문/계정 범위로 미확인 작업을 대사한 뒤 현재 라인 상태를 읽는다.
+- 기존 불일치는 읽기 전용 감사와 실물 대사 대상으로 남긴다. 자동 귀속/FIFO/누계 보정은 하지 않으며 운영 배포·보정·기기 인수는 별도다. 검증 범위와 한계는 [입고 일관성 인수 기록](../../native/warehouse-app/docs/inventory-accuracy-acceptance.md#2026-09-16-입고-대기-보호와-현재-상태-일관성)을 따른다.
+
 ## References
 
 - `docs/superpowers/specs/2026-09-14-purchase-order-owns-receiving-design.md`

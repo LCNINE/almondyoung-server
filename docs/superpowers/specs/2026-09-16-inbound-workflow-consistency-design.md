@@ -2,7 +2,7 @@
 
 작성일: 2026-09-16 (KST). 기준: `develop`의 `d18b1a940` (#883).
 브랜치: `codex/inbound-workflow-consistency`.
-상태: 해결 방향 승인 후 작성한 상세 설계. 구현·운영 적용 전 검토본.
+상태: 2026-09-16 구현 및 로컬 검증 반영. 운영 적용과 Windows/PDA 현장 인수는 미실행. 최종 실행 수와 한계는 [인수 기록](../../../native/warehouse-app/docs/inventory-accuracy-acceptance.md#2026-09-16-입고-대기-보호와-현재-상태-일관성)에 기록한다.
 
 ## 1. 문제와 목표
 

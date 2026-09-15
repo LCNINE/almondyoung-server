@@ -213,12 +213,15 @@ export function useReceiptLineState(
     ]
   );
   useEffect(() => {
+    // Keep the stable ref object, not its counter: cleanup must invalidate
+    // every request started during this subscription, including later refreshes.
+    const requestGeneration = generation;
     active.current = true;
     const start = (reconcile: boolean) => {
       if (lineId && warehouseId) void load(reconcile).catch(() => {});
     };
     const unsubscribeSession = session.subscribe(() => {
-      ++generation.current;
+      ++requestGeneration.current;
       setView({ identity, state: null, error: null });
       start(true);
     });
@@ -237,7 +240,7 @@ export function useReceiptLineState(
     start(true);
     return () => {
       active.current = false;
-      ++generation.current;
+      ++requestGeneration.current;
       unsubscribeSession();
       unsubscribeOperations?.();
     };
