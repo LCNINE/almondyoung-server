@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Status:** 2026-09-15 사용자 “바로 실행하자” 승인 후 로컬 구현·검증 완료. 최종 독립 검토 진행 중. 운영 배포는 별도다.
+**Status:** 2026-09-15 사용자 “바로 실행하자” 승인 후 로컬 구현·검증 완료. 최종 독립 검토 완료(차단 결함 없음). 운영 배포는 별도다.
 
 **Goal:** 물류팀이 출고를 연속 스캔하고, 권한이 없는 작업에서 정상 업무로 돌아오며, 완료 송장을 정확히 확인할 수 있게 한다.
 
@@ -239,7 +239,7 @@ corepack yarn tsc --noEmit --incremental false -p apps/core/tsconfig.app.json
 - [x] 실제 React→로컬 HTTP→DB 흐름에서 아래 합격 기준을 대사한다. 화면 mock만으로 대체하지 않는다.
 - [x] Core를 먼저 배포하고 새 권한/결과 확인 계약을 검사한 후 Windows 앱을 배포하는 순서를 릴리스 절차에 적는다. 기존 앱을 지원하는 정상 force 응답은 유지한다.
 - [ ] 실제 Windows 설치본에서 일반 작업자/관리자 로그인, HID 100회, 통신 단절과 재개를 검사한다. 실기기를 사용할 수 없으면 그 항목을 미검증으로 남기고 현장 인수 완료로 표시하지 않는다.
-- [ ] 검증 일자/커밋/명령/결과/제한을 인수 기록에 추가하고 코드와 권한·재고 경합 경계를 검토한다.
+- [x] 검증 일자/커밋/명령/결과/제한을 인수 기록에 추가하고 코드와 권한·재고 경합 경계를 검토한다.
 
 ## 합격 기준
 
