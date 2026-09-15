@@ -191,3 +191,130 @@ it('binds the token at transport to the persisted actor before any write', async
   expect(sent).toBe(0);
   expect((await store.get('x'))?.scope).toBe('a');
 });
+
+it('위치 출고의 마지막 응답 유실은 같은 위치·본문·키로 재확인한다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const sent: Array<{ path: string; key?: string; body?: string }> = [];
+  const applied = new Set<string>();
+  let picked = 0;
+  const state = {
+    shipmentId: 's',
+    warehouseId: 'w',
+    status: 'shipped',
+    workItemStatus: 'completed',
+    dispatchAttemptId: 'dispatch',
+    lines: [
+      {
+        shipmentLineId: 'l',
+        skuId: 'sku',
+        qty: 2,
+        pickedQty: 2,
+        inspectedQty: 2,
+      },
+    ],
+    sources: [],
+  };
+  const api: ApiClient = {
+    request: async <T>(input: Parameters<ApiClient['request']>[0]) => {
+      sent.push({
+        path: input.path,
+        key: input.idempotencyKey,
+        body: input.bodyJson,
+      });
+      if (!applied.has(input.idempotencyKey!)) {
+        applied.add(input.idempotencyKey!);
+        picked += 2;
+        throw new TypeError('lost response');
+      }
+      return state as T;
+    },
+  };
+  const runner = createOperationRunner({
+    api,
+    store,
+    getScope: async () => 'scope',
+    wait: async () => {},
+  });
+  const body = {
+    warehouseId: 'w',
+    sourceLocationId: 'B',
+    barcode: '8801',
+    quantity: 2,
+  };
+  await expect(
+    runner.request({
+      method: 'POST',
+      path: '/shipments/s/location-outbound-scans',
+      body,
+      idempotencyKey: 'same',
+    })
+  ).resolves.toEqual(state);
+  expect(picked).toBe(2);
+  expect(sent).toEqual([
+    {
+      path: '/shipments/s/location-outbound-scans',
+      key: 'same',
+      body: JSON.stringify(body),
+    },
+    {
+      path: '/shipments/s/location-outbound-scans',
+      key: 'same',
+      body: JSON.stringify(body),
+    },
+  ]);
+});
+it('구형 미확인 출고는 새 위치 계약으로 변경하지 않고 원래 본문을 재생한다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const bodyJson = JSON.stringify({ barcode: '8801', quantity: 1 });
+  await store.begin({
+    id: 'old-key',
+    scope: 'scope',
+    resource: '/shipments/s',
+    path: '/shipments/s/simple-outbound-scans',
+    method: 'POST',
+    bodyJson,
+    createdAt: Date.now(),
+  });
+  const api: ApiClient = {
+    request: vi.fn(async () => ({
+      shipmentId: 's',
+      status: 'shipped',
+      lines: [],
+    })) as ApiClient['request'],
+  };
+  const runner = createOperationRunner({
+    api,
+    store,
+    getScope: async () => 'scope',
+    wait: async () => {},
+  });
+  await runner.retryPending();
+  expect(api.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: '/shipments/s/simple-outbound-scans',
+      bodyJson,
+      idempotencyKey: 'old-key',
+    })
+  );
+  expect((await store.get('old-key'))?.status).toBe('confirmed');
+});
+for (const path of [
+  '/shipments/s/location-outbound-starts',
+  '/shipments/s/location-outbound-forces',
+  '/stocktaking/count-items',
+]) {
+  it(`${path} 저장 실패 시 HTTP 요청을 보내지 않는다`, async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    vi.spyOn(store, 'begin').mockRejectedValue(new Error('disk full'));
+    const api: ApiClient = { request: vi.fn() };
+    const runner = createOperationRunner({
+      api,
+      store,
+      getScope: async () => 'scope',
+    });
+    await expect(
+      runner.request({ method: 'POST', path, body: {}, idempotencyKey: 'k' })
+    ).rejects.toThrow('disk full');
+    expect(api.request).not.toHaveBeenCalled();
+  });
+}

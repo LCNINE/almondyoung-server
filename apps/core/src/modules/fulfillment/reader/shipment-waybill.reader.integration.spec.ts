@@ -29,6 +29,7 @@ describeIfDb('ShipmentWaybillReader', () => {
       const result = await reader.byTrackingNo(fixture.trackingNo);
 
       expect(result.shipmentId).toBe(fixture.shipmentId);
+      expect(result).toHaveProperty('warehouseId', fixture.warehouseId);
       expect(result.carrier).toBe('HANJIN');
       expect(result.batchId).toBe(fixture.batchId);
       expect(result.workItemId).toBe(fixture.workItemId);
@@ -98,6 +99,20 @@ describeIfDb('ShipmentWaybillReader', () => {
       expect(result.batchId).toBe(fixture.batchId);
       expect(result.workItemId).toBe(fixture.workItemId);
       expect(result.workItemStatus).toBe('short_pick_recovery');
+    });
+  });
+
+  it('accepts an optional warehouse filter and rejects a different warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      expect(await reader.byTrackingNo(fixture.trackingNo, fixture.warehouseId)).toHaveProperty(
+        'shipmentId',
+        fixture.shipmentId,
+      );
+      await expect(reader.byTrackingNo(fixture.trackingNo, randomUUID())).rejects.toMatchObject({
+        response: { code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH' },
+      });
     });
   });
 

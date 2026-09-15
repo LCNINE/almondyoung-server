@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
+import { useCapabilityReader } from '../../core/operations/useWorkCapabilities';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type {
   GenerateAdjustmentsResult,
@@ -220,6 +221,34 @@ export function useResetCount() {
         path: `/stocktaking/lines/${input.lineId}/reset-count`,
         body: { expectedRevision: input.expectedRevision },
       }),
+    onSettled: (_data, _error, input) => {
+      invalidateSession(qc, input.sessionId);
+      invalidateVariances(qc, input.sessionId);
+    },
+  });
+}
+
+export function useAddCountItem() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  const capabilities = useCapabilityReader();
+  return useMutation({
+    mutationFn: async (input: {
+      sessionId: string;
+      locationId: string;
+      skuId: string;
+      countedQuantity: number;
+      idempotencyKey: string;
+    }) => {
+      if (!(await capabilities()).stocktakingAddCountItem)
+        throw new Error('새 상품 실사를 사용하려면 서버 업데이트가 필요해요.');
+      return api.request<ScanProductResult>({
+        method: 'POST',
+        path: '/stocktaking/count-items',
+        idempotencyKey: input.idempotencyKey,
+        body: { ...input, contractVersion: 2 },
+      });
+    },
     onSettled: (_data, _error, input) => {
       invalidateSession(qc, input.sessionId);
       invalidateVariances(qc, input.sessionId);

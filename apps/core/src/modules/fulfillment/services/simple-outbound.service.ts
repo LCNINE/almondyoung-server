@@ -12,6 +12,14 @@ import { BarcodeService } from '../../inventory/shared/services/barcode.service'
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
+// A structured key keeps new nested commands disjoint from every legacy string key.
+export type OutboundCommandKey = string | { contract: 'location'; operation: 'start' | 'scan' | 'force'; key: string };
+function nestedCommandKey(key: OutboundCommandKey, step: string): string {
+  return typeof key === 'string'
+    ? `simple:${key}:${step}`
+    : `location-outbound:${JSON.stringify([key.operation, key.key, step])}`;
+}
+
 export interface SimpleOutboundActor {
   id: string;
   roles: string[];
@@ -70,7 +78,7 @@ export class SimpleOutboundService {
   async prepare(
     shipmentId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<SimpleOutboundContext> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.prepare');
@@ -161,41 +169,7 @@ export class SimpleOutboundService {
       async (trx) => {
         const context = await this.prepare(shipmentId, input.actor, input.idempotencyKey, trx);
         await this.forcePickRemaining(context, input.actor, input.idempotencyKey, trx);
-        const [workItem] = await trx
-          .select({
-            status: wmsTables.outboundBatchWorkItems.status,
-            leaseVersion: wmsTables.outboundBatchWorkItems.leaseVersion,
-          })
-          .from(wmsTables.outboundBatchWorkItems)
-          .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId))
-          .limit(1);
-        if (workItem?.status === 'picking') {
-          await this.picking.completePick(
-            {
-              batchId: context.batchId,
-              planId: context.planId,
-              sessionId: context.sessionId,
-              workItemId: context.workItemId,
-              shipmentId: context.shipmentId,
-              actor: { id: input.actor.id, roles: input.actor.roles },
-              expectedLeaseVersion: workItem.leaseVersion,
-              idempotencyKey: `simple:${input.idempotencyKey}:complete`,
-            },
-            trx,
-          );
-        }
-        const forced = await this.dispatch.forceDispatch(
-          context.shipmentId,
-          {
-            reason: input.reason,
-            csCaseId: input.csCaseId,
-            note: input.note,
-            actor: { id: input.actor.id, roles: input.actor.roles },
-            idempotencyKey: `simple:${input.idempotencyKey}:force`,
-            authorization: input.authorization,
-          },
-          trx,
-        );
+        const forced = await this.completeAndForceDispatch(context, input, trx);
         const state = await this.loadState(context, trx);
         return {
           response: { ...state, dispatchAttemptId: forced.dispatchAttemptId },
@@ -208,11 +182,62 @@ export class SimpleOutboundService {
     );
   }
 
+  /** Complete explicitly picked custody, then use the audited force-dispatch path. */
+  async completeAndForceDispatch(
+    context: SimpleOutboundContext,
+    input: {
+      reason: string;
+      csCaseId?: string;
+      note?: string;
+      actor: SimpleOutboundActor;
+      idempotencyKey: OutboundCommandKey;
+      authorization: ScopeAuthorizationDecision | undefined;
+    },
+    trx: DbTx,
+  ) {
+    const [workItem] = await trx
+      .select({
+        status: wmsTables.outboundBatchWorkItems.status,
+        leaseVersion: wmsTables.outboundBatchWorkItems.leaseVersion,
+      })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId))
+      .limit(1);
+    if (workItem?.status === 'picking') {
+      await this.picking.completePick(
+        {
+          batchId: context.batchId,
+          planId: context.planId,
+          sessionId: context.sessionId,
+          workItemId: context.workItemId,
+          shipmentId: context.shipmentId,
+          actor: { id: input.actor.id, roles: input.actor.roles },
+          expectedLeaseVersion: workItem.leaseVersion,
+          idempotencyKey: nestedCommandKey(input.idempotencyKey, 'complete'),
+        },
+        trx,
+      );
+    }
+    const forced = await this.dispatch.forceDispatch(
+      context.shipmentId,
+      {
+        reason: input.reason,
+        csCaseId: input.csCaseId,
+        note: input.note,
+        actor: { id: input.actor.id, roles: input.actor.roles },
+        idempotencyKey: nestedCommandKey(input.idempotencyKey, 'force'),
+        authorization: input.authorization,
+      },
+      trx,
+    );
+    return forced;
+  }
+
   /** 남은 필요 수량을 할당 로케이션 기준으로 채운다 — 작업자가 스캔을 생략한 몫이다. */
   private async forcePickRemaining(
     context: SimpleOutboundContext,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<void> {
     const allocations = await tx
@@ -263,7 +288,7 @@ export class SimpleOutboundService {
           quantity: missing,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: context.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:force-pick:${allocation.id}`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, `force-pick:${allocation.id}`),
         },
         tx,
       );
@@ -271,7 +296,7 @@ export class SimpleOutboundService {
   }
 
   /** 바코드 → SKU. 검수(`resolveInspectionLine`)와 같은 4단계 해석 규칙을 공유 헬퍼로 쓴다. */
-  private async resolveSkuId(barcode: string, tx: DbTx): Promise<string> {
+  async resolveSkuId(barcode: string, tx: DbTx): Promise<string> {
     const normalized = barcode.trim();
     if (!normalized) throw new BadRequestException('barcode is required');
     const skuId = await resolveSkuIdByBarcode(this.barcode, normalized, tx);
@@ -284,13 +309,14 @@ export class SimpleOutboundService {
    * 로케이션에서 나올 수 있고(unique 키가 plan+line+location), 전략의 과다피킹
    * 가드도 로케이션 단위라 분배가 필요하다.
    */
-  private async pickScanned(
+  async pickScanned(
     context: SimpleOutboundContext,
     skuId: string,
     quantity: number,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
+    source?: { sourceLocationId: string; shipmentLineId?: string },
   ): Promise<void> {
     const allocations = await tx
       .select({
@@ -309,6 +335,8 @@ export class SimpleOutboundService {
           eq(wmsTables.pickingSourceAllocations.planId, context.planId),
           eq(wmsTables.shipmentLines.shipmentId, context.shipmentId),
           eq(wmsTables.shipmentLines.skuId, skuId),
+          source ? eq(wmsTables.pickingSourceAllocations.sourceLocationId, source.sourceLocationId) : undefined,
+          source?.shipmentLineId ? eq(wmsTables.shipmentLines.id, source.shipmentLineId) : undefined,
         ),
       )
       .orderBy(
@@ -316,9 +344,26 @@ export class SimpleOutboundService {
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
     if (allocations.length === 0) {
-      throw this.conflict('SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT', 'Scanned SKU does not belong to this shipment');
+      throw this.conflict(
+        source ? 'LOCATION_OUTBOUND_SOURCE_MISMATCH' : 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT',
+        'No allocation for the scanned SKU at the selected source',
+      );
     }
 
+    // Location-aware requests must fail before any picking.scan call, with no fallback.
+    if (source) {
+      let available = 0;
+      for (const allocation of allocations) {
+        available += Math.max(
+          0,
+          allocation.qty -
+            (await this.attributedQty(context.sessionId, allocation.shipmentLineId, allocation.sourceLocationId, tx)),
+        );
+      }
+      if (quantity > available) {
+        throw this.conflict('LOCATION_OUTBOUND_OVERSCAN', 'Quantity exceeds the selected source allocation');
+      }
+    }
     let remaining = quantity;
     for (const allocation of allocations) {
       if (remaining === 0) break;
@@ -346,7 +391,7 @@ export class SimpleOutboundService {
           quantity: take,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: context.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:pick:${allocation.id}`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, `pick:${allocation.id}`),
         },
         tx,
       );
@@ -361,12 +406,7 @@ export class SimpleOutboundService {
   }
 
   /** 전략의 과다피킹 가드와 같은 집계 — SETTLED 를 제외한 커스터디 합계. */
-  private async attributedQty(
-    sessionId: string,
-    shipmentLineId: string,
-    sourceLocationId: string,
-    tx: DbTx,
-  ): Promise<number> {
+  async attributedQty(sessionId: string, shipmentLineId: string, sourceLocationId: string, tx: DbTx): Promise<number> {
     const [row] = await tx
       .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
       .from(wmsTables.batchInventorySessionBalances)
@@ -401,10 +441,10 @@ export class SimpleOutboundService {
    * 전략 밖(shipment-dispatch)이고 완료(HAND_IN·ready_to_pack) 이후에만 성립하므로
    * 라인별로 교차할 수 없다 — 그래서 여기서 한 번에 재생한다.
    */
-  private async settleIfFullyPicked(
+  async settleIfFullyPicked(
     context: SimpleOutboundContext,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<{ dispatchAttemptId: string | null } | null> {
     const lines = await tx
@@ -445,7 +485,7 @@ export class SimpleOutboundService {
           shipmentId: context.shipmentId,
           actor: { id: actor.id, roles: actor.roles },
           expectedLeaseVersion: beforeComplete.leaseVersion,
-          idempotencyKey: `simple:${idempotencyKey}:complete`,
+          idempotencyKey: nestedCommandKey(idempotencyKey, 'complete'),
         },
         tx,
       );
@@ -463,7 +503,7 @@ export class SimpleOutboundService {
       await this.batches.claimPacker(
         context.workItemId,
         { expectedLeaseVersion: beforePack.leaseVersion },
-        `simple:${idempotencyKey}:claim-packer`,
+        nestedCommandKey(idempotencyKey, 'claim-packer'),
         { id: actor.id, roles: actor.roles },
         tx,
       );
@@ -474,14 +514,17 @@ export class SimpleOutboundService {
       {
         entries: pending,
         actor: { id: actor.id, roles: actor.roles },
-        idempotencyKey: `simple:${idempotencyKey}:inspect`,
+        idempotencyKey: nestedCommandKey(idempotencyKey, 'inspect'),
       },
       tx,
     );
     return { dispatchAttemptId: inspected.dispatchAttemptId };
   }
 
-  private async loadState(context: SimpleOutboundContext, tx: DbTx): Promise<SimpleOutboundState> {
+  async loadState(
+    context: { shipmentId: string; workItemId: string | null; sessionId: string | null },
+    tx: DbTx,
+  ): Promise<SimpleOutboundState> {
     const lines = await tx
       .select({
         id: wmsTables.shipmentLines.id,
@@ -494,7 +537,7 @@ export class SimpleOutboundService {
       .orderBy(asc(wmsTables.shipmentLines.id));
     const progress: SimpleOutboundLineProgress[] = [];
     for (const line of lines) {
-      const picked = await this.pickedQtyForLine(context.sessionId, line.id, tx);
+      const picked = context.sessionId ? await this.pickedQtyForLine(context.sessionId, line.id, tx) : 0;
       progress.push({
         shipmentLineId: line.id,
         skuId: line.skuId,
@@ -503,11 +546,13 @@ export class SimpleOutboundService {
         inspectedQty: line.inspectedQty,
       });
     }
-    const [workItem] = await tx
-      .select({ status: wmsTables.outboundBatchWorkItems.status })
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId))
-      .limit(1);
+    const [workItem] = context.workItemId
+      ? await tx
+          .select({ status: wmsTables.outboundBatchWorkItems.status })
+          .from(wmsTables.outboundBatchWorkItems)
+          .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId))
+          .limit(1)
+      : [];
     const [shipment] = await tx
       .select({ status: wmsTables.shipments.status })
       .from(wmsTables.shipments)
@@ -573,7 +618,7 @@ export class SimpleOutboundService {
   private async ensurePlan(
     batchId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<string> {
     // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
@@ -605,7 +650,7 @@ export class SimpleOutboundService {
         batchId,
         shipmentIds: members.map((member) => member.shipmentId),
         actorId: actor.id,
-        idempotencyKey: `simple:${idempotencyKey}:plan`,
+        idempotencyKey: nestedCommandKey(idempotencyKey, 'plan'),
       },
       tx,
     );
@@ -619,7 +664,7 @@ export class SimpleOutboundService {
     batchId: string,
     planId: string,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<string> {
     // 마찬가지로 락 없는 fast-path 조회다 — 실질적인 동시성 보장은 아래 `this.picking.start()`
@@ -638,7 +683,7 @@ export class SimpleOutboundService {
     if (existing) return existing.id;
 
     const started = await this.picking.start(
-      { batchId, planId, actorId: actor.id, idempotencyKey: `simple:${idempotencyKey}:start` },
+      { batchId, planId, actorId: actor.id, idempotencyKey: nestedCommandKey(idempotencyKey, 'start') },
       tx,
     );
     if (started.state !== 'started') {
@@ -650,7 +695,7 @@ export class SimpleOutboundService {
   private async ensurePickerClaim(
     workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect,
     actor: SimpleOutboundActor,
-    idempotencyKey: string,
+    idempotencyKey: OutboundCommandKey,
     tx: DbTx,
   ): Promise<number> {
     const leaseActive = workItem.leaseExpiresAt !== null && workItem.leaseExpiresAt.getTime() > Date.now();
@@ -669,7 +714,7 @@ export class SimpleOutboundService {
     const claimed = await this.batches.claimPicker(
       workItem.id,
       { expectedLeaseVersion: workItem.leaseVersion },
-      `simple:${idempotencyKey}:claim-picker`,
+      nestedCommandKey(idempotencyKey, 'claim-picker'),
       { id: actor.id, roles: actor.roles },
       tx,
     );

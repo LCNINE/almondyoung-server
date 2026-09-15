@@ -1,7 +1,11 @@
 import {
   confirmedPutawayQuantity,
+  confirmedCanceledQuantity,
   withConfirmedPutaway,
 } from './confirmedPutaway';
+import { Link } from '@tanstack/react-router';
+import { useApiClient } from '../../core/data/ApiClientProvider';
+import { receiptHistoryPath, validateReceiptHistory } from './receiptHistory';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { SimpleInboundResult } from './types';
 import { WorkArea } from '../../core/operations/WorkBoundary';
@@ -11,6 +15,10 @@ import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
+import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
+import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import { NumberPad } from '../../core/design/NumberPad';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import {
@@ -35,9 +43,11 @@ interface CartRow {
 function QuickInboundScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
+  const api = useApiClient();
   const submit = useSimpleInbound();
 
   const initialDraft = useRef({
+    receiptId: null as string | null,
     cart: [] as CartRow[],
     staged: [] as FreshLine[],
     seen: [] as string[],
@@ -63,16 +73,24 @@ function QuickInboundScreenContent() {
     }));
   const runtime = useWorkRuntime();
   const [reconciled, setReconciled] = useState(!runtime);
+  const reconcileRef = useRef<(() => Promise<void>) | null>(null);
+  const reconciliation = useRef<Promise<void> | null>(null);
   useEffect(() => {
     if (!runtime || !draft.ready) return;
     let live = true;
+    let generation = 0;
     const reconcile = async () => {
+      const thisGeneration = ++generation;
+      if (live) setReconciled(false);
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
+      if (op && op.status !== 'confirmed' && op.status !== 'rejected')
+        throw new Error('입고 처리 여부를 먼저 확인해 주세요.');
       if (op?.status === 'confirmed' && current.staged.length === 0) {
         const result = op.result as SimpleInboundResult;
         await draft.update((prev) => ({
           ...prev,
+          receiptId: result.id,
           staged:
             prev.key !== current.key || prev.staged.length > 0
               ? prev.staged
@@ -102,26 +120,110 @@ function QuickInboundScreenContent() {
           )
         )
       );
+      const canceled = new Map(
+        await Promise.all(
+          latest.staged.map(
+            async (line) =>
+              [
+                line.lineId,
+                await confirmedCanceledQuantity(runtime, line.lineId),
+              ] as const
+          )
+        )
+      );
+      if ([...canceled.values()].some((quantity) => quantity > 0))
+        await draft.update((prev) => ({
+          ...prev,
+          staged: prev.staged.map((line) => ({
+            ...line,
+            canceledQty: Math.max(
+              line.canceledQty ?? 0,
+              canceled.get(line.lineId) ?? 0
+            ),
+          })),
+        }));
+      const receiptId =
+        latest.receiptId ??
+        (op?.status === 'confirmed'
+          ? (op.result as SimpleInboundResult).id
+          : undefined);
+      let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
+      if (latest.staged.length) {
+        if (!receiptId || !warehouseId)
+          throw new Error('입고내역에서 상태를 확인해 주세요.');
+        const history = await api.request<unknown>({
+          path: receiptHistoryPath({
+            warehouseId,
+            receiptId,
+            status: 'all',
+            limit: 1,
+            offset: 0,
+          }),
+        });
+        validateReceiptHistory(history);
+        const receipt = history.items.find(
+          (item) => item.id === receiptId && item.warehouseId === warehouseId
+        );
+        if (
+          !receipt ||
+          latest.staged.some(
+            (line) => !receipt.lines.some((item) => item.id === line.lineId)
+          )
+        )
+          throw new Error('입고내역을 확인해 주세요.');
+        historyLines = receipt.lines;
+      }
+      if (!live || thisGeneration !== generation) return;
       await draft.update((prev) => ({
         ...prev,
-        staged: prev.staged.map((line) =>
-          withConfirmedPutaway(line, quantities.get(line.lineId) ?? 0)
-        ),
+        receiptId: receiptId ?? null,
+        staged: prev.staged.map((line) => {
+          const currentLine = historyLines.find(
+            (item) => item.id === line.lineId
+          );
+          return {
+            ...withConfirmedPutaway(
+              line,
+              Math.max(
+                quantities.get(line.lineId) ?? 0,
+                currentLine?.putawayFromOriginQty ?? 0
+              )
+            ),
+            canceledQty: Math.max(
+              currentLine?.canceledQty ?? 0,
+              line.canceledQty ?? 0,
+              canceled.get(line.lineId) ?? 0
+            ),
+            returnedQty: currentLine?.returnedQty ?? line.returnedQty,
+          };
+        }),
       }));
-      if (live) setReconciled(true);
+      if (live && thisGeneration === generation) setReconciled(true);
     };
-    void reconcile().catch(() => {
-      if (live) setReconciled(false);
-    });
+    const runReconcile = () => {
+      const pending = reconcile();
+      reconciliation.current = pending;
+      return pending;
+    };
+    reconcileRef.current = runReconcile;
+    void runReconcile().catch(() => {});
     const off = runtime.runner.subscribe(
-      () => void reconcile().catch(() => {})
+      () => void runReconcile().catch(() => {})
     );
     return () => {
       live = false;
       off();
     };
-  }, [runtime, draft.ready, idempotencyKey]);
+  }, [runtime, draft.ready, api, warehouseId]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [quantityText, setQuantityText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  useUnsavedWork(
+    editing !== null ||
+      saving ||
+      (!reconciled && cart.length > 0 && staged.length === 0)
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   const [putawayFor, setPutawayFor] = useState<FreshLine | null>(null);
@@ -130,6 +232,12 @@ function QuickInboundScreenContent() {
   const stagedMode = staged.length > 0;
 
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
+    // Restored physical inputs must wait for the original receipt result too.
+    if (runtime) {
+      if (!reconciliation.current)
+        throw new Error('입고 상태를 확인해 주세요.');
+      await reconciliation.current;
+    }
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];
     if (!sku) {
@@ -140,6 +248,8 @@ function QuickInboundScreenContent() {
     setNotice(null);
     await draft.update((prev) => {
       if (prev.seen.includes(eventId)) return prev;
+      if (prev.staged.length > 0)
+        throw new Error('이미 입고된 작업이에요. 입고내역을 확인해 주세요.');
       const found = prev.cart.find((r) => r.skuId === sku.id);
       const cart = found
         ? prev.cart.map((r) =>
@@ -164,12 +274,77 @@ function QuickInboundScreenContent() {
   }, `quick-inbound:${warehouseId}`);
   useScanner((e) => {
     if (putawayFor) return;
-    if (stagedMode || submit.isPending || !draft.ready) {
+    if (
+      stagedMode ||
+      submit.isPending ||
+      !draft.ready ||
+      !reconciled ||
+      editing ||
+      savingRef.current
+    ) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;
     }
     scanQueue.enqueue(e.code);
   });
+
+  async function chooseSku(sku: SelectedSku) {
+    if (
+      !reconciled ||
+      !draft.ready ||
+      stagedMode ||
+      savingRef.current ||
+      editing ||
+      scanQueue.blocked() ||
+      submit.isPending
+    )
+      return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const current = await draft.read();
+      const row = current.cart.find((item) => item.skuId === sku.id);
+      if (!row)
+        await setCart((prev) => [
+          ...prev,
+          {
+            skuId: sku.id,
+            skuCode: sku.code,
+            skuName: sku.name,
+            quantity: 1,
+          },
+        ]);
+      setQuantityText(String(row?.quantity ?? 1));
+      setEditing(sku.id);
+    } catch {
+      setNotice(
+        '상품을 저장하지 못했어요. 저장 공간을 확인한 뒤 다시 선택해 주세요.'
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+  async function saveQuantity() {
+    const quantity = parseQuantity(quantityText, 1);
+    if (!reconciled || !editing || quantity === null || savingRef.current)
+      return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await setCart((prev) =>
+        prev.map((row) => (row.skuId === editing ? { ...row, quantity } : row))
+      );
+      setEditing(null);
+    } catch {
+      setNotice(
+        '수량을 저장하지 못했어요. 입력을 유지한 채 다시 저장해 주세요.'
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
 
   if (!isSet) {
     return (
@@ -188,6 +363,14 @@ function QuickInboundScreenContent() {
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!draft.ready ? <p role="status">작업을 불러오고 있어요.</p> : null}
+      {draft.ready && !reconciled && !stagedMode && (
+        <p role="status">
+          이전 입고 결과를 확인하고 있어요. 확인 후 계속 입력할 수 있어요.
+          <Button onClick={() => void reconcileRef.current?.().catch(() => {})}>
+            입고 상태 다시 확인
+          </Button>
+        </p>
+      )}
       {draft.error ? (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
       ) : null}
@@ -217,6 +400,13 @@ function QuickInboundScreenContent() {
             입고는 끝났어요. 각 품목을 선반에 꽂으면서 대상 로케이션을 찍어
             주세요.
           </p>
+          <Link to="/inbound/history">입고내역 · 취소</Link>
+          {!reconciled && (
+            <p role="alert">
+              입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
+              대기 목록에서 이어서 작업해 주세요.
+            </p>
+          )}
           <ul className="space-y-2">
             {staged.map((line) => (
               <li
@@ -243,7 +433,11 @@ function QuickInboundScreenContent() {
                 <span className="text-lg font-semibold text-gray-900">
                   {line.quantity}
                 </span>
-                {line.putawayDoneQty >= line.quantity ? (
+                {(line.canceledQty ?? 0) > 0 ? (
+                  <span>취소됨</span>
+                ) : (line.returnedQty ?? 0) > 0 ? (
+                  <span>회송됨</span>
+                ) : line.putawayDoneQty >= line.quantity ? (
                   <span className="shrink-0 text-xs font-semibold text-green-700">
                     완료
                   </span>
@@ -262,9 +456,25 @@ function QuickInboundScreenContent() {
           <Button
             type="button"
             className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            onClick={() => {
-              setStaged([]);
-              setCart([]);
+            disabled={saving || !reconciled || !!draft.error}
+            onClick={async () => {
+              if (!reconciled || savingRef.current) return;
+              savingRef.current = true;
+              setSaving(true);
+              try {
+                await draft.update(() => ({
+                  receiptId: null,
+                  cart: [],
+                  staged: [],
+                  seen: [],
+                  key: crypto.randomUUID(),
+                }));
+              } catch {
+                setNotice('새 입고를 시작하지 못했어요. 다시 시도해 주세요.');
+              } finally {
+                savingRef.current = false;
+                setSaving(false);
+              }
             }}
           >
             새 입고 시작
@@ -272,10 +482,34 @@ function QuickInboundScreenContent() {
         </section>
       ) : (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">스캔한 품목</h2>
+          <h2 className="text-sm font-semibold text-gray-700">입고할 품목</h2>
+          <p className="text-xs text-gray-500">
+            발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
+          </p>
+          <SkuPicker
+            disabled={
+              !draft.ready ||
+              !reconciled ||
+              saving ||
+              !!editing ||
+              scanQueue.blocked() ||
+              submit.isPending
+            }
+            onSelect={(sku) => void chooseSku(sku)}
+          />
+          <BarcodeInput
+            disabled={
+              !draft.ready ||
+              !reconciled ||
+              saving ||
+              !!editing ||
+              submit.isPending
+            }
+            onSubmit={(code) => scanQueue.enqueue(code)}
+          />
           {cart.length === 0 ? (
             <p className="text-sm text-gray-500">
-              상품 바코드를 스캔해 주세요.
+              상품을 검색해서 선택하거나 바코드를 입력해 주세요.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -297,10 +531,19 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 수량`}
                       className="text-lg font-semibold text-gray-900 underline"
-                      disabled={scanQueue.blocked() || submit.isPending}
-                      onClick={() =>
-                        setEditing(editing === row.skuId ? null : row.skuId)
+                      disabled={
+                        !reconciled ||
+                        !draft.ready ||
+                        scanQueue.blocked() ||
+                        submit.isPending ||
+                        saving ||
+                        !!editing
                       }
+                      onClick={() => {
+                        if (!reconciled) return;
+                        setQuantityText(String(row.quantity));
+                        setEditing(row.skuId);
+                      }}
                     >
                       {row.quantity}
                     </button>
@@ -308,12 +551,31 @@ function QuickInboundScreenContent() {
                       type="button"
                       aria-label={`${row.skuName} 삭제`}
                       className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
-                      disabled={scanQueue.blocked() || submit.isPending}
-                      onClick={() =>
-                        void setCart((prev) =>
-                          prev.filter((r) => r.skuId !== row.skuId)
-                        )
+                      disabled={
+                        !reconciled ||
+                        !draft.ready ||
+                        scanQueue.blocked() ||
+                        submit.isPending ||
+                        saving ||
+                        !!editing
                       }
+                      onClick={async () => {
+                        if (!reconciled || savingRef.current) return;
+                        savingRef.current = true;
+                        setSaving(true);
+                        try {
+                          await setCart((prev) =>
+                            prev.filter((r) => r.skuId !== row.skuId)
+                          );
+                        } catch {
+                          setNotice(
+                            '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
+                          );
+                        } finally {
+                          savingRef.current = false;
+                          setSaving(false);
+                        }
+                      }}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
                     </button>
@@ -321,16 +583,37 @@ function QuickInboundScreenContent() {
                   {editing === row.skuId &&
                   !scanQueue.blocked() &&
                   !submit.isPending ? (
-                    <NumberPad
-                      value={row.quantity}
-                      onChange={(next) =>
-                        setCart((prev) =>
-                          prev.map((r) =>
-                            r.skuId === row.skuId ? { ...r, quantity: next } : r
-                          )
-                        )
-                      }
-                    />
+                    <div className="space-y-2">
+                      <QuantityInput
+                        label="입고 수량 직접 입력"
+                        value={quantityText}
+                        onChange={setQuantityText}
+                        min={1}
+                        disabled={saving}
+                      />
+                      <fieldset disabled={saving}>
+                        <NumberPad
+                          value={parseQuantity(quantityText, 0) ?? 0}
+                          onChange={(next) => setQuantityText(String(next))}
+                        />
+                      </fieldset>
+                      <Button
+                        disabled={
+                          !reconciled ||
+                          saving ||
+                          parseQuantity(quantityText, 1) === null
+                        }
+                        onClick={() => void saveQuantity()}
+                      >
+                        수량 저장
+                      </Button>
+                      <Button
+                        disabled={saving}
+                        onClick={() => setEditing(null)}
+                      >
+                        수정 취소
+                      </Button>
+                    </div>
                   ) : null}
                 </li>
               ))}
@@ -348,6 +631,8 @@ function QuickInboundScreenContent() {
             className="w-full"
             disabled={
               !reconciled ||
+              !!editing ||
+              saving ||
               !draft.ready ||
               !!draft.error ||
               scanQueue.blocked() ||
@@ -369,8 +654,10 @@ function QuickInboundScreenContent() {
                 {
                   onSuccess: async (result) => {
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
-                    await setStaged(
-                      result.lines.map((line) => {
+                    await draft.update((prev) => ({
+                      ...prev,
+                      receiptId: result.id,
+                      staged: result.lines.map((line) => {
                         const row = cart.find((r) => r.skuId === line.skuId);
                         return {
                           lineId: line.id,
@@ -380,8 +667,8 @@ function QuickInboundScreenContent() {
                           quantity: line.quantity,
                           putawayDoneQty: 0,
                         };
-                      })
-                    );
+                      }),
+                    }));
                   },
                 }
               );

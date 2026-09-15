@@ -1,3 +1,5 @@
+import { Server } from 'http';
+import { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { AuthorizationService, ScopeGuard } from '@app/authorization';
@@ -19,7 +21,7 @@ import { StocktakingService } from '../../stocktaking/services/stocktaking.servi
 // Real Nest routes/ScopeGuard/DTO pipeline; replace only the DB authorization source and mutation services.
 describe('warehouse v2 HTTP authorization and DTO contract', () => {
   let app: INestApplication;
-  const mutation = jest.fn();
+  const mutation = jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue({ lineId: 'line' });
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [
@@ -34,13 +36,15 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
         {
           provide: AuthorizationService,
           useValue: {
-            getScopesByRoles: async (roles: string[]) =>
-              new Set(
-                roles.includes('manager')
-                  ? ['inventory.operate', 'inventory.manage', 'inventory.adjust']
-                  : roles.includes('worker')
-                    ? ['inventory.operate']
-                    : [],
+            getScopesByRoles: (roles: string[]) =>
+              Promise.resolve(
+                new Set(
+                  roles.includes('manager')
+                    ? ['inventory.operate', 'inventory.manage', 'inventory.adjust']
+                    : roles.includes('worker')
+                      ? ['inventory.operate']
+                      : [],
+                ),
               ),
           },
         },
@@ -56,9 +60,9 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       ],
     }).compile();
     app = module.createNestApplication();
-    app.use((req: any, _res: unknown, next: () => void) => {
-      if (req.headers['x-test-role'])
-        req.user = { userId: '00000000-0000-4000-8000-000000000001', roles: [req.headers['x-test-role']] };
+    app.use((req: Request & { user?: { userId: string; roles: string[] } }, _res: unknown, next: () => void) => {
+      const role = req.headers['x-test-role'];
+      if (typeof role === 'string') req.user = { userId: '00000000-0000-4000-8000-000000000001', roles: [role] };
       next();
     });
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
@@ -69,16 +73,28 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
   beforeEach(() => mutation.mockClear());
 
   it('exposes authenticated identity to an operator', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
       .set('x-test-role', 'worker')
       .expect(200);
-    expect(response.body).toEqual({ actorId: '00000000-0000-4000-8000-000000000001', operationContractVersion: 2 });
+    expect(response.body).toEqual({
+      actorId: '00000000-0000-4000-8000-000000000001',
+      operationContractVersion: 2,
+      capabilities: { stocktakingAddCountItem: true, locationOutbound: true },
+    });
   });
   it('fails closed for anonymous work context and ordinary worker diagnostics', async () => {
-    await request(app.getHttpServer()).get('/inventory/work-context').expect(403);
-    await request(app.getHttpServer()).get('/inventory/diagnostics-access').set('x-test-role', 'worker').expect(403);
-    await request(app.getHttpServer()).get('/inventory/diagnostics-access').set('x-test-role', 'manager').expect(204);
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .expect(403);
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/diagnostics-access')
+      .set('x-test-role', 'worker')
+      .expect(403);
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/diagnostics-access')
+      .set('x-test-role', 'manager')
+      .expect(204);
   });
   it.each([
     '/inventory/stocks/adjust',
@@ -86,8 +102,12 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     '/movement/move',
     '/stocktaking/scan-product',
     '/stocktaking/scan-location',
+    '/stocktaking/count-items',
   ])('denies unauthorized %s before payload validation/replay', async (path) => {
-    await request(app.getHttpServer()).post(path).send({ contractVersion: 2 }).expect(403);
+    await request(app.getHttpServer() as Server)
+      .post(path)
+      .send({ contractVersion: 2 })
+      .expect(403);
     expect(mutation).not.toHaveBeenCalled();
   });
   const dto = {
@@ -99,35 +119,76 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     reason: 'found',
   };
   it('rejects mismatched header/body key without a mutation and exposes a stable code', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(app.getHttpServer() as Server)
       .post('/inventory/stocks/adjust')
       .set('x-test-role', 'manager')
       .set('Idempotency-Key', 'another-operation')
       .send(dto)
       .expect(409);
     expect(res.body).toMatchObject({ code: 'OPERATION_PAYLOAD_MISMATCH', error: 'OPERATION_PAYLOAD_MISMATCH' });
-    expect(res.body.message).not.toContain('operation');
+    expect(res.body).not.toHaveProperty('message', expect.stringContaining('operation'));
     expect(mutation).not.toHaveBeenCalled();
   });
   it('rejects unknown contract versions with an update instruction', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(app.getHttpServer() as Server)
       .post('/inventory/stocks/adjust')
       .set('x-test-role', 'manager')
       .send({ ...dto, contractVersion: 3 })
       .expect(426);
-    expect(res.body.code).toBe('CLIENT_UPDATE_REQUIRED');
+    expect(res.body).toMatchObject({ code: 'CLIENT_UPDATE_REQUIRED' });
     expect(mutation).not.toHaveBeenCalled();
   });
   it('v2 manual counts require the reviewed line revision before executing', async () => {
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as Server)
       .put('/stocktaking/lines/00000000-0000-4000-8000-000000000001/count')
       .set('x-test-role', 'worker')
       .send({ contractVersion: 2, idempotencyKey: 'count-operation', countedQuantity: 0 })
       .expect(400);
     expect(mutation).not.toHaveBeenCalled();
   });
+  const addCountItem = {
+    sessionId: '00000000-0000-4000-8000-000000000002',
+    locationId: '00000000-0000-4000-8000-000000000003',
+    skuId: '00000000-0000-4000-8000-000000000004',
+    countedQuantity: 0,
+    contractVersion: 2,
+    idempotencyKey: 'add-count-item',
+  };
+  it('authorizes an operator and executes SKU-based count creation with actor-bound v2 idempotency', async () => {
+    await request(app.getHttpServer() as Server)
+      .post('/stocktaking/count-items')
+      .set('x-test-role', 'worker')
+      .send(addCountItem)
+      .expect(200);
+    expect(mutation).toHaveBeenCalledWith(
+      'stocktaking.add-count-item.v2',
+      'add-count-item',
+      {
+        actorId: '00000000-0000-4000-8000-000000000001',
+        countedQuantity: 0,
+        locationId: '00000000-0000-4000-8000-000000000003',
+        sessionId: '00000000-0000-4000-8000-000000000002',
+        skuId: '00000000-0000-4000-8000-000000000004',
+      },
+      expect.any(Function),
+    );
+  });
+  it.each([
+    ['negative total', { countedQuantity: -1 }],
+    ['fractional total', { countedQuantity: 1.5 }],
+    ['unsafe integer total', { countedQuantity: Number.MAX_SAFE_INTEGER + 1 }],
+    ['malformed SKU id', { skuId: 'not-a-uuid' }],
+    ['legacy contract', { contractVersion: 1 }],
+  ])('rejects %s before executing SKU-based count creation', async (_label, override) => {
+    await request(app.getHttpServer() as Server)
+      .post('/stocktaking/count-items')
+      .set('x-test-role', 'worker')
+      .send({ ...addCountItem, ...override })
+      .expect(400);
+    expect(mutation).not.toHaveBeenCalled();
+  });
   it('v2 completion requires a preview token before executing', async () => {
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as Server)
       .post('/stocktaking/sessions/00000000-0000-4000-8000-000000000001/complete')
       .set('x-test-role', 'manager')
       .send({ contractVersion: 2, idempotencyKey: 'complete-operation' })
@@ -138,14 +199,16 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     const previous = process.env.WAREHOUSE_REQUIRE_OPERATION_V2;
     process.env.WAREHOUSE_REQUIRE_OPERATION_V2 = 'true';
     try {
-      const res = await request(app.getHttpServer()).post('/inventory/stocks/adjust').set('x-test-role', 'manager')
-        .send({ ...dto, contractVersion: undefined }).expect(426);
-      expect(res.body.code).toBe('CLIENT_UPDATE_REQUIRED');
+      const res = await request(app.getHttpServer() as Server)
+        .post('/inventory/stocks/adjust')
+        .set('x-test-role', 'manager')
+        .send({ ...dto, contractVersion: undefined })
+        .expect(426);
+      expect(res.body).toMatchObject({ code: 'CLIENT_UPDATE_REQUIRED' });
       expect(mutation).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.WAREHOUSE_REQUIRE_OPERATION_V2;
       else process.env.WAREHOUSE_REQUIRE_OPERATION_V2 = previous;
     }
   });
-
 });

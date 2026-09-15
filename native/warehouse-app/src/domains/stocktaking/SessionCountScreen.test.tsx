@@ -30,6 +30,7 @@ import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
+import { ConflictError } from '../../core/data/httpClient';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { SessionCountScreen } from './SessionCountScreen';
@@ -567,6 +568,9 @@ describe('SessionCountScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '열기' })).toBeEnabled()
     );
+    // The DOM can commit before the scanner subscription effect catches up.
+    // Flush hydration effects before emitting the synchronous physical scan burst.
+    await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: '스캔:A-01-02' }));
     fireEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
     fireEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -693,4 +697,167 @@ describe('SessionCountScreen', () => {
       ).toHaveLength(0);
     }
   );
+});
+
+it('실사 키보드 입력은 빈 값과 0을 구분한다', async () => {
+  const calls: Call[] = [];
+  renderScreen(calls);
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔:A-01-02' })
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '코튼셔츠 수량 입력' })
+  );
+  const input = screen.getByLabelText(/실물 총수량 직접 입력/);
+  await userEvent.clear(input);
+  expect(screen.getByRole('button', { name: '저장' })).toBeDisabled();
+  await userEvent.type(input, '0{Enter}');
+  expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  await userEvent.click(screen.getByRole('button', { name: '저장' }));
+  expect(calls.find((c) => c.method === 'PUT')?.body).toMatchObject({
+    countedQuantity: 0,
+    expectedRevision: 1,
+  });
+});
+
+it('바코드 없는 새 상품은 SKU로 총수량을 추가한다', async () => {
+  const calls: Call[] = [];
+  let added = false;
+  mountScreen((async (opts: Call) => {
+    calls.push(opts);
+    if (opts.path === '/inventory/work-context')
+      return { capabilities: { stocktakingAddCountItem: true } };
+    if (opts.path.startsWith('/inventory/skus/search/advanced'))
+      return {
+        items: [
+          {
+            id: 'new-sku',
+            code: 'NEW',
+            name: '신상품',
+            optionKey: '',
+            currentStock: 0,
+          },
+        ],
+        total: 1,
+      };
+    if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+    if (opts.path === '/stocktaking/scan-location')
+      return {
+        ...SCAN_LOCATION,
+        expectedItems: added
+          ? [
+              ...SCAN_LOCATION.expectedItems,
+              {
+                lineId: 'new-line',
+                lineRevision: 1,
+                skuId: 'new-sku',
+                skuCode: 'NEW',
+                skuName: '신상품',
+                barcode: null,
+                expectedQuantity: 0,
+                countedQuantity: 12,
+                status: 'counted',
+              },
+            ]
+          : SCAN_LOCATION.expectedItems,
+      };
+    if (opts.path === '/stocktaking/count-items') {
+      added = true;
+      return {
+        lineId: 'new-line',
+        lineRevision: 1,
+        skuId: 'new-sku',
+        countedQuantity: 12,
+      };
+    }
+    return {};
+  }) as ApiClient['request']);
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔:A-01-02' })
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '상품 추가' })
+  );
+  await userEvent.type(
+    screen.getByLabelText('상품명·코드 검색'),
+    '신상품{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '신상품 선택' })
+  );
+  await userEvent.type(screen.getByLabelText(/새 상품 실물 총수량/), '12');
+  await userEvent.click(screen.getByRole('button', { name: '실사에 추가' }));
+  expect(await screen.findByTestId('count-new-line')).toHaveTextContent('12');
+  expect(
+    calls.find((c) => c.path === '/stocktaking/count-items')?.body
+  ).toMatchObject({
+    sessionId: 's-1',
+    locationId: 'l-1',
+    skuId: 'new-sku',
+    countedQuantity: 12,
+  });
+  expect(
+    calls.filter((c) => c.path === '/stocktaking/scan-product')
+  ).toHaveLength(0);
+});
+
+it('다른 PC에서 추가된 상품과 충돌하면 기존 실사 총수량을 열고 자동 덮어쓰지 않는다', async () => {
+  let remote = false;
+  const calls: Call[] = [];
+  const item = {
+    lineId: 'remote-line',
+    lineRevision: 2,
+    skuId: 'new-sku',
+    skuCode: 'NEW',
+    skuName: '신상품',
+    barcode: null,
+    expectedQuantity: 0,
+    countedQuantity: 9,
+    status: 'counted',
+  };
+  mountScreen((async (opts: Call) => {
+    calls.push(opts);
+    if (opts.path === '/inventory/work-context')
+      return { capabilities: { stocktakingAddCountItem: true } };
+    if (opts.path.startsWith('/inventory/skus/search/advanced'))
+      return {
+        items: [
+          {
+            id: 'new-sku',
+            code: 'NEW',
+            name: '신상품',
+            optionKey: '',
+            currentStock: 0,
+          },
+        ],
+        total: 1,
+      };
+    if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+    if (opts.path === '/stocktaking/scan-location')
+      return { ...SCAN_LOCATION, expectedItems: remote ? [item] : [] };
+    if (opts.path === '/stocktaking/count-items') {
+      remote = true;
+      throw new ConflictError('exists', 'STOCKTAKING_REVISION_CONFLICT');
+    }
+    return {};
+  }) as ApiClient['request']);
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔:A-01-02' })
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '상품 추가' })
+  );
+  await userEvent.type(
+    screen.getByLabelText('상품명·코드 검색'),
+    '신상품{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '신상품 선택' })
+  );
+  await userEvent.type(screen.getByLabelText(/새 상품 실물 총수량/), '12');
+  await userEvent.click(screen.getByRole('button', { name: '실사에 추가' }));
+  expect(await screen.findByLabelText(/실물 총수량 직접 입력/)).toHaveValue(
+    '9'
+  );
+  expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
 });

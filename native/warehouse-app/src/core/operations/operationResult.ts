@@ -1,5 +1,9 @@
 /** Check fields used to display confirmed quantities before settling a durable write. */
-export function validateOperationResult(path: string, value: unknown): void {
+export function validateOperationResult(
+  path: string,
+  value: unknown,
+  requestBody?: unknown
+): void {
   const row = value as Record<string, unknown> | null;
   const object = !!row && typeof row === 'object' && !Array.isArray(row);
   const integer = (v: unknown) =>
@@ -17,6 +21,14 @@ export function validateOperationResult(path: string, value: unknown): void {
           typeof line.skuId === 'string' &&
           integer(line.quantity)
       );
+  else if (path === '/inbound/cancel') valid = object && row.success === true;
+  else if (/^\/purchase-orders\/receipt-lines\/[^/]+\/cancel$/.test(path))
+    valid =
+      object &&
+      typeof row.receiptLineId === 'string' &&
+      typeof row.poId === 'string' &&
+      typeof row.skuId === 'string' &&
+      integer(row.quantity);
   else if (/^\/purchase-orders\/[^/]+\/receipts$/.test(path))
     valid =
       object &&
@@ -50,6 +62,7 @@ export function validateOperationResult(path: string, value: unknown): void {
         (line) => typeof line.lineId === 'string' && integer(line.lineRevision)
       );
   else if (
+    path === '/stocktaking/count-items' ||
     path === '/stocktaking/scan-product' ||
     /^\/stocktaking\/lines\/[^/]+\/(count|reset-count)$/.test(path)
   )
@@ -61,5 +74,35 @@ export function validateOperationResult(path: string, value: unknown): void {
       integer(row.lineRevision);
   // An endpoint explicitly returning 204 has no quantity projection to decode.
   else if (value === undefined) valid = true;
+  if (/\/location-outbound-(starts|scans|forces|state)(\?|$)/.test(path)) {
+    const request = requestBody as { warehouseId?: unknown } | undefined;
+    const ids = new Set<string>();
+    valid =
+      valid &&
+      object &&
+      typeof row.warehouseId === 'string' &&
+      row.warehouseId.length > 0 &&
+      row.shipmentId === path.split('/')[2] &&
+      (!request || row.warehouseId === request.warehouseId) &&
+      Array.isArray(row.sources) &&
+      (row.status !== 'shipped' || row.sources.length === 0) &&
+      row.sources.every((source) => {
+        if (!source || typeof source !== 'object') return false;
+        const key = `${source.shipmentLineId}:${source.sourceLocationId}`;
+        if (ids.has(key)) return false;
+        ids.add(key);
+        return (
+          typeof source.shipmentLineId === 'string' &&
+          typeof source.skuId === 'string' &&
+          typeof source.sourceLocationId === 'string' &&
+          source.sourceLocationId.length > 0 &&
+          typeof source.sourceLocationCode === 'string' &&
+          integer(source.allocatedQty) &&
+          integer(source.pickedQty) &&
+          integer(source.remainingQty) &&
+          source.allocatedQty - source.pickedQty === source.remainingQty
+        );
+      });
+  }
   if (!valid) throw new TypeError('처리 결과를 확인하지 못했어요.');
 }

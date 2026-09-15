@@ -422,7 +422,7 @@ describe('PurchaseOrderReceiveScreen', () => {
 
     expect(
       within(sheet).getByText(
-        '남은 수량 12개를 넘습니다 — 넘는 분량은 간편입고로 받으세요'
+        '남은 수량 12개를 넘습니다. 발주 수량을 확인해 주세요.'
       )
     ).toBeInTheDocument();
     expect(within(sheet).getByRole('button', { name: '입고' })).toBeDisabled();

@@ -27,6 +27,7 @@ import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
+import { LocationOutboundService } from '../location-outbound.service';
 import { SimpleOutboundService } from '../simple-outbound.service';
 import { WaybillService } from '../../waybill/waybill.service';
 import { WaybillManager } from '../../waybill/waybill.manager';
@@ -36,11 +37,11 @@ import { WaybillRepository } from '../../waybill/waybill.repository';
 export function ambientDbService(tx: DbTx): DbService<typeof wmsSchema> {
   return {
     db: tx,
-    run: <T>(fn: (trx: DbTx) => Promise<T>): Promise<T> => fn(tx),
+    run: <T>(fn: (trx: DbTx) => Promise<T>, provided?: DbTx): Promise<T> => fn(provided ?? tx),
   } as unknown as DbService<typeof wmsSchema>;
 }
 
-export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
+function assembleOutbound(tx: DbTx) {
   const dbService = ambientDbService(tx);
   const workflowGate = new FulfillmentWorkflowGate(
     new ConfigService({
@@ -124,5 +125,14 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
     audit,
     workflowGate,
   );
-  return new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
+  const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
+  return { simple, location: new LocationOutboundService(dbService, commands, simple) };
+}
+
+export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
+  return assembleOutbound(tx).simple;
+}
+
+export function assembleLocationOutbound(tx: DbTx): LocationOutboundService {
+  return assembleOutbound(tx).location;
 }

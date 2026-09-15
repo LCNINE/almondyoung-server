@@ -15,7 +15,7 @@ export function SettingsRoute() {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">이 기기의 창고</h2>
         <p className="text-xs text-gray-500">
-          조정·실사는 여기서 고른 창고를 기준으로 기록돼요.
+          입고·적치·이동·조정·실사는 여기서 고른 창고를 기준으로 기록돼요.
         </p>
         <WarehousePicker />
       </section>

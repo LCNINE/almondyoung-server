@@ -21,6 +21,7 @@ import {
   SimpleInboundResponseDto,
 } from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
+import { InboundReceiptsQueryDto } from '../dto/inbound-receipts-query.dto';
 
 @ApiTags('Inbound')
 @Controller('inbound')
@@ -123,37 +124,20 @@ export class InboundController {
   @Get('receipts')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '회차별 입고내역 조회 - 전체 라인 포함' })
-  @ApiQuery({ name: 'skuId', required: false })
-  @ApiQuery({ name: 'warehouseId', required: false })
-  @ApiQuery({ name: 'method', required: false, enum: ['individual', 'simple', 'simple_fullscan', 'planned'] })
-  @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
-  @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
-  @ApiQuery({ name: 'limit', required: false })
-  @ApiQuery({ name: 'offset', required: false })
   @ApiResponse({
     status: 200,
     description: '회차별 입고내역이 성공적으로 조회되었습니다.',
     type: InboundReceiptHistoryResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async listInboundReceipts(
-    @Query('skuId') skuId?: string,
-    @Query('warehouseId') warehouseId?: string,
-    @Query('method') method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned',
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ): Promise<InboundReceiptHistoryResponseDto> {
-    return this.inboundService.listInboundReceipts({
-      skuId,
-      warehouseId,
-      method,
-      startDate,
-      endDate,
-      limit: limit ? parseInt(limit, 10) : undefined,
-      offset: offset ? parseInt(offset, 10) : undefined,
-    });
+  async listInboundReceipts(@Query() query: InboundReceiptsQueryDto): Promise<InboundReceiptHistoryResponseDto> {
+    if (query.receiptId && !query.warehouseId) {
+      throw new BadRequestException('warehouseId is required when filtering by receiptId');
+    }
+    if (query.startDate && query.endDate && query.startDate > query.endDate) {
+      throw new BadRequestException('startDate must be on or before endDate');
+    }
+    return this.inboundService.listInboundReceipts(query);
   }
 
   @Get('work-logs')

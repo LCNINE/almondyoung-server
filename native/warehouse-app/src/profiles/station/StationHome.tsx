@@ -1,6 +1,15 @@
 import { useDeveloperMode } from '../../core/diagnostics/DeveloperModeProvider';
 import { Link } from '@tanstack/react-router';
-import { Search, PackageCheck, Truck, Wrench, Settings } from 'lucide-react';
+import {
+  Search,
+  PackageCheck,
+  PackagePlus,
+  ClipboardList,
+  ArrowLeftRight,
+  ClipboardCheck,
+  Wrench,
+  Settings,
+} from 'lucide-react';
 import { TileGrid, HubTile } from '../../core/design/HubTile';
 
 export function StationHome() {
@@ -14,8 +23,20 @@ export function StationHome() {
         <Link to="/outbound">
           <HubTile icon={PackageCheck} label="출고작업" />
         </Link>
-        <Link to="/shipments">
-          <HubTile icon={Truck} label="출고조회" />
+        <Link to="/inbound">
+          <HubTile icon={PackagePlus} label="입고" />
+        </Link>
+        <Link to="/inbound/history">
+          <HubTile icon={ClipboardList} label="입고내역" />
+        </Link>
+        <Link to="/putaway">
+          <HubTile icon={ClipboardList} label="적치" />
+        </Link>
+        <Link to="/movement">
+          <HubTile icon={ArrowLeftRight} label="이동" />
+        </Link>
+        <Link to="/stocktaking">
+          <HubTile icon={ClipboardCheck} label="실사" />
         </Link>
         {developer.enabled && (
           <Link to="/diagnostics">

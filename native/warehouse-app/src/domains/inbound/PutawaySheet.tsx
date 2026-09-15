@@ -2,6 +2,7 @@ import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { useLocationSearch } from '../warehouse/useLocationSearch';
@@ -32,7 +33,9 @@ function PutawaySheetContent({
   onCancel: () => void;
 }) {
   const [dest, setDest] = useState<LocationRef | null>(null);
-  const [quantity, setQuantity] = useState(target.pendingQty);
+  const [quantityText, setQuantityText] = useState(String(target.pendingQty));
+  const quantity = parseQuantity(quantityText, 1) ?? 0;
+  const setQuantity = (next: number) => setQuantityText(String(next));
   const [term, setTerm] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
     crypto.randomUUID()
@@ -138,6 +141,13 @@ function PutawaySheetContent({
               전량
             </button>
           </div>
+          <QuantityInput
+            label="적치 수량 직접 입력"
+            value={quantityText}
+            onChange={setQuantityText}
+            min={1}
+            max={target.pendingQty}
+          />
           <NumberPad value={quantity} onChange={setQuantity} />
         </section>
 

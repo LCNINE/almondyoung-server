@@ -72,6 +72,8 @@ function renderScreen(calls: Call[]) {
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.startsWith('/inventory/skus/search/advanced?'))
+        return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
@@ -301,4 +303,30 @@ describe('QuickInboundScreen', () => {
     renderScreen([]);
     expect(await screen.findByRole('button', { name: '등록' })).toBeDisabled();
   });
+});
+
+it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선택은 수량을 늘리지 않는다', async () => {
+  const calls: Call[] = [];
+  renderScreen(calls);
+  await userEvent.type(
+    await screen.findByLabelText('상품명·코드 검색'),
+    '셔츠{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '코튼셔츠 선택' })
+  );
+  const quantity = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await userEvent.clear(quantity);
+  expect(screen.getByRole('button', { name: '수량 저장' })).toBeDisabled();
+  await userEvent.type(quantity, '10');
+  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  await userEvent.click(screen.getByRole('button', { name: '코튼셔츠 선택' }));
+  expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveValue('10');
+  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  await userEvent.click(screen.getByRole('button', { name: '등록' }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
+      { items: [{ skuId: 's1', quantity: 10 }] }
+    )
+  );
 });

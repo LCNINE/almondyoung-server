@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, ne, notInArray, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -15,6 +15,7 @@ export interface ShipmentByWaybillLine {
 }
 
 export interface ShipmentByWaybillResult {
+  warehouseId: string;
   shipmentId: string;
   trackingNo: string;
   carrier: string;
@@ -55,7 +56,7 @@ function readRecipientName(snapshot: unknown): string {
 export class ShipmentWaybillReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  async byTrackingNo(trackingNo: string): Promise<ShipmentByWaybillResult> {
+  async byTrackingNo(trackingNo: string, warehouseId?: string): Promise<ShipmentByWaybillResult> {
     const normalized = trackingNo.trim();
     return this.dbService.run(async (trx) => {
       const [waybill] = await trx
@@ -76,11 +77,23 @@ export class ShipmentWaybillReader {
       if (!waybill) throw new NotFoundException(`Waybill not found for tracking number ${normalized}`);
 
       const [shipment] = await trx
-        .select({ status: wmsTables.shipments.status, recipientSnapshot: wmsTables.shipments.recipientSnapshot })
+        .select({
+          warehouseId: wmsTables.shipments.warehouseId,
+          status: wmsTables.shipments.status,
+          recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+        })
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, waybill.shipmentId))
         .limit(1);
       if (!shipment) throw new NotFoundException(`Shipment ${waybill.shipmentId} not found`);
+
+      if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) {
+        throw new ConflictException({
+          code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH',
+          error: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH',
+          message: 'Shipment belongs to another warehouse',
+        });
+      }
 
       const [workItem] = await trx
         .select({
@@ -149,6 +162,7 @@ export class ShipmentWaybillReader {
 
       return {
         shipmentId: waybill.shipmentId,
+        warehouseId: shipment.warehouseId,
         trackingNo: waybill.trackingNo ?? normalized,
         carrier: waybill.carrier,
         waybillStatus: waybill.status,
