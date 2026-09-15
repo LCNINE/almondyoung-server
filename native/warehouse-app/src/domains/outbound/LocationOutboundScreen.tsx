@@ -93,20 +93,30 @@ function LocationWork({
   useEffect(() => {
     if (!draft.ready) return;
     let live = true;
+    let requested = false;
+    let running = false;
     async function recover() {
-      const saved = await draft.read();
-      const op = runtime ? await runtime.store.get(saved.startKey) : null;
-      if (!live || (!saved.started && op?.status !== 'confirmed')) return;
-      if (busyRef.current) return;
+      requested = true;
+      if (running || busyRef.current) return;
+      running = true;
       busyRef.current = true;
       setBusy(true);
       try {
-        await recoverRef.current();
-        if (!saved.started)
-          await draft.update((prev) => ({ ...prev, started: true }));
+        // A restored operation can finish while the first read is in flight.
+        // Keep its notification so we read the committed state afterward.
+        while (live && requested) {
+          requested = false;
+          const saved = await draft.read();
+          const op = runtime ? await runtime.store.get(saved.startKey) : null;
+          if (!live || (!saved.started && op?.status !== 'confirmed')) continue;
+          await recoverRef.current();
+          if (!saved.started)
+            await draft.update((prev) => ({ ...prev, started: true }));
+        }
       } catch (e) {
         if (live) setNotice(errorMessage(e, 'outbound'));
       } finally {
+        running = false;
         busyRef.current = false;
         if (live) setBusy(false);
       }
@@ -115,7 +125,7 @@ function LocationWork({
       if (live) setNotice(errorMessage(e, 'outbound'));
     });
     const off = runtime?.runner.subscribe(() => {
-      if (!workRef.current) void recover().catch(() => {});
+      void recover().catch(() => {});
     });
     return () => {
       live = false;

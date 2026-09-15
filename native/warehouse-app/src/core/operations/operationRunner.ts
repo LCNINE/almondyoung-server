@@ -87,7 +87,11 @@ export function createOperationRunner(deps: {
             beforeSend: (token) =>
               deps.assertPrincipal?.(token, input.scope) ?? Promise.resolve(),
           });
-          validateOperationResult(input.path, result);
+          validateOperationResult(
+            input.path,
+            result,
+            JSON.parse(input.bodyJson)
+          );
         } catch (error) {
           failure = error;
         }

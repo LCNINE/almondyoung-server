@@ -1,3 +1,10 @@
+import 'fake-indexeddb/auto';
+import {
+  OperationContext,
+  type WorkRuntime,
+} from '../../core/operations/OperationContext';
+import { createOperationStore } from '../../core/operations/operationStore';
+import { createOperationRunner } from '../../core/operations/operationRunner';
 import { expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -76,7 +83,11 @@ const state = {
   sources: [source('A', 1), source('B', 2)],
 };
 type Call = { path: string; method?: string; body?: unknown };
-function mount(request: ApiClient['request'], warehouseId = 'w') {
+function mount(
+  request: ApiClient['request'],
+  warehouseId = 'w',
+  runtime: WorkRuntime | null = null
+) {
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({
       id: warehouseId,
@@ -108,9 +119,11 @@ function mount(request: ApiClient['request'], warehouseId = 'w') {
       >
         <ApiClientProvider client={{ request }}>
           <WarehouseProvider prefs={prefs}>
-            <ScanProvider>
-              <RouterProvider router={router} />
-            </ScanProvider>
+            <OperationContext.Provider value={runtime}>
+              <ScanProvider>
+                <RouterProvider router={router} />
+              </ScanProvider>
+            </OperationContext.Provider>
           </WarehouseProvider>
         </ApiClientProvider>
       </QueryClientProvider>
@@ -230,4 +243,46 @@ it('스캔 생략은 사유와 모든 위치별 실물 수량을 명시한다', 
       ],
     })
   );
+});
+
+it('초기 조회 뒤에 복구된 스캔 생략 출고가 완료되면 최신 완료 상태를 다시 읽는다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  await store.draft('scope:draft:location-outbound:s', () => ({
+    startKey: 'start',
+    started: true,
+    sourceId: 'A',
+  }));
+  await store.begin({
+    id: 'force',
+    scope: 'scope',
+    resource: '/shipments/s',
+    path: '/shipments/s/location-outbound-forces',
+    method: 'POST',
+    bodyJson: JSON.stringify({ warehouseId: 'w', reason: '확인', items: [] }),
+    createdAt: Date.now(),
+  });
+  let shipped = false;
+  const api: ApiClient = {
+    request: async <T,>(opts: Parameters<ApiClient['request']>[0]) => {
+      if (opts.path.endsWith('/location-outbound-forces')) shipped = true;
+      return (
+        shipped ? { ...state, status: 'shipped', sources: [] } : state
+      ) as T;
+    },
+  };
+  const runtime = {
+    store,
+    runner: createOperationRunner({
+      api,
+      store,
+      getScope: async () => 'scope',
+      wait: async () => {},
+    }),
+    getScope: async () => 'scope',
+    getCapabilities: async () => ({ locationOutbound: true }),
+  };
+  mount(api.request, 'w', runtime);
+  await screen.findByRole('button', { name: 'A 선택' });
+  await runtime.runner.retryPending();
+  expect(await screen.findByText('출고완료')).toBeInTheDocument();
 });

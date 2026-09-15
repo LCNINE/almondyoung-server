@@ -78,7 +78,7 @@ function renderScreen(
   }>,
   bodies: Array<{ barcode: string; quantity: number }> = [],
   prefs: DevicePrefs = createMemoryPrefs(),
-  shipmentOverride: ShipmentByWaybill = shipment
+  shipmentOverride: ShipmentByWaybill | null = shipment
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -252,4 +252,18 @@ describe('SimpleOutboundScreen', () => {
       { barcode: '8801', quantity: 1 },
     ]);
   });
+});
+
+it('송장 상태를 잃은 화면에서는 HID로 구형 출고 요청을 만들지 않는다', async () => {
+  const bodies: Array<{ barcode: string; quantity: number }> = [];
+  renderScreen(
+    [{ status: 'in_progress', pickedQty: 1, inspectedQty: 0 }],
+    bodies,
+    undefined,
+    null
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔:8801' })
+  );
+  expect(bodies).toHaveLength(0);
 });

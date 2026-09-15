@@ -82,3 +82,23 @@ it('위치 출고 결과는 위치 식별자와 수량 관계가 있어야 한�
     })
   ).toThrow();
 });
+it('위치 출고의 다른 송장·창고 응답은 확인 완료로 인정하지 않는다', () => {
+  const result = {
+    shipmentId: 's',
+    warehouseId: 'w',
+    status: 'shipped',
+    lines: [],
+    sources: [],
+  };
+  expect(() =>
+    validateOperationResult('/shipments/s/location-outbound-scans', {
+      ...result,
+      shipmentId: 'other',
+    })
+  ).toThrow();
+  expect(() =>
+    validateOperationResult('/shipments/s/location-outbound-scans', result, {
+      warehouseId: 'other',
+    })
+  ).toThrow();
+});

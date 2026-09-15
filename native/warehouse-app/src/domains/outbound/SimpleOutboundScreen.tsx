@@ -86,6 +86,7 @@ function SimpleOutboundScreenContent({
     `outbound:${shipmentId}`
   );
   function acceptBarcode(code: string) {
+    if (!shipment || shipment.outboundContract === 'location') return;
     if (forceOpen || force.isPending) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;

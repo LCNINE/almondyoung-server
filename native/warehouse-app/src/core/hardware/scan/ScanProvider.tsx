@@ -47,7 +47,10 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const code = buffer.feed(ev.key, performance.now());
-      if (code) bus.emit({ code, source: 'hid', at: Date.now() });
+      if (code) {
+        ev.preventDefault();
+        bus.emit({ code, source: 'hid', at: Date.now() });
+      }
     }
     const reset = () => buffer.reset();
     window.addEventListener('keydown', onKeyDown);

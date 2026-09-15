@@ -1,5 +1,9 @@
 /** Check fields used to display confirmed quantities before settling a durable write. */
-export function validateOperationResult(path: string, value: unknown): void {
+export function validateOperationResult(
+  path: string,
+  value: unknown,
+  requestBody?: unknown
+): void {
   const row = value as Record<string, unknown> | null;
   const object = !!row && typeof row === 'object' && !Array.isArray(row);
   const integer = (v: unknown) =>
@@ -71,12 +75,15 @@ export function validateOperationResult(path: string, value: unknown): void {
   // An endpoint explicitly returning 204 has no quantity projection to decode.
   else if (value === undefined) valid = true;
   if (/\/location-outbound-(starts|scans|forces|state)(\?|$)/.test(path)) {
+    const request = requestBody as { warehouseId?: unknown } | undefined;
     const ids = new Set<string>();
     valid =
       valid &&
       object &&
       typeof row.warehouseId === 'string' &&
       row.warehouseId.length > 0 &&
+      row.shipmentId === path.split('/')[2] &&
+      (!request || row.warehouseId === request.warehouseId) &&
       Array.isArray(row.sources) &&
       (row.status !== 'shipped' || row.sources.length === 0) &&
       row.sources.every((source) => {
