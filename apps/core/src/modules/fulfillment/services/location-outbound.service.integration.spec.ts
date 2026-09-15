@@ -707,7 +707,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           .set('Idempotency-Key', forceKey)
           .send(force)
           .expect(201);
-        expect(resolved.body).toEqual({ outcome: 'confirmed', result: done.body });
+        expect(resolved.body).toEqual({ outcome: 'confirmed', result: done.body as unknown });
         const resolvedAgain = await request(server)
           .post(`${prefix}-force-resolutions`)
           .set('Idempotency-Key', forceKey)

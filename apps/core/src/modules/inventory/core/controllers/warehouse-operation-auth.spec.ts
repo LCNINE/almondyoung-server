@@ -101,12 +101,12 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
   ])('matches the actual force guard for %s', async (role, forceDispatch) => {
     const context = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
-      .set('x-test-role', role as string)
+      .set('x-test-role', role)
       .expect(200);
-    expect(context.body.permissions).toEqual({ forceDispatch });
+    expect(context.body).toHaveProperty('permissions', { forceDispatch });
     await request(app.getHttpServer() as Server)
       .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
-      .set('x-test-role', role as string)
+      .set('x-test-role', role)
       .set('Idempotency-Key', 'check-force')
       .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
       .expect(forceDispatch ? 201 : 403);
@@ -123,7 +123,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
         .get('/inventory/work-context')
         .set('x-test-role', 'manager')
         .expect(200);
-      expect(context.body.permissions).toEqual({ forceDispatch: false });
+      expect(context.body).toHaveProperty('permissions', { forceDispatch: false });
       await request(app.getHttpServer() as Server)
         .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
         .set('x-test-role', 'manager')
