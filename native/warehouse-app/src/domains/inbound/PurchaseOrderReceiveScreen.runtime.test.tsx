@@ -1,5 +1,12 @@
 import 'fake-indexeddb/auto';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -29,6 +36,7 @@ import { createOperationStore } from '../../core/operations/operationStore';
 import { WorkBoundary } from '../../core/operations/WorkBoundary';
 import { PurchaseOrderReceiveScreen } from './PurchaseOrderReceiveScreen';
 import type { ExpectedArrivalLine, ExpectedArrivalsResult } from './types';
+import type { SkuSearchItem } from '../inventory/types';
 
 const session = {
   bootstrap: async () => {},
@@ -80,7 +88,7 @@ const arrivals: ExpectedArrivalsResult = {
     },
   ],
 };
-const skuA = {
+const skuA: SkuSearchItem = {
   id: 'sku-a',
   code: 'ALMOND-A',
   name: '아몬드 셔츠',
@@ -139,6 +147,10 @@ function deferred<T>() {
 type Draft = {
   active: ExpectedArrivalLine | null;
   scanBump: number;
+  quantity?: {
+    text: string;
+    source: 'suggested' | 'manual' | 'scanned';
+  } | null;
   seen: string[];
   fresh: null;
   submitted: null | {
@@ -159,7 +171,26 @@ async function fixture(
   await setupStore?.(store);
   const persistedDraft = store.draft.bind(store);
   let scanWriteFailures = 0;
-  store.draft = ((id: string, update?: (value: unknown) => unknown) => {
+  let draftWriteGate: Promise<void> | undefined;
+  let scanWriteGate: Promise<void> | undefined;
+  let draftWriteFailures = 0;
+  let scanWriteCount = 0;
+  store.draft = (async (id: string, update?: (value: unknown) => unknown) => {
+    if (update && id === 'scope:draft:po-inbound:w-1:po-1') {
+      const gate = draftWriteGate;
+      draftWriteGate = undefined;
+      if (gate) await gate;
+      if (draftWriteFailures > 0) {
+        draftWriteFailures -= 1;
+        throw new Error('receipt draft storage unavailable');
+      }
+    }
+    if (update && id === 'scope:scan:po-inbound:w-1:po-1') {
+      scanWriteCount += 1;
+      const gate = scanWriteGate;
+      scanWriteGate = undefined;
+      if (gate) await gate;
+    }
     if (
       scanWriteFailures > 0 &&
       id === 'scope:scan:po-inbound:w-1:po-1' &&
@@ -287,6 +318,20 @@ async function fixture(
     },
     answerLookupFor(code: string, read: () => Promise<(typeof skuA)[]>) {
       lookupReaders.set(code, read);
+    },
+    deferNextDraftWrite() {
+      const gate = deferred<void>();
+      draftWriteGate = gate.promise;
+      return gate;
+    },
+    deferNextScanWrite() {
+      const gate = deferred<void>();
+      scanWriteGate = gate.promise;
+      return gate;
+    },
+    scanWriteCount: () => scanWriteCount,
+    failNextDraftWrite() {
+      draftWriteFailures += 1;
     },
     failNextScanWrite() {
       scanWriteFailures += 1;
@@ -1146,3 +1191,376 @@ it.each([
     await waitFor(async () => expect((await f.draft())?.active).toBeNull());
   }
 );
+
+const emptyDraft: Draft = {
+  active: null,
+  scanBump: 0,
+  seen: [],
+  fresh: null,
+  submitted: null,
+};
+const largeArrivals: ExpectedArrivalsResult = {
+  ...arrivals,
+  arrivals: [
+    {
+      ...arrivals.arrivals[0],
+      lines: [{ ...lineA, orderedQty: 200, outstandingQty: 200 }, lineB],
+    },
+  ],
+};
+
+it('adds one physical scan to the saved manual quantity and submits eleven', async () => {
+  const f = await fixture(emptyDraft, [
+    { id: 'first-a', data: '880000000001' },
+  ]);
+  await act(async () => f.firstArrivals.resolve(largeArrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: '10' } });
+  act(() => emitScan('880000000001'));
+  await waitFor(() => expect(input).toHaveValue('11'));
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity).toEqual({
+      text: '11',
+      source: 'scanned',
+    })
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '입고' }));
+  await screen.findByText('아몬드 셔츠 11개 입고됨');
+  expect(
+    f.requests
+      .filter((r) => r.path === '/purchase-orders/po-1/receipts')
+      .map((r) => r.body)
+  ).toEqual([
+    expect.objectContaining({
+      warehouseId: 'w-1',
+      lines: [{ skuId: 'sku-a', quantity: 11 }],
+    }),
+  ]);
+});
+
+it('restores a manually entered quantity from the same durable draft key', async () => {
+  const f = await fixture({ ...emptyDraft, active: lineA, scanBump: 1 });
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: '10' } });
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity).toEqual({
+      text: '10',
+      source: 'manual',
+    })
+  );
+  f.unmount();
+  f.reopen();
+  expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveValue('10');
+});
+
+async function readyQuantityFixture() {
+  const f = await fixture({
+    ...emptyDraft,
+    active: { ...lineA, orderedQty: 200, outstandingQty: 200 },
+    scanBump: 1,
+  });
+  await act(async () => f.firstArrivals.resolve(largeArrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  return { ...f, input };
+}
+
+it('keeps the newest typing visible while deferred writes serialize before a scan', async () => {
+  const f = await readyQuantityFixture();
+  const gate = f.deferNextDraftWrite();
+  act(() => {
+    fireEvent.change(f.input, { target: { value: '1' } });
+    fireEvent.change(f.input, { target: { value: '10' } });
+  });
+  expect(f.input).toHaveValue('10');
+  expect(screen.getByRole('button', { name: '입고' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '취소' })).toBeDisabled();
+  const unload = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  act(() => emitScan('880000000001'));
+  await waitFor(async () => expect(await f.savedScans()).toHaveLength(1));
+  expect(f.input).toHaveValue('10');
+  expect((await f.draft())?.scanBump).toBe(1);
+  await act(async () => gate.resolve());
+  await waitFor(() => expect(f.input).toHaveValue('11'));
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('11')
+  );
+});
+
+it('retains failed manual input and a following scan until saving is retried', async () => {
+  const f = await readyQuantityFixture();
+  f.failNextDraftWrite();
+  fireEvent.change(f.input, { target: { value: '10' } });
+  const sheet = screen.getByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByRole('button', { name: '저장 다시 시도' });
+  expect(f.input).toHaveValue('10');
+  expect(f.input).toBeDisabled();
+  act(() => emitScan('880000000001'));
+  await waitFor(async () => expect(await f.savedScans()).toHaveLength(1));
+  expect((await f.draft())?.quantity?.text).not.toBe('11');
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '저장 다시 시도' })
+  );
+  await waitFor(() => expect(f.input).toHaveValue('11'));
+  await waitFor(() =>
+    expect(within(sheet).getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+});
+
+it('lets an empty quantity be corrected before replaying the retained scan once', async () => {
+  const f = await readyQuantityFixture();
+  fireEvent.change(f.input, { target: { value: '' } });
+  act(() => emitScan('880000000001'));
+  const sheet = screen.getByRole('dialog', { name: '입고 수량' });
+  await within(sheet).findByText(/수량을 수정한 뒤 다시 확인/);
+  expect(f.input).toHaveValue('');
+  expect(f.input).toBeEnabled();
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  fireEvent.change(f.input, { target: { value: '4' } });
+  await userEvent.click(
+    within(sheet).getByRole('button', { name: '다시 확인' })
+  );
+  await waitFor(() => expect(f.input).toHaveValue('5'));
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect((await f.draft())?.seen).toHaveLength(1);
+});
+
+it('uses the latest accepted keypad text for clicks before a render or save', async () => {
+  const f = await readyQuantityFixture();
+  const gate = f.deferNextDraftWrite();
+  act(() => {
+    fireEvent.change(f.input, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    fireEvent.click(screen.getByRole('button', { name: '0' }));
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: '지우기' }));
+  });
+  expect(f.input).toHaveValue('10');
+  await act(async () => gate.resolve());
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('10')
+  );
+  fireEvent.keyDown(f.input, { key: 'Enter' });
+  expect(
+    f.requests.filter((r) => r.path === '/purchase-orders/po-1/receipts')
+  ).toHaveLength(0);
+});
+
+it('preserves a packaging increment over the outstanding quantity and blocks submit', async () => {
+  const f = await fixture({ ...emptyDraft, active: lineA, scanBump: 1 });
+  f.answerLookupFor('box-a', async () => [
+    {
+      ...skuA,
+      barcodes: [
+        { id: 'box', barcode: 'box-a', isPrimary: false, packingUnit: 20 },
+      ],
+    },
+  ]);
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: '10' } });
+  act(() => emitScan('box-a'));
+  await waitFor(() => expect(input).toHaveValue('30'));
+  expect(screen.getByRole('button', { name: '입고' })).toBeDisabled();
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('30')
+  );
+});
+
+it('keeps one hundred same-code scan events distinct after restarting from a suggestion', async () => {
+  const f = await fixture({
+    ...emptyDraft,
+    active: { ...lineA, orderedQty: 200, outstandingQty: 200 },
+  });
+  await act(async () => f.firstArrivals.resolve(largeArrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(input).toHaveValue('200');
+  act(() => {
+    for (let i = 0; i < 100; i++) emitScan('880000000001');
+  });
+  await waitFor(() => expect(input).toHaveValue('100'), { timeout: 10000 });
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  const saved = await f.draft();
+  expect(saved?.quantity?.text).toBe('100');
+  expect(new Set(saved?.seen).size).toBe(100);
+});
+
+it('locks duplicate exclusion clicks synchronously while the removal write is deferred', async () => {
+  const f = await readyQuantityFixture();
+  act(() => emitScan('880000000002'));
+  const exclude = await screen.findByRole('button', { name: '이 스캔 제외' });
+  const count = f.scanWriteCount();
+  const gate = f.deferNextScanWrite();
+  act(() => {
+    fireEvent.click(exclude);
+    fireEvent.click(exclude);
+  });
+  expect(exclude).toBeDisabled();
+  await waitFor(() => expect(f.scanWriteCount()).toBe(count + 1));
+  expect(await f.savedScans()).toHaveLength(1);
+  await act(async () => gate.resolve());
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect(f.input).toHaveValue('1');
+  expect(f.scanWriteCount()).toBe(count + 1);
+});
+
+it('retries a failed draft scan application without excluding or double-applying the event', async () => {
+  const f = await readyQuantityFixture();
+  f.failNextDraftWrite();
+  act(() => emitScan('880000000001'));
+  const sheet = screen.getByRole('dialog', { name: '입고 수량' });
+  const retry = await within(sheet).findByRole('button', { name: '다시 확인' });
+  expect(f.input).toHaveValue('1');
+  expect(f.input).toBeDisabled();
+  expect(
+    within(sheet).queryByRole('button', { name: '이 스캔 제외' })
+  ).not.toBeInTheDocument();
+  const saved = await f.savedScans();
+  expect(saved).toHaveLength(1);
+  await userEvent.click(retry);
+  await waitFor(() => expect(f.input).toHaveValue('2'));
+  await waitFor(async () => expect(await f.savedScans()).toEqual([]));
+  expect((await f.draft())?.seen).toEqual([saved![0].id]);
+});
+
+it('replays an already-applied new-format scan record without increasing the manual correction', async () => {
+  const f = await fixture(
+    {
+      ...emptyDraft,
+      active: lineA,
+      scanBump: 3,
+      seen: ['already-applied'],
+      quantity: { text: '2', source: 'manual' },
+    },
+    [{ id: 'already-applied', data: '880000000001' }]
+  );
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(input).toHaveValue('2');
+  expect(await f.savedScans()).toEqual([]);
+  act(() => emitScan('880000000001'));
+  await waitFor(() => expect(input).toHaveValue('3'));
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('3')
+  );
+});
+
+it('keeps later accepted typing behind a failed earlier write until the whole sequence is saved', async () => {
+  const f = await readyQuantityFixture();
+  const gate = f.deferNextDraftWrite();
+  f.failNextDraftWrite();
+  act(() => {
+    fireEvent.change(f.input, { target: { value: '1' } });
+    fireEvent.change(f.input, { target: { value: '10' } });
+    emitScan('880000000001');
+  });
+  await act(async () => gate.resolve());
+  const retry = await screen.findByRole('button', { name: '저장 다시 시도' });
+  expect(f.input).toHaveValue('10');
+  expect((await f.draft())?.quantity).toBeUndefined();
+  const retryGate = f.deferNextDraftWrite();
+  act(() => {
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+  });
+  await act(async () => retryGate.resolve());
+  await waitFor(() => expect(f.input).toHaveValue('11'));
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('11')
+  );
+  expect((await f.draft())?.seen).toHaveLength(1);
+});
+
+it('lets the keypad correct an above-limit integer using the latest accepted text', async () => {
+  const f = await readyQuantityFixture();
+  act(() => {
+    fireEvent.change(f.input, { target: { value: '2147483648' } });
+    fireEvent.click(screen.getByRole('button', { name: '지우기' }));
+  });
+  expect(f.input).toHaveValue('214748364');
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('214748364')
+  );
+});
+
+it('receives HID-shaped keydown after Enter completes manual entry without submitting', async () => {
+  const f = await readyQuantityFixture();
+  await userEvent.click(f.input);
+  fireEvent.change(f.input, { target: { value: '10' } });
+  fireEvent.keyDown(f.input, { key: 'Enter' });
+  expect(f.input).not.toHaveFocus();
+  act(() => {
+    for (const key of [...'880000000001', 'Enter'])
+      fireEvent.keyDown(document.activeElement!, { key });
+  });
+  await waitFor(() => expect(f.input).toHaveValue('11'));
+  await waitFor(async () =>
+    expect((await f.draft())?.quantity?.text).toBe('11')
+  );
+  expect(
+    f.requests.filter((r) => r.path === '/purchase-orders/po-1/receipts')
+  ).toHaveLength(0);
+});
+
+it('retries a failed submission draft save inside the sheet before sending the saved quantity', async () => {
+  const f = await readyQuantityFixture();
+  fireEvent.change(f.input, { target: { value: '10' } });
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+  f.failNextDraftWrite();
+  await userEvent.click(screen.getByRole('button', { name: '입고' }));
+  const retry = await within(
+    screen.getByRole('dialog', { name: '입고 수량' })
+  ).findByRole('button', { name: '입고 요청 저장 다시 시도' });
+  expect(f.input).toHaveValue('10');
+  expect(f.input).toBeDisabled();
+  expect(
+    f.requests.filter((r) => r.path === '/purchase-orders/po-1/receipts')
+  ).toHaveLength(0);
+  await userEvent.click(retry);
+  await screen.findByText('아몬드 셔츠 10개 입고됨');
+  const sent = f.requests.filter(
+    (r) => r.path === '/purchase-orders/po-1/receipts'
+  );
+  expect(sent).toHaveLength(1);
+  expect(sent[0].body).toMatchObject({
+    lines: [{ skuId: 'sku-a', quantity: 10 }],
+  });
+});
+
+it('does not turn a double-click on failed quantity saving into an automatic second retry', async () => {
+  const f = await readyQuantityFixture();
+  f.failNextDraftWrite();
+  fireEvent.change(f.input, { target: { value: '10' } });
+  const retry = await screen.findByRole('button', { name: '저장 다시 시도' });
+  f.failNextDraftWrite();
+  const gate = f.deferNextDraftWrite();
+  act(() => {
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+  });
+  await act(async () => gate.resolve());
+  expect(
+    await screen.findByRole('button', { name: '저장 다시 시도' })
+  ).toBeEnabled();
+  expect(f.input).toHaveValue('10');
+  expect(f.input).toBeDisabled();
+  expect((await f.draft())?.quantity).toBeUndefined();
+});

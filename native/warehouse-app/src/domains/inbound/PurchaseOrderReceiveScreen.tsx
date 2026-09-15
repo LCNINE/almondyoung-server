@@ -26,6 +26,14 @@ import {
 } from './mutations';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { ReceiveSheet } from './ReceiveSheet';
+import { parseQuantity } from '../../core/design/QuantityInput';
+import {
+  normalizePoReceiveDraft,
+  scanReceiptQuantity,
+  PoReceiveQuantityError,
+  type PoReceiveDraft,
+} from './poReceiveDraft';
+import { usePoReceiptQuantity } from './usePoReceiptQuantity';
 import { ReceiveScanRecovery } from './ReceiveScanRecovery';
 import {
   PoReceiveBarcodeNotFoundError,
@@ -34,7 +42,7 @@ import {
   PoReceiveScanNotAppliedError,
   PoReceiveSkuNotInOrderError,
 } from './poReceiveScanError';
-import type { ExpectedArrivalLine, FreshLine } from './types';
+import type { FreshLine } from './types';
 
 function createReadinessGate() {
   let release!: () => void;
@@ -51,26 +59,23 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const receive = useReceivePurchaseOrder();
   const cancel = useCancelPurchaseOrderReceipt();
 
-  const initial = useRef({
-    active: null as ExpectedArrivalLine | null,
+  const initial = useRef<PoReceiveDraft>({
+    active: null,
     scanBump: 0,
-    seen: [] as string[],
-    fresh: null as FreshLine | null,
-    submitted: null as {
-      target: ExpectedArrivalLine;
-      quantity: number;
-      key: string;
-    } | null,
+    seen: [],
+    fresh: null,
+    submitted: null,
   });
   const draft = useWorkDraft(
     `po-inbound:${warehouseId}:${poId}`,
     initial.current
   );
-  const { active, scanBump, fresh } = draft.value;
-  const setActive = (active: ExpectedArrivalLine | null) =>
-    draft.update((prev) => ({ ...prev, active }));
-  const setScanBump = (value: number) =>
-    draft.update((prev) => ({ ...prev, scanBump: value }));
+  const quantity = usePoReceiptQuantity(draft);
+  const { active, fresh } = draft.value;
+  const submitLock = useRef(false);
+  const unsavedSubmission = useRef<PoReceiveDraft['submitted']>(null);
+  const [submissionSaveFailed, setSubmissionSaveFailed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const setFresh = (
     value: FreshLine | null | ((p: FreshLine | null) => FreshLine | null)
   ) =>
@@ -98,6 +103,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   ...prev,
                   active: null,
                   scanBump: 0,
+                  quantity: null,
                   submitted: null,
                   fresh: {
                     lineId: result.lines[0].receiptLineId,
@@ -219,63 +225,88 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     return key;
   }
 
-  async function submitReceive(target: ExpectedArrivalLine, quantity: number) {
-    if (!warehouseId || !draft.ready || !reconciled) return;
-    const current = await draft.read();
-    const previous = current.submitted;
+  async function submitReceive() {
     if (
-      previous &&
-      (previous.target.skuId !== target.skuId || previous.quantity !== quantity)
+      !warehouseId ||
+      !draft.ready ||
+      !reconciled ||
+      !arrivalsReady ||
+      activeStateChanged ||
+      submitLock.current ||
+      quantity.isPending() ||
+      (draft.error && !submissionSaveFailed) ||
+      scanQueue.blocked()
     )
       return;
-    const submission = previous ?? {
-      target,
-      quantity,
-      key: crypto.randomUUID(),
-    };
-    await draft.update((prev) => ({
-      ...prev,
-      submitted: submission,
-    }));
-    receive.mutate(
-      {
+    submitLock.current = true;
+    setSubmitting(true);
+    let requestSaved = false;
+    try {
+      const current = normalizePoReceiveDraft(await draft.read());
+      if (quantity.isPending() || scanQueue.blocked()) return;
+      const target = current.submitted?.target ?? current.active;
+      if (!target) return;
+      const savedQuantity =
+        current.submitted?.quantity ??
+        parseQuantity(current.quantity?.text ?? '', 1, target.outstandingQty);
+      if (savedQuantity == null) return;
+      const submission = current.submitted ??
+        unsavedSubmission.current ?? {
+          target,
+          quantity: savedQuantity,
+          key: crypto.randomUUID(),
+        };
+      unsavedSubmission.current = submission;
+      if (!current.submitted)
+        await draft.update((prev) => ({ ...prev, submitted: submission }));
+      requestSaved = true;
+      unsavedSubmission.current = null;
+      setSubmissionSaveFailed(false);
+      const result = await receive.mutateAsync({
         poId,
         warehouseId,
         lines: [
-          {
-            skuId: submission.target.skuId,
-            quantity: submission.quantity,
-          },
+          { skuId: submission.target.skuId, quantity: submission.quantity },
         ],
         idempotencyKey: submission.key,
-      },
-      {
-        onSuccess: (result) => {
-          setFresh({
+      });
+      // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
+      if (!runtime) {
+        await draft.update((prev) => ({
+          ...prev,
+          active: null,
+          quantity: null,
+          scanBump: 0,
+          submitted: null,
+          fresh: {
             lineId: result.lines[0].receiptLineId,
             skuId: submission.target.skuId,
             skuName: submission.target.skuName,
             skuCode: submission.target.skuCode,
             quantity: submission.quantity,
             putawayDoneQty: 0,
-          });
-          void draft.update((prev) => ({ ...prev, submitted: null }));
-          closeSheet();
-        },
+          },
+        }));
       }
-    );
+    } catch {
+      if (!requestSaved) setSubmissionSaveFailed(true);
+      // The mutation and draft hooks expose recoverable failures in the open sheet.
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
+    }
   }
 
-  const activeRef = useRef(active);
-  activeRef.current = active;
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
     await waitForScanReadiness();
+    await quantity.waitUntilSaved();
     const beforeLookup = await draft.read();
     if (beforeLookup.seen.includes(eventId)) return;
     assertScanCanApply(beforeLookup);
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];
     await waitForScanReadiness();
+    await quantity.waitUntilSaved();
     const current = await draft.read();
     if (current.seen.includes(eventId)) return;
     assertScanCanApply(current);
@@ -296,31 +327,66 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     if (current.active && current.active.skuId !== sku.id) {
       throw new PoReceiveDifferentSkuError();
     }
+    if (current.submitted)
+      throw new Error('먼저 저장된 입고 요청을 확인해 주세요.');
+    // Validate before the storage reducer so an editable quantity error is not a storage failure.
+    scanReceiptQuantity(
+      normalizePoReceiveDraft(current).quantity ?? {
+        text: String(matched.outstandingQty),
+        source: 'suggested',
+      },
+      step
+    );
     setNotice(null);
-    await draft.update((prev) => ({
-      ...prev,
-      active: prev.active ?? matched,
-      scanBump: prev.active ? prev.scanBump + step : step,
-      seen: [...prev.seen, eventId],
-    }));
+    await draft.update((saved) => {
+      const prev = normalizePoReceiveDraft(saved);
+      if (prev.seen.includes(eventId)) return prev;
+      const nextQuantity = scanReceiptQuantity(
+        prev.quantity ?? {
+          text: String(matched.outstandingQty),
+          source: 'suggested',
+        },
+        step
+      );
+      return {
+        ...prev,
+        active: prev.active ?? matched,
+        quantity: nextQuantity,
+        // Retain the legacy tally; only quantity drives display, edits and submission.
+        scanBump: prev.active ? prev.scanBump + step : step,
+        seen: [...prev.seen, eventId],
+      };
+    });
   }, `po-inbound:${warehouseId}:${poId}`);
   useScanner((e) => {
     if (putawayOpen) return;
-    if (cancelConfirm || receive.isPending || !draft.ready) {
+    if (
+      cancelConfirm ||
+      receive.isPending ||
+      submitLock.current ||
+      unsavedSubmission.current ||
+      !draft.ready
+    ) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;
     }
     scanQueue.enqueue(e.code);
   });
 
-  function closeSheet() {
-    activeRef.current = null;
-    setActive(null);
-    setScanBump(0);
+  async function closeSheet() {
+    await draft.update((prev) => ({
+      ...prev,
+      active: null,
+      quantity: null,
+      scanBump: 0,
+    }));
   }
 
   const canDiscardInput =
     !draft.value.submitted &&
+    !quantity.pending &&
+    !submissionSaveFailed &&
+    !submitting &&
     scanQueue.ready &&
     scanQueue.size() === 0 &&
     !scanQueue.error() &&
@@ -329,13 +395,16 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     const current = await draft.read();
     if (
       current.submitted ||
+      quantity.isPending() ||
+      submitLock.current ||
+      unsavedSubmission.current ||
       !scanQueue.ready ||
       scanQueue.size() > 0 ||
       scanQueue.error() ||
       draft.error
     )
       return;
-    closeSheet();
+    await closeSheet();
   }
   const recoveryLock = useRef(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
@@ -364,14 +433,15 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const scanRecovery = scanError ? (
     <ReceiveScanRecovery
       message={
-        recoveryActionError ??
-        (scanQueue.storageError()
+        scanQueue.storageError()
           ? SCAN_STORAGE_MESSAGE
-          : scanError instanceof PoReceiveConfirmedUnappliedError
-            ? scanError.message
-            : '상품을 확인하지 못했어요. 다시 확인해 주세요.')
+          : (recoveryActionError ??
+            (scanError instanceof PoReceiveConfirmedUnappliedError ||
+            scanError instanceof PoReceiveQuantityError
+              ? scanError.message
+              : '상품을 확인하지 못했어요. 다시 확인해 주세요.'))
       }
-      busy={recoveryBusy}
+      busy={recoveryBusy || quantity.saveFailed}
       canRetry={
         !(scanError instanceof PoReceiveConfirmedUnappliedError) ||
         scanError instanceof PoReceiveScanNotAppliedError
@@ -555,8 +625,24 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   <Button
                     className="shrink-0 px-3 py-1.5 text-xs"
                     onClick={() => {
-                      setActive(item);
-                      setScanBump(0);
+                      if (
+                        !draft.ready ||
+                        quantity.isPending() ||
+                        scanQueue.blocked() ||
+                        submitLock.current
+                      )
+                        return;
+                      void draft
+                        .update((prev) => ({
+                          ...prev,
+                          active: item,
+                          scanBump: 0,
+                          quantity: {
+                            text: String(item.outstandingQty),
+                            source: 'suggested',
+                          },
+                        }))
+                        .catch(() => {});
                       setNotice(null);
                     }}
                   >
@@ -572,29 +658,95 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {activeItem ? (
         <ReceiveSheet
           item={activeItem}
-          scanBump={draft.value.submitted?.quantity ?? scanBump}
-          pending={
+          quantityText={
+            draft.value.submitted
+              ? String(draft.value.submitted.quantity)
+              : quantity.text
+          }
+          getQuantityText={quantity.getText}
+          onQuantityChange={(text) => {
+            if (
+              submitLock.current ||
+              unsavedSubmission.current ||
+              recoveryLock.current ||
+              draft.value.submitted ||
+              quantity.saveFailed ||
+              draft.error ||
+              !draft.ready ||
+              !reconciled ||
+              !arrivalsReady ||
+              activeStateChanged ||
+              (scanQueue.blocked() &&
+                !(scanQueue.error() instanceof PoReceiveQuantityError))
+            )
+              return;
+            quantity.change(text);
+          }}
+          submitDisabled={
             receive.isPending ||
+            submitting ||
+            quantity.pending ||
+            !!draft.error ||
             scanQueue.blocked() ||
             !draft.ready ||
             !reconciled ||
             !arrivalsReady ||
             activeStateChanged
           }
-          inputDisabled={!!draft.value.submitted}
+          inputDisabled={
+            !!draft.value.submitted ||
+            submissionSaveFailed ||
+            receive.isPending ||
+            submitting ||
+            recoveryBusy ||
+            !!draft.error ||
+            quantity.saveFailed ||
+            !draft.ready ||
+            !reconciled ||
+            !arrivalsReady ||
+            activeStateChanged ||
+            (scanQueue.blocked() &&
+              !(scanError instanceof PoReceiveQuantityError))
+          }
           cancelDisabled={!canDiscardInput}
           error={
             receive.isError ? errorMessage(receive.error, 'po-receive') : null
           }
           statusContent={sheetStatus}
-          recovery={scanRecovery}
-          onCancel={() => void discardDraftInput()}
-          onSubmit={(quantity) =>
-            submitReceive(
-              draft.value.submitted?.target ?? activeItem,
-              draft.value.submitted?.quantity ?? quantity
-            )
+          recovery={
+            <>
+              {submissionSaveFailed ? (
+                <div className="space-y-2" role="alert">
+                  <p>
+                    입고 요청을 저장하지 못했어요. 수량을 유지한 채 다시 시도해
+                    주세요.
+                  </p>
+                  <Button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => void submitReceive()}
+                  >
+                    입고 요청 저장 다시 시도
+                  </Button>
+                </div>
+              ) : null}
+              {quantity.saveFailed ? (
+                <div className="space-y-2" role="alert">
+                  <p>
+                    수량을 저장하지 못했어요. 입력한 수량을 유지하고 있어요.
+                  </p>
+                  <Button type="button" onClick={() => void quantity.retry()}>
+                    저장 다시 시도
+                  </Button>
+                </div>
+              ) : quantity.pending ? (
+                <p role="status">수량을 저장하고 있어요.</p>
+              ) : null}
+              {scanRecovery}
+            </>
           }
+          onCancel={() => void discardDraftInput()}
+          onSubmit={() => void submitReceive()}
         />
       ) : null}
 
