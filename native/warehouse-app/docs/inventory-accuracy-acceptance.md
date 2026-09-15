@@ -239,3 +239,63 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 로컬 구현·검증은 완료 범위이며, 현장 전체 사용 합격과 운영 배포 완료를 뜻하지 않는다. Push·PR 생성·병합·배포는 수행하지 않고 실행 브랜치와 worktree를 보존한다.
 
 임시 검증용 Nest/Vite 서버는 종료했다. 전용 로컬 DB와 work/의 실행 로그·fixture는 재검증을 위해 보존한다.
+
+## 물류팀 시연 결함 D1–D3 수정 및 검증
+
+검증일: 2026-09-15. 기준 `cfe7d5e7a`, 브랜치 `codex/warehouse-demo-defects`. 제품 변경 기준 `0c6fd4454`. 위의 과거 검사 기록과 구분한다.
+
+### 수정한 동작
+
+- **D1 연속 스캔:** 동일 송장·창고·출발 위치의 정상 전송 중에는 다음 입력을 영속 큐에 접수한다. 위치 변경·강제출고는 대기가 끝날 때까지 차단한다. 초기 복원, 다른 작업, 미확인, 계정 범위 오류, 저장 실패에는 스캔 예외를 허용하지 않는다. 처리 완료 후 과잉 입력은 미반영 사실을 안내한다. 전역 스캔 구독이 이전 렌더의 잠금·위치를 참조하지 않게 했다.
+- **D2 권한과 복구:** `work-context.permissions.forceDispatch`를 서버의 실제 ScopeGuard 규칙으로 계산한다. 일반 작업자는 강제출고를 실행할 수 없고, 권한 조회 실패·구형 서버에서도 일반 출고는 유지한다. 강제출고 직전에 권한을 다시 확인한다.
+- **D2 미확인 결과:** 위치별 강제출고는 원래 키·본문·사용자 범위로 `location-outbound-force-resolutions`를 호출한다. 서버가 저장한 성공 결과 또는 원자적으로 확정한 미반영 결과만 종결한다. 미반영 기록은 늦게 도착한 원래 force 요청도 막는다. 일반 401/403을 일괄 실패로 바꾸거나 이전 작업을 새 키로 만들지 않는다. 결과 저장은 사용자 범위와 현재 처리권을 확인하며 저장 실패 시 계속 차단한다.
+- **D3 완료 송장:** 창고 일치 확인 뒤 출고완료 여부를 먼저 판정한다. 활성 배치 작업이 없는 완료 송장도 ‘이미 출고된 송장이에요’로 안내하며 조회만 수행한다.
+
+### 자동 검사
+
+| 검사 | 결과 |
+|---|---|
+| warehouse-app 전체 | 83 files / **450 tests**, 실패·skip 0 |
+| 앱 production build | TypeScript 및 Vite 통과 |
+| 앱 lint | 오류 0, 경고 23개. Hook 의존성·Fast Refresh 경고이며 새 `WorkBoundary` hook export 경고 1개 포함 |
+| Core 입고·이동·출고·권한 회귀 | 9 suites / **115 tests**, 실패·skip 0 |
+| 서버 테스트 타입 표현 정리 후 영향 검사 | 2 suites / 54 tests, 실패·skip 0 |
+| 권한·명령·양방향 경합 검사 묶음 | 8 suites / 99 tests, 실패·skip 0 |
+| Core 타입 검사 | `tsc --noEmit -p apps/core/tsconfig.app.json` 통과 |
+| 변경 서버·테스트 9개 파일 ESLint | 오류·경고 0 |
+
+서버 묶음은 겹치므로 합산한 고유 총수로 해석하지 않는다. 빌드의 500 kB 초과 chunk 경고는 남는다. 신규 DB migration은 없다.
+
+실행 명령은 저장소 루트의 `corepack yarn --cwd native/warehouse-app test --run`, `build`, `lint`와 `DATABASE_URL=<전용 DB> corepack yarn test --runInBand --runTestsByPath ...`다. 115개 회귀의 파일은 다음과 같다.
+
+- `inbound.service.idempotency.spec.ts`, `inbound-receipt.kernel.integration.spec.ts`, `movement.service.idempotency.spec.ts`
+- `shipment-waybill.reader.integration.spec.ts`, `location-outbound.service.integration.spec.ts`, `location-outbound.controller.spec.ts`
+- `fulfillment-command.service.spec.ts`, `warehouse-operation-auth.spec.ts`, `outbound-v2-authorization.spec.ts`
+
+실제 runtime 화면 검사에는 IndexedDB 실행기·WorkBoundary·ScanProvider를 포함했다. 동일 입력 100회, 포커스된 입력과 전역 키보드 이벤트, 응답 유실·구형 작업 복원, 다른 계정, 손상 응답, 저장 실패, 처리권 경합을 검사했다. 서버 경합 검사는 서로 다른 PostgreSQL 연결에서 양방향 대기를 확인해 force 선행 시 출고 한 번, resolver 선행 시 재고 변경 0을 검증했다.
+
+### 실제 React → 로컬 HTTP → DB 대사
+
+| 시나리오 | 확인한 결과 |
+|---|---|
+| 입고10 → A 적치10 → B 이동4 → B 출고3 | RECEIVE10/MOVE10/MOVE4/SHIP3. 최종 A6/B1/기본존0, 총재고7 |
+| 동일 상품 100회, 서버 처리 1초 지연 | 입력창에서 100회 바코드+Enter 접수, HTTP201 정확히100회, SHIP100 한 번, 최종재고0 |
+| 첫 스캔 커밋 뒤 지속적인 응답 유실·창 재개 | 미확인1개와 후속2개 보존. ‘처리 내역 확인’ 후 ‘이어서 작업’으로 복구. 첫 키의 재시도5회에도 고유 스캔3개, SHIP3 한 번 |
+| 일반 작업자 | 관리자 권한 안내만 표시하고 강제출고 버튼 없음. 일반 스캔 출고 성공 |
+| 권한 확인 직후 force403 | 같은 키·본문의 resolver201로 미반영 확정. 당시 재고3/이벤트0. 확인창을 닫고 일반 스캔3개로 완료 |
+| force 커밋 후 응답 유실·권한 철회 | 일반 작업 권한으로 원래 키·본문의 resolver201 성공 복구. force 재전송 없이 SHIP3 한 번, 완료 화면 |
+| 완료 송장 재조회 | ‘이미 출고된 송장이에요’, 조회 이후 추가 POST0 |
+
+전용 DB는 `127.0.0.1:5432/warehouse_demo_defects_20260915`다. 기존 DB의 스키마만 복사하고 합성 데이터를 생성했다. 기존 DB를 초기화하거나 운영 데이터를 변경하지 않았다.
+
+로컬 검증은 제품 React 라우트·영속 실행기와 실제 Nest 컨트롤러·DTO·ScopeGuard·재고 서비스를 연결했다. Tauri 전송을 browser fetch로 대체하고 합성 작업자/관리자 인증을 주입했다. 응답 유실은 실제 서버 커밋 뒤 검증 전송 어댑터가 응답을 버리는 방식이다. 제품 코드에 인증 우회나 장애 주입을 추가하지 않았다. 검증 서버는 배치 목록 컨트롤러를 포함하지 않아 목록 조회가 404였으며, 이번 실제 화면 검사는 송장 조회 진입을 사용했다.
+
+검증 fixture·HTTP 기록·대사 JSON은 worktree의 `.superpowers/demo-http/`, 실행 로그는 `/tmp/demo-*` 및 각 작업 검사 로그에 남겼다. 합격 여부는 위 결과와 정식 회귀 테스트로 판단한다.
+
+### 릴리스와 남은 현장 검사
+
+1. Core 서버를 먼저 배포하고 `permissions.forceDispatch`와 결과 확인 endpoint를 확인한다. 기존 정상 force 응답과 기존 명령 키는 호환 유지한다.
+2. Windows 앱을 배포한다. 구형 서버 연결에서는 강제출고를 비활성화하며 기존 미확인 기록을 삭제하지 않는다. 오래된 simple-force 작업은 기존 복구/관리자 확인 경로를 유지한다.
+3. 실제 Windows 설치·일반 작업자/관리자 로그인, HID100회·입력 포커스, Wi-Fi 단절·재로그인, 네이티브 강제 종료 후 복구를 현장에서 검사한다. 두 작업자의 실제 박스 충돌과 실물/원장 대사도 별도다.
+
+**로컬 시연 흐름은 통과했다. 실제 Windows 장비·계정·네트워크 검사는 이 환경에서 수행하지 못했으며 현장 인수 완료를 뜻하지 않는다.** 원격 push·PR·병합·운영 배포는 수행하지 않았다.
