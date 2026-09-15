@@ -26,7 +26,31 @@ import {
 } from './mutations';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { ReceiveSheet } from './ReceiveSheet';
-import type { ExpectedArrivalLine, FreshLine } from './types';
+import { parseQuantity } from '../../core/design/QuantityInput';
+import {
+  normalizePoReceiveDraft,
+  scanReceiptQuantity,
+  PoReceiveQuantityError,
+  type PoReceiveDraft,
+} from './poReceiveDraft';
+import { usePoReceiptQuantity } from './usePoReceiptQuantity';
+import { ReceiveScanRecovery } from './ReceiveScanRecovery';
+import {
+  PoReceiveBarcodeNotFoundError,
+  PoReceiveConfirmedUnappliedError,
+  PoReceiveDifferentSkuError,
+  PoReceiveScanNotAppliedError,
+  PoReceiveSkuNotInOrderError,
+} from './poReceiveScanError';
+import type { FreshLine } from './types';
+
+function createReadinessGate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release, open: false };
+}
 
 function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const { warehouseId, isSet } = useWarehouse();
@@ -35,26 +59,23 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const receive = useReceivePurchaseOrder();
   const cancel = useCancelPurchaseOrderReceipt();
 
-  const initial = useRef({
-    active: null as ExpectedArrivalLine | null,
+  const initial = useRef<PoReceiveDraft>({
+    active: null,
     scanBump: 0,
-    seen: [] as string[],
-    fresh: null as FreshLine | null,
-    submitted: null as {
-      target: ExpectedArrivalLine;
-      quantity: number;
-      key: string;
-    } | null,
+    seen: [],
+    fresh: null,
+    submitted: null,
   });
   const draft = useWorkDraft(
     `po-inbound:${warehouseId}:${poId}`,
     initial.current
   );
-  const { active, scanBump, fresh } = draft.value;
-  const setActive = (active: ExpectedArrivalLine | null) =>
-    draft.update((prev) => ({ ...prev, active }));
-  const setScanBump = (value: number) =>
-    draft.update((prev) => ({ ...prev, scanBump: value }));
+  const quantity = usePoReceiptQuantity(draft);
+  const { active, fresh } = draft.value;
+  const submitLock = useRef(false);
+  const unsavedSubmission = useRef<PoReceiveDraft['submitted']>(null);
+  const [submissionSaveFailed, setSubmissionSaveFailed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const setFresh = (
     value: FreshLine | null | ((p: FreshLine | null) => FreshLine | null)
   ) =>
@@ -71,7 +92,8 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       const current = await draft.read();
       if (current.submitted) {
         const op = await runtime.store.get(current.submitted.key);
-        if (op?.status === 'confirmed') {
+        const scope = await runtime.getScope();
+        if (op?.scope === scope && op.status === 'confirmed') {
           const result = op.result as ReceivePurchaseOrderResult;
           const { target, quantity } = current.submitted;
           await draft.update((prev) =>
@@ -81,6 +103,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   ...prev,
                   active: null,
                   scanBump: 0,
+                  quantity: null,
                   submitted: null,
                   fresh: {
                     lineId: result.lines[0].receiptLineId,
@@ -91,6 +114,12 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                     putawayDoneQty: 0,
                   },
                 }
+          );
+        } else if (op?.scope === scope && op.status === 'rejected') {
+          await draft.update((prev) =>
+            prev.submitted?.key === current.submitted?.key
+              ? { ...prev, submitted: null }
+              : prev
           );
         }
       }
@@ -132,20 +161,53 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   // 시트는 열릴 때 스냅샷(active)을 잡지만, 표시는 매 렌더 lines 에서 같은
   // skuId 를 다시 찾아 쓴다 — onSettled 무효화로 잔여/입고 수량이 바뀌어도
-  // 시트가 옛 숫자를 계속 보여주면 "응답만 유실됐지 실제로는 커밋된" 제출 뒤
-  // 작업자가 고쳐서 다시 누르는 이중입고로 이어진다. lines 에서 사라졌다면(전량
-  // 도달로 서버가 confirmed 로 굳힌 경우) 스냅샷으로 폴백만 하고, 아래 effect 가
-  // 시트를 닫는다.
-  const activeItem = active
-    ? (lines.find((line) => line.skuId === active.skuId) ?? active)
-    : null;
-  const activeStillPending = active
-    ? lines.some((line) => line.skuId === active.skuId)
-    : true;
-
+  // 시트가 옛 숫자를 계속 보여주면 현재 발주 상태를 오해하게 된다. 다만 품목
+  // 소실이나 잔량 감소만으로 제출 성공을 추정하지 않고, 저장된 스냅샷과 수량은
+  // 명시적인 확인 또는 취소 때까지 보존한다.
+  const currentActiveItem = active
+    ? lines.find((line) => line.skuId === active.skuId)
+    : undefined;
+  const activeItem = active ? (currentActiveItem ?? active) : null;
+  const activeStateChanged =
+    !!active &&
+    (!currentActiveItem ||
+      currentActiveItem.outstandingQty < active.outstandingQty);
+  const arrivalsReady = arrivals.isSuccess && !arrivals.isFetching;
+  const scansCanRun = draft.ready && reconciled && arrivalsReady;
+  const scansCanRunRef = useRef(scansCanRun);
+  scansCanRunRef.current = scansCanRun;
+  const scanGateRef = useRef(createReadinessGate());
+  if (!scansCanRun && scanGateRef.current.open) {
+    scanGateRef.current = createReadinessGate();
+  }
   useEffect(() => {
-    if (active && !activeStillPending && !receive.isPending) closeSheet();
-  }, [active, activeStillPending]);
+    if (!scansCanRun) return;
+    scanGateRef.current.open = true;
+    scanGateRef.current.release();
+  }, [scansCanRun]);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const purchaseOrderRef = useRef(purchaseOrder);
+  purchaseOrderRef.current = purchaseOrder;
+  async function waitForScanReadiness() {
+    while (!scansCanRunRef.current) await scanGateRef.current.promise;
+  }
+
+  function assertScanCanApply(current: typeof initial.current) {
+    const currentOrder = purchaseOrderRef.current;
+    const currentLine = current.active
+      ? linesRef.current.find((line) => line.skuId === current.active?.skuId)
+      : undefined;
+    if (
+      !currentOrder ||
+      currentOrder.lines.length === 0 ||
+      (current.active &&
+        (!currentLine ||
+          currentLine.outstandingQty < current.active.outstandingQty))
+    ) {
+      throw new PoReceiveScanNotAppliedError();
+    }
+  }
 
   // 취소도 같은 회전 규칙을 따라야 한다. receiptLineId 가 있는 한 payload 는
   // 배너가 떠 있는 동안 고정이므로, 재시도는 새 키가 아니라 같은
@@ -163,82 +225,290 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     return key;
   }
 
-  async function submitReceive(target: ExpectedArrivalLine, quantity: number) {
-    if (!warehouseId || !draft.ready || !reconciled) return;
-    const current = await draft.read();
-    const previous = current.submitted;
-    const key =
-      previous?.target.skuId === target.skuId && previous.quantity === quantity
-        ? previous.key
-        : crypto.randomUUID();
-    await draft.update((prev) => ({
-      ...prev,
-      submitted: { target, quantity, key },
-    }));
-    receive.mutate(
-      {
+  async function submitReceive() {
+    if (
+      !warehouseId ||
+      !draft.ready ||
+      !reconciled ||
+      !arrivalsReady ||
+      activeStateChanged ||
+      submitLock.current ||
+      quantity.isPending() ||
+      (draft.error && !submissionSaveFailed) ||
+      scanQueue.blocked()
+    )
+      return;
+    submitLock.current = true;
+    setSubmitting(true);
+    let requestSaved = false;
+    try {
+      const current = normalizePoReceiveDraft(await draft.read());
+      if (quantity.isPending() || scanQueue.blocked()) return;
+      const target = current.submitted?.target ?? current.active;
+      if (!target) return;
+      const savedQuantity =
+        current.submitted?.quantity ??
+        parseQuantity(current.quantity?.text ?? '', 1, target.outstandingQty);
+      if (savedQuantity == null) return;
+      const submission = current.submitted ??
+        unsavedSubmission.current ?? {
+          target,
+          quantity: savedQuantity,
+          key: crypto.randomUUID(),
+        };
+      unsavedSubmission.current = submission;
+      if (!current.submitted)
+        await draft.update((prev) => ({ ...prev, submitted: submission }));
+      requestSaved = true;
+      unsavedSubmission.current = null;
+      setSubmissionSaveFailed(false);
+      const result = await receive.mutateAsync({
         poId,
         warehouseId,
-        lines: [{ skuId: target.skuId, quantity }],
-        idempotencyKey: key,
-      },
-      {
-        onSuccess: (result) => {
-          setFresh({
+        lines: [
+          { skuId: submission.target.skuId, quantity: submission.quantity },
+        ],
+        idempotencyKey: submission.key,
+      });
+      // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
+      if (!runtime) {
+        await draft.update((prev) => ({
+          ...prev,
+          active: null,
+          quantity: null,
+          scanBump: 0,
+          submitted: null,
+          fresh: {
             lineId: result.lines[0].receiptLineId,
-            skuId: target.skuId,
-            skuName: target.skuName,
-            skuCode: target.skuCode,
-            quantity,
+            skuId: submission.target.skuId,
+            skuName: submission.target.skuName,
+            skuCode: submission.target.skuCode,
+            quantity: submission.quantity,
             putawayDoneQty: 0,
-          });
-          void draft.update((prev) => ({ ...prev, submitted: null }));
-          closeSheet();
-        },
+          },
+        }));
       }
-    );
+    } catch {
+      if (!requestSaved) setSubmissionSaveFailed(true);
+      // The mutation and draft hooks expose recoverable failures in the open sheet.
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
+    }
   }
 
-  const activeRef = useRef(active);
-  activeRef.current = active;
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
+    await waitForScanReadiness();
+    await quantity.waitUntilSaved();
+    const beforeLookup = await draft.read();
+    if (beforeLookup.seen.includes(eventId)) return;
+    assertScanCanApply(beforeLookup);
     const skus = await lookup.mutateAsync(code);
     const sku = skus[0];
+    await waitForScanReadiness();
+    await quantity.waitUntilSaved();
+    const current = await draft.read();
+    if (current.seen.includes(eventId)) return;
+    assertScanCanApply(current);
     const matched = sku
-      ? lines.find((line) => line.skuId === sku.id)
+      ? linesRef.current.find((line) => line.skuId === sku.id)
       : undefined;
-    if (!sku || !matched) {
+    if (!sku) {
+      if (current.active) throw new PoReceiveBarcodeNotFoundError();
+      setNotice('이 발주에 없는 품목이에요.');
+      return;
+    }
+    if (!matched) {
+      if (current.active) throw new PoReceiveSkuNotInOrderError();
       setNotice('이 발주에 없는 품목이에요.');
       return;
     }
     const step = scanIncrement(sku, code);
-    const current = await draft.read();
-    if (current.seen.includes(eventId)) return;
     if (current.active && current.active.skuId !== sku.id) {
-      throw new Error('다른 품목이에요. 지금 수량을 먼저 확인해 주세요.');
+      throw new PoReceiveDifferentSkuError();
     }
+    if (current.submitted)
+      throw new Error('먼저 저장된 입고 요청을 확인해 주세요.');
+    // Validate before the storage reducer so an editable quantity error is not a storage failure.
+    scanReceiptQuantity(
+      normalizePoReceiveDraft(current).quantity ?? {
+        text: String(matched.outstandingQty),
+        source: 'suggested',
+      },
+      step
+    );
     setNotice(null);
-    await draft.update((prev) => ({
-      ...prev,
-      active: prev.active ?? matched,
-      scanBump: prev.active ? prev.scanBump + step : step,
-      seen: [...prev.seen, eventId],
-    }));
+    await draft.update((saved) => {
+      const prev = normalizePoReceiveDraft(saved);
+      if (prev.seen.includes(eventId)) return prev;
+      const nextQuantity = scanReceiptQuantity(
+        prev.quantity ?? {
+          text: String(matched.outstandingQty),
+          source: 'suggested',
+        },
+        step
+      );
+      return {
+        ...prev,
+        active: prev.active ?? matched,
+        quantity: nextQuantity,
+        // Retain the legacy tally; only quantity drives display, edits and submission.
+        scanBump: prev.active ? prev.scanBump + step : step,
+        seen: [...prev.seen, eventId],
+      };
+    });
   }, `po-inbound:${warehouseId}:${poId}`);
   useScanner((e) => {
     if (putawayOpen) return;
-    if (cancelConfirm || receive.isPending || !draft.ready) {
+    if (
+      cancelConfirm ||
+      receive.isPending ||
+      submitLock.current ||
+      unsavedSubmission.current ||
+      !draft.ready
+    ) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;
     }
     scanQueue.enqueue(e.code);
   });
 
-  function closeSheet() {
-    activeRef.current = null;
-    setActive(null);
-    setScanBump(0);
+  async function closeSheet() {
+    await draft.update((prev) => ({
+      ...prev,
+      active: null,
+      quantity: null,
+      scanBump: 0,
+    }));
   }
+
+  const canDiscardInput =
+    !draft.value.submitted &&
+    !quantity.pending &&
+    !submissionSaveFailed &&
+    !submitting &&
+    scanQueue.ready &&
+    scanQueue.size() === 0 &&
+    !scanQueue.error() &&
+    !draft.error;
+  async function discardDraftInput() {
+    const current = await draft.read();
+    if (
+      current.submitted ||
+      quantity.isPending() ||
+      submitLock.current ||
+      unsavedSubmission.current ||
+      !scanQueue.ready ||
+      scanQueue.size() > 0 ||
+      scanQueue.error() ||
+      draft.error
+    )
+      return;
+    await closeSheet();
+  }
+  const recoveryLock = useRef(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryActionError, setRecoveryActionError] = useState<string | null>(
+    null
+  );
+  const scanError = scanQueue.error();
+  useEffect(() => setRecoveryActionError(null), [scanError]);
+  async function runScanRecovery(
+    action: () => Promise<void>,
+    failureMessage: string
+  ) {
+    if (recoveryLock.current) return;
+    recoveryLock.current = true;
+    setRecoveryBusy(true);
+    setRecoveryActionError(null);
+    try {
+      await action();
+    } catch {
+      setRecoveryActionError(failureMessage);
+    } finally {
+      recoveryLock.current = false;
+      setRecoveryBusy(false);
+    }
+  }
+  const scanRecovery = scanError ? (
+    <ReceiveScanRecovery
+      message={
+        scanQueue.storageError()
+          ? SCAN_STORAGE_MESSAGE
+          : (recoveryActionError ??
+            (scanError instanceof PoReceiveConfirmedUnappliedError ||
+            scanError instanceof PoReceiveQuantityError
+              ? scanError.message
+              : '상품을 확인하지 못했어요. 다시 확인해 주세요.'))
+      }
+      busy={recoveryBusy || quantity.saveFailed}
+      canRetry={
+        !(scanError instanceof PoReceiveConfirmedUnappliedError) ||
+        scanError instanceof PoReceiveScanNotAppliedError
+      }
+      canExclude={
+        scanError instanceof PoReceiveConfirmedUnappliedError &&
+        !draft.value.submitted
+      }
+      onRetry={() =>
+        void runScanRecovery(
+          () => scanQueue.retryHead(),
+          '상품을 다시 확인하지 못했어요. 잠시 후 다시 확인해 주세요.'
+        )
+      }
+      onExclude={() =>
+        void runScanRecovery(
+          () => scanQueue.rejectHead(),
+          '이 스캔을 제외하지 못했어요. 저장 공간을 확인한 뒤 다시 시도해 주세요.'
+        )
+      }
+    />
+  ) : null;
+  const discardInput =
+    activeItem && canDiscardInput ? (
+      <Button
+        type="button"
+        className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+        onClick={() => void discardDraftInput()}
+      >
+        입력 취소
+      </Button>
+    ) : null;
+  const sheetStatus = !arrivalsReady ? (
+    arrivals.isError ? (
+      <div className="space-y-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <p role="alert">발주 정보를 확인하지 못했어요.</p>
+        <div className="flex gap-2">
+          <Button type="button" onClick={() => void arrivals.refetch()}>
+            다시 확인
+          </Button>
+          {discardInput}
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-2 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+        <p role="status">발주 정보를 확인하고 있어요.</p>
+        {discardInput}
+      </div>
+    )
+  ) : activeStateChanged ? (
+    <div className="space-y-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+      <p role="alert">발주 상태가 바뀌었어요. 입고내역을 확인해 주세요.</p>
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => void arrivals.refetch()}>
+          다시 확인
+        </Button>
+        {discardInput}
+      </div>
+    </div>
+  ) : draft.value.submitted ? (
+    <p
+      role="status"
+      className="rounded-md bg-gray-50 p-3 text-sm text-gray-700"
+    >
+      저장된 입고 요청을 같은 내용으로 다시 확인해 주세요.
+    </p>
+  ) : null;
 
   if (!isSet) {
     return (
@@ -259,21 +529,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {draft.error ? (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
       ) : null}
-      {scanQueue.error() ? (
-        <p role="alert">
-          {scanQueue.storageError()
-            ? SCAN_STORAGE_MESSAGE
-            : '상품을 확인하지 못했어요.'}{' '}
-          <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
-            다시 확인
-          </Button>
-          {!scanQueue.storageError() && (
-            <Button onClick={() => void scanQueue.rejectHead()}>
-              이 스캔 제외
-            </Button>
-          )}
-        </p>
-      ) : null}
+      {!activeItem ? scanRecovery : null}
       {notice ? (
         <p
           role="alert"
@@ -337,7 +593,9 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">발주 품목</h2>
-        {arrivals.isError ? (
+        {!activeItem && !arrivalsReady ? (
+          sheetStatus
+        ) : arrivals.isError ? (
           <p role="alert" className="text-sm text-red-600">
             {errorMessage(arrivals.error, 'po-receive')}
           </p>
@@ -370,8 +628,24 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   <Button
                     className="shrink-0 px-3 py-1.5 text-xs"
                     onClick={() => {
-                      setActive(item);
-                      setScanBump(0);
+                      if (
+                        !draft.ready ||
+                        quantity.isPending() ||
+                        scanQueue.blocked() ||
+                        submitLock.current
+                      )
+                        return;
+                      void draft
+                        .update((prev) => ({
+                          ...prev,
+                          active: item,
+                          scanBump: 0,
+                          quantity: {
+                            text: String(item.outstandingQty),
+                            source: 'suggested',
+                          },
+                        }))
+                        .catch(() => {});
                       setNotice(null);
                     }}
                   >
@@ -387,18 +661,95 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {activeItem ? (
         <ReceiveSheet
           item={activeItem}
-          scanBump={scanBump}
-          pending={
+          quantityText={
+            draft.value.submitted
+              ? String(draft.value.submitted.quantity)
+              : quantity.text
+          }
+          getQuantityText={quantity.getText}
+          onQuantityChange={(text) => {
+            if (
+              submitLock.current ||
+              unsavedSubmission.current ||
+              recoveryLock.current ||
+              draft.value.submitted ||
+              quantity.saveFailed ||
+              draft.error ||
+              !draft.ready ||
+              !reconciled ||
+              !arrivalsReady ||
+              activeStateChanged ||
+              (scanQueue.blocked() &&
+                !(scanQueue.error() instanceof PoReceiveQuantityError))
+            )
+              return;
+            quantity.change(text);
+          }}
+          submitDisabled={
             receive.isPending ||
+            submitting ||
+            quantity.pending ||
+            !!draft.error ||
             scanQueue.blocked() ||
             !draft.ready ||
-            !reconciled
+            !reconciled ||
+            !arrivalsReady ||
+            activeStateChanged
           }
+          inputDisabled={
+            !!draft.value.submitted ||
+            submissionSaveFailed ||
+            receive.isPending ||
+            submitting ||
+            recoveryBusy ||
+            !!draft.error ||
+            quantity.saveFailed ||
+            !draft.ready ||
+            !reconciled ||
+            !arrivalsReady ||
+            activeStateChanged ||
+            (scanQueue.blocked() &&
+              !(scanError instanceof PoReceiveQuantityError))
+          }
+          cancelDisabled={!canDiscardInput}
           error={
             receive.isError ? errorMessage(receive.error, 'po-receive') : null
           }
-          onCancel={closeSheet}
-          onSubmit={(quantity) => submitReceive(activeItem, quantity)}
+          statusContent={sheetStatus}
+          recovery={
+            <>
+              {submissionSaveFailed ? (
+                <div className="space-y-2" role="alert">
+                  <p>
+                    입고 요청을 저장하지 못했어요. 수량을 유지한 채 다시 시도해
+                    주세요.
+                  </p>
+                  <Button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => void submitReceive()}
+                  >
+                    입고 요청 저장 다시 시도
+                  </Button>
+                </div>
+              ) : null}
+              {quantity.saveFailed ? (
+                <div className="space-y-2" role="alert">
+                  <p>
+                    수량을 저장하지 못했어요. 입력한 수량을 유지하고 있어요.
+                  </p>
+                  <Button type="button" onClick={() => void quantity.retry()}>
+                    저장 다시 시도
+                  </Button>
+                </div>
+              ) : quantity.pending ? (
+                <p role="status">수량을 저장하고 있어요.</p>
+              ) : null}
+              {scanRecovery}
+            </>
+          }
+          onCancel={() => void discardDraftInput()}
+          onSubmit={() => void submitReceive()}
         />
       ) : null}
 
@@ -467,9 +818,13 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 export function PurchaseOrderReceiveScreen(
   props: Parameters<typeof PurchaseOrderReceiveScreenContent>[0]
 ) {
+  const { warehouseId } = useWarehouse();
   return (
     <WorkArea kind="inbound">
-      <PurchaseOrderReceiveScreenContent {...props} />
+      <PurchaseOrderReceiveScreenContent
+        key={`${warehouseId ?? 'no-warehouse'}:${props.poId}`}
+        {...props}
+      />
     </WorkArea>
   );
 }
