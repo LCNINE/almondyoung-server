@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { WorkRuntime } from './OperationContext';
 
 export type WorkReadiness =
@@ -28,7 +35,9 @@ export function useWorkReadiness(
     [runtime, authenticated]
   );
   const ownerRef = useRef(owner);
-  ownerRef.current = owner;
+  useLayoutEffect(() => {
+    ownerRef.current = owner;
+  }, [owner]);
   const generationRef = useRef(0);
   const flightRef = useRef<
     | {

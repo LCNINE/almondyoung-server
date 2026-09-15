@@ -1,5 +1,11 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { StrictMode } from 'react';
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { StrictMode, Suspense, startTransition, useState } from 'react';
 import { expect, it, vi } from 'vitest';
 import { createTestWorkRuntime } from '../../domains/inbound/__fixtures__/workRuntime';
 import { useWorkReadiness } from './useWorkReadiness';
@@ -259,4 +265,60 @@ it('StrictMode cleanup 뒤 이전 검사 실패가 새 ready를 덮지 않는다
   });
 
   expect(result.current.state).toEqual({ status: 'ready', scope: 'fixture' });
+});
+
+it('중단된 runtime render는 committed owner의 진행 중 검사를 취소하지 않는다', async () => {
+  const runtimeA = createTestWorkRuntime({ request: vi.fn() });
+  const runtimeB = createTestWorkRuntime({ request: vi.fn() });
+  const scopeA = deferred<string>();
+  vi.spyOn(runtimeA, 'getScope')
+    .mockImplementationOnce(() => scopeA.promise)
+    .mockResolvedValue('account-a');
+  const restoreA = vi.spyOn(runtimeA.runner, 'restore');
+  const scopeB = vi.spyOn(runtimeB, 'getScope');
+  const suspended = deferred<void>();
+
+  function Candidate({
+    runtime,
+    block,
+  }: {
+    runtime: typeof runtimeA;
+    block: boolean;
+  }) {
+    const { state } = useWorkReadiness(runtime, true);
+    if (block) throw suspended.promise;
+    return (
+      <p role="status">
+        {state.status === 'ready' ? state.scope : state.status}
+      </p>
+    );
+  }
+
+  let showRuntimeB!: () => void;
+  function App() {
+    const [next, setNext] = useState(false);
+    showRuntimeB = () => startTransition(() => setNext(true));
+    return (
+      <Suspense fallback={<p>fallback</p>}>
+        <Candidate runtime={next ? runtimeB : runtimeA} block={next} />
+      </Suspense>
+    );
+  }
+
+  render(<App />);
+  await waitFor(() => expect(runtimeA.getScope).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('status')).toHaveTextContent('checking_scope');
+
+  act(() => showRuntimeB());
+  expect(screen.queryByText('fallback')).toBeNull();
+  await act(async () => {
+    scopeA.resolve('account-a');
+    await scopeA.promise;
+  });
+
+  await waitFor(() =>
+    expect(screen.getByRole('status')).toHaveTextContent('account-a')
+  );
+  expect(restoreA).toHaveBeenCalledTimes(1);
+  expect(scopeB).not.toHaveBeenCalled();
 });
