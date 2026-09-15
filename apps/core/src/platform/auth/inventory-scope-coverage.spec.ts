@@ -83,6 +83,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /movement/move': S.OPERATE,
   'POST /purchase-orders/:poId/receipts': S.OPERATE,
   'POST /purchase-orders/receipt-lines/:receiptLineId/cancel': S.OPERATE,
+  'POST /stocktaking/count-items': S.OPERATE,
   'POST /stocktaking/lines/:id/reset-count': S.OPERATE,
   'PUT /stocktaking/lines/:id/count': S.OPERATE,
   'POST /stocktaking/scan-location': S.OPERATE,
