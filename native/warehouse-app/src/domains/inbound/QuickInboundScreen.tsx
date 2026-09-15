@@ -1,5 +1,6 @@
 import {
   confirmedPutawayQuantity,
+  confirmedCanceledQuantity,
   withConfirmedPutaway,
 } from './confirmedPutaway';
 import { Link } from '@tanstack/react-router';
@@ -115,6 +116,28 @@ function QuickInboundScreenContent() {
           )
         )
       );
+      const canceled = new Map(
+        await Promise.all(
+          latest.staged.map(
+            async (line) =>
+              [
+                line.lineId,
+                await confirmedCanceledQuantity(runtime, line.lineId),
+              ] as const
+          )
+        )
+      );
+      if ([...canceled.values()].some((quantity) => quantity > 0))
+        await draft.update((prev) => ({
+          ...prev,
+          staged: prev.staged.map((line) => ({
+            ...line,
+            canceledQty: Math.max(
+              line.canceledQty ?? 0,
+              canceled.get(line.lineId) ?? 0
+            ),
+          })),
+        }));
       const receiptId =
         latest.receiptId ??
         (op?.status === 'confirmed'
@@ -162,7 +185,11 @@ function QuickInboundScreenContent() {
                 currentLine?.putawayFromOriginQty ?? 0
               )
             ),
-            canceledQty: currentLine?.canceledQty ?? line.canceledQty,
+            canceledQty: Math.max(
+              currentLine?.canceledQty ?? 0,
+              line.canceledQty ?? 0,
+              canceled.get(line.lineId) ?? 0
+            ),
             returnedQty: currentLine?.returnedQty ?? line.returnedQty,
           };
         }),

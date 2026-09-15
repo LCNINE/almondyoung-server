@@ -161,3 +161,23 @@ it('조회 오류를 빈 이력으로 표시하지 않는다', async () => {
   );
   expect(screen.queryByText('입고내역이 없어요.')).not.toBeInTheDocument();
 });
+it('다음 페이지 조회 실패 시 이전 이력을 유지하고 취소는 잠근다', async () => {
+  mount((async (opts: Call) => {
+    if (opts.path.includes('offset=20')) throw new Error('offline');
+    return {
+      items: [receipt('d', 'direct')],
+      total: 21,
+      serverTime: new Date().toISOString(),
+    };
+  }) as ApiClient['request']);
+  await screen.findByRole('button', { name: '직접상품 입고 취소' });
+  await userEvent.click(screen.getByRole('button', { name: '다음' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '입고내역을 불러오지 못했어요.'
+  );
+  expect(screen.getByText('직접상품')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '직접상품 입고 취소' })
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(/1페이지/)).toBeInTheDocument();
+});
