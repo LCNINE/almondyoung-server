@@ -4,7 +4,7 @@ import { ApiError, type ApiClient } from '../data/httpClient';
 import { type OperationStore, type StoredOperation } from './operationStore';
 type Request = Parameters<ApiClient['request']>[0];
 const ledgerPath =
-  /^(\/inbound\/(simple|putaway|cancel)$|\/movement\/move$|\/inventory\/stocks\/adjust$|\/purchase-orders\/[^/]+\/receipts$|\/purchase-orders\/receipt-lines\/[^/]+\/cancel$|\/shipments\/[^/]+\/simple-outbound-(scans|forces)$|\/stocktaking\/(scan-product|scan-location|count-items)$|\/stocktaking\/lines\/[^/]+\/(count|reset-count)$|\/stocktaking\/sessions\/[^/]+\/complete$)/;
+  /^(\/inbound\/(simple|putaway|cancel)$|\/movement\/move$|\/inventory\/stocks\/adjust$|\/purchase-orders\/[^/]+\/receipts$|\/purchase-orders\/receipt-lines\/[^/]+\/cancel$|\/shipments\/[^/]+\/(simple-outbound-(scans|forces)|location-outbound-(starts|scans|forces))$|\/stocktaking\/(scan-product|scan-location|count-items)$|\/stocktaking\/lines\/[^/]+\/(count|reset-count)$|\/stocktaking\/sessions\/[^/]+\/complete$)/;
 function resource(path: string, body: Record<string, unknown>) {
   if (path.startsWith('/shipments/'))
     return path.split('/').slice(0, 3).join('/');

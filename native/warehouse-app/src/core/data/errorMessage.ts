@@ -1,4 +1,4 @@
-import { ConflictError } from './httpClient';
+import { ApiError, ConflictError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
 export type ErrorContext =
@@ -47,6 +47,14 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  LOCATION_OUTBOUND_WAREHOUSE_MISMATCH:
+    '송장의 창고와 선택 창고가 달라요. 창고를 확인해 주세요.',
+  LOCATION_OUTBOUND_SOURCE_MISMATCH:
+    '선택 위치에 이 상품의 출고 할당이 없어요. 표시된 위치를 확인해 주세요.',
+  LOCATION_OUTBOUND_OVERSCAN:
+    '선택 위치의 남은 수량을 초과했어요. 수량과 위치를 확인해 주세요.',
+  LOCATION_OUTBOUND_PROGRESS_CHANGED:
+    '출고 진행이 바뀌었어요. 최신 위치별 수량을 다시 확인해 주세요.',
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN:
     '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
   SIMPLE_OUTBOUND_PLAN_INVALIDATED:
@@ -61,6 +69,13 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (
+    error instanceof ApiError &&
+    context === 'outbound' &&
+    error.code &&
+    OUTBOUND_CONFLICT_MESSAGES[error.code]
+  )
+    return OUTBOUND_CONFLICT_MESSAGES[error.code];
   if (error instanceof ConflictError) {
     if (error.code === 'STOCKTAKING_COUNT_REQUIRED')
       return '아직 세지 않은 상품이 있어요. 모든 수량을 확인해 주세요.';

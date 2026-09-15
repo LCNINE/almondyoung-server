@@ -91,7 +91,8 @@ function renderScreen(
       },
     ],
     created: [],
-  }
+  },
+  foundWarehouse = 'w-1'
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -99,8 +100,11 @@ function renderScreen(
   const client: ApiClient = {
     request: (async (o: { path: string }) => {
       paths.push(o.path);
+      if (o.path === '/inventory/work-context')
+        return { capabilities: { locationOutbound: true } };
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-1')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-1',
           trackingNo: 'T-1',
           carrier: 'HANJIN',
@@ -115,6 +119,7 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-NOWORKITEM')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-2',
           trackingNo: 'T-NOWORKITEM',
           carrier: 'HANJIN',
@@ -129,6 +134,7 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-SHIPPED')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-3',
           trackingNo: 'T-SHIPPED',
           carrier: 'HANJIN',
@@ -398,4 +404,15 @@ describe('OutboundQueueScreen', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
   });
+});
+
+it('다른 창고의 송장은 화면 진입 전에 거절한다', async () => {
+  const paths: string[] = [];
+  renderScreen(paths, undefined, undefined, 'other');
+  await userEvent.type(
+    await screen.findByLabelText('운송장번호'),
+    'T-1{Enter}'
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent('창고');
+  expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
 });
