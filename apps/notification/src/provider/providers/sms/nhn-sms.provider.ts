@@ -47,13 +47,14 @@ interface NHNSmsDetailResponse {
     resultCode: number;
     resultMessage: string;
   };
+  // 단건 조회의 data 는 객체다 — 목록 조회(`?requestId=`)의 배열과 모양이 다르다.
   body?: {
-    data?: Array<{
+    data?: {
       requestId: string;
       recipientSeq: number;
       recipientNo: string;
       body: string;
-    }>;
+    };
   };
 }
 
@@ -259,8 +260,11 @@ export class NHNSmsProvider implements NotificationProvider {
    */
   async getSentBody(requestId: string, recipientSeq: number): Promise<string | undefined> {
     try {
+      // recipientSeq 는 필수다. 빼면 조회가 `-2012 Search parameter is invalid.(requestId and mtPr)`
+      // 로 거부된다 — HTTP 는 200 이라 상태코드만 보면 성공으로 읽힌다.
       const response = await this.client.get<NHNSmsDetailResponse>(
         `/sms/v3.0/appKeys/${this.config.appKey}/sender/sms/${requestId}`,
+        { params: { recipientSeq } },
       );
 
       if (!response.data.header.isSuccessful) {
@@ -272,7 +276,7 @@ export class NHNSmsProvider implements NotificationProvider {
         return undefined;
       }
 
-      return response.data.body?.data?.find((row) => row.recipientSeq === recipientSeq)?.body;
+      return response.data.body?.data?.body;
     } catch (error: unknown) {
       this.logger.error('Failed to read sent SMS body', {
         requestId,

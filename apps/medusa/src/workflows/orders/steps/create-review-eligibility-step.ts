@@ -24,7 +24,19 @@ type CreateReviewEligibilityInput = {
  * 자동 구매확정 잡이 「자격이 실제로 생겼나」를 판정하려면 결과가 필요하다.
  */
 export type CreateReviewEligibilityResult =
-  | { status: 'created'; orderId: string; almondUserId: string; itemCount: number }
+  | {
+      status: 'created';
+      orderId: string;
+      almondUserId: string;
+      /** 발급을 «요청한» 라인 수. */
+      itemCount: number;
+      /**
+       * ugc 가 «실제로 만든» 자격 행 수. 발급은 멱등이라(같은 라인을 다시 보내면 안 만든다)
+       * 재시도에서는 요청 수보다 작다. 본문을 못 읽으면 요청 수로 둔다 — 세는 일이 발급을
+       * 실패시키면 안 된다.
+       */
+      createdCount: number;
+    }
   | { status: 'skipped'; orderId: string; reason: string };
 
 /**
@@ -92,6 +104,7 @@ export async function createReviewEligibility(
 
   let almondUserId: string;
   let items: Array<{ productId: string; orderLineId: string; orderLineAmount?: number }>;
+  let createdCount = 0;
 
   try {
     // customer metadata에서 almond_user_id 조회
@@ -168,12 +181,24 @@ export async function createReviewEligibility(
       const body = await response.text().catch(() => '');
       return skip(`ugc_error_${response.status}`, body);
     }
+
+    // 응답 본문은 «만들어진» 자격 목록이다. 읽기에 실패해도 발급은 이미 성공했으므로
+    // 요청 수로 둔다 — 이 함수의 불변식(던지지 않는다)이 세는 일보다 먼저다.
+    // 🔴 try 를 «안쪽»에 둔다. 본문 파서가 없는 응답에서는 호출 자체가 동기적으로 던져
+    // `.catch()` 로 안 잡히고, 바깥 catch 로 빠지면 성공한 발급이 skipped 가 된다
+    // (그러면 발급 표식이 안 남아 다음 틱이 같은 주문을 계속 다시 잡는다).
+    try {
+      const created = await response.json();
+      createdCount = Array.isArray(created) ? created.length : items.length;
+    } catch {
+      createdCount = items.length;
+    }
   } catch (err) {
     return skip('ugc_request_failed', (err as Error)?.message);
   }
 
   logger.info(`Review eligibility created for order ${input.orderId}, user ${almondUserId}`);
-  return { status: 'created', orderId: input.orderId, almondUserId, itemCount: items.length };
+  return { status: 'created', orderId: input.orderId, almondUserId, itemCount: items.length, createdCount };
 }
 
 export const createReviewEligibilityStep = createStep(

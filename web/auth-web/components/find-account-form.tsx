@@ -14,6 +14,7 @@ import { PasswordInput } from "@/components/password-input"
 import { PhoneNumberInput } from "@/components/phone-number-input"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { MessageCircle } from "lucide-react"
 import { FieldDescription } from "@/components/ui/field"
 import {
   FloatingField,
@@ -39,6 +40,11 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
   const [pending, startTransition] = useTransition()
   const [step, setStep] = useState<Step>("verify")
   const [codeSent, setCodeSent] = useState(false)
+  // 어느 채널을 보내는 중인지. pending 하나만 보면 카카오톡을 누를 때 문자 재발송 버튼까지
+  // 로딩 상태로 바뀐다.
+  const [sendingChannel, setSendingChannel] = useState<null | "SMS" | "KAKAO">(
+    null
+  )
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [errorField, setErrorField] = useState<RecoveryField | null>(null)
@@ -58,27 +64,40 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
     setMessage(null)
   }
 
-  function sendCode() {
+  function sendCode(channel?: "KAKAO") {
     const form = formRef.current
     if (!form) return
     if (!phoneRef.current?.reportValidity()) return
 
     clear()
 
+    setSendingChannel(channel ?? "SMS")
+
     startTransition(async () => {
-      const res = await sendRecoveryCodeAction(new FormData(form))
-      if (!res.ok) {
-        fail(res)
-        return
+      try {
+        const formData = new FormData(form)
+        if (channel) formData.set("channel", channel)
+
+        const res = await sendRecoveryCodeAction(formData)
+        if (!res.ok) {
+          fail(res)
+          return
+        }
+
+        const codeInput = form.elements.namedItem("code")
+        if (codeInput instanceof HTMLInputElement) codeInput.value = ""
+
+        setPhoneNumber(res.phoneNumber)
+        setPhoneInput(String(new FormData(form).get("phoneNumber") ?? ""))
+        setCodeSent(true)
+        setMessage(
+          channel
+            ? "카카오톡으로 인증번호를 보냈습니다."
+            : "인증번호를 발송했습니다."
+        )
+      } finally {
+        setSendingChannel(null)
       }
-
-      const codeInput = form.elements.namedItem("code")
-      if (codeInput instanceof HTMLInputElement) codeInput.value = ""
-
-      setPhoneNumber(res.phoneNumber)
-      setPhoneInput(String(new FormData(form).get("phoneNumber") ?? ""))
-      setCodeSent(true)
-      setMessage("인증번호를 발송했습니다.")
     })
   }
 
@@ -241,7 +260,11 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
   }
 
   return (
-    <form ref={formRef} onSubmit={verify} className="flex flex-1 flex-col gap-4">
+    <form
+      ref={formRef}
+      onSubmit={verify}
+      className="flex flex-1 flex-col gap-4"
+    >
       <div className="flex items-start gap-2">
         <FloatingField
           htmlFor="phoneNumber"
@@ -266,11 +289,15 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
         <Button
           type="button"
           variant={codeSent ? "outline" : "default"}
-          onClick={sendCode}
+          onClick={() => sendCode()}
           disabled={pending}
-          className="h-14 shrink-0 rounded-lg px-4"
+          className="h-14 min-w-[132px] shrink-0 rounded-lg px-4"
         >
-          {codeSent ? "재발송" : "인증번호 받기"}
+          {sendingChannel === "SMS"
+            ? "보내는 중…"
+            : codeSent
+              ? "재발송"
+              : "인증번호 받기"}
         </Button>
       </div>
       <FieldDescription>
@@ -294,17 +321,27 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
             minLength={6}
             maxLength={6}
           />
-          {errorField === "code" && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
+          <p className="min-h-5 text-sm text-destructive" role="alert">
+            {errorField === "code" ? error : ""}
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <FieldDescription>문자가 오지 않나요?</FieldDescription>
+            <button
+              type="button"
+              onClick={() => sendCode("KAKAO")}
+              disabled={pending}
+              className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <MessageCircle className="size-4 fill-current" strokeWidth={0} />
+              {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
+            </button>
+          </div>
         </div>
       )}
 
       <p
         className={cn(
-          "min-h-5 text-sm",
+          "min-h-10 text-sm",
           error && !errorField ? "text-destructive" : "text-muted-foreground"
         )}
         role={error && !errorField ? "alert" : undefined}

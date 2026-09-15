@@ -93,6 +93,7 @@
     "restockApproximate": "입고 예정일은 대략적이며 실제 입고일과 다를 수 있어요",
     "restockInfoLabel": "입고 예정일 안내",
     "outOfStockSuffix": "({value} 품절)",
+    "optionRestockShort": "{date} 입고",
     "defaultLabel": "기본 옵션값",
     "directInput": "직접입력",
     "buyNow": "바로구매",

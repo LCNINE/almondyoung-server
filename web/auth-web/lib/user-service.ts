@@ -11,6 +11,8 @@ export type SendPhoneVerificationInput = {
   countryCode: string
   phoneNumber: string
   purpose?: "phone_verify"
+
+  channel?: "SMS" | "KAKAO"
 }
 
 export type VerifyPhoneCodeInput = {

@@ -28,6 +28,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
+import { reviewPolicyNoticeKey } from "../../../utils/reward-policy"
 
 /** 금액 하나로 말할 수 있는 안내만 — 정액이면서 금액이 실제로 있는 것. */
 type FixedRewardPolicy = RewardPolicy & { rewardAmount: number }
@@ -121,6 +122,8 @@ export const ReviewFormCard = ({
     fixedPhotoPolicy && fixedTextPolicy
       ? fixedPhotoPolicy.rewardAmount - fixedTextPolicy.rewardAmount
       : (fixedPhotoPolicy?.rewardAmount ?? 0)
+
+  const policyNoticeKey = reviewPolicyNoticeKey(rewardPolicies)
 
   const schema = useMemo(
     () =>
@@ -437,7 +440,7 @@ export const ReviewFormCard = ({
               </div>
 
               <p className="text-[11px] leading-relaxed text-red-400">
-                {tForm("policyNotice")}
+                {tForm(policyNoticeKey)}
               </p>
 
               <div className="flex justify-end gap-2">

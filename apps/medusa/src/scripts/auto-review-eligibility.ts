@@ -34,6 +34,14 @@ export interface AutoEligibilitySummary {
   scanned: number;
   eligible: number;
   issued: number;
+  /**
+   * 실제로 만들어진 자격 «행» 수 — ugc 응답이 돌려준 것을 센다(요청 수가 아니다. 발급이
+   * 멱등이라 재시도에서는 요청보다 적게 만들어진다). `issued` 는 주문 단위라 둘이 갈린다 —
+   * 자격은 주문의 라인마다 하나씩 생기기 때문이다. 배율은
+   * `select count(*), count(distinct order_id) from review_eligibilities` 가 준다.
+   * 한 줄만 보고 발급량을 읽을 수 있어야 한다.
+   */
+  rows: number;
   failed: number;
   /** 발급하지 않은 사유별 건수. 「0으로 뭉개지 않는다」 — 왜 안 했는지가 남아야 한다. */
   skipped: Record<string, number>;
@@ -65,6 +73,7 @@ export default async function autoReviewEligibility({ container }: ExecArgs): Pr
     scanned: 0,
     eligible: 0,
     issued: 0,
+    rows: 0,
     failed: 0,
     skipped: {},
     basis: {},
@@ -106,9 +115,13 @@ export default async function autoReviewEligibility({ container }: ExecArgs): Pr
     // 🔴 건별 격리 — 한 건이 터져도 배치가 멈추지 않는다. 표식을 못 남긴 건은 다음 틱이 다시
     // 잡고, ugc 의 발급은 `source_event_id` unique 로 멱등이라 두 번 만들어지지 않는다.
     try {
-      const issued = await issueOne(query, orderModule, container, orderId, logger);
-      if (issued) summary.issued += 1;
-      else summary.skipped.nothing_to_issue = (summary.skipped.nothing_to_issue ?? 0) + 1;
+      const issuedRows = await issueOne(query, orderModule, container, orderId, logger);
+      if (issuedRows === null) {
+        summary.skipped.nothing_to_issue = (summary.skipped.nothing_to_issue ?? 0) + 1;
+      } else {
+        summary.issued += 1;
+        summary.rows += issuedRows;
+      }
     } catch (err) {
       summary.failed += 1;
       logger.error(`[review-eligibility] order ${orderId} failed: ${(err as Error)?.message}`);
@@ -116,7 +129,7 @@ export default async function autoReviewEligibility({ container }: ExecArgs): Pr
   }
 
   logger.info(
-    `[review-eligibility] scanned=${summary.scanned} eligible=${summary.eligible} issued=${summary.issued} failed=${summary.failed} basis=${JSON.stringify(summary.basis)} skipped=${JSON.stringify(summary.skipped)}`,
+    `[review-eligibility] scanned=${summary.scanned} eligible=${summary.eligible} issued=${summary.issued} rows=${summary.rows} failed=${summary.failed} basis=${JSON.stringify(summary.basis)} skipped=${JSON.stringify(summary.skipped)}`,
   );
   return summary;
 }
@@ -127,7 +140,7 @@ async function issueOne(
   container: unknown,
   orderId: string,
   logger: { warn: (msg: string) => void },
-): Promise<boolean> {
+): Promise<number | null> {
   const { data } = await query.graph({
     entity: 'order',
     fields: [
@@ -146,7 +159,7 @@ async function issueOne(
   const order = data?.[0] as OrderForIssue | undefined;
   if (!order?.customer_id) {
     logger.warn(`[review-eligibility] order ${orderId} has no customer — skipped`);
-    return false;
+    return null;
   }
 
   const result = await createReviewEligibility(
@@ -156,11 +169,11 @@ async function issueOne(
 
   // 🔴 표식은 «발급이 실제로 성공했을 때만» 남긴다. 실패한 건에 표식을 남기면 그 주문은 영영
   // 자격을 못 받는다 — 재시도가 조용히 사라지는 쪽이 중복 왕복보다 나쁘다.
-  if (result.status !== 'created') return false;
+  if (result.status !== 'created') return null;
 
   await orderModule.updateOrders([
     { id: orderId, metadata: { [ELIGIBILITY_ISSUED_METADATA_KEY]: new Date().toISOString() } },
   ]);
 
-  return true;
+  return result.createdCount;
 }

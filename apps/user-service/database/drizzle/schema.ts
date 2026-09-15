@@ -358,6 +358,9 @@ export const phoneVerifications = pgTable(
     // 용도 구분
     purpose: phoneVerificationPurposeEnum('purpose').notNull(), // 'phone_verify' | 'pin_reset' ...
 
+    // 발송 채널
+    channel: varchar('channel', { length: 10 }).default('SMS').notNull(), // 'SMS' | 'KAKAO'
+
     // 검증 관련
     isVerified: boolean('is_verified').default(false).notNull(),
     verifiedAt: timestamp('verified_at'),

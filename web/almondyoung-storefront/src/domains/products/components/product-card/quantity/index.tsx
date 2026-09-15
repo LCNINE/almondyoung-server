@@ -4,7 +4,7 @@ import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { HttpTypes } from "@medusajs/types"
 import { Calendar } from "lucide-react"
 import { useMemo } from "react"
-import { pickEarliestRestock } from "domains/products/product-details/components/product-actions/restock-notice"
+import { pickEarliestRestock } from "domains/products/product-details/components/product-actions/restock"
 import { PartialSoldOutDialog } from "./partial-sold-out-dialog"
 import { calculateStockStatus } from "./stock-status"
 

@@ -93,6 +93,7 @@
     "restockApproximate": "入荷予定日はおおよその目安で、実際の入荷日と異なる場合があります",
     "restockInfoLabel": "入荷予定日について",
     "outOfStockSuffix": "({value} 売り切れ)",
+    "optionRestockShort": "{date} 入荷",
     "defaultLabel": "基本オプション",
     "directInput": "直接入力",
     "buyNow": "今すぐ購入",

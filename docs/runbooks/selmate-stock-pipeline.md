@@ -6,6 +6,7 @@
 - **Ⓑ 예약 정리 (일일, Ⓐ 직전)** — Medusa 에 영원히 남는 예약(reservation)을 걷어내고 `reserved` 카운터를 예약 원장과 정합시킨다. 안 하면 재고가 이중으로 깎인다.
 - **Ⓒ 상자 종결 (일일, Ⓐ 직후)** — core 에 열린 채 남은 출고 상자를 닫고 거기 붙들린 예약을 푼다. Ⓑ 가 Medusa 쪽이라면 Ⓒ 는 **core 쪽 같은 병**이다.
 - **②③ 입고예정 (수시)** — **스토어프론트에 입고예정일을 표시**한다. ① 적재는 폐지됐다.
+- **Ⓓ 기한 지난 발주 종결 (수시, ③ 직전)** — 예정일이 지났는데 미수령인 발주 라인을 잔량 포기로 닫는다. 안 하면 ③ 이 볼 후보가 과거로 오염된다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
 
@@ -769,6 +770,52 @@ dry-run 이 찍는 `skip` 카운터로 원인이 갈린다:
 | `카페코드_medusa에없음` | 셀메이트에만 있는 상품 / Medusa 미등록      | 상품 등록 여부 확인                               |
 | `sku_없음`              | 바코드가 `sku_barcodes` 에 없음             | **Ⓐ A-1 `import-products` 를 먼저 돌렸는지 확인** |
 
+## Ⓓ 기한 지난 발주 종결 (③ 직전) — `scripts/ops/short-close-overdue-po-lines.ts`
+
+예정일이 지났는데 미수령인 발주 라인을 **잔량 포기**(`closed_at`)로 닫는다.
+
+**왜 쌓이나**: 실물 입고는 셀메이트에서 하고 core 발주 수령 경로(`POST …/receipts`)는 거의 안 쓴다.
+그래서 라인이 `ordered` · `closed_at IS NULL` · `received_qty = 0` 인 채 영원히 남는다.
+2026-09-15 live 첫 실행 때 **2,257라인 / 발주 152건 / 미수령 310,259개**, 전부 부분입고조차 없었다.
+
+**일회용이 아니다.** 수령을 core 에 안 찍는 구조가 그대로면 지금 살아있는 미래 발주도 예정일이
+지나는 대로 같은 상태가 된다. 주기적으로(월 1회 정도, ③ 돌리기 전에) 돌린다.
+
+```bash
+# dry-run (기본) — 대상 라인·발주·미수령 수량만 센다
+bash scripts/sellmate/run.sh live tmp-runner scripts/ops/short-close-overdue-po-lines.ts
+
+# 실제 종결. CLOSED_BY 는 감사 주체 uuid — 사람이 아니라 스크립트면 nil uuid 를 쓴다
+# (closed_by 는 FK 도 없고 화면에 안 나온다. 경위는 closed_reason 에 남는다)
+CLOSED_BY=00000000-0000-0000-0000-000000000000 \
+  bash scripts/sellmate/run.sh live tmp-runner scripts/ops/short-close-overdue-po-lines.ts --apply
+```
+
+> `run.sh` 는 `scripts/sellmate/*.ts` 만 실행하므로 `DATABASE_URL` 을 물려줄 한 줄짜리 래퍼가 필요하다
+> (`tmp-runner.ts` — `spawnSync('npx', ['tsx', ...process.argv.slice(2)])`). 쓰고 지운다.
+
+- **취소가 아니라 잔량 포기다.** 취소(`cancelPurchaseOrder`)는 발주를 없던 일로 만들지만, 잔량 포기는
+  발주와 라인을 남기고 "안 들어옴" 으로 닫는다 — 이력이 보존된다. 입고 이력이 하나라도 있는 발주는
+  도메인이 취소를 거부하므로 어차피 이 경로여야 한다.
+- 쓰기는 `PurchaseOrderReceivingManager.shortCloseLine` 과 같고, 헤더 파생은 도메인의
+  `deriveHeaderStatus` 를 **그대로 import** 한다(규칙을 베끼지 않는다). 전량 종결된 발주 헤더는
+  `received` 로 파생된다 — 받은 게 없어도 "더 받을 것이 없다" 가 도메인 정의다.
+- 멱등: 조건이 전부 상태 기반이라 다시 돌리면 `대상 0건` 으로 끝난다.
+
+### ⚠️ 잠근 뒤 조건을 **전부** 다시 걸어야 한다
+
+대상 목록은 트랜잭션 **밖에서** 읽은 스냅샷이다. 잠근 다음 재검증에서 조건을 하나라도 빠뜨리면
+그 조건이 바뀐 행을 잘못 닫는다. 실제로 두 번 걸렸다(둘 다 리뷰에서 잡힘, live 피해는 없었다):
+
+| 빠뜨린 것 | 생기는 일 |
+|-----------|-----------|
+| 발주 상태 재확인 | 그 사이 취소된 발주의 라인을 닫고, 헤더 파생이 `cancelled` 를 덮어써 **취소된 발주가 되살아난다** |
+| `expected_arrival` 재확인 | `PATCH …/lines/:skuId/expected-arrival` 로 예정일이 **미래로 밀린 라인까지 닫는다** |
+
+그래서 잠근 직후 `isDerivationFrozen(status)` 로 취소 발주를 건너뛰고, UPDATE 의 WHERE 에
+`status`·`closed_at`·`received_qty`·**`expected_arrival < CURRENT_DATE`** 를 전부 다시 건다.
+**대상을 정의하는 조건을 재검증에서 빼면 재검증 자체가 무의미하다.**
+
 ## ③ 발주 라인 남은 수량·예정일 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
 
 매칭된 variant 의 입고예정일을 Medusa `variant.metadata` 에 직접 쓴다(restock-notice UI 가 읽음).
@@ -780,6 +827,12 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 
 - 기본 dry-run. `--apply` 로 Medusa 반영.
 - variant 구성 sku 의 남은 수량이 있는 발주 라인 중 가장 이른 `expected_arrival` + 해외 발주면 `inboundApproximate=true`.
+- **후보는 오늘 이후 예정일만이다** (`pol.expected_arrival >= CURRENT_DATE`). 기한이 지난 미수령
+  라인을 후보에 두면 `MIN()` 이 그걸 집어 과거 날짜가 박히고, storefront 가 stale 로 버려
+  **진짜 입고예정이 있는 상품이 그냥 품절로 보인다.** 2026-09-15 live 실측으로 variant **137개**가
+  이 상태였다(7월짜리 미수령 라인 하나가 10월 입고를 덮음). 미래 라인이 하나도 없는 variant 는
+  행 자체가 안 나와 아래 stale 제거가 걷어간다.
+  `apps/channel-adapter/scripts/sync-restock-to-medusa.spec.ts` 가 이 조건을 지킨다.
 - 멱등: 이미 같은 inboundDate 면 skip. Medusa 502(일시) 나면 재실행하면 이어서 채워짐.
 - **stale 제거가 기본 동작이다** — 입고완료/취소로 예정이 사라진 variant 의 `inboundDate` 를 지운다.
   그래서 handle 별 조회가 아니라 **전 상품을 페이지네이션으로 훑는다**(예정이 사라진 상품은 handle 로는 영영 안 만나므로).

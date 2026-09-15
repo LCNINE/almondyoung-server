@@ -93,6 +93,7 @@
     "restockApproximate": "The restock date is approximate and may differ from the actual arrival.",
     "restockInfoLabel": "About the restock date",
     "outOfStockSuffix": "({value} sold out)",
+    "optionRestockShort": "Restock {date}",
     "defaultLabel": "Default option",
     "directInput": "Enter qty",
     "buyNow": "Buy now",
