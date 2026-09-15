@@ -56,12 +56,12 @@ function OutboundQueueContent({
         setNotice('송장의 창고와 선택 창고가 달라요. 창고를 확인해 주세요.');
         return;
       }
-      if (found.workItemId === null) {
-        setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
-        return;
-      }
       if (found.shipmentStatus === 'shipped') {
         setNotice('이미 출고된 송장이에요');
+        return;
+      }
+      if (found.workItemId === null) {
+        setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
         return;
       }
       const legacy =

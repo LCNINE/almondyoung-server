@@ -141,8 +141,8 @@ function renderScreen(
           waybillStatus: 'used',
           shipmentStatus: 'shipped',
           batchId: 'b-1',
-          workItemId: 'wi-3',
-          workItemStatus: 'completed',
+          workItemId: null,
+          workItemStatus: null,
           recipientMasked: '홍길**',
           lines: [],
         };
