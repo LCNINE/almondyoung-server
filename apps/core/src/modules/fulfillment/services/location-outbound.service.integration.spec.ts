@@ -10,7 +10,7 @@ import { ShipmentWaybillReader } from '../reader/shipment-waybill.reader';
 import { LocationOutboundService } from './location-outbound.service';
 import { SimpleOutboundService } from './simple-outbound.service';
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql as sqlQuery } from 'drizzle-orm';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -81,6 +81,32 @@ async function setup(tx: DbTx, split = false) {
   return { f, service, actor, first, b, scan, session };
 }
 
+async function inventorySnapshot(tx: DbTx, f: Awaited<ReturnType<typeof seedPickableShipment>>) {
+  return {
+    ...(await effects(tx, f.batchId)),
+    shipments: await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, f.shipmentId)),
+    lines: await tx.select().from(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.shipmentId, f.shipmentId)),
+    ledgers: await tx.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.skuId)),
+    events: await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId)),
+    allocations: await tx
+      .select()
+      .from(wmsTables.pickingSourceAllocations)
+      .where(eq(wmsTables.pickingSourceAllocations.shipmentLineId, f.shipmentLineId)),
+    custody: await tx
+      .select()
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(eq(wmsTables.batchInventorySessionBalances.skuId, f.skuId)),
+  };
+}
+
+function forceInput(f: Awaited<ReturnType<typeof seedPickableShipment>>) {
+  return {
+    warehouseId: f.warehouseId,
+    reason: ' physical check ',
+    items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 3 }],
+  };
+}
+
 async function effects(tx: DbTx, batchId: string) {
   return {
     plans: await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, batchId)),
@@ -99,6 +125,111 @@ describeIfDb('LocationOutboundService — real inventory', () => {
   const { sql, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
     await sql.end({ timeout: 5 });
+  });
+
+  it('resolves a denied force once, preserves inventory and fences a late authorized force', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { f, service, actor } = await setup(tx);
+      const input = forceInput(f);
+      const key = randomUUID();
+      const before = await inventorySnapshot(tx, f);
+      await expect(service.force(f.shipmentId, input, actor, key, undefined, tx)).rejects.toMatchObject({
+        status: 403,
+      });
+      const rejected = { outcome: 'rejected', code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED' };
+      expect(await service.resolveForce(f.shipmentId, input, actor, key, tx)).toEqual(rejected);
+      expect(
+        await service.resolveForce(f.shipmentId, { ...input, reason: input.reason.trim() }, actor, key, tx),
+      ).toEqual(rejected);
+      await expect(service.force(f.shipmentId, input, actor, key, authorization, tx)).rejects.toMatchObject({
+        response: { code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED' },
+      });
+      expect(await inventorySnapshot(tx, f)).toEqual(before);
+      const records = await tx
+        .select()
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key));
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        commandType: 'shipment.location_outbound.force',
+        status: 'completed',
+        responseSnapshot: rejected,
+      });
+    });
+  });
+
+  it('returns the saved successful force after permission revocation and binds original actor/body/warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { f, service, actor } = await setup(tx);
+      const input = forceInput(f);
+      const key = randomUUID();
+      const done = await service.force(f.shipmentId, input, actor, key, authorization, tx);
+      await expect(service.force(f.shipmentId, input, actor, key, undefined, tx)).rejects.toMatchObject({
+        status: 403,
+      });
+      const before = await inventorySnapshot(tx, f);
+      expect(await service.resolveForce(f.shipmentId, input, actor, key, tx)).toEqual({
+        outcome: 'confirmed',
+        result: done,
+      });
+      for (const patch of [{ warehouseId: randomUUID() }, { reason: 'changed' }, { items: [] }]) {
+        await expect(service.resolveForce(f.shipmentId, { ...input, ...patch }, actor, key, tx)).rejects.toMatchObject({
+          response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' },
+        });
+      }
+      await expect(
+        service.resolveForce(f.shipmentId, input, { ...actor, id: randomUUID() }, key, tx),
+      ).rejects.toMatchObject({ response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' } });
+      // A shipped box does not prove this different command succeeded.
+      expect(await service.resolveForce(f.shipmentId, input, actor, randomUUID(), tx)).toEqual({
+        outcome: 'rejected',
+        code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+      });
+      expect(await inventorySnapshot(tx, f)).toEqual(before);
+    });
+  });
+
+  it('preserves item order in old force hashes and refuses altered rejected-command identity', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { f, service, actor } = await setup(tx, true);
+      const state = await service.getState(f.shipmentId, f.warehouseId, tx);
+      const input = {
+        warehouseId: f.warehouseId,
+        reason: 'confirmed',
+        items: state.sources.map((source) => ({
+          shipmentLineId: source.shipmentLineId,
+          sourceLocationId: source.sourceLocationId,
+          quantity: source.remainingQty,
+        })),
+      };
+      const key = randomUUID();
+      await service.resolveForce(f.shipmentId, input, actor, key, tx);
+      await expect(
+        service.resolveForce(f.shipmentId, { ...input, items: [...input.items].reverse() }, actor, key, tx),
+      ).rejects.toMatchObject({ response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' } });
+      await expect(
+        service.resolveForce(f.shipmentId, input, { ...actor, id: randomUUID() }, key, tx),
+      ).rejects.toMatchObject({ response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' } });
+      await expect(service.force(f.shipmentId, input, actor, key, authorization, tx)).rejects.toMatchObject({
+        response: { code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED' },
+      });
+    });
+  });
+
+  it('rejects an absent command with the wrong warehouse without leaving a marker', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { f, service, actor } = await setup(tx);
+      const key = randomUUID();
+      await expect(
+        service.resolveForce(f.shipmentId, { ...forceInput(f), warehouseId: randomUUID() }, actor, key, tx),
+      ).rejects.toMatchObject({ response: { code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH' } });
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
+      ).toEqual([]);
+    });
   });
 
   it('GET is read-only, wrong warehouse rejects before preparing, start and replay create one plan/session/claim', async () => {
@@ -483,6 +614,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
   it('drives HTTP start/state/scan/force through real inventory and returns declared rejection codes', async () => {
     await inRollbackTx(db, async (tx) => {
       const { f, service, actor, scan, b } = await setup(tx, true);
+      let forceAllowed = true;
       const module = await Test.createTestingModule({
         controllers: [SimpleOutboundController, LocationOutboundController],
         providers: [
@@ -491,7 +623,12 @@ describeIfDb('LocationOutboundService — real inventory', () => {
             provide: AuthorizationService,
             useValue: {
               getScopesByRoles: () =>
-                Promise.resolve(new Set([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE, FULFILLMENT_SCOPE.DISPATCH_FORCE])),
+                Promise.resolve(
+                  new Set([
+                    FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+                    ...(forceAllowed ? [FULFILLMENT_SCOPE.DISPATCH_FORCE] : []),
+                  ]),
+                ),
             },
           },
           { provide: LocationOutboundService, useValue: service },
@@ -556,12 +693,27 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           reason: 'physically confirmed',
           items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 2 }],
         };
+        const forceKey = randomUUID();
         const done = await request(server)
           .post(`${prefix}-forces`)
-          .set('Idempotency-Key', randomUUID())
+          .set('Idempotency-Key', forceKey)
           .send(force)
           .expect(201);
         expect(done.body).toMatchObject({ status: 'shipped', sources: [] });
+        forceAllowed = false;
+        await request(server).post(`${prefix}-forces`).set('Idempotency-Key', forceKey).send(force).expect(403);
+        const resolved = await request(server)
+          .post(`${prefix}-force-resolutions`)
+          .set('Idempotency-Key', forceKey)
+          .send(force)
+          .expect(201);
+        expect(resolved.body).toEqual({ outcome: 'confirmed', result: done.body });
+        const resolvedAgain = await request(server)
+          .post(`${prefix}-force-resolutions`)
+          .set('Idempotency-Key', forceKey)
+          .send(force)
+          .expect(201);
+        expect(resolvedAgain.body).toEqual(resolved.body);
         const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
         expect(events).toHaveLength(2);
         expect(events.reduce((sum, event) => sum + event.quantity, 0)).toBe(3);
@@ -577,8 +729,97 @@ describeIfDb('LocationOutboundService — real inventory', () => {
 describeIfDb('location outbound concurrent commands on independent connections', () => {
   const first = makeDb(DATABASE_URL as string);
   const second = makeDb(DATABASE_URL as string);
+  const observer = makeDb(DATABASE_URL as string);
   afterAll(async () => {
-    await Promise.all([first.sql.end({ timeout: 5 }), second.sql.end({ timeout: 5 })]);
+    await Promise.all([
+      first.sql.end({ timeout: 5 }),
+      second.sql.end({ timeout: 5 }),
+      observer.sql.end({ timeout: 5 }),
+    ]);
+  });
+
+  it.each(['force', 'resolution'] as const)('serializes force/resolver while %s is uncommitted', async (winner) => {
+    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const actor = { id: f.actorId, roles: ['logistics_worker'] };
+    const input = forceInput(f);
+    const key = randomUUID();
+    let release!: () => void;
+    let ready!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const before = await first.db.transaction((tx) => inventorySnapshot(tx, f));
+    const leading = first.db.transaction(async (tx) => {
+      const service = wiring.assembleLocationOutbound(tx);
+      const result =
+        winner === 'force'
+          ? await service.force(f.shipmentId, input, actor, key, authorization, tx)
+          : await service.resolveForce(f.shipmentId, input, actor, key, tx);
+      ready();
+      await held;
+      return result;
+    });
+    // Ensure a failing leading call cannot leave the test waiting forever.
+    await Promise.race([started, leading]);
+    let pid = 0;
+    let followerReady!: () => void;
+    const followerStarted = new Promise<void>((resolve) => {
+      followerReady = resolve;
+    });
+    const following = second.db.transaction(async (tx) => {
+      const rows = await tx.execute(sqlQuery`select pg_backend_pid() as pid`);
+      pid = Number(rows[0].pid);
+      followerReady();
+      const service = wiring.assembleLocationOutbound(tx);
+      return winner === 'force'
+        ? service.resolveForce(f.shipmentId, input, actor, key, tx)
+        : service.force(f.shipmentId, input, actor, key, authorization, tx);
+    });
+    const settledFollower = following.then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    try {
+      await followerStarted;
+      let blocked = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const rows = await observer.sql`select cardinality(pg_blocking_pids(${pid})) as blockers`;
+        if (Number(rows[0].blockers) > 0) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(blocked).toBe(true);
+    } finally {
+      release();
+    }
+    const [leader, follower] = await Promise.all([leading, settledFollower]);
+    if (winner === 'force') {
+      expect(leader).toMatchObject({ status: 'shipped' });
+      expect(follower).toEqual({ value: { outcome: 'confirmed', result: leader } });
+    } else {
+      expect(leader).toEqual({ outcome: 'rejected', code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED' });
+      expect(follower).toMatchObject({ error: { response: { code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED' } } });
+    }
+    await first.db.transaction(async (tx) => {
+      const records = await tx
+        .select()
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(
+          and(
+            eq(wmsTables.fulfillmentCommandRequests.commandType, 'shipment.location_outbound.force'),
+            eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key),
+          ),
+        );
+      expect(records).toHaveLength(1);
+      const after = await inventorySnapshot(tx, f);
+      if (winner === 'resolution') expect(after).toEqual(before);
+      else expect(after.events.reduce((sum, event) => sum + event.quantity, 0)).toBe(3);
+    });
   });
 
   it('serializes same-key starts and different-key source scans without duplicate custody', async () => {

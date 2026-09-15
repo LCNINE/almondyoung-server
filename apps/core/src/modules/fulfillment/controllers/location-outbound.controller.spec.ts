@@ -38,7 +38,7 @@ describe('location outbound HTTP authorization and validation', () => {
         },
         {
           provide: LocationOutboundService,
-          useValue: { start: mutation, getState: mutation, scan: mutation, force: mutation },
+          useValue: { start: mutation, getState: mutation, scan: mutation, force: mutation, resolveForce: mutation },
         },
       ],
     }).compile();
@@ -54,10 +54,56 @@ describe('location outbound HTTP authorization and validation', () => {
   });
   afterAll(() => app.close());
   beforeEach(() => mutation.mockClear());
-  it.each(['starts', 'scans', 'forces'])('requires authenticated scope for %s', async (suffix) => {
+  it.each(['starts', 'scans', 'forces', 'force-resolutions'])('requires authenticated scope for %s', async (suffix) => {
     await request(app.getHttpServer() as Server)
       .post(`/shipments/${shipmentId}/location-outbound-${suffix}`)
       .send({})
+      .expect(403);
+    expect(mutation).not.toHaveBeenCalled();
+  });
+  it('allows warehouse operators to resolve the original force body and key', async () => {
+    const body = {
+      warehouseId,
+      reason: 'confirmed',
+      items: [{ shipmentLineId: randomUUID(), sourceLocationId, quantity: 1 }],
+    };
+    await request(app.getHttpServer() as Server)
+      .post(`/shipments/${shipmentId}/location-outbound-force-resolutions`)
+      .set('x-test-role', 'worker')
+      .set('Idempotency-Key', 'original-force')
+      .send(body)
+      .expect(201);
+    expect(mutation).toHaveBeenCalledWith(
+      shipmentId,
+      body,
+      expect.objectContaining({ roles: ['worker'] }),
+      'original-force',
+    );
+  });
+  it.each([
+    { reason: '', items: [] },
+    { reason: 'checked', items: [{ shipmentLineId: 'bad', sourceLocationId, quantity: 0 }] },
+  ])('validates original force resolution body %s', async (body) => {
+    await request(app.getHttpServer() as Server)
+      .post(`/shipments/${shipmentId}/location-outbound-force-resolutions`)
+      .set('x-test-role', 'worker')
+      .set('Idempotency-Key', 'original-force')
+      .send({ warehouseId, ...body })
+      .expect(400);
+    expect(mutation).not.toHaveBeenCalled();
+  });
+  it('requires the original key and rejects a role that lost warehouse permission', async () => {
+    const path = `/shipments/${shipmentId}/location-outbound-force-resolutions`;
+    await request(app.getHttpServer() as Server)
+      .post(path)
+      .set('x-test-role', 'worker')
+      .send({ warehouseId, reason: 'confirmed', items: [] })
+      .expect(400);
+    await request(app.getHttpServer() as Server)
+      .post(path)
+      .set('x-test-role', 'former-worker')
+      .set('Idempotency-Key', 'original-force')
+      .send({ warehouseId, reason: 'confirmed', items: [] })
       .expect(403);
     expect(mutation).not.toHaveBeenCalled();
   });

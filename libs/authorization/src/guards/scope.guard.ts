@@ -65,31 +65,21 @@ export class ScopeGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<ScopeAuthorizedRequest>();
-    const user = request.user;
+    const grantedScopes = await this.getGrantedScopes(request.user, requiredScopes);
+    if (grantedScopes.length > 0) recordScopeAuthorizationDecisions(request, grantedScopes);
+    return grantedScopes.length > 0;
+  }
 
-    if (!user || !user.roles) {
-      return false;
-    }
-
-    if (user.roles.includes('master')) {
-      recordScopeAuthorizationDecisions(request, requiredScopes);
-      return true;
-    }
-
+  /** Shared by route enforcement and permission previews; lookup failure always denies. */
+  async getGrantedScopes(user: { roles?: string[] } | undefined, requiredScopes: string[]): Promise<string[]> {
+    if (!user?.roles) return [];
+    if (user.roles.includes('master')) return requiredScopes;
     try {
       const userScopes = await this.authService.getScopesByRoles(user.roles);
-
-      if (userScopes.has('master')) {
-        recordScopeAuthorizationDecisions(request, requiredScopes);
-        return true;
-      }
-
-      const grantedScopes = requiredScopes.filter((scope) => userScopes.has(scope));
-      if (grantedScopes.length > 0) recordScopeAuthorizationDecisions(request, grantedScopes);
-      return grantedScopes.length > 0;
+      return userScopes.has('master') ? requiredScopes : requiredScopes.filter((scope) => userScopes.has(scope));
     } catch (error) {
       this.logger.error('Failed to fetch role-scope mappings from DB', error);
-      return false;
+      return [];
     }
   }
 }

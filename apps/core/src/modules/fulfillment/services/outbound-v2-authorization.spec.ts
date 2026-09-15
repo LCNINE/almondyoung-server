@@ -1,3 +1,4 @@
+import { LocationOutboundController } from '../controllers/location-outbound.controller';
 import { ScopeGuard } from '@app/authorization';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
@@ -21,6 +22,12 @@ function handlerFor(endpoint: ControllerEndpoint): object {
 }
 
 const AUTHORIZED_ENDPOINTS = [
+  {
+    name: 'force result resolution',
+    controller: LocationOutboundController,
+    handlerName: 'resolveForce',
+    scope: FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+  },
   {
     name: 'warehouse planning',
     controller: ShipmentPlanningController,
