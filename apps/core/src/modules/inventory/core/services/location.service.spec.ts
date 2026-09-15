@@ -7,7 +7,6 @@ describe('LocationService system locations', () => {
   it('bootstraps all four required roles with conflict-safe inserts', async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS);
-    let selectedRole = 0;
     const trx = {
       insert: jest.fn(() => ({
         values: jest.fn((value: Record<string, unknown>) => {
@@ -18,11 +17,10 @@ describe('LocationService system locations', () => {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
           where: jest.fn(() => ({
-            for: jest.fn(() => ({
-              limit: jest.fn().mockImplementation(() => {
-                const role = roles[selectedRole++];
-                return Promise.resolve([{ id: `location-${role}`, isActive: true, systemRole: role }]);
-              }),
+            orderBy: jest.fn(() => ({
+              for: jest
+                .fn()
+                .mockResolvedValue(roles.map((role) => ({ id: `location-${role}`, isActive: true, systemRole: role }))),
             })),
           })),
         })),

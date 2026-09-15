@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx, LocationRack, LocationColumn, Location } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
+import { eq, and, like, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import {
   CreateColumnDto,
   CreateRackDto,
@@ -48,14 +48,17 @@ export class LocationService {
             isActive: true,
           })
           .onConflictDoNothing();
-
-        const [location] = await trx
-          .select()
-          .from(wmsTables.locations)
-          .where(and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, role)))
-          .for('update')
-          .limit(1);
-
+      }
+      // Movement/putaway lock locations in UUID order. Role-order row locks here
+      // can deadlock with them even when the stock locks belong to different SKUs.
+      const locations = await trx
+        .select()
+        .from(wmsTables.locations)
+        .where(and(eq(wmsTables.locations.warehouseId, warehouseId), inArray(wmsTables.locations.systemRole, roles)))
+        .orderBy(asc(wmsTables.locations.id))
+        .for('update');
+      for (const role of roles) {
+        const location = locations.find((row) => row.systemRole === role);
         if (!location) {
           throw new Error(`System location bootstrap failed for role ${role} in warehouse ${warehouseId}`);
         }
