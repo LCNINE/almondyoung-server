@@ -128,6 +128,9 @@ export function useReceiptLineState(
   }>({ identity, state: null, error: null });
   const load = useCallback(
     async (reconcile: boolean): Promise<ReceiptLineState> => {
+      // A retained handler for a previous selection must not claim ownership
+      // of the current target's generation, view, or preparation phase.
+      if (!active.current || identityRef.current !== identity) throw obsolete();
       const request = ++generation.current;
       const live = () =>
         active.current &&
@@ -167,6 +170,14 @@ export function useReceiptLineState(
         if (expectedSource && value.source !== expectedSource)
           throw new ReceiptStateError(
             '입고 구분이 바뀌었어요. 입고내역에서 다시 선택해 주세요.'
+          );
+        if (!live()) throw obsolete();
+        // begin() is durable before the runner emits its first notification.
+        // A GET can finish in that interval, so notifications alone are not
+        // enough to authorize another action.
+        if (beforeRead && (await runtime.store.pending(scope)).length > 0)
+          throw new ReceiptStateError(
+            '처리 여부를 아직 확인하지 못했어요. 처리 내역을 다시 확인해 주세요.'
           );
         if (
           !live() ||

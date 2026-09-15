@@ -483,3 +483,93 @@ it('rejects capability/auth lookup failures before reading and recovers after lo
   });
   expect(result.current.ready).toBe(true);
 });
+
+it('rejects a retained old-target refresh without disturbing the ready target or its operation notifications', async () => {
+  const f = fixture();
+  const { result, rerender } = f.mount();
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  const previousRefresh = result.current.refresh;
+  const next = { ...current, lineId: 'next' };
+  f.read(async () => next);
+  rerender({
+    lineId: 'next',
+    warehouseId: 'warehouse',
+    expectedSource: 'direct',
+  });
+  await waitFor(() => expect(result.current.state).toEqual(next));
+
+  await act(async () => {
+    await expect(previousRefresh()).rejects.toThrow(/바뀌었어요/);
+  });
+  expect(result.current.ready).toBe(true);
+  expect(result.current.state).toEqual(next);
+
+  const nextCanceled = { ...canceled, lineId: 'next' };
+  f.read(async () => nextCanceled);
+  await act(async () => {
+    await f.runner.request({
+      method: 'POST',
+      path: '/inbound/cancel',
+      body: { lineId: 'next' },
+      idempotencyKey: 'next-cancel',
+    });
+  });
+  await waitFor(() => expect(result.current.state).toEqual(nextCanceled));
+  expect(result.current.ready).toBe(true);
+});
+
+it('rejects a state GET completed after durable enqueue but before the first runner notification', async () => {
+  const f = fixture();
+  const { result } = f.mount();
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  const response = deferred<unknown>();
+  f.read(() => response.promise);
+  let refreshed!: Promise<unknown>;
+  act(() => {
+    refreshed = result.current.refresh().catch((error: unknown) => error);
+  });
+  await waitFor(() => expect(gets(f)).toHaveLength(2));
+
+  const claimStarted = deferred<void>();
+  const releaseClaim = deferred<void>();
+  const originalClaim = f.store.claim;
+  const claim = vi
+    .spyOn(f.store, 'claim')
+    .mockImplementation(async (...args) => {
+      claimStarted.resolve();
+      await releaseClaim.promise;
+      return originalClaim(...args);
+    });
+  let command!: Promise<unknown>;
+  await act(async () => {
+    command = f.runner.request({
+      method: 'POST',
+      path: '/inbound/cancel',
+      body: { lineId: 'line' },
+      idempotencyKey: 'queued-during-get',
+    });
+    await claimStarted.promise;
+  });
+  try {
+    expect((await f.store.get('queued-during-get'))?.status).toBe('queued');
+    expect(f.runner.getSnapshot()).toEqual([]);
+    expect(f.sent.filter((request) => request.method === 'POST')).toHaveLength(
+      0
+    );
+    await act(async () => {
+      response.resolve(current);
+      expect(await refreshed).toBeInstanceOf(Error);
+    });
+    expect(result.current.ready).toBe(false);
+    expect(result.current.state).toBeNull();
+  } finally {
+    f.read(async () => canceled);
+    await act(async () => {
+      releaseClaim.resolve();
+      await command;
+    });
+    claim.mockRestore();
+  }
+  await waitFor(() => expect(result.current.state).toEqual(canceled));
+  expect(result.current.ready).toBe(true);
+});
