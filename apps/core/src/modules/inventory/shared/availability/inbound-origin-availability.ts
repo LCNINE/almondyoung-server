@@ -20,6 +20,20 @@ interface InboundOriginAvailabilityRow {
   invalid_receipt: boolean;
 }
 
+/** Shared SQL expressions use the receipt aliases irl, ir and origin. */
+export const inboundPendingQuantitySql = sql`(
+  irl.quantity - irl.putaway_from_origin_qty - irl.returned_qty - irl.canceled_qty
+)`;
+export const inboundReceiptInvalidSql = sql`(
+  irl.quantity <= 0
+  OR irl.putaway_from_origin_qty < 0
+  OR irl.returned_qty < 0
+  OR irl.canceled_qty < 0
+  OR irl.putaway_from_origin_qty + irl.returned_qty + irl.canceled_qty > irl.quantity
+  OR origin.id IS NULL
+  OR origin.warehouse_id <> ir.warehouse_id
+)`;
+
 /**
  * 한 SKU·창고·원위치의 ON_HAND와 미처리 입고를 같은 statement snapshot에서 읽는다.
  * 일반 선반의 입고는 원장에는 남지만 입고 대기에는 포함하지 않는다.
@@ -40,10 +54,7 @@ export async function readInboundOriginAvailability(
       ), 0) AS on_hand_qty,
       COALESCE((
         SELECT SUM(
-          irl.quantity
-          - irl.putaway_from_origin_qty
-          - irl.returned_qty
-          - irl.canceled_qty
+          ${inboundPendingQuantitySql}
         ) FILTER (
           WHERE origin.warehouse_id = ir.warehouse_id
             AND origin.is_system = true
@@ -61,15 +72,7 @@ export async function readInboundOriginAvailability(
       ), 0) AS pending_qty,
       COALESCE((
         SELECT BOOL_OR(
-          irl.quantity <= 0
-          OR irl.putaway_from_origin_qty < 0
-          OR irl.returned_qty < 0
-          OR irl.canceled_qty < 0
-          OR irl.putaway_from_origin_qty
-            + irl.returned_qty
-            + irl.canceled_qty > irl.quantity
-          OR origin.id IS NULL
-          OR origin.warehouse_id <> ir.warehouse_id
+          ${inboundReceiptInvalidSql}
         )
           FROM inbound_receipt_lines irl
           JOIN inbound_receipts ir ON ir.id = irl.receipt_id
