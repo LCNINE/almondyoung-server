@@ -7,6 +7,7 @@ import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
+import { receiptActionPolicy } from '../services/inbound-receipt-policy';
 import { isTodaySeoul } from '../../shared/services/time.util';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
@@ -283,13 +284,39 @@ export class InboundReceiptKernel {
       throw new BadRequestException('quantity exceeds origin available');
     }
 
-    // 실원장 검증: 원위치 ON_HAND 수량 확인
-    const onHand = await this.onHandAt(
-      { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
+    // Validate the same current facts as the read policy while receipt/header and
+    // stock locks are held, before releasing any pending quantity. These ordinary
+    // origin/event reads do not add an event lock after the stock lock.
+    await acquireStockAvailabilityLocks(tx, [{ skuId: line.skuId, warehouseId: receipt.warehouseId }]);
+    const availability = await this.stockAvailability.getAvailability(
+      { skuId: line.skuId, warehouseId: receipt.warehouseId, sourceLocationId: originLocationId },
       tx,
+      { lock: true },
     );
-    if (onHand < input.quantity) {
-      throw new BadRequestException('insufficient on-hand at origin');
+    const [origin] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, originLocationId));
+    const [event] = line.eventId
+      ? await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.id, line.eventId))
+      : [];
+    const policy = receiptActionPolicy({
+      receiptStatus: receipt.status,
+      quantity: line.quantity,
+      canceledQty: line.canceledQty,
+      returnedQty: line.returnedQty,
+      putawayFromOriginQty: line.putawayFromOriginQty,
+      originValid: origin?.warehouseId === receipt.warehouseId,
+      isStagingOrigin: origin?.isSystem === true,
+      eventExists: event?.transitionType === 'RECEIVE',
+      invalidReceipt: false, // getAvailability already rejects invalid bucket facts.
+      onHandQty: availability.onHandQty,
+      bucketPendingQty: availability.inboundPendingQty,
+      custodyQty: availability.batchControlledQty,
+      isToday: isTodaySeoul(receipt.occurredAt),
+    });
+    if (!policy.canPutaway) {
+      throw new BadRequestException({
+        message: 'receipt is not eligible for putaway',
+        reason: policy.putawayBlockReason,
+      });
     }
 
     await tx

@@ -399,6 +399,13 @@ function QuickInboundScreenContent() {
                         적치됨
                       </span>
                     ) : null}
+                    {current?.putawayBlockReason ===
+                      'ORIGIN_STOCK_INCONSISTENT' && (
+                      <span className="block text-xs text-gray-500">
+                        입고 기록과 현재 재고가 맞지 않아요. 입고내역과 실물을
+                        확인해 주세요.
+                      </span>
+                    )}
                     {line.returnedQty > 0 && (
                       <span className="block text-xs text-gray-500">
                         {line.returnedQty}개 회송됨

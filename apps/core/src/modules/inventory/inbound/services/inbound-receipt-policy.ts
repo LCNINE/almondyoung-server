@@ -17,7 +17,7 @@ export interface ReceiptPolicyFacts {
   isToday: boolean;
 }
 
-/** Read policy only: commands still validate under their existing locks. */
+/** Shared eligibility semantics; commands must supply current facts under their existing locks. */
 export function receiptActionPolicy(f: ReceiptPolicyFacts) {
   const pendingQty = f.quantity - f.putawayFromOriginQty - f.returnedQty - f.canceledQty;
   let common: ReceiptActionBlockReason | null = null;

@@ -158,6 +158,96 @@ describe('inbound workflow capability → native runner → Core HTTP → Postgr
     expect(await r.store.get(key)).toMatchObject({ status: 'rejected', errorCode: code, attempts: 1 });
     expect(await r.store.pending(r.scope)).toEqual([]);
   }
+  it.each(['shelf', 'missing-event', 'wrong-event', 'voided', 'partial-cancel'] as const)(
+    'putaway HTTP rejects %s legacy facts without stock or receipt side effects',
+    async (damage) => {
+      const r = runtime();
+      const f = await seed(r);
+      if (damage === 'shelf')
+        await db.execute(
+          sql`UPDATE locations SET is_system = false, system_role = NULL WHERE id = ${f.line.originLocationId}`,
+        );
+      if (damage === 'missing-event')
+        await db.execute(sql`UPDATE inbound_receipt_lines SET event_id = NULL WHERE id = ${f.line.id}`);
+      if (damage === 'wrong-event')
+        await db.execute(
+          sql`UPDATE stock_events SET transition_type = 'ADJUST_UP' WHERE id = (SELECT event_id FROM inbound_receipt_lines WHERE id = ${f.line.id})`,
+        );
+      if (damage === 'voided')
+        await db.execute(
+          sql`UPDATE inbound_receipts SET status = 'voided' WHERE id = (SELECT receipt_id FROM inbound_receipt_lines WHERE id = ${f.line.id})`,
+        );
+      if (damage === 'partial-cancel')
+        await db.execute(sql`UPDATE inbound_receipt_lines SET canceled_qty = 1 WHERE id = ${f.line.id}`);
+      const blocked = (await current(r, f)) as { canPutaway: boolean; putawayBlockReason: string };
+      expect(blocked.canPutaway).toBe(false);
+      const snapshot = async () => ({
+        lines: await db
+          .select()
+          .from(wmsTables.inboundReceiptLines)
+          .where(eq(wmsTables.inboundReceiptLines.skuId, f.sku.id)),
+        stock: await db.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.sku.id)),
+        events: await db.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.sku.id)),
+        logs: await db
+          .select()
+          .from(wmsTables.inboundWorkLogs)
+          .where(eq(wmsTables.inboundWorkLogs.warehouseId, f.warehouse.id)),
+      });
+      const before = await snapshot();
+      const key = randomUUID();
+      operationKeys.push(key);
+      const response = await fetch(`${baseUrl}/inbound/putaway`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer local-worker', 'content-type': 'application/json' },
+        body: JSON.stringify({ lineId: f.line.id, toLocationId: f.destination.id, quantity: 1, idempotencyKey: key }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ message: 'receipt is not eligible for putaway' });
+      expect(await snapshot()).toEqual(before);
+    },
+  );
+
+  it('allows older receipts to put away the residual after partial return and partial putaway', async () => {
+    const r = runtime();
+    const f = await seed(r);
+    await db.execute(
+      sql`UPDATE inbound_receipts SET occurred_at = now() - interval '90 days' WHERE id = (SELECT receipt_id FROM inbound_receipt_lines WHERE id = ${f.line.id})`,
+    );
+    const mutate = async (path: string, body: Record<string, unknown>) => {
+      const key = randomUUID();
+      operationKeys.push(key);
+      return r.runner.request({ method: 'POST', path, body: { ...body, idempotencyKey: key }, idempotencyKey: key });
+    };
+    await mutate('/inbound/return', { lineId: f.line.id, quantity: 3 });
+    expect(await current(r, f)).toMatchObject({ returnedQty: 3, pendingQty: 7, canPutaway: true, canCancel: false });
+    await mutate('/inbound/putaway', { lineId: f.line.id, toLocationId: f.destination.id, quantity: 2 });
+    expect(await current(r, f)).toMatchObject({
+      returnedQty: 3,
+      putawayFromOriginQty: 2,
+      pendingQty: 5,
+      canPutaway: true,
+    });
+    await mutate('/inbound/putaway', { lineId: f.line.id, toLocationId: f.destination.id, quantity: 5 });
+    expect(await current(r, f)).toMatchObject({
+      returnedQty: 3,
+      putawayFromOriginQty: 7,
+      pendingQty: 0,
+      canPutaway: false,
+    });
+    const stock = await db.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.sku.id));
+    expect(stock.find((row) => row.locationId === f.line.originLocationId)?.qty).toBe(0);
+    expect(stock.find((row) => row.locationId === f.destination.id)?.qty).toBe(7);
+    expect(await db.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.sku.id))).toHaveLength(
+      4,
+    );
+    expect(
+      await db
+        .select()
+        .from(wmsTables.inboundWorkLogs)
+        .where(eq(wmsTables.inboundWorkLogs.warehouseId, f.warehouse.id)),
+    ).toHaveLength(4);
+  });
+
   it('advertises the capability only with protected movement and an authoritative current-state route', async () => {
     const r = runtime();
     expect(await r.api.request({ path: '/inventory/work-context' })).toMatchObject({
@@ -217,6 +307,8 @@ describe('inbound workflow capability → native runner → Core HTTP → Postgr
     const sent: Array<{ key: string | null; body: string | undefined }> = [];
     let drop = true;
     const transport: typeof fetch = async (url, init) => {
+      const key = randomUUID();
+      operationKeys.push(key);
       const response = await fetch(url, init);
       if (String(url).endsWith('/inbound/cancel')) {
         sent.push({ key: new Headers(init?.headers).get('idempotency-key'), body: init?.body as string });

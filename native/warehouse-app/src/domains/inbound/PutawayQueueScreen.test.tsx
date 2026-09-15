@@ -868,3 +868,22 @@ it('잘못된 출처를 받은 후보로 상세 적치를 열지 않는다', asy
   await userEvent.click(row);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
+
+it('distinguishes all-period candidates by their Seoul date and time', async () => {
+  await renderScreen(SELECTED, {
+    search: { skuId: 's-1', originLocationId: 'loc-origin' },
+    queue: {
+      ...QUEUE,
+      items: [
+        { ...QUEUE.items[0], receivedAt: '2026-07-25T15:14:00.000Z' },
+        {
+          ...QUEUE.items[0],
+          lineId: 'another-day',
+          receivedAt: '2026-07-26T15:14:00.000Z',
+        },
+      ],
+    },
+  });
+  expect(await screen.findByText(/2026.07.26 00:14/)).toBeInTheDocument();
+  expect(screen.getByText(/2026.07.27 00:14/)).toBeInTheDocument();
+});

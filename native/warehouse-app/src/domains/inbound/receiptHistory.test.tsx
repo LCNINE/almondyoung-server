@@ -78,6 +78,8 @@ it('accepts optional current putaway policy without inventing eligibility for ol
       historyWith({
         ...historyLine,
         pendingQty: -2,
+        canCancel: false,
+        cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK',
         canPutaway: false,
         putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
       })
@@ -91,5 +93,56 @@ it.each([
 ])('rejects damaged optional current policy %#', (fields) => {
   expect(() =>
     validateReceiptHistory(historyWith({ ...historyLine, ...fields }))
+  ).toThrow();
+});
+
+const blockedFacts = {
+  ...historyLine,
+  putawayFromOriginQty: -1,
+  pendingQty: 6,
+  canCancel: false,
+  cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK',
+  canPutaway: false,
+  putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+};
+it.each(['quantity', 'canceledQty', 'returnedQty', 'putawayFromOriginQty'])(
+  'retains negative %s as blocked diagnostic facts',
+  (field) => {
+    expect(() =>
+      validateReceiptHistory(historyWith({ ...blockedFacts, [field]: -1 }))
+    ).not.toThrow();
+  }
+);
+it.each([
+  { quantity: NaN },
+  { quantity: 1.5 },
+  { quantity: undefined },
+  { canCancel: true },
+  { canPutaway: true },
+  { canPutaway: undefined },
+  { putawayBlockReason: null },
+  { putawayBlockReason: 'UNKNOWN' },
+  { cancelBlockReason: null },
+  { cancelBlockReason: 'UNKNOWN' },
+])('rejects malformed or actionable diagnostic facts %#', (patch) => {
+  expect(() =>
+    validateReceiptHistory(historyWith({ ...blockedFacts, ...patch }))
+  ).toThrow();
+});
+
+it.each([
+  { canPutaway: true, putawayBlockReason: 'NOTHING_PENDING', pendingQty: 5 },
+  { canPutaway: false, putawayBlockReason: null, pendingQty: 5 },
+  { canPutaway: true, putawayBlockReason: null },
+  { canCancel: true, cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK' },
+  { canCancel: false, cancelBlockReason: null },
+])('rejects contradictory or incomplete action policy %#', (fields) => {
+  expect(() =>
+    validateReceiptHistory(historyWith({ ...historyLine, ...fields }))
+  ).toThrow();
+});
+it('requires nonnegative list totals even when raw receipt counters are diagnostic', () => {
+  expect(() =>
+    validateReceiptHistory({ ...historyWith(blockedFacts), total: -1 })
   ).toThrow();
 });

@@ -71,7 +71,8 @@ function ScanButton({ code }: { code: string }) {
 
 async function renderScreen(
   calls: Call[],
-  restored?: Partial<ReturnType<typeof receiptFixture>>
+  restored?: Partial<ReturnType<typeof receiptFixture>>,
+  withNeighbor = false
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -83,9 +84,17 @@ async function renderScreen(
     pendingQty: 20,
     ...restored,
   });
+  const neighbor = receiptFixture({
+    source: 'direct',
+    lineId: 'valid-neighbor',
+    skuName: '정상 이웃 상품',
+    quantity: 4,
+    pendingQty: 4,
+  });
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.includes('/inbound/lines/valid-neighbor/')) return neighbor;
       if (o.path.startsWith('/inbound/lines/')) return current;
       if (o.path.startsWith('/inbound/receipts?'))
         return {
@@ -99,7 +108,10 @@ async function renderScreen(
               occurredAt: new Date().toISOString(),
               status: current.receiptStatus,
               totalQuantity: current.quantity,
-              lines: [{ ...current, id: current.lineId }],
+              lines: [
+                { ...current, id: current.lineId },
+                ...(withNeighbor ? [{ ...neighbor, id: neighbor.lineId }] : []),
+              ],
             },
           ],
         };
@@ -155,6 +167,18 @@ async function renderScreen(
           quantity: current.quantity,
           putawayDoneQty: 0,
         },
+        ...(withNeighbor
+          ? [
+              {
+                lineId: neighbor.lineId,
+                skuId: neighbor.skuId,
+                skuCode: neighbor.skuCode,
+                skuName: neighbor.skuName,
+                quantity: neighbor.quantity,
+                putawayDoneQty: 0,
+              },
+            ]
+          : []),
       ],
       seen: [],
       key: 'restored-receipt',
@@ -433,3 +457,52 @@ for (const returned of [3, 10]) {
       ).not.toBeInTheDocument();
   });
 }
+
+it('restores a malformed receipt as visible blocked guidance without a mutation', async () => {
+  const calls: Call[] = [];
+  await renderScreen(calls, {
+    quantity: 5,
+    putawayFromOriginQty: -1,
+    pendingQty: 6,
+    canCancel: false,
+    cancelBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+    canPutaway: false,
+    putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+  });
+  expect(await screen.findByText(/입고내역과 실물을 확인/)).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치' })
+  ).not.toBeInTheDocument();
+  expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
+    true
+  );
+});
+
+it('a blocked diagnostic row does not prevent a valid neighbor from resuming putaway', async () => {
+  const calls: Call[] = [];
+  await renderScreen(
+    calls,
+    {
+      quantity: 5,
+      putawayFromOriginQty: -1,
+      pendingQty: 6,
+      canCancel: false,
+      cancelBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+      canPutaway: false,
+      putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+    },
+    true
+  );
+  expect(await screen.findByText(/입고내역과 실물을 확인/)).toBeInTheDocument();
+  expect(screen.getByText('정상 이웃 상품')).toBeInTheDocument();
+  const buttons = screen.getAllByRole('button', { name: '적치' });
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0]).toBeEnabled();
+  await userEvent.click(buttons[0]);
+  expect(await screen.findByRole('dialog', { name: '적치' })).toHaveTextContent(
+    '정상 이웃 상품'
+  );
+  expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
+    true
+  );
+});

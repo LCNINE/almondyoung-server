@@ -437,8 +437,17 @@ corepack yarn test --runInBand --testPathPattern='(inbound-origin|inbound-receip
 
 ## 최종 실행 기록 — 2026-09-16
 
-- Native 전체: 89 files / 587 tests, 실패·skip·unhandled error 0 (`--maxWorkers=2`). Build 및 Core tsc 통과. Native lint는 오류0/기존 경고22개이며 새 경고5개를 해소했다.
-- 필수 서버 패턴에 감사·실제 HTTP·변경한 controller/policy/idempotency/admin 메시지 검사를 포함한 최종 실행: 28 files / 419 tests, 실패·skip0. 파일별 수치와 실행 명령은 [자동 검사 상세](../../../native/warehouse-app/docs/evidence/inbound-consistency/automated-results.md)에 기록했다.
+- Native 전체: 89 files / 611 tests, 실패·skip·unhandled error 0 (`--maxWorkers=2`). Build 및 Core tsc 통과. Native lint는 오류0/기존 경고22개이며 새 경고5개를 해소했다.
+- 필수 서버 패턴에 감사·실제 HTTP·변경한 controller/policy/idempotency/admin 메시지 검사를 포함한 최종 실행: 29 files / 429 tests, 실패·skip0. 파일별 수치와 실행 명령은 [자동 검사 상세](../../../native/warehouse-app/docs/evidence/inbound-consistency/automated-results.md)에 기록했다.
 - 첫 전체 앱 실행에서 발견한 테스트 준비 시점 문제2개와 첫 전체 서버 실행의 기존 migration journal 고정 개수 기대값 오류를 수정하고 전체 재검증했다. timeout·skip으로 우회하지 않았다.
 - Task 3의 기존 계획 재사용/세션 취득 경로는 이미 current generallyAvailableQty를 소비해 별도 제품 변경 없이 실제 DB 회귀로 확인했다. 캡처는 실제 컴포넌트+읽기 전용 API fixture로 남겼고, 실제 Core+native HTTP 대사는 별도 PostgreSQL 검사로 수행했다.
 - A1–A12 로컬 검증과 screenshot/HTTP/장비 범위 구분은 [인수 기록](../../../native/warehouse-app/docs/inventory-accuracy-acceptance.md#2026-09-16-입고-대기-보호와-현재-상태-일관성)에 있다. Windows/PDA 기기 항목은 미검증으로 남긴다. 운영 배포·기존 데이터 보정은 실행하지 않았다.
+
+
+### 최종 전체 검토 수정 — 기준 `746d06211`
+
+- [x] 회수의 immutable 재생 수량도 기존 잠금 안에서 generallyAvailableQty 이하인지 검사한다. 원장12/입고대기10/free2에서 누락된 balance10 재생 거절과2 재생 허용을 실제 DB로 검사한다.
+- [x] 이력의 원본 정수 사실과 비음수 목록 메타데이터를 분리하고 음수 사실은 엄격한 차단 정책으로만 보존한다. parser·입고내역·Quick 복원에서 진단 행과 정상 이웃을 함께 검사한다.
+- [x] 적치 커널이 공통 정책을 잠금 안에서 다시 검사한다. 선반/원래 RECEIVE 없음/voided/부분취소 HTTP 거절의 누계·원장·이벤트·업무로그 불변과 오래된 정상 잔여의 부분회송/적치를 검사한다.
+- [x] 후보 목록에 Asia/Seoul 날짜·시각을 표시하고 회귀와 실제 컴포넌트 캡처를 갱신한다.
+- [x] 마지막 코드 변경 후 native611개/서버429개 전체를 재검증하고 build/lint/Core tsc를 실행한다. 커널 경계5개는 별도 통과했다. 새 스키마/의존성/이벤트 잠금/운영 데이터 보정은 없다.

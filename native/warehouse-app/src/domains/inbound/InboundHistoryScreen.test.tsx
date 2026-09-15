@@ -232,3 +232,33 @@ it('다음 페이지 조회 실패 시 이전 이력을 유지하고 취소는 �
   ).not.toBeInTheDocument();
   expect(screen.getByText(/1페이지/)).toBeInTheDocument();
 });
+
+it('keeps invalid diagnostic rows visible and valid neighboring actions available', async () => {
+  const bad = receipt('bad', 'direct');
+  const good = receipt('d', 'direct');
+  bad.lines[0] = {
+    ...bad.lines[0],
+    skuName: '확인필요상품',
+    putawayFromOriginQty: -1,
+    canCancel: false,
+    cancelBlockReason: 'INSUFFICIENT_ORIGIN_STOCK',
+    pendingQty: 5,
+    canPutaway: false,
+    putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+  } as (typeof bad.lines)[0];
+  const calls: Call[] = [];
+  await mount((async (opts: Call) => {
+    calls.push(opts);
+    return {
+      items: [bad, good],
+      total: 2,
+      serverTime: new Date().toISOString(),
+    };
+  }) as ApiClient['request']);
+  expect(await screen.findByText('확인필요상품')).toBeInTheDocument();
+  expect(screen.getByText('직접상품')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /입고 취소/ })).toHaveLength(1);
+  expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
+    true
+  );
+});

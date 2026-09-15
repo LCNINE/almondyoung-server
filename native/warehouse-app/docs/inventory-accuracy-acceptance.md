@@ -353,7 +353,7 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 
 ## 2026-09-16 입고 대기 보호와 현재 상태 일관성
 
-브랜치: `codex/inbound-workflow-consistency`. 기능 기준: `d18b1a940`, Task 8 시작: `57b52222b`.
+브랜치: `codex/inbound-workflow-consistency`. 기능 기준: `d18b1a940`, 최종 검토 수정 기준: `746d06211`.
 위의 과거 수치는 이전 작업 기록이다. 이번 결과는 아래 최종 실행에서 새로 수집했다.
 
 ### 구현과 계약 공개
@@ -382,18 +382,27 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 
 | 검사 | 최종 결과 |
 |---|---|
-| warehouse-app 전체 | 89 files / 587 tests 통과, 실패·skip·unhandled error 0. `--maxWorkers=2`로 실행 |
-| Core/관리자/감사/실제 HTTP 회귀 | 28 files / 419 tests 통과, 실패·skip 0. 실제 HTTP3개와 감사33개 포함 |
-| native production build | TypeScript 및 Vite 통과. JS 579.34 kB, 기존 500 kB 초과 chunk 경고 유지 |
+| warehouse-app 전체 | 89 files / 611 tests 통과, 실패·skip·unhandled error 0. `--maxWorkers=2`로 실행 |
+| Core/관리자/감사/실제 HTTP 회귀 | 29 files / 429 tests 통과, 실패·skip 0. 실제 HTTP9개, 회수4개와 감사33개 포함 |
+| native production build | TypeScript 및 Vite 통과. JS 580.49 kB, 기존 500 kB 초과 chunk 경고 유지 |
 | native lint | exit0, 오류0, 기존 경고22개. 새 경고5개 해소; 기준선과 파일별 경고 수 동일 |
 | Core TypeScript | `corepack yarn tsc --noEmit -p apps/core/tsconfig.app.json` 통과 |
-| 작업 중 영향 검사 | native 5 files / 64 tests, HTTP+auth 2 suites / 29 tests, 마이그레이션 계약 1 suite / 12 tests 통과. 전체 검사와 겹치므로 합산하지 않음 |
+| 작업 중 영향 검사 | 최종 수정 집중 native4 files/70 tests, backend3 suites/23 tests와 별도 kernel 경계5 tests 통과. 정상 잔여 HTTP1개를 이후 추가해 전체 검사에 포함. 전체 검사와 겹치므로 합산하지 않음 |
 
 전용 DB는 `postgresql://postgres:postgres@127.0.0.1:5432/inbound_workflow_consistency_test`이며 기존 마이그레이션을 적용한 로컬 테스트 DB다. 마이그레이션 계약 suite는 같은 로컬 PostgreSQL에 고유한 `pr_c_t1_*` 임시 DB를 생성하고 삭제한다. 운영/shared DB·운영 `.env`를 사용하지 않았고 새 의존성·테이블·스키마 변경은 없다.
 
 첫 전체 앱 실행은 586/587 통과와 unhandled rejection 1건이었다. 이미 존재하는 비활성 버튼을 즉시 검사하던 assertion과 소비자가 붙기 전에 deferred GET을 reject하던 테스트를 실제 준비 완료/조회 시작을 기다리도록 수정했다. GET 실패가 표시되고 입력이 보존되며 POST가 없는 것까지 확인한다. 빠르게 교체되는 PO 안내 DOM도 조회와 assertion을 같은 `waitFor` 안에서 검사한다. 전역 timeout 증가나 unhandled error 무시는 하지 않았다.
 
 첫 넓은 서버 실행은 418/419 통과였다. 기존 migration 테스트가 PR-B 이후 적용 수를 `+2`로 고정해 이미 존재하는 stocktaking baseline migration을 누락했다. 스키마나 적용 목록은 바꾸지 않고, 적용된 전체 migration의 hash·timestamp 일치와 기존 journal prefix 보존을 검사하도록 강화했다. 해당 12개 검사와 최종 전체 회귀를 다시 실행했다.
+
+### 최종 전체 검토에서 보강한 계약
+
+- **회수:** 손상된 live balance의 HAND_IN10 재생은 원장12/입고대기10의 자유수량2를 넘으므로 recovery-required를 유지한다. 원장·이벤트·balance 불변과 정확히2를 재생하는 성공을 실제 DB로 확인했다. 진단에 입고대기와 자유수량을 포함한다.
+- **입고내역:** 음수 원본 수량/누계를 숨기지 않고 차단된 진단 행으로 보존한다. NaN·소수·누락·알 수 없거나 모순된 정책은 계속 거절한다. 입고내역 및 Quick 화면에서 불일치 행이 보이고 정상 이웃은 계속 사용할 수 있다. Quick에는 실물/입고내역 확인 안내가 표시된다.
+- **적치 명령:** 회차·원장 잠금 안에서 조회와 같은 정책을 검사한다. 일반 선반, 원래 RECEIVE 이벤트 누락/다른 종류, voided, 부분취소를 직접 HTTP 요청해도 거절하며 누계·원장·이벤트·업무로그를 변경하지 않는다. 90일 전 정상 입고의 부분회송3→부분적치2→남은5 적치는 성공한다. stock 이후 event 잠금을 추가하지 않았다.
+- **후보 구분:** 전체 기간 목록에 서울 기준 날짜·시각을 함께 표시한다. 아래 캡처에서 2026.09.01과2026.09.02 후보를 구분할 수 있다.
+
+위 수정은 의미 있는 RED 재현 후 적용했고, 마지막 코드 서식 정리 뒤 전체611/429개와 build/lint/tsc를 새로 실행했다. 별도 최종 재검토는 이 수정 커밋을 기준으로 수행한다.
 
 ### A1–A12 대응
 
@@ -405,12 +414,12 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 | A4 취소·회송 원자성 | kernel·purchase-order receiving·origin protection의 원장/로그/정산 실패 롤백 | 로컬 통과 |
 | A5 모든 원장 감소 경계 | origin protection의 직접 이벤트·역분개·조정·실사·이송/출고 검사 | 로컬 통과 |
 | A6 자유 물량·일반 선반·회수 | availability/protection 및 batch-controlled stock guard 검사 | 로컬 통과 |
-| A7 출고 계획·세션 취득 | `inbound-origin-planning`, location/simple outbound, batch-controlled stock guard | 로컬 통과 |
+| A7 출고 계획·세션 취득 | `inbound-origin-planning`, location/simple outbound, batch-controlled stock guard 및 실제 recovery 재생 | 로컬 통과 |
 | A8 양방향 DB 경합 | origin protection concurrency의 3쌍과 origin planning의 적치↔세션 취득 1쌍, 모두 양방향 독립 연결·실제 잠금 대기 검사 | 로컬 통과 |
 | A9 취소/다른 기기 적치 후 재개 | `PurchaseOrderReceiveScreen.runtime`, `InboundWorkflow.runtime`, reconciliation hook 및 HTTP 취소 재생 | 로컬 통과 |
 | A10 미확인·응답 역전·인증/저장 실패 | native operation runner, reconciliation hook, 실제 HTTP의 새 거절3종 및 원래 취소 키 복원 | 로컬 통과 |
 | A11 많은 후보·오래된 입고·원위치/창고 | putaway reader 및 `PutawayQueueScreen`, controller 권한/UUID, 구형 capability 검사 | 로컬 통과 |
-| A12 기존 불일치와 읽기 전용 감사 | current state/pending projection 및 감사33개 검사. INSERT/UPDATE/DELETE의 DB read-only 거절과 실행 전후 불변 확인 | 로컬 통과 |
+| A12 기존 불일치와 읽기 전용 감사 | current state/pending projection, 음수 이력 parser/화면 및 감사33개 검사. INSERT/UPDATE/DELETE의 DB read-only 거절과 실행 전후 불변 확인 | 로컬 통과 |
 
 ### 실제 컴포넌트 화면 증거
 
@@ -419,7 +428,7 @@ A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결
 | 화면 | 확인한 표시 |
 |---|---|
 | [일반 이동](evidence/inbound-consistency/movement-after.png) | 입고 대기10/자유0 fixture에서 일반 이동 비활성, 적치하기 경로 표시 |
-| [적치 후보](evidence/inbound-consistency/putaway-candidates-after.png) | 선택 상품·원위치의 전체 기간 후보2건, 잔여6/4 |
+| [적치 후보](evidence/inbound-consistency/putaway-candidates-after.png) | 선택 상품·원위치의 전체 기간 후보2건, 잔여6/4, 서울 기준 날짜·시각으로 다른 날짜 구분 |
 | [발주 재개](evidence/inbound-consistency/po-after.png) | 복원한 입고가 ‘취소됨’으로 표시되고 해당 입고의 적치/취소 조작 없음 |
 
 ### 현장 인수와 운영 적용
