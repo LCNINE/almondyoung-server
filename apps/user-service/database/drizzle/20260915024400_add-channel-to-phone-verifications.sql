@@ -1,0 +1,1 @@
+ALTER TABLE "phone_verifications" ADD COLUMN "channel" varchar(10) DEFAULT 'SMS' NOT NULL;

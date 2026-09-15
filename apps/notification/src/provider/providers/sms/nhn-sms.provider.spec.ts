@@ -27,8 +27,8 @@ type PostMock = jest.Mock<Promise<unknown>, [string, SmsPayload]>;
 
 const makePost = (): PostMock => jest.fn<Promise<unknown>, [string, SmsPayload]>();
 
-function createProvider(post: PostMock) {
-  mockedAxios.create.mockReturnValue({ post } as never);
+function createProvider(post: PostMock, get?: jest.Mock) {
+  mockedAxios.create.mockReturnValue({ post, get } as never);
   return new NHNSmsProvider('provider-id', CONFIG, configService);
 }
 
@@ -133,5 +133,44 @@ describe('NHNSmsProvider', () => {
   it('발신번호가 없으면 생성 단계에서 던진다', () => {
     mockedAxios.create.mockReturnValue({ post: jest.fn() } as never);
     expect(() => new NHNSmsProvider('id', { ...CONFIG, sendNo: '' }, configService)).toThrow('NHN_SMS_SEND_NO');
+  });
+});
+
+/**
+ * 결과 웹훅은 본문을 주지 않으므로, 실패 건을 다른 채널로 구제하려면 이 조회가 반드시 성공해야 한다.
+ * 2026-09-14 라이브 실측에서 두 가지가 틀려 구제가 통째로 죽어 있었다 — 둘 다 여기서 막는다.
+ */
+describe('NHNSmsProvider.getSentBody', () => {
+  const detailResponse = {
+    data: {
+      header: { isSuccessful: true, resultCode: 0, resultMessage: 'SUCCESS' },
+      // 단건 조회의 data 는 배열이 아니라 객체다.
+      body: { data: { requestId: 'req-1', recipientSeq: 1, recipientNo: '01012345678', body: '[아몬드영] 인증번호: 483920' } },
+    },
+  };
+
+  it('recipientSeq 를 쿼리에 실어 조회하고 본문을 돌려준다', async () => {
+    const get = jest.fn().mockResolvedValue(detailResponse);
+    const provider = createProvider(makePost(), get);
+
+    await expect(provider.getSentBody('req-1', 1)).resolves.toBe('[아몬드영] 인증번호: 483920');
+
+    // recipientSeq 가 빠지면 NHN 이 -2012 로 거부한다 (HTTP 는 200 이라 조용히 실패한다).
+    expect(get).toHaveBeenCalledWith(
+      `/sms/v3.0/appKeys/${CONFIG.appKey}/sender/sms/req-1`,
+      { params: { recipientSeq: 1 } },
+    );
+  });
+
+  it('조회가 거부되면 undefined 를 돌려준다 (HTTP 200 이어도 isSuccessful=false)', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        header: { isSuccessful: false, resultCode: -2012, resultMessage: 'Search parameter is invalid.(requestId and mtPr)' },
+        body: null,
+      },
+    });
+    const provider = createProvider(makePost(), get);
+
+    await expect(provider.getSentBody('req-1', 1)).resolves.toBeUndefined();
   });
 });

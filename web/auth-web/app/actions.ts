@@ -233,16 +233,26 @@ export async function sendRecoveryCodeAction(
 ): Promise<SendRecoveryCodeResult> {
   let phoneNumber: string
 
+  // 문자가 스팸보관함으로 들어간 경우 서버는 발송 성공으로 기록한다 — 실패를 감지할 방법이 없다.
+  // 그래서 고객이 채널을 직접 고르게 하고, 고른 값을 그대로 user-service 에 넘긴다.
+  const channel = formData.get("channel") === "KAKAO" ? "KAKAO" : undefined
+
   try {
     phoneNumber = getNormalizedPhoneNumber(formData)
     const result = await sendPhoneVerificationCode({
       countryCode: "KR",
       phoneNumber,
+      ...(channel ? { channel } : {}),
     })
 
     return { ok: true, message: result.message, phoneNumber }
   } catch (e) {
-    return failure(e, "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요.")
+    return failure(
+      e,
+      channel
+        ? "카카오톡으로 보내지 못했어요. 잠시 후 다시 시도해 주세요."
+        : "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요."
+    )
   }
 }
 
