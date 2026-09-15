@@ -80,7 +80,8 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       const current = await draft.read();
       if (current.submitted) {
         const op = await runtime.store.get(current.submitted.key);
-        if (op?.status === 'confirmed') {
+        const scope = await runtime.getScope();
+        if (op?.scope === scope && op.status === 'confirmed') {
           const result = op.result as ReceivePurchaseOrderResult;
           const { target, quantity } = current.submitted;
           await draft.update((prev) =>
@@ -100,6 +101,12 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                     putawayDoneQty: 0,
                   },
                 }
+          );
+        } else if (op?.scope === scope && op.status === 'rejected') {
+          await draft.update((prev) =>
+            prev.submitted?.key === current.submitted?.key
+              ? { ...prev, submitted: null }
+              : prev
           );
         }
       }

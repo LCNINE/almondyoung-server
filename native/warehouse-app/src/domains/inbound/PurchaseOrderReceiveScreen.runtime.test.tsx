@@ -542,6 +542,86 @@ it('locks edits and cancellation but retries an unresolved submission with its o
   });
 });
 
+it('releases a rejected submission across remount and corrects it with a fresh key', async () => {
+  const submitted = { target: lineA, quantity: 3, key: 'receive-key' };
+  const originalBody = {
+    warehouseId: 'w-1',
+    lines: [{ skuId: 'sku-a', quantity: 3 }],
+    contractVersion: 2,
+    idempotencyKey: 'receive-key',
+  };
+  const f = await fixture(
+    {
+      active: lineA,
+      scanBump: 3,
+      seen: ['a1', 'a2', 'a3'],
+      fresh: null,
+      submitted,
+    },
+    [],
+    async (store) => {
+      await store.begin({
+        id: 'receive-key',
+        scope: 'scope',
+        resource: '/purchase-orders/po-1',
+        path: '/purchase-orders/po-1/receipts',
+        method: 'POST',
+        bodyJson: JSON.stringify(originalBody),
+        createdAt: Date.now(),
+      });
+      await store.finish(
+        'receive-key',
+        'rejected',
+        undefined,
+        'INVALID_RECEIPT_QUANTITY'
+      );
+    }
+  );
+
+  await act(async () => f.firstArrivals.resolve(arrivals));
+  await waitFor(async () =>
+    expect(await f.draft()).toMatchObject({
+      active: lineA,
+      scanBump: 3,
+      seen: ['a1', 'a2', 'a3'],
+      submitted: null,
+    })
+  );
+  f.unmount();
+  f.reopen();
+
+  const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+  const input = within(sheet).getByLabelText('입고 수량 직접 입력 (낱개)');
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(within(sheet).getByRole('button', { name: '취소' })).toBeEnabled();
+  expect(await f.draft()).toMatchObject({
+    active: lineA,
+    scanBump: 3,
+    seen: ['a1', 'a2', 'a3'],
+    submitted: null,
+  });
+
+  await userEvent.clear(input);
+  await userEvent.type(input, '4');
+  await userEvent.click(within(sheet).getByRole('button', { name: '입고' }));
+
+  expect(await screen.findByText('아몬드 셔츠 4개 입고됨')).toBeInTheDocument();
+  const calls = f.requests.filter(
+    (request) => request.path === '/purchase-orders/po-1/receipts'
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0].idempotencyKey).not.toBe('receive-key');
+  expect(calls[0].body).toEqual({
+    warehouseId: 'w-1',
+    lines: [{ skuId: 'sku-a', quantity: 4 }],
+    contractVersion: 2,
+    idempotencyKey: calls[0].idempotencyKey,
+  });
+  expect(await f.store.get(calls[0].idempotencyKey!)).toMatchObject({
+    status: 'confirmed',
+  });
+});
+
 it('moves a submitted draft to putaway only when its original operation key is confirmed', async () => {
   const submitted = { target: lineA, quantity: 3, key: 'receive-key' };
   const f = await fixture(
