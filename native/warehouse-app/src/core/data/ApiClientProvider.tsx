@@ -10,6 +10,7 @@ import { createOperationStore } from '../operations/operationStore';
 import {
   OperationContext,
   type WorkCapabilities,
+  type WorkPermissions,
 } from '../operations/OperationContext';
 import { WorkBoundary } from '../operations/WorkBoundary';
 import { invalidateInventory } from './invalidateInventory';
@@ -62,7 +63,7 @@ export function ApiClientProvider({
       boundScope = scope;
       return scope;
     };
-    const getCapabilities = async (): Promise<WorkCapabilities> => {
+    const getWorkContext = async () => {
       const scope = await getScope();
       const token = await session.getAccessToken();
       const contextApi = createApiClient({
@@ -74,6 +75,7 @@ export function ApiClientProvider({
         actorId: string;
         operationContractVersion: number;
         capabilities?: WorkCapabilities;
+        permissions?: WorkPermissions;
       }>({ path: '/inventory/work-context' });
       if (
         !session.isAuthenticated() ||
@@ -82,8 +84,12 @@ export function ApiClientProvider({
         token !== (await session.getAccessToken())
       )
         throw new Error('로그인을 다시 확인해 주세요.');
-      return context.capabilities ?? {};
+      return context;
     };
+    const getCapabilities = async () =>
+      (await getWorkContext()).capabilities ?? {};
+    const getPermissions = async () =>
+      (await getWorkContext()).permissions ?? {};
     const store = createOperationStore();
     const runner = createOperationRunner({
       api: raw,
@@ -98,7 +104,7 @@ export function ApiClientProvider({
       },
       onConfirmed: () => invalidateInventory(qc),
     });
-    return { runner, store, getScope, getCapabilities };
+    return { runner, store, getScope, getCapabilities, getPermissions };
   }, [client, session, qc, authenticated]);
   return (
     <ApiClientContext.Provider value={client ?? runtime!.runner}>

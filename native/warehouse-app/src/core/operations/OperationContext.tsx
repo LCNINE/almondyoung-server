@@ -5,7 +5,11 @@ export interface WorkCapabilities {
   stocktakingAddCountItem?: boolean;
   locationOutbound?: boolean;
 }
+export interface WorkPermissions {
+  forceDispatch?: boolean;
+}
 export interface WorkRuntime {
+  getPermissions?: () => Promise<WorkPermissions>;
   getCapabilities?: () => Promise<WorkCapabilities>;
   runner: OperationRunner;
   store: OperationStore;

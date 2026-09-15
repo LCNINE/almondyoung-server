@@ -47,6 +47,12 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
+    '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
+  LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED:
+    '스캔 생략 출고는 관리자 권한이 필요해요. 상품 스캔으로 일반 출고를 계속해 주세요.',
+  LOCATION_OUTBOUND_FORCE_NOT_APPLIED:
+    '스캔 생략 출고가 반영되지 않았어요. 상품을 스캔해 일반 출고를 계속해 주세요.',
   LOCATION_OUTBOUND_WAREHOUSE_MISMATCH:
     '송장의 창고와 선택 창고가 달라요. 창고를 확인해 주세요.',
   LOCATION_OUTBOUND_SOURCE_MISMATCH:

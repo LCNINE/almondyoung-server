@@ -18,7 +18,10 @@ import {
 } from '../../core/hardware/scan/useWorkScanQueue';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
-import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
+import {
+  useWorkCapabilities,
+  useWorkPermissions,
+} from '../../core/operations/useWorkCapabilities';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import {
   WorkArea,
@@ -49,6 +52,7 @@ function LocationWork({
   const shipmentId = shipment.shipmentId;
   const runtime = useWorkRuntime();
   const capabilities = useWorkCapabilities();
+  const permissions = useWorkPermissions();
   const operations = useLocationOutbound();
   const initial = useRef({
     startKey: crypto.randomUUID(),
@@ -235,6 +239,7 @@ function LocationWork({
       work.status === 'shipped' ||
       busyRef.current ||
       intakeBlocked ||
+      !!queue.error() ||
       mode !== 'product' ||
       !source ||
       count === null ||
@@ -252,16 +257,24 @@ function LocationWork({
     });
     editQuantity('1');
   }
-  useScanner((event) => {
-    if (intakeBlocked || busyRef.current) return;
-    if (mode === 'location') chooseCode(event.code);
-    else acceptProduct(event.code);
-  });
+  const scanHandler = useRef<(code: string) => void>(() => {});
+  scanHandler.current = (code) => {
+    // The subscription may still be from a previous render. Always evaluate
+    // the current source and lock policy, including synchronous queue failures.
+    if (intakeBlocked || busyRef.current || queue.error()) return;
+    if (mode === 'location') chooseCode(code);
+    else acceptProduct(code);
+  };
+  useScanner((event) => scanHandler.current(event.code));
   const skuName = (skuId: string) =>
     shipment.lines.find((line) => line.skuId === skuId)?.skuName ??
     '상품 확인 필요';
   const remaining = work?.sources.filter((item) => item.remainingQty > 0) ?? [];
   const supported = capabilities.data?.locationOutbound === true;
+  const canForce =
+    permissions.isSuccess &&
+    !permissions.isFetching &&
+    permissions.data.forceDispatch === true;
   const canConfirm =
     remaining.length > 0 ||
     (!!work?.lines.length &&
@@ -410,18 +423,25 @@ function LocationWork({
             />
           </WorkArea>
           <WorkArea kind="outbound">
-            <Button
-              disabled={blocked || !canConfirm}
-              onClick={() => {
-                if (queue.blocked() || busyRef.current) return;
-                setForceOpen(true);
-                setReason('');
-                setCounts({});
-                setForceKey(crypto.randomUUID());
-              }}
-            >
-              스캔 생략 확인
-            </Button>
+            {canForce ? (
+              <Button
+                disabled={blocked || !canConfirm}
+                onClick={() => {
+                  if (queue.blocked() || busyRef.current) return;
+                  setForceOpen(true);
+                  setReason('');
+                  setCounts({});
+                  setForceKey(crypto.randomUUID());
+                }}
+              >
+                스캔 생략 확인
+              </Button>
+            ) : (
+              <p>
+                스캔 생략 출고는 관리자 권한이 필요해요. 권한을 확인할 수 없으면
+                연결과 로그인을 확인해 주세요.
+              </p>
+            )}
             <Button
               disabled={blocked || forceOpen}
               onClick={() => {

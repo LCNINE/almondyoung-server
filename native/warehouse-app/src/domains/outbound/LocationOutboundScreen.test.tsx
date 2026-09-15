@@ -137,7 +137,10 @@ it('위치 선택 없이는 접수하지 않고 선택한 B와 수량을 요청�
   mount((async (opts: Call) => {
     calls.push(opts);
     if (opts.path === '/inventory/work-context')
-      return { capabilities: { locationOutbound: true } };
+      return {
+        capabilities: { locationOutbound: true },
+        permissions: { forceDispatch: true },
+      };
     if (opts.path.endsWith('location-outbound-scans')) {
       await gate;
       return {
@@ -186,7 +189,10 @@ it('선택 창고가 다르면 출고 준비 명령을 만들지 않는다', asy
   mount(
     (async (opts: Call) => {
       calls.push(opts);
-      return { capabilities: { locationOutbound: true } };
+      return {
+        capabilities: { locationOutbound: true },
+        permissions: { forceDispatch: true },
+      };
     }) as ApiClient['request'],
     'other'
   );
@@ -208,7 +214,10 @@ it('스캔 생략은 사유와 모든 위치별 실물 수량을 명시한다', 
   mount((async (opts: Call) => {
     calls.push(opts);
     if (opts.path === '/inventory/work-context')
-      return { capabilities: { locationOutbound: true } };
+      return {
+        capabilities: { locationOutbound: true },
+        permissions: { forceDispatch: true },
+      };
     if (opts.path.endsWith('location-outbound-forces'))
       return { ...state, status: 'shipped', sources: [] };
     return state;

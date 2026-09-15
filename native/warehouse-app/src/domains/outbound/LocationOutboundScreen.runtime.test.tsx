@@ -126,13 +126,12 @@ function mount(
     routeTree: root.addChildren([index]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
-  return render(
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
     <SessionProvider session={session}>
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
+      <QueryClientProvider client={queryClient}>
         <ApiClientProvider client={{ request }}>
           <WarehouseProvider prefs={prefs}>
             <OperationContext.Provider value={runtime}>
@@ -148,6 +147,7 @@ function mount(
       </QueryClientProvider>
     </SessionProvider>
   );
+  return { ...view, queryClient };
 }
 
 function deferred() {
@@ -157,7 +157,13 @@ function deferred() {
   });
   return { promise, resolve };
 }
-async function fixture(total = 3) {
+async function fixture(
+  total = 3,
+  options: {
+    getPermissions?: () => Promise<{ forceDispatch?: boolean }>;
+    forceRequest?: ApiClient['request'];
+  } = {}
+) {
   const store = createOperationStore(crypto.randomUUID());
   await store.draft('scope:draft:location-outbound:s', () => ({
     startKey: 'start',
@@ -169,6 +175,7 @@ async function fixture(total = 3) {
   let sendGate: ReturnType<typeof deferred> | undefined;
   let loseResponse = false;
   const calls: Array<{ id: string; body: Record<string, unknown> }> = [];
+  const requests: Parameters<ApiClient['request']>[0][] = [];
   const applied = new Map<string, typeof state>();
   const snapshot = () => ({
     ...state,
@@ -187,6 +194,14 @@ async function fixture(total = 3) {
   });
   const api: ApiClient = {
     request: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      requests.push(o);
+      if (
+        o.path.endsWith('location-outbound-forces') ||
+        o.path.endsWith('location-outbound-force-resolutions')
+      ) {
+        if (!options.forceRequest) throw new Error('Unexpected force');
+        return options.forceRequest<T>(o);
+      }
       if (o.path.includes('location-outbound-state')) {
         const result = snapshot();
         await readGate?.promise;
@@ -224,6 +239,8 @@ async function fixture(total = 3) {
     runner,
     getScope: async () => 'scope',
     getCapabilities: async () => ({ locationOutbound: true }),
+    getPermissions:
+      options.getPermissions ?? (async () => ({ forceDispatch: true })),
   };
   const view = mount(runner.request, 'w', runtime);
   const select = await screen.findByRole('button', { name: 'B 선택' });
@@ -239,8 +256,12 @@ async function fixture(total = 3) {
     runtime,
     view,
     calls,
+    requests,
     applied,
     picked: () => picked,
+    complete: () => {
+      picked = total;
+    },
     holdReads() {
       return (readGate = deferred());
     },
@@ -434,7 +455,9 @@ it('preserves an unsaved scan on storage failure and rejects further intake unti
   act(() => emitScan('B'));
   expect(f.calls).toHaveLength(0);
   diskFull = false;
-  await userEvent.click(screen.getByRole('button', { name: '처리 내역 확인' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
   await waitFor(() => expect(f.picked()).toBe(1));
   await waitFor(async () => expect(await f.saved()).toHaveLength(0));
   expect(f.calls.map((c) => c.body.barcode)).toEqual(['A']);
@@ -481,4 +504,269 @@ it('keeps intake locked until WorkBoundary has discovered pending operations', a
   expect(f.calls).toHaveLength(0);
   gate.resolve();
   await waitFor(() => expect(select).toBeEnabled());
+});
+
+async function submitForce() {
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔 생략 확인' })
+  );
+  await userEvent.type(screen.getByLabelText(/B 실물 수량/), '3');
+  await userEvent.type(
+    screen.getByLabelText('스캔 생략 사유'),
+    '포장 실물 확인'
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '확인한 수량 출고' })
+  );
+}
+it.each(['worker', 'missing', 'failed'])(
+  'keeps normal scanning available and force unavailable when permission is %s',
+  async (permission) => {
+    const f = await fixture(3, {
+      getPermissions: async () => {
+        if (permission === 'failed') throw new Error('offline');
+        return permission === 'missing' ? {} : { forceDispatch: false };
+      },
+    });
+    expect(
+      screen.queryByRole('button', { name: '스캔 생략 확인' })
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/스캔 생략 출고는 관리자 권한이 필요해요/)
+    ).toBeInTheDocument();
+    act(() => emitScan('A'));
+    await waitFor(() => expect(f.picked()).toBe(1));
+    expect(
+      f.requests.filter((r) => r.path.endsWith('location-outbound-forces'))
+    ).toHaveLength(0);
+  }
+);
+it.each(['revoked', 'lookup failed'])(
+  'checks force permission immediately before saving when permission is %s',
+  async (permission) => {
+    let reads = 0;
+    const f = await fixture(3, {
+      getPermissions: async () => {
+        if (++reads === 1) return { forceDispatch: true };
+        if (permission === 'lookup failed') throw new Error('offline');
+        return { forceDispatch: false };
+      },
+    });
+    await submitForce();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    );
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('alert')).toHaveTextContent('권한');
+    expect(
+      f.requests.filter((r) => r.path.endsWith('location-outbound-forces'))
+    ).toHaveLength(0);
+    expect(await f.store.pending('scope')).toHaveLength(0);
+    act(() => emitScan('A'));
+    await waitFor(() => expect(f.picked()).toBe(1));
+  }
+);
+it('closes physical confirmation after persisted non-application and accepts ordinary scans', async () => {
+  const gate = deferred();
+  const f = await fixture(3, {
+    forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      if (o.path.endsWith('location-outbound-forces'))
+        throw new ApiError('forbidden', 403);
+      await gate.promise;
+      return {
+        outcome: 'rejected',
+        code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+      } as T;
+    },
+  });
+  await submitForce();
+  await waitFor(() =>
+    expect(
+      f.requests.filter((r) =>
+        r.path.endsWith('location-outbound-force-resolutions')
+      )
+    ).toHaveLength(1)
+  );
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+  gate.resolve();
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  );
+  expect(
+    await screen.findByText(/스캔 생략 출고가 반영되지 않았어요/)
+  ).toBeInTheDocument();
+  const force = f.requests.find((r) =>
+    r.path.endsWith('location-outbound-forces')
+  )!;
+  expect((await f.store.get(force.idempotencyKey!))?.status).toBe('rejected');
+  act(() => emitScan('A'));
+  await waitFor(() => expect(f.picked()).toBe(1));
+});
+it('keeps the dialog and boundary blocked after resolver loss, then recovers using the same command', async () => {
+  let lost = true;
+  const f = await fixture(3, {
+    forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      if (o.path.endsWith('location-outbound-forces') || lost)
+        throw new ApiError('lost', 403);
+      return {
+        outcome: 'rejected',
+        code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+      } as T;
+    },
+  });
+  await submitForce();
+  await waitFor(async () =>
+    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+  );
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  const input = screen.getByLabelText('출고 상품 바코드');
+  expect(input).toBeDisabled();
+  expect(input.closest('[inert]')).not.toBeNull();
+  await waitFor(async () => {
+    const saved = (await f.store.pending('scope'))[0];
+    expect(saved?.status).toBe('uncertain');
+    expect(saved?.leaseExpiresAt).toBe(0);
+  });
+  lost = false;
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  );
+  const writes = f.requests.filter((r) => r.method === 'POST');
+  expect(writes.map((r) => r.path)).toEqual([
+    '/shipments/s/location-outbound-forces',
+    '/shipments/s/location-outbound-force-resolutions',
+    '/shipments/s/location-outbound-force-resolutions',
+  ]);
+  expect(new Set(writes.map((r) => r.idempotencyKey)).size).toBe(1);
+  expect(new Set(writes.map((r) => r.bodyJson)).size).toBe(1);
+});
+
+it('preserves the active force promise and dialog when terminal storage fails, then settles after durable recovery', async () => {
+  const f = await fixture(3, {
+    forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      if (o.path.endsWith('location-outbound-forces'))
+        throw new ApiError('forbidden', 403);
+      return {
+        outcome: 'rejected',
+        code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+      } as T;
+    },
+  });
+  const finish = f.store.finish;
+  let failed = false;
+  let diskFull = true;
+  vi.spyOn(f.store, 'finish').mockImplementation(async (...args) => {
+    if (diskFull && args[1] === 'rejected') {
+      failed = true;
+      throw new Error('disk full');
+    }
+    return finish(...args);
+  });
+  await submitForce();
+  await waitFor(() => expect(failed).toBe(true));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+  expect(await f.store.pending('scope')).toHaveLength(1);
+  act(() => emitScan('A'));
+  expect(f.picked()).toBe(0);
+  diskFull = false;
+  await act(async () => f.runner.retryPending());
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  );
+  expect(await f.store.pending('scope')).toHaveLength(0);
+});
+it('restores old uncertain force using its saved body and shows confirmed completion after force permission is revoked', async () => {
+  const f = await fixture(3, {
+    getPermissions: async () => ({ forceDispatch: false }),
+    forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      if (!o.path.endsWith('location-outbound-force-resolutions'))
+        throw new Error('Force must not execute');
+      f.complete();
+      return {
+        outcome: 'confirmed',
+        result: {
+          ...state,
+          status: 'shipped',
+          dispatchAttemptId: 'dispatch',
+          workItemStatus: 'completed',
+          lines: [{ ...state.lines[0], pickedQty: 3, inspectedQty: 3 }],
+          sources: [],
+        },
+      } as T;
+    },
+  });
+  f.view.unmount();
+  const bodyJson = JSON.stringify({
+    warehouseId: 'w',
+    reason: '확인',
+    items: [{ shipmentLineId: 'line', sourceLocationId: 'B', quantity: 3 }],
+  });
+  await f.store.begin({
+    id: 'old-force',
+    scope: 'scope',
+    resource: '/shipments/s',
+    method: 'POST',
+    path: '/shipments/s/location-outbound-forces',
+    bodyJson,
+    createdAt: Date.now(),
+  });
+  await f.store.finish('old-force', 'uncertain');
+  const runner = createOperationRunner({
+    api: f.api,
+    store: f.store,
+    getScope: f.runtime.getScope,
+    wait: async () => {},
+  });
+  mount(runner.request, 'w', { ...f.runtime, runner });
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
+  expect(await screen.findByText('출고완료')).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '다음 송장 스캔' })).toBeEnabled()
+  );
+  expect(await f.store.get('old-force')).toMatchObject({
+    status: 'confirmed',
+    bodyJson,
+  });
+  expect(
+    f.requests
+      .filter((o) => o.method === 'POST')
+      .map((o) => ({ path: o.path, key: o.idempotencyKey, body: o.bodyJson }))
+  ).toEqual([
+    {
+      path: '/shipments/s/location-outbound-force-resolutions',
+      key: 'old-force',
+      body: bodyJson,
+    },
+  ]);
+});
+
+it('hides previously granted force permission when its refresh fails', async () => {
+  let failed = false;
+  const f = await fixture(3, {
+    getPermissions: async () => {
+      if (failed) throw new Error('offline');
+      return { forceDispatch: true };
+    },
+  });
+  expect(
+    await screen.findByRole('button', { name: '스캔 생략 확인' })
+  ).toBeEnabled();
+  failed = true;
+  await act(async () =>
+    f.view.queryClient.invalidateQueries({ queryKey: ['work-permissions'] })
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '스캔 생략 확인' })
+    ).not.toBeInTheDocument()
+  );
+  act(() => emitScan('A'));
+  await waitFor(() => expect(f.picked()).toBe(1));
 });

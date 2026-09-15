@@ -1,6 +1,10 @@
 import { useMutation } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
-import { useCapabilityReader } from '../../core/operations/useWorkCapabilities';
+import { ApiError } from '../../core/data/httpClient';
+import {
+  useCapabilityReader,
+  usePermissionReader,
+} from '../../core/operations/useWorkCapabilities';
 import { validateOperationResult } from '../../core/operations/operationResult';
 import type { LocationOutboundState } from './types';
 export const outboundRemainingSignature = (state: LocationOutboundState) =>
@@ -17,6 +21,7 @@ export const outboundRemainingSignature = (state: LocationOutboundState) =>
 export function useLocationOutbound() {
   const api = useApiClient();
   const readCapabilities = useCapabilityReader();
+  const readPermissions = usePermissionReader();
   const read = async (shipmentId: string, warehouseId: string) => {
     const path = `/shipments/${shipmentId}/location-outbound-state?${new URLSearchParams({ warehouseId })}`;
     const state = await api.request<LocationOutboundState>({ path });
@@ -64,7 +69,7 @@ export function useLocationOutbound() {
       }),
   });
   const force = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       shipmentId,
       idempotencyKey,
       ...body
@@ -78,13 +83,31 @@ export function useLocationOutbound() {
         quantity: number;
       }>;
       idempotencyKey: string;
-    }) =>
-      api.request<LocationOutboundState>({
+    }) => {
+      // A failed or absent permission lookup must never create a durable write.
+      let allowed = false;
+      try {
+        allowed = (await readPermissions()).forceDispatch === true;
+      } catch {
+        throw new ApiError(
+          'Permission lookup failed',
+          403,
+          'LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE'
+        );
+      }
+      if (!allowed)
+        throw new ApiError(
+          'Force permission required',
+          403,
+          'LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED'
+        );
+      return api.request<LocationOutboundState>({
         method: 'POST',
         path: `/shipments/${shipmentId}/location-outbound-forces`,
         body,
         idempotencyKey,
-      }),
+      });
+    },
   });
   return { read, start, scan, force };
 }
