@@ -108,7 +108,7 @@ export function setup(infra: DemoSharedInfra) {
 
   createService('Core', {
     architecture: 'arm64',
-    dockerfile: 'apps/core/Dockerfile',
+    dockerfile: 'deployments/lcnine/services/bundle/Dockerfile.demo-core',
     domainSlug: 'core',
     port: 3000,
     priority: 145,
@@ -145,7 +145,7 @@ export function setup(infra: DemoSharedInfra) {
     link: [db, publicFiles, privateFiles],
     loadBalancerHealth: {
       '3000/http': {
-        path: '/health',
+        path: '/',
         interval: '30 seconds',
         timeout: '5 seconds',
         healthyThreshold: 2,

@@ -1,5 +1,6 @@
-# Demo bundle: build only the three runtime services selected by the demo profile.
+# Demo Core image: compile JavaScript on the build host; keep runtime dependencies on target ARM.
 FROM node:22-alpine AS base
+
 WORKDIR /app
 RUN apk add --no-cache postgresql-client git openssh-client
 
@@ -24,21 +25,27 @@ COPY tsconfig*.json ./
 COPY nest-cli.json webpack.config.js ./
 COPY libs/ ./libs/
 COPY packages/ ./packages/
-COPY apps/analytics/ ./apps/analytics/
-COPY apps/channel-adapter/ ./apps/channel-adapter/
-COPY apps/notification/ ./apps/notification/
-RUN npm run build:analytics \
-  && npm run build:channel-adapter \
-  && npm run build:notification
+COPY apps/core/ ./apps/core/
+
+RUN npm run build:main
 
 FROM base AS runner
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
+
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
-COPY deployments/lcnine/services/bundle/supervisor.mjs ./supervisor.mjs
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nestjs
 USER nestjs
+
 ENV NODE_ENV=production
-EXPOSE 3001 3003 3040
-CMD ["node", "supervisor.mjs"]
+ENV PORT=3000
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+CMD ["npm", "run", "start:main:prod"]
