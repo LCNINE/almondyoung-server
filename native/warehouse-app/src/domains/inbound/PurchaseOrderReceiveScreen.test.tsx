@@ -26,6 +26,43 @@ import {
 import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { PurchaseOrderReceiveScreen } from './PurchaseOrderReceiveScreen';
+import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+
+it('발주입고 후 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
+  const calls: Call[] = [];
+  await renderScreen(calls);
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getAllByRole('button', { name: '입고' })[0]);
+  const receive = await screen.findByRole('dialog', { name: '입고 수량' });
+  await waitFor(() =>
+    expect(within(receive).getByRole('button', { name: '입고' })).toBeEnabled()
+  );
+  await userEvent.click(within(receive).getByRole('button', { name: '입고' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: '적치하기' })
+  );
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  const keypad = within(dialog).getByRole('button', { name: '지우기' });
+  await userEvent.click(keypad);
+  const before = calls.length;
+  scanHid(keypad, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  expect(calls.slice(before).filter((c) => c.method === 'POST')).toHaveLength(
+    0
+  );
+  expect(
+    calls
+      .slice(before)
+      .filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+  ).toHaveLength(0);
+  await userEvent.click(submit);
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  expect(await screen.findByText(/잔여 11개 · 1개 적치됨/)).toBeInTheDocument();
+  expect(calls.filter((c) => c.path === '/inbound/putaway')).toEqual([
+    expect.objectContaining({ body: expect.objectContaining({ quantity: 1 }) }),
+  ]);
+});
 
 const session = {
   bootstrap: async () => {},
