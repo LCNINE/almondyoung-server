@@ -772,3 +772,343 @@ it('hides previously granted force permission when its refresh fails', async () 
   act(() => emitScan('A'));
   await waitFor(() => expect(f.picked()).toBe(1));
 });
+
+// HTTP boundary is the only fake: the screen, hooks, runner and IndexedDB store are real.
+async function preparationFixture(
+  recovery: 'retry_preparation' | 'review_batch' = 'retry_preparation'
+) {
+  const storeName = crypto.randomUUID();
+  const store = createOperationStore(storeName);
+  const draftId = 'scope:draft:location-outbound:s';
+  let blocked = true;
+  let lost = false;
+  let readFailed = false;
+  let missing = false;
+  let current = { ...state, sources: [source('B', 3)] };
+  const saved = new Map<string, typeof current | ApiError>();
+  const requests: Parameters<ApiClient['request']>[0][] = [];
+  const api: ApiClient = {
+    request: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      requests.push(o);
+      if (o.path.includes('location-outbound-state')) {
+        if (readFailed) throw new Error('GET state → 503');
+        return (missing ? null : current) as T;
+      }
+      if (o.path.endsWith('location-outbound-starts')) {
+        const key = o.idempotencyKey!;
+        const draft = await store.draft<{ startKey: string }>(draftId);
+        expect(draft?.startKey).toBe(key);
+        if (!saved.has(key))
+          saved.set(
+            key,
+            blocked
+              ? new ApiError(
+                  'blocked',
+                  409,
+                  'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+                  {
+                    reasonCode:
+                      recovery === 'review_batch'
+                        ? 'SHIPMENT_SNAPSHOT_CHANGED'
+                        : 'SOURCE_INSUFFICIENT',
+                    recovery,
+                  }
+                )
+              : current
+          );
+        if (lost) throw new ApiError('response lost', 403);
+        const result = saved.get(key)!;
+        if (result instanceof ApiError) throw result;
+        return result as T;
+      }
+      throw new Error('Unexpected request ' + o.path);
+    },
+  };
+  const makeRuntime = (operationStore = store): WorkRuntime => ({
+    store: operationStore,
+    runner: createOperationRunner({
+      api,
+      store: operationStore,
+      getScope: async () => 'scope',
+      wait: async () => {},
+    }),
+    getScope: async () => 'scope',
+    getCapabilities: async () => ({ locationOutbound: true }),
+    getPermissions: async () => ({ forceDispatch: true }),
+  });
+  const runtime = makeRuntime();
+  const view = mount(runtime.runner.request, 'w', runtime);
+  const button = await screen.findByRole('button', { name: '출고 준비' });
+  await waitFor(() => expect(button).toBeEnabled());
+  return {
+    store,
+    runtime,
+    view,
+    makeRuntime,
+    storeName,
+    requests,
+    draftId,
+    writes: () => requests.filter((r) => r.method === 'POST'),
+    available: () => {
+      blocked = false;
+    },
+    lose: (value: boolean) => {
+      lost = value;
+    },
+    failReads: (value: boolean) => {
+      readFailed = value;
+    },
+    missingState: () => {
+      missing = true;
+    },
+    changeSource: () => {
+      current = { ...current, sources: [source('C', 3)] };
+    },
+  };
+}
+it.each([false, true])(
+  'requires explicit new preparation after durable rejection (restart=%s)',
+  async (restart) => {
+    const f = await preparationFixture();
+    await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+    await screen.findByText(/출고할 재고가 부족해요/);
+    const first = f.writes()[0];
+    expect(await f.store.get(first.idempotencyKey!)).toMatchObject({
+      status: 'rejected',
+      preparation: {
+        reasonCode: 'SOURCE_INSUFFICIENT',
+        recovery: 'retry_preparation',
+      },
+    });
+    expect(await f.store.draft(f.draftId)).toMatchObject({
+      startKey: first.idempotencyKey,
+    });
+    if (restart) {
+      f.view.unmount();
+      const runtime = f.makeRuntime(createOperationStore(f.storeName));
+      mount(runtime.runner.request, 'w', runtime);
+    }
+    const retry = await screen.findByRole('button', { name: '다시 준비' });
+    await waitFor(() => expect(retry).toBeEnabled());
+    f.available();
+    expect(f.writes()).toHaveLength(1);
+    await userEvent.click(retry);
+    await screen.findByRole('button', { name: 'B 선택' });
+    expect(f.writes()).toHaveLength(2);
+    expect(f.writes()[1].idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(f.writes()[1].bodyJson).toBe(first.bodyJson);
+  }
+);
+it('does not send a new preparation when its draft cannot be saved', async () => {
+  const f = await preparationFixture();
+  await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+  const retry = await screen.findByRole('button', { name: '다시 준비' });
+  const draft = f.store.draft;
+  vi.spyOn(f.store, 'draft').mockImplementation(async (id, update) => {
+    if (id === f.draftId && update) throw new Error('disk full');
+    return draft(id, update);
+  });
+  await userEvent.click(retry);
+  await screen.findByText(/작업을 저장하지 못했어요/);
+  expect(f.writes()).toHaveLength(1);
+});
+it('offers batch review without a new preparation for review_batch', async () => {
+  const f = await preparationFixture('review_batch');
+  await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+  await screen.findByText(/배치와 송장을 확인해 주세요/);
+  expect(
+    screen.queryByRole('button', { name: '다시 준비' })
+  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '출고 준비' })
+    ).not.toBeInTheDocument()
+  );
+  expect(f.writes()).toHaveLength(1);
+});
+it.each([true, false])(
+  'restores a lost preparation response using the original body and key (blocked=%s)',
+  async (blocked) => {
+    const f = await preparationFixture();
+    if (!blocked) f.available();
+    f.lose(true);
+    await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+    await waitFor(async () =>
+      expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    );
+    const first = f.writes()[0];
+    expect(
+      screen.queryByRole('button', { name: '다시 준비' })
+    ).not.toBeInTheDocument();
+    f.view.unmount();
+    f.available();
+    f.lose(false);
+    const runtime = f.makeRuntime(createOperationStore(f.storeName));
+    mount(runtime.runner.request, 'w', runtime);
+    await userEvent.click(
+      await screen.findByRole('button', { name: '처리 내역 확인' })
+    );
+    if (blocked) await screen.findByRole('button', { name: '다시 준비' });
+    else await screen.findByRole('button', { name: 'B 선택' });
+    expect(f.writes()).toHaveLength(2);
+    expect(f.writes()[1]).toMatchObject({
+      idempotencyKey: first.idempotencyKey,
+      bodyJson: first.bodyJson,
+    });
+  }
+);
+it('blocks old source scans after a failed current-state read and recovers on a successful GET', async () => {
+  const f = await preparationFixture();
+  f.available();
+  await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'B 선택' }));
+  f.failReads(true);
+  await userEvent.click(screen.getByRole('button', { name: '작업 새로고침' }));
+  await screen.findByText(/서버에 문제가/);
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+  act(() => emitScan('A'));
+  expect(f.writes()).toHaveLength(1);
+  f.failReads(false);
+  f.changeSource();
+  await userEvent.click(screen.getByRole('button', { name: '작업 새로고침' }));
+  await screen.findByText(/C · 할당/);
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+});
+
+it.each(['failed', 'missing'])(
+  'does not expose a preparation success snapshot when current GET is %s',
+  async (kind) => {
+    const f = await preparationFixture();
+    f.available();
+    if (kind === 'failed') f.failReads(true);
+    else f.missingState();
+    await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByLabelText('출고 상품 바코드')).not.toBeInTheDocument();
+    act(() => emitScan('A'));
+    expect(f.writes()).toHaveLength(1);
+    expect(await f.store.get(f.writes()[0].idempotencyKey!)).toMatchObject({
+      status: 'confirmed',
+    });
+  }
+);
+it('reconciles a historical preparation snapshot to the current source after response loss', async () => {
+  const f = await preparationFixture();
+  f.available();
+  f.lose(true);
+  await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+  await waitFor(async () =>
+    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+  );
+  f.changeSource();
+  f.lose(false);
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
+  await screen.findByRole('button', { name: 'C 선택' });
+  expect(
+    screen.queryByRole('button', { name: 'B 선택' })
+  ).not.toBeInTheDocument();
+  expect(f.writes()[1].idempotencyKey).toBe(f.writes()[0].idempotencyKey);
+});
+it('requires fresh physical confirmation when the current source tuple changes', async () => {
+  const f = await preparationFixture();
+  f.available();
+  await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: '스캔 생략 확인' })
+  );
+  await userEvent.type(screen.getByLabelText(/B 실물 수량/), '3');
+  await userEvent.type(screen.getByLabelText('스캔 생략 사유'), '확인');
+  f.changeSource();
+  await userEvent.click(
+    screen.getByRole('button', { name: '확인한 수량 출고' })
+  );
+  await screen.findByText(/남은 수량이 바뀌었어요/);
+  expect(f.writes()).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: '스캔 생략 확인' }));
+  expect(screen.getByLabelText(/C 실물 수량/)).toHaveValue('');
+  expect(
+    screen.getByRole('button', { name: '확인한 수량 출고' })
+  ).toBeDisabled();
+});
+it('resolves lost blocked force after permission revocation without resending or reusing physical confirmation', async () => {
+  let allowed = true;
+  let lost = true;
+  const f = await fixture(3, {
+    getPermissions: async () => ({ forceDispatch: allowed }),
+    forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
+      if (o.path.endsWith('location-outbound-forces')) {
+        // Server persisted preparation_blocked; its response did not reach the client.
+        allowed = false;
+        throw new TypeError('response lost after blocked commit');
+      }
+      if (lost) throw new TypeError('resolver response lost');
+      return {
+        outcome: 'rejected',
+        code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+      } as T;
+    },
+  });
+  await submitForce();
+  await waitFor(async () =>
+    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+  );
+  f.view.unmount();
+  lost = false;
+  const runner = createOperationRunner({
+    api: f.api,
+    store: f.store,
+    getScope: f.runtime.getScope,
+    wait: async () => {},
+  });
+  mount(runner.request, 'w', { ...f.runtime, runner });
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처리 내역 확인' })
+  );
+  await waitFor(async () =>
+    expect(await f.store.pending('scope')).toHaveLength(0)
+  );
+  const writes = f.requests.filter((o) => o.method === 'POST');
+  expect(
+    writes.filter((o) => o.path.endsWith('location-outbound-forces'))
+  ).toHaveLength(1);
+  expect(new Set(writes.map((o) => o.idempotencyKey)).size).toBe(1);
+  expect(new Set(writes.map((o) => o.bodyJson)).size).toBe(1);
+  expect(await f.store.get(writes[0].idempotencyKey!)).toMatchObject({
+    status: 'rejected',
+    errorCode: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
+  });
+  expect(f.picked()).toBe(0);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '스캔 생략 확인' })
+  ).not.toBeInTheDocument();
+});
+
+it('does not display historical force success as current when the follow-up GET fails', async () => {
+  let forceReturned = false;
+  const f = await fixture(3, {
+    forceRequest: async <T,>() => {
+      forceReturned = true;
+      return {
+        ...state,
+        status: 'shipped',
+        dispatchAttemptId: 'old-dispatch',
+        workItemStatus: 'completed',
+        lines: [{ ...state.lines[0], pickedQty: 3, inspectedQty: 3 }],
+        sources: [],
+      } as T;
+    },
+  });
+  const request = f.api.request;
+  vi.spyOn(f.api, 'request').mockImplementation(async (o) => {
+    if (forceReturned && o.path.includes('location-outbound-state'))
+      throw new Error('GET state → 503');
+    return request(o);
+  });
+  await submitForce();
+  await screen.findByText(/서버에 문제가/);
+  expect(screen.queryByText('출고완료')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+});

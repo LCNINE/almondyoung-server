@@ -102,3 +102,19 @@ it('위치 출고의 다른 송장·창고 응답은 확인 완료로 인정하�
     })
   ).toThrow();
 });
+
+it.each(['starts', 'scans', 'forces'])(
+  'does not treat a preparation_blocked marker on location outbound %s as a success snapshot',
+  (action) => {
+    expect(() =>
+      validateOperationResult(`/shipments/s/location-outbound-${action}`, {
+        outcome: 'preparation_blocked',
+        code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+        reasonCode: 'SOURCE_INSUFFICIENT',
+        batchId: 'batch',
+        invalidatedPlanId: null,
+        recovery: 'retry_preparation',
+      })
+    ).toThrow();
+  }
+);

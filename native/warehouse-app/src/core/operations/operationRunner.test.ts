@@ -705,3 +705,58 @@ it.each([
     ).toBe(message);
   }
 );
+
+it('persists preparation metadata for live rejection and restarted same-key replay', async () => {
+  const name = crypto.randomUUID();
+  const store = createOperationStore(name);
+  let sends = 0;
+  const preparation = {
+    reasonCode: 'SOURCE_INSUFFICIENT',
+    recovery: 'retry_preparation',
+  } as const;
+  const api: ApiClient = {
+    request: async () => {
+      sends++;
+      throw new ApiError(
+        'blocked',
+        409,
+        'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+        preparation
+      );
+    },
+  };
+  const options = {
+    api,
+    store,
+    getScope: async () => 'actor|server',
+    wait: async () => {},
+  };
+  const request = {
+    method: 'POST',
+    path: '/shipments/s/location-outbound-starts',
+    body: { warehouseId: 'w' },
+    idempotencyKey: 'blocked-start',
+  };
+  await expect(
+    createOperationRunner(options).request(request)
+  ).rejects.toMatchObject({ outcome: 'rejected', preparation });
+  const reopened = createOperationStore(name);
+  expect(await reopened.get('blocked-start')).toMatchObject({
+    status: 'rejected',
+    preparation,
+    bodyJson: '{"warehouseId":"w"}',
+  });
+  await expect(
+    createOperationRunner({ ...options, store: reopened }).request(request)
+  ).rejects.toMatchObject({ preparation });
+  expect(sends).toBe(1);
+  for (const scope of ['other-actor|server', 'actor|other-server'])
+    await expect(
+      createOperationRunner({
+        ...options,
+        store: reopened,
+        getScope: async () => scope,
+      }).request(request)
+    ).rejects.toThrow('처리 여부를 먼저 확인');
+  expect(sends).toBe(1);
+});

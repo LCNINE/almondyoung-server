@@ -206,3 +206,39 @@ describe('outbound 문맥', () => {
     ).toBe('다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.');
   });
 });
+
+it.each([
+  [
+    'SOURCE_INSUFFICIENT',
+    'retry_preparation',
+    '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.',
+  ],
+  [
+    'SOURCE_STOCK_CHANGED',
+    'retry_preparation',
+    '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
+  ],
+  [
+    'REPLAN_LIMIT_REACHED',
+    'retry_preparation',
+    '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
+  ],
+  [
+    'SHIPMENT_SNAPSHOT_CHANGED',
+    'review_batch',
+    '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+  ],
+] as const)(
+  'gives actionable preparation guidance for %s',
+  (reasonCode, recovery, message) => {
+    expect(
+      errorMessage(
+        new ApiError('blocked', 409, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED', {
+          reasonCode,
+          recovery,
+        }),
+        'outbound'
+      )
+    ).toBe(message);
+  }
+);

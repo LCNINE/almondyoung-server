@@ -92,6 +92,18 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (
     error instanceof ApiError &&
     error.outcome === 'rejected' &&
+    context === 'outbound' &&
+    error.preparation
+  ) {
+    if (error.preparation.recovery === 'review_batch')
+      return '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.';
+    if (error.preparation.reasonCode === 'SOURCE_INSUFFICIENT')
+      return '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.';
+    return '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.';
+  }
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
     context === 'movement' &&
     error.code &&
     MOVEMENT_WORKFLOW_MESSAGES[error.code]

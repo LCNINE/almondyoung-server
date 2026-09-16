@@ -125,3 +125,86 @@ it('only classifies explicit force non-application as rejected and preserves gen
         .outcome
     ).toBe('uncertain');
 });
+
+it.each([
+  'SOURCE_STOCK_CHANGED',
+  'PLAN_IDENTITY_CHANGED',
+  'PLAN_NOT_DRAFT',
+  'SHIPMENT_SNAPSHOT_CHANGED',
+  'ALLOCATION_INVALID',
+  'ELIGIBILITY_CHANGED',
+  'SOURCE_INSUFFICIENT',
+  'ACTIVE_WORK_REQUIRES_REVIEW',
+  'REPLAN_LIMIT_REACHED',
+])(
+  'preserves validated preparation reason %s without diagnostic extras',
+  async (reasonCode) => {
+    const client = createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: async () =>
+        jsonResponse(409, {
+          code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+          details: {
+            reasonCode,
+            recovery: 'retry_preparation',
+            internal: 'private',
+          },
+        }),
+    });
+    await expect(client.request({ path: '/x' })).rejects.toMatchObject({
+      outcome: 'rejected',
+      preparation: { reasonCode, recovery: 'retry_preparation' },
+    });
+    const error = await client
+      .request({ path: '/x' })
+      .catch((e: ApiError) => e);
+    if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+    expect(error.preparation).not.toHaveProperty('internal');
+  }
+);
+it.each([
+  [
+    409,
+    'NEW_UNKNOWN_CODE',
+    { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' },
+    'uncertain',
+  ],
+  [409, 'PICKING_COMPONENT_CHANGED_RETRY', {}, 'uncertain'],
+  [
+    503,
+    'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+    { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' },
+    'uncertain',
+  ],
+  [
+    409,
+    'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+    { reasonCode: 'NEW_REASON', recovery: 'retry_preparation' },
+    'rejected',
+  ],
+  [
+    409,
+    'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+    { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'automatic' },
+    'rejected',
+  ],
+  [409, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED', null, 'rejected'],
+] as const)(
+  'filters unsupported preparation details (%s %s %j)',
+  async (status, code, details, outcome) => {
+    const client = createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: async () => jsonResponse(status, { code, details }),
+    });
+    const error = await client
+      .request({ path: '/x' })
+      .catch((e: ApiError) => e);
+    expect(error).toMatchObject({ outcome });
+    if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+    expect(error.preparation).toBeUndefined();
+  }
+);

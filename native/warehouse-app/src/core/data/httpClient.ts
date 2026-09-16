@@ -1,12 +1,58 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { authHeader } from './authHeader';
 
+// Keep aligned with outbound-preparation-result.ts and the HTTP exception filter.
+const preparationReasons = [
+  'SOURCE_STOCK_CHANGED',
+  'PLAN_IDENTITY_CHANGED',
+  'PLAN_NOT_DRAFT',
+  'SHIPMENT_SNAPSHOT_CHANGED',
+  'ALLOCATION_INVALID',
+  'ELIGIBILITY_CHANGED',
+  'SOURCE_INSUFFICIENT',
+  'ACTIVE_WORK_REQUIRES_REVIEW',
+  'REPLAN_LIMIT_REACHED',
+] as const;
+export type PreparationBlockReason = (typeof preparationReasons)[number];
+export type PreparationRejection = {
+  reasonCode: PreparationBlockReason;
+  recovery: 'retry_preparation' | 'review_batch';
+};
+export function parsePreparationRejection(
+  value: unknown
+): PreparationRejection | undefined {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    !('reasonCode' in value) ||
+    !('recovery' in value)
+  )
+    return undefined;
+  const reasonCode = preparationReasons.find(
+    (reason) => reason === value.reasonCode
+  );
+  if (
+    !reasonCode ||
+    (value.recovery !== 'retry_preparation' &&
+      value.recovery !== 'review_batch')
+  )
+    return undefined;
+  return { reasonCode, recovery: value.recovery };
+}
+
 export class ApiError extends Error {
   readonly outcome: 'rejected' | 'uncertain';
   readonly retryable: boolean;
   readonly status: number;
   readonly code?: string;
-  constructor(message: string, status: number, code?: string) {
+  readonly preparation?: PreparationRejection;
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    preparation?: PreparationRejection
+  ) {
     super(message);
     this.status = status;
     this.code = code;
@@ -37,6 +83,11 @@ export class ApiError extends Error {
       rejected
         ? 'rejected'
         : 'uncertain';
+    if (
+      this.outcome === 'rejected' &&
+      code === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'
+    )
+      this.preparation = parsePreparationRejection(preparation);
     this.retryable =
       status >= 500 ||
       status === 408 ||
@@ -47,8 +98,12 @@ export class ApiError extends Error {
 }
 
 export class ConflictError extends ApiError {
-  constructor(message: string, code?: string) {
-    super(message, 409, code);
+  constructor(
+    message: string,
+    code?: string,
+    preparation?: PreparationRejection
+  ) {
+    super(message, 409, code, preparation);
   }
 }
 
@@ -116,10 +171,16 @@ export function createApiClient(deps: {
       const res = await once({ ...o, method });
       if (res.status === 409) {
         const j = await res.json().catch(() => ({}));
-        const body = j as { message?: string; error?: string; code?: string };
+        const body = j as {
+          message?: string;
+          error?: string;
+          code?: string;
+          details?: unknown;
+        };
         throw new ConflictError(
           body.message ?? 'version conflict',
-          body.code ?? body.error
+          body.code ?? body.error,
+          parsePreparationRejection(body.details)
         );
       }
       if (!res.ok) {

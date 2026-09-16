@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import {
@@ -65,6 +65,9 @@ function LocationWork({
   );
   const [work, setWork] = useState<LocationOutboundState | null>(null);
   const workRef = useRef(work);
+  const [startRejection, setStartRejection] = useState<ApiError | null>(null);
+  const [stateUnavailable, setStateUnavailable] = useState(false);
+  const stateUnavailableRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -87,13 +90,52 @@ function LocationWork({
     version.current++;
     workRef.current = state;
     setWork(state);
+    stateUnavailableRef.current = false;
+    setStateUnavailable(false);
     if (state.status === 'shipped') clearLastBox(prefs);
   }
   async function refresh() {
     const before = version.current;
-    const current = await operations.read(shipmentId, warehouseId);
-    if (before === version.current) apply(current);
-    return current;
+    try {
+      const current = await operations.read(shipmentId, warehouseId);
+      if (before === version.current) apply(current);
+      return current;
+    } catch (error) {
+      if (before === version.current) {
+        stateUnavailableRef.current = true;
+        setStateUnavailable(true);
+      }
+      throw error;
+    }
+  }
+  const readStartOperation = useCallback(
+    async (key: string) => {
+      if (!runtime) return null;
+      const op = await runtime.store.get(key);
+      if (
+        op &&
+        (op.scope !== (await runtime.getScope()) ||
+          op.path !== `/shipments/${shipmentId}/location-outbound-starts` ||
+          op.method !== 'POST' ||
+          op.bodyJson !== JSON.stringify({ warehouseId }))
+      )
+        throw new Error('출고 작업 범위를 확인해 주세요.');
+      return op;
+    },
+    [runtime, shipmentId, warehouseId]
+  );
+  function showStartRejection(op: {
+    errorCode?: string;
+    preparation?: ApiError['preparation'];
+  }) {
+    const error = new ApiError(
+      '작업이 반영되지 않았어요.',
+      400,
+      op.errorCode,
+      op.preparation
+    );
+    setStartRejection(error);
+    setNotice(errorMessage(error, 'outbound'));
   }
   const recoverRef = useRef(refresh);
   recoverRef.current = refresh;
@@ -118,7 +160,11 @@ function LocationWork({
         while (live && requested) {
           requested = false;
           const saved = await draft.read();
-          const op = runtime ? await runtime.store.get(saved.startKey) : null;
+          const op = await readStartOperation(saved.startKey);
+          if (live && op?.status === 'rejected') {
+            showStartRejection(op);
+            continue;
+          }
           if (!live || (!saved.started && op?.status !== 'confirmed')) continue;
           await recoverRef.current();
           if (!saved.started)
@@ -145,7 +191,7 @@ function LocationWork({
       live = false;
       off?.();
     };
-  }, [draft.ready, runtime]);
+  }, [draft.ready, runtime, readStartOperation]);
   const queue = useWorkScanQueue<ScanInput>(async (input, id) => {
     if (workRef.current?.status === 'shipped') {
       setNotice(
@@ -185,6 +231,7 @@ function LocationWork({
   const scanAreaBlocked = useWorkAreaBlocked('outbound', scanAllowance);
   const intakeBlocked =
     busy ||
+    stateUnavailable ||
     !queue.ready ||
     !!queue.error() ||
     forceOpen ||
@@ -201,6 +248,7 @@ function LocationWork({
   async function chooseSource(id: string) {
     if (
       blocked ||
+      stateUnavailableRef.current ||
       queue.blocked() ||
       forceOpen ||
       busyRef.current ||
@@ -236,6 +284,7 @@ function LocationWork({
     const count = parseQuantity(quantityRef.current, 1);
     if (
       !work ||
+      stateUnavailableRef.current ||
       work.status === 'shipped' ||
       busyRef.current ||
       intakeBlocked ||
@@ -261,7 +310,13 @@ function LocationWork({
   scanHandler.current = (code) => {
     // The subscription may still be from a previous render. Always evaluate
     // the current source and lock policy, including synchronous queue failures.
-    if (intakeBlocked || busyRef.current || queue.error()) return;
+    if (
+      intakeBlocked ||
+      stateUnavailableRef.current ||
+      busyRef.current ||
+      queue.error()
+    )
+      return;
     if (mode === 'location') chooseCode(code);
     else acceptProduct(code);
   };
@@ -322,43 +377,70 @@ function LocationWork({
         </p>
       )}
       {!work ? (
-        <Button
-          disabled={!supported || blocked}
-          onClick={async () => {
-            if (busyRef.current) return;
-            busyRef.current = true;
-            setBusy(true);
-            setNotice(null);
-            try {
-              const current = await draft.read();
-              await draft.update((prev) => ({
-                ...prev,
-                startKey: current.startKey,
-              }));
-              await operations.start.mutateAsync({
-                shipmentId,
-                warehouseId,
-                idempotencyKey: current.startKey,
-              });
-              await refresh();
-              await draft.update((prev) => ({ ...prev, started: true }));
-            } catch (e) {
-              setNotice(errorMessage(e, 'outbound'));
-              if (e instanceof ApiError && e.outcome === 'rejected')
-                await draft
-                  .update((prev) => ({
-                    ...prev,
-                    startKey: crypto.randomUUID(),
-                  }))
-                  .catch(() => {});
-            } finally {
-              busyRef.current = false;
-              setBusy(false);
-            }
-          }}
-        >
-          출고 준비
-        </Button>
+        startRejection?.preparation?.recovery === 'review_batch' ? (
+          <WorkArea kind="outbound">
+            <Link to="/outbound" disabled={blocked}>
+              배치와 송장 확인
+            </Link>
+          </WorkArea>
+        ) : (
+          <Button
+            disabled={!supported || blocked}
+            onClick={async () => {
+              if (busyRef.current) return;
+              busyRef.current = true;
+              setBusy(true);
+              setNotice(null);
+              try {
+                const current = await draft.read();
+                const previous = await readStartOperation(current.startKey);
+                // Only a durable rejection and this explicit action create a new intent.
+                // Uncertain work keeps its original key and body in the runner.
+                if (
+                  previous?.status === 'rejected' &&
+                  previous.preparation?.recovery === 'review_batch'
+                ) {
+                  showStartRejection(previous);
+                  return;
+                }
+                const startKey =
+                  previous?.status === 'rejected'
+                    ? crypto.randomUUID()
+                    : current.startKey;
+                await draft.update((prev) => ({
+                  ...prev,
+                  startKey,
+                  started: false,
+                  sourceId: null,
+                }));
+                setStartRejection(null);
+                setForceOpen(false);
+                setCounts({});
+                setReason('');
+                setMode('location');
+                await operations.start.mutateAsync({
+                  shipmentId,
+                  warehouseId,
+                  idempotencyKey: startKey,
+                });
+                await refresh();
+                await draft.update((prev) => ({ ...prev, started: true }));
+              } catch (e) {
+                setNotice(errorMessage(e, 'outbound'));
+                if (e instanceof ApiError && e.outcome === 'rejected') {
+                  const current = await draft.read();
+                  const saved = await readStartOperation(current.startKey);
+                  if (saved?.status === 'rejected') showStartRejection(saved);
+                }
+              } finally {
+                busyRef.current = false;
+                setBusy(false);
+              }
+            }}
+          >
+            {startRejection ? '다시 준비' : '출고 준비'}
+          </Button>
+        )
       ) : work.status === 'shipped' ? (
         <section>
           <p className="text-xl font-semibold">출고완료</p>
@@ -386,7 +468,7 @@ function LocationWork({
             {mode === 'location' ? (
               <OutboundSourcePicker
                 sources={work.sources}
-                disabled={blocked || forceOpen}
+                disabled={blocked || stateUnavailable || forceOpen}
                 onSelect={(id) => void chooseSource(id)}
                 onCode={chooseCode}
               />
@@ -425,7 +507,7 @@ function LocationWork({
           <WorkArea kind="outbound">
             {canForce ? (
               <Button
-                disabled={blocked || !canConfirm}
+                disabled={blocked || stateUnavailable || !canConfirm}
                 onClick={() => {
                   if (queue.blocked() || busyRef.current) return;
                   setForceOpen(true);
@@ -524,10 +606,7 @@ function LocationWork({
                   busyRef.current = true;
                   setBusy(true);
                   try {
-                    const latest = await operations.read(
-                      shipmentId,
-                      warehouseId
-                    );
+                    const latest = await refresh();
                     if (
                       outboundRemainingSignature(latest) !==
                       outboundRemainingSignature(work)
@@ -539,7 +618,7 @@ function LocationWork({
                       );
                       return;
                     }
-                    const state = await operations.force.mutateAsync({
+                    await operations.force.mutateAsync({
                       shipmentId,
                       warehouseId,
                       reason: reason.trim(),
@@ -555,7 +634,8 @@ function LocationWork({
                       })),
                       idempotencyKey: forceKey,
                     });
-                    apply(state);
+                    // A replay can return an old success snapshot. Display only the current GET.
+                    await refresh();
                     setForceOpen(false);
                   } catch (e) {
                     setNotice(errorMessage(e, 'outbound'));
