@@ -1,3 +1,4 @@
+import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { and, eq } from 'drizzle-orm';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
@@ -23,7 +24,9 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
-      const context = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      const contextPrepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      if (contextPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const context = contextPrepared.context;
 
       expect(context.batchId).toBe(fixture.batchId);
       expect(context.workItemId).toBe(fixture.workItemId);
@@ -56,8 +59,12 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
-      const first = await service.prepare(fixture.shipmentId, actor, `prep-a-${randomUUID()}`, tx);
-      const second = await service.prepare(fixture.shipmentId, actor, `prep-b-${randomUUID()}`, tx);
+      const firstPrepared = await service.prepare(fixture.shipmentId, actor, `prep-a-${randomUUID()}`, tx);
+      if (firstPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const first = firstPrepared.context;
+      const secondPrepared = await service.prepare(fixture.shipmentId, actor, `prep-b-${randomUUID()}`, tx);
+      if (secondPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const second = secondPrepared.context;
 
       expect(second.planId).toBe(first.planId);
       expect(second.sessionId).toBe(first.sessionId);
@@ -141,14 +148,18 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
-      const first = await service.prepare(fixture.shipmentId, actor, `prep-a-${randomUUID()}`, tx);
+      const firstPrepared = await service.prepare(fixture.shipmentId, actor, `prep-a-${randomUUID()}`, tx);
+      if (firstPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const first = firstPrepared.context;
 
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({ leaseExpiresAt: new Date(Date.now() - 60_000) })
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItemId));
 
-      const second = await service.prepare(fixture.shipmentId, actor, `prep-b-${randomUUID()}`, tx);
+      const secondPrepared = await service.prepare(fixture.shipmentId, actor, `prep-b-${randomUUID()}`, tx);
+      if (secondPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const second = secondPrepared.context;
 
       expect(second.leaseVersion).toBeGreaterThan(first.leaseVersion);
 
@@ -195,6 +206,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       expect(state.status).toBe('shipped');
     });
@@ -223,6 +235,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       expect(state.status).toBe('in_progress');
       expect(state.lines).toEqual([
@@ -286,6 +299,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       expect(state.status).toBe('in_progress');
       expect(state.lines).toEqual([
@@ -327,7 +341,9 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
 
       // prepare() 먼저 호출해 plan/session 을 확보한다 — plan() 이 만든 단일
       // allocation(전체 qty=3, fixture.locationId)을 아래서 둘로 쪼갠다.
-      const context = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      const contextPrepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      if (contextPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const context = contextPrepared.context;
 
       const [originalAllocation] = await tx
         .select({ id: wmsTables.pickingSourceAllocations.id })
@@ -398,6 +414,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         { barcode: fixture.barcode, quantity: 3, actor, idempotencyKey: `scan-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       // 이 라인이 유일한 라인이라 스캔 3개로 전량이 찬다 — Task 5 의 settleIfFullyPicked
       // 가 같은 스캔 안에서 완료·검수까지 이어붙이므로 inspectedQty 도 3으로 찬다.
@@ -448,6 +465,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-a-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
       expect(first.status).toBe('in_progress');
 
       const second = await service.scan(
@@ -455,6 +473,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-b-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(second)) throw new Error('Expected prepared outbound state');
 
       expect(second.status).toBe('shipped');
       expect(second.dispatchAttemptId).not.toBeNull();
@@ -507,6 +526,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
         },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       expect(state.status).toBe('shipped');
       expect(state.workItemStatus).toBe('completed');
@@ -525,11 +545,13 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: key },
         tx,
       );
+      if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
       const replay = await service.scan(
         fixture.shipmentId,
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: key },
         tx,
       );
+      if (isPreparationBlocked(replay)) throw new Error('Expected prepared outbound state');
 
       expect(replay).toEqual(first);
       const [line] = await tx
@@ -577,6 +599,7 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
         },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
 
       expect(state.status).toBe('shipped');
       const [line] = await tx
@@ -654,6 +677,7 @@ describeIfDb('SimpleOutboundService.scan — 두 라인', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-a-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(afterLineA)) throw new Error('Expected prepared outbound state');
 
       expect(afterLineA.status).toBe('in_progress');
       expect(afterLineA.workItemStatus).toBe('picking');
@@ -676,6 +700,7 @@ describeIfDb('SimpleOutboundService.scan — 두 라인', () => {
         { barcode: second.barcode, quantity: 1, actor, idempotencyKey: `scan-b-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(afterLineB)) throw new Error('Expected prepared outbound state');
 
       expect(afterLineB.status).toBe('shipped');
       const [shipmentAfterB] = await tx

@@ -1,3 +1,4 @@
+import { ConflictError } from '@app/shared';
 import { NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
@@ -206,7 +207,14 @@ export async function assertPlanningEligibility(
         `Shipment ${shipment.id} must contain only uninspected, fully reserved physical lines`,
       );
     }
-    await waybills.assertDispatchable(shipment.id, trx);
+    try {
+      await waybills.assertDispatchable(shipment.id, trx);
+    } catch (error) {
+      // This API uses shared domain errors for missing/stale waybills. Only its
+      // business conflict is a planning validation failure; auth/SQL errors escape.
+      if (!(error instanceof ConflictError)) throw error;
+      throw conflict('PICKING_WAYBILL_NOT_DISPATCHABLE', error.message);
+    }
   }
   const lineIds = aggregate.lines.map((line) => line.id);
   const reservations = await trx

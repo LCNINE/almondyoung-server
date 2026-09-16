@@ -1,3 +1,4 @@
+import { isPreparationBlocked } from './outbound-preparation-result';
 import { Server } from 'http';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
@@ -39,6 +40,7 @@ async function setup(tx: DbTx, split = false) {
   const service = wiring.assembleLocationOutbound(tx);
   const actor = { id: f.actorId, roles: ['logistics_worker'] };
   const first = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
+  if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
   const [plan] = await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId));
   const [session] = await tx
     .select()
@@ -164,6 +166,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       const input = forceInput(f);
       const key = randomUUID();
       const done = await service.force(f.shipmentId, input, actor, key, authorization, tx);
+      if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
       await expect(service.force(f.shipmentId, input, actor, key, undefined, tx)).rejects.toMatchObject({
         status: 403,
       });
@@ -247,6 +250,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       expect(await effects(tx, f.batchId)).toEqual(before);
       const key = randomUUID();
       const started = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx);
+      if (isPreparationBlocked(started)) throw new Error('Expected prepared outbound state');
       expect(await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx)).toEqual(started);
       expect(started.sources).toEqual([
         expect.objectContaining({ sourceLocationId: f.locationId, allocatedQty: 2, pickedQty: 0, remainingQty: 2 }),
@@ -274,6 +278,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       const { f, service, actor, b, scan } = await setup(tx, true);
       const key = randomUUID();
       const first = await service.scan(f.shipmentId, scan, actor, key, tx);
+      if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
       expect(first.sources).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ sourceLocationId: f.locationId, pickedQty: 0, remainingQty: 2 }),
@@ -292,6 +297,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       const lastInput = { ...scan, sourceLocationId: f.locationId, quantity: 2 };
       const lastKey = randomUUID();
       const done = await service.scan(f.shipmentId, lastInput, actor, lastKey, tx);
+      if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
       expect(done).toMatchObject({ status: 'shipped', sources: [] });
       expect(done.dispatchAttemptId).not.toBeNull();
       expect(await service.scan(f.shipmentId, lastInput, actor, lastKey, tx)).toEqual(done);
@@ -333,6 +339,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     await inRollbackTx(db, async (tx) => {
       const { f, service, actor, scan, session } = await setup(tx, true);
       const state = await service.scan(f.shipmentId, scan, actor, randomUUID(), tx);
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       const items = state.sources
         .filter((s) => s.remainingQty > 0)
         .map((s) => ({
@@ -366,6 +373,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       ).toEqual(before);
       const key = randomUUID();
       const done = await service.force(f.shipmentId, input, actor, key, authorization, tx);
+      if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
       expect(done).toMatchObject({ status: 'shipped', sources: [] });
       expect(await service.force(f.shipmentId, input, actor, key, authorization, tx)).toEqual(done);
       await expect(service.force(f.shipmentId, input, actor, key, undefined, tx)).rejects.toMatchObject({
@@ -396,6 +404,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           key,
           tx,
         );
+        if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
         expect(state.sources[0].pickedQty).toBe(2);
         const done = await service.force(
           f.shipmentId,
@@ -409,6 +418,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           authorization,
           tx,
         );
+        if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
         expect(done.status).toBe('shipped');
       });
     },
@@ -457,7 +467,9 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     await inRollbackTx(db, async (tx) => {
       const { f, service, actor } = await setup(tx);
       const simple = wiring.assembleSimpleOutbound(tx);
-      const context = await simple.prepare(f.shipmentId, actor, randomUUID(), tx);
+      const contextPrepared = await simple.prepare(f.shipmentId, actor, randomUUID(), tx);
+      if (contextPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const context = contextPrepared.context;
       await simple.pickScanned(context, f.skuId, 3, actor, randomUUID(), tx, { sourceLocationId: f.locationId });
       const before = await service.getState(f.shipmentId, f.warehouseId, tx);
       expect(before.sources[0].remainingQty).toBe(0);
@@ -469,6 +481,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         authorization,
         tx,
       );
+      if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
       expect(done.status).toBe('shipped');
     });
   });
@@ -543,6 +556,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         randomUUID(),
         tx,
       );
+      if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
       expect(first.lines).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ skuId: f.skuId, pickedQty: 1 }),
@@ -565,6 +579,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         randomUUID(),
         tx,
       );
+      if (isPreparationBlocked(next)) throw new Error('Expected prepared outbound state');
       expect(next.status).toBe('in_progress');
       expect(next.lines).toEqual(
         expect.arrayContaining([
@@ -579,6 +594,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         randomUUID(),
         tx,
       );
+      if (isPreparationBlocked(done)) throw new Error('Expected prepared outbound state');
       expect(done.status).toBe('shipped');
     });
   });

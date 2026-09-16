@@ -570,7 +570,9 @@ describeIfSeedDb('dev_core 시드', () => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: '019d0008-0001-7000-a000-000000000001', roles: ['logistics_worker'] };
 
-      const context = await service.prepare(waybill.shipmentId, actor, 'seed-smoke-0001', tx);
+      const prepared = await service.prepare(waybill.shipmentId, actor, 'seed-smoke-0001', tx);
+      if (prepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+      const context = prepared.context;
 
       // prepare 가 만드는 셋 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
       expect(context.planId).toBeTruthy();

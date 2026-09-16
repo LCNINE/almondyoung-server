@@ -1,6 +1,14 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { canReplaceDraft } from './outbound-preparation-policy';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+  Injectable,
+} from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { ScopeAuthorizationDecision } from '@app/authorization';
+import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
@@ -10,6 +18,16 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
+import { lockPreparation, preparationExecutionFacts } from './outbound-preparation.locks';
+import {
+  preparationBlocked,
+  OutboundPreparationResult,
+  PreparedOutboundResult,
+  OutboundPreparationBlocked,
+} from './outbound-preparation-result';
+import { PickingStartResult } from '../picking/picking-strategy.interface';
+import { isPlanValidationError } from '../picking/plan/picking-plan.errors';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
 // A structured key keeps new nested commands disjoint from every legacy string key.
@@ -69,6 +87,7 @@ export class SimpleOutboundService {
     private readonly commands: FulfillmentCommandService,
     private readonly dispatch: ShipmentDispatchService,
     private readonly barcode: BarcodeService,
+    private readonly invariant: FulfillmentInvariantService,
   ) {}
 
   /**
@@ -80,56 +99,165 @@ export class SimpleOutboundService {
     actor: SimpleOutboundActor,
     idempotencyKey: OutboundCommandKey,
     tx: DbTx,
-  ): Promise<SimpleOutboundContext> {
+  ): Promise<OutboundPreparationResult> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.prepare');
+    if (!actor?.id) throw new UnauthorizedException('Authenticated actor is required');
+    const initial = await this.loadWorkItem(shipmentId, tx);
+    await this.assertBatchMethodSupported(initial.batchId, tx);
+    try {
+      await lockPreparation(initial.batchId, this.invariant, tx);
+    } catch (error) {
+      const blocked = this.preparationFailure(error, initial.batchId, null);
+      if (blocked) return blocked;
+      throw error;
+    }
     const workItem = await this.loadWorkItem(shipmentId, tx);
     await this.assertBatchMethodSupported(workItem.batchId, tx);
-    const planId = await this.ensurePlan(workItem.batchId, actor, idempotencyKey, tx);
-    const sessionId = await this.ensureSession(workItem.batchId, planId, actor, idempotencyKey, tx);
-    const leaseVersion = await this.ensurePickerClaim(workItem, actor, idempotencyKey, tx);
-    return {
-      batchId: workItem.batchId,
-      workItemId: workItem.id,
-      shipmentId,
-      planId,
-      sessionId,
-      leaseVersion,
+    if (workItem.batchId !== initial.batchId)
+      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Shipment batch changed');
+    const [openPlan] = await tx
+      .select()
+      .from(wmsTables.pickingPlans)
+      .where(
+        and(
+          eq(wmsTables.pickingPlans.batchId, workItem.batchId),
+          inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
+        ),
+      )
+      .limit(1);
+    const facts = await preparationExecutionFacts(workItem.batchId, actor.id, tx);
+    if (openPlan?.status === 'draft' && Object.values(facts).some(Boolean)) {
+      return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+    }
+    const attempt = async (step: string, trx: DbTx): Promise<PickingStartResult> => {
+      const plan = await this.ensurePlan(workItem.batchId, actor, idempotencyKey, trx, step);
+      if (typeof plan !== 'string') return plan;
+      return this.picking.start(
+        {
+          batchId: workItem.batchId,
+          planId: plan,
+          actorId: actor.id,
+          idempotencyKey: nestedCommandKey(idempotencyKey, `${step}start`),
+        },
+        trx,
+      );
     };
+    let started: PickingStartResult;
+    try {
+      // Roll back nested pending commands on a first-plan shortage. A returned invalidation commits
+      // this savepoint, so the replacement savepoint below cannot undo the old draft's invalidation.
+      started = await tx.transaction((trx) => attempt('', trx));
+    } catch (error) {
+      const blocked = this.preparationFailure(error, workItem.batchId, null);
+      if (blocked) return blocked;
+      throw error;
+    }
+    if (started.state === 'invalidated') {
+      const oldPlanId = started.planId;
+      // SOURCE_STOCK_CHANGED is emitted only after locked membership/version/waybill validation.
+      if (
+        !canReplaceDraft({
+          ...facts,
+          reasonCode: started.reasonCode,
+          supportedIndividual: true,
+          shipmentSnapshotUnchanged: started.reasonCode === 'SOURCE_STOCK_CHANGED',
+        })
+      ) {
+        return preparationBlocked(workItem.batchId, oldPlanId, started.reasonCode ?? 'ACTIVE_WORK_REQUIRES_REVIEW');
+      }
+      try {
+        started = await tx.transaction(async (trx) => {
+          const replacement = await attempt(`replan:${oldPlanId}:`, trx);
+          if (replacement.state === 'invalidated')
+            throw new PreparationAttemptBlocked(
+              preparationBlocked(workItem.batchId, oldPlanId, 'REPLAN_LIMIT_REACHED'),
+            );
+          return replacement;
+        });
+      } catch (error) {
+        if (error instanceof PreparationAttemptBlocked) return error.result;
+        const blocked = this.preparationFailure(error, workItem.batchId, oldPlanId);
+        if (blocked) return blocked;
+        throw error;
+      }
+    }
+    if (started.state !== 'started') throw new Error('Preparation did not start a session');
+    if (started.status !== 'active') return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+    const current = await this.loadWorkItem(shipmentId, tx);
+    const leaseVersion = await this.ensurePickerClaim(current, actor, idempotencyKey, tx);
+    return {
+      outcome: 'ready',
+      context: {
+        batchId: workItem.batchId,
+        workItemId: current.id,
+        shipmentId,
+        planId: started.planId,
+        sessionId: started.sessionId,
+        leaseVersion,
+      },
+    };
+  }
+
+  private preparationFailure(
+    error: unknown,
+    batchId: string,
+    planId: string | null,
+  ): OutboundPreparationBlocked | null {
+    // Explicit allowlist only: authorization failures, SQL errors and unknown failures escape.
+    if (!isPlanValidationError(error)) return null;
+    const response = error.getResponse();
+    const code = typeof response === 'object' && 'code' in response ? response.code : undefined;
+    if (code === 'FULFILLMENT_INVARIANT_VIOLATION')
+      return preparationBlocked(batchId, planId, 'ACTIVE_WORK_REQUIRES_REVIEW');
+    if (code === 'PICKING_WAYBILL_NOT_DISPATCHABLE') return preparationBlocked(batchId, planId, 'ELIGIBILITY_CHANGED');
+    if (code === 'PICKING_SOURCE_INSUFFICIENT') return preparationBlocked(batchId, planId, 'SOURCE_INSUFFICIENT');
+    if (code === 'PICKING_SOURCE_STALE' || code === 'PICKING_PLAN_SOURCE_STALE')
+      return preparationBlocked(batchId, planId, 'REPLAN_LIMIT_REACHED');
+    return null;
   }
 
   async scan(
     shipmentId: string,
     input: { barcode: string; quantity: number; actor: SimpleOutboundActor; idempotencyKey: string },
     tx?: DbTx,
-  ): Promise<SimpleOutboundState> {
+  ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.scan');
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
       throw new BadRequestException('quantity must be a positive integer');
     }
-    return this.commands.execute<SimpleOutboundState>(
-      {
-        commandType: 'shipment.simple_outbound.scan',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          shipmentId,
-          barcode: input.barcode.trim(),
-          quantity: input.quantity,
-          actorId: input.actor.id,
-        },
-      },
-      async (trx) => {
-        const context = await this.prepare(shipmentId, input.actor, input.idempotencyKey, trx);
-        const skuId = await this.resolveSkuId(input.barcode, trx);
-        await this.pickScanned(context, skuId, input.quantity, input.actor, input.idempotencyKey, trx);
-        const settled = await this.settleIfFullyPicked(context, input.actor, input.idempotencyKey, trx);
-        const state = await this.loadState(context, trx);
-        return {
-          response: { ...state, dispatchAttemptId: settled?.dispatchAttemptId ?? null },
-          resourceType: 'shipment',
-          resourceId: shipmentId,
-          attemptId: settled?.dispatchAttemptId ?? undefined,
-        };
-      },
+    return this.dbService.run(
+      (outer) =>
+        outer.transaction((savepoint) =>
+          this.commands.execute<PreparedOutboundResult<SimpleOutboundState>>(
+            {
+              commandType: 'shipment.simple_outbound.scan',
+              idempotencyKey: input.idempotencyKey,
+              canonicalRequest: {
+                shipmentId,
+                barcode: input.barcode.trim(),
+                quantity: input.quantity,
+                actorId: input.actor.id,
+              },
+            },
+            async (trx) => {
+              const prepared = await this.prepare(shipmentId, input.actor, input.idempotencyKey, trx);
+              if (prepared.outcome === 'preparation_blocked')
+                return { response: prepared, resourceType: 'shipment', resourceId: shipmentId };
+              const context = prepared.context;
+              const skuId = await this.resolveSkuId(input.barcode, trx);
+              await this.pickScanned(context, skuId, input.quantity, input.actor, input.idempotencyKey, trx);
+              const settled = await this.settleIfFullyPicked(context, input.actor, input.idempotencyKey, trx);
+              const state = await this.loadState(context, trx);
+              return {
+                response: { ...state, dispatchAttemptId: settled?.dispatchAttemptId ?? null },
+                resourceType: 'shipment',
+                resourceId: shipmentId,
+                attemptId: settled?.dispatchAttemptId ?? undefined,
+              };
+            },
+            savepoint,
+          ),
+        ),
       tx,
     );
   }
@@ -151,33 +279,47 @@ export class SimpleOutboundService {
       authorization: ScopeAuthorizationDecision | undefined;
     },
     tx?: DbTx,
-  ): Promise<SimpleOutboundState> {
+  ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.force');
+    if (!isScopeAuthorizationDecision(input.authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE))
+      throw new ForbiddenException({
+        code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
+        message: 'Force dispatch scope is required',
+      });
     if (!input.reason.trim()) throw new BadRequestException('reason is required');
-    return this.commands.execute<SimpleOutboundState>(
-      {
-        commandType: 'shipment.simple_outbound.force',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          shipmentId,
-          reason: input.reason.trim(),
-          csCaseId: input.csCaseId?.trim() || null,
-          note: input.note?.trim() || null,
-          actorId: input.actor.id,
-        },
-      },
-      async (trx) => {
-        const context = await this.prepare(shipmentId, input.actor, input.idempotencyKey, trx);
-        await this.forcePickRemaining(context, input.actor, input.idempotencyKey, trx);
-        const forced = await this.completeAndForceDispatch(context, input, trx);
-        const state = await this.loadState(context, trx);
-        return {
-          response: { ...state, dispatchAttemptId: forced.dispatchAttemptId },
-          resourceType: 'shipment',
-          resourceId: shipmentId,
-          attemptId: forced.dispatchAttemptId ?? undefined,
-        };
-      },
+    return this.dbService.run(
+      (outer) =>
+        outer.transaction((savepoint) =>
+          this.commands.execute<PreparedOutboundResult<SimpleOutboundState>>(
+            {
+              commandType: 'shipment.simple_outbound.force',
+              idempotencyKey: input.idempotencyKey,
+              canonicalRequest: {
+                shipmentId,
+                reason: input.reason.trim(),
+                csCaseId: input.csCaseId?.trim() || null,
+                note: input.note?.trim() || null,
+                actorId: input.actor.id,
+              },
+            },
+            async (trx) => {
+              const prepared = await this.prepare(shipmentId, input.actor, input.idempotencyKey, trx);
+              if (prepared.outcome === 'preparation_blocked')
+                return { response: prepared, resourceType: 'shipment', resourceId: shipmentId };
+              const context = prepared.context;
+              await this.forcePickRemaining(context, input.actor, input.idempotencyKey, trx);
+              const forced = await this.completeAndForceDispatch(context, input, trx);
+              const state = await this.loadState(context, trx);
+              return {
+                response: { ...state, dispatchAttemptId: forced.dispatchAttemptId },
+                resourceType: 'shipment',
+                resourceId: shipmentId,
+                attemptId: forced.dispatchAttemptId ?? undefined,
+              };
+            },
+            savepoint,
+          ),
+        ),
       tx,
     );
   }
@@ -577,8 +719,7 @@ export class SimpleOutboundService {
           inArray(wmsTables.outboundBatchWorkItems.status, [...PICKABLE_WORK_ITEM_STATUSES]),
         ),
       )
-      .limit(1)
-      .for('update');
+      .limit(1);
     if (!workItem) {
       throw this.conflict(
         'SIMPLE_OUTBOUND_WORK_ITEM_MISSING',
@@ -620,7 +761,8 @@ export class SimpleOutboundService {
     actor: SimpleOutboundActor,
     idempotencyKey: OutboundCommandKey,
     tx: DbTx,
-  ): Promise<string> {
+    step = '',
+  ): Promise<string | Extract<PickingStartResult, { state: 'invalidated' }>> {
     // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
     // `this.picking.plan()` 이 부르는 `plan/picking-plan.ts` 의 `planPicking()`
     // (SELECT … FOR UPDATE + idempotent commands.execute)이 진다. 이 쿼리는 이미 있는
@@ -650,46 +792,14 @@ export class SimpleOutboundService {
         batchId,
         shipmentIds: members.map((member) => member.shipmentId),
         actorId: actor.id,
-        idempotencyKey: nestedCommandKey(idempotencyKey, 'plan'),
+        idempotencyKey: nestedCommandKey(idempotencyKey, `${step}plan`),
       },
       tx,
     );
     if (planned.state !== 'planned') {
-      throw this.conflict('SIMPLE_OUTBOUND_PLAN_INVALIDATED', planned.reason);
+      return planned;
     }
     return planned.planId;
-  }
-
-  private async ensureSession(
-    batchId: string,
-    planId: string,
-    actor: SimpleOutboundActor,
-    idempotencyKey: OutboundCommandKey,
-    tx: DbTx,
-  ): Promise<string> {
-    // 마찬가지로 락 없는 fast-path 조회다 — 실질적인 동시성 보장은 아래 `this.picking.start()`
-    // 경로의 idempotent `commands.execute` + row lock 이 진다. 여기서 걸러지지 않아도
-    // 아래 호출이 안전하게 막아준다.
-    const [existing] = await tx
-      .select({ id: wmsTables.batchInventorySessions.id })
-      .from(wmsTables.batchInventorySessions)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessions.batchId, batchId),
-          eq(wmsTables.batchInventorySessions.status, 'active'),
-        ),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
-    const started = await this.picking.start(
-      { batchId, planId, actorId: actor.id, idempotencyKey: nestedCommandKey(idempotencyKey, 'start') },
-      tx,
-    );
-    if (started.state !== 'started') {
-      throw this.conflict('SIMPLE_OUTBOUND_PLAN_INVALIDATED', started.reason);
-    }
-    return started.sessionId;
   }
 
   private async ensurePickerClaim(
@@ -727,5 +837,11 @@ export class SimpleOutboundService {
   // 먼저 변경했어요" 하나로만 본다 — SKU_NOT_IN_SHIPMENT·OVERSCAN·CLAIMED_BY_OTHER 가 다 같은 문구가 된다.
   private conflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, error: code, message });
+  }
+}
+
+class PreparationAttemptBlocked extends Error {
+  constructor(readonly result: OutboundPreparationBlocked) {
+    super(result.reasonCode);
   }
 }
