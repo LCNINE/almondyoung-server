@@ -35,6 +35,23 @@ export class DemandProfileRefresher {
     input: { today: string; settings: ReplenishmentSettings },
     tx?: DbTx,
   ): Promise<ProfileRefreshResult> {
+    return this.refresh(input, tx);
+  }
+
+  /** Refresh a bounded demo selection within its receipt transaction; leave unrelated profiles untouched. */
+  async refreshSelected(
+    input: { today: string; settings: ReplenishmentSettings; skuIds: string[] },
+    tx: DbTx,
+  ): Promise<ProfileRefreshResult> {
+    if (!input.skuIds.length || input.skuIds.length > 50) throw new Error('Profile selection must contain 1–50 SKUs');
+    return this.refresh(input, tx, input.skuIds);
+  }
+
+  private async refresh(
+    input: { today: string; settings: ReplenishmentSettings },
+    tx?: DbTx,
+    selected?: string[],
+  ): Promise<ProfileRefreshResult> {
     return this.dbService.run(async (trx) => {
       const { settings } = input;
       const windows = {
@@ -59,12 +76,16 @@ export class DemandProfileRefresher {
       );
 
       const skuIds = (
-        await trx.select({ id: wmsTables.skus.id }).from(wmsTables.skus).where(eq(wmsTables.skus.isDeleted, false))
+        await trx
+          .select({ id: wmsTables.skus.id })
+          .from(wmsTables.skus)
+          .where(and(eq(wmsTables.skus.isDeleted, false), selected ? inArray(wmsTables.skus.id, selected) : undefined))
       ).map((r) => r.id);
 
-      const firstDates = await this.readFirstDates(trx);
+      const firstDates = await this.readFirstDates(trx, selected);
       const amounts = await this.readWindowAmounts(trx, classificationFrom, classificationTo);
-      const amountBySku = new Map(skuIds.map((id) => [id, amounts.get(id) ?? 0]));
+      // Grades are relative to the whole catalog even when only selected profiles are written.
+      const amountBySku = selected ? amounts : new Map(skuIds.map((id) => [id, amounts.get(id) ?? 0]));
       const grades = assignGrades(amountBySku, { gradeACut: settings.gradeACut, gradeBCut: settings.gradeBCut });
 
       const byPattern: Record<DemandPattern, number> = {
@@ -111,24 +132,26 @@ export class DemandProfileRefresher {
         await this.upsertProfiles(trx, rows, computedAt);
       }
 
-      await trx
-        .delete(wmsTables.skuDemandProfiles)
-        .where(
-          inArray(
-            wmsTables.skuDemandProfiles.skuId,
-            trx.select({ id: wmsTables.skus.id }).from(wmsTables.skus).where(eq(wmsTables.skus.isDeleted, true)),
-          ),
-        );
+      if (!selected)
+        await trx
+          .delete(wmsTables.skuDemandProfiles)
+          .where(
+            inArray(
+              wmsTables.skuDemandProfiles.skuId,
+              trx.select({ id: wmsTables.skus.id }).from(wmsTables.skus).where(eq(wmsTables.skus.isDeleted, true)),
+            ),
+          );
 
       return { skus: skuIds.length, byPattern };
     }, tx);
   }
 
-  private async readFirstDates(trx: DbTx): Promise<Map<string, string>> {
+  private async readFirstDates(trx: DbTx, selected?: string[]): Promise<Map<string, string>> {
     const daily = wmsTables.skuDemandDaily;
     const rows = await trx
       .select({ skuId: daily.skuId, first: sql<string>`MIN(${daily.demandDate})::text` })
       .from(daily)
+      .where(selected ? inArray(daily.skuId, selected) : undefined)
       .groupBy(daily.skuId);
     return new Map(rows.map((r) => [r.skuId, r.first]));
   }

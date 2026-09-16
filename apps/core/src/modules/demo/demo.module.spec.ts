@@ -1,6 +1,7 @@
 import { DemoController } from './demo.controller';
 import { DemoModule } from './demo.module';
 import type { DemoService } from './demo.service';
+import type { DemoCatalogService } from './demo-catalog.service';
 
 describe('DemoModule stage registration', () => {
   it('registers the controller only for the exact safe demo environment', () => {
@@ -32,10 +33,17 @@ describe('DemoModule stage registration', () => {
       shipments: jest.fn().mockResolvedValue(shipments),
       recompute: jest.fn().mockResolvedValue(recompute),
     } as unknown as DemoService;
-    const controller = new DemoController(service);
+    const controller = new DemoController(
+      service,
+      {
+        catalog: jest.fn().mockResolvedValue(catalog),
+        coverage: jest.fn().mockResolvedValue({ totalSkus: 30 }),
+      } as unknown as DemoCatalogService,
+      {} as never,
+    );
 
     await expect(controller.catalog()).resolves.toEqual(catalog);
-    await expect(controller.readiness()).resolves.toEqual(readiness);
+    await expect(controller.readiness()).resolves.toEqual({ ...readiness, coverage: { totalSkus: 30 } });
     await expect(controller.shipments()).resolves.toEqual(shipments);
     await expect(controller.recompute()).resolves.toEqual(recompute);
   });
