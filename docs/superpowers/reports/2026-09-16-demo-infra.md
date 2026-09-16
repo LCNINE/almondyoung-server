@@ -7,11 +7,15 @@ The `demo` stage now has an explicit profile at `almondyoung-next.com`. Existing
 The deployment graph is intentionally smaller:
 
 - platform: isolated VPC, NAT/bastion, Redpanda and EBS under the existing `lcnine-platform/demo` state/SSM namespace
-- auth: user-service, auth-web, auth Postgres, and a demo-owned versioned auth upload bucket
+- auth: user-service, auth-web, auth Postgres, and a demo-owned versioned public-read auth upload bucket
 - services: Core, Analytics, Channel Adapter, Notification, File Service, Admin Web, services Postgres, one public file bucket and one private file bucket
 - omitted: Medusa, storefront, wallet, wallet-web, membership, UGC, search, Redis/Valkey, OpenSearch, GA4 credentials, and all real business-provider credentials
 
-The public and private File Service buckets are separate. The public bucket explicitly supports the provider's `public-read` ACL and a public read policy; the private bucket retains the default public-access block. Both services use ECS task-role permissions supplied by SST links, so AWS access-key secrets are absent.
+The user-service upload implementation returns an unsigned S3 URL, so its isolated demo bucket has a public-read policy. Only authenticated user-service routes can upload or delete objects. Its CORS rule allows `GET`, `HEAD`, and `PUT` from the demo Admin Web and Auth Web origins.
+
+The public and private File Service buckets are separate. The public bucket explicitly supports the provider's `public-read` ACL and a public read policy; the private bucket retains the default public-access block. Both allow `GET`, `HEAD`, and `PUT` from the demo Admin Web origin so browser uploads through presigned URLs work. Both services use ECS task-role permissions supplied by SST links, so AWS access-key secrets are absent.
+
+Notification does not import its Bull-backed bulk module in the demo stage. Its dispatcher sends through the persisted mock provider directly when Redis is absent, so the retained Notification service has no implicit localhost Redis dependency.
 
 Demo uses CloudWatch/ECS logs provided by the AWS resources. Grafana Cloud forwarding is not declared in the demo graph, which avoids requiring shared observability credentials. It can be added later with demo-specific write-only tokens.
 
@@ -45,6 +49,15 @@ https://notification.almondyoung-next.com
 ```
 
 Cookie parent domain and auth-web redirect host suffix are `.almondyoung-next.com`. The native OAuth callback in the auth redirect whitelist is `almondwms-demo://oauth/callback`. Auth developer tools are disabled.
+
+OIDC audience validation is explicit in the retained services:
+
+```text
+analytics, channel-adapter, notification, admin-web: admin-web
+core, file-service: admin-web,warehouse-app
+```
+
+The seeded confidential `admin-web` client accepts only `https://admin.almondyoung-next.com/auth/callback` and redirects logout only to `https://admin.almondyoung-next.com/login`. The seeded public `warehouse-app` client accepts `almondwms-demo://oauth/callback` and `http://127.0.0.1/callback` for its loopback listener. User-service validates issued token audiences against its internal audience or an active registered OAuth client.
 
 ## Secret inventory
 
@@ -114,5 +127,7 @@ git diff --check
 ```
 
 The focused suites cover demo/live/dev URLs, unknown-stage defaults, removal/protection, resource/service selection, runtime environment contract, stage-aware DB registry selection, and infrastructure-only relaunch behavior.
+
+The deployed environment shapes were also checked directly against the current user-service, Core, File Service, Channel Adapter, and Notification validators. All five accept the declared demo contract without provider, Redis, search, or commerce credentials. Static startup review confirmed that the platform broker SSM value and Redpanda advertised address are both `Redpanda.demo.lcnine-platform.sst:9092`; imported auth/services VPCs retain the same `sst` Cloud Map namespace, and the consumers intentionally select plaintext Kafka.
 
 No AWS preview/diff or deployment was performed by this worker. Deployed health checks, DNS/certificate validation, DB migration execution, authenticated flow acceptance, device OAuth, and physical scanner/printer checks remain integration/deployment tasks.
