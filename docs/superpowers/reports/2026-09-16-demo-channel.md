@@ -43,8 +43,7 @@ inventory outcome. Defaults and the fixture version are normalized before hashin
 original omitted values or the explicit values returned by the first response.
 
 Reposting the same `requestId` and normalized input returns the same durable run and resumes only unfinished or
-failed items. A concurrent or later request with the same `requestId` and different normalized input returns HTTP
-409. Item identities, external order IDs, sales order correlation IDs, and typed event idempotency keys are stable
+failed items. A concurrent or later request with the same `requestId` and different normalized input returns HTTP 409. Item identities, external order IDs, sales order correlation IDs, and typed event idempotency keys are stable
 across retries.
 
 ```ts
@@ -202,6 +201,31 @@ The implementation was exercised with:
 - `git diff --check -- apps/channel-adapter docs/superpowers/reports/2026-09-16-demo-channel.md` — whitespace check.
 
 The database integration verifies an `OrderCreated` reaches the real channel transactional outbox exactly once.
-Kafka delivery and Core fulfillment-order creation remain Task 5 cross-service acceptance work. This Task 2 worker
-performed no AWS deployment. Demo mode disables the Core order-cancellation-to-Medusa consumer; cancellation
-remains internal to Core rather than creating an external channel cancellation operation.
+This Task 2 worker performed no AWS deployment. Demo mode disables the Core order-cancellation-to-Medusa
+consumer; cancellation remains internal to Core rather than creating an external channel cancellation operation.
+
+### Deployed cross-service acceptance
+
+After the root deployment became healthy on 2026-09-17 KST, acceptance used the admin console BFF with an actual
+admin OIDC session. Core reported `demo-logistics-v1` ready with all fixture checks satisfied.
+
+- Happy run `83acdafc-96cd-43dd-b897-77d602f6840c` returned HTTP 202, `completed`, and one `enqueued` item.
+  Reposting the exact same request returned the same run and identical item set. The channel correlation order ID
+  `18b77c4f-534d-508f-adf9-f97aad5f1359` mapped in Core to sales order
+  `64604b77-8d66-4adc-a3cb-8db774a26c48`.
+- Shortage run `91c4e240-9a01-437e-a32c-56051b8a8794` used variant
+  `019f1003-0001-7000-a000-000000000001`, quantity 10, and returned HTTP 202, `completed`, and one `enqueued`
+  item. Correlation order `1fa328ac-2029-5e93-8dbc-baaf9da3fedb` mapped to Core sales order
+  `74ba7f75-a2f9-49b3-add6-c79ff7eca029`. Core first reserved 2 of 10, then completed the remaining reservation
+  after an eight-unit recovery receipt and automatic retry.
+- Core registered both shipments, with mock tracking numbers `948819344728` and `943208804851`.
+- `GET /demo/dispatch-outcomes` returned exactly two relevant dispatch rows. Both were `succeeded` on attempt 1,
+  had `result.mocked: true` and `providerAcknowledged: true`, and referenced Core shipments
+  `fd09447d-1781-4012-8518-101f7097e134` and `bacedf46-cb98-4b8c-bfe7-3c204c774026` respectively.
+- Notification persisted one simulated `SENT` email result per order to `demo-order@example.invalid`; both rows
+  record `simulated: true`. The disabled public Resend webhook returned HTTP 404 in the same deployed runtime.
+- A `warehouse-app` worker OIDC token was denied by the channel adapter at its audience boundary, while the
+  `admin-web` OIDC session could access the guarded demo API.
+
+Sanitized responses are stored locally at
+`.superpowers/sdd/2026-09-16-demo-stage/channel-acceptance-runs.json`; the file contains no cookies or tokens.
