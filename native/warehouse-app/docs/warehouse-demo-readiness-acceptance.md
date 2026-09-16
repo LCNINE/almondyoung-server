@@ -3,10 +3,10 @@
 ## 검증 대상과 범위
 
 - 일시: 2026-09-16 KST (첫 HTTP 실행 10:00, 최종 gate 10:07–10:09). Node `v22.23.1`, Corepack Yarn `1.22.22`.
-- 제품 구현 검증 commit: `13ef6bb7c` (A/B/C-1–C-3의 리뷰 수정 포함). C-4는 인수 검사·test support·gate·문서와 기존 native 테스트의 비동기 종료 대기만 변경한다.
+- 최초 제품 구현 검증 commit: `13ef6bb7c` (A/B/C-1–C-3의 리뷰 수정 포함). C-4 `ec564cd4c`는 인수 검사·test support·gate·문서와 기존 native 테스트의 비동기 종료 대기만 변경했다. 최종 리뷰의 native GET 순서 수정과 제품 blob 증거는 아래 추가 gate에 기록한다.
 - C-4 인수 commit은 이 문서를 최초 추가한 `test(warehouse): verify demo workflow recovery over HTTP` commit이다. 정확한 SHA: `git log --diff-filter=A --format=%H -- native/warehouse-app/docs/warehouse-demo-readiness-acceptance.md`.
 - 전용 로컬 migrated DB: `postgresql://postgres:postgres@127.0.0.1:5432/warehouse_demo_readiness_test`. DB suite는 직렬 실행했다. DB drop/reset, 운영 데이터 보정, schema/enum/의존성 변경은 없다.
-- 시연 범위: **개별 배치, 기발급 송장, 활성 일반 위치, 같은 창고**. 배포와 실제 기기 인수는 아래 별도 미검증 항목이다. C-4 독립 리뷰와 최종 전체 branch 리뷰는 이 기록 작성 후 root가 수행한다.
+- 시연 범위: **개별 배치, 기발급 송장, 활성 일반 위치, 같은 창고**. 배포와 실제 기기 인수는 아래 별도 미검증 항목이다. 최종 리뷰의 P2 수정 뒤 scoped 재리뷰는 root가 수행하며 아직 완료로 기록하지 않는다.
 
 ## 실제 HTTP/DB 인수
 
@@ -68,6 +68,37 @@ corepack yarn audit:consume-validation --gate
 - 기본 CI 단위 검사는 첫 실행도 614파일/5,514검사 통과(93.161초)였고 종료 경고가 없었다. 최종 재실행은 동일 통과/skip 수와 exit 0이지만 worker 강제 종료 경고가 1회 있었다. 변경된 DB suite의 DB 없는 수집을 `--detectOpenHandles`로 검사한 결과 3파일/42검사 의도적 skip, 경고 없이 exit 0이었다. 새 HTTP suite는 실제 실행에서 app.close와 pool.end 및 scoped cleanup을 완료했다. 전체 unit 경고를 낸 suite는 특정하지 못했으며 최종 리뷰에 minor로 전달한다. 이를 경고 없는 실행으로 보고하지 않는다.
 - 기존 AuditService 로그/권한 실패 주입 로그는 영향 범위 suite의 의도된 출력이다. 새로운 lint warning이나 schema 변경은 없다.
 
+## 최종 리뷰 P2 수정 — GET 응답 순서와 큐 해제
+
+- 기준 commit: `ec564cd4c`. 수정 commit은 `fix(warehouse): order current-state reconciliation before queue release`이며 정확한 SHA는 `git log -1 --format=%H --grep='^fix(warehouse): order current-state reconciliation before queue release$'`로 확인한다.
+- 검증한 제품 파일 `LocationOutboundScreen.tsx`의 Git blob: `5867df230b71a875274e4a8eb493165d3fc24c54`. runtime 검사 파일 blob: `8b55db673b393c580e9e411ec1748694a4b87322`. 각각 `git rev-parse <수정-SHA>:native/warehouse-app/src/domains/outbound/<파일명>`으로 대조한다.
+- 실제 screen/hook/runner/store/IndexedDB runtime에서, scan 전 GET A → scan commit → GET B 시작 → A의 과거 in_progress 응답 → B의 현재 shipped 응답 순서를 제어했다. 뒤의 recovery GET G3는 계속 대기시켰다. 기존 코드는 B를 버려 완료 표시 없이 큐를 해제했다. 서버 중복 재고 차감이 입증된 결함으로 확대하지 않는다.
+- 각 GET에 시작 순번을 부여하고 **종료된 GET 중 가장 나중에 시작한 요청**만 상태를 바꾼다. 최신 요청이 실패한 사실도 같은 순서로 보존한다. 늦게 도착한 이전 성공은 최신 실패를 지울 수 없다. 단순히 새 요청이 시작됐다는 이유로 아직 유효한 scan 후 GET을 버리지 않는다.
+- refresh 성공 반환은 실제 채택한 상태이며 해당 GET 또는 더 나중에 시작한 GET에서 온 상태다. 더 최신의 종료된 GET이 실패했다면 이전 성공도 거절하여 큐 head를 유지한다. 이후 재확인은 동일한 저장된 key/body/source를 사용한다. force의 현재 위치·라인·잔여수량 비교는 유지한다.
+- HTTP 경계만 지연/실패시키는 회귀 5개를 추가했다. 최초 **RED 3실패/42통과**, 수정 후 **GREEN 45통과**. A가 B 전/후에 성공·실패하는 순서, G3 실패 뒤 B의 오래된 성공, 추가 스캔 차단과 동일 key 복구를 포함한다. 모든 지연 응답은 테스트 종료 전에 해제한다.
+
+| 추가 gate | 결과 | 시간 | 로그 |
+| --- | --- | --- | --- |
+| Runtime RED | 예상 exit 1; 1파일 / 3실패·42통과 | 6.95초 | `/tmp/final-fix-red.log` |
+| Runtime GREEN | exit 0; 1파일 / 45통과 | 4.74초 | `/tmp/final-fix-green.log` |
+| Outbound + queue 영향 범위 | exit 0; 10파일 / 85통과 (100스캔 포함) | 6.36초 | `/tmp/final-fix-affected.log` |
+| Native 전체 | exit 0; 91파일 / 689통과, 실패 0 / skip 0 / unhandled 0 | 48.85초 | `/tmp/final-fix-native.log` |
+| Native build | exit 0; 기존 Vite chunk-size 경고 | 6.27초 | `/tmp/final-fix-build.log` |
+| Native lint | exit 0; 오류 0 / 기존 경고 22 / 신규 경고 0 | 0.10초 | `/tmp/final-fix-lint.log` |
+| Root type-check | exit 0 | 7.28초 | `/tmp/final-fix-types.log` |
+
+```bash
+corepack yarn --cwd native/warehouse-app test src/domains/outbound/LocationOutboundScreen.runtime.test.tsx --maxWorkers=2
+corepack yarn --cwd native/warehouse-app test src/domains/outbound src/core/hardware/scan/workScanQueue.test.ts src/core/hardware/scan/useWorkScanQueue.test.tsx --maxWorkers=2
+corepack yarn --cwd native/warehouse-app test --maxWorkers=2
+corepack yarn --cwd native/warehouse-app build
+corepack yarn --cwd native/warehouse-app lint
+corepack yarn type-check
+git diff --check
+```
+
+서버·DB 변경이 없어 위의 C-4 DB/default CI/consume gate는 재실행하지 않았고 기존 로그와 commit 증거를 유지한다. 특히 `/tmp/c4-unit-final.log`의 worker 강제 종료 경고는 발생 suite와 원인이 아직 불명이며 baseline 경고라고 단정하지 않는다. 첫 전체 실행 `/tmp/c4-unit.log`에는 경고가 없었고, 변경 suite의 별도 `--detectOpenHandles` 로그 `/tmp/c4-open-handles.log`에도 없었다. 이번 native 통과를 그 경고의 해결 증거로 취급하지 않는다.
+
 ## 인수 조건 매핑
 
 | ID | 자동 증거 | 판정 |
@@ -99,6 +130,6 @@ corepack yarn audit:consume-validation --gate
 - [ ] 실제 앱/Tauri/OS 재시작 뒤 작업 복구
 - [ ] 실제 Wi-Fi 단절·재연결 후 같은 키 복구
 - [ ] 시연 서버 Core/앱 배포 버전·계정·창고·송장 대조
-- [ ] C-4 독립 task 리뷰 및 최종 전체 branch 리뷰
+- [ ] 최종 P2 수정 wave의 독립 scoped 재리뷰 (root)
 
 기기 항목은 자동 스캔/runner 검사로 완료 처리하지 않는다. B의 새 거절 code는 앱 처리를 먼저 배포하고, C의 서버·앱 계약은 함께 맞춘다. 배포하거나 운영 재고를 보정한 사실은 없다.

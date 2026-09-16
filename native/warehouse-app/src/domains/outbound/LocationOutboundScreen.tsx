@@ -82,12 +82,12 @@ function LocationWork({
   const [reason, setReason] = useState('');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [forceKey, setForceKey] = useState(() => crypto.randomUUID());
-  const version = useRef(0);
+  const readSequence = useRef(0);
+  const settledRead = useRef(0);
   useUnsavedWork(forceOpen || busy);
   function apply(state: LocationOutboundState) {
     if (state.warehouseId !== warehouseId || state.shipmentId !== shipmentId)
       throw new Error('출고 작업 범위를 확인해 주세요.');
-    version.current++;
     workRef.current = state;
     setWork(state);
     stateUnavailableRef.current = false;
@@ -95,18 +95,28 @@ function LocationWork({
     if (state.status === 'shipped') clearLastBox(prefs);
   }
   async function refresh() {
-    const before = version.current;
+    const requestId = ++readSequence.current;
     try {
       const current = await operations.read(shipmentId, warehouseId);
-      if (before === version.current) apply(current);
-      return current;
+      // Request order, not response order, determines which settled read wins.
+      // A newer pending read must not suppress this post-command reconciliation.
+      if (requestId > settledRead.current) {
+        apply(current);
+        settledRead.current = requestId;
+      }
     } catch (error) {
-      if (before === version.current) {
+      if (requestId > settledRead.current) {
+        settledRead.current = requestId;
         stateUnavailableRef.current = true;
         setStateUnavailable(true);
       }
-      throw error;
+      if (stateUnavailableRef.current) throw error;
     }
+    // A superseded read succeeds only with an already adopted, newer state.
+    // In particular, an older success cannot clear a newer failure or release a head.
+    if (stateUnavailableRef.current || !workRef.current)
+      throw new Error('출고 처리 내역을 다시 확인해 주세요.');
+    return workRef.current;
   }
   const readStartOperation = useCallback(
     async (key: string) => {
@@ -610,7 +620,6 @@ function LocationWork({
                       outboundRemainingSignature(latest) !==
                       outboundRemainingSignature(work)
                     ) {
-                      apply(latest);
                       setForceOpen(false);
                       setNotice(
                         '남은 수량이 바뀌었어요. 최신 위치별 수량을 다시 확인해 주세요.'

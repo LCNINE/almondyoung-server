@@ -1199,3 +1199,149 @@ it.each(['failed', 'missing'] as const)(
     expect(f.picked()).toBe(1);
   }
 );
+
+// Keep the real runner notifications and capture each GET snapshot at request time.
+function controlStateReads(f: Awaited<ReturnType<typeof fixture>>) {
+  const request = f.api.request;
+  const reads: Array<{ resolve: () => void; fail: () => void }> = [];
+  let released = false;
+  vi.spyOn(f.api, 'request').mockImplementation(async (o) => {
+    const result = request(o);
+    if (!released && o.path.includes('location-outbound-state')) {
+      const gate = deferred();
+      let failed = false;
+      reads.push({
+        resolve: gate.resolve,
+        fail: () => {
+          failed = true;
+          gate.resolve();
+        },
+      });
+      await gate.promise;
+      if (failed) throw new Error('GET state → 503');
+    }
+    return result;
+  });
+  return {
+    reads,
+    async release() {
+      released = true;
+      await act(async () => reads.forEach((read) => read.resolve()));
+    },
+  };
+}
+it.each(['success', 'failure'] as const)(
+  'adopts the post-scan GET after an earlier %s while later recovery stays pending',
+  async (earlier) => {
+    const f = await fixture(1);
+    const control = controlStateReads(f);
+    const send = f.holdSends();
+    try {
+      act(() => {
+        emitScan('A');
+        emitScan('B');
+      });
+      await waitFor(() => expect(control.reads).toHaveLength(1));
+      await waitFor(async () => expect(await f.saved()).toHaveLength(2));
+      send.resolve();
+      await waitFor(() => expect(control.reads).toHaveLength(2));
+      // A began before the POST committed; B began after it completed.
+      await act(async () =>
+        earlier === 'success'
+          ? control.reads[0].resolve()
+          : control.reads[0].fail()
+      );
+      if (earlier === 'success')
+        await waitFor(() => expect(control.reads).toHaveLength(3));
+      // G3 remains pending: it cannot conceal B being discarded.
+      await act(async () => control.reads[1].resolve());
+      await screen.findByText('출고완료');
+      await waitFor(async () => expect(await f.saved()).toHaveLength(0));
+      expect(screen.getByRole('alert')).toHaveTextContent('반영되지 않았어요');
+      expect(f.calls).toHaveLength(1);
+      expect(f.picked()).toBe(1);
+    } finally {
+      send.resolve();
+      await control.release();
+      f.view.unmount();
+    }
+  }
+);
+it.each(['success', 'failure'] as const)(
+  'does not replace adopted post-scan state with a late pre-command %s',
+  async (earlier) => {
+    const f = await fixture(1);
+    const control = controlStateReads(f);
+    const send = f.holdSends();
+    try {
+      act(() => emitScan('A'));
+      await waitFor(() => expect(control.reads).toHaveLength(1));
+      send.resolve();
+      await waitFor(() => expect(control.reads).toHaveLength(2));
+      await act(async () => control.reads[1].resolve());
+      await screen.findByText('출고완료');
+      await waitFor(async () => expect(await f.saved()).toHaveLength(0));
+      await act(async () =>
+        earlier === 'success'
+          ? control.reads[0].resolve()
+          : control.reads[0].fail()
+      );
+      expect(screen.queryByText(/서버에 문제가/)).not.toBeInTheDocument();
+      expect(screen.getByText('출고완료')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: '다음 송장 스캔' })
+      ).toBeEnabled();
+      expect(f.calls).toHaveLength(1);
+    } finally {
+      send.resolve();
+      await control.release();
+      f.view.unmount();
+    }
+  }
+);
+it('retains the confirmed scan head when a newer GET fails before reconciliation returns', async () => {
+  const f = await fixture(1);
+  const control = controlStateReads(f);
+  const send = f.holdSends();
+  try {
+    act(() => emitScan('A'));
+    await waitFor(() => expect(control.reads).toHaveLength(1));
+    send.resolve();
+    await waitFor(() => expect(control.reads).toHaveLength(2));
+    const saved = (await f.saved())!;
+    await act(async () => control.reads[0].resolve());
+    await waitFor(() => expect(control.reads).toHaveLength(3));
+    await act(async () => control.reads[2].fail());
+    await act(async () => control.reads[1].resolve());
+    await screen.findByRole('button', { name: '처리 내역 확인' });
+    expect(await f.saved()).toEqual(saved);
+    expect(await f.store.get(saved[0].id)).toMatchObject({
+      status: 'confirmed',
+    });
+    expect(screen.queryByText('출고완료')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+    act(() => emitScan('extra'));
+    expect(await f.saved()).toEqual(saved);
+    await control.release();
+    await userEvent.click(
+      screen.getByRole('button', { name: '처리 내역 확인' })
+    );
+    await screen.findByText('출고완료');
+    await waitFor(async () => expect(await f.saved()).toHaveLength(0));
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]).toEqual({
+      id: saved[0].id,
+      body: {
+        warehouseId: 'w',
+        sourceLocationId: 'B',
+        barcode: 'A',
+        quantity: 1,
+      },
+    });
+    expect(f.picked()).toBe(1);
+  } finally {
+    send.resolve();
+    await control.release();
+    f.view.unmount();
+  }
+});
