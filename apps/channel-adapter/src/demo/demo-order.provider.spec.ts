@@ -47,4 +47,56 @@ describe('DemoOrderProvider', () => {
       'variantId is not part of demo-logistics-v1',
     );
   });
+
+  it('emits multiple persisted lines with stable line identities and correct totals', async () => {
+    const lines = [
+      {
+        orderItemId: 'demo-line-a',
+        skuId: '44444444-4444-4444-8444-444444444444',
+        masterId: '22222222-2222-4222-8222-222222222222',
+        versionId: '33333333-3333-4333-8333-333333333333',
+        variantId: '11111111-1111-4111-8111-111111111111',
+        sku: 'SKU-A',
+        productName: '상품 A',
+        availableQuantity: 8,
+        components: [{ skuId: '44444444-4444-4444-8444-444444444444', quantity: 1, availableQuantity: 8 }],
+        quantity: 2,
+        unitPrice: 12000,
+        totalPrice: 24000,
+      },
+      {
+        orderItemId: 'demo-line-b',
+        skuId: '88888888-8888-4888-8888-888888888888',
+        masterId: '66666666-6666-4666-8666-666666666666',
+        versionId: '77777777-7777-4777-8777-777777777777',
+        variantId: '55555555-5555-4555-8555-555555555555',
+        sku: 'SKU-B',
+        productName: '상품 B',
+        availableQuantity: 9,
+        components: [{ skuId: '88888888-8888-4888-8888-888888888888', quantity: 1, availableQuantity: 9 }],
+        quantity: 3,
+        unitPrice: 7000,
+        totalPrice: 21000,
+      },
+    ];
+    const provider = DemoOrderProvider.forPersistedItem(
+      {
+        requestId,
+        scenario: 'happy_path',
+        count: 1,
+        variantId: lines[0].variantId,
+        quantity: lines[0].quantity,
+        createdAt,
+      },
+      1,
+      lines,
+    );
+
+    const order = (await provider.fetchOrders(null)).orders[0].createPayload;
+
+    expect(order.items.map((item) => item.orderItemId)).toEqual(['demo-line-a', 'demo-line-b']);
+    expect(order.subtotalAmount).toBe(45000);
+    expect(order.totalAmount).toBe(45000);
+    expect(ORDER_STREAM.events.OrderCreated.schema?.safeParse(order).success).toBe(true);
+  });
 });

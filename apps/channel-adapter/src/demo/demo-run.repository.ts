@@ -3,7 +3,7 @@ import { DbService } from '@app/db';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { channelAdapterSchema, demoRunItems, demoRuns } from '../schema';
 import { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
-import { DemoOrderProvider } from './demo-order.provider';
+import { DemoOrderProvider, demoRunItemIdentity, fixtureIdentityForVariant } from './demo-order.provider';
 import type {
   DemoRunItemStatus,
   DemoRunRepositoryPort,
@@ -38,6 +38,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
           requestedCount: run.count,
           variantId: run.variantId,
           quantity: run.quantity,
+          requestInput: run.input as unknown as Record<string, unknown>,
           requestedBy: run.requestedBy,
           createdAt: run.createdAt,
           updatedAt: run.updatedAt,
@@ -53,6 +54,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
             sequence: item.sequence,
             externalOrderId: item.externalOrderId,
             orderId: item.orderId,
+            lines: item.lines,
             status: item.status,
             attempts: item.attempts,
             createdAt: item.createdAt,
@@ -77,17 +79,30 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
       if (!item) break;
 
       try {
-        const provider = DemoOrderProvider.forItem(
-          {
-            requestId: run.requestId,
-            scenario: run.scenario,
-            count: run.count,
-            variantId: run.variantId,
-            quantity: run.quantity,
-            createdAt: run.createdAt,
-          },
-          item.sequence,
-        );
+        const provider = item.lines?.length
+          ? DemoOrderProvider.forPersistedItem(
+              {
+                requestId: run.requestId,
+                scenario: run.scenario,
+                count: run.count,
+                variantId: run.variantId,
+                quantity: run.quantity,
+                createdAt: run.createdAt,
+              },
+              item.sequence,
+              item.lines,
+            )
+          : DemoOrderProvider.forItem(
+              {
+                requestId: run.requestId,
+                scenario: run.scenario,
+                count: run.count,
+                variantId: run.variantId,
+                quantity: run.quantity,
+                createdAt: run.createdAt,
+              },
+              item.sequence,
+            );
         const [result] = await this.orderPoller.ingestProvider(provider);
         if (!result?.enqueued || result.orderId !== item.orderId) {
           throw new Error(`Order ingestion did not acknowledge deterministic order ${item.orderId}`);
@@ -141,7 +156,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
     return Number(row?.value ?? 0);
   }
 
-  private async getByRequestId(requestId: string): Promise<PersistedDemoRun | null> {
+  async getByRequestId(requestId: string): Promise<PersistedDemoRun | null> {
     const [row] = await this.dbService.db.select().from(demoRuns).where(eq(demoRuns.requestId, requestId)).limit(1);
     return row ? this.hydrate(row) : null;
   }
@@ -184,6 +199,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
         sequence,
         external_order_id AS "externalOrderId",
         order_id AS "orderId",
+        lines,
         status,
         attempts,
         error_message AS "errorMessage",
@@ -216,6 +232,19 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
   }
 
   private toRun(row: DemoRunRow, items: DemoRunItemRow[]): PersistedDemoRun {
+    const input =
+      (row.requestInput as unknown as PersistedDemoRun['input'] | null) ??
+      ({
+        requestId: row.requestId,
+        fixtureVersion: row.fixtureVersion,
+        scenario: row.scenario as PersistedDemoRun['scenario'],
+        count: row.requestedCount,
+        mode: 'specified',
+        variantIds: [row.variantId],
+        productsPerOrder: 1,
+        minQuantity: row.quantity,
+        maxQuantity: row.quantity,
+      } satisfies PersistedDemoRun['input']);
     return {
       id: row.id,
       requestId: row.requestId,
@@ -226,6 +255,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
       count: row.requestedCount,
       variantId: row.variantId,
       quantity: row.quantity,
+      input,
       requestedBy: row.requestedBy,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -237,6 +267,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
           sequence: item.sequence,
           externalOrderId: item.externalOrderId,
           orderId: item.orderId,
+          lines: item.lines ?? legacyLines(row, item),
           status: item.status as DemoRunItemStatus,
           attempts: item.attempts,
           error: item.errorMessage,
@@ -247,4 +278,24 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
       ),
     };
   }
+}
+
+function legacyLines(row: DemoRunRow, item: DemoRunItemRow) {
+  const fixture = fixtureIdentityForVariant(row.variantId);
+  return [
+    {
+      orderItemId: demoRunItemIdentity(row.requestId, item.sequence).orderItemId,
+      skuId: fixture.skuId,
+      masterId: fixture.masterId,
+      versionId: fixture.versionId,
+      variantId: fixture.variantId,
+      sku: fixture.sku,
+      productName: fixture.productName,
+      availableQuantity: null,
+      components: [{ skuId: fixture.skuId, quantity: 1, availableQuantity: null }],
+      quantity: row.quantity,
+      unitPrice: fixture.unitPrice,
+      totalPrice: fixture.unitPrice * row.quantity,
+    },
+  ];
 }

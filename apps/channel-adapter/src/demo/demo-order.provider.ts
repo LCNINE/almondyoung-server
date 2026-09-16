@@ -32,6 +32,21 @@ export interface DemoProviderRunInput {
   createdAt: Date;
 }
 
+export interface DemoPersistedOrderLine {
+  orderItemId: string;
+  skuId: string;
+  masterId: string;
+  versionId: string;
+  variantId: string;
+  sku: string;
+  productName: string;
+  availableQuantity: number | null;
+  components: { skuId: string; quantity: number; availableQuantity: number | null }[];
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
 export function fixtureIdentityForVariant(variantId: string): DemoFixtureIdentity {
   const fixtureNumber = DEMO_LOGISTICS_FIXTURE.catalog.findIndex((item) => item.variantId === variantId) + 1;
   const fixture = DEMO_LOGISTICS_FIXTURE.catalog[fixtureNumber - 1];
@@ -61,6 +76,10 @@ export function demoRunItemIdentity(requestId: string, sequence: number) {
   };
 }
 
+export function demoRunLineIdentity(requestId: string, sequence: number, lineSequence: number): string {
+  return `demo-line-${uuidv5(`demo-line:${requestId}:${sequence}:${lineSequence}`, DEMO_ID_NAMESPACE)}`;
+}
+
 export class DemoOrderProvider implements ChannelOrderProvider {
   readonly channel = 'medusa' as const;
 
@@ -74,17 +93,27 @@ export class DemoOrderProvider implements ChannelOrderProvider {
     return new DemoOrderProvider([buildDemoOrder(input, sequence)]);
   }
 
+  static forPersistedItem(
+    input: DemoProviderRunInput,
+    sequence: number,
+    lines: DemoPersistedOrderLine[],
+  ): DemoOrderProvider {
+    return new DemoOrderProvider([buildDemoOrder(input, sequence, lines)]);
+  }
+
   fetchOrders(_since: Date | null): Promise<FetchOrdersResult> {
     void _since;
     return Promise.resolve({ orders: this.orders, failures: [], lifecycleEvents: [] });
   }
 }
 
-function buildDemoOrder(input: DemoProviderRunInput, sequence: number): OrderFetchItem {
-  const fixture = fixtureIdentityForVariant(input.variantId);
+function buildDemoOrder(
+  input: DemoProviderRunInput,
+  sequence: number,
+  persistedLines?: DemoPersistedOrderLine[],
+): OrderFetchItem {
   const identity = demoRunItemIdentity(input.requestId, sequence);
   const createdAt = input.createdAt.toISOString();
-  const totalPrice = fixture.unitPrice * input.quantity;
   const shippingAddress = {
     recipientName: `데모 수령인 ${String(sequence).padStart(2, '0')}`,
     phone: '010-0000-0000',
@@ -93,27 +122,49 @@ function buildDemoOrder(input: DemoProviderRunInput, sequence: number): OrderFet
     detailAddress: `데모 ${sequence}호`,
     deliveryNote: `${DEMO_FIXTURE_VERSION} / ${input.scenario}`,
   };
-  const item = {
-    orderItemId: identity.orderItemId,
-    skuId: fixture.variantId,
-    masterId: fixture.masterId,
-    versionId: fixture.versionId,
-    variantId: fixture.variantId,
-    productName: fixture.productName,
-    channelProductId: fixture.sku,
-    quantity: input.quantity,
-    unitPrice: fixture.unitPrice,
-    totalPrice,
+  const lines: DemoPersistedOrderLine[] =
+    persistedLines ??
+    (() => {
+      const fixture = fixtureIdentityForVariant(input.variantId);
+      return [
+        {
+          orderItemId: identity.orderItemId,
+          skuId: fixture.skuId,
+          masterId: fixture.masterId,
+          versionId: fixture.versionId,
+          variantId: fixture.variantId,
+          sku: fixture.sku,
+          productName: fixture.productName,
+          availableQuantity: null,
+          components: [{ skuId: fixture.skuId, quantity: 1, availableQuantity: null }],
+          quantity: input.quantity,
+          unitPrice: fixture.unitPrice,
+          totalPrice: fixture.unitPrice * input.quantity,
+        },
+      ];
+    })();
+  const items = lines.map((line) => ({
+    orderItemId: line.orderItemId,
+    skuId: line.variantId,
+    masterId: line.masterId,
+    versionId: line.versionId,
+    variantId: line.variantId,
+    productName: line.productName,
+    channelProductId: line.sku,
+    quantity: line.quantity,
+    unitPrice: line.unitPrice,
+    totalPrice: line.totalPrice,
     fulfillmentKind: 'physical' as const,
     requiresShipping: true,
-  };
+  }));
+  const totalPrice = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const createPayload: OrderCreatedPayload = {
     orderId: identity.orderId,
     externalOrderId: identity.externalOrderId,
     displayOrderNo: `DEMO-${input.requestId.slice(0, 8)}-${String(sequence).padStart(3, '0')}`,
     salesChannel: 'medusa',
     customerId: null,
-    items: [item],
+    items,
     totalAmount: totalPrice,
     subtotalAmount: totalPrice,
     shippingAmount: 0,
@@ -129,7 +180,7 @@ function buildDemoOrder(input: DemoProviderRunInput, sequence: number): OrderFet
     sourceUpdatedAt: createdAt,
     eligibleForOrderCreation: true,
     createPayload,
-    changes: { items: [item], shippingAddress, totalAmount: totalPrice },
+    changes: { items, shippingAddress, totalAmount: totalPrice },
     modifiedAt: createdAt,
   };
 }
