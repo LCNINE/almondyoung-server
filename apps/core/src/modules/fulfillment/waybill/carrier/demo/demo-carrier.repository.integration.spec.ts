@@ -6,16 +6,20 @@ import { DemoCarrierRepository } from './demo-carrier.repository';
 const describeDb = process.env.REQUIRE_DEMO_LOGISTICS_SEED_DB === '1' ? describe : describe.skip;
 
 describeDb('DemoCarrierRepository transitions', () => {
-  const runtimeDatabaseUrl = new URL(process.env.DEMO_LOGISTICS_SEED_DATABASE_URL!);
-  runtimeDatabaseUrl.searchParams.delete('uselibpqcompat');
-  const dbService = new DbService(
-    { connectionString: runtimeDatabaseUrl.toString() },
-    inventorySchema,
-  );
-  const repository = new DemoCarrierRepository(dbService);
+  let dbService: DbService<typeof inventorySchema>;
+  let repository: DemoCarrierRepository;
+
+  beforeAll(() => {
+    const configuredUrl = process.env.DEMO_LOGISTICS_SEED_DATABASE_URL;
+    if (!configuredUrl) throw new Error('DEMO_LOGISTICS_SEED_DATABASE_URL is required when DB integration is enabled');
+    const runtimeDatabaseUrl = new URL(configuredUrl);
+    runtimeDatabaseUrl.searchParams.delete('uselibpqcompat');
+    dbService = new DbService({ connectionString: runtimeDatabaseUrl.toString() }, inventorySchema);
+    repository = new DemoCarrierRepository(dbService);
+  });
 
   afterAll(async () => {
-    await dbService.onModuleDestroy();
+    await dbService?.onModuleDestroy();
   });
 
   it('keeps cancel terminal and makes concurrent registration idempotent', async () => {
@@ -35,8 +39,8 @@ describeDb('DemoCarrierRepository transitions', () => {
       waybillNo: `7${suffix}`,
       labelData: { demo: true },
     });
-    await expect(Promise.all([repository.register(concurrent.waybillNo), repository.register(concurrent.waybillNo)])).resolves.toEqual(
-      expect.arrayContaining(['registered', 'already_registered']),
-    );
+    await expect(
+      Promise.all([repository.register(concurrent.waybillNo), repository.register(concurrent.waybillNo)]),
+    ).resolves.toEqual(expect.arrayContaining(['registered', 'already_registered']));
   });
 });

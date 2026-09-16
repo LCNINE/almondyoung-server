@@ -8,10 +8,8 @@ import {
 describe('demo logistics fixture contract', () => {
   it('removes drizzle-kit-only parameters before the recompute runtime opens postgres.js', () => {
     expect(
-      toDemoRuntimeDatabaseUrl(
-        'postgresql://demo:secret@db.example.com:5432/core?sslmode=require&uselibpqcompat=true',
-      ),
-    ).toBe('postgresql://demo:secret@db.example.com:5432/core?sslmode=require');
+      toDemoRuntimeDatabaseUrl('postgresql://demo:secret@localhost:5432/core?sslmode=require&uselibpqcompat=true'),
+    ).toBe('postgresql://demo:secret@localhost:5432/core?sslmode=require');
   });
 
   it('rejects non-demo and conflicting SST resource stages before touching the database', () => {
@@ -27,9 +25,9 @@ describe('demo logistics fixture contract', () => {
     expect(() => assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', APP_STAGE: 'live' })).toThrow(
       'Demo logistics can only be seeded in demo',
     );
-    expect(() =>
-      assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', EXTERNAL_INTEGRATIONS_MODE: 'real' }),
-    ).toThrow('Demo logistics can only be seeded in demo');
+    expect(() => assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', EXTERNAL_INTEGRATIONS_MODE: 'real' })).toThrow(
+      'Demo logistics can only be seeded in demo',
+    );
     expect(() =>
       assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', SST_RESOURCE_App: JSON.stringify({ stage: 'demo' }) }),
     ).not.toThrow();

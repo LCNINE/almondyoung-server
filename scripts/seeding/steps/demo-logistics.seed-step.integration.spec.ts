@@ -7,18 +7,22 @@ const describeDb = process.env.REQUIRE_DEMO_LOGISTICS_SEED_DB === '1' ? describe
 const BASELINE_SELLABLE_WAREHOUSE = '019d0001-0001-7000-a000-000000000001';
 
 describeDb('DemoLogisticsSeedStep baseline convergence', () => {
-  const databaseUrl = process.env.DEMO_LOGISTICS_SEED_DATABASE_URL!;
-  const sql = postgres(toDemoRuntimeDatabaseUrl(databaseUrl));
+  let databaseUrl: string;
+  let sql: postgres.Sql;
   const previousStage = process.env.SST_STAGE;
 
   beforeAll(() => {
+    const configuredUrl = process.env.DEMO_LOGISTICS_SEED_DATABASE_URL;
+    if (!configuredUrl) throw new Error('DEMO_LOGISTICS_SEED_DATABASE_URL is required when DB integration is enabled');
+    databaseUrl = configuredUrl;
+    sql = postgres(toDemoRuntimeDatabaseUrl(databaseUrl));
     process.env.SST_STAGE = 'demo';
   });
 
   afterAll(async () => {
     if (previousStage === undefined) delete process.env.SST_STAGE;
     else process.env.SST_STAGE = previousStage;
-    await sql.end();
+    await sql?.end();
   });
 
   it('repairs an already-seeded baseline plus stale demo fixture and stays idempotent', async () => {
