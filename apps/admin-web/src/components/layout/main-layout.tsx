@@ -59,11 +59,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   const demoBanner = process.env.NEXT_PUBLIC_APP_STAGE === 'demo' && (
-    <div className="flex items-center justify-between bg-amber-100 px-5 py-2 text-sm text-amber-950">
+    <div className="flex items-center justify-between gap-3 bg-amber-100 px-5 py-2 text-sm text-amber-950">
       <span>
         <strong>DEMO</strong> · 시연 데이터 · 택배와 알림은 모의 처리됩니다.
       </span>
-      <Link href="/demo" className="font-semibold underline">
+      <Link href="/demo" className="shrink-0 whitespace-nowrap font-semibold underline">
         시연 콘솔
       </Link>
     </div>
