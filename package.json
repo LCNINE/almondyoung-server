@@ -102,6 +102,8 @@
     "mock:naver-server": "ts-node apps/channel-adapter/naver-mock-server.ts",
     "mock:naver-server:bg": "ts-node apps/channel-adapter/naver-mock-server.ts &",
     "search:analyze": "ts-node -r tsconfig-paths/register apps/search/scripts/analyze-benchmark.ts",
+    "search:migrate-opensearch": "ts-node -r tsconfig-paths/register apps/search/scripts/migrate-opensearch.ts",
+    "search:migrate-opensearch:dry": "ts-node -r tsconfig-paths/register apps/search/scripts/migrate-opensearch.ts --dry-run",
     "search:backfill": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-from-core.ts",
     "search:backfill:dry": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-from-core.ts --dry-run",
     "search:backfill:reviews": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-review-stats.ts",

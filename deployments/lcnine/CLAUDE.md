@@ -56,6 +56,9 @@ SSM publish:
 - platform VPC + Kafka 를 SSM 으로 가져옴.
 - 자체 소유: `Postgres("Db")` (db.t4g.small), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung.com`).
 - 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리.
+- **OpenSearch**: VPC private subnet 단일 노드(t3.small, 10GB gp3) + `analysis-nori` 패키지 associate.
+  FGAC master user 를 SST 가 만들어 `opensearch.username/password` 로 내준다. 노드가 하나라
+  인덱스의 `number_of_replicas: 1` 은 배정되지 않고 클러스터는 yellow 로 남는다 (정상 동작).
 - Redis: ElastiCache 제거됨 (비용). 유일 컨슈머였던 Medusa 는 태스크 내 valkey 사이드카(localhost)를 쓴다.
 - `createService()` 헬퍼: ECS Fargate Service + ALB 룰. `transform.listenerRule` 로 hostHeader 조건을 직접 덮어써 wildcard ALB 한 대에 host 기반 멀티플렉싱.
 
@@ -71,7 +74,7 @@ SSM publish:
 | UgcService | `ugc.…` | 3030 | |
 | Wallet | `wallet.…` | 3000 | Toss/Nicepay, Medusa 결제 webhook |
 | FileService | `file.…` | 3000 | S3 (`almondyoung-demo`) |
-| Search | `search.…` | 3000 | 백엔드는 Railway OpenSearch (AWS OpenSearch 도메인은 비용절감으로 제거) |
+| Search | `search.…` | 3000 | 백엔드는 VPC 내 AWS OpenSearch 도메인 (`Opensearch`, t3.small×1 + nori) |
 | Medusa | `medusa.…` | 9000 | DB link + valkey 사이드카(redis://localhost), 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
 | AdminWeb | `admin.…` | — | Next.js / OpenNext / CloudFront |
 | WalletWeb | `wallet-web.…` | — | Next.js / OpenNext / CloudFront |
