@@ -64,3 +64,11 @@ seed 재실행은 시연 중 생성된 발주·입고·주문·현재 재고를 
 - Linux 설치 파일 빌드 성공: `LCNINE Logistics Demo_0.1.0_amd64.deb`, 패키지 `lcnine-logistics-demo`.
 
 실제 배포 및 업무 API 검증 완료일: 2026-09-17 (KST). 물리 장비의 스캔·인쇄 인수는 수행하지 않았다. Windows/PDA용 설치 파일과 해당 장비의 OAuth 딥링크는 별도 검증 대상이다.
+
+## 배포 화면
+
+실제 demo 배포에서 가상 데이터만 사용한 화면이다.
+
+![데스크톱 시연 콘솔](assets/demo-stage/console-desktop.png)
+
+[모바일 시연 콘솔 화면](assets/demo-stage/console-mobile.png)
