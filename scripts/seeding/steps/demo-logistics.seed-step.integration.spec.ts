@@ -44,6 +44,15 @@ describeDb('DemoLogisticsSeedStep baseline convergence', () => {
       await expect(step.check()).resolves.toMatchObject({ isFullySeeded: false });
       await expect(step.apply()).resolves.toMatchObject({ success: true });
       await expect(step.check()).resolves.toMatchObject({ isFullySeeded: true });
+
+      await sql`
+        UPDATE inbound_receipt_lines
+        SET putaway_from_origin_qty = 0
+        WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 401 + index))})
+      `;
+      await expect(step.check()).resolves.toMatchObject({ isFullySeeded: false });
+      await expect(step.apply()).resolves.toMatchObject({ success: true });
+      await expect(step.check()).resolves.toMatchObject({ isFullySeeded: true });
       await expect(step.apply()).resolves.toMatchObject({ success: true });
       await expect(step.check()).resolves.toMatchObject({ isFullySeeded: true });
     } finally {
@@ -67,5 +76,12 @@ describeDb('DemoLogisticsSeedStep baseline convergence', () => {
         AND delivery_profile_id = ${fixture.deliveryProfile.id}
     `;
     expect(Number(profiledSkus.count)).toBe(30);
+    const [settledHistoricalReceipts] = await sql`
+      SELECT count(*)::int AS count
+      FROM inbound_receipt_lines
+      WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 401 + index))})
+        AND putaway_from_origin_qty = quantity
+    `;
+    expect(Number(settledHistoricalReceipts.count)).toBe(15);
   });
 });

@@ -123,7 +123,13 @@ export class DemoLogisticsSeedStep extends SeedStep {
       WHERE id = ANY(${fixture.catalog.map((item) => item.skuId)})
         AND delivery_profile_id = ${fixture.deliveryProfile.id}
     `;
-    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3, 1, 3, 15, 30];
+    const [settledHistoricalReceipts] = await this.client`
+      SELECT count(*)::int AS count
+      FROM inbound_receipt_lines
+      WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 401 + index))})
+        AND putaway_from_origin_qty = quantity
+    `;
+    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3, 1, 3, 15, 30, 15];
     const actual = [
       ...checks.map((rows) => rows.size),
       Number(demand.count),
@@ -134,6 +140,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
       Number(supplierRoutes.count),
       Number(purchaseOrderRoutes.count),
       Number(profiledSkus.count),
+      Number(settledHistoricalReceipts.count),
     ];
     const entities = [
       'product_variants',
@@ -148,6 +155,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
       'supplier_warehouse_routes',
       'purchase_order_routes',
       'sku_delivery_profiles',
+      'settled_historical_receipts',
     ];
     const items = entities.map((entity, index) => ({
       entity,
@@ -375,11 +383,12 @@ export class DemoLogisticsSeedStep extends SeedStep {
             `;
             await trx`
               INSERT INTO inbound_receipt_lines (
-                id, receipt_id, sku_id, quantity, origin_location_id, source, memo
+                id, receipt_id, sku_id, quantity, origin_location_id, source, memo, putaway_from_origin_qty
               ) VALUES (
                 ${receiptLineId}, ${receiptId}, ${sku.skuId}, 10, ${fixture.locations[0].id},
-                'purchase_order', ${fixture.version}
-              ) ON CONFLICT (id) DO NOTHING
+                'purchase_order', ${fixture.version}, 10
+              ) ON CONFLICT (id) DO UPDATE SET
+                putaway_from_origin_qty = EXCLUDED.putaway_from_origin_qty
             `;
             await trx`
               INSERT INTO purchase_order_receipt_lines (po_id, sku_id, receipt_line_id)

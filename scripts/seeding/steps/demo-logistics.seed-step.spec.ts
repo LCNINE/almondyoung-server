@@ -48,6 +48,7 @@ describe('demo logistics fixture contract', () => {
           if (query.includes('FROM supplier_lead_time_profiles')) return [{ count: 0 }];
           if (query.includes('FROM warehouses')) return [{ count: 1 }];
           if (query.includes('FROM suppliers')) return [{ count: 3 }];
+          if (query.includes('FROM inbound_receipt_lines')) return [{ count: 15 }];
           if (query.includes('FROM purchase_orders')) return [{ count: 15 }];
           if (query.includes('FROM skus')) return [{ count: 30 }];
           throw new Error(`Unexpected query: ${query}`);
