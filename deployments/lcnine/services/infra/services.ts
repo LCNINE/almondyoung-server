@@ -360,7 +360,7 @@ export function setup(infra: SharedInfra) {
   //
   // true 로 바꾼 뒤에도 Railway 를 며칠 살려 둘 것 — 되돌릴 유일한 경로이고 검색 이력
   // (search_query_events) 의 두 번째 사본이다.
-  const useAwsOpenSearch = false;
+  const useAwsOpenSearch = true;
   const searchBackendEnv = useAwsOpenSearch
     ? {
         // 자격증명은 SST 가 만드는 FGAC master user. Railway 를 쓰는 동안에는 이 두 값이
