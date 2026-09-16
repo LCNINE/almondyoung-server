@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
+import { AssistantButton } from '@/features/assistant/components/assistant-button';
 import { MobileNav } from './mobile-nav';
 import { useSignout } from '@/lib/services/auth';
 import { useMe, useMyRoles } from '@/lib/services/users';
@@ -292,7 +293,8 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
         </nav>
 
         {/* 사용자 정보 */}
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          <AssistantButton />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

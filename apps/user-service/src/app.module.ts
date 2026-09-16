@@ -24,6 +24,7 @@ import { Cafe24LinkModule } from './api/cafe24-link/cafe24-link.module';
 import { ConsentsModule } from './api/consents/consents.module';
 import { EmailVerificationModule } from './api/email-verification/email-verification.module';
 import { FileModule } from './api/file/file.module';
+import { AssistantChatModule } from './api/assistant-chat/assistant-chat.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
 import { PhoneVerificationModule } from './api/phone-verification/phone-verification.module';
@@ -145,6 +146,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     ConsentsModule,
     WishlistModule,
     RecentViewsModule,
+    AssistantChatModule,
     FileModule,
     BusinessLicensesModule,
     AdminModule,
