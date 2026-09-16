@@ -54,16 +54,24 @@ Railway 를 계속 본다 — 도메인이 비어 있는 채로 트래픽을 받
 
 도메인이 VPC 안이라 로컬에서 바로 안 닿는다. NAT/bastion 인스턴스를 거쳐 포트를 뚫는다.
 
-```bash
-# 도메인 엔드포인트 확인
-aws opensearch list-domain-names --query 'DomainNames[].DomainName' --output text
-aws opensearch describe-domain --domain-name <이름> --query 'DomainStatus.Endpoints' --output json
+로컬에 `session-manager-plugin` 이 있어야 한다(`session-manager-plugin --version`).
 
-# SSM 포트포워딩 (인스턴스 id 는 프라이빗 서브넷 라우트의 NAT 인스턴스)
+```bash
+# 도메인 엔드포인트 (vpc-... 로 시작하는 사설 엔드포인트)
+DOMAIN=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+ENDPOINT=$(aws opensearch describe-domain --domain-name "$DOMAIN" \
+  --query 'DomainStatus.Endpoints.vpc' --output text)
+
+# 경유할 인스턴스 — 프라이빗 서브넷 라우트의 NAT 인스턴스. SSM Online 인 것을 고른다
+aws ec2 describe-route-tables --filters Name=vpc-id,Values=<vpc-id> \
+  --query 'RouteTables[].Routes[?DestinationCidrBlock==`0.0.0.0/0`].InstanceId' --output text
+aws ssm describe-instance-information --query 'InstanceInformationList[].[InstanceId,PingStatus]' --output text
+
+# 터널. 이 창은 작업 내내 열어 둔다
 aws ssm start-session \
   --target <instance-id> \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters '{"host":["<도메인 엔드포인트>"],"portNumber":["443"],"localPortNumber":["9243"]}'
+  --parameters "{\"host\":[\"$ENDPOINT\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"9243\"]}"
 ```
 
 터널을 쓰면 인증서 호스트명이 `localhost` 와 안 맞으므로 다음 단계에서 `TARGET_TLS_INSECURE=1`
@@ -71,10 +79,17 @@ aws ssm start-session \
 
 ### 3. 데이터 복사
 
-자격증명은 SST 가 만든 master user 다.
+자격증명은 SST 가 만든 master user 다. `sst secret` 이 아니라 **Secrets Manager** 에 있다 —
+SST 가 도메인 태그 `sst:ref:password` 에 시크릿 id 를, `sst:ref:username` 에 사용자명을 박아둔다.
 
 ```bash
-sst secret list --stage live   # 참고용. 도메인 자격증명은 Pulumi 상태에 있다
+DOMAIN=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+ARN=$(aws opensearch describe-domain --domain-name "$DOMAIN" --query 'DomainStatus.ARN' --output text)
+SECRET_ID=$(aws opensearch list-tags --arn "$ARN" \
+  --query "TagList[?Key=='sst:ref:password'].Value | [0]" --output text)
+
+aws secretsmanager get-secret-value --secret-id "$SECRET_ID" \
+  --query SecretString --output text     # {"username":"admin","password":"..."}
 ```
 
 ```bash
