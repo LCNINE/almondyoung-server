@@ -21,6 +21,7 @@ import { WaybillModule } from './modules/fulfillment/waybill/waybill.module';
 import { LibraryModule } from './modules/library/library.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 import { ArchiveModule } from './modules/archive/archive.module';
+import { DemoModule } from './modules/demo/demo.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { ArchiveModule } from './modules/archive/archive.module';
     LibraryModule,
     CustomerServiceModule,
     ArchiveModule,
+    DemoModule.forEnvironment(),
   ],
   controllers: [AppController],
   providers: [

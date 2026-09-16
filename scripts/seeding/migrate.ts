@@ -16,7 +16,7 @@ import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch'
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
-  await ensureInsideSstShell({ stage: parsed.stage, deployment: parsed.deployment });
+  await ensureInsideSstShell(parsed);
 
   console.log(chalk.bold.cyan('\n=== db:migrate ==='));
   console.log(chalk.gray(`  Stage: ${parsed.stage ?? process.env.SST_STAGE ?? '(unknown)'}`));
@@ -24,9 +24,7 @@ async function main() {
 
   const synced = await runSchemaSync({ yes: parsed.yes, deployment: parsed.deployment });
 
-  console.log(
-    `\n  Schemas migrated: ${synced.length > 0 ? chalk.green(synced.join(', ')) : chalk.gray('none')}`,
-  );
+  console.log(`\n  Schemas migrated: ${synced.length > 0 ? chalk.green(synced.join(', ')) : chalk.gray('none')}`);
 }
 
 main().catch((error) => {

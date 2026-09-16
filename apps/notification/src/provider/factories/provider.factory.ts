@@ -1,4 +1,5 @@
 // apps/notification/src/provider/factories/provider.factory.ts
+import { DemoNotificationProvider } from '../providers/demo/demo.provider';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationProvider } from '../interfaces/notification-provider.interface';
@@ -12,6 +13,12 @@ export class ProviderFactory {
   constructor(private readonly configService: ConfigService) {}
 
   create(providerName: string, providerId: string, config: Record<string, any>): NotificationProvider | null {
+    if (this.configService.get<string>('APP_STAGE') === 'demo') {
+      if (this.configService.get<string>('EXTERNAL_INTEGRATIONS_MODE') !== 'mock') {
+        throw new Error('Demo notification requires mocked integrations');
+      }
+      return new DemoNotificationProvider(providerId, providerName);
+    }
     const name = providerName.toLowerCase();
 
     // Resend Email Provider

@@ -2,11 +2,13 @@
 
 export default $config({
   app(input) {
+    const isLive = input?.stage === "live";
+    const isDemo = input?.stage === "demo";
     return {
       name: "lcnine-platform",
       // "live" = 운영 stage. 삭제 저항성(retain)과 protect 적용. 도메인도 접두사 없음.
-      removal: input?.stage === "live" ? "retain" : "remove",
-      protect: ["live"].includes(input?.stage),
+      removal: isLive ? "retain" : "remove",
+      protect: isLive || isDemo,
       home: "aws",
       providers: {
         aws: { region: "ap-northeast-2" },

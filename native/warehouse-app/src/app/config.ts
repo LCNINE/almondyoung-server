@@ -1,3 +1,4 @@
+import { validateDemoConfig } from './demo-config';
 import type { OidcConfig } from '../core/auth/oidc';
 
 // These come from build-time env (VITE_*) in Phase 0. A settings screen can
@@ -6,7 +7,7 @@ export const oidcConfig: OidcConfig = {
   issuer: import.meta.env.VITE_OIDC_ISSUER ?? '',
   authorizationEndpoint: import.meta.env.VITE_OIDC_AUTHORIZE ?? '',
   clientId: import.meta.env.VITE_OIDC_CLIENT_ID ?? 'warehouse-app',
-  redirectUri: 'almondwms://oauth/callback',
+  redirectUri: import.meta.env.VITE_APP_STAGE === 'demo' ? 'almondwms-demo://oauth/callback' : 'almondwms://oauth/callback',
   scope: 'openid profile email offline_access',
 };
 
@@ -20,3 +21,5 @@ export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
 const rawAuthMode = import.meta.env.VITE_API_AUTH_MODE;
 export const apiAuthMode: 'bearer' | 'cookie' =
   rawAuthMode === 'cookie' ? 'cookie' : 'bearer';
+
+validateDemoConfig({ stage: import.meta.env.VITE_APP_STAGE, apiUrl: apiBaseUrl, issuer: oidcConfig.issuer, authorize: oidcConfig.authorizationEndpoint });

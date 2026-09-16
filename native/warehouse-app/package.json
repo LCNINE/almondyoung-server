@@ -12,7 +12,10 @@
     "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "tauri:dev": "tauri dev",
-    "tauri:dev:live": "cross-env VITE_API_BASE_URL=https://core.almondyoung.com tauri dev"
+    "tauri:dev:live": "cross-env VITE_API_BASE_URL=https://core.almondyoung.com tauri dev",
+    "build:demo": "cross-env VITE_APP_STAGE=demo VITE_API_BASE_URL=https://core.almondyoung-next.com VITE_OIDC_ISSUER=https://user.almondyoung-next.com VITE_OIDC_AUTHORIZE=https://auth.almondyoung-next.com/oauth/authorize VITE_OIDC_CLIENT_ID=warehouse-app yarn build",
+    "tauri:dev:demo": "cross-env VITE_APP_STAGE=demo VITE_API_BASE_URL=https://core.almondyoung-next.com VITE_OIDC_ISSUER=https://user.almondyoung-next.com VITE_OIDC_AUTHORIZE=https://auth.almondyoung-next.com/oauth/authorize VITE_OIDC_CLIENT_ID=warehouse-app tauri dev --config src-tauri/tauri.demo.conf.json",
+    "tauri:build:demo": "cross-env VITE_APP_STAGE=demo VITE_API_BASE_URL=https://core.almondyoung-next.com VITE_OIDC_ISSUER=https://user.almondyoung-next.com VITE_OIDC_AUTHORIZE=https://auth.almondyoung-next.com/oauth/authorize VITE_OIDC_CLIENT_ID=warehouse-app tauri build --config src-tauri/tauri.demo.conf.json"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",

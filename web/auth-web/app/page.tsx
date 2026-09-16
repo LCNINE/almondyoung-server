@@ -97,13 +97,13 @@ export default async function AccountHubPage({
             {hasAccounts ? "다른 계정으로 로그인" : "로그인"}
           </Link>
         </Button>
-        <Button
+        {process.env.APP_STAGE !== "demo" && <Button
           asChild
           variant="ghost"
           className="h-[52px] rounded-lg text-base font-medium"
         >
           <Link href={signupHref}>새로 가입하기</Link>
-        </Button>
+        </Button>}
       </div>
     </AuthShell>
   )

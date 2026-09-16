@@ -4,14 +4,11 @@
 // 여기서는 SSM으로 id만 읽어 공유한다. Cloud Map 네임스페이스도 VPC에 귀속되므로
 // 같은 VPC에 붙으면 platform의 Redpanda DNS가 자동 해석된다.
 
-export function setup() {
-  // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사, bastion 등).
-  const isDev = $app.stage !== "live";
+import { getLcnineStageProfile } from "../../stage-profile";
 
-  const baseDomain = isDev ? "lcnine-dev.com" : "almondyoung.com";
-  const domain = (slug: string) =>
-    isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`;
-  const url = (slug: string) => `https://${domain(slug)}`;
+export function setup() {
+  const profile = getLcnineStageProfile($app.stage);
+  const { isDev, baseDomain, domain, url } = profile;
 
   // ─── Platform 공유 자원 (lcnine-platform이 publish) ───
   const platformVpcId = aws.ssm.getParameterOutput({
@@ -45,6 +42,7 @@ export function setup() {
   const baseEnv = (serviceName: string) => ({
     NODE_ENV: "production",
     OTEL_SERVICE_NAME: serviceName,
+    ...(profile.isDemo ? profile.environment : {}),
   });
 
   const createBackendService = (
@@ -118,6 +116,7 @@ export function setup() {
     baseEnv,
     createBackendService,
     kafkaBrokers,
+    profile,
   };
 }
 

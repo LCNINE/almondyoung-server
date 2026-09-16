@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import {
@@ -16,6 +16,7 @@ import { channelDispatchOperations, inboxEvents } from '../schema';
 import type { ChannelAdapterSchema, ChannelCommand, ChannelDispatchOperation } from '../types';
 import { getChannelFulfillmentCapabilities, ShipmentSalesChannel } from './channel-capabilities';
 import { withMedusaOrderProjectionLock } from './medusa-order-projection-lock';
+import { DemoChannelDispatchMock } from '../demo/demo-channel-dispatch.mock';
 
 const OUTBOUND_INBOX_EVENT_TYPES = [
   'ShipmentShipped',
@@ -66,8 +67,9 @@ export class ShipmentDispatchInboxWorker {
 
   constructor(
     private readonly dbService: DbService<ChannelAdapterSchema>,
-    private readonly channelAdapterFactory: ChannelAdapterFactory,
-    private readonly medusaClient: MedusaClient,
+    @Optional() private readonly channelAdapterFactory?: ChannelAdapterFactory,
+    @Optional() private readonly medusaClient?: MedusaClient,
+    @Optional() private readonly demoDispatchMock?: DemoChannelDispatchMock,
   ) {}
 
   @Interval(1_000)
@@ -390,6 +392,10 @@ export class ShipmentDispatchInboxWorker {
   private async executeOperation(
     operation: ChannelDispatchOperation,
   ): Promise<{ manual: true; reason: string; result?: never } | { manual: false; result: Record<string, unknown> }> {
+    if (this.demoDispatchMock) {
+      return { manual: false, result: this.demoDispatchMock.acknowledge(operation) };
+    }
+
     const channel = operation.channel as ShipmentSalesChannel;
     const capabilities = getChannelFulfillmentCapabilities(channel);
     if (!capabilities) {
@@ -412,7 +418,7 @@ export class ShipmentDispatchInboxWorker {
     if (operation.operation === 'delivery') {
       if (capabilities.route.kind === 'projection') {
         await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
-          this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
+          this.requireMedusaClient().updateOrderShipmentAttemptProjection(operation.externalOrderId, {
             operation: 'delivery',
             payload: snapshot.payload as ShipmentDeliveredPayload,
           }),
@@ -423,7 +429,7 @@ export class ShipmentDispatchInboxWorker {
 
     if (operation.operation === 'recall') {
       await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
-        this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
+        this.requireMedusaClient().updateOrderShipmentAttemptProjection(operation.externalOrderId, {
           operation: 'recall',
           payload: snapshot.payload as ShipmentDispatchRecalledPayload,
         }),
@@ -448,7 +454,7 @@ export class ShipmentDispatchInboxWorker {
 
     if (capabilities.route.kind === 'projection') {
       await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
-        this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
+        this.requireMedusaClient().updateOrderShipmentAttemptProjection(operation.externalOrderId, {
           operation: 'dispatch',
           payload: shipped,
           order,
@@ -463,7 +469,7 @@ export class ShipmentDispatchInboxWorker {
       return { manual: true, reason: `${channel} has no outbound dispatch integration.` };
     }
 
-    const adapter = this.channelAdapterFactory.getAdapter(capabilities.route.adapter);
+    const adapter = this.requireChannelAdapterFactory().getAdapter(capabilities.route.adapter);
     const command: Extract<ChannelCommand, { type: 'dispatch.ship' }> = {
       type: 'dispatch.ship',
       idempotencyKey: operation.providerIdempotencyKey,
@@ -504,6 +510,18 @@ export class ShipmentDispatchInboxWorker {
     operation: DispatchOperationType,
   ): string {
     return `shipment:${dispatchAttemptId}:${salesOrderId}:${operation}`;
+  }
+
+  private requireMedusaClient(): MedusaClient {
+    if (!this.medusaClient) throw new Error('Medusa client is unavailable outside external integration mode');
+    return this.medusaClient;
+  }
+
+  private requireChannelAdapterFactory(): ChannelAdapterFactory {
+    if (!this.channelAdapterFactory) {
+      throw new Error('Channel adapter factory is unavailable outside external integration mode');
+    }
+    return this.channelAdapterFactory;
   }
 
   private invalidExternalIdentityReason(

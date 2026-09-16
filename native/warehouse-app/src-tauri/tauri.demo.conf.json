@@ -1,0 +1,72 @@
+{
+  "productName": "LCNINE Logistics Demo",
+  "identifier": "kr.lcnine.almondwms.demo",
+  "build": {
+    "beforeDevCommand": "yarn dev",
+    "beforeBuildCommand": "yarn build:demo"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "LCNINE Logistics DEMO",
+        "width": 800,
+        "height": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "demo",
+          "description": "Demo endpoints only",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "core:default",
+            "os:default",
+            "deep-link:default",
+            "opener:default",
+            "stronghold:default",
+            {
+              "identifier": "http:default",
+              "allow": [
+                {
+                  "url": "https://user.almondyoung-next.com/*"
+                },
+                {
+                  "url": "https://core.almondyoung-next.com/*"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "almondwms-demo"
+        ]
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "almondwms-demo"
+          ],
+          "appLink": false
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ]
+  }
+}

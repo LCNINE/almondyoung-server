@@ -2,14 +2,16 @@
 
 export default $config({
   app(input) {
+    const isLive = input?.stage === 'live';
+    const isDemo = input?.stage === 'demo';
     return {
-      name: "lcnine-services",
+      name: 'lcnine-services',
       // "live" = 운영 stage. 삭제 저항성(retain)과 protect 적용. 도메인도 접두사 없음.
-      removal: input?.stage === "live" ? "retain" : "remove",
-      protect: ["live"].includes(input?.stage),
-      home: "aws",
+      removal: isLive ? 'retain' : 'remove',
+      protect: isLive || isDemo,
+      home: 'aws',
       providers: {
-        aws: { region: "ap-northeast-2" },
+        aws: { region: 'ap-northeast-2' },
       },
     };
   },
@@ -20,19 +22,38 @@ export default $config({
     // 않고, arch 만 맞은 `sharp-darwin-arm64v8.node` 가 맥에서 그대로 올라간다. Lambda 에서
     // require 가 실패하면 Next 는 그걸 삼키고 원본 이미지를 그대로 반환하므로, 에러 하나 없이
     // 모든 이미지가 무손실 원본으로 나간다. 이 변수는 빌드 프로세스로 상속된다.
-    process.env.npm_config_platform = "linux";
+    process.env.npm_config_platform = 'linux';
 
-    const shared = await import("./infra/shared");
-    const services = await import("./infra/services");
+    if ($app.stage === 'demo') {
+      const shared = await import('./infra/demo-shared');
+      const infra = shared.setup();
+      const infraOnly = process.env.DEMO_INFRA_ONLY === 'true';
+      if (!infraOnly) {
+        const services = await import('./infra/demo-services');
+        services.setup(infra);
+      }
+      return {
+        dbHost: infra.db.host,
+        adminUrl: infra.url('admin'),
+        coreUrl: infra.url('core'),
+        fileUrl: infra.url('file'),
+        channelAdapterUrl: infra.url('channel-adapter'),
+        analyticsUrl: infra.url('analytics'),
+        notificationUrl: infra.url('notification'),
+        infraOnly,
+      };
+    }
 
+    const shared = await import('./infra/shared');
+    const services = await import('./infra/services');
     const infra = shared.setup();
     services.setup(infra);
-
     return {
       dbHost: infra.db.host,
-      medusaUrl: infra.url("medusa"),
-      walletUrl: infra.url("wallet"),
-      storefrontUrl: infra.url("www"),
+      medusaUrl: infra.url('medusa'),
+      walletUrl: infra.url('wallet'),
+      storefrontUrl: infra.url('www'),
+      infraOnly: false,
     };
   },
 });

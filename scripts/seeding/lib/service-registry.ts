@@ -9,15 +9,40 @@ import { ServiceConfig } from './types';
 
 const ROOT_REGISTRY: ServiceConfig[] = [
   { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
-  { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+  {
+    name: 'user-service',
+    database: 'user_service',
+    drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts',
+    hasSeedStep: true,
+  },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
-  { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
+  {
+    name: 'channel-adapter',
+    database: 'channel_adapter',
+    drizzleConfig: 'apps/channel-adapter/drizzle.config.ts',
+    hasSeedStep: false,
+  },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
-  { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
+  {
+    name: 'notification',
+    database: 'notification',
+    drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts',
+    hasSeedStep: true,
+  },
+  {
+    name: 'ugc-service',
+    database: 'ugc',
+    drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts',
+    hasSeedStep: false,
+  },
   { name: 'search', database: 'search', drizzleConfig: 'apps/search/drizzle.config.ts', hasSeedStep: false },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: true },
-  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/drizzle.config.ts', hasSeedStep: true },
+  {
+    name: 'file-service',
+    database: 'file_service',
+    drizzleConfig: 'apps/file-service/drizzle.config.ts',
+    hasSeedStep: true,
+  },
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
 ];
 
@@ -26,7 +51,12 @@ const ROOT_REGISTRY: ServiceConfig[] = [
  * DB는 `sst.aws.Postgres("IdpDb")` 리소스 (db-connection.ts가 자동 감지).
  */
 const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
-  { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+  {
+    name: 'user-service',
+    database: 'user_service',
+    drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts',
+    hasSeedStep: true,
+  },
 ];
 
 /**
@@ -38,14 +68,61 @@ const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
 const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
   { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
-  { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
+  {
+    name: 'channel-adapter',
+    database: 'channel_adapter',
+    drizzleConfig: 'apps/channel-adapter/drizzle.config.ts',
+    hasSeedStep: false,
+  },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
-  { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
+  {
+    name: 'notification',
+    database: 'notification',
+    drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts',
+    hasSeedStep: true,
+  },
+  {
+    name: 'ugc-service',
+    database: 'ugc',
+    drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts',
+    hasSeedStep: false,
+  },
   { name: 'search', database: 'search', drizzleConfig: 'apps/search/drizzle.config.ts', hasSeedStep: false },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: true },
-  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/drizzle.config.ts', hasSeedStep: true },
+  {
+    name: 'file-service',
+    database: 'file_service',
+    drizzleConfig: 'apps/file-service/drizzle.config.ts',
+    hasSeedStep: true,
+  },
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
+];
+
+/**
+ * lcnine-services demo deployment: logistics demo runtime only.
+ * Commerce, membership, UGC, search and wallet databases are intentionally absent.
+ */
+const LCNINE_DEMO_SERVICES_REGISTRY: ServiceConfig[] = [
+  { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
+  { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
+  {
+    name: 'channel-adapter',
+    database: 'channel_adapter',
+    drizzleConfig: 'apps/channel-adapter/drizzle.config.ts',
+    hasSeedStep: false,
+  },
+  {
+    name: 'notification',
+    database: 'notification',
+    drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts',
+    hasSeedStep: true,
+  },
+  {
+    name: 'file-service',
+    database: 'file_service',
+    drizzleConfig: 'apps/file-service/drizzle.config.ts',
+    hasSeedStep: true,
+  },
 ];
 
 const REGISTRIES: Record<string, ServiceConfig[]> = {
@@ -54,8 +131,11 @@ const REGISTRIES: Record<string, ServiceConfig[]> = {
   'lcnine-services': LCNINE_SERVICES_REGISTRY,
 };
 
-export function getServiceRegistry(deployment?: string): ServiceConfig[] {
+export function getServiceRegistry(deployment?: string, stage = process.env.SST_STAGE): ServiceConfig[] {
   const key = deployment ?? 'root';
+  if (key === 'lcnine-services' && stage === 'demo') {
+    return LCNINE_DEMO_SERVICES_REGISTRY;
+  }
   const registry = REGISTRIES[key];
   if (!registry) {
     throw new Error(`Unknown deployment "${key}". Available: ${Object.keys(REGISTRIES).join(', ')}`);

@@ -14,7 +14,7 @@ import chalk from 'chalk';
 import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
 import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch';
 
-const DEMO_GROUP_PREFIX = 'demo-';
+import { selectDemoSeedGroups } from './lib/demo-seed-groups';
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
@@ -26,7 +26,7 @@ async function main() {
     process.exit(2);
   }
 
-  await ensureInsideSstShell({ stage: parsed.stage, deployment: parsed.deployment });
+  await ensureInsideSstShell(parsed);
 
   // sst shell 내부에서도 한 번 더 (defense in depth — caller 가 --stage 인자 없이 SST_STAGE 만으로 부르는 경로)
   if (process.env.SST_STAGE === 'live') {
@@ -39,7 +39,7 @@ async function main() {
   if (parsed.deployment) console.log(chalk.gray(`  Deployment: ${parsed.deployment}`));
 
   const allGroups = await listGroupsForDeployment(parsed.deployment);
-  const demoGroups = allGroups.filter((g) => g.startsWith(DEMO_GROUP_PREFIX));
+  const demoGroups = selectDemoSeedGroups(allGroups, parsed.stage ?? process.env.SST_STAGE, parsed.group);
 
   if (demoGroups.length === 0) {
     console.log(chalk.gray('  No demo seed groups registered for this deployment.'));

@@ -27,6 +27,7 @@ type Props = {
    */
   reauthUserId?: string
   hasAccounts?: boolean
+  allowRecovery?: boolean
 }
 
 export function SignInForm({
@@ -34,6 +35,7 @@ export function SignInForm({
   prefilledLoginId = "",
   reauthUserId = "",
   hasAccounts = false,
+  allowRecovery = true,
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -119,7 +121,7 @@ export function SignInForm({
           )}
         </Button>
       </div>
-      {!isReauth && (
+      {!isReauth && allowRecovery && (
         <div className="flex items-center justify-center text-sm">
           <Link
             href={findAccountHref}

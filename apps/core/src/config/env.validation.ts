@@ -10,6 +10,9 @@ export const almondyoungEnvSchema = z
     // Server
     PORT: z.string().regex(/^\d+$/).optional(),
     NODE_ENV: z.string().optional(),
+    APP_STAGE: z.string().optional(),
+    DEMO_CONSOLE_ENABLED: z.enum(['true', 'false']).optional(),
+    EXTERNAL_INTEGRATIONS_MODE: z.enum(['real', 'mock']).optional(),
 
     // Database
     DATABASE_URL: z.string().url(),
@@ -76,6 +79,17 @@ export const almondyoungEnvSchema = z
     path: ['AUTH_SECRET'],
   })
   .superRefine((data, ctx) => {
+    const anyDemoSetting =
+      data.APP_STAGE === 'demo' || data.DEMO_CONSOLE_ENABLED === 'true' || data.EXTERNAL_INTEGRATIONS_MODE === 'mock';
+    const safeDemo =
+      data.APP_STAGE === 'demo' && data.DEMO_CONSOLE_ENABLED === 'true' && data.EXTERNAL_INTEGRATIONS_MODE === 'mock';
+    if (anyDemoSetting && !safeDemo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Demo features require APP_STAGE=demo, DEMO_CONSOLE_ENABLED=true, and EXTERNAL_INTEGRATIONS_MODE=mock',
+        path: ['APP_STAGE'],
+      });
+    }
     if (data.FULFILLMENT_WORKFLOW_MODE === 'v2' && !data.FULFILLMENT_V2_CUTOVER_AT) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

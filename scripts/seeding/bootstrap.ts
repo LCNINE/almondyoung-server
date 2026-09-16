@@ -16,7 +16,7 @@ import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch'
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
-  await ensureInsideSstShell({ stage: parsed.stage, deployment: parsed.deployment });
+  await ensureInsideSstShell(parsed);
 
   console.log(chalk.bold.cyan('\n=== db:bootstrap ==='));
   console.log(chalk.gray(`  Stage: ${parsed.stage ?? process.env.SST_STAGE ?? '(unknown)'}`));

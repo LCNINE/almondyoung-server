@@ -7,10 +7,11 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getLcnineStageProfile } from "../../stage-profile";
 
 export function setup() {
-  // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사 등).
-  const isDev = $app.stage !== "live";
+  const profile = getLcnineStageProfile($app.stage);
+  const isDev = profile.isDev;
 
   // ─── VPC (auth/services가 Vpc.get(id)로 공유) ───
   // bastion은 dev/live 모두 상시 ON: IdP DB 등 VPC 내부 리소스에
@@ -127,7 +128,7 @@ export function setup() {
   // 이미지가 여기로 push 된다. 매 배포마다 직전 이미지가 untagged 로 남아 저장 비용이 무한
   // 증가하므로 "untagged 14일 경과분 자동 만료" lifecycle 을 건다 (현재 참조 중인 tagged 는 보존).
   // 공용 리소스라 dev/live 가 동시에 관리하면 서로 덮어써 충돌 → live 스테이지에서만 소유한다.
-  if (!isDev) {
+  if (profile.isLive) {
     new aws.ecr.LifecyclePolicy("SstAssetLifecycle", {
       repository: "sst-asset",
       policy: JSON.stringify({
@@ -152,6 +153,7 @@ export function setup() {
     isDev,
     vpc,
     kafkaBrokers,
+    profile,
   };
 }
 

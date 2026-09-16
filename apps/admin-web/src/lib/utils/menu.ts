@@ -1,3 +1,4 @@
+import { filterDemoMenus } from '../demo/capabilities';
 /** @format */
 
 // src/lib/utils/menu.ts
@@ -27,7 +28,7 @@ export interface MainMenu {
   defaultPath?: string; // 첫 번째 페이지 경로 추가
 }
 
-export const mainMenus: MainMenu[] = [
+const allMenus: MainMenu[] = [
   {
     id: 'company',
     title: '회사/조직',
@@ -674,6 +675,13 @@ export const mainMenus: MainMenu[] = [
     children: [{ id: 'archive-pages', title: '문서', path: '/archive' }],
   },
 ];
+
+export const mainMenus: MainMenu[] = process.env.NEXT_PUBLIC_APP_STAGE === 'demo'
+  ? [{ id: 'demo', title: '시연 관리', icon: 'Package', defaultPath: '/demo', children: [
+      { id: 'demo-console', title: '시연 콘솔', path: '/demo', requireRole: ['admin', 'master'] },
+    ] }, ...filterDemoMenus(allMenus)]
+  : allMenus;
+
 
 // 첫 번째 페이지를 찾는 헬퍼 함수 추가
 export function getFirstPagePath(menuId: string): string | null {

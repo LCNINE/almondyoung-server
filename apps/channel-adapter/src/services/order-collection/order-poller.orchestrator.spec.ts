@@ -9,6 +9,46 @@ import {
 } from './channel-order-provider.interface';
 
 describe('OrderPollerOrchestrator', () => {
+  it('ingests a virtual provider through the transactional mapping and typed outbox path without polling Core', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [makeOrder('2026-09-16T12:00:00.000Z')],
+        failures: [],
+        lifecycleEvents: [],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const salesChannels = makeSalesChannelClient(['medusa']);
+    const orchestrator = new OrderPollerOrchestrator(
+      [],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      db as any,
+      salesChannels as any,
+    );
+
+    const result = await orchestrator.ingestProvider(provider);
+
+    expect(result).toEqual([
+      {
+        externalOrderId: 'medusa_order_1',
+        orderId: '11111111-1111-4111-8111-111111111111',
+        enqueued: true,
+      },
+    ]);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'OrderCreated' }),
+      expect.anything(),
+    );
+    expect(salesChannels.getActiveSites).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncStart).not.toHaveBeenCalled();
+  });
+
   it('does not create a duplicate Core order when a Medusa order changes from authorized to captured', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
@@ -439,10 +479,7 @@ describe('OrderPollerOrchestrator', () => {
     // refund is processed: both emit in order and the watermark advances to the shared
     // timestamp. A missing mapping at lifecycle time is therefore terminal UNLESS the order is
     // quarantined (covered by the next test), in which case the watermark is held instead.
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual([
-      'OrderCreated',
-      'OrderRefundCreated',
-    ]);
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual(['OrderCreated', 'OrderRefundCreated']);
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:10:00.000Z'));
   });
 
@@ -1489,7 +1526,9 @@ describe('OrderPollerOrchestrator — 채널 활성 게이트 (#654)', () => {
     await orchestrator.poll();
 
     expect(
-      outbox.enqueue.mock.calls.filter(([event]: [{ eventType: string }, unknown]) => event.eventType === 'OrderCancelled'),
+      outbox.enqueue.mock.calls.filter(
+        ([event]: [{ eventType: string }, unknown]) => event.eventType === 'OrderCancelled',
+      ),
     ).toHaveLength(2);
   });
 

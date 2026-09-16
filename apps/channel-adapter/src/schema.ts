@@ -390,6 +390,63 @@ export const channelDispatchOperations = pgTable(
   ],
 );
 
+export const demoRuns = pgTable(
+  'demo_runs',
+  {
+    id: uuid('id').primaryKey(),
+    requestId: uuid('request_id').notNull(),
+    inputHash: varchar('input_hash', { length: 64 }).notNull(),
+    fixtureVersion: varchar('fixture_version', { length: 80 }).notNull().default('demo-logistics-v1'),
+    scenario: varchar('scenario', { length: 40 }).notNull(),
+    status: varchar('status', { length: 30 }).notNull().default('processing'),
+    requestedCount: integer('requested_count').notNull(),
+    variantId: uuid('variant_id').notNull(),
+    quantity: integer('quantity').notNull(),
+    requestedBy: varchar('requested_by', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('uq_demo_runs_request_id').on(table.requestId),
+    index('idx_demo_runs_created_at').on(table.createdAt),
+    check('chk_demo_runs_scenario', sql`${table.scenario} in ('happy_path', 'inventory_shortage')`),
+    check('chk_demo_runs_status', sql`${table.status} in ('processing', 'completed', 'partial_failure', 'failed')`),
+    check('chk_demo_runs_count', sql`${table.requestedCount} between 1 and 50`),
+    check('chk_demo_runs_quantity', sql`${table.quantity} between 1 and 100`),
+  ],
+);
+
+export const demoRunItems = pgTable(
+  'demo_run_items',
+  {
+    id: uuid('id').primaryKey(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => demoRuns.id, { onDelete: 'cascade' }),
+    sequence: integer('sequence').notNull(),
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+    orderId: uuid('order_id').notNull(),
+    status: varchar('status', { length: 30 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    errorMessage: text('error_message'),
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    enqueuedAt: timestamp('enqueued_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_demo_run_items_run_sequence').on(table.runId, table.sequence),
+    uniqueIndex('uq_demo_run_items_external_order').on(table.externalOrderId),
+    uniqueIndex('uq_demo_run_items_order_id').on(table.orderId),
+    index('idx_demo_run_items_claim').on(table.runId, table.status, table.leaseExpiresAt),
+    check('chk_demo_run_items_sequence', sql`${table.sequence} > 0`),
+    check('chk_demo_run_items_attempts', sql`${table.attempts} >= 0`),
+    check('chk_demo_run_items_status', sql`${table.status} in ('pending', 'processing', 'enqueued', 'failed')`),
+  ],
+);
+
 // 🔹 PIM-Medusa 상품 매핑 테이블
 export const pimMedusaMappings = pgTable(
   'pim_medusa_mappings',
@@ -559,6 +616,8 @@ export const channelAdapterSchema = {
   orderCollectionFailures,
   inboxEvents,
   channelDispatchOperations,
+  demoRuns,
+  demoRunItems,
   pimMedusaMappings,
   migrationProgress,
   migrationFailures,

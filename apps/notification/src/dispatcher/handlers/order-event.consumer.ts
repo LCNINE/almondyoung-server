@@ -1,10 +1,11 @@
 // apps/notification/src/dispatcher/handlers/order-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
-import { NotificationCategory } from '../../shared/enums';
+import { Channel, NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
 import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
@@ -30,6 +31,7 @@ export class OrderEventConsumer {
   constructor(
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly config: ConfigService,
   ) {}
 
   @On(ORDER_STREAM, 'OrderCreated')
@@ -39,6 +41,38 @@ export class OrderEventConsumer {
   ) {
     this.logger.log(`[Event] Received OrderCreated: ${payload.orderId} (correlationId: ${envelope.correlationId})`);
     try {
+      if (!payload.customerId && this.isSafeDemoEnvironment()) {
+        const displayOrderNo = payload.displayOrderNo ?? payload.externalOrderId ?? payload.orderId;
+        await this.notificationDispatcherService.send({
+          userId: `demo-order:${payload.orderId}`,
+          channels: [Channel.EMAIL],
+          category: NotificationCategory.TRANSACTIONAL,
+          eventKey: 'DEMO_ORDER_CREATED',
+          correlationId: envelope.correlationId,
+          payload: {
+            ...payload,
+            // RFC 2606 reserved TLD: it cannot resolve to a real mailbox.
+            email: 'demo-order@example.invalid',
+          },
+          content: {
+            [Channel.EMAIL]: {
+              subject: '[DEMO] 주문 접수',
+              body: `시연 주문 ${displayOrderNo}이 접수되었습니다. 결제금액 ${formatOrderTotal(
+                payload.totalAmount,
+                payload.pointsAmount,
+              )}원`,
+            },
+          },
+          metadata: {
+            demo: true,
+            simulated: true,
+            source: 'demo-order-created',
+          },
+        });
+        this.logger.log(`[Event] Dispatched simulated ORDER_CREATED notification for ${payload.orderId}`);
+        return;
+      }
+
       // 비-로그인 채널/미링크 고객 주문은 내부 user(=customerId)가 없어 알림 대상이 없다. 스킵.
       if (!payload.customerId) {
         this.logger.warn(`Skipping ORDER_CREATED notification: no customerId (order ${payload.orderId})`);
@@ -75,6 +109,14 @@ export class OrderEventConsumer {
       this.logger.error(`[Event] Failed to process ORDER_CREATED notification: ${error.message}`, error.stack);
       throw error; // Re-throw to send to DLQ
     }
+  }
+
+  private isSafeDemoEnvironment(): boolean {
+    return (
+      this.config.get<string>('APP_STAGE') === 'demo' &&
+      this.config.get<string>('DEMO_CONSOLE_ENABLED') === 'true' &&
+      this.config.get<string>('EXTERNAL_INTEGRATIONS_MODE') === 'mock'
+    );
   }
 
   @On(ORDER_STREAM, 'OrderPaymentCompleted')
