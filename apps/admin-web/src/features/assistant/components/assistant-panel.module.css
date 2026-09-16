@@ -206,6 +206,59 @@
   font-size: 11.5px;
   line-height: 1.6;
 }
+/* 추천은 손이 가는 입력창 바로 위에 한 줄로 둔다 — 화면 가운데 2x2 카드는
+   덩어리가 커서 인사와 경쟁했다. */
+.quickChips {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  cursor: grab;
+  /* 넘치는 쪽이 흐려지며 끊겨 더 있다는 것을 알린다. 다 들어오면 여백에 걸려 안 보인다. */
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+  touch-action: pan-x;
+  user-select: none;
+}
+.quickChips:active {
+  cursor: grabbing;
+}
+.quickChips::-webkit-scrollbar {
+  display: none;
+}
+.quickChip {
+  flex: none;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ay-surface-strong);
+  color: var(--ay-text-sub);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.quickChip:hover:not(:disabled) {
+  background: #e7eaee;
+  color: var(--ay-text);
+}
+.quickChip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.betaNote {
+  margin: 14px 0 0;
+  color: var(--ay-text-dim);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
 .chips {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -227,12 +280,6 @@
   letter-spacing: -0.02em;
   cursor: pointer;
   transition: background 0.15s;
-}
-.chipIcon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  color: var(--ay-text-dim);
 }
 .chip:hover {
   background: var(--ay-surface-strong);

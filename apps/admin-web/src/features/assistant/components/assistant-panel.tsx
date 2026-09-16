@@ -10,13 +10,11 @@ import {
 } from '@/components/ui/sheet';
 import {
   ArrowUp,
-  ClipboardCheck,
   RotateCcw,
   FileSpreadsheet,
   Loader2,
   Paperclip,
   Search,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
@@ -124,23 +122,20 @@ function AssistantFace({
   );
 }
 
-/** 시작 화면의 알약 버튼. 누르면 그 말을 바로 보낸다. */
+/** 입력창 위 추천 칩. 누르면 그 말을 바로 보낸다. */
 const SUGGESTIONS = [
-  { icon: Search, label: '상품 찾기', prompt: '상품 목록을 5개 보여줘.' },
+  { label: '상품 찾기', prompt: '상품 목록을 5개 보여줘.' },
   {
-    icon: Sparkles,
     label: '상품 등록',
     prompt: '새 상품을 등록하려고 해. 뭐부터 알려주면 될까?',
   },
   {
-    icon: FileSpreadsheet,
     label: '엑셀 일괄 등록',
     prompt:
       '엑셀로 상품을 일괄 등록하려고 해. 필요한 양식과 진행 방법을 알려줘.',
   },
   {
-    icon: ClipboardCheck,
-    label: '진행 상태',
+    label: '일괄 등록 진행 상태',
     prompt: '최근 일괄 등록 작업의 진행 상태를 확인해줘.',
   },
 ];
@@ -186,6 +181,14 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
   /** 맨 아래를 보고 있는가. 위로 올려 읽는 중이면 자동 스크롤을 멈춘다. */
   const stickToBottom = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  /** 추천 칩 가로 드래그. moved 가 커지면 그 뒤의 click 은 버린다. */
+  const chipDrag = useRef({
+    active: false,
+    captured: false,
+    startX: 0,
+    startScroll: 0,
+    moved: 0,
+  });
 
   useEffect(() => {
     dragDepth.current = 0;
@@ -658,26 +661,6 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
                   찾고, 고치고, 한 번에 올리고 — 뭐든 시켜만 주세요!
                 </p>
 
-                <div className={styles.chips}>
-                  {SUGGESTIONS.map(({ icon: Icon, label, prompt }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className={styles.chip}
-                      onClick={() => void send(prompt)}
-                    >
-                      <span className={styles.chipIcon}>
-                        <Icon size={17} strokeWidth={1.8} aria-hidden />
-                      </span>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <p className={styles.orRow}>
-                  <span>또는 아래에 직접 입력하세요</span>
-                </p>
-
                 <p className={styles.betaNote}>
                   베타 테스트로 아직은 상품 관련 일만 처리할 수 있어요
                 </p>
@@ -776,6 +759,66 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
                 {error}
               </p>
             )}
+            <div
+              className={styles.quickChips}
+              onPointerDown={(event) => {
+                chipDrag.current = {
+                  active: true,
+                  captured: false,
+                  startX: event.clientX,
+                  startScroll: event.currentTarget.scrollLeft,
+                  moved: 0,
+                };
+              }}
+              onPointerMove={(event) => {
+                const drag = chipDrag.current;
+                if (!drag.active) return;
+                // 캡처 전에 줄 바깥에서 떼면 pointerup 이 여기로 오지 않는다.
+                // 그대로 두면 누르지도 않았는데 다음 이동에서 줄이 끌린다.
+                if (event.buttons === 0) {
+                  drag.active = false;
+                  return;
+                }
+                const dx = event.clientX - drag.startX;
+                drag.moved = Math.max(drag.moved, Math.abs(dx));
+                // 5px 전까지는 아직 클릭일 수 있다. 여기서 포인터를 잡으면
+                // click 이 칩이 아니라 이 줄에서 일어나 버튼이 안 눌린다.
+                if (drag.moved < 5) return;
+                if (!drag.captured) {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  drag.captured = true;
+                }
+                event.currentTarget.scrollLeft = drag.startScroll - dx;
+              }}
+              onPointerUp={(event) => {
+                if (chipDrag.current.captured) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                chipDrag.current.active = false;
+              }}
+              onPointerCancel={() => {
+                chipDrag.current.active = false;
+                chipDrag.current.captured = false;
+              }}
+              onClickCapture={(event) => {
+                // 밀어서 멈춘 자리의 칩이 눌리면 안 된다.
+                if (chipDrag.current.moved < 5) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              {SUGGESTIONS.map(({ label, prompt }) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={styles.quickChip}
+                  disabled={pending || loadingHistory}
+                  onClick={() => void send(prompt)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <form
               className={styles.composer}
               onDragEnter={(event) => {
