@@ -21,7 +21,7 @@ export default function RootLayout({
       className={cn("antialiased", fontMono.variable, "font-sans")}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>{process.env.APP_STAGE === "demo" && <div className="bg-amber-100 px-4 py-2 text-center text-sm font-semibold text-amber-950">DEMO · 시연 계정으로 로그인하세요</div>}{children}</ThemeProvider>
       </body>
     </html>
   )

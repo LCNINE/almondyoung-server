@@ -136,7 +136,7 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
 
   // 쇼핑몰 Android 앱의 자체 public client (PKCE). 다른 RP 와 달리 base URL 이 없는 고정
   // 커스텀 스킴이라 env gate 없이 항상 시드한다.
-  oauthClients.push(STOREFRONT_APP_CLIENT_SEED);
+  if (process.env.SST_STAGE !== 'demo') oauthClients.push(STOREFRONT_APP_CLIENT_SEED);
 
   // Demo user 비밀번호 (clip의 DEMO_PASSWORD_DEFAULT와 동일 기본값)
   const demoPassword = process.env.DEMO_PASSWORD || 'demo!1234';
@@ -237,8 +237,9 @@ function buildSeedSteps(
   // user-service가 registry에 있는 배포에서만 등록.
   if (userEntry) {
     const userDbUrl = urlFor(userEntry.database);
-    steps.push(new DemoUserSeedStep(userDbUrl, { demoPassword: config.demoPassword }));
-    steps.push(new DabeauOAuthClientSeedStep(userDbUrl));
+    if (process.env.SST_STAGE !== 'demo')
+      steps.push(new DemoUserSeedStep(userDbUrl, { demoPassword: config.demoPassword }));
+    if (process.env.SST_STAGE !== 'demo') steps.push(new DabeauOAuthClientSeedStep(userDbUrl));
   }
 
   return steps;

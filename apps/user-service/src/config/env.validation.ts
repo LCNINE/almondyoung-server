@@ -1,3 +1,4 @@
+import { validateDemoAuthEnvironment } from '../demo/demo-boundary';
 import { z } from 'zod';
 
 // PEM 은 multiline 이라 ECS env 등 일부 transport 에서 newline 이 손상되기 쉽다.
@@ -25,6 +26,8 @@ const pemString = z
   .refine((s) => s.includes('-----BEGIN'), { message: 'must be a PEM-encoded key (raw or base64)' });
 
 export const userServiceEnvSchema = z.object({
+  APP_STAGE: z.string().optional(),
+  EXTERNAL_INTEGRATIONS_MODE: z.enum(['real', 'mock']).optional(),
   // Database
   DATABASE_URL: z.string().url(),
   USER_SERVICE_PORT: z.string().regex(/^\d+$/).optional(),
@@ -94,6 +97,7 @@ export const userServiceEnvSchema = z.object({
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;
 
 export function validateUserServiceEnv(config: Record<string, unknown>) {
+  validateDemoAuthEnvironment(config);
   const parsed = userServiceEnvSchema.safeParse(config);
 
   if (!parsed.success) {

@@ -14,7 +14,7 @@ import chalk from 'chalk';
 import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
 import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch';
 
-const DEMO_GROUP_PREFIX = 'demo-';
+import { selectDemoSeedGroups } from './lib/demo-seed-groups';
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
@@ -39,7 +39,7 @@ async function main() {
   if (parsed.deployment) console.log(chalk.gray(`  Deployment: ${parsed.deployment}`));
 
   const allGroups = await listGroupsForDeployment(parsed.deployment);
-  const demoGroups = allGroups.filter((g) => g.startsWith(DEMO_GROUP_PREFIX));
+  const demoGroups = selectDemoSeedGroups(allGroups, parsed.stage ?? process.env.SST_STAGE, parsed.group);
 
   if (demoGroups.length === 0) {
     console.log(chalk.gray('  No demo seed groups registered for this deployment.'));

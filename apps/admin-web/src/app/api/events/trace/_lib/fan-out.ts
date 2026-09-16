@@ -62,9 +62,14 @@ export async function fanOut<T>(
 ): Promise<FanOutResult<T>[]> {
   const headers = await buildAuthHeaders();
 
+  const available = TRACKED_SERVICES.filter(
+    (service) =>
+      process.env.APP_STAGE !== 'demo' ||
+      !['membership', 'wallet'].includes(service.name)
+  );
   const targets = serviceName
-    ? TRACKED_SERVICES.filter((s) => s.name === serviceName)
-    : TRACKED_SERVICES;
+    ? available.filter((service) => service.name === serviceName)
+    : available;
 
   const results = await Promise.allSettled(
     targets.map(async (svc) => {

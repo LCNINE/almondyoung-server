@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation"
 import { AuthShell } from "@/components/auth-shell"
 import { SignUpForm } from "@/components/signup-form"
 import { sanitizeRedirectTo } from "@/lib/redirect"
@@ -9,6 +10,7 @@ export default async function SignUpPage({
 }: {
   searchParams: SearchParams
 }) {
+  if (process.env.APP_STAGE === "demo") notFound()
   const params = await searchParams
   const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
   return (

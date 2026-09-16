@@ -18,7 +18,10 @@ export function setup(infra: IdpInfra) {
   const oauthJwtPublicKey = new sst.Secret('OauthJwtPublicKey');
 
   const uploads = new sst.aws.Bucket('DemoAuthUploads', {
+    // User file service returns unsigned object URLs. Demo uploads contain fictional data.
+    access: 'public',
     versioning: true,
+    cors: { allowOrigins: [url('admin'), url('auth')], allowMethods: ['GET', 'HEAD', 'PUT'], allowHeaders: ['*'] },
   });
 
   const userServiceUrl = url('user');

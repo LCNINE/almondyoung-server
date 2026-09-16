@@ -27,7 +27,13 @@ export function setup(infra: DemoSharedInfra) {
   const adminWebOidcClientSecret = new sst.Secret('AdminWebOidcClientSecret');
   // The provider sends ACL=public-read for public uploads, so keep ACL support only on
   // this public bucket. Private objects live in a different bucket with the default block.
+  const fileCors = {
+    allowOrigins: [url('admin')],
+    allowMethods: ['GET', 'HEAD', 'PUT'] as ('GET' | 'HEAD' | 'PUT')[],
+    allowHeaders: ['*'],
+  };
   const publicFiles = new sst.aws.Bucket('DemoPublicFiles', {
+    cors: fileCors,
     access: 'public',
     versioning: true,
     transform: {
@@ -40,7 +46,7 @@ export function setup(infra: DemoSharedInfra) {
       },
     },
   });
-  const privateFiles = new sst.aws.Bucket('DemoPrivateFiles', { versioning: true });
+  const privateFiles = new sst.aws.Bucket('DemoPrivateFiles', { versioning: true, cors: fileCors });
 
   const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
     Object.fromEntries(
@@ -52,12 +58,14 @@ export function setup(infra: DemoSharedInfra) {
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: idpAuthSecret,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    ALLOWED_AUDIENCES: 'admin-web',
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
     AUTH_SECRET: idpAuthSecret,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    ALLOWED_AUDIENCES: 'admin-web',
     CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
     CORE_INTERNAL_KEY: coreInternalKey.value,
     USER_SERVICE_URL: idpUserServiceUrl,
@@ -73,6 +81,7 @@ export function setup(infra: DemoSharedInfra) {
     ...kafkaEnv('notification', 'notification-group'),
     AUTH_SECRET: idpAuthSecret,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    ALLOWED_AUDIENCES: 'admin-web',
     NOTIFICATION_INTERNAL_KEY: notificationInternalKey,
   });
 
@@ -121,6 +130,7 @@ export function setup(infra: DemoSharedInfra) {
       AUTH_SECRET: idpAuthSecret,
       JWT_ISSUER: 'almondyoung-auth',
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      ALLOWED_AUDIENCES: 'admin-web,warehouse-app',
       CORE_INTERNAL_KEY: coreInternalKey.value,
       FILE_SERVICE_URL: url('file'),
     },
@@ -147,6 +157,7 @@ export function setup(infra: DemoSharedInfra) {
       ...kafkaEnv('file-service', 'file-service-group'),
       AUTH_SECRET: idpAuthSecret,
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      ALLOWED_AUDIENCES: 'admin-web,warehouse-app',
       AWS_REGION: 'ap-northeast-2',
       AWS_S3_PUBLIC_BUCKET: publicFiles.name,
       AWS_S3_PRIVATE_BUCKET: privateFiles.name,
@@ -171,6 +182,7 @@ export function setup(infra: DemoSharedInfra) {
       ANALYTICS_SERVICE_URL: url('analytics'),
       ADMIN_DOMAIN: domain('admin'),
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      ALLOWED_AUDIENCES: 'admin-web',
       OAUTH_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
       OIDC_CLIENT_ID: 'admin-web',

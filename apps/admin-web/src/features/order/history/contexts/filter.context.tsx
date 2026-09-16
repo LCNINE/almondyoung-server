@@ -3,6 +3,7 @@
 
 import { createContext, useContext, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
+import { useSearchParams } from 'next/navigation';
 
 export type QuickDateOption = 'today' | 'yesterday' | 'week' | 'month' | '3m' | 'custom';
 
@@ -48,6 +49,8 @@ export const useOrderHistoryFilter = () => {
 
 export const OrderHistoryFilterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const today = dayjs().format('YYYY-MM-DD');
+    const searchParams = useSearchParams();
+    const demoOrder = process.env.NEXT_PUBLIC_APP_STAGE === 'demo' ? searchParams.get('externalOrderId') : null;
 
     const [filter, setFilterState] = useState<OrderHistoryFilter>({
         type: 'pending', // 주문 미확정이 기본값
@@ -56,7 +59,8 @@ export const OrderHistoryFilterProvider: React.FC<{ children: React.ReactNode }>
         quickDate: 'today',
         dateFrom: today,
         dateTo: today,
-        keywordType: '통합검색',
+        keywordType: demoOrder ? '주문번호' : '통합검색',
+        keyword: demoOrder || undefined,
     });
 
     const [searchToken, setSearchToken] = useState(0);
