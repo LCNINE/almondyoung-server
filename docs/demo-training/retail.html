@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>리테일팀 발주·입고 진행 가이드</title>
+  <link rel="stylesheet" href="assets/training.css">
+</head>
+<body>
+  <nav class="screen-nav" aria-label="문서 바로가기"><strong>리테일팀 · 발주 실행</strong><a href="index.html">교육 허브</a><a href="#create">발주 생성</a><a href="#execute">품목 실행</a><a href="#partial">부분 입고</a><a href="#troubleshooting">문제 해결</a></nav>
+  <main class="guide">
+    <section class="sheet cover" id="cover">
+      <div class="cover-grid"><div><p class="eyebrow">ROLE GUIDE · RETAIL</p><h1>발주서는 만들고 끝이 아닙니다</h1><p class="lead">보충 제안을 읽고, 품목별 실제 발주를 기록하고, 물류팀의 부분 입고가 잔량 0이 될 때까지 확인합니다.</p><div class="meta"><span class="chip">핵심 실습 · 10개 발주</span><span class="chip">부분 입고 · 4 + 6</span><span class="chip">demo 전용</span></div></div><div class="cover-mark" aria-hidden="true"><span>PO</span></div></div>
+      <div class="page-footer"><strong>리테일팀 가이드</strong><span>1 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="prepare">
+      <p class="eyebrow">BEFORE YOU START</p><h2>세 가지를 먼저 고정합니다</h2><p class="kicker">계정·상품·창고가 흐름 중간에 바뀌면 수량 대사가 무너집니다.</p>
+      <div class="grid-3">
+        <div class="card blue"><div class="number">1</div><h3>demo 확인</h3><ul class="checklist"><li>상단 <b>DEMO · 시연 데이터</b></li><li>리테일 권한 계정</li><li>시연 콘솔 준비 완료는 안내자가 확인</li></ul></div>
+        <div class="card teal"><div class="number">2</div><h3>교육 상품</h3><ul class="checklist"><li>상품명과 <span class="mono">SKU 코드</span></li><li>고정 실습은 안내자가 지정</li><li>다른 작업 진행 여부 확인</li></ul></div>
+        <div class="card amber"><div class="number">3</div><h3>인계 기준</h3><ul class="checklist"><li>목적지 창고</li><li>입고 예정일</li><li>물류 담당자와 인계 시각</li></ul></div>
+      </div>
+      <div class="callout warn" style="margin-top:20px"><strong>SKU 코드와 SKU ID는 다릅니다.</strong> 수동 <span class="ui-label">발주 생성</span> 화면은 <b>SKU ID</b>를 받습니다. 교육에서는 <span class="ui-label">보충 제안</span> → <span class="ui-label">카트</span> 흐름을 우선 사용해 잘못된 ID 입력을 피합니다.</div>
+      <div class="page-footer"><strong>준비 조건</strong><span>리테일팀 · 2 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="replenishment">
+      <p class="eyebrow">STEP 1 · READ THE SIGNAL</p><h2>보충 제안에서 “왜 사는지” 확인합니다</h2>
+      <div class="route"><span>재고관리</span><i>›</i><span>보충 제안</span><i>›</i><span>전체 또는 발주</span><i>›</i><span>발주 유형: 국내</span></div>
+      <div class="split-60">
+        <div>
+          <table class="table"><thead><tr><th>화면 열</th><th>확인할 의미</th></tr></thead><tbody>
+            <tr><td><b>SKU</b></td><td>상품명 · SKU 코드 · 공급처가 실습 대상과 같은가</td></tr>
+            <tr><td><b>판매창고 재고</b></td><td>현재 수량 / 예약 / 이동중. 가용과 혼동하지 않기</td></tr>
+            <tr><td><b>예상 커버</b></td><td>재고가 며칠 버티는지와 부족 수량</td></tr>
+            <tr><td><b>전사 위치</b></td><td>전사 수량 / 이미 발주한 잔량</td></tr>
+            <tr><td><b>제안</b></td><td>발주 또는 이동, 추천 수량</td></tr>
+          </tbody></table>
+          <div class="callout" style="margin-top:13px"><b>샘플 판단</b> · <span class="mono">DEMO-SKU-001</span>의 현재 수량과 예약을 기록하고, 합동 실습 수량 10개는 추천량과 별도로 교육 작업지에 고정합니다.</div>
+        </div>
+        <div class="shot tall"><img src="assets/screens/replenishment-current.png" alt="현재 배포된 보충 제안 화면"><figcaption>배포 화면 확인 · 2026-09-17 · 읽기 전용 캡처</figcaption></div>
+      </div>
+      <div class="page-footer"><strong>현재 배포 화면 확인</strong><span>리테일팀 · 3 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="create">
+      <p class="eyebrow">STEP 2 · CREATE THE PO</p><h2>카트에서 발주서를 만듭니다</h2>
+      <div class="grid-2">
+        <div>
+          <ol class="steps">
+            <li><span><span class="ui-label">발주 유형: 국내</span>를 선택하고 대상 행의 <span class="ui-label">카트</span>를 클릭합니다.</span></li>
+            <li><span><span class="route" style="display:inline-flex;margin:0"><span>재고관리</span><i>›</i><span>발주관리</span></span>에서 <span class="ui-label">발주 카트</span>를 엽니다.</span></li>
+            <li><span>상품·공급처를 확인하고 수량을 <b>10</b>으로 바꿉니다.</span></li>
+            <li><span><span class="ui-label">발주 생성</span> → <b>공급처</b>, <b>목적지 창고</b>, <b>입고 예정일</b>을 입력합니다.</span></li>
+            <li><span>마지막 <span class="ui-label">발주 생성</span>을 누르고 “발주가 생성되었습니다.”를 확인합니다.</span></li>
+          </ol>
+        </div>
+        <div>
+          <div class="card blue"><h3>고정 실습 입력 예</h3><dl class="record"><dt>상품</dt><dd>안내자가 지정한 SKU 1종</dd><dt>요청 수량</dt><dd>10</dd><dt>공급처</dt><dd>데모 국내 공급사</dd><dt>목적지</dt><dd>데모 국내 물류센터</dd><dt>입고 예정일</dt><dd>안내자가 지정한 날짜</dd></dl></div>
+          <div class="callout warn" style="margin-top:16px"><strong>정상 결과</strong>는 발주 목록에 새 행이 생기는 것입니다. 이 시점에는 아직 공급처에 “실제로 발주했다”는 기록이 없습니다. 이어서 품목별 <span class="ui-label">실행</span>을 해야 합니다.</div>
+        </div>
+      </div>
+      <div class="page-footer"><strong>카트 기반 발주 생성</strong><span>리테일팀 · 4 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="execute">
+      <p class="eyebrow">STEP 3 · EXECUTE EACH LINE</p><h2><span class="ui-label">실행</span>은 되돌릴 수 없는 실제 발주 기록입니다</h2>
+      <div class="split-40">
+        <div>
+          <ol class="steps">
+            <li><span><b>발주관리</b>에서 새 행의 <span class="ui-label">상세</span>를 누릅니다.</span></li>
+            <li><span>상태 <b>요청됨</b>, 요청 수량 <b>10</b>을 확인합니다.</span></li>
+            <li><span>해당 품목의 <span class="ui-label">실행</span>을 누릅니다.</span></li>
+            <li><span><b>실발주 수량 10</b>, 실제 단가, 도착 예정일을 입력합니다.</span></li>
+            <li><span><span class="ui-label">실행 기록</span> 후 상태가 <b>발주됨</b>, “요청 10 → 실발주 10”인지 확인합니다.</span></li>
+          </ol>
+          <div class="callout danger" style="margin-top:15px">수량·SKU·공급처가 틀리면 <span class="ui-label">실행 기록</span>을 누르지 말고 창을 닫습니다. 실행 기록은 되돌릴 수 없습니다.</div>
+        </div>
+        <div class="diagram">
+          <div class="card"><h3>발주 실행 기록 — 교육 상품</h3><div class="field" data-label="요청 수량">10개</div><div class="field" data-label="실발주 수량">10</div><div class="field" data-label="실제 단가 (선택)">10,000</div><div class="field" data-label="도착 예정일 (선택)">안내자 지정일</div><p style="margin:12px 0 0;text-align:right"><span class="ui-label">닫기</span> <span class="ui-label" style="background:#2563eb;color:white">실행 기록</span></p></div>
+        </div>
+      </div>
+      <div class="page-footer"><strong>소스 동작 확인 · 실제 실행 가능 발주 캡처 필요</strong><span>리테일팀 · 5 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="partial">
+      <p class="eyebrow">STEP 4 · FOLLOW PARTIAL RECEIPTS</p><h2>부분 입고는 “진행 중”입니다</h2>
+      <div class="flow">
+        <div class="node"><strong>실행 직후</strong><small>요청 10 → 실발주 10<br>입고 0 / 남음 10</small></div>
+        <div class="node"><strong>1차 입고</strong><small>물류팀 4개 입고·적치<br>받음 4 / 남음 6</small></div>
+        <div class="node"><strong>2차 입고</strong><small>물류팀 6개 입고·적치<br>받음 10 / 남음 0</small></div>
+        <div class="node"><strong>완료 확인</strong><small>발주 운영 상태 입고완료<br>미적치 0 별도 대사</small></div>
+      </div>
+      <div class="grid-2" style="margin-top:22px">
+        <div class="card blue"><h3>리테일이 보는 것</h3><ul class="checklist"><li>발주 상세의 요청·실발주·입고 누계</li><li>품목별 도착예정일</li><li>남은 수량이 6 → 0으로 바뀌는지</li></ul></div>
+        <div class="card teal"><h3>물류가 확인할 것</h3><ul class="checklist"><li>입고 4개와 6개가 각각 기록됨</li><li><span class="mono">DEMO-RECEIVING</span>의 대기 수량</li><li><span class="mono">DEMO-A-01-01</span> 적치 후 대기 0</li></ul></div>
+      </div>
+      <div class="callout warn" style="margin-top:17px"><strong>입고 확정 ≠ 적치 완료.</strong> 발주 화면이 전량 입고여도 입고대기 위치에 재고가 남을 수 있습니다. 물류팀의 “적치 완료·대기 0” 인계를 받아야 실습 완료입니다.</div>
+      <div class="page-footer"><strong>부분 입고 대사</strong><span>리테일팀 · 6 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="current-detail">
+      <p class="eyebrow">VERIFIED SCREEN</p><h2>완료 발주 상세는 이렇게 읽습니다</h2>
+      <div class="split-60">
+        <div class="shot tall"><img src="assets/screens/purchase-order-detail-current.png" alt="현재 배포된 완료 발주 상세 화면"><figcaption>배포 화면 확인 · 완료 발주 · 조작 없음</figcaption></div>
+        <div>
+          <div class="card green"><h3>정상 완료 예</h3><p class="compact"><b>운영 상태</b> 입고완료<br><b>발주 라인</b> 1/1 실행 · 입고 1/1<br><b>품목</b> 발주됨<br><b>수량</b> 요청 8 → 실발주 8 · 전량 입고</p></div>
+          <div class="callout" style="margin-top:15px">완료 발주에는 <span class="ui-label">실행</span>, <span class="ui-label">예정일 수정</span>, <span class="ui-label">잔량 포기</span>가 나타나지 않을 수 있습니다. 상태에 따라 허용된 버튼만 표시됩니다.</div>
+          <p class="source-note" style="margin-top:14px">이 캡처는 별도 완료 건입니다. Acceptance에서 SKU 58005, PO <span class="mono">6f59ecb3…28ec8</span>의 10개를 4+6으로 받고 남음 0, 미적치 0을 확인했습니다.</p>
+        </div>
+      </div>
+      <div class="page-footer"><strong>현재 배포 화면 확인</strong><span>리테일팀 · 7 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="exceptions">
+      <p class="eyebrow">CONTROLLED ENDINGS</p><h2>예외 버튼은 조건과 결과가 다릅니다</h2>
+      <table class="table"><thead><tr><th>화면 버튼</th><th>언제 사용</th><th>필수 입력 / 결과</th><th>사용하지 말아야 할 때</th></tr></thead><tbody>
+        <tr><td><span class="ui-label">예정일 수정</span></td><td>실행한 품목의 도착일 변경</td><td>날짜 저장 또는 <b>비우기</b></td><td>수량 자체를 바꾸려는 경우</td></tr>
+        <tr><td><span class="ui-label">불가</span></td><td>요청 품목을 끝내 발주 못함</td><td>사유 선택 입력, <b>불가로 종결</b></td><td>이미 실행한 품목 또는 일시 지연</td></tr>
+        <tr><td><span class="ui-label">잔량 포기</span></td><td>부분 입고 뒤 남은 수량을 더 받지 않음</td><td>사유 필수, 남은 수량 종결</td><td>남은 6개가 곧 도착하는 경우</td></tr>
+        <tr><td><span class="ui-label">발주 취소</span></td><td>입고 전 발주 전체를 취소</td><td>사유 필수, 되돌릴 수 없음</td><td>이미 입고된 라인이 하나라도 있는 경우</td></tr>
+      </tbody></table>
+      <div class="grid-2" style="margin-top:18px"><div class="callout danger"><strong>모두 종결성 조작입니다.</strong> 교육 예외용 별도 발주에서만 연습하고, 기본 10개 발주에는 안내자 지시 없이 사용하지 않습니다.</div><div class="callout ok"><strong>부분 입고 후 공급 중단</strong>이라면 발주 전체 취소가 아니라 해당 품목의 <span class="ui-label">잔량 포기</span>가 맞습니다.</div></div>
+      <div class="page-footer"><strong>예외 처리</strong><span>리테일팀 · 8 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="handoff">
+      <p class="eyebrow">HANDOFF</p><h2>물류팀에 이 카드 한 장을 넘깁니다</h2>
+      <div class="split-60">
+        <div class="card blue"><div class="worksheet"><div class="blank"><strong>발주번호</strong>생성 후 전체 값</div><div class="blank"><strong>목적지 창고</strong>데모 국내 물류센터</div><div class="blank"><strong>상품명 / SKU</strong>교육 상품 / 코드</div><div class="blank"><strong>실발주 수량</strong>10</div><div class="blank"><strong>1차 수령</strong>4</div><div class="blank"><strong>2차 수령</strong>6</div><div class="blank"><strong>도착 예정일</strong>YYYY-MM-DD</div><div class="blank"><strong>리테일 담당자</strong>이름 · 시각</div></div></div>
+        <div>
+          <h3>리테일 완료 기준</h3><ul class="checklist"><li>상태가 <b>발주됨</b>으로 바뀜</li><li>요청 10 → 실발주 10 표시</li><li>물류팀이 발주번호로 입고 예정 건을 찾음</li><li>4개 입고 뒤 남음 6 확인</li><li>6개 추가 입고 뒤 남음 0 확인</li><li>물류팀이 미적치 0을 인계</li></ul>
+          <div class="callout warn" style="margin-top:14px">동시 실습에서는 “현재 재고 +10”만으로 성공을 판정하지 않습니다. 발주·입고 원장과 작업 ID를 기준으로 확인합니다.</div>
+        </div>
+      </div>
+      <div class="page-footer"><strong>리테일 → 물류 인계</strong><span>리테일팀 · 9 / 10</span></div>
+    </section>
+
+    <section class="sheet" id="troubleshooting">
+      <p class="eyebrow">TROUBLESHOOTING</p><h2>막히면 상태를 바꾸기 전에 원인을 확인합니다</h2>
+      <table class="table"><thead><tr><th>증상</th><th>확인</th><th>다음 행동</th></tr></thead><tbody>
+        <tr><td>보충 제안에 상품이 없음</td><td>필터 <b>전체/발주/이동</b>, 공급처·보충 규칙, 안내자의 데이터 준비</td><td>수동 SKU ID를 추측하지 말고 안내자에게 SKU ID 요청</td></tr>
+        <tr><td><span class="ui-label">실행</span>이 없음</td><td>품목 상태가 요청됨인지, 발주 전체가 취소/입고완료인지</td><td>이미 종결된 건이면 새 발주번호로 진행</td></tr>
+        <tr><td>4개 입고 뒤 전량 입고로 보임</td><td>요청/실발주 수량이 정말 10인지, 잘못 4로 실행했는지</td><td>발주번호와 실발주 수량을 안내자에게 전달</td></tr>
+        <tr><td><span class="ui-label">발주 취소</span>가 없음</td><td>이미 일부라도 입고됐는지</td><td>남은 입고를 중단하려면 <span class="ui-label">잔량 포기</span> 검토</td></tr>
+        <tr><td>목록 숫자가 바로 안 바뀜</td><td>상세를 닫았다 다시 열어 최신 데이터 확인</td><td>중복 생성/실행하지 말고 오류 문구와 시각 기록</td></tr>
+      </tbody></table>
+      <div class="callout danger" style="margin-top:18px"><strong>에스컬레이션</strong> · demo 표시, 발주번호, SKU, 요청/실발주/입고/남은 수량, 마지막 버튼, 오류 문구를 함께 전달합니다.</div>
+      <div class="page-footer"><strong>문제 해결</strong><span>리테일팀 · 10 / 10</span></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Almond WMS demo 직원 교육 허브</title>
+  <link rel="stylesheet" href="assets/training.css">
+</head>
+<body>
+  <nav class="screen-nav" aria-label="문서 바로가기">
+    <strong>Almond WMS demo · 교육 허브</strong>
+    <a href="retail.html">리테일팀</a><a href="warehouse.html">물류팀</a>
+    <a href="workshop.html">합동 실습</a><a href="operator.html">안내자</a>
+  </nav>
+  <main class="guide">
+    <section class="sheet cover" id="cover">
+      <div class="cover-grid">
+        <div>
+          <p class="eyebrow">DEMO TRAINING · 2026.09.17</p>
+          <h1>발주에서 출고까지<br>한 팀처럼 이어가기</h1>
+          <p class="lead">리테일 · 물류 · 안내자가 같은 발주번호와 송장을 보고 움직이는 직원 교육 패키지</p>
+          <div class="meta">
+            <span class="chip">HTML 원본</span><span class="chip">16:9 가로 PDF</span>
+            <span class="chip">Windows PC</span><span class="chip">바코드 스캐너 · 프린터</span>
+          </div>
+        </div>
+        <div class="cover-mark" aria-hidden="true"><span>AY</span></div>
+      </div>
+      <div class="page-footer"><strong>Almond Young · demo 전용</strong><span>교육 허브 · 1 / 6</span></div>
+    </section>
+
+    <section class="sheet" id="choose-guide">
+      <p class="eyebrow">START HERE</p>
+      <h2>내 역할에 맞는 가이드부터 여세요</h2>
+      <p class="kicker">각 문서는 목적 → 준비 조건 → 클릭/스캔 → 예시 → 정상 결과 → 다음 담당자 → 문제 해결 순서로 구성했습니다.</p>
+      <div class="grid-4">
+        <article class="card blue">
+          <div class="number">R</div><h3>리테일팀</h3>
+          <p class="compact">보충 제안 확인, 발주 생성, 품목별 실행, 부분 입고 진행 확인.</p>
+          <a class="ui-label" href="retail.html">retail.html 열기</a>
+        </article>
+        <article class="card teal">
+          <div class="number">W</div><h3>물류팀</h3>
+          <p class="compact">Windows 로그인, 입고·적치·이동, 송장 스캔, 통합 출고.</p>
+          <a class="ui-label" href="warehouse.html">warehouse.html 열기</a>
+        </article>
+        <article class="card violet">
+          <div class="number">A</div><h3>합동 실습</h3>
+          <p class="compact">고정 수량 10개, 4+6 부분 입고, 정상·부족·예외 시나리오.</p>
+          <a class="ui-label" href="workshop.html">workshop.html 열기</a>
+        </article>
+        <article class="card amber">
+          <div class="number">O</div><h3>안내자</h3>
+          <p class="compact">준비 상태, 주문 생성, 인계 값, 반복 실습과 장비 인수.</p>
+          <a class="ui-label" href="operator.html">operator.html 열기</a>
+        </article>
+      </div>
+      <div class="callout warn" style="margin-top:20px"><strong>관리자 로그인 후 진입 주소</strong> · <span class="ui-label">/demo/guide/index.html</span>에서 시작합니다. 이 가이드는 공개 자산이 아닙니다. 비밀번호는 안내자가 별도 채널로 전달하며, demo 표시가 없는 환경에서는 실습하지 않습니다.</div>
+      <div class="page-footer"><strong>역할별 진입점</strong><span>교육 허브 · 2 / 6</span></div>
+    </section>
+
+    <section class="sheet" id="flow">
+      <p class="eyebrow">ONE SHARED FLOW</p>
+      <h2>한 건의 업무가 다섯 번 인계됩니다</h2>
+      <p class="kicker">인계할 때는 말로 “됐어요”라고 하지 말고, 아래 식별자와 수량을 함께 전달합니다.</p>
+      <div class="flow">
+        <div class="node"><strong>1 · 수요 판단</strong><small>리테일<br>SKU · 가용 · 예약 · 제안량</small></div>
+        <div class="node"><strong>2 · 발주 실행</strong><small>리테일<br>발주번호 · 실발주 · 예정일</small></div>
+        <div class="node"><strong>3 · 입고·적치</strong><small>물류<br>입고 4+6 · 위치 · 잔량</small></div>
+        <div class="node"><strong>4 · 주문 준비</strong><small>안내자/관리<br>주문 · shipment · 송장</small></div>
+        <div class="node"><strong>5 · 통합 출고</strong><small>물류<br>위치 · 상품 · 완료 수량</small></div>
+      </div>
+      <div class="grid-3" style="margin-top:24px">
+        <article class="card"><h3>리테일 → 물류</h3><p class="compact">발주번호, 목적지 창고, SKU, 실발주 수량, 도착예정일.</p></article>
+        <article class="card"><h3>안내자 → 물류</h3><p class="compact">주문번호, shipment, 운송장번호, 예상 품목·수량, 대상 창고.</p></article>
+        <article class="card"><h3>물류 → 리테일/안내자</h3><p class="compact">입고·적치·출고 결과, 남은 수량, 화면 문구, 재확인 여부.</p></article>
+      </div>
+      <div class="page-footer"><strong>공통 인계 원칙</strong><span>교육 허브 · 3 / 6</span></div>
+    </section>
+
+    <section class="sheet" id="readiness">
+      <p class="eyebrow">GO / NO-GO</p>
+      <h2>교육 시작 전, 네 개의 문을 통과합니다</h2>
+      <div class="grid-2">
+        <div class="card green">
+          <h3>① 환경</h3>
+          <ul class="checklist"><li>상단에 <b>DEMO · 시연 데이터</b> 표시</li><li>관리자 화면과 WMS가 같은 demo 환경</li><li>시연 콘솔의 준비 상태를 안내자가 확인</li></ul>
+        </div>
+        <div class="card blue">
+          <h3>② 계정·창고</h3>
+          <ul class="checklist"><li>역할에 맞는 계정으로 로그인</li><li>WMS 상단 창고가 <b>데모 국내 물류센터</b></li><li>작업 권한이 없으면 안내자에게 즉시 인계</li></ul>
+        </div>
+        <div class="card amber">
+          <h3>③ Windows 장비</h3>
+          <ul class="checklist"><li>로그인 후 앱으로 돌아옴</li><li>HID 스캐너가 문자열 + Enter를 한 번 전송</li><li>프린터·라벨 규격은 실물 인수표로 확인</li></ul>
+        </div>
+        <div class="card red">
+          <h3>④ 작업 데이터</h3>
+          <ul class="checklist"><li>고정 실습 SKU와 시작 수량 기록</li><li>다른 교육생의 동시 작업 여부 확인</li><li>발주번호·주문·송장을 작업지에 기록</li></ul>
+        </div>
+      </div>
+      <div class="callout danger" style="margin-top:18px"><strong>Windows 설치 산출물의 빌드와 SHA-256 대사는 완료했습니다.</strong> 지정 PC 설치·실행, 로그인 callback, 스캐너·프린터는 아직 실물 인수가 필요합니다. 통과 전에는 “장비 검증 완료”로 표시하지 않습니다.</div>
+      <div class="page-footer"><strong>시작 전 필수 점검</strong><span>교육 허브 · 4 / 6</span></div>
+    </section>
+
+    <section class="sheet" id="evidence">
+      <p class="eyebrow">EVIDENCE LABELS</p>
+      <h2>화면과 도식을 구분해서 읽으세요</h2>
+      <p class="kicker">배포 확인, 저장소 소스, 이후 데이터·실물 확인 항목을 섞지 않고 표시합니다.</p>
+      <div class="grid-2">
+        <div>
+          <div class="legend">
+            <span class="tag verified">● 배포 화면 확인</span>
+            <span class="tag source">● 소스 동작 확인</span>
+            <span class="tag pending">● 후속 증거 필요</span>
+            <span class="tag device">● 실물 장비 인수 필요</span>
+          </div>
+          <div class="card soft" style="margin-top:18px">
+            <h3>현재 확인된 것</h3>
+            <ul class="checklist"><li>관리자 demo 로그인과 새 다상품 콘솔 배포</li><li>전체 카탈로그 집계·상품 후보 실제 화면</li><li>발주 10 → 입고·적치 4+6 acceptance</li><li>정상/부족 주문의 모의 출고 완료</li><li>인증된 직원 가이드 진입 경로</li></ul>
+          </div>
+        </div>
+        <div class="card amber">
+          <h3>최종 인수 전 채울 것</h3>
+          <ul class="checklist dont"><li>지정 Windows PC 설치·로그인 callback</li><li>낱개·박스·위치·송장의 실물 스캔 결과</li><li>지정 프린터·라벨 용지의 출력·재스캔</li><li>Windows 앱의 실제 작업 화면 캡처</li></ul>
+          <p class="compact muted" style="margin-top:14px">따라서 “예정” 패널은 업무 개념 설명용이며, 현재 화면의 클릭 절차로 사용하지 않습니다.</p>
+        </div>
+      </div>
+      <div class="page-footer"><strong>증거 표기 규칙</strong><span>교육 허브 · 5 / 6</span></div>
+    </section>
+
+    <section class="sheet" id="escalation">
+      <p class="eyebrow">WHEN SOMETHING STOPS</p>
+      <h2>멈췄을 때 남길 여섯 가지</h2>
+      <div class="split-60">
+        <div class="grid-2">
+          <div class="card"><div class="number">1</div><h3>환경</h3><p class="compact">demo 표시, URL/앱 버전, Windows 시각.</p></div>
+          <div class="card"><div class="number">2</div><h3>업무 식별자</h3><p class="compact">발주번호, 주문번호, shipment, 송장번호.</p></div>
+          <div class="card"><div class="number">3</div><h3>대상</h3><p class="compact">창고, 위치 코드, SKU 코드, 바코드 종류.</p></div>
+          <div class="card"><div class="number">4</div><h3>수량</h3><p class="compact">시작·입력·처리·남은 수량.</p></div>
+          <div class="card"><div class="number">5</div><h3>마지막 조작</h3><p class="compact">클릭/스캔한 정확한 버튼·필드명.</p></div>
+          <div class="card"><div class="number">6</div><h3>화면 문구</h3><p class="compact">오류 문구 그대로, 재확인 실행 여부.</p></div>
+        </div>
+        <div>
+          <div class="callout warn"><strong>중복 시도 금지</strong><br>결과가 불확실한데 같은 작업을 새로 시작하지 않습니다. 화면의 <span class="ui-label">다시 확인</span> 또는 <span class="ui-label">처리 내역 확인</span>을 먼저 사용합니다.</div>
+          <div class="card blue" style="margin-top:18px"><h3>빠른 문서 링크</h3><p class="compact"><a href="retail.html#troubleshooting">리테일 문제 해결</a><br><a href="warehouse.html#recovery">물류 복구</a><br><a href="operator.html#incident">안내자 장애 기록</a></p></div>
+        </div>
+      </div>
+      <div class="page-footer"><strong>에스컬레이션 패킷</strong><span>교육 허브 · 6 / 6</span></div>
+    </section>
+  </main>
+</body>
+</html>
