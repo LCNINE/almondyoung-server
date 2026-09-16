@@ -243,7 +243,7 @@ export class DemoRunRepository implements DemoRunRepositoryPort {
         variantIds: [row.variantId],
         productsPerOrder: 1,
         minQuantity: row.quantity,
-        maxQuantity: row.quantity,
+        maxQuantity: row.scenario === 'inventory_shortage' ? 100 : row.quantity,
       } satisfies PersistedDemoRun['input']);
     return {
       id: row.id,

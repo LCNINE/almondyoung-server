@@ -22,6 +22,7 @@ import { DemoRunRepository } from './demo-run.repository';
 import { DemoRunService } from './demo-run.service';
 import { DemoDispatchOutcomeReader } from './demo-dispatch-outcome.reader';
 import type { DemoCatalogClient, DemoCatalogItem } from './demo-catalog.client';
+import { DEFAULT_INVENTORY_SHORTAGE_VARIANT_ID } from './demo-order.provider';
 
 const trustedCatalog: DemoCatalogItem[] = [
   {
@@ -320,6 +321,64 @@ describeIntegration('DemoRunRepository integration', () => {
       'Bearer token',
     );
     expect(replay.id).toBe(requestId);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('replays a pre-migration shortage row from both its original legacy payload and hydrated input', async () => {
+    const requestId = '99999999-9999-4999-8999-999999999994';
+    await dbService.db.insert(demoRuns).values({
+      id: requestId,
+      requestId,
+      inputHash: 'b'.repeat(64),
+      fixtureVersion: 'demo-logistics-v1',
+      scenario: 'inventory_shortage',
+      status: 'completed',
+      requestedCount: 1,
+      variantId: DEFAULT_INVENTORY_SHORTAGE_VARIANT_ID,
+      quantity: 10,
+      requestedBy: 'legacy-actor',
+    });
+    await dbService.db.insert(demoRunItems).values({
+      id: '99999999-9999-4999-8999-999999999995',
+      runId: requestId,
+      sequence: 1,
+      externalOrderId: `demo-${requestId}-001`,
+      orderId: '99999999-9999-4999-8999-999999999996',
+      status: 'enqueued',
+      attempts: 1,
+    });
+
+    const repository = new DemoRunRepository(dbService, {} as never);
+    const list = jest.fn(() => Promise.reject(new Error('legacy replay must not query catalog')));
+    const replayService = new DemoRunService(repository, { list } as unknown as DemoCatalogClient);
+    const originalReplay = await replayService.create(
+      { requestId, scenario: 'inventory_shortage', count: 1 },
+      'legacy-actor',
+      'Bearer token',
+    );
+    const hydratedReplay = await replayService.create(
+      {
+        requestId,
+        scenario: originalReplay.input.scenario,
+        count: originalReplay.input.count,
+        mode: originalReplay.input.mode,
+        variantIds: originalReplay.input.variantIds,
+        productsPerOrder: originalReplay.input.productsPerOrder,
+        minQuantity: originalReplay.input.minQuantity,
+        maxQuantity: originalReplay.input.maxQuantity,
+      },
+      'legacy-actor',
+      'Bearer token',
+    );
+
+    expect(originalReplay.input).toMatchObject({
+      mode: 'specified',
+      variantIds: [DEFAULT_INVENTORY_SHORTAGE_VARIANT_ID],
+      productsPerOrder: 1,
+      minQuantity: 10,
+      maxQuantity: 100,
+    });
+    expect(hydratedReplay.id).toBe(requestId);
     expect(list).not.toHaveBeenCalled();
   });
 });
