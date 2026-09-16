@@ -308,7 +308,7 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/warehouse_demo_readin
 일반 CI 전체 suite는 저장소 gate 규칙을 따른다. targeted integration에서 DB 부재로 skip한 결과를 통과로 보고하지 않는다. 새 경고/실패가 없으면 불필요한 동일 검사 반복을 하지 않는다.
 
 - [x] **5. 인수 기록을 작성한다.** acceptance 문서에는 검증 commit, 실행 명령/시간, 파일·test 수, 실패/skip, A1–E2 매핑, 실제 HTTP 대사, 응답 유실 재생 결과, 남은 제한을 기록한다. Windows/PDA 로그인·HID 연속 A/A/B 및100스캔·포커스/Enter·재시작·Wi-Fi는 별도 unchecked 항목으로 두고 실기 검증 후에만 체크한다. 시연 범위는 개별 배치/기발급 송장/활성 일반 위치/같은 창고다.
-- [ ] **6. 최종 리뷰와 커밋.** diff에서 신규 schema/우회 권한/미확인 키 교체/서비스 안 HTTP 예외 변환이 없는지 확인한다. `test(warehouse): verify demo workflow recovery over HTTP`로 수용 검사와 기록을 커밋한다.
+- [x] **6. 최종 리뷰와 커밋.** diff에서 신규 schema/우회 권한/미확인 키 교체/서비스 안 HTTP 예외 변환이 없는지 확인한다. `test(warehouse): verify demo workflow recovery over HTTP`로 수용 검사와 기록을 커밋한다.
 
 ## 배포 가능한 완료 상태
 

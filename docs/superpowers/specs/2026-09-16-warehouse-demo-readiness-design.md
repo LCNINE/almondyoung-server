@@ -5,7 +5,7 @@
 입고 → 적치 → 같은 창고 내 이동 → 위치별 출고 시연에서 확인한 세 결함을 고친다. 사용자가 승인한 방향은 정상 로그인 후 자동 작업 준비, 작업별 위치 정책, 미시작 출고 계획의 제한적 자동 재계획이다.
 
 - 기준: 원격 develop `25ef604a6` (#884 포함). 작성 작업공간 HEAD `191a2fb71`은 해당 develop과 추적 파일 내용이 같다.
-- 상태: **A/B/C 구현 및 로컬 자동 검증 완료**. 실제 HTTP/DB 대사와 gate 결과는 [통합 인수 기록](../../../native/warehouse-app/docs/warehouse-demo-readiness-acceptance.md)을 따른다. C-4 독립 리뷰·전체 branch 리뷰와 실제 장비·OIDC·배포 인수는 미완료다.
+- 상태: **A/B/C 구현 및 로컬 자동 검증 완료**. 실제 HTTP/DB 대사와 gate 결과는 [통합 인수 기록](../../../native/warehouse-app/docs/warehouse-demo-readiness-acceptance.md)을 따른다. C-4 독립 리뷰와 전체 branch 리뷰 및 최종 수정 재리뷰를 완료했다. 실제 장비·OIDC·배포 인수는 미완료다.
 - 사전 조사: 기존 native 89파일/611검사, Core·HTTP 29파일/429검사 및 native build 통과. 별도 재현에서 로그인 후 작업 잠금, stale draft 반복 거절, 비활성 위치 이동 후 출고 거절을 확인했다.
 - `/tmp` 재현 파일은 참고 자료일 뿐이다. 구현자는 아래 계획에 따라 저장소 안에 지속 가능한 회귀 검사를 만든다.
 
