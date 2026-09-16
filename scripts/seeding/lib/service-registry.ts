@@ -10,6 +10,7 @@ import { ServiceConfig } from './types';
 const ROOT_REGISTRY: ServiceConfig[] = [
   { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
   { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+  { name: 'ai', database: 'ai', drizzleConfig: 'apps/ai/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
@@ -37,6 +38,7 @@ const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
  */
 const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
   { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
+  { name: 'ai', database: 'ai', drizzleConfig: 'apps/ai/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },

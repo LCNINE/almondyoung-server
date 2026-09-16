@@ -125,11 +125,11 @@ export function setup(infra: SharedInfra) {
   const adminWebOidcClientSecret = new sst.Secret('AdminWebOidcClientSecret');
   // wallet-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
   const walletWebOidcClientSecret = new sst.Secret('WalletWebOidcClientSecret');
-  // admin-web 상품 상세설명 AI 초안 생성용 Anthropic API key.
+  // ai 앱의 상품 상세설명 초안 생성용 Anthropic API key.
   const anthropicApiKey = new sst.Secret('AnthropicApiKey');
   // 검색어·상품명 임베딩용 OpenAI API key. 없으면 벡터 없이 키워드 검색만 동작한다.
   const openAiApiKey = new sst.Secret('OpenAiApiKey');
-  // admin-web AI 어시스턴트(챗봇)용 OpenAI API key. 없으면 챗봇이 503 을 낸다.
+  // ai 앱의 어시스턴트(챗봇)용 OpenAI API key. 없으면 챗봇이 503 을 낸다.
   // 위 OpenAiApiKey(임베딩용)와 «다른 키»다 — 용도가 갈리므로 secret 도 나눈다.
   const productAiOpenAiApiKey = new sst.Secret('ProductAiOpenAiApiKey');
 
@@ -416,6 +416,41 @@ export function setup(infra: SharedInfra) {
       ...notificationEnv,
       ...searchEnv,
       ...ugcEnv,
+    },
+  });
+
+  // ─── ai (어시스턴트 + 상품설명) ───
+  // 번들에 넣지 않고 따로 띄운다 — 상품설명 초안이 이미지를 8장씩 base64 로 물고 있어
+  // 메모리 스파이크가 크고, SSE 응답 하나가 40초까지 살아 있는다. 옆 앱과 1GB 를
+  // 나눠 쓰면 그 스파이크가 남의 OOM 이 된다.
+  createService('Ai', {
+    architecture: 'arm64',
+    dockerfile: 'apps/ai/Dockerfile',
+    domainSlug: 'ai',
+    port: 3070,
+    priority: 148,
+    link: [db],
+    loadBalancerHealth: {
+      '3070/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
+    environment: {
+      DATABASE_URL: dbUrl('ai'),
+      AUTH_SECRET: authSecret.value,
+      JWT_ISSUER: 'almondyoung-auth',
+      // admin-web 이 넘겨 준 RS256 토큰을 검증한다.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 도구가 부르는 곳. 인증은 부른 사람의 것을 그대로 싣는다.
+      CORE_API_URL: url('core'),
+      FILE_SERVICE_URL: url('file'),
+      ANTHROPIC_API_KEY: anthropicApiKey.value,
+      // 검색 임베딩용 OpenAiApiKey 와 다른 키다 — 용도가 갈리므로 secret 도 나눠 둔 것이다.
+      OPENAI_API_KEY: productAiOpenAiApiKey.value,
     },
   });
 
@@ -720,8 +755,8 @@ export function setup(infra: SharedInfra) {
       // 타임세일이 멤버십용 price list 를 만들 때 거는 고객그룹 룰. 비면 멤버십 세일가를
       // 저장할 수 없다. NEXT_PUBLIC_ 이라 빌드 타임에 박히므로 값이 바뀌면 재빌드가 필요하다.
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
-      ANTHROPIC_API_KEY: anthropicApiKey.value,
-      PRODUCT_AI_OPENAI_API_KEY: productAiOpenAiApiKey.value,
+      // AI 는 이제 별도 앱이다 — admin-web 은 프록시만 하므로 모델 키를 갖지 않는다.
+      AI_SERVICE_URL: url('ai'),
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
       OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,

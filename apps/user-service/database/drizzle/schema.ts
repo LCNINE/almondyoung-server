@@ -647,49 +647,6 @@ export const blacklistsRelations = relations(blacklists, ({ one }) => ({
  * 어드민의 AI 어시스턴트가 나눈 대화를 남긴다. 사용자에게 귀속되는 기록이라
  * 여기 둔다 — admin-web 은 VPC 밖 Lambda 라 DB 에 직접 붙지 못한다.
  *──────────────────────────*/
-export const assistantChatSessions = pgTable(
-  'assistant_chat_sessions',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    /** 목록에 보여줄 이름. 첫 사용자 발화에서 따온다. */
-    title: text('title'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index('idx_assistant_sessions_user').on(table.userId, table.updatedAt),
-  ],
-);
-
-export const assistantChatMessages = pgTable(
-  'assistant_chat_messages',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-      .notNull()
-      .references(() => assistantChatSessions.id, { onDelete: 'cascade' }),
-    role: varchar('role', { length: 20 }).notNull(), // 'user' | 'assistant'
-    content: text('content'),
-    /**
-     * 모델에게 그대로 되돌려줄 수 있는 원본 메시지(도구 호출·결과 포함).
-     * 텍스트만 남기면 이전 턴에 받은 fileId 같은 것이 사라져 대화를 이어갈 수 없다.
-     */
-    contentBlocks: jsonb('content_blocks').$type<unknown[]>(),
-    /** 이 턴에 실제로 실행된 도구. 무엇을 했는지 훑어보는 용도. */
-    toolCalls: jsonb('tool_calls').$type<unknown[]>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index('idx_assistant_messages_session').on(table.sessionId, table.createdAt),
-  ],
-);
-
 export const userServiceTables = {
   users,
   roles,
@@ -711,8 +668,6 @@ export const userServiceTables = {
   oauthClients,
   oauthAuthorizationCodes,
   oauthTokens,
-  assistantChatSessions,
-  assistantChatMessages,
 } as const;
 
 /*───────────────────────────
@@ -770,8 +725,6 @@ export type BusinessLicense = typeof businessLicenses.$inferSelect;
 export type Cafe24Token = typeof cafe24Tokens.$inferSelect;
 export type Cafe24Link = typeof cafe24Links.$inferSelect;
 export type Cafe24Snapshot = typeof cafe24Snapshots.$inferSelect;
-export type AssistantChatSession = typeof assistantChatSessions.$inferSelect;
-export type AssistantChatMessage = typeof assistantChatMessages.$inferSelect;
 
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;

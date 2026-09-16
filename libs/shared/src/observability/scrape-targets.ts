@@ -112,6 +112,14 @@ export const SCRAPE_TARGETS: readonly ScrapeTarget[] = [
     dnsSuffixEnv: 'METRICS_DNS_SUFFIX_SERVICES',
   },
   {
+    job: 'ai',
+    appDir: 'ai',
+    metricsServer: 'shared',
+    metricsPort: 13070,
+    serviceName: 'Ai',
+    dnsSuffixEnv: 'METRICS_DNS_SUFFIX_SERVICES',
+  },
+  {
     job: 'user-service',
     appDir: 'user-service',
     metricsServer: 'shared',

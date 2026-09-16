@@ -172,6 +172,9 @@ final-summary.md
 !apps/ugc-service/src/db/*.sql
 !apps/ugc-service/src/db/meta/
 !apps/ugc-service/src/db/meta/*.json
+!apps/ai/src/db/*.sql
+!apps/ai/src/db/meta/
+!apps/ai/src/db/meta/*.json
 
 # SSL certificates
 *.pem

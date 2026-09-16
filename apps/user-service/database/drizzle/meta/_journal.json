@@ -43,13 +43,6 @@
       "when": 1789440240424,
       "tag": "20260915024400_add-channel-to-phone-verifications",
       "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1789456747651,
-      "tag": "20260915071907_add-assistant-chat-tables",
-      "breakpoints": true
     }
   ]
 }

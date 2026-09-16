@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789528494927,
+      "tag": "20260916031454_add-assistant-chat-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789543837500,
+      "tag": "20260916073037_add-conversation-summary",
+      "breakpoints": true
+    }
+  ]
+}

@@ -226,6 +226,20 @@ prometheus.scrape "ugc" {
 	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
+discovery.dns "ai" {
+	names = ["Ai." + sys.env("METRICS_DNS_SUFFIX_SERVICES")]
+	type  = "A"
+	port  = 13070
+}
+
+prometheus.scrape "ai" {
+	targets         = discovery.dns.ai.targets
+	job_name        = "ai"
+	metrics_path    = "/metrics"
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
+}
+
 discovery.dns "user_service" {
 	names = ["UserService." + sys.env("METRICS_DNS_SUFFIX_AUTH")]
 	type  = "A"

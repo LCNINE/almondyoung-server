@@ -84,8 +84,20 @@
   border-radius: 50%;
   overflow: hidden;
   clip-path: circle(50% at 50% 50%);
-  -webkit-mask: radial-gradient(circle, transparent 11.5px, #000 12px, #000 13.5px, transparent 15px);
-  mask: radial-gradient(circle, transparent 11.5px, #000 12px, #000 13.5px, transparent 15px);
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 11.5px,
+    #000 12px,
+    #000 13.5px,
+    transparent 15px
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 11.5px,
+    #000 12px,
+    #000 13.5px,
+    transparent 15px
+  );
 }
 
 .ring::before,
@@ -124,14 +136,36 @@
     #e5eaf0 334deg,
     #8693a8 360deg
   );
-  -webkit-mask: radial-gradient(circle, transparent 12px, #000 12.35px, #000 13.1px, transparent 13.5px);
-  mask: radial-gradient(circle, transparent 12px, #000 12.35px, #000 13.1px, transparent 13.5px);
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 12px,
+    #000 12.35px,
+    #000 13.1px,
+    transparent 13.5px
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 12px,
+    #000 12.35px,
+    #000 13.1px,
+    transparent 13.5px
+  );
 }
 
 .ring::after {
   background:
-    radial-gradient(circle at 78% 22%, #ffffff 0.8px, #fff0bcc7 1.8px, transparent 4.2px),
-    radial-gradient(circle at 22% 78%, #ffffff 0.6px, #a6e4ffb3 1.6px, transparent 4px);
+    radial-gradient(
+      circle at 78% 22%,
+      #ffffff 0.8px,
+      #fff0bcc7 1.8px,
+      transparent 4.2px
+    ),
+    radial-gradient(
+      circle at 22% 78%,
+      #ffffff 0.6px,
+      #a6e4ffb3 1.6px,
+      transparent 4px
+    );
   filter: blur(0.45px);
 }
 

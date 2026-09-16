@@ -9,7 +9,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
-  ArrowRight,
   ArrowUp,
   ClipboardCheck,
   RotateCcw,
@@ -17,21 +16,18 @@ import {
   Loader2,
   Paperclip,
   Search,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
+import { EventSourceParserStream } from 'eventsource-parser/stream';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { AlmondMark } from './almond-mark';
 import { ToolResults, TOOL_LABELS } from './tool-result';
-import {
-  appendMessage,
-  createSession,
-  loadMessages,
-  titleFrom,
-} from '../lib/chat-history';
-import { HistoryMenu } from './history-menu';
-import buttonStyles from './assistant-button.module.css';
+import { createSession, loadMessages, titleFrom } from '../lib/chat-history';
+import { SessionSidebar } from './session-sidebar';
+import { IconRail } from './icon-rail';
+import { matchHints } from '../lib/prompt-hints';
 import styles from './assistant-panel.module.css';
 
 /** 같은 이름의 첨부를 구분하려면 파일명이 아니라 키로 식별해야 한다. */
@@ -44,8 +40,13 @@ type Attachment = { id: string; file: File };
 const STORAGE_KEY = 'almondyoung.assistant.session';
 
 type DraftSession = {
-  messages: { role: 'user' | 'assistant'; content: string; toolCalls?: unknown[] }[];
-  conversation: unknown[];
+  messages: {
+    role: 'user' | 'assistant';
+    content: string;
+    toolCalls?: unknown[];
+  }[];
+  /** 서버가 들고 있는 대화의 id. 이것만 있으면 이어서 말할 수 있다. */
+  sessionId: string | null;
 };
 
 function loadSession(): DraftSession | null {
@@ -91,24 +92,55 @@ function ImageAttachment({ file }: { file: File }) {
   return src ? <img src={src} alt={file.name} /> : null;
 }
 
+/** 어시스턴트 이름. 헤더·말풍선 작성자 라벨·인사문이 전부 여기서 나온다. */
+const ASSISTANT_NAME = '아몬이';
+
+/** 어시스턴트 캐릭터 3컷. public/assistant 에 있다. */
+const CHARACTER = {
+  idle: '/assistant/character.png',
+  wave: '/assistant/character-wave.png',
+  thinking: '/assistant/character-thinking.png',
+};
+
+function AssistantFace({
+  mood = 'idle',
+  size = 'sm',
+}: {
+  mood?: keyof typeof CHARACTER;
+  size?: 'sm' | 'md' | 'lg';
+}) {
+  const box =
+    size === 'lg'
+      ? styles.bigFace
+      : size === 'md'
+        ? styles.midFace
+        : styles.face;
+  return (
+    <span className={box}>
+      {/* 고정 크기 장식이라 최적화가 필요 없다. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={CHARACTER[mood]} alt="" />
+    </span>
+  );
+}
+
+/** 시작 화면의 알약 버튼. 누르면 그 말을 바로 보낸다. */
 const SUGGESTIONS = [
+  { icon: Search, label: '상품 찾기', prompt: '상품 목록을 5개 보여줘.' },
   {
-    icon: Search,
-    title: '상품 찾아보기',
-    description: '상품 목록과 상세 정보를 확인해요',
-    prompt: '상품 목록을 5개 보여줘.',
+    icon: Sparkles,
+    label: '상품 등록',
+    prompt: '새 상품을 등록하려고 해. 뭐부터 알려주면 될까?',
   },
   {
     icon: FileSpreadsheet,
-    title: '엑셀로 일괄 등록',
-    description: '양식과 등록 방법을 안내해요',
+    label: '엑셀 일괄 등록',
     prompt:
       '엑셀로 상품을 일괄 등록하려고 해. 필요한 양식과 진행 방법을 알려줘.',
   },
   {
     icon: ClipboardCheck,
-    title: '진행 중인 작업 확인',
-    description: '최근 업로드한 작업의 상태를 살펴봐요',
+    label: '진행 상태',
     prompt: '최근 일괄 등록 작업의 진행 상태를 확인해줘.',
   },
 ];
@@ -123,42 +155,27 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   /**
-   * 서버가 돌려준 대화 원본(도구 호출·결과 포함). 화면용 messages 와 달리
-   * 이전 턴에 받은 fileId 같은 것이 들어 있어서, 다음 요청에 그대로 보내야
-   * 모델이 이미 올린 이미지를 다시 달라고 하지 않는다.
+   * 대화 원본(도구 호출·결과 포함)은 ai 앱이 들고 있다. 화면은 sessionId 와
+   * 보여줄 말풍선만 들면 된다 — 브라우저가 들고 있던 사본을 매번 되돌려주던
+   * 방식은 DB 와 갈릴 수 있었고, tool_result 를 고쳐 보내면 모델이 그대로 믿었다.
+   *
+   * 세션 id. 첫 발화 전에 만들고 그 뒤로 붙여 나간다.
    */
-  const conversationRef = useRef<unknown[]>([]);
-  /** 서버에 남기는 대화의 세션 id. 첫 발화 때 만들고 그 뒤로 붙여 나간다. */
-  const sessionIdRef = useRef<string | null>(null);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(
+    typeof window === 'undefined' ? null : (loadSession()?.sessionId ?? null)
+  );
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(
+    () => sessionIdRef.current
+  );
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  /** 목록을 다시 읽게 하는 값. 새 대화가 생기면 올린다. */
+  const [sessionRevision, setSessionRevision] = useState(0);
+  /** 추천어에서 키보드로 짚은 위치. -1 이면 아무것도 안 짚은 상태. */
+  const [hintIndex, setHintIndex] = useState(-1);
+  const [hintsHiddenFor, setHintsHiddenFor] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  /**
-   * 기록 저장은 순서대로 처리한다. 세션 생성보다 답변이 먼저 끝나면
-   * 저장할 세션이 아직 없어 그 답변이 통째로 누락된다.
-   */
-  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
-  /**
-   * 진행 중인 세션 생성. 첫 턴의 생성이 끝나기 전에 다음 턴을 보내면
-   * 세션이 하나 더 만들어져 같은 대화가 둘로 쪼개진다.
-   */
-  const pendingSession = useRef<Promise<string | null> | null>(null);
   /** 지난 대화를 여는 중인가. 늦게 끝난 조회가 진행 중 대화를 덮어쓰면 안 된다. */
   const loadToken = useRef(0);
-
-  function enqueueSave(task: () => Promise<unknown>) {
-    // 저장 실패가 다음 저장을 막지 않게 체인을 끊어 둔다.
-    saveQueue.current = saveQueue.current.then(task, task);
-  }
-  const restored = useRef(false);
-
-  // 새로고침 뒤 첫 렌더에 한 번만 복원한다.
-  if (typeof window !== 'undefined' && !restored.current) {
-    restored.current = true;
-    const saved = loadSession();
-    if (saved?.messages?.length) {
-      conversationRef.current = saved.conversation ?? [];
-    }
-  }
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -175,15 +192,33 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     setDragging(false);
   }, [open, pending]);
 
+  // 글자가 바뀌면 짚어 둔 위치는 버린다.
+  useEffect(() => {
+    setHintIndex(-1);
+  }, [input]);
+
+  /**
+   * Esc 로 닫았거나 방금 골라 넣은 글이면 띄우지 않는다. 열림 여부를 boolean 으로
+   * 들면 «닫자마자 input 이 바뀌어 다시 열리는» 순서 문제가 생긴다.
+   */
+  const hints =
+    !pending && files.length === 0 && input !== hintsHiddenFor
+      ? matchHints(input)
+      : [];
+
+  function applyHint(hint: string) {
+    setInput(hint);
+    setHintsHiddenFor(hint);
+    inputRef.current?.focus();
+  }
+
   function resetConversation() {
     setMessages([]);
     setFiles([]);
     setInput('');
     setError(null);
-    conversationRef.current = [];
     sessionIdRef.current = null;
     setCurrentSessionId(null);
-    pendingSession.current = null;
     loadToken.current += 1;
     setLoadingHistory(false);
     try {
@@ -221,18 +256,13 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
       }))
     );
 
-    // 모델에 되돌려줄 원본은 마지막으로 저장된 것이 가장 완전하다.
-    const lastBlocks = [...rows]
-      .reverse()
-      .find((row) => Array.isArray(row.contentBlocks))?.contentBlocks;
-    conversationRef.current = (lastBlocks as unknown[]) ?? [];
-
     sessionIdRef.current = sessionId;
     setCurrentSessionId(sessionId);
-    pendingSession.current = null;
     setFiles([]);
     setInput('');
     setError(null);
+    // 좁은 화면에서는 목록이 대화를 덮고 있다. 골랐으면 비켜 준다.
+    if (window.innerWidth <= 720) setSidebarOpen(false);
   }
 
   function dropAttachment(id: string) {
@@ -257,16 +287,20 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     );
   }
 
-  useEffect(() => {
-    if (messages.length === 0) return;
+  function persist(shown: Message[], sessionId: string | null) {
     saveSession({
-      messages: messages.map((m) => ({
+      messages: shown.map((m) => ({
         role: m.role,
         content: m.content,
         toolCalls: m.toolCalls,
       })),
-      conversation: conversationRef.current,
+      sessionId,
     });
+  }
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    persist(messages, sessionIdRef.current);
   }, [messages]);
 
   useEffect(() => {
@@ -309,8 +343,17 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     }
   }, [input, open]);
 
-  async function send() {
-    const text = input.trim();
+  /**
+   * 선택지를 누르면 그 값을 그대로 다음 발화로 보낸다.
+   * 입력창에 넣고 사용자가 다시 엔터를 치게 하면 두 번 일하는 꼴이다.
+   */
+  function chooseOption(value: string) {
+    if (pending || loadingHistory) return;
+    void send(value);
+  }
+
+  async function send(spoken?: string) {
+    const text = (spoken ?? input).trim();
     if ((!text && files.length === 0) || pending || loadingHistory) return;
 
     const shownBefore = messages.length;
@@ -319,18 +362,10 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
       content: text,
       attachments: files,
     };
-    const history = [
-      ...(conversationRef.current.length > 0
-        ? conversationRef.current
-        : messages.map((message) => ({
-            role: message.role,
-            content: message.content || '(첨부 파일만 보냄)',
-          }))),
-      { role: 'user', content: text || '(첨부 파일만 보냄)' },
-    ];
 
     setMessages((previous) => [...previous, outgoing]);
-    setInput('');
+    // 선택지로 보낸 것이면 입력창은 그대로 둔다 — 사용자가 쓰다 만 글이 있을 수 있다.
+    if (spoken === undefined) setInput('');
     // 첨부는 여기서 비우지 않는다 — 어시스턴트가 "카테고리 뭘로 할까요" 처럼 되물으면
     // 그 턴에 파일이 사라져서, 사용자가 답할 때 이미지를 다시 첨부해야 한다.
     // 업로드 도구가 실제로 썼다고 알려줄 때(consumedAttachments)만 비운다.
@@ -338,63 +373,48 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     setPending(true);
 
     /**
-     * 이 턴이 저장될 세션을 «여기서 고정»한다.
-     *
-     * 큐 안에서 sessionIdRef 를 읽으면, 저장이 밀린 사이 사용자가 다른 대화를 열었을 때
-     * 이 턴의 답변이 그 대화에 가서 붙는다. 세션을 promise 로 묶어 두면 나중에
-     * 무엇을 열든 이 턴은 자기 세션에만 저장된다.
+     * 대화는 서버가 들고 있으므로 세션이 먼저 있어야 말을 보낼 수 있다.
+     * 기록이 부가 기능이던 때와 달리, 생성이 실패하면 이 턴은 진행할 수 없다.
      */
-    let turnSession: Promise<string | null>;
-    if (sessionIdRef.current !== null) {
-      turnSession = Promise.resolve(sessionIdRef.current);
-    } else if (pendingSession.current) {
-      // 같은 대화의 다음 턴. 진행 중인 생성을 함께 기다린다.
-      turnSession = pendingSession.current;
-    } else {
-      const started: Promise<string | null> = createSession(
-        titleFrom(text || '첨부 파일')
-      ).then((session) => {
-        const id = session?.id ?? null;
-
-        // 실패한 결과를 물고 있으면 이후 턴이 전부 그 null 을 받아 기록이
-        // 영영 안 남는다. 다만 그 사이 새 대화가 시작됐을 수 있으므로
-        // 아직 «내가 걸어둔» 생성일 때만 비운다.
-        if (!id) {
-          if (pendingSession.current === started) pendingSession.current = null;
-          return null;
-        }
-
-        // 그 사이 다른 대화를 열었으면 현재 세션을 덮지 않는다.
-        if (sessionIdRef.current === null && pendingSession.current === started) {
-          sessionIdRef.current = id;
-          setCurrentSessionId(id);
-        }
-        return id;
-      });
-      pendingSession.current = started;
-      turnSession = started;
+    let sessionId = sessionIdRef.current;
+    if (!sessionId) {
+      const created = await createSession(titleFrom(text || '첨부 파일'));
+      if (!created?.id) {
+        setMessages((previous) => previous.slice(0, shownBefore));
+        setInput(text);
+        setPending(false);
+        setError('대화를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      sessionId = created.id;
+      sessionIdRef.current = sessionId;
+      setCurrentSessionId(sessionId);
+      // 목록에 방금 만든 대화가 보여야 한다.
+      setSessionRevision((n) => n + 1);
     }
 
-    // 기록 저장은 대화를 막지 않는다 — 실패해도 답변은 그대로 진행된다.
-    enqueueSave(async () => {
-      const id = await turnSession;
-      if (!id) return;
-      await appendMessage(id, { role: 'user', content: text });
-    });
-
     const body = new FormData();
-    body.append('messages', JSON.stringify(history));
+    body.append('content', text);
     for (const { id, file } of files) {
       body.append('files', file);
       body.append('fileIds', id);
     }
 
-    // 입력창은 비운다. 보낸 파일은 위 대화 말풍선에 파일명으로 남는다.
-    setFiles([]);
+    // 이번 전송에 실은 것만 비운다. 세션 생성을 기다리는 동안 사용자가 파일을 더 붙일 수
+    // 있는데, 전부 비우면 보내지도 않은 그 파일이 조용히 사라진다.
+    const sentIds = new Set(files.map((attachment) => attachment.id));
+    setFiles((previous) =>
+      previous.filter((attachment) => !sentIds.has(attachment.id))
+    );
 
+    /**
+     * 서버가 이 발화를 받기 전에 거절했을 때만 쓴다 (4xx). 그 경우 서버는 세션 확인·
+     * 동시 턴 검사에서 막은 것이라 발화를 저장하지 않았다.
+     * 스트림이 시작된 뒤나 5xx 에는 저장됐을 수 있으므로 되돌리면 같은 말이 두 번 남는다.
+     */
     function restoreDraft(message: string) {
       setMessages((previous) => previous.slice(0, shownBefore));
-      setInput(text);
+      if (spoken === undefined) setInput(text);
       setFiles(files);
       setError(message);
     }
@@ -408,7 +428,10 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     const ensureBubble = () => {
       if (bubbleAdded) return;
       bubbleAdded = true;
-      setMessages((previous) => [...previous, { role: 'assistant', content: '' }]);
+      setMessages((previous) => [
+        ...previous,
+        { role: 'assistant', content: '' },
+      ]);
     };
 
     const updateLast = (patch: Partial<Message>) => {
@@ -423,83 +446,78 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     let streamedText = '';
     let toolStarted = false;
 
+    /**
+     * 연결이 중간에 끊겼을 때. 저장은 손대지 않는다 — 서버가 자기 쪽에서 끝까지
+     * 돌고 이 턴을 저장한다. 여기서 또 쓰면 같은 턴이 두 벌로 남는다.
+     */
     function finishInterrupted(message: string) {
       setError(message);
-      const conversation = [
-        ...history,
-        {
-          role: 'assistant',
-          content: `${streamedText}\n\n(응답이 중간에 끊겼다. 이 요청에서 이미 실행된 도구가 있을 수 있으니 다시 실행하기 전에 조회로 확인한다.)`,
-        },
-      ];
-      conversationRef.current = conversation;
       if (bubbleAdded) updateLast({ runningTool: undefined });
-      enqueueSave(async () => {
-        const id = await turnSession;
-        if (!id) return;
-        await appendMessage(id, {
-          role: 'assistant',
-          content: streamedText,
-          contentBlocks: conversation,
-        });
-      });
     }
 
     try {
       const controller = new AbortController();
       abortRef.current = controller;
-      const res = await fetchWithRefresh('/api/ai/assistant/chat', {
-        method: 'POST',
-        body,
-        signal: controller.signal,
-        credentials: 'include',
-      });
+      const res = await fetchWithRefresh(
+        `/api/proxy/ai/assistant/sessions/${sessionId}/messages`,
+        {
+          method: 'POST',
+          body,
+          signal: controller.signal,
+          credentials: 'include',
+        }
+      );
       if (!res.ok || !res.body) {
         const fallback = await res
           .json()
           .then((b: { message?: string }) => b.message)
           .catch(() => undefined);
-        restoreDraft(fallback ?? '요청을 완료하지 못했습니다.');
+        const message = fallback ?? '요청을 완료하지 못했습니다.';
+
+        if (res.status >= 400 && res.status < 500) {
+          restoreDraft(message);
+        } else {
+          // 5xx 는 발화를 저장한 뒤 터졌을 수 있다. 말풍선을 남기고 알리기만 한다.
+          setError(message);
+        }
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      const reader = res.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new EventSourceParserStream({ maxBufferSize: 1_000_000 }))
+        .getReader();
       let settled = false;
       let data: {
         message?: string;
         toolCalls?: { name: string; input?: unknown; result?: unknown }[];
         consumedIds?: string[];
-        conversation?: unknown[];
       } = {};
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split('\n\n');
-        buffer = frames.pop() ?? '';
+        if (!value.event) continue;
 
-        for (const frame of frames) {
-          const event = /^event: (.+)$/m.exec(frame)?.[1];
-          const payload = /^data: (.+)$/m.exec(frame)?.[1];
-          if (!event || !payload) continue;
-
-          const parsed = JSON.parse(payload);
-          if (event === 'delta') {
-            streamedText += parsed.text as string;
-            updateLast({ content: streamedText });
-          } else if (event === 'tool') {
-            toolStarted = true;
-            updateLast({ runningTool: parsed.status === 'running' ? parsed.name : undefined });
-          } else {
-            // done · aborted · error 는 모두 마지막 상태를 싣고 온다.
-            settled = true;
-            data = parsed;
-            if (event === 'error') setError(parsed.message ?? '요청을 처리하지 못했습니다.');
-          }
+        const parsed = JSON.parse(value.data);
+        if (value.event === 'delta') {
+          streamedText += parsed.text as string;
+          updateLast({ content: streamedText });
+        } else if (value.event === 'tool') {
+          toolStarted = true;
+          updateLast({
+            runningTool: parsed.status === 'running' ? parsed.name : undefined,
+          });
+        } else if (value.event === 'session_title') {
+          // 서버가 첫 발화에서 제목을 딴다. 화면에 제목을 쓰는 곳은 없고 목록은
+          // 열 때 다시 조회하므로 흘려보낸다 — 다만 done 으로 오인되면 안 된다.
+        } else {
+          // done · aborted · error 는 모두 마지막 상태를 싣고 온다.
+          settled = true;
+          data = parsed;
+          if (value.event === 'error')
+            setError(parsed.message ?? '요청을 처리하지 못했습니다.');
         }
       }
 
@@ -510,29 +528,10 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
         return;
       }
 
-      if (Array.isArray(data.conversation)) {
-        conversationRef.current = data.conversation;
-      }
-
       updateLast({
         content: data.message ?? streamedText,
         toolCalls: data.toolCalls,
         runningTool: undefined,
-      });
-
-      // 이 답변이 «시작될 때의» 세션에 저장한다. 큐에 넣어 두면 세션 생성이
-      // 늦게 끝나도 순서가 지켜진다.
-      const answer = data.message ?? streamedText;
-      enqueueSave(async () => {
-        const id = await turnSession;
-        if (!id) return;
-        await appendMessage(id, {
-          role: 'assistant',
-          content: answer,
-          // 원본을 통째로 남겨야 나중에 불러왔을 때 도구 결과까지 이어진다.
-          contentBlocks: data.conversation,
-          toolCalls: data.toolCalls,
-        });
       });
 
       const consumed = data.consumedIds ?? [];
@@ -546,14 +545,14 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
             : '연결이 끊겼습니다. 일부 작업이 이미 반영됐을 수 있으니 확인한 뒤 다시 요청해 주세요.'
         );
       } else if ((error as Error)?.name === 'AbortError') {
-        // 사용자가 Esc 로 멈춘 것이다. 실패가 아니므로 보낸 말과 첨부를 되돌린다.
-        setMessages((previous) => previous.slice(0, shownBefore));
-        setInput(text);
-        setFiles(files);
-        // conversationRef 는 건드리지 않는다. 이번 턴은 서버 응답을 받아야 들어가므로
-        // 여기서 자르면 직전에 성공한 턴이 날아간다.
+        // 사용자가 Esc 로 멈췄다. 보낸 말을 입력창으로 되돌리지 않는다 —
+        // 서버는 이 발화를 이미 저장했으므로, 되돌려서 다시 보내면 같은 말이 두 번 남는다.
+        finishInterrupted(
+          '중단했습니다. 이어서 말씀하시면 그 대화에서 계속됩니다.'
+        );
       } else {
-        restoreDraft('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        // 헤더까지 받은 뒤의 실패라 서버에 발화가 남았을 수 있다. 같은 이유로 되돌리지 않는다.
+        finishInterrupted('연결이 끊겼습니다. 잠시 후 이어서 말씀해 주세요.');
       }
     } finally {
       abortRef.current = null;
@@ -565,311 +564,389 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className={styles.panel}
+        className={`${styles.panel} ${sidebarOpen ? styles.withSidebar : ''}`}
         overlayClassName={styles.overlay}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
         }}
+        onEscapeKeyDown={(event) => {
+          // Radix 는 document 캡처 단계에서 Esc 를 받는다 — textarea 에서
+          // stopPropagation 해 봐야 이미 늦어 패널이 통째로 닫힌다.
+          if (hints.length === 0) return;
+          event.preventDefault();
+          setHintsHiddenFor(input);
+        }}
       >
-        <SheetHeader className={styles.header}>
-          <span aria-hidden className={styles.brandMark}>
-            <span className={buttonStyles.knob}>
-              <span className={`${buttonStyles.ring} ${styles.brandRing}`} />
-              <AlmondMark className={buttonStyles.logo} />
-            </span>
-          </span>
-          <div className={styles.heading}>
-            <SheetTitle className={styles.title}>아몬드영 AI 챗봇</SheetTitle>
-            <SheetDescription className={styles.subtitle}>
-              상품 관리부터 엑셀 일괄 작업까지
-            </SheetDescription>
-          </div>
-          <HistoryMenu
-            currentId={currentSessionId}
-            onOpen={(id) => void openSession(id)}
-            onDeleted={(id) => {
-              // 지워진 세션에 계속 저장하면 404 로 조용히 사라진다.
-              // 화면의 대화는 그대로 두고 다음 발화부터 새 세션에 남긴다.
-              if (sessionIdRef.current !== id) return;
-              sessionIdRef.current = null;
-              setCurrentSessionId(null);
-              pendingSession.current = null;
-            }}
-            disabled={pending || loadingHistory}
-          />
-          {messages.length > 0 && (
-            <button
-              type="button"
-              className={styles.resetButton}
-              onClick={resetConversation}
-              disabled={pending}
-              title="대화 새로 시작"
-            >
-              <RotateCcw size={15} aria-hidden />
-              <span className="sr-only">대화 새로 시작</span>
-            </button>
-          )}
-        </SheetHeader>
+        <IconRail
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((previous) => !previous)}
+          onNew={resetConversation}
+          disabled={pending || loadingHistory}
+        />
 
-        <div
-          ref={scrollRef}
-          className={styles.conversation}
-          onScroll={(event) => {
-            const box = event.currentTarget;
-            const gap = box.scrollHeight - box.scrollTop - box.clientHeight;
-            stickToBottom.current = gap < 80;
+        <SessionSidebar
+          open={sidebarOpen}
+          currentId={currentSessionId}
+          revision={sessionRevision}
+          onOpen={(id) => void openSession(id)}
+          onNew={resetConversation}
+          onClose={() => setSidebarOpen(false)}
+          onDeleted={(id) => {
+            // 지워진 세션에 계속 보내면 404 가 난다. 화면의 대화는 그대로 두고
+            // 다음 발화부터 새 세션에 남긴다.
+            if (sessionIdRef.current !== id) return;
+            sessionIdRef.current = null;
+            setCurrentSessionId(null);
+            // 저장 effect 는 messages 만 구독한다 — 삭제는 messages 를 안 바꾸므로
+            // 여기서 직접 지우지 않으면 새로고침 뒤에 지워진 id 가 되살아난다.
+            persist(messages, null);
           }}
-        >
-          {messages.length === 0 && (
-            <section className={styles.welcome}>
-              <span className={styles.eyebrow}>함께하는 상품 관리</span>
-              <h2>
-                어떤 작업을
-                <br />
-                도와드릴까요?
-              </h2>
-              <p>
-                상품을 찾고 수정하거나,
-                <br />
-                엑셀로 여러 상품을 한 번에 관리하세요.
-              </p>
-              <div className={styles.suggestions}>
-                {SUGGESTIONS.map(
-                  ({ icon: Icon, title, description, prompt }) => (
-                    <button
-                      key={title}
-                      type="button"
-                      className={styles.suggestion}
-                      onClick={() => {
-                        setInput(prompt);
-                        inputRef.current?.focus();
-                      }}
-                    >
-                      <span className={styles.suggestionIcon}>
-                        <Icon size={18} aria-hidden />
-                      </span>
-                      <span>
-                        <strong>{title}</strong>
-                        <small>{description}</small>
-                      </span>
-                      <ArrowRight size={15} aria-hidden />
-                    </button>
-                  )
-                )}
-              </div>
-            </section>
-          )}
+          disabled={pending || loadingHistory}
+        />
+
+        <div className={styles.main}>
+          <SheetHeader className={styles.header}>
+            <span aria-hidden className={styles.brandMark}>
+              <AssistantFace size="md" />
+            </span>
+            <div className={styles.heading}>
+              <SheetTitle className={styles.title}>{ASSISTANT_NAME}</SheetTitle>
+              <SheetDescription className={styles.subtitle}>
+                업무는 저한테 맡겨 주세요!
+              </SheetDescription>
+            </div>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className={styles.resetButton}
+                onClick={resetConversation}
+                disabled={pending}
+                title="대화 새로 시작"
+              >
+                <RotateCcw size={15} aria-hidden />
+                <span className="sr-only">대화 새로 시작</span>
+              </button>
+            )}
+          </SheetHeader>
 
           <div
-            role="log"
-            aria-label="대화 내용"
-            aria-live="polite"
-            aria-relevant="additions"
-            className={styles.messages}
+            ref={scrollRef}
+            className={styles.conversation}
+            onScroll={(event) => {
+              const box = event.currentTarget;
+              const gap = box.scrollHeight - box.scrollTop - box.clientHeight;
+              stickToBottom.current = gap < 80;
+            }}
           >
-            {messages
-            .filter(
-              (message) =>
-                message.role === 'user' ||
-                Boolean(message.content) ||
-                Boolean(message.runningTool) ||
-                (message.toolCalls?.length ?? 0) > 0
-            )
-            .map((message, index) => (
-              <div
-                key={index}
-                className={`${styles.message} ${message.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
-              >
-                <span className={styles.messageAuthor}>
-                  {message.role === 'user' ? '나' : '아몬드영 AI'}
-                </span>
-                <div className={styles.bubble}>
-                  {message.role === 'assistant' ? (
-                    <div className={styles.markdown}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                  ) : message.content ? (
-                    <p className={styles.userText}>{message.content}</p>
-                  ) : null}
-                  {message.attachments && message.attachments.length > 0 && (
-                    <div className={styles.sentAttachments}>
-                      {message.attachments.map(({ id, file }) =>
-                        file.type.startsWith('image/') ? (
-                          // 이미지는 무엇을 보냈는지 바로 보이게 썸네일로 둔다.
-                          <span key={id} className={styles.sentImage}>
-                            <ImageAttachment file={file} />
-                          </span>
-                        ) : (
-                          <span key={id}>
-                            <Paperclip size={13} aria-hidden />
-                            <span>{file.name}</span>
-                          </span>
-                        )
+            {messages.length === 0 && (
+              <section className={styles.welcome}>
+                <div className={styles.hero}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className={styles.speech}
+                    src="/assistant/bubble-hello.png"
+                    alt="안녕하세요!"
+                  />
+                  <AssistantFace mood="wave" size="lg" />
+                </div>
+
+                <p className={styles.greeting}>
+                  저는 <strong>{ASSISTANT_NAME}</strong>예요!
+                </p>
+                <p className={styles.greetingSub}>
+                  찾고, 고치고, 한 번에 올리고 — 뭐든 시켜만 주세요!
+                </p>
+
+                <div className={styles.chips}>
+                  {SUGGESTIONS.map(({ icon: Icon, label, prompt }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={styles.chip}
+                      onClick={() => void send(prompt)}
+                    >
+                      <span className={styles.chipIcon}>
+                        <Icon size={17} strokeWidth={1.8} aria-hidden />
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <p className={styles.orRow}>
+                  <span>또는 아래에 직접 입력하세요</span>
+                </p>
+
+                <p className={styles.betaNote}>
+                  베타 테스트로 아직은 상품 관련 일만 처리할 수 있어요
+                </p>
+              </section>
+            )}
+
+            <div
+              role="log"
+              aria-label="대화 내용"
+              aria-live="polite"
+              aria-relevant="additions"
+              className={styles.messages}
+            >
+              {messages
+                .filter(
+                  (message) =>
+                    message.role === 'user' ||
+                    Boolean(message.content) ||
+                    Boolean(message.runningTool) ||
+                    (message.toolCalls?.length ?? 0) > 0
+                )
+                .map((message, index) => (
+                  <div
+                    key={index}
+                    className={`${styles.message} ${message.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
+                  >
+                    <span className={styles.messageAuthor}>
+                      {message.role === 'assistant' && <AssistantFace />}
+                      {message.role === 'user' ? '나' : ASSISTANT_NAME}
+                    </span>
+                    <div className={styles.bubble}>
+                      {message.role === 'assistant' ? (
+                        <div className={styles.markdown}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : message.content ? (
+                        <p className={styles.userText}>{message.content}</p>
+                      ) : null}
+                      {message.attachments &&
+                        message.attachments.length > 0 && (
+                          <div className={styles.sentAttachments}>
+                            {message.attachments.map(({ id, file }) =>
+                              file.type.startsWith('image/') ? (
+                                // 이미지는 무엇을 보냈는지 바로 보이게 썸네일로 둔다.
+                                <span key={id} className={styles.sentImage}>
+                                  <ImageAttachment file={file} />
+                                </span>
+                              ) : (
+                                <span key={id}>
+                                  <Paperclip size={13} aria-hidden />
+                                  <span>{file.name}</span>
+                                </span>
+                              )
+                            )}
+                          </div>
+                        )}
+                      {message.runningTool && (
+                        <p className={styles.runningTool}>
+                          <Loader2
+                            size={13}
+                            className={styles.spin}
+                            aria-hidden
+                          />
+                          {TOOL_LABELS[message.runningTool] ?? '처리'} 중…
+                        </p>
+                      )}
+                      {message.toolCalls && message.toolCalls.length > 0 && (
+                        <ToolResults
+                          calls={message.toolCalls}
+                          onNavigate={() => onOpenChange(false)}
+                          onChoose={chooseOption}
+                          busy={pending || loadingHistory}
+                        />
                       )}
                     </div>
-                  )}
-                  {message.runningTool && (
-                    <p className={styles.runningTool}>
-                      <Loader2 size={13} className={styles.spin} aria-hidden />
-                      {TOOL_LABELS[message.runningTool] ?? '처리'} 중…
-                    </p>
-                  )}
-                  {message.toolCalls && message.toolCalls.length > 0 && (
-                    <ToolResults
-                      calls={message.toolCalls}
-                      onNavigate={() => onOpenChange(false)}
-                    />
-                  )}
-                </div>
+                  </div>
+                ))}
+            </div>
+
+            {pending && (
+              <div role="status" className={styles.thinking}>
+                <AssistantFace mood="thinking" size="md" />
+                <span>
+                  요청을 처리하고 있어요
+                  <span className={styles.thinkingDots}>…</span>
+                </span>
               </div>
-            ))}
+            )}
           </div>
 
-          {pending && (
-            <div role="status" className={styles.thinking}>
-              <Loader2 size={16} className={styles.spinner} aria-hidden />
-              <span>
-                요청을 처리하고 있어요
-                <span className={styles.thinkingDots}>…</span>
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.footer}>
-          {error && (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          )}
-          <form
-            className={styles.composer}
-            onDragEnter={(event) => {
-              if (!event.dataTransfer.types.includes('Files')) return;
-              event.preventDefault();
-              dragDepth.current += 1;
-              setDragging(true);
-            }}
-            onDragOver={(event) => {
-              if (!event.dataTransfer.types.includes('Files')) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'copy';
-              setDragging(true);
-            }}
-            onDragLeave={() => {
-              dragDepth.current = Math.max(0, dragDepth.current - 1);
-              if (dragDepth.current === 0) setDragging(false);
-            }}
-            onDrop={(event) => {
-              if (!event.dataTransfer.types.includes('Files')) return;
-              event.preventDefault();
-              dragDepth.current = 0;
-              setDragging(false);
-              attachFiles(Array.from(event.dataTransfer.files));
-            }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send();
-            }}
-          >
-            {dragging && (
-              <div className={styles.dropHint} role="status">
-                <Paperclip size={28} aria-hidden />
-                <strong>이미지나 엑셀 파일을 여기에 놓으세요</strong>
-              </div>
+          <div className={styles.footer}>
+            {error && (
+              <p role="alert" className={styles.error}>
+                {error}
+              </p>
             )}
-            {files.length > 0 && (
-              <div className={styles.attachments}>
-                {files.map(({ id, file }) => (
-                  <span
-                    key={id}
-                    className={
-                      file.type.startsWith('image/')
-                        ? styles.imageAttachment
-                        : styles.fileChip
-                    }
-                    title={file.name}
-                  >
-                    {file.type.startsWith('image/') ? (
-                      <ImageAttachment file={file} />
-                    ) : (
-                      <>
-                        <FileSpreadsheet size={15} aria-hidden />
-                        <span>{file.name}</span>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        dropAttachment(id)
-                      }
-                      aria-label={`${file.name} 첨부 취소`}
-                    >
-                      <X size={13} aria-hidden />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <textarea
-              ref={inputRef}
-              value={input}
-              readOnly={pending}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing &&
-                  event.nativeEvent.keyCode !== 229
-                ) {
-                  event.preventDefault();
-                  void send();
-                }
+            <form
+              className={styles.composer}
+              onDragEnter={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                dragDepth.current += 1;
+                setDragging(true);
               }}
-              rows={2}
-              aria-label="메시지 입력"
-              placeholder="상품명이나 필요한 작업을 입력해 주세요"
-              className={styles.textarea}
-            />
-            <div className={styles.composerActions}>
-              <div className={styles.attachAction}>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,image/*"
-                  multiple
-                  hidden
-                  onChange={(event) => {
-                    attachFiles(Array.from(event.target.files ?? []));
-                    event.target.value = '';
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="파일 첨부 (엑셀 양식 · 이미지)"
-                  className={styles.attachButton}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
+                setDragging(true);
+              }}
+              onDragLeave={() => {
+                dragDepth.current = Math.max(0, dragDepth.current - 1);
+                if (dragDepth.current === 0) setDragging(false);
+              }}
+              onDrop={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return;
+                event.preventDefault();
+                dragDepth.current = 0;
+                setDragging(false);
+                attachFiles(Array.from(event.dataTransfer.files));
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+            >
+              {dragging && (
+                <div className={styles.dropHint} role="status">
+                  <Paperclip size={28} aria-hidden />
+                  <strong>이미지나 엑셀 파일을 여기에 놓으세요</strong>
+                </div>
+              )}
+              {hints.length > 0 && (
+                <div
+                  className={styles.hints}
+                  role="listbox"
+                  aria-label="추천 질문"
                 >
-                  <Paperclip size={18} aria-hidden />
+                  {hints.map((hint, index) => (
+                    <button
+                      key={hint}
+                      type="button"
+                      role="option"
+                      aria-selected={index === hintIndex}
+                      className={`${styles.hint} ${index === hintIndex ? styles.hintActive : ''}`}
+                      // 클릭 전에 blur 가 먼저 나면 입력 포커스가 흔들린다.
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applyHint(hint)}
+                    >
+                      <Search size={13} aria-hidden />
+                      <span>{hint}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {files.length > 0 && (
+                <div className={styles.attachments}>
+                  {files.map(({ id, file }) => (
+                    <span
+                      key={id}
+                      className={
+                        file.type.startsWith('image/')
+                          ? styles.imageAttachment
+                          : styles.fileChip
+                      }
+                      title={file.name}
+                    >
+                      {file.type.startsWith('image/') ? (
+                        <ImageAttachment file={file} />
+                      ) : (
+                        <>
+                          <FileSpreadsheet size={15} aria-hidden />
+                          <span>{file.name}</span>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => dropAttachment(id)}
+                        aria-label={`${file.name} 첨부 취소`}
+                      >
+                        <X size={13} aria-hidden />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={inputRef}
+                value={input}
+                readOnly={pending}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (hints.length > 0) {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      const step = event.key === 'ArrowDown' ? 1 : -1;
+                      // -1(입력창)까지 한 자리로 세고 순환시킨다.
+                      setHintIndex(
+                        (previous) =>
+                          ((previous + step + hints.length + 2) %
+                            (hints.length + 1)) -
+                          1
+                      );
+                      return;
+                    }
+                    if (
+                      event.key === 'Enter' &&
+                      hintIndex >= 0 &&
+                      !event.nativeEvent.isComposing &&
+                      event.nativeEvent.keyCode !== 229
+                    ) {
+                      event.preventDefault();
+                      applyHint(hints[hintIndex]);
+                      return;
+                    }
+                  }
+                  if (
+                    event.key === 'Enter' &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing &&
+                    event.nativeEvent.keyCode !== 229
+                  ) {
+                    event.preventDefault();
+                    void send();
+                  }
+                }}
+                rows={2}
+                aria-label="메시지 입력"
+                placeholder="상품명이나 필요한 작업을 입력해 주세요"
+                className={styles.textarea}
+              />
+              <div className={styles.composerActions}>
+                <div className={styles.attachAction}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,image/*"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                      attachFiles(Array.from(event.target.files ?? []));
+                      event.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="파일 첨부 (엑셀 양식 · 이미지)"
+                    className={styles.attachButton}
+                  >
+                    <Paperclip size={18} aria-hidden />
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  disabled={pending || (!input.trim() && files.length === 0)}
+                  aria-label="보내기"
+                  className={styles.sendButton}
+                >
+                  <ArrowUp size={19} aria-hidden />
                 </button>
               </div>
-              <button
-                type="submit"
-                disabled={pending || (!input.trim() && files.length === 0)}
-                aria-label="보내기"
-                className={styles.sendButton}
-              >
-                <ArrowUp size={19} aria-hidden />
-              </button>
-            </div>
-          </form>
-          <p className={styles.keyboardHint}>
-            Enter 전송 <span>·</span> Shift + Enter 줄바꿈
-          </p>
+            </form>
+            <p className={styles.keyboardHint}>
+              Enter 전송 <span>·</span> Shift + Enter 줄바꿈
+            </p>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

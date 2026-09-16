@@ -1,23 +1,92 @@
 'use client';
 
 import Link from 'next/link';
-import { ExternalLink, ImageOff } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  ImageOff,
+} from 'lucide-react';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { buildDraftEditPath } from '@/features/mall/my-drafts/lib/draft-edit-path';
 import styles from './assistant-panel.module.css';
 
 /**
  * 도구 결과를 화면으로 보여준다.
- *
- * 모델이 마크다운 표를 그리면 448px 패널에 20행이 쏟아져 읽을 수가 없다. 그래서
- * 목록형 결과는 여기서 카드로 그리고, 모델에게는 표를 쓰지 말라고 지시한다.
- * 아직 렌더러가 없는 도구는 조용히 실행됨 한 줄로만 남는다.
  */
-
 type ToolCall = { name: string; input?: unknown; result?: unknown };
+
+/** 한 쪽에 보여줄 카드 수. 패널이 448px 라 이 이상은 스크롤이 길어진다. */
+const PAGE_SIZE = 8;
 
 /** 링크로 이동할 때 패널을 닫는다. 열린 채로 두면 뒤에서 이동만 하고 화면은 그대로다. */
 type Nav = { onNavigate: () => void };
+
+type Choice = { label: string; value: string; hint?: string };
+
+/**
+ * 모델이 되물을 때 누를 항목.
+ */
+function asChoices(
+  result: unknown
+): { question: string; choices: Choice[] } | null {
+  if (!result || typeof result !== 'object') return null;
+  const body = result as {
+    ok?: unknown;
+    question?: unknown;
+    choices?: unknown;
+  };
+  if (
+    body.ok !== true ||
+    typeof body.question !== 'string' ||
+    !Array.isArray(body.choices)
+  ) {
+    return null;
+  }
+
+  const choices = body.choices.filter(
+    (c): c is Choice =>
+      Boolean(c) &&
+      typeof (c as Choice).label === 'string' &&
+      typeof (c as Choice).value === 'string'
+  );
+
+  return choices.length >= 2 ? { question: body.question, choices } : null;
+}
+
+function ChoiceCard({
+  question,
+  choices,
+  onChoose,
+  disabled,
+}: {
+  question: string;
+  choices: Choice[];
+  onChoose: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className={styles.choiceCard}>
+      <p className={styles.choiceQuestion}>{question}</p>
+      {choices.map((choice) => (
+        <button
+          key={choice.value}
+          type="button"
+          className={styles.choice}
+          // 답변이 도는 중에는 막는다. 안 막으면 두 번 눌려 같은 턴이 두 번 나간다.
+          disabled={disabled}
+          onClick={() => onChoose(choice.value)}
+        >
+          <span className={styles.choiceLabel}>{choice.label}</span>
+          {choice.hint && (
+            <span className={styles.choiceHint}>{choice.hint}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type ProductRow = {
   masterId?: string;
@@ -71,8 +140,17 @@ function ProductCards({
   /** 작성중 Draft 목록인가. 목적지와 「더 보기」가 갈린다. */
   draft?: boolean;
 } & Nav) {
-  const shown = rows.slice(0, 8);
-  const rest = (total ?? rows.length) - shown.length;
+  // 좁은 패널에 20개를 세로로 쏟으면 스크롤만 길어진다. 한 쪽에 8개씩 끊고
+  // 앞뒤로 넘긴다 — 받아온 것은 다 볼 수 있으면서 카드 영역 높이는 일정하다.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(Math.ceil(rows.length / PAGE_SIZE), 1);
+  const current = Math.min(page, pageCount - 1);
+  const shown = rows.slice(
+    current * PAGE_SIZE,
+    current * PAGE_SIZE + PAGE_SIZE
+  );
+  // 더 보기는 «받아오지 못한» 나머지다. 페이지로 넘길 수 있는 것은 여기서 빼지 않는다.
+  const rest = (total ?? rows.length) - rows.length;
 
   return (
     <div className={styles.productCards}>
@@ -98,7 +176,6 @@ function ProductCards({
             <div className={styles.productImage}>
               {resolvePublicFileUrl(p.thumbnail) ? (
                 // 외부 파일 도메인이 여러 곳이라 next/image 최적화 대상이 아니다.
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={resolvePublicFileUrl(p.thumbnail)!}
                   alt=""
@@ -133,6 +210,33 @@ function ProductCards({
           </Link>
         );
       })}
+
+      {pageCount > 1 && (
+        <div className={styles.pager}>
+          <button
+            type="button"
+            className={styles.pagerButton}
+            onClick={() => setPage(current - 1)}
+            disabled={current === 0}
+            aria-label="이전 상품"
+          >
+            <ChevronLeft size={14} aria-hidden />
+          </button>
+          <span className={styles.pagerLabel}>
+            {current * PAGE_SIZE + 1}–{current * PAGE_SIZE + shown.length} /{' '}
+            {rows.length}
+          </span>
+          <button
+            type="button"
+            className={styles.pagerButton}
+            onClick={() => setPage(current + 1)}
+            disabled={current >= pageCount - 1}
+            aria-label="다음 상품"
+          >
+            <ChevronRight size={14} aria-hidden />
+          </button>
+        </div>
+      )}
 
       {rest > 0 && (
         <Link
@@ -218,7 +322,11 @@ function touchedProduct(calls: ToolCall[]): {
     if (typeof from.masterId === 'string') masterId = from.masterId;
     // create_product 는 새 버전 id 를 `id` 로 준다.
     if (typeof from.versionId === 'string') versionId = from.versionId;
-    else if (!failed && typeof from.id === 'string' && call.name === 'create_product') {
+    else if (
+      !failed &&
+      typeof from.id === 'string' &&
+      call.name === 'create_product'
+    ) {
       versionId = from.id;
     }
 
@@ -243,6 +351,7 @@ export const TOOL_LABELS: Record<string, string> = {
   delete_product: '상품 삭제',
   restore_product: '상품 복구',
   unpublish_product: '상품 판매 중지',
+  ask_choice: '선택지 제시',
   upload_product_form: '엑셀 양식 업로드',
   list_bulk_sessions: '일괄 작업 목록 확인',
   get_bulk_session: '진행 상태 확인',
@@ -272,8 +381,21 @@ const PRODUCT_TOOLS = new Set([
 export function ToolResults({
   calls,
   onNavigate,
-}: { calls: ToolCall[] } & Nav) {
+  onChoose,
+  busy,
+}: {
+  calls: ToolCall[];
+  onChoose?: (value: string) => void;
+  busy?: boolean;
+} & Nav) {
   if (calls.length === 0) return null;
+
+  // 선택지는 마지막 것만 살린다 — 한 턴에 두 번 물었으면 앞의 것은 이미 지나간 질문이다.
+  const choicePrompt = calls
+    .filter((c) => c.name === 'ask_choice')
+    .map((c) => asChoices(c.result))
+    .filter((v): v is NonNullable<typeof v> => v !== null)
+    .at(-1);
 
   const cards = calls
     .filter((c) => PRODUCT_TOOLS.has(c.name))
@@ -289,6 +411,14 @@ export function ToolResults({
 
   return (
     <>
+      {choicePrompt && onChoose && (
+        <ChoiceCard
+          question={choicePrompt.question}
+          choices={choicePrompt.choices}
+          onChoose={onChoose}
+          disabled={busy}
+        />
+      )}
       {touched && (
         <Link
           href={

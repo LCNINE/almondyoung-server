@@ -3,14 +3,14 @@
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
 
 /**
- * 대화 기록 저장소 (user-service).
+ * 대화 기록 저장소 (ai 앱).
  *
- * 저장이 실패해도 대화는 계속 돌아야 한다 — 기록은 부가 기능이고, 여기서 예외를
- * 던지면 사용자가 방금 받은 답변까지 잃는다. 그래서 모든 함수가 실패를 삼키고
- * null 을 돌려준다. 호출부는 성공 여부만 보면 된다.
+ * 메시지 저장 은 ai 앱이 직접 한다 — 여기 있는 건 세션 CRUD 와 읽기뿐이다.
+ * 조회가 실패해도 대화는 계속 돌아야 하므로 모든 함수가 실패를 삼키고 null 을
+ * 돌려준다. 호출부는 성공 여부만 보면 된다.
  */
 
-const BASE = '/api/proxy/users/assistant-chat/sessions';
+const BASE = '/api/proxy/ai/assistant/sessions';
 
 export type StoredSession = {
   id: string;
@@ -38,10 +38,15 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
     if (!res.ok) return null;
     if (res.status === 204) return null;
 
-    // user-service 는 전역 ResponseInterceptor 로 { success, data } 를 씌운다.
+    // 서비스에 따라 전역 ResponseInterceptor 가 { success, data } 를 씌운다.
     // 벗기지 않으면 목록이 배열이 아니라 객체로 와서 렌더링이 터진다.
     const body: unknown = await res.json();
-    if (body && typeof body === 'object' && 'success' in body && 'data' in body) {
+    if (
+      body &&
+      typeof body === 'object' &&
+      'success' in body &&
+      'data' in body
+    ) {
       return (body as { data: T }).data;
     }
     return body as T;
@@ -69,21 +74,6 @@ export function listSessions(limit = 20) {
 
 export function loadMessages(sessionId: string) {
   return call<StoredMessage[]>(`/${sessionId}/messages`);
-}
-
-export function appendMessage(
-  sessionId: string,
-  message: {
-    role: 'user' | 'assistant';
-    content?: string;
-    contentBlocks?: unknown[];
-    toolCalls?: unknown[];
-  }
-) {
-  return call<StoredMessage>(`/${sessionId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify(message),
-  });
 }
 
 export function deleteSession(sessionId: string) {
