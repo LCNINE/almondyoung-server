@@ -19,7 +19,7 @@ import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
-import { lockPreparation, preparationExecutionFacts } from './outbound-preparation.locks';
+import { lockPreparation, lockedPreparationSession, preparationExecutionFacts } from './outbound-preparation.locks';
 import {
   preparationBlocked,
   OutboundPreparationResult,
@@ -125,6 +125,11 @@ export class SimpleOutboundService {
         ),
       )
       .limit(1);
+    if (openPlan?.status === 'active') {
+      const sessionId = await lockedPreparationSession(workItem.batchId, openPlan.id, tx);
+      if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+      return this.claimPrepared(workItem, openPlan.id, sessionId, actor, idempotencyKey, tx);
+    }
     const facts = await preparationExecutionFacts(workItem.batchId, actor.id, tx);
     if (openPlan?.status === 'draft' && Object.values(facts).some(Boolean)) {
       return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
@@ -184,15 +189,26 @@ export class SimpleOutboundService {
     if (started.state !== 'started') throw new Error('Preparation did not start a session');
     if (started.status !== 'active') return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
     const current = await this.loadWorkItem(shipmentId, tx);
-    const leaseVersion = await this.ensurePickerClaim(current, actor, idempotencyKey, tx);
+    return this.claimPrepared(current, started.planId, started.sessionId, actor, idempotencyKey, tx);
+  }
+
+  private async claimPrepared(
+    workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect,
+    planId: string,
+    sessionId: string,
+    actor: SimpleOutboundActor,
+    idempotencyKey: OutboundCommandKey,
+    tx: DbTx,
+  ): Promise<OutboundPreparationResult> {
+    const leaseVersion = await this.ensurePickerClaim(workItem, actor, idempotencyKey, tx);
     return {
       outcome: 'ready',
       context: {
         batchId: workItem.batchId,
-        workItemId: current.id,
-        shipmentId,
-        planId: started.planId,
-        sessionId: started.sessionId,
+        workItemId: workItem.id,
+        shipmentId: workItem.shipmentId,
+        planId,
+        sessionId,
         leaseVersion,
       },
     };

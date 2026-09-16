@@ -135,7 +135,7 @@ export function assembleOutbound(tx: DbTx) {
     barcodes,
     invariant,
   );
-  return { simple, picking, location: new LocationOutboundService(dbService, commands, simple) };
+  return { simple, picking, batches, location: new LocationOutboundService(dbService, commands, simple) };
 }
 
 export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {

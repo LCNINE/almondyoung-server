@@ -1,3 +1,5 @@
+import * as preparationLocks from './outbound-preparation.locks';
+import * as planLocks from '../picking/plan/picking-plan.locks';
 import { randomUUID } from 'crypto';
 import { eq, sql as sqlQuery } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -237,6 +239,214 @@ describeDb('outbound preparation committed concurrency', () => {
       }
     } finally {
       await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
+    }
+  });
+  it('resumes while direct picking.start holds the plan and waits for the already locked session', async () => {
+    const f = await fixture();
+    await observer.db.transaction((tx) => start(f, randomUUID(), tx));
+    const [plan] = await observer.db
+      .select()
+      .from(wmsTables.pickingPlans)
+      .where(eq(wmsTables.pickingPlans.batchId, f.batchId));
+    const direct = makeDb(DATABASE_URL!);
+    const resume = makeDb(DATABASE_URL!);
+    let releasePreparation!: () => void;
+    let releaseDirect!: () => void;
+    let planLocked!: () => void;
+    let preparationLocked!: () => void;
+    const beforeResume = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const beforeDirect = new Promise<void>((resolve) => {
+      releaseDirect = resolve;
+    });
+    const directAtLock = new Promise<void>((resolve) => {
+      planLocked = resolve;
+    });
+    const preparationAtLock = new Promise<void>((resolve) => {
+      preparationLocked = resolve;
+    });
+    const lockPreparation = preparationLocks.lockPreparation;
+    const spy = jest.spyOn(preparationLocks, 'lockPreparation').mockImplementation(async (...args) => {
+      const aggregate = await lockPreparation(...args);
+      preparationLocked();
+      await beforeResume;
+      return aggregate;
+    });
+    let a: Promise<unknown> | undefined;
+    let b: Promise<unknown> | undefined;
+    try {
+      const [{ pid: directPid }] = await direct.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
+      const [{ pid: resumePid }] = await resume.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
+      // Hold the exact first lock of startSession's historical-start branch before invoking
+      // the real direct API. Preparation then acquires its invariant/session locks mid-operation.
+      b = direct.db.transaction(async (tx) => {
+        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '5s'`);
+        await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, plan.id)).for('update');
+        planLocked();
+        await beforeDirect;
+        return assembleOutbound(tx).picking.start(
+          { batchId: f.batchId, planId: plan.id, actorId: f.actorId, idempotencyKey: randomUUID() },
+          tx,
+        );
+      });
+      const resultB = b.then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
+      await directAtLock;
+      a = resume.db.transaction(async (tx) => {
+        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '5s'`);
+        return start(f, randomUUID(), tx);
+      });
+      const resultA = a.then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
+      await Promise.race([
+        preparationAtLock,
+        resultA.then((result) => {
+          throw new Error(JSON.stringify(result));
+        }),
+      ]);
+      releaseDirect();
+      let waiting = false;
+      const deadline = Date.now() + 3000;
+      while (!waiting && Date.now() < deadline) {
+        const [row] = await observer.sql<
+          { waiting: boolean }[]
+        >`select ${resumePid}::int = any(pg_blocking_pids(${directPid}::int)) as waiting`;
+        waiting = row.waiting;
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      releasePreparation();
+      expect(await resultA).toMatchObject({ ok: true, value: { status: 'in_progress' } });
+      const directOutcome = await resultB;
+      if ('error' in directOutcome) throw directOutcome.error;
+      expect(directOutcome).toMatchObject({ ok: true, value: { state: 'started' } });
+      await assertSingleSession(f, 1);
+    } finally {
+      releaseDirect();
+      releasePreparation();
+      spy.mockRestore();
+      await Promise.allSettled([a, b].filter((value) => value !== undefined));
+      await Promise.all([direct.sql.end(), resume.sql.end()]);
+      await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
+    }
+  });
+
+  it('rejects a member added after optimistic discovery before acquiring its new fulfillment component', async () => {
+    const f = await observer.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const other = await observer.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await tx
+        .delete(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, seeded.workItemId));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ warehouseId: f.warehouseId })
+        .where(eq(wmsTables.shipments.id, seeded.shipmentId));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ warehouseId: f.warehouseId })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, seeded.shipmentLineId));
+      return seeded;
+    });
+    const prep = makeDb(DATABASE_URL!);
+    const member = makeDb(DATABASE_URL!);
+    let continuePreparation!: () => void;
+    let discovered!: () => void;
+    let releaseComponent!: () => void;
+    let componentLocked!: () => void;
+    const pausePreparation = new Promise<void>((resolve) => {
+      continuePreparation = resolve;
+    });
+    const optimisticRead = new Promise<void>((resolve) => {
+      discovered = resolve;
+    });
+    const holdComponent = new Promise<void>((resolve) => {
+      releaseComponent = resolve;
+    });
+    const atComponent = new Promise<void>((resolve) => {
+      componentLocked = resolve;
+    });
+    const lockAggregate = planLocks.lockAggregate;
+    const spy = jest.spyOn(planLocks, 'lockAggregate').mockImplementation(async (...args) => {
+      discovered();
+      await pausePreparation;
+      return lockAggregate(...args);
+    });
+    let run: Promise<unknown> | undefined;
+    let blocker: Promise<unknown> | undefined;
+    let addedWorkItemId: string | undefined;
+    const key = randomUUID();
+    try {
+      run = prep.db.transaction(async (tx) => {
+        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '1500ms'`);
+        return start(f, key, tx);
+      });
+      const result = run.then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
+      await Promise.race([
+        optimisticRead,
+        result.then((value) => {
+          throw new Error(JSON.stringify(value));
+        }),
+      ]);
+      const added = await member.db.transaction((tx) =>
+        assembleOutbound(tx).batches.addShipment(
+          f.batchId,
+          other.shipmentId,
+          randomUUID(),
+          { id: other.actorId, roles: ['logistics_worker'] },
+          tx,
+        ),
+      );
+      addedWorkItemId = added.workItem.id;
+      // A newly joined worker may hold this FOI while waiting for its work item. Preparation
+      // must reject its stale lock scope, not reacquire this earlier-order lock under the batch.
+      blocker = member.db.transaction(async (tx) => {
+        await tx
+          .select()
+          .from(wmsTables.fulfillmentOrderItems)
+          .where(eq(wmsTables.fulfillmentOrderItems.skuId, other.skuId))
+          .for('update');
+        componentLocked();
+        await holdComponent;
+      });
+      await atComponent;
+      continuePreparation();
+      expect(await result).toMatchObject({
+        ok: false,
+        error: { response: { code: 'PICKING_COMPONENT_CHANGED_RETRY' } },
+      });
+      expect(
+        await observer.db
+          .select()
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
+      ).toHaveLength(0);
+      expect(
+        await observer.db.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId)),
+      ).toHaveLength(0);
+    } finally {
+      continuePreparation();
+      releaseComponent();
+      spy.mockRestore();
+      await Promise.allSettled([run, blocker].filter((value) => value !== undefined));
+      await Promise.all([prep.sql.end(), member.sql.end()]);
+      await observer.db.transaction(async (tx) => {
+        if (addedWorkItemId)
+          await tx
+            .update(wmsTables.outboundBatchWorkItems)
+            .set({ batchId: other.batchId })
+            .where(eq(wmsTables.outboundBatchWorkItems.id, addedWorkItemId));
+        await cleanupPreparationFixture(tx, { ...other, workItemId: addedWorkItemId ?? other.workItemId });
+        await cleanupPreparationFixture(tx, f);
+      });
     }
   });
 });

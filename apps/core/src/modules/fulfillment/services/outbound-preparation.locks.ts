@@ -1,10 +1,23 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { lockAggregate } from '../picking/plan/picking-plan.locks';
+import { conflict } from '../picking/plan/picking-plan.errors';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 
 /** Lock the recursive component first; a work-item or batch lock first inverts planning's order. */
 export async function lockPreparation(batchId: string, invariant: FulfillmentInvariantService, tx: DbTx) {
+  const shipmentIds = await preparationShipmentIds(batchId, tx);
+  const aggregate = await lockAggregate(tx, invariant, batchId, shipmentIds);
+  // addShipment can commit while the optimistic scope is being discovered. Never
+  // acquire its new FOI/component later, while already holding the batch/work locks.
+  const lockedShipmentIds = await preparationShipmentIds(batchId, tx);
+  if (shipmentIds.join(',') !== lockedShipmentIds.join(',')) {
+    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Batch membership changed while acquiring preparation locks');
+  }
+  return aggregate;
+}
+
+async function preparationShipmentIds(batchId: string, tx: DbTx): Promise<string[]> {
   const items = await tx
     .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
     .from(wmsTables.outboundBatchWorkItems)
@@ -31,7 +44,7 @@ export async function lockPreparation(batchId: string, invariant: FulfillmentInv
         isNull(wmsTables.pickingPlanMembers.retiredAt),
       ),
     );
-  return lockAggregate(tx, invariant, batchId, [...new Set([...items, ...stored].map((row) => row.shipmentId))].sort());
+  return [...new Set([...items, ...stored].map((row) => row.shipmentId))].sort();
 }
 
 /** A zero balance is not evidence of no execution: retain header/event and work-item history checks. */
@@ -94,4 +107,41 @@ export async function preparationExecutionFacts(batchId: string, actorId: string
         item.leaseExpiresAt.getTime() > Date.now(),
     ),
   };
+}
+
+/**
+ * lockPreparation's invariant already owns the session. Resuming via picking.start
+ * would now take plan -> session in reverse order against a direct active start.
+ * Validate the immutable HAND_IN identity using the held session, without another plan lock.
+ */
+export async function lockedPreparationSession(batchId: string, planId: string, tx: DbTx): Promise<string | null> {
+  const sessions = await tx
+    .select()
+    .from(wmsTables.batchInventorySessions)
+    .where(
+      and(
+        eq(wmsTables.batchInventorySessions.batchId, batchId),
+        inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+      ),
+    );
+  if (sessions.length !== 1 || sessions[0].status !== 'active') return null;
+  const session = sessions[0];
+  const starts = await tx
+    .select({ payload: wmsTables.batchInventorySessionEvents.payload })
+    .from(wmsTables.batchInventorySessionEvents)
+    .where(
+      and(
+        eq(wmsTables.batchInventorySessionEvents.sessionId, session.id),
+        eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
+      ),
+    );
+  if (
+    starts.length === 0 ||
+    starts.some(
+      ({ payload }) =>
+        typeof payload !== 'object' || payload === null || !('planId' in payload) || payload.planId !== planId,
+    )
+  )
+    return null;
+  return session.id;
 }
