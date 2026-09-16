@@ -48,7 +48,14 @@ export function createOperationRunner(deps: {
     callbacks?.forEach((w) =>
       op.status === 'confirmed'
         ? w.resolve(op.result)
-        : w.reject(new ApiError('작업이 반영되지 않았어요.', 400, op.errorCode))
+        : w.reject(
+            new ApiError(
+              '작업이 반영되지 않았어요.',
+              400,
+              op.errorCode,
+              op.preparation
+            )
+          )
     );
   }
   async function execute(input: StoredOperation) {
@@ -171,7 +178,8 @@ export function createOperationRunner(deps: {
             : failure instanceof ApiError
               ? failure.code
               : undefined,
-          ownership
+          ownership,
+          failure instanceof ApiError ? failure.preparation : undefined
         );
         const saved = (await deps.store.get(input.id))!;
         recordDiagnostic(saved);
@@ -241,7 +249,12 @@ export function createOperationRunner(deps: {
     });
     if (op.status === 'confirmed') return op.result as T;
     if (op.status === 'rejected')
-      throw new ApiError('작업이 반영되지 않았어요.', 400, op.errorCode);
+      throw new ApiError(
+        '작업이 반영되지 않았어요.',
+        400,
+        op.errorCode,
+        op.preparation
+      );
     return new Promise<T>((resolve, reject) => {
       const list = waiting.get(id) ?? [];
       list.push({ resolve: (v) => resolve(v as T), reject });

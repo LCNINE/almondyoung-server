@@ -1,3 +1,4 @@
+import { isPreparationBlocked } from '../services/outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { NotFoundException } from '@nestjs/common';
@@ -66,6 +67,7 @@ describeIfDb('ShipmentWaybillReader', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       expect(state.status).toBe('in_progress');
 
       const reader = new ShipmentWaybillReader(ambientDbService(tx));
@@ -130,6 +132,7 @@ describeIfDb('ShipmentWaybillReader', () => {
         },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       expect(state.status).toBe('shipped');
       const reader = new ShipmentWaybillReader(ambientDbService(tx));
       expect(await reader.byTrackingNo(fixture.trackingNo)).toMatchObject({

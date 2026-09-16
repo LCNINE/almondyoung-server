@@ -28,8 +28,10 @@ describeIfDb('inbound origin audit (migrated PostgreSQL)', () => {
 
   beforeAll(() => {
     // Never accidentally prepare historical corruption in a shared database.
-    if (new URL(databaseUrl!).pathname !== '/inbound_workflow_consistency_test') {
-      throw new Error('Use the dedicated inbound_workflow_consistency_test database.');
+    if (
+      !['/inbound_workflow_consistency_test', '/warehouse_demo_readiness_test'].includes(new URL(databaseUrl!).pathname)
+    ) {
+      throw new Error('Use a dedicated inbound_workflow_consistency_test or warehouse_demo_readiness_test database.');
     }
     db = postgres(databaseUrl!, { max: 1 });
   });

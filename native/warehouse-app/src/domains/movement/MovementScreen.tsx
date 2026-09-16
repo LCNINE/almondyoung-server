@@ -7,6 +7,7 @@ import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
+import { ApiError } from '../../core/data/httpClient';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -20,12 +21,16 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useLocationContents } from './useLocationContents';
 import { useMoveStock, MOVE_REASONS } from './useMoveStock';
 import type { LocationContentItem } from './types';
+import type { LocationItem } from '../warehouse/types';
 
 const OTHER = '기타';
 
-interface LocationRef {
-  id: string;
-  code: string;
+type LocationRef = Pick<LocationItem, 'id' | 'code' | 'isActive' | 'isSystem'>;
+
+function isMovementDestination(
+  location: Pick<LocationItem, 'isActive' | 'isSystem'>
+) {
+  return location.isActive === true && typeof location.isSystem === 'boolean';
 }
 
 function MovementScreenContent() {
@@ -85,10 +90,15 @@ function MovementScreenContent() {
     };
   }, []);
   const contents = useLocationContents(source?.id);
-  const sourceSearch = useLocationSearch(warehouseId, source ? '' : sourceTerm);
+  const sourceSearch = useLocationSearch(
+    warehouseId,
+    source ? '' : sourceTerm,
+    'movement-source'
+  );
   const destSearch = useLocationSearch(
     warehouseId,
-    !activeItem || dest ? '' : destTerm
+    !activeItem || dest ? '' : destTerm,
+    'movement-destination'
   );
   const move = useMoveStock();
 
@@ -112,7 +122,12 @@ function MovementScreenContent() {
       (i) => i.code === term
     );
     if (exact.length === 1) {
-      setSource({ id: exact[0].id, code: exact[0].code });
+      setSource({
+        id: exact[0].id,
+        code: exact[0].code,
+        isActive: exact[0].isActive,
+        isSystem: exact[0].isSystem,
+      });
       setSourceTerm('');
     }
   }, [sourceSearch.data, sourceTerm, source]);
@@ -124,9 +139,15 @@ function MovementScreenContent() {
     if (!term) return;
     const exact = (destSearch.data?.items ?? [])
       .filter((i) => i.id !== source?.id)
+      .filter(isMovementDestination)
       .filter((i) => i.code === term);
     if (exact.length === 1) {
-      setDest({ id: exact[0].id, code: exact[0].code });
+      setDest({
+        id: exact[0].id,
+        code: exact[0].code,
+        isActive: exact[0].isActive,
+        isSystem: exact[0].isSystem,
+      });
       setDestTerm('');
     }
   }, [destSearch.data, destTerm, activeItem, dest, source, setDest]);
@@ -248,7 +269,12 @@ function MovementScreenContent() {
                   type="button"
                   className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
                   onClick={() => {
-                    setSource({ id: loc.id, code: loc.code });
+                    setSource({
+                      id: loc.id,
+                      code: loc.code,
+                      isActive: loc.isActive,
+                      isSystem: loc.isSystem,
+                    });
                     setSourceTerm('');
                   }}
                 >
@@ -401,7 +427,9 @@ function MovementScreenContent() {
                 </div>
               ) : (
                 <>
-                  {lastDest && lastDest.id !== source.id ? (
+                  {lastDest &&
+                  lastDest.id !== source.id &&
+                  isMovementDestination(lastDest) ? (
                     <button
                       type="button"
                       className="w-full rounded-md border border-blue-300 bg-blue-50 p-2 text-sm text-blue-700"
@@ -429,13 +457,19 @@ function MovementScreenContent() {
                   <ul className="space-y-1">
                     {(destSearch.data?.items ?? [])
                       .filter((i) => i.id !== source.id)
+                      .filter(isMovementDestination)
                       .map((loc) => (
                         <li key={loc.id}>
                           <button
                             type="button"
                             className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
                             onClick={() =>
-                              setDest({ id: loc.id, code: loc.code })
+                              setDest({
+                                id: loc.id,
+                                code: loc.code,
+                                isActive: loc.isActive,
+                                isSystem: loc.isSystem,
+                              })
                             }
                           >
                             {loc.code}
@@ -553,8 +587,19 @@ function MovementScreenContent() {
               }
             );
           } catch (error) {
-            if (mounted.current && revision === intentRevision.current)
-              setActionError(errorMessage(error, 'movement'));
+            if (mounted.current && revision === intentRevision.current) {
+              if (
+                error instanceof ApiError &&
+                error.outcome === 'rejected' &&
+                error.code === 'MOVEMENT_DESTINATION_INACTIVE'
+              ) {
+                setDest(null);
+                setDestTerm('');
+                setActionError(null);
+              } else {
+                setActionError(errorMessage(error, 'movement'));
+              }
+            }
           } finally {
             actionLock.current = false;
           }

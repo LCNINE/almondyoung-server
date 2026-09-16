@@ -1,5 +1,5 @@
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, MovementJobLine, MovementJob } from '../../schema/inventory.schema';
@@ -7,6 +7,8 @@ import { MoveBatchDto } from '../dto/move-batch.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { and, eq } from 'drizzle-orm';
+import { destinationIssue } from '../../shared/policies/location-work-policy';
+import { lockWorkLocations } from '../../shared/locks/location-work-lock';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 
 @Injectable()
@@ -70,6 +72,33 @@ export class MovementService {
           tx,
           dto.lines.map((line) => ({ skuId: line.skuId, warehouseId })),
         );
+
+        const lockedLocations = await lockWorkLocations(
+          tx,
+          dto.lines.flatMap((line) => [line.fromLocationId, line.toLocationId]),
+        );
+        for (const line of dto.lines) {
+          const from = lockedLocations.get(line.fromLocationId);
+          const to = lockedLocations.get(line.toLocationId);
+          // Repeat existence/warehouse checks against the locked rows, never the preliminary read.
+          if (!from || !to) throw new BadRequestException('invalid location id in lines');
+          if (from.warehouseId !== warehouseId || to.warehouseId !== warehouseId) {
+            throw new BadRequestException('all locations must belong to provided warehouseId');
+          }
+          if (
+            destinationIssue({
+              purpose: 'movement',
+              warehouseId,
+              sourceLocationId: line.fromLocationId,
+              destination: to,
+            }) === 'INACTIVE'
+          ) {
+            throw new ConflictException({
+              code: 'MOVEMENT_DESTINATION_INACTIVE',
+              message: '도착 위치가 비활성 상태입니다. 활성 위치를 다시 선택하세요.',
+            });
+          }
+        }
 
         const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
         const [journal] = await tx

@@ -1832,7 +1832,12 @@ it('별도 적치 화면에서 처리한 후 PO를 재개하면 서버의 현재
         originLocationCode: '입고기본존',
       }}
       warehouseId="w-1"
-      lastDest={{ id: 'dest-1', code: 'A-01' }}
+      lastDest={{
+        id: 'dest-1',
+        code: 'A-01',
+        isActive: true,
+        isSystem: false,
+      }}
       onDone={() => {}}
       onCancel={() => {}}
     />

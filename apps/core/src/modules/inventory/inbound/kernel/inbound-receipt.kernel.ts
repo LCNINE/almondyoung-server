@@ -5,6 +5,8 @@ import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
+import { destinationIssue } from '../../shared/policies/location-work-policy';
+import { lockWorkLocations } from '../../shared/locks/location-work-lock';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
 import { receiptActionPolicy } from '../services/inbound-receipt-policy';
@@ -264,18 +266,24 @@ export class InboundReceiptKernel {
     const receipt = await this.loadReceipt(line.receiptId, tx);
     const originLocationId = this.requireOrigin(line);
 
-    // 목적지 로케이션 검증: 존재/활성/동일 창고
-    const [dest] = await tx
-      .select()
-      .from(wmsTables.locations)
-      .where(eq(wmsTables.locations.id, input.toLocationId))
-      .limit(1);
+    await acquireStockAvailabilityLocks(tx, [{ skuId: line.skuId, warehouseId: receipt.warehouseId }]);
+    const locations = await lockWorkLocations(tx, [originLocationId, input.toLocationId]);
+    const dest = locations.get(input.toLocationId);
+    // Preserve the putaway API's historical precedence before the shared policy's
+    // warehouse-first classification (system/same, missing, inactive, warehouse).
     if (input.toLocationId === originLocationId || dest?.isSystem) {
       throw new ConflictException({ code: 'INBOUND_PUTAWAY_DESTINATION_INVALID' });
     }
     if (!dest) throw new NotFoundException('destination location not found');
     if (!dest.isActive) throw new BadRequestException('destination location is inactive');
-    if (dest.warehouseId !== receipt.warehouseId) {
+    if (
+      destinationIssue({
+        purpose: 'putaway',
+        warehouseId: receipt.warehouseId,
+        sourceLocationId: originLocationId,
+        destination: dest,
+      }) === 'WRONG_WAREHOUSE'
+    ) {
       throw new BadRequestException('destination location must be in the same warehouse');
     }
 
@@ -284,16 +292,13 @@ export class InboundReceiptKernel {
       throw new BadRequestException('quantity exceeds origin available');
     }
 
-    // Validate the same current facts as the read policy while receipt/header and
-    // stock locks are held, before releasing any pending quantity. These ordinary
-    // origin/event reads do not add an event lock after the stock lock.
-    await acquireStockAvailabilityLocks(tx, [{ skuId: line.skuId, warehouseId: receipt.warehouseId }]);
+    // Receipt/header, stock and location locks protect these facts before releasing pending quantity.
     const availability = await this.stockAvailability.getAvailability(
       { skuId: line.skuId, warehouseId: receipt.warehouseId, sourceLocationId: originLocationId },
       tx,
       { lock: true },
     );
-    const [origin] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, originLocationId));
+    const origin = locations.get(originLocationId);
     const [event] = line.eventId
       ? await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.id, line.eventId))
       : [];

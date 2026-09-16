@@ -131,7 +131,16 @@ interface RenderOpts {
     Array<{ id: string }> | Promise<Array<{ id: string }>>
   >;
   /** 검색어(부분 문자열)로 대상 로케이션 후보를 내려주는 목 — 적치 완료 시나리오용. */
-  locations?: Record<string, Array<{ id: string; code: string }>>;
+  locations?: Record<
+    string,
+    Array<{
+      id: string;
+      code: string;
+      displayName: string;
+      isActive: boolean;
+      isSystem: boolean;
+    }>
+  >;
 }
 
 function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
@@ -628,7 +637,17 @@ describe('PutawayQueueScreen', () => {
   it('안내 문구가 뜬 뒤 목록에서 직접 골라 적치를 마치면 문구가 다시 나타나지 않는다', async () => {
     renderScreen(SELECTED, {
       barcode: { '9999': [{ id: 's-none' }] },
-      locations: { DST01: [{ id: 'loc-dst', code: 'DST01' }] },
+      locations: {
+        DST01: [
+          {
+            id: 'loc-dst',
+            code: 'DST01',
+            displayName: 'DST01',
+            isActive: true,
+            isSystem: false,
+          },
+        ],
+      },
     });
     await screen.findByText('무선마우스 블랙');
 

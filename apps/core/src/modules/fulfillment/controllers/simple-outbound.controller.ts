@@ -1,3 +1,4 @@
+import { unwrapPreparedOutbound } from './outbound-preparation-http';
 import {
   BadRequestException,
   Body,
@@ -59,12 +60,14 @@ export class SimpleOutboundController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<SimpleOutboundStateDto> {
-    return this.simpleOutbound.scan(shipmentId, {
-      barcode: dto.barcode,
-      quantity: dto.quantity,
-      actor: this.actor(user),
-      idempotencyKey: this.idempotencyKey(idempotencyKey),
-    });
+    return unwrapPreparedOutbound(
+      await this.simpleOutbound.scan(shipmentId, {
+        barcode: dto.barcode,
+        quantity: dto.quantity,
+        actor: this.actor(user),
+        idempotencyKey: this.idempotencyKey(idempotencyKey),
+      }),
+    );
   }
 
   @Post(':shipmentId/simple-outbound-forces')
@@ -78,14 +81,16 @@ export class SimpleOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ): Promise<SimpleOutboundStateDto> {
-    return this.simpleOutbound.forceComplete(shipmentId, {
-      reason: dto.reason,
-      csCaseId: dto.csCaseId,
-      note: dto.note,
-      actor: this.actor(user),
-      idempotencyKey: this.idempotencyKey(idempotencyKey),
-      authorization: getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
-    });
+    return unwrapPreparedOutbound(
+      await this.simpleOutbound.forceComplete(shipmentId, {
+        reason: dto.reason,
+        csCaseId: dto.csCaseId,
+        note: dto.note,
+        actor: this.actor(user),
+        idempotencyKey: this.idempotencyKey(idempotencyKey),
+        authorization: getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
+      }),
+    );
   }
 
   private actor(user: AuthenticatedUser) {

@@ -11,6 +11,7 @@ import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/a
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { PreparedOutboundResult, isPreparationBlocked } from './outbound-preparation-result';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import {
   OutboundCommandKey,
@@ -53,7 +54,9 @@ export type LocationOutboundForceRejection = {
 export type LocationOutboundForceResolution =
   | { outcome: 'confirmed'; result: LocationOutboundState }
   | LocationOutboundForceRejection;
-type LocationOutboundForceCommandResult = LocationOutboundState | LocationOutboundForceRejection;
+type LocationOutboundForceCommandResult =
+  | PreparedOutboundResult<LocationOutboundState>
+  | LocationOutboundForceRejection;
 const FORCE_NOT_APPLIED: LocationOutboundForceRejection = {
   outcome: 'rejected',
   code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
@@ -83,7 +86,7 @@ export class LocationOutboundService {
     actor: LocationOutboundActor,
     idempotencyKey: string,
     tx?: DbTx,
-  ): Promise<LocationOutboundState> {
+  ): Promise<PreparedOutboundResult<LocationOutboundState>> {
     return this.execute(
       'start',
       shipmentId,
@@ -92,7 +95,9 @@ export class LocationOutboundService {
       idempotencyKey,
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('start', idempotencyKey), trx);
+        const prepared = await this.simple.prepare(shipmentId, actor, locationCommandKey('start', idempotencyKey), trx);
+        if (prepared.outcome === 'preparation_blocked') return prepared;
+        const context = prepared.context;
         return this.loadState(context, input.warehouseId, trx);
       },
       tx,
@@ -151,7 +156,7 @@ export class LocationOutboundService {
     actor: LocationOutboundActor,
     idempotencyKey: string,
     tx?: DbTx,
-  ): Promise<LocationOutboundState> {
+  ): Promise<PreparedOutboundResult<LocationOutboundState>> {
     this.assertQuantity(input.quantity);
     if (typeof input.barcode !== 'string' || !input.barcode.trim())
       throw new BadRequestException('barcode is required');
@@ -164,7 +169,9 @@ export class LocationOutboundService {
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
         await this.assertSource(input.sourceLocationId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('scan', idempotencyKey), trx);
+        const prepared = await this.simple.prepare(shipmentId, actor, locationCommandKey('scan', idempotencyKey), trx);
+        if (prepared.outcome === 'preparation_blocked') return prepared;
+        const context = prepared.context;
         const skuId = await this.simple.resolveSkuId(input.barcode, trx);
         await this.simple.pickScanned(
           context,
@@ -199,7 +206,7 @@ export class LocationOutboundService {
     idempotencyKey: string,
     authorization: ScopeAuthorizationDecision | undefined,
     tx?: DbTx,
-  ): Promise<LocationOutboundState> {
+  ): Promise<PreparedOutboundResult<LocationOutboundState>> {
     // Recheck authorization even for a completed command replay.
     if (!isScopeAuthorizationDecision(authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE)) {
       throw new ForbiddenException({
@@ -216,7 +223,9 @@ export class LocationOutboundService {
       idempotencyKey,
       async (trx) => {
         await this.assertWarehouse(shipmentId, input.warehouseId, trx);
-        const context = await this.simple.prepare(shipmentId, actor, locationCommandKey('force', idempotencyKey), trx);
+        const prepared = await this.simple.prepare(shipmentId, actor, locationCommandKey('force', idempotencyKey), trx);
+        if (prepared.outcome === 'preparation_blocked') return prepared;
+        const context = prepared.context;
         const state = await this.loadState(context, input.warehouseId, trx);
         const remaining = state.sources.filter((source) => source.remainingQty > 0);
         const tuples = new Map(input.items.map((item) => [this.tuple(item), item.quantity]));
@@ -283,7 +292,11 @@ export class LocationOutboundService {
       },
       tx,
     );
-    return isForceRejection(result) ? result : { outcome: 'confirmed', result };
+    return isPreparationBlocked(result)
+      ? FORCE_NOT_APPLIED
+      : isForceRejection(result)
+        ? result
+        : { outcome: 'confirmed', result };
   }
 
   private normalizeForceInput(input: LocationOutboundConfirmInput): LocationOutboundConfirmInput {
@@ -297,7 +310,7 @@ export class LocationOutboundService {
 
   private execute<
     TInput extends StartLocationOutboundInput,
-    TResult extends LocationOutboundForceCommandResult = LocationOutboundState,
+    TResult extends LocationOutboundForceCommandResult = PreparedOutboundResult<LocationOutboundState>,
   >(
     command: string,
     shipmentId: string,

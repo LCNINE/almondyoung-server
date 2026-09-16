@@ -1,3 +1,4 @@
+import { unwrapPreparedOutbound } from './outbound-preparation-http';
 import {
   BadRequestException,
   Body,
@@ -33,13 +34,13 @@ export class LocationOutboundController {
   @Post(':shipmentId/location-outbound-starts')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  start(
+  async start(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
     @Body() dto: StartLocationOutboundDto,
     @Headers('idempotency-key') key: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
-    return this.outbound.start(shipmentId, dto, this.actor(user), this.key(key));
+    return unwrapPreparedOutbound(await this.outbound.start(shipmentId, dto, this.actor(user), this.key(key)));
   }
 
   @Get(':shipmentId/location-outbound-state')
@@ -56,31 +57,33 @@ export class LocationOutboundController {
   @Post(':shipmentId/location-outbound-scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  scan(
+  async scan(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
     @Body() dto: LocationOutboundScanDto,
     @Headers('idempotency-key') key: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
-    return this.outbound.scan(shipmentId, dto, this.actor(user), this.key(key));
+    return unwrapPreparedOutbound(await this.outbound.scan(shipmentId, dto, this.actor(user), this.key(key)));
   }
 
   @Post(':shipmentId/location-outbound-forces')
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  force(
+  async force(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
     @Body() dto: LocationOutboundConfirmDto,
     @Headers('idempotency-key') key: string | undefined,
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ) {
-    return this.outbound.force(
-      shipmentId,
-      dto,
-      this.actor(user),
-      this.key(key),
-      getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
+    return unwrapPreparedOutbound(
+      await this.outbound.force(
+        shipmentId,
+        dto,
+        this.actor(user),
+        this.key(key),
+        getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
+      ),
     );
   }
 

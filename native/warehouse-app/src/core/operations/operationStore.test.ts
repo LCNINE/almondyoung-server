@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
 const input = () => ({
@@ -11,6 +11,20 @@ const input = () => ({
   createdAt: Date.now(),
 });
 describe('persistent operations', () => {
+  it('retries opening the same store after a transient IndexedDB failure', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    const open = vi.spyOn(indexedDB, 'open').mockImplementationOnce(() => {
+      throw new Error('indexeddb unavailable');
+    });
+
+    await expect(store.pending('actor|server')).rejects.toThrow(
+      'indexeddb unavailable'
+    );
+    expect(await store.pending('actor|server')).toEqual([]);
+
+    open.mockRestore();
+  });
+
   it('survives reopening and refuses a different operation on an unresolved resource', async () => {
     const dbName = crypto.randomUUID();
     const op = input();

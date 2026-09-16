@@ -8,12 +8,19 @@ import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { useLocationSearch } from '../warehouse/useLocationSearch';
+import type { LocationItem } from '../warehouse/types';
 import { usePutaway } from './mutations';
 import type { PutawayTarget } from './types';
 
-export interface LocationRef {
-  id: string;
-  code: string;
+export type LocationRef = Pick<
+  LocationItem,
+  'id' | 'code' | 'isActive' | 'isSystem'
+>;
+
+function isPutawayDestination(
+  location: Pick<LocationItem, 'isActive' | 'isSystem'>
+) {
+  return location.isActive === true && location.isSystem === false;
 }
 
 /**
@@ -54,7 +61,11 @@ function PutawaySheetContent({
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
     crypto.randomUUID()
   );
-  const search = useLocationSearch(warehouseId, dest ? '' : term);
+  const search = useLocationSearch(
+    warehouseId,
+    dest ? '' : term,
+    'putaway-destination'
+  );
   const putaway = usePutaway();
   const receipt = useReceiptReconciliation({
     lineId: target.lineId,
@@ -124,15 +135,15 @@ function PutawaySheetContent({
 
   // 검색 결과에서 출발지를 뺀 후보 목록 — 렌더와 자동선택 이펙트가 같은
   // 필터를 공유한다. rawResults 가 있는데(검색은 됐는데) candidateLocations 가
-  // 비면 "찾은 로케이션이 전부 출발지였다"는 뜻이다 — "못 찾음"과는 다른
-  // 사실이라 화면이 구분해 말해야 한다(작업자가 출발지 라벨을 대상지로 스캔한
-  // 경우가 실제로 생긴다).
+  // 비고 원본 결과가 모두 출발지면 "찾은 로케이션이 전부 출발지였다"는 뜻이다.
+  // 안전하지 않아 탈락한 결과까지 출발지로 안내하지 않도록 원본 ID를 확인한다.
   const rawLocationResults = search.data?.items ?? [];
   const candidateLocations = rawLocationResults.filter(
-    (i) => i.id !== target.originLocationId
+    (i) => i.id !== target.originLocationId && isPutawayDestination(i)
   );
   const onlyOriginMatched =
-    rawLocationResults.length > 0 && candidateLocations.length === 0;
+    rawLocationResults.length > 0 &&
+    rawLocationResults.every((i) => i.id === target.originLocationId);
 
   useScanner((e) => {
     if (!dest) setTerm(e.code);
@@ -150,10 +161,18 @@ function PutawaySheetContent({
     const trimmed = term.trim();
     if (!trimmed) return;
     const exact = (search.data?.items ?? []).filter(
-      (i) => i.code === trimmed && i.id !== target.originLocationId
+      (i) =>
+        i.code === trimmed &&
+        i.id !== target.originLocationId &&
+        isPutawayDestination(i)
     );
     if (exact.length === 1) {
-      setDest({ id: exact[0].id, code: exact[0].code });
+      setDest({
+        id: exact[0].id,
+        code: exact[0].code,
+        isActive: exact[0].isActive,
+        isSystem: exact[0].isSystem,
+      });
       setTerm('');
     }
   }, [search.data, term, dest, target.originLocationId, setDest]);
@@ -254,7 +273,9 @@ function PutawaySheetContent({
             </div>
           ) : (
             <>
-              {lastDest && lastDest.id !== target.originLocationId ? (
+              {lastDest &&
+              lastDest.id !== target.originLocationId &&
+              isPutawayDestination(lastDest) ? (
                 <button
                   type="button"
                   className="w-full rounded-md border border-blue-300 bg-blue-50 p-2 text-sm text-blue-700"
@@ -291,7 +312,14 @@ function PutawaySheetContent({
                       <button
                         type="button"
                         className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
-                        onClick={() => setDest({ id: loc.id, code: loc.code })}
+                        onClick={() =>
+                          setDest({
+                            id: loc.id,
+                            code: loc.code,
+                            isActive: loc.isActive,
+                            isSystem: loc.isSystem,
+                          })
+                        }
                       >
                         {loc.code}
                       </button>

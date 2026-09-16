@@ -7,6 +7,7 @@ interface ErrorResponse {
   error?: string;
   message?: string | string[];
   errors?: unknown;
+  details?: unknown;
 }
 
 @Catch()
@@ -23,6 +24,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 검증 실패 상세 (zod issues 등). 이게 응답에서 빠져 있어서
     // "Invalid pricing rules structure" 만 보이고 어느 룰이 문제인지 알 수 없었다.
     let errors: unknown;
+    let details: { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' } | undefined;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -38,6 +40,30 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       errorCode = this.getErrorCode(status, errorResponse);
       message = this.getErrorMessage(errorResponse);
       errors = errorResponse?.errors;
+      const candidate = errorResponse?.details;
+      if (
+        status === 409 &&
+        errorCode === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' &&
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        'reasonCode' in candidate &&
+        typeof candidate.reasonCode === 'string' &&
+        [
+          'SOURCE_STOCK_CHANGED',
+          'PLAN_IDENTITY_CHANGED',
+          'PLAN_NOT_DRAFT',
+          'SHIPMENT_SNAPSHOT_CHANGED',
+          'ALLOCATION_INVALID',
+          'ELIGIBILITY_CHANGED',
+          'SOURCE_INSUFFICIENT',
+          'ACTIVE_WORK_REQUIRES_REVIEW',
+          'REPLAN_LIMIT_REACHED',
+        ].includes(candidate.reasonCode) &&
+        'recovery' in candidate &&
+        (candidate.recovery === 'retry_preparation' || candidate.recovery === 'review_batch')
+      ) {
+        details = { reasonCode: candidate.reasonCode, recovery: candidate.recovery };
+      }
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
     // 3. 일반 Error 처리
@@ -59,6 +85,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       code: errorCode,
       message: message,
       ...(errors !== undefined && { errors }),
+      ...(details !== undefined && { details }),
       ...(process.env.NODE_ENV !== 'production' &&
         devMessage && {
           devMessage: devMessage,

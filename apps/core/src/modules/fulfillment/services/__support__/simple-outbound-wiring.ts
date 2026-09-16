@@ -41,8 +41,12 @@ export function ambientDbService(tx: DbTx): DbService<typeof wmsSchema> {
   } as unknown as DbService<typeof wmsSchema>;
 }
 
-function assembleOutbound(tx: DbTx) {
-  const dbService = ambientDbService(tx);
+export function assembleOutbound(tx: DbTx) {
+  return assembleOutboundWithDb(ambientDbService(tx));
+}
+
+/** Real transaction-owning adapter for listening HTTP acceptance suites. */
+export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const workflowGate = new FulfillmentWorkflowGate(
     new ConfigService({
       FULFILLMENT_WORKFLOW_MODE: 'v2',
@@ -125,8 +129,17 @@ function assembleOutbound(tx: DbTx) {
     audit,
     workflowGate,
   );
-  const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
-  return { simple, location: new LocationOutboundService(dbService, commands, simple) };
+  const simple = new SimpleOutboundService(
+    dbService,
+    batches,
+    picking,
+    workflowGate,
+    commands,
+    dispatch,
+    barcodes,
+    invariant,
+  );
+  return { simple, picking, batches, location: new LocationOutboundService(dbService, commands, simple) };
 }
 
 export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {

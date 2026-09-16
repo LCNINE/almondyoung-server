@@ -369,11 +369,22 @@ it('확정된 스캔 복구 후에도 최신 위치 잔량을 다시 읽는다',
   mount(runner.request, 'w', runtime);
   await waitFor(() => expect(reads).toBe(1));
   releaseCached();
-  await screen.findByRole('button', { name: 'A 선택' });
+  await waitFor(() => expect(reads).toBe(2));
+  expect(
+    screen.queryByRole('button', { name: 'A 선택' })
+  ).not.toBeInTheDocument();
+  expect(await store.draft('scope:scan:location-outbound-scans:s')).toEqual([
+    { id: 'scan', data: input },
+  ]);
   releaseRead();
-  await waitFor(() =>
-    expect(
-      screen.queryByRole('button', { name: 'A 선택' })
-    ).not.toBeInTheDocument()
+  await screen.findByRole('button', { name: 'B 선택' });
+  expect(
+    screen.queryByRole('button', { name: 'A 선택' })
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+  await waitFor(async () =>
+    expect(await store.draft('scope:scan:location-outbound-scans:s')).toEqual(
+      []
+    )
   );
 });

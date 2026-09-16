@@ -11,6 +11,7 @@ import { useWorkRuntime } from './OperationContext';
 import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
 import type { StoredOperation } from './operationStore';
+import { useWorkReadiness } from './useWorkReadiness';
 
 export interface ScanAllowance {
   path: string;
@@ -94,40 +95,12 @@ function ActiveBoundary({
     runtime.runner.getSnapshot
   );
   const [now, setNow] = useState(Date.now());
-  const [problem, setProblem] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [restoring, setRestoring] = useState(true);
-  const [scope, setScope] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void runtime
-      .getScope()
-      .then((value) => {
-        if (live) setScope(value);
-      })
-      .catch(() => {
-        if (live) setProblem(true);
-      });
-    return () => {
-      live = false;
-    };
-  }, [runtime, authed, ops]);
-  useEffect(() => {
-    if (!authed) return;
-    let live = true;
-    setRestoring(true);
-    void runtime.runner
-      .restore()
-      .catch(() => {
-        if (live) setProblem(true);
-      })
-      .finally(() => {
-        if (live) setRestoring(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [runtime, authed]);
+  const { state: readiness, recheck } = useWorkReadiness(runtime, authed);
+  const ready = readiness.status === 'ready';
+  const scope = ready ? readiness.scope : null;
+  const problem = authed && readiness.status === 'failed';
+  const restoring = authed && !ready && !problem;
   useEffect(() => {
     if (!ops.length) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
@@ -141,11 +114,11 @@ function ActiveBoundary({
   useEffect(() => {
     if (!authed) return;
     const resume = () => {
-      void runtime.runner.retryPending().catch(() => setProblem(true));
+      void recheck();
     };
     window.addEventListener('online', resume);
     return () => window.removeEventListener('online', resume);
-  }, [runtime, authed]);
+  }, [authed, recheck]);
   const state = workStatus(authed ? ops : [], now);
   const blocked = authed && (state.blocksWork || problem);
   return (
@@ -181,10 +154,7 @@ function ActiveBoundary({
                 onClick={async () => {
                   setChecking(true);
                   try {
-                    await runtime.runner.retryPending();
-                    setProblem(false);
-                  } catch {
-                    setProblem(true);
+                    await recheck();
                   } finally {
                     setChecking(false);
                   }

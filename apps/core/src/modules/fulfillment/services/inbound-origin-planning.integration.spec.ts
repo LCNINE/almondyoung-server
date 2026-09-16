@@ -1,3 +1,4 @@
+import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
@@ -205,6 +206,7 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
         },
         tx,
       );
+      if (isPreparationBlocked(result)) throw new Error('Expected prepared outbound state');
       expect(result.status).toBe('shipped');
       expect((await contents(tx, f.origin)).items[0]).toMatchObject({
         quantity: 10,

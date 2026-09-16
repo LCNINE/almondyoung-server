@@ -318,6 +318,33 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .values({ skuId: sku.id, warehouseId: warehouse.id, locationId: location.id, stockState: 'ON_HAND', qty })
     .returning();
 
+  return seedShipmentForExistingStock(
+    tx,
+    {
+      actorId,
+      warehouseId: warehouse.id,
+      holderId: holder.id,
+      skuId: sku.id,
+      skuCode,
+      barcode,
+      locationId: location.id,
+      ledgerVersion: ledger.version,
+      deliveryProfileId: deliveryProfile.id,
+    },
+    qty,
+  );
+}
+
+/** Compose a shipment over existing inventory; never inserts a ledger or RECEIVE. */
+export async function seedShipmentForExistingStock(
+  tx: DbTx,
+  stock: Pick<
+    PickableShipmentFixture,
+    'actorId' | 'warehouseId' | 'holderId' | 'skuId' | 'skuCode' | 'barcode' | 'locationId' | 'ledgerVersion'
+  > & { deliveryProfileId: string },
+  qty: number,
+): Promise<PickableShipmentFixture> {
+  const suffix = randomUUID();
   const [salesOrder] = await tx
     .insert(wmsTables.salesOrders)
     .values({
@@ -340,7 +367,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .returning();
   const [fulfillmentOrder] = await tx
     .insert(wmsTables.fulfillmentOrders)
-    .values({ salesOrderId: salesOrder.id, warehouseId: warehouse.id, status: 'processing', totalQty: qty })
+    .values({ salesOrderId: salesOrder.id, warehouseId: stock.warehouseId, status: 'processing', totalQty: qty })
     .returning();
   const [item] = await tx
     .insert(wmsTables.fulfillmentOrderItems)
@@ -348,7 +375,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
       fulfillmentOrderId: fulfillmentOrder.id,
       salesOrderId: salesOrder.id,
       salesOrderLineId: salesOrderLine.id,
-      skuId: sku.id,
+      skuId: stock.skuId,
       qty,
       reservedQty: qty,
       status: 'processing',
@@ -365,11 +392,11 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
   const [shipment] = await tx
     .insert(wmsTables.shipments)
     .values({
-      warehouseId: warehouse.id,
+      warehouseId: stock.warehouseId,
       status: 'planned',
       recipientSnapshot,
       plannedAt: new Date(),
-      shippingProfileId: deliveryProfile.id,
+      shippingProfileId: stock.deliveryProfileId,
     })
     .returning();
   const [line] = await tx
@@ -377,7 +404,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .values({
       shipmentId: shipment.id,
       fulfillmentOrderItemId: item.id,
-      skuId: sku.id,
+      skuId: stock.skuId,
       qty,
       reservedQty: qty,
       inspectedQty: 0,
@@ -387,8 +414,8 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     targetType: 'SHIPMENT_LINE',
     targetId: line.id,
     shipmentLineId: line.id,
-    skuId: sku.id,
-    warehouseId: warehouse.id,
+    skuId: stock.skuId,
+    warehouseId: stock.warehouseId,
     quantity: qty,
     status: 'confirmed',
     requestedAt: new Date(),
@@ -397,7 +424,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .insert(wmsTables.outboundBatches)
     .values({
       batchNumber: `SIMPLE-BATCH-${suffix}`,
-      warehouseId: warehouse.id,
+      warehouseId: stock.warehouseId,
       pickingMethod: 'individual',
       status: 'created',
     })
@@ -421,14 +448,14 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .returning();
 
   return {
-    actorId,
-    warehouseId: warehouse.id,
-    holderId: holder.id,
-    skuId: sku.id,
-    skuCode,
-    barcode,
-    locationId: location.id,
-    ledgerVersion: ledger.version,
+    actorId: stock.actorId,
+    warehouseId: stock.warehouseId,
+    holderId: stock.holderId,
+    skuId: stock.skuId,
+    skuCode: stock.skuCode,
+    barcode: stock.barcode,
+    locationId: stock.locationId,
+    ledgerVersion: stock.ledgerVersion,
     shipmentId: shipment.id,
     shipmentLineId: line.id,
     batchId: batch.id,
