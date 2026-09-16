@@ -130,4 +130,22 @@ The focused suites cover demo/live/dev URLs, unknown-stage defaults, removal/pro
 
 The deployed environment shapes were also checked directly against the current user-service, Core, File Service, Channel Adapter, and Notification validators. All five accept the declared demo contract without provider, Redis, search, or commerce credentials. Static startup review confirmed that the platform broker SSM value and Redpanda advertised address are both `Redpanda.demo.lcnine-platform.sst:9092`; imported auth/services VPCs retain the same `sst` Cloud Map namespace, and the consumers intentionally select plaintext Kafka.
 
-No AWS preview/diff or deployment was performed by this worker. Deployed health checks, DNS/certificate validation, DB migration execution, authenticated flow acceptance, device OAuth, and physical scanner/printer checks remain integration/deployment tasks.
+### Read-only deployed verification
+
+After the root worker deployed the stage, read-only AWS and HTTPS checks confirmed:
+
+- the auth and services ECS services each reached `desired=1`, `running=1`, `pending=0`, `rolloutState=COMPLETED`, with zero failed tasks
+- sanitized current-task logs show successful Nest startup and Kafka consumer joins for User Service, Core, Analytics, Channel Adapter, Notification, and File Service; no Redis connection attempt or real provider initialization occurred
+- the public health paths return `200` for User Service, Core, Analytics, Channel Adapter, and Notification; File Service's declared target health path is `/` and returns `200`
+- unauthenticated Admin Web requests enter the expected OIDC redirect flow, while Auth Web `/signin` returns `200`
+- a demo Resend webhook request with the required dummy headers returns `404` before signature parsing because Resend webhooks are disabled without a real verifier
+- the deployed ECS and Lambda environment contracts contain the exact demo triple, the audience lists above, and no Redis, Medusa, search, GA4, Cafe24, Kakao/Naver client, NHN/Resend, or payment credential variables
+- demo-tagged resources contain the isolated VPC, the auth and services RDS instances, and the auth/services ECS clusters; direct ElastiCache, OpenSearch, and OpenSearch Serverless queries return no demo resources
+
+The deployed auth upload bucket allows public `GetObject`, denies insecure transport, and limits CORS to `GET`, `HEAD`, and `PUT` from the demo Admin/Auth origins. The File Service public bucket has the same methods from Admin Web, a public-read policy, and ACL support needed by the existing provider. The private bucket has the same upload CORS but all four S3 public-access-block flags enabled and no public allow statement. All three data buckets are versioned. The Auth Web and Admin Web asset buckets remain separate from uploaded data.
+
+Commands used for the read-only verification were limited to `aws resourcegroupstaggingapi get-resources`, ECS list/describe operations, CloudWatch Logs read operations, S3 bucket CORS/policy/public-access/versioning reads, direct ElastiCache/OpenSearch collection listings, and HTTPS `GET`/disabled-webhook probes. Secret values and full ECS/Lambda environments were never printed.
+
+The first services image build lost its BuildKit transport while compiling Core under ARM emulation. Demo-only Dockerfiles now compile Nest JavaScript on `$BUILDPLATFORM` and install production dependencies in the target ARM stage; the isolated retry built Core in 74 seconds. OpenNext also requires each web app's `node_modules` to be a real local directory during packaging: a workspace symlink produced a Lambda bundle without `next`, while copying the installed dependencies locally produced working Auth Web and Admin Web artifacts. Future deploy hosts must preserve that preflight until the packaging setup removes the symlink sensitivity.
+
+No AWS mutation or deployment was performed by this worker. The root worker performed deployment, database bootstrap/migration/seeding, and authenticated acceptance. Physical scanner/printer behavior remains device acceptance work.
