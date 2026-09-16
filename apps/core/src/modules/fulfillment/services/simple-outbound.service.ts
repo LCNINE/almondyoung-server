@@ -19,7 +19,12 @@ import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
-import { lockPreparation, lockedPreparationSession, preparationExecutionFacts } from './outbound-preparation.locks';
+import {
+  lockPreparation,
+  activePreparationSession,
+  preparationExecutionFacts,
+  readPreparationPlan,
+} from './outbound-preparation.locks';
 import {
   preparationBlocked,
   OutboundPreparationResult,
@@ -104,6 +109,28 @@ export class SimpleOutboundService {
     if (!actor?.id) throw new UnauthorizedException('Authenticated actor is required');
     const initial = await this.loadWorkItem(shipmentId, tx);
     await this.assertBatchMethodSupported(initial.batchId, tx);
+    const selectedPlan = await readPreparationPlan(initial.batchId, tx);
+    if (selectedPlan?.status === 'active') {
+      // Preserve active execution's work -> plan -> session ordering. Canonical
+      // component locks belong only to draft preparation, before HAND_IN.
+      const [workItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, initial.id))
+        .for('update');
+      const currentPlan = await readPreparationPlan(initial.batchId, tx);
+      if (
+        !workItem ||
+        workItem.batchId !== initial.batchId ||
+        !(PICKABLE_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status) ||
+        currentPlan?.id !== selectedPlan.id ||
+        currentPlan.status !== 'active'
+      )
+        throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Active preparation changed while acquiring work item');
+      const sessionId = await activePreparationSession(workItem.batchId, currentPlan.id, tx);
+      if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+      return this.claimPrepared(workItem, currentPlan.id, sessionId, actor, idempotencyKey, tx);
+    }
     try {
       await lockPreparation(initial.batchId, this.invariant, tx);
     } catch (error) {
@@ -115,21 +142,11 @@ export class SimpleOutboundService {
     await this.assertBatchMethodSupported(workItem.batchId, tx);
     if (workItem.batchId !== initial.batchId)
       throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Shipment batch changed');
-    const [openPlan] = await tx
-      .select()
-      .from(wmsTables.pickingPlans)
-      .where(
-        and(
-          eq(wmsTables.pickingPlans.batchId, workItem.batchId),
-          inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-        ),
-      )
-      .limit(1);
-    if (openPlan?.status === 'active') {
-      const sessionId = await lockedPreparationSession(workItem.batchId, openPlan.id, tx);
-      if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-      return this.claimPrepared(workItem, openPlan.id, sessionId, actor, idempotencyKey, tx);
-    }
+    const openPlan = await readPreparationPlan(workItem.batchId, tx);
+    // Never resume under draft preparation's invariant/session locks: subsequent scan
+    // would take plan after session, opposite to a direct historical start.
+    if (openPlan?.status === 'active')
+      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Draft became active while acquiring preparation locks');
     const facts = await preparationExecutionFacts(workItem.batchId, actor.id, tx);
     if (openPlan?.status === 'draft' && Object.values(facts).some(Boolean)) {
       return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');

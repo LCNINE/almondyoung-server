@@ -880,19 +880,32 @@ describeIfDb('location outbound concurrent commands on independent connections',
       { id: f.actorId, roles: ['logistics_worker'] },
       { id: randomUUID(), roles: ['logistics_worker'] },
     ];
+    const keys = [randomUUID(), randomUUID()];
     const results = await Promise.allSettled(
       [first, second].map((connection, index) =>
         connection.db.transaction((tx) =>
           wiring
             .assembleLocationOutbound(tx)
-            .start(f.shipmentId, { warehouseId: f.warehouseId }, actors[index], randomUUID(), tx),
+            .start(f.shipmentId, { warehouseId: f.warehouseId }, actors[index], keys[index], tx),
         ),
       ),
     );
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
-      reason: { response: { code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER' } },
-    });
+    const loserIndex = results.findIndex((result) => result.status === 'rejected');
+    const loser = results[loserIndex];
+    if (loser.status !== 'rejected') throw new Error('Expected one rejected start');
+    expect(['PICKING_COMPONENT_CHANGED_RETRY', 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER']).toContain(
+      loser.reason.response.code,
+    );
+    // A draft-to-active race rolls back its key. Retrying that original request
+    // must still enforce the winning actor's claim, without creating another plan/session.
+    await expect(
+      first.db.transaction((tx) =>
+        wiring
+          .assembleLocationOutbound(tx)
+          .start(f.shipmentId, { warehouseId: f.warehouseId }, actors[loserIndex], keys[loserIndex], tx),
+      ),
+    ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER' } });
     await first.db.transaction(async (tx) => {
       const state = await effects(tx, f.batchId);
       expect(state.plans).toHaveLength(1);

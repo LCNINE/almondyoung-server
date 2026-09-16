@@ -109,12 +109,23 @@ export async function preparationExecutionFacts(batchId: string, actorId: string
   };
 }
 
+/** Read without acquiring plan/session locks; active commands retain their own guarded execution order. */
+export async function readPreparationPlan(batchId: string, tx: DbTx) {
+  const [plan] = await tx
+    .select()
+    .from(wmsTables.pickingPlans)
+    .where(
+      and(eq(wmsTables.pickingPlans.batchId, batchId), inArray(wmsTables.pickingPlans.status, ['draft', 'active'])),
+    )
+    .limit(1);
+  return plan;
+}
+
 /**
- * lockPreparation's invariant already owns the session. Resuming via picking.start
- * would now take plan -> session in reverse order against a direct active start.
- * Validate the immutable HAND_IN identity using the held session, without another plan lock.
+ * Called under the active work-item lock, before downstream work -> plan -> session
+ * guards. HAND_IN identity is immutable; do not introduce a session lock ahead of plan.
  */
-export async function lockedPreparationSession(batchId: string, planId: string, tx: DbTx): Promise<string | null> {
+export async function activePreparationSession(batchId: string, planId: string, tx: DbTx): Promise<string | null> {
   const sessions = await tx
     .select()
     .from(wmsTables.batchInventorySessions)

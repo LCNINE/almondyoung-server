@@ -18,7 +18,18 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
     .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
   const plans = await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId));
   const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
-  const resourceIds = [f.shipmentId, f.batchId, f.workItemId, ...plans.map((p) => p.id), ...sessions.map((s) => s.id)];
+  const attempts = await tx
+    .select()
+    .from(wmsTables.dispatchAttempts)
+    .where(eq(wmsTables.dispatchAttempts.shipmentId, f.shipmentId));
+  const resourceIds = [
+    ...attempts.map((a) => a.id),
+    f.shipmentId,
+    f.batchId,
+    f.workItemId,
+    ...plans.map((p) => p.id),
+    ...sessions.map((s) => s.id),
+  ];
   await tx
     .delete(wmsTables.fulfillmentCommandRequests)
     .where(inArray(wmsTables.fulfillmentCommandRequests.resourceId, resourceIds));
@@ -33,6 +44,15 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
       ]),
     );
   await tx.delete(wmsTables.auditLogs).where(eq(wmsTables.auditLogs.userId, f.actorId));
+  if (attempts.length) {
+    await tx.delete(wmsTables.dispatchAttemptSources).where(
+      inArray(
+        wmsTables.dispatchAttemptSources.dispatchAttemptId,
+        attempts.map((a) => a.id),
+      ),
+    );
+    await tx.delete(wmsTables.dispatchAttempts).where(eq(wmsTables.dispatchAttempts.shipmentId, f.shipmentId));
+  }
   if (sessions.length) {
     await tx.delete(wmsTables.batchInventorySessionEvents).where(
       inArray(

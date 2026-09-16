@@ -1,4 +1,7 @@
 import * as preparationLocks from './outbound-preparation.locks';
+import { SimpleOutboundService } from './simple-outbound.service';
+import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
+import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import * as planLocks from '../picking/plan/picking-plan.locks';
 import { randomUUID } from 'crypto';
 import { eq, sql as sqlQuery } from 'drizzle-orm';
@@ -138,12 +141,22 @@ describeDb('outbound preparation committed concurrency', () => {
     const f = await fixture(true);
     try {
       const key = randomUUID();
+      const secondKey = sameKey ? key : randomUUID();
       const result = await overlap(
         (tx) => start(f, key, tx),
-        (tx) => start(f, sameKey ? key : randomUUID(), tx),
+        (tx) => start(f, secondKey, tx),
       );
       expect(result.first).toMatchObject({ status: 'in_progress' });
-      expect(result.second).toEqual({ ok: true, value: result.first });
+      if (sameKey) expect(result.second).toEqual({ ok: true, value: result.first });
+      else {
+        expect(result.second).toMatchObject({
+          ok: false,
+          error: {
+            response: { code: 'PICKING_COMPONENT_CHANGED_RETRY' },
+          },
+        });
+        expect(await observer.db.transaction((tx) => start(f, secondKey, tx))).toEqual(result.first);
+      }
       await assertSingleSession(f, 2);
     } finally {
       await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
@@ -241,7 +254,12 @@ describeDb('outbound preparation committed concurrency', () => {
       await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
     }
   });
-  it('resumes while direct picking.start holds the plan and waits for the already locked session', async () => {
+  it.each([
+    ['start', 'start'],
+    ['scan', 'start'],
+    ['force', 'start'],
+    ['scan', 'scan'],
+  ] as const)('finishes active %s with a direct %s paused at real mid-command locks', async (operation, competitor) => {
     const f = await fixture();
     await observer.db.transaction((tx) => start(f, randomUUID(), tx));
     const [plan] = await observer.db
@@ -250,91 +268,244 @@ describeDb('outbound preparation committed concurrency', () => {
       .where(eq(wmsTables.pickingPlans.batchId, f.batchId));
     const direct = makeDb(DATABASE_URL!);
     const resume = makeDb(DATABASE_URL!);
-    let releasePreparation!: () => void;
-    let releaseDirect!: () => void;
-    let planLocked!: () => void;
-    let preparationLocked!: () => void;
-    const beforeResume = new Promise<void>((resolve) => {
-      releasePreparation = resolve;
+    let release!: () => void;
+    let entered!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    const beforeDirect = new Promise<void>((resolve) => {
-      releaseDirect = resolve;
+    const prepared = new Promise<void>((resolve) => {
+      entered = resolve;
     });
-    const directAtLock = new Promise<void>((resolve) => {
-      planLocked = resolve;
-    });
-    const preparationAtLock = new Promise<void>((resolve) => {
-      preparationLocked = resolve;
-    });
-    const lockPreparation = preparationLocks.lockPreparation;
-    const spy = jest.spyOn(preparationLocks, 'lockPreparation').mockImplementation(async (...args) => {
-      const aggregate = await lockPreparation(...args);
-      preparationLocked();
-      await beforeResume;
-      return aggregate;
+    const prepare = SimpleOutboundService.prototype.prepare;
+    const spy = jest.spyOn(SimpleOutboundService.prototype, 'prepare').mockImplementation(async function (...args) {
+      const result = await prepare.apply(this, args);
+      entered();
+      await barrier;
+      return result;
     });
     let a: Promise<unknown> | undefined;
     let b: Promise<unknown> | undefined;
     try {
       const [{ pid: directPid }] = await direct.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
       const [{ pid: resumePid }] = await resume.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
-      // Hold the exact first lock of startSession's historical-start branch before invoking
-      // the real direct API. Preparation then acquires its invariant/session locks mid-operation.
-      b = direct.db.transaction(async (tx) => {
+      expect(directPid).not.toBe(resumePid);
+      a = resume.db.transaction(async (tx) => {
         await tx.execute(sqlQuery`SET LOCAL statement_timeout = '5s'`);
-        await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, plan.id)).for('update');
-        planLocked();
-        await beforeDirect;
-        return assembleOutbound(tx).picking.start(
-          { batchId: f.batchId, planId: plan.id, actorId: f.actorId, idempotencyKey: randomUUID() },
+        const { location } = assembleOutbound(tx);
+        const actor = { id: f.actorId, roles: ['logistics_worker'] };
+        if (operation === 'start') return start(f, randomUUID(), tx);
+        if (operation === 'scan')
+          return location.scan(
+            f.shipmentId,
+            {
+              warehouseId: f.warehouseId,
+              sourceLocationId: f.locationId,
+              barcode: f.barcode,
+              quantity: 1,
+            },
+            actor,
+            randomUUID(),
+            tx,
+          );
+        return location.force(
+          f.shipmentId,
+          {
+            warehouseId: f.warehouseId,
+            reason: 'concurrent active force',
+            items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 3 }],
+          },
+          actor,
+          randomUUID(),
+          {
+            scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+            granted: true,
+            [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
+          },
           tx,
         );
       });
-      const resultB = b.then(
-        (value) => ({ ok: true, value }),
-        (error) => ({ ok: false, error }),
-      );
-      await directAtLock;
-      a = resume.db.transaction(async (tx) => {
-        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '5s'`);
-        return start(f, randomUUID(), tx);
-      });
       const resultA = a.then(
-        (value) => ({ ok: true, value }),
-        (error) => ({ ok: false, error }),
+        (value) => ({ ok: true as const, value }),
+        (error) => ({ ok: false as const, error }),
       );
       await Promise.race([
-        preparationAtLock,
+        prepared,
         resultA.then((result) => {
           throw new Error(JSON.stringify(result));
         }),
       ]);
-      releaseDirect();
+      let completed = false;
+      b = direct.db.transaction(async (tx) => {
+        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '5s'`);
+        if (competitor === 'scan') {
+          const [session] = await tx
+            .select()
+            .from(wmsTables.batchInventorySessions)
+            .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
+          const [work] = await tx
+            .select()
+            .from(wmsTables.outboundBatchWorkItems)
+            .where(eq(wmsTables.outboundBatchWorkItems.id, f.workItemId));
+          return assembleOutbound(tx).picking.scan(
+            {
+              strategy: 'discrete',
+              stage: 'source',
+              batchId: f.batchId,
+              planId: plan.id,
+              sessionId: session.id,
+              workItemId: f.workItemId,
+              shipmentId: f.shipmentId,
+              shipmentLineId: f.shipmentLineId,
+              skuId: f.skuId,
+              sourceLocationId: f.locationId,
+              quantity: 1,
+              actor: { id: f.actorId, roles: ['logistics_worker'] },
+              expectedLeaseVersion: work.leaseVersion,
+              idempotencyKey: randomUUID(),
+            },
+            tx,
+          );
+        }
+        return assembleOutbound(tx).picking.start(
+          {
+            batchId: f.batchId,
+            planId: plan.id,
+            actorId: f.actorId,
+            idempotencyKey: randomUUID(),
+          },
+          tx,
+        );
+      });
+      const resultB = b
+        .then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error }),
+        )
+        .finally(() => {
+          completed = true;
+        });
+      // Observe the real direct command either commit or wait on preparation before
+      // allowing scan/force to execute. No synthetic plan/session locks are taken.
       let waiting = false;
       const deadline = Date.now() + 3000;
-      while (!waiting && Date.now() < deadline) {
-        const [row] = await observer.sql<
-          { waiting: boolean }[]
-        >`select ${resumePid}::int = any(pg_blocking_pids(${directPid}::int)) as waiting`;
+      while (!waiting && !completed && Date.now() < deadline) {
+        const [row] = await observer.sql<{ waiting: boolean }[]>`
+            select ${resumePid}::int = any(pg_blocking_pids(${directPid}::int)) as waiting`;
         waiting = row.waiting;
-        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+        if (!waiting && !completed) await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      expect(waiting).toBe(true);
-      releasePreparation();
-      expect(await resultA).toMatchObject({ ok: true, value: { status: 'in_progress' } });
-      const directOutcome = await resultB;
-      if ('error' in directOutcome) throw directOutcome.error;
-      expect(directOutcome).toMatchObject({ ok: true, value: { state: 'started' } });
-      await assertSingleSession(f, 1);
+      expect(waiting || completed).toBe(true);
+      release();
+      const outcomeA = await resultA;
+      const outcomeB = await resultB;
+      if (!outcomeA.ok) throw outcomeA.error;
+      if (!outcomeB.ok) throw outcomeB.error;
+      expect(outcomeA.value).toMatchObject({ status: operation === 'force' ? 'shipped' : 'in_progress' });
+      if (competitor === 'start')
+        expect(outcomeB.value).toMatchObject({ state: 'started', sessionId: expect.any(String) });
+      else expect(outcomeB.value).toBeDefined();
+      const sessions = await observer.db
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
+      expect(sessions).toHaveLength(1);
     } finally {
-      releaseDirect();
-      releasePreparation();
+      release();
       spy.mockRestore();
       await Promise.allSettled([a, b].filter((value) => value !== undefined));
       await Promise.all([direct.sql.end(), resume.sql.end()]);
       await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
     }
   });
+
+  it.each(['draft-to-active', 'active-to-completed'] as const)(
+    'retries %s after optimistic selection without switching lock order',
+    async (transition) => {
+      const f = await fixture();
+      if (transition === 'active-to-completed') await observer.db.transaction((tx) => start(f, randomUUID(), tx));
+      const prep = makeDb(DATABASE_URL!);
+      const other = makeDb(DATABASE_URL!);
+      let release!: () => void;
+      let entered!: () => void;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const selected = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const read = preparationLocks.readPreparationPlan;
+      let first = true;
+      const spy = jest.spyOn(preparationLocks, 'readPreparationPlan').mockImplementation(async (...args) => {
+        const plan = await read(...args);
+        if (first) {
+          first = false;
+          entered();
+          await barrier;
+        }
+        return plan;
+      });
+      let run: Promise<unknown> | undefined;
+      const key = randomUUID();
+      try {
+        run = prep.db.transaction((tx) => start(f, key, tx));
+        const outcome = run.then(
+          (value) => ({ ok: true, value }),
+          (error) => ({ ok: false, error }),
+        );
+        await Promise.race([
+          selected,
+          outcome.then((result) => {
+            throw new Error(JSON.stringify(result));
+          }),
+        ]);
+        await other.db.transaction(async (tx) => {
+          const services = assembleOutbound(tx);
+          if (transition === 'draft-to-active') {
+            const plan = await read(f.batchId, tx);
+            return services.picking.start(
+              { batchId: f.batchId, planId: plan.id, actorId: f.actorId, idempotencyKey: randomUUID() },
+              tx,
+            );
+          }
+          return services.location.force(
+            f.shipmentId,
+            {
+              warehouseId: f.warehouseId,
+              reason: 'complete between active selection and work lock',
+              items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 3 }],
+            },
+            { id: f.actorId, roles: ['logistics_worker'] },
+            randomUUID(),
+            {
+              scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+              granted: true,
+              [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
+            },
+            tx,
+          );
+        });
+        release();
+        expect(await outcome).toMatchObject({
+          ok: false,
+          error: {
+            response: { code: 'PICKING_COMPONENT_CHANGED_RETRY' },
+          },
+        });
+        expect(
+          await observer.db
+            .select()
+            .from(wmsTables.fulfillmentCommandRequests)
+            .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
+        ).toHaveLength(0);
+      } finally {
+        release();
+        spy.mockRestore();
+        await Promise.allSettled([run]);
+        await Promise.all([prep.sql.end(), other.sql.end()]);
+        await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
+      }
+    },
+  );
 
   it('rejects a member added after optimistic discovery before acquiring its new fulfillment component', async () => {
     const f = await observer.db.transaction((tx) => seedPickableShipment(tx, 3));
