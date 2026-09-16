@@ -1,5 +1,5 @@
 // apps/notification/src/shared/services/webhook.service.ts
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Webhook } from 'svix';
 import { InjectTypedDb } from '@app/db/decorators';
@@ -16,7 +16,7 @@ import { StructuredLogger } from '../utils/logger.utils';
 @Injectable()
 export class WebhookService {
   private readonly logger: StructuredLogger;
-  private readonly resendWebhook: Webhook;
+  private readonly resendWebhook: Webhook | null;
 
   constructor(
     @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
@@ -25,6 +25,16 @@ export class WebhookService {
     private readonly verificationFallback: VerificationFallbackService,
   ) {
     this.logger = new StructuredLogger(new Logger(WebhookService.name));
+
+    const isSafeDemoEnvironment =
+      this.configService.get<string>('APP_STAGE') === 'demo' &&
+      this.configService.get<string>('DEMO_CONSOLE_ENABLED') === 'true' &&
+      this.configService.get<string>('EXTERNAL_INTEGRATIONS_MODE') === 'mock';
+
+    if (isSafeDemoEnvironment) {
+      this.resendWebhook = null;
+      return;
+    }
 
     // Resend webhook verifier 초기화
     const resendSecret = this.configService.get<string>('RESEND_WEBHOOK_SECRET');
@@ -49,6 +59,10 @@ export class WebhookService {
       'svix-signature': string;
     },
   ): Promise<void> {
+    if (!this.resendWebhook) {
+      throw new NotFoundException('Resend webhooks are unavailable in demo mode');
+    }
+
     try {
       // 1. 서명 검증
       let event: ResendWebhookEvent;
