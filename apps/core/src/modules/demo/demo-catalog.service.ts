@@ -69,7 +69,7 @@ export class DemoCatalogService {
         JOIN product_masters master ON master.id = mv.master_id AND master.deleted_at IS NULL
         JOIN product_matchings m ON m.variant_id = v.id AND (m.master_id = master.id OR m.master_id IS NULL)
         LEFT JOIN product_variant_price_cache pc ON pc.variant_id = v.id AND pc.version_id = mv.id
-        WHERE v.status = 'active' AND mv.status = 'active' AND mv.fulfillment_kind = 'physical'
+        WHERE v.status = 'active' AND mv.status = 'active' AND mv.deleted_at IS NULL AND mv.fulfillment_kind = 'physical'
           AND m.is_resolved AND m.status = 'matched' ${variantFilter} ${searchFilter}
         ORDER BY v.id, mv.version DESC, mv.id
       ), available_stock AS (

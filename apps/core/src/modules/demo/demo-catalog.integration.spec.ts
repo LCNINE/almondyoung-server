@@ -104,6 +104,14 @@ const databaseUrl =
       await client`UPDATE skus SET is_deleted=false WHERE id=${a.skuId}`;
     }
   });
+  it('excludes soft-deleted product versions even if their status is still active', async () => {
+    await client`UPDATE product_master_versions SET deleted_at=now() WHERE id=${ids.version}`;
+    try {
+      expect((await service.catalog(parseDemoCatalogQuery({ variantIds: ids.variant }))).items).toEqual([]);
+    } finally {
+      await client`UPDATE product_master_versions SET deleted_at=null WHERE id=${ids.version}`;
+    }
+  });
   it('returns stable seeded pages and filters unavailable variants before paging', async () => {
     const query = parseDemoCatalogQuery({ randomSeed: ids.variant, limit: 3, availableOnly: 'true' });
     const first = await service.catalog(query);
