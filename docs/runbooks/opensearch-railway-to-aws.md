@@ -50,6 +50,28 @@ customTimeouts 가 60분이다). 배포가 길어져도 정상이다.
 **이 배포는 컷오버가 아니다.** `services.ts` 의 `useAwsOpenSearch` 가 `false` 인 동안 앱은
 Railway 를 계속 본다 — 도메인이 비어 있는 채로 트래픽을 받는 창이 없다. 컷오버는 5번이다.
 
+**첫 배포는 nori associate 에서 한 번 실패하는 게 정상이다.** 도메인 생성 직후 AWS 가 내부
+준비를 마치기 전에 패키지를 붙이려 해서 이런 오류가 난다:
+
+```
+ValidationException: Domain is processing other changes. Please wait for the Domain
+status to get back to Active before associating or dissociating a plugin.
+```
+
+도메인 자체는 이미 만들어져 있다. `Active` 가 된 것을 확인하고 **같은 명령을 다시 돌리면**
+도메인은 건너뛰고 패키지만 붙인다.
+
+```bash
+D=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+aws opensearch describe-domain --domain-name "$D" \
+  --query 'DomainStatus.{processing:Processing,status:DomainProcessingStatus}' --output json
+# processing: false / status: "Active" 를 확인한 뒤 재배포
+
+aws opensearch list-packages-for-domain --domain-name "$D" \
+  --query 'DomainPackageDetailsList[].[PackageName,DomainPackageStatus]' --output text
+# 재배포 뒤 analysis-nori / ACTIVE 가 나와야 한다. 비어 있으면 아직 안 붙은 것이다
+```
+
 ### 2. 도메인에 접속 경로 열기
 
 도메인이 VPC 안이라 로컬에서 바로 안 닿는다. NAT/bastion 인스턴스를 거쳐 포트를 뚫는다.
