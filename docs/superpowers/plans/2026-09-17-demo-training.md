@@ -22,12 +22,12 @@ Files: create scripts/demo/catalog-snapshot.ts, catalog-import.ts, catalog-polic
 Consumes: live/core read-only connection and demo/core target, existing demo-logistics fixture.
 Produces: CLI snapshot/export/audit/import with manifest; all SKU identifiers retained with source deletion state and related catalog/matching/barcodes/supplier attributes. Snapshot metadata stored in demo and import report.
 
-- [ ] Inspect real table schema and dependency graph; obtain aggregate source/target audit only.
-- [ ] Test target stage/identity rejection, field allowlist, idempotent upsert, SKU completeness and relationship validation before implementation.
-- [ ] Implement explicit table/column selections and repeatable-read read-only export; never serialize credentials or full unfiltered supplier/customer data.
-- [ ] Import in dependency order, map demo warehouse/holder/delivery profiles, preserve current stock/work and retain existing fixture. Missing physical SKU catalog links get deterministic demo variants.
-- [ ] Test import into disposable migrated PostgreSQL, run twice, assert stock/work preservation and exact source SKU set containment.
-- [ ] Apply only verified source snapshot to demo; record aggregate evidence and unresolved exclusions.
+- [x] Inspect real table schema and dependency graph; obtain aggregate source/target audit only.
+- [x] Test target stage/identity rejection, field allowlist, idempotent upsert, SKU completeness and relationship validation before implementation.
+- [x] Implement explicit table/column selections and repeatable-read read-only export; never serialize credentials or full unfiltered supplier/customer data.
+- [x] Import in dependency order, map demo warehouse/holder/delivery profiles, preserve current stock/work and retain existing fixture. Missing physical SKU catalog links get deterministic demo variants.
+- [x] Test import into disposable migrated PostgreSQL, run twice, assert stock/work preservation and exact source SKU set containment.
+- [x] Apply only verified source snapshot to demo; record aggregate evidence and unresolved exclusions.
 
 ```ts
 // The importer must fail closed independently of its CLI.
@@ -42,10 +42,10 @@ expect(stockAfterRefresh).toEqual(stockBeforeRefresh);
 Files: apps/core/src/modules/demo/demo-catalog.service.ts, demo-catalog.service.spec.ts, demo.controller.ts, demo.module.ts, demo.service.ts.
 Produces: GET /demo/catalog?search=&page=1&limit=100&variantIds=uuid,uuid, with { items, total, page, limit }; each item { variantId, masterId, versionId, skuId, sku, productName, unitPrice, availableQuantity, components: [{skuId,quantity,availableQuantity}] }. Only physical valid mapped demo-shippable variants appear as order candidates. GET readiness retains fixture checks plus catalog totals.
 
-- [ ] Write tests for non-fixture variant, composite SKU availability, deleted SKU exclusion, stable paging, barcode search and malformed filter rejection.
-- [ ] Use actual active product master/version/variant links; derive stock from sellable warehouses, exclude missing/invalid components.
-- [ ] Keep full SKU audit separate from order candidate filtering. Preserve existing consumers of items and fixture readiness.
-- [ ] Test with source import and at least one non-fixture SKU/variant.
+- [x] Write tests for non-fixture variant, composite SKU availability, deleted SKU exclusion, stable paging, barcode search and malformed filter rejection.
+- [x] Use actual active product master/version/variant links; derive stock from sellable warehouses, exclude missing/invalid components.
+- [x] Keep full SKU audit separate from order candidate filtering. Preserve existing consumers of items and fixture readiness.
+- [x] Test with source import and at least one non-fixture SKU/variant.
 
 ```ts
 // Bundle availability cannot exceed the limiting component.
@@ -58,11 +58,11 @@ Files: apps/channel-adapter/src/demo/*, apps/channel-adapter/src/schema.ts, chan
 Consumes: Task 2 catalog via authenticated trusted Core URL. Forward the requesting admin's authorization to Core; do not trust client product names/prices/stock snapshots.
 Produces: additive run input mode='specified'|'random', variantIds?, productsPerOrder?, minQuantity?, maxQuantity?; count remains 1..50. Existing variantId/quantity requests remain replayable. Runs expose input for retry; items expose persisted lines.
 
-- [ ] Test multiple distinct variants/order, aggregate and shared-component availability, shortage quantity, exhausted candidates, request replay after catalog changes and partial retry.
-- [ ] Persist selection and trusted catalog snapshots per run item before ingestion using additive JSON columns; old runs fall back to fixture identity.
-- [ ] Resolve same request before consulting mutable catalog on replay. Conflicting input returns 409, completed items not resent.
-- [ ] Provider emits each line with stable deterministic identity and correct totals through existing orchestrator/outbox.
-- [ ] Run unit and migrated disposable-DB repository integration tests, including old/new run hydration.
+- [x] Test multiple distinct variants/order, aggregate and shared-component availability, shortage quantity, exhausted candidates, request replay after catalog changes and partial retry.
+- [x] Persist selection and trusted catalog snapshots per run item before ingestion using additive JSON columns; old runs fall back to fixture identity.
+- [x] Resolve same request before consulting mutable catalog on replay. Conflicting input returns 409, completed items not resent.
+- [x] Provider emits each line with stable deterministic identity and correct totals through existing orchestrator/outbox.
+- [x] Run unit and migrated disposable-DB repository integration tests, including old/new run hydration.
 
 ```ts
 expect(replayed.items.map(i => i.lines)).toEqual(first.items.map(i => i.lines));
@@ -75,11 +75,11 @@ Files: apps/admin-web/src/features/demo/demo-console.tsx and focused helpers/com
 Consumes: Task 2 catalog, Task 3 extended input and item lines.
 Produces: searched catalog selection, multi-product run controls, repeat request persistence, per-order contents, guide links; operator preparation tool using existing inbound/putaway APIs.
 
-- [ ] Add independent UI model tests for validated bounds and old/new pending request replay.
-- [ ] Split long console sections if needed. Use server search/pagination, show request acceptance distinct from actual outbound completion.
-- [ ] Preparation tool takes stable requestId, selected SKU IDs, quantity and destination; uses existing domain APIs and durable local/DB checkpoint keyed by that request, never stock resets.
-- [ ] Add selected-SKU synthetic demand via demo-only bounded seed, run normal replenishment refresh. Provide barcode/PO/receipt/location handoff information.
-- [ ] Verify controls at desktop width, create/replay mixed orders and replenish non-fixture SKU.
+- [x] Add independent UI model tests for validated bounds and old/new pending request replay.
+- [x] Split long console sections if needed. Use server search/pagination, show request acceptance distinct from actual outbound completion.
+- [x] Preparation tool takes stable requestId, selected SKU IDs, quantity and destination; uses existing domain APIs and durable local/DB checkpoint keyed by that request, never stock resets.
+- [x] Add selected-SKU synthetic demand via demo-only bounded seed, run normal replenishment refresh. Provide barcode/PO/receipt/location handoff information.
+- [x] Verify controls at desktop width, create/replay mixed orders and replenish non-fixture SKU.
 
 ### Task 5: Detailed guides and Windows delivery
 
@@ -87,16 +87,20 @@ Files: docs/demo-training/{index,retail,warehouse,workshop,operator}.html; asset
 Consumes: current verified UI + approved design; successful work IDs from acceptance.
 Produces: self-contained HTML guides and 16:9 printable/searchable PDFs; Windows build artifact or exact outstanding toolchain limitation.
 
-- [ ] Capture authenticated demo screens without passwords/tokens; read source for exact buttons and recovery states. Do not fabricate screenshots or imply future features are deployed.
-- [ ] Write full step-by-step Korean role guides with prerequisites, actions, example, result, next owner, troubleshooting.
-- [ ] Include fixed workshop values and free-practice distinction, barcode/packing-unit input, Windows login callback/scanner/printer checks.
-- [ ] Generate PDFs from same HTML with readable page layout; render and inspect all pages, verify text extraction and links.
-- [ ] Build Windows demo through supported Windows toolchain/CI if available; explicitly retain physical device acceptance as requiring the device.
+- [x] Capture authenticated demo screens without passwords/tokens; read source for exact buttons and recovery states. Do not fabricate screenshots or imply future features are deployed.
+- [x] Write full step-by-step Korean role guides with prerequisites, actions, example, result, next owner, troubleshooting.
+- [x] Include fixed workshop values and free-practice distinction, barcode/packing-unit input, Windows login callback/scanner/printer checks.
+- [x] Generate PDFs from same HTML with readable page layout; render and inspect all pages, verify text extraction and links.
+- [x] Build Windows demo through supported Windows toolchain/CI if available; explicitly retain physical device acceptance as requiring the device.
 
 ### Task 6: Deployment, acceptance and final review
 
-- [ ] Review all diffs and source/target manifest, run scoped tests, TypeScript, UI checks and migration tests.
-- [ ] Deploy only demo changes using existing SST path, apply additive migrations before corresponding services.
-- [ ] In deployed demo verify non-fixture lookup, 10-unit PO with 4+6 receipts/putaway, generated multi-product order to mock waybill/outbound, shortage/restock path, same-request replay.
-- [ ] Refresh guide screenshots/results to deployed version and verify all HTML/PDF pages.
-- [ ] Record exact completed/unavailable evidence, artifact locations, command outcomes and residual physical-device steps in docs/superpowers/reports/2026-09-17-demo-training.md.
+- [x] Review all diffs and source/target manifest, run scoped tests, TypeScript, UI checks and migration tests.
+- [x] Deploy only demo changes using existing SST path, apply additive migrations before corresponding services.
+- [x] In deployed demo verify non-fixture lookup, 10-unit PO with 4+6 receipts/putaway, generated multi-product order to mock waybill/outbound, shortage/restock path, same-request replay.
+- [x] Refresh guide screenshots/results to deployed version and verify all HTML/PDF pages.
+- [x] Record exact completed/unavailable evidence, artifact locations, command outcomes and residual physical-device steps in docs/superpowers/reports/2026-09-17-demo-training.md.
+
+## 완료 기록
+
+구현 및 demo 업무/API 인수 결과와 파일 경로는 `../reports/2026-09-17-demo-training.md`에 기록했다. Windows 설치 파일 빌드는 완료했고, 지정 PC·스캐너·프린터의 실물 확인은 가이드에 미검증으로 명시해 현장 인수 항목으로 남긴다.
