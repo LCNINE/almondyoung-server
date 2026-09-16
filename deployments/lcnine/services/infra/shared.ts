@@ -80,13 +80,13 @@ export function setup(opts?: { baseDomain?: string }) {
     $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
   // ─── OpenSearch (VPC, single-AZ, t3.small.search) ───
-  // 2026-05 에 연결 트러블슈팅으로 Railway 로 폴백했다가 07-05 에 고아 자원이라 삭제했던 도메인을
-  // 되살린다. 2026-09-16 에 그 Railway 인스턴스가 28분 죽어 고객 검색이 전면 0건이 됐고,
-  // 검색 이력(search_query_events)이 거기에만 있어 사실상 백업 없는 단일 장애점이었다.
+  // 2026-05 에 연결 트러블슈팅으로 외부 인스턴스로 폴백했다가 07-05 에 고아 자원이라 삭제했던
+  // 도메인을 되살린다. 그 외부 인스턴스는 백업도 인증도 없었고 검색 이력(search_query_events)의
+  // 유일본을 들고 있었다 — 저장소가 하나뿐인 구조라 사실상 단일 장애점이었다.
   //
-  // 사양은 삭제 전과 같은 t3.small × 1 / 10 GB (월 약 $42). 노드가 하나라 코드가 요구하는
-  // number_of_replicas: 1 은 배정되지 않고 클러스터는 yellow 로 남는다 — Railway 도 같은 상태였다.
-  // 이중화가 필요해지면 instanceCount 2 + zoneAwarenessEnabled 로 올린다 (월 약 +$42).
+  // 사양은 삭제 전과 같은 t3.small × 1 / 10 GB. 노드가 하나라 코드가 요구하는
+  // number_of_replicas: 1 은 배정되지 않고 클러스터는 yellow 로 남는다 (정상 동작).
+  // 이중화가 필요해지면 instanceCount 2 + zoneAwarenessEnabled 로 올린다.
   //
   // sst.aws.OpenSearch 는 vpc 옵션을 직접 받지 않아 transform.domain 으로 vpcOptions 를 주입한다.
   // 한국어 형태소 분석은 AWS-managed `analysis-nori` 패키지를 도메인에 associate 해서 활성화 (built-in 아님).

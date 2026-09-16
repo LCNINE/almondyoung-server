@@ -32,9 +32,8 @@ export class OpenSearchService implements OnModuleInit {
 
   // 부팅 시 연결 확인은 «로그»지 «관문»이 아니다. 여기서 throw 하면 OpenSearch 의 가용성이
   // 그대로 이 프로세스의 가용성이 되고, 검색과 무관한 라우트(키워드 운영 상태 = search DB)까지
-  // 같이 죽는다. 게다가 이 앱은 notification·ugc 와 한 ECS 태스크를 쓰므로 포트 하나가
-  // unhealthy 해지면 태스크 «전체»가 교체돼 멀쩡한 두 앱까지 재시작된다.
-  // (2026-09-16: 외부 OpenSearch 28분 다운 → 무한 재시작 → 고객 검색 전면 0건.)
+  // 같이 죽는다. 게다가 이 앱은 다른 앱들과 한 ECS 태스크를 공유하므로, 포트 하나가 unhealthy
+  // 해지면 태스크 «전체»가 교체돼 멀쩡한 이웃까지 재시작된다.
   // 이 상태는 /health 가 200 + status:'degraded' 로 알린다 — 프로세스는 살아서 요청을 받는다.
   async onModuleInit(): Promise<void> {
     try {

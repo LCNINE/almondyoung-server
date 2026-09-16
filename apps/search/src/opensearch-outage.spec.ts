@@ -10,9 +10,9 @@ import { SpellCorrectionService } from './spell-correction.service';
 /**
  * OpenSearch 가 죽어 있어도 search 앱은 «부팅에 성공하고», 돌아오면 «스스로 붙어야» 한다.
  *
- * 2026-09-16 라이브: 외부 OpenSearch 가 28분 다운 → 부팅 훅 세 곳이 throw → 프로세스가
- * 1초마다 재시작 → 포트 3004 가 계속 unhealthy → ALB 가 전 경로 502 → 고객 검색 전면 0건.
- * 게다가 이 앱은 notification·ugc 와 한 ECS 태스크를 써서 그 둘까지 몇 분마다 교체됐다.
+ * 부팅 훅이 throw 하면 프로세스가 재시작을 반복하고, 포트가 계속 unhealthy 라 ALB 가 전
+ * 경로를 502 로 돌려준다. 이 앱은 다른 앱들과 한 ECS 태스크를 공유하므로 그 이웃까지
+ * 주기적으로 교체된다 — OpenSearch 한 곳의 장애가 훨씬 넓게 번진다.
  */
 
 const UNREACHABLE = () => Promise.reject(new Error('connect ECONNREFUSED'));
