@@ -105,7 +105,15 @@ export class ProductIndexService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    await this.ensureProductsIndex();
+    // 인덱스 준비 실패로 부팅을 막지 않는다 (사유는 OpenSearchService.onModuleInit 참조).
+    // ensureProductsIndex 는 실패를 캐시하지 않으므로 첫 검색 요청에서 다시 시도된다.
+    try {
+      await this.ensureProductsIndex();
+    } catch (error) {
+      this.logger.warn(
+        `상품 인덱스 준비 실패 — 검색 요청에서 재시도한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     // 사전 구축은 색인을 훑느라 몇 초 걸린다. 검색은 사전 없이도 동작하므로 기다리지 않는다.
     void this.spellCorrectionService.buildDictionary();
   }
@@ -443,9 +451,15 @@ export class ProductIndexService implements OnModuleInit {
     return result;
   }
 
+  // 거절된 promise 를 «들고 있으면» 안 된다. OpenSearch 가 돌아와도 캐시된 거절이 그대로
+  // 돌아와 이 프로세스가 사는 동안 영영 색인을 못 연다. 예전엔 부팅에서 죽고 새로 뜨는 덕에
+  // 가려져 있던 함정이다 — 부팅이 살아남게 된 지금은 여기서 비워야 재연결이 성립한다.
   private ensureProductsIndex(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initIndex();
+      this.initPromise = this.initIndex().catch((error) => {
+        this.initPromise = null;
+        throw error;
+      });
     }
     return this.initPromise;
   }
@@ -466,8 +480,9 @@ export class ProductIndexService implements OnModuleInit {
         });
         this.logger.log(`Created products index: ${index}`);
       } catch (error) {
+        // initPromise 비우기는 ensureProductsIndex 의 catch 가 «모든» 실패 경로에 대해 한다.
+        // 여기서만 비우면 위 indices.exists() 가 던지는 경우(=접속 불가)가 빠진다.
         if (error.meta?.body?.error?.type !== 'resource_already_exists_exception') {
-          this.initPromise = null;
           throw error;
         }
       }
