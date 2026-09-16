@@ -12,6 +12,12 @@ import { DEMO_LOGISTICS_FIXTURE as fixture, demoUuid } from './demo-logistics.fi
 
 const HOLDER_ID = demoUuid(9, 900);
 
+export function toDemoRuntimeDatabaseUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  url.searchParams.delete('uselibpqcompat');
+  return url.toString();
+}
+
 export class DemoLogisticsSeedStep extends SeedStep {
   readonly groups = ['demo-logistics'] as const;
 
@@ -48,9 +54,34 @@ export class DemoLogisticsSeedStep extends SeedStep {
       FROM purchase_orders
       WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 201 + index))})
     `;
-    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15];
-    const actual = [...checks.map((rows) => rows.size), Number(demand.count), Number(leadTime.count)];
-    const entities = ['product_variants', 'skus', 'suppliers', 'warehouses', 'sku_demand_daily', 'lead_time_inputs'];
+    const [demandProfiles] = await this.client`
+      SELECT count(*)::int AS count
+      FROM sku_demand_profiles
+      WHERE sku_id = ANY(${fixture.catalog.map((item) => item.skuId)})
+    `;
+    const [supplierProfiles] = await this.client`
+      SELECT count(*)::int AS count
+      FROM supplier_lead_time_profiles
+      WHERE supplier_id = ANY(${fixture.suppliers.map((item) => item.id)})
+    `;
+    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3];
+    const actual = [
+      ...checks.map((rows) => rows.size),
+      Number(demand.count),
+      Number(leadTime.count),
+      Number(demandProfiles.count),
+      Number(supplierProfiles.count),
+    ];
+    const entities = [
+      'product_variants',
+      'skus',
+      'suppliers',
+      'warehouses',
+      'sku_demand_daily',
+      'lead_time_inputs',
+      'sku_demand_profiles',
+      'supplier_lead_time_profiles',
+    ];
     const items = entities.map((entity, index) => ({
       entity,
       expected: expected[index],
@@ -256,7 +287,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
 
       // Run the same three-stage full refresh used by POST /replenishment/profiles/recompute.
       // The fixture stores sellmate-partition demand inputs, so the core-series stage leaves them intact.
-      const dbService = new DbService({ connectionString: this.databaseUrl }, wmsSchema);
+      const dbService = new DbService({ connectionString: toDemoRuntimeDatabaseUrl(this.databaseUrl) }, wmsSchema);
       try {
         const job = new ReplenishmentRefreshJob(
           new ReplenishmentSettingsReader(dbService),
