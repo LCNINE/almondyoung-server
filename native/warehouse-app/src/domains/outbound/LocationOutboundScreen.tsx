@@ -193,21 +193,20 @@ function LocationWork({
     };
   }, [draft.ready, runtime, readStartOperation]);
   const queue = useWorkScanQueue<ScanInput>(async (input, id) => {
-    if (workRef.current?.status === 'shipped') {
+    if (!stateUnavailableRef.current && workRef.current?.status === 'shipped') {
       setNotice(
         '출고가 이미 완료되어 남은 스캔은 반영되지 않았어요. 포장 수량을 다시 확인해 주세요.'
       );
       return;
     }
     try {
-      const result = await operations.scan.mutateAsync({
+      await operations.scan.mutateAsync({
         shipmentId,
         ...input,
         idempotencyKey: id,
       });
-      apply(result);
       // A confirmed queue replay returns its original response snapshot.
-      // Keep the queue blocked until current source progress is reconciled.
+      // Only the current GET may project completion or release this queue head.
       await refresh();
       setNotice(null);
     } catch (e) {
@@ -441,7 +440,7 @@ function LocationWork({
             {startRejection ? '다시 준비' : '출고 준비'}
           </Button>
         )
-      ) : work.status === 'shipped' ? (
+      ) : work.status === 'shipped' && !stateUnavailable ? (
         <section>
           <p className="text-xl font-semibold">출고완료</p>
           <WorkArea kind="outbound">

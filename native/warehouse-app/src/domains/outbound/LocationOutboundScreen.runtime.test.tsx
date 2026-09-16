@@ -1015,9 +1015,9 @@ it('requires fresh physical confirmation when the current source tuple changes',
   const f = await preparationFixture();
   f.available();
   await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
-  await userEvent.click(
-    await screen.findByRole('button', { name: '스캔 생략 확인' })
-  );
+  const force = await screen.findByRole('button', { name: '스캔 생략 확인' });
+  await waitFor(() => expect(force).toBeEnabled());
+  await userEvent.click(force);
   await userEvent.type(screen.getByLabelText(/B 실물 수량/), '3');
   await userEvent.type(screen.getByLabelText('스캔 생략 사유'), '확인');
   f.changeSource();
@@ -1052,7 +1052,10 @@ it('resolves lost blocked force after permission revocation without resending or
   });
   await submitForce();
   await waitFor(async () =>
-    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
   );
   f.view.unmount();
   lost = false;
@@ -1112,3 +1115,87 @@ it('does not display historical force success as current when the follow-up GET 
   expect(screen.queryByText('출고완료')).not.toBeInTheDocument();
   expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
 });
+
+async function lostShippedScanWithUnavailableState(kind: 'failed' | 'missing') {
+  const f = await fixture(1);
+  f.loseResponse(true);
+  act(() => emitScan('A'));
+  await waitFor(async () =>
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
+  );
+  const saved = (await f.saved())!;
+  let unavailable = true;
+  let reads = 0;
+  const request = f.api.request;
+  vi.spyOn(f.api, 'request').mockImplementation(async (o) => {
+    if (o.path.includes('location-outbound-state')) {
+      reads++;
+      if (unavailable) {
+        if (kind === 'failed') throw new Error('GET state → 503');
+        return null;
+      }
+    }
+    return request(o);
+  });
+  f.loseResponse(false);
+  await act(async () => f.runner.retryPending());
+  await screen.findByRole('button', { name: '처리 내역 확인' });
+  expect(await f.store.get(saved[0].id)).toMatchObject({
+    status: 'confirmed',
+    result: { status: 'shipped' },
+  });
+  expect(await f.saved()).toEqual(saved);
+  return {
+    ...f,
+    original: saved,
+    reads: () => reads,
+    recover: () => {
+      unavailable = false;
+    },
+  };
+}
+it.each(['failed', 'missing'] as const)(
+  'does not display historical shipped scan completion when current GET is %s',
+  async (kind) => {
+    const f = await lostShippedScanWithUnavailableState(kind);
+    expect(screen.queryByText('출고완료')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('출고 상품 바코드')).toBeDisabled();
+    act(() => emitScan('extra'));
+    expect(await f.saved()).toEqual(f.original);
+    expect(f.picked()).toBe(1);
+  }
+);
+it.each(['failed', 'missing'] as const)(
+  'retains a confirmed shipped scan head until a retry verifies current GET after %s',
+  async (kind) => {
+    const f = await lostShippedScanWithUnavailableState(kind);
+    const previousReads = f.reads();
+    await userEvent.click(
+      screen.getByRole('button', { name: '처리 내역 확인' })
+    );
+    await waitFor(() => expect(f.reads()).toBeGreaterThan(previousReads));
+    expect(await f.saved()).toEqual(f.original);
+    expect(screen.queryByText('출고완료')).not.toBeInTheDocument();
+    f.recover();
+    await userEvent.click(
+      screen.getByRole('button', { name: '처리 내역 확인' })
+    );
+    await screen.findByText('출고완료');
+    await waitFor(async () => expect(await f.saved()).toHaveLength(0));
+    const scans = f.requests.filter((o) =>
+      o.path.endsWith('location-outbound-scans')
+    );
+    expect(scans).toHaveLength(2);
+    expect(new Set(scans.map((o) => o.idempotencyKey)).size).toBe(1);
+    expect(new Set(scans.map((o) => o.bodyJson)).size).toBe(1);
+    expect(scans[0].body).toMatchObject({
+      sourceLocationId: 'B',
+      barcode: 'A',
+      quantity: 1,
+    });
+    expect(f.picked()).toBe(1);
+  }
+);
