@@ -687,6 +687,13 @@
       "when": 1789411103705,
       "tag": "20260914183823_stocktaking-count-baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1789569288700,
+      "tag": "20260916143448_add-demo-carrier-shipments",
+      "breakpoints": true
     }
   ]
 }

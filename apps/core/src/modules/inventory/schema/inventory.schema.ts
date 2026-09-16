@@ -2806,6 +2806,32 @@ export const waybills = pgTable(
   }),
 );
 
+/** Durable external-boundary record used only by the demo carrier provider. */
+export const demoCarrierShipments = pgTable(
+  'demo_carrier_shipments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestKey: varchar('request_key', { length: 128 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    waybillNo: varchar('waybill_no', { length: 128 }).notNull(),
+    labelData: jsonb('label_data').$type<Record<string, unknown>>().notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('allocated'),
+    registeredAt: timestamp('registered_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqDemoCarrierRequestKey: unique('uq_demo_carrier_request_key').on(t.requestKey),
+    uqDemoCarrierWaybillNo: unique('uq_demo_carrier_waybill_no').on(t.waybillNo),
+    ckDemoCarrierRequestHash: check('ck_demo_carrier_request_hash', sql`length(${t.requestHash}) = 64`),
+    ckDemoCarrierStatus: check(
+      'ck_demo_carrier_status',
+      sql`${t.status} IN ('allocated', 'registered', 'canceled')`,
+    ),
+  }),
+);
+
 export const outboundBatchWorkItems = pgTable(
   'outbound_batch_work_items',
   {
@@ -3350,6 +3376,7 @@ export const wmsTables = {
   inspectionIssues,
   outboundBatches,
   waybills,
+  demoCarrierShipments,
 
   // Outbound V2 expand model
   fulfillmentCommandRequests,
@@ -4600,6 +4627,7 @@ export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMap
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;
 export type NewWaybill = InferInsertModel<typeof waybills>;
+export type DemoCarrierShipment = InferSelectModel<typeof demoCarrierShipments>;
 
 // Outbound V2 expand model types
 export type FulfillmentCommandRequest = InferSelectModel<typeof fulfillmentCommandRequests>;

@@ -9,6 +9,8 @@ import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
 import { ReplenishmentSeedStep } from '../steps/replenishment.seed-step';
+import { DemoLogisticsSeedStep } from '../steps/demo-logistics.seed-step';
+import { DemoLogisticsAuthSeedStep } from '../steps/demo-logistics-auth.seed-step';
 import {
   UserServiceSeedStep,
   STOREFRONT_APP_CLIENT_SEED,
@@ -195,6 +197,7 @@ function buildSeedSteps(
     steps.push(new PimSeedStep(coreDbUrl));
     steps.push(new ProductMatchingBackfillSeedStep(coreDbUrl));
     steps.push(new ReplenishmentSeedStep(coreDbUrl));
+    steps.push(new DemoLogisticsSeedStep(coreDbUrl));
   }
 
   const userEntry = registryMap.get('user-service');
@@ -205,6 +208,9 @@ function buildSeedSteps(
         oauthClients: config.oauthClients,
       }),
     );
+    if (process.env.SST_STAGE === 'demo') {
+      steps.push(new DemoLogisticsAuthSeedStep(urlFor(userEntry.database)));
+    }
   }
 
   const membershipEntry = registryMap.get('membership');
