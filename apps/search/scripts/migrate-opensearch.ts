@@ -220,10 +220,15 @@ async function copyIndex(source: Client, target: Client, plan: IndexPlan, option
 
   await target.indices.refresh({ index: plan.name });
   const targetTotal = await countDocs(target, plan.name);
-  const verdict = targetTotal === sourceTotal ? '일치' : '불일치';
+
+  // 판정은 «같다» 가 아니라 «대상이 소스를 포함한다» 여야 한다. 컷오버 뒤 꼬리 복사를 돌리면
+  // 대상에는 전환 후 새로 들어온 문서가 있어 소스보다 많은 게 «정상»이다. 같기를 요구하면
+  // 정상인 회차를 실패로 보고하고, 그걸 본 사람이 이미 옮겨진 데이터를 의심하게 된다.
+  const surplus = targetTotal - sourceTotal;
+  const verdict = surplus === 0 ? '일치' : surplus > 0 ? `대상이 ${surplus.toLocaleString()}건 많음 (전환 후 유입)` : '🔴 대상이 모자람';
   console.log(`  검증: 소스 ${sourceTotal.toLocaleString()} / 대상 ${targetTotal.toLocaleString()} — ${verdict}`);
-  if (targetTotal !== sourceTotal) {
-    throw new Error(`${plan.name} 문서 수가 맞지 않습니다. 다시 실행해 채운 뒤 이 줄이 «일치» 인지 확인하세요.`);
+  if (targetTotal < sourceTotal) {
+    throw new Error(`${plan.name} 이 소스보다 적습니다. 다시 실행해 채운 뒤 이 줄을 확인하세요.`);
   }
 }
 
