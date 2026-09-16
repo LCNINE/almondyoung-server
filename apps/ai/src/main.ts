@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from '@app/shared';
+import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { Logger } from 'nestjs-pino';
 import { AiModule } from './ai.module';
 
@@ -51,6 +52,17 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document, { yamlDocumentUrl: '/docs.yaml' });
+
+  // 소비 집합은 `@On` 에서 도출된다 (ADR-0029 §3). ai.module.ts 의 `forApp` 조건과 짝이다.
+  const kafkaConfig = createKafkaConfigFromEnv();
+  if (kafkaConfig) {
+    await EventsModule.startConsumer(app, {
+      groupId: process.env.KAFKA_GROUP_ID ?? 'ai-consumer',
+      kafka: kafkaConfig,
+    });
+  } else {
+    console.warn('⚠️  KAFKA_BROKERS 가 없다 — 탈퇴 회원의 대화가 지워지지 않는다.');
+  }
 
   const port = process.env.PORT ?? 3070;
 

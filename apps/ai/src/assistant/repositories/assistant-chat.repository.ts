@@ -1,6 +1,6 @@
 import { DbService, InjectTypedDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, lt } from 'drizzle-orm';
 import { assistantChatMessages, assistantChatSessions, type AiSchema } from '../../db/schema';
 
 export type SessionRow = typeof assistantChatSessions.$inferSelect;
@@ -40,7 +40,7 @@ export class AssistantChatRepository {
         updatedAt: assistantChatSessions.updatedAt,
       })
       .from(assistantChatSessions)
-      .where(eq(assistantChatSessions.userId, userId))
+      .where(and(eq(assistantChatSessions.userId, userId), isNull(assistantChatSessions.deletedAt)))
       .orderBy(desc(assistantChatSessions.updatedAt))
       .limit(limit);
   }
@@ -49,7 +49,13 @@ export class AssistantChatRepository {
     const [found] = await this.dbService.db
       .select()
       .from(assistantChatSessions)
-      .where(and(eq(assistantChatSessions.id, sessionId), eq(assistantChatSessions.userId, userId)))
+      .where(
+        and(
+          eq(assistantChatSessions.id, sessionId),
+          eq(assistantChatSessions.userId, userId),
+          isNull(assistantChatSessions.deletedAt),
+        ),
+      )
       .limit(1);
 
     return found;
@@ -111,5 +117,26 @@ export class AssistantChatRepository {
   /** 메시지는 FK 의 on delete cascade 로 함께 지워진다. */
   async deleteSession(sessionId: string): Promise<void> {
     await this.dbService.db.delete(assistantChatSessions).where(eq(assistantChatSessions.id, sessionId));
+  }
+
+  /** 이미 감춰진 것은 건드리지 않는다 — `deleted_at` 이 뒤로 밀리면 유예가 그만큼 늘어난다. */
+  async softDeleteSessionsByUser(userId: string, at: Date): Promise<number> {
+    const updated = await this.dbService.db
+      .update(assistantChatSessions)
+      .set({ deletedAt: at })
+      .where(and(eq(assistantChatSessions.userId, userId), isNull(assistantChatSessions.deletedAt)))
+      .returning({ id: assistantChatSessions.id });
+
+    return updated.length;
+  }
+
+  /** 유예 기간이 지난 것을 실제로 지운다. 메시지는 FK cascade 로 함께 사라진다. */
+  async purgeSoftDeletedBefore(cutoff: Date): Promise<number> {
+    const purged = await this.dbService.db
+      .delete(assistantChatSessions)
+      .where(lt(assistantChatSessions.deletedAt, cutoff))
+      .returning({ id: assistantChatSessions.id });
+
+    return purged.length;
   }
 }

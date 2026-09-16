@@ -1,6 +1,9 @@
 import { AuthorizationModule, authorizationSchema, JwtAuthGuard, ScopeGuard } from '@app/authorization';
+import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
+import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { loggerConfig } from '@app/shared/observability/logger.config';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -27,12 +30,26 @@ const combinedSchema = { ...aiSchema, ...authorizationSchema };
       scopes: AI_SCOPES,
       roleMappings: AI_ROLE_MAPPINGS,
     }),
+    // 이 둘이 빠지면 @CronOnce 는 조용히 안 돈다.
+    SCHEDULE_ROOT,
+    CronOnceModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
       },
       schema: combinedSchema,
     }),
+    // 소비 전용(`publishes` 없음). 브로커 없는 로컬에서 부팅이 죽지 않게 조건부다 —
+    // main.ts 의 startConsumer 와 짝이다.
+    ...(process.env.KAFKA_BROKERS
+      ? [
+          EventsModule.forApp({
+            kafka: createKafkaConfigFromEnv()!,
+            serviceName: 'ai',
+            policy: { validateOnConsume: true },
+          }),
+        ]
+      : []),
     AssistantModule,
     ProductDescriptionModule,
   ],

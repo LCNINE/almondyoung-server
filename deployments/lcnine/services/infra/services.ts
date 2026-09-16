@@ -440,6 +440,7 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
+      ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',

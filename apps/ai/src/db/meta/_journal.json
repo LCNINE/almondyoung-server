@@ -15,6 +15,13 @@
       "when": 1789543837500,
       "tag": "20260916073037_add-conversation-summary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789550491655,
+      "tag": "20260916092131_add-session-deleted-at-and-cron-runs",
+      "breakpoints": true
     }
   ]
 }

@@ -7,8 +7,7 @@ import { index, jsonb, pgTable, text, timestamp, uuid, varchar } from 'drizzle-o
  * 논리 DB 가 갈리면 FK 를 못 건다 — userId 는 IdP 가 발급한 sub 를 그대로 담는
  * 값일 뿐이고, 그 사용자가 실재하는지는 JWT 검증이 이미 보증한다.
  *
- * 탈퇴 시 cascade 도 같이 사라졌다. 사용자가 지워져도 대화가 남으므로
- * user.deleted 이벤트를 듣거나 보존기간 크론으로 지워야 한다 (→ 향후 작업).
+ * cascade 가 없는 그 자리는 `UserPermanentDeletedConsumer` 가 메운다.
  */
 export const assistantChatSessions = pgTable(
   'assistant_chat_sessions',
@@ -29,13 +28,17 @@ export const assistantChatSessions = pgTable(
      * 축이어야 한다. id 로 두면 그 메시지를 찾는 조회가 한 번 더 필요하다.
      */
     summarizedThrough: timestamp('summarized_through', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index('idx_assistant_sessions_user').on(table.userId, table.updatedAt)],
+  (table) => [
+    index('idx_assistant_sessions_user').on(table.userId, table.updatedAt),
+    index('idx_assistant_sessions_deleted_at').on(table.deletedAt),
+  ],
 );
 
 export const assistantChatMessages = pgTable(
