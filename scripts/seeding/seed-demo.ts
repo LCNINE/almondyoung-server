@@ -26,7 +26,7 @@ async function main() {
     process.exit(2);
   }
 
-  await ensureInsideSstShell({ stage: parsed.stage, deployment: parsed.deployment });
+  await ensureInsideSstShell(parsed);
 
   // sst shell 내부에서도 한 번 더 (defense in depth — caller 가 --stage 인자 없이 SST_STAGE 만으로 부르는 경로)
   if (process.env.SST_STAGE === 'live') {

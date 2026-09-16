@@ -10,7 +10,9 @@
 | `auth/` | `lcnine-auth` | IdP: user-service + auth-web. 자체 Postgres·ALB |
 | `services/` | `lcnine-services` | 커머스/물류/결제 도메인 + Medusa + admin/wallet web |
 
-세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, `*.almondyoung.com`), 그 외(`dev` 등)는 `.dev.lcnine-dev.com` 접두사 + `removal: remove`.
+세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, `*.almondyoung.com`), `demo`는 보호된 시연 환경(`removal: remove`, `protect: true`, `*.almondyoung-next.com`), 그 외(`dev` 등)는 `.dev.lcnine-dev.com` 접두사 + `removal: remove`.
+
+`demo`의 services 앱은 core, analytics, channel-adapter, notification, file-service, admin-web만 선언한다. Redis, OpenSearch, Medusa/storefront, wallet, membership, UGC, search는 생성하지 않는다. auth와 file-service 업로드는 각각 demo stage가 소유한 별도 S3 버킷을 사용한다. 최초 DB bootstrap 전에는 `DEMO_INFRA_ONLY=true npx sst deploy --stage demo`로 네트워크와 DB만 만들고, seeding 명령에 `--infra-only`를 주면 `sst shell` 재진입 때 같은 최소 선언을 유지한다.
 
 배포 순서: `platform → auth → services` (최초 부트스트랩 시. 이후엔 SSM late-binding 으로 독립 재배포 가능).
 
