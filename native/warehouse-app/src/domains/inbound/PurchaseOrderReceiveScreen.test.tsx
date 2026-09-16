@@ -712,5 +712,12 @@ describe('PurchaseOrderReceiveScreen', () => {
       (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
     );
     expect(cancelCalls[0].idempotencyKey).toBe(cancelCalls[1].idempotencyKey);
+    // Finish the retry/recheck before jsdom teardown; observing the second POST alone
+    // leaves WorkBoundary's async click handler and later retries in flight.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: '처리 내역 확인' })
+      ).toBeEnabled()
+    );
   });
 });

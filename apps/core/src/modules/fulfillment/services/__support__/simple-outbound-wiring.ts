@@ -42,7 +42,11 @@ export function ambientDbService(tx: DbTx): DbService<typeof wmsSchema> {
 }
 
 export function assembleOutbound(tx: DbTx) {
-  const dbService = ambientDbService(tx);
+  return assembleOutboundWithDb(ambientDbService(tx));
+}
+
+/** Real transaction-owning adapter for listening HTTP acceptance suites. */
+export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const workflowGate = new FulfillmentWorkflowGate(
     new ConfigService({
       FULFILLMENT_WORKFLOW_MODE: 'v2',

@@ -10,6 +10,10 @@
 
 **Spec:** [물류 앱 시연 흐름 설계 §4, §7 A1–A4](../specs/2026-09-16-warehouse-demo-readiness-design.md)
 
+## 실행 상태 (2026-09-16)
+
+A/B/C-1–C-3 구현과 개별 리뷰를 완료했다. C-4 로컬 HTTP/DB·전체 gate 결과는 [통합 인수 기록](../../../native/warehouse-app/docs/warehouse-demo-readiness-acceptance.md)에 있다. 체크 표시는 각 task의 실행/RED·GREEN 기록에 근거한다. C-4 독립 리뷰·전체 branch 리뷰, 배포·실제 Windows/PDA 인수는 아직 완료 표시하지 않는다.
+
 ## Global Constraints
 
 - Node 22와 저장소의 `corepack yarn` 명령을 사용한다. 신규 외부 의존성·DB 테이블·DB enum·영구 재고 사본을 추가하지 않는다.
@@ -55,7 +59,7 @@ export function useWorkReadiness(
 };
 ```
 
-- [ ] **1. 먼저 실패 검사 작성.** 기존 `createTestWorkRuntime`으로 실제 runner/store를 구성하고 scope/restore의 실패와 완료 시점만 제어한다. 첫 검사는 다음처럼 로그인 전 접근 금지를 검증한다.
+- [x] **1. 먼저 실패 검사 작성.** 기존 `createTestWorkRuntime`으로 실제 runner/store를 구성하고 scope/restore의 실패와 완료 시점만 제어한다. 첫 검사는 다음처럼 로그인 전 접근 금지를 검증한다.
 
 ```tsx
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -81,8 +85,8 @@ it('로그인 전에는 검사하지 않고 로그인하면 준비한다', async
 
 추가 입력표: scope reject → failed(scope), restore reject → failed(restore), recheck retry reject → failed(retry), 재확인 성공 → ready, 동시 recheck 두 번 → retryPending 한 번. deferred Promise를 사용하고 전역 timeout을 늘리지 않는다.
 
-- [ ] **2. RED 확인.** `corepack yarn --cwd native/warehouse-app test src/core/operations/useWorkReadiness.test.tsx --maxWorkers=2`. 신규 import 또는 기대 상태에서 실패해야 한다.
-- [ ] **3. 훅 구현.** `(runtime, authenticated)`로 owner를 생성하고, 저장한 상태의 owner와 다르면 첫 render에 ready를 반환하지 않는다. 아래 순서를 내부 단일 검사 경로로 구현한다.
+- [x] **2. RED 확인.** `corepack yarn --cwd native/warehouse-app test src/core/operations/useWorkReadiness.test.tsx --maxWorkers=2`. 신규 import 또는 기대 상태에서 실패해야 한다.
+- [x] **3. 훅 구현.** `(runtime, authenticated)`로 owner를 생성하고, 저장한 상태의 owner와 다르면 첫 render에 ready를 반환하지 않는다. 아래 순서를 내부 단일 검사 경로로 구현한다.
 
 ```text
 check(retry):
@@ -100,8 +104,8 @@ check(retry):
 
 effect cleanup은 generation을 무효화한다. 취소된 네트워크 작업의 결과를 성공/실패로 추정하지 않는다. 반환 recheck는 오류를 state로 처리하여 클릭/online에서 unhandled rejection이 생기지 않게 한다. 최초 effect는 retry=false, recheck는 retry=true를 사용한다.
 
-- [ ] **4. 계정 전환 회귀 추가.** A의 지연 scope/restore가 B의 ready 이후 resolve/reject되는 두 경우, 로그아웃 중 결과 도착, 같은 runtime 재확인 중복, React StrictMode cleanup을 검사한다. stale 완료가 B 상태를 덮거나 A pending을 B로 전송하면 실패다.
-- [ ] **5. GREEN 확인 후 커밋.** 위 focused 명령 통과 후 `feat(warehouse): model work readiness per authenticated runtime`으로 해당 두 파일만 커밋한다.
+- [x] **4. 계정 전환 회귀 추가.** A의 지연 scope/restore가 B의 ready 이후 resolve/reject되는 두 경우, 로그아웃 중 결과 도착, 같은 runtime 재확인 중복, React StrictMode cleanup을 검사한다. stale 완료가 B 상태를 덮거나 A pending을 B로 전송하면 실패다.
+- [x] **5. GREEN 확인 후 커밋.** 위 focused 명령 통과 후 `feat(warehouse): model work readiness per authenticated runtime`으로 해당 두 파일만 커밋한다.
 
 ## Task A-2: WorkBoundary 연결과 실제 로그인 경계 검증
 
@@ -109,7 +113,7 @@ effect cleanup은 generation을 무효화한다. 취소된 네트워크 작업�
 
 **Interfaces:** A-1의 `useWorkReadiness(runtime, authed)`를 소비한다. WorkArea/useWorkAreaBlocked/ScanAllowance의 외부 호출 계약을 유지한다.
 
-- [ ] **1. 기존 현상을 정상 기대값으로 재현.** runtime test에는 `fake-indexeddb/auto`, 실제 QueryClientProvider/SessionProvider/ApiClientProvider/WorkArea를 사용한다. Tauri HTTP만 정상 work-context 응답으로 대체한다. 아래 세션 fixture를 사용해 초기 미인증 render가 안정된 뒤 로그인한다.
+- [x] **1. 기존 현상을 정상 기대값으로 재현.** runtime test에는 `fake-indexeddb/auto`, 실제 QueryClientProvider/SessionProvider/ApiClientProvider/WorkArea를 사용한다. Tauri HTTP만 정상 work-context 응답으로 대체한다. 아래 세션 fixture를 사용해 초기 미인증 render가 안정된 뒤 로그인한다.
 
 ```tsx
 import 'fake-indexeddb/auto';
@@ -163,8 +167,8 @@ expect(screen.queryByText('작업 저장소나 서버 연결을 확인하지 못
 
 mock work-context는 `{ actorId: 'worker', operationContractVersion: 2, capabilities: { inboundWorkflowConsistency: true } }`이며 성공 상태를 직접 주입하지 않는다. beforeEach/afterEach에서 기본 operation store DB를 격리/종료하여 다른 테스트의 pending을 읽지 않는다.
 
-- [ ] **2. RED 실행.** `corepack yarn --cwd native/warehouse-app test src/core/operations/WorkBoundary.runtime.test.tsx --maxWorkers=1`. 기존 구현에서 정상 로그인 후 inert/error가 남아 실패해야 한다.
-- [ ] **3. Boundary 통합.** 독립 `problem/restoring/scope` effects와 직접 setProblem을 제거하고 readiness를 소비한다. 기존 ops snapshot, now timer, beforeunload, 업무별 path 분류, ScanAllowance를 보존한다.
+- [x] **2. RED 실행.** `corepack yarn --cwd native/warehouse-app test src/core/operations/WorkBoundary.runtime.test.tsx --maxWorkers=1`. 기존 구현에서 정상 로그인 후 inert/error가 남아 실패해야 한다.
+- [x] **3. Boundary 통합.** 독립 `problem/restoring/scope` effects와 직접 setProblem을 제거하고 readiness를 소비한다. 기존 ops snapshot, now timer, beforeunload, 업무별 path 분류, ScanAllowance를 보존한다.
 
 ```ts
 const { state, recheck } = useWorkReadiness(runtime, authed);
@@ -178,8 +182,8 @@ const restoring = authed && !ready && !problem;
 
 로그인 성공 자체가 pending operation 잠금을 지우지 않게 한다. provider를 Bootstrap 뒤로 옮기거나 전체 children을 재마운트하는 방식으로만 문제를 감추지 않는다.
 
-- [ ] **4. 실제 runtime 경계 검사.** 정상 bootstrap, IndexedDB 실패 뒤 재확인, scope 성공/restore 실패, uncertain 출고 보존, logout/login A→B, 연속 스캔 sending 중 허용과 uncertain 후 차단을 검사한다. A-1의 generation 검사는 runtime 교체에서도 반복한다.
-- [ ] **5. 집중·전체 회귀 실행.**
+- [x] **4. 실제 runtime 경계 검사.** 정상 bootstrap, IndexedDB 실패 뒤 재확인, scope 성공/restore 실패, uncertain 출고 보존, logout/login A→B, 연속 스캔 sending 중 허용과 uncertain 후 차단을 검사한다. A-1의 generation 검사는 runtime 교체에서도 반복한다.
+- [x] **5. 집중·전체 회귀 실행.**
 
 ```bash
 corepack yarn --cwd native/warehouse-app test src/core/operations src/core/data/ApiClientProvider.test.tsx src/app/Bootstrap.test.tsx src/domains/outbound/LocationOutboundScreen.runtime.test.tsx --maxWorkers=2

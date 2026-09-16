@@ -10,6 +10,10 @@
 
 **Spec:** [물류 앱 시연 흐름 설계 §6–8, C1–C7/E1–E2](../specs/2026-09-16-warehouse-demo-readiness-design.md)
 
+## 실행 상태 (2026-09-16)
+
+A/B/C-1–C-3 구현과 개별 리뷰를 완료했다. C-4 로컬 HTTP/DB·전체 gate 결과는 [통합 인수 기록](../../../native/warehouse-app/docs/warehouse-demo-readiness-acceptance.md)에 있다. 체크 표시는 각 task의 실행/RED·GREEN 기록에 근거한다. C-4 독립 리뷰·전체 branch 리뷰, 배포·실제 Windows/PDA 인수는 아직 완료 표시하지 않는다.
+
 ## Global Constraints
 
 - Node 22와 저장소의 `corepack yarn` 명령을 사용한다. 신규 외부 의존성·DB 테이블·DB enum·영구 재고 사본을 추가하지 않는다.
@@ -65,7 +69,7 @@ export type PlanInvalidation = { code: PlanInvalidationCode; message: string };
 // PickingPlanResult/PickingStartResult의 invalidated 분기: reasonCode?: PlanInvalidationCode 추가
 ```
 
-- [ ] **1. RED를 추가한다.** `picking-plan.spec.ts`의 실제 staleness helper 검사에 원인별 기대값을 추가한다. 기존 조립 fixture를 사용해 각각 한 사실만 바꾼다.
+- [x] **1. RED를 추가한다.** `picking-plan.spec.ts`의 실제 staleness helper 검사에 원인별 기대값을 추가한다. 기존 조립 fixture를 사용해 각각 한 사실만 바꾼다.
 
 ```ts
 expect(result).toEqual({
@@ -76,8 +80,8 @@ expect(result).toEqual({
 
 `skuId/sourceLocationId`는 해당 검사에서 만들거나 기존 `IDS` fixture에서 꺼낸 실제 값이다. 표: source version/가용량 변화→SOURCE_STOCK_CHANGED; plan/strategy 불일치→PLAN_IDENTITY_CHANGED; status≠draft→PLAN_NOT_DRAFT; 멤버/manifest/reservation 변화→SHIPMENT_SNAPSHOT_CHANGED; source snapshot 모순/라인 배정 합계 오류→ALLOCATION_INVALID; 기존 계획 eligibility 예외→ELIGIBILITY_CHANGED. 정상 null은 유지한다.
 
-- [ ] **2. 실패를 확인한다.** `corepack yarn test --runInBand --runTestsByPath apps/core/src/modules/fulfillment/picking/plan/picking-plan.spec.ts`.
-- [ ] **3. 반환값과 무효화 결과를 연결한다.**
+- [x] **2. 실패를 확인한다.** `corepack yarn test --runInBand --runTestsByPath apps/core/src/modules/fulfillment/picking/plan/picking-plan.spec.ts`.
+- [x] **3. 반환값과 무효화 결과를 연결한다.**
 
 ```ts
 return {
@@ -91,7 +95,7 @@ return {
 
 `invalidateDraftPlan`의 사유 인자를 PlanInvalidation으로 바꾸고 모든 호출부/관련 tests를 갱신한다. `isPlanValidationError`로 이미 분류하는 예외는 ELIGIBILITY_CHANGED로 매핑하되 auth/DB/예상 밖 예외를 새로 삼키지 않는다. 이전 응답 snapshot의 reasonCode 누락을 지원한다.
 
-- [ ] **4. 전략 공통 회귀를 통과시킨다.**
+- [x] **4. 전략 공통 회귀를 통과시킨다.**
 
 ```bash
 corepack yarn test --runInBand --testPathPattern='(picking-plan.spec|picking-strategy.contract.spec|aggregate-then-sort.strategy.spec|pick-to-tote.strategy.spec)'
@@ -122,7 +126,7 @@ export function isPreparationBlocked(value: unknown): value is OutboundPreparati
 export function unwrapPreparedOutbound<T>(value: PreparedOutboundResult<T>): T;
 ```
 
-- [ ] **1. 실제 재현을 정상 성공 기대값으로 바꾼다.** support wiring의 `assembleOutbound`를 export하고 `{ simple, location, picking }`을 반환하도록 보강한다. private service 필드를 강제 cast해서 테스트하지 않는다. rollback fixture에서 다음 검사를 추가한다.
+- [x] **1. 실제 재현을 정상 성공 기대값으로 바꾼다.** support wiring의 `assembleOutbound`를 export하고 `{ simple, location, picking }`을 반환하도록 보강한다. private service 필드를 강제 cast해서 테스트하지 않는다. rollback fixture에서 다음 검사를 추가한다.
 
 ```ts
 const f = await seedPickableShipment(tx, 3);
@@ -163,8 +167,8 @@ expect(sessions).toHaveLength(1);
 
 루트의 기존 Jest aliases와 `__support__`의 makeDb/inRollbackTx를 사용한다. 신규 DB suite는 REQUIRE_WAREHOUSE_DEMO_DB=1이고 DATABASE_URL이 없으면 시작 전에 throw한다.
 
-- [ ] **2. RED를 실행한다.** `corepack yarn test --runInBand --runTestsByPath apps/core/src/modules/fulfillment/services/outbound-preparation.integration.spec.ts`. 기존 구현에서는 SIMPLE_OUTBOUND_PLAN_INVALIDATED로 실패한다.
-- [ ] **3. policy/result와 준비 제어를 구현한다.** canReplaceDraft는 reasonCode=SOURCE_STOCK_CHANGED, 동일 snapshot, 대상 방식, 미실행 조건을 모두 만족할 때만 true다. DB 사실은 기존 aggregate/session/custody/picking 기록에서 잠금 안에 읽는다. 현재 잔량이 0이라는 이유만으로 실행 이력이 없다고 판단하지 않는다.
+- [x] **2. RED를 실행한다.** `corepack yarn test --runInBand --runTestsByPath apps/core/src/modules/fulfillment/services/outbound-preparation.integration.spec.ts`. 기존 구현에서는 SIMPLE_OUTBOUND_PLAN_INVALIDATED로 실패한다.
+- [x] **3. policy/result와 준비 제어를 구현한다.** canReplaceDraft는 reasonCode=SOURCE_STOCK_CHANGED, 동일 snapshot, 대상 방식, 미실행 조건을 모두 만족할 때만 true다. DB 사실은 기존 aggregate/session/custody/picking 기록에서 잠금 안에 읽는다. 현재 잔량이 0이라는 이유만으로 실행 이력이 없다고 판단하지 않는다.
 
 ```text
 prepare:
@@ -184,7 +188,7 @@ replacement는 한 번만 시도한다. 기존 invariant→batch/plan→stock �
 
 최초 plan 생성 앞에도 savepoint를 둔다. 부족을 typed result로 바꾸기 전에 해당 savepoint를 롤백해 내부 명령의 pending 기록과 부분 생성물이 남지 않게 한다. 이전 draft의 정상 무효화 결과를 받은 경우에는 그 결과를 보존하고 **그다음** replacement savepoint를 연다.
 
-- [ ] **4. 모든 준비 호출과 HTTP 경계를 갱신한다.** simple scan/force, location start/scan/force에서 blocked이면 stock/picking으로 진행하지 않고 명령 snapshot에 marker를 반환한다. 성공 snapshot은 기존 형식을 유지한다. FulfillmentCommandService의 generic execute에 모든 예외를 잡아 저장하는 기능을 추가하지 않는다.
+- [x] **4. 모든 준비 호출과 HTTP 경계를 갱신한다.** simple scan/force, location start/scan/force에서 blocked이면 stock/picking으로 진행하지 않고 명령 snapshot에 marker를 반환한다. 성공 snapshot은 기존 형식을 유지한다. FulfillmentCommandService의 generic execute에 모든 예외를 잡아 저장하는 기능을 추가하지 않는다.
 
 ```ts
 const prepared = await this.prepare(shipmentId, actor, key, trx);
@@ -197,8 +201,8 @@ const context = prepared.context;
 
 controller에서는 `unwrapPreparedOutbound(await service.method(...))`를 사용한다. mapper는 marker를 기존 code의 409+details로 변환한다. service에 ambient tx를 전달한 호출자는 marker를 상위까지 반환하며 중간에 unwrap하지 않는다. `rg -n '\.prepare\(|\.forceComplete\(' apps/core/src/modules/fulfillment`와 타입 검사로 모든 호출을 확인한다.
 
-- [ ] **5. 멱등/force 복구를 연결한다.** 최상위/최초 단계 키는 보존하고 replacement 두 단계만 spec의 oldPlanId 포함 키를 사용한다. force resolver는 저장된 preparation_blocked를 기존 FORCE_NOT_APPLIED 응답으로 매핑한다. 원본 snapshot은 덮어쓰지 않는다. 이미 저장된 성공/거절 snapshot의 재생도 검사한다.
-- [ ] **6. 부정·원자성·경합 검사를 추가한다.** 아래 각 행을 실제 DB 검사로 만든다.
+- [x] **5. 멱등/force 복구를 연결한다.** 최상위/최초 단계 키는 보존하고 replacement 두 단계만 spec의 oldPlanId 포함 키를 사용한다. force resolver는 저장된 preparation_blocked를 기존 FORCE_NOT_APPLIED 응답으로 매핑한다. 원본 snapshot은 덮어쓰지 않는다. 이미 저장된 성공/거절 snapshot의 재생도 검사한다.
+- [x] **6. 부정·원자성·경합 검사를 추가한다.** 아래 각 행을 실제 DB 검사로 만든다.
 
 | 입력/주입                                       | 확인할 상태                                                      |
 | ----------------------------------------------- | ---------------------------------------------------------------- |
@@ -214,7 +218,7 @@ controller에서는 `unwrapPreparedOutbound(await service.method(...))`를 사�
 
 두 연결 검사는 실제 commit/rollback 및 barrier를 사용한다. 모든 테스트를 단일 ambient rollback transaction에 넣어 동시성을 검증했다고 보고하지 않는다. unique fixture를 사용하고 생성한 데이터만 정리한다.
 
-- [ ] **7. GREEN/타입 검사를 확인하고 커밋한다.**
+- [x] **7. GREEN/타입 검사를 확인하고 커밋한다.**
 
 ```bash
 corepack yarn test --runInBand --testPathPattern='(outbound-preparation|location-outbound|simple-outbound|outbound-v2-recovery-scenarios|inbound-origin-planning)'
@@ -229,7 +233,7 @@ corepack yarn tsc --noEmit -p apps/core/tsconfig.app.json
 
 **Interfaces:** ApiError에 optional `preparation?: { reasonCode: PreparationBlockReason; recovery: 'retry_preparation' | 'review_batch' }`를 추가한다. 별도 native 타입은 server의 허용 문자열 집합과 일치해야 하며 HTTP details parser는 알려진 값만 허용한다. 기존 생성자 호출은 동작을 유지한다.
 
-- [ ] **1. 차단/응답 유실 회귀를 추가한다.** 실제 work runtime fixture와 operation store를 사용한다. HTTP 409의 known code는 rejected, 5xx/응답 유실/손상된 details만 있는 unknown code는 uncertain이다.
+- [x] **1. 차단/응답 유실 회귀를 추가한다.** 실제 work runtime fixture와 operation store를 사용한다. HTTP 409의 known code는 rejected, 5xx/응답 유실/손상된 details만 있는 unknown code는 uncertain이다.
 
 ```ts
 expect(new ApiError('blocked', 409, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED').outcome).toBe('rejected');
@@ -238,13 +242,13 @@ expect(new ApiError('unknown', 409, 'NEW_UNKNOWN_CODE').outcome).toBe('uncertain
 
 runtime 검사에서 첫 start 키를 기록하고 확정 거절 후 사용자의 ‘다시 준비’ 클릭은 **다른 키**, uncertain 중 재확인은 **동일 키·동일 bodyJson**임을 비교한다. 클릭 전에는 새 POST가 없어야 한다.
 
-- [ ] **2. RED 실행.**
+- [x] **2. RED 실행.**
 
 ```bash
 corepack yarn --cwd native/warehouse-app test src/core/data/httpClient.test.ts src/core/data/errorMessage.test.ts src/domains/outbound/LocationOutboundScreen.runtime.test.tsx --maxWorkers=2
 ```
 
-- [ ] **3. 명시적 재준비를 구현한다.** start의 rejected를 store에서 확인한 뒤에만 새 startKey를 draft에 먼저 저장하고 호출한다. draft 저장 실패 시 POST하지 않는다. uncertain이면 기존 처리 내역 확인만 제공한다. retry_preparation과 review_batch를 구분해 아래 안내를 사용한다.
+- [x] **3. 명시적 재준비를 구현한다.** start의 rejected를 store에서 확인한 뒤에만 새 startKey를 draft에 먼저 저장하고 호출한다. draft 저장 실패 시 POST하지 않는다. uncertain이면 기존 처리 내역 확인만 제공한다. retry_preparation과 review_batch를 구분해 아래 안내를 사용한다.
 
 ```text
 SOURCE_INSUFFICIENT: 출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.
@@ -254,8 +258,8 @@ review_batch: 출고 대상이나 작업 상태가 바뀌었어요. 배치와 �
 
 review_batch에서 자동 새 키/자동 재시도 루프를 만들지 않는다. 구형 서버의 details 없는 거절은 기존 안내로 처리한다. 거절된 상품 스캔을 성공으로 소비하거나 다른 source로 자동 재전송하지 않는다. 새 준비 성공 후 현재 state GET을 확인하고 source/수량을 다시 표시한다. 강제출고 확인은 이전 tuple을 재사용하지 않고 현재 tuple을 재확인한다.
 
-- [ ] **4. 복구 조합을 검사한다.** 정상/blocked 응답 유실 후 재실행, 같은 키에 부족 해소 후에도 과거 blocked 재생, 새 키의 정상 준비, force blocked+응답 유실+권한 철회→resolver rejected, 과거 성공 snapshot 재생, 계정/API 범위 불일치, GET 실패 시 오래된 화면으로 스캔 차단을 검증한다.
-- [ ] **5. focused 회귀와 build 후 커밋한다.**
+- [x] **4. 복구 조합을 검사한다.** 정상/blocked 응답 유실 후 재실행, 같은 키에 부족 해소 후에도 과거 blocked 재생, 새 키의 정상 준비, force blocked+응답 유실+권한 철회→resolver rejected, 과거 성공 snapshot 재생, 계정/API 범위 불일치, GET 실패 시 오래된 화면으로 스캔 차단을 검증한다.
+- [x] **5. focused 회귀와 build 후 커밋한다.**
 
 ```bash
 corepack yarn --cwd native/warehouse-app test src/core/data/httpClient.test.ts src/core/data/errorMessage.test.ts src/core/operations/operationRunner.test.ts src/core/operations/operationResult.test.ts src/domains/outbound --maxWorkers=2
@@ -270,7 +274,7 @@ corepack yarn --cwd native/warehouse-app build
 
 **Interfaces:** 기존 native createApiClient/operationRunner/operationStore와 실제 Nest ScopeGuard/DTO/GlobalExceptionFilter/서비스/DB를 연결한다. 인증 identity/역할 fixture와 Tauri→Node fetch transport만 대체한다. 실제 OIDC·Tauri 프로세스·HID를 검증했다고 주장하지 않는다.
 
-- [ ] **1. HTTP 인수 fixture를 만든다.** 기존 inbound-workflow-http suite의 실제 listen/close·unique warehouse/SKU fixture·정리 패턴을 재사용하고 LocationOutboundController와 필요한 real service wiring을 추가한다. DB URL이 없으면 REQUIRE_WAREHOUSE_DEMO_DB=1에서 즉시 실패한다. 실행 gate는 다음 명령을 package.json에 등록한다.
+- [x] **1. HTTP 인수 fixture를 만든다.** 기존 inbound-workflow-http suite의 실제 listen/close·unique warehouse/SKU fixture·정리 패턴을 재사용하고 LocationOutboundController와 필요한 real service wiring을 추가한다. DB URL이 없으면 REQUIRE_WAREHOUSE_DEMO_DB=1에서 즉시 실패한다. 실행 gate는 다음 명령을 package.json에 등록한다.
 
 ```json
 {
@@ -278,11 +282,11 @@ corepack yarn --cwd native/warehouse-app build
 }
 ```
 
-- [ ] **2. 실재고 대사 시나리오를 작성한다.** 입고10 → A에6 적치 → A→B 2 이동 → 잔여4를 B에 적치 → 개별 송장의 상품3개 출고. 최종 입고대기0/A4/B3/출고3/전체 ON_HAND7을 확인한다. 두 무작위 위치 UUID를 정렬해 작은 UUID를 B에 배정하고, 현재 planner의 sourceLocationId 순서에 따라 B에서3을 선택하는 것을 먼저 assert한다. 이 fixture는 입고10 외에 추가 RECEIVE를 만들지 않으며 `seedPickableShipment`가 자동 생성하는 기초 재고를 중복 사용하지 않는다. 같은 시나리오의 draft 생성 시점을 이동 전으로 바꾼 변형에서는 변경된 source 배정과 총수량7을 확인한다.
+- [x] **2. 실재고 대사 시나리오를 작성한다.** 입고10 → A에6 적치 → A→B 2 이동 → 잔여4를 B에 적치 → 개별 송장의 상품3개 출고. 최종 입고대기0/A4/B3/출고3/전체 ON_HAND7을 확인한다. 두 무작위 위치 UUID를 정렬해 작은 UUID를 B에 배정하고, 현재 planner의 sourceLocationId 순서에 따라 B에서3을 선택하는 것을 먼저 assert한다. 이 fixture는 입고10 외에 추가 RECEIVE를 만들지 않으며 `seedPickableShipment`가 자동 생성하는 기초 재고를 중복 사용하지 않는다. 같은 시나리오의 draft 생성 시점을 이동 전으로 바꾼 변형에서는 변경된 source 배정과 총수량7을 확인한다.
 
 실제 HTTP 수준에서 별도로 검사한다: 로그인 readiness는 A runtime suite; 비활성 도착 이동409와 원장 불변; stale draft 부족409 뒤 새 연결 SELECT에서 invalidated/blocked 커밋 확인; 같은 키 재생; 새로운 store/runner로 응답 유실 복구; force resolver·권한. 서비스 내부 rollback fixture만으로 커밋 보존을 증명하지 않는다.
 
-- [ ] **3. DB gate를 실행한다.**
+- [x] **3. DB gate를 실행한다.**
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/warehouse_demo_readiness_test corepack yarn test:warehouse-demo:integration
@@ -291,7 +295,7 @@ env -u DATABASE_URL corepack yarn test:warehouse-demo:integration
 
 첫 명령은 fail/skip 0, 두 번째 명령은 DB 누락으로 exit 1이어야 한다. 후자는 의도된 gate 실패로 기록한다.
 
-- [ ] **4. 영향 범위와 빌드를 확인한다.**
+- [x] **4. 영향 범위와 빌드를 확인한다.**
 
 ```bash
 corepack yarn --cwd native/warehouse-app test --maxWorkers=2
@@ -303,7 +307,7 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/warehouse_demo_readin
 
 일반 CI 전체 suite는 저장소 gate 규칙을 따른다. targeted integration에서 DB 부재로 skip한 결과를 통과로 보고하지 않는다. 새 경고/실패가 없으면 불필요한 동일 검사 반복을 하지 않는다.
 
-- [ ] **5. 인수 기록을 작성한다.** acceptance 문서에는 검증 commit, 실행 명령/시간, 파일·test 수, 실패/skip, A1–E2 매핑, 실제 HTTP 대사, 응답 유실 재생 결과, 남은 제한을 기록한다. Windows/PDA 로그인·HID 연속 A/A/B 및100스캔·포커스/Enter·재시작·Wi-Fi는 별도 unchecked 항목으로 두고 실기 검증 후에만 체크한다. 시연 범위는 개별 배치/기발급 송장/활성 일반 위치/같은 창고다.
+- [x] **5. 인수 기록을 작성한다.** acceptance 문서에는 검증 commit, 실행 명령/시간, 파일·test 수, 실패/skip, A1–E2 매핑, 실제 HTTP 대사, 응답 유실 재생 결과, 남은 제한을 기록한다. Windows/PDA 로그인·HID 연속 A/A/B 및100스캔·포커스/Enter·재시작·Wi-Fi는 별도 unchecked 항목으로 두고 실기 검증 후에만 체크한다. 시연 범위는 개별 배치/기발급 송장/활성 일반 위치/같은 창고다.
 - [ ] **6. 최종 리뷰와 커밋.** diff에서 신규 schema/우회 권한/미확인 키 교체/서비스 안 HTTP 예외 변환이 없는지 확인한다. `test(warehouse): verify demo workflow recovery over HTTP`로 수용 검사와 기록을 커밋한다.
 
 ## 배포 가능한 완료 상태
