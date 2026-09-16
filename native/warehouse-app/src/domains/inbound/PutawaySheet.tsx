@@ -7,6 +7,7 @@ import { Button } from '../../core/design/Button';
 import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { NumberPad } from '../../core/design/NumberPad';
 import { useScanner } from '../../core/hardware/scan/useScanner';
+import { preventScanEnterActivation } from '../../core/hardware/scan/hidScanBoundary';
 import { useLocationSearch } from '../warehouse/useLocationSearch';
 import type { LocationItem } from '../warehouse/types';
 import { usePutaway } from './mutations';
@@ -217,9 +218,7 @@ function PutawaySheetContent({
       role="dialog"
       aria-modal="true"
       aria-label="적치"
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') event.preventDefault();
-      }}
+      onKeyDown={(event) => preventScanEnterActivation(event.nativeEvent)}
     >
       <div className="max-h-[90vh] w-full max-w-sm space-y-4 overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
         <div>
@@ -232,7 +231,19 @@ function PutawaySheetContent({
           </div>
         </div>
 
-        <section className="space-y-2">
+        <section
+          className="space-y-2"
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              !event.nativeEvent.isComposing &&
+              event.target instanceof HTMLInputElement
+            ) {
+              event.preventDefault();
+              event.target.blur();
+            }
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700">적치 수량</h3>
           <div className="flex items-center gap-2">
             <output className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-right text-xl font-semibold">
@@ -253,6 +264,9 @@ function PutawaySheetContent({
             min={1}
             max={pendingQty}
           />
+          <p className="text-xs text-gray-500">
+            직접 입력 후 Enter 또는 입력칸 밖을 눌러 스캔해 주세요.
+          </p>
           <NumberPad value={quantity} onChange={setQuantity} />
         </section>
 

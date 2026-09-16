@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { createScanBuffer } from './scanBuffer';
+import { isPreservedScanEnter } from './hidScanBoundary';
 
 export interface ScanEvent {
   code: string;
@@ -37,7 +38,7 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
     function onKeyDown(ev: KeyboardEvent) {
       const target = ev.target;
       if (
-        ev.defaultPrevented ||
+        (ev.defaultPrevented && !isPreservedScanEnter(ev)) ||
         ev.isComposing ||
         (target instanceof HTMLElement &&
           (target.isContentEditable ||

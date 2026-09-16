@@ -14,6 +14,7 @@ import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayTarget } from './types';
 import { PutawaySheet } from './PutawaySheet';
+import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
 const session = {
   bootstrap: async () => {},
@@ -249,6 +250,92 @@ function renderSheet(
 }
 
 describe('PutawaySheet', () => {
+  it.each([
+    ['direct', '지우기', 5],
+    ['direct', '전량', 50],
+    ['purchase_order', '지우기', 5],
+    ['purchase_order', '전량', 50],
+  ] as const)(
+    '%s 입고에서 %s 클릭 뒤 HID로 대상지만 선택하고 명시적 클릭으로 적치한다',
+    async (source, key, quantity) => {
+      const calls: Call[] = [];
+      const { onDone, onCancel } = renderSheet(
+        { target: { ...TARGET, source } },
+        calls
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByText('입고 상태를 다시 확인해 주세요.')
+        ).not.toBeInTheDocument()
+      );
+      const control = screen.getByRole('button', { name: key });
+      await userEvent.click(control);
+      expect(control).toHaveFocus();
+      scanHid(control, 'B-05-03');
+      const submit = screen.getByRole('button', { name: '적치' });
+      await waitFor(() => expect(submit).toBeEnabled());
+      expect(
+        calls.filter((c) => c.path.startsWith('/locations/'))
+      ).toHaveLength(1);
+      expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+
+      // Both an ordinary Enter and the scanner terminator must keep actions inert.
+      submit.focus();
+      await userEvent.keyboard('{Enter}[NumpadEnter]');
+      scanHid(submit, 'B-05-03', 'NumpadEnter');
+      const cancel = screen.getByRole('button', { name: '나중에' });
+      cancel.focus();
+      await userEvent.keyboard('{Enter}[NumpadEnter]');
+      scanHid(cancel, 'B-05-03');
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+
+      await userEvent.click(submit);
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+      expect(calls.filter((c) => c.method === 'POST')).toEqual([
+        expect.objectContaining({
+          path: '/inbound/putaway',
+          body: expect.objectContaining({ quantity, toLocationId: 'l-dst' }),
+        }),
+      ]);
+    }
+  );
+
+  it('대상지 변경 버튼에서 NumpadEnter로 끝나는 HID를 받아 새 위치를 선택한다', async () => {
+    const calls: Call[] = [];
+    renderSheet({ lastDest: LAST_DEST }, calls);
+    await userEvent.click(
+      screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
+    await userEvent.click(screen.getByRole('button', { name: '변경' }));
+    // The removed change button releases focus to body; keypad focus stays in the dialog.
+    const keypad = screen.getByRole('button', { name: '전량' });
+    await userEvent.click(keypad);
+    scanHid(keypad, 'C-09-01', 'NumpadEnter');
+    await waitFor(() =>
+      expect(screen.getByText('C-09-01')).toBeInTheDocument()
+    );
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  it('직접 수량 입력 후 Enter로 입력을 마치고 이어서 위치를 스캔한다', async () => {
+    const calls: Call[] = [];
+    renderSheet({}, calls);
+    const quantity = screen.getByLabelText('적치 수량 직접 입력 (낱개)');
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, '12{Enter}');
+    expect(quantity).not.toHaveFocus();
+    scanHid(document.activeElement as HTMLElement, 'B-05-03');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
+    expect(quantity).toHaveValue('12');
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
   it('코드 완전일치 단건이면 대상지를 자동 선택한다', async () => {
     const user = userEvent.setup();
     renderSheet();
@@ -507,10 +594,7 @@ describe('PutawaySheet', () => {
     const calls: Call[] = [];
     renderSheet({}, calls);
 
-    await user.type(
-      screen.getByLabelText('대상 로케이션 검색'),
-      'UNSAFEONLY'
-    );
+    await user.type(screen.getByLabelText('대상 로케이션 검색'), 'UNSAFEONLY');
 
     await waitFor(() =>
       expect(calls.some((c) => c.path.includes('UNSAFEONLY'))).toBe(true)
@@ -571,7 +655,7 @@ describe('PutawaySheet', () => {
   it('수량을 바꾸면 멱등키가 회전한다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderSheet({ lastDest: LAST_DEST }, calls);
+    const { onDone } = renderSheet({ lastDest: LAST_DEST }, calls);
 
     await user.click(
       screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
@@ -580,6 +664,9 @@ describe('PutawaySheet', () => {
       expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
     );
     await user.click(screen.getByRole('button', { name: '적치' }));
+
+    // Wait for the first preflight and command to finish before editing its input.
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
 
     // 같은 라인·같은 대상지인데 수량만 바꿔 재제출한다.
     // 50 → 지우기 → 5 → 지우기 → 0 → '3' → 3.

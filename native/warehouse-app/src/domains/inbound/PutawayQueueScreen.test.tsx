@@ -27,6 +27,38 @@ import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayPendingResult } from './types';
 import { PutawayQueueScreen } from './PutawayQueueScreen';
+import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+
+it('적치 대기에서 전량 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
+  renderScreen(SELECTED, {
+    locations: {
+      DST01: [
+        {
+          id: 'loc-dst',
+          code: 'DST01',
+          displayName: 'DST01',
+          isActive: true,
+          isSystem: false,
+        },
+      ],
+    },
+  });
+  await userEvent.click(
+    await screen.findByRole('button', { name: /무선마우스 블랙/ })
+  );
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  const full = within(dialog).getByRole('button', { name: '전량' });
+  await userEvent.click(full);
+  scanHid(full, 'DST01');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  expect(dialog).toBeInTheDocument();
+  expect(
+    screen.queryByText('등록되지 않은 바코드예요.')
+  ).not.toBeInTheDocument();
+  await userEvent.click(submit);
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
+});
 
 const session = {
   bootstrap: async () => {},
