@@ -98,6 +98,8 @@ export class DemoCatalogService {
       ? sql`md5("variantId"::text || ${query.randomSeed}), "variantId"`
       : sql`"productName", "variantId"`;
     return this.dbService.run(async (trx) => {
+      // A slow search must stop in PostgreSQL before the proxy times out.
+      await trx.execute(sql`SET LOCAL statement_timeout = '15s'`);
       const rows = await trx.execute<{ items: DemoCatalogItem[]; total: number }>(sql`${cte}
         SELECT (SELECT count(*)::int FROM filtered) AS total,
           coalesce((SELECT jsonb_agg(page_rows) FROM (
@@ -111,14 +113,16 @@ export class DemoCatalogService {
 
   async coverage() {
     return this.dbService.run(async (trx) => {
+      // A slow search must stop in PostgreSQL before the proxy times out.
+      await trx.execute(sql`SET LOCAL statement_timeout = '15s'`);
       const [counts] = await trx.execute(sql`
-        SELECT count(*)::int AS "totalSkus", count(*) FILTER (WHERE NOT is_deleted)::int AS "activeSkus",
-          count(*) FILTER (WHERE NOT is_deleted AND stock_type = 'physical')::int AS "physicalSkus",
-          count(*) FILTER (WHERE NOT is_deleted AND NOT EXISTS (
-            SELECT 1 FROM sku_suppliers sp WHERE sp.sku_id = skus.id))::int AS "withoutSupplier",
-          count(*) FILTER (WHERE NOT is_deleted AND NOT EXISTS (
-            SELECT 1 FROM sku_barcodes b WHERE b.sku_id = skus.id))::int AS "withoutBarcode"
-        FROM skus
+        WITH supplier_skus AS (SELECT DISTINCT sku_id FROM sku_suppliers),
+          barcode_skus AS (SELECT DISTINCT sku_id FROM sku_barcodes)
+        SELECT count(*)::int AS "totalSkus", count(*) FILTER (WHERE NOT s.is_deleted)::int AS "activeSkus",
+          count(*) FILTER (WHERE NOT s.is_deleted AND s.stock_type = 'physical')::int AS "physicalSkus",
+          count(*) FILTER (WHERE NOT s.is_deleted AND sp.sku_id IS NULL)::int AS "withoutSupplier",
+          count(*) FILTER (WHERE NOT s.is_deleted AND b.sku_id IS NULL)::int AS "withoutBarcode"
+        FROM skus s LEFT JOIN supplier_skus sp ON sp.sku_id = s.id LEFT JOIN barcode_skus b ON b.sku_id = s.id
       `);
       const [table] = await trx.execute<{ exists: boolean }>(
         sql`SELECT to_regclass('public.demo_catalog_imports') IS NOT NULL AS exists`,

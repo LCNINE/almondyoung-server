@@ -1,0 +1,1 @@
+CREATE INDEX "ix_sku_barcodes_sku_id" ON "sku_barcodes" USING btree ("sku_id");

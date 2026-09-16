@@ -112,6 +112,18 @@ const databaseUrl =
       await client`UPDATE product_master_versions SET deleted_at=null WHERE id=${ids.version}`;
     }
   });
+  it('counts missing setup per SKU without multiplying rows for additional barcodes', async () => {
+    const skuId = randomUUID(),
+      barcodeId = randomUUID();
+    await client`INSERT INTO skus (id,holder_id,code,name) VALUES (${skuId},'019f1009-0900-7000-a000-000000000900',${'COVERAGE-' + skuId},'Coverage check')`;
+    await client`INSERT INTO sku_barcodes (id,sku_id,barcode) VALUES (${barcodeId},${a.skuId},${'COVERAGE-' + barcodeId})`;
+    try {
+      expect(await service.coverage()).toMatchObject({ totalSkus: 31, withoutSupplier: 1, withoutBarcode: 1 });
+    } finally {
+      await client`DELETE FROM sku_barcodes WHERE id=${barcodeId}`;
+      await client`DELETE FROM skus WHERE id=${skuId}`;
+    }
+  });
   it('returns stable seeded pages and filters unavailable variants before paging', async () => {
     const query = parseDemoCatalogQuery({ randomSeed: ids.variant, limit: 3, availableOnly: 'true' });
     const first = await service.catalog(query);
