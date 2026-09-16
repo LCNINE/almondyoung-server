@@ -18,7 +18,8 @@ async function handle(request: NextRequest, { params }: Params) {
             route
           )) ||
         (service === 'notification' && route === 'logs')
-      : service === 'channel' && route === 'runs';
+      : (service === 'channel' && route === 'runs') ||
+        (service === 'core' && route === 'practice');
   if (!allowed) return new Response(null, { status: 404 });
   if (!request.cookies.get('accessToken')?.value)
     return new Response(null, { status: 401 });
