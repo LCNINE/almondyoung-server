@@ -35,6 +35,7 @@ class MemoryStore implements DemoCarrierStore {
     const found = [...this.records.values()].find((record) => record.waybillNo === waybillNo);
     if (!found) return Promise.resolve('missing' as const);
     if (found.status === 'registered') return Promise.resolve('already_registered' as const);
+    if (found.status === 'canceled') return Promise.resolve('canceled' as const);
     found.status = 'registered';
     return Promise.resolve('registered' as const);
   }
@@ -93,5 +94,16 @@ describe('DemoCarrierGateway', () => {
     expect(await gateway.track?.(allocated.waybillNo)).toEqual([
       expect.objectContaining({ statusCode: '03', status: 'canceled', description: '시연용 택배 취소' }),
     ]);
+  });
+
+  it('never resurrects a canceled allocation during registration', async () => {
+    const gateway = new DemoCarrierGateway(new MemoryStore());
+    const allocated = await gateway.allocate(request);
+    await gateway.cancel?.(allocated.waybillNo);
+
+    await expect(gateway.register(allocated.waybillNo)).resolves.toEqual({
+      kind: 'rejected',
+      reason: 'Demo waybill was canceled',
+    });
   });
 });

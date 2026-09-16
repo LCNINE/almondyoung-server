@@ -1,5 +1,9 @@
 import { DEMO_LOGISTICS_FIXTURE, demoUuid } from './demo-logistics.fixture';
-import { DemoLogisticsSeedStep, toDemoRuntimeDatabaseUrl } from './demo-logistics.seed-step';
+import {
+  assertDemoLogisticsSeedEnvironment,
+  DemoLogisticsSeedStep,
+  toDemoRuntimeDatabaseUrl,
+} from './demo-logistics.seed-step';
 
 describe('demo logistics fixture contract', () => {
   it('removes drizzle-kit-only parameters before the recompute runtime opens postgres.js', () => {
@@ -8,6 +12,27 @@ describe('demo logistics fixture contract', () => {
         'postgresql://demo:secret@db.example.com:5432/core?sslmode=require&uselibpqcompat=true',
       ),
     ).toBe('postgresql://demo:secret@db.example.com:5432/core?sslmode=require');
+  });
+
+  it('rejects non-demo and conflicting SST resource stages before touching the database', () => {
+    expect(() => assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'live' })).toThrow(
+      'Demo logistics can only be seeded in demo',
+    );
+    expect(() =>
+      assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', SST_RESOURCE_App: JSON.stringify({ stage: 'dev' }) }),
+    ).toThrow('Demo logistics can only be seeded in demo');
+    expect(() =>
+      assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', SST_RESOURCE_App: JSON.stringify({}) }),
+    ).toThrow('Demo logistics can only be seeded in demo');
+    expect(() => assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', APP_STAGE: 'live' })).toThrow(
+      'Demo logistics can only be seeded in demo',
+    );
+    expect(() =>
+      assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', EXTERNAL_INTEGRATIONS_MODE: 'real' }),
+    ).toThrow('Demo logistics can only be seeded in demo');
+    expect(() =>
+      assertDemoLogisticsSeedEnvironment({ SST_STAGE: 'demo', SST_RESOURCE_App: JSON.stringify({ stage: 'demo' }) }),
+    ).not.toThrow();
   });
 
   it('requires derived demand and supplier profiles so a failed recompute is retried', async () => {
@@ -21,6 +46,9 @@ describe('demo logistics fixture contract', () => {
           if (query.includes('FROM purchase_orders')) return [{ count: 15 }];
           if (query.includes('FROM sku_demand_profiles')) return [{ count: 0 }];
           if (query.includes('FROM supplier_lead_time_profiles')) return [{ count: 0 }];
+          if (query.includes('FROM warehouses')) return [{ count: 1 }];
+          if (query.includes('FROM suppliers')) return [{ count: 3 }];
+          if (query.includes('FROM purchase_orders')) return [{ count: 15 }];
           throw new Error(`Unexpected query: ${query}`);
         }) as unknown as typeof this.client;
       }
@@ -30,7 +58,15 @@ describe('demo logistics fixture contract', () => {
       }
     }
 
-    const result = await new CheckHarness().check();
+    const previousStage = process.env.SST_STAGE;
+    process.env.SST_STAGE = 'demo';
+    let result;
+    try {
+      result = await new CheckHarness().check();
+    } finally {
+      if (previousStage === undefined) delete process.env.SST_STAGE;
+      else process.env.SST_STAGE = previousStage;
+    }
 
     expect(result.isFullySeeded).toBe(false);
     expect(result.items).toEqual(
@@ -64,5 +100,6 @@ describe('demo logistics fixture contract', () => {
     for (const supplier of DEMO_LOGISTICS_FIXTURE.suppliers) {
       expect(supplier.leadTimeDays).toHaveLength(5);
     }
+    expect(DEMO_LOGISTICS_FIXTURE.suppliers.map((supplier) => supplier.defaultWarehouseIndex)).toEqual([0, 1, 1]);
   });
 });

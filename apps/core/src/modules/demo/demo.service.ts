@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { inArray, sql } from 'drizzle-orm';
+import { and, desc, inArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
-import { inventorySchema, inventoryTables } from '../inventory/schema/inventory.schema';
-import { ReplenishmentProfileService } from '../inventory/replenishment/demand/replenishment-profile.service';
 import {
   DEMO_LOGISTICS_FIXTURE,
   DEMO_LOGISTICS_FIXTURE_VERSION,
-} from '../../../../../scripts/seeding/steps/demo-logistics.fixture';
+} from '@app/shared/demo-logistics.fixture';
+import { inventorySchema, inventoryTables } from '../inventory/schema/inventory.schema';
+import { ReplenishmentProfileService } from '../inventory/replenishment/demand/replenishment-profile.service';
+import { inSellableWarehouse } from '../inventory/shared/availability/sellable-warehouses';
 
 interface CountRow {
   products: number | string;
@@ -35,14 +36,15 @@ export class DemoService {
         .select({ id: inventoryTables.skus.id })
         .from(inventoryTables.skus)
         .where(inArray(inventoryTables.skus.id, skuIds));
+      const summary = inventorySchema.stockSummary;
       const available = await trx
         .select({
-          skuId: inventoryTables.stockLedgers.skuId,
-          quantity: sql<number>`coalesce(sum(${inventoryTables.stockLedgers.qty}), 0)::int`,
+          skuId: summary.skuId,
+          quantity: sql<number>`coalesce(sum(${summary.availableQty}), 0)::int`,
         })
-        .from(inventoryTables.stockLedgers)
-        .where(inArray(inventoryTables.stockLedgers.skuId, skuIds))
-        .groupBy(inventoryTables.stockLedgers.skuId);
+        .from(summary)
+        .where(and(inArray(summary.skuId, skuIds), inSellableWarehouse(summary.warehouseId)))
+        .groupBy(summary.skuId);
       const existing = new Set(existingSkus.map((row) => row.id));
       const quantities = new Map(available.map((row) => [row.skuId, Number(row.quantity)]));
       return {
@@ -140,6 +142,33 @@ export class DemoService {
         counts,
         checks,
         recomputedAt: row.recomputed_at === null ? null : new Date(row.recomputed_at).toISOString(),
+      };
+    });
+  }
+
+  async shipments() {
+    return this.dbService.run(async (trx) => {
+      const shipments = await trx
+        .select({
+          reference: inventoryTables.demoCarrierShipments.requestKey,
+          trackingNumber: inventoryTables.demoCarrierShipments.waybillNo,
+          status: inventoryTables.demoCarrierShipments.status,
+          createdAt: inventoryTables.demoCarrierShipments.createdAt,
+          updatedAt: inventoryTables.demoCarrierShipments.updatedAt,
+          registeredAt: inventoryTables.demoCarrierShipments.registeredAt,
+          canceledAt: inventoryTables.demoCarrierShipments.canceledAt,
+        })
+        .from(inventoryTables.demoCarrierShipments)
+        .orderBy(desc(inventoryTables.demoCarrierShipments.createdAt))
+        .limit(20);
+      return {
+        items: shipments.map((shipment) => ({
+          ...shipment,
+          createdAt: shipment.createdAt.toISOString(),
+          updatedAt: shipment.updatedAt.toISOString(),
+          registeredAt: shipment.registeredAt?.toISOString() ?? null,
+          canceledAt: shipment.canceledAt?.toISOString() ?? null,
+        })),
       };
     });
   }

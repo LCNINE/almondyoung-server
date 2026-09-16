@@ -23,6 +23,12 @@ export class DemoController {
     return this.service.readiness();
   }
 
+  @Get('shipments')
+  @ApiOperation({ summary: 'Most recent persisted demo carrier shipments' })
+  shipments() {
+    return this.service.shipments();
+  }
+
   @Post('recompute')
   @HttpCode(200)
   @ApiOperation({ summary: 'Run the existing full replenishment recomputation' })

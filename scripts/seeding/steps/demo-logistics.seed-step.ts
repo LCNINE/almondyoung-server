@@ -12,6 +12,33 @@ import { DEMO_LOGISTICS_FIXTURE as fixture, demoUuid } from './demo-logistics.fi
 
 const HOLDER_ID = demoUuid(9, 900);
 
+interface DemoSeedEnvironment {
+  SST_STAGE?: string;
+  SST_RESOURCE_App?: string;
+  APP_STAGE?: string;
+  DEMO_CONSOLE_ENABLED?: string;
+  EXTERNAL_INTEGRATIONS_MODE?: string;
+}
+
+export function assertDemoLogisticsSeedEnvironment(env: DemoSeedEnvironment = process.env): void {
+  let resourceStage: unknown;
+  if (env.SST_RESOURCE_App) {
+    try {
+      resourceStage = JSON.parse(env.SST_RESOURCE_App).stage;
+    } catch {
+      throw new Error('Demo logistics can only be seeded in demo');
+    }
+    if (resourceStage !== 'demo') throw new Error('Demo logistics can only be seeded in demo');
+  }
+  const stages = [env.SST_STAGE, resourceStage, env.APP_STAGE].filter(Boolean);
+  const unsafeContract =
+    (env.DEMO_CONSOLE_ENABLED !== undefined && env.DEMO_CONSOLE_ENABLED !== 'true') ||
+    (env.EXTERNAL_INTEGRATIONS_MODE !== undefined && env.EXTERNAL_INTEGRATIONS_MODE !== 'mock');
+  if (!stages.length || stages.some((stage) => stage !== 'demo') || unsafeContract) {
+    throw new Error('Demo logistics can only be seeded in demo');
+  }
+}
+
 export function toDemoRuntimeDatabaseUrl(databaseUrl: string): string {
   const url = new URL(databaseUrl);
   url.searchParams.delete('uselibpqcompat');
@@ -26,6 +53,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
   }
 
   async check(): Promise<SeedCheckResult> {
+    assertDemoLogisticsSeedEnvironment();
     const checks = await Promise.all([
       this.findExistingIds(
         'product_variants',
@@ -64,13 +92,41 @@ export class DemoLogisticsSeedStep extends SeedStep {
       FROM supplier_lead_time_profiles
       WHERE supplier_id = ANY(${fixture.suppliers.map((item) => item.id)})
     `;
-    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3];
+    const [sellableWarehouse] = await this.client`
+      SELECT CASE WHEN count(*) = 1 AND bool_or(id = ${fixture.warehouses[0].id}) THEN 1 ELSE 0 END::int AS count
+      FROM warehouses
+      WHERE is_sellable = true
+    `;
+    const [supplierRoutes] = await this.client`
+      SELECT count(*)::int AS count
+      FROM suppliers
+      WHERE (id = ${fixture.suppliers[0].id} AND default_warehouse_id = ${fixture.warehouses[0].id})
+         OR (id = ANY(${fixture.suppliers.slice(1).map((supplier) => supplier.id)})
+             AND default_warehouse_id = ${fixture.warehouses[1].id})
+    `;
+    const [purchaseOrderRoutes] = await this.client`
+      SELECT count(*)::int AS count
+      FROM purchase_orders
+      WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 201 + index))})
+        AND destination_warehouse_id = ${fixture.warehouses[0].id}
+        AND (
+          (supplier_id = ${fixture.suppliers[0].id}
+            AND type = 'domestic' AND source_warehouse_id = ${fixture.warehouses[0].id} AND requires_transfer = false)
+          OR
+          (supplier_id = ANY(${fixture.suppliers.slice(1).map((supplier) => supplier.id)})
+            AND type = 'foreign' AND source_warehouse_id = ${fixture.warehouses[1].id} AND requires_transfer = true)
+        )
+    `;
+    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3, 1, 3, 15];
     const actual = [
       ...checks.map((rows) => rows.size),
       Number(demand.count),
       Number(leadTime.count),
       Number(demandProfiles.count),
       Number(supplierProfiles.count),
+      Number(sellableWarehouse.count),
+      Number(supplierRoutes.count),
+      Number(purchaseOrderRoutes.count),
     ];
     const entities = [
       'product_variants',
@@ -81,6 +137,9 @@ export class DemoLogisticsSeedStep extends SeedStep {
       'lead_time_inputs',
       'sku_demand_profiles',
       'supplier_lead_time_profiles',
+      'single_sellable_warehouse',
+      'supplier_warehouse_routes',
+      'purchase_order_routes',
     ];
     const items = entities.map((entity, index) => ({
       entity,
@@ -99,6 +158,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
   }
 
   async apply(): Promise<SeedApplyResult> {
+    assertDemoLogisticsSeedEnvironment();
     const startedAt = Date.now();
     try {
       await this.client.begin(async (transaction) => {
@@ -119,6 +179,13 @@ export class DemoLogisticsSeedStep extends SeedStep {
               supported_picking_strategies = EXCLUDED.supported_picking_strategies
           `;
         }
+        // The baseline WMS seed owns another sellable warehouse. Demo workflows must have exactly one,
+        // so converge existing demo databases on the fixture's domestic warehouse.
+        await trx`
+          UPDATE warehouses
+          SET is_sellable = (id = ${fixture.warehouses[0].id}), updated_at = now()
+          WHERE is_sellable = true OR id = ${fixture.warehouses[0].id}
+        `;
         for (const location of fixture.locations) {
           await trx`
             INSERT INTO locations (
@@ -131,10 +198,12 @@ export class DemoLogisticsSeedStep extends SeedStep {
           `;
         }
         for (const supplier of fixture.suppliers) {
+          const defaultWarehouse = fixture.warehouses[supplier.defaultWarehouseIndex];
           await trx`
             INSERT INTO suppliers (id, name, code, default_warehouse_id, description)
-            VALUES (${supplier.id}, ${supplier.name}, ${supplier.code}, ${fixture.warehouses[0].id}, ${fixture.version})
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code
+            VALUES (${supplier.id}, ${supplier.name}, ${supplier.code}, ${defaultWarehouse.id}, ${fixture.version})
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name, code = EXCLUDED.code, default_warehouse_id = EXCLUDED.default_warehouse_id
           `;
         }
 
@@ -243,14 +312,22 @@ export class DemoLogisticsSeedStep extends SeedStep {
             const receiptId = demoUuid(9, 300 + observation);
             const receiptLineId = demoUuid(9, 400 + observation);
             const sku = fixture.catalog[(observation - 1) % fixture.catalog.length];
+            const sourceWarehouse = fixture.warehouses[supplier.defaultWarehouseIndex];
+            const requiresTransfer = sourceWarehouse.id !== fixture.warehouses[0].id;
+            const purchaseType = requiresTransfer ? 'foreign' : 'domestic';
             await trx`
               INSERT INTO purchase_orders (
                 id, type, supplier_id, status, source_warehouse_id, destination_warehouse_id,
                 requires_transfer, audit_status, created_at
               ) VALUES (
-                ${poId}, 'domestic', ${supplier.id}, 'received', ${fixture.warehouses[0].id},
-                ${fixture.warehouses[0].id}, false, 'approved', now() - (${45 + observation} * interval '1 day')
-              ) ON CONFLICT (id) DO NOTHING
+                ${poId}, ${purchaseType}, ${supplier.id}, 'received', ${sourceWarehouse.id},
+                ${fixture.warehouses[0].id}, ${requiresTransfer}, 'approved', now() - (${45 + observation} * interval '1 day')
+              ) ON CONFLICT (id) DO UPDATE SET
+                supplier_id = EXCLUDED.supplier_id,
+                type = EXCLUDED.type,
+                source_warehouse_id = EXCLUDED.source_warehouse_id,
+                destination_warehouse_id = EXCLUDED.destination_warehouse_id,
+                requires_transfer = EXCLUDED.requires_transfer
             `;
             await trx`
               INSERT INTO purchase_order_lines (

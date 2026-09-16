@@ -26,7 +26,7 @@ export interface DemoCarrierStore {
     waybillNo: string;
     labelData: Record<string, unknown>;
   }): Promise<DemoCarrierStoredRecord>;
-  register(waybillNo: string): Promise<'registered' | 'already_registered' | 'missing'>;
+  register(waybillNo: string): Promise<'registered' | 'already_registered' | 'canceled' | 'missing'>;
   cancel(waybillNo: string): Promise<boolean>;
   track(waybillNo: string): Promise<{ status: string; updatedAt: Date } | null>;
 }
@@ -111,6 +111,7 @@ export class DemoCarrierGateway extends CarrierGateway {
   override async register(waybillNo: string): Promise<RegisterOutcome> {
     const result = await this.store.register(waybillNo);
     if (result === 'registered' || result === 'already_registered') return { kind: result };
+    if (result === 'canceled') return { kind: 'rejected', reason: 'Demo waybill was canceled' };
     return { kind: 'rejected', reason: 'Demo waybill was not allocated' };
   }
 
