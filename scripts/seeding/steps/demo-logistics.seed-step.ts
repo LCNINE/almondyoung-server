@@ -117,7 +117,13 @@ export class DemoLogisticsSeedStep extends SeedStep {
             AND type = 'foreign' AND source_warehouse_id = ${fixture.warehouses[1].id} AND requires_transfer = true)
         )
     `;
-    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3, 1, 3, 15];
+    const [profiledSkus] = await this.client`
+      SELECT count(*)::int AS count
+      FROM skus
+      WHERE id = ANY(${fixture.catalog.map((item) => item.skuId)})
+        AND delivery_profile_id = ${fixture.deliveryProfile.id}
+    `;
+    const expected = [30, 30, 3, 2, 30 * fixture.demandDays, 15, 30, 3, 1, 3, 15, 30];
     const actual = [
       ...checks.map((rows) => rows.size),
       Number(demand.count),
@@ -127,6 +133,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
       Number(sellableWarehouse.count),
       Number(supplierRoutes.count),
       Number(purchaseOrderRoutes.count),
+      Number(profiledSkus.count),
     ];
     const entities = [
       'product_variants',
@@ -140,6 +147,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
       'single_sellable_warehouse',
       'supplier_warehouse_routes',
       'purchase_order_routes',
+      'sku_delivery_profiles',
     ];
     const items = entities.map((entity, index) => ({
       entity,
@@ -168,6 +176,25 @@ export class DemoLogisticsSeedStep extends SeedStep {
           INSERT INTO holders (id, name, is_our_asset)
           VALUES (${HOLDER_ID}, ${'아몬드영 데모 재고'}, true)
           ON CONFLICT (id) DO NOTHING
+        `;
+        await trx`
+          INSERT INTO delivery_profiles (
+            id, name, source_type, sender_snapshot, origin_address_snapshot, return_address_snapshot,
+            carrier_account_ref, supported_fulfillment_modes
+          ) VALUES (
+            ${fixture.deliveryProfile.id}, ${fixture.deliveryProfile.name}, ${fixture.deliveryProfile.sourceType},
+            ${JSON.stringify(fixture.deliveryProfile.senderSnapshot)}::jsonb,
+            ${JSON.stringify(fixture.deliveryProfile.originAddressSnapshot)}::jsonb,
+            ${JSON.stringify(fixture.deliveryProfile.returnAddressSnapshot)}::jsonb,
+            ${fixture.deliveryProfile.carrierAccountRef}, ARRAY['in_house']::fulfillment_mode[]
+          ) ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            sender_snapshot = EXCLUDED.sender_snapshot,
+            origin_address_snapshot = EXCLUDED.origin_address_snapshot,
+            return_address_snapshot = EXCLUDED.return_address_snapshot,
+            carrier_account_ref = EXCLUDED.carrier_account_ref,
+            supported_fulfillment_modes = EXCLUDED.supported_fulfillment_modes,
+            updated_at = now()
         `;
 
         for (const warehouse of fixture.warehouses) {
@@ -229,11 +256,12 @@ export class DemoLogisticsSeedStep extends SeedStep {
           await trx`
             INSERT INTO skus (
               id, holder_id, name, code, stock_type, safety_stock, korean_name, moq,
-              primary_location_id, is_general_inventory
+              primary_location_id, is_general_inventory, delivery_profile_id
             ) VALUES (
               ${item.skuId}, ${HOLDER_ID}, ${item.productName}, ${item.sku}, 'physical', 5,
-              ${item.productName}, 10, ${fixture.locations[2].id}, true
-            ) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code
+              ${item.productName}, 10, ${fixture.locations[2].id}, true, ${fixture.deliveryProfile.id}
+            ) ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name, code = EXCLUDED.code, delivery_profile_id = EXCLUDED.delivery_profile_id
           `;
           await trx`
             INSERT INTO sku_barcodes (sku_id, barcode, is_primary)

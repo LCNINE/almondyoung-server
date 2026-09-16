@@ -26,6 +26,16 @@ const catalog = Array.from({ length: 30 }, (_, offset) => {
 export const DEMO_LOGISTICS_FIXTURE = {
   version: DEMO_LOGISTICS_FIXTURE_VERSION,
   demandDays: 365,
+  deliveryProfile: {
+    id: demoUuid(9, 901),
+    name: '데모 기본 택배',
+    sourceType: 'in_house',
+    senderSnapshot: { name: '아몬드영 데모', phone: '02-0000-0000' },
+    originAddressSnapshot: { address: '서울특별시 강남구 테헤란로 1' },
+    returnAddressSnapshot: { address: '서울특별시 강남구 테헤란로 1' },
+    carrierAccountRef: 'demo-mock',
+    supportedFulfillmentModes: ['in_house'],
+  },
   warehouses: [
     { id: demoUuid(6, 1), name: '데모 국내 물류센터', type: 'domestic', isSellable: true },
     { id: demoUuid(6, 2), name: '데모 해외 조달창고', type: 'overseas', isSellable: false },

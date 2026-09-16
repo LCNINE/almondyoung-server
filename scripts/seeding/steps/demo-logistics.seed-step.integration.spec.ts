@@ -34,6 +34,10 @@ describeDb('DemoLogisticsSeedStep baseline convergence', () => {
           destination_warehouse_id = ${fixture.warehouses[0].id}, requires_transfer = false
       WHERE id = ANY(${Array.from({ length: 15 }, (_, index) => demoUuid(9, 201 + index))})
     `;
+    await sql`
+      UPDATE skus SET delivery_profile_id = NULL
+      WHERE id = ANY(${fixture.catalog.map((item) => item.skuId)})
+    `;
 
     const step = new DemoLogisticsSeedStep(databaseUrl);
     try {
@@ -56,5 +60,12 @@ describeDb('DemoLogisticsSeedStep baseline convergence', () => {
     `;
     expect(Number(sellable.count)).toBe(1);
     expect(Number(foreignRoutes.count)).toBe(10);
+    const [profiledSkus] = await sql`
+      SELECT count(*)::int AS count
+      FROM skus
+      WHERE id = ANY(${fixture.catalog.map((item) => item.skuId)})
+        AND delivery_profile_id = ${fixture.deliveryProfile.id}
+    `;
+    expect(Number(profiledSkus.count)).toBe(30);
   });
 });

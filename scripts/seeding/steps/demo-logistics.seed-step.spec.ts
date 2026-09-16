@@ -49,6 +49,7 @@ describe('demo logistics fixture contract', () => {
           if (query.includes('FROM warehouses')) return [{ count: 1 }];
           if (query.includes('FROM suppliers')) return [{ count: 3 }];
           if (query.includes('FROM purchase_orders')) return [{ count: 15 }];
+          if (query.includes('FROM skus')) return [{ count: 30 }];
           throw new Error(`Unexpected query: ${query}`);
         }) as unknown as typeof this.client;
       }
@@ -93,6 +94,11 @@ describe('demo logistics fixture contract', () => {
   });
 
   it('contains the required warehouses, suppliers, demand window and lead-time samples', () => {
+    expect(DEMO_LOGISTICS_FIXTURE.deliveryProfile).toMatchObject({
+      id: '019f1009-0901-7000-a000-000000000901',
+      sourceType: 'in_house',
+      supportedFulfillmentModes: ['in_house'],
+    });
     expect(DEMO_LOGISTICS_FIXTURE.warehouses).toHaveLength(2);
     expect(DEMO_LOGISTICS_FIXTURE.suppliers).toHaveLength(3);
     expect(DEMO_LOGISTICS_FIXTURE.locations.length).toBeGreaterThanOrEqual(8);
