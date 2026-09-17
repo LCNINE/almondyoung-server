@@ -83,6 +83,10 @@ export function setup(infra: SharedInfra) {
   // 수집 게이트는 fail-closed 라 주문 수집이 멈춘다 (#654).
   const coreInternalKey = new sst.Secret('CoreInternalKey');
 
+  // file-service — 서버 간 라우트 인증 키 (ai 의 고아 파일 수거 크론 → file-service /internal/files/*)
+  // FileService 와 Ai 양쪽에 같은 값이 들어가야 한다. 한쪽만 배포되면 401 이고 수거가 멈춘다.
+  const fileServiceInternalKey = new sst.Secret('FileServiceInternalKey');
+
   // Notification
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
@@ -455,6 +459,10 @@ export function setup(infra: SharedInfra) {
       ANTHROPIC_API_KEY: anthropicApiKey.value,
       // 검색 임베딩용 OpenAiApiKey 와 다른 키다 — 용도가 갈리므로 secret 도 나눠 둔 것이다.
       OPENAI_API_KEY: productAiOpenAiApiKey.value,
+      // 고아 파일 수거 크론이 쓴다. 사람 토큰이 없는 호출이라 공유 키로 부른다 —
+      // 둘 중 하나가 없으면 크론이 아무것도 지우지 않고 에러만 찍는다.
+      CORE_INTERNAL_KEY: coreInternalKey.value,
+      FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
     },
   });
 
@@ -580,6 +588,8 @@ export function setup(infra: SharedInfra) {
       AWS_S3_PUBLIC_BUCKET: 'almondyoung-demo',
       AWS_S3_PRIVATE_BUCKET: 'almondyoung-demo',
       STORAGE_PROVIDER: 'S3',
+      // ai 의 고아 파일 수거 크론이 /internal/files/* 를 부를 때 쓰는 키.
+      FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
     },
   });
 

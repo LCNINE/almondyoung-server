@@ -6,6 +6,7 @@ import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { ProductsModule } from './core/products/products.module';
 import { CategoriesModule } from './core/categories/categories.module';
 import { ChannelsModule } from './core/channels/channels.module';
+import { ProductFilesModule } from './core/product-files/product-files.module';
 import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
@@ -35,6 +36,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ProductsModule,
     CategoriesModule,
     ChannelsModule,
+    ProductFilesModule,
     PricingModule,
     TagsModule,
     BannersModule,

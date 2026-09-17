@@ -14,6 +14,12 @@ export type SkillContext = {
   signal?: AbortSignal;
   /** 이번 요청에 사용자가 첨부한 파일. 멀티턴으로 넘어가지 않는다 — 다시 첨부해야 한다. */
   attachments: SkillAttachment[];
+  /**
+   * 올린 파일을 기록한다. 상품에 붙지 못한 파일을 나중에 수거하려면 어시스턴트가
+   * 무엇을 올렸는지 알아야 한다. uploadToFileService 가 대신 불러주므로 스킬은
+   * 신경 쓸 필요 없다.
+   */
+  onUpload?: (fileId: string, contextId: string) => Promise<void>;
 };
 
 export type SkillAttachment = {
@@ -147,7 +153,11 @@ export async function uploadToFileService(
   });
 
   if ((result as { ok?: boolean })?.ok === false) return result as never;
-  return result as UploadedFile;
+
+  const uploaded = result as UploadedFile;
+  // 기록 실패로 업로드를 되돌리지 않는다. 수거를 못 하는 것보다 파일을 잃는 쪽이 나쁘다.
+  await ctx.onUpload?.(uploaded.id, contextId).catch(() => undefined);
+  return uploaded;
 }
 
 /** 파일명 비교는 화면과 같은 규칙이다 — 경로를 떼고 대소문자·앞뒤 공백을 무시한다. */

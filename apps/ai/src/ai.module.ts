@@ -10,6 +10,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AiController } from './ai.controller';
 import { AssistantModule } from './assistant/assistant.module';
+import { FilesModule } from './files/files.module';
 import { aiSchema } from './db/schema';
 import { AI_ROLE_MAPPINGS, AI_SCOPES } from './platform/auth/ai-scopes';
 import { ProductDescriptionModule } from './product-description/product-description.module';
@@ -51,6 +52,7 @@ const combinedSchema = { ...aiSchema, ...authorizationSchema };
         ]
       : []),
     AssistantModule,
+    FilesModule,
     ProductDescriptionModule,
   ],
   controllers: [AiController],

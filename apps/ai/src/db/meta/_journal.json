@@ -22,6 +22,20 @@
       "when": 1789550491655,
       "tag": "20260916092131_add-session-deleted-at-and-cron-runs",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789611356800,
+      "tag": "20260917021556_add-assistant-uploaded-files",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789612857799,
+      "tag": "20260917024057_add-uploaded-file-stuck-at",
+      "breakpoints": true
     }
   ]
 }

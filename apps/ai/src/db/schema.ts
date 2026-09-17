@@ -70,9 +70,41 @@ export const assistantChatMessages = pgTable(
   (table) => [index('idx_assistant_messages_session').on(table.sessionId, table.createdAt)],
 );
 
+/**
+ * 어시스턴트가 file-service 에 올린 파일. 상품에 붙지 못한 것을 수거하려고 남긴다.
+ *
+ * 대화 기록만으로는 부족하다 — 오래된 턴은 요약으로 접히고 탈퇴 회원의 대화는 지워지는데,
+ * 그때 fileId 를 잃으면 S3 객체가 영구히 남는다.
+ *
+ * 세션에 FK 를 걸지 않는다. 대화가 지워진 뒤에도 파일은 계속 수거 대상이어야 한다.
+ */
+export const assistantUploadedFiles = pgTable(
+  'assistant_uploaded_files',
+  {
+    fileId: uuid('file_id').primaryKey(),
+    sessionId: uuid('session_id'),
+    contextId: varchar('context_id', { length: 50 }).notNull(),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    /** 미참조로 판정해 file-service 에 soft delete 를 요청한 시각. */
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    /**
+     * 자동으로는 더 못 고치는 상태가 된 시각. 수거 큐에서 빠지고 기록만 남는다.
+     *
+     * 이 표시가 없으면 되살릴 수 없는 행이 매 주기 배치 앞자리를 차지해, 정작 지워야
+     * 할 파일이 영원히 밀린다.
+     */
+    stuckAt: timestamp('stuck_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_assistant_uploaded_files_uploaded_at').on(table.uploadedAt),
+    index('idx_assistant_uploaded_files_released_at').on(table.releasedAt),
+  ],
+);
+
 export const aiTables = {
   assistantChatSessions,
   assistantChatMessages,
+  assistantUploadedFiles,
 } as const;
 
 export const aiSchema = { ...aiTables } as const;

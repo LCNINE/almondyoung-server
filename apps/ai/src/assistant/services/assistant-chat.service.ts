@@ -56,6 +56,7 @@ export class AssistantChatService {
         coreHeaders,
         signal,
         grantedScopes,
+        sessionId,
       })) {
         if (event.type !== 'settled') {
           yield event;

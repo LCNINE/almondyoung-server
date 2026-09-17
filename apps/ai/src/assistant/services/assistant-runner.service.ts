@@ -6,6 +6,7 @@ import { closeDanglingToolCalls, type Message } from '../lib/conversation';
 import { MODEL, getOpenAiClient, logUsage, toUserMessage } from '../lib/openai';
 import type OpenAI from 'openai';
 import { urlEnv } from '../../platform/env';
+import { UploadedFileRepository } from '../../files/uploaded-file.repository';
 
 /**
  * 한 요청 안에서 도는 도구 호출 라운드 상한. 모델이 같은 도구를 물고 늘어져도 여기서 끊긴다.
@@ -40,6 +41,8 @@ export type RunInput = {
   attachments: SkillAttachment[];
   coreHeaders: SkillContext['coreHeaders'];
   signal: AbortSignal;
+  /** 올린 파일을 어느 대화에서 올렸는지 기록하려고 받는다. */
+  sessionId?: string;
   now?: Date;
 };
 
@@ -58,6 +61,8 @@ function toOpenAiTools(grantedScopes: readonly string[]): OpenAI.Chat.Completion
 @Injectable()
 export class AssistantRunnerService {
   private readonly logger = new Logger(AssistantRunnerService.name);
+
+  constructor(private readonly uploadedFiles: UploadedFileRepository) {}
 
   /**
    * 스코프 조합별 도구 정의. 조합은 몇 개뿐이고 프로세스 수명 동안 바뀌지 않으므로
@@ -92,6 +97,7 @@ export class AssistantRunnerService {
       // 도구 안에서 조회 → 저장으로 이어질 때, 취소 이후 저장이 나가는 것을 막는다.
       signal,
       attachments,
+      onUpload: (fileId, contextId) => this.uploadedFiles.record(fileId, contextId, input.sessionId ?? null),
     };
 
     // system 은 매번 서버가 새로 붙인다 — 지시문을 고치면 진행 중인 대화에도 바로 반영된다.
