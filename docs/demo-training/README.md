@@ -5,16 +5,16 @@
 - 관리자 화면: <https://admin.almondyoung-next.com>
 - 관리자 계정 ID: `demoadmin`
 - 창고 작업자 계정 ID: `demoworker`
-- 로그인에 필요한 추가 정보와 Windows 설치 파일은 교육 담당자에게 별도로 받습니다.
+- 로그인에 필요한 추가 정보와 Windows 설치 파일은 개발팀에서 별도로 받습니다.
 - 로그인 뒤 주소 상단에 `DEMO · 시연 데이터 · 택배와 알림은 모의 처리됩니다.`가 표시되는지 확인합니다.
 
 ![관리자 demo 홈 화면](assets/screens/admin-home.png)
 
 ## 역할별 문서
 
-- [리테일팀: 보충 제안과 발주](retail.md)
-- [물류팀: 입고·적치·출고](warehouse.md)
-- [교육 안내자: 시연 콘솔 운영](operator.md)
+- [보충 제안과 발주](retail.md)
+- [창고 앱 입고·적치·출고](warehouse.md)
+- [개발팀: 시연 콘솔 운영](operator.md)
 - [합동 실습 진행표](workshop.md)
 
 ## 공통 작업 원칙

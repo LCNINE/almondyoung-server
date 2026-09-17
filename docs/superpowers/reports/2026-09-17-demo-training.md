@@ -107,4 +107,6 @@ SHA-256: `c33d7a56cedfa45a84073aab0e2589ebc04df09cfbb621541263227965f4eea3`.
 
 Markdown 전환 배포 후 인증된 demo에서 문서5개·스크린샷27개(32파일)의 바이트가 로컬 원본과 모두 일치했다. 비인증 Markdown/PNG/뷰어는 로그인으로 이동, 기존 HTML5개는 새 문서로 이동, 이전 PDF·CSS·미허용 문서는 404였다. 5문서 모두 이미지 로드 성공, 1440/390px 가로 overflow 0, browser page error 0.
 
-현재 오프라인 ZIP: `docs/demo-training/output/distribution/Almond-WMS-demo-manuals-markdown-2026-09-17.zip` (Markdown5 + PNG27). SHA-256: `4c1a97669ef6701d21d3e0b4656a10aaaab36b5e3f0a8d5b65207f4834a86826`.
+현재 오프라인 ZIP: `docs/demo-training/output/distribution/Almond-WMS-demo-manuals-markdown-2026-09-17.zip` (Markdown5 + PNG27). SHA-256: `bf0195dddad61b95770009fa9fbc84f68351155d0a02396d14f190507b94ffcd`.
+
+문서 용어 통일: 공개 매뉴얼 5개의 팀 명칭을 발주 담당자·입출고 담당자로 변경하고, 진행 주체는 개발팀으로 통일했다. 시연·실증 용어를 적용했으며 원본 ZIP도 갱신했다.
