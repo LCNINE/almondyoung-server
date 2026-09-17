@@ -74,7 +74,12 @@ function parseArgs(): Options {
   const queryEventsIndex = process.env.SEARCH_QUERY_EVENTS_INDEX || DEFAULT_QUERY_EVENTS_INDEX;
 
   const requested = value('--indices');
-  const indices = requested ? requested.split(',').map((s) => s.trim()).filter(Boolean) : [productsIndex, queryEventsIndex];
+  const indices = requested
+    ? requested
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [productsIndex, queryEventsIndex];
 
   const batchSizeRaw = value('--batch-size');
   const batchSize = batchSizeRaw === undefined ? 500 : Number(batchSizeRaw);
@@ -95,7 +100,11 @@ function planFor(indexName: string): IndexPlan {
   const queryEventsIndex = process.env.SEARCH_QUERY_EVENTS_INDEX || DEFAULT_QUERY_EVENTS_INDEX;
 
   if (indexName === productsIndex) {
-    return { name: indexName, settings: PRODUCTS_INDEX_SETTINGS, mappings: PRODUCTS_INDEX_MAPPINGS as Record<string, unknown> };
+    return {
+      name: indexName,
+      settings: PRODUCTS_INDEX_SETTINGS,
+      mappings: PRODUCTS_INDEX_MAPPINGS as Record<string, unknown>,
+    };
   }
   if (indexName === queryEventsIndex) {
     return {
@@ -132,7 +141,7 @@ async function ensureTargetIndex(target: Client, plan: IndexPlan, dryRun: boolea
   console.log(`  ${plan.name} 생성 완료 (설정·매핑은 저장소 상수)`);
 }
 
-async function copyIndex(source: Client, target: Client, plan: IndexPlan, options: Options): Promise<void> {
+export async function copyIndex(source: Client, target: Client, plan: IndexPlan, options: Options): Promise<void> {
   const sourceTotal = await countDocs(source, plan.name);
   console.log(`\n[${plan.name}] 소스 문서 ${sourceTotal.toLocaleString()}건`);
 
@@ -181,18 +190,20 @@ async function copyIndex(source: Client, target: Client, plan: IndexPlan, option
           hit._source,
         ]);
         const bulk = await target.bulk({ refresh: false, body: operations });
-        if (bulk.body.errors) {
-          const items = bulk.body.items as Array<{ index?: { error?: unknown; _id?: string } }>;
-          for (const item of items) {
-            if (item.index?.error) {
-              failed += 1;
-              if (failed <= 5) {
-                console.error(`  색인 실패 _id=${item.index._id}: ${JSON.stringify(item.index.error)}`);
-              }
-            }
+        const items = bulk.body.items as Array<{ index?: { status?: number; error?: unknown; _id?: string } }>;
+        let batchCopied = 0;
+        let batchFailed = 0;
+        for (const item of items ?? []) {
+          const result = item.index;
+          if (result && !result.error && result.status !== undefined && result.status >= 200 && result.status < 300) {
+            batchCopied += 1;
+          } else if (failed + ++batchFailed <= 5) {
+            console.error(`  색인 실패 _id=${result?._id}: ${JSON.stringify(result?.error ?? result?.status)}`);
           }
         }
-        copied += hits.length - failed;
+        // 누적 실패를 매 배치에서 다시 빼면 진행 건수도 틀어진다.
+        copied += batchCopied;
+        failed += hits.length - batchCopied;
       }
 
       process.stdout.write(`\r  복사 ${copied.toLocaleString()} / ${sourceTotal.toLocaleString()}`);
@@ -213,6 +224,11 @@ async function copyIndex(source: Client, target: Client, plan: IndexPlan, option
     console.error(`  _source 없어 건너뛴 문서 ${skipped}건`);
   }
 
+  // 기존 대상 문서 수가 충분해도 덮어쓰기가 실패했으면 데이터가 최신이라는 보장은 없다.
+  if (failed > 0 || skipped > 0) {
+    throw new Error(`${plan.name} 복사 불완전: 색인 실패 ${failed}건, _source 누락 ${skipped}건`);
+  }
+
   if (options.dryRun) {
     console.log(`  [dry-run] ${copied.toLocaleString()}건을 복사했을 것`);
     return;
@@ -225,7 +241,12 @@ async function copyIndex(source: Client, target: Client, plan: IndexPlan, option
   // 대상에는 전환 후 새로 들어온 문서가 있어 소스보다 많은 게 «정상»이다. 같기를 요구하면
   // 정상인 회차를 실패로 보고하고, 그걸 본 사람이 이미 옮겨진 데이터를 의심하게 된다.
   const surplus = targetTotal - sourceTotal;
-  const verdict = surplus === 0 ? '일치' : surplus > 0 ? `대상이 ${surplus.toLocaleString()}건 많음 (전환 후 유입)` : '🔴 대상이 모자람';
+  const verdict =
+    surplus === 0
+      ? '일치'
+      : surplus > 0
+        ? `대상이 ${surplus.toLocaleString()}건 많음 (전환 후 유입)`
+        : '🔴 대상이 모자람';
   console.log(`  검증: 소스 ${sourceTotal.toLocaleString()} / 대상 ${targetTotal.toLocaleString()} — ${verdict}`);
   if (targetTotal < sourceTotal) {
     throw new Error(`${plan.name} 이 소스보다 적습니다. 다시 실행해 채운 뒤 이 줄을 확인하세요.`);
@@ -237,22 +258,28 @@ async function main(): Promise<void> {
   const source = buildClient('SOURCE');
   const target = buildClient('TARGET');
 
-  console.log(`소스   ${requireEnv('SOURCE_OPENSEARCH_NODE')}`);
-  console.log(`대상   ${requireEnv('TARGET_OPENSEARCH_NODE')}`);
-  console.log(`인덱스 ${options.indices.join(', ')}${options.dryRun ? '  (dry-run)' : ''}`);
+  try {
+    console.log(`소스   ${requireEnv('SOURCE_OPENSEARCH_NODE')}`);
+    console.log(`대상   ${requireEnv('TARGET_OPENSEARCH_NODE')}`);
+    console.log(`인덱스 ${options.indices.join(', ')}${options.dryRun ? '  (dry-run)' : ''}`);
 
-  const sourceHealth = await source.cluster.health();
-  const targetHealth = await target.cluster.health();
-  console.log(`상태   소스 ${sourceHealth.body.status} / 대상 ${targetHealth.body.status}`);
+    const sourceHealth = await source.cluster.health();
+    const targetHealth = await target.cluster.health();
+    console.log(`상태   소스 ${sourceHealth.body.status} / 대상 ${targetHealth.body.status}`);
 
-  for (const indexName of options.indices) {
-    await copyIndex(source, target, planFor(indexName), options);
+    for (const indexName of options.indices) {
+      await copyIndex(source, target, planFor(indexName), options);
+    }
+
+    console.log('\n이관 완료');
+  } finally {
+    await Promise.allSettled([source.close(), target.close()]);
   }
-
-  console.log('\n이관 완료');
 }
 
-main().catch((error) => {
-  console.error('\n이관 실패:', error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('\n이관 실패:', error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

@@ -205,10 +205,12 @@ sst deploy --stage live --target ServicesBundleB
 
 ### 6. 꼬리 복사
 
-복사하는 동안에도 문서는 계속 쌓인다. **컷오버가 끝난 뒤 한 번 더 돌린다.** 멱등이라 전체를 다시 훑고 바뀐 것만 덮어쓴다.
+복사하는 동안에도 검색 이력은 계속 쌓인다. **컷오버가 끝난 뒤 검색 이력만 한 번 더 복사한다.**
+소스는 계속 Railway, 대상은 AWS로 유지한다. 상품까지 재복사하면 컷오버 후 AWS에서 갱신된
+상품을 오래된 Railway 문서로 덮어쓸 수 있다.
 
 ```bash
-npm run search:migrate-opensearch
+yarn search:migrate-opensearch --indices=search_query_events
 ```
 
 `search_products_v2` 는 이걸 놓쳐도 Kafka 소비자와 `npm run search:backfill` 로 복구된다.
