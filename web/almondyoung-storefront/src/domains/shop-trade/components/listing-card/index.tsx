@@ -9,9 +9,12 @@ import { CardThumbnail } from "./card-thumbnail"
 export async function ListingCard({
   listing,
   variant,
+  enablePhotoSwipe = true,
 }: {
   listing: ShopListingItem
   variant: "grid" | "list"
+  /** 가로로 넘기는 줄 안에서는 사진 넘기기가 줄 넘기기와 겹쳐 끈다 */
+  enablePhotoSwipe?: boolean
 }) {
   const t = await getTranslations("shopTrade")
   const isList = variant === "list"
@@ -56,6 +59,7 @@ export async function ListingCard({
               : "(min-width: 1280px) 320px, (min-width: 768px) 33vw, 50vw"
           }
           enableHover={!isList}
+          enableSwipe={enablePhotoSwipe}
         />
 
         {listing.dealType && (

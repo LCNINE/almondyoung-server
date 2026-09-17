@@ -46,7 +46,11 @@ export async function ShopTradeWrapper() {
               key={listing.id}
               className="basis-[45%] pl-2 sm:basis-[38%] sm:pl-4 lg:basis-[25%]"
             >
-              <ListingCard listing={listing} variant="grid" />
+              <ListingCard
+                listing={listing}
+                variant="grid"
+                enablePhotoSwipe={false}
+              />
             </CarouselItem>
           ))}
         </CarouselContent>
