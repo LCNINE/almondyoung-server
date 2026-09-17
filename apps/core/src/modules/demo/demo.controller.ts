@@ -3,6 +3,8 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../platform/auth/inventory-scopes';
 import { DemoPracticeService, parsePracticeRequest } from './demo-practice.service';
+import { DemoReplenishmentService } from './demo-replenishment.service';
+import { parseDemoReplenishmentRequest } from './demo-replenishment.input';
 import { DemoService } from './demo.service';
 import { DemoCatalogService, parseDemoCatalogQuery } from './demo-catalog.service';
 
@@ -15,6 +17,7 @@ export class DemoController {
     private readonly service: DemoService,
     private readonly products: DemoCatalogService,
     private readonly practice: DemoPracticeService,
+    private readonly replenishment: DemoReplenishmentService,
   ) {}
 
   @Get('catalog')
@@ -40,6 +43,15 @@ export class DemoController {
   @HttpCode(200)
   preparePractice(@Body() body: unknown, @User('userId') actorId: string) {
     return this.practice.prepare(parsePracticeRequest(body), actorId);
+  }
+
+  @Post('replenishment')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Prepare synthetic demand for random or selected unused real SKUs and verify purchase suggestions',
+  })
+  prepareReplenishment(@Body() body: unknown, @User('userId') actorId: string) {
+    return this.replenishment.prepare(parseDemoReplenishmentRequest(body), actorId);
   }
 
   @Post('recompute')

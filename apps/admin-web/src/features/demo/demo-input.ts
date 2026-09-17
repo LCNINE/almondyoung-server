@@ -113,3 +113,47 @@ export function buildPracticeItems(
   }
   return items;
 }
+
+export type ReplenishmentInput =
+  | { requestId: string; mode: 'random'; count: number }
+  | { requestId: string; mode: 'specified'; skuIds: string[] };
+
+export type ReplenishmentResult = {
+  requestId: string;
+  synthetic: boolean;
+  createdAt: string;
+  historyDays: number;
+  items: {
+    skuId: string;
+    skuCode: string;
+    skuName: string;
+    pattern: string;
+    dailyMean: number;
+    onHand: number;
+    onOrder: number;
+    reorderPoint: number;
+    purchaseQuantity: number;
+    supplierName: string;
+  }[];
+};
+
+export function buildReplenishmentInput(
+  requestId: string,
+  mode: 'random' | 'specified',
+  count: number,
+  products: { components: { skuId: string }[] }[]
+): ReplenishmentInput {
+  if (mode === 'random') {
+    if (!Number.isInteger(count) || count < 1 || count > 20)
+      throw new Error('무작위 상품 수는 1~20개로 입력해 주세요.');
+    return { requestId, mode, count };
+  }
+  const skuIds = [
+    ...new Set(products.flatMap((p) => p.components.map((c) => c.skuId))),
+  ].sort();
+  if (!skuIds.length || skuIds.length > 20)
+    throw new Error(
+      '직접 선택은 중복을 제외한 구성 SKU 1~20개까지 가능합니다.'
+    );
+  return { requestId, mode, skuIds };
+}

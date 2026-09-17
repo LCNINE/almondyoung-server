@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
   buildPracticeItems,
+  buildReplenishmentInput,
+  type ReplenishmentInput,
   buildRunInput,
   type CatalogItem,
   type RunInput,
@@ -17,6 +19,7 @@ type Props = {
     query: string
   ) => Promise<{ items: CatalogItem[]; total: number }>;
   onSubmit: (input?: RunInput) => void;
+  onPrepareReplenishment: (input: ReplenishmentInput) => void;
   onPrepare: (
     items: { skuId: string; quantity: number }[],
     prepareDemand: boolean
@@ -32,6 +35,7 @@ export function DemoOrderForm({
   loadCatalog,
   onSubmit,
   onPrepare,
+  onPrepareReplenishment,
 }: Props) {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -43,6 +47,10 @@ export function DemoOrderForm({
   const [kinds, setKinds] = useState(2);
   const [min, setMin] = useState(1);
   const [max, setMax] = useState(3);
+  const [replenishmentMode, setReplenishmentMode] = useState<
+    'random' | 'specified'
+  >('random');
+  const [replenishmentCount, setReplenishmentCount] = useState(5);
   const [restock, setRestock] = useState(50);
   const [demand, setDemand] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,10 +93,10 @@ export function DemoOrderForm({
   };
   return (
     <section className="rounded-xl border p-5">
-      <h2 className="font-semibold">주문 생성 · 실습 상품 준비</h2>
+      <h2 className="font-semibold">주문 생성 · 시연 상품 준비</h2>
       <p className="mt-2 text-sm text-slate-600">
-        실제 상품을 골라 연습하거나, 전체 후보에서 상품을 무작위로 섞어 주문을
-        만들 수 있습니다.
+        실제 상품을 선택하거나, 전체 후보에서 상품을 무작위로 섞어 주문을 만들
+        수 있습니다.
       </p>
       <form
         className="mt-4 flex gap-2"
@@ -99,7 +107,7 @@ export function DemoOrderForm({
         }}
       >
         <input
-          aria-label="실습 상품 검색"
+          aria-label="시연 상품 검색"
           placeholder="상품명, SKU 또는 바코드"
           className={fieldClass}
           value={search}
@@ -293,7 +301,7 @@ export function DemoOrderForm({
         {busy ? '처리 중…' : pending ? '같은 요청 재확인' : '주문 생성'}
       </Button>
       <div className="mt-6 border-t pt-5">
-        <h3 className="font-medium">선택 상품의 실습 재고 보충</h3>
+        <h3 className="font-medium">선택 상품의 시연 재고 보충</h3>
         <p className="mt-2 text-sm text-slate-600">
           선택 상품의 구성 SKU를 국내 데모 창고에 새로 입고·적치합니다. 기존
           재고와 진행 중인 작업은 보존됩니다.
@@ -329,8 +337,73 @@ export function DemoOrderForm({
           </Button>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          입고·적치 자체를 연습하려면 이 버튼 대신 발주 실습을 진행하세요. 세트
-          상품은 구성 수량을 합산합니다.
+          발주 후 입고·적치하는 작업 흐름은 발주 화면에서 시작할 수 있습니다.
+          세트 상품은 구성 수량을 합산합니다.
+        </p>
+      </div>
+      <div className="mt-6 border-t pt-5">
+        <h3 className="font-medium">발주 제안용 데이터 준비</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          기존 수요·재고·거래 이력이 없는 실제 상품에 최근 365일의 시연용 합성
+          수요를 만듭니다. 실제 판매 이력이 아니며, 기존 작업과 재고는 변경하지
+          않습니다.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-4">
+          <label className="space-y-1 text-sm">
+            <span>발주 제안 상품 선택</span>
+            <select
+              className={fieldClass}
+              disabled={locked}
+              value={replenishmentMode}
+              onChange={(e) =>
+                setReplenishmentMode(
+                  e.target.value === 'specified' ? 'specified' : 'random'
+                )
+              }
+            >
+              <option value="random">무작위 실제 상품</option>
+              <option value="specified">위에서 직접 선택한 상품</option>
+            </select>
+          </label>
+          {replenishmentMode === 'random' && (
+            <label className="space-y-1 text-sm">
+              <span>무작위 상품 수</span>
+              <input
+                className={fieldClass}
+                disabled={locked}
+                type="number"
+                min={1}
+                max={20}
+                value={replenishmentCount}
+                onChange={(e) => setReplenishmentCount(Number(e.target.value))}
+              />
+            </label>
+          )}
+          <Button
+            disabled={locked || !ready}
+            onClick={() => {
+              try {
+                const input = buildReplenishmentInput(
+                  crypto.randomUUID(),
+                  replenishmentMode,
+                  replenishmentCount,
+                  products
+                );
+                setError(null);
+                onPrepareReplenishment(input);
+              } catch (e) {
+                setError(
+                  e instanceof Error ? e.message : '상품 선택을 확인해 주세요.'
+                );
+              }
+            }}
+          >
+            발주 제안 만들기
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          최대 20 SKU · 꾸준한 수요, 변동이 큰 수요, 간헐적 수요를 섞습니다.
+          무작위 모드는 위의 상품 선택과 관계없이 전체 후보에서 새로 추첨합니다.
         </p>
       </div>
     </section>

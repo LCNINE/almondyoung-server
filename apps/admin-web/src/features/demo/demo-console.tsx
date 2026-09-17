@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
 import { Button } from '@/components/ui/button';
+import { DemoReplenishmentResult } from './demo-replenishment-result';
 import { DemoOrderForm } from './demo-order-form';
 import {
   retryRunInput,
@@ -12,6 +13,8 @@ import {
   type RunInput,
   type CatalogItem,
   type PracticeInput,
+  type ReplenishmentInput,
+  type ReplenishmentResult,
 } from './demo-input';
 
 type Readiness = {
@@ -73,7 +76,7 @@ class DemoRequestError extends Error {
 
 async function request<T>(
   path: string,
-  body?: RunInput | PracticeInput
+  body?: RunInput | PracticeInput | ReplenishmentInput
 ): Promise<T> {
   const response = await fetchWithRefresh(
     `/api/demo/${path}`,
@@ -121,6 +124,10 @@ export function DemoConsole() {
     demandPrepared: boolean;
     lines: { skuId: string; name: string; sku: string; quantity: number }[];
   } | null>(null);
+  const [replenishmentPending, setReplenishmentPending] =
+    useState<ReplenishmentInput | null>(null);
+  const [replenishmentResult, setReplenishmentResult] =
+    useState<ReplenishmentResult | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const readiness = useQuery({
     queryKey: ['demo', 'readiness'],
@@ -145,6 +152,10 @@ export function DemoConsole() {
       if (saved) setPending(JSON.parse(saved));
       const practice = sessionStorage.getItem('demo-practice-request-v1');
       if (practice) setPracticePending(JSON.parse(practice));
+      const replenishment = sessionStorage.getItem(
+        'demo-replenishment-request-v1'
+      );
+      if (replenishment) setReplenishmentPending(JSON.parse(replenishment));
     } catch {
       setError('이전 요청을 복원하지 못했습니다. 생성 이력을 확인해 주세요.');
     }
@@ -208,6 +219,42 @@ export function DemoConsole() {
           e instanceof Error
             ? e.message
             : '보충 결과를 확인하지 못했습니다. 같은 요청으로 재확인해 주세요.'
+        );
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
+  async function prepareReplenishment(input: ReplenishmentInput) {
+    await runWithActionLock(actionLock, async () => {
+      setBusy(true);
+      setError(null);
+      setReplenishmentResult(null);
+      try {
+        sessionStorage.setItem(
+          'demo-replenishment-request-v1',
+          JSON.stringify(input)
+        );
+        setReplenishmentPending(input);
+        const result = await request<ReplenishmentResult>(
+          'core/replenishment',
+          input
+        );
+        setReplenishmentResult(result);
+        setReplenishmentPending(null);
+        sessionStorage.removeItem('demo-replenishment-request-v1');
+        await queryClient.invalidateQueries({ queryKey: ['demo'] });
+        await queryClient.invalidateQueries({ queryKey: ['replenishment'] });
+      } catch (e) {
+        if (e instanceof DemoRequestError && e.status === 400) {
+          setReplenishmentPending(null);
+          sessionStorage.removeItem('demo-replenishment-request-v1');
+        }
+        setError(
+          e instanceof Error
+            ? e.message
+            : '생성 결과를 확인하지 못했습니다. 같은 요청으로 재확인해 주세요.'
         );
       } finally {
         setBusy(false);
@@ -374,7 +421,7 @@ export function DemoConsole() {
             {readiness.data.coverage.withoutBarcode.toLocaleString()}개
           </p>
           <p className="mt-1 text-slate-500">
-            위의 준비 상태는 기본 교육 세트 기준입니다. 주문 후보에는 현재 주문
+            위의 준비 상태는 기본 시연 세트 기준입니다. 주문 후보에는 현재 주문
             가능한 물리 상품만 표시합니다.
           </p>
         </section>
@@ -389,18 +436,37 @@ export function DemoConsole() {
       )}
       <DemoOrderForm
         ready={!!readiness.data?.ready}
-        busy={busy || !!practicePending}
+        busy={busy || !!practicePending || !!replenishmentPending}
         pending={!!pending}
         loadCatalog={(query) =>
           request<{ items: CatalogItem[]; total: number }>(
             `core/catalog?${query}`
           )
         }
+        onPrepareReplenishment={(input) => void prepareReplenishment(input)}
         onSubmit={(input) => void submit(input)}
         onPrepare={(items, prepareDemand) =>
           void prepare({ requestId: crypto.randomUUID(), items, prepareDemand })
         }
       />
+      {replenishmentPending && (
+        <section className="rounded-xl border border-amber-300 p-5 text-sm">
+          <p>
+            발주 제안 생성 결과를 확인해야 합니다. 같은 요청으로 재확인하면
+            상품을 다시 추첨하거나 수요 이력을 중복 생성하지 않습니다.
+          </p>
+          <Button
+            className="mt-3"
+            disabled={busy}
+            onClick={() => void prepareReplenishment(replenishmentPending)}
+          >
+            발주 제안 요청 재확인
+          </Button>
+        </section>
+      )}
+      {replenishmentResult && (
+        <DemoReplenishmentResult result={replenishmentResult} />
+      )}
       {practicePending && (
         <section className="rounded-xl border border-amber-300 p-5 text-sm">
           <p>
@@ -418,7 +484,7 @@ export function DemoConsole() {
       )}
       {practiceResult && (
         <section className="rounded-xl bg-emerald-50 p-5 text-sm">
-          <h2 className="font-semibold">실습 재고 준비 완료</h2>
+          <h2 className="font-semibold">시연 재고 준비 완료</h2>
           <p className="mt-2">
             {practiceResult.warehouseName} · {practiceResult.locationCode}
           </p>

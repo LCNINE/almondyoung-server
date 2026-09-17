@@ -40,6 +40,7 @@ describe('DemoModule stage registration', () => {
         coverage: jest.fn().mockResolvedValue({ totalSkus: 30 }),
       } as unknown as DemoCatalogService,
       {} as never,
+      {} as never,
     );
 
     await expect(controller.catalog()).resolves.toEqual(catalog);
