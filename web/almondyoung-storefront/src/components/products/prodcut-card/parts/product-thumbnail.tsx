@@ -32,7 +32,7 @@ export function ProductThumbnail({
         fill
         alt={alt}
         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-        className="pointer-events-none h-full w-full object-contain p-3 transition-transform duration-300 will-change-transform select-none group-hover:scale-105 sm:p-4"
+        className="pointer-events-none h-full w-full object-cover transition-transform duration-300 will-change-transform select-none group-hover:scale-105"
       />
       {rank}
       {isSoldOut && <SoldOutOverlay comingSoon={comingSoon} />}

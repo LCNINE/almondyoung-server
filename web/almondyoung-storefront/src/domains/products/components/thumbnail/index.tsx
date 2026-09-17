@@ -51,7 +51,6 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   return (
     <div
       className={cn(
-        // 패딩은 이미지 자체(object-contain)에 주고, 박스는 고정 정사각 영역만 담당한다.
         "shadow-elevation-card-rest rounded-large group-hover:shadow-elevation-card-hover relative aspect-square w-full overflow-hidden bg-white transition-shadow duration-150 ease-in-out",
         className,
         {
