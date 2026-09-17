@@ -5,10 +5,26 @@ import PlaceholderImage from "@/icons/placeholder-image"
 import ThumbnailImage from "./thumbnail-image"
 import { StoreProductImage } from "@medusajs/types"
 import { PhotoSwipeFrame } from "@/components/shared/photo-swipe-frame"
-import { Camera } from "lucide-react"
 
 /** 카드 하나에서 미리 보여줄 사진 수. 더 늘리면 구역이 좁아 조준이 어렵다. */
 const MAX_PREVIEW = 5
+
+/**
+ * 카드가 넘겨볼 수 있는 사진 목록.
+ * 대표 사진이 images[0] 과 같은 파일이라 그대로 이어 붙이면 첫 장이 바뀌지 않는다.
+ */
+export function listPhotoUrls(
+  thumbnail?: string | null,
+  images?: StoreProductImage[] | null
+) {
+  const gallery = (images ?? [])
+    .map((image) => image.url)
+    .filter((url): url is string => Boolean(url))
+
+  return thumbnail
+    ? [thumbnail, ...gallery.filter((url) => url !== thumbnail)]
+    : gallery
+}
 
 type ThumbnailProps = {
   thumbnail?: string | null
@@ -30,15 +46,7 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   overlay,
   enableSwipe = true,
 }) => {
-  // 대표 사진이 images[0] 과 같은 파일이라 그대로 이어 붙이면 첫 장이 바뀌지 않는다
-  const gallery = (images ?? [])
-    .map((image) => image.url)
-    .filter((url): url is string => Boolean(url))
-
-  const all = thumbnail
-    ? [thumbnail, ...gallery.filter((url) => url !== thumbnail)]
-    : gallery
-  const shown = all.slice(0, MAX_PREVIEW)
+  const shown = listPhotoUrls(thumbnail, images).slice(0, MAX_PREVIEW)
 
   return (
     <div
@@ -68,13 +76,6 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
         <ImageOrPlaceholder image={shown[0]} size={size} />
       )}
 
-      {/* 하단은 찜·장바구니와 점 인디케이터가 쓰므로 위로 올린다 */}
-      {all.length > 1 && enableSwipe && (
-        <span className="bg-foreground/75 pointer-events-none absolute top-2 right-2 flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-white transition-opacity md:group-hover:opacity-0">
-          <Camera className="h-3 w-3" />
-          {all.length}
-        </span>
-      )}
 
       {overlay}
     </div>

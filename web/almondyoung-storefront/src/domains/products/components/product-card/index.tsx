@@ -6,12 +6,12 @@ import { getProductPrice } from "@/lib/utils/get-product-price"
 import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
 import { fetchRatingSummaryBatched } from "@/lib/api/ugc/rating-summary-batch"
 import { HttpTypes } from "@medusajs/types"
-import { Lock, Star } from "lucide-react"
+import { Camera, Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
 import { useIsTimeSalePrice } from "@/components/providers/time-sale-provider"
-import Thumbnail from "../thumbnail"
+import Thumbnail, { listPhotoUrls } from "../thumbnail"
 import { Quantity } from "./quantity"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
@@ -123,6 +123,8 @@ export default function ProductCard({
   const isTimeSale = useIsTimeSalePrice(cheapestVariant)
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
+  const photoCount = listPhotoUrls(product.thumbnail, product.images).length
+  const showPhotoCount = photoCount > 1 && enablePhotoSwipe
 
   const isSingleOption = (product.variants?.length ?? 0) <= 1
   const isSoldOut = useMemo(
@@ -184,11 +186,24 @@ export default function ProductCard({
             }
           />
 
-          {membersOnlyPurchase && (
-            <span className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white">
-              <Lock className="size-3" />
-              {tCard("membersOnly")}
-            </span>
+          {/* 우측 위 뱃지들은 한 줄에 쌓는다 — 따로 두면 같은 좌표에서 서로를 덮는다 */}
+          {(membersOnlyPurchase || showPhotoCount) && (
+            <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
+              {membersOnlyPurchase && (
+                <span className="inline-flex items-center gap-1 rounded bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white">
+                  <Lock className="size-3" />
+                  {tCard("membersOnly")}
+                </span>
+              )}
+
+              {/* 호버하면 찜·장바구니가 뜨고 점 인디케이터가 장수를 대신 알린다 */}
+              {showPhotoCount && (
+                <span className="bg-foreground/75 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-white transition-opacity md:group-hover:opacity-0">
+                  <Camera className="h-3 w-3" />
+                  {photoCount}
+                </span>
+              )}
+            </div>
           )}
 
           {isDigital && (
