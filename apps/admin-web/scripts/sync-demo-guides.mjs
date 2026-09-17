@@ -11,10 +11,17 @@ if (process.env.APP_STAGE === 'demo') {
   // Ship only reviewed guide output, never scratch state, build tools or credentials.
   const copyPublicArtifacts = async (from, to) => {
     for (const entry of await readdir(from, { withFileTypes: true })) {
-      if (entry.name.startsWith('.')) continue;
-      const src = resolve(from, entry.name), dst = resolve(to, entry.name);
-      if (entry.isDirectory()) { await mkdir(dst, { recursive: true }); await copyPublicArtifacts(src, dst); }
-      else if (/\.(html|css|js|png|jpe?g|svg|pdf|woff2?)$/.test(entry.name)) await cp(src, dst);
+      if (
+        entry.name.startsWith('.') ||
+        ['output', 'scripts'].includes(entry.name)
+      )
+        continue;
+      const src = resolve(from, entry.name),
+        dst = resolve(to, entry.name);
+      if (entry.isDirectory()) {
+        await mkdir(dst, { recursive: true });
+        await copyPublicArtifacts(src, dst);
+      } else if (/\.(md|png)$/.test(entry.name)) await cp(src, dst);
     }
   };
   await copyPublicArtifacts(source, target);

@@ -284,7 +284,7 @@ export function DemoConsole() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <a href="/demo/guide/index.html" target="_blank" rel="noreferrer">
+            <a href="/demo/manual/README" target="_blank" rel="noreferrer">
               직원 사용 가이드
             </a>
           </Button>

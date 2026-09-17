@@ -4,14 +4,14 @@
 
 ## 제공물
 
-- 직원 가이드: https://admin.almondyoung-next.com/demo/guide/index.html (로그인 필요).
+- 직원 가이드: https://admin.almondyoung-next.com/demo/manual/README (로그인 필요).
 - 안내자 콘솔: https://admin.almondyoung-next.com/demo.
-- 원본: `docs/demo-training/{index,retail,warehouse,workshop,operator}.html`.
-- 가로 PDF: `docs/demo-training/output/pdf/`의 5개 문서, 총 47페이지, 16:9.
+- 원본: `docs/demo-training/{README,retail,warehouse,workshop,operator}.md`.
+- 문서 형식: Markdown 5개와 실제 앱 PNG 스크린샷. HTML 발표 자료와 PDF는 폐기했다.
 - Windows NSIS: `LCNINE Logistics Demo_0.1.0_x64-setup.exe`, 별도 전달용 gitignored 산출물.
 - 재현 도구: `scripts/demo/README.md`의 카탈로그 export/import, 이미지 복사, 선택 SKU 실습 준비 CLI.
 
-HTML과 PDF는 같은 원본에서 생성한다. 관리자 인증을 거친 demo 전용 라우트에서 제공하며, 로그인되지 않은 요청은 인증으로 이동한다. 실행 파일은 해당 라우트에서 제공하지 않는다.
+Markdown만 원본으로 유지하며 웹에서는 같은 내용을 기본 문서 형식으로 렌더링한다. 이전 `.html` 링크는 Markdown 뷰어로 이동하고 PDF 경로는 404를 반환한다. 관리자 인증을 거친 demo 전용 라우트에서 제공하며, 로그인되지 않은 요청은 인증으로 이동한다. 실행 파일은 해당 라우트에서 제공하지 않는다.
 
 ## 상품과 업무 데이터
 
@@ -86,7 +86,7 @@ Windows CI: https://github.com/LCNINE/almondyoung-server/actions/runs/3515240513
 
 2026-09-17 07:23:38 KST 인증된 실제 URL에서 HTML·CSS·PNG·PDF **20개 파일의 SHA-256이 검수 원본과 모두 일치**했다. 비인증 요청은 307 인증 이동, readiness는 true, 실제 SKU 코드 `58005` 검색은 1개 일치, 1440/390px 화면 가로 overflow와 브라우저 page error는 0이었다.
 
-오프라인 ZIP: `docs/demo-training/output/distribution/Almond-WMS-demo-training-2026-09-17.zip`.
+이전 HTML/PDF 오프라인 ZIP(폐기): `Almond-WMS-demo-training-2026-09-17.zip`.
 SHA-256: `c33d7a56cedfa45a84073aab0e2589ebc04df09cfbb621541263227965f4eea3`.
 
 최종 독립 리뷰에서 migration 전 부족재고 run의 기존 입력 재확인이 409로 실패할 수 있는 차이를 발견했다. DB hydration의 `maxQuantity`를 기존 요청 정규화와 일치시키고, 원래 입력과 조회 후 반환 입력 두 경로의 재시도를 DB 회귀 테스트에 추가했다.
@@ -96,3 +96,15 @@ SHA-256: `c33d7a56cedfa45a84073aab0e2589ebc04df09cfbb621541263227965f4eea3`.
 호환성 배포 후 ECS `Core`, `ServicesBundleA`, `ServicesBundleB`, `FileService`의 `services-stable` 확인을 통과했다. CI와 같은 root type-check 및 consume-validation gate도 통과했다.
 
 전체 CI 단위 테스트 명령 `corepack yarn jest --ci --silent --maxWorkers=2`는 **649 suites / 5,719 tests 통과**, 155 suites / 1,284 tests는 환경별 opt-in 등으로 skip, 종료 코드 0이었다. 별도로 위 Core/Channel 실제 DB 테스트를 실행했다. Jest는 종료 시 worker timer/teardown 경고를 1회 출력했으며 실패 suite는 없었다.
+
+## Markdown 사용 매뉴얼로 교체 (2026-09-17)
+
+사용자 요청으로 발표형 HTML/PDF 5세트를 제거하고, 작업 절차·입력값·결과·오류 처리 중심의 Markdown 5개와 실제 캡처 27개로 교체했다. 기존 warehouse fixture 캡처 4개는 제거했다. 관리자 웹은 demo 실제 화면, 물류앱은 demo 서버에 연결한 Linux Tauri 실제 실행 화면이다. Linux 홈과 Windows 홈의 입고 메뉴명 차이를 명시했으며 Windows 화면·스캐너·프린터 실물 검증을 주장하지 않는다.
+
+실제 Tauri 로그인, 창고 선택, SKU 58005 발주 10→입고4·적치4→입고6·적치6, 두 품목의 위치별 출고를 수행하고 단계별 화면을 캡처했다. 발주 `07358242-e601-4867-bc5a-ff116eaf13e0`, shipment `b6dba2ed-68a6-4a7c-9f13-76227e8ade5d`, 모의 송장 `997156763867`. 작업자 계정으로 처리했다. 관리자 웹의 선명한 부분 입고 캡처용 발주 `244e0fce-7167-429a-8af2-5c86cbefd192`는 발주10·입고4 상태로 남겨 후속 실습에 사용할 수 있다.
+
+기존 HTML/PDF 검증 항목은 당시 결과의 이력이며 현행 배포 형식을 뜻하지 않는다. 현행 검증: Markdown/PNG·인증·레거시 리다이렉트·PDF 차단 단위테스트18개, 관리자 TypeScript 및 변경 파일 ESLint, 링크/이미지 원본 확인.
+
+Markdown 전환 배포 후 인증된 demo에서 문서5개·스크린샷27개(32파일)의 바이트가 로컬 원본과 모두 일치했다. 비인증 Markdown/PNG/뷰어는 로그인으로 이동, 기존 HTML5개는 새 문서로 이동, 이전 PDF·CSS·미허용 문서는 404였다. 5문서 모두 이미지 로드 성공, 1440/390px 가로 overflow 0, browser page error 0.
+
+현재 오프라인 ZIP: `docs/demo-training/output/distribution/Almond-WMS-demo-manuals-markdown-2026-09-17.zip` (Markdown5 + PNG27). SHA-256: `4c1a97669ef6701d21d3e0b4656a10aaaab36b5e3f0a8d5b65207f4834a86826`.

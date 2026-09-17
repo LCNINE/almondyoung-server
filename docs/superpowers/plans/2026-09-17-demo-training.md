@@ -1,5 +1,7 @@
 # Demo 직원 실습 환경과 가이드 Implementation Plan
 
+> 2026-09-17 형식 결정 변경: 사용자가 Markdown + 앱 실사용 스크린샷으로 형식을 확정했다. 아래 초기 HTML/PDF 제작 항목은 폐기되었으며, 현재 유지·배포 원본은 `docs/demo-training/*.md`와 실제 PNG 캡처다. 발표형 레이아웃과 PDF 파생본은 만들지 않는다. Windows 현장 장비 미검증 표시는 유지한다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** live 전체 SKU를 포함한 반복 실습 환경과 Windows 직원용 HTML/가로 PDF 가이드를 제공한다.
