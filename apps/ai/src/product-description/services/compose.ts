@@ -30,14 +30,20 @@ export type ComposeRequest = {
   hint?: string;
   /** 고른 양식 ID. 없거나 못 찾으면 코드 기본 프롬프트를 쓴다. */
   presetId?: string;
+  /** 양식 이름. 어시스턴트는 ID 를 모르므로 이름으로 고른다. */
+  presetTitle?: string;
 };
 
 /**
  * 어드민이 고른 양식. 조회 실패는 치명적이지 않으므로 기본 프롬프트로 폴백한다 —
  * Core 가 잠깐 죽어도 AI 초안 기능 자체는 계속 동작해야 한다.
  */
-async function loadEditablePrompt(presetId: string | undefined, authHeaders: Record<string, string>): Promise<string> {
-  if (!presetId) return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
+async function loadEditablePrompt(
+  presetId: string | undefined,
+  presetTitle: string | undefined,
+  authHeaders: Record<string, string>,
+): Promise<string> {
+  if (!presetId && !presetTitle) return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
 
   try {
     const res = await fetch(`${coreApiUrl()}/ai-prompts?scope=${encodeURIComponent(PROMPT_SCOPE)}`, {
@@ -46,8 +52,11 @@ async function loadEditablePrompt(presetId: string | undefined, authHeaders: Rec
     });
     if (!res.ok) return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
 
-    const presets = (await res.json()) as { id: string; content: string }[];
-    const preset = presets.find((item) => item.id === presetId);
+    const presets = (await res.json()) as { id: string; title?: string; content: string }[];
+    const wanted = presetTitle?.trim().toLowerCase();
+    const preset =
+      presets.find((item) => item.id === presetId) ??
+      (wanted ? presets.find((item) => item.title?.trim().toLowerCase() === wanted) : undefined);
     return preset?.content?.trim() ? preset.content : DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
   } catch {
     return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
@@ -86,7 +95,7 @@ export async function composeProductDescription(
     .filter(Boolean)
     .join('\n');
 
-  const editablePrompt = await loadEditablePrompt(body.presetId, authHeaders);
+  const editablePrompt = await loadEditablePrompt(body.presetId, body.presetTitle, authHeaders);
 
   try {
     const message = await client.messages.create(

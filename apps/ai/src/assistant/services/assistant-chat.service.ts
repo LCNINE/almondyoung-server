@@ -74,9 +74,10 @@ export class AssistantChatService {
 
         yield event;
 
-        // 답변을 다 보낸 뒤에 접는다. 접기는 모델을 한 번 더 부르므로 스트리밍 도중에
-        // 하면 사용자가 그만큼 기다린다. 여기서는 이미 done 이 나간 뒤다.
-        await this.compactor.compactIfNeeded(session);
+        // 접기는 기다리지 않는다. await 하면 제너레이터가 안 끝나 SSE 도 안 닫히고,
+        // 화면은 답변이 다 나온 뒤에도 "처리 중" 인 채로 입력과 선택지가 막힌다.
+        // 접기는 비용을 줄이는 일이라 이번 턴 뒤에 끝나든 다음 턴 중에 끝나든 상관없다.
+        void this.compactor.compactIfNeeded(session).catch(() => undefined);
       }
     } finally {
       this.lock.release(sessionId);

@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import { MODEL, logUsage } from './openai';
+import { logUsage, model } from './openai';
 
 type Logged = Record<string, unknown>;
 
@@ -73,6 +73,6 @@ describe('logUsage 비용 계산', () => {
     // 기본 모델은 env 로 바뀌므로 상수를 그대로 본다 — 여기에 이름을 박으면
     // 모델을 갈 때마다 관계없는 테스트가 깨진다.
     expect(logged.servedModel).toBe(SERVED_MODEL);
-    expect(logged.requestedModel).toBe(MODEL);
+    expect(logged.requestedModel).toBe(model());
   });
 });

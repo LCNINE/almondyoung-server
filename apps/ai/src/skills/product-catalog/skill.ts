@@ -12,6 +12,19 @@ const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
  */
 const MAX_PARALLEL_EXTRACTS = 3;
 
+/**
+ * 모델이 주는 목록 개수의 상한. Core 는 limit 에 상한이 없어서 넘기는 대로 다 준다.
+ * 결과는 도구 결과로 화면까지 한 프레임에 실려 가므로, 여기서 안 묶으면 그 프레임이
+ * 클라이언트 파서 상한을 넘겨 성공한 턴이 실패로 보인다.
+ */
+const MAX_LIST_LIMIT = 100;
+
+function listLimit(input: unknown): string {
+  const raw = (input as { limit?: unknown })?.limit;
+  const value = typeof raw === 'number' && Number.isFinite(raw) ? Math.trunc(raw) : 20;
+  return String(Math.min(Math.max(value, 1), MAX_LIST_LIMIT));
+}
+
 function str(input: unknown, key: string): string | null {
   const v = (input as Record<string, unknown>)?.[key];
   return typeof v === 'string' && v.length > 0 ? v : null;
@@ -26,7 +39,7 @@ const searchProducts: SkillTool = {
       type: 'object',
       properties: {
         keyword: { type: 'string', description: '상품명 검색어' },
-        limit: { type: 'number', description: '기본 20' },
+        limit: { type: 'number', description: '기본 20, 최대 100' },
         deleted: {
           type: 'boolean',
           description: 'true 면 삭제된 상품 목록을 본다',
@@ -36,7 +49,7 @@ const searchProducts: SkillTool = {
     },
   },
   async execute(input, ctx) {
-    const limit = String((input as { limit?: number })?.limit ?? 20);
+    const limit = listLimit(input);
     if ((input as { deleted?: boolean })?.deleted) {
       return core(ctx, `/masters/deleted?page=1&limit=${limit}`);
     }
@@ -77,14 +90,14 @@ const listMyDrafts: SkillTool = {
       type: 'object',
       properties: {
         keyword: { type: 'string', description: '이름 검색어(선택)' },
-        limit: { type: 'number', description: '기본 20' },
+        limit: { type: 'number', description: '기본 20, 최대 100' },
       },
       required: [],
     },
   },
   async execute(input, ctx) {
     const q = new URLSearchParams({ page: '1' });
-    q.set('limit', String((input as { limit?: number })?.limit ?? 20));
+    q.set('limit', listLimit(input));
     q.set('sort', 'createdAt');
     q.set('order', 'desc');
     const keyword = str(input, 'keyword');
@@ -316,6 +329,11 @@ const writeDescription: SkillTool = {
           type: 'string',
           description: '어떤 톤·무엇을 강조할지 같은 추가 지시(선택)',
         },
+        presetTitle: {
+          type: 'string',
+          description:
+            '어드민이 저장해 둔 프롬프트 양식 이름(선택). 사용자가 양식을 지목하면 그 이름을 그대로 넘긴다. 비우면 기본 양식을 쓴다.',
+        },
       },
       required: ['fileIds'],
     },
@@ -383,6 +401,7 @@ const writeDescription: SkillTool = {
         result,
         productName: str(input, 'productName') ?? undefined,
         hint: str(input, 'hint') ?? undefined,
+        presetTitle: str(input, 'presetTitle') ?? undefined,
       },
       { authHeaders: await ctx.coreHeaders(), signal: ctx.signal },
     );

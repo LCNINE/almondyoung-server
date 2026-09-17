@@ -3,7 +3,7 @@ import { buildSystemPrompt, buildToolDefinitions, runTool } from '../../skills/r
 import type { SkillAttachment, SkillContext } from '../../skills/types';
 import { buildDateTimeContext } from '../lib/chat-datetime';
 import { closeDanglingToolCalls, type Message } from '../lib/conversation';
-import { MODEL, getOpenAiClient, logUsage, toUserMessage } from '../lib/openai';
+import { getOpenAiClient, logUsage, model, toUserMessage } from '../lib/openai';
 import type OpenAI from 'openai';
 import { urlEnv } from '../../platform/env';
 import { UploadedFileRepository } from '../../files/uploaded-file.repository';
@@ -160,7 +160,7 @@ export class AssistantRunnerService {
         // 작업은 20초 넘게 걸려서, 침묵이 길면 고장으로 읽힌다.
         const streamed = await getOpenAiClient().chat.completions.create(
           {
-            model: MODEL,
+            model: model(),
             messages,
             tools: this.toolsFor(grantedScopes),
             stream: true,

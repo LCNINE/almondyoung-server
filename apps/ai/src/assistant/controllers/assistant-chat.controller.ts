@@ -8,6 +8,26 @@ import { AssistantChatService, type TurnEvent } from '../services/assistant-chat
 import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 import { grantedAiScopes } from '../../platform/auth/granted-scopes';
 
+/**
+ * 마지막 프레임에 실을 도구 결과의 상한(자). 클라이언트 파서가 1MB 를 넘으면 던지고,
+ * 화면은 그걸 연결 끊김으로 읽어 성공한 턴을 실패로 표시한다. 여기서 미리 줄인다.
+ */
+const MAX_TOOL_RESULT_CHARS = 200_000;
+
+/**
+ * 도구 결과가 상한을 넘으면 결과 본문을 뺀다. 도구 이름과 인자는 남긴다 —
+ * 무엇을 했는지는 보여야 하고, 잘라내는 쪽이 프레임을 통째로 잃는 것보다 낫다.
+ */
+function fitToolCalls(toolCalls: unknown): unknown {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return toolCalls;
+  if (JSON.stringify(toolCalls).length <= MAX_TOOL_RESULT_CHARS) return toolCalls;
+
+  return toolCalls.map((call) => {
+    const { name, input } = (call ?? {}) as Record<string, unknown>;
+    return { name, input, resultOmitted: true };
+  });
+}
+
 @ApiTags('AI 어시스턴트 - 채팅')
 @ApiBearerAuth()
 // 두 스코프 모두 이 엔드포인트로 들어온다. 무엇을 부를 수 있는지는 도구 목록이 가른다.
@@ -85,7 +105,7 @@ export class AssistantChatController {
           send('session_title', { title: event.title });
         } else {
           const { message, toolCalls, consumedIds } = event.payload;
-          send(event.event, { message, toolCalls, consumedIds });
+          send(event.event, { message, toolCalls: fitToolCalls(toolCalls), consumedIds });
         }
 
         step = await events.next();

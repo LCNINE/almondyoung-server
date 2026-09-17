@@ -27,6 +27,7 @@ import { SessionSidebar } from './session-sidebar';
 import { IconRail } from './icon-rail';
 import { matchHints } from '../lib/prompt-hints';
 import styles from './assistant-panel.module.css';
+import { shrinkImageForAi } from '@/features/mall/products-detail/components/description/shrink-image';
 
 /** 같은 이름의 첨부를 구분하려면 파일명이 아니라 키로 식별해야 한다. */
 type Attachment = { id: string; file: File };
@@ -139,6 +140,13 @@ const SUGGESTIONS = [
     prompt: '최근 일괄 등록 작업의 진행 상태를 확인해줘.',
   },
 ];
+
+/**
+ * 첨부 하나의 상한. admin-web 은 Lambda(요청 6MB)를 통해 프록시하므로 ai 앱이 받는
+ * 20MB 를 그대로 열어 두면 프록시 단계에서 정체불명으로 실패한다.
+ */
+const MAX_ATTACHMENT_MB = 4;
+const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
 
 export function AssistantPanel({ open, onOpenChange }: Props) {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -272,17 +280,38 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     setFiles((previous) => previous.filter((a) => a.id !== id));
   }
 
-  function attachFiles(selected: File[]) {
+  async function attachFiles(selected: File[]) {
     const accepted = selected.filter(
       (file) => file.type.startsWith('image/') || /\.xlsx$/i.test(file.name)
     );
+
+    // 이미지는 붙이기 전에 줄인다. admin-web 은 Lambda 라 요청이 6MB 를 넘으면
+    // 프록시에서 죽고, 그 실패는 화면에 "요청을 완료하지 못했습니다" 로만 보인다.
+    const prepared = await Promise.all(
+      accepted.map((file) =>
+        file.type.startsWith('image/')
+          ? shrinkImageForAi(file).catch(() => file)
+          : Promise.resolve(file)
+      )
+    );
+
+    const withinLimit = prepared.filter(
+      (file) => file.size <= MAX_ATTACHMENT_BYTES
+    );
     setFiles((previous) => [
       ...previous,
-      ...accepted.map((file) => ({
+      ...withinLimit.map((file) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         file,
       })),
     ]);
+
+    if (withinLimit.length < prepared.length) {
+      setError(
+        `파일 하나가 ${MAX_ATTACHMENT_MB}MB 를 넘습니다. 줄여서 다시 첨부해 주세요.`
+      );
+      return;
+    }
     setError(
       accepted.length < selected.length
         ? '이미지 또는 엑셀(.xlsx) 파일을 첨부해 주세요.'
@@ -854,7 +883,7 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
                 event.preventDefault();
                 dragDepth.current = 0;
                 setDragging(false);
-                attachFiles(Array.from(event.dataTransfer.files));
+                void attachFiles(Array.from(event.dataTransfer.files));
               }}
               onSubmit={(event) => {
                 event.preventDefault();
@@ -975,7 +1004,7 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
                     multiple
                     hidden
                     onChange={(event) => {
-                      attachFiles(Array.from(event.target.files ?? []));
+                      void attachFiles(Array.from(event.target.files ?? []));
                       event.target.value = '';
                     }}
                   />

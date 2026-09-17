@@ -76,6 +76,10 @@ async function bootstrap() {
     console.warn('⚠️  KAFKA_BROKERS 가 없다 — 탈퇴 회원의 대화가 지워지지 않는다.');
   }
 
+  // 이게 없으면 Nest 가 onApplicationShutdown 을 부르지 않는다 — 롤링 배포 때
+  // Kafka 컨슈머가 그룹을 안 떠나고 진행 중인 SSE 가 쓰던 중에 잘린다.
+  app.enableShutdownHooks();
+
   const port = process.env.PORT ?? 3070;
 
   await app.listen(port, '0.0.0.0');

@@ -10,7 +10,9 @@ import { positiveNumberEnv } from '../../platform/env';
  * 그때마다 시스템 프롬프트와 대화가 통째로 다시 실린다. 출력 단가가 비싼 모델을 기본으로
  * 두면 그 배수만큼 곱해진다. 더 나은 판단이 필요하면 ASSISTANT_MODEL 로 올린다.
  */
-export const MODEL = process.env.ASSISTANT_MODEL || 'gpt-5';
+export function model(): string {
+  return process.env.ASSISTANT_MODEL || 'gpt-5';
+}
 
 /**
  * 인증은 컨트롤러의 가드가 이미 끝냈다. 여기서는 키만 본다.
@@ -49,7 +51,7 @@ function price(key: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-const USD_TO_KRW = positiveNumberEnv('USD_TO_KRW', 1380);
+const usdToKrw = () => positiveNumberEnv('USD_TO_KRW', 1380);
 
 /**
  * 이번 호출의 비용. 단가가 하나라도 없으면 null 을 준다.
@@ -91,7 +93,7 @@ export function logUsage(
   const usd = estimateUsd(usage);
 
   console.info('[ai/assistant] usage', {
-    requestedModel: MODEL,
+    requestedModel: model(),
     servedModel: servedModel ?? '(응답에 없음)',
     promptTokens: usage.prompt_tokens,
     completionTokens: usage.completion_tokens,
@@ -100,7 +102,7 @@ export function logUsage(
     cacheHitRate: usage.prompt_tokens > 0 ? Number((cachedTokens / usage.prompt_tokens).toFixed(2)) : 0,
     ...(usd === null
       ? { estimatedCost: '단가 미설정 (OPENAI_PRICE_*_PER_MTOK)' }
-      : { estimatedUsd: Number(usd.toFixed(5)), estimatedKrw: Math.round(usd * USD_TO_KRW) }),
+      : { estimatedUsd: Number(usd.toFixed(5)), estimatedKrw: Math.round(usd * usdToKrw()) }),
     ...extra,
   });
 }

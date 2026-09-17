@@ -9,19 +9,19 @@ import { positiveNumberEnv } from '../../platform/env';
  * 이 크기를 넘으면 접는다. 대화는 매 턴 통째로 다시 실리므로, 접지 않으면 입력 토큰이
  * 턴 수에 비례해 늘고 비용도 같이 는다.
  */
-const THRESHOLD_TOKENS = positiveNumberEnv('ASSISTANT_COMPACT_THRESHOLD_TOKENS', 12_000);
+const thresholdTokens = () => positiveNumberEnv('ASSISTANT_COMPACT_THRESHOLD_TOKENS', 12_000);
 
 /**
  * 원문으로 남길 최근 메시지 수. 방금 한 말과 그 결과는 요약으로 뭉개면 안 된다 —
  * 직전 턴에 올린 이미지의 fileId 나 방금 만든 상품의 id 를 다음 턴이 곧바로 쓴다.
  */
-const KEEP_RECENT = positiveNumberEnv('ASSISTANT_COMPACT_KEEP_RECENT', 6);
+const keepRecent = () => positiveNumberEnv('ASSISTANT_COMPACT_KEEP_RECENT', 6);
 
 /**
  * 요약에 쓰는 모델. 옮겨적기에 가까운 작업이라 본 모델보다 싼 것으로 충분하다 —
  * 요약이 비싸면 접어서 아낀 것을 도로 쓴다.
  */
-const COMPACT_MODEL = process.env.ASSISTANT_COMPACT_MODEL || 'gpt-5-mini';
+const compactModel = () => process.env.ASSISTANT_COMPACT_MODEL || 'gpt-5-mini';
 
 /** 요약 입력 전체 예산(자). 요약 모델의 컨텍스트 안에 들어가야 한다. */
 const MAX_TRANSCRIPT_CHARS = 40_000;
@@ -171,17 +171,17 @@ export class ConversationCompactorService {
       const rows = session.summarizedThrough
         ? await this.repository.findMessagesAfter(session.id, session.summarizedThrough)
         : await this.repository.findMessages(session.id);
-      if (rows.length <= KEEP_RECENT) return;
+      if (rows.length <= keepRecent()) return;
 
       // 판정도 모델에 실제 실리는 것을 기준으로 한다 — 요약 한 덩이 + 접히지 않은 메시지.
       const carried = restoreConversation(rows);
       const summaryTokens = session.summary ? estimateTokens([{ role: 'user', content: session.summary }]) : 0;
-      if (estimateTokens(carried) + summaryTokens < THRESHOLD_TOKENS) return;
+      if (estimateTokens(carried) + summaryTokens < thresholdTokens()) return;
 
       // 예산 안에 들어가는 만큼만 접는다. 요약 입력을 뒤에서 잘라놓고 경계는 전체 끝으로
       // 잡으면, 잘려나간 구간이 요약에도 없고 원문에서도 빠져 영영 사라진다.
       // 남은 구간은 다음 턴의 접기가 가져간다.
-      const { fold, transcript } = foldWithinBudget(rows.slice(0, rows.length - KEEP_RECENT));
+      const { fold, transcript } = foldWithinBudget(rows.slice(0, rows.length - keepRecent()));
       const boundary = fold.at(-1)?.createdAt;
       if (!boundary) return;
 
@@ -189,7 +189,7 @@ export class ConversationCompactorService {
       if (!summary) return;
 
       await this.repository.saveSummary(session.id, summary, boundary);
-      this.logger.log(`대화 접음 sessionId=${session.id} 접은메시지=${fold.length} 남긴메시지=${KEEP_RECENT}`);
+      this.logger.log(`대화 접음 sessionId=${session.id} 접은메시지=${fold.length} 남긴메시지=${keepRecent()}`);
     } catch (err) {
       this.logger.warn(`대화 접기 실패 (대화는 계속된다): ${(err as Error)?.message?.slice(0, 200)}`);
     }
@@ -201,7 +201,7 @@ export class ConversationCompactorService {
    */
   private async summarize(transcript: string, previousSummary: string | null): Promise<string | null> {
     const response = await getOpenAiClient().chat.completions.create({
-      model: COMPACT_MODEL,
+      model: compactModel(),
       messages: [
         { role: 'system', content: SUMMARY_PROMPT },
         {
