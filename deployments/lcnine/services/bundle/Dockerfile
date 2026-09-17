@@ -7,8 +7,13 @@ FROM node:22-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache postgresql-client git openssh-client
 
+# TypeScript 컴파일은 빌드 머신에서 실행하고 런타임 의존성은 대상 아키텍처로 설치한다.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build-base
+WORKDIR /app
+RUN apk add --no-cache postgresql-client git openssh-client
+
 # === 의존성 설치 (hms-api-wrapper 는 package.json 의 file: dep 이라 npm ci 전에 필요) ===
-FROM base AS deps
+FROM build-base AS deps
 COPY package*.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci
@@ -20,7 +25,7 @@ COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci --omit=dev && npm cache clean --force
 
 # === 빌드 (6개 앱) ===
-FROM base AS builder
+FROM build-base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY tsconfig*.json ./
