@@ -1,9 +1,9 @@
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
+import { and, eq, sql, gte, lt, lte, desc, inArray } from 'drizzle-orm';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
@@ -12,6 +12,12 @@ import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto } from '../dto/si
 import { InboundReceiptKernel } from '../kernel/inbound-receipt.kernel';
 import { InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
 import { InboundReceiptLineMapper, InboundReceiptMapper } from '../mappers/inbound.mapper';
+import type { InboundReceiptMethod, InboundReceiptStatusFilter } from '../dto/inbound-receipts-query.dto';
+import { receiptFactsCtes, ReceiptFactsRow, receiptStateFromFacts } from './inbound-receipt-state.reader';
+import { toHistoryCancelBlockReason } from './inbound-receipt-policy';
+import { getTableColumns } from 'drizzle-orm';
+import { InboundReceipt } from '../../schema/inventory.schema';
+import { ReplayableDates } from '../../shared/mappers/stored-date';
 
 @Injectable()
 export class InboundService {
@@ -153,7 +159,9 @@ export class InboundService {
     params: {
       skuId?: string;
       warehouseId?: string;
-      method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+      receiptId?: string;
+      method?: InboundReceiptMethod;
+      status?: InboundReceiptStatusFilter;
       startDate?: string;
       endDate?: string;
       limit?: number;
@@ -161,7 +169,11 @@ export class InboundService {
     },
     tx?: DbTx,
   ): Promise<InboundReceiptHistoryResponseDto> {
-    const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
+    const { skuId, warehouseId, receiptId, method, status, startDate, endDate, limit = 50, offset = 0 } = params;
+    if (receiptId && !warehouseId) {
+      throw new BadRequestException('warehouseId is required when filtering by receiptId');
+    }
+    const serverTime = new Date();
     return this.dbService.run(async (tx) => {
       const receiptIdsForSku = skuId
         ? tx
@@ -170,48 +182,64 @@ export class InboundService {
             .where(eq(wmsTables.inboundReceiptLines.skuId, skuId))
         : undefined;
       const receiptWhere = and(
-        eq(wmsTables.inboundReceipts.status, 'posted'),
+        status === 'all' ? undefined : eq(wmsTables.inboundReceipts.status, status ?? 'posted'),
         warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+        receiptId ? eq(wmsTables.inboundReceipts.id, receiptId) : undefined,
         method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
         receiptIdsForSku ? inArray(wmsTables.inboundReceipts.id, receiptIdsForSku) : undefined,
-        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(`${startDate}T00:00:00+09:00`)) : undefined,
         endDate
-          ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+          ? lt(
+              wmsTables.inboundReceipts.occurredAt,
+              new Date(new Date(`${endDate}T00:00:00+09:00`).getTime() + 86_400_000),
+            )
           : undefined,
       );
 
-      const [{ total }] = await tx
-        .select({ total: sql<number>`count(*)::int` })
-        .from(wmsTables.inboundReceipts)
-        .where(receiptWhere);
-      const receipts = await tx
-        .select()
-        .from(wmsTables.inboundReceipts)
-        .where(receiptWhere)
-        .orderBy(desc(wmsTables.inboundReceipts.occurredAt), desc(wmsTables.inboundReceipts.id))
-        .limit(limit)
-        .offset(offset);
-      const receiptIds = receipts.map((receipt) => receipt.id);
-      const lines =
-        receiptIds.length === 0
-          ? []
-          : await tx
-              .select()
-              .from(wmsTables.inboundReceiptLines)
-              .where(inArray(wmsTables.inboundReceiptLines.receiptId, receiptIds))
-              .orderBy(wmsTables.inboundReceiptLines.createdAt, wmsTables.inboundReceiptLines.id);
-      const linesByReceipt = new Map<string, typeof lines>();
-      for (const line of lines) {
-        const receiptLines = linesByReceipt.get(line.receiptId) ?? [];
-        receiptLines.push(line);
-        linesByReceipt.set(line.receiptId, receiptLines);
-      }
-
+      // Header page, line counters, origin ledger and custody share ONE statement snapshot,
+      // including when propagating a caller-owned READ COMMITTED transaction.
+      const receiptJson = sql`jsonb_build_object(${sql.join(
+        Object.entries(getTableColumns(wmsTables.inboundReceipts)).flatMap(([key, column]) => [
+          sql`${sql.raw("'" + key + "'")}`,
+          sql`r.${sql.identifier(column.name)}`,
+        ]),
+        sql`, `,
+      )})`;
+      const rows = (await tx.execute(sql`
+        WITH matching_receipts AS (
+          SELECT * FROM ${wmsTables.inboundReceipts} WHERE ${receiptWhere ?? sql`true`}
+        ), receipt_page AS (
+          SELECT * FROM matching_receipts ORDER BY occurred_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}
+        ), ${receiptFactsCtes(sql`irl.receipt_id IN (SELECT id FROM receipt_page)`)}
+        SELECT (SELECT count(*)::int FROM matching_receipts) AS total,
+          COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'receipt', ${receiptJson},
+            'lines', COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f."createdAt", f."lineId")
+              FROM facts f WHERE f."receiptId" = r.id), '[]'::jsonb)
+          ) ORDER BY r.occurred_at DESC, r.id DESC) FROM receipt_page r), '[]'::jsonb) AS items
+      `)) as unknown as {
+        total: number;
+        items: { receipt: ReplayableDates<InboundReceipt>; lines: ReceiptFactsRow[] }[];
+      }[];
       return {
-        total,
-        items: receipts.map((receipt) => ({
+        serverTime: serverTime.toISOString(),
+        total: rows[0].total,
+        items: rows[0].items.map(({ receipt, lines }) => ({
           ...InboundReceiptMapper.toBaseDto(receipt),
-          lines: (linesByReceipt.get(receipt.id) ?? []).map(InboundReceiptLineMapper.toDto),
+          lines: lines.map((row) => {
+            const state = receiptStateFromFacts(row, serverTime);
+            return {
+              ...InboundReceiptLineMapper.toDto({ ...row, id: row.lineId }),
+              skuCode: row.skuCode,
+              skuName: row.skuName,
+              originLocationCode: row.originLocationCode,
+              pendingQty: state.pendingQty,
+              canPutaway: state.canPutaway,
+              putawayBlockReason: state.putawayBlockReason,
+              canCancel: state.canCancel,
+              cancelBlockReason: toHistoryCancelBlockReason(state.cancelBlockReason),
+            };
+          }),
         })),
       };
     }, tx);

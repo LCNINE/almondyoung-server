@@ -1,8 +1,13 @@
+import { InboundReceiptStateReader } from '../services/inbound-receipt-state.reader';
 import { randomUUID } from 'crypto';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import * as request from 'supertest';
+import { ScopeGuard } from '@app/authorization';
+import { createGlobalValidationPipe } from '../../../../platform/http/validation-pipe';
 import { InboundController } from './inbound.controllers';
-import type { InboundService } from '../services/inbound.service';
-import type { InboundPutawayReader } from '../services/inbound-putaway.reader';
+import { InboundService } from '../services/inbound.service';
+import { InboundPutawayReader } from '../services/inbound-putaway.reader';
 import type { InboundReceiptHistoryResponseDto } from '../dto/inbound-response.dto';
 
 /**
@@ -20,7 +25,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
   function makeController() {
     const listPending = jest.fn().mockResolvedValue({ total: 0, truncated: false, items: [] });
     const putawayReader = { listPending } as unknown as InboundPutawayReader;
-    const controller = new InboundController({} as unknown as InboundService, putawayReader);
+    const controller = new InboundController({} as unknown as InboundService, putawayReader, {} as never);
     return { controller, listPending };
   }
 
@@ -69,6 +74,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: undefined,
       skuIds: [first, second],
       cursor: 'opaque-cursor',
+      originLocationId: undefined,
     });
   });
 
@@ -106,6 +112,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: 365,
       skuIds: undefined,
       cursor: undefined,
+      originLocationId: undefined,
     });
   });
 
@@ -131,6 +138,7 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
       days: undefined,
       skuIds: undefined,
       cursor: undefined,
+      originLocationId: undefined,
     });
   });
 });
@@ -153,24 +161,171 @@ describe('InboundController — 계획 생성 라우트', () => {
 
 describe('InboundController.listInboundReceipts — 회차별 이력 계약', () => {
   it('기존 query를 보존하고 limit/offset을 숫자로 바꿔 typed grouped response를 반환한다', async () => {
-    const response: InboundReceiptHistoryResponseDto = { total: 0, items: [] };
+    const response: InboundReceiptHistoryResponseDto = {
+      serverTime: '2026-09-15T00:00:00.000Z',
+      total: 0,
+      items: [],
+    };
     const listInboundReceipts = jest.fn().mockResolvedValue(response);
     const controller = new InboundController(
       { listInboundReceipts } as unknown as InboundService,
       {} as unknown as InboundPutawayReader,
+      {} as never,
     );
 
     await expect(
-      controller.listInboundReceipts('sku-1', 'warehouse-1', 'planned', '2026-09-01', '2026-09-14', '20', '40'),
+      controller.listInboundReceipts({
+        skuId: '00000000-0000-4000-8000-000000000001',
+        warehouseId: '00000000-0000-4000-8000-000000000002',
+        method: 'planned',
+        startDate: '2026-09-01',
+        endDate: '2026-09-14',
+        limit: 20,
+        offset: 40,
+      }),
     ).resolves.toBe(response);
     expect(listInboundReceipts).toHaveBeenCalledWith({
-      skuId: 'sku-1',
-      warehouseId: 'warehouse-1',
+      skuId: '00000000-0000-4000-8000-000000000001',
+      warehouseId: '00000000-0000-4000-8000-000000000002',
       method: 'planned',
       startDate: '2026-09-01',
       endDate: '2026-09-14',
       limit: 20,
       offset: 40,
     });
+  });
+});
+
+describe('GET /inbound/receipts — 조회 조건 검증', () => {
+  let app: INestApplication;
+  let httpServer: Parameters<typeof request>[0];
+  const listInboundReceipts = jest.fn().mockResolvedValue({
+    serverTime: '2026-09-15T00:00:00.000Z',
+    total: 0,
+    items: [],
+  });
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      controllers: [InboundController],
+      providers: [
+        { provide: InboundService, useValue: { listInboundReceipts } },
+        { provide: InboundPutawayReader, useValue: {} },
+        { provide: InboundReceiptStateReader, useValue: {} },
+      ],
+    })
+      .overrideGuard(ScopeGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    app = module.createNestApplication();
+    app.useGlobalPipes(createGlobalValidationPipe());
+    await app.init();
+    httpServer = app.getHttpServer() as unknown as Parameters<typeof request>[0];
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  beforeEach(() => {
+    listInboundReceipts.mockClear();
+  });
+
+  it.each([
+    ['skuId', 'not-a-uuid'],
+    ['warehouseId', 'not-a-uuid'],
+    ['receiptId', 'not-a-uuid'],
+    ['status', 'missing'],
+    ['startDate', '2026-02-30'],
+    ['startDate', '2026-09-15T00:00:00Z'],
+    ['endDate', '2026-13-01'],
+    ['limit', '0'],
+    ['limit', '101'],
+    ['offset', '-1'],
+  ])('rejects invalid %s=%s with 400', async (key, value) => {
+    await request(httpServer)
+      .get('/inbound/receipts')
+      .query({ [key]: value })
+      .expect(400);
+    expect(listInboundReceipts).not.toHaveBeenCalled();
+  });
+
+  it('requires warehouseId when receiptId is used', async () => {
+    await request(httpServer).get('/inbound/receipts').query({ receiptId: randomUUID() }).expect(400);
+    expect(listInboundReceipts).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inverted Seoul calendar date range', async () => {
+    await request(httpServer)
+      .get('/inbound/receipts')
+      .query({ startDate: '2026-09-16', endDate: '2026-09-15' })
+      .expect(400);
+    expect(listInboundReceipts).not.toHaveBeenCalled();
+  });
+
+  it('applies the default page and accepts the maximum page with all new filters', async () => {
+    const skuId = randomUUID();
+    const warehouseId = randomUUID();
+    const receiptId = randomUUID();
+
+    await request(httpServer).get('/inbound/receipts').query({ warehouseId }).expect(200);
+    expect(listInboundReceipts).toHaveBeenLastCalledWith({ warehouseId, limit: 50, offset: 0 });
+
+    await request(httpServer)
+      .get('/inbound/receipts')
+      .query({
+        skuId,
+        warehouseId,
+        receiptId,
+        method: 'planned',
+        status: 'all',
+        startDate: '2024-02-29',
+        endDate: '2026-09-15',
+        limit: '100',
+        offset: '0',
+      })
+      .expect(200);
+    expect(listInboundReceipts).toHaveBeenLastCalledWith({
+      skuId,
+      warehouseId,
+      receiptId,
+      method: 'planned',
+      status: 'all',
+      startDate: '2024-02-29',
+      endDate: '2026-09-15',
+      limit: 100,
+      offset: 0,
+    });
+  });
+});
+
+describe('InboundController receipt line state contract', () => {
+  it.each(['bad', '', ['00000000-0000-4000-8000-000000000001']])('rejects malformed lineId %#', async (value) => {
+    const controller = new InboundController({} as never, {} as never, {} as never);
+    await expect(controller.getReceiptLineState(value as string, randomUUID())).rejects.toThrow(BadRequestException);
+  });
+  it.each([undefined, 'bad', '', ['00000000-0000-4000-8000-000000000001']])(
+    'rejects malformed warehouseId %#',
+    async (value) => {
+      const controller = new InboundController({} as never, {} as never, {} as never);
+      await expect(controller.getReceiptLineState(randomUUID(), value as string)).rejects.toThrow(BadRequestException);
+    },
+  );
+  it('reads a line directly without requiring receiptId', async () => {
+    const lineId = randomUUID(),
+      warehouseId = randomUUID();
+    const state = { lineId, warehouseId, source: 'purchase_order', canceledQty: 3, pendingQty: 0 };
+    const controller = new InboundController(
+      {} as never,
+      {} as never,
+      { getLineState: () => Promise.resolve(state) } as never,
+    );
+    expect(await controller.getReceiptLineState(lineId, warehouseId)).toEqual(state);
+  });
+  it('rejects malformed origin filters', async () => {
+    const controller = new InboundController({} as never, {} as never, {} as never);
+    await expect(controller.listPutawayPending(randomUUID(), undefined, undefined, undefined, 'bad')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 });

@@ -59,6 +59,7 @@ export class OrderPollerOrchestrator {
 
   @CronOnce('*/5 * * * *', { name: 'order-poll' })
   async poll(): Promise<void> {
+    if (this.providers.length === 0) return;
     // 캐시하지 않는다. 주기가 5분이고 provider 는 한 자릿수라 호출 비용이 무시할 만한 데다,
     // 캐시를 두면 "껐는데 왜 아직 도나" 라는 혼란 지점이 생긴다. 즉시 들어야 킬스위치다.
     let activeSites: Set<string>;
@@ -262,6 +263,31 @@ export class OrderPollerOrchestrator {
         this.logger.error(`[${provider.channel}] Order polling failed: ${error.message}`);
       }
     }
+  }
+
+  /**
+   * Ingest an explicitly supplied provider without advancing channel polling watermarks.
+   * Demo runs use this entrypoint so they retain the canonical mapping + typed transactional
+   * outbox boundary while avoiding a second raw-Kafka or direct business-table path.
+   */
+  async ingestProvider(
+    provider: ChannelOrderProvider,
+  ): Promise<Array<{ externalOrderId: string; orderId: string; enqueued: boolean }>> {
+    const { orders, failures, lifecycleEvents = [] } = await provider.fetchOrders(null);
+    if (failures.length > 0 || lifecycleEvents.length > 0) {
+      throw new Error('Explicit order ingestion accepts order candidates only');
+    }
+
+    const results: Array<{ externalOrderId: string; orderId: string; enqueued: boolean }> = [];
+    for (const order of orders) {
+      const result = await this.processOrderItem(provider, order);
+      results.push({
+        externalOrderId: order.externalOrderId,
+        orderId: result.wmsOrderId ?? order.createPayload.orderId,
+        enqueued: result.emitted > 0 || result.dedupedUnchanged > 0 || Boolean(result.wmsOrderId),
+      });
+    }
+    return results;
   }
 
   async replayFailure(failureId: string): Promise<{

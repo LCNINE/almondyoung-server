@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { validateNotificationEnv } from './config/env.validation';
 import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
+import { DemoNotificationController } from './demo/demo-notification.controller';
 import { HealthController } from './health.controller';
 
 // Core modules
@@ -55,10 +56,15 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
     DispatcherModule,
     ProviderModule,
     TemplateModule,
-    BulkModule,
+    // Demo delivers immediately through the mock provider and has no Redis resource.
+    ...(process.env.APP_STAGE === 'demo' ? [] : [BulkModule]),
     DeviceModule,
   ],
-  controllers: [HealthController, EventTraceController],
+  controllers: [
+    HealthController,
+    EventTraceController,
+    ...(process.env.APP_STAGE === 'demo' ? [DemoNotificationController] : []),
+  ],
   providers: [
     // 이 서비스는 알림 템플릿/프로바이더 CRUD 와 실제 발송 테스트를 노출하는데, 공용 ALB 의
     // 와일드카드 도메인으로 인터넷에서 도달한다. 그동안 인증이 전혀 없었다.

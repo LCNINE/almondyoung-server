@@ -69,13 +69,20 @@ const idpUserServiceUrl = aws.ssm.getParameterOutput({
 
 ## Stage
 
-- `live` — 운영 stage. **유일한 특별 취급 stage**.
+- `live` — 운영 stage.
   - `removal: "retain"` (삭제 저항성)
   - `protect: true` (`sst remove` 시 추가 확인)
   - 도메인에 접두사 없음 (`id.almondyoung-next.com` 같이 베이스 도메인 바로 사용)
+- `demo` — 물류 시연 전용 stage.
+  - `removal: "remove"`, `protect: true` (실수 삭제는 막고 승인된 철거에서는 demo 자원을 정리)
+  - `*.almondyoung-next.com`의 비어 있는 명시적 서브도메인만 사용하며 apex/`www` 레코드는 소유하지 않음
+  - 앱 계약은 `APP_STAGE=demo`, `DEMO_CONSOLE_ENABLED=true`, `EXTERNAL_INTEGRATIONS_MODE=mock`
+  - auth/services는 demo 전용 최소 서비스 그래프와 S3 버킷을 사용
 - `live` 이외의 모든 stage(`dev`, `staging`, `pr-*` 등) — 비운영 취급.
   - `removal: "remove"` (state 삭제 시 리소스 동반 정리)
   - 도메인에 `.dev.` 접두사 (예: `id.dev.almondyoung-next.com`)
+
+마지막 항목의 기본 규칙에서 `demo`는 위의 명시적 예외다. 그 밖의 기존 stage 의미는 변경하지 않는다.
 
 VPC bastion은 **dev/live 모두 상시 ON**. VPC 내부 리소스(IdP DB 등)에 대한 시딩·점검 접근(`sst tunnel`) 경로가 필요하고, t4g.nano 1대 비용(월 ~$3)은 무시할 수준.
 

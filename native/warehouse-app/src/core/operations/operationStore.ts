@@ -1,3 +1,7 @@
+import {
+  parsePreparationRejection,
+  type PreparationRejection,
+} from '../data/httpClient';
 export type OperationStatus =
   'queued' | 'sending' | 'uncertain' | 'confirmed' | 'rejected';
 export interface OperationInput {
@@ -16,6 +20,7 @@ export interface StoredOperation extends OperationInput {
   attempts: number;
   result?: unknown;
   errorCode?: string;
+  preparation?: PreparationRejection;
 }
 const unresolved = (o: StoredOperation) =>
   !['confirmed', 'rejected'].includes(o.status);
@@ -36,6 +41,9 @@ export function createOperationStore(name = 'almondwms-work-v2') {
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+    }).catch((error) => {
+      opening = undefined;
+      throw error;
     }));
   async function transaction<T>(
     mode: IDBTransactionMode,
@@ -136,17 +144,34 @@ export function createOperationStore(name = 'almondwms-work-v2') {
     id: string,
     status: OperationStatus,
     result?: unknown,
-    errorCode?: string
+    errorCode?: string,
+    ownership?: { scope: string; ownerId: string },
+    preparation?: PreparationRejection
   ) =>
     transaction<void>('readwrite', (s, done) => {
       const r = s.get(id);
       r.onsuccess = () => {
+        if (
+          ownership &&
+          (!r.result ||
+            r.result.scope !== ownership.scope ||
+            r.result.ownerId !== ownership.ownerId ||
+            (r.result.leaseExpiresAt ?? 0) <= Date.now())
+        ) {
+          s.transaction.abort();
+          return;
+        }
         if (r.result && !['confirmed', 'rejected'].includes(r.result.status))
           s.put({
             ...r.result,
             status,
             result,
             errorCode,
+            preparation:
+              status === 'rejected' &&
+              errorCode === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'
+                ? parsePreparationRejection(preparation)
+                : undefined,
             attempts: r.result.attempts + (status === 'sending' ? 1 : 0),
           });
         done();

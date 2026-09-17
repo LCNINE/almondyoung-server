@@ -1,3 +1,4 @@
+import type { ReceiptActionBlockReason } from './receiptState';
 export interface ExpectedArrivalLine {
   skuId: string;
   skuName: string;
@@ -84,6 +85,8 @@ export interface CancelInboundInput {
 
 /** 입고 직후 화면에 남는 "방금 만든 라인" — 적치·취소의 대상. */
 export interface FreshLine {
+  canceledQty?: number;
+  returnedQty?: number;
   lineId: string;
   skuId: string;
   skuName: string;
@@ -98,13 +101,16 @@ export interface FreshLine {
 
 /** GET /inbound/putaway/pending 의 items[] 한 행. */
 export interface PutawayPendingItem {
+  source: 'direct' | 'purchase_order';
+  canPutaway: boolean;
+  putawayBlockReason: ReceiptActionBlockReason | null;
   lineId: string;
   skuId: string;
   skuName: string;
   skuCode: string;
   pendingQty: number;
-  originLocationId: string;
-  originLocationCode: string;
+  originLocationId: string | null;
+  originLocationCode: string | null;
   /** ISO 문자열. */
   receivedAt: string;
 }
@@ -118,17 +124,30 @@ export interface PutawayPendingResult {
   items: PutawayPendingItem[];
 }
 
-/**
- * PutawaySheet 의 입력. 입고 직후 화면과 적치 큐가 공유한다.
- * originLocationId 가 선택인 이유: 입고 직후 경로는 그 값을 모른다
- * (ReceivePurchaseOrderResult·SimpleInboundLine 어느 쪽도 로케이션을 안 돌려준다).
- * 없으면 "출발지를 대상지 후보에서 제외" 가드를 걸지 않는다.
- */
+/** Actionable sheet snapshot; the detail read revalidates it before submission. */
 export interface PutawayTarget {
   lineId: string;
+  source: 'direct' | 'purchase_order';
   skuName: string;
   skuCode: string;
   pendingQty: number;
   originLocationCode: string;
-  originLocationId?: string;
+  originLocationId: string;
+}
+
+/** Only an explicit server policy and identifiable origin can open a sheet. */
+export function isActionablePutaway(
+  item: PutawayPendingItem
+): item is PutawayPendingItem & PutawayTarget {
+  return (
+    item.canPutaway === true &&
+    item.putawayBlockReason === null &&
+    (item.source === 'direct' || item.source === 'purchase_order') &&
+    typeof item.originLocationId === 'string' &&
+    item.originLocationId.length > 0 &&
+    typeof item.originLocationCode === 'string' &&
+    item.originLocationCode.length > 0 &&
+    Number.isSafeInteger(item.pendingQty) &&
+    item.pendingQty > 0
+  );
 }

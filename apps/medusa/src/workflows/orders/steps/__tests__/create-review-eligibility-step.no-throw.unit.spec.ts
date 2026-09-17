@@ -50,6 +50,26 @@ describe('createReviewEligibility 는 어떤 실패에도 던지지 않는다', 
     expect(result.status).toBe('created');
   });
 
+  it('만들어진 행 수를 응답 본문에서 센다 — 멱등 충돌이면 요청보다 적다', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => [], text: async () => '[]' });
+
+    const result = await createReviewEligibility(baseInput, makeContainer());
+
+    expect(result.status).toBe('created');
+    expect(result.status === 'created' && result.itemCount).toBe(1);
+    expect(result.status === 'created' && result.createdCount).toBe(0);
+  });
+
+  it('🔴 본문을 못 읽어도 «성공»이다 — skipped 로 떨어뜨리면 발급 표식이 안 남아 계속 다시 잡는다', async () => {
+    // 본문 파서가 아예 없는 응답: `response.json()` 은 «동기적으로» 던진다.
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+    const result = await createReviewEligibility(baseInput, makeContainer());
+
+    expect(result.status).toBe('created');
+    expect(result.status === 'created' && result.createdCount).toBe(1);
+  });
+
   it('UGC_SERVICE_URL 이 없어도 던지지 않는다', async () => {
     delete process.env.UGC_SERVICE_URL;
 

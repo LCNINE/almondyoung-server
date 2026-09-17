@@ -1,3 +1,4 @@
+import { seedShipmentLineFor } from '../../../fulfillment/services/__support__/logistics-fixtures';
 import { randomUUID } from 'crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -191,6 +192,71 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
         .from(wmsTables.inboundReceipts)
         .where(eq(wmsTables.inboundReceipts.warehouseId, warehouseId));
       expect(leaked).toEqual([]);
+    });
+  });
+
+  it('reservation rejection after releasing cancellation counters rolls back the entire caller transaction', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const f = await seedWarehouseAndSku(tx, randomUUID());
+      const arrival = await kernel.recordArrival(
+        {
+          source: 'direct',
+          method: 'simple',
+          warehouseId: f.warehouseId,
+          reason: 'reserved cancellation',
+          lines: [{ skuId: f.skuId, quantity: 5, eventKey: randomUUID() }],
+        },
+        tx,
+      );
+      const shipmentLineId = await seedShipmentLineFor(tx, { skuId: f.skuId, warehouseId: f.warehouseId, qty: 1 });
+      await tx
+        .insert(wmsTables.stockReservations)
+        .values({
+          targetType: 'SHIPMENT_LINE',
+          targetId: shipmentLineId,
+          shipmentLineId,
+          skuId: f.skuId,
+          warehouseId: f.warehouseId,
+          quantity: 1,
+          status: 'confirmed',
+        });
+      const before = {
+        lines: await tx
+          .select()
+          .from(wmsTables.inboundReceiptLines)
+          .where(eq(wmsTables.inboundReceiptLines.receiptId, arrival.receipt.id)),
+        receipt: await tx
+          .select()
+          .from(wmsTables.inboundReceipts)
+          .where(eq(wmsTables.inboundReceipts.id, arrival.receipt.id)),
+        ledger: await tx.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.skuId)),
+        events: await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId)),
+        logs: await tx
+          .select()
+          .from(wmsTables.inboundWorkLogs)
+          .where(eq(wmsTables.inboundWorkLogs.receiptId, arrival.receipt.id)),
+      };
+      await expect(
+        tx.transaction((sp) =>
+          kernel.cancelLine({ receiptLineId: arrival.lines[0].id, expected: { source: 'direct' } }, sp),
+        ),
+      ).rejects.toThrow(/예약된 재고/);
+      expect({
+        lines: await tx
+          .select()
+          .from(wmsTables.inboundReceiptLines)
+          .where(eq(wmsTables.inboundReceiptLines.receiptId, arrival.receipt.id)),
+        receipt: await tx
+          .select()
+          .from(wmsTables.inboundReceipts)
+          .where(eq(wmsTables.inboundReceipts.id, arrival.receipt.id)),
+        ledger: await tx.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.skuId)),
+        events: await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId)),
+        logs: await tx
+          .select()
+          .from(wmsTables.inboundWorkLogs)
+          .where(eq(wmsTables.inboundWorkLogs.receiptId, arrival.receipt.id)),
+      }).toEqual(before);
     });
   });
 
@@ -549,9 +615,7 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
       } finally {
         blockerRelease.resolve();
         await withTimeout(
-          Promise.allSettled(
-            [blocker, cancelA, cancelB].filter((promise): promise is Promise<unknown> => !!promise),
-          ),
+          Promise.allSettled([blocker, cancelA, cancelB].filter((promise): promise is Promise<unknown> => !!promise)),
           'concurrency worker cleanup',
         );
         await Promise.all([blockerClient.end(), workerAClient.end(), workerBClient.end()]);

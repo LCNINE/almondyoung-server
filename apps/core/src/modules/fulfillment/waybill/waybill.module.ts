@@ -9,6 +9,7 @@ import { WaybillIssueMachine } from './waybill-issue.machine';
 import { WaybillManager } from './waybill.manager';
 import { WaybillService } from './waybill.service';
 import { WaybillController } from './waybill.controller';
+import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
 
 @Module({
   // FulfillmentCommandService(WaybillManager 의존) 획득. 방향 반전 완료 — FulfillmentModule 이 WaybillModule 을 import(spec §12.1).
@@ -16,7 +17,12 @@ import { WaybillController } from './waybill.controller';
   controllers: [WaybillController],
   providers: [
     { provide: HANJIN_CONFIG, useFactory: buildHanjinConfig },
-    { provide: CarrierGatewayRegistry, useFactory: buildCarrierGatewayRegistry, inject: [HANJIN_CONFIG] },
+    {
+      provide: CarrierGatewayRegistry,
+      useFactory: buildCarrierGatewayRegistry,
+      inject: [HANJIN_CONFIG, DemoCarrierRepository],
+    },
+    DemoCarrierRepository,
     WaybillRepository,
     WaybillReader,
     WaybillIssueMachine,

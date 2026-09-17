@@ -1,3 +1,8 @@
+import {
+  createTestWorkRuntime,
+  TestWorkProvider,
+  receiptFixture,
+} from './__fixtures__/workRuntime';
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -14,7 +19,6 @@ import {
 import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
-import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import {
   ScanProvider,
   useScanBus,
@@ -22,6 +26,34 @@ import {
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
+import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+
+it('간편입고 재개에서 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
+  const calls: Call[] = [];
+  await renderScreen(calls, {});
+  const open = await screen.findByRole('button', { name: '적치' });
+  await waitFor(() => expect(open).toBeEnabled());
+  await userEvent.click(open);
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  const keypad = within(dialog).getByRole('button', { name: '지우기' });
+  await userEvent.click(keypad);
+  scanHid(keypad, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  expect(
+    calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+  ).toHaveLength(0);
+  await userEvent.click(submit);
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  expect(await screen.findByText(/잔여 18개 · 2개 적치됨/)).toBeInTheDocument();
+  expect(calls.filter((c) => c.method === 'POST')).toEqual([
+    expect.objectContaining({
+      path: '/inbound/putaway',
+      body: expect.objectContaining({ quantity: 2 }),
+    }),
+  ]);
+});
 
 const session = {
   bootstrap: async () => {},
@@ -65,13 +97,54 @@ function ScanButton({ code }: { code: string }) {
   );
 }
 
-function renderScreen(calls: Call[]) {
+async function renderScreen(
+  calls: Call[],
+  restored?: Partial<ReturnType<typeof receiptFixture>>,
+  withNeighbor = false
+) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  let current = receiptFixture({
+    source: 'direct',
+    lineId: 'ln-1',
+    quantity: 20,
+    pendingQty: 20,
+    ...restored,
+  });
+  const neighbor = receiptFixture({
+    source: 'direct',
+    lineId: 'valid-neighbor',
+    skuName: '정상 이웃 상품',
+    quantity: 4,
+    pendingQty: 4,
   });
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.includes('/inbound/lines/valid-neighbor/')) return neighbor;
+      if (o.path.startsWith('/inbound/lines/')) return current;
+      if (o.path.startsWith('/inbound/receipts?'))
+        return {
+          serverTime: new Date().toISOString(),
+          total: 1,
+          items: [
+            {
+              id: 'r-1',
+              warehouseId: 'w-1',
+              method: 'simple',
+              occurredAt: new Date().toISOString(),
+              status: current.receiptStatus,
+              totalQuantity: current.quantity,
+              lines: [
+                { ...current, id: current.lineId },
+                ...(withNeighbor ? [{ ...neighbor, id: neighbor.lineId }] : []),
+              ],
+            },
+          ],
+        };
+      if (o.path.startsWith('/inventory/skus/search/advanced?'))
+        return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
@@ -80,13 +153,34 @@ function renderScreen(calls: Call[]) {
           lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
         };
       }
-      if (o.path === '/inbound/putaway') return { success: true };
+      if (o.path === '/inbound/putaway') {
+        const qty = (o.body as { quantity: number }).quantity;
+        current = {
+          ...current,
+          pendingQty: current.pendingQty - qty,
+          putawayFromOriginQty: current.putawayFromOriginQty + qty,
+          canCancel: false,
+          cancelBlockReason: 'ALREADY_PUTAWAY',
+          canPutaway: current.pendingQty > qty,
+          putawayBlockReason:
+            current.pendingQty > qty ? null : 'NOTHING_PENDING',
+        };
+        return { success: true };
+      }
       if (o.path.startsWith('/locations/warehouses/')) {
         // 검색어가 한글이면 URLSearchParams 가 percent-encode 한다 — 디코드해서 비교한다.
         const path = decodeURIComponent(o.path);
         if (path.includes('B-05')) {
           return {
-            items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }],
+            items: [
+              {
+                id: 'l-dst',
+                code: 'B-05-03',
+                displayName: 'B-05-03',
+                isActive: true,
+                isSystem: false,
+              },
+            ],
             total: 1,
           };
         }
@@ -95,6 +189,36 @@ function renderScreen(calls: Call[]) {
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
+  const runtime = createTestWorkRuntime(client);
+  if (restored)
+    await runtime.store.draft('fixture:draft:quick-inbound:w-1', () => ({
+      receiptId: 'r-1',
+      cart: [],
+      staged: [
+        {
+          lineId: current.lineId,
+          skuId: current.skuId,
+          skuCode: current.skuCode,
+          skuName: current.skuName,
+          quantity: current.quantity,
+          putawayDoneQty: 0,
+        },
+        ...(withNeighbor
+          ? [
+              {
+                lineId: neighbor.lineId,
+                skuId: neighbor.skuId,
+                skuCode: neighbor.skuCode,
+                skuName: neighbor.skuName,
+                quantity: neighbor.quantity,
+                putawayDoneQty: 0,
+              },
+            ]
+          : []),
+      ],
+      seen: [],
+      key: 'restored-receipt',
+    }));
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
   });
@@ -119,21 +243,27 @@ function renderScreen(calls: Call[]) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <QueryClientProvider client={qc}>
-        <ApiClientProvider client={client}>
+        <TestWorkProvider runtime={runtime}>
           <WarehouseProvider prefs={prefs}>
             <ScanProvider>{children}</ScanProvider>
           </WarehouseProvider>
-        </ApiClientProvider>
+        </TestWorkProvider>
       </QueryClientProvider>
     </SessionProvider>
   );
   render(<RouterProvider router={router} />, { wrapper });
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
 }
 
 describe('QuickInboundScreen', () => {
   it('스캔하면 카트에 담긴다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    await renderScreen([]);
     // 라우터 초기 매치가 커밋되기 전에 동기 getByRole 로 스캔 버튼을 찾으면
     // 아직 빈 문서라 실패한다 — 헤더 제목으로 초기 렌더 완료를 기다린다.
     await screen.findByText('간편입고');
@@ -145,7 +275,7 @@ describe('QuickInboundScreen', () => {
 
   it('같은 SKU 를 다시 스캔하면 포장단위만큼 더한다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    await renderScreen([]);
     await screen.findByText('간편입고');
 
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -161,7 +291,7 @@ describe('QuickInboundScreen', () => {
   it('등록하면 카트가 적치 대기 목록으로 바뀐다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('간편입고');
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
@@ -182,7 +312,7 @@ describe('QuickInboundScreen', () => {
   it('등록한 뒤에는 스캔해도 적치 대기 목록이 바뀌지 않는다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('간편입고');
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
@@ -237,7 +367,7 @@ describe('QuickInboundScreen', () => {
   it('적치 대기 행에서 부분 적치를 완료하면 잔여·누계 표시와 완료 배지가 반영된다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
-    renderScreen(calls);
+    await renderScreen(calls);
     await screen.findByText('간편입고');
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
@@ -246,6 +376,9 @@ describe('QuickInboundScreen', () => {
     await screen.findByText('적치 대기');
 
     // 1차 부분 적치: 20개 중 12개.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '적치' }));
     let sheet = await screen.findByRole('dialog', { name: '적치' });
     await user.type(
@@ -263,11 +396,16 @@ describe('QuickInboundScreen', () => {
     await user.click(within(sheet).getByRole('button', { name: '적치' }));
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
 
-    expect(screen.getByText(/잔여 8개 · 12개 적치됨/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/잔여 8개 · 12개 적치됨/)
+    ).toBeInTheDocument();
     expect(screen.queryByText('완료')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '적치' })).toBeInTheDocument();
 
     // 재오픈하면 잔여(8)로 다시 프리필된다.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: '적치' }));
     sheet = await screen.findByRole('dialog', { name: '적치' });
     expect(within(sheet).getByText(/잔여 8개/)).toBeInTheDocument();
@@ -287,7 +425,9 @@ describe('QuickInboundScreen', () => {
     await user.click(within(sheet).getByRole('button', { name: '적치' }));
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
 
-    expect(screen.getByText(/잔여 3개 · 17개 적치됨/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/잔여 3개 · 17개 적치됨/)
+    ).toBeInTheDocument();
     expect(screen.queryByText('완료')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '적치' })).toBeInTheDocument();
 
@@ -298,7 +438,107 @@ describe('QuickInboundScreen', () => {
   });
 
   it('빈 카트로는 등록할 수 없다', async () => {
-    renderScreen([]);
+    await renderScreen([]);
     expect(await screen.findByRole('button', { name: '등록' })).toBeDisabled();
   });
+});
+
+it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선택은 수량을 늘리지 않는다', async () => {
+  const calls: Call[] = [];
+  await renderScreen(calls);
+  await userEvent.type(
+    await screen.findByLabelText('상품명·코드 검색'),
+    '셔츠{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '코튼셔츠 선택' })
+  );
+  const quantity = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await userEvent.clear(quantity);
+  expect(screen.getByRole('button', { name: '수량 저장' })).toBeDisabled();
+  await userEvent.type(quantity, '10');
+  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  await userEvent.click(screen.getByRole('button', { name: '코튼셔츠 선택' }));
+  expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveValue('10');
+  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  await userEvent.click(screen.getByRole('button', { name: '등록' }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
+      { items: [{ skuId: 's1', quantity: 10 }] }
+    )
+  );
+});
+
+for (const returned of [3, 10]) {
+  it(`회송 ${returned}개인 입고는 회송 누계와 서버의 잔여 적치 정책을 따로 표시한다`, async () => {
+    await renderScreen([], {
+      quantity: 10,
+      pendingQty: 10 - returned,
+      returnedQty: returned,
+      canPutaway: returned < 10,
+      putawayBlockReason: returned < 10 ? null : 'NOTHING_PENDING',
+      canCancel: false,
+      cancelBlockReason: 'RETURN_EXISTS',
+    });
+    expect(await screen.findByText(`${returned}개 회송됨`)).toBeInTheDocument();
+    if (returned < 10) {
+      expect(screen.getByRole('button', { name: '적치' })).toBeEnabled();
+      await userEvent.click(screen.getByRole('button', { name: '적치' }));
+      expect(
+        await screen.findByRole('dialog', { name: '적치' })
+      ).toHaveTextContent('잔여 7개');
+    } else
+      expect(
+        screen.queryByRole('button', { name: '적치' })
+      ).not.toBeInTheDocument();
+  });
+}
+
+it('restores a malformed receipt as visible blocked guidance without a mutation', async () => {
+  const calls: Call[] = [];
+  await renderScreen(calls, {
+    quantity: 5,
+    putawayFromOriginQty: -1,
+    pendingQty: 6,
+    canCancel: false,
+    cancelBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+    canPutaway: false,
+    putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+  });
+  expect(await screen.findByText(/입고내역과 실물을 확인/)).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치' })
+  ).not.toBeInTheDocument();
+  expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
+    true
+  );
+});
+
+it('a blocked diagnostic row does not prevent a valid neighbor from resuming putaway', async () => {
+  const calls: Call[] = [];
+  await renderScreen(
+    calls,
+    {
+      quantity: 5,
+      putawayFromOriginQty: -1,
+      pendingQty: 6,
+      canCancel: false,
+      cancelBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+      canPutaway: false,
+      putawayBlockReason: 'ORIGIN_STOCK_INCONSISTENT',
+    },
+    true
+  );
+  expect(await screen.findByText(/입고내역과 실물을 확인/)).toBeInTheDocument();
+  expect(screen.getByText('정상 이웃 상품')).toBeInTheDocument();
+  const buttons = screen.getAllByRole('button', { name: '적치' });
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0]).toBeEnabled();
+  await userEvent.click(buttons[0]);
+  expect(await screen.findByRole('dialog', { name: '적치' })).toHaveTextContent(
+    '정상 이웃 상품'
+  );
+  expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
+    true
+  );
 });

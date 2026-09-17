@@ -1,3 +1,4 @@
+import { validatePutawaySearch } from '../domains/inbound/putawaySearch';
 import {
   createRootRouteWithContext,
   createRoute,
@@ -19,6 +20,7 @@ import { StocktakingRoute } from './routes/StocktakingRoute';
 import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
 import { MovementRoute } from './routes/MovementRoute';
+import { InboundHistoryRoute } from './routes/InboundHistoryRoute';
 import { InboundRoute } from './routes/InboundRoute';
 import { PurchaseOrderReceiveRoute } from './routes/PurchaseOrderReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
@@ -86,14 +88,22 @@ const inventoryAdjustRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory/$sku/adjust',
   component: AdjustStockRoute,
-  validateSearch: (search: Record<string, unknown>): { locationId?: string } => ({
-    locationId: typeof search.locationId === 'string' ? search.locationId : undefined,
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { locationId?: string } => ({
+    locationId:
+      typeof search.locationId === 'string' ? search.locationId : undefined,
   }),
 });
 const shipmentsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/shipments',
-  component: () => <PlaceholderScreen title="출고/송장 조회" note="후속 Phase에서 구현됩니다." />,
+  component: () => (
+    <PlaceholderScreen
+      title="출고/송장 조회"
+      note="후속 Phase에서 구현됩니다."
+    />
+  ),
 });
 
 // --- 작업 · 핸드헬드 ---
@@ -127,6 +137,11 @@ const inboundPurchaseOrderRoute = createRoute({
   path: '/inbound/purchase-orders/$poId',
   component: PurchaseOrderReceiveRoute,
 });
+const inboundHistoryRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/history',
+  component: InboundHistoryRoute,
+});
 const inboundQuickRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound/quick',
@@ -142,6 +157,7 @@ const pickingRoute = createRoute({
 const putawayRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/putaway',
+  validateSearch: validatePutawaySearch,
   component: PutawayRoute,
 });
 
@@ -189,6 +205,7 @@ export const routeTree = rootRoute.addChildren([
     inboundRoute,
     inboundPurchaseOrderRoute,
     inboundQuickRoute,
+    inboundHistoryRoute,
     pickingRoute,
     putawayRoute,
     packingRoute,

@@ -10,4 +10,6 @@ export interface LocationItem {
   id: string;
   code: string;
   displayName: string;
+  isActive: boolean;
+  isSystem: boolean;
 }

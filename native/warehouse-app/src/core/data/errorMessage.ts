@@ -1,4 +1,4 @@
-import { ConflictError } from './httpClient';
+import { ApiError, ConflictError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
 export type ErrorContext =
@@ -47,6 +47,20 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
+    '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
+  LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED:
+    '스캔 생략 출고는 관리자 권한이 필요해요. 상품 스캔으로 일반 출고를 계속해 주세요.',
+  LOCATION_OUTBOUND_FORCE_NOT_APPLIED:
+    '스캔 생략 출고가 반영되지 않았어요. 상품을 스캔해 일반 출고를 계속해 주세요.',
+  LOCATION_OUTBOUND_WAREHOUSE_MISMATCH:
+    '송장의 창고와 선택 창고가 달라요. 창고를 확인해 주세요.',
+  LOCATION_OUTBOUND_SOURCE_MISMATCH:
+    '선택 위치에 이 상품의 출고 할당이 없어요. 표시된 위치를 확인해 주세요.',
+  LOCATION_OUTBOUND_OVERSCAN:
+    '선택 위치의 남은 수량을 초과했어요. 수량과 위치를 확인해 주세요.',
+  LOCATION_OUTBOUND_PROGRESS_CHANGED:
+    '출고 진행이 바뀌었어요. 최신 위치별 수량을 다시 확인해 주세요.',
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN:
     '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
   SIMPLE_OUTBOUND_PLAN_INVALIDATED:
@@ -60,7 +74,55 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
 };
 
+const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
+  INBOUND_ORIGIN_STOCK_PROTECTED:
+    '이 상품은 적치 대기 중이에요. 적치에서 처리해 주세요.',
+  INBOUND_ORIGIN_STOCK_INCONSISTENT:
+    '입고 기록과 현재 재고가 맞지 않아요. 입고내역과 실물을 확인해 주세요.',
+  INBOUND_PUTAWAY_DESTINATION_INVALID:
+    '같은 창고의 일반 로케이션을 선택해 주세요.',
+};
+
+const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
+  MOVEMENT_DESTINATION_INACTIVE:
+    '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.',
+};
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
+    context === 'outbound' &&
+    error.preparation
+  ) {
+    if (error.preparation.recovery === 'review_batch')
+      return '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.';
+    if (error.preparation.reasonCode === 'SOURCE_INSUFFICIENT')
+      return '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.';
+    return '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.';
+  }
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
+    context === 'movement' &&
+    error.code &&
+    MOVEMENT_WORKFLOW_MESSAGES[error.code]
+  )
+    return MOVEMENT_WORKFLOW_MESSAGES[error.code];
+  if (
+    error instanceof ApiError &&
+    error.outcome === 'rejected' &&
+    error.code &&
+    INBOUND_WORKFLOW_MESSAGES[error.code]
+  )
+    return INBOUND_WORKFLOW_MESSAGES[error.code];
+  if (
+    error instanceof ApiError &&
+    context === 'outbound' &&
+    error.code &&
+    OUTBOUND_CONFLICT_MESSAGES[error.code]
+  )
+    return OUTBOUND_CONFLICT_MESSAGES[error.code];
   if (error instanceof ConflictError) {
     if (error.code === 'STOCKTAKING_COUNT_REQUIRED')
       return '아직 세지 않은 상품이 있어요. 모든 수량을 확인해 주세요.';

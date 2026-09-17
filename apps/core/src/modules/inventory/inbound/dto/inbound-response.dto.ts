@@ -1,3 +1,4 @@
+import type { ReceiptActionBlockReason } from './inbound-receipt-state.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InboundReceiptLineDto {
@@ -166,12 +167,60 @@ export class SimpleInboundResponseDto extends BaseInboundReceiptDto {
   lines: InboundReceiptLineDto[];
 }
 
+export type InboundCancelBlockReason =
+  | 'ALREADY_CANCELED'
+  | 'NOT_TODAY'
+  | 'PUTAWAY_EXISTS'
+  | 'RETURN_EXISTS'
+  | 'INSUFFICIENT_ORIGIN_STOCK'
+  | 'MISSING_ORIGIN_OR_EVENT';
+
+export class InboundReceiptHistoryLineDto extends InboundReceiptLineDto {
+  @ApiProperty({ description: '미처리 입고 수량' })
+  pendingQty: number;
+
+  @ApiProperty({ description: '조회 시점의 적치 가능 여부' })
+  canPutaway: boolean;
+
+  @ApiProperty({ description: '적치 차단 사유', nullable: true })
+  putawayBlockReason: ReceiptActionBlockReason | null;
+
+  @ApiProperty({ description: '상품 코드' })
+  skuCode: string;
+
+  @ApiProperty({ description: '상품명' })
+  skuName: string;
+
+  @ApiProperty({ description: '원위치 코드', nullable: true })
+  originLocationCode: string | null;
+
+  @ApiProperty({ description: '조회 시점의 취소 가능 여부' })
+  canCancel: boolean;
+
+  @ApiProperty({
+    description: '조회 시점의 취소 차단 사유',
+    nullable: true,
+    enum: [
+      'ALREADY_CANCELED',
+      'NOT_TODAY',
+      'PUTAWAY_EXISTS',
+      'RETURN_EXISTS',
+      'INSUFFICIENT_ORIGIN_STOCK',
+      'MISSING_ORIGIN_OR_EVENT',
+    ],
+  })
+  cancelBlockReason: InboundCancelBlockReason | null;
+}
+
 export class InboundReceiptHistoryItemDto extends BaseInboundReceiptDto {
-  @ApiProperty({ description: '회차의 전체 입고 라인', type: [InboundReceiptLineDto] })
-  lines: InboundReceiptLineDto[];
+  @ApiProperty({ description: '회차의 전체 입고 라인', type: [InboundReceiptHistoryLineDto] })
+  lines: InboundReceiptHistoryLineDto[];
 }
 
 export class InboundReceiptHistoryResponseDto {
+  @ApiProperty({ description: '서버 응답 생성 시각', example: '2026-09-15T00:00:00.000Z' })
+  serverTime: string;
+
   @ApiProperty({ description: '필터에 맞는 회차 수', example: 2 })
   total: number;
 

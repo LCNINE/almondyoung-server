@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 export const notificationEnvSchema = z.object({
+  APP_STAGE: z.string().optional(),
+  DEMO_CONSOLE_ENABLED: z.enum(['true', 'false']).optional(),
+  EXTERNAL_INTEGRATIONS_MODE: z.enum(['real', 'mock']).optional(),
   // Database
   DATABASE_URL: z.string().url(),
   PORT: z.string().regex(/^\d+$/).optional(),
@@ -83,6 +86,10 @@ export function validateNotificationEnv(config: Record<string, unknown>) {
   // Swagger 문서 생성 모드에서는 검증 스킵
   if (process.env.GENERATE_SWAGGER === 'true') {
     return config as NotificationEnvConfig;
+  }
+
+  if (config.APP_STAGE === 'demo' && config.EXTERNAL_INTEGRATIONS_MODE !== 'mock') {
+    throw new Error('Demo notification requires EXTERNAL_INTEGRATIONS_MODE=mock');
   }
 
   const parsed = notificationEnvSchema.safeParse(config);

@@ -1,5 +1,7 @@
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
 import { buildCarrierGatewayRegistry, buildHanjinConfig } from './carrier/hanjin/carrier-gateway.factory';
+import { DemoCarrierGateway, type DemoCarrierStore } from './carrier/demo/demo-carrier.gateway';
+import { HanjinCarrierGateway } from './carrier/hanjin/hanjin-carrier.gateway';
 
 // FulfillmentModule 은 EventsModule.forApp(SalesOrderModule 경유)을 정적으로 물고 있어, import 만
 // 해도 KAFKA_BROKERS 연결을 시도한다(실측: 로컬에 브로커가 없으면 재시도를 반복하며 멈추지 않는다 — Task 12
@@ -81,5 +83,27 @@ describe('carrier gateway factory', () => {
     expect(gateway?.carrier).toBe('HANJIN');
     // isConfigured() 값은 env 설정 여부에 따라 달라진다(구성 완료/미완료 모두 유효) — 정의된 boolean 인지만 확인.
     expect(typeof gateway?.isConfigured()).toBe('boolean');
+  });
+
+  it('selects the persistent mock and never constructs the Hanjin gateway in safe demo mode', () => {
+    const store = {} as DemoCarrierStore;
+    const registry = buildCarrierGatewayRegistry(buildHanjinConfig(), store, {
+      APP_STAGE: 'demo',
+      DEMO_CONSOLE_ENABLED: 'true',
+      EXTERNAL_INTEGRATIONS_MODE: 'mock',
+    });
+
+    expect(registry.get('HANJIN')).toBeInstanceOf(DemoCarrierGateway);
+    expect(registry.get('HANJIN')).not.toBeInstanceOf(HanjinCarrierGateway);
+    expect(registry.get('HANJIN')?.capabilities.allocatesExternally).toBe(false);
+  });
+
+  it('preserves the Hanjin provider outside demo', () => {
+    const registry = buildCarrierGatewayRegistry(buildHanjinConfig(), undefined, {
+      APP_STAGE: 'live',
+      DEMO_CONSOLE_ENABLED: 'false',
+      EXTERNAL_INTEGRATIONS_MODE: 'real',
+    });
+    expect(registry.get('HANJIN')).toBeInstanceOf(HanjinCarrierGateway);
   });
 });

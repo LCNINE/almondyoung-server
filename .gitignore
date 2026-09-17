@@ -487,3 +487,6 @@ skills/product-bulk-form/.venv/
 
 # 로컬 확인용 Next 빌드 (NEXT_DIST_DIR)
 .next-local/
+
+# Demo native packaging uses the PNG frame embedded in the existing ICO.
+!native/warehouse-app/src-tauri/icons/icon.png

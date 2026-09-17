@@ -19,6 +19,7 @@ import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
 import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
+import { AddCountItemDto } from '../dto/add-count-item.dto';
 
 @Injectable()
 export class StocktakingService {
@@ -262,6 +263,53 @@ export class StocktakingService {
             .returning();
       const sessionRevision = await this.bumpSession(trx, session.id);
       return this.countResponse(line, sessionRevision);
+    }, tx);
+  }
+
+  async addCountItem(dto: AddCountItemDto, tx?: DbTx) {
+    return this.dbService.run(async (trx) => {
+      const session = await this.assertInProgress(trx, dto.sessionId);
+      await this.assertLocation(trx, dto.locationId, session.warehouseId);
+      await acquireStockAvailabilityLocks(trx, [{ skuId: dto.skuId, warehouseId: session.warehouseId }]);
+
+      const [sku] = await trx
+        .select({ id: wmsTables.skus.id })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, dto.skuId))
+        .limit(1);
+      if (!sku) throw new NotFoundException('상품을 찾을 수 없어요.');
+
+      const [existing] = await trx
+        .select({ id: wmsTables.stocktakingLines.id })
+        .from(wmsTables.stocktakingLines)
+        .where(
+          and(
+            eq(wmsTables.stocktakingLines.sessionId, dto.sessionId),
+            eq(wmsTables.stocktakingLines.skuId, dto.skuId),
+            eq(wmsTables.stocktakingLines.locationId, dto.locationId),
+          ),
+        )
+        .for('update');
+      if (existing) throw new StocktakingConflict('STOCKTAKING_REVISION_CONFLICT');
+
+      const ledger = await this.readLedger(trx, dto.skuId, session.warehouseId, dto.locationId);
+      const now = new Date();
+      const [line] = await trx
+        .insert(wmsTables.stocktakingLines)
+        .values({
+          sessionId: dto.sessionId,
+          locationId: dto.locationId,
+          skuId: dto.skuId,
+          countedQuantity: dto.countedQuantity,
+          expectedQuantity: ledger.qty,
+          variance: dto.countedQuantity - ledger.qty,
+          countBaselineVersion: ledger.version,
+          status: 'counted',
+          countedAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return this.countResponse(line, await this.bumpSession(trx, session.id));
     }, tx);
   }
 

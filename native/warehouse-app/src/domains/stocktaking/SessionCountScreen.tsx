@@ -1,3 +1,6 @@
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
+import { useLocationSearch } from '../warehouse/useLocationSearch';
+import { AddCountItemSheet } from './AddCountItemSheet';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
@@ -6,6 +9,8 @@ import { ApiError } from '../../core/data/httpClient';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
+import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
+import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import { NumberPad } from '../../core/design/NumberPad';
 import { cn } from '../../core/design/cn';
 import { useScanner } from '../../core/hardware/scan/useScanner';
@@ -40,7 +45,7 @@ type CountScan =
 interface EditingLine {
   lineId: string;
   skuName: string;
-  value: number;
+  value: string;
   revision: number;
 }
 function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
@@ -66,7 +71,12 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         : null;
   }, [draft.ready, place]);
   const [manualCode, setManualCode] = useState('');
+  const locationSearch = useLocationSearch(
+    detail.data?.warehouseId ?? null,
+    place ? '' : manualCode
+  );
   const [editing, setEditing] = useState<EditingLine | null>(null);
+  const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState<ScanLocationItem | null>(null);
   const applyCount = (result: ScanProductResult) =>
@@ -96,15 +106,26 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         prev
           ? {
               ...prev,
-              expectedItems: prev.expectedItems.map((item) => {
-                const line = detail.data!.lines.find(
-                  (line) => line.lineId === item.lineId
-                );
-                return line &&
-                  (line.lineRevision ?? 0) > (item.lineRevision ?? 0)
-                  ? { ...item, ...line }
-                  : item;
-              }),
+              expectedItems: [
+                ...prev.expectedItems.map((item) => {
+                  const line = detail.data!.lines.find(
+                    (line) => line.lineId === item.lineId
+                  );
+                  return line &&
+                    (line.lineRevision ?? 0) > (item.lineRevision ?? 0)
+                    ? { ...item, ...line }
+                    : item;
+                }),
+                ...detail
+                  .data!.lines.filter(
+                    (line) =>
+                      line.locationId === prev.locationId &&
+                      !prev.expectedItems.some(
+                        (item) => item.lineId === line.lineId
+                      )
+                  )
+                  .map((line) => ({ ...line, barcode: line.scannedBarcode })),
+              ],
             }
           : prev
       )
@@ -123,6 +144,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         locationId: result.locationId,
       };
     setManualCode('');
+    return result;
   }
   const scanQueue = useWorkScanQueue<CountScan>(async (input, id) => {
     setNotice(null);
@@ -203,6 +225,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
   useScanner((event) => {
     if (
       editing ||
+      adding ||
       resetting ||
       updateCount.isPending ||
       resetCount.isPending ||
@@ -217,7 +240,9 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
     scanQueue.blocked() ||
     updateCount.isPending ||
     resetCount.isPending ||
-    switchingLocation;
+    switchingLocation ||
+    adding ||
+    !!editing;
   const progress = detail.data?.progress;
   return (
     <div className="space-y-4">
@@ -284,6 +309,28 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
               열기
             </Button>
           </form>
+          {locationSearch.isError && (
+            <p role="alert">로케이션을 찾지 못했어요.</p>
+          )}
+          <ul>
+            {(locationSearch.data?.items ?? []).map((location) => (
+              <li key={location.id}>
+                <Button
+                  disabled={
+                    busy ||
+                    !manualCode.trim() ||
+                    locationSearch.isFetching ||
+                    locationSearch.isPlaceholderData ||
+                    locationSearch.isError ||
+                    !draft.ready
+                  }
+                  onClick={() => acceptScan(location.code, true)}
+                >
+                  {location.code} 열기
+                </Button>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : (
         <section className="space-y-3">
@@ -299,6 +346,17 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
             상품 바코드를 스캔하면 1개씩 올라가요. 박스 단위는 수량 입력을
             쓰세요.
           </p>
+          <BarcodeInput
+            label="실사 상품 바코드"
+            disabled={busy || !draft.ready}
+            onSubmit={(code) => acceptScan(code)}
+          />
+          <Button
+            disabled={busy || !draft.ready}
+            onClick={() => setAdding(true)}
+          >
+            상품 추가
+          </Button>
           <fieldset disabled={busy}>
             <ul className="space-y-2">
               {place.expectedItems.map((item) => (
@@ -313,7 +371,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
                       setEditing({
                         lineId: item.lineId,
                         skuName: item.skuName,
-                        value: item.countedQuantity ?? 0,
+                        value: String(item.countedQuantity ?? 0),
                         revision: item.lineRevision,
                       });
                     }}
@@ -375,6 +433,34 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
           </section>
         </div>
       )}
+      {adding && place && (
+        <AddCountItemSheet
+          sessionId={sessionId}
+          place={place}
+          onCancel={() => setAdding(false)}
+          onConflict={async (skuId) => {
+            const latest = await enterLocation(place.locationCode);
+            return latest.expectedItems.find((item) => item.skuId === skuId);
+          }}
+          onExisting={(item) => {
+            setAdding(false);
+            if (item.lineRevision === undefined) {
+              setNotice('최신 수량을 확인해 주세요.');
+              return;
+            }
+            setEditing({
+              lineId: item.lineId,
+              skuName: item.skuName,
+              value: String(item.countedQuantity ?? 0),
+              revision: item.lineRevision,
+            });
+          }}
+          onDone={async (key) => {
+            await enterLocation(place.locationCode, `${key}:location`);
+            setAdding(false);
+          }}
+        />
+      )}
       <QuantityDialog
         editing={editing}
         pending={updateCount.isPending}
@@ -385,12 +471,12 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
           setEditing((prev) => (prev ? { ...prev, value } : prev))
         }
         onSave={async () => {
-          if (!editing) return;
+          if (!editing || parseQuantity(editing.value, 0) === null) return;
           try {
             const result = await updateCount.mutateAsync({
               sessionId,
               lineId: editing.lineId,
-              countedQuantity: editing.value,
+              countedQuantity: parseQuantity(editing.value, 0)!,
               expectedRevision: editing.revision,
             });
             await applyCount(result);
@@ -472,9 +558,10 @@ function QuantityDialog({
   editing: EditingLine | null;
   pending: boolean;
   onCancel: () => void;
-  onChange: (v: number) => void;
+  onChange: (v: string) => void;
   onSave: () => void;
 }) {
+  useUnsavedWork(!!editing);
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -489,7 +576,7 @@ function QuantityDialog({
       previouslyFocusedRef.current?.focus();
       previouslyFocusedRef.current = null;
     }
-  }, [editing]);
+  }, [editing?.lineId]);
 
   useEffect(() => {
     if (!editing) return;
@@ -531,7 +618,16 @@ function QuantityDialog({
           {editing.value}
         </div>
         <fieldset disabled={pending}>
-          <NumberPad value={editing.value} onChange={onChange} />
+          <QuantityInput
+            label="실물 총수량 직접 입력"
+            value={editing.value}
+            onChange={onChange}
+            min={0}
+          />
+          <NumberPad
+            value={parseQuantity(editing.value, 0) ?? 0}
+            onChange={(v) => onChange(String(v))}
+          />
         </fieldset>
         <div className="flex gap-2">
           <Button
@@ -544,7 +640,7 @@ function QuantityDialog({
           <Button
             type="button"
             className="flex-1"
-            disabled={pending}
+            disabled={pending || parseQuantity(editing.value, 0) === null}
             onClick={onSave}
           >
             저장

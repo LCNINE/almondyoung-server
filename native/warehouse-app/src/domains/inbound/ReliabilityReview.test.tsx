@@ -1,3 +1,4 @@
+import { receiptFixture } from './__fixtures__/workRuntime';
 import 'fake-indexeddb/auto';
 import { createOperationRunner } from '../../core/operations/operationRunner';
 import {
@@ -78,7 +79,9 @@ function renderScreen(
   gate?: Promise<void>,
   database?: string,
   mode: 'quick' | 'po' = 'quick',
-  configureStore?: (store: OperationStore) => void
+  configureStore?: (store: OperationStore) => void,
+  receiptCanceled = false,
+  serverPutawayQty = 0
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -86,6 +89,63 @@ function renderScreen(
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
+      if (o.path.startsWith('/inbound/lines/'))
+        return receiptFixture({
+          source: mode === 'po' ? 'purchase_order' : 'direct',
+          quantity: 10,
+          pendingQty: receiptCanceled ? 0 : 10 - serverPutawayQty,
+          putawayFromOriginQty: serverPutawayQty,
+          canceledQty: receiptCanceled ? 10 : 0,
+          canPutaway: !receiptCanceled,
+          putawayBlockReason: receiptCanceled ? 'CANCELED' : null,
+          canCancel: !receiptCanceled && !serverPutawayQty,
+          cancelBlockReason: receiptCanceled
+            ? 'CANCELED'
+            : serverPutawayQty
+              ? 'ALREADY_PUTAWAY'
+              : null,
+        });
+      if (o.path.startsWith('/inbound/receipts?'))
+        return {
+          serverTime: new Date().toISOString(),
+          total: 1,
+          items: [
+            {
+              id: 'r-1',
+              warehouseId: 'w-1',
+              method: 'simple',
+              occurredAt: new Date().toISOString(),
+              status: receiptCanceled ? 'voided' : 'posted',
+              totalQuantity: 20,
+              lines: [
+                {
+                  id: 'ln-1',
+                  skuId: 's1',
+                  skuCode: 'CT-001',
+                  skuName: '코튼셔츠',
+                  quantity: serverPutawayQty ? 10 : 20,
+                  pendingQty: receiptCanceled
+                    ? 0
+                    : serverPutawayQty
+                      ? 10 - serverPutawayQty
+                      : 20,
+                  canPutaway: !receiptCanceled,
+                  putawayBlockReason: receiptCanceled ? 'CANCELED' : null,
+                  originLocationId: 'l-origin',
+                  source: 'direct',
+                  originLocationCode: 'INBOUND',
+                  canCancel: !receiptCanceled,
+                  cancelBlockReason: receiptCanceled
+                    ? 'ALREADY_CANCELED'
+                    : null,
+                  canceledQty: receiptCanceled ? 20 : 0,
+                  returnedQty: 0,
+                  putawayFromOriginQty: serverPutawayQty,
+                },
+              ],
+            },
+          ],
+        };
       if (o.path.startsWith('/inventory/expected-arrivals'))
         return { arrivals: [] };
       if (o.path.startsWith('/inventory/skus?barcode=880')) {
@@ -120,6 +180,7 @@ function renderScreen(
     ? {
         store,
         getScope: async () => 'actor|local',
+        getCapabilities: async () => ({ inboundWorkflowConsistency: true }),
         runner: createOperationRunner({
           api: client,
           store,
@@ -186,6 +247,9 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
     expect(
       screen.queryByText('작업을 불러오고 있어요.')
     ).not.toBeInTheDocument()
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
   );
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
   await waitFor(() =>
@@ -259,21 +323,24 @@ it('does not register a restored partial cart while saved scans cannot be read',
     { id: 'second-scan', data: '8801' },
   ]);
   let unavailable = true;
-  let cartReconciled = false;
   renderScreen([], undefined, database, 'quick', (store) => {
     const draft = store.draft;
     vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
       if (unavailable && id.includes(':scan:') && !update)
         throw new DOMException('storage unavailable', 'UnknownError');
       const value = await draft(id, update);
-      if (id.includes(':draft:') && update) cartReconciled = true;
       return value;
     });
   });
   const user = userEvent.setup();
   await screen.findByRole('button', { name: '다시 확인' });
   await screen.findByLabelText('코튼셔츠 수량');
-  await waitFor(() => expect(cartReconciled).toBe(true));
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
   expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
   unavailable = false;
   await user.click(screen.getByRole('button', { name: '다시 확인' }));
@@ -297,6 +364,9 @@ it('restores accepted scan counts after remount without sending inventory again'
     expect(
       screen.queryByText('작업을 불러오고 있어요.')
     ).not.toBeInTheDocument()
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -328,7 +398,13 @@ for (const mode of ['quick', 'po'] as const) {
       `actor|local:draft:${mode === 'quick' ? 'quick-inbound:w-1' : 'po-inbound:w-1:po-1'}`,
       () =>
         mode === 'quick'
-          ? { cart: [], staged: [line], seen: [], key: 'receipt-key' }
+          ? {
+              cart: [],
+              staged: [line],
+              seen: [],
+              key: 'receipt-key',
+              receiptId: 'r-1',
+            }
           : {
               active: null,
               scanBump: 0,
@@ -352,11 +428,151 @@ for (const mode of ['quick', 'po'] as const) {
     });
     await store.finish('putaway-key', 'confirmed', { success: true });
     const calls: Call[] = [];
-    const first = renderScreen(calls, undefined, database, mode);
+    const first = renderScreen(
+      calls,
+      undefined,
+      database,
+      mode,
+      undefined,
+      false,
+      3
+    );
     await screen.findByText(/잔여 7개 · 3개 적치됨/);
     first.unmount();
-    renderScreen(calls, undefined, database, mode);
+    renderScreen(calls, undefined, database, mode, undefined, false, 3);
     await screen.findByText(/잔여 7개 · 3개 적치됨/);
     expect(calls.filter((c) => c.path === '/inbound/putaway')).toHaveLength(0);
   });
 }
+
+it('취소 후 재시작한 간편입고는 취소 이력을 확인하고 적치를 열지 않는다', async () => {
+  const database = crypto.randomUUID();
+  const store = createOperationStore(database);
+  await store.draft('actor|local:draft:quick-inbound:w-1', () => ({
+    cart: [],
+    staged: [
+      {
+        lineId: 'ln-1',
+        skuId: 's1',
+        skuName: '코튼셔츠',
+        skuCode: 'CT-001',
+        quantity: 20,
+        putawayDoneQty: 0,
+      },
+    ],
+    seen: [],
+    key: 'receipt-key',
+    receiptId: 'r-1',
+  }));
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, database, 'quick', undefined, true);
+  expect(await screen.findByText('취소됨')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '적치' })
+  ).not.toBeInTheDocument();
+  expect(
+    calls.some(
+      (c) =>
+        c.path.includes('receiptId=r-1') &&
+        c.path.includes('warehouseId=w-1') &&
+        c.path.includes('status=all')
+    )
+  ).toBe(true);
+});
+
+it('keeps confirmed inbound cart locked until original key reconciliation completes', async () => {
+  const database = crypto.randomUUID();
+  const store = createOperationStore(database);
+  await store.draft('actor|local:draft:quick-inbound:w-1', () => ({
+    cart: [
+      { skuId: 's1', skuCode: 'CT-001', skuName: '코튼셔츠', quantity: 20 },
+    ],
+    staged: [],
+    seen: [],
+    key: 'confirmed-receipt',
+    receiptId: null,
+  }));
+  await store.begin({
+    id: 'confirmed-receipt',
+    scope: 'actor|local',
+    resource: '/inbound/simple:w-1',
+    method: 'POST',
+    path: '/inbound/simple',
+    bodyJson: '{}',
+    createdAt: Date.now(),
+  });
+  await store.finish('confirmed-receipt', 'confirmed', {
+    id: 'r-1',
+    lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, database, 'quick', (localStore) => {
+    const get = localStore.get;
+    vi.spyOn(localStore, 'get').mockImplementation(async (id) => {
+      if (id === 'confirmed-receipt') await gate;
+      return get(id);
+    });
+  });
+  const quantity = await screen.findByLabelText('코튼셔츠 수량');
+  expect(quantity).toBeDisabled();
+  expect(screen.getByLabelText('코튼셔츠 삭제')).toBeDisabled();
+  expect(screen.getByLabelText('바코드 입력')).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await screen.findByText('적치 대기');
+  expect(calls.filter((c) => c.path === '/inbound/simple')).toHaveLength(0);
+  expect(
+    (await store.draft<{ key: string }>('actor|local:draft:quick-inbound:w-1'))
+      ?.key
+  ).toBe('confirmed-receipt');
+});
+
+it('retains consecutive scans after initial receipt reconciliation', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let block = false;
+  const calls: Call[] = [];
+  renderScreen(calls, undefined, crypto.randomUUID(), 'quick', (localStore) => {
+    const get = localStore.get;
+    vi.spyOn(localStore, 'get').mockImplementation(async (id) => {
+      if (block) await gate;
+      return get(id);
+    });
+  });
+  const user = userEvent.setup();
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1')
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  block = true;
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  // Once the original receipt was checked, local scans must not reopen that check.
+  expect(screen.getByLabelText('바코드 입력')).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await act(async () => {
+    block = false;
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('3')
+  );
+});

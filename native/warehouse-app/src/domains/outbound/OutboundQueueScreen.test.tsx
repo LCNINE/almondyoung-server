@@ -64,8 +64,10 @@ function TargetScreen() {
   );
 }
 
+type CapturedRequest = { method: string; path: string };
+
 function renderScreen(
-  paths: string[],
+  requests: CapturedRequest[],
   prefs: DevicePrefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
   }),
@@ -91,16 +93,20 @@ function renderScreen(
       },
     ],
     created: [],
-  }
+  },
+  foundWarehouse = 'w-1'
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const client: ApiClient = {
-    request: (async (o: { path: string }) => {
-      paths.push(o.path);
+    request: (async (o: { method?: string; path: string }) => {
+      requests.push({ method: o.method ?? 'GET', path: o.path });
+      if (o.path === '/inventory/work-context')
+        return { capabilities: { locationOutbound: true } };
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-1')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-1',
           trackingNo: 'T-1',
           carrier: 'HANJIN',
@@ -115,6 +121,7 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-NOWORKITEM')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-2',
           trackingNo: 'T-NOWORKITEM',
           carrier: 'HANJIN',
@@ -129,14 +136,15 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-SHIPPED')) {
         return {
+          warehouseId: foundWarehouse,
           shipmentId: 's-3',
           trackingNo: 'T-SHIPPED',
           carrier: 'HANJIN',
           waybillStatus: 'used',
           shipmentStatus: 'shipped',
           batchId: 'b-1',
-          workItemId: 'wi-3',
-          workItemStatus: 'completed',
+          workItemId: null,
+          workItemStatus: null,
           recipientMasked: '홍길**',
           lines: [],
         };
@@ -388,7 +396,8 @@ describe('OutboundQueueScreen', () => {
 
   it('이미 출고된 송장이면 안내를 띄우고 이동하지 않는다', async () => {
     const user = userEvent.setup();
-    renderScreen([]);
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests);
     await screen.findByText('출고작업');
 
     await user.click(screen.getByRole('button', { name: '스캔:T-SHIPPED' }));
@@ -397,5 +406,17 @@ describe('OutboundQueueScreen', () => {
       await screen.findByText('이미 출고된 송장이에요')
     ).toBeInTheDocument();
     expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    expect(requests.filter(({ method }) => method === 'POST')).toHaveLength(0);
   });
+});
+
+it('다른 창고의 송장은 화면 진입 전에 거절한다', async () => {
+  const requests: CapturedRequest[] = [];
+  renderScreen(requests, undefined, undefined, 'other');
+  await userEvent.type(
+    await screen.findByLabelText('운송장번호'),
+    'T-1{Enter}'
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent('창고');
+  expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
 });

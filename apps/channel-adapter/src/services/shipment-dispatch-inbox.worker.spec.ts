@@ -1,5 +1,6 @@
 import type { ShipmentEventOrder, ShipmentShippedPayload } from '@packages/event-contracts/streams';
 import { ShipmentDispatchInboxWorker } from './shipment-dispatch-inbox.worker';
+import { DemoChannelDispatchMock } from '../demo/demo-channel-dispatch.mock';
 
 function collectConditionValues(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || value === undefined) return [];
@@ -87,6 +88,29 @@ function makeWorker() {
 }
 
 describe('ShipmentDispatchInboxWorker routing', () => {
+  it('records a useful mock acknowledgement in demo without calling any external channel client', async () => {
+    const { factory, medusaClient } = makeWorker();
+    const mock = new DemoChannelDispatchMock();
+    const worker = new ShipmentDispatchInboxWorker({ db: {} } as any, factory as any, medusaClient as any, mock);
+    const order = makeOrder('medusa');
+
+    const result = await (worker as any).executeOperation(makeOperation(order));
+
+    expect(result).toEqual({
+      manual: false,
+      result: expect.objectContaining({
+        mocked: true,
+        mode: 'demo',
+        operation: 'dispatch',
+        channel: 'medusa',
+        externalOrderId: order.channelOrderId,
+        providerIdempotencyKey: expect.any(String),
+      }),
+    });
+    expect(factory.getAdapter).not.toHaveBeenCalled();
+    expect(medusaClient.updateOrderShipmentAttemptProjection).not.toHaveBeenCalled();
+  });
+
   it('accepts an internal shipment fact without creating a channel operation', async () => {
     const { worker, factory } = makeWorker();
     const internal = worker as unknown as {

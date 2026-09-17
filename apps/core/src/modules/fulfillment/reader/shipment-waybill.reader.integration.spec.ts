@@ -1,3 +1,4 @@
+import { isPreparationBlocked } from '../services/outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { NotFoundException } from '@nestjs/common';
@@ -29,6 +30,7 @@ describeIfDb('ShipmentWaybillReader', () => {
       const result = await reader.byTrackingNo(fixture.trackingNo);
 
       expect(result.shipmentId).toBe(fixture.shipmentId);
+      expect(result).toHaveProperty('warehouseId', fixture.warehouseId);
       expect(result.carrier).toBe('HANJIN');
       expect(result.batchId).toBe(fixture.batchId);
       expect(result.workItemId).toBe(fixture.workItemId);
@@ -65,6 +67,7 @@ describeIfDb('ShipmentWaybillReader', () => {
         { barcode: fixture.barcode, quantity: 1, actor, idempotencyKey: `scan-${randomUUID()}` },
         tx,
       );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       expect(state.status).toBe('in_progress');
 
       const reader = new ShipmentWaybillReader(ambientDbService(tx));
@@ -98,6 +101,47 @@ describeIfDb('ShipmentWaybillReader', () => {
       expect(result.batchId).toBe(fixture.batchId);
       expect(result.workItemId).toBe(fixture.workItemId);
       expect(result.workItemStatus).toBe('short_pick_recovery');
+    });
+  });
+
+  it('accepts an optional warehouse filter and rejects a different warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      expect(await reader.byTrackingNo(fixture.trackingNo, fixture.warehouseId)).toHaveProperty(
+        'shipmentId',
+        fixture.shipmentId,
+      );
+      await expect(reader.byTrackingNo(fixture.trackingNo, randomUUID())).rejects.toMatchObject({
+        response: { code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH' },
+      });
+    });
+  });
+
+  it('완료 송장은 활성 작업 없이 shipped로 조회된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const service = assembleSimpleOutbound(tx);
+      const state = await service.scan(
+        fixture.shipmentId,
+        {
+          barcode: fixture.barcode,
+          quantity: 1,
+          actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
+      expect(state.status).toBe('shipped');
+      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      expect(await reader.byTrackingNo(fixture.trackingNo)).toMatchObject({
+        shipmentId: fixture.shipmentId,
+        shipmentStatus: 'shipped',
+        workItemId: null,
+        batchId: null,
+        workItemStatus: null,
+      });
     });
   });
 

@@ -10,27 +10,70 @@ import { useIsAuthenticated, useSession } from '../../app/session-context';
 import { useWorkRuntime } from './OperationContext';
 import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
+import type { StoredOperation } from './operationStore';
+import { useWorkReadiness } from './useWorkReadiness';
 
-const AreaContext = createContext({ paths: [] as string[], problem: false });
+export interface ScanAllowance {
+  path: string;
+  operationId?: string;
+  warehouseId: string;
+  sourceLocationId: string;
+}
+const AreaContext = createContext({
+  operations: [] as StoredOperation[],
+  scope: null as string | null,
+  problem: false,
+  restoring: false,
+});
+/** A scan region can accept more inputs only for its first, normal send. */
+export function useWorkAreaBlocked(
+  kind: string,
+  scanAllowance?: ScanAllowance
+) {
+  const state = useContext(AreaContext);
+  if (state.problem || state.restoring) return true;
+  if (scanAllowance && state.operations.length) {
+    return !state.operations.every((op) => {
+      if (
+        op.scope !== state.scope ||
+        op.id !== scanAllowance.operationId ||
+        op.path !== scanAllowance.path ||
+        !/^\/shipments\/[^/]+\/location-outbound-scans$/.test(op.path) ||
+        !['queued', 'sending'].includes(op.status) ||
+        op.attempts > 1
+      )
+        return false;
+      try {
+        const body = JSON.parse(op.bodyJson);
+        return (
+          body.warehouseId === scanAllowance.warehouseId &&
+          body.sourceLocationId === scanAllowance.sourceLocationId
+        );
+      } catch {
+        return false;
+      }
+    });
+  }
+  return state.operations.some(({ path }) =>
+    kind === 'inbound'
+      ? path.startsWith('/inbound/') || path.startsWith('/purchase-orders/')
+      : kind === 'outbound'
+        ? path.startsWith('/shipments/')
+        : kind === 'adjust'
+          ? path.startsWith('/inventory/stocks/adjust')
+          : path.startsWith(`/${kind}/`)
+  );
+}
 export function WorkArea({
   kind,
+  scanAllowance,
   children,
 }: {
   kind: string;
+  scanAllowance?: ScanAllowance;
   children: ReactNode;
 }) {
-  const state = useContext(AreaContext);
-  const blocked =
-    state.problem ||
-    state.paths.some((path) =>
-      kind === 'inbound'
-        ? path.startsWith('/inbound/') || path.startsWith('/purchase-orders/')
-        : kind === 'outbound'
-          ? path.startsWith('/shipments/')
-          : kind === 'adjust'
-            ? path.startsWith('/inventory/stocks/adjust')
-            : path.startsWith(`/${kind}/`)
-    );
+  const blocked = useWorkAreaBlocked(kind, scanAllowance);
   return <div inert={blocked || undefined}>{children}</div>;
 }
 export function WorkBoundary({ children }: { children: ReactNode }) {
@@ -52,18 +95,12 @@ function ActiveBoundary({
     runtime.runner.getSnapshot
   );
   const [now, setNow] = useState(Date.now());
-  const [problem, setProblem] = useState(false);
   const [checking, setChecking] = useState(false);
-  useEffect(() => {
-    if (!authed) return;
-    let live = true;
-    void runtime.runner.restore().catch(() => {
-      if (live) setProblem(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [runtime, authed]);
+  const { state: readiness, recheck } = useWorkReadiness(runtime, authed);
+  const ready = readiness.status === 'ready';
+  const scope = ready ? readiness.scope : null;
+  const problem = authed && readiness.status === 'failed';
+  const restoring = authed && !ready && !problem;
   useEffect(() => {
     if (!ops.length) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
@@ -77,21 +114,28 @@ function ActiveBoundary({
   useEffect(() => {
     if (!authed) return;
     const resume = () => {
-      void runtime.runner.retryPending().catch(() => setProblem(true));
+      void recheck();
     };
     window.addEventListener('online', resume);
     return () => window.removeEventListener('online', resume);
-  }, [runtime, authed]);
+  }, [authed, recheck]);
   const state = workStatus(authed ? ops : [], now);
   const blocked = authed && (state.blocksWork || problem);
   return (
     <AreaContext.Provider
       value={{
-        paths: authed ? ops.map((o) => o.path) : [],
+        operations: authed ? ops : [],
+        scope,
         problem: authed && problem,
+        restoring: authed && restoring,
       }}
     >
       {children}
+      {authed && restoring && (
+        <p role="status">
+          저장된 작업을 확인하고 있어요. 잠시만 기다려 주세요.
+        </p>
+      )}
       {blocked && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center pointer-events-none p-4">
           {(state.message || problem) && (
@@ -110,10 +154,7 @@ function ActiveBoundary({
                 onClick={async () => {
                   setChecking(true);
                   try {
-                    await runtime.runner.retryPending();
-                    setProblem(false);
-                  } catch {
-                    setProblem(true);
+                    await recheck();
                   } finally {
                     setChecking(false);
                   }

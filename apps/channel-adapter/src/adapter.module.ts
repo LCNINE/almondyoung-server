@@ -45,7 +45,6 @@ import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consum
 import { ShipmentEventsConsumer } from './consumers/shipment-events.consumer';
 import { UserEventConsumer } from './consumers/user-event.consumer';
 import { PaymentEventsConsumer } from './consumers/payment-events.consumer';
-import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {
   CoupangOrderClient,
@@ -101,6 +100,16 @@ import { createOrderProvider } from './services/order-collection/translating-ord
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 import { EventTraceController } from './controllers/event-trace.controller';
+import { isSafeDemoMode } from './demo/demo-mode';
+import { DemoController } from './demo/demo.controller';
+import { DemoModeGuard } from './demo/demo-mode.guard';
+import { DemoChannelDispatchMock } from './demo/demo-channel-dispatch.mock';
+import { DEMO_RUN_REPOSITORY, DemoRunService } from './demo/demo-run.service';
+import { DemoRunRepository } from './demo/demo-run.repository';
+import { DemoDispatchOutcomeReader } from './demo/demo-dispatch-outcome.reader';
+import { DemoCatalogClient } from './demo/demo-catalog.client';
+
+const IS_SAFE_DEMO_MODE = isSafeDemoMode(process.env);
 
 /**
  * `KAFKA_BROKERS` 가 없는 로컬 부팅에서 즉시 발행을 버리는 전송.
@@ -209,43 +218,50 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
   controllers: [
     EventTraceController,
     HealthController,
-    ChannelAdapterController,
     SyncStatusController,
-    InternalMembershipController,
-    FulfillmentEventsConsumer,
     ShipmentEventsConsumer,
-    PimProductEventConsumer,
-    PimCategoryConsumer,
-    ProductSellableQuantityConsumer,
-    MembershipEventConsumer,
-    UserEventConsumer,
-    PaymentEventsConsumer,
-    OrderCollectionFailuresController,
     ChannelDispatchOperationsController,
+    ...(IS_SAFE_DEMO_MODE
+      ? [DemoController]
+      : [
+          ChannelAdapterController,
+          InternalMembershipController,
+          FulfillmentEventsConsumer,
+          PimProductEventConsumer,
+          PimCategoryConsumer,
+          ProductSellableQuantityConsumer,
+          MembershipEventConsumer,
+          UserEventConsumer,
+          PaymentEventsConsumer,
+          OrderCollectionFailuresController,
+        ]),
   ],
   providers: [
     // 이 서비스도 공용 ALB 와일드카드로 인터넷에 노출돼 있는데 인증이 전혀 없었다.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: AdminRealmGuard },
     SyncStatusService,
-    ChannelAdapterFactory,
-    NaverSmartstoreAdapter,
-    CoupangAdapter,
-
-    CoupangOrderClient,
-    CoupangReturnClient,
-    CoupangExchangeClient,
-    CoupangProductClient,
-    NaverOrderClient,
-    NaverClaimClient,
-    NaverProductClient,
-    NaverAuthService,
+    ...(!IS_SAFE_DEMO_MODE
+      ? [
+          ChannelAdapterFactory,
+          NaverSmartstoreAdapter,
+          CoupangAdapter,
+          CoupangOrderClient,
+          CoupangReturnClient,
+          CoupangExchangeClient,
+          CoupangProductClient,
+          NaverOrderClient,
+          NaverClaimClient,
+          NaverProductClient,
+          NaverAuthService,
+        ]
+      : []),
 
     // 🆕 리팩토링된 레이어 클래스들
-    ChannelDataReader,
+    ...(!IS_SAFE_DEMO_MODE ? [ChannelDataReader] : []),
 
     // PIM 매핑 조회 클라이언트
-    ChannelListingClient,
+    ...(!IS_SAFE_DEMO_MODE ? [ChannelListingClient] : []),
     SalesChannelClient,
 
     // 계류 주문 서비스
@@ -262,45 +278,65 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // PIM-Medusa 동기화
     // PIMCLIENT: Removed to enforce MSA boundary
     // PimClient,
-    MedusaClient,
-    PimMedusaSyncService,
-    StorefrontRevalidateService,
-    MembershipMedusaSyncService,
-    CustomerLifecycleMedusaSyncService,
-    PimProductEventConsumer,
-    PimCategoryConsumer,
-    ProductSellableQuantityConsumer,
-    MembershipEventConsumer,
-    PimMedusaMappingRepository,
-    DeferredRevalidateService,
-    CategoryEnsureMemoService,
-    InboxWorkerService,
+    ...(!IS_SAFE_DEMO_MODE
+      ? [
+          MedusaClient,
+          PimMedusaSyncService,
+          StorefrontRevalidateService,
+          MembershipMedusaSyncService,
+          CustomerLifecycleMedusaSyncService,
+          PimProductEventConsumer,
+          PimCategoryConsumer,
+          ProductSellableQuantityConsumer,
+          MembershipEventConsumer,
+          PimMedusaMappingRepository,
+          DeferredRevalidateService,
+          CategoryEnsureMemoService,
+          InboxWorkerService,
+        ]
+      : []),
 
     // 주문 수집 (ADR-0031: source 는 채널 원어, 번역·식별·격리는 공용)
-    ChannelLineIdentityResolver,
-    ChannelOrderTranslator,
-    MedusaOrderSource,
-    NaverOrderSource,
-    {
-      provide: CHANNEL_ORDER_PROVIDER,
-      // 채널이 늘면 source 를 하나 더 만들어 이 배열에 더한다. 번역기는 공유한다.
-      useFactory: (translator: ChannelOrderTranslator, medusa: MedusaOrderSource, naver: NaverOrderSource) => [
-        createOrderProvider(medusa, translator),
-        createOrderProvider(naver, translator),
-      ],
-      inject: [ChannelOrderTranslator, MedusaOrderSource, NaverOrderSource],
-    },
+    ...(!IS_SAFE_DEMO_MODE
+      ? [
+          ChannelLineIdentityResolver,
+          ChannelOrderTranslator,
+          MedusaOrderSource,
+          NaverOrderSource,
+          {
+            provide: CHANNEL_ORDER_PROVIDER,
+            // 채널이 늘면 source 를 하나 더 만들어 이 배열에 더한다. 번역기는 공유한다.
+            useFactory: (translator: ChannelOrderTranslator, medusa: MedusaOrderSource, naver: NaverOrderSource) => [
+              createOrderProvider(medusa, translator),
+              createOrderProvider(naver, translator),
+            ],
+            inject: [ChannelOrderTranslator, MedusaOrderSource, NaverOrderSource],
+          },
+        ]
+      : [{ provide: CHANNEL_ORDER_PROVIDER, useValue: [] }]),
     OrderPollerOrchestrator,
     OrderCollectionFailureService,
 
     // Firebase 멤버십 동기화
-    AlmondAuthClient,
-    UserServiceClient,
-    MembershipServiceClient,
-    FirebaseMembershipSyncService,
-    MembershipDailySyncService,
-    CouponIssueReconciliationService,
-    InboxFailedRevivalService,
+    ...(!IS_SAFE_DEMO_MODE
+      ? [
+          AlmondAuthClient,
+          UserServiceClient,
+          MembershipServiceClient,
+          FirebaseMembershipSyncService,
+          MembershipDailySyncService,
+          CouponIssueReconciliationService,
+          InboxFailedRevivalService,
+        ]
+      : [
+          DemoModeGuard,
+          DemoChannelDispatchMock,
+          DemoDispatchOutcomeReader,
+          DemoCatalogClient,
+          DemoRunRepository,
+          { provide: DEMO_RUN_REPOSITORY, useExisting: DemoRunRepository },
+          DemoRunService,
+        ]),
 
     // Event Chain Tracking (환경 무관하게 항상 등록)
     EventChainService,

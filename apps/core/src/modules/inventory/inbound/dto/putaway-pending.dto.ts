@@ -1,6 +1,16 @@
+import { ReceiptActionBlockReason, RECEIPT_ACTION_BLOCK_REASONS } from './inbound-receipt-state.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PutawayPendingItemDto {
+  @ApiProperty({ enum: ['direct', 'purchase_order'] })
+  source: 'direct' | 'purchase_order';
+
+  @ApiProperty()
+  canPutaway: boolean;
+
+  @ApiProperty({ enum: RECEIPT_ACTION_BLOCK_REASONS, nullable: true })
+  putawayBlockReason: ReceiptActionBlockReason | null;
+
   @ApiProperty({ description: '입고 라인 ID' })
   lineId: string;
 
@@ -16,11 +26,11 @@ export class PutawayPendingItemDto {
   @ApiProperty({ description: '미적치 잔량', example: 20 })
   pendingQty: number;
 
-  @ApiProperty({ description: '출발지 로케이션 ID' })
-  originLocationId: string;
+  @ApiProperty({ description: '출발지 로케이션 ID', type: String, nullable: true })
+  originLocationId: string | null;
 
-  @ApiProperty({ description: '출발지 로케이션 코드', example: 'zone-inbound-default' })
-  originLocationCode: string;
+  @ApiProperty({ description: '출발지 로케이션 코드', type: String, nullable: true, example: 'zone-inbound-default' })
+  originLocationCode: string | null;
 
   @ApiProperty({ description: '입고 시각 (ISO)', example: '2026-07-26T00:14:00.000Z' })
   receivedAt: string;

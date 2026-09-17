@@ -10,6 +10,7 @@ import { CurrentStockDto } from '../dto/current-stock.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
+import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
 
 @Injectable()
 export class StockProjectionReader {
@@ -232,18 +233,7 @@ export class StockProjectionReader {
         throw new NotFoundError(`Location not found: ${locationId}`);
       }
 
-      const items = await trx
-        .select({
-          skuId: wmsTables.stockLedgers.skuId,
-          skuCode: wmsTables.skus.code,
-          skuName: wmsTables.skus.name,
-          stockState: wmsTables.stockLedgers.stockState,
-          quantity: wmsTables.stockLedgers.qty,
-        })
-        .from(wmsTables.stockLedgers)
-        .innerJoin(wmsTables.skus, eq(wmsTables.stockLedgers.skuId, wmsTables.skus.id))
-        .where(eq(wmsTables.stockLedgers.locationId, locationId))
-        .orderBy(wmsTables.skus.code, wmsTables.stockLedgers.stockState);
+      const items = await readLocationStockAvailability(trx, locationId, location.warehouseId);
 
       return {
         locationId: location.id,

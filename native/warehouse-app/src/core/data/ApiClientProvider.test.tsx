@@ -8,11 +8,22 @@ import type { Session } from '../auth/session';
 import { apiBaseUrl } from '../../app/config';
 
 const fetchMock = vi.fn(
-  async (..._args: unknown[]) =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
+  async (...args: unknown[]) =>
+    new Response(
+      JSON.stringify(
+        String(args[0]).endsWith('/inventory/work-context')
+          ? {
+              actorId: 'worker',
+              operationContractVersion: 2,
+              capabilities: { inboundWorkflowConsistency: true },
+            }
+          : { ok: true }
+      ),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
 );
 vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: (...args: unknown[]) => fetchMock(...args),

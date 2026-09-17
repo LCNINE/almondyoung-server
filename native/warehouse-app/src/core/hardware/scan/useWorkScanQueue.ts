@@ -17,6 +17,7 @@ export function useWorkScanQueue<T>(
   const router = useRouter({ warn: false });
   const consumeRef = useRef(consume);
   consumeRef.current = consume;
+  const restoredIds = useRef(new Set<string>());
   const storageId = useRef<Promise<string> | null>(null);
   const [queue] = useState(() =>
     createWorkScanQueue<ScanRecord<T>>(async (event) => {
@@ -26,6 +27,7 @@ export function useWorkScanQueue<T>(
           await storageId.current,
           (events) => (events ?? []).filter((e) => e.id !== event.id)
         );
+      restoredIds.current.delete(event.id);
     })
   );
   const [saveError, setSaveError] = useState<unknown>();
@@ -68,6 +70,7 @@ export function useWorkScanQueue<T>(
           await storageId.current
         );
         if (live) {
+          restoredIds.current = new Set(events?.map((event) => event.id));
           events?.forEach((e) => queue.enqueue(e));
           setSaveError(undefined);
           setRestored(true);
@@ -129,10 +132,12 @@ export function useWorkScanQueue<T>(
           await storageId.current,
           (events) => (events ?? []).filter((e) => e.id !== head.id)
         );
+      restoredIds.current.delete(head.id);
       queue.rejectHead(head);
     },
     size: () => queue.size() + savingQueue.size(),
     blocked,
+    ready: restored && restoredIds.current.size === 0,
     error: () => saveError ?? savingQueue.error() ?? queue.error(),
     storageError: () => saveError ?? savingQueue.error(),
   };

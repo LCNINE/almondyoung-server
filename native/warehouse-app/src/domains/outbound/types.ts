@@ -25,6 +25,8 @@ export interface ShipmentByWaybillLine {
 }
 
 export interface ShipmentByWaybill {
+  warehouseId?: string;
+  outboundContract?: 'legacy' | 'location';
   shipmentId: string;
   trackingNo: string;
   carrier: string;
@@ -57,4 +59,18 @@ export interface ForceSimpleOutboundInput {
   shipmentId: string;
   reason: string;
   idempotencyKey: string;
+}
+
+export interface OutboundSourceLine {
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  sourceLocationCode: string;
+  allocatedQty: number;
+  pickedQty: number;
+  remainingQty: number;
+}
+export interface LocationOutboundState extends SimpleOutboundState {
+  warehouseId: string;
+  sources: OutboundSourceLine[];
 }

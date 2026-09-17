@@ -79,10 +79,58 @@ export function setup(opts?: { baseDomain?: string }) {
   const redisUrl = (dbIndex: number) =>
     $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
-  // ─── Search: OpenSearch 도메인 제거됨 ───
-  // search 서비스는 Railway(opensearch-development.up.railway.app)를 사용한다 (services.ts searchEnv).
-  // AWS OpenSearch 도메인(t3.small)은 어떤 서비스도 참조하지 않는 고아 자원이라 비용절감 차원에서 삭제.
-  // nori 형태소 분석이 다시 필요해지면 도메인 + OpensearchSg + OpensearchNoriAssociation 을 복원하면 됨.
+  // ─── OpenSearch (VPC, single-AZ) ───
+  // 2026-05 에 연결 트러블슈팅으로 외부 인스턴스로 폴백했다가 07-05 에 고아 자원이라 삭제했던
+  // 도메인을 되살린다. 그 외부 인스턴스는 백업도 인증도 없었고 검색 이력(search_query_events)의
+  // 유일본을 들고 있었다 — 저장소가 하나뿐인 구조라 사실상 단일 장애점이었다.
+  //
+  // 부하 검증용 기준 사양은 m7g.medium × 1 / 10 GB. 노드가 하나라 코드가 요구하는
+  // number_of_replicas: 1 은 배정되지 않고 클러스터는 yellow 로 남는다 (정상 동작).
+  // 이중화가 필요해지면 instanceCount 2 + zoneAwarenessEnabled 로 올린다.
+  //
+  // sst.aws.OpenSearch 는 vpc 옵션을 직접 받지 않아 transform.domain 으로 vpcOptions 를 주입한다.
+  // 한국어 형태소 분석은 AWS-managed `analysis-nori` 패키지를 도메인에 associate 해서 활성화 (built-in 아님).
+  // 패키지 ID 는 region + EngineVersion 별로 다름 — 아래 값은 ap-northeast-2 / OpenSearch_2.17
+  // (2026-09-16 `aws opensearch describe-packages` 로 여전히 AVAILABLE 확인).
+  // 엔진 버전을 올리면 같은 명령으로 새 ID 를 조회해 함께 바꿀 것.
+  const vpcInfo = aws.ec2.getVpcOutput({ id: vpc.id });
+  const opensearchSg = new aws.ec2.SecurityGroup('OpensearchSg', {
+    vpcId: vpc.id,
+    description: 'Allow HTTPS to OpenSearch domain from within VPC',
+    ingress: [
+      {
+        protocol: 'tcp',
+        fromPort: 443,
+        toPort: 443,
+        cidrBlocks: [vpcInfo.cidrBlock],
+      },
+    ],
+    egress: [{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] }],
+  });
+  const opensearch = new sst.aws.OpenSearch('Opensearch', {
+    instance: 'm7g.medium',
+    storage: '10 GB',
+    transform: {
+      domain: (args) => {
+        args.vpcOptions = {
+          subnetIds: vpc.privateSubnets.apply((ids) => [ids[0]]),
+          securityGroupIds: [opensearchSg.id],
+        };
+      },
+    },
+  });
+  // Pulumi-aws 의 PackageAssociation 기본 wait 가 10분이라 t3.small 도메인 plugin install +
+  // rolling restart 에 부족할 때가 많다 — 60분으로 늘려둔다.
+  new aws.opensearch.PackageAssociation(
+    'OpensearchNoriAssociation',
+    {
+      packageId: 'G267799487',
+      domainName: opensearch.nodes.domain!.domainName,
+    },
+    {
+      customTimeouts: { create: '60m', update: '60m', delete: '60m' },
+    },
+  );
 
   // ─── Common env builders ───
   let otelExporterOtlpEndpoint: $util.Output<string> | string | undefined;
@@ -302,6 +350,7 @@ export function setup(opts?: { baseDomain?: string }) {
     dbUrl,
     redis,
     redisUrl,
+    opensearch,
     baseDomain,
     domain,
     url,

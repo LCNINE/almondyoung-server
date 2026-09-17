@@ -1,11 +1,15 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
+import { destinationIssue } from '../../shared/policies/location-work-policy';
+import { lockWorkLocations } from '../../shared/locks/location-work-lock';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
+import { receiptActionPolicy } from '../services/inbound-receipt-policy';
 import { isTodaySeoul } from '../../shared/services/time.util';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
@@ -78,6 +82,7 @@ export class InboundReceiptKernel {
     private readonly command: InventoryCommandService,
     private readonly location: LocationService,
     private readonly eventStore: StockEventStore,
+    private readonly stockAvailability: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
   /**
@@ -203,6 +208,15 @@ export class InboundReceiptKernel {
       throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
     }
 
+    if (!line.eventId) {
+      throw new BadRequestException('original receive eventId missing; cannot perform reversal');
+    }
+    // reverseEvent also locks event → stock. Keep the same order to avoid a cycle.
+    await tx
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.id, line.eventId))
+      .for('update');
     const onHand = await this.onHandAt(
       { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
       tx,
@@ -210,16 +224,11 @@ export class InboundReceiptKernel {
     if (onHand < line.quantity) {
       throw new BadRequestException('insufficient on-hand at origin to cancel');
     }
-    if (!line.eventId) {
-      throw new BadRequestException('original receive eventId missing; cannot perform reversal');
-    }
-
-    const reversal = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
-
     await tx
       .update(wmsTables.inboundReceiptLines)
       .set({ canceledQty: line.quantity })
       .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+    const reversal = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
 
     await tx.insert(wmsTables.inboundWorkLogs).values({
       type: 'CANCEL',
@@ -257,15 +266,24 @@ export class InboundReceiptKernel {
     const receipt = await this.loadReceipt(line.receiptId, tx);
     const originLocationId = this.requireOrigin(line);
 
-    // 목적지 로케이션 검증: 존재/활성/동일 창고
-    const [dest] = await tx
-      .select()
-      .from(wmsTables.locations)
-      .where(eq(wmsTables.locations.id, input.toLocationId))
-      .limit(1);
+    await acquireStockAvailabilityLocks(tx, [{ skuId: line.skuId, warehouseId: receipt.warehouseId }]);
+    const locations = await lockWorkLocations(tx, [originLocationId, input.toLocationId]);
+    const dest = locations.get(input.toLocationId);
+    // Preserve the putaway API's historical precedence before the shared policy's
+    // warehouse-first classification (system/same, missing, inactive, warehouse).
+    if (input.toLocationId === originLocationId || dest?.isSystem) {
+      throw new ConflictException({ code: 'INBOUND_PUTAWAY_DESTINATION_INVALID' });
+    }
     if (!dest) throw new NotFoundException('destination location not found');
     if (!dest.isActive) throw new BadRequestException('destination location is inactive');
-    if (dest.warehouseId !== receipt.warehouseId) {
+    if (
+      destinationIssue({
+        purpose: 'putaway',
+        warehouseId: receipt.warehouseId,
+        sourceLocationId: originLocationId,
+        destination: dest,
+      }) === 'WRONG_WAREHOUSE'
+    ) {
       throw new BadRequestException('destination location must be in the same warehouse');
     }
 
@@ -274,14 +292,42 @@ export class InboundReceiptKernel {
       throw new BadRequestException('quantity exceeds origin available');
     }
 
-    // 실원장 검증: 원위치 ON_HAND 수량 확인
-    const onHand = await this.onHandAt(
-      { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
+    // Receipt/header, stock and location locks protect these facts before releasing pending quantity.
+    const availability = await this.stockAvailability.getAvailability(
+      { skuId: line.skuId, warehouseId: receipt.warehouseId, sourceLocationId: originLocationId },
       tx,
+      { lock: true },
     );
-    if (onHand < input.quantity) {
-      throw new BadRequestException('insufficient on-hand at origin');
+    const origin = locations.get(originLocationId);
+    const [event] = line.eventId
+      ? await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.id, line.eventId))
+      : [];
+    const policy = receiptActionPolicy({
+      receiptStatus: receipt.status,
+      quantity: line.quantity,
+      canceledQty: line.canceledQty,
+      returnedQty: line.returnedQty,
+      putawayFromOriginQty: line.putawayFromOriginQty,
+      originValid: origin?.warehouseId === receipt.warehouseId,
+      isStagingOrigin: origin?.isSystem === true,
+      eventExists: event?.transitionType === 'RECEIVE',
+      invalidReceipt: false, // getAvailability already rejects invalid bucket facts.
+      onHandQty: availability.onHandQty,
+      bucketPendingQty: availability.inboundPendingQty,
+      custodyQty: availability.batchControlledQty,
+      isToday: isTodaySeoul(receipt.occurredAt),
+    });
+    if (!policy.canPutaway) {
+      throw new BadRequestException({
+        message: 'receipt is not eligible for putaway',
+        reason: policy.putawayBlockReason,
+      });
     }
+
+    await tx
+      .update(wmsTables.inboundReceiptLines)
+      .set({ putawayFromOriginQty: line.putawayFromOriginQty + input.quantity })
+      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
     const moveResult = await this.command.moveInternal(
       {
@@ -295,11 +341,6 @@ export class InboundReceiptKernel {
       },
       tx,
     );
-
-    await tx
-      .update(wmsTables.inboundReceiptLines)
-      .set({ putawayFromOriginQty: line.putawayFromOriginQty + input.quantity })
-      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
     await tx.insert(wmsTables.inboundWorkLogs).values({
       type: 'PUTAWAY',
@@ -337,6 +378,11 @@ export class InboundReceiptKernel {
       throw new BadRequestException('insufficient on-hand at origin');
     }
 
+    await tx
+      .update(wmsTables.inboundReceiptLines)
+      .set({ returnedQty: line.returnedQty + input.quantity })
+      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
     const event = await this.eventStore.createEvent(
       {
         skuId: line.skuId,
@@ -351,11 +397,6 @@ export class InboundReceiptKernel {
       },
       tx,
     );
-
-    await tx
-      .update(wmsTables.inboundReceiptLines)
-      .set({ returnedQty: line.returnedQty + input.quantity })
-      .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
     await tx.insert(wmsTables.inboundWorkLogs).values({
       type: 'RETURN',
@@ -413,18 +454,17 @@ export class InboundReceiptKernel {
   }
 
   private async onHandAt(grain: { skuId: string; warehouseId: string; locationId: string }, tx: DbTx): Promise<number> {
-    const [row] = await tx
-      .select({ qty: wmsTables.stockLedgers.qty })
-      .from(wmsTables.stockLedgers)
-      .where(
-        and(
-          eq(wmsTables.stockLedgers.skuId, grain.skuId),
-          eq(wmsTables.stockLedgers.warehouseId, grain.warehouseId),
-          eq(wmsTables.stockLedgers.locationId, grain.locationId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      )
-      .limit(1);
-    return row?.qty ?? 0;
+    await acquireStockAvailabilityLocks(tx, [grain]);
+    // Read all receipt/custody protection before releasing this line's pending quantity.
+    const availability = await this.stockAvailability.getAvailability(
+      {
+        skuId: grain.skuId,
+        warehouseId: grain.warehouseId,
+        sourceLocationId: grain.locationId,
+      },
+      tx,
+      { lock: true },
+    );
+    return availability.onHandQty;
   }
 }

@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
-    "test:e2e:membership-cancel": "./e2e/membership-cancel/run.sh"
+    "test:e2e:membership-cancel": "./e2e/membership-cancel/run.sh",
+    "prebuild": "node scripts/sync-demo-guides.mjs"
   },
   "dependencies": {
     "@blocknote/core": "^0.54.0",

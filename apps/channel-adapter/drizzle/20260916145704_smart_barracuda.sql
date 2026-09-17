@@ -1,0 +1,1 @@
+ALTER TABLE "demo_runs" ADD COLUMN "fixture_version" varchar(80) DEFAULT 'demo-logistics-v1' NOT NULL;

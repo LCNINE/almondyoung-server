@@ -39,6 +39,12 @@ export function ExpectedArrivalListScreen() {
         간편입고
       </Link>
 
+      <Link
+        to="/inbound/history"
+        className="block rounded-lg border p-3 text-center"
+      >
+        입고내역 · 취소
+      </Link>
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">입고 예정</h2>
         {arrivals.isError ? (
@@ -48,7 +54,9 @@ export function ExpectedArrivalListScreen() {
         ) : arrivals.isLoading ? (
           <p className="text-sm text-gray-500">불러오는 중…</p>
         ) : (arrivals.data?.arrivals ?? []).length === 0 ? (
-          <p className="text-sm text-gray-500">입고 예정이 없어요. 간편입고로 진행해 주세요.</p>
+          <p className="text-sm text-gray-500">
+            입고 예정이 없어요. 간편입고로 진행해 주세요.
+          </p>
         ) : (
           <ul className="space-y-2">
             {(arrivals.data?.arrivals ?? []).map((arrival) => (
@@ -63,7 +71,8 @@ export function ExpectedArrivalListScreen() {
                       {arrival.supplier?.name ?? '발주처 미상'}
                     </span>
                     <span className="block text-xs text-gray-500">
-                      {formatDate(arrival.expectedDate)} · {arrival.lines.length}품목
+                      {formatDate(arrival.expectedDate)} ·{' '}
+                      {arrival.lines.length}품목
                     </span>
                   </span>
                   <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">

@@ -1,3 +1,4 @@
+import { ConflictError } from '@app/shared';
 import { NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
@@ -7,6 +8,7 @@ import { FulfillmentInvariantService } from '../../services/fulfillment-invarian
 import { WaybillService } from '../../waybill/waybill.service';
 import { PickingStrategyName } from '../picking-strategy.interface';
 import { conflict } from './picking-plan.errors';
+import { PlanInvalidation } from './plan-invalidation';
 import { assertProfileComplete, assertRecipientComplete } from './picking-plan.queries';
 import { ACTIVE_WORK_ITEM_STATUSES, LockedAggregate, SourceCapacity, uniqueSorted } from './picking-plan.types';
 
@@ -205,7 +207,14 @@ export async function assertPlanningEligibility(
         `Shipment ${shipment.id} must contain only uninspected, fully reserved physical lines`,
       );
     }
-    await waybills.assertDispatchable(shipment.id, trx);
+    try {
+      await waybills.assertDispatchable(shipment.id, trx);
+    } catch (error) {
+      // This API uses shared domain errors for missing/stale waybills. Only its
+      // business conflict is a planning validation failure; auth/SQL errors escape.
+      if (!(error instanceof ConflictError)) throw error;
+      throw conflict('PICKING_WAYBILL_NOT_DISPATCHABLE', error.message);
+    }
   }
   const lineIds = aggregate.lines.map((line) => line.id);
   const reservations = await trx
@@ -293,7 +302,7 @@ export async function planStalenessReason(
   planId: string,
   aggregate: LockedAggregate,
   strategyName: PickingStrategyName,
-): Promise<string | null> {
+): Promise<PlanInvalidation | null> {
   const [plan] = await trx
     .select()
     .from(wmsTables.pickingPlans)
@@ -301,9 +310,14 @@ export async function planStalenessReason(
     .limit(1)
     .for('update');
   if (!plan || plan.batchId !== aggregate.batch.id || plan.strategy !== strategyName) {
-    return `Picking plan identity no longer matches the ${strategyName} batch`;
+    return {
+      code: 'PLAN_IDENTITY_CHANGED',
+      message: `Picking plan identity no longer matches the ${strategyName} batch`,
+    };
   }
-  if (plan.status !== 'draft') return `Picking plan is ${plan.status}`;
+  if (plan.status !== 'draft') {
+    return { code: 'PLAN_NOT_DRAFT', message: `Picking plan is ${plan.status}` };
+  }
   const members = await trx
     .select()
     .from(wmsTables.pickingPlanMembers)
@@ -322,7 +336,10 @@ export async function planStalenessReason(
       );
     })
   ) {
-    return 'Shipment membership, manifest version, or reservation version changed after planning';
+    return {
+      code: 'SHIPMENT_SNAPSHOT_CHANGED',
+      message: 'Shipment membership, manifest version, or reservation version changed after planning',
+    };
   }
 
   const allocations = await trx
@@ -359,7 +376,7 @@ export async function planStalenessReason(
     const key = `${allocation.skuId}|${allocation.sourceLocationId}`;
     const existing = sourceGroups.get(key);
     if (existing && existing.stockVersion !== allocation.sourceStockVersion) {
-      return `Source snapshot versions disagree for ${key}`;
+      return { code: 'ALLOCATION_INVALID', message: `Source snapshot versions disagree for ${key}` };
     }
     sourceGroups.set(key, {
       skuId: allocation.skuId,
@@ -373,7 +390,10 @@ export async function planStalenessReason(
     aggregate.lines.some((line) => allocationByLine.get(line.id) !== line.qty) ||
     [...allocationByLine.keys()].some((lineId) => !aggregate.lines.some((line) => line.id === lineId))
   ) {
-    return 'Picking source allocation no longer exactly covers the shipment lines';
+    return {
+      code: 'ALLOCATION_INVALID',
+      message: 'Picking source allocation no longer exactly covers the shipment lines',
+    };
   }
 
   const sources = [...sourceGroups.values()].sort((left, right) =>
@@ -393,7 +413,10 @@ export async function planStalenessReason(
       { lock: true },
     );
     if (availability.stockVersion !== source.stockVersion || availability.generallyAvailableQty < source.qty) {
-      return `Source ${source.skuId}/${source.sourceLocationId} changed after planning`;
+      return {
+        code: 'SOURCE_STOCK_CHANGED',
+        message: `Source ${source.skuId}/${source.sourceLocationId} changed after planning`,
+      };
     }
   }
   return null;

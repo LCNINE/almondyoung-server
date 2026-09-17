@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DbTx } from '../../../inventory/schema/inventory.schema';
-import { planPicking } from './picking-plan';
+import { planPicking, startPicking } from './picking-plan';
 import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
 import {
   assertPlanningEligibility,
@@ -25,6 +25,9 @@ import { PickingPlanDeps } from './picking-plan.types';
 // Layer 2 does real locking against a real database; layer 1 and the entry points are what this
 // spec pins down. The DB-gated integration specs cover layer 2 (ADR-0030 §5).
 jest.mock('./picking-plan.locks');
+
+const { planStalenessReason: actualPlanStalenessReason } =
+  jest.requireActual<typeof import('./picking-plan.locks')>('./picking-plan.locks');
 
 const IDS = Object.freeze({
   actor: 'worker-1',
@@ -138,6 +141,47 @@ const LOCKED_AGGREGATE = {
   ],
   workItems: [],
 };
+
+const FRESH_PLAN = {
+  id: IDS.plan,
+  batchId: IDS.batch,
+  strategy: 'discrete',
+  status: 'draft',
+};
+
+const FRESH_MEMBERS = [
+  { shipmentId: IDS.shipmentA, manifestVersion: 1, reservationVersion: 1 },
+  { shipmentId: IDS.shipmentB, manifestVersion: 1, reservationVersion: 1 },
+];
+
+const FRESH_ALLOCATIONS = [
+  {
+    id: 'allocation-a',
+    shipmentLineId: IDS.lineA,
+    sourceLocationId: IDS.source,
+    qty: 2,
+    sourceStockVersion: 7,
+    skuId: IDS.sku,
+  },
+  {
+    id: 'allocation-b',
+    shipmentLineId: IDS.lineB,
+    sourceLocationId: IDS.source,
+    qty: 3,
+    sourceStockVersion: 7,
+    skuId: IDS.sku,
+  },
+];
+
+function stalenessFixture(selectQueue: unknown[][] = [[FRESH_PLAN], FRESH_MEMBERS, FRESH_ALLOCATIONS]) {
+  const { tx } = fakeTx(selectQueue);
+  const controlledStock = {
+    getAvailability: jest.fn().mockResolvedValue({ stockVersion: 7, generallyAvailableQty: 5 }),
+  };
+  const check = () =>
+    actualPlanStalenessReason(tx, controlledStock as never, IDS.plan, LOCKED_AGGREGATE as never, 'discrete');
+  return { check, controlledStock };
+}
 
 describe('picking plan layer — layer 1 pure functions', () => {
   describe('requiredIds', () => {
@@ -309,20 +353,128 @@ describe('picking plan layer — layer 1 pure functions', () => {
   describe('invalidateDraftPlan', () => {
     it('returns the invalidated envelope after a successful CAS', async () => {
       const { tx } = fakeTx();
-      await expect(invalidateDraftPlan(tx, IDS.plan, IDS.batch, 'source stale', 'op-1')).resolves.toEqual({
+      await expect(
+        invalidateDraftPlan(tx, IDS.plan, IDS.batch, { code: 'SOURCE_STOCK_CHANGED', message: 'source stale' }, 'op-1'),
+      ).resolves.toEqual({
         state: 'invalidated',
         operationId: 'op-1',
         planId: IDS.plan,
         batchId: IDS.batch,
         reason: 'source stale',
+        reasonCode: 'SOURCE_STOCK_CHANGED',
       });
     });
 
     it('conflicts when the draft moved underneath the CAS', async () => {
       const { tx, updateBuilder } = fakeTx();
       updateBuilder.returning.mockResolvedValue([]);
-      await expect(invalidateDraftPlan(tx, IDS.plan, IDS.batch, 'source stale', 'op-1')).rejects.toMatchObject({
-        response: expect.objectContaining({ code: 'PICKING_PLAN_STALE_VERSION' }),
+      await expect(
+        invalidateDraftPlan(tx, IDS.plan, IDS.batch, { code: 'SOURCE_STOCK_CHANGED', message: 'source stale' }, 'op-1'),
+      ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'PICKING_PLAN_STALE_VERSION' }) });
+    });
+  });
+
+  describe('planStalenessReason', () => {
+    it('returns null while the plan snapshot still matches', async () => {
+      await expect(stalenessFixture().check()).resolves.toBeNull();
+    });
+
+    it('classifies a strategy mismatch as PLAN_IDENTITY_CHANGED', async () => {
+      const { check } = stalenessFixture([[{ ...FRESH_PLAN, strategy: 'pick_to_tote' }]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_IDENTITY_CHANGED',
+        message: 'Picking plan identity no longer matches the discrete batch',
+      });
+    });
+
+    it('classifies a missing plan as PLAN_IDENTITY_CHANGED', async () => {
+      const { check } = stalenessFixture([[]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_IDENTITY_CHANGED',
+        message: 'Picking plan identity no longer matches the discrete batch',
+      });
+    });
+
+    it('classifies a batch mismatch as PLAN_IDENTITY_CHANGED', async () => {
+      const { check } = stalenessFixture([[{ ...FRESH_PLAN, batchId: 'other-batch' }]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_IDENTITY_CHANGED',
+        message: 'Picking plan identity no longer matches the discrete batch',
+      });
+    });
+
+    it('classifies a non-draft plan as PLAN_NOT_DRAFT', async () => {
+      const { check } = stalenessFixture([[{ ...FRESH_PLAN, status: 'active' }]]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'PLAN_NOT_DRAFT',
+        message: 'Picking plan is active',
+      });
+    });
+
+    it('classifies a changed manifest snapshot as SHIPMENT_SNAPSHOT_CHANGED', async () => {
+      const changedMembers = [{ ...FRESH_MEMBERS[0], manifestVersion: 2 }, FRESH_MEMBERS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'SHIPMENT_SNAPSHOT_CHANGED',
+        message: 'Shipment membership, manifest version, or reservation version changed after planning',
+      });
+    });
+
+    it('classifies a changed membership as SHIPMENT_SNAPSHOT_CHANGED', async () => {
+      const changedMembers = [{ ...FRESH_MEMBERS[0], shipmentId: 'shipment-other' }, FRESH_MEMBERS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'SHIPMENT_SNAPSHOT_CHANGED',
+        message: 'Shipment membership, manifest version, or reservation version changed after planning',
+      });
+    });
+
+    it('classifies a changed reservation snapshot as SHIPMENT_SNAPSHOT_CHANGED', async () => {
+      const changedMembers = [{ ...FRESH_MEMBERS[0], reservationVersion: 2 }, FRESH_MEMBERS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], changedMembers]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'SHIPMENT_SNAPSHOT_CHANGED',
+        message: 'Shipment membership, manifest version, or reservation version changed after planning',
+      });
+    });
+
+    it('classifies contradictory source snapshots as ALLOCATION_INVALID', async () => {
+      const contradictoryAllocations = [FRESH_ALLOCATIONS[0], { ...FRESH_ALLOCATIONS[1], sourceStockVersion: 8 }];
+      const { check } = stalenessFixture([[FRESH_PLAN], FRESH_MEMBERS, contradictoryAllocations]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'ALLOCATION_INVALID',
+        message: `Source snapshot versions disagree for ${IDS.sku}|${IDS.source}`,
+      });
+    });
+
+    it('classifies an incorrect line allocation sum as ALLOCATION_INVALID', async () => {
+      const changedAllocations = [{ ...FRESH_ALLOCATIONS[0], qty: 1 }, FRESH_ALLOCATIONS[1]];
+      const { check } = stalenessFixture([[FRESH_PLAN], FRESH_MEMBERS, changedAllocations]);
+
+      await expect(check()).resolves.toEqual({
+        code: 'ALLOCATION_INVALID',
+        message: 'Picking source allocation no longer exactly covers the shipment lines',
+      });
+    });
+
+    it.each([
+      ['version', { stockVersion: 8, generallyAvailableQty: 5 }],
+      ['available quantity', { stockVersion: 7, generallyAvailableQty: 4 }],
+    ])('classifies changed source %s as SOURCE_STOCK_CHANGED', async (_change, availability) => {
+      const fixture = stalenessFixture();
+      fixture.controlledStock.getAvailability.mockResolvedValue(availability);
+
+      await expect(fixture.check()).resolves.toEqual({
+        code: 'SOURCE_STOCK_CHANGED',
+        message: `Source ${IDS.sku}/${IDS.source} changed after planning`,
       });
     });
   });
@@ -426,6 +578,7 @@ describe('planPicking', () => {
       planId: IDS.plan,
       batchId: IDS.batch,
       reason: 'source stale',
+      reasonCode: 'ELIGIBILITY_CHANGED',
     });
     expect(raw.update).toHaveBeenCalledTimes(1);
   });
@@ -438,6 +591,68 @@ describe('planPicking', () => {
     await expect(
       planPicking(deps, 'discrete', planInput({ shipmentIds: [IDS.shipmentA] }) as never, tx),
     ).rejects.toThrow('connection reset');
+    expect(raw.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('startPicking', () => {
+  beforeEach(() => {
+    jest.mocked(lockAggregate).mockResolvedValue(LOCKED_AGGREGATE as never);
+    jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
+    jest.mocked(planStalenessReason).mockResolvedValue(null);
+  });
+
+  it('classifies a known eligibility failure without changing its message', async () => {
+    const { deps } = planDepsFake();
+    jest.mocked(assertPlanningEligibility).mockRejectedValue(new ConflictException('shipment not eligible'));
+    const { tx, updateBuilder } = fakeTx([
+      [{ status: 'draft', strategy: 'discrete' }],
+      [{ shipmentId: IDS.shipmentA }],
+    ]);
+
+    await expect(
+      startPicking(
+        deps,
+        'discrete',
+        {
+          batchId: IDS.batch,
+          planId: IDS.plan,
+          actorId: IDS.actor,
+          idempotencyKey: 'start-key',
+        },
+        tx,
+      ),
+    ).resolves.toEqual({
+      state: 'invalidated',
+      operationId: 'command-request-1',
+      planId: IDS.plan,
+      batchId: IDS.batch,
+      reason: 'shipment not eligible',
+      reasonCode: 'ELIGIBILITY_CHANGED',
+    });
+    expect(updateBuilder.set).toHaveBeenCalledWith(
+      expect.objectContaining({ invalidationReason: 'shipment not eligible' }),
+    );
+  });
+
+  it('propagates unexpected failures without invalidating', async () => {
+    const { deps } = planDepsFake();
+    jest.mocked(assertPlanningEligibility).mockRejectedValue(new Error('database unavailable'));
+    const { tx, raw } = fakeTx([[{ status: 'draft', strategy: 'discrete' }], [{ shipmentId: IDS.shipmentA }]]);
+
+    await expect(
+      startPicking(
+        deps,
+        'discrete',
+        {
+          batchId: IDS.batch,
+          planId: IDS.plan,
+          actorId: IDS.actor,
+          idempotencyKey: 'start-key',
+        },
+        tx,
+      ),
+    ).rejects.toThrow('database unavailable');
     expect(raw.update).not.toHaveBeenCalled();
   });
 });

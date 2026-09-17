@@ -1,3 +1,4 @@
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
@@ -84,7 +85,8 @@ function SimpleOutboundScreenContent({
     },
     `outbound:${shipmentId}`
   );
-  useScanner((event) => {
+  function acceptBarcode(code: string) {
+    if (!shipment || shipment.outboundContract === 'location') return;
     if (forceOpen || force.isPending) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
       return;
@@ -93,8 +95,9 @@ function SimpleOutboundScreenContent({
     quantityRef.current = 1;
     setQuantity(1);
     setPadOpen(false);
-    scanQueue.enqueue({ barcode: event.code, quantity: scanQuantity });
-  });
+    scanQueue.enqueue({ barcode: code, quantity: scanQuantity });
+  }
+  useScanner((event) => acceptBarcode(event.code));
 
   if (!shipment) {
     return (
@@ -155,6 +158,11 @@ function SimpleOutboundScreenContent({
       ) : (
         <section className="space-y-2">
           <p className="text-sm text-neutral-500">상품 바코드를 스캔하세요.</p>
+          <BarcodeInput
+            label="출고 상품 바코드"
+            disabled={forceOpen || force.isPending}
+            onSubmit={acceptBarcode}
+          />
           {padOpen ? (
             <>
               <NumberPad value={quantity} onChange={setQuantity} />

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { WorkArea } from '../../core/operations/WorkBoundary';
+import { useCapabilityReader } from '../../core/operations/useWorkCapabilities';
+import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import {
@@ -13,7 +15,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { readLastBox, writeLastBox } from './lastBox';
 import { useOutboundBatches, useShipmentByWaybill } from './queries';
 
-export function OutboundQueueScreen({
+function OutboundQueueContent({
   prefs = localStoragePrefs,
 }: {
   prefs?: DevicePrefs;
@@ -23,7 +25,10 @@ export function OutboundQueueScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [manual, setManual] = useState('');
   const [resume] = useState(() => readLastBox(prefs));
-  const lookup = useShipmentByWaybill();
+  const lookup = useShipmentByWaybill(warehouseId);
+  const capabilities = useCapabilityReader();
+  const opening = useRef(false);
+  const [openingState, setOpeningState] = useState(false);
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
   // 진행 중(picking) 배치를 먼저, 아직 시작 안 한(created) 배치를 그 다음에 —
@@ -39,40 +44,63 @@ export function OutboundQueueScreen({
     }
   );
 
-  const open = (trackingNo: string) => {
+  const open = async (trackingNo: string) => {
     const code = trackingNo.trim();
-    if (!code) return;
+    if (!code || !warehouseId || opening.current) return;
+    opening.current = true;
+    setOpeningState(true);
     setNotice(null);
-    lookup.mutate(code, {
-      onSuccess: (found) => {
-        setManual('');
-        // 배치의 눈으로 이미 알 수 있는 문제는 첫 상품 스캔까지 미루지 않는다 —
-        // 조회 시점에 안내하고 큐 화면에 남는다.
-        if (found.workItemId === null) {
-          setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
-          return;
-        }
-        if (found.shipmentStatus === 'shipped') {
-          setNotice('이미 출고된 송장이에요');
-          return;
-        }
-        writeLastBox(prefs, found);
-        void navigate({
-          to: '/outbound/simple/$shipmentId',
-          params: { shipmentId: found.shipmentId },
-          state: { shipment: found },
-        });
-      },
-      onError: (error) => setNotice(errorMessage(error, 'outbound')),
-    });
+    try {
+      const found = await lookup.mutateAsync(code);
+      if (found.warehouseId && found.warehouseId !== warehouseId) {
+        setNotice('송장의 창고와 선택 창고가 달라요. 창고를 확인해 주세요.');
+        return;
+      }
+      if (found.shipmentStatus === 'shipped') {
+        setNotice('이미 출고된 송장이에요');
+        return;
+      }
+      if (found.workItemId === null) {
+        setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
+        return;
+      }
+      const legacy =
+        resume?.shipmentId === found.shipmentId &&
+        resume.outboundContract !== 'location';
+      if (
+        !legacy &&
+        (!found.warehouseId || !(await capabilities()).locationOutbound)
+      ) {
+        setNotice(
+          '위치를 확인하는 출고를 사용하려면 서버 연결과 업데이트를 확인해 주세요.'
+        );
+        return;
+      }
+      const work = {
+        ...found,
+        outboundContract: legacy ? ('legacy' as const) : ('location' as const),
+      };
+      setManual('');
+      writeLastBox(prefs, work);
+      await navigate({
+        to: '/outbound/simple/$shipmentId',
+        params: { shipmentId: found.shipmentId },
+        state: { shipment: work },
+      });
+    } catch (error) {
+      setNotice(errorMessage(error, 'outbound'));
+    } finally {
+      opening.current = false;
+      setOpeningState(false);
+    }
   };
 
-  useScanner((event) => open(event.code));
+  useScanner((event) => void open(event.code));
 
   // 기기에 남은 건 마지막으로 열었던 스냅샷일 뿐이다 — 그 사이 다른 작업자가 더
   // 스캔했을 수 있으니 재개 시 항상 다시 조회한다. 실패하면 일반 스캔과 같은 안내를 쓴다.
   const resumeWork = () => {
-    if (resume) open(resume.trackingNo);
+    if (resume) void open(resume.trackingNo);
   };
 
   if (!isSet) {
@@ -94,7 +122,7 @@ export function OutboundQueueScreen({
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          open(manual);
+          void open(manual);
         }}
       >
         <input
@@ -105,7 +133,7 @@ export function OutboundQueueScreen({
           onChange={(e) => setManual(e.target.value)}
           aria-label="운송장번호"
         />
-        <Button type="submit" disabled={lookup.isPending}>
+        <Button type="submit" disabled={openingState}>
           조회
         </Button>
       </form>
@@ -117,7 +145,7 @@ export function OutboundQueueScreen({
           <p>
             {resume.carrier} {resume.trackingNo}
           </p>
-          <Button onClick={resumeWork} disabled={lookup.isPending}>
+          <Button onClick={resumeWork} disabled={openingState}>
             이어서 작업
           </Button>
         </section>
@@ -140,5 +168,15 @@ export function OutboundQueueScreen({
         </ul>
       </section>
     </div>
+  );
+}
+
+export function OutboundQueueScreen(
+  props: Parameters<typeof OutboundQueueContent>[0]
+) {
+  return (
+    <WorkArea kind="outbound">
+      <OutboundQueueContent {...props} />
+    </WorkArea>
   );
 }

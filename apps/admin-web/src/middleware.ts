@@ -1,3 +1,7 @@
+import {
+  isDemoConsoleEnabled,
+  isDemoUnavailablePath,
+} from './lib/demo/capabilities';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyOptions } from 'jose';
@@ -42,6 +46,20 @@ async function verifyAccessToken(token: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (
+    (pathname === '/demo' ||
+      pathname.startsWith('/demo/') ||
+      pathname.startsWith('/api/demo/')) &&
+    !isDemoConsoleEnabled(process.env)
+  ) {
+    return new NextResponse('Not found', { status: 404 });
+  }
+  if (process.env.APP_STAGE === 'demo' && isDemoUnavailablePath(pathname)) {
+    return NextResponse.json(
+      { message: '시연 환경에서 제공하지 않는 기능입니다.' },
+      { status: 404 }
+    );
+  }
 
   // 정적 파일 및 API 라우트는 미들웨어를 거치지 않음
   if (
@@ -79,7 +97,9 @@ export async function middleware(request: NextRequest) {
     const { payload } = await verifyAccessToken(accessToken);
     const mustChange = payload.must_change_password === true;
     if (mustChange && pathname !== CHANGE_PASSWORD_PATH) {
-      return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.nextUrl.origin));
+      return NextResponse.redirect(
+        new URL(CHANGE_PASSWORD_PATH, request.nextUrl.origin)
+      );
     }
     return NextResponse.next();
   } catch {
@@ -102,5 +122,5 @@ function bounce(request: NextRequest, hasRefreshToken: boolean): NextResponse {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

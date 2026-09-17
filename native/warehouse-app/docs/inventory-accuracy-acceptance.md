@@ -177,3 +177,265 @@ PR 본문과 이 문서, `docs/superpowers/specs/inventory-accuracy-design.md`�
 페이지 목록은 조회 시점의 재고를 보여준다. 과거 시각으로 새로 입력된 입고는 목록을 새로 조회해야 반영된다. 스냅샷 전체를 고정하는 기능은 추가하지 않았다.
 
 이번 검증은 React 화면 테스트와 서버/DB 검사다. 실제 PDA·Windows 스캔, 네이티브 프로세스 장애, 현장 실물 대사 합격을 뜻하지 않는다. Push·PR 생성·병합·운영 배포는 수행하지 않았다.
+
+## 스테이션 단독 물류 운영 — A/B/C 구현 및 로컬 검증
+
+검증일: 2026-09-15. 기준 `develop`의 `df44cf4fb`, 실행 브랜치 `feat/station-logistics-workflows`. 제품 코드 확인 기준 `f27bd3247`. 위의 이전 작업 기록과 구분한다.
+
+### 구현한 업무
+
+| 묶음 | 실제 사용 흐름 |
+|---|---|
+| A1–A4 | 스테이션 홈에서 입고·적치·이동·실사 진입. 상품 검색과 키보드 수량 입력. 검수 없이 간편입고로 실제 도착 수량을 기본존에 등록하고 적치는 나중에 진행. 발주 물건은 발주 수령 경로와 잔량 처리를 유지 |
+| A5–A6 | 바코드 없는 SKU와 장부에 없는 품목도 실사에 추가. 기존 품목 0과 미입력을 구분. 추가는 create-only이고 재고는 실사 완료에서만 조정. 초안/원래 키를 저장하고 미확인·복구 실패 동안 추가 확정 차단 |
+| B1–B3 | 날짜·상품·상태별 직접/발주 입고 이력 및 취소 이력. 출처별 전량 취소 후 직접입고 적치 대기와 발주 잔량 갱신. 취소는 서버가 잠금 아래 재검증하고, 취소된 초안의 적치를 막음 |
+| C1–C3 | 선택 창고와 송장 창고 일치 확인, 출고 준비 및 위치별 잔량 표시, 접수 시 출발 위치 고정. 지정 위치 잔량을 다른 위치에서 채우지 않음. 스캔 생략도 위치별 실물 수량·사유를 요구. 구형 미확인 요청은 기존 경로·본문·키로 복구 |
+
+수량은 낱개 정수이며 일반 업무는 1 이상, 실사는 0 이상이다. 입력란의 빈 값은 0으로 바꾸지 않는다. 검색·수량 편집의 Enter와 전역 스캔은 분리했으며, 완료된 전역 HID 입력의 Enter가 포커스된 업무 버튼까지 누르지 않도록 처리했다.
+
+### 자동 검사
+
+- `corepack yarn --cwd native/warehouse-app test --run`: **82 files / 404 tests 통과**, 실패·skip 0.
+- `corepack yarn --cwd native/warehouse-app build`: TypeScript 및 production build 통과.
+- `corepack yarn --cwd native/warehouse-app lint`: 오류 0, 경고 **22개**. Hook 의존성과 Fast Refresh export 경고가 남는다. 빌드의 500kB 초과 chunk 경고도 남으며 bundle 약 556kB다.
+- A/B/C 통합 Core 회귀: **16 suites / 172 tests 통과**, 실패·skip 0. 신규 실사 및 기존 count-version/preview/complete, 입고 history/DTO/취소/kernel, 신규·기존 출고/controller/route-order/waybill, 공통 권한을 하나의 명령으로 실행했다.
+- `corepack yarn tsc --noEmit --incremental false -p apps/core/tsconfig.app.json`: 최종 C 서버 코드에서 통과.
+- C의 변경 서버·테스트 15개 파일 ESLint 통과. B의 기존 `inbound.service.ts`에는 변경 전부터 있던 미사용 import/인수 오류 3개가 남으며 서버 전체 lint 통과로 주장하지 않는다.
+
+Core 실행은 `source work/station-local.env` 후 `DATABASE_URL="$STATION_TEST_DATABASE_URL" corepack yarn test --runInBand --silent --runTestsByPath ...`를 사용했다. 검사 목록과 실행 결과는 로컬 `work/station-final-core-tests.log`, 앱 결과는 `work/station-final-app-{tests,build,lint}.log`에 보관한다. 이 파일들과 테스트 인증 fixture는 제품 커밋에 포함하지 않는다.
+
+새 출고 테스트는 두 위치·두 SKU, 다른 위치/창고·초과 입력 거절, 동일 키의 actor/body 변경 거절, force 실패 시 선행 피킹 전체 롤백, 기존/신규 계약의 내부 키 충돌 방지, 독립 DB 연결의 동일 키 시작·서로 다른 스캔 키·두 작업자 리스 경합을 포함한다.
+
+### 실제 React → HTTP → DB 대사
+
+| 작업 | 확인한 원장·업무 결과 |
+|---|---|
+| 키보드로 두 SKU 10+3 입고 후 첫 품목 3 적치 | 한 입고 회차13개, 기본존7/적치위치3/두 번째SKU3, 합계13 유지 |
+| 직접입고 5 → 취소 5 → 신규입고 3 | RECEIVE5 / ADJUST_DOWN5 / RECEIVE3, 최종 재고3 |
+| 적치3 후 A→B 이동3 | MOVE3 두 건, A0/B3, 총재고3 유지 |
+| 발주10 → 입고4 → 취소4 | 발주 잔량10으로 복원, 수령 누계0, 해당 SKU 재고0 |
+| 기존 실사 예상5→실물0 + 바코드 없는 신규 SKU0→2 | 완료 전 재고 불변. 완료 시 정확히 ADJUST_DOWN5와 ADJUST_UP2, 창고 총량8→5 |
+| 출고 할당 A2/B1 중 B1 처리 후 새로 열기 | B만 피킹1, A미피킹2 유지; 새로 열어도 동일 상태 복구 |
+| 다른 위치 출고 요청 | HTTP409 `LOCATION_OUTBOUND_SOURCE_MISMATCH`, 원장·커스터디·할당 변화0 |
+| 나머지 A2를 수량·사유로 명시 확인 | 출고완료 화면, SHIP1(B)+SHIP2(A), 총재고3→0 |
+
+브라우저 업무 검증 후 확인된 출고 내부 키 충돌과 입고 복구/연속 스캔 수정은 서버·화면 회귀 검사로 재검증했다. 의도적인 응답 유실은 영속 실행기 테스트에서 검사했으며 이번 실제 브라우저 검사는 일반 새로 열기까지다.
+
+브라우저는 제품 React 화면·라우터·IndexedDB 실행기와 실제 Nest 컨트롤러·DTO·재고 서비스를 사용했다. Tauri 전송 대신 browser fetch, 로그인/권한 대신 로컬 fixture를 사용했다. 실제 권한 검사는 별도 HTTP 회귀 테스트로 검사했으나 실제 계정 로그인 검증은 아니다. 독립된 신규 DB `warehouse_station_20260915`(127.0.0.1:5432)에서만 실행했다. 기존 DB 초기화 및 운영 데이터 변경은 없다.
+
+### 독립 검토와 수정
+
+A의 신규 실사/화면, B의 서버/화면, C의 서버/화면, 전체 연결 경계를 따로 검토했다. 복구 중 실사·입고 편집 차단, 취소된 입고의 적치 재개 차단, 출고 응답의 창고/송장 검사, 확정된 출고 응답 재생 후 최신 잔량 갱신, 새 출고 내부 키를 구형 문자열 키와 구분하는 보완을 반영했다. 입고 복구 중에는 입력을 막되 이후 연속 스캔에는 불필요한 재확인을 끼우지 않는다.
+
+검토 범위에서 남은 조치 필요 P1/P2 사항 없음.
+
+### 배포 전 남은 확인
+
+- [ ] Core 서버를 먼저 배포하고 새 capability/이력/위치 출고 계약을 확인한 다음 Windows 앱을 배포한다. 이번 기능 추가 자체의 새 DB 마이그레이션은 없다. 기존 v2/실사 baseline 전제는 기존 배포 절차에 따른다.
+- [ ] 실제 Windows 설치·계정 로그인·권한별 메뉴/작업을 확인한다.
+- [ ] 실제 HID 입력과 키보드 포커스 전환, 통신 단절·재로그인·네이티브 강제 종료 후 미확인 작업 복구를 확인한다.
+- [ ] 두 실제 작업자의 동일 박스 충돌과 당일 실물/원장 대사를 제한된 시험 운영에서 확인한다.
+
+로컬 구현·검증은 완료 범위이며, 현장 전체 사용 합격과 운영 배포 완료를 뜻하지 않는다. Push·PR 생성·병합·배포는 수행하지 않고 실행 브랜치와 worktree를 보존한다.
+
+임시 검증용 Nest/Vite 서버는 종료했다. 전용 로컬 DB와 work/의 실행 로그·fixture는 재검증을 위해 보존한다.
+
+## 물류팀 시연 결함 D1–D3 수정 및 검증
+
+검증일: 2026-09-15. 기준 `cfe7d5e7a`, 브랜치 `codex/warehouse-demo-defects`. 제품 변경 기준 `0c6fd4454`. 위의 과거 검사 기록과 구분한다.
+
+### 수정한 동작
+
+- **D1 연속 스캔:** 동일 송장·창고·출발 위치의 정상 전송 중에는 다음 입력을 영속 큐에 접수한다. 위치 변경·강제출고는 대기가 끝날 때까지 차단한다. 초기 복원, 다른 작업, 미확인, 계정 범위 오류, 저장 실패에는 스캔 예외를 허용하지 않는다. 처리 완료 후 과잉 입력은 미반영 사실을 안내한다. 전역 스캔 구독이 이전 렌더의 잠금·위치를 참조하지 않게 했다.
+- **D2 권한과 복구:** `work-context.permissions.forceDispatch`를 서버의 실제 ScopeGuard 규칙으로 계산한다. 일반 작업자는 강제출고를 실행할 수 없고, 권한 조회 실패·구형 서버에서도 일반 출고는 유지한다. 강제출고 직전에 권한을 다시 확인한다.
+- **D2 미확인 결과:** 위치별 강제출고는 원래 키·본문·사용자 범위로 `location-outbound-force-resolutions`를 호출한다. 서버가 저장한 성공 결과 또는 원자적으로 확정한 미반영 결과만 종결한다. 미반영 기록은 늦게 도착한 원래 force 요청도 막는다. 일반 401/403을 일괄 실패로 바꾸거나 이전 작업을 새 키로 만들지 않는다. 결과 저장은 사용자 범위와 현재 처리권을 확인하며 저장 실패 시 계속 차단한다.
+- **D3 완료 송장:** 창고 일치 확인 뒤 출고완료 여부를 먼저 판정한다. 활성 배치 작업이 없는 완료 송장도 ‘이미 출고된 송장이에요’로 안내하며 조회만 수행한다.
+
+### 자동 검사
+
+| 검사 | 결과 |
+|---|---|
+| warehouse-app 전체 | 83 files / **450 tests**, 실패·skip 0 |
+| 앱 production build | TypeScript 및 Vite 통과 |
+| 앱 lint | 오류 0, 경고 23개. Hook 의존성·Fast Refresh 경고이며 새 `WorkBoundary` hook export 경고 1개 포함 |
+| Core 입고·이동·출고·권한 회귀 | 9 suites / **115 tests**, 실패·skip 0 |
+| 서버 테스트 타입 표현 정리 후 영향 검사 | 2 suites / 54 tests, 실패·skip 0 |
+| 권한·명령·양방향 경합 검사 묶음 | 8 suites / 99 tests, 실패·skip 0 |
+| Core 타입 검사 | `tsc --noEmit -p apps/core/tsconfig.app.json` 통과 |
+| 변경 서버·테스트 9개 파일 ESLint | 오류·경고 0 |
+
+서버 묶음은 겹치므로 합산한 고유 총수로 해석하지 않는다. 빌드의 500 kB 초과 chunk 경고는 남는다. 신규 DB migration은 없다.
+
+실행 명령은 저장소 루트의 `corepack yarn --cwd native/warehouse-app test --run`, `build`, `lint`와 `DATABASE_URL=<전용 DB> corepack yarn test --runInBand --runTestsByPath ...`다. 115개 회귀의 파일은 다음과 같다.
+
+- `inbound.service.idempotency.spec.ts`, `inbound-receipt.kernel.integration.spec.ts`, `movement.service.idempotency.spec.ts`
+- `shipment-waybill.reader.integration.spec.ts`, `location-outbound.service.integration.spec.ts`, `location-outbound.controller.spec.ts`
+- `fulfillment-command.service.spec.ts`, `warehouse-operation-auth.spec.ts`, `outbound-v2-authorization.spec.ts`
+
+실제 runtime 화면 검사에는 IndexedDB 실행기·WorkBoundary·ScanProvider를 포함했다. 동일 입력 100회, 포커스된 입력과 전역 키보드 이벤트, 응답 유실·구형 작업 복원, 다른 계정, 손상 응답, 저장 실패, 처리권 경합을 검사했다. 서버 경합 검사는 서로 다른 PostgreSQL 연결에서 양방향 대기를 확인해 force 선행 시 출고 한 번, resolver 선행 시 재고 변경 0을 검증했다.
+
+### 실제 React → 로컬 HTTP → DB 대사
+
+| 시나리오 | 확인한 결과 |
+|---|---|
+| 입고10 → A 적치10 → B 이동4 → B 출고3 | RECEIVE10/MOVE10/MOVE4/SHIP3. 최종 A6/B1/기본존0, 총재고7 |
+| 동일 상품 100회, 서버 처리 1초 지연 | 입력창에서 100회 바코드+Enter 접수, HTTP201 정확히100회, SHIP100 한 번, 최종재고0 |
+| 첫 스캔 커밋 뒤 지속적인 응답 유실·창 재개 | 미확인1개와 후속2개 보존. ‘처리 내역 확인’ 후 ‘이어서 작업’으로 복구. 첫 키의 재시도5회에도 고유 스캔3개, SHIP3 한 번 |
+| 일반 작업자 | 관리자 권한 안내만 표시하고 강제출고 버튼 없음. 일반 스캔 출고 성공 |
+| 권한 확인 직후 force403 | 같은 키·본문의 resolver201로 미반영 확정. 당시 재고3/이벤트0. 확인창을 닫고 일반 스캔3개로 완료 |
+| force 커밋 후 응답 유실·권한 철회 | 일반 작업 권한으로 원래 키·본문의 resolver201 성공 복구. force 재전송 없이 SHIP3 한 번, 완료 화면 |
+| 완료 송장 재조회 | ‘이미 출고된 송장이에요’, 조회 이후 추가 POST0 |
+
+전용 DB는 `127.0.0.1:5432/warehouse_demo_defects_20260915`다. 기존 DB의 스키마만 복사하고 합성 데이터를 생성했다. 기존 DB를 초기화하거나 운영 데이터를 변경하지 않았다.
+
+로컬 검증은 제품 React 라우트·영속 실행기와 실제 Nest 컨트롤러·DTO·ScopeGuard·재고 서비스를 연결했다. Tauri 전송을 browser fetch로 대체하고 합성 작업자/관리자 인증을 주입했다. 응답 유실은 실제 서버 커밋 뒤 검증 전송 어댑터가 응답을 버리는 방식이다. 제품 코드에 인증 우회나 장애 주입을 추가하지 않았다. 검증 서버는 배치 목록 컨트롤러를 포함하지 않아 목록 조회가 404였으며, 이번 실제 화면 검사는 송장 조회 진입을 사용했다.
+
+검증 fixture·HTTP 기록·대사 JSON은 worktree의 `.superpowers/demo-http/`, 실행 로그는 `/tmp/demo-*` 및 각 작업 검사 로그에 남겼다. 합격 여부는 위 결과와 정식 회귀 테스트로 판단한다.
+
+### 릴리스와 남은 현장 검사
+
+1. Core 서버를 먼저 배포하고 `permissions.forceDispatch`와 결과 확인 endpoint를 확인한다. 기존 정상 force 응답과 기존 명령 키는 호환 유지한다.
+2. Windows 앱을 배포한다. 구형 서버 연결에서는 강제출고를 비활성화하며 기존 미확인 기록을 삭제하지 않는다. 오래된 simple-force 작업은 기존 복구/관리자 확인 경로를 유지한다.
+3. 실제 Windows 설치·일반 작업자/관리자 로그인, HID100회·입력 포커스, Wi-Fi 단절·재로그인, 네이티브 강제 종료 후 복구를 현장에서 검사한다. 두 작업자의 실제 박스 충돌과 실물/원장 대사도 별도다.
+
+**로컬 시연 흐름은 통과했다. 실제 Windows 장비·계정·네트워크 검사는 이 환경에서 수행하지 못했으며 현장 인수 완료를 뜻하지 않는다.** 원격 push·PR·병합·운영 배포는 수행하지 않았다.
+
+최종 독립 검토: D1·D2 서버·D2 앱·D3 각각의 검토와 전체 브랜치 검토를 완료했다. 차단 결함 없음. 별도로 지연시킨 두 GET 응답의 역전만 검사하는 테스트는 선택적 보강 사항으로 남으며 기존 요청 순서 보호는 확인했다. 로컬 테스트용 HTTP/Vite 서버는 종료했고 브랜치·전용 DB·검증 fixture는 보존한다.
+
+## 2026-09-16 발주 입고 시연 흐름 보완
+
+작업 브랜치: `codex/po-inbound-demo-fixes`. 기준: `9def17e0e`. 이번 범위는 발주 입고 화면이며 서버 API, DB 스키마, 권한 정책은 변경하지 않는다.
+
+### 복원과 원래 요청 보호
+
+- 발주 조회가 늦거나 실패해도 저장된 상품·수량·스캔을 유지한다. 조회 완료 전 확정은 막고 수량 창 안에서 재조회를 제공한다. 첫 스캔이 대기해 아직 수량 창이 없을 때도 페이지에서 조회 상태와 재시도 버튼을 제공한다.
+- 조회가 성공했는데 발주 상태가 바뀐 경우 자동으로 입력을 버리지 않는다. 처리할 수 없는 대기 스캔은 오류 상태로 보존해 복구할 수 있게 한다.
+- 미확인 제출은 원래 수량·본문·키로 확인하며 편집과 취소를 막는다. 같은 사용자/API 범위의 정확한 작업 키가 확정된 경우 적치로 넘어가고, 명확히 거절된 경우에만 제출 잠금을 풀어 수량 수정·취소를 허용한다.
+- 이미 초안에 반영된 스캔 ID가 재시작 후 큐에 남아 있어도 다시 더하지 않는다.
+
+### 수량 창 안의 스캔 복구
+
+- 같은 발주의 다른 상품, 발주에 없는 상품, 미등록 바코드를 구분해 열린 수량 창 안에 안내한다. 창이 없을 때만 페이지에 복구 조작을 표시한다.
+- 초안에 반영되지 않은 것으로 확인된 잘못된 스캔만 제외할 수 있다. 저장 실패·통신 실패·미확인 입고 요청에는 제외를 허용하지 않는다.
+- 제외/재시도 중 중복 클릭을 막으며, 복구 조작의 저장이 실패해도 같은 스캔과 현재 수량을 보존한다.
+
+### 직접 입력·스캔·저장의 수량 통합
+
+- 직접 입력, 숫자패드, 스캔은 같은 저장 수량을 사용한다. 직접 입력 10 뒤 낱개 스캔은 11, 20개 포장 스캔은 30이며 잔량 초과는 확정을 막는다.
+- 입력 문자열은 즉시 표시하고 저장은 순서대로 완료한다. 저장 실패 시 입력과 후속 스캔을 유지하며 저장 완료 전 확정·이탈을 막는다. 빈 수량은 0으로 바꾸지 않고 수량 교정 후 대기 스캔을 재확인한다.
+- 구형 초안의 저장 키와 스캔 ID, 원래 제출 요청은 유지한다. 저장하지 못했던 과거 수동 입력값은 추정하지 않는다.
+- PO 화면의 키보드 직접 입력은 Enter로 마친 뒤 스캔한다. Enter는 입고를 전송하지 않고 입력칸의 포커스를 해제한다. 입력칸 밖을 클릭해도 된다. 기존 공통 스캐너의 입력칸 처리 정책을 유지하는 대신 입력 완료 조작이 한 번 필요하다.
+
+### 검증 환경과 현재 기록
+
+신규 로컬 DB `warehouse_po_demo_fixes_20260916`에 Core 마이그레이션을 적용했다. 실제 Nest 컨트롤러·서비스·DB와 제품 React 화면·스캔 처리·IndexedDB 작업 실행기를 연결했다. 브라우저 검증용 HTTP/OS 어댑터와 테스트 계정은 무시되는 로컬 검증 파일에만 존재한다.
+
+| 범위 | 기록 |
+|---|---|
+| 수정 전 앱 기준 | 83 files / 450 tests 통과 |
+| Core 회귀 | 발주 입고, 당일 입고 취소, 입고내역, 이동 멱등성, 위치별 출고, 창고 작업 권한: 6 suites / 83 tests 통과, skip 없음 |
+| 실제 브라우저 복원 | A를 3회 스캔하고 조회 실패 상태에서 다시 열어도 수량 3 유지. 창 안의 재시도 버튼 클릭 후 4초 조회 지연 중에도 3 유지, 확정 차단. 조회 성공 후 3으로 재개 |
+| 실제 브라우저 스캔 복구 | A 수량 3에서 같은 발주의 B 스캔. 창 안의 제외 버튼을 실제 좌표로 클릭해 오류 해제, A 수량 3 유지 및 입력·입고 조작 재개 |
+| 첫 스캔 조회 실패 복구 | `658c78132`에서 저장된 첫 스캔을 복원하고 조회 실패 안내·다시 확인 버튼 확인. 조회 복구 후 버튼 클릭 → A 수량 1, 추가 입고 전송 없이 입력 취소 가능. 실제 브라우저와 영속 큐 runtime 회귀 모두 통과 |
+| 최종 warehouse-app | `658c78132`: 85 files / 512 tests 통과. TypeScript 및 production build 통과. lint 오류 0, 기존 경고 22개(수정 전 23개). 기존 500kB 번들 경고 유지 |
+| 직접 입력·스캔·재시작 | Enter로 직접 입력 10 완료 후 HID 형태 키 입력으로 낱개 스캔 → 화면 11. 다시 열어도 11. 같은 값을 실제 POST로 보내 입고 원장 11 및 발주 잔량 9 확인 |
+| 입력 교정·포장 | 빈 수량에서 스캔 대기 및 확정 차단 → 5로 교정 후 재확인 → 6. 직접 10 + 20개 포장 → 30 유지 및 잔량 20 초과 차단 |
+| 부분 적치·이동·출고 | 입고 11 → A에 4 적치 → 다시 열어 잔여 7/적치 4 복원 → 나머지 7 적치 → A에서 B로 3 이동 → 이동 후 생성한 discrete 배치/송장으로 B의 3개 연속 스캔 출고 → 완료 화면 및 DB A=8/B=0, 입고기본존=0 |
+| 성공 응답 유실 | 별도 SKU B 3개가 커밋된 직후 응답만 버리고 재시작. 미확인 보호 화면 유지 → 같은 키와 동일 본문으로 처리 내역 재확인 → 입고 3 복구. DB 재고 3, 입고 연결 라인 1개, 재고 이벤트 1건으로 중복 없음 |
+
+실제 Windows/PDA 로그인, 네이티브 프로세스 강제 종료, 실물 HID 스캐너와 Wi-Fi 단절은 이 로컬 브라우저 검증에 포함하지 않는다. 현장 시연 전 지정 기기에서 확인해야 한다.
+
+### 실행 범위와 시연 판정
+
+세 결함(R1/R2/R3)과 작업별 검토에서 발견한 복구 경계 상황을 수정했다. 로컬에서 준비된 데이터로 입고·부분 적치·이동·출고 전체 흐름을 시연할 수 있음을 확인했다. 실제 현장 시연 준비 완료로 판정하지는 않는다. 지정 Windows/PDA의 로그인·HID·터치와 네이티브 재실행, 시연 서버의 배포 버전 확인이 남는다.
+
+코드 커밋: `61404c577`, `136753210`, `249db4bb2`, `22fee3ff6`, `48b675d04`, `658c78132`. 서버·마이그레이션 변경은 없으며 로컬 브랜치에 보존한다. 모든 작업별 검토는 spec/quality 승인 상태다. 전체 브랜치 최종 검토의 첫 스캔 조회 복구 지적도 수정 후 재검토에서 해결됨으로 확인했고, 남은 지적은 없다. 검증용 HTTP/DB fixture는 제품 배포물에 포함하지 않는다.
+
+## 2026-09-16 입고 대기 보호와 현재 상태 일관성
+
+브랜치: `codex/inbound-workflow-consistency`. 기능 기준: `d18b1a940`, 최종 검토 수정 기준: `746d06211`.
+위의 과거 수치는 이전 작업 기록이다. 이번 결과는 아래 최종 실행에서 새로 수집했다.
+
+### 구현과 계약 공개
+
+- 공통 원장 쓰기 경계에서 입고 대기를 보호한다. 일반 이동·출고·감소 조정·실사·역분개가 미처리 입고를 소비할 수 없으며, 자유 재고와 정상 적치·취소·회송은 계속 처리한다. 입고 누계를 원장보다 먼저 같은 트랜잭션에서 갱신하고 이후 실패 시 전부 롤백한다.
+- 단일 현재 상태 조회와 공통 정책을 입고내역·적치 대기·간편/발주 입고 재개에 사용한다. 미확인 요청은 원래 키·본문·사용자/API 범위로 확인한 뒤 현재 서버 상태를 읽는다. 일반 이동 화면은 입고 대기를 명시적인 적치 후보 선택으로 연결한다.
+- 최종 HTTP 검사에서 서버의 `capabilities.inboundWorkflowConsistency: true`, 실제 이동 거절, 현재 상태 조회를 함께 확인했다. capability 없이 새 앱은 입고 일관성 작업을 허용하지 않는다.
+- 과거 데이터 감사는 PostgreSQL read-only 트랜잭션을 사용한다. 이유와 원장·입고·이벤트 근거를 보고하며, 자동 FIFO 귀속이나 누계 보정은 하지 않는다.
+
+### 실제 로컬 HTTP 대사
+
+`inbound-workflow-http.integration.spec.ts`는 실제 listen한 Nest 서버, ScopeGuard, DTO 검증, GlobalExceptionFilter, 실제 입고/이동 서비스·커널·원장 저장소·PostgreSQL을 사용한다. native의 실제 `createApiClient`, `ApiError`, operation runner와 operation store를 연결했다. 인증 신원/역할 매핑만 로컬 합성 fixture이고, Tauri 전송은 Node fetch로 대체했다. IndexedDB는 기존 `fake-indexeddb` 패키지를 사용한다.
+
+| 시나리오 | 실제 확인 결과 |
+|---|---|
+| capability → 입고10 → 일반 이동1 | capability true, HTTP 409의 `INBOUND_ORIGIN_STOCK_PROTECTED`가 native에서 확정 거절됨. pending 작업0, 원장10·입고 대기10 유지 |
+| 동일 원위치 적치 / 과거 원장 부족 fixture | `INBOUND_PUTAWAY_DESTINATION_INVALID`와 `INBOUND_ORIGIN_STOCK_INCONSISTENT`도 각각 한 번의 요청으로 거절 종결. 원장 부족 상태 조회는 대기10을 숨기지 않고 적치 불가를 반환 |
+| 취소 커밋 뒤 성공 응답 유실 | 같은 키·본문의 미확인 기록 보존 → 새 store/runner로 복원 → 원래 요청 재생으로 확정 → 현재 상태에서 취소10·대기0·적치/취소 불가 확인. 추가 재생까지 원장 이벤트는 입고1+취소1만 존재 |
+| 조회 권한·창고 | 익명 조회403, 다른 창고 조회403. 별도 controller auth 검사에서도 익명 상태 조회와 v2 사용자 결합을 확인 |
+
+이 HTTP 검사는 서비스 응답 mock이 아니다. 새 store/runner 생성은 영속 복구의 소프트웨어 검사이며 실제 OS 프로세스 강제 종료나 PDA 검증을 뜻하지 않는다. UI가 최신 취소/다른 기기 적치 상태를 사용하는지는 별도 React runtime 회귀에서 검사했다.
+
+### 최종 자동 검사
+
+최종 파일별 실행 수·실패·skip, 전체 명령과 기존 lint 경고 목록은 [자동 검사 상세](evidence/inbound-consistency/automated-results.md)에 기록했다. Native의 JSON reporter는 중첩 describe도 suite로 세므로 파일 수는 `testResults` 89개를 기준으로 한다.
+
+| 검사 | 최종 결과 |
+|---|---|
+| warehouse-app 전체 | 89 files / 611 tests 통과, 실패·skip·unhandled error 0. `--maxWorkers=2`로 실행 |
+| Core/관리자/감사/실제 HTTP 회귀 | 29 files / 429 tests 통과, 실패·skip 0. 실제 HTTP9개, 회수4개와 감사33개 포함 |
+| native production build | TypeScript 및 Vite 통과. JS 580.49 kB, 기존 500 kB 초과 chunk 경고 유지 |
+| native lint | exit0, 오류0, 기존 경고22개. 새 경고5개 해소; 기준선과 파일별 경고 수 동일 |
+| Core TypeScript | `corepack yarn tsc --noEmit -p apps/core/tsconfig.app.json` 통과 |
+| 작업 중 영향 검사 | 최종 수정 집중 native4 files/70 tests, backend3 suites/23 tests와 별도 kernel 경계5 tests 통과. 정상 잔여 HTTP1개를 이후 추가해 전체 검사에 포함. 전체 검사와 겹치므로 합산하지 않음 |
+
+전용 DB는 `postgresql://postgres:postgres@127.0.0.1:5432/inbound_workflow_consistency_test`이며 기존 마이그레이션을 적용한 로컬 테스트 DB다. 마이그레이션 계약 suite는 같은 로컬 PostgreSQL에 고유한 `pr_c_t1_*` 임시 DB를 생성하고 삭제한다. 운영/shared DB·운영 `.env`를 사용하지 않았고 새 의존성·테이블·스키마 변경은 없다.
+
+첫 전체 앱 실행은 586/587 통과와 unhandled rejection 1건이었다. 이미 존재하는 비활성 버튼을 즉시 검사하던 assertion과 소비자가 붙기 전에 deferred GET을 reject하던 테스트를 실제 준비 완료/조회 시작을 기다리도록 수정했다. GET 실패가 표시되고 입력이 보존되며 POST가 없는 것까지 확인한다. 빠르게 교체되는 PO 안내 DOM도 조회와 assertion을 같은 `waitFor` 안에서 검사한다. 전역 timeout 증가나 unhandled error 무시는 하지 않았다.
+
+첫 넓은 서버 실행은 418/419 통과였다. 기존 migration 테스트가 PR-B 이후 적용 수를 `+2`로 고정해 이미 존재하는 stocktaking baseline migration을 누락했다. 스키마나 적용 목록은 바꾸지 않고, 적용된 전체 migration의 hash·timestamp 일치와 기존 journal prefix 보존을 검사하도록 강화했다. 해당 12개 검사와 최종 전체 회귀를 다시 실행했다.
+
+### 최종 전체 검토에서 보강한 계약
+
+- **회수:** 손상된 live balance의 HAND_IN10 재생은 원장12/입고대기10의 자유수량2를 넘으므로 recovery-required를 유지한다. 원장·이벤트·balance 불변과 정확히2를 재생하는 성공을 실제 DB로 확인했다. 진단에 입고대기와 자유수량을 포함한다.
+- **입고내역:** 음수 원본 수량/누계를 숨기지 않고 차단된 진단 행으로 보존한다. NaN·소수·누락·알 수 없거나 모순된 정책은 계속 거절한다. 입고내역 및 Quick 화면에서 불일치 행이 보이고 정상 이웃은 계속 사용할 수 있다. Quick에는 실물/입고내역 확인 안내가 표시된다.
+- **적치 명령:** 회차·원장 잠금 안에서 조회와 같은 정책을 검사한다. 일반 선반, 원래 RECEIVE 이벤트 누락/다른 종류, voided, 부분취소를 직접 HTTP 요청해도 거절하며 누계·원장·이벤트·업무로그를 변경하지 않는다. 90일 전 정상 입고의 부분회송3→부분적치2→남은5 적치는 성공한다. stock 이후 event 잠금을 추가하지 않았다.
+- **후보 구분:** 전체 기간 목록에 서울 기준 날짜·시각을 함께 표시한다. 아래 캡처에서 2026.09.01과2026.09.02 후보를 구분할 수 있다.
+
+위 수정은 의미 있는 RED 재현 후 적용했고, 마지막 코드 서식 정리 뒤 전체611/429개와 build/lint/tsc를 새로 실행했다. 별도 최종 재검토는 이 수정 커밋을 기준으로 수행한다.
+
+### A1–A12 대응
+
+| 기준 | 확인한 증거 | 판정 |
+|---|---|---|
+| A1 일반 이동 거절 | `inbound-origin-protection.integration`, 실제 HTTP 거절/원장 대사, `MovementScreen` | 로컬 통과 |
+| A2 적치·선반 이동·새 입고 | origin protection와 receipt kernel의 원장/누계/새 잔량 검사 | 로컬 통과 |
+| A3 여러 입고의 라인 귀속 | origin availability/protection 및 putaway reader의 다중 회차 검사 | 로컬 통과 |
+| A4 취소·회송 원자성 | kernel·purchase-order receiving·origin protection의 원장/로그/정산 실패 롤백 | 로컬 통과 |
+| A5 모든 원장 감소 경계 | origin protection의 직접 이벤트·역분개·조정·실사·이송/출고 검사 | 로컬 통과 |
+| A6 자유 물량·일반 선반·회수 | availability/protection 및 batch-controlled stock guard 검사 | 로컬 통과 |
+| A7 출고 계획·세션 취득 | `inbound-origin-planning`, location/simple outbound, batch-controlled stock guard 및 실제 recovery 재생 | 로컬 통과 |
+| A8 양방향 DB 경합 | origin protection concurrency의 3쌍과 origin planning의 적치↔세션 취득 1쌍, 모두 양방향 독립 연결·실제 잠금 대기 검사 | 로컬 통과 |
+| A9 취소/다른 기기 적치 후 재개 | `PurchaseOrderReceiveScreen.runtime`, `InboundWorkflow.runtime`, reconciliation hook 및 HTTP 취소 재생 | 로컬 통과 |
+| A10 미확인·응답 역전·인증/저장 실패 | native operation runner, reconciliation hook, 실제 HTTP의 새 거절3종 및 원래 취소 키 복원 | 로컬 통과 |
+| A11 많은 후보·오래된 입고·원위치/창고 | putaway reader 및 `PutawayQueueScreen`, controller 권한/UUID, 구형 capability 검사 | 로컬 통과 |
+| A12 기존 불일치와 읽기 전용 감사 | current state/pending projection, 음수 이력 parser/화면 및 감사33개 검사. INSERT/UPDATE/DELETE의 DB read-only 거절과 실행 전후 불변 확인 | 로컬 통과 |
+
+### 실제 컴포넌트 화면 증거
+
+아래 이미지는 제품 React 컴포넌트와 실제 로컬 IndexedDB/runner를 사용한 브라우저 캡처다. API는 **읽기 전용 응답 fixture**이며 실제 HTTP/DB 대사의 증거와 구분한다.
+
+| 화면 | 확인한 표시 |
+|---|---|
+| [일반 이동](evidence/inbound-consistency/movement-after.png) | 입고 대기10/자유0 fixture에서 일반 이동 비활성, 적치하기 경로 표시 |
+| [적치 후보](evidence/inbound-consistency/putaway-candidates-after.png) | 선택 상품·원위치의 전체 기간 후보2건, 잔여6/4, 서울 기준 날짜·시각으로 다른 날짜 구분 |
+| [발주 재개](evidence/inbound-consistency/po-after.png) | 복원한 입고가 ‘취소됨’으로 표시되고 해당 입고의 적치/취소 조작 없음 |
+
+### 현장 인수와 운영 적용
+
+- [ ] Windows/PDA에서 정상 입고→적치→이동, 취소→재개를 확인한다.
+- [ ] 실제 HID 연속 입력과 포커스/Enter, 터치, 네이티브 재시작·강제 종료·Wi-Fi 단절을 확인한다.
+- [ ] 대상 창고의 읽기 전용 감사와 실물 대사를 완료한다. 미해결 후보가 있는 창고는 시험 운영에 넣지 않는다.
+- [ ] Core/앱 버전 전환과 지정 계정·기기의 제한된 시험 운영을 완료한다.
+
+**로컬 소프트웨어 검증을 완료했다. 기기가 없어 현장 인수·운영 준비 완료로 판정하지 않는다.** 운영 배포·기존 데이터 보정·push·merge는 수행하지 않았다. [전환 runbook](../../../docs/runbooks/inbound-origin-consistency.md)의 창고 작업 중지→감사→실물 대사→미확인 원본 보존→Core/앱 전환→재검사 순서를 따른다.

@@ -9,6 +9,7 @@ import {
   StartPickingInput,
 } from '../picking-strategy.interface';
 import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
+import { PlanInvalidation } from './plan-invalidation';
 import {
   assertPlanningEligibility,
   lockAggregate,
@@ -98,7 +99,7 @@ export async function planPicking(
           trx,
           optimisticDraftId,
           input.batchId,
-          errorMessage(error),
+          { code: 'ELIGIBILITY_CHANGED', message: errorMessage(error) },
           commandRequestId,
         );
         return { response, resourceType: 'picking_plan', resourceId: optimisticDraftId };
@@ -138,15 +139,15 @@ export async function planPicking(
             'Requested shipments do not match the locked draft plan membership',
           );
         }
-        let staleReason: string | null = null;
+        let invalidation: PlanInvalidation | null = null;
         try {
           await assertPlanningEligibility(trx, deps.waybills, aggregate, storedShipmentIds);
-          staleReason = await planStalenessReason(trx, deps.controlledStock, openPlan.id, aggregate, strategyName);
+          invalidation = await planStalenessReason(trx, deps.controlledStock, openPlan.id, aggregate, strategyName);
         } catch (error) {
           if (!isPlanValidationError(error)) throw error;
-          staleReason = errorMessage(error);
+          invalidation = { code: 'ELIGIBILITY_CHANGED', message: errorMessage(error) };
         }
-        if (!staleReason) {
+        if (!invalidation) {
           const [allocationSummary] = await trx
             .select({
               count: sql<number>`count(*)::int`,
@@ -174,7 +175,7 @@ export async function planPicking(
           };
           return { response, resourceType: 'picking_plan', resourceId: openPlan.id };
         }
-        const response = await invalidateDraftPlan(trx, openPlan.id, input.batchId, staleReason, commandRequestId);
+        const response = await invalidateDraftPlan(trx, openPlan.id, input.batchId, invalidation, commandRequestId);
         return { response, resourceType: 'picking_plan', resourceId: openPlan.id };
       }
 
@@ -311,29 +312,23 @@ export async function startPicking(
           and(eq(wmsTables.pickingPlanMembers.planId, input.planId), isNull(wmsTables.pickingPlanMembers.retiredAt)),
         );
       const shipmentIds = uniqueSorted(memberRows.map((member) => member.shipmentId));
-      let invalidationReason: string | null = null;
+      let invalidation: PlanInvalidation | null = null;
       try {
         const aggregate = await lockAggregate(trx, deps.invariant, input.batchId, shipmentIds);
         await assertPlanningEligibility(trx, deps.waybills, aggregate, shipmentIds);
-        invalidationReason = await planStalenessReason(
-          trx,
-          deps.controlledStock,
-          input.planId,
-          aggregate,
-          strategyName,
-        );
+        invalidation = await planStalenessReason(trx, deps.controlledStock, input.planId, aggregate, strategyName);
       } catch (error) {
         if (!isPlanValidationError(error)) throw error;
-        invalidationReason = errorMessage(error);
+        invalidation = { code: 'ELIGIBILITY_CHANGED', message: errorMessage(error) };
       }
 
-      if (invalidationReason) {
+      if (invalidation) {
         const [invalidated] = await trx
           .update(wmsTables.pickingPlans)
           .set({
             status: 'invalidated',
             invalidatedAt: sql`now()`,
-            invalidationReason,
+            invalidationReason: invalidation.message,
             updatedAt: sql`now()`,
           })
           .where(and(eq(wmsTables.pickingPlans.id, input.planId), eq(wmsTables.pickingPlans.status, 'draft')))
@@ -346,7 +341,8 @@ export async function startPicking(
           operationId: commandRequestId,
           planId: input.planId,
           batchId: input.batchId,
-          reason: invalidationReason,
+          reason: invalidation.message,
+          reasonCode: invalidation.code,
         };
         return { response, resourceType: 'picking_plan', resourceId: input.planId };
       }

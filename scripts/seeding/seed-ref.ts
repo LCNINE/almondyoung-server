@@ -19,7 +19,7 @@ const DEMO_GROUP_PREFIX = 'demo-';
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
-  await ensureInsideSstShell({ stage: parsed.stage, deployment: parsed.deployment });
+  await ensureInsideSstShell(parsed);
 
   console.log(chalk.bold.cyan('\n=== db:seed:ref ==='));
   console.log(chalk.gray(`  Stage: ${parsed.stage ?? process.env.SST_STAGE ?? '(unknown)'}`));

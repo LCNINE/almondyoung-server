@@ -68,3 +68,11 @@ docker-compose*
 
 # sst
 .sst
+
+# Local demo credentials, deployment state and worktree artifacts
+.env.*
+**/.env.*
+.superpowers
+.worktrees
+**/.sst
+**/.next*

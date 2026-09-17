@@ -35,12 +35,19 @@ export type PutawayDays = 1 | 7 | 'all';
 export function usePutawayPending(
   warehouseId: string | null,
   days: PutawayDays,
-  skuIds?: string[]
+  skuIds?: string[],
+  originLocationId?: string
 ) {
   const api = useApiClient();
   const skuFilter = skuIds ? [...new Set(skuIds)].sort().join(',') : undefined;
   const query = useInfiniteQuery({
-    queryKey: ['putaway-pending', warehouseId, days, skuFilter],
+    queryKey: [
+      'putaway-pending',
+      warehouseId,
+      days,
+      skuFilter,
+      originLocationId,
+    ],
     enabled: warehouseId !== null && skuFilter !== '',
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page: PutawayPendingResult) =>
@@ -50,6 +57,7 @@ export function usePutawayPending(
       const qs = new URLSearchParams({ warehouseId: warehouseId ?? '' });
       if (days !== 'all') qs.set('days', String(days));
       if (skuFilter) qs.set('skuIds', skuFilter);
+      if (originLocationId) qs.set('originLocationId', originLocationId);
       if (pageParam) qs.set('cursor', pageParam);
       const result = await api.request<PutawayPendingResult>({
         path: `/inbound/putaway/pending?${qs.toString()}`,
@@ -57,9 +65,13 @@ export function usePutawayPending(
       // Old servers ignore the SKU filter. Never open an unrelated receipt or
       // infer absence from their unfiltered, capped response during rollout.
       if (
-        skuFilter &&
+        (skuFilter || originLocationId) &&
         (result.nextCursor === undefined ||
-          result.items.some((item) => !skuIds!.includes(item.skuId)))
+          result.items.some(
+            (item) =>
+              (skuIds && !skuIds.includes(item.skuId)) ||
+              (originLocationId && item.originLocationId !== originLocationId)
+          ))
       ) {
         throw new Error(
           '상품별 적치 조회를 사용할 수 없어요. 관리자에게 앱과 서버 업데이트를 확인해 주세요.'

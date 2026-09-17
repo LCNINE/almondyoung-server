@@ -1,4 +1,5 @@
 import { DbTx } from '../../inventory/schema/inventory.schema';
+import { PlanInvalidationCode } from './plan/plan-invalidation';
 
 export type PickingStrategyName = 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
 
@@ -188,6 +189,7 @@ export type PickingPlanResult =
       planId: string;
       batchId: string;
       reason: string;
+      reasonCode?: PlanInvalidationCode;
     };
 
 export type PickingStartResult =
@@ -205,6 +207,7 @@ export type PickingStartResult =
       planId: string;
       batchId: string;
       reason: string;
+      reasonCode?: PlanInvalidationCode;
     };
 
 export interface PickingScanResult {

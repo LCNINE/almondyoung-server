@@ -10,7 +10,9 @@
 | `auth/` | `lcnine-auth` | IdP: user-service + auth-web. 자체 Postgres·ALB |
 | `services/` | `lcnine-services` | 커머스/물류/결제 도메인 + Medusa + admin/wallet web |
 
-세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, `*.almondyoung.com`), 그 외(`dev` 등)는 `.dev.lcnine-dev.com` 접두사 + `removal: remove`.
+세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, `*.almondyoung.com`), `demo`는 보호된 시연 환경(`removal: remove`, `protect: true`, `*.almondyoung-next.com`), 그 외(`dev` 등)는 `.dev.lcnine-dev.com` 접두사 + `removal: remove`.
+
+`demo`의 services 앱은 core, analytics, channel-adapter, notification, file-service, admin-web만 선언한다. Redis, OpenSearch, Medusa/storefront, wallet, membership, UGC, search는 생성하지 않는다. auth와 file-service 업로드는 각각 demo stage가 소유한 별도 S3 버킷을 사용한다. 최초 DB bootstrap 전에는 `DEMO_INFRA_ONLY=true npx sst deploy --stage demo`로 네트워크와 DB만 만들고, seeding 명령에 `--infra-only`를 주면 `sst shell` 재진입 때 같은 최소 선언을 유지한다.
 
 배포 순서: `platform → auth → services` (최초 부트스트랩 시. 이후엔 SSM late-binding 으로 독립 재배포 가능).
 
@@ -56,6 +58,9 @@ SSM publish:
 - platform VPC + Kafka 를 SSM 으로 가져옴.
 - 자체 소유: `Postgres("Db")` (db.t4g.small), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung.com`).
 - 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리.
+- **OpenSearch**: VPC private subnet 단일 노드(t3.small, 10GB gp3) + `analysis-nori` 패키지 associate.
+  FGAC master user 를 SST 가 만들어 `opensearch.username/password` 로 내준다. 노드가 하나라
+  인덱스의 `number_of_replicas: 1` 은 배정되지 않고 클러스터는 yellow 로 남는다 (정상 동작).
 - Redis: ElastiCache 제거됨 (비용). 유일 컨슈머였던 Medusa 는 태스크 내 valkey 사이드카(localhost)를 쓴다.
 - `createService()` 헬퍼: ECS Fargate Service + ALB 룰. `transform.listenerRule` 로 hostHeader 조건을 직접 덮어써 wildcard ALB 한 대에 host 기반 멀티플렉싱.
 
@@ -71,7 +76,7 @@ SSM publish:
 | UgcService | `ugc.…` | 3030 | |
 | Wallet | `wallet.…` | 3000 | Toss/Nicepay, Medusa 결제 webhook |
 | FileService | `file.…` | 3000 | S3 (`almondyoung-demo`) |
-| Search | `search.…` | 3000 | 백엔드는 Railway OpenSearch (AWS OpenSearch 도메인은 비용절감으로 제거) |
+| Search | `search.…` | 3000 | 백엔드는 VPC 내 AWS OpenSearch 도메인 (`Opensearch`, t3.small×1 + nori) |
 | Medusa | `medusa.…` | 9000 | DB link + valkey 사이드카(redis://localhost), 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
 | AdminWeb | `admin.…` | — | Next.js / OpenNext / CloudFront |
 | WalletWeb | `wallet-web.…` | — | Next.js / OpenNext / CloudFront |

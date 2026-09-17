@@ -38,7 +38,21 @@ export function deploymentToCwd(deployment: string): string {
  * 그동안 부모가 caller 의 후속 로직을 *돌리지 않도록* pending Promise 를 반환 — caller 는
  * `await ensureInsideSstShell(opts)` 한 줄로 sst shell 안에서만 그 뒤 코드가 실행됨을 보장한다.
  */
-export function ensureInsideSstShell(opts: { stage?: string; deployment?: string }): Promise<void> {
+export function getSstShellEnvironment(
+  opts: { stage?: string; infraOnly?: boolean },
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  if (opts.infraOnly && opts.stage !== 'demo') {
+    throw new Error('--infra-only is only valid with --stage demo');
+  }
+  return opts.infraOnly ? { ...baseEnv, DEMO_INFRA_ONLY: 'true' } : { ...baseEnv };
+}
+
+export function ensureInsideSstShell(opts: {
+  stage?: string;
+  deployment?: string;
+  infraOnly?: boolean;
+}): Promise<void> {
   if (isInsideSstShell()) return Promise.resolve();
 
   if (!opts.stage) {
@@ -47,6 +61,7 @@ export function ensureInsideSstShell(opts: { stage?: string; deployment?: string
   }
 
   const sstCwd = opts.deployment ? deploymentToCwd(opts.deployment) : undefined;
+  const childEnv = getSstShellEnvironment(opts);
   const args = process.argv.slice(2).join(' ');
   const cwdLabel = sstCwd ? ` (cwd: ${sstCwd})` : '';
   const cmd = `sst shell --stage ${opts.stage} -- npx tsx ${process.argv[1]} ${args}`;
@@ -57,7 +72,7 @@ export function ensureInsideSstShell(opts: { stage?: string; deployment?: string
     ['shell', '--stage', opts.stage, '--', 'npx', 'tsx', process.argv[1], ...process.argv.slice(2)],
     {
       stdio: 'inherit',
-      env: process.env,
+      env: childEnv,
       cwd: sstCwd,
     },
   );
@@ -79,6 +94,7 @@ export interface CommonArgs {
   deployment?: string;
   yes: boolean;
   group?: string;
+  infraOnly?: boolean;
 }
 
 export function parseCommonArgs(argv: string[]): CommonArgs {
@@ -89,6 +105,7 @@ export function parseCommonArgs(argv: string[]): CommonArgs {
     else if (args[i] === '--deployment' && args[i + 1]) out.deployment = args[++i];
     else if (args[i] === '--yes' || args[i] === '--non-interactive') out.yes = true;
     else if (args[i] === '--group' && args[i + 1] !== undefined) out.group = args[++i];
+    else if (args[i] === '--infra-only') out.infraOnly = true;
   }
   return out;
 }

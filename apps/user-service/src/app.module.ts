@@ -1,3 +1,4 @@
+import { DemoBoundaryGuard } from './demo/demo-boundary.guard';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { AuthorizationModule, authorizationSchema, ScopeGuard } from '@app/authorization';
@@ -151,6 +152,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
   ],
   controllers: [HealthController, EventTraceController],
   providers: [
+    { provide: APP_GUARD, useClass: DemoBoundaryGuard },
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,

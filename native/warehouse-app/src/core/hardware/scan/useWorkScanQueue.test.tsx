@@ -134,3 +134,44 @@ it('loads older saved inputs before new inputs when the initial storage read is 
   expect(consumed).toHaveLength(2);
   expect(await store.draft('local-test-worker:scan:outbound:s1')).toEqual([]);
 });
+
+it('keeps restored inputs in recovery until replay and reconciliation finish', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const getScope = async () => 'worker';
+  const runtime = {
+    store,
+    getScope,
+    runner: createOperationRunner({
+      store,
+      getScope,
+      api: { request: vi.fn() },
+    }),
+  };
+  await store.draft('worker:scan:outbound:s1', () => [
+    { id: 'old', data: 'A' },
+  ]);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const consumed: string[] = [];
+  const { result } = renderHook(
+    () =>
+      useWorkScanQueue<string>(async (code) => {
+        consumed.push(code);
+        await gate;
+      }, 'outbound:s1'),
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <OperationContext.Provider value={runtime}>
+          {children}
+        </OperationContext.Provider>
+      ),
+    }
+  );
+  await waitFor(() => expect(consumed).toEqual(['A']));
+  expect(result.current.ready).toBe(false);
+  release();
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  expect(await store.draft('worker:scan:outbound:s1')).toEqual([]);
+});

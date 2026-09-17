@@ -26,7 +26,14 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
   constructor(private readonly openSearchService: OpenSearchService) {}
 
   async onModuleInit(): Promise<void> {
-    await this.ensureQueryEventsIndex();
+    // 인덱스 준비 실패로 부팅을 막지 않는다 (사유는 OpenSearchService.onModuleInit 참조).
+    try {
+      await this.ensureQueryEventsIndex();
+    } catch (error) {
+      this.logger.warn(
+        `검색 이벤트 인덱스 준비 실패 — 요청에서 재시도한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async record(record: SearchKeywordRecord): Promise<void> {
@@ -569,9 +576,14 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
       .filter((row): row is KeywordStatRow => row !== null);
   }
 
+  // 거절된 promise 를 캐시하면 OpenSearch 가 돌아와도 영영 같은 거절이 돌아온다
+  // (ProductIndexService.ensureProductsIndex 와 같은 규칙).
   private ensureQueryEventsIndex(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initIndex();
+      this.initPromise = this.initIndex().catch((error) => {
+        this.initPromise = null;
+        throw error;
+      });
     }
     return this.initPromise;
   }
@@ -592,8 +604,8 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
         });
         this.logger.log(`Created query events index: ${index}`);
       } catch (error) {
+        // initPromise 비우기는 ensureQueryEventsIndex 의 catch 가 모든 실패 경로에 대해 한다.
         if (error.meta?.body?.error?.type !== 'resource_already_exists_exception') {
-          this.initPromise = null;
           throw error;
         }
       }

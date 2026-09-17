@@ -9,6 +9,8 @@ import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
 import { ReplenishmentSeedStep } from '../steps/replenishment.seed-step';
+import { DemoLogisticsSeedStep } from '../steps/demo-logistics.seed-step';
+import { DemoLogisticsAuthSeedStep } from '../steps/demo-logistics-auth.seed-step';
 import {
   UserServiceSeedStep,
   STOREFRONT_APP_CLIENT_SEED,
@@ -134,7 +136,7 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
 
   // 쇼핑몰 Android 앱의 자체 public client (PKCE). 다른 RP 와 달리 base URL 이 없는 고정
   // 커스텀 스킴이라 env gate 없이 항상 시드한다.
-  oauthClients.push(STOREFRONT_APP_CLIENT_SEED);
+  if (process.env.SST_STAGE !== 'demo') oauthClients.push(STOREFRONT_APP_CLIENT_SEED);
 
   // Demo user 비밀번호 (clip의 DEMO_PASSWORD_DEFAULT와 동일 기본값)
   const demoPassword = process.env.DEMO_PASSWORD || 'demo!1234';
@@ -195,6 +197,7 @@ function buildSeedSteps(
     steps.push(new PimSeedStep(coreDbUrl));
     steps.push(new ProductMatchingBackfillSeedStep(coreDbUrl));
     steps.push(new ReplenishmentSeedStep(coreDbUrl));
+    steps.push(new DemoLogisticsSeedStep(coreDbUrl));
   }
 
   const userEntry = registryMap.get('user-service');
@@ -205,6 +208,9 @@ function buildSeedSteps(
         oauthClients: config.oauthClients,
       }),
     );
+    if (process.env.SST_STAGE === 'demo') {
+      steps.push(new DemoLogisticsAuthSeedStep(urlFor(userEntry.database)));
+    }
   }
 
   const membershipEntry = registryMap.get('membership');
@@ -231,8 +237,9 @@ function buildSeedSteps(
   // user-service가 registry에 있는 배포에서만 등록.
   if (userEntry) {
     const userDbUrl = urlFor(userEntry.database);
-    steps.push(new DemoUserSeedStep(userDbUrl, { demoPassword: config.demoPassword }));
-    steps.push(new DabeauOAuthClientSeedStep(userDbUrl));
+    if (process.env.SST_STAGE !== 'demo')
+      steps.push(new DemoUserSeedStep(userDbUrl, { demoPassword: config.demoPassword }));
+    if (process.env.SST_STAGE !== 'demo') steps.push(new DabeauOAuthClientSeedStep(userDbUrl));
   }
 
   return steps;

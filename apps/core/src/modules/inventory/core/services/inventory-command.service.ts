@@ -504,6 +504,10 @@ export class InventoryCommandService {
         throw new BadRequestException(`SKU not found: ${input.skuId}`);
       }
 
+      // Bootstrap holds system location row locks. Claim stock first, as movement
+      // does, so omitted-location adjustments cannot invert stock → location order.
+      await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+
       // 2. 위치 미지정 시 시스템 입고기본존으로 — 빈 문자열 uuid 비교(DB 에러)와
       //    locationId 없는 ledger 갱신 불가 문제를 막는다
       let effectiveLocationId = input.locationId ?? null;

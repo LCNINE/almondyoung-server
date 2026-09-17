@@ -17,6 +17,7 @@ import type {
  * 어긋나므로 한 곳에 묶어 부른다.
  */
 function invalidateAfterLedgerWrite(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ['inbound-receipts'] });
   void qc.invalidateQueries({ queryKey: ['expected-arrivals'] });
   void qc.invalidateQueries({ queryKey: ['location-contents'] });
   void qc.invalidateQueries({ queryKey: ['sku-warehouse-stock'] });
@@ -54,7 +55,10 @@ export function useCancelPurchaseOrderReceipt() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ receiptLineId, idempotencyKey }: CancelPurchaseOrderReceiptInput) =>
+    mutationFn: ({
+      receiptLineId,
+      idempotencyKey,
+    }: CancelPurchaseOrderReceiptInput) =>
       api.request<CancelPurchaseOrderReceiptResult>({
         method: 'POST',
         path: `/purchase-orders/receipt-lines/${receiptLineId}/cancel`,

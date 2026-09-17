@@ -11,6 +11,7 @@ export function setup(infra: SharedInfra) {
     dbUrl,
     redis,
     redisUrl,
+    opensearch,
     baseDomain,
     domain,
     url,
@@ -358,6 +359,25 @@ export function setup(infra: SharedInfra) {
     // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.
     STOREFRONT_URL: storefrontUrl,
   });
+  // ─── 검색 백엔드 전환 스위치 (docs/runbooks/opensearch-railway-to-aws.md) ───
+  // false → true 로 바꾸는 «한 줄» 이 컷오버다. 도메인 생성과 컷오버를 한 배포에 묶지 않는
+  // 이유: nori 패키지 associate 가 plugin install + rolling restart 라 수십 분 걸리고, 그동안
+  // 앱이 빈 도메인을 보면 검색이 0건이 된다. 도메인을 먼저 만들고 데이터를 옮긴 뒤 이 줄을
+  // 바꿔 두 번째 배포를 한다.
+  //
+  // true 로 바꾼 뒤에도 Railway 를 며칠 살려 둘 것 — 되돌릴 유일한 경로이고 검색 이력
+  // (search_query_events) 의 두 번째 사본이다.
+  const useAwsOpenSearch = false;
+  const searchBackendEnv = useAwsOpenSearch
+    ? {
+        // 자격증명은 SST 가 만드는 FGAC master user. Railway 를 쓰는 동안에는 이 두 값이
+        // 비어 있었고, 공개 URL 에 무인증으로 붙고 있었다.
+        OPENSEARCH_NODE: opensearch.url,
+        OPENSEARCH_USERNAME: opensearch.username,
+        OPENSEARCH_PASSWORD: opensearch.password,
+      }
+    : { OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app' };
+
   const ugcEnv = withPrefix('UGC', {
     DATABASE_URL: dbUrl('ugc'),
     ...kafkaEnv('ugc-service', 'ugc-service-group'),
@@ -367,8 +387,7 @@ export function setup(infra: SharedInfra) {
     UGC_INTERNAL_KEY: ugcInternalKey.value,
   });
   const searchEnv = withPrefix('SEARCH', {
-    // search 백엔드는 Railway OpenSearch. AWS OpenSearch 도메인은 미사용으로 제거됨 (shared.ts 참조).
-    OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
+    ...searchBackendEnv,
     SEARCH_PRODUCTS_INDEX: 'search_products_v2',
     // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
     DATABASE_URL: dbUrl('search'),

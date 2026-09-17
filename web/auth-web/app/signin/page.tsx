@@ -43,6 +43,7 @@ export default async function SignInPage({
         prefilledLoginId={prefilledLoginId}
         reauthUserId={reauthUserId}
         hasAccounts={hasAccounts}
+        allowRecovery={process.env.APP_STAGE !== "demo"}
       />
     </AuthShell>
   )

@@ -1,3 +1,6 @@
+import { isActionablePutaway } from './types';
+import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
+import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -9,7 +12,7 @@ import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
-import type { PutawayPendingItem } from './types';
+import type { PutawayPendingItem, PutawayTarget } from './types';
 
 const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
   { value: 1, label: '최근 1일' },
@@ -20,16 +23,37 @@ const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value;
+  return `${part('year')}.${part('month')}.${part('day')} ${part('hour')}:${part('minute')}`;
 }
 
-export function PutawayQueueScreen() {
+export function PutawayQueueScreen({
+  skuId,
+  originLocationId,
+}: { skuId?: string; originLocationId?: string } = {}) {
   const { warehouseId, isSet } = useWarehouse();
   const [days, setDays] = useState<PutawayDays>(1);
+  const capabilities = useWorkCapabilities();
+  const runtime = useWorkRuntime();
+  const supported =
+    !!runtime &&
+    capabilities.isSuccess &&
+    capabilities.data.inboundWorkflowConsistency === true;
+  const filtered = !!skuId || !!originLocationId;
   // target 은 큐 데이터에서 매 렌더 다시 찾지 않는다 — 시트를 여는 순간의
   // 스냅샷이다. 백그라운드 refetch 로 pendingQty 가 바뀌어도 작업자가 입력
   // 중인 수량은 지워지지 않는다(서버가 실제 잔량을 재검증하므로 낡아도 안전).
-  const [target, setTarget] = useState<PutawayPendingItem | null>(null);
+  const [target, setTarget] = useState<PutawayTarget | null>(null);
   const [scan, setScan] = useState<{ id: number; skuIds: string[] } | null>(
     null
   );
@@ -37,9 +61,26 @@ export function PutawayQueueScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
 
-  const queue = usePutawayPending(warehouseId, days);
+  const queue = usePutawayPending(
+    warehouseId,
+    filtered ? 'all' : days,
+    skuId ? [skuId] : undefined,
+    originLocationId
+  );
   const byBarcode = useSkuByBarcode();
   const items = queue.data?.items ?? [];
+  function select(item: PutawayPendingItem) {
+    if (!supported || !isActionablePutaway(item)) return;
+    setTarget({
+      ...item,
+      originLocationId: item.originLocationId,
+      originLocationCode: item.originLocationCode,
+    });
+  }
+  useEffect(() => {
+    setTarget(null);
+    setLastDest(null);
+  }, [warehouseId, skuId, originLocationId]);
 
   const resetBarcode = byBarcode.reset;
   const clearScanFeedback = useCallback(() => {
@@ -52,7 +93,7 @@ export function PutawayQueueScreen() {
   // Leaving this search context also cancels late barcode lookup results.
   useEffect(() => {
     clearScanFeedback();
-  }, [days, warehouseId, clearScanFeedback]);
+  }, [days, warehouseId, skuId, originLocationId, clearScanFeedback]);
   useEffect(
     () => () => {
       scanId.current += 1;
@@ -61,7 +102,7 @@ export function PutawayQueueScreen() {
   );
 
   useScanner((event) => {
-    if (target || !warehouseId) return;
+    if (target || !warehouseId || !supported) return;
     clearScanFeedback();
     const id = scanId.current;
     setNotice('상품을 확인하고 있어요.');
@@ -106,24 +147,29 @@ export function PutawayQueueScreen() {
         }
       />
 
-      <div className="flex gap-2">
-        {DAY_OPTIONS.map((o) => (
-          <button
-            key={String(o.value)}
-            type="button"
-            aria-pressed={days === o.value}
-            className={
-              days === o.value
-                ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm text-blue-700'
-                : 'rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700'
-            }
-            onClick={() => setDays(o.value)}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-
+      {!filtered && (
+        <div className="flex gap-2">
+          {DAY_OPTIONS.map((o) => (
+            <button
+              key={String(o.value)}
+              type="button"
+              aria-pressed={days === o.value}
+              className={
+                days === o.value
+                  ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm text-blue-700'
+                  : 'rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700'
+              }
+              onClick={() => setDays(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered && <p>선택한 상품과 원위치의 전체 기간 입고예요.</p>}
+      {!supported && (
+        <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+      )}
       <p className="text-sm text-gray-500">
         상품 바코드를 스캔하거나 목록에서 고르세요.
       </p>
@@ -160,11 +206,14 @@ export function PutawayQueueScreen() {
               <button
                 type="button"
                 className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
+                disabled={
+                  !supported || !isActionablePutaway(item) || queue.isFetching
+                }
                 onClick={() => {
                   // 낡은 "적치 대기 없음" 안내와 미등록 바코드 오류 배너는 이 탭으로
                   // 더는 사실이 아니게 된다.
                   clearScanFeedback();
-                  setTarget(item);
+                  select(item);
                 }}
               >
                 <span className="min-w-0 flex-1">
@@ -172,8 +221,14 @@ export function PutawayQueueScreen() {
                     {item.skuName}
                   </span>
                   <span className="block text-xs text-gray-500">
-                    {item.originLocationCode} · {formatTime(item.receivedAt)}
+                    {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
+                    {formatTime(item.receivedAt)}
                   </span>
+                  {!item.canPutaway && (
+                    <span className="block text-sm text-amber-700">
+                      입고내역과 원위치를 확인해 주세요.
+                    </span>
+                  )}
                 </span>
                 <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
                   잔여 {item.pendingQty}
@@ -216,9 +271,11 @@ export function PutawayQueueScreen() {
           key={scan.id}
           warehouseId={warehouseId}
           skuIds={scan.skuIds}
+          originLocationId={originLocationId}
+          supported={supported}
           onSelect={(item) => {
             clearScanFeedback();
-            setTarget(item);
+            select(item);
           }}
           onEmpty={() => {
             clearScanFeedback();

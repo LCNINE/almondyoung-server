@@ -6,6 +6,7 @@ export function invalidateInventory(client: QueryClient) {
     'sku-warehouse-stock',
     'sku-stock-summary',
     'expected-arrivals',
+    'inbound-receipts',
     'putaway-pending',
     'outbound-batches',
     'stocktaking-session',

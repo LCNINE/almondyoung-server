@@ -3,6 +3,7 @@ import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { PickingStrategyName, PickingPlanResult } from '../picking-strategy.interface';
 import { conflict } from './picking-plan.errors';
+import { PlanInvalidation } from './plan-invalidation';
 import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './picking-plan.types';
 
 /**
@@ -193,7 +194,7 @@ export async function invalidateDraftPlan(
   trx: DbTx,
   planId: string,
   batchId: string,
-  reason: string,
+  invalidation: PlanInvalidation,
   operationId: string,
 ): Promise<PickingPlanResult> {
   const [invalidated] = await trx
@@ -201,7 +202,7 @@ export async function invalidateDraftPlan(
     .set({
       status: 'invalidated',
       invalidatedAt: sql`now()`,
-      invalidationReason: reason,
+      invalidationReason: invalidation.message,
       updatedAt: sql`now()`,
     })
     .where(
@@ -215,7 +216,14 @@ export async function invalidateDraftPlan(
   if (!invalidated) {
     throw conflict('PICKING_PLAN_STALE_VERSION', `Draft plan ${planId} changed while invalidating`);
   }
-  return { state: 'invalidated', operationId, planId, batchId, reason };
+  return {
+    state: 'invalidated',
+    operationId,
+    planId,
+    batchId,
+    reason: invalidation.message,
+    reasonCode: invalidation.code,
+  };
 }
 
 export function assertRecipientComplete(value: unknown): void {

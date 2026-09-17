@@ -1,5 +1,5 @@
 // apps/notification/src/template/services/nhn-template.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
@@ -26,11 +26,14 @@ export class NHNTemplateService {
     this.senderKey = this.configService.get<string>('NHN_SENDER_KEY')!;
     this.apiUrl = this.configService.get<string>('NHN_API_URL') || 'https://api-alimtalk.cloud.toast.com';
 
-    if (!this.appKey || !this.secretKey || !this.senderKey) {
+    const isDemo = this.configService.get<string>('APP_STAGE') === 'demo';
+    if (!isDemo && (!this.appKey || !this.secretKey || !this.senderKey)) {
       throw new Error('NHN_APP_KEY, NHN_SECRET_KEY, NHN_SENDER_KEY 환경변수가 필요합니다.');
     }
 
     this.client = axios.create({
+      // Template administration is outside the demo; never contact NHN from this client.
+      ...(isDemo ? { adapter: async () => { throw new ServiceUnavailableException('시연 환경에서는 외부 템플릿 관리를 사용하지 않습니다.'); } } : {}),
       baseURL: this.apiUrl,
       timeout: 30000,
       headers: {

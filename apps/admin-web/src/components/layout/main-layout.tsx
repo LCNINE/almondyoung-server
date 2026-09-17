@@ -4,6 +4,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header } from './header';
 import { AppSidebar } from './app-sidebar';
@@ -57,24 +58,55 @@ export function MainLayout({ children }: MainLayoutProps) {
     setActiveItem(item.id);
   };
 
+  const demoBanner = process.env.NEXT_PUBLIC_APP_STAGE === 'demo' && (
+    <div className="flex items-center justify-between gap-3 bg-amber-100 px-5 py-2 text-sm text-amber-950">
+      <span>
+        <strong>DEMO</strong> · 시연 데이터 · 택배와 알림은 모의 처리됩니다.
+      </span>
+      <Link href="/demo" className="shrink-0 whitespace-nowrap font-semibold underline">
+        시연 콘솔
+      </Link>
+    </div>
+  );
+
   // 로그인 페이지와 모바일 전용 페이지는 PC 레이아웃 제외
   if (pathname === '/login' || pathname === '/unauthorized') {
-    return <>{children}</>;
+    return (
+      <>
+        {demoBanner}
+        {children}
+      </>
+    );
   }
 
   // 모바일 전용 페이지들 (/mobile로 시작하는 모든 경로)은 PC 레이아웃 제외
   if (pathname.startsWith('/mobile')) {
-    return <>{children}</>;
+    return (
+      <>
+        {demoBanner}
+        {children}
+      </>
+    );
   }
 
   // 다이얼로그 전용 페이지들 (/dialog로 시작하는 모든 경로)은 PC 레이아웃 제외
   if (pathname.startsWith('/dialog')) {
-    return <>{children}</>;
+    return (
+      <>
+        {demoBanner}
+        {children}
+      </>
+    );
   }
 
   // 회원정보조회 팝업 창
   if (pathname.startsWith('/customer-window')) {
-    return <>{children}</>;
+    return (
+      <>
+        {demoBanner}
+        {children}
+      </>
+    );
   }
 
   return (
@@ -94,6 +126,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           isArchive && 'h-svh overflow-hidden'
         )}
       >
+        {demoBanner}
         <Header
           activeMenu={activeMenu}
           activeItem={activeItem ?? undefined}

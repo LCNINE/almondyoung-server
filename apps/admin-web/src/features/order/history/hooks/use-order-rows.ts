@@ -6,6 +6,7 @@ import { useVariantsBatch } from '@/lib/services/products';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
+import { isOrderLineMatched } from './demo-order-line';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 주문한 회원의 신원. user-service 조회가 실패하면 «없다» 가 아니라 «모른다» 라 전부 undefined. */
@@ -264,7 +265,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
         const optionName = variant?.optionLabel ?? line.optionName;
 
         const lineStatus: string = line.status ?? 'pending';
-        const isMatched = !!line.productMatchingId;
+        const isMatched = isOrderLineMatched(line, process.env.NEXT_PUBLIC_APP_STAGE);
         const isReadyToShip = lineStatus === 'stock_deducted';
         const isUnavailable = lineStatus === 'stock_unavailable';
 

@@ -9,28 +9,28 @@ const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
 export function NumberPad({
   value,
   onChange,
+  getValue,
   allowNegative = false,
 }: {
   value: number;
   onChange: (next: number) => void;
   allowNegative?: boolean;
+  /** Optional synchronous source for consumers that accept several keys before rendering. */
+  getValue?: () => number;
 }) {
-  const negative = value < 0;
-  const magnitude = Math.abs(value);
-
-  function signed(n: number): number {
-    return negative ? -n : n;
-  }
-
   function pressDigit(d: string) {
+    const current = getValue?.() ?? value;
+    const magnitude = Math.abs(current);
     const next = Number(`${magnitude}${d}`);
-    onChange(signed(Number.isFinite(next) ? next : magnitude));
+    const result = Number.isFinite(next) ? next : magnitude;
+    onChange(current < 0 ? -result : result);
   }
 
   function pressBackspace() {
-    const text = String(magnitude);
+    const current = getValue?.() ?? value;
+    const text = String(Math.abs(current));
     const next = text.length <= 1 ? 0 : Number(text.slice(0, -1));
-    onChange(signed(next));
+    onChange(current < 0 ? -next : next);
   }
 
   const keyClass = cn(
@@ -41,7 +41,12 @@ export function NumberPad({
   return (
     <div className="grid grid-cols-3 gap-2">
       {DIGITS.map((d) => (
-        <button key={d} type="button" className={keyClass} onClick={() => pressDigit(d)}>
+        <button
+          key={d}
+          type="button"
+          className={keyClass}
+          onClick={() => pressDigit(d)}
+        >
           {d}
         </button>
       ))}
@@ -51,7 +56,7 @@ export function NumberPad({
           className={keyClass}
           aria-label="부호"
           onClick={() => {
-            const toggled = -value;
+            const toggled = -(getValue?.() ?? value);
             onChange(toggled === 0 ? 0 : toggled);
           }}
         >
@@ -60,10 +65,19 @@ export function NumberPad({
       ) : (
         <span />
       )}
-      <button type="button" className={keyClass} onClick={() => pressDigit('0')}>
+      <button
+        type="button"
+        className={keyClass}
+        onClick={() => pressDigit('0')}
+      >
         0
       </button>
-      <button type="button" className={keyClass} aria-label="지우기" onClick={pressBackspace}>
+      <button
+        type="button"
+        className={keyClass}
+        aria-label="지우기"
+        onClick={pressBackspace}
+      >
         ←
       </button>
     </div>

@@ -1268,6 +1268,7 @@
       "photoBonusInline": "Photo review +{amount} KRW bonus!",
       "photoAlt": "Review photo",
       "policyNotice": "Points are awarded based on photos in the first submitted review. Attachments unrelated to the product may be deleted and rewards may be revoked.",
+      "policyNoticeNoReward": "Attachments unrelated to the product may be deleted.",
       "cancel": "Cancel",
       "submit": "Submit"
     },

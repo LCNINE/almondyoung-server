@@ -1,0 +1,254 @@
+# OpenSearch 이관 — Railway → AWS (VPC)
+
+검색 백엔드를 Railway 자체호스팅 OpenSearch 에서 VPC 안의 AWS OpenSearch 도메인으로 옮긴다.
+**검색 이력(`search_query_events`)은 Railway 에만 있는 원본**이라 같이 들고 간다.
+
+## 왜
+
+Railway 인스턴스는 백업도 인증도 없는 공개 엔드포인트였고, **검색 이력의 유일본**을 들고
+있었다. 저장소가 하나뿐이라 그게 응답하지 않으면 검색이 통째로 멈추고 되돌릴 사본도 없다.
+
+전환 판정은 검색 API의 응답시간·상품 ID 순서·전체 건수로 한다. 스토어프론트 HTML의
+상품 링크 수는 렌더 시점에 따라 달라지므로 판정에 사용하지 않는다(7번).
+
+## 무엇이 바뀌나
+
+| | 전 | 후 |
+|---|---|---|
+| 엔드포인트 | 공개 `opensearch-development.up.railway.app` | VPC private subnet 도메인 |
+| 인증 | 없음 | SST 가 만드는 FGAC master user |
+| 사양 | (Railway 요금제) | t3.small × 1, gp3 10GB |
+| 형태소 분석 | 이미지 내장 | AWS `analysis-nori` 패키지 associate |
+
+노드는 **하나**다. 삭제 전 구성과 같다 — 인덱스의 `number_of_replicas: 1` 은 배정되지 않아
+클러스터는 계속 **yellow** 이고, 이건 정상이다(Railway 도 같은 상태였다). 노드 한 대가
+죽으면 검색이 다시 통째로 멈춘다. 이중화하려면 `instanceCount: 2` + `zoneAwarenessEnabled`
+로 올린다. 비용은 `aws pricing get-products --service-code AmazonES` 로 그때 단가를 뽑을 것 —
+여기 적어 두면 갈린다.
+
+## 전제
+
+- `develop` 에 `[search] OpenSearch 장애 시 부팅 유지와 자동 재연결`이 들어가 있을 것.
+  **이게 이 이관의 안전망이다** — 새 도메인이 아직 비어 있거나 접속이 안 돼도 search 앱은 죽지
+  않고 뜨며, 같은 태스크의 notification·ugc 를 끌고 가지 않는다.
+- VPC 프라이빗 서브넷의 인터넷 출구는 NAT **인스턴스**다(NAT 게이트웨이 없음). 같은 인스턴스가
+  SSM 세션 대상이기도 하다.
+
+## 절차
+
+### 1. 도메인 생성 (배포 ①)
+
+```bash
+cd deployments/lcnine/services
+sst deploy --stage live
+```
+
+`shared.ts` 의 `Opensearch` + `OpensearchSg` + `OpensearchNoriAssociation` 이 생성된다.
+**nori 패키지 associate 는 plugin install + rolling restart 라 수십 분 걸린다**(그래서
+customTimeouts 가 60분이다). 배포가 길어져도 정상이다.
+
+**이 배포는 컷오버가 아니다.** `services.ts` 의 `useAwsOpenSearch` 가 `false` 인 동안 앱은
+Railway 를 계속 본다 — 도메인이 비어 있는 채로 트래픽을 받는 창이 없다. 컷오버는 5번이다.
+
+**첫 배포는 nori associate 에서 한 번 실패하는 게 정상이다.** 도메인 생성 직후 AWS 가 내부
+준비를 마치기 전에 패키지를 붙이려 해서 이런 오류가 난다:
+
+```
+ValidationException: Domain is processing other changes. Please wait for the Domain
+status to get back to Active before associating or dissociating a plugin.
+```
+
+도메인 자체는 이미 만들어져 있다. `Active` 가 된 것을 확인하고 **같은 명령을 다시 돌리면**
+도메인은 건너뛰고 패키지만 붙인다.
+
+```bash
+D=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+aws opensearch describe-domain --domain-name "$D" \
+  --query 'DomainStatus.{processing:Processing,status:DomainProcessingStatus}' --output json
+# processing: false / status: "Active" 를 확인한 뒤 재배포
+
+aws opensearch list-packages-for-domain --domain-name "$D" \
+  --query 'DomainPackageDetailsList[].[PackageName,DomainPackageStatus]' --output text
+# 재배포 뒤 analysis-nori / ACTIVE 가 나와야 한다. 비어 있으면 아직 안 붙은 것이다
+```
+
+기존 도메인의 사양만 변경할 때는 `sst deploy --stage live --target Opensearch`로 범위를 좁힌다.
+검색 앱 코드만 배포할 때는 `--target ServicesBundleB`를 사용한다(notification·search·ugc가
+같은 태스크에 묶여 있다). SST 설정 평가 과정에서 다른 앱의 빌드 로그가 나올 수 있으므로,
+빌드 로그와 실제 배포 리소스 목록을 구분한다. 배포 실행은 사용자가 한다.
+
+### 2. 도메인에 접속 경로 열기
+
+도메인이 VPC 안이라 로컬에서 바로 안 닿는다. NAT/bastion 인스턴스를 거쳐 포트를 뚫는다.
+
+로컬에 `session-manager-plugin` 이 있어야 한다(`session-manager-plugin --version`).
+
+```bash
+# 도메인 엔드포인트 (vpc-... 로 시작하는 사설 엔드포인트)
+DOMAIN=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+ENDPOINT=$(aws opensearch describe-domain --domain-name "$DOMAIN" \
+  --query 'DomainStatus.Endpoints.vpc' --output text)
+
+# 경유할 인스턴스 — 프라이빗 서브넷 라우트의 NAT 인스턴스. SSM Online 인 것을 고른다
+aws ec2 describe-route-tables --filters Name=vpc-id,Values=<vpc-id> \
+  --query 'RouteTables[].Routes[?DestinationCidrBlock==`0.0.0.0/0`].InstanceId' --output text
+aws ssm describe-instance-information --query 'InstanceInformationList[].[InstanceId,PingStatus]' --output text
+
+# 터널. 이 창은 작업 내내 열어 둔다
+aws ssm start-session \
+  --target <instance-id> \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters "{\"host\":[\"$ENDPOINT\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"9243\"]}"
+```
+
+터널을 쓰면 인증서 호스트명이 `localhost` 와 안 맞으므로 다음 단계에서 `TARGET_TLS_INSECURE=1`
+을 준다. **TLS 자체는 유지되고 검증만 끈다** — 터널 구간은 SSM 이 이미 암호화한다.
+
+### 3. 데이터 복사
+
+자격증명은 SST 가 만든 master user 다. `sst secret` 이 아니라 **Secrets Manager** 에 있다 —
+SST 가 도메인 태그 `sst:ref:password` 에 시크릿 id 를, `sst:ref:username` 에 사용자명을 박아둔다.
+
+```bash
+DOMAIN=$(aws opensearch list-domain-names --query 'DomainNames[0].DomainName' --output text)
+ARN=$(aws opensearch describe-domain --domain-name "$DOMAIN" --query 'DomainStatus.ARN' --output text)
+SECRET_ID=$(aws opensearch list-tags --arn "$ARN" \
+  --query "TagList[?Key=='sst:ref:password'].Value | [0]" --output text)
+
+aws secretsmanager get-secret-value --secret-id "$SECRET_ID" \
+  --query SecretString --output text     # {"username":"admin","password":"..."}
+```
+
+```bash
+export SOURCE_OPENSEARCH_NODE=https://opensearch-development.up.railway.app
+export TARGET_OPENSEARCH_NODE=https://localhost:9243
+export TARGET_OPENSEARCH_USERNAME=<master user>
+export TARGET_OPENSEARCH_PASSWORD=<master password>
+export TARGET_TLS_INSECURE=1
+export SEARCH_PRODUCTS_INDEX=search_products_v2
+
+npm run search:migrate-opensearch:dry   # 읽기만 한다. 건수·접속 확인용
+npm run search:migrate-opensearch
+```
+
+스크립트가 하는 일:
+
+- 대상 인덱스를 **이 저장소의 상수**로 만든다(소스 설정을 복사하지 않는다). 소스가 드리프트해
+  있어도 새 클러스터는 앱이 기대하는 모양으로 선다. 엔진 버전이 달라도 무방하다.
+- `_source` 를 그대로 옮기므로 **상품명 벡터가 보존된다** — 재임베딩(OpenAI) 비용이 없다.
+- 소스 `_id` 로 bulk index 한다. **여러 번 돌려도 안전**하고, 끊기면 다시 돌리면 된다.
+- 마지막에 소스/대상 문서 수를 대조해 안 맞으면 실패로 끝낸다.
+
+### 4. 실제 앱 질의와 동시 요청 검증 (컷오버 전)
+
+문서 수·분석기·단순 match 확인만으로 컷오버하지 않는다. 다음 항목을 모두 확인한다.
+
+1. 두 인덱스의 문서 수와 복사 시점을 대조한다. 건수가 같아도 문서 내용이 최신이라는 보장은
+   없으므로 복사 이후 변경분을 반영하고 결과를 다시 비교한다. 검색 이력은 양쪽에만 존재하는
+   문서가 있는지도 확인하고, 한쪽을 삭제하거나 빈 인덱스로 덮어쓰지 않는다.
+2. 대표 검색어의 nori 토큰을 양쪽에서 비교한다.
+3. 현재 `ProductIndexService`와 `SearchService`의 실제 경로로 상위 10개 ID 순서·전체 건수를
+   비교한다. strict/fallback, 벡터, 페이지 본문 조회, 교정, 연관검색어를 포함한다. 단순 match
+   질의로 대체하거나 후보 수·정렬·필터를 측정용으로 바꾸지 않는다. 쓰기와 부팅 시 인덱스
+   초기화는 차단하고 `track=false`로 실행한다.
+4. 넓은 검색어를 포함해 동시 요청 5개부터 최소 30초간 실행한다. 통과한 뒤 10개로 늘린다.
+   실제 검색 API 한 요청이 여러 OpenSearch 요청을 발생시킨다는 점을 반영한다. 초기 요청과
+   캐시가 채워진 요청을 구분해 기록하며, 타임아웃·오류도 지연 통계와 별도로 남긴다.
+5. 부하 구간의 JVM 사용률·검색 큐·거절 수·CPU와 API 지연을 함께 확인한다. 노드 통계를 약
+   1초 간격으로 수집하고 CloudWatch도 대조한다. CloudWatch의 분 단위 샘플에 짧은 큐 상승이
+   나타나지 않았다고 통과시키지 않는다.
+
+부하 측정은 가능한 한 VPC 내부에서 실행한다. SSM 포트포워딩의 클라이언트 지연은
+터널 정체를 포함할 수 있으므로 서버 `took`, 노드 통계, 별도 경로의 연결 상태를 함께 기록한다.
+터널 장애 구간을 서버 용량 부족의 증거로 사용하지 않는다. 동시 실행 수뿐 아니라 목표/실제
+요청률, 질의 혼합, 워밍업, 측정/종료 대기 시간, 오류 수, p95를 남긴다. 저장된 질의 재생은
+OpenSearch 비용 검증이며, 임베딩·교정·HTTP 처리를 포함한 실제 앱/API 검증과 구분한다.
+
+판정 기준은 JVM 사용률 75% 미만, 검색 큐 10 미만, 요청 오류 없음, 합의한 API 지연 목표 충족,
+상위 결과 순서 회귀 없음이다. 한 항목이라도 실패하면 컷오버하지 않는다. 사양 변경은 현재
+단가를 조회해 결정하며 사용자가 배포한 뒤 같은 검증을 반복한다. 측정 결과와 운영 수치는
+공개 저장소 밖에 보관한다.
+
+아래 명령은 기본 점검의 예시이며, 실제 앱 질의와 부하 검증을 대신하지 않는다.
+
+```bash
+# 문서 수
+curl -sk -u "$TARGET_OPENSEARCH_USERNAME:$TARGET_OPENSEARCH_PASSWORD" \
+  "$TARGET_OPENSEARCH_NODE/_cat/indices?v&h=index,docs.count,store.size"
+
+# nori 가 실제로 붙었나 — 안 붙었으면 한국어 검색 품질이 조용히 무너진다
+curl -sk -u "$TARGET_OPENSEARCH_USERNAME:$TARGET_OPENSEARCH_PASSWORD" \
+  -H 'Content-Type: application/json' \
+  "$TARGET_OPENSEARCH_NODE/search_products_v2/_analyze" \
+  -d '{"analyzer":"nori","text":"헤어에센스"}'
+
+# 실제 검색이 결과를 내나
+curl -sk -u "$TARGET_OPENSEARCH_USERNAME:$TARGET_OPENSEARCH_PASSWORD" \
+  -H 'Content-Type: application/json' \
+  "$TARGET_OPENSEARCH_NODE/search_products_v2/_search?size=1" \
+  -d '{"query":{"match":{"name":"헤어"}}}'
+```
+
+기본 점검과 위 다섯 항목을 모두 통과해야 다음으로 간다.
+
+### 5. 컷오버 (배포 ②)
+
+`deployments/lcnine/services/infra/services.ts` 에서 한 줄을 바꾼다.
+
+```ts
+const useAwsOpenSearch = true;
+```
+
+```bash
+sst deploy --stage live --target ServicesBundleB
+```
+
+### 6. 꼬리 복사
+
+복사하는 동안에도 문서는 계속 쌓인다. **컷오버가 끝난 뒤 한 번 더 돌린다.** 멱등이라 전체를 다시 훑고 바뀐 것만 덮어쓴다.
+
+```bash
+npm run search:migrate-opensearch
+```
+
+`search_products_v2` 는 이걸 놓쳐도 Kafka 소비자와 `npm run search:backfill` 로 복구된다.
+`search_query_events` 는 **복구 경로가 없다** — 이 단계를 건너뛰면 그 사이 검색 이력이 사라진다.
+
+### 7. 운영 API와 검색 이력 확인
+
+```bash
+# 앱 의존 연결 상태 (백엔드 전환 여부는 태스크 설정도 대조)
+curl -s https://search.almondyoung.com/health
+
+# q가 검색 파라미터다. keyword를 쓰면 빈 검색으로 처리될 수 있다.
+curl -fsS --max-time 40 --get 'https://search.almondyoung.com/search/products' --data-urlencode 'q=네일' --data-urlencode 'size=10' --data-urlencode 'track=false' -o /tmp/search-cutover-response.json -w '%{http_code} %{time_total}s\n'
+python3 -c 'import json; d=json.load(open("/tmp/search-cutover-response.json")); print(d["pagination"]); print([x["productId"] for x in d["items"]])'
+```
+
+컷오버 전 저장한 대표 검색어 결과와 대조한다. 컷오버 후 최소 10분 동안 API 지연·JVM·검색 큐를
+관찰하며, 초기 요청의 지연이나 실패를 이후 정상 응답으로 덮어 해석하지 않는다.
+
+관리자 통계 → 검색 키워드 탭에서 인기 검색어·0건 검색어가 **이관 이전 기간까지** 나오는지 본다.
+이력이 안 옮겨졌으면 여기서 드러난다.
+
+### 8. Railway 정리
+
+**최소 며칠은 켜 둔다.** 되돌릴 유일한 경로이고, 검색 이력의 두 번째 사본이다.
+확인이 끝나면 Railway 쪽 비용을 정리한다(요금제는 이 문서 범위 밖).
+
+## 되돌리기
+
+`useAwsOpenSearch` 를 `false` 로 되돌리고 재배포한다. 도메인은 지우지 말고 남겨 둔다
+(원인 파악용이고, 지웠다 다시 만들면 nori associate 를 또 수십 분 기다려야 한다).
+
+되돌린 뒤 Railway 는 컷오버 시점까지의 검색 이력을 그대로 갖고 있다. 컷오버 이후 AWS 에만
+쌓인 이력을 되가져오려면 같은 스크립트를 소스/대상만 바꿔 돌리면 된다.
+
+## 알려진 위험
+
+- **2026-05 에 이 도메인으로 붙다가 「연결 트러블슈팅」 사유로 Railway 로 폴백한 이력이 있다**
+  (`4225496b3`). 원인이 기록돼 있지 않다. **4번(컷오버 전)과 7번(고객 화면)을 반드시 통과시킨
+  뒤** Railway 를 끊을 것.
+- nori associate 가 60분 안에 안 끝나면 배포가 실패한다. 그때 도메인은 이미 떠 있으므로
+  `aws opensearch describe-packages` 로 패키지 ID 가 엔진 버전과 맞는지부터 확인한다.
+- 노드가 하나라 클러스터는 계속 yellow 다. 「yellow 면 이상」이라는 알림을 붙이면 상시 울린다.
