@@ -6,6 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { isVariantSoldOut } from "@/lib/utils/cart-availability"
 import { formatDate } from "@/lib/utils/format-date"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
@@ -65,8 +66,7 @@ function sortByPimRank(
 }
 
 function hasStock(variant: HttpTypes.StoreProductVariant): boolean {
-  if (!variant.manage_inventory || variant.allow_backorder) return true
-  return (variant.inventory_quantity ?? 0) > 0
+  return !isVariantSoldOut(variant)
 }
 
 function getButtonStyle(isCurrent: boolean, isOutOfStock: boolean): string {

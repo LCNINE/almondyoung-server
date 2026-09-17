@@ -169,8 +169,10 @@ export async function findUnavailableLineItems(
         // 카트 라인아이템의 variant 에는 Medusa 가 inventory_quantity 를 계산해 주지 않아
         // 항상 품절로 잡힌다. 재고가 계산되는 /store/products 응답에서 variant 재고를 받아와
         // 품절을 판정한다. (비회원 멤버십 전용 상품은 이 경로에서 재고 0 으로 마스킹돼 자동 품절)
+        // metadata 를 빼면 출시예정 판정이 fail-open 으로 통과한다 — 이 응답이 결제 차단의
+        // 근거라 여기서 빠지면 상세에서 못 담는 상품이 장바구니에서는 결제까지 간다.
         fields:
-          "id,variants.id,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder",
+          "id,variants.id,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata",
         limit: productIds.length,
       },
       headers,

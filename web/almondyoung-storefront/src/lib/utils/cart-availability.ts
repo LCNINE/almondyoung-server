@@ -33,6 +33,20 @@ type VariantStock = {
   manage_inventory?: boolean | null
   allow_backorder?: boolean | null
   inventory_quantity?: number | null
+  metadata?: Record<string, unknown> | null
+}
+
+/**
+ * 출시예정은 재고 판정을 이긴다. 플래그가 켜져 있으면 아직 한 번도 안 나온 물건이라
+ * 재고 수치가 무엇이든 팔면 안 된다.
+ *
+ * 재고를 먼저 보면 안 되는 이유: `manage_inventory=false`(매칭 전 상품의 기본값이고,
+ * core 가 MATCHING_MISSING 으로 내보낸 프로젝션이 이 값을 박는다) 이면 Medusa 는 무한재고로
+ * 취급해 품절 분기가 아예 성립하지 않는다. 그러면 출시예정 안내도 못 뜨고 구매 버튼이 살아난다
+ * — 2026-09-17 «마카롱 위생접시» 9개 중 4개가 정확히 이 상태로 판매 가능했다.
+ */
+export function isComingSoonVariant(variant?: VariantStock | null): boolean {
+  return variant?.metadata?.comingSoon === true
 }
 
 /**
@@ -46,6 +60,7 @@ export function getAvailableQuantity(
   variant?: VariantStock | null
 ): number | null {
   if (!variant) return null
+  if (isComingSoonVariant(variant)) return 0
   if (!variant.manage_inventory) return null
   if (variant.allow_backorder) return null
   return Math.max(0, variant.inventory_quantity ?? 0)
@@ -149,6 +164,7 @@ export function isLineItemVariantGone(
  */
 export function isVariantSoldOut(variant?: VariantStock | null): boolean {
   if (!variant) return false
+  if (isComingSoonVariant(variant)) return true
   if (!variant.manage_inventory) return false
   if (variant.allow_backorder) return false
   return (variant.inventory_quantity ?? 0) <= 0

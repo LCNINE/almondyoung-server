@@ -44,6 +44,7 @@ import {
   describeStockShortage,
   getAvailableQuantity,
   isInsufficientInventoryError,
+  isVariantSoldOut,
 } from "@/lib/utils/cart-availability"
 
 type ProductActionsProps = {
@@ -73,12 +74,9 @@ const getVariantLabel = (
   )
 }
 
-// 재고 확인
-const isInStock = (v: HttpTypes.StoreProductVariant) => {
-  if (!v.manage_inventory) return true // 재고관리를 안하는 상품은 장바구니에 추가 가능
-  if (v.allow_backorder) return true // 백오더 가능한 상품은 장바구니에 추가 가능
-  return (v.inventory_quantity || 0) > 0 // 재고가 있는 상품은 장바구니에 추가 가능
-}
+// 재고 확인. 판정은 cart-availability 한 곳에만 둔다 — 장바구니·결제와 기준이 갈리면
+// 상세에서 못 담는 것이 결제까지 통과한다.
+const isInStock = (v: HttpTypes.StoreProductVariant) => !isVariantSoldOut(v)
 
 export default function ProductActions({
   product,

@@ -474,3 +474,72 @@ describe("classifyCartLineItems — 품절과 판매중단 구분", () => {
     expect(result.soldOutVariantIds).toEqual([])
   })
 })
+
+describe("출시예정은 재고 판정을 이긴다", () => {
+  // manage_inventory=false 는 Medusa 에서 «무한재고» 다. 출시예정을 재고 뒤에 두면
+  // 이 조합이 품절 분기를 통째로 건너뛰어 구매 가능해진다 (2026-09-17 실사고).
+  const comingSoonUnmanaged = {
+    manage_inventory: false,
+    allow_backorder: false,
+    inventory_quantity: 0,
+    metadata: { comingSoon: true },
+  }
+
+  it("무한재고여도 품절로 본다", () => {
+    expect(isVariantSoldOut(comingSoonUnmanaged)).toBe(true)
+  })
+
+  it("백오더 허용이어도 품절로 본다", () => {
+    expect(
+      isVariantSoldOut({ ...comingSoonUnmanaged, allow_backorder: true })
+    ).toBe(true)
+  })
+
+  it("재고가 남아 있어도 품절로 본다", () => {
+    expect(
+      isVariantSoldOut({
+        manage_inventory: true,
+        allow_backorder: false,
+        inventory_quantity: 7,
+        metadata: { comingSoon: true },
+      })
+    ).toBe(true)
+  })
+
+  it("구매 가능 수량은 상한 없음(null)이 아니라 0 이다", () => {
+    expect(getAvailableQuantity(comingSoonUnmanaged)).toBe(0)
+  })
+
+  it("플래그가 없으면 기존 판정 그대로다", () => {
+    expect(
+      isVariantSoldOut({ ...comingSoonUnmanaged, metadata: null })
+    ).toBe(false)
+  })
+})
+
+describe("장바구니 분류도 출시예정을 막는다", () => {
+  // 이 경로가 결제 차단의 근거다. 조회 fields 에서 metadata 가 빠지면 판정이
+  // fail-open 으로 통과해, 상세에서 못 담는 상품이 장바구니에서는 결제까지 간다.
+  it("무한재고 + 출시예정 라인은 품절로 분류된다", () => {
+    const result = classifyCartLineItems(
+      [{ product_id: "prod_1", variant_id: "var_1", quantity: 1 }],
+      [
+        {
+          id: "prod_1",
+          variants: [
+            {
+              id: "var_1",
+              manage_inventory: false,
+              allow_backorder: false,
+              inventory_quantity: 0,
+              metadata: { comingSoon: true },
+            },
+          ],
+        },
+      ]
+    )
+
+    expect(result.soldOutVariantIds).toEqual(["var_1"])
+    expect(result.variantIds).toContain("var_1")
+  })
+})

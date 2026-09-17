@@ -1,4 +1,9 @@
 import { HttpTypes } from "@medusajs/types"
+// vitest 에 `@/` alias 가 없어 상대경로로 둔다 (stock-status.test.ts 가 이 파일을 로드한다)
+import {
+  getAvailableQuantity,
+  isVariantSoldOut as isSoldOut,
+} from "../../../../../lib/utils/cart-availability"
 
 export const LOW_STOCK_THRESHOLD = 5
 
@@ -9,18 +14,12 @@ export type StockStatus =
   | { kind: "lowStock"; total: number }
   | { kind: "inStock" }
 
-export const isVariantSoldOut = (variant: HttpTypes.StoreProductVariant) => {
-  if (!variant.manage_inventory) return false
-  if (variant.allow_backorder) return false
-  return (variant.inventory_quantity ?? 0) <= 0
-}
+export const isVariantSoldOut = (variant: HttpTypes.StoreProductVariant) =>
+  isSoldOut(variant)
 
 // 추적 가능한 재고를 반환. 재고관리 안 함 / 백오더 허용은 null.
-export const getVariantStock = (variant: HttpTypes.StoreProductVariant) => {
-  if (!variant.manage_inventory) return null
-  if (variant.allow_backorder) return null
-  return variant.inventory_quantity ?? 0
-}
+export const getVariantStock = (variant: HttpTypes.StoreProductVariant) =>
+  getAvailableQuantity(variant)
 
 export const getVariantLabel = (variant: HttpTypes.StoreProductVariant) =>
   variant.options?.map((o) => o.value).join(" / ") ||
