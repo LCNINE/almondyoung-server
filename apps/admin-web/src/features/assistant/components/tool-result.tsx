@@ -259,10 +259,46 @@ function ProductCards({
   );
 }
 
-/** 도구 결과에서 상품 배열을 꺼낸다. 목록은 `{data,total}`, 단건은 객체 하나다. */
+/**
+ * 삭제된 상품 목록(GET /masters/deleted)의 한 줄을 카드 모양으로 옮긴다.
+ * 이 엔드포인트만 `{ id, primaryVersion }` 를 줘서 masterId·name 위치가 다르다.
+ */
+function fromDeletedMaster(row: Record<string, unknown>): ProductRow | null {
+  if (typeof row.id !== 'string') return null;
+  const version = (row.primaryVersion ?? null) as Record<
+    string,
+    unknown
+  > | null;
+  return {
+    masterId: row.id,
+    versionId: typeof version?.id === 'string' ? version.id : undefined,
+    name: typeof version?.name === 'string' ? version.name : undefined,
+    brand: typeof version?.brand === 'string' ? version.brand : null,
+    thumbnail:
+      typeof version?.thumbnail === 'string' ? version.thumbnail : null,
+    status: typeof version?.status === 'string' ? version.status : undefined,
+  };
+}
+
+/**
+ * 도구 결과에서 상품 배열을 꺼낸다. 목록은 `{data,total}`, 단건은 객체 하나다.
+ * 삭제된 상품 목록(GET /masters/deleted)만 감싸지 않은 배열로 온다.
+ */
 function asProducts(
   result: unknown
 ): { rows: ProductRow[]; total?: number } | null {
+  if (Array.isArray(result)) {
+    const rows = result
+      .filter(
+        (row): row is Record<string, unknown> =>
+          !!row && typeof row === 'object'
+      )
+      .map((row) =>
+        'primaryVersion' in row ? fromDeletedMaster(row) : (row as ProductRow)
+      )
+      .filter((row): row is ProductRow => row !== null);
+    return rows.length > 0 ? { rows } : null;
+  }
   if (!result || typeof result !== 'object') return null;
   const r = result as Record<string, unknown>;
   if (r.ok === false) return null;

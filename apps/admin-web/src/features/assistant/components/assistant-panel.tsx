@@ -411,6 +411,14 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     );
 
     /**
+     * 이번 전송에 실은 첨부를 입력창으로 되돌린다. 덮어쓰지 않고 앞에 붙인다 —
+     * 요청이 나간 뒤 사용자가 더 붙인 파일이 사라지면 안 된다.
+     */
+    function restoreSentFiles() {
+      setFiles((previous) => [...files, ...previous]);
+    }
+
+    /**
      * 서버가 이 발화를 받기 전에 거절했을 때만 쓴다 (4xx). 그 경우 서버는 세션 확인·
      * 동시 턴 검사에서 막은 것이라 발화를 저장하지 않았다.
      * 스트림이 시작된 뒤나 5xx 에는 저장됐을 수 있으므로 되돌리면 같은 말이 두 번 남는다.
@@ -418,7 +426,7 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     function restoreDraft(message: string) {
       setMessages((previous) => previous.slice(0, shownBefore));
       if (spoken === undefined) setInput(text);
-      setFiles(files);
+      restoreSentFiles();
       setError(message);
     }
 
@@ -456,6 +464,10 @@ export function AssistantPanel({ open, onOpenChange }: Props) {
     function finishInterrupted(message: string) {
       setError(message);
       if (bubbleAdded) updateLast({ runningTool: undefined });
+      // 첨부는 되돌린다. 서버가 썼는지는 알 수 없지만(consumedIds 는 done 에만 온다),
+      // 안 되돌리면 입력창이 비어 다음 턴이 "첨부가 없다" 로 막힌다.
+      // 같은 파일이 두 번 올라가는 편이 낫다.
+      restoreSentFiles();
     }
 
     try {

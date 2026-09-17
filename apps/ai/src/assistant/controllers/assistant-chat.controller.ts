@@ -96,6 +96,10 @@ export class AssistantChatController {
         message: '요청을 처리하지 못했습니다. 이미 반영된 작업이 있을 수 있으니 확인해 주세요.',
       });
     } finally {
+      // 제너레이터를 반드시 닫는다. send() 가 yield 중간에 던지면 runTurn 이 중단된
+      // 상태로 남아 자기 finally 를 못 돌고, SessionTurnLock 이 풀리지 않아 그 대화가
+      // 프로세스가 죽을 때까지 409 만 낸다.
+      await events.return(undefined);
       if (!reply.raw.writableEnded) reply.raw.end();
     }
   }

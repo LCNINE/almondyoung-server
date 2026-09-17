@@ -9,6 +9,7 @@ import { GlobalExceptionFilter } from '@app/shared';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { Logger } from 'nestjs-pino';
 import { AiModule } from './ai.module';
+import { MAX_FILES_PER_TURN } from './assistant/lib/multipart';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(AiModule, new FastifyAdapter(), {
@@ -18,9 +19,20 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
 
   await app.register(fastifyCookie);
-  // 어시스턴트가 엑셀·이미지를 첨부로 받는다. 파일 하나 20MB 면 충분하다 —
-  // 그보다 큰 엑셀은 모델이 아니라 어드민 일괄등록 화면에서 처리할 일이다.
-  await app.register(fastifyMultipart, { limits: { fileSize: 20 * 1024 * 1024 } });
+  // 어시스턴트가 엑셀·이미지를 첨부로 받는다. 파일 하나 20MB 면 충분하다.
+  // files 도 꼭 준다 — busboy 기본값이 무제한이고 readTurn 이 전부 메모리에
+  // 들고 있어서, 파일 수를 안 막으면 요청 하나로 OOM 이 난다.
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: 20 * 1024 * 1024,
+      files: MAX_FILES_PER_TURN,
+      // content 가 사용자의 지시라 좁히면 안 된다. 파서는 초과분을 조용히 잘라서
+      // 긴 지시가 반토막 난 채 모델에 들어간다 (readTurn 이 그건 400 으로 막는다).
+      fieldSize: 1024 * 1024,
+      // content 하나 + 파일당 fileIds 하나.
+      fields: 64,
+    },
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

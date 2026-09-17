@@ -27,8 +27,12 @@ export const AI_SCOPES: ScopeDefinition[] = [
 export const AI_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
   { roleName: 'admin', scopeKeys: [AI_SCOPE.ASSISTANT] },
   { roleName: 'master', scopeKeys: [AI_SCOPE.ASSISTANT, AI_SCOPE.STOREFRONT] },
-  // 고객 스킬이 실제로 생기기 전까지 이 스코프로는 부를 도구가 없다 —
-  // 모델은 도구 없이 말만 한다. 스킬을 더하면 그때부터 동작한다.
-  { roleName: 'user', scopeKeys: [AI_SCOPE.STOREFRONT] },
-  { roleName: 'membership', scopeKeys: [AI_SCOPE.STOREFRONT] },
+  // 고객 역할에는 아직 스코프를 주지 않는다. 도구가 없어도 모델은 돌고
+  // 사용자당 한도가 없어서, 토큰만 있으면 OpenAI 요금을 무한히 태울 수 있다.
+  // 고객 스킬을 만들 때 한도와 함께 STOREFRONT 를 넣는다.
+  //
+  // 역할을 지우지 말고 빈 배열로 둘 것. ensureRoleScopeMappings 는 목록에 있는
+  // 역할만 조정하므로, 지우면 이미 부여된 DB 행이 남아 권한이 살아 있어 보인다.
+  { roleName: 'user', scopeKeys: [] },
+  { roleName: 'membership', scopeKeys: [] },
 ];

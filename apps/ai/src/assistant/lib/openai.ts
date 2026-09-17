@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { ServiceUnavailableError } from '@app/shared';
+import { positiveNumberEnv } from '../../platform/env';
 
 /**
  * 어시스턴트가 쓰는 모델. env 로 바꾼다 — 코드에 박아 두면 모델을 갈 때마다 재빌드가 필요하다.
@@ -48,7 +49,7 @@ function price(key: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-const USD_TO_KRW = Number(process.env.USD_TO_KRW ?? 1380);
+const USD_TO_KRW = positiveNumberEnv('USD_TO_KRW', 1380);
 
 /**
  * 이번 호출의 비용. 단가가 하나라도 없으면 null 을 준다.

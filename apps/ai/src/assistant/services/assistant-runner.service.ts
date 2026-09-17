@@ -5,6 +5,7 @@ import { buildDateTimeContext } from '../lib/chat-datetime';
 import { closeDanglingToolCalls, type Message } from '../lib/conversation';
 import { MODEL, getOpenAiClient, logUsage, toUserMessage } from '../lib/openai';
 import type OpenAI from 'openai';
+import { urlEnv } from '../../platform/env';
 
 /**
  * 한 요청 안에서 도는 도구 호출 라운드 상한. 모델이 같은 도구를 물고 늘어져도 여기서 끊긴다.
@@ -83,8 +84,11 @@ export class AssistantRunnerService {
 
     const ctx: SkillContext = {
       coreHeaders,
-      coreApiUrl: (process.env.CORE_API_URL ?? 'http://localhost:3000').replace(/\/+$/, ''),
-      fileServiceUrl: (process.env.FILE_SERVICE_URL ?? 'http://localhost:3080').replace(/\/+$/, ''),
+      // 포트는 scripts/local/e2e-env-map.sh 가 정본이다 — 3000 은 user-service 고
+      // core 는 3100, file-service 는 3010 이다. 틀린 폴백은 도구를 IdP 로 보내고
+      // 모델은 원인을 알 수 없는 404 만 받는다.
+      coreApiUrl: urlEnv('CORE_API_URL', 'http://localhost:3100'),
+      fileServiceUrl: urlEnv('FILE_SERVICE_URL', 'http://localhost:3010'),
       // 도구 안에서 조회 → 저장으로 이어질 때, 취소 이후 저장이 나가는 것을 막는다.
       signal,
       attachments,

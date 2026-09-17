@@ -6,8 +6,13 @@ import {
   type ExtractResult,
 } from '@packages/product-description';
 import { MODEL, logUsage, toAnthropicErrorResponse } from './anthropic';
+import { urlEnv } from '../../platform/env';
 
-const CORE_API_URL = process.env.CORE_API_URL ?? 'http://localhost:3000';
+/**
+ * 함수로 둔다 — 모듈 상수로 두면 ConfigModule 이 envFilePath 를 읽기 전에 평가된다.
+ * 컨트롤러까지 정적 import 로 엮여 있어서 ai.module.ts 가 로드되는 중에 값이 굳는다.
+ */
+const coreApiUrl = () => urlEnv('CORE_API_URL', 'http://localhost:3100');
 const PROMPT_SCOPE = 'product-description';
 
 /**
@@ -35,10 +40,10 @@ async function loadEditablePrompt(presetId: string | undefined, authHeaders: Rec
   if (!presetId) return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
 
   try {
-    const res = await fetch(
-      `${CORE_API_URL.replace(/\/+$/, '')}/ai-prompts?scope=${encodeURIComponent(PROMPT_SCOPE)}`,
-      { cache: 'no-store', headers: authHeaders },
-    );
+    const res = await fetch(`${coreApiUrl()}/ai-prompts?scope=${encodeURIComponent(PROMPT_SCOPE)}`, {
+      cache: 'no-store',
+      headers: authHeaders,
+    });
     if (!res.ok) return DEFAULT_PRODUCT_DESCRIPTION_PROMPT;
 
     const presets = (await res.json()) as { id: string; content: string }[];

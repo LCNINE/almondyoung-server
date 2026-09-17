@@ -428,6 +428,9 @@ export function setup(infra: SharedInfra) {
     dockerfile: 'apps/ai/Dockerfile',
     domainSlug: 'ai',
     port: 3070,
+    // 명시하지 않으면 SST 기본값 0.5GB 라, 나눠 쓰기 싫어서 뺀 앱이 번들의 절반을 받는다.
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
     priority: 148,
     link: [db],
     loadBalancerHealth: {

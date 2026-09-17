@@ -1,4 +1,7 @@
-const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL ?? 'http://localhost:3080';
+import { urlEnv } from '../../platform/env';
+
+/** compose.ts 와 같은 이유로 함수다 — 모듈 상수는 ConfigModule 보다 먼저 평가된다. */
+const fileServiceUrl = () => urlEnv('FILE_SERVICE_URL', 'http://localhost:3010');
 
 /**
  * 한 번의 Claude 호출에 넣는 이미지 장수. Claude API 는 한 요청에 이미지가 20장을
@@ -51,7 +54,7 @@ function sniffMediaType(buffer: Buffer): SupportedMediaType | null {
 }
 
 async function loadImage(fileId: string): Promise<LoadedImage> {
-  const res = await fetch(`${FILE_SERVICE_URL.replace(/\/+$/, '')}/files/public/${encodeURIComponent(fileId)}`);
+  const res = await fetch(`${fileServiceUrl()}/files/public/${encodeURIComponent(fileId)}`);
   if (!res.ok) {
     throw new Error(`이미지를 불러오지 못했습니다. (fileId: ${fileId}, status: ${res.status})`);
   }

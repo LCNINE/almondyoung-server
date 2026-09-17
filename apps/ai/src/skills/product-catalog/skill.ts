@@ -6,6 +6,12 @@ import { RequestAbortedError, core, normalizeFileName, toolError, uploadToFileSe
 /** 상품 이미지는 이 컨텍스트로 올라간다 (file_contexts 시드와 같은 값). */
 const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
 
+/**
+ * 상세설명 추출을 동시에 몇 청크까지 돌릴지. 청크 하나가 원본 20MB + base64 사본을
+ * 물고 있어서 이 값이 곧 메모리 상한이다. 3이면 한 번에 24장까지 처리된다.
+ */
+const MAX_PARALLEL_EXTRACTS = 3;
+
 function str(input: unknown, key: string): string | null {
   const v = (input as Record<string, unknown>)?.[key];
   return typeof v === 'string' && v.length > 0 ? v : null;
@@ -302,7 +308,8 @@ const writeDescription: SkillTool = {
         fileIds: {
           type: 'array',
           items: { type: 'string' },
-          description: 'upload_product_image 가 돌려준 fileId 목록. 상세컷이 많을수록 본문이 충실해진다.',
+          description:
+            'upload_product_image 가 돌려준 fileId 목록. 장수 제한은 없다 — 안에서 나눠 분석한 뒤 합친다. 상세컷이 많을수록 본문이 충실해진다.',
         },
         productName: { type: 'string', description: '상품명' },
         hint: {
@@ -321,10 +328,16 @@ const writeDescription: SkillTool = {
 
     // 정적 import 로 바꾸지 말 것 — 이 스킬 파일과 product-description 이 서로를
     // 참조해서(타입은 위에서 type-only 로 끊었다) 정적으로 엮으면 순환이 생긴다.
-    const [{ getAnthropicClient }, { extractProductFacts }, { composeProductDescription }] = await Promise.all([
+    const [
+      { getAnthropicClient },
+      { extractProductFacts },
+      { composeProductDescription },
+      { IMAGES_PER_CHUNK, chunkFileIds, mergeExtractResults },
+    ] = await Promise.all([
       import('../../product-description/services/anthropic'),
       import('../../product-description/services/extract'),
       import('../../product-description/services/compose'),
+      import('@packages/product-description'),
     ]);
 
     let client: Awaited<ReturnType<typeof getAnthropicClient>>;
@@ -334,17 +347,35 @@ const writeDescription: SkillTool = {
       return toolError((err as Error).message ?? 'AI 설명 생성을 쓸 수 없다');
     }
 
-    const extracted = await extractProductFacts(
-      client,
-      fileIds.filter((id): id is string => typeof id === 'string' && id.length > 0),
-      ctx.signal,
-    );
-    if (ctx.signal?.aborted) throw new RequestAbortedError();
-    if (!extracted.ok) {
-      const body = (await extracted.json().catch(() => ({}))) as { message?: string };
-      return toolError(body.message ?? `상세 정보 추출 실패 (${extracted.status})`);
+    // 추출은 한 번에 8장까지다. 어드민 화면과 같이 나눠 보내고 합친다 —
+    // 통째로 넘기면 9장부터 항상 400 이고, 모델은 스스로 고칠 방법이 없다.
+    //
+    // 청크는 병렬로 돈다. 순차로 돌리면 9장에서 러너의 40초 예산을 넘어
+    // "시간이 오래 걸려 멈췄습니다" 로 턴이 끊긴다 (2026-09-17 실측).
+    //
+    // 단 한 번에 도는 청크 수는 묶는다. fileIds 는 모델이 주는 배열이라 개수
+    // 상한이 없어서, 통째로 Promise.all 하면 메모리가 장수에 비례해 튄다.
+    const ids = fileIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const chunks = chunkFileIds(ids, IMAGES_PER_CHUNK);
+
+    const responses: Response[] = [];
+    for (let i = 0; i < chunks.length; i += MAX_PARALLEL_EXTRACTS) {
+      const wave = chunks.slice(i, i + MAX_PARALLEL_EXTRACTS);
+      responses.push(...(await Promise.all(wave.map((chunk) => extractProductFacts(client, chunk, ctx.signal)))));
+      if (ctx.signal?.aborted) throw new RequestAbortedError();
     }
-    const { result } = (await extracted.json()) as { result: ComposeRequest['result'] };
+
+    const extractedChunks: ComposeRequest['result'][] = [];
+    for (const extracted of responses) {
+      if (!extracted.ok) {
+        const body = (await extracted.json().catch(() => ({}))) as { message?: string };
+        return toolError(body.message ?? `상세 정보 추출 실패 (${extracted.status})`);
+      }
+      const { result } = (await extracted.json()) as { result: ComposeRequest['result'] };
+      extractedChunks.push(result);
+    }
+
+    const result = mergeExtractResults(extractedChunks);
 
     const composed = await composeProductDescription(
       client,

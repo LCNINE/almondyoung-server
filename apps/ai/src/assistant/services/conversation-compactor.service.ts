@@ -3,18 +3,19 @@ import { AssistantChatRepository, type MessageRow } from '../repositories/assist
 import { estimateTokens } from '../lib/conversation-size';
 import { restoreConversation, type Message } from '../lib/conversation';
 import { getOpenAiClient } from '../lib/openai';
+import { positiveNumberEnv } from '../../platform/env';
 
 /**
  * 이 크기를 넘으면 접는다. 대화는 매 턴 통째로 다시 실리므로, 접지 않으면 입력 토큰이
  * 턴 수에 비례해 늘고 비용도 같이 는다.
  */
-const THRESHOLD_TOKENS = Number(process.env.ASSISTANT_COMPACT_THRESHOLD_TOKENS ?? 12_000);
+const THRESHOLD_TOKENS = positiveNumberEnv('ASSISTANT_COMPACT_THRESHOLD_TOKENS', 12_000);
 
 /**
  * 원문으로 남길 최근 메시지 수. 방금 한 말과 그 결과는 요약으로 뭉개면 안 된다 —
  * 직전 턴에 올린 이미지의 fileId 나 방금 만든 상품의 id 를 다음 턴이 곧바로 쓴다.
  */
-const KEEP_RECENT = Number(process.env.ASSISTANT_COMPACT_KEEP_RECENT ?? 6);
+const KEEP_RECENT = positiveNumberEnv('ASSISTANT_COMPACT_KEEP_RECENT', 6);
 
 /**
  * 요약에 쓰는 모델. 옮겨적기에 가까운 작업이라 본 모델보다 싼 것으로 충분하다 —

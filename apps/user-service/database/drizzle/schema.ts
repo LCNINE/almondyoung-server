@@ -641,12 +641,6 @@ export const blacklistsRelations = relations(blacklists, ({ one }) => ({
 /*───────────────────────────
  * TABLES ONLY SCHEMA (enum 제외)
  *──────────────────────────*/
-/*───────────────────────────
- * AI 어시스턴트 대화
- *
- * 어드민의 AI 어시스턴트가 나눈 대화를 남긴다. 사용자에게 귀속되는 기록이라
- * 여기 둔다 — admin-web 은 VPC 밖 Lambda 라 DB 에 직접 붙지 못한다.
- *──────────────────────────*/
 export const userServiceTables = {
   users,
   roles,
