@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { API } from '@opensearch-project/opensearch';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { ProductSearchItemDto, ProductSearchResponseDto } from './dto/product-search-response.dto';
 import { OpenSearchService } from './opensearch.service';
@@ -291,20 +292,31 @@ export class ProductIndexService implements OnModuleInit {
       // 벡터 보충 대상(20건 미만)은 전체 키워드 후보를 모은 뒤 RRF에 넘긴다.
       const candidateLimit = Math.min(this.keywordResultPoolLimit, Math.max(VECTOR_FILL_KEYWORD_LIMIT, from + size));
       // 건수는 strict/fallback의 합집합으로 구하고 기존 5000건 상한을 유지한다.
-      const [strictResponse, countResponse] = await Promise.all([
-        this.executeSearch({ index, query: strictQuery, sort, from: 0, size: candidateLimit, fetchSource: false }),
-        this.executeSearch({
-          index,
-          query: { bool: { should: [strictQuery, fallbackQuery], minimum_should_match: 1 } },
-          sort: [],
-          from: 0,
-          size: 0,
-          fetchSource: false,
-        }),
-      ]);
+      const strictResponse = await this.executeSearch({
+        index,
+        query: strictQuery,
+        sort,
+        from: 0,
+        size: candidateLimit,
+        fetchSource: false,
+        // global 집계 안에서 동일한 필터를 포함한 합집합을 센다. 후보 정렬은 strict 그대로다.
+        // 검색마다 순위/건수 요청을 동시에 보내 작은 노드의 큐를 늘리지 않게 한 요청에 묶는다.
+        aggregations: {
+          keyword_pool: {
+            global: {},
+            aggs: {
+              matches: { filter: { bool: { should: [strictQuery, fallbackQuery], minimum_should_match: 1 } } },
+            },
+          },
+        },
+      });
       const strictHits = strictResponse.body.hits.hits as any[];
       const strictTotal = this.extractTotal(strictResponse.body.hits.total);
-      keywordMatchCount = Math.min(this.keywordResultPoolLimit, this.extractTotal(countResponse.body.hits.total));
+      const keywordTotal = strictResponse.body.aggregations?.keyword_pool?.matches?.doc_count;
+      if (typeof keywordTotal !== 'number') {
+        throw new Error('Missing keyword match count aggregation');
+      }
+      keywordMatchCount = Math.min(this.keywordResultPoolLimit, keywordTotal);
       let keywordHits = strictHits;
       if (strictTotal < candidateLimit && keywordMatchCount > strictTotal) {
         const fallbackResponse = await this.executeSearch({
@@ -556,6 +568,7 @@ export class ProductIndexService implements OnModuleInit {
     from: number;
     size: number;
     fetchSource?: boolean;
+    aggregations?: API.Search_RequestBody['aggs'];
   }): Promise<any> {
     const client = this.openSearchService.getClient();
     return client.search({
@@ -567,6 +580,7 @@ export class ProductIndexService implements OnModuleInit {
         size: params.size,
         track_total_hits: true,
         _source: params.fetchSource === false ? false : SEARCH_ITEM_SOURCE_FIELDS,
+        ...(params.aggregations ? { aggs: params.aggregations } : {}),
       },
     });
   }

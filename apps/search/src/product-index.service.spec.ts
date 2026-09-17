@@ -26,6 +26,15 @@ function makeAnalyzeMock(tokens?: string[]) {
   });
 }
 
+function searchResponse(hits: any[], total = hits.length, keywordTotal = total) {
+  return {
+    body: {
+      hits: { hits, total: { value: total } },
+      aggregations: { keyword_pool: { matches: { doc_count: keywordTotal } } },
+    },
+  };
+}
+
 function makeOpenSearchClient(
   overrides: Partial<{
     exists: any;
@@ -46,7 +55,7 @@ function makeOpenSearchClient(
     },
     update: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
-    search: jest.fn().mockResolvedValue({ body: { hits: { hits: [], total: { value: 0 } } } }),
+    search: jest.fn().mockResolvedValue(searchResponse([])),
     mget: jest.fn(),
     ...overrides,
   };
@@ -229,11 +238,11 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
     );
   });
 
-  it('with keyword: ranks strict hits by review and counts without sorting', async () => {
+  it('with keyword: ranks strict hits by review and counts their union in one request', async () => {
     await service.searchProducts({ q: '글루', sort: 'review', page: 1, size: 20 } as any);
 
-    // strict 후보와 정렬 없는 합집합 건수를 따로 구한다.
-    expect(client.search).toHaveBeenCalledTimes(2);
+    // strict 정렬과 합집합 건수 집계를 한 요청에서 구한다.
+    expect(client.search).toHaveBeenCalledTimes(1);
     for (const [callArg] of client.search.mock.calls.filter(([arg]) => arg.body.size > 0)) {
       expect(callArg.body.sort).toEqual([
         { review_sort_score: { order: 'desc', missing: 0 } },
@@ -366,8 +375,10 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
   it('union count retains the original fallback query including function_score', async () => {
     await service.searchProducts({ q: '글루', sort: 'relevance', page: 1, size: 20 } as any);
 
-    const [, fallbackCallArg] = client.search.mock.calls;
-    expect(fallbackCallArg[0].body.query.bool.should[1]).toHaveProperty('function_score');
+    const [fallbackCallArg] = client.search.mock.calls;
+    expect(fallbackCallArg[0].body.aggs.keyword_pool.aggs.matches.filter.bool.should[1]).toHaveProperty(
+      'function_score',
+    );
   });
 
   it('sort is by _score desc then updated_at desc', async () => {
@@ -507,8 +518,10 @@ describe('ProductIndexService.searchProducts - nori collapse guard', () => {
 
     await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
 
-    const [, fallbackCall] = client.search.mock.calls;
-    const fallbackShould = fallbackCall[0].body.query.bool.should[1].function_score.query.bool.must[0].bool.should;
+    const [fallbackCall] = client.search.mock.calls;
+    const fallbackShould =
+      fallbackCall[0].body.aggs.keyword_pool.aggs.matches.filter.bool.should[1].function_score.query.bool.must[0].bool
+        .should;
     expect(fallbackShould.some((clause: any) => clause.multi_match !== undefined)).toBe(true);
   });
 
@@ -533,9 +546,9 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
     client.search = jest.fn().mockImplementation((params: any) => {
       // knn, 건수 조회, strict 후보를 구분한다.
       const isKnn = JSON.stringify(params.body.query).includes('"knn"');
-      if (isKnn) return Promise.resolve({ body: { hits: { hits: vectorHits, total: { value: vectorHits.length } } } });
+      if (isKnn) return Promise.resolve(searchResponse(vectorHits));
       const hits = params.body.size === 0 ? [] : keywordHits.slice(0, params.body.size);
-      return Promise.resolve({ body: { hits: { hits, total: { value: keywordHits.length } } } });
+      return Promise.resolve(searchResponse(hits, keywordHits.length));
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -649,7 +662,7 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
       const body = JSON.stringify(params.body);
       const keyword = Object.keys(hitsByKeyword).find((k) => body.includes(k));
       const hits = keyword ? hitsByKeyword[keyword] : [];
-      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+      return Promise.resolve(searchResponse(hits));
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -681,10 +694,10 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
       const body = JSON.stringify(params.body);
       if (body.includes('"knn"')) {
         // 벡터는 무관한 상품을 끌어온다.
-        return Promise.resolve({ body: { hits: { hits: [hit('noise')], total: { value: 1 } } } });
+        return Promise.resolve(searchResponse([hit('noise')]));
       }
       const hits = body.includes('니치반') ? [hit('a')] : [];
-      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+      return Promise.resolve(searchResponse(hits));
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -716,7 +729,7 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
   it('결과가 있으면 교정을 시도조차 하지 않는다', async () => {
     const spell = makeSpellCorrectionService('니치반');
     const client = makeOpenSearchClient();
-    client.search = jest.fn().mockResolvedValue({ body: { hits: { hits: [hit('a')], total: { value: 1 } } } });
+    client.search = jest.fn().mockResolvedValue(searchResponse([hit('a')]));
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductIndexService,
@@ -769,11 +782,11 @@ describe('ProductIndexService.searchProducts - 키워드 0건일 때 벡터·계
       const body = JSON.stringify(params.body.query);
       if (body.includes('"knn"')) {
         knnCalls.push(params);
-        return Promise.resolve({ body: { hits: { hits: vectorHits, total: { value: vectorHits.length } } } });
+        return Promise.resolve(searchResponse(vectorHits));
       }
       const matched = Object.keys(keywordHitsFor).find((keyword) => body.includes(keyword));
       const hits = matched ? keywordHitsFor[matched] : [];
-      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+      return Promise.resolve(searchResponse(hits));
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -840,9 +853,7 @@ describe('ProductIndexService.searchProducts - page source loading', () => {
       ],
     }).compile();
     const hits = Array.from({ length: 25 }, (_, i) => ({ _id: `p${i}`, _score: 100 - i }));
-    client.search.mockImplementation(async ({ body }) => ({
-      body: { hits: { hits: hits.slice(0, body.size), total: { value: hits.length } } },
-    }));
+    client.search.mockImplementation(async ({ body }) => searchResponse(hits.slice(0, body.size), hits.length));
     client.mget.mockImplementation(async ({ body }) => ({
       body: {
         docs: body.docs
@@ -950,7 +961,7 @@ describe('ProductIndexService.searchProducts - bounded keyword candidates', () =
           : body.query.bool?.must_not
             ? fallback.filter((item) => !strict.some((primary) => primary._id === item._id))
             : strict;
-      return { body: { hits: { hits: candidates.slice(0, body.size), total: { value: candidates.length } } } };
+      return searchResponse(candidates.slice(0, body.size), candidates.length, union.length);
     });
     const service = new ProductIndexService(
       makeOpenSearchService(client) as any,
@@ -1014,5 +1025,64 @@ describe('ProductIndexService.searchProducts - bounded keyword candidates', () =
     const { service } = await setup(strict, []);
     const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 2, size: 20 });
     expect(result.items.map((item) => item.productId)).toEqual(strict.slice(20).map((item) => item._id));
+  });
+});
+
+describe('ProductIndexService.searchProducts - global count scope', () => {
+  function setup() {
+    const client = makeOpenSearchClient();
+    const service = new ProductIndexService(
+      makeOpenSearchService(client) as any,
+      makeConfigService() as any,
+      makeEmbeddingService() as any,
+      makeSpellCorrectionService() as any,
+    );
+    return { service, client };
+  }
+
+  it.each([false, true])(
+    'keeps visibility, category, brand and price filters inside global count (member=%s)',
+    async (includeMembersOnly) => {
+      const { service, client } = setup();
+      await service.searchProducts({
+        q: '네일',
+        sort: 'relevance',
+        page: 1,
+        size: 20,
+        categoryIds: ['category'],
+        brands: ['brand'],
+        minPrice: 100,
+        maxPrice: 200,
+        includeMembersOnly,
+      });
+      expect(client.search).toHaveBeenCalledTimes(1);
+      const body = client.search.mock.calls[0][0].body;
+      const union = body.aggs.keyword_pool.aggs.matches.filter.bool;
+      expect(union.minimum_should_match).toBe(1);
+      for (const query of union.should) {
+        const filters = query.function_score.query.bool.filter;
+        expect(filters).toEqual(
+          expect.arrayContaining([
+            { term: { status: 'active' } },
+            { terms: { category_ids: ['category'] } },
+            { terms: { 'brand.keyword': ['brand'] } },
+            { range: { max_base_price: { gte: 100 } } },
+            { range: { min_base_price: { lte: 200 } } },
+          ]),
+        );
+        const membersFilter = { bool: { must_not: [{ term: { is_visible_to_members_only: true } }] } };
+        if (includeMembersOnly) expect(filters).not.toContainEqual(membersFilter);
+        else expect(filters).toContainEqual(membersFilter);
+      }
+      expect(union.should[0]).toEqual(body.query);
+    },
+  );
+
+  it('does not turn a missing count aggregation into a zero-result response', async () => {
+    const { service, client } = setup();
+    client.search.mockResolvedValue({ body: { hits: { hits: [], total: { value: 0 } } } });
+    await expect(service.searchProducts({ q: '네일', sort: 'relevance', page: 1, size: 20 })).rejects.toThrow(
+      'Missing keyword match count aggregation',
+    );
   });
 });
