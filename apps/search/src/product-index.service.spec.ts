@@ -899,7 +899,7 @@ describe('ProductIndexService.searchProducts - page source loading', () => {
       score: 90,
     });
     for (const [request] of client.search.mock.calls) {
-      expect(request.body).toMatchObject({ _source: false, track_total_hits: true });
+      expect(request.body).toMatchObject({ _source: false, track_total_hits: false });
       expect(request.body.size).toBeLessThanOrEqual(20);
     }
     expect(client.mget).toHaveBeenCalledTimes(1);
@@ -961,7 +961,10 @@ describe('ProductIndexService.searchProducts - bounded keyword candidates', () =
           : body.query.bool?.must_not
             ? fallback.filter((item) => !strict.some((primary) => primary._id === item._id))
             : strict;
-      return searchResponse(candidates.slice(0, body.size), candidates.length, union.length);
+      const response = searchResponse(candidates.slice(0, body.size), candidates.length, union.length);
+      // OpenSearch omits hits.total when counting is disabled.
+      if (body.track_total_hits === false) Reflect.deleteProperty(response.body.hits, 'total');
+      return response;
     });
     const service = new ProductIndexService(
       makeOpenSearchService(client) as any,
@@ -993,6 +996,19 @@ describe('ProductIndexService.searchProducts - bounded keyword candidates', () =
     expect(result.keywordMatchCount).toBe(count);
     expect(result.pagination.total).toBe(20);
     expect(embedding.embedQuery).toHaveBeenCalledTimes(count === 19 ? 1 : 0);
+  });
+
+  it.each([0, 19, 20, 21])('fills candidates without hits.total at strict count %i', async (count) => {
+    const strict = Array.from({ length: count }, (_, i) => hit(`s${i}`));
+    const fallback = Array.from({ length: 25 }, (_, i) => hit(`f${i}`));
+    const { service, client } = await setup(strict, fallback);
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 1, size: 20 });
+    expect(result.items.map((item) => item.productId)).toEqual(
+      [...strict, ...fallback].slice(0, 20).map((item) => item._id),
+    );
+    expect(result.pagination.total).toBe(count + fallback.length);
+    expect(client.search).toHaveBeenCalledTimes(count < 20 ? 2 : 1);
+    expect(client.search.mock.calls.every(([request]) => request.body.track_total_hits === false)).toBe(true);
   });
 
   it('fetches fallback-only matches when strict is empty without losing their scores', async () => {

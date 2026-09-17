@@ -299,6 +299,7 @@ export class ProductIndexService implements OnModuleInit {
         from: 0,
         size: candidateLimit,
         fetchSource: false,
+        trackTotalHits: false,
         // global 집계 안에서 동일한 필터를 포함한 합집합을 센다. 후보 정렬은 strict 그대로다.
         // 검색마다 순위/건수 요청을 동시에 보내 작은 노드의 큐를 늘리지 않게 한 요청에 묶는다.
         aggregations: {
@@ -311,14 +312,14 @@ export class ProductIndexService implements OnModuleInit {
         },
       });
       const strictHits = strictResponse.body.hits.hits as any[];
-      const strictTotal = this.extractTotal(strictResponse.body.hits.total);
       const keywordTotal = strictResponse.body.aggregations?.keyword_pool?.matches?.doc_count;
       if (typeof keywordTotal !== 'number') {
         throw new Error('Missing keyword match count aggregation');
       }
       keywordMatchCount = Math.min(this.keywordResultPoolLimit, keywordTotal);
       let keywordHits = strictHits;
-      if (strictTotal < candidateLimit && keywordMatchCount > strictTotal) {
+      // 후보가 덜 찬 경우에만 fallback을 보충한다. 전체 건수는 위 집계에서 이미 계산한다.
+      if (strictHits.length < candidateLimit && keywordMatchCount > strictHits.length) {
         const fallbackResponse = await this.executeSearch({
           index,
           query: { bool: { must: [fallbackQuery], must_not: [strictQuery] } },
@@ -326,6 +327,7 @@ export class ProductIndexService implements OnModuleInit {
           from: 0,
           size: candidateLimit - strictHits.length,
           fetchSource: false,
+          trackTotalHits: false,
         });
         keywordHits = this.mergeHitsWithPriority(strictHits, fallbackResponse.body.hits.hits, candidateLimit);
       }
@@ -568,6 +570,7 @@ export class ProductIndexService implements OnModuleInit {
     from: number;
     size: number;
     fetchSource?: boolean;
+    trackTotalHits?: boolean;
     aggregations?: API.Search_RequestBody['aggs'];
   }): Promise<any> {
     const client = this.openSearchService.getClient();
@@ -580,7 +583,7 @@ export class ProductIndexService implements OnModuleInit {
         sort: params.sort,
         from: params.from,
         size: params.size,
-        track_total_hits: true,
+        track_total_hits: params.trackTotalHits ?? true,
         _source: params.fetchSource === false ? false : SEARCH_ITEM_SOURCE_FIELDS,
         ...(params.aggregations ? { aggs: params.aggregations } : {}),
       },
