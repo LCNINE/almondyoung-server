@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { ScanProvider } from './ScanProvider';
 import { useScanner } from './useScanner';
 import { BarcodeInput } from './BarcodeInput';

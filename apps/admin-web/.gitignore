@@ -46,3 +46,6 @@ next-env.d.ts
 .cursor/rules/wms_pim.mdc
 .cursor/rules/medusa.mdc
 .env*.local
+
+# Generated authenticated demo guide bundle
+/demo-guides/

@@ -18,6 +18,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid'; // uuid v7 지원 라이브러리 사용
 import type { AffectedLine } from '@packages/domain-types';
+import type { DemoPersistedOrderLine } from './demo/demo-order.provider';
 
 export const eventLogs = pgTable(
   'event_logs',
@@ -402,6 +403,7 @@ export const demoRuns = pgTable(
     requestedCount: integer('requested_count').notNull(),
     variantId: uuid('variant_id').notNull(),
     quantity: integer('quantity').notNull(),
+    requestInput: jsonb('request_input').$type<Record<string, unknown>>(),
     requestedBy: varchar('requested_by', { length: 255 }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -427,6 +429,7 @@ export const demoRunItems = pgTable(
     sequence: integer('sequence').notNull(),
     externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
     orderId: uuid('order_id').notNull(),
+    lines: jsonb('lines').$type<DemoPersistedOrderLine[]>(),
     status: varchar('status', { length: 30 }).notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     errorMessage: text('error_message'),

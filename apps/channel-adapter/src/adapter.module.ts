@@ -107,6 +107,7 @@ import { DemoChannelDispatchMock } from './demo/demo-channel-dispatch.mock';
 import { DEMO_RUN_REPOSITORY, DemoRunService } from './demo/demo-run.service';
 import { DemoRunRepository } from './demo/demo-run.repository';
 import { DemoDispatchOutcomeReader } from './demo/demo-dispatch-outcome.reader';
+import { DemoCatalogClient } from './demo/demo-catalog.client';
 
 const IS_SAFE_DEMO_MODE = isSafeDemoMode(process.env);
 
@@ -331,6 +332,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           DemoModeGuard,
           DemoChannelDispatchMock,
           DemoDispatchOutcomeReader,
+          DemoCatalogClient,
           DemoRunRepository,
           { provide: DEMO_RUN_REPOSITORY, useExisting: DemoRunRepository },
           DemoRunService,
