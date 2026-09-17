@@ -1,0 +1,3 @@
+# Downloaded Windows CI artifacts are distributed separately from guide source.
+/output/installers/
+/output/distribution/

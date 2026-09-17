@@ -1,29 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
 import { Button } from '@/components/ui/button';
+import { DemoOrderForm } from './demo-order-form';
+import {
+  retryRunInput,
+  runWithActionLock,
+  type RunInput,
+  type CatalogItem,
+  type PracticeInput,
+} from './demo-input';
 
-type CatalogItem = {
-  variantId: string;
-  productName: string;
-  sku: string;
-  availableQuantity: number;
-  unitPrice: number;
-};
 type Readiness = {
   ready: boolean;
   fixtureVersion: string;
+  coverage?: {
+    totalSkus: number;
+    activeSkus: number;
+    withoutSupplier: number;
+    withoutBarcode: number;
+    imported: {
+      sourceSkuCount: number;
+      importedSkuCount: number;
+      missingSkuCount: number;
+      importedAt: string;
+    } | null;
+  };
   checks: { key: string; ready: boolean; actual: number; expected: number }[];
-};
-type RunInput = {
-  requestId: string;
-  scenario: 'happy_path' | 'inventory_shortage';
-  count: number;
-  variantId?: string;
-  quantity: number;
 };
 type RunItem = {
   id: string;
@@ -31,11 +37,17 @@ type RunItem = {
   externalOrderId: string;
   status: string;
   error: string | null;
+  lines?: {
+    orderItemId: string;
+    productName: string;
+    sku: string;
+    quantity: number;
+  }[];
 };
 type Run = {
   id: string;
   requestId: string;
-  scenario: string;
+  scenario: RunInput['scenario'];
   status: string;
   count: number;
   quantity: number;
@@ -43,6 +55,10 @@ type Run = {
   createdAt: string;
   summary: { requested: number; enqueued: number; failed: number };
   items?: RunItem[];
+  input?: Pick<
+    RunInput,
+    'mode' | 'variantIds' | 'productsPerOrder' | 'minQuantity' | 'maxQuantity'
+  >;
 };
 const PENDING_KEY = 'demo-order-request-v1';
 
@@ -55,7 +71,10 @@ class DemoRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, body?: RunInput): Promise<T> {
+async function request<T>(
+  path: string,
+  body?: RunInput | PracticeInput
+): Promise<T> {
   const response = await fetchWithRefresh(
     `/api/demo/${path}`,
     body
@@ -88,18 +107,21 @@ const statusLabels: Record<string, string> = {
 
 export function DemoConsole() {
   const queryClient = useQueryClient();
-  const [scenario, setScenario] = useState<RunInput['scenario']>('happy_path');
-  const [count, setCount] = useState(5);
-  const [quantity, setQuantity] = useState(1);
-  const [variantId, setVariantId] = useState('');
+  const actionLock = useRef(false);
   const [pending, setPending] = useState<RunInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [practicePending, setPracticePending] = useState<PracticeInput | null>(
+    null
+  );
+  const [practiceResult, setPracticeResult] = useState<{
+    receiptId: string;
+    warehouseName: string;
+    locationCode: string;
+    demandPrepared: boolean;
+    lines: { skuId: string; name: string; sku: string; quantity: number }[];
+  } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const catalog = useQuery({
-    queryKey: ['demo', 'catalog'],
-    queryFn: () => request<{ items: CatalogItem[] }>('core/catalog'),
-  });
   const readiness = useQuery({
     queryKey: ['demo', 'readiness'],
     queryFn: () => request<Readiness>('core/readiness'),
@@ -121,44 +143,76 @@ export function DemoConsole() {
     try {
       const saved = sessionStorage.getItem(PENDING_KEY);
       if (saved) setPending(JSON.parse(saved));
+      const practice = sessionStorage.getItem('demo-practice-request-v1');
+      if (practice) setPracticePending(JSON.parse(practice));
     } catch {
       setError('이전 요청을 복원하지 못했습니다. 생성 이력을 확인해 주세요.');
     }
   }, []);
 
   async function submit(existing?: RunInput) {
-    const payload = existing ??
-      pending ?? {
-        requestId: crypto.randomUUID(),
-        scenario,
-        count,
-        quantity,
-        ...(variantId ? { variantId } : {}),
-      };
-    setError(null);
-    try {
-      // Save before transport. A timeout never silently creates a second request identity.
-      sessionStorage.setItem(PENDING_KEY, JSON.stringify(payload));
-      setPending(payload);
-      setBusy(true);
-      const result = await request<Run>('channel/runs', payload);
-      setSelected(result.id);
-      sessionStorage.removeItem(PENDING_KEY);
-      setPending(null);
-      await queryClient.invalidateQueries({ queryKey: ['demo', 'runs'] });
-    } catch (e) {
-      if (e instanceof DemoRequestError && e.status === 400) {
+    const payload = existing ?? pending;
+    if (!payload) return;
+    await runWithActionLock(actionLock, async () => {
+      setError(null);
+      try {
+        // Save before transport. A timeout never silently creates a second request identity.
+        sessionStorage.setItem(PENDING_KEY, JSON.stringify(payload));
+        setPending(payload);
+        setBusy(true);
+        const result = await request<Run>('channel/runs', payload);
+        setSelected(result.id);
         sessionStorage.removeItem(PENDING_KEY);
         setPending(null);
+        await queryClient.invalidateQueries({ queryKey: ['demo', 'runs'] });
+      } catch (e) {
+        if (e instanceof DemoRequestError && e.status === 400) {
+          sessionStorage.removeItem(PENDING_KEY);
+          setPending(null);
+        }
+        setError(
+          e instanceof Error
+            ? e.message
+            : '요청 결과를 확인하지 못했습니다. 같은 요청으로 재확인해 주세요.'
+        );
+      } finally {
+        setBusy(false);
       }
-      setError(
-        e instanceof Error
-          ? e.message
-          : '요청 결과를 확인하지 못했습니다. 같은 요청으로 재확인해 주세요.'
-      );
-    } finally {
-      setBusy(false);
-    }
+    });
+  }
+
+  async function prepare(input: PracticeInput) {
+    await runWithActionLock(actionLock, async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        sessionStorage.setItem(
+          'demo-practice-request-v1',
+          JSON.stringify(input)
+        );
+        setPracticePending(input);
+        const result = await request<NonNullable<typeof practiceResult>>(
+          'core/practice',
+          input
+        );
+        setPracticeResult(result);
+        setPracticePending(null);
+        sessionStorage.removeItem('demo-practice-request-v1');
+        await queryClient.invalidateQueries({ queryKey: ['demo'] });
+      } catch (e) {
+        if (e instanceof DemoRequestError && e.status === 400) {
+          setPracticePending(null);
+          sessionStorage.removeItem('demo-practice-request-v1');
+        }
+        setError(
+          e instanceof Error
+            ? e.message
+            : '보충 결과를 확인하지 못했습니다. 같은 요청으로 재확인해 주세요.'
+        );
+      } finally {
+        setBusy(false);
+      }
+    });
   }
 
   const shipments = useQuery({
@@ -207,12 +261,8 @@ export function DemoConsole() {
       }>('channel/dispatch-outcomes?limit=20'),
     refetchInterval: 10000,
   });
-  const products = catalog.data?.items ?? [];
-  const fieldClass =
-    'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100';
   const problems = [
     readiness.error,
-    catalog.error,
     runs.error,
     detail.error,
     shipments.error,
@@ -233,6 +283,11 @@ export function DemoConsole() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <a href="/demo/manual/README" target="_blank" rel="noreferrer">
+              직원 사용 가이드
+            </a>
+          </Button>
           <Button variant="outline" asChild>
             <Link href="/inventory/replenishment">발주 추천</Link>
           </Button>
@@ -291,107 +346,97 @@ export function DemoConsole() {
         </div>
         {!readiness.isLoading && !readiness.data?.ready && (
           <p className="mt-3 text-sm text-amber-800">
-            기준 데이터 준비가 필요합니다. 환경 관리자가 시연 데이터 초기화를
+            기준 데이터 준비가 필요합니다. 환경 관리자가 시연 기준 데이터 준비를
             완료하면 주문을 생성할 수 있습니다.
           </p>
         )}
       </section>
-      <section className="rounded-xl border p-5">
-        <h2 className="font-semibold">주문 생성</h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span>시나리오</span>
-            <select
-              value={scenario}
-              disabled={busy || !!pending}
-              onChange={(e) => {
-                setScenario(e.target.value as RunInput['scenario']);
-                setQuantity(e.target.value === 'inventory_shortage' ? 10 : 1);
-                setVariantId('');
-              }}
-              className={fieldClass}
-            >
-              <option value="happy_path">정상 출고</option>
-              <option value="inventory_shortage">
-                재고 부족 → 발주·입고 후 출고
-              </option>
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>상품</span>
-            <select
-              value={variantId}
-              disabled={busy || !!pending}
-              onChange={(e) => setVariantId(e.target.value)}
-              className={fieldClass}
-            >
-              <option value="">시나리오 기본 상품</option>
-              {products.map((item) => (
-                <option key={item.variantId} value={item.variantId}>
-                  {item.productName} · {item.sku} · 가용{' '}
-                  {item.availableQuantity}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>주문 수 (1–50)</span>
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={count}
-              disabled={busy || !!pending}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className={fieldClass}
-            />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>주문당 수량 (1–100)</span>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={quantity}
-              disabled={busy || !!pending}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className={fieldClass}
-            />
-          </label>
-        </div>
-        <p className="mt-3 text-sm text-slate-500">
-          가상 고객의 주문을 생성합니다. 결제·택배 접수·외부 알림은 발생하지
-          않습니다.
-        </p>
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-red-700">
-            {error}
+      {readiness.data?.coverage && (
+        <section className="rounded-xl bg-slate-50 p-5 text-sm">
+          {readiness.data.coverage.imported && (
+            <p className="mb-2">
+              운영 상품 복사:{' '}
+              {readiness.data.coverage.imported.importedSkuCount.toLocaleString()}{' '}
+              /{' '}
+              {readiness.data.coverage.imported.sourceSkuCount.toLocaleString()}{' '}
+              SKU · 누락 {readiness.data.coverage.imported.missingSkuCount}개 ·{' '}
+              {new Date(
+                readiness.data.coverage.imported.importedAt
+              ).toLocaleString('ko-KR')}
+            </p>
+          )}
+          <h2 className="font-semibold">전체 상품 기준정보</h2>
+          <p className="mt-2">
+            SKU {readiness.data.coverage.totalSkus.toLocaleString()}개 · 비삭제{' '}
+            {readiness.data.coverage.activeSkus.toLocaleString()}개 · 공급처
+            미연결 {readiness.data.coverage.withoutSupplier.toLocaleString()}개
+            · 바코드 없음{' '}
+            {readiness.data.coverage.withoutBarcode.toLocaleString()}개
           </p>
-        )}
-        {pending && (
-          <p className="mt-3 text-sm text-amber-800">
-            확인할 요청이 있습니다. 재확인은 기존 요청을 다시 조회·처리하며
-            주문을 중복 생성하지 않습니다.
+          <p className="mt-1 text-slate-500">
+            위의 준비 상태는 기본 교육 세트 기준입니다. 주문 후보에는 현재 주문
+            가능한 물리 상품만 표시합니다.
           </p>
-        )}
-        <Button
-          className="mt-4"
-          onClick={() => void submit()}
-          disabled={
-            busy ||
-            (!pending &&
-              (!readiness.data?.ready ||
-                !Number.isInteger(count) ||
-                count < 1 ||
-                count > 50 ||
-                !Number.isInteger(quantity) ||
-                quantity < 1 ||
-                quantity > 100))
-          }
+        </section>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg bg-red-50 p-3 text-sm text-red-700"
         >
-          {busy ? '처리 중…' : pending ? '같은 요청 재확인' : '주문 생성'}
-        </Button>
-      </section>
+          {error}
+        </p>
+      )}
+      <DemoOrderForm
+        ready={!!readiness.data?.ready}
+        busy={busy || !!practicePending}
+        pending={!!pending}
+        loadCatalog={(query) =>
+          request<{ items: CatalogItem[]; total: number }>(
+            `core/catalog?${query}`
+          )
+        }
+        onSubmit={(input) => void submit(input)}
+        onPrepare={(items, prepareDemand) =>
+          void prepare({ requestId: crypto.randomUUID(), items, prepareDemand })
+        }
+      />
+      {practicePending && (
+        <section className="rounded-xl border border-amber-300 p-5 text-sm">
+          <p>
+            보충 요청 결과를 확인해야 합니다. 같은 요청으로 재확인해도 재고를 두
+            번 더하지 않습니다.
+          </p>
+          <Button
+            className="mt-3"
+            disabled={busy}
+            onClick={() => void prepare(practicePending)}
+          >
+            보충 요청 재확인
+          </Button>
+        </section>
+      )}
+      {practiceResult && (
+        <section className="rounded-xl bg-emerald-50 p-5 text-sm">
+          <h2 className="font-semibold">실습 재고 준비 완료</h2>
+          <p className="mt-2">
+            {practiceResult.warehouseName} · {practiceResult.locationCode}
+          </p>
+          <p className="mt-1 break-all">입고번호: {practiceResult.receiptId}</p>
+          <ul className="mt-2 space-y-1">
+            {practiceResult.lines.map((line) => (
+              <li key={line.skuId}>
+                {line.name} · {line.sku} · +{line.quantity}개
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-slate-600">
+            {practiceResult.demandPrepared
+              ? '수요 이력 준비와 발주 추천 재계산을 완료했습니다.'
+              : '입고·적치를 완료했습니다.'}
+          </p>
+        </section>
+      )}
       <section className="rounded-xl border p-5">
         <h2 className="font-semibold">생성 이력</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -447,15 +492,7 @@ export function DemoConsole() {
               <Button
                 variant="outline"
                 disabled={busy || !!pending}
-                onClick={() =>
-                  void submit({
-                    requestId: detail.data!.requestId,
-                    scenario: detail.data!.scenario as RunInput['scenario'],
-                    count: detail.data!.count,
-                    quantity: detail.data!.quantity,
-                    variantId: detail.data!.variantId,
-                  })
-                }
+                onClick={() => void submit(retryRunInput(detail.data!))}
               >
                 실패 항목 재시도
               </Button>
@@ -473,6 +510,15 @@ export function DemoConsole() {
                 <span className="ml-3">
                   {statusLabels[item.status] ?? item.status}
                 </span>
+                {item.lines && (
+                  <ul className="mt-2 space-y-1 text-slate-600">
+                    {item.lines.map((line) => (
+                      <li key={line.orderItemId}>
+                        {line.productName} · {line.sku} · {line.quantity}개
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {item.error && (
                   <p className="mt-1 text-red-700">{item.error}</p>
                 )}

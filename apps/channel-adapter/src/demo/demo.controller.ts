@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -38,14 +39,22 @@ export class DemoController {
       salesChannel: 'medusa' as const,
       scenarios: ['happy_path', 'inventory_shortage'] as const,
       maxCount: 50,
+      modes: ['specified', 'random'] as const,
+      maxProductsPerOrder: 5,
+      maxQuantity: 100,
     };
   }
 
   @Post('runs')
   @HttpCode(202)
-  async createRun(@Body() body: unknown, @User('userId') actorId: string) {
+  async createRun(
+    @Body() body: unknown,
+    @User('userId') actorId: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('cookie') cookie?: string,
+  ) {
     const request = parseOrBadRequest(createDemoRunSchema, body);
-    return toDetail(await this.runs.create(request, actorId));
+    return toDetail(await this.runs.create(request, actorId, authorizationForCore(authorization, cookie)));
   }
 
   @Get('runs')
@@ -102,17 +111,35 @@ function toSummary(run: PersistedDemoRun) {
 function toDetail(run: PersistedDemoRun) {
   return {
     ...toSummary(run),
+    input: {
+      requestId: run.input.requestId,
+      scenario: run.input.scenario,
+      count: run.input.count,
+      mode: run.input.mode,
+      variantIds: run.input.variantIds,
+      productsPerOrder: run.input.productsPerOrder,
+      minQuantity: run.input.minQuantity,
+      maxQuantity: run.input.maxQuantity,
+    },
     items: run.items.map((item) => ({
       id: item.id,
       sequence: item.sequence,
       externalOrderId: item.externalOrderId,
       orderId: item.orderId,
+      lines: item.lines,
       status: item.status,
       attempts: item.attempts,
       error: item.error,
       enqueuedAt: item.enqueuedAt?.toISOString() ?? null,
     })),
   };
+}
+
+export function authorizationForCore(authorization?: string, cookie?: string): string {
+  if (authorization?.startsWith('Bearer ')) return authorization;
+  const encodedToken = cookie?.match(/(?:^|;\s*)accessToken=([^;]+)/)?.[1];
+  if (!encodedToken) throw new BadRequestException('Unable to forward the requesting admin authorization to Core');
+  return `Bearer ${decodeURIComponent(encodedToken)}`;
 }
 
 function summarize(run: PersistedDemoRun) {

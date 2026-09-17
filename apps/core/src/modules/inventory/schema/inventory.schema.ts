@@ -723,6 +723,7 @@ export const skuBarcodes = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    ixSkuBarcodesSkuId: index('ix_sku_barcodes_sku_id').on(t.skuId),
     ckPackingUnitPositive: check(
       'ck_sku_barcodes_packing_unit_positive',
       sql`${t.packingUnit} IS NULL OR ${t.packingUnit} >= 1`,

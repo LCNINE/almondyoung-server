@@ -52,6 +52,7 @@ import { ReplenishmentRulesService } from './rules/replenishment-rules.service';
     ReplenishmentRulesService,
   ],
   exports: [
+    DemandProfileRefresher,
     ReplenishmentSuggestionService,
     ReplenishmentSettingsReader,
     ReplenishmentRulesReader,

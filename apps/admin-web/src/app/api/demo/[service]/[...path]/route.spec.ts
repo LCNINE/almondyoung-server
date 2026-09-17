@@ -73,4 +73,26 @@ describe('demo console proxy', () => {
       (transport.mock.calls[0][1]?.headers as Headers).get('cookie')
     ).toContain('accessToken=token');
   });
+  it('allows authenticated same-origin practice preparation and rejects a cross-origin request', async () => {
+    process.env.ALMONDYOUNG_API_URL = 'https://core.almondyoung-next.com';
+    const transport = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+    expect(
+      (await POST(request('POST'), params('core', ['practice']))).status
+    ).toBe(200);
+    expect(transport.mock.calls[0][0]).toBe(
+      'https://core.almondyoung-next.com/demo/practice'
+    );
+    transport.mockClear();
+    expect(
+      (
+        await POST(
+          request('POST', 'https://unrelated.example'),
+          params('core', ['practice'])
+        )
+      ).status
+    ).toBe(403);
+    expect(transport).not.toHaveBeenCalled();
+  });
 });
