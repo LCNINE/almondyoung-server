@@ -13,6 +13,7 @@ import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { MembershipServiceClient } from '../../services/membership-service.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import { SlowRetryInboxError } from './slow-retry.error';
+import { isTransientMedusaError } from './transient-error';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type {
   CategoryChangedPayload,
@@ -671,11 +672,14 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   // 기본 스케줄(지수백오프 수 회, 약 1분)로는 절대 성공할 수 없다. 이 타입만 재시도 한도를
   // 늘리고 백오프를 1시간으로 캡해 하루 가까이 기다린다 — 그 사이 고객이 로그인하면 성공하고,
   // 끝내 실패하면 02:30 전체 정합화 크론이 백스톱이다.
+  //
+  // Medusa 5xx 도 같은 스케줄로 보낸다. 재기동 공백이 기본 30초를 넘기면 이벤트가 failed 로
+  // 굳는데, 되살리는 크론은 product-not-found 만 줍는다.
   private async handleFailure(event: InboxEventRecord, error: unknown): Promise<void> {
     const eventId = event.id;
     const errorMessage = this.getErrorMessage(error);
     const attempts = Number.isInteger(event.attempts) && event.attempts > 0 ? event.attempts : 1;
-    const slowRetry = error instanceof SlowRetryInboxError;
+    const slowRetry = error instanceof SlowRetryInboxError || isTransientMedusaError(error);
     const retryLimit = slowRetry ? this.slowMaxRetries : this.maxRetries;
 
     if (attempts >= retryLimit) {

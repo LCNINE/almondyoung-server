@@ -944,7 +944,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to ensure product type ${value}: ${fetchError.message}`);
-      throw new Error(`Medusa ensureProductType failed: ${fetchError.message}`);
+      throw new Error(`Medusa ensureProductType failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -998,7 +998,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to get default sales channel: ${fetchError.message}`);
-      throw new Error(`Medusa getDefaultSalesChannel failed: ${fetchError.message}`);
+      throw new Error(`Medusa getDefaultSalesChannel failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1071,7 +1071,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to find product by handle: ${handle}`, fetchError.message);
-      throw new Error(`Medusa findProductByHandle failed: ${fetchError.message}`);
+      throw new Error(`Medusa findProductByHandle failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1092,7 +1092,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to create Medusa product: ${payload.title}`, fetchError.message);
-      throw new Error(`Medusa createProduct failed: ${fetchError.message}`);
+      throw new Error(`Medusa createProduct failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1792,7 +1792,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to set product to draft: ${medusaProductId}`, fetchError.message);
-      throw new Error(`Medusa setProductToDraft failed: ${fetchError.message}`);
+      throw new Error(`Medusa setProductToDraft failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1807,7 +1807,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to delete Medusa product: ${medusaProductId}`, fetchError.message);
-      throw new Error(`Medusa deleteProduct failed: ${fetchError.message}`);
+      throw new Error(`Medusa deleteProduct failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1879,7 +1879,7 @@ export class MedusaClient {
         return null;
       }
       this.logger.error(`Failed to retrieve Medusa order: ${orderId}`, fetchError.message);
-      throw new Error(`Medusa retrieveOrder failed: ${fetchError.message}`);
+      throw new Error(`Medusa retrieveOrder failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1900,7 +1900,7 @@ export class MedusaClient {
         return;
       }
       this.logger.error(`Failed to cancel Medusa order: ${orderId}`, fetchError.message);
-      throw new Error(`Medusa cancelOrder failed: ${fetchError.message}`);
+      throw new Error(`Medusa cancelOrder failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -1958,7 +1958,7 @@ export class MedusaClient {
         return;
       }
       this.logger.error(`Failed to update Medusa order shipping projection: ${orderId}`, fetchError.message);
-      throw new Error(`Medusa updateOrderShippingProjection failed: ${fetchError.message}`);
+      throw new Error(`Medusa updateOrderShippingProjection failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2153,7 +2153,7 @@ export class MedusaClient {
         this.logger.warn(`Medusa shipment projection skipped; order not found: ${orderId}`);
         return;
       }
-      throw new Error(`Medusa shipment projection failed: ${fetchError.message}`);
+      throw new Error(`Medusa shipment projection failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2250,7 +2250,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to ensure price list ${payload.name}: ${fetchError.message}`);
-      throw new Error(`Medusa ensurePriceList failed: ${fetchError.message}`);
+      throw new Error(`Medusa ensurePriceList failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2275,7 +2275,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to add prices to list ${priceListId}: ${fetchError.message}`);
-      throw new Error(`Medusa addPricesToPriceList failed: ${fetchError.message}`);
+      throw new Error(`Medusa addPricesToPriceList failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2302,7 +2302,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to remove product ${productId} from list ${priceListId}: ${fetchError.message}`);
-      throw new Error(`Medusa removeProductFromPriceList failed: ${fetchError.message}`);
+      throw new Error(`Medusa removeProductFromPriceList failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2364,7 +2364,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to add customer ${customerId} to group ${groupId}: ${fetchError.message}`);
-      throw new Error(`Medusa addCustomerToGroup failed: ${fetchError.message}`);
+      throw new Error(`Medusa addCustomerToGroup failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2440,7 +2440,7 @@ export class MedusaClient {
       } else {
         this.logger.warn(`withdrawCustomer transient failure (userId=${almondUserId}, status=${status ?? 'n/a'}): ${fetchError.message}`);
       }
-      throw new Error(`Medusa withdrawCustomer failed (status=${status ?? 'n/a'}): ${fetchError.message}`);
+      throw new Error(`Medusa withdrawCustomer failed (status=${status ?? 'n/a'}): ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2453,7 +2453,7 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to remove customer ${customerId} from group ${groupId}: ${fetchError.message}`);
-      throw new Error(`Medusa removeCustomerFromGroup failed: ${fetchError.message}`);
+      throw new Error(`Medusa removeCustomerFromGroup failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2494,7 +2494,7 @@ export class MedusaClient {
           `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
         );
       }
-      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`);
+      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2525,7 +2525,9 @@ export class MedusaClient {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Failed to refresh cart prices for customer ${customerId}: ${message}`);
-      throw new Error(`Medusa refreshCustomerCartPrices failed (customerId=${customerId}): ${message}`);
+      throw new Error(`Medusa refreshCustomerCartPrices failed (customerId=${customerId}): ${message}`, {
+        cause: error,
+      });
     }
   }
 }

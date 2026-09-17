@@ -989,4 +989,30 @@ describe('InboxWorkerService handleFailure — SlowRetryInboxError 장기 재시
 
     expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'failed' })]);
   });
+
+  it('Medusa 5xx 는 기본 한도를 넘겨도 재시도를 계속 잡는다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+
+    await (service as any).handleFailure(
+      event(5),
+      new Error('Medusa findProductByHandle failed: Bad Gateway', {
+        cause: { status: 502, message: 'Bad Gateway' },
+      }),
+    );
+
+    expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'pending' })]);
+  });
+
+  it('Medusa 4xx 는 요청이 틀린 것이라 기본 한도에서 failed 로 종료한다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+
+    await (service as any).handleFailure(
+      event(5),
+      new Error('Medusa createProduct failed: Conflict', { cause: { status: 409 } }),
+    );
+
+    expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'failed' })]);
+  });
 });
