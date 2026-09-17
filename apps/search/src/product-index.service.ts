@@ -573,6 +573,8 @@ export class ProductIndexService implements OnModuleInit {
     const client = this.openSearchService.getClient();
     return client.search({
       index: params.index,
+      // 결과와 집계를 함께 캐시한다. 색인 refresh 시 OpenSearch가 자동 무효화한다.
+      request_cache: true,
       body: {
         query: params.query,
         sort: params.sort,
