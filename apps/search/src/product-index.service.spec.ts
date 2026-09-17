@@ -35,7 +35,7 @@ function makeOpenSearchClient(overrides: Partial<{
   putMapping: any;
   analyze: any;
 }> = {}) {
-  return {
+  const client = {
     indices: {
       exists: jest.fn().mockResolvedValue({ body: true }),
       create: jest.fn().mockResolvedValue({}),
@@ -45,8 +45,22 @@ function makeOpenSearchClient(overrides: Partial<{
     update: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
     search: jest.fn().mockResolvedValue({ body: { hits: { hits: [], total: { value: 0 } } } }),
+    mget: jest.fn(),
     ...overrides,
   };
+  client.mget.mockImplementation(async ({ body }) => {
+    const responses = await Promise.all(client.search.mock.results.map((result) => result.value));
+    const hits = responses.flatMap((response) => response.body.hits.hits);
+    return {
+      body: {
+        docs: body.docs.map(({ _id }) => {
+          const hit = hits.find((candidate) => candidate._id === _id);
+          return { _id, found: Boolean(hit), _source: hit?._source };
+        }),
+      },
+    };
+  });
+  return client;
 }
 
 function makeOpenSearchService(client: ReturnType<typeof makeOpenSearchClient>) {
@@ -814,5 +828,105 @@ describe('ProductIndexService.searchProducts - 키워드 0건일 때 벡터·계
 
     expect(result.items.map((item) => item.productId)).toEqual(['a', 'c']);
     expect(result.keywordMatchCount).toBe(1);
+  });
+});
+
+describe('ProductIndexService.searchProducts - page source loading', () => {
+  async function setup() {
+    const client = makeOpenSearchClient();
+    const module = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
+      ],
+    }).compile();
+    const hits = Array.from({ length: 25 }, (_, i) => ({ _id: `p${i}`, _score: 100 - i }));
+    client.search.mockResolvedValue({ body: { hits: { hits, total: { value: hits.length } } } });
+    client.mget.mockImplementation(async ({ body }) => ({
+      body: {
+        docs: body.docs
+          .map(({ _id }) => ({
+            _id,
+            found: true,
+            _source: {
+              master_id: _id,
+              version_id: `v-${_id}`,
+              name: `Product ${_id}`,
+              thumbnail: 'image.jpg',
+              brand: 'Brand',
+              min_base_price: 100,
+              max_base_price: 200,
+              min_membership_price: 90,
+              max_membership_price: 180,
+              category_ids: ['category'],
+            },
+          }))
+          .reverse(),
+      },
+    }));
+    return { client, service: module.get(ProductIndexService) };
+  }
+
+  it('fetches only the requested page while retaining candidate totals, order, scores and item fields', async () => {
+    const { client, service } = await setup();
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 2, size: 10 });
+    expect(result.pagination).toEqual({ page: 2, size: 10, total: 25, totalPages: 3 });
+    expect(result.keywordMatchCount).toBe(25);
+    expect(result.items.map((item) => item.productId)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i + 10}`));
+    expect(result.items[0]).toEqual({
+      productId: 'p10',
+      versionId: 'v-p10',
+      name: 'Product p10',
+      thumbnail: 'image.jpg',
+      brand: 'Brand',
+      minBasePrice: 100,
+      maxBasePrice: 200,
+      minMembershipPrice: 90,
+      maxMembershipPrice: 180,
+      categoryIds: ['category'],
+      score: 90,
+    });
+    for (const [request] of client.search.mock.calls) {
+      expect(request.body).toMatchObject({ _source: false, size: 5000, track_total_hits: true });
+    }
+    expect(client.mget).toHaveBeenCalledTimes(1);
+    const request = client.mget.mock.calls[0][0];
+    expect(request.realtime).toBe(false);
+    expect(request.body.docs.map((doc) => doc._id)).toEqual(result.items.map((item) => item.productId));
+    expect(request.body.docs[0]._source).not.toContain('name_vector');
+  });
+
+  it('does not load sources for an empty page', async () => {
+    const { client, service } = await setup();
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 4, size: 10 });
+    expect(result.items).toEqual([]);
+    expect(result.pagination.total).toBe(25);
+    expect(client.mget).not.toHaveBeenCalled();
+  });
+
+  it('omits a document deleted between ranking and source loading', async () => {
+    const { client, service } = await setup();
+    client.mget.mockResolvedValue({
+      body: {
+        docs: [
+          { _id: 'p0', found: false },
+          { _id: 'p1', found: true, _source: { master_id: 'p1', name: 'Remaining' } },
+        ],
+      },
+    });
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 1, size: 2 });
+    expect(result.items.map((item) => item.productId)).toEqual(['p1']);
+    expect(result.items[0].score).toBe(99);
+  });
+
+  it('does not disguise a partial source retrieval failure as an empty result', async () => {
+    const { client, service } = await setup();
+    client.mget.mockResolvedValue({ body: { docs: [{ _id: 'p0', error: { type: 'unavailable_shards_exception' } }] } });
+    await expect(service.searchProducts({ q: '네일', sort: 'relevance', page: 1, size: 1 })).rejects.toThrow(
+      'Failed to fetch search result p0',
+    );
   });
 });

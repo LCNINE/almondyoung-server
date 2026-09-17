@@ -65,6 +65,20 @@ const RRF_K = 60;
 const RRF_VECTOR_WEIGHT = 0.3;
 const VECTOR_POOL_LIMIT = 100;
 
+// 후보 전체의 벡터·본문을 전송하지 않고, 현재 페이지를 표시할 필드만 조회한다.
+const SEARCH_ITEM_SOURCE_FIELDS = [
+  'master_id',
+  'version_id',
+  'name',
+  'thumbnail',
+  'brand',
+  'min_base_price',
+  'max_base_price',
+  'min_membership_price',
+  'max_membership_price',
+  'category_ids',
+];
+
 // 자모 오타 절을 태울 최소 길이(공백 제외 음절 수).
 // 2음절을 막으면 "헨나"→헤나, "깍이"→깎이 같은 유일한 정답까지 0건이 된다. 대신 "태그"→"택1"
 // 처럼 후보가 넓어지는 검색어가 같이 열리므로 boost 로 뒤로 민다. 자모 절은 fallback 에만 있어
@@ -282,6 +296,7 @@ export class ProductIndexService implements OnModuleInit {
           sort,
           from: 0,
           size: this.keywordResultPoolLimit,
+          fetchSource: false,
         }),
         this.executeSearch({
           index,
@@ -289,6 +304,7 @@ export class ProductIndexService implements OnModuleInit {
           sort,
           from: 0,
           size: this.keywordResultPoolLimit,
+          fetchSource: false,
         }),
         useVector ? this.searchByVector(index, query) : Promise.resolve([]),
       ]);
@@ -324,6 +340,7 @@ export class ProductIndexService implements OnModuleInit {
           return corrected;
         }
       }
+      resultHits = await this.fetchPageSources(index, resultHits);
     } else {
       const response = await this.executeSearch({
         index,
@@ -545,6 +562,7 @@ export class ProductIndexService implements OnModuleInit {
     sort: any[];
     from: number;
     size: number;
+    fetchSource?: boolean;
   }): Promise<any> {
     const client = this.openSearchService.getClient();
     return client.search({
@@ -555,7 +573,35 @@ export class ProductIndexService implements OnModuleInit {
         from: params.from,
         size: params.size,
         track_total_hits: true,
+        _source: params.fetchSource === false ? false : SEARCH_ITEM_SOURCE_FIELDS,
       },
+    });
+  }
+
+  private async fetchPageSources(index: string, hits: any[]): Promise<any[]> {
+    if (hits.length === 0) return hits;
+
+    const response = await this.openSearchService.getClient().mget({
+      index,
+      realtime: false,
+      body: {
+        docs: hits.map((hit) => ({ _id: hit._id, _source: SEARCH_ITEM_SOURCE_FIELDS })),
+      },
+    });
+    const sources = new Map<string, SearchProductDocument>();
+    for (const doc of response.body.docs) {
+      if ('error' in doc) {
+        throw new Error(`Failed to fetch search result ${doc._id}`);
+      }
+      if (doc.found && doc._source) {
+        sources.set(doc._id, doc._source as SearchProductDocument);
+      }
+    }
+
+    // 조회 사이에 삭제된 상품은 제외한다. 점수와 순서는 후보 검색의 값을 보존한다.
+    return hits.flatMap((hit) => {
+      const source = sources.get(hit._id);
+      return source ? [{ ...hit, _source: source }] : [];
     });
   }
 
@@ -604,6 +650,7 @@ export class ProductIndexService implements OnModuleInit {
         index,
         body: {
           size: VECTOR_POOL_LIMIT,
+          _source: false,
           query: {
             bool: {
               must: [{ knn: { name_vector: { vector, k: VECTOR_POOL_LIMIT } } }],
