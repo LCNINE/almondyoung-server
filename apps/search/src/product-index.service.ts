@@ -285,60 +285,53 @@ export class ProductIndexService implements OnModuleInit {
 
     if (hasKeyword) {
       const noriCollapsed = await this.isNoriCollapsed(query.q!.trim());
-      // 관련도 정렬일 때만 벡터를 태운다. 가격·최신순은 융합하지 않으므로 임베딩 호출이 낭비다.
-      // 교정 재검색(correct=false)에서도 뺀다 — 교정어 자체가 이미 추측이라 그 위에 벡터 추측을
-      // 얹으면 "바리깡"이 교정어 "발광"의 이웃 99 건으로 뒤덮인다.
-      const useVector = query.sort === 'relevance' && query.correct !== false;
-      const [strictResponse, fallbackResponse, vectorHits] = await Promise.all([
+      const strictQuery = this.buildQuery(query, 'strict', noriCollapsed);
+      const fallbackQuery = this.buildQuery(query, 'fallback', noriCollapsed);
+      // strict 우선순서를 유지하고 현재 페이지까지의 후보만 조회한다.
+      // 벡터 보충 대상(20건 미만)은 전체 키워드 후보를 모은 뒤 RRF에 넘긴다.
+      const candidateLimit = Math.min(this.keywordResultPoolLimit, Math.max(VECTOR_FILL_KEYWORD_LIMIT, from + size));
+      // 건수는 strict/fallback의 합집합으로 구하고 기존 5000건 상한을 유지한다.
+      const [strictResponse, countResponse] = await Promise.all([
+        this.executeSearch({ index, query: strictQuery, sort, from: 0, size: candidateLimit, fetchSource: false }),
         this.executeSearch({
           index,
-          query: this.buildQuery(query, 'strict', noriCollapsed),
-          sort,
+          query: { bool: { should: [strictQuery, fallbackQuery], minimum_should_match: 1 } },
+          sort: [],
           from: 0,
-          size: this.keywordResultPoolLimit,
+          size: 0,
           fetchSource: false,
         }),
-        this.executeSearch({
-          index,
-          query: this.buildQuery(query, 'fallback', noriCollapsed),
-          sort,
-          from: 0,
-          size: this.keywordResultPoolLimit,
-          fetchSource: false,
-        }),
-        useVector ? this.searchByVector(index, query) : Promise.resolve([]),
       ]);
-
       const strictHits = strictResponse.body.hits.hits as any[];
-      const fallbackHits = fallbackResponse.body.hits.hits as any[];
-      const keywordHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
-
-      // 벡터는 키워드가 부족할 때 채우는 용도다. 양쪽 끝에서는 태우지 않는다 — 0 건이면 안 파는
-      // 상품을 뜻만 닮은 100 건으로 덮어 화면이 거짓말을 하고 result_count 도 0 이 아니게 되어
-      // 소싱 리포트에서 사라진다. 반대로 키워드가 이미 한 화면을 채웠으면 꼬리에 무관 상품만
-      // 붙는다 ("유키반 테이프" 106 건의 뒤쪽이 전부 맥반석가루·슈가링왁스 같은 벡터 이웃이었다).
-      const fillWithVector =
-        vectorHits.length > 0 &&
-        keywordHits.length > 0 &&
-        keywordHits.length < VECTOR_FILL_KEYWORD_LIMIT;
-      const mergedHits = fillWithVector
-        ? this.fuseWithRrf(keywordHits, vectorHits.slice(0, VECTOR_FILL_LIMIT), this.keywordResultPoolLimit)
-        : keywordHits;
-
-      keywordMatchCount = keywordHits.length;
-      total = mergedHits.length;
+      const strictTotal = this.extractTotal(strictResponse.body.hits.total);
+      keywordMatchCount = Math.min(this.keywordResultPoolLimit, this.extractTotal(countResponse.body.hits.total));
+      let keywordHits = strictHits;
+      if (strictTotal < candidateLimit && keywordMatchCount > strictTotal) {
+        const fallbackResponse = await this.executeSearch({
+          index,
+          query: { bool: { must: [fallbackQuery], must_not: [strictQuery] } },
+          sort,
+          from: 0,
+          size: candidateLimit - strictHits.length,
+          fetchSource: false,
+        });
+        keywordHits = this.mergeHitsWithPriority(strictHits, fallbackResponse.body.hits.hits, candidateLimit);
+      }
+      const useVector =
+        query.sort === 'relevance' &&
+        query.correct !== false &&
+        keywordMatchCount > 0 &&
+        keywordMatchCount < VECTOR_FILL_KEYWORD_LIMIT;
+      const vectorHits = useVector ? await this.searchByVector(index, query) : [];
+      const mergedHits =
+        vectorHits.length > 0
+          ? this.fuseWithRrf(keywordHits, vectorHits.slice(0, VECTOR_FILL_LIMIT), this.keywordResultPoolLimit)
+          : keywordHits;
+      total = vectorHits.length > 0 ? mergedHits.length : keywordMatchCount;
       resultHits = mergedHits.slice(from, from + size);
-
-      // 키워드가 한 건도 못 찾았을 때만 교정을 시도한다. "나찌반"→"니치반" 처럼 토큰이 하나도
-      // 안 겹쳐 어떤 필드로도 못 잡는 오타가 대상이다.
-      //
-      // total(=융합 결과)이 아니라 keywordHits 로 판단해야 한다 — 벡터는 "나찌반"에도 뜻이
-      // 닮은 상품을 100건씩 얹어주므로, total 로 재면 0건이 될 일이 없어 교정이 영영 안 돈다.
-      if (keywordHits.length === 0 && query.correct !== false) {
+      if (keywordMatchCount === 0 && query.correct !== false) {
         const corrected = await this.retryWithCorrection(query);
-        if (corrected) {
-          return corrected;
-        }
+        if (corrected) return corrected;
       }
       resultHits = await this.fetchPageSources(index, resultHits);
     } else {
@@ -639,7 +632,7 @@ export class ProductIndexService implements OnModuleInit {
       return [];
     }
 
-    // Promise.all 로 묶여 있어 여기서 던지면 검색 전체가 500 이다.
+    // 벡터 실패가 키워드 검색 전체의 실패로 전파되지 않게 한다.
     try {
       const vector = await this.embeddingService.embedQuery(query.q!.trim());
       if (!vector) {

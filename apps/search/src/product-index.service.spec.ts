@@ -26,15 +26,17 @@ function makeAnalyzeMock(tokens?: string[]) {
   });
 }
 
-function makeOpenSearchClient(overrides: Partial<{
-  exists: any;
-  create: any;
-  update: any;
-  delete: any;
-  search: any;
-  putMapping: any;
-  analyze: any;
-}> = {}) {
+function makeOpenSearchClient(
+  overrides: Partial<{
+    exists: any;
+    create: any;
+    update: any;
+    delete: any;
+    search: any;
+    putMapping: any;
+    analyze: any;
+  }> = {},
+) {
   const client = {
     indices: {
       exists: jest.fn().mockResolvedValue({ body: true }),
@@ -227,12 +229,12 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
     );
   });
 
-  it('with keyword: strict + fallback both use review sort', async () => {
+  it('with keyword: ranks strict hits by review and counts without sorting', async () => {
     await service.searchProducts({ q: '글루', sort: 'review', page: 1, size: 20 } as any);
 
-    // keyword search calls client.search twice (strict, fallback)
+    // strict 후보와 정렬 없는 합집합 건수를 따로 구한다.
     expect(client.search).toHaveBeenCalledTimes(2);
-    for (const [callArg] of client.search.mock.calls) {
+    for (const [callArg] of client.search.mock.calls.filter(([arg]) => arg.body.size > 0)) {
       expect(callArg.body.sort).toEqual([
         { review_sort_score: { order: 'desc', missing: 0 } },
         { review_count: { order: 'desc', missing: 0 } },
@@ -361,21 +363,18 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
     });
   });
 
-  it('fallback call also wraps query in function_score', async () => {
+  it('union count retains the original fallback query including function_score', async () => {
     await service.searchProducts({ q: '글루', sort: 'relevance', page: 1, size: 20 } as any);
 
     const [, fallbackCallArg] = client.search.mock.calls;
-    expect(fallbackCallArg[0].body.query).toHaveProperty('function_score');
+    expect(fallbackCallArg[0].body.query.bool.should[1]).toHaveProperty('function_score');
   });
 
   it('sort is by _score desc then updated_at desc', async () => {
     await service.searchProducts({ q: '글루', sort: 'relevance', page: 1, size: 20 } as any);
 
     const [strictCallArg] = client.search.mock.calls[0];
-    expect(strictCallArg.body.sort).toEqual([
-      { _score: { order: 'desc' } },
-      { updated_at: { order: 'desc' } },
-    ]);
+    expect(strictCallArg.body.sort).toEqual([{ _score: { order: 'desc' } }, { updated_at: { order: 'desc' } }]);
   });
 
   it('REVIEW_SCORE_WEIGHT env overrides the default factor of 0.1', async () => {
@@ -509,7 +508,7 @@ describe('ProductIndexService.searchProducts - nori collapse guard', () => {
     await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
 
     const [, fallbackCall] = client.search.mock.calls;
-    const fallbackShould = fallbackCall[0].body.query.function_score.query.bool.must[0].bool.should;
+    const fallbackShould = fallbackCall[0].body.query.bool.should[1].function_score.query.bool.must[0].bool.should;
     expect(fallbackShould.some((clause: any) => clause.multi_match !== undefined)).toBe(true);
   });
 
@@ -531,13 +530,12 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
 
   async function buildService(embedding: any, keywordHits: any[], vectorHits: any[]) {
     const client = makeOpenSearchClient();
-    let call = 0;
     client.search = jest.fn().mockImplementation((params: any) => {
-      // knn 절이 있으면 벡터 검색이다. 없으면 strict → fallback 순.
+      // knn, 건수 조회, strict 후보를 구분한다.
       const isKnn = JSON.stringify(params.body.query).includes('"knn"');
       if (isKnn) return Promise.resolve({ body: { hits: { hits: vectorHits, total: { value: vectorHits.length } } } });
-      const hits = call++ === 0 ? keywordHits : [];
-      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+      const hits = params.body.size === 0 ? [] : keywordHits.slice(0, params.body.size);
+      return Promise.resolve({ body: { hits: { hits, total: { value: keywordHits.length } } } });
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -729,9 +727,7 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
       ],
     }).compile();
 
-    await module
-      .get(ProductIndexService)
-      .searchProducts({ q: '니들', sort: 'relevance', page: 1, size: 20 } as any);
+    await module.get(ProductIndexService).searchProducts({ q: '니들', sort: 'relevance', page: 1, size: 20 } as any);
 
     expect(spell.suggest).not.toHaveBeenCalled();
   });
@@ -808,8 +804,8 @@ describe('ProductIndexService.searchProducts - 키워드 0건일 때 벡터·계
 
     expect(result.correctedQuery).toBe('발광');
     expect(result.items.map((item) => item.productId)).toEqual(['x']);
-    // 원본 검색에서 한 번 부르고, 교정 재검색에서는 부르지 않는다.
-    expect(knnCalls).toHaveLength(1);
+    // 원본 0건과 교정 재검색 모두 벡터를 호출하지 않는다.
+    expect(knnCalls).toHaveLength(0);
   });
 
   it('교정으로 찾은 건수는 원본 검색어의 몫이 아니라 0 으로 기록된다', async () => {
@@ -844,7 +840,9 @@ describe('ProductIndexService.searchProducts - page source loading', () => {
       ],
     }).compile();
     const hits = Array.from({ length: 25 }, (_, i) => ({ _id: `p${i}`, _score: 100 - i }));
-    client.search.mockResolvedValue({ body: { hits: { hits, total: { value: hits.length } } } });
+    client.search.mockImplementation(async ({ body }) => ({
+      body: { hits: { hits: hits.slice(0, body.size), total: { value: hits.length } } },
+    }));
     client.mget.mockImplementation(async ({ body }) => ({
       body: {
         docs: body.docs
@@ -890,7 +888,8 @@ describe('ProductIndexService.searchProducts - page source loading', () => {
       score: 90,
     });
     for (const [request] of client.search.mock.calls) {
-      expect(request.body).toMatchObject({ _source: false, size: 5000, track_total_hits: true });
+      expect(request.body).toMatchObject({ _source: false, track_total_hits: true });
+      expect(request.body.size).toBeLessThanOrEqual(20);
     }
     expect(client.mget).toHaveBeenCalledTimes(1);
     const request = client.mget.mock.calls[0][0];
@@ -928,5 +927,92 @@ describe('ProductIndexService.searchProducts - page source loading', () => {
     await expect(service.searchProducts({ q: '네일', sort: 'relevance', page: 1, size: 1 })).rejects.toThrow(
       'Failed to fetch search result p0',
     );
+  });
+});
+
+describe('ProductIndexService.searchProducts - bounded keyword candidates', () => {
+  const hit = (id: string, score = 1) => ({
+    _id: id,
+    _score: score,
+    _source: { master_id: id, version_id: `v-${id}`, name: id },
+  });
+
+  async function setup(strict: any[], fallback: any[], vector: any[] = []) {
+    const client = makeOpenSearchClient();
+    const embedding = makeEmbeddingService([0.1, 0.2]);
+    const union = [...new Map([...strict, ...fallback].map((item) => [item._id, item])).values()];
+    client.search.mockImplementation(async ({ body }) => {
+      const isVector = JSON.stringify(body.query).includes('"knn"');
+      const candidates = isVector
+        ? vector
+        : body.size === 0
+          ? union
+          : body.query.bool?.must_not
+            ? fallback.filter((item) => !strict.some((primary) => primary._id === item._id))
+            : strict;
+      return { body: { hits: { hits: candidates.slice(0, body.size), total: { value: candidates.length } } } };
+    });
+    const service = new ProductIndexService(
+      makeOpenSearchService(client) as any,
+      makeConfigService() as any,
+      embedding as any,
+      makeSpellCorrectionService() as any,
+    );
+    return { service, client, embedding, union };
+  }
+
+  it.each([1, 2, 3, 4])('preserves strict-first order, overlap removal and total on page %i', async (page) => {
+    const strict = Array.from({ length: 23 }, (_, i) => hit(`s${i}`, 100 - i));
+    const fallback = [hit('s3', 999), ...Array.from({ length: 24 }, (_, i) => hit(`f${i}`, 50 - i))];
+    const { service, embedding, union } = await setup(strict, fallback);
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page, size: 20 });
+    const expected = [...strict, ...fallback.filter((item) => !strict.some((s) => s._id === item._id))];
+    expect(result.items.map((item) => [item.productId, item.score])).toEqual(
+      expected.slice((page - 1) * 20, page * 20).map((item) => [item._id, item._score]),
+    );
+    expect(result.pagination.total).toBe(union.length);
+    expect(result.keywordMatchCount).toBe(union.length);
+    expect(embedding.embedQuery).not.toHaveBeenCalled();
+  });
+
+  it.each([19, 20])('uses the full keyword count, not page size, at vector boundary %i', async (count) => {
+    const strict = Array.from({ length: count }, (_, i) => hit(`s${i}`));
+    const { service, embedding } = await setup(strict, [], [hit('v'), hit('s1')]);
+    const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 2, size: 5 });
+    expect(result.keywordMatchCount).toBe(count);
+    expect(result.pagination.total).toBe(20);
+    expect(embedding.embedQuery).toHaveBeenCalledTimes(count === 19 ? 1 : 0);
+  });
+
+  it('fetches fallback-only matches when strict is empty without losing their scores', async () => {
+    const { service } = await setup([], [hit('a', 25), hit('b', 12)]);
+    const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20, correct: false });
+    expect(result.items.map((item) => [item.productId, item.score])).toEqual([
+      ['a', 25],
+      ['b', 12],
+    ]);
+    expect(result.pagination.total).toBe(2);
+  });
+
+  it.each([250, 251])('retains the 5000-result cap and empty pages beyond it (page %i)', async (page) => {
+    const strict = Array.from({ length: 5010 }, (_, i) => hit(`s${i}`));
+    const { service, client } = await setup(strict, [hit('fallback')]);
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page, size: 20 });
+    expect(result.pagination.total).toBe(5000);
+    expect(result.keywordMatchCount).toBe(5000);
+    expect(result.items.map((item) => item.productId)).toEqual(
+      strict
+        .slice(0, 5000)
+        .slice((page - 1) * 20, page * 20)
+        .map((item) => item._id),
+    );
+    expect(client.search.mock.calls.every(([arg]) => arg.body.size <= 5000)).toBe(true);
+  });
+
+  it('keeps the existing order of tied candidates at a page boundary', async () => {
+    const strict = Array.from({ length: 30 }, (_, i) => hit(`tied${i}`, 10));
+    const { service } = await setup(strict, []);
+    const result = await service.searchProducts({ q: '네일', sort: 'relevance', page: 2, size: 20 });
+    expect(result.items.map((item) => item.productId)).toEqual(strict.slice(20).map((item) => item._id));
   });
 });

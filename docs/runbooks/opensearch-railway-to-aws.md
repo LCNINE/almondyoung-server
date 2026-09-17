@@ -8,8 +8,8 @@
 Railway 인스턴스는 백업도 인증도 없는 공개 엔드포인트였고, **검색 이력의 유일본**을 들고
 있었다. 저장소가 하나뿐이라 그게 응답하지 않으면 검색이 통째로 멈추고 되돌릴 사본도 없다.
 
-전환을 확인할 때 주의할 점: 검색 페이지는 백엔드가 죽어도 200 + 「검색 결과가 없습니다」로
-뜬다. **상태 코드로는 안 보이므로 «결과 수»를 세야 한다**(7번).
+전환 판정은 검색 API의 응답시간·상품 ID 순서·전체 건수로 한다. 스토어프론트 HTML의
+상품 링크 수는 렌더 시점에 따라 달라지므로 판정에 사용하지 않는다(7번).
 
 ## 무엇이 바뀌나
 
@@ -71,6 +71,11 @@ aws opensearch list-packages-for-domain --domain-name "$D" \
   --query 'DomainPackageDetailsList[].[PackageName,DomainPackageStatus]' --output text
 # 재배포 뒤 analysis-nori / ACTIVE 가 나와야 한다. 비어 있으면 아직 안 붙은 것이다
 ```
+
+기존 도메인의 사양만 변경할 때는 `sst deploy --stage live --target Opensearch`로 범위를 좁힌다.
+검색 앱 코드만 배포할 때는 `--target ServicesBundleB`를 사용한다(notification·search·ugc가
+같은 태스크에 묶여 있다). SST 설정 평가 과정에서 다른 앱의 빌드 로그가 나올 수 있으므로,
+빌드 로그와 실제 배포 리소스 목록을 구분한다. 배포 실행은 사용자가 한다.
 
 ### 2. 도메인에 접속 경로 열기
 
@@ -134,11 +139,37 @@ npm run search:migrate-opensearch
 - 소스 `_id` 로 bulk index 한다. **여러 번 돌려도 안전**하고, 끊기면 다시 돌리면 된다.
 - 마지막에 소스/대상 문서 수를 대조해 안 맞으면 실패로 끝낸다.
 
-### 4. 새 도메인이 실제로 답하는지 확인 (컷오버 «전»)
+### 4. 실제 앱 질의와 동시 요청 검증 (컷오버 전)
 
-전환하기 전에 새 도메인에서 직접 검색이 되는지 본다. 2026-05 에 이 도메인으로 붙다가 원인
-미상의 「연결 트러블슈팅」으로 Railway 로 물러난 이력이 있어(`4225496b3`), 이 단계를 건너뛰면
-같은 일을 반복할 수 있다.
+문서 수·분석기·단순 match 확인만으로 컷오버하지 않는다. 다음 항목을 모두 확인한다.
+
+1. 두 인덱스의 문서 수와 복사 시점을 대조한다. 건수가 같아도 문서 내용이 최신이라는 보장은
+   없으므로 복사 이후 변경분을 반영하고 결과를 다시 비교한다. 검색 이력은 양쪽에만 존재하는
+   문서가 있는지도 확인하고, 한쪽을 삭제하거나 빈 인덱스로 덮어쓰지 않는다.
+2. 대표 검색어의 nori 토큰을 양쪽에서 비교한다.
+3. 현재 `ProductIndexService`와 `SearchService`의 실제 경로로 상위 10개 ID 순서·전체 건수를
+   비교한다. strict/fallback, 벡터, 페이지 본문 조회, 교정, 연관검색어를 포함한다. 단순 match
+   질의로 대체하거나 후보 수·정렬·필터를 측정용으로 바꾸지 않는다. 쓰기와 부팅 시 인덱스
+   초기화는 차단하고 `track=false`로 실행한다.
+4. 넓은 검색어를 포함해 동시 요청 5개부터 최소 30초간 실행한다. 통과한 뒤 10개로 늘린다.
+   실제 검색 API 한 요청이 여러 OpenSearch 요청을 발생시킨다는 점을 반영한다. 초기 요청과
+   캐시가 채워진 요청을 구분해 기록하며, 타임아웃·오류도 지연 통계와 별도로 남긴다.
+5. 부하 구간의 JVM 사용률·검색 큐·거절 수·CPU와 API 지연을 함께 확인한다. 노드 통계를 약
+   1초 간격으로 수집하고 CloudWatch도 대조한다. CloudWatch의 분 단위 샘플에 짧은 큐 상승이
+   나타나지 않았다고 통과시키지 않는다.
+
+부하 측정은 가능한 한 VPC 내부에서 실행한다. SSM 포트포워딩의 클라이언트 지연은
+터널 정체를 포함할 수 있으므로 서버 `took`, 노드 통계, 별도 경로의 연결 상태를 함께 기록한다.
+터널 장애 구간을 서버 용량 부족의 증거로 사용하지 않는다. 동시 실행 수뿐 아니라 목표/실제
+요청률, 질의 혼합, 워밍업, 측정/종료 대기 시간, 오류 수, p95를 남긴다. 저장된 질의 재생은
+OpenSearch 비용 검증이며, 임베딩·교정·HTTP 처리를 포함한 실제 앱/API 검증과 구분한다.
+
+판정 기준은 JVM 사용률 75% 미만, 검색 큐 10 미만, 요청 오류 없음, 합의한 API 지연 목표 충족,
+상위 결과 순서 회귀 없음이다. 한 항목이라도 실패하면 컷오버하지 않는다. 사양 변경은 현재
+단가를 조회해 결정하며 사용자가 배포한 뒤 같은 검증을 반복한다. 측정 결과와 운영 수치는
+공개 저장소 밖에 보관한다.
+
+아래 명령은 기본 점검의 예시이며, 실제 앱 질의와 부하 검증을 대신하지 않는다.
 
 ```bash
 # 문서 수
@@ -158,7 +189,7 @@ curl -sk -u "$TARGET_OPENSEARCH_USERNAME:$TARGET_OPENSEARCH_PASSWORD" \
   -d '{"query":{"match":{"name":"헤어"}}}'
 ```
 
-셋 다 통과해야 다음으로 간다.
+기본 점검과 위 다섯 항목을 모두 통과해야 다음으로 간다.
 
 ### 5. 컷오버 (배포 ②)
 
@@ -169,7 +200,7 @@ const useAwsOpenSearch = true;
 ```
 
 ```bash
-sst deploy --stage live
+sst deploy --stage live --target ServicesBundleB
 ```
 
 ### 6. 꼬리 복사
@@ -183,17 +214,19 @@ npm run search:migrate-opensearch
 `search_products_v2` 는 이걸 놓쳐도 Kafka 소비자와 `npm run search:backfill` 로 복구된다.
 `search_query_events` 는 **복구 경로가 없다** — 이 단계를 건너뛰면 그 사이 검색 이력이 사라진다.
 
-### 7. 고객 화면 확인
+### 7. 운영 API와 검색 이력 확인
 
 ```bash
-# 앱이 새 도메인을 보고 있나
+# 앱 의존 연결 상태 (백엔드 전환 여부는 태스크 설정도 대조)
 curl -s https://search.almondyoung.com/health
 
-# 검색이 실제로 결과를 내나 (상태 코드가 아니라 «결과 수»를 본다)
-curl -s "https://almondyoung.com/kr/search?q=%ED%97%A4%EC%96%B4" | grep -c 'href="/kr/products/'
-# 홈을 양성 대조로: 0 이 아니어야 한다
-curl -s "https://almondyoung.com/kr" | grep -c 'href="/kr/products/'
+# q가 검색 파라미터다. keyword를 쓰면 빈 검색으로 처리될 수 있다.
+curl -fsS --max-time 40 --get 'https://search.almondyoung.com/search/products' --data-urlencode 'q=네일' --data-urlencode 'size=10' --data-urlencode 'track=false' -o /tmp/search-cutover-response.json -w '%{http_code} %{time_total}s\n'
+python3 -c 'import json; d=json.load(open("/tmp/search-cutover-response.json")); print(d["pagination"]); print([x["productId"] for x in d["items"]])'
 ```
+
+컷오버 전 저장한 대표 검색어 결과와 대조한다. 컷오버 후 최소 10분 동안 API 지연·JVM·검색 큐를
+관찰하며, 초기 요청의 지연이나 실패를 이후 정상 응답으로 덮어 해석하지 않는다.
 
 관리자 통계 → 검색 키워드 탭에서 인기 검색어·0건 검색어가 **이관 이전 기간까지** 나오는지 본다.
 이력이 안 옮겨졌으면 여기서 드러난다.
