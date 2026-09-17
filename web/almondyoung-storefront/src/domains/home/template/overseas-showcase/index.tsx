@@ -96,6 +96,7 @@ export async function OverseasShowcaseWrapper({
                   isMembershipOnly={getIsMembershipOnly(product)}
                   isWishlisted={wishlistIds.has(product.id ?? "")}
                   overlay={<RankBadge rank={index + 1} />}
+                  enablePhotoSwipe={false}
                 />
               </div>
             </CarouselItem>

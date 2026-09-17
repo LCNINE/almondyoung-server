@@ -4,6 +4,11 @@ import React from "react"
 import PlaceholderImage from "@/icons/placeholder-image"
 import ThumbnailImage from "./thumbnail-image"
 import { StoreProductImage } from "@medusajs/types"
+import { PhotoSwipeFrame } from "@/components/shared/photo-swipe-frame"
+import { Camera } from "lucide-react"
+
+/** 카드 하나에서 미리 보여줄 사진 수. 더 늘리면 구역이 좁아 조준이 어렵다. */
+const MAX_PREVIEW = 5
 
 type ThumbnailProps = {
   thumbnail?: string | null
@@ -12,6 +17,8 @@ type ThumbnailProps = {
   className?: string
   "data-testid"?: string
   overlay?: React.ReactNode
+  /** 가로로 넘기는 줄 안에 든 카드는 손짓이 겹쳐 사진 넘기기를 끈다 */
+  enableSwipe?: boolean
 }
 
 const Thumbnail: React.FC<ThumbnailProps> = ({
@@ -21,8 +28,17 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   className,
   "data-testid": dataTestid,
   overlay,
+  enableSwipe = true,
 }) => {
-  const initialImage = thumbnail || images?.[0]?.url
+  // 대표 사진이 images[0] 과 같은 파일이라 그대로 이어 붙이면 첫 장이 바뀌지 않는다
+  const gallery = (images ?? [])
+    .map((image) => image.url)
+    .filter((url): url is string => Boolean(url))
+
+  const all = thumbnail
+    ? [thumbnail, ...gallery.filter((url) => url !== thumbnail)]
+    : gallery
+  const shown = all.slice(0, MAX_PREVIEW)
 
   return (
     <div
@@ -39,7 +55,27 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
       )}
       data-testid={dataTestid}
     >
-      <ImageOrPlaceholder image={initialImage} size={size} />
+      {shown.length > 1 ? (
+        <PhotoSwipeFrame
+          count={shown.length}
+          renderImage={(index) => (
+            <ThumbnailImage image={shown[index]} size={size} />
+          )}
+          itemClassName="aspect-square"
+          enableSwipe={enableSwipe}
+        />
+      ) : (
+        <ImageOrPlaceholder image={shown[0]} size={size} />
+      )}
+
+      {/* 하단은 찜·장바구니와 점 인디케이터가 쓰므로 위로 올린다 */}
+      {all.length > 1 && enableSwipe && (
+        <span className="bg-foreground/75 pointer-events-none absolute top-2 right-2 flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-white transition-opacity md:group-hover:opacity-0">
+          <Camera className="h-3 w-3" />
+          {all.length}
+        </span>
+      )}
+
       {overlay}
     </div>
   )

@@ -103,6 +103,7 @@ export function ProductSection<T extends TabItem>({
         isMembershipOnly={getIsMembershipOnly(p)}
         overlay={renderOverlay(p, index)}
         isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
+        enablePhotoSwipe={false}
       />
     )
 

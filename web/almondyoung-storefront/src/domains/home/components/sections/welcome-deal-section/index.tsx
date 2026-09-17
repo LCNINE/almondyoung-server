@@ -69,6 +69,7 @@ export function WelcomeDealSection({
                   isMembershipOnly={getIsMembershipOnly(p)}
                   overlay={<RankBadge rank={index + 1} variant="bottom-left" />}
                   isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
+                  enablePhotoSwipe={false}
                 />
               </CarouselItem>
             ))}

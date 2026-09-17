@@ -105,6 +105,7 @@ export default function ProductCard({
   countryCode = "kr",
   isWishlisted = false,
   onClick,
+  enablePhotoSwipe = true,
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
@@ -113,6 +114,8 @@ export default function ProductCard({
   countryCode?: string
   isWishlisted?: boolean
   onClick?: () => void
+  /** 가로로 넘기는 줄 안에서는 사진 넘기기가 줄 넘기기와 겹쳐 끈다 */
+  enablePhotoSwipe?: boolean
 }) {
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
@@ -167,6 +170,7 @@ export default function ProductCard({
             thumbnail={product.thumbnail}
             images={product.images}
             size="full"
+            enableSwipe={enablePhotoSwipe}
             overlay={
               <>
                 {overlay}
