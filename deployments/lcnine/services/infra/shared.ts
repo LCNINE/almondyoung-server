@@ -84,7 +84,7 @@ export function setup(opts?: { baseDomain?: string }) {
   // 도메인을 되살린다. 그 외부 인스턴스는 백업도 인증도 없었고 검색 이력(search_query_events)의
   // 유일본을 들고 있었다 — 저장소가 하나뿐인 구조라 사실상 단일 장애점이었다.
   //
-  // 부하 검증용 기준 사양은 m6g.large × 1 / 10 GB. 노드가 하나라 코드가 요구하는
+  // 부하 검증용 기준 사양은 m7g.medium × 1 / 10 GB. 노드가 하나라 코드가 요구하는
   // number_of_replicas: 1 은 배정되지 않고 클러스터는 yellow 로 남는다 (정상 동작).
   // 이중화가 필요해지면 instanceCount 2 + zoneAwarenessEnabled 로 올린다.
   //
@@ -108,7 +108,7 @@ export function setup(opts?: { baseDomain?: string }) {
     egress: [{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] }],
   });
   const opensearch = new sst.aws.OpenSearch('Opensearch', {
-    instance: 'm6g.large',
+    instance: 'm7g.medium',
     storage: '10 GB',
     transform: {
       domain: (args) => {
