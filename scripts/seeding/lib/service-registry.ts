@@ -15,6 +15,7 @@ const ROOT_REGISTRY: ServiceConfig[] = [
     drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts',
     hasSeedStep: true,
   },
+  { name: 'ai', database: 'ai', drizzleConfig: 'apps/ai/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   {
     name: 'channel-adapter',
@@ -67,6 +68,7 @@ const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
  */
 const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
   { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
+  { name: 'ai', database: 'ai', drizzleConfig: 'apps/ai/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   {
     name: 'channel-adapter',

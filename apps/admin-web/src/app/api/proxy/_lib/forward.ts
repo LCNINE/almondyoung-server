@@ -27,6 +27,15 @@ export interface ForwardOptions {
    * 걸려 502 가 난다. 브라우저가 직접 따라가게 하면 크기 제한이 없다.
    */
   passThroughRedirects?: boolean;
+  /**
+   * 업스트림 본문을 버퍼링하지 않고 그대로 흘려보낸다 (SSE·긴 스트림용).
+   *
+   * 기본 경로는 `arrayBuffer()` 로 통째로 읽고 나서야 응답을 만든다 — 그러면
+   * text/event-stream 이 전부 끝난 뒤 한 덩어리로 도착해 스트리밍이 의미를 잃는다.
+   * 이 모드에서는 타임아웃이 응답 헤더까지만 적용되고, 브라우저가 끊으면
+   * 업스트림 연결도 같이 끊는다.
+   */
+  streaming?: boolean;
 }
 
 export async function forwardRequest(
@@ -40,6 +49,7 @@ export async function forwardRequest(
     timeoutMs = DEFAULT_TIMEOUT_MS,
     forwardAuthCookie = true,
     passThroughRedirects = false,
+    streaming = false,
   } = options;
 
   const targetPath = path.join('/');
@@ -82,6 +92,15 @@ export async function forwardRequest(
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  // 브라우저가 끊으면(Esc·탭 닫기) 업스트림도 끊는다. 스트리밍은 응답이 오래 살아 있어서
+  // 이걸 안 엮으면 사용자가 나간 뒤에도 도구가 계속 실행된다.
+  //
+  // 본문을 읽는 동안 이미 끊겼을 수 있으므로 현재 상태부터 본다 — 리스너만 달면
+  // 그 abort 는 이미 지나가서 업스트림 호출이 그대로 나간다.
+  if (streaming) {
+    if (request.signal.aborted) controller.abort();
+    else request.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
 
   let upstream: Response;
   try {
@@ -121,6 +140,18 @@ export async function forwardRequest(
     return new Response(null, {
       status: upstream.status,
       headers: { Location: location },
+    });
+  }
+
+  if (streaming) {
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': upstream.headers.get('Content-Type') ?? 'application/octet-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        // 프록시가 버퍼링하면 스트리밍이 의미를 잃는다.
+        'X-Accel-Buffering': 'no',
+      },
     });
   }
 

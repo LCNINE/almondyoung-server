@@ -13,7 +13,6 @@
     "prebuild": "node scripts/sync-demo-guides.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
     "@blocknote/core": "^0.54.0",
     "@blocknote/react": "^0.54.0",
     "@blocknote/shadcn": "^0.54.0",
@@ -71,6 +70,7 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.18",
     "embla-carousel-react": "^8.6.0",
+    "eventsource-parser": "^4.1.1",
     "input-otp": "^1.4.2",
     "jose": "^6.1.0",
     "jsbarcode": "^3.12.1",

@@ -58,6 +58,21 @@ export class UpstreamUnavailableError extends ApplicationException {
   }
 }
 
+/** 기능이 설정 누락으로 통째로 꺼져 있음 (API 키 미설정 등) — 재시도해도 소용없다. */
+export class ServiceUnavailableError extends ApplicationException {
+  constructor(message: string) {
+    super(message);
+  }
+
+  getErrorCode(): string {
+    return 'SERVICE_UNAVAILABLE';
+  }
+
+  getHttpStatus(): number {
+    return HttpStatus.SERVICE_UNAVAILABLE;
+  }
+}
+
 export class UnauthorizedError extends ApplicationException {
   constructor(message: string) {
     super(message);

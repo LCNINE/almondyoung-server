@@ -12,6 +12,7 @@ import { fileServiceSchema } from './database/schema';
 import { SharedModule } from './shared/shared.module';
 import { StorageModule } from './storage/storage.module';
 import { UploadModule } from './upload/upload.module';
+import { InternalFilesModule } from './internal/internal-files.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { DownloadModule } from './download/download.module';
 
@@ -37,6 +38,7 @@ import { DownloadModule } from './download/download.module';
     StorageModule,
     UploadModule,
     LifecycleModule,
+    InternalFilesModule,
     DownloadModule,
   ],
   controllers: [FileServiceController],

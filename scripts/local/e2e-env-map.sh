@@ -31,6 +31,7 @@ E2E_ENV_ROWS=(
   "analytics|apps/analytics/.env|-|3040|extra|nest|analytics|no|통계 (어드민 대시보드 타일)"
   "notification|apps/notification/.env|-|3050|extra|nest|notification|no|알림 — 로컬은 scripts/local/sms-stub.js 로 대체"
   "search|apps/search/.env|-|3060|extra|nest|search|no|상품 검색"
+  "ai|apps/ai/.env|.env.ai.local.example|3070|extra|nest|ai|no|어드민 AI 어시스턴트·상품설명 초안"
 )
 
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)

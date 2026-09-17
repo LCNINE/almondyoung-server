@@ -1,0 +1,71 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestError, NotFoundError } from '@app/shared';
+import { FileRepository } from '../shared/repositories/file.repository';
+import { StorageService } from '../storage/storage.service';
+
+/**
+ * soft delete 뒤 S3 객체까지 지우기 전에 기다리는 기간.
+ *
+ * 오판을 되돌릴 창이다. 이 기간 안에는 uploads.status 를 active 로 돌리면 객체가
+ * 그대로 있어 복구된다.
+ */
+export const OBJECT_PURGE_GRACE_DAYS = 14;
+
+@Injectable()
+export class InternalFilesService {
+  private readonly logger = new Logger(InternalFilesService.name);
+
+  constructor(
+    private readonly repo: FileRepository,
+    private readonly storage: StorageService,
+  ) {}
+
+  /** 행만 deleted 로 바꾼다. S3 객체는 남는다. */
+  async softDelete(fileId: string): Promise<{ success: boolean }> {
+    const file = await this.repo.findById(fileId);
+    if (!file) throw new NotFoundError('File not found');
+    if (file.status === 'deleted') return { success: true };
+
+    await this.repo.softDelete(fileId);
+    this.logger.log(`내부 soft delete fileId=${fileId} context=${file.contextId}`);
+    return { success: true };
+  }
+
+  /**
+   * soft delete 를 되돌린다. 유예기간 안에 다시 쓰이게 된 파일을 살리는 길이다.
+   */
+  async restore(fileId: string): Promise<{ success: boolean }> {
+    const file = await this.repo.findById(fileId);
+    if (!file) throw new NotFoundError('File not found');
+    if (file.status === 'active') return { success: true };
+
+    await this.repo.updateStatus(fileId, 'active', { deletedAt: null });
+    this.logger.log(`내부 복구 fileId=${fileId} context=${file.contextId}`);
+    return { success: true };
+  }
+
+  /**
+   * S3 객체와 행을 지운다. 되돌릴 수 없다.
+   *
+   * 이미 soft delete 됐고 유예기간이 지난 파일만 받는다. 호출자가 시점을 잘못 계산해도
+   * 여기서 막히도록 조건을 서버에 둔다.
+   */
+  async purgeObject(fileId: string): Promise<{ success: boolean }> {
+    const file = await this.repo.findById(fileId);
+    if (!file) throw new NotFoundError('File not found');
+
+    if (file.status !== 'deleted' || !file.deletedAt) {
+      throw new BadRequestError('File is not soft-deleted');
+    }
+
+    const graceEndsAt = new Date(file.deletedAt.getTime() + OBJECT_PURGE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    if (graceEndsAt > new Date()) {
+      throw new BadRequestError(`File is still within the ${OBJECT_PURGE_GRACE_DAYS}-day grace period`);
+    }
+
+    await this.storage.delete({ key: file.filePath, isPublic: file.isPublic });
+    await this.repo.hardDelete(fileId);
+    this.logger.log(`내부 purge fileId=${fileId} key=${file.filePath}`);
+    return { success: true };
+  }
+}

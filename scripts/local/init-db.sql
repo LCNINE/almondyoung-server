@@ -16,3 +16,6 @@ CREATE DATABASE user_service;
 -- «무한 재시도» 를 해서 migrate-all.sh 가 거기서 굳고, 목록상 뒤의 user_service 가
 -- 영영 마이그레이션되지 않는다 (docs/local-e2e-environment.md §2).
 CREATE DATABASE search;
+-- apps/ai 의 대화 기록. migrate-all.sh 는 없으면 만들어 주지만, 새로 컨테이너를 띄우는
+-- 사람이 앱만 먼저 켜면 부팅하다 죽으므로 여기에도 둔다.
+CREATE DATABASE ai;

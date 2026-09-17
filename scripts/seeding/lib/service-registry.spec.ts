@@ -4,6 +4,7 @@ describe('getServiceRegistry demo selection', () => {
   it('keeps the existing lcnine services registry outside demo', () => {
     expect(getServiceRegistry('lcnine-services', 'dev').map((service) => service.name)).toEqual([
       'core',
+      'ai',
       'analytics',
       'channel-adapter',
       'membership',

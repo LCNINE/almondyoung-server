@@ -21,7 +21,7 @@ import { BUILTIN_PRESET_VALUE } from './ai-prompt-select';
 import {
   DEFAULT_PRODUCT_DESCRIPTION_PROMPT,
   IMAGE_DIRECTIVE_RULES,
-} from './product-description-prompt';
+} from '@packages/product-description';
 
 type Props = {
   presets: AiPromptPresetDto[];

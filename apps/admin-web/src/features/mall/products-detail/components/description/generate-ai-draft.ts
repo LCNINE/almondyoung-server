@@ -4,7 +4,7 @@ import {
   IMAGES_PER_CHUNK,
   chunkFileIds,
   mergeExtractResults,
-} from './ai-draft';
+} from '@packages/product-description';
 
 export type DraftProgress =
   | { phase: 'extracting'; done: number; total: number }
@@ -31,7 +31,7 @@ async function postJson<T>(
 
 /**
  * 이미지를 청크로 나눠 병렬 분석한 뒤, 그 결과를 합쳐 한 번에 상세페이지를 쓴다.
- * 한 호출에 다 시키면 60초 CloudFront 타임아웃에 걸린다 — ai-draft.ts 참조.
+ * 한 호출에 다 시키면 60초 CloudFront 타임아웃에 걸린다 — @packages/product-description 의 draft.ts 참조.
  */
 export async function generateAiDraft(params: {
   fileIds: string[];
@@ -48,7 +48,7 @@ export async function generateAiDraft(params: {
   const results = await Promise.all(
     chunks.map(async (chunk) => {
       const json = await postJson<{ result: ExtractResult }>(
-        '/api/ai/product-description/extract',
+        '/api/proxy/ai/product-description/extract',
         { fileIds: chunk },
         '이미지 분석에 실패했습니다.'
       );
@@ -61,7 +61,7 @@ export async function generateAiDraft(params: {
   onProgress?.({ phase: 'composing' });
 
   const composed = await postJson<{ markdown?: string; truncated?: boolean }>(
-    '/api/ai/product-description/compose',
+    '/api/proxy/ai/product-description/compose',
     { result: mergeExtractResults(results), productName, presetId },
     'AI 초안 생성에 실패했습니다.'
   );

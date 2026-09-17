@@ -25,6 +25,7 @@ SERVICES=(
   "search:apps/search/drizzle.config.ts"
   "file_service:apps/file-service/drizzle.config.ts"
   "user_service:apps/user-service/database/drizzle/drizzle.config.ts"
+  "ai:apps/ai/src/db/drizzle.config.ts"
 )
 
 for entry in "${SERVICES[@]}"; do

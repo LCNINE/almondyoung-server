@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_uploaded_files" ADD COLUMN "stuck_at" timestamp with time zone;

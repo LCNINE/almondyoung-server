@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `search` | Elasticsearch/OpenSearch product search |
 | `analytics` | Analytics data collection |
 | `ugc-service` | User-generated content (reviews) |
+| `ai` | AI 어시스턴트(도구 호출 채팅) + 상품 상세설명 초안. 다른 서비스는 전부 HTTP 로 부른다 |
 
 ### Frontend Apps
 - `apps/admin-web` — Next.js admin dashboard
@@ -44,6 +45,7 @@ npm run start:membership:dev   # Membership
 npm run start:channel-adapter:dev  # Channel adapter
 npm run start:search:dev       # Search
 npm run start:ugc-service:dev  # UGC service
+npm run start:ai:dev           # AI (어시스턴트·상품설명)
 npm run start:admin-web:dev    # Admin Next.js dev server
 ```
 
@@ -102,6 +104,7 @@ npm run db:generate:analytics -- --name <kebab-description>
 npm run db:generate:file-service -- --name <kebab-description>
 npm run db:generate:ugc-service -- --name <kebab-description>
 npm run db:generate:membership -- --name <kebab-description>
+npm run db:generate:ai -- --name <kebab-description>
 
 # Dev 머신에서 마이그레이션 적용 (인터랙티브). 한 명령에 bootstrap → migrate → seed 가 묶여있음.
 npm run db:setup -- --stage dev --deployment lcnine-services
@@ -345,6 +348,30 @@ ECS 태스크가 겹쳐도(롤링 배포·`scaling.max > 1`) 한 주기가 클�
 - Transactional outbox pattern for reliable event publishing
 - Auto-DLQ support for failed consumers
 - Graceful shutdown support; see `libs/events/docs/` for patterns
+
+### AI (`apps/ai`) — 스킬은 도구를 들고, 앱은 다른 서비스를 HTTP 로만 부른다
+
+어시스턴트는 어느 프론트에도 붙을 수 있게 **독립 앱**이다 (admin-web 은 `/api/proxy/ai` 로 프록시만 한다).
+이 앱은 도메인 DB 를 직접 읽지 않는다 — core·file-service 등은 **HTTP** 로 부르고, 인증은
+**부른 사람의 쿠키/토큰을 그대로 전달**한다. 서비스 계정을 두면 어드민이 못 보는 것까지 도구가 본다.
+
+- **스킬 하나 = 도구 정의 + 실행부 + 모델이 읽는 지시문.** `src/skills/registry.ts` 의 배열에 한 줄
+  더하면 도구 목록도 시스템 프롬프트도 거기서 파생된다.
+- **되돌리기 어려운 도구는 `destructive: true`.** 레지스트리가 `confirmed: true` 없이는 실행을 거부한다.
+  프롬프트로만 막으면 모델이 그 문장을 무시하는 순간 상품이 지워진다 — 프롬프트는 규율이지 방어선이 아니다.
+- **도구 정의는 provider 중립 형태**(`ToolDefinition`)로 둔다. 스킬이 특정 SDK 타입을 물면 모델을
+  갈 때 스킬 전부를 고쳐야 한다. OpenAI/Anthropic 형식으로 옮기는 것은 러너 한 곳의 일이다.
+- **대화 원본은 서버가 들고 있다.** 클라이언트가 통째로 되돌려주면 DB 사본과 갈리고, `tool_result`
+  를 고쳐 보내면 모델이 그대로 믿는다. 브라우저는 `sessionId` 와 이번 발화만 보낸다.
+- **집계는 DB/업스트림에서 끝내고 모델에게 산술을 시키지 않는다.** 원본 행을 그대로 주면 모델이
+  수십~수백 행을 더하다 틀리고 토큰도 버린다. 합계·평균·건수를 묻는 도구는 완성된 숫자를 반환할 것.
+- **지금이 언제인지는 시스템 프롬프트가 아니라 마지막 사용자 턴 뒤에 붙인다**(`chat-datetime.ts`).
+  시스템 프롬프트는 캐시되는 접두사의 맨 앞이라, 매 요청 바뀌는 값을 거기 두면 캐시가 통째로 깨진다.
+- **탈퇴 회원의 대화 파기는 감추기와 크론 두 걸음이다.** `user_id` 에 FK 가 없어 cascade 가 오지
+  않는다. `UserPermanentDeleted` 를 받은 컨슈머가 `deleted_at` 만 찍고 30일 뒤
+  `AssistantChatPurgeService` 가 지운다 — 그 30일이 잘못 감춘 것을 되돌릴 창이다.
+- **Kafka 는 소비만 한다(발행 없음).** `KAFKA_BROKERS` 가 없으면 컨슈머를 안 띄우고 부팅한다 —
+  브로커를 ai 의 기동 조건으로 만들지 않기 위해서다.
 
 ### Medusa (`apps/medusa`) — 확장은 소스가 아니라 문서에서 시작한다
 
