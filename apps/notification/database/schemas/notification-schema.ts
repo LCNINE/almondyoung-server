@@ -119,17 +119,30 @@ export const notifications = pgTable(
     nextRetryAt: timestamp('next_retry_at'),
     errorDetails: jsonb('error_details').$type<ErrorDetails>(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
+    smsDeviceId: varchar('sms_device_id', { length: 64 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     userStatusIdx: index('idx_user_status_created').on(table.userId, table.status, table.createdAt),
+    smsDeviceSentIdx: index('idx_sms_device_sent').on(table.smsDeviceId, table.sentAt),
     statusSendAtIdx: index('idx_status_send_at').on(table.status, table.sendAt),
     statusRetryIdx: index('idx_status_retry').on(table.status, table.nextRetryAt),
     campaignIdx: index('idx_campaign').on(table.campaignId),
     categoryPriorityIdx: index('idx_category_priority').on(table.category, table.priority),
   }),
 );
+
+// SMS Gate 발송폰
+export const smsDevices = pgTable('sms_devices', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  deviceId: varchar('device_id', { length: 64 }).notNull().unique(),
+  name: varchar('name', { length: 64 }).notNull(),
+  dailyLimit: integer('daily_limit').notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 // 대량 발송 캠페인 테이블
 export const notificationCampaigns = pgTable(
@@ -459,6 +472,7 @@ export const notificationTables = {
   alerts,
   fcmTokens,
   fcmTopicSubscriptions,
+  smsDevices,
 };
 
 // Export types
@@ -486,6 +500,8 @@ export type FcmToken = typeof fcmTokens.$inferSelect;
 export type NewFcmToken = typeof fcmTokens.$inferInsert;
 export type FcmTopicSubscription = typeof fcmTopicSubscriptions.$inferSelect;
 export type NewFcmTopicSubscription = typeof fcmTopicSubscriptions.$inferInsert;
+export type SmsDevice = typeof smsDevices.$inferSelect;
+export type NewSmsDevice = typeof smsDevices.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;
