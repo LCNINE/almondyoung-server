@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, UserContactClient } from '@app/shared';
-import { Notification } from '../../database/schemas/notification-schema';
-import { Channel } from '../shared/enums';
-import { SendSmsGateMessageDto } from './dto/sms-gate.dto';
-import { SMS_GATE_PROVIDER_ID } from './sms-gate.constants';
-import { SmsGateRepository } from './sms-gate.repository';
+import { Notification } from '../../../database/schemas/notification-schema';
+import { Channel } from '../../shared/enums';
+import { SendSmsGateMessageDto } from '../dto';
+import { composeSmsBody } from '../utils/sms-body';
+import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
+import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
 export interface SmsGateSendResult {
   queued: { notificationId: string; userId: string }[];
@@ -37,17 +38,21 @@ export class SmsMessageManager {
         skipped.push({ userId, reason: '등록된 휴대폰 번호가 없습니다' });
         return [];
       }
+      if (dto.category === 'MARKETING' && !contact.marketingConsent) {
+        skipped.push({ userId, reason: '마케팅 수신 동의가 없습니다' });
+        return [];
+      }
       return [
         {
           userId,
-          category: 'INFORMATIONAL' as const,
+          category: dto.category,
           priority: 'HIGH' as const,
           channel: Channel.SMS,
           language: 'ko' as const,
           providerId: SMS_GATE_PROVIDER_ID,
           status: 'PENDING' as const,
           payload: { phoneNumber: contact.phoneNumber, username: contact.username },
-          renderedContent: { body: dto.content },
+          renderedContent: { body: composeSmsBody(dto.category, dto.content) },
           metadata: { requestedDeviceId: dto.deviceId ?? null, sentBy },
         },
       ];

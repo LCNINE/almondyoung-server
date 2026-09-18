@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {
   NewNotification,
   NewSmsDevice,
@@ -10,8 +10,8 @@ import {
   notificationTables,
   SmsDevice,
   smsDevices,
-} from '../../database/schemas/notification-schema';
-import { SMS_GATE_PROVIDER_ID } from './sms-gate.constants';
+} from '../../../database/schemas/notification-schema';
+import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 
 type Schema = typeof notificationTables;
 
@@ -82,7 +82,7 @@ export class SmsGateRepository {
     return this.dbService.db.insert(notifications).values(rows).returning();
   }
 
-  findDue(now: Date, limit: number): Promise<Notification[]> {
+  findDue(now: Date, limit: number, includeMarketing: boolean): Promise<Notification[]> {
     return this.dbService.db
       .select()
       .from(notifications)
@@ -91,6 +91,7 @@ export class SmsGateRepository {
           isSmsGate,
           eq(notifications.status, 'PENDING'),
           or(isNull(notifications.sendAt), lte(notifications.sendAt, now)),
+          includeMarketing ? undefined : ne(notifications.category, 'MARKETING'),
         ),
       )
       .orderBy(asc(notifications.createdAt))
@@ -131,6 +132,22 @@ export class SmsGateRepository {
         updatedAt: new Date(),
       })
       .where(eq(notifications.notificationId, row.notificationId));
+  }
+
+  async markCancelled(row: Notification, message: string): Promise<void> {
+    await this.dbService.db
+      .update(notifications)
+      .set({ status: 'CANCELLED', errorDetails: { message, timestamp: new Date() }, updatedAt: new Date() })
+      .where(and(eq(notifications.notificationId, row.notificationId), eq(notifications.status, 'PENDING')));
+  }
+
+  async hasReplyFor(inboundMessageId: string): Promise<boolean> {
+    const [row] = await this.dbService.db
+      .select({ id: notifications.notificationId })
+      .from(notifications)
+      .where(and(isSmsGate, sql`${notifications.metadata}->>'inboundMessageId' = ${inboundMessageId}`))
+      .limit(1);
+    return !!row;
   }
 
   findMessages(ids: string[]): Promise<Notification[]> {

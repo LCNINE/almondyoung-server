@@ -26,9 +26,12 @@ export interface SmsDeviceFormValues {
   enabled: boolean;
 }
 
+export type SmsGateCategory = 'INFORMATIONAL' | 'MARKETING';
+
 export interface SendSmsGateMessageDto {
   userIds: string[];
   content: string;
+  category: SmsGateCategory;
   deviceId?: string;
 }
 

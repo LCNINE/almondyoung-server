@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { SmsDispatchManager } from './sms-dispatch.manager';
-import { SmsGateClient } from './sms-gate.client';
+import { SmsGateClient } from '../clients/sms-gate.client';
 
 @Injectable()
 export class SmsDispatchWorker {

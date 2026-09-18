@@ -1,4 +1,4 @@
-import { SMS_GATE_OFFLINE_AFTER_MS } from './sms-gate.constants';
+import { SMS_GATE_OFFLINE_AFTER_MS } from '../constants/sms-gate.constants';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
