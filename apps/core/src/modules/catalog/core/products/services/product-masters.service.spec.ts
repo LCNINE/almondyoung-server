@@ -5,8 +5,13 @@ jest.mock(
   }),
   { virtual: true },
 );
+jest.mock('./product-audit-log', () => ({
+  ...jest.requireActual('./product-audit-log'),
+  recordProductAudit: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { ProductMastersService } from './product-masters.service';
+import { diffFields, recordProductAudit } from './product-audit-log';
 import {
   productMasterPurchaseConstraints,
   productMasters,
@@ -312,5 +317,85 @@ describe('ProductMastersService.createMaster ownership', () => {
 
     const masterValues = insertedValues.find((v) => 'id' in v && !('masterId' in v) && !('variantName' in v));
     expect(masterValues.createdBy).toBe('user-123');
+
+    expect(recordProductAudit).toHaveBeenCalledWith(tx, {
+      masterId: masterValues.id,
+      versionId: versionValues.id,
+      action: 'created',
+      userId: 'user-123',
+    });
+  });
+});
+
+describe('ProductMastersService.updateVersion 감사 기록', () => {
+  it('버전 칼럼과 별도 테이블 관계를 수정 전후 실제 값으로 남긴다', async () => {
+    const service = new ProductMastersService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      null,
+    );
+    const tx: any = {
+      update: () => ({ set: () => ({ where: () => ({ returning: () => [{ id: 'v1', masterId: 'm1' }] }) }) }),
+      delete: () => ({ where: jest.fn() }),
+    };
+    jest
+      .spyOn(service, 'getVersionById')
+      .mockResolvedValue({ id: 'v1', masterId: 'm1', status: 'draft', name: 'A' } as any);
+    jest.spyOn(service as any, '_linkCategories').mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, '_loadAuditedRelations')
+      .mockResolvedValueOnce({ categoryIds: ['c1'], thumbnailFileId: 'f1' })
+      .mockResolvedValueOnce({ categoryIds: ['c2'], thumbnailFileId: 'f1' });
+
+    await service.updateVersion('v1', { name: 'B', categoryIds: ['c2'] }, 'user-1', tx);
+
+    expect(recordProductAudit).toHaveBeenCalledWith(tx, {
+      masterId: 'm1',
+      versionId: 'v1',
+      action: 'updated',
+      userId: 'user-1',
+      changes: {
+        name: { old: 'A', new: 'B' },
+        categoryIds: { old: ['c1'], new: ['c2'] },
+      },
+    });
+  });
+
+  it('옵션의 표시 속성(색상코드 등)만 바뀌어도 변경으로 잡는다', async () => {
+    const service = new ProductMastersService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      null,
+    );
+    const rows = { orderBy: () => [], then: (resolve: (v: unknown[]) => unknown) => resolve([]) };
+    const tx: any = { select: () => ({ from: () => ({ where: () => rows }) }) };
+    const group = (colorCode: string) => [
+      {
+        optionGroupId: 'g1',
+        displayName: '색상',
+        description: null,
+        sortOrder: 0,
+        values: [{ optionValueId: 'o1', displayName: '빨강', colorCode, imageUrl: null, sortOrder: 0 }],
+      },
+    ];
+    jest
+      .spyOn(service as any, '_getVersionOptionGroupsWithDisplays')
+      .mockResolvedValueOnce(group('#ff0000'))
+      .mockResolvedValueOnce(group('#ee0000'));
+
+    const before = await (service as any)._loadAuditedRelations('m1', 'v1', tx);
+    const after = await (service as any)._loadAuditedRelations('m1', 'v1', tx);
+
+    expect(Object.keys(diffFields(before, after))).toEqual(['options']);
   });
 });

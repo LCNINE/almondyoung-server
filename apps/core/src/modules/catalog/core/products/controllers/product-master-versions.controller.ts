@@ -177,7 +177,7 @@ export class ProductMasterVersionsController {
     if (!canModify) {
       throw new ForbiddenException('Only draft versions can be modified. Create a new draft version to make changes.');
     }
-    const updatedVersion = await this.productMastersService.updateVersion(versionId, updateData);
+    const updatedVersion = await this.productMastersService.updateVersion(versionId, updateData, user.userId);
     const versionDetail = await this.productVersionsService.getVersionDetail(updatedVersion.id);
     return ProductVersionMapper.toDetailResponseDto(versionDetail);
   }
@@ -196,8 +196,12 @@ export class ProductMasterVersionsController {
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   @ApiResponse({ status: 400, description: 'Draft 또는 Inactive 상태가 아닌 버전은 publish할 수 없음' })
-  async publishVersion(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
-    await this.productVersionsService.publishVersion(versionId);
+  async publishVersion(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @User() user: { userId: string },
+  ) {
+    await this.productVersionsService.publishVersion(versionId, user.userId);
     return { message: 'Version published successfully' };
   }
 

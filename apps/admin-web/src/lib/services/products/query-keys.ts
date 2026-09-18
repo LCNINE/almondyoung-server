@@ -145,11 +145,8 @@ export const productQueryKeys = {
   channelCategory: (id: string) => ['channel-categories', id] as const,
 
   // 감사 로그 관련
-  auditRecent: (limit: number) => ['audit', 'recent', limit] as const,
-  auditByUser: (userId: string, limit: number) =>
-    ['audit', 'by-user', userId, limit] as const,
-  auditByAction: (action: string, limit: number) =>
-    ['audit', 'by-action', action, limit] as const,
+  auditLogs: (params: { page: number; limit: number; action?: string }) =>
+    ['audit', 'list', params] as const,
   auditProduct: (masterId: string) => ['audit', 'product', masterId] as const,
 
   // 프리필 양식(대량등록 재출력) 관련

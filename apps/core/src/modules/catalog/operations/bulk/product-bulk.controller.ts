@@ -66,9 +66,9 @@ export class ProductBulkController {
   @ApiBody({ type: BulkPolicyDto })
   @ApiResponse({ status: 200, description: '일괄 변경 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async bulkUpdatePolicy(@Body() dto: BulkPolicyDto) {
+  async bulkUpdatePolicy(@Body() dto: BulkPolicyDto, @User() user: { userId: string }) {
     try {
-      return await this.bulkService.bulkUpdatePolicy(dto);
+      return await this.bulkService.bulkUpdatePolicy(dto, user.userId);
     } catch (error) {
       throw new HttpException(`Failed to bulk update policy: ${error.message}`, HttpStatus.BAD_REQUEST);
     }

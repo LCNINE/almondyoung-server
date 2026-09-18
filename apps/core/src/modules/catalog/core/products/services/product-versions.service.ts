@@ -48,14 +48,11 @@ import { ProductSellableQuantityService } from '../../../../inventory/product-se
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, count } from 'drizzle-orm';
 import { isExternalMarketplaceSite } from '../../channels/marketplace-site';
-import {
-  comboKey,
-  planChannelListingReconciliation,
-  type VariantOptionCombo,
-} from './channel-listing-reconciliation';
+import { comboKey, planChannelListingReconciliation, type VariantOptionCombo } from './channel-listing-reconciliation';
 import { keywordMatch } from '../../../common/keyword-match';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
+import { AuditChanges, diffFields, recordProductAudit } from './product-audit-log';
 
 /**
  * publish 를 유발한 작업의 성격. 임포트 워커와 단건 UI 가 같은 `publishVersion` 을
@@ -274,7 +271,12 @@ export class ProductVersionsService {
    * - 새 active variant 들끼리의 variantCode 충돌 검증 (DB 강제 없음 — 런타임 검증)
    * - 다른 master 의 active 버전과 productCode 충돌 검증 (DB partial unique index와 이중 방어)
    */
-  async publishVersion(versionId: string, tx?: DbTransaction, options?: PublishVersionOptions): Promise<void> {
+  async publishVersion(
+    versionId: string,
+    userId: string,
+    tx?: DbTransaction,
+    options?: PublishVersionOptions,
+  ): Promise<void> {
     return this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
@@ -362,8 +364,52 @@ export class ProductVersionsService {
       ];
       await this.productSellableQuantity.recalculateAndPublishForVariants(variantIdsToRecalculate, tx);
 
+      await recordProductAudit(tx, {
+        masterId: version.masterId,
+        versionId,
+        action: changeReason === 'rollback' ? 'rolled_back' : 'published',
+        userId,
+        changes: await this._diffAgainstPreviousActive(versionId, previousActiveVersion?.id ?? null, tx),
+      });
+
       this.logger.log(`Published version ${version.id} of master ${version.masterId} as active`);
     }, tx);
+  }
+
+  private async _diffAgainstPreviousActive(
+    versionId: string,
+    previousActiveId: string | null,
+    tx: DbTransaction,
+  ): Promise<AuditChanges> {
+    const changes: AuditChanges = {};
+    if (previousActiveId) {
+      for (const diff of await this.compareVersions(previousActiveId, versionId, tx)) {
+        if (diff.field === 'status') continue;
+        changes[diff.field] = { old: diff.oldValue, new: diff.newValue };
+      }
+    }
+
+    const [oldPrices, newPrices] = await Promise.all([
+      previousActiveId ? this.priceCacheService.getCachedPriceSetsByVersion(previousActiveId, tx) : [],
+      this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx),
+    ]);
+    const combos = await this._attachOptionValues(
+      [...oldPrices, ...newPrices].map((p) => p.variantId),
+      tx,
+    );
+    const comboOf = new Map(combos.map((c) => [c.variantId, comboKey(c.optionValueIds)]));
+    const priceKey = (sets: typeof newPrices) =>
+      JSON.stringify(
+        sets
+          .map(({ variantId, basePrice, membershipPrice, tieredPrices }) =>
+            JSON.stringify([comboOf.get(variantId), basePrice, membershipPrice, tieredPrices]),
+          )
+          .sort(),
+      );
+    if (priceKey(oldPrices) !== priceKey(newPrices)) {
+      changes.prices = { old: oldPrices, new: newPrices };
+    }
+    return changes;
   }
 
   /**
@@ -868,17 +914,18 @@ export class ProductVersionsService {
     return variantIds.map((id) => ({ variantId: id, optionValueIds: byVariant.get(id) ?? [] }));
   }
 
-
   /**
    * 멤버십가 공개 제한 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
   async updateMembershipPriceVisibility(
     masterId: string,
     hideMembershipPriceForNonMembers: boolean,
+    userId: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
+      await this._recordExposureChange(activeVersion, activeVersion, { hideMembershipPriceForNonMembers }, userId, tx);
 
       await tx
         .update(productMasterVersions)
@@ -903,10 +950,12 @@ export class ProductVersionsService {
   async updateMembersOnlyVisibility(
     masterId: string,
     isVisibleToMembersOnly: boolean,
+    userId: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
+      await this._recordExposureChange(activeVersion, activeVersion, { isVisibleToMembersOnly }, userId, tx);
 
       await tx
         .update(productMasterVersions)
@@ -926,10 +975,22 @@ export class ProductVersionsService {
    * 값이 별도 테이블이라 updateExposurePolicy 의 단일 UPDATE 에는 얹지 못한다.
    * lifetimeQuantityLimit 은 보존 — 이 토글이 구매수량 제한을 지우면 안 된다.
    */
-  async updateRequiresMembership(masterId: string, requiresMembership: boolean, tx?: DbTransaction): Promise<void> {
+  async updateRequiresMembership(
+    masterId: string,
+    requiresMembership: boolean,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
     return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
       const current = await this.purchaseConstraints.getForVersion(masterId, activeVersion.id, tx);
+      await this._recordExposureChange(
+        activeVersion,
+        { requiresMembership: current?.requiresMembership ?? false },
+        { requiresMembership },
+        userId,
+        tx,
+      );
 
       await this.purchaseConstraints.upsertForVersion(
         masterId,
@@ -947,9 +1008,10 @@ export class ProductVersionsService {
   /**
    * 해외직구 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
-  async updateOverseas(masterId: string, isOverseas: boolean, tx?: DbTransaction): Promise<void> {
+  async updateOverseas(masterId: string, isOverseas: boolean, userId: string, tx?: DbTransaction): Promise<void> {
     return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
+      await this._recordExposureChange(activeVersion, activeVersion, { isOverseas }, userId, tx);
 
       await tx
         .update(productMasterVersions)
@@ -975,6 +1037,7 @@ export class ProductVersionsService {
       isOverseas?: boolean;
       shippingGroupCode?: string | null;
     },
+    userId: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
@@ -997,6 +1060,7 @@ export class ProductVersionsService {
       }
 
       await tx.update(productMasterVersions).set(set).where(eq(productMasterVersions.id, activeVersion.id));
+      await this._recordExposureChange(activeVersion, activeVersion, set, userId, tx);
 
       // 스냅샷은 _emit 내부에서 같은 tx로 UPDATE 이후의 DB 상태를 다시 조회해 조립하므로,
       // 갱신 전 activeVersion 객체를 그대로 넘겨도 새 값이 반영된다 (단건 경로와 동일).
@@ -1006,10 +1070,28 @@ export class ProductVersionsService {
     }, tx);
   }
 
+  private async _recordExposureChange(
+    activeVersion: ProductMasterVersion,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+    userId: string,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const changes = diffFields(before, after);
+    delete changes.updatedAt;
+    await recordProductAudit(tx, {
+      masterId: activeVersion.masterId,
+      versionId: activeVersion.id,
+      action: 'exposure_updated',
+      userId,
+      changes,
+    });
+  }
+
   /**
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
-  async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {
+  async unpublishMaster(masterId: string, userId: string, tx?: DbTransaction): Promise<void> {
     return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
@@ -1020,6 +1102,14 @@ export class ProductVersionsService {
         .where(eq(productMasterVersions.id, activeVersion.id));
 
       await this._emitActiveVersionChangedEvent(activeVersion, activeVersion, 'unpublished', tx);
+
+      await recordProductAudit(tx, {
+        masterId,
+        versionId: activeVersion.id,
+        action: 'unpublished',
+        userId,
+        changes: { status: { old: 'active', new: 'inactive' } },
+      });
 
       const variantIds = await this.getVersionVariants(activeVersion.masterId, activeVersion.id, tx);
       await this.productSellableQuantity.recalculateAndPublishForVariants(variantIds, tx);

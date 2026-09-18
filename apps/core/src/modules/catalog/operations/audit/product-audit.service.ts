@@ -1,9 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { eq, desc } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { pimSchema, productAuditLog } from '../../schema/catalog.schema';
-import { NewProductAuditLog } from '../../catalog.types';
+import { pimSchema, productAuditLog, productImages, productMasterVersions } from '../../schema/catalog.schema';
+
+const auditLogItem = {
+  id: productAuditLog.id,
+  productId: productAuditLog.masterId,
+  versionId: productAuditLog.versionId,
+  action: productAuditLog.action,
+  userId: productAuditLog.userId,
+  createdAt: productAuditLog.timestamp,
+};
 
 @Injectable()
 export class ProductAuditService {
@@ -16,53 +24,81 @@ export class ProductAuditService {
     return this.dbService.db;
   }
 
-  /**
-   * Get audit history for a specific product
-   */
-  async getProductAuditHistory(productId: string) {
-    return this.db
-      .select()
+  async getProductAuditHistory(masterId: string) {
+    const rows = await this.db
+      .select({ ...auditLogItem, changes: productAuditLog.changes })
       .from(productAuditLog)
-      .where(eq(productAuditLog.versionId, productId))
-      .orderBy(desc(productAuditLog.timestamp));
+      .where(eq(productAuditLog.masterId, masterId))
+      .orderBy(desc(productAuditLog.timestamp), desc(productAuditLog.id));
+    return this.withProducts(rows);
   }
 
-  /**
-   * Get recent audit logs (all products)
-   */
-  async getRecentAuditLogs(limit = 100) {
-    return this.db.select().from(productAuditLog).orderBy(desc(productAuditLog.timestamp)).limit(limit);
+  async listAuditLogs(query: { action?: string; userId?: string; page?: number; limit?: number }) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 20, 100);
+    const where = and(
+      query.action ? eq(productAuditLog.action, query.action) : undefined,
+      query.userId ? eq(productAuditLog.userId, query.userId) : undefined,
+    );
+
+    const [rows, [{ total }]] = await Promise.all([
+      this.db
+        .select(auditLogItem)
+        .from(productAuditLog)
+        .where(where)
+        .orderBy(desc(productAuditLog.timestamp), desc(productAuditLog.id))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      this.db.select({ total: count() }).from(productAuditLog).where(where),
+    ]);
+
+    return { data: await this.withProducts(rows), total, page, limit };
   }
 
-  /**
-   * Get audit logs by user
-   */
-  async getAuditLogsByUser(userId: string, limit = 100) {
-    return this.db
-      .select()
-      .from(productAuditLog)
-      .where(eq(productAuditLog.userId, userId))
-      .orderBy(desc(productAuditLog.timestamp))
-      .limit(limit);
-  }
+  private async withProducts<T extends { productId: string | null }>(rows: T[]) {
+    const masterIds = [...new Set(rows.map((r) => r.productId).filter((id): id is string => !!id))];
+    if (masterIds.length === 0) {
+      return rows.map((row) => ({ ...row, productName: null, productThumbnail: null }));
+    }
 
-  /**
-   * Get audit logs by action type
-   */
-  async getAuditLogsByAction(action: string, limit = 100) {
-    return this.db
-      .select()
-      .from(productAuditLog)
-      .where(eq(productAuditLog.action, action))
-      .orderBy(desc(productAuditLog.timestamp))
-      .limit(limit);
-  }
+    const versions = await this.db
+      .selectDistinctOn([productMasterVersions.masterId], {
+        masterId: productMasterVersions.masterId,
+        versionId: productMasterVersions.id,
+        name: productMasterVersions.name,
+      })
+      .from(productMasterVersions)
+      .where(inArray(productMasterVersions.masterId, masterIds))
+      .orderBy(
+        productMasterVersions.masterId,
+        sql`(${productMasterVersions.status} = 'active') desc`,
+        desc(productMasterVersions.createdAt),
+      );
 
-  /**
-   * Manually log an audit entry
-   */
-  async logAuditEntry(entry: NewProductAuditLog) {
-    const [logged] = await this.db.insert(productAuditLog).values(entry).returning();
-    return logged;
+    const thumbnails =
+      versions.length === 0
+        ? []
+        : await this.db
+            .select({ versionId: productImages.versionId, fileId: productImages.fileId })
+            .from(productImages)
+            .where(
+              and(
+                inArray(
+                  productImages.versionId,
+                  versions.map((v) => v.versionId),
+                ),
+                eq(productImages.isPrimary, true),
+              ),
+            );
+
+    const thumbnailByVersion = new Map(thumbnails.map((t) => [t.versionId, t.fileId]));
+    const productByMaster = new Map(
+      versions.map((v) => [v.masterId, { name: v.name, thumbnail: thumbnailByVersion.get(v.versionId) ?? null }]),
+    );
+
+    return rows.map((row) => {
+      const product = row.productId ? productByMaster.get(row.productId) : undefined;
+      return { ...row, productName: product?.name ?? null, productThumbnail: product?.thumbnail ?? null };
+    });
   }
 }

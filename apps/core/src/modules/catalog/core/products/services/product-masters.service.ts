@@ -35,7 +35,6 @@ import {
   productVariants,
   variantOptionValues,
   productImages,
-  productAuditLog,
   productMasterOptionGroups,
   productMasterVariants,
   productVariantPriceCache,
@@ -55,6 +54,7 @@ import { PricingCalculatorService } from '../../pricing/pricing-calculator.servi
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
+import { diffFields, recordProductAudit } from './product-audit-log';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
@@ -254,6 +254,8 @@ export class ProductMastersService {
 
       // 5. WMS 이벤트 발행
       await this.publishVariantCreatedEvent(version, variant);
+
+      await recordProductAudit(tx, { masterId, versionId, action: 'created', userId: ownerId });
 
       return version;
     }, tx);
@@ -921,6 +923,7 @@ export class ProductMastersService {
   async updateVersion(
     versionId: string,
     data: UpdateProductMasterVersion,
+    userId: string,
     tx?: DbTransaction,
   ): Promise<ProductMasterVersion> {
     if (!versionId) {
@@ -957,6 +960,18 @@ export class ProductMastersService {
       ) {
         masterUpdateData.hideMembershipPriceForNonMembers = masterUpdateData.isMembershipOnly;
       }
+
+      const touchesRelations = [
+        categoryIds,
+        primaryCategoryId,
+        optionDiff,
+        tagValueIds,
+        thumbnailFileId,
+        additionalImageFileIds,
+      ].some((value) => value !== undefined);
+      const relationsBefore = touchesRelations
+        ? await this._loadAuditedRelations(existingVersion.masterId, versionId, tx)
+        : {};
 
       const [updated] = await tx
         .update(productMasterVersions)
@@ -1086,8 +1101,53 @@ export class ProductMastersService {
         }
       }
 
+      await recordProductAudit(tx, {
+        masterId: updated.masterId,
+        versionId,
+        action: 'updated',
+        userId,
+        changes: {
+          ...diffFields(existingVersion, masterUpdateData),
+          ...(touchesRelations
+            ? diffFields(relationsBefore, await this._loadAuditedRelations(updated.masterId, versionId, tx))
+            : {}),
+        },
+      });
+
       return updated;
     }, tx);
+  }
+
+  private async _loadAuditedRelations(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<Record<string, unknown>> {
+    const [categories, tags, images, optionGroups] = await Promise.all([
+      tx
+        .select({ categoryId: productMasterCategories.categoryId, isPrimary: productMasterCategories.isPrimary })
+        .from(productMasterCategories)
+        .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, versionId))),
+      tx
+        .select({ tagValueId: productTagValues.tagValueId })
+        .from(productTagValues)
+        .where(and(eq(productTagValues.masterId, masterId), eq(productTagValues.versionId, versionId))),
+      tx
+        .select({ fileId: productImages.fileId, isPrimary: productImages.isPrimary })
+        .from(productImages)
+        .where(eq(productImages.versionId, versionId))
+        .orderBy(asc(productImages.sortOrder)),
+      this._getVersionOptionGroupsWithDisplays(masterId, versionId, 'ko-KR', tx),
+    ]);
+
+    return {
+      categoryIds: categories.map((c) => c.categoryId).sort(),
+      primaryCategoryId: categories.find((c) => c.isPrimary)?.categoryId ?? null,
+      tagValueIds: tags.map((t) => t.tagValueId).sort(),
+      thumbnailFileId: images.find((i) => i.isPrimary)?.fileId ?? null,
+      additionalImageFileIds: images.filter((i) => !i.isPrimary).map((i) => i.fileId),
+      options: optionGroups,
+    };
   }
 
   private generateOptionCombinations(optionGroups: any[]): any[][] {
@@ -1164,16 +1224,13 @@ export class ProductMastersService {
         .where(eq(productMasterVersions.id, id))
         .returning();
 
-      // Log audit event
-      await this.logAudit(
-        {
-          versionId: id,
-          action: 'deleted',
-          changes: { deletedAt: deleted.deletedAt },
-          userId,
-        },
-        tx,
-      );
+      await recordProductAudit(tx, {
+        masterId: product.masterId,
+        versionId: id,
+        action: 'deleted',
+        userId,
+        changes: { deletedAt: { old: null, new: deleted.deletedAt } },
+      });
 
       if (product.status === 'active') {
         await this._emitMasterDeletedEvent(product.masterId, tx);
@@ -1213,16 +1270,13 @@ export class ProductMastersService {
         .where(eq(productMasterVersions.id, id))
         .returning();
 
-      // Log audit event
-      await this.logAudit(
-        {
-          versionId: id,
-          action: 'restored',
-          changes: { deletedAt: null },
-          userId,
-        },
-        tx,
-      );
+      await recordProductAudit(tx, {
+        masterId: product.masterId,
+        versionId: id,
+        action: 'restored',
+        userId,
+        changes: { deletedAt: { old: product.deletedAt, new: null } },
+      });
 
       await this.productSellableQuantity.recalculateAndPublishForVersion(id, tx);
 
@@ -1270,6 +1324,14 @@ export class ProductMastersService {
         await this._emitMasterDeletedEvent(masterId, tx);
       }
 
+      await recordProductAudit(tx, {
+        masterId,
+        versionId: activeVersion?.id ?? null,
+        action: 'master_deleted',
+        userId,
+        changes: { deletedAt: { old: null, new: deletedMaster.deletedAt } },
+      });
+
       await this.productSellableQuantity.recalculateAndPublishForMaster(masterId, tx);
 
       return deletedMaster;
@@ -1279,7 +1341,7 @@ export class ProductMastersService {
   /**
    * Master 복원 (product_masters.deletedAt = null)
    */
-  async restoreMaster(masterId: string, tx?: DbTransaction): Promise<ProductMaster> {
+  async restoreMaster(masterId: string, userId: string, tx?: DbTransaction): Promise<ProductMaster> {
     return await this.db.run(async (tx) => {
       // 1. Master 존재 확인 (includeDeleted)
       const [master] = await tx.select().from(productMasters).where(eq(productMasters.id, masterId));
@@ -1301,6 +1363,14 @@ export class ProductMastersService {
         })
         .where(eq(productMasters.id, masterId))
         .returning();
+
+      await recordProductAudit(tx, {
+        masterId,
+        versionId: null,
+        action: 'master_restored',
+        userId,
+        changes: { deletedAt: { old: master.deletedAt, new: null } },
+      });
 
       await this.productSellableQuantity.recalculateAndPublishForMaster(masterId, tx);
 
@@ -1366,16 +1436,7 @@ export class ProductMastersService {
         throw new NotFoundException(`Product with ID ${id} not found`);
       }
 
-      // Log before deletion (orphaned record)
-      await this.logAudit(
-        {
-          versionId: id,
-          action: 'hard_deleted',
-          changes: { permanent: true },
-          userId,
-        },
-        tx,
-      );
+      await recordProductAudit(tx, { masterId: product.masterId, versionId: id, action: 'hard_deleted', userId });
 
       const purchaseConstraintMappings = await tx
         .select({ purchaseConstraintId: productMasterPurchaseConstraints.purchaseConstraintId })
@@ -2016,27 +2077,5 @@ export class ProductMastersService {
     }
 
     return result;
-  }
-
-  /**
-   * Log audit event
-   */
-  private async logAudit(
-    data: {
-      versionId: string;
-      action: string;
-      changes: Record<string, any>;
-      userId: string;
-    },
-    tx?: DbTransaction,
-  ) {
-    return this.db.run(async (tx) => {
-      await tx.insert(productAuditLog).values({
-        versionId: data.versionId,
-        action: data.action,
-        changes: data.changes,
-        userId: data.userId,
-      });
-    }, tx);
   }
 }

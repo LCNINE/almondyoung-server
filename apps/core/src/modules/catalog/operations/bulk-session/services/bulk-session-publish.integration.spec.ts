@@ -283,15 +283,19 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     const draft = await masters.createMaster(owner);
     createdMasterIds.add(draft.masterId);
 
-    await masters.updateVersion(draft.id, {
-      name: opts.name,
-      brand: opts.brand,
-      // productCode 는 active 끼리 유일해야 한다(publishVersion 의 게이트) — 매번 새로 만든다.
-      productCode: `SKU-${randomUUID().slice(0, 8)}`,
-      seller: '본사',
-      productType: 'regular_sale',
-      fulfillmentKind: 'physical',
-    });
+    await masters.updateVersion(
+      draft.id,
+      {
+        name: opts.name,
+        brand: opts.brand,
+        // productCode 는 active 끼리 유일해야 한다(publishVersion 의 게이트) — 매번 새로 만든다.
+        productCode: `SKU-${randomUUID().slice(0, 8)}`,
+        seller: '본사',
+        productType: 'regular_sale',
+        fulfillmentKind: 'physical',
+      },
+      randomUUID(),
+    );
 
     const [mapping] = await db.run((trx) =>
       trx
@@ -321,7 +325,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
       tieredPriceRules: [],
     });
 
-    await versions.publishVersion(draft.id);
+    await versions.publishVersion(draft.id, randomUUID());
 
     return { masterId: draft.masterId, versionId: draft.id, variantId: mapping.variantId };
   }
@@ -640,8 +644,8 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
 
     // 세션과 무관한 경로로 남이 경합 상품을 먼저 발행한다 — parentVersionId 가 어긋난다.
     const otherDraft = await versions.createDraftVersion(fxRace.versionId, randomUUID(), true);
-    await masters.updateVersion(otherDraft.id, { brand: 'BETA' });
-    await versions.publishVersion(otherDraft.id);
+    await masters.updateVersion(otherDraft.id, { brand: 'BETA' }, randomUUID());
+    await versions.publishVersion(otherDraft.id, randomUUID());
 
     await sessionManager.queuePublish(sessionId, uploaderId);
     const publishLease = randomUUID();
@@ -747,14 +751,14 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
 
     // 그 버전을 inactive 로 만든다 — 새 draft 를 발행해 자연스럽게 밀어낸다.
     const newer = await versions.createDraftVersion(draftVersionId, randomUUID(), true);
-    await masters.updateVersion(newer.id, { name: '최신본' });
-    await versions.publishVersion(newer.id);
+    await masters.updateVersion(newer.id, { name: '최신본' }, randomUUID());
+    await versions.publishVersion(newer.id, randomUUID());
     const superseded = await readVersion(draftVersionId);
     expect(superseded.status).toBe('inactive');
 
     // bulk_session_id 가 비어 있어야 이 롤백 발행이 '일괄 등록 세션이 관리하는' 409 없이
     // 통과한다 — 비지 않았다면 여기서 ConflictError 가 던져진다.
-    await expect(versions.publishVersion(draftVersionId)).resolves.not.toThrow();
+    await expect(versions.publishVersion(draftVersionId, randomUUID())).resolves.not.toThrow();
     const rolledBack = await readVersion(draftVersionId);
     expect(rolledBack.status).toBe('active');
   });
@@ -775,7 +779,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     const unlocked = await readVersion(draftVersionId);
     expect(unlocked.bulkSessionId).toBeNull();
 
-    await expect(versions.publishVersion(draftVersionId)).resolves.not.toThrow();
+    await expect(versions.publishVersion(draftVersionId, randomUUID())).resolves.not.toThrow();
     const publishedAfterExclude = await readVersion(draftVersionId);
     expect(publishedAfterExclude.status).toBe('active');
   });
@@ -1017,7 +1021,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     expect(cow.variantId).not.toBe(fx.variantId);
 
     // ④ 발행
-    await versions.publishVersion(draft.id);
+    await versions.publishVersion(draft.id, randomUUID());
 
     // ⑤ 새 variantId 가 정책을 이어받았는가
     const [policy] = await db.run((trx) =>

@@ -723,8 +723,9 @@ export const productAuditLog = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    versionId: uuid('version_id').notNull(),
-    action: varchar('action', { length: 50 }).notNull(), // 'created', 'updated', 'deleted', 'restored'
+    masterId: uuid('master_id'),
+    versionId: uuid('version_id'),
+    action: varchar('action', { length: 50 }).notNull(),
     changes: jsonb('changes').$type<Record<string, any>>(),
     userId: uuid('user_id').notNull(),
     userEmail: varchar('user_email', { length: 255 }),
@@ -733,6 +734,7 @@ export const productAuditLog = pgTable(
     userAgent: text('user_agent'),
   },
   (table) => [
+    index('idx_audit_log_master').on(table.masterId),
     index('idx_audit_log_version').on(table.versionId),
     index('idx_audit_log_action').on(table.action),
     index('idx_audit_log_timestamp').on(table.timestamp),

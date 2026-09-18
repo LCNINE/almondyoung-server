@@ -701,6 +701,13 @@
       "when": 1789595899274,
       "tag": "20260916215819_complex_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1789699690591,
+      "tag": "20260918024810_add-master-id-to-product-audit-log",
+      "breakpoints": true
     }
   ]
 }

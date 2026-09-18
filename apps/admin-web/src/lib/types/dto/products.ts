@@ -2,7 +2,10 @@
 // PIM API 스펙 기반 상품 관련 DTO 타입 정의
 
 import type { UUID } from './common';
-import type { SalesChannelSite, ChannelFormType } from '@/lib/api/domains/sales-channel/vocabulary';
+import type {
+  SalesChannelSite,
+  ChannelFormType,
+} from '@/lib/api/domains/sales-channel/vocabulary';
 
 // ===== 공통 타입 =====
 export type ProductStatus = 'active' | 'inactive' | 'draft' | 'archived';
@@ -614,7 +617,12 @@ export type SitePopupContentType = (typeof SITE_POPUP_CONTENT_TYPES)[number];
 export const SITE_POPUP_PLACEMENTS = ['main', 'all', 'paths'] as const;
 export type SitePopupPlacement = (typeof SITE_POPUP_PLACEMENTS)[number];
 
-export const SITE_POPUP_AUDIENCES = ['all', 'guest', 'member', 'membership'] as const;
+export const SITE_POPUP_AUDIENCES = [
+  'all',
+  'guest',
+  'member',
+  'membership',
+] as const;
 export type SitePopupAudience = (typeof SITE_POPUP_AUDIENCES)[number];
 
 export const SITE_POPUP_DISMISS_MODES = ['none', 'today', 'days'] as const;
@@ -771,11 +779,13 @@ export const SHOP_LISTING_DEAL_TYPES = ['transfer', 'lease'] as const;
 
 export type ShopListingDealType = (typeof SHOP_LISTING_DEAL_TYPES)[number];
 
-export const SHOP_LISTING_DEAL_TYPE_LABELS: Record<ShopListingDealType, string> =
-  {
-    transfer: '양도',
-    lease: '임대',
-  };
+export const SHOP_LISTING_DEAL_TYPE_LABELS: Record<
+  ShopListingDealType,
+  string
+> = {
+  transfer: '양도',
+  lease: '임대',
+};
 
 export const SHOP_LISTING_REGION_LABELS: Record<ShopListingRegion, string> = {
   seoul: '서울',
@@ -1190,10 +1200,20 @@ export interface BulkPolicyResultDto {
 
 export interface AuditLogItemDto {
   id: string;
-  productId: string;
+  productId: string | null;
+  versionId: string | null;
+  productName: string | null;
+  productThumbnail: string | null;
   action: string;
   userId: string;
   createdAt: string;
+}
+
+export interface AuditLogPageDto {
+  data: AuditLogItemDto[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface ProductAuditHistoryItemDto extends AuditLogItemDto {

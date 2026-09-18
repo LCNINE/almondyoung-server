@@ -291,15 +291,19 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
     const draft = await masters.createMaster(owner);
     createdMasterIds.add(draft.masterId);
 
-    await masters.updateVersion(draft.id, {
-      name: opts.name,
-      brand: opts.brand,
-      // productCode 는 active 끼리 유일해야 한다(publishVersion 의 게이트) — 매번 새로 만든다.
-      productCode: `SKU-${randomUUID().slice(0, 8)}`,
-      seller: '본사',
-      productType: 'regular_sale',
-      fulfillmentKind: 'physical',
-    });
+    await masters.updateVersion(
+      draft.id,
+      {
+        name: opts.name,
+        brand: opts.brand,
+        // productCode 는 active 끼리 유일해야 한다(publishVersion 의 게이트) — 매번 새로 만든다.
+        productCode: `SKU-${randomUUID().slice(0, 8)}`,
+        seller: '본사',
+        productType: 'regular_sale',
+        fulfillmentKind: 'physical',
+      },
+      randomUUID(),
+    );
 
     const [mapping] = await db.run((trx) =>
       trx
@@ -329,7 +333,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
       tieredPriceRules: [],
     });
 
-    await versions.publishVersion(draft.id);
+    await versions.publishVersion(draft.id, randomUUID());
 
     return { masterId: draft.masterId, versionId: draft.id, variantId: mapping.variantId };
   }
@@ -498,8 +502,8 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
 
     // ③ 그 사이 남이 **브랜드만** 바꿔 새 active 를 발행한다(정상 draft→publish 경로).
     const otherDraft = await versions.createDraftVersion(fx.versionId, randomUUID(), true);
-    await masters.updateVersion(otherDraft.id, { brand: 'BETA' });
-    await versions.publishVersion(otherDraft.id);
+    await masters.updateVersion(otherDraft.id, { brand: 'BETA' }, randomUUID());
+    await versions.publishVersion(otherDraft.id, randomUUID());
     const republished = await versions.getActiveVersion(fx.masterId);
     expect(republished.id).toBe(otherDraft.id);
     expect(republished.brand).toBe('BETA');
@@ -535,7 +539,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
     const draft = await readVersion(draftVersionId);
     expect(draft.bulkSessionId).toBeTruthy();
 
-    await expect(versions.publishVersion(draftVersionId)).rejects.toThrow('일괄 등록 세션');
+    await expect(versions.publishVersion(draftVersionId, randomUUID())).rejects.toThrow('일괄 등록 세션');
   });
 
   it('세션이 잠근 draft 는 my-drafts 에 나오지 않는다', async () => {

@@ -3,7 +3,11 @@
 
 'use client';
 
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+  useSuspenseQuery,
+} from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
 import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
@@ -502,28 +506,15 @@ export const useChannelCategories = () => {
 
 // ===== 감사 로그 =====
 
-export const useAuditRecent = (limit = 100) => {
+export const useAuditLogs = (params: {
+  page: number;
+  limit: number;
+  action?: string;
+}) => {
   return useQuery({
-    queryKey: productQueryKeys.auditRecent(limit),
-    queryFn: () => products.audit.getRecent(limit),
-    staleTime: 30 * 1000,
-  });
-};
-
-export const useAuditByUser = (userId: string, limit = 100) => {
-  return useQuery({
-    queryKey: productQueryKeys.auditByUser(userId, limit),
-    queryFn: () => products.audit.getByUser(userId, limit),
-    enabled: !!userId,
-    staleTime: 30 * 1000,
-  });
-};
-
-export const useAuditByAction = (action: string, limit = 100) => {
-  return useQuery({
-    queryKey: productQueryKeys.auditByAction(action, limit),
-    queryFn: () => products.audit.getByAction(action, limit),
-    enabled: !!action,
+    queryKey: productQueryKeys.auditLogs(params),
+    queryFn: () => products.audit.list(params),
+    placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
   });
 };
