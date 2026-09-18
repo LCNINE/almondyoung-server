@@ -10,6 +10,12 @@ export class AuditLogItemDto {
   @ApiProperty({ description: '버전 ID. 마스터 단위 작업이면 null', nullable: true, type: String })
   versionId: string | null;
 
+  @ApiProperty({ description: '상품명 (판매중 버전 우선, 없으면 최신 버전)', nullable: true, type: String })
+  productName: string | null;
+
+  @ApiProperty({ description: '대표 이미지 파일 ID', nullable: true, type: String })
+  productThumbnail: string | null;
+
   @ApiProperty({ description: '액션 타입 (예: created, updated, published, unpublished)' })
   action: string;
 

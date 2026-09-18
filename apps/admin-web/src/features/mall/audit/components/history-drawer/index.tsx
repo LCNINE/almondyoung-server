@@ -8,7 +8,12 @@ import {
 } from '@/components/ui/sheet';
 import { useProductAuditHistory } from '@/lib/services/products';
 import { DateCell } from '@/components/table/table-cells/common';
-import { ACTION_LABELS } from '../audit-log-table';
+import {
+  ACTION_LABELS,
+  ProductThumbnail,
+  useUserNames,
+} from '../../audit-display';
+import type { AuditLogItemDto } from '@/lib/types/dto/products';
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined) return '-';
@@ -16,12 +21,14 @@ function formatValue(value: unknown) {
 }
 
 interface Props {
-  masterId: string | null;
+  item: AuditLogItemDto | null;
   onClose: () => void;
 }
 
-export function HistoryDrawer({ masterId, onClose }: Props) {
-  const { data, isLoading } = useProductAuditHistory(masterId ?? '');
+export function HistoryDrawer({ item: selected, onClose }: Props) {
+  const masterId = selected?.productId ?? '';
+  const { data, isLoading } = useProductAuditHistory(masterId);
+  const userName = useUserNames((data ?? []).map((item) => item.userId));
 
   return (
     <Sheet open={!!masterId} onOpenChange={(open) => !open && onClose()}>
@@ -29,6 +36,19 @@ export function HistoryDrawer({ masterId, onClose }: Props) {
         <SheetHeader>
           <SheetTitle>변경 이력</SheetTitle>
         </SheetHeader>
+
+        <div className="mt-4 flex items-center gap-3">
+          <ProductThumbnail
+            fileId={selected?.productThumbnail ?? null}
+            size="lg"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {selected?.productName ?? '알 수 없는 상품'}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{masterId}</p>
+          </div>
+        </div>
 
         <div className="mt-4 space-y-3 overflow-y-auto">
           {isLoading && (
@@ -46,7 +66,7 @@ export function HistoryDrawer({ masterId, onClose }: Props) {
                 <DateCell value={item.createdAt} />
               </div>
               <p className="text-xs text-muted-foreground">
-                작업자: {item.userId}
+                작업자: {userName(item.userId)}
               </p>
               {item.changes && Object.keys(item.changes).length > 0 && (
                 <div className="mt-2 space-y-1">

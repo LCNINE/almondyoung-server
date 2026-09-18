@@ -1202,9 +1202,18 @@ export interface AuditLogItemDto {
   id: string;
   productId: string | null;
   versionId: string | null;
+  productName: string | null;
+  productThumbnail: string | null;
   action: string;
   userId: string;
   createdAt: string;
+}
+
+export interface AuditLogPageDto {
+  data: AuditLogItemDto[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface ProductAuditHistoryItemDto extends AuditLogItemDto {
