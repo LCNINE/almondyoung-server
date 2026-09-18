@@ -139,6 +139,7 @@ export class BulkDraftApplier {
     await this.masters.updateVersion(
       draft.id,
       { ...data, ...(resolvedModify.length > 0 ? { optionDiff: { modifyDisplay: resolvedModify } } : {}) },
+      input.userId,
       tx,
     );
 
@@ -202,6 +203,7 @@ export class BulkDraftApplier {
     await this.masters.updateVersion(
       version.id,
       { ...data, ...(plan.add.length > 0 ? { optionDiff: { add: plan.add } } : {}) },
+      input.userId,
       tx,
     );
 

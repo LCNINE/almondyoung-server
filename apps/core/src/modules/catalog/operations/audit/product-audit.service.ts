@@ -3,7 +3,15 @@ import { eq, desc } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { pimSchema, productAuditLog } from '../../schema/catalog.schema';
-import { NewProductAuditLog } from '../../catalog.types';
+
+const auditLogItem = {
+  id: productAuditLog.id,
+  productId: productAuditLog.masterId,
+  versionId: productAuditLog.versionId,
+  action: productAuditLog.action,
+  userId: productAuditLog.userId,
+  createdAt: productAuditLog.timestamp,
+};
 
 @Injectable()
 export class ProductAuditService {
@@ -16,53 +24,33 @@ export class ProductAuditService {
     return this.dbService.db;
   }
 
-  /**
-   * Get audit history for a specific product
-   */
-  async getProductAuditHistory(productId: string) {
+  async getProductAuditHistory(masterId: string) {
     return this.db
-      .select()
+      .select({ ...auditLogItem, changes: productAuditLog.changes })
       .from(productAuditLog)
-      .where(eq(productAuditLog.versionId, productId))
+      .where(eq(productAuditLog.masterId, masterId))
       .orderBy(desc(productAuditLog.timestamp));
   }
 
-  /**
-   * Get recent audit logs (all products)
-   */
   async getRecentAuditLogs(limit = 100) {
-    return this.db.select().from(productAuditLog).orderBy(desc(productAuditLog.timestamp)).limit(limit);
+    return this.db.select(auditLogItem).from(productAuditLog).orderBy(desc(productAuditLog.timestamp)).limit(limit);
   }
 
-  /**
-   * Get audit logs by user
-   */
   async getAuditLogsByUser(userId: string, limit = 100) {
     return this.db
-      .select()
+      .select(auditLogItem)
       .from(productAuditLog)
       .where(eq(productAuditLog.userId, userId))
       .orderBy(desc(productAuditLog.timestamp))
       .limit(limit);
   }
 
-  /**
-   * Get audit logs by action type
-   */
   async getAuditLogsByAction(action: string, limit = 100) {
     return this.db
-      .select()
+      .select(auditLogItem)
       .from(productAuditLog)
       .where(eq(productAuditLog.action, action))
       .orderBy(desc(productAuditLog.timestamp))
       .limit(limit);
-  }
-
-  /**
-   * Manually log an audit entry
-   */
-  async logAuditEntry(entry: NewProductAuditLog) {
-    const [logged] = await this.db.insert(productAuditLog).values(entry).returning();
-    return logged;
   }
 }

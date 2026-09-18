@@ -8,6 +8,12 @@ import {
 } from '@/components/ui/sheet';
 import { useProductAuditHistory } from '@/lib/services/products';
 import { DateCell } from '@/components/table/table-cells/common';
+import { ACTION_LABELS } from '../audit-log-table';
+
+function formatValue(value: unknown) {
+  if (value === null || value === undefined) return '-';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
 
 interface Props {
   masterId: string | null;
@@ -32,12 +38,11 @@ export function HistoryDrawer({ masterId, onClose }: Props) {
             <p className="text-sm text-muted-foreground">이력이 없습니다.</p>
           )}
           {data?.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-lg border p-3 text-sm"
-            >
+            <div key={item.id} className="rounded-lg border p-3 text-sm">
               <div className="mb-1 flex items-center justify-between">
-                <span className="font-medium">{item.action}</span>
+                <span className="font-medium">
+                  {ACTION_LABELS[item.action] ?? item.action}
+                </span>
                 <DateCell value={item.createdAt} />
               </div>
               <p className="text-xs text-muted-foreground">
@@ -52,11 +57,11 @@ export function HistoryDrawer({ masterId, onClose }: Props) {
                       </span>
                       :{' '}
                       <span className="text-destructive line-through">
-                        {String(diff?.old ?? '-')}
+                        {formatValue(diff?.old)}
                       </span>{' '}
                       →{' '}
                       <span className="text-green-600">
-                        {String(diff?.new ?? '-')}
+                        {formatValue(diff?.new)}
                       </span>
                     </div>
                   ))}

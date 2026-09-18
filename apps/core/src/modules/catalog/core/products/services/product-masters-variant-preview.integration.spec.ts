@@ -163,28 +163,32 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     const draft = await masters.createMaster(randomUUID());
     createdMasterIds.add(draft.masterId);
 
-    await masters.updateVersion(draft.id, {
-      name: opts.name,
-      brand: '테스트브랜드',
-      productCode: `SKU-${randomUUID().slice(0, 8)}`,
-      seller: '본사',
-      productType: 'regular_sale',
-      fulfillmentKind: 'physical',
-      ...(opts.options
-        ? {
-            optionDiff: {
-              add: opts.options.map((group, groupIndex) => ({
-                displayName: group.group,
-                sortOrder: groupIndex,
-                values: group.values.map((value, valueIndex) => ({
-                  displayName: value,
-                  sortOrder: valueIndex,
+    await masters.updateVersion(
+      draft.id,
+      {
+        name: opts.name,
+        brand: '테스트브랜드',
+        productCode: `SKU-${randomUUID().slice(0, 8)}`,
+        seller: '본사',
+        productType: 'regular_sale',
+        fulfillmentKind: 'physical',
+        ...(opts.options
+          ? {
+              optionDiff: {
+                add: opts.options.map((group, groupIndex) => ({
+                  displayName: group.group,
+                  sortOrder: groupIndex,
+                  values: group.values.map((value, valueIndex) => ({
+                    displayName: value,
+                    sortOrder: valueIndex,
+                  })),
                 })),
-              })),
-            },
-          }
-        : {}),
-    });
+              },
+            }
+          : {}),
+      },
+      randomUUID(),
+    );
 
     await pricing.replaceVersionRules(draft.id, {
       basePriceRules: [
@@ -211,7 +215,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
       tieredPriceRules: [],
     });
 
-    await versions.publishVersion(draft.id);
+    await versions.publishVersion(draft.id, randomUUID());
 
     return { masterId: draft.masterId, versionId: draft.id };
   }

@@ -5,8 +5,13 @@ jest.mock(
   }),
   { virtual: true },
 );
+jest.mock('./product-audit-log', () => ({
+  ...jest.requireActual('./product-audit-log'),
+  recordProductAudit: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { ProductVersionsService } from './product-versions.service';
+import { recordProductAudit } from './product-audit-log';
 import {
   planChannelListingReconciliation,
   type VariantOptionCombo,
@@ -40,6 +45,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
     const priceCacheService = {
       cachePricesForVersion: jest.fn().mockResolvedValue(undefined),
+      getCachedPriceSetsByVersion: jest.fn().mockResolvedValue([]),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariants: jest.fn().mockResolvedValue(undefined),
@@ -60,6 +66,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       productSellableQuantity as any,
       purchaseConstraints as any,
     );
+    jest.spyOn(service, 'compareVersions').mockResolvedValue([]);
 
     return {
       service,
@@ -372,7 +379,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       order.push('recalculateSellableQuantity'),
     );
 
-    await service.publishVersion('version-2', tx as any);
+    await service.publishVersion('version-2', 'user-1', tx as any);
 
     expect(order).toEqual([
       'validateVariantCode',
@@ -446,8 +453,8 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       .mockResolvedValueOnce(draftVersion)
       .mockResolvedValueOnce(inactiveVersion);
 
-    await service.publishVersion('version-draft', tx as any);
-    await service.publishVersion('version-inactive', tx as any);
+    await service.publishVersion('version-draft', 'user-1', tx as any);
+    await service.publishVersion('version-inactive', 'user-1', tx as any);
 
     expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx, undefined);
     expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx, undefined);
@@ -464,7 +471,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
     jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
 
-    await expect(service.publishVersion(version.id)).rejects.toThrow(
+    await expect(service.publishVersion(version.id, 'user-1')).rejects.toThrow(
       '일괄 등록 세션이 관리하는 상품입니다. 세션 화면에서 일괄 발행해 주세요.',
     );
   });
@@ -499,7 +506,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, '_emitActiveVersionChangedEvent').mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
-    await expect(service.publishVersion(version.id, tx as any)).resolves.toBeUndefined();
+    await expect(service.publishVersion(version.id, 'user-1', tx as any)).resolves.toBeUndefined();
   });
 
   it('품번코드가 비어 있으면 발행 시 AY- 순번으로 발번한다', async () => {
@@ -537,7 +544,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
-    await service.publishVersion(version.id, tx as any);
+    await service.publishVersion(version.id, 'user-1', tx as any);
 
     expect(sets).toContainEqual({ productCode: 'AY-10042' });
     expect(version.productCode).toBe('AY-10042');
@@ -572,7 +579,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
-    await service.publishVersion(version.id, tx as any);
+    await service.publishVersion(version.id, 'user-1', tx as any);
 
     // 발번 쿼리(advisory lock) 자체가 돌지 않아야 한다
     expect(tx.execute).not.toHaveBeenCalled();
@@ -589,7 +596,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
     const tx = {} as any;
 
-    await service.updateRequiresMembership('m1', true, tx);
+    await service.updateRequiresMembership('m1', true, 'user-1', tx);
 
     expect(purchaseConstraints.upsertForVersion).toHaveBeenCalledWith(
       'm1',
@@ -615,7 +622,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       lifetimeQuantityLimit: 3,
     });
 
-    await service.updateRequiresMembership('m1', true, {} as any);
+    await service.updateRequiresMembership('m1', true, 'user-1', {} as any);
 
     expect(purchaseConstraints.upsertForVersion).toHaveBeenCalledWith(
       'm1',
@@ -641,6 +648,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     await service.updateExposurePolicy(
       'm1',
       { isVisibleToMembersOnly: true, hideMembershipPriceForNonMembers: false },
+      'user-1',
       tx,
     );
 
@@ -655,6 +663,84 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     const [event, txArg] = productPublisher.enqueue.mock.calls[0];
     expect(event.payload.changeReason).toBe('published');
     expect(txArg).toBe(tx);
+
+    const [auditTx, audit] = jest.mocked(recordProductAudit).mock.calls.at(-1)!;
+    expect(auditTx).toBe(tx);
+    expect(audit).toMatchObject({ masterId: 'm1', versionId: 'v1', action: 'exposure_updated', userId: 'user-1' });
+    expect(audit.changes).toMatchObject({ isVisibleToMembersOnly: { old: null, new: true } });
+    expect(audit.changes).not.toHaveProperty('updatedAt');
+  });
+
+  describe('발행 감사 기록', () => {
+    const price = (variantId: string, basePrice: number) => ({
+      variantId,
+      basePrice,
+      membershipPrice: basePrice - 400,
+      tieredPrices: [],
+    });
+
+    const combos: Record<string, string[]> = { va: ['red'], vb: ['red'], vc: ['blue'] };
+
+    async function publishWithPrices(oldPrices: unknown[], newPrices: unknown[]) {
+      const { service, priceCacheService } = makeService();
+      const tx = { update: jest.fn(() => ({ set: jest.fn(() => ({ where: jest.fn() })) })) };
+      jest
+        .spyOn(service as any, 'getVersionById')
+        .mockResolvedValue({ id: 'v2', masterId: 'm1', status: 'draft', productCode: 'AY-1', bulkSessionId: null });
+      jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', status: 'active' });
+      for (const m of [
+        '_validateVariantCodeUniqueness',
+        'validateProductCodeUniqueness',
+        '_reconcileMatchingsAfterPublish',
+        '_reconcileAssetLinksAfterPublish',
+        '_reconcileChannelListingsAfterPublish',
+        '_validateDigitalAssetLinks',
+        '_publishVariantChangeEvents',
+        '_emitActiveVersionChangedEvent',
+      ])
+        jest.spyOn(service as any, m).mockResolvedValue(undefined);
+      jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
+      jest
+        .spyOn(service as any, '_attachOptionValues')
+        .mockImplementation((ids: unknown) =>
+          Promise.resolve((ids as string[]).map((variantId) => ({ variantId, optionValueIds: combos[variantId] }))),
+        );
+      jest.spyOn(service, 'compareVersions').mockResolvedValue([
+        { field: 'name', oldValue: 'A', newValue: 'B' },
+        { field: 'status', oldValue: 'active', newValue: 'draft' },
+      ]);
+      priceCacheService.getCachedPriceSetsByVersion.mockImplementation((id: string) =>
+        Promise.resolve(id === 'v1' ? oldPrices : newPrices),
+      );
+
+      await service.publishVersion('v2', 'user-1', tx as any);
+      return jest.mocked(recordProductAudit).mock.calls.at(-1)![1];
+    }
+
+    it('직전 active 와의 필드 차이와 가격 변경을 이전/이후 값으로 남긴다', async () => {
+      const audit = await publishWithPrices([price('va', 4000)], [price('va', 3500)]);
+
+      expect(audit).toMatchObject({ masterId: 'm1', versionId: 'v2', action: 'published', userId: 'user-1' });
+      expect(audit.changes).toEqual({
+        name: { old: 'A', new: 'B' },
+        prices: { old: [price('va', 4000)], new: [price('va', 3500)] },
+      });
+    });
+
+    it('옵션끼리 가격이 서로 바뀌어도 변경으로 남긴다', async () => {
+      const audit = await publishWithPrices(
+        [price('va', 4000), price('vc', 5000)],
+        [price('va', 5000), price('vc', 4000)],
+      );
+
+      expect(audit.changes).toHaveProperty('prices');
+    });
+
+    it('variantId 만 바뀌고 같은 옵션의 가격이 같으면 가격 변경으로 남기지 않는다', async () => {
+      const audit = await publishWithPrices([price('va', 4000)], [price('vb', 4000)]);
+
+      expect(audit.changes).not.toHaveProperty('prices');
+    });
   });
 });
 

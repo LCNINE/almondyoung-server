@@ -954,7 +954,10 @@ export class BulkSessionJobManager {
       await this.db.run(async (trx) => {
         // ① 취소 재확인
         const [locked] = await trx
-          .select({ cancelRequestedAt: productBulkSessions.cancelRequestedAt })
+          .select({
+            cancelRequestedAt: productBulkSessions.cancelRequestedAt,
+            uploadedBy: productBulkSessions.uploadedBy,
+          })
           .from(productBulkSessions)
           .where(eq(productBulkSessions.id, sessionId))
           .for('update');
@@ -1008,7 +1011,7 @@ export class BulkSessionJobManager {
               .set({ bulkSessionId: null, updatedAt: new Date() })
               .where(eq(productMasterVersions.id, draftVersionId));
 
-            await this.versions.publishVersion(draftVersionId, trx, {
+            await this.versions.publishVersion(draftVersionId, locked.uploadedBy, trx, {
               origin: 'bulk_import',
               importSessionId: sessionId,
             });

@@ -13,21 +13,39 @@ import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { HistoryDrawer } from '../history-drawer';
 
+export const ACTION_LABELS: Record<string, string> = {
+  created: '생성',
+  updated: '수정',
+  published: '발행',
+  rolled_back: '이전 버전 재발행',
+  unpublished: '판매 중단',
+  exposure_updated: '노출 정책 변경',
+  deleted: '삭제',
+  restored: '복구',
+  hard_deleted: '영구 삭제',
+  master_deleted: '상품 삭제',
+  master_restored: '상품 복구',
+  bulk_updated: '일괄 수정',
+  bulk_activated: '일괄 재공개',
+};
+
 const ACTION_OPTIONS = [
   { label: '전체', value: 'all' },
-  { label: '생성', value: 'CREATE' },
-  { label: '수정', value: 'UPDATE' },
-  { label: '삭제', value: 'DELETE' },
-  { label: '승인', value: 'APPROVE' },
-  { label: '거부', value: 'REJECT' },
+  ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ label, value })),
 ];
 
-const ACTION_BADGE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  CREATE: 'default',
-  UPDATE: 'secondary',
-  DELETE: 'destructive',
-  APPROVE: 'default',
-  REJECT: 'destructive',
+const ACTION_BADGE: Record<
+  string,
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
+  created: 'default',
+  published: 'default',
+  updated: 'secondary',
+  exposure_updated: 'secondary',
+  unpublished: 'destructive',
+  deleted: 'destructive',
+  hard_deleted: 'destructive',
+  master_deleted: 'destructive',
 };
 
 export function AuditLogTable() {
@@ -57,9 +75,7 @@ export function AuditLogTable() {
         </Select>
       </div>
 
-      {isLoading && (
-        <p className="text-sm text-muted-foreground">로딩 중...</p>
-      )}
+      {isLoading && <p className="text-sm text-muted-foreground">로딩 중...</p>}
 
       {!isLoading && (!logs || logs.length === 0) && (
         <p className="text-sm text-muted-foreground">감사 로그가 없습니다.</p>
@@ -78,7 +94,7 @@ export function AuditLogTable() {
                   variant={ACTION_BADGE[item.action] ?? 'outline'}
                   className="text-xs"
                 >
-                  {item.action}
+                  {ACTION_LABELS[item.action] ?? item.action}
                 </Badge>
                 <span className="truncate text-xs text-muted-foreground">
                   상품 ID: {item.productId}

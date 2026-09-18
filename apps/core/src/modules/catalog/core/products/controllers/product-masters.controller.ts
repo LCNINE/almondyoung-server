@@ -362,8 +362,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 400, description: 'Master가 삭제되지 않았음' })
   @ApiResponse({ status: 404, description: 'Master를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async restore(@Param('masterId') masterId: string) {
-    const restored = await this.productMastersService.restoreMaster(masterId);
+  async restore(@Param('masterId') masterId: string, @User() user: { userId: string }) {
+    const restored = await this.productMastersService.restoreMaster(masterId, user.userId);
 
     return {
       success: true,
@@ -391,8 +391,13 @@ export class ProductMastersController {
   async updateMembershipPriceVisibility(
     @Param('masterId') masterId: string,
     @Body() body: { hideMembershipPriceForNonMembers: boolean },
+    @User() user: { userId: string },
   ) {
-    await this.productVersionsService.updateMembershipPriceVisibility(masterId, body.hideMembershipPriceForNonMembers);
+    await this.productVersionsService.updateMembershipPriceVisibility(
+      masterId,
+      body.hideMembershipPriceForNonMembers,
+      user.userId,
+    );
     return {
       success: true,
       masterId,
@@ -414,8 +419,12 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateMembershipVisibility(@Param('masterId') masterId: string, @Body() body: { isMembershipOnly: boolean }) {
-    await this.productVersionsService.updateMembershipPriceVisibility(masterId, body.isMembershipOnly);
+  async updateMembershipVisibility(
+    @Param('masterId') masterId: string,
+    @Body() body: { isMembershipOnly: boolean },
+    @User() user: { userId: string },
+  ) {
+    await this.productVersionsService.updateMembershipPriceVisibility(masterId, body.isMembershipOnly, user.userId);
     return {
       success: true,
       masterId,
@@ -443,8 +452,9 @@ export class ProductMastersController {
   async updateMembersOnlyVisibility(
     @Param('masterId') masterId: string,
     @Body() body: { isVisibleToMembersOnly: boolean },
+    @User() user: { userId: string },
   ) {
-    await this.productVersionsService.updateMembersOnlyVisibility(masterId, body.isVisibleToMembersOnly);
+    await this.productVersionsService.updateMembersOnlyVisibility(masterId, body.isVisibleToMembersOnly, user.userId);
     return { success: true, masterId, isVisibleToMembersOnly: body.isVisibleToMembersOnly };
   }
 
@@ -464,8 +474,12 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateRequiresMembership(@Param('masterId') masterId: string, @Body() body: { requiresMembership: boolean }) {
-    await this.productVersionsService.updateRequiresMembership(masterId, body.requiresMembership);
+  async updateRequiresMembership(
+    @Param('masterId') masterId: string,
+    @Body() body: { requiresMembership: boolean },
+    @User() user: { userId: string },
+  ) {
+    await this.productVersionsService.updateRequiresMembership(masterId, body.requiresMembership, user.userId);
     return { success: true, masterId, requiresMembership: body.requiresMembership };
   }
 
@@ -485,8 +499,12 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateOverseas(@Param('masterId') masterId: string, @Body() body: { isOverseas: boolean }) {
-    await this.productVersionsService.updateOverseas(masterId, body.isOverseas);
+  async updateOverseas(
+    @Param('masterId') masterId: string,
+    @Body() body: { isOverseas: boolean },
+    @User() user: { userId: string },
+  ) {
+    await this.productVersionsService.updateOverseas(masterId, body.isOverseas, user.userId);
     return { success: true, masterId, isOverseas: body.isOverseas };
   }
 
@@ -507,10 +525,16 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateShippingGroup(@Param('masterId') masterId: string, @Body() body: { shippingGroupCode: string | null }) {
-    await this.productVersionsService.updateExposurePolicy(masterId, {
-      shippingGroupCode: body.shippingGroupCode ?? null,
-    });
+  async updateShippingGroup(
+    @Param('masterId') masterId: string,
+    @Body() body: { shippingGroupCode: string | null },
+    @User() user: { userId: string },
+  ) {
+    await this.productVersionsService.updateExposurePolicy(
+      masterId,
+      { shippingGroupCode: body.shippingGroupCode ?? null },
+      user.userId,
+    );
     return { success: true, masterId, shippingGroupCode: body.shippingGroupCode ?? null };
   }
 
@@ -531,8 +555,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 200, description: '상품 비공개 처리 성공' })
   @ApiResponse({ status: 404, description: 'Master를 찾을 수 없거나 Active 버전이 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async unpublish(@Param('masterId') masterId: string) {
-    await this.productVersionsService.unpublishMaster(masterId);
+  async unpublish(@Param('masterId') masterId: string, @User() user: { userId: string }) {
+    await this.productVersionsService.unpublishMaster(masterId, user.userId);
     return {
       success: true,
       message: 'Master unpublished successfully',

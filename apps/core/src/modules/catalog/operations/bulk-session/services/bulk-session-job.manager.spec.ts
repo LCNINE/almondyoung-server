@@ -1636,7 +1636,7 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
 
     await manager.runPublishSlice(PUBLISHING);
 
-    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', expect.anything(), {
+    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', 'user-1', expect.anything(), {
       origin: 'bulk_import',
       importSessionId: 'sess-1',
     });
@@ -1681,7 +1681,7 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
     const { params } = renderQuery(versionUpdate.condition);
     expect(params).toContain('V-draft');
     expect(versionUpdate.values).toMatchObject({ bulkSessionId: null });
-    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', expect.anything(), {
+    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', 'user-1', expect.anything(), {
       origin: 'bulk_import',
       importSessionId: 'sess-1',
     });

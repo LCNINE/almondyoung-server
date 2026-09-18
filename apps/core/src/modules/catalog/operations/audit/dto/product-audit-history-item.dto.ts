@@ -3,7 +3,7 @@ import { AuditLogItemDto } from './audit-log-item.dto';
 
 export class ProductAuditHistoryItemDto extends AuditLogItemDto {
   @ApiProperty({
-    description: '변경 사항 (키-값 쌍의 객체)',
+    description: '변경 사항. 필드마다 { old, new }',
     nullable: true,
     required: false,
     example: {

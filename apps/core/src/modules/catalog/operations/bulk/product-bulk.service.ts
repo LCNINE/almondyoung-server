@@ -6,6 +6,7 @@ import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto, BulkPolicyDto } from './d
 import { DbTransaction, DbClient } from '../../catalog.types';
 import { ProductVersionsService } from '../../core/products/services/product-versions.service';
 import { ProductMastersService } from '../../core/products/services/product-masters.service';
+import { diffFields, recordProductAudit } from '../../core/products/services/product-audit-log';
 
 @Injectable()
 export class ProductBulkService {
@@ -24,7 +25,7 @@ export class ProductBulkService {
    * undefined 아닌 플래그만 반영. active 버전이 없는 master 는 failed 로 수집한다.
    * master 단위 독립 처리 — 각 건이 자체 이벤트를 발행(Medusa·검색·analytics 재싱크).
    */
-  async bulkUpdatePolicy(dto: BulkPolicyDto, tx?: DbTransaction) {
+  async bulkUpdatePolicy(dto: BulkPolicyDto, userId: string, tx?: DbTransaction) {
     const patch: {
       hideMembershipPriceForNonMembers?: boolean;
       isVisibleToMembersOnly?: boolean;
@@ -46,7 +47,7 @@ export class ProductBulkService {
 
     for (const masterId of dto.productIds) {
       const run = async (trx: DbTransaction) => {
-        await this.productVersionsService.updateExposurePolicy(masterId, patch, trx);
+        await this.productVersionsService.updateExposurePolicy(masterId, patch, userId, trx);
       };
       try {
         await this.db.run(run, tx);
@@ -101,6 +102,7 @@ export class ProductBulkService {
     // Log bulk update
     for (const product of updated) {
       await client.insert(productAuditLog).values({
+        masterId: product.masterId,
         versionId: product.id,
         action: 'bulk_updated',
         changes: updateData,
@@ -129,18 +131,20 @@ export class ProductBulkService {
         const activeVersion = await this.productVersionsService.getActiveVersion(masterId, trx);
 
         // status 전환 + 이벤트 발행 + 가용재고 재계산
-        await this.productVersionsService.unpublishMaster(masterId, trx);
+        await this.productVersionsService.unpublishMaster(masterId, userId, trx);
 
         await trx.update(productMasterVersions).set(extraData).where(eq(productMasterVersions.id, activeVersion.id));
 
-        const changes = { status: 'inactive', ...extraData, updatedAt: new Date() };
-        await trx.insert(productAuditLog).values({
-          versionId: activeVersion.id,
-          action: 'bulk_updated',
-          changes,
-          userId,
-          timestamp: new Date(),
-        });
+        const changes = diffFields(activeVersion, { brand: extraData.brand, seller: extraData.seller });
+        if (Object.keys(changes).length > 0) {
+          await recordProductAudit(trx, {
+            masterId,
+            versionId: activeVersion.id,
+            action: 'bulk_updated',
+            userId,
+            changes,
+          });
+        }
 
         products.push({ ...activeVersion, ...extraData, status: 'inactive' });
       };
@@ -206,14 +210,7 @@ export class ProductBulkService {
       }
 
       const run = async (trx: DbTransaction) => {
-        await this.productVersionsService.publishVersion(target.id, trx);
-        await trx.insert(productAuditLog).values({
-          versionId: target.id,
-          action: 'bulk_activated',
-          changes: { status: 'active' },
-          userId,
-          timestamp: new Date(),
-        });
+        await this.productVersionsService.publishVersion(target.id, userId, trx);
       };
 
       try {
