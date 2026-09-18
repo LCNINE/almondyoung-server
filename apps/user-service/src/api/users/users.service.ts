@@ -158,15 +158,19 @@ export class UsersService {
    * 탈퇴(deletedAt)·휴면(dormantAt) 계정은 제외한다 — 법정 고지라도 탈퇴자에겐 보내지 않는다.
    * 못 찾은 userId 는 조용히 빠진다(호출자가 개수 차이로 판단).
    */
-  async findContactsByIds(userIds: string[]): Promise<{ userId: string; email: string; username: string }[]> {
+  async findContactsByIds(
+    userIds: string[],
+  ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null }[]> {
     if (userIds.length === 0) return [];
     const rows = await this.dbService.db
       .select({
         userId: schema.users.id,
         email: schema.users.email,
         username: schema.users.username,
+        phoneNumber: schema.profiles.phoneNumber,
       })
       .from(schema.users)
+      .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
       .where(
         and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)),
       );

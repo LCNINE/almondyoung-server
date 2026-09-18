@@ -7,6 +7,7 @@ import { loggerConfig } from '@app/shared/observability/logger.config';
 import { EventTraceApiModule } from '@app/events';
 import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { DbModule } from '@app/db';
 import { validateNotificationEnv } from './config/env.validation';
 import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
@@ -20,6 +21,7 @@ import { ProviderModule } from './provider/provider.module';
 import { TemplateModule } from './template/template.module';
 import { BulkModule } from './bulk/bulk.module';
 import { DeviceModule } from './device/device.module';
+import { SmsGateModule } from './sms-gate/sms-gate.module';
 import { EventTraceController } from './shared/controllers/event-trace.controller';
 
 @Module({
@@ -59,6 +61,8 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
     // Demo delivers immediately through the mock provider and has no Redis resource.
     ...(process.env.APP_STAGE === 'demo' ? [] : [BulkModule]),
     DeviceModule,
+    SCHEDULE_ROOT,
+    SmsGateModule,
   ],
   controllers: [
     HealthController,

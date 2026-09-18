@@ -7,6 +7,7 @@ export interface UserContact {
   userId: string;
   email: string;
   username: string;
+  phoneNumber: string | null;
 }
 
 /** 한 번에 조회할 userId 개수. user-service DTO 의 ArrayMaxSize(500) 와 맞춘다. */

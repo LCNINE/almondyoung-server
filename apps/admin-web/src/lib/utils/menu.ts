@@ -449,6 +449,20 @@ const allMenus: MainMenu[] = [
       },
     ],
   },
+  ...(process.env.NEXT_PUBLIC_SMS_GATE_ENABLED === 'true'
+    ? [
+        {
+          id: 'messages',
+          title: '메시지',
+          icon: 'MessageSquare',
+          defaultPath: '/messages/send',
+          children: [
+            { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
+            { id: 'message-devices', title: '발송폰 디바이스', path: '/messages/devices' },
+          ],
+        },
+      ]
+    : []),
   {
     id: 'sales-statistics',
     title: '판매/통계',

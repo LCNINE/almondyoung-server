@@ -186,7 +186,7 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async getInternalContacts(
     @Body() body: InternalContactsRequestDto,
-  ): Promise<{ userId: string; email: string; username: string }[]> {
+  ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null }[]> {
     return this.usersService.findContactsByIds(body.userIds);
   }
 

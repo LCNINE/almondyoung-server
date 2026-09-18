@@ -8,6 +8,13 @@
       "when": 1779113727759,
       "tag": "20260518141527_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789712373363,
+      "tag": "20260918061933_add-sms-devices",
+      "breakpoints": true
     }
   ]
 }

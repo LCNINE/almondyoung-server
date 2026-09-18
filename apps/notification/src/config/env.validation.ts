@@ -64,6 +64,12 @@ export const notificationEnvSchema = z.object({
   // 서비스 간 통신
   USER_SERVICE_URL: z.string().url().optional(),
   USER_SERVICE_INTERNAL_TOKEN: z.string().optional(),
+  USER_SERVICE_INTERNAL_KEY: z.string().optional(),
+
+  // SMS Gate(안드로이드 발송폰 중계). 계정이 없으면 폰 발송 디스패처가 돌지 않는다.
+  SMS_GATE_BASE_URL: z.string().url().optional(),
+  SMS_GATE_USERNAME: z.string().optional(),
+  SMS_GATE_PASSWORD: z.string().optional(),
 
   // FCM 토큰 등록 엔드포인트 JWT 검증용 (user-service와 동일한 AUTH_SECRET)
   JWT_ACCESS_SECRET: z.string().optional(),
