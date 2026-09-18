@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConflictError, NotFoundError } from '@app/shared';
-import { SmsDevice } from '../../database/schemas/notification-schema';
-import { CreateSmsDeviceDto, UpdateSmsDeviceDto } from './dto/sms-gate.dto';
-import { SmsGateRepository } from './sms-gate.repository';
+import { SmsDevice } from '../../../database/schemas/notification-schema';
+import { CreateSmsDeviceDto, UpdateSmsDeviceDto } from '../dto';
+import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
 @Injectable()
 export class SmsDeviceManager {

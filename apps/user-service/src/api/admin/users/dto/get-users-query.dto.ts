@@ -69,4 +69,9 @@ export class GetUsersQueryDto {
   @IsOptional()
   @IsString()
   ids?: string;
+
+  @ApiPropertyOptional({ description: '마케팅 수신 동의 필터', enum: ['true', 'false'] })
+  @IsOptional()
+  @IsEnum(['true', 'false'])
+  marketingConsent?: 'true' | 'false';
 }

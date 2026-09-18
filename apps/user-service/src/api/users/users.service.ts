@@ -158,9 +158,9 @@ export class UsersService {
    * 탈퇴(deletedAt)·휴면(dormantAt) 계정은 제외한다 — 법정 고지라도 탈퇴자에겐 보내지 않는다.
    * 못 찾은 userId 는 조용히 빠진다(호출자가 개수 차이로 판단).
    */
-  async findContactsByIds(
-    userIds: string[],
-  ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null }[]> {
+  async findContactsByIds(userIds: string[]): Promise<
+    { userId: string; email: string; username: string; phoneNumber: string | null; marketingConsent: boolean }[]
+  > {
     if (userIds.length === 0) return [];
     const rows = await this.dbService.db
       .select({
@@ -168,13 +168,36 @@ export class UsersService {
         email: schema.users.email,
         username: schema.users.username,
         phoneNumber: schema.profiles.phoneNumber,
+        marketingConsent: schema.userConsents.marketingConsent,
       })
       .from(schema.users)
       .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
+      .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
       .where(
         and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)),
       );
-    return rows;
+    return rows.map((row) => ({ ...row, marketingConsent: row.marketingConsent ?? false }));
+  }
+
+  async withdrawMarketingConsentByPhone(
+    phoneNumber: string,
+    via: string,
+  ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
+    const users = await this.findUsersByPhoneNumber(phoneNumber);
+    const userIds = users.map((u) => u.id);
+    if (userIds.length === 0) return { userIds, withdrawnUserIds: [] };
+
+    const withdrawn = await this.dbService.db
+      .update(schema.userConsents)
+      .set({
+        marketingConsent: false,
+        marketingConsentWithdrawnAt: new Date(),
+        marketingConsentWithdrawnVia: via,
+        updatedAt: new Date(),
+      })
+      .where(and(inArray(schema.userConsents.userId, userIds), eq(schema.userConsents.marketingConsent, true)))
+      .returning({ userId: schema.userConsents.userId });
+    return { userIds, withdrawnUserIds: withdrawn.map((row) => row.userId) };
   }
 
   // 이메일 가입 가능 여부 확인 (중복 여부만 boolean 으로 반환, PII 미노출)

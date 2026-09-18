@@ -1,21 +1,26 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { UserContactClient } from '@app/shared';
-import { SmsDeviceManager } from './sms-device.manager';
-import { SmsDeviceReader } from './sms-device.reader';
-import { SmsDispatchManager } from './sms-dispatch.manager';
-import { SmsDispatchWorker } from './sms-dispatch.worker';
-import { SmsGateClient } from './sms-gate.client';
-import { SmsGateController } from './sms-gate.controller';
-import { SmsGateRepository } from './sms-gate.repository';
-import { SmsGateService } from './sms-gate.service';
-import { SmsMessageManager } from './sms-message.manager';
+import { SmsGateClient } from './clients/sms-gate.client';
+import { SmsDevicesController } from './controllers/sms-devices.controller';
+import { SmsGateWebhookController } from './controllers/sms-gate-webhook.controller';
+import { SmsMessagesController } from './controllers/sms-messages.controller';
+import { SmsGateRepository } from './repositories/sms-gate.repository';
+import { InboundSmsManager } from './services/inbound-sms.manager';
+import { SmsDeviceManager } from './services/sms-device.manager';
+import { SmsDeviceReader } from './services/sms-device.reader';
+import { SmsDevicesService } from './services/sms-devices.service';
+import { SmsDispatchManager } from './services/sms-dispatch.manager';
+import { SmsDispatchWorker } from './services/sms-dispatch.worker';
+import { SmsMessageManager } from './services/sms-message.manager';
+import { SmsMessagesService } from './services/sms-messages.service';
 
 @Module({
   imports: [HttpModule],
-  controllers: [SmsGateController],
+  controllers: [SmsDevicesController, SmsMessagesController, SmsGateWebhookController],
   providers: [
-    SmsGateService,
+    SmsDevicesService,
+    SmsMessagesService,
     SmsGateRepository,
     SmsGateClient,
     SmsDeviceReader,
@@ -23,6 +28,7 @@ import { SmsMessageManager } from './sms-message.manager';
     SmsMessageManager,
     SmsDispatchManager,
     SmsDispatchWorker,
+    InboundSmsManager,
     UserContactClient,
   ],
 })

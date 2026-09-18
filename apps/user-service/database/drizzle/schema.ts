@@ -79,6 +79,8 @@ export const userConsents = pgTable('user_consents', {
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
   marketingConsent: boolean('marketing_consent').notNull().default(false), // 마케팅 동의
+  marketingConsentWithdrawnAt: timestamp('marketing_consent_withdrawn_at'), // 마케팅 동의 철회 시각
+  marketingConsentWithdrawnVia: varchar('marketing_consent_withdrawn_via', { length: 32 }), // 철회 경로 (sms-reply 등)
   consentedAt: timestamp('consented_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { SmsDevice } from '../../database/schemas/notification-schema';
-import { DeviceCandidate, isOnline, startOfKstDay } from './device-picker';
-import { SmsGateClient } from './sms-gate.client';
-import { SmsGateRepository } from './sms-gate.repository';
+import { SmsDevice } from '../../../database/schemas/notification-schema';
+import { DeviceCandidate, isOnline, startOfKstDay } from '../utils/device-picker';
+import { SmsGateClient } from '../clients/sms-gate.client';
+import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
 export interface SmsDeviceStatus extends DeviceCandidate {
   id: string;

@@ -16,6 +16,7 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 import { InternalContactsRequestDto } from './dto/internal-contacts.request.dto';
+import { WithdrawMarketingConsentRequestDto } from './dto/withdraw-marketing-consent.request.dto';
 import { ReplayWithdrawnRequestDto } from './dto/replay-withdrawn.request.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
@@ -186,8 +187,24 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async getInternalContacts(
     @Body() body: InternalContactsRequestDto,
-  ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null }[]> {
+  ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null; marketingConsent: boolean }[]> {
     return this.usersService.findContactsByIds(body.userIds);
+  }
+
+  @ApiOperation({
+    summary: '[Internal] 휴대폰 번호로 마케팅 수신 동의 철회',
+    description:
+      '문자 답장 "수신거부" 처리용. 같은 번호를 쓰는 계정 전부를 철회한다. ' +
+      'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @Post('internal/marketing-consent/withdraw')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @HttpCode(HttpStatus.OK)
+  async withdrawMarketingConsent(
+    @Body() body: WithdrawMarketingConsentRequestDto,
+  ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
+    return this.usersService.withdrawMarketingConsentByPhone(body.phoneNumber, body.via);
   }
 
   @ApiOperation({

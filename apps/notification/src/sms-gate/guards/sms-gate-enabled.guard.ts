@@ -1,5 +1,5 @@
 import { CanActivate, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { SmsGateClient } from './sms-gate.client';
+import { SmsGateClient } from '../clients/sms-gate.client';
 
 @Injectable()
 export class SmsGateEnabledGuard implements CanActivate {

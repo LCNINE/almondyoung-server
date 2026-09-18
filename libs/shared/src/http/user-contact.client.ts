@@ -8,6 +8,7 @@ export interface UserContact {
   email: string;
   username: string;
   phoneNumber: string | null;
+  marketingConsent: boolean;
 }
 
 /** 한 번에 조회할 userId 개수. user-service DTO 의 ArrayMaxSize(500) 와 맞춘다. */
@@ -72,5 +73,24 @@ export class UserContactClient {
       this.logger.warn(`연락처를 찾지 못한 사용자 ${missing}명 — 탈퇴 계정이거나 계정이 사라진 경우`);
     }
     return result;
+  }
+
+  async withdrawMarketingConsentByPhone(
+    phoneNumber: string,
+    via: string,
+  ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
+    const baseUrl = this.configService.get<string>('USER_SERVICE_URL');
+    const key = this.configService.get<string>('USER_SERVICE_INTERNAL_KEY');
+    if (!baseUrl || !key) {
+      throw new Error('USER_SERVICE_URL or USER_SERVICE_INTERNAL_KEY is not configured');
+    }
+    const { data } = await firstValueFrom(
+      this.httpService.post<{ data: { userIds: string[]; withdrawnUserIds: string[] } }>(
+        `${baseUrl}/users/internal/marketing-consent/withdraw`,
+        { phoneNumber, via },
+        { headers: { Authorization: `Bearer ${key}` }, timeout: REQUEST_TIMEOUT_MS },
+      ),
+    );
+    return data.data;
   }
 }

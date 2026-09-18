@@ -20,6 +20,9 @@ export class AdminUserListItemDto {
   phoneNumber: string | null;
 
   @ApiProperty()
+  marketingConsent: boolean;
+
+  @ApiProperty()
   isEmailVerified: boolean;
 
   @ApiProperty({ nullable: true })

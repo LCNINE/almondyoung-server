@@ -150,6 +150,7 @@ interface CustomerListQuery {
   status?: 'active' | 'withdrawn' | 'dormant';
   sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
   order?: 'asc' | 'desc';
+  marketingConsent?: 'true' | 'false';
 }
 
 interface CustomerListItem {
@@ -166,6 +167,7 @@ interface CustomerListItem {
   createdAt: string;
   updatedAt: string;
   roles: string[];
+  marketingConsent: boolean;
 }
 
 interface CustomerListResponse {

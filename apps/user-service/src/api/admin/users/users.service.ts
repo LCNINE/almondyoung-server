@@ -12,6 +12,7 @@ import { UserConsent } from '../../consents/types/consent.type';
 export type UserWithRoles = schema.UserWithoutPassword & {
   roles: string[];
   phoneNumber: string | null;
+  marketingConsent: boolean;
 };
 
 @Injectable()
@@ -34,6 +35,7 @@ export class UsersService {
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
     order?: 'asc' | 'desc';
     ids?: string;
+    marketingConsent?: 'true' | 'false';
     tx?: DbTransaction;
   }): Promise<{
     data: UserWithRoles[];
@@ -92,6 +94,11 @@ export class UsersService {
       } else if (filters?.status === 'dormant') {
         conditions.push(and(isNotNull(schema.users.dormantAt), isNull(schema.users.deletedAt)));
       }
+      if (filters?.marketingConsent === 'true') {
+        conditions.push(eq(schema.userConsents.marketingConsent, true));
+      } else if (filters?.marketingConsent === 'false') {
+        conditions.push(or(isNull(schema.userConsents.marketingConsent), eq(schema.userConsents.marketingConsent, false)));
+      }
       if (filters?.roleName) {
         const roleNames = filters.roleName
           .split(',')
@@ -115,7 +122,8 @@ export class UsersService {
       const countQuery = client
         .select({ count: count() })
         .from(schema.users)
-        .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId));
+        .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
+        .leftJoin(schema.userConsents, eq(schema.users.id, schema.userConsents.userId));
       if (whereClause) {
         countQuery.where(whereClause);
       }
@@ -140,9 +148,11 @@ export class UsersService {
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
           phoneNumber: schema.profiles.phoneNumber,
+          marketingConsent: schema.userConsents.marketingConsent,
         })
         .from(schema.users)
         .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
+        .leftJoin(schema.userConsents, eq(schema.users.id, schema.userConsents.userId))
         .orderBy(orderExpr)
         .limit(limit)
         .offset(offset);
@@ -176,6 +186,7 @@ export class UsersService {
 
       const data: UserWithRoles[] = users.map((u) => ({
         ...u,
+        marketingConsent: u.marketingConsent ?? false,
         roles: rolesByUserId.get(u.id) ?? [],
       }));
 
