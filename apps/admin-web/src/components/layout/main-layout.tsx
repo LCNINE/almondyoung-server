@@ -16,11 +16,6 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-// 이 경로들에 들어가면 사이드바가 자동으로 접힌다 (경로 완전일치 — 하위 상세 페이지는 제외)
-const COLLAPSED_SIDEBAR_PATHS = ['/mall/products-list'];
-// 하위 상세까지 접는 경로
-const COLLAPSED_SIDEBAR_PREFIXES = ['/mall/banner-groups'];
-
 export function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname();
   const [activeMenu, setActiveMenu] = useState('company');
@@ -30,16 +25,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   // 다른 경로의 레이아웃은 그대로 둔다.
   const isArchive = pathname.startsWith('/archive');
 
-  const shouldCollapseSidebar =
-    COLLAPSED_SIDEBAR_PATHS.includes(pathname) ||
-    COLLAPSED_SIDEBAR_PREFIXES.some(
-      (p) => pathname === p || pathname.startsWith(`${p}/`)
-    );
-  const [sidebarOpen, setSidebarOpen] = useState(!shouldCollapseSidebar);
-
-  useEffect(() => {
-    setSidebarOpen(!shouldCollapseSidebar);
-  }, [shouldCollapseSidebar]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const { menuId, itemId } = getActiveMenuAndItem(pathname);
@@ -117,6 +103,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             activeMenu={activeMenu}
             activeItem={activeItem}
             onItemClick={handleItemClick}
+            onMenuChange={handleMenuChange}
           />
         </div>
       )}
@@ -131,6 +118,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           activeMenu={activeMenu}
           activeItem={activeItem ?? undefined}
           onMenuChange={handleMenuChange}
+          withSidebar={!isArchive}
         />
         <main
           className={cn(

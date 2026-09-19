@@ -9,6 +9,7 @@ export const usersQueryKeys = {
   all: ['users'] as const,
   count: () => [...usersQueryKeys.all, 'count'] as const,
   allCount: () => [...usersQueryKeys.all, 'allCount'] as const,
+  dailySignups: (from: string, to: string) => [...usersQueryKeys.all, 'dailySignups', { from, to }] as const,
   list: (query: AdminUsersQuery) =>
     [...usersQueryKeys.all, 'list', query] as const,
   batch: (ids: string[]) =>

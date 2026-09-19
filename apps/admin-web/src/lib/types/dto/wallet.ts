@@ -526,6 +526,11 @@ export interface DailyPaymentsDto {
   series: DailyPaymentPointDto[];
 }
 
+export interface DailyPointsDto {
+  range: { from: string; to: string };
+  series: Array<{ bucket: string; earnedAmount: number; earnedCount: number }>;
+}
+
 export interface MembershipRevenueDto {
   range: { from: string; to: string };
   totalAmount: number;

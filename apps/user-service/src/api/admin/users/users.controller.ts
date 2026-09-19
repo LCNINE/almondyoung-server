@@ -18,6 +18,7 @@ import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { AdminUsersListResponseDto } from './dto/admin-users-list.response.dto';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
+import { DateRangeQueryDto } from './dto/date-range-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
 import { ReplaceUserRolesDto, UserRolesResponseDto } from '../roles/dto/user-roles.dto';
@@ -46,6 +47,13 @@ export class UsersController {
   })
   async getUsers(@Query() query: GetUsersQueryDto) {
     return await this.usersService.getUsers(query);
+  }
+
+  @Get('stats/daily-signups')
+  @RequireScopes('master', 'admin:users:read', 'admin:access')
+  @ApiOperation({ summary: '일별 신규 가입자 수 — KST 달력일 귀속' })
+  async getDailySignups(@Query() query: DateRangeQueryDto) {
+    return this.usersService.getDailySignups(query.from, query.to);
   }
 
   @Get('consents')

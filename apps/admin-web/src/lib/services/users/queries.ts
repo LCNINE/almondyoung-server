@@ -18,6 +18,14 @@ export const useAdminUserCount = () => {
   });
 };
 
+export const useDailySignups = (from: string, to: string) => {
+  return useQuery({
+    queryKey: usersQueryKeys.dailySignups(from, to),
+    queryFn: () => userApi.getDailySignups(from, to),
+    staleTime: 60 * 1000,
+  });
+};
+
 export const useAllUserCount = () => {
   return useQuery({
     queryKey: usersQueryKeys.allCount(),

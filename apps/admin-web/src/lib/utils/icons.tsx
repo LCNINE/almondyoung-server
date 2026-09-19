@@ -50,6 +50,9 @@ import {
   FileText,
   ScanBarcode,
   QrCode,
+  ShoppingBag,
+  BookOpen,
+  House,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -102,6 +105,9 @@ const iconMap: Record<string, LucideIcon> = {
   FileText,
   ScanBarcode,
   QrCode,
+  ShoppingBag,
+  BookOpen,
+  House,
 };
 
 export function getIconComponent(name?: string): LucideIcon | null {

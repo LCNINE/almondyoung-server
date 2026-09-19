@@ -83,6 +83,12 @@ export class StatisticsAdminController {
     return this.service.getDailyPayments(query.from, query.to);
   }
 
+  @Get('points/daily')
+  @ApiOperation({ summary: '일별 적립금 지급(EARN) 시계열 — KST 달력일 귀속' })
+  async getDailyPoints(@Query() query: StatisticsRangeQueryDto) {
+    return this.service.getDailyPoints(query.from, query.to);
+  }
+
   @Get('membership-revenue')
   @ApiOperation({ summary: '멤버십 구독료 수입 (PAID 인보이스, finalized_at KST 기준)' })
   async getMembershipRevenue(@Query() query: StatisticsRangeQueryDto) {

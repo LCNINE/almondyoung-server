@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UpstreamUnavailableError } from '@app/shared';
 import { protos } from '@google-analytics/data';
 import { Ga4Client } from '../ga4/ga4.client';
-import { RealtimeBucketDto, RealtimeDimensionRowDto, RealtimeTrafficResponseDto } from '../api/traffic-query.dto';
+import {
+  RealtimeBucketDto,
+  RealtimeDimensionRowDto,
+  RealtimePageTypeDto,
+  RealtimeTrafficResponseDto,
+} from '../api/traffic-query.dto';
 
 type RunRealtimeReportResponse = protos.google.analytics.data.v1beta.IRunRealtimeReportResponse;
 
@@ -45,6 +50,32 @@ export function mapRealtimeDimension(response: RunRealtimeReportResponse): Realt
   }));
 }
 
+export const REALTIME_PAGE_TYPES = [
+  { key: 'view_home', label: '메인' },
+  { key: 'view_item_list', label: '상품목록' },
+  { key: 'view_item', label: '상품상세' },
+  { key: 'view_cart', label: '장바구니' },
+  { key: 'view_checkout', label: '주문작성' },
+  { key: 'view_order_complete', label: '결제완료' },
+  { key: 'view_board', label: '게시판' },
+] as const;
+
+/** eventName × deviceCategory 행을 화면 종류별 모바일·PC·합계로 접는다. 행이 없는 화면은 0 으로 채운다. */
+export function mapRealtimePageTypes(response: RunRealtimeReportResponse): RealtimePageTypeDto[] {
+  const rows = REALTIME_PAGE_TYPES.map((type) => ({ ...type, mobile: 0, desktop: 0, total: 0 }));
+  const byKey = new Map<string, RealtimePageTypeDto>(rows.map((row) => [row.key, row]));
+  for (const row of response.rows ?? []) {
+    const target = byKey.get(row.dimensionValues?.[0]?.value ?? '');
+    if (!target) continue;
+    const users = toNum(row.metricValues?.[0]?.value);
+    const device = row.dimensionValues?.[1]?.value;
+    if (device === 'mobile') target.mobile += users;
+    if (device === 'desktop') target.desktop += users;
+    target.total += users;
+  }
+  return rows;
+}
+
 /**
  * 분 단위 합은 전체 활성 사용자와 다르다 — 한 사람이 여러 분에 걸쳐 활동하면 중복으로 세진다.
  * 그래서 총계는 반드시 차원 없는 별도 조회에서 읽는다.
@@ -69,6 +100,7 @@ export class RealtimeQuery {
         byMinute: [],
         pages: [],
         devices: [],
+        pageTypes: [],
       };
     }
 
@@ -79,8 +111,9 @@ export class RealtimeQuery {
     let byMinute: RunRealtimeReportResponse;
     let pages: RunRealtimeReportResponse;
     let devices: RunRealtimeReportResponse;
+    let pageTypes: RunRealtimeReportResponse;
     try {
-      [totals, byMinute, pages, devices] = await Promise.all([
+      [totals, byMinute, pages, devices, pageTypes] = await Promise.all([
         this.ga4.runRealtimeReport({ metrics: [{ name: 'activeUsers' }] }),
         this.ga4.runRealtimeReport({
           dimensions: [{ name: 'minutesAgo' }],
@@ -99,6 +132,17 @@ export class RealtimeQuery {
           orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
           limit: 10,
         }),
+        this.ga4.runRealtimeReport({
+          dimensions: [{ name: 'eventName' }, { name: 'deviceCategory' }],
+          metrics: [{ name: 'activeUsers' }],
+          dimensionFilter: {
+            filter: {
+              fieldName: 'eventName',
+              inListFilter: { values: REALTIME_PAGE_TYPES.map((type) => type.key) },
+            },
+          },
+          limit: 100,
+        }),
       ]);
     } catch (error) {
       this.logger.warn(`GA4 실시간 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -112,6 +156,7 @@ export class RealtimeQuery {
       byMinute: mapRealtimeByMinute(byMinute),
       pages: mapRealtimeDimension(pages),
       devices: mapRealtimeDimension(devices),
+      pageTypes: mapRealtimePageTypes(pageTypes),
     };
     this.cached = { at: Date.now(), value };
     return value;

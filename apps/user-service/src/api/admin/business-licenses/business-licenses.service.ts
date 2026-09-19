@@ -3,7 +3,8 @@ import { InjectPublisher, PublisherFor } from '@app/events';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { USER_STREAM } from '@packages/event-contracts';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstDaySql } from '../../../commons/utils/daily-count';
 import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
@@ -90,6 +91,16 @@ export class BusinessLicensesService {
     return result;
   }
 
+  async getDailyApplications(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyCountPoint[] }> {
+    if (from > to) throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
+    const rows = await this.dbService.db
+      .select({ day: kstDaySql(schema.businessLicenses.createdAt), count: count() })
+      .from(schema.businessLicenses)
+      .where(kstDayRangeCondition(schema.businessLicenses.createdAt, from, to))
+      .groupBy(sql`1`);
+    return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
+  }
+
   async getBusinessLicenses({
     businessLicenseQueryDto,
   }: {
@@ -100,7 +111,8 @@ export class BusinessLicensesService {
     page: number;
     limit: number;
   }> {
-    const { search, sortBy, sortOrder, hasShopId, status, Daterange, hasVerificationFile } = businessLicenseQueryDto;
+    const { search, sortBy, sortOrder, hasShopId, status, Daterange, hasVerificationFile, createdFrom, createdTo } =
+      businessLicenseQueryDto;
 
     const page = businessLicenseQueryDto.page || 1;
     const limit = Math.min(businessLicenseQueryDto.limit || 20, 100);
@@ -138,6 +150,9 @@ export class BusinessLicensesService {
           ),
         );
       }
+
+      if (createdFrom) whereConditions.push(gte(schema.businessLicenses.createdAt, new Date(createdFrom)));
+      if (createdTo) whereConditions.push(lte(schema.businessLicenses.createdAt, new Date(createdTo)));
 
       const whereClause = and(...whereConditions);
 

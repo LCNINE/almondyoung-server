@@ -24,7 +24,8 @@ export class TrafficStatisticsQueryDto {
   @ApiPropertyOptional({
     example: 10,
     default: 10,
-    description: '랜딩페이지·국가 목록 최대 행 수 — 전체 열람은 큰 limit 1회 조회 후 화면 페이지네이션 (GA4 는 서버 offset 미사용)',
+    description:
+      '랜딩페이지·국가 목록 최대 행 수 — 전체 열람은 큰 limit 1회 조회 후 화면 페이지네이션 (GA4 는 서버 offset 미사용)',
   })
   @IsOptional()
   @Type(() => Number)
@@ -46,6 +47,7 @@ export class TrafficDailyBucketDto {
   /** GA4 속성 시간대의 달력 날짜 (YYYY-MM-DD) */
   date: string;
   sessions: number;
+  users: number;
   engagementRate: number | null;
 }
 
@@ -84,6 +86,16 @@ export class RealtimeBucketDto {
   activeUsers: number;
 }
 
+export class RealtimePageTypeDto {
+  /** GA4 이벤트 이름 (view_home, view_item …) */
+  key: string;
+  label: string;
+  mobile: number;
+  desktop: number;
+  /** 모바일·PC·태블릿 합 */
+  total: number;
+}
+
 export class RealtimeTrafficResponseDto {
   /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
   enabled: boolean;
@@ -94,4 +106,6 @@ export class RealtimeTrafficResponseDto {
   byMinute: RealtimeBucketDto[];
   pages: RealtimeDimensionRowDto[];
   devices: RealtimeDimensionRowDto[];
+  /** 화면 종류별 최근 30분 활성 사용자. 스토어프론트가 화면마다 보내는 이벤트 이름으로 나눈다. */
+  pageTypes: RealtimePageTypeDto[];
 }

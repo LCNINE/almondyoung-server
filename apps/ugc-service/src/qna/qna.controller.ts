@@ -17,6 +17,7 @@ import { AnswerResponseDto } from './dto/answer-response.dto';
 import { QuestionResponseDto } from './dto/question-response.dto';
 import { QnaSummaryQueryDto, QnaSummaryResponseDto } from './dto/qna-summary.dto';
 import { QnaMapper } from './mappers';
+import { DailyRangeQueryDto } from '../shared/daily/daily-count';
 
 @ApiTags('Q&A')
 @Controller('qna')
@@ -178,6 +179,13 @@ export class QnaController {
       ...result,
       data: result.data.map((q) => QnaMapper.toQuestionResponse(q)),
     };
+  }
+
+  @Get('admin/questions/stats/daily')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '일별 문의 접수 수 (관리자) — 작성일 KST 귀속, 삭제 제외' })
+  async getDailyQuestionCounts(@Query() query: DailyRangeQueryDto) {
+    return this.qnaService.getDailyCountsForAdmin(query.from, query.to);
   }
 
   @Get('admin/questions/:id')

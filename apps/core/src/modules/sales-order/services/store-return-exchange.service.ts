@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, max, notInArray, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, max, notInArray, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -1201,6 +1201,8 @@ export class StoreReturnExchangeService {
   async adminListReturnRequests(filters: {
     salesOrderId?: string;
     status?: string;
+    createdFrom?: Date;
+    createdTo?: Date;
     page?: number;
     limit?: number;
   }): Promise<{ items: ReturnRequestWithItems[]; total: number }> {
@@ -1212,8 +1214,12 @@ export class StoreReturnExchangeService {
     if (filters.salesOrderId) {
       conditions.push(eq(returnExchangeTables.returnRequests.salesOrderId, filters.salesOrderId));
     }
+    if (filters.createdFrom) conditions.push(gte(returnExchangeTables.returnRequests.createdAt, filters.createdFrom));
+    if (filters.createdTo) conditions.push(lte(returnExchangeTables.returnRequests.createdAt, filters.createdTo));
     if (filters.status) {
-      conditions.push(eq(returnExchangeTables.returnRequests.status, filters.status as ReturnRequestRow['status']));
+      conditions.push(
+        inArray(returnExchangeTables.returnRequests.status, filters.status.split(',') as ReturnRequestRow['status'][]),
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1248,6 +1254,8 @@ export class StoreReturnExchangeService {
   async adminListExchangeRequests(filters: {
     salesOrderId?: string;
     status?: string;
+    createdFrom?: Date;
+    createdTo?: Date;
     page?: number;
     limit?: number;
   }): Promise<{ items: ExchangeRequestWithItems[]; total: number }> {
@@ -1259,8 +1267,12 @@ export class StoreReturnExchangeService {
     if (filters.salesOrderId) {
       conditions.push(eq(returnExchangeTables.exchangeRequests.salesOrderId, filters.salesOrderId));
     }
+    if (filters.createdFrom) conditions.push(gte(returnExchangeTables.exchangeRequests.createdAt, filters.createdFrom));
+    if (filters.createdTo) conditions.push(lte(returnExchangeTables.exchangeRequests.createdAt, filters.createdTo));
     if (filters.status) {
-      conditions.push(eq(returnExchangeTables.exchangeRequests.status, filters.status as ExchangeRequestRow['status']));
+      conditions.push(
+        inArray(returnExchangeTables.exchangeRequests.status, filters.status.split(',') as ExchangeRequestRow['status'][]),
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

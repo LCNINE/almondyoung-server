@@ -21,3 +21,11 @@ export const useBusinessLicense = (id: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+export const useDailyBusinessLicenseCounts = (from: string, to: string) => {
+  return useQuery({
+    queryKey: [...businessLicensesQueryKeys.all, 'daily', { from, to }] as const,
+    queryFn: () => businessLicensesApi.getDailyCounts(from, to),
+    staleTime: 60 * 1000,
+  });
+};

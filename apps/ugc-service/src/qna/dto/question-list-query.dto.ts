@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsBoolean, IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
 import { QUESTION_CATEGORIES, type QuestionCategory } from '../constants';
 
@@ -134,4 +134,13 @@ export class AdminQuestionListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+  @ApiPropertyOptional({ description: '작성 시각 하한 (ISO 8601, 포함)' })
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: '작성 시각 상한 (ISO 8601, 포함)' })
+  @IsOptional()
+  @IsISO8601()
+  createdTo?: string;
 }

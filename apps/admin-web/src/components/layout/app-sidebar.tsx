@@ -4,7 +4,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getMenuById, type MenuItem } from '@/lib/utils/menu';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { ChevronLeft, ChevronRight, House } from 'lucide-react';
+import {
+  getFirstPagePath,
+  getMenuById,
+  mainMenus,
+  type MenuItem,
+} from '@/lib/utils/menu';
+import { IconComponent } from '@/lib/utils/icons';
 import { Badge } from '@/components/ui/badge';
 import { useOrderStats } from '@/lib/services/orders';
 import { useAdminUserCount } from '@/lib/services/users';
@@ -15,6 +24,8 @@ import {
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
@@ -24,6 +35,7 @@ interface AppSidebarProps {
   activeMenu: string;
   activeItem?: string;
   onItemClick: (item: MenuItem) => void;
+  onMenuChange: (menuId: string) => void;
 }
 
 // 특정 아이템의 부모 경로를 찾는 함수
@@ -62,8 +74,16 @@ export function AppSidebar({
   activeMenu,
   activeItem,
   onItemClick,
+  onMenuChange,
 }: AppSidebarProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [browsingAll, setBrowsingAll] = useState(false);
+
+  useEffect(() => {
+    setBrowsingAll(false);
+  }, [pathname]);
 
   const currentMenu = getMenuById(activeMenu);
 
@@ -130,46 +150,113 @@ export function AppSidebar({
     }
   };
 
-  if (!currentMenu) {
-    return (
-      <Sidebar collapsible="icon" className="border-r">
-        <SidebarHeader className="p-4">
-          <div className="text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
-            메뉴를 선택해주세요
-          </div>
-        </SidebarHeader>
-        <SidebarRail />
-      </Sidebar>
-    );
-  }
+  const goToMenu = (menuId: string) => {
+    setBrowsingAll(false);
+    onMenuChange(menuId);
+    const path = getFirstPagePath(menuId);
+    if (path) router.push(path);
+  };
+
+  const isHome = pathname === '/';
+  const showAll = browsingAll || isHome || !currentMenu;
 
   return (
     <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="gap-4 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden">
-            {currentMenu.title}
-          </h2>
-          <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
-        </div>
-        {getMenuInfo()}
+      <SidebarHeader className="flex-row items-center justify-between p-4 group-data-[collapsible=icon]:px-2">
+        <Link
+          href="/"
+          className="text-lg font-bold tracking-tight text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden"
+        >
+          LCNINE
+        </Link>
+        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            {visibleChildren.map((item) => (
-              <SidebarMenuItemRecursive
-                key={item.id}
-                item={item}
-                activeItem={activeItem}
-                expandedItems={expandedItems}
-                onToggleExpanded={toggleExpanded}
-                onItemClick={onItemClick}
-              />
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        {showAll ? (
+          <SidebarGroup>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isHome} tooltip="홈">
+                  <Link href="/">
+                    <House className="size-4 shrink-0" />
+                    <span>홈</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {mainMenus.map((menu) => (
+                <SidebarMenuItem key={menu.id}>
+                  <SidebarMenuButton
+                    tooltip={menu.title}
+                    isActive={!isHome && activeMenu === menu.id}
+                    onClick={() => goToMenu(menu.id)}
+                  >
+                    <IconComponent name={menu.icon} className="size-4 shrink-0" />
+                    <span>{menu.title}</span>
+                    <ChevronRight className="ml-auto" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <SidebarMenu className="w-(--sidebar-width-icon) shrink-0 items-center gap-1 border-r border-sidebar-border py-2 group-data-[collapsible=icon]:border-r-0">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip={{ children: '홈', hidden: false }}
+                  className="size-8 justify-center p-0"
+                >
+                  <Link href="/" aria-label="홈">
+                    <House className="size-4" />
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {mainMenus.map((menu) => (
+                <SidebarMenuItem key={menu.id}>
+                  <SidebarMenuButton
+                    tooltip={{ children: menu.title, hidden: false }}
+                    aria-label={menu.title}
+                    isActive={activeMenu === menu.id}
+                    onClick={() => goToMenu(menu.id)}
+                    className="size-8 justify-center p-0"
+                  >
+                    <IconComponent name={menu.icon} className="size-4" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+
+            <div className="flex min-w-0 flex-1 flex-col overflow-y-auto group-data-[collapsible=icon]:hidden">
+              <div className="flex flex-col gap-3 p-3">
+                <button
+                  type="button"
+                  onClick={() => setBrowsingAll(true)}
+                  className="flex items-center gap-1 text-base font-semibold text-sidebar-primary-foreground"
+                >
+                  <ChevronLeft className="size-4" />
+                  {currentMenu.title}
+                </button>
+                {getMenuInfo()}
+              </div>
+              <SidebarGroup className="pt-0">
+                <SidebarMenu>
+                  {visibleChildren.map((item) => (
+                    <SidebarMenuItemRecursive
+                      key={item.id}
+                      item={item}
+                      activeItem={activeItem}
+                      expandedItems={expandedItems}
+                      onToggleExpanded={toggleExpanded}
+                      onItemClick={onItemClick}
+                    />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+            </div>
+          </div>
+        )}
       </SidebarContent>
 
       <SidebarRail />

@@ -1,4 +1,4 @@
-import { buildDailyPaymentSeries, kstDayStart, resolveFeeRateBp, summarizeFees } from './statistics-admin.service';
+import { buildDailyPaymentSeries, buildDailyPointSeries, kstDayStart, resolveFeeRateBp, summarizeFees } from './statistics-admin.service';
 
 describe('kstDayStart', () => {
   it('KST 날짜의 자정을 UTC 로 환산한다', () => {
@@ -143,5 +143,16 @@ describe('buildDailyPaymentSeries', () => {
   it('월을 넘겨도 날짜가 밀리지 않는다', () => {
     const series = buildDailyPaymentSeries([], [], '2026-08-30', '2026-09-02');
     expect(series.map((point) => point.bucket)).toEqual(['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02']);
+  });
+});
+
+describe('buildDailyPointSeries', () => {
+  it('지급이 없는 날을 0 으로 채워 기간 전체를 준다', () => {
+    const series = buildDailyPointSeries([{ day: '2026-09-15', amount: 24_000, count: 24 }], '2026-09-14', '2026-09-16');
+    expect(series).toEqual([
+      { bucket: '2026-09-14', earnedAmount: 0, earnedCount: 0 },
+      { bucket: '2026-09-15', earnedAmount: 24_000, earnedCount: 24 },
+      { bucket: '2026-09-16', earnedAmount: 0, earnedCount: 0 },
+    ]);
   });
 });

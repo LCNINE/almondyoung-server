@@ -18,6 +18,7 @@ import { StoreSalesOrdersService } from '../services/store-sales-orders.service'
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
+import { DailyStatsQueryDto } from '../dto/daily-stats-query.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto, CancelByIntentDto } from '../dto/cancel-sales-order.dto';
@@ -106,6 +107,12 @@ export class SalesOrdersController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   listAmendments(@Param('id') id: string) {
     return this.amendments.listForSalesOrder(id);
+  }
+
+  @Get('stats/daily')
+  @ApiOperation({ summary: '일별 주문처리 현황', description: '주문일(KST) 기준 일별 상태별 건수와 교환·반품 접수 건수' })
+  getDailyStatusStats(@Query() query: DailyStatsQueryDto) {
+    return this.service.getDailyStatusStats(query.from, query.to);
   }
 
   @Get('stats')

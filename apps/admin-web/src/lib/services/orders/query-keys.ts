@@ -108,4 +108,5 @@ export const orderQueryKeys = {
 
   // 통계
   orderStats: ['orders', 'stats'] as const,
+  dailyOrderStatus: (from: string, to: string) => ['orders', 'stats', 'daily', { from, to }] as const,
 } as const;

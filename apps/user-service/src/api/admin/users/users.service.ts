@@ -1,7 +1,8 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstDaySql } from '../../../commons/utils/daily-count';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
@@ -24,6 +25,18 @@ export class UsersService {
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
+  }
+
+  async getDailySignups(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyCountPoint[] }> {
+    if (from > to) throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
+
+    const rows = await this.dbService.db
+      .select({ day: kstDaySql(schema.users.createdAt), count: count() })
+      .from(schema.users)
+      .where(kstDayRangeCondition(schema.users.createdAt, from, to))
+      .groupBy(sql`1`);
+
+    return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
   }
 
   async getUsers(filters: {

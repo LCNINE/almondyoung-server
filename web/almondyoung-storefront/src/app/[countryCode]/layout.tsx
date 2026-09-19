@@ -1,6 +1,7 @@
 import { listRegions } from "@/lib/api/medusa/regions"
 import { listActiveTimeSales } from "@/lib/api/medusa/time-sale"
 import { TimeSaleProvider } from "@/components/providers/time-sale-provider"
+import { PageTypeTracker } from "@/components/analytics/page-type-tracker"
 import { notFound } from "next/navigation"
 
 // 등록된 국가코드가 아니면 404 (/llms.txt 등이 홈으로 렌더되는 걸 막는다)
@@ -26,6 +27,9 @@ export default async function CountryCodeLayout(props: {
   }
 
   return (
-    <TimeSaleProvider sales={timeSales}>{props.children}</TimeSaleProvider>
+    <TimeSaleProvider sales={timeSales}>
+      <PageTypeTracker />
+      {props.children}
+    </TimeSaleProvider>
   )
 }

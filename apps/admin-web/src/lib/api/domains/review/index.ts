@@ -1,4 +1,5 @@
 'use client';
+import type { DailyCountsDto } from '@/lib/types/dto/daily-counts';
 
 import { UGC_SERVICE_BASE_URL } from '@/const';
 import {
@@ -23,6 +24,11 @@ function buildQueryString(query: ReviewListQuery): string {
 }
 
 export const reviewApi = {
+  getDailyCounts: async (from: string, to: string): Promise<DailyCountsDto> => {
+    const response = await client.get<DailyCountsDto>(`${UGC_SERVICE_BASE_URL}/reviews/admin/reviews/stats/daily?${new URLSearchParams({ from, to })}`);
+    return response.data;
+  },
+
   // 리뷰 목록 조회 (관리자용)
   getReviews: async (query: ReviewListQuery): Promise<ReviewListResponse> => {
     const qs = buildQueryString(query);

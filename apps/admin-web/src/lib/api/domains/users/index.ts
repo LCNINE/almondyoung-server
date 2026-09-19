@@ -27,7 +27,20 @@ function buildQueryString(query: AdminUsersQuery): string {
 /**
  * 클라이언트용 사용자 API
  */
+export interface DailySignupsDto {
+  range: { from: string; to: string };
+  series: Array<{ bucket: string; count: number }>;
+}
+
 export const userApi = {
+  getDailySignups: async (from: string, to: string): Promise<DailySignupsDto> => {
+    const res = await client.get(
+      `${USER_SERVICE_BASE_URL}/admin/users/stats/daily-signups?${new URLSearchParams({ from, to })}`
+    );
+    return res.data;
+  },
+
+
   getMe: async (): Promise<User> => {
     const response = await client.get<User>(
       `${USER_SERVICE_BASE_URL}/users/me`

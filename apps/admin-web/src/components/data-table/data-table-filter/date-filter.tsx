@@ -50,7 +50,7 @@ export function DateFilter({ filter, open, onOpenChange, prefix }: DateFilterPro
   const [range, setRange] = useState<DateRange | undefined>()
 
   const raw = get(filter.key)
-  const rawStr = Array.isArray(raw) ? raw[0] : raw
+  const rawStr = Array.isArray(raw) ? raw.join(',') : raw
   let parsed: DateFilterValue | null = null
   try {
     if (rawStr) parsed = JSON.parse(rawStr)

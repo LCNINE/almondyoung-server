@@ -1,4 +1,10 @@
-import { mapRealtimeByMinute, mapRealtimeDimension, mapRealtimeTotal, REALTIME_WINDOW_MINUTES } from './realtime.query';
+import {
+  mapRealtimeByMinute,
+  mapRealtimeDimension,
+  mapRealtimePageTypes,
+  mapRealtimeTotal,
+  REALTIME_WINDOW_MINUTES,
+} from './realtime.query';
 
 describe('mapRealtimeByMinute', () => {
   it('활동 없는 분을 0 으로 채워 30칸을 만든다', () => {
@@ -51,5 +57,36 @@ describe('mapRealtimeDimension', () => {
     expect(mapRealtimeDimension({ rows: [{ metricValues: [{ value: '2' }] }] })).toEqual([
       { label: '(not set)', activeUsers: 2 },
     ]);
+  });
+});
+
+describe('mapRealtimePageTypes', () => {
+  const row = (eventName: string, device: string, users: number) => ({
+    dimensionValues: [{ value: eventName }, { value: device }],
+    metricValues: [{ value: String(users) }],
+  });
+
+  it('이벤트·기기 행을 화면 종류별 모바일·PC·합계로 접고, 행이 없는 화면은 0 으로 채운다', () => {
+    const result = mapRealtimePageTypes({
+      rows: [
+        row('view_item', 'mobile', 30),
+        row('view_item', 'desktop', 10),
+        row('view_item', 'tablet', 2),
+        row('view_home', 'mobile', 5),
+        row('page_view', 'mobile', 99),
+      ],
+    });
+    expect(result.map((type) => type.label)).toEqual([
+      '메인',
+      '상품목록',
+      '상품상세',
+      '장바구니',
+      '주문작성',
+      '결제완료',
+      '게시판',
+    ]);
+    expect(result.find((type) => type.key === 'view_item')).toMatchObject({ mobile: 30, desktop: 10, total: 42 });
+    expect(result.find((type) => type.key === 'view_home')).toMatchObject({ mobile: 5, desktop: 0, total: 5 });
+    expect(result.find((type) => type.key === 'view_cart')).toMatchObject({ mobile: 0, desktop: 0, total: 0 });
   });
 });

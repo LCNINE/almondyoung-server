@@ -57,6 +57,8 @@ export interface ReviewListQuery {
   sort?: ReviewSortOption;
   q?: string;
   source?: ReviewSourceOption;
+  createdFrom?: string;
+  createdTo?: string;
 }
 
 export interface ReviewListResponse {
