@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { AssistantButton } from '@/features/assistant/components/assistant-button';
+import { HeaderSearch } from './header-search';
 import { MobileNav } from './mobile-nav';
 import { useSignout } from '@/lib/services/auth';
 import { useMe, useMyRoles } from '@/lib/services/users';
@@ -98,6 +99,9 @@ export function Header({
         </Link>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="hidden lg:block">
+            <HeaderSearch />
+          </div>
           <AssistantButton />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
