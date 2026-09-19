@@ -49,6 +49,8 @@ export interface BusinessLicenseListQuery {
   hasVerificationFile?: boolean;
   sort?: string;
   order?: 'asc' | 'desc';
+  createdFrom?: string;
+  createdTo?: string;
 }
 
 export interface BusinessLicenseUpdateDto {

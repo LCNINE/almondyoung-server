@@ -41,5 +41,10 @@ export function useReviewTableFilters(): Filter[] {
       label: '상품 ID',
       type: 'string',
     },
+    {
+      key: 'createdAt',
+      label: '작성일',
+      type: 'date',
+    },
   ];
 }

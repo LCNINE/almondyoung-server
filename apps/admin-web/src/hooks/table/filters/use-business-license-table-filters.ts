@@ -24,5 +24,10 @@ export function useBusinessLicenseTableFilters(): Filter[] {
         { label: '없음', value: 'false' },
       ],
     },
+    {
+      key: 'createdAt',
+      label: '신청일',
+      type: 'date',
+    },
   ];
 }

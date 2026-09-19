@@ -26,5 +26,10 @@ export function useQnaTableFilters(): Filter[] {
         value: status,
       })),
     },
+    {
+      key: 'createdAt',
+      label: '문의일',
+      type: 'date',
+    },
   ];
 }

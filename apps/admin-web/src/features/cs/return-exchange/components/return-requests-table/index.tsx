@@ -74,6 +74,8 @@ const STATUS_VARIANTS: Record<
 
 interface Props {
   statusFilter?: string;
+  createdFrom?: string;
+  createdTo?: string;
   page: number;
   onPageChange: (p: number) => void;
 }
@@ -82,10 +84,12 @@ const PAGE_SIZE = 20;
 
 export function ReturnRequestsTable({
   statusFilter,
+  createdFrom,
+  createdTo,
   page,
   onPageChange,
 }: Props) {
-  const query = { status: statusFilter, page, limit: PAGE_SIZE };
+  const query = { status: statusFilter, createdFrom, createdTo, page, limit: PAGE_SIZE };
   const { data, isLoading, isFetching } = useReturnRequests(query);
   const { hasScope, isPermissionLoading } = usePermission();
   const canReadEligibility =

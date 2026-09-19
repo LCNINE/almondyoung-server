@@ -97,7 +97,11 @@ export interface ReturnExchangeListQuery {
   status?: string;
   page?: number;
   limit?: number;
+  createdFrom?: string;
+  createdTo?: string;
 }
+
+export const CLAIM_IN_PROGRESS = ['approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'].join(',');
 
 export interface CreateAdminReturnRequest {
   orderId: string;
