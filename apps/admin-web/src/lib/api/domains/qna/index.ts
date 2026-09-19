@@ -1,4 +1,5 @@
 'use client';
+import type { DailyCountsDto } from '@/lib/types/dto/daily-counts';
 
 import { UGC_SERVICE_BASE_URL } from '@/const';
 import {
@@ -22,6 +23,11 @@ function buildQueryString(query: QnaListQuery): string {
 }
 
 export const qnaApi = {
+  getDailyCounts: async (from: string, to: string): Promise<DailyCountsDto> => {
+    const response = await client.get<DailyCountsDto>(`${UGC_SERVICE_BASE_URL}/qna/admin/questions/stats/daily?${new URLSearchParams({ from, to })}`);
+    return response.data;
+  },
+
   // 질문 목록 조회 (관리자용 - 비밀글 포함 전체 조회)
   getQuestions: async (query: QnaListQuery): Promise<QnaListResponse> => {
     const qs = buildQueryString(query);

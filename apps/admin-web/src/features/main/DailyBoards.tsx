@@ -5,7 +5,11 @@ import { Brush, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XA
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kstDaysAgo, kstToday } from '@/features/statistics/as-of';
+import Link from 'next/link';
 import { useDailyOrderStatus } from '@/lib/services/orders';
+import { useDailyQuestionCounts } from '@/lib/services/qna';
+import { useDailyReviewCounts } from '@/lib/services/review';
+import { useDailyBusinessLicenseCounts } from '@/lib/services/business-licenses';
 import { useDailySignups } from '@/lib/services/users';
 import { useDailyPoints } from '@/lib/services/wallet';
 import { cn } from '@/lib/utils/ui';
@@ -336,4 +340,170 @@ export function SkeletonRows({ rows, cols }: { rows: number; cols: number }) {
       ))}
     </tr>
   ));
+}
+
+function createdAtParam(fromDay: string, toDay: string) {
+  return encodeURIComponent(
+    JSON.stringify({
+      $gte: new Date(`${fromDay}T00:00:00+09:00`).toISOString(),
+      $lte: new Date(`${toDay}T23:59:59.999+09:00`).toISOString(),
+    }),
+  );
+}
+
+type CsColumn = {
+  key: string;
+  label: string;
+  href: (fromDay: string, toDay: string) => string;
+  counts: Map<string, number> | null;
+  isLoading: boolean;
+};
+
+export function CsBoard() {
+  const range = useRange();
+  const today = kstToday();
+  const questions = useDailyQuestionCounts(range.from, range.to);
+  const reviews = useDailyReviewCounts(range.from, range.to);
+  const claims = useDailyOrderStatus(range.from, range.to);
+  const licenses = useDailyBusinessLicenseCounts(range.from, range.to);
+  const [desc, setDesc] = useState(true);
+
+  const toMap = (query: { isError: boolean; data?: { series: Array<{ bucket: string; count: number }> } }) =>
+    query.isError || !query.data ? null : new Map(query.data.series.map((point) => [point.bucket, point.count]));
+  const claimMap = (key: 'return' | 'exchange') =>
+    claims.isError || !claims.data ? null : new Map(claims.data.series.map((point) => [point.bucket, point[key]]));
+
+  const columns: CsColumn[] = [
+    {
+      key: 'questions',
+      label: '문의',
+      href: (from, to) => `/cs/qna?createdAt=${createdAtParam(from, to)}`,
+      counts: toMap(questions),
+      isLoading: questions.isLoading,
+    },
+    {
+      key: 'reviews',
+      label: '리뷰',
+      href: (from, to) => `/cs/reviews?createdAt=${createdAtParam(from, to)}`,
+      counts: toMap(reviews),
+      isLoading: reviews.isLoading,
+    },
+    {
+      key: 'returns',
+      label: '반품 신청',
+      href: (from, to) => `/cs/return-exchange?createdAt=${createdAtParam(from, to)}`,
+      counts: claimMap('return'),
+      isLoading: claims.isLoading,
+    },
+    {
+      key: 'exchanges',
+      label: '교환 신청',
+      href: (from, to) => `/cs/return-exchange?tab=exchanges&createdAt=${createdAtParam(from, to)}`,
+      counts: claimMap('exchange'),
+      isLoading: claims.isLoading,
+    },
+    {
+      key: 'licenses',
+      label: '사업자 신청',
+      href: (from, to) => `/cs/business-licenses?createdAt=${createdAtParam(from, to)}`,
+      counts: toMap(licenses),
+      isLoading: licenses.isLoading,
+    },
+  ];
+
+  const isLoading = columns.some((column) => column.isLoading);
+  const failed = columns.filter((column) => !column.isLoading && column.counts == null).map((column) => column.label);
+  const days: string[] = [];
+  for (let day = range.from; day <= range.to; day = nextDay(day)) days.push(day);
+  const rows = desc ? [...days].reverse() : days;
+  const valueOf = (column: CsColumn, day: string) => column.counts?.get(day) ?? 0;
+  const sumOf = (column: CsColumn) => days.reduce((total, day) => total + valueOf(column, day), 0);
+  const rowTotal = (day: string) =>
+    columns.every((column) => column.counts)
+      ? columns.reduce((total, column) => total + valueOf(column, day), 0)
+      : null;
+  const grandTotal = columns.every((column) => column.counts)
+    ? columns.reduce((total, column) => total + sumOf(column), 0)
+    : null;
+
+  const cell = (column: CsColumn, value: number, fromDay: string, toDay: string, bold: boolean) =>
+    column.counts == null ? (
+      <span className="text-[#BDBDBD]">-</span>
+    ) : (
+      <Link
+        href={column.href(fromDay, toDay)}
+        aria-label={`${column.label} ${value}건 목록 보기`}
+        className={cn('hover:underline', bold || value > 0 ? 'font-bold text-[#2B2B2B]' : 'text-[#9E9E9E]')}
+      >
+        {value.toLocaleString('ko-KR')}
+      </Link>
+    );
+
+  return (
+    <div className="space-y-2">
+      {failed.length > 0 ? (
+        <p className="text-xs text-[#D71952]">{failed.join('·')} 데이터를 불러오지 못했습니다.</p>
+      ) : null}
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-[#CCCCCC] bg-[#FAFAFA] text-[#616161]">
+              <SortableDateHeader desc={desc} onToggle={() => setDesc((value) => !value)} />
+              {columns.map((column) => (
+                <th key={column.key} className="h-[41px] whitespace-nowrap px-2.5 text-right font-medium">
+                  {column.label}
+                </th>
+              ))}
+              <th className="h-[41px] whitespace-nowrap px-2.5 text-right font-medium">합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? <SkeletonRows rows={DAYS + 1} cols={columns.length + 1} /> : null}
+            {isLoading ? null : (
+              <tr className="border-b border-[#EBEBEB] bg-[#F1F9FD]">
+                <td className="border-l-[3px] border-l-[#1882C8] px-3 py-3 font-bold text-[#1C1C1C]">합계</td>
+                {columns.map((column) => (
+                  <td key={column.key} className="px-3 py-3 text-right text-sm tabular-nums">
+                    {cell(column, sumOf(column), range.from, range.to, true)}
+                  </td>
+                ))}
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-[#2B2B2B]">
+                  {grandTotal == null ? '-' : grandTotal.toLocaleString('ko-KR')}
+                </td>
+              </tr>
+            )}
+            {isLoading
+              ? null
+              : rows.map((day) => {
+                  const total = rowTotal(day);
+                  return (
+                    <tr key={day} className={cn('border-b border-[#EBEBEB]', day === today && 'bg-[#FAFDFE]')}>
+                      <DayCell bucket={day} today={today} />
+                      {columns.map((column) => (
+                        <td key={column.key} className="px-3 py-3 text-right text-sm tabular-nums">
+                          {cell(column, valueOf(column, day), day, day, day === today)}
+                        </td>
+                      ))}
+                      <td
+                        className={cn(
+                          'px-3 py-3 text-right text-sm tabular-nums text-[#2B2B2B]',
+                          (total ?? 0) > 0 && 'font-bold',
+                        )}
+                      >
+                        {total == null ? '-' : total.toLocaleString('ko-KR')}
+                      </td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function nextDay(day: string) {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }

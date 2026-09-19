@@ -10,11 +10,12 @@ import { useOrderStats } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useReviews } from '@/lib/services/review';
 import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
+import { CLAIM_IN_PROGRESS } from '@/lib/api/domains/return-exchange';
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
 import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
 import { SalesBoard } from '@/features/main/sales/SalesBoard';
 import { RealtimeBoard } from '@/features/main/RealtimeBoard';
-import { MembersBoard, OrderStatusBoard, SkeletonRows } from '@/features/main/DailyBoards';
+import { CsBoard, MembersBoard, OrderStatusBoard, SkeletonRows } from '@/features/main/DailyBoards';
 import { SourcingBoard } from '@/features/main/SourcingBoard';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { toLocalDateString } from '@/lib/utils/date';
@@ -47,8 +48,6 @@ type BoardTabId = (typeof BOARD_TABS)[number]['id'];
 const CARD_CLASS = 'rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_2px_rgba(0,0,0,0.05)]';
 
 type TodoTone = 'order' | 'claim' | 'etc';
-
-const CLAIM_IN_PROGRESS = 'approved,collection_pending,collected,inspected,refund_pending';
 
 const TODO_TONE: Record<TodoTone, { box: string; count: string }> = {
   order: { box: 'bg-[#F1F9FD]', count: 'text-[#1779BA]' },
@@ -127,8 +126,12 @@ export default function MainTemplate() {
       tone: 'claim',
       label: '교환신청',
       count: exchangeRequests.data?.total,
-      second: { label: '처리중', count: exchangesInProgress.data?.total },
-      href: '/cs/return-exchange',
+      second: {
+        label: '처리중',
+        href: `/cs/return-exchange?tab=exchanges&status=${encodeURIComponent(CLAIM_IN_PROGRESS)}`,
+        count: exchangesInProgress.data?.total,
+      },
+      href: '/cs/return-exchange?tab=exchanges&status=requested',
       isLoading: exchangeRequests.isLoading || exchangesInProgress.isLoading,
       isError: exchangeRequests.isError || exchangesInProgress.isError,
     },
@@ -137,8 +140,12 @@ export default function MainTemplate() {
       tone: 'claim',
       label: '반품신청',
       count: returnRequests.data?.total,
-      second: { label: '처리중', count: returnsInProgress.data?.total },
-      href: '/cs/return-exchange',
+      second: {
+        label: '처리중',
+        href: `/cs/return-exchange?status=${encodeURIComponent(CLAIM_IN_PROGRESS)}`,
+        count: returnsInProgress.data?.total,
+      },
+      href: '/cs/return-exchange?status=requested',
       isLoading: returnRequests.isLoading || returnsInProgress.isLoading,
       isError: returnRequests.isError || returnsInProgress.isError,
     },
@@ -403,102 +410,5 @@ function KeywordChange({ current, previous }: { current: number; previous: numbe
       {rate > 0 ? '▲' : '▼'}
       {Math.abs(rate)}%
     </span>
-  );
-}
-
-function CsBoard() {
-  const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
-  const ownReviews = useReviews({ hasComment: 'false', status: 'active', source: 'own', page: 1, limit: 1 });
-  const legacyReviews = useReviews({ hasComment: 'false', status: 'active', source: 'legacy', page: 1, limit: 1 });
-  const returnRequests = useReturnRequests({ status: 'requested', page: 1, limit: 1 });
-  const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
-  const businessLicenses = useBusinessLicenses({ limit: 10, status: 'under_review' });
-
-  return (
-    <div className="space-y-3">
-      <BoardHeader
-        label="처리 대기"
-        help={['접수되어 처리를 기다리는 건수입니다.', '이전 사이트에서 옮겨 온 리뷰는 기간 제한 없이 누적된 수입니다.']}
-        href="/cs/qna"
-        linkLabel="문의 보기"
-      />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <BoardStat
-          label="미답변 문의"
-          value={unansweredQna.data?.total}
-          unit="건"
-          isLoading={unansweredQna.isLoading}
-          isError={unansweredQna.isError}
-        />
-        <BoardStat
-          label="미답변 리뷰 (자체 작성)"
-          value={ownReviews.data?.total}
-          unit="건"
-          isLoading={ownReviews.isLoading}
-          isError={ownReviews.isError}
-        />
-        <BoardStat
-          label="미답변 리뷰 (이전 사이트 이관분)"
-          value={legacyReviews.data?.total}
-          unit="건"
-          hint="기간 제한 없는 누적 백로그"
-          isLoading={legacyReviews.isLoading}
-          isError={legacyReviews.isError}
-        />
-        <BoardStat
-          label="반품 접수"
-          value={returnRequests.data?.total}
-          unit="건"
-          isLoading={returnRequests.isLoading}
-          isError={returnRequests.isError}
-        />
-        <BoardStat
-          label="교환 접수"
-          value={exchangeRequests.data?.total}
-          unit="건"
-          isLoading={exchangeRequests.isLoading}
-          isError={exchangeRequests.isError}
-        />
-        <BoardStat
-          label="사업자 심사 대기"
-          value={businessLicenses.data?.total}
-          unit="건"
-          isLoading={businessLicenses.isLoading}
-          isError={businessLicenses.isError}
-        />
-      </div>
-    </div>
-  );
-}
-
-function BoardStat({
-  label,
-  value,
-  unit,
-  hint,
-  isLoading,
-  isError,
-}: {
-  label: string;
-  value: number | undefined;
-  unit: string;
-  hint?: string;
-  isLoading?: boolean;
-  isError?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      {isLoading ? (
-        <Skeleton className="mt-1 h-7 w-20" />
-      ) : isError ? (
-        <p className="mt-1 text-sm text-gray-400">불러오지 못함</p>
-      ) : (
-        <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">
-          {value != null ? `${value.toLocaleString('ko-KR')}${unit}` : '-'}
-        </p>
-      )}
-      {hint ? <p className="mt-1 text-[11px] text-gray-400">{hint}</p> : null}
-    </div>
   );
 }

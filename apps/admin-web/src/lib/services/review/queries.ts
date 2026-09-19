@@ -32,3 +32,11 @@ export const useReview = (id: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+export const useDailyReviewCounts = (from: string, to: string) => {
+  return useQuery({
+    queryKey: [...reviewQueryKeys.all, 'daily', { from, to }] as const,
+    queryFn: () => reviewApi.getDailyCounts(from, to),
+    staleTime: 60 * 1000,
+  });
+};

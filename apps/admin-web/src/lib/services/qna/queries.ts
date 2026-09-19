@@ -23,3 +23,11 @@ export const useQuestion = (id: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+export const useDailyQuestionCounts = (from: string, to: string) => {
+  return useQuery({
+    queryKey: [...qnaQueryKeys.all, 'daily', { from, to }] as const,
+    queryFn: () => qnaApi.getDailyCounts(from, to),
+    staleTime: 60 * 1000,
+  });
+};

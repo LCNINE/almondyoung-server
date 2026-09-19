@@ -1,4 +1,5 @@
 'use client';
+import type { DailyCountsDto } from '@/lib/types/dto/daily-counts';
 
 import { USER_SERVICE_BASE_URL } from '@/const/api-const';
 import {
@@ -24,6 +25,11 @@ function buildQueryString(query: BusinessLicenseListQuery): string {
 }
 
 export const businessLicensesApi = {
+  getDailyCounts: async (from: string, to: string): Promise<DailyCountsDto> => {
+    const response = await client.get<DailyCountsDto>(`${USER_SERVICE_BASE_URL}/admin/business-licenses/stats/daily?${new URLSearchParams({ from, to })}`);
+    return response.data;
+  },
+
   getBusinessLicenses: async (
     query: BusinessLicenseListQuery
   ): Promise<BusinessLicenseListResponse> => {
