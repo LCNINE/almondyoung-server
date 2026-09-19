@@ -530,31 +530,31 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:209',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:217',
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)))',
     note: 'soft delete UPDATE 자체에 userId 조건 포함(분리 가드 없음, PATCH보다 더 견고).',
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:694',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:703',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
   'ugc-service GET /qna/questions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:336',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:344',
     predicate: 'const shouldHide = q.isSecret && !isAdmin && q.userId !== currentUserId;',
     note: "currentUserId는 @OptionalAuth() 하의 @User('userId') 토큰값이며 쿼리로 스푸핑 불가(QuestionListQueryDto에 userId 필드 없음).",
   },
   'ugc-service GET /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:254',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:262',
     predicate: 'if (question.isSecret && !isAdmin && question.userId !== currentUserId) {',
     note: 'DB WHERE절이 아닌 앱 레벨 체크지만 currentUserId(토큰)로 비밀글 접근을 실제로 차단(ForbiddenException). 비밀글이 아니면 원래 공개 자원이라 IDOR 대상 아님.',
   },
   'ugc-service GET /qna/questions/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:443',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:466',
     predicate: 'const conditions: SQL[] = [eq(questions.userId, userId), isNull(questions.deletedAt)];',
   },
   'ugc-service GET /reviews/eligibilities': {
@@ -565,19 +565,19 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:820',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:829',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:171',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:179',
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)));',
     note: '실제 UPDATE(183행)는 eq(questions.id, id)만 쓰지만 같은 트랜잭션 내 이 줄의 사전 SELECT 가드가 없으면 진행되지 않아(NotFoundException) 현재는 안전. 취약점은 아니나 observations에 리팩터링 위험 기록.',
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:639',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:647',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
@@ -595,7 +595,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews/:id/reactions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:420',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:429',
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
