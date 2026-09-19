@@ -212,7 +212,7 @@ export function MembersBoard() {
   );
 }
 
-function SummaryCard({
+export function SummaryCard({
   label,
   value,
   unit,
@@ -323,7 +323,7 @@ export function OrderStatusBoard() {
   );
 }
 
-function SkeletonRows({ rows, cols }: { rows: number; cols: number }) {
+export function SkeletonRows({ rows, cols }: { rows: number; cols: number }) {
   return Array.from({ length: rows }, (_, row) => (
     <tr key={row} className="border-b border-[#EBEBEB]">
       <td className="px-3 py-3">
