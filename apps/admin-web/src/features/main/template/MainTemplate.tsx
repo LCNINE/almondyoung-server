@@ -36,7 +36,7 @@ function lastDays(days: number): { from: string; to: string } {
 const BOARD_TABS = [
   { id: 'sales', label: '오늘의 매출' },
   { id: 'realtime', label: '실시간 접속' },
-  { id: 'sourcing', label: '소싱 후보 (검색 0건)' },
+  { id: 'sourcing', label: '소싱 후보 (고객 검색 0건)' },
   { id: 'keywords', label: '인기 검색어' },
   { id: 'orders', label: '주문처리 현황' },
   { id: 'members', label: '회원/적립금' },
