@@ -20,6 +20,7 @@ import { ToggleReactionDto } from '../dto/toggle-reaction.dto';
 import { ReviewMapper } from '../mappers';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
+import { DailyRangeQueryDto } from '../../shared/daily/daily-count';
 
 @ApiTags('Reviews')
 @Controller('reviews')
@@ -205,6 +206,13 @@ export class ReviewsController {
       ...result,
       data: result.data.map(ReviewMapper.toResponse),
     };
+  }
+
+  @Get('admin/reviews/stats/daily')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '일별 리뷰 작성 수 (관리자) — 작성일 KST 귀속, 삭제 제외' })
+  async getDailyReviewCounts(@Query() query: DailyRangeQueryDto) {
+    return this.reviewsService.getDailyCountsForAdmin(query.from, query.to);
   }
 
   @Get('admin/reviews/:id')

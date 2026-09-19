@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
 
 export const REVIEW_RATING_FILTERS = ['1', '2', '3', '4', '5', 'positive', 'negative'] as const;
@@ -116,4 +116,13 @@ export class AdminReviewListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(REVIEW_SOURCE_FILTERS)
   source?: ReviewSourceFilter;
+  @ApiPropertyOptional({ description: '작성 시각 하한 (ISO 8601, 포함)' })
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: '작성 시각 상한 (ISO 8601, 포함)' })
+  @IsOptional()
+  @IsISO8601()
+  createdTo?: string;
 }

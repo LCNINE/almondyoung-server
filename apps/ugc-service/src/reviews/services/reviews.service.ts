@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import {
+  assertDailyRange,
+  buildDailyCountSeries,
+  createdRangeConditions,
+  type DailyCountPoint,
+  kstDayRangeCondition,
+  kstDaySql,
+} from '../../shared/daily/daily-count';
+import {
   reviewBestSelections,
   reviewComments,
   reviewMedia,
@@ -911,6 +919,17 @@ export class ReviewsService {
 
   // ─── 관리자용 ───
 
+  async getDailyCountsForAdmin(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyCountPoint[] }> {
+    assertDailyRange(from, to);
+    const day = kstDaySql(reviews.createdAt);
+    const rows = await this.client
+      .select({ day, count: count() })
+      .from(reviews)
+      .where(and(isNull(reviews.deletedAt), kstDayRangeCondition(reviews.createdAt, from, to)))
+      .groupBy(sql`1`);
+    return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
+  }
+
   async listAllForAdmin(
     query: AdminReviewListQueryDto,
     tx?: DbTransaction,
@@ -966,6 +985,8 @@ export class ReviewsService {
           sql`(${reviews.content} ILIKE ${searchTerm} OR COALESCE(${reviews.legacyAuthorName}, '') ILIKE ${searchTerm})`,
         );
       }
+
+      conditions.push(...createdRangeConditions(reviews.createdAt, query));
 
       if (query.source === 'own') {
         conditions.push(eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM));

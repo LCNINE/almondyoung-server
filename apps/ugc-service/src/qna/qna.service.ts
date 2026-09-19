@@ -16,6 +16,14 @@ import { type AnswerEntity, type QuestionEntity, type QuestionWithDetailsEntity 
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_QUESTION_MEDIA_COUNT, type QuestionCategory } from './constants';
 import { isNotNull } from 'drizzle-orm';
+import {
+  assertDailyRange,
+  buildDailyCountSeries,
+  createdRangeConditions,
+  type DailyCountPoint,
+  kstDayRangeCondition,
+  kstDaySql,
+} from '../shared/daily/daily-count';
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
 
@@ -350,6 +358,17 @@ export class QnaService {
 
   // ─── 관리자용 전체 문의 목록 ───
 
+  async getDailyCountsForAdmin(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyCountPoint[] }> {
+    assertDailyRange(from, to);
+    const day = kstDaySql(questions.createdAt);
+    const rows = await this.client
+      .select({ day, count: count() })
+      .from(questions)
+      .where(and(isNull(questions.deletedAt), kstDayRangeCondition(questions.createdAt, from, to)))
+      .groupBy(sql`1`);
+    return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
+  }
+
   async listAllForAdmin(
     query: {
       page?: number;
@@ -359,6 +378,8 @@ export class QnaService {
       sort?: string;
       q?: string;
       userId?: string;
+      createdFrom?: string;
+      createdTo?: string;
     },
     tx?: DbTransaction,
   ): Promise<PaginatedResponseDto<QuestionWithDetailsEntity>> {
@@ -383,6 +404,8 @@ export class QnaService {
       if (query.category) {
         conditions.push(eq(questions.category, query.category as QuestionCategory));
       }
+
+      conditions.push(...createdRangeConditions(questions.createdAt, query));
 
       // 작성자(회원) 필터
       if (query.userId) {
