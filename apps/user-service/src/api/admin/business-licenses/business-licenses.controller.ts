@@ -6,6 +6,7 @@ import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
+import { DateRangeQueryDto } from '../users/dto/date-range-query.dto';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
@@ -43,6 +44,13 @@ export class BusinessLicensesController {
     @Body() upsertBusinessLicenseDto: BusinessAdminUpsertDto,
   ): Promise<BusinessLicenseResponseDto> {
     return this.businessLicensesService.upsertBusinessLicenseByUserId(userId, upsertBusinessLicenseDto);
+  }
+
+  @Get('stats/daily')
+  @RequireScopes('master', 'admin:users:read')
+  @ApiOperation({ summary: '일별 사업자 등록 신청 수 — 신청일 KST 귀속' })
+  async getDailyApplications(@Query() query: DateRangeQueryDto) {
+    return this.businessLicensesService.getDailyApplications(query.from, query.to);
   }
 
   @Get()

@@ -6,6 +6,7 @@ import {
   IsDate,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   Max,
@@ -132,4 +133,14 @@ export class BusinessLicenseQueryDto {
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   hasVerificationFile?: boolean;
+
+  @ApiProperty({ description: '신청 시각 하한 (ISO 8601, 포함)', type: String, required: false })
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @ApiProperty({ description: '신청 시각 상한 (ISO 8601, 포함)', type: String, required: false })
+  @IsOptional()
+  @IsISO8601()
+  createdTo?: string;
 }
