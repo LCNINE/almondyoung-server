@@ -49,6 +49,7 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { kstDayStart, kstDayEndInclusive, kstTodayRange } from '../utils/kst-date.util';
 import { extractDisplayOrderNo } from '../utils/display-order-no.util';
+import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -1089,6 +1090,83 @@ export class SalesOrdersService {
         totalPages: Math.ceil(total / limit),
       };
     }, tx);
+  }
+
+  async getDailyStatusStats(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyOrderStatusPoint[] }> {
+    if (from > to) throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
+
+    const start = sql`(${from}::date)::timestamp AT TIME ZONE 'Asia/Seoul'`;
+    const end = sql`(${to}::date + 1)::timestamp AT TIME ZONE 'Asia/Seoul'`;
+    const db = this.db.db;
+
+    const [orderRows, exchangeRows, returnRows] = await Promise.all([
+      db.execute(sql`
+        WITH so AS (
+          SELECT id, status::text AS status, ((order_date AT TIME ZONE 'Asia/Seoul')::date)::text AS day
+            FROM sales_orders
+           WHERE order_date >= ${start} AND order_date < ${end}
+        ),
+        units AS (
+          SELECT DISTINCT fo.sales_order_id, s.id AS unit_id, s.status::text AS st
+            FROM shipments s
+            JOIN shipment_lines sl ON sl.shipment_id = s.id
+            JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+            JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+            JOIN so ON so.id = fo.sales_order_id
+           WHERE s.status NOT IN ('canceled', 'superseded')
+          UNION ALL
+          SELECT fo.sales_order_id, fo.id,
+                 CASE fo.direct_ship_status WHEN 'completed' THEN 'delivered' WHEN 'forwarded' THEN 'shipped' ELSE 'draft' END
+            FROM fulfillment_orders fo
+            JOIN so ON so.id = fo.sales_order_id
+           WHERE fo.fulfillment_mode = 'drop_ship'
+             AND fo.direct_ship_status IS NOT NULL
+             AND fo.direct_ship_status <> 'canceled'
+        ),
+        phase AS (
+          SELECT sales_order_id,
+                 bool_and(st = 'delivered') AS all_delivered,
+                 bool_or(st IN ('shipped', 'in_transit', 'failed', 'delivered')) AS any_moved
+            FROM units
+           GROUP BY sales_order_id
+        )
+        SELECT so.day,
+               count(*) FILTER (WHERE so.status = 'pending')::int AS pending,
+               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND NOT coalesce(p.any_moved, false))::int AS preparing,
+               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND p.any_moved AND NOT p.all_delivered)::int AS shipping,
+               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND p.all_delivered)::int AS delivered,
+               count(*) FILTER (WHERE so.status IN ('cancelled', 'timeout'))::int AS cancelled,
+               count(*)::int AS total
+          FROM so
+          LEFT JOIN phase p ON p.sales_order_id = so.id
+         GROUP BY so.day
+      `),
+      db.execute(sql`
+        SELECT ((created_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
+          FROM exchange_requests
+         WHERE created_at >= ${start} AND created_at < ${end}
+         GROUP BY 1
+      `),
+      db.execute(sql`
+        SELECT ((created_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
+          FROM return_requests
+         WHERE created_at >= ${start} AND created_at < ${end}
+         GROUP BY 1
+      `),
+    ]);
+
+    type DayCount = { day: string; count: number };
+    type OrderDayRow = Parameters<typeof buildDailyOrderStatusSeries>[0][number];
+    return {
+      range: { from, to },
+      series: buildDailyOrderStatusSeries(
+        Array.from(orderRows as unknown as ArrayLike<OrderDayRow>),
+        Array.from(exchangeRows as unknown as ArrayLike<DayCount>),
+        Array.from(returnRows as unknown as ArrayLike<DayCount>),
+        from,
+        to,
+      ),
+    };
   }
 
   async getStats() {
