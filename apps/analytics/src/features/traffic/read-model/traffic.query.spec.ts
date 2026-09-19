@@ -46,12 +46,12 @@ describe('fromGa4Date', () => {
 
 describe('mapDailySeries', () => {
   it('세션 없는 날짜를 0으로 채워 기간 전체를 돌려준다', () => {
-    const response = { rows: [row('20260801', [40, 30]), row('20260803', [60, 30])] };
+    const response = { rows: [row('20260801', [40, 30, 25]), row('20260803', [60, 30, 41])] };
     const series = mapDailySeries(response, '2026-08-01', '2026-08-03');
     expect(series).toEqual([
-      { date: '2026-08-01', sessions: 40, engagementRate: 0.75 },
-      { date: '2026-08-02', sessions: 0, engagementRate: null },
-      { date: '2026-08-03', sessions: 60, engagementRate: 0.5 },
+      { date: '2026-08-01', sessions: 40, users: 25, engagementRate: 0.75 },
+      { date: '2026-08-02', sessions: 0, users: 0, engagementRate: null },
+      { date: '2026-08-03', sessions: 60, users: 41, engagementRate: 0.5 },
     ]);
   });
 });

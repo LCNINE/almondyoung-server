@@ -39,12 +39,13 @@ export function fromGa4Date(value: string): string {
 
 /** GA4 는 세션 0인 날짜를 행으로 주지 않는다 — 기간 전체를 0으로 채워 선이 끊기지 않게 한다. */
 export function mapDailySeries(response: RunReportResponse, from: string, to: string): TrafficDailyBucketDto[] {
-  const byDate = new Map<string, { sessions: number; engaged: number }>();
+  const byDate = new Map<string, { sessions: number; engaged: number; users: number }>();
   for (const row of response.rows ?? []) {
     const date = fromGa4Date(row.dimensionValues?.[0]?.value ?? '');
     byDate.set(date, {
       sessions: toNum(row.metricValues?.[0]?.value),
       engaged: toNum(row.metricValues?.[1]?.value),
+      users: toNum(row.metricValues?.[2]?.value),
     });
   }
   const series: TrafficDailyBucketDto[] = [];
@@ -56,6 +57,7 @@ export function mapDailySeries(response: RunReportResponse, from: string, to: st
     series.push({
       date,
       sessions: found?.sessions ?? 0,
+      users: found?.users ?? 0,
       engagementRate: found ? engagementRate(found.engaged, found.sessions) : null,
     });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -138,7 +140,7 @@ export class TrafficQuery {
           dateRanges,
           dimensionFilter,
           dimensions: [{ name: 'date' }],
-          metrics: [{ name: 'sessions' }, { name: 'engagedSessions' }],
+          metrics: [{ name: 'sessions' }, { name: 'engagedSessions' }, { name: 'totalUsers' }],
           orderBys: [{ dimension: { dimensionName: 'date' } }],
           limit: 400,
         }),
