@@ -2,9 +2,19 @@
 
 import Link from 'next/link';
 import { useMemo } from 'react';
-import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpPopover } from '@/features/main/HelpPopover';
+import {
+  BRUSH_HEIGHT,
+  CHART_BLOCK_HEIGHT,
+  CHART_HEIGHT,
+  CHART_MARGIN,
+  LEGEND_CLASS,
+  X_AXIS_HEIGHT,
+  yDomainMax,
+} from '@/features/main/chart-style';
+import { BrushTraveller } from '@/features/main/BrushTraveller';
 import { useAnalyticsOverview, useSalesStatistics } from '@/lib/services/analytics';
 import { useDailyPayments } from '@/lib/services/wallet';
 import { asOfLabel, kstDaysAgo, kstToday, stalenessNote } from '@/features/statistics/as-of';
@@ -19,6 +29,7 @@ const CHART_DAYS = 7;
 /** 표의 "최근 30일" 행을 만들려면 30일치가 필요하다. */
 const TABLE_DAYS = 30;
 const SKELETON_ROWS = 7;
+const SALES_CHART_SHRINK = 20;
 
 const SERIES = {
   order: { key: 'orderAmount', chartKey: 'orderMan', name: '주문', color: '#4DAFFF', mark: 'bar' },
@@ -114,8 +125,8 @@ export function SalesBoard() {
         <p className="text-xs text-[#D71952]">{failed.join('·')} 데이터를 불러오지 못했습니다.</p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="pt-3">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-xs text-[#757575]">
               단위/만원
@@ -131,15 +142,15 @@ export function SalesBoard() {
             {asOf ? <span className="text-xs text-[#757575]">{asOf}</span> : null}
           </div>
           {stale ? <p className="mb-1 text-[11px] text-amber-700">{stale}</p> : null}
-          <div className="h-[288px]">
+          <div style={{ height: CHART_BLOCK_HEIGHT - SALES_CHART_SHRINK }}>
             {isLoading ? (
               <Skeleton className="h-full w-full" />
             ) : chartData.length === 0 ? (
               <p className="py-16 text-center text-xs text-gray-400">조회 기간에 매출 기록이 없습니다</p>
             ) : (
               <>
-                <ResponsiveContainer width="100%" height={256}>
-                  <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <ResponsiveContainer width="100%" height={CHART_HEIGHT - SALES_CHART_SHRINK}>
+                  <ComposedChart data={chartData} margin={CHART_MARGIN}>
                     <defs>
                       <linearGradient id="salesOrderBar" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={SERIES.order.color} stopOpacity={0.9} />
@@ -152,6 +163,7 @@ export function SalesBoard() {
                       tick={{ fontSize: 13, fill: '#757575' }}
                       stroke="#707070"
                       tickLine={{ stroke: '#707070' }}
+                      height={X_AXIS_HEIGHT}
                     />
                     <YAxis
                       tick={{ fontSize: 12, fill: '#757575' }}
@@ -159,6 +171,8 @@ export function SalesBoard() {
                       tickLine={false}
                       width={40}
                       allowDecimals={false}
+                      domain={[0, yDomainMax]}
+                      tickCount={5}
                       tickFormatter={(value: number) => value.toLocaleString('ko-KR')}
                     />
                     <Tooltip
@@ -186,9 +200,17 @@ export function SalesBoard() {
                         activeDot={{ r: 5, fill: '#fff', stroke: series.color, strokeWidth: 2 }}
                       />
                     ))}
+                    <Brush
+                      dataKey="label"
+                      height={BRUSH_HEIGHT}
+                      stroke={SERIES.order.color}
+                      fill="#fff"
+                      travellerWidth={20}
+                      traveller={(props) => <BrushTraveller {...props} />}
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
-                <div className="mt-2 flex justify-center gap-4 text-sm text-[#2B2B2B]">
+                <div className={LEGEND_CLASS}>
                   {LEGEND_ORDER.map((series) => (
                     <span key={series.key} className="inline-flex items-center gap-1.5">
                       <SeriesIcon series={series} />
@@ -226,7 +248,7 @@ export function SalesBoard() {
                     {[0, 1, 2].map((cell) => (
                       <td key={cell} className="px-3 py-1.5">
                         <Skeleton className="ml-auto h-5 w-16" />
-                        <Skeleton className="ml-auto mt-0.5 h-[17.5px] w-8" />
+                        <Skeleton className="ml-auto mt-1 h-[17.5px] w-8" />
                       </td>
                     ))}
                   </tr>
@@ -292,7 +314,7 @@ function AmountCell({ cell, emphasized, failed }: { cell: SalesCell; emphasized:
         </span>
         <span className="ml-0.5 text-[#757575]">원</span>
       </div>
-      <span className="mt-0.5 inline-block rounded bg-[#F2F2F2] px-1 text-xs font-medium text-[#2B2B2B]">
+      <span className="mt-1 inline-block rounded bg-[#F2F2F2] px-1 text-xs font-medium text-[#2B2B2B]">
         {formatCount(cell.count)}건
       </span>
     </td>

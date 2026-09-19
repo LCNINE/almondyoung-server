@@ -233,7 +233,7 @@ export default function MainTemplate() {
               onClick={() => setTab(boardTab.id)}
               aria-current={tab === boardTab.id ? 'page' : undefined}
               className={cn(
-                '-mb-px h-12 min-w-[139px] shrink-0 cursor-pointer whitespace-nowrap border-b-4 px-3 text-[15px] transition-colors',
+                '-mb-px h-12 min-w-[139px] shrink-0 cursor-pointer whitespace-nowrap border-b-4 px-3 text-[15px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1A54F5]/50',
                 tab === boardTab.id
                   ? 'border-[#1A54F5] font-bold text-[#1A54F5]'
                   : 'border-transparent font-medium text-[#757575] hover:text-[#1C1C1C]',
@@ -243,7 +243,7 @@ export default function MainTemplate() {
             </button>
           ))}
         </div>
-        <div className="px-4 pt-4 pb-4">
+        <div className="px-4 pt-3 pb-6">
           {/* 선택된 탭만 그린다 — 안 보는 탭의 요청까지 로그인 직후에 한꺼번에 나가지 않도록 */}
           {tab === 'sales' ? <SalesBoard /> : null}
           {tab === 'realtime' ? <RealtimeBoard /> : null}

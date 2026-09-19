@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Brush, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kstDaysAgo, kstToday } from '@/features/statistics/as-of';
@@ -9,7 +9,17 @@ import { useDailyOrderStatus } from '@/lib/services/orders';
 import { useDailySignups } from '@/lib/services/users';
 import { useDailyPoints } from '@/lib/services/wallet';
 import { cn } from '@/lib/utils/ui';
-import { TOOLTIP_STYLE } from '@/features/main/chart-style';
+import {
+  BRUSH_HEIGHT,
+  CHART_BLOCK_HEIGHT,
+  CHART_HEIGHT,
+  CHART_MARGIN,
+  LEGEND_CLASS,
+  TOOLTIP_STYLE,
+  X_AXIS_HEIGHT,
+  yDomainMax,
+} from '@/features/main/chart-style';
+import { BrushTraveller } from '@/features/main/BrushTraveller';
 
 const DAYS = 7;
 const SIGNUP_COLOR = '#EC825F';
@@ -26,7 +36,7 @@ function dayLabel(bucket: string) {
 function SortableDateHeader({ desc, onToggle }: { desc: boolean; onToggle: () => void }) {
   const Icon = desc ? ArrowDown : ArrowUp;
   return (
-    <th className="p-2.5 text-left font-medium">
+    <th className="h-[41px] px-2.5 text-left font-medium">
       <button type="button" onClick={onToggle} className="inline-flex cursor-pointer items-center gap-1 text-[#616161]">
         날짜 <Icon className="h-3.5 w-3.5" />
       </button>
@@ -89,27 +99,35 @@ export function MembersBoard() {
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-      <div>
+      <div className="pt-3">
         <p className="mb-1 text-xs text-[#757575]">단위/명</p>
-        <div className="h-[316px]">
+        <div style={{ height: CHART_BLOCK_HEIGHT }}>
           {signups.isError ? (
             <p className="py-24 text-center text-xs text-red-500">신규 회원 가입 현황을 불러오지 못했습니다.</p>
           ) : isLoading ? (
             <Skeleton className="h-full w-full" />
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={288}>
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                 <LineChart
                   data={rows.map((row) => ({ label: row.bucket.slice(5), signups: row.signups ?? 0 }))}
-                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                  margin={CHART_MARGIN}
                 >
                   <CartesianGrid stroke="#EBEBEB" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 13, fill: '#757575' }} stroke="#707070" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 13, fill: '#757575' }}
+                    stroke="#707070"
+                    height={X_AXIS_HEIGHT}
+                    padding={{ left: 16, right: 16 }}
+                  />
                   <YAxis
                     tick={{ fontSize: 12, fill: '#757575' }}
                     axisLine={false}
                     tickLine={false}
                     allowDecimals={false}
+                    domain={[0, yDomainMax]}
+                    tickCount={5}
                     width={32}
                   />
                   <Tooltip
@@ -125,9 +143,17 @@ export function MembersBoard() {
                     dot={{ r: 3, fill: '#fff', stroke: SIGNUP_COLOR, strokeWidth: 2 }}
                     activeDot={{ r: 5, fill: '#fff', stroke: SIGNUP_COLOR, strokeWidth: 2 }}
                   />
+                  <Brush
+                    dataKey="label"
+                    height={BRUSH_HEIGHT}
+                    stroke={SIGNUP_COLOR}
+                    fill="#fff"
+                    travellerWidth={20}
+                    traveller={(props) => <BrushTraveller {...props} />}
+                  />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="mt-2 flex justify-center text-sm text-[#2B2B2B]">
+              <div className={LEGEND_CLASS}>
                 <span className="inline-flex items-center gap-1.5">
                   <LineIcon color={SIGNUP_COLOR} />
                   신규 회원 가입 현황
@@ -153,13 +179,13 @@ export function MembersBoard() {
             <thead>
               <tr className="border-b border-[#CCCCCC] bg-[#FAFAFA] text-[#616161]">
                 <SortableDateHeader desc={desc} onToggle={() => setDesc((value) => !value)} />
-                <th className="p-2.5 text-right font-medium">
+                <th className="h-[41px] px-2.5 text-right font-medium">
                   <span className="inline-flex items-center gap-1.5">
                     <LineIcon color={SIGNUP_COLOR} />
                     신규 회원 가입 현황
                   </span>
                 </th>
-                <th className="p-2.5 text-right font-medium">적립금 적용 현황</th>
+                <th className="h-[41px] px-2.5 text-right font-medium">적립금 적용 현황</th>
               </tr>
             </thead>
             <tbody>
@@ -198,14 +224,14 @@ function SummaryCard({
   isLoading: boolean;
 }) {
   return (
-    <div className="rounded-xl bg-[#F5F8FF] p-3">
-      <p className="text-[13px] text-[#616161]">{label}</p>
+    <div className="min-h-20 rounded-xl bg-[#F5F8FF] p-3">
+      <p className="text-[13px] leading-5 text-[#616161]">{label}</p>
       {isLoading ? (
-        <Skeleton className="mt-1 h-7 w-20" />
+        <Skeleton className="mt-1.5 h-7 w-20" />
       ) : value == null ? (
-        <p className="mt-1 text-sm leading-7 text-gray-400">불러오지 못함</p>
+        <p className="mt-1.5 text-sm leading-7 text-gray-400">불러오지 못함</p>
       ) : (
-        <p className="mt-1 leading-7">
+        <p className="mt-1.5 leading-7">
           <span className="text-xl font-bold tabular-nums text-[#2B2B2B]">{value.toLocaleString('ko-KR')}</span>
           <span className="ml-0.5 text-base text-[#757575]">{unit}</span>
         </p>
@@ -254,7 +280,7 @@ export function OrderStatusBoard() {
           <tr className="border-b border-[#CCCCCC] bg-[#FAFAFA] text-[#616161]">
             <SortableDateHeader desc={desc} onToggle={() => setDesc((value) => !value)} />
             {ORDER_COLUMNS.map((column) => (
-              <th key={column.key} className="whitespace-nowrap p-2.5 text-right font-medium">
+              <th key={column.key} className="h-[41px] whitespace-nowrap px-2.5 text-right font-medium">
                 {column.label}
               </th>
             ))}
