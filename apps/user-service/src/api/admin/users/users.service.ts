@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
@@ -15,6 +15,28 @@ export type UserWithRoles = schema.UserWithoutPassword & {
   marketingConsent: boolean;
 };
 
+export interface DailySignupPoint {
+  bucket: string;
+  count: number;
+}
+
+export function buildDailySignupSeries(
+  rows: Array<{ day: string; count: number }>,
+  from: string,
+  to: string,
+): DailySignupPoint[] {
+  const countByDay = new Map(rows.map((row) => [row.day, Number(row.count)]));
+  const series: DailySignupPoint[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    const bucket = cursor.toISOString().slice(0, 10);
+    series.push({ bucket, count: countByDay.get(bucket) ?? 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return series;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -24,6 +46,24 @@ export class UsersService {
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
+  }
+
+  async getDailySignups(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailySignupPoint[] }> {
+    if (from > to) throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
+
+    const day = sql<string>`((${schema.users.createdAt} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')::date)::text`;
+    const rows = await this.dbService.db
+      .select({ day, count: count() })
+      .from(schema.users)
+      .where(
+        and(
+          gte(schema.users.createdAt, sql`((${from}::date)::timestamp AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'UTC'`),
+          lt(schema.users.createdAt, sql`((${to}::date + 1)::timestamp AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'UTC'`),
+        ),
+      )
+      .groupBy(sql`1`);
+
+    return { range: { from, to }, series: buildDailySignupSeries(rows, from, to) };
   }
 
   async getUsers(filters: {
