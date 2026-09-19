@@ -2,7 +2,16 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { DbService } from '@app/db';
-import { charges, invoices, paymentFeeRates, paymentMethods, PaymentMethodType, refunds, WalletSchema } from '../schema';
+import {
+  charges,
+  invoices,
+  paymentFeeRates,
+  paymentMethods,
+  PaymentMethodType,
+  pointEvents,
+  refunds,
+  WalletSchema,
+} from '../schema';
 
 export interface FeeRateDto {
   id: string;
@@ -140,6 +149,35 @@ export function summarizeFees(
  * 차트 선이 끊기거나 x축이 실제보다 촘촘해 보이지 않게 한다.
  * 날짜 순회는 UTC 로 못박는다(로컬 TZ 로 순회하면 서머타임·오프셋에 하루가 밀린다).
  */
+export interface DailyPointPoint {
+  bucket: string;
+  earnedAmount: number;
+  earnedCount: number;
+}
+
+export interface DailyPointsResponse {
+  range: { from: string; to: string };
+  series: DailyPointPoint[];
+}
+
+export function buildDailyPointSeries(
+  earned: Array<{ day: string; amount: number; count: number }>,
+  from: string,
+  to: string,
+): DailyPointPoint[] {
+  const earnedByDay = new Map(earned.map((row) => [row.day, row]));
+  const series: DailyPointPoint[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    const bucket = cursor.toISOString().slice(0, 10);
+    const row = earnedByDay.get(bucket);
+    series.push({ bucket, earnedAmount: row?.amount ?? 0, earnedCount: row?.count ?? 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return series;
+}
+
 export function buildDailyPaymentSeries(
   captured: Array<{ day: string; amount: number; count: number }>,
   refunded: Array<{ day: string; amount: number; count: number }>,
@@ -368,6 +406,20 @@ export class StatisticsAdminService {
       rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
 
     return { range: { from, to }, series: buildDailyPaymentSeries(toRows(capturedRows), toRows(refundedRows), from, to) };
+  }
+
+  async getDailyPoints(from: string, to: string): Promise<DailyPointsResponse> {
+    assertRange(from, to);
+
+    const day = sql<string>`((${pointEvents.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`;
+    const rows = await this.db
+      .select({ day, amount: sql<string>`SUM(${pointEvents.amount})`, count: sql<string>`COUNT(*)` })
+      .from(pointEvents)
+      .where(and(eq(pointEvents.eventType, 'EARN'), kstDayRange(pointEvents.createdAt, from, to)))
+      .groupBy(sql`1`);
+
+    const earned = rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
+    return { range: { from, to }, series: buildDailyPointSeries(earned, from, to) };
   }
 
   /** 멤버십 구독료 수입 — PAID 인보이스의 amount_due 를 finalized_at(KST 달력일) 기준으로 귀속 */
