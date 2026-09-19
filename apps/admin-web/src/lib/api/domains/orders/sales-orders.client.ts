@@ -14,6 +14,7 @@ import type {
   MergeSalesOrdersDto,
   MergeSalesOrdersResponseDto,
   OrderStatsDto,
+  DailyOrderStatusDto,
   SalesOrderDto,
   SalesOrderBusinessTimelineItemDto,
   SalesOrdersQuery,
@@ -165,6 +166,13 @@ export const salesOrders = {
   },
 
   // 주문 현황 통계
+  getDailyStatusStats: async (from: string, to: string): Promise<DailyOrderStatusDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/stats/daily?${new URLSearchParams({ from, to })}`
+    );
+    return response.data;
+  },
+
   getStats: async (): Promise<OrderStatsDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/stats`

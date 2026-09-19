@@ -9,12 +9,13 @@ import { SalesDailyPoint } from './sales-table';
  * - 톤은 관측 사실까지만. 원인 추정은 하지 않는다(라운드 12 의 자동 판정 금지와 같은 정신).
  */
 
-export type InsightTone = 'good' | 'bad' | 'neutral';
+export type InsightTone = 'up' | 'down' | 'alert';
 
 export interface SalesInsight {
   key: string;
   tone: InsightTone;
-  text: string;
+  label: string;
+  value: string;
 }
 
 /** 비교에 쓸 수 있는 "끝난 날"만 남긴다. */
@@ -46,8 +47,8 @@ function mean(values: number[]): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function percentText(rate: number): string {
-  return `${rate > 0 ? '+' : ''}${Math.round(rate * 100)}%`;
+function changeText(rate: number): string {
+  return `${rate > 0 ? '▲' : '▼'}${Math.abs(Math.round(rate * 100))}%`;
 }
 
 const STREAK_MIN_DAYS = 3;
@@ -72,8 +73,9 @@ export function buildSalesInsights(points: SalesDailyPoint[], today: string): Sa
     if (Math.abs(rate) >= NOTABLE_RATE) {
       insights.push({
         key: 'vs-average',
-        tone: rate > 0 ? 'good' : 'bad',
-        text: `어제 주문이 직전 ${priorWindow.length}일 평균보다 ${percentText(rate)}입니다`,
+        tone: rate > 0 ? 'up' : 'down',
+        label: `어제 주문 (직전 ${priorWindow.length}일 평균 대비)`,
+        value: changeText(rate),
       });
     }
   }
@@ -82,8 +84,9 @@ export function buildSalesInsights(points: SalesDailyPoint[], today: string): Sa
   if (streak.days >= STREAK_MIN_DAYS) {
     insights.push({
       key: 'streak',
-      tone: streak.direction === 'up' ? 'good' : 'bad',
-      text: `주문이 ${streak.days}일 연속 ${streak.direction === 'up' ? '늘고' : '줄고'} 있습니다`,
+      tone: streak.direction === 'up' ? 'up' : 'down',
+      label: '주문 추이',
+      value: `${streak.days}일 연속 ${streak.direction === 'up' ? '증가' : '감소'}`,
     });
   }
 
@@ -95,21 +98,20 @@ export function buildSalesInsights(points: SalesDailyPoint[], today: string): Sa
   if (orderSum > 0 && paidSum / orderSum < PAYMENT_GAP_RATE) {
     insights.push({
       key: 'payment-gap',
-      tone: 'bad',
-      text: `최근 ${window.length}일 결제액이 주문액의 ${Math.round((paidSum / orderSum) * 100)}%입니다 — 미입금·결제 이탈을 확인하세요`,
+      tone: 'alert',
+      label: `최근 ${window.length}일 결제/주문`,
+      value: `${Math.round((paidSum / orderSum) * 100)}%`,
     });
   }
 
   if (paidSum > 0 && refundSum / paidSum >= REFUND_ALERT_RATE) {
     insights.push({
       key: 'refund',
-      tone: 'bad',
-      text: `최근 ${window.length}일 환불이 결제액의 ${Math.round((refundSum / paidSum) * 100)}%입니다`,
+      tone: 'alert',
+      label: `최근 ${window.length}일 환불/결제`,
+      value: `${Math.round((refundSum / paidSum) * 100)}%`,
     });
   }
 
-  if (insights.length === 0) {
-    insights.push({ key: 'steady', tone: 'neutral', text: `최근 ${window.length}일 매출이 평소 범위 안에서 움직이고 있습니다` });
-  }
   return insights;
 }

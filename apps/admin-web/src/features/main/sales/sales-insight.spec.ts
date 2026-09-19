@@ -50,24 +50,22 @@ describe('buildSalesInsights', () => {
     expect(buildSalesInsights(points, '2026-08-27')).toEqual([]);
   });
 
-  it('평소 범위면 그렇다고 한 줄로 답한다', () => {
-    const insights = buildSalesInsights(steady(), '2026-08-28');
-    expect(insights.map((insight) => insight.key)).toEqual(['steady']);
-    expect(insights[0].tone).toBe('neutral');
+  it('평소 범위면 아무것도 표시하지 않는다', () => {
+    expect(buildSalesInsights(steady(), '2026-08-28')).toEqual([]);
   });
 
   it('직전 평균보다 크게 오르면 좋은 신호로 말한다', () => {
     const points = [...steady().slice(0, 7), day('2026-08-27', 200_000)];
     const insight = buildSalesInsights(points, '2026-08-28').find((row) => row.key === 'vs-average');
-    expect(insight?.tone).toBe('good');
-    expect(insight?.text).toContain('+100%');
+    expect(insight?.tone).toBe('up');
+    expect(insight?.value).toBe('▲100%');
   });
 
   it('직전 평균보다 크게 떨어지면 나쁜 신호로 말한다', () => {
     const points = [...steady().slice(0, 7), day('2026-08-27', 20_000)];
     const insight = buildSalesInsights(points, '2026-08-28').find((row) => row.key === 'vs-average');
-    expect(insight?.tone).toBe('bad');
-    expect(insight?.text).toContain('-80%');
+    expect(insight?.tone).toBe('down');
+    expect(insight?.value).toBe('▼80%');
   });
 
   it('평균 대비 20% 미만의 흔들림은 말하지 않는다', () => {
@@ -87,15 +85,15 @@ describe('buildSalesInsights', () => {
       day('2026-08-27', 60_000),
     ];
     const insight = buildSalesInsights(points, '2026-08-28').find((row) => row.key === 'streak');
-    expect(insight?.text).toBe('주문이 4일 연속 줄고 있습니다');
-    expect(insight?.tone).toBe('bad');
+    expect(insight?.value).toBe('4일 연속 감소');
+    expect(insight?.tone).toBe('down');
   });
 
-  it('결제가 주문에 크게 못 미치면 미입금·이탈을 확인하라고 말한다', () => {
+  it('결제가 주문에 크게 못 미치면 결제/주문 비율을 짚는다', () => {
     const points = Array.from({ length: 8 }, (_, index) => day(`2026-08-2${index}`, 100_000, 30_000));
     const insight = buildSalesInsights(points, '2026-08-28').find((row) => row.key === 'payment-gap');
-    expect(insight?.text).toContain('30%');
-    expect(insight?.tone).toBe('bad');
+    expect(insight?.value).toBe('30%');
+    expect(insight?.tone).toBe('alert');
   });
 
   it('결제가 주문을 충분히 따라오면 결제 문장을 만들지 않는다', () => {
@@ -106,11 +104,11 @@ describe('buildSalesInsights', () => {
   it('환불 비중이 높으면 따로 말한다', () => {
     const points = Array.from({ length: 8 }, (_, index) => day(`2026-08-2${index}`, 100_000, 100_000, 30_000));
     const insight = buildSalesInsights(points, '2026-08-28').find((row) => row.key === 'refund');
-    expect(insight?.text).toContain('30%');
+    expect(insight?.value).toBe('30%');
   });
 
   it('매출이 0인 기간에는 0으로 나누지 않고 조용히 넘어간다', () => {
     const points = Array.from({ length: 8 }, (_, index) => day(`2026-08-2${index}`, 0, 0));
-    expect(buildSalesInsights(points, '2026-08-28').map((row) => row.key)).toEqual(['steady']);
+    expect(buildSalesInsights(points, '2026-08-28')).toEqual([]);
   });
 });

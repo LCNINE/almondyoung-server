@@ -1,72 +1,71 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Pencil } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from '@/components/ui/carousel';
+import { ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { QuickActionsEditDialog } from './QuickActionsEditDialog';
 import { useQuickActions } from './useQuickActions';
 
 export function QuickActionsCard() {
-  const router = useRouter();
   const { visibleActions, pref, savePref, isReady } = useQuickActions();
   const [editOpen, setEditOpen] = useState(false);
 
   return (
-    <Card className="bg-white border border-gray-200 shadow-sm">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-gray-900 text-base">빠른 액션</CardTitle>
-            <CardDescription className="text-gray-500 text-xs mt-0.5">
-              자주 사용하는 메뉴
-            </CardDescription>
+    <section className="rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_2px_rgba(0,0,0,0.05)]">
+      <Carousel opts={{ align: 'start', slidesToScroll: 'auto' }}>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1.5">
+          <h2 className="text-base font-bold text-[#1C1C1C]">주요 서비스</h2>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 [&:not(:has(:enabled))]:hidden">
+              <CarouselPrevious className="static size-7 translate-y-0 cursor-pointer" />
+              <CarouselNext className="static size-7 translate-y-0 cursor-pointer" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              disabled={!isReady}
+              className="cursor-pointer text-[13px] text-[#1779BA] hover:underline disabled:cursor-default disabled:opacity-50"
+            >
+              편집
+            </button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-gray-400 hover:text-gray-600"
-            onClick={() => setEditOpen(true)}
-            disabled={!isReady}
-            aria-label="빠른 액션 편집"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
         </div>
-      </CardHeader>
-      <CardContent>
-        {visibleActions.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-6">
-            표시할 빠른 액션이 없어요. 편집에서 추가해 보세요.
-          </p>
-        ) : (
-          <div className="grid grid-cols-4 gap-2">
-            {visibleActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Button
-                  key={action.id}
-                  variant="ghost"
-                  className="flex flex-col items-center gap-2 h-20 rounded-xl hover:bg-gray-50 border border-transparent hover:border-gray-200"
-                  onClick={() => router.push(action.path)}
-                >
-                  <div className={`p-2 rounded-lg ${action.bg}`}>
-                    <Icon className={`w-4 h-4 ${action.iconColor}`} />
-                  </div>
-                  <span className="text-xs text-gray-600 font-normal">{action.label}</span>
-                </Button>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
+        <div className="px-4 pb-4">
+          {visibleActions.length === 0 ? (
+            <p className="py-3 text-center text-[13px] text-gray-400">
+              표시할 서비스가 없어요. 편집에서 추가해 보세요.
+            </p>
+          ) : (
+            <CarouselContent className="-ml-2">
+              {visibleActions.map((action) => {
+                return (
+                  <CarouselItem
+                    key={action.id}
+                    className="basis-1/2 pl-2 md:basis-1/3 xl:basis-1/4"
+                  >
+                    <Link
+                      href={action.path}
+                      className="flex h-12 items-center gap-2 rounded-lg bg-[#FAFAFA] px-4 transition-colors hover:bg-[#F2F2F2]"
+                    >
+                      <span className="flex-1 truncate text-sm font-medium text-[#1C1C1C]">
+                        {action.label}
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-[#BDBDBD]" />
+                    </Link>
+                  </CarouselItem>
+                );
+              })}
+            </CarouselContent>
+          )}
+        </div>
+      </Carousel>
 
       <QuickActionsEditDialog
         open={editOpen}
@@ -74,6 +73,6 @@ export function QuickActionsCard() {
         pref={pref}
         onSave={savePref}
       />
-    </Card>
+    </section>
   );
 }

@@ -359,6 +359,14 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
+export const useDailyOrderStatus = (from: string, to: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.dailyOrderStatus(from, to),
+    queryFn: () => orders.salesOrders.getDailyStatusStats(from, to),
+    staleTime: 60 * 1000,
+  });
+};
+
 export const useOrderStats = () => {
   return useQuery({
     queryKey: orderQueryKeys.orderStats,

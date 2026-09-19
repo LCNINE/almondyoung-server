@@ -2,59 +2,31 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HelpPopover } from '@/features/main/HelpPopover';
 import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard';
 import { useBusinessLicenses } from '@/lib/services/business-licenses';
-import { useMembershipMembersSummary } from '@/lib/services/membership';
-import { useOrderStats, useSalesOrders } from '@/lib/services/orders';
+import { useOrderStats } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useReviews } from '@/lib/services/review';
 import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
-import { useAllUserCount } from '@/lib/services/users';
-import { usePendingBankTransfers, usePointsStats, useRefundRequests } from '@/lib/services/wallet';
+import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
 import { SalesBoard } from '@/features/main/sales/SalesBoard';
 import { RealtimeBoard } from '@/features/main/RealtimeBoard';
+import { MembersBoard, OrderStatusBoard } from '@/features/main/DailyBoards';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
-import type { SalesOrderStatus } from '@/lib/types/dto/orders';
 import { ZeroHitTable, useAssigneeOptions } from '@/features/keyword-ops/components/ZeroHitTable';
 import { DiagnosisLines } from '@/features/keyword-ops/components/summary';
 import { buildKeywordDiagnosis } from '@/features/keyword-ops/diagnosis';
 import { formatKinds, formatTimes } from '@/features/keyword-ops/labels';
-import { ChevronRight, Package } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 /** 메인은 기간 선택기를 두지 않는다 — 기간을 바꿔 보려면 통계 탭으로 간다. */
 const MAIN_RANGE_DAYS = 7;
 /** 현황판 표는 훑어보는 자리다. 전체 목록은 각 탭의 "전체 보기"로 넘긴다. */
 const BOARD_ROWS = 10;
-
-const STATUS_LABEL: Record<SalesOrderStatus, string> = {
-  pending: '대기',
-  confirmed: '확인',
-  processing: '처리중',
-  shipped: '배송중',
-  delivered: '완료',
-  cancelled: '취소',
-  timeout: '타임아웃',
-};
-
-const STATUS_COLOR: Record<SalesOrderStatus, string> = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  confirmed: 'bg-blue-100 text-blue-700',
-  processing: 'bg-blue-100 text-blue-700',
-  shipped: 'bg-violet-100 text-violet-700',
-  delivered: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-600',
-  timeout: 'bg-gray-100 text-gray-600',
-};
 
 function lastDays(days: number): { from: string; to: string } {
   const to = new Date();
@@ -75,6 +47,18 @@ const BOARD_TABS = [
 
 type BoardTabId = (typeof BOARD_TABS)[number]['id'];
 
+const CARD_CLASS = 'rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_2px_rgba(0,0,0,0.05)]';
+
+type TodoTone = 'order' | 'claim' | 'etc';
+
+const CLAIM_IN_PROGRESS = 'approved,collection_pending,collected,inspected,refund_pending';
+
+const TODO_TONE: Record<TodoTone, { box: string; count: string }> = {
+  order: { box: 'bg-[#F1F9FD]', count: 'text-[#1779BA]' },
+  claim: { box: 'bg-[#FEF6F8]', count: 'text-[#D71952]' },
+  etc: { box: 'bg-[#FAFAFA]', count: 'text-[#1C1C1C]' },
+};
+
 export default function MainTemplate() {
   const [tab, setTab] = useState<BoardTabId>('sales');
   const range = lastDays(MAIN_RANGE_DAYS);
@@ -85,6 +69,8 @@ export default function MainTemplate() {
   const refundRequests = useRefundRequests(1, 1);
   const returnRequests = useReturnRequests({ status: 'requested', page: 1, limit: 1 });
   const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
+  const returnsInProgress = useReturnRequests({ status: CLAIM_IN_PROGRESS, page: 1, limit: 1 });
+  const exchangesInProgress = useExchangeRequests({ status: CLAIM_IN_PROGRESS, page: 1, limit: 1 });
   const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
   // 이전 사이트에서 넘어온 리뷰 백로그는 "오늘 할 일"이 아니다 — 자체 작성분만 센다.
   // 전체(이관분 포함) 건수는 CS 현황 탭에서 따로 보여준다.
@@ -99,14 +85,10 @@ export default function MainTemplate() {
   const businessLicenses = useBusinessLicenses({ limit: 10, status: 'under_review' });
   const zeroHit = useZeroHitKeywords({ from: range.from, to: range.to, page: 1, limit: BOARD_ROWS, status: 'open' });
 
-  const returnExchangeCount =
-    returnRequests.data == null && exchangeRequests.data == null
-      ? undefined
-      : (returnRequests.data?.total ?? 0) + (exchangeRequests.data?.total ?? 0);
-
-  const chips = [
+  const chips: (React.ComponentProps<typeof TodoChip> & { id: string })[] = [
     {
       id: 'bank-transfers',
+      tone: 'order',
       label: '입금 대기',
       count: bankTransfers.data?.total,
       href: '/payments/bank-transfers',
@@ -117,6 +99,7 @@ export default function MainTemplate() {
       // 매칭 대기는 세는 방식이 여럿이다. 이 칩은 "지금 안 하면 주문이 안 나가는" 것만 센다 —
       // 매칭 화면이 나열하는 주문 라인 수(전 기간)와는 모수가 다르므로 힌트에 밝힌다.
       id: 'waiting-matching',
+      tone: 'order',
       label: '매칭 대기',
       hint: '출고 막힘 · 14일',
       count: orderStats.data?.waitingMatching,
@@ -126,6 +109,7 @@ export default function MainTemplate() {
     },
     {
       id: 'outbound-requested',
+      tone: 'order',
       label: '출고 요청',
       count: orderStats.data?.outboundRequested,
       href: '/order/fulfillments',
@@ -134,6 +118,7 @@ export default function MainTemplate() {
     },
     {
       id: 'cannot-ship',
+      tone: 'order',
       label: '출고 불가',
       count: orderStats.data?.cannotShip,
       href: '/order/fulfillments',
@@ -141,15 +126,28 @@ export default function MainTemplate() {
       isError: orderStats.isError,
     },
     {
-      id: 'return-exchange',
-      label: '반품·교환',
-      count: returnExchangeCount,
+      id: 'exchange-requests',
+      tone: 'claim',
+      label: '교환신청',
+      count: exchangeRequests.data?.total,
+      second: { label: '처리중', count: exchangesInProgress.data?.total },
       href: '/cs/return-exchange',
-      isLoading: returnRequests.isLoading || exchangeRequests.isLoading,
-      isError: returnRequests.isError || exchangeRequests.isError,
+      isLoading: exchangeRequests.isLoading || exchangesInProgress.isLoading,
+      isError: exchangeRequests.isError || exchangesInProgress.isError,
+    },
+    {
+      id: 'return-requests',
+      tone: 'claim',
+      label: '반품신청',
+      count: returnRequests.data?.total,
+      second: { label: '처리중', count: returnsInProgress.data?.total },
+      href: '/cs/return-exchange',
+      isLoading: returnRequests.isLoading || returnsInProgress.isLoading,
+      isError: returnRequests.isError || returnsInProgress.isError,
     },
     {
       id: 'refund-requests',
+      tone: 'etc',
       label: '환불 신청',
       count: refundRequests.data?.total,
       href: '/payments/refund-requests',
@@ -158,6 +156,7 @@ export default function MainTemplate() {
     },
     {
       id: 'unanswered-qna',
+      tone: 'etc',
       label: '미답변 문의',
       count: unansweredQna.data?.total,
       href: '/cs/qna',
@@ -166,6 +165,7 @@ export default function MainTemplate() {
     },
     {
       id: 'unanswered-reviews',
+      tone: 'etc',
       label: '미답변 리뷰',
       hint: '자체 작성분',
       count: unansweredOwnReviews.data?.total,
@@ -175,6 +175,7 @@ export default function MainTemplate() {
     },
     {
       id: 'business-licenses',
+      tone: 'etc',
       label: '사업자 심사',
       count: businessLicenses.data?.total,
       href: '/cs/business-licenses?status=under_review',
@@ -183,6 +184,7 @@ export default function MainTemplate() {
     },
     {
       id: 'neglected-keywords',
+      tone: 'etc',
       label: '방치된 검색어',
       hint: '7일 이상',
       count: zeroHit.data?.summary.openNeglectedOver7Days,
@@ -201,62 +203,57 @@ export default function MainTemplate() {
 
   return (
     <div className="space-y-6 px-4">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">대시보드</h1>
-        <p className="mt-1 text-sm text-gray-500">LCNINE 관리자 시스템</p>
-      </div>
+      <section className={CARD_CLASS}>
+        <div className="flex items-center gap-2 px-4 pt-3.5 pb-1.5">
+          <h2 className="text-base font-bold text-[#1C1C1C]">오늘의 할 일</h2>
+          <span className="text-xs text-[#757575]">{todayLabel}</span>
+          <HelpPopover
+            label="오늘의 할 일"
+            items={[
+              '오늘 처리해야 할 주문·클레임·CS 건수를 보여줍니다.',
+              '각 건수를 클릭하면 해당 목록으로 이동합니다.',
+              '0이면 처리할 일이 없다는 뜻입니다.',
+              '매칭 대기는 최근 14일 주문 중 출고가 막힌 것, 방치된 검색어는 7일 이상 처리하지 않은 것만 셉니다.',
+            ]}
+          />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2 px-4 pb-4">
+          {chips.map((chip) => (
+            <TodoChip key={chip.id} {...chip} />
+          ))}
+        </div>
+      </section>
 
-      <Card className="border border-gray-200 bg-white shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-baseline gap-2">
-            <CardTitle className="text-base text-gray-900">오늘의 할 일</CardTitle>
-            <span className="text-xs text-gray-400">{todayLabel}</span>
-          </div>
-          <CardDescription className="text-xs text-gray-500">
-            처리를 기다리는 건수입니다. 0이면 할 일이 없다는 뜻이고, 숫자를 누르면 해당 목록으로 갑니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {chips.map((chip) => (
-              <TodoChip key={chip.id} {...chip} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border border-gray-200 bg-white shadow-sm">
-        <CardHeader className="pb-0">
-          <div className="flex flex-wrap gap-1 border-b border-gray-200">
-            {BOARD_TABS.map((boardTab) => (
-              <button
-                key={boardTab.id}
-                type="button"
-                onClick={() => setTab(boardTab.id)}
-                aria-current={tab === boardTab.id ? 'page' : undefined}
-                className={cn(
-                  '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                  tab === boardTab.id
-                    ? 'border-gray-900 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700',
-                )}
-              >
-                {boardTab.label}
-              </button>
-            ))}
-          </div>
-        </CardHeader>
-        <CardContent className="pt-4">
+      <section className={CARD_CLASS}>
+        <div className="mx-4 flex overflow-x-auto border-b border-[#EBEBEB]">
+          {BOARD_TABS.map((boardTab) => (
+            <button
+              key={boardTab.id}
+              type="button"
+              onClick={() => setTab(boardTab.id)}
+              aria-current={tab === boardTab.id ? 'page' : undefined}
+              className={cn(
+                '-mb-px h-12 min-w-[139px] shrink-0 cursor-pointer whitespace-nowrap border-b-4 px-3 text-[15px] transition-colors',
+                tab === boardTab.id
+                  ? 'border-[#1A54F5] font-bold text-[#1A54F5]'
+                  : 'border-transparent font-medium text-[#757575] hover:text-[#1C1C1C]',
+              )}
+            >
+              {boardTab.label}
+            </button>
+          ))}
+        </div>
+        <div className="px-4 pt-4 pb-4">
           {/* 선택된 탭만 그린다 — 안 보는 탭의 요청까지 로그인 직후에 한꺼번에 나가지 않도록 */}
           {tab === 'sales' ? <SalesBoard /> : null}
           {tab === 'realtime' ? <RealtimeBoard /> : null}
           {tab === 'sourcing' ? <SourcingBoard range={range} /> : null}
           {tab === 'keywords' ? <PopularKeywordsBoard range={range} /> : null}
-          {tab === 'orders' ? <OrdersBoard /> : null}
+          {tab === 'orders' ? <OrderStatusBoard /> : null}
           {tab === 'members' ? <MembersBoard /> : null}
           {tab === 'cs' ? <CsBoard /> : null}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <QuickActionsCard />
     </div>
@@ -266,7 +263,9 @@ export default function MainTemplate() {
 function TodoChip({
   label,
   hint,
+  tone,
   count,
+  second,
   href,
   onClick,
   isLoading,
@@ -274,39 +273,55 @@ function TodoChip({
 }: {
   label: string;
   hint?: string;
+  tone: TodoTone;
   count: number | undefined;
+  second?: { label: string; count: number | undefined };
   href?: string;
   onClick?: () => void;
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  const isPending = count != null && count > 0;
-  const body = (
-    <>
-      <span className="text-xs text-gray-500">
-        {label}
-        {hint ? <span className="ml-1 text-[10px] text-gray-400">{hint}</span> : null}
+  const countText = (value: number | undefined) =>
+    isLoading ? (
+      <Skeleton className="h-[18px] w-6" />
+    ) : isError ? (
+      <span className="text-xs leading-[18px] text-gray-400">불러오지 못함</span>
+    ) : (
+      <span
+        className={cn(
+          'text-[13px] font-bold leading-[18px] tabular-nums underline underline-offset-2',
+          TODO_TONE[tone].count,
+        )}
+      >
+        {value != null ? value.toLocaleString('ko-KR') : '-'}
       </span>
-      {isLoading ? (
-        <Skeleton className="mt-0.5 h-6 w-10" />
-      ) : isError ? (
-        <span className="mt-0.5 text-sm text-gray-400">불러오지 못함</span>
-      ) : (
-        <span
-          className={cn(
-            'mt-0.5 text-xl font-bold tabular-nums',
-            isPending ? 'text-red-600' : 'text-gray-400',
-          )}
-        >
-          {count ?? '-'}
-        </span>
-      )}
+    );
+  const labelClass = 'whitespace-nowrap text-[13px] font-medium leading-tight text-[#616161]';
+
+  const body = second ? (
+    <>
+      <span className="flex items-center justify-between gap-2 py-1">
+        <span className={labelClass}>{label}</span>
+        {countText(count)}
+      </span>
+      <span className="flex items-center justify-between gap-2">
+        <span className={labelClass}>{second.label}</span>
+        {countText(second.count)}
+      </span>
+    </>
+  ) : (
+    <>
+      <span className={cn('py-1', labelClass)}>
+        {label}
+        {hint ? <span className="block text-[11px] font-normal text-[#9E9E9E]">{hint}</span> : null}
+      </span>
+      {countText(count)}
     </>
   );
 
   const className = cn(
-    'flex min-w-28 flex-col rounded-lg border px-3 py-2 text-left transition-colors',
-    isPending ? 'border-red-200 bg-red-50 hover:border-red-300' : 'border-gray-200 bg-white hover:border-gray-300',
+    'flex min-h-[72px] cursor-pointer flex-col justify-between rounded-md p-1.5 text-left transition-[filter] hover:brightness-[0.97]',
+    TODO_TONE[tone].box,
   );
 
   if (href) {
@@ -430,111 +445,6 @@ function PopularKeywordsBoard({ range }: { range: { from: string; to: string } }
           </tbody>
         </table>
       )}
-    </div>
-  );
-}
-
-function OrdersBoard() {
-  const { data, isLoading, isError } = useSalesOrders({ limit: 5 });
-  const orderStats = useOrderStats();
-
-  const orders = data?.data ?? [];
-  return (
-    <div className="space-y-3">
-      <BoardHeader href="/order/history" linkLabel="전체 보기">
-        오늘 주문 {orderStats.data?.todayCount ?? '-'}건 · 최근 접수된 5건
-      </BoardHeader>
-      {isError ? (
-        <p className="py-6 text-center text-xs text-red-500">주문을 불러오지 못했습니다.</p>
-      ) : isLoading ? (
-        <div className="space-y-2">
-          {[...Array(4)].map((_, index) => (
-            <Skeleton key={index} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : orders.length === 0 ? (
-        <p className="py-6 text-center text-xs text-gray-400">주문이 없습니다</p>
-      ) : (
-        <div className="space-y-2">
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors hover:bg-gray-50"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="shrink-0 rounded-md bg-blue-50 p-1.5">
-                  <Package className="h-3.5 w-3.5 text-blue-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-900">{order.channelOrderId}</p>
-                  <p className="truncate text-xs text-gray-400">{order.customerName ?? '-'}</p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <p className="text-sm font-medium tabular-nums text-gray-900">
-                  {order.totalAmount != null ? `₩${order.totalAmount.toLocaleString('ko-KR')}` : '-'}
-                </p>
-                <span
-                  className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                    STATUS_COLOR[order.status],
-                  )}
-                >
-                  {STATUS_LABEL[order.status]}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MembersBoard() {
-  const userCount = useAllUserCount();
-  const members = useMembershipMembersSummary();
-  const points = usePointsStats();
-
-  return (
-    <div className="space-y-3">
-      <BoardHeader href="/membership/members?status=ACTIVE&page=1" linkLabel="멤버십 회원 보기">
-        누적 기준 · 멤버십 활성은 목록의 ACTIVE 필터와 같은 기준(해지 예약 포함, 일시정지 제외)
-      </BoardHeader>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <BoardStat label="전체 회원" value={userCount.data} unit="명" isLoading={userCount.isLoading} isError={userCount.isError} />
-        <BoardStat
-          label="멤버십 활성 회원"
-          value={members.data?.active}
-          unit="명"
-          isLoading={members.isLoading}
-          isError={members.isError}
-        />
-        <BoardStat
-          label="미사용 적립금"
-          value={points.data?.currentCirculating}
-          unit="원"
-          hint="언젠가 나갈 돈 — 부채로 잡히는 몫"
-          isLoading={points.isLoading}
-          isError={points.isError}
-        />
-        <BoardStat
-          label="누적 적립"
-          value={points.data?.totalEarned}
-          unit="원"
-          hint={
-            points.data && points.data.totalEarned > 0
-              ? `이 중 ${Math.round((points.data.totalRedeemed / points.data.totalEarned) * 100)}% 사용됨`
-              : undefined
-          }
-          isLoading={points.isLoading}
-          isError={points.isError}
-        />
-      </div>
-      <p className="text-[11px] text-gray-400">
-        적립금 상세는 <Link href="/payments/points" className="text-blue-600 hover:underline">적립금 관리</Link>에 있습니다.
-        예치금(선불 충전)은 아직 도입하지 않았습니다.
-      </p>
     </div>
   );
 }

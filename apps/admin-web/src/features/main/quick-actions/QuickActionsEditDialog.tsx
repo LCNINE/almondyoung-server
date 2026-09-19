@@ -80,8 +80,8 @@ function SortableRow({
       >
         <GripVertical className="w-4 h-4" />
       </button>
-      <div className={`p-1.5 rounded-md ${item.bg}`}>
-        <Icon className={`w-4 h-4 ${item.iconColor}`} />
+      <div className="p-1.5">
+        <Icon className="w-4 h-4 text-[#757575]" />
       </div>
       <span className={`text-sm flex-1 ${visible ? 'text-gray-700' : 'text-gray-300'}`}>
         {item.label}
@@ -147,7 +147,7 @@ export function QuickActionsEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>빠른 액션 편집</DialogTitle>
+          <DialogTitle>주요 서비스 편집</DialogTitle>
           <DialogDescription>
             표시할 메뉴를 켜고, 드래그해서 순서를 바꿀 수 있어요.
           </DialogDescription>

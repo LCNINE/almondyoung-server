@@ -400,6 +400,21 @@ export interface AllocateInventoryResponse {
 }
 
 // ===== 주문 통계 =====
+export interface DailyOrderStatusDto {
+  range: { from: string; to: string };
+  series: Array<{
+    bucket: string;
+    pending: number;
+    preparing: number;
+    shipping: number;
+    delivered: number;
+    cancelled: number;
+    exchange: number;
+    return: number;
+    total: number;
+  }>;
+}
+
 export interface OrderStatsDto {
   todayCount: number;
   outboundRequested: number;

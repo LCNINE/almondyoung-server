@@ -173,6 +173,14 @@ export const useFeeSummary = (from: string, to: string) => {
   });
 };
 
+export const useDailyPoints = (from: string, to: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.dailyPoints(from, to),
+    queryFn: () => walletApi.getDailyPoints(from, to),
+    staleTime: 60 * 1000,
+  });
+};
+
 export const useDailyPayments = (from: string, to: string) => {
   return useQuery({
     queryKey: walletQueryKeys.dailyPayments(from, to),
