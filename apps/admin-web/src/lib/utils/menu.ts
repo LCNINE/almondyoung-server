@@ -14,8 +14,7 @@ export interface MenuItem {
    * 미매핑 주문(채널 수집 실패 격리) 건수를 메뉴 라벨 옆에 배지로 그린다.
    * 실제 카운트 조회는 렌더 컴포넌트(sidebar-menu-item.tsx의 데스크톱 사이드바,
    * mobile-nav.tsx의 모바일 시트 내비)의 `<QuarantineMenuBadge />` 가 담당한다 —
-   * 이 파일은 순수 데이터이고 훅을 가질 수 없다. header.tsx 의 상단 호버 드롭다운은
-   * 의도적으로 범위 밖이다(사이드바가 이미 같은 신호를 보여준다).
+   * 이 파일은 순수 데이터이고 훅을 가질 수 없다.
    */
   hasQuarantineBadge?: boolean;
 }
@@ -685,7 +684,7 @@ const allMenus: MainMenu[] = [
     icon: 'BookOpen',
     defaultPath: '/archive',
     // 실제 문서 목록은 /archive 화면이 자기 사이드바에 트리로 그린다.
-    // 여기 항목들은 헤더 드롭다운과 모바일 내비에서 쓰는 진입점이다.
+    // 여기 항목들은 사이드바와 모바일 내비에서 쓰는 진입점이다.
     children: [{ id: 'archive-pages', title: '문서', path: '/archive' }],
   },
 ];
