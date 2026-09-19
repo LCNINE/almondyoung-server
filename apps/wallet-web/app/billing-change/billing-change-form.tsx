@@ -339,7 +339,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
 
   if (step === 'signature') {
     return (
-      <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-background">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
         <header className="relative flex h-14 shrink-0 items-center px-2">
           <button
             type="button"
