@@ -150,6 +150,8 @@ export class AdminReturnExchangeController {
   }
 
   @Get('return-requests')
+  @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
+  @ApiQuery({ name: 'createdTo', required: false, description: '접수 시각 상한 (ISO 8601, 포함)' })
   @ApiOperation({ summary: '반품 요청 목록 조회 (관리자)' })
   @ApiQuery({ name: 'salesOrderId', required: false })
   @ApiQuery({ name: 'status', required: false })
@@ -160,10 +162,14 @@ export class AdminReturnExchangeController {
     @Query('status') status?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
   ) {
     return this.service.adminListReturnRequests({
       salesOrderId,
       status,
+      createdFrom: parseInstant(createdFrom, 'createdFrom'),
+      createdTo: parseInstant(createdTo, 'createdTo'),
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -243,6 +249,8 @@ export class AdminReturnExchangeController {
   // ── Exchange Requests ─────────────────────────────────────────────────────
 
   @Get('exchange-requests')
+  @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
+  @ApiQuery({ name: 'createdTo', required: false, description: '접수 시각 상한 (ISO 8601, 포함)' })
   @ApiOperation({ summary: '교환 요청 목록 조회 (관리자)' })
   @ApiQuery({ name: 'salesOrderId', required: false })
   @ApiQuery({ name: 'status', required: false })
@@ -253,10 +261,14 @@ export class AdminReturnExchangeController {
     @Query('status') status?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
   ) {
     return this.service.adminListExchangeRequests({
       salesOrderId,
       status,
+      createdFrom: parseInstant(createdFrom, 'createdFrom'),
+      createdTo: parseInstant(createdTo, 'createdTo'),
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -324,4 +336,11 @@ export class AdminReturnExchangeController {
   completeExchangeRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.completeExchangeRequest(id, admin.userId);
   }
+}
+
+function parseInstant(value: string | undefined, name: string): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new BadRequestException(`${name} 는 ISO 8601 시각이어야 합니다`);
+  return date;
 }
