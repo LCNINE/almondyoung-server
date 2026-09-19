@@ -9,6 +9,7 @@ import { useDailyOrderStatus } from '@/lib/services/orders';
 import { useDailySignups } from '@/lib/services/users';
 import { useDailyPoints } from '@/lib/services/wallet';
 import { cn } from '@/lib/utils/ui';
+import { TOOLTIP_STYLE } from '@/features/main/chart-style';
 
 const DAYS = 7;
 const SIGNUP_COLOR = '#EC825F';
@@ -112,6 +113,7 @@ export function MembersBoard() {
                     width={32}
                   />
                   <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
                     cursor={{ stroke: '#707070', strokeDasharray: '3 3' }}
                     formatter={(value: number) => [`${value.toLocaleString('ko-KR')}명`, '신규 회원 가입']}
                   />

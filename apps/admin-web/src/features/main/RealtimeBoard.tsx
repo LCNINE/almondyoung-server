@@ -5,9 +5,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -17,10 +16,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { HelpPopover } from '@/features/main/HelpPopover';
 import { useRealtimeTraffic, useTrafficStatistics } from '@/lib/services/analytics';
 import { formatKstDateTime, kstDaysAgo } from '@/features/statistics/as-of';
-import { formatCount, SERIES_COLORS } from '@/features/statistics/shared';
+import { formatCount } from '@/features/statistics/shared';
 import { ExternalLink } from 'lucide-react';
+import { TOOLTIP_STYLE } from '@/features/main/chart-style';
 
 const VISIT_DAYS = 7;
+const TOTAL_COLOR = '#4DAFFF';
+const DEVICE_SERIES = [
+  { key: 'mobile', name: 'Mobile', color: '#E566CA' },
+  { key: 'desktop', name: 'PC', color: '#9065E6' },
+] as const;
+const VISIT_COLOR = '#5BC4D8';
 
 /**
  * 실시간 접속. 탭이 열려 있을 때만 폴링한다 — 메인이 선택된 탭만 그리므로
@@ -41,10 +47,10 @@ export function RealtimeBoard() {
     );
   }
 
-  const pageData = (realtime.data?.pages ?? []).map((page) => ({ label: page.label, activeUsers: page.activeUsers }));
+  const pageData = realtime.data?.pageTypes ?? [];
   const visitData = (traffic.data?.series ?? []).map((point) => ({
     label: point.date.slice(5),
-    sessions: point.sessions,
+    users: point.users,
   }));
   const observedAt = formatKstDateTime(realtime.data?.observedAt);
 
@@ -54,7 +60,8 @@ export function RealtimeBoard() {
         <PanelHeader
           title="실시간 접속자"
           help={[
-            '최근 30분 동안 화면별로 보고 있는 사람 수입니다.',
+            '최근 30분 동안 각 화면을 본 사람 수입니다. 한 사람이 여러 화면을 봤으면 화면마다 셉니다.',
+            '전체에는 태블릿도 포함됩니다.',
             '20초마다 갱신합니다.',
             ...(observedAt ? [`${observedAt} 기준입니다.`] : []),
           ]}
@@ -66,55 +73,107 @@ export function RealtimeBoard() {
         {realtime.isError ? (
           <p className="py-16 text-center text-xs text-red-500">실시간 접속을 불러오지 못했습니다.</p>
         ) : realtime.isLoading ? (
-          <Skeleton className="h-64 w-full" />
-        ) : pageData.length === 0 ? (
-          <p className="py-16 text-center text-xs text-gray-400">지금 접속 중인 사람이 없습니다</p>
+          <Skeleton className="h-[284px] w-full" />
         ) : (
-          <ResponsiveContainer width="100%" height={256}>
-            <LineChart data={pageData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#eee" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#999" interval={0} />
-              <YAxis tick={{ fontSize: 12 }} stroke="#999" allowDecimals={false} width={32} />
-              <Tooltip formatter={(value: number) => `${formatCount(value)}명`} />
-              <Legend iconSize={10} wrapperStyle={{ fontSize: 13, color: '#616161' }} />
-              <Line
-                type="linear"
-                dataKey="activeUsers"
-                name="전체"
-                stroke="#8B5CF6"
-                strokeWidth={2}
-                dot={{ r: 4, fill: '#fff', strokeWidth: 2 }}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={256}>
+              <ComposedChart data={pageData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 13, fill: '#757575' }} stroke="#707070" interval={0} />
+                <YAxis
+                  tick={{ fontSize: 12, fill: '#757575' }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={40}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  cursor={{ stroke: '#707070', strokeDasharray: '3 3' }}
+                  formatter={(value: number, name: string) => [`${formatCount(value)}명`, name]}
+                />
+                <Bar dataKey="total" name="전체" fill={TOTAL_COLOR} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                {DEVICE_SERIES.map((series) => (
+                  <Line
+                    key={series.key}
+                    type="linear"
+                    dataKey={series.key}
+                    name={series.name}
+                    stroke={series.color}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: '#fff', stroke: series.color, strokeWidth: 2 }}
+                    activeDot={{ r: 5, fill: '#fff', stroke: series.color, strokeWidth: 2 }}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </ComposedChart>
+            </ResponsiveContainer>
+            <ChartLegend>
+              {DEVICE_SERIES.map((series) => (
+                <span key={series.key} className="inline-flex items-center gap-1.5">
+                  <LineIcon color={series.color} />
+                  {series.name}
+                </span>
+              ))}
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-2.5 w-2.5 rounded-[1px]" style={{ backgroundColor: TOTAL_COLOR }} />
+                전체
+              </span>
+            </ChartLegend>
+          </>
         )}
       </div>
 
       <div>
         <PanelHeader
-          title="일별 방문 수"
-          help={['어제까지 최근 7일의 방문(세션) 수입니다.', '한 사람이 여러 번 들어오면 여러 번 셉니다.']}
+          title="일별 방문자 수"
+          help={[
+            '어제까지 최근 7일 동안 하루에 방문한 사람 수입니다.',
+            '같은 사람이 하루에 여러 번 들어와도 한 명으로 셉니다.',
+          ]}
           href="/statistics/traffic"
         />
-        <p className="mb-1 text-xs text-[#757575]">단위/회</p>
+        <p className="mb-1 text-xs text-[#757575]">단위/명</p>
         {traffic.isError ? (
-          <p className="py-16 text-center text-xs text-red-500">방문 수를 불러오지 못했습니다.</p>
+          <p className="py-16 text-center text-xs text-red-500">방문자 수를 불러오지 못했습니다.</p>
         ) : traffic.isLoading ? (
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-[284px] w-full" />
         ) : visitData.length === 0 ? (
           <p className="py-16 text-center text-xs text-gray-400">조회 기간에 방문 기록이 없습니다</p>
         ) : (
-          <ResponsiveContainer width="100%" height={256}>
-            <BarChart data={visitData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#eee" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#999" />
-              <YAxis tick={{ fontSize: 12 }} stroke="#999" allowDecimals={false} width={40} />
-              <Tooltip formatter={(value: number) => `${formatCount(value)}회`} />
-              <Legend iconSize={10} wrapperStyle={{ fontSize: 13, color: '#616161' }} />
-              <Bar dataKey="sessions" name="방문 수" fill={SERIES_COLORS[0]} radius={[8, 8, 0, 0]} maxBarSize={56} />
-            </BarChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={256}>
+              <BarChart data={visitData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="visitBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={VISIT_COLOR} stopOpacity={0.6} />
+                    <stop offset="100%" stopColor={VISIT_COLOR} stopOpacity={0.9} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 13, fill: '#757575' }} stroke="#707070" />
+                <YAxis
+                  tick={{ fontSize: 12, fill: '#757575' }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={40}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  cursor={{ fill: '#F5F5F5' }}
+                  formatter={(value: number) => [`${formatCount(value)}명`, '방문자 수']}
+                />
+                <Bar dataKey="users" name="방문자 수" fill="url(#visitBar)" radius={[8, 8, 0, 0]} maxBarSize={56} />
+              </BarChart>
+            </ResponsiveContainer>
+            <ChartLegend>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-2.5 w-2.5 rounded-[1px]" style={{ backgroundColor: VISIT_COLOR }} />
+                방문자 수
+              </span>
+            </ChartLegend>
+          </>
         )}
       </div>
     </div>
@@ -130,5 +189,18 @@ function PanelHeader({ title, help, href }: { title: string; help: string[]; hre
         자세히 보기 <ExternalLink className="h-3 w-3" />
       </Link>
     </div>
+  );
+}
+
+function ChartLegend({ children }: { children: React.ReactNode }) {
+  return <div className="mt-2 flex justify-center gap-4 text-sm text-[#2B2B2B]">{children}</div>;
+}
+
+function LineIcon({ color }: { color: string }) {
+  return (
+    <svg aria-hidden width="18" height="10" viewBox="0 0 18 10">
+      <line x1="0" y1="5" x2="18" y2="5" stroke={color} strokeWidth="2" />
+      <circle cx="9" cy="5" r="3" fill="#fff" stroke={color} strokeWidth="2" />
+    </svg>
   );
 }

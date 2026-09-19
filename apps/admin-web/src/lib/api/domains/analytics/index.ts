@@ -187,7 +187,7 @@ export interface TrafficStatistics {
   range: { from: string; to: string };
   channelGroup: TrafficChannelGroup;
   totals: TrafficTotals | null;
-  series: Array<{ date: string; sessions: number; engagementRate: number | null }>;
+  series: Array<{ date: string; sessions: number; users: number; engagementRate: number | null }>;
   landingPages: Array<{ path: string; sessions: number; engagementRate: number | null }>;
   devices: Array<{ label: string; sessions: number }>;
   countries: Array<{ label: string; sessions: number }>;
@@ -209,6 +209,8 @@ export interface RealtimeTraffic {
   byMinute: Array<{ minutesAgo: number; activeUsers: number }>;
   pages: RealtimeDimensionRow[];
   devices: RealtimeDimensionRow[];
+  /** 화면 종류별(메인·상품목록·상품상세…) 최근 30분 활성 사용자 */
+  pageTypes: Array<{ key: string; label: string; mobile: number; desktop: number; total: number }>;
 }
 
 export interface OperatingCost {
