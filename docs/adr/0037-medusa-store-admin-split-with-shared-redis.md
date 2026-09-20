@@ -112,3 +112,4 @@ p99 가 Lambda 타임아웃에 붙는다. 같은 날의 정정 코멘트가 「�
   `inbox_events` 는 UTC.
 - 이 ADR 은 Medusa 를 읽기 경로에서 빼는 것(카탈로그를 별도 read model 에서 읽기)을 결정하지
   **않는다**. 그 방향은 [[storefront-perf-structural-roots]] 에 지평선 옵션으로만 적혀 있다.
+  *2026-09-21 추기*: 그 방향은 ADR-0040(Medusa 는 거래 엔진이다)이 결정했다.
