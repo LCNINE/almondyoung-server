@@ -54,7 +54,10 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       zip: rc.postalCode,
       baseAddress: rc.roadAddress,
       detailAddress: rc.detailAddress,
-      mobile: rc.phone, // 스냅샷은 phone 단일필드 → mobile 로(§조사4). tel 은 생략.
+      // 스냅샷의 연락처는 단일 phone 필드(=휴대폰)뿐이라 carrier 중립 요청에는 mobile 로만 싣는다.
+      // 한진은 rcvrTelNo(전화번호)가 필수·rcvrMobileNo 가 선택이므로(정본 §4.2 19·20번)
+      // 그 폴백은 한진 게이트웨이가 한다 — 여기서 tel 이 비는 것은 누락이 아니라 위임이다.
+      mobile: rc.phone,
       message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
     sender: input.config.sender,

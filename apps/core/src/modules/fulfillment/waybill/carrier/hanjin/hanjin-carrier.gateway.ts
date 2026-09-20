@@ -130,12 +130,17 @@ export class HanjinCarrierGateway extends CarrierGateway {
       sndrBaseAddr: req.sender.baseAddress,
       sndrDtlAddr: req.sender.detailAddress,
       sndrNm: req.sender.name,
+      // 송하인은 폴백할 두 번째 번호가 없다. 빈 값이 나가지 않는 것은 isHanjinConfigured 가
+      // HANJIN_SENDER_TEL 을 필수로 보기 때문이다(#912) — 게이트를 좁히면 여기가 다시 빈다.
       sndrTelNo: req.sender.tel ?? '',
       rcvrZip: req.recipient.zip,
       rcvrBaseAddr: req.recipient.baseAddress,
       rcvrDtlAddr: req.recipient.detailAddress,
       rcvrNm: req.recipient.name,
-      rcvrTelNo: req.recipient.tel ?? '',
+      // §4.2 19번 rcvrTelNo 는 필수, 20번 rcvrMobileNo 는 선택이다. 커머스 주문은 연락처가 휴대폰
+      // 하나뿐이므로 tel 이 비면 mobile 로 폴백한다 — 비워 보내면 ERROR-01 로 전건 거절된다.
+      // 두 필드는 배타가 아니므로 폴백해도 mobile 을 비우지 않는다.
+      rcvrTelNo: req.recipient.tel || req.recipient.mobile || '',
       rcvrMobileNo: req.recipient.mobile ?? '',
       rcvrAskCntent: req.recipient.message ?? '',
       comodityNm: req.commodityName,
