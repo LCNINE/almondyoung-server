@@ -388,7 +388,9 @@ Issues live on GitHub at `LCNINE/almondyoung-server`; use the `gh` CLI. See `doc
 `libs/shared/src/observability/scrape-targets.ts`, `scripts/local/e2e-env-map.sh` 가 그 본이다.
 
 같은 이유로 **다른 이슈의 열림/닫힘을 본문에 복제하지 않는다.** 상태는 트래커가 이미 들고 있다 —
-트래킹 이슈는 sub-issue 로 엮고(`gh api repos/:owner/:repo/issues/<부모>/sub_issues -f sub_issue_id=<자식 id>`),
+트래킹 이슈는 sub-issue 로 엮고(`gh api repos/:owner/:repo/issues/<부모>/sub_issues -F sub_issue_id=<자식 id>`
+— `-f` 는 문자열로 보내 422 가 난다. `<자식 id>` 는 이슈 «번호»가 아니라 `gh api repos/:owner/:repo/issues/<번호> --jq .id`
+의 내부 id 다. 자식은 부모를 하나만 가질 수 있어, 이미 엮인 이슈를 다른 부모에 붙이면 422 다),
 체크박스는 «이슈가 아닌 작업»(배포·라이브 실측)에만 쓴다. 그리고 **어떤 이슈의 산출물을 교정했으면
 그 이슈 본문을 고친다** — 교정을 트래킹 이슈 코멘트에만 남기면 원본만 읽는 사람이 두 번 놓친다.
 
