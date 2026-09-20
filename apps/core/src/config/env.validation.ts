@@ -47,7 +47,9 @@ export const almondyoungEnvSchema = z
     ELASTICSEARCH_PASSWORD: z.string().optional(),
     FILE_SERVICE_URL: z.string().url().optional(),
 
-    // 한진택배 (Fulfillment) — 계약 승인 전까지 미설정. 미설정 시 hanjin 발행은 503 반환.
+    // 한진택배 (Fulfillment) — 계약 승인 전까지 미설정. 미설정 시 hanjin 발행은
+    // 409 `WAYBILL_CARRIER_NOT_CONFIGURED`(ConflictError) 로 거절된다.
+    // 무엇이 필수인지는 isHanjinConfigured / missingHanjinConfig 가 정본이다.
     HANJIN_API_KEY: z.string().optional(),
     HANJIN_SENDER_NAME: z.string().optional(),
     HANJIN_TIMEOUT_MS: z.string().regex(/^\d+$/).optional(),

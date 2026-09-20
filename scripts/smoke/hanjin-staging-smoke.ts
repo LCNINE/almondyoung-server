@@ -11,7 +11,7 @@
  */
 import {
   loadHanjinConfig,
-  isHanjinConfigured,
+  missingHanjinConfig,
 } from '../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin.config';
 import { HanjinHmacSigner } from '../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-hmac.signer';
 import { HanjinApiClient } from '../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-api.client';
@@ -20,8 +20,9 @@ import { assembleWaybillRequest } from '../../apps/core/src/modules/fulfillment/
 
 async function main(): Promise<void> {
   const config = loadHanjinConfig(process.env);
-  if (!isHanjinConfigured(config)) {
-    console.error('SKIP: HANJIN_* env not configured. Set dev keys to run the staging smoke.');
+  const missing = missingHanjinConfig(config);
+  if (missing.length) {
+    console.error(`SKIP: HANJIN_* env not configured. Missing/invalid: ${missing.join(', ')}`);
     process.exit(2);
   }
 

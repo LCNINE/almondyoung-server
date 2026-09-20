@@ -1,6 +1,7 @@
 import { HanjinCarrierGateway } from './hanjin-carrier.gateway';
 import type { WaybillRequest } from '../carrier-gateway.interface';
 import type { HanjinConfig } from './hanjin.config';
+import { assembleWaybillRequest } from '../../waybill-request.assembler';
 
 const config = {
   clientId: 'HANJIN',
@@ -128,6 +129,31 @@ describe('HanjinCarrierGateway.register', () => {
     });
   });
 
+  // #911 회귀: §4.2 에서 19번 rcvrTelNo 가 필수, 20번 rcvrMobileNo 가 선택이다.
+  // 휴대폰만 받는 커머스 주문에서 tel 이 비면 ERROR-01 로 전건 거절된다.
+  it('수하인 tel 이 없으면 rcvrTelNo 를 mobile 로 채운다 (둘 다 싣는다)', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    const mobileOnly: WaybillRequest = { ...req, recipient: { ...req.recipient, tel: undefined } };
+    await g.register('531647410114', mobileOnly);
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({ rcvrTelNo: '010-2', rcvrMobileNo: '010-2' }),
+    );
+  });
+
+  it('수하인 tel 이 있으면 그대로 쓰고 mobile 을 덮지 않는다', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    await g.register('531647410114', req);
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({ rcvrTelNo: '02-2', rcvrMobileNo: '010-2' }),
+    );
+  });
+
   it('insert-order ERROR-09(기등록) → already_registered (멱등 성공)', async () => {
     const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-09', resultMessage: '기등록 운송장번호' });
     const g = new HanjinCarrierGateway(config, { post } as any, today);
@@ -179,5 +205,31 @@ describe('HanjinCarrierGateway.track', () => {
   it('ERROR-01(스캔 없음) → 빈 배열', async () => {
     const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-01', resultMessage: '존재하지 않는 운송장번호' });
     expect(await new HanjinCarrierGateway(config, { post } as any).track('777')).toEqual([]);
+  });
+});
+
+// #911 회귀 — 결함이 assembler(단일 phone → mobile)와 gateway(tel 그대로 전송) 사이에서 났으므로
+// 스냅샷부터 insert-order 바디까지 한 번에 본다.
+describe('주문 스냅샷 → insert-order 바디 (#911)', () => {
+  it('스냅샷에 휴대폰만 있어도 rcvrTelNo 가 비지 않는다', async () => {
+    const assembled = assembleWaybillRequest({
+      shipmentId: '018f3b2c-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      recipientSnapshot: {
+        recipientName: '김택배',
+        phone: '010-1234-5678',
+        postalCode: '04532',
+        roadAddress: '서울시 중구 소공로 88',
+        detailAddress: '999층',
+      },
+      lines: [{ productName: '의류', quantity: 1, skuId: 'sku-1' }],
+      config,
+    });
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    await new HanjinCarrierGateway(config, { post } as any).register('531647410114', assembled);
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({ rcvrTelNo: '010-1234-5678' }),
+    );
   });
 });

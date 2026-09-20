@@ -91,10 +91,9 @@ npx tsx scripts/smoke/hanjin-staging-smoke.ts
 
 CI 아님 — 사람이 dev key 를 손에 쥐고 직접 실행하는 스크립트다(`scripts/smoke/hanjin-staging-smoke.ts`).
 
-- **env 미설정** (`HANJIN_CLIENT_ID`/`HANJIN_API_KEY`/`HANJIN_SECRET_KEY`/`HANJIN_CONTRACT_NO`/
-  `HANJIN_ORDER_BASE_URL`/`HANJIN_PRINT_BASE_URL` 중 하나라도 없음 = `isHanjinConfigured` false): `SKIP:
-  HANJIN_* env not configured` 를 출력하고 `exit 2`. 이것이 기본/기대 동작이다 — 대부분의 개발 환경엔 이
-  키가 없다.
+- **env 미설정** (`isHanjinConfigured` false): `SKIP: HANJIN_* env not configured. Missing/invalid: …` 로
+  **어떤 키가 비었는지 이름을 찍고** `exit 2`. 이것이 기본/기대 동작이다 — 대부분의 개발 환경엔 이 키가
+  없다. 무엇이 필수인지는 `missingHanjinConfig` 가 정본이며, 그 목록을 여기 복제하지 않는다.
 - **env 설정됨**: `loadHanjinConfig` → `HanjinHmacSigner` → `HanjinApiClient` → `HanjinCarrierGateway` 를
   조립하고 `assembleWaybillRequest` 로 샘플 `WaybillRequest` 를 만든 뒤,
   1. `allocate`(print-wbl) 시도 — 방화벽에 발신 IP 가 등록되어 있지 않으면 실패한다. 이 실패는 **크래시가
@@ -102,9 +101,9 @@ CI 아님 — 사람이 dev key 를 손에 쥐고 직접 실행하는 스크립�
   2. `waybillNo` 를 받았으면 `register`(insert-order) + `track`(tracking-wbl) 을 순서대로 실사격 — order
      호스트는 dev key 로 접근 가능하므로 여기까지가 이 스크립트의 실질적 검증 범위다.
   3. `waybillNo` 를 못 받았으면(print-wbl 미가용) register/track 을 스킵하고 경고만 남긴다.
-- (선택) sender 정보(`HANJIN_SENDER_NAME`/`HANJIN_SENDER_ZIP`/`HANJIN_SENDER_BASE_ADDR`/
-  `HANJIN_SENDER_DTL_ADDR`/`HANJIN_SENDER_TEL`)와 `HANJIN_BOX_TYPE`/`HANJIN_PAY_TYPE` 도 채워야 실제 한진이
-  거절하지 않을 만한 요청 바디가 만들어진다 — 비어 있어도 `isHanjinConfigured` 게이트 자체는 통과한다.
+- sender 정보와 `HANJIN_BOX_TYPE`/`HANJIN_PAY_TYPE` 은 **선택이 아니다.** insert-order 의 필수 항목이라
+  (정본 §4.2) 게이트가 함께 본다 — 예전에는 이들이 비어도 게이트를 통과해, 설정 누락이 복구 가능한
+  409 가 아니라 한진 `ERROR-01` → waybill `failed`(종료상태)로 기록됐다(#912).
 
 ## 미해결 리스크 (UNRESOLVED RISKS)
 
