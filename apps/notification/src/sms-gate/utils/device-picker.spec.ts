@@ -1,4 +1,4 @@
-import { DeviceCandidate, pickDevice, startOfKstDay } from './device-picker';
+import { DeviceCandidate, pickDevice, remainingCapacity, startOfKstDay } from './device-picker';
 
 const now = new Date('2026-09-18T03:00:00.000Z');
 const device = (overrides: Partial<DeviceCandidate>): DeviceCandidate => ({
@@ -39,5 +39,21 @@ describe('startOfKstDay', () => {
   it('KST 자정을 UTC 로 돌려준다', () => {
     expect(startOfKstDay(new Date('2026-09-18T14:59:00.000Z')).toISOString()).toBe('2026-09-17T15:00:00.000Z');
     expect(startOfKstDay(new Date('2026-09-18T15:00:00.000Z')).toISOString()).toBe('2026-09-18T15:00:00.000Z');
+  });
+});
+
+describe('remainingCapacity', () => {
+  const now = new Date('2026-09-21T03:00:00Z');
+  const online = { enabled: true, dailyLimit: 100, sentToday: 40, lastSeen: now };
+
+  it('보낼 수 있는 폰의 남은 한도 합', () => {
+    const devices = [
+      { ...online, deviceId: 'a' },
+      { ...online, deviceId: 'b', sentToday: 100 },
+      { ...online, deviceId: 'c', enabled: false },
+      { ...online, deviceId: 'd', lastSeen: null },
+    ];
+    expect(remainingCapacity(devices, now)).toBe(60);
+    expect(remainingCapacity(devices, now, 'b')).toBe(0);
   });
 });

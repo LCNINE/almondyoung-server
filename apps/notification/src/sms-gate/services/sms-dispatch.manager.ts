@@ -5,8 +5,9 @@ import { Channel } from '../../shared/enums';
 import { getContactForChannel } from '../../shared/utils/contact.utils';
 import { pickDevice } from '../utils/device-picker';
 import { isMarketingQuietHours } from '../utils/sms-body';
+import { isBulkIntervalPassed, isBulkWindow } from '../utils/bulk-schedule';
 import { SmsDeviceReader } from './sms-device.reader';
-import { SMS_GATE_DISPATCH_BATCH } from '../constants/sms-gate.constants';
+import { SMS_GATE_BULK_DISPATCH_BATCH, SMS_GATE_DISPATCH_BATCH } from '../constants/sms-gate.constants';
 import { SmsGateClient } from '../clients/sms-gate.client';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
@@ -23,18 +24,33 @@ export class SmsDispatchManager {
 
   async dispatchDue(now: Date): Promise<void> {
     await this.repository.withDispatchLock(async () => {
-      const due = await this.withoutWithdrawnMarketing(
-        await this.repository.findDue(now, SMS_GATE_DISPATCH_BATCH, !isMarketingQuietHours(now)),
-      );
+      const includeMarketing = !isMarketingQuietHours(now);
+      const [singles, bulk] = await Promise.all([
+        this.repository.findDue(now, SMS_GATE_DISPATCH_BATCH, includeMarketing, false),
+        isBulkWindow(now)
+          ? this.repository.findDue(now, SMS_GATE_BULK_DISPATCH_BATCH, includeMarketing, true)
+          : Promise.resolve([]),
+      ]);
+      const due = await this.withoutWithdrawnMarketing([...singles, ...bulk]);
       if (due.length === 0) return;
 
       const devices = await this.deviceReader.loadStatuses(now);
       for (const row of due) {
-        const device = pickDevice(devices, now, row.metadata?.requestedDeviceId);
+        // 발송마다 시간이 걸리므로 시간대는 보내기 직전 시각으로 다시 본다.
+        const at = new Date();
+        if (row.campaignId && !isBulkWindow(at)) continue;
+        if (row.category === 'MARKETING' && isMarketingQuietHours(at)) continue;
+        const device = row.campaignId
+          ? pickDevice(
+              devices.filter((d) => isBulkIntervalPassed(d, at)),
+              at,
+            )
+          : pickDevice(devices, at, row.metadata?.requestedDeviceId);
         if (!device) continue;
         if (!(await this.repository.claim(row))) continue;
         await this.deliver(row, device.deviceId);
         device.sentToday += 1;
+        device.lastSentAt = new Date();
       }
     });
   }

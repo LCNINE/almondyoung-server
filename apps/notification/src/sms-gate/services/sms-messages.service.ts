@@ -15,6 +15,10 @@ export class SmsMessagesService {
     return this.messageManager.send(dto, sentBy);
   }
 
+  capacity(deviceId?: string): Promise<{ remaining: number }> {
+    return this.messageManager.capacity(deviceId);
+  }
+
   find(ids: string[]): Promise<Notification[]> {
     return this.repository.findMessages(ids);
   }

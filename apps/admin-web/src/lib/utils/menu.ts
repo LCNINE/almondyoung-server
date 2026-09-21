@@ -457,6 +457,8 @@ const allMenus: MainMenu[] = [
           defaultPath: '/messages/send',
           children: [
             { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
+            { id: 'message-bulk', title: '대량 메시지 전송', path: '/messages/bulk' },
+            { id: 'message-campaigns', title: '발송 목록', path: '/messages/campaigns' },
             { id: 'message-templates', title: '문자 템플릿', path: '/messages/templates' },
             { id: 'message-devices', title: '발송폰 디바이스', path: '/messages/devices' },
           ],

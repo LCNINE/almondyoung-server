@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -34,4 +35,9 @@ export class SendSmsGateMessageDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @ApiPropertyOptional({ description: '정보성일 때 폰 한도를 넘는 건은 대표번호(NHN)로 보낸다' })
+  @IsOptional()
+  @IsBoolean()
+  nhnFallback?: boolean;
 }

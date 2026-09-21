@@ -24,6 +24,22 @@ const CHUNK_SIZE = 500;
  */
 const REQUEST_TIMEOUT_MS = 5_000;
 
+/** 대량 발송 대상은 활성 회원 전원이라 응답이 크다. */
+const AUDIENCE_TIMEOUT_MS = 60_000;
+
+export interface SmsAudienceContact {
+  userId: string;
+  username: string;
+  phoneNumber: string;
+  marketingConsent: boolean;
+}
+
+export interface SmsAudienceSummary {
+  active: number;
+  withPhone: number;
+  consented: number;
+}
+
 /**
  * user-service 의 서버 간(internal) 연락처 조회 클라이언트.
  *
@@ -92,5 +108,38 @@ export class UserContactClient {
       ),
     );
     return data.data;
+  }
+
+  async findSmsAudience(marketingOnly: boolean): Promise<SmsAudienceContact[]> {
+    const { data } = await firstValueFrom(
+      this.httpService.get<{ data: SmsAudienceContact[] }>(`${this.baseUrl()}/users/internal/sms-audience`, {
+        params: { marketingOnly },
+        headers: this.headers(),
+        timeout: AUDIENCE_TIMEOUT_MS,
+      }),
+    );
+    return data.data;
+  }
+
+  async summarizeSmsAudience(): Promise<SmsAudienceSummary> {
+    const { data } = await firstValueFrom(
+      this.httpService.get<{ data: SmsAudienceSummary }>(`${this.baseUrl()}/users/internal/sms-audience/summary`, {
+        headers: this.headers(),
+        timeout: REQUEST_TIMEOUT_MS,
+      }),
+    );
+    return data.data;
+  }
+
+  private baseUrl(): string {
+    const baseUrl = this.configService.get<string>('USER_SERVICE_URL');
+    if (!baseUrl) throw new Error('USER_SERVICE_URL is not configured');
+    return baseUrl;
+  }
+
+  private headers(): Record<string, string> {
+    const key = this.configService.get<string>('USER_SERVICE_INTERNAL_KEY');
+    if (!key) throw new Error('USER_SERVICE_INTERNAL_KEY is not configured');
+    return { Authorization: `Bearer ${key}` };
   }
 }

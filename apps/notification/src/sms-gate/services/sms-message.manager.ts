@@ -1,11 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, UserContactClient } from '@app/shared';
-import { Notification } from '../../../database/schemas/notification-schema';
+import { NewNotification, Notification } from '../../../database/schemas/notification-schema';
+import { NotificationProvider } from '../../provider/interfaces/notification-provider.interface';
+import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { Channel } from '../../shared/enums';
+import { getContactForChannel } from '../../shared/utils/contact.utils';
 import { SendSmsGateMessageDto } from '../dto';
 import { composeSmsBody, fillName } from '../utils/sms-body';
+import { remainingCapacity } from '../utils/device-picker';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
+import { SmsDeviceReader } from './sms-device.reader';
 
 export interface SmsGateSendResult {
   queued: { notificationId: string; userId: string }[];
@@ -14,10 +19,23 @@ export interface SmsGateSendResult {
 
 @Injectable()
 export class SmsMessageManager {
+  private readonly logger = new Logger(SmsMessageManager.name);
+
   constructor(
     private readonly repository: SmsGateRepository,
     private readonly userContactClient: UserContactClient,
+    private readonly deviceReader: SmsDeviceReader,
+    private readonly providerManager: ProviderManagerService,
   ) {}
+
+  /** 지금 폰으로 바로 나갈 수 있는 단건 수. 먼저 들어온 단건 대기분을 뺀다. */
+  async capacity(deviceId?: string): Promise<{ remaining: number }> {
+    const [devices, pendingSingles] = await Promise.all([
+      this.deviceReader.loadStatuses(new Date()),
+      this.repository.countPending(true),
+    ]);
+    return { remaining: Math.max(0, remainingCapacity(devices, new Date(), deviceId) - pendingSingles) };
+  }
 
   async send(dto: SendSmsGateMessageDto, sentBy: string): Promise<SmsGateSendResult> {
     if (dto.deviceId) {
@@ -58,10 +76,54 @@ export class SmsMessageManager {
       ];
     });
 
-    const inserted: Notification[] = await this.repository.enqueue(rows);
+    // 광고는 수신거부가 폰 답장뿐이라 대표번호로 우회하지 않는다.
+    const phoneCount =
+      dto.nhnFallback && dto.category === 'INFORMATIONAL' ? (await this.capacity(dto.deviceId)).remaining : rows.length;
+    const inserted: Notification[] = await this.repository.enqueue(rows.slice(0, phoneCount));
+    const viaNhn = await this.sendViaNhn(rows.slice(phoneCount), skipped);
     return {
-      queued: inserted.map((row) => ({ notificationId: row.notificationId, userId: row.userId })),
+      queued: [...inserted, ...viaNhn].map((row) => ({ notificationId: row.notificationId, userId: row.userId })),
       skipped,
     };
+  }
+
+  private async sendViaNhn(rows: NewNotification[], skipped: SmsGateSendResult['skipped']): Promise<Notification[]> {
+    if (rows.length === 0) return [];
+    const provider = await this.providerManager.getAvailableProviderForChannel(Channel.SMS);
+    if (!provider) {
+      skipped.push(...rows.map((row) => ({ userId: row.userId, reason: '대표번호(NHN) 발송 프로바이더가 없습니다' })));
+      return [];
+    }
+    const inserted = await this.repository.enqueue(
+      rows.map((row) => ({
+        ...row,
+        providerId: provider.getProviderId(),
+        status: 'PROCESSING' as const,
+        metadata: { ...row.metadata, route: 'nhn' },
+      })),
+    );
+    for (const row of inserted) await this.deliverViaNhn(provider, row);
+    return inserted;
+  }
+
+  private async deliverViaNhn(provider: NotificationProvider, row: Notification): Promise<void> {
+    const contact = getContactForChannel({ userId: row.userId, phoneNumber: row.payload?.phoneNumber }, Channel.SMS);
+    if (!contact) {
+      await this.repository.markFailed(row, null, '수신 번호가 없습니다 (운영 외 환경은 NOTIFICATION_DEV_PHONE 필요)');
+      return;
+    }
+    try {
+      const result = await provider.send({
+        to: contact,
+        content: row.renderedContent?.body ?? '',
+        metadata: { notificationId: row.notificationId, category: row.category },
+      });
+      if (result.success) await this.repository.markSent(row, null, result.messageId ?? '');
+      else await this.repository.markFailed(row, null, result.error ?? '대표번호 발송 실패');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`대표번호 발송 실패 notificationId=${row.notificationId}: ${message}`);
+      await this.repository.markFailed(row, null, message);
+    }
   }
 }

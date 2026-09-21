@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  CreateSmsCampaignDto,
   SendSmsGateMessageDto,
   smsGateApi,
   SmsDeviceFormValues,
@@ -64,5 +65,27 @@ export const useDeleteSmsTemplate = () => {
   return useMutation({
     mutationFn: (id: string) => smsGateApi.deleteTemplate(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
+  });
+};
+
+export const usePreviewSmsCampaign = () => {
+  return useMutation({
+    mutationFn: (dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt'>) => smsGateApi.previewCampaign(dto),
+  });
+};
+
+export const useCreateSmsCampaign = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateSmsCampaignDto) => smsGateApi.createCampaign(dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
+  });
+};
+
+export const useStopSmsCampaign = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (campaignId: string) => smsGateApi.stopCampaign(campaignId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };

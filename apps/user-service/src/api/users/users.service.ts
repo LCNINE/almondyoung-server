@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
@@ -177,6 +177,56 @@ export class UsersService {
         and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)),
       );
     return rows.map((row) => ({ ...row, marketingConsent: row.marketingConsent ?? false }));
+  }
+
+  /** 폰 문자 대량 발송 대상: 활성(탈퇴·휴면 아님) 회원 중 휴대폰 번호가 있는 사람 전원. */
+  async findSmsAudience(marketingOnly: boolean): Promise<
+    { userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]
+  > {
+    const rows = await this.dbService.db
+      .select({
+        userId: schema.users.id,
+        username: schema.users.username,
+        phoneNumber: schema.profiles.phoneNumber,
+        marketingConsent: schema.userConsents.marketingConsent,
+      })
+      .from(schema.users)
+      .innerJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
+      .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
+      .where(
+        and(
+          ...this.smsAudienceConditions(),
+          marketingOnly ? eq(schema.userConsents.marketingConsent, true) : undefined,
+        ),
+      )
+      .orderBy(schema.users.createdAt);
+    return rows.map((row) => ({ ...row, phoneNumber: row.phoneNumber ?? '', marketingConsent: row.marketingConsent ?? false }));
+  }
+
+  async summarizeSmsAudience(): Promise<{ active: number; withPhone: number; consented: number }> {
+    const [active] = await this.dbService.db
+      .select({ value: count() })
+      .from(schema.users)
+      .where(and(isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
+    const [withPhone] = await this.dbService.db
+      .select({
+        value: count(),
+        consented: sql<number>`count(*) filter (where ${schema.userConsents.marketingConsent} = true)`.mapWith(Number),
+      })
+      .from(schema.users)
+      .innerJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
+      .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
+      .where(and(...this.smsAudienceConditions()));
+    return { active: active?.value ?? 0, withPhone: withPhone?.value ?? 0, consented: withPhone?.consented ?? 0 };
+  }
+
+  private smsAudienceConditions() {
+    return [
+      isNull(schema.users.deletedAt),
+      isNull(schema.users.dormantAt),
+      isNotNull(schema.profiles.phoneNumber),
+      ne(schema.profiles.phoneNumber, ''),
+    ];
   }
 
   async withdrawMarketingConsentByPhone(
