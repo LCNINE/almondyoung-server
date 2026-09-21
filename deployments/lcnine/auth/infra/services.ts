@@ -23,6 +23,8 @@ export function setup(infra: IdpInfra) {
   const cafe24ClientSecret = new sst.Secret('Cafe24ClientSecret');
   const cafe24ServiceKey = new sst.Secret('Cafe24ServiceKey');
   const dataGoKrServiceKey = new sst.Secret('DataGoKrServiceKey');
+  // services 배포의 AnthropicApiKey 와 같은 값. SST 시크릿은 앱마다 따로라 여기에도 set 해야 한다.
+  const anthropicApiKey = new sst.Secret('AnthropicApiKey');
 
   // const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
   // const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
@@ -156,6 +158,8 @@ export function setup(infra: IdpInfra) {
       CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
       CAFE24_MALL_ID: 'lcnine',
       DATA_GO_KR_SERVICE_KEY: dataGoKrServiceKey.value,
+      ANTHROPIC_API_KEY: anthropicApiKey.value,
+      BUSINESS_LICENSE_AUTO_APPROVE: 'false',
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
     },

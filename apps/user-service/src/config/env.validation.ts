@@ -60,6 +60,11 @@ export const userServiceEnvSchema = z.object({
   // 국세청 사업자등록정보 상태조회 (data.go.kr). 없으면 조회는 lookup_failed 로 처리되고 등록은 계속 가능.
   DATA_GO_KR_SERVICE_KEY: z.string().optional(),
 
+  // 사업자등록증 첨부 자동 심사 (#930). 키가 없으면 크론이 아무것도 안 한다.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  // 'true' 가 아니면 판정만 기록한다.
+  BUSINESS_LICENSE_AUTO_APPROVE: z.enum(['true', 'false']).optional(),
+
   // Cafe24 Link (optional: disabled when not set)
   CAFE24_SERVICE_KEY: z.string().optional(),
   CAFE24_API_VERSION: z.string().optional(),

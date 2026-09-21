@@ -44,7 +44,7 @@ const ERROR_BODY_MAX_CHARS = 1000;
  * 법인은 신청자가 대표이사가 아니라 담당 직원인 경우가 많아, 대표자명 일치를 요구하면
  * 정상 고객이 막힌다. 그래서 자동 검증 대상에서 빼고 증빙 첨부 → 관리자 심사로 보낸다.
  */
-function isCorporateBusinessNumber(businessNumber: string): boolean {
+export function isCorporateBusinessNumber(businessNumber: string): boolean {
   const middle = Number(businessNumber.slice(3, 5));
   return middle >= 81 && middle <= 88;
 }
@@ -414,7 +414,7 @@ export class BusinessLicensesService {
    * 키 미설정·장애 등 호출 자체가 실패하면 valid=false + error 로 돌려준다. 이 경우
    * 승인하지 않고 under_review 로 보내 사람이 보게 한다 (실패를 통과로 취급하지 않는다).
    */
-  private async verifyWithNts(
+  async verifyWithNts(
     businessNumber: string,
     representativeName: string,
     startDate: string,
