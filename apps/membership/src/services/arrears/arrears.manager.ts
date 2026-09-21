@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { DrizzleTransaction } from '../../shared/schemas/types';
@@ -66,16 +66,34 @@ export class ArrearsManager {
   }
 
   /**
-   * 수금으로 청산. 이미 청산·면제된 줄은 건드리지 않는다(WHERE 로 막는다) —
-   * 두 결제가 같은 미수를 동시에 갚으려 하면 한쪽만 이겨야 한다.
+   * 수금으로 청산. 한 결제가 덮는 줄을 한 문장으로 닫는다 — 건별로 나눠 쏘면 중간에 끊겼을 때
+   * 「일부만 갚힌」 상태가 남고, 게이트는 잔액 합으로 판단하므로 그건 돈만 받고 안 풀린 상태다.
+   *
+   * `WHERE` 에 세 조건이 다 필요하다: 소유자(다른 사람의 줄을 닫지 못하게) · 대상 목록 ·
+   * `OUTSTANDING`(이미 청산·면제된 줄은 안 건드린다 — 같은 결제 이벤트가 두 번 와도 두 번째는 0건).
+   * 반환은 «이번에 실제로 닫힌» id 들이다. 요청한 것보다 적으면 호출자가 그걸 알아야 한다.
    */
-  async settle(tx: DrizzleTransaction, arrearsId: string, settlementRef: string): Promise<boolean> {
+  async settleMany(
+    tx: DrizzleTransaction,
+    userId: string,
+    arrearsIds: string[],
+    settlementRef: string,
+  ): Promise<string[]> {
+    if (arrearsIds.length === 0) return [];
+
     const rows = await tx
       .update(schema.membershipArrears)
       .set({ status: 'SETTLED', settlementRef, settledAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(schema.membershipArrears.id, arrearsId), eq(schema.membershipArrears.status, 'OUTSTANDING')))
+      .where(
+        and(
+          eq(schema.membershipArrears.userId, userId),
+          inArray(schema.membershipArrears.id, arrearsIds),
+          eq(schema.membershipArrears.status, 'OUTSTANDING'),
+        ),
+      )
       .returning({ id: schema.membershipArrears.id });
-    return rows.length > 0;
+
+    return rows.map((r) => r.id);
   }
 
   /**

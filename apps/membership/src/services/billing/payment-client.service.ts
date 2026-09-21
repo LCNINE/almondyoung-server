@@ -3,6 +3,10 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { randomUUID } from 'node:crypto';
+import {
+  MEMBERSHIP_PAYMENT_KIND_ARREARS,
+  MEMBERSHIP_PAYMENT_KIND_FIELD,
+} from '../arrears/arrears-payment.metadata';
 
 // Wallet v4 API 타입 정의 (최신 아키텍처 반영)
 export interface PaymentIntentRequest {
@@ -136,6 +140,17 @@ export interface WalletPaymentIntentResponse {
   };
 }
 
+export interface ArrearsCheckoutIntentRequest {
+  userId: string;
+  /** 서버가 원장에서 더한 값. 클라이언트가 보낸 금액은 쓰지 않는다. */
+  amount: number;
+  currency: string;
+  returnUrl: string;
+  email?: string;
+  /** 이 결제가 덮는 미수 원장 id 들. 청산은 이 목록으로만 한다. */
+  arrearsIds: string[];
+}
+
 export interface MembershipCheckoutIntentResponse {
   intentId: string;
 }
@@ -247,6 +262,49 @@ export class PaymentClientService {
     } catch (error) {
       this.logger.error(`Failed to create membership checkout intent: ${error.message}`);
       throw new Error(`Checkout intent creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 미수 청산용 checkout intent. 가입 결제와 **같은 `type: 'MEMBERSHIP_FEE'`** 를 쓴다 —
+   * 미수는 못 받은 멤버십 요금이므로 wallet 이 멤버십 결제에 걸어 둔 정책(포인트 사용 불가 ·
+   * 무통장 전용 · 환불 차단)이 그대로 적용돼야 한다. 새 type 을 만들면 그 정책이 조용히 빠진다.
+   * 가입 결제와 갈라지는 것은 `membershipPaymentKind` 한 칸뿐이다.
+   */
+  async createArrearsCheckoutIntent(request: ArrearsCheckoutIntentRequest): Promise<MembershipCheckoutIntentResponse> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ id: string }>(
+          `${walletApiUrl}/v1/payment-intents`,
+          {
+            userId: request.userId,
+            amount: request.amount,
+            currency: request.currency,
+            returnUrl: request.returnUrl,
+            metadata: {
+              type: 'MEMBERSHIP_FEE',
+              [MEMBERSHIP_PAYMENT_KIND_FIELD]: MEMBERSHIP_PAYMENT_KIND_ARREARS,
+              userId: request.userId,
+              arrearsIds: request.arrearsIds,
+              ...(request.email ? { email: request.email } : {}),
+            },
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${walletApiKey}`,
+              'Idempotency-Key': randomUUID(),
+            },
+          },
+        ),
+      );
+
+      return { intentId: response.data.id };
+    } catch (error) {
+      this.logger.error(`Failed to create arrears checkout intent: ${error.message}`);
+      throw new Error(`Arrears checkout intent creation failed: ${error.message}`);
     }
   }
 

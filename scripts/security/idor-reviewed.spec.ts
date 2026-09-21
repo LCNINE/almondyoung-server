@@ -301,6 +301,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: 'Pure creation route: presignUpload() always inserts a brand-new pending row (id: uuidv7(), uploadedBy: userId); POST /files/upload 과 같은 이유로 client-supplied id 가 기존 타인 소유 행으로 해석되는 경로가 없다. dto.contextId 는 공유 설정(file_contexts) 조회일 뿐이다.',
   },
+  'membership GET /me/arrears': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/arrears/arrears.reader.ts:72',
+    predicate: 'and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, \'OUTSTANDING\'))',
+    note: '조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User(\'userId\')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:87)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.',
+  },
+  'membership POST /me/arrears/checkout': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:60',
+    predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
+    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:60-77). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:89 eq(schema.membershipArrears.userId, userId)).',
+  },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',
     evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:77',
@@ -734,15 +746,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(115);
+    expect(targets).toHaveLength(117);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(115);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(114);
+    expect(new Set(targets.map(keyOf)).size).toBe(117);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(116);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, InferSelectModel, sql } from 'drizzle-orm';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 
@@ -23,6 +23,28 @@ export interface ArrearsRow {
   createdAt: string;
 }
 
+/** 원장 행 → 응답 모양. 조회가 둘이라 매핑을 한 곳에 둔다(갈리면 화면마다 다른 필드가 빈다). */
+function toArrearsRow(r: InferSelectModel<typeof schema.membershipArrears>): ArrearsRow {
+  return {
+    id: r.id,
+    userId: r.userId,
+    contractId: r.contractId,
+    invoiceRef: r.invoiceRef,
+    cause: r.cause,
+    causeCode: r.causeCode,
+    amount: r.amount,
+    currency: r.currency,
+    amountSource: r.amountSource,
+    periodStart: r.periodStart,
+    periodEnd: r.periodEnd,
+    status: r.status,
+    settlementRef: r.settlementRef,
+    settledAt: r.settledAt ? r.settledAt.toISOString() : null,
+    settledBy: r.settledBy,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
 /** 미수 원장의 읽기. 쓰기는 ArrearsManager 가 맡는다. */
 @Injectable()
 export class ArrearsReader {
@@ -36,24 +58,21 @@ export class ArrearsReader {
       .where(eq(schema.membershipArrears.userId, userId))
       .orderBy(desc(schema.membershipArrears.createdAt));
 
-    return rows.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      contractId: r.contractId,
-      invoiceRef: r.invoiceRef,
-      cause: r.cause,
-      causeCode: r.causeCode,
-      amount: r.amount,
-      currency: r.currency,
-      amountSource: r.amountSource,
-      periodStart: r.periodStart,
-      periodEnd: r.periodEnd,
-      status: r.status,
-      settlementRef: r.settlementRef,
-      settledAt: r.settledAt ? r.settledAt.toISOString() : null,
-      settledBy: r.settledBy,
-      createdAt: r.createdAt.toISOString(),
-    }));
+    return rows.map(toArrearsRow);
+  }
+
+  /**
+   * 한 계정의 «미청산» 줄만. 고객 화면과 청산 결제가 쓰는 목록이라 청산·면제분은 뺀다 —
+   * 지나간 것까지 보여주면 고객은 이미 끝난 건에 다시 돈을 내려 한다.
+   */
+  async findOutstandingByUserId(userId: string): Promise<ArrearsRow[]> {
+    const rows = await this.dbService.db
+      .select()
+      .from(schema.membershipArrears)
+      .where(and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, 'OUTSTANDING')))
+      .orderBy(desc(schema.membershipArrears.createdAt));
+
+    return rows.map(toArrearsRow);
   }
 
   /** 미청산 잔액 한 줄. 고객 화면·게이트가 이것만 본다. */
