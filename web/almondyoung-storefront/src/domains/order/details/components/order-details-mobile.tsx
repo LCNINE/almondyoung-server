@@ -1,6 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import {
@@ -439,22 +440,35 @@ export const OrderDetailsMobile = ({
               const thumbnail = getThumbnailUrl(
                 item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
               )
+              const productHref = item.product_handle
+                ? `/products/${item.product_handle}`
+                : undefined
               return (
                 <article
                   key={item.id}
                   className="flex gap-3 py-3 first:pt-0 last:pb-0"
                 >
-                  {thumbnail ? (
-                    <img
-                      src={thumbnail}
-                      alt={item.title}
-                      className="h-20 w-20 shrink-0 rounded-md object-cover"
-                    />
-                  ) : (
-                    <div className="h-20 w-20 shrink-0 rounded-md bg-gray-100" />
-                  )}
+                  <LocalizedClientLink
+                    href={productHref ?? "#"}
+                    className={productHref ? "shrink-0" : "pointer-events-none shrink-0"}
+                  >
+                    {thumbnail ? (
+                      <img
+                        src={thumbnail}
+                        alt={item.title}
+                        className="h-20 w-20 rounded-md object-cover"
+                      />
+                    ) : (
+                      <div className="h-20 w-20 rounded-md bg-gray-100" />
+                    )}
+                  </LocalizedClientLink>
                   <div className="flex-grow">
-                    <p className="font-semibold text-gray-800">{item.title}</p>
+                    <LocalizedClientLink
+                      href={productHref ?? "#"}
+                      className={productHref ? undefined : "pointer-events-none"}
+                    >
+                      <p className="font-semibold text-gray-800">{item.title}</p>
+                    </LocalizedClientLink>
                     <p className="mt-1 text-sm text-gray-500">
                       {formatAmount(item.unit_price)} · {item.quantity}
                     </p>
@@ -474,9 +488,9 @@ export const OrderDetailsMobile = ({
                       </LocalizedClientLink>
                     )
                   ) : (
-                    <CustomButton variant="outline" size="sm">
-                      {tActions("addToCart")}
-                    </CustomButton>
+                    item.variant_id && (
+                      <OrderItemCartButton variantId={item.variant_id} />
+                    )
                   )}
                 </article>
               )

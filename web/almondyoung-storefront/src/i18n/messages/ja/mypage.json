@@ -537,7 +537,10 @@
       "searchResultCount": "「{q}」の検索結果 {count}件",
       "prevPage": "前へ",
       "nextPage": "次へ",
-      "recent6m": "直近6か月"
+      "recent6m": "直近6か月",
+      "showMoreItems": "商品をあと{count}件表示",
+      "totalPaid": "お支払い合計",
+      "itemQuantity": "{count}個"
     },
     "filter": {
       "label": "フィルター",
@@ -572,7 +575,10 @@
         "channel_order": "チャネル注文は、ご注文元のチャネルでキャンセルしてください。",
         "already_processing": "ピッキングが開始されたため、ご自身でのキャンセルはできません。カスタマーセンターへお問い合わせください。",
         "digital_downloaded": "ダウンロード済みのデジタル商品が含まれているため、ご自身でのキャンセルはできません。カスタマーセンターへお問い合わせください。"
-      }
+      },
+      "writeReview": "レビューを書く",
+      "addToCartSuccess": "カートに追加しました。",
+      "goToCart": "カートを見る"
     },
     "delivery": {
       "paid": "お支払い完了",

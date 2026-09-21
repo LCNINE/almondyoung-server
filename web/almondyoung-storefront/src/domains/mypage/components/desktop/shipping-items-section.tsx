@@ -29,10 +29,15 @@ function ShippingCard({ order }: { order: ShippingOrder }) {
       orderDate={formatDate(order.createdAt, "yyyy. M. d")}
       status={order.status}
       deliveryInfo={order.deliveryInfo}
-      productName={order.productName}
-      productImage={order.productImage}
-      price={order.price}
-      options={order.options}
+      items={[
+        {
+          id: order.orderId,
+          title: order.productName,
+          thumbnail: order.productImage,
+          price: order.price,
+          options: order.options,
+        },
+      ]}
     >
       <Button variant="outline" onClick={handleTrack} className="w-full">
         {t("trackButton")}

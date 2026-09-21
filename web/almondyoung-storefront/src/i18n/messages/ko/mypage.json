@@ -537,7 +537,10 @@
       "searchResultCount": "‘{q}’ 검색결과 {count}건",
       "prevPage": "이전",
       "nextPage": "다음",
-      "recent6m": "최근 6개월"
+      "recent6m": "최근 6개월",
+      "showMoreItems": "상품 {count}개 더보기",
+      "totalPaid": "총 결제금액",
+      "itemQuantity": "{count}개"
     },
     "filter": {
       "label": "필터",
@@ -572,7 +575,10 @@
         "channel_order": "채널 주문은 해당 채널에서 취소해 주세요.",
         "already_processing": "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
         "digital_downloaded": "이미 다운로드하신 디지털 상품이 포함되어 있어 직접 취소가 불가합니다. 고객센터로 문의해 주세요."
-      }
+      },
+      "writeReview": "리뷰 작성하기",
+      "addToCartSuccess": "장바구니에 담았습니다.",
+      "goToCart": "장바구니 보기"
     },
     "delivery": {
       "paid": "결제완료",

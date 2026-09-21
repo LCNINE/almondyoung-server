@@ -122,14 +122,17 @@ export const getMyReviews = async ({
  */
 export const getReviewEligibilities = async ({
   status = "available",
+  productId,
   page,
   limit,
 }: {
   status?: "available" | "consumed"
+  productId?: string
   page?: number
   limit?: number
 } = {}): Promise<PaginatedResponseDto<ReviewEligibilityResponseDto>> => {
   const params: Record<string, string> = { status }
+  if (productId) params.productId = productId
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
 

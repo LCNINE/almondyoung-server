@@ -537,7 +537,10 @@
       "searchResultCount": "{count} results for ‘{q}’",
       "prevPage": "Previous",
       "nextPage": "Next",
-      "recent6m": "Last 6 months"
+      "recent6m": "Last 6 months",
+      "showMoreItems": "Show {count} more items",
+      "totalPaid": "Total paid",
+      "itemQuantity": "Qty {count}"
     },
     "filter": {
       "label": "Filter",
@@ -572,7 +575,10 @@
         "channel_order": "Please cancel this order on the channel where it was placed.",
         "already_processing": "Picking has started, so self-cancellation is unavailable. Please contact customer support.",
         "digital_downloaded": "This order includes a digital item you already downloaded, so self-cancellation is unavailable. Please contact customer support."
-      }
+      },
+      "writeReview": "Write a review",
+      "addToCartSuccess": "Added to cart.",
+      "goToCart": "View cart"
     },
     "delivery": {
       "paid": "Paid",

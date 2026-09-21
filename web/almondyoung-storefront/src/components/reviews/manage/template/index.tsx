@@ -9,7 +9,13 @@ import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 type Props = {
   params: { countryCode: string }
-  searchParams: { period?: string; type?: string; page?: string }
+  searchParams: {
+    period?: string
+    type?: string
+    page?: string
+    write?: string
+    productId?: string
+  }
 }
 
 export const ReviewsTemplate = async ({ params, searchParams }: Props) => {

@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
 import OrderActions from "@components/orders/order-card/order-actions"
-import OrderSummaryCard from "@components/orders/order-card/order-summary-card"
+import OrderSummaryCard, {
+  type OrderSummaryItem,
+} from "@components/orders/order-card/order-summary-card"
 import { getCoreDisplayStatus } from "@components/orders/order-status-badges"
+import { isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import type { HttpTypes } from "@medusajs/types"
 import {
   ChevronLeft,
@@ -80,14 +83,11 @@ interface OrderItem {
   deliveryInfo: string
   shippingNote: string
   productName: string
-  productImage: string
+  items: OrderSummaryItem[]
   price: string
   /** 포인트를 써서 실결제액이 주문금액보다 적을 때만 채워진다 */
   originalPrice?: string
-  quantity: string
-  options: string[]
   showInquiry: boolean
-  variantId: string
   bankTransferStatus?: string
 }
 
@@ -105,6 +105,7 @@ interface OrderListProps {
   count: number
   actionsMap: Record<string, StoreOrderActionsResponse>
   refundMap: Record<string, string>
+  reviewHrefs: Record<string, string>
   hasError?: boolean
   /** 마이페이지 홈 안에 끼워 넣어 쓸 때 true — 페이지 전용 여백/최소높이 제거 */
   embedded?: boolean
@@ -135,6 +136,7 @@ const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
 interface MapperContext {
   tStatus: (key: string) => string
   tList: (key: string, values?: Record<string, string | number>) => string
+  reviewHrefs: Record<string, string>
 }
 
 const mapStoreOrderToOrderItem = (
@@ -145,10 +147,6 @@ const mapStoreOrderToOrderItem = (
   const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
   const firstItem = order.items?.[0]
   const lineItemCount = order.items?.length ?? 0
-  const totalQuantity = (order.items ?? []).reduce(
-    (acc, item) => acc + (item.quantity ?? 0),
-    0
-  )
   const representativeName =
     firstItem?.title ||
     firstItem?.variant?.product?.title ||
@@ -163,10 +161,33 @@ const mapStoreOrderToOrderItem = (
   const pointsUsed = getOrderPointsUsed(order.metadata)
   const displayPrice = orderTotal - pointsUsed
 
-  const options: string[] = []
-  if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
-    options.push(firstItem.variant.title)
-  }
+  const items: OrderSummaryItem[] = (order.items ?? []).map((item) => {
+    const handle = item.product_handle || item.variant?.product?.handle
+    const lineTotal =
+      typeof item.total === "number"
+        ? item.total
+        : (item.unit_price ?? 0) * (item.quantity ?? 0)
+    return {
+      id: item.id,
+      title:
+        item.title ||
+        item.variant?.product?.title ||
+        ctx.tList("defaultProductName"),
+      thumbnail:
+        item.thumbnail ||
+        item.variant?.product?.thumbnail ||
+        "https://placehold.co/80x80",
+      href: handle ? `/products/${handle}` : undefined,
+      price: `${lineTotal.toLocaleString()}원 · ${ctx.tList("itemQuantity", { count: item.quantity ?? 0 })}`,
+      options:
+        item.variant?.title && item.variant.title !== "Default"
+          ? [item.variant.title]
+          : [],
+      variantId: item.variant_id ?? undefined,
+      isDigital: isDigitalItem(item),
+      reviewHref: ctx.reviewHrefs[item.id],
+    }
+  })
 
   return {
     orderId: order.id,
@@ -179,18 +200,12 @@ const mapStoreOrderToOrderItem = (
     deliveryInfo: "",
     shippingNote: "",
     productName,
-    productImage:
-      firstItem?.thumbnail ||
-      firstItem?.variant?.product?.thumbnail ||
-      "https://placehold.co/80x80",
+    items,
     price: `${displayPrice.toLocaleString()}원`,
     ...(pointsUsed > 0
       ? { originalPrice: `${orderTotal.toLocaleString()}원` }
       : {}),
-    quantity: `${ctx.tList("items", { count: lineItemCount })} · ${ctx.tList("totalQuantity", { count: totalQuantity })}`,
-    options,
     showInquiry: order.fulfillment_status === "fulfilled",
-    variantId: firstItem?.variant_id ?? "",
     bankTransferStatus:
       ((order.metadata as Record<string, unknown> | null)
         ?.bank_transfer_status as string | undefined) ?? undefined,
@@ -206,6 +221,7 @@ export function OrderList({
   count,
   actionsMap,
   refundMap,
+  reviewHrefs,
   hasError = false,
   embedded = false,
 }: OrderListProps) {
@@ -218,8 +234,11 @@ export function OrderList({
   const [isPending, startTransition] = useTransition()
 
   const orders = useMemo(
-    () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
-    [rawOrders, tStatus, tList]
+    () =>
+      rawOrders.map((o) =>
+        mapStoreOrderToOrderItem(o, { tStatus, tList, reviewHrefs })
+      ),
+    [rawOrders, tStatus, tList, reviewHrefs]
   )
 
   // 결제 완료 화면에서 넘어온 직후에만(무통장 전파 지연) 짧게 자동 재조회한다.
@@ -283,12 +302,12 @@ export function OrderList({
               고객이 결제가 실패한 줄 안다. 재조회가 끝날 때까지 준비 중으로 보여준다. */}
           {isWaitingForNewOrder ? (
             <>
-              <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+              <Loader2 className="h-8 w-8 animate-spin text-gray-300" />
               <p className="text-sm text-gray-500">{tList("preparingOrder")}</p>
             </>
           ) : (
             <>
-              <Package className="w-12 h-12 text-gray-300" />
+              <Package className="h-12 w-12 text-gray-300" />
               <div className="text-center">
                 <p className="text-lg font-medium text-gray-600">
                   {tEmpty("orderTitle")}
@@ -312,7 +331,7 @@ export function OrderList({
       )}
     >
       {/* 검색 + 기간 필터 */}
-      <div className="px-4 py-3 space-y-3 bg-white md:bg-transparent md:p-0">
+      <div className="space-y-3 bg-white px-4 py-3 md:bg-transparent md:p-0">
         <div className="hidden md:block">
           <PageTitle>{tList("title")}</PageTitle>
         </div>
@@ -340,15 +359,15 @@ export function OrderList({
               onClick={() => navigate({ page: 1, q: "" })}
               className="absolute top-1/2 right-9 -translate-y-1/2 cursor-pointer rounded-full bg-gray-300 p-0.5 hover:bg-gray-400"
             >
-              <X className="w-3 h-3 text-white" />
+              <X className="h-3 w-3 text-white" />
             </button>
           )}
           <button
             type="submit"
             aria-label={tList("searchPlaceholder")}
-            className="absolute -translate-y-1/2 cursor-pointer top-1/2 right-3"
+            className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer"
           >
-            <Search className="w-4 h-4 text-gray-400" />
+            <Search className="h-4 w-4 text-gray-400" />
           </button>
         </form>
         <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
@@ -391,7 +410,7 @@ export function OrderList({
               onClick={() => navigate({ page: 1, q: "" })}
               className="hover:border-primary hover:text-primary flex cursor-pointer items-center gap-1 rounded-full border border-gray-300 px-2.5 py-1 text-xs text-gray-600 transition-colors"
             >
-              <X className="w-3 h-3" />
+              <X className="h-3 w-3" />
               {tList("clearSearch")}
             </button>
           </div>
@@ -400,11 +419,11 @@ export function OrderList({
 
       {isPending ? (
         <div className="flex min-h-[200px] items-center justify-center">
-          <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </div>
       ) : orders.length === 0 ? (
         <div className="flex min-h-[300px] flex-col items-center justify-center gap-4">
-          <Package className="w-12 h-12 text-gray-300" />
+          <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
               {tEmpty(q ? "orderSearchTitle" : "orderPeriodTitle")}
@@ -434,18 +453,14 @@ export function OrderList({
                   orderNumber={order.orderNumber}
                   status={displayStatus}
                   deliveryInfo={order.deliveryInfo}
-                  productName={order.productName}
-                  productImage={order.productImage}
-                  price={order.price}
+                  items={order.items}
+                  totalPrice={order.price}
                   originalPrice={order.originalPrice}
-                  quantity={order.quantity}
-                  options={order.options}
                 >
                   <OrderActions
                     orderId={order.orderId}
                     paymentStatus={order.paymentStatus}
                     productName={order.productName}
-                    variantId={order.variantId}
                     showInquiry={order.showInquiry}
                     coreActions={actions}
                     bankTransferStatus={order.bankTransferStatus}
@@ -463,7 +478,7 @@ export function OrderList({
                 disabled={page <= 1 || isPending}
                 onClick={() => navigate({ page: page - 1 })}
               >
-                <ChevronLeft className="w-4 h-4 mr-1" />
+                <ChevronLeft className="mr-1 h-4 w-4" />
                 {tList("prevPage")}
               </Button>
               <Button
@@ -472,7 +487,7 @@ export function OrderList({
                 onClick={() => navigate({ page: page + 1 })}
               >
                 {tList("nextPage")}
-                <ChevronRight className="w-4 h-4 ml-1" />
+                <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </div>
           )}

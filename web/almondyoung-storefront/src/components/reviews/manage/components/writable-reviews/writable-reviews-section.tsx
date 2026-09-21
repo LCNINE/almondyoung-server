@@ -17,6 +17,7 @@ interface WritableReviewsSectionProps {
   currentPage: number
   totalPages: number
   rewardPolicies: RewardPolicy[]
+  initialEditingId?: string
 }
 
 export const WritableReviewsSection = ({
@@ -25,9 +26,12 @@ export const WritableReviewsSection = ({
   currentPage,
   totalPages,
   rewardPolicies,
+  initialEditingId,
 }: WritableReviewsSectionProps) => {
   const t = useTranslations("mypage.reviews")
-  const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(
+    initialEditingId ?? null
+  )
   const [isPending, startTransition] = useTransition()
 
   const handleSave = (item: WritableReview, data: ReviewInfo) => {

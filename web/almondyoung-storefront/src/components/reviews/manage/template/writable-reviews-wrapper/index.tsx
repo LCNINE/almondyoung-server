@@ -12,18 +12,23 @@ const ITEMS_PER_PAGE = 10
 
 export async function WritableReviewsWrapper(props: {
   params: { countryCode: string }
-  searchParams: { page?: string }
+  searchParams: { page?: string; write?: string; productId?: string }
 }) {
-  const { page: pageParam } = props.searchParams
+  const { page: pageParam, write, productId } = props.searchParams
   const page = Math.max(1, Number(pageParam) || 1)
 
   const [eligibilityData, rewardPolicies] = await Promise.all([
-    getReviewEligibilities({ page, limit: ITEMS_PER_PAGE }),
+    write && productId
+      ? getReviewEligibilities({ productId, limit: 100 })
+      : getReviewEligibilities({ page, limit: ITEMS_PER_PAGE }),
     getRewardPolicies(),
   ])
 
   const eligibilities = eligibilityData?.data ?? []
-  const totalPages = Math.ceil((eligibilityData?.total ?? 0) / ITEMS_PER_PAGE)
+  const totalPages =
+    write && productId
+      ? 1
+      : Math.ceil((eligibilityData?.total ?? 0) / ITEMS_PER_PAGE)
 
   if (eligibilities.length === 0) {
     return (
@@ -70,6 +75,7 @@ export async function WritableReviewsWrapper(props: {
   return (
     <WritableReviewsSection
       reviews={writableReviews}
+      initialEditingId={write}
       totalCount={eligibilityData.total}
       currentPage={page}
       totalPages={totalPages}
