@@ -60,6 +60,8 @@ import { BillingReader } from './services/billing/billing.reader';
 import { BillingOutcomeHandler } from './services/billing/billing-outcome.handler';
 import { InvoiceBillingManager } from './services/billing/invoice-billing.manager';
 import { InvoiceOutcomeHandler } from './services/billing/invoice-outcome.handler';
+import { ArrearsManager } from './services/arrears/arrears.manager';
+import { ArrearsReader } from './services/arrears/arrears.reader';
 import { InvoiceResultConsumer } from './consumers/invoice-result.consumer';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
@@ -200,6 +202,8 @@ import { EventTraceController } from './controllers/event-trace.controller';
     // ADR-0027 인보이스(선적용) 경로
     InvoiceBillingManager,
     InvoiceOutcomeHandler,
+    ArrearsManager,
+    ArrearsReader,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
     // 해지·환불 정책 (연간 정산 / 청약철회 창)

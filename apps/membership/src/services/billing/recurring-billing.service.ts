@@ -185,13 +185,23 @@ export class RecurringBillingService {
         );
         break;
       case 'UNCOLLECTIBLE':
-        await this.invoiceOutcomeHandler.handleUncollectible(contractId, invoice.invoiceId, invoice.errorCode);
+        await this.invoiceOutcomeHandler.handleUncollectible(contractId, invoice.invoiceId, invoice.errorCode, {
+          amount: invoice.amount,
+          currency: invoice.currency,
+          periodStart: invoice.periodStart,
+          periodEnd: invoice.periodEnd,
+        });
         break;
       case 'VOID':
         await this.invoiceOutcomeHandler.handleVoided(contractId, invoice.invoiceId, invoice.reason);
         break;
       case 'MANDATE_REJECTED':
-        await this.invoiceOutcomeHandler.handleMandateRejected(contractId, invoice.invoiceId, invoice.errorCode);
+        await this.invoiceOutcomeHandler.handleMandateRejected(contractId, invoice.invoiceId, invoice.errorCode, {
+          amount: invoice.amount,
+          currency: invoice.currency,
+          periodStart: invoice.periodStart,
+          periodEnd: invoice.periodEnd,
+        });
         break;
       default:
         // DRAFT/OPEN/MANDATE_PENDING/ATTEMPTING/PAST_DUE — 아직 진행 중, 다음 주기 재확인

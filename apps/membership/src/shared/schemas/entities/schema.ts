@@ -455,6 +455,68 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
 });
 
 // =================================================================
+// 미수(외상) 원장 — 혜택은 받았는데 수금이 끝내 실패한 주기를 계정에 붙여 둔다
+// =================================================================
+
+/**
+ * 미수 원장. wallet `invoices` 가 «청구» 의 진실 원천이라면 이 표는 «계정에 남은 빚» 의 진실
+ * 원천이다. 둘을 갈라 두는 이유: wallet 은 의도적으로 멤버십 도메인을 모르고 `invoices` 에
+ * user_id 가 없어서, 계약을 새로 파면(재가입) 옛 빚과의 연결이 계약 단위로 끊긴다.
+ *
+ * 한 인보이스는 최대 한 번만 빚이 된다 — `uq_membership_arrears_invoice` 가 그걸 강제한다.
+ * 이 유니크가 없으면 결과 이벤트가 두 번 와서 같은 주기를 두 번 걷는다.
+ */
+export const membershipArrearsStatusEnum = pgEnum('membership_arrears_status', [
+  'OUTSTANDING',
+  'SETTLED',
+  'WAIVED',
+]);
+
+export const membershipArrears = pgTable(
+  'membership_arrears',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => subscriptionContracts.id),
+    /**
+     * 원 인보이스(wallet). 인보이스 행 없이 거절된 경로(결제수단 부재 등)는 계약 단위 합성 키가
+     * 들어오므로 uuid 가 아니라 text 다.
+     */
+    invoiceRef: text('invoice_ref').notNull(),
+    /** 'UNCOLLECTIBLE'(출금 재시도 소진) | 'MANDATE_REJECTED'(계좌 심사 거절·기한초과) */
+    cause: text('cause').notNull(),
+    /** 사유 코드 원문. 심사 기한초과는 별도 상태가 아니라 이 칸의 'MANDATE_TIMEOUT' 로만 구분된다. */
+    causeCode: text('cause_code'),
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull().default('KRW'),
+    /**
+     * 금액의 출처. 'INVOICE' = 발행된 인보이스 금액 그대로. 'PLAN_FALLBACK' = 인보이스 행이 없어
+     * 현재 플랜가로 유도함(플랜가가 그 사이 바뀌었으면 실제 청구액과 다를 수 있다 — 면제 판단 근거).
+     * 'ADMIN_ADJUSTED' = 사람이 금액을 고침.
+     */
+    amountSource: text('amount_source').notNull().default('INVOICE'),
+    periodStart: date('period_start'),
+    periodEnd: date('period_end'),
+    status: membershipArrearsStatusEnum('status').notNull().default('OUTSTANDING'),
+    /** 청산 근거 — 무엇으로 갚았는지(결제 intent·주문 id 등). 면제면 면제 사유. */
+    settlementRef: text('settlement_ref'),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    /** 면제·조정을 실행한 관리자. 시스템 청산이면 NULL. */
+    settledBy: text('settled_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_membership_arrears_invoice').on(table.invoiceRef),
+    // 계정별 잔액 조회가 이 표의 주 질의다 — 미청산만 훑는다.
+    index('idx_membership_arrears_user_status').on(table.userId, table.status),
+    index('idx_membership_arrears_contract').on(table.contractId),
+  ],
+);
+
+// =================================================================
 // 멤버십 혜택 추적 (Membership Benefits Tracking)
 // =================================================================
 
@@ -595,6 +657,7 @@ export const membershipSchema = {
   subscriptionPolicies,
   membershipCycleBenefits,
   membershipDiscountEvents,
+  membershipArrears,
   welcomeMembershipEligibility,
   adminOperationKeys,
 

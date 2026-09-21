@@ -49,13 +49,19 @@ function makeHandler(opts: {
     refundByIntent: jest.fn().mockResolvedValue({ status: 'SUCCEEDED', refundedAmount: 0 }),
     revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
   };
+  // 미수 원장은 이 스펙의 관심사가 아니다 — 회수 경로가 원장을 «부르는지»만 관찰한다.
+  const arrearsManager = {
+    record: jest.fn().mockResolvedValue(true),
+    outstandingTotal: jest.fn().mockResolvedValue(0),
+  };
   const handler = new InvoiceOutcomeHandler(
     { db } as never,
     contractEventManager as never,
     publisher as never,
     paymentClient as never,
+    arrearsManager as never,
   );
-  return { handler, tx, updates, contractEventManager, publisher, paymentClient };
+  return { handler, tx, updates, contractEventManager, publisher, paymentClient, arrearsManager };
 }
 
 const activeContract = { userId: 'u1', status: 'ACTIVE', autoRenewal: true, billingPath: 'INVOICE' };
