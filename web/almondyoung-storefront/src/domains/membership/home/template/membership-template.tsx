@@ -1,6 +1,7 @@
 import SubscriberSection from "../components/subscriber/subscriber-section"
 import NonSubscriberSection from "../components/non-subscriber"
 import MembershipInvoicesSection from "../components/subscriber/membership-invoices-section"
+import MembershipArrearsSection from "../components/membership-arrears-section"
 import RefundStatusCard from "../components/refund-status-card"
 import TerminationNoticeCard from "../components/termination-notice-card"
 import type {
@@ -47,6 +48,9 @@ export default function MembershipTemplate({
           즉시해지하면 아래가 비가입자 화면으로 바뀌므로 가입 여부와 무관하게 맨 위에 둔다. */}
       {/* 왜 끝났는지 먼저 알린다 — 화면에 '가입하기' 만 남으면 고객은 이유를 알 수 없다. */}
       {terminationNotice && <TerminationNoticeCard notice={terminationNotice} />}
+      {/* 미납 요금은 회수된 «뒤에» 남는 것이라 가입 여부와 무관하게 맨 위에 둔다.
+          미수가 없으면 스스로 숨는다. */}
+      <MembershipArrearsSection />
       {refundStatus && <RefundStatusCard refundStatus={refundStatus} />}
       {isMember ? (
         <SubscriberSection

@@ -626,6 +626,12 @@ export function MembershipForm({
             invoiceBillingEnabled={invoiceBillingEnabled}
             bankTransferDelay={tPm("bankTransferDelay")}
           />
+          {/* 동의 «전에» 눈에 닿아야 하는 한 줄. 상세는 위 고지 시트 한 곳에만 둔다. */}
+          {billingMode === "recurring" && (
+            <p className="text-muted-foreground text-xs leading-4">
+              {t("agreeArrearsLine")}
+            </p>
+          )}
           <div ref={agreementSectionRef}>
             <FormField
               control={form.control}
@@ -906,6 +912,13 @@ export function PaymentNoticeBody({
               ? t("noticeMandateInvoice")
               : t.rich("noticeMandateCms", { b })}
           </p>
+        </NoticeSection>
+      )}
+
+      {/* 출금이 끝내 실패하면 «돈이 남는다». 회수만 안내하고 미납을 안 적으면 나중 청구가 분쟁이 된다. */}
+      {billingMode === "recurring" && (
+        <NoticeSection title={t("noticeArrearsTitle")}>
+          <p>{t("noticeArrears")}</p>
         </NoticeSection>
       )}
 

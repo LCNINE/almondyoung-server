@@ -197,3 +197,30 @@ export interface TerminationNoticeDto {
   notice: string
   endedAt: string | null
 }
+
+/** 미수(미납 멤버십 요금) 한 건. 자격이 회수될 때 그 주기의 요금이 원장에 남는다. */
+export interface ArrearsItemDto {
+  id: string
+  amount: number
+  currency: string
+  /** UNCOLLECTIBLE(출금 실패 소진) | MANDATE_REJECTED(계좌 심사 거절) */
+  cause: string
+  causeCode: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  createdAt: string
+}
+
+/** 내 미수 현황. 미수가 없으면 total·count 가 0 이고 items 가 빈 배열이다. */
+export interface MyArrearsDto {
+  outstanding: { total: number; count: number; currency: string }
+  items: ArrearsItemDto[]
+}
+
+/** 「지금 갚기」가 만든 결제. intentId 로 결제 화면(wallet-web)으로 이동한다. */
+export interface ArrearsCheckoutDto {
+  intentId: string
+  amount: number
+  currency: string
+  arrearsIds: string[]
+}

@@ -1,6 +1,7 @@
 "use server"
 
 import type {
+  ArrearsCheckoutDto,
   CancellationMode,
   CancellationPreviewDto,
   CancellationReasonDto,
@@ -9,6 +10,7 @@ import type {
   CycleBenefitHistoryDto,
   MembershipPlanDto,
   MembershipTierDto,
+  MyArrearsDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
   TerminationNoticeDto,
@@ -495,4 +497,37 @@ export async function subscribeWithBillingMethod(
       cache: "no-store",
     }
   )
+}
+
+/**
+ * 내 미수(미납 멤버십 요금) 현황.
+ *
+ * 화면은 「없음」을 이 응답으로만 판정한다 — 캐시된 조회로 부재를 판정하면 있는 미수가 안 보인다.
+ * 조회 실패는 빈 값으로 접는다(미수 안내가 안 뜨는 것이, 마이페이지 전체가 죽는 것보다 낫다).
+ */
+export async function getMyArrears(): Promise<MyArrearsDto> {
+  try {
+    return await api<MyArrearsDto>("membership", "/me/arrears", {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    })
+  } catch {
+    return { outstanding: { total: 0, count: 0, currency: "KRW" }, items: [] }
+  }
+}
+
+/**
+ * 미수 전액 청산 결제 생성. 금액과 대상은 서버가 원장에서 정하므로 여기서 보내지 않는다.
+ * mutation 이라 실패를 삼키지 않는다 — 버튼을 눌렀는데 아무 일도 안 일어나면 안 된다.
+ */
+export async function startArrearsCheckout(
+  returnUrl: string
+): Promise<ArrearsCheckoutDto> {
+  return await api<ArrearsCheckoutDto>("membership", "/me/arrears/checkout", {
+    method: "POST",
+    body: { returnUrl },
+    withAuth: true,
+    cache: "no-store",
+  })
 }

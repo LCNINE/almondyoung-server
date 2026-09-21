@@ -828,7 +828,7 @@
       "failureReason": "Reason: {reason}",
       "failureReasonUnknown": "The withdrawal failed.",
       "failureActionPastDue": "Check your account balance, then tap “Pay again”.",
-      "failureActionUncollectible": "All retries were used and your membership ended. Fund the account and subscribe again — your registered account will be reused.",
+      "failureActionUncollectible": "All retries were used and your membership ended. The fee for this period is still unpaid — pay it from My Page > Membership, then subscribe again and your registered account will be reused.",
       "failureActionMandate": "Your direct debit registration was rejected. Please register a different account under payment methods.",
       "attempts": "Attempt {attempt} of {max}",
       "remainingAttempts": "{remaining} more failure(s) will end your membership",
@@ -1056,6 +1056,21 @@
     "termination": {
       "title": "Your membership has ended",
       "reason": "Reason: {reason}"
+    },
+    "arrears": {
+      "title": "Unpaid membership fee",
+      "whatHappened": "Your auto-debit failed and your membership was ended. The fee for the period you were entitled to is still unpaid.",
+      "totalAmount": "{amount} KRW in total",
+      "amount": "{amount} KRW",
+      "causeUncollectible": "Every payment retry failed",
+      "causeMandateRejected": "Auto-debit account registration was rejected",
+      "whatsNext": "Until it is paid, membership access is no longer granted ahead of payment confirmation. Subscribing, registering an account and shopping all work as usual.",
+      "paymentMethodNotice": "Payment is by bank transfer, the same as a membership payment, and is applied once the deposit is confirmed.",
+      "payNow": "Pay now",
+      "starting": "Opening payment",
+      "startError": "We couldn't start the payment. Please try again in a moment.",
+      "alertTitle": "Unpaid membership fee: {amount} KRW",
+      "alertBody": "See the details and pay"
     }
   },
   "orderActions": {
@@ -1414,6 +1429,9 @@
     "termsTitle": "Almondyoung Membership Terms",
     "unitMonth": "monthly",
     "unitOnce": "30 days",
-    "unitYear": "1 year"
+    "unitYear": "1 year",
+    "noticeArrearsTitle": "Failed debits and unpaid fees",
+    "noticeArrears": "After three failed debit attempts your membership is ended. The fee for the period you were entitled to remains unpaid, and it is due even if you did not use any membership discount during that period. You can pay it any time from My Page > Membership; until then, the next period's access is no longer granted ahead of payment confirmation.",
+    "agreeArrearsLine": "After three failed debits your membership ends, and the fee for the period you were entitled to remains unpaid."
   }
 }
