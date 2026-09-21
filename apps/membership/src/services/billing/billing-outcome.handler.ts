@@ -9,7 +9,7 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
 const DUNNING_MAX_ATTEMPTS = 3;
-const DUNNING_RETRY_HOURS = 72; // 3일 후 재시도
+const DUNNING_RETRY_HOURS = 48; // 2일 후 재시도
 
 @Injectable()
 export class BillingOutcomeHandler {
@@ -417,7 +417,7 @@ export class BillingOutcomeHandler {
       }
 
       // 활성 자동갱신 계약: 취소된 주기를 새 멱등키로 재청구되게 dunning 을 생성/증가시킨다.
-      // 취소-기원 재청구는 즉시 대상이 되도록 nextRetryAt 을 now 로 둔다(실패 dunning 의 72h 지연과 구분).
+      // 취소-기원 재청구는 즉시 대상이 되도록 nextRetryAt 을 now 로 둔다(실패 dunning 의 48h 지연과 구분).
       const nextRetryAt = new Date();
       const [dunning] = await tx
         .select()

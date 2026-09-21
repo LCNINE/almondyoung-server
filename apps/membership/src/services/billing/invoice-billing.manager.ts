@@ -9,9 +9,9 @@ import { WalletCommandPublisher } from './wallet-command.publisher';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { BillingResult } from './billing.manager';
 
-// 레거시 더닝 정책(72h×3)을 인보이스 재시도 정책으로 그대로 실어준다(ADR-0027 §10-1).
+// 더닝 정책(48h×3)을 인보이스 재시도 정책으로 그대로 실어준다(ADR-0027 §10-1).
 const INVOICE_MAX_ATTEMPTS = 3;
-const INVOICE_RETRY_INTERVAL_HOURS = 72;
+const INVOICE_RETRY_INTERVAL_HOURS = 48;
 
 /**
  * 인보이스(선적용) 경로의 청구 발행(ADR-0027). 레거시와 달리 락/더닝 큐를 쓰지 않는다 —

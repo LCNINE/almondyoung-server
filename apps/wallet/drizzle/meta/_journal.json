@@ -120,6 +120,13 @@
       "when": 1789016974700,
       "tag": "20260910050934_add-cms-account-checks",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789964508029,
+      "tag": "20260921042148_lower-invoice-retry-interval-to-48h",
+      "breakpoints": true
     }
   ]
 }

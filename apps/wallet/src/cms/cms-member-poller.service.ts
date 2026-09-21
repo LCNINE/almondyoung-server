@@ -41,9 +41,13 @@ export class CmsMemberPollerService {
   /**
    * 회원등록 결과 폴링.
    * 회원등록은 영업일 12:00 마감, 결과는 D+1에 확인 가능.
-   * 평일 09:00, 12:00, 15:00 실행.
+   * 평일 09:00~17:00 매시 실행 — 승인을 늦게 알수록 출금이 통째로 하루 밀린다.
+   * CMS 출금은 출금일 전 영업일 17:00 마감이라, 17시 전에 승인을 잡아야 그 인보이스가
+   * 익영업일 출금에 실린다(REGISTERED 훅이 다음 시도를 즉시로 당긴다).
    */
-  @CronOnce('0 0 9,12,15 * * 1-5', { name: 'cms-member-poll' })
+  // 시간대를 명시하지 않으면 UTC 벽시계로 발화한다 — 옛 '9,12,15' 는 KST 18·21·24시,
+  // 즉 CMS 17:00 마감이 지난 뒤였다. 승인을 그날 못 잡아 출금이 하루씩 밀리던 자리.
+  @CronOnce('0 0 9-17 * * 1-5', { name: 'cms-member-poll', timeZone: 'Asia/Seoul' })
   async pollPendingMembers(): Promise<void> {
     const pendingMembers = await this.cmsMemberService.findPendingMembers();
     if (pendingMembers.length === 0) return;

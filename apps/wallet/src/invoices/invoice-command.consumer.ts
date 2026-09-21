@@ -15,7 +15,7 @@ import { InvoiceEventType, invoicePartitionKey } from './invoice-event.builder';
 import { EventPayloadOf } from '@packages/event-contracts/types';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
-const DEFAULT_RETRY_INTERVAL_HOURS = 72;
+const DEFAULT_RETRY_INTERVAL_HOURS = 48;
 
 /**
  * ADR-0027 §4-1. membership 의 CreateInvoice/VoidInvoice 커맨드를 받아 인보이스를 생성/무효화한다.

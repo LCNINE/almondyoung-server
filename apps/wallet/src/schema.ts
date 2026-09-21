@@ -880,7 +880,7 @@ export const invoices = pgTable(
     attemptCount: integer('attempt_count').notNull().default(0),
     // 재시도 정책은 생성 커맨드가 실어준다(ADR-0027 §10-1) — wallet 은 subscriber 별 정책 무지 유지.
     maxAttempts: integer('max_attempts').notNull().default(3),
-    retryIntervalHours: integer('retry_interval_hours').notNull().default(72),
+    retryIntervalHours: integer('retry_interval_hours').notNull().default(48),
     // 다음 charge 시도 시각. 스케줄 대상 상태(OPEN/MANDATE_PENDING/PAST_DUE)는 NOT NULL 강제 —
     // executor 가 (status, next_attempt_at <= now()) 만 보고 스캔해도 놓치는 인보이스가 없다.
     // OPEN 생성 시 due_date 로 초기화. 터미널은 NULL 강제, DRAFT/ATTEMPTING 은 제약 없음(자유).
