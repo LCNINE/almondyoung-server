@@ -144,6 +144,16 @@ export const smsDevices = pgTable('sms_devices', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const smsTemplates = pgTable('sms_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  category: notificationCategoryEnum('category').notNull(),
+  content: text('content').notNull(),
+  createdBy: uuid('created_by').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // 대량 발송 캠페인 테이블
 export const notificationCampaigns = pgTable(
   'notification_campaigns',
@@ -473,6 +483,7 @@ export const notificationTables = {
   fcmTokens,
   fcmTopicSubscriptions,
   smsDevices,
+  smsTemplates,
 };
 
 // Export types
@@ -502,6 +513,8 @@ export type FcmTopicSubscription = typeof fcmTopicSubscriptions.$inferSelect;
 export type NewFcmTopicSubscription = typeof fcmTopicSubscriptions.$inferInsert;
 export type SmsDevice = typeof smsDevices.$inferSelect;
 export type NewSmsDevice = typeof smsDevices.$inferInsert;
+export type SmsTemplate = typeof smsTemplates.$inferSelect;
+export type NewSmsTemplate = typeof smsTemplates.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;

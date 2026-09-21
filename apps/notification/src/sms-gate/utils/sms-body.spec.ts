@@ -1,4 +1,4 @@
-import { composeSmsBody, isMarketingQuietHours } from './sms-body';
+import { composeSmsBody, fillName, isMarketingQuietHours } from './sms-body';
 
 describe('composeSmsBody', () => {
   it('정보성은 본문 그대로', () => {
@@ -20,5 +20,11 @@ describe('isMarketingQuietHours', () => {
     expect(isMarketingQuietHours(new Date('2026-09-18T12:00:00Z'))).toBe(true);
     expect(isMarketingQuietHours(new Date('2026-09-18T22:59:00Z'))).toBe(true);
     expect(isMarketingQuietHours(new Date('2026-09-18T23:00:00Z'))).toBe(false);
+  });
+});
+
+describe('fillName', () => {
+  it('{{이름}} 을 모두 수신자 이름으로 바꾼다', () => {
+    expect(fillName('{{이름}}님, {{이름}}님께 드리는 혜택', '홍길동')).toBe('홍길동님, 홍길동님께 드리는 혜택');
   });
 });

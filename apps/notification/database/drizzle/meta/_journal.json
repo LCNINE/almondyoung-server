@@ -15,6 +15,13 @@
       "when": 1789712373363,
       "tag": "20260918061933_add-sms-devices",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789964267522,
+      "tag": "20260921041747_add-sms-templates",
+      "breakpoints": true
     }
   ]
 }

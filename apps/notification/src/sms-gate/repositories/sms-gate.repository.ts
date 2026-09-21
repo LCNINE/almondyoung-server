@@ -1,15 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, count, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {
   NewNotification,
   NewSmsDevice,
+  NewSmsTemplate,
   Notification,
   notifications,
   notificationTables,
   SmsDevice,
   smsDevices,
+  SmsTemplate,
+  smsTemplates,
 } from '../../../database/schemas/notification-schema';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 
@@ -58,6 +61,31 @@ export class SmsGateRepository {
 
   async deleteDevice(id: string): Promise<void> {
     await this.dbService.db.delete(smsDevices).where(eq(smsDevices.id, id));
+  }
+
+  listTemplates(): Promise<SmsTemplate[]> {
+    return this.dbService.db.select().from(smsTemplates).orderBy(desc(smsTemplates.updatedAt));
+  }
+
+  async findTemplateById(id: string): Promise<SmsTemplate | undefined> {
+    const [row] = await this.dbService.db.select().from(smsTemplates).where(eq(smsTemplates.id, id));
+    return row;
+  }
+
+  async createTemplate(values: NewSmsTemplate): Promise<SmsTemplate> {
+    const [row] = await this.dbService.db.insert(smsTemplates).values(values).returning();
+    return row;
+  }
+
+  async updateTemplate(id: string, values: Partial<Pick<SmsTemplate, 'name' | 'category' | 'content'>>): Promise<void> {
+    await this.dbService.db
+      .update(smsTemplates)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(smsTemplates.id, id));
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    await this.dbService.db.delete(smsTemplates).where(eq(smsTemplates.id, id));
   }
 
   async countSentSince(since: Date): Promise<Map<string, number>> {
