@@ -2,6 +2,7 @@
 
 import {
   CreateSmsCampaignDto,
+  ReplySmsConversationDto,
   SendSmsGateMessageDto,
   smsGateApi,
   SmsDeviceFormValues,
@@ -86,6 +87,14 @@ export const useStopSmsCampaign = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (campaignId: string) => smsGateApi.stopCampaign(campaignId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
+  });
+};
+
+export const useReplySmsConversation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: ReplySmsConversationDto) => smsGateApi.replyConversation(dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
