@@ -40,9 +40,14 @@ export class RecurringBillingService {
   ) {}
 
   /**
-   * 매일 09시 정기결제 스케줄러 실행
+   * 매일 KST 09시 정기결제 스케줄러 실행.
+   *
+   * 시간대를 안 적으면 UTC 벽시계로 발화해 KST 18시가 된다. CMS 출금은 «출금일 전 영업일 17:00»
+   * 마감이라, 18시에 인보이스를 발행하면 그날 마감을 이미 넘겨 출금일이 통째로 하루 밀린다
+   * (라이브 실측: 출금 요청의 68%가 KST 18시에 생성됐고, 요청→출금일 중앙값이 1일이 아니라 2일이었다).
+   * 같은 이유로 cms-member-poller 가 먼저 고쳐졌다 — 이 자리는 그때 빠졌던 짝이다.
    */
-  @CronOnce(CronExpression.EVERY_DAY_AT_9AM, { name: 'billing-daily-scheduler' })
+  @CronOnce(CronExpression.EVERY_DAY_AT_9AM, { name: 'billing-daily-scheduler', timeZone: 'Asia/Seoul' })
   async runDailyBillingScheduler(): Promise<void> {
     this.logger.log('Starting daily billing scheduler...');
 

@@ -96,7 +96,7 @@ export class EntrancePasswordCleaner {
     private readonly db: DbService<typeof wmsSchema>,
   ) {}
 
-  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'entrance-password-sweep' })
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'entrance-password-sweep', timeZone: 'Asia/Seoul' })
   async sweep(): Promise<void> {
     if (this.isSweeping) {
       this.logger.debug('이전 공동현관 비번 파기 스윕 진행 중, 건너뜀');
