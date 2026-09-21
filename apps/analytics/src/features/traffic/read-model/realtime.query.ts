@@ -111,7 +111,7 @@ export class RealtimeQuery {
     let byMinute: RunRealtimeReportResponse;
     let pages: RunRealtimeReportResponse;
     let devices: RunRealtimeReportResponse;
-    let pageTypes: RunRealtimeReportResponse;
+    let pageTypes: RunRealtimeReportResponse | null;
     try {
       [totals, byMinute, pages, devices, pageTypes] = await Promise.all([
         this.ga4.runRealtimeReport({ metrics: [{ name: 'activeUsers' }] }),
@@ -132,17 +132,24 @@ export class RealtimeQuery {
           orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
           limit: 10,
         }),
-        this.ga4.runRealtimeReport({
-          dimensions: [{ name: 'eventName' }, { name: 'deviceCategory' }],
-          metrics: [{ name: 'activeUsers' }],
-          dimensionFilter: {
-            filter: {
-              fieldName: 'eventName',
-              inListFilter: { values: REALTIME_PAGE_TYPES.map((type) => type.key) },
+        this.ga4
+          .runRealtimeReport({
+            dimensions: [{ name: 'eventName' }, { name: 'deviceCategory' }],
+            metrics: [{ name: 'eventCount' }],
+            dimensionFilter: {
+              filter: {
+                fieldName: 'eventName',
+                inListFilter: { values: REALTIME_PAGE_TYPES.map((type) => type.key) },
+              },
             },
-          },
-          limit: 100,
-        }),
+            limit: 100,
+          })
+          .catch((error: unknown) => {
+            this.logger.warn(
+              `GA4 실시간 화면 종류 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            return null;
+          }),
       ]);
     } catch (error) {
       this.logger.warn(`GA4 실시간 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -156,7 +163,7 @@ export class RealtimeQuery {
       byMinute: mapRealtimeByMinute(byMinute),
       pages: mapRealtimeDimension(pages),
       devices: mapRealtimeDimension(devices),
-      pageTypes: mapRealtimePageTypes(pageTypes),
+      pageTypes: pageTypes ? mapRealtimePageTypes(pageTypes) : [],
     };
     this.cached = { at: Date.now(), value };
     return value;

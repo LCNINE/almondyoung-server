@@ -60,7 +60,7 @@ export function RealtimeBoard() {
         <PanelHeader
           title="실시간 접속자"
           help={[
-            '최근 30분 동안 각 화면을 본 사람 수입니다. 한 사람이 여러 화면을 봤으면 화면마다 셉니다.',
+            '최근 30분 동안 각 화면이 열린 횟수입니다. 한 사람이 같은 화면을 여러 번 열면 그만큼 셉니다.',
             '전체에는 태블릿도 포함됩니다.',
             '20초마다 갱신합니다.',
             ...(observedAt ? [`${observedAt} 기준입니다.`] : []),
@@ -68,12 +68,14 @@ export function RealtimeBoard() {
           href="/statistics/traffic"
         />
         <p className="mb-1 text-xs text-[#757575]">
-          단위/명{realtime.isError ? '' : ` · 지금 ${formatCount(realtime.data?.activeUsers ?? 0)}명`}
+          단위/회{realtime.isError ? '' : ` · 지금 ${formatCount(realtime.data?.activeUsers ?? 0)}명`}
         </p>
         {realtime.isError ? (
           <p className="py-16 text-center text-xs text-red-500">실시간 접속을 불러오지 못했습니다.</p>
         ) : realtime.isLoading ? (
           <Skeleton className="h-[284px] w-full" />
+        ) : pageData.length === 0 ? (
+          <p className="py-16 text-center text-xs text-red-500">화면별 조회수를 불러오지 못했습니다.</p>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={256}>
@@ -90,7 +92,7 @@ export function RealtimeBoard() {
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
                   cursor={{ stroke: '#707070', strokeDasharray: '3 3' }}
-                  formatter={(value: number, name: string) => [`${formatCount(value)}명`, name]}
+                  formatter={(value: number, name: string) => [`${formatCount(value)}회`, name]}
                 />
                 <Bar dataKey="total" name="전체" fill={TOTAL_COLOR} radius={[4, 4, 0, 0]} maxBarSize={20} />
                 {DEVICE_SERIES.map((series) => (

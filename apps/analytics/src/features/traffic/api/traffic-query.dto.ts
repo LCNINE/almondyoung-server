@@ -106,6 +106,6 @@ export class RealtimeTrafficResponseDto {
   byMinute: RealtimeBucketDto[];
   pages: RealtimeDimensionRowDto[];
   devices: RealtimeDimensionRowDto[];
-  /** 화면 종류별 최근 30분 활성 사용자. 스토어프론트가 화면마다 보내는 이벤트 이름으로 나눈다. */
+  /** 화면 종류별 최근 30분 조회 횟수(eventCount). 스토어프론트가 화면마다 보내는 이벤트 이름으로 나눈다. */
   pageTypes: RealtimePageTypeDto[];
 }
