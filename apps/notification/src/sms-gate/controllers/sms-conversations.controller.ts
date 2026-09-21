@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { ListSmsConversationsDto, ReplySmsConversationDto } from '../dto';
@@ -20,6 +20,13 @@ export class SmsConversationsController {
   detail(@Query('phone') phone?: string) {
     if (!phone) throw new BadRequestException('phone is required');
     return this.service.detail(phone);
+  }
+
+  @Delete()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  delete(@Query('phone') phone?: string) {
+    if (!phone) throw new BadRequestException('phone is required');
+    return this.service.delete(phone);
   }
 
   @Post('reply')

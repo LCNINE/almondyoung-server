@@ -43,6 +43,13 @@
       "when": 1789968725266,
       "tag": "20260921053205_add-sms-device-offline-alerted-at",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789982793796,
+      "tag": "20260921092633_add-inbound-messages-deleted-at",
+      "breakpoints": true
     }
   ]
 }

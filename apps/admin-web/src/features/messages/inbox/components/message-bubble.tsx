@@ -40,6 +40,7 @@ export function MessageBubble({
             isOutbound ? 'text-white/75' : 'text-muted-foreground'
           )}
         >
+          {message.sentByName && <span>{message.sentByName} ·</span>}
           <span>{format(new Date(message.createdAt), 'M/d a h:mm', { locale: ko })}</span>
           {inProgress ? (
             <Loader2 className="size-3 animate-spin" aria-label={message.state ? STATE_LABEL[message.state] : ''} />

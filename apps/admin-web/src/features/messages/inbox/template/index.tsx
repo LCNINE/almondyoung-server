@@ -26,7 +26,7 @@ export default function SmsInboxTemplate() {
   return (
     <Container>
       <Header
-        title="받은 문자"
+        title="메시지함"
         titleAside={<HelpSheet />}
         subtitle="발송폰으로 들어온 문자를 번호별 대화로 보여줍니다. 답장은 받은 그 폰에서 나갑니다."
       />
@@ -37,7 +37,7 @@ export default function SmsInboxTemplate() {
         <div className="flex min-h-0 flex-col gap-3">
           <Input placeholder="번호·내용 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
           {isLoading && <Skeleton className="h-40 w-full" />}
-          {isError && <p className="text-destructive text-sm">받은 문자를 불러오지 못했습니다.</p>}
+          {isError && <p className="text-destructive text-sm">메시지를 불러오지 못했습니다.</p>}
           {data && (
             <ConversationList
               conversations={conversations}
@@ -51,7 +51,11 @@ export default function SmsInboxTemplate() {
             </Button>
           )}
         </div>
-        <ConversationPanel key={selectedPhone ?? 'none'} phoneNumber={selectedPhone} />
+        <ConversationPanel
+          key={selectedPhone ?? 'none'}
+          phoneNumber={selectedPhone}
+          onDeleted={() => setSelectedPhone(null)}
+        />
       </div>
     </Container>
   );

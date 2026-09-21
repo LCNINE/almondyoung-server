@@ -19,7 +19,7 @@ export function ConversationList({
   if (conversations.length === 0) {
     return (
       <div className="text-muted-foreground flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm">
-        받은 문자가 없습니다.
+        메시지가 없습니다.
       </div>
     );
   }

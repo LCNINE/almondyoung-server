@@ -13,6 +13,11 @@ export class SmsConversationManager {
     private readonly userContactClient: UserContactClient,
   ) {}
 
+  async delete(phoneNumber: string): Promise<void> {
+    const deleted = await this.repository.deleteConversation(toKrE164(phoneNumber));
+    if (deleted === 0) throw new NotFoundError(`삭제할 대화가 없습니다: ${phoneNumber}`);
+  }
+
   async reply(dto: ReplySmsConversationDto, sentBy: string): Promise<SmsGateSendResult> {
     const phoneNumber = toKrE164(dto.phoneNumber);
     const latest = (await this.repository.findInbound(phoneNumber)).at(-1);

@@ -167,6 +167,7 @@ export const inboundMessages = pgTable(
     userId: varchar('user_id', { length: 100 }),
     receivedAt: timestamp('received_at').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at'),
   },
   (table) => ({
     phoneReceivedIdx: index('idx_inbound_phone_received').on(table.phoneNumber, table.receivedAt),

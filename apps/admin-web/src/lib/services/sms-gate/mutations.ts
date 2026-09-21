@@ -98,3 +98,11 @@ export const useReplySmsConversation = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+
+export const useDeleteSmsConversation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (phoneNumber: string) => smsGateApi.deleteConversation(phoneNumber),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
+  });
+};

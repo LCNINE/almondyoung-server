@@ -27,6 +27,15 @@ type Schema = typeof notificationTables;
 const isSmsGate = eq(notifications.providerId, SMS_GATE_PROVIDER_ID);
 const isSmsGateCampaign = sql`${notificationCampaigns.metadata}->>'provider' = 'sms-gate'`;
 const INSERT_CHUNK = 1000;
+const isPhoneMessage = or(isSmsGate, sql`${notifications.metadata}->>'route' = 'nhn'`);
+const inboundPhoneKey = sql<string>`regexp_replace(${inboundMessages.phoneNumber}, '^[+]82', '0')`;
+const outboundPhoneKey = sql<string>`regexp_replace(regexp_replace(${notifications.payload}->>'phoneNumber', '[^0-9]', '', 'g'), '^82', '0')`;
+const outboundAt = sql`coalesce(${notifications.sentAt}, ${notifications.createdAt})`;
+
+export interface ConversationRow {
+  inbound: InboundMessage;
+  lastOutbound: { body: string; at: Date } | null;
+}
 
 export interface CampaignStatusCount {
   campaignId: string;
@@ -267,18 +276,19 @@ export class SmsGateRepository {
     page: number,
     limit: number,
     q?: string,
-  ): Promise<{ items: InboundMessage[]; total: number }> {
+  ): Promise<{ items: ConversationRow[]; total: number }> {
     const keyword = q?.trim();
     const digits = keyword?.replace(/^\+82/, '0').replace(/\D/g, '');
+    const alive = isNull(inboundMessages.deletedAt);
     const matchesKeyword = keyword
       ? or(
-          digits ? sql`regexp_replace(${inboundMessages.phoneNumber}, '^[+]82', '0') like ${`%${digits}%`}` : undefined,
+          digits ? sql`${inboundPhoneKey} like ${`%${digits}%`}` : undefined,
           inArray(
             inboundMessages.phoneNumber,
             this.dbService.db
               .selectDistinct({ phoneNumber: inboundMessages.phoneNumber })
               .from(inboundMessages)
-              .where(ilike(inboundMessages.body, `%${keyword}%`)),
+              .where(and(alive, ilike(inboundMessages.body, `%${keyword}%`))),
           ),
         )
       : undefined;
@@ -286,23 +296,60 @@ export class SmsGateRepository {
     const latest = this.dbService.db
       .selectDistinctOn([inboundMessages.phoneNumber])
       .from(inboundMessages)
-      .where(matchesKeyword)
+      .where(and(alive, matchesKeyword))
       .orderBy(inboundMessages.phoneNumber, desc(inboundMessages.receivedAt), desc(inboundMessages.createdAt))
       .as('latest');
 
-    const [items, [totalRow]] = await Promise.all([
+    const lastOutbound = this.dbService.db
+      .selectDistinctOn([outboundPhoneKey], {
+        phoneKey: sql<string>`${outboundPhoneKey}`.as('phone_key'),
+        body: sql<string | null>`${notifications.renderedContent}->>'body'`.as('outbound_body'),
+        at: sql<Date>`${outboundAt}`.mapWith(notifications.createdAt).as('outbound_at'),
+      })
+      .from(notifications)
+      .where(
+        and(
+          isPhoneMessage,
+          inArray(
+            outboundPhoneKey,
+            this.dbService.db.selectDistinct({ phoneKey: inboundPhoneKey }).from(inboundMessages).where(alive),
+          ),
+        ),
+      )
+      .orderBy(outboundPhoneKey, desc(outboundAt))
+      .as('last_outbound');
+
+    const [rows, [totalRow]] = await Promise.all([
       this.dbService.db
         .select()
         .from(latest)
-        .orderBy(desc(latest.receivedAt), asc(latest.phoneNumber))
+        .leftJoin(lastOutbound, sql`regexp_replace(${latest.phoneNumber}, '^[+]82', '0') = ${lastOutbound.phoneKey}`)
+        .orderBy(sql`greatest(${latest.receivedAt}, ${lastOutbound.at}) desc`, asc(latest.phoneNumber))
         .limit(limit)
         .offset((page - 1) * limit),
       this.dbService.db
         .select({ total: sql<number>`count(distinct ${inboundMessages.phoneNumber})`.mapWith(Number) })
         .from(inboundMessages)
-        .where(matchesKeyword),
+        .where(and(alive, matchesKeyword)),
     ]);
-    return { items, total: totalRow?.total ?? 0 };
+    return {
+      items: rows.map((row) => ({
+        inbound: row.latest,
+        lastOutbound: row.last_outbound?.at
+          ? { body: row.last_outbound.body ?? '', at: row.last_outbound.at }
+          : null,
+      })),
+      total: totalRow?.total ?? 0,
+    };
+  }
+
+  async deleteConversation(phoneNumber: string): Promise<number> {
+    const deleted = await this.dbService.db
+      .update(inboundMessages)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(inboundMessages.phoneNumber, phoneNumber), isNull(inboundMessages.deletedAt)))
+      .returning({ id: inboundMessages.id });
+    return deleted.length;
   }
 
   findInbound(phoneNumber: string): Promise<InboundMessage[]> {
@@ -322,7 +369,7 @@ export class SmsGateRepository {
       .where(
         and(
           inArray(sql`regexp_replace(${notifications.payload}->>'phoneNumber', '[^0-9]', '', 'g')`, variants),
-          or(isSmsGate, sql`${notifications.metadata}->>'route' = 'nhn'`),
+          isPhoneMessage,
         ),
       )
       .orderBy(desc(notifications.createdAt))

@@ -115,6 +115,7 @@ export interface ConversationMessage {
   state: ConversationMessageState | null;
   deviceId: string | null;
   viaNhn: boolean;
+  sentByName: string | null;
   createdAt: string;
 }
 
@@ -242,6 +243,10 @@ export const smsGateApi = {
       params: { phone: phoneNumber },
     });
     return response.data;
+  },
+
+  deleteConversation: async (phoneNumber: string): Promise<void> => {
+    await client.delete(`${BASE}/conversations`, { params: { phone: phoneNumber } });
   },
 
   replyConversation: async (dto: ReplySmsConversationDto): Promise<SmsGateSendResult> => {

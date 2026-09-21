@@ -6,6 +6,8 @@ import { ListSmsConversationsDto } from '../dto';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
 const OUTBOUND_LIMIT = 500;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
 
 export type ConversationMessageState = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
 
@@ -16,6 +18,7 @@ export interface ConversationMessage {
   state: ConversationMessageState | null;
   deviceId: string | null;
   viaNhn: boolean;
+  sentByName: string | null;
   createdAt: Date;
 }
 
@@ -62,13 +65,16 @@ export class SmsConversationReader {
 
   async list(dto: ListSmsConversationsDto): Promise<ConversationPage> {
     const { items, total } = await this.repository.pageLatestInboundPerPhone(dto.page, dto.limit, dto.q);
-    const contacts = await this.loadContacts(items.flatMap((m) => (m.userId ? [m.userId] : [])));
+    const contacts = await this.loadContacts(items.flatMap(({ inbound }) => (inbound.userId ? [inbound.userId] : [])));
     return {
-      items: items.map((m) => ({
-        phoneNumber: m.phoneNumber,
-        userId: m.userId,
-        name: m.userId ? (contacts.get(m.userId)?.username ?? null) : null,
-        lastMessage: { text: m.body, receivedAt: m.receivedAt },
+      items: items.map(({ inbound, lastOutbound }) => ({
+        phoneNumber: inbound.phoneNumber,
+        userId: inbound.userId,
+        name: inbound.userId ? (contacts.get(inbound.userId)?.username ?? null) : null,
+        lastMessage:
+          lastOutbound && lastOutbound.at > inbound.receivedAt
+            ? { text: lastOutbound.body, receivedAt: lastOutbound.at }
+            : { text: inbound.body, receivedAt: inbound.receivedAt },
       })),
       total,
       page: dto.page,
@@ -78,14 +84,19 @@ export class SmsConversationReader {
 
   async detail(phoneNumber: string): Promise<ConversationDetail> {
     const phone = toKrE164(phoneNumber);
-    const [inbound, outbound, currentUserId] = await Promise.all([
+    const [allInbound, allOutbound, currentUserId] = await Promise.all([
       this.repository.findInbound(phone),
       this.repository.findPhoneMessagesTo(phone, OUTBOUND_LIMIT),
       this.currentOwner(phone),
     ]);
+    // 삭제한 대화는 그 시점 이전 기록을 감춘다. 이후 새 문자가 오면 거기서부터 다시 보인다.
+    const deletedUntil = Math.max(0, ...allInbound.map((m) => m.deletedAt?.getTime() ?? 0));
+    const inbound = allInbound.filter((m) => !m.deletedAt);
+    const outbound = allOutbound.filter((n) => (n.sentAt ?? n.createdAt).getTime() > deletedUntil);
     const latest = inbound.at(-1);
     const userId = currentUserId === undefined ? (latest?.userId ?? null) : currentUserId;
-    const contacts = await this.loadContacts(userId ? [userId] : []);
+    const senderIds = outbound.flatMap((n) => (isUuid(n.metadata?.sentBy) ? [n.metadata.sentBy] : []));
+    const contacts = await this.loadContacts([...(userId ? [userId] : []), ...senderIds]);
 
     const messages: ConversationMessage[] = [
       ...inbound.map((m) => ({
@@ -95,6 +106,7 @@ export class SmsConversationReader {
         state: null,
         deviceId: m.deviceId,
         viaNhn: false,
+        sentByName: null,
         createdAt: m.receivedAt,
       })),
       ...outbound.map((n) => ({
@@ -104,6 +116,7 @@ export class SmsConversationReader {
         state: STATE[n.status],
         deviceId: n.smsDeviceId,
         viaNhn: n.metadata?.route === 'nhn',
+        sentByName: isUuid(n.metadata?.sentBy) ? (contacts.get(n.metadata.sentBy)?.username ?? null) : null,
         createdAt: n.sentAt ?? n.createdAt,
       })),
     ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
