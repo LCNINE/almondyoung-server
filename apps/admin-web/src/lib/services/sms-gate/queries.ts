@@ -30,3 +30,18 @@ export const useSmsTemplates = () => {
     queryFn: () => smsGateApi.getTemplates(),
   });
 };
+
+export const useSmsAudience = () => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.audience(),
+    queryFn: () => smsGateApi.getAudience(),
+  });
+};
+
+export const useSmsCampaigns = () => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.campaigns(),
+    queryFn: () => smsGateApi.getCampaigns(),
+    refetchInterval: 30_000,
+  });
+};

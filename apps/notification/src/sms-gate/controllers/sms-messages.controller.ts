@@ -16,6 +16,11 @@ export class SmsMessagesController {
     return this.service.send(dto, user.userId);
   }
 
+  @Get('capacity')
+  capacity(@Query('deviceId') deviceId?: string) {
+    return this.service.capacity(deviceId);
+  }
+
   @Get()
   find(@Query('ids') ids = '') {
     return this.service.find(ids.split(',').filter(Boolean));

@@ -24,11 +24,11 @@ export function isSendable(device: DeviceCandidate, now: Date): boolean {
   return device.enabled && device.sentToday < device.dailyLimit && isOnline(device.lastSeen, now);
 }
 
-export function pickDevice(
-  devices: DeviceCandidate[],
+export function pickDevice<T extends DeviceCandidate>(
+  devices: T[],
   now: Date,
   requestedDeviceId?: string | null,
-): DeviceCandidate | null {
+): T | null {
   if (requestedDeviceId) {
     const requested = devices.find((d) => d.deviceId === requestedDeviceId);
     return requested && isSendable(requested, now) ? requested : null;
@@ -37,4 +37,10 @@ export function pickDevice(
     .filter((d) => isSendable(d, now))
     .sort((a, b) => a.dailyLimit - a.sentToday - (b.dailyLimit - b.sentToday))
     .pop() ?? null;
+}
+
+export function remainingCapacity(devices: DeviceCandidate[], now: Date, requestedDeviceId?: string | null): number {
+  return devices
+    .filter((d) => (!requestedDeviceId || d.deviceId === requestedDeviceId) && isSendable(d, now))
+    .reduce((sum, d) => sum + d.dailyLimit - d.sentToday, 0);
 }

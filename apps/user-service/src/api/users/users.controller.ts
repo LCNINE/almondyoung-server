@@ -192,6 +192,29 @@ export class UsersController {
   }
 
   @ApiOperation({
+    summary: '[Internal] 폰 문자 대량 발송 대상 (활성 회원 중 휴대폰 번호가 있는 사람)',
+    description: 'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @ApiQuery({ name: 'marketingOnly', required: false, type: Boolean })
+  @Get('internal/sms-audience')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  async getSmsAudience(@Query('marketingOnly') marketingOnly?: string) {
+    return this.usersService.findSmsAudience(marketingOnly === 'true');
+  }
+
+  @ApiOperation({
+    summary: '[Internal] 폰 문자 대량 발송 대상 인원 요약',
+    description: 'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @Get('internal/sms-audience/summary')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  async getSmsAudienceSummary() {
+    return this.usersService.summarizeSmsAudience();
+  }
+
+  @ApiOperation({
     summary: '[Internal] 휴대폰 번호로 마케팅 수신 동의 철회',
     description:
       '문자 답장 "수신거부" 처리용. 같은 번호를 쓰는 계정 전부를 철회한다. ' +

@@ -33,6 +33,7 @@ export interface SendSmsGateMessageDto {
   content: string;
   category: SmsGateCategory;
   deviceId?: string;
+  nhnFallback?: boolean;
 }
 
 export interface SmsGateSendResult {
@@ -50,6 +51,7 @@ export interface SmsGateMessage {
   sentAt: string | null;
   errorDetails: { message: string } | null;
   payload: { phoneNumber?: string; username?: string } | null;
+  metadata: { route?: 'nhn' } | null;
 }
 
 export interface SmsTemplateFormValues {
@@ -64,6 +66,44 @@ export interface SmsTemplate extends SmsTemplateFormValues {
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SmsAudienceSummary {
+  active: number;
+  withPhone: number;
+  consented: number;
+}
+
+export interface CreateSmsCampaignDto {
+  name: string;
+  category: SmsGateCategory;
+  content: string;
+  sendAt?: string;
+}
+
+export interface SmsCampaignPreview {
+  audience: SmsAudienceSummary;
+  recipients: number;
+  excluded: number;
+  ahead: number;
+  window: { start: string; end: string };
+  devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
+  estimatedStartDate: string | null;
+  estimatedCompleteDate: string | null;
+}
+
+export type SmsCampaignState = 'SCHEDULED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
+
+export interface SmsCampaign {
+  campaignId: string;
+  name: string;
+  category: SmsGateCategory;
+  content: string;
+  sendAt: string | null;
+  state: SmsCampaignState;
+  createdAt: string;
+  counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
+  estimatedCompleteDate: string | null;
 }
 
 const BASE = `${NOTIFICATION_SERVICE_BASE_URL}/sms-gate`;
@@ -116,5 +156,39 @@ export const smsGateApi = {
 
   deleteTemplate: async (id: string): Promise<void> => {
     await client.delete(`${BASE}/templates/${id}`);
+  },
+
+  getCapacity: async (deviceId?: string): Promise<{ remaining: number }> => {
+    const response = await client.get<{ remaining: number }>(`${BASE}/messages/capacity`, {
+      params: deviceId ? { deviceId } : undefined,
+    });
+    return response.data;
+  },
+
+  getAudience: async (): Promise<SmsAudienceSummary> => {
+    const response = await client.get<SmsAudienceSummary>(`${BASE}/campaigns/audience`);
+    return response.data;
+  },
+
+  previewCampaign: async (
+    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt'>
+  ): Promise<SmsCampaignPreview> => {
+    const response = await client.post<SmsCampaignPreview>(`${BASE}/campaigns/preview`, dto);
+    return response.data;
+  },
+
+  getCampaigns: async (): Promise<SmsCampaign[]> => {
+    const response = await client.get<SmsCampaign[]>(`${BASE}/campaigns`);
+    return response.data;
+  },
+
+  createCampaign: async (dto: CreateSmsCampaignDto): Promise<{ campaignId: string; recipients: number }> => {
+    const response = await client.post<{ campaignId: string; recipients: number }>(`${BASE}/campaigns`, dto);
+    return response.data;
+  },
+
+  stopCampaign: async (campaignId: string): Promise<{ cancelled: number }> => {
+    const response = await client.post<{ cancelled: number }>(`${BASE}/campaigns/${campaignId}/stop`);
+    return response.data;
   },
 };

@@ -43,7 +43,11 @@ export function SendResults({ ids, devices }: { ids: string[]; devices: SmsDevic
                 {STATUS_LABEL[m.status]}
               </span>
             </div>
-            {m.smsDeviceId && <span className="text-muted-foreground text-xs">{deviceName(m.smsDeviceId)}</span>}
+            {m.metadata?.route === 'nhn' ? (
+              <span className="text-muted-foreground text-xs">대표번호(NHN)</span>
+            ) : (
+              m.smsDeviceId && <span className="text-muted-foreground text-xs">{deviceName(m.smsDeviceId)}</span>
+            )}
             {m.status === 'FAILED' && m.errorDetails?.message && (
               <span className="text-destructive text-xs">{m.errorDetails.message}</span>
             )}
