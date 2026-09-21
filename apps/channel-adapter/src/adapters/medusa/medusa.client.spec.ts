@@ -599,6 +599,39 @@ describe('MedusaClient product sellable inventory projection', () => {
     expect(result.variants[1]).not.toHaveProperty('id');
   });
 
+  it('keeps projection-owned metadata (comingSoon, inboundDate) when a product edit re-syncs variants', async () => {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      variants: [
+        {
+          id: 'variant_medusa_1',
+          sku: 'SKU-1',
+          metadata: {
+            pimVariantId: 'pim-var-1',
+            membershipPrice: 1000,
+            comingSoon: true,
+            comingSoonDate: '2026-10-01',
+            inboundDate: '2026-10-05',
+            inboundApproximate: true,
+          },
+        },
+      ],
+    });
+
+    const result = await (client as any).enrichPayloadWithExistingVariantIds('prod_1', {
+      variants: [{ title: 'Red', sku: 'SKU-1', metadata: { pimVariantId: 'pim-var-1', membershipPrice: 880 } }],
+    });
+
+    expect(result.variants[0].metadata).toEqual({
+      pimVariantId: 'pim-var-1',
+      membershipPrice: 880,
+      comingSoon: true,
+      comingSoonDate: '2026-10-01',
+      inboundDate: '2026-10-05',
+      inboundApproximate: true,
+    });
+  });
+
   it('relinks by barcode when a republish issued a new pimVariantId', async () => {
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
     (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({

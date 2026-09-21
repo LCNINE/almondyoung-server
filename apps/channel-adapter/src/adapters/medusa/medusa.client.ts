@@ -189,6 +189,8 @@ function isCollectableOrder(order: MedusaOrder): boolean {
   return isPaymentAcceptedOrder(order) || isLifecycleOrder(order);
 }
 
+const PROJECTION_OWNED_VARIANT_METADATA_KEYS = ['comingSoon', 'comingSoonDate', 'inboundDate', 'inboundApproximate'] as const;
+
 const ORDER_FIELDS = [
   'id',
   'display_id',
@@ -1218,6 +1220,16 @@ export class MedusaClient {
       };
       if (typeof matchedVariant.manage_inventory === 'boolean') {
         enriched.manage_inventory = matchedVariant.manage_inventory;
+      }
+      const existingMetadata = (matchedVariant.metadata ?? {}) as Record<string, unknown>;
+      const carried = Object.fromEntries(
+        PROJECTION_OWNED_VARIANT_METADATA_KEYS.filter((key) => existingMetadata[key] !== undefined).map((key) => [
+          key,
+          existingMetadata[key],
+        ]),
+      );
+      if (Object.keys(carried).length > 0) {
+        enriched.metadata = { ...variant.metadata, ...carried } as PayloadVariant['metadata'];
       }
 
       return enriched;
