@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { SmsCampaignPreview, SmsGateCategory } from '@/lib/api/domains/sms-gate';
 import { useCreateSmsCampaign, usePreviewSmsCampaign, useSmsAudience } from '@/lib/services/sms-gate';
+import { HelpSheet } from '../../components/help-sheet';
+import { OfflineBanner } from '../../components/offline-banner';
 import { CategoryRadio } from '../../components/category-radio';
 import { MessageComposer } from '../../components/message-composer';
 import { TemplatePanel } from '../../send/components/template-panel';
@@ -61,8 +63,11 @@ export default function SmsBulkTemplate() {
     <Container>
       <Header
         title="대량 메시지 전송"
+        titleAside={<HelpSheet />}
         subtitle="활성 회원 전체에게 발송폰으로 문자를 보냅니다. 폰 한도만큼 하루하루 나가다가 전원에게 나가면 끝납니다."
       />
+
+      <OfflineBanner />
 
       <div className="flex flex-col gap-6 px-6 pb-6">
         <div className="flex flex-col gap-3 rounded-md border px-4 py-3">

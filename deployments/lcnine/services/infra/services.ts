@@ -103,6 +103,8 @@ export function setup(infra: SharedInfra) {
   const notificationInternalKey = new sst.Secret('NotificationInternalKey');
   const resendApiKey = new sst.Secret('ResendApiKey');
   const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
+  // 발송폰 오프라인·복구 알림을 받을 Google Chat 스페이스 웹훅. 비우면 오프라인 점검 크론이 돌지 않는다.
+  const googleChatWebhookUrl = new sst.Secret('GoogleChatWebhookUrl', '');
 
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
@@ -356,6 +358,7 @@ export function setup(infra: SharedInfra) {
     RESEND_FROM: `noreply@mail.${baseDomain}`,
     RESEND_FROM_NAME: '아몬드영',
     RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+    GOOGLE_CHAT_WEBHOOK_URL: googleChatWebhookUrl.value,
     // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.
     STOREFRONT_URL: storefrontUrl,
   });

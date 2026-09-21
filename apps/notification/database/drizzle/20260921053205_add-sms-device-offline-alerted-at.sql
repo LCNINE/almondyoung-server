@@ -1,0 +1,1 @@
+ALTER TABLE "sms_devices" ADD COLUMN "offline_alerted_at" timestamp;

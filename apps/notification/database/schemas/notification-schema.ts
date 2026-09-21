@@ -140,6 +140,7 @@ export const smsDevices = pgTable('sms_devices', {
   name: varchar('name', { length: 64 }).notNull(),
   dailyLimit: integer('daily_limit').notNull(),
   enabled: boolean('enabled').default(true).notNull(),
+  offlineAlertedAt: timestamp('offline_alerted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

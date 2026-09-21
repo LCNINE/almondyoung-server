@@ -2,6 +2,7 @@ import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { UserContactClient } from '@app/shared';
 import { ProviderModule } from '../provider/provider.module';
+import { GoogleChatClient } from './clients/google-chat.client';
 import { SmsGateClient } from './clients/sms-gate.client';
 import { SmsCampaignsController } from './controllers/sms-campaigns.controller';
 import { SmsConversationsController } from './controllers/sms-conversations.controller';
@@ -19,6 +20,7 @@ import { SmsConversationsService } from './services/sms-conversations.service';
 import { InboundSmsManager } from './services/inbound-sms.manager';
 import { SmsDeviceManager } from './services/sms-device.manager';
 import { SmsDeviceReader } from './services/sms-device.reader';
+import { SmsDeviceOfflineMonitor } from './services/sms-device-offline.monitor';
 import { SmsDevicesService } from './services/sms-devices.service';
 import { SmsDispatchManager } from './services/sms-dispatch.manager';
 import { SmsDispatchWorker } from './services/sms-dispatch.worker';
@@ -36,6 +38,8 @@ import { SmsTemplatesService } from './services/sms-templates.service';
     SmsMessagesService,
     SmsGateRepository,
     SmsGateClient,
+    GoogleChatClient,
+    SmsDeviceOfflineMonitor,
     SmsDeviceReader,
     SmsDeviceManager,
     SmsMessageManager,
