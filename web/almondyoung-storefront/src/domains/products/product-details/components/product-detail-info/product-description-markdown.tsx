@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkDirective from "remark-directive"
 import remarkGfm from "remark-gfm"
@@ -30,15 +31,7 @@ export function ProductDescriptionMarkdown({
         components={{
           img: ({ src, alt }) =>
             typeof src === "string" && src ? (
-              <Image
-                src={src}
-                alt={alt || imageAltFallback || ""}
-                className="h-auto w-full object-contain"
-                loading="lazy"
-                width={860}
-                height={860}
-                sizes="(max-width: 768px) 100vw, 860px"
-              />
+              <DescriptionImage src={src} alt={alt || imageAltFallback || ""} />
             ) : null,
           p: ({ node, children }) => {
             const text = node?.children.every((c) => c.type === "text")
@@ -67,5 +60,23 @@ export function ProductDescriptionMarkdown({
         {markdown}
       </ReactMarkdown>
     </div>
+  )
+}
+
+function DescriptionImage({ src, alt }: { src: string; alt: string }) {
+  const [unoptimized, setUnoptimized] = useState(false)
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      className="h-auto w-full object-contain"
+      loading="lazy"
+      width={860}
+      height={860}
+      sizes="(max-width: 768px) 100vw, 860px"
+      unoptimized={unoptimized}
+      onError={() => setUnoptimized(true)}
+    />
   )
 }

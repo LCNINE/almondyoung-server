@@ -22,6 +22,12 @@ const BATCH_SIZE = 20;
 
 const checksum = new IsBusinessNumberChecksumConstraint();
 
+type Submission = { id: string; fileUrl: string };
+
+// 판독하는 사이 관리자가 결정했거나(#820) 고객이 서류를 바꿔 다시 냈으면 쓰지 않는다.
+const sameSubmission = ({ id, fileUrl }: Submission) =>
+  and(eq(businessLicenses.id, id), eq(businessLicenses.status, 'under_review'), eq(businessLicenses.fileUrl, fileUrl));
+
 type Verdict =
   | { decision: 'approve'; businessNumber: string; representativeName: string; verification: NtsValidateResult }
   | { decision: 'manual'; reason: AutoReviewManualReason; verification?: NtsValidateResult }
@@ -82,7 +88,10 @@ export class BusinessLicenseAutoReviewService {
           eq(businessLicenses.status, 'under_review'),
           isNotNull(businessLicenses.fileUrl),
           isNull(businessLicenses.deletedAt),
-          sql`${businessLicenses.metadata}->'autoReview' is null`,
+          // 자동 승인이 켜지면 dry-run 때 판정만 남긴 건도 다시 본다.
+          dryRun
+            ? sql`${businessLicenses.metadata}->'autoReview' is null`
+            : sql`coalesce((${businessLicenses.metadata}->'autoReview'->>'dryRun')::boolean, true)`,
         ),
       )
       .orderBy(asc(businessLicenses.createdAt))
@@ -122,10 +131,11 @@ export class BusinessLicenseAutoReviewService {
         ...(verdict.verification ? { ntsValidate: verdict.verification } : {}),
       };
 
+      const submission = { id: row.id, fileUrl: row.fileUrl };
       if (verdict.decision === 'approve' && !dryRun) {
-        await this.approve(row, verdict, metadata);
+        await this.approve({ ...row, ...submission }, verdict, metadata);
       } else {
-        await this.recordOnly(row.id, metadata);
+        await this.recordOnly(submission, metadata);
         this.logger.log(`사업자 자동심사: ${row.id} → ${verdict.decision}${dryRun ? ' (dry-run)' : ''}`);
       }
     }
@@ -149,13 +159,12 @@ export class BusinessLicenseAutoReviewService {
   }
 
   private async approve(
-    row: { id: string; userId: string; email: string; username: string },
+    row: Submission & { userId: string; email: string; username: string },
     verdict: Extract<Verdict, { decision: 'approve' }>,
     metadata: BusinessMetadata,
   ): Promise<void> {
     let updated: { id: string } | undefined;
     try {
-      // under_review 조건을 빼면 판독 도중 관리자가 내린 결정을 덮어쓴다 (#820).
       [updated] = await this.dbService.db
         .update(businessLicenses)
         .set({
@@ -166,14 +175,14 @@ export class BusinessLicenseAutoReviewService {
           verifiedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(and(eq(businessLicenses.id, row.id), eq(businessLicenses.status, 'under_review')))
+        .where(sameSubmission(row))
         .returning({ id: businessLicenses.id });
     } catch (error) {
       // 23505: 같은 번호를 다른 계정이 이미 등록했다.
       if ((error as { cause?: { code?: string } })?.cause?.code !== '23505') throw error;
       const record = metadata.autoReview;
       if (!record) throw error;
-      await this.recordOnly(row.id, {
+      await this.recordOnly(row, {
         ...metadata,
         autoReview: { ...record, decision: 'manual', reason: 'duplicate_number' },
       });
@@ -194,10 +203,10 @@ export class BusinessLicenseAutoReviewService {
     });
   }
 
-  private async recordOnly(id: string, metadata: BusinessMetadata): Promise<void> {
+  private async recordOnly(submission: Submission, metadata: BusinessMetadata): Promise<void> {
     await this.dbService.db
       .update(businessLicenses)
       .set({ metadata, updatedAt: new Date() })
-      .where(and(eq(businessLicenses.id, id), eq(businessLicenses.status, 'under_review')));
+      .where(sameSubmission(submission));
   }
 }

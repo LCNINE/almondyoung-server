@@ -50,10 +50,16 @@ describe('BusinessLicenseAutoReviewService', () => {
 
   function makeDb(rows: unknown[], returningRows: { id: string }[][] = []) {
     const updates: { values: Record<string, unknown>; predicate: SQL }[] = [];
+    const selects: SQL[] = [];
     const db = {
       select: () => ({
         from: () => ({
-          innerJoin: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve(rows) }) }) }),
+          innerJoin: () => ({
+            where: (predicate: SQL) => {
+              selects.push(predicate);
+              return { orderBy: () => ({ limit: () => Promise.resolve(rows) }) };
+            },
+          }),
         }),
       }),
       update: () => ({
@@ -67,7 +73,7 @@ describe('BusinessLicenseAutoReviewService', () => {
         }),
       }),
     };
-    return { dbService: { db } as never, updates };
+    return { dbService: { db } as never, updates, selects };
   }
 
   function row(id: string) {
@@ -88,7 +94,7 @@ describe('BusinessLicenseAutoReviewService', () => {
     autoApprove?: boolean;
     returningRows?: { id: string }[][];
   }) {
-    const { dbService, updates } = makeDb(opts.rows, opts.returningRows);
+    const { dbService, updates, selects } = makeDb(opts.rows, opts.returningRows);
     const publishEvent = jest.fn();
     const service = new BusinessLicenseAutoReviewService(
       dbService,
@@ -99,7 +105,7 @@ describe('BusinessLicenseAutoReviewService', () => {
       { isConfigured: () => true, read: opts.read } as never,
       { publishEvent } as never,
     );
-    return { service, updates, publishEvent };
+    return { service, updates, selects, publishEvent };
   }
 
   it('dry-run 이면 승인 판정이어도 상태는 안 바꾸고 기록만 남긴다', async () => {
@@ -132,7 +138,7 @@ describe('BusinessLicenseAutoReviewService', () => {
     });
     const { sql, params } = new PgDialect().sqlToQuery(updates[0].predicate);
     expect(sql).toMatch(/"business_licenses"\."status" = \$\d/);
-    expect(params).toEqual(expect.arrayContaining(['a', 'under_review']));
+    expect(params).toEqual(expect.arrayContaining(['a', 'under_review', 'https://s3/a.jpg']));
     expect(publishEvent).toHaveBeenCalledTimes(1);
   });
 
@@ -189,5 +195,26 @@ describe('BusinessLicenseAutoReviewService', () => {
     expect(updates[0].values.metadata).toMatchObject({
       autoReview: { decision: 'manual', reason: 'image_unavailable' },
     });
+  });
+
+  it('판정만 남기는 쓰기도 같은 서류일 때만 한다 — 그 사이 고객이 다시 냈으면 새 신청을 덮지 않는다', async () => {
+    const { service, updates } = makeService({ rows: [row('a')], read: jest.fn().mockResolvedValue(reading()) });
+
+    await service.reviewFileSubmissions();
+
+    const { params } = new PgDialect().sqlToQuery(updates[0].predicate);
+    expect(params).toEqual(expect.arrayContaining(['a', 'under_review', 'https://s3/a.jpg']));
+  });
+
+  it('자동 승인이 켜지면 dry-run 때 판정만 남긴 건도 다시 고른다', async () => {
+    const dry = makeService({ rows: [], read: jest.fn() });
+    const live = makeService({ rows: [], read: jest.fn(), autoApprove: true });
+
+    await dry.service.reviewFileSubmissions();
+    await live.service.reviewFileSubmissions();
+
+    const render = (p: SQL) => new PgDialect().sqlToQuery(p).sql;
+    expect(render(dry.selects[0])).toMatch(/->'autoReview' is null/);
+    expect(render(live.selects[0])).toMatch(/->'autoReview'->>'dryRun'/);
   });
 });
