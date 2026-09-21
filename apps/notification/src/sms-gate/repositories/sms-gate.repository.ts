@@ -48,7 +48,7 @@ export class SmsGateRepository {
   }
 
   listDevices(): Promise<SmsDevice[]> {
-    return this.dbService.db.select().from(smsDevices).orderBy(asc(smsDevices.createdAt));
+    return this.dbService.db.select().from(smsDevices).orderBy(asc(smsDevices.createdAt), asc(smsDevices.deviceId));
   }
 
   async findDeviceById(id: string): Promise<SmsDevice | undefined> {
