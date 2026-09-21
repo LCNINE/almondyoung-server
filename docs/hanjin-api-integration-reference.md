@@ -4,6 +4,8 @@
 적지 않는다 — 대조 결과는 §7 에 「도출 명령」으로만 남긴다.
 
 - 출처: <https://developers.hanjin.com> (Guides / APIs / FAQs), 2026-09-21 로그인 상태에서 확인
+- 일부 사실은 **DEV 인증키로 실제 호출해 확인**했다 (2026-09-21). 그런 항목은 「실측」 으로 표시한다 —
+  포털 문서가 안 적거나 애매하게 적은 것을 응답이 확정해 준 경우다
 - 문의처: `openapi@hanjin.com`
 - 우리 구현: `apps/core/src/modules/fulfillment/waybill/` (모듈 설명은 그 디렉터리의 `README.md`)
 
@@ -38,11 +40,14 @@
 ### 계정 현황 (2026-09-21 실측)
 
 포털 `My Apps` 에 **`택배:LCNINE-DEV` (client_id `LCNINE`, 생성 2026-06-18) 하나뿐이고 LIVE 앱은 없다.**
-→ 절차 04 까지 도달, 05 이후 미진행.
+→ 절차 **05 (API Self TEST 및 개발 진행) 까지 도달**, 06 이후 미진행.
 
-> ⚠️ FAQ 에 **「3개월 간 미사용 App 은 중지처리됩니다」**(`errorCode -101 App not approved (장기간미사용 승인중지)`)
-> 항목이 있다. 이 DEV 앱은 생성 후 3개월이 지났고 우리 쪽 실제 호출 이력이 없으므로 **이미 중지됐을 수 있다.**
-> 재개는 `openapi@hanjin.com` 요청.
+**실측 (2026-09-21)** — DEV 키로 계약정보·운송장출력·주문정보·배송정보를 실제로 호출해 전부 응답을 받았다.
+API Key `Active` · 만료 `never` · API 구독 5종 전부 `Enabled`.
+
+> ⚠️ FAQ 의 **「3개월 간 미사용 App 은 중지처리됩니다」**(`errorCode -101 App not approved (장기간미사용 승인중지)`)
+> 는 **이 앱에 일어나지 않았다** — 생성 후 3개월이 지났지만 위 실측 호출이 전부 정상 응답했다.
+> 중지된 경우의 재개는 `openapi@hanjin.com` 요청.
 
 ---
 
@@ -143,6 +148,12 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 예) 12345678901 / 7 → 나머지 3  ⇒  123456789013
 ```
 
+**실측 (2026-09-21)** — 이 규칙은 한진이 **발급하는 번호에도, 우리가 보내는 번호에도** 성립한다.
+
+- `print-wbl` 이 발급한 번호가 규칙을 만족한다: `10003568223` MOD 7 = 5 → `100035682235`
+- 규칙을 어긴 번호는 **서버가 거절한다** — `tracking-wbl` 에 `999999999999` 를 보내면
+  `ERROR-02 Invalid Format - 운송장 번호 오류(CHECK DIGIT)`. 즉 체크디지트는 검증되는 값이고 자리수 채우기가 아니다
+
 ---
 
 ## 4. API 스펙
@@ -151,6 +162,8 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 
 - Base URL(개발): `https://ebbapd.hjt.co.kr`
 - ※ **운영 환경에서는 방화벽 등록이 필요하다.**
+- **실측 (2026-09-21)**: 개발 호스트는 **방화벽 등록 없이 호출됐다.** 방화벽 조치는 운영 전용 과제다 —
+  개발 단계에서 IP 등록을 기다릴 필요가 없다
 - ※ 전용 운송장 대역을 받아 사용하는 경우 §3.4 채번규칙을 지켜야 한다.
 
 | Method | Endpoint | 비고 |
@@ -304,9 +317,25 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 배송정보 결과코드: `OK` / `ERROR-01` 존재하지 않는 운송장번호(= **실 배송 스캔내역이 없는 경우**) /
 `ERROR-02` 운송장번호 오류(CHECK DIGIT) / `ERROR-90` `custEdiCd` 오류 / `ERROR-99` 기타.
 
+> 🔴 **실측 (2026-09-21) — `ERROR-01` 은 「없는 번호」와 「아직 스캔되지 않은 번호」를 구별하지 못한다.**
+> `print-wbl` 로 채번하고 `insert-order` 로 등록까지 끝낸 직후의 운송장을 조회해도
+> `ERROR-01 존재하지 않는 운송장번호` 가 돌아온다. 집화 스캔이 찍히기 전까지는 정상 상태가 이것이다.
+> 추적 폴러는 이 코드를 **오류가 아니라 「아직 이력 없음」으로** 다뤄야 한다 — 오류로 다루면
+> 집화 전 전건이 실패로 보인다.
+
 ### 4.5 택배 - 계약정보 (`pd-customer`)
 
-계약번호 / 사업자등록번호로 계약정보를 검증한다. 현재 우리 구현은 사용하지 않는다.
+계약번호 / 사업자등록번호로 계약정보를 검증한다.
+
+- Base URL(개발): `https://api-stg.hanjin.com`
+
+| Method | Endpoint | 비고 |
+| --- | --- | --- |
+| GET | `/parcel-delivery/v1/customer/customer-check?cntractNo={계약번호}` | **실측 (2026-09-21)** |
+
+**실측 (2026-09-21)** — `cntractNo=9117159` 로 `200 {"resultCode":"OK","resultMessage":"SUCCESS"}`.
+**부작용이 없는 유일한 호출**이므로 인증키·HMAC 서명·계약 유효성을 한 번에 확인하는 데 쓸 수 있다
+(`print-wbl` 은 채번하고 `insert-order` 는 주문을 만든다).
 
 ---
 
@@ -371,8 +400,9 @@ grep -n "mobile\|tel" apps/core/src/modules/fulfillment/waybill/waybill-request.
 # labelData 소비자가 있는지 (= 운송장 렌더러 존재 여부)
 grep -rn "labelData" apps/core/src apps/admin-web/src native/warehouse-app/src --include=*.ts --include=*.tsx | grep -v spec
 
-# 스테이징 스모크 (env 미설정이면 SKIP + exit 2 가 정상)
-npx tsx scripts/smoke/hanjin-staging-smoke.ts
+# 스테이징 스모크 — env 는 «바깥에서» 주입한다 (스크립트는 dotenv 를 부르지 않는다).
+# 그냥 `npx tsx …` 만 하면 env 를 못 읽어 언제나 SKIP + exit 2 다.
+npx dotenv -e apps/core/.env -- npx tsx scripts/smoke/hanjin-staging-smoke.ts
 ```
 
 ---
@@ -383,3 +413,5 @@ npx tsx scripts/smoke/hanjin-staging-smoke.ts
 - **API Spec Download 문서를 받았을 때** — 운영환경 URL 과 채번규칙 상세가 그 문서에만 있으므로,
   받는 즉시 §4 의 Base URL 표와 §3.4 를 이 문서에서 갱신한다
 - 계약·앱 상태가 바뀌었을 때 (§1 의 「계정 현황」)
+- **실사격 응답이 이 문서의 서술과 어긋났을 때** — 포털 문서보다 응답이 정본이다. 「실측」 표기를 붙여
+  어긋난 쪽을 고친다
