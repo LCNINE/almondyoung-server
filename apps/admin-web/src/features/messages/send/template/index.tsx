@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useSendSmsGateMessage, useSmsDevices } from '@/lib/services/sms-gate';
+import { NameVariableButton } from '../../components/name-variable-button';
 import { PhoneFrame } from '../../components/phone-frame';
 import {
   MARKETING_FOOTER,
@@ -26,6 +27,7 @@ import {
 import { isLongSms, smsByteLength } from '../../lib/sms-bytes';
 import { Recipient, RecipientList } from '../components/recipient-list';
 import { SendResults } from '../components/send-results';
+import { TemplatePanel } from '../components/template-panel';
 
 const AUTO = 'auto';
 
@@ -38,6 +40,7 @@ export default function SmsSendTemplate() {
   const [content, setContent] = useState('');
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [sentIds, setSentIds] = useState<string[]>([]);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const isMarketing = category === 'MARKETING';
   const finalBody = composeSmsBody(category, content);
@@ -130,7 +133,7 @@ export default function SmsSendTemplate() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr_1fr_280px]">
           <section className="flex flex-col gap-2">
             <h3 className="font-semibold">메시지 작성</h3>
             <PhoneFrame screenClassName="bg-white p-3">
@@ -140,6 +143,7 @@ export default function SmsSendTemplate() {
                 </div>
               )}
               <textarea
+                ref={contentRef}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="메시지를 입력해 주세요"
@@ -150,6 +154,9 @@ export default function SmsSendTemplate() {
                   {MARKETING_FOOTER}
                 </div>
               )}
+              <div className="pt-1">
+                <NameVariableButton textareaRef={contentRef} value={content} onChange={setContent} />
+              </div>
               <div className="py-1 text-right text-xs text-neutral-500">
                 {bytes} byte
                 {isLongSms(content) ? ' · 장문(여러 통으로 나뉘어 발송)' : ''}
@@ -172,6 +179,16 @@ export default function SmsSendTemplate() {
           <section className="flex flex-col gap-2">
             <h3 className="font-semibold">전송 결과</h3>
             <SendResults ids={sentIds} devices={deviceData?.devices ?? []} />
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h3 className="font-semibold">템플릿</h3>
+            <TemplatePanel
+              onSelect={(template) => {
+                setContent(template.content);
+                setCategory(template.category);
+              }}
+            />
           </section>
         </div>
       </div>

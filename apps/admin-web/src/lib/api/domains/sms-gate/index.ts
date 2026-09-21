@@ -52,6 +52,20 @@ export interface SmsGateMessage {
   payload: { phoneNumber?: string; username?: string } | null;
 }
 
+export interface SmsTemplateFormValues {
+  name: string;
+  category: SmsGateCategory;
+  content: string;
+}
+
+export interface SmsTemplate extends SmsTemplateFormValues {
+  id: string;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const BASE = `${NOTIFICATION_SERVICE_BASE_URL}/sms-gate`;
 
 export const smsGateApi = {
@@ -85,5 +99,22 @@ export const smsGateApi = {
       params: { ids: ids.join(',') },
     });
     return response.data;
+  },
+
+  getTemplates: async (): Promise<SmsTemplate[]> => {
+    const response = await client.get<SmsTemplate[]>(`${BASE}/templates`);
+    return response.data;
+  },
+
+  createTemplate: async (values: SmsTemplateFormValues): Promise<void> => {
+    await client.post(`${BASE}/templates`, values);
+  },
+
+  updateTemplate: async (id: string, values: SmsTemplateFormValues): Promise<void> => {
+    await client.patch(`${BASE}/templates/${id}`, values);
+  },
+
+  deleteTemplate: async (id: string): Promise<void> => {
+    await client.delete(`${BASE}/templates/${id}`);
   },
 };

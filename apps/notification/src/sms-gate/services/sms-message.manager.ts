@@ -3,7 +3,7 @@ import { BadRequestError, UserContactClient } from '@app/shared';
 import { Notification } from '../../../database/schemas/notification-schema';
 import { Channel } from '../../shared/enums';
 import { SendSmsGateMessageDto } from '../dto';
-import { composeSmsBody } from '../utils/sms-body';
+import { composeSmsBody, fillName } from '../utils/sms-body';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
@@ -52,7 +52,7 @@ export class SmsMessageManager {
           providerId: SMS_GATE_PROVIDER_ID,
           status: 'PENDING' as const,
           payload: { phoneNumber: contact.phoneNumber, username: contact.username },
-          renderedContent: { body: composeSmsBody(dto.category, dto.content) },
+          renderedContent: { body: composeSmsBody(dto.category, fillName(dto.content, contact.username)) },
           metadata: { requestedDeviceId: dto.deviceId ?? null, sentBy },
         },
       ];

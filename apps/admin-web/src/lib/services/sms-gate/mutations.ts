@@ -4,6 +4,7 @@ import {
   SendSmsGateMessageDto,
   smsGateApi,
   SmsDeviceFormValues,
+  SmsTemplateFormValues,
 } from '@/lib/api/domains/sms-gate';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { smsGateQueryKeys } from './query-keys';
@@ -38,5 +39,30 @@ export const useSendSmsGateMessage = () => {
   return useMutation({
     mutationFn: (dto: SendSmsGateMessageDto) => smsGateApi.send(dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.devices() }),
+  });
+};
+
+export const useCreateSmsTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: SmsTemplateFormValues) => smsGateApi.createTemplate(values),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
+  });
+};
+
+export const useUpdateSmsTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, values }: { id: string; values: SmsTemplateFormValues }) =>
+      smsGateApi.updateTemplate(id, values),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
+  });
+};
+
+export const useDeleteSmsTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => smsGateApi.deleteTemplate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
   });
 };

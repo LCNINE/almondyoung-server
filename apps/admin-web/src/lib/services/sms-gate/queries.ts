@@ -23,3 +23,10 @@ export const useSmsGateMessages = (ids: string[]) => {
       query.state.data?.every((m) => isSettled(m.status)) ? false : 5_000,
   });
 };
+
+export const useSmsTemplates = () => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.templates(),
+    queryFn: () => smsGateApi.getTemplates(),
+  });
+};
