@@ -15,7 +15,7 @@ export function composeSmsBody(category: SmsGateCategory, content: string): stri
 }
 
 export function fillName(content: string, name: string): string {
-  return content.replaceAll(NAME_VARIABLE, name);
+  return content.replaceAll(NAME_VARIABLE, () => name);
 }
 
 export function isMarketingQuietHours(now: Date): boolean {
