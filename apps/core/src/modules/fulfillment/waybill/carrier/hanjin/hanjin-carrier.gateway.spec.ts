@@ -75,6 +75,29 @@ describe('HanjinCarrierGateway.allocate', () => {
     });
   });
 
+  // 정본 §4.1 의 「성질」열이 일시적인 두 코드만 transient 다. 나머지 ERROR-xx 를 여기 넣으면
+  // 영원히 풀리지 않을 사유를 붙들고 재시도하게 된다.
+  it.each([
+    ['ERROR-05', { kind: 'next_day' }],
+    ['ERROR-06', { kind: 'after_ms', ms: 60 * 60 * 1000 }],
+  ])('print-wbl %s → transient_rejection (retryAfter 힌트 포함)', async (code, retryAfter) => {
+    const post = jest.fn().mockResolvedValue({ result_code: code, result_message: '일시적' });
+    await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({
+      outcome: 'transient_rejection',
+      details: { code, retryAfter },
+    });
+  });
+
+  it('일시적 표에 없는 ERROR 코드는 영구 거절이다', async () => {
+    for (const code of ['ERROR-01', 'ERROR-02', 'ERROR-03', 'ERROR-99']) {
+      const post = jest.fn().mockResolvedValue({ result_code: code });
+      await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({
+        outcome: 'definitive_rejection',
+        details: { code },
+      });
+    }
+  });
+
   it('print-wbl OK 인데 wbl_num 누락 → definitive_rejection code=no_wbl_num', async () => {
     const post = jest.fn().mockResolvedValue({ result_code: 'OK' });
     await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({

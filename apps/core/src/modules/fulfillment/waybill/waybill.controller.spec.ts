@@ -9,6 +9,7 @@ describe('WaybillController', () => {
       registerManual: jest.fn().mockResolvedValue({ id: 'w1', status: 'registered' }),
       void: jest.fn().mockResolvedValue({ id: 'w1', status: 'voided' }),
       reissue: jest.fn().mockResolvedValue({ id: 'w2', status: 'registered' }),
+      abandon: jest.fn().mockResolvedValue({ id: 'w1', status: 'abandoned' }),
       getActiveWaybill: jest.fn().mockResolvedValue({ id: 'w1', status: 'registered' }),
       issueBatch: jest
         .fn()
@@ -61,6 +62,13 @@ describe('WaybillController', () => {
     expect(svc.void).toHaveBeenCalledWith('w1', dto, 'idem-4', { id: 'u1', roles: ['logistics_worker'] });
   });
 
+  it('abandon delegates with actor + idempotency-key', async () => {
+    const { controller, svc } = make();
+    const dto = { reason: 'carrier deadlock' };
+    await controller.abandon('w1', dto, 'idem-6', user);
+    expect(svc.abandon).toHaveBeenCalledWith('w1', dto, 'idem-6', { id: 'u1', roles: ['logistics_worker'] });
+  });
+
   it('reissue delegates with actor + idempotency-key', async () => {
     const { controller, svc } = make();
     await controller.reissue('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 } as never, 'idem-5', user);
@@ -89,6 +97,8 @@ describe('WaybillController', () => {
     expect(metadata(WaybillController.prototype.batch)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
     expect(metadata(WaybillController.prototype.void)).toEqual([FULFILLMENT_SCOPE.SHIPMENT_REOPEN]);
     expect(metadata(WaybillController.prototype.reissue)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    // 현장에서 막혔을 때 관리자를 기다리지 않고 풀 수 있어야 한다 — SHIPMENT_REOPEN 이 아니라 발급과 같은 스코프다.
+    expect(metadata(WaybillController.prototype.abandon)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
     expect(metadata(WaybillController.prototype.active)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
   });
 });

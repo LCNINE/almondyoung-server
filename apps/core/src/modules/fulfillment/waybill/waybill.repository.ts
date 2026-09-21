@@ -116,10 +116,17 @@ export class WaybillRepository {
     return rows.length;
   }
 
-  async casToAbandoned(trx: DbTx, id: string, fromStatus: 'pending' | 'allocated'): Promise<boolean> {
+  // lastError 는 선택 — 자동 abandon(pending CAP 초과)은 사유를 남기지 않던 기존 동작을 유지하고,
+  // 운영자 abandon 은 사유를 반드시 넘긴다. 전달하지 않으면 기존 lastError 를 덮지 않는다.
+  async casToAbandoned(
+    trx: DbTx,
+    id: string,
+    fromStatus: 'pending' | 'allocated',
+    lastError?: string,
+  ): Promise<boolean> {
     const rows = await trx
       .update(T)
-      .set({ status: 'abandoned', updatedAt: new Date() })
+      .set({ status: 'abandoned', updatedAt: new Date(), ...(lastError === undefined ? {} : { lastError }) })
       .where(and(eq(T.id, id), eq(T.status, fromStatus)))
       .returning({ id: T.id });
     return rows.length === 1;
@@ -130,6 +137,23 @@ export class WaybillRepository {
       .update(T)
       .set({ status: 'failed', lastError, updatedAt: new Date() })
       .where(and(eq(T.id, id), inArray(T.status, ['pending', 'allocated'])))
+      .returning({ id: T.id });
+    return rows.length === 1;
+  }
+
+  // 일시적 거절: pending 을 «유지»하면서 사유와 다음 재시도 시각을 남기고 전용 카운터를 올린다.
+  // casToFailed 가 lastError 를 쓰는 유일한 경로였기 때문에, 이게 없으면 「pending 인데 왜 멈췄는지」를
+  // 기록할 방법이 없다. WHERE status='pending' — allocated 로 넘어간 행을 되돌리지 않는다.
+  async casToTransientPending(trx: DbTx, id: string, lastError: string, nextAttemptAt: Date): Promise<boolean> {
+    const rows = await trx
+      .update(T)
+      .set({
+        lastError,
+        nextAttemptAt,
+        transientAttempts: sql`${T.transientAttempts} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(T.id, id), eq(T.status, 'pending')))
       .returning({ id: T.id });
     return rows.length === 1;
   }

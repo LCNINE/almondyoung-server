@@ -1369,6 +1369,13 @@ export interface WaybillResponse {
   issuedAt: string | null;
   voidedAt: string | null;
   lastError: string | null;
+  // 일시적 거절(한진 일일한도·지역통제)로 대기 중이면 다음 재시도 시각. 없으면 대기 중이 아니다.
+  nextAttemptAt: string | null;
+  transientAttempts: number;
+}
+
+export interface AbandonWaybillRequest {
+  reason: string;
 }
 
 export interface IssueWaybillRequest {
@@ -1397,4 +1404,6 @@ export interface BatchResultItem {
   status: string; // registered | failed | pending | allocated
   trackingNo: string | null;
   reason: string | null;
+  // pending 이 «시간예산 초과»인지 «일시적 거절로 대기»인지 가른다.
+  nextAttemptAt: string | null;
 }

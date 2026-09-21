@@ -15,6 +15,7 @@ import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { WaybillService } from './waybill.service';
 import {
+  AbandonWaybillDto,
   BatchResultItemDto,
   IssueBatchWaybillDto,
   IssueWaybillDto,
@@ -85,6 +86,21 @@ export class WaybillController {
     @User() user: AuthenticatedUser,
   ) {
     return this.waybills.void(waybillId, dto, idem ?? '', this.actor(user));
+  }
+
+  // 교착된 발급(pending/allocated)을 운영자가 푼다 — 활성 슬롯이 풀려야 재발급·수기등록이 열린다(#914).
+  // 스코프가 WAREHOUSE_OPERATE 인 것은 의도다: 현장에서 막혔을 때 관리자를 기다리지 않고 바로 풀 수 있어야 한다.
+  @Post('waybills/:waybillId/abandon')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiOkResponse({ type: WaybillResponseDto })
+  abandon(
+    @Param('waybillId') waybillId: string,
+    @Body() dto: AbandonWaybillDto,
+    @Headers('idempotency-key') idem: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.waybills.abandon(waybillId, dto, idem ?? '', this.actor(user));
   }
 
   @Post('shipments/:shipmentId/waybills/reissue')
