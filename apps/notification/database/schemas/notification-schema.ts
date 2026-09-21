@@ -154,6 +154,24 @@ export const smsTemplates = pgTable('sms_templates', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// 발송폰으로 받은 문자
+export const inboundMessages = pgTable(
+  'inbound_messages',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    gatewayMessageId: varchar('gateway_message_id', { length: 128 }).unique(),
+    phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
+    body: text('body').notNull(),
+    deviceId: varchar('device_id', { length: 64 }),
+    userId: varchar('user_id', { length: 100 }),
+    receivedAt: timestamp('received_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    phoneReceivedIdx: index('idx_inbound_phone_received').on(table.phoneNumber, table.receivedAt),
+  }),
+);
+
 // 대량 발송 캠페인 테이블
 export const notificationCampaigns = pgTable(
   'notification_campaigns',
@@ -484,6 +502,7 @@ export const notificationTables = {
   fcmTopicSubscriptions,
   smsDevices,
   smsTemplates,
+  inboundMessages,
 };
 
 // Export types
@@ -515,6 +534,8 @@ export type SmsDevice = typeof smsDevices.$inferSelect;
 export type NewSmsDevice = typeof smsDevices.$inferInsert;
 export type SmsTemplate = typeof smsTemplates.$inferSelect;
 export type NewSmsTemplate = typeof smsTemplates.$inferInsert;
+export type InboundMessage = typeof inboundMessages.$inferSelect;
+export type NewInboundMessage = typeof inboundMessages.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;
