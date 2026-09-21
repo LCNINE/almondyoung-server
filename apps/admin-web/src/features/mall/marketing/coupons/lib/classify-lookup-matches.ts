@@ -20,7 +20,7 @@
 export type LookupOutcome<T> =
   | { kind: 'resolved'; match: T }
   | { kind: 'not_found' }
-  | { kind: 'ambiguous' };
+  | { kind: 'ambiguous'; matches: T[] };
 
 const normalizeText = (v: string | null | undefined): string => (v ?? '').trim().toLowerCase();
 
@@ -28,7 +28,7 @@ const normalizeText = (v: string | null | undefined): string => (v ?? '').trim()
  * 전화번호 비교용 정규화. 하이픈·공백을 버리고 국가번호를 국내 표기로 접는다 —
  * 저장값이 `+8210…` 인데 관리자는 `010-…` 로 입력하는 것이 보통이다(서버도 같은 폴딩을 한다).
  */
-const normalizePhone = (v: string | null | undefined): string => {
+export const normalizePhone = (v: string | null | undefined): string => {
   const digits = (v ?? '').replace(/[^0-9]/g, '');
   if (!digits) return '';
   return digits.startsWith('82') ? `0${digits.slice(2)}` : digits;
@@ -60,6 +60,6 @@ export function classifyLookupMatches<T>(
   // 부분일치뿐이다 — 관리자가 의도한 사람이 아닐 수 있으므로 발급하지 않는다.
   if (exact.length === 0) return { kind: 'not_found' };
   // 같은 식별자를 여러 계정이 가진 경우. 사람이 골라야 한다.
-  if (exact.length > 1) return { kind: 'ambiguous' };
+  if (exact.length > 1) return { kind: 'ambiguous', matches: exact };
   return { kind: 'resolved', match: exact[0] };
 }

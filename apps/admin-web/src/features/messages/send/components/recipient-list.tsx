@@ -10,7 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { SmsGateCategory } from '@/lib/api/domains/sms-gate';
 import { cn } from '@/lib/utils/cn';
-import { classifyLookupMatches } from '@/features/mall/marketing/coupons/lib/classify-lookup-matches';
+import {
+  classifyLookupMatches,
+  normalizePhone,
+} from '@/features/mall/marketing/coupons/lib/classify-lookup-matches';
 import { customerApi } from '@/lib/api/domains/customer';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 
@@ -62,11 +65,20 @@ export function RecipientList({
         toast.error('회원을 찾을 수 없습니다. 회원에게만 보낼 수 있습니다.');
         return;
       }
+      let user;
       if (outcome.kind === 'ambiguous') {
-        toast.error('두 명 이상 일치합니다. 아이디나 이메일로 입력해 주세요.');
-        return;
+        const phones = new Set(
+          outcome.matches.map((m) => normalizePhone(m.phoneNumber))
+        );
+        if (phones.size !== 1 || phones.has('')) {
+          toast.error('두 명 이상 일치합니다. 아이디나 이메일로 입력해 주세요.');
+          return;
+        }
+        user =
+          outcome.matches.find((m) => m.marketingConsent) ?? outcome.matches[0];
+      } else {
+        user = outcome.match;
       }
-      const user = outcome.match;
       if (!user.phoneNumber) {
         toast.error(`${user.username} 회원은 휴대폰 번호가 없습니다.`);
         return;
@@ -77,19 +89,27 @@ export function RecipientList({
         );
         return;
       }
-      if (recipients.some((r) => r.userId === user.id)) {
+      const entry: Recipient = {
+        userId: user.id,
+        name: user.username,
+        phoneNumber: user.phoneNumber,
+        marketingConsent: user.marketingConsent,
+      };
+      const samePhone = recipients.find(
+        (r) =>
+          r.userId === user.id ||
+          normalizePhone(r.phoneNumber) === normalizePhone(user.phoneNumber)
+      );
+      if (samePhone) {
+        if (!samePhone.marketingConsent && user.marketingConsent) {
+          onChange(recipients.map((r) => (r === samePhone ? entry : r)));
+          setInput('');
+          return;
+        }
         toast.info('이미 추가된 회원입니다.');
         return;
       }
-      onChange([
-        ...recipients,
-        {
-          userId: user.id,
-          name: user.username,
-          phoneNumber: user.phoneNumber,
-          marketingConsent: user.marketingConsent,
-        },
-      ]);
+      onChange([...recipients, entry]);
       setInput('');
     } catch {
       toast.error('회원 조회에 실패했습니다.');
