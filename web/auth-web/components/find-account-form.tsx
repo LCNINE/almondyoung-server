@@ -309,6 +309,24 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
         </p>
       )}
 
+      <div className="flex items-center justify-between gap-3">
+        <FieldDescription>
+          <span className="block font-medium text-foreground">
+            {codeSent ? "문자가 오지 않나요?" : "문자 인증이 어려우신가요?"}
+          </span>
+          카카오톡으로 인증번호를 받아보세요!
+        </FieldDescription>
+        <button
+          type="button"
+          onClick={() => sendCode("KAKAO")}
+          disabled={pending}
+          className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <MessageCircle className="size-4 fill-current" strokeWidth={0} />
+          {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
+        </button>
+      </div>
+
       {codeSent && (
         <div className="flex flex-col gap-1">
           <FloatingLabelInput
@@ -324,18 +342,6 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
           <p className="min-h-5 text-sm text-destructive" role="alert">
             {errorField === "code" ? error : ""}
           </p>
-          <div className="flex items-center justify-between gap-3">
-            <FieldDescription>문자가 오지 않나요?</FieldDescription>
-            <button
-              type="button"
-              onClick={() => sendCode("KAKAO")}
-              disabled={pending}
-              className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <MessageCircle className="size-4 fill-current" strokeWidth={0} />
-              {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
-            </button>
-          </div>
         </div>
       )}
 

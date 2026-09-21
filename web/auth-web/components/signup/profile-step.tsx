@@ -191,20 +191,23 @@ export function ProfileStep({
           onInput={(e) => e.currentTarget.setCustomValidity("")}
         />
       )}
-      {codeSent && (
-        <div className="flex items-center justify-between gap-3">
-          <FieldDescription>문자가 오지 않나요?</FieldDescription>
-          <button
-            type="button"
-            onClick={() => sendCode("KAKAO")}
-            disabled={sending !== null}
-            className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <MessageCircle className="size-4 fill-current" strokeWidth={0} />
-            {sending === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
-          </button>
-        </div>
-      )}
+      <div className="flex items-center justify-between gap-3">
+        <FieldDescription>
+          <span className="block font-medium text-foreground">
+            {codeSent ? "문자가 오지 않나요?" : "문자 인증이 어려우신가요?"}
+          </span>
+          카카오톡으로 인증번호를 받아보세요!
+        </FieldDescription>
+        <button
+          type="button"
+          onClick={() => sendCode("KAKAO")}
+          disabled={sending !== null}
+          className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <MessageCircle className="size-4 fill-current" strokeWidth={0} />
+          {sending === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
+        </button>
+      </div>
       {/*
         결과 문구는 조건부로 붙였다 떼면 발송할 때마다 아래 내용이 밀렸다 당겨져 화면이 흔들린다.
         자리를 항상 차지하게 두고 내용만 바꾼다. 높이는 두 줄분 — 실패 문구는 한 줄에 안 들어간다.
