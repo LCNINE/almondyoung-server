@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSmsConversations } from '@/lib/services/sms-gate';
+import { HelpSheet } from '../../components/help-sheet';
+import { OfflineBanner } from '../../components/offline-banner';
 import { ConversationList } from '../components/conversation-list';
 import { ConversationPanel } from '../components/conversation-panel';
 
@@ -23,7 +25,13 @@ export default function SmsInboxTemplate() {
 
   return (
     <Container>
-      <Header title="받은 문자" subtitle="발송폰으로 들어온 문자를 번호별 대화로 보여줍니다. 답장은 받은 그 폰에서 나갑니다." />
+      <Header
+        title="받은 문자"
+        titleAside={<HelpSheet />}
+        subtitle="발송폰으로 들어온 문자를 번호별 대화로 보여줍니다. 답장은 받은 그 폰에서 나갑니다."
+      />
+
+      <OfflineBanner />
 
       <div className="grid h-[calc(100vh-220px)] min-h-[480px] grid-cols-1 gap-4 px-6 pb-6 lg:grid-cols-[320px_1fr]">
         <div className="flex min-h-0 flex-col gap-3">

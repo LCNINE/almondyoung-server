@@ -73,6 +73,10 @@ export class SmsGateRepository {
       .where(eq(smsDevices.id, id));
   }
 
+  async setOfflineAlertedAt(ids: string[], at: Date | null): Promise<void> {
+    await this.dbService.db.update(smsDevices).set({ offlineAlertedAt: at }).where(inArray(smsDevices.id, ids));
+  }
+
   async deleteDevice(id: string): Promise<void> {
     await this.dbService.db.delete(smsDevices).where(eq(smsDevices.id, id));
   }
