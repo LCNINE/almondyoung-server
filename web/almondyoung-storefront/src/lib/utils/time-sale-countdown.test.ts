@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
   COUNTDOWN_THRESHOLD_MS,
+  URGENT_THRESHOLD_MS,
+  CACHE_SETTLE_MS,
+  createEndRefreshScheduler,
+  formatClock,
+  refreshDelaysAfterEnd,
   formatCountdown,
   nextTickDelayMs,
   resolveCountdown,
+  resolveSectionCountdown,
 } from "./time-sale-countdown"
 
 const NOW = Date.parse("2026-08-28T00:00:00.000Z")
@@ -66,5 +72,57 @@ describe("nextTickDelayMs", () => {
 
   it("끝났으면 더 기다리지 않는다", () => {
     expect(nextTickDelayMs(at(0), NOW)).toBe(0)
+  })
+})
+
+describe("resolveSectionCountdown", () => {
+  // 하루가 넘게 남아도 초가 움직여야 한다. "2일" 로만 두면 이틀 내내 화면이 멈춰 있다.
+  it("하루를 넘어도 시:분:초를 함께 준다", () => {
+    const view = resolveSectionCountdown(at(2 * DAY + 4 * HOUR + 23 * 60 * 1000 + 11000), NOW)
+    expect(view).toMatchObject({ days: 2, hours: 4, minutes: 23, seconds: 11 })
+    expect(formatClock(view!)).toBe("04:23:11")
+  })
+
+  it("한 시간 이하로 남으면 임박이다", () => {
+    expect(resolveSectionCountdown(at(URGENT_THRESHOLD_MS), NOW)?.isUrgent).toBe(true)
+    expect(resolveSectionCountdown(at(URGENT_THRESHOLD_MS + 1000), NOW)?.isUrgent).toBe(false)
+  })
+
+  it("끝났거나 날짜가 아니면 null 이다", () => {
+    expect(resolveSectionCountdown(at(0), NOW)).toBeNull()
+    expect(resolveSectionCountdown("not-a-date", NOW)).toBeNull()
+  })
+})
+
+describe("refreshDelaysAfterEnd", () => {
+  // 0 초에 한 번만 받으면 크론이 아직 캐시를 안 비워 세일가가 그대로 남는다. 두 번째는 크론이
+  // 반드시 한 번 돈 뒤여야 한다.
+  it("두 번째 갱신은 크론이 캐시를 비운 뒤다", () => {
+    const [, second] = refreshDelaysAfterEnd(() => 0)
+    expect(second).toBeGreaterThanOrEqual(CACHE_SETTLE_MS)
+    expect(CACHE_SETTLE_MS).toBeGreaterThan(70 * 1000)
+  })
+
+  it("손님마다 흩어진다", () => {
+    const [firstLow, secondLow] = refreshDelaysAfterEnd(() => 0)
+    const [firstHigh, secondHigh] = refreshDelaysAfterEnd(() => 0.999)
+    expect(firstHigh).toBeGreaterThan(firstLow)
+    expect(secondHigh).toBeGreaterThan(secondLow)
+  })
+})
+
+describe("createEndRefreshScheduler", () => {
+  // 첫 갱신이 섹션을 없애도 두 번째는 돌아야 한다. 예약만 있고 취소 수단이 없는 게 요점이다.
+  it("두 시점을 모두 예약하고 같은 마감은 다시 예약하지 않는다", () => {
+    const calls: number[] = []
+    const schedule = createEndRefreshScheduler(
+      (_run, ms) => calls.push(ms),
+      () => [1000, 80000]
+    )
+
+    schedule("2026-09-23T06:30:00Z", () => {})
+    schedule("2026-09-23T06:30:00Z", () => {})
+
+    expect(calls).toEqual([1000, 80000])
   })
 })

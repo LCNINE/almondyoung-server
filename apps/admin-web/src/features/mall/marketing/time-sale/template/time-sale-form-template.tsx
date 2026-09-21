@@ -18,6 +18,7 @@ import {
 import {
   applyPercentDiscount,
   applySavedSalePrices,
+  summarizeSaleRows,
   validateRows,
   type TimeSaleRow,
 } from '../time-sale-model';
@@ -72,6 +73,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [percent, setPercent] = useState('');
+  const [membershipPercent, setMembershipPercent] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rows, setRows] = useState<TimeSaleRow[]>([]);
   const [restored, setRestored] = useState(false);
@@ -108,6 +110,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
 
   const errors = validateRows(mergedRows);
   const errorByVariant = new Map(errors.map((error) => [error.variantId, error.message]));
+  const saleSummary = summarizeSaleRows(mergedRows);
 
   const toggleProduct = (productId: string) => {
     setSelectedIds((prev) =>
@@ -122,13 +125,27 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     });
   };
 
+  const isValidPercent = (value: number) => Number.isFinite(value) && value > 0 && value < 100;
+
+  const membershipPercentTyped = membershipPercent.trim() !== '';
+  const membershipPercentInvalid =
+    membershipPercentTyped && !isValidPercent(Number(membershipPercent));
+  // 비워두거나 값이 틀리면 일반 할인율을 그대로 쓴다 — 틀린 값이 상품별 적용으로 새면 음수나
+  // NaN 세일가가 만들어진다.
+  const resolvedMembershipPercent =
+    membershipPercentTyped && !membershipPercentInvalid ? Number(membershipPercent) : null;
+
   const fillByPercent = () => {
     const value = Number(percent);
-    if (!Number.isFinite(value) || value <= 0 || value >= 100) {
+    if (!isValidPercent(value)) {
       toast.error('할인율은 1~99 사이여야 합니다.');
       return;
     }
-    setRows(applyPercentDiscount(mergedRows, value));
+    if (membershipPercentInvalid) {
+      toast.error('멤버십 할인율은 1~99 사이여야 합니다.');
+      return;
+    }
+    setRows(applyPercentDiscount(mergedRows, value, resolvedMembershipPercent ?? value));
   };
 
   const isPending = createTimeSale.isPending || updateTimeSale.isPending;
@@ -144,6 +161,10 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     }
     if (mergedRows.length === 0) {
       toast.error('세일에 올릴 상품을 선택하세요.');
+      return;
+    }
+    if (saleSummary.filled === 0) {
+      toast.error('세일가를 입력한 품목이 하나도 없습니다.');
       return;
     }
 
@@ -198,13 +219,16 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
             </Button>
             <Button
               onClick={() => void submit()}
-              disabled={isPending || errors.length > 0 || mergedRows.length === 0}
+              disabled={
+                isPending ||
+                errors.length > 0 ||
+                mergedRows.length === 0 ||
+                saleSummary.filled === 0
+              }
             >
               {errors.length > 0
                 ? `세일가 확인 필요 (${errors.length})`
-                : isEdit
-                  ? '수정'
-                  : '등록'}
+                : `${isEdit ? '수정' : '등록'}${saleSummary.filled > 0 ? ` (${saleSummary.filled}개 품목)` : ''}`}
             </Button>
           </div>
         }
@@ -266,7 +290,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
           <Section
             step={3}
             title="세일가"
-            description="일반가는 정가에서, 멤버십가는 멤버십가에서 같은 비율로 깎습니다."
+            description="일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. 세일가를 비운 품목은 세일에서 빠집니다."
           >
             <div className="flex flex-wrap items-end gap-2">
               <div className="space-y-1">
@@ -279,7 +303,26 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
                   onChange={(event) => setPercent(event.target.value)}
                 />
               </div>
-              <Button type="button" variant="outline" onClick={fillByPercent}>
+              <div className="space-y-1">
+                <Label htmlFor="time-sale-membership-percent">멤버십 할인율(%)</Label>
+                <Input
+                  id="time-sale-membership-percent"
+                  type="number"
+                  className="w-28"
+                  placeholder={percent || '동일'}
+                  value={membershipPercent}
+                  onChange={(event) => setMembershipPercent(event.target.value)}
+                />
+                {membershipPercentInvalid && (
+                  <p className="text-xs text-red-600">1~99 사이로 넣으세요.</p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={membershipPercentInvalid}
+                onClick={fillByPercent}
+              >
                 전체 채우기
               </Button>
               <p className="text-muted-foreground pb-2 text-xs">
@@ -287,11 +330,22 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
               </p>
             </div>
 
+            <p className="text-muted-foreground text-xs">
+              멤버십가가 이미 많이 깎여 있으면 같은 할인율로는 구독자에게 값이 안 변합니다 — 둘 중
+              싼 값이 적용되기 때문입니다. 그럴 땐 멤버십 할인율을 낮춰 잡으세요.
+            </p>
+
             <TimeSalePriceEditor
               rows={mergedRows}
               errorByVariant={errorByVariant}
+              membershipPercent={resolvedMembershipPercent}
+              disabled={membershipPercentInvalid}
               onChange={setRows}
             />
+
+            <p className="text-muted-foreground text-xs">
+              세일에 들어갈 품목 {saleSummary.filled}개 / 고른 품목 {saleSummary.total}개
+            </p>
           </Section>
         )}
 

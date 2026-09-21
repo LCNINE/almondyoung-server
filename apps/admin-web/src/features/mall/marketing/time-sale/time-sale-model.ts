@@ -156,19 +156,26 @@ export function findVariantConflicts<T extends { variantIds: string[] }>(
 /**
  * "정가의 N% 할인" 일괄 채우기.
  *
- * 같은 N 을 각자의 기준에 적용한다 — 일반은 정가에서, 멤버십은 멤버십가에서. 그래야 "전 상품 20%
- * 추가 할인" 한 문장으로 설명되고, 멤버십 세일가가 멤버십가보다 반드시 싸져 검증에 걸리지 않는다.
- * 정가 기준 하나로 양쪽을 채우면 멤버십 할인율이 N 보다 큰 상품이 전부 저장 거부된다
- * (라이브 기준 할인 있는 variant 의 중앙값이 20%).
+ * 각 할인율을 각자의 기준에 적용한다 — 일반은 정가에서, 멤버십은 멤버십가에서. 정가 기준 하나로
+ * 양쪽을 채우면 멤버십 할인율이 N 보다 큰 상품이 전부 저장 거부된다.
+ *
+ * 멤버십 할인율은 따로 받는다. 같은 N 을 쓰면 이미 N% 이상 할인 중인 멤버십가(라이브 기준
+ * 27,015 개 중 28%)는 세일가보다 싸서 Medusa 가 멤버십가를 그대로 적용한다 — 세일을 걸어도
+ * 구독자에겐 값이 안 변한다. 생략하면 종전대로 같은 비율이다.
  */
-export function applyPercentDiscount(rows: TimeSaleRow[], percent: number): TimeSaleRow[] {
+export function applyPercentDiscount(
+  rows: TimeSaleRow[],
+  percent: number,
+  membershipPercent: number = percent
+): TimeSaleRow[] {
   const rate = 1 - percent / 100;
+  const membershipRate = 1 - membershipPercent / 100;
 
   return rows.map((row) => ({
     ...row,
     generalSalePrice: Math.round(row.basePrice * rate),
     membershipSalePrice:
-      row.membershipBasePrice === null ? null : Math.round(row.membershipBasePrice * rate),
+      row.membershipBasePrice === null ? null : Math.round(row.membershipBasePrice * membershipRate),
   }));
 }
 
@@ -177,17 +184,28 @@ export function applyPercentDiscount(rows: TimeSaleRow[], percent: number): Time
  *
  * 세일가가 현재가보다 비싸면 뱃지만 붙고 가격은 그대로다 — "세일이라며 왜 그대로냐" CS 가 된다.
  * 화면에서 눈으로 비교되긴 하지만 상품이 스무 개면 놓친다.
+ *
+ * **빈 칸은 에러가 아니라 «그 품목은 세일에서 뺀다» 는 뜻이다.** 상품을 고르면 옵션이 백 개씩
+ * 딸려오는데(라이브에 143 개짜리가 있다) 전부 채워야만 저장되면 "안 팔리는 옵션만 세일" 이
+ * 불가능하고, 그렇게 만든 세일은 편집 화면에서 다시 저장할 수도 없다.
  */
 export function validateRows(rows: TimeSaleRow[]): RowError[] {
   const errors: RowError[] = [];
 
   for (const row of rows) {
     if (row.generalSalePrice === null) {
-      errors.push({ variantId: row.variantId, message: '세일가를 입력하세요.' });
+      if (row.membershipSalePrice !== null) {
+        errors.push({
+          variantId: row.variantId,
+          message: '일반 세일가를 비우면 이 품목은 세일에서 빠집니다. 멤버십 세일가도 비우세요.',
+        });
+      }
       continue;
     }
-    if (row.generalSalePrice <= 0) {
-      errors.push({ variantId: row.variantId, message: '세일가는 0원보다 커야 합니다.' });
+    // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
+    // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
+    if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
+      errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
       continue;
     }
     if (row.generalSalePrice >= row.basePrice) {
@@ -196,19 +214,33 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
         message: `세일가는 정가(${row.basePrice.toLocaleString()}원)보다 낮아야 합니다.`,
       });
     }
-    if (
-      row.membershipBasePrice !== null &&
-      row.membershipSalePrice !== null &&
-      row.membershipSalePrice >= row.membershipBasePrice
-    ) {
-      errors.push({
-        variantId: row.variantId,
-        message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
-      });
+    if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
+      if (!Number.isFinite(row.membershipSalePrice) || row.membershipSalePrice <= 0) {
+        errors.push({
+          variantId: row.variantId,
+          message: '멤버십 세일가는 0원보다 큰 숫자여야 합니다.',
+        });
+      } else if (row.membershipSalePrice >= row.membershipBasePrice) {
+        errors.push({
+          variantId: row.variantId,
+          message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
+        });
+      }
     }
   }
 
   return errors;
+}
+
+/**
+ * 실제로 세일에 들어가는 품목.
+ *
+ * 세일가를 비운 품목은 `buildPriceListPayloads` 가 이미 빼고 있다. 중복 검사처럼 "이 세일이
+ * 건드리는 품목" 을 묻는 쪽도 같은 기준을 써야 한다 — 고른 상품의 옵션 전부를 세면 세일가를
+ * 넣지도 않은 품목 때문에 저장이 막힌다.
+ */
+export function saleVariantIds(rows: TimeSaleRow[]): string[] {
+  return rows.filter((row) => row.generalSalePrice !== null).map((row) => row.variantId);
 }
 
 export type PriceListPricePayload = {

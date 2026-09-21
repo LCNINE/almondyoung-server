@@ -20,8 +20,10 @@ const HOME_ROWS = 10
 
 export async function TimeSaleWrapper({
   countryCode,
+  background,
 }: {
   countryCode: string
+  background?: "white" | "muted"
 }) {
   const sales = (await listActiveTimeSales()).filter(
     (sale) => sale.endsAt && sale.productIds.length > 0
@@ -112,6 +114,7 @@ export async function TimeSaleWrapper({
             )}
             customer={customer}
             wishlistIds={wishlistIds}
+            background={background}
           />
         ))}
     </>

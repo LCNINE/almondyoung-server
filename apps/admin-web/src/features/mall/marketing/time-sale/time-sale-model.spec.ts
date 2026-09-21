@@ -6,6 +6,7 @@ import {
   findOverlapping,
   findVariantConflicts,
   resolveTimeSaleStatus,
+  saleVariantIds,
   validateRows,
   toTimeSaleRows,
   type TimeSaleRow,
@@ -113,6 +114,16 @@ describe('applyPercentDiscount', () => {
     expect(result.membershipSalePrice).toBe(7200);
     expect(validateRows([result])).toEqual([]);
   });
+
+  // 멤버십가가 이미 정가의 30% 를 깎은 값이면 20% 세일가(8000)보다 싸서 Medusa 가 멤버십가를
+  // 그대로 적용한다 — 구독자에겐 세일이 없는 것과 같다. 멤버십만 얕게 깎아 그걸 피한다.
+  it('멤버십 할인율을 따로 주면 멤버십가만 그 비율로 깎는다', () => {
+    const [result] = applyPercentDiscount([row({ membershipBasePrice: 7000 })], 20, 10);
+
+    expect(result.generalSalePrice).toBe(8000);
+    expect(result.membershipSalePrice).toBe(6300);
+    expect(validateRows([result])).toEqual([]);
+  });
 });
 
 describe('validateRows', () => {
@@ -126,8 +137,42 @@ describe('validateRows', () => {
     expect(errors[0].message).toContain('멤버십가');
   });
 
-  it('세일가가 비어 있으면 막는다', () => {
-    expect(validateRows([row()])[0].message).toContain('세일가를 입력');
+  // 빈 칸은 "이 품목은 세일에서 뺀다" 는 뜻이다. 상품 하나에 옵션이 백 개씩 딸려오는데 전부
+  // 채워야만 저장되면 일부 옵션만 거는 세일을 만들 수도, 그렇게 만든 세일을 다시 저장할 수도 없다.
+  it('세일가가 비어 있으면 그 품목만 빠지고 저장은 막지 않는다', () => {
+    expect(validateRows([row()])).toEqual([]);
+  });
+
+  it('일반 세일가 없이 멤버십 세일가만 남으면 막는다', () => {
+    const errors = validateRows([row({ membershipSalePrice: 6000 })]);
+    expect(errors[0].message).toContain('멤버십 세일가도 비우세요');
+  });
+
+  // 할인율 100 이상이면 음수가, NaN 이면 `amount: null` 이 Medusa 까지 간다. 멤버십 쪽은
+  // "멤버십가보다 싼가" 만 봐서 둘 다 통과했다 — 음수도 NaN 비교도 그 검사를 뚫는다.
+  it('멤버십 세일가가 0 이하면 막는다', () => {
+    const errors = validateRows([row({ generalSalePrice: 8000, membershipSalePrice: -100 })]);
+    expect(errors[0].message).toContain('멤버십 세일가는 0원보다');
+  });
+
+  it('세일가가 숫자가 아니면 막는다', () => {
+    expect(validateRows([row({ generalSalePrice: NaN })])[0].message).toContain('숫자여야');
+    expect(
+      validateRows([row({ generalSalePrice: 8000, membershipSalePrice: NaN })])[0].message
+    ).toContain('멤버십 세일가는 0원보다');
+  });
+});
+
+describe('saleVariantIds', () => {
+  // 상품 하나에 옵션이 백 개씩 딸려오는데 세일가를 넣은 건 몇 개뿐일 수 있다. 중복 검사가
+  // 고른 옵션 전부를 세면, 세일에 넣지도 않은 품목 때문에 저장이 막힌다.
+  it('세일가를 비운 품목은 빠진다', () => {
+    expect(
+      saleVariantIds([
+        row({ variantId: 'variant_1', generalSalePrice: 8000 }),
+        row({ variantId: 'variant_2' }),
+      ])
+    ).toEqual(['variant_1']);
   });
 });
 

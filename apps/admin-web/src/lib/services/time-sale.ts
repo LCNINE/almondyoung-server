@@ -14,6 +14,7 @@ import {
   findOverlapping,
   findVariantConflicts,
   resolveTimeSaleStatus,
+  saleVariantIds,
   toTimeSaleRows,
   validateRows,
   type TimeSalePeriod,
@@ -165,7 +166,7 @@ export function useCreateTimeSale() {
         ],
       }));
       const conflicts = findVariantConflicts(
-        input.rows.map((row) => row.variantId),
+        saleVariantIds(input.rows),
         findOverlapping(input.period, existing)
       );
       if (conflicts.length > 0) {

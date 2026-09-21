@@ -76,6 +76,9 @@
     "nextSale": "Next time sale starts {date}",
     "endsIn": "Ends in {remaining}",
     "countdownLabel": "Time sale ends in",
-    "endsOn": "Until {date}"
+    "endsOn": "Until {date}",
+    "dayUnit": "d",
+    "untilEnd": "Ends in",
+    "endingSoon": "Ending soon"
   }
 }

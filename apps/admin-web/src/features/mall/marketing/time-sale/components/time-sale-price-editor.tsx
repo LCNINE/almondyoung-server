@@ -5,7 +5,11 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { applyPercentDiscount, summarizeSaleRows, type TimeSaleRow } from '../time-sale-model';
+import {
+  applyPercentDiscount,
+  summarizeSaleRows,
+  type TimeSaleRow,
+} from '../time-sale-model';
 
 const won = (value: number) => `${value.toLocaleString('ko-KR')}원`;
 
@@ -36,14 +40,23 @@ const groupByProduct = (rows: TimeSaleRow[]): Group[] => {
 export function TimeSalePriceEditor({
   rows,
   errorByVariant,
+  membershipPercent,
+  disabled,
   onChange,
 }: {
   rows: TimeSaleRow[];
   errorByVariant: Map<string, string>;
+  /** null 이면 상품 줄에 적은 할인율을 멤버십가에도 그대로 쓴다. */
+  membershipPercent: number | null;
+  /** 멤버십 할인율 입력이 틀렸을 때. 이때 적용을 허용하면 그 값이 일반 할인율로 대체돼
+   * 조용히 저장된다 — 값이 그럴듯해서 검증에도 안 걸린다. */
+  disabled?: boolean;
   onChange: (rows: TimeSaleRow[]) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [percentByProduct, setPercentByProduct] = useState<Record<string, string>>({});
+  const [percentByProduct, setPercentByProduct] = useState<
+    Record<string, string>
+  >({});
 
   const groups = groupByProduct(rows);
 
@@ -57,11 +70,16 @@ export function TimeSalePriceEditor({
   };
 
   const applyToProduct = (group: Group) => {
+    if (disabled) return;
     const percent = Number(percentByProduct[group.productId]);
     if (!Number.isFinite(percent) || percent <= 0 || percent >= 100) return;
 
     const discounted = new Map(
-      applyPercentDiscount(group.rows, percent).map((row) => [row.variantId, row])
+      applyPercentDiscount(
+        group.rows,
+        percent,
+        membershipPercent ?? percent
+      ).map((row) => [row.variantId, row])
     );
     onChange(rows.map((row) => discounted.get(row.variantId) ?? row));
   };
@@ -72,7 +90,11 @@ export function TimeSalePriceEditor({
     raw: string
   ) => {
     const value = raw === '' ? null : Number(raw);
-    onChange(rows.map((row) => (row.variantId === variantId ? { ...row, [field]: value } : row)));
+    onChange(
+      rows.map((row) =>
+        row.variantId === variantId ? { ...row, [field]: value } : row
+      )
+    );
   };
 
   return (
@@ -80,7 +102,9 @@ export function TimeSalePriceEditor({
       {groups.map((group) => {
         const isOpen = expanded.has(group.productId);
         const summary = summarizeSaleRows(group.rows);
-        const errorCount = group.rows.filter((row) => errorByVariant.has(row.variantId)).length;
+        const errorCount = group.rows.filter((row) =>
+          errorByVariant.has(row.variantId)
+        ).length;
         const percentLabel =
           summary.minPercent === null
             ? null
@@ -107,7 +131,9 @@ export function TimeSalePriceEditor({
                 ) : (
                   <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
                 )}
-                <span className="truncate text-sm font-medium">{group.productTitle}</span>
+                <span className="truncate text-sm font-medium">
+                  {group.productTitle}
+                </span>
                 <span className="text-muted-foreground shrink-0 text-xs">
                   품목 {summary.total}개
                 </span>
@@ -116,12 +142,14 @@ export function TimeSalePriceEditor({
                     {percentLabel} 할인 · {priceLabel}
                     {summary.filled < summary.total && (
                       <span className="text-muted-foreground ml-1 font-normal">
-                        ({summary.total - summary.filled}개 미입력)
+                        ({summary.total - summary.filled}개 세일 제외)
                       </span>
                     )}
                   </span>
                 ) : (
-                  <span className="text-muted-foreground shrink-0 text-xs">세일가 미입력</span>
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    전부 세일 제외
+                  </span>
                 )}
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="shrink-0">
@@ -143,7 +171,13 @@ export function TimeSalePriceEditor({
                     }))
                   }
                 />
-                <Button type="button" variant="outline" size="sm" onClick={() => applyToProduct(group)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => applyToProduct(group)}
+                >
                   적용
                 </Button>
               </div>
@@ -156,7 +190,9 @@ export function TimeSalePriceEditor({
                     <tr>
                       <th className="px-3 py-2 text-left">품목</th>
                       <th className="px-3 py-2 text-right">정가</th>
-                      <th className="px-3 py-2 text-right">일반 세일가</th>
+                      <th className="px-3 py-2 text-right">
+                        일반 세일가 (비우면 제외)
+                      </th>
                       <th className="px-3 py-2 text-right">멤버십가</th>
                       <th className="px-3 py-2 text-right">멤버십 세일가</th>
                     </tr>
@@ -168,7 +204,11 @@ export function TimeSalePriceEditor({
                         <tr key={row.variantId} className="border-t">
                           <td className="px-3 py-2">
                             <div className="text-xs">{row.variantTitle}</div>
-                            {error && <div className="text-xs text-red-600">{error}</div>}
+                            {error && (
+                              <div className="text-xs text-red-600">
+                                {error}
+                              </div>
+                            )}
                           </td>
                           <td className="text-muted-foreground px-3 py-2 text-right tabular-nums whitespace-nowrap">
                             {won(row.basePrice)}
@@ -179,7 +219,11 @@ export function TimeSalePriceEditor({
                               className="ml-auto w-28 text-right"
                               value={row.generalSalePrice ?? ''}
                               onChange={(event) =>
-                                editRow(row.variantId, 'generalSalePrice', event.target.value)
+                                editRow(
+                                  row.variantId,
+                                  'generalSalePrice',
+                                  event.target.value
+                                )
                               }
                             />
                           </td>
@@ -190,14 +234,20 @@ export function TimeSalePriceEditor({
                           </td>
                           <td className="px-3 py-2 text-right">
                             {row.membershipBasePrice === null ? (
-                              <span className="text-muted-foreground text-xs">해당 없음</span>
+                              <span className="text-muted-foreground text-xs">
+                                해당 없음
+                              </span>
                             ) : (
                               <Input
                                 type="number"
                                 className="ml-auto w-28 text-right"
                                 value={row.membershipSalePrice ?? ''}
                                 onChange={(event) =>
-                                  editRow(row.variantId, 'membershipSalePrice', event.target.value)
+                                  editRow(
+                                    row.variantId,
+                                    'membershipSalePrice',
+                                    event.target.value
+                                  )
                                 }
                               />
                             )}

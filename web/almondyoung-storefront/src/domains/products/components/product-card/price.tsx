@@ -2,7 +2,6 @@
 
 import { VariantPrice } from "@/lib/types/common/price"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import { DiscountBadge } from "@/components/shared/badges/discount-badge"
 
 interface Props {
   price: VariantPrice
@@ -11,6 +10,35 @@ interface Props {
   isMembershipOnly: boolean
   /** 이 가격이 타임세일 price list 에서 나왔는지. */
   isTimeSale?: boolean
+}
+
+function TimeSalePrice({
+  original,
+  sale,
+  showMembershipBadge,
+}: {
+  original: number
+  sale: number
+  showMembershipBadge: boolean
+}) {
+  const percent = Math.round(((original - sale) / original) * 100)
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[13px] text-[#8b95a1] line-through">
+        {original.toLocaleString()}원
+      </span>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[17px] leading-none font-bold text-[#f04452]">{percent}%</span>
+        <span className="text-[17px] leading-none font-bold whitespace-nowrap text-[#191f28]">
+          {sale.toLocaleString()}원
+        </span>
+      </div>
+      {showMembershipBadge && (
+        <ProductMembershipBadge size="sm" label="멤버십할인가" className="mt-1" />
+      )}
+    </div>
+  )
 }
 
 export default function ProductPrice({
@@ -64,32 +92,30 @@ export default function ProductPrice({
     // 멤버십가가 지금 보고 있는 값보다 쌀 때만 가입 유인이 된다. 세일가가 더 싸면 거짓말이 된다.
     const membershipStillCheaper = membershipPrice > 0 && membershipPrice < price.calculated_price_number
 
+    if (isTimeSale) {
+      return (
+        <TimeSalePrice
+          original={price.original_price_number}
+          sale={price.calculated_price_number}
+          showMembershipBadge={membershipStillCheaper}
+        />
+      )
+    }
+
     return (
-      <div className={`flex flex-col ${isTimeSale ? "gap-2" : "gap-1"}`}>
+      <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1 text-[13px] text-gray-400">
-          {!isTimeSale && <span className="shrink-0 font-bold">{saleDiscount}%</span>}
+          <span className="shrink-0 font-bold">{saleDiscount}%</span>
           <span className="min-w-0 truncate line-through">
             {price.original_price_number.toLocaleString()}원
           </span>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <span
-            className={`text-[16px] leading-none font-bold whitespace-nowrap ${
-              isTimeSale ? "text-red-30" : "text-foreground"
-            }`}
-          >
+          <span className="text-foreground text-[16px] leading-none font-bold whitespace-nowrap">
             {price.calculated_price_number.toLocaleString()}원
           </span>
-          {isTimeSale && membershipStillCheaper && (
-            <ProductMembershipBadge
-              size="sm"
-              label="멤버십할인가"
-              className="shrink-0"
-            />
-          )}
         </div>
-        {isTimeSale && <DiscountBadge percent={saleDiscount} />}
-        {!isTimeSale && membershipStillCheaper && (
+        {membershipStillCheaper && (
           <div className="flex flex-col gap-0.5 text-[#F2994A]">
             <ProductMembershipBadge size="sm" label="멤버십할인가" />
             <span className="text-[15px] font-bold whitespace-nowrap">
@@ -102,6 +128,16 @@ export default function ProductPrice({
   }
 
   if (isMembership) {
+    if (isTimeSale && hasMemberDiscount) {
+      return (
+        <TimeSalePrice
+          original={price.original_price_number}
+          sale={price.calculated_price_number}
+          showMembershipBadge
+        />
+      )
+    }
+
     // Medusa price list가 실제로 적용된 경우에만 배지 표시
     if (!hasMemberDiscount) {
       return (
@@ -114,18 +150,14 @@ export default function ProductPrice({
     return (
       <>
         <div className="flex items-center gap-1 text-[13px] text-gray-400">
-          {!isTimeSale && <span className="shrink-0 font-bold">{memberDiscount}%</span>}
+          <span className="shrink-0 font-bold">{memberDiscount}%</span>
           <span className="min-w-0 truncate line-through">
             {price.original_price_number.toLocaleString()}원
           </span>
         </div>
 
         <div className="flex min-w-0 flex-col gap-x-1 gap-y-0.5 md:flex-row md:items-center">
-          <span
-            className={`text-[16px] leading-none font-bold whitespace-nowrap ${
-              isTimeSale ? "text-red-30" : "text-black"
-            }`}
-          >
+          <span className="text-[16px] leading-none font-bold whitespace-nowrap text-black">
             {price.calculated_price_number.toLocaleString()}원
           </span>
 
@@ -135,8 +167,6 @@ export default function ProductPrice({
             className="shrink-0"
           />
         </div>
-
-        {isTimeSale && <DiscountBadge percent={memberDiscount} />}
       </>
     )
   }

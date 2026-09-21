@@ -27,7 +27,7 @@ export default async function TimeSalePage({
       {/* 세일이 없어도 404 로 보내지 않는다 — 이 링크는 홈·카트·상품상세에 박혀 있어서
           세일 사이에 죽은 링크가 된다. */}
       {sales.length > 0 ? (
-        <TimeSaleWrapper countryCode={countryCode} />
+        <TimeSaleWrapper countryCode={countryCode} background="white" />
       ) : (
         <div className="py-24 text-center">
           <p className="text-lg font-semibold">{t("noSaleTitle")}</p>

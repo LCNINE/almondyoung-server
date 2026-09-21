@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
+import { TimeSaleDeadline } from "@/components/shared/time-sale-deadline"
 import type { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import type { TimeSaleTab } from "@/lib/utils/time-sale-tabs"
 import { ProductSection } from "../../shared/product-section"
@@ -17,6 +18,7 @@ interface TimeSaleSectionProps {
   tabs: TimeSaleTab[]
   customer: StoreCustomerWithGroups | null
   wishlistIds?: Set<string>
+  background?: "white" | "muted"
 }
 
 const toTabItem = (tab: TimeSaleTab) => ({ ...tab, id: tab.key })
@@ -36,6 +38,7 @@ export function TimeSaleSection({
   tabs,
   customer,
   wishlistIds,
+  background = "muted",
 }: TimeSaleSectionProps) {
   const t = useTranslations("home.timeSale")
   const items = tabs.map(toTabItem)
@@ -48,19 +51,22 @@ export function TimeSaleSection({
     ? products.filter((product) => activeTab.productIds.includes(product.id))
     : products
 
+  const heading = (
+    <span className="text-[#191f28]">
+      {title ?? `${t("titleFirst")}${t("titleSecond")}`}
+    </span>
+  )
+
   return (
-    <HomeSection className="[&_img]:p-0!">
+    <HomeSection background={background} className="[&_img]:p-0!">
       <ProductSection
         title={
-          title ? (
-            <span className="text-primary">{title}</span>
-          ) : (
-            <>
-              <span className="text-primary">{t("titleFirst")}</span>
-              {t("titleSecond")}
-            </>
-          )
+          <>
+            {heading}
+            <TimeSaleDeadline endsAt={endsAt} className="mt-2" />
+          </>
         }
+        titleClassName="md:text-left [&>span]:block"
         tabs={items.length > 0 ? items : [FALLBACK_TAB]}
         activeTab={activeTab ?? FALLBACK_TAB}
         hideTabs={items.length === 0}

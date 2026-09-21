@@ -76,6 +76,9 @@
     "nextSale": "次のタイムセールは {date} 開始",
     "endsIn": "タイムセール終了まで {remaining}",
     "countdownLabel": "タイムセール終了まで",
-    "endsOn": "{date}まで"
+    "endsOn": "{date}まで",
+    "dayUnit": "日",
+    "untilEnd": "終了まで",
+    "endingSoon": "まもなく終了"
   }
 }

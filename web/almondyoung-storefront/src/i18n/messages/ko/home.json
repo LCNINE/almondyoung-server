@@ -76,6 +76,9 @@
     "nextSale": "다음 타임세일 {date} 시작",
     "endsIn": "타임세일 종료까지 {remaining}",
     "countdownLabel": "타임세일 종료까지",
-    "endsOn": "{date}까지"
+    "endsOn": "{date}까지",
+    "dayUnit": "일",
+    "untilEnd": "종료까지",
+    "endingSoon": "마감 임박"
   }
 }

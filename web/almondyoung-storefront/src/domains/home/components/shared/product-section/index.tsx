@@ -49,6 +49,7 @@ interface ProductSectionProps<T extends TabItem> {
   renderOverlay?: (product: HttpTypes.StoreProduct, index: number) => ReactNode
   /** 데스크톱 그리드에 얹을 클래스. 줄 수를 제한할 때 쓴다. */
   gridClassName?: string
+  titleClassName?: string
 }
 
 export function ProductSection<T extends TabItem>({
@@ -69,6 +70,7 @@ export function ProductSection<T extends TabItem>({
   footer,
   renderOverlay = (_product, index) => <RankBadge rank={index + 1} />,
   gridClassName,
+  titleClassName,
 }: ProductSectionProps<T>) {
   const handleTabChange = (value: string) => {
     const nextTab = tabs.find((t) => t.id === value)
@@ -146,7 +148,7 @@ export function ProductSection<T extends TabItem>({
   return (
     <div className="w-full">
       <Header className="mb-6">
-        <Title className="flex-1 md:text-center">{title}</Title>
+        <Title className={cn("flex-1 md:text-center", titleClassName)}>{title}</Title>
         <div className="flex items-center gap-1 md:absolute md:right-0">
           {moreHref && <MoreButton href={moreHref} showOnDesktop />}
           {headerExtra}
