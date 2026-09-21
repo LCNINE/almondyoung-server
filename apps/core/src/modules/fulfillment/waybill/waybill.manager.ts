@@ -63,8 +63,17 @@ export class WaybillManager {
               `${WAYBILL.ERROR.STALE_MANIFEST_VERSION}: ${ctx.manifestVersion} != ${opts.expectedManifestVersion}`,
             );
           }
-          if (await this.reader.getActiveWaybill(trx, shipmentId)) {
-            throw new ConflictError(`${WAYBILL.ERROR.ACTIVE_EXISTS}: ${shipmentId}`);
+          const active = await this.reader.getActiveWaybill(trx, shipmentId);
+          if (active) {
+            // 일시적 거절(ERROR-05/06)로 멈춰 선 pending 행은 «새로 만들지 않고 그 행을 재구동»한다(#914).
+            // 이 분기가 없으면 pending 이 활성 슬롯을 붙들어 재발급·수기등록이 전부 409 로 막히고,
+            // 운영자에게 남는 복구 경로가 0 이 된다. drive 는 멱등이라 같은 행을 다시 태워도 안전하다.
+            if (
+              !isRetryableTransientRow(active, ctx.manifestVersion, this.reader.recipientHashOf(ctx.recipientSnapshot))
+            ) {
+              throw new ConflictError(`${WAYBILL.ERROR.ACTIVE_EXISTS}: ${shipmentId}`);
+            }
+            return { response: { waybillId: active.id }, resourceType: 'waybill', resourceId: active.id };
           }
           const req = assembleWaybillRequest({
             shipmentId,
@@ -98,7 +107,48 @@ export class WaybillManager {
         return { waybillId: r.waybillId, request };
       });
 
+    // 재시도 시각 전이면 캐리어를 부르지 않고 현 상태를 그대로 돌려준다 — 한도가 아직 안 풀렸는데
+    // 다시 부르면 같은 거절을 받아 전용 CAP 만 태운다. 배치 화면에는 pending + lastError 로 보인다.
+    const current = await this.dbService.run((trx) => this.repo.findById(trx, waybillId));
+    if (current && current.status === 'pending' && current.nextAttemptAt && current.nextAttemptAt > new Date()) {
+      return current;
+    }
     return this.machine.drive(waybillId, request);
+  }
+
+  // 교착된 발급(pending/allocated)을 운영자가 강제 종료해 활성 슬롯을 푼다(#914 문제 2).
+  // 이게 없으면 `WAYBILL_ABANDON_NOT_ALLOWED` 메시지가 «존재하지 않는 기능»을 가리킨다.
+  // allocated 를 버리면 한진에 채번된 wblNo 하나가 미사용으로 남는다 — 그래서 사유를 필수로 받아 남긴다.
+  // 외부 I/O 가 없어 호출자 tx 에 합류할 수 있다.
+  async abandon(
+    waybillId: string,
+    dto: { reason: string },
+    idempotencyKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillRow> {
+    const reason = dto.reason.trim();
+    if (!reason) throw new BadRequestError(`${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: reason required`);
+    return this.commands.execute<WaybillRow>(
+      {
+        commandType: 'shipment.waybill.abandon',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, waybillId, reason },
+      },
+      async (trx) => {
+        const wb = await this.repo.findById(trx, waybillId);
+        if (!wb) throw new NotFoundError(`${WAYBILL.ERROR.NOT_FOUND}: ${waybillId}`);
+        if (wb.status !== 'pending' && wb.status !== 'allocated') {
+          throw new ConflictError(`${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: ${waybillId} is ${wb.status}`);
+        }
+        const ok = await this.repo.casToAbandoned(trx, waybillId, wb.status, `abandoned by operator: ${reason}`);
+        if (!ok) throw new ConflictError(`${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: ${waybillId} changed concurrently`);
+        const row = await this.repo.findById(trx, waybillId);
+        // 방금 같은 트랜잭션에서 CAS 에 성공했고 waybills 에 hard-delete 경로가 없으므로 undefined 일 수 없다.
+        return { response: row as WaybillRow, resourceType: 'waybill', resourceId: waybillId };
+      },
+      tx,
+    );
   }
 
   // 배치 발급(§10): 버전 인자 없음 — shipment 별 CURRENT manifestVersion 을 그때그때 읽어 issueForShipment 에
@@ -118,7 +168,13 @@ export class WaybillManager {
 
     const runOne = async (shipmentId: string): Promise<void> => {
       if (Date.now() >= deadline) {
-        results.set(shipmentId, { shipmentId, status: 'pending', trackingNo: null, reason: 'time-budget-exceeded' });
+        results.set(shipmentId, {
+          shipmentId,
+          status: 'pending',
+          trackingNo: null,
+          reason: 'time-budget-exceeded',
+          nextAttemptAt: null,
+        });
         return;
       }
       try {
@@ -129,13 +185,20 @@ export class WaybillManager {
           `${idempotencyKey}:${shipmentId}`,
           actor,
         );
-        results.set(shipmentId, { shipmentId, status: wb.status, trackingNo: wb.trackingNo, reason: wb.lastError });
+        results.set(shipmentId, {
+          shipmentId,
+          status: wb.status,
+          trackingNo: wb.trackingNo,
+          reason: wb.lastError,
+          nextAttemptAt: wb.nextAttemptAt ? wb.nextAttemptAt.toISOString() : null,
+        });
       } catch (e) {
         results.set(shipmentId, {
           shipmentId,
           status: 'failed',
           trackingNo: null,
           reason: e instanceof Error ? e.message : String(e),
+          nextAttemptAt: null,
         });
       }
     };
@@ -154,10 +217,23 @@ export class WaybillManager {
     // 방어적 처리: 워커 풀은 정상적으로 큐를 완전히 소진하므로 여기 도달할 항목은 없어야 하지만,
     // 예기치 못한 워커 조기종료로 큐에 미착수건이 남는 경우에도 silent truncation 을 방지한다.
     for (const id of queue) {
-      results.set(id, { shipmentId: id, status: 'pending', trackingNo: null, reason: 'time-budget-exceeded' });
+      results.set(id, {
+        shipmentId: id,
+        status: 'pending',
+        trackingNo: null,
+        reason: 'time-budget-exceeded',
+        nextAttemptAt: null,
+      });
     }
     return shipmentIds.map(
-      (id) => results.get(id) ?? { shipmentId: id, status: 'pending', trackingNo: null, reason: 'not-processed' },
+      (id) =>
+        results.get(id) ?? {
+          shipmentId: id,
+          status: 'pending',
+          trackingNo: null,
+          reason: 'not-processed',
+          nextAttemptAt: null,
+        },
     );
   }
 
@@ -377,4 +453,22 @@ function isUniqueViolation(e: unknown): boolean {
     current = row.cause;
   }
   return false;
+}
+
+/**
+ * 「이 활성 행은 일시적 거절로 멈춰 선 것이고, 같은 내용으로 다시 태워도 되는가」.
+ *
+ * - `transientAttempts > 0` 를 요구한다 — 방금 다른 요청이 만들어 «진행 중»인 pending 행을
+ *   두 번 태우지 않기 위해서다. 일시적 거절을 한 번이라도 겪은 행만 재구동 대상이다.
+ * - manifestVersion·recipientHash 가 둘 다 같아야 한다. 수하인만 바뀌면 manifestVersion 은 그대로일
+ *   수 있어 버전 비교만으로는 «주소가 바뀐 상자»를 옛 내용으로 발급하게 된다.
+ *   달라졌으면 운영자가 abandon 후 재발급하는 게 맞다.
+ */
+export function isRetryableTransientRow(row: WaybillRow, manifestVersion: number, recipientHash: string): boolean {
+  return (
+    row.status === 'pending' &&
+    row.transientAttempts > 0 &&
+    row.manifestVersion === manifestVersion &&
+    row.recipientHash === recipientHash
+  );
 }

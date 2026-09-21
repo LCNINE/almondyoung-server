@@ -43,14 +43,35 @@ export interface CarrierScan {
   reasonMessage?: string;
 }
 
-export type CarrierErrorOutcome = 'definitive_rejection' | 'unknown_outcome';
+/**
+ * `transient_rejection` 은 «확실히 거절됐지만 시간이 지나면 풀리는» 사유다 (한진 ERROR-05 일일
+ * 출력한도 / ERROR-06 지역통제). `unknown_outcome`(타임아웃·5xx = 채번이 됐는지 모른다)과 섞지 말 것 —
+ * 의미가 반대이고, 상태머신이 소모하는 카운터도 다르다.
+ */
+export type CarrierErrorOutcome = 'definitive_rejection' | 'transient_rejection' | 'unknown_outcome';
+
+/**
+ * 언제 다시 시도해도 되는지에 대한 캐리어의 힌트. «얼마나 기다려야 하는가»는 캐리어만 아는 지식이라
+ * (ERROR-05 는 일 단위, ERROR-06 은 미상) 상태머신이 코드별 분기를 갖지 않도록 게이트웨이가 실어 보낸다.
+ * 상태머신은 이걸 시각으로 환산만 한다.
+ */
+export type RetryAfter =
+  | { kind: 'next_day' } // 다음 날(KST) 이후. 일 단위로 리셋되는 한도에 쓴다.
+  | { kind: 'after_ms'; ms: number };
 
 export class CarrierError extends Error {
   override readonly name = 'CarrierError';
   constructor(
     message: string,
     readonly outcome: CarrierErrorOutcome,
-    readonly details: { carrier?: string; code?: string; httpStatus?: number; cause?: unknown } = {},
+    readonly details: {
+      carrier?: string;
+      code?: string;
+      httpStatus?: number;
+      cause?: unknown;
+      /** `transient_rejection` 일 때만 의미가 있다. 없으면 상태머신이 기본 백오프를 쓴다. */
+      retryAfter?: RetryAfter;
+    } = {},
   ) {
     super(message);
   }

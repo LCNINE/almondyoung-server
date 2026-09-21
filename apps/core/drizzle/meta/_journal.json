@@ -708,6 +708,13 @@
       "when": 1789699690591,
       "tag": "20260918024810_add-master-id-to-product-audit-log",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1789970803751,
+      "tag": "20260921060643_add-waybill-transient-retry-fields",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,8 @@ import {
   useFulfillmentShipments,
   useFulfillments,
   WAYBILL_CARRIERS,
+  isWaybillWaitingRetry,
+  retryNoticeOf,
 } from '@/lib/services/orders';
 import type { BatchResultItem, CarrierCode } from '@/lib/types/dto/fulfillment';
 
@@ -68,10 +70,16 @@ export default function WaybillIssueTemplate() {
       });
       setResults(res);
       const issued = res.filter((r) => isWaybillIssued(r.status)).length;
-      const pending = res.filter((r) => isWaybillPendingIssue(r.status)).length;
+      // 「재시도 대기」를 「진행중」에서 떼어낸다 — 섞으면 재시도 시각까지 아무 일도 안 일어나는
+      // 건들이 정상 진행 중으로 보인다(#914).
+      const waiting = res.filter((r) =>
+        isWaybillWaitingRetry(r.status, r.nextAttemptAt)
+      ).length;
+      const pending =
+        res.filter((r) => isWaybillPendingIssue(r.status)).length - waiting;
       const failed = res.filter((r) => isWaybillFailed(r.status)).length;
-      const summary = `일괄 발급 — 총 ${res.length}건 (완료 ${issued}, 진행중 ${pending}, 실패 ${failed}).`;
-      if (pending || failed) toast.warning(summary);
+      const summary = `일괄 발급 — 총 ${res.length}건 (완료 ${issued}, 진행중 ${pending}, 재시도 대기 ${waiting}, 실패 ${failed}).`;
+      if (pending || waiting || failed) toast.warning(summary);
       else toast.success(summary);
     } catch (error) {
       toast.error(getServerDenyMessage(error, '일괄 발급 요청 실패'));
@@ -182,16 +190,24 @@ export default function WaybillIssueTemplate() {
                     <TableCell className="font-mono text-xs">{r.shipmentId}</TableCell>
                     <TableCell>
                       <Badge
-                        variant={r.status === 'failed' ? 'destructive' : 'outline'}
+                        variant={
+                          r.status === 'failed'
+                            ? 'destructive'
+                            : isWaybillWaitingRetry(r.status, r.nextAttemptAt)
+                              ? 'secondary'
+                              : 'outline'
+                        }
                       >
-                        {r.status}
+                        {isWaybillWaitingRetry(r.status, r.nextAttemptAt)
+                          ? '재시도 대기'
+                          : r.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {r.trackingNo ?? '-'}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {r.reason ?? '-'}
+                      {retryNoticeOf(r.status, r.nextAttemptAt) ?? r.reason ?? '-'}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -7,6 +7,7 @@ import {
   CarrierScan,
   CarrierScanStatus,
   RegisterOutcome,
+  RetryAfter,
   WaybillRequest,
 } from '../carrier-gateway.interface';
 import { HanjinConfig, isHanjinConfigured } from './hanjin.config';
@@ -29,6 +30,14 @@ const LABEL_FIELDS = [
   'es_cod',
   'prt_add',
 ] as const;
+
+// 시간이 지나면 저절로 풀리는 print-wbl 결과코드 (정본 §4.1). 이 표에 없는 ERROR-xx 는 전부 영구 거절이다.
+// 값은 재시도 시점 힌트 — ERROR-05 는 한도가 «일 단위»로 리셋되므로 같은 날 다시 불러봐야 의미가 없고,
+// ERROR-06 은 통제 해제 시점이 미상이라 짧게 잡아 다음 배치에서 다시 부딪혀 보게 한다.
+const TRANSIENT_PRINT_WBL_CODES: Record<string, RetryAfter> = {
+  'ERROR-05': { kind: 'next_day' }, // 일일 운송장 출력 한도 초과 (고객별 한도물량)
+  'ERROR-06': { kind: 'after_ms', ms: 60 * 60 * 1000 }, // 불가항력 지역 출력 통제
+};
 
 // print-wbl 응답(snake_case). 분류필드는 인덱스 시그니처로 접근.
 interface PrintWblResponse {
@@ -106,11 +115,13 @@ export class HanjinCarrierGateway extends CarrierGateway {
     };
     const res = await this.client.post<PrintWblResponse>('print', `/v1/wbl/${this.config.clientId}/print-wbl`, body);
     if (res?.result_code !== 'OK' || !res?.wbl_num) {
+      // 구체 오류코드(ERROR-xx) 보존; OK 인데 wbl_num 만 없는 경우에만 no_wbl_num.
+      const code = res?.result_code && res.result_code !== 'OK' ? res.result_code : 'no_wbl_num';
+      const retryAfter = TRANSIENT_PRINT_WBL_CODES[code];
       throw new CarrierError(
         `Hanjin print-wbl rejected: ${res?.result_code} - ${res?.result_message ?? ''}`,
-        'definitive_rejection',
-        // 구체 오류코드(ERROR-xx) 보존; OK 인데 wbl_num 만 없는 경우에만 no_wbl_num.
-        { carrier: 'hanjin', code: res?.result_code && res.result_code !== 'OK' ? res.result_code : 'no_wbl_num' },
+        retryAfter ? 'transient_rejection' : 'definitive_rejection',
+        { carrier: 'hanjin', code, ...(retryAfter ? { retryAfter } : {}) },
       );
     }
     const labelData: Record<string, unknown> = {};

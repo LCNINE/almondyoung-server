@@ -2776,6 +2776,14 @@ export const waybills = pgTable(
     recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
     lastError: text('last_error'),
     attempts: integer('attempts').notNull().default(0),
+    // 일시적 거절(한진 ERROR-05 일일한도 / ERROR-06 지역통제) 전용 카운터. `attempts` 와 분리한 이유는
+    // 의미가 다르기 때문이다 — `attempts` 는 「채번이 됐는지 모른다」(unknown_outcome), 이쪽은
+    // 「확실히 안 됐고 시간이 지나면 풀린다」. 섞으면 일시적 사유가 pending CAP 을 갉아먹어
+    // 자동 abandon 을 앞당긴다.
+    transientAttempts: integer('transient_attempts').notNull().default(0),
+    // 이 시각 전에는 재시도하지 않는다. 지금은 발급 배치가 이 값을 보고 re-drive 여부를 정하고,
+    // 나중에 무인 폴러를 붙이면 같은 컬럼을 그대로 쓴다.
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
     issuedAt: timestamp('issued_at', { withTimezone: true }),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2802,6 +2810,7 @@ export const waybills = pgTable(
       sql`${t.source} <> 'manual' OR ${t.status} IN ('registered', 'used', 'voided')`,
     ),
     ckAttempts: check('ck_waybills_attempts', sql`${t.attempts} >= 0`),
+    ckTransientAttempts: check('ck_waybills_transient_attempts', sql`${t.transientAttempts} >= 0`),
     ckRecipientHash: check('ck_waybills_recipient_hash', sql`length(${t.recipientHash}) = 64`),
     ckManifestVersion: check('ck_waybills_manifest_version', sql`${t.manifestVersion} > 0`),
   }),
