@@ -9,6 +9,7 @@ import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { DbModule } from '@app/db';
+import { CronOnceModule } from '@app/cron-once';
 import { validateNotificationEnv } from './config/env.validation';
 import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
 import { DemoNotificationController } from './demo/demo-notification.controller';
@@ -62,6 +63,7 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
     ...(process.env.APP_STAGE === 'demo' ? [] : [BulkModule]),
     DeviceModule,
     SCHEDULE_ROOT,
+    CronOnceModule,
     SmsGateModule,
   ],
   controllers: [

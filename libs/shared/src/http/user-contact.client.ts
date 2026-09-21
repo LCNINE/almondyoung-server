@@ -110,6 +110,17 @@ export class UserContactClient {
     return data.data;
   }
 
+  async findActiveContactsByPhone(phoneNumber: string): Promise<{ userId: string; username: string }[]> {
+    const { data } = await firstValueFrom(
+      this.httpService.post<{ data: { userId: string; username: string }[] }>(
+        `${this.baseUrl()}/users/internal/contacts/by-phone`,
+        { phoneNumber },
+        { headers: this.headers(), timeout: REQUEST_TIMEOUT_MS },
+      ),
+    );
+    return data.data;
+  }
+
   async findSmsAudience(marketingOnly: boolean): Promise<SmsAudienceContact[]> {
     const { data } = await firstValueFrom(
       this.httpService.get<{ data: SmsAudienceContact[] }>(`${this.baseUrl()}/users/internal/sms-audience`, {

@@ -179,6 +179,11 @@ export class UsersService {
     return rows.map((row) => ({ ...row, marketingConsent: row.marketingConsent ?? false }));
   }
 
+  async findActiveContactsByPhone(phoneNumber: string): Promise<{ userId: string; username: string }[]> {
+    const users = await this.findUsersByPhoneNumber(phoneNumber);
+    return users.filter((u) => !u.deletedAt && !u.dormantAt).map((u) => ({ userId: u.id, username: u.username }));
+  }
+
   /** 폰 문자 대량 발송 대상: 활성(탈퇴·휴면 아님) 회원 중 휴대폰 번호가 있는 사람 전원. */
   async findSmsAudience(marketingOnly: boolean): Promise<
     { userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]

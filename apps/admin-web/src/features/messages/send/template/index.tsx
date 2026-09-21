@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useSendSmsGateMessage, useSmsDevices } from '@/lib/services/sms-gate';
+import { HelpSheet } from '../../components/help-sheet';
+import { OfflineBanner } from '../../components/offline-banner';
 import { CategoryRadio } from '../../components/category-radio';
 import { MessageComposer } from '../../components/message-composer';
 import { NhnFallbackDialog } from '../components/nhn-fallback-dialog';
@@ -92,8 +94,11 @@ export default function SmsSendTemplate() {
     <Container>
       <Header
         title="개별 메시지 전송"
+        titleAside={<HelpSheet />}
         subtitle="발송폰(SMS Gate)으로 회원에게 문자를 보냅니다."
       />
+
+      <OfflineBanner />
 
       <div className="flex flex-col gap-6 px-6 pb-6">
         <div className="flex flex-col gap-3 rounded-md border px-4 py-3">

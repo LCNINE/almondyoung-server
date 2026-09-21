@@ -103,6 +103,13 @@ export function setup(infra: SharedInfra) {
   const notificationInternalKey = new sst.Secret('NotificationInternalKey');
   const resendApiKey = new sst.Secret('ResendApiKey');
   const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
+  // 발송폰 오프라인·복구 알림을 받을 Google Chat 스페이스 웹훅. 비우면 오프라인 점검 크론이 돌지 않는다.
+  const googleChatWebhookUrl = new sst.Secret('GoogleChatWebhookUrl', '');
+  // 폰 문자(SMS Gate) 중계 계정. 비어 있으면 /sms-gate/* 가 503 이고 발송 큐도 돌지 않는다.
+  const smsGateUsername = new sst.Secret('SmsGateUsername', '');
+  const smsGatePassword = new sst.Secret('SmsGatePassword', '');
+  // 중계 서버에 웹훅을 등록할 때 쓴 서명키와 같아야 한다. 라이브는 비어 있으면 수신 웹훅을 전부 거절한다.
+  const smsGateWebhookSigningKey = new sst.Secret('SmsGateWebhookSigningKey', '');
 
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
@@ -356,6 +363,13 @@ export function setup(infra: SharedInfra) {
     RESEND_FROM: `noreply@mail.${baseDomain}`,
     RESEND_FROM_NAME: '아몬드영',
     RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+    GOOGLE_CHAT_WEBHOOK_URL: googleChatWebhookUrl.value,
+    SMS_GATE_BASE_URL: 'https://api.sms-gate.app/3rdparty/v1',
+    SMS_GATE_USERNAME: smsGateUsername.value,
+    SMS_GATE_PASSWORD: smsGatePassword.value,
+    SMS_GATE_WEBHOOK_SIGNING_KEY: smsGateWebhookSigningKey.value,
+    USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
     // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.
     STOREFRONT_URL: storefrontUrl,
   });
@@ -788,6 +802,8 @@ export function setup(infra: SharedInfra) {
       // 타임세일이 멤버십용 price list 를 만들 때 거는 고객그룹 룰. 비면 멤버십 세일가를
       // 저장할 수 없다. NEXT_PUBLIC_ 이라 빌드 타임에 박히므로 값이 바뀌면 재빌드가 필요하다.
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      // 메시지(폰 문자) 메뉴. notification 의 SMS Gate 시크릿과 같이 켜야 한다 — 한쪽만 켜면 메뉴가 503 이다.
+      NEXT_PUBLIC_SMS_GATE_ENABLED: 'true',
       // AI 는 이제 별도 앱이다 — admin-web 은 프록시만 하므로 모델 키를 갖지 않는다.
       AI_SERVICE_URL: url('ai'),
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.

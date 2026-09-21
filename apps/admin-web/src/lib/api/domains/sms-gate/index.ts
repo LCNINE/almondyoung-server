@@ -106,6 +106,46 @@ export interface SmsCampaign {
   estimatedCompleteDate: string | null;
 }
 
+export type ConversationMessageState = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
+
+export interface ConversationMessage {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  text: string;
+  state: ConversationMessageState | null;
+  deviceId: string | null;
+  viaNhn: boolean;
+  createdAt: string;
+}
+
+export interface ConversationSummary {
+  phoneNumber: string;
+  userId: string | null;
+  name: string | null;
+  lastMessage: { text: string; receivedAt: string };
+}
+
+export interface ConversationPage {
+  items: ConversationSummary[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ConversationDetail {
+  phoneNumber: string;
+  userId: string | null;
+  name: string | null;
+  deviceId: string | null;
+  messages: ConversationMessage[];
+}
+
+export interface ReplySmsConversationDto {
+  phoneNumber: string;
+  content: string;
+  nhnFallback?: boolean;
+}
+
 const BASE = `${NOTIFICATION_SERVICE_BASE_URL}/sms-gate`;
 
 export const smsGateApi = {
@@ -189,6 +229,23 @@ export const smsGateApi = {
 
   stopCampaign: async (campaignId: string): Promise<{ cancelled: number }> => {
     const response = await client.post<{ cancelled: number }>(`${BASE}/campaigns/${campaignId}/stop`);
+    return response.data;
+  },
+
+  getConversations: async (params: { page: number; limit: number; q?: string }): Promise<ConversationPage> => {
+    const response = await client.get<ConversationPage>(`${BASE}/conversations`, { params });
+    return response.data;
+  },
+
+  getConversation: async (phoneNumber: string): Promise<ConversationDetail> => {
+    const response = await client.get<ConversationDetail>(`${BASE}/conversations/messages`, {
+      params: { phone: phoneNumber },
+    });
+    return response.data;
+  },
+
+  replyConversation: async (dto: ReplySmsConversationDto): Promise<SmsGateSendResult> => {
+    const response = await client.post<SmsGateSendResult>(`${BASE}/conversations/reply`, dto);
     return response.data;
   },
 };

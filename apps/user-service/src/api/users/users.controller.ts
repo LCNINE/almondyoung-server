@@ -16,6 +16,7 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 import { InternalContactsRequestDto } from './dto/internal-contacts.request.dto';
+import { InternalContactsByPhoneRequestDto } from './dto/internal-contacts-by-phone.request.dto';
 import { WithdrawMarketingConsentRequestDto } from './dto/withdraw-marketing-consent.request.dto';
 import { ReplayWithdrawnRequestDto } from './dto/replay-withdrawn.request.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -189,6 +190,20 @@ export class UsersController {
     @Body() body: InternalContactsRequestDto,
   ): Promise<{ userId: string; email: string; username: string; phoneNumber: string | null; marketingConsent: boolean }[]> {
     return this.usersService.findContactsByIds(body.userIds);
+  }
+
+  @ApiOperation({
+    summary: '[Internal] 휴대폰 번호로 활성 회원 조회',
+    description: '받은 문자의 발신번호를 회원과 잇는 용도. Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @Post('internal/contacts/by-phone')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @HttpCode(HttpStatus.OK)
+  async getInternalContactsByPhone(
+    @Body() body: InternalContactsByPhoneRequestDto,
+  ): Promise<{ userId: string; username: string }[]> {
+    return this.usersService.findActiveContactsByPhone(body.phoneNumber);
   }
 
   @ApiOperation({

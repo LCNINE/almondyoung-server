@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, max, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, ne, or, sql } from 'drizzle-orm';
 import {
+  InboundMessage,
+  inboundMessages,
+  NewInboundMessage,
   NewNotification,
   NewNotificationCampaign,
   NewSmsDevice,
@@ -45,7 +48,7 @@ export class SmsGateRepository {
   }
 
   listDevices(): Promise<SmsDevice[]> {
-    return this.dbService.db.select().from(smsDevices).orderBy(asc(smsDevices.createdAt));
+    return this.dbService.db.select().from(smsDevices).orderBy(asc(smsDevices.createdAt), asc(smsDevices.deviceId));
   }
 
   async findDeviceById(id: string): Promise<SmsDevice | undefined> {
@@ -68,6 +71,10 @@ export class SmsGateRepository {
       .update(smsDevices)
       .set({ ...values, updatedAt: new Date() })
       .where(eq(smsDevices.id, id));
+  }
+
+  async setOfflineAlertedAt(ids: string[], at: Date | null): Promise<void> {
+    await this.dbService.db.update(smsDevices).set({ offlineAlertedAt: at }).where(inArray(smsDevices.id, ids));
   }
 
   async deleteDevice(id: string): Promise<void> {
@@ -243,6 +250,83 @@ export class SmsGateRepository {
       .update(notifications)
       .set({ status: 'CANCELLED', errorDetails: { message, timestamp: new Date() }, updatedAt: new Date() })
       .where(and(eq(notifications.notificationId, row.notificationId), eq(notifications.status, 'PENDING')));
+  }
+
+  async saveInbound(values: NewInboundMessage): Promise<void> {
+    await this.dbService.db.insert(inboundMessages).values(values).onConflictDoNothing();
+  }
+
+  async fillInboundUser(phoneNumber: string, userId: string): Promise<void> {
+    await this.dbService.db
+      .update(inboundMessages)
+      .set({ userId })
+      .where(and(eq(inboundMessages.phoneNumber, phoneNumber), isNull(inboundMessages.userId)));
+  }
+
+  async pageLatestInboundPerPhone(
+    page: number,
+    limit: number,
+    q?: string,
+  ): Promise<{ items: InboundMessage[]; total: number }> {
+    const keyword = q?.trim();
+    const digits = keyword?.replace(/^\+82/, '0').replace(/\D/g, '');
+    const matchesKeyword = keyword
+      ? or(
+          digits ? sql`regexp_replace(${inboundMessages.phoneNumber}, '^[+]82', '0') like ${`%${digits}%`}` : undefined,
+          inArray(
+            inboundMessages.phoneNumber,
+            this.dbService.db
+              .selectDistinct({ phoneNumber: inboundMessages.phoneNumber })
+              .from(inboundMessages)
+              .where(ilike(inboundMessages.body, `%${keyword}%`)),
+          ),
+        )
+      : undefined;
+
+    const latest = this.dbService.db
+      .selectDistinctOn([inboundMessages.phoneNumber])
+      .from(inboundMessages)
+      .where(matchesKeyword)
+      .orderBy(inboundMessages.phoneNumber, desc(inboundMessages.receivedAt), desc(inboundMessages.createdAt))
+      .as('latest');
+
+    const [items, [totalRow]] = await Promise.all([
+      this.dbService.db
+        .select()
+        .from(latest)
+        .orderBy(desc(latest.receivedAt), asc(latest.phoneNumber))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      this.dbService.db
+        .select({ total: sql<number>`count(distinct ${inboundMessages.phoneNumber})`.mapWith(Number) })
+        .from(inboundMessages)
+        .where(matchesKeyword),
+    ]);
+    return { items, total: totalRow?.total ?? 0 };
+  }
+
+  findInbound(phoneNumber: string): Promise<InboundMessage[]> {
+    return this.dbService.db
+      .select()
+      .from(inboundMessages)
+      .where(eq(inboundMessages.phoneNumber, phoneNumber))
+      .orderBy(asc(inboundMessages.receivedAt));
+  }
+
+  findPhoneMessagesTo(phoneNumberE164: string, limit: number): Promise<Notification[]> {
+    const digits = phoneNumberE164.replace(/\D/g, '');
+    const variants = digits.startsWith('82') ? [digits, `0${digits.slice(2)}`] : [digits];
+    return this.dbService.db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          inArray(sql`regexp_replace(${notifications.payload}->>'phoneNumber', '[^0-9]', '', 'g')`, variants),
+          or(isSmsGate, sql`${notifications.metadata}->>'route' = 'nhn'`),
+        ),
+      )
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
   }
 
   async hasReplyFor(inboundMessageId: string): Promise<boolean> {

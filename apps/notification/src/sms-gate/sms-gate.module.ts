@@ -2,8 +2,10 @@ import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { UserContactClient } from '@app/shared';
 import { ProviderModule } from '../provider/provider.module';
+import { GoogleChatClient } from './clients/google-chat.client';
 import { SmsGateClient } from './clients/sms-gate.client';
 import { SmsCampaignsController } from './controllers/sms-campaigns.controller';
+import { SmsConversationsController } from './controllers/sms-conversations.controller';
 import { SmsDevicesController } from './controllers/sms-devices.controller';
 import { SmsGateWebhookController } from './controllers/sms-gate-webhook.controller';
 import { SmsMessagesController } from './controllers/sms-messages.controller';
@@ -12,9 +14,13 @@ import { SmsGateRepository } from './repositories/sms-gate.repository';
 import { SmsCampaignManager } from './services/sms-campaign.manager';
 import { SmsCampaignReader } from './services/sms-campaign.reader';
 import { SmsCampaignsService } from './services/sms-campaigns.service';
+import { SmsConversationManager } from './services/sms-conversation.manager';
+import { SmsConversationReader } from './services/sms-conversation.reader';
+import { SmsConversationsService } from './services/sms-conversations.service';
 import { InboundSmsManager } from './services/inbound-sms.manager';
 import { SmsDeviceManager } from './services/sms-device.manager';
 import { SmsDeviceReader } from './services/sms-device.reader';
+import { SmsDeviceOfflineMonitor } from './services/sms-device-offline.monitor';
 import { SmsDevicesService } from './services/sms-devices.service';
 import { SmsDispatchManager } from './services/sms-dispatch.manager';
 import { SmsDispatchWorker } from './services/sms-dispatch.worker';
@@ -26,12 +32,14 @@ import { SmsTemplatesService } from './services/sms-templates.service';
 
 @Module({
   imports: [HttpModule, ProviderModule],
-  controllers: [SmsDevicesController, SmsCampaignsController, SmsMessagesController, SmsTemplatesController, SmsGateWebhookController],
+  controllers: [SmsDevicesController, SmsCampaignsController, SmsConversationsController, SmsMessagesController, SmsTemplatesController, SmsGateWebhookController],
   providers: [
     SmsDevicesService,
     SmsMessagesService,
     SmsGateRepository,
     SmsGateClient,
+    GoogleChatClient,
+    SmsDeviceOfflineMonitor,
     SmsDeviceReader,
     SmsDeviceManager,
     SmsMessageManager,
@@ -42,6 +50,9 @@ import { SmsTemplatesService } from './services/sms-templates.service';
     SmsCampaignsService,
     SmsCampaignReader,
     SmsCampaignManager,
+    SmsConversationsService,
+    SmsConversationReader,
+    SmsConversationManager,
     SmsTemplateReader,
     SmsTemplateManager,
     UserContactClient,

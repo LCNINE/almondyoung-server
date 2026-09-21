@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { SmsCampaign, SmsCampaignState } from '@/lib/api/domains/sms-gate';
 import { useSmsCampaigns, useStopSmsCampaign } from '@/lib/services/sms-gate';
+import { HelpSheet } from '../../components/help-sheet';
 import { CategoryBadge } from '../../components/category-badge';
 
 const STATE_LABEL: Record<SmsCampaignState, string> = {
@@ -50,7 +51,11 @@ export default function SmsCampaignsTemplate() {
 
   return (
     <Container>
-      <Header title="발송 목록" subtitle="대량 발송의 진행률과 예상 완료일입니다. 예상 완료일은 폰 한도로 계산한 예상치입니다." />
+      <Header
+        title="발송 목록"
+        titleAside={<HelpSheet />}
+        subtitle="대량 발송의 진행률과 예상 완료일입니다. 예상 완료일은 폰 한도로 계산한 예상치입니다."
+      />
 
       <div className="px-6 pb-6">
         {isLoading && <Skeleton className="h-40 w-full" />}

@@ -52,9 +52,38 @@ export interface NtsValidateResult {
   errorBody?: string;
 }
 
+export type AutoReviewManualReason =
+  | 'not_license'
+  | 'unreadable'
+  | 'corporation'
+  | 'name_mismatch'
+  | 'nts_mismatch'
+  | 'not_active'
+  | 'duplicate_number'
+  | 'image_unavailable';
+
+// 첨부 서류 자동 심사 기록. 이 키가 있는 행은 크론이 다시 보지 않는다.
+export interface AutoReviewRecord {
+  decision: 'approve' | 'manual';
+  reason?: AutoReviewManualReason;
+  /** 판정만 기록하고 상태는 안 바꿨다 */
+  dryRun: boolean;
+  model: string;
+  reviewedAt: string;
+  reading?: {
+    isBusinessRegistration: boolean;
+    businessNumber: string | null;
+    representativeName: string | null;
+    startDate: string | null;
+    isCorporation: boolean;
+    readable: boolean;
+  };
+}
+
 export interface BusinessMetadata {
   nts?: NtsLookupResult;
   ntsValidate?: NtsValidateResult;
+  autoReview?: AutoReviewRecord;
   [key: string]: unknown;
 }
 
@@ -107,9 +136,7 @@ export class IsBusinessNumberChecksumConstraint implements ValidatorConstraintIn
     if (typeof value !== 'string' || !/^\d{10}$/.test(value)) return false;
 
     const digits = [...value].map(Number);
-    let sum = digits
-      .slice(0, 9)
-      .reduce((acc, d, i) => acc + d * IsBusinessNumberChecksumConstraint.WEIGHTS[i], 0);
+    let sum = digits.slice(0, 9).reduce((acc, d, i) => acc + d * IsBusinessNumberChecksumConstraint.WEIGHTS[i], 0);
     sum += Math.floor((digits[8] * 5) / 10);
 
     return (10 - (sum % 10)) % 10 === digits[9];
