@@ -103,16 +103,21 @@ export class NotificationDispatcherService {
         finalVariables = payload;
       }
 
+      // 광고 메일은 수신 설정 안내를 본문에 붙여야 해서 Resend 호스팅 템플릿(본문을 보내지 않는다)을 쓰지 않는다.
+      const adEmail = channel === Channel.EMAIL && dto.category === NotificationCategory.MARKETING;
+      const channelTemplate = adEmail && template ? { ...template, providerTemplateId: undefined } : template;
+
       // 채널별 변수 매핑
       const channelVariables = this.variableMapper.mapVariablesForChannel(channel, finalVariables || {}, {
-        kakaoTemplateCode: template?.kakaoTemplateCode,
-        providerTemplateId: template?.providerTemplateId,
+        kakaoTemplateCode: channelTemplate?.kakaoTemplateCode,
+        providerTemplateId: channelTemplate?.providerTemplateId,
       });
 
       const renderedContent = this.renderContent({
         channel,
+        category: dto.category,
         language,
-        template,
+        template: channelTemplate,
         contentOverride: channelContentOverride,
         variables: finalVariables,
         payload,
@@ -503,6 +508,7 @@ export class NotificationDispatcherService {
    */
   private renderContent(params: {
     channel: Channel;
+    category?: NotificationCategory;
     language: string; // 'ko' | 'en'
     template?: any;
     contentOverride?: {
@@ -517,7 +523,7 @@ export class NotificationDispatcherService {
     body: string;
     metadata?: Record<string, any>;
   } {
-    const { channel, language, template, contentOverride, variables, payload } = params;
+    const { channel, category, language, template, contentOverride, variables, payload } = params;
 
     let subject: string | undefined;
     let body: string | undefined;
@@ -553,6 +559,8 @@ export class NotificationDispatcherService {
       }
     }
 
+    const hasOwnBody = !!body;
+
     // 3) 그래도 body가 없으면 payload를 fallback으로 사용 (debug용이라도)
     if (!body) {
       body = payload ? JSON.stringify(payload) : '';
@@ -576,6 +584,13 @@ export class NotificationDispatcherService {
       }
     }
     // 템플릿 시스템을 사용하는 경우는 Provider에서 templateParameter/template.variables로 처리
+
+    if (channel === 'EMAIL' && category === NotificationCategory.MARKETING) {
+      if (!hasOwnBody) {
+        throw new Error('광고 메일은 자체 본문(template.contents 또는 content override)이 있어야 수신 설정 안내를 붙일 수 있다');
+      }
+      ({ subject, body } = markAdvertisementEmail(subject, body));
+    }
 
     return {
       subject,
@@ -626,4 +641,24 @@ export class NotificationDispatcherService {
     };
     return map[priority] ?? 3;
   }
+}
+
+const AD_SUBJECT_PREFIX = '(광고)';
+
+export function markAdvertisementEmail(
+  subject: string | undefined,
+  body: string,
+): { subject: string | undefined; body: string } {
+  const settingsUrl = `${process.env.STOREFRONT_URL ?? 'https://almondyoung.com'}/kr/mypage/account/profile#marketing-consent`;
+  return {
+    subject: !subject?.trim()
+      ? `${AD_SUBJECT_PREFIX} [아몬드영] 혜택 소식`
+      : subject.startsWith(AD_SUBJECT_PREFIX)
+        ? subject
+        : `${AD_SUBJECT_PREFIX} ${subject}`,
+    body:
+      body +
+      `\n<p style="color:#888;font-size:12px">본 메일은 광고성 정보 수신에 동의하신 분께 발송되었습니다. ` +
+      `수신을 원하지 않으시면 <a href="${settingsUrl}">마이페이지 수신 설정</a>에서 변경하실 수 있습니다.</p>`,
+  };
 }

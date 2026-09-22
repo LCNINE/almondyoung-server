@@ -1,5 +1,7 @@
 import { MembershipEventConsumer } from './membership-event.consumer';
 import { UserEventConsumer } from './user-event.consumer';
+import { notifyMember } from './notify-member';
+import { markAdvertisementEmail } from '../services/notification-dispatcher.service';
 
 const active = (eventKey: string, isActive = true) => ({
   eventKey,
@@ -125,5 +127,46 @@ describe('멤버십 가입·해지 알림', () => {
     await consumer.onStatusChanged(envelope, { ...change, status: 'CANCELLED', reasonCode: 'ADMIN_FORCED' } as never);
 
     expect(d.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('광고성 알림', () => {
+  function adDeps(marketingConsent: boolean) {
+    const send = jest.fn().mockResolvedValue({ notificationIds: [] });
+    const eventMappings = {
+      getEventMapping: jest.fn().mockResolvedValue({ ...active('PROMOTION_AD'), category: 'MARKETING' }),
+    };
+    const contacts = {
+      findContacts: jest.fn().mockResolvedValue(
+        new Map([
+          ['user-1', { userId: 'user-1', email: 'member@example.com', username: '홍길동', phoneNumber: null, marketingConsent }],
+        ]),
+      ),
+    };
+    const logger = { warn: jest.fn(), log: jest.fn() };
+    return { send, deps: { dispatcher: { send }, eventMappings, contacts, logger } as never };
+  }
+
+  const input = { eventKey: 'PROMOTION_AD', userId: 'user-1', payload: {}, variables: () => ({}) };
+
+  it('광고성 정보 수신에 동의하지 않은 회원에게는 보내지 않는다', async () => {
+    const d = adDeps(false);
+    await notifyMember(d.deps, input);
+    expect(d.send).not.toHaveBeenCalled();
+  });
+
+  it('동의한 회원에게는 보낸다', async () => {
+    const d = adDeps(true);
+    await notifyMember(d.deps, input);
+    expect(d.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('광고 메일은 제목에 (광고)를 한 번만 붙이고 수신 설정 안내를 덧붙인다', () => {
+    const marked = markAdvertisementEmail('[아몬드영] 쿠폰이 곧 만료됩니다', '<p>본문</p>');
+    expect(marked.subject).toBe('(광고) [아몬드영] 쿠폰이 곧 만료됩니다');
+    expect(marked.body).toContain('/mypage/account/profile#marketing-consent');
+    expect(markAdvertisementEmail(marked.subject, '<p>본문</p>').subject).toBe(marked.subject);
+    expect(markAdvertisementEmail(undefined, '<p>본문</p>').subject).toBe('(광고) [아몬드영] 혜택 소식');
+    expect(markAdvertisementEmail('  ', '<p>본문</p>').subject).toBe('(광고) [아몬드영] 혜택 소식');
   });
 });

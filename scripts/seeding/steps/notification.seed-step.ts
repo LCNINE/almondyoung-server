@@ -569,9 +569,9 @@ const MEMBER_TEMPLATES = [
   csTemplate(
     FIXED_UUIDS.TEMPLATE_COUPON_EXPIRING,
     'COUPON_EXPIRING_EMAIL',
-    '다운로드 쿠폰 만료예정',
-    '[아몬드영] 받으신 쿠폰 {{couponCount}}장이 곧 만료됩니다',
-    ['<p>받으신 쿠폰이 <strong>{{expiresAt}}</strong>에 만료됩니다.</p>', '<p>{{couponNames}}</p>', '<p>만료 전에 사용해 주세요. 쿠폰은 마이페이지 쿠폰함에서 확인하실 수 있습니다.</p>'],
+    '쿠폰 만료예정',
+    '[아몬드영] 보유하신 쿠폰 {{couponCount}}장이 곧 만료됩니다',
+    ['<p>보유하신 쿠폰이 <strong>{{expiresAt}}</strong>에 만료됩니다.</p>', '<p>{{couponNames}}</p>', '<p>쿠폰은 마이페이지 쿠폰함에서 확인하실 수 있습니다.</p>'],
     {
       name: { type: 'string', required: true },
       couponNames: { type: 'string', required: true },
@@ -586,7 +586,7 @@ const MEMBER_EVENTS = [
   csEvent('USER_WITHDRAWN', '회원 탈퇴', '회원 탈퇴가 완료되면', 'USER_WITHDRAWN_EMAIL'),
   csEvent('MEMBERSHIP_JOINED', '멤버십 회원 가입', '멤버십에 새로 가입하면', 'MEMBERSHIP_JOINED_EMAIL'),
   csEvent('MEMBERSHIP_CANCELLED', '멤버십 회원 해지', '멤버십이 해지되거나 해지 예약되면', 'MEMBERSHIP_CANCELLED_EMAIL'),
-  csEvent('COUPON_EXPIRING', '다운로드 쿠폰 만료예정', '내려받은 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
+  csEvent('COUPON_EXPIRING', '쿠폰 만료예정', '보유한 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
 ];
 
 const NOTICE_TEMPLATES = [
