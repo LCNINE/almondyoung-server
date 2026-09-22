@@ -1,6 +1,7 @@
 // apps/notification/src/dispatcher/dispatcher.module.ts
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { INTERNAL_KEY_ENV } from '@app/authorization';
 import { UserContactClient } from '@app/shared';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
@@ -12,6 +13,7 @@ import { NotificationDispatcherService } from './services/notification-dispatche
 import { NotificationController } from './controllers/notification.controller';
 import { UserNotificationHistoryReader } from './services/user-notification-history.reader';
 import { EventController } from './controllers/event.controller';
+import { InternalNotificationController } from './controllers/internal-notification.controller';
 import { UserEventConsumer } from './handlers/user-event.consumer';
 import { OrderEventConsumer } from './handlers/order-event.consumer';
 import { WalletEventConsumer } from './handlers/wallet-event.consumer';
@@ -51,13 +53,19 @@ import { UgcEventConsumer } from './handlers/ugc-event.consumer';
   controllers: [
     NotificationController,
     EventController,
+    InternalNotificationController,
     UserEventConsumer,
     OrderEventConsumer,
     WalletEventConsumer,
     MembershipEventConsumer,
     UgcEventConsumer,
   ],
-  providers: [NotificationDispatcherService, UserNotificationHistoryReader, UserContactClient],
+  providers: [
+    NotificationDispatcherService,
+    UserNotificationHistoryReader,
+    UserContactClient,
+    { provide: INTERNAL_KEY_ENV, useValue: 'NOTIFICATION_INTERNAL_KEY' },
+  ],
   exports: [NotificationDispatcherService],
 })
 export class DispatcherModule {}

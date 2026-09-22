@@ -524,6 +524,71 @@ const CS_EVENTS = [
   csEvent('QNA_ANSWERED', '문의 답변 완료', '상품·1:1 문의에 답변이 등록되면', 'QNA_ANSWERED_EMAIL'),
 ];
 
+const NAME_ONLY = { name: { type: 'string', required: true } };
+
+const MEMBER_TEMPLATES = [
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_USER_WELCOME,
+    'USER_WELCOME_EMAIL',
+    '회원 가입',
+    '[아몬드영] 회원 가입을 환영합니다',
+    ['<p>아몬드영 회원이 되신 것을 환영합니다.</p>'],
+    NAME_ONLY,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_USER_WITHDRAWN,
+    'USER_WITHDRAWN_EMAIL',
+    '회원 탈퇴',
+    '[아몬드영] 회원 탈퇴가 완료되었습니다',
+    ['<p>회원 탈퇴가 완료되었습니다. 그동안 아몬드영을 이용해 주셔서 감사합니다.</p>', '<p>탈퇴 후 개인정보는 관련 법령에 따라 보관이 필요한 정보를 제외하고 파기됩니다.</p>'],
+    NAME_ONLY,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_JOINED,
+    'MEMBERSHIP_JOINED_EMAIL',
+    '멤버십 회원 가입',
+    '[아몬드영] 멤버십 가입이 완료되었습니다',
+    ['<p>아몬드영 멤버십 가입이 완료되었습니다.</p>', '<p>지금부터 멤버십 전용가와 혜택을 이용하실 수 있습니다. 이용 현황은 마이페이지 멤버십에서 확인하실 수 있습니다.</p>'],
+    NAME_ONLY,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_CANCELLED,
+    'MEMBERSHIP_CANCELLED_EMAIL',
+    '멤버십 회원 해지',
+    '[아몬드영] 멤버십이 해지되었습니다',
+    [
+      '<p>아몬드영 멤버십이 해지되었습니다.</p>',
+      '<p>{{periodNotice}}</p>',
+      '<p>그동안 아몬드영 멤버십과 함께해 주셔서 진심으로 감사합니다.</p>',
+      '<p>원장님의 선택에 조금이나마 도움이 되는 멤버십이었기를 바랍니다.<br>잠시 멤버십을 떠나시더라도, 필요해지는 순간 언제든 편하게 다시 찾아주세요.</p>',
+      '<p>더 좋은 상품과 더 나은 혜택으로 다시 만나 뵐 수 있도록 계속 노력하겠습니다.</p>',
+      '<p>함께해 주셔서 감사합니다.<br>아몬드영 드림</p>',
+    ],
+    { name: { type: 'string', required: true }, periodNotice: { type: 'string', required: false } },
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_COUPON_EXPIRING,
+    'COUPON_EXPIRING_EMAIL',
+    '다운로드 쿠폰 만료예정',
+    '[아몬드영] 받으신 쿠폰 {{couponCount}}장이 곧 만료됩니다',
+    ['<p>받으신 쿠폰이 <strong>{{expiresAt}}</strong>에 만료됩니다.</p>', '<p>{{couponNames}}</p>', '<p>만료 전에 사용해 주세요. 쿠폰은 마이페이지 쿠폰함에서 확인하실 수 있습니다.</p>'],
+    {
+      name: { type: 'string', required: true },
+      couponNames: { type: 'string', required: true },
+      couponCount: { type: 'number', required: true },
+      expiresAt: { type: 'string', required: true },
+    },
+  ),
+];
+
+const MEMBER_EVENTS = [
+  csEvent('USER_WELCOME', '회원 가입', '회원 가입이 완료되면', 'USER_WELCOME_EMAIL'),
+  csEvent('USER_WITHDRAWN', '회원 탈퇴', '회원 탈퇴가 완료되면', 'USER_WITHDRAWN_EMAIL'),
+  csEvent('MEMBERSHIP_JOINED', '멤버십 회원 가입', '멤버십에 새로 가입하면', 'MEMBERSHIP_JOINED_EMAIL'),
+  csEvent('MEMBERSHIP_CANCELLED', '멤버십 회원 해지', '멤버십이 해지되거나 해지 예약되면', 'MEMBERSHIP_CANCELLED_EMAIL'),
+  csEvent('COUPON_EXPIRING', '다운로드 쿠폰 만료예정', '내려받은 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
+];
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
@@ -533,6 +598,7 @@ const NOTICE_TEMPLATES = [
   ORDER_SHIPPED_TEMPLATE,
   ORDER_PARTIALLY_SHIPPED_TEMPLATE,
   ...CS_TEMPLATES,
+  ...MEMBER_TEMPLATES,
 ];
 const NOTICE_EVENTS = [
   RENEWAL_NOTICE_EVENT,
@@ -543,6 +609,7 @@ const NOTICE_EVENTS = [
   ORDER_SHIPPED_EVENT,
   ORDER_PARTIALLY_SHIPPED_EVENT,
   ...CS_EVENTS,
+  ...MEMBER_EVENTS,
 ];
 
 const PROVIDER_IDS = [
