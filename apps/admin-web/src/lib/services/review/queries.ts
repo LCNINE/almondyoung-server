@@ -38,6 +38,7 @@ export const useReview = (id: string) => {
     queryKey: reviewQueryKeys.review(id),
     queryFn: () => reviewApi.getReview(id),
     staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
   });
 };
 
