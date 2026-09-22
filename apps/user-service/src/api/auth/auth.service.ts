@@ -1047,6 +1047,12 @@ export class AuthService {
         );
       await this.tokensService.deleteAllTokens(userId, tx);
 
+      const [before] = await tx
+        .select({ email: userServiceSchema.users.email, username: userServiceSchema.users.username })
+        .from(userServiceSchema.users)
+        .where(eq(userServiceSchema.users.id, userId))
+        .limit(1);
+
       await this.anonymizeIdentity(userId, tx);
 
       await this.eventPublisher.publishEvent({
@@ -1054,6 +1060,8 @@ export class AuthService {
         aggregateId: userId,
         payload: {
           userId,
+          ...(before?.email?.includes('@') ? { email: before.email } : {}),
+          ...(before?.username ? { name: before.username } : {}),
         },
       });
     }, tx);

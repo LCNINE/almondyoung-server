@@ -190,6 +190,7 @@ export class SubscriptionCreator {
             contractId: contract.id,
             planId: plan.id,
             tierId: tier.id,
+            reasonCode: 'SUBSCRIBED',
           },
           tx,
         );
