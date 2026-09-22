@@ -8,6 +8,7 @@ import { SharedModule } from '../shared/shared.module';
 import { ProviderModule } from '../provider/provider.module';
 import { NotificationDispatcherService } from './services/notification-dispatcher.service';
 import { NotificationController } from './controllers/notification.controller';
+import { UserNotificationHistoryReader } from './services/user-notification-history.reader';
 import { EventController } from './controllers/event.controller';
 import { UserEventConsumer } from './handlers/user-event.consumer';
 import { OrderEventConsumer } from './handlers/order-event.consumer';
@@ -51,7 +52,7 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
     WalletEventConsumer,
     MembershipEventConsumer,
   ],
-  providers: [NotificationDispatcherService],
+  providers: [NotificationDispatcherService, UserNotificationHistoryReader],
   exports: [NotificationDispatcherService],
 })
 export class DispatcherModule {}

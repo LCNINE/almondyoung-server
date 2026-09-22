@@ -8,6 +8,7 @@ import { DemoNotificationProvider } from '../../provider/providers/demo/demo.pro
 import type { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import type { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
+import { UserNotificationHistoryReader } from '../services/user-notification-history.reader';
 import type { EventMappingService } from '../../shared/services/event-mapping.service';
 import { OrderEventConsumer } from './order-event.consumer';
 
@@ -149,6 +150,7 @@ describe('OrderEventConsumer demo delivery boundary', () => {
       {
         getAvailableProviderForChannel: jest.fn().mockResolvedValue(provider),
       } as unknown as ProviderManagerService,
+      {} as UserNotificationHistoryReader,
     );
     const eventMappings = { getEventMapping: jest.fn() };
     const consumer = new OrderEventConsumer(
