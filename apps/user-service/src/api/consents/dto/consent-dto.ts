@@ -51,3 +51,9 @@ export class CreateConsentDto implements IConsent {
   @IsBoolean()
   marketingConsent: boolean;
 }
+
+export class UpdateMarketingConsentDto {
+  @ApiProperty({ description: '광고성 정보 수신 동의 (모든 채널)', example: false })
+  @IsBoolean()
+  enabled: boolean;
+}

@@ -29,10 +29,14 @@ export async function notifyMember(
   }
 
   const contact = input.email
-    ? { email: input.email, username: '' }
+    ? { email: input.email, username: '', marketingConsent: false }
     : (await deps.contacts.findContacts([input.userId])).get(input.userId);
   if (!contact?.email) {
     deps.logger.warn(`Skipping ${input.eventKey}: no active contact (user ${input.userId})`);
+    return;
+  }
+  if (mapping.category === NotificationCategory.MARKETING && !contact.marketingConsent) {
+    deps.logger.log(`Skipping ${input.eventKey}: no marketing consent (user ${input.userId})`);
     return;
   }
 

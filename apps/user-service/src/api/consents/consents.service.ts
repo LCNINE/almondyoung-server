@@ -8,7 +8,7 @@ import {
 } from 'apps/user-service/database/drizzle/schema';
 import { eq, SQL } from 'drizzle-orm';
 import { DbTransaction } from '../../commons/types';
-import { CreateConsentDto } from './dto/consent-dto';
+import { CreateConsentDto, UpdateMarketingConsentDto } from './dto/consent-dto';
 import { ConsentsException } from './exceptions/consents.exceptions';
 import { UserConsent } from './types/consent.type';
 
@@ -49,6 +49,32 @@ export class ConsentsService {
     });
 
     return;
+  }
+
+  async updateMyMarketingConsent(
+    userId: string,
+    dto: UpdateMarketingConsentDto,
+  ): Promise<{ marketingConsent: boolean; changedAt: Date }> {
+    const changedAt = new Date();
+    const [row] = await this.dbService.db
+      .update(userConsents)
+      .set({
+        marketingConsent: dto.enabled,
+        marketingConsentWithdrawnAt: dto.enabled ? null : changedAt,
+        marketingConsentWithdrawnVia: dto.enabled ? null : 'mypage',
+        updatedAt: changedAt,
+      })
+      .where(eq(userConsents.userId, userId))
+      .returning({ marketingConsent: userConsents.marketingConsent });
+
+    if (!row) {
+      throw new ConsentsException({
+        message: '동의 정보가 없습니다.',
+        errorCode: 'USER_CONSENT_NOT_FOUND',
+        httpStatus: HttpStatus.NOT_FOUND,
+      });
+    }
+    return { marketingConsent: row.marketingConsent, changedAt };
   }
 
   // notification-service용: 마케팅 동의 여부만 확인

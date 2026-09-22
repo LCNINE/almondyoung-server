@@ -1,4 +1,4 @@
-import type { MedusaContainer } from '@medusajs/framework/types';
+import type { ExecArgs, MedusaContainer } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../modules/promotion-meta';
 import type PromotionMetaModuleService from '../modules/promotion-meta/service';
@@ -6,10 +6,16 @@ import type PromotionMetaModuleService from '../modules/promotion-meta/service';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_LIMIT = 500;
 
-export type ExpiringCouponNotice = { userId: string; coupons: Array<{ name: string; expiresAt: string }> };
+type ExpiringGrant = { id: string; customer_id: string; promotion_id: string; expires_at: Date };
+
+export type ExpiringCouponNotice = {
+  userId: string;
+  coupons: Array<{ name: string; expiresAt: string }>;
+  grantIds: string[];
+};
 
 export function groupNotices(
-  grants: Array<{ customer_id: string; promotion_id: string; expires_at: Date }>,
+  grants: ExpiringGrant[],
   userIdByCustomer: Map<string, string>,
   nameByPromotion: Map<string, string>,
 ): ExpiringCouponNotice[] {
@@ -17,8 +23,9 @@ export function groupNotices(
   for (const grant of grants) {
     const userId = userIdByCustomer.get(grant.customer_id);
     if (!userId) continue;
-    const notice = byUser.get(userId) ?? { userId, coupons: [] };
+    const notice = byUser.get(userId) ?? { userId, coupons: [], grantIds: [] };
     notice.coupons.push({ name: nameByPromotion.get(grant.promotion_id) ?? '쿠폰', expiresAt: grant.expires_at.toISOString() });
+    notice.grantIds.push(grant.id);
     byUser.set(userId, notice);
   }
   return [...byUser.values()];
@@ -35,7 +42,7 @@ export async function notifyExpiringCoupons(container: MedusaContainer, now = ne
 
   const days = Number(process.env.COUPON_EXPIRY_NOTICE_DAYS ?? 3);
   const service = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
-  const grants = await service.claimExpiringClaimedGrants(now, new Date(now.getTime() + days * DAY_MS), SCAN_LIMIT);
+  const grants = await service.claimExpiringGrants(now, new Date(now.getTime() + days * DAY_MS), SCAN_LIMIT);
   if (grants.length === 0) return;
 
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
@@ -56,8 +63,7 @@ export async function notifyExpiringCoupons(container: MedusaContainer, now = ne
   const nameByPromotion = new Map(metas.filter((m) => m.name).map((m) => [m.promotion_id, m.name as string]));
 
   let sent = 0;
-  for (const notice of groupNotices(grants, userIdByCustomer, nameByPromotion)) {
-    const ids = grants.filter((g) => userIdByCustomer.get(g.customer_id) === notice.userId).map((g) => g.id);
+  for (const { grantIds, ...notice } of groupNotices(grants, userIdByCustomer, nameByPromotion)) {
     try {
       const res = await fetch(`${baseUrl}/internal/notifications/coupon-expiry`, {
         method: 'POST',
@@ -67,9 +73,13 @@ export async function notifyExpiringCoupons(container: MedusaContainer, now = ne
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       sent += 1;
     } catch (error) {
-      await service.releaseExpiryNotice(ids);
+      await service.releaseExpiryNotice(grantIds);
       logger.warn(`[coupon] 만료 예정 안내 실패 userId=${notice.userId}: ${(error as Error).message} — 다음 회차에 다시 보낸다`);
     }
   }
   logger.info(`[coupon] 만료 예정 안내 ${sent}명 (대상 ${grants.length}장)`);
+}
+
+export default async function run({ container }: ExecArgs): Promise<void> {
+  await notifyExpiringCoupons(container);
 }

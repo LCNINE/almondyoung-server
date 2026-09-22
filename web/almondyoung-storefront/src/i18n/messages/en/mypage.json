@@ -478,6 +478,14 @@
         "birthday": "Date of Birth",
         "phone": "Mobile Number"
       }
+    },
+    "marketing": {
+      "title": "Marketing messages",
+      "description": "Receive promotions and event news by email and SMS. Notices such as orders, shipping, and expiring coupons you hold are sent regardless of this setting.",
+      "label": "Email & SMS consent",
+      "agreed": "Your consent to Almondyoung marketing messages was processed on {date}.",
+      "withdrawn": "Your opt-out from Almondyoung marketing messages was processed on {date}.",
+      "saveFailed": "Failed to update. Please try again."
     }
   },
   "order": {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CalendarDays, Crown, Megaphone, PhoneCall, ShoppingBag, User, type LucideIcon } from 'lucide-react';
+import { Crown, Megaphone, PhoneCall, ShoppingBag, User, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
@@ -24,7 +24,6 @@ import { PreviewDialog, type PreviewTarget } from '../components/preview-dialog'
 const GROUP_ICON: Record<NotificationGroup, { icon: LucideIcon; tone: string }> = {
   주문: { icon: ShoppingBag, tone: 'bg-sky-50 text-sky-600' },
   CS: { icon: PhoneCall, tone: 'bg-fuchsia-50 text-fuchsia-600' },
-  '상품 예약': { icon: CalendarDays, tone: 'bg-blue-50 text-blue-600' },
   회원: { icon: User, tone: 'bg-teal-50 text-teal-600' },
   멤버십: { icon: Crown, tone: 'bg-amber-50 text-amber-600' },
   광고: { icon: Megaphone, tone: 'bg-orange-50 text-orange-600' },
