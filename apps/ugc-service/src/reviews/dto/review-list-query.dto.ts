@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsUUID, IsString, MaxLength } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
 
 export const REVIEW_RATING_FILTERS = ['1', '2', '3', '4', '5', 'positive', 'negative'] as const;
@@ -63,6 +63,20 @@ export class ReviewListQueryDto extends PaginationQueryDto {
 
 // 관리자용 전체 리뷰 조회
 export class AdminReviewListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: '작성 권한. unassigned는 권한 연결 없는 기존 리뷰',
+    enum: ['order', 'admin', 'unassigned'],
+  })
+  @IsOptional()
+  @IsIn(['order', 'admin', 'unassigned'])
+  provider?: 'order' | 'admin' | 'unassigned';
+
+  @ApiPropertyOptional({ description: '관리자 등록 배치 ID (정확히 일치)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  batchId?: string;
+
   @ApiPropertyOptional({
     description: '상태 필터 (미지정 시 삭제됨 제외, deleted 지정 시 삭제됨만)',
     enum: REVIEW_STATUS_FILTERS,

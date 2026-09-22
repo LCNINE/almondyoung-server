@@ -1,12 +1,4 @@
-/**
- * 관리자 리뷰 목록의 출처 필터 — 이전 사이트 이관분과 자체 작성분을 갈라 센다.
- *
- * 어드민 메인의 '미답변 리뷰' 칩이 이 필터를 건다. 필터가 빠지면 칩이 이관 백로그까지
- * 세어 "오늘 처리할 일" 자리에 수만 건이 뜬다.
- */
-
 describe('ReviewsService.listAllForAdmin — source 필터', () => {
-  /** 캡처한 where 절에서 참조된 컬럼명과 연산자 문자열을 전부 모은다 */
   function collectSql(node: unknown, out: { columns: string[]; operators: string[] }) {
     if (typeof node === 'string') {
       const trimmed = node.trim();
@@ -19,6 +11,7 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
       out.columns.push(record.name);
     }
     // drizzle 은 연산자를 StringChunk({ value: [' = '] }) 로 감싼다
+    if (typeof record.value === 'string') collectSql(record.value, out);
     if (Array.isArray(record.value)) {
       for (const part of record.value) collectSql(part, out);
     }
@@ -32,8 +25,7 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
     const { ReviewsService } = await import('../reviews.service');
 
     const whereClauses: unknown[] = [];
-    // hasComment 필터의 notExists 서브쿼리도 tx.select 를 부르지만 await 되지 않는다.
-    // 그래서 select 호출이 아니라 실제로 await 된 순서로 응답을 고른다.
+    // 서브쿼리 구성 호출은 제외하고 await 순서로 응답한다.
     let awaited = 0;
     const selectChain = () => {
       const chain: Record<string, unknown> = {
@@ -87,5 +79,30 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
     const { columns, operators } = await runQuery({ hasComment: 'false', source: 'legacy' });
     expect(columns).toContain('source_system');
     expect(operators).toContain('<>');
+  });
+  it.each(['order', 'admin'])('provider=%s uses permission linkage, independently of source', async (provider) => {
+    const { columns, operators } = await runQuery({ provider });
+    expect(columns).toContain('provider');
+    expect(columns).toContain('review_permission_id');
+    expect(columns).not.toContain('source_system');
+    expect(operators).toContain(provider);
+  });
+
+  it('unassigned only matches reviews without a permission', async () => {
+    const { columns, operators } = await runQuery({ provider: 'unassigned' });
+    expect(columns).toContain('review_permission_id');
+    expect(columns).not.toContain('provider');
+    expect(operators.join(' ')).toContain('is null');
+  });
+
+  it('batch filter also applies with status and source filters', async () => {
+    const { columns, operators } = await runQuery({
+      provider: 'admin',
+      batchId: 'test-batch',
+      status: 'hidden',
+      source: 'own',
+    });
+    expect(columns).toEqual(expect.arrayContaining(['batch_id', 'provider', 'status', 'source_system']));
+    expect(operators).toContain('test-batch');
   });
 });

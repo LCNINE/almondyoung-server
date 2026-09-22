@@ -11,6 +11,7 @@ import {
   kstDaySql,
 } from '../../shared/daily/daily-count';
 import {
+  reviewEligibilities,
   reviewBestSelections,
   reviewComments,
   reviewMedia,
@@ -930,6 +931,21 @@ export class ReviewsService {
     return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
   }
 
+  private async fetchAdminPermissions(items: ReviewEntity[], tx: DbTransaction) {
+    const ids = [...new Set(items.flatMap((r) => (r.reviewPermissionId ? [r.reviewPermissionId] : [])))];
+    if (!ids.length) return new Map<string, NonNullable<ReviewWithMediaEntity['permission']>>();
+    const rows = await tx
+      .select({
+        id: reviewEligibilities.id,
+        provider: reviewEligibilities.provider,
+        batchId: reviewEligibilities.batchId,
+        grantedReason: reviewEligibilities.grantedReason,
+      })
+      .from(reviewEligibilities)
+      .where(inArray(reviewEligibilities.id, ids));
+    return new Map(rows.map((row) => [row.id, row]));
+  }
+
   async listAllForAdmin(
     query: AdminReviewListQueryDto,
     tx?: DbTransaction,
@@ -968,13 +984,19 @@ export class ReviewsService {
       if (query.hasComment === 'true') {
         conditions.push(
           exists(
-            tx.select({ _: sql`1` }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+            tx
+              .select({ _: sql`1` })
+              .from(reviewComments)
+              .where(eq(reviewComments.reviewId, reviews.id)),
           ),
         );
       } else if (query.hasComment === 'false') {
         conditions.push(
           notExists(
-            tx.select({ _: sql`1` }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+            tx
+              .select({ _: sql`1` })
+              .from(reviewComments)
+              .where(eq(reviewComments.reviewId, reviews.id)),
           ),
         );
       }
@@ -994,6 +1016,38 @@ export class ReviewsService {
         conditions.push(ne(reviews.sourceSystem, OWN_SOURCE_SYSTEM));
       }
 
+      if (query.provider === 'unassigned') {
+        conditions.push(isNull(reviews.reviewPermissionId));
+      } else if (query.provider) {
+        conditions.push(
+          exists(
+            tx
+              .select({ _: sql`1` })
+              .from(reviewEligibilities)
+              .where(
+                and(
+                  eq(reviewEligibilities.id, reviews.reviewPermissionId),
+                  eq(reviewEligibilities.provider, query.provider),
+                ),
+              ),
+          ),
+        );
+      }
+      if (query.batchId) {
+        conditions.push(
+          exists(
+            tx
+              .select({ _: sql`1` })
+              .from(reviewEligibilities)
+              .where(
+                and(
+                  eq(reviewEligibilities.id, reviews.reviewPermissionId),
+                  eq(reviewEligibilities.batchId, query.batchId),
+                ),
+              ),
+          ),
+        );
+      }
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
       const [{ count: total }] = await tx.select({ count: count() }).from(reviews).where(whereClause);
@@ -1016,12 +1070,7 @@ export class ReviewsService {
             tx
               .select({ _: sql`1` })
               .from(reviewBestSelections)
-              .where(
-                and(
-                  eq(reviewBestSelections.reviewId, reviews.id),
-                  eq(reviewBestSelections.status, 'CONFIRMED'),
-                ),
-              ),
+              .where(and(eq(reviewBestSelections.reviewId, reviews.id), eq(reviewBestSelections.status, 'CONFIRMED'))),
           ),
         })
         .from(reviews)
@@ -1030,6 +1079,10 @@ export class ReviewsService {
         .limit(limit)
         .offset(offset);
 
+      const permissions = await this.fetchAdminPermissions(
+        data.map((row) => row.review),
+        tx,
+      );
       const reviewIds = data.map((row) => row.review.id);
       const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
       const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
@@ -1040,6 +1093,7 @@ export class ReviewsService {
           const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
           return {
             ...review,
+            permission: review.reviewPermissionId ? (permissions.get(review.reviewPermissionId) ?? null) : null,
             mediaFileIds: mediaMap.get(review.id) ?? [],
             helpfulCount: counts.helpfulCount,
             likeCount: counts.likeCount,
@@ -1063,6 +1117,7 @@ export class ReviewsService {
         throw new NotFoundException('Review not found');
       }
 
+      const permissions = await this.fetchAdminPermissions([review], tx);
       const mediaFileIds = await this.fetchMediaFileIdsByReviewId(id, tx);
       const reactionCountMap = await this.fetchReactionCounts([id], tx);
       const counts = reactionCountMap.get(id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
@@ -1070,6 +1125,7 @@ export class ReviewsService {
 
       return {
         ...review,
+        permission: review.reviewPermissionId ? (permissions.get(review.reviewPermissionId) ?? null) : null,
         mediaFileIds,
         helpfulCount: counts.helpfulCount,
         likeCount: counts.likeCount,

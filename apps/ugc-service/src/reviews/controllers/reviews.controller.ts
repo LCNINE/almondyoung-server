@@ -2,6 +2,7 @@ import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Patch, Post, Get
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
+import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import {
@@ -199,12 +200,14 @@ export class ReviewsController {
   })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
-  @ApiOkResponsePaginated(ReviewResponseDto, { description: '전체 리뷰 목록 조회 성공' })
-  async listReviewsForAdmin(@Query() query: AdminReviewListQueryDto): Promise<PaginatedResponseDto<ReviewResponseDto>> {
+  @ApiOkResponsePaginated(AdminReviewResponseDto, { description: '전체 리뷰 목록 조회 성공' })
+  async listReviewsForAdmin(
+    @Query() query: AdminReviewListQueryDto,
+  ): Promise<PaginatedResponseDto<AdminReviewResponseDto>> {
     const result = await this.reviewsService.listAllForAdmin(query);
     return {
       ...result,
-      data: result.data.map(ReviewMapper.toResponse),
+      data: result.data.map(ReviewMapper.toAdminResponse),
     };
   }
 
@@ -219,11 +222,11 @@ export class ReviewsController {
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
-  @ApiResponse({ status: HttpStatus.OK, description: '리뷰 상세 조회 성공', type: ReviewResponseDto })
+  @ApiResponse({ status: HttpStatus.OK, description: '리뷰 상세 조회 성공', type: AdminReviewResponseDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
-  async getReviewForAdmin(@Param('id') id: string): Promise<ReviewResponseDto> {
+  async getReviewForAdmin(@Param('id') id: string): Promise<AdminReviewResponseDto> {
     const review = await this.reviewsService.getReviewForAdmin(id);
-    return ReviewMapper.toResponse(review);
+    return ReviewMapper.toAdminResponse(review);
   }
 
   @Patch('admin/reviews/:id/status')
