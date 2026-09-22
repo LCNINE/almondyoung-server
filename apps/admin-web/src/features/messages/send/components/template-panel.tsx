@@ -37,7 +37,7 @@ export function TemplatePanel({ onSelect }: { onSelect: (template: SmsTemplate) 
       <ul className="flex max-h-64 flex-col overflow-y-auto">
         {isLoading && <li className="text-muted-foreground p-2 text-sm">불러오는 중...</li>}
         {!isLoading && filtered.length === 0 && (
-          <li className="text-muted-foreground p-2 text-sm">'{keyword}'와 일치하는 템플릿이 없습니다.</li>
+          <li className="text-muted-foreground p-2 text-sm">&apos;{keyword}&apos;와 일치하는 템플릿이 없습니다.</li>
         )}
         {filtered.map((template) => (
           <li key={template.id}>
