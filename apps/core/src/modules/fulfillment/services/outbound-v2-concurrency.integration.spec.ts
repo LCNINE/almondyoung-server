@@ -5,6 +5,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
@@ -388,6 +389,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     );
   }
 
