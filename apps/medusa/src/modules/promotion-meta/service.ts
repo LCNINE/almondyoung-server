@@ -92,7 +92,10 @@ class PromotionMetaModuleService extends MedusaService({
     if (data.visibility != null && !['public', 'claimable', 'assigned_only'].includes(data.visibility)) {
       throw new Error(`Invalid visibility value: ${data.visibility}`);
     }
-    if (data.auto_issue_trigger != null && !['customer_registered', 'membership_activated'].includes(data.auto_issue_trigger)) {
+    if (
+      data.auto_issue_trigger != null &&
+      !['customer_registered', 'membership_activated'].includes(data.auto_issue_trigger)
+    ) {
       throw new Error(`Invalid auto_issue_trigger value: ${data.auto_issue_trigger}`);
     }
     if (data.validity_days != null) {
@@ -192,10 +195,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 불변식을 지키는 것은 이 함수가 아니라 호출 사슬이다 — 조용히 안 잠그는 것보다 시끄럽게
    * 500 으로 죽는 편이 낫다.
    */
-  private async lockPromotionForIssue(
-    promotionId: string,
-    sharedContext?: Context<EntityManager>,
-  ): Promise<void> {
+  private async lockPromotionForIssue(promotionId: string, sharedContext?: Context<EntityManager>): Promise<void> {
     const rows = await this.txEm(sharedContext).execute(
       `SELECT 1 FROM "promotion_meta" WHERE "promotion_id" = ? FOR UPDATE`,
       [promotionId],
@@ -216,10 +216,7 @@ class PromotionMetaModuleService extends MedusaService({
 
   /** 이벤트에 담긴 쿠폰(프로모션) 항목을 sort_order 순으로 반환. */
   async listEventItems(eventId: string): Promise<any[]> {
-    return (this as any).listCouponEventItems(
-      { event_id: eventId },
-      { order: { sort_order: 'ASC' } },
-    );
+    return (this as any).listCouponEventItems({ event_id: eventId }, { order: { sort_order: 'ASC' } });
   }
 
   /** 이벤트의 쿠폰 구성을 통째로 교체(기존 항목 제거 후 순서대로 재생성). */
@@ -246,12 +243,7 @@ class PromotionMetaModuleService extends MedusaService({
    */
   private isUniqueViolation(e: any): boolean {
     const msg = String(e?.message ?? '').toLowerCase();
-    return (
-      e?.code === '23505' ||
-      msg.includes('unique') ||
-      msg.includes('duplicate') ||
-      msg.includes('already exists')
-    );
+    return e?.code === '23505' || msg.includes('unique') || msg.includes('duplicate') || msg.includes('already exists');
   }
 
   /**
@@ -511,6 +503,43 @@ class PromotionMetaModuleService extends MedusaService({
     return this.restoreGrants(targets.map((g) => g.id));
   }
 
+  async claimExpiringClaimedGrants(
+    now: Date,
+    windowEnd: Date,
+    limit: number,
+  ): Promise<Array<{ id: string; customer_id: string; promotion_id: string; expires_at: Date }>> {
+    if (limit <= 0) return [];
+    const rows = await this.txEm().execute(
+      `WITH picked AS (
+         SELECT "id" FROM "coupon_grant"
+          WHERE "issued_via" = 'customer_claim' AND "used_at" IS NULL AND "revoked_at" IS NULL
+            AND "deleted_at" IS NULL AND "expiry_notified_at" IS NULL
+            AND "expires_at" > ? AND "expires_at" <= ?
+          ORDER BY "expires_at" ASC
+          LIMIT ?
+          FOR UPDATE SKIP LOCKED
+       )
+       UPDATE "coupon_grant" g SET "expiry_notified_at" = ?
+         FROM picked WHERE g."id" = picked."id"
+       RETURNING g."id", g."customer_id", g."promotion_id", g."expires_at"`,
+      [now, windowEnd, limit, now],
+    );
+    return (rows ?? []).map((r) => ({
+      id: String(r.id),
+      customer_id: String(r.customer_id),
+      promotion_id: String(r.promotion_id),
+      expires_at: r.expires_at instanceof Date ? r.expires_at : new Date(String(r.expires_at)),
+    }));
+  }
+
+  async releaseExpiryNotice(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.txEm().execute(
+      `UPDATE "coupon_grant" SET "expiry_notified_at" = NULL WHERE "id" IN (?)`,
+      [ids],
+    );
+  }
+
   /**
    * 스위퍼의 후보 — 카트가 잡았는데(`cart_id`) `usedBefore` 보다 오래된 «사용된» 장 (ADR-0034 결정 7).
    *
@@ -542,11 +571,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 이번 실행에서 `'duplicate'` 로 판정된 장)은 남의 것이다. 그중에서도 **아직 안 쓴 장만**
    * 지운다 — 실제로 치운 장수를 돌려준다.
    */
-  async revokeGrantsByIssueKeys(
-    promotionId: string,
-    customerId: string,
-    issueKeys: string[],
-  ): Promise<number> {
+  async revokeGrantsByIssueKeys(promotionId: string, customerId: string, issueKeys: string[]): Promise<number> {
     if (issueKeys.length === 0) return 0;
     // 🔴 `revokeGrants` 와 **같은 본체**를 지난다. 둘이 따로 구현돼 있을 때 「쓴 장은 soft
     // delete 하지 않는다」가 어드민 회수에만 걸려 있었다 — 스텝과 보상 사이에 소비된 장을
@@ -621,7 +646,11 @@ class PromotionMetaModuleService extends MedusaService({
     const unused = rows.filter((g) => g.used_at == null);
     if (unused.length > 0) {
       // soft delete 가 곧 슬롯 반환이다 — 상한은 `coupon_grant` COUNT 로 세므로 카운터가 따로 없다.
-      await (this as any).softDeleteCouponGrants(unused.map((g) => g.id), {}, sharedContext);
+      await (this as any).softDeleteCouponGrants(
+        unused.map((g) => g.id),
+        {},
+        sharedContext,
+      );
     }
     return { revoked: unused.length, remaining: rows.length - unused.length };
   }
