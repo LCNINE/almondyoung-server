@@ -79,6 +79,7 @@ function ReviewProductCard({ productId }: { productId: string }) {
     <div className="flex items-center gap-3">
       <div className="w-16 h-16 overflow-hidden border rounded shrink-0 bg-muted">
         <Image
+          unoptimized
           src={buildProductThumbnailSrc(product?.thumbnail)}
           alt={product?.name ?? '상품 이미지'}
           width={64}
@@ -205,6 +206,7 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
                   className="cursor-pointer"
                 >
                   <Image
+                    unoptimized
                     width={96}
                     height={96}
                     src={url}
@@ -229,6 +231,7 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
                 <CarouselItem key={url}>
                   <div className="relative flex h-[70vh] w-full items-center justify-center">
                     <Image
+                      unoptimized
                       fill
                       src={url}
                       alt={`첨부 이미지 ${index + 1}`}
