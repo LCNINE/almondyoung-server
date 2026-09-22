@@ -1,8 +1,8 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
-import { Body, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConsentsService } from './consents.service';
-import { CreateConsentDto } from './dto/consent-dto';
+import { CreateConsentDto, UpdateMarketingConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
@@ -37,6 +37,18 @@ export class ConsentsController {
   @RequireScopes('user:modify')
   async createConsent(@CurrentUser() user: JwtPayload, @Body() createConsentDto: CreateConsentDto): Promise<void> {
     return this.consentsService.createConsent(user.id, createConsentDto);
+  }
+
+  @ApiOperation({ summary: '내 광고성 정보 수신 동의 변경' })
+  @ApiResponse({ status: 200, description: '변경 결과와 처리 시각' })
+  @ApiResponse({ status: 404, description: '동의 정보가 없음' })
+  @Patch('marketing')
+  @RequireScopes('user:modify')
+  async updateMyMarketingConsent(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateMarketingConsentDto,
+  ): Promise<{ marketingConsent: boolean; changedAt: Date }> {
+    return this.consentsService.updateMyMarketingConsent(user.id, dto);
   }
 
   // notification-service용 API들 (인증 없이 접근 가능)

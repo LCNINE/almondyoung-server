@@ -6,13 +6,15 @@ import type { SocialIdentitiesState } from "@/lib/types/ui/social-identity"
 import { AccountInfoCard } from "./account-info-card"
 import { AddressBookSection } from "./address-book-section"
 import { InterestCategoriesSection } from "./interest-categories-section"
+import { MarketingConsentSection } from "./marketing-consent-section"
 
 interface ProfileEditProps {
   userData: UserDetail
   identitiesState: SocialIdentitiesState
+  marketingConsent: boolean | null
 }
 
-export function ProfileEdit({ userData }: ProfileEditProps) {
+export function ProfileEdit({ userData, marketingConsent }: ProfileEditProps) {
   return (
     <div className="space-y-6 py-2 md:py-4">
       {/* 계정 정보 (비밀번호/이메일/휴대폰/이름/닉네임/생년월일/아이디) */}
@@ -30,6 +32,10 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
       <InterestCategoriesSection
         initialKeys={userData.profile?.interestCategoryKeys ?? []}
       />
+
+      {marketingConsent !== null && (
+        <MarketingConsentSection initialEnabled={marketingConsent} />
+      )}
 
       <Separator />
 
