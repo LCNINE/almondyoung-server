@@ -2,12 +2,12 @@ import { ThemeManager } from "@/components/shared/theme-manager"
 import { SurveyPromptBanner } from "@/components/survey-prompt-banner"
 // import { Cafe24LinkBanner } from "@/components/cafe24-link-banner"
 // import { Cafe24LinkPopup } from "@/components/layout/cafe24-link-popup"
-import ArrearsAlert from "@/domains/membership/components/arrears-alert"
-import { getMyArrears } from "@/lib/api/membership"
+import ArrearsAlertSection from "@/domains/membership/components/arrears-alert-section"
 import { getMyProfile } from "@/lib/api/users/profile"
 import { getSEOTags } from "@/lib/seo"
 import { shouldShowSurvey } from "@/lib/utils/should-show-survey"
 import { getTranslations } from "next-intl/server"
+import { Suspense } from "react"
 import ProtectedRoute from "@components/protected-route"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
 
@@ -43,10 +43,6 @@ export default async function Home({
   const showSurvey: boolean = shouldShowSurvey(userDetailInfo)
 
   const isLoggedIn = !!userDetailInfo
-  // 미납 멤버십 요금 알림. 로그인한 사람에게만 묻는다 — 비로그인 홈에 조회를 더하지 않는다.
-  const arrearsTotal = isLoggedIn
-    ? (await getMyArrears()).outstanding.total
-    : 0
 
   return (
     <ProtectedRoute>
@@ -54,7 +50,13 @@ export default async function Home({
           섹션 제목들은 h2 가 맞으므로 h1 은 여기 하나만 둔다. */}
       <h1 className="sr-only">{t("pageTitle")}</h1>
 
-      <ArrearsAlert total={arrearsTotal} className="mx-4 mt-3" />
+      {/* 미납 멤버십 요금 알림. 로그인한 사람에게만 묻고, 홈 본문이 이 조회를 기다리지 않도록
+          Suspense 안에 둔다. 미수가 없으면 아무것도 그리지 않는다. */}
+      {isLoggedIn && (
+        <Suspense fallback={null}>
+          <ArrearsAlertSection className="mx-4 mt-3" />
+        </Suspense>
+      )}
 
       <HomeLogoutTemplate countryCode={countryCode} />
 

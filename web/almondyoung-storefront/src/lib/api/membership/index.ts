@@ -511,6 +511,9 @@ export async function getMyArrears(): Promise<MyArrearsDto> {
       method: "GET",
       withAuth: true,
       cache: "no-store",
+      // 이 조회는 마이페이지·홈의 서버 렌더 경로에 있다. 멤버십이 느려질 때 화면 전체가 같이
+      // 느려지지 않도록 짧게 끊고, 실패는 아래에서 '미수 없음'으로 흡수한다.
+      timeout: 2000,
     })
   } catch {
     return { outstanding: { total: 0, count: 0, currency: "KRW" }, items: [] }
