@@ -1,5 +1,6 @@
 import type { Filter } from '@/components/data-table';
 import {
+  REVIEW_PROVIDER_LABELS,
   HAS_COMMENT_LABELS,
   REVIEW_HAS_COMMENT_OPTIONS,
   REVIEW_RATINGS,
@@ -9,6 +10,25 @@ import {
 
 export function useReviewTableFilters(): Filter[] {
   return [
+    {
+      key: 'provider',
+      label: '작성 권한',
+      type: 'select',
+      options: Object.entries(REVIEW_PROVIDER_LABELS).map(([value, label]) => ({
+        value,
+        label,
+      })),
+    },
+    { key: 'batchId', label: '등록 배치 ID', type: 'string' },
+    {
+      key: 'source',
+      label: '리뷰 출처',
+      type: 'select',
+      options: [
+        { value: 'own', label: '자체 작성' },
+        { value: 'legacy', label: '이관 리뷰' },
+      ],
+    },
     {
       key: 'status',
       label: '상태',

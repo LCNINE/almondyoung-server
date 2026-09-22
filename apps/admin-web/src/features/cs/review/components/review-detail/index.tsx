@@ -8,7 +8,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { useReview } from '@/lib/services/review';
 import { useMastersByIdsSuspense } from '@/lib/services/products/queries';
 import { useOptionalAdminUser } from '@/lib/services/users/queries';
-import { STATUS_LABELS, ReviewStatus } from '@/lib/types/dto/review';
+import {
+  STATUS_LABELS,
+  REVIEW_PROVIDER_LABELS,
+  ReviewStatus,
+} from '@/lib/types/dto/review';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
@@ -139,6 +143,13 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: '작성자', value: authorNode },
+    {
+      key: '작성 권한',
+      value: REVIEW_PROVIDER_LABELS[data.permission?.provider ?? 'unassigned'],
+    },
+    { key: '등록 관리자/회원 ID', value: data.userId },
+    { key: '등록 배치', value: data.permission?.batchId },
+    { key: '권한 발급 사유', value: data.permission?.grantedReason },
     { key: '상품', value: productNode },
     { key: '별점', value: ratingStars(data.rating) },
     {

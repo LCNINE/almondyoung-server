@@ -1,10 +1,10 @@
-import { reviewApi, reviewStatisticsApi, ReviewStatisticsQuery } from '@/lib/api/domains/review';
-import { ReviewListQuery } from '@/lib/types/dto/review';
 import {
-  keepPreviousData,
-  useQuery,
-  useSuspenseQuery,
-} from '@tanstack/react-query';
+  reviewApi,
+  reviewStatisticsApi,
+  ReviewStatisticsQuery,
+} from '@/lib/api/domains/review';
+import { ReviewListQuery } from '@/lib/types/dto/review';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { reviewQueryKeys } from './query-keys';
 
 export const useReviews = (query: ReviewListQuery) => {
@@ -12,7 +12,15 @@ export const useReviews = (query: ReviewListQuery) => {
     queryKey: reviewQueryKeys.list(query),
     queryFn: () => reviewApi.getReviews(query),
     staleTime: 30 * 1000,
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, previousQuery) => {
+      const previousFilter = previousQuery?.queryKey.at(-1) as
+        | ReviewListQuery
+        | undefined;
+      return previousFilter?.provider === query.provider &&
+        previousFilter?.batchId === query.batchId
+        ? previous
+        : undefined;
+    },
   });
 };
 

@@ -12,9 +12,15 @@ export const REVIEW_RATINGS = ['1', '2', '3', '4', '5'] as const;
 export type ReviewRating = (typeof REVIEW_RATINGS)[number];
 
 export const REVIEW_HAS_COMMENT_OPTIONS = ['true', 'false'] as const;
-export type ReviewHasCommentOption = (typeof REVIEW_HAS_COMMENT_OPTIONS)[number];
+export type ReviewHasCommentOption =
+  (typeof REVIEW_HAS_COMMENT_OPTIONS)[number];
 
-export const REVIEW_SORT_OPTIONS = ['latest', 'oldest', 'rating_high', 'rating_low'] as const;
+export const REVIEW_SORT_OPTIONS = [
+  'latest',
+  'oldest',
+  'rating_high',
+  'rating_low',
+] as const;
 export type ReviewSortOption = (typeof REVIEW_SORT_OPTIONS)[number];
 
 export interface AdminCommentDto {
@@ -26,7 +32,20 @@ export interface AdminCommentDto {
   updatedAt: string;
 }
 
+export const REVIEW_PROVIDER_LABELS = {
+  order: '주문 권한',
+  admin: '관리자 권한',
+  unassigned: '권한 미연결',
+} as const;
+export type ReviewProviderFilter = keyof typeof REVIEW_PROVIDER_LABELS;
+
 export interface ReviewDto {
+  permission?: {
+    id: string;
+    provider: 'order' | 'admin';
+    batchId: string | null;
+    grantedReason: string | null;
+  } | null;
   id: string;
   userId: string | null;
   productId: string;
@@ -48,6 +67,8 @@ export interface ReviewDto {
 export type ReviewSourceOption = 'own' | 'legacy';
 
 export interface ReviewListQuery {
+  provider?: ReviewProviderFilter;
+  batchId?: string;
   page?: number;
   limit?: number;
   status?: ReviewStatusFilter;
