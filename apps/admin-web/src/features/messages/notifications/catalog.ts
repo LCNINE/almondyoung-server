@@ -19,11 +19,8 @@ export type CatalogEntry = {
 export const NOTIFICATION_CATALOG: CatalogEntry[] = [
   { id: 'order-created', group: '주문', title: '주문 완료 안내', condition: '주문이 접수되면', kind: 'event', eventKey: 'ORDER_CREATED' },
   { id: 'bank-transfer', group: '주문', title: '무통장 입금 안내', condition: '무통장입금 결제를 신청하면 입금 계좌와 기한을 보낸다', kind: 'event', eventKey: 'BANK_TRANSFER_ISSUED' },
-  { id: 'shipped', group: '주문', title: '발송 완료', condition: '주문 상품이 모두 출고되면', kind: 'planned', issue: 940 },
-  { id: 'partially-shipped', group: '주문', title: '부분 발송 완료', condition: '주문 상품 중 일부가 먼저 출고되면', kind: 'planned', issue: 940 },
-  { id: 'delivered', group: '주문', title: '배송 완료', condition: '배송이 완료되면', kind: 'planned', issue: 940 },
-  { id: 'confirmed-review', group: '주문', title: '구매 확정 및 리뷰요청', condition: '구매가 확정되면 리뷰 작성을 요청한다', kind: 'planned', issue: 940 },
-  { id: 'confirmed', group: '주문', title: '구매 확정', condition: '구매가 확정되면', kind: 'planned', issue: 940 },
+  { id: 'shipped', group: '주문', title: '발송 완료', condition: '주문 상품이 모두 출고되면', kind: 'event', eventKey: 'ORDER_SHIPPED' },
+  { id: 'partially-shipped', group: '주문', title: '부분 발송 완료', condition: '주문 상품 중 일부가 먼저 출고되면', kind: 'event', eventKey: 'ORDER_PARTIALLY_SHIPPED' },
 
   { id: 'claim-received', group: 'CS', title: '취소/반품/교환 접수 및 주문상품 추가', condition: '관리자가 취소·반품·교환을 접수하거나 주문 상품을 추가하면', kind: 'planned', issue: 941 },
   { id: 'claim-requested', group: 'CS', title: '취소/반품/교환 신청', condition: '고객이 취소·반품·교환을 신청하면', kind: 'planned', issue: 941 },
