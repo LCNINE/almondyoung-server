@@ -1,5 +1,7 @@
 // apps/notification/src/dispatcher/dispatcher.module.ts
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { UserContactClient } from '@app/shared';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
@@ -14,6 +16,7 @@ import { UserEventConsumer } from './handlers/user-event.consumer';
 import { OrderEventConsumer } from './handlers/order-event.consumer';
 import { WalletEventConsumer } from './handlers/wallet-event.consumer';
 import { MembershipEventConsumer } from './handlers/membership-event.consumer';
+import { UgcEventConsumer } from './handlers/ugc-event.consumer';
 // Redis가 있을 때만 NotificationProcessorModule import
 // TypeScript에서는 조건부 import가 어려우므로, 런타임에 에러가 발생할 수 있습니다.
 // 대신 NotificationProcessorModule 내부에서 Redis 체크를 수행합니다.
@@ -21,6 +24,7 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
 @Module({
   imports: [
     DbModule,
+    HttpModule,
     ProviderModule,
     SharedModule,
     // 소비만 하는 앱이다 — `publishes` 가 없다. 구독 토픽은 `@On` 에서 도출되고
@@ -51,8 +55,9 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
     OrderEventConsumer,
     WalletEventConsumer,
     MembershipEventConsumer,
+    UgcEventConsumer,
   ],
-  providers: [NotificationDispatcherService, UserNotificationHistoryReader],
+  providers: [NotificationDispatcherService, UserNotificationHistoryReader, UserContactClient],
   exports: [NotificationDispatcherService],
 })
 export class DispatcherModule {}

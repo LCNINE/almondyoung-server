@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { UserContactClient } from '@app/shared';
 import type { DbService } from '@app/db';
 import type { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
 import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
@@ -45,12 +46,29 @@ function makeConsumer(env: Record<string, string>, mapping: Record<string, unkno
     .mockResolvedValue({ notificationIds: ['notification-1'] });
   const dispatcher = { send };
   const eventMappings = { getEventMapping: jest.fn().mockResolvedValue(mapping) };
+  const contacts = {
+    findContacts: jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'user-1',
+          {
+            userId: 'user-1',
+            email: 'looked-up@example.com',
+            username: '조회',
+            phoneNumber: null,
+            marketingConsent: false,
+          },
+        ],
+      ]),
+    ),
+  };
   const consumer = new OrderEventConsumer(
     dispatcher as unknown as NotificationDispatcherService,
     eventMappings as unknown as EventMappingService,
     new ConfigService(env),
+    contacts as unknown as UserContactClient,
   );
-  return { consumer, dispatcher, eventMappings };
+  return { consumer, dispatcher, eventMappings, contacts };
 }
 
 describe('OrderEventConsumer demo delivery boundary', () => {
@@ -161,6 +179,7 @@ describe('OrderEventConsumer demo delivery boundary', () => {
         DEMO_CONSOLE_ENABLED: 'true',
         EXTERNAL_INTEGRATIONS_MODE: 'mock',
       }),
+      {} as UserContactClient,
     );
     const transport = jest.spyOn(globalThis, 'fetch');
     const nodeEnv = process.env.NODE_ENV;
@@ -215,7 +234,7 @@ describe('OrderEventConsumer 발송 완료 알림', () => {
     priority: 'NORMAL',
   });
 
-  it('부분 발송이면 부분 발송 알림을 받는 사람 메일과 송장 정보로 보낸다', async () => {
+  it('부분 발송이면 부분 발송 알림을 활성 회원 메일과 송장 정보로 보낸다', async () => {
     const { consumer, dispatcher, eventMappings } = makeConsumer({}, mapping('ORDER_PARTIALLY_SHIPPED'));
 
     await consumer.onShipmentDispatched(coreEnvelope, shipment);
@@ -224,7 +243,7 @@ describe('OrderEventConsumer 발송 완료 알림', () => {
     expect(dispatcher.send).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
-        payload: expect.objectContaining({ email: 'buyer@example.com' }),
+        payload: expect.objectContaining({ email: 'looked-up@example.com' }),
         variables: { name: '홍길동', orderNumber: '#3900', carrier: '한진택배', trackingNo: 'TRACK-1' },
       }),
     );
@@ -242,6 +261,68 @@ describe('OrderEventConsumer 발송 완료 알림', () => {
     const { consumer, dispatcher } = makeConsumer({}, mapping('ORDER_SHIPPED', false));
 
     await consumer.onShipmentDispatched(coreEnvelope, { ...shipment, isPartial: false });
+
+    expect(dispatcher.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderEventConsumer 반품·교환 진행 알림', () => {
+  const claim = {
+    orderId: 'so-1',
+    channelOrderId: 'order_01',
+    displayOrderNo: '3900',
+    customerId: 'user-1',
+    kind: 'exchange' as const,
+    stage: 'requested' as const,
+    requestId: 'er-1',
+    requestedBy: 'customer' as const,
+    occurredAt: '2026-09-22T01:00:00.000Z',
+  };
+  const envelope = { correlationId: 'c-1' } as EnvelopeOf<typeof CORE_ORDER_STREAM, 'SalesOrderClaimProgressed'>;
+  const active = (eventKey: string) => ({
+    eventKey,
+    isActive: true,
+    defaultChannels: ['EMAIL'],
+    category: 'TRANSACTIONAL',
+    templateKey: `${eventKey}_EMAIL`,
+    priority: 'NORMAL',
+  });
+
+  it.each([
+    [{ stage: 'requested', requestedBy: 'customer' }, 'CLAIM_REQUESTED'],
+    [{ stage: 'requested', requestedBy: 'admin' }, 'CLAIM_RECEIVED'],
+    [{ stage: 'collected' }, 'CLAIM_COLLECTED'],
+    [{ stage: 'completed' }, 'CLAIM_COMPLETED'],
+  ])('%o 는 %s 알림을 고른다', async (override, eventKey) => {
+    const { consumer, eventMappings } = makeConsumer({}, active(eventKey));
+
+    await consumer.onClaimProgressed(envelope, { ...claim, ...override } as typeof claim);
+
+    expect(eventMappings.getEventMapping).toHaveBeenCalledWith(eventKey);
+  });
+
+  it('주문에 적힌 메일이 아니라 활성 회원 메일로 보낸다', async () => {
+    const { consumer, dispatcher } = makeConsumer({}, active('CLAIM_REQUESTED'));
+
+    await consumer.onClaimProgressed(envelope, { ...claim, customerEmail: 'old-order@example.com' });
+
+    expect(dispatcher.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ email: 'looked-up@example.com' }),
+        variables: { name: '고객', orderNumber: '#3900', claimType: '교환' },
+      }),
+    );
+  });
+
+  it('탈퇴·휴면으로 활성 연락처가 없으면 주문에 메일이 있어도 보내지 않는다', async () => {
+    const { consumer, dispatcher, contacts } = makeConsumer({}, active('CLAIM_COLLECTED'));
+    contacts.findContacts.mockResolvedValue(new Map());
+
+    await consumer.onClaimProgressed(envelope, {
+      ...claim,
+      stage: 'collected',
+      customerEmail: 'old-order@example.com',
+    });
 
     expect(dispatcher.send).not.toHaveBeenCalled();
   });
