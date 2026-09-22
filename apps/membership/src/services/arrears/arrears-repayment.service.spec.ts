@@ -26,7 +26,7 @@ function row(overrides: Partial<ArrearsRow> = {}): ArrearsRow {
   };
 }
 
-function makeService(rows: ArrearsRow[]) {
+function makeService(rows: ArrearsRow[], storefrontUrl?: string) {
   const findOutstandingByUserId = jest.fn().mockResolvedValue(rows);
   const outstandingSummary = jest.fn().mockResolvedValue({
     total: rows.reduce((s, r) => s + r.amount, 0),
@@ -34,6 +34,7 @@ function makeService(rows: ArrearsRow[]) {
     currency: rows[0]?.currency ?? 'KRW',
   });
   const settleMany = jest.fn().mockResolvedValue(rows.map((r) => r.id));
+  const lockOutstandingSum = jest.fn().mockResolvedValue(rows.reduce((s, r) => s + r.amount, 0));
   const createArrearsCheckoutIntent = jest.fn().mockResolvedValue({ intentId: 'i1' });
   const getWalletPaymentIntent = jest.fn();
   const tx = {};
@@ -42,11 +43,20 @@ function makeService(rows: ArrearsRow[]) {
   const service = new ArrearsRepaymentService(
     { db } as never,
     { findOutstandingByUserId, outstandingSummary } as unknown as ArrearsReader,
-    { settleMany } as unknown as ArrearsManager,
+    { settleMany, lockOutstandingSum } as unknown as ArrearsManager,
     { createArrearsCheckoutIntent, getWalletPaymentIntent } as unknown as PaymentClientService,
+    { get: () => storefrontUrl } as never,
   );
 
-  return { service, findOutstandingByUserId, settleMany, createArrearsCheckoutIntent, getWalletPaymentIntent, tx };
+  return {
+    service,
+    findOutstandingByUserId,
+    settleMany,
+    lockOutstandingSum,
+    createArrearsCheckoutIntent,
+    getWalletPaymentIntent,
+    tx,
+  };
 }
 
 const arrearsIntent = (overrides: Record<string, unknown> = {}) => ({
@@ -78,6 +88,29 @@ describe('ArrearsRepaymentService — 청산 결제 시작', () => {
     );
   });
 
+  it('returnUrl 이 주소 형식이 아니면 결제를 만들지 않는다', async () => {
+    const { service, createArrearsCheckoutIntent } = makeService([row()]);
+
+    await expect(service.startRepayment('u1', '/mypage/membership')).rejects.toThrow('returnUrl');
+    expect(createArrearsCheckoutIntent).not.toHaveBeenCalled();
+  });
+
+  it('http(s) 가 아닌 스킴은 설정이 없어도 막는다', async () => {
+    const { service, createArrearsCheckoutIntent } = makeService([row()]);
+
+    await expect(service.startRepayment('u1', 'javascript:alert(1)')).rejects.toThrow('returnUrl');
+    expect(createArrearsCheckoutIntent).not.toHaveBeenCalled();
+  });
+
+  it('쇼핑몰 주소를 아는 환경에서는 다른 출처로 돌려보내지 않는다', async () => {
+    const { service, createArrearsCheckoutIntent } = makeService([row()], 'https://shop.example.com');
+
+    await expect(service.startRepayment('u1', 'https://evil.example.net/steal')).rejects.toThrow('returnUrl');
+    expect(createArrearsCheckoutIntent).not.toHaveBeenCalled();
+
+    await expect(service.startRepayment('u1', 'https://shop.example.com/kr/mypage/membership')).resolves.toBeDefined();
+  });
+
   it('미수가 없으면 결제를 만들지 않는다', async () => {
     const { service, createArrearsCheckoutIntent } = makeService([]);
 
@@ -98,8 +131,9 @@ describe('ArrearsRepaymentService — 청산 결제 시작', () => {
 
 describe('ArrearsRepaymentService — 입금 확인 후 청산', () => {
   it('CAPTURED 면 metadata 의 대상만, 소유자 조건과 함께 닫는다', async () => {
-    const { service, settleMany, getWalletPaymentIntent, tx } = makeService([]);
+    const { service, settleMany, lockOutstandingSum, getWalletPaymentIntent, tx } = makeService([]);
     getWalletPaymentIntent.mockResolvedValue(arrearsIntent());
+    lockOutstandingSum.mockResolvedValue(9980);
     settleMany.mockResolvedValue(['a1', 'a2']);
 
     await service.settleFromCapturedIntent('i1');
@@ -144,9 +178,32 @@ describe('ArrearsRepaymentService — 입금 확인 후 청산', () => {
     expect(settleMany).not.toHaveBeenCalled();
   });
 
+  it('수납액이 미수보다 적으면 한 줄도 닫지 않는다', async () => {
+    const { service, settleMany, lockOutstandingSum, getWalletPaymentIntent } = makeService([]);
+    getWalletPaymentIntent.mockResolvedValue(arrearsIntent({ payableAmount: 4990 }));
+    lockOutstandingSum.mockResolvedValue(9980);
+
+    await service.settleFromCapturedIntent('i1');
+
+    expect(settleMany).not.toHaveBeenCalled();
+  });
+
+  it('수납액이 더 많으면 청산은 진행한다', async () => {
+    const { service, settleMany, lockOutstandingSum, getWalletPaymentIntent } = makeService([]);
+    getWalletPaymentIntent.mockResolvedValue(arrearsIntent({ payableAmount: 20000 }));
+    lockOutstandingSum.mockResolvedValue(9980);
+    settleMany.mockResolvedValue(['a1', 'a2']);
+
+    await service.settleFromCapturedIntent('i1');
+
+    expect(settleMany).toHaveBeenCalled();
+  });
+
   it('같은 이벤트가 두 번 와도 두 번째는 조용히 끝난다', async () => {
-    const { service, settleMany, getWalletPaymentIntent } = makeService([]);
+    const { service, settleMany, lockOutstandingSum, getWalletPaymentIntent } = makeService([]);
     getWalletPaymentIntent.mockResolvedValue(arrearsIntent());
+    // 두 번째 배달 시점엔 이미 닫혀 있어 대조할 빚이 없다.
+    lockOutstandingSum.mockResolvedValueOnce(9980).mockResolvedValueOnce(0);
     settleMany.mockResolvedValueOnce(['a1', 'a2']).mockResolvedValueOnce([]);
 
     await service.settleFromCapturedIntent('i1');

@@ -309,9 +309,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'membership POST /me/arrears/checkout': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:60',
+    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:97',
     predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
-    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:60-77). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:89 eq(schema.membershipArrears.userId, userId)).',
+    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:97-118). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:112 eq(schema.membershipArrears.userId, userId)).',
   },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',

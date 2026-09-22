@@ -66,6 +66,29 @@ export class ArrearsManager {
   }
 
   /**
+   * 청산 대상 줄의 미청산 합. **청산과 같은 트랜잭션에서** 불러 잠근다 — 결제 생성과 입금 확인
+   * 사이에 관리자가 금액을 조정하면 받은 돈과 지울 빚이 어긋나는데, 잠그지 않으면 그 대조 자체가
+   * 낡은 값 위에서 이뤄진다.
+   */
+  async lockOutstandingSum(tx: DrizzleTransaction, userId: string, arrearsIds: string[]): Promise<number> {
+    if (arrearsIds.length === 0) return 0;
+
+    const rows = await tx
+      .select({ amount: schema.membershipArrears.amount })
+      .from(schema.membershipArrears)
+      .where(
+        and(
+          eq(schema.membershipArrears.userId, userId),
+          inArray(schema.membershipArrears.id, arrearsIds),
+          eq(schema.membershipArrears.status, 'OUTSTANDING'),
+        ),
+      )
+      .for('update');
+
+    return rows.reduce((sum, r) => sum + r.amount, 0);
+  }
+
+  /**
    * 수금으로 청산. 한 결제가 덮는 줄을 한 문장으로 닫는다 — 건별로 나눠 쏘면 중간에 끊겼을 때
    * 「일부만 갚힌」 상태가 남고, 게이트는 잔액 합으로 판단하므로 그건 돈만 받고 안 풀린 상태다.
    *

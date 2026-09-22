@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BadRequestError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
@@ -41,7 +42,41 @@ export class ArrearsRepaymentService {
     private readonly arrearsReader: ArrearsReader,
     private readonly arrearsManager: ArrearsManager,
     private readonly paymentClientService: PaymentClientService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * 결제 뒤 돌아갈 곳. 형식만 보고 넘기면 이 라우트가 임의 사이트로 튕겨 보내는 발판이 된다 —
+   * 결제 직후라 고객이 가장 속기 쉬운 순간이다. 쇼핑몰 주소를 아는 환경에서는 같은 출처만 받는다.
+   */
+  private assertAllowedReturnUrl(returnUrl: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(returnUrl);
+    } catch {
+      throw new BadRequestError('returnUrl 형식이 올바르지 않습니다.');
+    }
+
+    // http(s) 가 아니면 주소가 아니라 «스크립트»일 수 있다(javascript:·data:). URL 파서는 그걸
+    // 정상으로 받아들이므로 여기서 걸러야 한다 — 설정이 없는 환경에서도 이 검사는 항상 돈다.
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new BadRequestError('returnUrl 형식이 올바르지 않습니다.');
+    }
+
+    const storefrontUrl = this.configService.get<string>('STOREFRONT_URL');
+    // 주소를 모르는 환경(로컬·과도기)에서는 형식 검사까지만 한다. 여기서 막으면 설정이 없는 곳의
+    // 정상 결제가 통째로 죽는다.
+    if (!storefrontUrl) return;
+
+    try {
+      if (new URL(storefrontUrl).origin !== parsed.origin) {
+        throw new BadRequestError('returnUrl 이 허용된 주소가 아닙니다.');
+      }
+    } catch (err) {
+      if (err instanceof BadRequestError) throw err;
+      this.logger.warn(`[arrears] STOREFRONT_URL 을 해석할 수 없어 출처 검사를 건너뛴다: ${storefrontUrl}`);
+    }
+  }
 
   /** 본인 미수 현황. 스코프는 호출자가 넘긴 JWT userId 하나뿐이다. */
   async getMine(userId: string): Promise<MyArrearsView> {
@@ -57,6 +92,8 @@ export class ArrearsRepaymentService {
    * 미수를 지울 수 있다. 어느 줄을 덮는지도 여기서 확정해 intent metadata 에 싣는다.
    */
   async startRepayment(userId: string, returnUrl: string, email?: string): Promise<StartRepaymentResult> {
+    this.assertAllowedReturnUrl(returnUrl);
+
     const items = await this.arrearsReader.findOutstandingByUserId(userId);
     if (items.length === 0) {
       throw new BadRequestError('청산할 미수가 없습니다.');
@@ -112,9 +149,29 @@ export class ArrearsRepaymentService {
       return;
     }
 
-    const settled = await this.dbService.db.transaction((tx) =>
-      this.arrearsManager.settleMany(tx, userId, arrearsIds, `intent:${intentId}`),
-    );
+    const paid = intent.payableAmount;
+    const settled = await this.dbService.db.transaction(async (tx) => {
+      // 받은 돈으로 지울 빚을 덮는지 먼저 본다. 결제를 만든 뒤 입금이 확인되기까지 관리자가 금액을
+      // 조정할 수 있어서, 대조 없이 닫으면 «덜 받고 전액 탕감» 이 조용히 일어난다.
+      const due = await this.arrearsManager.lockOutstandingSum(tx, userId, arrearsIds);
+      if (due === 0) return [];
+
+      if (paid < due) {
+        this.logger.error(
+          `[arrears] 수납액이 미수보다 적어 청산하지 않는다 — 수동 확인 필요 ` +
+            `(intentId=${intentId}, userId=${userId}, paid=${paid}, due=${due})`,
+        );
+        return [];
+      }
+      if (paid > due) {
+        this.logger.warn(
+          `[arrears] 수납액이 미수보다 많다 — 청산은 진행하고 차액은 사람이 본다 ` +
+            `(intentId=${intentId}, userId=${userId}, paid=${paid}, due=${due})`,
+        );
+      }
+
+      return this.arrearsManager.settleMany(tx, userId, arrearsIds, `intent:${intentId}`);
+    });
 
     if (settled.length === arrearsIds.length) {
       this.logger.log(`[arrears] 청산 완료: userId=${userId}, intentId=${intentId}, count=${settled.length}`);

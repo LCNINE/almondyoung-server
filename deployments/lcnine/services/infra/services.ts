@@ -331,6 +331,8 @@ export function setup(infra: SharedInfra) {
     WALLET_API_URL: url('wallet'),
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
+    // 미수 납부 결제가 돌아올 주소의 출처 검사 기준. 없으면 형식 검사까지만 한다.
+    STOREFRONT_URL: storefrontUrl,
     OIDC_ISSUER_URL: idpUserServiceUrl,
     // 갱신 사전 고지 크론이 수신자 이메일을 조회하는 경로.
     USER_SERVICE_URL: idpUserServiceUrl,
