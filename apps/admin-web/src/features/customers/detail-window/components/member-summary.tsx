@@ -2,9 +2,9 @@
 
 import { CheckCircle2, Phone, Mail } from 'lucide-react';
 import { useCustomerById } from '@/lib/services/customers';
-import { useMemberDetail } from '@/lib/services/membership';
 import { formatDate } from '@/lib/utils/date';
 import { formatPhoneNumber } from '@/lib/utils/phone';
+import { useMembershipLabel } from '../lib/order-labels';
 
 const shopTypeLabels: Record<string, string> = {
   solo: '1인 샵',
@@ -20,15 +20,13 @@ const roleBadgeLabels: Record<string, string> = {
 /** 좌측 상단 회원 요약 카드 */
 export function MemberSummary({ customerId }: { customerId: string }) {
   const { data: customer, isLoading } = useCustomerById(customerId);
-  const { data: membership } = useMemberDetail(customerId);
-  const isMember =
-    membership?.status === 'ACTIVE' || membership?.status === 'PAUSED';
+  const membershipLabel = useMembershipLabel(customerId);
   const profile = customer?.profile;
   const shop = customer?.shop;
 
   // 멤버십 상태 + 보유 역할
   const badges = [
-    isMember ? '멤버십 회원' : '일반 회원',
+    membershipLabel,
     ...(customer?.roles ?? [])
       .map((role) => roleBadgeLabels[role])
       .filter(Boolean),

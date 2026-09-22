@@ -1,4 +1,5 @@
 import type { AdminOrder } from '@/lib/api/domains/medusa';
+import { useMemberDetail } from '@/lib/services/membership';
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   not_paid: '미결제',
@@ -59,10 +60,9 @@ export function paymentMethodLabel(providerId: string): string {
   return providerId.replace(/^pp_/, '');
 }
 
-// 멤버십 역할 여부로 등급 라벨 추정 (정식 등급 체계 들어오면 교체)
-export function membershipLabel(roles: string[] | undefined): string {
-  if (roles?.includes('membership')) return '멤버십 회원';
-  return '일반 회원';
+export function useMembershipLabel(userId: string): string {
+  const { data } = useMemberDetail(userId);
+  return data?.status === 'ACTIVE' || data?.status === 'PAUSED' ? '멤버십 회원' : '일반 회원';
 }
 
 /** 통화 코드에 맞춰 금액 문자열로 변환 (KRW 는 ₩, 그 외는 코드 병기) */
