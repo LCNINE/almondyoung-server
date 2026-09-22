@@ -144,6 +144,7 @@ export interface ConversationDetail {
 export interface ReplySmsConversationDto {
   phoneNumber: string;
   content: string;
+  deviceId?: string;
   nhnFallback?: boolean;
 }
 

@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { smsGateApi } from '@/lib/api/domains/sms-gate';
 import {
   useDeleteSmsConversation,
@@ -42,12 +43,17 @@ export function ConversationPanel({
   const [text, setText] = useState('');
   const [isChecking, setIsChecking] = useState(false);
   const [overflow, setOverflow] = useState<number | null>(null);
+  const [pickedDeviceId, setPickedDeviceId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageCount = data?.messages.length ?? 0;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [phoneNumber, messageCount]);
+
+  useEffect(() => {
+    setPickedDeviceId('');
+  }, [phoneNumber]);
 
   if (!phoneNumber) {
     return (
@@ -60,13 +66,14 @@ export function ConversationPanel({
 
   const devices = deviceData?.devices ?? [];
   const deviceName = (deviceId: string) => devices.find((d) => d.deviceId === deviceId)?.name ?? deviceId;
-  const canReply = !!data?.userId && !!data.deviceId;
+  const sendDeviceId = pickedDeviceId || data?.deviceId || '';
+  const canReply = !!data?.userId && !!sendDeviceId;
   const busy = reply.isPending || isChecking;
 
   const submit = (nhnFallback: boolean) => {
     setOverflow(null);
     reply.mutate(
-      { phoneNumber, content: text.trim(), nhnFallback },
+      { phoneNumber, content: text.trim(), deviceId: sendDeviceId, nhnFallback },
       {
         onSuccess: (result) => {
           if (result.skipped.length > 0) toast.warning(`보내지 못했습니다: ${result.skipped[0].reason}`);
@@ -89,10 +96,10 @@ export function ConversationPanel({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!data?.deviceId || !text.trim() || busy) return;
+    if (!sendDeviceId || !text.trim() || busy) return;
     setIsChecking(true);
     try {
-      const { remaining } = await smsGateApi.getCapacity(data.deviceId);
+      const { remaining } = await smsGateApi.getCapacity(sendDeviceId);
       if (remaining < 1) setOverflow(1);
       else submit(false);
     } catch (error) {
@@ -109,7 +116,7 @@ export function ConversationPanel({
           <span className="truncate font-semibold">{data?.name ?? formatPhoneNumber(phoneNumber)}</span>
           <span className="text-muted-foreground truncate text-sm">
             {formatPhoneNumber(phoneNumber)}
-            {data?.deviceId && ` · 받은 폰 ${deviceName(data.deviceId)}`}
+            {data?.deviceId && ` · 최근 사용 폰 ${deviceName(data.deviceId)}`}
           </span>
         </div>
         <Button variant="ghost" size="icon" aria-label="대화 삭제" onClick={() => setConfirmingDelete(true)}>
@@ -145,9 +152,24 @@ export function ConversationPanel({
           <p className="text-muted-foreground text-xs">회원이 아닌 번호로는 답장할 수 없습니다.</p>
         )}
         <form className="flex items-center gap-2" onSubmit={handleSubmit}>
+          <Select value={sendDeviceId} onValueChange={setPickedDeviceId} disabled={!canReply || busy}>
+            <SelectTrigger className="w-56 shrink-0" aria-label="보낼 발송폰">
+              <SelectValue placeholder="발송폰 선택" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {devices
+                .filter((d) => d.enabled || d.deviceId === data?.deviceId)
+                .map((d) => (
+                  <SelectItem key={d.deviceId} value={d.deviceId} disabled={!d.enabled}>
+                    {d.name} · 잔여 {Math.max(0, d.dailyLimit - d.sentToday)}건
+                    {d.online ? '' : ' · 오프라인'}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
           <Input
             value={text}
-            placeholder={canReply && data?.deviceId ? `메시지를 입력하세요. ${deviceName(data.deviceId)}에서 보냅니다.` : ''}
+            placeholder={canReply ? `메시지를 입력하세요. ${deviceName(sendDeviceId)}에서 보냅니다.` : ''}
             disabled={!canReply || busy}
             maxLength={2000}
             onChange={(event) => setText(event.target.value)}

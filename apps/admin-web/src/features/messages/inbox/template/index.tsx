@@ -28,7 +28,7 @@ export default function SmsInboxTemplate() {
       <Header
         title="메시지함"
         titleAside={<HelpSheet />}
-        subtitle="발송폰으로 들어온 문자를 번호별 대화로 보여줍니다. 답장은 받은 그 폰에서 나갑니다."
+        subtitle="발송폰으로 들어온 문자를 번호별 대화로 보여줍니다. 답장은 받은 폰에서 나가며, 입력칸 옆에서 다른 발송폰을 고를 수 있습니다."
       />
 
       <OfflineBanner />

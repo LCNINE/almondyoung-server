@@ -125,7 +125,7 @@ export class SmsConversationReader {
       phoneNumber: phone,
       userId,
       name: userId ? (contacts.get(userId)?.username ?? null) : null,
-      deviceId: latest?.deviceId ?? null,
+      deviceId: messages.findLast((m) => m.deviceId && !m.viaNhn && (m.state === null || m.state === 'sent'))?.deviceId ?? latest?.deviceId ?? null,
       messages,
     };
   }

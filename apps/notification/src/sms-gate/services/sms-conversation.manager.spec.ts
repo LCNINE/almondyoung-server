@@ -29,6 +29,14 @@ describe('SmsConversationManager.reply', () => {
     );
   });
 
+  it('발송폰을 고르면 받은 폰 대신 그 폰으로 보낸다', async () => {
+    const { manager, messageManager } = setup([{ userId: 'current-owner', username: '새 주인' }]);
+
+    await manager.reply({ phoneNumber: '010-1234-5678', content: '답장', deviceId: 'phone-b' }, 'staff');
+
+    expect(messageManager.send).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'phone-b' }), 'staff');
+  });
+
   it('지금 그 번호를 쓰는 회원이 없으면 거절한다', async () => {
     const { manager, messageManager } = setup([]);
 
