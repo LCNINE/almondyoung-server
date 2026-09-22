@@ -105,4 +105,16 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
     expect(columns).toEqual(expect.arrayContaining(['batch_id', 'provider', 'status', 'source_system']));
     expect(operators).toContain('test-batch');
   });
+  it.each(['true', 'false'])(
+    'hasMedia=%s filters count and rows with a correlated media subquery',
+    async (hasMedia) => {
+      const { columns, operators } = await runQuery({ hasMedia, provider: 'admin', status: 'hidden' });
+      expect(columns).toContain('review_id');
+      expect(columns).toContain('provider');
+      expect(columns).toContain('status');
+      const text = operators.join(' ');
+      expect(text).toContain(hasMedia === 'true' ? 'exists' : 'not exists');
+      if (hasMedia === 'true') expect(text).not.toContain('not exists');
+    },
+  );
 });

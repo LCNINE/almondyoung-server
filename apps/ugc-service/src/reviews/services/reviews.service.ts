@@ -981,6 +981,14 @@ export class ReviewsService {
         conditions.push(sql`${reviews.productId}::text ILIKE ${productIdTerm}`);
       }
 
+      if (query.hasMedia === 'true' || query.hasMedia === 'false') {
+        const mediaQuery = tx
+          .select({ _: sql`1` })
+          .from(reviewMedia)
+          .where(eq(reviewMedia.reviewId, reviews.id));
+        conditions.push(query.hasMedia === 'true' ? exists(mediaQuery) : notExists(mediaQuery));
+      }
+
       if (query.hasComment === 'true') {
         conditions.push(
           exists(

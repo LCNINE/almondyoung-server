@@ -63,6 +63,11 @@ export class ReviewListQueryDto extends PaginationQueryDto {
 
 // 관리자용 전체 리뷰 조회
 export class AdminReviewListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ enum: ['true', 'false'], description: '첨부 이미지 유무' })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  hasMedia?: 'true' | 'false';
+
   @ApiPropertyOptional({
     description: '작성 권한. unassigned는 권한 연결 없는 기존 리뷰',
     enum: ['order', 'admin', 'unassigned'],
