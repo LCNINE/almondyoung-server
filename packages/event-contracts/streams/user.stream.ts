@@ -71,6 +71,8 @@ export interface UserUpdatedPayload {
 
 export interface UserDeletedPayload {
   userId: string;
+  email?: string;
+  name?: string;
 }
 
 export interface UserDormantConvertedPayload {
@@ -178,6 +180,8 @@ const UserUpdatedSchema = z.object({
 
 const UserDeletedSchema = z.object({
   userId: z.string().min(1),
+  email: z.string().email().optional(),
+  name: z.string().min(1).optional(),
 });
 
 const UserDormantConvertedSchema = z.object({

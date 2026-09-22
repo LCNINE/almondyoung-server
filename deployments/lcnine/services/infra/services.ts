@@ -677,6 +677,8 @@ export function setup(infra: SharedInfra) {
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     SEARCH_SERVICE_URL: url('search'),
     SEARCH_INTERNAL_KEY: searchInternalKey.value,
+    NOTIFICATION_SERVICE_URL: url('notification'),
+    NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
     MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
     ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
     ELIGIBILITY_BATCH: eligibilityBatch,

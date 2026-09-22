@@ -17,7 +17,7 @@ function makeConsumer(templateKey: string) {
       priority: 'HIGH',
     }),
   };
-  const consumer = new MembershipEventConsumer(dispatcher as never, eventMapping as never);
+  const consumer = new MembershipEventConsumer(dispatcher as never, eventMapping as never, {} as never);
   return { consumer, dispatcher };
 }
 
