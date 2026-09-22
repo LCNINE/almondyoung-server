@@ -11,6 +11,15 @@ import {
 export function useReviewTableFilters(): Filter[] {
   return [
     {
+      key: 'hasMedia',
+      label: '첨부 이미지',
+      type: 'select',
+      options: [
+        { value: 'true', label: '있음' },
+        { value: 'false', label: '없음' },
+      ],
+    },
+    {
       key: 'provider',
       label: '작성 권한',
       type: 'select',

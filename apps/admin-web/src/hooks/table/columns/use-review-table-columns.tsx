@@ -99,6 +99,21 @@ export const useReviewTableColumns = ({
         header: '별점',
         cell: ({ getValue }) => <ReviewRatingCell value={getValue()} />,
       }),
+      columnHelper.accessor('mediaFileIds', {
+        header: '첨부 이미지',
+        cell: ({ getValue }) => {
+          const count = getValue().length;
+          return (
+            <span
+              className={
+                count ? 'font-medium text-blue-600' : 'text-muted-foreground'
+              }
+            >
+              {count ? `${count}장` : '없음'}
+            </span>
+          );
+        },
+      }),
       columnHelper.accessor('content', {
         header: '내용',
         cell: ({ getValue }) => {

@@ -67,6 +67,7 @@ export interface ReviewDto {
 export type ReviewSourceOption = 'own' | 'legacy';
 
 export interface ReviewListQuery {
+  hasMedia?: 'true' | 'false';
   provider?: ReviewProviderFilter;
   batchId?: string;
   page?: number;
