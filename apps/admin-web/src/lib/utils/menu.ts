@@ -553,7 +553,7 @@ const allMenus: MainMenu[] = [
         id: 'marketing',
         title: '마케팅',
         children: [
-          // { id: 'messages', title: '메시지 or 푸시알림' },
+          { id: 'messages', title: '메시지 관리', path: '/mall/marketing/messages' },
           {
             id: 'banner-groups',
             title: '배너 그룹',

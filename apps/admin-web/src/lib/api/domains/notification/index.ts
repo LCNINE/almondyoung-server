@@ -53,3 +53,55 @@ export const notificationApi = {
     return response.data;
   },
 };
+
+export type NotificationChannel = 'EMAIL' | 'SMS' | 'KAKAO' | 'PUSH';
+
+export interface NotificationEvent {
+  eventKey: string;
+  name: string;
+  description: string;
+  templateKey: string;
+  defaultChannels: NotificationChannel[];
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface ChannelBody {
+  subject?: string;
+  body: string;
+}
+
+export type TemplateContents = Record<string, Record<string, ChannelBody | undefined> | undefined>;
+
+export interface NotificationTemplate {
+  templateId: string;
+  templateKey: string;
+  name: string;
+  contents: TemplateContents;
+  variablesSchema: Record<string, { type: string; required?: boolean; description?: string }>;
+  updatedAt: string;
+  kakaoTemplateConfig?: { templateCode: string; status: string };
+}
+
+export const notificationAdminApi = {
+  getEvents: async (): Promise<NotificationEvent[]> => {
+    const response = await client.get<NotificationEvent[]>(`${NOTIFICATION_SERVICE_BASE_URL}/events`);
+    return response.data;
+  },
+
+  updateEvent: async (
+    eventKey: string,
+    values: Partial<Pick<NotificationEvent, 'isActive' | 'defaultChannels'>>
+  ): Promise<void> => {
+    await client.put(`${NOTIFICATION_SERVICE_BASE_URL}/events/${eventKey}`, values);
+  },
+
+  getTemplates: async (): Promise<NotificationTemplate[]> => {
+    const response = await client.get<NotificationTemplate[]>(`${NOTIFICATION_SERVICE_BASE_URL}/templates`);
+    return response.data;
+  },
+
+  updateTemplateContents: async (templateId: string, contents: TemplateContents): Promise<void> => {
+    await client.put(`${NOTIFICATION_SERVICE_BASE_URL}/templates/by-id/${templateId}`, { contents });
+  },
+};
