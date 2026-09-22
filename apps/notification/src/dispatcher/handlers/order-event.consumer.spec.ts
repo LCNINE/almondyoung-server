@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import type { DbService } from '@app/db';
 import type { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
-import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
 import { Channel, NotificationCategory } from '../../shared/enums';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DemoNotificationProvider } from '../../provider/providers/demo/demo.provider';
@@ -188,5 +188,61 @@ describe('OrderEventConsumer demo delivery boundary', () => {
       recipient: 'demo-order@example.invalid',
       subject: '[DEMO] 주문 접수',
     });
+  });
+});
+
+describe('OrderEventConsumer 발송 완료 알림', () => {
+  const shipment = {
+    orderId: 'so-1',
+    channelOrderId: 'order_01',
+    displayOrderNo: '3900',
+    customerId: 'user-1',
+    customerEmail: 'buyer@example.com',
+    customerName: '홍길동',
+    dispatchAttemptId: 'attempt-1',
+    isPartial: true,
+    carrier: 'HANJIN',
+    trackingNo: 'TRACK-1',
+    dispatchedAt: '2026-09-22T01:00:00.000Z',
+  };
+  const coreEnvelope = { correlationId: 'c-1' } as EnvelopeOf<typeof CORE_ORDER_STREAM, 'SalesOrderShipmentDispatched'>;
+  const mapping = (eventKey: string, isActive = true) => ({
+    eventKey,
+    isActive,
+    defaultChannels: ['EMAIL'],
+    category: 'TRANSACTIONAL',
+    templateKey: `${eventKey}_EMAIL`,
+    priority: 'NORMAL',
+  });
+
+  it('부분 발송이면 부분 발송 알림을 받는 사람 메일과 송장 정보로 보낸다', async () => {
+    const { consumer, dispatcher, eventMappings } = makeConsumer({}, mapping('ORDER_PARTIALLY_SHIPPED'));
+
+    await consumer.onShipmentDispatched(coreEnvelope, shipment);
+
+    expect(eventMappings.getEventMapping).toHaveBeenCalledWith('ORDER_PARTIALLY_SHIPPED');
+    expect(dispatcher.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        payload: expect.objectContaining({ email: 'buyer@example.com' }),
+        variables: { name: '홍길동', orderNumber: '#3900', carrier: '한진택배', trackingNo: 'TRACK-1' },
+      }),
+    );
+  });
+
+  it('전부 나갔으면 발송 완료 알림을 고른다', async () => {
+    const { consumer, eventMappings } = makeConsumer({}, mapping('ORDER_SHIPPED'));
+
+    await consumer.onShipmentDispatched(coreEnvelope, { ...shipment, isPartial: false });
+
+    expect(eventMappings.getEventMapping).toHaveBeenCalledWith('ORDER_SHIPPED');
+  });
+
+  it('알림이 꺼져 있으면 보내지 않는다', async () => {
+    const { consumer, dispatcher } = makeConsumer({}, mapping('ORDER_SHIPPED', false));
+
+    await consumer.onShipmentDispatched(coreEnvelope, { ...shipment, isPartial: false });
+
+    expect(dispatcher.send).not.toHaveBeenCalled();
   });
 });

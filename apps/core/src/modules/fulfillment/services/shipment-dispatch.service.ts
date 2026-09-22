@@ -16,6 +16,8 @@ import {
   SHIPMENT_STREAM,
   ShipmentEventOrder,
   ShipmentShippedPayload,
+  CORE_ORDER_STREAM,
+  type SalesOrderShipmentDispatchedPayload,
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
@@ -169,6 +171,8 @@ export class ShipmentDispatchService {
     private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    @InjectPublisher(CORE_ORDER_STREAM)
+    private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
   ) {}
 
   async inspectionScan(shipmentId: string, input: InspectionScanInput, tx?: DbTx): Promise<ShipmentDispatchResponse> {
@@ -1203,6 +1207,7 @@ export class ShipmentDispatchService {
       orders,
     };
     await this.shipments.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
+    await this.enqueueCustomerShipmentNotices(orders, attemptId, waybill.carrier, waybill.trackingNo, dispatchedAt, tx);
 
     for (const summary of summaries) {
       const progressed: FulfillmentProgressedPayload = {
@@ -1235,6 +1240,60 @@ export class ShipmentDispatchService {
           tx,
         );
       }
+    }
+  }
+
+  private async enqueueCustomerShipmentNotices(
+    orders: ShipmentEventOrder[],
+    attemptId: string,
+    carrier: string,
+    trackingNo: string,
+    dispatchedAt: Date,
+    tx: DbTx,
+  ): Promise<void> {
+    const medusaOrders = orders.filter((order) => order.salesChannel === 'medusa');
+    if (medusaOrders.length === 0) return;
+    const customers = await tx
+      .select({
+        id: wmsTables.salesOrders.id,
+        displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+        customerId: wmsTables.salesOrders.customerId,
+        customerEmail: wmsTables.salesOrders.customerEmail,
+        customerName: wmsTables.salesOrders.customerName,
+      })
+      .from(wmsTables.salesOrders)
+      .where(
+        inArray(
+          wmsTables.salesOrders.id,
+          medusaOrders.map((order) => order.salesOrderId),
+        ),
+      );
+    const customerByOrder = new Map(customers.map((row) => [row.id, row]));
+    for (const order of medusaOrders) {
+      const customer = customerByOrder.get(order.salesOrderId);
+      if (!customer?.customerId || !customer.customerEmail) continue;
+      await this.coreOrders.enqueue(
+        {
+          idempotencyKey: `so-shipment-dispatched:${attemptId}:${order.salesOrderId}`,
+          eventType: 'SalesOrderShipmentDispatched',
+          aggregateId: order.salesOrderId,
+          partitionKey: order.salesOrderId,
+          payload: {
+            orderId: order.salesOrderId,
+            channelOrderId: order.channelOrderId,
+            ...(customer.displayOrderNo ? { displayOrderNo: customer.displayOrderNo } : {}),
+            customerId: customer.customerId,
+            customerEmail: customer.customerEmail,
+            ...(customer.customerName ? { customerName: customer.customerName } : {}),
+            dispatchAttemptId: attemptId,
+            isPartial: order.isPartial,
+            carrier,
+            trackingNo,
+            dispatchedAt: dispatchedAt.toISOString(),
+          } satisfies SalesOrderShipmentDispatchedPayload,
+        },
+        tx,
+      );
     }
   }
 

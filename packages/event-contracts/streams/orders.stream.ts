@@ -482,6 +482,34 @@ const SalesOrderReturnedSchema = z.object({
   ),
 });
 
+export interface SalesOrderShipmentDispatchedPayload {
+  orderId: string;
+  channelOrderId: string;
+  displayOrderNo?: string;
+  customerId: string;
+  customerEmail: string;
+  customerName?: string;
+  dispatchAttemptId: string;
+  isPartial: boolean;
+  carrier: string;
+  trackingNo: string;
+  dispatchedAt: string;
+}
+
+const SalesOrderShipmentDispatchedSchema = z.object({
+  orderId: z.string().min(1),
+  channelOrderId: z.string().min(1),
+  displayOrderNo: z.string().min(1).optional(),
+  customerId: z.string().min(1),
+  customerEmail: z.string().email(),
+  customerName: z.string().min(1).optional(),
+  dispatchAttemptId: z.string().min(1),
+  isPartial: z.boolean(),
+  carrier: z.string().min(1),
+  trackingNo: z.string().min(1),
+  dispatchedAt: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -525,6 +553,10 @@ export const CORE_ORDER_STREAM = stream({
     SalesOrderReturned: event<'SalesOrderReturned', SalesOrderReturnedPayload>(
       'SalesOrderReturned',
       SalesOrderReturnedSchema,
+    ),
+    SalesOrderShipmentDispatched: event<'SalesOrderShipmentDispatched', SalesOrderShipmentDispatchedPayload>(
+      'SalesOrderShipmentDispatched',
+      SalesOrderShipmentDispatchedSchema,
     ),
   },
 });

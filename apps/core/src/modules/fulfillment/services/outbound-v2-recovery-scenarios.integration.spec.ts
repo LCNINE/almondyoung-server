@@ -5,6 +5,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
@@ -145,6 +146,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     );
   }
 

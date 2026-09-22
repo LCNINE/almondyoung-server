@@ -6,6 +6,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
@@ -412,6 +413,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     );
     return { planning: localPlanning, consolidation: localConsolidation, waybills, dispatch, sessions };
   }

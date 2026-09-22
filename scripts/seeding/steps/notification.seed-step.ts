@@ -330,12 +330,87 @@ const CMS_REGISTERED_EVENT = {
   priority: 'HIGH',
 };
 
+const shippedBody = (lead: string) =>
+  [
+    '<p>{{name}}님, 안녕하세요.</p>',
+    `<p>주문하신 <strong>{{orderNumber}}</strong> ${lead}</p>`,
+    '<table>',
+    '<tr><th>택배사</th><td>{{carrier}}</td></tr>',
+    '<tr><th>송장번호</th><td>{{trackingNo}}</td></tr>',
+    '</table>',
+    '<p>배송 현황은 마이페이지 주문내역에서 확인하실 수 있습니다.</p>',
+    '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
+  ].join('\n');
+
+const SHIPMENT_VARIABLES = {
+  name: { type: 'string', required: true },
+  orderNumber: { type: 'string', required: true },
+  carrier: { type: 'string', required: true },
+  trackingNo: { type: 'string', required: true },
+};
+
+const ORDER_SHIPPED_TEMPLATE = {
+  templateId: FIXED_UUIDS.TEMPLATE_ORDER_SHIPPED,
+  templateKey: 'ORDER_SHIPPED_EMAIL',
+  name: '발송 완료',
+  category: 'TRANSACTIONAL',
+  contents: {
+    EMAIL: {
+      ko: {
+        subject: '[아몬드영] 주문하신 상품이 모두 발송되었습니다 ({{orderNumber}})',
+        body: shippedBody('주문 상품이 모두 발송되었습니다.'),
+      },
+    },
+  },
+  variablesSchema: SHIPMENT_VARIABLES,
+};
+
+const ORDER_PARTIALLY_SHIPPED_TEMPLATE = {
+  templateId: FIXED_UUIDS.TEMPLATE_ORDER_PARTIALLY_SHIPPED,
+  templateKey: 'ORDER_PARTIALLY_SHIPPED_EMAIL',
+  name: '부분 발송 완료',
+  category: 'TRANSACTIONAL',
+  contents: {
+    EMAIL: {
+      ko: {
+        subject: '[아몬드영] 주문하신 상품 중 일부가 먼저 발송되었습니다 ({{orderNumber}})',
+        body: shippedBody('주문 상품 중 일부가 먼저 발송되었습니다. 나머지 상품은 준비되는 대로 보내드리겠습니다.'),
+      },
+    },
+  },
+  variablesSchema: SHIPMENT_VARIABLES,
+};
+
+const ORDER_SHIPPED_EVENT = {
+  eventKey: 'ORDER_SHIPPED',
+  name: '발송 완료',
+  description: '자사몰 주문 상품이 모두 출고되면',
+  templateKey: ORDER_SHIPPED_TEMPLATE.templateKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['EMAIL'],
+  priority: 'NORMAL',
+  isActive: false,
+};
+
+const ORDER_PARTIALLY_SHIPPED_EVENT = {
+  eventKey: 'ORDER_PARTIALLY_SHIPPED',
+  name: '부분 발송 완료',
+  description: '자사몰 주문 상품 중 일부가 먼저 출고되면',
+  templateKey: ORDER_PARTIALLY_SHIPPED_TEMPLATE.templateKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['EMAIL'],
+  priority: 'NORMAL',
+  isActive: false,
+};
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
   CMS_REJECTED_TEMPLATE,
   MANDATE_PENDING_TEMPLATE,
   CMS_REGISTERED_TEMPLATE,
+  ORDER_SHIPPED_TEMPLATE,
+  ORDER_PARTIALLY_SHIPPED_TEMPLATE,
 ];
 const NOTICE_EVENTS = [
   RENEWAL_NOTICE_EVENT,
@@ -343,6 +418,8 @@ const NOTICE_EVENTS = [
   CMS_REJECTED_EVENT,
   MANDATE_PENDING_EVENT,
   CMS_REGISTERED_EVENT,
+  ORDER_SHIPPED_EVENT,
+  ORDER_PARTIALLY_SHIPPED_EVENT,
 ];
 
 const PROVIDER_IDS = [
@@ -455,12 +532,7 @@ export class NotificationSeedStep extends SeedStep {
             ${JSON.stringify(template.variablesSchema)},
             ${true}
           )
-          ON CONFLICT (template_id) DO UPDATE SET
-            contents = EXCLUDED.contents,
-            variables_schema = EXCLUDED.variables_schema,
-            name = EXCLUDED.name,
-            is_active = true,
-            updated_at = now()
+          ON CONFLICT (template_id) DO NOTHING
         `);
       }
 
@@ -476,7 +548,7 @@ export class NotificationSeedStep extends SeedStep {
             ${event.category}::notification_category,
             ${JSON.stringify(event.defaultChannels)},
             ${event.priority}::notification_priority,
-            ${true}
+            ${'isActive' in event ? event.isActive : true}
           )
           ON CONFLICT (event_key) DO NOTHING
         `);
