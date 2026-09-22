@@ -37,6 +37,17 @@ describe('SmsConversationManager.reply', () => {
     expect(messageManager.send).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'phone-b' }), 'staff');
   });
 
+  it('대표번호(NHN)를 고르면 발송폰 없이 NHN 으로 보낸다', async () => {
+    const { manager, messageManager } = setup([{ userId: 'current-owner', username: '새 주인' }]);
+
+    await manager.reply({ phoneNumber: '010-1234-5678', content: '답장', route: 'NHN' }, 'staff');
+
+    expect(messageManager.send).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceId: undefined, route: 'NHN' }),
+      'staff',
+    );
+  });
+
   it('지금 그 번호를 쓰는 회원이 없으면 거절한다', async () => {
     const { manager, messageManager } = setup([]);
 

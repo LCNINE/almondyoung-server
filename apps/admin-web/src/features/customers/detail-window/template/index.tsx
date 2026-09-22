@@ -8,6 +8,7 @@ import { CartTab } from '../components/tabs/cart-tab';
 import { DetailTab } from '../components/tabs/detail-tab';
 import { HomeTab } from '../components/tabs/home-tab';
 import { InquiriesTab } from '../components/tabs/inquiries-tab';
+import { MessagesTab } from '../components/tabs/messages-tab';
 import { OrdersTab } from '../components/tabs/orders-tab';
 import { PointsTab } from '../components/tabs/points-tab';
 
@@ -18,7 +19,8 @@ export type TabKey =
   | 'orders'
   | 'inquiries'
   | 'points'
-  | 'cart';
+  | 'cart'
+  | 'messages';
 
 const MENU: { key: TabKey; label: string }[] = [
   { key: 'home', label: '홈' },
@@ -28,6 +30,7 @@ const MENU: { key: TabKey; label: string }[] = [
   { key: 'inquiries', label: '문의내역' },
   { key: 'points', label: '적립금/쿠폰' },
   { key: 'cart', label: '장바구니 정보' },
+  { key: 'messages', label: '메시지 발송내역' },
 ];
 
 export default function CustomerDetailWindowTemplate({
@@ -82,6 +85,9 @@ export default function CustomerDetailWindowTemplate({
           )}
           {activeTab === 'points' && <PointsTab customerId={customerId} />}
           {activeTab === 'cart' && <CartTab customerId={customerId} />}
+          {activeTab === 'messages' && (
+            <MessagesTab customerId={customerId} />
+          )}
         </main>
       </div>
     </div>

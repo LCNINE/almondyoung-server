@@ -119,7 +119,7 @@ export default function SmsBulkTemplate() {
 
           <section className="flex flex-col gap-2">
             <h3 className="font-semibold">대상</h3>
-            <div className="flex flex-col gap-2 rounded-md border p-4 text-sm">
+            <div className="flex min-h-[320px] flex-1 flex-col gap-2 rounded-md border p-4 text-sm">
               {audience ? (
                 <>
                   <p className="text-base font-semibold">

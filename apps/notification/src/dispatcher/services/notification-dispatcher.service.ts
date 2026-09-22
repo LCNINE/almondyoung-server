@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, Optional } 
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import {
   notificationTables,
   notifications,
@@ -16,6 +16,8 @@ import { Channel, Language, NotificationCategory, NotificationPriority, Notifica
 import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
+import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
+import { UserNotificationHistoryPage, UserNotificationHistoryReader } from './user-notification-history.reader';
 
 export interface Notification {
   notificationId: string;
@@ -39,6 +41,7 @@ export class NotificationDispatcherService {
     @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
     private readonly providerManager: ProviderManagerService,
+    private readonly historyReader: UserNotificationHistoryReader,
   ) {}
 
   /**
@@ -430,19 +433,8 @@ export class NotificationDispatcherService {
     return notification as unknown as Notification;
   }
 
-  /**
-   * 특정 유저의 알림 목록 조회
-   */
-  async getUserNotifications(userId: string, limit = 50): Promise<Notification[]> {
-    const db = this.db.db;
-
-    const rows = await db.query.notifications.findMany({
-      where: eq(notifications.userId, userId),
-      orderBy: (fields) => [desc(fields.createdAt)],
-      limit,
-    });
-
-    return rows as unknown as Notification[];
+  getUserNotifications(userId: string, dto: ListUserNotificationsDto): Promise<UserNotificationHistoryPage> {
+    return this.historyReader.list(userId, dto);
   }
 
   /**

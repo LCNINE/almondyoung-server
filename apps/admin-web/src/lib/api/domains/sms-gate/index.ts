@@ -28,11 +28,16 @@ export interface SmsDeviceFormValues {
 
 export type SmsGateCategory = 'INFORMATIONAL' | 'MARKETING';
 
+export type SmsSendRoute = 'PHONE' | 'NHN';
+
+export const NHN_ROUTE_VALUE = 'nhn';
+
 export interface SendSmsGateMessageDto {
   userIds: string[];
   content: string;
   category: SmsGateCategory;
   deviceId?: string;
+  route?: SmsSendRoute;
   nhnFallback?: boolean;
 }
 
@@ -145,6 +150,7 @@ export interface ReplySmsConversationDto {
   phoneNumber: string;
   content: string;
   deviceId?: string;
+  route?: SmsSendRoute;
   nhnFallback?: boolean;
 }
 

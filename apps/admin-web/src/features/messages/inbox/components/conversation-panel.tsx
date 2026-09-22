@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { smsGateApi } from '@/lib/api/domains/sms-gate';
+import { NHN_ROUTE_VALUE, smsGateApi } from '@/lib/api/domains/sms-gate';
 import {
   useDeleteSmsConversation,
   useReplySmsConversation,
@@ -67,13 +67,20 @@ export function ConversationPanel({
   const devices = deviceData?.devices ?? [];
   const deviceName = (deviceId: string) => devices.find((d) => d.deviceId === deviceId)?.name ?? deviceId;
   const sendDeviceId = pickedDeviceId || data?.deviceId || '';
+  const isNhn = sendDeviceId === NHN_ROUTE_VALUE;
   const canReply = !!data?.userId && !!sendDeviceId;
   const busy = reply.isPending || isChecking;
 
   const submit = (nhnFallback: boolean) => {
     setOverflow(null);
     reply.mutate(
-      { phoneNumber, content: text.trim(), deviceId: sendDeviceId, nhnFallback },
+      {
+        phoneNumber,
+        content: text.trim(),
+        deviceId: isNhn ? undefined : sendDeviceId,
+        route: isNhn ? 'NHN' : undefined,
+        nhnFallback,
+      },
       {
         onSuccess: (result) => {
           if (result.skipped.length > 0) toast.warning(`보내지 못했습니다: ${result.skipped[0].reason}`);
@@ -97,6 +104,7 @@ export function ConversationPanel({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!sendDeviceId || !text.trim() || busy) return;
+    if (isNhn) return submit(false);
     setIsChecking(true);
     try {
       const { remaining } = await smsGateApi.getCapacity(sendDeviceId);
@@ -157,6 +165,7 @@ export function ConversationPanel({
               <SelectValue placeholder="발송폰 선택" />
             </SelectTrigger>
             <SelectContent position="popper">
+              <SelectItem value={NHN_ROUTE_VALUE}>대표번호 (NHN)</SelectItem>
               {devices
                 .filter((d) => d.enabled || d.deviceId === data?.deviceId)
                 .map((d) => (
@@ -169,7 +178,7 @@ export function ConversationPanel({
           </Select>
           <Input
             value={text}
-            placeholder={canReply ? `메시지를 입력하세요. ${deviceName(sendDeviceId)}에서 보냅니다.` : ''}
+            placeholder={canReply ? `메시지를 입력하세요. ${isNhn ? '대표번호(NHN)' : deviceName(sendDeviceId)}에서 보냅니다.` : ''}
             disabled={!canReply || busy}
             maxLength={2000}
             onChange={(event) => setText(event.target.value)}
