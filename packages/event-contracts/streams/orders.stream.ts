@@ -510,6 +510,34 @@ const SalesOrderShipmentDispatchedSchema = z.object({
   dispatchedAt: z.string().datetime(),
 });
 
+export interface SalesOrderClaimProgressedPayload {
+  orderId: string;
+  channelOrderId: string;
+  displayOrderNo?: string;
+  customerId: string;
+  customerEmail?: string;
+  customerName?: string;
+  kind: 'return' | 'exchange';
+  stage: 'requested' | 'collected' | 'completed';
+  requestId: string;
+  requestedBy?: 'customer' | 'admin';
+  occurredAt: string;
+}
+
+const SalesOrderClaimProgressedSchema = z.object({
+  orderId: z.string().min(1),
+  channelOrderId: z.string().min(1),
+  displayOrderNo: z.string().min(1).optional(),
+  customerId: z.string().min(1),
+  customerEmail: z.string().email().optional(),
+  customerName: z.string().min(1).optional(),
+  kind: z.enum(['return', 'exchange']),
+  stage: z.enum(['requested', 'collected', 'completed']),
+  requestId: z.string().min(1),
+  requestedBy: z.enum(['customer', 'admin']).optional(),
+  occurredAt: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -557,6 +585,10 @@ export const CORE_ORDER_STREAM = stream({
     SalesOrderShipmentDispatched: event<'SalesOrderShipmentDispatched', SalesOrderShipmentDispatchedPayload>(
       'SalesOrderShipmentDispatched',
       SalesOrderShipmentDispatchedSchema,
+    ),
+    SalesOrderClaimProgressed: event<'SalesOrderClaimProgressed', SalesOrderClaimProgressedPayload>(
+      'SalesOrderClaimProgressed',
+      SalesOrderClaimProgressedSchema,
     ),
   },
 });

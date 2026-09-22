@@ -403,6 +403,127 @@ const ORDER_PARTIALLY_SHIPPED_EVENT = {
   isActive: false,
 };
 
+const CS_FOOTER =
+  '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>';
+
+const CLAIM_VARIABLES = {
+  name: { type: 'string', required: true },
+  orderNumber: { type: 'string', required: true },
+  claimType: { type: 'string', required: true },
+};
+
+const csTemplate = (
+  templateId: string,
+  templateKey: string,
+  name: string,
+  subject: string,
+  lines: string[],
+  variablesSchema: Record<string, { type: string; required: boolean }>,
+) => ({
+  templateId,
+  templateKey,
+  name,
+  category: 'CUSTOMER_SERVICE',
+  contents: { EMAIL: { ko: { subject, body: ['<p>{{name}}님, 안녕하세요.</p>', ...lines, CS_FOOTER].join('\n') } } },
+  variablesSchema,
+});
+
+const csEvent = (eventKey: string, name: string, description: string, templateKey: string) => ({
+  eventKey,
+  name,
+  description,
+  templateKey,
+  category: 'CUSTOMER_SERVICE',
+  defaultChannels: ['EMAIL'],
+  priority: 'NORMAL',
+  isActive: false,
+});
+
+const CS_TEMPLATES = [
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_CLAIM_REQUESTED,
+    'CLAIM_REQUESTED_EMAIL',
+    '반품/교환 신청',
+    '[아몬드영] {{claimType}} 신청이 접수되었습니다 ({{orderNumber}})',
+    [
+      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 신청이 접수되었습니다.</p>',
+      '<p>확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.</p>',
+    ],
+    CLAIM_VARIABLES,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_CLAIM_RECEIVED,
+    'CLAIM_RECEIVED_EMAIL',
+    '반품/교환 접수',
+    '[아몬드영] {{claimType}} 요청이 접수되었습니다 ({{orderNumber}})',
+    [
+      '<p>고객센터에서 주문 <strong>{{orderNumber}}</strong>의 {{claimType}}을 접수했습니다.</p>',
+      '<p>확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.</p>',
+    ],
+    CLAIM_VARIABLES,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_CLAIM_COLLECTED,
+    'CLAIM_COLLECTED_EMAIL',
+    '수거 완료',
+    '[아몬드영] {{claimType}} 상품 수거가 완료되었습니다 ({{orderNumber}})',
+    [
+      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 상품 수거가 완료되었습니다.</p>',
+      '<p>상품 검수 후 {{claimType}} 처리를 진행하겠습니다.</p>',
+    ],
+    CLAIM_VARIABLES,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_CLAIM_COMPLETED,
+    'CLAIM_COMPLETED_EMAIL',
+    '반품/교환 완료',
+    '[아몬드영] {{claimType}} 처리가 완료되었습니다 ({{orderNumber}})',
+    [
+      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 처리가 완료되었습니다.</p>',
+      '<p>환불이 있는 경우 환불 완료 안내를 따로 보내드립니다.</p>',
+    ],
+    CLAIM_VARIABLES,
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_REFUND_COMPLETED,
+    'REFUND_COMPLETED_EMAIL',
+    '환불 완료',
+    '[아몬드영] {{amount}}원 환불이 완료되었습니다',
+    [
+      '<p><strong>{{orderName}}</strong> 주문의 환불이 완료되었습니다.</p>',
+      '<table>',
+      '<tr><th>환불 금액</th><td>{{amount}}원</td></tr>',
+      '</table>',
+      '<p>결제 수단에 따라 실제 환불 반영까지 며칠이 걸릴 수 있습니다.</p>',
+    ],
+    {
+      name: { type: 'string', required: true },
+      amount: { type: 'string', required: true },
+      orderName: { type: 'string', required: true },
+    },
+  ),
+  csTemplate(
+    FIXED_UUIDS.TEMPLATE_QNA_ANSWERED,
+    'QNA_ANSWERED_EMAIL',
+    '문의 답변 완료',
+    '[아몬드영] 문의하신 내용에 답변이 등록되었습니다',
+    [
+      '<p>문의하신 <strong>{{title}}</strong>에 답변이 등록되었습니다.</p>',
+      '<p>답변 내용은 마이페이지 문의내역에서 확인하실 수 있습니다.</p>',
+    ],
+    { name: { type: 'string', required: true }, title: { type: 'string', required: true } },
+  ),
+];
+
+const CS_EVENTS = [
+  csEvent('CLAIM_REQUESTED', '반품/교환 신청', '고객이 반품·교환을 신청하면', 'CLAIM_REQUESTED_EMAIL'),
+  csEvent('CLAIM_RECEIVED', '반품/교환 접수', '관리자가 반품·교환을 접수하면', 'CLAIM_RECEIVED_EMAIL'),
+  csEvent('CLAIM_COLLECTED', '수거 완료', '반품·교환 상품 수거를 완료 처리하면', 'CLAIM_COLLECTED_EMAIL'),
+  csEvent('CLAIM_COMPLETED', '반품/교환 완료', '반품·교환 처리가 끝나면', 'CLAIM_COMPLETED_EMAIL'),
+  csEvent('REFUND_COMPLETED', '환불 완료', '상품 주문 환불이 완료되면 (취소·반품)', 'REFUND_COMPLETED_EMAIL'),
+  csEvent('QNA_ANSWERED', '문의 답변 완료', '상품·1:1 문의에 답변이 등록되면', 'QNA_ANSWERED_EMAIL'),
+];
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
@@ -411,6 +532,7 @@ const NOTICE_TEMPLATES = [
   CMS_REGISTERED_TEMPLATE,
   ORDER_SHIPPED_TEMPLATE,
   ORDER_PARTIALLY_SHIPPED_TEMPLATE,
+  ...CS_TEMPLATES,
 ];
 const NOTICE_EVENTS = [
   RENEWAL_NOTICE_EVENT,
@@ -420,6 +542,7 @@ const NOTICE_EVENTS = [
   CMS_REGISTERED_EVENT,
   ORDER_SHIPPED_EVENT,
   ORDER_PARTIALLY_SHIPPED_EVENT,
+  ...CS_EVENTS,
 ];
 
 const PROVIDER_IDS = [

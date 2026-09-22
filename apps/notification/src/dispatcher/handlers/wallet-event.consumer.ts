@@ -4,7 +4,8 @@ import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
-import { NotificationCategory } from '../../shared/enums';
+import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
+import { UserContactClient } from '@app/shared';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDueDate } from '../../shared/utils/template-helpers';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
@@ -25,14 +26,9 @@ import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
  * - PaymentAuthorized: 결제 승인
  * - PaymentCaptured: 결제 완료
  * - PaymentFailed: 결제 실패
- * - PaymentCancelled: 결제 취소
  *
  * Refund 이벤트:
- * - PaymentRefundRequest: 환불 요청 (SoT)
- * - PaymentRefundCompleted: 환불 완료 (SoT)
- * - RefundApproved: 환불 승인
- * - RefundRejected: 환불 거부
- * - RefundFailed: 환불 실패
+ * - gateway.refund.succeeded: 환불 완료 (상품 주문만)
  *
  * Point 이벤트:
  * - PointsEarned: 포인트 적립
@@ -61,6 +57,7 @@ export class WalletEventConsumer {
   constructor(
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly userContactClient: UserContactClient,
   ) {}
 
   // ===== Payment 이벤트 =====
@@ -185,249 +182,47 @@ export class WalletEventConsumer {
     }
   }
 
-  @On(PAYMENT_STREAM, 'PaymentCancelled')
-  async onPaymentCancelled(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentCancelled'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentCancelled'>,
+  @On(PAYMENT_STREAM, 'gateway.refund.succeeded')
+  async onRefundSucceeded(
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'gateway.refund.succeeded'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'gateway.refund.succeeded'>,
   ) {
-    this.logger.log(
-      `[Event] Received PaymentCancelled: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
-    );
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_CANCELLED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for PAYMENT_CANCELLED not found or inactive.`);
-        return;
-      }
-
-      const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          intentId: payload.intentId,
-          paymentId: payload.paymentId,
-          amount: payload.amount,
-          currency: payload.currency,
-          reason: payload.reason,
-          orderId: payload.orderId,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched PAYMENT_CANCELLED notification for ${payload.customerId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process PAYMENT_CANCELLED notification: ${error.message}`, error.stack);
-      throw error;
+    if (
+      (payload.purpose && payload.purpose !== 'PURCHASE') ||
+      payload.intentType === 'MEMBERSHIP_FEE' ||
+      !payload.userId
+    ) {
+      return;
     }
-  }
 
-  // ===== Refund 이벤트 =====
-
-  @On(PAYMENT_STREAM, 'PaymentRefundRequest')
-  async onPaymentRefundRequest(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentRefundRequest'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentRefundRequest'>,
-  ) {
-    this.logger.log(
-      `[Event] Received PaymentRefundRequest: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
-    );
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('REFUND_REQUESTED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for REFUND_REQUESTED not found or inactive.`);
-        return;
-      }
-
-      const sendDto: SendNotificationDto = {
-        userId: payload.userId,
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          refundId: payload.refundId,
-          paymentEventId: payload.paymentEventId,
-          amount: payload.amount,
-          reason: payload.reason,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_REQUESTED notification for ${payload.userId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process REFUND_REQUESTED notification: ${error.message}`, error.stack);
-      throw error;
+    const mapping = await this.eventMappingService.getEventMapping('REFUND_COMPLETED');
+    if (!mapping || !mapping.isActive) {
+      this.logger.warn('Event mapping for REFUND_COMPLETED not found or inactive.');
+      return;
     }
-  }
 
-  @On(PAYMENT_STREAM, 'PaymentRefundCompleted')
-  async onPaymentRefundCompleted(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentRefundCompleted'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentRefundCompleted'>,
-  ) {
-    this.logger.log(
-      `[Event] Received PaymentRefundCompleted: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
-    );
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('REFUND_COMPLETED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for REFUND_COMPLETED not found or inactive.`);
-        return;
-      }
-
-      // PaymentRefundCompleted는 userId가 없으므로 paymentId로 조회하거나 metadata에서 추출 필요
-      // TODO: paymentId로 userId 조회
-      const sendDto: SendNotificationDto = {
-        userId: payload.paymentId, // 임시: paymentId로 userId 조회 필요
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          refundId: payload.refundId,
-          paymentId: payload.paymentId,
-          orderId: payload.orderId,
-          amount: payload.amount,
-          currency: payload.currency,
-          status: payload.status,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_COMPLETED notification for ${payload.paymentId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process REFUND_COMPLETED notification: ${error.message}`, error.stack);
-      throw error;
+    const contact = (await this.userContactClient.findContacts([payload.userId])).get(payload.userId);
+    const email = contact?.email;
+    if (!email) {
+      this.logger.warn(`Skipping REFUND_COMPLETED: no email (refund ${payload.refundId})`);
+      return;
     }
-  }
 
-  @On(PAYMENT_STREAM, 'RefundApproved')
-  async onRefundApproved(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundApproved'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundApproved'>,
-  ) {
-    this.logger.log(`[Event] Received RefundApproved: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('REFUND_APPROVED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for REFUND_APPROVED not found or inactive.`);
-        return;
-      }
-
-      const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          refundId: payload.refundId,
-          paymentId: payload.paymentId,
-          intentId: payload.intentId,
-          amount: payload.amount,
-          currency: payload.currency,
-          orderId: payload.orderId,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_APPROVED notification for ${payload.customerId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process REFUND_APPROVED notification: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  @On(PAYMENT_STREAM, 'RefundRejected')
-  async onRefundRejected(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundRejected'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundRejected'>,
-  ) {
-    this.logger.log(`[Event] Received RefundRejected: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('REFUND_REJECTED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for REFUND_REJECTED not found or inactive.`);
-        return;
-      }
-
-      const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          refundId: payload.refundId,
-          paymentId: payload.paymentId,
-          intentId: payload.intentId,
-          amount: payload.amount,
-          currency: payload.currency,
-          rejectionReason: payload.rejectionReason,
-          orderId: payload.orderId,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_REJECTED notification for ${payload.customerId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process REFUND_REJECTED notification: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  @On(PAYMENT_STREAM, 'RefundFailed')
-  async onRefundFailed(
-    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundFailed'>,
-    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundFailed'>,
-  ) {
-    this.logger.log(`[Event] Received RefundFailed: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
-    try {
-      const eventMapping = await this.eventMappingService.getEventMapping('REFUND_FAILED');
-      if (!eventMapping || !eventMapping.isActive) {
-        this.logger.warn(`Event mapping for REFUND_FAILED not found or inactive.`);
-        return;
-      }
-
-      const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
-        channels: eventMapping.defaultChannels as any,
-        category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
-        eventKey: eventMapping.eventKey,
-        payload: payload,
-        correlationId: envelope.correlationId,
-        priority: eventMapping.priority as any,
-        variables: {
-          refundId: payload.refundId,
-          paymentId: payload.paymentId,
-          intentId: payload.intentId,
-          amount: payload.amount,
-          currency: payload.currency,
-          errorCode: payload.errorCode,
-          errorMessage: payload.errorMessage,
-          orderId: payload.orderId,
-        },
-      };
-      await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_FAILED notification for ${payload.customerId}`);
-    } catch (error) {
-      this.logger.error(`[Event] Failed to process REFUND_FAILED notification: ${error.message}`, error.stack);
-      throw error;
-    }
+    await this.notificationDispatcherService.send({
+      userId: payload.userId,
+      channels: mapping.defaultChannels as Channel[],
+      category: mapping.category as NotificationCategory,
+      templateKey: mapping.templateKey,
+      eventKey: mapping.eventKey,
+      payload: { ...payload, email },
+      correlationId: envelope.correlationId,
+      priority: mapping.priority as NotificationPriority,
+      variables: {
+        name: (typeof payload.customerName === 'string' ? payload.customerName : contact?.username) ?? '고객',
+        amount: formatAmount(payload.amount),
+        orderName: typeof payload.orderName === 'string' ? payload.orderName : '주문 상품',
+      },
+    });
   }
 
   // ===== Point 이벤트 =====

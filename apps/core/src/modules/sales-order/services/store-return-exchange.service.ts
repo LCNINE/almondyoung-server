@@ -30,7 +30,10 @@ import {
 import { StoreCreateExchangeRequestDto, StoreExchangeRequestResponseDto } from '../dto/store-exchange-request.dto';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
-import { SalesOrderReturnedPayload } from '@packages/event-contracts/streams/orders.stream';
+import {
+  SalesOrderClaimProgressedPayload,
+  SalesOrderReturnedPayload,
+} from '@packages/event-contracts/streams/orders.stream';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 import { classifyRefundOutcome } from './return-refund-classification';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
@@ -167,6 +170,14 @@ export class StoreReturnExchangeService {
         customerId: actor.customerId,
         timestamp: new Date().toISOString(),
       });
+      await this.enqueueClaimProgress(tx as unknown as DbTx, {
+        salesOrderId: orderId,
+        kind: 'return',
+        stage: 'requested',
+        requestId: returnRequest.id,
+        requestedBy: actor.requestedBy,
+        occurredAt: new Date(),
+      });
 
       return this.toReturnResponseDto(returnRequest, items);
     });
@@ -221,6 +232,14 @@ export class StoreReturnExchangeService {
         requestedBy: 'customer',
         customerId,
         timestamp: new Date().toISOString(),
+      });
+      await this.enqueueClaimProgress(tx as unknown as DbTx, {
+        salesOrderId: orderId,
+        kind: 'exchange',
+        stage: 'requested',
+        requestId: exchangeRequest.id,
+        requestedBy: 'customer',
+        occurredAt: new Date(),
       });
 
       return this.toExchangeResponseDto(exchangeRequest, items);
@@ -609,6 +628,13 @@ export class StoreReturnExchangeService {
         adminId,
         timestamp: new Date().toISOString(),
       });
+      await this.enqueueClaimProgress(tx as unknown as DbTx, {
+        salesOrderId: rr.salesOrderId,
+        kind: 'return',
+        stage: 'collected',
+        requestId: returnRequestId,
+        occurredAt: new Date(),
+      });
 
       return updated;
     });
@@ -648,11 +674,63 @@ export class StoreReturnExchangeService {
    * **반품 완료와 같은 트랜잭션에서 적재한다** — 별도 커밋이면 「반품은 됐는데 알림만 유실」되는
    * 창이 생긴다.
    */
+  private async enqueueClaimProgress(
+    tx: DbTx,
+    claim: Pick<SalesOrderClaimProgressedPayload, 'kind' | 'stage' | 'requestId' | 'requestedBy'> & {
+      salesOrderId: string;
+      occurredAt: Date;
+    },
+  ): Promise<void> {
+    const [so] = await tx
+      .select({
+        channelOrderId: wmsTables.salesOrders.channelOrderId,
+        displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+        salesChannel: wmsTables.salesOrders.salesChannel,
+        customerId: wmsTables.salesOrders.customerId,
+        customerEmail: wmsTables.salesOrders.customerEmail,
+        customerName: wmsTables.salesOrders.customerName,
+      })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, claim.salesOrderId))
+      .limit(1);
+    if (!so || so.salesChannel !== 'medusa' || !so.customerId) return;
+
+    await this.coreOrders.enqueue(
+      {
+        idempotencyKey: `so-claim:${claim.kind}:${claim.requestId}:${claim.stage}`,
+        eventType: 'SalesOrderClaimProgressed',
+        aggregateId: claim.salesOrderId,
+        partitionKey: claim.salesOrderId,
+        payload: {
+          orderId: claim.salesOrderId,
+          channelOrderId: so.channelOrderId,
+          ...(so.displayOrderNo ? { displayOrderNo: so.displayOrderNo } : {}),
+          customerId: so.customerId,
+          ...(so.customerEmail ? { customerEmail: so.customerEmail } : {}),
+          ...(so.customerName ? { customerName: so.customerName } : {}),
+          kind: claim.kind,
+          stage: claim.stage,
+          requestId: claim.requestId,
+          ...(claim.requestedBy ? { requestedBy: claim.requestedBy } : {}),
+          occurredAt: claim.occurredAt.toISOString(),
+        } satisfies SalesOrderClaimProgressedPayload,
+      },
+      tx,
+    );
+  }
+
   private async enqueueReturnCompletedEvent(
     tx: DbTx,
     returnRequest: ReturnRequestRow,
     completedAt: Date,
   ): Promise<void> {
+    await this.enqueueClaimProgress(tx, {
+      salesOrderId: returnRequest.salesOrderId,
+      kind: 'return',
+      stage: 'completed',
+      requestId: returnRequest.id,
+      occurredAt: completedAt,
+    });
     const salesOrder = await tx
       .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
       .from(wmsTables.salesOrders)
@@ -1011,6 +1089,13 @@ export class StoreReturnExchangeService {
           timestamp: new Date().toISOString(),
         },
       );
+      await this.enqueueClaimProgress(tx as unknown as DbTx, {
+        salesOrderId: er.salesOrderId,
+        kind: 'exchange',
+        stage: 'collected',
+        requestId: exchangeRequestId,
+        occurredAt: new Date(),
+      });
 
       return updated;
     });
@@ -1191,6 +1276,13 @@ export class StoreReturnExchangeService {
           timestamp: new Date().toISOString(),
         },
       );
+      await this.enqueueClaimProgress(tx as unknown as DbTx, {
+        salesOrderId: er.salesOrderId,
+        kind: 'exchange',
+        stage: 'completed',
+        requestId: exchangeRequestId,
+        occurredAt: new Date(),
+      });
 
       return updated;
     });
