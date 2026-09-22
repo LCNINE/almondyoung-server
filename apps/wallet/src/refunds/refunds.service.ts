@@ -142,6 +142,7 @@ export class RefundsService {
     const now = new Date().toISOString();
 
     if (providerResult.status === 'SUCCEEDED') {
+      const notifyExtra = await this.getRefundNotifyExtra(charge.intentId);
       await this.dbService.db.transaction(async (tx) => {
         // Keep provider metadata, then let the state machine perform PENDING -> SUCCEEDED.
         await tx
@@ -171,6 +172,7 @@ export class RefundsService {
                 amount: dto.amount,
                 currency: charge.currency,
                 occurredAt: now,
+                extra: notifyExtra,
               }),
             },
           },
@@ -360,6 +362,23 @@ export class RefundsService {
       .orderBy(asc(refunds.createdAt));
   }
 
+  private async getRefundNotifyExtra(intentId: string): Promise<Record<string, unknown>> {
+    const rows = await this.dbService.db
+      .select({ metadata: paymentIntents.metadata, purpose: paymentIntents.purpose })
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1);
+    const m = rows[0]?.metadata ?? {};
+    const email = m.email ?? m.customerEmail;
+    return {
+      ...(typeof email === 'string' && email.includes('@') ? { email } : {}),
+      ...(typeof m.customerName === 'string' ? { customerName: m.customerName } : {}),
+      ...(typeof m.orderName === 'string' ? { orderName: m.orderName } : {}),
+      ...(typeof m.type === 'string' ? { intentType: m.type } : {}),
+      ...(rows[0]?.purpose ? { purpose: rows[0].purpose } : {}),
+    };
+  }
+
   private async getIntentUserId(intentId: string): Promise<string | null> {
     const rows = await this.dbService.db
       .select({ userId: paymentIntents.userId })
@@ -408,6 +427,7 @@ export class RefundsService {
     // create() 가 이미 허용한 건(= admin 강제취소 예외)뿐이라 완료를 막지 않는다.
     const now = new Date().toISOString();
     const correlationId = `manual-confirm:${refundId}`;
+    const notifyExtra = await this.getRefundNotifyExtra(refund.intentId);
 
     await this.dbService.db.transaction(async (tx) => {
       // transitionRefund가 status update와 state_transitions 기록을 모두 처리
@@ -429,6 +449,7 @@ export class RefundsService {
               amount: refund.amount,
               currency: refund.currency,
               occurredAt: now,
+              extra: notifyExtra,
             }),
           },
         },
