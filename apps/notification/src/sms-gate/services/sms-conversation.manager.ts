@@ -22,8 +22,9 @@ export class SmsConversationManager {
     const phoneNumber = toKrE164(dto.phoneNumber);
     const latest = (await this.repository.findInbound(phoneNumber)).at(-1);
     if (!latest) throw new NotFoundError(`받은 문자가 없는 번호입니다: ${phoneNumber}`);
-    const deviceId = dto.deviceId ?? latest.deviceId;
-    if (!deviceId) throw new BadRequestError('받은 폰을 알 수 없어 답장할 수 없습니다');
+    const viaNhnOnly = dto.route === 'NHN';
+    const deviceId = viaNhnOnly ? undefined : (dto.deviceId ?? latest.deviceId ?? undefined);
+    if (!viaNhnOnly && !deviceId) throw new BadRequestError('받은 폰을 알 수 없어 답장할 수 없습니다');
 
     const matched = await this.userContactClient.findActiveContactsByPhone(phoneNumber);
     const userId = (matched.find((c) => c.userId === latest.userId) ?? matched[0])?.userId;
@@ -35,6 +36,7 @@ export class SmsConversationManager {
         content: dto.content,
         category: 'INFORMATIONAL',
         deviceId,
+        route: dto.route,
         nhnFallback: dto.nhnFallback,
       },
       sentBy,
