@@ -503,7 +503,7 @@ class PromotionMetaModuleService extends MedusaService({
     return this.restoreGrants(targets.map((g) => g.id));
   }
 
-  async claimExpiringClaimedGrants(
+  async claimExpiringGrants(
     now: Date,
     windowEnd: Date,
     limit: number,
@@ -512,7 +512,7 @@ class PromotionMetaModuleService extends MedusaService({
     const rows = await this.txEm().execute(
       `WITH picked AS (
          SELECT "id" FROM "coupon_grant"
-          WHERE "issued_via" = 'customer_claim' AND "used_at" IS NULL AND "revoked_at" IS NULL
+          WHERE "used_at" IS NULL AND "revoked_at" IS NULL
             AND "deleted_at" IS NULL AND "expiry_notified_at" IS NULL
             AND "expires_at" > ? AND "expires_at" <= ?
           ORDER BY "expires_at" ASC
