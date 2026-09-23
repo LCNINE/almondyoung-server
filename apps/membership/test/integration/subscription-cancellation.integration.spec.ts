@@ -14,6 +14,9 @@ import { PauseManager } from '../../src/services/pause/pause.manager';
 import { SavingsService } from '../../src/services/savings/savings.service';
 import { SavingsReader } from '../../src/services/savings/savings.reader';
 import { SubscriptionService } from '../../src/services/subscription.service';
+import { TermsAgreementManager } from '../../src/services/terms/terms-agreement.manager';
+import { ArrearsGate } from '../../src/services/arrears/arrears.gate';
+import { ArrearsReader } from '../../src/services/arrears/arrears.reader';
 import { SubscriptionCreator } from '../../src/services/subscription/subscription.creator';
 import { SubscriptionManager } from '../../src/services/subscription/subscription.manager';
 import { EntitlementService } from '../../src/services/entitlement.service';
@@ -87,6 +90,10 @@ describeIfDb('Subscription Cancellation Integration Tests', () => {
         SavingsReader,
         // 무료 체험 테스트를 위한 추가 providers
         SubscriptionService,
+        // 가입 경로의 동의 확인·미납 관문. DbService 만 의존하므로 실제 구현을 쓴다.
+        TermsAgreementManager,
+        ArrearsGate,
+        ArrearsReader,
         SubscriptionCreator,
         SubscriptionManager,
         EntitlementService,

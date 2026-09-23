@@ -3,6 +3,10 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { randomUUID } from 'node:crypto';
+import {
+  MEMBERSHIP_PAYMENT_KIND_ARREARS,
+  MEMBERSHIP_PAYMENT_KIND_FIELD,
+} from '../arrears/arrears-payment.metadata';
 
 // Wallet v4 API 타입 정의 (최신 아키텍처 반영)
 export interface PaymentIntentRequest {
@@ -120,13 +124,35 @@ export interface MembershipCheckoutIntentRequest {
   currency?: string;
   email?: string;
   billingMode?: 'one_time' | 'recurring';
+  /** 결제 완료 후 가입이 만들어질 때 이 동의에 이어 붙인다(`confirmCheckoutIntent`). */
+  termsAgreementId?: string;
 }
+
+/**
+ * wallet `payment_intent_status` enum 그대로(`apps/wallet/src/schema.ts`).
+ * 이 목록이 wallet 보다 좁으면 실제로 오는 값이 타입에 없어 비교가 조용히 죽는다 —
+ * 정합화 경로가 `String(intent.status)` 로 우회하고 있던 것이 그 증거다.
+ */
+export type WalletPaymentIntentStatus =
+  | 'CREATED'
+  | 'PROCESSING'
+  | 'REQUIRES_ACTION'
+  | 'AWAITING_DEPOSIT'
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'CANCELED'
+  | 'PENDING_SETTLEMENT'
+  | 'PARTIALLY_CAPTURED';
 
 export interface WalletPaymentIntentResponse {
   id: string;
-  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELED';
+  status: WalletPaymentIntentStatus;
   payableAmount: number;
   createdAt: string;
+  /** 결제 자체의 만료 시각. wallet 이 만료 크론으로 이 시각 뒤의 intent 를 닫는다. */
+  expiresAt?: string;
   metadata: {
     type?: string;
     planId?: string;
@@ -134,6 +160,17 @@ export interface WalletPaymentIntentResponse {
     email?: string;
     [key: string]: unknown;
   };
+}
+
+export interface ArrearsCheckoutIntentRequest {
+  userId: string;
+  /** 서버가 원장에서 더한 값. 클라이언트가 보낸 금액은 쓰지 않는다. */
+  amount: number;
+  currency: string;
+  returnUrl: string;
+  email?: string;
+  /** 이 결제가 덮는 미수 원장 id 들. 청산은 이 목록으로만 한다. */
+  arrearsIds: string[];
 }
 
 export interface MembershipCheckoutIntentResponse {
@@ -231,6 +268,7 @@ export class PaymentClientService {
               userId: request.userId,
               ...(request.email ? { email: request.email } : {}),
               ...(request.billingMode ? { billingMode: request.billingMode } : {}),
+              ...(request.termsAgreementId ? { termsAgreementId: request.termsAgreementId } : {}),
             },
           },
           {
@@ -247,6 +285,49 @@ export class PaymentClientService {
     } catch (error) {
       this.logger.error(`Failed to create membership checkout intent: ${error.message}`);
       throw new Error(`Checkout intent creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 미수 청산용 checkout intent. 가입 결제와 **같은 `type: 'MEMBERSHIP_FEE'`** 를 쓴다 —
+   * 미수는 못 받은 멤버십 요금이므로 wallet 이 멤버십 결제에 걸어 둔 정책(포인트 사용 불가 ·
+   * 무통장 전용 · 환불 차단)이 그대로 적용돼야 한다. 새 type 을 만들면 그 정책이 조용히 빠진다.
+   * 가입 결제와 갈라지는 것은 `membershipPaymentKind` 한 칸뿐이다.
+   */
+  async createArrearsCheckoutIntent(request: ArrearsCheckoutIntentRequest): Promise<MembershipCheckoutIntentResponse> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ id: string }>(
+          `${walletApiUrl}/v1/payment-intents`,
+          {
+            userId: request.userId,
+            amount: request.amount,
+            currency: request.currency,
+            returnUrl: request.returnUrl,
+            metadata: {
+              type: 'MEMBERSHIP_FEE',
+              [MEMBERSHIP_PAYMENT_KIND_FIELD]: MEMBERSHIP_PAYMENT_KIND_ARREARS,
+              userId: request.userId,
+              arrearsIds: request.arrearsIds,
+              ...(request.email ? { email: request.email } : {}),
+            },
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${walletApiKey}`,
+              'Idempotency-Key': randomUUID(),
+            },
+          },
+        ),
+      );
+
+      return { intentId: response.data.id };
+    } catch (error) {
+      this.logger.error(`Failed to create arrears checkout intent: ${error.message}`);
+      throw new Error(`Arrears checkout intent creation failed: ${error.message}`);
     }
   }
 
@@ -271,6 +352,28 @@ export class PaymentClientService {
       if (error.response?.status === 404) {
         throw new Error(`Payment intent not found: ${intentId}`);
       }
+      throw new Error(`Wallet payment intent retrieval failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 같은 조회인데 «없음»을 예외가 아니라 null 로 돌려준다. 있는지 없는지가 분기인 호출자
+   * (직전 청산 결제가 아직 살아 있는가)가 예외 메시지를 문자열로 갈라 읽지 않게 한다.
+   * 404 가 아닌 실패는 그대로 던진다 — 「못 물어봤다」를 「없다」로 읽으면 결제가 하나 더 생긴다.
+   */
+  async getWalletPaymentIntentOrNull(intentId: string): Promise<WalletPaymentIntentResponse | null> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<WalletPaymentIntentResponse>(`${walletApiUrl}/v1/payment-intents/${intentId}`, {
+          headers: { Authorization: `Bearer ${walletApiKey}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      this.logger.error(`Failed to get wallet payment intent ${intentId}: ${error.message}`);
       throw new Error(`Wallet payment intent retrieval failed: ${error.message}`);
     }
   }

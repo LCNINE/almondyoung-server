@@ -8,6 +8,26 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 import { PaymentClientService } from './payment-client.service';
+import { ArrearsManager } from '../arrears/arrears.manager';
+import { BenefitReader } from '../benefit/benefit.reader';
+import { TermsRulesReader } from '../terms/terms-rules.reader';
+import { isWithdrawalEligible } from '../subscription/refund-policy.service';
+
+/** 인보이스가 실어 보낸 청구 정보. mandate.rejected 는 인보이스 행 없이 올 수 있어 전부 선택이다. */
+export interface BilledPeriod {
+  amount?: number | null;
+  currency?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+}
+
+/** 원장 한 줄을 만들기 위해 회수 경로가 들고 가는 것. */
+interface ArrearsContext {
+  invoiceRef: string;
+  cause: 'UNCOLLECTIBLE' | 'MANDATE_REJECTED';
+  causeCode: string | null;
+  billed?: BilledPeriod;
+}
 
 /**
  * wallet 인보이스 결과 이벤트의 자격 연장/회수(ADR-0027 §4-2). 더닝/락은 다루지 않는다.
@@ -22,6 +42,9 @@ export class InvoiceOutcomeHandler {
     private readonly contractEventManager: ContractEventManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
+    private readonly arrearsManager: ArrearsManager,
+    private readonly benefitReader: BenefitReader,
+    private readonly termsRulesReader: TermsRulesReader,
   ) {}
 
   /**
@@ -222,9 +245,19 @@ export class InvoiceOutcomeHandler {
     });
   }
 
-  /** invoice.uncollectible — 재시도 소진, 최종 미수(터미널) → 자격 회수(해지). */
-  async handleUncollectible(contractId: string, invoiceId: string, errorCode: string | null): Promise<void> {
-    await this.terminateForInvoiceOutcome(contractId, invoiceId, 'CHARGE_FAIL', `UNCOLLECTIBLE:${errorCode ?? '-'}`);
+  /** invoice.uncollectible — 재시도 소진, 최종 미수(터미널) → 자격 회수(해지) + 미수 원장 기록. */
+  async handleUncollectible(
+    contractId: string,
+    invoiceId: string,
+    errorCode: string | null,
+    billed?: BilledPeriod,
+  ): Promise<void> {
+    await this.terminateForInvoiceOutcome(contractId, invoiceId, 'CHARGE_FAIL', `UNCOLLECTIBLE:${errorCode ?? '-'}`, {
+      invoiceRef: invoiceId,
+      cause: 'UNCOLLECTIBLE',
+      causeCode: errorCode,
+      billed,
+    });
   }
 
   /** invoice.voided(명시 intent 취소) — 청구가 소멸했으므로 선적용 자격을 회수한다. */
@@ -232,13 +265,23 @@ export class InvoiceOutcomeHandler {
     await this.terminateForInvoiceOutcome(contractId, invoiceId, 'CHARGE_CANCELED', `INVOICE_VOIDED:${reason ?? '-'}`);
   }
 
-  /** mandate.rejected — 계좌 심사 최종 거절. 선적용 자격 회수(invoiceId 없으면 계약 단위 1회). */
-  async handleMandateRejected(contractId: string, invoiceId: string | null, reasonCode: string | null): Promise<void> {
+  /**
+   * mandate.rejected — 계좌 심사 최종 거절. 선적용 자격 회수(invoiceId 없으면 계약 단위 1회) + 미수 기록.
+   * 심사 기한초과(MANDATE_TIMEOUT)도 별도 상태가 아니라 이 경로의 reasonCode 로만 들어온다.
+   */
+  async handleMandateRejected(
+    contractId: string,
+    invoiceId: string | null,
+    reasonCode: string | null,
+    billed?: BilledPeriod,
+  ): Promise<void> {
+    const invoiceRef = invoiceId ?? `mandate-rejected:${contractId}`;
     await this.terminateForInvoiceOutcome(
       contractId,
-      invoiceId ?? `mandate-rejected:${contractId}`,
+      invoiceRef,
       'CHARGE_CANCELED',
       `MANDATE_REJECTED:${reasonCode ?? '-'}`,
+      { invoiceRef, cause: 'MANDATE_REJECTED', causeCode: reasonCode, billed },
     );
   }
 
@@ -248,6 +291,7 @@ export class InvoiceOutcomeHandler {
     markerKey: string,
     markerType: string,
     reason: string,
+    arrears?: ArrearsContext,
   ): Promise<void> {
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
       const contract = await this.getContract(tx, contractId);
@@ -266,6 +310,19 @@ export class InvoiceOutcomeHandler {
         .insert(schema.eventBatches)
         .values({ type: 'SUBSCRIPTION_TERMINATED', effectiveDate: format(new Date(), 'yyyy-MM-dd') })
         .returning();
+
+      // 미수 판정축: «이 사람이 이 주기의 자격을 실제로 들고 있었는가». 회수 UPDATE 가 지워 버리기
+      // 전에 읽어야 한다. 자격이 아예 없었으면 공짜로 쓴 것이 없으므로 빚도 지우지 않는다.
+      const [heldEntitlement] = await tx
+        .select({ startsAt: schema.subscriptionEntitlement.startsAt, endsAt: schema.subscriptionEntitlement.endsAt })
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, contract.userId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        )
+        .limit(1);
 
       await tx
         .update(schema.subscriptionEntitlement)
@@ -297,6 +354,10 @@ export class InvoiceOutcomeHandler {
         contract.userId,
         batch.id,
       );
+
+      if (arrears) {
+        await this.recordArrearsForTermination(tx, contractId, contract.userId, arrears, heldEntitlement ?? null);
+      }
 
       this.logger.warn(`[invoice-outcome] 자격 회수/해지: contractId=${contractId}, reason=${reason}`);
       return contract.userId;
@@ -386,6 +447,118 @@ export class InvoiceOutcomeHandler {
       return false;
     }
     return true;
+  }
+
+  /**
+   * 회수와 «같은 트랜잭션»에서 미수 한 줄을 적는다. 따로 적으면 회수만 되고 원장이 비는 창이 생기고,
+   * 그 창에 빠진 주기는 아무도 청구하지 않는다.
+   *
+   * 판정은 «돈을 냈다면 이 주기를 환불받을 수 있었는가»와 같은 줄로 긋는다(`isWithdrawalEligible`).
+   * 청약철회로 전액 환불될 주기(7일 안 · 혜택 미사용)에는 적지 않고, 그 밖에는 혜택을 실제로
+   * 썼는지와 무관하게 주기 요금을 적는다 — 정상 납부자도 그 주기는 환불받지 못하기 때문이다.
+   * 자격이 그 주기를 덮지 못했으면(선적용이 걸린 적 없음) 공짜로 쓴 것이 없으므로 적지 않는다.
+   *
+   * 미납 요금은 기존 회원에게 불리한 새 약관 조항이라, 그 약관이 적용되는 계약에만 적는다(`TermsRulesReader`).
+   * 적지 않은 이유는 계약 이벤트(`ARREARS_SKIPPED`)로 남긴다 — 로그만 남기면 관리자가 「왜 외상이 없지」를 못 본다.
+   */
+  private async recordArrearsForTermination(
+    tx: DrizzleTransaction,
+    contractId: string,
+    userId: string,
+    arrears: ArrearsContext,
+    heldEntitlement: { startsAt: string; endsAt: string } | null,
+  ): Promise<void> {
+    if (!heldEntitlement) {
+      this.logger.log(`[arrears] 자격 없이 종결 — 미수 없음 (contractId=${contractId})`);
+      return;
+    }
+
+    const periodEnd = arrears.billed?.periodEnd ?? null;
+    // periodEnd 를 아는 경우에만 «덮였는지» 를 따진다. 모르면(인보이스 행 없는 거절) 활성 자격이
+    // 있었다는 사실만으로 판정한다 — 그 자격은 이 계약이 만든 것이다.
+    if (periodEnd && heldEntitlement.endsAt < periodEnd) {
+      this.logger.log(
+        `[arrears] 자격이 청구 주기를 덮지 않음 — 미수 없음 (contractId=${contractId}, endsAt=${heldEntitlement.endsAt}, periodEnd=${periodEnd})`,
+      );
+      return;
+    }
+
+    if (!(await this.termsRulesReader.newRulesApply(contractId))) {
+      await this.skipArrears(tx, contractId, userId, arrears, 'TERMS_NOT_IN_FORCE');
+      return;
+    }
+
+    // 주기 시작은 인보이스가 준 값, 없으면 자격 개시일 — 해지 화면(수금 전 선지급)과 같은 기준점이다.
+    const periodStart = new Date(arrears.billed?.periodStart ?? heldEntitlement.startsAt);
+    const usage = await this.benefitReader.findMembershipBenefitUsageSince(userId, periodStart);
+    if (isWithdrawalEligible({ periodStart, now: new Date(), usage })) {
+      await this.skipArrears(tx, contractId, userId, arrears, 'WITHDRAWAL_ELIGIBLE');
+      return;
+    }
+
+    const billedAmount = arrears.billed?.amount ?? null;
+    let amount = billedAmount;
+    let amountSource: 'INVOICE' | 'PLAN_FALLBACK' = 'INVOICE';
+    let currency = arrears.billed?.currency ?? 'KRW';
+
+    if (amount == null || amount <= 0) {
+      // 인보이스 행 없이 거절된 경로. 청구될 뻔한 금액은 계약의 플랜가다.
+      const [row] = await tx
+        .select({ price: schema.plan.price, currency: schema.plan.currency })
+        .from(schema.subscriptionContracts)
+        .innerJoin(schema.plan, eq(schema.plan.id, schema.subscriptionContracts.planId))
+        .where(eq(schema.subscriptionContracts.id, contractId))
+        .limit(1);
+      if (!row || row.price <= 0) {
+        this.logger.warn(`[arrears] 금액을 정할 수 없어 미수를 적지 않는다 (contractId=${contractId})`);
+        return;
+      }
+      amount = row.price;
+      currency = row.currency ?? 'KRW';
+      amountSource = 'PLAN_FALLBACK';
+    }
+
+    const created = await this.arrearsManager.record(tx, {
+      userId,
+      contractId,
+      invoiceRef: arrears.invoiceRef,
+      cause: arrears.cause,
+      causeCode: arrears.causeCode,
+      amount,
+      currency,
+      amountSource,
+      periodStart: arrears.billed?.periodStart ?? null,
+      periodEnd,
+    });
+
+    if (created) {
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'ARREARS_RECORDED',
+        { invoiceRef: arrears.invoiceRef, amount, currency, amountSource, cause: arrears.cause },
+        'SYSTEM',
+        userId,
+      );
+    }
+  }
+
+  private async skipArrears(
+    tx: DrizzleTransaction,
+    contractId: string,
+    userId: string,
+    arrears: ArrearsContext,
+    reason: 'TERMS_NOT_IN_FORCE' | 'WITHDRAWAL_ELIGIBLE',
+  ): Promise<void> {
+    this.logger.log(`[arrears] 미수 적지 않음 — ${reason} (contractId=${contractId})`);
+    await this.contractEventManager.addEvent(
+      tx,
+      contractId,
+      'ARREARS_SKIPPED',
+      { invoiceRef: arrears.invoiceRef, cause: arrears.cause, reason },
+      'SYSTEM',
+      userId,
+    );
   }
 
   private async getContract(tx: DrizzleTransaction, contractId: string) {

@@ -37,6 +37,9 @@ import { RefundEventHandler } from '../../src/services/refund-event-handler.serv
 import { AgreementCleanupService } from '../../src/services/subscription/agreement-cleanup.service';
 import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
 import { InvoiceOutcomeHandler } from '../../src/services/billing/invoice-outcome.handler';
+import { ArrearsManager } from '../../src/services/arrears/arrears.manager';
+import { TermsRulesReader } from '../../src/services/terms/terms-rules.reader';
+import { ConfigService } from '@nestjs/config';
 
 type MembershipSchema = typeof membershipSchema;
 
@@ -102,6 +105,9 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         AgreementCleanupService,
         BillingOutcomeHandler,
         InvoiceOutcomeHandler,
+        ArrearsManager,
+        TermsRulesReader,
+        { provide: ConfigService, useValue: { get: () => undefined } },
         { provide: PaymentClientService, useValue: wallet },
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
@@ -181,6 +187,8 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     await db.db.delete(schema.membershipDunningQueue);
     await db.db.delete(schema.billingEvents);
     await db.db.delete(schema.subscriptionContractEvents);
+    await db.db.delete(schema.membershipArrears);
+    await db.db.delete(schema.membershipTermsAgreements);
     // pause_events 는 entitlement 를 참조한다 — 먼저 지우지 않으면 FK 로 정리가 막힌다.
     await db.db.delete(schema.pauseEventDetails);
     await db.db.delete(schema.pauseEvents);
@@ -554,13 +562,12 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect((await loadContract(contract.id)).eligibleRefundAmount).toBe(expectedRefund);
     });
 
-    it('사용한 할인 혜택액을 추가로 차감한다', async () => {
+    it('받은 할인이 있어도 연간 정산은 이용 개월만 차감한다', async () => {
       const { userId, contract, periodStart } = await givenSubscription({
         plan: 'annual',
         daysSincePeriodStart: 75,
         recurring: false,
       });
-      // 기간 내 실제로 받은 할인 12,000원
       await db.db.insert(schema.membershipDiscountEvents).values({
         orderId: `order_${contract.id}`,
         userId,
@@ -573,30 +580,8 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       const preview = await service.previewCancellation(userId);
       const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
-      expect(immediate.breakdown?.benefitDeduction).toBe(12000);
-      expect(immediate.refundAmount).toBe(34930 - 12000);
-    });
-
-    it('취소된 주문의 할인은 차감하지 않는다', async () => {
-      const { userId, contract, periodStart } = await givenSubscription({
-        plan: 'annual',
-        daysSincePeriodStart: 75,
-        recurring: false,
-      });
-      await db.db.insert(schema.membershipDiscountEvents).values({
-        orderId: `order_cancelled_${contract.id}`,
-        userId,
-        discountAmount: 12000,
-        tierId,
-        cycleStartDate: format(periodStart, 'yyyy-MM-dd'),
-        subscriptionId: contract.id,
-        orderDate: addDays(periodStart, 5),
-        isCancelled: true,
-        cancelledAt: new Date(),
-      });
-
-      const preview = await service.previewCancellation(userId);
-      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!.refundAmount).toBe(34930);
+      expect(immediate.refundAmount).toBe(34930);
+      expect(immediate.breakdown).not.toHaveProperty('benefitDeduction');
     });
 
     it('10개월 경과 후에는 환불액이 0이라 즉시해지를 막고 잔여기간 이용을 권한다', async () => {

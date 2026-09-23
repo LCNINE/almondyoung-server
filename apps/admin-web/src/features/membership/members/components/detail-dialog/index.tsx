@@ -294,12 +294,6 @@ function ForceCancelDialog({
                       {immediate.breakdown.monthlyListPrice.toLocaleString()}원 =
                       -{immediate.breakdown.usageDeduction.toLocaleString()}원
                     </li>
-                    {immediate.breakdown.benefitDeduction > 0 && (
-                      <li>
-                        사용한 할인 혜택 -
-                        {immediate.breakdown.benefitDeduction.toLocaleString()}원
-                      </li>
-                    )}
                   </ul>
                 )}
                 {!immediate.available && immediate.unavailableReason && (

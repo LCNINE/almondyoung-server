@@ -33,6 +33,8 @@ import { getBillingMethods, getCmsBillingMethodStatuses } from "@lib/api/wallet"
 import {
   subscribeWithBillingMethod,
   createMembershipCheckoutIntent,
+  recordMembershipTermsAgreement,
+  getMyArrears,
 } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
 import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
@@ -40,6 +42,7 @@ import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
 import { TermsAndConditions } from "@/domains/membership/components/terms-and-conditions"
+import { MEMBERSHIP_TERMS_VERSION } from "@/domains/membership/terms-version"
 import type {
   BillingMethodDto,
   CmsBillingMethodStatusDto,
@@ -268,13 +271,21 @@ export function MembershipForm({
         const methodId =
           billingMode === "recurring" ? selectedBillingMethodId : null
 
+        // 동의는 «지금» 남긴다. 어느 경로든 가입 완성은 이보다 늦고, 정기결제 첫 가입은 화면을 떠났다 돌아온다.
+        const { agreementId } = await recordMembershipTermsAgreement({
+          termsVersion: MEMBERSHIP_TERMS_VERSION,
+          planId: selectedPlanId,
+          billingMode,
+        })
+
         if (methodId) {
           const attemptId = crypto.randomUUID()
           const res = await subscribeWithBillingMethod(
             selectedPlanId,
             methodId,
             billingMode,
-            attemptId
+            attemptId,
+            agreementId
           )
           if (billingMode === "recurring") {
             // 재가입자는 backend가 무료체험을 제거하므로 실제 적용된 일수로 안내한다.
@@ -294,7 +305,7 @@ export function MembershipForm({
             // 최초 정기결제 가입: 빈 결제수단 목록 페이지를 거치지 않고 자동이체 등록 화면(wallet-web)으로
             // 바로 보낸다. 등록을 마치면 결제수단 페이지로 복귀(cardChanged=1)하면서 방금 등록한 수단으로
             // 정기결제 가입이 자동 완료된다(payment-method/content.tsx 의 autoSubscribeOnLoad).
-            const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`
+            const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}&termsAgreementId=${agreementId}`
             const walletWebUrl =
               process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
             window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
@@ -305,7 +316,8 @@ export function MembershipForm({
             const { intentId } = await createMembershipCheckoutIntent(
               selectedPlanId,
               returnUrl,
-              "one_time"
+              "one_time",
+              agreementId
             )
             setPendingPaymentMode("membership", {
               planId: selectedPlanId,
@@ -325,6 +337,14 @@ export function MembershipForm({
           err?.status === 401
         ) {
           throw error
+        }
+        // 화면을 연 뒤에 미납이 생겼으면 서버가 409 로 거절한다. 서버 액션 경계를 넘으면 오류 코드가
+        // 남는다는 보장이 없어, 실패했을 때만 미납을 다시 물어 안내 화면으로 보낸다.
+        const { outstanding } = await getMyArrears()
+        if (outstanding.total > 0) {
+          toast.error(tPm("arrearsFirstToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
         }
         if (error instanceof HttpApiError) {
           toast.error(error.message)
@@ -626,6 +646,16 @@ export function MembershipForm({
             invoiceBillingEnabled={invoiceBillingEnabled}
             bankTransferDelay={tPm("bankTransferDelay")}
           />
+          {/* 동의 «전에» 눈에 닿아야 하는 줄. 상세는 위 고지 시트 한 곳에만 둔다.
+              청약철회 제한은 결제 버튼 가까이에 표시해야 효력이 있다(전자상거래법 제17조 제6항). */}
+          <p className="text-muted-foreground text-xs leading-4">
+            {t("agreeWithdrawLine")}
+          </p>
+          {billingMode === "recurring" && (
+            <p className="text-muted-foreground text-xs leading-4">
+              {t("agreeArrearsLine")}
+            </p>
+          )}
           <div ref={agreementSectionRef}>
             <FormField
               control={form.control}
@@ -906,6 +936,13 @@ export function PaymentNoticeBody({
               ? t("noticeMandateInvoice")
               : t.rich("noticeMandateCms", { b })}
           </p>
+        </NoticeSection>
+      )}
+
+      {/* 출금이 끝내 실패하면 «돈이 남는다». 회수만 안내하고 미납을 안 적으면 나중 청구가 분쟁이 된다. */}
+      {billingMode === "recurring" && (
+        <NoticeSection title={t("noticeArrearsTitle")}>
+          <p>{t("noticeArrears")}</p>
         </NoticeSection>
       )}
 

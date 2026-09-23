@@ -57,6 +57,8 @@ import {
 import { JwtAuthGuard, User } from '@app/authorization';
 import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { SubscriptionService } from '../services/subscription.service';
+import { ArrearsManager } from '../services/arrears/arrears.manager';
+import { ArrearsReader } from '../services/arrears/arrears.reader';
 /**
  * 관리자 운영 컨트롤러
  *
@@ -76,6 +78,8 @@ export class AdminOperationsController {
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
     private readonly authorizationService: AuthorizationService,
+    private readonly arrearsReader: ArrearsReader,
+    private readonly arrearsManager: ArrearsManager,
     @Optional() private readonly dlqHandler?: DLQHandler,
   ) {}
 
@@ -1185,6 +1189,84 @@ export class AdminOperationsController {
       return { success: true, data: { dlqTopic, ...result } };
     } catch (error) {
       this.handleError(error, 'DLQ 재구동', dlqTopic);
+    }
+  }
+
+  /**
+   * 한 계정의 미수(외상) 이력. 청산·면제분까지 함께 준다 — 면제 판단은 지나간 건을 봐야 선다.
+   */
+  @Get('arrears/:userId')
+  @ApiOperation({ summary: '회원 미수 이력 조회' })
+  @ApiParam({ name: 'userId', description: '회원 ID' })
+  async getArrears(@Param('userId') userId: string) {
+    try {
+      const [rows, summary] = await Promise.all([
+        this.arrearsReader.findByUserId(userId),
+        this.arrearsReader.outstandingSummary(userId),
+      ]);
+      return { success: true, data: { outstanding: summary, items: rows } };
+    } catch (error) {
+      this.handleError(error, '미수 이력 조회', userId);
+    }
+  }
+
+  /**
+   * 미수 면제. 오판정(정상 고객이 일시적 잔액부족으로 끊긴 경우)을 사람이 되돌리는 유일한 수단이다 —
+   * 없으면 CS 가 DB 를 직접 만진다. 돈을 포기하는 결정이라 환불과 같은 스코프를 요구한다.
+   */
+  @Post('arrears/:arrearsId/waive')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '미수 면제' })
+  @ApiParam({ name: 'arrearsId', description: '미수 원장 ID' })
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('arrears-waive')
+  async waiveArrears(
+    @User('userId') adminId: string,
+    @Param('arrearsId') arrearsId: string,
+    @Body() dto: { reason?: string },
+  ) {
+    const reason = dto?.reason?.trim();
+    if (!reason) throw new BadRequestException('면제 사유는 필수입니다.');
+    try {
+      const waived = await this.arrearsManager.waive(arrearsId, adminId, reason);
+      if (!waived) {
+        throw new NotFoundException('미청산 상태의 미수를 찾을 수 없습니다(이미 청산·면제되었을 수 있습니다).');
+      }
+      this.logger.warn(`미수 면제: arrearsId=${arrearsId} (관리자: ${adminId})`);
+      return { success: true, data: { arrearsId, status: 'WAIVED' } };
+    } catch (error) {
+      this.handleError(error, '미수 면제', arrearsId);
+    }
+  }
+
+  /**
+   * 미수 금액 조정. 인보이스 금액이 진실이지만 플랜가로 유도된 줄이나 부분 수금이 있었던 줄은
+   * 사람이 고쳐야 한다. 0 이하로는 못 내린다 — 0 이면 면제가 맞는 표현이다.
+   */
+  @Patch('arrears/:arrearsId/amount')
+  @ApiOperation({ summary: '미수 금액 조정' })
+  @ApiParam({ name: 'arrearsId', description: '미수 원장 ID' })
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('arrears-adjust')
+  async adjustArrearsAmount(
+    @User('userId') adminId: string,
+    @Param('arrearsId') arrearsId: string,
+    @Body() dto: { amount?: number; reason?: string },
+  ) {
+    const reason = dto?.reason?.trim();
+    if (!reason) throw new BadRequestException('조정 사유는 필수입니다.');
+    if (!Number.isInteger(dto?.amount) || (dto.amount as number) <= 0) {
+      throw new BadRequestException('금액은 1 이상의 정수여야 합니다. 전액을 없애려면 면제를 쓰세요.');
+    }
+    try {
+      const adjusted = await this.arrearsManager.adjustAmount(arrearsId, dto.amount as number, adminId, reason);
+      if (!adjusted) {
+        throw new NotFoundException('미청산 상태의 미수를 찾을 수 없습니다(이미 청산·면제되었을 수 있습니다).');
+      }
+      this.logger.warn(`미수 금액 조정: arrearsId=${arrearsId} → ${dto.amount} (관리자: ${adminId})`);
+      return { success: true, data: { arrearsId, amount: dto.amount } };
+    } catch (error) {
+      this.handleError(error, '미수 금액 조정', arrearsId);
     }
   }
 }

@@ -34,7 +34,7 @@ export class OrphanFileReaperService {
 
   constructor(private readonly repository: UploadedFileRepository) {}
 
-  @CronOnce('0 5 * * *', { name: 'assistant-orphan-file-reap' })
+  @CronOnce('0 5 * * *', { name: 'assistant-orphan-file-reap', timeZone: 'Asia/Seoul' })
   async reap(): Promise<void> {
     const released = await this.releaseUnreferenced();
     const { purged, restored } = await this.purgeReleased();

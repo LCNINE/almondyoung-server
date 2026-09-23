@@ -60,6 +60,16 @@ import { BillingReader } from './services/billing/billing.reader';
 import { BillingOutcomeHandler } from './services/billing/billing-outcome.handler';
 import { InvoiceBillingManager } from './services/billing/invoice-billing.manager';
 import { InvoiceOutcomeHandler } from './services/billing/invoice-outcome.handler';
+import { ArrearsManager } from './services/arrears/arrears.manager';
+import { ArrearsRepaymentService } from './services/arrears/arrears-repayment.service';
+import { ArrearsPaymentConsumer } from './consumers/arrears-payment.consumer';
+import { MeArrearsController } from './controllers/me-arrears.controller';
+import { MeTermsAgreementController } from './controllers/me-terms-agreement.controller';
+import { TermsAgreementManager } from './services/terms/terms-agreement.manager';
+import { TermsAgreementService } from './services/terms/terms-agreement.service';
+import { TermsRulesReader } from './services/terms/terms-rules.reader';
+import { ArrearsReader } from './services/arrears/arrears.reader';
+import { ArrearsGate } from './services/arrears/arrears.gate';
 import { InvoiceResultConsumer } from './consumers/invoice-result.consumer';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
@@ -133,10 +143,13 @@ import { EventTraceController } from './controllers/event-trace.controller';
     BillingResultConsumer,
     InvoiceResultConsumer,
     MembershipCheckoutConsumer,
+    ArrearsPaymentConsumer,
     MembershipRefundConsumer,
     UserWithdrawalConsumer,
     BillingController,
     AdminOperationsController,
+    MeArrearsController,
+    MeTermsAgreementController,
     SubscriptionController,
     PlanController,
     PauseController,
@@ -200,6 +213,13 @@ import { EventTraceController } from './controllers/event-trace.controller';
     // ADR-0027 인보이스(선적용) 경로
     InvoiceBillingManager,
     InvoiceOutcomeHandler,
+    ArrearsManager,
+    ArrearsReader,
+    ArrearsGate,
+    ArrearsRepaymentService,
+    TermsAgreementManager,
+    TermsAgreementService,
+    TermsRulesReader,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
     // 해지·환불 정책 (연간 정산 / 청약철회 창)

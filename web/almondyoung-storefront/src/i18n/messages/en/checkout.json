@@ -304,35 +304,6 @@
       "goToCart": "Go to cart"
     }
   },
-  "membership": {
-    "headerTitle": "Membership checkout",
-    "missingPlanTitle": "No membership plan information.",
-    "missingPlanDesc": "Please try again from the membership signup page.",
-    "planNotFoundTitle": "Membership plan not found.",
-    "planNotFoundDesc": "Please try again with a different plan.",
-    "fallbackPlanName": "Membership",
-    "planSectionTitle": "Membership plan",
-    "selectedPlanLabel": "Selected plan",
-    "priceWon": "{amount} KRW",
-    "noticeTitle": "Payment notice",
-    "oneTimeHeader": "📌 One-time payment (no auto-billing)",
-    "oneTimeNoAutoPay": "This is a one-time payment with no auto-billing.",
-    "bankTransferDelay": "If you choose bank transfer, deposit confirmation can take up to about 10 minutes.",
-    "immediateNoRefundPrefix": "Service starts immediately upon payment, and ",
-    "immediateNoRefundEmphasis": "refunds are not allowed after use begins",
-    "immediateNoRefundSuffix": ".",
-    "paidPeriodAccess": "Service is available for the paid period.",
-    "refundPolicyTitle": "[Refund policy]",
-    "refund1": "· Refunds for buyer's remorse are not allowed.",
-    "refund2": "· If normal use is not possible due to service outages or technical errors, a partial refund may be processed for the unused period.",
-    "refund3": "· Refund eligibility and amount are determined by internal policy.",
-    "agree": "I have reviewed the payment and refund policy and agree to it.",
-    "toasts": {
-      "agreeRequired": "Please agree to the payment and refund policy.",
-      "loginRequired": "Login is required.",
-      "paymentRequestFailed": "Payment request failed."
-    }
-  },
   "success": {
     "completedHighlight": "Order complete",
     "completedSuffix": ".",

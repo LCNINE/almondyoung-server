@@ -1,6 +1,7 @@
 "use server"
 
 import type {
+  ArrearsCheckoutDto,
   CancellationMode,
   CancellationPreviewDto,
   CancellationReasonDto,
@@ -9,6 +10,7 @@ import type {
   CycleBenefitHistoryDto,
   MembershipPlanDto,
   MembershipTierDto,
+  MyArrearsDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
   TerminationNoticeDto,
@@ -436,7 +438,8 @@ export async function getRangeSavings(
 export async function createMembershipCheckoutIntent(
   planId: string,
   returnUrl: string,
-  billingMode: "one_time" | "recurring" = "one_time"
+  billingMode: "one_time" | "recurring" = "one_time",
+  termsAgreementId?: string
 ): Promise<{ intentId: string }> {
   try {
     return await api<{ intentId: string }>(
@@ -444,7 +447,7 @@ export async function createMembershipCheckoutIntent(
       "/subscriptions/checkout-intent",
       {
         method: "POST",
-        body: { planId, returnUrl, billingMode },
+        body: { planId, returnUrl, billingMode, termsAgreementId },
         withAuth: true,
         cache: "no-store",
       }
@@ -463,8 +466,13 @@ export async function createMembershipCheckoutIntent(
         throw new Error("이미 활성 구독이 존재합니다.")
       }
     }
-    // 409 에러: 이미 활성 구독 존재
+    // 409 는 둘이다: 미납 요금이 남아 있음 / 이미 활성 구독 존재
     if (error instanceof HttpApiError && error.status === 409) {
+      // 멤버십 서버의 오류 본문은 { error: { code, message } } 모양이다.
+      const body = error.data?.error
+      if (body?.code === "ARREARS_OUTSTANDING") {
+        throw new Error(body.message ?? "미납된 멤버십 요금을 먼저 납부해 주세요.")
+      }
       throw new Error("이미 활성 구독이 존재합니다.")
     }
     // 기타 에러: plain Error로 변환하여 Next.js Server Action 직렬화 문제 방지
@@ -477,22 +485,87 @@ export async function createMembershipCheckoutIntent(
 }
 
 /**
+ * 가입 약관 동의를 기록하고 그 id 를 받는다. 가입 폼을 제출한 «순간» 부른다 —
+ * 정기결제 첫 가입은 자동이체 등록으로 화면을 떠났다 돌아와 완성되므로, 가입 요청에는 이 id 를 실어 보낸다.
+ * mutation 이라 실패를 삼키지 않는다 — 동의가 안 남은 채로 가입을 진행하지 않는다.
+ */
+export async function recordMembershipTermsAgreement(input: {
+  termsVersion: string
+  planId: string
+  billingMode: "one_time" | "recurring"
+}): Promise<{ agreementId: string }> {
+  return await api<{ agreementId: string }>(
+    "membership",
+    "/me/membership-terms-agreements",
+    {
+      method: "POST",
+      body: input,
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}
+
+/**
  * 기존 billing_method로 즉시 결제 후 구독 생성
  */
 export async function subscribeWithBillingMethod(
   planId: string,
   billingMethodId: string,
   billingMode: "one_time" | "recurring" = "one_time",
-  checkoutAttemptId?: string
+  checkoutAttemptId?: string,
+  termsAgreementId?: string
 ): Promise<{ contractId: string; effectiveTrialDays?: number }> {
   return await api<{ contractId: string; effectiveTrialDays?: number }>(
     "membership",
     "/subscriptions/subscribe-with-method",
     {
       method: "POST",
-      body: { planId, billingMethodId, billingMode, checkoutAttemptId },
+      body: {
+        planId,
+        billingMethodId,
+        billingMode,
+        checkoutAttemptId,
+        termsAgreementId,
+      },
       withAuth: true,
       cache: "no-store",
     }
   )
+}
+
+/**
+ * 내 미수(미납 멤버십 요금) 현황.
+ *
+ * 화면은 「없음」을 이 응답으로만 판정한다 — 캐시된 조회로 부재를 판정하면 있는 미수가 안 보인다.
+ * 조회 실패는 빈 값으로 접는다(미수 안내가 안 뜨는 것이, 마이페이지 전체가 죽는 것보다 낫다).
+ */
+export async function getMyArrears(): Promise<MyArrearsDto> {
+  try {
+    return await api<MyArrearsDto>("membership", "/me/arrears", {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+      // 이 조회는 마이페이지·홈의 서버 렌더 경로에 있다. 멤버십이 느려질 때 화면 전체가 같이
+      // 느려지지 않도록 짧게 끊고, 실패는 아래에서 '미수 없음'으로 흡수한다.
+      timeout: 2000,
+    })
+  } catch {
+    return { outstanding: { total: 0, count: 0, currency: "KRW" }, items: [] }
+  }
+}
+
+/**
+ * 미수 전액 청산 결제 생성. 금액과 대상은 서버가 원장에서 정하므로 여기서 보내지 않는다.
+ * mutation 이라 실패를 삼키지 않는다 — 버튼을 눌렀는데 아무 일도 안 일어나면 안 된다.
+ */
+export async function startArrearsCheckout(
+  returnUrl: string
+): Promise<ArrearsCheckoutDto> {
+  return await api<ArrearsCheckoutDto>("membership", "/me/arrears/checkout", {
+    method: "POST",
+    body: { returnUrl },
+    withAuth: true,
+    cache: "no-store",
+  })
 }

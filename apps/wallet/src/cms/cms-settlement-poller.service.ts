@@ -5,7 +5,7 @@ import { and, eq, inArray, lte } from 'drizzle-orm';
 import { WalletSchema, cmsWithdrawals } from '../schema';
 import { CmsWithdrawal } from '../types';
 import { CmsApiClient, CmsPaymentData } from './cms-api.client';
-import { kstYesterdayYyyymmdd } from './cms-date.util';
+import { kstTodayYyyymmdd, kstYesterdayYyyymmdd } from './cms-date.util';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
@@ -34,16 +34,21 @@ export class CmsSettlementPollerService {
   /**
    * PENDING_SETTLEMENT 상태의 Intent에 대응하는 CMS 출금건의 결과를 폴링한다.
    * 매 30분 실행. 은행 영업시간 외에는 실행해도 무해 (결과가 없을 뿐).
+   *
+   * 출금일 «당일»부터 조회한다. 예전엔 D+1 부터만 물어봤는데, 그러면 결과가 당일에 나오더라도
+   * 하루를 통째로 기다리게 된다 — 관측된 「출금일→결과 1일」의 그 1일이 효성의 속도가 아니라
+   * 이 게이트였을 수 있다. 아직 안 끝난 건은 '출금중'/'출금대기'로 돌아와 다음 주기에 재조회되므로
+   * 일찍 묻는 것 자체는 해가 없다. 다만 404(접수 유실) 판정만은 D+1 이후로 남긴다 — 당일의 404 는
+   * 「아직 반영 안 됨」과 구별되지 않아서, 그걸 실패로 확정하면 정상 출금을 죽인다.
    */
   @CronOnce('0 */30 * * * *', { name: 'cms-settlement-poll' })
   async pollPendingSettlements(): Promise<void> {
-    // paymentDate의 D+1 이상 경과한 건만 — 결과 확인 가능 시점
-    const yesterday = kstYesterdayYyyymmdd();
+    const today = kstTodayYyyymmdd();
     const pendingWithdrawals = await this.dbService.db
       .select()
       .from(cmsWithdrawals)
       .where(
-        and(inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING']), lte(cmsWithdrawals.paymentDate, yesterday)),
+        and(inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING']), lte(cmsWithdrawals.paymentDate, today)),
       );
 
     if (pendingWithdrawals.length === 0) return;
@@ -72,13 +77,21 @@ export class CmsSettlementPollerService {
   private async processWithdrawal(withdrawal: CmsWithdrawal): Promise<void> {
     const result = await this.cmsApi.getWithdrawal(withdrawal.transactionId);
     if (!result.ok) {
-      // write-ahead 행인데 효성에 없다(404) = 접수 유실. 폴은 D+1 이후라 지연이 아니므로 실패 확정.
-      if (result.statusCode === 404) {
+      // write-ahead 행인데 효성에 없다(404) = 접수 유실. 단 출금일 «당일»의 404 는 「아직 반영 안 됨」과
+      // 구별되지 않으므로 확정하지 않는다 — D+1 이 지난 뒤의 404 만 실패로 굳힌다.
+      const settledEnough = withdrawal.paymentDate <= kstYesterdayYyyymmdd();
+      if (result.statusCode === 404 && settledEnough) {
         this.logger.warn(`CMS withdrawal ${withdrawal.transactionId} not found at provider — treating as lost request`);
         await this.handleWithdrawalFailure(withdrawal, {
           status: '출금실패',
           result: { code: 'CMS_NOT_ACCEPTED', message: '효성에 접수되지 않은 출금 요청(유실)' },
         });
+        return;
+      }
+      if (result.statusCode === 404) {
+        this.logger.log(
+          `CMS withdrawal ${withdrawal.transactionId} not yet visible at provider (출금일 당일) — 다음 주기 재조회`,
+        );
         return;
       }
       this.logger.warn(

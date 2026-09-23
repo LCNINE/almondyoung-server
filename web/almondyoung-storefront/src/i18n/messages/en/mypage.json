@@ -842,7 +842,7 @@
       "failureReason": "Reason: {reason}",
       "failureReasonUnknown": "The withdrawal failed.",
       "failureActionPastDue": "Check your account balance, then tap “Pay again”.",
-      "failureActionUncollectible": "All retries were used and your membership ended. Fund the account and subscribe again — your registered account will be reused.",
+      "failureActionUncollectible": "All retries were used and your membership ended. The fee for this period is still unpaid — pay it from My Page > Membership, then subscribe again and your registered account will be reused.",
       "failureActionMandate": "Your direct debit registration was rejected. Please register a different account under payment methods.",
       "attempts": "Attempt {attempt} of {max}",
       "remainingAttempts": "{remaining} more failure(s) will end your membership",
@@ -965,7 +965,7 @@
       },
       "q5": {
         "question": "How can I cancel?",
-        "answer": "Cancel from My Page > Membership. You can keep using the service until the end of the billing month, after which it ends automatically."
+        "answer": "Cancel any time from My Page > Membership. You can keep using the service until the end of the billing period you already paid for, after which it ends automatically. Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, etc.), you may withdraw for a full refund. Otherwise, a monthly plan's paid period is not refunded, and a yearly plan is settled at the regular monthly price for the period used and the remainder is refunded."
       }
     },
     "history": {
@@ -1041,7 +1041,6 @@
       "modeImmediateDesc": "Benefits end immediately and the remaining period cannot be used.",
       "breakdownPaid": "Paid {amount} KRW",
       "breakdownUsage": "{months} month(s) used × {monthly} KRW monthly price = -{amount} KRW",
-      "breakdownBenefit": "Membership discounts already received -{amount} KRW",
       "manualRefundNotice": "Direct-debit payments cannot be refunded instantly. We will transfer to the account you enter within {days} business days.",
       "summaryImmediate": "Cancelling now refunds {amount} KRW.",
       "summaryAtPeriodEnd": "Your membership ends automatically on {date}.",
@@ -1070,6 +1069,21 @@
     "termination": {
       "title": "Your membership has ended",
       "reason": "Reason: {reason}"
+    },
+    "arrears": {
+      "title": "Unpaid membership fee",
+      "whatHappened": "Your auto-debit failed and your membership was ended. The fee for the period you were entitled to is still unpaid.",
+      "totalAmount": "{amount} KRW in total",
+      "amount": "{amount} KRW",
+      "causeUncollectible": "Every payment retry failed",
+      "causeMandateRejected": "Auto-debit account registration was rejected",
+      "whatsNext": "Until it is paid, you cannot start a new membership, and access is no longer granted ahead of payment confirmation. Registering an account and shopping work as usual.",
+      "paymentMethodNotice": "Payment is by bank transfer, the same as a membership payment, and is applied once the deposit is confirmed.",
+      "payNow": "Pay now",
+      "starting": "Opening payment",
+      "startError": "We couldn't start the payment. Please try again in a moment.",
+      "alertTitle": "Unpaid membership fee: {amount} KRW",
+      "alertBody": "See the details and pay"
     }
   },
   "orderActions": {
@@ -1134,6 +1148,7 @@
     "metaSuccess": "Membership subscription complete",
     "metaFail": "Payment failed - Membership",
     "successTitle": "Membership subscription complete",
+    "withdrawNotice": "Within 7 days of payment (or of when your access started, if it started before payment was confirmed), and if you have never used a membership benefit, you can withdraw for a full refund from My Page > Membership. Using any benefit once — a member-price purchase, a welcome deal, a members-only coupon, etc. — limits withdrawal.",
     "celebrationAlt": "Celebration icon",
     "welcomeLine1": "Congratulations!",
     "welcomeStrong": "Almondyoung Membership",
@@ -1151,6 +1166,9 @@
     "errorCode": "Error code: {code}",
     "retryPayment": "Retry payment",
     "pageTitle": "Membership subscription",
+    "arrearsFirstTitle": "You have an unpaid membership fee",
+    "arrearsFirstDescription": "Please pay the unpaid fee of {amount} KRW first, then you can start your membership again.",
+    "arrearsFirstCta": "Review and pay the unpaid fee",
     "plansLoadFailTitle": "Failed to load membership plans.",
     "plansLoadFailDescription": "Please try again later.",
     "pendingMandateNotice": "Your account is still under bank review, so the first withdrawal happens once it's approved.",
@@ -1189,6 +1207,7 @@
     "membershipJoinedSuccess": "Your membership has been activated.",
     "registerAutoDebitFirst": "To start a subscription, please register an auto-debit method first.",
     "membershipJoinFailed": "Failed to register the membership.",
+    "arrearsFirstToast": "Please pay your unpaid membership fee first.",
     "startWithTrial": "Start {days}-day free trial",
     "startRecurring": "Start subscription",
     "recurringAfterReview": "Available after account review",
@@ -1397,7 +1416,7 @@
     "noticeMandateTitle": "Auto-debit account verification",
     "noticeRefundTitle": "Payment & refunds",
     "noticeTrigger": "Please check before paying",
-    "noticeWithdrawBody": "Even within 7 days of payment, <b>buying a product at the member price limits your right of withdrawal</b>.",
+    "noticeWithdrawBody": "Even within 7 days of payment, <b>using any membership benefit once — a member-price purchase, a welcome deal, a members-only coupon, etc. — limits your right of withdrawal</b>.",
     "noticeWithdrawTitle": "Withdrawal limits",
     "noticeWithdrawYearlySuffix": "For the yearly plan, cancelling early refunds the remainder after settling the period you used.",
     "planLabelMonthly": "Membership, 1 month",
@@ -1412,12 +1431,12 @@
     "planYearlyDesc": "About {price} KRW per month · Does not auto-renew",
     "refundCommon": "Partial refunds may be considered if normal use is not possible, such as during a service outage.",
     "refundOnce1": "A one-time payment; no automatic billing takes place.",
-    "refundOnce2": "Within 7 days of payment and if you have never used a membership benefit, <b>you may withdraw and receive a full refund</b>.",
+    "refundOnce2": "Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, etc.), <b>you may withdraw and receive a full refund</b>.",
     "refundOnce3": "Otherwise you keep access until the end of the period paid for, and that fee is consideration for the period used and is not refunded.",
     "refundRecurring1": "Charged automatically each month from your registered auto-debit method, renewing until you cancel.",
-    "refundRecurring2": "Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, etc.), <b>you may withdraw and receive a full refund</b> (access ends immediately).",
+    "refundRecurring2": "Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, etc.), <b>you may withdraw and receive a full refund</b> (access ends immediately).",
     "refundRecurring3": "Otherwise you keep access until the end of the period already paid for, and you are not billed from the next payment date. This cycle's fee is consideration for the period used and is not refunded.",
-    "refundYearly1": "The yearly plan discounts two months on the premise of 12 months of use. If you cancel early, <b>we settle the period used at the regular monthly price and refund the remainder</b>. (Refund = amount paid − months used × regular monthly price − membership discounts used)",
+    "refundYearly1": "The yearly plan discounts two months on the premise of 12 months of use. If you cancel early, <b>we settle the period used at the regular monthly price and refund the remainder</b>. (Refund = amount paid − months used × regular monthly price)",
     "refundYearly2": "Months used are counted in 30-day units, and the month containing the start date counts as one month. If the settlement leaves 0 KRW or less, no refund is made.",
     "rowMethod": "Payment method",
     "sectionAmount": "Payment summary",
@@ -1428,6 +1447,10 @@
     "termsTitle": "Almondyoung Membership Terms",
     "unitMonth": "monthly",
     "unitOnce": "30 days",
-    "unitYear": "1 year"
+    "unitYear": "1 year",
+    "noticeArrearsTitle": "Failed debits and unpaid fees",
+    "noticeArrears": "If a debit fails or your auto-debit account is rejected and your membership is ended, the fee for the period you were entitled to remains unpaid. The rule is the same as for a paid period you could not get refunded — if it has been no more than 7 days since your access started and you have not used any membership benefit, no unpaid fee arises. You can pay it any time from My Page > Membership; until then, you cannot start a new membership and the next period's access is no longer granted ahead of payment confirmation.",
+    "agreeArrearsLine": "If your membership ends because a debit fails or your account is rejected, the fee for a period in which you used a benefit or that is past 7 days remains unpaid, and you cannot start a new membership until it is paid.",
+    "agreeWithdrawLine": "Using any membership benefit once (member-price purchase, welcome deal, members-only coupon, etc.) limits withdrawal (full refund), even within 7 days."
   }
 }

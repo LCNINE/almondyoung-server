@@ -7,6 +7,7 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PlanService } from '../plan.service';
 import { WalletCommandPublisher } from './wallet-command.publisher';
 import { ContractEventManager } from '../subscription/contract-event.manager';
+import { ArrearsManager } from '../arrears/arrears.manager';
 import { BillingResult } from './billing.manager';
 
 // 더닝 정책(48h×3)을 인보이스 재시도 정책으로 그대로 실어준다(ADR-0027 §10-1).
@@ -27,6 +28,7 @@ export class InvoiceBillingManager {
     private readonly walletCommandPublisher: WalletCommandPublisher,
     private readonly planService: PlanService,
     private readonly contractEventManager: ContractEventManager,
+    private readonly arrearsManager: ArrearsManager,
   ) {}
 
   /** 현재 주기 인보이스 발행. 선적용: 자격을 periodEnd 까지 먼저 연장, 출금/회수는 인보이스 결과가 담당. */
@@ -51,7 +53,9 @@ export class InvoiceBillingManager {
     const periodStart = contract.nextBillingDate;
     const periodEnd = format(addDays(new Date(`${periodStart}T00:00:00`), plan.plan.durationDays), 'yyyy-MM-dd');
 
-    // 1. 선적용 — 자격을 periodEnd 까지 연장(이미 연장돼 있으면 no-op → 일일 재발행에 멱등)
+    // 1. 선적용 — 자격을 periodEnd 까지 연장(이미 연장돼 있으면 no-op → 일일 재발행에 멱등).
+    //    단 미수가 남은 계정은 선적용하지 않는다. 수금이 확인되면 invoice.paid 가 같은 자리까지
+    //    연장하므로(ensureEntitlementCovers) 자격을 영영 못 받는 게 아니라 «뒤로 미뤄지는» 것이다.
     await this.grantAdvanceEntitlement(contract.id, contract.userId, periodEnd);
 
     // 2. CreateInvoice 커맨드 발행 (주기당 1 멱등키 — 재발행은 wallet 이 dedupe)
@@ -101,6 +105,26 @@ export class InvoiceBillingManager {
    */
   private async grantAdvanceEntitlement(contractId: string, userId: string, periodEnd: string): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
+      // 미수 게이트. 잔액 조회를 같은 트랜잭션에서 하는 이유는 면제/청산이 동시에 들어와도
+      // 한 쪽만 이기게 하기 위해서다.
+      // 가입 관문(ArrearsGate)이 있어도 필요하다 — 활성 계약을 가진 채 미수가 생긴 계정의 갱신은
+      // 가입을 거치지 않는다.
+      const outstanding = await this.arrearsManager.outstandingTotal(tx, userId);
+      if (outstanding > 0) {
+        this.logger.warn(
+          `선적용 보류 — 미수 잔액 있음 (contractId=${contractId}, userId=${userId}, outstanding=${outstanding})`,
+        );
+        await this.contractEventManager.addEvent(
+          tx,
+          contractId,
+          'INVOICE_ADVANCE_GRANT_WITHHELD',
+          { periodEnd, outstanding },
+          'SYSTEM',
+          userId,
+        );
+        return;
+      }
+
       const [entitlement] = await tx
         .select()
         .from(schema.subscriptionEntitlement)

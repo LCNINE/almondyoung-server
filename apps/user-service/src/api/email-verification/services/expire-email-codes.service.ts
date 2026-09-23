@@ -22,7 +22,7 @@ export class ExpireEmailCodesService {
       );
   }
 
-  @CronOnce('0 0 * * *', { name: 'email-verification-expire' }) // 매일 자정
+  @CronOnce('0 0 * * *', { name: 'email-verification-expire', timeZone: 'Asia/Seoul' }) // 매일 자정(KST)
   async cleanupExpiredVerifications() {
     this.logger.log('만료된 이메일 인증 코드 삭제 작업 시작');
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

@@ -40,6 +40,8 @@ import { BillingReader } from '../../src/services/billing/billing.reader';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
+import { ArrearsReader } from '../../src/services/arrears/arrears.reader';
+import { ArrearsManager } from '../../src/services/arrears/arrears.manager';
 import { AdminMembersReader } from '../../src/services/admin/admin-members.reader';
 import { AdminOperationsService } from '../../src/services/admin-operations.service';
 import { SubscriptionService } from '../../src/services/subscription.service';
@@ -131,6 +133,8 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         },
         AdminIdempotencyService,
         AdminIdempotencyInterceptor,
+        ArrearsReader,
+        ArrearsManager,
         { provide: PaymentClientService, useValue: wallet },
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
@@ -203,6 +207,8 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
     await db.db.delete(schema.membershipDunningQueue);
     await db.db.delete(schema.billingEvents);
     await db.db.delete(schema.subscriptionContractEvents);
+    await db.db.delete(schema.membershipArrears);
+    await db.db.delete(schema.membershipTermsAgreements);
     await db.db.delete(schema.subscriptionEntitlement);
     await db.db.delete(schema.subscriptionContracts);
     await db.db.delete(schema.eventBatches);

@@ -8,6 +8,7 @@ import {
 } from "@lib/api/wallet"
 import {
   getCurrentSubscription,
+  getMyArrears,
   subscribeWithBillingMethod,
 } from "@lib/api/membership"
 import type {
@@ -57,6 +58,8 @@ export default function MembershipPaymentMethodContent() {
   const t = useTranslations("mypage.membershipPaymentMethod")
 
   const planId = searchParams.get("planId")
+  // 가입 폼이 떠나기 전에 남긴 약관 동의. 가입 요청에 실어 보내 그 동의에 이어 붙인다.
+  const termsAgreementId = searchParams.get("termsAgreementId") ?? undefined
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
   const autoSubscribeOnLoad = useRef(
@@ -187,7 +190,8 @@ export default function MembershipPaymentMethodContent() {
           currentPlanId,
           billingMethodId,
           "recurring",
-          crypto.randomUUID()
+          crypto.randomUUID(),
+          termsAgreementId
         )
         // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
         const appliedTrialDays = res.effectiveTrialDays ?? 0
@@ -202,6 +206,13 @@ export default function MembershipPaymentMethodContent() {
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } catch (error) {
         if (isUnauthorizedError(error)) throw error
+        // 미납이 있으면 서버가 가입을 거절한다 — 일반 실패 문구 대신 납부 먼저로 보낸다.
+        const { outstanding } = await getMyArrears()
+        if (outstanding.total > 0) {
+          toast.error(t("arrearsFirstToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
+        }
         toast.error(t("subscribeFail"))
       } finally {
         setIsChanging(null)

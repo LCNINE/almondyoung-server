@@ -455,6 +455,109 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
 });
 
 // =================================================================
+// 미수(외상) 원장 — 혜택은 받았는데 수금이 끝내 실패한 주기를 계정에 붙여 둔다
+// =================================================================
+
+/**
+ * 미수 원장. wallet `invoices` 가 «청구» 의 진실 원천이라면 이 표는 «계정에 남은 빚» 의 진실
+ * 원천이다. 둘을 갈라 두는 이유: wallet 은 의도적으로 멤버십 도메인을 모르고 `invoices` 에
+ * user_id 가 없어서, 계약을 새로 파면(재가입) 옛 빚과의 연결이 계약 단위로 끊긴다.
+ *
+ * 한 인보이스는 최대 한 번만 빚이 된다 — `uq_membership_arrears_invoice` 가 그걸 강제한다.
+ * 이 유니크가 없으면 결과 이벤트가 두 번 와서 같은 주기를 두 번 걷는다.
+ */
+export const membershipArrearsStatusEnum = pgEnum('membership_arrears_status', [
+  'OUTSTANDING',
+  'SETTLED',
+  'WAIVED',
+]);
+
+export const membershipArrears = pgTable(
+  'membership_arrears',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => subscriptionContracts.id),
+    /**
+     * 원 인보이스(wallet). 인보이스 행 없이 거절된 경로(결제수단 부재 등)는 계약 단위 합성 키가
+     * 들어오므로 uuid 가 아니라 text 다.
+     */
+    invoiceRef: text('invoice_ref').notNull(),
+    /** 'UNCOLLECTIBLE'(출금 재시도 소진) | 'MANDATE_REJECTED'(계좌 심사 거절·기한초과) */
+    cause: text('cause').notNull(),
+    /** 사유 코드 원문. 심사 기한초과는 별도 상태가 아니라 이 칸의 'MANDATE_TIMEOUT' 로만 구분된다. */
+    causeCode: text('cause_code'),
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull().default('KRW'),
+    /**
+     * 금액의 출처. 'INVOICE' = 발행된 인보이스 금액 그대로. 'PLAN_FALLBACK' = 인보이스 행이 없어
+     * 현재 플랜가로 유도함(플랜가가 그 사이 바뀌었으면 실제 청구액과 다를 수 있다 — 면제 판단 근거).
+     * 'ADMIN_ADJUSTED' = 사람이 금액을 고침.
+     */
+    amountSource: text('amount_source').notNull().default('INVOICE'),
+    periodStart: date('period_start'),
+    periodEnd: date('period_end'),
+    status: membershipArrearsStatusEnum('status').notNull().default('OUTSTANDING'),
+    /**
+     * 이 줄을 덮는 «진행 중» 청산 결제. 「지금 납부하기」를 다시 누른 사람에게 새 결제를 만들어
+     * 주면 같은 빚에 두 번 입금할 수 있어서(무통장이라 둘 다 가상계좌가 살아 있다), 결제를
+     * 만들기 전에 이 표식으로 직전 결제를 찾는다.
+     *
+     * 이 칸은 «어느 결제를 물어볼지»만 가리킨다 — 아직 살아 있는지는 wallet 에 물어서 정한다.
+     * 여기에 시각을 같이 두고 우리가 수명을 재면 wallet 의 만료 정책과 갈린다.
+     */
+    pendingIntentId: text('pending_intent_id'),
+    /** 청산 근거 — 무엇으로 갚았는지(결제 intent·주문 id 등). 면제면 면제 사유. */
+    settlementRef: text('settlement_ref'),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    /** 면제·조정을 실행한 관리자. 시스템 청산이면 NULL. */
+    settledBy: text('settled_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_membership_arrears_invoice').on(table.invoiceRef),
+    // 계정별 잔액 조회가 이 표의 주 질의다 — 미청산만 훑는다.
+    index('idx_membership_arrears_user_status').on(table.userId, table.status),
+    index('idx_membership_arrears_contract').on(table.contractId),
+  ],
+);
+
+/**
+ * 가입 약관 동의 이력. 「이 사람이 언제 어느 버전 약관에 동의했나」를 분쟁 때 행으로 제시하기 위한 표.
+ *
+ * 유저당 여러 행이 정상이다(가입할 때마다 한 줄). 회원가입 동의(user-service `user_consents`)는
+ * 유저당 1행에 버전이 없어 이력이 될 수 없고, BC 도 다르다.
+ *
+ * 동의는 «가입이 완성되기 전에» 적힌다 — 정기결제 첫 가입은 자동이체 등록으로 화면을 떠났다가
+ * 돌아와서 완성되므로, 가입 시점에는 동의 값이 없다. 가입이 완성되면 `contract_id` 로 이어 붙인다.
+ * 이어지지 않은 행은 「동의는 했지만 가입까지 가지 않은」 기록이다.
+ */
+export const membershipTermsAgreements = pgTable(
+  'membership_terms_agreements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(),
+    /** 화면이 보여 준 약관 버전. 알려진 버전만 받는다(`services/terms/membership-terms.ts`). */
+    termsVersion: text('terms_version').notNull(),
+    /** 'recurring' | 'one_time' — 같은 버전 안에서도 정기결제 약관에만 붙는 조항(제5조)이 있다. */
+    billingMode: text('billing_mode').notNull(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plan.id),
+    /** 이 동의로 완성된 가입. 한 동의는 한 가입에만 쓰인다. */
+    contractId: uuid('contract_id').references(() => subscriptionContracts.id),
+    agreedAt: timestamp('agreed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_membership_terms_agreements_user').on(table.userId),
+    index('idx_membership_terms_agreements_contract').on(table.contractId),
+  ],
+);
+
+// =================================================================
 // 멤버십 혜택 추적 (Membership Benefits Tracking)
 // =================================================================
 
@@ -595,6 +698,8 @@ export const membershipSchema = {
   subscriptionPolicies,
   membershipCycleBenefits,
   membershipDiscountEvents,
+  membershipArrears,
+  membershipTermsAgreements,
   welcomeMembershipEligibility,
   adminOperationKeys,
 

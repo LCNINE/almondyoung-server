@@ -67,7 +67,7 @@ export class FormExportJobWorker {
   }
 
   /** 만료된 잡과 워크북을 정리한다. 하루 한 번이면 충분하다. */
-  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'form-export-job-purge' })
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'form-export-job-purge', timeZone: 'Asia/Seoul' })
   async purge(): Promise<void> {
     if (!this.enabled) return;
     const removed = await this.manager.purgeExpired(new Date());

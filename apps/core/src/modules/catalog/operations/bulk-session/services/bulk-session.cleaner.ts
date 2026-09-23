@@ -40,7 +40,7 @@ export class BulkSessionCleaner {
     return this.config.get<string>('PRODUCT_BULK_SESSION_WORKER_ENABLED') !== 'false';
   }
 
-  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'bulk-session-sweep' })
+  @CronOnce(CronExpression.EVERY_DAY_AT_4AM, { name: 'bulk-session-sweep', timeZone: 'Asia/Seoul' })
   async sweep(): Promise<void> {
     if (!this.enabled) return;
     if (this.isSweeping) {

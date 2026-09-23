@@ -24,7 +24,7 @@ export class DormantService {
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
 
-  @CronOnce(CronExpression.EVERY_DAY_AT_2AM, { name: 'dormant-accounts' })
+  @CronOnce(CronExpression.EVERY_DAY_AT_2AM, { name: 'dormant-accounts', timeZone: 'Asia/Seoul' })
   async handleDormantAccounts() {
     this.logger.log('휴면 계정 전환/삭제 점검 시작');
 

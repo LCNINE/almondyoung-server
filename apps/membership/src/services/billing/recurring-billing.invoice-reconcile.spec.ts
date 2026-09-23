@@ -61,7 +61,12 @@ describe('RecurringBillingService.reconcileStuckInvoices', () => {
   it('UNCOLLECTIBLE → handleUncollectible 로 위임(자격 회수)', async () => {
     const { service, invoiceOutcomeHandler } = makeService({ ...base, status: 'UNCOLLECTIBLE', errorCode: 'INSUFFICIENT' });
     await service.reconcileStuckInvoices();
-    expect(invoiceOutcomeHandler.handleUncollectible).toHaveBeenCalledWith('c1', 'inv1', 'INSUFFICIENT');
+    expect(invoiceOutcomeHandler.handleUncollectible).toHaveBeenCalledWith('c1', 'inv1', 'INSUFFICIENT', {
+      amount: 10000,
+      currency: 'KRW',
+      periodStart: '2026-07-01',
+      periodEnd: '2026-08-01',
+    });
   });
 
   it('VOID → handleVoided 로 위임', async () => {
@@ -73,7 +78,12 @@ describe('RecurringBillingService.reconcileStuckInvoices', () => {
   it('MANDATE_REJECTED → handleMandateRejected 로 위임', async () => {
     const { service, invoiceOutcomeHandler } = makeService({ ...base, status: 'MANDATE_REJECTED', errorCode: 'NO_ACCOUNT' });
     await service.reconcileStuckInvoices();
-    expect(invoiceOutcomeHandler.handleMandateRejected).toHaveBeenCalledWith('c1', 'inv1', 'NO_ACCOUNT');
+    expect(invoiceOutcomeHandler.handleMandateRejected).toHaveBeenCalledWith('c1', 'inv1', 'NO_ACCOUNT', {
+      amount: 10000,
+      currency: 'KRW',
+      periodStart: '2026-07-01',
+      periodEnd: '2026-08-01',
+    });
   });
 
   it('비터미널(ATTEMPTING) → 어떤 핸들러도 호출하지 않고 대기', async () => {

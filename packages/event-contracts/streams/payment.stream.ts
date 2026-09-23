@@ -331,6 +331,9 @@ export interface InvoiceUncollectiblePayload {
   subscriberRef: string;
   periodStart: string;
   periodEnd: string;
+  /** 미수 원장이 걷을 금액. 구독자 쪽에서 플랜가로 유도하면 그 사이 가격 변경과 어긋난다. */
+  amount?: number;
+  currency?: string;
   errorCode: string | null;
   errorMessage: string | null;
   intentId: string | null;
@@ -345,6 +348,14 @@ export interface MandateRejectedPayload {
   subscriberRef: string;
   reasonCode: string | null;
   reason: string | null;
+  /**
+   * 거절된 인보이스가 청구하려던 주기와 금액. 인보이스 행 없이 거절되는 경로가 있어 전부 선택이다.
+   * 심사 거절이 터미널 실패의 대다수라, 이게 없으면 미수 원장이 금액을 못 정한다.
+   */
+  amount?: number;
+  currency?: string;
+  periodStart?: string;
+  periodEnd?: string;
   /** invoiceId 가 null 인 경우의 안정 멱등 키(CreateInvoice idempotencyKey) */
   idempotencyKey?: string;
   occurredAt: string;

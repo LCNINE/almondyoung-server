@@ -18,6 +18,11 @@ export const membershipEnvSchema = z
     USER_SERVICE_INTERNAL_KEY: z.string().min(1).optional(),
     // 'true' 면 신규 정기 가입이 인보이스(선적용) 경로를 탄다(기존 계약은 billing_path 고정).
     MEMBERSHIP_INVOICE_BILLING_ENABLED: z.enum(['true', 'false']).optional(),
+    // 'true' 면 약관 동의 기록 없이 들어온 가입을 거절한다. 스토어프론트가 동의를 보내기 시작한 뒤에 켠다.
+    MEMBERSHIP_TERMS_AGREEMENT_REQUIRED: z.enum(['true', 'false']).optional(),
+    // 새 약관의 미납 요금 조항을 «기존» 계약에도 적용하기 시작하는 시각(ISO). 비우면 새 약관 동의 계약에만.
+    // 이용약관 제3조 제6항(개정약관은 개정 후 체결 계약에만)과 부딪혀 법무 검토 없이 설정하지 않는다.
+    MEMBERSHIP_TERMS_EXISTING_MEMBERS_EFFECTIVE_AT: z.string().optional(),
     // Auth — dual-mode: AUTH_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC), 둘 중 하나 필수.
     AUTH_SECRET: z.string().min(1).optional(),
     OIDC_ISSUER_URL: z.string().url().optional(),

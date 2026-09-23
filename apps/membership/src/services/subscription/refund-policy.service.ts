@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { addDays, differenceInCalendarDays, format } from 'date-fns';
+import { hasUsedMembershipBenefit, MembershipBenefitUsage } from '../benefit/benefit-usage';
 
 /** 해지 방식. 고객이 직접 고른다(서버가 강제 분기하지 않는다). */
 export type CancellationMode = 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
@@ -11,6 +12,24 @@ export type RefundExecution = 'NONE' | 'AUTO' | 'MANUAL';
 
 /** 청약철회 창(일). 이 기간 안에 혜택을 하나도 안 썼으면 결제액 전액 환불. */
 export const WITHDRAWAL_WINDOW_DAYS = 7;
+
+/**
+ * 청약철회로 «전액 환불(수금 전이면 청구 없이 종료)»이 되는 주기인가.
+ *
+ * 해지 화면과 미납 요금 기록이 이 함수 하나를 쓴다. 둘이 다르게 판정하면, 돈을 냈다면 전액 환불받았을
+ * 주기에 출금이 실패했다는 이유로 미납 요금이 달린다 — 청약철회권(전자상거래법 제17조)과 정면으로 부딪힌다.
+ *
+ * `periodStart` 는 결제 성공 시각, 수금 전 선지급이면 자격 개시일이다. 주기 시작을 모르면 창은 닫힌 것으로 본다.
+ */
+export function isWithdrawalEligible(params: {
+  periodStart: Date | null;
+  now: Date;
+  usage: MembershipBenefitUsage;
+}): boolean {
+  if (!params.periodStart) return false;
+  const days = differenceInCalendarDays(params.now, params.periodStart);
+  return days <= WITHDRAWAL_WINDOW_DAYS && !hasUsedMembershipBenefit(params.usage);
+}
 
 /** 연간 플랜 판정 기준일수. 365 를 그대로 쓰지 않는 이유는 366/360 같은 변형 플랜도 연간으로 보기 위함. */
 export const ANNUAL_PLAN_MIN_DURATION_DAYS = 180;
@@ -30,8 +49,6 @@ export interface AnnualProrationBreakdown {
   monthsElapsed: number;
   /** 사용 기간 차감액 = monthsElapsed × monthlyListPrice (결제액 상한) */
   usageDeduction: number;
-  /** 해당 기간에 실제로 받은 멤버십 할인 혜택 차감액 */
-  benefitDeduction: number;
 }
 
 export interface CancellationOption {
@@ -91,15 +108,8 @@ export interface CancellationPolicyInput {
    * 되므로 상한으로 쓴다.
    */
   refundableAmount: number | null;
-  /**
-   * 이번 결제 주기에 실제로 받은 멤버십 할인 (청약철회 판정용).
-   *
-   * 판정 축은 **할인 금액 하나뿐이다.** 주문 건수는 화면 표시용으로만 함께 넘어온다 — 주문을 했어도
-   * 멤버십 할인이 0원이었다면 혜택을 누린 게 아니므로 환불을 막지 않는다.
-   */
-  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
-  /** 이번 결제 주기 전체에 받은 할인 합계 (연간 정산 차감용) */
-  termBenefitDiscount: number;
+  /** 이번 결제 주기에 쓴 멤버십 혜택 (청약철회 판정용 — 판정은 `hasUsedMembershipBenefit`) */
+  currentPeriodBenefit: MembershipBenefitUsage;
 }
 
 export interface CancellationPolicyDecision {
@@ -147,10 +157,12 @@ export class RefundPolicyService {
     const daysSincePeriodStart = input.paidPeriodStart
       ? differenceInCalendarDays(input.now, input.paidPeriodStart)
       : null;
-    const withinWithdrawalWindow = daysSincePeriodStart !== null && daysSincePeriodStart <= WITHDRAWAL_WINDOW_DAYS;
-    // 혜택을 썼는지는 **받은 할인 금액**으로만 가른다. 주문 건수를 함께 보면, 주문은 했지만 멤버십
-    // 할인이 0원이던 고객(정가 상품만 산 경우)이 '혜택 사용'으로 잡혀 정당한 청약철회가 막힌다.
-    const benefitUnused = input.currentPeriodBenefit.totalDiscountAmount <= 0;
+    const benefitUnused = !hasUsedMembershipBenefit(input.currentPeriodBenefit);
+    const withdrawalEligible = isWithdrawalEligible({
+      periodStart: input.paidPeriodStart,
+      now: input.now,
+      usage: input.currentPeriodBenefit,
+    });
     const withdrawalDaysRemaining =
       daysSincePeriodStart === null ? 0 : Math.max(0, WITHDRAWAL_WINDOW_DAYS - daysSincePeriodStart);
 
@@ -159,7 +171,7 @@ export class RefundPolicyService {
       nowDate,
       isAnnual,
       daysSincePeriodStart,
-      withinWithdrawalWindow,
+      withdrawalEligible,
       benefitUnused,
     });
 
@@ -180,19 +192,21 @@ export class RefundPolicyService {
   /**
    * 연간 중도해지 정산액.
    *
-   * 환불액 = 결제액 − (경과 개월수 × 월간 정가) − 해당 기간 할인 혜택액, 최소 0
+   * 환불액 = 결제액 − (경과 개월수 × 월간 정가), 최소 0
+   *
+   * 받은 할인액은 따로 빼지 않는다. 할인은 월 정가를 낸 대가로 받는 것이라, 이용 개월을 월 정가로
+   * 이미 받았는데 할인을 또 빼면 같은 이용을 두 번 청구하는 셈이 된다(실제 제공한 대가를 넘는 공제).
+   * 연간 할인분(2개월)은 월 정가 환산만으로 회수된다 — 10개월 뒤 환불액이 0이 된다.
    */
   calculateAnnualProration(params: {
     paidAmount: number;
     monthlyListPrice: number;
     daysElapsed: number;
-    benefitDiscount: number;
   }): { refundAmount: number; breakdown: AnnualProrationBreakdown } {
     // 사용 첫날도 1개월로 센다(일할 계산이 아니라 '월 단위 정가 환산'이 정책이다).
     const monthsElapsed = Math.max(1, Math.ceil(Math.max(0, params.daysElapsed) / MONTH_UNIT_DAYS));
     const usageDeduction = Math.min(params.paidAmount, monthsElapsed * params.monthlyListPrice);
-    const benefitDeduction = Math.max(0, params.benefitDiscount);
-    const refundAmount = Math.max(0, params.paidAmount - usageDeduction - benefitDeduction);
+    const refundAmount = Math.max(0, params.paidAmount - usageDeduction);
 
     return {
       refundAmount,
@@ -201,7 +215,6 @@ export class RefundPolicyService {
         monthlyListPrice: params.monthlyListPrice,
         monthsElapsed,
         usageDeduction,
-        benefitDeduction,
       },
     };
   }
@@ -246,10 +259,10 @@ export class RefundPolicyService {
     nowDate: string;
     isAnnual: boolean;
     daysSincePeriodStart: number | null;
-    withinWithdrawalWindow: boolean;
+    withdrawalEligible: boolean;
     benefitUnused: boolean;
   }): CancellationOption {
-    const { input, nowDate, isAnnual, daysSincePeriodStart, withinWithdrawalWindow, benefitUnused } = params;
+    const { input, nowDate, isAnnual, daysSincePeriodStart, withdrawalEligible, benefitUnused } = params;
 
     // 집행 수단은 **환불 가능 여부와 다른 축이다.** 정책상 환불이 안 되는 계약이라도 관리자는 예외
     // 환불을 넣을 수 있고, 그 돈은 결제수단에 따라 PG 로 나가거나 사람이 계좌로 보내야 한다.
@@ -271,7 +284,7 @@ export class RefundPolicyService {
 
     if (!input.hasPayment) {
       // 선지급 + 수금 전: 돌려줄 돈은 없지만 예정 출금을 지우면 나갈 돈도 없어진다.
-      if (input.awaitingCollection && daysSincePeriodStart !== null && withinWithdrawalWindow && benefitUnused) {
+      if (input.awaitingCollection && withdrawalEligible) {
         return {
           ...base,
           available: true,
@@ -296,7 +309,7 @@ export class RefundPolicyService {
     }
 
     // 1) 청약철회: 결제 후 7일 내 + 혜택 미사용 → 전액 환불
-    if (withinWithdrawalWindow && benefitUnused) {
+    if (withdrawalEligible) {
       return {
         ...base,
         available: true,
@@ -315,7 +328,6 @@ export class RefundPolicyService {
         // 청약철회 창은 법정 기준(결제일로부터)이라 보정하지 않지만, '이용한 기간' 정산에서는
         // 정지 기간을 빼야 한다 — 그 기간에는 멤버십 혜택을 쓸 수 없었다.
         daysElapsed: daysSincePeriodStart - input.pausedDaysInPeriod,
-        benefitDiscount: input.termBenefitDiscount,
       });
       const refundAmount = this.capByRefundable(policyAmount, input.refundableAmount);
 

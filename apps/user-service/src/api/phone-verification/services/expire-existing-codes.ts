@@ -30,7 +30,7 @@ export class ExpireExistingCodesService {
       );
   }
 
-  @CronOnce('0 0 * * *', { name: 'phone-verification-expire' }) // 매일 자정 실행
+  @CronOnce('0 0 * * *', { name: 'phone-verification-expire', timeZone: 'Asia/Seoul' }) // 매일 자정(KST) 실행
   async cleanupExpiredVerifications(tx?: DbTransaction) {
     this.logger.log('만료된 핸드폰 번호 인증 코드 삭제 작업 시작');
     const client = this.getClient(tx);
