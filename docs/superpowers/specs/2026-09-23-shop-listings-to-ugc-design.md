@@ -2,7 +2,7 @@
 
 작성일: 2026-09-23 (KST). 기준: `develop` 의 `e1ade9f10` (#955).
 브랜치: `docs/shop-listings-to-ugc-spec`.
-상태: 설계 확정. 구현·이관·배포 미착수.
+상태: 설계 확정. PR 1(#957) 라이브 배포 완료(2026-09-24). §8 은 PR 2 착수 전 보정(2026-09-24).
 
 ## 1. 문제와 목표
 
@@ -45,6 +45,8 @@ URL(`/shop-trade`, `/shop-trade/{slug}`)과 기존 글의 slug·id·조회수는
 | 작성자 표시 | 공개 페이지에 표시하지 않는다 | 배지 / 마스킹 닉네임 |
 | 관리자 권한 | 기존 scope `admin:ugc:read`·`admin:ugc:modify` 재사용 | 전용 scope 신설 (매핑 시드 전까지 master 만 관리 가능) |
 | 이관 | 두 번 배포 + 멱등 복사 스크립트 (§9) | 한 번 배포 (§9.1 의 사이트맵 함정) / core 를 ugc 프록시로 유지 (서비스 간 결합 신설) |
+| 마크다운 렌더 규칙 공유 | `packages/shop-listing-markdown` 한 벌을 두 앱이 `transpilePackages` 로 import (§8.4) | 스토어프론트에 복사 + 드리프트 가드 (규칙이 두 벌) / 패키지가 React 컴포넌트까지 제공 (루트 react 19.2 와 스토어프론트 19.0-rc 가 섞일 수 있다) / 상품 상세설명과 한 패키지에 프리셋으로 (규칙이 반대라 공유할 게 없고 라이브 상품 상세를 건드린다) |
+| 이관 글의 U+200B | 복사할 때 본문 전체에서 제거 (§9.3) | 그대로 둔다 (textarea 에서 빈 줄처럼 보이는 줄이 글자를 담는다) / `&nbsp;` 로 치환 (에디터에 엔티티 텍스트가 보인다) |
 | 탈퇴 회원 글 | 컨슈머가 `UserDeleted`(탈퇴 즉시)와 `UserPermanentDeleted`(보조)를 듣고 연락처 NULL + soft delete. **물리 삭제 크론은 두지 않는다** | 30일 뒤 물리 삭제 크론 / `UserPermanentDeleted` 만 듣기 (휴면 크론이 약 3년 뒤에야 내서 그동안 전화번호가 공개된다) |
 
 ## 4. 데이터 모델 (ugc DB, `public` 스키마)
@@ -215,22 +217,57 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 
 ### 8.1 스토어프론트 (`web/almondyoung-storefront`)
 
-- `lib/api/pim/shop-listings.ts` → `lib/api/ugc/shop-listings.ts`. 서비스 키 `"pim"` → `"ugc"`. 캐시 태그와 `revalidate: 60` 유지.
-- 본문 렌더: `sanitizeNoticeHtml` 대신 `react-markdown` + `remark-gfm`(둘 다 이미 의존성에 있다).
-  - `rehype-raw` 를 붙이지 않는다(원시 HTML 은 이스케이프).
-  - `img` 요소는 렌더하지 않는다. 사진은 갤러리로만 받는다.
-  - 링크는 `rel="nofollow ugc noopener"`, 허용 스킴은 `http`·`https`·`tel`.
-  - `remark-breaks` 를 더해 단일 줄바꿈을 `<br>` 로 그린다. 표준 마크다운은 단일 줄바꿈을 공백으로 합쳐, 이관 글의 `<br>` 와 회원이 textarea 에서 친 Enter 가 모두 사라진다.
-  - 이 옵션은 `.ts` 모듈 하나로 빼서 스토어프론트와 admin-web 미리보기가 같은 규칙을 쓴다.
-- 상세 페이지에 「연락처 보기」 클라이언트 컴포넌트. 비로그인이면 로그인 진입, 로그인이면 §7.2 호출 후 `tel:`·오픈채팅 링크.
-- 목록 카드·상세에 `closed` → 「거래완료」 배지.
-- 회원 작성 화면은 **`/mypage/shop-listings/*`** 에 둔다.
-  `middleware.ts` 의 `CACHEABLE_PATH_PREFIXES` 가 `/shop-trade` 를 접두사로 매칭하므로 `/shop-trade/new` 에 두면
-  사람마다 다른 화면이 CDN 에 캐시된다. `/mypage` 는 이미 로그인 보호 경로이고 캐시 대상이 아니다.
-  - `/mypage/shop-listings` — 내 매물(상태·거절 사유·거래완료 전환·삭제)
-  - `/mypage/shop-listings/new`, `/mypage/shop-listings/[id]/edit` — 마크다운 textarea + 미리보기, 이미지 1~15장(첫 장이 썸네일), 연락처
-  - `/shop-trade` 목록에 「매물 등록」 진입 버튼
-- `sitemap.ts` 는 API 호출부만 바꾼다. URL 불변.
+**API 전환.** `lib/api/pim/shop-listings.ts` → `lib/api/ugc/shop-listings.ts`, 서비스 키 `"pim"` → `"ugc"`.
+
+- 공개 셋(목록·상세·조회수): 캐시 태그와 `revalidate: 60` 을 유지한다.
+- DTO(`lib/types/dto/shop-listing.ts`)를 ugc 응답에 맞춘다: `images` → `imageFileIds`, `isActive`·`deletedAt` 제거,
+  `status`·`viewCount` 추가. 이 필드를 쓰는 곳(목록·카드·관련 매물·갤러리·홈 섹션·`sitemap.ts`)을 같이 고친다. URL 은 그대로다.
+- 회원용 서버 액션: 내 글 목록·단건·작성·수정·거래완료·재개·삭제·연락처.
+  - 서버 액션이 throw 한 에러는 프로덕션에서 메시지가 지워진다. 그래서 400·404·409 는 `{ ok: false, status, message }` 로
+    **돌려준다**(선례 `lib/api/orders/store-orders.ts`).
+  - 회원이 글을 바꾸면 `revalidateTag('shop-listings')` 를 부른다. CDN 층이 남으므로 공개 반영은 여전히 「60초 안」이다.
+
+**공개 페이지.**
+
+- 상세 본문은 `sanitizeNoticeHtml` 대신 `ShopListingMarkdown`(§8.4)으로 그린다. 서버 컴포넌트로 렌더하므로 클라이언트 번들에 들어가지 않는다.
+  이 페이지에서 jsdom 이 빠진다(#676 계열 500 의 경로).
+- 메타 description 은 §8.4 의 `toPlainSummary` 로 만든다.
+- `closed` 인 글은 목록 카드와 상세에 「거래완료」 배지를 붙인다. 목록의 정렬·필터는 바꾸지 않는다.
+- `/shop-trade` 목록에 「매물 등록」 버튼(`/mypage/shop-listings/new` 로 가는 정적 링크)을 둔다.
+  비로그인이면 middleware 의 `/mypage` 보호가 로그인으로 보낸다. 캐시 페이지에 뷰어별 값이 섞이지 않는다.
+
+**「연락처 보기」**(상세 페이지, 클라이언트 컴포넌트).
+
+- 캐시된 페이지는 로그인 여부를 모르므로 버튼은 항상 같은 모양이다. 클릭하면 서버 액션 `getShopListingContact(slug)` 가
+  §7.2 를 부른다.
+  - `{ ok, contact }` → 버튼 자리에 `tel:`(표시는 하이픈 포맷)과 오픈채팅 링크를 편다. 둘 다 null(이관 글)이면
+    「등록된 연락처가 없어요」를 보인다.
+  - `{ loginRequired }` → `redirect_to` 에 현재 경로를 실어 로그인으로 보낸다(선례 `review-helpful-button`).
+- 연락처는 공개 응답에 섞지 않는다(§2 캐시 제약).
+
+**회원 화면은 `/mypage/shop-listings/*` 에 둔다.** `middleware.ts` 의 `CACHEABLE_PATH_PREFIXES` 가 `/shop-trade` 를
+접두사로 매칭하므로 `/shop-trade/new` 에 두면 사람마다 다른 화면이 CDN 에 캐시된다. `/mypage` 는 이미 로그인 보호 경로이고 캐시 대상이 아니다.
+
+- `/mypage/shop-listings` — 내 매물. 상태 배지(검토 대기·게시 중·반려·숨김·거래완료)와 반려 사유를 보인다. 상태별 동작:
+
+  | 상태 | 동작 |
+  |---|---|
+  | 게시 중 | 수정 · 거래완료 · 삭제 |
+  | 거래완료 | 수정 · 재개 · 삭제 |
+  | 검토 대기·반려 | 수정 · 삭제 |
+  | 숨김 | 삭제만(「관리자가 숨긴 글은 수정할 수 없어요」) |
+
+- `/mypage/shop-listings/new`, `/mypage/shop-listings/[id]/edit` — 한 폼을 공유한다.
+  - 필드: 제목, 지역·업종·거래유형(필수), 평수·보증금·월세·권리금(비우면 「협의」), 이미지 1~15장(첫 장이 썸네일,
+    앞뒤 이동 버튼, 컨텍스트 `shop-listing-image`), 연락처(필수, 하이픈 허용 입력), 오픈채팅(선택).
+  - 본문은 textarea 에 「작성 / 미리보기」 탭을 둔다. 미리보기도 `ShopListingMarkdown` 이다.
+  - 게시 중·거래완료 글을 수정할 때는 제출 전에 「수정하면 다시 검토를 받고, 그동안 공개되지 않아요」를 확인받는다.
+  - 409 는 서버 메시지를 보인다. 한도 초과면 폼에 머무르고, 숨김이면 목록으로 돌려보낸다.
+- 마이페이지 메뉴(`domains/mypage/components/constants/mypage-constants.ts` 의 데스크톱·모바일 두 목록)에 「내 매물」을 더한다.
+- 판단 로직은 `.ts` 순수 함수로 뺀다: 상태 → 허용 동작·배지, 전화번호 정규화·표시 포맷, 폼 값 → DTO(빈 칸 → null),
+  서버 액션 결과 → 사용자 문구. 스펙은 스토어프론트 `vitest` 로 쓴다.
+
+**범위 밖:** 목록의 「거래완료 제외」 필터, 작성 중 임시저장, 이미지 드래그 정렬.
 
 ### 8.2 file-service
 
@@ -240,11 +277,85 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 
 ### 8.3 admin-web
 
-- 클라이언트: `/proxy/api/shop-listings` → `/proxy/ugc/admin/shop-listings`.
-- 폼: tiptap 리치 에디터 → 마크다운 textarea + 미리보기(§8.1 의 렌더 규칙). 연락처 필드 추가. 이미지 컨텍스트 `shop-listing-image`.
-- 목록: `status`·`authorType` 필터, 기본 탭 「검토 대기」.
-- 상세: 승인·거절(사유 입력)·숨김·숨김 해제, 판정 이력.
-- `types/dto/products.ts` 에 복제된 enum·DTO 를 새 형태로 맞춘다.
+admin-web 에는 DESIGN.md 가 없다. 기준은 shadcn `components/ui` 와 같은 앱의 선례 두 곳이다: 기존 샵 매매 화면
+(헤더·빈 상태·삭제 AlertDialog·`sonner` 토스트·`SimplePagination`)과 승인·반려 선례 `features/cs/business-licenses` 상세.
+
+**클라이언트·타입.**
+
+- `lib/api/domains/products/shop-listings.client.ts`: `ALMONDYOUNG_API_BASE_URL/shop-listings` →
+  `UGC_SERVICE_BASE_URL/admin/shop-listings`(= `/proxy/ugc/admin/shop-listings`). 메서드는 list(필터)·get·create·update·
+  approve·reject·hide·unhide·close·reopen·remove.
+- `lib/types/dto/products.ts` 의 샵 매매 enum·DTO 를 ugc 응답(`AdminShopListing(Detail)ResponseDto`, 판정 이력,
+  status·authorType)으로 교체한다.
+- `SHOP_LISTING_IMAGE_CONTEXT_ID` 를 `'shop-listing-image'` 로 바꾼다(`lib/api/domains/files/upload.client.ts`).
+  `image-gallery-field` 의 정책값 주석도 새 컨텍스트에 맞춘다.
+- react-query 키 팩토리에 인자 없는 호출을 만들지 않는다. 무효화가 조용히 빗나간다.
+
+**목록**(`/mall/shop-listings`).
+
+- 상단 `Tabs`: 검토 대기(기본)·게시 중·반려·숨김·거래완료·전체. 오른쪽에 작성자 `Select`(전체/관리자/회원)와 제목 검색(`q`).
+- 필터는 서버로 보낸다(§7.4). 페이지는 지금처럼 클라이언트에서 20건씩 자른다.
+- 행: 썸네일·제목·상태 Badge·작성자 유형·제출일(검토 대기)/작성일·조회수.
+
+**상세·수정**(`/mall/shop-listings/[id]`, 한 페이지).
+
+- 상단 판정 바: 상태 Badge, 반려 사유, 상태별 버튼.
+
+  | 상태 | 버튼 |
+  |---|---|
+  | 검토 대기 | 승인 · 반려 |
+  | 게시 중 | 숨김 · 거래완료 |
+  | 거래완료 | 숨김 · 재개 |
+  | 숨김 | 숨김 해제 |
+  | 반려 | 없음(회원이 고쳐 재제출하면 검토 대기로 온다) |
+
+  반려는 business-licenses 처럼 AlertDialog 안의 사유 `Textarea` 로 받는다. 다만 서버가 사유를 요구하므로 비어 있으면 버튼을 막는다.
+- **승인·반려는 상세 응답의 `submittedAt` 을 `expectedSubmittedAt` 으로 싣는다.** 409 면 「그사이 회원이 글을 고쳤어요.
+  새로고침해서 바뀐 내용을 확인해 주세요」 토스트와 「새로고침」 액션으로 상세를 다시 부른다.
+- 본문: tiptap 을 걷어내고 `Textarea` + 「편집 / 미리보기」 `Tabs` 로 바꾼다. 미리보기는 `ShopListingMarkdown`(§8.4)이다.
+- 연락처 필드 추가: 전화(선택), 오픈채팅(선택). 관리자 글의 slug 입력칸은 유지한다.
+- **폼 → DTO 변환은 `.ts` 순수 함수다. 이 함수는 `contactPhone`·`kakaoOpenChatUrl` 을 항상 키로 싣는다(비면 `null`).**
+  관리자 PUT 이 전체 교체라서, 키를 빼면 회원이 등록한 번호가 지워진다. admin-web jest 스펙으로 고정한다.
+- 판정 이력: 하단 카드, 최신순. 행마다 결정·사유·처리자 id·시각.
+- 판단 로직(상태 → 허용 버튼, 폼 ↔ DTO, 409 분류)은 `.ts` + 스펙으로 둔다.
+
+**범위 밖:** 판정 결과 알림, 일괄 승인, 목록 서버 페이지네이션.
+
+### 8.4 마크다운 렌더 패키지 `packages/shop-listing-markdown`
+
+두 앱이 **같은 렌더 설정 한 벌**을 import 한다. 선례는 `packages/product-description` 이다(프레임워크 독립 계약, 루트 jest `roots` 로 CI 검사).
+
+- `rules.ts` — 순수 TS, 외부 import 없음. `shopListingUrlTransform`(`http`·`https`·`tel` 만 통과, 그 밖은 빈 문자열),
+  `SHOP_LISTING_DISALLOWED_ELEMENTS = ['img']`, `SHOP_LISTING_LINK_REL = 'nofollow ugc noopener'`, `toPlainSummary(markdown)`,
+  그리고 hast 의 모든 `a` 요소에 그 rel 을 붙이는 rehype 플러그인 `rehypeShopListingLinks`(트리 순회만 하므로 의존성이 없다).
+- `options.ts` — `react-markdown` 에 펼치는 설정: `remarkPlugins: [remarkGfm, remarkBreaks]`, `rehypePlugins: [rehypeShopListingLinks]`,
+  `urlTransform`, `disallowedElements`. `rehype-raw` 는 넣지 않는다. `remark-gfm`·`remark-breaks` 는 peerDependency 이고 각 앱 `node_modules` 에서 해석된다.
+  - `remark-breaks` 가 필요한 이유: 표준 마크다운은 단일 줄바꿈을 공백으로 합친다. 그러면 이관 글의 `<br>` 와 회원이 textarea 에서 친 Enter 가 모두 사라진다.
+- **패키지는 React 를 import 하지 않는다.** 루트 `node_modules` 의 react(19.2)와 스토어프론트의 react(19.0-rc)가 섞이는 것을 피하려는 것이다.
+  링크 rel 을 `components.a`(JSX)가 아니라 rehype 플러그인으로 붙이는 이유가 이것이다.
+- 앱 쪽 `ShopListingMarkdown` 은 `<ReactMarkdown {...shopListingMarkdownOptions}>{content}</ReactMarkdown>` 수준으로 얇다.
+  스토어프론트 컴포넌트는 hook 이 없어 `"use client"` 없이 서버·클라이언트 양쪽에서 쓴다.
+- 배선:
+  - 스토어프론트: `file:` dep + `transpilePackages`. 의존성 해석 폴백은 `c41e30aee` 로 이미 있다.
+  - admin-web: tsconfig `paths` + `transpilePackages` + 같은 `resolve.modules` 폴백.
+  - 두 앱 모두 `remark-breaks` 를 의존성에 추가한다(lock 이 바뀌므로 배포 전 `npm ci` 가 필수다).
+- **첫 구현 단계는 빌드 실증이다.** 두 앱 `next build` 가 패키지를 import 한 채 통과하는지 확인한다. 실패하면
+  스토어프론트 복사 + 드리프트 가드(§3 의 기각안)로 물러난다. 2026-07-22 `eb1c98f18` 이 스토어프론트에서
+  `@packages/product-description` 을 걷어낸 이력이 있다. 그 패키지는 외부 import 가 없어 해석 문제일 수 없었고,
+  같은 커밋이 깨진 디렉티브 처리도 바꿨다. 원인은 기록돼 있지 않다.
+
+### 8.5 스토어프론트 디자인 시스템
+
+`web/almondyoung-storefront/DESIGN.md`(Seed Design 기반)를 따른다.
+
+- 부품은 `components/ui` 와 기존 샵 매매 부품(`listing-card`·`listing-gallery`·`filter-select`)을 재사용한다. 새로 만들지 않는다.
+- 오렌지(Primary)는 한 화면에 하나다. 상세는 「연락처 보기」가 Primary CTA(`h-[52px] rounded-xl`)다. 목록의 「매물 등록」은
+  Outline 버튼이고, 마이페이지 폼의 제출이 Primary 다.
+- 「거래완료」와 마이페이지 상태 배지는 전부 뉴트럴(`bg-secondary`)이다. 「반려」에도 빨강을 쓰지 않는다.
+  빨강·경고 아이콘은 실제 에러(검증 실패, 409)에만 쓴다.
+- 시맨틱 유틸만 쓰고(하드코딩 hex 금지) 4px 그리드를 지킨다. 375px 기준, 좌우 16px 거터. 입력은 `bg-muted border-border rounded-lg`.
+- 문구는 DESIGN.md §8 톤을 따른다(「등록했어요. 검토 후 공개돼요」, 「오류가 발생했습니다」 금지). `next-intl` 의
+  `shopTrade`·`mypage.menu.*` 키에 둔다.
 
 ## 9. 이관·배포
 
@@ -269,6 +380,10 @@ ugc 엔드포인트 추가와 스토어프론트 전환을 한 배포에 묶으�
 - 대상: core `shop_listings` 중 `deleted_at IS NULL` 인 행과 그 `shop_listing_views`. soft delete 된 행은 복사하지 않는다.
 - 변환:
   - HTML → 마크다운(`<p>` → 문단, `<br>` → 줄바꿈, 엔티티 디코드). 그 밖의 태그를 만나면 **실패하고 행 id 를 출력**한다(조용한 손실 금지).
+  - 폭 없는 공백(U+200B)은 본문 전체에서 지운다. 관리자들이 빈 줄로 쓴 `<p>​</p>` 에 들어 있는데, JS `trim()` 이 이 문자를
+    공백으로 보지 않아 「보이지 않는 한 글자짜리 문단」으로 남기 때문이다. 지우면 그 문단은 비어서 빠지고, 연속된 빈 줄은
+    문단 간격 한 번으로 합쳐진다(새 글과 같은 규칙). 이관 글의 세로 간격이 원본보다 좁아지는 것은 받아들인다.
+    이 수정은 복사보다 먼저 머지돼야 하므로 PR 2 가 아니라 #958 에 넣는다.
   - `is_active` true → `published`, false → `hidden`.
   - `created_by` → `author_user_id`, `author_type = admin`.
   - `thumbnail_file_id` + `images` → `shop_listing_images`. 썸네일을 `order = 0` 으로 두고 나머지 `images` 를 순서대로 잇는다(썸네일이 `images` 안 다른 자리에 있으면 앞으로 옮긴다). 중복 fileId 는 한 번만.
@@ -341,10 +456,22 @@ core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:
 - 회원 `:id` 라우트를 `idor-reviewed.spec.ts` 에 등록.
 - `route-authz-audit.spec.ts` 의 `ALLOWED` 에 `POST /shop-listings/public/:slug/view` 를 이유와 함께 등록한다 — ugc 의 무인증 쓰기 라우트는 이것 하나다.
 
-### 11.4 프론트 (CI 게이트 없음)
+### 11.4 프론트
 
-- 마크다운 렌더 옵션 모듈의 스펙: `rehype-raw` 부재, `img` 비렌더, 링크 `rel`.
-- admin-web: `cd apps/admin-web && npx tsc --noEmit` 수동.
+두 앱 모두 CI 게이트가 없다. CI 가 보는 것은 패키지 스펙뿐이다.
+
+- **`packages/shop-listing-markdown`(루트 `npx jest`, CI):**
+  - `rules.ts` 표 기반 스펙: `javascript:`·`data:`·`vbscript:` → 빈 문자열, `http`·`https`·`tel`·상대경로 통과, `toPlainSummary`,
+    `rehypeShopListingLinks`(손으로 만든 hast 트리의 중첩된 `a` 까지 rel 이 붙는지).
+  - `options.ts` 소스 가드: `remark-gfm`·`remark-breaks` 가 있고 `rehype-raw` 가 없는지, `img` 가 `disallowedElements` 에 있는지.
+    루트에는 `remark-*` 가 설치돼 있지 않으므로 import 하지 않고 소스를 읽어 확인한다.
+- **스토어프론트 `vitest`(수동 실행):**
+  - `renderToStaticMarkup` 실측: `img` 비렌더, 링크 rel, `<script>` 이스케이프, 단일 줄바꿈 → `<br>`, `javascript:` 링크 무력화.
+  - `.ts` 판단 로직(§8.1) 스펙.
+- **admin-web(수동 실행):**
+  - `npm run test:admin-web` 으로 폼 → DTO(연락처 키 항상 포함)·상태 → 버튼·409 분류 스펙을 돌린다.
+  - `cd apps/admin-web && npx tsc --noEmit` 을 돌린다.
+- **두 앱 `next build`:** §8.4 배선의 실증이다. 스토어프론트는 `typescript.ignoreBuildErrors` 라 빌드가 타입을 보지 않으므로 `npx tsc --noEmit` 도 따로 돌린다.
 - 수동 스모크:
   1. 회원 작성 → 내 매물에 「검토 대기」 → 공개 목록에 없음
   2. 관리자 승인 → 60초 안에 공개 목록·상세 노출
