@@ -260,7 +260,8 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 - `/mypage/shop-listings/new`, `/mypage/shop-listings/[id]/edit` — 한 폼을 공유한다.
   - 필드: 제목, 지역·업종·거래유형(필수), 평수·보증금·월세·권리금(비우면 「협의」), 이미지 1~15장(첫 장이 썸네일,
     앞뒤 이동 버튼, 컨텍스트 `shop-listing-image`), 연락처(필수, 하이픈 허용 입력), 오픈채팅(선택).
-  - 본문은 textarea 에 「작성 / 미리보기」 탭을 둔다. 미리보기도 `ShopListingMarkdown` 이다.
+  - 본문은 넓은 화면에서 좌우 배치(편집 | 미리보기), 좁으면 위아래 — 상품 상세설명 편집기(`product-description-focus-editor.tsx`)와 같은 배치. 미리보기도 `ShopListingMarkdown` 이다.
+  - slug 는 입력받지 않고 주소만 보여 준다(지금 폼과 같다).
   - 게시 중·거래완료 글을 수정할 때는 제출 전에 「수정하면 다시 검토를 받고, 그동안 공개되지 않아요」를 확인받는다.
   - 409 는 서버 메시지를 보인다. 한도 초과면 폼에 머무르고, 숨김이면 목록으로 돌려보낸다.
 - 마이페이지 메뉴(`domains/mypage/components/constants/mypage-constants.ts` 의 데스크톱·모바일 두 목록)에 「내 매물」을 더한다.
@@ -328,16 +329,17 @@ admin-web 에는 DESIGN.md 가 없다. 기준은 shadcn `components/ui` 와 같�
 - `rules.ts` — 순수 TS, 외부 import 없음. `shopListingUrlTransform`(`http`·`https`·`tel` 만 통과, 그 밖은 빈 문자열),
   `SHOP_LISTING_DISALLOWED_ELEMENTS = ['img']`, `SHOP_LISTING_LINK_REL = 'nofollow ugc noopener'`, `toPlainSummary(markdown)`,
   그리고 hast 의 모든 `a` 요소에 그 rel 을 붙이는 rehype 플러그인 `rehypeShopListingLinks`(트리 순회만 하므로 의존성이 없다).
-- `options.ts` — `react-markdown` 에 펼치는 설정: `remarkPlugins: [remarkGfm, remarkBreaks]`, `rehypePlugins: [rehypeShopListingLinks]`,
-  `urlTransform`, `disallowedElements`. `rehype-raw` 는 넣지 않는다. `remark-gfm`·`remark-breaks` 는 peerDependency 이고 각 앱 `node_modules` 에서 해석된다.
-  - `remark-breaks` 가 필요한 이유: 표준 마크다운은 단일 줄바꿈을 공백으로 합친다. 그러면 이관 글의 `<br>` 와 회원이 textarea 에서 친 Enter 가 모두 사라진다.
+- `options.ts` — `createShopListingMarkdownOptions({ remarkGfm, remarkBreaks })`. 앱이 자기 `node_modules` 의 플러그인을
+  넘기면 `remarkPlugins`·`rehypePlugins: [rehypeShopListingLinks]`·`urlTransform`·`disallowedElements` 를 조립해 돌려준다.
+  **패키지는 외부 import 가 0개다** — 스토어프론트 dev 는 turbopack 이라 webpack `resolve.modules` 폴백이 닿지 않고,
+  루트 jest 에도 `remark-*` 가 없다. 두 플러그인은 필수 인자라 빠뜨리면 타입 에러다.
 - **패키지는 React 를 import 하지 않는다.** 루트 `node_modules` 의 react(19.2)와 스토어프론트의 react(19.0-rc)가 섞이는 것을 피하려는 것이다.
   링크 rel 을 `components.a`(JSX)가 아니라 rehype 플러그인으로 붙이는 이유가 이것이다.
 - 앱 쪽 `ShopListingMarkdown` 은 `<ReactMarkdown {...shopListingMarkdownOptions}>{content}</ReactMarkdown>` 수준으로 얇다.
   스토어프론트 컴포넌트는 hook 이 없어 `"use client"` 없이 서버·클라이언트 양쪽에서 쓴다.
 - 배선:
   - 스토어프론트: `file:` dep + `transpilePackages`. 의존성 해석 폴백은 `c41e30aee` 로 이미 있다.
-  - admin-web: tsconfig `paths` + `transpilePackages` + 같은 `resolve.modules` 폴백.
+  - admin-web: tsconfig `paths` 한 줄(선례 `product-description`). 외부 import 가 없으므로 해석 폴백은 필요 없다.
   - 두 앱 모두 `remark-breaks` 를 의존성에 추가한다(lock 이 바뀌므로 배포 전 `npm ci` 가 필수다).
 - **첫 구현 단계는 빌드 실증이다.** 두 앱 `next build` 가 패키지를 import 한 채 통과하는지 확인한다. 실패하면
   스토어프론트 복사 + 드리프트 가드(§3 의 기각안)로 물러난다. 2026-07-22 `eb1c98f18` 이 스토어프론트에서
@@ -458,18 +460,18 @@ core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:
 
 ### 11.4 프론트
 
-두 앱 모두 CI 게이트가 없다. CI 가 보는 것은 패키지 스펙뿐이다.
+CI 가 보는 것은 루트 `npx jest` 뿐이다. 루트 jest 는 패키지 스펙과 **`apps/admin-web/src/**/*.spec.ts`** 를 포함한다
+(CI 가 `npm ci --prefix apps/admin-web` 도 한다). 스토어프론트 vitest·tsc, admin-web tsc, 두 앱 `next build` 는 CI 밖이다.
 
 - **`packages/shop-listing-markdown`(루트 `npx jest`, CI):**
   - `rules.ts` 표 기반 스펙: `javascript:`·`data:`·`vbscript:` → 빈 문자열, `http`·`https`·`tel`·상대경로 통과, `toPlainSummary`,
     `rehypeShopListingLinks`(손으로 만든 hast 트리의 중첩된 `a` 까지 rel 이 붙는지).
-  - `options.ts` 소스 가드: `remark-gfm`·`remark-breaks` 가 있고 `rehype-raw` 가 없는지, `img` 가 `disallowedElements` 에 있는지.
-    루트에는 `remark-*` 가 설치돼 있지 않으므로 import 하지 않고 소스를 읽어 확인한다.
+  - `options.ts` 는 가짜 플러그인으로 조립 결과를 검사하고, `app-wiring.spec.ts` 가 두 앱 컴포넌트 소스를 읽어 `remark-gfm`·`remark-breaks` 전달과 `rehype-raw`·설정 덮어쓰기 부재를 확인한다.
 - **스토어프론트 `vitest`(수동 실행):**
   - `renderToStaticMarkup` 실측: `img` 비렌더, 링크 rel, `<script>` 이스케이프, 단일 줄바꿈 → `<br>`, `javascript:` 링크 무력화.
   - `.ts` 판단 로직(§8.1) 스펙.
-- **admin-web(수동 실행):**
-  - `npm run test:admin-web` 으로 폼 → DTO(연락처 키 항상 포함)·상태 → 버튼·409 분류 스펙을 돌린다.
+- **admin-web(루트 jest, CI 포함):**
+  - 폼 → DTO·상태 → 버튼·409 분류 스펙은 루트 jest(CI)가 돈다.
   - `cd apps/admin-web && npx tsc --noEmit` 을 돌린다.
 - **두 앱 `next build`:** §8.4 배선의 실증이다. 스토어프론트는 `typescript.ignoreBuildErrors` 라 빌드가 타입을 보지 않으므로 `npx tsc --noEmit` 도 따로 돌린다.
 - 수동 스모크:

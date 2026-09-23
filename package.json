@@ -374,6 +374,7 @@
     "^@packages/email-layout(|/.*)$": "<rootDir>/packages/email-layout$1",
       "^@packages/event-contracts(|/.*)$": "<rootDir>/packages/event-contracts$1",
       "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
+      "^@packages/shop-listing-markdown(|/.*)$": "<rootDir>/packages/shop-listing-markdown$1",
       "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
       "^apps/(.*)$": "<rootDir>/apps/$1"
     },
@@ -397,6 +398,7 @@
       "<rootDir>/apps/",
       "<rootDir>/libs/",
       "<rootDir>/packages/product-description/",
+      "<rootDir>/packages/shop-listing-markdown/",
       "<rootDir>/packages/domain-types/",
       "<rootDir>/packages/event-contracts/",
       "<rootDir>/packages/email-layout/",
