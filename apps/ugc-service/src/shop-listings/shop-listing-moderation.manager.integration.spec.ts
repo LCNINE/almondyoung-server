@@ -21,12 +21,14 @@ describeIfDb('ShopListingModerationManager (실 Postgres)', () => {
   let sqlClient: ReturnType<typeof makeTestDb>['sql'];
   let db: TestDrizzle;
   let manager: ShopListingModerationManager;
+  let reader: ShopListingReader;
 
   beforeAll(() => {
     const t = makeTestDb(DATABASE_URL as string);
     sqlClient = t.sql;
     db = t.db;
-    manager = new ShopListingModerationManager(t.dbService, new ShopListingReader(t.dbService));
+    reader = new ShopListingReader(t.dbService);
+    manager = new ShopListingModerationManager(t.dbService, reader);
   });
 
   afterAll(async () => {
@@ -86,6 +88,53 @@ describeIfDb('ShopListingModerationManager (실 Postgres)', () => {
         await manager.updateStatusGuarded(trx, id, 'published', { status: 'hidden' });
       }),
     ).rejects.toThrow(ConflictError);
+  });
+
+  it('관리자가 본 판(expectedSubmittedAt)이 지금 글과 다르면 승인은 409 — 상태도 이력도 그대로', async () => {
+    const id = await listing('pending');
+    const stale = new Date(Date.now() - 60_000).toISOString();
+
+    await expect(manager.approve(id, adminId, stale)).rejects.toThrow(ConflictError);
+
+    const [row] = await db.select().from(shopListings).where(eq(shopListings.id, id));
+    expect(row.status).toBe('pending');
+    expect(await moderationsOf(id)).toHaveLength(0);
+  });
+
+  it('거절도 같다 — 본 판이 다르면 409', async () => {
+    const id = await listing('pending');
+    const stale = new Date(Date.now() - 60_000).toISOString();
+    await expect(manager.reject(id, '사유', adminId, stale)).rejects.toThrow(ConflictError);
+    expect(await moderationsOf(id)).toHaveLength(0);
+  });
+
+  it('본 판이 지금 글과 같으면 승인된다', async () => {
+    const id = await listing('pending');
+    const [row] = await db.select().from(shopListings).where(eq(shopListings.id, id));
+    const result = await manager.approve(id, adminId, row.submittedAt?.toISOString());
+    expect(result.status).toBe('published');
+  });
+
+  it('읽은 뒤 회원이 pending 글을 고쳤으면(pending → pending) submitted_at CAS 가 409 로 막는다', async () => {
+    const id = await listing('pending');
+    const [before] = await db.select().from(shopListings).where(eq(shopListings.id, id));
+    const readSubmittedAt = before.submittedAt;
+
+    await expect(
+      db.transaction(async (trx) => {
+        const current = await reader.findForAdmin(id, trx);
+        expect(current.submittedAt?.getTime()).toBe(readSubmittedAt?.getTime());
+        // 다른 연결에서 회원 수정이 커밋된다 — 상태는 pending 그대로, 제출 시각만 바뀐다.
+        await db
+          .update(shopListings)
+          .set({ title: '고친 제목', submittedAt: new Date(Date.now() + 1_000) })
+          .where(eq(shopListings.id, id));
+        await manager.updateStatusGuarded(trx, id, 'pending', { status: 'published' }, { submittedAt: readSubmittedAt });
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const [after] = await db.select().from(shopListings).where(eq(shopListings.id, id));
+    expect(after.status).toBe('pending');
   });
 
   it('판정기 결과가 없으면 이력을 남기지 않는다', async () => {

@@ -5,8 +5,10 @@ import {
   type AdminShopListingListQueryDto,
   type AdminShopListingResponseDto,
   type MemberShopListingDto,
+  type ModerateShopListingDto,
   type MyShopListingResponseDto,
   type PublicShopListingResponseDto,
+  type RejectShopListingDto,
   type ShopListingContactResponseDto,
 } from './dto';
 import { ShopListingMapper } from './mappers/shop-listing.mapper';
@@ -78,11 +80,13 @@ export class ShopListingsService {
   async setDealStatusByAdmin(id: string, action: 'close' | 'reopen', adminId: string): Promise<AdminShopListingResponseDto> {
     return ShopListingMapper.toAdminDto(await this.manager.setDealStatusByAdmin(id, action, adminId));
   }
-  async approve(id: string, adminId: string): Promise<AdminShopListingResponseDto> {
-    return ShopListingMapper.toAdminDto(await this.moderation.approve(id, adminId));
+  async approve(id: string, dto: ModerateShopListingDto, adminId: string): Promise<AdminShopListingResponseDto> {
+    return ShopListingMapper.toAdminDto(await this.moderation.approve(id, adminId, dto.expectedSubmittedAt));
   }
-  async reject(id: string, reason: string, adminId: string): Promise<AdminShopListingResponseDto> {
-    return ShopListingMapper.toAdminDto(await this.moderation.reject(id, reason, adminId));
+  async reject(id: string, dto: RejectShopListingDto, adminId: string): Promise<AdminShopListingResponseDto> {
+    return ShopListingMapper.toAdminDto(
+      await this.moderation.reject(id, dto.reason, adminId, dto.expectedSubmittedAt),
+    );
   }
   async hide(id: string, adminId: string): Promise<AdminShopListingResponseDto> {
     return ShopListingMapper.toAdminDto(await this.moderation.hide(id, adminId));

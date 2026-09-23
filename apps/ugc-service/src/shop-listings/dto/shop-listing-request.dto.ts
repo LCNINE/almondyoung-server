@@ -7,6 +7,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -190,12 +191,27 @@ export class AdminShopListingDto {
   kakaoOpenChatUrl?: string | null;
 }
 
+const EXPECTED_SUBMITTED_AT_DESCRIPTION =
+  '관리자가 화면에서 본 판의 submittedAt (ISO 8601). 주면 그사이 회원이 글을 고쳤을 때 409 로 막는다';
+
+export class ModerateShopListingDto {
+  @ApiProperty({ required: false, description: EXPECTED_SUBMITTED_AT_DESCRIPTION })
+  @IsOptional()
+  @IsISO8601()
+  expectedSubmittedAt?: string;
+}
+
 export class RejectShopListingDto {
   @ApiProperty({ description: '회원에게 보이는 거절 사유', maxLength: 500 })
   @IsString()
   @Matches(NOT_BLANK, { message: '거절 사유를 입력해주세요.' })
   @MaxLength(500)
   reason: string;
+
+  @ApiProperty({ required: false, description: EXPECTED_SUBMITTED_AT_DESCRIPTION })
+  @IsOptional()
+  @IsISO8601()
+  expectedSubmittedAt?: string;
 }
 
 export class AdminShopListingListQueryDto {

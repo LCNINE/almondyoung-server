@@ -6,6 +6,7 @@ import {
   AdminShopListingDto,
   AdminShopListingListQueryDto,
   AdminShopListingResponseDto,
+  ModerateShopListingDto,
   RejectShopListingDto,
 } from '../dto';
 import { ShopListingsService } from '../shop-listings.service';
@@ -56,10 +57,15 @@ export class AdminShopListingsController {
 
   @Post(':id/approve')
   @RequireScopes('admin:ugc:modify')
-  @ApiOperation({ summary: '승인' })
+  @ApiOperation({ summary: '승인', description: 'expectedSubmittedAt 이 지금 글과 다르면 409 — 그사이 회원이 고쳤다' })
+  @ApiBody({ type: ModerateShopListingDto, required: false })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
-  approve(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<AdminShopListingResponseDto> {
-    return this.service.approve(id, adminId);
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ModerateShopListingDto,
+    @User('userId') adminId: string,
+  ): Promise<AdminShopListingResponseDto> {
+    return this.service.approve(id, dto, adminId);
   }
 
   @Post(':id/reject')
@@ -72,7 +78,7 @@ export class AdminShopListingsController {
     @Body() dto: RejectShopListingDto,
     @User('userId') adminId: string,
   ): Promise<AdminShopListingResponseDto> {
-    return this.service.reject(id, dto.reason, adminId);
+    return this.service.reject(id, dto, adminId);
   }
 
   @Post(':id/hide')

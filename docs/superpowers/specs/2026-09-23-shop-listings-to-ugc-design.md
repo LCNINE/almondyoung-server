@@ -201,6 +201,10 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 - `POST /` — 관리자 작성. slug 지정 가능
 - `PUT /:id` — 관리자 수정
 - `POST /:id/approve`, `POST /:id/reject {reason}`, `POST /:id/hide`, `POST /:id/unhide`
+- `approve`·`reject` 는 선택 필드 `expectedSubmittedAt`(ISO 8601)을 받는다 — 관리자가 화면에서 본 판의 `submittedAt`.
+  지금 글과 다르면 409(그사이 회원이 고쳤다). 필드가 없어도 서버는 UPDATE 에서 `status` 와 함께 **읽은 판의
+  `submitted_at` 으로 CAS** 한다 — 회원의 pending 글 수정은 `pending → pending` 이라 `status` 만으로는 못 가려서,
+  검토하지 않은 판이 게시되고 판정 이력 스냅샷이 옛 판을 적는다.
 - `POST /:id/close`, `POST /:id/reopen` — 관리자 글·회원 글의 거래완료 전환(§5). 한도 검사 없음
 - `DELETE /:id`
 
