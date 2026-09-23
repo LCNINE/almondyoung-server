@@ -56,12 +56,22 @@ export class ShopListingReader {
     }, tx);
   }
 
+  /**
+   * 회원 쪽 조회는 전부 `author_type='member'` 로 좁힌다 — 이관된 관리자 글은 author_user_id 에 그 직원의
+   * id 를 들고 있어, 좁히지 않으면 직원이 스토어프론트 「내 글」에서 관리자 글을 고치고 지울 수 있다.
+   */
   async listByAuthor(userId: string, tx?: UgcTx): Promise<ShopListingWithImages[]> {
     return this.db.run(async (trx) => {
       const rows = await trx
         .select()
         .from(shopListings)
-        .where(and(eq(shopListings.authorUserId, userId), isNull(shopListings.deletedAt)))
+        .where(
+          and(
+            eq(shopListings.authorUserId, userId),
+            eq(shopListings.authorType, 'member'),
+            isNull(shopListings.deletedAt),
+          ),
+        )
         .orderBy(desc(shopListings.createdAt));
       return this.attachImages(trx, rows);
     }, tx);
@@ -73,7 +83,14 @@ export class ShopListingReader {
       const [row] = await trx
         .select()
         .from(shopListings)
-        .where(and(eq(shopListings.id, id), eq(shopListings.authorUserId, userId), isNull(shopListings.deletedAt)))
+        .where(
+          and(
+            eq(shopListings.id, id),
+            eq(shopListings.authorUserId, userId),
+            eq(shopListings.authorType, 'member'),
+            isNull(shopListings.deletedAt),
+          ),
+        )
         .limit(1);
       if (!row) throw new NotFoundError(`Shop listing not found: ${id}`);
       const [withImages] = await this.attachImages(trx, [row]);
@@ -145,6 +162,7 @@ export class ShopListingReader {
         .where(
           and(
             eq(shopListings.authorUserId, userId),
+            eq(shopListings.authorType, 'member'),
             inArray(shopListings.status, ['pending', 'published']),
             isNull(shopListings.deletedAt),
           ),

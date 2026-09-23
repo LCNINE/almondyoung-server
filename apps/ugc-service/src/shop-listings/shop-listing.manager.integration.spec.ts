@@ -199,6 +199,29 @@ describeIfDb('ShopListingManager (실 Postgres)', () => {
     expect(row.deletedAt).toBeInstanceOf(Date);
   });
 
+  // 이관된 관리자 글은 author_user_id 에 그 직원의 id 를 들고 있다. 그 직원이 회원 화면으로 들어와도
+  // 관리자 글은 「내 글」이 아니다 — 목록·조회·한도·삭제 모두에서 빠진다.
+  it('같은 user id 의 관리자 글은 회원 쪽 조회·한도·삭제에서 빠진다', async () => {
+    const staffId = newAuthor();
+    const manager = build();
+    const reader = new ShopListingReader(t.dbService);
+    const adminIds: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      adminIds.push((await manager.createByAdmin({ ...memberDto(), contactPhone: null }, staffId)).id);
+    }
+    await db.update(shopListings).set({ status: 'pending' }).where(eq(shopListings.id, adminIds[0]));
+
+    expect(await reader.listByAuthor(staffId)).toEqual([]);
+    await expect(reader.findOwned(adminIds[0], staffId)).rejects.toThrow(NotFoundError);
+    expect(await reader.countActiveByAuthor(staffId)).toBe(0);
+    await expect(manager.deleteByMember(adminIds[0], staffId)).rejects.toThrow(NotFoundError);
+    // 관리자 글 3건이 있어도 회원으로서 한도(3)에 걸리지 않는다
+    await expect(manager.createByMember(memberDto(), staffId)).resolves.toMatchObject({ authorType: 'member' });
+
+    const [row] = await db.select().from(shopListings).where(eq(shopListings.id, adminIds[0]));
+    expect(row.deletedAt).toBeNull();
+  });
+
   // 이관된 관리자 글은 author_user_id 에 그 직원의 id 를 들고 있다 — 직원이 탈퇴해도 관리자 글은 그대로다.
   it('탈퇴 처리는 같은 user id 의 관리자 글을 건드리지 않는다', async () => {
     const staffId = newAuthor();

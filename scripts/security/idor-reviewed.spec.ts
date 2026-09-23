@@ -536,19 +536,19 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /shop-listings/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:129',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:132',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'soft delete UPDATE 의 WHERE 에 작성자 조건. 0행이면 404(존재 은닉).',
   },
   'ugc-service GET /shop-listings/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:76',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User(\'userId\') 토큰값.',
   },
   'ugc-service GET /shop-listings/mine': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:64',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:70',
     predicate: 'eq(shopListings.authorUserId, userId)',
   },
   'ugc-service GET /shop-listings/public/:slug/contact': {
@@ -565,19 +565,19 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /shop-listings/:id/close': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:76',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'setDealStatusByMember 가 findOwned 로 먼저 소유권을 확인한다(남의 글 404).',
   },
   'ugc-service POST /shop-listings/:id/reopen': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:76',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'close 와 같은 경로.',
   },
   'ugc-service PUT /shop-listings/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:76',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'updateByMember 가 findOwned 로 소유권 확인 후 상태 CAS UPDATE.',
   },

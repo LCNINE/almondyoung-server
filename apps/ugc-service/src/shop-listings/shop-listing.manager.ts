@@ -126,7 +126,14 @@ export class ShopListingManager {
       const [deleted] = await trx
         .update(shopListings)
         .set({ ...CLEARED_CONTACT, deletedAt: now, deletedBy: userId, updatedAt: now })
-        .where(and(eq(shopListings.id, id), eq(shopListings.authorUserId, userId), isNull(shopListings.deletedAt)))
+        .where(
+          and(
+            eq(shopListings.id, id),
+            eq(shopListings.authorUserId, userId),
+            eq(shopListings.authorType, 'member'),
+            isNull(shopListings.deletedAt),
+          ),
+        )
         .returning({ id: shopListings.id });
       if (!deleted) throw new NotFoundError(`Shop listing not found: ${id}`);
     }, tx);
