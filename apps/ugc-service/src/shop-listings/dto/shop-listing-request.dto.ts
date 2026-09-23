@@ -46,6 +46,7 @@ export class MemberShopListingDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
+  @Matches(NOT_BLANK, { message: '제목을 입력해주세요.' })
   title: string;
 
   @ApiProperty({ description: '본문 (마크다운)', maxLength: MAX_SHOP_LISTING_CONTENT_LENGTH })
@@ -113,10 +114,10 @@ export class MemberShopListingDto {
 }
 
 export class AdminShopListingDto {
-  @ApiProperty({ required: false, description: '비우면 제목에서 자동 생성. 수정 시 보내면 다시 만든다' })
+  @ApiProperty({ required: false, maxLength: 100, description: '비우면 제목에서 자동 생성. 수정 시 보내면 다시 만든다' })
   @IsOptional()
   @IsString()
-  @MaxLength(120)
+  @MaxLength(100) // slugify 가 100자로 자른다 — 더 받으면 조용히 잘린 주소가 된다
   @Matches(SHOP_LISTING_SLUG_PATTERN, { message: '주소는 한글, 영문 소문자, 숫자, 하이픈(-)만 사용할 수 있습니다.' })
   slug?: string;
 
@@ -124,6 +125,7 @@ export class AdminShopListingDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
+  @Matches(NOT_BLANK, { message: '제목을 입력해주세요.' })
   title: string;
 
   @ApiProperty({ description: '본문 (마크다운)', maxLength: MAX_SHOP_LISTING_CONTENT_LENGTH })

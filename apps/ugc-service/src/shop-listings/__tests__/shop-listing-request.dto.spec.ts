@@ -44,6 +44,10 @@ describe('MemberShopListingDto', () => {
     expect(await errorsOf(MemberShopListingDto, { ...VALID, content: '  \n ' })).toContain('content');
   });
 
+  it('공백뿐인 제목은 거부', async () => {
+    expect(await errorsOf(MemberShopListingDto, { ...VALID, title: '   ' })).toContain('title');
+  });
+
   it('본문 10,000자 초과는 거부', async () => {
     expect(await errorsOf(MemberShopListingDto, { ...VALID, content: 'a'.repeat(10_001) })).toContain('content');
   });
@@ -73,5 +77,15 @@ describe('AdminShopListingDto', () => {
   it('slug 형식을 검사한다', async () => {
     expect(await errorsOf(AdminShopListingDto, { ...VALID, slug: 'Bad Slug' })).toContain('slug');
     expect(await errorsOf(AdminShopListingDto, { ...VALID, slug: '강남-네일' })).toEqual([]);
+  });
+
+  it('공백뿐인 제목은 거부', async () => {
+    expect(await errorsOf(AdminShopListingDto, { ...VALID, title: ' \t ' })).toContain('title');
+  });
+
+  // slugify 가 100자로 자르므로, 그보다 긴 slug 를 받으면 조용히 잘린 주소가 된다.
+  it('slug 는 100자까지', async () => {
+    expect(await errorsOf(AdminShopListingDto, { ...VALID, slug: 'a'.repeat(100) })).toEqual([]);
+    expect(await errorsOf(AdminShopListingDto, { ...VALID, slug: 'a'.repeat(101) })).toContain('slug');
   });
 });
