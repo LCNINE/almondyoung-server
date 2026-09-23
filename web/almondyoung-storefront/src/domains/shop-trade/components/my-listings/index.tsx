@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
@@ -32,22 +32,28 @@ export function MyListings({ items }: { items: MyShopListingItem[] }) {
   const router = useRouter()
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MyShopListingItem | null>(null)
+  const [, startTransition] = useTransition()
 
-  const run = async (
+  const run = (
     id: string,
-    action: () => Promise<{ ok: boolean; message?: string }>,
+    action: () => Promise<{ ok: boolean; status?: number; message?: string }>,
     doneKey: "closedDone" | "reopenedDone" | "deletedDone"
   ) => {
     setPendingId(id)
-    const result = await action()
-    setPendingId(null)
-    if (result.ok) {
-      toast.success(t(doneKey))
-      router.refresh()
-    } else {
-      // 한도 초과 같은 409 는 서버 문구가 더 정확하다
-      toast.error(result.message || t("actionFail"))
-    }
+    startTransition(async () => {
+      const result = await action()
+      setPendingId(null)
+      if (result.ok) {
+        toast.success(t(doneKey))
+        router.refresh()
+      } else if (result.status === 401) {
+        // 루트 error.tsx 가 토큰을 복구한다 — CLAUDE.md §6
+        throw new Error("UNAUTHORIZED")
+      } else {
+        // 한도 초과 같은 409 는 서버 문구가 더 정확하다
+        toast.error(result.message || t("actionFail"))
+      }
+    })
   }
 
   if (items.length === 0) {
@@ -122,7 +128,7 @@ export function MyListings({ items }: { items: MyShopListingItem[] }) {
                       size="sm"
                       disabled={busy}
                       onClick={() =>
-                        void run(item.id, () => closeMyShopListing(item.id), "closedDone")
+                        run(item.id, () => closeMyShopListing(item.id), "closedDone")
                       }
                     >
                       {t("close")}
@@ -134,7 +140,7 @@ export function MyListings({ items }: { items: MyShopListingItem[] }) {
                       size="sm"
                       disabled={busy}
                       onClick={() =>
-                        void run(item.id, () => reopenMyShopListing(item.id), "reopenedDone")
+                        run(item.id, () => reopenMyShopListing(item.id), "reopenedDone")
                       }
                     >
                       {t("reopen")}
@@ -173,7 +179,7 @@ export function MyListings({ items }: { items: MyShopListingItem[] }) {
                 const target = deleteTarget
                 setDeleteTarget(null)
                 if (target)
-                  void run(target.id, () => deleteMyShopListing(target.id), "deletedDone")
+                  run(target.id, () => deleteMyShopListing(target.id), "deletedDone")
               }}
             >
               {t("delete")}
