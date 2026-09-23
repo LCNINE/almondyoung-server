@@ -94,8 +94,9 @@ npx sst shell --stage live -- bash -c 'cd ../../.. && TZ=UTC npx tsx scripts/ops
 `TZ=UTC` 는 필수다 — 없으면 스크립트가 멈춘다. core 의 시각 컬럼은 timestamp(without tz) 라 KST 노트북에서
 로컬 시간으로 읽으면 작성일이 9시간 밀린다. 스크립트는 SQL 에서 `at time zone 'UTC'` 로 읽어 이미 막지만 한 겹 더 둔다.
 
-관리자들이 빈 줄로 쓴 `<p>​</p>` 에는 폭 없는 공백(U+200B)이 들어 있어, 변환 뒤에도 「보이지 않는 문단」으로 남는다.
-렌더링은 원본과 같은 간격이다.
+관리자들이 빈 줄로 쓴 `<p>​</p>` 에는 폭 없는 공백(U+200B)이 들어 있다. 변환은 본문 전체에서 이 문자를 지운다
+(spec §9.3). 그래서 그 문단은 빠지고 연속된 빈 줄은 문단 간격 한 번으로 합쳐진다 — 이관 글의 세로 간격이 원본보다
+좁아지는 것은 의도한 결과다. 3 단계에서 렌더를 볼 때 이걸 결함으로 읽지 말 것.
 
 3. 대조: 0 단계의 core 건수 = ugc `select count(*) from shop_listings`. 슬러그 몇 개를 `https://ugc.almondyoung.com/shop-listings/public/<slug>` 로 열어 본문 줄바꿈을 본다.
 

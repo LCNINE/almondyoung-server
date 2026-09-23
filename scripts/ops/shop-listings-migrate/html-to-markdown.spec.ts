@@ -25,6 +25,24 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<p>a</p><p></p><p><br></p><p>b</p>')).toBe('a\n\nb');
   });
 
+  // 관리자들이 빈 줄로 쓴 <p>\u200B</p> 에 U+200B 가 들어 있다. JS trim() 은 이걸 공백으로 보지 않아
+  // 지우지 않으면 「보이지 않는 한 글자짜리 문단」이 남고, textarea 에서 빈 줄처럼 보이는 줄이 글자를 담는다.
+  it('U+200B 만 있는 문단은 빈 문단이다', () => {
+    expect(htmlToMarkdown('<p>a</p><p>\u200B</p><p>\u200B</p><p>b</p>')).toBe('a\n\nb');
+  });
+
+  it('엔티티로 적힌 U+200B 도 지운다', () => {
+    expect(htmlToMarkdown('<p>a</p><p>&#8203;</p><p>&#x200b;</p><p>b</p>')).toBe('a\n\nb');
+  });
+
+  it('글자 사이의 U+200B 도 지운다', () => {
+    expect(htmlToMarkdown('<p>보증\u200B금 1,000</p>')).toBe('보증금 1,000');
+  });
+
+  it('줄 머리의 U+200B 가 # 이스케이프를 가리지 않는다', () => {
+    expect(htmlToMarkdown('<p>\u200B#1 매물</p>')).toBe('\\#1 매물');
+  });
+
   it('속성이 붙은 <p> 도 문단이다', () => {
     expect(htmlToMarkdown('<p style="text-align: center">가운데</p>')).toBe('가운데');
   });
