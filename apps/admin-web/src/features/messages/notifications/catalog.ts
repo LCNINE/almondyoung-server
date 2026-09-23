@@ -38,7 +38,8 @@ export const NOTIFICATION_CATALOG: CatalogEntry[] = [
   { id: 'withdrawal', group: '회원', title: '회원 탈퇴', condition: '회원 탈퇴가 완료되면', kind: 'event', eventKey: 'USER_WITHDRAWN' },
 
   { id: 'membership-joined', group: '멤버십', title: '멤버십 회원 가입', condition: '멤버십에 새로 가입하면', kind: 'event', eventKey: 'MEMBERSHIP_JOINED' },
-  { id: 'membership-cancelled', group: '멤버십', title: '멤버십 회원 해지', condition: '멤버십이 해지되거나 해지 예약되면', kind: 'event', eventKey: 'MEMBERSHIP_CANCELLED' },
+  { id: 'membership-cancel-scheduled', group: '멤버십', title: '멤버십 해지 예약', condition: '고객이 해지를 신청해 자동갱신이 꺼지면 (종료일까지는 이용)', kind: 'event', eventKey: 'MEMBERSHIP_CANCEL_SCHEDULED' },
+  { id: 'membership-cancelled', group: '멤버십', title: '멤버십 회원 해지', condition: '멤버십 이용이 바로 끝나면', kind: 'event', eventKey: 'MEMBERSHIP_CANCELLED' },
   { id: 'membership-renewal', group: '멤버십', title: '자동갱신 사전 고지', condition: '자동 갱신 결제 7일 전', kind: 'event', eventKey: 'MEMBERSHIP_RENEWAL_UPCOMING' },
   { id: 'membership-expiry', group: '멤버십', title: '멤버십 만료 사전 안내', condition: '멤버십 만료 7일 전', kind: 'event', eventKey: 'MEMBERSHIP_EXPIRY_UPCOMING' },
   { id: 'mandate-pending', group: '멤버십', title: '멤버십 선적용 안내', condition: '자동이체 계좌 심사 중에 멤버십을 먼저 적용하면', kind: 'event', eventKey: 'MANDATE_PENDING' },

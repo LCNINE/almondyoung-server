@@ -84,7 +84,7 @@ describe('멤버십 가입·해지 알림', () => {
   it.each([
     [{ status: 'ACTIVE', reasonCode: 'SUBSCRIBED' }, 'MEMBERSHIP_JOINED'],
     [{ status: 'CANCELLED', reasonCode: 'USER_REQUESTED' }, 'MEMBERSHIP_CANCELLED'],
-    [{ status: 'RECURRING_CANCELLED' }, 'MEMBERSHIP_CANCELLED'],
+    [{ status: 'RECURRING_CANCELLED' }, 'MEMBERSHIP_CANCEL_SCHEDULED'],
   ])('%o 는 %s', async (override, eventKey) => {
     const d = deps('member@example.com');
     const consumer = new MembershipEventConsumer(...(d.args as [never, never, never]));
@@ -94,7 +94,7 @@ describe('멤버십 가입·해지 알림', () => {
     expect(d.getEventMapping).toHaveBeenCalledWith(eventKey);
   });
 
-  it('예약 해지는 종료일 안내를 싣고, 즉시 해지는 비운다', async () => {
+  it('해지 예약은 종료일을 싣는다 — 아직 쓸 수 있는 사람에게 「해지되었습니다」가 가면 안 된다', async () => {
     const d = deps('member@example.com');
     const consumer = new MembershipEventConsumer(...(d.args as [never, never, never]));
 
@@ -103,11 +103,10 @@ describe('멤버십 가입·해지 알림', () => {
       status: 'RECURRING_CANCELLED',
       periodEndsAt: '2026-10-22T00:00:00.000Z',
     } as never);
-    await consumer.onStatusChanged(envelope, { ...change, status: 'CANCELLED' } as never);
 
-    const [scheduled, immediate] = d.send.mock.calls.map(([dto]) => dto.variables.periodNotice);
-    expect(scheduled).toContain('종료일까지는');
-    expect(immediate).toBe('');
+    const [dto] = d.send.mock.calls[0];
+    expect(dto.eventKey).toBe('MEMBERSHIP_CANCEL_SCHEDULED');
+    expect(dto.variables.endsAt).toBe('2026년 10월 22일');
   });
 
   it('갱신 성공·해지 취소(사유 없는 ACTIVE)와 만료는 보내지 않는다', async () => {

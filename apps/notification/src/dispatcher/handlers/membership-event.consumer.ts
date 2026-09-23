@@ -143,12 +143,16 @@ export class MembershipEventConsumer {
     @EventEnvelope() envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
     @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
   ) {
+    // RECURRING_CANCELLED 는 자동갱신만 끈 «해지 예약» 이다 — 종료일까지는 그대로 쓴다.
+    // 같은 메일로 묶으면 「해지되었습니다」가 아직 쓰는 사람에게 간다.
     const eventKey =
       payload.status === 'ACTIVE' && payload.reasonCode === 'SUBSCRIBED'
         ? 'MEMBERSHIP_JOINED'
-        : payload.status === 'CANCELLED' || payload.status === 'RECURRING_CANCELLED'
-          ? 'MEMBERSHIP_CANCELLED'
-          : null;
+        : payload.status === 'RECURRING_CANCELLED'
+          ? 'MEMBERSHIP_CANCEL_SCHEDULED'
+          : payload.status === 'CANCELLED'
+            ? 'MEMBERSHIP_CANCELLED'
+            : null;
     if (!eventKey) return;
 
     await notifyMember(this.notifyDeps, {
@@ -158,9 +162,7 @@ export class MembershipEventConsumer {
       payload,
       variables: (contact) => ({
         name: contact.username || '고객',
-        periodNotice: payload.periodEndsAt
-          ? `이용 종료일은 ${formatDate(payload.periodEndsAt)}이며, 종료일까지는 지금처럼 멤버십 혜택을 계속 이용하실 수 있습니다.`
-          : '',
+        endsAt: payload.periodEndsAt ? formatDate(payload.periodEndsAt) : '',
       }),
     });
   }
