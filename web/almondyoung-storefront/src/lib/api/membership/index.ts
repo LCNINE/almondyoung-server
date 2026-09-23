@@ -466,8 +466,13 @@ export async function createMembershipCheckoutIntent(
         throw new Error("이미 활성 구독이 존재합니다.")
       }
     }
-    // 409 에러: 이미 활성 구독 존재
+    // 409 는 둘이다: 미납 요금이 남아 있음 / 이미 활성 구독 존재
     if (error instanceof HttpApiError && error.status === 409) {
+      // 멤버십 서버의 오류 본문은 { error: { code, message } } 모양이다.
+      const body = error.data?.error
+      if (body?.code === "ARREARS_OUTSTANDING") {
+        throw new Error(body.message ?? "미납된 멤버십 요금을 먼저 납부해 주세요.")
+      }
       throw new Error("이미 활성 구독이 존재합니다.")
     }
     // 기타 에러: plain Error로 변환하여 Next.js Server Action 직렬화 문제 방지

@@ -17,6 +17,7 @@ import { BillingReader } from './billing/billing.reader';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 import { ConfigService } from '@nestjs/config';
 import { TermsAgreementManager } from './terms/terms-agreement.manager';
+import { ArrearsGate } from './arrears/arrears.gate';
 import { SavingsService } from './savings/savings.service';
 import { format } from 'date-fns';
 
@@ -54,6 +55,7 @@ export class SubscriptionService {
     private readonly configService: ConfigService,
     private readonly savingsService: SavingsService,
     private readonly termsAgreementManager: TermsAgreementManager,
+    private readonly arrearsGate: ArrearsGate,
   ) {}
 
   /** ADR-0027 Phase 2 dual-path flag — 신규 정기 가입에만 적용, 기존 계약 경로는 불변. */
@@ -193,6 +195,7 @@ export class SubscriptionService {
 
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
+    await this.arrearsGate.assertNoOutstanding(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();
@@ -551,6 +554,8 @@ export class SubscriptionService {
   ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
+    // 결제보다 먼저 — 미납이 남은 계정은 새 달 요금만 내고 다시 쓰지 못하게 한다.
+    await this.arrearsGate.assertNoOutstanding(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();

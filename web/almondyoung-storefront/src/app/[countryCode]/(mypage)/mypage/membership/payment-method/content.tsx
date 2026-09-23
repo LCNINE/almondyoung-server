@@ -8,6 +8,7 @@ import {
 } from "@lib/api/wallet"
 import {
   getCurrentSubscription,
+  getMyArrears,
   subscribeWithBillingMethod,
 } from "@lib/api/membership"
 import type {
@@ -205,6 +206,13 @@ export default function MembershipPaymentMethodContent() {
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } catch (error) {
         if (isUnauthorizedError(error)) throw error
+        // 미납이 있으면 서버가 가입을 거절한다 — 일반 실패 문구 대신 납부 먼저로 보낸다.
+        const { outstanding } = await getMyArrears()
+        if (outstanding.total > 0) {
+          toast.error(t("arrearsFirstToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
+        }
         toast.error(t("subscribeFail"))
       } finally {
         setIsChanging(null)

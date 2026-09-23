@@ -69,6 +69,7 @@ import { TermsAgreementManager } from './services/terms/terms-agreement.manager'
 import { TermsAgreementService } from './services/terms/terms-agreement.service';
 import { TermsRulesReader } from './services/terms/terms-rules.reader';
 import { ArrearsReader } from './services/arrears/arrears.reader';
+import { ArrearsGate } from './services/arrears/arrears.gate';
 import { InvoiceResultConsumer } from './consumers/invoice-result.consumer';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
@@ -214,6 +215,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     InvoiceOutcomeHandler,
     ArrearsManager,
     ArrearsReader,
+    ArrearsGate,
     ArrearsRepaymentService,
     TermsAgreementManager,
     TermsAgreementService,

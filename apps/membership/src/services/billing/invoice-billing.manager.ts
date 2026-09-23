@@ -107,6 +107,8 @@ export class InvoiceBillingManager {
     await this.dbService.db.transaction(async (tx) => {
       // 미수 게이트. 잔액 조회를 같은 트랜잭션에서 하는 이유는 면제/청산이 동시에 들어와도
       // 한 쪽만 이기게 하기 위해서다.
+      // 가입 관문(ArrearsGate)이 있어도 필요하다 — 활성 계약을 가진 채 미수가 생긴 계정의 갱신은
+      // 가입을 거치지 않는다.
       const outstanding = await this.arrearsManager.outstandingTotal(tx, userId);
       if (outstanding > 0) {
         this.logger.warn(

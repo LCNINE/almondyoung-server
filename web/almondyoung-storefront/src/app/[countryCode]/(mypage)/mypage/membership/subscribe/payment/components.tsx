@@ -34,6 +34,7 @@ import {
   subscribeWithBillingMethod,
   createMembershipCheckoutIntent,
   recordMembershipTermsAgreement,
+  getMyArrears,
 } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
 import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
@@ -336,6 +337,14 @@ export function MembershipForm({
           err?.status === 401
         ) {
           throw error
+        }
+        // 화면을 연 뒤에 미납이 생겼으면 서버가 409 로 거절한다. 서버 액션 경계를 넘으면 오류 코드가
+        // 남는다는 보장이 없어, 실패했을 때만 미납을 다시 물어 안내 화면으로 보낸다.
+        const { outstanding } = await getMyArrears()
+        if (outstanding.total > 0) {
+          toast.error(tPm("arrearsFirstToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
         }
         if (error instanceof HttpApiError) {
           toast.error(error.message)

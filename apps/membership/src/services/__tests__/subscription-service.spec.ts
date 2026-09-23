@@ -14,6 +14,8 @@ import { ConfigService } from '@nestjs/config';
 import { SavingsService } from '../savings/savings.service';
 import { TermsAgreementManager } from '../terms/terms-agreement.manager';
 import { BadRequestError } from '@app/shared';
+import { ArrearsGate } from '../arrears/arrears.gate';
+import { ArrearsOutstandingException } from '../../shared/exceptions/subscription.exceptions';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -78,6 +80,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
     linkContract: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockArrearsGate = {
+    assertNoOutstanding: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -133,6 +139,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: TermsAgreementManager,
           useValue: mockTermsAgreementManager,
+        },
+        {
+          provide: ArrearsGate,
+          useValue: mockArrearsGate,
         },
       ],
     }).compile();
@@ -445,6 +455,66 @@ describe('SubscriptionService - Layer Refactoring', () => {
       await service.confirmCheckoutIntent('pi_2');
 
       expect(mockTermsAgreementManager.linkContract).toHaveBeenCalledWith(userId, agreementId, 'contract_terms');
+    });
+  });
+  describe('미납 요금 관문', () => {
+    const userId = 'user_arrears';
+    const planId = 'plan_arrears';
+
+    beforeEach(() => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
+      mockPlanService.getPlanDetails.mockResolvedValue({
+        plan: { id: planId, price: 4990, durationDays: 30, isActive: true },
+        tier: { id: 'tier_arrears', code: 'BASIC' },
+      });
+      mockSubscriptionCreator.createNewSubscription.mockResolvedValue({ contractId: 'contract_arrears' });
+      mockArrearsGate.assertNoOutstanding.mockRejectedValue(new ArrearsOutstandingException());
+    });
+
+    afterEach(() => {
+      mockArrearsGate.assertNoOutstanding.mockResolvedValue(undefined);
+    });
+
+    it.each(['one_time', 'recurring'] as const)(
+      '등록 수단 가입(%s)은 미납이 있으면 돈을 빼거나 약정·계약을 만들기 전에 거절한다',
+      async (mode) => {
+        await expect(
+          service.subscribeWithBillingMethod(userId, planId, 'e@x', 'bm_1', mode, 'attempt'),
+        ).rejects.toBeInstanceOf(ArrearsOutstandingException);
+
+        expect(mockArrearsGate.assertNoOutstanding).toHaveBeenCalledWith(userId);
+        expect(mockPaymentClientService.directCharge).not.toHaveBeenCalled();
+        expect(mockPaymentClientService.createBillingAgreement).not.toHaveBeenCalled();
+        expect(mockSubscriptionCreator.createNewSubscription).not.toHaveBeenCalled();
+      },
+    );
+
+    it('1회결제 결제창은 미납이 있으면 결제를 만들지 않는다', async () => {
+      await expect(
+        service.createCheckoutIntent(userId, planId, 'https://shop/cb', 'e@x', 'one_time'),
+      ).rejects.toBeInstanceOf(ArrearsOutstandingException);
+
+      expect(mockPaymentClientService.createMembershipCheckoutIntent).not.toHaveBeenCalled();
+    });
+
+    it('이미 끝난 결제의 확정은 관문을 지나지 않는다 — 돈을 받고 가입을 거절하면 안 된다', async () => {
+      mockPaymentClientService.getWalletPaymentIntent.mockResolvedValue({
+        status: 'CAPTURED',
+        payableAmount: 4990,
+        metadata: { userId, planId },
+      });
+
+      await service.confirmCheckoutIntent('pi_paid');
+
+      expect(mockArrearsGate.assertNoOutstanding).not.toHaveBeenCalled();
+      expect(mockSubscriptionCreator.createNewSubscription).toHaveBeenCalled();
+    });
+
+    it('관리자 직접 등록은 관문을 지나지 않는다', async () => {
+      await service.adminCreateSubscription(userId, planId, 'one_time');
+
+      expect(mockArrearsGate.assertNoOutstanding).not.toHaveBeenCalled();
+      expect(mockSubscriptionCreator.createNewSubscription).toHaveBeenCalled();
     });
   });
 });
