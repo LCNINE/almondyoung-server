@@ -147,14 +147,7 @@ async function main(): Promise<void> {
     throw new Error('TZ=UTC 로 실행하세요 — core 의 timestamp(without tz) 를 로컬 시간으로 읽어 9시간 밀린다.');
   }
   const apply = process.argv.includes('--apply');
-  const coreUrl = process.env.CORE_DATABASE_URL;
-  const ugcUrl = process.env.UGC_DATABASE_URL;
-  if (!coreUrl || !ugcUrl) {
-    throw new Error('CORE_DATABASE_URL 과 UGC_DATABASE_URL 이 모두 필요합니다.');
-  }
-
-  const core = postgres(coreUrl, { max: 1 });
-  const ugc = postgres(ugcUrl, { max: 1 });
+  const { core, ugc } = await connect();
   try {
     const report = await runMigration({ core, ugc, apply });
     console.log(`글 ${report.listings}건 (게시 ${report.byStatus.published} / 숨김 ${report.byStatus.hidden})`);
@@ -167,6 +160,24 @@ async function main(): Promise<void> {
     await core.end();
     await ugc.end();
   }
+}
+
+/**
+ * 두 URL 을 주면 그걸 쓰고(로컬), 없으면 `sst shell` 이 주입한 `SST_RESOURCE_Db` 로 붙는다(라이브).
+ * `sst shell` 은 DB 를 URL 이 아니라 리소스(호스트·계정)로 준다 — 2026-09-24 라이브 실측.
+ * `sst` 는 여기서만 불러온다: jest 가 `runMigration` 때문에 이 파일을 import 해도 끌려오지 않게.
+ */
+async function connect(): Promise<{ core: Sql; ugc: Sql }> {
+  const coreUrl = process.env.CORE_DATABASE_URL;
+  const ugcUrl = process.env.UGC_DATABASE_URL;
+  if (coreUrl && ugcUrl) {
+    return { core: postgres(coreUrl, { max: 1 }), ugc: postgres(ugcUrl, { max: 1 }) };
+  }
+  if (!process.env.SST_RESOURCE_Db) {
+    throw new Error('CORE_DATABASE_URL·UGC_DATABASE_URL 을 주거나 `sst shell` 안에서 실행하세요 (README §2).');
+  }
+  const { createServiceConnection } = await import('../../seeding/lib/db-connection');
+  return { core: createServiceConnection('core', { max: 1 }), ugc: createServiceConnection('ugc', { max: 1 }) };
 }
 
 if (require.main === module) {
