@@ -37,6 +37,7 @@ import {
 import { editRequiresReReview } from "@/domains/shop-trade/my-listing-status"
 import {
   createMyShopListing,
+  getMyShopListing,
   updateMyShopListing,
 } from "@/lib/api/ugc/my-shop-listings"
 import {
@@ -113,7 +114,17 @@ export function ShopListingFormView({
           // 루트 error.tsx 가 토큰을 복구한다 — CLAUDE.md §6
           throw new Error("UNAUTHORIZED")
         }
-        // 한도 초과·숨김(409)·검증(400)은 서버 문구가 정확하다
+        if (listing && result.status === 409) {
+          // 수정 중 관리자가 숨겼을 수 있다(spec §7.3) — 최신 상태를 다시 봐서 갈 곳을 가른다.
+          // 한도 초과 같은 다른 409 면 폼에 남아 고쳐 쓰게 둔다.
+          toast.error(result.message || tf("submitFail"))
+          const latest = await getMyShopListing(listing.id)
+          if (!latest.ok || latest.data.status === "hidden") {
+            router.push(`/${countryCode}/mypage/shop-listings`)
+          }
+          return
+        }
+        // 한도 초과·검증(400)은 서버 문구가 정확하다
         toast.error(result.message || tf("submitFail"))
         return
       }
