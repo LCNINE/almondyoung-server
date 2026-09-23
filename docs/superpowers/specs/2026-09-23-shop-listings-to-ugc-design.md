@@ -260,8 +260,7 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 - `/mypage/shop-listings/new`, `/mypage/shop-listings/[id]/edit` — 한 폼을 공유한다.
   - 필드: 제목, 지역·업종·거래유형(필수), 평수·보증금·월세·권리금(비우면 「협의」), 이미지 1~15장(첫 장이 썸네일,
     앞뒤 이동 버튼, 컨텍스트 `shop-listing-image`), 연락처(필수, 하이픈 허용 입력), 오픈채팅(선택).
-  - 본문은 넓은 화면에서 좌우 배치(편집 | 미리보기), 좁으면 위아래 — 상품 상세설명 편집기(`product-description-focus-editor.tsx`)와 같은 배치. 미리보기도 `ShopListingMarkdown` 이다.
-  - slug 는 입력받지 않고 주소만 보여 준다(지금 폼과 같다).
+  - 본문은 textarea 에 「작성 / 미리보기」 탭을 둔다. 미리보기도 `ShopListingMarkdown` 이다.
   - 게시 중·거래완료 글을 수정할 때는 제출 전에 「수정하면 다시 검토를 받고, 그동안 공개되지 않아요」를 확인받는다.
   - 409 는 서버 메시지를 보인다. 한도 초과면 폼에 머무르고, 숨김이면 목록으로 돌려보낸다.
 - 마이페이지 메뉴(`domains/mypage/components/constants/mypage-constants.ts` 의 데스크톱·모바일 두 목록)에 「내 매물」을 더한다.
@@ -313,8 +312,8 @@ admin-web 에는 DESIGN.md 가 없다. 기준은 shadcn `components/ui` 와 같�
   반려는 business-licenses 처럼 AlertDialog 안의 사유 `Textarea` 로 받는다. 다만 서버가 사유를 요구하므로 비어 있으면 버튼을 막는다.
 - **승인·반려는 상세 응답의 `submittedAt` 을 `expectedSubmittedAt` 으로 싣는다.** 409 면 「그사이 회원이 글을 고쳤어요.
   새로고침해서 바뀐 내용을 확인해 주세요」 토스트와 「새로고침」 액션으로 상세를 다시 부른다.
-- 본문: tiptap 을 걷어내고 `Textarea` + 「편집 / 미리보기」 `Tabs` 로 바꾼다. 미리보기는 `ShopListingMarkdown`(§8.4)이다.
-- 연락처 필드 추가: 전화(선택), 오픈채팅(선택). 관리자 글의 slug 입력칸은 유지한다.
+- 본문: tiptap 을 걷어내고 `Textarea` + 넓은 화면에서 좌우 배치(편집 | 미리보기), 좁으면 위아래 — 상품 상세설명 편집기(`product-description-focus-editor.tsx`)와 같은 배치로 바꾼다. 미리보기는 `ShopListingMarkdown`(§8.4)이다.
+- 연락처 필드 추가: 전화(선택), 오픈채팅(선택). slug 는 입력받지 않고 주소만 보여 준다(지금 폼과 같다).
 - **폼 → DTO 변환은 `.ts` 순수 함수다. 이 함수는 `contactPhone`·`kakaoOpenChatUrl` 을 항상 키로 싣는다(비면 `null`).**
   관리자 PUT 이 전체 교체라서, 키를 빼면 회원이 등록한 번호가 지워진다. admin-web jest 스펙으로 고정한다.
 - 판정 이력: 하단 카드, 최신순. 행마다 결정·사유·처리자 id·시각.
