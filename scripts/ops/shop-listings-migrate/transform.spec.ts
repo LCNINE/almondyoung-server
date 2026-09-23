@@ -1,4 +1,4 @@
-import { type CoreShopListingRow, transformListing } from './transform';
+import { chunk, type CoreShopListingRow, transformListing } from './transform';
 
 const ROW: CoreShopListingRow = {
   id: '019166f0-0000-7000-8000-00000000aaaa',
@@ -69,5 +69,20 @@ describe('transformListing', () => {
 
   it('중복 fileId 는 한 번만', () => {
     expect(transformListing({ ...ROW, images: ['a', 'a', 't'] }).imageFileIds).toEqual(['t', 'a']);
+  });
+});
+
+// postgres.js 한 문장의 파라미터 상한은 65,534 다. 조회 기록(행당 5개)을 한 번에 넣으면 ~13k 행에서 --apply 만 터진다.
+describe('chunk', () => {
+  it('빈 배열은 빈 배열', () => {
+    expect(chunk([], 2)).toEqual([]);
+  });
+
+  it('크기대로 자르고 나머지는 마지막 조각에', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it('크기가 1 보다 작으면 거부한다 — 무한 루프 방지', () => {
+    expect(() => chunk([1], 0)).toThrow();
   });
 });

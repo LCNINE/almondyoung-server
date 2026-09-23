@@ -8,7 +8,7 @@
  */
 import postgres, { type Sql } from 'postgres';
 import { UnsupportedHtmlError } from './html-to-markdown';
-import { type CoreShopListingRow, transformListing, type UgcListingRow } from './transform';
+import { chunk, type CoreShopListingRow, transformListing, type UgcListingRow } from './transform';
 
 export interface MigrationReport {
   listings: number;
@@ -17,6 +17,9 @@ export interface MigrationReport {
   views: number;
   samples: Array<{ id: string; slug: string; before: string; after: string }>;
 }
+
+/** 조회 기록 INSERT 한 문장의 행 수. 행당 파라미터 5개 → 25,000 개로 postgres.js 상한(65,534) 아래. */
+const VIEWS_PER_INSERT = 5_000;
 
 interface CoreViewRow {
   id: string;
@@ -129,8 +132,9 @@ export async function runMigration(opts: {
       }
     }
 
-    if (views.length > 0) {
-      await tx`insert into shop_listing_views ${tx(views)} on conflict do nothing`;
+    // 한 문장으로 넣으면 ~13k 행에서 MAX_PARAMETERS_EXCEEDED — 같은 트랜잭션 안에서 나눠 넣는다.
+    for (const part of chunk(views, VIEWS_PER_INSERT)) {
+      await tx`insert into shop_listing_views ${tx(part)} on conflict do nothing`;
     }
   });
 

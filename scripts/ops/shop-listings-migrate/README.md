@@ -18,6 +18,7 @@ npx sst shell --stage live -- bash -c 'psql "$UGC_DATABASE_URL" -c "
 ```sql
 -- core DB
 select count(*) from shop_listings where deleted_at is null;
+select count(*) from shop_listing_views;   -- 스크립트가 5,000 행씩 나눠 넣는다. 건수로 소요 시간을 가늠한다
 select count(*) from shop_listings
  where deleted_at is null and thumbnail_file_id is not null
    and not (coalesce(images, '[]'::jsonb) ? thumbnail_file_id::text);
@@ -26,7 +27,7 @@ select id, slug from shop_listings
 ```
 
 마지막 쿼리가 행을 내면 `html-to-markdown.ts` 규칙을 먼저 늘린다.
-(세 쿼리 모두 로컬 `core` DB 에 실측 완료 — 2026-09-23. 마지막 쿼리는 Postgres ARE 에서 단어 경계가
+(네 쿼리 모두 로컬 `core` DB 에 실측 완료 — 2026-09-23. 마지막 쿼리는 Postgres ARE 에서 단어 경계가
 `\b`(백스페이스 문자로 해석됨)가 아니라 `\y` 라 `\y` 를 쓴다. `\b` 로 쓰면 lookahead 가 항상
 통과해 `<p>`·`<br>` 까지 「모르는 태그」로 오탐한다 — 실측 중 발견.)
 

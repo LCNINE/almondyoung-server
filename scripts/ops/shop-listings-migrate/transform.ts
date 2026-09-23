@@ -80,3 +80,11 @@ function orderImages(thumbnail: string | null, images: string[]): string[] {
   const ordered = thumbnail ? [thumbnail, ...images] : images;
   return [...new Set(ordered)];
 }
+
+/** 한 INSERT 의 파라미터가 postgres.js 상한(65,534)을 넘지 않게 행을 나눈다. */
+export function chunk<T>(rows: T[], size: number): T[][] {
+  if (!Number.isInteger(size) || size < 1) throw new Error(`chunk size 는 1 이상의 정수여야 한다: ${size}`);
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
