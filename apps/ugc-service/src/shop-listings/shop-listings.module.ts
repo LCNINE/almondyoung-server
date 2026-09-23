@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { UgcEventsModule } from '../ugc-events.module';
 import { autoDecisionPolicyFromEnv, SHOP_LISTING_AUTO_DECISION_POLICY } from './classifier/auto-decision';
 import { NullShopListingClassifier, SHOP_LISTING_CLASSIFIER } from './classifier/shop-listing-classifier';
 import { AdminShopListingsController } from './controllers/admin-shop-listings.controller';
@@ -13,7 +12,6 @@ import { ShopListingReader } from './shop-listing.reader';
 import { ShopListingsService } from './shop-listings.service';
 
 @Module({
-  imports: [UgcEventsModule],
   controllers: [PublicShopListingsController, MemberShopListingsController, AdminShopListingsController, ShopListingUserPermanentDeletedConsumer],
   providers: [
     ShopListingsService,
