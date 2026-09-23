@@ -179,6 +179,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     isActive: true,
   },
   {
+    id: 'shop-listing-image',
+    name: 'Shop Listing Image',
+    description: '샵 매매 글 사진 (관리자·회원 업로드). 첫 장이 썸네일',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'shop-listings/images',
+    isActive: true,
+  },
+  {
     id: 'product-bulk-form',
     name: 'Product Bulk Form',
     description: '상품 일괄 등록/수정 양식 워크북(xlsx)',
