@@ -1,5 +1,6 @@
 'use client';
 
+import type { EmailLayoutSettings } from '@packages/email-layout';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { NotificationChannel, NotificationTemplate } from '@/lib/api/domains/notification';
 import { channelBody } from '../lib/render';
@@ -7,10 +8,23 @@ import { CHANNEL_LABEL } from './channel-badges';
 import { MessagePreview } from './message-preview';
 
 export type PreviewTarget =
-  | { title: string; template: NotificationTemplate; channels: NotificationChannel[] }
+  | {
+      title: string;
+      template: NotificationTemplate;
+      channels: NotificationChannel[];
+      advertising: boolean;
+    }
   | { title: string; fixed: { channel: NotificationChannel; text: string } };
 
-export function PreviewDialog({ target, onClose }: { target: PreviewTarget | null; onClose: () => void }) {
+export function PreviewDialog({
+  target,
+  settings,
+  onClose,
+}: {
+  target: PreviewTarget | null;
+  settings?: EmailLayoutSettings;
+  onClose: () => void;
+}) {
   const items =
     target && 'template' in target
       ? target.channels.flatMap((channel) => {
@@ -33,7 +47,13 @@ export function PreviewDialog({ target, onClose }: { target: PreviewTarget | nul
           {items.map((item) => (
             <section key={item.channel} className="flex flex-col gap-2">
               <h4 className="text-sm font-semibold">{CHANNEL_LABEL[item.channel]}</h4>
-              <MessagePreview channel={item.channel} subject={item.subject} body={item.body} />
+              <MessagePreview
+                channel={item.channel}
+                subject={item.subject}
+                body={item.body}
+                advertising={target !== null && 'advertising' in target && target.advertising}
+                settings={settings}
+              />
             </section>
           ))}
         </div>

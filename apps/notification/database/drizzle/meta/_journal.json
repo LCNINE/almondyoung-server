@@ -50,6 +50,20 @@
       "when": 1789982793796,
       "tag": "20260921092633_add-inbound-messages-deleted-at",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790125755912,
+      "tag": "20260923010915_add-template-default-contents",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790127780901,
+      "tag": "20260923014300_add-email-layout-settings",
+      "breakpoints": true
     }
   ]
 }

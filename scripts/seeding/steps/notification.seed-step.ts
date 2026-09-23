@@ -101,20 +101,24 @@ const RENEWAL_NOTICE_TEMPLATE = {
       ko: {
         subject: '[아몬드영] {{nextBillingDate}} 멤버십이 자동 갱신됩니다',
         body: [
-          '<p>{{userName}}님, 안녕하세요.</p>',
-          '<p>이용 중인 <strong>{{planName}}</strong> 멤버십이 <strong>{{nextBillingDate}}</strong>에 자동 갱신될 예정입니다.',
-          ' 결제 예정일 {{noticeDaysBefore}}일 전에 미리 안내드립니다.</p>',
-          '<table>',
-          '<tr><th>결제 예정일</th><td>{{nextBillingDate}}</td></tr>',
-          '<tr><th>결제 예정 금액</th><td>{{amount}}원</td></tr>',
-          '<tr><th>결제 수단</th><td>{{paymentMethodLabel}}</td></tr>',
-          '<tr><th>갱신 후 이용 기간</th><td>{{nextBillingDate}} ~ {{nextPeriodEnd}}</td></tr>',
-          '</table>',
-          '<p>갱신을 원하지 않으시면 <strong>{{nextBillingDate}} 전까지</strong> 아래에서 해지해 주세요.',
-          ' 해지하셔도 이미 결제하신 기간({{currentPeriodEnd}}까지)은 그대로 이용하실 수 있습니다.</p>',
-          '<p><a href="{{manageUrl}}">멤버십 관리 · 해지하기</a></p>',
-          '<p>문의: 고객센터 1877-7184</p>',
-          '<p>본 메일은 전자상거래법에 따른 계속거래 갱신 사전 고지 안내로, 수신거부 대상이 아닙니다.</p>',
+          '{{userName}}님, 안녕하세요.',
+          '',
+          '이용 중인 **{{planName}}** 멤버십이 **{{nextBillingDate}}**에 자동 갱신될 예정입니다.',
+          ' 결제 예정일 {{noticeDaysBefore}}일 전에 미리 안내드립니다.',
+          '',
+          '> **결제 예정일** · {{nextBillingDate}}',
+          '> **결제 예정 금액** · {{amount}}원',
+          '> **결제 수단** · {{paymentMethodLabel}}',
+          '> **갱신 후 이용 기간** · {{nextBillingDate}} ~ {{nextPeriodEnd}}',
+          '',
+          '갱신을 원하지 않으시면 **{{nextBillingDate}} 전까지** 아래에서 해지해 주세요.',
+          ' 해지하셔도 이미 결제하신 기간({{currentPeriodEnd}}까지)은 그대로 이용하실 수 있습니다.',
+          '',
+          '[멤버십 관리 · 해지하기]({{manageUrl}})',
+          '',
+          '문의: 고객센터 1877-7184',
+          '',
+          '본 메일은 전자상거래법에 따른 계속거래 갱신 사전 고지 안내로, 수신거부 대상이 아닙니다.',
         ].join('\n'),
       },
     },
@@ -159,16 +163,19 @@ const EXPIRY_NOTICE_TEMPLATE = {
       ko: {
         subject: '[아몬드영] {{expiresAt}} 멤버십 이용이 종료됩니다',
         body: [
-          '<p>{{userName}}님, 안녕하세요.</p>',
-          '<p>이용 중인 <strong>{{planName}}</strong>의 이용 기간이 <strong>{{expiresAt}}</strong>에 종료됩니다.',
-          ' 종료 {{noticeDaysBefore}}일 전에 미리 안내드립니다.</p>',
-          '<table>',
-          '<tr><th>이용 종료일</th><td>{{expiresAt}}</td></tr>',
-          '</table>',
-          '<p>종료일 이후에는 멤버십 전용가와 혜택이 적용되지 않습니다.',
-          ' 계속 이용하시려면 아래에서 멤버십을 다시 신청해 주세요.</p>',
-          '<p><a href="{{manageUrl}}">멤버십 관리하기</a></p>',
-          '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
+          '{{userName}}님, 안녕하세요.',
+          '',
+          '이용 중인 **{{planName}}**의 이용 기간이 **{{expiresAt}}**에 종료됩니다.',
+          ' 종료 {{noticeDaysBefore}}일 전에 미리 안내드립니다.',
+          '',
+          '> **이용 종료일** · {{expiresAt}}',
+          '',
+          '종료일 이후에는 멤버십 전용가와 혜택이 적용되지 않습니다.',
+          ' 계속 이용하시려면 아래에서 멤버십을 다시 신청해 주세요.',
+          '',
+          '[멤버십 관리하기]({{manageUrl}})',
+          '',
+          '문의: [카카오톡 채널 아몬드영](https://pf.kakao.com/_xaxgxazs) · 고객센터 1877-7184',
         ].join('\n'),
       },
     },
@@ -211,14 +218,21 @@ const CMS_REJECTED_TEMPLATE = {
       ko: {
         subject: '[아몬드영] 자동이체 계좌 등록이 완료되지 않았습니다',
         body: [
-          '<p>{{name}}님, 안녕하세요. 아몬드영입니다.</p>',
-          '<p>신청해 주신 자동이체 계좌를 확인하는 과정에서 {{reason}} 계좌 등록이 완료되지 않았습니다.</p>',
-          '<p>번거로우시겠지만, {{action}} 계좌를 다시 등록해 주세요.',
-          ' 재등록해 주시면 확인 절차가 다시 진행됩니다.</p>',
-          '<p><a href="{{registerUrl}}">계좌 다시 등록하기</a></p>',
-          '<p>이용에 번거로움을 드려 죄송하며, 등록 과정에서 어려움이 있으시면 언제든 문의해 주세요.</p>',
-          '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
-          '<p>감사합니다.<br/>아몬드영 드림</p>',
+          '{{name}}님, 안녕하세요. 아몬드영입니다.',
+          '',
+          '신청해 주신 자동이체 계좌를 확인하는 과정에서 {{reason}} 계좌 등록이 완료되지 않았습니다.',
+          '',
+          '번거로우시겠지만, {{action}} 계좌를 다시 등록해 주세요.',
+          ' 재등록해 주시면 확인 절차가 다시 진행됩니다.',
+          '',
+          '[계좌 다시 등록하기]({{registerUrl}})',
+          '',
+          '이용에 번거로움을 드려 죄송하며, 등록 과정에서 어려움이 있으시면 언제든 문의해 주세요.',
+          '',
+          '문의: [카카오톡 채널 아몬드영](https://pf.kakao.com/_xaxgxazs) · 고객센터 1877-7184',
+          '',
+          '감사합니다.',
+          '아몬드영 드림',
         ].join('\n'),
       },
     },
@@ -262,15 +276,22 @@ const MANDATE_PENDING_TEMPLATE = {
       ko: {
         subject: '[아몬드영] 멤버십 혜택이 바로 시작되었습니다',
         body: [
-          '<p>{{name}}님, 안녕하세요. 아몬드영입니다.</p>',
-          '<p>멤버십 가입이 완료되었습니다. <strong>혜택은 지금 바로 이용하실 수 있습니다.</strong></p>',
-          '<p>등록해 주신 자동이체 계좌는 현재 은행 확인이 진행 중입니다(영업일 기준 1~2일).',
-          ' <strong>확인이 끝나기 전에는 계좌에서 돈이 빠져나가지 않습니다.</strong></p>',
-          '<p>은행에서 받으신 ‘자동이체 등록 접수’ 문자는 접수 확인일 뿐 최종 승인이 아닙니다.',
-          ' 확인이 끝나면 승인 여부를 메일로 다시 안내드립니다.</p>',
-          '<p><a href="{{membershipUrl}}">멤버십 확인하기</a></p>',
-          '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
-          '<p>감사합니다.<br/>아몬드영 드림</p>',
+          '{{name}}님, 안녕하세요. 아몬드영입니다.',
+          '',
+          '멤버십 가입이 완료되었습니다. **혜택은 지금 바로 이용하실 수 있습니다.**',
+          '',
+          '등록해 주신 자동이체 계좌는 현재 은행 확인이 진행 중입니다(영업일 기준 1~2일).',
+          ' **확인이 끝나기 전에는 계좌에서 돈이 빠져나가지 않습니다.**',
+          '',
+          '은행에서 받으신 ‘자동이체 등록 접수’ 문자는 접수 확인일 뿐 최종 승인이 아닙니다.',
+          ' 확인이 끝나면 승인 여부를 메일로 다시 안내드립니다.',
+          '',
+          '[멤버십 확인하기]({{membershipUrl}})',
+          '',
+          '문의: [카카오톡 채널 아몬드영](https://pf.kakao.com/_xaxgxazs) · 고객센터 1877-7184',
+          '',
+          '감사합니다.',
+          '아몬드영 드림',
         ].join('\n'),
       },
     },
@@ -309,7 +330,18 @@ const CMS_REGISTERED_TEMPLATE = {
     EMAIL: {
       ko: {
         subject: '[아몬드영] 자동이체 계좌 등록이 완료되었습니다',
-        body: '<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:#ff6600;padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">계좌 등록 완료</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">{{name}}님, 안녕하세요.<br/>신청해 주신 자동이체 계좌의 은행 확인이 끝나 등록이 완료되었습니다.</td></tr><tr><td style="padding-bottom:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:20px 24px;"><tr><td style="font-size:14px;color:#888888;padding:4px 0;">은행</td><td align="right" style="font-size:14px;font-weight:600;color:#111111;padding:4px 0;">{{bankName}}</td></tr><tr><td style="font-size:14px;color:#888888;padding:4px 0;">예금주</td><td align="right" style="font-size:14px;font-weight:600;color:#111111;padding:4px 0;">{{payerName}}</td></tr></table></td></tr><tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">앞으로 결제일에 이 계좌에서 자동으로 출금됩니다. 계좌를 바꾸거나 해지하시려면 마이페이지 > 결제수단 관리에서 변경하실 수 있습니다.</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>',
+        body: [
+          '{{name}}님, 안녕하세요.',
+          '',
+          '## 계좌 등록 완료',
+          '',
+          '신청해 주신 자동이체 계좌의 은행 확인이 끝나 등록이 완료되었습니다.',
+          '',
+          '> **은행** · {{bankName}}',
+          '> **예금주** · {{payerName}}',
+          '',
+          '앞으로 결제일에 이 계좌에서 자동으로 출금됩니다. 계좌를 바꾸거나 해지하시려면 마이페이지 > 결제수단 관리에서 변경하실 수 있습니다.',
+        ].join('\n'),
       },
     },
   },
@@ -332,14 +364,14 @@ const CMS_REGISTERED_EVENT = {
 
 const shippedBody = (lead: string) =>
   [
-    '<p>{{name}}님, 안녕하세요.</p>',
-    `<p>주문하신 <strong>{{orderNumber}}</strong> ${lead}</p>`,
-    '<table>',
-    '<tr><th>택배사</th><td>{{carrier}}</td></tr>',
-    '<tr><th>송장번호</th><td>{{trackingNo}}</td></tr>',
-    '</table>',
-    '<p>배송 현황은 마이페이지 주문내역에서 확인하실 수 있습니다.</p>',
-    '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
+    '{{name}}님, 안녕하세요.',
+    '',
+    `주문하신 **{{orderNumber}}** ${lead}`,
+    '',
+    '> **택배사** · {{carrier}}',
+    '> **송장번호** · {{trackingNo}}',
+    '',
+    '배송 현황은 마이페이지 주문내역에서 확인하실 수 있습니다.',
   ].join('\n');
 
 const SHIPMENT_VARIABLES = {
@@ -403,9 +435,6 @@ const ORDER_PARTIALLY_SHIPPED_EVENT = {
   isActive: false,
 };
 
-const CS_FOOTER =
-  '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>';
-
 const CLAIM_VARIABLES = {
   name: { type: 'string', required: true },
   orderNumber: { type: 'string', required: true },
@@ -424,7 +453,7 @@ const csTemplate = (
   templateKey,
   name,
   category: 'CUSTOMER_SERVICE',
-  contents: { EMAIL: { ko: { subject, body: ['<p>{{name}}님, 안녕하세요.</p>', ...lines, CS_FOOTER].join('\n') } } },
+  contents: { EMAIL: { ko: { subject, body: ['{{name}}님, 안녕하세요.', '', ...lines].join('\n') } } },
   variablesSchema,
 });
 
@@ -446,8 +475,9 @@ const CS_TEMPLATES = [
     '반품/교환 신청',
     '[아몬드영] {{claimType}} 신청이 접수되었습니다 ({{orderNumber}})',
     [
-      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 신청이 접수되었습니다.</p>',
-      '<p>확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.</p>',
+      '주문 **{{orderNumber}}**의 {{claimType}} 신청이 접수되었습니다.',
+      '',
+      '확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.',
     ],
     CLAIM_VARIABLES,
   ),
@@ -457,8 +487,9 @@ const CS_TEMPLATES = [
     '반품/교환 접수',
     '[아몬드영] {{claimType}} 요청이 접수되었습니다 ({{orderNumber}})',
     [
-      '<p>고객센터에서 주문 <strong>{{orderNumber}}</strong>의 {{claimType}}을 접수했습니다.</p>',
-      '<p>확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.</p>',
+      '고객센터에서 주문 **{{orderNumber}}**의 {{claimType}}을 접수했습니다.',
+      '',
+      '확인 후 수거 일정을 안내드리겠습니다. 진행 상황은 마이페이지에서 확인하실 수 있습니다.',
     ],
     CLAIM_VARIABLES,
   ),
@@ -468,8 +499,9 @@ const CS_TEMPLATES = [
     '수거 완료',
     '[아몬드영] {{claimType}} 상품 수거가 완료되었습니다 ({{orderNumber}})',
     [
-      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 상품 수거가 완료되었습니다.</p>',
-      '<p>상품 검수 후 {{claimType}} 처리를 진행하겠습니다.</p>',
+      '주문 **{{orderNumber}}**의 {{claimType}} 상품 수거가 완료되었습니다.',
+      '',
+      '상품 검수 후 {{claimType}} 처리를 진행하겠습니다.',
     ],
     CLAIM_VARIABLES,
   ),
@@ -479,8 +511,9 @@ const CS_TEMPLATES = [
     '반품/교환 완료',
     '[아몬드영] {{claimType}} 처리가 완료되었습니다 ({{orderNumber}})',
     [
-      '<p>주문 <strong>{{orderNumber}}</strong>의 {{claimType}} 처리가 완료되었습니다.</p>',
-      '<p>환불이 있는 경우 환불 완료 안내를 따로 보내드립니다.</p>',
+      '주문 **{{orderNumber}}**의 {{claimType}} 처리가 완료되었습니다.',
+      '',
+      '환불이 있는 경우 환불 완료 안내를 따로 보내드립니다.',
     ],
     CLAIM_VARIABLES,
   ),
@@ -490,11 +523,11 @@ const CS_TEMPLATES = [
     '환불 완료',
     '[아몬드영] {{amount}}원 환불이 완료되었습니다',
     [
-      '<p><strong>{{orderName}}</strong> 주문의 환불이 완료되었습니다.</p>',
-      '<table>',
-      '<tr><th>환불 금액</th><td>{{amount}}원</td></tr>',
-      '</table>',
-      '<p>결제 수단에 따라 실제 환불 반영까지 며칠이 걸릴 수 있습니다.</p>',
+      '**{{orderName}}** 주문의 환불이 완료되었습니다.',
+      '',
+      '> **환불 금액** · {{amount}}원',
+      '',
+      '결제 수단에 따라 실제 환불 반영까지 며칠이 걸릴 수 있습니다.',
     ],
     {
       name: { type: 'string', required: true },
@@ -508,8 +541,9 @@ const CS_TEMPLATES = [
     '문의 답변 완료',
     '[아몬드영] 문의하신 내용에 답변이 등록되었습니다',
     [
-      '<p>문의하신 <strong>{{title}}</strong>에 답변이 등록되었습니다.</p>',
-      '<p>답변 내용은 마이페이지 문의내역에서 확인하실 수 있습니다.</p>',
+      '문의하신 **{{title}}**에 답변이 등록되었습니다.',
+      '',
+      '답변 내용은 마이페이지 문의내역에서 확인하실 수 있습니다.',
     ],
     { name: { type: 'string', required: true }, title: { type: 'string', required: true } },
   ),
@@ -532,7 +566,7 @@ const MEMBER_TEMPLATES = [
     'USER_WELCOME_EMAIL',
     '회원 가입',
     '[아몬드영] 회원 가입을 환영합니다',
-    ['<p>아몬드영 회원이 되신 것을 환영합니다.</p>'],
+    ['아몬드영 회원이 되신 것을 환영합니다.'],
     NAME_ONLY,
   ),
   csTemplate(
@@ -540,7 +574,11 @@ const MEMBER_TEMPLATES = [
     'USER_WITHDRAWN_EMAIL',
     '회원 탈퇴',
     '[아몬드영] 회원 탈퇴가 완료되었습니다',
-    ['<p>회원 탈퇴가 완료되었습니다. 그동안 아몬드영을 이용해 주셔서 감사합니다.</p>', '<p>탈퇴 후 개인정보는 관련 법령에 따라 보관이 필요한 정보를 제외하고 파기됩니다.</p>'],
+    [
+      '회원 탈퇴가 완료되었습니다. 그동안 아몬드영을 이용해 주셔서 감사합니다.',
+      '',
+      '탈퇴 후 개인정보는 관련 법령에 따라 보관이 필요한 정보를 제외하고 파기됩니다.',
+    ],
     NAME_ONLY,
   ),
   csTemplate(
@@ -548,7 +586,11 @@ const MEMBER_TEMPLATES = [
     'MEMBERSHIP_JOINED_EMAIL',
     '멤버십 회원 가입',
     '[아몬드영] 멤버십 가입이 완료되었습니다',
-    ['<p>아몬드영 멤버십 가입이 완료되었습니다.</p>', '<p>지금부터 멤버십 전용가와 혜택을 이용하실 수 있습니다. 이용 현황은 마이페이지 멤버십에서 확인하실 수 있습니다.</p>'],
+    [
+      '아몬드영 멤버십 가입이 완료되었습니다.',
+      '',
+      '지금부터 멤버십 전용가와 혜택을 이용하실 수 있습니다. 이용 현황은 마이페이지 멤버십에서 확인하실 수 있습니다.',
+    ],
     NAME_ONLY,
   ),
   csTemplate(
@@ -557,12 +599,19 @@ const MEMBER_TEMPLATES = [
     '멤버십 회원 해지',
     '[아몬드영] 멤버십이 해지되었습니다',
     [
-      '<p>아몬드영 멤버십이 해지되었습니다.</p>',
-      '<p>{{periodNotice}}</p>',
-      '<p>그동안 아몬드영 멤버십과 함께해 주셔서 진심으로 감사합니다.</p>',
-      '<p>원장님의 선택에 조금이나마 도움이 되는 멤버십이었기를 바랍니다.<br>잠시 멤버십을 떠나시더라도, 필요해지는 순간 언제든 편하게 다시 찾아주세요.</p>',
-      '<p>더 좋은 상품과 더 나은 혜택으로 다시 만나 뵐 수 있도록 계속 노력하겠습니다.</p>',
-      '<p>함께해 주셔서 감사합니다.<br>아몬드영 드림</p>',
+      '아몬드영 멤버십이 해지되었습니다.',
+      '',
+      '{{periodNotice}}',
+      '',
+      '그동안 아몬드영 멤버십과 함께해 주셔서 진심으로 감사합니다.',
+      '',
+      '원장님의 선택에 조금이나마 도움이 되는 멤버십이었기를 바랍니다.',
+      '잠시 멤버십을 떠나시더라도, 필요해지는 순간 언제든 편하게 다시 찾아주세요.',
+      '',
+      '더 좋은 상품과 더 나은 혜택으로 다시 만나 뵐 수 있도록 계속 노력하겠습니다.',
+      '',
+      '함께해 주셔서 감사합니다.',
+      '아몬드영 드림',
     ],
     { name: { type: 'string', required: true }, periodNotice: { type: 'string', required: false } },
   ),
@@ -571,7 +620,13 @@ const MEMBER_TEMPLATES = [
     'COUPON_EXPIRING_EMAIL',
     '쿠폰 만료예정',
     '[아몬드영] 보유하신 쿠폰 {{couponCount}}장이 곧 만료됩니다',
-    ['<p>보유하신 쿠폰이 <strong>{{expiresAt}}</strong>에 만료됩니다.</p>', '<p>{{couponNames}}</p>', '<p>쿠폰은 마이페이지 쿠폰함에서 확인하실 수 있습니다.</p>'],
+    [
+      '보유하신 쿠폰이 **{{expiresAt}}**에 만료됩니다.',
+      '',
+      '{{couponNames}}',
+      '',
+      '쿠폰은 마이페이지 쿠폰함에서 확인하실 수 있습니다.',
+    ],
     {
       name: { type: 'string', required: true },
       couponNames: { type: 'string', required: true },
@@ -585,7 +640,12 @@ const MEMBER_EVENTS = [
   csEvent('USER_WELCOME', '회원 가입', '회원 가입이 완료되면', 'USER_WELCOME_EMAIL'),
   csEvent('USER_WITHDRAWN', '회원 탈퇴', '회원 탈퇴가 완료되면', 'USER_WITHDRAWN_EMAIL'),
   csEvent('MEMBERSHIP_JOINED', '멤버십 회원 가입', '멤버십에 새로 가입하면', 'MEMBERSHIP_JOINED_EMAIL'),
-  csEvent('MEMBERSHIP_CANCELLED', '멤버십 회원 해지', '멤버십이 해지되거나 해지 예약되면', 'MEMBERSHIP_CANCELLED_EMAIL'),
+  csEvent(
+    'MEMBERSHIP_CANCELLED',
+    '멤버십 회원 해지',
+    '멤버십이 해지되거나 해지 예약되면',
+    'MEMBERSHIP_CANCELLED_EMAIL',
+  ),
   csEvent('COUPON_EXPIRING', '쿠폰 만료예정', '보유한 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
 ];
 
@@ -626,6 +686,22 @@ const PROVIDER_NAMES: Record<string, string> = {
   [FIXED_UUIDS.PROVIDER_NHN_KAKAO]: 'NHN KakaoTalk',
 };
 
+/** jsonb 는 키 순서를 바꿔 돌려주므로, 키를 정렬해 비교한다. */
+function canonical(value: unknown): string {
+  const sort = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(sort);
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(
+        Object.entries(node as Record<string, unknown>)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, val]) => [key, sort(val)]),
+      );
+    }
+    return node;
+  };
+  return JSON.stringify(sort(value));
+}
+
 export class NotificationSeedStep extends SeedStep {
   private notificationConfig: NotificationConfig;
 
@@ -650,6 +726,7 @@ export class NotificationSeedStep extends SeedStep {
       NOTICE_EVENTS.map((e) => e.eventKey),
       'event_key',
     );
+    const staleDefaults = await this.findTemplatesWithStaleDefault();
 
     const items = [
       {
@@ -673,6 +750,13 @@ export class NotificationSeedStep extends SeedStep {
         missing: NOTICE_EVENTS.length - existingEvents.size,
         missingDetails: NOTICE_EVENTS.filter((e) => !existingEvents.has(e.eventKey)).map((e) => e.eventKey),
       },
+      {
+        entity: 'templates.default_contents',
+        expected: NOTICE_TEMPLATES.length,
+        existing: NOTICE_TEMPLATES.length - staleDefaults.length,
+        missing: staleDefaults.length,
+        missingDetails: staleDefaults,
+      },
     ];
 
     const totalMissing = items.reduce((sum, item) => sum + item.missing, 0);
@@ -683,6 +767,23 @@ export class NotificationSeedStep extends SeedStep {
       isFullySeeded,
       summary: isFullySeeded ? 'All Notification seed data present' : `${totalMissing} missing record(s)`,
     };
+  }
+
+  /**
+   * 기본 메시지 사본이 정본과 다른 템플릿 이름들. 행이 다 있어도 이게 비면 시드를 돌려야 한다.
+   */
+  private async findTemplatesWithStaleDefault(): Promise<string[]> {
+    const rows = (await this.db.execute(sql`
+      SELECT template_id, default_contents FROM templates
+      WHERE template_id IN (${sql.raw(NOTICE_TEMPLATES.map((t) => `'${t.templateId}'`).join(', '))})
+    `)) as unknown as Array<{ template_id: string; default_contents: unknown }>;
+
+    const byId = new Map(rows.map((row) => [row.template_id, row.default_contents]));
+    return NOTICE_TEMPLATES.filter((template) => {
+      const stored = byId.get(template.templateId);
+      if (stored === undefined) return false; // 행 자체가 없으면 templates 항목이 이미 잡는다
+      return canonical(stored) !== canonical(template.contents);
+    }).map((template) => template.name);
   }
 
   async apply(): Promise<SeedApplyResult> {
@@ -712,17 +813,18 @@ export class NotificationSeedStep extends SeedStep {
       this.logger.step(2, 3, 'Inserting notification templates');
       for (const template of NOTICE_TEMPLATES) {
         await this.db.execute(sql`
-          INSERT INTO templates (template_id, template_key, name, category, contents, variables_schema, is_active)
+          INSERT INTO templates (template_id, template_key, name, category, contents, default_contents, variables_schema, is_active)
           VALUES (
             ${template.templateId},
             ${template.templateKey},
             ${template.name},
             ${template.category}::notification_category,
             ${JSON.stringify(template.contents)},
+            ${JSON.stringify(template.contents)},
             ${JSON.stringify(template.variablesSchema)},
             ${true}
           )
-          ON CONFLICT (template_id) DO NOTHING
+          ON CONFLICT (template_id) DO UPDATE SET default_contents = EXCLUDED.default_contents
         `);
       }
 

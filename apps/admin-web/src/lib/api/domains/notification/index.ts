@@ -1,18 +1,12 @@
 'use client';
 
 import { NOTIFICATION_SERVICE_BASE_URL } from '@/const';
+import type { EmailLayoutSettings } from '@packages/email-layout';
 import { client } from '../../client';
 
 export type MessageChannel = 'SMS' | 'KAKAO';
 
-export type NotificationStatus =
-  | 'PENDING'
-  | 'PROCESSING'
-  | 'SENT'
-  | 'DELIVERED'
-  | 'FAILED'
-  | 'CANCELLED'
-  | 'RETRYING';
+export type NotificationStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'RETRYING';
 
 export interface UserMessageHistoryItem {
   notificationId: string;
@@ -42,13 +36,10 @@ export interface UserMessageHistoryQuery {
 }
 
 export const notificationApi = {
-  getUserMessages: async (
-    userId: string,
-    params: UserMessageHistoryQuery
-  ): Promise<UserMessageHistoryPage> => {
+  getUserMessages: async (userId: string, params: UserMessageHistoryQuery): Promise<UserMessageHistoryPage> => {
     const response = await client.get<UserMessageHistoryPage>(
       `${NOTIFICATION_SERVICE_BASE_URL}/notifications/users/${userId}`,
-      { params }
+      { params },
     );
     return response.data;
   },
@@ -61,6 +52,7 @@ export interface NotificationEvent {
   name: string;
   description: string;
   templateKey: string;
+  category: string;
   defaultChannels: NotificationChannel[];
   isActive: boolean;
   updatedAt: string;
@@ -78,6 +70,7 @@ export interface NotificationTemplate {
   templateKey: string;
   name: string;
   contents: TemplateContents;
+  hasDefaultContents?: boolean;
   variablesSchema: Record<string, { type: string; required?: boolean; description?: string }>;
   updatedAt: string;
   kakaoTemplateConfig?: { templateCode: string; status: string };
@@ -91,7 +84,7 @@ export const notificationAdminApi = {
 
   updateEvent: async (
     eventKey: string,
-    values: Partial<Pick<NotificationEvent, 'isActive' | 'defaultChannels'>>
+    values: Partial<Pick<NotificationEvent, 'isActive' | 'defaultChannels'>>,
   ): Promise<void> => {
     await client.put(`${NOTIFICATION_SERVICE_BASE_URL}/events/${eventKey}`, values);
   },
@@ -103,5 +96,25 @@ export const notificationAdminApi = {
 
   updateTemplateContents: async (templateId: string, contents: TemplateContents): Promise<void> => {
     await client.put(`${NOTIFICATION_SERVICE_BASE_URL}/templates/by-id/${templateId}`, { contents });
+  },
+
+  getEmailLayout: async (): Promise<EmailLayoutSettings> => {
+    const response = await client.get<EmailLayoutSettings>(`${NOTIFICATION_SERVICE_BASE_URL}/templates/email-layout`);
+    return response.data;
+  },
+
+  updateEmailLayout: async (values: Partial<EmailLayoutSettings>): Promise<EmailLayoutSettings> => {
+    const response = await client.put<EmailLayoutSettings>(
+      `${NOTIFICATION_SERVICE_BASE_URL}/templates/email-layout`,
+      values,
+    );
+    return response.data;
+  },
+
+  resetTemplateToDefault: async (templateId: string): Promise<NotificationTemplate> => {
+    const response = await client.post<NotificationTemplate>(
+      `${NOTIFICATION_SERVICE_BASE_URL}/templates/by-id/${templateId}/reset-default`,
+    );
+    return response.data;
   },
 };

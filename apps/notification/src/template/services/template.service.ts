@@ -175,6 +175,25 @@ export class TemplateService {
     throw new NotFoundException(`Template with key ${key} not found`);
   }
 
+  async resetTemplateToDefault(id: string): Promise<any> {
+    const db = this.dbService.db;
+    const existing = await db.query.templates.findFirst({ where: eq(templates.templateId, id) });
+    if (!existing) {
+      throw new NotFoundException(`Template with ID ${id} not found`);
+    }
+    if (!existing.defaultContents) {
+      throw new NotFoundException(`Template ${existing.templateKey} has no default contents to restore`);
+    }
+
+    const [updated] = await db
+      .update(templates)
+      .set({ contents: existing.defaultContents, updatedAt: new Date() })
+      .where(eq(templates.templateId, id))
+      .returning();
+
+    return this.formatTemplateResponse(updated);
+  }
+
   async updateTemplate(id: string, updateTemplateDto: UpdateTemplateDto): Promise<any> {
     const db = this.dbService.db;
 
@@ -389,6 +408,7 @@ export class TemplateService {
       name: template.name,
       category: template.category,
       contents: template.contents,
+      hasDefaultContents: template.defaultContents != null,
       variablesSchema: template.variablesSchema,
       version: template.version,
       isActive: template.isActive,

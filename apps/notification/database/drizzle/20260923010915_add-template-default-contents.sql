@@ -1,0 +1,1 @@
+ALTER TABLE "templates" ADD COLUMN "default_contents" jsonb;

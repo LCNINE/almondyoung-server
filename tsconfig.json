@@ -46,6 +46,8 @@
       "@app/shared/*": ["libs/shared/src/*"],
       "@packages/domain-types": ["packages/domain-types"],
       "@packages/domain-types/*": ["packages/domain-types/*"],
+      "@packages/email-layout": ["packages/email-layout"],
+      "@packages/email-layout/*": ["packages/email-layout/*"],
       "@packages/event-contracts": ["packages/event-contracts"],
       "@packages/event-contracts/*": ["packages/event-contracts/*"],
       "@packages/product-description": ["packages/product-description"],
