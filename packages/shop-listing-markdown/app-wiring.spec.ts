@@ -22,7 +22,10 @@ describe.each(COMPONENTS)('%s', (relativePath) => {
   });
 
   it('설정을 펼쳐 쓰고 덮어쓰지 않는다', () => {
-    expect(source).toMatch(/<ReactMarkdown \{\.\.\.options\}>/);
+    const renders = source.match(/<ReactMarkdown\b/g) ?? [];
+    const spreadRenders = source.match(/<ReactMarkdown \{\.\.\.options\}>/g) ?? [];
+    expect(renders.length).toBeGreaterThan(0);
+    expect(spreadRenders.length).toBe(renders.length);
     for (const override of [
       'rehype-raw',
       'rehypePlugins',
