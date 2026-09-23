@@ -47,6 +47,9 @@ export function htmlToMarkdown(html: string): string {
     .split(/<\/p>/i)
     .map((chunk) => chunk.replace(/<p\b[^>]*>/gi, ''))
     .map((chunk) => decodeEntities(chunk))
+    // 빈 줄로 쓴 <p>\u200B</p> 의 U+200B. trim() 이 공백으로 보지 않아 그냥 두면 보이지 않는 한 글자짜리 문단이 남는다.
+    // 엔티티(&#8203;)로 적힌 것까지 잡으려고 디코드 뒤에, 줄 머리 이스케이프가 가려지지 않게 그 앞에서 지운다.
+    .map((chunk) => chunk.replace(/\u200B/g, ''))
     .map((chunk) =>
       chunk
         .split('\n')
