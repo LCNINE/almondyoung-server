@@ -169,6 +169,7 @@ describe('OrderEventConsumer demo delivery boundary', () => {
         getAvailableProviderForChannel: jest.fn().mockResolvedValue(provider),
       } as unknown as ProviderManagerService,
       {} as UserNotificationHistoryReader,
+      { getCached: jest.fn().mockResolvedValue(undefined) } as never,
     );
     const eventMappings = { getEventMapping: jest.fn() };
     const consumer = new OrderEventConsumer(

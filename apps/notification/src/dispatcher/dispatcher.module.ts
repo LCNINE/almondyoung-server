@@ -9,6 +9,7 @@ import { EventsModule } from '@app/events';
 import { SharedModule } from '../shared/shared.module';
 
 import { ProviderModule } from '../provider/provider.module';
+import { TemplateModule } from '../template/template.module';
 import { NotificationDispatcherService } from './services/notification-dispatcher.service';
 import { NotificationController } from './controllers/notification.controller';
 import { UserNotificationHistoryReader } from './services/user-notification-history.reader';
@@ -28,6 +29,7 @@ import { UgcEventConsumer } from './handlers/ugc-event.consumer';
     DbModule,
     HttpModule,
     ProviderModule,
+    TemplateModule,
     SharedModule,
     // 소비만 하는 앱이다 — `publishes` 가 없다. 구독 토픽은 `@On` 에서 도출되고
     // (`startConsumer`), groupId 는 `main.ts` 가 준다. 옛 `forConsumerModule` 은 그 둘을

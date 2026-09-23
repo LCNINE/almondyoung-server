@@ -74,6 +74,8 @@ export const templates = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     category: notificationCategoryEnum('category').notNull(),
     contents: jsonb('contents').notNull().$type<TemplateContents>(),
+    // 기본 메시지 사본
+    defaultContents: jsonb('default_contents').$type<TemplateContents>(),
     variablesSchema: jsonb('variables_schema').notNull().$type<VariableSchema>(),
     version: integer('version').default(1).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
@@ -400,6 +402,18 @@ export const alerts = pgTable(
   }),
 );
 
+// 메일 양식 설정. 행 하나만 쓴다.
+export const emailLayoutSettings = pgTable('email_layout_settings', {
+  id: varchar('id', { length: 20 }).primaryKey(),
+  logoUrl: text('logo_url'),
+  brandColor: varchar('brand_color', { length: 20 }).notNull(),
+  textColor: varchar('text_color', { length: 20 }).notNull(),
+  backgroundColor: varchar('background_color', { length: 20 }).notNull(),
+  footerContact: text('footer_contact').notNull(),
+  footerBusiness: text('footer_business').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // Types
 export type Channel = 'EMAIL' | 'SMS' | 'KAKAO' | 'PUSH';
 export type Language = 'ko' | 'en';
@@ -505,9 +519,11 @@ export const notificationTables = {
   smsDevices,
   smsTemplates,
   inboundMessages,
+  emailLayoutSettings,
 };
 
 // Export types
+export type EmailLayoutSettingsRow = typeof emailLayoutSettings.$inferSelect;
 export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;

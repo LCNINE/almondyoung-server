@@ -12,12 +12,14 @@ import {
   fcmTokens,
 } from '../../../database/schemas/notification-schema';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { markdownToEmailHtml, wrapEmailLayout, type EmailLayoutSettings } from '@packages/email-layout';
 import { Channel, Language, NotificationCategory, NotificationPriority, NotificationStatus } from '../../shared/enums';
 import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
 import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
 import { UserNotificationHistoryPage, UserNotificationHistoryReader } from './user-notification-history.reader';
+import { EmailLayoutService } from '../../template/services/email-layout.service';
 
 export interface Notification {
   notificationId: string;
@@ -42,6 +44,7 @@ export class NotificationDispatcherService {
     private readonly variableMapper: TemplateVariableMapperService,
     private readonly providerManager: ProviderManagerService,
     private readonly historyReader: UserNotificationHistoryReader,
+    private readonly emailLayoutService: EmailLayoutService,
   ) {}
 
   /**
@@ -116,6 +119,7 @@ export class NotificationDispatcherService {
       const renderedContent = this.renderContent({
         channel,
         category: dto.category,
+        emailLayout: channel === Channel.EMAIL ? await this.emailLayoutService.getCached() : undefined,
         language,
         template: channelTemplate,
         contentOverride: channelContentOverride,
@@ -509,6 +513,7 @@ export class NotificationDispatcherService {
   private renderContent(params: {
     channel: Channel;
     category?: NotificationCategory;
+    emailLayout?: EmailLayoutSettings;
     language: string; // 'ko' | 'en'
     template?: any;
     contentOverride?: {
@@ -523,7 +528,7 @@ export class NotificationDispatcherService {
     body: string;
     metadata?: Record<string, any>;
   } {
-    const { channel, category, language, template, contentOverride, variables, payload } = params;
+    const { channel, category, emailLayout, language, template, contentOverride, variables, payload } = params;
 
     let subject: string | undefined;
     let body: string | undefined;
@@ -572,6 +577,19 @@ export class NotificationDispatcherService {
     const usesProviderTemplate =
       (channel === 'KAKAO' && template?.kakaoTemplateCode) || (channel === 'EMAIL' && template?.providerTemplateId);
 
+    const advertising = channel === Channel.EMAIL && category === NotificationCategory.MARKETING;
+
+    // 마크다운 변환은 «치환 전»에 한다. 치환값에는 고객이 적은 값(이름·예금주명)이 섞이는데,
+    // 나중에 변환하면 그 값 안의 [글자](주소) 가 진짜 링크가 된다.
+    if (advertising && !hasOwnBody) {
+      throw new Error(
+        '광고 메일은 자체 본문(template.contents 또는 content override)이 있어야 수신 설정 안내를 붙일 수 있다',
+      );
+    }
+    if (channel === Channel.EMAIL && !usesProviderTemplate) {
+      body = markdownToEmailHtml(body, emailLayout);
+    }
+
     if (!usesProviderTemplate) {
       // 템플릿 시스템을 사용하지 않는 경우만 텍스트 치환
       if (variables && body) {
@@ -585,11 +603,9 @@ export class NotificationDispatcherService {
     }
     // 템플릿 시스템을 사용하는 경우는 Provider에서 templateParameter/template.variables로 처리
 
-    if (channel === 'EMAIL' && category === NotificationCategory.MARKETING) {
-      if (!hasOwnBody) {
-        throw new Error('광고 메일은 자체 본문(template.contents 또는 content override)이 있어야 수신 설정 안내를 붙일 수 있다');
-      }
-      ({ subject, body } = markAdvertisementEmail(subject, body));
+    if (channel === Channel.EMAIL) {
+      if (advertising) subject = markAdvertisementSubject(subject);
+      body = wrapEmailLayout(body, { settings: emailLayout, storefrontUrl: process.env.STOREFRONT_URL, advertising });
     }
 
     return {
@@ -645,20 +661,7 @@ export class NotificationDispatcherService {
 
 const AD_SUBJECT_PREFIX = '(광고)';
 
-export function markAdvertisementEmail(
-  subject: string | undefined,
-  body: string,
-): { subject: string | undefined; body: string } {
-  const settingsUrl = `${process.env.STOREFRONT_URL ?? 'https://almondyoung.com'}/kr/mypage/account/profile#marketing-consent`;
-  return {
-    subject: !subject?.trim()
-      ? `${AD_SUBJECT_PREFIX} [아몬드영] 혜택 소식`
-      : subject.startsWith(AD_SUBJECT_PREFIX)
-        ? subject
-        : `${AD_SUBJECT_PREFIX} ${subject}`,
-    body:
-      body +
-      `\n<p style="color:#888;font-size:12px">본 메일은 광고성 정보 수신에 동의하신 분께 발송되었습니다. ` +
-      `수신을 원하지 않으시면 <a href="${settingsUrl}">마이페이지 수신 설정</a>에서 변경하실 수 있습니다.</p>`,
-  };
+export function markAdvertisementSubject(subject: string | undefined): string {
+  if (!subject?.trim()) return `${AD_SUBJECT_PREFIX} [아몬드영] 혜택 소식`;
+  return subject.startsWith(AD_SUBJECT_PREFIX) ? subject : `${AD_SUBJECT_PREFIX} ${subject}`;
 }

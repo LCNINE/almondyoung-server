@@ -1,7 +1,7 @@
 import { MembershipEventConsumer } from './membership-event.consumer';
 import { UserEventConsumer } from './user-event.consumer';
 import { notifyMember } from './notify-member';
-import { markAdvertisementEmail } from '../services/notification-dispatcher.service';
+import { markAdvertisementSubject } from '../services/notification-dispatcher.service';
 
 const active = (eventKey: string, isActive = true) => ({
   eventKey,
@@ -161,12 +161,11 @@ describe('광고성 알림', () => {
     expect(d.send).toHaveBeenCalledTimes(1);
   });
 
-  it('광고 메일은 제목에 (광고)를 한 번만 붙이고 수신 설정 안내를 덧붙인다', () => {
-    const marked = markAdvertisementEmail('[아몬드영] 쿠폰이 곧 만료됩니다', '<p>본문</p>');
-    expect(marked.subject).toBe('(광고) [아몬드영] 쿠폰이 곧 만료됩니다');
-    expect(marked.body).toContain('/mypage/account/profile#marketing-consent');
-    expect(markAdvertisementEmail(marked.subject, '<p>본문</p>').subject).toBe(marked.subject);
-    expect(markAdvertisementEmail(undefined, '<p>본문</p>').subject).toBe('(광고) [아몬드영] 혜택 소식');
-    expect(markAdvertisementEmail('  ', '<p>본문</p>').subject).toBe('(광고) [아몬드영] 혜택 소식');
+  it('광고 메일 제목에는 (광고)를 한 번만 붙이고, 제목이 비면 기본 제목을 쓴다', () => {
+    const marked = markAdvertisementSubject('[아몬드영] 쿠폰이 곧 만료됩니다');
+    expect(marked).toBe('(광고) [아몬드영] 쿠폰이 곧 만료됩니다');
+    expect(markAdvertisementSubject(marked)).toBe(marked);
+    expect(markAdvertisementSubject(undefined)).toBe('(광고) [아몬드영] 혜택 소식');
+    expect(markAdvertisementSubject('  ')).toBe('(광고) [아몬드영] 혜택 소식');
   });
 });
