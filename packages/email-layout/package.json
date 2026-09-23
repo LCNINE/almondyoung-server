@@ -1,0 +1,8 @@
+{
+  "name": "@packages/email-layout",
+  "version": "0.0.1",
+  "description": "알림 메일의 공통 뼈대 — 발송기와 어드민 미리보기가 같은 함수를 쓴다",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}
