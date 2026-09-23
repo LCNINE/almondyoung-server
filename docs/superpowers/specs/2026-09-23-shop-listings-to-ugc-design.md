@@ -45,7 +45,7 @@ URL(`/shop-trade`, `/shop-trade/{slug}`)과 기존 글의 slug·id·조회수는
 | 작성자 표시 | 공개 페이지에 표시하지 않는다 | 배지 / 마스킹 닉네임 |
 | 관리자 권한 | 기존 scope `admin:ugc:read`·`admin:ugc:modify` 재사용 | 전용 scope 신설 (매핑 시드 전까지 master 만 관리 가능) |
 | 이관 | 두 번 배포 + 멱등 복사 스크립트 (§9) | 한 번 배포 (§9.1 의 사이트맵 함정) / core 를 ugc 프록시로 유지 (서비스 간 결합 신설) |
-| 탈퇴 회원 글 | 컨슈머가 연락처 NULL + soft delete. **물리 삭제 크론은 두지 않는다** | 30일 뒤 물리 삭제 크론 |
+| 탈퇴 회원 글 | 컨슈머가 `UserDeleted`(탈퇴 즉시)와 `UserPermanentDeleted`(보조)를 듣고 연락처 NULL + soft delete. **물리 삭제 크론은 두지 않는다** | 30일 뒤 물리 삭제 크론 / `UserPermanentDeleted` 만 듣기 (휴면 크론이 약 3년 뒤에야 내서 그동안 전화번호가 공개된다) |
 
 ## 4. 데이터 모델 (ugc DB, `public` 스키마)
 
@@ -257,7 +257,7 @@ ugc 엔드포인트 추가와 스토어프론트 전환을 한 배포에 묶으�
 ### 9.2 PR 1 — expand (ugc + file-service, 사용자 영향 없음)
 
 - ugc 마이그레이션 1건: §4 의 테이블 넷. 전부 additive.
-- ugc 의 공개·회원·관리자 컨트롤러, `UserPermanentDeleted` 컨슈머, `NullClassifier`.
+- ugc 의 공개·회원·관리자 컨트롤러, 탈퇴 컨슈머(`UserDeleted`·`UserPermanentDeleted`), `NullClassifier`.
 - file-service `shop-listing-image` 시드.
 - 복사 스크립트 `scripts/ops/shop-listings-migrate/` (§9.3).
 - 배포: `db:migrate`(ugc) → `db:seed:ref`(file-service) → `sst deploy`. expand 이므로 migrate 가 먼저다.
@@ -304,8 +304,12 @@ core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:
 
 ## 10. 탈퇴 회원과 개인정보
 
-- ugc 에 `@On(USER_STREAM, 'UserPermanentDeleted')` 컨슈머를 둔다(선례 `apps/ai/src/assistant/consumers/user-permanent-deleted.consumer.ts`).
-  탈퇴 회원의 매물은 연락처 두 필드를 NULL 로, `deleted_at` 을 기록한다. 컨슈머는 멱등이다.
+- ugc 에 탈퇴 컨슈머 `ShopListingUserWithdrawalConsumer` 를 둔다(선례 `apps/ai/src/assistant/consumers/user-permanent-deleted.consumer.ts`).
+  **`UserDeleted`** 를 듣는다 — 회원이 탈퇴하는 순간 `AuthService.softDeleteUser` 가 낸다. `UserPermanentDeleted` 는
+  휴면 크론이 약 3년 뒤에야 내므로 그것만 들으면 탈퇴한 회원의 전화번호가 몇 년 동안 공개된 채 남는다. 그래서
+  `UserPermanentDeleted` 는 보조 경로로만 같이 듣는다.
+  탈퇴 회원의 매물(`author_type='member'` 만)은 연락처 두 필드를 NULL 로, `deleted_at` 을 기록한다. 컨슈머는 멱등이라
+  두 이벤트가 모두 오거나 user-service 의 `withdrawn-replay` 가 옛 탈퇴자의 `UserDeleted` 를 다시 내도 결과가 같다.
 - 컨슈머는 모듈의 `controllers: []` 에 등록해야 실제로 구독한다. 빠져도 에러가 나지 않으므로 등록 여부를 스펙으로 지킨다.
 - 물리 삭제 크론은 두지 않는다.
 
@@ -329,7 +333,7 @@ core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:
 - 동시 게시 한도: 병렬 4건 생성 → 3건 성공.
 - 소유권: 남의 글 조회·수정·거래완료·삭제 → 전부 404.
 - 회원 수정 → `pending`, slug 불변.
-- `UserPermanentDeleted` → 연락처 NULL, 공개 목록에서 빠짐.
+- 탈퇴(`withdrawAuthor`) → 연락처 NULL, 공개 목록에서 빠짐. 같은 user id 의 관리자 글은 그대로.
 - 복사 스크립트 두 번 실행 → 결과 동일.
 
 ### 11.3 보안 레지스트리

@@ -4,7 +4,7 @@ import { NullShopListingClassifier, SHOP_LISTING_CLASSIFIER } from './classifier
 import { AdminShopListingsController } from './controllers/admin-shop-listings.controller';
 import { MemberShopListingsController } from './controllers/member-shop-listings.controller';
 import { PublicShopListingsController } from './controllers/public-shop-listings.controller';
-import { ShopListingUserPermanentDeletedConsumer } from './consumers/user-permanent-deleted.consumer';
+import { ShopListingUserWithdrawalConsumer } from './consumers/user-withdrawal.consumer';
 import { ShopListingModerationManager } from './shop-listing-moderation.manager';
 import { ShopListingViewManager } from './shop-listing-view.manager';
 import { ShopListingManager } from './shop-listing.manager';
@@ -12,7 +12,7 @@ import { ShopListingReader } from './shop-listing.reader';
 import { ShopListingsService } from './shop-listings.service';
 
 @Module({
-  controllers: [PublicShopListingsController, MemberShopListingsController, AdminShopListingsController, ShopListingUserPermanentDeletedConsumer],
+  controllers: [PublicShopListingsController, MemberShopListingsController, AdminShopListingsController, ShopListingUserWithdrawalConsumer],
   providers: [
     ShopListingsService,
     ShopListingReader,

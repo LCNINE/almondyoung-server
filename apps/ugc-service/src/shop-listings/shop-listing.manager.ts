@@ -215,11 +215,13 @@ export class ShopListingManager {
   // ─── 탈퇴 ───
 
   /**
-   * 영구 삭제된 회원의 글: 연락처를 비우고 감춘다. 이미 지워진 글의 연락처도 비운다.
+   * 탈퇴한 회원의 글: 연락처를 비우고 감춘다. 이미 지워진 글의 연락처도 비운다.
    * 멱등 — 재전송돼도 결과가 같다. 반환값은 이번에 새로 감춘 글 수.
+   * 작성자 락을 먼저 잡는다 — 진행 중인 회원 작성·수정이 끝난 뒤에 감춰, 탈퇴 직후 커밋된 글이 살아남지 않게 한다.
    */
   async withdrawAuthor(userId: string, tx?: UgcTx): Promise<number> {
     return this.db.run(async (trx) => {
+      await this.lockAuthor(trx, userId);
       const now = new Date();
       const hidden = await trx
         .update(shopListings)

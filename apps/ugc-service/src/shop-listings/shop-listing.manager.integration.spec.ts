@@ -198,4 +198,24 @@ describeIfDb('ShopListingManager (실 Postgres)', () => {
     expect(row).toMatchObject({ contactPhone: null, kakaoOpenChatUrl: null });
     expect(row.deletedAt).toBeInstanceOf(Date);
   });
+
+  // 이관된 관리자 글은 author_user_id 에 그 직원의 id 를 들고 있다 — 직원이 탈퇴해도 관리자 글은 그대로다.
+  it('탈퇴 처리는 같은 user id 의 관리자 글을 건드리지 않는다', async () => {
+    const staffId = newAuthor();
+    const manager = build();
+    const adminListing = await manager.createByAdmin(
+      { ...memberDto(), contactPhone: '01099998888', kakaoOpenChatUrl: 'https://open.kakao.com/o/staff' },
+      staffId,
+    );
+
+    expect(await manager.withdrawAuthor(staffId)).toBe(0);
+
+    const [row] = await db.select().from(shopListings).where(eq(shopListings.id, adminListing.id));
+    expect(row).toMatchObject({
+      authorType: 'admin',
+      contactPhone: '01099998888',
+      kakaoOpenChatUrl: 'https://open.kakao.com/o/staff',
+      deletedAt: null,
+    });
+  });
 });
