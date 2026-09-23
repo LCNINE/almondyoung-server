@@ -43,7 +43,7 @@ export function htmlToMarkdown(html: string): string {
   }
 
   const paragraphs = html
-    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?br\b[^>]*>/gi, '\n')
     .split(/<\/p>/i)
     .map((chunk) => chunk.replace(/<p\b[^>]*>/gi, ''))
     .map((chunk) => decodeEntities(chunk))

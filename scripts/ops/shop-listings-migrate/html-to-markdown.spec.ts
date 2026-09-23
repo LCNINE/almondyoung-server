@@ -9,6 +9,18 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<p>한 줄<br>두 줄<br/>세 줄<br />네 줄</p>')).toBe('한 줄\n두 줄\n세 줄\n네 줄');
   });
 
+  it('속성 붙은 <br class="x"> 도 줄바꿈', () => {
+    expect(htmlToMarkdown('<p>a<br class="x">b</p>')).toBe('a\nb');
+  });
+
+  it('닫는 </br> 도 줄바꿈', () => {
+    expect(htmlToMarkdown('<p>a</br>b</p>')).toBe('a\nb');
+  });
+
+  it('대문자 <P>·<BR> 도 처리한다', () => {
+    expect(htmlToMarkdown('<P>A<BR>B</P>')).toBe('A\nB');
+  });
+
   it('빈 문단은 버린다', () => {
     expect(htmlToMarkdown('<p>a</p><p></p><p><br></p><p>b</p>')).toBe('a\n\nb');
   });
