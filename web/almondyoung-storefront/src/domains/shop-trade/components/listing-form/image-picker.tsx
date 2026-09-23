@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { MAX_SHOP_LISTING_IMAGES } from "@/domains/shop-trade/listing-form"
 import { uploadFile } from "@/lib/api/file/upload"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { MAX_UPLOAD_BYTES, compressImageForUpload } from "@/lib/utils/image-compress"
 import { cn } from "@/lib/utils"
 
 // file-service file_contexts 시드와 같아야 한다(spec §8.2). 없으면 업로드가 404.
@@ -30,13 +31,26 @@ export function ImagePicker({
   const add = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const room = MAX_SHOP_LISTING_IMAGES - value.length
-    const picked = Array.from(files).slice(0, room)
+    if (room <= 0) return
+    const all = Array.from(files)
+    const picked = all.slice(0, room)
+    // 15장 제한에 걸려 일부만 담았으면 몇 장이 빠졌는지 바로 알려준다(그렇지 않으면 나머지가
+    // 조용히 버려진 걸로 보인다).
+    if (all.length > room) toast.error(t("tooManyImages", { count: room }))
+
     setUploading(true)
     try {
+      // 폰 사진 원본은 업로드 서버 액션이 거치는 Lambda 프록시의 본문 상한을 base64 인코딩 뒤
+      // 쉽게 넘는다(image-compress.ts 참고). 업로드 전에 무손실 webp 로 줄인다.
+      const compressed = await Promise.all(picked.map((file) => compressImageForUpload(file)))
+      const withinLimit = compressed.filter((result) => result.file.size <= MAX_UPLOAD_BYTES)
+      if (withinLimit.length < compressed.length) toast.error(t("imageTooLarge"))
+      if (withinLimit.length === 0) return
+
       // Promise.all 은 하나만 실패해도 나머지 성공분까지 버린다(file-service 고아 파일 + 전부 다시 선택).
       // allSettled 로 성공분은 순서대로 살리고, 실패가 하나라도 있으면 한 번만 알린다.
       const results = await Promise.allSettled(
-        picked.map((file) => {
+        withinLimit.map(({ file }) => {
           const formData = new FormData()
           formData.append("file", file)
           formData.append("contextId", SHOP_LISTING_IMAGE_CONTEXT_ID)

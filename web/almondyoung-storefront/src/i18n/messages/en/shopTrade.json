@@ -22,6 +22,8 @@
     "moveDown": "Move down",
     "removeImage": "Remove",
     "uploadFail": "Couldn't upload the photo. Please try again",
+    "imageTooLarge": "This photo is too large. Please choose a smaller one",
+    "tooManyImages": "You can add up to 15 photos. Only the first {count} were added",
     "content": "Description",
     "write": "Write",
     "preview": "Preview",

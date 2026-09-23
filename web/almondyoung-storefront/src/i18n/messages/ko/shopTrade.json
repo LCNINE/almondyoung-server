@@ -22,6 +22,8 @@
     "moveDown": "뒤로",
     "removeImage": "빼기",
     "uploadFail": "사진을 올리지 못했어요. 다시 시도해 주세요",
+    "imageTooLarge": "사진이 너무 커요. 더 작은 사진을 골라 주세요",
+    "tooManyImages": "사진은 15장까지 올릴 수 있어요. 앞의 {count}장만 올렸어요",
     "content": "본문",
     "write": "작성",
     "preview": "미리보기",

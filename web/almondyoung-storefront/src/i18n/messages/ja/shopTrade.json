@@ -22,6 +22,8 @@
     "moveDown": "後ろへ",
     "removeImage": "外す",
     "uploadFail": "写真をアップロードできませんでした。もう一度お試しください",
+    "imageTooLarge": "写真が大きすぎます。もっと小さい写真を選んでください",
+    "tooManyImages": "写真は15枚までです。最初の{count}枚のみ追加しました",
     "content": "本文",
     "write": "作成",
     "preview": "プレビュー",
