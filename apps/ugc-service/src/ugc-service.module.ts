@@ -11,6 +11,7 @@ import { UgcServiceController } from './ugc-service.controller';
 import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
+import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { ugcServiceSchema } from './db/schema';
 
 const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
@@ -25,8 +26,8 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     AuthorizationModule.forRoot({
       microserviceName: 'ugc-service',
       scopes: [
-        { key: 'admin:ugc:read', category: 'admin', description: '관리자 - UGC 조회 (리뷰, Q&A 목록 조회)' },
-        { key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변)' },
+        { key: 'admin:ugc:read', category: 'admin', description: '관리자 - UGC 조회 (리뷰, Q&A, 샵 매매 목록 조회)' },
+        { key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변, 샵 매매 작성·검토)' },
       ],
     }),
     DbModule.forRoot({
@@ -39,6 +40,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     CronOnceModule,
     ReviewsModule,
     QnaModule,
+    ShopListingsModule,
   ],
   controllers: [UgcServiceController],
   providers: [

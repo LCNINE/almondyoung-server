@@ -16,7 +16,10 @@ import { join } from 'node:path';
 const AUDIT = join(__dirname, 'route-authz-audit.js');
 
 /** 무인증 쓰기가 정당한 라우트 (서명 검증 등 자체 방어가 있는 경우). `"VERB /route": '이유'` */
-const ALLOWED: Record<string, string> = {};
+const ALLOWED: Record<string, string> = {
+  'POST /shop-listings/public/:slug/view':
+    '샵 매매 조회수 비콘. 스토어프론트 캐시 페이지가 브라우저에서 부른다(로그인 무관). 쓰는 것은 방문자 해시 1행과 카운터뿐이고, (매물·방문자·KST 날짜) unique 로 같은 방문자는 하루 1회만 센다. 비공개·없는 slug 는 조용히 무시한다.',
+};
 
 interface AuditRow {
   app: string;
