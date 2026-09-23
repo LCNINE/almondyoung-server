@@ -1,4 +1,4 @@
-import { hashVisitor, kstToday, slugify, stripPhoneSeparators } from '../shop-listing.util';
+import { hashVisitor, isUniqueViolation, kstToday, slugify, stripPhoneSeparators } from '../shop-listing.util';
 
 describe('slugify', () => {
   it('소문자로 바꾸고 허용 밖 문자를 하이픈 하나로 접는다', () => {
@@ -50,5 +50,24 @@ describe('stripPhoneSeparators', () => {
   it('문자열이 아니면 그대로 둔다 — 타입 검증은 class-validator 몫이다', () => {
     expect(stripPhoneSeparators(123)).toBe(123);
     expect(stripPhoneSeparators(undefined)).toBeUndefined();
+  });
+});
+
+describe('isUniqueViolation', () => {
+  const pgError = { code: '23505', constraint_name: 'shop_listings_slug_unique' };
+
+  it('postgres.js 에러를 직접 받으면 알아본다', () => {
+    expect(isUniqueViolation(pgError, 'shop_listings_slug_unique')).toBe(true);
+  });
+
+  it('drizzle 이 cause 로 감싸도 알아본다', () => {
+    expect(isUniqueViolation(new Error('Failed query', { cause: pgError }), 'shop_listings_slug_unique')).toBe(true);
+  });
+
+  it('다른 제약·다른 코드·에러가 아닌 값은 아니다', () => {
+    expect(isUniqueViolation(pgError, 'other_unique')).toBe(false);
+    expect(isUniqueViolation({ ...pgError, code: '23503' }, 'shop_listings_slug_unique')).toBe(false);
+    expect(isUniqueViolation('23505', 'shop_listings_slug_unique')).toBe(false);
+    expect(isUniqueViolation(null, 'shop_listings_slug_unique')).toBe(false);
   });
 });

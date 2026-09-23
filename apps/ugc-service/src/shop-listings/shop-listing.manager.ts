@@ -21,8 +21,8 @@ import { MEMBER_ACTIVE_LISTING_LIMIT, SHOP_LISTING_ADVISORY_LOCK_CLASS } from '.
 import { ShopListingModerationManager } from './shop-listing-moderation.manager';
 import { ShopListingReader } from './shop-listing.reader';
 import { entersLimit, nextStatus } from './shop-listing.transitions';
-import { slugify } from './shop-listing.util';
-import { type ShopListingEntity, type ShopListingWithImages } from './types';
+import { isUniqueViolation, slugify } from './shop-listing.util';
+import { type ShopListingEntity, type ShopListingInsert, type ShopListingWithImages } from './types';
 
 type ListingFields = Pick<
   MemberShopListingDto,
@@ -59,19 +59,16 @@ export class ShopListingManager {
       await this.lockAuthor(trx, userId);
       await this.assertWithinLimit(trx, userId);
 
-      const [created] = await trx
-        .insert(shopListings)
-        .values({
-          ...fieldsOf(dto),
-          slug: await this.resolveSlug(dto.title, null, trx),
-          contactPhone: dto.contactPhone,
-          authorType: 'member',
-          authorUserId: userId,
-          updatedBy: userId,
-          ...statusPatchFor(decision),
-          submittedAt: new Date(),
-        })
-        .returning();
+      const created = await this.insertListing(trx, {
+        ...fieldsOf(dto),
+        slug: await this.resolveSlug(dto.title, null, trx),
+        contactPhone: dto.contactPhone,
+        authorType: 'member',
+        authorUserId: userId,
+        updatedBy: userId,
+        ...statusPatchFor(decision),
+        submittedAt: new Date(),
+      });
 
       await this.replaceImages(trx, created.id, dto.imageFileIds);
       await this.moderation.recordClassification(trx, created, classification, decision);
@@ -143,18 +140,15 @@ export class ShopListingManager {
 
   async createByAdmin(dto: AdminShopListingDto, adminId: string, tx?: UgcTx): Promise<ShopListingWithImages> {
     return this.db.run(async (trx) => {
-      const [created] = await trx
-        .insert(shopListings)
-        .values({
-          ...fieldsOf(dto),
-          slug: await this.resolveSlug(dto.slug || dto.title, null, trx),
-          contactPhone: dto.contactPhone ?? null,
-          authorType: 'admin',
-          authorUserId: adminId,
-          updatedBy: adminId,
-          status: 'published',
-        })
-        .returning();
+      const created = await this.insertListing(trx, {
+        ...fieldsOf(dto),
+        slug: await this.resolveSlug(dto.slug || dto.title, null, trx),
+        contactPhone: dto.contactPhone ?? null,
+        authorType: 'admin',
+        authorUserId: adminId,
+        updatedBy: adminId,
+        status: 'published',
+      });
 
       await this.replaceImages(trx, created.id, dto.imageFileIds);
       return { ...created, imageFileIds: [...dto.imageFileIds] };
@@ -293,6 +287,22 @@ export class ShopListingManager {
     await trx.insert(shopListingImages).values(fileIds.map((fileId, order) => ({ listingId, fileId, order })));
   }
 
+  /**
+   * resolveSlug 는 확인 후 넣기라, 그사이 같은 slug 가 먼저 커밋되면 unique 위반이 난다. 500 대신 409 로 돌려준다.
+   * 트랜잭션은 이미 중단됐으므로 다시 시도하지 않고 호출자에게 맡긴다.
+   */
+  private async insertListing(trx: UgcTx, values: ShopListingInsert): Promise<ShopListingEntity> {
+    try {
+      const [created] = await trx.insert(shopListings).values(values).returning();
+      return created;
+    } catch (e) {
+      if (isUniqueViolation(e, SHOP_LISTING_SLUG_UNIQUE_CONSTRAINT)) {
+        throw new ConflictError('같은 주소의 글이 방금 등록됐습니다. 다시 시도해 주세요.');
+      }
+      throw e;
+    }
+  }
+
   private async resolveSlug(raw: string, excludeId: string | null, trx: UgcTx): Promise<string> {
     const base = slugify(raw);
     if (!base) {
@@ -307,6 +317,9 @@ export class ShopListingManager {
 }
 
 const CLEARED_CONTACT = { contactPhone: null, kakaoOpenChatUrl: null } as const;
+
+/** db/schema.ts 의 uniqueIndex 이름과 같아야 한다 — 통합 스펙이 실제 위반으로 확인한다. */
+const SHOP_LISTING_SLUG_UNIQUE_CONSTRAINT = 'shop_listings_slug_unique';
 
 function fieldsOf(dto: ListingFields): Pick<
   ShopListingEntity,

@@ -26,3 +26,23 @@ export function kstToday(now: Date = new Date()): string {
 export function stripPhoneSeparators(value: unknown): unknown {
   return typeof value === 'string' ? value.replace(/[\s-]/g, '') : value;
 }
+
+/**
+ * Postgres unique 위반(23505)이 그 제약에서 났는가. postgres.js 의 `PostgresError` 는 제약 이름을
+ * `constraint_name` 에 싣고, drizzle 은 그 에러를 `DrizzleQueryError.cause` 로 감싼다 — 둘 다 본다.
+ */
+export function isUniqueViolation(e: unknown, constraint: string): boolean {
+  let current: unknown = e;
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
+    if (
+      'code' in current &&
+      current.code === '23505' &&
+      'constraint_name' in current &&
+      current.constraint_name === constraint
+    ) {
+      return true;
+    }
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
+}

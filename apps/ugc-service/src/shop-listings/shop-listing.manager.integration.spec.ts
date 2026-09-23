@@ -174,6 +174,28 @@ describeIfDb('ShopListingManager (실 Postgres)', () => {
     expect(created).toMatchObject({ status: 'published', authorType: 'admin', slug: dto.slug, contactPhone: null });
   });
 
+  // resolveSlug 의 확인과 INSERT 사이에 같은 slug 가 먼저 커밋되는 경우 — 확인을 늘 「비어 있음」으로 만들어 재현한다.
+  it('slug 가 그사이 선점되면 500 이 아니라 409', async () => {
+    const adminId = newAuthor();
+    const slug = `경합-${randomUUID().slice(0, 8)}`;
+    await build().createByAdmin({ ...memberDto(), contactPhone: null, slug }, adminId);
+
+    const reader = new ShopListingReader(t.dbService);
+    jest.spyOn(reader, 'slugTaken').mockResolvedValue(false);
+    const racing = new ShopListingManager(
+      t.dbService,
+      reader,
+      new ShopListingModerationManager(t.dbService, reader),
+      new NullShopListingClassifier(),
+      OFF,
+    );
+
+    await expect(racing.createByAdmin({ ...memberDto(), contactPhone: null, slug }, adminId)).rejects.toThrow(
+      ConflictError,
+    );
+    await expect(racing.createByMember(memberDto({ title: slug }), newAuthor())).rejects.toThrow(ConflictError);
+  });
+
   it('관리자 수정은 상태를 바꾸지 않는다', async () => {
     const adminId = newAuthor();
     const userId = newAuthor();

@@ -536,7 +536,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /shop-listings/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:132',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:129',
     predicate: 'eq(shopListings.authorUserId, userId)',
     note: 'soft delete UPDATE 의 WHERE 에 작성자 조건. 0행이면 404(존재 은닉).',
   },
