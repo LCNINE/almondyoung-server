@@ -2,9 +2,16 @@
 
 // 샵 매매는 2026-09 ugc-service 로 옮겼다(spec 2026-09-23-shop-listings-to-ugc-design). core(pim) 의 옛 API 는 PR 3 에서 지운다.
 
-import type { ShopListingResponseDto } from "@/lib/types/dto/shop-listing"
+import type {
+  ShopListingContactDto,
+  ShopListingResponseDto,
+} from "@/lib/types/dto/shop-listing"
 import type { ShopListingItem } from "@/lib/types/ui/shop-listing"
 import { headers } from "next/headers"
+import {
+  toActionFailure,
+  type ShopListingActionResult,
+} from "@/domains/shop-trade/action-result"
 import { api } from "../api"
 
 const SHOP_LISTINGS_TAG = "shop-listings"
@@ -64,5 +71,21 @@ export async function recordShopListingView(slug: string): Promise<void> {
     )
   } catch {
     // 조회수는 실패해도 페이지가 멀쩡해야 한다
+  }
+}
+
+/** 로그인 회원에게만. 공개 상세는 캐시되므로 연락처는 이 호출로만 받는다(spec §7.2) */
+export async function getShopListingContact(
+  slug: string
+): Promise<ShopListingActionResult<ShopListingContactDto>> {
+  try {
+    const data = await api<ShopListingContactDto>(
+      "ugc",
+      `/shop-listings/public/${encodeSlugOnce(slug)}/contact`,
+      { method: "GET", withAuth: true, cache: "no-store" }
+    )
+    return { ok: true, data }
+  } catch (error) {
+    return toActionFailure(error)
   }
 }
