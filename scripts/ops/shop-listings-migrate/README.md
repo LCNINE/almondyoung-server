@@ -46,6 +46,9 @@ curl -s https://ugc.almondyoung.com/shop-listings/public            # []
 curl -s -o /dev/null -w '%{http_code}\n' https://ugc.almondyoung.com/shop-listings/mine   # 401
 ```
 
+**PR 1 배포 후 복사 전까지 라이브에서 매물을 만들지 말 것** — 스모크로 만든 글이 하나라도 있으면 복사 스크립트의
+재실행 가드(「ugc 에 core 에 없는 글」)가 멈춘다. 멈추면 그 행을 확인하고 물리 삭제한 뒤 다시 돌린다.
+
 ## 2. 복사
 
 1. 관리자에게 **샵 매매 쓰기 동결**을 공지한다 (PR 2 배포 완료까지).
@@ -69,6 +72,9 @@ npx sst shell --stage live -- bash -c \
 ## 3. PR 2 배포 직전
 
 같은 명령을 `--apply` 로 한 번 더 — 그사이 쌓인 조회수를 합친다. 스크립트는 ugc 에 core 에 없는 글이 생기면(= 전환 이후) 스스로 멈춘다.
+
+같은 가드는 앞선 복사 뒤 core 에서 soft delete 된 글에도 걸린다 — core 쪽은 `deleted_at is null` 만 읽으므로 그 글이
+「ugc 에만 있는 글」로 보인다. 쓰기 동결 중에는 생길 수 없는 일이지만, 멈췄다면 그 행이 동결 전 삭제인지 먼저 확인한다.
 
 ## 롤백
 
