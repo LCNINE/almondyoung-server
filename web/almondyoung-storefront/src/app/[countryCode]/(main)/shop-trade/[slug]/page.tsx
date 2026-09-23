@@ -6,6 +6,7 @@ import { toPlainSummary } from "@packages/shop-listing-markdown"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { Badge } from "@/components/ui/badge"
+import { ContactReveal } from "@/domains/shop-trade/components/contact-reveal"
 import { ShopListingMarkdown } from "@/domains/shop-trade/components/listing-markdown"
 import { ListingGallery } from "@/domains/shop-trade/components/listing-gallery"
 import { RelatedListings } from "@/domains/shop-trade/components/related-listings"
@@ -48,7 +49,7 @@ export async function generateMetadata({
 }
 
 export default async function ShopTradeDetailPage({ params }: PageProps) {
-  const { slug } = await params
+  const { countryCode, slug } = await params
   const t = await getTranslations("shopTrade")
   const listing = await getPublicShopListing(slug)
 
@@ -125,6 +126,8 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
           </div>
         ))}
       </dl>
+
+      <ContactReveal slug={listing.slug} countryCode={countryCode} />
 
       <ShopListingMarkdown content={listing.content} className="mt-6" />
 

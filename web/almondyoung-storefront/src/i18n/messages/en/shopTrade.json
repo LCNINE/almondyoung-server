@@ -1,4 +1,11 @@
 {
+  "contact": {
+    "show": "Show contact",
+    "call": "Call",
+    "openChat": "KakaoTalk open chat",
+    "none": "No contact info registered",
+    "loadFail": "Couldn't load contact info. Please try again"
+  },
   "title": "Shop Trade",
   "homeDescription": "Beauty salon transfer listings near you",
   "metaTitle": "Shop Trade — Beauty Salon Transfers",
