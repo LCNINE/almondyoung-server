@@ -1,5 +1,7 @@
 "use server"
 
+// 샵 매매는 2026-09 ugc-service 로 옮겼다(spec 2026-09-23-shop-listings-to-ugc-design). core(pim) 의 옛 API 는 PR 3 에서 지운다.
+
 import type { ShopListingResponseDto } from "@/lib/types/dto/shop-listing"
 import type { ShopListingItem } from "@/lib/types/ui/shop-listing"
 import { headers } from "next/headers"
@@ -8,7 +10,7 @@ import { api } from "../api"
 const SHOP_LISTINGS_TAG = "shop-listings"
 
 export async function listPublicShopListings(): Promise<ShopListingItem[]> {
-  return await api<ShopListingResponseDto[]>("pim", "/shop-listings/public", {
+  return await api<ShopListingResponseDto[]>("ugc", "/shop-listings/public", {
     method: "GET",
     withAuth: false,
     next: { tags: [SHOP_LISTINGS_TAG], revalidate: 60 },
@@ -29,7 +31,7 @@ export async function getPublicShopListing(
 ): Promise<ShopListingItem | null> {
   try {
     return await api<ShopListingResponseDto>(
-      "pim",
+      "ugc",
       `/shop-listings/public/${encodeSlugOnce(slug)}`,
       {
         method: "GET",
@@ -51,7 +53,7 @@ export async function recordShopListingView(slug: string): Promise<void> {
 
   try {
     await api<void>(
-      "pim",
+      "ugc",
       `/shop-listings/public/${encodeSlugOnce(slug)}/view`,
       {
         method: "POST",

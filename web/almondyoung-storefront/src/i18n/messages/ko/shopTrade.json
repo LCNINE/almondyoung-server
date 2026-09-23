@@ -22,6 +22,7 @@
   "allBusiness": "업종 전체",
   "allDeal": "거래 전체",
   "allKeyMoney": "권리금 전체",
+  "closed": "거래완료",
   "negotiable": "협의",
   "pyeong": "{n}평",
   "keyMoneyLabel": "권리금",

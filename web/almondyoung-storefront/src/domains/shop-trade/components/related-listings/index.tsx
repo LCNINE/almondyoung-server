@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
+import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
 import type { ShopListingItem } from "@/lib/types/ui/shop-listing"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 

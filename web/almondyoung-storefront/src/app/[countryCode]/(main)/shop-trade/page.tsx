@@ -9,7 +9,7 @@ import {
   hasActiveFilter,
   type ShopTradeListParams,
 } from "@/domains/shop-trade/build-list-href"
-import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
+import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
 import {
   SHOP_LISTING_BUSINESS_TYPES,
   SHOP_LISTING_DEAL_TYPES,

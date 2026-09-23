@@ -2,20 +2,31 @@ import {
   SHOP_LISTING_BUSINESS_TYPES,
   SHOP_LISTING_DEAL_TYPES,
   SHOP_LISTING_REGIONS,
+  SHOP_LISTING_STATUSES,
+  type MyShopListingResponseDto,
   type ShopListingBusinessType,
   type ShopListingDealType,
   type ShopListingRegion,
   type ShopListingResponseDto,
+  type ShopListingStatus,
 } from "../dto/shop-listing"
 
 export {
   SHOP_LISTING_REGIONS,
   SHOP_LISTING_BUSINESS_TYPES,
   SHOP_LISTING_DEAL_TYPES,
+  SHOP_LISTING_STATUSES,
 }
-export type { ShopListingRegion, ShopListingBusinessType, ShopListingDealType }
+export type {
+  ShopListingRegion,
+  ShopListingBusinessType,
+  ShopListingDealType,
+  ShopListingStatus,
+}
 
 export interface ShopListingItem extends ShopListingResponseDto {}
+
+export interface MyShopListingItem extends MyShopListingResponseDto {}
 
 export const SHOP_TRADE_VIEWS = ["grid", "list"] as const
 export type ShopTradeView = (typeof SHOP_TRADE_VIEWS)[number]
