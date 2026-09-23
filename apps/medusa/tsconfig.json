@@ -27,5 +27,7 @@
     "swc": true
   },
   "include": ["src/**/*", "../../packages/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // email-layout 은 ESM 전용 marked 를 쓴다. Medusa 는 이 패키지를 쓰지 않는데,
+  // 포함하면 CommonJS 빌드가 TS1479 로 죽는다.
+  "exclude": ["node_modules", "dist", "../../packages/email-layout/**"]
 }
