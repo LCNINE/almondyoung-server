@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { renderEmail, type EmailLayoutSettings } from '@packages/email-layout';
 import type { NotificationChannel } from '@/lib/api/domains/notification';
 import { fillSample } from '../lib/render';
 
@@ -8,13 +9,23 @@ export function MessagePreview({
   channel,
   subject,
   body,
+  advertising = false,
+  settings,
 }: {
   channel: NotificationChannel;
   subject?: string;
   body: string;
+  advertising?: boolean;
+  settings?: Partial<EmailLayoutSettings>;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const html = fillSample(body);
+  const html = fillSample(
+    renderEmail(body, {
+      settings,
+      storefrontUrl: process.env.NEXT_PUBLIC_STOREFRONT_URL,
+      advertising,
+    }),
+  );
 
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
@@ -39,12 +50,7 @@ export function MessagePreview({
         <span className="text-muted-foreground mr-2">제목</span>
         {subject ? fillSample(subject) : '(제목 없음)'}
       </div>
-      <iframe
-        title="메일 미리보기"
-        sandbox="allow-same-origin"
-        ref={frameRef}
-        className="h-[480px] w-full bg-white"
-      />
+      <iframe title="메일 미리보기" sandbox="allow-same-origin" ref={frameRef} className="h-[480px] w-full bg-white" />
     </div>
   );
 }

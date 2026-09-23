@@ -787,6 +787,7 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url('notification'),
       CHANNEL_ADAPTER_SERVICE_URL: url('channel-adapter'),
       FILE_SERVICE_URL: url('file'),
+      NEXT_PUBLIC_FILE_PUBLIC_URL: url('file'),
       UGC_SERVICE_URL: url('ugc'),
       ANALYTICS_SERVICE_URL: url('analytics'),
       SEARCH_SERVICE_URL: url('search'),

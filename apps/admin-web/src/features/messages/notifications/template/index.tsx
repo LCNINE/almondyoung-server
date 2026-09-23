@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Crown, Megaphone, PhoneCall, ShoppingBag, User, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Crown, Mail, Megaphone, PhoneCall, ShoppingBag, User, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import type { NotificationEvent, NotificationTemplate } from '@/lib/api/domains/notification';
 import {
+  useEmailLayout,
   useNotificationEvents,
   useNotificationTemplates,
   useUpdateNotificationEvent,
@@ -34,6 +35,7 @@ export default function NotificationSettingsTemplate() {
   const templates = useNotificationTemplates();
   const updateEvent = useUpdateNotificationEvent();
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const emailLayout = useEmailLayout();
 
   const eventByKey = new Map((events.data ?? []).map((e) => [e.eventKey, e]));
   const templateByKey = new Map((templates.data ?? []).map((t) => [t.templateKey, t]));
@@ -44,7 +46,7 @@ export default function NotificationSettingsTemplate() {
       {
         onSuccess: () => toast.success(`${event.name} 발송을 ${isActive ? '켰' : '껐'}습니다.`),
         onError: (error) => toast.error(error.message || '발송 설정을 바꾸지 못했습니다.'),
-      }
+      },
     );
 
   return (
@@ -55,6 +57,25 @@ export default function NotificationSettingsTemplate() {
       />
 
       <div className="flex flex-col gap-8 px-6 pb-6">
+        <Link
+          href="/mall/marketing/messages/layout-settings"
+          className="hover:border-primary hover:bg-primary/5 group flex cursor-pointer items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-all hover:shadow-md"
+        >
+          <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-md">
+            <Mail className="size-5" />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="group-hover:text-primary font-medium">메일 양식</span>
+            <span className="text-muted-foreground text-xs">
+              로고·색·푸터처럼 모든 메일에 똑같이 들어가는 부분을 한 번에 바꿉니다.
+            </span>
+          </div>
+          <span className="border-input group-hover:border-primary group-hover:text-primary flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium">
+            양식 편집
+            <ChevronRight className="size-4" />
+          </span>
+        </Link>
+
         {(events.isLoading || templates.isLoading) && <Skeleton className="h-64 w-full" />}
         {(events.isError || templates.isError) && (
           <p className="text-destructive text-sm">자동 알림 설정을 불러오지 못했습니다.</p>
@@ -81,7 +102,7 @@ export default function NotificationSettingsTemplate() {
           ))}
       </div>
 
-      <PreviewDialog target={preview} onClose={() => setPreview(null)} />
+      <PreviewDialog target={preview} settings={emailLayout.data} onClose={() => setPreview(null)} />
     </Container>
   );
 }
@@ -143,7 +164,14 @@ function NotificationCard({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onPreview({ title: entry.title, template, channels: event.defaultChannels })}
+            onClick={() =>
+              onPreview({
+                title: entry.title,
+                template,
+                channels: event.defaultChannels,
+                advertising: event.category === 'MARKETING',
+              })
+            }
           >
             미리보기
           </Button>
@@ -152,7 +180,12 @@ function NotificationCard({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onPreview({ title: entry.title, fixed: { channel: entry.channel, text: entry.text } })}
+            onClick={() =>
+              onPreview({
+                title: entry.title,
+                fixed: { channel: entry.channel, text: entry.text },
+              })
+            }
           >
             미리보기
           </Button>
