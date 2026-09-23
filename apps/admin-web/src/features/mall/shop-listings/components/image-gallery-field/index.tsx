@@ -13,7 +13,7 @@ import { CropDialog } from './crop-dialog';
 
 /** 사고 방지용 상한. 실제 권장은 8~10장이라 여기에 닿을 일은 거의 없다. */
 const MAX_IMAGES = 15;
-/** file_contexts 의 notice-content-image 정책과 맞춘다 (서버도 같은 값으로 거른다) */
+/** file_contexts 의 shop-listing-image 정책(10MB, image/*)과 맞춘다 (서버도 같은 값으로 거른다) */
 const MAX_BYTES = 10 * 1024 * 1024;
 
 type Props = {

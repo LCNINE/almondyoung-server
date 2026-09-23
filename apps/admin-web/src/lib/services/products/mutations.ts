@@ -23,8 +23,7 @@ import type {
   CreateBannerDto,
   UpdateBannerDto,
   CreateNoticeDto,
-  CreateShopListingDto,
-  UpdateShopListingDto,
+  AdminShopListingPayload,
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
@@ -1016,44 +1015,70 @@ export const useDeleteNotice = () => {
 
 // ===== 샵매매 뮤테이션 =====
 
-export const useCreateShopListing = () => {
+const useInvalidateShopListings = () => {
   const queryClient = useQueryClient();
+  return (id?: string) => {
+    void queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
+    if (id) void queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListing(id) });
+  };
+};
+
+export const useCreateShopListing = () => {
+  const invalidate = useInvalidateShopListings();
   return useMutation({
-    mutationFn: (dto: CreateShopListingDto) =>
-      products.shopListings.create(dto),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.shopListings,
-      });
-    },
+    mutationFn: (payload: AdminShopListingPayload) => products.shopListings.create(payload),
+    onSuccess: () => invalidate(),
   });
 };
 
 export const useUpdateShopListing = () => {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateShopListings();
   return useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: UpdateShopListingDto }) =>
-      products.shopListings.update(id, dto),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.shopListings,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.shopListing(variables.id),
-      });
-    },
+    mutationFn: ({ id, payload }: { id: string; payload: AdminShopListingPayload }) =>
+      products.shopListings.update(id, payload),
+    onSuccess: (_, { id }) => invalidate(id),
   });
 };
 
 export const useDeleteShopListing = () => {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateShopListings();
   return useMutation({
     mutationFn: (id: string) => products.shopListings.remove(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.shopListings,
-      });
-    },
+    onSuccess: () => invalidate(),
+  });
+};
+
+export const useApproveShopListing = () => {
+  const invalidate = useInvalidateShopListings();
+  return useMutation({
+    mutationFn: ({ id, expectedSubmittedAt }: { id: string; expectedSubmittedAt: string | null }) =>
+      products.shopListings.approve(id, expectedSubmittedAt),
+    // 409(그사이 수정)여도 상세를 새로 읽어야 하므로 성공·실패 모두 무효화한다
+    onSettled: (_, __, { id }) => invalidate(id),
+  });
+};
+
+export const useRejectShopListing = () => {
+  const invalidate = useInvalidateShopListings();
+  return useMutation({
+    mutationFn: ({
+      id,
+      reason,
+      expectedSubmittedAt,
+    }: {
+      id: string;
+      reason: string;
+      expectedSubmittedAt: string | null;
+    }) => products.shopListings.reject(id, reason, expectedSubmittedAt),
+    onSettled: (_, __, { id }) => invalidate(id),
+  });
+};
+
+export const useShopListingTransition = (kind: 'hide' | 'unhide' | 'close' | 'reopen') => {
+  const invalidate = useInvalidateShopListings();
+  return useMutation({
+    mutationFn: (id: string) => products.shopListings[kind](id),
+    onSettled: (_, __, id) => invalidate(id),
   });
 };
 
