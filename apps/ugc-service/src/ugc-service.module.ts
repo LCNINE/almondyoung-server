@@ -13,6 +13,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
 import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { ugcServiceSchema } from './db/schema';
+import { UGC_ROLE_MAPPINGS, UGC_SCOPES } from './shared/auth/ugc-scopes';
 
 const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
 
@@ -25,10 +26,8 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'ugc-service',
-      scopes: [
-        { key: 'admin:ugc:read', category: 'admin', description: '관리자 - UGC 조회 (리뷰, Q&A, 샵 매매 목록 조회)' },
-        { key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변, 샵 매매 작성·검토)' },
-      ],
+      scopes: UGC_SCOPES,
+      roleMappings: UGC_ROLE_MAPPINGS,
     }),
     DbModule.forRoot({
       config: {
