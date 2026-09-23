@@ -11,6 +11,7 @@ import { formatPhone, isValidPhone, stripPhone } from "./phone"
 export const MAX_SHOP_LISTING_IMAGES = 15
 const MAX_TITLE_LENGTH = 255
 const MAX_CONTENT_LENGTH = 10_000
+const MAX_KAKAO_URL_LENGTH = 255
 const KAKAO_OPEN_CHAT_PREFIX = "https://open.kakao.com/"
 
 /** 금액은 만원 단위 문자열로 받는다 (admin 폼과 같은 단위) */
@@ -93,7 +94,8 @@ export function buildMemberPayload(
   if (!values.businessType) return { ok: false, field: "businessType" }
   if (
     values.imageFileIds.length === 0 ||
-    values.imageFileIds.length > MAX_SHOP_LISTING_IMAGES
+    values.imageFileIds.length > MAX_SHOP_LISTING_IMAGES ||
+    new Set(values.imageFileIds).size !== values.imageFileIds.length
   )
     return { ok: false, field: "imageFileIds" }
   if (!values.content.trim() || values.content.length > MAX_CONTENT_LENGTH)
@@ -104,6 +106,8 @@ export function buildMemberPayload(
 
   const kakao = values.kakaoOpenChatUrl.trim()
   if (kakao && !kakao.startsWith(KAKAO_OPEN_CHAT_PREFIX))
+    return { ok: false, field: "kakaoOpenChatUrl" }
+  if (kakao && kakao.length > MAX_KAKAO_URL_LENGTH)
     return { ok: false, field: "kakaoOpenChatUrl" }
 
   return {

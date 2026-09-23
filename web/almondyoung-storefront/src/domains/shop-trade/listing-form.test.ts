@@ -52,11 +52,13 @@ describe("buildMemberPayload", () => {
     [{ businessType: "" }, "businessType"],
     [{ imageFileIds: [] }, "imageFileIds"],
     [{ imageFileIds: Array.from({ length: 16 }, (_, i) => `${i}`) }, "imageFileIds"],
+    [{ imageFileIds: [FILE, FILE] }, "imageFileIds"],
     [{ content: " \n " }, "content"],
     [{ content: "가".repeat(10_001) }, "content"],
     [{ contactPhone: "" }, "contactPhone"],
     [{ contactPhone: "1234" }, "contactPhone"],
     [{ kakaoOpenChatUrl: "https://example.com" }, "kakaoOpenChatUrl"],
+    [{ kakaoOpenChatUrl: "https://open.kakao.com/" + "a".repeat(240) }, "kakaoOpenChatUrl"],
   ] as const)("%j → %s 에서 멈춘다", (patch, field) => {
     expect(buildMemberPayload({ ...valid, ...patch } as ShopListingFormValues)).toEqual({ ok: false, field })
   })
