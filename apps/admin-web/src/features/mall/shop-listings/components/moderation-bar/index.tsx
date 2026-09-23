@@ -50,10 +50,14 @@ export function ModerationBar({ listing, onRefresh }: Props) {
     (m) => m.isPending
   );
 
-  const handle = async (run: () => Promise<unknown>, done: string) => {
+  const handle = async (
+    run: () => Promise<unknown>,
+    done: string
+  ): Promise<boolean> => {
     try {
       await run();
       toast.success(done);
+      return true;
     } catch (error) {
       if (isModerationConflict(error)) {
         toast.error(
@@ -62,11 +66,12 @@ export function ModerationBar({ listing, onRefresh }: Props) {
             action: { label: '새로고침', onClick: onRefresh },
           }
         );
-        return;
+        return false;
       }
       toast.error(
         error instanceof Error ? error.message : '처리하지 못했어요.'
       );
+      return false;
     }
   };
 
@@ -214,7 +219,9 @@ export function ModerationBar({ listing, onRefresh }: Props) {
                       expectedSubmittedAt: listing.submittedAt,
                     }),
                   '반려했어요.'
-                ).then(() => setReason(''))
+                ).then((ok) => {
+                  if (ok) setReason('');
+                })
               }
             >
               반려 처리

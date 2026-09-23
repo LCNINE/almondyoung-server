@@ -125,7 +125,8 @@ export type BuildAdminPayloadResult =
  */
 export function buildAdminPayload(values: AdminShopListingFormValues): BuildAdminPayloadResult {
   const title = values.title.trim();
-  if (!title || title.length > 255) return { ok: false, field: 'title', message: '제목을 입력해 주세요.' };
+  if (!title) return { ok: false, field: 'title', message: '제목을 입력해 주세요.' };
+  if (title.length > 255) return { ok: false, field: 'title', message: '제목은 255자까지 쓸 수 있어요.' };
   if (!values.region) return { ok: false, field: 'region', message: '지역을 선택해 주세요.' };
   if (!values.businessType) return { ok: false, field: 'businessType', message: '업종을 선택해 주세요.' };
   if (values.imageFileIds.length === 0 || values.imageFileIds.length > 15) {

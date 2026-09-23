@@ -114,6 +114,14 @@ describe('buildAdminPayload — PUT 전체 교체 계약', () => {
     expect(result.field).toBe(field);
     expect(result.message.length).toBeGreaterThan(0);
   });
+
+  it('제목이 255자를 넘으면 빈 제목과 다른 문구를 준다', () => {
+    const result = buildAdminPayload({ ...adminFormValuesFrom(memberListing), title: '가'.repeat(256) });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.field).toBe('title');
+    expect(result.message).toBe('제목은 255자까지 쓸 수 있어요.');
+  });
 });
 
 describe('adminFormValuesFrom', () => {
