@@ -59,18 +59,18 @@ export default function NotificationSettingsTemplate() {
       <div className="flex flex-col gap-8 px-6 pb-6">
         <Link
           href="/mall/marketing/messages/layout-settings"
-          className="hover:border-primary hover:bg-primary/5 group flex cursor-pointer items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-all hover:shadow-md"
+          className="group flex cursor-pointer items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-shadow hover:shadow-lg"
         >
-          <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-md">
+          <div className="text-foreground flex size-10 shrink-0 items-center justify-center rounded-md bg-gray-100">
             <Mail className="size-5" />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
-            <span className="group-hover:text-primary font-medium">메일 양식</span>
+            <span className="font-medium">메일 양식</span>
             <span className="text-muted-foreground text-xs">
               로고·색·푸터처럼 모든 메일에 똑같이 들어가는 부분을 한 번에 바꿉니다.
             </span>
           </div>
-          <span className="border-input group-hover:border-primary group-hover:text-primary flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium">
+          <span className="border-input flex shrink-0 items-center gap-1 rounded-md border bg-white px-3 py-1.5 text-sm font-medium">
             양식 편집
             <ChevronRight className="size-4" />
           </span>
