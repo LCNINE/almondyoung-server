@@ -7,6 +7,7 @@ import {
   buildAdminPayload,
   isModerationConflict,
   SHOP_LISTING_STATUS_TABS,
+  type AdminFormField,
   type AdminShopListingFormValues,
 } from './admin-listing-rules';
 
@@ -96,7 +97,7 @@ describe('buildAdminPayload — PUT 전체 교체 계약', () => {
     expect(result.ok && result.payload.contactPhone).toBe('021234567');
   });
 
-  it.each([
+  const invalidCases: Array<[Partial<AdminShopListingFormValues>, AdminFormField]> = [
     [{ title: ' ' }, 'title'],
     [{ region: '' }, 'region'],
     [{ businessType: '' }, 'businessType'],
@@ -104,7 +105,9 @@ describe('buildAdminPayload — PUT 전체 교체 계약', () => {
     [{ content: '' }, 'content'],
     [{ contactPhone: '123' }, 'contactPhone'],
     [{ kakaoOpenChatUrl: 'https://x.y' }, 'kakaoOpenChatUrl'],
-  ] as const)('%j → %s', (patch, field) => {
+  ];
+
+  it.each(invalidCases)('%j → %s', (patch, field) => {
     const result = buildAdminPayload({ ...adminFormValuesFrom(memberListing), ...patch });
     expect(result.ok).toBe(false);
     if (result.ok) return;
