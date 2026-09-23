@@ -6,6 +6,33 @@
     "none": "登録された連絡先がありません",
     "loadFail": "連絡先を読み込めませんでした。もう一度お試しください"
   },
+  "register": "物件を登録",
+  "mine": {
+    "title": "マイ物件",
+    "empty": "まだ登録した物件がありません",
+    "register": "物件を登録する",
+    "loadFail": "物件を読み込めませんでした。もう一度お試しください",
+    "status": {
+      "pending": "審査待ち",
+      "published": "掲載中",
+      "rejected": "差し戻し",
+      "hidden": "非表示",
+      "closed": "取引完了"
+    },
+    "rejectReason": "差し戻し理由: {reason}",
+    "hiddenNotice": "管理者が非表示にした物件は編集できません",
+    "edit": "編集",
+    "close": "取引完了にする",
+    "reopen": "再掲載する",
+    "delete": "削除",
+    "deleteTitle": "物件を削除しますか?",
+    "deleteBody": "削除すると元に戻せません。",
+    "cancel": "キャンセル",
+    "closedDone": "取引完了にしました",
+    "reopenedDone": "再掲載しました",
+    "deletedDone": "削除しました",
+    "actionFail": "処理できませんでした。もう一度お試しください"
+  },
   "title": "ショップ売買",
   "homeDescription": "ビューティーサロンの譲渡物件",
   "metaTitle": "ショップ売買 — ビューティーサロン譲渡",

@@ -6,6 +6,33 @@
     "none": "No contact info registered",
     "loadFail": "Couldn't load contact info. Please try again"
   },
+  "register": "List your shop",
+  "mine": {
+    "title": "My shop listings",
+    "empty": "You haven't listed a shop yet",
+    "register": "List a shop",
+    "loadFail": "Couldn't load your listings. Please try again",
+    "status": {
+      "pending": "In review",
+      "published": "Published",
+      "rejected": "Rejected",
+      "hidden": "Hidden",
+      "closed": "Closed"
+    },
+    "rejectReason": "Reason: {reason}",
+    "hiddenNotice": "Listings hidden by an admin can't be edited",
+    "edit": "Edit",
+    "close": "Mark as closed",
+    "reopen": "Publish again",
+    "delete": "Delete",
+    "deleteTitle": "Delete this listing?",
+    "deleteBody": "This can't be undone.",
+    "cancel": "Cancel",
+    "closedDone": "Marked as closed",
+    "reopenedDone": "Published again",
+    "deletedDone": "Deleted",
+    "actionFail": "Couldn't complete that. Please try again"
+  },
   "title": "Shop Trade",
   "homeDescription": "Beauty salon transfer listings near you",
   "metaTitle": "Shop Trade — Beauty Salon Transfers",

@@ -132,7 +132,16 @@ export default async function ShopTradePage({ searchParams }: PageProps) {
   return (
     <div className="container mx-auto max-w-[1360px] px-3.5 py-6 xl:px-[40px]">
       <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
-      <h1 className="text-foreground mb-6 text-2xl font-bold">{t("title")}</h1>
+
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-foreground text-2xl font-bold">{t("title")}</h1>
+        <LocalizedClientLink
+          href="/mypage/shop-listings/new"
+          className="border-border text-foreground hover:bg-muted rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+        >
+          {t("register")}
+        </LocalizedClientLink>
+      </div>
 
       <ListToolbar params={{ ...listParams, page }} total={filtered.length} />
 

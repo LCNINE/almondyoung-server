@@ -6,6 +6,33 @@
     "none": "등록된 연락처가 없어요",
     "loadFail": "연락처를 불러오지 못했어요. 다시 시도해 주세요"
   },
+  "register": "매물 등록",
+  "mine": {
+    "title": "내 매물",
+    "empty": "아직 올린 매물이 없어요",
+    "register": "매물 등록하기",
+    "loadFail": "매물을 불러오지 못했어요. 다시 시도해 주세요",
+    "status": {
+      "pending": "검토 대기",
+      "published": "게시 중",
+      "rejected": "반려",
+      "hidden": "숨김",
+      "closed": "거래완료"
+    },
+    "rejectReason": "반려 사유: {reason}",
+    "hiddenNotice": "관리자가 숨긴 글은 수정할 수 없어요",
+    "edit": "수정",
+    "close": "거래완료로 바꾸기",
+    "reopen": "다시 게시하기",
+    "delete": "삭제",
+    "deleteTitle": "매물을 삭제할까요?",
+    "deleteBody": "삭제하면 되돌릴 수 없어요.",
+    "cancel": "취소",
+    "closedDone": "거래완료로 바꿨어요",
+    "reopenedDone": "다시 게시했어요",
+    "deletedDone": "삭제했어요",
+    "actionFail": "처리하지 못했어요. 다시 시도해 주세요"
+  },
   "title": "샵매매",
   "homeDescription": "우리 동네 뷰티샵 양도·양수 매물",
   "metaTitle": "샵매매 — 뷰티샵 양도·양수",
