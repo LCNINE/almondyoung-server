@@ -1,7 +1,7 @@
 /**
  * core 의 샵 매매 글을 ugc 로 옮긴다 (spec 2026-09-23 §9.3). 런북은 같은 폴더의 README.md.
  *
- *   CORE_DATABASE_URL=... UGC_DATABASE_URL=... npx tsx scripts/ops/shop-listings-migrate/migrate.ts [--apply]
+ *   TZ=UTC CORE_DATABASE_URL=... UGC_DATABASE_URL=... npx tsx scripts/ops/shop-listings-migrate/migrate.ts [--apply]
  *
  * 기본은 **드라이런**이다. `--apply` 를 줘야 쓴다.
  * 멱등하다 — id 기준 upsert, 조회수는 큰 쪽, 이미지는 행마다 다시 넣고, 조회 기록은 중복을 버린다.
@@ -33,10 +33,14 @@ export async function runMigration(opts: {
 }): Promise<MigrationReport> {
   const { core, ugc, apply } = opts;
 
+  // core 의 시각 컬럼은 timestamp(without tz) 다. postgres.js 는 그걸 `new Date(x)` 로 **로컬 시간**으로 읽어
+  // KST 머신에서 9시간 밀린다. `at time zone 'UTC'` 로 timestamptz 로 바꿔 읽으면 오프셋이 붙어 모호하지 않다.
   const rows = await core<CoreShopListingRow[]>`
     select id, slug, title, content, region, business_type, deal_type, area_pyeong,
            deposit::float8 as deposit, monthly_rent::float8 as monthly_rent, key_money::float8 as key_money,
-           thumbnail_file_id, images, is_active, view_count, created_at, updated_at, created_by, updated_by
+           thumbnail_file_id, images, is_active, view_count,
+           created_at at time zone 'UTC' as created_at, updated_at at time zone 'UTC' as updated_at,
+           created_by, updated_by
     from shop_listings
     where deleted_at is null
     order by created_at`;
@@ -70,7 +74,8 @@ export async function runMigration(opts: {
     rows.length === 0
       ? []
       : await core<CoreViewRow[]>`
-          select id, listing_id, visitor_hash, viewed_on::text as viewed_on, created_at
+          select id, listing_id, visitor_hash, viewed_on::text as viewed_on,
+                 created_at at time zone 'UTC' as created_at
           from shop_listing_views where listing_id in ${core([...coreIds])}`;
 
   const report: MigrationReport = {
@@ -133,6 +138,10 @@ export async function runMigration(opts: {
 }
 
 async function main(): Promise<void> {
+  // 읽기는 위 SQL 에서 이미 TZ 와 무관하게 했다. 그래도 운영자 노트북(KST)에서 돌리는 스크립트라 한 겹 더 막는다.
+  if (process.env.TZ !== 'UTC') {
+    throw new Error('TZ=UTC 로 실행하세요 — core 의 timestamp(without tz) 를 로컬 시간으로 읽어 9시간 밀린다.');
+  }
   const apply = process.argv.includes('--apply');
   const coreUrl = process.env.CORE_DATABASE_URL;
   const ugcUrl = process.env.UGC_DATABASE_URL;

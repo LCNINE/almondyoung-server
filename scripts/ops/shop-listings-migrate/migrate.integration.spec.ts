@@ -31,12 +31,13 @@ describeIfDbs('runMigration (실 Postgres 두 개)', () => {
     ugc = postgres(UGC as string, { max: 1 });
     await core`
       insert into shop_listings (id, slug, title, content, region, business_type, deal_type,
-        thumbnail_file_id, images, is_active, view_count, created_by, updated_by)
+        thumbnail_file_id, images, is_active, view_count, created_by, updated_by, created_at, updated_at)
       values (${id}, ${slug}, '이관 테스트', '<p>첫 줄<br>둘째 줄</p>', 'seoul', 'nail', 'transfer',
-        ${thumb}, ${core.json([other])}, true, 7, ${randomUUID()}, null)`;
+        ${thumb}, ${core.json([other])}, true, 7, ${randomUUID()}, null,
+        '2026-09-07 01:00:00', '2026-09-08 02:30:00')`;
     await core`
-      insert into shop_listing_views (id, listing_id, visitor_hash, viewed_on)
-      values (${randomUUID()}, ${id}, ${'h'.repeat(64)}, '2026-09-01')`;
+      insert into shop_listing_views (id, listing_id, visitor_hash, viewed_on, created_at)
+      values (${randomUUID()}, ${id}, ${'h'.repeat(64)}, '2026-09-01', '2026-09-01 03:15:00')`;
   });
 
   afterAll(async () => {
@@ -62,6 +63,17 @@ describeIfDbs('runMigration (실 Postgres 두 개)', () => {
     const images = await ugc`select file_id from shop_listing_images where listing_id = ${id} order by "order"`;
     expect(images.map((r) => r.file_id)).toEqual([thumb, other]);
     expect(await ugc`select 1 from shop_listing_views where listing_id = ${id}`).toHaveLength(1);
+  });
+
+  // core 의 timestamp(without tz) 를 로컬 시간으로 읽으면 KST 머신에서 9시간 밀린다.
+  // 이 스펙을 `TZ=Asia/Seoul` 로 돌려도 초록이어야 한다 (README §2).
+  it('시각이 벽시계 값 그대로 옮겨진다 — 실행 머신의 TZ 와 무관', async () => {
+    const [row] = await ugc<{ created_at: string; updated_at: string }[]>`
+      select created_at::text as created_at, updated_at::text as updated_at from shop_listings where id = ${id}`;
+    expect(row).toEqual({ created_at: '2026-09-07 01:00:00', updated_at: '2026-09-08 02:30:00' });
+    const [view] = await ugc<{ created_at: string }[]>`
+      select created_at::text as created_at from shop_listing_views where listing_id = ${id}`;
+    expect(view.created_at).toBe('2026-09-01 03:15:00');
   });
 
   it('두 번 돌려도 결과가 같고, 조회수는 큰 쪽을 남긴다', async () => {

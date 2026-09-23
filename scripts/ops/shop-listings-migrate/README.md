@@ -52,11 +52,14 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ugc.almondyoung.com/shop-listin
 
 ```bash
 npx sst shell --stage live -- bash -c \
-  'CORE_DATABASE_URL="$CORE_DATABASE_URL" UGC_DATABASE_URL="$UGC_DATABASE_URL" npx tsx scripts/ops/shop-listings-migrate/migrate.ts'
+  'TZ=UTC CORE_DATABASE_URL="$CORE_DATABASE_URL" UGC_DATABASE_URL="$UGC_DATABASE_URL" npx tsx scripts/ops/shop-listings-migrate/migrate.ts'
 # 건수·샘플이 맞으면
 npx sst shell --stage live -- bash -c \
-  'CORE_DATABASE_URL="$CORE_DATABASE_URL" UGC_DATABASE_URL="$UGC_DATABASE_URL" npx tsx scripts/ops/shop-listings-migrate/migrate.ts --apply'
+  'TZ=UTC CORE_DATABASE_URL="$CORE_DATABASE_URL" UGC_DATABASE_URL="$UGC_DATABASE_URL" npx tsx scripts/ops/shop-listings-migrate/migrate.ts --apply'
 ```
+
+`TZ=UTC` 는 필수다 — 없으면 스크립트가 멈춘다. core 의 시각 컬럼은 timestamp(without tz) 라 KST 노트북에서
+로컬 시간으로 읽으면 작성일이 9시간 밀린다. 스크립트는 SQL 에서 `at time zone 'UTC'` 로 읽어 이미 막지만 한 겹 더 둔다.
 
 (`sst shell` 이 내보내는 변수 이름이 다르면 `deployments/lcnine/services/infra/shared.ts` 의 `dbUrl()` 로 두 URL 을 만든다.)
 
