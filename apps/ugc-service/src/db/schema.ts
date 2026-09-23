@@ -1,7 +1,10 @@
 import {
+  bigint,
+  date,
   integer,
   pgEnum,
   pgTable,
+  real,
   uuid,
   text,
   timestamp,
@@ -14,6 +17,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import type { TxFor } from '@app/db';
 import type {
   BestSelectionStatus,
@@ -27,6 +31,12 @@ import type {
 } from '../reviews/rewards/reward-rule.types';
 import type { ReviewPermissionProvider } from '../review-permissions/types';
 import { OWN_SOURCE_SYSTEM } from '../source-system';
+import {
+  SHOP_LISTING_AUTHOR_TYPES,
+  SHOP_LISTING_MODERATION_DECIDERS,
+  SHOP_LISTING_MODERATION_DECISIONS,
+  SHOP_LISTING_STATUSES,
+} from '../shop-listings/shop-listing.constants';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -403,6 +413,126 @@ export const reviewBestSelections = pgTable(
   ],
 );
 
+// ===== SHOP LISTINGS (샵 매매) — core 에서 이전 (spec 2026-09-23) =====
+export const shopListingStatusEnum = pgEnum('shop_listing_status', SHOP_LISTING_STATUSES);
+export const shopListingAuthorTypeEnum = pgEnum('shop_listing_author_type', SHOP_LISTING_AUTHOR_TYPES);
+export const shopListingModerationDeciderEnum = pgEnum(
+  'shop_listing_moderation_decider',
+  SHOP_LISTING_MODERATION_DECIDERS,
+);
+export const shopListingModerationDecisionEnum = pgEnum(
+  'shop_listing_moderation_decision',
+  SHOP_LISTING_MODERATION_DECISIONS,
+);
+
+export const shopListings = pgTable(
+  'shop_listings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    slug: varchar('slug', { length: 120 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    /** 마크다운. 원시 HTML 은 렌더러가 이스케이프한다. */
+    content: text('content').notNull(),
+    region: varchar('region', { length: 20 }),
+    businessType: varchar('business_type', { length: 20 }),
+    dealType: varchar('deal_type', { length: 20 }),
+    areaPyeong: integer('area_pyeong'),
+    /** 원 단위. null 이면 「협의」. */
+    deposit: bigint('deposit', { mode: 'number' }),
+    monthlyRent: bigint('monthly_rent', { mode: 'number' }),
+    keyMoney: bigint('key_money', { mode: 'number' }),
+    /** 숫자만. 공개 응답에 넣지 않는다 — 로그인 라우트로만 나간다. */
+    contactPhone: varchar('contact_phone', { length: 20 }),
+    kakaoOpenChatUrl: varchar('kakao_open_chat_url', { length: 255 }),
+    authorType: shopListingAuthorTypeEnum('author_type').notNull(),
+    authorUserId: uuid('author_user_id'),
+    status: shopListingStatusEnum('status').notNull(),
+    rejectReason: text('reject_reason'),
+    /** 가장 최근 pending 진입 시각. 검토 대기열 정렬 기준. */
+    submittedAt: timestamp('submitted_at'),
+    viewCount: integer('view_count').notNull().default(0),
+    updatedBy: uuid('updated_by'),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('shop_listings_slug_unique')
+      .on(table.slug)
+      .where(sql`${table.deletedAt} is null`),
+    index('shop_listings_status').on(table.status),
+    index('shop_listings_author_user_id').on(table.authorUserId),
+    index('shop_listings_created_at').on(table.createdAt),
+    index('shop_listings_deleted_at').on(table.deletedAt),
+    index('shop_listings_region').on(table.region),
+    index('shop_listings_business_type').on(table.businessType),
+    index('shop_listings_deal_type').on(table.dealType),
+  ],
+);
+
+/** review_media 와 같은 모양. order = 0 이 썸네일이다. */
+export const shopListingImages = pgTable(
+  'shop_listing_images',
+  {
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    primaryKey({ columns: [table.listingId, table.fileId], name: 'shop_listing_images_pkey' }),
+    uniqueIndex('shop_listing_images_listing_order_unique').on(table.listingId, table.order),
+    index('shop_listing_images_file_id').on(table.fileId),
+  ],
+);
+
+/** 판정 이력. 추가만 한다. Jev 임계값을 재는 정답셋이 된다. */
+export const shopListingModerations = pgTable(
+  'shop_listing_moderations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    decidedBy: shopListingModerationDeciderEnum('decided_by').notNull(),
+    decision: shopListingModerationDecisionEnum('decision').notNull(),
+    label: varchar('label', { length: 40 }),
+    confidence: real('confidence'),
+    reason: text('reason'),
+    actorUserId: uuid('actor_user_id'),
+    titleSnapshot: varchar('title_snapshot', { length: 255 }).notNull(),
+    contentSnapshot: text('content_snapshot').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('shop_listing_moderations_listing_created').on(table.listingId, table.createdAt)],
+);
+
+export const shopListingViews = pgTable(
+  'shop_listing_views',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    /** 방문자 IP + 매물 id 해시. 원본 IP 는 저장하지 않는다. */
+    visitorHash: varchar('visitor_hash', { length: 64 }).notNull(),
+    /** KST 날짜. 같은 방문자·같은 매물·같은 날은 1행만 남는다. */
+    viewedOn: date('viewed_on').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('shop_listing_views_per_day_unique').on(table.listingId, table.visitorHash, table.viewedOn),
+  ],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -416,6 +546,10 @@ export const ugcServiceSchema = {
   questions,
   questionMedia,
   answers,
+  shopListings,
+  shopListingImages,
+  shopListingModerations,
+  shopListingViews,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

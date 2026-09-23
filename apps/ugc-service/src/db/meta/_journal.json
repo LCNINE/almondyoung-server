@@ -50,6 +50,13 @@
       "when": 1789014257729,
       "tag": "20260910042417_add-review-permission-unique",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790162962793,
+      "tag": "20260923112922_add-shop-listings",
+      "breakpoints": true
     }
   ]
 }
