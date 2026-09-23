@@ -438,7 +438,8 @@ export async function getRangeSavings(
 export async function createMembershipCheckoutIntent(
   planId: string,
   returnUrl: string,
-  billingMode: "one_time" | "recurring" = "one_time"
+  billingMode: "one_time" | "recurring" = "one_time",
+  termsAgreementId?: string
 ): Promise<{ intentId: string }> {
   try {
     return await api<{ intentId: string }>(
@@ -446,7 +447,7 @@ export async function createMembershipCheckoutIntent(
       "/subscriptions/checkout-intent",
       {
         method: "POST",
-        body: { planId, returnUrl, billingMode },
+        body: { planId, returnUrl, billingMode, termsAgreementId },
         withAuth: true,
         cache: "no-store",
       }
@@ -479,20 +480,49 @@ export async function createMembershipCheckoutIntent(
 }
 
 /**
+ * 가입 약관 동의를 기록하고 그 id 를 받는다. 가입 폼을 제출한 «순간» 부른다 —
+ * 정기결제 첫 가입은 자동이체 등록으로 화면을 떠났다 돌아와 완성되므로, 가입 요청에는 이 id 를 실어 보낸다.
+ * mutation 이라 실패를 삼키지 않는다 — 동의가 안 남은 채로 가입을 진행하지 않는다.
+ */
+export async function recordMembershipTermsAgreement(input: {
+  termsVersion: string
+  planId: string
+  billingMode: "one_time" | "recurring"
+}): Promise<{ agreementId: string }> {
+  return await api<{ agreementId: string }>(
+    "membership",
+    "/me/membership-terms-agreements",
+    {
+      method: "POST",
+      body: input,
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}
+
+/**
  * 기존 billing_method로 즉시 결제 후 구독 생성
  */
 export async function subscribeWithBillingMethod(
   planId: string,
   billingMethodId: string,
   billingMode: "one_time" | "recurring" = "one_time",
-  checkoutAttemptId?: string
+  checkoutAttemptId?: string,
+  termsAgreementId?: string
 ): Promise<{ contractId: string; effectiveTrialDays?: number }> {
   return await api<{ contractId: string; effectiveTrialDays?: number }>(
     "membership",
     "/subscriptions/subscribe-with-method",
     {
       method: "POST",
-      body: { planId, billingMethodId, billingMode, checkoutAttemptId },
+      body: {
+        planId,
+        billingMethodId,
+        billingMode,
+        checkoutAttemptId,
+        termsAgreementId,
+      },
       withAuth: true,
       cache: "no-store",
     }

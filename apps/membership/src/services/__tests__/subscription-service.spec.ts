@@ -12,6 +12,8 @@ import { BillingReader } from '../billing/billing.reader';
 import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
 import { ConfigService } from '@nestjs/config';
 import { SavingsService } from '../savings/savings.service';
+import { TermsAgreementManager } from '../terms/terms-agreement.manager';
+import { BadRequestError } from '@app/shared';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -50,6 +52,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
     createMembershipCheckoutIntent: jest.fn(),
     getWalletPaymentIntent: jest.fn(),
     directCharge: jest.fn(),
+    createBillingAgreement: jest.fn(),
   };
 
   const mockBillingManager = {
@@ -68,6 +71,11 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
   const mockConfigService = {
     get: jest.fn().mockReturnValue(undefined),
+  };
+
+  const mockTermsAgreementManager = {
+    resolveForSubscription: jest.fn().mockResolvedValue(null),
+    linkContract: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -121,6 +129,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: SavingsService,
           useValue: { getSavingsByContract: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: TermsAgreementManager,
+          useValue: mockTermsAgreementManager,
         },
       ],
     }).compile();
@@ -355,6 +367,84 @@ describe('SubscriptionService - Layer Refactoring', () => {
       await service.voidByPaymentIntent('intent_1', '결제 환불');
 
       expect(mockSubscriptionManager.voidSubscription).not.toHaveBeenCalled();
+    });
+  });
+  describe('약관 동의', () => {
+    const userId = 'user_terms';
+    const planId = 'plan_terms';
+    const agreementId = '00000000-0000-4000-8000-000000000001';
+
+    beforeEach(() => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
+      mockPlanService.getPlanDetails.mockResolvedValue({
+        plan: { id: planId, price: 4990, durationDays: 30, isActive: true },
+        tier: { id: 'tier_terms', code: 'BASIC' },
+      });
+      mockSubscriptionCreator.createNewSubscription.mockResolvedValue({ contractId: 'contract_terms' });
+      mockTermsAgreementManager.resolveForSubscription.mockResolvedValue(agreementId);
+    });
+
+    it('동의가 안 맞으면 돈을 빼기 전에 거절한다', async () => {
+      mockTermsAgreementManager.resolveForSubscription.mockRejectedValue(new BadRequestError('약관 동의를 다시 해 주세요.'));
+
+      await expect(
+        service.subscribeWithBillingMethod(userId, planId, 'e@x', 'bm_1', 'one_time', 'attempt', agreementId),
+      ).rejects.toThrow('약관 동의');
+
+      expect(mockPaymentClientService.directCharge).not.toHaveBeenCalled();
+      expect(mockSubscriptionCreator.createNewSubscription).not.toHaveBeenCalled();
+    });
+
+    it('가입이 완성되면 그 동의에 계약을 이어 붙인다', async () => {
+      mockPaymentClientService.directCharge.mockResolvedValue({ status: 'CAPTURED', intentId: 'pi_1' });
+
+      await service.subscribeWithBillingMethod(userId, planId, 'e@x', 'bm_1', 'one_time', 'attempt', agreementId);
+
+      expect(mockTermsAgreementManager.resolveForSubscription).toHaveBeenCalledWith(
+        userId,
+        agreementId,
+        planId,
+        'one_time',
+      );
+      expect(mockTermsAgreementManager.linkContract).toHaveBeenCalledWith(userId, agreementId, 'contract_terms');
+    });
+
+    it('정기결제 약정이 실패해 가입을 무르면 동의를 잇지 않는다 — 같은 동의로 다시 시도할 수 있어야 한다', async () => {
+      mockPaymentClientService.createBillingAgreement.mockRejectedValue(new Error('wallet down'));
+      mockContractReader.findById.mockResolvedValue({ id: 'contract_terms' });
+
+      await expect(
+        service.subscribeWithBillingMethod(userId, planId, 'e@x', 'bm_1', 'recurring', undefined, agreementId),
+      ).rejects.toThrow('정기결제 설정에 실패');
+
+      expect(mockSubscriptionManager.voidSubscription).toHaveBeenCalled();
+      expect(mockTermsAgreementManager.linkContract).not.toHaveBeenCalled();
+    });
+
+    it('1회결제 결제창 경로는 동의 id 를 결제에 실어 보내고, 결제 확정 때 잇는다', async () => {
+      mockPaymentClientService.createMembershipCheckoutIntent.mockResolvedValue({ intentId: 'pi_2' });
+
+      await service.createCheckoutIntent(userId, planId, 'https://shop/cb', 'e@x', 'one_time', agreementId);
+
+      expect(mockTermsAgreementManager.resolveForSubscription).toHaveBeenCalledWith(
+        userId,
+        agreementId,
+        planId,
+        'one_time',
+      );
+      expect(mockPaymentClientService.createMembershipCheckoutIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ termsAgreementId: agreementId }),
+      );
+
+      mockPaymentClientService.getWalletPaymentIntent.mockResolvedValue({
+        status: 'CAPTURED',
+        payableAmount: 4990,
+        metadata: { userId, planId, termsAgreementId: agreementId },
+      });
+
+      await service.confirmCheckoutIntent('pi_2');
+
+      expect(mockTermsAgreementManager.linkContract).toHaveBeenCalledWith(userId, agreementId, 'contract_terms');
     });
   });
 });

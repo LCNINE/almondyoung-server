@@ -54,12 +54,20 @@ function makeHandler(opts: {
     record: jest.fn().mockResolvedValue(true),
     outstandingTotal: jest.fn().mockResolvedValue(0),
   };
+  const benefitReader = {
+    findMembershipBenefitUsageSince: jest
+      .fn()
+      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
+  };
+  const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(true) };
   const handler = new InvoiceOutcomeHandler(
     { db } as never,
     contractEventManager as never,
     publisher as never,
     paymentClient as never,
     arrearsManager as never,
+    benefitReader as never,
+    termsRulesReader as never,
   );
   return { handler, tx, updates, contractEventManager, publisher, paymentClient, arrearsManager };
 }

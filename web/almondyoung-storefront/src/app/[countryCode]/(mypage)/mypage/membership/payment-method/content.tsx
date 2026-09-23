@@ -57,6 +57,8 @@ export default function MembershipPaymentMethodContent() {
   const t = useTranslations("mypage.membershipPaymentMethod")
 
   const planId = searchParams.get("planId")
+  // 가입 폼이 떠나기 전에 남긴 약관 동의. 가입 요청에 실어 보내 그 동의에 이어 붙인다.
+  const termsAgreementId = searchParams.get("termsAgreementId") ?? undefined
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
   const autoSubscribeOnLoad = useRef(
@@ -187,7 +189,8 @@ export default function MembershipPaymentMethodContent() {
           currentPlanId,
           billingMethodId,
           "recurring",
-          crypto.randomUUID()
+          crypto.randomUUID(),
+          termsAgreementId
         )
         // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
         const appliedTrialDays = res.effectiveTrialDays ?? 0

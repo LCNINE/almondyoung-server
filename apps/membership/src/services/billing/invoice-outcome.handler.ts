@@ -9,6 +9,9 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 import { PaymentClientService } from './payment-client.service';
 import { ArrearsManager } from '../arrears/arrears.manager';
+import { BenefitReader } from '../benefit/benefit.reader';
+import { TermsRulesReader } from '../terms/terms-rules.reader';
+import { isWithdrawalEligible } from '../subscription/refund-policy.service';
 
 /** 인보이스가 실어 보낸 청구 정보. mandate.rejected 는 인보이스 행 없이 올 수 있어 전부 선택이다. */
 export interface BilledPeriod {
@@ -40,6 +43,8 @@ export class InvoiceOutcomeHandler {
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
     private readonly arrearsManager: ArrearsManager,
+    private readonly benefitReader: BenefitReader,
+    private readonly termsRulesReader: TermsRulesReader,
   ) {}
 
   /**
@@ -309,7 +314,7 @@ export class InvoiceOutcomeHandler {
       // 미수 판정축: «이 사람이 이 주기의 자격을 실제로 들고 있었는가». 회수 UPDATE 가 지워 버리기
       // 전에 읽어야 한다. 자격이 아예 없었으면 공짜로 쓴 것이 없으므로 빚도 지우지 않는다.
       const [heldEntitlement] = await tx
-        .select({ endsAt: schema.subscriptionEntitlement.endsAt })
+        .select({ startsAt: schema.subscriptionEntitlement.startsAt, endsAt: schema.subscriptionEntitlement.endsAt })
         .from(schema.subscriptionEntitlement)
         .where(
           and(
@@ -448,16 +453,20 @@ export class InvoiceOutcomeHandler {
    * 회수와 «같은 트랜잭션»에서 미수 한 줄을 적는다. 따로 적으면 회수만 되고 원장이 비는 창이 생기고,
    * 그 창에 빠진 주기는 아무도 청구하지 않는다.
    *
-   * 판정축은 «자격을 받았는가»(부여축)다 — 그 자격으로 실제 할인을 썼는지는 보지 않는다.
-   * 부여축을 고른 것은 사업 결정이고, 그래서 가입 시점 고지·약관이 방어선이 된다.
+   * 판정은 «돈을 냈다면 이 주기를 환불받을 수 있었는가»와 같은 줄로 긋는다(`isWithdrawalEligible`).
+   * 청약철회로 전액 환불될 주기(7일 안 · 혜택 미사용)에는 적지 않고, 그 밖에는 혜택을 실제로
+   * 썼는지와 무관하게 주기 요금을 적는다 — 정상 납부자도 그 주기는 환불받지 못하기 때문이다.
    * 자격이 그 주기를 덮지 못했으면(선적용이 걸린 적 없음) 공짜로 쓴 것이 없으므로 적지 않는다.
+   *
+   * 미납 요금은 기존 회원에게 불리한 새 약관 조항이라, 그 약관이 적용되는 계약에만 적는다(`TermsRulesReader`).
+   * 적지 않은 이유는 계약 이벤트(`ARREARS_SKIPPED`)로 남긴다 — 로그만 남기면 관리자가 「왜 외상이 없지」를 못 본다.
    */
   private async recordArrearsForTermination(
     tx: DrizzleTransaction,
     contractId: string,
     userId: string,
     arrears: ArrearsContext,
-    heldEntitlement: { endsAt: string } | null,
+    heldEntitlement: { startsAt: string; endsAt: string } | null,
   ): Promise<void> {
     if (!heldEntitlement) {
       this.logger.log(`[arrears] 자격 없이 종결 — 미수 없음 (contractId=${contractId})`);
@@ -471,6 +480,19 @@ export class InvoiceOutcomeHandler {
       this.logger.log(
         `[arrears] 자격이 청구 주기를 덮지 않음 — 미수 없음 (contractId=${contractId}, endsAt=${heldEntitlement.endsAt}, periodEnd=${periodEnd})`,
       );
+      return;
+    }
+
+    if (!(await this.termsRulesReader.newRulesApply(contractId))) {
+      await this.skipArrears(tx, contractId, userId, arrears, 'TERMS_NOT_IN_FORCE');
+      return;
+    }
+
+    // 주기 시작은 인보이스가 준 값, 없으면 자격 개시일 — 해지 화면(수금 전 선지급)과 같은 기준점이다.
+    const periodStart = new Date(arrears.billed?.periodStart ?? heldEntitlement.startsAt);
+    const usage = await this.benefitReader.findMembershipBenefitUsageSince(userId, periodStart);
+    if (isWithdrawalEligible({ periodStart, now: new Date(), usage })) {
+      await this.skipArrears(tx, contractId, userId, arrears, 'WITHDRAWAL_ELIGIBLE');
       return;
     }
 
@@ -519,6 +541,24 @@ export class InvoiceOutcomeHandler {
         userId,
       );
     }
+  }
+
+  private async skipArrears(
+    tx: DrizzleTransaction,
+    contractId: string,
+    userId: string,
+    arrears: ArrearsContext,
+    reason: 'TERMS_NOT_IN_FORCE' | 'WITHDRAWAL_ELIGIBLE',
+  ): Promise<void> {
+    this.logger.log(`[arrears] 미수 적지 않음 — ${reason} (contractId=${contractId})`);
+    await this.contractEventManager.addEvent(
+      tx,
+      contractId,
+      'ARREARS_SKIPPED',
+      { invoiceRef: arrears.invoiceRef, cause: arrears.cause, reason },
+      'SYSTEM',
+      userId,
+    );
   }
 
   private async getContract(tx: DrizzleTransaction, contractId: string) {

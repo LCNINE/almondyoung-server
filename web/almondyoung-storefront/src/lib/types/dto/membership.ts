@@ -72,7 +72,6 @@ export interface CancellationOptionDto {
     monthlyListPrice: number
     monthsElapsed: number
     usageDeduction: number
-    benefitDeduction: number
   }
 }
 

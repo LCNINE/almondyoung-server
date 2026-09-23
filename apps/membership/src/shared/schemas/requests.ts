@@ -66,6 +66,7 @@ export const CreateCheckoutIntentRequestSchema = z.object({
   planId: z.string().min(1, { error: 'planId는 필수입니다' }),
   returnUrl: z.url({ error: '유효한 returnUrl이어야 합니다' }),
   billingMode: z.enum(['one_time', 'recurring']).optional(),
+  termsAgreementId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }).optional(),
 });
 
 export const ConfirmCheckoutIntentRequestSchema = z.object({
@@ -130,6 +131,7 @@ export const SubscribeWithMethodRequestSchema = z
     billingMethodId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
     billingMode: z.enum(['one_time', 'recurring']).optional(),
     checkoutAttemptId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }).optional(),
+    termsAgreementId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }).optional(),
   })
   .superRefine((data, ctx) => {
     const effectiveMode = data.billingMode ?? 'one_time';
@@ -141,6 +143,12 @@ export const SubscribeWithMethodRequestSchema = z
       });
     }
   });
+
+export const RecordTermsAgreementRequestSchema = z.object({
+  termsVersion: z.string().min(1, { error: 'termsVersion은 필수입니다' }),
+  planId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
+  billingMode: z.enum(['one_time', 'recurring']),
+});
 
 // Type exports - Controller에서만 사용
 export type CreateTierRequest = z.infer<typeof CreateTierRequestSchema>;
@@ -157,6 +165,7 @@ export type PauseSubscriptionRequest = z.infer<typeof PauseSubscriptionRequestSc
 export type ResumeSubscriptionRequest = z.infer<typeof ResumeSubscriptionRequestSchema>;
 export type CancelSubscriptionRequest = z.infer<typeof CancelSubscriptionRequestSchema>;
 export type SubscribeWithMethodRequest = z.infer<typeof SubscribeWithMethodRequestSchema>;
+export type RecordTermsAgreementRequest = z.infer<typeof RecordTermsAgreementRequestSchema>;
 
 // =================================================================
 // Policy Management - 정책 관리 요청 검증용

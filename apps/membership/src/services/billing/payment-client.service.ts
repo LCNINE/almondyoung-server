@@ -124,6 +124,8 @@ export interface MembershipCheckoutIntentRequest {
   currency?: string;
   email?: string;
   billingMode?: 'one_time' | 'recurring';
+  /** 결제 완료 후 가입이 만들어질 때 이 동의에 이어 붙인다(`confirmCheckoutIntent`). */
+  termsAgreementId?: string;
 }
 
 /**
@@ -266,6 +268,7 @@ export class PaymentClientService {
               userId: request.userId,
               ...(request.email ? { email: request.email } : {}),
               ...(request.billingMode ? { billingMode: request.billingMode } : {}),
+              ...(request.termsAgreementId ? { termsAgreementId: request.termsAgreementId } : {}),
             },
           },
           {

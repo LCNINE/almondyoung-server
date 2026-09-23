@@ -313,15 +313,21 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
     note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:124-155). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:155 eq(schema.membershipArrears.userId, userId)).',
   },
+  'membership POST /me/membership-terms-agreements': {
+    verdict: 'N/A',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:55',
+    predicate: '',
+    note: '순수 생성 라우트: 호출자 JWT userId(@User(\'userId\'), me-terms-agreement.controller.ts)로 새 동의 행을 insert 할 뿐이다. 바디는 termsVersion·billingMode·planId 인데 planId 는 공유 플랜 설정을 가리키지 사용자별 객체가 아니고, userId 는 받지 않는다. 기존 타인 소유 행으로 해석되는 id 가 없다.',
+  },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:77',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:80',
     predicate: 'eq(schema.membershipCycleBenefits.userId, userId),',
     note: 'BenefitTrackingController.getCurrentCycleBenefit -> BenefitTrackingService.getCurrentCycleBenefit(userId) -> BenefitReader.findCurrentCycleBenefit(userId,...) 의 where 절에 userId가 들어간다.',
   },
   'membership GET /membership/benefits/history': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:121',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:124',
     predicate: '.where(eq(schema.membershipCycleBenefits.userId, userId))',
     note: 'getCycleBenefitHistory -> BenefitReader.findCycleBenefitHistory(userId, limit) 의 where 절에 userId가 들어간다.',
   },
@@ -345,7 +351,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'membership GET /membership/savings/periods/:periodId': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:186',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:217',
     predicate: 'eq(schema.membershipDiscountEvents.userId, userId),',
     note: "SavingsController.getPeriodDetail -> SavingsService.getPeriodDetail(userId, periodId). periodId 는 먼저 resolvePeriods(userId)가 만든 '이 userId 소유 주기 목록'에서만 매칭되고(다른 사용자의 periodId를 넣으면 목록에 없어 BadRequestError), 매칭된 주기의 주문 상세도 findDiscountEventsBetween(userId,...) 의 where 절에 userId가 들어간다.",
   },
@@ -456,10 +462,10 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     note: 'undoCancellation -> SubscriptionCancellationService.undoCancellation(userId,...) -> contractReader.findContractWithPlan(userId) -> findActiveContract(userId) 의 where 절에 userId가 들어간다(뒤이은 findCurrentEntitlement(userId) 도 동일하게 userId로 필터).',
   },
   'membership POST /subscriptions/checkout-intent': {
-    verdict: 'N/A',
-    evidence: 'apps/membership/src/controllers/subscription.controller.ts:118',
-    predicate: '',
-    note: 'createCheckoutIntent 는 신규 결제 intent 생성 라우트다. userId 는 오직 @User() 로 취한 호출자 자신의 JWT 값이고(바디로 override 불가), 아직 존재하지 않는 대상 객체를 만드는 것이므로 IDOR이 성립하지 않는다.',
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:94',
+    predicate: 'eq(schema.membershipTermsAgreements.userId, userId),',
+    note: '신규 결제 intent 생성 라우트이고 userId 는 @User() 로 취한 호출자 JWT 값뿐이다. 바디가 받는 기존 행 id 는 termsAgreementId(약관 동의 기록) 하나인데, TermsAgreementManager.resolveForSubscription 이 id + 호출자 userId 두 조건으로만 찾고(terms-agreement.manager.ts:94) 못 찾으면 400 — 남의 동의로 가입하거나 존재 여부를 알아낼 수 없다. 실 DB 통합 스펙(terms-agreement.manager.integration.spec.ts)이 남의 동의 거절을 고정한다.',
   },
   'membership POST /subscriptions/confirm-checkout-intent': {
     verdict: 'VULN',
@@ -468,10 +474,10 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     note: '소유권 검사 없음. 핸들러(subscription.controller.ts:163-167)가 호출자 신원을 전혀 받지 않고 바디의 intentId 만 받으며, 서비스가 userId 를 intent 메타데이터에서 뽑는다. 재현: 인증된 A 가 B 의 intentId 로 호출하면 B 명의 구독이 생성된다. 영향 제한적 — intent 가 AUTHORIZED/CAPTURED 여야 하므로 B 가 이미 결제한 건이고 A 는 이득이 없다. 오케스트레이터 직접 확인 (조사 에이전트는 N/A 로 오판, 자기 observations 와 모순이었음).',
   },
   'membership POST /subscriptions/subscribe-with-method': {
-    verdict: 'N/A',
-    evidence: 'apps/membership/src/services/subscription.service.ts:527',
-    predicate: '',
-    note: 'subscribeWithBillingMethod 는 신규 구독 생성 라우트다. userId 는 @User() 로 취한 호출자 자신의 JWT 값만 쓰이고(멤버십 계약은 그 userId로 새로 생성됨), 기존 소유 리소스를 조회/변경하는 경로가 아니라 IDOR이 성립하지 않는다. billingMethodId 소유권 검사는 wallet 쪽 책임이라 observations 참고.',
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:94',
+    predicate: 'eq(schema.membershipTermsAgreements.userId, userId),',
+    note: '신규 구독 생성 라우트이고 userId 는 @User() 로 취한 호출자 JWT 값뿐이다(계약은 그 userId 로 새로 생성). 바디의 termsAgreementId 는 기존 행을 가리키지만 resolveForSubscription 이 id + 호출자 userId 로만 찾고(terms-agreement.manager.ts:94) 결제보다 먼저 검사한다. 가입 후 연결(linkContract)도 같은 소유자 조건을 건다(:118). billingMethodId 소유권 검사는 wallet 쪽 책임이라 observations 참고.',
   },
   'notification DELETE /devices/fcm-token': {
     verdict: 'SAFE',
@@ -746,15 +752,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(117);
+    expect(targets).toHaveLength(118);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(117);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(116);
+    expect(new Set(targets.map(keyOf)).size).toBe(118);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(117);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

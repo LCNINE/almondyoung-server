@@ -64,6 +64,10 @@ import { ArrearsManager } from './services/arrears/arrears.manager';
 import { ArrearsRepaymentService } from './services/arrears/arrears-repayment.service';
 import { ArrearsPaymentConsumer } from './consumers/arrears-payment.consumer';
 import { MeArrearsController } from './controllers/me-arrears.controller';
+import { MeTermsAgreementController } from './controllers/me-terms-agreement.controller';
+import { TermsAgreementManager } from './services/terms/terms-agreement.manager';
+import { TermsAgreementService } from './services/terms/terms-agreement.service';
+import { TermsRulesReader } from './services/terms/terms-rules.reader';
 import { ArrearsReader } from './services/arrears/arrears.reader';
 import { InvoiceResultConsumer } from './consumers/invoice-result.consumer';
 import { MembershipPolicyService } from './services/membership-policy.service';
@@ -144,6 +148,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     BillingController,
     AdminOperationsController,
     MeArrearsController,
+    MeTermsAgreementController,
     SubscriptionController,
     PlanController,
     PauseController,
@@ -210,6 +215,9 @@ import { EventTraceController } from './controllers/event-trace.controller';
     ArrearsManager,
     ArrearsReader,
     ArrearsRepaymentService,
+    TermsAgreementManager,
+    TermsAgreementService,
+    TermsRulesReader,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
     // 해지·환불 정책 (연간 정산 / 청약철회 창)

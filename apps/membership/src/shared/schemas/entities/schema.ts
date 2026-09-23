@@ -525,6 +525,38 @@ export const membershipArrears = pgTable(
   ],
 );
 
+/**
+ * 가입 약관 동의 이력. 「이 사람이 언제 어느 버전 약관에 동의했나」를 분쟁 때 행으로 제시하기 위한 표.
+ *
+ * 유저당 여러 행이 정상이다(가입할 때마다 한 줄). 회원가입 동의(user-service `user_consents`)는
+ * 유저당 1행에 버전이 없어 이력이 될 수 없고, BC 도 다르다.
+ *
+ * 동의는 «가입이 완성되기 전에» 적힌다 — 정기결제 첫 가입은 자동이체 등록으로 화면을 떠났다가
+ * 돌아와서 완성되므로, 가입 시점에는 동의 값이 없다. 가입이 완성되면 `contract_id` 로 이어 붙인다.
+ * 이어지지 않은 행은 「동의는 했지만 가입까지 가지 않은」 기록이다.
+ */
+export const membershipTermsAgreements = pgTable(
+  'membership_terms_agreements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(),
+    /** 화면이 보여 준 약관 버전. 알려진 버전만 받는다(`services/terms/membership-terms.ts`). */
+    termsVersion: text('terms_version').notNull(),
+    /** 'recurring' | 'one_time' — 같은 버전 안에서도 정기결제 약관에만 붙는 조항(제5조)이 있다. */
+    billingMode: text('billing_mode').notNull(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plan.id),
+    /** 이 동의로 완성된 가입. 한 동의는 한 가입에만 쓰인다. */
+    contractId: uuid('contract_id').references(() => subscriptionContracts.id),
+    agreedAt: timestamp('agreed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_membership_terms_agreements_user').on(table.userId),
+    index('idx_membership_terms_agreements_contract').on(table.contractId),
+  ],
+);
+
 // =================================================================
 // 멤버십 혜택 추적 (Membership Benefits Tracking)
 // =================================================================
@@ -667,6 +699,7 @@ export const membershipSchema = {
   membershipCycleBenefits,
   membershipDiscountEvents,
   membershipArrears,
+  membershipTermsAgreements,
   welcomeMembershipEligibility,
   adminOperationKeys,
 
