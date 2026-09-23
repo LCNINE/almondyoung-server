@@ -57,14 +57,21 @@ export function rehypeShopListingLinks() {
   };
 }
 
+/**
+ * 이스케이프(`\#` 등)는 원래 글자로 되돌리고, 이스케이프되지 않은 강조 기호(`*_~\``)는 지운다.
+ * 룩비하인드(`(?<!\\)`) 없이 한 번의 alternation 으로 처리한다 — Safari < 16.4 는 룩비하인드를
+ * 파싱하지 못해 이 함수를 부르는 순간 전체가 죽는다. 캡처 그룹이 잡히면(이스케이프) 그 글자로,
+ * 안 잡히면(맨 기호) 빈 문자열로 치환한다.
+ */
+const UNESCAPE_OR_STRIP = /\\([\\`*_{}[\]()#+\-.!>~|])|[*_~`]/g;
+
 /** 메타 description 용 한 줄 요약. 마크다운 기호를 대강 벗긴다(정확한 파싱이 아니라 검색 스니펫 품질이 목적). */
 export function toPlainSummary(markdown: string, maxLength = 160): string {
   return markdown
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
-    .replace(/(?<!\\)[*_~`]/g, '')
-    .replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1')
+    .replace(UNESCAPE_OR_STRIP, (_match, escaped?: string) => escaped ?? '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLength);
