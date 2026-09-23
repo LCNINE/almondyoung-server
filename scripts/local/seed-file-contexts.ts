@@ -10,7 +10,9 @@
  * 사용법: npm run dev:seed-file-contexts
  *         LOCAL_PG=postgresql://... npm run dev:seed-file-contexts   (포트가 다른 머신)
  */
-import postgres from 'postgres';
+// `import postgres from` 이 아니라 `* as` 다 — 레포 tsconfig 가 esModuleInterop 를 켜지 않아
+// default import 가 런타임에 함수가 아니게 된다(libs/db/src/db.service.ts 와 같은 관례).
+import * as postgres from 'postgres';
 import { FILE_CONTEXTS } from '../../apps/file-service/src/database/default-file-contexts';
 
 const DEFAULT_URL = 'postgresql://postgres:postgres@localhost:5432/file_service';
