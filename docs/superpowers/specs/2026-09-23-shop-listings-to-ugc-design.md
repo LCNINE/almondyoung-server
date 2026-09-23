@@ -201,6 +201,7 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
 - `POST /` — 관리자 작성. slug 지정 가능
 - `PUT /:id` — 관리자 수정
 - `POST /:id/approve`, `POST /:id/reject {reason}`, `POST /:id/hide`, `POST /:id/unhide`
+- `POST /:id/close`, `POST /:id/reopen` — 관리자 글·회원 글의 거래완료 전환(§5). 한도 검사 없음
 - `DELETE /:id`
 
 **권한 범위가 바뀐다.** 지금은 `master`·`admin` 두 역할만 관리한다. ugc 는 역할→scope 매핑을 DB 에서 읽으므로
@@ -215,6 +216,7 @@ core 구조를 그대로 옮긴다: `listing_id`(FK `ON DELETE CASCADE`), `visit
   - `rehype-raw` 를 붙이지 않는다(원시 HTML 은 이스케이프).
   - `img` 요소는 렌더하지 않는다. 사진은 갤러리로만 받는다.
   - 링크는 `rel="nofollow ugc noopener"`, 허용 스킴은 `http`·`https`·`tel`.
+  - `remark-breaks` 를 더해 단일 줄바꿈을 `<br>` 로 그린다. 표준 마크다운은 단일 줄바꿈을 공백으로 합쳐, 이관 글의 `<br>` 와 회원이 textarea 에서 친 Enter 가 모두 사라진다.
   - 이 옵션은 `.ts` 모듈 하나로 빼서 스토어프론트와 admin-web 미리보기가 같은 규칙을 쓴다.
 - 상세 페이지에 「연락처 보기」 클라이언트 컴포넌트. 비로그인이면 로그인 진입, 로그인이면 §7.2 호출 후 `tel:`·오픈채팅 링크.
 - 목록 카드·상세에 `closed` → 「거래완료」 배지.
@@ -265,16 +267,17 @@ ugc 엔드포인트 추가와 스토어프론트 전환을 한 배포에 묶으�
   - HTML → 마크다운(`<p>` → 문단, `<br>` → 줄바꿈, 엔티티 디코드). 그 밖의 태그를 만나면 **실패하고 행 id 를 출력**한다(조용한 손실 금지).
   - `is_active` true → `published`, false → `hidden`.
   - `created_by` → `author_user_id`, `author_type = admin`.
-  - `thumbnail_file_id` + `images` → `shop_listing_images`. 썸네일이 `images` 에 없으면 `order = 0` 으로 앞에 끼운다. 중복 fileId 는 한 번만.
+  - `thumbnail_file_id` + `images` → `shop_listing_images`. 썸네일을 `order = 0` 으로 두고 나머지 `images` 를 순서대로 잇는다(썸네일이 `images` 안 다른 자리에 있으면 앞으로 옮긴다). 중복 fileId 는 한 번만.
   - 연락처 필드는 NULL.
 - 멱등: `shop_listings` 는 id 기준 upsert, `view_count` 는 `GREATEST(기존, 원본)`. 이미지는 행마다 지우고 다시 넣는다.
   views 는 unique 키 기준 `ON CONFLICT DO NOTHING`.
-- `--dry-run`: 건수, 상태별 분포, 변환 샘플 몇 건의 전후를 출력하고 쓰지 않는다.
+- 기본 실행은 **드라이런**이다(저장소의 `scripts/ops/backfill-*.ts` 관례). 건수·상태별 분포·변환 샘플을 출력하고 쓰지 않는다. `--apply` 를 줘야 쓴다.
+- **전환 이후 재실행 방지:** ugc 에 core 에 없는 id 가 하나라도 있으면(= 회원·관리자가 ugc 에 새로 쓴 글이 있으면) 중단한다. 재실행이 ugc 쪽 수정을 core 원본으로 덮는 사고를 막는다.
 
 ### 9.4 복사와 PR 2 — 전환 (스토어프론트 + admin-web)
 
 1. 관리자에게 **매물 쓰기 동결**을 공지한다(PR 2 배포 완료까지).
-2. 복사 `--dry-run` → 실행 → 건수 대조, slug 몇 건의 렌더 확인.
+2. 복사(드라이런) → `--apply` → 건수 대조, slug 몇 건의 렌더 확인.
 3. PR 2(§8.1·§8.3 전부) 머지.
 4. `sst deploy` **직전에 복사를 한 번 더** 돌려 그사이 쌓인 조회수를 합친다.
 5. `sst deploy`. 동결 해제.
@@ -328,7 +331,7 @@ core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:
 ### 11.3 보안 레지스트리
 
 - 회원 `:id` 라우트를 `idor-reviewed.spec.ts` 에 등록.
-- `route-authz-audit` 통과 — `@Public` 쓰기 라우트는 조회수 비콘 하나.
+- `route-authz-audit.spec.ts` 의 `ALLOWED` 에 `POST /shop-listings/public/:slug/view` 를 이유와 함께 등록한다 — ugc 의 무인증 쓰기 라우트는 이것 하나다.
 
 ### 11.4 프론트 (CI 게이트 없음)
 
