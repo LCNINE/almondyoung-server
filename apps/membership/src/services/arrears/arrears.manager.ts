@@ -20,6 +20,15 @@ export interface RecordArrearsInput {
   periodEnd: string | null;
 }
 
+/** 청산 판단에 필요한 만큼의 원장 행. 잠근 채로 돌려준다. */
+export interface SettlementTargetRow {
+  id: string;
+  contractId: string;
+  amount: number;
+  status: (typeof schema.membershipArrears.$inferSelect)['status'];
+  settlementRef: string | null;
+}
+
 /**
  * 미수(외상) 원장의 쓰기. 읽기는 ArrearsReader 가 맡는다.
  *
@@ -66,16 +75,48 @@ export class ArrearsManager {
   }
 
   /**
-   * 청산 대상 줄의 미청산 합. **청산과 같은 트랜잭션에서** 불러 잠근다 — 결제 생성과 입금 확인
-   * 사이에 관리자가 금액을 조정하면 받은 돈과 지울 빚이 어긋나는데, 잠그지 않으면 그 대조 자체가
-   * 낡은 값 위에서 이뤄진다.
+   * 청산 대상 줄을 **청산과 같은 트랜잭션에서** 잠그고 그대로 돌려준다 — 결제 생성과 입금 확인
+   * 사이에 관리자가 금액을 조정하거나 면제하면 받은 돈과 지울 빚이 어긋나는데, 잠그지 않으면 그
+   * 대조 자체가 낡은 값 위에서 이뤄진다.
+   *
+   * 미청산분만 걸러 합을 내는 것도, 「왜 지울 게 없는지」(이미 청산됐나·면제됐나)를 가리는 것도
+   * 호출자의 일이다 — 그 둘은 사람이 봐야 하는 일인지가 갈린다.
+   * 정렬은 발생 순서다: 호출자가 여러 계약 중 하나를 골라야 할 때 매번 같은 줄을 고르게 한다.
    */
-  async lockOutstandingSum(tx: DrizzleTransaction, userId: string, arrearsIds: string[]): Promise<number> {
+  async lockSettlementTargets(
+    tx: DrizzleTransaction,
+    userId: string,
+    arrearsIds: string[],
+  ): Promise<SettlementTargetRow[]> {
+    if (arrearsIds.length === 0) return [];
+
+    return tx
+      .select({
+        id: schema.membershipArrears.id,
+        contractId: schema.membershipArrears.contractId,
+        amount: schema.membershipArrears.amount,
+        status: schema.membershipArrears.status,
+        settlementRef: schema.membershipArrears.settlementRef,
+      })
+      .from(schema.membershipArrears)
+      .where(and(eq(schema.membershipArrears.userId, userId), inArray(schema.membershipArrears.id, arrearsIds)))
+      .orderBy(schema.membershipArrears.createdAt)
+      .for('update');
+  }
+
+  /**
+   * 「이 줄들은 이 결제가 덮고 있다」를 적는다. 다시 누른 사람에게 새 결제를 만들지 않으려면
+   * 어느 결제를 물어봐야 하는지 우리 쪽에 있어야 한다 — wallet 에는 metadata 로 진행 중 결제를
+   * 찾는 조회가 없다.
+   *
+   * 새 표식은 옛 표식을 덮는다. 대상 집합이 바뀌어 새 결제를 만든 경우가 그 자리다.
+   */
+  async markPendingIntent(userId: string, arrearsIds: string[], intentId: string): Promise<number> {
     if (arrearsIds.length === 0) return 0;
 
-    const rows = await tx
-      .select({ amount: schema.membershipArrears.amount })
-      .from(schema.membershipArrears)
+    const rows = await this.dbService.db
+      .update(schema.membershipArrears)
+      .set({ pendingIntentId: intentId, updatedAt: new Date() })
       .where(
         and(
           eq(schema.membershipArrears.userId, userId),
@@ -83,9 +124,9 @@ export class ArrearsManager {
           eq(schema.membershipArrears.status, 'OUTSTANDING'),
         ),
       )
-      .for('update');
+      .returning({ id: schema.membershipArrears.id });
 
-    return rows.reduce((sum, r) => sum + r.amount, 0);
+    return rows.length;
   }
 
   /**
@@ -106,7 +147,9 @@ export class ArrearsManager {
 
     const rows = await tx
       .update(schema.membershipArrears)
-      .set({ status: 'SETTLED', settlementRef, settledAt: new Date(), updatedAt: new Date() })
+      // 표식도 같이 지운다 — 닫힌 줄에 「진행 중 결제」가 남아 있으면 다음 미수가 그 결제를
+      // 물려받은 것처럼 보인다.
+      .set({ status: 'SETTLED', settlementRef, settledAt: new Date(), pendingIntentId: null, updatedAt: new Date() })
       .where(
         and(
           eq(schema.membershipArrears.userId, userId),
@@ -131,6 +174,7 @@ export class ArrearsManager {
         settlementRef: reason,
         settledBy: adminId,
         settledAt: new Date(),
+        pendingIntentId: null,
         updatedAt: new Date(),
       })
       .where(and(eq(schema.membershipArrears.id, arrearsId), eq(schema.membershipArrears.status, 'OUTSTANDING')))

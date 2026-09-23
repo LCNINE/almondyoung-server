@@ -305,13 +305,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'SAFE',
     evidence: 'apps/membership/src/services/arrears/arrears.reader.ts:72',
     predicate: 'and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, \'OUTSTANDING\'))',
-    note: '조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User(\'userId\')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:87)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.',
+    note: '조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User(\'userId\')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:105)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.',
   },
   'membership POST /me/arrears/checkout': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:97',
+    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:124',
     predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
-    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:97-118). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:112 eq(schema.membershipArrears.userId, userId)).',
+    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:124-155). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:155 eq(schema.membershipArrears.userId, userId)).',
   },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',

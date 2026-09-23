@@ -159,6 +159,61 @@ describeIfDb('ArrearsManager 원장 멱등·청산 (PostgreSQL 통합)', () => {
     expect(after.status).toBe('OUTSTANDING');
   });
 
+  it('진행 중 결제 표식은 미청산 줄에만 찍히고, 청산이 그것을 지운다', async () => {
+    const userId = newUserId();
+    const refA = newInvoiceRef();
+    const refB = newInvoiceRef();
+
+    await db.transaction((tx) => manager.record(tx as never, recordInput(userId, refA, 4990)));
+    await db.transaction((tx) => manager.record(tx as never, recordInput(userId, refB, 5000)));
+    const ids = (
+      await db.select().from(schema.membershipArrears).where(eq(schema.membershipArrears.userId, userId))
+    ).map((r) => r.id);
+
+    expect(await manager.markPendingIntent(userId, ids, 'intent-live-1')).toBe(2);
+
+    const marked = await db
+      .select()
+      .from(schema.membershipArrears)
+      .where(eq(schema.membershipArrears.userId, userId));
+    expect(marked.every((r) => r.pendingIntentId === 'intent-live-1')).toBe(true);
+
+    // 남의 줄에는 안 찍힌다 — 표식도 소유자 조건을 건다.
+    expect(await manager.markPendingIntent(newUserId(), ids, 'intent-live-2')).toBe(0);
+
+    await db.transaction((tx) => manager.settleMany(tx as never, userId, ids, 'intent:it-4'));
+
+    const settled = await db
+      .select()
+      .from(schema.membershipArrears)
+      .where(eq(schema.membershipArrears.userId, userId));
+    expect(settled.every((r) => r.pendingIntentId === null)).toBe(true);
+  });
+
+  it('청산 대상 줄은 상태·청산근거까지 잠근 채로 돌아온다', async () => {
+    const userId = newUserId();
+    const refA = newInvoiceRef();
+    const refB = newInvoiceRef();
+
+    await db.transaction((tx) => manager.record(tx as never, recordInput(userId, refA, 4990)));
+    await db.transaction((tx) => manager.record(tx as never, recordInput(userId, refB, 5000)));
+    const ids = (
+      await db.select().from(schema.membershipArrears).where(eq(schema.membershipArrears.userId, userId))
+    ).map((r) => r.id);
+
+    await manager.waive(ids[0], 'admin-it', '결제 전 면제');
+
+    const targets = await db.transaction((tx) => manager.lockSettlementTargets(tx as never, userId, ids));
+    expect(targets).toHaveLength(2);
+    const waived = targets.find((t) => t.id === ids[0]);
+    expect(waived?.status).toBe('WAIVED');
+    expect(waived?.settlementRef).toBe('결제 전 면제');
+    // 지울 빚은 미청산분만이다 — 면제분까지 더하면 「덜 받았다」로 잘못 읽힌다.
+    expect(targets.filter((t) => t.status === 'OUTSTANDING').reduce((s, t) => s + t.amount, 0)).toBe(
+      targets.find((t) => t.id === ids[1])?.amount,
+    );
+  });
+
   it('면제된 줄은 결제가 와도 다시 닫히지 않는다', async () => {
     const userId = newUserId();
     const ref = newInvoiceRef();

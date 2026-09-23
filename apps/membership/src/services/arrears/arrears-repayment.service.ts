@@ -3,10 +3,36 @@ import { ConfigService } from '@nestjs/config';
 import { BadRequestError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
-import { PaymentClientService } from '../billing/payment-client.service';
-import { ArrearsManager } from './arrears.manager';
+import { PaymentClientService, WalletPaymentIntentStatus } from '../billing/payment-client.service';
+import { ArrearsManager, SettlementTargetRow } from './arrears.manager';
 import { ArrearsReader, ArrearsRow } from './arrears.reader';
 import { arrearsIdsFromMetadata, isArrearsPayment } from './arrears-payment.metadata';
+import { ContractEventManager } from '../subscription/contract-event.manager';
+import { DrizzleTransaction } from '../../shared/schemas/types';
+
+/**
+ * 받은 돈과 지울 빚이 어긋나 «사람이 수습해야 하는» 청산. 로그로만 남기면 관리자 화면에 안 나오고,
+ * 안 나오는 일은 아무도 안 본다.
+ */
+export const ARREARS_SETTLEMENT_MISMATCH = 'ARREARS_SETTLEMENT_MISMATCH';
+
+/**
+ * 아직 «낼 수 있는» 결제 상태. wallet 의 만료 크론이 닫는 대상과 같은 목록이다
+ * (`apps/wallet/src/jobs/expiration.job.ts` 의 `EXPIRABLE_INTENT_STATUSES`).
+ * 여기 없는 상태(취소·실패·이미 캡처)는 다시 보내도 고객이 낼 수 없으므로 새로 만들어야 한다.
+ */
+const REUSABLE_INTENT_STATUSES: ReadonlySet<WalletPaymentIntentStatus> = new Set([
+  'CREATED',
+  'PROCESSING',
+  'REQUIRES_ACTION',
+  'AWAITING_DEPOSIT',
+]);
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = new Set(a);
+  return b.every((id) => left.has(id));
+}
 
 export interface MyArrearsView {
   outstanding: { total: number; count: number; currency: string };
@@ -42,6 +68,7 @@ export class ArrearsRepaymentService {
     private readonly arrearsReader: ArrearsReader,
     private readonly arrearsManager: ArrearsManager,
     private readonly paymentClientService: PaymentClientService,
+    private readonly contractEventManager: ContractEventManager,
     private readonly configService: ConfigService,
   ) {}
 
@@ -110,6 +137,14 @@ export class ArrearsRepaymentService {
     const amount = items.reduce((sum, i) => sum + i.amount, 0);
     const arrearsIds = items.map((i) => i.id);
 
+    const reusableIntentId = await this.findReusableIntentId(userId, arrearsIds, amount);
+    if (reusableIntentId) {
+      this.logger.log(
+        `[arrears] 진행 중 청산 결제 재사용: userId=${userId}, intentId=${reusableIntentId}, amount=${amount}`,
+      );
+      return { intentId: reusableIntentId, amount, currency, arrearsIds };
+    }
+
     const { intentId } = await this.paymentClientService.createArrearsCheckoutIntent({
       userId,
       amount,
@@ -119,11 +154,94 @@ export class ArrearsRepaymentService {
       arrearsIds,
     });
 
+    // 표식이 없어도 결제 자체는 성립한다 — 여기서 던지면 «돈 낼 수 있는 결제»를 만들어 놓고
+    // 고객에게 실패를 보여주게 된다. 다음 연타를 못 막는 대신 결제를 살린다.
+    try {
+      await this.arrearsManager.markPendingIntent(userId, arrearsIds, intentId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[arrears] 진행 중 결제 표식 실패 — 연타 시 결제가 하나 더 생길 수 있다: ${message}`);
+    }
+
     this.logger.log(
       `[arrears] 청산 결제 생성: userId=${userId}, intentId=${intentId}, amount=${amount}, count=${arrearsIds.length}`,
     );
 
     return { intentId, amount, currency, arrearsIds };
+  }
+
+  /**
+   * 직전에 만든 청산 결제가 아직 살아 있으면 그것을 다시 쓴다. 무통장이라 결제 화면을 떠난 뒤에도
+   * 가상계좌가 살아 있어서, 새로 만들어 주면 «같은 빚에 두 번 입금»이 가능해진다. 두 번째 입금은
+   * 지울 줄이 없어 돈만 들어오고 사람이 환불해야 한다.
+   *
+   * 살아 있는지는 wallet 에 물어서 정한다 — 우리 표식은 어느 결제를 물어볼지만 가리킨다.
+   * 물어보지 못하면(네트워크 실패) 예외가 그대로 나간다: 「못 물어봤다」를 「없다」로 읽으면
+   * 바로 그 이중 결제가 된다. 고객에겐 잠시 뒤 다시 누르는 편이 낫다.
+   */
+  private async findReusableIntentId(userId: string, arrearsIds: string[], amount: number): Promise<string | null> {
+    const { intentIds, unmarked } = await this.arrearsReader.pendingIntentMarks(userId);
+    // 표식 없는 줄이 있거나(결제 뒤에 미수가 더 생겼다) 표식이 여럿이면 그 결제는 지금 청구할
+    // 금액을 덮지 않는다. 부분 청산은 허용하지 않으므로 재사용하지 않고 새로 만든다.
+    if (unmarked > 0 || intentIds.length !== 1) return null;
+
+    const intent = await this.paymentClientService.getWalletPaymentIntentOrNull(intentIds[0]);
+    if (!intent) return null;
+    if (!REUSABLE_INTENT_STATUSES.has(intent.status)) return null;
+    // 만료 크론은 10분마다 돌므로 만료 시각이 지났어도 상태가 아직 안 바뀐 창이 있다.
+    if (intent.expiresAt && new Date(intent.expiresAt).getTime() <= Date.now()) return null;
+    if (!isArrearsPayment(intent.metadata)) return null;
+    if (intent.metadata?.userId !== userId) return null;
+    // 금액·대상이 하나라도 다르면 그 결제로는 빚이 안 지워진다(관리자가 금액을 고친 경우 등).
+    if (intent.payableAmount !== amount) return null;
+    if (!sameIdSet(arrearsIdsFromMetadata(intent.metadata), arrearsIds)) return null;
+
+    return intent.id;
+  }
+
+  /**
+   * 사람이 수습해야 하는 청산을 계약 이벤트로 남긴다.
+   *
+   * 대상 줄이 여러 계약에 걸칠 수 있어 하나를 골라 붙인다 — **가장 오래된 줄의 계약**이다
+   * (`lockSettlementTargets` 가 발생 순으로 돌려준다). 고른 규칙이 없으면 같은 사고가 매번 다른
+   * 계약에 붙어 이력이 흩어진다. 나머지 계약은 payload 에 전부 싣는다.
+   */
+  private async recordSettlementMismatch(
+    tx: DrizzleTransaction,
+    params: {
+      targets: SettlementTargetRow[];
+      userId: string;
+      intentId: string;
+      paid: number;
+      due: number;
+      reason: 'UNDERPAID' | 'OVERPAID' | 'NO_OPEN_ARREARS';
+    },
+  ): Promise<void> {
+    const contractId = params.targets[0]?.contractId;
+    if (!contractId) {
+      // 지목된 줄이 하나도 없다(남의 id·지워진 id). 붙일 계약이 없어 로그가 유일한 흔적이다.
+      this.logger.error(
+        `[arrears] 청산 대상 줄을 찾지 못했다 — 계약 이벤트를 남길 수 없다 ` +
+          `(intentId=${params.intentId}, userId=${params.userId}, paid=${params.paid})`,
+      );
+      return;
+    }
+
+    await this.contractEventManager.addEvent(
+      tx,
+      contractId,
+      ARREARS_SETTLEMENT_MISMATCH,
+      {
+        reason: params.reason,
+        intentId: params.intentId,
+        paid: params.paid,
+        due: params.due,
+        arrearsIds: params.targets.map((t) => t.id),
+        contractIds: [...new Set(params.targets.map((t) => t.contractId))],
+      },
+      'SYSTEM',
+      params.userId,
+    );
   }
 
   /**
@@ -150,17 +268,32 @@ export class ArrearsRepaymentService {
     }
 
     const paid = intent.payableAmount;
+    const settlementRef = `intent:${intentId}`;
     const settled = await this.dbService.db.transaction(async (tx) => {
       // 받은 돈으로 지울 빚을 덮는지 먼저 본다. 결제를 만든 뒤 입금이 확인되기까지 관리자가 금액을
-      // 조정할 수 있어서, 대조 없이 닫으면 «덜 받고 전액 탕감» 이 조용히 일어난다.
-      const due = await this.arrearsManager.lockOutstandingSum(tx, userId, arrearsIds);
-      if (due === 0) return [];
+      // 조정하거나 면제할 수 있어서, 대조 없이 닫으면 «덜 받고 전액 탕감» 이 조용히 일어난다.
+      const targets = await this.arrearsManager.lockSettlementTargets(tx, userId, arrearsIds);
+      const due = targets.filter((t) => t.status === 'OUTSTANDING').reduce((sum, t) => sum + t.amount, 0);
+
+      if (due === 0) {
+        // 이 결제가 이미 닫은 줄이면 같은 이벤트의 재배달이다 — 정상이고 흔하다.
+        if (targets.some((t) => t.settlementRef === settlementRef)) return [];
+
+        // 그게 아니면 돈은 들어왔는데 지울 빚이 없다(결제 «전»에 면제된 경우 등). 사람이 환불해야 한다.
+        this.logger.error(
+          `[arrears] 지울 미수가 없는데 입금됐다 — 수동 확인 필요 ` +
+            `(intentId=${intentId}, userId=${userId}, paid=${paid}, ids=${arrearsIds.join(',')})`,
+        );
+        await this.recordSettlementMismatch(tx, { targets, userId, intentId, paid, due, reason: 'NO_OPEN_ARREARS' });
+        return [];
+      }
 
       if (paid < due) {
         this.logger.error(
           `[arrears] 수납액이 미수보다 적어 청산하지 않는다 — 수동 확인 필요 ` +
             `(intentId=${intentId}, userId=${userId}, paid=${paid}, due=${due})`,
         );
+        await this.recordSettlementMismatch(tx, { targets, userId, intentId, paid, due, reason: 'UNDERPAID' });
         return [];
       }
       if (paid > due) {
@@ -168,9 +301,10 @@ export class ArrearsRepaymentService {
           `[arrears] 수납액이 미수보다 많다 — 청산은 진행하고 차액은 사람이 본다 ` +
             `(intentId=${intentId}, userId=${userId}, paid=${paid}, due=${due})`,
         );
+        await this.recordSettlementMismatch(tx, { targets, userId, intentId, paid, due, reason: 'OVERPAID' });
       }
 
-      return this.arrearsManager.settleMany(tx, userId, arrearsIds, `intent:${intentId}`);
+      return this.arrearsManager.settleMany(tx, userId, arrearsIds, settlementRef);
     });
 
     if (settled.length === arrearsIds.length) {
@@ -178,14 +312,9 @@ export class ArrearsRepaymentService {
       return;
     }
 
-    if (settled.length === 0) {
-      // 같은 결제가 두 번 배달된 경우가 대부분이다(정상). 하지만 결제 «전에» 관리자가 면제했다면
-      // 고객이 낸 돈이 갈 곳이 없다 — 사람이 봐야 하므로 id 를 남긴다.
-      this.logger.warn(
-        `[arrears] 청산할 줄이 없다 — 이미 청산·면제됐을 수 있다 (intentId=${intentId}, userId=${userId}, ids=${arrearsIds.join(',')})`,
-      );
-      return;
-    }
+    // 0건은 위 트랜잭션이 이미 갈라 놨다 — 재배달(정상)이면 조용히, 지울 빚이 없는데 입금됐으면
+    // 계약 이벤트까지 남겼다. 여기서 다시 적으면 정상 재배달마다 경고가 쌓인다.
+    if (settled.length === 0) return;
 
     this.logger.error(
       `[arrears] 부분 청산 — 결제는 전액인데 일부만 닫혔다. 수동 확인 필요 ` +

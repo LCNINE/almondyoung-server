@@ -126,11 +126,31 @@ export interface MembershipCheckoutIntentRequest {
   billingMode?: 'one_time' | 'recurring';
 }
 
+/**
+ * wallet `payment_intent_status` enum 그대로(`apps/wallet/src/schema.ts`).
+ * 이 목록이 wallet 보다 좁으면 실제로 오는 값이 타입에 없어 비교가 조용히 죽는다 —
+ * 정합화 경로가 `String(intent.status)` 로 우회하고 있던 것이 그 증거다.
+ */
+export type WalletPaymentIntentStatus =
+  | 'CREATED'
+  | 'PROCESSING'
+  | 'REQUIRES_ACTION'
+  | 'AWAITING_DEPOSIT'
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'CANCELED'
+  | 'PENDING_SETTLEMENT'
+  | 'PARTIALLY_CAPTURED';
+
 export interface WalletPaymentIntentResponse {
   id: string;
-  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELED';
+  status: WalletPaymentIntentStatus;
   payableAmount: number;
   createdAt: string;
+  /** 결제 자체의 만료 시각. wallet 이 만료 크론으로 이 시각 뒤의 intent 를 닫는다. */
+  expiresAt?: string;
   metadata: {
     type?: string;
     planId?: string;
@@ -329,6 +349,28 @@ export class PaymentClientService {
       if (error.response?.status === 404) {
         throw new Error(`Payment intent not found: ${intentId}`);
       }
+      throw new Error(`Wallet payment intent retrieval failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 같은 조회인데 «없음»을 예외가 아니라 null 로 돌려준다. 있는지 없는지가 분기인 호출자
+   * (직전 청산 결제가 아직 살아 있는가)가 예외 메시지를 문자열로 갈라 읽지 않게 한다.
+   * 404 가 아닌 실패는 그대로 던진다 — 「못 물어봤다」를 「없다」로 읽으면 결제가 하나 더 생긴다.
+   */
+  async getWalletPaymentIntentOrNull(intentId: string): Promise<WalletPaymentIntentResponse | null> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<WalletPaymentIntentResponse>(`${walletApiUrl}/v1/payment-intents/${intentId}`, {
+          headers: { Authorization: `Bearer ${walletApiKey}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      this.logger.error(`Failed to get wallet payment intent ${intentId}: ${error.message}`);
       throw new Error(`Wallet payment intent retrieval failed: ${error.message}`);
     }
   }

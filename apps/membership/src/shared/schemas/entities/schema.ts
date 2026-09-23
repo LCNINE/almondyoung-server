@@ -500,6 +500,15 @@ export const membershipArrears = pgTable(
     periodStart: date('period_start'),
     periodEnd: date('period_end'),
     status: membershipArrearsStatusEnum('status').notNull().default('OUTSTANDING'),
+    /**
+     * 이 줄을 덮는 «진행 중» 청산 결제. 「지금 납부하기」를 다시 누른 사람에게 새 결제를 만들어
+     * 주면 같은 빚에 두 번 입금할 수 있어서(무통장이라 둘 다 가상계좌가 살아 있다), 결제를
+     * 만들기 전에 이 표식으로 직전 결제를 찾는다.
+     *
+     * 이 칸은 «어느 결제를 물어볼지»만 가리킨다 — 아직 살아 있는지는 wallet 에 물어서 정한다.
+     * 여기에 시각을 같이 두고 우리가 수명을 재면 wallet 의 만료 정책과 갈린다.
+     */
+    pendingIntentId: text('pending_intent_id'),
     /** 청산 근거 — 무엇으로 갚았는지(결제 intent·주문 id 등). 면제면 면제 사유. */
     settlementRef: text('settlement_ref'),
     settledAt: timestamp('settled_at', { withTimezone: true }),

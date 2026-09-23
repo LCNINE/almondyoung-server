@@ -75,6 +75,24 @@ export class ArrearsReader {
     return rows.map(toArrearsRow);
   }
 
+  /**
+   * 미청산 줄에 찍힌 「진행 중 청산 결제」 표식.
+   *
+   * 결제를 하나 더 만들지 말지는 **지금 갚아야 할 줄 전부가 같은 결제 하나에 묶여 있을 때만**
+   * 물어볼 값이 있다. 표식이 없는 줄이 하나라도 있으면(= 결제를 만든 뒤 미수가 더 생겼다)
+   * 그 결제는 지금 청구할 금액을 덮지 않으므로 재사용 후보가 아니다.
+   * 표식은 고객에게 보여줄 값이 아니라 여기서만 쓰므로 목록 조회(ArrearsRow)에 싣지 않는다.
+   */
+  async pendingIntentMarks(userId: string): Promise<{ intentIds: string[]; unmarked: number }> {
+    const rows = await this.dbService.db
+      .select({ pendingIntentId: schema.membershipArrears.pendingIntentId })
+      .from(schema.membershipArrears)
+      .where(and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, 'OUTSTANDING')));
+
+    const intentIds = [...new Set(rows.map((r) => r.pendingIntentId).filter((id): id is string => !!id))];
+    return { intentIds, unmarked: rows.filter((r) => !r.pendingIntentId).length };
+  }
+
   /** 미청산 잔액 한 줄. 고객 화면·게이트가 이것만 본다. */
   async outstandingSummary(userId: string): Promise<{ total: number; count: number; currency: string }> {
     const [row] = await this.dbService.db
