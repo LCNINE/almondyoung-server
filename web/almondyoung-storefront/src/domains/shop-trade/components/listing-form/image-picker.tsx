@@ -33,7 +33,9 @@ export function ImagePicker({
     const picked = Array.from(files).slice(0, room)
     setUploading(true)
     try {
-      const uploaded = await Promise.all(
+      // Promise.all 은 하나만 실패해도 나머지 성공분까지 버린다(file-service 고아 파일 + 전부 다시 선택).
+      // allSettled 로 성공분은 순서대로 살리고, 실패가 하나라도 있으면 한 번만 알린다.
+      const results = await Promise.allSettled(
         picked.map((file) => {
           const formData = new FormData()
           formData.append("file", file)
@@ -41,9 +43,11 @@ export function ImagePicker({
           return uploadFile(formData)
         })
       )
-      onChange([...value, ...uploaded.map((f) => f.id)])
-    } catch {
-      toast.error(t("uploadFail"))
+      const uploaded = results
+        .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof uploadFile>>> => r.status === "fulfilled")
+        .map((r) => r.value.id)
+      if (uploaded.length > 0) onChange([...value, ...uploaded])
+      if (results.some((r) => r.status === "rejected")) toast.error(t("uploadFail"))
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ""

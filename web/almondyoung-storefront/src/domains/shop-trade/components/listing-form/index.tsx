@@ -65,7 +65,7 @@ function Field({
     <div className="grid gap-2">
       <Label className="text-foreground text-sm font-medium">
         {label}
-        {required && <span className="text-primary ml-0.5">*</span>}
+        {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
       {children}
       {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
