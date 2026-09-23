@@ -6,7 +6,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CronExpression } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts';
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { businessLicenses, users, type UserServiceSchema } from '../../../database/drizzle/schema';
 import { BusinessLicensesService, isCorporateBusinessNumber } from './business-licenses.service';
 import {
@@ -31,7 +31,7 @@ const sameSubmission = ({ id, fileUrl }: Submission) =>
 type Verdict =
   | { decision: 'approve'; businessNumber: string; representativeName: string; verification: NtsValidateResult }
   | { decision: 'manual'; reason: AutoReviewManualReason; verification?: NtsValidateResult }
-  | { decision: 'retry' };
+  | { decision: 'retry'; verification: NtsValidateResult };
 
 export function judgeReading(
   reading: LicenseReading,
@@ -88,10 +88,13 @@ export class BusinessLicenseAutoReviewService {
           eq(businessLicenses.status, 'under_review'),
           isNotNull(businessLicenses.fileUrl),
           isNull(businessLicenses.deletedAt),
-          // 자동 승인이 켜지면 dry-run 때 판정만 남긴 건도 다시 본다.
-          dryRun
-            ? sql`${businessLicenses.metadata}->'autoReview' is null`
-            : sql`coalesce((${businessLicenses.metadata}->'autoReview'->>'dryRun')::boolean, true)`,
+          or(
+            // 자동 승인이 켜지면 dry-run 때 판정만 남긴 건도 다시 본다.
+            dryRun
+              ? sql`${businessLicenses.metadata}->'autoReview' is null`
+              : sql`coalesce((${businessLicenses.metadata}->'autoReview'->>'dryRun')::boolean, true)`,
+            sql`${businessLicenses.metadata}->'autoReview'->>'decision' = 'retry'`,
+          ),
         ),
       )
       .orderBy(asc(businessLicenses.createdAt))
@@ -100,10 +103,17 @@ export class BusinessLicenseAutoReviewService {
     for (const row of rows) {
       if (!row.fileUrl) continue;
 
+      // jsonb 라 unknown 으로 내려온다. 우리가 쓴 모양이다.
+      const previous = (row.metadata as BusinessMetadata | null) ?? {};
+      const cached =
+        previous.autoReview?.decision === 'retry' && previous.autoReview.fileUrl === row.fileUrl
+          ? previous.autoReview.reading
+          : undefined;
+
       let reading: LicenseReading | undefined;
       let verdict: Verdict;
       try {
-        reading = await this.reader.read(row.fileUrl);
+        reading = cached ?? (await this.reader.read(row.fileUrl));
         verdict = await this.judge(reading, row.username);
       } catch (error) {
         if (error instanceof Anthropic.BadRequestError) {
@@ -113,14 +123,11 @@ export class BusinessLicenseAutoReviewService {
           continue;
         }
       }
-      if (verdict.decision === 'retry') continue;
-
-      // jsonb 라 unknown 으로 내려온다. 우리가 쓴 모양이다.
-      const previous = (row.metadata as BusinessMetadata | null) ?? {};
       const record: AutoReviewRecord = {
         decision: verdict.decision,
         reason: verdict.decision === 'manual' ? verdict.reason : undefined,
         dryRun,
+        fileUrl: row.fileUrl,
         model: LICENSE_READER_MODEL,
         reviewedAt: new Date().toISOString(),
         reading,
@@ -152,7 +159,7 @@ export class BusinessLicenseAutoReviewService {
       startDate,
     );
 
-    if (verification.status === 'lookup_failed') return { decision: 'retry' };
+    if (verification.status === 'lookup_failed') return { decision: 'retry', verification };
     if (!verification.valid) return { decision: 'manual', reason: 'nts_mismatch', verification };
     if (verification.status !== 'active') return { decision: 'manual', reason: 'not_active', verification };
     return { decision: 'approve', businessNumber, representativeName, verification };
