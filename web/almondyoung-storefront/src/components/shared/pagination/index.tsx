@@ -84,11 +84,13 @@ export function SharedPagination({
 
   return (
     <nav
+      data-pagination
       className={cn("flex items-center justify-center gap-1", className)}
       aria-label="페이지네이션"
     >
       {/* 이전 페이지 */}
       <button
+        data-page-prev
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
         className={cn(
@@ -142,6 +144,7 @@ export function SharedPagination({
 
       {/* 다음 페이지 */}
       <button
+        data-page-next
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
         className={cn(
