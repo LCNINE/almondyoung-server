@@ -17,6 +17,7 @@ const SWIPE_THRESHOLD = 50
 
 interface Props {
   images: string[]
+  fit?: "cover" | "contain"
   /** 열려 있는 사진의 인덱스. null 이면 닫힘 */
   index: number | null
   onIndexChange: (index: number) => void
@@ -27,6 +28,7 @@ interface Props {
 /** 슬라이드는 4:3 으로 잘려 보이므로, 사진 전체를 보고 싶을 때 여는 확대 화면 */
 export function GalleryLightbox({
   images,
+  fit = "cover",
   index,
   onIndexChange,
   onClose,
@@ -87,13 +89,19 @@ export function GalleryLightbox({
         >
           <DialogTitle className="sr-only">{alt} 사진 크게 보기</DialogTitle>
 
-          <div className="relative h-full w-full">
+          <div
+            className={`relative h-full w-full ${fit === "contain" ? "bg-muted" : ""}`}
+          >
             <Image
               src={getThumbnailUrl(images[index])}
               alt={`${alt} 사진 ${index + 1}`}
               fill
               sizes="100vw"
-              className="object-contain"
+              className={
+                fit === "contain" && index === 1
+                  ? "m-auto max-h-80 max-w-80 object-contain"
+                  : "object-contain"
+              }
               priority
             />
           </div>

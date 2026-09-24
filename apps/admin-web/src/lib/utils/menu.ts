@@ -683,6 +683,15 @@ const allMenus: MainMenu[] = [
     ],
   },
   {
+    id: 'logo-contest',
+    title: '로고 공모전',
+    icon: 'Trophy',
+    defaultPath: '/logo-contest',
+    children: [
+      { id: 'logo-contest-entries', title: '출품작', path: '/logo-contest' },
+    ],
+  },
+  {
     id: 'archive',
     title: '아카이브',
     icon: 'BookOpen',

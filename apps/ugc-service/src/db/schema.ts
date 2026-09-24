@@ -533,6 +533,80 @@ export const shopListingViews = pgTable(
   ],
 );
 
+export const logoContestEntryStatusEnum = pgEnum('logo_contest_entry_status', ['active', 'hidden']);
+
+/**
+ * 로고 공모전 출품작. 공모전은 이번 한 번뿐이라 `contests` 테이블이 없다 —
+ * 기간은 `LOGO_CONTEST_STARTS_AT`/`LOGO_CONTEST_ENDS_AT` 설정값이 들고 있다.
+ *
+ * `authorName` 은 출품 시점 스냅샷이다(`questions.nickname` 과 같은 결). 공개 응답에는
+ * 가린 값만 나가고, 원본은 어드민만 본다.
+ */
+export const logoContestEntries = pgTable(
+  'logo_contest_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    authorName: varchar('author_name', { length: 100 }).notNull(),
+    title: varchar('title', { length: 30 }).notNull(),
+    description: varchar('description', { length: 500 }),
+    status: logoContestEntryStatusEnum('status').notNull().default('active'),
+    isWinner: boolean('is_winner').notNull().default(false),
+    agreedAt: timestamp('agreed_at').notNull(),
+    deletedAt: timestamp('deleted_at'),
+    ...timestampColumns,
+  },
+  (table) => [
+    // 1계정 1출품. 삭제하면 다시 낼 수 있다 — 수정이 없는 대신 삭제 후 재출품이 유일한 정정 수단이다.
+    uniqueIndex('logo_contest_entries_user_unique')
+      .on(table.userId)
+      .where(sql`${table.deletedAt} is null`),
+    uniqueIndex('logo_contest_entries_winner_unique')
+      .on(table.isWinner)
+      .where(sql`${table.isWinner} = true`),
+    index('logo_contest_entries_visible_created')
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
+  ],
+);
+
+export const logoContestEntryMedia = pgTable(
+  'logo_contest_entry_media',
+  {
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => logoContestEntries.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('logo_contest_entry_media_order_unique').on(table.entryId, table.order),
+    primaryKey({ columns: [table.entryId, table.fileId], name: 'logo_contest_entry_media_pkey' }),
+    index('logo_contest_entry_media_entry_id').on(table.entryId),
+  ],
+);
+
+/**
+ * 1계정 1표, 취소·변경 없음. 작품이 삭제·숨김되면 그 작품의 표를 지워
+ * 투표자가 다시 투표할 수 있게 한다 — 그래서 unique 는 `userId` 하나다.
+ */
+export const logoContestVotes = pgTable(
+  'logo_contest_votes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => logoContestEntries.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('logo_contest_votes_user_unique').on(table.userId),
+    index('logo_contest_votes_entry').on(table.entryId),
+  ],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -550,6 +624,9 @@ export const ugcServiceSchema = {
   shopListingImages,
   shopListingModerations,
   shopListingViews,
+  logoContestEntries,
+  logoContestEntryMedia,
+  logoContestVotes,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

@@ -203,24 +203,24 @@ input[type="search"]::-webkit-search-results-decoration {
 :root {
   --pdp-header-h: 104px;
   --pdp-section-offset: 160px;
-  /* Karrot / Seed Design 시맨틱 리매핑 (light) */
+  /* Seed Design 중립색 + 스토어 UI 피그마 브랜드색 (light) */
   --background: #ffffff;
-  --foreground: #1a1c20;
+  --foreground: #000000;
   --card: #ffffff;
-  --card-foreground: #1a1c20;
+  --card-foreground: #000000;
   --popover: #ffffff;
-  --popover-foreground: #1a1c20;
-  --primary: #ff6600;
+  --popover-foreground: #000000;
+  --primary: #ffa500;
   --primary-foreground: #ffffff;
   --secondary: #f3f4f5;
-  --secondary-foreground: #1a1c20;
+  --secondary-foreground: #000000;
   --muted: #f7f8f9;
-  --muted-foreground: #868b94;
+  --muted-foreground: #757575;
   --accent: #f3f4f5;
-  --accent-foreground: #1a1c20;
+  --accent-foreground: #000000;
   --destructive: #fa342c;
-  --border: #dcdee3;
-  --input: #dcdee3;
+  --border: #d9d9d9;
+  --input: #d9d9d9;
   --ring: #5e98fe;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -229,12 +229,12 @@ input[type="search"]::-webkit-search-results-decoration {
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.75rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #1a1c20;
-  --sidebar-primary: #1a1c20;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f3f4f5;
-  --sidebar-accent-foreground: #1a1c20;
-  --sidebar-border: #dcdee3;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #d9d9d9;
   --sidebar-ring: #5e98fe;
 
   /* 폰트 및 컬러 팔레트 */
@@ -255,13 +255,13 @@ input[type="search"]::-webkit-search-results-decoration {
   --gray-90: #1c1c1e;
   --yellow-10: #fff7e5;
   --yellow-20: #ffe8b3;
-  --yellow-30: #ff6600;
-  --yellow-40: #e14d00;
+  --yellow-30: #ffa500;
+  --yellow-40: #e69500;
   --yellow-50: #a86200;
   --red-30: #f54527;
   --red-40: #c7321f;
   --red-50: #981c14;
-  --orange-600: #ff5722;
+  --orange-600: #ffa500;
   --green-30: #34c759;
   --green-40: #22a343;
 
@@ -295,7 +295,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: #ff6600;
+  --primary: #ffa500;
   --primary-foreground: #ffffff;
   --secondary: #2c2c2e;
   --secondary-foreground: #ffffff;
@@ -636,4 +636,31 @@ input[type="search"]::-webkit-search-results-decoration {
 .prose img {
   margin: 24px 0;
   border-radius: 12px;
+}
+
+@keyframes clay-vote-pop {
+  0% {
+    transform: scale(0.75) rotate(-12deg);
+  }
+  55% {
+    transform: scale(1.2) rotate(7deg);
+  }
+  78% {
+    transform: scale(0.94) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.logo-sticker-tilt {
+  transform: perspective(500px) rotateY(-12deg) rotateZ(-6deg);
+  filter: drop-shadow(0 8px 7px rgb(0 0 0 / 28%));
+}
+
+@media (min-width: 1024px) {
+  .logo-sticker-tilt {
+    transform: none;
+    filter: none;
+  }
 }

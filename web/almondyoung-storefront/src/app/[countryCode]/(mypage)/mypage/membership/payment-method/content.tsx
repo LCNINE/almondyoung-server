@@ -793,7 +793,7 @@ export default function MembershipPaymentMethodContent() {
         {/* 새 카드 등록 CTA — 콘텐츠 영역 하단에 고정 */}
         <div className="mt-auto pt-8">
           <button
-            className="bg-primary w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-[#e14d00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e14d00] disabled:cursor-not-allowed disabled:opacity-50"
+            className="bg-primary w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-[#e69500] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e69500] disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRegisterNewCard}
             disabled={!!isChanging || isActionPending}
           >

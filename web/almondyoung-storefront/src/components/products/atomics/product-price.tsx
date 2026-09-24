@@ -59,9 +59,9 @@ export const ProductPrice = ({
         <span className="text-base font-bold md:text-[19px]">
           {displayPrice.toLocaleString()}원
         </span>
-        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
-          <span className="text-[15px] font-bold text-[#F2994A]">
+          <span className="text-[15px] font-bold text-[#ffa500]">
             멤버십 회원 공개
           </span>
         </div>
@@ -137,13 +137,13 @@ export const ProductPrice = ({
           membershipPrice > 0 &&
           membershipSavings != null && (
             <div className="mt-1 flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
                 <ProductMembershipBadge size="sm" label="멤버십할인가" />
                 <span className="text-[15px] font-bold">
                   {membershipPrice.toLocaleString()}원
                 </span>
               </div>
-              <span className="text-[11px] font-medium text-[#F2994A]">
+              <span className="text-[11px] font-medium text-[#ffa500]">
                 가입 시 {membershipSavings.toLocaleString()}원 절약
               </span>
             </div>
@@ -166,13 +166,13 @@ export const ProductPrice = ({
         membershipPrice > 0 &&
         membershipSavings != null && (
           <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
               <ProductMembershipBadge size="sm" label="멤버십할인가" />
               <span className="text-[15px] font-bold">
                 {membershipPrice.toLocaleString()}원
               </span>
             </div>
-            <span className="text-[11px] font-medium text-[#F2994A]">
+            <span className="text-[11px] font-medium text-[#ffa500]">
               가입 시 {membershipSavings.toLocaleString()}원 절약
             </span>
           </div>

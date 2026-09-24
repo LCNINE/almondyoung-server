@@ -7,7 +7,7 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Banner } from "@/lib/types/ui/pim"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { getBannerImageUrl } from "@/lib/utils/banner"
 import { cn } from "@lib/utils"
 
 /**
@@ -156,7 +156,7 @@ export function HeroBannerList({ banners, current, onSelect }: Props) {
               </span>
               {banner.listImageFileId && (
                 <Image
-                  src={getThumbnailUrl(banner.listImageFileId)}
+                  src={getBannerImageUrl(banner.listImageFileId)}
                   alt=""
                   width={48}
                   height={48}

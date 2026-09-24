@@ -16,7 +16,7 @@ import { agreements, type Agreement } from "@/lib/data/agreements"
 import type { StepValues } from "@/components/signup/types"
 
 const CHECK_CLASS =
-  "size-5 rounded-full data-[state=checked]:border-transparent data-[state=checked]:bg-transparent data-[state=checked]:text-primary"
+  "size-5 rounded-full text-primary data-[state=checked]:border-transparent data-[state=checked]:bg-transparent data-[state=checked]:text-primary"
 
 export function AgreementsStep({
   defaultValues,

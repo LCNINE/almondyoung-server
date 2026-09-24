@@ -13,7 +13,7 @@ export function TermsAndConditions({
   return (
     <div className="space-y-6 text-sm leading-[19px] text-[#555d6d]">
       <div>
-        <h1 className="mb-2 text-lg font-bold text-[#1a1c20]">
+        <h1 className="mb-2 text-lg font-bold text-[#000000]">
           {isRecurring
             ? "정기 자동 결제 및 이용 약관 동의서"
             : "멤버십 이용 및 환불 약관 동의서"}
@@ -26,7 +26,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 목적 및 내용
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -51,7 +51,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 주기 및 금액
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -96,7 +96,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 정보 수집 항목
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -122,7 +122,7 @@ export function TermsAndConditions({
 
       {isRecurring && (
         <div>
-          <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          <h2 className="mb-2 text-base font-bold text-[#000000]">
             동의 철회 및 변경
           </h2>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -143,7 +143,7 @@ export function TermsAndConditions({
       )}
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">유의사항</h2>
+        <h2 className="mb-2 text-base font-bold text-[#000000]">유의사항</h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           {isRecurring ? (
             <>
@@ -166,9 +166,9 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">환불 정책</h2>
+        <h2 className="mb-2 text-base font-bold text-[#000000]">환불 정책</h2>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 1조 목적
         </h3>
         <p>
@@ -177,7 +177,7 @@ export function TermsAndConditions({
           권리·의무 및 책임 사항을 규정함을 목적으로 합니다.
         </p>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 2조 청약철회 및 중도해지 환급
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -221,7 +221,7 @@ export function TermsAndConditions({
           </li>
         </ul>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           {isRecurring ? "제 3조 구독 해지 및 갱신" : "제 3조 구독 기간"}
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -254,7 +254,7 @@ export function TermsAndConditions({
           )}
         </ul>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 4조 회원의 동의
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">

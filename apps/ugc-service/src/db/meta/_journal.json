@@ -57,6 +57,13 @@
       "when": 1790162962793,
       "tag": "20260923112922_add-shop-listings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790215451940,
+      "tag": "20260924020411_add-logo-contest",
+      "breakpoints": true
     }
   ]
 }

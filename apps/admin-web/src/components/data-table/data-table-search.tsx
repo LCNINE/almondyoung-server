@@ -36,6 +36,7 @@ export function DataTableSearch({ prefix, placeholder = '검색...' }: DataTable
       <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         className="h-8 pl-8 text-sm"
+        aria-label={placeholder}
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}

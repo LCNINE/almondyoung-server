@@ -53,6 +53,7 @@ import {
   ShoppingBag,
   BookOpen,
   House,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -108,6 +109,7 @@ const iconMap: Record<string, LucideIcon> = {
   ShoppingBag,
   BookOpen,
   House,
+  Trophy,
 };
 
 export function getIconComponent(name?: string): LucideIcon | null {

@@ -2,6 +2,7 @@ import Footer from "@/components/layout/footer"
 import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import { ObservabilityProvider } from "@/components/providers/observability-provider"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
+import { PaginationKeyboard } from "@/components/shared/pagination/pagination-keyboard"
 import { PushNotificationProvider } from "@/components/providers/push-notification-provider"
 import { CartProvider } from "@/contexts/cart-context"
 import { ShippingGroupsProvider } from "@/contexts/shipping-groups-context"
@@ -83,6 +84,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
             <OverlayProvider>
               <UserProvider initialUser={userDetailInfo}>
                 <ObservabilityProvider />
+                <PaginationKeyboard />
                 <PushNotificationProvider />
                 <CartProvider initialCart={cart}>
                   <ShippingGroupsProvider groups={shippingGroups}>

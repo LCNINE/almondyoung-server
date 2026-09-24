@@ -4,6 +4,7 @@ import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import {
   ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
   DIGITAL_ASSET_FILE_CONTEXT_ID,
+  LOGO_CONTEST_IMAGE_CONTEXT_ID,
   FILE_CONTEXTS,
   fileContextMatchesSeed,
 } from '../../../apps/file-service/src/database/default-file-contexts';
@@ -19,7 +20,11 @@ const CONTEXT_IDS = FILE_CONTEXTS.map((c) => c.id);
  * 상한을 100MB → 600MB 로 올렸는데 라이브가 그대로여서 업로드가 400 으로 죽었다.
  * 소스가 정본이어야 하는 컨텍스트는 여기 적는다.
  */
-const OVERWRITE_FROM_SOURCE: readonly string[] = [DIGITAL_ASSET_FILE_CONTEXT_ID, ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID];
+const OVERWRITE_FROM_SOURCE: readonly string[] = [
+  DIGITAL_ASSET_FILE_CONTEXT_ID,
+  ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+  LOGO_CONTEST_IMAGE_CONTEXT_ID,
+];
 const CONTEXT_NAMES: Record<string, string> = Object.fromEntries(FILE_CONTEXTS.map((c) => [c.id, c.name]));
 
 export class FileServiceSeedStep extends SeedStep {

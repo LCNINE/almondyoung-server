@@ -10,9 +10,12 @@
     "hideForToday": "오늘 하루 보지 않기"
   },
   "popup": {
-    "hideForToday": "오늘 하루 보지 않기",
-    "hideForDays": "{days}일간 보지 않기",
+    "hideThisForToday": "이 팝업 오늘 그만 보기",
+    "hideThisForDays": "이 팝업 {days}일간 보지 않기",
+    "previous": "이전 팝업",
+    "next": "다음 팝업",
     "viewDetail": "자세히 보기",
-    "close": "닫기"
+    "close": "닫기",
+    "closeAll": "모두 닫기"
   }
 }

@@ -149,7 +149,7 @@ export default function MembershipCheckoutTemplate({
                     {planName}
                   </p>
                 </div>
-                <p className="text-xl font-bold text-[#ff6600]">
+                <p className="text-xl font-bold text-[#ffa500]">
                   {t("priceWon", { amount: price.toLocaleString() })}
                 </p>
               </div>

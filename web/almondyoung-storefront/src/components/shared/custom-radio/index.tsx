@@ -21,10 +21,10 @@ const CustomRadio = ({
       className="peer sr-only"
     />
     <span
-      className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${checked ? "border-[#ff6600]" : "border-gray-300"}`}
+      className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${checked ? "border-[#ffa500]" : "border-gray-300"}`}
     >
       {checked && (
-        <span className="h-2.5 w-2.5 rounded-full bg-[#ff6600]"></span>
+        <span className="h-2.5 w-2.5 rounded-full bg-[#ffa500]"></span>
       )}
     </span>
     <span

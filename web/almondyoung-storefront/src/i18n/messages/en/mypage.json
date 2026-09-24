@@ -26,6 +26,7 @@
     "password": "Change Password",
     "cafe24": "Link Legacy Almondyoung Account",
     "review": "Review Management",
+    "contests": "My Contests",
     "reviewShort": "Reviews",
     "myShopListings": "My shop listings",
     "inquiries": "My Inquiries",
@@ -36,6 +37,18 @@
     "logout": "Log out",
     "withdraw": "Delete Account",
     "business": "Business Info"
+  },
+  "contests": {
+    "title": "My Contests",
+    "description": "View the work you submitted and voted for.",
+    "logoContest": "Logo Contest",
+    "viewContest": "View contest",
+    "submitted": "My entry",
+    "voted": "My vote",
+    "entryNotice": "Entries cannot be edited. Withdraw yours before submitting again.",
+    "empty": "You have not joined a contest yet.",
+    "browse": "Browse the logo contest",
+    "loadFail": "Could not load your contest activity. Please try again later."
   },
   "quickLink": {
     "orderList": "Orders",
