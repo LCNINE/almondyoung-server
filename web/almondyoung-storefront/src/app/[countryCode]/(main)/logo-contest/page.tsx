@@ -235,7 +235,7 @@ export default async function LogoContestPage({
       )}
 
       {entries && items.length === 0 && (
-        <p className="text-muted-foreground py-16 text-center text-sm">
+        <p className="text-muted-foreground py-28 text-center text-sm">
           {status.isOpen ? t("empty") : t("emptyClosed")}
         </p>
       )}
