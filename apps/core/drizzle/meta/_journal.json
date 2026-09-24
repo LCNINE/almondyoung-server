@@ -715,6 +715,13 @@
       "when": 1789970803751,
       "tag": "20260921060643_add-waybill-transient-retry-fields",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790276464943,
+      "tag": "20260924190104_drop-shop-listings",
+      "breakpoints": true
     }
   ]
 }
