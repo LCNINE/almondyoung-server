@@ -20,6 +20,30 @@ export class InternalFilesService {
     private readonly storage: StorageService,
   ) {}
 
+  /**
+   * 파일의 소유자와 컨텍스트를 돌려준다. 첨부를 받는 서비스가 「이 fileId 가 정말
+   * 그 사람이 그 용도로 올린 것인지」를 확인하는 용도다 — 사용자용
+   * `GET /files/:id/metadata` 는 `uploadedBy` 를 일부러 안 내려보내므로 여기 둔다.
+   */
+  async describe(fileId: string): Promise<{
+    id: string;
+    contextId: string;
+    uploadedBy: string;
+    status: string;
+    mimeType: string;
+  }> {
+    const file = await this.repo.findById(fileId);
+    if (!file) throw new NotFoundError('File not found');
+
+    return {
+      id: file.id,
+      contextId: file.contextId,
+      uploadedBy: file.uploadedBy,
+      status: file.status,
+      mimeType: file.mimeType,
+    };
+  }
+
   /** 행만 deleted 로 바꾼다. S3 객체는 남는다. */
   async softDelete(fileId: string): Promise<{ success: boolean }> {
     const file = await this.repo.findById(fileId);

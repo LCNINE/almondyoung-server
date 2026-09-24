@@ -1,4 +1,4 @@
-import { Controller, Delete, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Controller, Delete, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { InternalOnly } from '@app/authorization';
 import { InternalFilesService } from './internal-files.service';
@@ -15,6 +15,11 @@ import { InternalFilesService } from './internal-files.service';
 @Controller('internal/files')
 export class InternalFilesController {
   constructor(private readonly service: InternalFilesService) {}
+
+  @Get(':fileId')
+  async describe(@Param('fileId', ParseUUIDPipe) fileId: string) {
+    return this.service.describe(fileId);
+  }
 
   @Delete(':fileId')
   async softDelete(@Param('fileId', ParseUUIDPipe) fileId: string) {
