@@ -1078,6 +1078,8 @@ export const sitePopups = pgTable(
 );
 
 // ===== SHOP LISTINGS (샵매매) =====
+// 도메인은 ugc-service 로 옮겼고 core 에 이 테이블을 읽는 코드는 없다. 테이블 정의는 contract PR 이
+// DROP 마이그레이션과 함께 지운다 (spec 2026-09-23-shop-listings-to-ugc-design §9.7).
 export const shopListingViews = pgTable(
   'shop_listing_views',
   {
