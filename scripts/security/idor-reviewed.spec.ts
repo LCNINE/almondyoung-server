@@ -291,7 +291,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service POST /files/upload/confirm': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/upload/upload.service.ts:173',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:187',
     predicate: 'if (file.uploadedBy !== userId) {',
     note: 'UploadController.confirmUpload -> UploadService.confirmUpload(dto.fileId, user.userId). 바디의 fileId 가 기존 pending 행을 가리키는 client-supplied id 지만, 행을 읽자마자 file.uploadedBy 를 호출자 userId 와 대조해 다르면 ForbiddenError — 타인의 pending 업로드를 대신 activate 하거나 존재 여부를 활성화로 확인할 수 없다. upload.service.spec.ts 가 발급자 불일치 거부를 고정한다.',
   },

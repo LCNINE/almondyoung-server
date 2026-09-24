@@ -31,6 +31,8 @@ export class InternalFilesService {
     uploadedBy: string;
     status: string;
     mimeType: string;
+    width?: number;
+    height?: number;
   }> {
     const file = await this.repo.findById(fileId);
     if (!file) throw new NotFoundError('File not found');
@@ -41,6 +43,8 @@ export class InternalFilesService {
       uploadedBy: file.uploadedBy,
       status: file.status,
       mimeType: file.mimeType,
+      width: file.metadata?.width,
+      height: file.metadata?.height,
     };
   }
 
