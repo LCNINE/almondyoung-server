@@ -11,6 +11,7 @@ import { UgcServiceController } from './ugc-service.controller';
 import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
+import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { ugcServiceSchema } from './db/schema';
 
 const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
@@ -39,6 +40,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     CronOnceModule,
     ReviewsModule,
     QnaModule,
+    LogoContestModule,
   ],
   controllers: [UgcServiceController],
   providers: [

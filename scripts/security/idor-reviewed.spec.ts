@@ -569,6 +569,36 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
+  'ugc-service DELETE /logo-contest/entries/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:212',
+    predicate: "if (entry.userId !== userId) throw new ForbiddenError('본인 출품작만 삭제할 수 있습니다.');",
+    note: "같은 트랜잭션 안의 사전 SELECT 뒤 앱 레벨 체크다. userId 는 @User('userId') 토큰값이고 삭제 대상은 경로의 id 뿐 — 남의 출품작을 지우면 403 이다. 표 삭제도 같은 트랜잭션에서 그 entryId 로만 한정된다.",
+  },
+  'ugc-service GET /logo-contest/me': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:130',
+    predicate: '.where(and(eq(logoContestEntries.userId, userId), isNull(logoContestEntries.deletedAt)));',
+    note: "내 출품작과 내 표만 돌려준다. userId 는 토큰값이고 이 라우트는 쿼리 파라미터를 받지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:38',
+    predicate: 'if (file.uploadedBy !== userId) {',
+    note: "생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.",
+  },
+  'ugc-service DELETE /logo-contest/entries/:id/vote': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:256',
+    predicate: '.where(and(eq(logoContestVotes.userId, userId), eq(logoContestVotes.entryId, entryId)));',
+    note: "지우는 것은 내 표뿐이다. userId 는 토큰값이라 경로의 id 로 남의 표를 지울 수 없고, 그 출품작에 내 표가 없으면 아무 행도 지워지지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries/:id/vote': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:234',
+    predicate: '',
+    note: "남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.",
+  },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/qna/qna.service.ts:185',
@@ -734,15 +764,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(115);
+    expect(targets).toHaveLength(120);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(115);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(114);
+    expect(new Set(targets.map(keyOf)).size).toBe(120);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(119);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

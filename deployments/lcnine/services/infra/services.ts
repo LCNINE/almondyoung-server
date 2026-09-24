@@ -399,6 +399,8 @@ export function setup(infra: SharedInfra) {
     JWT_ISSUER: 'almondyoung-auth',
     OIDC_ISSUER_URL: idpUserServiceUrl,
     UGC_INTERNAL_KEY: ugcInternalKey.value,
+    FILE_SERVICE_URL: url('file'),
+    FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
   });
   const searchEnv = withPrefix('SEARCH', {
     ...searchBackendEnv,
