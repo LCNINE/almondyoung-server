@@ -164,7 +164,7 @@ export function SectionTabs({
     cn(
       "flex-1 cursor-pointer border-0 border-b-2 px-4 py-3 text-sm font-bold transition-colors focus-visible:outline-none lg:text-base",
       active
-        ? "border-b-[#ff6600] text-[#ff6600]"
+        ? "border-b-[#ffa500] text-[#ffa500]"
         : "border-b-transparent text-[#666666] hover:text-[#333333]"
     )
 

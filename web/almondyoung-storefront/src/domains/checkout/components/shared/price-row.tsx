@@ -30,15 +30,15 @@ const labelToneClass: Record<LabelTone, string> = {
   default: "text-gray-900",
   muted: "text-gray-600",
   sub: "text-gray-400",
-  membership: "text-[#e14d00]",
-  accent: "text-[#ff6600]",
+  membership: "text-[#e69500]",
+  accent: "text-[#ffa500]",
 }
 
 const valueToneClass: Record<ValueTone, string> = {
   default: "text-gray-900",
   muted: "text-gray-600",
-  membership: "text-[#e14d00]",
-  discount: "text-[#ff6600]",
+  membership: "text-[#e69500]",
+  discount: "text-[#ffa500]",
 }
 
 const highlightClass: Record<Highlight, string> = {

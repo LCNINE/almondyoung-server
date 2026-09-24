@@ -212,7 +212,7 @@ export function CashReceiptModal({
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-[#ff6600] hover:bg-[#ff6600]/90"
+              className="flex-1 bg-[#ffa500] hover:bg-[#ffa500]/90"
               disabled={!isValid || isPending}
             >
               {isPending ? "저장 중..." : "저장"}

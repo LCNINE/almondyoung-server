@@ -84,7 +84,7 @@ function ProductCardRating({
                 style={{ width: `${fillPercent}%` }}
                 aria-hidden="true"
               >
-                <Star className="h-3.5 w-3.5 fill-[#F2994A] text-[#F2994A]" />
+                <Star className="h-3.5 w-3.5 fill-[#ffa500] text-[#ffa500]" />
               </span>
             )}
           </span>

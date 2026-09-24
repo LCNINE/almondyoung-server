@@ -211,10 +211,10 @@ export const DiscountSection = ({
 
           {/* 적용된 쿠폰 표시 */}
           {selectedCoupon ? (
-            <div className="flex items-center justify-between rounded-[5px] border border-[#ff6600] px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-[5px] border border-[#ffa500] px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <span
-                  className={`text-xs font-medium lg:text-sm ${couponNotApplied ? "text-gray-400" : "text-[#ff6600]"}`}
+                  className={`text-xs font-medium lg:text-sm ${couponNotApplied ? "text-gray-400" : "text-[#ffa500]"}`}
                 >
                   {couponNotApplied
                     ? t("notApplicable")

@@ -159,7 +159,7 @@ export default async function LogoContestPage({
           <p className="text-sm leading-6 whitespace-pre-line sm:text-base">
             {t("lead")}
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-[3px] border-[#F29219] pl-3 text-sm">
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-[3px] border-[#ffa500] pl-3 text-sm">
             <span className="font-medium text-[#5c7180]">
               {t("periodLabel")}
             </span>
@@ -185,8 +185,8 @@ export default async function LogoContestPage({
                 className={cn(
                   "px-1 py-2 text-sm font-semibold transition-colors",
                   displaySort === value
-                    ? "text-[#F29219]"
-                    : "text-[#607585] hover:text-[#F29219]"
+                    ? "text-[#ffa500]"
+                    : "text-[#607585] hover:text-[#ffa500]"
                 )}
               >
                 {t(`sort.${value}`)}
@@ -202,7 +202,7 @@ export default async function LogoContestPage({
         >
           <summary
             aria-label={t("pageSize.label")}
-            className="flex h-9 cursor-pointer list-none items-center justify-between rounded-xl px-3 font-medium text-[#24343d] outline-none focus-visible:ring-2 focus-visible:ring-[#F29219] [&::-webkit-details-marker]:hidden"
+            className="flex h-9 cursor-pointer list-none items-center justify-between rounded-xl px-3 font-medium text-[#24343d] outline-none focus-visible:ring-2 focus-visible:ring-[#ffa500] [&::-webkit-details-marker]:hidden"
           >
             {t("pageSize.option", { count: pageSize })}
             <ChevronDown

@@ -413,26 +413,26 @@ export default function CheckoutTemplate({
             {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
             <Card className="mb-8 shadow-none">
               <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-3 lg:p-6 lg:pb-4">
-                <Info className="size-5 shrink-0 text-[#ff6600]" />
+                <Info className="size-5 shrink-0 text-[#ffa500]" />
                 <CardTitle className="text-base font-bold lg:text-lg">
                   {tNotice("title")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 p-4 pt-0 lg:p-6 lg:pt-0">
                 <div className="flex items-start gap-2.5">
-                  <Banknote className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <Banknote className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("bankTransfer")}
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <Clock className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <Clock className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("bankTransferDelay")}
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <Coins className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <Coins className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("points")}
                   </p>

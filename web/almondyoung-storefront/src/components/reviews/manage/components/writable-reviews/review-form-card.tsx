@@ -280,7 +280,7 @@ export const ReviewFormCard = ({
                                 <Star
                                   className={`h-6 w-6 transition-colors ${
                                     isFilled
-                                      ? "fill-[#FF9500] text-[#FF9500]"
+                                      ? "fill-[#ffa500] text-[#ffa500]"
                                       : "text-gray-300"
                                   }`}
                                 />
@@ -323,7 +323,7 @@ export const ReviewFormCard = ({
                           {tForm.rich("textRewardHint", {
                             min: minContentLength,
                             strong: () => (
-                              <span className="font-medium text-[#FF9500]">
+                              <span className="font-medium text-[#ffa500]">
                                 {tForm("textRewardAmount", { amount: fixedTextPolicy.rewardAmount.toLocaleString() })}
                               </span>
                             ),
@@ -381,7 +381,7 @@ export const ReviewFormCard = ({
                       <p className="text-[13px] font-medium text-gray-700">
                         {tForm.rich("photoCount", {
                           strong: () => (
-                            <span className="text-[#FF9500]">{photos.length}</span>
+                            <span className="text-[#ffa500]">{photos.length}</span>
                           ),
                           max: MAX_PHOTO_COUNT,
                         })}
