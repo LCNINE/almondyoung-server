@@ -63,6 +63,21 @@ describe('admin menu navigation', () => {
     });
   });
 
+  it('로고 공모전이 최상위 메뉴로 있고 출품작 한 페이지를 가진다', () => {
+    const contest = getMenuById('logo-contest');
+
+    expect(contest?.title).toBe('로고 공모전');
+    expect(contest?.defaultPath).toBe('/logo-contest');
+    expect(contest?.children).toEqual([
+      { id: 'logo-contest-entries', title: '출품작', path: '/logo-contest' },
+    ]);
+    expect(getFirstPagePath('logo-contest')).toBe('/logo-contest');
+    expect(getActiveMenuAndItem('/logo-contest')).toEqual({
+      menuId: 'logo-contest',
+      itemId: 'logo-contest-entries',
+    });
+  });
+
   it('재고관리 아래에 보충 제안이 발주관리 바로 다음, 보충 규칙이 그 다음에 있다', () => {
     expect(getActiveMenuAndItem('/inventory/replenishment')).toEqual({
       menuId: 'inventory-product',
