@@ -534,6 +534,53 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)))',
     note: 'soft delete UPDATE 자체에 userId 조건 포함(분리 가드 없음, PATCH보다 더 견고).',
   },
+  'ugc-service DELETE /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:129',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'soft delete UPDATE 의 WHERE 에 작성자 조건. 0행이면 404(존재 은닉).',
+  },
+  'ugc-service GET /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User(\'userId\') 토큰값.',
+  },
+  'ugc-service GET /shop-listings/mine': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:70',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+  },
+  'ugc-service GET /shop-listings/public/:slug/contact': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:44',
+    predicate: '',
+    note: '소유자 자원이 아니다 — 공개(published·closed) 매물의 연락처를 로그인 회원 누구에게나 보여주는 것이 설계다(spec §7.2). 비공개 상태는 404.',
+  },
+  'ugc-service POST /shop-listings': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/controllers/member-shop-listings.controller.ts:19',
+    predicate: '',
+    note: '생성 — 대상 id 가 없다. 작성자는 토큰(@User(\'userId\'))에서만 오고 DTO 에 작성자 필드가 없다.',
+  },
+  'ugc-service POST /shop-listings/:id/close': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'setDealStatusByMember 가 findOwned 로 먼저 소유권을 확인한다(남의 글 404).',
+  },
+  'ugc-service POST /shop-listings/:id/reopen': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'close 와 같은 경로.',
+  },
+  'ugc-service PUT /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'updateByMember 가 findOwned 로 소유권 확인 후 상태 CAS UPDATE.',
+  },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:703',
@@ -764,15 +811,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(120);
+    expect(targets).toHaveLength(128);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(120);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(119);
+    expect(new Set(targets.map(keyOf)).size).toBe(128);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(127);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {
