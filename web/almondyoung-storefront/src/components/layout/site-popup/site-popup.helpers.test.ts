@@ -9,6 +9,7 @@ import {
   isPopupDismissed,
   matchesPath,
   resolvePopupSize,
+  resolvePopupStackSize,
   selectVisiblePopups,
   stripCountryCode,
 } from "./site-popup.helpers"
@@ -89,14 +90,20 @@ describe("matchesPath", () => {
   })
 
   it("경로 지정은 prefix 로 매칭한다", () => {
-    const popup = makePopup({ placement: "paths", placementPaths: ["/products"] })
+    const popup = makePopup({
+      placement: "paths",
+      placementPaths: ["/products"],
+    })
     expect(matchesPath(popup, "/products")).toBe(true)
     expect(matchesPath(popup, "/products/foo")).toBe(true)
     expect(matchesPath(popup, "/store")).toBe(false)
   })
 
   it("경로 앞부분 글자만 겹치는 다른 경로에는 뜨지 않는다", () => {
-    const popup = makePopup({ placement: "paths", placementPaths: ["/product"] })
+    const popup = makePopup({
+      placement: "paths",
+      placementPaths: ["/product"],
+    })
     expect(matchesPath(popup, "/products")).toBe(false)
   })
 })
@@ -168,7 +175,10 @@ describe("다시 보지 않기", () => {
     dismissPopup(makePopup({ id: "popup-1" }))
     dismissPopup(makePopup({ id: "popup-2" }))
 
-    expect(Array.from(store.keys()).sort()).toEqual(["popup:popup-1:v1", "popup:popup-2:v1"])
+    expect(Array.from(store.keys()).sort()).toEqual([
+      "popup:popup-1:v1",
+      "popup:popup-2:v1",
+    ])
   })
 
   it("localStorage 를 못 쓰면 숨기지 않고 그냥 노출한다", () => {
@@ -278,6 +288,26 @@ describe("resolvePopupSize", () => {
       width: DEFAULT_MOBILE_WIDTH,
       height: null,
     })
+  })
+})
+
+it("같은 경로의 팝업을 넘겨도 바깥 카드 크기를 유지한다", () => {
+  const image = makePopup({ id: "image", pcWidth: 460, mobileWidth: 340 })
+  const text = makePopup({ id: "text", pcWidth: 320, mobileWidth: 300 })
+  const otherPath = makePopup({
+    id: "other",
+    placement: "paths",
+    placementPaths: ["/products"],
+    pcWidth: 900,
+  })
+
+  expect(resolvePopupStackSize([image, text, otherPath], "/", true)).toEqual({
+    width: 460,
+    height: 420,
+  })
+  expect(resolvePopupStackSize([text, image, otherPath], "/", false)).toEqual({
+    width: 340,
+    height: 360,
   })
 })
 
