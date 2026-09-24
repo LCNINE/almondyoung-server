@@ -107,6 +107,14 @@ npx sst shell --stage live -- bash -c 'cd ../../.. && TZ=UTC npx tsx scripts/ops
 같은 가드는 앞선 복사 뒤 core 에서 soft delete 된 글에도 걸린다 — core 쪽은 `deleted_at is null` 만 읽으므로 그 글이
 「ugc 에만 있는 글」로 보인다. 쓰기 동결 중에는 생길 수 없는 일이지만, 멈췄다면 그 행이 동결 전 삭제인지 먼저 확인한다.
 
+PR 2 는 스토어프론트와 admin-web 에 `remark-breaks` 를 더한다. `sst deploy` 는 **각 앱의 로컬 `node_modules`** 로 Next 를 빌드하므로
+세 트리를 모두 lock 에 맞춘 뒤 배포한다(`sst.aws.Nextjs('Storefront')` 의 path 는 `web/almondyoung-storefront`):
+
+```bash
+npm ci && npm ci --prefix apps/admin-web && npm ci --prefix web/almondyoung-storefront
+npx sst deploy --stage live
+```
+
 ## 롤백
 
 PR 2 revert. core 의 옛 API·테이블은 PR 3·4 전까지 그대로다. 전환 뒤 ugc 에 새로 쓴 글은 core 에 없다.

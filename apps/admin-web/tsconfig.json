@@ -24,6 +24,8 @@
       "@packages/web-observability/*": ["../../packages/web-observability/*"],
       "@packages/product-description": ["../../packages/product-description"],
       "@packages/product-description/*": ["../../packages/product-description/*"],
+      "@packages/shop-listing-markdown": ["../../packages/shop-listing-markdown"],
+      "@packages/shop-listing-markdown/*": ["../../packages/shop-listing-markdown/*"],
       "@packages/email-layout": ["../../packages/email-layout"],
       "@packages/email-layout/*": ["../../packages/email-layout/*"],
       "@packages/event-contracts": ["../../packages/event-contracts"],

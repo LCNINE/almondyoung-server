@@ -1,0 +1,8 @@
+{
+  "name": "@packages/shop-listing-markdown",
+  "version": "0.0.1",
+  "description": "샵 매매 본문 마크다운 렌더 규칙 (외부 import 없음)",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}
