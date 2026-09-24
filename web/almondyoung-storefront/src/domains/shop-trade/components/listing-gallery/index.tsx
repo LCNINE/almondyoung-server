@@ -57,7 +57,13 @@ export function ListingGallery({ images, alt, fit = "cover" }: Props) {
                   fill
                   sizes="(min-width: 800px) 800px, 100vw"
                   priority={index === 0}
-                  className={fit === "contain" ? "object-contain p-6" : "object-cover"}
+                  className={
+                    fit === "contain"
+                      ? index === 1
+                        ? "m-auto max-h-64 max-w-64 object-contain"
+                        : "object-scale-down p-6"
+                      : "object-cover"
+                  }
                 />
               </button>
             </CarouselItem>
@@ -94,6 +100,7 @@ export function ListingGallery({ images, alt, fit = "cover" }: Props) {
 
       <GalleryLightbox
         images={images}
+        fit={fit}
         index={zoomed}
         onIndexChange={(next) => {
           setZoomed(next)
