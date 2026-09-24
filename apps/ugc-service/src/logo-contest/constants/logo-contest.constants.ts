@@ -1,5 +1,5 @@
 export const MIN_LOGO_CONTEST_MEDIA_COUNT = 2;
-export const MAX_LOGO_CONTEST_MEDIA_COUNT = 3;
+export const MAX_LOGO_CONTEST_MEDIA_COUNT = 2;
 
 export const LOGO_CONTEST_IMAGE_CONTEXT_ID = 'logo-contest-image';
 

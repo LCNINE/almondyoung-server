@@ -81,12 +81,15 @@ it('동시 출품으로 unique 제약이 충돌해도 도메인 오류를 던진
   ).rejects.toThrow(AlreadySubmittedError);
 });
 
-it('가로 로고와 파비콘용 심볼 두 장이 없으면 출품을 거부한다', async () => {
+it('가로 로고와 파비콘용 심볼 두 장이 아니면 출품을 거부한다', async () => {
   const fileOwner = { assertOwnedImages: jest.fn() } as unknown as FileOwnerClient;
   const service = new LogoContestService(explodingDb(), openPeriod(), fileOwner);
 
   await expect(
     service.create(USER, { title: '로고', mediaFileIds: [ENTRY], authorName: '작성자', agreed: true }),
+  ).rejects.toThrow(BadRequestError);
+  await expect(
+    service.create(USER, { title: '로고', mediaFileIds: [ENTRY, ICON, USER], authorName: '작성자', agreed: true }),
   ).rejects.toThrow(BadRequestError);
   expect(fileOwner.assertOwnedImages).not.toHaveBeenCalled();
 });

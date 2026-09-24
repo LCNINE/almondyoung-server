@@ -95,7 +95,7 @@ export default async function LogoContestPage({
   const phase = status.isClosed ? "closed" : status.isOpen ? "open" : "upcoming"
 
   return (
-    <div className="container mx-auto max-w-[1360px] px-4 py-6 xl:px-[40px]">
+    <div className="container mx-auto max-w-[1360px] px-4 pt-6 pb-16 xl:px-[40px]">
       <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
 
       <header className="relative -mx-4 aspect-[780/360] overflow-hidden bg-[#dff6ff] text-[#143247] md:mx-0 md:aspect-auto md:min-h-[380px] md:rounded-[28px] md:border md:border-[#9bd9ef]">
@@ -170,7 +170,7 @@ export default async function LogoContestPage({
 
       {ranking && <LiveRanking initialEntries={ranking.data} />}
 
-      <div className="mb-5 grid grid-cols-[1fr_auto] items-center gap-y-2 sm:flex sm:gap-4">
+      <div className="mb-8 grid grid-cols-[1fr_auto] items-center gap-y-2 sm:flex sm:gap-4">
         <h2 className="text-foreground text-xl font-bold">{t("browse")}</h2>
         {!status.isClosed && (
           <nav

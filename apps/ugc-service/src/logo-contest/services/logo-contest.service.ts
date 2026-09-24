@@ -382,7 +382,7 @@ export class LogoContestService {
   private normalizeMediaFileIds(mediaFileIds: string[]): string[] {
     if (mediaFileIds.length < MIN_LOGO_CONTEST_MEDIA_COUNT || mediaFileIds.length > MAX_LOGO_CONTEST_MEDIA_COUNT) {
       throw new BadRequestError(
-        `이미지는 ${MIN_LOGO_CONTEST_MEDIA_COUNT}~${MAX_LOGO_CONTEST_MEDIA_COUNT}장까지 첨부할 수 있습니다.`,
+        `이미지는 ${MIN_LOGO_CONTEST_MEDIA_COUNT}장 첨부해야 합니다.`,
       );
     }
 

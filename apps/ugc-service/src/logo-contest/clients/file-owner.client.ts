@@ -9,6 +9,8 @@ interface FileDescription {
   uploadedBy: string;
   status: string;
   mimeType: string;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -31,7 +33,7 @@ export class FileOwnerClient {
   async assertOwnedImages(fileIds: string[], userId: string): Promise<void> {
     const described = await Promise.all(fileIds.map((fileId) => this.describe(fileId)));
 
-    described.forEach((file) => {
+    described.forEach((file, index) => {
       if (file.contextId !== LOGO_CONTEST_IMAGE_CONTEXT_ID) {
         throw new BadRequestError(`공모전 출품 이미지로 올린 파일이 아닙니다: ${file.id}`);
       }
@@ -44,6 +46,15 @@ export class FileOwnerClient {
       }
       if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.mimeType)) {
         throw new BadRequestError(`jpg·png·webp 이미지만 첨부할 수 있습니다: ${file.id}`);
+      }
+      if (!file.width || !file.height) {
+        throw new BadRequestError(`이미지 크기를 확인할 수 없습니다: ${file.id}`);
+      }
+      if (index === 0 && file.width <= file.height) {
+        throw new BadRequestError('첫 번째 이미지는 가로가 세로보다 긴 로고여야 합니다.');
+      }
+      if (index === 1 && file.width !== file.height) {
+        throw new BadRequestError('두 번째 이미지는 가로세로 크기가 같은 심볼이어야 합니다.');
       }
     });
   }

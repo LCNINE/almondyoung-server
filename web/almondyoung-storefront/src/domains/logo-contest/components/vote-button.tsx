@@ -23,6 +23,7 @@ import { useUser } from "@/contexts/user-context"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { ThumbsUp } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { showContestToast } from "./contest-toast"
@@ -49,6 +50,7 @@ export function VoteButton({
   variant = "full",
 }: VoteButtonProps) {
   const t = useTranslations("logoContest.vote")
+  const tContest = useTranslations("logoContest")
   const router = useRouter()
   const { user } = useUser()
   const [open, setOpen] = useState(false)
@@ -86,13 +88,13 @@ export function VoteButton({
   }
 
   const handleClick = () => {
+    if (isOwnEntry) {
+      showContestToast(t("own"))
+      return
+    }
     if (!canVote) {
       if (process.env.NODE_ENV !== "development") {
         showContestToast(upcomingNotice ?? "")
-        return
-      }
-      if (isOwnEntry) {
-        showContestToast(t("own"))
         return
       }
       if (switching) {
@@ -106,10 +108,6 @@ export function VoteButton({
         })
       )
       showContestToast(removing ? t("undone") : t("done"), t("previewOnly"))
-      return
-    }
-    if (isOwnEntry) {
-      showContestToast(t("own"))
       return
     }
     if (!user) {
@@ -174,6 +172,7 @@ export function VoteButton({
     <>
       <Button
         type="button"
+        variant={variant === "full" ? "outline" : "default"}
         onClick={handleClick}
         disabled={isPending}
         aria-label={
@@ -183,27 +182,35 @@ export function VoteButton({
         }
         title={variant === "tile" ? (disabledReason ?? undefined) : undefined}
         className={cn(
-          "font-bold",
           variant === "tile"
-            ? "h-9 min-w-14 gap-0.5 rounded-md bg-transparent px-1 text-xs text-[#24343d] shadow-none transition-transform hover:bg-black/5 active:scale-90 disabled:opacity-100 lg:h-10 lg:text-white lg:hover:bg-white/10"
-            : "bg-primary h-[52px] w-full rounded-xl text-base text-white"
+            ? "h-9 min-w-14 gap-0.5 rounded-md bg-transparent px-1 text-xs font-bold text-[#24343d] shadow-none transition-transform hover:bg-black/5 active:scale-90 disabled:opacity-100 lg:h-10 lg:text-white lg:hover:bg-white/10"
+            : "border-border text-foreground hover:border-primary/60 hover:bg-transparent hover:text-primary h-10 gap-2 rounded-lg px-3.5 text-sm font-medium shadow-none",
+          variant === "full" && votedId === entryId && "border-primary/60 text-primary"
         )}
       >
-        <Image
-          key={votedId === entryId ? "on" : "off"}
-          src={votedId === entryId ? logoContestVoteOn : logoContestVoteOff}
-          alt=""
-          width={variant === "tile" ? 32 : 24}
-          height={variant === "tile" ? 32 : 24}
-          unoptimized
-          className={cn(
-            "motion-safe:animate-[clay-vote-pop_420ms_ease-out]",
-            variant === "full" && "mr-2"
-          )}
-        />
-        {variant === "tile"
-          ? count
-          : (disabledReason ?? `${t("action")} (${count})`)}
+        {variant === "tile" ? (
+          <Image
+            key={votedId === entryId ? "on" : "off"}
+            src={votedId === entryId ? logoContestVoteOn : logoContestVoteOff}
+            alt=""
+            width={32}
+            height={32}
+            unoptimized
+            className="motion-safe:animate-[clay-vote-pop_420ms_ease-out]"
+          />
+        ) : (
+          <ThumbsUp className="size-4" aria-hidden="true" />
+        )}
+        {variant === "tile" ? (
+          count
+        ) : (
+          <>
+            <span>{isOwnEntry ? t("action") : disabledReason ?? t("action")}</span>
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {tContest("voteCount", { count })}
+            </span>
+          </>
+        )}
       </Button>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
