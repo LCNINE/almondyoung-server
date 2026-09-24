@@ -19,6 +19,7 @@ export const MENU_ITEMS: MenuItem[] = [
   },
   { label: "mypage.menu.exchangeLong2", icon: "🔄", path: "/mypage/exchange" },
   { label: "mypage.menu.review", icon: "⭐", path: "/mypage/reviews" },
+  { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
   { label: "mypage.menu.membership", icon: "💎", path: "/mypage/membership" },
   {
     label: "mypage.menu.payment",
@@ -108,6 +109,7 @@ export const MENU_SECTIONS: MenuSection[] = [
         path: "/mypage/membership/payment-method",
       },
       { label: "mypage.menu.review", icon: "⭐", path: "/mypage/reviews" },
+      { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
       { label: "mypage.menu.inquiries", icon: "❓", path: "/mypage/inquiries" },
     ],
   },
@@ -208,6 +210,12 @@ export const SIDEBAR_MENU_ITEMS = [
     path: "/mypage/inquiries",
   },
   {
+    id: "contests",
+    label: "mypage.menu.contests",
+    hasSubMenu: false,
+    path: "/mypage/contests",
+  },
+  {
     id: "membership",
     label: "mypage.menu.membership",
     hasSubMenu: false,
@@ -280,6 +288,11 @@ export const SIDEBAR_SECTIONS: {
         path: "/mypage/membership/payment-method",
       },
       { id: "review", label: "mypage.menu.review", path: "/mypage/reviews" },
+      {
+        id: "contests",
+        label: "mypage.menu.contests",
+        path: "/mypage/contests",
+      },
       // {
       //   id: "inquiries",
       //   label: "mypage.menu.inquiries",
