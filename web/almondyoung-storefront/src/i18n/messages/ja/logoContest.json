@@ -26,6 +26,7 @@
   "paginationLabel": "作品のページ",
   "previousPage": "前のページ",
   "nextPage": "次のページ",
+  "keyboardHint": "キーボードの← →キーでページを移動できます",
   "imageCount": "{count}枚",
   "periodBefore": "{start}から応募と投票ができます。もう少しお待ちください。",
   "periodClosed": "コンテストは終了しました。最終득票순に表示しています。",

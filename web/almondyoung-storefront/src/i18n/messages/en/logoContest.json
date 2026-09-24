@@ -30,6 +30,7 @@
   "paginationLabel": "Entry pages",
   "previousPage": "Previous page",
   "nextPage": "Next page",
+  "keyboardHint": "Use the ← → keys to change pages",
   "imageCount": "{count} images",
   "periodBefore": "You can submit a logo and vote from {start}. See you soon!",
   "periodClosed": "The contest has closed. Entries are shown by final vote count.",

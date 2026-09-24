@@ -30,6 +30,7 @@
   "paginationLabel": "출품작 페이지",
   "previousPage": "이전 페이지",
   "nextPage": "다음 페이지",
+  "keyboardHint": "키보드 ← → 키로 페이지를 넘길 수 있어요",
   "imageCount": "{count}장",
   "periodBefore": "{start}부터 출품하고 투표할 수 있어요. 조금만 기다려 주세요.",
   "periodClosed": "공모전이 마감되었어요. 최종 득표순으로 보여드립니다.",

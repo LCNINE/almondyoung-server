@@ -266,7 +266,7 @@ export default async function LogoContestPage({
       {totalPages > 1 && (
         <nav
           data-pagination
-          className="mt-10 flex items-center justify-center gap-5"
+          className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
           aria-label={t("paginationLabel")}
         >
           {page > 1 ? (
@@ -318,6 +318,9 @@ export default async function LogoContestPage({
               <ChevronRight className="size-5" />
             </span>
           )}
+          <p className="hidden basis-full text-center text-xs text-[#879aa5] md:block">
+            {t("keyboardHint")}
+          </p>
         </nav>
       )}
     </div>
