@@ -2,7 +2,8 @@
 
 작성일: 2026-09-23 (KST). 기준: `develop` 의 `e1ade9f10` (#955).
 브랜치: `docs/shop-listings-to-ugc-spec`.
-상태: 설계 확정. PR 1(#957) 라이브 배포 완료(2026-09-24). §8 은 PR 2 착수 전 보정(2026-09-24).
+상태: 설계 확정. PR 1(#957)·PR 2(#959) 라이브 배포 완료(2026-09-24), PR 3(#964) 라이브 배포 완료(2026-09-25).
+PR 4(DROP) 는 머지·배포 대기(§9.7). §8 은 PR 2 착수 전 보정(2026-09-24).
 
 ## 1. 문제와 목표
 
@@ -371,11 +372,14 @@ ugc 엔드포인트 추가와 스토어프론트 전환을 한 배포에 묶으�
 - ugc 마이그레이션 1건: §4 의 테이블 넷. 전부 additive.
 - ugc 의 공개·회원·관리자 컨트롤러, 탈퇴 컨슈머(`UserDeleted`·`UserPermanentDeleted`), `NullClassifier`.
 - file-service `shop-listing-image` 시드.
-- 복사 스크립트 `scripts/ops/shop-listings-migrate/` (§9.3).
+- 복사 스크립트 `scripts/ops/shop-listings-migrate/` (§9.3). PR 4 에서 지웠다.
 - 배포: `db:migrate`(ugc) → `db:seed:ref`(file-service) → `sst deploy`. expand 이므로 migrate 가 먼저다.
 - 배포 후 프론트는 아직 core 를 본다. ugc 새 API 를 스모크한다.
 
 ### 9.3 복사 스크립트
+
+원본 테이블이 PR 4 로 사라지면 다시 돌릴 수 없으므로 PR 4 에서 스크립트·스펙·런북을 지웠다.
+코드는 #957 에서 볼 수 있다. 아래는 그 스크립트가 한 일의 기록이다.
 
 - 입력: core DB 와 ugc DB 연결 문자열(`sst shell` 안에서 실행). 두 DB 는 같은 RDS 인스턴스의 서로 다른 데이터베이스다.
 - 대상: core `shop_listings` 중 `deleted_at IS NULL` 인 행과 그 `shop_listing_views`. soft delete 된 행은 복사하지 않는다.
@@ -414,9 +418,20 @@ ugc 엔드포인트 추가와 스토어프론트 전환을 한 배포에 묶으�
 
 core `shop-listings` 모듈과 `catalog.module.ts` 의 연결을 지운다. PR 2 배포 뒤 **최소 한 번의 배포가 지난 다음** 머지한다.
 
+#964 로 머지해 2026-09-25 03:4x KST 에 라이브 배포했다. 테이블 정의(`catalog.schema.ts`)는 DROP 마이그레이션과
+같은 커밋에 있어야 하므로 PR 4 로 남겼다.
+
 ### 9.7 PR 4 — contract
 
 core `shop_listings`·`shop_listing_views` DROP. 순서는 `sst deploy` → `db:migrate`(contract).
+
+- `catalog.schema.ts` 의 두 테이블 정의와 스키마 객체 항목을 지우고 `apps/core/drizzle/20260924190104_drop-shop-listings.sql`
+  (`DROP TABLE … CASCADE` 두 문장, 인덱스는 테이블과 함께 사라진다)을 만든다. drizzle 스냅샷 기준으로 두 테이블을 가리키는 FK 는 없다.
+- 복사 스크립트(§9.3)를 지운다.
+- **되돌릴 수 없다.** ugc 로 옮긴 것은 살아 있는 글과 그 조회 기록뿐이라, soft delete 된 글과 그 조회 기록은 DROP 과 함께
+  사라진다. 백업 여부는 migrate 전에 정한다.
+- `db:migrate` 는 드라이런 없이 배포 전체 서비스의 대기 마이그를 적용하므로, 실행 전에 서비스별 journal 과 라이브
+  `drizzle.__drizzle_migrations` 를 대조해 대기 목록이 이 1건뿐인지 확인한다.
 
 ## 10. 탈퇴 회원과 개인정보
 
