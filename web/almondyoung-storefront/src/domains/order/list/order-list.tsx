@@ -50,7 +50,8 @@ function useJustOrderedRefresh(
     if (!enabled) return
     if (
       latestOrderCreatedAt &&
-      Date.now() - new Date(latestOrderCreatedAt).getTime() < JUST_ORDERED_WINDOW_MS
+      Date.now() - new Date(latestOrderCreatedAt).getTime() <
+        JUST_ORDERED_WINDOW_MS
     ) {
       setWaiting(false)
       return // 이미 도착했다
@@ -472,8 +473,12 @@ export function OrderList({
           </section>
 
           {pageCount > 1 && (
-            <div className="flex items-center justify-center gap-2 py-6">
+            <div
+              data-pagination
+              className="flex items-center justify-center gap-2 py-6"
+            >
               <Button
+                data-page-prev
                 variant="outline"
                 disabled={page <= 1 || isPending}
                 onClick={() => navigate({ page: page - 1 })}
@@ -482,6 +487,7 @@ export function OrderList({
                 {tList("prevPage")}
               </Button>
               <Button
+                data-page-next
                 variant="outline"
                 disabled={page >= pageCount || isPending}
                 onClick={() => navigate({ page: page + 1 })}

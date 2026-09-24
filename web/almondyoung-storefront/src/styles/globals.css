@@ -637,3 +637,30 @@ input[type="search"]::-webkit-search-results-decoration {
   margin: 24px 0;
   border-radius: 12px;
 }
+
+@keyframes clay-vote-pop {
+  0% {
+    transform: scale(0.75) rotate(-12deg);
+  }
+  55% {
+    transform: scale(1.2) rotate(7deg);
+  }
+  78% {
+    transform: scale(0.94) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.logo-sticker-tilt {
+  transform: perspective(500px) rotateY(-12deg) rotateZ(-6deg);
+  filter: drop-shadow(0 8px 7px rgb(0 0 0 / 28%));
+}
+
+@media (min-width: 1024px) {
+  .logo-sticker-tilt {
+    transform: none;
+    filter: none;
+  }
+}

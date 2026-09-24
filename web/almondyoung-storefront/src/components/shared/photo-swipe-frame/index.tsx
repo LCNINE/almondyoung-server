@@ -19,6 +19,8 @@ interface Props {
   enableSwipe?: boolean
   /** 썸네일이 작아 구역 나누기가 어려운 카드는 호버 미리보기를 끈다 */
   enableHover?: boolean
+  onSelect?: (index: number) => void
+  hideDots?: boolean
 }
 
 /** 카드 사진 칸을 좌우로 넘길 수 있게 감싼다. 마우스는 호버, 손가락은 스와이프. */
@@ -28,6 +30,8 @@ export function PhotoSwipeFrame({
   itemClassName,
   enableSwipe = true,
   enableHover = true,
+  onSelect,
+  hideDots = false,
 }: Props) {
   const [api, setApi] = useState<CarouselApi>()
   const [active, setActive] = useState(0)
@@ -35,13 +39,17 @@ export function PhotoSwipeFrame({
   useEffect(() => {
     if (!api) return
 
-    const sync = () => setActive(api.selectedScrollSnap())
+    const sync = () => {
+      const index = api.selectedScrollSnap()
+      setActive(index)
+      onSelect?.(index)
+    }
     sync()
     api.on("select", sync)
     return () => {
       api.off("select", sync)
     }
-  }, [api])
+  }, [api, onSelect])
 
   const indexes = Array.from({ length: count }, (_, index) => index)
 
@@ -80,27 +88,29 @@ export function PhotoSwipeFrame({
           </div>
 
           {/* 넘길 수 없는 카드에 점만 띄우면 넘어갈 것처럼 보인다 */}
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity",
-              enableSwipe
-                ? "[@media(pointer:fine)]:opacity-0 [@media(pointer:fine)]:group-hover:opacity-100"
-                : "opacity-0 group-hover:opacity-100"
-            )}
-          >
-            {/* 흰 점만 두면 상품 카드의 흰 배경에 묻힌다 */}
-            <span className="bg-foreground/45 flex items-center gap-1 rounded-full px-1.5 py-1">
-              {indexes.map((index) => (
-                <span
-                  key={index}
-                  className={cn(
-                    "h-1 rounded-full transition-all",
-                    index === active ? "w-4 bg-white" : "w-1 bg-white/60"
-                  )}
-                />
-              ))}
-            </span>
-          </div>
+          {!hideDots && (
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity",
+                enableSwipe
+                  ? "[@media(pointer:fine)]:opacity-0 [@media(pointer:fine)]:group-hover:opacity-100"
+                  : "opacity-0 group-hover:opacity-100"
+              )}
+            >
+              {/* 흰 점만 두면 상품 카드의 흰 배경에 묻힌다 */}
+              <span className="bg-foreground/45 flex items-center gap-1 rounded-full px-1.5 py-1">
+                {indexes.map((index) => (
+                  <span
+                    key={index}
+                    className={cn(
+                      "h-1 rounded-full transition-all",
+                      index === active ? "w-4 bg-white" : "w-1 bg-white/60"
+                    )}
+                  />
+                ))}
+              </span>
+            </div>
+          )}
         </>
       )}
     </div>

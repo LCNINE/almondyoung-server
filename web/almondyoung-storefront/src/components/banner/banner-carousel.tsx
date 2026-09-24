@@ -8,8 +8,9 @@ import Autoplay from "embla-carousel-autoplay"
 import Fade from "embla-carousel-fade"
 
 import { trackEvent } from "@/lib/analytics/gtag"
+import { logoContestPrizeBubble } from "@/domains/logo-contest/banner-assets"
 import { Banner } from "@/lib/types/ui/pim"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { getBannerImageUrl } from "@/lib/utils/banner"
 import { cn } from "@lib/utils"
 import { HeroBannerList } from "./hero-banner-list"
 import {
@@ -132,7 +133,7 @@ export function HeroBannerCarousel({
     <>
       {/* PC 이미지 - md(768px) 이상에서만 표시 */}
       <Image
-        src={getThumbnailUrl(banner.pcImageFileId)}
+        src={getBannerImageUrl(banner.pcImageFileId)}
         alt={banner.title}
         fill
         priority={eager}
@@ -141,13 +142,40 @@ export function HeroBannerCarousel({
       />
       {/* 모바일 이미지 - md(768px) 미만에서만 표시 */}
       <Image
-        src={getThumbnailUrl(banner.mobileImageFileId)}
+        src={getBannerImageUrl(banner.mobileImageFileId)}
         alt={banner.title}
         fill
         priority={eager}
         sizes="(max-width: 767px) 100vw, 0px"
-        className="block object-cover md:hidden"
+        className={cn(
+          "block object-cover md:hidden",
+          banner.id === "local-logo-contest" && "object-[75%_center]"
+        )}
       />
+      {banner.id === "local-logo-contest" && (
+        <div className="absolute top-[9%] left-[6%] z-10 text-[#143247] md:top-[13%] md:left-[14%]">
+          <div className="text-[10px] font-extrabold md:text-base">로고 공모전</div>
+          <div
+            className="mt-1 text-[23px] leading-[1.12] whitespace-pre-line [text-shadow:0_2px_0_#9bdcf5,0_4px_0_#5fb9df] md:mt-3 md:text-[clamp(36px,3.4vw,64px)]"
+            style={{ fontFamily: '"Jua Logo Contest", Pretendard, sans-serif' }}
+          >
+            {"아몬드영의 새 로고를\n함께 만들어 주세요"}
+          </div>
+          <div className="relative mt-2 h-[54px] w-[145px] md:mt-7 md:h-[100px] md:w-[260px]">
+            <Image
+              src={logoContestPrizeBubble}
+              alt=""
+              fill
+              sizes="(max-width: 767px) 145px, 260px"
+              className="object-contain"
+            />
+            <div className="absolute inset-0 flex flex-col items-center justify-center pt-1 text-[8px] font-semibold md:pt-3 md:text-sm">
+              <span>대상 수상자 · 1명</span>
+              <strong className="text-[13px] md:text-xl">20만 포인트</strong>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 

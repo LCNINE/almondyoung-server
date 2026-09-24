@@ -26,6 +26,7 @@
     "password": "パスワードの変更",
     "cafe24": "旧アーモンドヨンアカウント連携",
     "review": "レビュー管理",
+    "contests": "参加した公募展",
     "reviewShort": "レビュー",
     "inquiries": "お問い合わせ履歴",
     "membership": "アーモンドヨン メンバーシップ",
@@ -35,6 +36,18 @@
     "logout": "ログアウト",
     "withdraw": "退会",
     "business": "事業者情報"
+  },
+  "contests": {
+    "title": "参加した公募展",
+    "description": "応募した作品と投票した作品を確認できます。",
+    "logoContest": "ロゴ公募展",
+    "viewContest": "公募展を見る",
+    "submitted": "応募した作品",
+    "voted": "投票した作品",
+    "entryNotice": "作品は編集できません。再応募する場合は先に応募を取り消してください。",
+    "empty": "まだ参加した公募展はありません。",
+    "browse": "ロゴ公募展を見る",
+    "loadFail": "参加履歴を読み込めませんでした。しばらくしてから再度お試しください。"
   },
   "quickLink": {
     "orderList": "注文履歴",

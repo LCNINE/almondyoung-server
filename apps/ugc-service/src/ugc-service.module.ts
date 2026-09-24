@@ -12,6 +12,7 @@ import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
 import { ShopListingsModule } from './shop-listings/shop-listings.module';
+import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { ugcServiceSchema } from './db/schema';
 import { UGC_ROLE_MAPPINGS, UGC_SCOPES } from './shared/auth/ugc-scopes';
 
@@ -40,6 +41,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     ReviewsModule,
     QnaModule,
     ShopListingsModule,
+    LogoContestModule,
   ],
   controllers: [UgcServiceController],
   providers: [
