@@ -152,8 +152,10 @@ same_value MEDUSA_API_KEY apps/channel-adapter/.env apps/admin-web/.env.local
 echo "── 7. OIDC_ISSUER_URL 이 «로컬» IdP 를 가리키는가"
 # 🔴 라이브를 가리키면 libs/authorization 이 라이브 JWKS 로 서명을 검증해 전 API 가 401 인데,
 # 화면은 「총 주문 0건」을 멀쩡히 그린다. 2026-09-06 에 apps/core/.env 가 실제로 그랬다.
+# file-service·ugc 는 회원 토큰(RS256)이 오는 곳이라, 없으면 AUTH_SECRET 만으로 떠서 회원 요청만 401 이다.
 for f in apps/core/.env apps/user-service/.env apps/channel-adapter/.env apps/wallet/.env \
-         apps/medusa/.env apps/admin-web/.env.local web/almondyoung-storefront/.env.local; do
+         apps/medusa/.env apps/admin-web/.env.local web/almondyoung-storefront/.env.local \
+         apps/file-service/.env apps/ugc-service/.env; do
   [ -f "$f" ] || continue
   v=$(e2e_env_value "$f" OIDC_ISSUER_URL)
   case "$v" in

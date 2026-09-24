@@ -27,7 +27,7 @@ E2E_ENV_ROWS=(
   "auth-web|web/auth-web/.env.local|.env.auth-web.local.example|8001|required|web|web/auth-web|no|로그인/가입 UI"
   "admin-web|apps/admin-web/.env.local|.env.admin-web.local.example|8002|required|web|apps/admin-web|yes|관리자"
   "medusa|apps/medusa/.env|.env.medusa.local.example|9000|required|medusa|apps/medusa|no|커머스 코어"
-  "ugc-service|apps/ugc-service/.env|-|3030|extra|nest|ugc-service|no|리뷰 (어드민 「미답변 리뷰」 타일)"
+  "ugc-service|apps/ugc-service/.env|.env.ugc-service.local.example|3030|extra|nest|ugc-service|no|리뷰·Q&A·샵 매매 (어드민 「미답변 리뷰」 타일)"
   "analytics|apps/analytics/.env|-|3040|extra|nest|analytics|no|통계 (어드민 대시보드 타일)"
   "notification|apps/notification/.env|-|3050|extra|nest|notification|no|알림 — 로컬은 scripts/local/sms-stub.js 로 대체"
   "search|apps/search/.env|-|3060|extra|nest|search|no|상품 검색"

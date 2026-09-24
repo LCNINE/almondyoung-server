@@ -32,6 +32,28 @@ describe('EventsModule Kafka client configuration', () => {
 
     expect(getKafkaClientOptions(moduleRef)?.producerOnlyMode).toBe(true);
   });
+
+  describe('Kafka 설정이 없을 때', () => {
+    const saved = process.env.KAFKA_BROKERS;
+    beforeEach(() => {
+      delete process.env.KAFKA_BROKERS;
+    });
+    afterEach(() => {
+      if (saved === undefined) delete process.env.KAFKA_BROKERS;
+      else process.env.KAFKA_BROKERS = saved;
+    });
+
+    // `forApp` 은 Kafka 없이 뜰 수 없다. 예전엔 `null.clientId` 의 TypeError 로 죽어서
+    // 무엇이 빠졌는지 로그만으로는 알 수 없었다(ugc 로컬 부팅에서 실제로 밟았다).
+    it('forApp 은 원인을 말하며 거부한다', () => {
+      expect(() => EventsModule.forApp({ serviceName: 'ugc-service' })).toThrow(/KAFKA_BROKERS/);
+    });
+
+    it('startConsumer 도 같은 메시지로 거부한다', async () => {
+      const app = { get: jest.fn(), select: jest.fn() } as any;
+      await expect(EventsModule.startConsumer(app, { groupId: 'g' })).rejects.toThrow(/KAFKA_BROKERS/);
+    });
+  });
 });
 
 describe('EventsModule global retry interceptor registration', () => {
