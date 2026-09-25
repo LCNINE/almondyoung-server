@@ -343,6 +343,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/warehouses',
       },
       {
+        id: 'inventory-delivery-profiles',
+        title: '배송 프로필',
+        path: '/inventory/delivery-profiles',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
