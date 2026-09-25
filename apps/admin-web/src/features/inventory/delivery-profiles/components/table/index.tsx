@@ -4,20 +4,9 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDeliveryProfiles } from '@/lib/services/inventory';
-import type { DeliveryProfileDto, DeliveryProfileSourceType, FulfillmentMode } from '@/lib/types/dto/inventory';
+import type { DeliveryProfileDto } from '@/lib/types/dto/inventory';
+import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../../lib/labels';
 import { ProfileDialog } from '../profile-dialog';
-
-export const SOURCE_TYPE_LABELS: Record<DeliveryProfileSourceType, string> = {
-  in_house: '자사 창고',
-  direct: '직배송',
-  overseas: '해외',
-};
-
-export const FULFILLMENT_MODE_LABELS: Record<FulfillmentMode, string> = {
-  in_house: '자사 출고',
-  '3pl': '3PL',
-  drop_ship: '위탁 직배송',
-};
 
 export function DeliveryProfilesTable() {
   const { data: profiles = [], isLoading } = useDeliveryProfiles();

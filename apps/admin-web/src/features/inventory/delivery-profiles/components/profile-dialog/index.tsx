@@ -20,7 +20,7 @@ import {
   type ProfileFormErrors,
   type ProfileFormState,
 } from '../../lib/profile-form';
-import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../table';
+import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../../lib/labels';
 
 type Props = { open: boolean; profile: DeliveryProfileDto | null; onOpenChange: (open: boolean) => void };
 
