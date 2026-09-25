@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/common';
 import {
@@ -17,7 +18,7 @@ import {
   useResolveMatching,
   useUpsertVariantMatching,
 } from '@/lib/services/matching';
-import { useSkuSearch } from '@/lib/services/inventory';
+import { useSkuSearch, useDeliveryProfiles } from '@/lib/services/inventory';
 import {
   Dialog,
   DialogContent,
@@ -95,6 +96,7 @@ export function InventoryMatchingDialog({
   const [businessProductName, setBusinessProductName] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [holderId, setHolderId] = useState('');
+  const [deliveryProfileId, setDeliveryProfileId] = useState('');
   const [importDeclarationNumber, setImportDeclarationNumber] = useState('');
   const [optionKey, setOptionKey] = useState('');
   const [productDescription, setProductDescription] = useState('');
@@ -113,6 +115,7 @@ export function InventoryMatchingDialog({
   const autoTabState: AutoTabState = {
     holderId,
     supplierId,
+    deliveryProfileId,
     businessProductName,
     importDeclarationNumber,
     optionKey,
@@ -158,6 +161,7 @@ export function InventoryMatchingDialog({
   const searchingSuppliers = false;
   const supplierSearchResults = suppliersResponse;
   const { data: holdersResponse } = useHolders();
+  const { data: deliveryProfiles = [] } = useDeliveryProfiles();
   const { data: holderSearchResults, isLoading: searchingHolders } =
     useHolderSearch(holderSearch);
 
@@ -181,6 +185,7 @@ export function InventoryMatchingDialog({
     setBusinessProductName(baseName);
     setSupplierId('');
     setHolderId('');
+    setDeliveryProfileId('');
     setImportDeclarationNumber('');
     setOptionKey('');
     setProductDescription('');
@@ -605,6 +610,32 @@ export function InventoryMatchingDialog({
                       신규 등록
                     </Button>
                   </div>
+                </FormField>
+
+                <FormField label="배송 프로필" required>
+                  {deliveryProfiles.length === 0 ? (
+                    <p className="text-sm text-destructive">
+                      배송 프로필이 없습니다 —{' '}
+                      <Link
+                        href="/inventory/delivery-profiles"
+                        className="underline"
+                        target="_blank"
+                      >
+                        먼저 등록하세요
+                      </Link>
+                      .
+                    </p>
+                  ) : (
+                    <FormSelect
+                      options={deliveryProfiles.map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                      }))}
+                      value={deliveryProfileId}
+                      onValueChange={setDeliveryProfileId}
+                      placeholder="배송 프로필 선택"
+                    />
+                  )}
                 </FormField>
 
                 <FormField label="수입신고필증">

@@ -43,6 +43,7 @@ export interface CreateSkuInputDto {
   name: string;
   holderId?: string;
   supplierIds?: string[];
+  deliveryProfileId?: string;
   businessProductName?: string;
   importDeclarationNumber?: string;
   optionKey?: string;
