@@ -124,7 +124,7 @@ async function checkCore(tx: Sql): Promise<void> {
   else
     bad(
       `열린 상자 SKU 중 delivery_profile_id 없음 ${skuCoverage.missing_profile}개`,
-      'SKU 에 배송 프로필을 연결한다 — SKU 수정 DTO 에 필드가 없어 일괄 백필 수단부터 필요 (#923 §H)',
+      'SKU 에 배송 프로필을 연결한다 — 건별은 SKU 수정(PATCH /inventory/skus/:id)으로 되고, 일괄 백필은 보류 중 (#923 §H)',
     );
   const [mixedProfile] = await tx`
     select count(*)::int as n from (
