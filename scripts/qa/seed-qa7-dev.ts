@@ -8,9 +8,12 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
  * stock_ledgers + 작업로그)를 그대로 태우므로 admin UI 입고와 동일한 데이터가 만들어진다.
  * SKU 이름 기준 멱등 — 이미 존재하는 SKU는 생성/입고를 건너뛰고 현재 재고만 보고한다.
  *
+ * 환경변수: QA_DELIVERY_PROFILE_ID (필수) — physical SKU 는 배송 프로필 없이 만들 수 없다(#923).
+ * dev DB 에 이미 있는 배송 프로필의 id 를 넘긴다.
+ *
  * 실행 (core dev DB는 VPC 내부 — 터널 + sst shell 필요):
  *   1) 별도 터미널: ./scripts/sst-tunnel.sh deployments/lcnine/services dev
- *   2) ./scripts/qa/seed-qa7-dev.sh
+ *   2) QA_DELIVERY_PROFILE_ID=<id> ./scripts/qa/seed-qa7-dev.sh
  */
 import 'reflect-metadata';
 import postgres from 'postgres';
@@ -33,6 +36,12 @@ import { InboundReceiptKernel } from '../../apps/core/src/modules/inventory/inbo
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
+
+function requireEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) throw new Error(`${key} 가 필요하다 — physical SKU 는 배송 프로필 없이 만들 수 없다(#923)`);
+  return value;
+}
 
 const QA_SKUS: Array<{ name: string; qty: number; memo: string }> = [
   { name: 'QA7-A', qty: 1, memo: 'QA7 A-1 예약이전 간단판 (재고 정확히 1개 — deadlock 재현)' },
@@ -95,6 +104,9 @@ async function main() {
     }
     console.log(`창고: ${warehouse.name} (${warehouse.id})\n`);
 
+    // 루프 안에서 매 SKU 마다 다시 읽지 않는다 — 없으면 첫 SKU 를 만들기 전에 바로 실패한다.
+    const deliveryProfileId = requireEnv('QA_DELIVERY_PROFILE_ID');
+
     const onHand = async (skuId: string) => {
       const [row] = await db
         .select({ qty: sum(wmsTables.stockLedgers.qty) })
@@ -126,7 +138,7 @@ async function main() {
 
       // SKU 생성 + 입고를 한 트랜잭션으로 — 중간 실패 시 반쪽 상태가 남지 않게
       const created = await db.transaction(async (tx: DbTx) => {
-        const sku = await skuCatalog.create({ name: spec.name, stockType: 'physical' } as never, tx);
+        const sku = await skuCatalog.create({ name: spec.name, stockType: 'physical', deliveryProfileId } as never, tx);
         await inbound.simpleInbound(
           {
             warehouseId: WAREHOUSE_BUCHEON,

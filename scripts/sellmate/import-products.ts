@@ -34,6 +34,8 @@
  *   SELLMATE_ENCODING   HTML-xls 인코딩 (기본 euc-kr)
  *   COL_PRODUCT_CODE / COL_PRODUCT_SERIAL / COL_PRODUCT_NAME / COL_ITEM_CODE / COL_OPTION_NAME / COL_BARCODE
  *                       자동감지가 틀렸을 때 해당 "헤더 이름" 직접 지정
+ *
+ * ⚠️ 원시 SQL 로 skus 에 넣으므로 배송 프로필 필수 규칙(SkuCatalogManager, #923)을 우회한다 — 셀메이트 폐기와 함께 사라질 경로.
  */
 import * as path from 'path';
 import * as fs from 'fs';

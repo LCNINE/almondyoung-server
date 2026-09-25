@@ -149,7 +149,7 @@ export interface CreateSkuDto {
   name: string;
   optionKey?: string;
   source?: 'auto_matching' | 'manual_matching' | 'manual_entry';
-  deliveryProfileId?: string;
+  deliveryProfileId?: string | null;
   stockType?: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
   sale1m?: number;
   sale3m?: number;
@@ -1891,3 +1891,47 @@ export interface MovementHistoryQuery {
   warehouseId?: string;
   days?: number;
 }
+
+// ===== 배송 프로필 (Delivery Profiles) =====
+
+export type DeliveryProfileSourceType = 'direct' | 'in_house' | 'overseas';
+export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
+
+export interface DeliveryProfileAddress {
+  postalCode: string;
+  roadAddress: string;
+  detailAddress: string;
+}
+
+export interface DeliveryProfileDto {
+  id: string;
+  name: string;
+  sourceType: DeliveryProfileSourceType;
+  avgDeliveryDays: number | null;
+  sender: { name: string; phone: string };
+  originAddress: DeliveryProfileAddress;
+  returnAddress: DeliveryProfileAddress & { phone?: string };
+  carrierAccountRef: string | null;
+  supportedFulfillmentModes: FulfillmentMode[];
+  skuCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDeliveryProfileDto {
+  name: string;
+  sourceType: DeliveryProfileSourceType;
+  avgDeliveryDays?: number;
+  sender: { name: string; phone: string };
+  originAddress: DeliveryProfileAddress;
+  returnAddress: DeliveryProfileAddress & { phone?: string };
+  carrierAccountRef: string;
+  supportedFulfillmentModes: FulfillmentMode[];
+}
+
+// avgDeliveryDays 만 CreateDeliveryProfileDto 보다 넓다 — PATCH 는 null(지우기)을 허용한다.
+export type UpdateDeliveryProfileDto = Partial<
+  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays'>
+> & {
+  avgDeliveryDays?: number | null;
+};
