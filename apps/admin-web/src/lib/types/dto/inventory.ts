@@ -149,7 +149,7 @@ export interface CreateSkuDto {
   name: string;
   optionKey?: string;
   source?: 'auto_matching' | 'manual_matching' | 'manual_entry';
-  deliveryProfileId?: string;
+  deliveryProfileId?: string | null;
   stockType?: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
   sale1m?: number;
   sale3m?: number;
