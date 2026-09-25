@@ -8,6 +8,8 @@ import { UpdateSkuDto } from '../dto/update-sku.dto';
 import { AddBarcodeDto } from '../dto/add-barcode.dto';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { SkuCatalogReader } from './sku-catalog.reader';
+import { deliveryProfileViolation, type SkuProfileState } from '../sku-delivery-profile.rule';
+import { SkuDeliveryProfileNotFoundError, SkuDeliveryProfileRequiredError } from '../sku-catalog.errors';
 
 @Injectable()
 export class SkuCatalogManager {
@@ -21,6 +23,12 @@ export class SkuCatalogManager {
   async create(dto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.dbService.run(async (trx) => {
       const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = dto;
+
+      await this.assertDeliveryProfile(trx, skuData.name, null, {
+        // 컬럼 DEFAULT 와 같은 기본값 — 안 보내면 physical 로 들어간다
+        stockType: skuData.stockType ?? 'physical',
+        deliveryProfileId: skuData.deliveryProfileId ?? null,
+      });
 
       const [newSku] = await trx
         .insert(wmsTables.skus)
@@ -67,6 +75,14 @@ export class SkuCatalogManager {
   async update(skuId: string, dto: UpdateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.dbService.run(async (trx) => {
       const { supplierIds, categoryIds, skuGroupId, imageUploadIds, ...updateData } = dto;
+
+      const before = await this.loadProfileState(trx, skuId);
+      await this.assertDeliveryProfile(trx, updateData.name ?? before.name, before, {
+        stockType: updateData.stockType ?? before.stockType,
+        // undefined = 안 건드림, null = 지움
+        deliveryProfileId:
+          updateData.deliveryProfileId === undefined ? before.deliveryProfileId : updateData.deliveryProfileId,
+      });
 
       const skuUpdatePayload = {
         ...updateData,
@@ -263,6 +279,44 @@ export class SkuCatalogManager {
     );
 
     this.logger.log(`Barcode ${barcodeId} removed from SKU ${skuId}`);
+  }
+
+  /** 규칙 위반이면 던진다. 프로필 id 가 있으면 존재부터 확인한다 — 없으면 FK 위반이 500 이 된다. */
+  private async assertDeliveryProfile(
+    trx: DbTx,
+    skuName: string,
+    before: SkuProfileState | null,
+    after: SkuProfileState,
+  ): Promise<void> {
+    if (after.deliveryProfileId && after.deliveryProfileId !== before?.deliveryProfileId) {
+      const [profile] = await trx
+        .select({ id: wmsTables.deliveryProfiles.id })
+        .from(wmsTables.deliveryProfiles)
+        .where(eq(wmsTables.deliveryProfiles.id, after.deliveryProfileId))
+        .limit(1);
+      if (!profile) {
+        throw new SkuDeliveryProfileNotFoundError(`배송 프로필을 찾을 수 없습니다: ${after.deliveryProfileId}`);
+      }
+    }
+    if (deliveryProfileViolation(before, after)) {
+      throw new SkuDeliveryProfileRequiredError(
+        `재고 유형 ${after.stockType} 인 SKU(${skuName})는 배송 프로필이 필요합니다`,
+      );
+    }
+  }
+
+  private async loadProfileState(trx: DbTx, skuId: string): Promise<SkuProfileState & { name: string }> {
+    const [row] = await trx
+      .select({
+        name: wmsTables.skus.name,
+        stockType: wmsTables.skus.stockType,
+        deliveryProfileId: wmsTables.skus.deliveryProfileId,
+      })
+      .from(wmsTables.skus)
+      .where(eq(wmsTables.skus.id, skuId))
+      .for('update');
+    if (!row) throw new NotFoundError(`SKU not found: ${skuId}`);
+    return row;
   }
 
   private async generateSkuCode(tx: DbTx): Promise<string> {

@@ -34,6 +34,12 @@ import { InboundReceiptKernel } from '../../apps/core/src/modules/inventory/inbo
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
 
+function requireEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) throw new Error(`${key} 가 필요하다 — physical SKU 는 배송 프로필 없이 만들 수 없다(#923)`);
+  return value;
+}
+
 const QA_SKUS: Array<{ name: string; qty: number; memo: string }> = [
   { name: 'QA7-A', qty: 1, memo: 'QA7 A-1 예약이전 간단판 (재고 정확히 1개 — deadlock 재현)' },
   { name: 'QA7-B-SPLIT', qty: 3, memo: 'QA7 B-1 전량 예약 상태 FO 분할' },
@@ -126,7 +132,10 @@ async function main() {
 
       // SKU 생성 + 입고를 한 트랜잭션으로 — 중간 실패 시 반쪽 상태가 남지 않게
       const created = await db.transaction(async (tx: DbTx) => {
-        const sku = await skuCatalog.create({ name: spec.name, stockType: 'physical' } as never, tx);
+        const sku = await skuCatalog.create(
+          { name: spec.name, stockType: 'physical', deliveryProfileId: requireEnv('QA_DELIVERY_PROFILE_ID') } as never,
+          tx,
+        );
         await inbound.simpleInbound(
           {
             warehouseId: WAREHOUSE_BUCHEON,
