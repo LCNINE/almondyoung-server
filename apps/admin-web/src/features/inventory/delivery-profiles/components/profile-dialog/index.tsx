@@ -25,7 +25,7 @@ import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../table';
 type Props = { open: boolean; profile: DeliveryProfileDto | null; onOpenChange: (open: boolean) => void };
 
 const SOURCE_OPTIONS = Object.entries(SOURCE_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-const MODES = Object.keys(FULFILLMENT_MODE_LABELS) as FulfillmentMode[];
+const MODES = Object.keys(FULFILLMENT_MODE_LABELS) as FulfillmentMode[]; // Object.keys returns string[]; TypeScript cannot infer enum values at runtime
 
 export function ProfileDialog({ open, profile, onOpenChange }: Props) {
   const isEdit = !!profile;
@@ -79,7 +79,7 @@ export function ProfileDialog({ open, profile, onOpenChange }: Props) {
       onOpenChange(false);
     } catch (e: unknown) {
       const message =
-        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '저장하지 못했습니다.';
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '저장하지 못했습니다.'; // API error shape from mutation libraries like TanStack Query
       toast.error(message);
     }
   };
@@ -96,7 +96,7 @@ export function ProfileDialog({ open, profile, onOpenChange }: Props) {
           <FormSection title="기본">
             {input('name', '이름', true, '예: 부천 자사 출고')}
             <FormField label="원천" required>
-              <FormSelect value={form.sourceType} onValueChange={(v) => set('sourceType')(v as ProfileFormState['sourceType'])} options={SOURCE_OPTIONS} />
+              <FormSelect value={form.sourceType} onValueChange={(v) => set('sourceType')(v as ProfileFormState['sourceType'])} options={SOURCE_OPTIONS} /> {/* FormSelect returns string; cast matches select option values */}
             </FormField>
             {input('avgDeliveryDays', '평균 배송일', false, '선택')}
             {input('carrierAccountRef', '택배 계약번호')}
