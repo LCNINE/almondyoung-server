@@ -25,11 +25,13 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (65) ──────────────────────────────────────────
+  // ── inventory.operate (67) ──────────────────────────────────────────
   'GET /inventory/work-context': S.OPERATE,
   'GET /inventory/diagnostics-access': S.MANAGE,
   'GET /holders': S.OPERATE,
   'GET /holders/:id': S.OPERATE,
+  'GET /inventory/delivery-profiles': S.OPERATE,
+  'GET /inventory/delivery-profiles/:id': S.OPERATE,
   'POST /inbound/cancel': S.OPERATE,
   'GET /inbound/history': S.OPERATE,
   'POST /inbound/individual': S.OPERATE,
@@ -97,7 +99,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start': S.OPERATE,
   'GET /stocktaking/sessions/:id/variances': S.OPERATE,
 
-  // ── inventory.manage (72) ──────────────────────────────────────────
+  // ── inventory.manage (74) ──────────────────────────────────────────
   'POST /barcode-generation/custom': S.MANAGE,
   'POST /barcode-generation/fulfillment-order': S.MANAGE,
   'POST /barcode-generation/location': S.MANAGE,
@@ -106,6 +108,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /holders': S.MANAGE,
   'DELETE /holders/:id': S.MANAGE,
   'PUT /holders/:id': S.MANAGE,
+  'POST /inventory/delivery-profiles': S.MANAGE,
+  'PATCH /inventory/delivery-profiles/:id': S.MANAGE,
   'POST /inventory/sku-groups': S.MANAGE,
   'DELETE /inventory/sku-groups/:id': S.MANAGE,
   'PUT /inventory/sku-groups/:id': S.MANAGE,
