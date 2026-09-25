@@ -161,7 +161,11 @@ export function InventoryMatchingDialog({
   const searchingSuppliers = false;
   const supplierSearchResults = suppliersResponse;
   const { data: holdersResponse } = useHolders();
-  const { data: deliveryProfiles = [] } = useDeliveryProfiles();
+  const {
+    data: deliveryProfiles = [],
+    isLoading: deliveryProfilesLoading,
+    isError: deliveryProfilesError,
+  } = useDeliveryProfiles();
   const { data: holderSearchResults, isLoading: searchingHolders } =
     useHolderSearch(holderSearch);
 
@@ -613,7 +617,15 @@ export function InventoryMatchingDialog({
                 </FormField>
 
                 <FormField label="배송 프로필" required>
-                  {deliveryProfiles.length === 0 ? (
+                  {deliveryProfilesLoading ? (
+                    <p className="text-sm text-muted-foreground">
+                      불러오는 중…
+                    </p>
+                  ) : deliveryProfilesError ? (
+                    <p className="text-sm text-destructive">
+                      배송 프로필을 불러오지 못했습니다.
+                    </p>
+                  ) : deliveryProfiles.length === 0 ? (
                     <p className="text-sm text-destructive">
                       배송 프로필이 없습니다 —{' '}
                       <Link

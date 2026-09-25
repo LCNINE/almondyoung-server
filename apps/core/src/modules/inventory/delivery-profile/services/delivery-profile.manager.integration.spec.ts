@@ -44,7 +44,7 @@ describeIfDb('DeliveryProfileManager (DB integration)', () => {
       run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
     } as unknown as DbService<typeof wmsSchema>;
     const reader = new DeliveryProfileReader(dbService);
-    return { reader, manager: new DeliveryProfileManager(dbService, reader) };
+    return { reader, manager: new DeliveryProfileManager(dbService) };
   }
 
   // 이 API 로 만든 프로필은 계획 확정·배치 편입의 완전성 검사를 통과해야 한다 — 그게 이 기능의 목적이다.

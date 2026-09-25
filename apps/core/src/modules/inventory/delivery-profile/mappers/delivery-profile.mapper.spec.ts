@@ -60,4 +60,8 @@ describe('DeliveryProfileMapper.toColumns', () => {
       }),
     ).toEqual({ returnAddressSnapshot: { postalCode: '1', roadAddress: 'R', detailAddress: '' } });
   });
+  // I-1: avgDeliveryDays 는 PATCH 로 값을 지우는 유일한 방법이 null 이라, 컬럼에 그대로 저장한다.
+  it('avgDeliveryDays: null 은 null 로 저장한다(지우기)', () => {
+    expect(DeliveryProfileMapper.toColumns({ avgDeliveryDays: null })).toEqual({ avgDeliveryDays: null });
+  });
 });

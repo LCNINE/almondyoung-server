@@ -214,6 +214,9 @@ export const useDeliveryProfiles = () => {
     queryKey: inventoryQueryKeys.deliveryProfiles,
     queryFn: () => deliveryProfilesClient.list(),
     staleTime: 60 * 1000,
+    // 다른 탭(배송 프로필 관리 화면)에서 새로 만든 프로필을 이 창이 즉시 보게 한다.
+    // 전역 refetchOnWindowFocus:false 위에 이 훅만 되돌린다 — 목록이 작고 자주 안 바뀌어 비용이 싸다.
+    refetchOnWindowFocus: true,
   });
 };
 

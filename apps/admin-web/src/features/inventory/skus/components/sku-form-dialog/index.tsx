@@ -82,7 +82,11 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
   const createMutation = useCreateSku();
   const updateMutation = useUpdateSku();
   const { data: groups } = useSkuGroups();
-  const { data: profiles = [] } = useDeliveryProfiles();
+  const {
+    data: profiles = [],
+    isLoading: profilesLoading,
+    isError: profilesError,
+  } = useDeliveryProfiles();
   const original = sku
     ? {
         stockType: sku.stockType,
@@ -214,7 +218,13 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
               required={requiresDeliveryProfile(form.stockType)}
               errorMessage={errors.deliveryProfileId}
             >
-              {profiles.length === 0 ? (
+              {profilesLoading ? (
+                <p className="text-sm text-muted-foreground">불러오는 중…</p>
+              ) : profilesError ? (
+                <p className="text-sm text-destructive">
+                  배송 프로필을 불러오지 못했습니다.
+                </p>
+              ) : profiles.length === 0 ? (
                 <p className="text-sm text-destructive">
                   배송 프로필이 없습니다 —{' '}
                   <Link

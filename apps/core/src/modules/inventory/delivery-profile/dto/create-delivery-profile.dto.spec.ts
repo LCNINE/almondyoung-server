@@ -89,4 +89,21 @@ describe('UpdateDeliveryProfileDto', () => {
   it('빈 계약번호를 거부', async () => {
     expect(await errorsOf(UpdateDeliveryProfileDto, { carrierAccountRef: '' })).toContain('carrierAccountRef');
   });
+
+  // I-1: `@IsOptional()` 은 null 도 "안 보냄"으로 보고 검증을 건너뛴다. PartialType 이
+  // skipNullProperties:false 로 null 은 각 필드 검증기를 타게 해야 아래가 전부 거부된다.
+  it.each(['name', 'sourceType', 'sender', 'originAddress', 'returnAddress', 'carrierAccountRef'])(
+    '%s 에 null 을 보내면 거부',
+    async (key) => {
+      expect(await errorsOf(UpdateDeliveryProfileDto, { [key]: null })).toContain(key);
+    },
+  );
+  it('supportedFulfillmentModes 에 null 을 보내면 거부', async () => {
+    expect(await errorsOf(UpdateDeliveryProfileDto, { supportedFulfillmentModes: null })).toContain(
+      'supportedFulfillmentModes',
+    );
+  });
+  it('avgDeliveryDays 는 null 을 허용한다 — 값 지우기', async () => {
+    expect(await errorsOf(UpdateDeliveryProfileDto, { avgDeliveryDays: null })).toEqual([]);
+  });
 });

@@ -98,4 +98,20 @@ describe('toUpdatePayload', () => {
     });
     expect(payload).toEqual({ name: '새 이름', carrierAccountRef: 'X', supportedFulfillmentModes: ['in_house', '3pl'] });
   });
+  it('평균 배송일을 비우면 null(지우기)을 보낸다', () => {
+    const withDays: DeliveryProfileDto = { ...profile, avgDeliveryDays: 3 };
+    const payload = toUpdatePayload(withDays, {
+      ...formFromProfile(withDays),
+      avgDeliveryDays: '',
+    });
+    expect(payload).toEqual({ avgDeliveryDays: null });
+  });
+  it('평균 배송일이 원래 없었고 여전히 비어 있으면 바뀐 게 없다', () => {
+    expect(
+      toUpdatePayload(profile, {
+        ...formFromProfile(profile),
+        avgDeliveryDays: '',
+      })
+    ).toEqual({});
+  });
 });

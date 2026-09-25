@@ -1929,4 +1929,9 @@ export interface CreateDeliveryProfileDto {
   supportedFulfillmentModes: FulfillmentMode[];
 }
 
-export type UpdateDeliveryProfileDto = Partial<CreateDeliveryProfileDto>;
+// avgDeliveryDays 만 CreateDeliveryProfileDto 보다 넓다 — PATCH 는 null(지우기)을 허용한다.
+export type UpdateDeliveryProfileDto = Partial<
+  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays'>
+> & {
+  avgDeliveryDays?: number | null;
+};

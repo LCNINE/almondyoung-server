@@ -5,9 +5,19 @@ import type { DeliveryProfileReturnAddressDto } from '../dto/delivery-profile-ad
 
 type NewColumns = Partial<Omit<DeliveryProfile, 'id' | 'createdAt' | 'updatedAt' | 'handlingFlags'>>;
 
+/**
+ * create/update 양쪽에서 오는 입력. avgDeliveryDays 만 `CreateDeliveryProfileDto` 보다 넓다 —
+ * PATCH 는 이 필드에 한해 `null`(지우기)을 허용한다(update-delivery-profile.dto.ts 참고).
+ */
+type ProfileColumnsInput = Partial<Omit<CreateDeliveryProfileDto, 'avgDeliveryDays'>> & {
+  avgDeliveryDays?: number | null;
+};
+
 /** jsonb 는 옛 모양(`{ address }`)·null 일 수 있다 — 모르는 키는 빈 문자열로. */
 function text(source: unknown, key: string): string {
   if (!source || typeof source !== 'object' || Array.isArray(source)) return '';
+  // 위에서 object·non-array 로 좁혔다 — drizzle jsonb 컬럼은 타입이 `unknown` 이라 키 접근에
+  // 캐스팅이 필요하고, 좁힌 뒤라 키 조회 자체는 안전하다(값 타입만 아래에서 다시 확인한다).
   const value = (source as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : '';
 }
@@ -41,7 +51,7 @@ export class DeliveryProfileMapper {
   }
 
   /** 보낸 필드만 컬럼으로 옮긴다 — PATCH 가 안 보낸 필드를 null 로 덮지 않게. */
-  static toColumns(dto: Partial<CreateDeliveryProfileDto>): NewColumns {
+  static toColumns(dto: ProfileColumnsInput): NewColumns {
     const columns: NewColumns = {};
     if (dto.name !== undefined) columns.name = dto.name.trim();
     if (dto.sourceType !== undefined) columns.sourceType = dto.sourceType;

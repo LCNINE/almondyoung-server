@@ -7,14 +7,10 @@ import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
 import { UpdateDeliveryProfileDto } from '../dto/update-delivery-profile.dto';
 import type { DeliveryProfileDto } from '../dto/delivery-profile.dto';
 import { DeliveryProfileMapper } from '../mappers/delivery-profile.mapper';
-import { DeliveryProfileReader } from './delivery-profile.reader';
 
 @Injectable()
 export class DeliveryProfileManager {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly reader: DeliveryProfileReader,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   async create(dto: CreateDeliveryProfileDto, tx?: DbTx): Promise<DeliveryProfileDto> {
     return this.dbService.run(async (trx) => {
