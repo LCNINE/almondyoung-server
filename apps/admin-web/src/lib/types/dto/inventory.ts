@@ -1891,3 +1891,42 @@ export interface MovementHistoryQuery {
   warehouseId?: string;
   days?: number;
 }
+
+// ===== 배송 프로필 (Delivery Profiles) =====
+
+export type DeliveryProfileSourceType = 'direct' | 'in_house' | 'overseas';
+export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
+
+export interface DeliveryProfileAddress {
+  postalCode: string;
+  roadAddress: string;
+  detailAddress: string;
+}
+
+export interface DeliveryProfileDto {
+  id: string;
+  name: string;
+  sourceType: DeliveryProfileSourceType;
+  avgDeliveryDays: number | null;
+  sender: { name: string; phone: string };
+  originAddress: DeliveryProfileAddress;
+  returnAddress: DeliveryProfileAddress & { phone?: string };
+  carrierAccountRef: string | null;
+  supportedFulfillmentModes: FulfillmentMode[];
+  skuCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDeliveryProfileDto {
+  name: string;
+  sourceType: DeliveryProfileSourceType;
+  avgDeliveryDays?: number;
+  sender: { name: string; phone: string };
+  originAddress: DeliveryProfileAddress;
+  returnAddress: DeliveryProfileAddress & { phone?: string };
+  carrierAccountRef: string;
+  supportedFulfillmentModes: FulfillmentMode[];
+}
+
+export type UpdateDeliveryProfileDto = Partial<CreateDeliveryProfileDto>;

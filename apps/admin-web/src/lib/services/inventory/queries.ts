@@ -11,6 +11,7 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import { deliveryProfilesClient } from '../../api/domains/inventory/delivery-profiles.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -204,6 +205,15 @@ export const useWarehouseStockSummary = (warehouseId: string) => {
     queryKey: inventoryQueryKeys.warehouseStockSummary(warehouseId),
     queryFn: () => warehousesClient.getWarehouseStockSummary(warehouseId),
     enabled: !!warehouseId,
+  });
+};
+
+// 배송 프로필 관련 쿼리
+export const useDeliveryProfiles = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.deliveryProfiles,
+    queryFn: () => deliveryProfilesClient.list(),
+    staleTime: 60 * 1000,
   });
 };
 

@@ -13,6 +13,7 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import { deliveryProfilesClient } from '../../api/domains/inventory/delivery-profiles.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -32,6 +33,8 @@ import type {
   AddBarcodeDto,
   CreateWarehouseDto,
   UpdateWarehouseDto,
+  CreateDeliveryProfileDto,
+  UpdateDeliveryProfileDto,
   CreateSkuGroupDto,
   UpdateSkuGroupDto,
   BulkAddSkusToGroupDto,
@@ -220,6 +223,23 @@ export const useUpdateWarehouse = () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouses });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouse(id) });
     },
+  });
+};
+
+export const useCreateDeliveryProfile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateDeliveryProfileDto) => deliveryProfilesClient.create(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
+  });
+};
+
+export const useUpdateDeliveryProfile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateDeliveryProfileDto }) =>
+      deliveryProfilesClient.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
   });
 };
 
