@@ -87,7 +87,7 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: R + 6, y: 42.7, pt: 24, bold: true, text: s.routeRank }), // ⑩
     text({ x: R + 26.7, y: 42.7, pt: 22, bold: true, text: s.courierName }), // ⑪
     text({ x: R + 52.3, y: 42.7, pt: 25, bold: true, text: `${s.hubCode} ${s.terminalCode}` }), // ①②
-    text({ x: R + 79.6, y: 42.7, pt: 17, text: s.centerCode }), // ⑤
+    text({ x: R + 83.2, y: 42.7, pt: 17, text: s.centerCode }), // ⑤
     rect(R + 6.8, 43.4, 37, 6.6), // ⑬ 상자
     text({ x: R + 8.2, y: 48.8, pt: 14, bold: true, text: d.freightText }), // ⑬
     text({ x: R + 6, y: 54.3, pt: 10, text: koreanDate(d.printedDate) }),
