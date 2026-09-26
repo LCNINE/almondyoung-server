@@ -6,8 +6,15 @@ export const PT_TO_MM = 0.3528;
 // eslint-disable-next-line no-irregular-whitespace -- U+3000(전각 공백)은 CJK 기호 범위의 실제 시작점이지, 실수로 들어간 공백이 아니다.
 const WIDE = /[ᄀ-ᇿ　-鿿가-힣＀-￯]/;
 
+// XML 1.0 이 금지하는 문자(tab·LF·CR 제외 C0 제어문자, U+FFFE/U+FFFF). resvg 는 이걸 만나면
+// `non-XML character` 로 SVG 파싱 자체를 실패시켜 그 배송 라벨이 통째로 인쇄 불능이 된다 —
+// 배송메시지·품명처럼 고객이 입력하는 값에 섞여 들어올 수 있어 이스케이프 전에 제거한다.
+// eslint-disable-next-line no-control-regex -- 의도적으로 C0 제어문자를 걸러내는 필터다.
+const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
 export function escapeXml(s: string): string {
   return s
+    .replace(XML_ILLEGAL, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

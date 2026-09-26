@@ -150,6 +150,11 @@ describe('renderHanjinNsLabel', () => {
     expect(spec.svg).toContain('출고번호: AY0123456789ABCDEFGHJKMNPQRS');
   });
 
+  it('배송메시지에 섞인 XML 금지 제어문자는 SVG 에 남기지 않는다 (resvg 파싱 실패 방지)', () => {
+    const s = renderHanjinNsLabel({ ...DATA, deliveryMessage: '문앞\u000B' });
+    expect(s.svg).not.toContain('\u000B');
+  });
+
   it('모든 텍스트·도형 좌표가 라벨 안에 있다', () => {
     const xs = [...spec.svg.matchAll(/\bx="([\d.]+)"/g)].map((m) => Number(m[1]));
     const ys = [...spec.svg.matchAll(/\by="([\d.]+)"/g)].map((m) => Number(m[1]));

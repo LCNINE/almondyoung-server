@@ -4,6 +4,14 @@ describe('escapeXml', () => {
   it('XML 특수문자 다섯을 엔티티로 바꾼다', () => {
     expect(escapeXml(`<a href="x">&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&apos;&lt;/a&gt;');
   });
+
+  it('XML 이 금지하는 제어문자·비문자는 제거한다 (resvg 가 non-XML character 로 파싱을 거부한다)', () => {
+    expect(escapeXml('문\u0008앞\u000B￾')).toBe('문앞');
+  });
+
+  it('tab·LF·CR 은 XML 이 허용하므로 그대로 둔다', () => {
+    expect(escapeXml('a\tb')).toBe('a\tb');
+  });
 });
 
 describe('textWidthMm', () => {
