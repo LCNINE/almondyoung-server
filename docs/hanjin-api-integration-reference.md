@@ -360,6 +360,17 @@ errorCode: -103, message: Too many request
 **택배 - 배송정보 API** 에 SpikeArrest(트래픽 급증 저지) 정책이 적용되어 있다.
 「슬라이딩 창」 비율 제한 알고리즘으로 **1초당 10개의 요청(10 TPS)** 을 허용한다.
 
+> 🔴 **실측 (2026-09-26) — DEV 에서는 재현되지 않는다.** `api-stg.hanjin.com` 의 `tracking-wbl` 에
+> 30건을 동시에 보내 약 0.3초 안에 전부 받았는데(≈초당 100건) **전건 HTTP 200 + 백엔드 응답**
+> (`ERROR-02`)이었고, `retry-after`·`x-ratelimit-*` 헤더도 없었다. 그래서 `-103` 이 **어떤 HTTP 상태로,
+> 어떤 바디 모양으로 오는지는 아무도 모른다**(포털 문서에도 없다). 운영에서만 걸리는지, FAQ 가 설정과
+> 다른지도 미상이다.
+>
+> 우리 클라이언트는 이 미상을 전제로 짰다 — HTTP 상태가 아니라 **바디의 `errorCode` 가 `-103`** 인지로
+> 판별하고(200·429 모두), 어느 API 에서 오든 `transient_rejection` 으로 올린다(#916).
+> 판별 규칙: `sed -n '/^const RATE_LIMITED_ERROR_CODE/,/^}/p' apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-api.client.ts`
+> **운영에서 처음 `-103` 을 받으면 실제 응답을 여기에 적을 것** — 판별 규칙이 추정 위에 있다.
+
 ```
 errorCode: -101, message: App not approved.(장기간미사용 승인중지)
 ```

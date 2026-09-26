@@ -68,4 +68,34 @@ describe('HanjinApiClient', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response('bad', { status: 400 }));
     await expect(client().post('order', '/x', {})).rejects.toMatchObject({ outcome: 'definitive_rejection' });
   });
+
+  // -103(10 TPS SpikeArrest, 정본 §5) 의 HTTP 상태는 미상이다 — DEV 는 초당 ~100건에도 재현되지 않았다(#916).
+  // 그래서 상태코드가 아니라 바디의 errorCode 로 판별하고, 200·429 두 형태를 모두 막는다.
+  describe('-103 Too many request', () => {
+    const tooMany = (status: number, errorCode: number | string = -103) =>
+      new Response(JSON.stringify({ errorCode, message: 'Too many request' }), { status });
+
+    it.each([200, 429])('HTTP %i + errorCode -103 → transient_rejection, 1초 뒤 재시도 힌트', async (status) => {
+      jest.spyOn(global, 'fetch').mockResolvedValue(tooMany(status));
+      await expect(client().post('order', '/x', {})).rejects.toMatchObject({
+        outcome: 'transient_rejection',
+        details: { carrier: 'hanjin', code: '-103', retryAfter: { kind: 'after_ms', ms: 1000 } },
+      });
+    });
+
+    it('errorCode 가 문자열 "-103" 이어도 같다', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue(tooMany(200, '-103'));
+      await expect(client().post('order', '/x', {})).rejects.toMatchObject({ outcome: 'transient_rejection' });
+    });
+
+    it('바디가 -103 이 아닌 HTTP 429 → 지금처럼 unknown_outcome', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue(new Response('slow down', { status: 429 }));
+      await expect(client().post('order', '/x', {})).rejects.toMatchObject({ outcome: 'unknown_outcome' });
+    });
+
+    it('다른 errorCode 는 가로채지 않고 그대로 반환한다', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue(tooMany(200, -999));
+      await expect(client().post('order', '/x', {})).resolves.toEqual({ errorCode: -999, message: 'Too many request' });
+    });
+  });
 });
