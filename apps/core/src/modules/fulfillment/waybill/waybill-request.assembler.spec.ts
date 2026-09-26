@@ -1,4 +1,4 @@
-import { assembleWaybillRequest, parseRecipient } from './waybill-request.assembler';
+import { assembleWaybillRequest, parseRecipient, commodityNameOf, composeMessage } from './waybill-request.assembler';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 
@@ -129,5 +129,32 @@ describe('assembleWaybillRequest — 공동현관 비번 합성', () => {
       entrancePassword: null,
     });
     expect(req.recipient.message).toBeUndefined();
+  });
+});
+
+describe('commodityNameOf', () => {
+  it('한 줄이면 상품명 그대로', () => {
+    expect(commodityNameOf([{ productName: '펜', quantity: 1, skuId: 'a' }])).toBe('펜');
+  });
+  it('여러 줄이면 「첫 상품명 외 N건」', () => {
+    expect(
+      commodityNameOf([
+        { productName: '펜', quantity: 1, skuId: 'a' },
+        { productName: '자', quantity: 2, skuId: 'b' },
+        { productName: '풀', quantity: 1, skuId: 'c' },
+      ]),
+    ).toBe('펜 외 2건');
+  });
+  it('줄이 없으면 빈 문자열', () => {
+    expect(commodityNameOf([])).toBe('');
+  });
+});
+
+describe('composeMessage', () => {
+  it('메모와 공동현관 비번을 합친다', () => {
+    expect(composeMessage('문앞', '#1234')).toBe('문앞 (공동현관 #1234)');
+  });
+  it('둘 다 없으면 undefined', () => {
+    expect(composeMessage(undefined, null)).toBeUndefined();
   });
 });
