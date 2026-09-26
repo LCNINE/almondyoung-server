@@ -105,8 +105,8 @@ describe('encodeZpl', () => {
   it('비압축 ^GF 의 바이트 수는 bytesPerRow × 행 수이고 데이터는 그 두 배 hex 다', () => {
     const zpl = encodeZpl(nsBitmap(), [], { compress: false });
     const m = /\^GFA,(\d+),(\d+),(\d+),([0-9A-F]+)\^FS/.exec(zpl);
-    expect(m).not.toBeNull();
-    const [, total, total2, bpr, data] = m as RegExpExecArray;
+    if (!m) throw new Error('^GFA field not found in ZPL');
+    const [, total, total2, bpr, data] = m;
     expect(Number(bpr)).toBe(102); // 816 / 8
     expect(Number(total)).toBe(102 * 1600);
     expect(total2).toBe(total);
@@ -117,7 +117,8 @@ describe('encodeZpl', () => {
     const b = nsBitmap();
     for (let x = 10; x < 200; x++) setBit(b, x, 20);
     const zpl = encodeZpl(b, [], { compress: true });
-    const m = /\^GFA,(\d+),(\d+),(\d+),([^^]+)\^FS/.exec(zpl) as RegExpExecArray;
+    const m = /\^GFA,(\d+),(\d+),(\d+),([^^]+)\^FS/.exec(zpl);
+    if (!m) throw new Error('^GFA field not found in ZPL');
     expect(decodeAcs(m[4], Number(m[3]))).toEqual(hexRowsOf(rotateClockwise(b)));
   });
 
