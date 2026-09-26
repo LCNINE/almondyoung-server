@@ -11,6 +11,7 @@ import {
   RetryAfter,
   WaybillRequest,
 } from '../carrier-gateway.interface';
+import { IntervalPacer } from '../interval-pacer';
 import { HanjinConfig, isHanjinConfigured } from './hanjin.config';
 import type { HanjinApiClient } from './hanjin-api.client';
 
@@ -53,6 +54,12 @@ interface InsertOrderResponse {
   resultCode?: string;
   resultMessage?: string;
 }
+
+// 배송정보 API 는 10 TPS 슬라이딩 창으로 제한된다 (정본 §5). 그 절반으로 벌린다 — 창 경계의 지터를 흡수하고,
+// 폴러 밖 호출자(어드민 「배송 조회」 등)가 같은 게이트웨이를 거쳐도 여유가 남게 한다. 게이트웨이는 레지스트리가
+// 프로세스당 하나만 만들므로 이 페이서는 프로세스 안의 모든 추적 호출에 걸린다. 넘었을 때의 `-103` 은
+// 클라이언트가 `transient_rejection` 으로 올린다(#916).
+const TRACKING_MIN_INTERVAL_MS = 200;
 
 // tracking-wbl 작업상태코드 (정본 §4.4). 공식 목록은 이 12개가 전부다 — 여기 없는 코드는 `unknown` 으로
 // 떨어뜨리고 경고를 남긴다(한진이 코드를 늘릴 수 있다). `65` 같은 비공식 코드를 추측으로 넣지 말 것.
@@ -124,6 +131,7 @@ interface TrackingWblItem {
 }
 interface TrackingWblResponse {
   resultCode?: string;
+  resultMessage?: string;
   wrkList?: TrackingWblItem[];
 }
 
@@ -141,6 +149,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
     private readonly config: HanjinConfig,
     private readonly client: HanjinApiClient,
     private readonly now: () => Date = () => new Date(),
+    private readonly trackingPacer: Pick<IntervalPacer, 'acquire'> = new IntervalPacer(TRACKING_MIN_INTERVAL_MS),
   ) {
     super();
   }
@@ -215,11 +224,22 @@ export class HanjinCarrierGateway extends CarrierGateway {
   }
 
   override async track(waybillNo: string): Promise<CarrierScan[]> {
+    await this.trackingPacer.acquire();
     const res = await this.client.post<TrackingWblResponse>('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
       custEdiCd: this.config.clientId,
       wblNo: waybillNo,
     });
+    // ERROR-01 은 「없는 번호」와 「아직 스캔 안 된 번호」를 구별하지 못한다(정본 §4.4 실측) — 집하 전의 정상 상태라
+    // 빈 이력으로 읽는다. 나머지 결과코드(ERROR-02 체크디지트·ERROR-90 custEdiCd·ERROR-99)는 진짜 오류다.
     if (res?.resultCode === 'ERROR-01') return [];
+    if (res?.resultCode !== 'OK') {
+      const code = res?.resultCode ?? 'no_result_code';
+      throw new CarrierError(
+        `Hanjin tracking-wbl rejected: ${code} - ${res?.resultMessage ?? ''}`,
+        'definitive_rejection',
+        { carrier: 'hanjin', code },
+      );
+    }
     const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
     return list.map((w) => {
       const statusCode = String(w.statusCode ?? '');

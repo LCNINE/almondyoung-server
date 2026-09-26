@@ -8,4 +8,7 @@ export class CarrierGatewayRegistry {
   get(carrier: CarrierCode): CarrierGateway | undefined {
     return this.byCarrier.get(carrier);
   }
+  all(): CarrierGateway[] {
+    return [...this.byCarrier.values()];
+  }
 }

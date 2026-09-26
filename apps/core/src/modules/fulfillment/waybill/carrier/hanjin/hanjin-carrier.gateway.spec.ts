@@ -230,6 +230,35 @@ describe('HanjinCarrierGateway.track', () => {
     const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-01', resultMessage: '존재하지 않는 운송장번호' });
     expect(await new HanjinCarrierGateway(config, { post } as any).track('777')).toEqual([]);
   });
+
+  // ERROR-01 만 「아직 스캔 없음」이다. 나머지를 빈 배열로 삼키면 체크디지트 오류(ERROR-02)나 인증 오류(ERROR-90)
+  // 가 「아직 집하 전」과 구별되지 않아, 번호가 틀린 운송장을 폴러가 영원히 조용히 다시 부른다.
+  it.each(['ERROR-02', 'ERROR-90', 'ERROR-99'])('%s → definitive_rejection 으로 던진다', async (code) => {
+    const post = jest.fn().mockResolvedValue({ resultCode: code, resultMessage: '오류' });
+    await expect(new HanjinCarrierGateway(config, { post } as any).track('777')).rejects.toMatchObject({
+      name: 'CarrierError',
+      outcome: 'definitive_rejection',
+      details: { carrier: 'hanjin', code },
+    });
+  });
+
+  it('호출마다 추적 페이서를 거친다 (10 TPS 제한, #916 이관)', async () => {
+    const order: string[] = [];
+    const pacer = {
+      acquire: jest.fn(() => {
+        order.push('acquire');
+        return Promise.resolve();
+      }),
+    };
+    const post = jest.fn(() => {
+      order.push('post');
+      return Promise.resolve({ resultCode: 'ERROR-01' });
+    });
+    const gateway = new HanjinCarrierGateway(config, { post } as any, undefined, pacer);
+    await gateway.track('777');
+    await gateway.track('778');
+    expect(order).toEqual(['acquire', 'post', 'acquire', 'post']);
+  });
 });
 
 // #915 — 정본 §4.4 의 작업상태코드는 이 12개가 전부다. 표를 늘리거나 줄이려면 정본부터 확인할 것.

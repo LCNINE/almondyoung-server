@@ -408,6 +408,14 @@ grep -n "print-wbl\|insert-order\|tracking-wbl\|ERROR-" \
 sed -n '/^const STATUS_MAP/,/^};/p' \
   apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
 
+# 추적 호출 페이서 간격 (§5 의 10 TPS 와 대조할 것)
+grep -n "TRACKING_MIN_INTERVAL_MS" \
+  apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
+
+# 배송추적 폴러 — 주기(@CronOnce)·대상 창·주기당 상한·대상 조건 (#917)
+grep -n "@CronOnce(\|CARRIER_TRACKING_\|\.where(" \
+  apps/core/src/modules/fulfillment/services/carrier-tracking.poller.ts
+
 # 라벨 필드 보관 목록 (§3.2 와 대조할 것)
 sed -n '/^const LABEL_FIELDS/,/^] as const;/p' \
   apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
