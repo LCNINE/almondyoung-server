@@ -12,7 +12,7 @@ import { WAYBILL } from './waybill.constants';
 import { WaybillManager } from './waybill.manager';
 import { WaybillReader } from './waybill.reader';
 import { HANJIN_CONFIG, WAYBILL_LABEL_CLOCK } from './waybill.tokens';
-import type { WaybillRow } from './waybill.types';
+import type { IssueContext, WaybillRow } from './waybill.types';
 
 export interface WaybillLabel {
   waybillId: string;
@@ -35,9 +35,29 @@ export function assertLabelAvailable(wb: Pick<WaybillRow, 'id' | 'source' | 'car
 }
 
 /**
+ * `assertDispatchable` 과 `loadIssueContext` 는 같은 트랜잭션 안이라도 별개 statement 다 — READ COMMITTED
+ * 에서는 그 사이 커밋된 수하인 정정이 두 번째 읽기에만 보일 수 있다. 그러면 해시 검사(assertDispatchable)는
+ * 통과했는데 실제로 조립하는 라벨은 **새** 주소를 쓰게 되어, 한진에 등록된 값과 달라진다(#913 최종리뷰).
+ * `render` 는 `loadIssueContext` 직후 이 함수로 재확인한다.
+ */
+export function assertContextMatchesWaybill(
+  waybill: Pick<WaybillRow, 'id' | 'manifestVersion' | 'recipientHash'>,
+  ctx: Pick<IssueContext, 'manifestVersion' | 'recipientSnapshot'>,
+  hashOf: (recipientSnapshot: unknown) => string,
+): void {
+  if (waybill.manifestVersion !== ctx.manifestVersion || waybill.recipientHash !== hashOf(ctx.recipientSnapshot)) {
+    throw new ConflictError(
+      `${WAYBILL.ERROR.STALE}: waybill ${waybill.id} manifest/recipient changed between guard and assembly`,
+    );
+  }
+}
+
+/**
  * 한진 자체출력 운송장 ZPL(#913). 가드는 assertDispatchable 을 그대로 쓴다 — «출력 가능 ⇔ 출고 가능».
- * 라벨은 발급 때의 사본이 아니라 현재 shipment 로 다시 조립하는데, 매니페스트 버전·수하인 해시가
- * 같다는 게 확인됐으므로 한진 등록값과 같다.
+ * 라벨은 발급 때의 사본이 아니라 현재 shipment 로 다시 조립한다. 매니페스트 버전·수하인 해시가 같음을
+ * assertDispatchable 과 assertContextMatchesWaybill 두 번 확인하므로 수하인·품명은 한진 등록값과 같다 —
+ * 다만 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진에 등록된 시점보다 최신 값을 실을 수 있다
+ * (의도된 동작: 그 필드는 최신값을 태우는 게 맞다).
  */
 @Injectable()
 export class WaybillLabelManager {
@@ -55,6 +75,7 @@ export class WaybillLabelManager {
       const waybill = await this.waybills.assertDispatchable(shipmentId, trx);
       assertLabelAvailable(waybill);
       const ctx = await this.reader.loadIssueContext(trx, shipmentId);
+      assertContextMatchesWaybill(waybill, ctx, (snapshot) => this.reader.recipientHashOf(snapshot));
       return { waybill, ctx };
     }, tx);
 
