@@ -1,5 +1,18 @@
+import { createHash } from 'crypto';
+import { deriveCustOrdNo } from '../../../cust-ord-no';
+import { DOTS_PER_MM, getBit } from '../../../label/label-model';
+import { SvgRasterizer } from '../../../label/svg-rasterizer';
+import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
-import { renderHanjinNsLabel } from './hanjin-ns-template';
+import {
+  CUST_ORD_NO_MAX_WIDTH_MM,
+  CUST_ORD_NO_MIN_PT,
+  CUST_ORD_NO_X_MM,
+  custOrdNoPt,
+  ITF_QUIET_ZONE_MM,
+  ITF_X_MM,
+  renderHanjinNsLabel,
+} from './hanjin-ns-template';
 
 const DATA: HanjinLabelData = {
   trackingNo: '452716978431',
@@ -39,6 +52,36 @@ const block = (svg: string, id: string): string => {
   const m = new RegExp(`<g id="${id}">([\\s\\S]*?)</g>`).exec(svg);
   if (!m) throw new Error(`block ${id} not found`);
   return m[1];
+};
+
+/** 결정적 UUID v4 모양 — 카운터를 sha256 으로 흩어 버전·variant 비트만 v4 로 맞춘다. */
+const uuidV4Of = (i: number): string => {
+  const h = createHash('sha256').update(`shipment-${i}`).digest('hex');
+  const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
+
+const rasterizer = new SvgRasterizer();
+
+/** svg(또는 그 일부) 안에서 `pick` 에 맞는 <text> 요소 하나. */
+const textElement = (svg: string, pick: (el: string) => boolean): string => {
+  const el = [...svg.matchAll(/<text [^>]*>[^<]*<\/text>/g)].map((m) => m[0]).find(pick);
+  if (!el) throw new Error('text element not found');
+  return el;
+};
+
+/**
+ * 라벨 svg 의 <text> 요소 하나만 떼어, 같은 좌표·크기로 프린터 해상도(8 dot/mm)에서 그렸을 때
+ * 잉크 오른쪽 끝의 x(mm). 인쇄되는 비트맵과 같은 경로(SvgRasterizer)를 탄다.
+ */
+const inkRightEdgeMm = (svg: string, el: string): number => {
+  const header = /^<svg [^>]*>/.exec(svg)?.[0];
+  if (!header) throw new Error('svg header not found');
+  const b = rasterizer.rasterize(`${header}${el}</svg>`, 200 * DOTS_PER_MM);
+  let right = -1;
+  for (let y = 0; y < b.heightDots; y++) for (let x = right + 1; x < b.widthDots; x++) if (getBit(b, x, y)) right = x;
+  if (right < 0) throw new Error(`nothing rendered for ${el}`);
+  return (right + 1) / DOTS_PER_MM;
 };
 
 describe('renderHanjinNsLabel', () => {
@@ -183,6 +226,58 @@ describe('renderHanjinNsLabel', () => {
 
   it('출고번호는 자르지 않고 글자를 줄인다', () => {
     expect(spec.svg).toContain('출고번호: AY0123456789ABCDEFGHJKMNPQRS');
+  });
+
+  describe('출고번호는 ITF quiet zone(3.75mm) 앞에서 끝난다 (#913 — 잉크가 ITF 안까지 들어갔다)', () => {
+    const QUIET_ZONE_START = ITF_X_MM - ITF_QUIET_ZONE_MM; // R+46.25
+
+    it('ITF 는 같은 상수 위치에 놓이고, quiet zone 은 10 × 3dot 모듈 = 3.75mm 다', () => {
+      const itf = spec.barcodes.find((b) => b.kind === 'ITF');
+      expect(itf?.xMm).toBe(ITF_X_MM);
+      expect(ITF_QUIET_ZONE_MM).toBe((10 * (itf?.moduleDots ?? 0)) / DOTS_PER_MM);
+      expect(CUST_ORD_NO_X_MM + CUST_ORD_NO_MAX_WIDTH_MM).toBeCloseTo(QUIET_ZONE_START, 9);
+    });
+
+    // UUID 에서 파생한 실제 모양의 출고번호 500개 — 모델 폭으로 칸 안에 들어가는지 전수 확인.
+    const samples = Array.from({ length: 500 }, (_, i) => `출고번호: ${deriveCustOrdNo(uuidV4Of(i))}`);
+    const endMm = (t: string) => CUST_ORD_NO_X_MM + textWidthMm(t, custOrdNoPt(t));
+
+    it('UUID 파생 출고번호 500개 모두 최소 4pt 이상으로 quiet zone 앞에서 끝난다(모델 폭)', () => {
+      for (const t of samples) {
+        expect(custOrdNoPt(t)).toBeGreaterThanOrEqual(CUST_ORD_NO_MIN_PT);
+        expect(endMm(t)).toBeLessThanOrEqual(QUIET_ZONE_START + 1e-9);
+      }
+    });
+
+    it('그중 가장 긴 표본과 픽스처 표본은 실제로 그려도 잉크가 quiet zone 앞에서 끝난다', () => {
+      const worst = samples.reduce((a, b) => (endMm(b) > endMm(a) ? b : a));
+      for (const custOrdNo of [worst.slice('출고번호: '.length), DATA.custOrdNo]) {
+        const text = `출고번호: ${custOrdNo}`;
+        const label = renderHanjinNsLabel({ ...DATA, custOrdNo });
+        const el = new RegExp(`<text [^>]*font-size="([\\d.]+)"[^>]*>${text}</text>`).exec(label.svg);
+        expect(el?.[1]).toBe((custOrdNoPt(text) * PT_TO_MM).toFixed(2)); // 라벨이 실제로 그 크기로 그린다
+        const custEl = textElement(label.svg, (t) => t.includes(`>${text}<`));
+        expect(inkRightEdgeMm(label.svg, custEl)).toBeLessThanOrEqual(QUIET_ZONE_START);
+      }
+    });
+  });
+
+  describe('공백 없는 긴 한글도 이웃 칸을 넘지 않는다(실제 렌더) — 폭 모델이 과소추정하면 넘친다', () => {
+    const noSpaces = '가나다라마바사아자차카타파하'.repeat(10);
+    const s = renderHanjinNsLabel({ ...DATA, deliveryMessage: noSpaces, commodityName: noSpaces });
+    /** 그룹 안에서 x 좌표가 `x` 인, 말줄임으로 잘린 <text> 요소. */
+    const fittedAt = (group: string, x: string): string =>
+      textElement(block(s.svg, group), (t) => t.startsWith(`<text x="${x}" `) && t.includes('…'));
+
+    it('좌측 ⑭(x=2) 는 ⑮ 상자(x=70, 선 두께 0.4) 앞에서 끝난다', () => {
+      expect(inkRightEdgeMm(s.svg, fittedAt('left', '2'))).toBeLessThanOrEqual(69.5);
+    });
+    it('품명(x=1.5) 은 구분선 끝(x=96) 앞에서 끝난다', () => {
+      expect(inkRightEdgeMm(s.svg, fittedAt('left', '1.5'))).toBeLessThanOrEqual(96);
+    });
+    it('배달표 ⑭(x=R+6) 는 라벨 오른쪽 끝(x=200) 앞에서 끝난다', () => {
+      expect(inkRightEdgeMm(s.svg, fittedAt('delivery-slip', '106'))).toBeLessThanOrEqual(199);
+    });
   });
 
   it('배송메시지에 섞인 XML 금지 제어문자는 SVG 에 남기지 않는다 (resvg 파싱 실패 방지)', () => {

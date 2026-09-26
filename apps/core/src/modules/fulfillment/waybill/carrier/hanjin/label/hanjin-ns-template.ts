@@ -1,4 +1,4 @@
-import type { BarcodePlacement, LabelSpec } from '../../../label/label-model';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
 import { escapeXml, fitSizePt, fitText, PT_TO_MM } from '../../../label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
@@ -17,6 +17,23 @@ import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 const WIDTH_MM = 200;
 const HEIGHT_MM = 102;
 const R = 100; // 우측 절반 원점
+
+/**
+ * 배달표 ITF(운송장번호) — 한진 분류 스캐너가 읽는 주 바코드. 모듈 3 dot(0.375mm) × 10 = 3.75mm 의
+ * quiet zone 이 바코드 앞에 비어 있어야 한다. 폭 ~39.3mm(12자리, wideRatio 2.5)라 R+89.3 에서 끝난다.
+ */
+const ITF_MODULE_DOTS = 3;
+export const ITF_X_MM = R + 50;
+export const ITF_QUIET_ZONE_MM = (10 * ITF_MODULE_DOTS) / DOTS_PER_MM;
+
+/**
+ * 출고번호 칸 — 왼쪽 끝은 포털 샘플 실측, 오른쪽 끝은 ITF quiet zone 앞에서 멈춘다(#913). 옛 칸(42mm)은
+ * R+48.7 에서 끝나 quiet zone 을 1.3mm 만 남겼고, 좁게 재던 폭 모델 탓에 실제 잉크는 ITF 안까지 들어갔다.
+ * 식별자라 자르지 않는다 — 최소 4pt 까지 줄인다.
+ */
+export const CUST_ORD_NO_X_MM = R + 6.7;
+export const CUST_ORD_NO_MAX_WIDTH_MM = ITF_X_MM - ITF_QUIET_ZONE_MM - CUST_ORD_NO_X_MM;
+export const CUST_ORD_NO_MIN_PT = 4;
 
 interface TextEl {
   x: number;
@@ -54,6 +71,11 @@ function koreanDate(ymd: string): string {
 function shrinkThenFit(t: string, maxWidthMm: number, basePt: number): { pt: number; text: string } {
   const pt = fitSizePt(t, maxWidthMm, basePt, 7);
   return { pt, text: fitText(t, maxWidthMm, pt) };
+}
+
+/** 출고번호 줄(`출고번호: AY…`)이 ITF quiet zone 앞에 들어가는 가장 큰 크기(pt). */
+export function custOrdNoPt(custText: string): number {
+  return fitSizePt(custText, CUST_ORD_NO_MAX_WIDTH_MM, 10, CUST_ORD_NO_MIN_PT);
 }
 
 export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
@@ -108,7 +130,7 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: R + 6, y: 54.3, pt: 10, text: koreanDate(d.printedDate) }),
     text({ x: R + 6, y: 59.1, pt: 10, text: `수량: ${d.boxCount}` }),
     text({ x: R + 26, y: 59.1, pt: 10, text: `운임Type:${d.boxType}` }),
-    text({ x: R + 6.7, y: 63.4, pt: fitSizePt(custText, 42, 10, 5), text: custText }),
+    text({ x: CUST_ORD_NO_X_MM, y: 63.4, pt: custOrdNoPt(custText), text: custText }),
     text({ x: R + 69.65, y: 66.7, pt: 9, anchor: 'middle', text: d.trackingNoDisplay }), // ⑨ ITF 아래(중앙)
     text({ x: R + 69.8, y: 71.5, pt: 9, text: `발지: ${s.originTerminalCode}` }), // ⑦
     text({ x: R + 86.7, y: 71.5, pt: 9, text: s.originTerminalName }), // ⑧
@@ -125,10 +147,16 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     ...(s.terminalCode
       ? [{ kind: 'CODE128' as const, data: s.terminalCode, xMm: 4.4, yMm: 18.3, heightMm: 8, moduleDots: 2 }] // ③
       : []),
-    // xMm 는 quiet zone(≥10×module = 3.75mm) 확보를 위해 R+50 에서 시작한다 — 출고번호 텍스트가 5pt 까지
-    // 줄어들어도 끝이 R+49.1 근처까지 와 3.15mm 로 좁혀졌었다(#913 최종리뷰). 폭 ~39.3mm(moduleDots 3,
-    // wideRatio 2.5, 12자리) 이므로 R+89.3 에서 끝나 라벨(200mm) 안에 들어간다.
-    { kind: 'ITF', data: d.trackingNo, xMm: R + 50, yMm: 43.8, heightMm: 20, moduleDots: 3, wideRatio: 2.5 },
+    // quiet zone 은 출고번호 칸 폭(CUST_ORD_NO_MAX_WIDTH_MM)이 같은 상수로 지킨다.
+    {
+      kind: 'ITF',
+      data: d.trackingNo,
+      xMm: ITF_X_MM,
+      yMm: 43.8,
+      heightMm: 20,
+      moduleDots: ITF_MODULE_DOTS,
+      wideRatio: 2.5,
+    },
   ];
 
   const svg = [
