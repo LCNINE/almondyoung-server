@@ -35,8 +35,8 @@ core 가 **한진 자체출력 운송장 한 장을 창고 라벨 프린터가 �
 
 ```
 GET shipments/:shipmentId/waybill/label           (WAREHOUSE_OPERATE)
-  → WaybillController.label
-  → WaybillService.renderLabel(shipmentId)        2~3줄, 흐름만
+  → WaybillLabelController.label                  기존 WaybillController 와 별도 컨트롤러
+  → WaybillLabelService.renderLabel(shipmentId)   2~3줄, 흐름만
   → WaybillLabelManager.render(shipmentId, tx?)
       1. WaybillManager.assertDispatchable(shipmentId, trx)      가드 재사용 (§5)
       2. 라벨 전용 가드 (source·carrier·labelData)                (§5)
@@ -168,7 +168,9 @@ interface BarcodePlacement {
 - RGBA → 1비트: 알파 합성 후 휘도 < 50% 를 검정으로.
 - 폰트 경로: `<cwd>/dist/apps/core/assets/fonts` → 없으면 `<cwd>/apps/core/assets/fonts`. 둘 다 없으면
   **라벨 요청만** `Error`(500) — 메시지에 찾아본 경로를 적는다. **부팅은 막지 않는다**(라벨 기능 하나로
-  core 전체를 죽이지 않는다). resvg 인스턴스와 폰트 버퍼는 첫 사용 때 한 번 읽어 재사용한다.
+  core 전체를 죽이지 않는다). **구현은 폰트 파일 경로만** 첫 사용 때 한 번 찾아 캐시한다 — resvg-js
+  2.6.2 는 `fontFiles`(경로 배열)를 렌더 호출마다 받는 API 라 인스턴스 자체를 재사용할 수단이 없다.
+  렌더 한 번은 실측 ≈40ms 로 이 캐싱 없이도 충분히 빠르다.
 
 ### 4.5 `label/zpl-encoder.ts` — `encodeZpl`
 
@@ -190,7 +192,7 @@ interface BarcodePlacement {
 
 ### 4.6 `WaybillLabelManager` 와 배선
 
-- `waybill/waybill-label.manager.ts`. 검증·조립은 여기, `WaybillService.renderLabel` 은 위임만.
+- `waybill/waybill-label.manager.ts`. 검증·조립은 여기, `WaybillLabelService.renderLabel` 은 위임만.
 - `WaybillManager.assertDispatchable` · `WaybillReader.loadIssueContext` · `HANJIN_CONFIG` · `SvgRasterizer`
   주입. 트랜잭션은 `dbService.run(fn, tx)` (ADR-0025).
 - `now` 는 주입 가능한 시계로 받는다(테스트에서 고정).
