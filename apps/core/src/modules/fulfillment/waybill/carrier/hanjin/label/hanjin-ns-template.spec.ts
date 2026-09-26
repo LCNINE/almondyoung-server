@@ -87,6 +87,41 @@ describe('renderHanjinNsLabel', () => {
     });
   });
 
+  describe('개인정보 — 좌측 블록(양면 공용)에는 어느 개인정보도 없다', () => {
+    const left = block(spec.svg, 'left');
+    it('받는분 성명·연락처·상세주소·기본주소가 없다', () => {
+      expect(left).not.toContain('김한진');
+      expect(left).not.toContain('010-1234-5678');
+      expect(left).not.toContain('한진빌딩 10층');
+      expect(left).not.toContain('서울특별시 중구 남대문로 63');
+    });
+    it('보낸분 성명·연락처·기본주소가 없다', () => {
+      expect(left).not.toContain('아몬드영');
+      expect(left).not.toContain('032-000-1234');
+      expect(left).not.toContain('신흥로');
+    });
+  });
+
+  describe('실제 배달표 주소는 동·호수까지 전체가 찍힌다 (#913 최종리뷰 — fitText 단독으로는 잘렸다)', () => {
+    const cases: Array<[string, string, string]> = [
+      ['경기도 부천시 원미구 길주로 17', '현대아파트 101동 1203호', '101동 1203호'],
+      ['부산광역시 해운대구 우동 1411', '센텀아파트 101동 1001호', '101동 1001호'],
+      ['경기도 성남시 분당구 판교역로 235', '에이치스퀘어 N동 8층 801호', 'N동 8층 801호'],
+    ];
+    it.each(cases)('%s %s → 배달표에 "%s" 까지 전체가 찍힌다', (baseAddress, detailAddress, tail) => {
+      const s = renderHanjinNsLabel({ ...DATA, recipient: { ...DATA.recipient, baseAddress, detailAddress } });
+      const slip = block(s.svg, 'delivery-slip');
+      expect(slip).toContain(tail);
+    });
+  });
+
+  it('긴 ⑭ 도 배달표에서는 공동현관 비밀번호까지 전체가 찍힌다(먼저 크기를 줄이고, 그래도 넘치면 자른다)', () => {
+    const longMessage = '부재 시 경비실에 맡겨 주세요. 파손 주의 부탁드립니다 (공동현관 #1234)';
+    const s = renderHanjinNsLabel({ ...DATA, deliveryMessage: longMessage });
+    const slip = block(s.svg, 'delivery-slip');
+    expect(slip).toContain('공동현관 #1234');
+  });
+
   it('라벨 어디에도 받는분 실명·전체 전화번호가 없다', () => {
     expect(spec.svg).not.toContain('김한진');
     expect(spec.svg).not.toContain('010-1234-5678');

@@ -46,10 +46,25 @@ function koreanDate(ymd: string): string {
   return `${y}년 ${m}월 ${d}일`;
 }
 
+/**
+ * 배달표 받는분 전체주소·⑭ 처럼 «잘리면 곤란한» 긴 필드용: 말줄임 전에 먼저 글자 크기를 줄인다
+ * (최소 7pt). 그래도 안 들어가면 그 크기에서 말줄임으로 자른다(#913 최종리뷰) — 실측 주소
+ * (「…현대아파트 101동 1203호」류)와 ⑭ 끝의 「(공동현관 #…)」가 fitText 단독으로는 잘려 나갔다.
+ */
+function shrinkThenFit(t: string, maxWidthMm: number, basePt: number): { pt: number; text: string } {
+  const pt = fitSizePt(t, maxWidthMm, basePt, 7);
+  return { pt, text: fitText(t, maxWidthMm, pt) };
+}
+
 export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
   const s = d.sort;
   const rc = d.recipient;
   const sd = d.sender;
+
+  // 자르면 곤란한 필드 — 말줄임 전에 먼저 줄인다(위 shrinkThenFit 주석 참고).
+  const leftDeliveryMessage = shrinkThenFit(d.deliveryMessage, 66, 9); // ⑭ 좌측
+  const slipDeliveryMessage = shrinkThenFit(d.deliveryMessage, 90, 9); // ⑭ 배달표
+  const slipRecipientAddress = shrinkThenFit(`${rc.baseAddress} ${rc.detailAddress}`, 87, 10); // 배달표 받는분 주소(원본)
 
   // ── 좌측: 분류 + 품명 + 배송요구사항 + 권역 ─────────────────────────────
   const left = [
@@ -65,7 +80,7 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: 77, y: 25.5, pt: 20, bold: true, text: s.courierName }), // ⑪
     text({ x: 1.5, y: 32.3, pt: 10, text: fitText(d.commodityName, 93, 10) }), // 품명
     hline(1, 96, 33.5),
-    text({ x: 2, y: 89.3, pt: 9, text: fitText(d.deliveryMessage, 66, 9) }), // ⑭
+    text({ x: 2, y: 89.3, pt: leftDeliveryMessage.pt, text: leftDeliveryMessage.text }), // ⑭
     rect(70, 90.7, 27.3, 8), // ⑮ 상자
     text({ x: 83.6, y: 96.9, pt: 16, bold: true, anchor: 'middle', text: d.regionText }), // ⑮
   ];
@@ -94,13 +109,13 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: R + 6, y: 59.1, pt: 10, text: `수량: ${d.boxCount}` }),
     text({ x: R + 26, y: 59.1, pt: 10, text: `운임Type:${d.boxType}` }),
     text({ x: R + 6.7, y: 63.4, pt: fitSizePt(custText, 42, 10, 5), text: custText }),
-    text({ x: R + 68.8, y: 66.7, pt: 9, anchor: 'middle', text: d.trackingNoDisplay }), // ⑨ ITF 아래
+    text({ x: R + 69.65, y: 66.7, pt: 9, anchor: 'middle', text: d.trackingNoDisplay }), // ⑨ ITF 아래(중앙)
     text({ x: R + 69.8, y: 71.5, pt: 9, text: `발지: ${s.originTerminalCode}` }), // ⑦
     text({ x: R + 86.7, y: 71.5, pt: 9, text: s.originTerminalName }), // ⑧
-    text({ x: R + 6, y: 75.6, pt: 9, text: fitText(d.deliveryMessage, 90, 9) }), // ⑭
+    text({ x: R + 6, y: 75.6, pt: slipDeliveryMessage.pt, text: slipDeliveryMessage.text }), // ⑭
     text({ x: R + 8.7, y: 79.5, pt: 10, text: maskName(rc.name) }),
     text({ x: R + 96, y: 79.5, pt: 10, anchor: 'end', text: maskPhone(rc.phone) }),
-    text({ x: R + 8.7, y: 84, pt: 10, text: fitText(`${rc.baseAddress} ${rc.detailAddress}`, 87, 10) }),
+    text({ x: R + 8.7, y: 84, pt: slipRecipientAddress.pt, text: slipRecipientAddress.text }),
     text({ x: R + 8.7, y: 94.8, pt: 19, bold: true, text: fitText(s.addressSummary, 87, 19) }), // ⑫
     text({ x: R + 8.7, y: 100.3, pt: 9, text: sd.name }),
     text({ x: R + 96, y: 100.3, pt: 9, anchor: 'end', text: sd.phone }),
@@ -110,7 +125,10 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     ...(s.terminalCode
       ? [{ kind: 'CODE128' as const, data: s.terminalCode, xMm: 4.4, yMm: 18.3, heightMm: 8, moduleDots: 2 }] // ③
       : []),
-    { kind: 'ITF', data: d.trackingNo, xMm: R + 49.1, yMm: 43.8, heightMm: 20, moduleDots: 3, wideRatio: 2.5 },
+    // xMm 는 quiet zone(≥10×module = 3.75mm) 확보를 위해 R+50 에서 시작한다 — 출고번호 텍스트가 5pt 까지
+    // 줄어들어도 끝이 R+49.1 근처까지 와 3.15mm 로 좁혀졌었다(#913 최종리뷰). 폭 ~39.3mm(moduleDots 3,
+    // wideRatio 2.5, 12자리) 이므로 R+89.3 에서 끝나 라벨(200mm) 안에 들어간다.
+    { kind: 'ITF', data: d.trackingNo, xMm: R + 50, yMm: 43.8, heightMm: 20, moduleDots: 3, wideRatio: 2.5 },
   ];
 
   const svg = [
