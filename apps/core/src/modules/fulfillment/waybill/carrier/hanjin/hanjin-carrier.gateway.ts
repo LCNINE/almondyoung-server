@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   AllocateResult,
   CarrierCapabilities,
@@ -53,20 +54,63 @@ interface InsertOrderResponse {
   resultMessage?: string;
 }
 
+// tracking-wbl 작업상태코드 (정본 §4.4). 공식 목록은 이 12개가 전부다 — 여기 없는 코드는 `unknown` 으로
+// 떨어뜨리고 경고를 남긴다(한진이 코드를 늘릴 수 있다). `65` 같은 비공식 코드를 추측으로 넣지 말 것.
 const STATUS_MAP: Record<string, CarrierScanStatus> = {
-  '01': 'pending',
-  '05': 'pending',
-  '07': 'in_transit',
-  '08': 'in_transit',
-  '11': 'in_transit',
-  '14': 'in_transit',
-  '31': 'in_transit',
-  '32': 'in_transit',
-  '63': 'in_transit',
-  '65': 'delivered',
-  '66': 'delivered',
-  '92': 'failed',
-  '03': 'canceled',
+  '01': 'pending', // 예약등록
+  '03': 'canceled', // 예약취소
+  '05': 'pending', // 운송장출력
+  '07': 'in_transit', // 집하출발
+  '08': 'pickup_missed', // 미집하 — 진행 중이 아니라 예외 상태
+  '11': 'in_transit', // 집하완료
+  '14': 'in_transit', // 입고
+  '31': 'in_transit', // 상품출발
+  '32': 'in_transit', // 상품도착
+  '63': 'in_transit', // 배송출발
+  '66': 'delivered', // 배송완료
+  '92': 'failed', // 배송불가
+};
+
+// 작업상태별 사유코드 해석 (정본 §4.4). 같은 코드라도 작업상태마다 뜻이 다르다 — 66 은 사유가 아니라
+// 인수 관계다. ⚠️ 이 코드가 응답의 `reasonCode` 필드로 온다는 것은 정본에 없는 추정이다(첫 실스캔 전까지
+// 실측 불가 — DEV 는 집하 전 ERROR-01 만 준다). 그래서 표에 없으면 한진 원문 `reasonMessage` 로 폴백한다.
+const REASON_LABELS: Record<string, Record<string, string>> = {
+  '03': {
+    '01': '송하인부재',
+    '02': '화물미준비 및 재고부족',
+    '03': '취급불가 화물',
+    '04': '송하인 발송취소',
+    '05': '고객분실',
+    '06': '기 집하',
+    '07': '고객 파손',
+    '08': '타인 양도',
+    '09': '반품지시 부정확',
+    '10': '주소 불명',
+    '11': '고객 이사 및 퇴사',
+    '12': '타 운송자 집하',
+    '18': '기업체휴무',
+    '99': '기타',
+  },
+  '92': {
+    '01': '수취거부',
+    '02': '수하인 이사',
+    '04': '악천후',
+    '05': '수하인 주소 부정확',
+    '06': '고객부재',
+    '07': '관세지불 거절',
+    '08': '송하인 요청',
+    '17': '기업체 휴무',
+    '99': '기타',
+  },
+  '66': {
+    '01': '본인',
+    '02': '가족',
+    '03': '직장동료',
+    '04': '이웃',
+    '05': '경비실',
+    '06': '문앞',
+    '99': '기타',
+  },
 };
 
 // tracking-wbl 응답(camelCase)
@@ -84,6 +128,7 @@ interface TrackingWblResponse {
 }
 
 export class HanjinCarrierGateway extends CarrierGateway {
+  private readonly logger = new Logger(HanjinCarrierGateway.name);
   override readonly carrier: CarrierCode = 'HANJIN';
   override readonly capabilities: CarrierCapabilities = Object.freeze({
     allocatesExternally: true,
@@ -176,15 +221,30 @@ export class HanjinCarrierGateway extends CarrierGateway {
     });
     if (res?.resultCode === 'ERROR-01') return [];
     const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
-    return list.map((w) => ({
-      statusCode: String(w.statusCode ?? ''),
-      status: STATUS_MAP[String(w.statusCode)] ?? 'pending',
-      occurredAt: new Date(String(w.statusDate ?? '').replace(' ', 'T') + '+09:00'),
-      location: w.agencyName || undefined,
-      description: w.description || undefined,
-      reasonCode: w.reasonCode || undefined,
-      reasonMessage: w.reasonMessage || undefined,
-    }));
+    return list.map((w) => {
+      const statusCode = String(w.statusCode ?? '');
+      const reasonCode = w.reasonCode || undefined;
+      const reasonMessage = w.reasonMessage || undefined;
+      return {
+        statusCode,
+        status: this.scanStatus(waybillNo, statusCode),
+        occurredAt: new Date(String(w.statusDate ?? '').replace(' ', 'T') + '+09:00'),
+        location: w.agencyName || undefined,
+        description: w.description || undefined,
+        reasonCode,
+        reasonMessage,
+        reasonLabel: (reasonCode && REASON_LABELS[statusCode]?.[reasonCode]) || reasonMessage,
+      };
+    });
+  }
+
+  private scanStatus(waybillNo: string, statusCode: string): CarrierScanStatus {
+    const status = STATUS_MAP[statusCode];
+    if (status) return status;
+    this.logger.warn(
+      `한진 tracking-wbl 에 알 수 없는 작업상태코드 ${JSON.stringify(statusCode)} (운송장 ${waybillNo})`,
+    );
+    return 'unknown';
   }
 
   private kstDate(d: Date): string {
