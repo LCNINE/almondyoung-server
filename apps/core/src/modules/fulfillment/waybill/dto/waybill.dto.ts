@@ -114,3 +114,17 @@ export class BatchResultItemDto {
 }
 
 export type WaybillActor = { id: string; roles: string[] };
+
+export class WaybillLabelResponseDto {
+  @ApiProperty()
+  waybillId: string;
+
+  @ApiProperty()
+  trackingNo: string;
+
+  @ApiProperty({ enum: ['zpl'] })
+  format: 'zpl';
+
+  @ApiProperty({ description: '프린터에 그대로 보낼 ZPL (ASCII)' })
+  data: string;
+}
