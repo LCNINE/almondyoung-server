@@ -2,7 +2,9 @@
 
 export const PT_TO_MM = 0.3528;
 
-// 전각(한글 음절·자모, CJK, 전각 기호)은 1em, 나머지는 0.6em. 나눔고딕 라틴 평균보다 약간 넉넉하게 잡았다.
+// 전각(한글 음절·자모, CJK, 전각 기호)은 0.9em, 나머지는 0.6em. 나눔고딕 실측(10pt 기준 한글 음절 폭)은
+// 평균 약 0.88em 이라 1em 은 12% 과대추정이었다(#913 최종리뷰 — 배달표 주소·⑭ 가 실제 칸보다 먼저 잘렸다).
+// 0.9 로 보정하되 여전히 살짝 넉넉하게 잡는다.
 // eslint-disable-next-line no-irregular-whitespace -- U+3000(전각 공백)은 CJK 기호 범위의 실제 시작점이지, 실수로 들어간 공백이 아니다.
 const WIDE = /[ᄀ-ᇿ　-鿿가-힣＀-￯]/;
 
@@ -23,7 +25,7 @@ export function escapeXml(s: string): string {
 }
 
 export function textWidthMm(text: string, sizePt: number): number {
-  const em = Array.from(text).reduce((sum, ch) => sum + (WIDE.test(ch) ? 1 : 0.6), 0);
+  const em = Array.from(text).reduce((sum, ch) => sum + (WIDE.test(ch) ? 0.9 : 0.6), 0);
   return em * sizePt * PT_TO_MM;
 }
 

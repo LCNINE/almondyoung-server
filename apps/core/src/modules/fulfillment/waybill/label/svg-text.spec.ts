@@ -15,8 +15,8 @@ describe('escapeXml', () => {
 });
 
 describe('textWidthMm', () => {
-  it('한글은 1em, 그 외는 0.6em 으로 근사한다 (10pt = 3.528mm)', () => {
-    expect(textWidthMm('한', 10)).toBeCloseTo(3.528, 3);
+  it('한글은 0.9em, 그 외는 0.6em 으로 근사한다 (10pt → 한글 3.1752mm, 그 외 2.1168mm) — 나눔고딕 실측 ~0.88em 보정', () => {
+    expect(textWidthMm('한', 10)).toBeCloseTo(3.528 * 0.9, 3);
     expect(textWidthMm('a', 10)).toBeCloseTo(3.528 * 0.6, 3);
   });
 });
