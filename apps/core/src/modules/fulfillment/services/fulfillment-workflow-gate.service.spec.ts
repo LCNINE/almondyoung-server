@@ -33,6 +33,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldEnqueueFo(cutoverAt, true)).toBe(false);
     expect(gate.shouldRunFoCreation()).toBe(false);
     expect(gate.shouldRunReservationRetry()).toBe(false);
+    expect(gate.shouldRunCarrierTrackingPoll()).toBe(false);
     expect(gate.shouldRunInvoiceRecovery()).toBe(false);
     expect(gate.shouldDispatchFulfillmentEvents()).toBe(false);
 
@@ -58,6 +59,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldEnqueueFo('2026-07-14T03:00:00.001Z', true)).toBe(true);
     expect(gate.shouldEnqueueFo('2026-07-14T03:00:00.001Z', false)).toBe(false);
     expect(gate.shouldRunInvoiceRecovery()).toBe(true);
+    expect(gate.shouldRunCarrierTrackingPoll()).toBe(true);
   });
 
   // V1 전용 assertMutationAllowed(410) 는 V1 출고 경로와 함께 제거됐다 — v2 에서 남는 게이트 표면은

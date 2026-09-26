@@ -29,6 +29,7 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
     WaybillManager,
     WaybillService,
   ],
-  exports: [WaybillService],
+  // CarrierGatewayRegistry: 배송추적 폴러(FulfillmentModule)가 캐리어 추적을 부른다(#917).
+  exports: [WaybillService, CarrierGatewayRegistry],
 })
 export class WaybillModule {}
