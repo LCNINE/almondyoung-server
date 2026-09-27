@@ -128,6 +128,10 @@ export function BatchLabelPrintButton({
       // 한 장도 안 나왔으면 기록하지 않는다 — 다음 확인창이 「이미 인쇄」라고 거짓말하게 된다.
       if (result.printed.length > 0) writeBatchPrintedAt(prefs, batchId, now().toISOString());
       setPhase({ kind: 'done', result });
+    } catch (error) {
+      // 여기서 새면 phase 가 running 에 남아 화면 이동이 영영 막힌다.
+      setPhase({ kind: 'idle' });
+      setNotice(errorMessage(error));
     } finally {
       busy.current = false;
       onRunningChange?.(false);

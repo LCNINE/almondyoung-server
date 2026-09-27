@@ -57,6 +57,7 @@ const CONFLICT_MESSAGES: Record<string, string> = {
 const OTHER_CONFLICT = '송장 상태가 바뀌었어요. 관리자에게 문의해 주세요.';
 const NOT_FOUND = '출고 정보를 찾을 수 없어요.';
 const SERVER_FAILURE = '라벨을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.';
+const NETWORK_FAILURE = '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.';
 
 /** 서버가 200 에 빈 data 를 준 경우. print_raw 의 «nothing to print» 가 프린터 오류로 오인되지 않게 먼저 거른다. */
 export class EmptyLabelError extends Error {
@@ -83,6 +84,9 @@ export function labelErrorMessage(error: unknown): string {
     return (code && CONFLICT_MESSAGES[code]) || OTHER_CONFLICT;
   }
   const status = statusOf(error);
+  // 상태 코드가 없으면 응답을 못 받은 것이다 — httpClient 의 15초 타임아웃(abort)·연결 실패.
+  // 「알 수 없는 오류」로 두면 배치 전체가 그 문구로 채워져 현장이 원인을 못 짚는다.
+  if (status === undefined) return NETWORK_FAILURE;
   if (status === 404) return NOT_FOUND;
   if (status !== undefined && status >= 500) return SERVER_FAILURE;
   return errorMessage(error);

@@ -88,6 +88,10 @@ describe('409 접두어와 현장 문구', () => {
     [new EmptyLabelError('empty'), '라벨을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.'],
     [new PrinterError('OpenPrinterW failed'), '프린터로 보내지 못했어요. 전원·연결과 설정의 프린터 이름을 확인해 주세요.'],
     [new Error('GET /x → 401'), '권한이 없어요. 다시 로그인해 주세요.'],
+    [new ApiError('GET /x → 403', 403, 'FORBIDDEN'), '권한이 없어요. 다시 로그인해 주세요.'],
+    // httpClient 의 15초 타임아웃(abort)·연결 실패는 상태 코드가 없다.
+    [new DOMException('The operation was aborted.', 'AbortError'), '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.'],
+    [new TypeError('Failed to fetch'), '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.'],
   ])('%s → 문구', (error, expected) => {
     expect(labelErrorMessage(error)).toBe(expected);
   });

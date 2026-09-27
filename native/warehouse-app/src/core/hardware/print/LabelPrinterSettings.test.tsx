@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryPrefs } from '../../data/devicePrefs';
 import { LABEL_PRINTER_KEY, PrinterError } from './labelPrinter';
@@ -53,5 +53,21 @@ describe('LabelPrinterSettings', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('프린터로 보내지 못했어요');
     expect(alert).toHaveTextContent('OpenPrinterW failed: 1801');
+  });
+
+  it('같은 틱에 두 번 눌러도 테스트 라벨은 한 장만 보낸다', async () => {
+    let release: () => void = () => {};
+    const print = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
+    const prefs = createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://XP' });
+    render(<LabelPrinterSettings prefs={prefs} print={print} />);
+    const button = screen.getByRole('button', { name: '테스트 인쇄' });
+    // 한 act 안에서 연달아 누르면 busy state 가 반영되기 전이라 disabled 로는 못 막는다.
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    release();
+    expect(await screen.findByRole('status')).toHaveTextContent('테스트 라벨을 보냈어요');
+    expect(print).toHaveBeenCalledTimes(1);
   });
 });

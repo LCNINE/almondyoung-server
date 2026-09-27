@@ -30,6 +30,7 @@ function mount(opts: {
   label?: (shipmentId: string) => Promise<unknown>;
   print?: (target: string, text: string) => Promise<void>;
   prefs?: DevicePrefs;
+  onRunningChange?: (running: boolean) => void;
 }) {
   const paths: string[] = [];
   const client: ApiClient = {
@@ -58,7 +59,13 @@ function mount(opts: {
     </SessionProvider>
   );
   render(
-    <BatchLabelPrintButton batchId="b-1" prefs={prefs} print={print} now={() => NOW} />,
+    <BatchLabelPrintButton
+      batchId="b-1"
+      prefs={prefs}
+      print={print}
+      now={() => NOW}
+      onRunningChange={opts.onRunningChange}
+    />,
     { wrapper }
   );
   return { paths, print, prefs };
@@ -193,6 +200,26 @@ describe('BatchLabelPrintButton', () => {
     expect(print.mock.calls).toEqual([['spooler://XP', '^XAa^XZ']]);
     expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
     expect(screen.getByRole('button', { name: '실패·미인쇄만 다시' })).toBeEnabled();
+  });
+
+  // 인쇄 중 예외가 새면 phase 가 running 에 남아 화면 이동이 영영 막힌다.
+  it('인쇄 도중 예상 못 한 예외가 나도 running 에 갇히지 않는다', async () => {
+    const base = createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://XP' });
+    const prefs: DevicePrefs = {
+      ...base,
+      set: (key, value) => {
+        if (key === BATCH_KEY) throw new Error('storage broke');
+        base.set(key, value);
+      },
+    };
+    const running: boolean[] = [];
+    mount({ workItems: items, prefs, onRunningChange: (r) => running.push(r) });
+    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('알 수 없는 오류가 발생했어요.');
+    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
+    expect(running).toEqual([true, false]);
   });
 
   it('인쇄할 박스가 없으면 확인창 없이 알린다', async () => {

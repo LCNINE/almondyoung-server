@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '../../design/Button';
 import { localStoragePrefs, type DevicePrefs } from '../../data/devicePrefs';
 import { renderTestLabel } from './zpl';
@@ -26,6 +26,8 @@ export function LabelPrinterSettings({
   const [name, setName] = useState(() => printerNameOf(readLabelPrinter(prefs) ?? ''));
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
+  // state 는 다음 렌더에야 보인다 — 같은 틱의 연타는 ref 로 막아야 테스트 라벨이 두 장 안 나온다.
+  const running = useRef(false);
 
   const save = (): string | null => {
     writeLabelPrinter(prefs, name);
@@ -35,12 +37,14 @@ export function LabelPrinterSettings({
   };
 
   const testPrint = async () => {
+    if (running.current) return;
     // 입력만 하고 저장을 안 누른 채 시험하는 게 자연스러워서, 시험 전에 저장한다.
     const target = save();
     if (!target) {
       setStatus({ kind: 'error', text: NO_PRINTER_MESSAGE });
       return;
     }
+    running.current = true;
     setBusy(true);
     try {
       await print(target, renderTestLabel({ title: 'ALMOND WMS', barcode: '8801234' }));
@@ -52,6 +56,7 @@ export function LabelPrinterSettings({
         detail: error instanceof PrinterError ? error.detail : String(error),
       });
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
