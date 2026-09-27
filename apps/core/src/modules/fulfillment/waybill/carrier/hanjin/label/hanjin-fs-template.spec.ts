@@ -1,4 +1,5 @@
 import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
+import { textWidthMm } from '../../../label/svg-text';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import { renderHanjinFsLabel } from './hanjin-fs-template';
 
@@ -34,6 +35,28 @@ describe('renderHanjinFsLabel', () => {
     it('보낸분 성명·연락처는 원본, 주소는 마스킹', () => {
       expect(slip).toContain('아몬드영 / 032-000-1234 / 경기도 부천시 오정구 신흥로511번길 80 ****');
     });
+  });
+
+  it('받는분 성명이 길면 고정 x=35.1 의 연락처를 침범하기 전에 말줄임한다(#913 최종리뷰 F5)', () => {
+    const s = renderHanjinFsLabel({
+      ...DATA,
+      recipient: { ...DATA.recipient, name: '아몬드영뷰티 강남점 김한진' },
+    });
+    const el = /<text x="7.8" y="27.7"[^>]*>([^<]*)<\/text>/.exec(s.svg);
+    if (!el) throw new Error('recipient name text element not found');
+    expect(textWidthMm(el[1], 10)).toBeLessThanOrEqual(26.3);
+    expect(el[1].endsWith('…')).toBe(true);
+    // 기본 픽스처 출력은 그대로다.
+    expect(spec.svg).toContain('김*진');
+  });
+
+  it('보낸분 원본주소의 참고항목(동)은 마스킹 뒤에도 새지 않는다(#913 최종리뷰 F6)', () => {
+    const s = renderHanjinFsLabel({
+      ...DATA,
+      sender: { ...DATA.sender, baseAddress: '경기도 부천시 오정구 신흥로511번길 80 (오정동)' },
+    });
+    expect(s.svg).not.toContain('(오정동)');
+    expect(s.svg).toContain('신흥로511번길 80 ****');
   });
 
   describe('배달표 받는분 주소는 동·호수까지 전체가 찍힌다', () => {

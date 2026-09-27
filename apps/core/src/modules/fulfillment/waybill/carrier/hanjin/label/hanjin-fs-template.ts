@@ -68,7 +68,8 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec {
     rect(98.5, 17, 20.5, 6.4), // ⑮ 상자
     text({ x: 108.75, y: 22, pt: 11, bold: true, anchor: 'middle', text: d.regionText }), // ⑮
     // ── 받는분 ──
-    text({ x: RECIPIENT_X_MM, y: 27.7, pt: 10, text: maskName(rc.name) }),
+    // 성명(x 7.8)이 길면 고정 x=35.1 의 연락처를 침범한다(#913 최종리뷰 F5) — 연락처 앞에서 멈춘다.
+    text({ x: RECIPIENT_X_MM, y: 27.7, pt: 10, text: fitText(maskName(rc.name), 35.1 - RECIPIENT_X_MM - 1, 10) }),
     text({ x: 35.1, y: 27.7, pt: 10, text: maskPhone(rc.phone) }),
     text({ x: RECIPIENT_X_MM, y: 31.3, pt: address.pt, text: address.text }),
     text({
