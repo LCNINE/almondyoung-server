@@ -12,13 +12,16 @@ import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { Button } from '../../core/design/Button';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
+import { BatchLabelPrintButton } from './BatchLabelPrintButton';
 import { readLastBox, writeLastBox } from './lastBox';
 import { useOutboundBatches, useShipmentByWaybill } from './queries';
 
 function OutboundQueueContent({
   prefs = localStoragePrefs,
+  labelPrinting = false,
 }: {
   prefs?: DevicePrefs;
+  labelPrinting?: boolean;
 }) {
   const { warehouseId, isSet } = useWarehouse();
   const navigate = useNavigate();
@@ -163,6 +166,9 @@ function OutboundQueueContent({
               <p className="text-sm text-neutral-500">
                 {batch.totalItems}박스 · {batch.totalQty}개
               </p>
+              {labelPrinting && (
+                <BatchLabelPrintButton batchId={batch.id} prefs={prefs} />
+              )}
             </li>
           ))}
         </ul>

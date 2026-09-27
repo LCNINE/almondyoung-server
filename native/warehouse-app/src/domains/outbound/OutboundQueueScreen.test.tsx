@@ -94,7 +94,8 @@ function renderScreen(
     ],
     created: [],
   },
-  foundWarehouse = 'w-1'
+  foundWarehouse = 'w-1',
+  labelPrinting = false
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -171,7 +172,7 @@ function renderScreen(
         <ScanButton code="T-404" />
         <ScanButton code="T-NOWORKITEM" />
         <ScanButton code="T-SHIPPED" />
-        <OutboundQueueScreen prefs={prefs} />
+        <OutboundQueueScreen prefs={prefs} labelPrinting={labelPrinting} />
       </>
     ),
   });
@@ -407,6 +408,20 @@ describe('OutboundQueueScreen', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
     expect(requests.filter(({ method }) => method === 'POST')).toHaveLength(0);
+  });
+
+  it('labelPrinting 이면 배치 행마다 라벨 인쇄 버튼이 있다', async () => {
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests, undefined, undefined, 'w-1', true);
+    await screen.findByText('OB-1');
+    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeInTheDocument();
+  });
+
+  it('기본(핸드헬드)에서는 라벨 인쇄 버튼이 없다', async () => {
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests);
+    await screen.findByText('OB-1');
+    expect(screen.queryByRole('button', { name: '라벨 인쇄' })).toBeNull();
   });
 });
 
