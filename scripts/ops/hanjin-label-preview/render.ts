@@ -1,15 +1,19 @@
 /**
- * 한진 NS 라벨 미리보기(#913). 합성 데이터로 PNG 와 ZPL 을 만든다 — 포털 샘플
- * (https://developers.hanjin.com/files/ns_new.jpg)과 나란히 놓고 위치를 비교하는 용도.
- * 창고 프린터 실물 출력(스펙 §10-3)에는 같이 나오는 .zpl 을 쓴다.
+ * 한진 운송장 미리보기·현장 키트(#913). 합성 데이터로 NS·NL·FS 세 형의 PNG 와 ZPL 을 만든다.
+ * PNG 는 포털 샘플(https://developers.hanjin.com/printwbl 「운송장 출력 Sample」)과 나란히 놓고 위치를
+ * 비교하는 용도(템플릿 방향, 빨간 테두리 = 바코드 자리), ZPL 은 창고 프린터로 보내는 용도(프린터 방향).
+ * 창고에서 보내는 법은 같은 폴더 README.md.
  *
  *   npx tsx scripts/ops/hanjin-label-preview/render.ts <출력 디렉터리>
  */
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Resvg } from '@resvg/resvg-js';
-import { renderHanjinNsLabel } from '../../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-ns-template';
 import type { HanjinLabelData } from '../../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-label-data';
+import {
+  HANJIN_LABEL_TEMPLATES,
+  HANJIN_LABEL_TYPES,
+} from '../../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-label-templates';
 import {
   barcodeWidthMm,
   mmToDots,
@@ -72,28 +76,31 @@ const outDir = process.argv[2];
 if (!outDir) throw new Error('usage: npx tsx scripts/ops/hanjin-label-preview/render.ts <out-dir>');
 mkdirSync(outDir, { recursive: true });
 
-const spec = renderHanjinNsLabel(SAMPLE);
 const fontDir = resolveLabelFontDir();
-const png = new Resvg(withBarcodeOverlay(spec), {
-  background: 'white',
-  fitTo: { mode: 'width', value: mmToDots(spec.widthMm) },
-  font: {
-    loadSystemFonts: false,
-    fontFiles: LABEL_FONT_FILES.map((f) => join(fontDir, f)),
-    defaultFontFamily: 'NanumGothic',
-  },
-})
-  .render()
-  .asPng();
-writeFileSync(join(outDir, 'hanjin-ns-preview.png'), png);
+const rasterizer = new SvgRasterizer();
 
-const bitmap = new SvgRasterizer().rasterize(spec.svg, mmToDots(spec.widthMm));
-writeFileSync(
-  join(outDir, 'hanjin-ns-preview.zpl'),
-  encodeZpl(bitmap, spec.barcodes, { compress: false, rotation: spec.rotation }),
-);
-writeFileSync(
-  join(outDir, 'hanjin-ns-preview.compressed.zpl'),
-  encodeZpl(bitmap, spec.barcodes, { compress: true, rotation: spec.rotation }),
-);
-console.log(`wrote ${outDir}/hanjin-ns-preview.{png,zpl,compressed.zpl}`);
+for (const type of HANJIN_LABEL_TYPES) {
+  const spec = HANJIN_LABEL_TEMPLATES[type](SAMPLE);
+  const name = `hanjin-${type.toLowerCase()}-preview`;
+
+  const png = new Resvg(withBarcodeOverlay(spec), {
+    background: 'white',
+    fitTo: { mode: 'width', value: mmToDots(spec.widthMm) },
+    font: {
+      loadSystemFonts: false,
+      fontFiles: LABEL_FONT_FILES.map((f) => join(fontDir, f)),
+      defaultFontFamily: 'NanumGothic',
+    },
+  })
+    .render()
+    .asPng();
+  writeFileSync(join(outDir, `${name}.png`), png);
+
+  const bitmap = rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm));
+  const zpl = (compress: boolean) => encodeZpl(bitmap, spec.barcodes, { compress, rotation: spec.rotation });
+  writeFileSync(join(outDir, `${name}.zpl`), zpl(false));
+  writeFileSync(join(outDir, `${name}.compressed.zpl`), zpl(true));
+  console.log(
+    `wrote ${outDir}/${name}.{png,zpl,compressed.zpl}  (${spec.widthMm}×${spec.heightMm}mm, rotation ${spec.rotation})`,
+  );
+}
