@@ -139,7 +139,7 @@ core·Rust 변경은 없다. 창고 PC 에 새 빌드를 까는 것은 이 한 �
 | `ReprintLabelButton` | 컴포넌트 | 성공 한 줄, 409 문구 |
 | 화면 배선 | 컴포넌트 | 핸드헬드에선 버튼·설정 절이 없다 |
 
-`invoke` 는 기존 테스트처럼 `@tauri-apps/api/core` 를 모킹한다. 판정 기준: `npm test`(vitest) 전부 통과 ·
+`invoke` 는 `vi.mock('@tauri-apps/api/core', …)` 로 모킹한다 — 앱에 `invoke` 모킹 선례는 없고, `router.test.tsx` 의 `@tauri-apps/plugin-os` 모킹을 본뜬다. 컴포넌트 테스트는 `printRaw` 를 직접 쓰지 않고 props 로 주입받아 모킹 범위를 `labelPrinter.ts` 단위 테스트 하나로 가둔다. 판정 기준: `npm test`(vitest) 전부 통과 ·
 `npx tsc -b` 0 · `npm run lint` 0 (`native/warehouse-app` 에서). 루트 게이트는 이 앱을 보지 않는다.
 
 ## 7. 합격 기준
