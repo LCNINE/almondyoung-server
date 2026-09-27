@@ -22,7 +22,8 @@ const R = 100; // 우측 절반 원점
 
 /**
  * 배달표 ITF(운송장번호) — 한진 분류 스캐너가 읽는 주 바코드. 모듈 3 dot(0.375mm) × 10 = 3.75mm 의
- * quiet zone 이 바코드 앞에 비어 있어야 한다. 폭 ~39.3mm(12자리, wideRatio 2.5)라 R+89.3 에서 끝난다.
+ * quiet zone 이 바코드 앞에 비어 있어야 한다. 폭 40.75mm(12자리, wideRatio 2.5, 넓은 막대는 8dot 로
+ * 올림)라 R+90.75 에서 끝나고, 뒤쪽 quiet zone 까지 keep-out 은 R+94.5 에서 끝난다.
  */
 const ITF_MODULE_DOTS = 3;
 export const ITF_X_MM = R + 50;

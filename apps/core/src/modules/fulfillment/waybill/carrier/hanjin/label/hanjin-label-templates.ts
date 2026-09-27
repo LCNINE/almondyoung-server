@@ -18,7 +18,7 @@ export const HANJIN_LABEL_TEMPLATES: Readonly<Record<HanjinLabelType, (d: Hanjin
 };
 
 function isHanjinLabelType(v: string): v is HanjinLabelType {
-  return (HANJIN_LABEL_TYPES as readonly string[]).includes(v);
+  return HANJIN_LABEL_TYPES.some((t) => t === v);
 }
 
 /**
