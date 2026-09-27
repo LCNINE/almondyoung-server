@@ -23,7 +23,8 @@ const WIDTH_MM = 100;
 const HEIGHT_MM = 102;
 
 const ITF_MODULE_DOTS = 3;
-export const NL_ITF_X_MM = 56;
+/** ITF 금지 구역(40.75 + 양쪽 3.75mm)이 라벨 끝(100mm)에 닿지 않게 — 55.5 + 40.75 + 3.75 = 100. */
+export const NL_ITF_X_MM = 55.5;
 export const NL_ITF_QUIET_ZONE_MM = (10 * ITF_MODULE_DOTS) / DOTS_PER_MM;
 
 /** 출고번호 줄은 ITF 와 같은 높이라 quiet zone 앞에서 멈춘다. 식별자라 자르지 않고 최소 4pt 까지 줄인다. */

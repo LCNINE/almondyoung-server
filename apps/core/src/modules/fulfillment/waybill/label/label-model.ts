@@ -55,14 +55,16 @@ export interface LabelSpec {
  * 바코드 인쇄 폭(mm) «상한». quiet zone 판정과 미리보기 테두리에 쓴다 — ZPL 은 프린터가 `^B2`/`^BC` 로
  * 직접 그리므로 출력에는 영향이 없다.
  *
- * ITF: start(좁은 4모듈) + 자릿수 × (좁은 3 + 넓은 2×비) + stop(비 + 2).
+ * ITF: start(좁은 4모듈) + 자릿수 × (좁은 3 + 넓은 2) + stop(넓은 1 + 좁은 2). 넓은 막대는 모듈 × 비를 dot 단위로 «올린» 값 — 프린터는 반 dot 를 못 찍는다(3dot × 2.5 = 7.5 → 8, zebrash 역렌더 실측 2026-09-28).
  * CODE128: subset B 기준 start·check 포함 (n + 2) 글자 × 11 + stop 13 모듈. 숫자 쌍을 subset C 로
  * 접으면 더 좁아지므로 상한이다.
  */
 export function barcodeWidthMm(b: BarcodePlacement): number {
   if (b.kind === 'CODE128') return ((11 * (b.data.length + 2) + 13) * b.moduleDots) / DOTS_PER_MM;
-  const ratio = b.wideRatio ?? 2.5;
-  return ((4 + b.data.length * (3 + 2 * ratio) + (ratio + 2)) * b.moduleDots) / DOTS_PER_MM;
+  const wideDots = Math.ceil(b.moduleDots * (b.wideRatio ?? 2.5));
+  return (
+    (4 * b.moduleDots + b.data.length * (3 * b.moduleDots + 2 * wideDots) + (wideDots + 2 * b.moduleDots)) / DOTS_PER_MM
+  );
 }
 
 /** 바코드 좌우에 비워 둬야 하는 quiet zone(모듈 × 10). */
