@@ -170,7 +170,7 @@ NL 샘플의 ② 터미널코드 아래 「중구」는 필드표에 번호가 �
 | 대상 | 핵심 |
 | --- | --- |
 | `zpl-encoder` | `rotation: 0` 의 `^PW`/`^LL`/`^FO`/`^B2N`/`^BCN`; `rotation: 90` 은 기존 기대값 그대로; 폭 > 108mm 면 throw |
-| NS 불변 | 고정 데이터로 만든 NS ZPL 의 sha256 을 리팩터 **전에** 떠서 스펙에 박는다 → 리팩터 후 같아야 한다 |
+| NS 불변 | 고정 데이터로 만든 NS 의 `svg` 문자열 + 바코드 배치 JSON 의 sha256 을 리팩터 **전에** 떠서 스펙에 박는다 → 리팩터 후 같아야 한다. 해시는 순수 출력에 건다 — 래스터 결과까지 해시하면 머신·resvg 버전 차이로 흔들린다. 래스터·인코딩 경로는 기존 래스터라이저·인코더 테스트가 지킨다 |
 | `hanjin-label-templates` | 세 형 모두 등록, `rotation`·치수, 모르는 형 throw(메시지에 값) |
 | `hanjin.config` | `HANJIN_LABEL_TYPE` 미설정 → `NS`, 공백 trim |
 | NL 누출 | `customer-copy` 에 받는분 원본 성명·전화·기본주소·상세주소 **없음**, 받는분 ⑫ 외 주소 조각 없음, 보낸분 원본 성명·전화·주소 없음 / `delivery-slip` 에 받는분 전체주소 **있음**, 받는분 원본 성명·전화 **없음** / 보낸분 원본 주소는 **어디에도 없음** |
@@ -228,7 +228,7 @@ NL 샘플의 ② 터미널코드 아래 「중구」는 필드표에 번호가 �
 - **개통 지도 아티팩트**(https://claude.ai/artifact/2K17JzF6VXx1bo2iDZ8ekj) 의 같은 문장 정정 + NL·FS 반영.
 - NS 스펙 §11 「NL/FS 템플릿」 → 이 스펙 링크.
 - 정본 `docs/hanjin-api-integration-reference.md` §3.1 에 NL·FS 외곽 치수·면 구성·회전 한 줄씩(필드표는 링크).
-- `HANJIN_LABEL_TYPE` 을 `apps/core/src/modules/fulfillment/waybill/README.md` 의 한진 env 목록에 추가. SST 배선은 하지 않는다 —
+- `HANJIN_LABEL_TYPE` 을 `apps/core/src/config/env.validation.ts` 의 한진 블록에 `z.string().optional()` 로 추가(부팅을 막지 않는다 — 값 검증은 §3.3). SST 배선은 하지 않는다 —
   `HANJIN_*` 전체 배선 때 함께(개통 지도의 해당 항목에 한 줄).
 
 ## 11. 범위 밖
