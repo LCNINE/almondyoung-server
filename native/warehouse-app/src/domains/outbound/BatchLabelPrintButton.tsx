@@ -25,7 +25,8 @@ import {
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'confirm'; shipmentIds: string[]; last: BatchPrintResult | null }
+  // retry: 「실패·미인쇄만 다시」 — 대상이 한 번도 안 나온 건뿐이라 중복 경고를 띄우지 않는다.
+  | { kind: 'confirm'; shipmentIds: string[]; last: BatchPrintResult | null; retry: boolean }
   | { kind: 'running'; done: number; total: number }
   | { kind: 'done'; result: BatchPrintResult };
 
@@ -82,12 +83,14 @@ export function BatchLabelPrintButton({
   const prepare = async (retryIds?: string[]) => {
     if (busy.current || disabled) return;
     setNotice(null);
+    // 새로 시작하면 지난 요약은 더 이상 지금 상태가 아니다 — 새 안내 옆에 남기지 않는다(취소하면 last 로 돌아간다).
+    if (!retryIds) setPhase({ kind: 'idle' });
     if (!readLabelPrinter(prefs)) {
       setNotice(NO_PRINTER_MESSAGE);
       return;
     }
     if (retryIds) {
-      setPhase({ kind: 'confirm', shipmentIds: retryIds, last: lastResult });
+      setPhase({ kind: 'confirm', shipmentIds: retryIds, last: lastResult, retry: true });
       return;
     }
     busy.current = true;
@@ -97,7 +100,7 @@ export function BatchLabelPrintButton({
         setNotice('인쇄할 박스가 없어요.');
         return;
       }
-      setPhase({ kind: 'confirm', shipmentIds, last: lastResult });
+      setPhase({ kind: 'confirm', shipmentIds, last: lastResult, retry: false });
     } catch (error) {
       setNotice(errorMessage(error));
     } finally {
@@ -133,6 +136,15 @@ export function BatchLabelPrintButton({
 
   const printedAt = readBatchPrintedAt(prefs, batchId);
   const retry = lastResult ? retryTargets(lastResult) : [];
+  const skippedGroups = lastResult ? groupSkipped(lastResult) : [];
+  const confirmMessage =
+    phase.kind !== 'confirm'
+      ? ''
+      : phase.retry
+        ? `인쇄되지 않은 ${phase.shipmentIds.length}장만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
+        : printedAt
+          ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 라벨이 한 장씩 더 나와요.`
+          : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
 
   return (
     <div className="mt-2 space-y-1">
@@ -174,33 +186,35 @@ export function BatchLabelPrintButton({
       {phase.kind === 'done' && (
         <div className="space-y-1 text-sm">
           <p role="status">
-            인쇄 {phase.result.printed.length} · 실패 {phase.result.skipped.length} · 미인쇄{' '}
+            보냄 {phase.result.printed.length} · 실패 {phase.result.skipped.length} · 미인쇄{' '}
             {phase.result.notAttempted.length}
           </p>
+          {/* 스풀러가 받았다는 뜻일 뿐이다 — 꺼지거나 걸린 USB 프린터도 대개 작업을 받아 준다. */}
+          {phase.result.printed.length > 0 && (
+            <p className="text-xs text-gray-500">프린터에서 나온 장수가 맞는지 확인해 주세요.</p>
+          )}
           {phase.result.printerError !== undefined && (
             <p role="alert">
               {PRINTER_FAILURE_MESSAGE}
               <span className="block text-xs text-gray-500">{phase.result.printerError}</span>
             </p>
           )}
-          <ul>
-            {groupSkipped(phase.result).map(([message, count]) => (
-              <li key={message}>
-                {message} ({count}건)
-              </li>
-            ))}
-          </ul>
+          {skippedGroups.length > 0 && (
+            <ul>
+              {skippedGroups.map(([message, count]) => (
+                <li key={message}>
+                  {message} ({count}건)
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
       <ConfirmDialog
         open={phase.kind === 'confirm'}
         title={phase.kind === 'confirm' ? `라벨 ${phase.shipmentIds.length}장을 인쇄할까요?` : ''}
-        message={
-          printedAt
-            ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 라벨이 한 장씩 더 나와요.`
-            : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
-        }
+        message={confirmMessage}
         confirmLabel="인쇄"
         onCancel={() =>
           setPhase(

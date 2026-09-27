@@ -483,7 +483,7 @@ describe('OutboundQueueScreen', () => {
     ).toHaveLength(0);
 
     release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' });
-    await screen.findByRole('status');
+    expect(await screen.findByRole('status')).toHaveTextContent('보냄 1');
 
     await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
     expect(await screen.findByText('단순출고화면')).toBeInTheDocument();
