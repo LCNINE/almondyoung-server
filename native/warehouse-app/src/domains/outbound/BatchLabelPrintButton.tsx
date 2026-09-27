@@ -71,6 +71,10 @@ export function BatchLabelPrintButton({
   const [notice, setNotice] = useState<string | null>(null);
   // 조회·인쇄 중 연타 방지. state 는 다음 렌더에야 보이므로 ref 로 막는다.
   const busy = useRef(false);
+  // 네트워크가 나쁘면 200건 × 15초 동안 화면 이동까지 막힌다 — 사람이 끊을 수 있어야 한다.
+  // 지금 건은 끝까지 가고 다음 건부터 멈춘다(보낸 라벨을 되돌릴 수는 없다).
+  const stopRequested = useRef(false);
+  const [stopping, setStopping] = useState(false);
   useUnsavedWork(phase.kind === 'running');
 
   const lastResult = phase.kind === 'done' ? phase.result : null;
@@ -105,6 +109,8 @@ export function BatchLabelPrintButton({
     const target = readLabelPrinter(prefs);
     if (!target || busy.current || disabled) return;
     busy.current = true;
+    stopRequested.current = false;
+    setStopping(false);
     onRunningChange?.(true);
     setPhase({ kind: 'running', done: 0, total: shipmentIds.length });
     try {
@@ -114,6 +120,7 @@ export function BatchLabelPrintButton({
         print,
         fetchLabel: (id) => fetchWaybillLabel(api, id),
         onProgress: (done, total) => setPhase({ kind: 'running', done, total }),
+        shouldStop: () => stopRequested.current,
       });
       // 한 장도 안 나왔으면 기록하지 않는다 — 다음 확인창이 「이미 인쇄」라고 거짓말하게 된다.
       if (result.printed.length > 0) writeBatchPrintedAt(prefs, batchId, now().toISOString());
@@ -138,6 +145,19 @@ export function BatchLabelPrintButton({
         >
           {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : '라벨 인쇄'}
         </Button>
+        {phase.kind === 'running' && (
+          <Button
+            type="button"
+            className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            disabled={stopping}
+            onClick={() => {
+              stopRequested.current = true;
+              setStopping(true);
+            }}
+          >
+            중지
+          </Button>
+        )}
         {phase.kind === 'done' && retry.length > 0 && (
           <Button type="button" disabled={disabled} onClick={() => void prepare(retry)}>
             실패·미인쇄만 다시

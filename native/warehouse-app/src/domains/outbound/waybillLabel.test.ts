@@ -186,6 +186,25 @@ describe('runBatchLabelPrint', () => {
     expect(fetched).toEqual(['a', 'b']);
   });
 
+  it('중지하면 그 건부터 나머지를 notAttempted 로 두고 프린터 오류 없이 끝난다', async () => {
+    const fetched: string[] = [];
+    const printed: string[] = [];
+    const result = await runBatchLabelPrint({
+      shipmentIds: ['a', 'b', 'c'],
+      target: 't',
+      fetchLabel: async (id) => {
+        fetched.push(id);
+        return label(id);
+      },
+      print: async (_t, text) => {
+        printed.push(text);
+      },
+      shouldStop: () => printed.length >= 1,
+    });
+    expect(result).toEqual({ printed: ['a'], skipped: [], notAttempted: ['b', 'c'] });
+    expect(fetched).toEqual(['a']);
+  });
+
   it('동시에 두 건을 부르지 않는다', async () => {
     let inFlight = 0;
     let maxInFlight = 0;

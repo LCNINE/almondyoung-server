@@ -113,16 +113,22 @@ export interface BatchPrintResult {
  * 배치 일괄 인쇄. 순차로 돈다 — 프린터는 한 줄로 받고, core 의 래스터화도 가볍지 않다.
  * API 거절은 건 단위(건너뛰고 계속), 프린터 실패는 실행 단위(즉시 중단): 프린터가 죽었는데
  * 남은 라벨을 서버에서 계속 렌더링할 이유가 없다.
+ * 사람이 멈추면(shouldStop) 그 건부터 notAttempted 로 남긴다 — 「실패·미인쇄만 다시」가 이어 찍는다.
  */
 export async function runBatchLabelPrint(
   o: LabelPrintDeps & {
     shipmentIds: string[];
     onProgress?: (done: number, total: number) => void;
+    shouldStop?: () => boolean;
   }
 ): Promise<BatchPrintResult> {
   const result: BatchPrintResult = { printed: [], skipped: [], notAttempted: [] };
   const total = o.shipmentIds.length;
   for (let i = 0; i < total; i++) {
+    if (o.shouldStop?.()) {
+      result.notAttempted = o.shipmentIds.slice(i);
+      return result;
+    }
     const shipmentId = o.shipmentIds[i];
     try {
       await printOneLabel(o, shipmentId);

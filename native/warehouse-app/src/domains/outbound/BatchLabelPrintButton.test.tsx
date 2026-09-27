@@ -162,6 +162,28 @@ describe('BatchLabelPrintButton', () => {
     expect(prefs.get(BATCH_KEY)).toBeNull();
   });
 
+  it('인쇄 중 「중지」하면 남은 건을 미인쇄로 두고 다시 이어 찍을 수 있다', async () => {
+    let release: (v: unknown) => void = () => {};
+    const { print } = mount({
+      workItems: [
+        { id: '1', shipmentId: 'a', status: 'queued' },
+        { id: '2', shipmentId: 'b', status: 'queued' },
+      ],
+      label: (id) =>
+        id === 'a'
+          ? new Promise((resolve) => (release = resolve))
+          : Promise.resolve({ waybillId: `w-${id}`, trackingNo: `T-${id}`, format: 'zpl', data: `^XA${id}^XZ` }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
+    await userEvent.click(await screen.findByRole('button', { name: '중지' }));
+    release({ waybillId: 'w-a', trackingNo: 'T-a', format: 'zpl', data: '^XAa^XZ' });
+    expect(await screen.findByRole('status')).toHaveTextContent('인쇄 1 · 실패 0 · 미인쇄 1');
+    expect(print.mock.calls).toEqual([['spooler://XP', '^XAa^XZ']]);
+    expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
+    expect(screen.getByRole('button', { name: '실패·미인쇄만 다시' })).toBeEnabled();
+  });
+
   it('인쇄할 박스가 없으면 확인창 없이 알린다', async () => {
     mount({ workItems: [{ id: '1', shipmentId: 'a', status: 'completed' }] });
     await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
