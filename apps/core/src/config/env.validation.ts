@@ -66,6 +66,8 @@ export const almondyoungEnvSchema = z
     HANJIN_SENDER_TEL: z.string().optional(),
     HANJIN_BOX_TYPE: z.string().optional(),
     HANJIN_PAY_TYPE: z.string().optional(),
+    // 운송장 형 NS|NL|FS(기본 NS). 모르는 값이어도 부팅은 한다 — 라벨 요청만 500(hanjin-label-templates).
+    HANJIN_LABEL_TYPE: z.string().optional(),
 
     // Wallet 서비스 (취소 후 자동 환불 연결)
     // 미설정 시 환불은 manual_pending 상태로 기록되며 운영자가 수동 처리한다.

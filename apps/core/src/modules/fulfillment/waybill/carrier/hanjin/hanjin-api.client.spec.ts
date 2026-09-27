@@ -13,6 +13,7 @@ const config = {
   sender: { name: 'wh', zip: '08588', baseAddress: 'a', detailAddress: 'b', tel: '02-1' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 } as HanjinConfig;
 
 function client() {

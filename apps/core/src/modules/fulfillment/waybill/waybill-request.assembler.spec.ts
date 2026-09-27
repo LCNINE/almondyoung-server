@@ -19,6 +19,7 @@ const config: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 const snapshot = {
   recipientName: '홍길동',

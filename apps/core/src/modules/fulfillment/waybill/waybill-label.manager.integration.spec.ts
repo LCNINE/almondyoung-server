@@ -41,6 +41,7 @@ const CONFIG: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'CD',
+  labelType: 'NS',
 };
 const LABEL_DATA = {
   hub_cod: 'NX',
