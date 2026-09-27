@@ -63,6 +63,15 @@ describe('renderHanjinNlLabel', () => {
     });
   });
 
+  it('보낸분 원본주소의 참고항목(동)은 마스킹 뒤에도 새지 않는다(#913 최종리뷰 F6)', () => {
+    const s = renderHanjinNlLabel({
+      ...DATA,
+      sender: { ...DATA.sender, baseAddress: '경기도 부천시 오정구 신흥로511번길 80 (오정동)' },
+    });
+    expect(s.svg).not.toContain('(오정동)');
+    expect(s.svg).toContain('신흥로511번길 80 ****');
+  });
+
   it('분류 머리에는 어느 개인정보도 없다', () => {
     const head = block(spec.svg, 'sort-head');
     for (const s of ['김한진', '김*진', '010-1234', '남대문로', '아몬드영', '032-000', '신흥로']) {
@@ -150,6 +159,7 @@ describe('renderHanjinNlLabel', () => {
   it.each([
     ['기본', DATA],
     ['긴 데이터', LONG],
+    ['박스 10/12', { ...DATA, boxIndex: 10, boxCount: 12 }],
   ])('%s: 바코드 금지 구역(바코드 + 좌우 quiet zone)은 라벨 안이고 잉크가 없다', (_, data) => {
     const s = renderHanjinNlLabel(data);
     for (const z of barcodeKeepOutsMm(s)) {

@@ -83,9 +83,18 @@ export function renderHanjinNlLabel(d: HanjinLabelData): LabelSpec {
   ];
 
   // ── 받는고객용(배달표 외) ────────────────────────────────────────────────
+  // 박스 번호가 두 자리 이상이면(P. 10 이상) 고정 9.5pt 로는 ITF quiet zone(NL_ITF_X_MM 앞)을 침범한다
+  // (#913 최종리뷰 F4) — 자르면 박스 번호를 못 읽으므로 잘라내지 않고 칸에 맞을 때까지 줄인다.
+  const boxText = `P. ${d.boxIndex}`;
   const customerCopy = [
     text({ x: 15.3, y: 74.7, pt: 9.5, bold: true, text: d.trackingNoDisplay }), // ⑨ 좌측하단
-    text({ x: 44.2, y: 74.7, pt: 9.5, bold: true, text: `P. ${d.boxIndex}` }),
+    text({
+      x: 44.2,
+      y: 74.7,
+      pt: fitSizePt(boxText, NL_ITF_X_MM - NL_ITF_QUIET_ZONE_MM - 44.2 - 0.3, 9.5, 6),
+      bold: true,
+      text: boxText,
+    }),
     text({ x: 15.3, y: 79.6, pt: 10, text: fitText(d.commodityName, 82.5, 10) }), // 품명
     text({ x: 8.2, y: 86, pt: 16, bold: true, text: fitText(s.addressSummary, 89.5, 16) }), // ⑫
     text({ x: 8.2, y: 93.1, pt: 9, bold: true, text: maskName(sd.name) }),
