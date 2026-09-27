@@ -81,7 +81,7 @@ export class WaybillLabelManager {
 
     const spec = renderHanjinNsLabel(buildHanjinLabelData({ waybill, ctx, config: this.config, now: this.now() }));
     const bitmap = this.rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm));
-    const data = encodeZpl(bitmap, spec.barcodes, { compress: WAYBILL.LABEL_ZPL_COMPRESS });
+    const data = encodeZpl(bitmap, spec.barcodes, { compress: WAYBILL.LABEL_ZPL_COMPRESS, rotation: spec.rotation });
     return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '', format: 'zpl', data };
   }
 }

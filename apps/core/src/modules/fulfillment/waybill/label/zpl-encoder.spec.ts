@@ -95,7 +95,7 @@ describe('compressAcs', () => {
 
 describe('encodeZpl', () => {
   it('90° 회전해 폭 816 · 길이 1600 으로 선언하고 ^XA 로 열어 ^XZ 로 닫는다', () => {
-    const zpl = encodeZpl(nsBitmap(), [], { compress: false });
+    const zpl = encodeZpl(nsBitmap(), [], { compress: false, rotation: 90 });
     expect(zpl.startsWith('^XA')).toBe(true);
     expect(zpl.trimEnd().endsWith('^XZ')).toBe(true);
     expect(zpl).toContain('^PW816');
@@ -103,7 +103,7 @@ describe('encodeZpl', () => {
   });
 
   it('비압축 ^GF 의 바이트 수는 bytesPerRow × 행 수이고 데이터는 그 두 배 hex 다', () => {
-    const zpl = encodeZpl(nsBitmap(), [], { compress: false });
+    const zpl = encodeZpl(nsBitmap(), [], { compress: false, rotation: 90 });
     const m = /\^GFA,(\d+),(\d+),(\d+),([0-9A-F]+)\^FS/.exec(zpl);
     if (!m) throw new Error('^GFA field not found in ZPL');
     const [, total, total2, bpr, data] = m;
@@ -116,37 +116,84 @@ describe('encodeZpl', () => {
   it('압축 ^GF 를 풀면 회전한 비트맵과 같다', () => {
     const b = nsBitmap();
     for (let x = 10; x < 200; x++) setBit(b, x, 20);
-    const zpl = encodeZpl(b, [], { compress: true });
+    const zpl = encodeZpl(b, [], { compress: true, rotation: 90 });
     const m = /\^GFA,(\d+),(\d+),(\d+),([^^]+)\^FS/.exec(zpl);
     if (!m) throw new Error('^GFA field not found in ZPL');
     expect(decodeAcs(m[4], Number(m[3]))).toEqual(hexRowsOf(rotateClockwise(b)));
   });
 
   it('ITF 는 회전 좌표 ^FO(H-y-h, x) 에 ^BY3,2.5 ^B2R 로, 사람용 숫자·체크디지트 없이 놓는다', () => {
-    const zpl = encodeZpl(nsBitmap(), [ITF], { compress: false });
+    const zpl = encodeZpl(nsBitmap(), [ITF], { compress: false, rotation: 90 });
     // x = round(149.1×8) = 1193, y = round(43.8×8) = 350, h = 160 → FO(816-350-160, 1193) = (306, 1193)
     expect(zpl).toContain('^FO306,1193^BY3,2.5^B2R,160,N,N,N^FD452716978431^FS');
   });
 
   it('CODE128 은 ^BCR 로 놓는다', () => {
     const code: BarcodePlacement = { kind: 'CODE128', data: '150', xMm: 4.4, yMm: 18.3, heightMm: 8, moduleDots: 2 };
-    const zpl = encodeZpl(nsBitmap(), [code], { compress: false });
+    const zpl = encodeZpl(nsBitmap(), [code], { compress: false, rotation: 90 });
     // x = 35, y = 146, h = 64 → FO(816-146-64, 35) = (606, 35)
     expect(zpl).toContain('^FO606,35^BY2^BCR,64,N,N,N^FD150^FS');
   });
 
   it('ITF 데이터가 짝수 자리 숫자가 아니면 던진다', () => {
-    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: '12345' }], { compress: false })).toThrow(/ITF/);
-    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: 'WBL-1234' }], { compress: false })).toThrow(/ITF/);
+    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: '12345' }], { compress: false, rotation: 90 })).toThrow(/ITF/);
+    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: 'WBL-1234' }], { compress: false, rotation: 90 })).toThrow(
+      /ITF/,
+    );
   });
 
   it('CODE128 데이터가 비었거나 ZPL 제어문자(^ ~)를 담으면 던진다', () => {
     const base: BarcodePlacement = { kind: 'CODE128', data: '', xMm: 4, yMm: 18, heightMm: 8, moduleDots: 2 };
-    expect(() => encodeZpl(nsBitmap(), [base], { compress: false })).toThrow(/CODE128/);
-    expect(() => encodeZpl(nsBitmap(), [{ ...base, data: '1^XZ' }], { compress: false })).toThrow(/CODE128/);
+    expect(() => encodeZpl(nsBitmap(), [base], { compress: false, rotation: 90 })).toThrow(/CODE128/);
+    expect(() => encodeZpl(nsBitmap(), [{ ...base, data: '1^XZ' }], { compress: false, rotation: 90 })).toThrow(
+      /CODE128/,
+    );
   });
 
   it('라벨 밖에 놓인 바코드는 던진다', () => {
-    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, yMm: 95 }], { compress: false })).toThrow(/outside/);
+    expect(() => encodeZpl(nsBitmap(), [{ ...ITF, yMm: 95 }], { compress: false, rotation: 90 })).toThrow(/outside/);
+  });
+});
+
+// NL 크기(폭 100 × 길이 102mm)를 돌리지 않고 넣는 경우.
+const nlBitmap = () => createBitmap(800, 816);
+
+describe('encodeZpl — rotation 0', () => {
+  it('돌리지 않고 폭 800 · 길이 816 으로 선언한다', () => {
+    const zpl = encodeZpl(nlBitmap(), [], { compress: false, rotation: 0 });
+    expect(zpl).toContain('^PW800');
+    expect(zpl).toContain('^LL816');
+  });
+
+  it('^GF 데이터는 원본 비트맵 행 그대로다', () => {
+    const b = nlBitmap();
+    for (let x = 10; x < 200; x++) setBit(b, x, 20);
+    const zpl = encodeZpl(b, [], { compress: false, rotation: 0 });
+    const m = /\^GFA,(\d+),(\d+),(\d+),([0-9A-F]+)\^FS/.exec(zpl);
+    if (!m) throw new Error('^GFA field not found in ZPL');
+    expect(Number(m[3])).toBe(100); // 800 / 8
+    expect(m[4]).toBe(hexRowsOf(b).join(''));
+  });
+
+  it('ITF 는 원좌표 ^FO(x, y) 에 ^B2N 으로 놓는다', () => {
+    const zpl = encodeZpl(nlBitmap(), [{ ...ITF, xMm: 56, yMm: 62, heightMm: 14.5 }], { compress: false, rotation: 0 });
+    // x = 448, y = 496, h = round(14.5 × 8) = 116
+    expect(zpl).toContain('^FO448,496^BY3,2.5^B2N,116,N,N,N^FD452716978431^FS');
+  });
+
+  it('CODE128 은 ^BCN 으로 놓는다', () => {
+    const code: BarcodePlacement = { kind: 'CODE128', data: '150', xMm: 43, yMm: 5, heightMm: 8, moduleDots: 2 };
+    const zpl = encodeZpl(nlBitmap(), [code], { compress: false, rotation: 0 });
+    expect(zpl).toContain('^FO344,40^BY2^BCN,64,N,N,N^FD150^FS');
+  });
+});
+
+describe('encodeZpl — 인쇄폭 가드', () => {
+  it('넣는 방향 폭이 864 dot(108mm)를 넘으면 던진다 — NS 를 돌리지 않으면 1600 dot', () => {
+    expect(() => encodeZpl(nsBitmap(), [], { compress: false, rotation: 0 })).toThrow(/printer max is 864/);
+  });
+  it('864 dot 는 통과, 865 dot 는 던진다', () => {
+    expect(() => encodeZpl(createBitmap(864, 100), [], { compress: false, rotation: 0 })).not.toThrow();
+    expect(() => encodeZpl(createBitmap(865, 100), [], { compress: false, rotation: 0 })).toThrow(/864/);
   });
 });

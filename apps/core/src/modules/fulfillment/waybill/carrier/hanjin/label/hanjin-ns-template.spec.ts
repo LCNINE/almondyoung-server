@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { deriveCustOrdNo } from '../../../cust-ord-no';
 import { DOTS_PER_MM, getBit } from '../../../label/label-model';
+import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
 import { SvgRasterizer } from '../../../label/svg-rasterizer';
 import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
@@ -86,6 +87,11 @@ const inkRightEdgeMm = (svg: string, el: string): number => {
 
 describe('renderHanjinNsLabel', () => {
   const spec = renderHanjinNsLabel(DATA);
+
+  it('NS 출력은 NL·FS 추가 리팩터 전과 같다 (svg + 바코드 배치 해시 고정)', () => {
+    const digest = createHash('sha256').update(spec.svg).update(JSON.stringify(spec.barcodes)).digest('hex');
+    expect(digest).toBe('872607a6806741c6abcba32a1419a73b7a79d418ebd0644e79bbe8faa958da1c');
+  });
 
   it('NS 는 가로 200mm × 세로 102mm, viewBox 도 mm', () => {
     expect([spec.widthMm, spec.heightMm]).toEqual([200, 102]);
@@ -300,5 +306,14 @@ describe('renderHanjinNsLabel', () => {
       sort: { ...DATA.sort, hubCode: 'DEMO', terminalCode: 'DEMO' },
     });
     expect(demo.svg).toContain('DEMO');
+  });
+
+  it('바코드 금지 구역(바코드 + 좌우 quiet zone)은 라벨 안이고 잉크가 없다', () => {
+    for (const z of barcodeKeepOutsMm(spec)) {
+      expect(z.x0).toBeGreaterThanOrEqual(0);
+      expect(z.x1).toBeLessThanOrEqual(spec.widthMm);
+      expect(z.y1).toBeLessThanOrEqual(spec.heightMm);
+    }
+    expect(inkInBarcodeKeepOuts(spec)).toEqual(spec.barcodes.map((b) => ({ kind: b.kind, ink: 0 })));
   });
 });

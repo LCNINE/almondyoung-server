@@ -5,6 +5,7 @@ import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 
 /**
  * 한진 NS형(좌 100 + 우 100 = 200 × 102mm) 자체출력 운송장(#913).
+ * 프린터에는 90° 돌려 넣는다(짧은 변 102mm 가 폭).
  *
  * **검은색 요소(가변 데이터)만** 그린다 — 테두리·영역 캡션·로고·개인정보 안내 문구는 한진 라벨지에
  * 선인쇄돼 있다. 좌표는 포털 NS 샘플 실측(mm), y 는 기준선, 폰트 크기는 필드표의 pt.
@@ -167,5 +168,5 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     '</svg>',
   ].join('');
 
-  return { widthMm: WIDTH_MM, heightMm: HEIGHT_MM, svg, barcodes };
+  return { widthMm: WIDTH_MM, heightMm: HEIGHT_MM, rotation: 90, svg, barcodes };
 }
