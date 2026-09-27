@@ -45,6 +45,7 @@ const CTX: IssueContext = {
 const LABEL_DATA = {
   hub_cod: 'NX',
   tml_cod: '150',
+  tml_nam: '중구',
   dom_mid: 'Z',
   cen_cod: '1050',
   cen_nam: '해운(집)',
@@ -70,6 +71,7 @@ describe('buildHanjinLabelData', () => {
     expect(buildHanjinLabelData(input()).sort).toEqual({
       hubCode: 'NX',
       terminalCode: '150',
+      terminalName: '중구',
       midCode: 'Z',
       centerCode: '1050',
       centerName: '해운(집)',
@@ -151,6 +153,7 @@ describe('buildHanjinLabelData', () => {
   it('labelData 의 숫자 값은 문자열로, 없는 키는 빈 문자열로', () => {
     const d = buildHanjinLabelData(input({ waybill: { ...input().waybill, labelData: { hub_cod: 12 } } }));
     expect([d.sort.hubCode, d.sort.terminalCode]).toEqual(['12', '']);
+    expect(d.sort.terminalName).toBe('');
   });
 
   it('demo 캐리어의 가짜 값으로도 만든다', () => {

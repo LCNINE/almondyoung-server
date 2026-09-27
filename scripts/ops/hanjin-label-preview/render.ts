@@ -39,6 +39,7 @@ const SAMPLE: HanjinLabelData = {
   sort: {
     hubCode: 'NX',
     terminalCode: '150',
+    terminalName: '중구',
     midCode: 'Z',
     centerCode: '1050',
     centerName: '해운(집)',

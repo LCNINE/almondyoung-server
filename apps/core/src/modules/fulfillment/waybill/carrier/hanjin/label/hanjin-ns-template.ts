@@ -1,5 +1,6 @@
 import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
-import { escapeXml, fitSizePt, fitText, PT_TO_MM } from '../../../label/svg-text';
+import { fitSizePt, fitText } from '../../../label/svg-text';
+import { hline, koreanDate, rect, shrinkThenFit, svgDocument, text } from './hanjin-label-svg';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 
@@ -36,44 +37,6 @@ export const CUST_ORD_NO_X_MM = R + 6.7;
 export const CUST_ORD_NO_MAX_WIDTH_MM = ITF_X_MM - ITF_QUIET_ZONE_MM - CUST_ORD_NO_X_MM;
 export const CUST_ORD_NO_MIN_PT = 4;
 
-interface TextEl {
-  x: number;
-  y: number;
-  pt: number;
-  text: string;
-  bold?: boolean;
-  anchor?: 'middle' | 'end';
-}
-
-function text(t: TextEl): string {
-  const weight = t.bold ? ' font-weight="700"' : '';
-  const anchor = t.anchor ? ` text-anchor="${t.anchor}"` : '';
-  return `<text x="${t.x}" y="${t.y}" font-size="${(t.pt * PT_TO_MM).toFixed(2)}"${weight}${anchor}>${escapeXml(t.text)}</text>`;
-}
-
-function rect(x: number, y: number, w: number, h: number): string {
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#000" stroke-width="0.4"/>`;
-}
-
-function hline(x1: number, x2: number, y: number): string {
-  return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#000" stroke-width="0.3"/>`;
-}
-
-function koreanDate(ymd: string): string {
-  const [y, m, d] = ymd.split('-');
-  return `${y}년 ${m}월 ${d}일`;
-}
-
-/**
- * 배달표 받는분 전체주소·⑭ 처럼 «잘리면 곤란한» 긴 필드용: 말줄임 전에 먼저 글자 크기를 줄인다
- * (최소 7pt). 그래도 안 들어가면 그 크기에서 말줄임으로 자른다(#913 최종리뷰) — 실측 주소
- * (「…현대아파트 101동 1203호」류)와 ⑭ 끝의 「(공동현관 #…)」가 fitText 단독으로는 잘려 나갔다.
- */
-function shrinkThenFit(t: string, maxWidthMm: number, basePt: number): { pt: number; text: string } {
-  const pt = fitSizePt(t, maxWidthMm, basePt, 7);
-  return { pt, text: fitText(t, maxWidthMm, pt) };
-}
-
 /** 출고번호 줄(`출고번호: AY…`)이 ITF quiet zone 앞에 들어가는 가장 큰 크기(pt). */
 export function custOrdNoPt(custText: string): number {
   return fitSizePt(custText, CUST_ORD_NO_MAX_WIDTH_MM, 10, CUST_ORD_NO_MIN_PT);
@@ -98,7 +61,8 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: 57.8, y: 5.2, pt: 9, bold: true, text: `P. ${d.boxIndex}` }),
     text({ x: 69.5, y: 5.2, pt: 9, bold: true, text: `${d.boxIndex}/${d.boxCount}` }),
     text({ x: 42.5, y: 21.5, pt: 9, anchor: 'middle', text: s.centerCode }), // ⑤
-    text({ x: 42.5, y: 25, pt: 9, anchor: 'middle', text: s.centerName }), // ⑥
+    // ⑥ 가운데 정렬이라 길면 양쪽으로 퍼진다 — 왼쪽 끝이 ③ CODE128 quiet zone(x 23.9) 앞에서 멈추게 폭 36mm.
+    text({ x: 42.5, y: 25, pt: 9, anchor: 'middle', text: fitText(s.centerName, 36, 9) }), // ⑥
     text({ x: 55.5, y: 25.5, pt: 20, bold: true, text: s.routeRank }), // ⑩
     text({ x: 77, y: 25.5, pt: 20, bold: true, text: s.courierName }), // ⑪
     text({ x: 1.5, y: 32.3, pt: 10, text: fitText(d.commodityName, 93, 10) }), // 품명
@@ -160,13 +124,11 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     },
   ];
 
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH_MM}mm" height="${HEIGHT_MM}mm" viewBox="0 0 ${WIDTH_MM} ${HEIGHT_MM}" font-family="NanumGothic">`,
-    `<g id="left">${left.join('')}</g>`,
-    `<g id="customer-copy">${customerCopy.join('')}</g>`,
-    `<g id="delivery-slip">${deliverySlip.join('')}</g>`,
-    '</svg>',
-  ].join('');
+  const svg = svgDocument(WIDTH_MM, HEIGHT_MM, [
+    ['left', left],
+    ['customer-copy', customerCopy],
+    ['delivery-slip', deliverySlip],
+  ]);
 
   return { widthMm: WIDTH_MM, heightMm: HEIGHT_MM, rotation: 90, svg, barcodes };
 }

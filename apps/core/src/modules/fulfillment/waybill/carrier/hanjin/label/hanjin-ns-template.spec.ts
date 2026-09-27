@@ -4,7 +4,7 @@ import { DOTS_PER_MM, getBit } from '../../../label/label-model';
 import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
 import { SvgRasterizer } from '../../../label/svg-rasterizer';
 import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
-import type { HanjinLabelData } from './hanjin-label-data';
+import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE } from './__support__/hanjin-label-fixture';
 import {
   CUST_ORD_NO_MAX_WIDTH_MM,
   CUST_ORD_NO_MIN_PT,
@@ -14,40 +14,6 @@ import {
   ITF_X_MM,
   renderHanjinNsLabel,
 } from './hanjin-ns-template';
-
-const DATA: HanjinLabelData = {
-  trackingNo: '452716978431',
-  trackingNoDisplay: '4527-1697-8431',
-  sort: {
-    hubCode: 'NX',
-    terminalCode: '150',
-    midCode: 'Z',
-    centerCode: '1050',
-    centerName: '해운(집)',
-    originTerminalCode: '000',
-    originTerminalName: '본사',
-    routeRank: 'A1',
-    courierName: '권순천',
-    courierSortCode: '888',
-    addressSummary: '소공동 51 한진빌딩',
-  },
-  regionText: '수도권',
-  freightText: '발지신용',
-  recipient: {
-    name: '김한진',
-    phone: '010-1234-5678',
-    baseAddress: '서울특별시 중구 남대문로 63',
-    detailAddress: '한진빌딩 10층',
-  },
-  sender: { name: '아몬드영', phone: '032-000-1234', baseAddress: '경기도 부천시 오정구 신흥로511번길 80' },
-  deliveryMessage: '문앞 (공동현관 #1234)',
-  commodityName: '토익 Speaking 외 1건',
-  boxType: 'A',
-  custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
-  printedDate: '2026-09-28',
-  boxIndex: 1,
-  boxCount: 1,
-};
 
 const block = (svg: string, id: string): string => {
   const m = new RegExp(`<g id="${id}">([\\s\\S]*?)</g>`).exec(svg);
@@ -308,12 +274,16 @@ describe('renderHanjinNsLabel', () => {
     expect(demo.svg).toContain('DEMO');
   });
 
-  it('바코드 금지 구역(바코드 + 좌우 quiet zone)은 라벨 안이고 잉크가 없다', () => {
-    for (const z of barcodeKeepOutsMm(spec)) {
+  it.each([
+    ['기본', DATA],
+    ['긴 데이터', HANJIN_LABEL_LONG_FIXTURE],
+  ])('%s: 바코드 금지 구역(바코드 + 좌우 quiet zone)은 라벨 안이고 잉크가 없다', (_, data) => {
+    const s = renderHanjinNsLabel(data);
+    for (const z of barcodeKeepOutsMm(s)) {
       expect(z.x0).toBeGreaterThanOrEqual(0);
-      expect(z.x1).toBeLessThanOrEqual(spec.widthMm);
-      expect(z.y1).toBeLessThanOrEqual(spec.heightMm);
+      expect(z.x1).toBeLessThanOrEqual(s.widthMm);
+      expect(z.y1).toBeLessThanOrEqual(s.heightMm);
     }
-    expect(inkInBarcodeKeepOuts(spec)).toEqual(spec.barcodes.map((b) => ({ kind: b.kind, ink: 0 })));
+    expect(inkInBarcodeKeepOuts(s)).toEqual(s.barcodes.map((b) => ({ kind: b.kind, ink: 0 })));
   });
 });
