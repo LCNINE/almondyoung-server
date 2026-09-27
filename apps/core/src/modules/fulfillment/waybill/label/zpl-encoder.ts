@@ -1,15 +1,27 @@
-import { createBitmap, getBit, mmToDots, setBit, type BarcodePlacement, type MonoBitmap } from './label-model';
+import {
+  createBitmap,
+  getBit,
+  mmToDots,
+  PRINTER_MAX_WIDTH_MM,
+  setBit,
+  type BarcodePlacement,
+  type LabelRotation,
+  type MonoBitmap,
+} from './label-model';
 
 /**
- * 가로 방향으로 그린 라벨을 ZPL 로 바꾼다(#913).
+ * 템플릿 방향으로 그린 라벨을 ZPL 로 바꾼다(#913).
  *
- * 창고 프린터(XP-DT108B)의 인쇄폭이 108mm 라 NS(200×102mm)는 짧은 변을 폭으로 넣는다 — 그래서
- * 비트맵과 바코드 좌표를 함께 시계방향 90° 돌린다. 한글은 프린터 내장 폰트에 없어 텍스트는 전부
- * 배경 비트맵(^GF)에 들어 있고, 프린터 명령으로 그리는 것은 바코드 둘뿐이다.
+ * 창고 프린터(XP-DT108B)의 인쇄폭이 108mm 라 긴 변이 그보다 긴 형(NS 200mm·FS 123mm)은 짧은 변을 폭으로
+ * 넣는다 — `rotation: 90` 이면 비트맵과 바코드 좌표를 함께 시계방향 90° 돌린다. NL(100mm)은 그대로 넣는다.
+ * 한글은 프린터 내장 폰트에 없어 텍스트는 전부 배경 비트맵(^GF)에 들어 있고, 프린터 명령으로 그리는 것은
+ * 바코드뿐이다.
  */
 export interface ZplOptions {
-  /** ^GF 데이터에 ZPL ACS 압축을 쓸지. 기본값은 창고 실물 출력으로 정한다(스펙 §10-3). */
+  /** ^GF 데이터에 ZPL ACS 압축을 쓸지. 기본값은 창고 실물 출력으로 정한다(NS 스펙 §10-3). */
   compress: boolean;
+  /** LabelSpec.rotation — 프린터에 넣을 때 시계방향 회전(도). */
+  rotation: LabelRotation;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -81,38 +93,45 @@ export function compressAcs(hexRowsIn: readonly string[]): string {
   return out;
 }
 
-function barcodeField(b: BarcodePlacement, landscapeW: number, landscapeH: number): string {
+function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotation: LabelRotation): string {
   const x = mmToDots(b.xMm);
   const y = mmToDots(b.yMm);
   const h = mmToDots(b.heightMm);
-  if (x < 0 || y < 0 || x >= landscapeW || y + h > landscapeH) {
-    throw new Error(`barcode ${b.kind} is outside the label: x=${x} y=${y} h=${h} on ${landscapeW}×${landscapeH}`);
+  if (x < 0 || y < 0 || x >= drawnW || y + h > drawnH) {
+    throw new Error(`barcode ${b.kind} is outside the label: x=${x} y=${y} h=${h} on ${drawnW}×${drawnH}`);
   }
-  // 시계방향 90°: 가로 (x, y) → 세로 (H-1-y, x). 상자 (x, y, h) 의 세로 방향 왼쪽 위는 (H-y-h, x).
-  const fo = `^FO${landscapeH - y - h},${x}`;
+  // 시계방향 90°: 템플릿 (x, y) → 프린터 (H-1-y, x). 상자 (x, y, h) 의 프린터 쪽 왼쪽 위는 (H-y-h, x).
+  const fo = rotation === 90 ? `^FO${drawnH - y - h},${x}` : `^FO${x},${y}`;
+  const orientation = rotation === 90 ? 'R' : 'N';
   if (b.kind === 'ITF') {
     if (!/^(?:\d\d)+$/.test(b.data)) throw new Error(`ITF needs an even number of digits: "${b.data}"`);
     // f·g = N: 사람용 숫자는 SVG 에서 그린다. e = N: 한진 번호에 체크디지트가 이미 있다.
-    return `${fo}^BY${b.moduleDots},${(b.wideRatio ?? 2.5).toFixed(1)}^B2R,${h},N,N,N^FD${b.data}^FS`;
+    return `${fo}^BY${b.moduleDots},${(b.wideRatio ?? 2.5).toFixed(1)}^B2${orientation},${h},N,N,N^FD${b.data}^FS`;
   }
   if (!b.data || /[\^~]/.test(b.data)) {
     throw new Error(`CODE128 data is empty or contains ZPL control characters: "${b.data}"`);
   }
-  return `${fo}^BY${b.moduleDots}^BCR,${h},N,N,N^FD${b.data}^FS`;
+  return `${fo}^BY${b.moduleDots}^BC${orientation},${h},N,N,N^FD${b.data}^FS`;
 }
 
-export function encodeZpl(landscape: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
-  const portrait = rotateClockwise(landscape);
-  const total = portrait.bytesPerRow * portrait.heightDots;
-  const rows = hexRows(portrait);
+export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
+  const printed = opts.rotation === 90 ? rotateClockwise(drawn) : drawn;
+  const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM);
+  if (printed.widthDots > maxDots) {
+    throw new Error(
+      `label is ${printed.widthDots} dots wide as fed (rotation ${opts.rotation}), printer max is ${maxDots}`,
+    );
+  }
+  const total = printed.bytesPerRow * printed.heightDots;
+  const rows = hexRows(printed);
   const gfData = opts.compress ? compressAcs(rows) : rows.join('');
   const lines = [
     '^XA',
-    `^PW${portrait.widthDots}`,
-    `^LL${portrait.heightDots}`,
+    `^PW${printed.widthDots}`,
+    `^LL${printed.heightDots}`,
     '^LH0,0',
-    `^FO0,0^GFA,${total},${total},${portrait.bytesPerRow},${gfData}^FS`,
-    ...barcodes.map((b) => barcodeField(b, landscape.widthDots, landscape.heightDots)),
+    `^FO0,0^GFA,${total},${total},${printed.bytesPerRow},${gfData}^FS`,
+    ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation)),
     '^PQ1',
     '^XZ',
   ];

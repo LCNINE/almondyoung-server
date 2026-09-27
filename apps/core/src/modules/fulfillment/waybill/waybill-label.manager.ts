@@ -4,7 +4,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema } from '../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import { buildHanjinLabelData } from './carrier/hanjin/label/hanjin-label-data';
-import { renderHanjinNsLabel } from './carrier/hanjin/label/hanjin-ns-template';
+import { renderHanjinLabel } from './carrier/hanjin/label/hanjin-label-templates';
 import { mmToDots } from './label/label-model';
 import { SvgRasterizer } from './label/svg-rasterizer';
 import { encodeZpl } from './label/zpl-encoder';
@@ -53,7 +53,8 @@ export function assertContextMatchesWaybill(
 }
 
 /**
- * 한진 자체출력 운송장 ZPL(#913). 가드는 assertDispatchable 을 그대로 쓴다 — «출력 가능 ⇔ 출고 가능».
+ * 한진 자체출력 운송장 ZPL(#913). 형(NS·NL·FS)은 HANJIN_LABEL_TYPE 이 정한다.
+ * 가드는 assertDispatchable 을 그대로 쓴다 — «출력 가능 ⇔ 출고 가능».
  * 라벨은 발급 때의 사본이 아니라 현재 shipment 로 다시 조립한다. 매니페스트 버전·수하인 해시가 같음을
  * assertDispatchable 과 assertContextMatchesWaybill 두 번 확인하므로 수하인·품명은 한진 등록값과 같다 —
  * 다만 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진에 등록된 시점보다 최신 값을 실을 수 있다
@@ -79,9 +80,12 @@ export class WaybillLabelManager {
       return { waybill, ctx };
     }, tx);
 
-    const spec = renderHanjinNsLabel(buildHanjinLabelData({ waybill, ctx, config: this.config, now: this.now() }));
+    const spec = renderHanjinLabel(
+      this.config.labelType,
+      buildHanjinLabelData({ waybill, ctx, config: this.config, now: this.now() }),
+    );
     const bitmap = this.rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm));
-    const data = encodeZpl(bitmap, spec.barcodes, { compress: WAYBILL.LABEL_ZPL_COMPRESS });
+    const data = encodeZpl(bitmap, spec.barcodes, { compress: WAYBILL.LABEL_ZPL_COMPRESS, rotation: spec.rotation });
     return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '', format: 'zpl', data };
   }
 }

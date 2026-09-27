@@ -295,9 +295,10 @@ demo 캐리어(로컬 E2E)는 DB 의 `carrier` 가 `HANJIN` 이라 같은 템플
 
 ## 11. 범위 밖
 
-warehouse-app 배선(프린터 설정 저장·인쇄 버튼·출력 시점 — #923 출고 흐름과 함께) · NL/FS 템플릿 ·
+warehouse-app 배선(프린터 설정 저장·인쇄 버튼·출력 시점 — #923 출고 흐름과 함께) ·
 운송료 금액(선·착불) · 배치 출력 API · 출력 감사 로그 · 출력 시 운송장 상태 변경(`used` 는 dispatch 가
 찍는다) · 인쇄 오프셋 설정(§10-3 에서 필요해질 때만) · 한진 현물 검수(#920).
+NL·FS 템플릿과 형 선택은 `docs/superpowers/specs/2026-09-28-hanjin-nl-fs-label-templates-design.md` 로 구현됐다.
 
 ## 12. 열린 질문 (구현을 막지 않음, #920 에서 확인)
 

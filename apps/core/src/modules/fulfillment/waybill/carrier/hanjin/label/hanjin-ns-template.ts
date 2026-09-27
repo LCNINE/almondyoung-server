@@ -1,10 +1,12 @@
 import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
-import { escapeXml, fitSizePt, fitText, PT_TO_MM } from '../../../label/svg-text';
+import { fitSizePt, fitText } from '../../../label/svg-text';
+import { hline, koreanDate, rect, shrinkThenFit, svgDocument, text } from './hanjin-label-svg';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 
 /**
  * 한진 NS형(좌 100 + 우 100 = 200 × 102mm) 자체출력 운송장(#913).
+ * 프린터에는 90° 돌려 넣는다(짧은 변 102mm 가 폭).
  *
  * **검은색 요소(가변 데이터)만** 그린다 — 테두리·영역 캡션·로고·개인정보 안내 문구는 한진 라벨지에
  * 선인쇄돼 있다. 좌표는 포털 NS 샘플 실측(mm), y 는 기준선, 폰트 크기는 필드표의 pt.
@@ -20,7 +22,8 @@ const R = 100; // 우측 절반 원점
 
 /**
  * 배달표 ITF(운송장번호) — 한진 분류 스캐너가 읽는 주 바코드. 모듈 3 dot(0.375mm) × 10 = 3.75mm 의
- * quiet zone 이 바코드 앞에 비어 있어야 한다. 폭 ~39.3mm(12자리, wideRatio 2.5)라 R+89.3 에서 끝난다.
+ * quiet zone 이 바코드 앞에 비어 있어야 한다. 폭 40.75mm(12자리, wideRatio 2.5, 넓은 막대는 8dot 로
+ * 올림)라 R+90.75 에서 끝나고, 뒤쪽 quiet zone 까지 keep-out 은 R+94.5 에서 끝난다.
  */
 const ITF_MODULE_DOTS = 3;
 export const ITF_X_MM = R + 50;
@@ -34,44 +37,6 @@ export const ITF_QUIET_ZONE_MM = (10 * ITF_MODULE_DOTS) / DOTS_PER_MM;
 export const CUST_ORD_NO_X_MM = R + 6.7;
 export const CUST_ORD_NO_MAX_WIDTH_MM = ITF_X_MM - ITF_QUIET_ZONE_MM - CUST_ORD_NO_X_MM;
 export const CUST_ORD_NO_MIN_PT = 4;
-
-interface TextEl {
-  x: number;
-  y: number;
-  pt: number;
-  text: string;
-  bold?: boolean;
-  anchor?: 'middle' | 'end';
-}
-
-function text(t: TextEl): string {
-  const weight = t.bold ? ' font-weight="700"' : '';
-  const anchor = t.anchor ? ` text-anchor="${t.anchor}"` : '';
-  return `<text x="${t.x}" y="${t.y}" font-size="${(t.pt * PT_TO_MM).toFixed(2)}"${weight}${anchor}>${escapeXml(t.text)}</text>`;
-}
-
-function rect(x: number, y: number, w: number, h: number): string {
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#000" stroke-width="0.4"/>`;
-}
-
-function hline(x1: number, x2: number, y: number): string {
-  return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#000" stroke-width="0.3"/>`;
-}
-
-function koreanDate(ymd: string): string {
-  const [y, m, d] = ymd.split('-');
-  return `${y}년 ${m}월 ${d}일`;
-}
-
-/**
- * 배달표 받는분 전체주소·⑭ 처럼 «잘리면 곤란한» 긴 필드용: 말줄임 전에 먼저 글자 크기를 줄인다
- * (최소 7pt). 그래도 안 들어가면 그 크기에서 말줄임으로 자른다(#913 최종리뷰) — 실측 주소
- * (「…현대아파트 101동 1203호」류)와 ⑭ 끝의 「(공동현관 #…)」가 fitText 단독으로는 잘려 나갔다.
- */
-function shrinkThenFit(t: string, maxWidthMm: number, basePt: number): { pt: number; text: string } {
-  const pt = fitSizePt(t, maxWidthMm, basePt, 7);
-  return { pt, text: fitText(t, maxWidthMm, pt) };
-}
 
 /** 출고번호 줄(`출고번호: AY…`)이 ITF quiet zone 앞에 들어가는 가장 큰 크기(pt). */
 export function custOrdNoPt(custText: string): number {
@@ -97,7 +62,8 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     text({ x: 57.8, y: 5.2, pt: 9, bold: true, text: `P. ${d.boxIndex}` }),
     text({ x: 69.5, y: 5.2, pt: 9, bold: true, text: `${d.boxIndex}/${d.boxCount}` }),
     text({ x: 42.5, y: 21.5, pt: 9, anchor: 'middle', text: s.centerCode }), // ⑤
-    text({ x: 42.5, y: 25, pt: 9, anchor: 'middle', text: s.centerName }), // ⑥
+    // ⑥ 가운데 정렬이라 길면 양쪽으로 퍼진다 — 왼쪽 끝이 ③ CODE128 quiet zone(x 23.9) 앞에서 멈추게 폭 36mm.
+    text({ x: 42.5, y: 25, pt: 9, anchor: 'middle', text: fitText(s.centerName, 36, 9) }), // ⑥
     text({ x: 55.5, y: 25.5, pt: 20, bold: true, text: s.routeRank }), // ⑩
     text({ x: 77, y: 25.5, pt: 20, bold: true, text: s.courierName }), // ⑪
     text({ x: 1.5, y: 32.3, pt: 10, text: fitText(d.commodityName, 93, 10) }), // 품명
@@ -159,13 +125,11 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
     },
   ];
 
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH_MM}mm" height="${HEIGHT_MM}mm" viewBox="0 0 ${WIDTH_MM} ${HEIGHT_MM}" font-family="NanumGothic">`,
-    `<g id="left">${left.join('')}</g>`,
-    `<g id="customer-copy">${customerCopy.join('')}</g>`,
-    `<g id="delivery-slip">${deliverySlip.join('')}</g>`,
-    '</svg>',
-  ].join('');
+  const svg = svgDocument(WIDTH_MM, HEIGHT_MM, [
+    ['left', left],
+    ['customer-copy', customerCopy],
+    ['delivery-slip', deliverySlip],
+  ]);
 
-  return { widthMm: WIDTH_MM, heightMm: HEIGHT_MM, svg, barcodes };
+  return { widthMm: WIDTH_MM, heightMm: HEIGHT_MM, rotation: 90, svg, barcodes };
 }

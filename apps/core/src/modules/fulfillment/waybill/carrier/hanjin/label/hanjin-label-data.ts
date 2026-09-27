@@ -6,6 +6,7 @@ import { commodityNameOf, composeMessage, parseRecipient } from '../../../waybil
 export interface HanjinSortFields {
   hubCode: string; // ① hub_cod
   terminalCode: string; // ② tml_cod (③ CODE128 데이터)
+  terminalName: string; // tml_nam — NL 샘플 ② 아래 「중구」(필드표 번호 없음, #920 에서 확인)
   midCode: string; // ④ dom_mid
   centerCode: string; // ⑤ cen_cod
   centerName: string; // ⑥ cen_nam
@@ -99,6 +100,7 @@ export function buildHanjinLabelData({ waybill, ctx, config, now }: BuildHanjinL
     sort: {
       hubCode: field('hub_cod'),
       terminalCode: field('tml_cod'),
+      terminalName: field('tml_nam'),
       midCode: field('dom_mid'),
       centerCode: field('cen_cod'),
       centerName: field('cen_nam'),

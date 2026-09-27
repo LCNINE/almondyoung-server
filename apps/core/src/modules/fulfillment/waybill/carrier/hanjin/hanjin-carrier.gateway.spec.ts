@@ -15,6 +15,7 @@ const config = {
   sender: { name: '창고', zip: '08588', baseAddress: '금천구', detailAddress: '지점', tel: '02-1' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 } as HanjinConfig;
 
 const req: WaybillRequest = {

@@ -93,4 +93,22 @@ describe('hanjin.config', () => {
       }
     });
   });
+
+  describe('labelType (HANJIN_LABEL_TYPE)', () => {
+    it('없으면 NS', () => {
+      expect(configWith().labelType).toBe('NS');
+    });
+    it('공백뿐이면 NS', () => {
+      expect(configWith({ HANJIN_LABEL_TYPE: '  ' }).labelType).toBe('NS');
+    });
+    it('앞뒤 공백을 걷고 대문자로 맞춘다', () => {
+      expect(configWith({ HANJIN_LABEL_TYPE: ' nl ' }).labelType).toBe('NL');
+    });
+    it('모르는 값도 로드는 한다 — 발급 게이트는 라벨 형을 보지 않는다(검증은 라벨 렌더 때)', () => {
+      const c = configWith({ HANJIN_LABEL_TYPE: 'XX' });
+      expect(c.labelType).toBe('XX');
+      expect(isHanjinConfigured(c)).toBe(true);
+      expect(missingHanjinConfig(c)).toEqual([]);
+    });
+  });
 });
