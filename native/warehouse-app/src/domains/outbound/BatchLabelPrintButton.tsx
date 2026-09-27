@@ -55,11 +55,16 @@ export function BatchLabelPrintButton({
   prefs = localStoragePrefs,
   print = printRaw,
   now = () => new Date(),
+  disabled = false,
+  onRunningChange,
 }: {
   batchId: string;
   prefs?: DevicePrefs;
   print?: PrintRaw;
   now?: () => Date;
+  /** 다른 배치가 인쇄 중이면 부모가 막는다 — 프린터가 한 대라 라벨이 섞인다. */
+  disabled?: boolean;
+  onRunningChange?: (running: boolean) => void;
 }) {
   const api = useApiClient();
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
@@ -71,7 +76,7 @@ export function BatchLabelPrintButton({
   const lastResult = phase.kind === 'done' ? phase.result : null;
 
   const prepare = async (retryIds?: string[]) => {
-    if (busy.current) return;
+    if (busy.current || disabled) return;
     setNotice(null);
     if (!readLabelPrinter(prefs)) {
       setNotice(NO_PRINTER_MESSAGE);
@@ -98,8 +103,9 @@ export function BatchLabelPrintButton({
 
   const start = async (shipmentIds: string[]) => {
     const target = readLabelPrinter(prefs);
-    if (!target || busy.current) return;
+    if (!target || busy.current || disabled) return;
     busy.current = true;
+    onRunningChange?.(true);
     setPhase({ kind: 'running', done: 0, total: shipmentIds.length });
     try {
       const result = await runBatchLabelPrint({
@@ -114,6 +120,7 @@ export function BatchLabelPrintButton({
       setPhase({ kind: 'done', result });
     } finally {
       busy.current = false;
+      onRunningChange?.(false);
     }
   };
 
@@ -126,13 +133,13 @@ export function BatchLabelPrintButton({
         <Button
           type="button"
           className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-          disabled={phase.kind === 'running'}
+          disabled={disabled || phase.kind === 'running'}
           onClick={() => void prepare()}
         >
           {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : '라벨 인쇄'}
         </Button>
         {phase.kind === 'done' && retry.length > 0 && (
-          <Button type="button" onClick={() => void prepare(retry)}>
+          <Button type="button" disabled={disabled} onClick={() => void prepare(retry)}>
             실패·미인쇄만 다시
           </Button>
         )}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -25,6 +25,10 @@ import {
 } from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
+import {
+  LABEL_PRINTER_KEY,
+  type PrintRaw,
+} from '../../core/hardware/print/labelPrinter';
 import { OutboundQueueScreen } from './OutboundQueueScreen';
 
 const session = {
@@ -95,7 +99,8 @@ function renderScreen(
     created: [],
   },
   foundWarehouse = 'w-1',
-  labelPrinting = false
+  labelPrinting = false,
+  labelDeps: { label?: () => Promise<unknown>; print?: PrintRaw } = {}
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -152,6 +157,18 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill'))
         throw new Error(`GET ${o.path} → 404`);
+      const workItems = /^\/outbound-batches\/([^/]+)\/work-items$/.exec(
+        o.path
+      );
+      if (workItems)
+        return [
+          { id: `wi-${workItems[1]}`, shipmentId: 's-1', status: 'queued' },
+        ];
+      if (o.path === '/shipments/s-1/waybill/label') {
+        return labelDeps.label
+          ? labelDeps.label()
+          : { waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' };
+      }
       if (o.path.startsWith('/outbound-batches/v2')) {
         const [, qs] = o.path.split('?');
         const status = new URLSearchParams(qs ?? '').get('status');
@@ -172,7 +189,11 @@ function renderScreen(
         <ScanButton code="T-404" />
         <ScanButton code="T-NOWORKITEM" />
         <ScanButton code="T-SHIPPED" />
-        <OutboundQueueScreen prefs={prefs} labelPrinting={labelPrinting} />
+        <OutboundQueueScreen
+          prefs={prefs}
+          labelPrinting={labelPrinting}
+          print={labelDeps.print}
+        />
       </>
     ),
   });
@@ -422,6 +443,105 @@ describe('OutboundQueueScreen', () => {
     renderScreen(requests);
     await screen.findByText('OB-1');
     expect(screen.queryByRole('button', { name: '라벨 인쇄' })).toBeNull();
+  });
+
+  // 인쇄 중엔 useUnsavedWork 가 라우터를 막는다 — 그때 스캔이 navigate 까지 가면 그 promise 가
+  // 끝나지 않아 이후 스캔이 전부 무시된다(스캐너가 조용히 죽는다).
+  it('라벨 인쇄 중 스캔은 안내만 하고, 인쇄가 끝나면 다시 박스를 연다', async () => {
+    const user = userEvent.setup();
+    const requests: CapturedRequest[] = [];
+    let release: (v: unknown) => void = () => {};
+    renderScreen(
+      requests,
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      }),
+      undefined,
+      'w-1',
+      true,
+      {
+        label: () => new Promise((resolve) => (release = resolve)),
+        print: async () => {},
+      }
+    );
+    await user.click(await screen.findByRole('button', { name: '라벨 인쇄' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: '인쇄',
+      })
+    );
+    await screen.findByRole('button', { name: '인쇄 중 0/1' });
+
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(
+      await screen.findByText('라벨 인쇄가 끝난 뒤 스캔해 주세요.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    expect(
+      requests.filter(({ path }) => path.startsWith('/shipments/by-waybill'))
+    ).toHaveLength(0);
+
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' });
+    await screen.findByRole('status');
+
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(await screen.findByText('단순출고화면')).toBeInTheDocument();
+  });
+
+  // 프린터는 한 대다 — 두 배치가 동시에 돌면 라벨이 한 줄로 섞여 나온다.
+  it('한 배치를 인쇄하는 동안 다른 배치의 라벨 인쇄는 막힌다', async () => {
+    const user = userEvent.setup();
+    let release: (v: unknown) => void = () => {};
+    renderScreen(
+      [],
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      }),
+      {
+        picking: [
+          {
+            id: 'b-1',
+            batchNumber: 'OB-1',
+            name: '오전',
+            status: 'picking',
+            totalItems: 1,
+            totalQty: 1,
+          },
+        ],
+        created: [
+          {
+            id: 'b-2',
+            batchNumber: 'OB-2',
+            name: '오후',
+            status: 'created',
+            totalItems: 1,
+            totalQty: 1,
+          },
+        ],
+      },
+      'w-1',
+      true,
+      {
+        label: () => new Promise((resolve) => (release = resolve)),
+        print: async () => {},
+      }
+    );
+    await screen.findByText('OB-2');
+    const [first, second] = screen.getAllByRole('button', { name: '라벨 인쇄' });
+    await user.click(first);
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: '인쇄',
+      })
+    );
+    await screen.findByRole('button', { name: '인쇄 중 0/1' });
+    expect(second).toBeDisabled();
+
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' });
+    await screen.findByRole('status');
+    expect(second).toBeEnabled();
   });
 });
 
