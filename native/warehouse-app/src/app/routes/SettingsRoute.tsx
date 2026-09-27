@@ -5,6 +5,8 @@ import { platform } from '@tauri-apps/plugin-os';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { resolveProfile } from '../profile';
+import { LabelPrinterSettings } from '../../core/hardware/print/LabelPrinterSettings';
+import { isStationDevice } from '../station';
 
 export function SettingsRoute() {
   const developer = useDeveloperMode();
@@ -19,6 +21,8 @@ export function SettingsRoute() {
         </p>
         <WarehousePicker />
       </section>
+
+      {isStationDevice() && <LabelPrinterSettings />}
 
       <section className="space-y-1">
         <h2 className="text-sm font-semibold text-gray-700">프로필</h2>
