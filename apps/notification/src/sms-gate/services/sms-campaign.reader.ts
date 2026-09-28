@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, SmsAudienceSummary, UserContactClient } from '@app/shared';
+import { BadRequestError, NotFoundError, SmsAudienceSummary, UserContactClient } from '@app/shared';
 import { NotificationCampaign } from '../../../database/schemas/notification-schema';
 import { PreviewSmsCampaignDto } from '../dto';
+import { MergedAudience, mergeCampaignAudience } from '../utils/campaign-audience';
+import { toKrE164 } from '../clients/sms-gate.client';
 import { isSendable } from '../utils/device-picker';
 import { bulkIntervalMs, BulkDevice, estimateBulkSchedule } from '../utils/bulk-schedule';
 import { BULK_WINDOW_END_HOUR, BULK_WINDOW_START_HOUR } from '../constants/sms-gate.constants';
@@ -26,9 +28,9 @@ export interface SmsCampaignListItem {
 }
 
 export interface SmsCampaignPreview {
-  audience: SmsAudienceSummary;
   recipients: number;
   excluded: number;
+  duplicates: number;
   ahead: number;
   window: { start: string; end: string };
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
@@ -52,19 +54,44 @@ export class SmsCampaignReader {
     return this.userContactClient.summarizeSmsAudience();
   }
 
+  /**
+   * 발송 명단을 확정한다. 미리보기와 생성이 같은 함수를 써서 확인창 숫자와 실제 발송 수가 갈리지 않는다.
+   * 광고로 그룹에 보낼 때는 회원 명단도 불러와 동의 안 한 회원의 번호를 뺀다.
+   */
+  async resolveAudience(dto: PreviewSmsCampaignDto): Promise<MergedAudience> {
+    const groupIds = [...new Set(dto.groupIds ?? [])];
+    const includeMembers = dto.includeMembers ?? false;
+    if (!includeMembers && groupIds.length === 0) throw new BadRequestError('받는 사람을 하나 이상 고르세요');
+    const found = await this.repository.findRecipientGroupsByIds(groupIds);
+    const missing = groupIds.filter((id) => !found.some((g) => g.id === id));
+    if (missing.length > 0) throw new NotFoundError(`수신자 그룹을 찾을 수 없습니다: ${missing.join(', ')}`);
+
+    const marketing = dto.category === 'MARKETING';
+    const [members, groupRows] = await Promise.all([
+      includeMembers || (marketing && groupIds.length > 0)
+        ? this.userContactClient.findSmsAudience(false)
+        : Promise.resolve([]),
+      this.repository.findGroupRecipients(groupIds),
+    ]);
+    const optedOut = marketing
+      ? await this.repository.findOptedOut([...new Set(groupRows.map((row) => toKrE164(row.phone)))])
+      : new Set<string>();
+    return mergeCampaignAudience({ members, includeMembers, groupRows, marketing, optedOut });
+  }
+
   async preview(dto: PreviewSmsCampaignDto): Promise<SmsCampaignPreview> {
     const now = new Date();
     const [audience, ahead, devices] = await Promise.all([
-      dto.groupId ? this.groupAudience(dto.groupId) : this.userContactClient.summarizeSmsAudience(),
+      this.resolveAudience(dto),
       this.repository.countPending(),
       this.activeDevices(now),
     ]);
-    const recipients = dto.category === 'MARKETING' ? audience.consented : audience.withPhone;
+    const recipients = audience.recipients.length;
     const estimate = estimateBulkSchedule(devices, now, dto.sendAt ? new Date(dto.sendAt) : now, ahead, recipients);
     return {
-      audience,
       recipients,
-      excluded: audience.active - recipients,
+      excluded: audience.excluded,
+      duplicates: audience.duplicates,
       ahead,
       window: { start: hour(BULK_WINDOW_START_HOUR), end: hour(BULK_WINDOW_END_HOUR) },
       devices: devices.map((d) => ({
@@ -115,19 +142,6 @@ export class SmsCampaignReader {
       ahead += item.counts.pending;
     }
     return items;
-  }
-
-  /** 그룹은 전원이 번호를 가진다. consented 는 수신거부 번호를 뺀 광고 대상 수다. */
-  private async groupAudience(groupId: string): Promise<SmsAudienceSummary> {
-    if (!(await this.repository.findRecipientGroup(groupId))) {
-      throw new NotFoundError(`수신자 그룹을 찾을 수 없습니다: ${groupId}`);
-    }
-    // ponytail: 행을 받아 센다. 그룹이 수만 명을 넘으면 count 쿼리로 바꿀 것.
-    const [all, sendable] = await Promise.all([
-      this.repository.findGroupRecipients(groupId, false),
-      this.repository.findGroupRecipients(groupId, true),
-    ]);
-    return { active: all.length, withPhone: all.length, consented: sendable.length };
   }
 
   private stateOf(campaign: NotificationCampaign, pending: number, now: Date): SmsCampaignState {

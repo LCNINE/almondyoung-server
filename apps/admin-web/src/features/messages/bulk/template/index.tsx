@@ -23,7 +23,7 @@ import { CategoryRadio } from '../../components/category-radio';
 import { MessageComposer } from '../../components/message-composer';
 import { TemplatePanel } from '../../send/components/template-panel';
 import { BulkConfirmDialog } from '../components/bulk-confirm-dialog';
-import { ALL_MEMBERS, TargetPicker } from '../components/target-picker';
+import { TargetPicker, type TargetSelection } from '../components/target-picker';
 
 export default function SmsBulkTemplate() {
   const router = useRouter();
@@ -40,29 +40,45 @@ export default function SmsBulkTemplate() {
   const [preview, setPreview] = useState<{
     result: SmsCampaignPreview;
     request: CreateSmsCampaignDto;
-    groupName?: string;
+    targetNames: string[];
   } | null>(null);
-  const [target, setTarget] = useState(ALL_MEMBERS);
+  const [target, setTarget] = useState<TargetSelection>({ includeMembers: true, groupIds: [] });
 
   const isMarketing = category === 'MARKETING';
-  // 목록에서 찾은 값이 아니라 선택값을 보낸다. 그룹이 사라져도 전체 회원 발송으로 새지 않고 서버가 404 로 막는다.
-  const groupId = target === ALL_MEMBERS ? undefined : target;
-  const group = groups?.find((g) => g.id === groupId);
+  // 목록에서 찾은 값이 아니라 선택값을 보낸다. 그룹이 사라져도 다른 대상으로 새지 않고 서버가 404 로 막는다.
+  const selectedGroups = target.groupIds.map((id) => groups?.find((g) => g.id === id));
+  const hasTarget = target.includeMembers || target.groupIds.length > 0;
   const sendAt = scheduled && sendAtLocal ? new Date(sendAtLocal).toISOString() : null;
   const canSubmit =
     name.trim().length > 0 &&
     content.trim().length > 0 &&
     (!scheduled || sendAt !== null) &&
-    (!groupId || !!group) &&
+    hasTarget &&
+    selectedGroups.every(Boolean) &&
     !previewCampaign.isPending;
 
   const handleOpenConfirm = () => {
-    const request: CreateSmsCampaignDto = { name, category, content, sendAt: sendAt ?? undefined, groupId };
-    const groupName = group?.name;
+    const request: CreateSmsCampaignDto = {
+      name,
+      category,
+      content,
+      sendAt: sendAt ?? undefined,
+      includeMembers: target.includeMembers,
+      groupIds: target.groupIds,
+    };
+    const targetNames = [
+      ...(target.includeMembers ? ['아몬드영 회원 전체'] : []),
+      ...selectedGroups.map((g) => `${g?.name} 그룹`),
+    ];
     previewCampaign.mutate(
-      { category: request.category, sendAt: request.sendAt, groupId: request.groupId },
       {
-        onSuccess: (result) => setPreview({ result, request, groupName }),
+        category: request.category,
+        sendAt: request.sendAt,
+        includeMembers: request.includeMembers,
+        groupIds: request.groupIds,
+      },
+      {
+        onSuccess: (result) => setPreview({ result, request, targetNames }),
         onError: (error) => toast.error(error.message || '발송 예상치를 불러오지 못했습니다.'),
       }
     );
@@ -99,7 +115,7 @@ export default function SmsBulkTemplate() {
             <CategoryRadio value={category} onChange={setCategory} />
             {isMarketing && (
               <span className="text-muted-foreground text-xs">
-                {group ? '수신거부한 번호는 빼고 발송됩니다.' : '마케팅 수신 동의 회원에게만 발송됩니다.'}
+                마케팅 수신 동의 회원과, 수신거부하지 않은 그룹 번호에만 발송됩니다.
               </span>
             )}
           </div>
@@ -167,7 +183,7 @@ export default function SmsBulkTemplate() {
 
       <BulkConfirmDialog
         preview={preview?.result ?? null}
-        groupName={preview?.groupName}
+        targetNames={preview?.targetNames ?? []}
         category={preview?.request.category ?? category}
         content={preview?.request.content ?? content}
         sendAt={preview?.request.sendAt ?? null}

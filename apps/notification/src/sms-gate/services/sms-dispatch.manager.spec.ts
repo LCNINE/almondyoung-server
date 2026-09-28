@@ -64,7 +64,7 @@ describe('SmsDispatchManager.dispatchDue', () => {
     expect(client.send).toHaveBeenCalledTimes(1);
   });
 
-  it('수신자 그룹 광고 건은 수신거부 번호면 취소하고 회원 동의는 묻지 않는다', async () => {
+  it('수신자 그룹 광고 건은 수신거부 번호이거나 그 번호의 회원이 동의를 껐으면 취소한다', async () => {
     jest.useFakeTimers({ now: new Date('2026-09-21T10:00:00+09:00') });
     const groupRow = (id: string, phone: string) =>
       ({
@@ -76,10 +76,11 @@ describe('SmsDispatchManager.dispatchDue', () => {
       }) as unknown as Notification;
     const optedOut = groupRow('1', '+821011112222');
     const kept = groupRow('2', '+821033334444');
+    const consentOff = groupRow('3', '+821055556666');
     const repository = {
       withDispatchLock: (fn: () => Promise<void>) => fn(),
       findDue: jest.fn((_now: Date, _limit: number, _marketing: boolean, bulk: boolean) =>
-        Promise.resolve(bulk ? [optedOut, kept] : []),
+        Promise.resolve(bulk ? [optedOut, kept, consentOff] : []),
       ),
       findOptedOut: jest.fn().mockResolvedValue(new Set(['+821011112222'])),
       markCancelled: jest.fn(),
@@ -87,23 +88,26 @@ describe('SmsDispatchManager.dispatchDue', () => {
       markSent: jest.fn(),
       markFailed: jest.fn(),
     };
-    const contacts = { findContacts: jest.fn().mockResolvedValue(new Map()) };
+    const contacts = {
+      findActiveContactsByPhone: jest.fn(async (phone: string) =>
+        phone === '+821055556666' ? [{ userId: 'u-off', username: '동의끔' }] : [],
+      ),
+      findContacts: jest.fn().mockResolvedValue(new Map([['u-off', { userId: 'u-off', marketingConsent: false }]])),
+    };
     const deviceReader = {
-      loadStatuses: jest
-        .fn()
-        .mockResolvedValue([
-          {
-            id: 'a',
-            name: 'A',
-            deviceId: 'A',
-            online: true,
-            enabled: true,
-            dailyLimit: 1000,
-            sentToday: 0,
-            lastSeen: new Date(),
-            lastSentAt: null,
-          },
-        ]),
+      loadStatuses: jest.fn().mockResolvedValue([
+        {
+          id: 'a',
+          name: 'A',
+          deviceId: 'A',
+          online: true,
+          enabled: true,
+          dailyLimit: 1000,
+          sentToday: 0,
+          lastSeen: new Date(),
+          lastSentAt: null,
+        },
+      ]),
     };
     const client = { send: jest.fn().mockResolvedValue({ id: 'ext' }) };
     const manager = new SmsDispatchManager(
@@ -115,8 +119,9 @@ describe('SmsDispatchManager.dispatchDue', () => {
 
     await manager.dispatchDue(new Date());
 
-    expect(contacts.findContacts).toHaveBeenCalledWith([]);
+    expect(contacts.findContacts).toHaveBeenCalledWith(['u-off']);
     expect(repository.markCancelled).toHaveBeenCalledWith(optedOut, expect.any(String));
+    expect(repository.markCancelled).toHaveBeenCalledWith(consentOff, expect.any(String));
     expect(repository.claim).toHaveBeenCalledWith(kept);
     expect(repository.claim).not.toHaveBeenCalledWith(optedOut);
   });

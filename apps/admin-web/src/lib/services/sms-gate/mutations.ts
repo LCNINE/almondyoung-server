@@ -73,7 +73,8 @@ export const useDeleteSmsTemplate = () => {
 
 export const usePreviewSmsCampaign = () => {
   return useMutation({
-    mutationFn: (dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'groupId'>) => smsGateApi.previewCampaign(dto),
+    mutationFn: (dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'includeMembers' | 'groupIds'>) =>
+      smsGateApi.previewCampaign(dto),
   });
 };
 

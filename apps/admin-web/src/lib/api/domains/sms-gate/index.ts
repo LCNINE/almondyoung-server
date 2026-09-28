@@ -84,8 +84,10 @@ export interface CreateSmsCampaignDto {
   category: SmsGateCategory;
   content: string;
   sendAt?: string;
-  /** 비우면 활성 회원 전체 */
-  groupId?: string;
+  /** 아몬드영 회원 전체 포함 */
+  includeMembers?: boolean;
+  /** 수신자 그룹들. 회원·그룹 사이 겹치는 번호는 한 통만 */
+  groupIds?: string[];
 }
 
 export interface SmsRecipientGroup {
@@ -112,9 +114,9 @@ export interface SmsGroupRecipientsResult {
 }
 
 export interface SmsCampaignPreview {
-  audience: SmsAudienceSummary;
   recipients: number;
   excluded: number;
+  duplicates: number;
   ahead: number;
   window: { start: string; end: string };
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
@@ -244,7 +246,7 @@ export const smsGateApi = {
   },
 
   previewCampaign: async (
-    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'groupId'>
+    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'includeMembers' | 'groupIds'>
   ): Promise<SmsCampaignPreview> => {
     const response = await client.post<SmsCampaignPreview>(`${BASE}/campaigns/preview`, dto);
     return response.data;
