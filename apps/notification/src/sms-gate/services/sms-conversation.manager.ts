@@ -13,11 +13,18 @@ export class SmsConversationManager {
     private readonly userContactClient: UserContactClient,
   ) {}
 
+  async delete(phoneNumber: string): Promise<void> {
+    const deleted = await this.repository.deleteConversation(toKrE164(phoneNumber));
+    if (deleted === 0) throw new NotFoundError(`삭제할 대화가 없습니다: ${phoneNumber}`);
+  }
+
   async reply(dto: ReplySmsConversationDto, sentBy: string): Promise<SmsGateSendResult> {
     const phoneNumber = toKrE164(dto.phoneNumber);
     const latest = (await this.repository.findInbound(phoneNumber)).at(-1);
     if (!latest) throw new NotFoundError(`받은 문자가 없는 번호입니다: ${phoneNumber}`);
-    if (!latest.deviceId) throw new BadRequestError('받은 폰을 알 수 없어 답장할 수 없습니다');
+    const viaNhnOnly = dto.route === 'NHN';
+    const deviceId = viaNhnOnly ? undefined : (dto.deviceId ?? latest.deviceId ?? undefined);
+    if (!viaNhnOnly && !deviceId) throw new BadRequestError('받은 폰을 알 수 없어 답장할 수 없습니다');
 
     const matched = await this.userContactClient.findActiveContactsByPhone(phoneNumber);
     const userId = (matched.find((c) => c.userId === latest.userId) ?? matched[0])?.userId;
@@ -28,7 +35,8 @@ export class SmsConversationManager {
         userIds: [userId],
         content: dto.content,
         category: 'INFORMATIONAL',
-        deviceId: latest.deviceId,
+        deviceId,
+        route: dto.route,
         nhnFallback: dto.nhnFallback,
       },
       sentBy,

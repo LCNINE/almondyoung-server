@@ -5,6 +5,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
@@ -109,6 +110,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     );
   }
 

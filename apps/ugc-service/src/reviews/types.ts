@@ -1,5 +1,5 @@
 import { type InferSelectModel } from 'drizzle-orm';
-import { reviewComments, reviewMedia, reviews } from '../db/schema';
+import { reviewComments, reviewMedia, reviews, reviewEligibilities } from '../db/schema';
 
 export type ReviewStatus = 'active' | 'hidden';
 
@@ -7,6 +7,10 @@ export type ReviewEntity = InferSelectModel<typeof reviews>;
 export type ReviewMediaEntity = InferSelectModel<typeof reviewMedia>;
 export type ReviewCommentEntity = InferSelectModel<typeof reviewComments>;
 export type ReviewWithMediaEntity = ReviewEntity & {
+  permission?: Pick<
+    InferSelectModel<typeof reviewEligibilities>,
+    'id' | 'provider' | 'batchId' | 'grantedReason'
+  > | null;
   mediaFileIds: string[];
   helpfulCount: number;
   likeCount: number;

@@ -33,6 +33,7 @@ const CONFIG: HanjinConfig = {
   sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 const actor = { id: randomUUID(), roles: ['master'] };
 
@@ -84,7 +85,7 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
     const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
     const gw = fakeCarrierGateway({
       allocate: () => {
-        throw new CarrierError('x', 'definitive_rejection', { code: 'ERROR-05' });
+        throw new CarrierError('x', 'definitive_rejection', { code: 'ERROR-04' });
       },
     });
     const mgr = manager(new CarrierGatewayRegistry([gw]));
@@ -381,7 +382,7 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       const gw = fakeCarrierGateway({
         allocate: () => {
           call += 1;
-          if (call === 1) throw new CarrierError('x', 'definitive_rejection', { code: 'ERROR-05' });
+          if (call === 1) throw new CarrierError('x', 'definitive_rejection', { code: 'ERROR-04' });
           return Promise.resolve({ waybillNo: `WBL-${randomUUID().slice(0, 8)}`, labelData: {} });
         },
       });
@@ -395,7 +396,7 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       expect(results).toHaveLength(2);
       const failed = results.filter((r) => r.status === 'failed');
       expect(failed).toHaveLength(1);
-      expect(failed[0].reason).toContain('ERROR-05');
+      expect(failed[0].reason).toContain('ERROR-04');
     });
 
     // 위 'records a per-item reason on failure' 는 definitive_rejection 이 machine.driveAllocate 내부에서 잡혀

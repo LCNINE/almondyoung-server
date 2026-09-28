@@ -26,7 +26,9 @@
     "password": "パスワードの変更",
     "cafe24": "旧アーモンドヨンアカウント連携",
     "review": "レビュー管理",
+    "contests": "参加した公募展",
     "reviewShort": "レビュー",
+    "myShopListings": "マイ物件",
     "inquiries": "お問い合わせ履歴",
     "membership": "アーモンドヨン メンバーシップ",
     "point": "ポイント",
@@ -35,6 +37,18 @@
     "logout": "ログアウト",
     "withdraw": "退会",
     "business": "事業者情報"
+  },
+  "contests": {
+    "title": "参加した公募展",
+    "description": "応募した作品と投票した作品を確認できます。",
+    "logoContest": "ロゴ公募展",
+    "viewContest": "公募展を見る",
+    "submitted": "応募した作品",
+    "voted": "投票した作品",
+    "entryNotice": "作品は編集できません。再応募する場合は先に応募を取り消してください。",
+    "empty": "まだ参加した公募展はありません。",
+    "browse": "ロゴ公募展を見る",
+    "loadFail": "参加履歴を読み込めませんでした。しばらくしてから再度お試しください。"
   },
   "quickLink": {
     "orderList": "注文履歴",
@@ -478,6 +492,14 @@
         "birthday": "生年月日",
         "phone": "携帯電話番号"
       }
+    },
+    "marketing": {
+      "title": "広告情報の受信",
+      "description": "割引・イベントなどの特典情報をメールとSMSで受け取ります。注文・配送や保有クーポンの期限などのお知らせは設定に関係なく送信されます。",
+      "label": "メール・SMS受信同意",
+      "agreed": "アーモンドヤングの広告情報受信同意が{date}に処理されました。",
+      "withdrawn": "アーモンドヤングの広告情報受信拒否が{date}に処理されました。",
+      "saveFailed": "変更に失敗しました。再度お試しください。"
     }
   },
   "order": {
@@ -537,7 +559,10 @@
       "searchResultCount": "「{q}」の検索結果 {count}件",
       "prevPage": "前へ",
       "nextPage": "次へ",
-      "recent6m": "直近6か月"
+      "recent6m": "直近6か月",
+      "showMoreItems": "商品をあと{count}件表示",
+      "totalPaid": "お支払い合計",
+      "itemQuantity": "{count}個"
     },
     "filter": {
       "label": "フィルター",
@@ -572,7 +597,10 @@
         "channel_order": "チャネル注文は、ご注文元のチャネルでキャンセルしてください。",
         "already_processing": "ピッキングが開始されたため、ご自身でのキャンセルはできません。カスタマーセンターへお問い合わせください。",
         "digital_downloaded": "ダウンロード済みのデジタル商品が含まれているため、ご自身でのキャンセルはできません。カスタマーセンターへお問い合わせください。"
-      }
+      },
+      "writeReview": "レビューを書く",
+      "addToCartSuccess": "カートに追加しました。",
+      "goToCart": "カートを見る"
     },
     "delivery": {
       "paid": "お支払い完了",

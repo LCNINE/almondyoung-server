@@ -2,11 +2,13 @@ import { buildMatchingLinks, normalizeQuantity, type AutoTabState } from './buil
 
 const HOLDER = '11111111-1111-1111-1111-111111111111';
 const SUPPLIER = '22222222-2222-2222-2222-222222222222';
+const PROFILE = '33333333-3333-3333-3333-333333333333';
 
 function state(overrides: Partial<AutoTabState> = {}): AutoTabState {
   return {
     holderId: HOLDER,
     supplierId: SUPPLIER,
+    deliveryProfileId: PROFILE,
     businessProductName: '사입 상품명',
     importDeclarationNumber: '',
     optionKey: '',
@@ -30,6 +32,21 @@ describe('normalizeQuantity', () => {
 });
 
 describe('buildMatchingLinks', () => {
+  it('각 newSku 에 배송 프로필을 싣는다', () => {
+    const result = buildMatchingLinks(state());
+    expect(result.ok && result.links[0].newSku?.deliveryProfileId).toBe(
+      PROFILE
+    );
+  });
+
+  // 자동 탭이 만드는 SKU 는 stockType 을 안 보내 physical 이므로 서버가 항상 프로필을 요구한다.
+  it('프로필이 없으면 missing-required', () => {
+    expect(buildMatchingLinks(state({ deliveryProfileId: '' }))).toEqual({
+      ok: false,
+      reason: 'missing-required',
+    });
+  });
+
   it('builds one newSku link per filled option row', () => {
     const result = buildMatchingLinks(
       state({
@@ -45,11 +62,23 @@ describe('buildMatchingLinks', () => {
       links: [
         {
           quantity: 2,
-          newSku: { name: 'S / 검정', holderId: HOLDER, supplierIds: [SUPPLIER], businessProductName: '사입 상품명' },
+          newSku: {
+            name: 'S / 검정',
+            holderId: HOLDER,
+            supplierIds: [SUPPLIER],
+            deliveryProfileId: PROFILE,
+            businessProductName: '사입 상품명',
+          },
         },
         {
           quantity: 1,
-          newSku: { name: 'M / 검정', holderId: HOLDER, supplierIds: [SUPPLIER], businessProductName: '사입 상품명' },
+          newSku: {
+            name: 'M / 검정',
+            holderId: HOLDER,
+            supplierIds: [SUPPLIER],
+            deliveryProfileId: PROFILE,
+            businessProductName: '사입 상품명',
+          },
         },
       ],
     });
@@ -82,6 +111,7 @@ describe('buildMatchingLinks', () => {
       name: 'S / 검정',
       holderId: HOLDER,
       supplierIds: [SUPPLIER],
+      deliveryProfileId: PROFILE,
     });
   });
 

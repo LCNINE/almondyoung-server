@@ -8,8 +8,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { useReview } from '@/lib/services/review';
 import { useMastersByIdsSuspense } from '@/lib/services/products/queries';
 import { useOptionalAdminUser } from '@/lib/services/users/queries';
-import { STATUS_LABELS, ReviewStatus } from '@/lib/types/dto/review';
+import {
+  STATUS_LABELS,
+  REVIEW_PROVIDER_LABELS,
+  ReviewStatus,
+} from '@/lib/types/dto/review';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Carousel,
@@ -75,6 +80,7 @@ function ReviewProductCard({ productId }: { productId: string }) {
     <div className="flex items-center gap-3">
       <div className="w-16 h-16 overflow-hidden border rounded shrink-0 bg-muted">
         <Image
+          unoptimized
           src={buildProductThumbnailSrc(product?.thumbnail)}
           alt={product?.name ?? '상품 이미지'}
           width={64}
@@ -105,7 +111,7 @@ function ReviewAuthorName({ userId }: { userId: string }) {
 }
 
 function ReviewDetailContent({ reviewId }: { reviewId: string }) {
-  const { data } = useReview(reviewId);
+  const { data, refetch, isFetching, isRefetchError } = useReview(reviewId);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
@@ -139,6 +145,13 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: '작성자', value: authorNode },
+    {
+      key: '작성 권한',
+      value: REVIEW_PROVIDER_LABELS[data.permission?.provider ?? 'unassigned'],
+    },
+    { key: '등록 관리자/회원 ID', value: data.userId },
+    { key: '등록 배치', value: data.permission?.batchId },
+    { key: '권한 발급 사유', value: data.permission?.grantedReason },
     { key: '상품', value: productNode },
     { key: '별점', value: ratingStars(data.rating) },
     {
@@ -180,32 +193,52 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
           {data.content}
         </p>
       </section>
-      {imageUrls.length > 0 && (
-        <section className="p-4">
-          <h3 className="mb-2 text-sm font-medium text-gray-500">
-            첨부파일 ({imageUrls.length}개)
+      <section className="p-4">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-gray-500">
+            첨부 이미지 ({imageUrls.length}개)
           </h3>
-          <ul className="flex flex-wrap gap-3">
-            {imageUrls.map((url, index) => (
-              <li key={url}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedIndex(index)}
-                  className="cursor-pointer"
-                >
-                  <Image
-                    width={96}
-                    height={96}
-                    src={url}
-                    alt={`첨부 이미지 ${index + 1}`}
-                    className="object-cover transition-opacity border rounded-md aspect-square hover:opacity-80"
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {isFetching ? '확인 중…' : '새로고침'}
+          </Button>
+        </div>
+        {isRefetchError && (
+          <p role="status" className="mb-2 text-sm text-destructive">
+            최신 정보를 불러오지 못했습니다. 새로고침을 눌러 다시 확인해 주세요.
+          </p>
+        )}
+        {imageUrls.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            연결된 이미지가 없습니다. 이후 추가된 이미지는 자동으로 표시됩니다.
+          </p>
+        )}
+        <ul className="flex flex-wrap gap-3">
+          {imageUrls.map((url, index) => (
+            <li key={url}>
+              <button
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className="cursor-pointer"
+              >
+                <Image
+                  unoptimized
+                  width={96}
+                  height={96}
+                  src={url}
+                  alt={`첨부 이미지 ${index + 1}`}
+                  className="object-cover transition-opacity border rounded-md aspect-square hover:opacity-80"
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <Dialog
         open={selectedIndex !== null}
@@ -218,6 +251,7 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
                 <CarouselItem key={url}>
                   <div className="relative flex h-[70vh] w-full items-center justify-center">
                     <Image
+                      unoptimized
                       fill
                       src={url}
                       alt={`첨부 이미지 ${index + 1}`}

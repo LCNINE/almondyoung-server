@@ -19,6 +19,10 @@ export class SmsConversationsService {
     return this.conversationReader.detail(phoneNumber);
   }
 
+  delete(phoneNumber: string): Promise<void> {
+    return this.conversationManager.delete(phoneNumber);
+  }
+
   reply(dto: ReplySmsConversationDto, sentBy: string): Promise<SmsGateSendResult> {
     return this.conversationManager.reply(dto, sentBy);
   }

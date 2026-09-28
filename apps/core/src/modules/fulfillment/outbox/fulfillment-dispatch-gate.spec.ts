@@ -30,7 +30,7 @@ describe('FulfillmentOutboxDispatchGate', () => {
 
     expect(paused).not.toBeNull();
     expect(paused?.topics).toEqual([SHIPMENT_STREAM.topic.topic, FULFILLMENT_V2_STREAM.topic.topic]);
-    expect(paused?.eventTypePrefixes).toEqual(['Fulfillment', 'Shipment']);
+    expect(paused?.eventTypePrefixes).toEqual(['Fulfillment', 'Shipment', 'SalesOrderShipment']);
   });
 
   it('보류 서술이 옛 SQL 필터와 같은 행 집합을 고른다', () => {
@@ -47,10 +47,12 @@ describe('FulfillmentOutboxDispatchGate', () => {
     expect(isPaused('fulfillments.events.v2', 'FulfillmentProgressed')).toBe(true);
     expect(isPaused('fulfillments.events.v1', 'FulfillmentShipped')).toBe(true);
     expect(isPaused('fulfillments.events.v1', 'FulfillmentDelivered')).toBe(true);
+    expect(isPaused('core.orders.events.v1', 'SalesOrderShipmentDispatched')).toBe(true);
 
     expect(isPaused('fulfillments.events.v1', 'ORDER_CREATED')).toBe(false);
     expect(isPaused('fulfillments.events.v1', 'ORDER_MODIFIED')).toBe(false);
     expect(isPaused('core.orders.events.v1', 'SalesOrderCancelled')).toBe(false);
+    expect(isPaused('core.orders.events.v1', 'SalesOrderReturned')).toBe(false);
     expect(isPaused('inventory.events.v1', 'StockShipped')).toBe(false);
     expect(isPaused('inventory.events.v1', 'ProductSellableQuantityChanged')).toBe(false);
     expect(isPaused('products.events.v1', 'ProductMasterDeleted')).toBe(false);

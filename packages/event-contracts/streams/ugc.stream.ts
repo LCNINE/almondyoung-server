@@ -72,6 +72,14 @@ export interface ProductReviewStatsChangedPayload {
   changedAt: string;
 }
 
+export interface QuestionAnsweredPayload {
+  questionId: string;
+  userId: string;
+  productId?: string;
+  title: string;
+  answeredAt: string;
+}
+
 // ===== Zod Schemas =====
 
 const EarnPointsRequestedSchema = z.object({
@@ -112,6 +120,14 @@ const ProductReviewStatsChangedSchema = z.object({
   changedAt: z.string().datetime(),
 });
 
+const QuestionAnsweredSchema = z.object({
+  questionId: z.string().uuid(),
+  userId: z.string().uuid(),
+  productId: z.string().uuid().optional(),
+  title: z.string().min(1),
+  answeredAt: z.string().datetime(),
+});
+
 // ===== Stream Config =====
 
 export const UGC_COMMAND_STREAM = stream({
@@ -144,6 +160,7 @@ export const UGC_EVENT_STREAM = stream({
       'ProductReviewStatsChanged',
       ProductReviewStatsChangedPayload
     >('ProductReviewStatsChanged', ProductReviewStatsChangedSchema),
+    QuestionAnswered: event<'QuestionAnswered', QuestionAnsweredPayload>('QuestionAnswered', QuestionAnsweredSchema),
   },
 });
 

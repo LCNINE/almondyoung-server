@@ -18,11 +18,13 @@ export async function CategoryPaginationLinks({
 
   return (
     <nav
+      data-pagination
       aria-label={t("paginationLabel")}
       className="mt-10 flex items-center justify-center gap-3 border-t pt-6 text-sm"
     >
       {page > 1 && (
         <LocalizedClientLink
+          data-page-prev
           href={href(page - 1)}
           rel="prev"
           className="text-muted-foreground hover:text-primary"
@@ -32,6 +34,7 @@ export async function CategoryPaginationLinks({
       )}
       {page < lastPage && (
         <LocalizedClientLink
+          data-page-next
           href={href(page + 1)}
           rel="next"
           className="text-muted-foreground hover:text-primary"

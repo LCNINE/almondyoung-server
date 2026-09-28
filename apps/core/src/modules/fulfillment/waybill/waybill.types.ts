@@ -36,6 +36,8 @@ export interface BatchResultItem {
   status: string;
   trackingNo: string | null;
   reason: string | null;
+  // pending 이 「시간예산 초과」인지 「일시적 거절로 대기」인지 배치 결과만 보고 가를 수 있게 한다.
+  nextAttemptAt: string | null;
 }
 
 // 컨트롤러/서비스 응답.
@@ -51,4 +53,7 @@ export interface WaybillView {
   issuedAt: string | null;
   voidedAt: string | null;
   lastError: string | null;
+  // 일시적 거절로 대기 중인지 — 「진행중」과 「내일 다시」를 화면이 구분하려면 이 둘이 필요하다(#914).
+  nextAttemptAt: string | null;
+  transientAttempts: number;
 }

@@ -2,6 +2,8 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
+import { UserContactClient } from '@app/shared';
+import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
@@ -28,7 +30,17 @@ export class MembershipEventConsumer {
   constructor(
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly userContactClient: UserContactClient,
   ) {}
+
+  private get notifyDeps(): NotifyMemberDeps {
+    return {
+      dispatcher: this.notificationDispatcherService,
+      eventMappings: this.eventMappingService,
+      contacts: this.userContactClient,
+      logger: this.logger,
+    };
+  }
 
   @On(MEMBERSHIP_STREAM, 'MembershipRenewalUpcoming')
   async onRenewalUpcoming(
@@ -125,4 +137,34 @@ export class MembershipEventConsumer {
       throw error;
     }
   }
+
+  @On(MEMBERSHIP_STREAM, 'MembershipStatusChanged')
+  async onStatusChanged(
+    @EventEnvelope() envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
+  ) {
+    // RECURRING_CANCELLED 는 자동갱신만 끈 «해지 예약» 이다 — 종료일까지는 그대로 쓴다.
+    // 같은 메일로 묶으면 「해지되었습니다」가 아직 쓰는 사람에게 간다.
+    const eventKey =
+      payload.status === 'ACTIVE' && payload.reasonCode === 'SUBSCRIBED'
+        ? 'MEMBERSHIP_JOINED'
+        : payload.status === 'RECURRING_CANCELLED'
+          ? 'MEMBERSHIP_CANCEL_SCHEDULED'
+          : payload.status === 'CANCELLED'
+            ? 'MEMBERSHIP_CANCELLED'
+            : null;
+    if (!eventKey) return;
+
+    await notifyMember(this.notifyDeps, {
+      eventKey,
+      userId: payload.userId,
+      correlationId: envelope.correlationId,
+      payload,
+      variables: (contact) => ({
+        name: contact.username || '고객',
+        endsAt: payload.periodEndsAt ? formatDate(payload.periodEndsAt) : '',
+      }),
+    });
+  }
+
 }

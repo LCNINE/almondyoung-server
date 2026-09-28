@@ -1,6 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import {
   Dialog,
@@ -239,12 +240,18 @@ export const OrderDetailsDesktop = ({
           const thumbnail = getThumbnailUrl(
             item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
           )
+          const productHref = item.product_handle
+            ? `/products/${item.product_handle}`
+            : undefined
           return (
             <article
               key={item.id}
               className="flex items-end gap-6 border-b border-gray-100 py-4 last:border-b-0"
             >
-              <figure className="shrink-0">
+              <LocalizedClientLink
+                href={productHref ?? "#"}
+                className={productHref ? "shrink-0" : "pointer-events-none shrink-0"}
+              >
                 {thumbnail ? (
                   <img
                     className="h-24 w-24 rounded-[5px] border border-gray-200 object-cover"
@@ -254,9 +261,14 @@ export const OrderDetailsDesktop = ({
                 ) : (
                   <div className="h-24 w-24 rounded-[5px] border border-gray-200 bg-gray-100" />
                 )}
-              </figure>
+              </LocalizedClientLink>
               <div className="min-w-32 flex-1">
-                <h3 className="text-lg text-black">{item.title}</h3>
+                <LocalizedClientLink
+                  href={productHref ?? "#"}
+                  className={productHref ? undefined : "pointer-events-none"}
+                >
+                  <h3 className="text-lg text-black">{item.title}</h3>
+                </LocalizedClientLink>
                 <p className="mt-2 text-base text-gray-600">
                   {formatAmount(item.unit_price)} · {item.quantity}
                 </p>
@@ -276,9 +288,9 @@ export const OrderDetailsDesktop = ({
                   </LocalizedClientLink>
                 )
               ) : (
-                <CustomButton variant="outline" color="secondary" size="sm">
-                  {tActions("addToCart")}
-                </CustomButton>
+                item.variant_id && (
+                  <OrderItemCartButton variantId={item.variant_id} />
+                )
               )}
             </article>
           )

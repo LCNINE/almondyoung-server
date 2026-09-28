@@ -82,7 +82,7 @@ export class EventMappingService {
   }
 
   async getAllEvents(): Promise<NotificationEvent[]> {
-    const events = await this.db.db.select().from(notificationEvents).where(eq(notificationEvents.isActive, true));
+    const events = await this.db.db.select().from(notificationEvents).orderBy(notificationEvents.eventKey);
 
     return events.map((event) => ({
       eventId: event.eventId,

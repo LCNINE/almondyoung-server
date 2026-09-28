@@ -52,7 +52,7 @@ import {
   formatCurrency,
   paymentStatusLabel,
   fulfillmentStatusLabel,
-  membershipLabel,
+  useMembershipLabel,
   PAYMENT_STATUS_OPTIONS,
   FULFILLMENT_STATUS_OPTIONS,
 } from '../../lib/order-labels';
@@ -80,7 +80,7 @@ type ViewMode = 'by-order' | 'by-item';
 interface OrdererInfo {
   username?: string | null;
   email?: string | null;
-  roles?: string[];
+  membershipLabel: string;
 }
 
 function toIsoStart(date: string): string | undefined {
@@ -175,7 +175,7 @@ function OrdererCell({
       {customer?.email && (
         <div className="text-gray-500">{customer.email}</div>
       )}
-      <div className="text-gray-400">[{membershipLabel(customer?.roles)}]</div>
+      <div className="text-gray-400">[{customer?.membershipLabel}]</div>
       {totalCount != null && (
         <div className="text-gray-400">(총 {totalCount.toLocaleString()}건)</div>
       )}
@@ -697,6 +697,8 @@ export function OrdersTab({ customerId }: { customerId: string }) {
 
   const { data: customer, isLoading: isCustomerLoading } =
     useCustomerById(customerId);
+  const membershipLabel = useMembershipLabel(customerId);
+  const orderer = customer && { username: customer.username, email: customer.email, membershipLabel };
   const email = customer?.email ?? '';
 
   const { data: medusaCustomerRes, isLoading: isMedusaCustomerLoading } =
@@ -967,7 +969,7 @@ export function OrdersTab({ customerId }: { customerId: string }) {
           {viewMode === 'by-order' ? (
             <ByOrderTable
               orders={pagedOrders}
-              customer={customer}
+              customer={orderer}
               totalCount={matchedCount}
               ownershipsByOrder={ownershipsByOrder}
               onSelect={setSelectedOrderId}
@@ -975,7 +977,7 @@ export function OrdersTab({ customerId }: { customerId: string }) {
           ) : (
             <ByItemTable
               orders={pagedOrders}
-              customer={customer}
+              customer={orderer}
               ownershipsByOrder={ownershipsByOrder}
               onSelect={setSelectedOrderId}
             />

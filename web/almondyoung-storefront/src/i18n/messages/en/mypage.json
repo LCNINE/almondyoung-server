@@ -26,7 +26,9 @@
     "password": "Change Password",
     "cafe24": "Link Legacy Almondyoung Account",
     "review": "Review Management",
+    "contests": "My Contests",
     "reviewShort": "Reviews",
+    "myShopListings": "My shop listings",
     "inquiries": "My Inquiries",
     "membership": "Almondyoung Membership",
     "point": "Reward Points",
@@ -35,6 +37,18 @@
     "logout": "Log out",
     "withdraw": "Delete Account",
     "business": "Business Info"
+  },
+  "contests": {
+    "title": "My Contests",
+    "description": "View the work you submitted and voted for.",
+    "logoContest": "Logo Contest",
+    "viewContest": "View contest",
+    "submitted": "My entry",
+    "voted": "My vote",
+    "entryNotice": "Entries cannot be edited. Withdraw yours before submitting again.",
+    "empty": "You have not joined a contest yet.",
+    "browse": "Browse the logo contest",
+    "loadFail": "Could not load your contest activity. Please try again later."
   },
   "quickLink": {
     "orderList": "Orders",
@@ -478,6 +492,14 @@
         "birthday": "Date of Birth",
         "phone": "Mobile Number"
       }
+    },
+    "marketing": {
+      "title": "Marketing messages",
+      "description": "Receive promotions and event news by email and SMS. Notices such as orders, shipping, and expiring coupons you hold are sent regardless of this setting.",
+      "label": "Email & SMS consent",
+      "agreed": "Your consent to Almondyoung marketing messages was processed on {date}.",
+      "withdrawn": "Your opt-out from Almondyoung marketing messages was processed on {date}.",
+      "saveFailed": "Failed to update. Please try again."
     }
   },
   "order": {
@@ -537,7 +559,10 @@
       "searchResultCount": "{count} results for ‘{q}’",
       "prevPage": "Previous",
       "nextPage": "Next",
-      "recent6m": "Last 6 months"
+      "recent6m": "Last 6 months",
+      "showMoreItems": "Show {count} more items",
+      "totalPaid": "Total paid",
+      "itemQuantity": "Qty {count}"
     },
     "filter": {
       "label": "Filter",
@@ -572,7 +597,10 @@
         "channel_order": "Please cancel this order on the channel where it was placed.",
         "already_processing": "Picking has started, so self-cancellation is unavailable. Please contact customer support.",
         "digital_downloaded": "This order includes a digital item you already downloaded, so self-cancellation is unavailable. Please contact customer support."
-      }
+      },
+      "writeReview": "Write a review",
+      "addToCartSuccess": "Added to cart.",
+      "goToCart": "View cart"
     },
     "delivery": {
       "paid": "Paid",

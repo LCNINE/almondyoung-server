@@ -18,15 +18,19 @@ export function SendResults({ ids, devices }: { ids: string[]; devices: SmsDevic
   const deviceName = (deviceId: string | null) => devices.find((d) => d.deviceId === deviceId)?.name ?? deviceId;
 
   if (ids.length === 0) {
-    return <p className="text-muted-foreground text-sm">전송하면 결과가 여기에 표시됩니다.</p>;
+    return (
+      <div className="text-muted-foreground flex min-h-[320px] flex-1 items-center justify-center rounded-md border border-dashed px-3 text-center text-sm">
+        전송하면 결과가 여기에 표시됩니다.
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-1 flex-col gap-2">
       <p className="text-muted-foreground text-xs">
         접수 완료는 폰 중계 서버가 받았다는 뜻입니다. 고객 단말 도착 여부는 알 수 없습니다.
       </p>
-      <ul className="rounded-md border">
+      <ul className="min-h-[320px] flex-1 overflow-y-auto rounded-md border">
         {(messages ?? []).map((m) => (
           <li key={m.notificationId} className="flex flex-col gap-0.5 border-b px-3 py-2 text-sm last:border-b-0">
             <div className="flex items-center justify-between">

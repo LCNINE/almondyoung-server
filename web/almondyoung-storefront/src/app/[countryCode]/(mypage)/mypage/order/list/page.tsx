@@ -41,6 +41,7 @@ export default async function OrderListPage({
           count={data.count}
           actionsMap={data.actionsMap}
           refundMap={data.refundMap}
+          reviewHrefs={data.reviewHrefs}
           hasError={data.hasError}
         />
       </MypageLayout>

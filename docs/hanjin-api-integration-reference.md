@@ -4,6 +4,8 @@
 적지 않는다 — 대조 결과는 §7 에 「도출 명령」으로만 남긴다.
 
 - 출처: <https://developers.hanjin.com> (Guides / APIs / FAQs), 2026-09-21 로그인 상태에서 확인
+- 일부 사실은 **DEV 인증키로 실제 호출해 확인**했다 (2026-09-21). 그런 항목은 「실측」 으로 표시한다 —
+  포털 문서가 안 적거나 애매하게 적은 것을 응답이 확정해 준 경우다
 - 문의처: `openapi@hanjin.com`
 - 우리 구현: `apps/core/src/modules/fulfillment/waybill/` (모듈 설명은 그 디렉터리의 `README.md`)
 
@@ -38,11 +40,14 @@
 ### 계정 현황 (2026-09-21 실측)
 
 포털 `My Apps` 에 **`택배:LCNINE-DEV` (client_id `LCNINE`, 생성 2026-06-18) 하나뿐이고 LIVE 앱은 없다.**
-→ 절차 04 까지 도달, 05 이후 미진행.
+→ 절차 **05 (API Self TEST 및 개발 진행) 까지 도달**, 06 이후 미진행.
 
-> ⚠️ FAQ 에 **「3개월 간 미사용 App 은 중지처리됩니다」**(`errorCode -101 App not approved (장기간미사용 승인중지)`)
-> 항목이 있다. 이 DEV 앱은 생성 후 3개월이 지났고 우리 쪽 실제 호출 이력이 없으므로 **이미 중지됐을 수 있다.**
-> 재개는 `openapi@hanjin.com` 요청.
+**실측 (2026-09-21)** — DEV 키로 계약정보·운송장출력·주문정보·배송정보를 실제로 호출해 전부 응답을 받았다.
+API Key `Active` · 만료 `never` · API 구독 5종 전부 `Enabled`.
+
+> ⚠️ FAQ 의 **「3개월 간 미사용 App 은 중지처리됩니다」**(`errorCode -101 App not approved (장기간미사용 승인중지)`)
+> 는 **이 앱에 일어나지 않았다** — 생성 후 3개월이 지났지만 위 실측 호출이 전부 정상 응답했다.
+> 중지된 경우의 재개는 `openapi@hanjin.com` 요청.
 
 ---
 
@@ -82,10 +87,13 @@ Request header 3종:
 | 도착지 터미널 바코드 | **CODE128** (가로 25mm × 세로 8mm, 좌우 여백 5mm) |
 | 라벨 타입 | **NS / NL / FS 형** — 어느 것을 쓸지는 한진 영업담당자와 협의해 정한다 |
 | NS형 규격 | 좌측 100mm + 우측 100mm, 분류영역 22mm + 본문 80mm |
+| NL형 규격 | 가로 100mm × 세로 **미기재**(샘플 비율 ≈ 102mm). 위 = 배달표, 아래 = 받는고객용(받는분은 ⑫ 약칭주소만) |
+| FS형 규격 | 가로 123mm × 세로 100mm. **전체가 배달표 한 면**(받는고객용 없음) |
 
 FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음으로 CODE39 를 지원**한다.
 운송장 번호에 한해 CODE39 폰트도 사용 가능하다.
 **라벨지·라벨 프린터 지원 여부도 영업담당자와 별도 협의** 대상이다.
+NL·FS 의 필드별 폰트 크기는 NS(§3.2)와 다르다 — 포털 「운송장 출력 Sample」의 형별 필드표를 본다(복사하지 않음). 우리 템플릿: `apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-{ns,nl,fs}-template.ts`, 형 선택은 `HANJIN_LABEL_TYPE`.
 
 ### 3.2 NS형 출력 필드 매핑 (16개)
 
@@ -118,8 +126,13 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 | --- | --- | --- | --- | --- |
 | 배달표 외 | 받는분 | ○ 마스킹 | ○ 안심번호 또는 마스킹 | ○ 마스킹 |
 | | 보낸분 | ○ 마스킹 | ○ 안심번호 또는 마스킹 | ○ 마스킹 |
-| 배달표 | 받는분 | ✕ 미적용 | ✕ 미적용 | ✕ 미적용 |
+| 배달표 | 받는분 | ○ 마스킹 | ○ 안심번호 또는 마스킹 | ✕ 미적용 |
 | | 보낸분 | ✕ 미적용 | ✕ 미적용 | ○ 미표기 또는 마스킹 |
+
+> 🔴 **2026-09-27 정정** — 이 표의 「배달표 받는분」 행은 원래 ✕✕✕ 로 적혀 있었다. 포털 원본 표는 성명·연락처 칸이
+> **배달표 외 두 행 + 배달표 받는분 행에 걸친 병합 셀**이라, 배달표 받는분도 성명·연락처는 가리고 **주소만** 미적용이다.
+> 포털의 NS·NL·FS 샘플 셋이 모두 배달표 받는분을 `수*인 010-0000-****` + 전체 주소로 찍어 이를 뒷받침한다.
+> 병합 셀을 행별 표로 옮길 때 생긴 오기다 — 원본을 다시 옮길 일이 있으면 병합 범위부터 확인할 것.
 
 **상세 기준**
 
@@ -128,9 +141,21 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 | 성명(공백 제외) | 두 글자: 2번째 자리 | 한진 → 한\*, ab → a\* |
 | | 세 글자: 2번째 자리 | 김한진 → 김\*진, abc → a\*c |
 | | 네 글자: 2, 4번째 자리 | 박새로이 → 박\*로\*, abcd → a\*c\* |
-| | 다섯 글자 이상 — 국문: 2번째, 4번째 자리 이후 / 국문 외: 5번째 이후 | 김한진택배 → 김\*한\*\*\*, Barac Obama → Bara\*\*\*\*\*\* |
+| | 다섯 글자 이상 — 국문: 2번째, 4번째 자리 이후 / 국문 외: 5번째 이후 | 김한진택배 → 김\*진\*\* (⚠️ 포털 표기는 `김*한***` — 아래 주), Barac Obama → Bara\* \*\*\*\*\* |
 | 연락처 | 안심번호 적용 또는 마지막 4자리 | 02-728-\*\*\*\*, 010-1234-\*\*\*\* |
 | 주소 | 상세주소 마스킹 (읍면동 / 건물번호 이후) | 서울시 중구 소공동 \*\*\*\*, 서울시 중구 남대문로63 \*\*\*\* |
+
+- 성명 자리는 공백을 빼고 세고, 공백은 가리지 않고 그대로 둔다(`Barac Obama → Bara* *****`).
+- ⚠️ 포털 표기는 `Barac Obama → Bara******`(공백까지 가려 6글자를 전부 `*` 로 채운다)인데, 우리 출력은
+  `Bara* *****`(공백은 세지도 가리지도 않고 그대로 둔다)로 다르다. 규칙 문장이 「성명(**공백 제외**)」이라
+  공백은 애초에 마스킹 대상이 아니라고 해석해 구현했다 — 포털 예시가 규칙 문장과 어긋난 쪽이라고 본다.
+  현물 검수(#920) 때 한진에 같이 확인할 것.
+- ⚠️ 포털의 `김한진택배 → 김*한***` 는 **한진 쪽 오기**다 — 5글자 입력이 6글자로 나오고 3번째 자리에 원문 2번째
+  글자가 와 있어, 글자 수를 지키는 어떤 마스킹으로도 나올 수 없다. 규칙 문장(「2번째, 4번째 자리 이후」)을 따라
+  `김*진**` 로 구현했다. 「이후」가 그 자리를 포함한다는 건 같은 칸의 `Barac Obama` 예시(5번째 `c` 부터 가림)가 보인다.
+  현물 검수(#920) 때 한진에 확인할 것.
+- 구현: `apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-label-masking.ts`. 연락처는 안심번호를
+  쓰지 않고 마지막 4자리를 가린다.
 
 ### 3.4 운송장 번호 채번 규칙
 
@@ -143,6 +168,12 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 예) 12345678901 / 7 → 나머지 3  ⇒  123456789013
 ```
 
+**실측 (2026-09-21)** — 이 규칙은 한진이 **발급하는 번호에도, 우리가 보내는 번호에도** 성립한다.
+
+- `print-wbl` 이 발급한 번호가 규칙을 만족한다: `10003568223` MOD 7 = 5 → `100035682235`
+- 규칙을 어긴 번호는 **서버가 거절한다** — `tracking-wbl` 에 `999999999999` 를 보내면
+  `ERROR-02 Invalid Format - 운송장 번호 오류(CHECK DIGIT)`. 즉 체크디지트는 검증되는 값이고 자리수 채우기가 아니다
+
 ---
 
 ## 4. API 스펙
@@ -151,6 +182,8 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 
 - Base URL(개발): `https://ebbapd.hjt.co.kr`
 - ※ **운영 환경에서는 방화벽 등록이 필요하다.**
+- **실측 (2026-09-21)**: 개발 호스트는 **방화벽 등록 없이 호출됐다.** 방화벽 조치는 운영 전용 과제다 —
+  개발 단계에서 IP 등록을 기다릴 필요가 없다
 - ※ 전용 운송장 대역을 받아 사용하는 경우 §3.4 채번규칙을 지켜야 한다.
 
 | Method | Endpoint | 비고 |
@@ -218,7 +251,7 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 | 21 | `rcvrAskCntent` | 수하인 배송메시지 (**운송장에 출력될 배송메시지**) | |
 | 22 | `rcvrRefCntent` | 수하인 담당자명 | |
 | 23 | `comodityNm` | 상품명 | ● |
-| 24 | `payTypCd` | 지불조건 **CD(받지신용), CT(착지신용), PP(선불), CC(착불)** | ● |
+| 24 | `payTypCd` | 지불조건 **CD(받지신용), CT(착지신용), PP(선불), CC(착불)** — 배송구분별 허용조합은 아래 실측 | ● |
 | 25 | `boxTypCd` | 박스타입 **S, A, B, C, D, E** | ● |
 | 26–29 | `printMemo1`~`4` | 메모 — 현재 사용되지 않는 임시 컬럼 | |
 | 30 | `comodityList` | 상품리스트(배열) — 포함하지 않으면 상품내역은 공란 처리 | |
@@ -227,6 +260,18 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 
 > **19번 `rcvrTelNo` 가 필수이고 20번 `rcvrMobileNo` 는 선택이다.** 휴대폰만 받는 커머스 주문에서
 > 이 둘을 바꿔 매핑하면 `ERROR-01` 로 전건 거절된다.
+
+> **실측 (2026-09-21) — 배송구분 `S`(자체출력 출고)에서 `payTypCd` 허용 조합.**
+>
+> | `payTypCd` | 결과 |
+> | --- | --- |
+> | `PP` 선불 | `OK` |
+> | `CD` 받지신용 | `OK` |
+> | `CT` 착지신용 | **`ERROR-14`** 배송구분별 지불조건(payTypCd) 검증 오류 |
+>
+> `CC`(착불)는 미확인. **두 축이 다른 것을 뜻한다** — 선불/착불은 인도 시점에 현장에서 정산하는 형태이고
+> (그래서 §3.2 ⑬ 이 라벨에 **운송료 금액 표시**를 요구한다), 신용은 계약 여신으로 달아 **월 단위로 정산**하는
+> 형태다(금액 표시 의무 없음). **월 정산 계약이면 `CD` 하나로 확정된다** — `CT` 는 이 배송구분에서 거절되므로.
 
 주문정보 결과코드
 
@@ -246,7 +291,7 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 | `ERROR-11` | 박스타입(`boxTypCd`) 오류 |
 | `ERROR-12` | 배송구분(`svcCatCd`) 오류 |
 | `ERROR-13` | 배송구분이 출고(S)인 경우 `wblNo` 는 필수 |
-| `ERROR-14` | 배송구분별 지불조건 검증오류 (영업담당자 문의) |
+| `ERROR-14` | 배송구분별 지불조건 검증오류 (영업담당자 문의) — **실측: 배송구분 `S` 에서 `CT`(착지신용)가 여기 걸린다** |
 | `ERROR-90` | `custEdiCd` 유효하지 않음 (한진 시스템 담당자 문의) |
 | `ERROR-99` | 기타(시스템) 오류 |
 
@@ -304,9 +349,25 @@ FAQ 보충: 한진 분류 장비는 **ITF 를 가장 잘 인식하고 그 다음
 배송정보 결과코드: `OK` / `ERROR-01` 존재하지 않는 운송장번호(= **실 배송 스캔내역이 없는 경우**) /
 `ERROR-02` 운송장번호 오류(CHECK DIGIT) / `ERROR-90` `custEdiCd` 오류 / `ERROR-99` 기타.
 
+> 🔴 **실측 (2026-09-21) — `ERROR-01` 은 「없는 번호」와 「아직 스캔되지 않은 번호」를 구별하지 못한다.**
+> `print-wbl` 로 채번하고 `insert-order` 로 등록까지 끝낸 직후의 운송장을 조회해도
+> `ERROR-01 존재하지 않는 운송장번호` 가 돌아온다. 집화 스캔이 찍히기 전까지는 정상 상태가 이것이다.
+> 추적 폴러는 이 코드를 **오류가 아니라 「아직 이력 없음」으로** 다뤄야 한다 — 오류로 다루면
+> 집화 전 전건이 실패로 보인다.
+
 ### 4.5 택배 - 계약정보 (`pd-customer`)
 
-계약번호 / 사업자등록번호로 계약정보를 검증한다. 현재 우리 구현은 사용하지 않는다.
+계약번호 / 사업자등록번호로 계약정보를 검증한다.
+
+- Base URL(개발): `https://api-stg.hanjin.com`
+
+| Method | Endpoint | 비고 |
+| --- | --- | --- |
+| GET | `/parcel-delivery/v1/customer/customer-check?cntractNo={계약번호}` | **실측 (2026-09-21)** |
+
+**실측 (2026-09-21)** — `cntractNo=9117159` 로 `200 {"resultCode":"OK","resultMessage":"SUCCESS"}`.
+**부작용이 없는 유일한 호출**이므로 인증키·HMAC 서명·계약 유효성을 한 번에 확인하는 데 쓸 수 있다
+(`print-wbl` 은 채번하고 `insert-order` 는 주문을 만든다).
 
 ---
 
@@ -318,6 +379,17 @@ errorCode: -103, message: Too many request
 
 **택배 - 배송정보 API** 에 SpikeArrest(트래픽 급증 저지) 정책이 적용되어 있다.
 「슬라이딩 창」 비율 제한 알고리즘으로 **1초당 10개의 요청(10 TPS)** 을 허용한다.
+
+> 🔴 **실측 (2026-09-26) — DEV 에서는 재현되지 않는다.** `api-stg.hanjin.com` 의 `tracking-wbl` 에
+> 30건을 동시에 보내 약 0.3초 안에 전부 받았는데(≈초당 100건) **전건 HTTP 200 + 백엔드 응답**
+> (`ERROR-02`)이었고, `retry-after`·`x-ratelimit-*` 헤더도 없었다. 그래서 `-103` 이 **어떤 HTTP 상태로,
+> 어떤 바디 모양으로 오는지는 아무도 모른다**(포털 문서에도 없다). 운영에서만 걸리는지, FAQ 가 설정과
+> 다른지도 미상이다.
+>
+> 우리 클라이언트는 이 미상을 전제로 짰다 — HTTP 상태가 아니라 **바디의 `errorCode` 가 `-103`** 인지로
+> 판별하고(200·429 모두), 어느 API 에서 오든 `transient_rejection` 으로 올린다(#916).
+> 판별 규칙: `sed -n '/^const RATE_LIMITED_ERROR_CODE/,/^}/p' apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-api.client.ts`
+> **운영에서 처음 `-103` 을 받으면 실제 응답을 여기에 적을 것** — 판별 규칙이 추정 위에 있다.
 
 ```
 errorCode: -101, message: App not approved.(장기간미사용 승인중지)
@@ -356,6 +428,14 @@ grep -n "print-wbl\|insert-order\|tracking-wbl\|ERROR-" \
 sed -n '/^const STATUS_MAP/,/^};/p' \
   apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
 
+# 추적 호출 페이서 간격 (§5 의 10 TPS 와 대조할 것)
+grep -n "TRACKING_MIN_INTERVAL_MS" \
+  apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
+
+# 배송추적 폴러 — 주기(@CronOnce)·대상 창·주기당 상한·대상 조건 (#917)
+grep -n "@CronOnce(\|CARRIER_TRACKING_\|\.where(" \
+  apps/core/src/modules/fulfillment/services/carrier-tracking.poller.ts
+
 # 라벨 필드 보관 목록 (§3.2 와 대조할 것)
 sed -n '/^const LABEL_FIELDS/,/^] as const;/p' \
   apps/core/src/modules/fulfillment/waybill/carrier/hanjin/hanjin-carrier.gateway.ts
@@ -371,8 +451,9 @@ grep -n "mobile\|tel" apps/core/src/modules/fulfillment/waybill/waybill-request.
 # labelData 소비자가 있는지 (= 운송장 렌더러 존재 여부)
 grep -rn "labelData" apps/core/src apps/admin-web/src native/warehouse-app/src --include=*.ts --include=*.tsx | grep -v spec
 
-# 스테이징 스모크 (env 미설정이면 SKIP + exit 2 가 정상)
-npx tsx scripts/smoke/hanjin-staging-smoke.ts
+# 스테이징 스모크 — env 는 «바깥에서» 주입한다 (스크립트는 dotenv 를 부르지 않는다).
+# 그냥 `npx tsx …` 만 하면 env 를 못 읽어 언제나 SKIP + exit 2 다.
+npx dotenv -e apps/core/.env -- npx tsx scripts/smoke/hanjin-staging-smoke.ts
 ```
 
 ---
@@ -383,3 +464,5 @@ npx tsx scripts/smoke/hanjin-staging-smoke.ts
 - **API Spec Download 문서를 받았을 때** — 운영환경 URL 과 채번규칙 상세가 그 문서에만 있으므로,
   받는 즉시 §4 의 Base URL 표와 §3.4 를 이 문서에서 갱신한다
 - 계약·앱 상태가 바뀌었을 때 (§1 의 「계정 현황」)
+- **실사격 응답이 이 문서의 서술과 어긋났을 때** — 포털 문서보다 응답이 정본이다. 「실측」 표기를 붙여
+  어긋난 쪽을 고친다

@@ -28,11 +28,16 @@ export interface SmsDeviceFormValues {
 
 export type SmsGateCategory = 'INFORMATIONAL' | 'MARKETING';
 
+export type SmsSendRoute = 'PHONE' | 'NHN';
+
+export const NHN_ROUTE_VALUE = 'nhn';
+
 export interface SendSmsGateMessageDto {
   userIds: string[];
   content: string;
   category: SmsGateCategory;
   deviceId?: string;
+  route?: SmsSendRoute;
   nhnFallback?: boolean;
 }
 
@@ -115,6 +120,7 @@ export interface ConversationMessage {
   state: ConversationMessageState | null;
   deviceId: string | null;
   viaNhn: boolean;
+  sentByName: string | null;
   createdAt: string;
 }
 
@@ -143,6 +149,8 @@ export interface ConversationDetail {
 export interface ReplySmsConversationDto {
   phoneNumber: string;
   content: string;
+  deviceId?: string;
+  route?: SmsSendRoute;
   nhnFallback?: boolean;
 }
 
@@ -242,6 +250,10 @@ export const smsGateApi = {
       params: { phone: phoneNumber },
     });
     return response.data;
+  },
+
+  deleteConversation: async (phoneNumber: string): Promise<void> => {
+    await client.delete(`${BASE}/conversations`, { params: { phone: phoneNumber } });
   },
 
   replyConversation: async (dto: ReplySmsConversationDto): Promise<SmsGateSendResult> => {

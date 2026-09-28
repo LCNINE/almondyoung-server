@@ -16,20 +16,45 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SimplePagination } from '@/components/simple-pagination';
 import { useDeleteShopListing, useShopListings } from '@/lib/services/products';
 import {
   SHOP_LISTING_REGION_LABELS,
-  type ShopListingDto,
+  type AdminShopListingDto,
+  type ShopListingAuthorType,
+  type ShopListingStatus,
 } from '@/lib/types/dto/products';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import {
+  SHOP_LISTING_AUTHOR_LABELS,
+  SHOP_LISTING_STATUS_LABELS,
+  SHOP_LISTING_STATUS_TABS,
+  buildAdminListQuery,
+} from '../lib/admin-listing-rules';
 
 const PER_PAGE = 20;
 
 export default function ShopListingsTemplate() {
-  const { data, isLoading } = useShopListings({ includeInactive: true });
+  const [tab, setTab] = useState<ShopListingStatus | 'all'>('pending');
+  const [author, setAuthor] = useState<ShopListingAuthorType | 'all'>('all');
+  const [search, setSearch] = useState('');
+  const [q, setQ] = useState('');
+  const { data, isLoading } = useShopListings(
+    buildAdminListQuery(tab, author, q)
+  );
   const deleteMutation = useDeleteShopListing();
-  const [deleteTarget, setDeleteTarget] = useState<ShopListingDto | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminShopListingDto | null>(
+    null
+  );
   const [page, setPage] = useState(1);
 
   const listings = data ?? [];
@@ -58,12 +83,63 @@ export default function ShopListingsTemplate() {
         <div>
           <h1 className="text-xl font-bold">샵매매</h1>
           <p className="text-muted-foreground text-sm">
-            가게 양도/양수 소개 글을 올리는 곳이에요.
+            회원·관리자가 올린 가게 양도/양수 글을 검토하고 관리하는 곳이에요.
           </p>
         </div>
         <Button asChild>
           <Link href="/mall/shop-listings/new">새 글 쓰기</Link>
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as ShopListingStatus | 'all');
+            setPage(1);
+          }}
+        >
+          <TabsList>
+            {SHOP_LISTING_STATUS_TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
+        <div className="flex items-center gap-2">
+          <Select
+            value={author}
+            onValueChange={(value) => {
+              setAuthor(value as ShopListingAuthorType | 'all');
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">작성자 전체</SelectItem>
+              <SelectItem value="member">회원</SelectItem>
+              <SelectItem value="admin">관리자</SelectItem>
+            </SelectContent>
+          </Select>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setQ(search);
+              setPage(1);
+            }}
+          >
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="제목 검색 후 Enter"
+              className="w-[200px]"
+            />
+          </form>
+        </div>
       </div>
 
       {isLoading && (
@@ -75,11 +151,15 @@ export default function ShopListingsTemplate() {
       {!isLoading && listings.length === 0 && (
         <div className="rounded-lg border py-16 text-center">
           <p className="text-muted-foreground text-sm">
-            아직 올린 글이 없어요.
+            {tab === 'pending'
+              ? '검토할 글이 없어요.'
+              : '조건에 맞는 글이 없어요.'}
           </p>
-          <Button asChild className="mt-4">
-            <Link href="/mall/shop-listings/new">첫 글 쓰기</Link>
-          </Button>
+          {tab === 'all' && (
+            <Button asChild className="mt-4">
+              <Link href="/mall/shop-listings/new">첫 글 쓰기</Link>
+            </Button>
+          )}
         </div>
       )}
 
@@ -111,25 +191,36 @@ export default function ShopListingsTemplate() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium">{listing.title}</span>
+                  <Badge
+                    variant={
+                      listing.status === 'pending' ? 'default' : 'secondary'
+                    }
+                  >
+                    {SHOP_LISTING_STATUS_LABELS[listing.status]}
+                  </Badge>
+                  <Badge variant="outline">
+                    {SHOP_LISTING_AUTHOR_LABELS[listing.authorType]}
+                  </Badge>
                   {listing.region && (
                     <Badge variant="outline">
                       {SHOP_LISTING_REGION_LABELS[listing.region]}
                     </Badge>
                   )}
-                  <Badge variant={listing.isActive ? 'default' : 'secondary'}>
-                    {listing.isActive ? '노출중' : '숨김'}
-                  </Badge>
                 </div>
                 <p className="text-muted-foreground mt-1 truncate text-xs">
-                  {new Date(listing.createdAt).toLocaleDateString('ko-KR')} · 조회{' '}
-                  {listing.viewCount.toLocaleString()} · /kr/shop-trade/
+                  {listing.status === 'pending' && listing.submittedAt
+                    ? `제출 ${new Date(listing.submittedAt).toLocaleString('ko-KR')}`
+                    : new Date(listing.createdAt).toLocaleDateString(
+                        'ko-KR'
+                      )}{' '}
+                  · 조회 {listing.viewCount.toLocaleString()} · /kr/shop-trade/
                   {listing.slug}
                 </p>
               </div>
 
               <div className="flex shrink-0 gap-2">
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/mall/shop-listings/${listing.id}`}>수정</Link>
+                  <Link href={`/mall/shop-listings/${listing.id}`}>열기</Link>
                 </Button>
                 <Button
                   variant="outline"

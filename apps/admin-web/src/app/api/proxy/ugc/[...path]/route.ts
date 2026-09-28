@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const UGC_SERVICE_URL = process.env.UGC_SERVICE_URL ?? 'http://localhost:3031';
+const UGC_SERVICE_URL = process.env.UGC_SERVICE_URL ?? 'http://localhost:3030';
 
 type Params = { params: Promise<{ path: string[] }> };
 

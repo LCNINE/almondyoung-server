@@ -20,7 +20,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useAddToCart } from "@/hooks/api/use-add-to-cart"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import {
   cancelOrderByMedusaId,
@@ -34,7 +33,6 @@ import {
   Package,
   RefreshCw,
   RotateCcw,
-  ShoppingCart,
   type LucideIcon,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -45,7 +43,6 @@ interface OrderActionsProps {
   orderId: string
   paymentStatus: string
   productName: string
-  variantId: string
   showInquiry?: boolean
   coreActions?: StoreOrderActionsResponse
   availableActions?: StoreOrderAction[]
@@ -82,7 +79,6 @@ export default function OrderActions({
   orderId,
   paymentStatus,
   productName,
-  variantId,
   showInquiry = true,
   coreActions,
   availableActions: availableActionsProp,
@@ -97,7 +93,6 @@ export default function OrderActions({
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const { addToCart, isLoading: isAddingToCart } = useAddToCart()
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [showConfirmPurchaseDialog, setShowConfirmPurchaseDialog] =
@@ -151,15 +146,6 @@ export default function OrderActions({
     })
   }
 
-  const handleAddToCart = async () => {
-    const result = await addToCart({ variantId })
-    if (result.success) {
-      toast.success("장바구니에 담았습니다.", {
-        action: { label: "장바구니 보기", onClick: () => router.push("/cart") },
-      })
-    }
-  }
-
   // TODO(물류 API 연동): 실제 택배사 트래킹 화면으로 연결. 현재는 데이터 소스가 없어 안내 토스트.
   const handleTrack = () =>
     toast.info("배송 조회는 준비 중이에요. 고객센터로 문의해 주세요.")
@@ -200,15 +186,7 @@ export default function OrderActions({
   }
 
   // ── 액션 단일 정의 ─────────────────────────────────────────────
-  const actions: OrderAction[] = [
-    {
-      key: "addToCart",
-      label: "장바구니 담기",
-      icon: ShoppingCart,
-      onClick: handleAddToCart,
-      disabled: isAddingToCart,
-    },
-  ]
+  const actions: OrderAction[] = []
   if (canConfirmPurchase)
     actions.push({
       key: "confirm",
@@ -269,7 +247,8 @@ export default function OrderActions({
     })
   else if (
     cancelUnavailableReason &&
-    cancelUnavailableReason !== "already_cancelled"
+    cancelUnavailableReason !== "already_cancelled" &&
+    !canReturn
   )
     actions.push({
       key: "cancelUnavailable",
@@ -354,11 +333,13 @@ export default function OrderActions({
   return (
     <>
       {/* 데스크탑: 세로 버튼 나열 */}
-      <div className="hidden flex-col gap-2 md:flex">
-        {actions.map((action) => (
-          <div key={action.key}>{renderButton(action, "md")}</div>
-        ))}
-      </div>
+      {actions.length > 0 && (
+        <div data-order-actions className="hidden flex-col gap-2 md:flex">
+          {actions.map((action) => (
+            <div key={action.key}>{renderButton(action, "md")}</div>
+          ))}
+        </div>
+      )}
 
       {/* 모바일: 주요 버튼 + 더보기 메뉴 */}
       <div className="flex items-center gap-2 md:hidden">
@@ -381,20 +362,22 @@ export default function OrderActions({
           </LocalizedClientLink>
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white transition hover:bg-gray-50"
-              aria-label="더보기"
-            >
-              <MoreVertical className="h-4 w-4 text-gray-600" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            {menuActions.map(renderMenuItem)}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {menuActions.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white transition hover:bg-gray-50"
+                aria-label="더보기"
+              >
+                <MoreVertical className="h-4 w-4 text-gray-600" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {menuActions.map(renderMenuItem)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* 구매확정 확인 dialog */}

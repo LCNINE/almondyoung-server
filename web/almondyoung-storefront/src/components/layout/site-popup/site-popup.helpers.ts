@@ -10,7 +10,10 @@ const DISMISS_KEY_PREFIX = "popup:"
  * `/kr/products/foo` → `/products/foo`.
  * 관리자는 국가 코드를 빼고 경로를 입력하므로, 매칭 전에 접두사를 벗긴다.
  */
-export function stripCountryCode(pathname: string, countryCode: string): string {
+export function stripCountryCode(
+  pathname: string,
+  countryCode: string
+): string {
   const prefix = `/${countryCode}`
   if (pathname === prefix) return "/"
   if (pathname.startsWith(`${prefix}/`)) return pathname.slice(prefix.length)
@@ -108,6 +111,31 @@ export function resolvePopupSize(
   return {
     width: popup.mobileWidth ?? DEFAULT_MOBILE_WIDTH,
     height: popup.mobileHeight,
+  }
+}
+
+/** 같은 경로의 팝업을 넘기거나 숨겨도 카드 크기는 유지한다. */
+export function resolvePopupStackSize(
+  popups: SitePopup[],
+  path: string,
+  isDesktop: boolean
+): { width: number; height: number } {
+  const sizes = popups
+    .filter((popup) => matchesPath(popup, path))
+    .map((popup) => resolvePopupSize(popup, isDesktop))
+  const width = sizes.length
+    ? Math.max(...sizes.map((size) => size.width))
+    : isDesktop
+      ? DEFAULT_PC_WIDTH
+      : DEFAULT_MOBILE_WIDTH
+
+  return {
+    width,
+    height: Math.max(
+      isDesktop ? 420 : 360,
+      width * 0.9,
+      ...sizes.map((size) => size.height ?? 0)
+    ),
   }
 }
 

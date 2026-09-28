@@ -2,12 +2,21 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { TemplateService } from '../services/template.service';
-import { CreateTemplateDto, UpdateTemplateDto, TemplateFilterDto, PreviewTemplateDto } from '../dto';
+import {
+  CreateTemplateDto,
+  UpdateTemplateDto,
+  TemplateFilterDto,
+  PreviewTemplateDto,
+  UpdateEmailLayoutDto,
+} from '../dto';
+import { EmailLayoutService } from '../services/email-layout.service';
 
 @ApiTags('templates')
 @Controller('templates')
 export class TemplateController {
-  constructor(private readonly templateService: TemplateService) {}
+  constructor(private readonly templateService: TemplateService,
+    private readonly emailLayoutService: EmailLayoutService,
+  ) {}
 
   // 구체적인 라우트들을 먼저 정의
   @Get('kakao/list')
@@ -86,6 +95,30 @@ export class TemplateController {
   @ApiResponse({ status: 404, description: '템플릿을 찾을 수 없음' })
   async update(@Param('id') id: string, @Body() updateTemplateDto: UpdateTemplateDto): Promise<any> {
     return this.templateService.updateTemplate(id, updateTemplateDto);
+  }
+
+  @Get('email-layout')
+  @ApiOperation({ summary: '메일 양식 조회', description: '모든 알림 메일에 공통으로 씌우는 양식 설정입니다.' })
+  @ApiResponse({ status: 200, description: '조회 성공' })
+  async getEmailLayout() {
+    return this.emailLayoutService.get();
+  }
+
+  @Put('email-layout')
+  @ApiOperation({ summary: '메일 양식 수정' })
+  @ApiBody({ type: UpdateEmailLayoutDto })
+  @ApiResponse({ status: 200, description: '수정 성공' })
+  async updateEmailLayout(@Body(ValidationPipe) dto: UpdateEmailLayoutDto) {
+    return this.emailLayoutService.update(dto);
+  }
+
+  @Post('by-id/:id/reset-default')
+  @ApiOperation({ summary: '기본 메시지 적용', description: '본문을 시드가 넣어 둔 기본 메시지로 되돌립니다.' })
+  @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
+  @ApiResponse({ status: 200, description: '기본 메시지 적용 성공' })
+  @ApiResponse({ status: 404, description: '템플릿이 없거나 되돌릴 기본 메시지가 없음' })
+  async resetToDefault(@Param('id') id: string): Promise<any> {
+    return this.templateService.resetTemplateToDefault(id);
   }
 
   @Delete('by-id/:id')

@@ -147,19 +147,19 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/:orderId/exchange-requests/:exchangeRequestId': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:259',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:278',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getExchangeRequest.',
   },
   'core GET /store/orders/:orderId/return-eligibility': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:299',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:318',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getReturnEligibility.',
   },
   'core GET /store/orders/:orderId/return-requests/:returnRequestId': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:238',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:257',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getReturnRequest; returnRequestId로 조회한 row의 salesOrderId 로 SO를 다시 찾아 소유권 검증.',
   },
@@ -171,25 +171,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/exchange-requests/:exchangeRequestId': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:500',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:519',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getExchangeRequestByChannelOrder; 이중 검증 (500줄 + getExchangeRequest 259줄).',
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/lines': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:273',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:292',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getOrderLinesByChannelOrder.',
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/return-eligibility': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:299',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:318',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getReturnEligibilityByChannelOrder(458-464줄) -> findSoByChannelOrderOrThrow 후 this.getReturnEligibility(so.id, customerId) 로 위임, 실제 검증은 299줄에서 수행.',
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/return-requests/:returnRequestId': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:490',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:509',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'getReturnRequestByChannelOrder; channelOrderId로 찾은 SO에 대해 검증 후 getReturnRequest(238줄)에서 반품요청 자체의 SO로도 재검증 (이중 검증).',
   },
@@ -219,13 +219,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/:orderId/exchange-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:178',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:189',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createExchangeRequest.',
   },
   'core POST /store/orders/:orderId/return-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:90',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:93',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createReturnRequest; assertOwnership 정의는 1264-1268줄 (if (so.customerId !== customerId) throw ForbiddenException).',
   },
@@ -237,13 +237,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/exchange-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:178',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:189',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createExchangeRequestByChannelOrder(475-482줄) -> this.createExchangeRequest(so.id, customerId, dto) 로 위임, 실제 검증은 178줄.',
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/return-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:90',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:93',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createReturnRequestByChannelOrder(466-473줄) -> findSoByChannelOrderOrThrow 후 this.createReturnRequest(so.id, customerId, dto) 로 위임, 실제 검증은 90줄.',
   },
@@ -291,7 +291,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service POST /files/upload/confirm': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/upload/upload.service.ts:173',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:187',
     predicate: 'if (file.uploadedBy !== userId) {',
     note: 'UploadController.confirmUpload -> UploadService.confirmUpload(dto.fileId, user.userId). 바디의 fileId 가 기존 pending 행을 가리키는 client-supplied id 지만, 행을 읽자마자 file.uploadedBy 를 호출자 userId 와 대조해 다르면 ForbiddenError — 타인의 pending 업로드를 대신 activate 하거나 존재 여부를 활성화로 확인할 수 없다. upload.service.spec.ts 가 발급자 불일치 거부를 고정한다.',
   },
@@ -548,9 +548,56 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service DELETE /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:217',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:223',
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)))',
     note: 'soft delete UPDATE 자체에 userId 조건 포함(분리 가드 없음, PATCH보다 더 견고).',
+  },
+  'ugc-service DELETE /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:129',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'soft delete UPDATE 의 WHERE 에 작성자 조건. 0행이면 404(존재 은닉).',
+  },
+  'ugc-service GET /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User(\'userId\') 토큰값.',
+  },
+  'ugc-service GET /shop-listings/mine': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:70',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+  },
+  'ugc-service GET /shop-listings/public/:slug/contact': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:44',
+    predicate: '',
+    note: '소유자 자원이 아니다 — 공개(published·closed) 매물의 연락처를 로그인 회원 누구에게나 보여주는 것이 설계다(spec §7.2). 비공개 상태는 404.',
+  },
+  'ugc-service POST /shop-listings': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/controllers/member-shop-listings.controller.ts:19',
+    predicate: '',
+    note: '생성 — 대상 id 가 없다. 작성자는 토큰(@User(\'userId\'))에서만 오고 DTO 에 작성자 필드가 없다.',
+  },
+  'ugc-service POST /shop-listings/:id/close': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'setDealStatusByMember 가 findOwned 로 먼저 소유권을 확인한다(남의 글 404).',
+  },
+  'ugc-service POST /shop-listings/:id/reopen': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'close 와 같은 경로.',
+  },
+  'ugc-service PUT /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'updateByMember 가 findOwned 로 소유권 확인 후 상태 CAS UPDATE.',
   },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
@@ -560,19 +607,19 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /qna/questions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:344',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:350',
     predicate: 'const shouldHide = q.isSecret && !isAdmin && q.userId !== currentUserId;',
     note: "currentUserId는 @OptionalAuth() 하의 @User('userId') 토큰값이며 쿼리로 스푸핑 불가(QuestionListQueryDto에 userId 필드 없음).",
   },
   'ugc-service GET /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:262',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:268',
     predicate: 'if (question.isSecret && !isAdmin && question.userId !== currentUserId) {',
     note: 'DB WHERE절이 아닌 앱 레벨 체크지만 currentUserId(토큰)로 비밀글 접근을 실제로 차단(ForbiddenException). 비밀글이 아니면 원래 공개 자원이라 IDOR 대상 아님.',
   },
   'ugc-service GET /qna/questions/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:466',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:472',
     predicate: 'const conditions: SQL[] = [eq(questions.userId, userId), isNull(questions.deletedAt)];',
   },
   'ugc-service GET /reviews/eligibilities': {
@@ -587,9 +634,39 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
   },
+  'ugc-service DELETE /logo-contest/entries/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:212',
+    predicate: "if (entry.userId !== userId) throw new ForbiddenError('본인 출품작만 삭제할 수 있습니다.');",
+    note: "같은 트랜잭션 안의 사전 SELECT 뒤 앱 레벨 체크다. userId 는 @User('userId') 토큰값이고 삭제 대상은 경로의 id 뿐 — 남의 출품작을 지우면 403 이다. 표 삭제도 같은 트랜잭션에서 그 entryId 로만 한정된다.",
+  },
+  'ugc-service GET /logo-contest/me': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:130',
+    predicate: '.where(and(eq(logoContestEntries.userId, userId), isNull(logoContestEntries.deletedAt)));',
+    note: "내 출품작과 내 표만 돌려준다. userId 는 토큰값이고 이 라우트는 쿼리 파라미터를 받지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:38',
+    predicate: 'if (file.uploadedBy !== userId) {',
+    note: "생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.",
+  },
+  'ugc-service DELETE /logo-contest/entries/:id/vote': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:256',
+    predicate: '.where(and(eq(logoContestVotes.userId, userId), eq(logoContestVotes.entryId, entryId)));',
+    note: "지우는 것은 내 표뿐이다. userId 는 토큰값이라 경로의 id 로 남의 표를 지울 수 없고, 그 출품작에 내 표가 없으면 아무 행도 지워지지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries/:id/vote': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:234',
+    predicate: '',
+    note: "남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.",
+  },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:179',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:185',
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)));',
     note: '실제 UPDATE(183행)는 eq(questions.id, id)만 쓰지만 같은 트랜잭션 내 이 줄의 사전 SELECT 가드가 없으면 진행되지 않아(NotFoundException) 현재는 안전. 취약점은 아니나 observations에 리팩터링 위험 기록.',
   },
@@ -601,7 +678,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /qna/questions': {
     verdict: 'N/A',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:123',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:129',
     predicate: '',
     note: "생성 라우트, 대상 객체 없음. userId는 @User('userId') 데코레이터(토큰)에서 오고 CreateQuestionDto에는 userId 필드가 없어 바디로 덮어쓸 수 없음(P0 패턴 아님).",
   },
@@ -752,15 +829,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(118);
+    expect(targets).toHaveLength(131);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(118);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(117);
+    expect(new Set(targets.map(keyOf)).size).toBe(131);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(130);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -1,15 +1,25 @@
 // apps/notification/src/dispatcher/handlers/order-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { UserContactClient } from '@app/shared';
 import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
-import { Channel, NotificationCategory } from '../../shared/enums';
+import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
-import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
+
+const CARRIER_LABEL: Record<string, string> = {
+  CJ: 'CJ대한통운',
+  CJGLS: 'CJ대한통운',
+  HANJIN: '한진택배',
+  LOTTE: '롯데택배',
+  LOGEN: '로젠택배',
+  KDEXP: '경동택배',
+};
 
 /**
  * Order Service 이벤트 컨슈머
@@ -32,6 +42,7 @@ export class OrderEventConsumer {
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
     private readonly config: ConfigService,
+    private readonly userContactClient: UserContactClient,
   ) {}
 
   @On(ORDER_STREAM, 'OrderCreated')
@@ -109,6 +120,85 @@ export class OrderEventConsumer {
       this.logger.error(`[Event] Failed to process ORDER_CREATED notification: ${error.message}`, error.stack);
       throw error; // Re-throw to send to DLQ
     }
+  }
+
+  @On(CORE_ORDER_STREAM, 'SalesOrderShipmentDispatched')
+  async onShipmentDispatched(
+    @EventEnvelope() envelope: EnvelopeOf<typeof CORE_ORDER_STREAM, 'SalesOrderShipmentDispatched'>,
+    @EventPayload() payload: EventPayloadOf<typeof CORE_ORDER_STREAM, 'SalesOrderShipmentDispatched'>,
+  ) {
+    const eventKey = payload.isPartial ? 'ORDER_PARTIALLY_SHIPPED' : 'ORDER_SHIPPED';
+    const eventMapping = await this.eventMappingService.getEventMapping(eventKey);
+    if (!eventMapping || !eventMapping.isActive) {
+      this.logger.warn(`Event mapping for ${eventKey} not found or inactive.`);
+      return;
+    }
+
+    const email = (await this.userContactClient.findContacts([payload.customerId])).get(payload.customerId)?.email;
+    if (!email) {
+      this.logger.warn(`Skipping ${eventKey}: no active contact (order ${payload.orderId})`);
+      return;
+    }
+
+    await this.notificationDispatcherService.send({
+      userId: payload.customerId,
+      channels: eventMapping.defaultChannels as Channel[],
+      category: eventMapping.category as NotificationCategory,
+      templateKey: eventMapping.templateKey,
+      eventKey: eventMapping.eventKey,
+      payload: { ...payload, email },
+      correlationId: envelope.correlationId,
+      priority: eventMapping.priority as NotificationPriority,
+      variables: {
+        name: payload.customerName ?? '고객',
+        orderNumber: payload.displayOrderNo ? `#${payload.displayOrderNo}` : payload.channelOrderId,
+        carrier: CARRIER_LABEL[payload.carrier] ?? payload.carrier,
+        trackingNo: payload.trackingNo,
+      },
+    });
+    this.logger.log(`[Event] Dispatched ${eventKey} notification for order ${payload.orderId}`);
+  }
+
+  @On(CORE_ORDER_STREAM, 'SalesOrderClaimProgressed')
+  async onClaimProgressed(
+    @EventEnvelope() envelope: EnvelopeOf<typeof CORE_ORDER_STREAM, 'SalesOrderClaimProgressed'>,
+    @EventPayload() payload: EventPayloadOf<typeof CORE_ORDER_STREAM, 'SalesOrderClaimProgressed'>,
+  ) {
+    const eventKey =
+      payload.stage === 'requested'
+        ? payload.requestedBy === 'admin'
+          ? 'CLAIM_RECEIVED'
+          : 'CLAIM_REQUESTED'
+        : payload.stage === 'collected'
+          ? 'CLAIM_COLLECTED'
+          : 'CLAIM_COMPLETED';
+    const eventMapping = await this.eventMappingService.getEventMapping(eventKey);
+    if (!eventMapping || !eventMapping.isActive) {
+      this.logger.warn(`Event mapping for ${eventKey} not found or inactive.`);
+      return;
+    }
+
+    const email = (await this.userContactClient.findContacts([payload.customerId])).get(payload.customerId)?.email;
+    if (!email) {
+      this.logger.warn(`Skipping ${eventKey}: no active contact (order ${payload.orderId})`);
+      return;
+    }
+
+    await this.notificationDispatcherService.send({
+      userId: payload.customerId,
+      channels: eventMapping.defaultChannels as Channel[],
+      category: eventMapping.category as NotificationCategory,
+      templateKey: eventMapping.templateKey,
+      eventKey: eventMapping.eventKey,
+      payload: { ...payload, email },
+      correlationId: envelope.correlationId,
+      priority: eventMapping.priority as NotificationPriority,
+      variables: {
+        name: payload.customerName ?? '고객',
+        orderNumber: payload.displayOrderNo ? `#${payload.displayOrderNo}` : payload.channelOrderId,
+        claimType: payload.kind === 'exchange' ? '교환' : '반품',
+      },
+    });
   }
 
   private isSafeDemoEnvironment(): boolean {

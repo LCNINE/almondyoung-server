@@ -27,7 +27,7 @@ import type {
   VariantPriceDto,
   ActiveChannelsResponseDto,
   NoticeListQuery,
-  ShopListingListQuery,
+  AdminShopListingListQuery,
   SitePopupListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
@@ -549,11 +549,11 @@ export const useNotice = (id: string) => {
 
 // ===== 샵매매 관련 쿼리 =====
 
-export const useShopListings = (query?: ShopListingListQuery) => {
+export const useShopListings = (query: AdminShopListingListQuery) => {
   return useQuery({
-    queryKey: productQueryKeys.shopListingsList(query ?? {}),
+    queryKey: productQueryKeys.shopListingsList(query),
     queryFn: () => products.shopListings.list(query),
-    staleTime: 2 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 };
 
@@ -562,7 +562,8 @@ export const useShopListing = (id: string) => {
     queryKey: productQueryKeys.shopListing(id),
     queryFn: () => products.shopListings.get(id),
     enabled: !!id,
-    staleTime: 2 * 60 * 1000,
+    // 판정 직전의 submittedAt 이 곧 CAS 기준이라 오래 두지 않는다
+    staleTime: 0,
   });
 };
 

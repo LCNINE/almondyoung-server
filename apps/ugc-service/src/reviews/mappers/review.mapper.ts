@@ -1,8 +1,13 @@
+import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
 import { CommentResponseDto } from '../dto/comment-response.dto';
 import { ReviewResponseDto } from '../dto/review-response.dto';
 import { type ReviewCommentEntity, type ReviewWithMediaEntity } from '../types';
 
 export class ReviewMapper {
+  static toAdminResponse(entity: ReviewWithMediaEntity): AdminReviewResponseDto {
+    return { ...ReviewMapper.toResponse(entity), permission: entity.permission ?? null };
+  }
+
   static toResponse(entity: ReviewWithMediaEntity): ReviewResponseDto {
     return {
       id: entity.id,

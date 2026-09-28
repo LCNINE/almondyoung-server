@@ -1,6 +1,6 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
-import { ReviewDto } from '@/lib/types/dto/review';
+import { ReviewDto, REVIEW_PROVIDER_LABELS } from '@/lib/types/dto/review';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import {
   ReviewStatusCell,
@@ -37,6 +37,19 @@ export const useReviewTableColumns = ({
       columnHelper.accessor('id', {
         header: 'ID',
         cell: ({ getValue }) => <IdCell value={getValue()} />,
+      }),
+      columnHelper.display({
+        id: 'permission',
+        header: '작성 권한',
+        cell: ({ row }) => (
+          <span>
+            {
+              REVIEW_PROVIDER_LABELS[
+                row.original.permission?.provider ?? 'unassigned'
+              ]
+            }
+          </span>
+        ),
       }),
       columnHelper.display({
         id: 'author',
@@ -85,6 +98,21 @@ export const useReviewTableColumns = ({
       columnHelper.accessor('rating', {
         header: '별점',
         cell: ({ getValue }) => <ReviewRatingCell value={getValue()} />,
+      }),
+      columnHelper.accessor('mediaFileIds', {
+        header: '첨부 이미지',
+        cell: ({ getValue }) => {
+          const count = getValue().length;
+          return (
+            <span
+              className={
+                count ? 'font-medium text-blue-600' : 'text-muted-foreground'
+              }
+            >
+              {count ? `${count}장` : '없음'}
+            </span>
+          );
+        },
       }),
       columnHelper.accessor('content', {
         header: '내용',

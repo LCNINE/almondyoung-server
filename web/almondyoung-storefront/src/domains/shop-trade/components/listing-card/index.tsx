@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Badge } from "@/components/ui/badge"
 import type { ShopListingItem } from "@/lib/types/ui/shop-listing"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
@@ -50,7 +51,7 @@ export async function ListingCard({
         )}
       >
         <CardThumbnail
-          images={listing.images}
+          images={listing.imageFileIds}
           fallbackFileId={listing.thumbnailFileId}
           alt={listing.title}
           sizes={
@@ -74,9 +75,16 @@ export async function ListingCard({
           <p className="text-muted-foreground text-xs">{tags.join(" · ")}</p>
         )}
 
-        <h2 className="text-foreground mt-0.5 line-clamp-1 text-sm font-medium sm:text-base">
-          {listing.title}
-        </h2>
+        <div className="mt-0.5 flex min-w-0 items-center gap-1">
+          {listing.status === "closed" && (
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[11px] font-medium">
+              {t("closed")}
+            </Badge>
+          )}
+          <h2 className="text-foreground line-clamp-1 text-sm font-medium sm:text-base">
+            {listing.title}
+          </h2>
+        </div>
 
         <p className="text-foreground mt-1 text-sm font-semibold">
           {specs.join(" · ")}

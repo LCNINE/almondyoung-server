@@ -12,20 +12,51 @@ export const useReviewTableQuery = ({
   pageSize = 20,
 }: UseReviewTableQueryProps) => {
   const queryObject = useQueryParams(
-    ['page', 'q', 'status', 'rating', 'hasComment', 'productId', 'sort', 'order', 'createdAt'],
+    [
+      'provider',
+      'batchId',
+      'source',
+      'page',
+      'q',
+      'status',
+      'rating',
+      'hasComment',
+      'hasMedia',
+      'productId',
+      'sort',
+      'order',
+      'createdAt',
+    ],
     prefix
   );
 
-  const { page, q, status, rating, hasComment, productId, sort, createdAt } = queryObject;
+  const {
+    provider,
+    batchId,
+    source,
+    page,
+    q,
+    status,
+    rating,
+    hasComment,
+    hasMedia,
+    productId,
+    sort,
+    createdAt,
+  } = queryObject;
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
 
   const searchParams: ReviewListQuery = {
+    provider: provider as ReviewListQuery['provider'],
+    batchId,
+    source: source as ReviewListQuery['source'],
     limit: pageSize,
     page: page ? Number(page) : 1,
     q,
     status: status as ReviewListQuery['status'],
     rating: rating as ReviewListQuery['rating'],
     hasComment: hasComment as ReviewListQuery['hasComment'],
+    hasMedia: hasMedia as ReviewListQuery['hasMedia'],
     productId,
     sort: sort as ReviewListQuery['sort'],
     createdFrom,

@@ -1,15 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -17,10 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  RichTextEditor,
-  isEmptyHtml,
-} from '@/components/common/rich-text-editor';
+import { Textarea } from '@/components/ui/textarea';
 import { SHOP_LISTING_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import {
   useCreateShopListing,
@@ -33,115 +27,42 @@ import {
   SHOP_LISTING_DEAL_TYPE_LABELS,
   SHOP_LISTING_REGIONS,
   SHOP_LISTING_REGION_LABELS,
+  type AdminShopListingDetailDto,
   type ShopListingBusinessType,
   type ShopListingDealType,
-  type ShopListingDto,
   type ShopListingRegion,
 } from '@/lib/types/dto/products';
-import { useInViewport } from '@/lib/hooks/use-in-viewport';
-import { shouldShowFloatingCollapse } from '@/features/mall/products-detail/components/description/product-description-floating-collapse';
 import { cn } from '@/lib/utils';
-import { MoneyInput } from '../money-input';
+import {
+  adminFormValuesFrom,
+  buildAdminPayload,
+  type AdminFormField,
+  type AdminShopListingFormValues,
+} from '../../lib/admin-listing-rules';
 import { ImageGalleryField } from '../image-gallery-field';
+import { MoneyInput } from '../money-input';
+import { ShopListingMarkdown } from '../shop-listing-markdown';
 
 type Props = {
-  listing?: ShopListingDto;
+  listing?: AdminShopListingDetailDto;
 };
 
-type FieldName = 'title' | 'region' | 'businessType' | 'thumbnail' | 'content';
-
-const toWon = (manwon: string): number | null =>
-  manwon.trim() === '' ? null : Number(manwon) * 10_000;
-const toManwon = (won: number | null | undefined): string =>
-  won === null || won === undefined ? '' : String(won / 10_000);
+const invalidBox = 'rounded-md ring-2 ring-destructive ring-offset-2';
 
 export function ShopListingForm({ listing }: Props) {
   const router = useRouter();
   const createMutation = useCreateShopListing();
   const updateMutation = useUpdateShopListing();
-
-  const [title, setTitle] = useState(listing?.title ?? '');
-  const [content, setContent] = useState(listing?.content ?? '');
-  const [images, setImages] = useState<string[]>(listing?.images ?? []);
-  // 대표 사진은 따로 고르지 않는다 — 갤러리 맨 앞 사진이 곧 대표다.
-  const thumbnailFileId = images[0] ?? null;
-  const [region, setRegion] = useState<ShopListingRegion | ''>(
-    listing?.region ?? ''
+  const [values, setValues] = useState<AdminShopListingFormValues>(() =>
+    adminFormValuesFrom(listing)
   );
-  const [businessType, setBusinessType] = useState<
-    ShopListingBusinessType | ''
-  >(listing?.businessType ?? '');
-  const [dealType, setDealType] = useState<ShopListingDealType>(
-    listing?.dealType ?? 'transfer'
+  const [invalid, setInvalid] = useState<AdminFormField | null>(null);
+  const fieldRefs = useRef<Partial<Record<AdminFormField, HTMLElement | null>>>(
+    {}
   );
-  const [areaPyeong, setAreaPyeong] = useState(
-    listing?.areaPyeong ? String(listing.areaPyeong) : ''
-  );
-  const [deposit, setDeposit] = useState(toManwon(listing?.deposit));
-  const [monthlyRent, setMonthlyRent] = useState(
-    toManwon(listing?.monthlyRent)
-  );
-  const [keyMoney, setKeyMoney] = useState(toManwon(listing?.keyMoney));
-  const [isActive, setIsActive] = useState(listing?.isActive ?? true);
-  const [invalid, setInvalid] = useState<FieldName | null>(null);
-  const [contentExpanded, setContentExpanded] = useState(false);
-  const titleRef = useRef<HTMLInputElement>(null);
-  const regionRef = useRef<HTMLDivElement>(null);
-  const businessTypeRef = useRef<HTMLDivElement>(null);
-  const thumbnailRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const contentToggleRef = useRef<HTMLDivElement>(null);
-  // 상품 상세설명과 같은 규칙 — 펼친 본문은 보이는데 하단 접기 버튼이 화면 밖일 때만 띄운다
-  const contentVisible = useInViewport(contentRef, {
-    enabled: contentExpanded,
-  });
-  const toggleFullyVisible = useInViewport(contentToggleRef, { threshold: 1 });
-  const showFloatingCollapse = shouldShowFloatingCollapse({
-    open: contentExpanded,
-    contentVisible,
-    triggerFullyVisible: toggleFullyVisible,
-  });
-
-  // createPortal 은 클라이언트에서만 — SSR 가드
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const collapseContent = () => {
-    setContentExpanded(false);
-    contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
-
-  const snapshot = useMemo(
-    () =>
-      JSON.stringify([
-        title,
-        content,
-        images,
-        region,
-        businessType,
-        dealType,
-        areaPyeong,
-        deposit,
-        monthlyRent,
-        keyMoney,
-        isActive,
-      ]),
-    [
-      title,
-      content,
-      images,
-      region,
-      businessType,
-      dealType,
-      areaPyeong,
-      deposit,
-      monthlyRent,
-      keyMoney,
-      isActive,
-    ]
-  );
+  const snapshot = useMemo(() => JSON.stringify(values), [values]);
   const initialSnapshot = useRef(snapshot);
   const savedRef = useRef(false);
   const isDirty = !savedRef.current && snapshot !== initialSnapshot.current;
@@ -149,103 +70,71 @@ export function ShopListingForm({ listing }: Props) {
   // 카페 글을 길게 붙여넣은 뒤 실수로 탭을 닫는 사고를 막는다
   useEffect(() => {
     if (!isDirty) return;
-
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [isDirty]);
 
-  const focusField = (field: FieldName) => {
-    setInvalid(field);
-    const refs: Record<FieldName, HTMLElement | null> = {
-      title: titleRef.current,
-      region: regionRef.current,
-      businessType: businessTypeRef.current,
-      thumbnail: thumbnailRef.current,
-      content: contentRef.current,
-    };
+  const set = <K extends keyof AdminShopListingFormValues>(
+    key: K,
+    value: AdminShopListingFormValues[K]
+  ) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    if (invalid === key) setInvalid(null);
+  };
 
-    refs[field]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (field === 'title') titleRef.current?.focus({ preventScroll: true });
+  const bindRef = (field: AdminFormField) => (el: HTMLElement | null) => {
+    fieldRefs.current[field] = el;
   };
 
   const leave = () => {
-    if (isDirty && !window.confirm('저장하지 않은 내용이 있어요. 나갈까요?')) {
+    if (isDirty && !window.confirm('저장하지 않은 내용이 있어요. 나갈까요?'))
       return;
-    }
     router.push('/mall/shop-listings');
   };
 
   const handleSave = async () => {
-    if (!title.trim()) {
-      focusField('title');
-      toast.error('제목을 입력해 주세요.');
+    const built = buildAdminPayload(values);
+    if (!built.ok) {
+      setInvalid(built.field);
+      fieldRefs.current[built.field]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      toast.error(built.message);
       return;
     }
-    if (!region) {
-      focusField('region');
-      toast.error('지역을 선택해 주세요.');
-      return;
-    }
-    if (!businessType) {
-      focusField('businessType');
-      toast.error('업종을 선택해 주세요.');
-      return;
-    }
-    if (images.length === 0) {
-      focusField('thumbnail');
-      toast.error('샵 사진을 한 장 이상 올려 주세요.');
-      return;
-    }
-    if (isEmptyHtml(content)) {
-      focusField('content');
-      toast.error('내용을 입력해 주세요.');
-      return;
-    }
-
     setInvalid(null);
-
-    const payload = {
-      title,
-      content,
-      region,
-      businessType,
-      dealType,
-      areaPyeong: areaPyeong.trim() === '' ? null : Number(areaPyeong),
-      deposit: toWon(deposit),
-      monthlyRent: toWon(monthlyRent),
-      keyMoney: toWon(keyMoney),
-      thumbnailFileId,
-      images,
-      isActive,
-    };
 
     try {
       if (listing) {
-        await updateMutation.mutateAsync({ id: listing.id, dto: payload });
+        await updateMutation.mutateAsync({
+          id: listing.id,
+          payload: built.payload,
+        });
         toast.success('저장했습니다.');
       } else {
-        await createMutation.mutateAsync(payload);
-        toast.success('등록했습니다.');
+        await createMutation.mutateAsync(built.payload);
+        toast.success('등록했습니다. 바로 쇼핑몰에 보여요.');
       }
       savedRef.current = true;
       router.push('/mall/shop-listings');
-    } catch {
-      toast.error('저장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : '저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+      );
     }
   };
 
-  const invalidBox = 'rounded-md ring-2 ring-destructive ring-offset-2';
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-background border-border sticky top-14 z-20 -mt-4 flex items-center justify-between gap-3 border-b py-3 lg:top-16">
-        {/* 안내 문구가 나타날 때 헤더 높이가 변해 본문이 밀리지 않도록 자리를 미리 잡아둔다 */}
+      <div className="bg-background border-border sticky top-14 z-20 flex items-center justify-between gap-3 border-b py-3 lg:top-16">
         <div className={cn('min-w-0', listing && 'min-h-[46px]')}>
           <h1 className="truncate text-xl font-bold">
-            {listing ? '샵매매 글 수정' : '샵매매 새 글'}
+            {listing ? '샵매매 글' : '샵매매 새 글'}
           </h1>
-          {/* 새 글은 아직 저장된 원본이 없어 "변경사항"이 성립하지 않는다 — 수정 화면에서만 알린다 */}
           {listing && isDirty && (
             <p className="text-muted-foreground text-xs">
               저장하지 않은 변경사항이 있어요
@@ -266,66 +155,48 @@ export function ShopListingForm({ listing }: Props) {
         <div className="flex flex-col gap-4 lg:col-span-2">
           <Card>
             <CardContent className="grid gap-4 pt-6">
-              <div className="grid gap-1.5">
+              <div className="grid gap-1.5" ref={bindRef('title')}>
                 <Label htmlFor="title">
                   제목 <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="title"
-                  ref={titleRef}
                   aria-invalid={invalid === 'title'}
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (invalid === 'title') setInvalid(null);
-                  }}
+                  value={values.title}
+                  onChange={(e) => set('title', e.target.value)}
                   placeholder="예) 강남역 네일샵 양도합니다"
                 />
               </div>
 
-              <div className="grid gap-1.5">
+              <div className="grid gap-1.5" ref={bindRef('content')}>
                 <Label>
-                  내용 <span className="text-destructive">*</span>
+                  내용 (마크다운) <span className="text-destructive">*</span>
                 </Label>
+                {/* 상품 상세설명 편집기와 같은 배치 — 넓을 땐 좌우, 좁을 땐 위아래 */}
                 <div
-                  ref={contentRef}
                   className={cn(
-                    invalid === 'content' && invalidBox,
-                    // 공용 에디터를 건드리지 않고 본문 영역 높이만 밖에서 제한한다
-                    !contentExpanded &&
-                      '[&_.rich-text-content]:max-h-[420px] [&_.rich-text-content]:overflow-y-auto'
+                    'grid gap-3 xl:grid-cols-2',
+                    invalid === 'content' && invalidBox
                   )}
                 >
-                  <RichTextEditor
-                    value={content}
-                    onChange={(html) => {
-                      setContent(html);
-                      if (invalid === 'content') setInvalid(null);
-                    }}
-                    imageContextId={SHOP_LISTING_IMAGE_CONTEXT_ID}
-                    placeholder="본문을 작성해주세요."
-                    // 사진은 위 「샵 사진」 한 곳에서만 관리한다
-                    allowImages={false}
+                  <Textarea
+                    value={values.content}
+                    onChange={(e) => set('content', e.target.value)}
+                    placeholder="본문을 마크다운으로 작성하세요. 줄바꿈은 그대로 보여요."
+                    className="min-h-[420px] font-mono text-sm"
                   />
-                </div>
-
-                <div ref={contentToggleRef}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setContentExpanded((prev) => !prev)}
-                    className="w-full justify-center gap-1"
-                  >
-                    {contentExpanded ? '본문 접기' : '본문 펼치기'}
-                    <ChevronDown
-                      className="size-4 transition-transform duration-200"
-                      style={{
-                        transform: contentExpanded
-                          ? 'rotate(180deg)'
-                          : undefined,
-                      }}
-                    />
-                  </Button>
+                  <div className="bg-muted/20 max-h-[600px] min-h-[420px] overflow-y-auto rounded-md border p-4">
+                    <div className="text-muted-foreground mb-2 text-xs font-medium">
+                      미리보기
+                    </div>
+                    {values.content.trim() ? (
+                      <ShopListingMarkdown value={values.content} />
+                    ) : (
+                      <div className="text-muted-foreground py-6 text-center text-sm">
+                        작성한 내용이 여기에 보여요.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -339,9 +210,9 @@ export function ShopListingForm({ listing }: Props) {
               <div className="grid gap-1.5">
                 <Label>거래 유형</Label>
                 <Select
-                  value={dealType}
-                  onValueChange={(value) =>
-                    setDealType(value as ShopListingDealType)
+                  value={values.dealType}
+                  onValueChange={(v) =>
+                    set('dealType', v as ShopListingDealType)
                   }
                   disabled={isPending}
                 >
@@ -362,8 +233,8 @@ export function ShopListingForm({ listing }: Props) {
                 <MoneyInput
                   id="areaPyeong"
                   label="평수"
-                  value={areaPyeong}
-                  onChange={setAreaPyeong}
+                  value={values.areaPyeong}
+                  onChange={(v) => set('areaPyeong', v)}
                   placeholder="15"
                   unit="평"
                   money={false}
@@ -372,8 +243,8 @@ export function ShopListingForm({ listing }: Props) {
                 <MoneyInput
                   id="deposit"
                   label="보증금"
-                  value={deposit}
-                  onChange={setDeposit}
+                  value={values.deposit}
+                  onChange={(v) => set('deposit', v)}
                   placeholder="2000"
                   unit="만원"
                   disabled={isPending}
@@ -381,8 +252,8 @@ export function ShopListingForm({ listing }: Props) {
                 <MoneyInput
                   id="monthlyRent"
                   label="월세"
-                  value={monthlyRent}
-                  onChange={setMonthlyRent}
+                  value={values.monthlyRent}
+                  onChange={(v) => set('monthlyRent', v)}
                   placeholder="120"
                   unit="만원"
                   disabled={isPending}
@@ -390,11 +261,44 @@ export function ShopListingForm({ listing }: Props) {
                 <MoneyInput
                   id="keyMoney"
                   label="권리금"
-                  value={keyMoney}
-                  onChange={setKeyMoney}
+                  value={values.keyMoney}
+                  onChange={(v) => set('keyMoney', v)}
                   placeholder="3000"
                   unit="만원"
                   disabled={isPending}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">연락처</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5" ref={bindRef('contactPhone')}>
+                <Label htmlFor="contactPhone">전화번호 (선택)</Label>
+                <Input
+                  id="contactPhone"
+                  inputMode="tel"
+                  aria-invalid={invalid === 'contactPhone'}
+                  value={values.contactPhone}
+                  onChange={(e) => set('contactPhone', e.target.value)}
+                  placeholder="010-1234-5678"
+                />
+                <p className="text-muted-foreground text-xs">
+                  쇼핑몰에서는 로그인한 회원에게만 보여요.
+                </p>
+              </div>
+              <div className="grid gap-1.5" ref={bindRef('kakaoOpenChatUrl')}>
+                <Label htmlFor="kakaoOpenChatUrl">카카오 오픈채팅 (선택)</Label>
+                <Input
+                  id="kakaoOpenChatUrl"
+                  inputMode="url"
+                  aria-invalid={invalid === 'kakaoOpenChatUrl'}
+                  value={values.kakaoOpenChatUrl}
+                  onChange={(e) => set('kakaoOpenChatUrl', e.target.value)}
+                  placeholder="https://open.kakao.com/o/…"
                 />
               </div>
             </CardContent>
@@ -404,36 +308,16 @@ export function ShopListingForm({ listing }: Props) {
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">쇼핑몰 노출</CardTitle>
-            </CardHeader>
-            <CardContent className="flex items-center gap-3">
-              <Switch
-                id="isActive"
-                checked={isActive}
-                onCheckedChange={setIsActive}
-                disabled={isPending}
-              />
-              <Label htmlFor="isActive" className="font-normal">
-                {isActive ? '노출중' : '숨김'}
-              </Label>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <CardTitle className="text-base">분류</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4">
-              <div ref={regionRef} className="grid gap-1.5">
+              <div ref={bindRef('region')} className="grid gap-1.5">
                 <Label>
                   지역 <span className="text-destructive">*</span>
                 </Label>
                 <Select
-                  value={region}
-                  onValueChange={(value) => {
-                    setRegion(value as ShopListingRegion);
-                    if (invalid === 'region') setInvalid(null);
-                  }}
+                  value={values.region}
+                  onValueChange={(v) => set('region', v as ShopListingRegion)}
                   disabled={isPending}
                 >
                   <SelectTrigger aria-invalid={invalid === 'region'}>
@@ -449,16 +333,15 @@ export function ShopListingForm({ listing }: Props) {
                 </Select>
               </div>
 
-              <div ref={businessTypeRef} className="grid gap-1.5">
+              <div ref={bindRef('businessType')} className="grid gap-1.5">
                 <Label>
                   업종 <span className="text-destructive">*</span>
                 </Label>
                 <Select
-                  value={businessType}
-                  onValueChange={(value) => {
-                    setBusinessType(value as ShopListingBusinessType);
-                    if (invalid === 'businessType') setInvalid(null);
-                  }}
+                  value={values.businessType}
+                  onValueChange={(v) =>
+                    set('businessType', v as ShopListingBusinessType)
+                  }
                   disabled={isPending}
                 >
                   <SelectTrigger aria-invalid={invalid === 'businessType'}>
@@ -479,17 +362,12 @@ export function ShopListingForm({ listing }: Props) {
           <Card>
             <CardContent className="pt-6">
               <div
-                ref={thumbnailRef}
-                className={cn(invalid === 'thumbnail' && invalidBox)}
+                ref={bindRef('imageFileIds')}
+                className={cn(invalid === 'imageFileIds' && invalidBox)}
               >
                 <ImageGalleryField
-                  value={images}
-                  onChange={(next) => {
-                    setImages(next);
-                    if (invalid === 'thumbnail' && next.length > 0) {
-                      setInvalid(null);
-                    }
-                  }}
+                  value={values.imageFileIds}
+                  onChange={(next) => set('imageFileIds', next)}
                   contextId={SHOP_LISTING_IMAGE_CONTEXT_ID}
                   disabled={isPending}
                 />
@@ -511,22 +389,6 @@ export function ShopListingForm({ listing }: Props) {
           )}
         </div>
       </div>
-
-      {mounted && showFloatingCollapse
-        ? createPortal(
-            <div className="animate-in fade-in slide-in-from-bottom-4 fixed bottom-6 left-1/2 z-40 -translate-x-1/2 duration-200">
-              <Button
-                variant="outline"
-                onClick={collapseContent}
-                className="gap-1 shadow-lg"
-              >
-                <ChevronUp className="size-4" />
-                본문 접기
-              </Button>
-            </div>,
-            document.body
-          )
-        : null}
     </div>
   );
 }

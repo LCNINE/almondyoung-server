@@ -2,6 +2,8 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
+import { UserContactClient } from '@app/shared';
+import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
@@ -28,7 +30,17 @@ export class UserEventConsumer {
   constructor(
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly userContactClient: UserContactClient,
   ) {}
+
+  private get notifyDeps(): NotifyMemberDeps {
+    return {
+      dispatcher: this.notificationDispatcherService,
+      eventMappings: this.eventMappingService,
+      contacts: this.userContactClient,
+      logger: this.logger,
+    };
+  }
 
   @On(USER_STREAM, 'UserVerification')
   async onUserVerification(
@@ -141,4 +153,35 @@ export class UserEventConsumer {
       throw error;
     }
   }
+
+  @On(USER_STREAM, 'UserCreated')
+  async onUserCreated(
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserCreated'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserCreated'>,
+  ) {
+    await notifyMember(this.notifyDeps, {
+      eventKey: 'USER_WELCOME',
+      userId: payload.userId,
+      correlationId: envelope.correlationId,
+      payload,
+      variables: (contact) => ({ name: contact.username || payload.name || '고객' }),
+    });
+  }
+
+  @On(USER_STREAM, 'UserDeleted')
+  async onUserDeleted(
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserDeleted'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserDeleted'>,
+  ) {
+    if (!payload.email) return;
+    await notifyMember(this.notifyDeps, {
+      eventKey: 'USER_WITHDRAWN',
+      userId: payload.userId,
+      correlationId: envelope.correlationId,
+      payload,
+      email: payload.email,
+      variables: () => ({ name: payload.name ?? '고객' }),
+    });
+  }
+
 }

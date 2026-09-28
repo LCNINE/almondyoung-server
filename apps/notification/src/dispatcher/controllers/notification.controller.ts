@@ -1,9 +1,10 @@
 // apps/notification/src/dispatcher/controllers/notification.controller.ts
 import { Notification } from '../services/notification-dispatcher.service';
 import { Controller, Post, Get, Body, Param, Query, ValidationPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -37,15 +38,14 @@ export class NotificationController {
 
   @Get('users/:userId')
   @ApiOperation({
-    summary: '사용자 알림 목록 조회',
-    description: '특정 사용자가 받은 알림 목록을 조회합니다.',
+    summary: '회원 메시지 발송내역',
+    description: '회원에게 보낸 SMS·알림톡을 기간(최대 30일)으로 조회합니다.',
   })
   @ApiParam({ name: 'userId', description: '사용자 ID', type: 'string' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: '조회 개수 제한 (기본값: 50)' })
-  @ApiResponse({ status: 200, description: '사용자 알림 목록 조회 성공' })
-  @ApiResponse({ status: 404, description: '사용자를 찾을 수 없음' })
-  async getUserNotifications(@Param('userId') userId: string, @Query('limit') limit?: number): Promise<Notification[]> {
-    return this.dispatcherService.getUserNotifications(userId, limit || 50);
+  @ApiResponse({ status: 200, description: '발송내역 조회 성공' })
+  @ApiResponse({ status: 400, description: '기간이 30일을 넘거나 날짜가 잘못됨' })
+  getUserNotifications(@Param('userId') userId: string, @Query() dto: ListUserNotificationsDto) {
+    return this.dispatcherService.getUserNotifications(userId, dto);
   }
 
   // 이벤트 기반 개별 발송 엔드포인트

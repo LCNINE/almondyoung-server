@@ -13,6 +13,7 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import { deliveryProfilesClient } from '../../api/domains/inventory/delivery-profiles.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -32,6 +33,8 @@ import type {
   AddBarcodeDto,
   CreateWarehouseDto,
   UpdateWarehouseDto,
+  CreateDeliveryProfileDto,
+  UpdateDeliveryProfileDto,
   CreateSkuGroupDto,
   UpdateSkuGroupDto,
   BulkAddSkusToGroupDto,
@@ -86,7 +89,8 @@ import type {
 
 /**
  * 멱등 키 수명주기를 관리하는 mutation 래퍼 (P2-4, 스펙 §5).
- * - 키를 ref 로 유지: react-query 재시도·네트워크 오류 후 재클릭이 같은 키 재사용 → 서버 replay
+ * - 키를 ref 로 유지: 네트워크 오류 후 재클릭이 같은 키 재사용 → 서버 replay
+ *   (전역 mutation 기본값이 retry:false 라 자동 재시도는 없다 — #963)
  * - 성공 시 키 교체(다음 제출은 새 작업), 4xx 시 교체(서버 미커밋 확정)
  * - 네트워크/타임아웃/5xx 는 키 유지: 서버가 커밋했을 수 있으므로 재시도가 replay 돼야 함
  */
@@ -219,6 +223,23 @@ export const useUpdateWarehouse = () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouses });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouse(id) });
     },
+  });
+};
+
+export const useCreateDeliveryProfile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateDeliveryProfileDto) => deliveryProfilesClient.create(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
+  });
+};
+
+export const useUpdateDeliveryProfile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateDeliveryProfileDto }) =>
+      deliveryProfilesClient.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
   });
 };
 
@@ -611,9 +632,8 @@ export const useOrderPurchaseOrderLine = () => {
     }) => purchaseOrdersClient.orderLine(poId, skuId, data),
     // onSettled — 실패(특히 409)에도 무효화한다. 이미 남이 실행한 라인을 409 로
     // 되돌려받았을 때 목록이 여전히 requested+버튼을 보여주면 무한 재시도가
-    // 가능해진다. 전역 mutation 기본값이 retry:1 이라, 서버는 커밋됐는데
-    // 응답만 유실된 요청이 재시도 뒤 409 로 돌아오는 경우도 있다 — 그때는 실제로
-    // 성공한 액션이 실패 토스트와 함께 옛 화면 위에 뜨므로 무효화가 더더욱 필요하다.
+    // 가능해진다. 서버는 커밋됐는데 응답만 유실된 요청(타임아웃·5xx)도 실패로
+    // 끝나므로, 그때 옛 화면을 남기지 않으려면 역시 무효화가 필요하다.
     onSettled: (_res, _err, { poId }) => {
       for (const queryKey of lineExecutionInvalidationKeys(poId)) {
         queryClient.invalidateQueries({ queryKey });
@@ -636,9 +656,8 @@ export const useMarkPurchaseOrderLineUnavailable = () => {
     }) => purchaseOrdersClient.markLineUnavailable(poId, skuId, data),
     // onSettled — 실패(특히 409)에도 무효화한다. 이미 남이 실행한 라인을 409 로
     // 되돌려받았을 때 목록이 여전히 requested+버튼을 보여주면 무한 재시도가
-    // 가능해진다. 전역 mutation 기본값이 retry:1 이라, 서버는 커밋됐는데
-    // 응답만 유실된 요청이 재시도 뒤 409 로 돌아오는 경우도 있다 — 그때는 실제로
-    // 성공한 액션이 실패 토스트와 함께 옛 화면 위에 뜨므로 무효화가 더더욱 필요하다.
+    // 가능해진다. 서버는 커밋됐는데 응답만 유실된 요청(타임아웃·5xx)도 실패로
+    // 끝나므로, 그때 옛 화면을 남기지 않으려면 역시 무효화가 필요하다.
     onSettled: (_res, _err, { poId }) => {
       for (const queryKey of lineExecutionInvalidationKeys(poId)) {
         queryClient.invalidateQueries({ queryKey });

@@ -30,7 +30,7 @@ export const ReviewBenefitBanner = ({
     <div className="mb-4 rounded-xl border border-orange-100 bg-linear-to-r from-orange-50 to-amber-50 p-4">
       <p className="text-[15px] font-semibold text-gray-800">
         {t.rich("benefitBanner", {
-          amount: () => <span className="text-[#FF9500]">{rewardLabel}</span>,
+          amount: () => <span className="text-[#ffa500]">{rewardLabel}</span>,
         })}
       </p>
     </div>

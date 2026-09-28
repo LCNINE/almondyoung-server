@@ -4,6 +4,7 @@ import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
 import { TemplateController } from './controllers/template.controller';
 import { TemplateService } from './services/template.service';
+import { EmailLayoutService } from './services/email-layout.service';
 import { NHNTemplateService } from './services/nhn-template.service';
 import { TemplateRendererService } from '../shared/services/template-renderer.service';
 import { ProviderModule } from '../provider/provider.module';
@@ -19,7 +20,7 @@ import { ProviderModule } from '../provider/provider.module';
     ProviderModule, // ProviderManagerService와 ProviderFactory를 사용하기 위해 추가
   ],
   controllers: [TemplateController],
-  providers: [TemplateService, NHNTemplateService, TemplateRendererService],
-  exports: [TemplateService],
+  providers: [TemplateService, NHNTemplateService, TemplateRendererService, EmailLayoutService],
+  exports: [TemplateService, EmailLayoutService],
 })
 export class TemplateModule {}

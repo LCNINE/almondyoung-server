@@ -14,10 +14,26 @@ export const createConsents = async (consents: CreateConsentsDto) => {
 }
 
 export const getConsents = async () => {
-  const data = await api("users", "/consents", {
-    method: "GET",
-    withAuth: true,
-  })
+  const data = await api<{ marketingConsent: boolean } | null>(
+    "users",
+    "/consents",
+    {
+      method: "GET",
+      withAuth: true,
+    }
+  )
 
   return data
+}
+
+export const updateMarketingConsent = async (enabled: boolean) => {
+  return api<{ marketingConsent: boolean; changedAt: string }>(
+    "users",
+    "/consents/marketing",
+    {
+      method: "PATCH",
+      body: { enabled },
+      withAuth: true,
+    }
+  )
 }

@@ -10,6 +10,6 @@ export class TemplateFilterDto {
   })
   @IsBoolean()
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @Transform(({ value }) => (value === undefined ? undefined : value === 'true' || value === true))
   isActive?: boolean;
 }

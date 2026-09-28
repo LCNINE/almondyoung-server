@@ -16,13 +16,8 @@ import {
   formatOrderAmount,
   paymentStatusLabel,
   fulfillmentStatusLabel,
+  useMembershipLabel,
 } from '../../lib/order-labels';
-
-function membershipLabel(roles: string[] | undefined): string {
-  if (!roles?.length) return '일반 회원';
-  if (roles.includes('membership')) return '멤버십 회원';
-  return '일반 회원';
-}
 
 function Card({
   title,
@@ -53,6 +48,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 export function HomeTab({ customerId }: { customerId: string }) {
   const { data: customer, isLoading } = useCustomerById(customerId);
+  const membershipLabel = useMembershipLabel(customerId);
   const profile = customer?.profile;
   // 주문정보 행 클릭 시 주문내역 탭과 동일한 상세 다이얼로그(현금영수증 포함)를 연다.
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -116,7 +112,7 @@ export function HomeTab({ customerId }: { customerId: string }) {
             <div>
               <Field
                 label="회원등급"
-                value={membershipLabel(customer?.roles)}
+                value={membershipLabel}
               />
               <Field
                 label="이메일 인증"

@@ -25,6 +25,7 @@ import { EventTrackingService } from './tracking/event-tracking.service';
 import { EventTraceReader } from './tracking/event-trace.reader';
 import { KafkaConfig, StreamConfig, StreamEventTypes, getDLQTopicName } from '@packages/event-contracts/types';
 import { SchemaValidationOptions } from '@packages/event-contracts/types';
+import { createKafkaConfigFromEnv } from './kafka-config.util';
 import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
@@ -150,7 +151,7 @@ export class EventsModule {
    */
   static forApp(options: EventsAppOptions = {}): DynamicModule {
     // Kafka 설정 (환경변수 또는 명시적)
-    const kafka = options.kafka || this.createKafkaConfigFromEnv();
+    const kafka = options.kafka || this.requireKafkaConfigFromEnv('forApp');
     const serviceName = options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
     const enableDLQ = options.enableDLQ ?? true;
     const publishes = options.publishes ?? [];
@@ -384,9 +385,9 @@ export class EventsModule {
    */
   static async startConsumer(app: INestApplication, options: StartConsumerOptions): Promise<DerivedConsumerConfig> {
     const logger = new Logger('EventsConsumer');
+    const kafka = options.kafka || this.requireKafkaConfigFromEnv('startConsumer');
     const derived = deriveConsumerConfig(discoverEventHandlers(app));
 
-    const kafka = options.kafka || this.createKafkaConfigFromEnv();
     const enableAutoDLQ = options.enableAutoDLQ ?? true;
 
     if (!options.strategy) {
@@ -479,12 +480,21 @@ export class EventsModule {
   }
 
   /**
-   * @deprecated Use createKafkaConfigFromEnv() from kafka-config.util.ts directly
+   * 환경변수의 Kafka 설정. 없으면 **원인을 말하며** 던진다 — `forApp`·`startConsumer` 는 Kafka 없이
+   * 뜰 수 없다. 예전엔 `null` 을 그대로 넘겨 `Cannot read properties of null (reading 'clientId')`
+   * 로 죽었고, 로그만으로는 무엇이 빠졌는지 알 수 없었다.
+   * Kafka 를 선택 사항으로 두려는 앱은 `createKafkaConfigFromEnv()` 로 먼저 묻고 이 모듈을
+   * 조건부로 import 한다(ai 가 그렇다).
    */
-  private static createKafkaConfigFromEnv(): KafkaConfig {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createKafkaConfigFromEnv: buildConfig } = require('./kafka-config.util');
-    return buildConfig() as KafkaConfig;
+  private static requireKafkaConfigFromEnv(caller: 'forApp' | 'startConsumer'): KafkaConfig {
+    const config = createKafkaConfigFromEnv();
+    if (!config) {
+      throw new Error(
+        `EventsModule.${caller}: KAFKA_BROKERS 가 설정되지 않았다. 이 앱은 Kafka 없이 부팅할 수 없다 — ` +
+          `.env 에 KAFKA_BROKERS 를 넣을 것(로컬은 localhost:9092).`,
+      );
+    }
+    return config;
   }
 
   /**

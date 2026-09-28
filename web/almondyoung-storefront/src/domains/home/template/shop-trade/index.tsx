@@ -7,7 +7,7 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel"
 import { ListingCard } from "@/domains/shop-trade/components/listing-card"
-import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
+import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
 import { ArrowRight } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import { Title } from "../../components/header"

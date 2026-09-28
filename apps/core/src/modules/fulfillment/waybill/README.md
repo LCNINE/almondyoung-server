@@ -47,6 +47,9 @@ abandoned (종료, pending 전용)            ▼                               
 
 pending ──definitive_rejection(즉시)──▶ failed (종료)
 allocated ──definitive_rejection(즉시)──▶ failed (종료)
+
+pending ──transient_rejection──▶ pending 유지 (nextAttemptAt 기록) ──전용 CAP 초과──▶ failed (종료)
+pending/allocated ──운영자 abandon──▶ abandoned (종료)
 ```
 
 `failed`와 `abandoned`는 서로 독립된 종료 상태다 — `abandoned`(pending 전용, CAP 초과 자동포기)에서 `failed`로
@@ -62,8 +65,23 @@ allocated ──definitive_rejection(즉시)──▶ failed (종료)
   같은 `wblNo` 로 재구동하면 한진 `ERROR-09`(이미 등록됨) 가 멱등 성공으로 처리된다(§8). 이 비대칭(pending
   은 자동 abandon, allocated 는 금지)은 의도된 설계다.
 - `definitive_rejection` 은 즉시 `failed` — 재시도하지 않는다.
-- 운영자 전용 수동 abandon(교착 상태의 `allocated` 강제 해제) 엔드포인트는 이번 플랜 범위 밖이다(§11 은
-  operator-only 로 명시했으나 본 플랜은 `drive` 재구동만 제공).
+- **`transient_rejection`(#914)**: 시간이 지나면 저절로 풀리는 캐리어 사유(한진 `ERROR-05` 일일 출력한도 /
+  `ERROR-06` 지역 통제). `failed` 로 종료하지 않고 `pending` 을 유지하면서 `last_error` 와
+  `next_attempt_at` 을 적는다. **`attempts` 가 아니라 `transient_attempts` 를 쓴다** — pending CAP 은
+  「채번이 됐는지 모른다」(`unknown_outcome`) 전용이고 이쪽은 「확실히 안 됐다」로 의미가 반대다.
+  `WAYBILL.TRANSIENT_ATTEMPTS_CAP` 을 넘기면 사유를 명시해 `failed` 로 **종료한다** — 탈출구 없는 무한
+  `pending` 은 활성 슬롯을 영구히 붙들어 재발급·수기등록을 전부 막는다.
+  어느 코드가 일시적인지는 게이트웨이가 정하고(`TRANSIENT_PRINT_WBL_CODES`), 얼마나 기다릴지는
+  `CarrierError.details.retryAfter` 힌트로 싣는다 — 상태머신은 코드별 분기를 갖지 않는다.
+- **재구동은 발급 배치가 한다.** `issueForShipment` 는 활성 행이 «일시적 거절로 멈춘 pending»이면
+  `WAYBILL_ACTIVE_EXISTS` 대신 그 행을 재사용해 `drive` 를 다시 태운다(`isRetryableTransientRow`).
+  `next_attempt_at` 이 아직 미래면 캐리어를 부르지 않고 현 상태를 그대로 반환한다.
+  무인 폴러(`@CronOnce`)는 셀메이트 폐기 후 운영이 무인화될 때 같은 컬럼 위에 얹는다.
+- **운영자 abandon 은 이제 있다** — `POST /waybills/:waybillId/abandon`(`WAREHOUSE_OPERATE`, 사유 필수).
+  교착된 `pending`/`allocated` 를 종료시켜 활성 슬롯을 푼다. 슬롯이 풀려야 `reissue` 와 수기 등록이
+  열린다. 스코프가 `void`(`SHIPMENT_REOPEN`)보다 넓은 것은 의도다 — 현장에서 막혔을 때 관리자를
+  기다리지 않고 풀 수 있어야 한다.
+  ⚠️ `allocated` 를 버리면 한진에 채번된 `wblNo` 하나가 미사용으로 남는다. 그래서 사유가 필수다.
 
 ## Seam (소비자 진입점, §9.1)
 

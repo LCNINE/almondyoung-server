@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   AllocateResult,
   CarrierCapabilities,
@@ -7,8 +8,10 @@ import {
   CarrierScan,
   CarrierScanStatus,
   RegisterOutcome,
+  RetryAfter,
   WaybillRequest,
 } from '../carrier-gateway.interface';
+import { IntervalPacer } from '../interval-pacer';
 import { HanjinConfig, isHanjinConfigured } from './hanjin.config';
 import type { HanjinApiClient } from './hanjin-api.client';
 
@@ -30,6 +33,14 @@ const LABEL_FIELDS = [
   'prt_add',
 ] as const;
 
+// 시간이 지나면 저절로 풀리는 print-wbl 결과코드 (정본 §4.1). 이 표에 없는 ERROR-xx 는 전부 영구 거절이다.
+// 값은 재시도 시점 힌트 — ERROR-05 는 한도가 «일 단위»로 리셋되므로 같은 날 다시 불러봐야 의미가 없고,
+// ERROR-06 은 통제 해제 시점이 미상이라 짧게 잡아 다음 배치에서 다시 부딪혀 보게 한다.
+const TRANSIENT_PRINT_WBL_CODES: Record<string, RetryAfter> = {
+  'ERROR-05': { kind: 'next_day' }, // 일일 운송장 출력 한도 초과 (고객별 한도물량)
+  'ERROR-06': { kind: 'after_ms', ms: 60 * 60 * 1000 }, // 불가항력 지역 출력 통제
+};
+
 // print-wbl 응답(snake_case). 분류필드는 인덱스 시그니처로 접근.
 interface PrintWblResponse {
   result_code?: string;
@@ -44,20 +55,69 @@ interface InsertOrderResponse {
   resultMessage?: string;
 }
 
+// 배송정보 API 는 10 TPS 슬라이딩 창으로 제한된다 (정본 §5). 그 절반으로 벌린다 — 창 경계의 지터를 흡수하고,
+// 폴러 밖 호출자(어드민 「배송 조회」 등)가 같은 게이트웨이를 거쳐도 여유가 남게 한다. 게이트웨이는 레지스트리가
+// 프로세스당 하나만 만들므로 이 페이서는 프로세스 안의 모든 추적 호출에 걸린다. 넘었을 때의 `-103` 은
+// 클라이언트가 `transient_rejection` 으로 올린다(#916).
+const TRACKING_MIN_INTERVAL_MS = 200;
+
+// tracking-wbl 작업상태코드 (정본 §4.4). 공식 목록은 이 12개가 전부다 — 여기 없는 코드는 `unknown` 으로
+// 떨어뜨리고 경고를 남긴다(한진이 코드를 늘릴 수 있다). `65` 같은 비공식 코드를 추측으로 넣지 말 것.
 const STATUS_MAP: Record<string, CarrierScanStatus> = {
-  '01': 'pending',
-  '05': 'pending',
-  '07': 'in_transit',
-  '08': 'in_transit',
-  '11': 'in_transit',
-  '14': 'in_transit',
-  '31': 'in_transit',
-  '32': 'in_transit',
-  '63': 'in_transit',
-  '65': 'delivered',
-  '66': 'delivered',
-  '92': 'failed',
-  '03': 'canceled',
+  '01': 'pending', // 예약등록
+  '03': 'canceled', // 예약취소
+  '05': 'pending', // 운송장출력
+  '07': 'in_transit', // 집하출발
+  '08': 'pickup_missed', // 미집하 — 진행 중이 아니라 예외 상태
+  '11': 'in_transit', // 집하완료
+  '14': 'in_transit', // 입고
+  '31': 'in_transit', // 상품출발
+  '32': 'in_transit', // 상품도착
+  '63': 'in_transit', // 배송출발
+  '66': 'delivered', // 배송완료
+  '92': 'failed', // 배송불가
+};
+
+// 작업상태별 사유코드 해석 (정본 §4.4). 같은 코드라도 작업상태마다 뜻이 다르다 — 66 은 사유가 아니라
+// 인수 관계다. ⚠️ 이 코드가 응답의 `reasonCode` 필드로 온다는 것은 정본에 없는 추정이다(첫 실스캔 전까지
+// 실측 불가 — DEV 는 집하 전 ERROR-01 만 준다). 그래서 표에 없으면 한진 원문 `reasonMessage` 로 폴백한다.
+const REASON_LABELS: Record<string, Record<string, string>> = {
+  '03': {
+    '01': '송하인부재',
+    '02': '화물미준비 및 재고부족',
+    '03': '취급불가 화물',
+    '04': '송하인 발송취소',
+    '05': '고객분실',
+    '06': '기 집하',
+    '07': '고객 파손',
+    '08': '타인 양도',
+    '09': '반품지시 부정확',
+    '10': '주소 불명',
+    '11': '고객 이사 및 퇴사',
+    '12': '타 운송자 집하',
+    '18': '기업체휴무',
+    '99': '기타',
+  },
+  '92': {
+    '01': '수취거부',
+    '02': '수하인 이사',
+    '04': '악천후',
+    '05': '수하인 주소 부정확',
+    '06': '고객부재',
+    '07': '관세지불 거절',
+    '08': '송하인 요청',
+    '17': '기업체 휴무',
+    '99': '기타',
+  },
+  '66': {
+    '01': '본인',
+    '02': '가족',
+    '03': '직장동료',
+    '04': '이웃',
+    '05': '경비실',
+    '06': '문앞',
+    '99': '기타',
+  },
 };
 
 // tracking-wbl 응답(camelCase)
@@ -71,10 +131,12 @@ interface TrackingWblItem {
 }
 interface TrackingWblResponse {
   resultCode?: string;
+  resultMessage?: string;
   wrkList?: TrackingWblItem[];
 }
 
 export class HanjinCarrierGateway extends CarrierGateway {
+  private readonly logger = new Logger(HanjinCarrierGateway.name);
   override readonly carrier: CarrierCode = 'HANJIN';
   override readonly capabilities: CarrierCapabilities = Object.freeze({
     allocatesExternally: true,
@@ -87,6 +149,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
     private readonly config: HanjinConfig,
     private readonly client: HanjinApiClient,
     private readonly now: () => Date = () => new Date(),
+    private readonly trackingPacer: Pick<IntervalPacer, 'acquire'> = new IntervalPacer(TRACKING_MIN_INTERVAL_MS),
   ) {
     super();
   }
@@ -106,11 +169,13 @@ export class HanjinCarrierGateway extends CarrierGateway {
     };
     const res = await this.client.post<PrintWblResponse>('print', `/v1/wbl/${this.config.clientId}/print-wbl`, body);
     if (res?.result_code !== 'OK' || !res?.wbl_num) {
+      // 구체 오류코드(ERROR-xx) 보존; OK 인데 wbl_num 만 없는 경우에만 no_wbl_num.
+      const code = res?.result_code && res.result_code !== 'OK' ? res.result_code : 'no_wbl_num';
+      const retryAfter = TRANSIENT_PRINT_WBL_CODES[code];
       throw new CarrierError(
         `Hanjin print-wbl rejected: ${res?.result_code} - ${res?.result_message ?? ''}`,
-        'definitive_rejection',
-        // 구체 오류코드(ERROR-xx) 보존; OK 인데 wbl_num 만 없는 경우에만 no_wbl_num.
-        { carrier: 'hanjin', code: res?.result_code && res.result_code !== 'OK' ? res.result_code : 'no_wbl_num' },
+        retryAfter ? 'transient_rejection' : 'definitive_rejection',
+        { carrier: 'hanjin', code, ...(retryAfter ? { retryAfter } : {}) },
       );
     }
     const labelData: Record<string, unknown> = {};
@@ -159,21 +224,47 @@ export class HanjinCarrierGateway extends CarrierGateway {
   }
 
   override async track(waybillNo: string): Promise<CarrierScan[]> {
+    await this.trackingPacer.acquire();
     const res = await this.client.post<TrackingWblResponse>('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
       custEdiCd: this.config.clientId,
       wblNo: waybillNo,
     });
+    // ERROR-01 은 「없는 번호」와 「아직 스캔 안 된 번호」를 구별하지 못한다(정본 §4.4 실측) — 집하 전의 정상 상태라
+    // 빈 이력으로 읽는다. 나머지 결과코드(ERROR-02 체크디지트·ERROR-90 custEdiCd·ERROR-99)는 진짜 오류다.
     if (res?.resultCode === 'ERROR-01') return [];
+    if (res?.resultCode !== 'OK') {
+      const code = res?.resultCode ?? 'no_result_code';
+      throw new CarrierError(
+        `Hanjin tracking-wbl rejected: ${code} - ${res?.resultMessage ?? ''}`,
+        'definitive_rejection',
+        { carrier: 'hanjin', code },
+      );
+    }
     const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
-    return list.map((w) => ({
-      statusCode: String(w.statusCode ?? ''),
-      status: STATUS_MAP[String(w.statusCode)] ?? 'pending',
-      occurredAt: new Date(String(w.statusDate ?? '').replace(' ', 'T') + '+09:00'),
-      location: w.agencyName || undefined,
-      description: w.description || undefined,
-      reasonCode: w.reasonCode || undefined,
-      reasonMessage: w.reasonMessage || undefined,
-    }));
+    return list.map((w) => {
+      const statusCode = String(w.statusCode ?? '');
+      const reasonCode = w.reasonCode || undefined;
+      const reasonMessage = w.reasonMessage || undefined;
+      return {
+        statusCode,
+        status: this.scanStatus(waybillNo, statusCode),
+        occurredAt: new Date(String(w.statusDate ?? '').replace(' ', 'T') + '+09:00'),
+        location: w.agencyName || undefined,
+        description: w.description || undefined,
+        reasonCode,
+        reasonMessage,
+        reasonLabel: (reasonCode && REASON_LABELS[statusCode]?.[reasonCode]) || reasonMessage,
+      };
+    });
+  }
+
+  private scanStatus(waybillNo: string, statusCode: string): CarrierScanStatus {
+    const status = STATUS_MAP[statusCode];
+    if (status) return status;
+    this.logger.warn(
+      `한진 tracking-wbl 에 알 수 없는 작업상태코드 ${JSON.stringify(statusCode)} (운송장 ${waybillNo})`,
+    );
+    return 'unknown';
   }
 
   private kstDate(d: Date): string {

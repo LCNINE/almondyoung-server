@@ -237,14 +237,32 @@ grep 'sales-orders' logs/admin-web.log | tail          # 401 인지 200 인지
 `http://localhost:3000` 으로 바꾸고 core 를 재기동하면 `200`. `ALLOWED_AUDIENCES` 는 비어 있으면
 `aud` 를 검사하지 않으므로 건드릴 필요 없다(`jwt-access.strategy.ts:114`).
 
-### ⚠️ `analytics`(3040)·`ugc-service`(3030) 는 `.env` 가 아예 없다
+### ⚠️ `analytics`(3040) 는 `.env` 가 아예 없다
 
-그래서 **부팅하다 죽는다** — `EventsModule.forApp` 이 kafka 설정 `null` 을 읽고
-`TypeError: Cannot read properties of null (reading 'clientId')`.
+그래서 **부팅하다 죽는다** — `EventsModule.forApp` 은 Kafka 없이 뜰 수 없다. 이제 원인을 말하며 죽는다
+(`EventsModule.forApp: KAFKA_BROKERS 가 설정되지 않았다`). 예전엔 `null.clientId` 의 `TypeError` 였다.
 
-이 둘은 위 11개 목록 «밖»이라 E2E 검증엔 필요 없지만, **어드민 대시보드가 호출한다**:
-`/api/proxy/analytics/summary` 가 `ECONNREFUSED :3040` 으로 **500**, 「미답변 리뷰」 타일은 빈칸.
-대시보드에서 그 두 칸이 비는 건 **정상이다** — 주문·결제 판정과는 무관하다.
+위 11개 목록 «밖»이라 E2E 검증엔 필요 없지만, **어드민 대시보드가 호출한다**:
+`/api/proxy/analytics/summary` 가 `ECONNREFUSED :3040` 으로 **500**. 대시보드에서 그 칸이 비는 건
+**정상이다** — 주문·결제 판정과는 무관하다.
+
+### `ugc-service`(3030) — 템플릿은 있다, Kafka 는 필수다
+
+`env-templates/.env.ugc-service.local.example` 을 복사한다(bootstrap `--install-env` 가 한다).
+리뷰·Q&A·샵 매매가 여기 온다. 두 가지만 기억할 것:
+
+- **`KAFKA_BROKERS` 를 비우면 부팅하다 죽는다.** 리뷰 적립 명령 아웃박스가 모듈 import 시점에
+  Kafka 설정을 요구한다. 「소비만 끄고 HTTP 는 뜬다」는 옛 주석은 사실이 아니었다.
+- **포트는 3030 하나다.** 예전엔 ugc `main.ts` 와 admin-web 프록시의 기본값만 3031 이라,
+  `PORT` 를 비우면 storefront 가, `PORT=3030` 을 넣으면 admin-web 이 ugc 를 못 찾았다.
+  admin-web 은 `UGC_SERVICE_URL`, medusa 는 `UGC_SERVICE_URL`+`UGC_INTERNAL_KEY`(리뷰 자격)로 여기 온다.
+
+### file-service 에 `OIDC_ISSUER_URL` 이 없으면 회원 업로드만 401
+
+`AUTH_SECRET` 만 두면 file-service 는 HS256 한 모드로 뜬다. core 의 위임 토큰(HS256)은 통과하지만
+**회원 토큰(RS256)을 실어 오는 업로드**(storefront 서버 액션 `uploadFile` — 샵 매매 사진 등)는
+`RS256 token but jwksUri not configured` 로 401 이다. 템플릿에 `OIDC_ISSUER_URL=http://localhost:3000`
+을 더했고, preflight 7번이 file-service·ugc 도 본다.
 
 ### `apps/wallet-web/.env.local` (전문 — 그대로 만들 것)
 

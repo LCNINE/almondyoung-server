@@ -7,7 +7,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container/c
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { smsGateApi, type SmsGateCategory } from '@/lib/api/domains/sms-gate';
+import { NHN_ROUTE_VALUE, smsGateApi, type SmsGateCategory } from '@/lib/api/domains/sms-gate';
 import {
   Select,
   SelectContent,
@@ -40,7 +40,13 @@ export default function SmsSendTemplate() {
   const [isChecking, setIsChecking] = useState(false);
 
   const isMarketing = category === 'MARKETING';
-  const selectedDeviceId = deviceId === AUTO ? undefined : deviceId;
+  const isNhn = deviceId === NHN_ROUTE_VALUE;
+  const selectedDeviceId = deviceId === AUTO || isNhn ? undefined : deviceId;
+
+  const changeCategory = (next: SmsGateCategory) => {
+    setCategory(next);
+    if (next === 'MARKETING' && isNhn) setDeviceId(AUTO);
+  };
   const targets = isMarketing
     ? recipients.filter((r) => r.marketingConsent)
     : recipients;
@@ -55,6 +61,7 @@ export default function SmsSendTemplate() {
         content,
         category,
         deviceId: selectedDeviceId,
+        route: isNhn ? 'NHN' : undefined,
         nhnFallback,
       },
       {
@@ -77,7 +84,7 @@ export default function SmsSendTemplate() {
   };
 
   const handleSend = async () => {
-    if (isMarketing) return submit(false);
+    if (isMarketing || isNhn) return submit(false);
     setIsChecking(true);
     try {
       const { remaining } = await smsGateApi.getCapacity(selectedDeviceId);
@@ -95,7 +102,7 @@ export default function SmsSendTemplate() {
       <Header
         title="개별 메시지 전송"
         titleAside={<HelpSheet />}
-        subtitle="발송폰(SMS Gate)으로 회원에게 문자를 보냅니다."
+        subtitle="발송폰(SMS Gate) 또는 대표번호(NHN)로 회원에게 문자를 보냅니다."
       />
 
       <OfflineBanner />
@@ -104,7 +111,7 @@ export default function SmsSendTemplate() {
         <div className="flex flex-col gap-3 rounded-md border px-4 py-3">
           <div className="flex items-center gap-4">
             <Label className="w-28 shrink-0">구분</Label>
-            <CategoryRadio value={category} onChange={setCategory} />
+            <CategoryRadio value={category} onChange={changeCategory} />
             {isMarketing && (
               <span className="text-muted-foreground text-xs">
                 마케팅 수신 동의 회원에게만 발송되며, 21시~08시에는 보내지 않고
@@ -120,6 +127,9 @@ export default function SmsSendTemplate() {
               </SelectTrigger>
               <SelectContent position="popper">
                 <SelectItem value={AUTO}>자동 (한도가 남은 폰)</SelectItem>
+                <SelectItem value={NHN_ROUTE_VALUE} disabled={isMarketing}>
+                  대표번호 (NHN){isMarketing ? ' · 광고는 발송폰만' : ''}
+                </SelectItem>
                 {devices.map((d) => (
                   <SelectItem key={d.deviceId} value={d.deviceId}>
                     {d.name} · 잔여 {Math.max(0, d.dailyLimit - d.sentToday)}건
@@ -160,7 +170,7 @@ export default function SmsSendTemplate() {
             <TemplatePanel
               onSelect={(template) => {
                 setContent(template.content);
-                setCategory(template.category);
+                changeCategory(template.category);
               }}
             />
           </section>

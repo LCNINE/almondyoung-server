@@ -15,7 +15,13 @@ export async function generateMetadata() {
 
 type Props = {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ period?: string; type?: string; page?: string }>
+  searchParams: Promise<{
+    period?: string
+    type?: string
+    page?: string
+    write?: string
+    productId?: string
+  }>
 }
 
 export default async function MyReviewsPage(props: Props) {

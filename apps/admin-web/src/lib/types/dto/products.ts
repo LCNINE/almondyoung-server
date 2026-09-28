@@ -807,10 +807,24 @@ export const SHOP_LISTING_REGION_LABELS: Record<ShopListingRegion, string> = {
   jeju: '제주',
 };
 
-export interface ShopListingDto {
+export const SHOP_LISTING_STATUSES = [
+  'pending',
+  'published',
+  'rejected',
+  'hidden',
+  'closed',
+] as const;
+export type ShopListingStatus = (typeof SHOP_LISTING_STATUSES)[number];
+
+export const SHOP_LISTING_AUTHOR_TYPES = ['admin', 'member'] as const;
+export type ShopListingAuthorType = (typeof SHOP_LISTING_AUTHOR_TYPES)[number];
+
+/** ugc `GET /admin/shop-listings` 행 */
+export interface AdminShopListingDto {
   id: string;
   slug: string;
   title: string;
+  /** 마크다운 */
   content: string;
   region: ShopListingRegion | null;
   businessType: ShopListingBusinessType | null;
@@ -819,54 +833,65 @@ export interface ShopListingDto {
   deposit: number | null;
   monthlyRent: number | null;
   keyMoney: number | null;
+  /** imageFileIds[0] */
   thumbnailFileId: string | null;
-  /** 샵 사진 갤러리 fileId 목록. 배열 순서가 곧 노출 순서 */
-  images: string[];
-  isActive: boolean;
-  /** 상세 페이지 조회수 */
+  /** 순서 = 노출 순서 */
+  imageFileIds: string[];
+  status: ShopListingStatus;
   viewCount: number;
-  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  rejectReason: string | null;
+  /** 숫자만 */
+  contactPhone: string | null;
+  kakaoOpenChatUrl: string | null;
+  /** 가장 최근 pending 진입 시각. 승인·반려의 expectedSubmittedAt 으로 되돌려 보낸다 */
+  submittedAt: string | null;
+  authorType: ShopListingAuthorType;
+  authorUserId: string | null;
 }
 
-export interface CreateShopListingDto {
-  /** 비워두면 제목에서 자동 생성된다. */
-  slug?: string;
+export interface ShopListingModerationDto {
+  id: string;
+  decidedBy: 'admin' | 'classifier';
+  decision: 'approved' | 'rejected' | 'pending' | 'hidden' | 'unhidden';
+  label: string | null;
+  confidence: number | null;
+  reason: string | null;
+  actorUserId: string | null;
+  createdAt: string;
+}
+
+/** ugc `GET /admin/shop-listings/:id` */
+export interface AdminShopListingDetailDto extends AdminShopListingDto {
+  /** 최신순 */
+  moderations: ShopListingModerationDto[];
+}
+
+export interface AdminShopListingListQuery {
+  status?: ShopListingStatus;
+  authorType?: ShopListingAuthorType;
+  /** 제목 부분일치 */
+  q?: string;
+}
+
+/**
+ * ugc `POST /admin/shop-listings`·`PUT /admin/shop-listings/:id` 본문. **PUT 은 전체 교체다** —
+ * contactPhone·kakaoOpenChatUrl 은 항상 키를 싣는다(비면 null). 빼면 회원이 등록한 번호가 지워진다.
+ */
+export interface AdminShopListingPayload {
   title: string;
   content: string;
   region: ShopListingRegion;
   businessType: ShopListingBusinessType;
   dealType: ShopListingDealType;
-  areaPyeong?: number | null;
-  deposit?: number | null;
-  monthlyRent?: number | null;
-  keyMoney?: number | null;
-  thumbnailFileId: string;
-  images?: string[];
-  isActive?: boolean;
-}
-
-export interface UpdateShopListingDto {
-  slug?: string;
-  title?: string;
-  content?: string;
-  region?: ShopListingRegion;
-  businessType?: ShopListingBusinessType;
-  dealType?: ShopListingDealType;
-  areaPyeong?: number | null;
-  deposit?: number | null;
-  monthlyRent?: number | null;
-  keyMoney?: number | null;
-  thumbnailFileId?: string;
-  images?: string[];
-  isActive?: boolean;
-}
-
-export interface ShopListingListQuery {
-  includeInactive?: boolean;
-  isActive?: boolean;
-  q?: string;
+  areaPyeong: number | null;
+  deposit: number | null;
+  monthlyRent: number | null;
+  keyMoney: number | null;
+  imageFileIds: string[];
+  contactPhone: string | null;
+  kakaoOpenChatUrl: string | null;
 }
 
 // ===== 태그 그룹 관련 =====

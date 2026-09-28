@@ -343,6 +343,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/warehouses',
       },
       {
+        id: 'inventory-delivery-profiles',
+        title: '배송 프로필',
+        path: '/inventory/delivery-profiles',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
@@ -459,7 +464,7 @@ const allMenus: MainMenu[] = [
             { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
             { id: 'message-bulk', title: '대량 메시지 전송', path: '/messages/bulk' },
             { id: 'message-campaigns', title: '발송 목록', path: '/messages/campaigns' },
-            { id: 'message-inbox', title: '받은 문자', path: '/messages/inbox' },
+            { id: 'message-inbox', title: '메시지함', path: '/messages/inbox' },
             { id: 'message-templates', title: '문자 템플릿', path: '/messages/templates' },
             { id: 'message-devices', title: '발송폰 디바이스', path: '/messages/devices' },
           ],
@@ -553,7 +558,7 @@ const allMenus: MainMenu[] = [
         id: 'marketing',
         title: '마케팅',
         children: [
-          // { id: 'messages', title: '메시지 or 푸시알림' },
+          { id: 'messages', title: '메시지 관리', path: '/mall/marketing/messages' },
           {
             id: 'banner-groups',
             title: '배너 그룹',
@@ -680,6 +685,15 @@ const allMenus: MainMenu[] = [
           },
         ],
       },
+    ],
+  },
+  {
+    id: 'logo-contest',
+    title: '로고 공모전',
+    icon: 'Trophy',
+    defaultPath: '/logo-contest',
+    children: [
+      { id: 'logo-contest-entries', title: '출품작', path: '/logo-contest' },
     ],
   },
   {

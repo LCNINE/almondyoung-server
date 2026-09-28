@@ -33,8 +33,11 @@ export interface AssembleInput {
   entrancePassword?: string | null;
 }
 
-/** 배송 메시지 = 메모 라벨 + 공동현관 비번. 합성 결과는 어디에도 저장하지 않는다. */
-function composeMessage(deliveryNote: string | undefined, entrancePassword: string | null | undefined) {
+/**
+ * 배송 메시지 = 메모 라벨 + 공동현관 비번. 합성 결과는 어디에도 저장하지 않는다.
+ * 운송장 라벨(#913)도 이 함수를 쓴다 — 한진에 보낸 문자열과 라벨 문자열이 같은 함수에서 나와야 한다.
+ */
+export function composeMessage(deliveryNote: string | undefined, entrancePassword: string | null | undefined) {
   const parts = [deliveryNote, entrancePassword ? `공동현관 ${entrancePassword}` : undefined].filter(
     (part): part is string => !!part,
   );
@@ -42,11 +45,16 @@ function composeMessage(deliveryNote: string | undefined, entrancePassword: stri
   return parts.length === 2 ? `${parts[0]} (${parts[1]})` : parts[0];
 }
 
+/** 품명 = 첫 상품명 + 「외 N건」. 한진 등록값과 라벨 품명이 같은 함수에서 나온다(#913). */
+export function commodityNameOf(lines: readonly ManifestLineLite[]): string {
+  const head = lines[0]?.productName ?? '';
+  return lines.length > 1 ? `${head} 외 ${lines.length - 1}건` : head;
+}
+
 export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
   const rc = parseRecipient(input.recipientSnapshot);
   const items = input.lines.map((l) => ({ name: l.productName, quantity: l.quantity }));
-  const head = input.lines[0]?.productName ?? '';
-  const commodityName = input.lines.length > 1 ? `${head} 외 ${input.lines.length - 1}건` : head;
+  const commodityName = commodityNameOf(input.lines);
   return {
     custOrdNo: deriveCustOrdNo(input.shipmentId),
     recipient: {

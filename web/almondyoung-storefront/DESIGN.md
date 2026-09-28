@@ -1,13 +1,13 @@
 # DESIGN.md — 아몬드영 스토어프론트 디자인 시스템 (Karrot / Seed Design 기반)
 
 > UI(컴포넌트/화면/스타일)를 만들거나 수정할 때 **항상 이 문서를 따른다.**
-> 원본: Karrot(당근) Seed Design System (https://seed-design.io). 아몬드영에 맞춰 토큰만 리매핑.
+> 기본 토큰은 Karrot(당근) Seed Design System (https://seed-design.io)을 사용하고, 브랜드 색은 [스토어 UI 피그마](https://www.figma.com/design/VDeCQFDnT05Hxrc8c78KAd/AlmondYoung_Store-Admin_UI?node-id=2-4528)를 따른다.
 > 컬러/라운드/보더/포커스링은 `src/styles/globals.css` 의 CSS 변수로 이미 이 값에 매핑돼 있으니,
 > **하드코딩 hex 대신 시맨틱 유틸(`bg-primary`, `text-foreground`, `border-border`, `bg-muted` …)을 써라.**
 
 ## 1. 원칙 (가장 중요)
 
-1. **오렌지는 아껴 쓴다.** `#ff6600`(= `--primary`)는 Primary CTA·활성 상태·브랜드 순간에만. 배경/테두리 장식으로 뿌리지 않는다. 한 화면(주요 플로우)에 오렌지 강조는 사실상 하나.
+1. **오렌지는 아껴 쓴다.** `#FFA500`(= `--primary`, 피그마 `yellow light 30`)은 Primary CTA·활성 상태·브랜드 순간에만. 배경/테두리 장식으로 뿌리지 않는다. 한 화면(주요 플로우)에 오렌지 강조는 사실상 하나.
 2. **한 액센트, 한 시스템.** 두 번째 브랜드 색을 만들지 않는다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
 3. **4px 그리드.** 모든 padding/gap/height 는 `{4,8,12,16,20,24,32,40,48,56,64}` 중 하나. 벗어나면 이유를 주석으로.
 4. **차분함 = 신뢰.** 경고 아이콘/빨강/배지 남발 금지. 빨강·경고 아이콘은 실제 에러에만.
@@ -18,17 +18,16 @@
 
 | 역할 | HEX | 유틸 클래스 | 비고 |
 |---|---|---|---|
-| Primary / 브랜드 | `#ff6600` | `bg-primary` `text-primary` `border-primary` | CTA·활성. pressed `#e14d00` |
-| Primary hover | `#e14d00` | `hover:bg-primary/90` 또는 `#e14d00` | |
+| Primary / 브랜드 | `#FFA500` | `bg-primary` `text-primary` `border-primary` | 피그마 `yellow light 30`, CTA·활성 |
+| Primary hover | `#e69500` | `hover:bg-primary/90` 또는 `#e69500` | 기본색에서 어둡게 조정 |
 | 배경(캔버스) | `#ffffff` | `bg-background` | |
-| 헤딩/본문 진한 | `#1a1c20` | `text-foreground` | warm near-black. **순수 #000 금지** |
-| 본문 보조 | `#555d6d` | `text-muted-foreground`(약간 밝음) | 2차 본문 |
-| 캡션/3차 | `#868b94` | `text-muted-foreground` | 타임스탬프·메타 |
+| 헤딩/본문 진한 | `#000000` | `text-foreground` | 피그마 버튼 기본 텍스트 |
+| 본문 보조·캡션 | `#757575` | `text-muted-foreground` | 피그마 버튼 보조 텍스트·메타 |
 | placeholder | `#b0b3ba` | `placeholder:text-[#b0b3ba]` | |
 | surface(옅은 면) | `#f7f8f9` | `bg-muted` | 입력 배경·본문 캔버스 |
 | surface-fill | `#f3f4f5` | `bg-secondary` `bg-accent` | 뉴트럴 버튼·칩·비활성 |
-| hairline(보더) | `#dcdee3` | `border-border` `border` | 구분선·기본 테두리 |
-| 브랜드 틴트 | `#fff2ec` | `bg-[#fff2ec]` | 아주 옅은 오렌지 배경 |
+| hairline(보더) | `#d9d9d9` | `border-border` `border` | 피그마 버튼 중립 테두리 |
+| 브랜드 틴트 | `#fff7e5` | `bg-yellow-10` | 아주 옅은 오렌지 배경 |
 | error | `#fa342c` | `text-destructive` `bg-destructive` | |
 | info | `#217cf9` | `text-[#217cf9]` | 링크·정보 |
 | success | `#079171` | `text-[#079171]` | 완료 |
@@ -51,7 +50,7 @@
 
 ## 4. 컴포넌트 규격
 
-- **Primary CTA**: `bg-primary text-white`, 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. pressed `#e14d00`. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
+- **Primary CTA**: `bg-primary text-white`, 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. pressed `#e69500`. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
 - **Neutral 버튼**: `bg-secondary text-foreground`(`#f3f4f5`), radius 8px(`rounded-lg`).
 - **Outline 버튼**: `bg-transparent text-foreground border border-border`, radius 8px.
 - **Critical 버튼**: `bg-destructive text-white`, radius 8px. 삭제/신고 등.
@@ -74,7 +73,7 @@
 ## 7. Do / Don't
 
 - DO: 시맨틱 유틸(`bg-primary`, `text-foreground`, `border-border`) 사용, 4px 그리드, 오렌지는 CTA에만, Pretendard.
-- DON'T: 하드코딩 hex(특히 옛 `#f29219`), 두 번째 브랜드색, 순수 검정 텍스트, 26px 초과, s3보다 강한 그림자, 스프링 모션.
+- DON'T: 하드코딩 hex(특히 옛 `#ff6600`·`#f29219`), 두 번째 브랜드색, 26px 초과, s3보다 강한 그림자, 스프링 모션.
 
 ## 8. Voice & Tone (마이크로카피)
 

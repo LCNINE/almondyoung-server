@@ -3,6 +3,7 @@ import { select, password } from '@inquirer/prompts';
 import { buildDatabaseUrl } from '../lib/db-connection';
 import { getServiceRegistry } from '../lib/service-registry';
 import { Logger } from '../lib/logger';
+import { resolveAdminPassword } from '../lib/admin-password';
 import { SeedCheckResult, SeedApplyResult, ServiceConfig, PhaseOptions } from '../lib/types';
 import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
@@ -78,18 +79,15 @@ async function resolveGroup(options: PhaseOptions, availableGroups: string[]): P
 const logger = new Logger('Seeding');
 
 async function collectConfig(options: { yes: boolean; deployment?: string }) {
-  // Admin password
-  let adminPassword: string;
-  const adminPasswordFallback = process.env.ADMIN_INITIAL_PASSWORD || 'Admin@1234!';
-  if (options.yes) {
-    adminPassword = adminPasswordFallback;
-  } else {
-    const entered = await password({
-      message: `Admin user password (enter로 기본값 ${adminPasswordFallback} 사용):`,
-      mask: '*',
-    });
-    adminPassword = entered.trim() === '' ? adminPasswordFallback : entered;
-  }
+  // Admin password — 프롬프트에 값을 찍지 않는다(ADMIN_INITIAL_PASSWORD 를 주면 그 값이 화면에 나왔다).
+  const envPassword = process.env.ADMIN_INITIAL_PASSWORD;
+  const entered = options.yes
+    ? undefined
+    : await password({
+        message: `Admin user password (enter 면 ${envPassword ? 'ADMIN_INITIAL_PASSWORD' : '비운영 기본값'} 사용):`,
+        mask: '*',
+      });
+  const adminPassword = resolveAdminPassword({ entered, envPassword, isProd: isProdStage() });
 
   // Notification config
   const fcmPrivateKey = process.env.NOTIFICATION_FCM_PRIVATE_KEY || '';

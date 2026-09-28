@@ -46,7 +46,7 @@ describe('classifyLookupMatches', () => {
   it('정확 일치가 둘 이상이면 ambiguous 다', () => {
     const a = { id: 'u1', loginId: 'bob', email: 'a@example.com' };
     const b = { id: 'u2', loginId: 'other', email: 'bob' };
-    expect(classifyLookupMatches('bob', [a, b], ids, phone)).toEqual({ kind: 'ambiguous' });
+    expect(classifyLookupMatches('bob', [a, b], ids, phone)).toEqual({ kind: 'ambiguous', matches: [a, b] });
   });
 
   it('부분일치가 여럿이어도 정확 일치가 없으면 not_found 다 — ambiguous 가 아니다', () => {

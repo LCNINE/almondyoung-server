@@ -57,8 +57,7 @@ let inflight: Promise<void> | null = null;
 export async function refreshAccessToken(): Promise<void> {
   if (inflight) return inflight;
 
-  const supportsLocks =
-    typeof navigator !== 'undefined' && 'locks' in navigator;
+  const supportsLocks = typeof navigator !== 'undefined' && 'locks' in navigator;
 
   const run = async () => {
     if (supportsLocks) {
@@ -93,10 +92,7 @@ const globalConfig = {
 // Request interceptor: 전체 URL을 사용하는 경우 baseURL 무시 및 withCredentials 설정
 client.interceptors.request.use((config) => {
   // URL이 http:// 또는 https://로 시작하면 baseURL을 무시
-  if (
-    config.url &&
-    (config.url.startsWith('http://') || config.url.startsWith('https://'))
-  ) {
+  if (config.url && (config.url.startsWith('http://') || config.url.startsWith('https://'))) {
     config.baseURL = '';
     // 외부 API 요청인 경우 withCredentials를 false로 설정 (CORS 이슈 방지)
     // 필요시 서버에서 특정 origin을 명시적으로 허용하도록 수정해야 함
@@ -109,12 +105,22 @@ client.interceptors.request.use((config) => {
 // 백엔드 중 user-service 만 ResponseInterceptor(@app/shared) 로 envelope 를 씌우고,
 // core/ugc-service 등은 raw 응답을 그대로 반환한다.
 // 도메인 client 가 양쪽을 신경 쓰지 않도록 여기서 한 번에 정규화한다.
-function isApiEnvelope(
-  body: unknown
-): body is { success: boolean; data: unknown; message?: string } {
+function isApiEnvelope(body: unknown): body is { success: boolean; data: unknown; message?: string } {
   if (!body || typeof body !== 'object') return false;
   const v = body as Record<string, unknown>;
   return v.success === true && 'data' in v;
+}
+
+// 서비스마다 에러 본문 모양이 다르다. notification 처럼 { message: { message } } 로 한 겹 더
+// 감싸 보내는 곳이 있어, 풀지 않으면 토스트에 [object Object] 가 뜬다.
+function readErrorMessage(data: unknown): string | null {
+  if (typeof data === 'string') return data;
+  if (!data || typeof data !== 'object') return null;
+  const message = (data as { message?: unknown }).message;
+  if (Array.isArray(message)) return message.join('\n');
+  if (typeof message === 'string') return message;
+  if (message && typeof message === 'object') return readErrorMessage(message);
+  return null;
 }
 
 client.interceptors.response.use(
@@ -150,13 +156,7 @@ client.interceptors.response.use(
     // (재시도 후 raw AxiosError를 던지면 토스트에 "Request failed with status code 409" 같은
     //  generic 문구만 떠서 운영자가 원인을 알 수 없다)
     if (err.response && err.response.status < 500) {
-      const data = err.response.data as { message?: string | string[] };
-      const message =
-        (Array.isArray(data?.message)
-          ? data.message.join('\n')
-          : data?.message) ||
-        err.message ||
-        '요청 처리 중 오류가 발생했습니다.';
+      const message = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
 
       throw new CustomError({
         message,
@@ -168,10 +168,7 @@ client.interceptors.response.use(
     // 일반적인 재시도 로직
     if (!config) {
       const statusCode = err.response?.status || 500;
-      const message =
-        (err.response?.data as { message: string })?.message ||
-        err.message ||
-        '요청 처리 중 오류가 발생했습니다.';
+      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
 
       throw new CustomError({
         message,
@@ -193,11 +190,7 @@ client.interceptors.response.use(
     const headers = (config.headers ?? {}) as Record<string, unknown>;
     const hasIdempotencyKey = Boolean(headers['Idempotency-Key'] ?? headers['idempotency-key']);
     if (['post', 'put', 'patch', 'delete'].includes(method) && !hasIdempotencyKey) {
-      const data = err.response?.data as { message?: string | string[] } | undefined;
-      const message =
-        (Array.isArray(data?.message) ? data.message.join('\n') : data?.message) ||
-        err.message ||
-        '요청 처리 중 오류가 발생했습니다.';
+      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
       throw new CustomError({
         message,
         statusCode: err.response?.status || 500,
@@ -207,15 +200,7 @@ client.interceptors.response.use(
 
     // 재시도 횟수 체크 — 소진 시에도 서버 메시지를 보존해 던진다
     if (config.retry <= 0) {
-      const data = err.response?.data as
-        | { message?: string | string[] }
-        | undefined;
-      const message =
-        (Array.isArray(data?.message)
-          ? data.message.join('\n')
-          : data?.message) ||
-        err.message ||
-        '요청 처리 중 오류가 발생했습니다.';
+      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
 
       throw new CustomError({
         message,
@@ -235,7 +220,7 @@ client.interceptors.response.use(
     });
 
     return delayRetryRequest.then(() => client(config));
-  }
+  },
 );
 
 export { client, globalConfig };

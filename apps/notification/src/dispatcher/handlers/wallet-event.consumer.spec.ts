@@ -15,7 +15,7 @@ function makeConsumer() {
       priority: 'HIGH',
     }),
   };
-  const consumer = new WalletEventConsumer(dispatcher as never, eventMapping as never);
+  const consumer = new WalletEventConsumer(dispatcher as never, eventMapping as never, {} as never);
   return { consumer, dispatcher };
 }
 
@@ -95,7 +95,7 @@ function makeRegisteredConsumer(mapping: Record<string, unknown> | null = {}) {
       },
     ),
   };
-  const consumer = new WalletEventConsumer(dispatcher as never, eventMapping as never);
+  const consumer = new WalletEventConsumer(dispatcher as never, eventMapping as never, {} as never);
   return { consumer, dispatcher, eventMapping };
 }
 
@@ -172,7 +172,11 @@ describe('WalletEventConsumer — 선적용 가입 안내', () => {
         priority: 'HIGH',
       }),
     };
-    return { consumer: new WalletEventConsumer(dispatcher as never, eventMapping as never), dispatcher, eventMapping };
+    return {
+      consumer: new WalletEventConsumer(dispatcher as never, eventMapping as never, {} as never),
+      dispatcher,
+      eventMapping,
+    };
   }
 
   it('템플릿이 쓰는 이름 그대로 변수를 넘긴다', async () => {
@@ -187,5 +191,88 @@ describe('WalletEventConsumer — 선적용 가입 안내', () => {
     // 배너가 상시로 떠 있는 곳 — 결제수단 화면이 아니다.
     expect(sent.variables.membershipUrl).toMatch(/\/mypage\/membership$/);
     expect(sent.payload.email).toBe('a@b.com');
+  });
+});
+
+describe('WalletEventConsumer 환불 완료 알림', () => {
+  const refund = {
+    refundId: 'rf-1',
+    chargeId: 'ch-1',
+    intentId: 'pi-1',
+    userId: 'user-1',
+    status: 'SUCCEEDED',
+    amount: 29900,
+    currency: 'KRW',
+    occurredAt: '2026-09-22T01:00:00.000Z',
+  };
+  const envelope = { correlationId: 'c-1' } as never;
+
+  function make(contactEmail?: string) {
+    const send = jest.fn().mockResolvedValue({ notificationIds: [] });
+    const mapping = {
+      eventKey: 'REFUND_COMPLETED',
+      isActive: true,
+      defaultChannels: ['EMAIL'],
+      category: 'TRANSACTIONAL',
+      templateKey: 'REFUND_COMPLETED_EMAIL',
+      priority: 'NORMAL',
+    };
+    const contacts = contactEmail
+      ? new Map([
+          [
+            'user-1',
+            { userId: 'user-1', email: contactEmail, username: '홍길동', phoneNumber: null, marketingConsent: false },
+          ],
+        ])
+      : new Map();
+    const consumer = new WalletEventConsumer(
+      { send } as never,
+      { getEventMapping: jest.fn().mockResolvedValue(mapping) } as never,
+      { findContacts: jest.fn().mockResolvedValue(contacts) } as never,
+    );
+    return { consumer, send };
+  }
+
+  it('상품 주문 환불이면 활성 회원 메일로 금액과 주문명을 보낸다', async () => {
+    const { consumer, send } = make('member@example.com');
+
+    await consumer.onRefundSucceeded(envelope, {
+      ...refund,
+      email: 'buyer@example.com',
+      customerName: '홍길동',
+      orderName: '아몬드 오일 외 1건',
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ email: 'member@example.com' }),
+        variables: { name: '홍길동', amount: '29,900', orderName: '아몬드 오일 외 1건' },
+      }),
+    );
+  });
+
+  it('탈퇴·휴면으로 활성 연락처가 없으면 결제 메일이 있어도 보내지 않는다', async () => {
+    const { consumer, send } = make();
+
+    await consumer.onRefundSucceeded(envelope, { ...refund, email: 'buyer@example.com' });
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('일반 구매(purpose=PURCHASE)는 보낸다', async () => {
+    const { consumer, send } = make('member@example.com');
+
+    await consumer.onRefundSucceeded(envelope, { ...refund, purpose: 'PURCHASE' });
+
+    expect(send).toHaveBeenCalled();
+  });
+
+  it('멤버십 결제 환불은 보내지 않는다', async () => {
+    const { consumer, send } = make('member@example.com');
+
+    await consumer.onRefundSucceeded(envelope, { ...refund, purpose: 'SUBSCRIPTION' });
+    await consumer.onRefundSucceeded(envelope, { ...refund, intentType: 'MEMBERSHIP_FEE' });
+
+    expect(send).not.toHaveBeenCalled();
   });
 });

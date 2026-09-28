@@ -2,7 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { HttpTypes, OrderStatus } from "@medusajs/types"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
 import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
 
@@ -55,7 +55,7 @@ export async function getOrders(params?: {
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
-      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions,+payment_collections.payment_sessions.data",
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,+items.requires_shipping,+items.product_type,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions,+payment_collections.payment_sessions.data",
     order: "-created_at",
   }
 
@@ -170,6 +170,7 @@ export async function captureOrderPayment(
     })
 
     revalidatePath("/mypage/order/list")
+    revalidateTag("review-eligibilities")
     return { success: true }
   } catch (error: any) {
     const status = getErrorStatus(error)

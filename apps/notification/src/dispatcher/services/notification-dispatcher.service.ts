@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, Optional } 
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import {
   notificationTables,
   notifications,
@@ -12,10 +12,14 @@ import {
   fcmTokens,
 } from '../../../database/schemas/notification-schema';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { markdownToEmailHtml, wrapEmailLayout, type EmailLayoutSettings } from '@packages/email-layout';
 import { Channel, Language, NotificationCategory, NotificationPriority, NotificationStatus } from '../../shared/enums';
 import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
+import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
+import { UserNotificationHistoryPage, UserNotificationHistoryReader } from './user-notification-history.reader';
+import { EmailLayoutService } from '../../template/services/email-layout.service';
 
 export interface Notification {
   notificationId: string;
@@ -39,6 +43,8 @@ export class NotificationDispatcherService {
     @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
     private readonly providerManager: ProviderManagerService,
+    private readonly historyReader: UserNotificationHistoryReader,
+    private readonly emailLayoutService: EmailLayoutService,
   ) {}
 
   /**
@@ -100,16 +106,22 @@ export class NotificationDispatcherService {
         finalVariables = payload;
       }
 
+      // 광고 메일은 수신 설정 안내를 본문에 붙여야 해서 Resend 호스팅 템플릿(본문을 보내지 않는다)을 쓰지 않는다.
+      const adEmail = channel === Channel.EMAIL && dto.category === NotificationCategory.MARKETING;
+      const channelTemplate = adEmail && template ? { ...template, providerTemplateId: undefined } : template;
+
       // 채널별 변수 매핑
       const channelVariables = this.variableMapper.mapVariablesForChannel(channel, finalVariables || {}, {
-        kakaoTemplateCode: template?.kakaoTemplateCode,
-        providerTemplateId: template?.providerTemplateId,
+        kakaoTemplateCode: channelTemplate?.kakaoTemplateCode,
+        providerTemplateId: channelTemplate?.providerTemplateId,
       });
 
       const renderedContent = this.renderContent({
         channel,
+        category: dto.category,
+        emailLayout: channel === Channel.EMAIL ? await this.emailLayoutService.getCached() : undefined,
         language,
-        template,
+        template: channelTemplate,
         contentOverride: channelContentOverride,
         variables: finalVariables,
         payload,
@@ -430,19 +442,8 @@ export class NotificationDispatcherService {
     return notification as unknown as Notification;
   }
 
-  /**
-   * 특정 유저의 알림 목록 조회
-   */
-  async getUserNotifications(userId: string, limit = 50): Promise<Notification[]> {
-    const db = this.db.db;
-
-    const rows = await db.query.notifications.findMany({
-      where: eq(notifications.userId, userId),
-      orderBy: (fields) => [desc(fields.createdAt)],
-      limit,
-    });
-
-    return rows as unknown as Notification[];
+  getUserNotifications(userId: string, dto: ListUserNotificationsDto): Promise<UserNotificationHistoryPage> {
+    return this.historyReader.list(userId, dto);
   }
 
   /**
@@ -511,6 +512,8 @@ export class NotificationDispatcherService {
    */
   private renderContent(params: {
     channel: Channel;
+    category?: NotificationCategory;
+    emailLayout?: EmailLayoutSettings;
     language: string; // 'ko' | 'en'
     template?: any;
     contentOverride?: {
@@ -525,7 +528,7 @@ export class NotificationDispatcherService {
     body: string;
     metadata?: Record<string, any>;
   } {
-    const { channel, language, template, contentOverride, variables, payload } = params;
+    const { channel, category, emailLayout, language, template, contentOverride, variables, payload } = params;
 
     let subject: string | undefined;
     let body: string | undefined;
@@ -561,6 +564,8 @@ export class NotificationDispatcherService {
       }
     }
 
+    const hasOwnBody = !!body;
+
     // 3) 그래도 body가 없으면 payload를 fallback으로 사용 (debug용이라도)
     if (!body) {
       body = payload ? JSON.stringify(payload) : '';
@@ -571,6 +576,19 @@ export class NotificationDispatcherService {
     // 여기서는 템플릿 시스템이 없는 채널(SMS, PUSH)만 치환
     const usesProviderTemplate =
       (channel === 'KAKAO' && template?.kakaoTemplateCode) || (channel === 'EMAIL' && template?.providerTemplateId);
+
+    const advertising = channel === Channel.EMAIL && category === NotificationCategory.MARKETING;
+
+    // 마크다운 변환은 «치환 전»에 한다. 치환값에는 고객이 적은 값(이름·예금주명)이 섞이는데,
+    // 나중에 변환하면 그 값 안의 [글자](주소) 가 진짜 링크가 된다.
+    if (advertising && !hasOwnBody) {
+      throw new Error(
+        '광고 메일은 자체 본문(template.contents 또는 content override)이 있어야 수신 설정 안내를 붙일 수 있다',
+      );
+    }
+    if (channel === Channel.EMAIL && !usesProviderTemplate) {
+      body = markdownToEmailHtml(body, emailLayout);
+    }
 
     if (!usesProviderTemplate) {
       // 템플릿 시스템을 사용하지 않는 경우만 텍스트 치환
@@ -584,6 +602,11 @@ export class NotificationDispatcherService {
       }
     }
     // 템플릿 시스템을 사용하는 경우는 Provider에서 templateParameter/template.variables로 처리
+
+    if (channel === Channel.EMAIL) {
+      if (advertising) subject = markAdvertisementSubject(subject);
+      body = wrapEmailLayout(body, { settings: emailLayout, storefrontUrl: process.env.STOREFRONT_URL, advertising });
+    }
 
     return {
       subject,
@@ -634,4 +657,11 @@ export class NotificationDispatcherService {
     };
     return map[priority] ?? 3;
   }
+}
+
+const AD_SUBJECT_PREFIX = '(광고)';
+
+export function markAdvertisementSubject(subject: string | undefined): string {
+  if (!subject?.trim()) return `${AD_SUBJECT_PREFIX} [아몬드영] 혜택 소식`;
+  return subject.startsWith(AD_SUBJECT_PREFIX) ? subject : `${AD_SUBJECT_PREFIX} ${subject}`;
 }

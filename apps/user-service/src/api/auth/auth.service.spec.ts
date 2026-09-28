@@ -248,6 +248,11 @@ describe('AuthService - 탈퇴 익명화', () => {
         deletes.push(table);
         return { where: jest.fn().mockResolvedValue(undefined) };
       }),
+      select: jest.fn(() => ({
+        from: () => ({
+          where: () => ({ limit: jest.fn().mockResolvedValue([{ email: 'member@example.com', username: '홍길동' }]) }),
+        }),
+      })),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -315,11 +320,15 @@ describe('AuthService - 탈퇴 익명화', () => {
     expect(revoke).toBeDefined();
   });
 
-  it('UserDeleted 이벤트를 발행한다', async () => {
+  it('UserDeleted 이벤트를 익명화 전 이메일·이름과 함께 발행한다', async () => {
     await service.softDeleteUser(USER_ID);
 
     expect(publishEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: 'UserDeleted', aggregateId: USER_ID }),
+      expect.objectContaining({
+        eventType: 'UserDeleted',
+        aggregateId: USER_ID,
+        payload: { userId: USER_ID, email: 'member@example.com', name: '홍길동' },
+      }),
     );
   });
 });

@@ -407,6 +407,8 @@ export function setup(infra: SharedInfra) {
     JWT_ISSUER: 'almondyoung-auth',
     OIDC_ISSUER_URL: idpUserServiceUrl,
     UGC_INTERNAL_KEY: ugcInternalKey.value,
+    FILE_SERVICE_URL: url('file'),
+    FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
   });
   const searchEnv = withPrefix('SEARCH', {
     ...searchBackendEnv,
@@ -685,6 +687,8 @@ export function setup(infra: SharedInfra) {
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     SEARCH_SERVICE_URL: url('search'),
     SEARCH_INTERNAL_KEY: searchInternalKey.value,
+    NOTIFICATION_SERVICE_URL: url('notification'),
+    NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
     MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
     ELIGIBILITY_AUTO_ISSUE: eligibilityAutoIssue,
     ELIGIBILITY_BATCH: eligibilityBatch,
@@ -793,6 +797,7 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url('notification'),
       CHANNEL_ADAPTER_SERVICE_URL: url('channel-adapter'),
       FILE_SERVICE_URL: url('file'),
+      NEXT_PUBLIC_FILE_PUBLIC_URL: url('file'),
       UGC_SERVICE_URL: url('ugc'),
       ANALYTICS_SERVICE_URL: url('analytics'),
       SEARCH_SERVICE_URL: url('search'),

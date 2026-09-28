@@ -28,6 +28,12 @@ SERVICES=(
   "ai:apps/ai/src/db/drizzle.config.ts"
 )
 
+# macOS 에는 GNU timeout 이 없다. gtimeout(coreutils) 이 있으면 쓰고, 없으면 그냥 돌린다.
+TIMEOUT=""
+if command -v timeout >/dev/null 2>&1; then TIMEOUT="timeout 180"
+elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT="gtimeout 180"
+fi
+
 for entry in "${SERVICES[@]}"; do
   db="${entry%%:*}"
   config="${entry#*:}"
@@ -38,7 +44,7 @@ for entry in "${SERVICES[@]}"; do
     psql "${PG}/postgres" -c "CREATE DATABASE \"${db}\"" || { echo "  ✗ ${db} 생성 실패 — 건너뛴다"; continue; }
   fi
   echo "── migrate ${db} (${config})"
-  DATABASE_URL="${PG}/${db}" timeout 180 npx drizzle-kit migrate --config "$config" </dev/null \
+  DATABASE_URL="${PG}/${db}" $TIMEOUT npx drizzle-kit migrate --config "$config" </dev/null \
     || echo "  ✗ ${db} 마이그레이션 실패/타임아웃 — 계속 진행한다"
 done
 

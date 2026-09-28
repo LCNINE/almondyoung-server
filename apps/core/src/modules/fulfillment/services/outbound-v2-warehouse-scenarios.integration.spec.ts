@@ -5,6 +5,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConflictException } from '@nestjs/common';
@@ -73,6 +74,7 @@ const HANJIN_TEST_CONFIG: HanjinConfig = {
   sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 
 interface SeededShipment {
@@ -228,6 +230,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     );
     return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
   }

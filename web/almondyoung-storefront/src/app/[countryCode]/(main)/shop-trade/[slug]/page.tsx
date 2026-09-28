@@ -1,30 +1,24 @@
 import type { Metadata } from "next"
-import Image from "next/image"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { ChevronLeft } from "lucide-react"
+import { toPlainSummary } from "@packages/shop-listing-markdown"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
+import { Badge } from "@/components/ui/badge"
+import { ContactReveal } from "@/domains/shop-trade/components/contact-reveal"
+import { ShopListingMarkdown } from "@/domains/shop-trade/components/listing-markdown"
 import { ListingGallery } from "@/domains/shop-trade/components/listing-gallery"
 import { RelatedListings } from "@/domains/shop-trade/components/related-listings"
 import { ShareButton } from "@/domains/shop-trade/components/share-button"
 import { ViewBeacon } from "@/domains/shop-trade/components/view-beacon"
 import { formatKoreanMoney } from "@/domains/shop-trade/format-money"
-import { getPublicShopListing } from "@/lib/api/pim/shop-listings"
-import { sanitizeNoticeHtml } from "@/lib/utils/sanitize-html"
+import { getPublicShopListing } from "@/lib/api/ugc/shop-listings"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 
 interface PageProps {
   params: Promise<{ countryCode: string; slug: string }>
-}
-
-function toPlainSummary(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 160)
 }
 
 export async function generateMetadata({
@@ -55,7 +49,7 @@ export async function generateMetadata({
 }
 
 export default async function ShopTradeDetailPage({ params }: PageProps) {
-  const { slug } = await params
+  const { countryCode, slug } = await params
   const t = await getTranslations("shopTrade")
   const listing = await getPublicShopListing(slug)
 
@@ -63,9 +57,6 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  const thumbnailUrl = listing.thumbnailFileId
-    ? getThumbnailUrl(listing.thumbnailFileId)
-    : ""
   const regionLabel = listing.region ? t(`regions.${listing.region}`) : null
   const money = (won: number | null) => formatKoreanMoney(won) ?? t("negotiable")
 
@@ -107,9 +98,12 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
         </LocalizedClientLink>
       )}
 
-      <h1 className="text-foreground mt-1 text-2xl font-bold">
-        {listing.title}
-      </h1>
+      <div className="mt-1 flex items-center gap-2">
+        {listing.status === "closed" && (
+          <Badge variant="secondary">{t("closed")}</Badge>
+        )}
+        <h1 className="text-foreground text-2xl font-bold">{listing.title}</h1>
+      </div>
 
       <div className="border-border mt-3 flex items-center justify-between border-b pb-3">
         <p className="text-muted-foreground text-sm">
@@ -118,22 +112,8 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
         <ShareButton title={listing.title} />
       </div>
 
-      {/* 갤러리를 등록했으면 슬라이드로, 아니면 예전처럼 대표 사진 한 장만 */}
-      {listing.images.length > 0 ? (
-        <ListingGallery images={listing.images} alt={listing.title} />
-      ) : (
-        thumbnailUrl && (
-          <div className="bg-muted relative mt-6 aspect-[4/3] w-full overflow-hidden rounded-xl">
-            <Image
-              src={thumbnailUrl}
-              alt={listing.title}
-              fill
-              sizes="(min-width: 800px) 800px, 100vw"
-              priority
-              className="object-cover"
-            />
-          </div>
-        )
+      {listing.imageFileIds.length > 0 && (
+        <ListingGallery images={listing.imageFileIds} alt={listing.title} />
       )}
 
       <dl className="border-border mt-6 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border p-4 sm:grid-cols-3">
@@ -147,10 +127,9 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
         ))}
       </dl>
 
-      <div
-        className="rich-text-content text-foreground mt-6 text-sm leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: sanitizeNoticeHtml(listing.content) }}
-      />
+      <ContactReveal slug={listing.slug} countryCode={countryCode} />
+
+      <ShopListingMarkdown content={listing.content} className="mt-6" />
 
       <RelatedListings current={listing} />
 

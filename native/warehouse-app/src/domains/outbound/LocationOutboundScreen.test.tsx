@@ -86,7 +86,8 @@ type Call = { path: string; method?: string; body?: unknown };
 function mount(
   request: ApiClient['request'],
   warehouseId = 'w',
-  runtime: WorkRuntime | null = null
+  runtime: WorkRuntime | null = null,
+  labelPrinting = false
 ) {
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({
@@ -103,6 +104,7 @@ function mount(
         shipmentId="s"
         shipment={shipment}
         prefs={prefs}
+        labelPrinting={labelPrinting}
       />
     ),
   });
@@ -387,4 +389,20 @@ it('확정된 스캔 복구 후에도 최신 위치 잔량을 다시 읽는다',
       []
     )
   );
+});
+
+it('labelPrinting 이면 송장 줄 아래에 라벨 재출력 버튼이 있다', async () => {
+  mount(
+    (async () => ({ capabilities: {} })) as ApiClient['request'],
+    'w',
+    null,
+    true
+  );
+  expect(await screen.findByRole('button', { name: '라벨 재출력' })).toBeInTheDocument();
+});
+
+it('기본(핸드헬드)에서는 라벨 재출력 버튼이 없다', async () => {
+  mount((async () => ({ capabilities: {} })) as ApiClient['request']);
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('button', { name: '라벨 재출력' })).toBeNull();
 });

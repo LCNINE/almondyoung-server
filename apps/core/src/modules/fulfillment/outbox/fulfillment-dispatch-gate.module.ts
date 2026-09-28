@@ -22,6 +22,7 @@ import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.s
  * | `ShipmentShipped`/`Delivered`/`DispatchRecalled` | topic 일치 | topic 일치 |
  * | `FulfillmentProgressed`/`Reopened` | topic 일치 | topic 일치 |
  * | v1 `Fulfillment*` | `event_type LIKE 'fulfillment%'` | 접두사 `Fulfillment` |
+ * | `SalesOrderShipmentDispatched` (core.orders) | — | 접두사 `SalesOrderShipment` |
  * | `ORDER_CREATED`/`ORDER_MODIFIED` | 보류 안 함 | 보류 안 함 |
  * | 재고·주문취소·상품 | 보류 안 함 | 보류 안 함 |
  */
@@ -33,7 +34,7 @@ export class FulfillmentOutboxDispatchGate implements OutboxDispatchGate {
     if (this.workflow.shouldDispatchFulfillmentEvents()) return null;
     return {
       topics: [SHIPMENT_STREAM.topic.topic, FULFILLMENT_V2_STREAM.topic.topic],
-      eventTypePrefixes: ['Fulfillment', 'Shipment'],
+      eventTypePrefixes: ['Fulfillment', 'Shipment', 'SalesOrderShipment'],
     };
   }
 }

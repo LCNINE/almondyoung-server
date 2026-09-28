@@ -16,6 +16,8 @@ export function toView(row: WaybillRow): WaybillView {
     issuedAt: row.issuedAt ? row.issuedAt.toISOString() : null,
     voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
     lastError: row.lastError,
+    nextAttemptAt: row.nextAttemptAt ? row.nextAttemptAt.toISOString() : null,
+    transientAttempts: row.transientAttempts,
   };
 }
 
@@ -25,6 +27,16 @@ export class WaybillService {
 
   async issueForShipment(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
     return toView(await this.manager.issueForShipment(shipmentId, opts, idemKey, actor));
+  }
+
+  async abandon(
+    waybillId: string,
+    dto: { reason: string },
+    idemKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillView> {
+    return toView(await this.manager.abandon(waybillId, dto, idemKey, actor, tx));
   }
 
   async registerManual(

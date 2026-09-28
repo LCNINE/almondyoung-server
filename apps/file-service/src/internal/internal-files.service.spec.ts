@@ -46,6 +46,19 @@ const deletedFile = (deletedAt: Date) => ({
 });
 
 describe('내부 파일 정리', () => {
+  it('공모전이 확인할 수 있도록 이미지의 실제 크기를 반환한다', async () => {
+    const { service } = setup({
+      id: 'f1',
+      contextId: 'logo-contest-image',
+      uploadedBy: 'u1',
+      status: 'active',
+      mimeType: 'image/png',
+      metadata: { width: 512, height: 512 },
+    });
+
+    await expect(service.describe('f1')).resolves.toMatchObject({ width: 512, height: 512 });
+  });
+
   it('soft delete 는 S3 객체를 건드리지 않는다', async () => {
     const { service, storageDeleted, softDeleted } = setup({
       ...deletedFile(new Date()),

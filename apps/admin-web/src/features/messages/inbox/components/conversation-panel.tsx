@@ -1,30 +1,59 @@
 'use client';
 
-import { Loader, Send } from 'lucide-react';
+import { Loader, Send, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { smsGateApi } from '@/lib/api/domains/sms-gate';
-import { useReplySmsConversation, useSmsConversation, useSmsDevices } from '@/lib/services/sms-gate';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { NHN_ROUTE_VALUE, smsGateApi } from '@/lib/api/domains/sms-gate';
+import {
+  useDeleteSmsConversation,
+  useReplySmsConversation,
+  useSmsConversation,
+  useSmsDevices,
+} from '@/lib/services/sms-gate';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 import { NhnFallbackDialog } from '../../send/components/nhn-fallback-dialog';
 import { MessageBubble } from './message-bubble';
 
-export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null }) {
+export function ConversationPanel({
+  phoneNumber,
+  onDeleted,
+}: {
+  phoneNumber: string | null;
+  onDeleted: () => void;
+}) {
   const { data, isLoading, isError } = useSmsConversation(phoneNumber);
   const { data: deviceData } = useSmsDevices();
   const reply = useReplySmsConversation();
+  const deleteConversation = useDeleteSmsConversation();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [text, setText] = useState('');
   const [isChecking, setIsChecking] = useState(false);
   const [overflow, setOverflow] = useState<number | null>(null);
+  const [pickedDeviceId, setPickedDeviceId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageCount = data?.messages.length ?? 0;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [phoneNumber, messageCount]);
+
+  useEffect(() => {
+    setPickedDeviceId('');
+  }, [phoneNumber]);
 
   if (!phoneNumber) {
     return (
@@ -37,13 +66,21 @@ export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null 
 
   const devices = deviceData?.devices ?? [];
   const deviceName = (deviceId: string) => devices.find((d) => d.deviceId === deviceId)?.name ?? deviceId;
-  const canReply = !!data?.userId && !!data.deviceId;
+  const sendDeviceId = pickedDeviceId || data?.deviceId || '';
+  const isNhn = sendDeviceId === NHN_ROUTE_VALUE;
+  const canReply = !!data?.userId && !!sendDeviceId;
   const busy = reply.isPending || isChecking;
 
   const submit = (nhnFallback: boolean) => {
     setOverflow(null);
     reply.mutate(
-      { phoneNumber, content: text.trim(), nhnFallback },
+      {
+        phoneNumber,
+        content: text.trim(),
+        deviceId: isNhn ? undefined : sendDeviceId,
+        route: isNhn ? 'NHN' : undefined,
+        nhnFallback,
+      },
       {
         onSuccess: (result) => {
           if (result.skipped.length > 0) toast.warning(`보내지 못했습니다: ${result.skipped[0].reason}`);
@@ -54,12 +91,23 @@ export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null 
     );
   };
 
+  const handleDelete = () => {
+    deleteConversation.mutate(phoneNumber, {
+      onSuccess: () => {
+        toast.success('대화를 삭제했습니다.');
+        onDeleted();
+      },
+      onError: (error) => toast.error(error.message || '대화를 삭제하지 못했습니다.'),
+    });
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!data?.deviceId || !text.trim() || busy) return;
+    if (!sendDeviceId || !text.trim() || busy) return;
+    if (isNhn) return submit(false);
     setIsChecking(true);
     try {
-      const { remaining } = await smsGateApi.getCapacity(data.deviceId);
+      const { remaining } = await smsGateApi.getCapacity(sendDeviceId);
       if (remaining < 1) setOverflow(1);
       else submit(false);
     } catch (error) {
@@ -71,12 +119,17 @@ export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null 
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border">
-      <div className="flex flex-col border-b px-4 py-3">
-        <span className="truncate font-semibold">{data?.name ?? formatPhoneNumber(phoneNumber)}</span>
-        <span className="text-muted-foreground truncate text-sm">
-          {formatPhoneNumber(phoneNumber)}
-          {data?.deviceId && ` · 받은 폰 ${deviceName(data.deviceId)}`}
-        </span>
+      <div className="flex items-center gap-2 border-b px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-semibold">{data?.name ?? formatPhoneNumber(phoneNumber)}</span>
+          <span className="text-muted-foreground truncate text-sm">
+            {formatPhoneNumber(phoneNumber)}
+            {data?.deviceId && ` · 최근 사용 폰 ${deviceName(data.deviceId)}`}
+          </span>
+        </div>
+        <Button variant="ghost" size="icon" aria-label="대화 삭제" onClick={() => setConfirmingDelete(true)}>
+          <Trash2 className="size-4" />
+        </Button>
       </div>
 
       <div className="bg-muted/20 min-h-0 flex-1">
@@ -107,9 +160,25 @@ export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null 
           <p className="text-muted-foreground text-xs">회원이 아닌 번호로는 답장할 수 없습니다.</p>
         )}
         <form className="flex items-center gap-2" onSubmit={handleSubmit}>
+          <Select value={sendDeviceId} onValueChange={setPickedDeviceId} disabled={!canReply || busy}>
+            <SelectTrigger className="w-56 shrink-0" aria-label="보낼 발송폰">
+              <SelectValue placeholder="발송폰 선택" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value={NHN_ROUTE_VALUE}>대표번호 (NHN)</SelectItem>
+              {devices
+                .filter((d) => d.enabled || d.deviceId === data?.deviceId)
+                .map((d) => (
+                  <SelectItem key={d.deviceId} value={d.deviceId} disabled={!d.enabled}>
+                    {d.name} · 잔여 {Math.max(0, d.dailyLimit - d.sentToday)}건
+                    {d.online ? '' : ' · 오프라인'}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
           <Input
             value={text}
-            placeholder={canReply ? '답장을 입력하세요. 받은 폰 번호로 정보성 문자가 나갑니다.' : ''}
+            placeholder={canReply ? `메시지를 입력하세요. ${isNhn ? '대표번호(NHN)' : deviceName(sendDeviceId)}에서 보냅니다.` : ''}
             disabled={!canReply || busy}
             maxLength={2000}
             onChange={(event) => setText(event.target.value)}
@@ -119,6 +188,23 @@ export function ConversationPanel({ phoneNumber }: { phoneNumber: string | null 
           </Button>
         </form>
       </div>
+
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>대화를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              메시지함 목록에서 사라집니다. 이 번호로 새 문자가 오면 그 문자부터 다시 표시됩니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleteConversation.isPending}>
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <NhnFallbackDialog overflow={overflow} onCancel={() => setOverflow(null)} onConfirm={() => submit(true)} />
     </div>

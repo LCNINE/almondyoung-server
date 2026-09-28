@@ -12,6 +12,7 @@ import {
   FULFILLMENT_V2_STREAM,
   INVENTORY_STREAM,
   SHIPMENT_STREAM,
+  CORE_ORDER_STREAM,
 } from '@packages/event-contracts/streams';
 import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
@@ -62,6 +63,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const shipmentPublisher = outboxPublisherFor(SHIPMENT_STREAM, dbService);
   const fulfillmentV2Publisher = outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService);
   const fulfillmentV1Publisher = outboxPublisherFor(FULFILLMENT_STREAM, dbService);
+  const coreOrderPublisher = outboxPublisherFor(CORE_ORDER_STREAM, dbService);
   const sellable = new ProductSellableQuantityService(dbService as never, inventoryPublisher);
   const eventStore = new StockEventStore(dbService, sellable, controlled);
   const inventory = new InventoryCommandService(
@@ -128,6 +130,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     fulfillmentV1Publisher,
     audit,
     workflowGate,
+    coreOrderPublisher,
   );
   const simple = new SimpleOutboundService(
     dbService,

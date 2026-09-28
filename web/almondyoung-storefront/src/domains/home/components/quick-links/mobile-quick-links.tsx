@@ -171,7 +171,11 @@ function MobileQuickLink({ item }: { item: MobileQuickLinkItem }) {
 }
 
 function getMobileImageUrl(imageUrl: string) {
-  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+  if (
+    imageUrl.startsWith("/") ||
+    imageUrl.startsWith("http://") ||
+    imageUrl.startsWith("https://")
+  ) {
     return imageUrl
   }
 

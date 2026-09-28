@@ -19,6 +19,7 @@ import {
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { clearLastBox } from './lastBox';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from './mutations';
+import { ReprintLabelButton } from './ReprintLabelButton';
 import type { ShipmentByWaybill, SimpleOutboundLineProgress } from './types';
 
 function initialProgress(
@@ -39,10 +40,12 @@ function SimpleOutboundScreenContent({
   shipmentId,
   shipment,
   prefs = localStoragePrefs,
+  labelPrinting = false,
 }: {
   shipmentId: string;
   shipment: ShipmentByWaybill | null;
   prefs?: DevicePrefs;
+  labelPrinting?: boolean;
 }) {
   const [progress, setProgress] = useState<SimpleOutboundLineProgress[]>(() =>
     shipment ? initialProgress(shipment) : []
@@ -122,6 +125,9 @@ function SimpleOutboundScreenContent({
           {shipment.carrier} {shipment.trackingNo}
         </p>
         <p className="text-sm text-neutral-500">{shipment.recipientMasked}</p>
+        {labelPrinting && (
+          <ReprintLabelButton shipmentId={shipmentId} prefs={prefs} />
+        )}
       </section>
 
       <ul className="space-y-1">

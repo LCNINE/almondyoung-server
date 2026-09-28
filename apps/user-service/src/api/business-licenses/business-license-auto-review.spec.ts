@@ -170,7 +170,7 @@ describe('BusinessLicenseAutoReviewService', () => {
     expect(publishEvent).not.toHaveBeenCalled();
   });
 
-  it('국세청 조회 실패나 판독 장애는 기록하지 않는다 — 다음 주기에 다시 본다', async () => {
+  it('국세청 조회 실패는 판독과 함께 retry 로 남기고, 판독 장애는 기록하지 않는다', async () => {
     const { service, updates } = makeService({
       rows: [row('nts-down'), row('ai-down')],
       read: jest.fn().mockResolvedValueOnce(reading()).mockRejectedValueOnce(new Error('overloaded')),
@@ -180,7 +180,51 @@ describe('BusinessLicenseAutoReviewService', () => {
 
     await service.reviewFileSubmissions();
 
-    expect(updates).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values.status).toBeUndefined();
+    expect(updates[0].values.metadata).toMatchObject({ autoReview: { decision: 'retry', reading: reading() } });
+  });
+
+  it('retry 로 남은 건은 다시 판독하지 않고 국세청 조회만 한다', async () => {
+    const read = jest.fn();
+    const verify = jest.fn().mockResolvedValue(approvedNts);
+    const { service, updates } = makeService({
+      rows: [
+        {
+          ...row('a'),
+          metadata: { autoReview: { decision: 'retry', dryRun: false, fileUrl: 'https://s3/a.jpg', reading: reading() } },
+        },
+      ],
+      read,
+      verify,
+      autoApprove: true,
+    });
+
+    await service.reviewFileSubmissions();
+
+    expect(read).not.toHaveBeenCalled();
+    expect(verify).toHaveBeenCalledWith(VALID_NO, '홍길동', '20210615');
+    expect(updates[0].values).toMatchObject({ status: 'approved', metadata: { autoReview: { decision: 'approve' } } });
+  });
+
+  it('판독 뒤 서류가 바뀌었으면 저장된 판독을 쓰지 않고 새로 읽는다', async () => {
+    const read = jest.fn().mockResolvedValue(reading({ representativeName: '김철수' }));
+    const { service, updates } = makeService({
+      rows: [
+        {
+          ...row('a'),
+          metadata: { autoReview: { decision: 'retry', dryRun: false, fileUrl: 'https://s3/old.jpg', reading: reading() } },
+        },
+      ],
+      read,
+      autoApprove: true,
+    });
+
+    await service.reviewFileSubmissions();
+
+    expect(read).toHaveBeenCalledWith('https://s3/a.jpg');
+    expect(updates[0].values.status).toBeUndefined();
+    expect(updates[0].values.metadata).toMatchObject({ autoReview: { decision: 'manual', reason: 'name_mismatch' } });
   });
 
   it('이미지를 못 읽는 요청 오류는 image_unavailable 로 남긴다', async () => {
@@ -216,5 +260,7 @@ describe('BusinessLicenseAutoReviewService', () => {
     const render = (p: SQL) => new PgDialect().sqlToQuery(p).sql;
     expect(render(dry.selects[0])).toMatch(/->'autoReview' is null/);
     expect(render(live.selects[0])).toMatch(/->'autoReview'->>'dryRun'/);
+    expect(render(dry.selects[0])).toMatch(/->'autoReview'->>'decision' = 'retry'/);
+    expect(render(live.selects[0])).toMatch(/->'autoReview'->>'decision' = 'retry'/);
   });
 });

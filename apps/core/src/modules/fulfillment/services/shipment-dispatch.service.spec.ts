@@ -179,6 +179,7 @@ function makeService() {
   const shipmentOutbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const fulfillmentV2Outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const fulfillmentV1Outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const coreOrderOutbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const service = new ShipmentDispatchService(
@@ -194,6 +195,7 @@ function makeService() {
     fulfillmentV1Outbox as any,
     audit as any,
     workflowGate as any,
+    coreOrderOutbox as any,
   );
   return {
     service,
@@ -206,6 +208,7 @@ function makeService() {
     shipmentOutbox,
     fulfillmentV2Outbox,
     fulfillmentV1Outbox,
+    coreOrderOutbox,
     audit,
   };
 }
@@ -578,5 +581,58 @@ describe('ShipmentDispatchService', () => {
     ).rejects.toThrow(/WAYBILL_STALE/);
     expect(inventory.ship).not.toHaveBeenCalled();
     expect(shipmentReservations.consumeForDispatch).not.toHaveBeenCalled();
+  });
+
+  describe('고객 발송 알림 이벤트', () => {
+    const order = (overrides: Record<string, unknown> = {}) => ({
+      salesOrderId: IDS.so,
+      fulfillmentOrderId: IDS.fo,
+      salesChannel: 'medusa',
+      channelOrderId: 'order_01',
+      isPartial: true,
+      lines: [],
+      ...overrides,
+    });
+    const notify = (service: ShipmentDispatchService, orders: unknown[], customers: unknown[]) =>
+      (service as any).enqueueCustomerShipmentNotices(
+        orders,
+        'attempt-1',
+        'HANJIN',
+        'TRACK-1',
+        new Date('2026-09-22T01:00:00.000Z'),
+        { select: jest.fn(() => new Query(customers)) },
+      );
+
+    it('자사몰 회원 주문이면 받는 사람과 부분 발송 여부를 담아 싣는다', async () => {
+      const { service, coreOrderOutbox } = makeService();
+
+      await notify(service, [order()], [
+        { id: IDS.so, displayOrderNo: '3900', customerId: 'user-1', customerEmail: 'a@example.com', customerName: '홍길동' },
+      ]);
+
+      expect(coreOrderOutbox.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idempotencyKey: `so-shipment-dispatched:attempt-1:${IDS.so}`,
+          eventType: 'SalesOrderShipmentDispatched',
+          payload: expect.objectContaining({
+            displayOrderNo: '3900',
+            customerEmail: 'a@example.com',
+            isPartial: true,
+            carrier: 'HANJIN',
+            trackingNo: 'TRACK-1',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('외부 채널 주문이나 이메일 없는 주문은 싣지 않는다', async () => {
+      const { service, coreOrderOutbox } = makeService();
+
+      await notify(service, [order({ salesChannel: 'naver' })], []);
+      await notify(service, [order()], [{ id: IDS.so, customerId: 'user-1', customerEmail: null }]);
+
+      expect(coreOrderOutbox.enqueue).not.toHaveBeenCalled();
+    });
   });
 });

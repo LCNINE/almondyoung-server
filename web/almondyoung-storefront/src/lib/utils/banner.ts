@@ -1,6 +1,12 @@
 import { sortBy } from "lodash"
 import { BannerDto } from "../types/dto/pim"
 import type { BannerGroupDto } from "../types/dto/pim"
+import { getThumbnailUrl } from "./get-thumbnail-url"
+
+export const getBannerImageUrl = (image: string) =>
+  image.startsWith("/") || image.startsWith("https://file.almondyoung.com/")
+    ? image
+    : getThumbnailUrl(image)
 
 /**
  * 그룹째로 노출 가능한지. 그룹을 비활성화하면 안에 활성 배너가 남아 있어도 노출되지 않아야 한다.

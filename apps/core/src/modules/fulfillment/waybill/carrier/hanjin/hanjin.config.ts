@@ -9,6 +9,8 @@ export interface HanjinConfig {
   sender: { name: string; zip: string; baseAddress: string; detailAddress: string; tel: string };
   boxType: string;
   payType: string;
+  /** 운송장 형(NS|NL|FS). 검증은 라벨 렌더 때(hanjin-label-templates) — 발급과 무관하다. */
+  labelType: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -37,6 +39,7 @@ export function loadHanjinConfig(env: NodeJS.ProcessEnv = process.env): HanjinCo
     },
     boxType: env.HANJIN_BOX_TYPE ?? 'A',
     payType: env.HANJIN_PAY_TYPE ?? 'PP',
+    labelType: env.HANJIN_LABEL_TYPE?.trim().toUpperCase() || 'NS',
   };
 }
 

@@ -4,6 +4,7 @@ import { EmailVerifiedToast } from "@/domains/mypage/components/account/email-ve
 import { ProfileEdit } from "@/domains/mypage/components/account/profile-edit"
 import { SocialLinkResultToast } from "@/domains/mypage/components/account/social-link-result-toast"
 import { getIdentitiesWithFallback } from "@/lib/api/users/auth/identities"
+import { getConsents } from "@/lib/api/users/consents"
 import { getMyProfile } from "@/lib/api/users/profile"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
@@ -18,9 +19,10 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function AccountProfilePage() {
   const t = await getTranslations("mypage.menu")
 
-  const [userData, identitiesState] = await Promise.all([
+  const [userData, identitiesState, consents] = await Promise.all([
     getMyProfile(),
     getIdentitiesWithFallback(),
+    getConsents().catch(() => null),
   ])
 
   return (
@@ -35,7 +37,11 @@ export default async function AccountProfilePage() {
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>{t("profile")}</PageTitle>
-          <ProfileEdit userData={userData} identitiesState={identitiesState} />
+          <ProfileEdit
+            userData={userData}
+            identitiesState={identitiesState}
+            marketingConsent={consents?.marketingConsent ?? null}
+          />
         </div>
       </MypageLayout>
       <Suspense fallback={null}>

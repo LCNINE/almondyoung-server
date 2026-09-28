@@ -11,6 +11,6 @@ export class InternalContactsRequestDto {
   @ArrayNotEmpty()
   // 한 번에 긁어갈 수 있는 양의 상한. 크론 배치가 이보다 크면 호출자가 청크로 나눈다.
   @ArrayMaxSize(500)
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   userIds: string[];
 }

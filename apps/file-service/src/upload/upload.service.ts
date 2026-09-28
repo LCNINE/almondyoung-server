@@ -11,6 +11,8 @@ import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response
 import { PresignUploadDto, PresignUploadResponseDto } from './dto/presign-upload.dto';
 import { Upload } from '../shared/types/file.types';
 import { v7 as uuidv7 } from 'uuid';
+import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../database/default-file-contexts';
+import { imageDimensions } from './image-dimensions';
 
 /** presigned PUT URL 유효 시간. 발급 직후 바로 올리는 흐름이라 길 이유가 없다 */
 const PRESIGN_EXPIRES_IN_SECONDS = 600;
@@ -58,6 +60,14 @@ export class UploadService {
       this.logger.debug(`Using client Content-Type (normalized): ${normalizedClientMimeType}`);
     }
 
+    const dimensions =
+      context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID
+        ? imageDimensions(file.buffer, detectedMimeType ?? normalizedClientMimeType)
+        : null;
+    if (context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID && !dimensions) {
+      throw new BadRequestError('이미지의 가로세로 크기를 확인할 수 없습니다.');
+    }
+
     const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);
 
     const fileId = uuidv7();
@@ -93,7 +103,7 @@ export class UploadService {
       uploadedBy: userId,
       storageProvider: uploadResult.provider.toLowerCase(),
       isPublic,
-      metadata: dto.metadata,
+      metadata: dimensions ? { ...dto.metadata, ...dimensions } : dto.metadata,
       activatedAt: new Date(),
     });
 
@@ -113,6 +123,10 @@ export class UploadService {
     }
 
     const context = await this.loadActiveContext(dto.contextId);
+
+    if (context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID) {
+      throw new BadRequestError('공모전 이미지는 파일 업로드를 사용해 주세요.');
+    }
 
     this.contextValidator.validateFileSize(context, dto.size);
 

@@ -38,7 +38,11 @@ export class SmsMessageManager {
   }
 
   async send(dto: SendSmsGateMessageDto, sentBy: string): Promise<SmsGateSendResult> {
-    if (dto.deviceId) {
+    const viaNhnOnly = dto.route === 'NHN';
+    if (viaNhnOnly && dto.category === 'MARKETING') {
+      throw new BadRequestError('광고 문자는 수신거부 답장을 받아야 해서 발송폰으로만 보낼 수 있습니다');
+    }
+    if (dto.deviceId && !viaNhnOnly) {
       const device = await this.repository.findDeviceByDeviceId(dto.deviceId);
       if (!device?.enabled) throw new BadRequestError('선택한 발송폰이 없거나 비활성 상태입니다');
     }
@@ -77,8 +81,11 @@ export class SmsMessageManager {
     });
 
     // 광고는 수신거부가 폰 답장뿐이라 대표번호로 우회하지 않는다.
-    const phoneCount =
-      dto.nhnFallback && dto.category === 'INFORMATIONAL' ? (await this.capacity(dto.deviceId)).remaining : rows.length;
+    const phoneCount = viaNhnOnly
+      ? 0
+      : dto.nhnFallback && dto.category === 'INFORMATIONAL'
+        ? (await this.capacity(dto.deviceId)).remaining
+        : rows.length;
     const inserted: Notification[] = await this.repository.enqueue(rows.slice(0, phoneCount));
     const viaNhn = await this.sendViaNhn(rows.slice(phoneCount), skipped);
     return {

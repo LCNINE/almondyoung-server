@@ -170,6 +170,7 @@ export class SubscriptionService {
           contractId: result.contractId,
           planId: planDetails.plan.id,
           tierId: planDetails.tier.id,
+          reasonCode: 'SUBSCRIBED',
         })
         .catch((err: Error) =>
           this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
@@ -656,6 +657,7 @@ export class SubscriptionService {
           contractId: result.contractId,
           planId: planDetails.plan.id,
           tierId: planDetails.tier.id,
+          reasonCode: 'SUBSCRIBED',
         })
         .catch((err: Error) =>
           this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),

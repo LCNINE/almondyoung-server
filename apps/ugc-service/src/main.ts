@@ -7,7 +7,7 @@ import { GlobalExceptionFilter } from '@app/shared';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
-import { createKafkaConfigFromEnv, EventsModule, mountEventChainContext } from '@app/events';
+import { EventsModule, mountEventChainContext } from '@app/events';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter(), {
@@ -64,19 +64,15 @@ async function bootstrap() {
       done();
     });
 
-  // 주문 취소를 듣기 위한 첫 소비자. 구독 집합은 `@On` 에서 도출된다 (ADR-0029 §3).
-  // Kafka 설정이 없으면 소비 없이 HTTP 만 뜬다 — 로컬·테스트가 브로커 없이 돌아야 한다.
-  const kafkaConfig = createKafkaConfigFromEnv();
-  if (kafkaConfig) {
-    await EventsModule.startConsumer(app, {
-      groupId: process.env.KAFKA_GROUP_ID || 'ugc-service-consumer',
-      kafka: kafkaConfig,
-    });
-  } else {
-    console.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
-  }
+  // 주문 취소·탈퇴를 듣는다. 구독 집합은 `@On` 에서 도출된다 (ADR-0029 §3).
+  // Kafka 는 필수다 — 적립 명령 아웃박스(`UgcEventsModule` 의 `forApp`)가 모듈 import 시점에
+  // 설정을 요구하므로, KAFKA_BROKERS 가 없으면 여기 오기 전에 원인을 말하며 죽는다.
+  await EventsModule.startConsumer(app, {
+    groupId: process.env.KAFKA_GROUP_ID || 'ugc-service-consumer',
+  });
 
-  const port = process.env.PORT ?? 3031;
+  // 3030 이 정본이다 — Dockerfile·Caddyfile·e2e-env-map·storefront `backend.ts` 가 모두 3030 을 본다.
+  const port = process.env.PORT ?? 3030;
 
   await app.listen(port, '0.0.0.0');
 

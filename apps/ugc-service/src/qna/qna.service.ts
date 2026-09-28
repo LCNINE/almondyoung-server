@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { UGC_EVENT_STREAM } from '@packages/event-contracts/streams';
 import { and, asc, count, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { answers, questionMedia, questions, type UgcServiceSchema } from '../db/schema';
 import { CreateQuestionDto } from './dto/create-question.dto';
@@ -29,7 +31,11 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class QnaService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<UgcServiceSchema>,
+    @InjectPublisher(UGC_EVENT_STREAM)
+    private readonly events: PublisherFor<typeof UGC_EVENT_STREAM>,
+  ) {}
 
   private get client() {
     return this.db.db;
@@ -554,7 +560,7 @@ export class QnaService {
   ): Promise<AnswerEntity> {
     return this.inTx(async (tx) => {
       const [question] = await tx
-        .select({ id: questions.id })
+        .select({ id: questions.id, userId: questions.userId, productId: questions.productId, title: questions.title })
         .from(questions)
         .where(and(eq(questions.id, questionId), isNull(questions.deletedAt)));
 
@@ -582,6 +588,22 @@ export class QnaService {
           .update(questions)
           .set({ status: 'answered', updatedAt: new Date() })
           .where(eq(questions.id, questionId));
+
+        await this.events.enqueue(
+          {
+            idempotencyKey: `qna-answered:${answer.id}`,
+            eventType: 'QuestionAnswered',
+            aggregateId: questionId,
+            payload: {
+              questionId,
+              userId: question.userId,
+              ...(question.productId ? { productId: question.productId } : {}),
+              title: question.title,
+              answeredAt: answer.createdAt.toISOString(),
+            },
+          },
+          tx,
+        );
 
         return answer;
       } catch (error: unknown) {

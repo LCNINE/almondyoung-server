@@ -18,7 +18,7 @@ export interface MembershipTermsVersion {
 
 export const MEMBERSHIP_TERMS_VERSIONS: readonly MembershipTermsVersion[] = [
   // 제2조 멤버십 혜택 정의·연간 정산 · 제5조 미납 요금(청약철회와 같은 기준, 납부 전 재가입 불가) — 정기결제 약관에만 제5조가 붙는다.
-  { version: '2026-09-23', sha256: '2bbb3ed3ec5a9ea80bb1ed3bd38cc8eda4934f8ae14aed22251b8c3a0629e6c7' },
+  { version: '2026-09-23', sha256: '13b4a6e6438bbc3cff77e4d06722c7e159dba7aa620c8ba72bd8574324f31e99' },
 ];
 
 export const CURRENT_MEMBERSHIP_TERMS_VERSION = MEMBERSHIP_TERMS_VERSIONS[MEMBERSHIP_TERMS_VERSIONS.length - 1].version;

@@ -13,6 +13,8 @@ import {
 } from 'class-validator';
 import { SmsGateCategory } from '../utils/sms-body';
 
+export type SmsSendRoute = 'PHONE' | 'NHN';
+
 export class SendSmsGateMessageDto {
   @ApiProperty({ type: [String] })
   @IsArray()
@@ -35,6 +37,11 @@ export class SendSmsGateMessageDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @ApiPropertyOptional({ enum: ['PHONE', 'NHN'], default: 'PHONE', description: 'NHN 이면 전부 대표번호로 보낸다. 광고는 PHONE 만' })
+  @IsOptional()
+  @IsIn(['PHONE', 'NHN'])
+  route?: SmsSendRoute;
 
   @ApiPropertyOptional({ description: '정보성일 때 폰 한도를 넘는 건은 대표번호(NHN)로 보낸다' })
   @IsOptional()

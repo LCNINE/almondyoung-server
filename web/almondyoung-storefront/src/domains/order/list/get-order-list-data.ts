@@ -5,6 +5,7 @@ import {
   getOrderActionsBatchByMedusaId,
   type StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
+import { getReviewEligibilities } from "@/lib/api/ugc/reviews"
 import { getActiveRefundRequest } from "@/lib/api/wallet"
 import type { HttpTypes } from "@medusajs/types"
 import { subMonths } from "date-fns"
@@ -26,6 +27,7 @@ export interface OrderListPageData {
   q: string
   actionsMap: Record<string, StoreOrderActionsResponse>
   refundMap: Record<string, string>
+  reviewHrefs: Record<string, string>
   hasError: boolean
 }
 
@@ -90,7 +92,7 @@ export async function getOrderListPageData(params: {
     return bts === "confirmed" && intentId ? [{ id: o.id, intentId }] : []
   })
 
-  const [actionsList, refundEntries] = await Promise.all([
+  const [actionsList, refundEntries, eligibilities] = await Promise.all([
     getOrderActionsBatchByMedusaId(orders.map((o) => o.id)).catch(() => []),
     Promise.all(
       refundTargets.map(
@@ -103,6 +105,7 @@ export async function getOrderListPageData(params: {
           ] as const
       )
     ),
+    getReviewEligibilities({ limit: 100 }).catch(() => null),
   ])
 
   const count = ordersData?.count ?? 0
@@ -118,6 +121,12 @@ export async function getOrderListPageData(params: {
       actionsList.map((a) => [a.channelOrderId, a])
     ),
     refundMap: Object.fromEntries(refundEntries),
+    reviewHrefs: Object.fromEntries(
+      (eligibilities?.data ?? []).map((e) => [
+        e.orderLineId,
+        `/mypage/reviews?write=${e.id}&productId=${e.productId}`,
+      ])
+    ),
     hasError: ordersData === null,
   }
 }

@@ -62,12 +62,14 @@ export type AutoReviewManualReason =
   | 'duplicate_number'
   | 'image_unavailable';
 
-// 첨부 서류 자동 심사 기록. 이 키가 있는 행은 크론이 다시 보지 않는다.
+// 첨부 서류 자동 심사 기록. 이 키가 있는 행은 크론이 다시 보지 않는다 (retry 제외).
 export interface AutoReviewRecord {
-  decision: 'approve' | 'manual';
+  decision: 'approve' | 'manual' | 'retry';
   reason?: AutoReviewManualReason;
   /** 판정만 기록하고 상태는 안 바꿨다 */
   dryRun: boolean;
+  /** 판독한 서류 주소 */
+  fileUrl?: string;
   model: string;
   reviewedAt: string;
   reading?: {

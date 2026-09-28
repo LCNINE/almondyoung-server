@@ -37,7 +37,7 @@ export class EventController {
   @Get()
   @ApiOperation({
     summary: '전체 이벤트 목록 조회',
-    description: '시스템에 등록된 모든 이벤트 매핑 정보를 조회합니다.',
+    description: '꺼진 이벤트를 포함해 등록된 모든 이벤트 매핑 정보를 조회합니다.',
   })
   @ApiResponse({ status: 200, description: '이벤트 목록 조회 성공' })
   async getAllEvents() {
