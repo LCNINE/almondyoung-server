@@ -29,6 +29,10 @@ export const HANJIN_LABEL_FIXTURE: HanjinLabelData = {
   sender: { name: '아몬드영', phone: '032-000-1234', baseAddress: '경기도 부천시 오정구 신흥로511번길 80' },
   deliveryMessage: '문앞 (공동현관 #1234)',
   commodityName: '토익 Speaking 외 1건',
+  items: [
+    { name: '토익 Speaking', quantity: 1 },
+    { name: '펜', quantity: 2 },
+  ],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
   printedDate: '2026-09-28',
@@ -50,4 +54,5 @@ export const HANJIN_LABEL_LONG_FIXTURE: HanjinLabelData = {
   recipient: { ...HANJIN_LABEL_FIXTURE.recipient, detailAddress: '가'.repeat(80) },
   deliveryMessage: '가'.repeat(100),
   commodityName: '가'.repeat(100),
+  items: [{ name: '가'.repeat(100), quantity: 1 }],
 };

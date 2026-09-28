@@ -82,11 +82,11 @@ describe('BatchLabelPrintButton', () => {
   it('출고·제외 박스를 빼고 확인 후 순서대로 찍고 기록한다', async () => {
     const { print, prefs } = mount({ workItems: items });
     await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
-    const dialog = await screen.findByRole('dialog', { name: '라벨 2장을 인쇄할까요?' });
+    const dialog = await screen.findByRole('dialog', { name: '라벨 2건을 인쇄할까요?' });
     await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 2 · 실패 0 · 미인쇄 0');
     // 스풀러가 받았다는 뜻일 뿐 종이가 나왔다는 뜻이 아니다.
-    expect(screen.getByText('프린터에서 나온 장수가 맞는지 확인해 주세요.')).toBeInTheDocument();
+    expect(screen.getByText('프린터에서 2장이 나왔는지 확인해 주세요.')).toBeInTheDocument();
     // 거절 건이 없으면 사유 목록도 없다.
     expect(screen.queryByRole('list')).toBeNull();
     expect(print.mock.calls).toEqual([
@@ -138,9 +138,9 @@ describe('BatchLabelPrintButton', () => {
     paths.length = 0;
     await userEvent.click(screen.getByRole('button', { name: '실패·미인쇄만 다시' }));
     // 방금 한 장을 찍어 이 기기 기록이 생겼지만, 다시 보내는 건 안 나온 건뿐이라 중복 경고는 거짓말이다.
-    const retryDialog = await screen.findByRole('dialog', { name: '라벨 1장을 인쇄할까요?' });
+    const retryDialog = await screen.findByRole('dialog', { name: '라벨 1건을 인쇄할까요?' });
     expect(retryDialog).toHaveTextContent(
-      '인쇄되지 않은 1장만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
+      '인쇄되지 않은 1건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
     );
     expect(retryDialog).not.toHaveTextContent('이미 인쇄했어요');
     await userEvent.click(within(retryDialog).getByRole('button', { name: '인쇄' }));
@@ -161,10 +161,28 @@ describe('BatchLabelPrintButton', () => {
     await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 0 · 실패 0 · 미인쇄 2');
-    expect(screen.queryByText('프린터에서 나온 장수가 맞는지 확인해 주세요.')).toBeNull();
+    expect(screen.queryByText(/프린터에서 \d+장이 나왔는지/)).toBeNull();
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('프린터로 보내지 못했어요');
     expect(alert).toHaveTextContent('OpenPrinterW failed: 1801');
+  });
+
+  it('품목이 많아 여러 장인 송장은 장수 안내에 추가 쪽까지 센다', async () => {
+    mount({
+      workItems: items,
+      label: async (id) => ({
+        waybillId: `w-${id}`,
+        trackingNo: `T-${id}`,
+        format: 'zpl',
+        data: `^XA${id}^XZ`,
+        pages: id === 'a' ? 3 : 1,
+      }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    const dialog = await screen.findByRole('dialog', { name: '라벨 2건을 인쇄할까요?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('보냄 2 · 실패 0 · 미인쇄 0');
+    expect(screen.getByText('프린터에서 4장이 나왔는지 확인해 주세요.')).toBeInTheDocument();
   });
 
   it('한 장도 못 찍었으면 이 기기 인쇄 기록을 남기지 않는다', async () => {

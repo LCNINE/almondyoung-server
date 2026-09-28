@@ -9,7 +9,8 @@
 npx tsx scripts/ops/hanjin-label-preview/render.ts ./hanjin-kit
 ```
 
-`hanjin-{ns,nl,fs}-preview.{png,zpl,compressed.zpl}` 9개가 나온다.
+`hanjin-{ns,nl,fs}-preview.{png,zpl,compressed.zpl}` 9개와 FS 품목 7줄 견본
+`hanjin-fs-items-preview{-p1.png,-p2.png,.zpl,.compressed.zpl}`(2쪽)이 나온다.
 
 | 형 | 라벨 | 프린터에 넣는 방향 |
 | --- | --- | --- |
@@ -66,6 +67,7 @@ SMB 공유로 들어간 작업은 RAW 로 스풀돼 드라이버 렌더링을 �
 - [ ] 칸이 전체적으로 한쪽으로 밀리면 먼저 프린터 자체 오프셋으로 맞춘다
 - [ ] NL: ITF 가 라벨 오른쪽 끝에 가깝다(여백 3.88mm, 요구 3.75mm) — NL 의 ITF 를 따로 스캔해 본다
 - [ ] NS: 선인쇄와 위아래가 뒤집혀 나오면 NS 템플릿의 `rotation` 을 90 → 270 으로 바꾼다(FS 는 이 이유로 270 이다)
+- [ ] FS 품목 7줄 견본: 두 쪽 모두 품목이 같은 칸에 찍히고, 2쪽의 「발송 금지」 두 곳과 쪽 표시(`2/2 · 총 7건 13개`)가 선인쇄를 밟지 않는다
 
 ## 5. 결과를 남긴다
 

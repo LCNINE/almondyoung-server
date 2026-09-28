@@ -367,7 +367,7 @@ describe('주문 스냅샷 → insert-order 바디 (#911)', () => {
         roadAddress: '서울시 중구 소공로 88',
         detailAddress: '999층',
       },
-      lines: [{ productName: '의류', quantity: 1, skuId: 'sku-1' }],
+      lines: [{ productName: '의류', skuName: '의류', quantity: 1, skuId: 'sku-1' }],
       config,
     });
     const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });

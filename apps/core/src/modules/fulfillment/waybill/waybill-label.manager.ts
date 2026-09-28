@@ -5,9 +5,8 @@ import { DbTx, inventorySchema } from '../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import { buildHanjinLabelData } from './carrier/hanjin/label/hanjin-label-data';
 import { renderHanjinLabel } from './carrier/hanjin/label/hanjin-label-templates';
-import { mmToDots } from './label/label-model';
 import { SvgRasterizer } from './label/svg-rasterizer';
-import { encodeZpl } from './label/zpl-encoder';
+import { encodeLabelPages } from './label/label-document';
 import { WAYBILL } from './waybill.constants';
 import { WaybillManager } from './waybill.manager';
 import { WaybillReader } from './waybill.reader';
@@ -18,7 +17,9 @@ export interface WaybillLabel {
   waybillId: string;
   trackingNo: string;
   format: 'zpl';
+  /** 쪽마다 ^XA…^XZ 를 이어 붙인 문자열 — 앱은 통째로 인쇄한다. */
   data: string;
+  pages: number;
 }
 
 /** assertDispatchable 뒤에 거는 라벨 전용 조건(스펙 §5 의 4~6). */
@@ -80,12 +81,11 @@ export class WaybillLabelManager {
       return { waybill, ctx };
     }, tx);
 
-    const spec = renderHanjinLabel(
+    const pages = renderHanjinLabel(
       this.config.labelType,
       buildHanjinLabelData({ waybill, ctx, config: this.config, now: this.now() }),
     );
-    const bitmap = this.rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm));
-    const data = encodeZpl(bitmap, spec.barcodes, { compress: WAYBILL.LABEL_ZPL_COMPRESS, rotation: spec.rotation });
-    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '', format: 'zpl', data };
+    const data = encodeLabelPages(pages, this.rasterizer, WAYBILL.LABEL_ZPL_COMPRESS);
+    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '', format: 'zpl', data, pages: pages.length };
   }
 }

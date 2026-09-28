@@ -1,6 +1,7 @@
 import type { HanjinConfig } from '../hanjin.config';
 import type { IssueContext, WaybillRow } from '../../../waybill.types';
 import { commodityNameOf, composeMessage, parseRecipient } from '../../../waybill-request.assembler';
+import { labelItemsOf, type LabelItem } from '../../../label/label-items';
 
 /** print-wbl 분류필드(정본 §3.2). labelData 에 없으면 '' — demo 캐리어는 일부만 채운다. */
 export interface HanjinSortFields {
@@ -30,7 +31,8 @@ export interface HanjinLabelData {
   recipient: { name: string; phone: string; baseAddress: string; detailAddress: string };
   sender: { name: string; phone: string; baseAddress: string };
   deliveryMessage: string; // ⑭
-  commodityName: string;
+  commodityName: string; // 한진 등록 품명과 같은 값 — NS·NL 이 찍는다
+  items: LabelItem[]; // SKU별 품목 줄 — FS 가 찍는다(#913 품목 줄 스펙)
   boxType: string; // 운임Type
   custOrdNo: string; // 출고번호
   printedDate: string; // YYYY-MM-DD, Asia/Seoul
@@ -122,6 +124,7 @@ export function buildHanjinLabelData({ waybill, ctx, config, now }: BuildHanjinL
     sender: { name: config.sender.name, phone: config.sender.tel, baseAddress: config.sender.baseAddress },
     deliveryMessage: composeMessage(rc.deliveryNote, ctx.entrancePassword) ?? '',
     commodityName: commodityNameOf(ctx.lines),
+    items: labelItemsOf(ctx.lines),
     boxType: config.boxType,
     custOrdNo,
     printedDate: kstDate(now),

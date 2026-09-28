@@ -13,6 +13,8 @@ export interface WaybillLabel {
   trackingNo: string;
   format: string;
   data: string;
+  /** data 안의 쪽 수(#913 품목 줄). 품목이 4줄을 넘는 FS 는 2 이상 — 이 필드가 없던 core 는 늘 1장이다. */
+  pages?: number;
 }
 
 export interface BatchWorkItem {
@@ -111,6 +113,8 @@ export interface BatchPrintResult {
   skipped: { shipmentId: string; message: string }[];
   notAttempted: string[];
   printerError?: string;
+  /** 프린터로 보낸 종이 장수 — 한 건이 여러 장일 수 있어 printed.length 와 다르다. */
+  sheets: number;
 }
 
 /**
@@ -126,7 +130,7 @@ export async function runBatchLabelPrint(
     shouldStop?: () => boolean;
   }
 ): Promise<BatchPrintResult> {
-  const result: BatchPrintResult = { printed: [], skipped: [], notAttempted: [] };
+  const result: BatchPrintResult = { printed: [], skipped: [], notAttempted: [], sheets: 0 };
   const total = o.shipmentIds.length;
   for (let i = 0; i < total; i++) {
     if (o.shouldStop?.()) {
@@ -135,8 +139,9 @@ export async function runBatchLabelPrint(
     }
     const shipmentId = o.shipmentIds[i];
     try {
-      await printOneLabel(o, shipmentId);
+      const label = await printOneLabel(o, shipmentId);
       result.printed.push(shipmentId);
+      result.sheets += label.pages ?? 1;
     } catch (error) {
       if (error instanceof PrinterError) {
         result.printerError = error.detail;
