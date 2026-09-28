@@ -24,17 +24,19 @@ export class InboundSmsManager {
     await this.save(body.deviceId, messageId, sender, message, receivedAt);
     if (!isOptOutMessage(message)) return;
 
+    // 수신자 그룹(비회원) 발송은 회원 동의가 아니라 이 목록으로 막는다.
+    await this.repository.addOptOut(toKrE164(sender));
     const { userIds, withdrawnUserIds } = await this.userContactClient.withdrawMarketingConsentByPhone(
       sender,
       'sms-reply',
     );
     this.logger.warn(`수신거부 답장 처리: 매칭 ${userIds.length}명, 철회 ${withdrawnUserIds.length}명`);
-    if (userIds.length === 0) return;
     if (messageId && (await this.repository.hasReplyFor(messageId))) return;
 
     await this.repository.enqueue([
       {
-        userId: userIds[0],
+        // 회원이 아닌 번호(수신자 그룹)도 처리 결과를 받아야 한다. 그때는 번호를 식별자로 쓴다.
+        userId: userIds[0] ?? `phone:${toKrE164(sender)}`,
         category: 'INFORMATIONAL',
         priority: 'HIGH',
         channel: Channel.SMS,

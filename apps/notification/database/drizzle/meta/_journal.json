@@ -64,6 +64,13 @@
       "when": 1790127780901,
       "tag": "20260923014300_add-email-layout-settings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790578481731,
+      "tag": "20260928065441_add-sms-recipient-groups",
+      "breakpoints": true
     }
   ]
 }

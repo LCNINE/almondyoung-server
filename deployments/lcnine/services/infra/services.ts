@@ -110,6 +110,7 @@ export function setup(infra: SharedInfra) {
   const smsGatePassword = new sst.Secret('SmsGatePassword', '');
   // 중계 서버에 웹훅을 등록할 때 쓴 서명키와 같아야 한다. 라이브는 비어 있으면 수신 웹훅을 전부 거절한다.
   const smsGateWebhookSigningKey = new sst.Secret('SmsGateWebhookSigningKey', '');
+  const supabasePlacesServiceKey = new sst.Secret('SupabasePlacesServiceKey', '');
 
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
@@ -368,6 +369,8 @@ export function setup(infra: SharedInfra) {
     SMS_GATE_USERNAME: smsGateUsername.value,
     SMS_GATE_PASSWORD: smsGatePassword.value,
     SMS_GATE_WEBHOOK_SIGNING_KEY: smsGateWebhookSigningKey.value,
+    SUPABASE_PLACES_URL: 'https://xsjyvxbnmwwsdvyofjfy.supabase.co',
+    SUPABASE_PLACES_SERVICE_KEY: supabasePlacesServiceKey.value,
     USER_SERVICE_URL: idpUserServiceUrl,
     USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
     // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.

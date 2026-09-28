@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
-import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { SmsGateCategory } from '../utils/sms-body';
 
 export class CreateSmsCampaignDto {
@@ -23,6 +23,11 @@ export class CreateSmsCampaignDto {
   @IsOptional()
   @IsDateString()
   sendAt?: string;
+
+  @ApiPropertyOptional({ description: '수신자 그룹. 비우면 활성 회원 전체' })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
 }
 
-export class PreviewSmsCampaignDto extends PickType(CreateSmsCampaignDto, ['category', 'sendAt'] as const) {}
+export class PreviewSmsCampaignDto extends PickType(CreateSmsCampaignDto, ['category', 'sendAt', 'groupId'] as const) {}

@@ -8,7 +8,7 @@ import { isMarketingQuietHours } from '../utils/sms-body';
 import { isBulkIntervalPassed, isBulkWindow } from '../utils/bulk-schedule';
 import { SmsDeviceReader } from './sms-device.reader';
 import { SMS_GATE_BULK_DISPATCH_BATCH, SMS_GATE_DISPATCH_BATCH } from '../constants/sms-gate.constants';
-import { SmsGateClient } from '../clients/sms-gate.client';
+import { SmsGateClient, toKrE164 } from '../clients/sms-gate.client';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
 
 @Injectable()
@@ -55,15 +55,25 @@ export class SmsDispatchManager {
     });
   }
 
+  /** 회원은 마케팅 동의를, 수신자 그룹(비회원) 행은 수신거부 번호 목록을 발송 직전에 다시 본다. */
   private async withoutWithdrawnMarketing(rows: Notification[]): Promise<Notification[]> {
     const marketing = rows.filter((row) => row.category === 'MARKETING');
     if (marketing.length === 0) return rows;
-    const contacts = await this.userContactClient.findContacts([...new Set(marketing.map((row) => row.userId))]);
+    const isGroupRow = (row: Notification) => !!row.metadata?.recipientGroupId;
+    const [contacts, optedOut] = await Promise.all([
+      this.userContactClient.findContacts([...new Set(marketing.filter((row) => !isGroupRow(row)).map((row) => row.userId))]),
+      this.repository.findOptedOut(marketing.filter(isGroupRow).map((row) => toKrE164(row.payload?.phoneNumber ?? ''))),
+    ]);
     const kept: Notification[] = [];
     for (const row of rows) {
-      if (row.category === 'MARKETING' && !contacts.get(row.userId)?.marketingConsent) {
-        await this.repository.markCancelled(row, '발송 전 마케팅 수신 동의가 철회되었습니다');
-        continue;
+      if (row.category === 'MARKETING') {
+        const withdrawn = isGroupRow(row)
+          ? optedOut.has(toKrE164(row.payload?.phoneNumber ?? ''))
+          : !contacts.get(row.userId)?.marketingConsent;
+        if (withdrawn) {
+          await this.repository.markCancelled(row, '발송 전 수신거부 또는 마케팅 수신 동의 철회가 확인되었습니다');
+          continue;
+        }
       }
       kept.push(row);
     }
