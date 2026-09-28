@@ -56,6 +56,8 @@ const createSchemaData = () => ({
   name: "아몬드영",
   description: siteConfig.appDescription,
   image: `https://${siteConfig.domainName}/icon.png`,
+  // 구글 검색결과·지식패널이 기업 로고로 읽는 필드(표시 여부는 구글이 결정)
+  logo: `https://${siteConfig.domainName}/images/almond-logo.png`,
   url: HOME_URL,
 })
 

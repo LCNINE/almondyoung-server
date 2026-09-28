@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 
-const ALMOND_LOGO_URL = "/images/almond_white_logo.svg"
+const ALMOND_LOGO_URL = "/images/logo-mark-white.png"
 const TOSS_LOGO_URL = "/images/toss-payment-logo.jpg"
 
 // 결제 수단 섹션

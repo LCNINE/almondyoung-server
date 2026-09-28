@@ -36,11 +36,11 @@ export default function ErrorPageContent({
         <div className="container mx-auto flex h-16 items-center px-4">
           <LocalizedClientLink href="/">
             <Image
-              src="/images/almond_white_logo.svg"
+              src="/images/almond-logo.png"
               alt="아몬드영"
-              width={287}
-              height={45}
-              className="h-full w-full object-contain"
+              width={1024}
+              height={386}
+              className="h-full w-auto object-contain invert"
               priority
             />
           </LocalizedClientLink>
