@@ -1,7 +1,15 @@
 import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
-import { textWidthMm } from '../../../label/svg-text';
+import type { LabelSpec } from '../../../label/label-model';
+import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import { renderHanjinFsLabel } from './hanjin-fs-template';
+import type { HanjinLabelData } from './hanjin-label-data';
+
+/** 첫 쪽 — 기존 단일 쪽 테스트는 전부 첫 쪽의 성질이다. */
+const fs1 = (d: HanjinLabelData): LabelSpec => {
+  const [first] = renderHanjinFsLabel(d);
+  return first;
+};
 
 const block = (svg: string, id: string): string => {
   const m = new RegExp(`<g id="${id}">([\\s\\S]*?)</g>`).exec(svg);
@@ -10,7 +18,7 @@ const block = (svg: string, id: string): string => {
 };
 
 describe('renderHanjinFsLabel', () => {
-  const spec = renderHanjinFsLabel(DATA);
+  const spec = fs1(DATA);
 
   // 270° 는 창고 실물 출력으로 정했다(2026-09-28, XP-DT108B + FS 라벨지): 90° 는 선인쇄와 위아래가 뒤집혀 나왔다.
   it('FS 는 가로 123 × 세로 100mm, 270° 돌려 짧은 변(100mm)을 폭으로 넣는다', () => {
@@ -39,7 +47,7 @@ describe('renderHanjinFsLabel', () => {
   });
 
   it('받는분 성명이 길면 고정 x=35.1 의 연락처를 침범하기 전에 말줄임한다(#913 최종리뷰 F5)', () => {
-    const s = renderHanjinFsLabel({
+    const s = fs1({
       ...DATA,
       recipient: { ...DATA.recipient, name: '아몬드영뷰티 강남점 김한진' },
     });
@@ -52,7 +60,7 @@ describe('renderHanjinFsLabel', () => {
   });
 
   it('보낸분 원본주소의 참고항목(동)은 마스킹 뒤에도 새지 않는다(#913 최종리뷰 F6)', () => {
-    const s = renderHanjinFsLabel({
+    const s = fs1({
       ...DATA,
       sender: { ...DATA.sender, baseAddress: '경기도 부천시 오정구 신흥로511번길 80 (오정동)' },
     });
@@ -67,14 +75,14 @@ describe('renderHanjinFsLabel', () => {
       ['경기도 성남시 분당구 판교역로 235', '에이치스퀘어 N동 8층 801호', 'N동 8층 801호'],
     ];
     it.each(cases)('%s %s → "%s"', (baseAddress, detailAddress, tail) => {
-      const s = renderHanjinFsLabel({ ...DATA, recipient: { ...DATA.recipient, baseAddress, detailAddress } });
+      const s = fs1({ ...DATA, recipient: { ...DATA.recipient, baseAddress, detailAddress } });
       expect(s.svg).toContain(tail);
     });
   });
 
   it('긴 ⑭ 는 두 줄로 나눠 공동현관 비밀번호까지 잃지 않는다', () => {
     const msg = '부재 시 경비실에 맡겨 주세요. 파손 주의 (공동현관 #1234)';
-    const s = renderHanjinFsLabel({ ...DATA, deliveryMessage: msg });
+    const s = fs1({ ...DATA, deliveryMessage: msg });
     const lines = [...s.svg.matchAll(/<text x="8.8" [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
     expect(lines).toHaveLength(2);
     expect(lines.join(' ')).toBe(msg);
@@ -102,7 +110,8 @@ describe('renderHanjinFsLabel', () => {
       '운임Type : A',
       '출고번호: AY0123456789ABCDEFGHJKMNPQRS',
       '4527-1697-8431',
-      '토익 Speaking 외 1건',
+      '토익 Speaking',
+      '펜',
     ]) {
       expect(spec.svg).toContain(s);
     }
@@ -116,12 +125,12 @@ describe('renderHanjinFsLabel', () => {
   });
 
   it('터미널코드가 비면(demo 캐리어) CODE128 을 빼고 ITF 만 둔다', () => {
-    const s = renderHanjinFsLabel({ ...DATA, sort: { ...DATA.sort, terminalCode: '' } });
+    const s = fs1({ ...DATA, sort: { ...DATA.sort, terminalCode: '' } });
     expect(s.barcodes.map((b) => b.kind)).toEqual(['ITF']);
   });
 
   it('고객 입력의 XML 특수문자를 이스케이프하고 금지 제어문자는 뺀다', () => {
-    const s = renderHanjinFsLabel({ ...DATA, deliveryMessage: '<script>&\u000B', commodityName: 'A&B "펜"' });
+    const s = fs1({ ...DATA, deliveryMessage: '<script>&\u000B', items: [{ name: 'A&B "펜"', quantity: 1 }] });
     expect(s.svg).not.toContain('<script>');
     expect(s.svg).not.toContain('\u000B');
     expect(s.svg).toContain('&lt;script&gt;&amp;');
@@ -132,7 +141,7 @@ describe('renderHanjinFsLabel', () => {
     ['기본', DATA],
     ['긴 데이터', LONG],
   ])('%s: 바코드 금지 구역(바코드 + 좌우 quiet zone)은 라벨 안이고 잉크가 없다', (_, data) => {
-    const s = renderHanjinFsLabel(data);
+    const s = fs1(data);
     for (const z of barcodeKeepOutsMm(s)) {
       expect(z.x0).toBeGreaterThanOrEqual(0);
       expect(z.x1).toBeLessThanOrEqual(s.widthMm);
@@ -142,7 +151,7 @@ describe('renderHanjinFsLabel', () => {
   });
 
   it('긴 자유 텍스트는 말줄임으로 자른다', () => {
-    const s = renderHanjinFsLabel(LONG);
+    const s = fs1(LONG);
     expect(s.svg).not.toContain('가'.repeat(100));
     expect((s.svg.match(/…/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
@@ -152,5 +161,110 @@ describe('renderHanjinFsLabel', () => {
     const ys = [...spec.svg.matchAll(/\by="([\d.]+)"/g)].map((m) => Number(m[1]));
     expect(Math.max(...xs)).toBeLessThanOrEqual(123);
     expect(Math.max(...ys)).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
+  const ITEMS = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `품목${i + 1}`, quantity: i + 1 }));
+  const pagesOf = (n: number) => renderHanjinFsLabel({ ...DATA, items: ITEMS(n) });
+  const namesOn = (page: LabelSpec) =>
+    [...page.svg.matchAll(/<text x="4.5" y="(?:57|62.2|67.4|72.6)"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+
+  it.each([
+    [1, 1],
+    [4, 1],
+    [5, 2],
+    [8, 2],
+    [9, 3],
+  ])('품목 %d 줄 → %d 쪽', (n, pages) => {
+    expect(pagesOf(n)).toHaveLength(pages);
+  });
+
+  it('모든 쪽 같은 자리에 4줄씩, 순서대로', () => {
+    expect(pagesOf(9).map(namesOn)).toEqual([
+      ['품목1', '품목2', '품목3', '품목4'],
+      ['품목5', '품목6', '품목7', '품목8'],
+      ['품목9'],
+    ]);
+  });
+
+  it('수량은 오른쪽 끝(x 119)에 끝 정렬로 찍는다', () => {
+    const [first] = pagesOf(1);
+    expect(first.svg).toMatch(/<text x="119" y="57" [^>]*text-anchor="end">1<\/text>/);
+  });
+
+  it('쪽 표시: n/N · 총 건수·수량 합 — 정확히 4줄이면 1/1', () => {
+    expect(pagesOf(9).map((p) => /(\d+\/\d+ · 총 \d+건 \d+개)/.exec(p.svg)?.[1])).toEqual([
+      '1/3 · 총 9건 45개',
+      '2/3 · 총 9건 45개',
+      '3/3 · 총 9건 45개',
+    ]);
+    const four = pagesOf(4);
+    expect(four).toHaveLength(1);
+    expect(four[0].svg).toContain('1/1 · 총 4건 10개');
+  });
+
+  it('바코드는 첫 쪽에만 — 추가 쪽은 0개', () => {
+    expect(pagesOf(5).map((p) => p.barcodes.length)).toEqual([2, 0]);
+  });
+
+  it('demo 캐리어(터미널코드 빈 값) 여러 쪽: 첫 쪽 ITF 하나, 추가 쪽 0', () => {
+    const pages = renderHanjinFsLabel({ ...DATA, sort: { ...DATA.sort, terminalCode: '' }, items: ITEMS(5) });
+    expect(pages.map((p) => p.barcodes.map((b) => b.kind))).toEqual([['ITF'], []]);
+  });
+
+  it('추가 쪽은 「발송 금지」 두 곳 + 짝 맞추기 정보만, 첫 쪽 전용 요소는 없다', () => {
+    const [first, second] = pagesOf(5);
+    expect(first.svg).not.toContain('발송 금지');
+    expect(second.svg).toContain('<g id="continuation">');
+    expect(second.svg).toContain('발송 금지 · 상품 확인용');
+    expect(second.svg).toMatch(/>발송 금지<\/text>/);
+    for (const kept of ['4527-1697-8431', '김*진', '010-1234-****', '출고번호: AY0123456789ABCDEFGHJKMNPQRS']) {
+      expect(second.svg).toContain(kept);
+    }
+    for (const gone of [
+      '남대문로 63',
+      '소공동 51 한진빌딩',
+      '>NX</text>',
+      '발지신용',
+      '수도권',
+      '운임Type',
+      '문앞',
+      '<rect',
+    ]) {
+      expect(second.svg).not.toContain(gone);
+    }
+  });
+
+  it('큰 수량이어도 이름이 수량 칸을 덮지 않는다', () => {
+    const [page] = renderHanjinFsLabel({ ...DATA, items: [{ name: '가'.repeat(60), quantity: 1000 }] });
+    const m = /<text x="4.5" y="57" font-size="([\d.]+)">([^<]*)<\/text>/.exec(page.svg);
+    if (!m) throw new Error('item name element not found');
+    const nameWidthMm = textWidthMm(m[2], Number(m[1]) / PT_TO_MM);
+    expect(4.5 + nameWidthMm).toBeLessThanOrEqual(119 - textWidthMm('1000', 11) - 3 + 0.05);
+    expect(m[2].endsWith('…')).toBe(true);
+  });
+
+  it('SKU명의 XML 특수문자는 이스케이프하고 금지 제어문자는 뺀다', () => {
+    const [page] = renderHanjinFsLabel({ ...DATA, items: [{ name: '<b>&"펜"\u000B', quantity: 1 }] });
+    expect(page.svg).not.toContain('<b>');
+    expect(page.svg).not.toContain('\u000B');
+    expect(page.svg).toContain('&lt;b&gt;&amp;&quot;펜&quot;');
+  });
+
+  it.each([
+    ['기본 9줄', { ...DATA, items: ITEMS(9) }],
+    [
+      '긴 데이터 5줄',
+      { ...LONG, items: Array.from({ length: 5 }, () => ({ name: '가'.repeat(100), quantity: 9999 })) },
+    ],
+  ])('%s: 모든 쪽의 바코드 금지 구역에 잉크가 없고 좌표가 라벨 안이다', (_, data) => {
+    for (const page of renderHanjinFsLabel(data)) {
+      expect(inkInBarcodeKeepOuts(page)).toEqual(page.barcodes.map((b) => ({ kind: b.kind, ink: 0 })));
+      const xs = [...page.svg.matchAll(/\bx="([\d.]+)"/g)].map((m) => Number(m[1]));
+      const ys = [...page.svg.matchAll(/\by="([\d.]+)"/g)].map((m) => Number(m[1]));
+      expect(Math.max(...xs)).toBeLessThanOrEqual(123);
+      expect(Math.max(...ys)).toBeLessThanOrEqual(100);
+    }
   });
 });

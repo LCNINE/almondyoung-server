@@ -17,7 +17,7 @@ export type HanjinLabelTemplate = (d: HanjinLabelData) => LabelSpec[];
 export const HANJIN_LABEL_TEMPLATES: Readonly<Record<HanjinLabelType, HanjinLabelTemplate>> = {
   NS: (d) => [renderHanjinNsLabel(d)],
   NL: (d) => [renderHanjinNlLabel(d)],
-  FS: (d) => [renderHanjinFsLabel(d)],
+  FS: renderHanjinFsLabel,
 };
 
 function isHanjinLabelType(v: string): v is HanjinLabelType {
