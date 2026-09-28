@@ -37,8 +37,8 @@ const CTX: IssueContext = {
   manifestVersion: 1,
   recipientSnapshot: RECIPIENT,
   lines: [
-    { productName: '토익 Speaking', quantity: 1, skuId: 'k1' },
-    { productName: '펜', quantity: 2, skuId: 'k2' },
+    { productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' },
+    { productName: '펜', skuName: '펜', quantity: 2, skuId: 'k2' },
   ],
   entrancePassword: '#1234',
 };

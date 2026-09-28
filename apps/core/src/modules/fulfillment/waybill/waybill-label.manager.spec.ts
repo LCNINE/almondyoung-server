@@ -101,7 +101,7 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
       detailAddress: '한진빌딩 10층',
       deliveryNote: '문앞',
     },
-    lines: [{ productName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
+    lines: [{ productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
     entrancePassword: '#1234',
   };
 

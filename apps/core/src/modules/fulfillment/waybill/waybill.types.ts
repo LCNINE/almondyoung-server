@@ -13,7 +13,8 @@ export interface WaybillRecipient {
 }
 
 export interface ManifestLineLite {
-  productName: string;
+  productName: string; // 주문 상품명(없으면 SKU명) — 한진 등록 품명이 쓴다
+  skuName: string; // 창고 품목 이름 — 운송장 품목 줄이 쓴다(#913)
   quantity: number;
   skuId: string;
 }
