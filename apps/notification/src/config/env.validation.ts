@@ -71,6 +71,9 @@ export const notificationEnvSchema = z.object({
   SMS_GATE_USERNAME: z.string().optional(),
   SMS_GATE_PASSWORD: z.string().optional(),
   SMS_GATE_WEBHOOK_SIGNING_KEY: z.string().optional(),
+  // 크롤러 data lake(canonical_places). 없으면 수신자 그룹의 Supabase 가져오기만 막힌다.
+  SUPABASE_PLACES_URL: z.union([z.string().url(), z.literal('')]).optional(),
+  SUPABASE_PLACES_SERVICE_KEY: z.string().optional(),
   GOOGLE_CHAT_WEBHOOK_URL: z.union([z.string().url(), z.literal('')]).optional(),
 
   // FCM 토큰 등록 엔드포인트 JWT 검증용 (user-service와 동일한 AUTH_SECRET)

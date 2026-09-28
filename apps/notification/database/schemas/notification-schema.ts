@@ -176,6 +176,38 @@ export const inboundMessages = pgTable(
   }),
 );
 
+// 대량 문자 수신자 그룹. 회원이 아닌 번호(엑셀·Supabase)를 모아 두고 대량 발송 대상으로 고른다.
+export const smsRecipientGroups = pgTable('sms_recipient_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  createdBy: varchar('created_by', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// phone 은 E.164(+8210...). 같은 그룹에 같은 번호는 한 번만.
+export const smsGroupRecipients = pgTable(
+  'sms_group_recipients',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => smsRecipientGroups.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    phone: varchar('phone', { length: 20 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    groupPhoneIdx: uniqueIndex('uq_sms_group_recipient_phone').on(table.groupId, table.phone),
+  }),
+);
+
+// 수신거부 답장한 번호(E.164). 회원 동의 철회와 별개로, 회원이 아닌 번호의 광고 발송을 막는다.
+export const smsOptOuts = pgTable('sms_opt_outs', {
+  phone: varchar('phone', { length: 20 }).primaryKey(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // 대량 발송 캠페인 테이블
 export const notificationCampaigns = pgTable(
   'notification_campaigns',
@@ -520,6 +552,9 @@ export const notificationTables = {
   smsTemplates,
   inboundMessages,
   emailLayoutSettings,
+  smsRecipientGroups,
+  smsGroupRecipients,
+  smsOptOuts,
 };
 
 // Export types
@@ -554,6 +589,9 @@ export type SmsTemplate = typeof smsTemplates.$inferSelect;
 export type NewSmsTemplate = typeof smsTemplates.$inferInsert;
 export type InboundMessage = typeof inboundMessages.$inferSelect;
 export type NewInboundMessage = typeof inboundMessages.$inferInsert;
+export type SmsRecipientGroup = typeof smsRecipientGroups.$inferSelect;
+export type SmsGroupRecipient = typeof smsGroupRecipients.$inferSelect;
+export type NewSmsGroupRecipient = typeof smsGroupRecipients.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;

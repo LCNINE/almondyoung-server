@@ -9,6 +9,7 @@ import {
   NewNotification,
   NewNotificationCampaign,
   NewSmsDevice,
+  NewSmsGroupRecipient,
   NewSmsTemplate,
   Notification,
   NotificationCampaign,
@@ -17,6 +18,11 @@ import {
   notificationTables,
   SmsDevice,
   smsDevices,
+  SmsGroupRecipient,
+  smsGroupRecipients,
+  smsOptOuts,
+  SmsRecipientGroup,
+  smsRecipientGroups,
   SmsTemplate,
   smsTemplates,
 } from '../../../database/schemas/notification-schema';
@@ -35,6 +41,10 @@ const outboundAt = sql`coalesce(${notifications.sentAt}, ${notifications.created
 export interface ConversationRow {
   inbound: InboundMessage;
   lastOutbound: { body: string; at: Date } | null;
+}
+
+export interface RecipientGroupRow extends SmsRecipientGroup {
+  recipients: number;
 }
 
 export interface CampaignStatusCount {
@@ -391,5 +401,91 @@ export class SmsGateRepository {
       .select()
       .from(notifications)
       .where(and(eq(notifications.channel, 'SMS'), inArray(notifications.notificationId, ids)));
+  }
+
+  async listRecipientGroups(): Promise<RecipientGroupRow[]> {
+    return this.dbService.db
+      .select({
+        id: smsRecipientGroups.id,
+        name: smsRecipientGroups.name,
+        createdBy: smsRecipientGroups.createdBy,
+        createdAt: smsRecipientGroups.createdAt,
+        updatedAt: smsRecipientGroups.updatedAt,
+        recipients: count(smsGroupRecipients.id),
+      })
+      .from(smsRecipientGroups)
+      .leftJoin(smsGroupRecipients, eq(smsGroupRecipients.groupId, smsRecipientGroups.id))
+      .groupBy(smsRecipientGroups.id)
+      .orderBy(desc(smsRecipientGroups.createdAt));
+  }
+
+  async findRecipientGroup(id: string): Promise<SmsRecipientGroup | undefined> {
+    const [row] = await this.dbService.db.select().from(smsRecipientGroups).where(eq(smsRecipientGroups.id, id));
+    return row;
+  }
+
+  async findRecipientGroupByName(name: string): Promise<SmsRecipientGroup | undefined> {
+    const [row] = await this.dbService.db.select().from(smsRecipientGroups).where(eq(smsRecipientGroups.name, name));
+    return row;
+  }
+
+  async createRecipientGroup(name: string, createdBy: string): Promise<SmsRecipientGroup> {
+    const [row] = await this.dbService.db.insert(smsRecipientGroups).values({ name, createdBy }).returning();
+    return row;
+  }
+
+  /** 이미 그룹에 있는 번호는 건너뛴다. 새로 들어간 수를 돌려준다. */
+  async addGroupRecipients(rows: NewSmsGroupRecipient[]): Promise<number> {
+    let added = 0;
+    await this.dbService.run(async (tx) => {
+      for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+        const inserted = await tx
+          .insert(smsGroupRecipients)
+          .values(rows.slice(i, i + INSERT_CHUNK))
+          .onConflictDoNothing()
+          .returning({ id: smsGroupRecipients.id });
+        added += inserted.length;
+      }
+      if (rows.length > 0) {
+        await tx
+          .update(smsRecipientGroups)
+          .set({ updatedAt: new Date() })
+          .where(eq(smsRecipientGroups.id, rows[0].groupId));
+      }
+    });
+    return added;
+  }
+
+  async deleteRecipientGroup(id: string): Promise<void> {
+    await this.dbService.db.delete(smsRecipientGroups).where(eq(smsRecipientGroups.id, id));
+  }
+
+  /** 광고면 수신거부한 번호를 뺀다. */
+  findGroupRecipients(groupId: string, marketing: boolean): Promise<SmsGroupRecipient[]> {
+    return this.dbService.db
+      .select()
+      .from(smsGroupRecipients)
+      .where(
+        and(
+          eq(smsGroupRecipients.groupId, groupId),
+          marketing
+            ? sql`not exists (select 1 from ${smsOptOuts} where ${smsOptOuts.phone} = ${smsGroupRecipients.phone})`
+            : undefined,
+        ),
+      )
+      .orderBy(asc(smsGroupRecipients.createdAt));
+  }
+
+  async addOptOut(phoneE164: string): Promise<void> {
+    await this.dbService.db.insert(smsOptOuts).values({ phone: phoneE164 }).onConflictDoNothing();
+  }
+
+  async findOptedOut(phonesE164: string[]): Promise<Set<string>> {
+    if (phonesE164.length === 0) return new Set();
+    const rows = await this.dbService.db
+      .select({ phone: smsOptOuts.phone })
+      .from(smsOptOuts)
+      .where(inArray(smsOptOuts.phone, phonesE164));
+    return new Set(rows.map((r) => r.phone));
   }
 }

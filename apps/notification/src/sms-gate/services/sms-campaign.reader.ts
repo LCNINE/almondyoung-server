@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SmsAudienceSummary, UserContactClient } from '@app/shared';
+import { NotFoundError, SmsAudienceSummary, UserContactClient } from '@app/shared';
 import { NotificationCampaign } from '../../../database/schemas/notification-schema';
 import { PreviewSmsCampaignDto } from '../dto';
 import { isSendable } from '../utils/device-picker';
@@ -55,7 +55,7 @@ export class SmsCampaignReader {
   async preview(dto: PreviewSmsCampaignDto): Promise<SmsCampaignPreview> {
     const now = new Date();
     const [audience, ahead, devices] = await Promise.all([
-      this.userContactClient.summarizeSmsAudience(),
+      dto.groupId ? this.groupAudience(dto.groupId) : this.userContactClient.summarizeSmsAudience(),
       this.repository.countPending(),
       this.activeDevices(now),
     ]);
@@ -115,6 +115,19 @@ export class SmsCampaignReader {
       ahead += item.counts.pending;
     }
     return items;
+  }
+
+  /** 그룹은 전원이 번호를 가진다. consented 는 수신거부 번호를 뺀 광고 대상 수다. */
+  private async groupAudience(groupId: string): Promise<SmsAudienceSummary> {
+    if (!(await this.repository.findRecipientGroup(groupId))) {
+      throw new NotFoundError(`수신자 그룹을 찾을 수 없습니다: ${groupId}`);
+    }
+    // ponytail: 행을 받아 센다. 그룹이 수만 명을 넘으면 count 쿼리로 바꿀 것.
+    const [all, sendable] = await Promise.all([
+      this.repository.findGroupRecipients(groupId, false),
+      this.repository.findGroupRecipients(groupId, true),
+    ]);
+    return { active: all.length, withPhone: all.length, consented: sendable.length };
   }
 
   private stateOf(campaign: NotificationCampaign, pending: number, now: Date): SmsCampaignState {

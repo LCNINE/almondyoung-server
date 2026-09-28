@@ -9,6 +9,13 @@ import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
 import { toKrE164 } from '../clients/sms-gate.client';
 
+interface CampaignRecipient {
+  userId: string;
+  phoneNumber: string;
+  username: string;
+  recipientGroupId?: string;
+}
+
 @Injectable()
 export class SmsCampaignManager {
   constructor(
@@ -21,7 +28,7 @@ export class SmsCampaignManager {
     const sendAt = dto.sendAt ? new Date(dto.sendAt) : null;
     if (sendAt && sendAt.getTime() <= Date.now()) throw new BadRequestError('예약 시각은 지금 이후여야 합니다');
 
-    const audience = await this.userContactClient.findSmsAudience(dto.category === 'MARKETING');
+    const audience = await this.loadAudience(dto);
     const seenPhones = new Set<string>();
     const recipients = audience.filter((contact) => {
       const phone = toKrE164(contact.phoneNumber);
@@ -44,7 +51,7 @@ export class SmsCampaignManager {
       sendAt,
       payload: { phoneNumber: contact.phoneNumber, username: contact.username },
       renderedContent: { body: composeSmsBody(dto.category, fillName(dto.content, contact.username)) },
-      metadata: { sentBy: createdBy },
+      metadata: { sentBy: createdBy, ...(contact.recipientGroupId && { recipientGroupId: contact.recipientGroupId }) },
     }));
     await this.repository.createCampaign(
       {
@@ -55,12 +62,32 @@ export class SmsCampaignManager {
         content: { SMS: { body: dto.content } },
         sendAt,
         status: sendAt ? 'SCHEDULED' : 'PROCESSING',
-        metadata: { provider: 'sms-gate', recipients: rows.length },
+        metadata: {
+          provider: 'sms-gate',
+          recipients: rows.length,
+          ...(dto.groupId && { recipientGroupId: dto.groupId }),
+        },
         createdBy,
       },
       rows,
     );
     return { campaignId, recipients: rows.length };
+  }
+
+  /** 그룹이면 그룹 명단(광고는 수신거부 번호 제외), 아니면 활성 회원. 그룹 행의 userId 는 회원 id 가 아니다. */
+  private async loadAudience(dto: CreateSmsCampaignDto): Promise<CampaignRecipient[]> {
+    const marketing = dto.category === 'MARKETING';
+    if (!dto.groupId) return this.userContactClient.findSmsAudience(marketing);
+    if (!(await this.repository.findRecipientGroup(dto.groupId))) {
+      throw new NotFoundError(`수신자 그룹을 찾을 수 없습니다: ${dto.groupId}`);
+    }
+    const members = await this.repository.findGroupRecipients(dto.groupId, marketing);
+    return members.map((member) => ({
+      userId: `group:${member.id}`,
+      phoneNumber: member.phone,
+      username: member.name,
+      recipientGroupId: member.groupId,
+    }));
   }
 
   async stop(campaignId: string): Promise<{ cancelled: number }> {

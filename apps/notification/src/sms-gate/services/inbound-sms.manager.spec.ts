@@ -10,7 +10,7 @@ const received = (message: string) => ({
 
 describe('InboundSmsManager.handleReceived', () => {
   const setup = (findActiveContactsByPhone: jest.Mock) => {
-    const repository = { saveInbound: jest.fn(), enqueue: jest.fn(), hasReplyFor: jest.fn() };
+    const repository = { saveInbound: jest.fn(), enqueue: jest.fn(), hasReplyFor: jest.fn(), addOptOut: jest.fn() };
     const contacts = { findActiveContactsByPhone, withdrawMarketingConsentByPhone: jest.fn() };
     const manager = new InboundSmsManager(
       repository as unknown as SmsGateRepository,
@@ -43,5 +43,17 @@ describe('InboundSmsManager.handleReceived', () => {
     await manager.handleReceived(received('문의'));
 
     expect(repository.saveInbound).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
+  });
+
+  it('회원이 아닌 번호가 수신거부하면 번호를 기록하고 처리 결과를 회신한다', async () => {
+    const { manager, repository, contacts } = setup(jest.fn().mockResolvedValue([]));
+    contacts.withdrawMarketingConsentByPhone.mockResolvedValue({ userIds: [], withdrawnUserIds: [] });
+
+    await manager.handleReceived(received('수신거부'));
+
+    expect(repository.addOptOut).toHaveBeenCalledWith('+821012345678');
+    expect(repository.enqueue).toHaveBeenCalledWith([
+      expect.objectContaining({ userId: 'phone:+821012345678', payload: { phoneNumber: '010-1234-5678' } }),
+    ]);
   });
 });

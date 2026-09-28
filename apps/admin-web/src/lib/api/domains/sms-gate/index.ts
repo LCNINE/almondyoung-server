@@ -84,6 +84,31 @@ export interface CreateSmsCampaignDto {
   category: SmsGateCategory;
   content: string;
   sendAt?: string;
+  /** 비우면 활성 회원 전체 */
+  groupId?: string;
+}
+
+export interface SmsRecipientGroup {
+  id: string;
+  name: string;
+  recipients: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SmsGroupRecipientInput {
+  name?: string;
+  phone: string;
+}
+
+export interface SmsGroupRecipientsResult {
+  groupId: string;
+  received: number;
+  added: number;
+  /** 휴대폰 번호가 아니거나 같은 파일 안에서 겹친 행 */
+  skipped: number;
+  /** 이미 그룹에 있던 번호 */
+  duplicated: number;
 }
 
 export interface SmsCampaignPreview {
@@ -219,7 +244,7 @@ export const smsGateApi = {
   },
 
   previewCampaign: async (
-    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt'>
+    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'groupId'>
   ): Promise<SmsCampaignPreview> => {
     const response = await client.post<SmsCampaignPreview>(`${BASE}/campaigns/preview`, dto);
     return response.data;
@@ -233,6 +258,35 @@ export const smsGateApi = {
   createCampaign: async (dto: CreateSmsCampaignDto): Promise<{ campaignId: string; recipients: number }> => {
     const response = await client.post<{ campaignId: string; recipients: number }>(`${BASE}/campaigns`, dto);
     return response.data;
+  },
+
+  getRecipientGroups: async (): Promise<SmsRecipientGroup[]> => {
+    const response = await client.get<SmsRecipientGroup[]>(`${BASE}/recipient-groups`);
+    return response.data;
+  },
+
+  createRecipientGroup: async (name: string): Promise<{ id: string }> => {
+    const response = await client.post<{ id: string }>(`${BASE}/recipient-groups`, { name });
+    return response.data;
+  },
+
+  addGroupRecipients: async (
+    groupId: string,
+    recipients: SmsGroupRecipientInput[]
+  ): Promise<SmsGroupRecipientsResult> => {
+    const response = await client.post<SmsGroupRecipientsResult>(`${BASE}/recipient-groups/${groupId}/recipients`, {
+      recipients,
+    });
+    return response.data;
+  },
+
+  importSupabaseGroup: async (dto: { name: string; category: string }): Promise<SmsGroupRecipientsResult> => {
+    const response = await client.post<SmsGroupRecipientsResult>(`${BASE}/recipient-groups/import/supabase`, dto);
+    return response.data;
+  },
+
+  deleteRecipientGroup: async (groupId: string): Promise<void> => {
+    await client.delete(`${BASE}/recipient-groups/${groupId}`);
   },
 
   stopCampaign: async (campaignId: string): Promise<{ cancelled: number }> => {

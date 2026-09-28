@@ -25,6 +25,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 export function BulkConfirmDialog({
   preview,
+  groupName,
   category,
   content,
   sendAt,
@@ -33,6 +34,8 @@ export function BulkConfirmDialog({
   onConfirm,
 }: {
   preview: SmsCampaignPreview | null;
+  /** 수신자 그룹으로 보낼 때만 */
+  groupName?: string;
   category: SmsGateCategory;
   content: string;
   sendAt: string | null;
@@ -53,11 +56,12 @@ export function BulkConfirmDialog({
           <div className="flex flex-col">
             <Row label="구분">{isMarketing ? '광고' : '정보'}</Row>
             <Row label="대상">
+              {groupName ? `${groupName} 그룹 ` : ''}
               {preview.recipients.toLocaleString()}명
               <span className="text-muted-foreground">
                 {' '}
-                (제외 {preview.excluded.toLocaleString()}명: 휴대폰 번호 없음
-                {isMarketing ? ' · 마케팅 수신 미동의' : ''})
+                (제외 {preview.excluded.toLocaleString()}명:{' '}
+                {groupName ? '수신거부한 번호' : `휴대폰 번호 없음${isMarketing ? ' · 마케팅 수신 미동의' : ''}`})
               </span>
             </Row>
             <Row label="경로">
