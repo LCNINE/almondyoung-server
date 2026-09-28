@@ -31,6 +31,13 @@ export const useSmsTemplates = () => {
   });
 };
 
+export const useSmsRecipientGroups = () => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.recipientGroups(),
+    queryFn: () => smsGateApi.getRecipientGroups(),
+  });
+};
+
 export const useSmsAudience = () => {
   return useQuery({
     queryKey: smsGateQueryKeys.audience(),

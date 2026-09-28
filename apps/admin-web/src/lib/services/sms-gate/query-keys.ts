@@ -7,5 +7,6 @@ export const smsGateQueryKeys = {
   conversationList: (q: string) => [...smsGateQueryKeys.conversations(), 'list', q] as const,
   conversation: (phoneNumber: string) => [...smsGateQueryKeys.conversations(), 'detail', phoneNumber] as const,
   templates: () => [...smsGateQueryKeys.all, 'templates'] as const,
+  recipientGroups: () => [...smsGateQueryKeys.all, 'recipient-groups'] as const,
   messages: (ids: string[]) => [...smsGateQueryKeys.all, 'messages', ids] as const,
 };
