@@ -12,8 +12,9 @@ const block = (svg: string, id: string): string => {
 describe('renderHanjinFsLabel', () => {
   const spec = renderHanjinFsLabel(DATA);
 
-  it('FS 는 가로 123 × 세로 100mm, 90° 돌려 짧은 변(100mm)을 폭으로 넣는다', () => {
-    expect([spec.widthMm, spec.heightMm, spec.rotation]).toEqual([123, 100, 90]);
+  // 270° 는 창고 실물 출력으로 정했다(2026-09-28, XP-DT108B + FS 라벨지): 90° 는 선인쇄와 위아래가 뒤집혀 나왔다.
+  it('FS 는 가로 123 × 세로 100mm, 270° 돌려 짧은 변(100mm)을 폭으로 넣는다', () => {
+    expect([spec.widthMm, spec.heightMm, spec.rotation]).toEqual([123, 100, 270]);
     expect(spec.svg).toContain('viewBox="0 0 123 100"');
   });
 
