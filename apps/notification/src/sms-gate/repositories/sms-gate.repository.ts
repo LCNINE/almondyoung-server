@@ -460,19 +460,17 @@ export class SmsGateRepository {
     await this.dbService.db.delete(smsRecipientGroups).where(eq(smsRecipientGroups.id, id));
   }
 
-  /** 광고면 수신거부한 번호를 뺀다. */
-  findGroupRecipients(groupId: string, marketing: boolean): Promise<SmsGroupRecipient[]> {
+  async findRecipientGroupsByIds(ids: string[]): Promise<SmsRecipientGroup[]> {
+    if (ids.length === 0) return [];
+    return this.dbService.db.select().from(smsRecipientGroups).where(inArray(smsRecipientGroups.id, ids));
+  }
+
+  findGroupRecipients(groupIds: string[]): Promise<SmsGroupRecipient[]> {
+    if (groupIds.length === 0) return Promise.resolve([]);
     return this.dbService.db
       .select()
       .from(smsGroupRecipients)
-      .where(
-        and(
-          eq(smsGroupRecipients.groupId, groupId),
-          marketing
-            ? sql`not exists (select 1 from ${smsOptOuts} where ${smsOptOuts.phone} = ${smsGroupRecipients.phone})`
-            : undefined,
-        ),
-      )
+      .where(inArray(smsGroupRecipients.groupId, groupIds))
       .orderBy(asc(smsGroupRecipients.createdAt));
   }
 

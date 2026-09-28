@@ -55,20 +55,37 @@ export class SmsDispatchManager {
     });
   }
 
-  /** 회원은 마케팅 동의를, 수신자 그룹(비회원) 행은 수신거부 번호 목록을 발송 직전에 다시 본다. */
+  /**
+   * 회원은 마케팅 동의를, 수신자 그룹 행은 수신거부 번호 목록과 "그 번호를 쓰는 회원의 동의"를 발송 직전에 다시 본다.
+   * 대량 발송은 며칠에 걸쳐 나가서, 만든 뒤에 사이트에서 동의를 끈 회원이 그룹에 있으면 여기서만 걸린다.
+   */
   private async withoutWithdrawnMarketing(rows: Notification[]): Promise<Notification[]> {
     const marketing = rows.filter((row) => row.category === 'MARKETING');
     if (marketing.length === 0) return rows;
     const isGroupRow = (row: Notification) => !!row.metadata?.recipientGroupId;
+    const phoneOf = (row: Notification) => toKrE164(row.payload?.phoneNumber ?? '');
+    const groupPhones = [...new Set(marketing.filter(isGroupRow).map(phoneOf))];
+    // ponytail: 번호마다 한 번씩 부른다. 한 주기 대상이 배치 상한(대량 5건)이라 버틴다. 늘리면 일괄 조회 API 로.
+    const groupPhoneUsers = await Promise.all(
+      groupPhones.map(async (phone) => [phone, await this.userContactClient.findActiveContactsByPhone(phone)] as const),
+    );
+    const memberUserIds = marketing.filter((row) => !isGroupRow(row)).map((row) => row.userId);
     const [contacts, optedOut] = await Promise.all([
-      this.userContactClient.findContacts([...new Set(marketing.filter((row) => !isGroupRow(row)).map((row) => row.userId))]),
-      this.repository.findOptedOut(marketing.filter(isGroupRow).map((row) => toKrE164(row.payload?.phoneNumber ?? ''))),
+      this.userContactClient.findContacts([
+        ...new Set([...memberUserIds, ...groupPhoneUsers.flatMap(([, users]) => users.map((u) => u.userId))]),
+      ]),
+      this.repository.findOptedOut(groupPhones),
     ]);
+    const nonConsentedPhones = new Set(
+      groupPhoneUsers
+        .filter(([, users]) => users.some((u) => contacts.get(u.userId)?.marketingConsent === false))
+        .map(([phone]) => phone),
+    );
     const kept: Notification[] = [];
     for (const row of rows) {
       if (row.category === 'MARKETING') {
         const withdrawn = isGroupRow(row)
-          ? optedOut.has(toKrE164(row.payload?.phoneNumber ?? ''))
+          ? optedOut.has(phoneOf(row)) || nonConsentedPhones.has(phoneOf(row))
           : !contacts.get(row.userId)?.marketingConsent;
         if (withdrawn) {
           await this.repository.markCancelled(row, '발송 전 수신거부 또는 마케팅 수신 동의 철회가 확인되었습니다');
