@@ -1,5 +1,5 @@
 import { AdminLogoContestEntryResponseDto, LogoContestEntryResponseDto } from '../dto/logo-contest.dto';
-import { maskName } from './mask-name';
+import { authorNickname } from './author-nickname';
 import type { LogoContestEntryWithVotes } from '../types/logo-contest.types';
 
 export class LogoContestMapper {
@@ -8,7 +8,7 @@ export class LogoContestMapper {
       id: entry.id,
       title: entry.title,
       description: entry.description,
-      authorName: maskName(entry.authorName),
+      authorName: authorNickname(entry.id),
       mediaFileIds: entry.mediaFileIds,
       voteCount: entry.voteCount,
       isWinner: entry.isWinner,

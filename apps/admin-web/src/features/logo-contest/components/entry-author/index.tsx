@@ -7,10 +7,10 @@ import { formatPhoneNumber } from '@/lib/utils/phone';
 
 export function EntryAuthor({
   userId,
-  maskedName,
+  authorName,
 }: {
   userId: string;
-  maskedName: string;
+  authorName: string;
 }) {
   const { data: user, isLoading } = useOptionalAdminUser(userId);
 
@@ -23,9 +23,18 @@ export function EntryAuthor({
     );
   }
 
+  const nickname = (
+    <p className="text-xs text-muted-foreground">
+      <span className="font-medium">공개 닉네임</span> {authorName}
+    </p>
+  );
+
   if (!user) {
     return (
-      <span className="text-sm text-muted-foreground">{maskedName}</span>
+      <div className="space-y-0.5 text-sm">
+        <p className="text-muted-foreground">회원 정보 없음</p>
+        {nickname}
+      </div>
     );
   }
 
@@ -43,6 +52,7 @@ export function EntryAuthor({
       <p className="text-xs text-muted-foreground tabular-nums">
         {user.profile?.phoneNumber ? formatPhoneNumber(user.profile.phoneNumber) : '연락처 없음'}
       </p>
+      {nickname}
     </div>
   );
 }
