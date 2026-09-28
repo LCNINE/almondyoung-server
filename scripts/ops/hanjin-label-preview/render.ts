@@ -81,9 +81,25 @@ mkdirSync(outDir, { recursive: true });
 const fontDir = resolveLabelFontDir();
 const rasterizer = new SvgRasterizer();
 
-const SAMPLES: Array<[name: string, type: HanjinLabelType, data: HanjinLabelData]> = HANJIN_LABEL_TYPES.map(
-  (type): [string, HanjinLabelType, HanjinLabelData] => [`hanjin-${type.toLowerCase()}-preview`, type, SAMPLE],
-);
+const SEVEN_ITEMS: HanjinLabelData['items'] = [
+  { name: '노몬드 대용량 전처리제 1000ml', quantity: 1 },
+  { name: '노몬드 긴 마이크로 브러쉬', quantity: 1 },
+  { name: '실리콘 아이패치 블랙', quantity: 2 },
+  { name: '롤리킹 펌제 1제2제', quantity: 4 },
+  { name: '하이드로겔 아이패치 무지 50개입', quantity: 1 },
+  { name: '베르사 펌글루 5ml', quantity: 2 },
+  { name: '노몬드 크림리무버', quantity: 2 },
+];
+
+const SAMPLES: Array<[name: string, type: HanjinLabelType, data: HanjinLabelData]> = [
+  ...HANJIN_LABEL_TYPES.map((type): [string, HanjinLabelType, HanjinLabelData] => [
+    `hanjin-${type.toLowerCase()}-preview`,
+    type,
+    SAMPLE,
+  ]),
+  // 품목 7줄 = FS 2쪽(4 + 3). 추가 쪽의 「발송 금지」 와 품목 칸을 실물로 대조한다.
+  ['hanjin-fs-items-preview', 'FS', { ...SAMPLE, items: SEVEN_ITEMS }],
+];
 
 for (const [name, type, data] of SAMPLES) {
   const pages = HANJIN_LABEL_TEMPLATES[type](data);
