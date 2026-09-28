@@ -43,7 +43,7 @@ describe('LogoContestPeriodService', () => {
   it('설정값이 깨져도 기본 기간으로 돌아간다', () => {
     const period = new LogoContestPeriodService(configOf({ LOGO_CONTEST_STARTS_AT: '언젠가' }));
 
-    expect(period.startsAt.toISOString()).toBe('2026-09-30T15:00:00.000Z');
+    expect(period.startsAt.toISOString()).toBe('2026-09-27T15:00:00.000Z');
   });
 });
 
