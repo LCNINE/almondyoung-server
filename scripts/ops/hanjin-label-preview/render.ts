@@ -65,6 +65,7 @@ const SAMPLE: HanjinLabelData = {
   sender: { name: '아몬드영', phone: '010-0000-1111', baseAddress: '서울특별시 종로구 사직로 161' },
   deliveryMessage: '특이사항 없습니다.',
   commodityName: '토익 Speaking 1권',
+  items: [{ name: '토익 Speaking 1권', quantity: 1 }],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
   printedDate: '2026-09-27',

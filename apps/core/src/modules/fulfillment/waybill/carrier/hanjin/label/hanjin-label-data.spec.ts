@@ -37,8 +37,8 @@ const CTX: IssueContext = {
   manifestVersion: 1,
   recipientSnapshot: RECIPIENT,
   lines: [
-    { productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' },
-    { productName: '펜', skuName: '펜', quantity: 2, skuId: 'k2' },
+    { productName: '토익 Speaking', skuName: '토익 스피킹 교재', quantity: 1, skuId: 'k1' },
+    { productName: '펜', skuName: '볼펜 흑색', quantity: 2, skuId: 'k2' },
   ],
   entrancePassword: '#1234',
 };
@@ -68,6 +68,15 @@ const input = (over: Partial<BuildHanjinLabelInput> = {}): BuildHanjinLabelInput
 });
 
 describe('buildHanjinLabelData', () => {
+  it('품목 줄은 SKU명·수량, 이름순 — 한진 등록 품명(주문 상품명)과 별개다', () => {
+    const d = buildHanjinLabelData(input());
+    expect(d.items).toEqual([
+      { name: '볼펜 흑색', quantity: 2 },
+      { name: '토익 스피킹 교재', quantity: 1 },
+    ]);
+    expect(d.commodityName).toBe('토익 Speaking 외 1건');
+  });
+
   it('분류필드를 labelData 에서 옮긴다', () => {
     expect(buildHanjinLabelData(input()).sort).toEqual({
       hubCode: 'NX',
