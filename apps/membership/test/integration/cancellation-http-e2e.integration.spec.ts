@@ -207,6 +207,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
     await db.db.delete(schema.membershipDunningQueue);
     await db.db.delete(schema.billingEvents);
     await db.db.delete(schema.subscriptionContractEvents);
+    await db.db.delete(schema.membershipArrearsAdjustments);
     await db.db.delete(schema.membershipArrears);
     await db.db.delete(schema.membershipTermsAgreements);
     await db.db.delete(schema.subscriptionEntitlement);

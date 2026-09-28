@@ -59,6 +59,7 @@ import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { SubscriptionService } from '../services/subscription.service';
 import { ArrearsManager } from '../services/arrears/arrears.manager';
 import { ArrearsReader } from '../services/arrears/arrears.reader';
+import { MEMBER_AXES, MemberAxis } from '../services/admin/admin-member-insights.reader';
 /**
  * 관리자 운영 컨트롤러
  *
@@ -871,9 +872,22 @@ export class AdminOperationsController {
     @Query('dateTo') dateTo?: string,
     @Query('dateCriteria') dateCriteria?: 'createdAt' | 'cancelledAt',
     @Query('refundPending') refundPending?: string,
+    @Query('axis') axis?: string,
   ) {
+    // 모르는 축을 조용히 무시하면 「미납자 목록」이 전체 회원이 된다 — 상태 필터와 같은 이유로 거부한다.
+    if (axis !== undefined && !MEMBER_AXES.includes(axis as MemberAxis)) {
+      throw new BadRequestException(`알 수 없는 회원 축입니다: ${axis}`);
+    }
     try {
       const normalizedUserIds = userIds ? (Array.isArray(userIds) ? userIds : [userIds]) : undefined;
+      if (axis !== undefined) {
+        return await this.adminOperationsService.getMembersByAxis(
+          axis as MemberAxis,
+          Math.max(Number(page) || 1, 1),
+          Math.min(Math.max(Number(limit) || 20, 1), 100),
+          normalizedUserIds,
+        );
+      }
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
@@ -909,6 +923,23 @@ export class AdminOperationsController {
       return { success: true, data: result };
     } catch (error) {
       this.handleError(error, '멤버십 회원 수 요약');
+    }
+  }
+
+  /**
+   * 회원 «사람 축» 요약 — 받을 돈 · 놓칠 위험 · 좋은 손님 · 떠날 사람.
+   * 각 숫자는 같은 축의 목록(`GET /admin/members?axis=`) total 과 같은 정의로 센다.
+   * `members/:userId` 보다 먼저 선언해야 "insights" 가 userId 로 잡히지 않는다.
+   */
+  @Get('members/insights')
+  @ApiOperation({ summary: '멤버십 회원 사람 축 요약' })
+  @UseGuards(JwtAuthGuard)
+  async getMembersInsights() {
+    try {
+      const result = await this.adminOperationsService.getMembersInsights();
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '멤버십 회원 사람 축 요약');
     }
   }
 
@@ -1200,11 +1231,12 @@ export class AdminOperationsController {
   @ApiParam({ name: 'userId', description: '회원 ID' })
   async getArrears(@Param('userId') userId: string) {
     try {
-      const [rows, summary] = await Promise.all([
+      const [rows, summary, extras] = await Promise.all([
         this.arrearsReader.findByUserId(userId),
         this.arrearsReader.outstandingSummary(userId),
+        this.adminOperationsService.getArrearsDetailExtras(userId),
       ]);
-      return { success: true, data: { outstanding: summary, items: rows } };
+      return { success: true, data: { outstanding: summary, items: rows, ...extras } };
     } catch (error) {
       this.handleError(error, '미수 이력 조회', userId);
     }

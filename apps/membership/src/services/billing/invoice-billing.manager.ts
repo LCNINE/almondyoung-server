@@ -11,7 +11,7 @@ import { ArrearsManager } from '../arrears/arrears.manager';
 import { BillingResult } from './billing.manager';
 
 // 더닝 정책(48h×3)을 인보이스 재시도 정책으로 그대로 실어준다(ADR-0027 §10-1).
-const INVOICE_MAX_ATTEMPTS = 3;
+export const INVOICE_MAX_ATTEMPTS = 3;
 const INVOICE_RETRY_INTERVAL_HOURS = 48;
 
 /**

@@ -5,6 +5,10 @@ export const membershipQueryKeys = {
   members: () => [...membershipQueryKeys.all, 'members'] as const,
   memberList: (query: AdminMembersQuery) => [...membershipQueryKeys.members(), query] as const,
   membersSummary: () => [...membershipQueryKeys.members(), 'summary'] as const,
+  membersInsights: () => [...membershipQueryKeys.members(), 'insights'] as const,
+  memberAxisList: (axis: string, query: Record<string, unknown>) =>
+    [...membershipQueryKeys.members(), 'axis', axis, query] as const,
+  memberArrears: (userId: string) => [...membershipQueryKeys.all, 'memberArrears', userId] as const,
   memberDetail: (userId: string) => [...membershipQueryKeys.all, 'memberDetail', userId] as const,
   billingEvents: (userId: string) =>
     [...membershipQueryKeys.all, 'billingEvents', userId] as const,

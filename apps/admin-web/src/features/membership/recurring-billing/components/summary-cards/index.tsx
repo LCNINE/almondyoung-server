@@ -60,7 +60,7 @@ export function RecurringBillingSummaryCards({ overview }: SummaryCardsProps) {
       accent: true,
     },
     {
-      label: '미수 확정',
+      label: '출금 최종 실패',
       count: overview.invoiceUncollectible,
       query: 'view=invoices&status=UNCOLLECTIBLE&page=1',
       accent: true,

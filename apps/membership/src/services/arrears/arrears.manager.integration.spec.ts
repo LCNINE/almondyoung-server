@@ -57,7 +57,12 @@ describeIfDb('ArrearsManager 원장 멱등·청산 (PostgreSQL 통합)', () => {
   beforeAll(async () => {
     client = postgres(DATABASE_URL as string, { max: 2, prepare: false });
     db = drizzle(client);
-    manager = new ArrearsManager({ db } as never);
+    // 면제·조정은 기록 행과 한 트랜잭션이라 run 이 필요하다.
+    manager = new ArrearsManager({
+      db,
+      run: <T>(fn: (t: unknown) => Promise<T>, tx?: unknown): Promise<T> =>
+        tx ? fn(tx) : (db.transaction((t) => fn(t)) as Promise<T>),
+    } as never);
 
     const [tier] = await db
       .insert(schema.tiers)
@@ -79,6 +84,7 @@ describeIfDb('ArrearsManager 원장 멱등·청산 (PostgreSQL 통합)', () => {
   afterAll(async () => {
     try {
       if (invoiceRefs.length > 0) {
+        await client`delete from membership_arrears_adjustments where arrears_id in (select id from membership_arrears where invoice_ref = any(${client.array(invoiceRefs)}))`;
         await client`delete from membership_arrears where invoice_ref = any(${client.array(invoiceRefs)})`;
       }
       if (contractId) await client`delete from subscription_contracts where id = ${contractId}::uuid`;

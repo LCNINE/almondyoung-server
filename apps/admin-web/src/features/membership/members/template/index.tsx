@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Check, ChevronsUpDown, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { MembershipMemberTable } from '../components/table';
 import { MembershipMemberFilterBox } from '../components/filter-box';
 import { MembershipMembersSummaryCards } from '../components/summary-cards';
+import { MemberInsightPanel } from '../components/people/insight-panel';
+import { MemberAxisTable } from '../components/people/axis-table';
+import { MEMBER_AXES, MemberAxis } from '@/lib/api/domains/membership/people';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -193,14 +197,44 @@ function AdminGrantDialog({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
+const AXIS_TITLE: Record<MemberAxis, { title: string; description: string }> = {
+  arrears: {
+    title: '미납 요금이 남은 회원',
+    description: '금액이 큰 순입니다. 납부하기 전까지 이분들은 멤버십을 새로 시작할 수 없습니다.',
+  },
+  past_due: {
+    title: '출금 재시도 중인 회원',
+    description: '남은 출금 기회가 적은 순입니다. 끝까지 실패하면 이용이 끝나고 미납 요금이 남을 수 있습니다.',
+  },
+  good: {
+    title: '좋은 손님',
+    description: '낸 멤버십 요금이 많은 순입니다.',
+  },
+  ending: {
+    title: '해지를 예약한 회원',
+    description: '이용이 끝나는 날이 가까운 순입니다.',
+  },
+};
+
+function parseAxis(value: string | null): MemberAxis | null {
+  return value && (MEMBER_AXES as readonly string[]).includes(value) ? (value as MemberAxis) : null;
+}
+
 export default function MembershipMemberListTemplate() {
   const [subscribeDialogOpen, setSubscribeDialogOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const axis = parseAxis(searchParams.get('axis'));
+
+  const selectAxis = (next: MemberAxis | null) =>
+    router.replace(next ? `${pathname}?axis=${next}&page=1` : pathname);
 
   return (
     <Container>
       <Header
         title="멤버십 회원 조회"
-        subtitle="멤버십을 한 번이라도 구독했던 회원의 정보를 모두 조회할 수 있습니다."
+        subtitle="지금 챙길 사람부터 보고, 누르면 그 사람들 명단으로 바뀝니다."
         right={
           <Button
             size="sm"
@@ -212,9 +246,25 @@ export default function MembershipMemberListTemplate() {
           </Button>
         }
       />
+      <MemberInsightPanel axis={axis} onSelect={selectAxis} />
       <MembershipMembersSummaryCards />
-      <MembershipMemberFilterBox />
-      <MembershipMemberTable />
+      <MembershipMemberFilterBox axis={axis} />
+      {axis ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">{AXIS_TITLE[axis].title}</h2>
+              <p className="text-sm text-gray-500">{AXIS_TITLE[axis].description}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => selectAxis(null)}>
+              전체 회원 보기
+            </Button>
+          </div>
+          <MemberAxisTable axis={axis} />
+        </>
+      ) : (
+        <MembershipMemberTable />
+      )}
       <AdminGrantDialog
         open={subscribeDialogOpen}
         onClose={() => setSubscribeDialogOpen(false)}

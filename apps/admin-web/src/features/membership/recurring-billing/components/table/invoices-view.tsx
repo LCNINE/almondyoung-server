@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<AdminRecurringInvoiceStatus, { label: string; variant
   ATTEMPTING: { label: '출금 진행 중', variant: 'default' },
   PAST_DUE: { label: '결제 실패(재시도 예정)', variant: 'destructive' },
   PAID: { label: '결제 완료', variant: 'default' },
-  UNCOLLECTIBLE: { label: '미수 확정', variant: 'destructive' },
+  UNCOLLECTIBLE: { label: '출금 최종 실패', variant: 'destructive' },
   MANDATE_REJECTED: { label: '계좌 심사 거절', variant: 'destructive' },
   VOID: { label: '무효화', variant: 'outline' },
 };
@@ -36,7 +36,7 @@ const STATUS_FILTER_OPTIONS: { value: '' | AdminRecurringInvoiceStatus; label: s
   { value: 'ATTEMPTING', label: '출금 진행 중' },
   { value: 'PAST_DUE', label: '결제 실패' },
   { value: 'PAID', label: '결제 완료' },
-  { value: 'UNCOLLECTIBLE', label: '미수 확정' },
+  { value: 'UNCOLLECTIBLE', label: '출금 최종 실패' },
   { value: 'MANDATE_REJECTED', label: '심사 거절' },
   { value: 'VOID', label: '무효화' },
 ];
@@ -111,7 +111,7 @@ export function RecurringInvoicesView() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          정기결제 청구의 권위 상태입니다(인보이스 모델). 재시도·미수 판정은 인보이스가 소유하며,
+          정기결제 청구의 권위 상태입니다(인보이스 모델). 재시도·최종 실패 판정은 인보이스가 소유하며,
           &ldquo;즉시 집행&rdquo;은 청구 대기/심사 대기/결제 실패 상태에서만 가능합니다.
         </p>
         <Button

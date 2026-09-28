@@ -187,6 +187,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     await db.db.delete(schema.membershipDunningQueue);
     await db.db.delete(schema.billingEvents);
     await db.db.delete(schema.subscriptionContractEvents);
+    await db.db.delete(schema.membershipArrearsAdjustments);
     await db.db.delete(schema.membershipArrears);
     await db.db.delete(schema.membershipTermsAgreements);
     // pause_events 는 entitlement 를 참조한다 — 먼저 지우지 않으면 FK 로 정리가 막힌다.

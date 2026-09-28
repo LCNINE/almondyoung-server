@@ -167,39 +167,75 @@ export class ArrearsManager {
    * 이게 없으면 CS 가 DB 를 직접 만진다.
    */
   async waive(arrearsId: string, adminId: string, reason: string): Promise<boolean> {
-    const rows = await this.dbService.db
-      .update(schema.membershipArrears)
-      .set({
-        status: 'WAIVED',
-        settlementRef: reason,
-        settledBy: adminId,
-        settledAt: new Date(),
-        pendingIntentId: null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(schema.membershipArrears.id, arrearsId), eq(schema.membershipArrears.status, 'OUTSTANDING')))
-      .returning({ id: schema.membershipArrears.id });
-    return rows.length > 0;
+    return this.dbService.run(async (tx) => {
+      const before = await this.lockOutstanding(tx, arrearsId);
+      if (!before) return false;
+
+      await tx
+        .update(schema.membershipArrears)
+        .set({
+          status: 'WAIVED',
+          settlementRef: reason,
+          settledBy: adminId,
+          settledAt: new Date(),
+          pendingIntentId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.membershipArrears.id, arrearsId));
+      await tx.insert(schema.membershipArrearsAdjustments).values({
+        arrearsId,
+        userId: before.userId,
+        action: 'WAIVE',
+        amountBefore: before.amount,
+        amountAfter: 0,
+        reason,
+        adminId,
+      });
+      return true;
+    });
   }
 
   /**
    * 관리자 금액 조정. 인보이스 금액이 진실이지만, 플랜가로 유도된 줄(amountSource='PLAN_FALLBACK')이나
    * 부분 수금이 있었던 줄은 사람이 고쳐야 한다. 0 이하로는 못 내린다 — 0 이면 면제가 맞는 표현이다.
+   *
+   * 청산 칸(settlementRef·settledBy)은 건드리지 않는다. 조정은 청산이 아니다 — 거기에 적으면 뒤에
+   * 고객이 직접 갚았을 때 「관리자가 청산한 줄」로 보인다. 누가·왜 고쳤는지는 조정 기록에 쌓는다.
    */
   async adjustAmount(arrearsId: string, amount: number, adminId: string, reason: string): Promise<boolean> {
     if (!Number.isInteger(amount) || amount <= 0) return false;
-    const rows = await this.dbService.db
-      .update(schema.membershipArrears)
-      .set({
-        amount,
-        amountSource: 'ADMIN_ADJUSTED',
-        settlementRef: reason,
-        settledBy: adminId,
-        updatedAt: new Date(),
-      })
+    return this.dbService.run(async (tx) => {
+      const before = await this.lockOutstanding(tx, arrearsId);
+      if (!before) return false;
+
+      await tx
+        .update(schema.membershipArrears)
+        .set({ amount, amountSource: 'ADMIN_ADJUSTED', updatedAt: new Date() })
+        .where(eq(schema.membershipArrears.id, arrearsId));
+      await tx.insert(schema.membershipArrearsAdjustments).values({
+        arrearsId,
+        userId: before.userId,
+        action: 'ADJUST_AMOUNT',
+        amountBefore: before.amount,
+        amountAfter: amount,
+        reason,
+        adminId,
+      });
+      return true;
+    });
+  }
+
+  /** 미청산 줄 하나를 잠그고 바꾸기 전 값을 준다. 이미 닫힌 줄이면 null — 청산과 면제가 겹치지 않게 한다. */
+  private async lockOutstanding(
+    tx: DrizzleTransaction,
+    arrearsId: string,
+  ): Promise<{ userId: string; amount: number } | null> {
+    const [row] = await tx
+      .select({ userId: schema.membershipArrears.userId, amount: schema.membershipArrears.amount })
+      .from(schema.membershipArrears)
       .where(and(eq(schema.membershipArrears.id, arrearsId), eq(schema.membershipArrears.status, 'OUTSTANDING')))
-      .returning({ id: schema.membershipArrears.id });
-    return rows.length > 0;
+      .for('update');
+    return row ?? null;
   }
 
   /** 잔액 한 줄 요약. 게이트가 이것만 보고 판단한다. */

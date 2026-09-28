@@ -526,6 +526,34 @@ export const membershipArrears = pgTable(
 );
 
 /**
+ * 미수 한 줄에 사람이 손댄 기록(면제·금액 조정). 원장 행은 현재 값만 들고 있어서, 두 번째 조정이
+ * 첫 번째 사유와 원래 금액을 지운다 — 「왜 이 금액이 됐나」를 나중에 답하려면 한 줄씩 쌓아야 한다.
+ * 원장 갱신과 같은 트랜잭션에서만 쓴다.
+ */
+export const membershipArrearsAdjustments = pgTable(
+  'membership_arrears_adjustments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    arrearsId: uuid('arrears_id')
+      .notNull()
+      .references(() => membershipArrears.id),
+    userId: varchar('user_id').notNull(),
+    /** 'WAIVE' | 'ADJUST_AMOUNT' */
+    action: text('action').notNull(),
+    amountBefore: integer('amount_before').notNull(),
+    /** 면제면 0 — 그 뒤로 이 줄에서 받을 돈이 없다는 뜻이다. */
+    amountAfter: integer('amount_after').notNull(),
+    reason: text('reason').notNull(),
+    adminId: text('admin_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_membership_arrears_adjustments_arrears').on(table.arrearsId),
+    index('idx_membership_arrears_adjustments_user').on(table.userId),
+  ],
+);
+
+/**
  * 가입 약관 동의 이력. 「이 사람이 언제 어느 버전 약관에 동의했나」를 분쟁 때 행으로 제시하기 위한 표.
  *
  * 유저당 여러 행이 정상이다(가입할 때마다 한 줄). 회원가입 동의(user-service `user_consents`)는
@@ -699,6 +727,7 @@ export const membershipSchema = {
   membershipCycleBenefits,
   membershipDiscountEvents,
   membershipArrears,
+  membershipArrearsAdjustments,
   membershipTermsAgreements,
   welcomeMembershipEligibility,
   adminOperationKeys,
