@@ -145,9 +145,9 @@ export function BatchLabelPrintButton({
     phase.kind !== 'confirm'
       ? ''
       : phase.retry
-        ? `인쇄되지 않은 ${phase.shipmentIds.length}장만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
+        ? `인쇄되지 않은 ${phase.shipmentIds.length}건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
         : printedAt
-          ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 라벨이 한 장씩 더 나와요.`
+          ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 라벨이 한 번 더 나와요.`
           : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
 
   return (
@@ -195,7 +195,7 @@ export function BatchLabelPrintButton({
           </p>
           {/* 스풀러가 받았다는 뜻일 뿐이다 — 꺼지거나 걸린 USB 프린터도 대개 작업을 받아 준다. */}
           {phase.result.printed.length > 0 && (
-            <p className="text-xs text-gray-500">프린터에서 나온 장수가 맞는지 확인해 주세요.</p>
+            <p className="text-xs text-gray-500">프린터에서 {phase.result.sheets}장이 나왔는지 확인해 주세요.</p>
           )}
           {phase.result.printerError !== undefined && (
             <p role="alert">
@@ -217,7 +217,7 @@ export function BatchLabelPrintButton({
 
       <ConfirmDialog
         open={phase.kind === 'confirm'}
-        title={phase.kind === 'confirm' ? `라벨 ${phase.shipmentIds.length}장을 인쇄할까요?` : ''}
+        title={phase.kind === 'confirm' ? `라벨 ${phase.shipmentIds.length}건을 인쇄할까요?` : ''}
         message={confirmMessage}
         confirmLabel="인쇄"
         onCancel={() =>
