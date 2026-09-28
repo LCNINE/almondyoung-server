@@ -203,7 +203,11 @@ export const walletApi = {
   },
 
   rejectRefundRequest: async (id: string, adminNote?: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/refund-requests/${id}/reject`, { adminNote });
+    await client.post(
+      `${BASE}/v1/admin/refund-requests/${id}/reject`,
+      { adminNote },
+      idempotencyConfig()
+    );
   },
 
   // ── Points ───────────────────────────────────────────────────────────────
