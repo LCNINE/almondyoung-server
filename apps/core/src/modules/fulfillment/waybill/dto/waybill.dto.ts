@@ -127,4 +127,7 @@ export class WaybillLabelResponseDto {
 
   @ApiProperty({ description: '프린터에 그대로 보낼 ZPL (ASCII)' })
   data: string;
+
+  @ApiProperty({ description: '쪽 수 — data 안의 ^XA…^XZ 개수. 품목이 4줄을 넘는 FS 는 2 이상' })
+  pages: number;
 }

@@ -11,10 +11,13 @@ import { renderHanjinNsLabel } from './hanjin-ns-template';
 export const HANJIN_LABEL_TYPES = ['NS', 'NL', 'FS'] as const;
 export type HanjinLabelType = (typeof HANJIN_LABEL_TYPES)[number];
 
-export const HANJIN_LABEL_TEMPLATES: Readonly<Record<HanjinLabelType, (d: HanjinLabelData) => LabelSpec>> = {
-  NS: renderHanjinNsLabel,
-  NL: renderHanjinNlLabel,
-  FS: renderHanjinFsLabel,
+/** 형 하나 = 쪽 목록(1쪽 이상). 여러 쪽은 FS 품목 줄 스펙(2026-09-28)의 추가 쪽 — NS·NL 은 늘 1쪽이다. */
+export type HanjinLabelTemplate = (d: HanjinLabelData) => LabelSpec[];
+
+export const HANJIN_LABEL_TEMPLATES: Readonly<Record<HanjinLabelType, HanjinLabelTemplate>> = {
+  NS: (d) => [renderHanjinNsLabel(d)],
+  NL: (d) => [renderHanjinNlLabel(d)],
+  FS: (d) => [renderHanjinFsLabel(d)],
 };
 
 function isHanjinLabelType(v: string): v is HanjinLabelType {
@@ -25,7 +28,7 @@ function isHanjinLabelType(v: string): v is HanjinLabelType {
  * 설정값으로 템플릿을 골라 그린다. 모르는 값은 설정 오류라 `Error`(500) — 요청을 바꿔서 풀리는 문제가
  * 아니다. 검증을 부팅이 아니라 여기서 하는 건 라벨 설정 하나로 core 기동·발급을 막지 않기 위해서다.
  */
-export function renderHanjinLabel(type: string, d: HanjinLabelData): LabelSpec {
+export function renderHanjinLabel(type: string, d: HanjinLabelData): LabelSpec[] {
   if (!isHanjinLabelType(type)) {
     throw new Error(`Hanjin label: unknown HANJIN_LABEL_TYPE "${type}" (expected ${HANJIN_LABEL_TYPES.join('|')})`);
   }

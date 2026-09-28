@@ -166,6 +166,12 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     expect(label.data).toContain('^B2R');
   });
 
+  it('품목이 한 쪽에 들어가면 pages 1, ^XA 하나', async () => {
+    const label = await buildManager('NS').render('s1');
+    expect(label.pages).toBe(1);
+    expect(label.data.match(/\^XA/g)).toHaveLength(1);
+  });
+
   it('모르는 HANJIN_LABEL_TYPE 은 라벨 요청만 거절한다', async () => {
     await expect(buildManager('XX').render('s1')).rejects.toThrow(/unknown HANJIN_LABEL_TYPE "XX"/);
   });
