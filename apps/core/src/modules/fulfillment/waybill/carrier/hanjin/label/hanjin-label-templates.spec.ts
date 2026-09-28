@@ -11,7 +11,7 @@ describe('hanjin-label-templates', () => {
   it.each([
     ['NS', 200, 102, 90],
     ['NL', 100, 102, 0],
-    ['FS', 123, 100, 90],
+    ['FS', 123, 100, 270],
   ] as const)('%s: %d × %dmm, rotation %d', (type, w, h, rotation) => {
     const spec = renderHanjinLabel(type, DATA);
     expect([spec.widthMm, spec.heightMm, spec.rotation]).toEqual([w, h, rotation]);
@@ -19,7 +19,7 @@ describe('hanjin-label-templates', () => {
 
   it.each(HANJIN_LABEL_TYPES)('%s: 프린터에 넣는 방향의 폭이 108mm 이하다', (type) => {
     const spec = renderHanjinLabel(type, DATA);
-    const fedWidthMm = spec.rotation === 90 ? spec.heightMm : spec.widthMm;
+    const fedWidthMm = spec.rotation === 0 ? spec.widthMm : spec.heightMm;
     expect(fedWidthMm).toBeLessThanOrEqual(PRINTER_MAX_WIDTH_MM);
   });
 

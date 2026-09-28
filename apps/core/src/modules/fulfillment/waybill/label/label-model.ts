@@ -38,9 +38,10 @@ export const PRINTER_MAX_WIDTH_MM = 108;
 
 /**
  * 프린터에 넣을 때 시계방향 회전(도). 템플릿은 늘 포털 도면 방향대로 그리고, 넣는 방향은 형이 정한다 —
- * NS(200mm)·FS(123mm)는 긴 변이 인쇄폭을 넘어 90°, NL(100mm)은 그대로 들어가 0°.
+ * NS(200mm)·FS(123mm)는 긴 변이 인쇄폭을 넘어 90° 또는 270°, NL(100mm)은 그대로 들어가 0°.
+ * 90° 와 270° 중 어느 쪽인지는 라벨지가 롤에 감긴 방향이 정하므로 실물 출력으로만 판정된다.
  */
-export type LabelRotation = 0 | 90;
+export type LabelRotation = 0 | 90 | 270;
 
 /** 템플릿 출력. svg 의 viewBox 는 0 0 widthMm heightMm(mm 단위, 템플릿이 그린 방향)이다. */
 export interface LabelSpec {

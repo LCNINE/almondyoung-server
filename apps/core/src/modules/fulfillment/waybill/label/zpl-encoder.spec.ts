@@ -197,3 +197,23 @@ describe('encodeZpl — 인쇄폭 가드', () => {
     expect(() => encodeZpl(createBitmap(865, 100), [], { compress: false, rotation: 0 })).toThrow(/864/);
   });
 });
+
+describe('encodeZpl — rotation 270', () => {
+  it('90° 로 돌린 출력에 ^POI(180° 반전)를 더한 것과 같다 — 이 한 줄 말고는 바이트가 같다', () => {
+    const code: BarcodePlacement = { kind: 'CODE128', data: '150', xMm: 4.4, yMm: 18.3, heightMm: 8, moduleDots: 2 };
+    const b = nsBitmap();
+    for (let x = 10; x < 200; x++) setBit(b, x, 20);
+    const at90 = encodeZpl(b, [ITF, code], { compress: true, rotation: 90 });
+    const at270 = encodeZpl(b, [ITF, code], { compress: true, rotation: 270 });
+    expect(at270).toBe(at90.replace('^XA\n', '^XA\n^POI\n'));
+  });
+
+  it('90°·0° 는 ^PO 를 쓰지 않는다', () => {
+    expect(encodeZpl(nsBitmap(), [], { compress: false, rotation: 90 })).not.toContain('^PO');
+    expect(encodeZpl(nlBitmap(), [], { compress: false, rotation: 0 })).not.toContain('^PO');
+  });
+
+  it('폭 한도는 90° 와 같이 세로 길이로 판정한다', () => {
+    expect(() => encodeZpl(createBitmap(1600, 900), [], { compress: false, rotation: 270 })).toThrow(/rotation 270/);
+  });
+});

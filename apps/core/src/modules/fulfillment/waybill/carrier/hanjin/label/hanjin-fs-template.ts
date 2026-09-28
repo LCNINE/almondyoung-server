@@ -7,7 +7,7 @@ import { rect, shrinkThenFit, svgDocument, text, wrapLines } from './hanjin-labe
 /**
  * 한진 FS형(가로 123 × 세로 100mm) 자체출력 운송장(#913).
  *
- * 가로 123mm 가 인쇄폭(108mm)을 넘어 90° 돌려 짧은 변(100mm)을 폭으로 넣는다. **라벨 전체가 배달표 한 면**
+ * 가로 123mm 가 인쇄폭(108mm)을 넘어 270° 돌려 짧은 변(100mm)을 폭으로 넣는다. **라벨 전체가 배달표 한 면**
  * 이라 받는고객용이 없다(포털 샘플 좌측 「배달표」 100mm 표시).
  *
  * **검은색 요소만** 그린다 — 테두리·캡션·로고·「※ 개인정보 보호를…」 안내문은 선인쇄. 좌표는 포털 FS 샘플
@@ -54,15 +54,17 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec {
   const custText = `출고번호: ${d.custOrdNo}`;
 
   const slip = [
+    // 선인쇄 가로선(실측 y 7.4–8.0 · 24.3–24.6 · 44.4–44.9 · 52.0–52.5mm)을 글자가 밟지 않게 잡았다 —
+    // 2026-09-28 창고 FS 라벨지 실물 출력 스캔으로 ⑨·⑪·보낸분 줄을 옮겼다.
     // ── 머리: 운송장번호 + 분류 ──
-    text({ x: 15.3, y: 7.3, pt: 8, bold: true, text: d.trackingNoDisplay }), // ⑨ 좌측상단
+    text({ x: 15.3, y: 6.8, pt: 8, bold: true, text: d.trackingNoDisplay }), // ⑨ 좌측상단
     text({ x: 5, y: 19.4, pt: 35, bold: true, text: s.hubCode }), // ①
     text({ x: 24.5, y: 19.4, pt: 25, bold: true, text: s.terminalCode }), // ②
     text({ x: 42.5, y: 19.4, pt: fitSizePt(s.midCode, 9.5, 35, 20), bold: true, text: s.midCode }), // ④
     text({ x: 5.8, y: 22.6, pt: 8, text: fitText(`발지:${s.originTerminalCode} ${s.originTerminalName}`, 35, 8) }), // ⑦⑧
     text({ x: 57.8, y: 13.5, pt: fitSizePt(s.courierSortCode, 18, 20, 12), bold: true, text: s.courierSortCode }), // ⑯
     text({ x: 78, y: 13.5, pt: 20, bold: true, text: s.routeRank }), // ⑩
-    text({ x: 52.8, y: 23.9, pt: 20, bold: true, text: fitText(s.courierName, 24, 20) }), // ⑪
+    text({ x: 52.8, y: 23, pt: 20, bold: true, text: fitText(s.courierName, 24, 20) }), // ⑪
     text({ x: 78, y: 19.4, pt: 8, text: s.centerCode }), // ⑤
     text({ x: 78, y: 23.1, pt: 8, text: fitText(s.centerName, 19, 8) }), // ⑥
     rect(98.5, 17, 20.5, 6.4), // ⑮ 상자
@@ -82,11 +84,11 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec {
     rect(91.5, 36.7, 27.3, 6.4), // ⑬ 상자
     text({ x: 105.15, y: 41.8, pt: 14, bold: true, anchor: 'middle', text: d.freightText }), // ⑬
     // ── 보낸분 · 출력일자 · 출고번호 ──
-    text({ x: RECIPIENT_X_MM, y: 47.4, pt: senderLine.pt, text: senderLine.text }),
-    text({ x: RECIPIENT_X_MM, y: 51.2, pt: 8, text: `${d.printedDate} Type : ${d.boxType}` }),
+    text({ x: RECIPIENT_X_MM, y: 48.3, pt: senderLine.pt, text: senderLine.text }),
+    text({ x: RECIPIENT_X_MM, y: 51.5, pt: 8, text: `${d.printedDate} Type : ${d.boxType}` }),
     text({
       x: 119,
-      y: 51.2,
+      y: 51.5,
       pt: fitSizePt(custText, FS_CUST_ORD_NO_MAX_WIDTH_MM, 10, 4),
       anchor: 'end',
       text: custText,
@@ -125,7 +127,8 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec {
   return {
     widthMm: WIDTH_MM,
     heightMm: HEIGHT_MM,
-    rotation: 90,
+    // 창고 FS 라벨지는 90° 로 넣으면 선인쇄와 위아래가 뒤집혀 나온다(2026-09-28 실물 출력).
+    rotation: 270,
     svg: svgDocument(WIDTH_MM, HEIGHT_MM, [['delivery-slip', slip]]),
     barcodes,
   };
