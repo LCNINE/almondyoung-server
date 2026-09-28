@@ -92,7 +92,7 @@ export class LogoContestEntryResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() title: string;
   @ApiProperty({ nullable: true }) description: string | null;
-  @ApiProperty({ description: '가린 작성자명', example: '정*식' }) authorName: string;
+  @ApiProperty({ description: '작성자 닉네임', example: '귀여운 아몬드 #12' }) authorName: string;
   @ApiProperty({ type: [String], description: '첫 장이 대표 이미지' }) mediaFileIds: string[];
   @ApiProperty() voteCount: number;
   @ApiProperty() isWinner: boolean;
@@ -100,7 +100,7 @@ export class LogoContestEntryResponseDto {
 }
 
 /**
- * 어드민도 가린 이름을 본다 — 여기 저장된 이름은 출품자가 보낸 값이라 정본이 아니다.
+ * 어드민도 닉네임을 받는다 — 여기 저장된 이름은 출품자가 보낸 값이라 정본이 아니다.
  * 아이디·이름·연락처는 어드민 화면이 `userId` 로 user-service 회원 정보를 붙여 보여준다.
  */
 export class AdminLogoContestEntryResponseDto extends LogoContestEntryResponseDto {
