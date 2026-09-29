@@ -16,6 +16,7 @@ import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
 import { WaybillLabelPrintManager } from './waybill-label-print.manager';
 import { WaybillLabelService } from './waybill-label.service';
 import { WaybillLabelController } from './waybill-label.controller';
+import { LabelCurrencyGuard } from './label-currency.guard';
 import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
 
 @Module({
@@ -42,8 +43,9 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
     WaybillLabelManager,
     WaybillLabelPrintManager,
     WaybillLabelService,
+    LabelCurrencyGuard,
   ],
   // CarrierGatewayRegistry: 배송추적 폴러(FulfillmentModule)가 캐리어 추적을 부른다(#917).
-  exports: [WaybillService, CarrierGatewayRegistry],
+  exports: [WaybillService, CarrierGatewayRegistry, LabelCurrencyGuard],
 })
 export class WaybillModule {}

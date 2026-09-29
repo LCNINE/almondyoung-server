@@ -228,6 +228,7 @@ function makeService(options: { selects?: unknown[][]; inserts?: unknown[][]; up
     sessions,
     batches,
     audit,
+    { assertCurrent: jest.fn(async () => undefined) },
   );
   return { service, commands, sessions, batches, audit, tx, insertBuilders, updateBuilders };
 }
@@ -1048,6 +1049,7 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     {
       logUserActionRequired: jest.fn(),
     },
+    { assertCurrent: jest.fn(async () => undefined) },
   );
   const startDeps = {
     commands,

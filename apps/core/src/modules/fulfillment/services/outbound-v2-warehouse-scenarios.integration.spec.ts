@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -162,9 +163,28 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       workflow,
       moduleRef as never,
     );
-    const aggregate = new AggregateThenSortPickingStrategy(commands, workflow, sessions, batches);
-    const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches);
-    const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit);
+    const aggregate = new AggregateThenSortPickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      assembleLabels(dbService).guard,
+    );
+    const discrete = new DiscretePickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      assembleLabels(dbService).guard,
+    );
+    const tote = new PickToTotePickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      audit,
+      assembleLabels(dbService).guard,
+    );
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
     const picking = new PickingProcessService(
       dbService,
@@ -220,6 +240,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
     return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
   }

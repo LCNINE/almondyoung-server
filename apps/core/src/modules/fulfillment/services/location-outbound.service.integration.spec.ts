@@ -453,8 +453,9 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         .where(eq(wmsTables.batchInventorySessionBalances.sessionId, session.id));
       await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, f.waybillId));
       const key = randomUUID();
+      // 재출력 게이트(I5)가 첫 피킹 스캔에서 무효 송장을 먼저 잡는다 — 예전엔 발송 단계의 SHIPMENT_INVOICE_NOT_READY.
       await expect(service.force(f.shipmentId, input, actor, key, authorization, tx)).rejects.toMatchObject({
-        response: { code: 'SHIPMENT_INVOICE_NOT_READY' },
+        response: { code: 'WAYBILL_NOT_DISPATCHABLE' },
       });
       expect(
         await tx

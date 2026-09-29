@@ -578,7 +578,9 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   };
   const batches = { handoff: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const strategy: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, batches);
+  const strategy: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, batches, {
+    assertCurrent: jest.fn(async () => undefined),
+  });
   const startDeps = {
     commands,
     workflowGate,

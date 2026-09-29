@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BatchInventorySessionService } from '../services/batch-inventory-session.service';
@@ -58,6 +59,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
+    private readonly labels: LabelCurrencyGuard,
   ) {}
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult> {
@@ -197,6 +199,8 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
         const [line] = await trx
@@ -532,6 +536,8 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const sortingRef = this.sortingRef(input.workItemId, input.actor.id);

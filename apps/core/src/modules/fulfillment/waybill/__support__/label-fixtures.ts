@@ -4,6 +4,7 @@ import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from '../carrier/hanjin/hanjin.config';
 import { SvgRasterizer } from '../label/svg-rasterizer';
+import { LabelCurrencyGuard } from '../label-currency.guard';
 import { WaybillLabelContentAssembler } from '../waybill-label-content.assembler';
 import { WaybillLabelManager } from '../waybill-label.manager';
 import { WaybillLabelPrintManager } from '../waybill-label-print.manager';
@@ -90,6 +91,7 @@ export function assembleLabels(
   return {
     assembler,
     prints,
+    guard: new LabelCurrencyGuard(assembler, prints),
     confirm: new WaybillLabelPrintManager(assembler, prints, dbService),
     render: new WaybillLabelManager(assembler, prints, new SvgRasterizer(), LABEL_TEST_CONFIG, dbService, now),
   };

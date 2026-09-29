@@ -458,7 +458,9 @@ function createHarness(): AggregateHarness {
   };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = AggregateThenSortPickingStrategy as any;
-  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches);
+  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches, {
+    assertCurrent: jest.fn(async () => undefined),
+  });
   const startDeps = {
     commands,
     workflowGate,

@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -390,6 +391,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
   }
 

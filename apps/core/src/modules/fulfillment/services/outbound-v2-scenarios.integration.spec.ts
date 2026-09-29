@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { AddressDto } from '../dto/address.dto';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
@@ -414,6 +415,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
     return { planning: localPlanning, consolidation: localConsolidation, waybills, dispatch, sessions };
   }

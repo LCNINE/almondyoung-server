@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { assembleLabels } from '../../waybill/__support__/label-fixtures';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
@@ -107,7 +108,13 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     moduleRef,
   );
-  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches);
+  const discrete = new DiscretePickingStrategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    assembleLabels(dbService).guard,
+  );
   const picking = new PickingProcessService(
     dbService,
     commands,
@@ -133,6 +140,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     audit,
     workflowGate,
     coreOrderPublisher,
+    assembleLabels(dbService).guard,
   );
   const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
   return {
