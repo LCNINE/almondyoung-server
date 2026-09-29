@@ -304,35 +304,6 @@
       "goToCart": "カートへ移動"
     }
   },
-  "membership": {
-    "headerTitle": "メンバーシップ決済",
-    "missingPlanTitle": "メンバーシッププラン情報がありません。",
-    "missingPlanDesc": "メンバーシップ申込ページからもう一度お試しください。",
-    "planNotFoundTitle": "メンバーシッププランが見つかりません。",
-    "planNotFoundDesc": "別のプランでもう一度お試しください。",
-    "fallbackPlanName": "メンバーシップ",
-    "planSectionTitle": "メンバーシッププラン",
-    "selectedPlanLabel": "選択したプラン",
-    "priceWon": "{amount}ウォン",
-    "noticeTitle": "決済のご案内",
-    "oneTimeHeader": "📌 1回決済(自動決済なし)",
-    "oneTimeNoAutoPay": "1回決済で、自動決済は行われません。",
-    "bankTransferDelay": "銀行振込を選択された場合、入金確認まで最大10分ほどかかる場合があります。",
-    "immediateNoRefundPrefix": "決済直後に利用が開始され、",
-    "immediateNoRefundEmphasis": "利用開始後の返金は不可",
-    "immediateNoRefundSuffix": "です。",
-    "paidPeriodAccess": "決済した期間中、サービスをご利用いただけます。",
-    "refundPolicyTitle": "[返金ポリシー]",
-    "refund1": "· 単純な変心による返金はできません。",
-    "refund2": "· サービス障害、技術的な不具合等により正常に利用できない場合、利用できなかった期間について一部返金が行われる場合があります。",
-    "refund3": "· 返金の可否および金額は社内ポリシーに従って算定されます。",
-    "agree": "決済および返金ポリシーを確認し、同意します。",
-    "toasts": {
-      "agreeRequired": "決済および返金ポリシーに同意してください。",
-      "loginRequired": "ログインが必要です。",
-      "paymentRequestFailed": "決済リクエストに失敗しました。"
-    }
-  },
   "success": {
     "completedHighlight": "注文完了",
     "completedSuffix": "しました。",

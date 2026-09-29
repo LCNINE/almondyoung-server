@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MembershipBenefitUsage } from './benefit/benefit-usage';
 import { differenceInCalendarDays } from 'date-fns';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
@@ -71,7 +72,7 @@ export interface CancellationPreview {
    * 화면이 이 숫자를 보여줘야 "혜택을 쓰셔서 환불이 안 됩니다" 가 검증 가능한 안내가 된다.
    * 판정은 `totalDiscountAmount > 0` 하나로 갈린다(주문 건수는 표시용).
    */
-  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
+  currentPeriodBenefit: MembershipBenefitUsage;
   /** 위 혜택 사용량을 센 구간의 시작. 결제 기록이 없으면 null. */
   benefitPeriodStart: string | null;
   options: CancellationOption[];

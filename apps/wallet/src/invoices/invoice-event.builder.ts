@@ -76,6 +76,8 @@ export function buildInvoiceUncollectiblePayload(
     subscriberRef: invoice.subscriberRef,
     periodStart: invoice.periodStart,
     periodEnd: invoice.periodEnd,
+    amount: invoice.amountDue,
+    currency: invoice.currency,
     errorCode: input.errorCode,
     errorMessage: input.errorMessage,
     intentId: input.intentId,
@@ -94,6 +96,10 @@ export function buildMandateRejectedPayload(
     subscriberRef: invoice.subscriberRef,
     reasonCode: input.reasonCode,
     reason: input.reason,
+    amount: invoice.amountDue,
+    currency: invoice.currency,
+    periodStart: invoice.periodStart,
+    periodEnd: invoice.periodEnd,
     occurredAt: new Date().toISOString(),
   };
 }

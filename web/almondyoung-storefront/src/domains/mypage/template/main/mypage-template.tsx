@@ -1,7 +1,9 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { AdminAccessButton } from "@/components/admin/admin-access-button"
+import ArrearsAlert from "@/domains/membership/components/arrears-alert"
 import { checkAdminScope } from "@lib/api/admin/inventory"
 import { fetchMe } from "@lib/api/users/me"
+import { getMyArrears } from "@lib/api/membership"
 import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
 import { Suspense } from "react"
@@ -30,7 +32,7 @@ export async function MyPageTemplate({
   countryCode: string
   orderListParams: { page: number; period: string; q: string }
 }) {
-  const [currentUser, { isAdmin }, pointBalance, customer, cart] =
+  const [currentUser, { isAdmin }, pointBalance, customer, cart, arrears] =
     await Promise.all([
       fetchMe(),
       checkAdminScope(),
@@ -41,6 +43,7 @@ export async function MyPageTemplate({
       })),
       withMypageTimeout(retrieveCustomer(), null),
       withMypageTimeout(retrieveCart(undefined, undefined, "no-store"), null),
+      getMyArrears(),
     ])
   const cartWithCustomer = cart as
     | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
@@ -66,6 +69,9 @@ export async function MyPageTemplate({
             <AdminAccessButton countryCode={countryCode} className="w-full" />
           )}
         </div>
+
+        {/* 미납 멤버십 요금이 있으면 가장 먼저 알린다. 없으면 아무것도 그리지 않는다. */}
+        <ArrearsAlert total={arrears.outstanding.total} className="mx-6 mt-2" />
 
         {/* 퀵메뉴 */}
         <div className="bg-white px-6 py-4">
@@ -94,6 +100,8 @@ export async function MyPageTemplate({
               isMembership={isMembershipPricing}
               initialPointBalance={pointBalance.available}
             />
+
+            <ArrearsAlert total={arrears.outstanding.total} className="mb-4" />
 
             {/* 관리자 버튼 */}
             {isAdmin && (

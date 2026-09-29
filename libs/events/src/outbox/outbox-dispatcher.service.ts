@@ -333,7 +333,7 @@ export class OutboxDispatcher {
   }
 
   // cron-overlap-safe: PUBLISHED 행 DELETE 는 겹쳐도 같은 행을 다시 지우거나 0건일 뿐인 멱등 연산이다 — CronOnceModule 없는 앱에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
-  @Cron('0 2 * * *')
+  @Cron('0 2 * * *', { timeZone: 'Asia/Seoul' })
   async cleanupOldEvents() {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.config.cleanupDays);

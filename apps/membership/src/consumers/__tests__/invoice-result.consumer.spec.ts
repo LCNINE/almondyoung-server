@@ -53,6 +53,10 @@ function mandateRejected(overrides: Partial<MandateRejectedPayload> = {}): Manda
     subscriberRef: 'contract-1',
     reasonCode: 'Q201',
     reason: null,
+    amount: 4990,
+    currency: 'KRW',
+    periodStart: '2026-07-07',
+    periodEnd: '2026-08-07',
     occurredAt: OCCURRED_AT,
     ...overrides,
   };
@@ -115,13 +119,25 @@ describe('InvoiceResultConsumer 라우팅', () => {
   it('mandate.rejected → handleMandateRejected (선적용 자격 회수)', async () => {
     const { consumer, handler } = makeConsumer();
     await consumer.onMandateRejected(mandateRejected());
-    expect(handler.handleMandateRejected).toHaveBeenCalledWith('contract-1', 'inv-1', 'Q201');
+    // 미수 원장이 금액을 정하려면 청구 정보가 «그대로» 내려가야 한다 — 플랜가로 유도하면
+    // 그 사이 가격이 바뀐 계약에서 실제 청구액과 어긋난다.
+    expect(handler.handleMandateRejected).toHaveBeenCalledWith('contract-1', 'inv-1', 'Q201', {
+      amount: 4990,
+      currency: 'KRW',
+      periodStart: '2026-07-07',
+      periodEnd: '2026-08-07',
+    });
   });
 
   it('invoice.uncollectible → handleUncollectible (자격 종료)', async () => {
     const { consumer, handler } = makeConsumer();
     await consumer.onInvoiceUncollectible(uncollectible());
-    expect(handler.handleUncollectible).toHaveBeenCalledWith('contract-1', 'inv-1', 'Q999');
+    expect(handler.handleUncollectible).toHaveBeenCalledWith('contract-1', 'inv-1', 'Q999', {
+      amount: null,
+      currency: null,
+      periodStart: '2026-07-07',
+      periodEnd: '2026-08-07',
+    });
   });
 
   it('invoice.voided → handleVoided (명시 취소 — 선적용 자격 회수)', async () => {

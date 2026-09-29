@@ -1,0 +1,1 @@
+ALTER TABLE "membership_arrears" ADD COLUMN "pending_intent_id" text;

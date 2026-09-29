@@ -67,8 +67,7 @@ describe('SubscriptionCancellationService', () => {
   const mockPauseManager = { resumePause: jest.fn().mockResolvedValue(undefined) };
 
   const mockBenefitReader = {
-    findBenefitUsageBetween: jest.fn(),
-    sumBenefitDiscountSince: jest.fn().mockResolvedValue(0),
+    findMembershipBenefitUsageSince: jest.fn(),
   };
 
   const mockEventPublisher = { publishStatusChanged: jest.fn().mockResolvedValue(undefined) };
@@ -112,8 +111,7 @@ describe('SubscriptionCancellationService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockContractReader.findMonthlyListPrice.mockResolvedValue(4990);
-    mockBenefitReader.findBenefitUsageBetween.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0 });
-    mockBenefitReader.sumBenefitDiscountSince.mockResolvedValue(0);
+    mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false });
     mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
     mockPauseReader.findPausedEntitlement.mockResolvedValue(null);
     // 기본은 카드/무통장처럼 PG 자동환불이 되는 수단
@@ -237,7 +235,7 @@ describe('SubscriptionCancellationService', () => {
 
     it('7일 내라도 이번 주기에 혜택을 썼으면 환불 불가', async () => {
       givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
-      mockBenefitReader.findBenefitUsageBetween.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000 });
+      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000, welcomeDeal: false });
 
       await expect(
         service.cancelSubscription('user_001', 'a@b.com', {
@@ -245,6 +243,14 @@ describe('SubscriptionCancellationService', () => {
           cancelType: 'IMMEDIATE_REFUND',
         }),
       ).rejects.toThrow(BadRequestError);
+    });
+
+    it('웰컴딜을 샀으면 할인이 0원이라도 혜택 사용이라 7일 내라도 환불 불가', async () => {
+      givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
+      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true });
+
+      const preview = await service.previewCancellation('user_001');
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')?.available).toBe(false);
     });
 
     it('연간 3개월 사용 후 해지는 월간 정가로 차감해 34,930원 환불', async () => {
@@ -501,7 +507,6 @@ describe('SubscriptionCancellationService', () => {
         monthlyListPrice: 4990,
         monthsElapsed: 3,
         usageDeduction: 14970,
-        benefitDeduction: 0,
       });
       expect(preview.recommendedMode).toBe('IMMEDIATE_REFUND');
     });

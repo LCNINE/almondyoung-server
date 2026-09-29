@@ -44,6 +44,15 @@ describe('MembershipCheckoutConsumer', () => {
     expect(confirmCheckoutIntent).toHaveBeenCalledWith('i1');
   });
 
+  // 미수 청산 결제도 type 은 MEMBERSHIP_FEE 다(멤버십 결제 정책을 그대로 받으려고). 이걸 구독
+  // 생성으로 오인하면 planId 가 없어 실패하고, 빚을 갚은 사람의 결제가 DLQ 로 간다.
+  it('미수 청산 결제는 구독 생성 대상이 아니다', async () => {
+    await consumer.onIntentCaptured(
+      capturedPayload({ metadata: { type: 'MEMBERSHIP_FEE', membershipPaymentKind: 'ARREARS', arrearsIds: ['a1'] } }),
+    );
+    expect(confirmCheckoutIntent).not.toHaveBeenCalled();
+  });
+
   it('이미 구독이 있으면 멱등하게 스킵한다', async () => {
     confirmCheckoutIntent.mockRejectedValue(new ActiveSubscriptionExistsException());
     await expect(

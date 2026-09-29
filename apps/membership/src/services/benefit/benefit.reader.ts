@@ -5,6 +5,9 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { differenceInDays, addDays } from 'date-fns';
 import { calculateCycleStart, calculateCycleEnd, formatDate, isCycleCompleted } from '../../utils/cycle.utils';
+import { MembershipBenefitUsage } from './benefit-usage';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * 어떤 기간에 실제로 받은 멤버십 할인.
@@ -170,10 +173,38 @@ export class BenefitReader {
     };
   }
 
-  /** 특정 날짜 이후 실제로 받은 할인 혜택 합계. 연간 중도해지 정산에서 차감할 금액이다. */
-  async sumBenefitDiscountSince(userId: string, from: Date): Promise<number> {
-    const usage = await this.findBenefitUsageBetween(userId, from);
-    return usage.totalDiscountAmount;
+  /**
+   * 기간 안에 쓴 멤버십 혜택 전부(판정은 `hasUsedMembershipBenefit`).
+   *
+   * 웰컴딜은 사용자당 한 줄이고 취소되면 지워진다 — 「지금 산 상태이고 그 시각이 기간 안」이면 쓴 것이다.
+   * 구매확정 때 시각이 다시 찍혀 뒤로 밀릴 수 있지만, 판정은 «기간 시작 이후인가»만 보므로 영향이 없다.
+   */
+  async findMembershipBenefitUsageSince(userId: string, from: Date): Promise<MembershipBenefitUsage> {
+    const [discount, welcomeDeal] = await Promise.all([
+      this.findBenefitUsageBetween(userId, from),
+      this.hasWelcomeDealSince(userId, from),
+    ]);
+    return { ...discount, welcomeDeal };
+  }
+
+  /**
+   * 웰컴딜 표만 `user_id` 가 uuid 칸이다(다른 표는 문자열). uuid 가 아닌 id 로 물으면 DB 가 형 변환
+   * 오류를 던져 해지 화면·미납 기록까지 같이 죽는다 — 그런 id 는 이 표에 행이 있을 수도 없으니 묻지 않는다.
+   */
+  private async hasWelcomeDealSince(userId: string, from: Date): Promise<boolean> {
+    if (!UUID_PATTERN.test(userId)) return false;
+    const [row] = await this.db.db
+      .select({ purchasedAt: schema.welcomeMembershipEligibility.purchasedAt })
+      .from(schema.welcomeMembershipEligibility)
+      .where(
+        and(
+          eq(schema.welcomeMembershipEligibility.userId, userId),
+          eq(schema.welcomeMembershipEligibility.hasPurchased, true),
+          gte(schema.welcomeMembershipEligibility.purchasedAt, from),
+        ),
+      )
+      .limit(1);
+    return !!row;
   }
 
   /** 기간 내 할인 주문 목록. 고객이 "어느 주문에서 얼마 아꼈는지" 를 확인하는 용도다. */
