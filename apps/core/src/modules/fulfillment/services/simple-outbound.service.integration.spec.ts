@@ -184,6 +184,35 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
+  // 롤링 배포 중 옛 태스크가 시작한 배치(started_at NULL + 열린 세션 + 작업 항목은 아직 queued)도 같은 차단 표지로 나온다.
+  it('시작 전 배치에 옛 코드가 연 세션이 열려 있으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      await tx.insert(wmsTables.batchInventorySessions).values({ batchId: fixture.batchId, status: 'active' });
+      const service = assembleSimpleOutbound(tx);
+
+      const prepared = await service.prepare(
+        fixture.shipmentId,
+        { id: fixture.actorId, roles: ['logistics_worker'] },
+        `prep-${randomUUID()}`,
+        tx,
+      );
+
+      expect(prepared).toMatchObject({
+        outcome: 'preparation_blocked',
+        code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+        reasonCode: 'ACTIVE_WORK_REQUIRES_REVIEW',
+        batchId: fixture.batchId,
+        invalidatedPlanId: null,
+      });
+      const allocations = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItemId));
+      expect(allocations).toEqual([]);
+    });
+  });
+
   // 단독 picker-claim 은 시작 전 배치의 작업 항목도 queued → picking 으로 옮긴다. 인계 전이라 커스터디가
   // 없으므로 그 항목도 시작 대상이다 — 막으면 그 배치는 영영 시작하지 못한다.
   it('시작 전 배치에서 다른 박스가 먼저 picker-claim 됐어도 준비가 배치를 시작하고 두 박스를 모두 배정한다', async () => {

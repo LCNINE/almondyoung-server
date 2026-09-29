@@ -31,6 +31,7 @@ ADR-0030 을 부분 대체한다(계획 층의 «존재»를 대체, 3방식 dif
   함께 같은 것을 증명한다.
 - 시작된 배치에 박스를 추가하면 `OUTBOUND_BATCH_ALREADY_STARTED`. 합류는 S1-B 가 연다.
 - 배포는 expand(`work_item_id` 추가, `plan_id` NULL 허용) → contract(계획 테이블·`plan_id` 삭제) 두 번.
-- `started_at` 이 NULL 인데 작업 항목이 `picking` 을 넘어선 배치(이 전환 이전에 만들어진 배치)가 있을 수 있다.
+- `started_at` 이 NULL 인 배치(이 전환 이전에, 또는 롤링 배포 중 옛 태스크가 시작한 배치)에 열린 세션이 있거나
+  `picking` 을 지난 항목이 있으면 배치 시작은 `PICKING_BATCH_STATE_CORRUPT` 로 거절하고 배정을 남기지 않는다.
   단순출고는 이를 새 409 코드가 아니라 기존 준비 차단 표지 `ACTIVE_WORK_REQUIRES_REVIEW` 로 낸다 —
   현장 앱 계약(`SIMPLE_OUTBOUND_PLAN_INVALIDATED`)은 그대로 두고 `invalidatedPlanId` 는 항상 `null`.

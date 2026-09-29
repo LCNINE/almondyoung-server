@@ -812,6 +812,7 @@ class PickToToteContractState {
       if (index === 1) {
         return [{ shipmentId: PICKING_CONTRACT_IDS.shipmentA }, { shipmentId: PICKING_CONTRACT_IDS.shipmentB }];
       }
+      if (index === 2) return []; // 시작 전 배치에 열린 세션 없음
     }
     if (this.operation === 'picking.pick_to_tote.register_tote') {
       if (index === 0) return [{ id: 'warehouse-1' }];

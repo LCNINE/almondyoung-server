@@ -184,6 +184,49 @@ describe('startBatchPicking', () => {
     ).rejects.toMatchObject({ response: { code: 'PICKING_BATCH_EMPTY' } });
   });
 
+  it.each(['completed', 'canceled'])('%s 배치는 시작하지 않는다(OUTBOUND_BATCH_NOT_STARTABLE)', async (status) => {
+    const fake = fakeTrx([[{ id: 'batch-1', startedAt: null, status }]]);
+    trxHolder.trx = fake.trx;
+    const d = deps();
+    await expect(
+      startBatchPicking(d, 'discrete', { batchId: 'batch-1', actorId: 'a', idempotencyKey: 'k' }),
+    ).rejects.toMatchObject({ response: { code: 'OUTBOUND_BATCH_NOT_STARTABLE' } });
+    expect(mockedLocks.lockAggregate).not.toHaveBeenCalled();
+    expect(fake.inserted).toHaveLength(0);
+    expect(d.sessions.startSession).not.toHaveBeenCalled();
+  });
+
+  it('잠금을 기다리는 사이 배치가 끝났으면 잠근 행으로 다시 막는다', async () => {
+    mockedLocks.lockAggregate.mockResolvedValue({
+      ...aggregate,
+      batch: { ...aggregate.batch, status: 'canceled' },
+    } as never);
+    const fake = fakeTrx([
+      [{ id: 'batch-1', startedAt: null, status: 'created' }],
+      [{ shipmentId: 'shp-1' }, { shipmentId: 'shp-2' }],
+    ]);
+    trxHolder.trx = fake.trx;
+    await expect(
+      startBatchPicking(deps(), 'discrete', { batchId: 'batch-1', actorId: 'a', idempotencyKey: 'k' }),
+    ).rejects.toMatchObject({ response: { code: 'OUTBOUND_BATCH_NOT_STARTABLE' } });
+    expect(fake.inserted).toHaveLength(0);
+  });
+
+  it('시작 전 배치에 옛 코드가 연 세션이 열려 있으면 PICKING_BATCH_STATE_CORRUPT 이고 배정하지 않는다', async () => {
+    const fake = fakeTrx([
+      [{ id: 'batch-1', startedAt: null, status: 'picking' }],
+      [{ shipmentId: 'shp-1' }, { shipmentId: 'shp-2' }],
+      [{ id: 'legacy-session' }], // 열린 세션
+    ]);
+    trxHolder.trx = fake.trx;
+    const d = deps();
+    await expect(
+      startBatchPicking(d, 'discrete', { batchId: 'batch-1', actorId: 'a', idempotencyKey: 'k' }),
+    ).rejects.toMatchObject({ response: { code: 'PICKING_BATCH_STATE_CORRUPT' } });
+    expect(fake.inserted).toHaveLength(0);
+    expect(d.sessions.startSession).not.toHaveBeenCalled();
+  });
+
   it('위치 재고가 모자라면 배정 행을 하나도 넣지 않는다', async () => {
     mockedLocks.lockSourceCapacities.mockResolvedValue([
       { skuId: 'sku-1', sourceLocationId: 'loc-1', stockVersion: 4, remainingQty: 2 },

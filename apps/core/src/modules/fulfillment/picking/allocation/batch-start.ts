@@ -41,7 +41,11 @@ export async function startBatchPicking(
     },
     async (trx, commandRequestId) => {
       const [batch] = await trx
-        .select({ id: wmsTables.outboundBatches.id, startedAt: wmsTables.outboundBatches.startedAt })
+        .select({
+          id: wmsTables.outboundBatches.id,
+          startedAt: wmsTables.outboundBatches.startedAt,
+          status: wmsTables.outboundBatches.status,
+        })
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, input.batchId))
         .limit(1);
@@ -50,6 +54,7 @@ export async function startBatchPicking(
         const response = await existingStart(trx, input.batchId, commandRequestId);
         return { response, resourceType: 'batch_inventory_session', resourceId: response.sessionId };
       }
+      assertBatchStartable(input.batchId, batch.status);
 
       const startable = await trx
         .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
@@ -70,6 +75,9 @@ export async function startBatchPicking(
         const response = await existingStart(trx, input.batchId, commandRequestId);
         return { response, resourceType: 'batch_inventory_session', resourceId: response.sessionId };
       }
+      // 잠근 행으로 다시 본다 — 첫 조회와 잠금 사이에 배치가 완료·취소됐을 수 있다.
+      assertBatchStartable(input.batchId, aggregate.batch.status);
+      await assertNoOpenSession(trx, input.batchId);
       await assertStartEligibility(trx, deps.waybills, aggregate, shipmentIds);
 
       const workItemByShipment = new Map(aggregate.workItems.map((item) => [item.shipmentId, item.id]));
@@ -121,6 +129,38 @@ export async function startBatchPicking(
     },
     tx,
   );
+}
+
+/** 옛 `startSession` 이 막던 것과 같다 — 끝난 배치(completed·canceled)는 새로 시작하지 않는다. */
+function assertBatchStartable(batchId: string, status: string): void {
+  if (status === 'completed' || status === 'canceled') {
+    throw conflict('OUTBOUND_BATCH_NOT_STARTABLE', `Outbound batch ${batchId} is ${status}`);
+  }
+}
+
+/**
+ * 시작 전(`started_at` NULL)인데 열린 세션이 있다 = 계획 흡수 전 코드가 연 세션이다(롤링 배포 중 옛 태스크가 시작한 배치).
+ * 그대로 배정하면 옛 세션의 AT_SOURCE 가 가용을 깎아 SOURCE_INSUFFICIENT 재시도 고리에 빠지거나, 배정이 통과해
+ * `startSession` 의 날 409(SESSION_ALREADY_STARTED)가 된다. 손상으로 내서 단순출고가 검토 차단 표지로 바꾸게 한다.
+ *
+ * 잠금 없이 읽는다: `lockAggregate` 의 불변식 검사가 이 배치의 세션 행을 이미 FOR UPDATE 로 잡았고(구성요소 →
+ * 작업 항목 → 세션 순), 새 세션 삽입은 우리가 쥔 배치 행 잠금 뒤에서만 일어난다. 여기서 세션에 먼저 FOR UPDATE 를
+ * 거는 일은 없으므로 잠금 순서가 바뀌지 않는다.
+ */
+async function assertNoOpenSession(trx: DbTx, batchId: string): Promise<void> {
+  const [open] = await trx
+    .select({ id: wmsTables.batchInventorySessions.id })
+    .from(wmsTables.batchInventorySessions)
+    .where(
+      and(
+        eq(wmsTables.batchInventorySessions.batchId, batchId),
+        inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+      ),
+    )
+    .limit(1);
+  if (open) {
+    throw conflict('PICKING_BATCH_STATE_CORRUPT', `Unstarted batch ${batchId} already has an open inventory session`);
+  }
 }
 
 async function existingStart(trx: DbTx, batchId: string, operationId: string): Promise<BatchStartResult> {

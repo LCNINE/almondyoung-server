@@ -121,6 +121,43 @@ describeIfDb('배치 시작 (startBatchPicking)', () => {
     });
   });
 
+  // 롤링 배포 중 옛 태스크가 시작한 배치: started_at 은 NULL 인데 옛 코드가 연 세션이 열려 있고, 작업 항목은
+  // 아직 queued 다. 배정까지 가면 옛 세션의 AT_SOURCE 가 가용을 깎거나 startSession 이 날 409 를 낸다.
+  it('시작 전 배치에 옛 코드가 연 세션이 열려 있으면 PICKING_BATCH_STATE_CORRUPT 이고 배정을 남기지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second } = await seedTwoBoxBatch(tx);
+      const [legacy] = await tx
+        .insert(wmsTables.batchInventorySessions)
+        .values({ batchId: first.batchId, status: 'active' })
+        .returning();
+      const { picking } = assembleOutbound(tx);
+
+      await expect(
+        tx.transaction((trx) =>
+          picking.start({ batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` }, trx),
+        ),
+      ).rejects.toMatchObject({ response: { code: 'PICKING_BATCH_STATE_CORRUPT' } });
+
+      const allocations = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(
+          rawSql`${wmsTables.pickingSourceAllocations.workItemId} IN (${first.workItemId}::uuid, ${second.workItemId}::uuid)`,
+        );
+      expect(allocations).toHaveLength(0);
+      const sessions = await tx
+        .select({ id: wmsTables.batchInventorySessions.id })
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, first.batchId));
+      expect(sessions).toEqual([{ id: legacy.id }]);
+      const [batch] = await tx
+        .select()
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, first.batchId));
+      expect(batch.startedAt).toBeNull();
+    });
+  });
+
   it('시작된 배치에 박스를 추가하면 OUTBOUND_BATCH_ALREADY_STARTED', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first } = await seedTwoBoxBatch(tx, 1, 10);

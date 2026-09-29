@@ -243,6 +243,7 @@ class AggregateHarnessState {
     if (this.operation === 'picking.aggregate_then_sort.start') {
       if (index === 0) return [{ id: IDS.batch, startedAt: this.startedAt }];
       if (index === 1) return [{ shipmentId: IDS.shipmentA }, { shipmentId: IDS.shipmentB }];
+      if (index === 2) return []; // 시작 전 배치에 열린 세션 없음
     }
     if (this.operation === 'picking.aggregate_then_sort.bulk_collect') {
       if (index === 0) return [{ qty: 5 }];

@@ -386,6 +386,7 @@ class ProductionDiscreteState {
       if (index === 1) {
         return [{ shipmentId: PICKING_CONTRACT_IDS.shipmentA }, { shipmentId: PICKING_CONTRACT_IDS.shipmentB }];
       }
+      if (index === 2) return []; // 시작 전 배치에 열린 세션 없음
     }
     if (this.operation === 'picking.discrete.scan') {
       if (index === 0) return [{ shipmentId: PICKING_CONTRACT_IDS.shipmentA, skuId: PICKING_CONTRACT_IDS.sku }];
