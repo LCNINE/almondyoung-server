@@ -227,7 +227,8 @@ describeIfDb('배치 시작 (startBatchPicking)', () => {
 
   it('한 줄이 모자라면 그 줄만 STOCK_SHORT 로 보고하고 아무것도 쓰지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
-      // 2 + 3 > 4 — 줄 id 순에 따라 어느 박스가 모자라는지는 달라지지만 모자란 줄은 정확히 하나, 1개 부족이다.
+      // 2 + 3 > 4 — 둘 다 혼자서는 채울 수 있어 가장 앞선 줄 id 의 박스가 이긴다. 줄 id 가 무작위라 어느 박스가
+      // 막히는지는 달라지지만 막힌 박스는 정확히 하나, 남은 용량으로 재어 1개 부족이다.
       const { first, second } = await seedTwoBoxBatch(tx, 3, 4);
       const { picking } = assembleOutbound(tx);
       const error = await tx
@@ -253,6 +254,25 @@ describeIfDb('배치 시작 (startBatchPicking)', () => {
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, first.batchId));
       expect(batch.startedAt).toBeNull();
+    });
+  });
+
+  it('스스로 못 채우는 박스만 막히고, 그 박스가 쥔 일부 몫 때문에 다른 박스가 보고되지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 재고 4 — first 2개는 채울 수 있고 second 5개는 혼자서도 못 채운다. 줄 id 순과 무관하게 second 만 막히고,
+      // 부족분은 first 가 쓰고 남은 2 로 잰 3 이다.
+      const { first, second } = await seedTwoBoxBatch(tx, 5, 4);
+      const { picking } = assembleOutbound(tx);
+      const error = await tx
+        .transaction((trx) =>
+          picking.start({ batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` }, trx),
+        )
+        .catch((e: unknown) => e);
+      expect(error).toMatchObject({ response: { code: 'BATCH_START_BLOCKED' } });
+      const errors = (error as { response: { errors: Array<Record<string, unknown>> } }).response.errors;
+      expect(errors).toEqual([
+        expect.objectContaining({ shipmentId: second.shipmentId, reason: 'STOCK_SHORT', requiredQty: 5, shortQty: 3 }),
+      ]);
     });
   });
 

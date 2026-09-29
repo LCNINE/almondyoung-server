@@ -77,8 +77,9 @@ describe('allocateLines — E8 배정 규칙', () => {
 
 describe('allocateLines — 모자란 줄 보고', () => {
   it('첫 부족에서 멈추지 않고 모자란 줄을 전부 돌려준다', () => {
+    // 한 박스의 세 줄 — 박스가 막히면 그 박스의 모자란 줄은 전부 보고된다
     const { shortages } = allocateLines(
-      [line('l1', 'sku-1', 3), line('l2', 'sku-2', 1), line('l3', 'sku-1', 2)],
+      [line('l1', 'sku-1', 3, 'wi'), line('l2', 'sku-2', 1, 'wi'), line('l3', 'sku-1', 2, 'wi')],
       [cap('sku-1', 'loc-a', 'A-01', 2)],
     );
     expect(shortages.map((s) => [s.shipmentLineId, s.shortQty])).toEqual([
@@ -106,5 +107,62 @@ describe('allocateLines — 모자란 줄 보고', () => {
   it('적치 대기분은 줄 사이에 누적 소진된다 — 둘째 줄은 남은 대기분으로 판정', () => {
     const { shortages } = allocateLines([line('l1', 'sku', 2), line('l2', 'sku', 2)], [], new Map([['sku', 3]]));
     expect(shortages.map((s) => s.reason)).toEqual(['INBOUND_PENDING', 'STOCK_SHORT']);
+  });
+});
+
+describe('allocateLines — 박스 단위 고정점(막는 박스만 보고)', () => {
+  it('재고 5, A 6개·B 3개 — A 만 막히고 B 의 배정은 남는다(줄 순서와 무관)', () => {
+    const capacities = [cap('sku', 'loc-a', 'A-01', 5)];
+    for (const [aId, bId] of [
+      ['l1', 'l2'],
+      ['l2', 'l1'],
+    ]) {
+      const { drafts, shortages } = allocateLines(
+        [line(aId, 'sku', 6, 'box-a'), line(bId, 'sku', 3, 'box-b')],
+        capacities,
+      );
+      expect(shortages).toEqual([
+        { workItemId: 'box-a', shipmentLineId: aId, skuId: 'sku', requiredQty: 6, shortQty: 4, reason: 'STOCK_SHORT' },
+      ]);
+      expect(drafts).toEqual([
+        { workItemId: 'box-b', shipmentLineId: bId, sourceLocationId: 'loc-a', qty: 3, sourceStockVersion: 1 },
+      ]);
+    }
+  });
+
+  it('세 박스가 다투면 가장 앞선 줄 id 의 박스가 이기고, 뒤 박스들은 남은 용량으로 잰다', () => {
+    const { drafts, shortages } = allocateLines(
+      [line('l1', 'sku', 3, 'box-1'), line('l2', 'sku', 3, 'box-2'), line('l3', 'sku', 2, 'box-3')],
+      [cap('sku', 'loc-a', 'A-01', 5)],
+    );
+    // box-1(3) 들임 → box-2(3) 는 2 남아 막힘 → box-3(2) 는 들임. 막힌 box-2 는 남은 0 으로 잰다.
+    expect(drafts.map((d) => [d.workItemId, d.qty])).toEqual([
+      ['box-1', 3],
+      ['box-3', 2],
+    ]);
+    expect(shortages.map((s) => [s.workItemId, s.shortQty])).toEqual([['box-2', 3]]);
+  });
+
+  it('여러 줄 박스: 스스로 못 채우는 박스가 앞선 줄로 쥔 몫은 다른 박스를 막지 않는다', () => {
+    const { drafts, shortages } = allocateLines(
+      [line('l1', 'sku-s', 2, 'box-r'), line('l2', 'sku-s', 4, 'box-q'), line('l4', 'sku-t', 5, 'box-r')],
+      [cap('sku-s', 'loc-a', 'A-01', 5)],
+    );
+    expect(drafts.map((d) => [d.workItemId, d.shipmentLineId, d.qty])).toEqual([['box-q', 'l2', 4]]);
+    // box-r 은 남은 1 위에서 잰다: l1 은 1 만 채워 1 부족, l4 는 5 부족
+    expect(shortages.map((s) => [s.workItemId, s.shipmentLineId, s.shortQty])).toEqual([
+      ['box-r', 'l1', 1],
+      ['box-r', 'l4', 5],
+    ]);
+  });
+
+  it('막힌 박스의 사유는 막힌 줄에 대해서만 적치 대기분을 소진한다', () => {
+    const { shortages } = allocateLines(
+      [line('l1', 'sku', 3, 'box-1'), line('l2', 'sku', 4, 'box-2')],
+      [cap('sku', 'loc-a', 'A-01', 5)],
+      new Map([['sku', 2]]),
+    );
+    // box-1 들임, box-2 는 남은 2 로 2 부족 — 대기분 2 로 채워지니 INBOUND_PENDING
+    expect(shortages.map((s) => [s.workItemId, s.shortQty, s.reason])).toEqual([['box-2', 2, 'INBOUND_PENDING']]);
   });
 });
