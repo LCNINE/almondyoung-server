@@ -108,13 +108,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     moduleRef,
   );
-  const discrete = new DiscretePickingStrategy(
-    commands,
-    workflowGate,
-    sessions,
-    batches,
-    assembleLabels(dbService).guard,
-  );
+  const labelGuard = assembleLabels(dbService).guard;
+  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
   const picking = new PickingProcessService(
     dbService,
     commands,
@@ -140,7 +135,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     audit,
     workflowGate,
     coreOrderPublisher,
-    assembleLabels(dbService).guard,
+    labelGuard,
   );
   const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
   return {

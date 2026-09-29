@@ -11,6 +11,7 @@ import {
   startBatchFor,
 } from '../services/__support__';
 import { assembleLabels, promoteToCarrierWaybill } from './__support__/label-fixtures';
+import { LabelCurrencyGuard } from './label-currency.guard';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -51,6 +52,43 @@ describeIfDb('재출력 게이트 (I5)', () => {
       await printCurrent(tx, box, labels);
       const state = await scan(`scan-${randomUUID()}`);
       expect(isPreparationBlocked(state)).toBe(false);
+      // 한진 송장 박스가 검수·발송(lockAggregate 게이트)까지 통과해 끝까지 출고된다.
+      const last = await scan(`scan-${randomUUID()}`);
+      if (isPreparationBlocked(last)) throw new Error('Expected prepared outbound state');
+      expect(last.status).toBe('shipped');
+    });
+  });
+
+  it('피킹 게이트를 다 통과한 뒤 발송 직전(lockAggregate)에 송장이 바뀌면 발송이 LABEL_REPRINT_REQUIRED 로 거절된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, scan, labels } = await preparedBox(tx, 1, true);
+      await printCurrent(tx, box, labels);
+      const original = LabelCurrencyGuard.prototype.assertCurrent;
+      const callers: boolean[] = [];
+      const spy = jest.spyOn(LabelCurrencyGuard.prototype, 'assertCurrent').mockImplementation(async function (
+        this: LabelCurrencyGuard,
+        ...args: Parameters<typeof original>
+      ) {
+        const fromDispatch = new Error().stack?.includes('lockAggregate') ?? false;
+        callers.push(fromDispatch);
+        if (fromDispatch) {
+          await tx
+            .update(wmsTables.shipments)
+            .set({ entrancePassword: '#9999' })
+            .where(eq(wmsTables.shipments.id, box.shipmentId));
+        }
+        return original.apply(this, args);
+      });
+      try {
+        // 이 스캔은 discrete scan·completePick 게이트를 지나 lockAggregate 게이트에서만 걸린다.
+        await expect(scan(`scan-${randomUUID()}`)).rejects.toMatchObject({
+          response: { code: 'LABEL_REPRINT_REQUIRED' },
+        });
+        expect(callers.filter(Boolean)).toHaveLength(1);
+        expect(callers.filter((c) => !c).length).toBeGreaterThanOrEqual(1);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 

@@ -604,19 +604,9 @@ describe('ShipmentDispatchService', () => {
     it('자사몰 회원 주문이면 받는 사람과 부분 발송 여부를 담아 싣는다', async () => {
       const { service, coreOrderOutbox } = makeService();
 
-      await notify(
-        service,
-        [order()],
-        [
-          {
-            id: IDS.so,
-            displayOrderNo: '3900',
-            customerId: 'user-1',
-            customerEmail: 'a@example.com',
-            customerName: '홍길동',
-          },
-        ],
-      );
+      await notify(service, [order()], [
+        { id: IDS.so, displayOrderNo: '3900', customerId: 'user-1', customerEmail: 'a@example.com', customerName: '홍길동' },
+      ]);
 
       expect(coreOrderOutbox.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({

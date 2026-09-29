@@ -46,6 +46,9 @@ describe('재출력 게이트 배선', () => {
   it('검수·발송 공통 잠금(lockAggregate)이 작업 항목 잠금 뒤에 게이트를 부른다', () => {
     const body = methodBodies(join(DIR, '../services/shipment-dispatch.service.ts')).get('lockAggregate') ?? '';
     expect(body).toContain('this.labels.assertCurrent(workItem.id');
+    expect(body.indexOf('this.labels.assertCurrent(workItem.id')).toBeGreaterThan(
+      body.indexOf(".for('update')", body.indexOf('initialWorkItem.id')),
+    );
   });
 
   it('게이트 진입 메서드 수가 도출 목록과 같다 — 새 전진 명령이 생기면 이 목록과 계획을 같이 고친다', () => {

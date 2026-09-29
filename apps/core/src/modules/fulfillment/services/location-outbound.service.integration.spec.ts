@@ -451,11 +451,15 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         .select()
         .from(wmsTables.batchInventorySessionBalances)
         .where(eq(wmsTables.batchInventorySessionBalances.sessionId, session.id));
-      await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, f.waybillId));
+      // 발송 단계만 보는 실패를 심는다 — 확정 예약이 사라지면 피킹·완료는 통과하고 consumeForDispatch 에서만 거절된다.
+      // (송장을 무효화하면 재출력 게이트 I5 가 첫 피킹 스캔에서 먼저 잡아 롤백 검증이 공허해진다.)
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, f.shipmentLineId));
       const key = randomUUID();
-      // 재출력 게이트(I5)가 첫 피킹 스캔에서 무효 송장을 먼저 잡는다 — 예전엔 발송 단계의 SHIPMENT_INVOICE_NOT_READY.
       await expect(service.force(f.shipmentId, input, actor, key, authorization, tx)).rejects.toMatchObject({
-        response: { code: 'WAYBILL_NOT_DISPATCHABLE' },
+        response: { message: expect.stringContaining('confirmed reservations') },
       });
       expect(
         await tx

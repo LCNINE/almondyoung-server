@@ -163,28 +163,10 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       workflow,
       moduleRef as never,
     );
-    const aggregate = new AggregateThenSortPickingStrategy(
-      commands,
-      workflow,
-      sessions,
-      batches,
-      assembleLabels(dbService).guard,
-    );
-    const discrete = new DiscretePickingStrategy(
-      commands,
-      workflow,
-      sessions,
-      batches,
-      assembleLabels(dbService).guard,
-    );
-    const tote = new PickToTotePickingStrategy(
-      commands,
-      workflow,
-      sessions,
-      batches,
-      audit,
-      assembleLabels(dbService).guard,
-    );
+    const labelGuard = assembleLabels(dbService).guard;
+    const aggregate = new AggregateThenSortPickingStrategy(commands, workflow, sessions, batches, labelGuard);
+    const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches, labelGuard);
+    const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit, labelGuard);
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
     const picking = new PickingProcessService(
       dbService,
@@ -240,7 +222,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
-      assembleLabels(dbService).guard,
+      labelGuard,
     );
     return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
   }
