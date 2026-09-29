@@ -540,7 +540,7 @@ export const logoContestEntryStatusEnum = pgEnum('logo_contest_entry_status', ['
  * 기간은 `LOGO_CONTEST_STARTS_AT`/`LOGO_CONTEST_ENDS_AT` 설정값이 들고 있다.
  *
  * `authorName` 은 출품 시점 스냅샷이다(`questions.nickname` 과 같은 결). 공개 응답에는
- * 가린 값만 나가고, 원본은 어드민만 본다.
+ * 출품작 id 로 만든 닉네임이 나가고, 원본은 어드민만 본다.
  */
 export const logoContestEntries = pgTable(
   'logo_contest_entries',

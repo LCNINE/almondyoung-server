@@ -65,7 +65,9 @@ describeIfDb('WaybillReader (DB integration)', () => {
         const ctx = await reader.loadIssueContext(tx as never, seed.shipmentId);
         expect(ctx.status).toBe('planned');
         expect(ctx.manifestVersion).toBe(seed.manifestVersion);
-        expect(ctx.lines).toEqual([{ productName: '아몬드유 30입', quantity: 2, skuId: seed.skuId }]);
+        expect(ctx.lines).toEqual([
+          { productName: '아몬드유 30입', skuName: 'it-sku', quantity: 2, skuId: seed.skuId },
+        ]);
         expect(reader.recipientHashOf(ctx.recipientSnapshot)).toHaveLength(64);
         throw new Error('rollback');
       })

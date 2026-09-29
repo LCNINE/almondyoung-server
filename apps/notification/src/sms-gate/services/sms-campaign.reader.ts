@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import { SmsAudienceSummary, UserContactClient } from '@app/shared';
+import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestError, NotFoundError, SmsAudienceSummary, UserContact, UserContactClient } from '@app/shared';
 import { NotificationCampaign } from '../../../database/schemas/notification-schema';
 import { PreviewSmsCampaignDto } from '../dto';
+import { MergedAudience, mergeCampaignAudience } from '../utils/campaign-audience';
+import { toKrE164 } from '../clients/sms-gate.client';
 import { isSendable } from '../utils/device-picker';
 import { bulkIntervalMs, BulkDevice, estimateBulkSchedule } from '../utils/bulk-schedule';
 import { BULK_WINDOW_END_HOUR, BULK_WINDOW_START_HOUR } from '../constants/sms-gate.constants';
@@ -20,15 +22,16 @@ export interface SmsCampaignListItem {
   sendAt: Date | null;
   state: SmsCampaignState;
   createdBy: string;
+  createdByName: string | null;
   createdAt: Date;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
   estimatedCompleteDate: string | null;
 }
 
 export interface SmsCampaignPreview {
-  audience: SmsAudienceSummary;
   recipients: number;
   excluded: number;
+  duplicates: number;
   ahead: number;
   window: { start: string; end: string };
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
@@ -42,6 +45,8 @@ const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 @Injectable()
 export class SmsCampaignReader {
+  private readonly logger = new Logger(SmsCampaignReader.name);
+
   constructor(
     private readonly repository: SmsGateRepository,
     private readonly deviceReader: SmsDeviceReader,
@@ -52,19 +57,44 @@ export class SmsCampaignReader {
     return this.userContactClient.summarizeSmsAudience();
   }
 
+  /**
+   * 발송 명단을 확정한다. 미리보기와 생성이 같은 함수를 써서 확인창 숫자와 실제 발송 수가 갈리지 않는다.
+   * 광고로 그룹에 보낼 때는 회원 명단도 불러와 동의 안 한 회원의 번호를 뺀다.
+   */
+  async resolveAudience(dto: PreviewSmsCampaignDto): Promise<MergedAudience> {
+    const groupIds = [...new Set(dto.groupIds ?? [])];
+    const includeMembers = dto.includeMembers ?? false;
+    if (!includeMembers && groupIds.length === 0) throw new BadRequestError('받는 사람을 하나 이상 고르세요');
+    const found = await this.repository.findRecipientGroupsByIds(groupIds);
+    const missing = groupIds.filter((id) => !found.some((g) => g.id === id));
+    if (missing.length > 0) throw new NotFoundError(`수신자 그룹을 찾을 수 없습니다: ${missing.join(', ')}`);
+
+    const marketing = dto.category === 'MARKETING';
+    const [members, groupRows] = await Promise.all([
+      includeMembers || (marketing && groupIds.length > 0)
+        ? this.userContactClient.findSmsAudience(false)
+        : Promise.resolve([]),
+      this.repository.findGroupRecipients(groupIds),
+    ]);
+    const optedOut = marketing
+      ? await this.repository.findOptedOut([...new Set(groupRows.map((row) => toKrE164(row.phone)))])
+      : new Set<string>();
+    return mergeCampaignAudience({ members, includeMembers, groupRows, marketing, optedOut });
+  }
+
   async preview(dto: PreviewSmsCampaignDto): Promise<SmsCampaignPreview> {
     const now = new Date();
     const [audience, ahead, devices] = await Promise.all([
-      this.userContactClient.summarizeSmsAudience(),
+      this.resolveAudience(dto),
       this.repository.countPending(),
       this.activeDevices(now),
     ]);
-    const recipients = dto.category === 'MARKETING' ? audience.consented : audience.withPhone;
+    const recipients = audience.recipients.length;
     const estimate = estimateBulkSchedule(devices, now, dto.sendAt ? new Date(dto.sendAt) : now, ahead, recipients);
     return {
-      audience,
       recipients,
-      excluded: audience.active - recipients,
+      excluded: audience.excluded,
+      duplicates: audience.duplicates,
       ahead,
       window: { start: hour(BULK_WINDOW_START_HOUR), end: hour(BULK_WINDOW_END_HOUR) },
       devices: devices.map((d) => ({
@@ -81,10 +111,11 @@ export class SmsCampaignReader {
   async list(): Promise<SmsCampaignListItem[]> {
     const now = new Date();
     const campaigns = await this.repository.listCampaigns(CAMPAIGN_LIST_LIMIT);
-    const [counts, devices, pendingSingles] = await Promise.all([
+    const [counts, devices, pendingSingles, creators] = await Promise.all([
       this.repository.countByCampaign(campaigns.map((c) => c.campaignId)),
       this.activeDevices(now),
       this.repository.countPending(true),
+      this.loadCreators([...new Set(campaigns.map((c) => c.createdBy))]),
     ]);
 
     const items = campaigns.map((campaign) => {
@@ -100,6 +131,7 @@ export class SmsCampaignReader {
         sendAt: campaign.sendAt,
         state: this.stateOf(campaign, pending, now),
         createdBy: campaign.createdBy,
+        createdByName: creators.get(campaign.createdBy)?.username ?? null,
         createdAt: campaign.createdAt,
         counts: { total, pending, sent: byStatus('SENT'), failed: byStatus('FAILED'), cancelled: byStatus('CANCELLED') },
         estimatedCompleteDate: null as string | null,
@@ -122,6 +154,15 @@ export class SmsCampaignReader {
     if (pending === 0) return 'COMPLETED';
     if (campaign.sendAt && campaign.sendAt > now) return 'SCHEDULED';
     return 'PROCESSING';
+  }
+
+  private async loadCreators(userIds: string[]): Promise<Map<string, UserContact>> {
+    try {
+      return await this.userContactClient.findContacts(userIds);
+    } catch (error) {
+      this.logger.warn(`대량 발송 작성자 이름 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
+      return new Map();
+    }
   }
 
   private async activeDevices(now: Date): Promise<(SmsDeviceStatus & BulkDevice)[]> {

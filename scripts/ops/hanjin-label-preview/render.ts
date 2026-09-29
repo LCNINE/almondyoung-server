@@ -13,7 +13,9 @@ import type { HanjinLabelData } from '../../../apps/core/src/modules/fulfillment
 import {
   HANJIN_LABEL_TEMPLATES,
   HANJIN_LABEL_TYPES,
+  type HanjinLabelType,
 } from '../../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-label-templates';
+import { encodeLabelPages } from '../../../apps/core/src/modules/fulfillment/waybill/label/label-document';
 import {
   barcodeWidthMm,
   mmToDots,
@@ -24,7 +26,6 @@ import {
   resolveLabelFontDir,
   SvgRasterizer,
 } from '../../../apps/core/src/modules/fulfillment/waybill/label/svg-rasterizer';
-import { encodeZpl } from '../../../apps/core/src/modules/fulfillment/waybill/label/zpl-encoder';
 
 /** PNG 미리보기 전용 — spec.svg 에 바코드 위치 테두리(빨간 사각형)를 얹는다. ZPL 은 원본 svg 를 그대로 쓴다. */
 function withBarcodeOverlay(spec: LabelSpec): string {
@@ -65,6 +66,7 @@ const SAMPLE: HanjinLabelData = {
   sender: { name: '아몬드영', phone: '010-0000-1111', baseAddress: '서울특별시 종로구 사직로 161' },
   deliveryMessage: '특이사항 없습니다.',
   commodityName: '토익 Speaking 1권',
+  items: [{ name: '토익 Speaking 1권', quantity: 1 }],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
   printedDate: '2026-09-27',
@@ -79,28 +81,47 @@ mkdirSync(outDir, { recursive: true });
 const fontDir = resolveLabelFontDir();
 const rasterizer = new SvgRasterizer();
 
-for (const type of HANJIN_LABEL_TYPES) {
-  const spec = HANJIN_LABEL_TEMPLATES[type](SAMPLE);
-  const name = `hanjin-${type.toLowerCase()}-preview`;
+const SEVEN_ITEMS: HanjinLabelData['items'] = [
+  { name: '노몬드 대용량 전처리제 1000ml', quantity: 1 },
+  { name: '노몬드 긴 마이크로 브러쉬', quantity: 1 },
+  { name: '실리콘 아이패치 블랙', quantity: 2 },
+  { name: '롤리킹 펌제 1제2제', quantity: 4 },
+  { name: '하이드로겔 아이패치 무지 50개입', quantity: 1 },
+  { name: '베르사 펌글루 5ml', quantity: 2 },
+  { name: '노몬드 크림리무버', quantity: 2 },
+];
 
-  const png = new Resvg(withBarcodeOverlay(spec), {
-    background: 'white',
-    fitTo: { mode: 'width', value: mmToDots(spec.widthMm) },
-    font: {
-      loadSystemFonts: false,
-      fontFiles: LABEL_FONT_FILES.map((f) => join(fontDir, f)),
-      defaultFontFamily: 'NanumGothic',
-    },
-  })
-    .render()
-    .asPng();
-  writeFileSync(join(outDir, `${name}.png`), png);
+const SAMPLES: Array<[name: string, type: HanjinLabelType, data: HanjinLabelData]> = [
+  ...HANJIN_LABEL_TYPES.map((type): [string, HanjinLabelType, HanjinLabelData] => [
+    `hanjin-${type.toLowerCase()}-preview`,
+    type,
+    SAMPLE,
+  ]),
+  // 품목 7줄 = FS 2쪽(4 + 3). 추가 쪽의 「발송 금지」 와 품목 칸을 실물로 대조한다.
+  ['hanjin-fs-items-preview', 'FS', { ...SAMPLE, items: SEVEN_ITEMS }],
+];
 
-  const bitmap = rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm));
-  const zpl = (compress: boolean) => encodeZpl(bitmap, spec.barcodes, { compress, rotation: spec.rotation });
-  writeFileSync(join(outDir, `${name}.zpl`), zpl(false));
-  writeFileSync(join(outDir, `${name}.compressed.zpl`), zpl(true));
+for (const [name, type, data] of SAMPLES) {
+  const pages = HANJIN_LABEL_TEMPLATES[type](data);
+  pages.forEach((spec, i) => {
+    const png = new Resvg(withBarcodeOverlay(spec), {
+      background: 'white',
+      fitTo: { mode: 'width', value: mmToDots(spec.widthMm) },
+      font: {
+        loadSystemFonts: false,
+        fontFiles: LABEL_FONT_FILES.map((f) => join(fontDir, f)),
+        defaultFontFamily: 'NanumGothic',
+      },
+    })
+      .render()
+      .asPng();
+    writeFileSync(join(outDir, `${name}${pages.length > 1 ? `-p${i + 1}` : ''}.png`), png);
+  });
+
+  writeFileSync(join(outDir, `${name}.zpl`), encodeLabelPages(pages, rasterizer, false));
+  writeFileSync(join(outDir, `${name}.compressed.zpl`), encodeLabelPages(pages, rasterizer, true));
+  const [first] = pages;
   console.log(
-    `wrote ${outDir}/${name}.{png,zpl,compressed.zpl}  (${spec.widthMm}×${spec.heightMm}mm, rotation ${spec.rotation})`,
+    `wrote ${outDir}/${name}.{png,zpl,compressed.zpl}  (${first.widthMm}×${first.heightMm}mm, rotation ${first.rotation}, ${pages.length} page(s))`,
   );
 }

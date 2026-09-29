@@ -42,7 +42,7 @@ export const useLogoContestTableColumns = () => {
         cell: ({ row }) => (
           <EntryAuthor
             userId={row.original.userId}
-            maskedName={row.original.authorName}
+            authorName={row.original.authorName}
           />
         ),
       }),

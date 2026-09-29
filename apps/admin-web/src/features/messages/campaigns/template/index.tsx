@@ -71,6 +71,7 @@ export default function SmsCampaignsTemplate() {
                 <TableHead className="w-64">진행률</TableHead>
                 <TableHead className="w-40">예약</TableHead>
                 <TableHead className="w-28">예상 완료일</TableHead>
+                <TableHead className="w-28">보낸 사람</TableHead>
                 <TableHead className="w-28">만든 날</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
@@ -105,6 +106,7 @@ export default function SmsCampaignsTemplate() {
                     <TableCell>
                       {isStoppable(campaign.state) ? (campaign.estimatedCompleteDate ?? '계산 불가') : '-'}
                     </TableCell>
+                    <TableCell>{campaign.createdByName ?? '-'}</TableCell>
                     <TableCell>{new Date(campaign.createdAt).toLocaleDateString('ko-KR')}</TableCell>
                     <TableCell>
                       {isStoppable(campaign.state) && (

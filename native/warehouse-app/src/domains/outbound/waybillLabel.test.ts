@@ -138,8 +138,19 @@ describe('runBatchLabelPrint', () => {
       onProgress: (done, total) => progress.push([done, total]),
     });
     expect(printed).toEqual(['^XAa^XZ', '^XAb^XZ', '^XAc^XZ']);
-    expect(result).toEqual({ printed: ['a', 'b', 'c'], skipped: [], notAttempted: [] });
+    expect(result).toEqual({ printed: ['a', 'b', 'c'], skipped: [], notAttempted: [], sheets: 3 });
     expect(progress).toEqual([[1, 3], [2, 3], [3, 3]]);
+  });
+
+  it('품목이 4줄을 넘는 송장은 여러 장 — pages 를 합쳐 sheets 로, pages 없는 옛 core 응답은 1장', async () => {
+    const result = await runBatchLabelPrint({
+      shipmentIds: ['a', 'b', 'c'],
+      target: 't',
+      fetchLabel: async (id) => (id === 'a' ? { ...label(id), pages: 3 } : id === 'b' ? { ...label(id), pages: 1 } : label(id)),
+      print: async () => {},
+    });
+    expect(result.printed).toEqual(['a', 'b', 'c']);
+    expect(result.sheets).toBe(5);
   });
 
   it('API 거절은 그 건만 건너뛰고 계속한다', async () => {
@@ -205,7 +216,7 @@ describe('runBatchLabelPrint', () => {
       },
       shouldStop: () => printed.length >= 1,
     });
-    expect(result).toEqual({ printed: ['a'], skipped: [], notAttempted: ['b', 'c'] });
+    expect(result).toEqual({ printed: ['a'], skipped: [], notAttempted: ['b', 'c'], sheets: 1 });
     expect(fetched).toEqual(['a']);
   });
 

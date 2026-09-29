@@ -101,7 +101,7 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
       detailAddress: '한진빌딩 10층',
       deliveryNote: '문앞',
     },
-    lines: [{ productName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
+    lines: [{ productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
     entrancePassword: '#1234',
   };
 
@@ -124,10 +124,10 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     payType: 'CD',
   };
 
-  function buildManager(labelType: string): WaybillLabelManager {
+  function buildManager(labelType: string, ctx: IssueContext = CTX): WaybillLabelManager {
     const waybills = { assertDispatchable: jest.fn().mockResolvedValue(WAYBILL_ROW) } as never;
     const reader = {
-      loadIssueContext: jest.fn().mockResolvedValue(CTX),
+      loadIssueContext: jest.fn().mockResolvedValue(ctx),
       recipientHashOf: jest.fn().mockReturnValue(HASH),
     } as never;
     const FAKE_TX = {} as unknown as DbTx;
@@ -164,6 +164,25 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     expect(label.data).toContain('^PW800');
     expect(label.data).toContain('^LL984');
     expect(label.data).toContain('^B2R');
+  });
+
+  it('품목이 한 쪽에 들어가면 pages 1, ^XA 하나', async () => {
+    const label = await buildManager('NS').render('s1');
+    expect(label.pages).toBe(1);
+    expect(label.data.match(/\^XA/g)).toHaveLength(1);
+  });
+
+  it('FS 품목 5줄이면 2쪽 — ^XA 두 개, pages 2', async () => {
+    const lines = ['가', '나', '다', '라', '마'].map((n, i) => ({
+      productName: n,
+      skuName: n,
+      quantity: 1,
+      skuId: `k${i}`,
+    }));
+    const label = await buildManager('FS', { ...CTX, lines }).render('s1');
+    expect(label.pages).toBe(2);
+    expect(label.data.match(/\^XA/g)).toHaveLength(2);
+    expect(label.data.match(/\^B2R/g)).toHaveLength(1); // ITF 는 첫 쪽에만
   });
 
   it('모르는 HANJIN_LABEL_TYPE 은 라벨 요청만 거절한다', async () => {

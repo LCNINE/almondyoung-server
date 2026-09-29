@@ -57,7 +57,12 @@ export class WaybillReader {
       status: shipment.status,
       manifestVersion: shipment.manifestVersion,
       recipientSnapshot: shipment.recipientSnapshot,
-      lines: rows.map((r) => ({ productName: r.productName ?? r.skuName ?? '', quantity: r.quantity, skuId: r.skuId })),
+      lines: rows.map((r) => ({
+        productName: r.productName ?? r.skuName ?? '',
+        skuName: r.skuName ?? '',
+        quantity: r.quantity,
+        skuId: r.skuId,
+      })),
       entrancePassword: shipment.entrancePassword,
     };
   }

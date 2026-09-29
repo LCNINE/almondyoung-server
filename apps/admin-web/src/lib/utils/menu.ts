@@ -463,6 +463,7 @@ const allMenus: MainMenu[] = [
           children: [
             { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
             { id: 'message-bulk', title: '대량 메시지 전송', path: '/messages/bulk' },
+            { id: 'message-groups', title: '수신자 그룹', path: '/messages/groups' },
             { id: 'message-campaigns', title: '발송 목록', path: '/messages/campaigns' },
             { id: 'message-inbox', title: '메시지함', path: '/messages/inbox' },
             { id: 'message-templates', title: '문자 템플릿', path: '/messages/templates' },

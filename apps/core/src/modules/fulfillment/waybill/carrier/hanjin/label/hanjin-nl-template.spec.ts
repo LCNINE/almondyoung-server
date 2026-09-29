@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import {
@@ -16,6 +17,11 @@ const block = (svg: string, id: string): string => {
 
 describe('renderHanjinNlLabel', () => {
   const spec = renderHanjinNlLabel(DATA);
+
+  it('NL 출력은 여러 쪽 배관 리팩터 전과 같다 (svg + 바코드 배치 해시 고정)', () => {
+    const digest = createHash('sha256').update(spec.svg).update(JSON.stringify(spec.barcodes)).digest('hex');
+    expect(digest).toBe('aaa8c7ff7ea0b834a0bfdcadc93965f667c361fcca751d812b7f9118e0c4fd11');
+  });
 
   it('NL 은 가로 100 × 세로 102mm 이고 돌리지 않는다(폭 100mm 가 인쇄폭 108mm 안)', () => {
     expect([spec.widthMm, spec.heightMm, spec.rotation]).toEqual([100, 102, 0]);

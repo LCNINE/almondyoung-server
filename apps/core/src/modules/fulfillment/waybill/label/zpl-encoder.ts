@@ -14,6 +14,9 @@ import {
  *
  * 창고 프린터(XP-DT108B)의 인쇄폭이 108mm 라 긴 변이 그보다 긴 형(NS 200mm·FS 123mm)은 짧은 변을 폭으로
  * 넣는다 — `rotation: 90` 이면 비트맵과 바코드 좌표를 함께 시계방향 90° 돌린다. NL(100mm)은 그대로 넣는다.
+ * `rotation: 270` 은 90° 출력에 `^POI`(라벨 전체 180° 반전)를 더한다. 비트맵을 반대로 돌리면 `^B2B`/`^BCB`
+ * 의 왼쪽 위를 잡는 데 바코드 실폭이 필요한데, 프린터가 넓은 막대를 dot 로 올려 그 폭은 상한만 알 수 있다.
+ * 그래서 좌표가 이미 실측으로 맞는 90° 출력을 통째로 뒤집는다 — 창고 XP-DT108B 에서 FS 로 검증했다(2026-09-28).
  * 한글은 프린터 내장 폰트에 없어 텍스트는 전부 배경 비트맵(^GF)에 들어 있고, 프린터 명령으로 그리는 것은
  * 바코드뿐이다.
  */
@@ -101,8 +104,9 @@ function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotat
     throw new Error(`barcode ${b.kind} is outside the label: x=${x} y=${y} h=${h} on ${drawnW}×${drawnH}`);
   }
   // 시계방향 90°: 템플릿 (x, y) → 프린터 (H-1-y, x). 상자 (x, y, h) 의 프린터 쪽 왼쪽 위는 (H-y-h, x).
-  const fo = rotation === 90 ? `^FO${drawnH - y - h},${x}` : `^FO${x},${y}`;
-  const orientation = rotation === 90 ? 'R' : 'N';
+  // 270° 도 좌표는 90° 와 같다 — 뒤집기는 ^POI 가 라벨 전체에 한 번 한다.
+  const fo = rotation === 0 ? `^FO${x},${y}` : `^FO${drawnH - y - h},${x}`;
+  const orientation = rotation === 0 ? 'N' : 'R';
   if (b.kind === 'ITF') {
     if (!/^(?:\d\d)+$/.test(b.data)) throw new Error(`ITF needs an even number of digits: "${b.data}"`);
     // f·g = N: 사람용 숫자는 SVG 에서 그린다. e = N: 한진 번호에 체크디지트가 이미 있다.
@@ -115,7 +119,7 @@ function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotat
 }
 
 export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
-  const printed = opts.rotation === 90 ? rotateClockwise(drawn) : drawn;
+  const printed = opts.rotation === 0 ? drawn : rotateClockwise(drawn);
   const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM);
   if (printed.widthDots > maxDots) {
     throw new Error(
@@ -127,6 +131,7 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
   const gfData = opts.compress ? compressAcs(rows) : rows.join('');
   const lines = [
     '^XA',
+    ...(opts.rotation === 270 ? ['^POI'] : []),
     `^PW${printed.widthDots}`,
     `^LL${printed.heightDots}`,
     '^LH0,0',
