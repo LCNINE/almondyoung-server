@@ -1,8 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { lockAggregate } from '../picking/allocation/allocation.locks';
-import { conflict } from '../picking/allocation/allocation.errors';
-import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 
 /** 잠금 없는 읽기. 시작은 한 번만 일어나므로(`startedAt` 단조) 읽은 값이 뒤집히지 않는다. */
 export async function isBatchStarted(batchId: string, tx: DbTx): Promise<boolean> {

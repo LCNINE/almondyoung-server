@@ -248,7 +248,7 @@ describe('errorMessage outbound 작업 시작·재출력 게이트 (#987)', () =
     [
       new ApiError('작업이 반영되지 않았어요.', 400, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED', {
         reasonCode: 'BATCH_NOT_STARTED',
-        recovery: 'review_batch',
+        recovery: 'retry_preparation',
       }),
       '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.',
     ],

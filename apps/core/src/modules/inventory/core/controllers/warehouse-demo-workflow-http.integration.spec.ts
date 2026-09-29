@@ -317,7 +317,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     ).rejects.toMatchObject({ status: 409, code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' });
     await expect(write(r, path(f, 'starts'), startBody(f), key)).rejects.toMatchObject({
       code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
-      preparation: { reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' },
+      preparation: { reasonCode: 'BATCH_NOT_STARTED', recovery: 'retry_preparation' },
     });
     const observer = postgres(databaseUrl!, { max: 1 });
     try {
@@ -404,7 +404,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         await reconcile(resumed, f);
       } else {
         expect(await settled).toMatchObject({ error: { code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' } });
-        expect(saved?.preparation).toEqual({ reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' });
+        expect(saved?.preparation).toEqual({ reasonCode: 'BATCH_NOT_STARTED', recovery: 'retry_preparation' });
       }
       expect(await resumed.store.pending(r.scope)).toEqual([]);
     },

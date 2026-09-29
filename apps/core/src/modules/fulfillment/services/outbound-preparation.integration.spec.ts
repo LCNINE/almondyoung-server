@@ -114,7 +114,7 @@ describeDb('outbound preparation', () => {
         expect(result).toMatchObject({
           outcome: 'preparation_blocked',
           reasonCode: 'BATCH_NOT_STARTED',
-          recovery: 'review_batch',
+          recovery: 'retry_preparation',
         });
         const [batch] = await tx
           .select()

@@ -58,8 +58,8 @@ describe('preparation details allowlist', () => {
   });
   it('keeps BATCH_NOT_STARTED so the app can show the start-from-batch-screen message', () => {
     expect(
-      render('SIMPLE_OUTBOUND_PLAN_INVALIDATED', { reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' }),
-    ).toMatchObject({ details: { reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' } });
+      render('SIMPLE_OUTBOUND_PLAN_INVALIDATED', { reasonCode: 'BATCH_NOT_STARTED', recovery: 'retry_preparation' }),
+    ).toMatchObject({ details: { reasonCode: 'BATCH_NOT_STARTED', recovery: 'retry_preparation' } });
   });
   it.each([
     ['OTHER', { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' }],

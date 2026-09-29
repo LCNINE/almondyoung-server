@@ -66,8 +66,11 @@ export function preparationBlocked(
     reasonCode,
     batchId,
     invalidatedPlanId,
+    // BATCH_NOT_STARTED 는 배치 카드의 「작업 시작」을 누른 뒤 다시 준비하면 풀린다 — 배치를 들여다볼 일이 아니다.
     recovery:
-      reasonCode === 'SOURCE_INSUFFICIENT' || reasonCode === 'REPLAN_LIMIT_REACHED'
+      reasonCode === 'SOURCE_INSUFFICIENT' ||
+      reasonCode === 'REPLAN_LIMIT_REACHED' ||
+      reasonCode === 'BATCH_NOT_STARTED'
         ? 'retry_preparation'
         : 'review_batch',
   };

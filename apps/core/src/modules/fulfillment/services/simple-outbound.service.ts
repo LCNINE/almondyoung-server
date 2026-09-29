@@ -73,8 +73,9 @@ export class SimpleOutboundService {
   ) {}
 
   /**
-   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item 확인,
-   * 배치 시작(배정 + 세션 인계, 아직 시작 전일 때만), 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
+   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item·피킹 방식 확인, 배치가 시작됐는지 확인
+   * (시작 전이면 BATCH_NOT_STARTED 로 막는다 — 시작은 「작업 시작」 하나뿐이고 여기서 시작하지 않는다), 작업 항목 잠금,
+   * 활성 세션 확인, 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
    */
   async prepare(
     shipmentId: string,
@@ -638,8 +639,8 @@ export class SimpleOutboundService {
   }
 
   /**
-   * 단순출고가 다룰 수 없는 방식의 배치를 배치 시작 전에 거른다. 시작된 배치도 같은 가드를
-   * 지나야 하므로(관리자가 admin-web 에서 먼저 시작해 둔 배치) prepare 의 두 갈래 모두 앞에서 부른다.
+   * 단순출고가 다룰 수 없는 방식의 배치를 거른다. prepare 가 배치 시작 여부를 보기 전에 부른다 — 시작 전
+   * 배치(BATCH_NOT_STARTED)든 시작된 배치(관리자가 admin-web 에서 시작해 둔 배치 포함)든 방식이 틀리면 같은 거절이다.
    *
    * 락을 걸지 않는다 — picking_method 는 outbound-batch-orchestrator.service.ts:116 의
    * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). loadWorkItem 은 잠그지 않는다 — 시작된 배치

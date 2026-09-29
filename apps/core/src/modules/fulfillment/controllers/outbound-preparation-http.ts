@@ -6,10 +6,13 @@ export function unwrapPreparedOutbound<T>(value: PreparedOutboundResult<T>): T {
     throw new ConflictException({
       code: value.code,
       error: value.code,
+      // BATCH_NOT_STARTED 도 retry_preparation 이지만 풀리는 길은 재고가 아니라 「작업 시작」이다.
       message:
-        value.recovery === 'retry_preparation'
-          ? '출고 가능한 재고를 확인하거나 보충한 뒤 준비를 다시 시도해 주세요.'
-          : '배치와 송장 상태를 관리자와 확인해 주세요.',
+        value.reasonCode === 'BATCH_NOT_STARTED'
+          ? '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.'
+          : value.recovery === 'retry_preparation'
+            ? '출고 가능한 재고를 확인하거나 보충한 뒤 준비를 다시 시도해 주세요.'
+            : '배치와 송장 상태를 관리자와 확인해 주세요.',
       details: { reasonCode: value.reasonCode, recovery: value.recovery },
     });
   return value;

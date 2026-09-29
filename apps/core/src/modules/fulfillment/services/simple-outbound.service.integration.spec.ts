@@ -158,7 +158,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
         outcome: 'preparation_blocked',
         code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
         reasonCode: 'BATCH_NOT_STARTED',
-        recovery: 'review_batch',
+        recovery: 'retry_preparation',
         batchId: fixture.batchId,
         invalidatedPlanId: null,
       });
