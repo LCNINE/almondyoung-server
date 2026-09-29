@@ -32,9 +32,14 @@ const CODE128_MODULE_DOTS = 2;
 const CODE128_X_MM = 94;
 const CODE128_QUIET_ZONE_MM = (10 * CODE128_MODULE_DOTS) / DOTS_PER_MM;
 
+/** ① 허브 코드는 ② 터미널코드 앞에서 멈춘다. */
+const FS_HUB_X_MM = 5;
+const FS_TERMINAL_X_MM = 24.5;
+
 /** 받는분 칸(주소·⑫)은 ③ 터미널 바코드의 quiet zone 앞에서 멈춘다. */
 const RECIPIENT_X_MM = 7.8;
 const RECIPIENT_MAX_WIDTH_MM = CODE128_X_MM - CODE128_QUIET_ZONE_MM - RECIPIENT_X_MM - 0.5;
+const FS_ADDRESS_SUMMARY_PT = 12;
 
 /** ⑭ 는 ITF 와 같은 높이라 quiet zone 앞에서 멈춘다. */
 const MESSAGE_X_MM = 8.8;
@@ -136,8 +141,16 @@ function firstPage(d: HanjinLabelData, shared: readonly string[]): LabelSpec {
 
   const own = [
     // ── 분류 ──
-    text({ x: 5, y: 19.4, pt: 35, bold: true, text: s.hubCode }), // ①
-    text({ x: 24.5, y: 19.4, pt: 25, bold: true, text: s.terminalCode }), // ②
+    // ① 허브 코드는 영문 2자라 글자마다 폭이 크게 다르다 — 35pt 고정이면 `MG`(제주)가 ② 와 겹쳤다
+    // (2026-09-29 한진 DEV 샘플). ② 앞 0.5mm 에서 멈추도록 줄인다 — `SS` 는 35pt 로 딱 맞는다.
+    text({
+      x: FS_HUB_X_MM,
+      y: 19.4,
+      pt: fitSizePt(s.hubCode, FS_TERMINAL_X_MM - FS_HUB_X_MM - 0.5, 35, 20),
+      bold: true,
+      text: s.hubCode,
+    }), // ①
+    text({ x: FS_TERMINAL_X_MM, y: 19.4, pt: 25, bold: true, text: s.terminalCode }), // ②
     text({ x: 42.5, y: 19.4, pt: fitSizePt(s.midCode, 9.5, 35, 20), bold: true, text: s.midCode }), // ④
     text({ x: 5.8, y: 22.6, pt: 8, text: fitText(`발지:${s.originTerminalCode} ${s.originTerminalName}`, 35, 8) }), // ⑦⑧
     text({ x: 57.8, y: 13.5, pt: fitSizePt(s.courierSortCode, 18, 20, 12), bold: true, text: s.courierSortCode }), // ⑯
@@ -149,12 +162,13 @@ function firstPage(d: HanjinLabelData, shared: readonly string[]): LabelSpec {
     text({ x: 108.75, y: 22, pt: 11, bold: true, anchor: 'middle', text: d.regionText }), // ⑮
     // ── 받는분 주소 ──
     text({ x: RECIPIENT_X_MM, y: 31.3, pt: address.pt, text: address.text }),
+    // ⑫ 필드표(fs2)는 「19」지만 샘플 그림(fs_new)은 ≈11.3pt 로 그렸다 — 19 면 한글 주소가 대부분 잘린다.
     text({
       x: RECIPIENT_X_MM,
       y: 39.4,
-      pt: 19,
+      pt: FS_ADDRESS_SUMMARY_PT,
       bold: true,
-      text: fitText(s.addressSummary, RECIPIENT_MAX_WIDTH_MM, 19),
+      text: fitText(s.addressSummary, RECIPIENT_MAX_WIDTH_MM, FS_ADDRESS_SUMMARY_PT),
     }), // ⑫
     rect(91.5, 36.7, 27.3, 6.4), // ⑬ 상자
     text({ x: 105.15, y: 41.8, pt: 14, bold: true, anchor: 'middle', text: d.freightText }), // ⑬
