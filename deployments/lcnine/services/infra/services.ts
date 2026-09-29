@@ -338,6 +338,8 @@ export function setup(infra: SharedInfra) {
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
     MEMBERSHIP_TERMS_AGREEMENT_REQUIRED: membershipTermsAgreementRequired,
+    // 이 시각부터 기존 계약에도 미납 조항을 적용한다(비우면 새 약관 동의 계약만). 이용약관 부칙 시행일과 같다.
+    MEMBERSHIP_TERMS_EXISTING_MEMBERS_EFFECTIVE_AT: '2026-09-30T00:00:00+09:00',
     // 미수 납부 결제가 돌아올 주소의 출처 검사 기준. 없으면 형식 검사까지만 한다.
     STOREFRONT_URL: storefrontUrl,
     OIDC_ISSUER_URL: idpUserServiceUrl,

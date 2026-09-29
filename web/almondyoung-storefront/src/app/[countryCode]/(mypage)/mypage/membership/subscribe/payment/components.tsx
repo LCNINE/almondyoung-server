@@ -305,7 +305,7 @@ export function MembershipForm({
             // 최초 정기결제 가입: 빈 결제수단 목록 페이지를 거치지 않고 자동이체 등록 화면(wallet-web)으로
             // 바로 보낸다. 등록을 마치면 결제수단 페이지로 복귀(cardChanged=1)하면서 방금 등록한 수단으로
             // 정기결제 가입이 자동 완료된다(payment-method/content.tsx 의 autoSubscribeOnLoad).
-            const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}&termsAgreementId=${agreementId}`
+            const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}${agreementId ? `&termsAgreementId=${agreementId}` : ""}`
             const walletWebUrl =
               process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
             window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(

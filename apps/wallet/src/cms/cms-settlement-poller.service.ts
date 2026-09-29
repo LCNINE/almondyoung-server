@@ -106,6 +106,12 @@ export class CmsSettlementPollerService {
     if (apiStatus === '출금성공') {
       await this.handleWithdrawalSuccess(withdrawal, paymentData);
     } else if (apiStatus === '출금실패') {
+      // 당일의 실패는 굳히지 않는다 — 그날 안에 결과가 바뀌는지 확인된 적이 없다. 성공만 당일에 확정하고
+      // 실패는 예전처럼 D+1 이후에 확정한다(재시도 일정도 그때부터라 예전과 같다).
+      if (withdrawal.paymentDate > kstYesterdayYyyymmdd()) {
+        this.logger.log(`CMS withdrawal ${withdrawal.transactionId} failed on payment day — D+1 에 확정`);
+        return;
+      }
       await this.handleWithdrawalFailure(withdrawal, paymentData);
     } else if (apiStatus === '출금중') {
       // 출금중 상태로 전환 (최초 REQUESTED에서 PROCESSING으로)

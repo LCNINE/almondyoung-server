@@ -488,22 +488,29 @@ export async function createMembershipCheckoutIntent(
  * 가입 약관 동의를 기록하고 그 id 를 받는다. 가입 폼을 제출한 «순간» 부른다 —
  * 정기결제 첫 가입은 자동이체 등록으로 화면을 떠났다 돌아와 완성되므로, 가입 요청에는 이 id 를 실어 보낸다.
  * mutation 이라 실패를 삼키지 않는다 — 동의가 안 남은 채로 가입을 진행하지 않는다.
+ * 단 404 는 «동의 기록을 모르는 옛 서버»다. 그 서버는 동의를 요구하지도 않으므로 id 없이 진행한다
+ * (화면이 서버보다 먼저 배포돼도 가입이 막히지 않게).
  */
 export async function recordMembershipTermsAgreement(input: {
   termsVersion: string
   planId: string
   billingMode: "one_time" | "recurring"
-}): Promise<{ agreementId: string }> {
-  return await api<{ agreementId: string }>(
-    "membership",
-    "/me/membership-terms-agreements",
-    {
-      method: "POST",
-      body: input,
-      withAuth: true,
-      cache: "no-store",
-    }
-  )
+}): Promise<{ agreementId?: string }> {
+  try {
+    return await api<{ agreementId: string }>(
+      "membership",
+      "/me/membership-terms-agreements",
+      {
+        method: "POST",
+        body: input,
+        withAuth: true,
+        cache: "no-store",
+      }
+    )
+  } catch (error) {
+    if (error instanceof HttpApiError && error.status === 404) return {}
+    throw error
+  }
 }
 
 /**

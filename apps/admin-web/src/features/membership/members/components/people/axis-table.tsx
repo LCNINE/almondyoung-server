@@ -476,7 +476,8 @@ function AxisTableView<A extends MemberAxis>({
     : query.q
       ? [query.q]
       : undefined;
-  const waitingForSearch = !!memberQ && resolvedUserIds == null;
+  // 고객 정보 검색이 아무도 못 찾았으면 묻지 않는다 — 빈 목록을 보내면 서버가 «필터 없음»으로 읽어 축 전체가 나온다.
+  const waitingForSearch = !!memberQ && !resolvedUserIds?.length;
 
   const { data, isLoading, isFetching } = useMembersByAxis(
     axis,
