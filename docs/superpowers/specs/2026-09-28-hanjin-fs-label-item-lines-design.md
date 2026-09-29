@@ -155,6 +155,8 @@ README 에 7줄 견본 한 줄 추가).
 
 ## 11. 범위 밖 — 후속 스펙: 품목 줄의 위치 코드
 
+> **2026-09-30:** 후속 스펙 = `2026-09-30-outbound-allocation-before-label-design.md`. 아래 뼈대가 그 문서 §6·§10 으로 구체화됐다.
+
 라벨이 피킹 지시서이려면 품목 줄 앞에 `[AA-11-01]` 식 위치 코드가 필요하다. 출고 품목 줄 → 위치를 저장한
 곳은 `picking_source_allocations`(계획 단위, 한 줄 → 여러 위치 가능) 뿐인데, 계획은 **배치당 하나**이고 첫 작업자가
 운송장을 스캔할 때(`SimpleOutboundService.ensurePlan`) 만들어진다 — 배치 일괄 인쇄보다 늦다. 게다가 draft 계획은
