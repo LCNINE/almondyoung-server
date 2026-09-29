@@ -92,9 +92,19 @@ describe('startBatchPicking', () => {
     ]);
     trxHolder.trx = fake.trx;
     const d = deps();
-    const result = await startBatchPicking(d, 'discrete', { batchId: 'batch-1', actorId: 'actor-1', idempotencyKey: 'k' });
+    const result = await startBatchPicking(d, 'discrete', {
+      batchId: 'batch-1',
+      actorId: 'actor-1',
+      idempotencyKey: 'k',
+    });
 
-    expect(result).toEqual({ state: 'started', operationId: 'cmd-1', batchId: 'batch-1', sessionId: 'session-1', status: 'active' });
+    expect(result).toEqual({
+      state: 'started',
+      operationId: 'cmd-1',
+      batchId: 'batch-1',
+      sessionId: 'session-1',
+      status: 'active',
+    });
     expect(fake.inserted[0]).toEqual([
       { workItemId: 'wi-1', shipmentLineId: 'line-1', sourceLocationId: 'loc-1', qty: 2, sourceStockVersion: 4 },
       { workItemId: 'wi-2', shipmentLineId: 'line-2', sourceLocationId: 'loc-1', qty: 1, sourceStockVersion: 4 },
@@ -104,8 +114,24 @@ describe('startBatchPicking', () => {
         batchId: 'batch-1',
         actorId: 'actor-1',
         allocations: [
-          { id: 'alloc-1', workItemId: 'wi-1', shipmentLineId: 'line-1', skuId: 'sku-1', sourceLocationId: 'loc-1', quantity: 2, sourceStockVersion: 4 },
-          { id: 'alloc-2', workItemId: 'wi-2', shipmentLineId: 'line-2', skuId: 'sku-1', sourceLocationId: 'loc-1', quantity: 1, sourceStockVersion: 4 },
+          {
+            id: 'alloc-1',
+            workItemId: 'wi-1',
+            shipmentLineId: 'line-1',
+            skuId: 'sku-1',
+            sourceLocationId: 'loc-1',
+            quantity: 2,
+            sourceStockVersion: 4,
+          },
+          {
+            id: 'alloc-2',
+            workItemId: 'wi-2',
+            shipmentLineId: 'line-2',
+            skuId: 'sku-1',
+            sourceLocationId: 'loc-1',
+            quantity: 1,
+            sourceStockVersion: 4,
+          },
         ],
       },
       fake.trx,

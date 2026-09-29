@@ -10,7 +10,7 @@ import { PickingStrategyName } from '../picking-strategy.interface';
 import { conflict } from './allocation.errors';
 import { PlanInvalidation } from './plan-invalidation';
 import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
-import { LockedAggregate, SourceCapacity, uniqueSorted } from './allocation.types';
+import { ACTIVE_WORK_ITEM_STATUSES, LockedAggregate, SourceCapacity, uniqueSorted } from './allocation.types';
 
 /**
  * Layer 2 — each function takes exactly the one collaborator it needs, passed explicitly.
@@ -148,21 +148,12 @@ export async function lockAggregate(
   return { batch, shipments, lines: enrichedLines, workItems };
 }
 
-export async function assertStartEligibility(
-  trx: DbTx,
-  waybills: WaybillService,
-  aggregate: LockedAggregate,
-  requestedShipmentIds: string[],
-): Promise<void> {
-  const requested = requestedShipmentIds.join(',');
-  const queued = aggregate.workItems.filter((item) => item.status === 'queued');
-  if (uniqueSorted(queued.map((item) => item.shipmentId)).join(',') !== requested) {
-    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Queued batch work items changed while starting');
-  }
-  if (aggregate.workItems.some((item) => item.status !== 'queued')) {
-    // 시작 전 배치의 작업 항목은 전부 queued 여야 한다. 다른 상태는 계획 흡수 전의 흔적이거나 손상이다.
-    throw conflict('PICKING_BATCH_STATE_CORRUPT', 'An unstarted batch has work items beyond queued');
-  }
+/**
+ * `assertStartEligibility`/`assertPlanningEligibility` 가 공유하는 나머지 검사(창고·프로필·수령인·
+ * 예약·송장) — 둘의 차이는 오직 맨 앞의 작업 항목 멤버십 규칙뿐이라 여기만 갈라 두고 나머지는
+ * 한 곳에서 유지한다. `requestedShipmentIds` 는 멤버십 규칙 쪽 관심사라 이 함수는 받지 않는다.
+ */
+async function assertSharedEligibility(trx: DbTx, waybills: WaybillService, aggregate: LockedAggregate): Promise<void> {
   if (
     aggregate.shipments.some(
       (shipment) => shipment.status !== 'planned' || shipment.warehouseId !== aggregate.batch.warehouseId,
@@ -245,8 +236,49 @@ export async function assertStartEligibility(
   }
 }
 
-/** @deprecated legacy-plan.ts 전용. Task 3 에서 삭제한다. */
-export const assertPlanningEligibility = assertStartEligibility;
+export async function assertStartEligibility(
+  trx: DbTx,
+  waybills: WaybillService,
+  aggregate: LockedAggregate,
+  requestedShipmentIds: string[],
+): Promise<void> {
+  const requested = requestedShipmentIds.join(',');
+  const queued = aggregate.workItems.filter((item) => item.status === 'queued');
+  if (uniqueSorted(queued.map((item) => item.shipmentId)).join(',') !== requested) {
+    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Queued batch work items changed while starting');
+  }
+  if (aggregate.workItems.some((item) => item.status !== 'queued')) {
+    // 시작 전 배치의 작업 항목은 전부 queued 여야 한다. 다른 상태는 계획 흡수 전의 흔적이거나 손상이다.
+    throw conflict('PICKING_BATCH_STATE_CORRUPT', 'An unstarted batch has work items beyond queued');
+  }
+  await assertSharedEligibility(trx, waybills, aggregate);
+}
+
+/**
+ * @deprecated legacy-plan.ts 전용. Task 3 에서 삭제한다.
+ *
+ * `assertStartEligibility` 와 달리 멤버십 규칙이 «계획 구성원 = queued/picking 작업 항목»이다 —
+ * 옛 계획 층은 멀티박스 배치에서 다른 shipment 가 이미 `ready_to_pack`/`packing` 이어도 이
+ * shipment 의 작업 항목이 `picking` 이면 계획을 재사용할 수 있어야 한다(원래 동작, 400bdab96).
+ */
+export async function assertPlanningEligibility(
+  trx: DbTx,
+  waybills: WaybillService,
+  aggregate: LockedAggregate,
+  requestedShipmentIds: string[],
+): Promise<void> {
+  const requested = requestedShipmentIds.join(',');
+  const eligibleItems = aggregate.workItems.filter((item) =>
+    (ACTIVE_WORK_ITEM_STATUSES as readonly string[]).includes(item.status),
+  );
+  if (uniqueSorted(eligibleItems.map((item) => item.shipmentId)).join(',') !== requested) {
+    throw conflict(
+      'PICKING_WORK_ITEM_MEMBERSHIP_MISMATCH',
+      'Plan membership must exactly match queued/picking batch work items',
+    );
+  }
+  await assertSharedEligibility(trx, waybills, aggregate);
+}
 
 export async function lockSourceCapacities(
   trx: DbTx,

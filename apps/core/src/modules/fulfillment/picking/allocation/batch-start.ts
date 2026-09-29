@@ -73,6 +73,8 @@ export async function startBatchPicking(
           id: line.id,
           skuId: line.skuId,
           qty: line.qty,
+          // holds because assertStartEligibility already proved the queued work-item set equals
+          // the requested shipment set, so every line's shipmentId has a matching work item.
           workItemId: workItemByShipment.get(line.shipmentId)!,
         })),
         capacities,
@@ -81,8 +83,12 @@ export async function startBatchPicking(
       const skuByLine = new Map(aggregate.lines.map((line) => [line.id, line.skuId]));
       const allocations: SessionStartAllocation[] = inserted.map((row) => ({
         id: row.id,
+        // holds because every inserted row came from `drafts`, built above with a non-null
+        // workItemId for every line — the column is nullable in schema only for legacy rows.
         workItemId: row.workItemId!,
         shipmentLineId: row.shipmentLineId,
+        // holds because skuByLine is built from the same aggregate.lines that produced `drafts`,
+        // so every shipmentLineId returned from the insert has a matching entry.
         skuId: skuByLine.get(row.shipmentLineId)!,
         sourceLocationId: row.sourceLocationId,
         quantity: row.qty,

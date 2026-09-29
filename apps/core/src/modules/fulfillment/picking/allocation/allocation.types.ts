@@ -1,6 +1,6 @@
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
-import { BatchInventorySessionService } from '../../services/batch-inventory-session.service';
+import type { BatchInventorySessionService } from '../../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
@@ -71,7 +71,7 @@ export interface PickingPlanDeps {
 }
 
 /**
- * 세션 인계가 받는 배정 한 줄. `allocation.locks.ts`/`batch-start.ts` 가 만들고
+ * 세션 인계가 받는 배정 한 줄. `batch-start.ts` 가 만들고
  * Task 3 의 `BatchInventorySessionService.startSession` 이 그대로 소비한다.
  */
 export interface SessionStartAllocation {
