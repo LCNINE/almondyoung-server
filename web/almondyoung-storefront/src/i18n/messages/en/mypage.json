@@ -1098,6 +1098,14 @@
       "startError": "We couldn't start the payment. Please try again in a moment.",
       "alertTitle": "Unpaid membership fee: {amount} KRW",
       "alertBody": "See the details and pay"
+    },
+    "signupResume": {
+      "title": "Your membership hasn’t started yet",
+      "descPending": "Your {account} account is still under bank review. If you sign up now, you can use your membership right away, and payment will be withdrawn after approval.",
+      "descApproved": "Your {account} account is registered. Once you sign up, payments will be made automatically from this account.",
+      "accountFallback": "auto-debit",
+      "note": "You don’t need to register the account again.",
+      "cta": "Sign up with this account"
     }
   },
   "orderActions": {
@@ -1266,7 +1274,12 @@
     "detailBank": "Bank code",
     "detailPayerName": "Account holder",
     "detailAgreementStatus": "Signature status",
-    "detailCreatedAt": "Requested at"
+    "detailCreatedAt": "Requested at",
+    "subscribeFailTitle": "We couldn’t finish your signup",
+    "subscribeFailDesc": "Your account registration is complete. Please try again. If it keeps failing, sign up again from the membership page or contact customer service.",
+    "subscribeRetry": "Try again",
+    "subscribeGoToForm": "Go to signup",
+    "alreadyMemberToast": "You already have an active membership."
   },
   "reviews": {
     "pageTitle": "Reviews",

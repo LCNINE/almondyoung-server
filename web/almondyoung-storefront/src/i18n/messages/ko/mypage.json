@@ -1098,6 +1098,14 @@
       "startError": "납부를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.",
       "alertTitle": "미납 멤버십 요금 {amount}원",
       "alertBody": "내용을 확인하고 납부하실 수 있어요"
+    },
+    "signupResume": {
+      "title": "아직 멤버십 가입이 되지 않았어요",
+      "descPending": "{account} 계좌는 은행 심사 중이에요. 지금 가입하면 심사 중에도 멤버십을 바로 이용할 수 있고, 결제는 승인 뒤에 출금돼요.",
+      "descApproved": "{account} 계좌 등록이 끝났어요. 가입하시면 이 계좌로 자동 결제돼요.",
+      "accountFallback": "자동이체",
+      "note": "계좌를 다시 등록할 필요는 없어요.",
+      "cta": "등록한 계좌로 가입하기"
     }
   },
   "page": {
@@ -1278,7 +1286,12 @@
     "detailBank": "은행코드",
     "detailPayerName": "예금주",
     "detailAgreementStatus": "전자서명 상태",
-    "detailCreatedAt": "신청일"
+    "detailCreatedAt": "신청일",
+    "subscribeFailTitle": "가입을 마치지 못했어요",
+    "subscribeFailDesc": "계좌 등록은 끝났어요. 다시 시도해 주세요. 계속 안 되면 멤버십 가입 화면에서 다시 신청하거나 고객센터로 문의해 주세요.",
+    "subscribeRetry": "다시 시도",
+    "subscribeGoToForm": "가입 화면으로",
+    "alreadyMemberToast": "이미 멤버십을 이용 중이에요."
   },
   "reviews": {
     "pageTitle": "리뷰",

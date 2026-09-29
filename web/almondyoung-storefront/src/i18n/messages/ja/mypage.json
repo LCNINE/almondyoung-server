@@ -1098,6 +1098,14 @@
       "startError": "お支払いを開始できませんでした。しばらくしてからもう一度お試しください。",
       "alertTitle": "未納のメンバーシップ料金 {amount}ウォン",
       "alertBody": "内容を確認してお支払いいただけます"
+    },
+    "signupResume": {
+      "title": "まだメンバーシップに加入していません",
+      "descPending": "{account}の口座は銀行の審査中です。今すぐ加入すると審査中でもメンバーシップをすぐにご利用いただけ、お支払いは承認後に引き落とされます。",
+      "descApproved": "{account}の口座の登録が完了しました。加入するとこの口座から自動でお支払いされます。",
+      "accountFallback": "自動引き落とし",
+      "note": "口座を再度登録する必要はありません。",
+      "cta": "登録済みの口座で加入する"
     }
   },
   "orderActions": {
@@ -1266,7 +1274,12 @@
     "detailBank": "銀行コード",
     "detailPayerName": "口座名義",
     "detailAgreementStatus": "電子署名状態",
-    "detailCreatedAt": "申請日"
+    "detailCreatedAt": "申請日",
+    "subscribeFailTitle": "加入を完了できませんでした",
+    "subscribeFailDesc": "口座の登録は完了しています。もう一度お試しください。うまくいかない場合は、メンバーシップ加入画面から再度お申し込みいただくか、カスタマーセンターへお問い合わせください。",
+    "subscribeRetry": "再試行",
+    "subscribeGoToForm": "加入画面へ",
+    "alreadyMemberToast": "すでにメンバーシップをご利用中です。"
   },
   "reviews": {
     "pageTitle": "レビュー",
