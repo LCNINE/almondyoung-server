@@ -101,7 +101,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, controlled, audit),
+      new BatchInventorySessionService(dbService, audit),
       shipmentReservations,
       waybills,
       new BarcodeService(dbService),

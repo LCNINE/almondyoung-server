@@ -16,7 +16,6 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
     .select()
     .from(wmsTables.batchInventorySessions)
     .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
-  const plans = await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId));
   const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
   const attempts = await tx
     .select()
@@ -27,7 +26,6 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
     f.shipmentId,
     f.batchId,
     f.workItemId,
-    ...plans.map((p) => p.id),
     ...sessions.map((s) => s.id),
   ];
   await tx
@@ -68,20 +66,17 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
     );
     await tx.delete(wmsTables.batchInventorySessions).where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
   }
-  if (plans.length) {
-    await tx.delete(wmsTables.pickingSourceAllocations).where(
-      inArray(
-        wmsTables.pickingSourceAllocations.planId,
-        plans.map((p) => p.id),
-      ),
-    );
-    await tx.delete(wmsTables.pickingPlanMembers).where(
-      inArray(
-        wmsTables.pickingPlanMembers.planId,
-        plans.map((p) => p.id),
-      ),
-    );
-    await tx.delete(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId));
+  const workItemIds = (
+    await tx
+      .select({ id: wmsTables.outboundBatchWorkItems.id })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, f.batchId))
+  ).map((row) => row.id);
+  if (workItemIds.length) {
+    // 배정은 작업 항목을 restrict FK 로 물고 있으므로 작업 항목보다 먼저 지운다.
+    await tx
+      .delete(wmsTables.pickingSourceAllocations)
+      .where(inArray(wmsTables.pickingSourceAllocations.workItemId, workItemIds));
   }
   await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.batchId, f.batchId));
   await tx.delete(wmsTables.outboundBatches).where(eq(wmsTables.outboundBatches.id, f.batchId));

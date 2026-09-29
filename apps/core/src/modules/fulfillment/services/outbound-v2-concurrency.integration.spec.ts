@@ -380,7 +380,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, controlled, audit),
+      new BatchInventorySessionService(dbService, audit),
       reservations,
       waybills,
       new BarcodeService(dbService),

@@ -168,7 +168,7 @@ export async function assertStartEligibility(
   ) {
     throw conflict('PICKING_SHIPMENT_NOT_ELIGIBLE', 'Every shipment must be planned in the batch warehouse');
   }
-  if (!aggregate.lines.length) throw conflict('PICKING_PLAN_EMPTY', 'Picking plan has no shipment lines');
+  if (!aggregate.lines.length) throw conflict('PICKING_BATCH_EMPTY', 'Batch has no shipment lines');
   for (const shipment of aggregate.shipments) {
     if (!shipment.shippingProfileId) {
       throw conflict('SHIPMENT_PROFILE_REQUIRED', `Shipment ${shipment.id} has no shipping profile`);

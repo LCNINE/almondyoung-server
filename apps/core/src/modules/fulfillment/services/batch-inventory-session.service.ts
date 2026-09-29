@@ -11,7 +11,6 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import type { SessionStartAllocation } from '../picking/allocation/allocation.types';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
@@ -237,7 +236,6 @@ export function remainingShortPickAllocation(input: {
 export class BatchInventorySessionService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly controlledStock: BatchControlledStockGuard,
     private readonly audit: AuditService,
     @Optional()
     @Inject(BATCH_INVENTORY_SESSION_FAULT_INJECTOR)

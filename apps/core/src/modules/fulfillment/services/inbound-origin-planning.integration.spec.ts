@@ -32,7 +32,7 @@ function planning(tx: DbTx): BatchStartDeps {
     workflowGate: new FulfillmentWorkflowGate(
       new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2', FULFILLMENT_V2_CUTOVER_AT: '1970-01-01T00:00:00.000Z' }),
     ),
-    sessions: new BatchInventorySessionService(dbService, guard, new AuditService(dbService)),
+    sessions: new BatchInventorySessionService(dbService, new AuditService(dbService)),
     invariant: new FulfillmentInvariantService(),
     controlledStock: guard,
     waybills: new WaybillService(

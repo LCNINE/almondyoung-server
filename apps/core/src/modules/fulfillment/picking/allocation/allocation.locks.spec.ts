@@ -2,16 +2,19 @@ import { assertStartEligibility } from './allocation.locks';
 import { LockedAggregate } from './allocation.types';
 
 /**
- * Only the two `assertStartEligibility`-specific branches (queued-set membership, no-drift-beyond-
- * queued) are covered here — both throw before `trx`/`waybills` are touched, so `{} as never` stands
+ * Only the `assertStartEligibility`-specific branches (queued-set membership, no-drift-beyond-
+ * queued, no shipment lines) are covered here — all throw before `trx`/`waybills` are touched, so `{} as never` stands
  * in for them. The remainder (warehouse/profile/recipient/reservation/waybill checks)
  * already has DB-gated integration coverage via `outbound-preparation.concurrency.integration.spec.ts`
  * and friends.
  */
-function aggregate(workItems: Array<{ shipmentId: string; status: string }>): LockedAggregate {
+function aggregate(
+  workItems: Array<{ shipmentId: string; status: string }>,
+  shipments: Array<{ id: string; status: string; warehouseId: string }> = [],
+): LockedAggregate {
   return {
     batch: { warehouseId: 'wh-1' } as LockedAggregate['batch'],
-    shipments: [],
+    shipments: shipments as LockedAggregate['shipments'],
     lines: [],
     workItems: workItems as LockedAggregate['workItems'],
   };
@@ -35,5 +38,15 @@ describe('assertStartEligibility', () => {
     await expect(
       assertStartEligibility({} as never, {} as never, aggregateWithStrayPickingItem, ['shp-1']),
     ).rejects.toMatchObject({ response: { code: 'PICKING_BATCH_STATE_CORRUPT' } });
+  });
+
+  it('배치의 shipment 에 라인이 하나도 없으면 PICKING_BATCH_EMPTY', async () => {
+    const aggregateWithoutLines = aggregate(
+      [{ shipmentId: 'shp-1', status: 'queued' }],
+      [{ id: 'shp-1', status: 'planned', warehouseId: 'wh-1' }],
+    );
+    await expect(
+      assertStartEligibility({} as never, {} as never, aggregateWithoutLines, ['shp-1']),
+    ).rejects.toMatchObject({ response: { code: 'PICKING_BATCH_EMPTY', message: 'Batch has no shipment lines' } });
   });
 });

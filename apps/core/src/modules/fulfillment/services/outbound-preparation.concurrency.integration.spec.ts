@@ -132,16 +132,10 @@ describeDb('outbound preparation committed concurrency', () => {
         (tx) => start(f, secondKey, tx),
       );
       expect(result.first).toMatchObject({ status: 'in_progress' });
-      if (sameKey) expect(result.second).toEqual({ ok: true, value: result.first });
-      else {
-        expect(result.second).toMatchObject({
-          ok: false,
-          error: {
-            response: { code: 'PICKING_COMPONENT_CHANGED_RETRY' },
-          },
-        });
-        expect(await observer.db.transaction((tx) => start(f, secondKey, tx))).toEqual(result.first);
-      }
+      // 같은 키는 명령 재생으로, 다른 키는 잠금을 기다린 뒤 이미 시작된 배치의 세션에 합류한다
+      // (계획 시절에는 초안→활성 전이 때문에 PICKING_COMPONENT_CHANGED_RETRY 로 되돌려 보냈다).
+      expect(result.second).toEqual({ ok: true, value: result.first });
+      if (!sameKey) expect(await observer.db.transaction((tx) => start(f, secondKey, tx))).toEqual(result.first);
       await assertSingleSession(f);
     } finally {
       await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));

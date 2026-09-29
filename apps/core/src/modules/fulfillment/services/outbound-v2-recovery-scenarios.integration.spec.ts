@@ -71,7 +71,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const dbService = makeDbService(database);
     const guard = new BatchControlledStockGuard();
     const audit = new AuditService(dbService);
-    const sessions = new BatchInventorySessionService(dbService, guard, audit, faultInjector);
+    const sessions = new BatchInventorySessionService(dbService, audit, faultInjector);
     const recovery = new BatchSessionRecoveryService(dbService, audit, guard);
     const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
@@ -137,7 +137,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, guard, audit),
+      new BatchInventorySessionService(dbService, audit),
       reservations,
       waybills,
       new BarcodeService(dbService),

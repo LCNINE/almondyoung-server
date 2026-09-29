@@ -4,7 +4,6 @@ import { DbService } from '@app/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
-import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -82,7 +81,7 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       authorization as never,
       workflowGate,
     );
-    const sessions = new BatchInventorySessionService(dbService, new BatchControlledStockGuard(), audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     // short-pick 은 WaybillService.getActiveWaybill(읽기) + void(commands.execute→CAS, tx-local 동기)만 소비한다 —
     // carrier registry/issue machine/config 는 이 경로에서 호출되지 않아 stub 으로 충분. 단, void 가 commands.execute 를
     // 쓰므로 commands 는 실제 인스턴스여야 한다(dispatch spec 의 stub commands 와 다른 지점).

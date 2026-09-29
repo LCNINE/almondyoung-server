@@ -399,7 +399,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       new FulfillmentProgressService(),
       invariant,
     );
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     const dispatch = new ShipmentDispatchService(
       dbService,
       commands,

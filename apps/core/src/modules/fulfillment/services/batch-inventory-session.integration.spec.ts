@@ -13,7 +13,11 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { LocationService } from '../../inventory/core/services/location.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
-import { BatchInventorySessionFaultInjector, BatchInventorySessionService } from './batch-inventory-session.service';
+import {
+  BatchInventorySessionFaultInjector,
+  BatchInventorySessionService,
+  handInRequestHash,
+} from './batch-inventory-session.service';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';
 
@@ -59,7 +63,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     const dbService = dbServiceFor(database);
     const guard = new BatchControlledStockGuard();
     const audit = new AuditService(dbService);
-    const sessions = new BatchInventorySessionService(dbService, guard, audit, faultInjector);
+    const sessions = new BatchInventorySessionService(dbService, audit, faultInjector);
     const recovery = new BatchSessionRecoveryService(dbService, audit, guard);
     const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
@@ -272,6 +276,13 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
           allocationId: fixture.allocation.id,
         }),
       );
+      // 인계 해시는 배치 신원 + 그 배정으로 고정된다 — 재생·복구가 같은 식으로 다시 계산한다.
+      const [handedIn] = (await batchAllocations(tx, fixture.batch.id)).filter(
+        (allocation) => allocation.id === fixture.allocation.id,
+      );
+      expect((events[0].payload as Record<string, unknown>).requestHash).toBe(
+        handInRequestHash(fixture.batch.id, handedIn),
+      );
       const availability = await services.guard.getAvailability(
         {
           skuId: fixture.source.skuId,
@@ -481,6 +492,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
               kind: 'short_pick',
               operationId,
               shipmentId: fixture.shipment.id,
+              workItemId: fixture.workItem.id,
               sessionId: session.id,
               actorId,
               reason: operationReason,
@@ -565,6 +577,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
               kind: 'short_pick',
               operationId: wrongOperationId,
               shipmentId: fixture.shipment.id,
+              workItemId: fixture.workItem.id,
               sessionId: session.id,
               actorId,
               reason: operationReason,
@@ -633,6 +646,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
               kind: 'short_pick',
               operationId: operation.id,
               shipmentId: fixture.shipment.id,
+              workItemId: fixture.workItem.id,
               sessionId: session.id,
               actorId,
               reason: operationReason,

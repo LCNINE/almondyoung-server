@@ -58,7 +58,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const invariant = new FulfillmentInvariantService();
   const audit = new AuditService(dbService);
   const controlled = new BatchControlledStockGuard();
-  const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+  const sessions = new BatchInventorySessionService(dbService, audit);
   const inventoryPublisher = outboxPublisherFor(INVENTORY_STREAM, dbService);
   const shipmentPublisher = outboxPublisherFor(SHIPMENT_STREAM, dbService);
   const fulfillmentV2Publisher = outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService);

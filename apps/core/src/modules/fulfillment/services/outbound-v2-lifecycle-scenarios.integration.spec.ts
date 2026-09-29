@@ -151,7 +151,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         return { resumePending: jest.fn().mockResolvedValue(undefined) };
       }),
     };
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     // 플랜3: dispatch(assertDispatchable/markUsed)·recall(getActiveWaybill/voidForRecall) 둘 다 실제
     // WaybillService 를 소비한다. registry/machine 은 이 경로들에서 실행되지 않지만(carrier HTTP 없음) 구조적
     // 의존이므로 empty registry + issue machine 으로 배선한다(waybill.manager.integration.spec.ts 패턴).

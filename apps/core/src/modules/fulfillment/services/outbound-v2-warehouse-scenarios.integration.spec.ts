@@ -131,7 +131,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2', FULFILLMENT_V2_CUTOVER_AT: new Date().toISOString() }),
     );
     const controlled = new BatchControlledStockGuard();
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     const resumeTarget: { shortPick?: ShipmentShortPickService } = {};
     const moduleRef = {
       get: jest.fn(
