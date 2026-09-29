@@ -229,7 +229,9 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
    `WAYBILL_LABEL_NOT_ALLOCATED:` (앱 파서 규약 — `native/warehouse-app/src/domains/outbound/waybillLabel.ts` 의 `WAYBILL_[A-Z_]+:`)
 3. 품목 줄 = **(로케이션, SKU) 로 묶은 배정 행**, 로케이션 코드 순 → SKU 명 순. 이름 앞에 `[<로케이션 코드>]`.
    이름 칸 폭은 `fsItemNameMaxWidthMm` 에서 접두어 폭을 뺀다(`label-items.ts` 가 합치기 단위를 SKU → (로케이션, SKU) 로 바꾼다)
-4. 판차가 2 이상이면 종이에 `N판` 을 찍는다(위치는 FS 템플릿 계획에서 실측으로 정한다)
+4. 판차가 2 이상이면 종이에 `N판` 을 찍는다. **PR 1 계획이 정함:** FS 의 쪽 표시 줄(y 80.6) 바로 앞에 찍는다
+5. **PR 1 계획이 정함(로케이션 접두어 폭):** 접두어 글자 크기는 11pt 에서 5pt 까지 줄어든다. 줄이는 한도는 이름 칸 폭에서
+   이름용 20mm 를 남기고 난 자리다. 그래도 안 들어가는 코드는 렌더가 크게 실패한다(자르지도, 겹쳐 찍지도 않는다)
 
 ### 10.2 지문
 
@@ -258,6 +260,13 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
   다르거나 없으면 `409 LABEL_REPRINT_REQUIRED`
 - **전진 명령의 공통 진입점에만** 건다: 피킹 스캔(세 방식이 모두 지나는 진입), 포장 완료·검수, 발송. 정확한 진입점 목록은
   PR 1 계획이 코드에서 도출해 적고, 가드 스펙이 «전진 명령은 이 가드를 거친다»를 검사한다
+  - **PR 1 계획이 정함(도출 결과):** 전략의 `lockAndAssertPickerClaim` 을 부르는 7곳 — discrete 의 스캔·`completePick`,
+    pick_to_tote 의 `assignTote`·`toteScan`·`completePick`, aggregate 의 `sortScan`·`completePick` — 과
+    `ShipmentDispatchService.lockAggregate`(검수 스캔·검수 라인·강제 발송·자동 발송이 모두 지난다)
+  - **게이트 밖:** `bulkCartScan` 은 박스 식별이 없어 비교할 송장이 없다. `claimPacker` 는 포장 완료가 검수(`lockAggregate`)로
+    덮이므로 따로 걸지 않는다. 되돌림 명령은 위 이유로 밖이다
+  - 게이트는 모든 송장에 `assertDispatchable` 을 돌린다. 그래서 무효·낡은 수기 송장은 `external` 이어도
+    `WAYBILL_NOT_DISPATCHABLE`/`WAYBILL_STALE` 로 피킹이 막힌다
 - 되돌림 명령(`REMOVE_TO_RETURN_BIN`·`PUTAWAY_RETURN`)은 대상이 아니다 — 빼는 일에 종이는 필요 없고, 막으면 이탈이 끝나지 않는다
 - 조립은 한 함수로 둔다: 렌더러·게이트·출력 확인이 모두 같은 «현재 내용 조립»을 부른다
 
@@ -270,6 +279,8 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `current` | 최신 판이 출력됨 | 평소 작업 |
 | `never_printed` | 배정은 있으나 출력 기록 없음 | 출력(프린터 있음) / «프린터 있는 자리에서 출력» |
 | `reprint_required` | 지문이 바뀜. 마지막 출력 스냅샷과 현재 품목 줄의 차이를 싣는다 | «송장이 바뀌었습니다 · 바뀐 줄» + 재출력 |
+| `external` | 수기·한진 외 송장. 출력 기록 비교를 건너뛴다(사용자 결정 2026-09-30). 렌더는 여전히 `WAYBILL_LABEL_UNAVAILABLE` | 평소 작업(출력 없이 진행) |
+| `unavailable` | 현재 내용 조립 실패. 사유 코드를 싣는다 | «송장을 만들 수 없어요» + 사유 |
 | `not_started` | 배치가 시작 전 | «배치 화면에서 작업 시작» |
 | `withdrawing` | 이탈 중, 뺄 상품 목록 포함 | 뺄 상품 → 되돌림 바구니 |
 | `withdrawn` | 이탈 완료 | «빠진 박스입니다, 송장은 버리세요» |

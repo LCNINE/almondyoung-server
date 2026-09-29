@@ -101,6 +101,23 @@ pending/allocated ──운영자 abandon──▶ abandoned (종료)
 
 이들은 `tx?: DbTx` 를 받으므로(배치/발급 계열 제외) 호출자가 자기 트랜잭션 안에서 합류시킬 수 있다.
 
+## 송장 = 피킹 지시서 (#987)
+
+- **조립은 `WaybillLabelContentAssembler` 한 곳.** 렌더러·재출력 게이트·출력 확인·`labelState` 가 모두 같은 «현재 내용 조립» 을
+  부른다. 그리는 입력과 비교하는 입력이 같은 객체에서 나오므로 어긋나지 않는다.
+- **지문:** `labelFingerprint(HanjinLabelContent)` — 정규화 JSON 의 SHA-256. 출력 날짜·판차는 내용 타입 밖이라 섞일 수 없다.
+- **출력 기록:** `waybill_label_prints` (`shipment_id`+`fingerprint` 유니크, `shipment_id`+`revision` 유니크).
+  앱이 프린터 전송에 성공한 뒤에만 `POST shipments/:shipmentId/waybill/label-prints` 로 확인한다.
+  판차 2 이상이면 FS 종이의 쪽 표시 줄 앞에 `N판` 이 찍힌다.
+- **재출력 게이트(I5):** `LabelCurrencyGuard.assertCurrent(workItemId, trx)` 가 현재 지문과 마지막 출력 기록을 비교해
+  다르거나 없으면 `409 LABEL_REPRINT_REQUIRED`. 진입점 = 전략 7곳(`lockAndAssertPickerClaim`) + `ShipmentDispatchService.lockAggregate`.
+  `bulkCartScan`·`claimPacker`·되돌림 명령은 밖이다(스펙 §10.4).
+- **`labelState`**(by-waybill 응답): `current` / `never_printed` / `reprint_required` / `not_started` / `withdrawing` /
+  `withdrawn` / `external` / `unavailable`. **수기·한진 외 송장은 `external`** — 출력 기록 비교를 면제한다(렌더는 여전히
+  `WAYBILL_LABEL_UNAVAILABLE`). 단 게이트는 모든 송장에 `assertDispatchable` 을 돌리므로 무효·낡은 수기 송장은 여전히 막힌다.
+- **배치 시작 거절:** `409 BATCH_START_BLOCKED`, 사유 목록은 `errors: StartBlockerView[]` 에 싣는다(`details` 가 아니다 — 전역 필터가 `details` 를 준비 막힘에만 통과시킨다).
+- 운영 라벨 형은 FS(`HANJIN_LABEL_TYPE=FS`)여야 품목 줄·로케이션·판차가 종이에 나온다.
+
 ## 스테이징 스모크 실행법
 
 ```bash
