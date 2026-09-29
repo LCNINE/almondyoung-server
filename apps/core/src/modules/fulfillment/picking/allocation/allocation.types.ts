@@ -34,6 +34,7 @@ export interface LockedAggregate {
 export interface SourceCapacity {
   skuId: string;
   sourceLocationId: string;
+  locationCode: string;
   stockVersion: number;
   remainingQty: number;
 }
@@ -110,4 +111,16 @@ export const UNSTARTED_BATCH_WORK_ITEM_STATUSES = ['queued', 'picking'] as const
 
 export function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+/** 시작·합류가 배정을 못 채운 줄의 사유(스펙 §6 표). 송장 사유는 박스 단위라 여기 없다. */
+export type StartShortReason = 'INBOUND_PENDING' | 'STOCK_SHORT';
+
+export interface LineShortage {
+  workItemId: string;
+  shipmentLineId: string;
+  skuId: string;
+  requiredQty: number;
+  shortQty: number;
+  reason: StartShortReason;
 }
