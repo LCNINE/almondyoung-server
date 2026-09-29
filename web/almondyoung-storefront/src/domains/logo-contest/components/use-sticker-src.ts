@@ -9,7 +9,7 @@ export function useStickerSrc() {
   const prepareSticker = (image: HTMLImageElement, fileId: string) => {
     if (stickerSrcById[fileId] || !image.naturalWidth) return
     const canvas = document.createElement("canvas")
-    canvas.width = Math.min(image.naturalWidth, 192)
+    canvas.width = Math.min(image.naturalWidth, 384)
     canvas.height = Math.round(
       (canvas.width * image.naturalHeight) / image.naturalWidth
     )
