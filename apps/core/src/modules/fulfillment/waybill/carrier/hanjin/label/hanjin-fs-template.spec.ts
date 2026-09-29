@@ -46,6 +46,38 @@ describe('renderHanjinFsLabel', () => {
     });
   });
 
+  // 2026-09-29 한진 DEV 제주 샘플에서 허브 `MG` 가 35pt 고정으로 찍혀 터미널코드 `610` 과 겹쳤다.
+  // 허브 코드는 영문 2자라 글자에 따라 폭이 크게 다르다(`2A` < `SS` < `MG` < `WW`).
+  describe('허브 코드(①)는 터미널코드(② x=24.5) 앞에서 멈춘다', () => {
+    const hubWidthMm = (hubCode: string): { pt: number; widthMm: number } => {
+      const s = fs1({ ...DATA, sort: { ...DATA.sort, hubCode } });
+      const m = /<text x="5" y="19.4" font-size="([\d.]+)" font-weight="700">([^<]*)<\/text>/.exec(s.svg);
+      if (!m) throw new Error('hub code text element not found');
+      expect(m[2]).toBe(hubCode);
+      const pt = Number(m[1]) / PT_TO_MM;
+      return { pt, widthMm: textWidthMm(hubCode, pt) };
+    };
+
+    it.each(['MG', 'MW', 'WW'])('%s 는 글자를 줄여 칸 안에 넣는다', (hubCode) => {
+      const { pt, widthMm } = hubWidthMm(hubCode);
+      expect(pt).toBeLessThan(35);
+      expect(5 + widthMm).toBeLessThanOrEqual(24.5 - 0.5);
+    });
+
+    it.each(['SS', '2A', 'NX'])('%s 처럼 칸에 들어가는 코드는 원래 크기(35pt) 그대로다', (hubCode) => {
+      // font-size 는 소수 둘째 자리까지 찍혀 pt 로 되돌리면 35 가 정확히 안 나온다. 줄일 때는 0.5pt 단위다.
+      expect(Math.abs(hubWidthMm(hubCode).pt - 35)).toBeLessThan(0.25);
+    });
+  });
+
+  // 필드표(fs2)는 ⑫ 를 「19」로 적지만 단위가 없고, 샘플 그림(fs_new)에서 폭을 재 역산하면 ⑫ 만 표의 60%
+  // (≈11.3pt)로 그려져 있다 — 다른 요소는 0.9~0.97 로 표와 맞는다(2026-09-29). 그림을 따른다.
+  it('⑫ 주소 출력정보는 12pt bold 로 찍는다(샘플 그림 크기)', () => {
+    expect(spec.svg).toContain(
+      `<text x="7.8" y="39.4" font-size="${(12 * PT_TO_MM).toFixed(2)}" font-weight="700">소공동 51 한진빌딩</text>`,
+    );
+  });
+
   it('받는분 성명이 길면 고정 x=35.1 의 연락처를 침범하기 전에 말줄임한다(#913 최종리뷰 F5)', () => {
     const s = fs1({
       ...DATA,
