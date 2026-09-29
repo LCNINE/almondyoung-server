@@ -19,7 +19,14 @@ import { BatchInventorySessionService } from './batch-inventory-session.service'
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { ambientDbService, inRollbackTx, makeDb, seedPickableShipment, assembleSimpleOutbound } from './__support__';
+import {
+  ambientDbService,
+  inRollbackTx,
+  makeDb,
+  seedPickableShipment,
+  assembleSimpleOutbound,
+  startBatchFor,
+} from './__support__';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -164,6 +171,7 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
   it('final simple dispatch consumes only the two free units and leaves all pending receipts', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await fixture(tx, 2, 2);
+      await startBatchFor(tx, f);
       const result = await assembleSimpleOutbound(tx).scan(
         f.shipmentId,
         {

@@ -9,7 +9,8 @@ export type PreparationBlockReason =
   | 'ELIGIBILITY_CHANGED'
   | 'SOURCE_INSUFFICIENT'
   | 'ACTIVE_WORK_REQUIRES_REVIEW'
-  | 'REPLAN_LIMIT_REACHED';
+  | 'REPLAN_LIMIT_REACHED'
+  | 'BATCH_NOT_STARTED';
 export type OutboundPreparationBlocked = {
   outcome: 'preparation_blocked';
   code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED';
@@ -32,6 +33,7 @@ const reasons: readonly string[] = [
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ];
 
 export function isPreparationBlocked(value: unknown): value is OutboundPreparationBlocked {

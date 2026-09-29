@@ -214,5 +214,11 @@ export class OutboundBatchV2ListItemDto {
   totalItems: number;
   totalQty: number;
   scheduledPickingAt: Date | null;
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: '「작업 시작」 시각. null 이면 시작 전 — 송장 인쇄를 켜지 않는다',
+  })
+  startedAt: Date | null;
   createdAt: Date;
 }

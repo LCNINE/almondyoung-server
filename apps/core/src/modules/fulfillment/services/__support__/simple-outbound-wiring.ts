@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
@@ -133,16 +134,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     coreOrderPublisher,
   );
-  const simple = new SimpleOutboundService(
-    dbService,
-    batches,
-    picking,
-    workflowGate,
-    commands,
-    dispatch,
-    barcodes,
-    invariant,
-  );
+  const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
   return {
     simple,
     picking,
@@ -159,4 +151,12 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
 
 export function assembleLocationOutbound(tx: DbTx): LocationOutboundService {
   return assembleOutbound(tx).location;
+}
+
+/** 「작업 시작」 — 지연 시작이 사라져 prepare 전에 반드시 불러야 한다(스펙 §6). */
+export async function startBatchFor(tx: DbTx, fixture: { batchId: string; actorId: string }) {
+  return assembleOutbound(tx).picking.start(
+    { batchId: fixture.batchId, actorId: fixture.actorId, idempotencyKey: `start-${randomUUID()}` },
+    tx,
+  );
 }

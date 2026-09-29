@@ -12,6 +12,7 @@ const preparationReasons = [
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ] as const;
 export type PreparationBlockReason = (typeof preparationReasons)[number];
 export type PreparationRejection = {

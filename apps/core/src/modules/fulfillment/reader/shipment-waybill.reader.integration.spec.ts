@@ -10,6 +10,7 @@ import {
   makeDb,
   seedPickableShipment,
 } from '../services/__support__';
+import { startBatchFor } from '../services/__support__/simple-outbound-wiring';
 import { ShipmentWaybillReader } from './shipment-waybill.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -59,6 +60,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('절반만 스캔된 라인은 pickedQty 에 그 진행을 그대로 보고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -121,6 +123,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('완료 송장은 활성 작업 없이 shipped로 조회된다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const state = await service.scan(
         fixture.shipmentId,

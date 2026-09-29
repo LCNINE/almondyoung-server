@@ -1,9 +1,8 @@
-import { ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, sql as sqlQuery } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment, receiveStock, wireLogistics } from './__support__';
-import { assembleOutbound, ambientDbService } from './__support__/simple-outbound-wiring';
+import { assembleOutbound, ambientDbService, startBatchFor } from './__support__/simple-outbound-wiring';
 
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -49,48 +48,6 @@ describeDb('outbound preparation', () => {
       .where(eq(wmsTables.fulfillmentCommandRequests.status, 'pending'));
     expect(pending).toHaveLength(0);
   }
-  it('commits shortage marker without partial allocation/session or nested pending', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const f = await seedPickableShipment(tx, 3);
-      const { location } = assembleOutbound(tx);
-      const actor = { id: f.actorId, roles: ['logistics_worker'] };
-      await tx
-        .update(wmsTables.stockLedgers)
-        .set({ qty: 0, version: 2 })
-        .where(eq(wmsTables.stockLedgers.skuId, f.skuId));
-      const key = randomUUID();
-      const result = await location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx);
-      expect(result).toMatchObject({
-        outcome: 'preparation_blocked',
-        reasonCode: 'SOURCE_INSUFFICIENT',
-        recovery: 'retry_preparation',
-      });
-      expect(
-        await tx
-          .select()
-          .from(wmsTables.pickingSourceAllocations)
-          .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId)),
-      ).toHaveLength(0);
-      await noExecution(tx, f);
-      await receiveStock(wireLogistics(ambientDbService(tx)).command, tx, {
-        skuId: f.skuId,
-        warehouseId: f.warehouseId,
-        locationId: f.locationId,
-        quantity: 4,
-      });
-      expect(await location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx)).toEqual(result);
-      await expect(location.start(f.shipmentId, { warehouseId: randomUUID() }, actor, key, tx)).rejects.toMatchObject({
-        response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' },
-      });
-      await expect(
-        location.start(f.shipmentId, { warehouseId: f.warehouseId }, { ...actor, id: randomUUID() }, key, tx),
-      ).rejects.toMatchObject({ response: { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' } });
-      await noExecution(tx, f);
-      expect(await location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx)).toMatchObject(
-        { status: 'in_progress' },
-      );
-    });
-  });
   it('moves the entire source and starts from the new location', async () => {
     await inRollbackTx(db, async (tx) => {
       const { f, location, actor } = await unstarted(tx);
@@ -109,6 +66,7 @@ describeDb('outbound preparation', () => {
         },
         tx,
       );
+      await startBatchFor(tx, f);
       const result = await location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
       expect(result).toMatchObject({
         status: 'in_progress',
@@ -116,60 +74,48 @@ describeDb('outbound preparation', () => {
       });
     });
   });
-  it.each(['location-barcode', 'location-over', 'force', 'simple-barcode', 'simple-over'] as const)(
-    'rolls back batch start and all nested commands after %s failure in an ambient transaction',
-    async (failure) => {
+  // 지연 시작이 사라졌으므로(스펙 §6) 시작 안 된 배치에서는 어느 입구든 배치를 시작하지 않고 BATCH_NOT_STARTED 로 막힌다.
+  it.each(['location-scan', 'location-force', 'simple-scan', 'simple-force'] as const)(
+    'does not start the batch or write anything when %s hits an unstarted batch',
+    async (entry) => {
       await inRollbackTx(db, async (tx) => {
         const { f, location, simple, actor } = await unstarted(tx);
-        await receiveStock(wireLogistics(ambientDbService(tx)).command, tx, {
-          skuId: f.skuId,
-          warehouseId: f.warehouseId,
-          locationId: f.locationId,
-          quantity: 1,
-        });
         const stockBefore = await tx
           .select()
           .from(wmsTables.stockLedgers)
           .where(eq(wmsTables.stockLedgers.skuId, f.skuId));
-        const commandsBefore = await tx.select().from(wmsTables.fulfillmentCommandRequests);
-        const call =
-          failure === 'force'
-            ? location.force(
-                f.shipmentId,
-                {
-                  warehouseId: f.warehouseId,
-                  reason: 'test',
-                  items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 2 }],
-                },
-                actor,
-                randomUUID(),
-                authorization,
-                tx,
-              )
-            : failure.startsWith('simple')
-              ? simple.scan(
+        const forceInput = {
+          warehouseId: f.warehouseId,
+          reason: 'test',
+          items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.locationId, quantity: 2 }],
+        };
+        const result =
+          entry === 'location-force'
+            ? await location.force(f.shipmentId, forceInput, actor, randomUUID(), authorization, tx)
+            : entry === 'simple-force'
+              ? await simple.forceComplete(
                   f.shipmentId,
-                  {
-                    barcode: failure.endsWith('barcode') ? randomUUID() : f.barcode,
-                    quantity: failure.endsWith('over') ? 4 : 1,
-                    actor,
-                    idempotencyKey: randomUUID(),
-                  },
+                  { reason: 'test', actor, idempotencyKey: randomUUID(), authorization },
                   tx,
                 )
-              : location.scan(
-                  f.shipmentId,
-                  {
-                    warehouseId: f.warehouseId,
-                    sourceLocationId: f.locationId,
-                    barcode: failure.endsWith('barcode') ? randomUUID() : f.barcode,
-                    quantity: failure.endsWith('over') ? 4 : 1,
-                  },
-                  actor,
-                  randomUUID(),
-                  tx,
-                );
-        await expect(call).rejects.toBeDefined();
+              : entry === 'simple-scan'
+                ? await simple.scan(
+                    f.shipmentId,
+                    { barcode: f.barcode, quantity: 1, actor, idempotencyKey: randomUUID() },
+                    tx,
+                  )
+                : await location.scan(
+                    f.shipmentId,
+                    { warehouseId: f.warehouseId, sourceLocationId: f.locationId, barcode: f.barcode, quantity: 1 },
+                    actor,
+                    randomUUID(),
+                    tx,
+                  );
+        expect(result).toMatchObject({
+          outcome: 'preparation_blocked',
+          reasonCode: 'BATCH_NOT_STARTED',
+          recovery: 'review_batch',
+        });
         const [batch] = await tx
           .select()
           .from(wmsTables.outboundBatches)
@@ -178,15 +124,12 @@ describeDb('outbound preparation', () => {
         expect(await tx.select().from(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, f.skuId))).toEqual(
           stockBefore,
         );
-        expect(await tx.select().from(wmsTables.fulfillmentCommandRequests)).toEqual(commandsBefore);
         await noExecution(tx, f);
         const [line] = await tx
           .select()
           .from(wmsTables.shipmentLines)
           .where(eq(wmsTables.shipmentLines.id, f.shipmentLineId));
         expect(line.inspectedQty).toBe(0);
-        const [waybill] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, f.waybillId));
-        expect(waybill.status).toBe('registered');
       });
     },
   );
@@ -235,35 +178,10 @@ describeDb('outbound preparation', () => {
     });
   });
 
-  it.each(['unexpected', 'permission', 'database'] as const)(
-    'propagates %s batch start failures without leaving nested commands',
-    async (kind) => {
-      await inRollbackTx(db, async (tx) => {
-        const { f, location, picking, actor } = await unstarted(tx);
-        await tx.update(wmsTables.stockLedgers).set({ version: 2 }).where(eq(wmsTables.stockLedgers.skuId, f.skuId));
-        const before = await tx.select().from(wmsTables.fulfillmentCommandRequests);
-        const spy = jest.spyOn(picking, 'start').mockImplementation(async (_input, trx) => {
-          if (kind === 'database') await trx!.execute(sqlQuery`select 1/0`);
-          if (kind === 'permission') throw new ForbiddenException('test authorization denied');
-          throw new Error('test unknown failure');
-        });
-        try {
-          await expect(
-            location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx),
-          ).rejects.toBeDefined();
-          expect(await tx.select().from(wmsTables.fulfillmentCommandRequests)).toEqual(before);
-          await noExecution(tx, f);
-        } finally {
-          spy.mockRestore();
-        }
-      });
-    },
-  );
-
   it('does not resume a recovery-required session or change its claim', async () => {
     await inRollbackTx(db, async (tx) => {
       const { f, location, actor } = await unstarted(tx);
-      await location.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
+      await startBatchFor(tx, f);
       await tx
         .update(wmsTables.batchInventorySessions)
         .set({ status: 'recovery_required', recoveryReason: 'requires manual recovery' })

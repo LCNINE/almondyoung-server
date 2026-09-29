@@ -26,6 +26,8 @@ import { buildWiring, Database, dbServiceFor } from '../../inbound/services/__fi
 import { wmsSchema, wmsTables } from '../../schema/inventory.schema';
 
 import { LocationOutboundController } from '../../../fulfillment/controllers/location-outbound.controller';
+import { PickingCommandV2Controller } from '../../../fulfillment/controllers/picking-v2.controller';
+import { PickingProcessService } from '../../../fulfillment/services/picking-process.service';
 import {
   LocationOutboundService,
   LocationOutboundState,
@@ -68,10 +70,17 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     const catalogReader = new SkuCatalogReader(dbService);
     const catalog = new SkuCatalogService(catalogReader, new SkuCatalogManager(dbService, catalogReader));
     const module = await Test.createTestingModule({
-      controllers: [WarehouseWorkContextController, InboundController, MovementController, LocationOutboundController],
+      controllers: [
+        WarehouseWorkContextController,
+        InboundController,
+        MovementController,
+        LocationOutboundController,
+        PickingCommandV2Controller,
+      ],
       providers: [
         ScopeGuard,
         { provide: LocationOutboundService, useValue: outbound.location },
+        { provide: PickingProcessService, useValue: outbound.picking },
         {
           provide: AuthorizationService,
           useValue: {
@@ -217,14 +226,14 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
   const startBody = (f: Fixture) => ({ warehouseId: f.warehouseId });
   const scanBody = (f: Fixture) => ({
     warehouseId: f.warehouseId,
-    sourceLocationId: f.bId,
+    sourceLocationId: f.aId,
     barcode: f.barcode,
     quantity: 3,
   });
   const forceBody = (f: Fixture) => ({
     warehouseId: f.warehouseId,
     reason: '인수 확인',
-    items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.bId, quantity: 3 }],
+    items: [{ shipmentLineId: f.shipmentLineId, sourceLocationId: f.aId, quantity: 3 }],
   });
   const putaway = (r: Runtime, f: Fixture, toLocationId: string, quantity: number) =>
     write(r, '/inbound/putaway', { lineId: f.line.id, toLocationId, quantity });
@@ -232,14 +241,17 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     warehouseId: f.warehouseId,
     lines: [{ skuId: f.skuId, fromLocationId: f.aId, toLocationId: f.bId, quantity }],
   });
+  // 배치 시작은 「작업 시작」(POST /picking/v2/starts) 하나뿐이다 — 위치 출고의 시작·스캔은 시작된 배치만 다룬다.
+  const startBatch = (r: Runtime, f: Fixture) =>
+    write<{ state: string; batchId: string }>(r, '/picking/v2/starts', { batchId: f.batchId });
   async function prepare(r: Runtime, f: Fixture) {
     await putaway(r, f, f.aId, 6);
     await write(r, '/movement/move', moveBody(f));
     await putaway(r, f, f.bId, 4);
+    expect(await startBatch(r, f)).toMatchObject({ state: 'started', batchId: f.batchId });
     const result = await write<LocationOutboundState>(r, path(f, 'starts'), startBody(f));
-    // B is the smaller UUID and must supply all three units (A4/B6 before shipment).
-    expect(f.bId < f.aId).toBe(true);
-    expect(result.sources).toEqual([expect.objectContaining({ sourceLocationId: f.bId, allocatedQty: 3 })]);
+    // A4/B6 before shipment: both can supply all three units, so E8 picks the first location code (A).
+    expect(result.sources).toEqual([expect.objectContaining({ sourceLocationId: f.aId, allocatedQty: 3 })]);
     const [batch] = await db
       .select()
       .from(wmsTables.outboundBatches)
@@ -254,8 +266,8 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     const quantity = (locationId: string) =>
       ledgers.filter((l) => l.locationId === locationId && l.stockState === 'ON_HAND').reduce((n, l) => n + l.qty, 0);
     expect(quantity(f.line.originLocationId)).toBe(0);
-    expect(quantity(f.aId)).toBe(4);
-    expect(quantity(f.bId)).toBe(3);
+    expect(quantity(f.aId)).toBe(1);
+    expect(quantity(f.bId)).toBe(6);
     expect(ledgers.filter((l) => l.stockState === 'ON_HAND').reduce((n, l) => n + l.qty, 0)).toBe(7);
     const events = await db.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
     expect(events.filter((e) => e.transitionType === 'RECEIVE')).toEqual([expect.objectContaining({ quantity: 10 })]);
@@ -295,25 +307,17 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     ).rejects.toMatchObject({ status: 409, code: 'MOVEMENT_DESTINATION_INACTIVE' });
     expect(await db.transaction((tx) => snapshot(tx, f))).toEqual(before);
   });
-  async function shortage(r: Runtime, f: Fixture) {
-    await putaway(r, f, f.aId, 3);
-    // External stock depletion fault: the source changes before HTTP preparation.
-    await db
-      .update(wmsTables.stockLedgers)
-      .set({ qty: 0, version: 2 })
-      .where(eq(wmsTables.stockLedgers.locationId, f.aId));
-  }
-  it('commits the shortage rejection across HTTP409; same key replays, explicit new key re-evaluates', async () => {
+  it('commits the not-started rejection across HTTP409; same key replays, explicit new key re-evaluates after 작업 시작', async () => {
     const r = runtime();
     const f = await fixture(r);
-    await shortage(r, f);
+    await putaway(r, f, f.aId, 3);
     const key = randomUUID();
     await expect(
       r.api.request({ method: 'POST', path: path(f, 'starts'), body: startBody(f), idempotencyKey: key }),
     ).rejects.toMatchObject({ status: 409, code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' });
     await expect(write(r, path(f, 'starts'), startBody(f), key)).rejects.toMatchObject({
       code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
-      preparation: { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' },
+      preparation: { reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' },
     });
     const observer = postgres(databaseUrl!, { max: 1 });
     try {
@@ -324,7 +328,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         await observer`select status, response_snapshot from fulfillment_command_requests where idempotency_key=${key}`;
       expect(saved).toMatchObject({
         status: 'completed',
-        response_snapshot: { outcome: 'preparation_blocked', reasonCode: 'SOURCE_INSUFFICIENT' },
+        response_snapshot: { outcome: 'preparation_blocked', reasonCode: 'BATCH_NOT_STARTED' },
       });
       expect(await observer`select id from batch_inventory_sessions where batch_id=${f.batchId}`).toHaveLength(0);
       expect(await observer`select status, picker_id from outbound_batch_work_items where id=${f.workItemId}`).toEqual([
@@ -333,15 +337,14 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     } finally {
       await observer.end();
     }
-    await db.update(wmsTables.locations).set({ isActive: true }).where(eq(wmsTables.locations.id, f.bId));
-    await putaway(r, f, f.bId, 3);
+    expect(await startBatch(r, f)).toMatchObject({ state: 'started', batchId: f.batchId });
     await expect(
       r.api.request({ method: 'POST', path: path(f, 'starts'), body: startBody(f), idempotencyKey: key }),
     ).rejects.toMatchObject({ status: 409, code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' });
     expect(await r.store.get(key)).toMatchObject({ status: 'rejected', attempts: 1 });
     expect(await write(r, path(f, 'starts'), startBody(f))).toMatchObject({
       status: 'in_progress',
-      sources: [expect.objectContaining({ sourceLocationId: f.bId, allocatedQty: 3 })],
+      sources: [expect.objectContaining({ sourceLocationId: f.aId, allocatedQty: 3 })],
     });
   });
   async function waitUncertain(r: Runtime, key: string) {
@@ -372,7 +375,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
       const r = runtime(transport);
       const f = await fixture(r);
       if (outcome === 'success') await prepare(r, f);
-      else await shortage(r, f);
+      else await putaway(r, f, f.aId, 3);
       const key = randomUUID();
       const original = write(r, path(f, op), outcome === 'success' ? scanBody(f) : startBody(f), key);
       // Attach rejection immediately, while retaining the caller for the recovered terminal outcome.
@@ -401,7 +404,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         await reconcile(resumed, f);
       } else {
         expect(await settled).toMatchObject({ error: { code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' } });
-        expect(saved?.preparation).toEqual({ reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' });
+        expect(saved?.preparation).toEqual({ reasonCode: 'BATCH_NOT_STARTED', recovery: 'review_batch' });
       }
       expect(await resumed.store.pending(r.scope)).toEqual([]);
     },
@@ -426,7 +429,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
       const r = runtime(transport);
       const f = await fixture(r);
       if (outcome === 'success') await prepare(r, f);
-      else await shortage(r, f);
+      else await putaway(r, f, f.aId, 3);
       const key = randomUUID();
       const original = write(r, path(f, 'forces'), forceBody(f), key);
       const settled = original.then(
@@ -465,7 +468,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
           .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key));
         expect(saved.responseSnapshot).toMatchObject({
           outcome: 'preparation_blocked',
-          reasonCode: 'SOURCE_INSUFFICIENT',
+          reasonCode: 'BATCH_NOT_STARTED',
         });
         const events = await db.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
         expect(events.filter((e) => e.transitionType === 'SHIP')).toHaveLength(0);

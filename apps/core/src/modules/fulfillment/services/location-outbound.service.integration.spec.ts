@@ -37,6 +37,7 @@ const authorization: ScopeAuthorizationDecision = {
 
 async function setup(tx: DbTx, split = false) {
   const f = await seedPickableShipment(tx, 3);
+  await wiring.startBatchFor(tx, f);
   const service = wiring.assembleLocationOutbound(tx);
   const actor = { id: f.actorId, roles: ['logistics_worker'] };
   const first = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
@@ -255,6 +256,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         service.start(f.shipmentId, { warehouseId: randomUUID() }, actor, randomUUID(), tx),
       ).rejects.toMatchObject({ response: { code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH' } });
       expect(await effects(tx, f.batchId)).toEqual(before);
+      await wiring.startBatchFor(tx, f);
       const key = randomUUID();
       const started = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx);
       if (isPreparationBlocked(started)) throw new Error('Expected prepared outbound state');
@@ -398,6 +400,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     async (legacyPrefix) => {
       await inRollbackTx(db, async (tx) => {
         const f = await seedPickableShipment(tx, 4);
+        await wiring.startBatchFor(tx, f);
         const service = wiring.assembleLocationOutbound(tx);
         const actor = { id: f.actorId, roles: ['logistics_worker'] };
         const key = randomUUID();
@@ -537,6 +540,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         .update(wmsTables.outboundBatches)
         .set({ pickingMethod: 'individual' })
         .where(eq(wmsTables.outboundBatches.id, f.batchId));
+      await wiring.startBatchFor(tx, f);
       await service.scan(
         f.shipmentId,
         { warehouseId: f.warehouseId, sourceLocationId: f.locationId, barcode: f.barcode, quantity: 1 },
@@ -554,6 +558,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seedPickableShipment(tx, 2);
       const second = await addSecondSimpleOutboundLine(tx, f, 1);
+      await wiring.startBatchFor(tx, f);
       const service = wiring.assembleLocationOutbound(tx);
       const actor = { id: f.actorId, roles: ['logistics_worker'] };
       const first = await service.scan(
@@ -762,7 +767,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it.each(['force', 'resolution'] as const)('serializes force/resolver while %s is uncommitted', async (winner) => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actor = { id: f.actorId, roles: ['logistics_worker'] };
     const input = forceInput(f);
     const key = randomUUID();
@@ -846,7 +855,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it('serializes same-key starts and different-key source scans without duplicate custody', async () => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actor = { id: f.actorId, roles: ['logistics_worker'] };
     const key = randomUUID();
     const results = await Promise.all(
@@ -882,7 +895,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it('allows only one of two actors to start and own the same box', async () => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actors = [
       { id: f.actorId, roles: ['logistics_worker'] },
       { id: randomUUID(), roles: ['logistics_worker'] },

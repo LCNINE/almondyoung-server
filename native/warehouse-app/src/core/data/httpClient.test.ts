@@ -136,6 +136,7 @@ it.each([
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ])(
   'preserves validated preparation reason %s without diagnostic extras',
   async (reasonCode) => {
