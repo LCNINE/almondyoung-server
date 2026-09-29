@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -1004,7 +1004,7 @@ export class ConsolidationService {
 
   private async loadBlockers(aggregate: ShipmentAggregate, tx: DbTx): Promise<string[]> {
     const lineIds = aggregate.lines.map((line) => line.id);
-    const [waybill, workItem, custody, pickingPlan, attempt] = await Promise.all([
+    const [waybill, workItem, custody, attempt] = await Promise.all([
       tx
         .select({ id: wmsTables.waybills.id })
         .from(wmsTables.waybills)
@@ -1036,18 +1036,6 @@ export class ConsolidationService {
         )
         .limit(1),
       tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlanMembers)
-        .innerJoin(wmsTables.pickingPlans, eq(wmsTables.pickingPlans.id, wmsTables.pickingPlanMembers.planId))
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
-            isNull(wmsTables.pickingPlanMembers.retiredAt),
-            inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-          ),
-        )
-        .limit(1),
-      tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
         .where(
@@ -1063,7 +1051,6 @@ export class ConsolidationService {
     if (waybill[0]) codes.push('ACTIVE_INVOICE');
     if (workItem[0]) codes.push('ACTIVE_WORK_ITEM');
     if (custody[0] || aggregate.lines.some((line) => line.inspectedQty > 0)) codes.push('CUSTODY_REQUIRES_UNPICK');
-    if (pickingPlan[0]) codes.push('ACTIVE_PICKING_PLAN');
     if (attempt[0]) codes.push('DISPATCH_ATTEMPT_EXISTS');
     return codes;
   }

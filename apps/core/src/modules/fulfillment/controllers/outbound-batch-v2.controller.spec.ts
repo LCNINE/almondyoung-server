@@ -9,7 +9,7 @@ describe('OutboundBatchV2Controller read snapshot contract', () => {
         id: 'batch-1',
         warehouse: { supportedPickingStrategies: ['discrete'] },
         workItems: [],
-        pickingPlan: null,
+        picking: null,
         inventorySession: null,
         toteAssignments: [],
       }),

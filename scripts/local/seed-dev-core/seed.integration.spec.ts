@@ -574,8 +574,7 @@ describeIfSeedDb('dev_core 시드', () => {
       if (prepared.outcome !== 'ready') throw new Error('Expected ready preparation');
       const context = prepared.context;
 
-      // prepare 가 만드는 셋 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
-      expect(context.planId).toBeTruthy();
+      // prepare 가 만드는 것 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
       expect(context.sessionId).toBeTruthy();
       expect(context.batchId).toBeTruthy();
 

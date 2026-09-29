@@ -9,7 +9,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { ApplicationException } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -84,9 +84,7 @@ export class OutboundBatchOrchestrator {
         throw new BadRequestException('cartCapacity is required for multi_order batches');
       }
     } else if (dto.cartCapacity !== undefined && dto.cartCapacity !== null) {
-      throw new BadRequestException(
-        `cartCapacity is only allowed for multi_order batches (got ${dto.pickingMethod})`,
-      );
+      throw new BadRequestException(`cartCapacity is only allowed for multi_order batches (got ${dto.pickingMethod})`);
     }
     return this.commands.execute(
       {
@@ -159,6 +157,12 @@ export class OutboundBatchOrchestrator {
         await this.assertNoActiveWorkItem(shipmentId, trx);
         // Canonical component locks precede batch/work-item locks in every membership command.
         const batch = await this.lockOpenBatch(batchId, trx);
+        if (batch.startedAt) {
+          throw this.conflict(
+            'OUTBOUND_BATCH_ALREADY_STARTED',
+            `Batch ${batchId} has started picking; joining a running batch arrives with live allocation (S1-B)`,
+          );
+        }
         await this.assertCartCapacity(batch, trx);
         const eligible = await this.assertEligible(batch, aggregate, trx);
 
@@ -483,7 +487,7 @@ export class OutboundBatchOrchestrator {
         }
       }
       const workItems = [...items.values()];
-      const [warehouse, plan, inventorySession] = await Promise.all([
+      const [warehouse, inventorySession] = await Promise.all([
         trx
           .select({
             id: wmsTables.warehouses.id,
@@ -492,13 +496,6 @@ export class OutboundBatchOrchestrator {
           })
           .from(wmsTables.warehouses)
           .where(eq(wmsTables.warehouses.id, batch.warehouseId))
-          .limit(1)
-          .then((found) => found[0]),
-        trx
-          .select()
-          .from(wmsTables.pickingPlans)
-          .where(eq(wmsTables.pickingPlans.batchId, batchId))
-          .orderBy(desc(wmsTables.pickingPlans.version))
           .limit(1)
           .then((found) => found[0]),
         trx
@@ -514,32 +511,31 @@ export class OutboundBatchOrchestrator {
           .then((found) => found[0]),
       ]);
       if (!warehouse) throw new NotFoundException(`Warehouse ${batch.warehouseId} not found`);
-      const [members, allocations, balances] = await Promise.all([
-        plan
-          ? trx
-              .select()
-              .from(wmsTables.pickingPlanMembers)
-              .where(eq(wmsTables.pickingPlanMembers.planId, plan.id))
-              .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
-          : [],
-        plan
-          ? trx
-              .select()
-              .from(wmsTables.pickingSourceAllocations)
-              .where(eq(wmsTables.pickingSourceAllocations.planId, plan.id))
-              .orderBy(
-                asc(wmsTables.pickingSourceAllocations.shipmentLineId),
-                asc(wmsTables.pickingSourceAllocations.sourceLocationId),
-              )
-          : [],
-        inventorySession
-          ? trx
-              .select()
-              .from(wmsTables.batchInventorySessionBalances)
-              .where(eq(wmsTables.batchInventorySessionBalances.sessionId, inventorySession.id))
-              .orderBy(asc(wmsTables.batchInventorySessionBalances.id))
-          : [],
-      ]);
+      const allocations = batch.startedAt
+        ? await trx
+            .select({ allocation: wmsTables.pickingSourceAllocations, skuId: wmsTables.shipmentLines.skuId })
+            .from(wmsTables.pickingSourceAllocations)
+            .innerJoin(
+              wmsTables.outboundBatchWorkItems,
+              eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+            )
+            .innerJoin(
+              wmsTables.shipmentLines,
+              eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+            )
+            .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
+            .orderBy(
+              asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+              asc(wmsTables.pickingSourceAllocations.sourceLocationId),
+            )
+        : [];
+      const balances = inventorySession
+        ? await trx
+            .select()
+            .from(wmsTables.batchInventorySessionBalances)
+            .where(eq(wmsTables.batchInventorySessionBalances.sessionId, inventorySession.id))
+            .orderBy(asc(wmsTables.batchInventorySessionBalances.id))
+        : [];
       const toteAssignments: Array<{
         assignment: typeof wmsTables.shipmentToteAssignments.$inferSelect;
         toteBarcode: string;
@@ -579,7 +575,23 @@ export class OutboundBatchOrchestrator {
           ...warehouse,
           supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],
         },
-        pickingPlan: plan ? { ...plan, members, allocations } : null,
+        picking: batch.startedAt
+          ? {
+              strategy: STRATEGY_BY_PICKING_METHOD[batch.pickingMethod],
+              startedAt: batch.startedAt,
+              allocations: allocations.map(({ allocation, skuId }) => ({
+                id: allocation.id,
+                // 시작된 배치의 배정은 전부 startBatchPicking 이 workItemId 로 넣었다. 컬럼은 PR 2 에서 NOT NULL 이 된다.
+                workItemId: allocation.workItemId!,
+                shipmentLineId: allocation.shipmentLineId,
+                skuId,
+                sourceLocationId: allocation.sourceLocationId,
+                qty: allocation.qty,
+                sourceStockVersion: allocation.sourceStockVersion,
+                createdAt: allocation.createdAt,
+              })),
+            }
+          : null,
         inventorySession: inventorySession ? { ...inventorySession, balances } : null,
         toteAssignments: toteAssignments.map(({ assignment, toteBarcode, toteStatus }) => ({
           ...assignment,
@@ -1013,7 +1025,7 @@ export class OutboundBatchOrchestrator {
   }
 
   private async assertExcludable(aggregate: EligibilityAggregate, tx: DbTx): Promise<void> {
-    const [attempt, custody, plan, toteAssignment] = await Promise.all([
+    const [attempt, custody, allocated, toteAssignment] = await Promise.all([
       tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
@@ -1038,18 +1050,7 @@ export class OutboundBatchOrchestrator {
           ),
         )
         .limit(1),
-      tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlanMembers)
-        .innerJoin(wmsTables.pickingPlans, eq(wmsTables.pickingPlans.id, wmsTables.pickingPlanMembers.planId))
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
-            isNull(wmsTables.pickingPlanMembers.retiredAt),
-            inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-          ),
-        )
-        .limit(1),
+      this.liveAllocation(aggregate.shipment.id, tx),
       tx
         .select({ id: wmsTables.shipmentToteAssignments.id })
         .from(wmsTables.shipmentToteAssignments)
@@ -1076,9 +1077,28 @@ export class OutboundBatchOrchestrator {
         'Active physical tote assignments must be released before exclusion',
       );
     }
-    if (plan[0]) {
-      throw this.conflict('WORK_ITEM_PICKING_PLAN_ACTIVE', 'Invalidate the active picking plan before exclusion');
+    if (allocated[0]) {
+      throw this.conflict('WORK_ITEM_ALLOCATED', 'Work item holds picking allocations; use short-pick recovery');
     }
+  }
+
+  /** 활성 작업 항목(완료·제외 아님)에 남은 배정. 옛 «활성 계획 구성원» 검사의 자리다(ADR-0041). */
+  private liveAllocation(shipmentId: string, tx: DbTx) {
+    return tx
+      .select({ id: wmsTables.pickingSourceAllocations.id })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
+      .where(
+        and(
+          eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+          notInArray(wmsTables.outboundBatchWorkItems.status, ['completed', 'excluded']),
+          gt(wmsTables.pickingSourceAllocations.qty, 0),
+        ),
+      )
+      .limit(1);
   }
 
   private async resumeWaitingOperationIfReady(operationId: string, shipmentId: string, tx?: DbTx): Promise<void> {
@@ -1099,19 +1119,8 @@ export class OutboundBatchOrchestrator {
         );
       }
       if (operation.type === 'cancel') {
-        const [plan, custody] = await Promise.all([
-          trx
-            .select({ id: wmsTables.pickingPlans.id })
-            .from(wmsTables.pickingPlanMembers)
-            .innerJoin(wmsTables.pickingPlans, eq(wmsTables.pickingPlans.id, wmsTables.pickingPlanMembers.planId))
-            .where(
-              and(
-                eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
-                isNull(wmsTables.pickingPlanMembers.retiredAt),
-                inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-              ),
-            )
-            .limit(1),
+        const [allocated, custody] = await Promise.all([
+          this.liveAllocation(shipmentId, trx),
           trx
             .select({ id: wmsTables.batchInventorySessionBalances.id })
             .from(wmsTables.batchInventorySessionBalances)
@@ -1128,7 +1137,7 @@ export class OutboundBatchOrchestrator {
             )
             .limit(1),
         ]);
-        if (plan[0] || custody[0]) return;
+        if (allocated[0] || custody[0]) return;
         await this.moduleRef
           .get(ShipmentPlanningService, { strict: false })
           .resumePendingCancellation(operationId, trx);

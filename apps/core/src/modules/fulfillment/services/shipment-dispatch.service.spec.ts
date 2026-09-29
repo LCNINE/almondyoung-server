@@ -25,7 +25,6 @@ const IDS = {
   session: '00000000-0000-4000-8000-00000000000b',
   workItem: '00000000-0000-4000-8000-00000000000c',
   batch: '00000000-0000-4000-8000-00000000000d',
-  plan: '00000000-0000-4000-8000-00000000000e',
   actor: '00000000-0000-4000-8000-00000000000f',
   balance: '00000000-0000-4000-8000-000000000010',
 };
@@ -135,7 +134,6 @@ function aggregate(overrides: Record<string, unknown> = {}) {
       packerReleasedAt: null,
       leaseExpiresAt: new Date(Date.now() + 60_000),
     },
-    planId: IDS.plan,
     ...overrides,
   } as any;
 }
@@ -475,7 +473,6 @@ describe('ShipmentDispatchService', () => {
         beforeLineManifest: [expect.objectContaining({ shipmentLineId: IDS.line, inspectedQty: 1, forced: false })],
         afterLineManifest: [expect.objectContaining({ shipmentLineId: IDS.line, inspectedQty: 2, forced: true })],
         lineage: expect.objectContaining({
-          planId: IDS.plan,
           sessionId: IDS.session,
           workItemId: IDS.workItem,
           dispatchAttemptId: result.dispatchAttemptId,

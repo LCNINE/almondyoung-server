@@ -232,37 +232,19 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     warehouseId: f.warehouseId,
     lines: [{ skuId: f.skuId, fromLocationId: f.aId, toLocationId: f.bId, quantity }],
   });
-  async function draft(f: Fixture) {
-    return outbound.picking.plan({
-      batchId: f.batchId,
-      shipmentIds: [f.shipmentId],
-      actorId,
-      idempotencyKey: randomUUID(),
-    });
-  }
-  async function prepare(r: Runtime, f: Fixture, stale = false) {
+  async function prepare(r: Runtime, f: Fixture) {
     await putaway(r, f, f.aId, 6);
-    if (stale) {
-      await draft(f);
-      expect(
-        await db
-          .select()
-          .from(wmsTables.pickingSourceAllocations)
-          .where(eq(wmsTables.pickingSourceAllocations.shipmentLineId, f.shipmentLineId)),
-      ).toEqual([expect.objectContaining({ sourceLocationId: f.aId, qty: 3 })]);
-    }
     await write(r, '/movement/move', moveBody(f));
     await putaway(r, f, f.bId, 4);
-    if (!stale) await draft(f);
     const result = await write<LocationOutboundState>(r, path(f, 'starts'), startBody(f));
     // B is the smaller UUID and must supply all three units (A4/B6 before shipment).
     expect(f.bId < f.aId).toBe(true);
     expect(result.sources).toEqual([expect.objectContaining({ sourceLocationId: f.bId, allocatedQty: 3 })]);
-    expect(
-      (await db.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId)))
-        .map((p) => p.status)
-        .sort(),
-    ).toEqual(stale ? ['active', 'invalidated'] : ['active']);
+    const [batch] = await db
+      .select()
+      .from(wmsTables.outboundBatches)
+      .where(eq(wmsTables.outboundBatches.id, f.batchId));
+    expect(batch.startedAt).not.toBeNull();
   }
   async function reconcile(r: Runtime, f: Fixture) {
     expect(
@@ -283,10 +265,10 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
       sources: [],
     });
   }
-  it.each([false, true])('conserves receive10 → A6 → AtoB2 → B4 → ship3 (draft before move=%s)', async (stale) => {
+  it('conserves receive10 → A6 → AtoB2 → B4 → ship3', async () => {
     const r = runtime();
     const f = await fixture(r);
-    await prepare(r, f, stale);
+    await prepare(r, f);
     const key = randomUUID();
     const result = await write(r, path(f, 'scans'), scanBody(f), key);
     expect(result).toMatchObject({ status: 'shipped' });
@@ -315,14 +297,13 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
   });
   async function shortage(r: Runtime, f: Fixture) {
     await putaway(r, f, f.aId, 3);
-    await draft(f);
-    // External stock depletion fault: the source changes after draft, before HTTP preparation.
+    // External stock depletion fault: the source changes before HTTP preparation.
     await db
       .update(wmsTables.stockLedgers)
       .set({ qty: 0, version: 2 })
       .where(eq(wmsTables.stockLedgers.locationId, f.aId));
   }
-  it('commits invalidated draft and rejection across HTTP409; same key replays, explicit new key re-evaluates', async () => {
+  it('commits the shortage rejection across HTTP409; same key replays, explicit new key re-evaluates', async () => {
     const r = runtime();
     const f = await fixture(r);
     await shortage(r, f);
@@ -336,9 +317,9 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     });
     const observer = postgres(databaseUrl!, { max: 1 });
     try {
-      expect(await observer`select status from picking_plans where batch_id=${f.batchId}`).toEqual([
-        expect.objectContaining({ status: 'invalidated' }),
-      ]);
+      expect(await observer`select id from picking_source_allocations where work_item_id=${f.workItemId}`).toHaveLength(
+        0,
+      );
       const [saved] =
         await observer`select status, response_snapshot from fulfillment_command_requests where idempotency_key=${key}`;
       expect(saved).toMatchObject({

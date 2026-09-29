@@ -11,8 +11,8 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { WaybillService } from '../waybill/waybill.service';
-import { planPicking, startPicking } from '../picking/plan/picking-plan';
-import { PickingPlanDeps } from '../picking/plan/picking-plan.types';
+import { startBatchPicking, StartBatchPickingInput } from '../picking/allocation/batch-start';
+import { BatchStartDeps, BatchStartResult } from '../picking/allocation/allocation.types';
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
@@ -25,9 +25,7 @@ import {
   HandoffPickingInput,
   PickToToteStrategy,
   PickingStrategy,
-  PlanPickingInput,
   ScanPickingInput,
-  StartPickingInput,
   ToteAssignmentInput,
   ToteAssignmentResult,
   ToteHandoffInput,
@@ -84,7 +82,7 @@ export class PickingProcessService {
     @Optional() private readonly strategyRegistry?: PickingStrategyRegistry,
   ) {}
 
-  private get planDeps(): PickingPlanDeps {
+  private get startDeps(): BatchStartDeps {
     return {
       commands: this.commands,
       workflowGate: this.workflowGate,
@@ -95,61 +93,28 @@ export class PickingProcessService {
     };
   }
 
-  async plan(input: PlanPickingInput, tx?: DbTx) {
+  async start(input: StartBatchPickingInput, tx?: DbTx): Promise<BatchStartResult> {
     return this.dbService.run(async (trx) => {
-      const [batch] = await trx
-        .select({
-          warehouseId: wmsTables.outboundBatches.warehouseId,
-          pickingMethod: wmsTables.outboundBatches.pickingMethod,
-        })
-        .from(wmsTables.outboundBatches)
-        .where(eq(wmsTables.outboundBatches.id, input.batchId))
-        .limit(1);
-      if (!batch) throw new NotFoundException(`Outbound batch ${input.batchId} not found`);
-      const derived = STRATEGY_BY_PICKING_METHOD[batch.pickingMethod];
-      // 창고 허용 검사는 유지한다. 반환된 전략 객체는 버린다 — 계획 층은 전략에 의존하지 않는다.
-      await this.requiredRegistry().resolveForWarehouse(derived, batch.warehouseId, trx);
-      return planPicking(this.planDeps, derived, input, trx);
-    }, tx);
-  }
-
-  async start(input: StartPickingInput, tx?: DbTx) {
-    return this.dbService.run(async (trx) => {
-      const identity = await this.loadPlanIdentity(input.batchId, input.planId, trx);
+      const identity = await this.loadBatchIdentity(input.batchId, trx);
       await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
-      return startPicking(this.planDeps, identity.strategy, input, trx);
+      return startBatchPicking(this.startDeps, identity.strategy, input, trx);
     }, tx);
   }
 
   async scan(input: ScanPickingInput, tx?: DbTx) {
-    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.scan(input, trx), tx);
+    return this.withBatchStrategy(input.batchId, (strategy, trx) => strategy.scan(input, trx), tx);
   }
 
   async aggregateBulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult> {
-    return this.withAggregateThenSortStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.bulkCartScan(input, trx),
-      tx,
-    );
+    return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.bulkCartScan(input, trx), tx);
   }
 
   async aggregateSortScan(input: AggregateSortScanInput, tx?: DbTx): Promise<AggregateSortScanResult> {
-    return this.withAggregateThenSortStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.sortScan(input, trx),
-      tx,
-    );
+    return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.sortScan(input, trx), tx);
   }
 
   async aggregateCartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult> {
-    return this.withAggregateThenSortStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.cartHandoff(input, trx),
-      tx,
-    );
+    return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.cartHandoff(input, trx), tx);
   }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
@@ -166,88 +131,54 @@ export class PickingProcessService {
   }
 
   async assignTote(input: ToteAssignmentInput, tx?: DbTx): Promise<ToteAssignmentResult> {
-    return this.withPickToToteStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.assignTote(input, trx),
-      tx,
-    );
+    return this.withPickToToteStrategy(input.batchId, (strategy, trx) => strategy.assignTote(input, trx), tx);
   }
 
   async toteScan(input: ToteScanPickingInput, tx?: DbTx): Promise<ToteScanResult> {
-    return this.withPickToToteStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.toteScan(input, trx),
-      tx,
-    );
+    return this.withPickToToteStrategy(input.batchId, (strategy, trx) => strategy.toteScan(input, trx), tx);
   }
 
   async toteHandoff(input: ToteHandoffInput, tx?: DbTx): Promise<ToteHandoffResult> {
-    return this.withPickToToteStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.toteHandoff(input, trx),
-      tx,
-    );
+    return this.withPickToToteStrategy(input.batchId, (strategy, trx) => strategy.toteHandoff(input, trx), tx);
   }
 
   async releaseTote(input: ToteReleaseInput, tx?: DbTx): Promise<ToteReleaseResult> {
-    return this.withPickToToteStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.releaseTote(input, trx),
-      tx,
-    );
+    return this.withPickToToteStrategy(input.batchId, (strategy, trx) => strategy.releaseTote(input, trx), tx);
   }
 
   async handoff(input: HandoffPickingInput, tx?: DbTx) {
-    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.handoff(input, trx), tx);
+    return this.withBatchStrategy(input.batchId, (strategy, trx) => strategy.handoff(input, trx), tx);
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx) {
-    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.completePick(input, trx), tx);
+    return this.withBatchStrategy(input.batchId, (strategy, trx) => strategy.completePick(input, trx), tx);
   }
 
   async unpickShipment(input: UnpickShipmentInput, tx?: DbTx) {
-    return this.withPlanStrategy(
-      input.batchId,
-      input.planId,
-      (strategy, trx) => strategy.unpickShipment(input, trx),
-      tx,
-    );
+    return this.withBatchStrategy(input.batchId, (strategy, trx) => strategy.unpickShipment(input, trx), tx);
   }
 
-  /** Plan -> batch -> warehouse identity, shared by `start` and every custody operation. */
-  private async loadPlanIdentity(batchId: string, planId: string, trx: DbTx) {
-    const [identity] = await trx
+  /** Batch -> warehouse/strategy identity, shared by `start` and every custody operation. */
+  private async loadBatchIdentity(batchId: string, tx: DbTx) {
+    const [batch] = await tx
       .select({
-        batchId: wmsTables.pickingPlans.batchId,
-        strategy: wmsTables.pickingPlans.strategy,
         warehouseId: wmsTables.outboundBatches.warehouseId,
+        pickingMethod: wmsTables.outboundBatches.pickingMethod,
       })
-      .from(wmsTables.pickingPlans)
-      .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, wmsTables.pickingPlans.batchId))
-      .where(eq(wmsTables.pickingPlans.id, planId))
+      .from(wmsTables.outboundBatches)
+      .where(eq(wmsTables.outboundBatches.id, batchId))
       .limit(1);
-    if (!identity) throw new NotFoundException(`Picking plan ${planId} not found`);
-    if (identity.batchId !== batchId) {
-      throw new ConflictException({
-        code: 'PICKING_PLAN_BATCH_MISMATCH',
-        message: `Picking plan ${planId} does not belong to batch ${batchId}`,
-      });
-    }
-    return identity;
+    if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+    return { warehouseId: batch.warehouseId, strategy: STRATEGY_BY_PICKING_METHOD[batch.pickingMethod] };
   }
 
-  private withPlanStrategy<T>(
+  private withBatchStrategy<T>(
     batchId: string,
-    planId: string,
     execute: (strategy: PickingStrategy, tx: DbTx) => Promise<T>,
     tx?: DbTx,
   ): Promise<T> {
     return this.dbService.run(async (trx) => {
-      const identity = await this.loadPlanIdentity(batchId, planId, trx);
+      const identity = await this.loadBatchIdentity(batchId, trx);
       const strategy = await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
       return execute(strategy, trx);
     }, tx);
@@ -255,18 +186,16 @@ export class PickingProcessService {
 
   private withAggregateThenSortStrategy<T>(
     batchId: string,
-    planId: string,
     execute: (strategy: AggregateThenSortStrategy, tx: DbTx) => Promise<T>,
     tx?: DbTx,
   ): Promise<T> {
-    return this.withPlanStrategy(
+    return this.withBatchStrategy(
       batchId,
-      planId,
       (strategy, trx) => {
         if (!isAggregateThenSortStrategy(strategy)) {
           throw new ConflictException({
-            code: 'PICKING_PLAN_STRATEGY_MISMATCH',
-            message: `Picking plan ${planId} does not use aggregate_then_sort`,
+            code: 'PICKING_BATCH_STRATEGY_MISMATCH',
+            message: `Batch ${batchId} does not use aggregate_then_sort`,
           });
         }
         return execute(strategy, trx);
@@ -277,18 +206,16 @@ export class PickingProcessService {
 
   private withPickToToteStrategy<T>(
     batchId: string,
-    planId: string,
     execute: (strategy: PickToToteStrategy, tx: DbTx) => Promise<T>,
     tx?: DbTx,
   ): Promise<T> {
-    return this.withPlanStrategy(
+    return this.withBatchStrategy(
       batchId,
-      planId,
       (strategy, trx) => {
         if (!isPickToToteStrategy(strategy)) {
           throw new ConflictException({
-            code: 'PICKING_PLAN_STRATEGY_MISMATCH',
-            message: `Picking plan ${planId} does not use pick_to_tote`,
+            code: 'PICKING_BATCH_STRATEGY_MISMATCH',
+            message: `Batch ${batchId} does not use pick_to_tote`,
           });
         }
         return execute(strategy, trx);

@@ -1,8 +1,12 @@
-import type { PlanInvalidationCode } from '../picking/plan/plan-invalidation';
 import type { SimpleOutboundContext } from './simple-outbound.service';
 
 export type PreparationBlockReason =
-  | PlanInvalidationCode
+  | 'SOURCE_STOCK_CHANGED'
+  | 'PLAN_IDENTITY_CHANGED'
+  | 'PLAN_NOT_DRAFT'
+  | 'SHIPMENT_SNAPSHOT_CHANGED'
+  | 'ALLOCATION_INVALID'
+  | 'ELIGIBILITY_CHANGED'
   | 'SOURCE_INSUFFICIENT'
   | 'ACTIVE_WORK_REQUIRES_REVIEW'
   | 'REPLAN_LIMIT_REACHED';

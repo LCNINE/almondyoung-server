@@ -5,7 +5,7 @@ import { DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../../fulfillment/services/__support__';
-import { assertProfileComplete } from '../../../fulfillment/picking/plan/picking-plan.queries';
+import { assertProfileComplete } from '../../../fulfillment/picking/allocation/allocation.queries';
 import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
 import { DeliveryProfileReader } from './delivery-profile.reader';
 import { DeliveryProfileManager } from './delivery-profile.manager';

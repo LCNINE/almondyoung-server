@@ -231,11 +231,15 @@ async function checkCore(tx: Sql): Promise<void> {
   }
 
   section('7. 출고 깔때기 — 한 번이라도 돌았나');
+  // 배치 피킹이 돈 적 있나 = 시작된 배치(started_at)와 작업 항목 배정 행. 피킹 계획 테이블은 ADR-0041 로 사라졌다.
   table(await tx`select status, count(*)::int from fulfillment_orders group by 1 order by 2 desc`);
   const funnel = await tx`
     select 'outbound_batches' as t, status::text, count(*)::int from outbound_batches group by 2
     union all select 'work_items', status::text, count(*)::int from outbound_batch_work_items group by 2
-    union all select 'picking_plans', status::text, count(*)::int from picking_plans group by 2
+    union all select 'batch_start', case when started_at is null then 'not_started' else 'started' end,
+                     count(*)::int from outbound_batches group by 2
+    union all select 'picking_allocations', case when work_item_id is null then 'legacy' else 'work_item' end,
+                     count(*)::int from picking_source_allocations group by 2
     union all select 'waybills', status::text || '/' || source::text, count(*)::int from waybills group by 2
     union all select 'dispatch_attempts', status::text, count(*)::int from dispatch_attempts group by 2
     order by 1, 3 desc`;

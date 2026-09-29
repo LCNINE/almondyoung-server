@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +29,6 @@ import {
   useAddShipmentToBatch,
   useClaimBatchPacker,
   useClaimBatchPicker,
-  useCreatePickingPlan,
   useExcludeShipmentFromBatch,
   useHandoffBatchWorkItem,
   useOutboundBatchEligibleShipments,
@@ -61,20 +60,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const claimPicker = useClaimBatchPicker();
   const claimPacker = useClaimBatchPacker();
   const handoff = useHandoffBatchWorkItem();
-  const createPlan = useCreatePickingPlan();
   const [targetWorkerId, setTargetWorkerId] = useState('');
   const [reason, setReason] = useState('shift_handoff');
   const retry = useWarehouseCommandRetry();
   const canOperateWarehouse =
     !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
-
-  const shipmentIds = useMemo(
-    () =>
-      batch?.workItems
-        .filter((item) => !item.exclusionReason)
-        .map((item) => item.shipmentId) ?? [],
-    [batch]
-  );
 
   const command = async <T,>(
     action: string,
@@ -125,26 +115,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
             </div>
 
             <section className="space-y-3">
-              <h3 className="font-medium">피킹 계획</h3>
-              {canOperateWarehouse && (
-                <div className="flex flex-wrap items-end gap-2">
-                  <Button
-                    disabled={shipmentIds.length === 0 || createPlan.isPending}
-                    onClick={() =>
-                      command(
-                        'plan',
-                        { batchId, shipmentIds },
-                        (data, idempotencyKey) =>
-                          createPlan.mutateAsync({ data, idempotencyKey })
-                      )
-                    }
-                  >
-                    {retry.hasPending('plan')
-                      ? '원래 명령 재시도'
-                      : '계획 생성'}
-                  </Button>
-                </div>
-              )}
+              <h3 className="font-medium">피킹</h3>
               <p className="text-sm text-muted-foreground">
                 이 배치는 <b>{PICKING_METHOD_LABELS[batch.pickingMethod]}</b>{' '}
                 방식입니다.
@@ -152,16 +123,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                   ` 바구니 ${batch.cartCapacity}개.`}{' '}
                 전략은 방식에서 자동으로 결정됩니다.
               </p>
-              {batch.pickingPlan && (
-                <div className="rounded border p-3 text-sm">
-                  <p>
-                    <b>{STRATEGY_LABELS[batch.pickingPlan.strategy]}</b> ·{' '}
-                    {batch.pickingPlan.status} · v{batch.pickingPlan.version}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    plan {batch.pickingPlan.id}
-                  </p>
-                </div>
+              {batch.picking && (
+                <p>
+                  <b>{STRATEGY_LABELS[batch.picking.strategy]}</b> · 시작{' '}
+                  {new Date(batch.picking.startedAt).toLocaleString('ko-KR')}
+                </p>
               )}
             </section>
 
@@ -239,7 +205,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                 <h3 className="font-medium">Work item queue</h3>
                 <p className="text-xs text-muted-foreground">
                   claim/handoff 결과는 서버 스냅샷이 갱신된 뒤 표시됩니다.
-                  Picker handoff는 plan/session custody가 필요한 피킹
+                  Picker handoff는 session custody가 필요한 피킹
                   작업대에서만 실행하며, 여기서는 packer handoff만 제공합니다.
                 </p>
               </div>

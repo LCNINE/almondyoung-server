@@ -8,11 +8,10 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
-import { acquireStockAvailabilityLock } from '../../inventory/shared/locks/stock-availability-lock';
+import type { SessionStartAllocation } from '../picking/allocation/allocation.types';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 export type BatchInventoryCustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
@@ -81,6 +80,7 @@ export type ShortPickOperationIntentProof = {
   kind: 'short_pick';
   operationId: string;
   shipmentId: string;
+  workItemId: string;
   sessionId: string;
   actorId: string;
   reason: string;
@@ -157,6 +157,7 @@ export function shortPickOperationIntentOf(snapshot: unknown): ShortPickOperatio
     intent.kind !== 'short_pick' ||
     typeof intent.operationId !== 'string' ||
     typeof intent.shipmentId !== 'string' ||
+    typeof intent.workItemId !== 'string' ||
     typeof intent.sessionId !== 'string' ||
     typeof intent.actorId !== 'string' ||
     typeof intent.reason !== 'string' ||
@@ -193,6 +194,7 @@ export function shortPickOperationIntentOf(snapshot: unknown): ShortPickOperatio
     kind: 'short_pick',
     operationId: intent.operationId,
     shipmentId: intent.shipmentId,
+    workItemId: intent.workItemId,
     sessionId: intent.sessionId,
     actorId: intent.actorId,
     reason: intent.reason,
@@ -204,6 +206,20 @@ export function canonicalBatchSessionRequestHash(value: unknown): string {
   const canonical = stableJson(value, new Set());
   if (canonical === undefined) throw new TypeError('Request must be JSON serializable');
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+export function handInRequestHash(batchId: string, allocation: SessionStartAllocation): string {
+  return canonicalBatchSessionRequestHash({
+    eventType: 'HAND_IN',
+    batchId,
+    workItemId: allocation.workItemId,
+    allocationId: allocation.id,
+    skuId: allocation.skuId,
+    sourceLocationId: allocation.sourceLocationId,
+    shipmentLineId: allocation.shipmentLineId,
+    quantity: allocation.quantity,
+    sourceStockVersion: allocation.sourceStockVersion,
+  });
 }
 
 export function remainingShortPickAllocation(input: {
@@ -220,467 +236,108 @@ export function remainingShortPickAllocation(input: {
 export class BatchInventorySessionService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly controlledStock: BatchControlledStockGuard,
     private readonly audit: AuditService,
     @Optional()
     @Inject(BATCH_INVENTORY_SESSION_FAULT_INJECTOR)
     private readonly faultInjector?: BatchInventorySessionFaultInjector,
   ) {}
 
-  async startSession(batchId: string, planId: string, tx?: DbTx, actualActorId?: string): Promise<SessionRow> {
-    return this.dbService.run(async (trx) => {
-      let [plan] = await trx
-        .select()
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1);
-      if (!plan) throw new NotFoundException(`Picking plan ${planId} not found`);
-      if (plan.batchId !== batchId)
-        throw this.conflict('SESSION_PLAN_BATCH_MISMATCH', 'Picking plan belongs to another batch');
+  async startSession(
+    input: { batchId: string; actorId: string; allocations: SessionStartAllocation[] },
+    tx: DbTx,
+  ): Promise<SessionRow> {
+    if (!tx) throw new Error('startSession requires the caller batch-start transaction');
+    if (input.allocations.length === 0) {
+      throw this.conflict('PICKING_BATCH_EMPTY', `Batch ${input.batchId} has no allocations to hand in`);
+    }
+    const [existing] = await tx
+      .select({ id: wmsTables.batchInventorySessions.id })
+      .from(wmsTables.batchInventorySessions)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.batchId, input.batchId),
+          inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (existing) throw this.conflict('SESSION_ALREADY_STARTED', `Batch ${input.batchId} already has a session`);
 
-      const [historicalStart] = await trx
-        .select({ sessionId: wmsTables.batchInventorySessionEvents.sessionId })
-        .from(wmsTables.batchInventorySessionEvents)
-        .innerJoin(
-          wmsTables.batchInventorySessions,
-          eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionEvents.sessionId),
-        )
-        .where(
-          and(
-            eq(wmsTables.batchInventorySessions.batchId, batchId),
-            eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-            sql`${wmsTables.batchInventorySessionEvents.payload}->>'planId' = ${planId}`,
-          ),
-        )
-        .limit(1);
-      if (historicalStart) {
-        [plan] = await trx
-          .select()
-          .from(wmsTables.pickingPlans)
-          .where(eq(wmsTables.pickingPlans.id, planId))
-          .limit(1)
-          .for('update');
-        if (!plan) throw this.conflict('SESSION_PLAN_MISSING', `Session plan ${planId} no longer exists`);
-        const [historicalSession] = await trx
-          .select()
-          .from(wmsTables.batchInventorySessions)
-          .where(eq(wmsTables.batchInventorySessions.id, historicalStart.sessionId))
-          .limit(1)
-          .for('update');
-        if (!historicalSession) throw this.conflict('SESSION_HISTORY_BROKEN', 'Start event has no session header');
-        await this.assertExistingSessionPlan(historicalSession.id, planId, trx);
-        return historicalSession;
-      }
-
-      const [existing] = await trx
-        .select()
-        .from(wmsTables.batchInventorySessions)
-        .where(
-          and(
-            eq(wmsTables.batchInventorySessions.batchId, batchId),
-            inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
-          ),
-        )
-        .limit(1);
-      if (existing) {
-        throw this.conflict('SESSION_ALREADY_STARTED_FOR_OTHER_PLAN', 'Batch already has another active session');
-      }
-      if (plan.status !== 'draft') {
-        throw this.conflict('PICKING_PLAN_NOT_STARTABLE', `Picking plan ${planId} is ${plan.status}`);
-      }
-
-      let [batch] = await trx
-        .select({
-          id: wmsTables.outboundBatches.id,
-          warehouseId: wmsTables.outboundBatches.warehouseId,
-          status: wmsTables.outboundBatches.status,
-        })
-        .from(wmsTables.outboundBatches)
-        .where(eq(wmsTables.outboundBatches.id, batchId))
-        .limit(1);
-      if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
-      if (!['created', 'picking'].includes(batch.status)) {
-        throw this.conflict('OUTBOUND_BATCH_NOT_STARTABLE', `Outbound batch ${batchId} is ${batch.status}`);
-      }
-      const members = await trx
-        .select()
-        .from(wmsTables.pickingPlanMembers)
-        .where(eq(wmsTables.pickingPlanMembers.planId, planId))
-        .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
-      if (members.length === 0) throw this.conflict('PICKING_PLAN_EMPTY', `Picking plan ${planId} has no members`);
-
-      const lineIdentities = await trx
-        .select({
-          id: wmsTables.shipmentLines.id,
-          shipmentId: wmsTables.shipmentLines.shipmentId,
-          fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-        })
-        .from(wmsTables.shipmentLines)
-        .where(inArray(wmsTables.shipmentLines.shipmentId, members.map((member) => member.shipmentId).sort()));
-      if (lineIdentities.length === 0) throw this.conflict('PICKING_PLAN_EMPTY', `Picking plan ${planId} has no lines`);
-
-      await trx
-        .select({ id: wmsTables.fulfillmentOrderItems.id })
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(
-          inArray(
-            wmsTables.fulfillmentOrderItems.id,
-            [...new Set(lineIdentities.map((line) => line.fulfillmentOrderItemId))].sort(),
-          ),
-        )
-        .orderBy(asc(wmsTables.fulfillmentOrderItems.id))
-        .for('update');
-      await trx
-        .select({ id: wmsTables.shipments.id })
-        .from(wmsTables.shipments)
-        .where(inArray(wmsTables.shipments.id, members.map((member) => member.shipmentId).sort()))
-        .orderBy(asc(wmsTables.shipments.id))
-        .for('update');
-      await trx
-        .select({ id: wmsTables.shipmentLines.id })
-        .from(wmsTables.shipmentLines)
-        .where(inArray(wmsTables.shipmentLines.id, lineIdentities.map((line) => line.id).sort()))
-        .orderBy(asc(wmsTables.shipmentLines.id))
-        .for('update');
-      await trx
-        .select({ id: wmsTables.stockReservations.id })
-        .from(wmsTables.stockReservations)
-        .where(inArray(wmsTables.stockReservations.shipmentLineId, lineIdentities.map((line) => line.id).sort()))
-        .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
-        .for('update');
-      [batch] = await trx
-        .select({
-          id: wmsTables.outboundBatches.id,
-          warehouseId: wmsTables.outboundBatches.warehouseId,
-          status: wmsTables.outboundBatches.status,
-        })
-        .from(wmsTables.outboundBatches)
-        .where(eq(wmsTables.outboundBatches.id, batchId))
-        .limit(1)
-        .for('update');
-      if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
-      await trx
-        .select({ id: wmsTables.outboundBatchWorkItems.id })
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
-        .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
-        .for('update');
-      [plan] = await trx
-        .select()
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1)
-        .for('update');
-      if (!plan || plan.batchId !== batchId) {
-        throw this.conflict('PICKING_PLAN_STALE', `Picking plan ${planId} changed while starting`);
-      }
-      if (plan.status !== 'draft') {
-        const [samePlanStart] = await trx
-          .select({ sessionId: wmsTables.batchInventorySessionEvents.sessionId })
-          .from(wmsTables.batchInventorySessionEvents)
-          .innerJoin(
-            wmsTables.batchInventorySessions,
-            eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionEvents.sessionId),
-          )
-          .where(
-            and(
-              eq(wmsTables.batchInventorySessions.batchId, batchId),
-              eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-              sql`${wmsTables.batchInventorySessionEvents.payload}->>'planId' = ${planId}`,
-            ),
-          )
-          .limit(1);
-        if (samePlanStart) {
-          const replay = await this.lockSession(samePlanStart.sessionId, trx);
-          await this.assertExistingSessionPlan(replay.id, planId, trx);
-          return replay;
-        }
-        throw this.conflict('PICKING_PLAN_STALE', `Picking plan ${planId} changed while starting`);
-      }
-      const lockedMembers = await trx
-        .select()
-        .from(wmsTables.pickingPlanMembers)
-        .where(eq(wmsTables.pickingPlanMembers.planId, planId))
-        .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
-        .for('update');
-      if (JSON.stringify(lockedMembers) !== JSON.stringify(members)) {
-        throw this.conflict('PICKING_PLAN_STALE', `Picking plan ${planId} membership changed while starting`);
-      }
-      const [racedSession] = await trx
-        .select()
-        .from(wmsTables.batchInventorySessions)
-        .where(
-          and(
-            eq(wmsTables.batchInventorySessions.batchId, batchId),
-            inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
-          ),
-        )
-        .limit(1)
-        .for('update');
-      if (racedSession) {
-        await this.assertExistingSessionPlan(racedSession.id, planId, trx);
-        return racedSession;
-      }
-      const allocations = await trx
-        .select({
-          id: wmsTables.pickingSourceAllocations.id,
-          shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
-          sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
-          quantity: wmsTables.pickingSourceAllocations.qty,
-          sourceStockVersion: wmsTables.pickingSourceAllocations.sourceStockVersion,
-          skuId: wmsTables.shipmentLines.skuId,
-          shipmentId: wmsTables.shipmentLines.shipmentId,
-          lineQty: wmsTables.shipmentLines.qty,
-          shipmentWarehouseId: wmsTables.shipments.warehouseId,
-          manifestVersion: wmsTables.shipments.manifestVersion,
-          reservationVersion: wmsTables.shipments.reservationVersion,
-          shipmentStatus: wmsTables.shipments.status,
-          sourceWarehouseId: wmsTables.locations.warehouseId,
-        })
-        .from(wmsTables.pickingSourceAllocations)
-        .innerJoin(
-          wmsTables.shipmentLines,
-          eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
-        )
-        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
-        .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
-        .where(eq(wmsTables.pickingSourceAllocations.planId, planId))
-        .orderBy(
-          asc(wmsTables.pickingSourceAllocations.sourceLocationId),
-          asc(wmsTables.pickingSourceAllocations.shipmentLineId),
-          asc(wmsTables.pickingSourceAllocations.id),
-        )
-        .for('update');
-      if (members.length === 0 || allocations.length === 0) {
-        throw this.conflict('PICKING_PLAN_EMPTY', `Picking plan ${planId} has no members or allocations`);
-      }
-
-      const memberLines = await trx
-        .select({
-          id: wmsTables.shipmentLines.id,
-          skuId: wmsTables.shipmentLines.skuId,
-          qty: wmsTables.shipmentLines.qty,
-          shipmentId: wmsTables.shipmentLines.shipmentId,
-          warehouseId: wmsTables.shipments.warehouseId,
-          status: wmsTables.shipments.status,
-          manifestVersion: wmsTables.shipments.manifestVersion,
-          reservationVersion: wmsTables.shipments.reservationVersion,
-        })
-        .from(wmsTables.shipmentLines)
-        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
-        .where(inArray(wmsTables.shipmentLines.shipmentId, members.map((member) => member.shipmentId).sort()))
-        .orderBy(asc(wmsTables.shipmentLines.id))
-        .for('update');
-      if (memberLines.length === 0) throw this.conflict('PICKING_PLAN_EMPTY', `Picking plan ${planId} has no lines`);
-
-      const memberByShipment = new Map(members.map((member) => [member.shipmentId, member]));
-      const allocationByLine = new Map<string, number>();
-      const sourceGroups = new Map<
-        string,
-        { skuId: string; sourceLocationId: string; sourceStockVersion: number; quantity: number }
-      >();
-      for (const allocation of allocations) {
-        const member = memberByShipment.get(allocation.shipmentId);
-        if (!member)
-          throw this.conflict('PICKING_PLAN_FOREIGN_LINE', `Allocation ${allocation.id} is not a plan member`);
-        if (
-          member.manifestVersion !== allocation.manifestVersion ||
-          member.reservationVersion !== allocation.reservationVersion
-        ) {
-          throw this.conflict('PICKING_PLAN_STALE', `Shipment ${allocation.shipmentId} changed after planning`);
-        }
-        if (allocation.shipmentStatus !== 'planned') {
-          throw this.conflict('PICKING_PLAN_SHIPMENT_NOT_PLANNED', `Shipment ${allocation.shipmentId} is not planned`);
-        }
-        if (
-          allocation.shipmentWarehouseId !== batch.warehouseId ||
-          allocation.sourceWarehouseId !== batch.warehouseId
-        ) {
-          throw this.conflict('PICKING_PLAN_WAREHOUSE_MISMATCH', `Allocation ${allocation.id} crosses warehouse scope`);
-        }
-        allocationByLine.set(
-          allocation.shipmentLineId,
-          (allocationByLine.get(allocation.shipmentLineId) ?? 0) + allocation.quantity,
-        );
-        const sourceKey = `${allocation.skuId}|${allocation.sourceLocationId}`;
-        const source = sourceGroups.get(sourceKey);
-        if (source && source.sourceStockVersion !== allocation.sourceStockVersion) {
-          throw this.conflict(
-            'PICKING_PLAN_STOCK_VERSION_MISMATCH',
-            `Allocation source versions disagree for ${sourceKey}`,
-          );
-        }
-        sourceGroups.set(sourceKey, {
+    const [session] = await tx.insert(wmsTables.batchInventorySessions).values({ batchId: input.batchId }).returning();
+    let sequence = session.version;
+    const ordered = [...input.allocations].sort(
+      (left, right) =>
+        left.sourceLocationId.localeCompare(right.sourceLocationId) ||
+        left.shipmentLineId.localeCompare(right.shipmentLineId) ||
+        left.id.localeCompare(right.id),
+    );
+    for (const allocation of ordered) {
+      await tx.insert(wmsTables.batchInventorySessionEvents).values({
+        sessionId: session.id,
+        idempotencyKey: `start:${input.batchId}:${allocation.id}`,
+        eventType: 'HAND_IN',
+        skuId: allocation.skuId,
+        quantity: allocation.quantity,
+        toCustodyType: 'AT_SOURCE',
+        toSourceLocationId: allocation.sourceLocationId,
+        payload: {
+          sequence,
+          batchId: input.batchId,
+          workItemId: allocation.workItemId,
+          allocationId: allocation.id,
+          shipmentLineId: allocation.shipmentLineId,
+          sourceStockVersion: allocation.sourceStockVersion,
+          requestHash: handInRequestHash(input.batchId, allocation),
+        },
+      });
+      await tx
+        .insert(wmsTables.batchInventorySessionBalances)
+        .values({
+          sessionId: session.id,
           skuId: allocation.skuId,
           sourceLocationId: allocation.sourceLocationId,
-          sourceStockVersion: allocation.sourceStockVersion,
-          quantity: (source?.quantity ?? 0) + allocation.quantity,
-        });
-      }
-
-      const activeItems = await trx
-        .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(
-          and(
-            eq(wmsTables.outboundBatchWorkItems.batchId, batchId),
-            inArray(wmsTables.outboundBatchWorkItems.status, ['queued', 'picking']),
-          ),
-        )
-        .for('update');
-      const activeShipmentIds = new Set(activeItems.map((item) => item.shipmentId));
-      const memberShipmentIds = new Set(members.map((member) => member.shipmentId));
-      if (
-        members.some((member) => !activeShipmentIds.has(member.shipmentId)) ||
-        activeItems.some((item) => !memberShipmentIds.has(item.shipmentId))
-      ) {
-        throw this.conflict(
-          'PICKING_PLAN_WORK_ITEM_MISMATCH',
-          'Plan membership must exactly match queued/picking batch work items',
-        );
-      }
-
-      for (const line of memberLines) {
-        const member = memberByShipment.get(line.shipmentId)!;
-        if (
-          line.warehouseId !== batch.warehouseId ||
-          line.status !== 'planned' ||
-          line.manifestVersion !== member.manifestVersion ||
-          line.reservationVersion !== member.reservationVersion
-        ) {
-          throw this.conflict('PICKING_PLAN_STALE', `Member shipment ${line.shipmentId} changed after planning`);
-        }
-        const allocatedQty = allocationByLine.get(line.id) ?? 0;
-        const reservationRows = await trx
-          .select({
-            qty: wmsTables.stockReservations.quantity,
-            skuId: wmsTables.stockReservations.skuId,
-            warehouseId: wmsTables.stockReservations.warehouseId,
-          })
-          .from(wmsTables.stockReservations)
-          .where(
-            and(
-              eq(wmsTables.stockReservations.shipmentLineId, line.id),
-              eq(wmsTables.stockReservations.status, 'confirmed'),
-              isNull(wmsTables.stockReservations.invalidatedAt),
-            ),
-          )
-          .for('update');
-        const reservedQty = reservationRows.reduce((total, row) => total + row.qty, 0);
-        if (
-          allocatedQty !== line.qty ||
-          reservedQty !== line.qty ||
-          reservationRows.some((row) => row.skuId !== line.skuId || row.warehouseId !== batch.warehouseId)
-        ) {
-          throw this.conflict(
-            'PICKING_PLAN_RESERVATION_MISMATCH',
-            `Line ${line.id} is not fully reserved and allocated`,
-          );
-        }
-      }
-
-      for (const source of [...sourceGroups.values()].sort((left, right) => {
-        return `${left.skuId}|${left.sourceLocationId}`.localeCompare(`${right.skuId}|${right.sourceLocationId}`);
-      })) {
-        await acquireStockAvailabilityLock(trx, source.skuId, batch.warehouseId);
-        const availability = await this.controlledStock.getAvailability(
-          { skuId: source.skuId, warehouseId: batch.warehouseId, sourceLocationId: source.sourceLocationId },
-          trx,
-          { lock: true },
-        );
-        if (
-          availability.stockVersion !== source.sourceStockVersion ||
-          availability.generallyAvailableQty < source.quantity
-        ) {
-          throw this.conflict(
-            'PICKING_PLAN_SOURCE_STALE',
-            `Source ${source.skuId}/${source.sourceLocationId} no longer satisfies the plan`,
-          );
-        }
-      }
-
-      const [session] = await trx.insert(wmsTables.batchInventorySessions).values({ batchId }).returning();
-      let sequence = session.version;
-      for (const allocation of allocations) {
-        await trx.insert(wmsTables.batchInventorySessionEvents).values({
-          sessionId: session.id,
-          idempotencyKey: `start:${planId}:${allocation.id}`,
-          eventType: 'HAND_IN',
-          skuId: allocation.skuId,
-          quantity: allocation.quantity,
-          toCustodyType: 'AT_SOURCE',
-          toSourceLocationId: allocation.sourceLocationId,
-          payload: {
-            sequence,
-            planId,
-            allocationId: allocation.id,
-            shipmentLineId: allocation.shipmentLineId,
-            sourceStockVersion: allocation.sourceStockVersion,
-            requestHash: canonicalBatchSessionRequestHash({
-              eventType: 'HAND_IN',
-              planId,
-              allocationId: allocation.id,
-              skuId: allocation.skuId,
-              sourceLocationId: allocation.sourceLocationId,
-              shipmentLineId: allocation.shipmentLineId,
-              quantity: allocation.quantity,
-              sourceStockVersion: allocation.sourceStockVersion,
-            }),
+          custodyType: 'AT_SOURCE',
+          qty: allocation.quantity,
+        })
+        .onConflictDoUpdate({
+          target: [
+            wmsTables.batchInventorySessionBalances.sessionId,
+            wmsTables.batchInventorySessionBalances.skuId,
+            wmsTables.batchInventorySessionBalances.sourceLocationId,
+            wmsTables.batchInventorySessionBalances.custodyType,
+            wmsTables.batchInventorySessionBalances.custodyRef,
+            wmsTables.batchInventorySessionBalances.shipmentLineId,
+          ],
+          set: {
+            qty: sql`${wmsTables.batchInventorySessionBalances.qty} + ${allocation.quantity}`,
+            version: sql`${wmsTables.batchInventorySessionBalances.version} + 1`,
+            updatedAt: sql`now()`,
           },
         });
-        await trx
-          .insert(wmsTables.batchInventorySessionBalances)
-          .values({
-            sessionId: session.id,
-            skuId: allocation.skuId,
-            sourceLocationId: allocation.sourceLocationId,
-            custodyType: 'AT_SOURCE',
-            qty: allocation.quantity,
-          })
-          .onConflictDoUpdate({
-            target: [
-              wmsTables.batchInventorySessionBalances.sessionId,
-              wmsTables.batchInventorySessionBalances.skuId,
-              wmsTables.batchInventorySessionBalances.sourceLocationId,
-              wmsTables.batchInventorySessionBalances.custodyType,
-              wmsTables.batchInventorySessionBalances.custodyRef,
-              wmsTables.batchInventorySessionBalances.shipmentLineId,
-            ],
-            set: {
-              qty: sql`${wmsTables.batchInventorySessionBalances.qty} + ${allocation.quantity}`,
-              version: sql`${wmsTables.batchInventorySessionBalances.version} + 1`,
-              updatedAt: sql`now()`,
-            },
-          });
-        sequence += 1;
-      }
-      const handedInQty = allocations.reduce((total, allocation) => total + allocation.quantity, 0);
-      const [started] = await trx
-        .update(wmsTables.batchInventorySessions)
-        .set({ handedInQty, version: sequence, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(wmsTables.batchInventorySessions.id, session.id),
-            eq(wmsTables.batchInventorySessions.version, session.version),
-          ),
-        )
-        .returning();
-      if (!started) throw this.conflict('SESSION_STALE_VERSION', `Session ${session.id} changed while starting`);
-      await trx
-        .update(wmsTables.pickingPlans)
-        .set({ status: 'active', updatedAt: sql`now()` })
-        .where(and(eq(wmsTables.pickingPlans.id, planId), eq(wmsTables.pickingPlans.status, 'draft')));
-      await this.assertConservation(started, trx);
-      await this.audit.logUserActionRequired(
-        'batch_inventory_session.start',
-        'fulfillment',
-        `Started inventory session ${session.id}`,
-        { userId: actualActorId?.trim() || plan.createdBy },
-        { batchId, planId, handedInQty, allocationIds: allocations.map((allocation) => allocation.id) },
-        trx,
-      );
-      return started;
-    }, tx);
+      sequence += 1;
+    }
+    const handedInQty = ordered.reduce((total, allocation) => total + allocation.quantity, 0);
+    const [started] = await tx
+      .update(wmsTables.batchInventorySessions)
+      .set({ handedInQty, version: sequence, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.id, session.id),
+          eq(wmsTables.batchInventorySessions.version, session.version),
+        ),
+      )
+      .returning();
+    if (!started) throw this.conflict('SESSION_STALE_VERSION', `Session ${session.id} changed while starting`);
+    await this.assertConservation(started, tx);
+    await this.audit.logUserActionRequired(
+      'batch_inventory_session.start',
+      'fulfillment',
+      `Started inventory session ${session.id}`,
+      { userId: input.actorId },
+      { batchId: input.batchId, handedInQty, allocationIds: ordered.map((allocation) => allocation.id) },
+      tx,
+    );
+    return started;
   }
 
   async moveCustody(input: MoveBatchCustodyInput, tx?: DbTx) {
@@ -841,19 +498,8 @@ export class BatchInventorySessionService {
         typeof input.context?.shortPickOperationId === 'string'
           ? await this.lockShortPickOperation(input.context.shortPickOperationId, trx)
           : null;
-      // Short-pick commands already own their durable operation, then all session
-      // lifecycle paths continue in plan -> session order. HAND_IN identity is
-      // read optimistically and revalidated after those locks.
-      const planId = await this.sessionPlanId(input.sessionId, trx);
-      const [plan] = await trx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1)
-        .for('update');
-      if (!plan) throw this.conflict('SESSION_PLAN_MISSING', `Session plan ${planId} no longer exists`);
+      // short-pick 작업 → 세션 순서로 잠근다. short-pick 명령은 이미 자기 영속 작업을 잡았다.
       const session = await this.lockSession(input.sessionId, trx);
-      await this.assertExistingSessionPlan(input.sessionId, planId, trx);
       const [replay] = await trx
         .select()
         .from(wmsTables.batchInventorySessionEvents)
@@ -903,14 +549,14 @@ export class BatchInventorySessionService {
         );
       }
       if (input.eventType === 'APPROVE_SHORTAGE') {
-        await this.assertShortageAllocation(input, planId, shortPickOperation?.intent ?? null, trx);
+        await this.assertShortageAllocation(input, shortPickOperation?.intent ?? null, trx);
       }
       if (input.eventType === 'RETURN_TO_SOURCE' && typeof input.context?.shortPickOperationId === 'string') {
-        await this.assertShortageAllocation(input, planId, shortPickOperation?.intent ?? null, trx);
+        await this.assertShortageAllocation(input, shortPickOperation?.intent ?? null, trx);
       }
 
-      await this.assertLineAssignment(input.sessionId, input.skuId, input.from, trx);
-      if (input.to) await this.assertLineAssignment(input.sessionId, input.skuId, input.to, trx);
+      await this.assertLineAssignment(session.batchId, input.skuId, input.from, trx);
+      if (input.to) await this.assertLineAssignment(session.batchId, input.skuId, input.to, trx);
       const balances = await trx
         .select()
         .from(wmsTables.batchInventorySessionBalances)
@@ -987,7 +633,7 @@ export class BatchInventorySessionService {
       }
 
       if (input.to?.shipmentLineId) {
-        await this.assertAttributedQuantity(input.sessionId, input.to, trx);
+        await this.assertAttributedQuantity(session, input.to, trx);
       }
       const [remainingAfterMutation] = await trx
         .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
@@ -1021,13 +667,6 @@ export class BatchInventorySessionService {
         )
         .returning();
       if (!updated) throw this.conflict('SESSION_STALE_VERSION', `Session ${session.id} changed`);
-      if (isTerminal) {
-        const planId = await this.sessionPlanId(input.sessionId, trx);
-        await trx
-          .update(wmsTables.pickingPlans)
-          .set({ status: 'completed', completedAt: sql`now()`, updatedAt: sql`now()` })
-          .where(and(eq(wmsTables.pickingPlans.id, planId), eq(wmsTables.pickingPlans.status, 'active')));
-      }
       await this.assertConservation(updated, trx);
       await this.audit.logUserActionRequired(
         `batch_inventory_session.${input.eventType.toLowerCase()}`,
@@ -1059,7 +698,6 @@ export class BatchInventorySessionService {
       to: SessionEventSide | null;
       context?: Record<string, unknown>;
     },
-    planId: string,
     intent: ShortPickOperationIntentProof | null,
     tx: DbTx,
   ): Promise<void> {
@@ -1147,7 +785,7 @@ export class BatchInventorySessionService {
       )
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, intent.workItemId),
           eq(wmsTables.pickingSourceAllocations.shipmentLineId, shipmentLineId),
           eq(wmsTables.pickingSourceAllocations.sourceLocationId, sourceLocationId),
         ),
@@ -1305,23 +943,26 @@ export class BatchInventorySessionService {
   }
 
   private async assertLineAssignment(
-    sessionId: string,
+    batchId: string,
     skuId: string,
     bucket: SessionEventSide,
     tx: DbTx,
   ): Promise<void> {
     if (!bucket.shipmentLineId) return;
-    const planId = await this.sessionPlanId(sessionId, tx);
     const [allocation] = await tx
       .select({ id: wmsTables.pickingSourceAllocations.id })
       .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
       .innerJoin(
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.outboundBatchWorkItems.batchId, batchId),
           eq(wmsTables.pickingSourceAllocations.shipmentLineId, bucket.shipmentLineId),
           eq(wmsTables.pickingSourceAllocations.sourceLocationId, bucket.sourceLocationId),
           eq(wmsTables.shipmentLines.skuId, skuId),
@@ -1329,7 +970,7 @@ export class BatchInventorySessionService {
       )
       .limit(1);
     if (!allocation) {
-      throw this.conflict('SESSION_LINE_NOT_ALLOCATED', 'Custody shipment line is not allocated by the session plan');
+      throw this.conflict('SESSION_LINE_NOT_ALLOCATED', 'Custody shipment line is not allocated in the session batch');
     }
   }
 
@@ -1434,14 +1075,17 @@ export class BatchInventorySessionService {
     }
   }
 
-  private async assertAttributedQuantity(sessionId: string, bucket: SessionEventSide, tx: DbTx): Promise<void> {
-    const planId = await this.sessionPlanId(sessionId, tx);
+  private async assertAttributedQuantity(session: SessionRow, bucket: SessionEventSide, tx: DbTx): Promise<void> {
     const [allocated] = await tx
       .select({ qty: sql<number>`coalesce(sum(${wmsTables.pickingSourceAllocations.qty}), 0)::int` })
       .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.outboundBatchWorkItems.batchId, session.batchId),
           eq(wmsTables.pickingSourceAllocations.shipmentLineId, bucket.shipmentLineId!),
           eq(wmsTables.pickingSourceAllocations.sourceLocationId, bucket.sourceLocationId),
         ),
@@ -1451,7 +1095,7 @@ export class BatchInventorySessionService {
       .from(wmsTables.batchInventorySessionBalances)
       .where(
         and(
-          eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+          eq(wmsTables.batchInventorySessionBalances.sessionId, session.id),
           eq(wmsTables.batchInventorySessionBalances.shipmentLineId, bucket.shipmentLineId!),
           eq(wmsTables.batchInventorySessionBalances.sourceLocationId, bucket.sourceLocationId),
         ),
@@ -1498,39 +1142,6 @@ export class BatchInventorySessionService {
     return payload && typeof payload === 'object' && !Array.isArray(payload)
       ? (payload as Record<string, unknown>)
       : {};
-  }
-
-  private async sessionPlanId(sessionId: string, tx: DbTx): Promise<string> {
-    const [event] = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, sessionId),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        ),
-      )
-      .limit(1);
-    const planId = this.eventPayload(event?.payload).planId;
-    if (typeof planId !== 'string') {
-      throw this.conflict('SESSION_PLAN_ID_MISSING', `Session ${sessionId} has no immutable start plan identity`);
-    }
-    return planId;
-  }
-
-  private async assertExistingSessionPlan(sessionId: string, planId: string, tx: DbTx): Promise<void> {
-    const startEvents = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, sessionId),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        ),
-      );
-    if (startEvents.length === 0 || startEvents.some((event) => this.eventPayload(event.payload).planId !== planId)) {
-      throw this.conflict('SESSION_ALREADY_STARTED_FOR_OTHER_PLAN', `Batch has an active session for another plan`);
-    }
   }
 
   private conflict(code: string, message: string): ConflictException {

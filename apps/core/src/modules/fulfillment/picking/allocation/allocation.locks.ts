@@ -6,17 +6,15 @@ import { acquireStockAvailabilityLock } from '../../../inventory/shared/locks/st
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { WaybillService } from '../../waybill/waybill.service';
-import { PickingStrategyName } from '../picking-strategy.interface';
-import { conflict } from './picking-plan.errors';
-import { PlanInvalidation } from './plan-invalidation';
-import { assertProfileComplete, assertRecipientComplete } from './picking-plan.queries';
-import { ACTIVE_WORK_ITEM_STATUSES, LockedAggregate, SourceCapacity, uniqueSorted } from './picking-plan.types';
+import { conflict } from './allocation.errors';
+import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
+import { LockedAggregate, SourceCapacity, UNSTARTED_BATCH_WORK_ITEM_STATUSES, uniqueSorted } from './allocation.types';
 
 /**
  * Layer 2 — each function takes exactly the one collaborator it needs, passed explicitly.
  *
- * These live apart from the `planPicking` / `startPicking` entry points on purpose: a test that
- * wants to drive the entry points against a fake `trx` has to be able to substitute the locking
+ * These live apart from the `startBatchPicking` entry point on purpose: a test that
+ * wants to drive the entry point against a fake `trx` has to be able to substitute the locking
  * and eligibility steps, and an intra-module call cannot be substituted.
  */
 
@@ -45,7 +43,8 @@ export async function lockAggregate(
   await invariant.assertFulfillmentOrders(fulfillmentOrderIds, trx);
 
   // The invariant owns the recursive FOI -> shipment -> line -> reservation -> invoice/work/session locks.
-  // The following rows are re-read for strategy-specific identity and then batch -> plan -> source follows.
+  // The following rows are re-read for strategy-specific identity, then batch -> work items -> profile/SKU follow;
+  // source ledgers are locked last, by `lockSourceCapacities`.
   const shipments = await trx
     .select()
     .from(wmsTables.shipments)
@@ -89,7 +88,7 @@ export async function lockAggregate(
     )
     .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
     .for('update');
-  // Match addShipment: recursive component/invoice -> batch/work items -> execution profile/SKU -> plan/source.
+  // Match addShipment: recursive component/invoice -> batch/work items -> execution profile/SKU -> source ledgers.
   if (profileIds.length) {
     await trx
       .select({ id: wmsTables.deliveryProfiles.id })
@@ -148,21 +147,22 @@ export async function lockAggregate(
   return { batch, shipments, lines: enrichedLines, workItems };
 }
 
-export async function assertPlanningEligibility(
+export async function assertStartEligibility(
   trx: DbTx,
   waybills: WaybillService,
   aggregate: LockedAggregate,
   requestedShipmentIds: string[],
 ): Promise<void> {
   const requested = requestedShipmentIds.join(',');
-  const eligibleItems = aggregate.workItems.filter((item) =>
-    (ACTIVE_WORK_ITEM_STATUSES as readonly string[]).includes(item.status),
-  );
-  if (uniqueSorted(eligibleItems.map((item) => item.shipmentId)).join(',') !== requested) {
-    throw conflict(
-      'PICKING_WORK_ITEM_MEMBERSHIP_MISMATCH',
-      'Plan membership must exactly match queued/picking batch work items',
-    );
+  const isStartable = (item: { status: string }) =>
+    (UNSTARTED_BATCH_WORK_ITEM_STATUSES as readonly string[]).includes(item.status);
+  const startable = aggregate.workItems.filter(isStartable);
+  if (uniqueSorted(startable.map((item) => item.shipmentId)).join(',') !== requested) {
+    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Startable batch work items changed while starting');
+  }
+  if (!aggregate.workItems.every(isStartable)) {
+    // 시작 전 배치의 작업 항목은 queued·picking 뿐이어야 한다. 그 너머는 계획 흡수 전의 흔적이거나 손상이다.
+    throw conflict('PICKING_BATCH_STATE_CORRUPT', 'An unstarted batch has work items beyond picking');
   }
   if (
     aggregate.shipments.some(
@@ -171,7 +171,7 @@ export async function assertPlanningEligibility(
   ) {
     throw conflict('PICKING_SHIPMENT_NOT_ELIGIBLE', 'Every shipment must be planned in the batch warehouse');
   }
-  if (!aggregate.lines.length) throw conflict('PICKING_PLAN_EMPTY', 'Picking plan has no shipment lines');
+  if (!aggregate.lines.length) throw conflict('PICKING_BATCH_EMPTY', 'Batch has no shipment lines');
   for (const shipment of aggregate.shipments) {
     if (!shipment.shippingProfileId) {
       throw conflict('SHIPMENT_PROFILE_REQUIRED', `Shipment ${shipment.id} has no shipping profile`);
@@ -294,130 +294,4 @@ export async function lockSourceCapacities(
     }
   }
   return capacities;
-}
-
-export async function planStalenessReason(
-  trx: DbTx,
-  controlledStock: BatchControlledStockGuard,
-  planId: string,
-  aggregate: LockedAggregate,
-  strategyName: PickingStrategyName,
-): Promise<PlanInvalidation | null> {
-  const [plan] = await trx
-    .select()
-    .from(wmsTables.pickingPlans)
-    .where(eq(wmsTables.pickingPlans.id, planId))
-    .limit(1)
-    .for('update');
-  if (!plan || plan.batchId !== aggregate.batch.id || plan.strategy !== strategyName) {
-    return {
-      code: 'PLAN_IDENTITY_CHANGED',
-      message: `Picking plan identity no longer matches the ${strategyName} batch`,
-    };
-  }
-  if (plan.status !== 'draft') {
-    return { code: 'PLAN_NOT_DRAFT', message: `Picking plan is ${plan.status}` };
-  }
-  const members = await trx
-    .select()
-    .from(wmsTables.pickingPlanMembers)
-    .where(and(eq(wmsTables.pickingPlanMembers.planId, planId), isNull(wmsTables.pickingPlanMembers.retiredAt)))
-    .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
-    .for('update');
-  const shipmentById = new Map(aggregate.shipments.map((shipment) => [shipment.id, shipment]));
-  if (
-    members.length !== aggregate.shipments.length ||
-    members.some((member) => {
-      const shipment = shipmentById.get(member.shipmentId);
-      return (
-        !shipment ||
-        member.manifestVersion !== shipment.manifestVersion ||
-        member.reservationVersion !== shipment.reservationVersion
-      );
-    })
-  ) {
-    return {
-      code: 'SHIPMENT_SNAPSHOT_CHANGED',
-      message: 'Shipment membership, manifest version, or reservation version changed after planning',
-    };
-  }
-
-  const allocations = await trx
-    .select({
-      id: wmsTables.pickingSourceAllocations.id,
-      shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
-      sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
-      qty: wmsTables.pickingSourceAllocations.qty,
-      sourceStockVersion: wmsTables.pickingSourceAllocations.sourceStockVersion,
-      skuId: wmsTables.shipmentLines.skuId,
-    })
-    .from(wmsTables.pickingSourceAllocations)
-    .innerJoin(
-      wmsTables.shipmentLines,
-      eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
-    )
-    .where(eq(wmsTables.pickingSourceAllocations.planId, planId))
-    .orderBy(
-      asc(wmsTables.pickingSourceAllocations.sourceLocationId),
-      asc(wmsTables.pickingSourceAllocations.shipmentLineId),
-      asc(wmsTables.pickingSourceAllocations.id),
-    )
-    .for('update');
-  const allocationByLine = new Map<string, number>();
-  const sourceGroups = new Map<
-    string,
-    { skuId: string; sourceLocationId: string; stockVersion: number; qty: number }
-  >();
-  for (const allocation of allocations) {
-    allocationByLine.set(
-      allocation.shipmentLineId,
-      (allocationByLine.get(allocation.shipmentLineId) ?? 0) + allocation.qty,
-    );
-    const key = `${allocation.skuId}|${allocation.sourceLocationId}`;
-    const existing = sourceGroups.get(key);
-    if (existing && existing.stockVersion !== allocation.sourceStockVersion) {
-      return { code: 'ALLOCATION_INVALID', message: `Source snapshot versions disagree for ${key}` };
-    }
-    sourceGroups.set(key, {
-      skuId: allocation.skuId,
-      sourceLocationId: allocation.sourceLocationId,
-      stockVersion: allocation.sourceStockVersion,
-      qty: (existing?.qty ?? 0) + allocation.qty,
-    });
-  }
-  if (
-    allocations.length === 0 ||
-    aggregate.lines.some((line) => allocationByLine.get(line.id) !== line.qty) ||
-    [...allocationByLine.keys()].some((lineId) => !aggregate.lines.some((line) => line.id === lineId))
-  ) {
-    return {
-      code: 'ALLOCATION_INVALID',
-      message: 'Picking source allocation no longer exactly covers the shipment lines',
-    };
-  }
-
-  const sources = [...sourceGroups.values()].sort((left, right) =>
-    `${left.skuId}|${left.sourceLocationId}`.localeCompare(`${right.skuId}|${right.sourceLocationId}`),
-  );
-  for (const skuId of uniqueSorted(sources.map((source) => source.skuId))) {
-    await acquireStockAvailabilityLock(trx, skuId, aggregate.batch.warehouseId);
-  }
-  for (const source of sources) {
-    const availability = await controlledStock.getAvailability(
-      {
-        skuId: source.skuId,
-        warehouseId: aggregate.batch.warehouseId,
-        sourceLocationId: source.sourceLocationId,
-      },
-      trx,
-      { lock: true },
-    );
-    if (availability.stockVersion !== source.stockVersion || availability.generallyAvailableQty < source.qty) {
-      return {
-        code: 'SOURCE_STOCK_CHANGED',
-        message: `Source ${source.skuId}/${source.sourceLocationId} changed after planning`,
-      };
-    }
-  }
-  return null;
 }

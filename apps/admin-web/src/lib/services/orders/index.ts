@@ -93,7 +93,6 @@ export {
   useClaimBatchPicker,
   useClaimBatchPacker,
   useHandoffBatchWorkItem,
-  useCreatePickingPlan,
   useStartPickingV2,
   useDiscretePickingScan,
   usePickingHandoff,

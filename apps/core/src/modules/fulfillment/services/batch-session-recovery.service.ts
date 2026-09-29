@@ -8,6 +8,7 @@ import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stoc
 import {
   BatchInventoryCustodyType,
   canonicalBatchSessionRequestHash,
+  handInRequestHash,
   isApprovedShortageReasonCode,
   shortPickOperationIntentOf,
 } from './batch-inventory-session.service';
@@ -37,7 +38,6 @@ interface ReplayResult {
   returnedQty: number;
   shortageQty: number;
   nextSequence: number;
-  planId: string | null;
   status: 'active' | 'settled';
 }
 
@@ -84,10 +84,10 @@ export class BatchSessionRecoveryService {
 
   async reconcile(sessionId: string, tx?: DbTx): Promise<BatchSessionReconciliationResult> {
     return this.dbService.run(async (trx) => {
-      const session = await this.lockPlanThenSession(sessionId, trx);
+      const session = await this.lockSession(sessionId, trx);
       const events = await this.loadEvents(sessionId, trx);
       const replay = this.replay(session, events);
-      replay.issues.push(...(await this.validatePersistedPlan(session, events, replay, trx)));
+      replay.issues.push(...(await this.validatePersistedAllocations(session, events, replay, trx)));
       replay.issues = [...new Set(replay.issues)];
       replay.valid = replay.issues.length === 0;
       const actualBalances = await this.loadBalances(sessionId, trx);
@@ -103,14 +103,14 @@ export class BatchSessionRecoveryService {
   async rebuildFromEvents(sessionId: string, tx?: DbTx): Promise<BatchSessionReconciliationResult> {
     return this.dbService.run(async (trx) => {
       // Canonical lifecycle order shared with dispatch is
-      // plan -> session -> balances -> sorted stock-control locks. Holding the
+      // session -> balances -> sorted stock-control locks. Holding the
       // session header freezes the append-only replay stream while stock is
       // locked and revalidated below.
-      const session = await this.lockPlanThenSession(sessionId, trx);
+      const session = await this.lockSession(sessionId, trx);
       await this.loadBalances(sessionId, trx);
       const events = await this.loadEvents(sessionId, trx);
       const replay = this.replay(session, events);
-      replay.issues.push(...(await this.validatePersistedPlan(session, events, replay, trx)));
+      replay.issues.push(...(await this.validatePersistedAllocations(session, events, replay, trx)));
       replay.issues = [...new Set(replay.issues)];
       replay.valid = replay.issues.length === 0;
       if (!replay.valid) {
@@ -157,16 +157,6 @@ export class BatchSessionRecoveryService {
           updatedAt: sql`now()`,
         })
         .where(eq(wmsTables.batchInventorySessions.id, sessionId));
-      if (replay.planId) {
-        await trx
-          .update(wmsTables.pickingPlans)
-          .set(
-            replay.status === 'settled'
-              ? { status: 'completed', completedAt, updatedAt: sql`now()` }
-              : { status: 'active', completedAt: null, updatedAt: sql`now()` },
-          )
-          .where(eq(wmsTables.pickingPlans.id, replay.planId));
-      }
       await this.audit.logRequired(
         {
           eventType: 'SYSTEM_WARNING',
@@ -179,7 +169,7 @@ export class BatchSessionRecoveryService {
           metadata: {
             eventCount: events.length,
             balanceCount: nonZero.length,
-            planId: replay.planId,
+            batchId: session.batchId,
             nextSequence: replay.nextSequence,
           },
         },
@@ -199,26 +189,6 @@ export class BatchSessionRecoveryService {
       .for('update');
     if (!session) throw new NotFoundException(`Batch inventory session ${sessionId} not found`);
     return session;
-  }
-
-  private async lockPlanThenSession(sessionId: string, tx: DbTx): Promise<SessionRow> {
-    const [startIdentity] = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        sql`${wmsTables.batchInventorySessionEvents.sessionId} = ${sessionId}::uuid AND ${wmsTables.batchInventorySessionEvents.eventType} = 'HAND_IN'`,
-      )
-      .limit(1);
-    const planId = payloadOf(startIdentity?.payload).planId;
-    if (typeof planId === 'string') {
-      await tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1)
-        .for('update');
-    }
-    return this.lockSession(sessionId, tx);
   }
 
   private async prepareReplayStockLocks(events: EventRow[], sessionId: string, tx: DbTx): Promise<ReplaySourceLock[]> {
@@ -406,7 +376,6 @@ export class BatchSessionRecoveryService {
     let settledQty = 0;
     let returnedQty = 0;
     let shortageQty = 0;
-    let planId: string | null = null;
     const apply = (side: ReplayBucket, delta: number, eventId: string) => {
       const key = bucketKey(side);
       const current = balances.get(key) ?? { ...side, qty: 0 };
@@ -420,12 +389,12 @@ export class BatchSessionRecoveryService {
       const to = this.side(event, 'to');
       if (event.eventType === 'HAND_IN') {
         if (from || !to || to.custodyType !== 'AT_SOURCE') issues.push(`HAND_IN event ${event.id} has invalid sides`);
-        if (typeof payload.planId !== 'string' || typeof payload.allocationId !== 'string') {
-          issues.push(`HAND_IN event ${event.id} has no immutable plan/allocation identity`);
-        } else if (planId && payload.planId !== planId) {
-          issues.push(`HAND_IN event ${event.id} switches the session plan`);
-        } else {
-          planId = payload.planId;
+        if (
+          payload.batchId !== session.batchId ||
+          typeof payload.workItemId !== 'string' ||
+          typeof payload.allocationId !== 'string'
+        ) {
+          issues.push(`HAND_IN event ${event.id} has no immutable batch/work item/allocation identity`);
         }
         handedInQty += event.quantity;
       } else if (event.eventType === 'MOVE_CUSTODY') {
@@ -468,29 +437,21 @@ export class BatchSessionRecoveryService {
       returnedQty,
       shortageQty,
       nextSequence,
-      planId,
       status: remainingQty === 0 ? 'settled' : 'active',
     };
   }
 
-  private async validatePersistedPlan(
+  private async validatePersistedAllocations(
     session: SessionRow,
     events: EventRow[],
     replay: ReplayResult,
     tx: DbTx,
   ): Promise<string[]> {
     const issues: string[] = [];
-    if (!replay.planId) return ['session event stream has no immutable plan identity'];
-    const [plan] = await tx
-      .select({ id: wmsTables.pickingPlans.id, batchId: wmsTables.pickingPlans.batchId })
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, replay.planId))
-      .limit(1);
-    if (!plan || plan.batchId !== session.batchId) return ['session plan is missing or belongs to another batch'];
-
     const allocations = await tx
       .select({
         id: wmsTables.pickingSourceAllocations.id,
+        workItemId: wmsTables.pickingSourceAllocations.workItemId,
         shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
         sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
         quantity: wmsTables.pickingSourceAllocations.qty,
@@ -499,10 +460,14 @@ export class BatchSessionRecoveryService {
       })
       .from(wmsTables.pickingSourceAllocations)
       .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
+      .innerJoin(
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
-      .where(eq(wmsTables.pickingSourceAllocations.planId, replay.planId));
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, session.batchId));
     const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
     const startEvents = events.filter((event) => event.eventType === 'HAND_IN');
     const seenAllocationIds = new Set<string>();
@@ -523,7 +488,8 @@ export class BatchSessionRecoveryService {
         const allocation = allocationById.get(allocationId);
         if (
           !allocation ||
-          payload.planId !== replay.planId ||
+          payload.batchId !== session.batchId ||
+          payload.workItemId !== allocation.workItemId ||
           payload.shipmentLineId !== allocation.shipmentLineId ||
           payload.sourceStockVersion !== allocation.sourceStockVersion ||
           event.skuId !== allocation.skuId ||
@@ -536,13 +502,13 @@ export class BatchSessionRecoveryService {
           issues.push(`HAND_IN event ${event.id} differs from persisted allocation ${String(allocationId)}`);
           continue;
         }
-        expectedHash = canonicalBatchSessionRequestHash({
-          eventType: 'HAND_IN',
-          planId: replay.planId,
-          allocationId,
+        expectedHash = handInRequestHash(session.batchId, {
+          id: allocation.id,
+          // Non-null: the query inner-joins work items on workItemId.
+          workItemId: allocation.workItemId!,
+          shipmentLineId: allocation.shipmentLineId,
           skuId: allocation.skuId,
           sourceLocationId: allocation.sourceLocationId,
-          shipmentLineId: allocation.shipmentLineId,
           quantity: allocation.quantity,
           sourceStockVersion: allocation.sourceStockVersion,
         });
@@ -612,24 +578,6 @@ export class BatchSessionRecoveryService {
           const shipmentLineId = payload.shipmentLineId;
           const sourceLocationId = payload.sourceLocationId;
           const reason = payload.reason;
-          const allocation = allocations.find(
-            (candidate) =>
-              candidate.shipmentLineId === shipmentLineId && candidate.sourceLocationId === sourceLocationId,
-          );
-          if (
-            typeof shortPickOperationId !== 'string' ||
-            typeof shipmentLineId !== 'string' ||
-            typeof sourceLocationId !== 'string' ||
-            typeof reason !== 'string' ||
-            !reason.trim() ||
-            !allocation ||
-            allocation.skuId !== event.skuId ||
-            !from ||
-            from.sourceLocationId !== sourceLocationId ||
-            (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
-          ) {
-            issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
-          }
           const [operationOwner] =
             typeof shortPickOperationId === 'string' && typeof shipmentLineId === 'string'
               ? await tx
@@ -657,6 +605,30 @@ export class BatchSessionRecoveryService {
                   .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
                   .limit(1)
               : [];
+          const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
+          // The short-pick intent names the work item it was taken on; attribute
+          // the event only to that work item's allocation for this line/source.
+          const allocation = allocations.find(
+            (candidate) =>
+              intent !== null &&
+              candidate.workItemId === intent.workItemId &&
+              candidate.shipmentLineId === shipmentLineId &&
+              candidate.sourceLocationId === sourceLocationId,
+          );
+          if (
+            typeof shortPickOperationId !== 'string' ||
+            typeof shipmentLineId !== 'string' ||
+            typeof sourceLocationId !== 'string' ||
+            typeof reason !== 'string' ||
+            !reason.trim() ||
+            !allocation ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== sourceLocationId ||
+            (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
+          ) {
+            issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
+          }
           if (
             !operationOwner ||
             operationOwner.type !== 'short_pick' ||
@@ -664,7 +636,6 @@ export class BatchSessionRecoveryService {
           ) {
             issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
           } else {
-            const intent = shortPickOperationIntentOf(operationOwner.snapshot);
             const intentLine = intent?.lines.find(
               (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
             );
@@ -747,14 +718,14 @@ export class BatchSessionRecoveryService {
             allocation.sourceLocationId === side.sourceLocationId &&
             (!side.shipmentLineId || allocation.shipmentLineId === side.shipmentLineId),
         );
-        if (!matchingAllocation) issues.push(`event ${event.id} custody is outside the session plan`);
+        if (!matchingAllocation) issues.push(`event ${event.id} custody is outside the session batch allocations`);
       }
       if (from && to && from.sourceLocationId !== to.sourceLocationId) {
         issues.push(`event ${event.id} changes the original source location`);
       }
     }
     if (startEvents.length !== allocations.length || seenAllocationIds.size !== allocations.length) {
-      issues.push('HAND_IN event set does not exactly cover persisted plan allocations');
+      issues.push('HAND_IN event set does not exactly cover persisted batch allocations');
     }
     for (const allocation of allocations) {
       const activeAttributedQty = replay.balances

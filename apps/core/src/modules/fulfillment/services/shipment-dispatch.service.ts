@@ -84,7 +84,6 @@ interface LockedDispatchAggregate {
   waybill: WaybillRow;
   session: SessionRow;
   workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect;
-  planId: string;
 }
 
 interface DispatchSource {
@@ -438,18 +437,6 @@ export class ShipmentDispatchService {
       )
       .limit(1);
     if (!initialSession) throw this.conflict('SHIPMENT_SESSION_MISSING', 'Shipment batch has no inventory session');
-    const [handIn] = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, initialSession.id),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        ),
-      )
-      .limit(1);
-    const planId = this.payloadString(handIn?.payload, 'planId');
-    if (!planId) throw this.conflict('SHIPMENT_SESSION_PLAN_MISSING', 'Session has no immutable picking plan identity');
 
     // 활성 waybill 을 FOR UPDATE 로 잠근다 — dispatch 가 markUsed 로 이 행을 갱신하므로 concurrent void/reissue
     // 와 직렬화돼야 한다. staleness/carrier/trackingNo 검증은 dispatchLocked 의 assertDispatchable 이 담당.
@@ -483,37 +470,8 @@ export class ShipmentDispatchService {
       throw this.conflict('SHIPMENT_WORK_ITEM_CHANGED', 'Shipment work item changed while acquiring dispatch locks');
     }
 
-    const [plan] = await tx
-      .select({
-        id: wmsTables.pickingPlans.id,
-        batchId: wmsTables.pickingPlans.batchId,
-        status: wmsTables.pickingPlans.status,
-      })
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, planId))
-      .limit(1)
-      .for('update');
-    if (!plan || plan.batchId !== workItem.batchId || plan.status !== 'active') {
-      throw this.conflict('SHIPMENT_SESSION_PLAN_CHANGED', 'Session picking plan no longer belongs to the batch');
-    }
-    const [member] = await tx
-      .select()
-      .from(wmsTables.pickingPlanMembers)
-      .where(
-        and(
-          eq(wmsTables.pickingPlanMembers.planId, planId),
-          eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
-          isNull(wmsTables.pickingPlanMembers.retiredAt),
-        ),
-      )
-      .limit(1);
-    if (
-      !member ||
-      member.manifestVersion !== shipment.manifestVersion ||
-      member.reservationVersion !== shipment.reservationVersion
-    ) {
-      throw this.conflict('SHIPMENT_PICKING_PLAN_STALE', 'Picking plan does not match current shipment versions');
-    }
+    // 옛 «계획 구성원 버전 스냅샷» 검사는 없다: 배정 합 = 줄 수량(dispatchLocked), 송장 manifestVersion
+    // 일치(assertDispatchable), 예약 소진이 박스가 시작 뒤 바뀌지 않았음을 함께 증명한다(ADR-0041).
     const [session] = await tx
       .select()
       .from(wmsTables.batchInventorySessions)
@@ -522,19 +480,6 @@ export class ShipmentDispatchService {
       .for('update');
     if (!session || session.batchId !== workItem.batchId) {
       throw this.conflict('SHIPMENT_SESSION_CHANGED', 'Inventory session changed while acquiring dispatch locks');
-    }
-    const lockedHandIns = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, session.id),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        ),
-      );
-    const lockedPlanIds = new Set(lockedHandIns.map((event) => this.payloadString(event.payload, 'planId')));
-    if (lockedPlanIds.size !== 1 || !lockedPlanIds.has(planId)) {
-      throw this.conflict('SHIPMENT_SESSION_PLAN_CHANGED', 'Session plan identity changed while acquiring locks');
     }
     await tx
       .select({ id: wmsTables.batchInventorySessionBalances.id })
@@ -565,7 +510,7 @@ export class ShipmentDispatchService {
       .orderBy(asc(wmsTables.dispatchAttempts.attemptNo), asc(wmsTables.dispatchAttempts.id))
       .for('update');
 
-    return { shipment, lines, workItem, session, waybill: activeWaybills[0], planId };
+    return { shipment, lines, workItem, session, waybill: activeWaybills[0] };
   }
 
   private assertDispatchCandidate(
@@ -702,7 +647,7 @@ export class ShipmentDispatchService {
       .from(wmsTables.pickingSourceAllocations)
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, aggregate.planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, aggregate.workItem.id),
           inArray(
             wmsTables.pickingSourceAllocations.shipmentLineId,
             aggregate.lines.map((line) => line.id),
@@ -922,7 +867,6 @@ export class ShipmentDispatchService {
           beforeLineManifest: force.beforeLineManifest,
           afterLineManifest: this.dispatchLineManifest(aggregate.lines),
           lineage: {
-            planId: aggregate.planId,
             sessionId: aggregate.session.id,
             workItemId: aggregate.workItem.id,
             dispatchAttemptId: attemptId,
@@ -1303,12 +1247,6 @@ export class ShipmentDispatchService {
 
   private assertPositiveInteger(name: string, value: number): void {
     if (!Number.isSafeInteger(value) || value <= 0) throw new BadRequestException(`${name} must be a positive integer`);
-  }
-
-  private payloadString(payload: unknown, key: string): string | null {
-    if (!payload || typeof payload !== 'object') return null;
-    const value = (payload as Record<string, unknown>)[key];
-    return typeof value === 'string' && value.trim() ? value : null;
   }
 
   private conflict(code: string, message: string): ConflictException {

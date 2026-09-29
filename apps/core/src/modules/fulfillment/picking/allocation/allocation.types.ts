@@ -1,6 +1,5 @@
-import { wmsTables } from '../../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
-import { BatchInventorySessionService } from '../../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
@@ -10,9 +9,6 @@ export type BatchRow = typeof wmsTables.outboundBatches.$inferSelect;
 export type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 export type WorkItemRow = typeof wmsTables.outboundBatchWorkItems.$inferSelect;
 export type CustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
-
-/** Work item statuses a plan may legally claim. Everything else is already downstream of picking. */
-export const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
 
 export interface LockedLine {
   id: string;
@@ -61,17 +57,56 @@ export interface ShipmentCustodyBalance {
 }
 
 /**
- * Collaborators the plan layer needs. Measured: the extracted methods use exactly these six and
- * never `dbService` — every one of them receives an open `trx` instead (ADR-0030).
+ * 세션 인계가 받는 배정 한 줄. `batch-start.ts` 가 만들고
+ * `BatchInventorySessionService.startSession` 이 그대로 소비한다.
  */
-export interface PickingPlanDeps {
+export interface SessionStartAllocation {
+  id: string;
+  workItemId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  sourceStockVersion: number;
+}
+
+/**
+ * 배치 시작이 재고 세션 계층에 인계하는 포트. `BatchInventorySessionService` 가 구현하고, 단위 테스트는
+ * 가짜로 채운다 — 진입점이 세션 서비스 전체를 끌어오지 않고 인계 한 동작에만 기대게 하려는 경계다.
+ */
+export interface BatchStartSessionPort {
+  startSession(
+    input: { batchId: string; actorId: string; allocations: SessionStartAllocation[] },
+    tx: DbTx,
+  ): Promise<{ id: string; status: string }>;
+}
+
+/**
+ * Collaborators the batch-start entry point needs. Measured: the extracted methods use exactly
+ * these six and never `dbService` — every one of them receives an open `trx` instead (ADR-0030).
+ */
+export interface BatchStartDeps {
   commands: FulfillmentCommandService;
   workflowGate: FulfillmentWorkflowGate;
-  sessions: BatchInventorySessionService;
+  sessions: BatchStartSessionPort;
   invariant: FulfillmentInvariantService;
   controlledStock: BatchControlledStockGuard;
   waybills: WaybillService;
 }
+
+export interface BatchStartResult {
+  state: 'started';
+  operationId: string;
+  batchId: string;
+  sessionId: string;
+  status: string;
+}
+
+/**
+ * 시작 전 배치에서 배치 시작이 배정·인계하는 작업 항목 상태. 인계(HAND_IN) 전에는 커스터디가 있을 수 없으므로
+ * 단독 picker-claim 으로 `picking` 이 된 항목도 그대로 배정할 수 있다. 이 밖의 상태는 시작 전 배치의 손상이다.
+ */
+export const UNSTARTED_BATCH_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
 
 export function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();

@@ -37,7 +37,6 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { PickingProcessService } from './picking-process.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
-import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
@@ -131,7 +130,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2', FULFILLMENT_V2_CUTOVER_AT: new Date().toISOString() }),
     );
     const controlled = new BatchControlledStockGuard();
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     const resumeTarget: { shortPick?: ShipmentShortPickService } = {};
     const moduleRef = {
       get: jest.fn(
@@ -196,15 +195,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
     );
     const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-    const planning = new ShipmentPlanningService(
-      dbService,
-      commands,
-      shipmentReservations,
-      invariant,
-      audit,
-      authorization as never,
-      workflow,
-    );
     resumeTarget.shortPick = new ShipmentShortPickService(
       dbService,
       commands,
@@ -214,7 +204,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       waybills,
       sessions,
       shipmentReservations,
-      planning,
       new ToteLifecycleService(dbService),
     );
     const dispatch = new ShipmentDispatchService(
@@ -652,27 +641,16 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     expectedLeaseVersion: number,
   ) {
     const member = world.shipments[0];
-    const plan = await services.picking.plan({
-      batchId,
-      shipmentIds: [member.shipment.id],
-      actorId: worker.id,
-      idempotencyKey: `discrete-plan-${randomUUID()}`,
-    });
-    expect(plan.state).toBe('planned');
-    if (plan.state !== 'planned') throw new Error(plan.reason);
     const started = await services.picking.start({
       batchId,
-      planId: plan.planId,
       actorId: worker.id,
       idempotencyKey: `discrete-start-${randomUUID()}`,
     });
     expect(started.state).toBe('started');
-    if (started.state !== 'started') throw new Error(started.reason);
     await services.picking.scan({
       strategy: 'discrete',
       stage: 'source',
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       workItemId,
       shipmentId: member.shipment.id,
@@ -686,7 +664,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     });
     const completed = await services.picking.completePick({
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       workItemId,
       shipmentId: member.shipment.id,
@@ -694,7 +671,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expectedLeaseVersion,
       idempotencyKey: `discrete-complete-${randomUUID()}`,
     });
-    return { completed, plan, sessionId: started.sessionId };
+    return { completed, sessionId: started.sessionId };
   }
 
   async function aggregatePick(
@@ -712,28 +689,17 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       `aggregate-claim-${randomUUID()}`,
       worker,
     );
-    const plan = await services.picking.plan({
-      batchId,
-      shipmentIds: [member.shipment.id],
-      actorId: worker.id,
-      idempotencyKey: `aggregate-plan-${randomUUID()}`,
-    });
-    expect(plan.state).toBe('planned');
-    if (plan.state !== 'planned') throw new Error(plan.reason);
     const started = await services.picking.start({
       batchId,
-      planId: plan.planId,
       actorId: worker.id,
       idempotencyKey: `aggregate-start-${randomUUID()}`,
     });
     expect(started.state).toBe('started');
-    if (started.state !== 'started') throw new Error(started.reason);
     const cartId = `cart-${randomUUID()}`;
     await services.picking.aggregateBulkCartScan({
       strategy: 'aggregate_then_sort',
       stage: 'bulk_collect',
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       skuId: world.skuId,
       sourceLocationId: world.locationId,
@@ -746,7 +712,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       strategy: 'aggregate_then_sort',
       stage: 'sort',
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       workItemId,
       shipmentId: member.shipment.id,
@@ -761,7 +726,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     });
     const completed = await services.picking.completePick({
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       workItemId,
       shipmentId: member.shipment.id,
@@ -769,7 +733,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expectedLeaseVersion: claim.workItem.leaseVersion,
       idempotencyKey: `aggregate-complete-${randomUUID()}`,
     });
-    return { claim, completed, plan, sessionId: started.sessionId };
+    return { claim, completed, sessionId: started.sessionId };
   }
 
   async function totePick(
@@ -787,22 +751,12 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       `tote-claim-${randomUUID()}`,
       worker,
     );
-    const plan = await services.picking.plan({
-      batchId,
-      shipmentIds: [member.shipment.id],
-      actorId: worker.id,
-      idempotencyKey: `tote-plan-${randomUUID()}`,
-    });
-    expect(plan.state).toBe('planned');
-    if (plan.state !== 'planned') throw new Error(plan.reason);
     const started = await services.picking.start({
       batchId,
-      planId: plan.planId,
       actorId: worker.id,
       idempotencyKey: `tote-start-${randomUUID()}`,
     });
     expect(started.state).toBe('started');
-    if (started.state !== 'started') throw new Error(started.reason);
     const toteIds: string[] = [];
     for (const [index, quantity] of toteQuantities.entries()) {
       const toteBarcode = `TOTE-${index}-${randomUUID()}`;
@@ -815,7 +769,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       toteIds.push(registered.toteId);
       await services.picking.assignTote({
         batchId,
-        planId: plan.planId,
         sessionId: started.sessionId,
         workItemId,
         shipmentId: member.shipment.id,
@@ -828,7 +781,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         strategy: 'pick_to_tote',
         stage: 'source',
         batchId,
-        planId: plan.planId,
         sessionId: started.sessionId,
         workItemId,
         shipmentId: member.shipment.id,
@@ -844,7 +796,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     }
     const completed = await services.picking.completePick({
       batchId,
-      planId: plan.planId,
       sessionId: started.sessionId,
       workItemId,
       shipmentId: member.shipment.id,
@@ -852,7 +803,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expectedLeaseVersion: claim.workItem.leaseVersion,
       idempotencyKey: `tote-complete-${randomUUID()}`,
     });
-    return { claim, completed, plan, sessionId: started.sessionId, toteIds };
+    return { claim, completed, sessionId: started.sessionId, toteIds };
   }
 
   // 플랜3 컷오버: batch add 는 issued invoice 대신 WaybillService.assertDispatchable(registered waybill)를
@@ -891,7 +842,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         const [tote] = await tx.select().from(wmsTables.totes).where(eq(wmsTables.totes.id, toteId));
         await services.picking.releaseTote({
           batchId: batch.batchId,
-          planId: picked.plan.planId,
           sessionId: picked.sessionId,
           workItemId: added[0].workItem.id,
           shipmentId: world.shipments[1].shipment.id,
@@ -1146,30 +1096,16 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         `short-pick-claim-${randomUUID()}`,
         worker,
       );
-      const plan = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds: world.shipments.map((member) => member.shipment.id),
-        actorId: worker.id,
-        idempotencyKey: `short-pick-plan-${randomUUID()}`,
-      });
-      expect(plan.state).toBe('planned');
-      if (plan.state !== 'planned') throw new Error(plan.reason);
       const started = await services.picking.start({
         batchId: batch.batchId,
-        planId: plan.planId,
         actorId: worker.id,
         idempotencyKey: `short-pick-start-${randomUUID()}`,
       });
       expect(started.state).toBe('started');
-      if (started.state !== 'started') throw new Error(started.reason);
       const [session] = await tx
         .select()
         .from(wmsTables.batchInventorySessions)
         .where(eq(wmsTables.batchInventorySessions.id, started.sessionId));
-      const [storedPlan] = await tx
-        .select()
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, plan.planId));
       const [currentLine] = await tx
         .select()
         .from(wmsTables.shipmentLines)
@@ -1180,8 +1116,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         {
           workItemId: added[0].workItem.id,
           expectedWorkItemLeaseVersion: claimed.workItem.leaseVersion,
-          planId: plan.planId,
-          expectedPlanVersion: storedPlan.version,
           sessionId: session.id,
           expectedSessionVersion: session.version,
           expectedManifestVersion: world.shipments[0].shipment.manifestVersion,
@@ -1274,9 +1208,9 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
   });
 
   // ADR-0030 §3.5: 창고가 해당 전략을 켰는지 확인하는 검사의 소유자는
-  // `PickingStrategyRegistry.resolveForWarehouse` 다 — plan 도 start 도 계획 층에 들어가기 전에
-  // 이걸 먼저 통과해야 한다. 아래 세 케이스는 그 한 벌만으로 plan/replan/start 세 지점이 모두
-  // 막히는지를 실 DB 로 고정한다. 단언을 registry 쪽 메시지에 맞춘 것은 의도적이다 — 검사가
+  // `PickingStrategyRegistry.resolveForWarehouse` 다 — 배치 시작은 배정 층에 들어가기 전에
+  // 이걸 먼저 통과해야 한다. 아래 케이스들은 그 한 벌만으로 시작이 막히는지를
+  // 실 DB 로 고정한다. 단언을 registry 쪽 메시지에 맞춘 것은 의도적이다 — 검사가
   // registry 밖으로 새어 나가거나 사라지면 여기서 깨진다.
   //
   // 배치 생성 자체가 창고 지원 여부를 게이트하므로(`OUTBOUND_BATCH_METHOD_NOT_SUPPORTED`), 미설정 창고는
@@ -1302,7 +1236,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     expect(caught.message).toContain(messagePart);
   }
 
-  it('refuses to plan on a warehouse whose picking strategy configuration was emptied', async () => {
+  it('refuses to start a batch on a warehouse whose picking strategy configuration was emptied', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [2], ['discrete']);
       await seedRegisteredWaybills(tx, world);
@@ -1313,106 +1247,60 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       await revokeWarehouseStrategies(tx, world.warehouseId, []);
 
       await expectConflict(
-        services.picking.plan({
+        services.picking.start({
           batchId: batch.batchId,
-          shipmentIds: [world.shipments[0].shipment.id],
           actorId: worker.id,
-          idempotencyKey: `unconfigured-plan-${randomUUID()}`,
+          idempotencyKey: `unconfigured-start-${randomUUID()}`,
         }),
         'has no picking strategy configuration',
       );
 
-      // 거부는 어떤 계획 행도 남기지 않는다.
-      const plans = await tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.batchId, batch.batchId));
-      expect(plans).toHaveLength(0);
-    });
-  });
-
-  it('refuses to replan an existing draft after the batch strategy is disabled for the warehouse', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const world = await seedWorld(tx, [2], ['discrete']);
-      await seedRegisteredWaybills(tx, world);
-      const services = makeServices(tx);
-      const manager = { id: randomUUID(), roles: ['master'] };
-      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch } = await createBatchWithShipments(services, world, manager);
-      const shipmentIds = [world.shipments[0].shipment.id];
-
-      const first = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds,
-        actorId: worker.id,
-        idempotencyKey: `revoked-replan-first-${randomUUID()}`,
-      });
-      expect(first.state).toBe('planned');
-
-      // 창고는 여전히 설정돼 있지만 배치가 요구하는 discrete 만 빠졌다.
-      await revokeWarehouseStrategies(tx, world.warehouseId, ['pick_to_tote']);
-
-      await expectConflict(
-        services.picking.plan({
-          batchId: batch.batchId,
-          shipmentIds,
-          actorId: worker.id,
-          idempotencyKey: `revoked-replan-second-${randomUUID()}`,
-        }),
-        'is not enabled for warehouse',
-      );
-
-      // 기존 draft 는 무효화되지 않고 그대로 남는다 — 거부는 draft 경로에 닿기 전에 일어난다.
-      if (first.state !== 'planned') throw new Error(first.reason);
-      const [stored] = await tx
-        .select({ status: wmsTables.pickingPlans.status })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, first.planId));
-      expect(stored.status).toBe('draft');
-    });
-  });
-
-  it('refuses to start a planned batch after the strategy is disabled for the warehouse', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const world = await seedWorld(tx, [2], ['discrete']);
-      await seedRegisteredWaybills(tx, world);
-      const services = makeServices(tx);
-      const manager = { id: randomUUID(), roles: ['master'] };
-      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch } = await createBatchWithShipments(services, world, manager);
-
-      const planned = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds: [world.shipments[0].shipment.id],
-        actorId: worker.id,
-        idempotencyKey: `revoked-start-plan-${randomUUID()}`,
-      });
-      expect(planned.state).toBe('planned');
-      if (planned.state !== 'planned') throw new Error(planned.reason);
-
-      await revokeWarehouseStrategies(tx, world.warehouseId, ['pick_to_tote']);
-
-      await expectConflict(
-        services.picking.start({
-          batchId: batch.batchId,
-          planId: planned.planId,
-          actorId: worker.id,
-          idempotencyKey: `revoked-start-${randomUUID()}`,
-        }),
-        'is not enabled for warehouse',
-      );
-
-      // 세션도 만들어지지 않고 계획은 draft 로 남는다.
+      // 거부는 어떤 세션도, 시작 표시도 남기지 않는다.
       const sessions = await tx
         .select({ id: wmsTables.batchInventorySessions.id })
         .from(wmsTables.batchInventorySessions)
         .where(eq(wmsTables.batchInventorySessions.batchId, batch.batchId));
       expect(sessions).toHaveLength(0);
       const [stored] = await tx
-        .select({ status: wmsTables.pickingPlans.status })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planned.planId));
-      expect(stored.status).toBe('draft');
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+      expect(stored.startedAt).toBeNull();
+    });
+  });
+
+  it('refuses to start a batch after the batch strategy is disabled for the warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, [2], ['discrete']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+
+      // 창고는 여전히 설정돼 있지만 배치가 요구하는 discrete 만 빠졌다.
+      await revokeWarehouseStrategies(tx, world.warehouseId, ['pick_to_tote']);
+
+      await expectConflict(
+        services.picking.start({
+          batchId: batch.batchId,
+          actorId: worker.id,
+          idempotencyKey: `revoked-start-${randomUUID()}`,
+        }),
+        'is not enabled for warehouse',
+      );
+
+      // 세션도 만들어지지 않고 배치는 시작 전으로 남는다.
+      const sessions = await tx
+        .select({ id: wmsTables.batchInventorySessions.id })
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, batch.batchId));
+      expect(sessions).toHaveLength(0);
+      const [stored] = await tx
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+      expect(stored.startedAt).toBeNull();
     });
   });
 
@@ -1425,51 +1313,16 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
       const { batch } = await createBatchWithShipments(services, world, manager);
 
-      const planned = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds: [world.shipments[0].shipment.id],
-        actorId: worker.id,
-        idempotencyKey: `derived-plan-${randomUUID()}`,
-      });
+      const idempotencyKey = `derived-start-${randomUUID()}`;
+      const started = await services.picking.start({ batchId: batch.batchId, actorId: worker.id, idempotencyKey });
 
-      expect(planned.state).toBe('planned');
+      expect(started.state).toBe('started');
       const [row] = await tx
-        .select({ strategy: wmsTables.pickingPlans.strategy })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.batchId, batch.batchId))
+        .select({ commandType: wmsTables.fulfillmentCommandRequests.commandType })
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, idempotencyKey))
         .limit(1);
-      expect(row.strategy).toBe('discrete');
-    });
-  });
-
-  it('applies the same derivation to a replanned batch', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const world = await seedWorld(tx, [2], ['discrete', 'aggregate_then_sort']);
-      await seedRegisteredWaybills(tx, world);
-      const services = makeServices(tx);
-      const manager = { id: randomUUID(), roles: ['master'] };
-      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch } = await createBatchWithShipments(services, world, manager);
-      const shipmentIds = [world.shipments[0].shipment.id];
-
-      const first = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds,
-        actorId: worker.id,
-        idempotencyKey: `replan-first-${randomUUID()}`,
-      });
-      expect(first.state).toBe('planned');
-
-      // 창고가 aggregate_then_sort 도 지원하지만 배치는 individual 이므로 재plan 도 discrete 로 파생된다.
-      const second = await services.picking.plan({
-        batchId: batch.batchId,
-        shipmentIds,
-        actorId: worker.id,
-        idempotencyKey: `replan-second-${randomUUID()}`,
-      });
-      expect(second.state).toBe('planned');
-      if (second.state !== 'planned') throw new Error(second.reason);
-      expect(second.strategy).toBe('discrete');
+      expect(row.commandType).toBe('picking.discrete.start');
     });
   });
 });

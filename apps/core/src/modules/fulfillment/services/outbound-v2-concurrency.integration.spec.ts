@@ -30,7 +30,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
-import { BatchInventorySessionService } from './batch-inventory-session.service';
+import { BatchInventorySessionService, handInRequestHash } from './batch-inventory-session.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 import { WaybillManager } from '../waybill/waybill.manager';
@@ -380,7 +380,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, controlled, audit),
+      new BatchInventorySessionService(dbService, audit),
       reservations,
       waybills,
       new BarcodeService(dbService),
@@ -574,36 +574,45 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           leaseVersion: 1,
         })
         .returning();
-      const [plan] = await tx
-        .insert(wmsTables.pickingPlans)
-        .values({ batchId: batch.id, strategy: 'discrete', status: 'active', createdBy: actorId })
+      const [allocation] = await tx
+        .insert(wmsTables.pickingSourceAllocations)
+        .values({
+          workItemId: workItem.id,
+          shipmentLineId: line.id,
+          sourceLocationId: sourceLocation.id,
+          qty: 2,
+          sourceStockVersion: ledger.version,
+        })
         .returning();
-      await tx.insert(wmsTables.pickingPlanMembers).values({
-        planId: plan.id,
-        shipmentId: shipment.id,
-        manifestVersion: shipment.manifestVersion,
-        reservationVersion: shipment.reservationVersion,
-      });
-      await tx.insert(wmsTables.pickingSourceAllocations).values({
-        planId: plan.id,
-        shipmentLineId: line.id,
-        sourceLocationId: sourceLocation.id,
-        qty: 2,
-        sourceStockVersion: ledger.version,
-      });
       const [session] = await tx
         .insert(wmsTables.batchInventorySessions)
         .values({ batchId: batch.id, status: 'active', handedInQty: 2 })
         .returning();
       await tx.insert(wmsTables.batchInventorySessionEvents).values({
         sessionId: session.id,
-        idempotencyKey: `start:${plan.id}`,
+        idempotencyKey: `start:${batch.id}:${allocation.id}`,
         eventType: 'HAND_IN',
         skuId: sku.id,
         quantity: 2,
         toCustodyType: 'AT_SOURCE',
         toSourceLocationId: sourceLocation.id,
-        payload: { planId: plan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId },
+        payload: {
+          sequence: 0,
+          batchId: batch.id,
+          workItemId: workItem.id,
+          allocationId: allocation.id,
+          shipmentLineId: line.id,
+          sourceStockVersion: ledger.version,
+          requestHash: handInRequestHash(batch.id, {
+            id: allocation.id,
+            workItemId: workItem.id,
+            shipmentLineId: line.id,
+            skuId: sku.id,
+            sourceLocationId: sourceLocation.id,
+            quantity: 2,
+            sourceStockVersion: ledger.version,
+          }),
+        },
       });
       await tx.insert(wmsTables.batchInventorySessionBalances).values([
         {
@@ -649,7 +658,6 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
         item,
         ledger,
         line,
-        plan,
         reworkLocation,
         salesOrder,
         salesOrderLine,
@@ -743,9 +751,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
         .where(eq(wmsTables.batchInventorySessions.id, fixture.session.id));
       await tx
         .delete(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlanMembers).where(eq(wmsTables.pickingPlanMembers.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, fixture.plan.id));
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItem.id));
       await tx
         .delete(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItem.id));

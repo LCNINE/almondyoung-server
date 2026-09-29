@@ -26,19 +26,19 @@ import {
   UnpickShipmentInput,
   UnpickShipmentResult,
 } from './picking-strategy.interface';
-import { conflict } from './plan/picking-plan.errors';
+import { conflict } from './allocation/allocation.errors';
 import {
-  assertActivePlanSession,
-  assertPlanMembers,
+  assertActiveBatchSession,
+  assertBatchSessionLifecycle,
   assertPositiveQuantity,
   assertWorkItemIdentity,
   databaseNow,
   loadPositiveShipmentCustody,
-  loadShipmentAllocations,
   loadWorkItem,
+  loadWorkItemAllocations,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
 
 type ToteRow = typeof wmsTables.totes.$inferSelect;
 type ToteAssignmentRow = typeof wmsTables.shipmentToteAssignments.$inferSelect;
@@ -114,7 +114,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -132,8 +131,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         const assignments = await this.loadActiveToteAssignments(tote.id, trx);
@@ -211,7 +209,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -234,8 +231,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         this.assertToteInUse(tote);
@@ -256,7 +252,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           .from(wmsTables.pickingSourceAllocations)
           .where(
             and(
-              eq(wmsTables.pickingSourceAllocations.planId, input.planId),
+              eq(wmsTables.pickingSourceAllocations.workItemId, input.workItemId),
               eq(wmsTables.pickingSourceAllocations.shipmentLineId, input.shipmentLineId),
               eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
             ),
@@ -314,7 +310,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         );
         const response: ToteScanResult = {
           operationId: commandRequestId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -343,7 +338,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -356,8 +350,13 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       },
       async (trx, commandRequestId) => {
         await this.assertToteMutationAuthority(input, trx);
-        await this.assertReleasePlanSession(input.planId, input.sessionId, input.batchId, trx);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertBatchSessionLifecycle(trx, input.sessionId, input.batchId, this.capabilities.name, [
+          'active',
+          'settled',
+        ]);
+        const item = await loadWorkItem(trx, input.workItemId);
+        assertWorkItemIdentity(item, input.batchId, input.shipmentId);
+        // 완료 뒤 반납도 허용한다(옛 «계획 completed + 세션 settled» 규칙과 같다) — 상태는 따지지 않는다.
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         this.assertToteInUse(tote);
@@ -432,7 +431,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -462,8 +460,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.targetExpectedLeaseVersion,
           trx,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId, input.targetShipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         this.assertToteInUse(tote);
@@ -541,7 +538,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -579,8 +575,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         ) {
           throw conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const balances = await loadPositiveShipmentCustody(trx, input.sessionId, input.shipmentId);
         await this.assertExclusiveToteCustody(balances, input.shipmentId, trx);
         const response: PickingHandoffResult = {
@@ -606,7 +601,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -623,9 +617,8 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
         const activeToteRefs = await this.loadActiveShipmentToteRefs(input.shipmentId, trx);
         if (!activeToteRefs.size) {
@@ -745,7 +738,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -757,12 +749,11 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       async (trx, commandRequestId) => {
         const item = await loadWorkItem(trx, input.workItemId, true);
         assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         if (item.leaseVersion !== input.expectedLeaseVersion) {
           throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
         const now = await databaseNow(trx);
         if (item.status === 'picking') {
@@ -813,7 +804,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
           const allocation = allocationByGrain.get(grain);
           if (!allocation || allocation.skuId !== balance.skuId) {
-            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a plan allocation`);
+            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a work item allocation`);
           }
           attributedByGrain.set(grain, (attributedByGrain.get(grain) ?? 0) + balance.qty);
           if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
@@ -845,7 +836,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           ) {
             throw conflict(
               'PICKING_PACKING_CUSTODY_INCOMPLETE',
-              'Ready-to-pack custody must exactly match every plan allocation',
+              'Ready-to-pack custody must exactly match every work item allocation',
             );
           }
         }
@@ -907,52 +898,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       },
       tx,
     );
-  }
-
-  private async assertReleasePlanSession(planId: string, sessionId: string, batchId: string, tx: DbTx): Promise<void> {
-    const [plan] = await tx
-      .select({
-        batchId: wmsTables.pickingPlans.batchId,
-        strategy: wmsTables.pickingPlans.strategy,
-        status: wmsTables.pickingPlans.status,
-      })
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, planId))
-      .limit(1)
-      .for('update');
-    if (!plan || plan.batchId !== batchId || plan.strategy !== this.capabilities.name) {
-      throw conflict('PICKING_PLAN_IDENTITY_MISMATCH', `Picking plan ${planId} is not a pick-to-tote batch plan`);
-    }
-    const [session] = await tx
-      .select({ batchId: wmsTables.batchInventorySessions.batchId, status: wmsTables.batchInventorySessions.status })
-      .from(wmsTables.batchInventorySessions)
-      .where(eq(wmsTables.batchInventorySessions.id, sessionId))
-      .limit(1)
-      .for('update');
-    if (!session || session.batchId !== batchId) {
-      throw conflict('PICKING_SESSION_IDENTITY_MISMATCH', `Inventory session ${sessionId} belongs to another batch`);
-    }
-    const validLifecycle =
-      (plan.status === 'active' && session.status === 'active') ||
-      (plan.status === 'completed' && session.status === 'settled');
-    if (!validLifecycle) {
-      throw conflict(
-        'TOTE_RELEASE_LIFECYCLE_MISMATCH',
-        `Tote release requires active/active or completed/settled plan/session, got ${plan.status}/${session.status}`,
-      );
-    }
-    const [identity] = await tx
-      .select({ id: wmsTables.batchInventorySessionEvents.id })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, sessionId),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-          sql`${wmsTables.batchInventorySessionEvents.payload}->>'planId' = ${planId}`,
-        ),
-      )
-      .limit(1);
-    if (!identity) throw conflict('PICKING_SESSION_PLAN_MISMATCH', 'Inventory session belongs to another plan');
   }
 
   private async loadWorkItemsForUpdate(workItemIds: string[], tx: DbTx): Promise<Map<string, WorkItemRow>> {

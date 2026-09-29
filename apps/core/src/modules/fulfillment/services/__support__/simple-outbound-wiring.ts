@@ -18,6 +18,7 @@ import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
+import { BatchSessionRecoveryService } from '../batch-session-recovery.service';
 import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
@@ -58,7 +59,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const invariant = new FulfillmentInvariantService();
   const audit = new AuditService(dbService);
   const controlled = new BatchControlledStockGuard();
-  const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+  const sessions = new BatchInventorySessionService(dbService, audit);
   const inventoryPublisher = outboxPublisherFor(INVENTORY_STREAM, dbService);
   const shipmentPublisher = outboxPublisherFor(SHIPMENT_STREAM, dbService);
   const fulfillmentV2Publisher = outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService);
@@ -142,7 +143,14 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     barcodes,
     invariant,
   );
-  return { simple, picking, batches, location: new LocationOutboundService(dbService, commands, simple) };
+  return {
+    simple,
+    picking,
+    batches,
+    sessions,
+    recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
+    location: new LocationOutboundService(dbService, commands, simple),
+  };
 }
 
 export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {

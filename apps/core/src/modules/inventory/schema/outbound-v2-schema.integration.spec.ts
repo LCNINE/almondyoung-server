@@ -851,13 +851,16 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           }),
         'outbound_batch_work_items_waiting_operation_id',
       );
-      await tx.insert(wmsTables.outboundBatchWorkItems).values({
-        batchId: f.batch.id,
-        shipmentId: f.shipment.id,
-        status: 'short_pick_recovery',
-        recoveryReason: 'one source was short',
-        waitingOperationId: resumeOperation.id,
-      });
+      const [recoveryWorkItem] = await tx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({
+          batchId: f.batch.id,
+          shipmentId: f.shipment.id,
+          status: 'short_pick_recovery',
+          recoveryReason: 'one source was short',
+          waitingOperationId: resumeOperation.id,
+        })
+        .returning();
       await expectViolation(
         tx,
         (sp) => sp.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, resumeOperation.id)),
@@ -1058,6 +1061,23 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         tx,
         (sp) => sp.insert(wmsTables.pickingSourceAllocations).values(allocation),
         'uq_picking_source_allocations_grain',
+      );
+
+      // workItemId 는 planId 와 별개 grain 을 갖는다(PR 2 이전엔 둘 다 nullable, NULLS DISTINCT 라
+      // 서로 다른 컬럼 값이면 충돌하지 않는다). idx_picking_source_allocations_work_item 은 조회용
+      // 인덱스라 위반을 유발할 수 없어 이 스펙에서 직접 검증하지 않는다.
+      const workItemAllocation = {
+        workItemId: recoveryWorkItem.id,
+        shipmentLineId: f.shipmentLine.id,
+        sourceLocationId: f.location.id,
+        qty: 1,
+        sourceStockVersion: 1,
+      };
+      await tx.insert(wmsTables.pickingSourceAllocations).values(workItemAllocation);
+      await expectViolation(
+        tx,
+        (sp) => sp.insert(wmsTables.pickingSourceAllocations).values(workItemAllocation),
+        'uq_picking_source_allocations_work_item_grain',
       );
       await expectViolation(
         tx,
