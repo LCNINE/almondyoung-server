@@ -13,6 +13,7 @@ import { WaybillController } from './waybill.controller';
 import { WaybillLabelManager } from './waybill-label.manager';
 import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
 import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
+import { WaybillLabelPrintManager } from './waybill-label-print.manager';
 import { WaybillLabelService } from './waybill-label.service';
 import { WaybillLabelController } from './waybill-label.controller';
 import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
@@ -39,6 +40,7 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
     WaybillLabelContentAssembler,
     WaybillLabelPrintRepository,
     WaybillLabelManager,
+    WaybillLabelPrintManager,
     WaybillLabelService,
   ],
   // CarrierGatewayRegistry: 배송추적 폴러(FulfillmentModule)가 캐리어 추적을 부른다(#917).
