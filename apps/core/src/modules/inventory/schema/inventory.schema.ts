@@ -2986,9 +2986,10 @@ export const pickingSourceAllocations = pgTable(
   'picking_source_allocations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    planId: uuid('plan_id')
-      .references(() => pickingPlans.id, { onDelete: 'restrict' })
-      .notNull(),
+    // PR 2(contract)에서 컬럼째 삭제한다. 새 코드는 읽지도 쓰지도 않는다(ADR-0041).
+    planId: uuid('plan_id').references(() => pickingPlans.id, { onDelete: 'restrict' }),
+    // PR 2 에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
+    workItemId: uuid('work_item_id').references(() => outboundBatchWorkItems.id, { onDelete: 'restrict' }),
     shipmentLineId: uuid('shipment_line_id')
       .references(() => shipmentLines.id, { onDelete: 'restrict' })
       .notNull(),
@@ -3005,6 +3006,12 @@ export const pickingSourceAllocations = pgTable(
       t.shipmentLineId,
       t.sourceLocationId,
     ),
+    uqPickingSourceWorkItemGrain: unique('uq_picking_source_allocations_work_item_grain').on(
+      t.workItemId,
+      t.shipmentLineId,
+      t.sourceLocationId,
+    ),
+    idxPickingAllocationWorkItem: index('idx_picking_source_allocations_work_item').on(t.workItemId),
     idxPickingAllocationLine: index('idx_picking_source_allocations_line').on(t.shipmentLineId),
     ckPickingAllocationQty: check('ck_picking_source_allocations_qty_positive', sql`${t.qty} > 0`),
     ckPickingAllocationStockVersion: check(
@@ -3983,6 +3990,10 @@ export const pickingSourceAllocationsRelations = relations(pickingSourceAllocati
   plan: one(pickingPlans, {
     fields: [pickingSourceAllocations.planId],
     references: [pickingPlans.id],
+  }),
+  workItem: one(outboundBatchWorkItems, {
+    fields: [pickingSourceAllocations.workItemId],
+    references: [outboundBatchWorkItems.id],
   }),
   shipmentLine: one(shipmentLines, {
     fields: [pickingSourceAllocations.shipmentLineId],

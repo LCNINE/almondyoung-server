@@ -722,6 +722,13 @@
       "when": 1790276464943,
       "tag": "20260924190104_drop-shop-listings",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790649886096,
+      "tag": "20260929024446_picking-allocations-by-work-item",
+      "breakpoints": true
     }
   ]
 }
