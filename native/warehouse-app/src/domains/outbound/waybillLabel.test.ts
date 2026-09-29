@@ -5,16 +5,20 @@ import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { PrinterError } from '../../core/hardware/print/labelPrinter';
 import {
   EmptyLabelError,
+  LabelConfirmError,
+  confirmLabelPrinted,
+  fetchBatchLabelStates,
   fetchBatchWorkItems,
   fetchWaybillLabel,
   labelErrorMessage,
   printOneLabel,
   printableShipmentIds,
   readBatchPrintedAt,
-  retryTargets,
+  reprintTargets,
   runBatchLabelPrint,
   waybillConflictCode,
   writeBatchPrintedAt,
+  type LabelState,
   type WaybillLabel,
 } from './waybillLabel';
 
@@ -37,6 +41,8 @@ const label = (shipmentId: string): WaybillLabel => ({
   trackingNo: `T-${shipmentId}`,
   format: 'zpl',
   data: `^XA${shipmentId}^XZ`,
+  fingerprint: 'f'.repeat(64),
+  revision: 1,
 });
 
 describe('API 호출', () => {
@@ -84,8 +90,8 @@ describe('409 접두어와 현장 문구', () => {
     [new ConflictError('no prefix at all', 'CONFLICT'), '송장 상태가 바뀌었어요. 관리자에게 문의해 주세요.'],
     [new ApiError('GET /shipments/s1/waybill/label → 404', 404, 'NOT_FOUND'), '출고 정보를 찾을 수 없어요.'],
     [new Error('GET /shipments/s1/waybill/label → 404'), '출고 정보를 찾을 수 없어요.'],
-    [new ApiError('GET /x → 500', 500, 'INTERNAL_SERVER_ERROR'), '라벨을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.'],
-    [new EmptyLabelError('empty'), '라벨을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.'],
+    [new ApiError('GET /x → 500', 500, 'INTERNAL_SERVER_ERROR'), '송장을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.'],
+    [new EmptyLabelError('empty'), '송장을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.'],
     [new PrinterError('OpenPrinterW failed'), '프린터로 보내지 못했어요. 전원·연결과 설정의 프린터 이름을 확인해 주세요.'],
     [new Error('GET /x → 401'), '권한이 없어요. 다시 로그인해 주세요.'],
     [new ApiError('GET /x → 403', 403, 'FORBIDDEN'), '권한이 없어요. 다시 로그인해 주세요.'],
@@ -104,6 +110,7 @@ describe('printOneLabel', () => {
       {
         fetchLabel: async () => ({ ...label('s1'), format: 'tspl' }),
         print,
+        confirm: async () => {},
         target: 'spooler://XP',
       },
       's1'
@@ -116,7 +123,7 @@ describe('printOneLabel', () => {
     const print = vi.fn(async () => {});
     await expect(
       printOneLabel(
-        { fetchLabel: async () => ({ ...label('s1'), data: '' }), print, target: 't' },
+        { fetchLabel: async () => ({ ...label('s1'), data: '' }), print, confirm: async () => {}, target: 't' },
         's1'
       )
     ).rejects.toBeInstanceOf(EmptyLabelError);
@@ -132,6 +139,7 @@ describe('runBatchLabelPrint', () => {
       shipmentIds: ['a', 'b', 'c'],
       target: 't',
       fetchLabel: async (id) => label(id),
+      confirm: async () => {},
       print: async (_t, text) => {
         printed.push(text);
       },
@@ -148,6 +156,7 @@ describe('runBatchLabelPrint', () => {
       target: 't',
       fetchLabel: async (id) => (id === 'a' ? { ...label(id), pages: 3 } : id === 'b' ? { ...label(id), pages: 1 } : label(id)),
       print: async () => {},
+      confirm: async () => {},
     });
     expect(result.printed).toEqual(['a', 'b', 'c']);
     expect(result.sheets).toBe(5);
@@ -162,6 +171,7 @@ describe('runBatchLabelPrint', () => {
         return label(id);
       },
       print: async () => {},
+      confirm: async () => {},
     });
     expect(result.printed).toEqual(['a', 'c']);
     expect(result.skipped).toEqual([
@@ -176,6 +186,7 @@ describe('runBatchLabelPrint', () => {
       target: 't',
       fetchLabel: async (id) => (id === 'a' ? { ...label(id), data: '' } : label(id)),
       print: async () => {},
+      confirm: async () => {},
     });
     expect(result.printed).toEqual(['b']);
     expect(result.skipped.map((s) => s.shipmentId)).toEqual(['a']);
@@ -191,6 +202,7 @@ describe('runBatchLabelPrint', () => {
         fetched.push(id);
         return label(id);
       },
+      confirm: async () => {},
       print: async (_t, text) => {
         if (text === '^XAb^XZ') throw new PrinterError('OpenPrinterW failed');
       },
@@ -211,6 +223,7 @@ describe('runBatchLabelPrint', () => {
         fetched.push(id);
         return label(id);
       },
+      confirm: async () => {},
       print: async (_t, text) => {
         printed.push(text);
       },
@@ -234,19 +247,77 @@ describe('runBatchLabelPrint', () => {
         return label(id);
       },
       print: async () => {},
+      confirm: async () => {},
     });
     expect(maxInFlight).toBe(1);
   });
+});
 
-  it('retryTargets 는 실패·미인쇄를 원래 순서로 돌려준다', () => {
-    expect(
-      retryTargets({
-        printed: ['a'],
-        skipped: [{ shipmentId: 'b', message: 'x' }],
-        notAttempted: ['c', 'd'],
-        printerError: 'p',
-      })
-    ).toEqual(['b', 'c', 'd']);
+describe('printOneLabel — 출력 확인', () => {
+  const fl = { waybillId: 'w', trackingNo: 't', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 2 };
+
+  it('프린터 전송이 성공한 뒤에만 그 지문으로 확인한다', async () => {
+    const order: string[] = [];
+    await printOneLabel(
+      { fetchLabel: async () => fl, print: async () => void order.push('print'), confirm: async (_id, fp) => void order.push(`confirm:${fp.slice(0, 2)}`), target: 'p' },
+      's1',
+    );
+    expect(order).toEqual(['print', 'confirm:ff']);
+  });
+
+  it('프린터가 실패하면 확인하지 않는다', async () => {
+    const confirm = vi.fn();
+    await expect(printOneLabel({ fetchLabel: async () => fl, print: async () => { throw new PrinterError('x'); }, confirm, target: 'p' }, 's1')).rejects.toBeInstanceOf(PrinterError);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('확인이 실패하면 LabelConfirmError(쪽 수 포함) — 종이는 이미 나왔다', async () => {
+    const error = await printOneLabel(
+      { fetchLabel: async () => fl, print: async () => {}, confirm: async () => { throw new ConflictError('LABEL_CONTENT_CHANGED: x', 'CONFLICT'); }, target: 'p' },
+      's1',
+    ).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LabelConfirmError);
+    expect((error as LabelConfirmError).pages).toBe(1);
+  });
+});
+
+describe('labelErrorMessage — 확인 실패', () => {
+  it.each([
+    [new LabelConfirmError(1, new ConflictError('LABEL_CONTENT_CHANGED: x', 'CONFLICT')), '인쇄하는 사이 송장 내용이 바뀌었어요. 방금 나온 송장은 버리고 다시 인쇄해 주세요.'],
+    [new LabelConfirmError(1, new Error('network')), '송장은 나왔지만 출력 확인을 저장하지 못했어요. 다시 인쇄해 주세요.'],
+    [new ConflictError('WAYBILL_LABEL_NOT_ALLOCATED: x', 'CONFLICT'), '작업이 시작되지 않은 박스예요. 배치 화면에서 「작업 시작」을 먼저 눌러 주세요.'],
+  ])('%#', (error, expected) => expect(labelErrorMessage(error)).toBe(expected));
+});
+
+describe('runBatchLabelPrint — 확인 실패는 건너뛰되 장수는 센다', () => {
+  it('확인 실패 건은 skipped 이고 sheets 에 들어간다', async () => {
+    const result = await runBatchLabelPrint({
+      shipmentIds: ['s1'],
+      fetchLabel: async () => ({ waybillId: 'w', trackingNo: 't', format: 'zpl', data: 'x', pages: 2, fingerprint: 'f'.repeat(64), revision: 1 }),
+      print: async () => {},
+      confirm: async () => { throw new Error('network'); },
+      target: 'p',
+    });
+    expect(result.skipped.map((s) => s.shipmentId)).toEqual(['s1']);
+    expect(result.sheets).toBe(2);
+  });
+});
+
+describe('reprintTargets · API', () => {
+  it('never_printed·reprint_required 만', () => {
+    const s = (shipmentId: string, state: LabelState) => ({ shipmentId, workItemId: `w-${shipmentId}`, state, changes: [], issue: null });
+    expect(reprintTargets([s('a', 'current'), s('b', 'never_printed'), s('c', 'reprint_required'), s('d', 'external'), s('e', 'unavailable')])).toEqual(['b', 'c']);
+  });
+
+  it('확인·상태 조회 경로', async () => {
+    const calls: unknown[] = [];
+    const api = { request: (async (o: unknown) => void calls.push(o)) as unknown as ApiClient['request'] } as ApiClient;
+    await confirmLabelPrinted(api, 's1', 'fp');
+    await fetchBatchLabelStates(api, 'b1');
+    expect(calls).toEqual([
+      { method: 'POST', path: '/shipments/s1/waybill/label-prints', body: { fingerprint: 'fp' } },
+      { path: '/outbound-batches/b1/waybill-label-states' },
+    ]);
   });
 });
 

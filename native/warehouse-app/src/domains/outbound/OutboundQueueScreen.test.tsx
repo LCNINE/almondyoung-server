@@ -169,8 +169,10 @@ function renderScreen(
       if (o.path === '/shipments/s-1/waybill/label') {
         return labelDeps.label
           ? labelDeps.label()
-          : { waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' };
+          : { waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 };
       }
+      if (o.path === '/shipments/s-1/waybill/label-prints') return undefined;
+      if (/^\/outbound-batches\/[^/]+\/waybill-label-states$/.test(o.path)) return [];
       if (o.path.startsWith('/outbound-batches/v2')) {
         const [, qs] = o.path.split('?');
         const status = new URLSearchParams(qs ?? '').get('status');
@@ -441,7 +443,7 @@ describe('OutboundQueueScreen', () => {
     const requests: CapturedRequest[] = [];
     renderScreen(requests, undefined, undefined, 'w-1', true);
     await screen.findByText('OB-1');
-    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '송장 인쇄' })).toBeInTheDocument();
   });
 
   it('시작 전 배치에는 「작업 시작」만 있고 송장 인쇄는 없다(station 이어도)', async () => {
@@ -467,21 +469,21 @@ describe('OutboundQueueScreen', () => {
     );
     await screen.findByText('OB-2');
     expect(screen.getByRole('button', { name: '작업 시작' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '라벨 인쇄' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '송장 인쇄' })).toBeNull();
   });
 
   it('시작된 배치에는 「작업 시작」이 없고 station 이면 송장 인쇄가 있다', async () => {
     renderScreen([], undefined, undefined, 'w-1', true);
     await screen.findByText('OB-1');
     expect(screen.queryByRole('button', { name: '작업 시작' })).toBeNull();
-    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '송장 인쇄' })).toBeInTheDocument();
   });
 
   it('기본(핸드헬드)에서는 라벨 인쇄 버튼이 없다', async () => {
     const requests: CapturedRequest[] = [];
     renderScreen(requests);
     await screen.findByText('OB-1');
-    expect(screen.queryByRole('button', { name: '라벨 인쇄' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '송장 인쇄' })).toBeNull();
   });
 
   // 인쇄 중엔 useUnsavedWork 가 라우터를 막는다 — 그때 스캔이 navigate 까지 가면 그 promise 가
@@ -504,7 +506,7 @@ describe('OutboundQueueScreen', () => {
         print: async () => {},
       }
     );
-    await user.click(await screen.findByRole('button', { name: '라벨 인쇄' }));
+    await user.click(await screen.findByRole('button', { name: '송장 인쇄' }));
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', {
         name: '인쇄',
@@ -521,7 +523,7 @@ describe('OutboundQueueScreen', () => {
       requests.filter(({ path }) => path.startsWith('/shipments/by-waybill'))
     ).toHaveLength(0);
 
-    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' });
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 });
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 1');
 
     await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
@@ -570,7 +572,7 @@ describe('OutboundQueueScreen', () => {
       }
     );
     await screen.findByText('OB-2');
-    const [first, second] = screen.getAllByRole('button', { name: '라벨 인쇄' });
+    const [first, second] = screen.getAllByRole('button', { name: '송장 인쇄' });
     await user.click(first);
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', {
@@ -580,7 +582,7 @@ describe('OutboundQueueScreen', () => {
     await screen.findByRole('button', { name: '인쇄 중 0/1' });
     expect(second).toBeDisabled();
 
-    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ' });
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 });
     await screen.findByRole('status');
     expect(second).toBeEnabled();
   });
