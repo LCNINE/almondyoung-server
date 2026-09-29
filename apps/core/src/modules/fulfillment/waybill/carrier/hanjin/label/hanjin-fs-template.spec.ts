@@ -162,7 +162,11 @@ describe('renderHanjinFsLabel', () => {
   });
 
   it('고객 입력의 XML 특수문자를 이스케이프하고 금지 제어문자는 뺀다', () => {
-    const s = fs1({ ...DATA, deliveryMessage: '<script>&\u000B', items: [{ name: 'A&B "펜"', quantity: 1 }] });
+    const s = fs1({
+      ...DATA,
+      deliveryMessage: '<script>&\u000B',
+      items: [{ locationCode: 'A-1', skuId: 's1', name: 'A&B "펜"', quantity: 1 }],
+    });
     expect(s.svg).not.toContain('<script>');
     expect(s.svg).not.toContain('\u000B');
     expect(s.svg).toContain('&lt;script&gt;&amp;');
@@ -197,7 +201,13 @@ describe('renderHanjinFsLabel', () => {
 });
 
 describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
-  const ITEMS = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `품목${i + 1}`, quantity: i + 1 }));
+  const ITEMS = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      locationCode: `A-${i + 1}`,
+      skuId: `s${i + 1}`,
+      name: `품목${i + 1}`,
+      quantity: i + 1,
+    }));
   const pagesOf = (n: number) => renderHanjinFsLabel({ ...DATA, items: ITEMS(n) });
   const namesOn = (page: LabelSpec) =>
     [...page.svg.matchAll(/<text x="4.5" y="(?:57|62.2|67.4|72.6)"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
@@ -269,7 +279,10 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
   });
 
   it('큰 수량이어도 이름이 수량 칸을 덮지 않는다', () => {
-    const [page] = renderHanjinFsLabel({ ...DATA, items: [{ name: '가'.repeat(60), quantity: 1000 }] });
+    const [page] = renderHanjinFsLabel({
+      ...DATA,
+      items: [{ locationCode: 'A-1', skuId: 's1', name: '가'.repeat(60), quantity: 1000 }],
+    });
     const m = /<text x="4.5" y="57" font-size="([\d.]+)">([^<]*)<\/text>/.exec(page.svg);
     if (!m) throw new Error('item name element not found');
     const nameWidthMm = textWidthMm(m[2], Number(m[1]) / PT_TO_MM);
@@ -278,7 +291,10 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
   });
 
   it('SKU명의 XML 특수문자는 이스케이프하고 금지 제어문자는 뺀다', () => {
-    const [page] = renderHanjinFsLabel({ ...DATA, items: [{ name: '<b>&"펜"\u000B', quantity: 1 }] });
+    const [page] = renderHanjinFsLabel({
+      ...DATA,
+      items: [{ locationCode: 'A-1', skuId: 's1', name: '<b>&"펜"\u000B', quantity: 1 }],
+    });
     expect(page.svg).not.toContain('<b>');
     expect(page.svg).not.toContain('\u000B');
     expect(page.svg).toContain('&lt;b&gt;&amp;&quot;펜&quot;');
@@ -288,7 +304,15 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
     ['기본 9줄', { ...DATA, items: ITEMS(9) }],
     [
       '긴 데이터 5줄',
-      { ...LONG, items: Array.from({ length: 5 }, () => ({ name: '가'.repeat(100), quantity: 9999 })) },
+      {
+        ...LONG,
+        items: Array.from({ length: 5 }, () => ({
+          locationCode: 'Z'.repeat(64),
+          skuId: 'sku-long',
+          name: '가'.repeat(100),
+          quantity: 9999,
+        })),
+      },
     ],
   ])('%s: 모든 쪽의 바코드 금지 구역에 잉크가 없고 좌표가 라벨 안이다', (_, data) => {
     for (const page of renderHanjinFsLabel(data)) {

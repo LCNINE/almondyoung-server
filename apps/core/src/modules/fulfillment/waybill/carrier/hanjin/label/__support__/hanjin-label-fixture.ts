@@ -30,12 +30,13 @@ export const HANJIN_LABEL_FIXTURE: HanjinLabelData = {
   deliveryMessage: '문앞 (공동현관 #1234)',
   commodityName: '토익 Speaking 외 1건',
   items: [
-    { name: '토익 Speaking', quantity: 1 },
-    { name: '펜', quantity: 2 },
+    { locationCode: 'A-01-01', skuId: 'sku-1', name: '토익 Speaking', quantity: 1 },
+    { locationCode: 'B-02-03', skuId: 'sku-2', name: '펜', quantity: 2 },
   ],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
   printedDate: '2026-09-28',
+  revision: 1,
   boxIndex: 1,
   boxCount: 1,
 };
@@ -54,5 +55,5 @@ export const HANJIN_LABEL_LONG_FIXTURE: HanjinLabelData = {
   recipient: { ...HANJIN_LABEL_FIXTURE.recipient, detailAddress: '가'.repeat(80) },
   deliveryMessage: '가'.repeat(100),
   commodityName: '가'.repeat(100),
-  items: [{ name: '가'.repeat(100), quantity: 1 }],
+  items: [{ locationCode: 'Z'.repeat(64), skuId: 'sku-long', name: '가'.repeat(100), quantity: 1 }],
 };

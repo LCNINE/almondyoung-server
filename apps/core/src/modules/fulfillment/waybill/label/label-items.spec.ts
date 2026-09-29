@@ -1,39 +1,46 @@
 import { labelItemsOf, paginate } from './label-items';
 
-describe('labelItemsOf', () => {
-  it('같은 SKU 는 한 줄로 합치고 수량을 더한다', () => {
+describe('labelItemsOf — 배정 행을 (로케이션, SKU) 로', () => {
+  const row = (locationCode: string, skuId: string, skuName: string, qty: number) => ({
+    locationCode,
+    skuId,
+    skuName,
+    qty,
+  });
+
+  it('같은 로케이션·같은 SKU 는 한 줄로 합친다(한 SKU 의 여러 출고 줄)', () => {
+    expect(labelItemsOf([row('A-01', 's1', '볼펜', 1), row('A-01', 's1', '볼펜', 2)])).toEqual([
+      { locationCode: 'A-01', skuId: 's1', name: '볼펜', quantity: 3 },
+    ]);
+  });
+
+  it('같은 SKU 라도 로케이션이 다르면 두 줄 — 집는 곳이 다르다', () => {
     expect(
-      labelItemsOf([
-        { skuId: 'a', skuName: '볼펜', quantity: 1 },
-        { skuId: 'b', skuName: '공책', quantity: 2 },
-        { skuId: 'a', skuName: '볼펜', quantity: 3 },
+      labelItemsOf([row('B-02', 's1', '볼펜', 1), row('A-01', 's1', '볼펜', 2)]).map((i) => [
+        i.locationCode,
+        i.quantity,
       ]),
     ).toEqual([
-      { name: '공책', quantity: 2 },
-      { name: '볼펜', quantity: 4 },
+      ['A-01', 2],
+      ['B-02', 1],
     ]);
   });
 
-  it('한글 이름순이고 입력 순서에 흔들리지 않는다', () => {
-    const lines = [
-      { skuId: '1', skuName: '하마', quantity: 1 },
-      { skuId: '2', skuName: '가위', quantity: 1 },
-      { skuId: '3', skuName: '나비', quantity: 1 },
+  it('로케이션 코드 순 → 이름순(ko) → skuId 순, 입력 순서에 흔들리지 않는다', () => {
+    const rows = [
+      row('A-01', 's2', '하마', 1),
+      row('A-01', 's1', '가위', 1),
+      row('A-01', 's3', '가위', 1),
+      row('A-00', 's9', '펜', 1),
     ];
-    expect(labelItemsOf(lines).map((i) => i.name)).toEqual(['가위', '나비', '하마']);
-    expect(labelItemsOf([...lines].reverse())).toEqual(labelItemsOf(lines));
-  });
-
-  it('동명의 다른 SKU 는 합치지 않고 skuId 순 두 줄', () => {
-    const lines = [
-      { skuId: 'b', skuName: '펜', quantity: 1 },
-      { skuId: 'a', skuName: '펜', quantity: 2 },
-    ];
-    expect(labelItemsOf(lines)).toEqual([
-      { name: '펜', quantity: 2 },
-      { name: '펜', quantity: 1 },
+    const items = labelItemsOf(rows);
+    expect(items.map((i) => `${i.locationCode}/${i.name}/${i.skuId}`)).toEqual([
+      'A-00/펜/s9',
+      'A-01/가위/s1',
+      'A-01/가위/s3',
+      'A-01/하마/s2',
     ]);
-    expect(labelItemsOf([...lines].reverse())).toEqual(labelItemsOf(lines));
+    expect(labelItemsOf([...rows].reverse())).toEqual(items);
   });
 
   it('빈 목록은 빈 목록', () => {
