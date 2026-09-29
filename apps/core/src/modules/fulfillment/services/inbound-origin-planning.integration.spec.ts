@@ -107,7 +107,9 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       const f = await fixture(tx);
       const locationContents = await contents(tx, f.origin);
       expect(locationContents.items[0]).toMatchObject({ quantity: 10, inboundPendingQty: 10, generallyMovableQty: 0 });
-      await expect(start(f, tx)).rejects.toMatchObject({ response: { code: 'PICKING_SOURCE_INSUFFICIENT' } });
+      await expect(start(f, tx)).rejects.toMatchObject({
+        response: { code: 'BATCH_START_BLOCKED', errors: [expect.objectContaining({ reason: 'INBOUND_PENDING' })] },
+      });
       await f.kernel.putaway(
         { receiptLineId: f.lineId, toLocationId: f.locationId, quantity: 6, eventKey: randomUUID() },
         tx,

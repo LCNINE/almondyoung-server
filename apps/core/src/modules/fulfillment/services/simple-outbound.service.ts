@@ -181,8 +181,17 @@ export class SimpleOutboundService {
     // 시작 안 된 배치인데 작업 항목이 queued 를 지났다 = 계획 흡수 전에 시작된 배치. 현장 앱이 아는 차단 표지로 낸다.
     if (code === 'FULFILLMENT_INVARIANT_VIOLATION' || code === 'PICKING_BATCH_STATE_CORRUPT')
       return preparationBlocked(batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    if (code === 'PICKING_WAYBILL_NOT_DISPATCHABLE') return preparationBlocked(batchId, null, 'ELIGIBILITY_CHANGED');
-    if (code === 'PICKING_SOURCE_INSUFFICIENT') return preparationBlocked(batchId, null, 'SOURCE_INSUFFICIENT');
+    if (code === 'BATCH_START_BLOCKED') {
+      // 시작 거절은 전 사유를 싣고 온다. 송장 사유가 하나라도 있으면 자격 변경, 아니면 재고 부족으로 옛 표지에 접는다
+      // (사유 전체를 현장에 내보내는 일은 후속 태스크의 몫이다).
+      const errors =
+        typeof response === 'object' && 'errors' in response && Array.isArray(response.errors) ? response.errors : [];
+      const waybill = errors.some(
+        (item: unknown) =>
+          typeof item === 'object' && item !== null && 'reason' in item && item.reason === 'WAYBILL_NOT_READY',
+      );
+      return preparationBlocked(batchId, null, waybill ? 'ELIGIBILITY_CHANGED' : 'SOURCE_INSUFFICIENT');
+    }
     if (code === 'PICKING_SOURCE_STALE') return preparationBlocked(batchId, null, 'REPLAN_LIMIT_REACHED');
     return null;
   }

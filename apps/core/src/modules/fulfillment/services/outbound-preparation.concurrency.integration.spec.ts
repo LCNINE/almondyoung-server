@@ -293,7 +293,7 @@ describeDb('outbound preparation committed concurrency', () => {
         (tx) => startBatch(second.batchId, second.actorId, `start-${randomUUID()}`, tx),
       );
       expect(result.first).toMatchObject({ state: 'started', batchId: first.batchId });
-      expect(result.second).toMatchObject({ ok: false, error: { response: { code: 'PICKING_SOURCE_INSUFFICIENT' } } });
+      expect(result.second).toMatchObject({ ok: false, error: { response: { code: 'BATCH_START_BLOCKED' } } });
 
       expect(
         await observer.db

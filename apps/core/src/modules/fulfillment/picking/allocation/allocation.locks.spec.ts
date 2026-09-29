@@ -54,7 +54,7 @@ describe('assertStartEligibility', () => {
     const trx = { select: () => ({ from: () => ({ where: () => Promise.resolve(reservations) }) }) };
     await expect(
       assertStartEligibility(trx as never, {} as never, claimedSibling, ['shp-1', 'shp-2']),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
   });
 
   it('배치의 shipment 에 라인이 하나도 없으면 PICKING_BATCH_EMPTY', async () => {

@@ -1,14 +1,23 @@
 import { ConflictError } from '@app/shared';
 import { NotFoundException } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { acquireStockAvailabilityLock } from '../../../inventory/shared/locks/stock-availability-lock';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
+import { WAYBILL_TERMINAL_STATUSES } from '../../waybill/waybill.constants';
 import { WaybillService } from '../../waybill/waybill.service';
 import { conflict } from './allocation.errors';
 import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
-import { LockedAggregate, SourceCapacity, UNSTARTED_BATCH_WORK_ITEM_STATUSES, uniqueSorted } from './allocation.types';
+import {
+  LockedAggregate,
+  SourceCapacity,
+  StartBlocker,
+  StartBlockerView,
+  StartBlockReason,
+  UNSTARTED_BATCH_WORK_ITEM_STATUSES,
+  uniqueSorted,
+} from './allocation.types';
 
 /**
  * Layer 2 — each function takes exactly the one collaborator it needs, passed explicitly.
@@ -152,7 +161,8 @@ export async function assertStartEligibility(
   waybills: WaybillService,
   aggregate: LockedAggregate,
   requestedShipmentIds: string[],
-): Promise<void> {
+): Promise<StartBlocker[]> {
+  const blockers: StartBlocker[] = [];
   const requested = requestedShipmentIds.join(',');
   const isStartable = (item: { status: string }) =>
     (UNSTARTED_BATCH_WORK_ITEM_STATUSES as readonly string[]).includes(item.status);
@@ -210,10 +220,17 @@ export async function assertStartEligibility(
     try {
       await waybills.assertDispatchable(shipment.id, trx);
     } catch (error) {
-      // This API uses shared domain errors for missing/stale waybills. Only its
-      // business conflict is a planning validation failure; auth/SQL errors escape.
+      // 송장 문제는 박스 사유로 모은다(스펙 §6 WAYBILL_NOT_READY). 인증·SQL 오류는 그대로 샌다.
       if (!(error instanceof ConflictError)) throw error;
-      throw conflict('PICKING_WAYBILL_NOT_DISPATCHABLE', error.message);
+      blockers.push({
+        shipmentId: shipment.id,
+        reason: 'WAYBILL_NOT_READY',
+        shipmentLineId: null,
+        skuId: null,
+        requiredQty: null,
+        shortQty: null,
+        detail: error.message,
+      });
     }
   }
   const lineIds = aggregate.lines.map((line) => line.id);
@@ -244,13 +261,14 @@ export async function assertStartEligibility(
   if (aggregate.lines.some((line) => reservedByLine.get(line.id) !== line.qty)) {
     throw conflict('PICKING_RESERVATION_MISMATCH', 'Every shipment line must remain fully reserved');
   }
+  return blockers;
 }
 
 export async function lockSourceCapacities(
   trx: DbTx,
   controlledStock: BatchControlledStockGuard,
   aggregate: LockedAggregate,
-): Promise<SourceCapacity[]> {
+): Promise<{ capacities: SourceCapacity[]; inboundPendingBySku: Map<string, number> }> {
   const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
   for (const skuId of skuIds) {
     await acquireStockAvailabilityLock(trx, skuId, aggregate.batch.warehouseId);
@@ -271,7 +289,17 @@ export async function lockSourceCapacities(
     )
     .orderBy(asc(wmsTables.stockLedgers.skuId), asc(wmsTables.stockLedgers.locationId))
     .for('update');
+  // 코드는 잠그지 않고 따로 읽는다 — 원장 조회에 조인하면 FOR UPDATE 가 locations 행까지 잠근다.
+  const locationIds = uniqueSorted(ledgers.map((ledger) => ledger.locationId));
+  const codes = locationIds.length
+    ? await trx
+        .select({ id: wmsTables.locations.id, code: wmsTables.locations.code })
+        .from(wmsTables.locations)
+        .where(inArray(wmsTables.locations.id, locationIds))
+    : [];
+  const codeById = new Map(codes.map((row) => [row.id, row.code]));
   const capacities: SourceCapacity[] = [];
+  const inboundPendingBySku = new Map<string, number>();
   for (const ledger of ledgers) {
     const availability = await controlledStock.getAvailability(
       {
@@ -284,14 +312,59 @@ export async function lockSourceCapacities(
     if (availability.stockVersion !== ledger.version) {
       throw conflict('PICKING_SOURCE_STALE', 'Source stock changed while locking capacity');
     }
+    inboundPendingBySku.set(
+      ledger.skuId,
+      (inboundPendingBySku.get(ledger.skuId) ?? 0) + availability.inboundPendingQty,
+    );
     if (availability.generallyAvailableQty > 0) {
       capacities.push({
         skuId: ledger.skuId,
         sourceLocationId: ledger.locationId,
+        // holds because locations.id is the FK target of stock_ledgers.location_id (restrict), read in the same tx.
+        locationCode: codeById.get(ledger.locationId)!,
         stockVersion: ledger.version,
         remainingQty: availability.generallyAvailableQty,
       });
     }
   }
-  return capacities;
+  return { capacities, inboundPendingBySku };
+}
+
+/**
+ * 차단 목록에 현장이 읽을 이름을 붙이고 정렬한다(박스 → 사유 → 줄). 잠그지 않는다 — 거절 직전의 설명일 뿐이다.
+ */
+export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[]): Promise<StartBlockerView[]> {
+  const skuIds = uniqueSorted(blockers.flatMap((blocker) => (blocker.skuId ? [blocker.skuId] : [])));
+  const shipmentIds = uniqueSorted(blockers.map((blocker) => blocker.shipmentId));
+  const skus = skuIds.length
+    ? await trx
+        .select({ id: wmsTables.skus.id, code: wmsTables.skus.code, name: wmsTables.skus.name })
+        .from(wmsTables.skus)
+        .where(inArray(wmsTables.skus.id, skuIds))
+    : [];
+  const waybills = await trx
+    .select({ shipmentId: wmsTables.waybills.shipmentId, trackingNo: wmsTables.waybills.trackingNo })
+    .from(wmsTables.waybills)
+    .where(
+      and(
+        inArray(wmsTables.waybills.shipmentId, shipmentIds),
+        notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+      ),
+    );
+  const skuById = new Map(skus.map((sku) => [sku.id, sku]));
+  const trackingByShipment = new Map(waybills.map((row) => [row.shipmentId, row.trackingNo]));
+  const order: Record<StartBlockReason, number> = { INBOUND_PENDING: 0, STOCK_SHORT: 1, WAYBILL_NOT_READY: 2 };
+  return blockers
+    .map((blocker) => ({
+      ...blocker,
+      trackingNo: trackingByShipment.get(blocker.shipmentId) ?? null,
+      skuCode: blocker.skuId ? (skuById.get(blocker.skuId)?.code ?? null) : null,
+      skuName: blocker.skuId ? (skuById.get(blocker.skuId)?.name ?? null) : null,
+    }))
+    .sort(
+      (left, right) =>
+        left.shipmentId.localeCompare(right.shipmentId) ||
+        order[left.reason] - order[right.reason] ||
+        (left.shipmentLineId ?? '').localeCompare(right.shipmentLineId ?? ''),
+    );
 }

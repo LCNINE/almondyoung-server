@@ -1,3 +1,4 @@
+import type { StartBlockerView } from './allocation.types';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 /** Canonical: `discrete` (byte-identical to `pick_to_tote`). */
@@ -15,4 +16,16 @@ export function isPlanValidationError(
   return (
     error instanceof BadRequestException || error instanceof ConflictException || error instanceof NotFoundException
   );
+}
+
+/**
+ * 시작 거절 — 아무것도 쓰지 않았다. `errors` 는 전역 필터가 응답 본문에 그대로 싣는 필드다(`details` 는
+ * 준비 차단 전용 허용 목록이라 쓰지 않는다).
+ */
+export function startBlocked(batchId: string, blockers: StartBlockerView[]): ConflictException {
+  return new ConflictException({
+    code: 'BATCH_START_BLOCKED',
+    message: `Batch ${batchId} cannot start: ${blockers.length} blocker(s)`,
+    errors: blockers,
+  });
 }

@@ -611,15 +611,19 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
     workItems: Object.values(state.workItems),
   };
   jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
-  jest.mocked(assertStartEligibility).mockResolvedValue(undefined);
-  jest.mocked(lockSourceCapacities).mockResolvedValue([
-    {
-      skuId: PICKING_CONTRACT_IDS.sku,
-      sourceLocationId: PICKING_CONTRACT_IDS.source,
-      stockVersion: 7,
-      remainingQty: 5,
-    },
-  ]);
+  jest.mocked(assertStartEligibility).mockResolvedValue([]);
+  jest.mocked(lockSourceCapacities).mockResolvedValue({
+    capacities: [
+      {
+        skuId: PICKING_CONTRACT_IDS.sku,
+        sourceLocationId: PICKING_CONTRACT_IDS.source,
+        locationCode: 'A-01',
+        stockVersion: 7,
+        remainingQty: 5,
+      },
+    ],
+    inboundPendingBySku: new Map(),
+  });
   jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
   // 옛 계획 구성원 검사가 하던 «은퇴한 박스는 못 집는다»는 이제 작업 항목 상태가 말한다 —
   // 실제 `lockAndAssertPickerClaim` 은 `status !== 'picking'` 이면 PICKING_STALE_CLAIM 을 던진다.

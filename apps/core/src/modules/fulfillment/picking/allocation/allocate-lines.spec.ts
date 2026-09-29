@@ -13,7 +13,10 @@ const line = (id: string, skuId: string, qty: number, workItemId = `wi-${id}`) =
 
 describe('allocateLines — E8 배정 규칙', () => {
   it('한 로케이션에서 줄 전량을 채울 수 있으면 그곳에서만 — 앞 코드의 1개짜리로 쪼개지 않는다', () => {
-    const { drafts, shortages } = allocateLines([line('l1', 'sku', 2)], [cap('sku', 'loc-a', 'A-01', 1), cap('sku', 'loc-b', 'B-01', 5)]);
+    const { drafts, shortages } = allocateLines(
+      [line('l1', 'sku', 2)],
+      [cap('sku', 'loc-a', 'A-01', 1), cap('sku', 'loc-b', 'B-01', 5)],
+    );
     expect(shortages).toEqual([]);
     expect(drafts).toEqual([
       { workItemId: 'wi-l1', shipmentLineId: 'l1', sourceLocationId: 'loc-b', qty: 2, sourceStockVersion: 1 },
@@ -21,7 +24,10 @@ describe('allocateLines — E8 배정 규칙', () => {
   });
 
   it('전량 가능한 곳이 여럿이면 로케이션 코드 순 첫째(id 순이 아니다)', () => {
-    const { drafts } = allocateLines([line('l1', 'sku', 2)], [cap('sku', 'id-1', 'C-01', 9), cap('sku', 'id-9', 'B-01', 9)]);
+    const { drafts } = allocateLines(
+      [line('l1', 'sku', 2)],
+      [cap('sku', 'id-1', 'C-01', 9), cap('sku', 'id-9', 'B-01', 9)],
+    );
     expect(drafts.map((d) => d.sourceLocationId)).toEqual(['id-9']);
   });
 
@@ -98,11 +104,7 @@ describe('allocateLines — 모자란 줄 보고', () => {
   });
 
   it('적치 대기분은 줄 사이에 누적 소진된다 — 둘째 줄은 남은 대기분으로 판정', () => {
-    const { shortages } = allocateLines(
-      [line('l1', 'sku', 2), line('l2', 'sku', 2)],
-      [],
-      new Map([['sku', 3]]),
-    );
+    const { shortages } = allocateLines([line('l1', 'sku', 2), line('l2', 'sku', 2)], [], new Map([['sku', 3]]));
     expect(shortages.map((s) => s.reason)).toEqual(['INBOUND_PENDING', 'STOCK_SHORT']);
   });
 });

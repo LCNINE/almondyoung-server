@@ -56,9 +56,7 @@ export function allocateLines(
   const drafts: AllocationDraft[] = [];
   const shortages: LineShortage[] = [];
   for (const line of [...lines].sort(byId)) {
-    const sources = remaining
-      .filter((source) => source.skuId === line.skuId && source.remainingQty > 0)
-      .sort(byCode);
+    const sources = remaining.filter((source) => source.skuId === line.skuId && source.remainingQty > 0).sort(byCode);
     const whole = sources.find((source) => source.remainingQty >= line.qty);
     let needed = line.qty;
     for (const source of whole ? [whole] : sources) {

@@ -78,10 +78,16 @@ const aggregate = {
 beforeEach(() => {
   jest.resetAllMocks();
   mockedLocks.lockAggregate.mockResolvedValue(aggregate as never);
-  mockedLocks.assertStartEligibility.mockResolvedValue(undefined);
-  mockedLocks.lockSourceCapacities.mockResolvedValue([
-    { skuId: 'sku-1', sourceLocationId: 'loc-1', stockVersion: 4, remainingQty: 10 },
-  ]);
+  mockedLocks.assertStartEligibility.mockResolvedValue([]);
+  mockedLocks.lockSourceCapacities.mockResolvedValue({
+    capacities: [
+      { skuId: 'sku-1', sourceLocationId: 'loc-1', locationCode: 'A-01', stockVersion: 4, remainingQty: 10 },
+    ],
+    inboundPendingBySku: new Map(),
+  });
+  mockedLocks.describeStartBlockers.mockImplementation(async (_trx, blockers) =>
+    blockers.map((blocker) => ({ ...blocker, trackingNo: null, skuCode: null, skuName: null })),
+  );
 });
 
 describe('startBatchPicking', () => {
@@ -227,15 +233,45 @@ describe('startBatchPicking', () => {
     expect(d.sessions.startSession).not.toHaveBeenCalled();
   });
 
-  it('위치 재고가 모자라면 배정 행을 하나도 넣지 않는다', async () => {
-    mockedLocks.lockSourceCapacities.mockResolvedValue([
-      { skuId: 'sku-1', sourceLocationId: 'loc-1', stockVersion: 4, remainingQty: 2 },
-    ]);
+  it('모자란 줄이 있으면 배정·세션·started_at 을 아무것도 쓰지 않고 BATCH_START_BLOCKED 로 전부 보고한다', async () => {
     const fake = fakeTrx([[{ id: 'batch-1', startedAt: null }], [{ shipmentId: 'shp-1' }, { shipmentId: 'shp-2' }]]);
     trxHolder.trx = fake.trx;
-    await expect(
-      startBatchPicking(deps(), 'discrete', { batchId: 'batch-1', actorId: 'a', idempotencyKey: 'k' }),
-    ).rejects.toBeInstanceOf(ConflictException);
-    expect(fake.inserted).toHaveLength(0);
+    mockedLocks.lockSourceCapacities.mockResolvedValue({
+      capacities: [],
+      inboundPendingBySku: new Map([['sku-1', 2]]),
+    });
+    mockedLocks.assertStartEligibility.mockResolvedValue([
+      {
+        shipmentId: 'shp-2',
+        reason: 'WAYBILL_NOT_READY',
+        shipmentLineId: null,
+        skuId: null,
+        requiredQty: null,
+        shortQty: null,
+        detail: 'WAYBILL_STALE: x',
+      },
+    ]);
+    const d = deps();
+
+    const error = await startBatchPicking(d, 'discrete', {
+      batchId: 'batch-1',
+      actorId: 'actor',
+      idempotencyKey: 'k',
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    const body = (error as ConflictException).getResponse() as {
+      code: string;
+      errors: Array<{ shipmentId: string; reason: string }>;
+    };
+    expect(body.code).toBe('BATCH_START_BLOCKED');
+    expect(body.errors.map((b) => [b.shipmentId, b.reason])).toEqual([
+      ['shp-1', 'INBOUND_PENDING'],
+      ['shp-2', 'STOCK_SHORT'],
+      ['shp-2', 'WAYBILL_NOT_READY'],
+    ]);
+    expect(fake.inserted).toEqual([]);
+    expect(fake.updated).toEqual([]);
+    expect(d.sessions.startSession).not.toHaveBeenCalled();
   });
 });
