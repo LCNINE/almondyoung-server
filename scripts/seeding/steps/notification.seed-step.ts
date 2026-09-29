@@ -747,9 +747,10 @@ export const BILLING_NOTICE_TEMPLATES = [
     [
       '#{name}님, 멤버십 #{period} 요금 출금이 모두 실패해 멤버십이 해지되었어요.',
       '이용하신 기간의 요금 #{arrearsAmount}이 미납으로 남아 있어요.',
-      '미납 요금을 결제하셔야 멤버십에 다시 가입할 수 있어요.',
+      '자세한 내용은 멤버십 화면에서 확인하실 수 있어요.',
     ].join('\n'),
-    webLink('미납 요금 결제하기', '/mypage/membership'),
+    // 알림톡은 결제·납부를 유도하는 문구와 버튼을 허용하지 않는다. 결제는 멤버십 화면에서 한다.
+    webLink('멤버십 보기', '/mypage/membership'),
     {
       name: { type: 'string', required: true },
       period: { type: 'string', required: true },
