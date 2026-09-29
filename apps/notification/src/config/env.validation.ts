@@ -65,6 +65,9 @@ export const notificationEnvSchema = z.object({
   USER_SERVICE_URL: z.string().url().optional(),
   USER_SERVICE_INTERNAL_TOKEN: z.string().optional(),
   USER_SERVICE_INTERNAL_KEY: z.string().optional(),
+  // 알림톡 대상 «멤버십 회원만» 의 명단. 없으면 그 선택지만 막힌다.
+  MEMBERSHIP_SERVICE_URL: z.string().url().optional(),
+  MEMBERSHIP_INTERNAL_KEY: z.string().optional(),
 
   // SMS Gate(안드로이드 발송폰 중계). 계정이 없으면 폰 발송 디스패처가 돌지 않는다.
   SMS_GATE_BASE_URL: z.string().url().optional(),

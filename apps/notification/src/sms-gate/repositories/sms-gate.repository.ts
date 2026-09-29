@@ -408,6 +408,7 @@ export class SmsGateRepository {
       .select({
         id: smsRecipientGroups.id,
         name: smsRecipientGroups.name,
+        source: smsRecipientGroups.source,
         createdBy: smsRecipientGroups.createdBy,
         createdAt: smsRecipientGroups.createdAt,
         updatedAt: smsRecipientGroups.updatedAt,
@@ -429,8 +430,8 @@ export class SmsGateRepository {
     return row;
   }
 
-  async createRecipientGroup(name: string, createdBy: string): Promise<SmsRecipientGroup> {
-    const [row] = await this.dbService.db.insert(smsRecipientGroups).values({ name, createdBy }).returning();
+  async createRecipientGroup(name: string, createdBy: string, source?: 'supabase'): Promise<SmsRecipientGroup> {
+    const [row] = await this.dbService.db.insert(smsRecipientGroups).values({ name, createdBy, source }).returning();
     return row;
   }
 

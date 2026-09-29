@@ -23,6 +23,7 @@ import { TemplateModule } from './template/template.module';
 import { BulkModule } from './bulk/bulk.module';
 import { DeviceModule } from './device/device.module';
 import { SmsGateModule } from './sms-gate/sms-gate.module';
+import { AlimtalkModule } from './alimtalk/alimtalk.module';
 import { EventTraceController } from './shared/controllers/event-trace.controller';
 
 @Module({
@@ -65,6 +66,7 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
     SCHEDULE_ROOT,
     CronOnceModule,
     SmsGateModule,
+    AlimtalkModule,
   ],
   controllers: [
     HealthController,

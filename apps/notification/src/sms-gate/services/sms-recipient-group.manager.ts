@@ -39,7 +39,7 @@ export class SmsRecipientGroupManager {
   async importSupabase(dto: ImportSupabaseGroupDto, createdBy: string): Promise<GroupRecipientsResult> {
     await this.assertNameFree(dto.name);
     const places = await this.supabasePlacesClient.fetchPlaces(dto.category);
-    const group = await this.repository.createRecipientGroup(dto.name.trim(), createdBy);
+    const group = await this.repository.createRecipientGroup(dto.name.trim(), createdBy, 'supabase');
     return this.insert(
       group.id,
       places.map((place) => ({ name: place.shop_name, phone: place.phone })),
