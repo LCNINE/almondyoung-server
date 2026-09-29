@@ -60,7 +60,7 @@ const REGION_TEXT: Readonly<Record<string, string>> = {
 };
 
 // ⑬ 운임지급 기준. 선·착불(PP/CC)은 운송료 금액을 반드시 찍어야 하는데 우리에게 출처가 없다(스펙 §4.2).
-// CD 의 명칭은 포털 FS 샘플 표기를 따른다(정본 §4.2 는 「받지신용」 — 스펙 §12 열린 질문).
+// CD 는 「발지신용」(발송지 쪽 신용 — CT 착지신용의 짝). 포털 FS 샘플 표기와 같다. 정본 §4.2 의 옛 「받지신용」은 오기였다.
 const FREIGHT_TEXT: Readonly<Record<string, string>> = { CD: '발지신용' };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
