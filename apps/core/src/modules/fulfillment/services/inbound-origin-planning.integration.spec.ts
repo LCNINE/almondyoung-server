@@ -9,8 +9,8 @@ import { StockProjectionReader } from '../../inventory/stock-projection/services
 import { StockProjectionService } from '../../inventory/stock-projection/services/stock-projection.service';
 import { StockProjectionController } from '../../inventory/stock-projection/controllers/stock-projection.controller';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { planPicking } from '../picking/plan/picking-plan';
-import { PickingPlanDeps } from '../picking/plan/picking-plan.types';
+import { planPicking } from '../picking/allocation/legacy-plan';
+import { PickingPlanDeps } from '../picking/allocation/allocation.types';
 import { WaybillService } from '../waybill/waybill.service';
 import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';

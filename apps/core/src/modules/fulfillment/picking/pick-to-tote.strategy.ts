@@ -26,7 +26,7 @@ import {
   UnpickShipmentInput,
   UnpickShipmentResult,
 } from './picking-strategy.interface';
-import { conflict } from './plan/picking-plan.errors';
+import { conflict } from './allocation/allocation.errors';
 import {
   assertActivePlanSession,
   assertPlanMembers,
@@ -37,8 +37,8 @@ import {
   loadShipmentAllocations,
   loadWorkItem,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
 
 type ToteRow = typeof wmsTables.totes.$inferSelect;
 type ToteAssignmentRow = typeof wmsTables.shipmentToteAssignments.$inferSelect;

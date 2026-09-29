@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { lockAggregate } from '../picking/plan/picking-plan.locks';
-import { conflict } from '../picking/plan/picking-plan.errors';
+import { lockAggregate } from '../picking/allocation/allocation.locks';
+import { conflict } from '../picking/allocation/allocation.errors';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 
 /** Lock the recursive component first; a work-item or batch lock first inverts planning's order. */

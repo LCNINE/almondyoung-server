@@ -16,7 +16,7 @@ import {
   UnpickShipmentInput,
   UnpickShipmentResult,
 } from './picking-strategy.interface';
-import { conflict } from './plan/picking-plan.errors';
+import { conflict } from './allocation/allocation.errors';
 import {
   assertActivePlanSession,
   assertPlanMembers,
@@ -27,8 +27,8 @@ import {
   loadShipmentAllocations,
   loadWorkItem,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { ShipmentCustodyBalance } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { ShipmentCustodyBalance } from './allocation/allocation.types';
 
 const PACKING_REF_PREFIX = 'work-item:';
 

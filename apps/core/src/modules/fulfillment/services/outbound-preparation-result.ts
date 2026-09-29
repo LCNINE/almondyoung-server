@@ -1,4 +1,4 @@
-import type { PlanInvalidationCode } from '../picking/plan/plan-invalidation';
+import type { PlanInvalidationCode } from '../picking/allocation/plan-invalidation';
 import type { SimpleOutboundContext } from './simple-outbound.service';
 
 export type PreparationBlockReason =

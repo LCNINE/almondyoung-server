@@ -1,4 +1,4 @@
-import type { PlanInvalidationCode } from '../picking/plan/plan-invalidation';
+import type { PlanInvalidationCode } from '../picking/allocation/plan-invalidation';
 export function canReplaceDraft(input: {
   reasonCode?: PlanInvalidationCode;
   supportedIndividual: boolean;

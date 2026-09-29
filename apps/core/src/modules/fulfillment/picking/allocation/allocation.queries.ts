@@ -2,9 +2,9 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { PickingStrategyName, PickingPlanResult } from '../picking-strategy.interface';
-import { conflict } from './picking-plan.errors';
+import { conflict } from './allocation.errors';
 import { PlanInvalidation } from './plan-invalidation';
-import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './picking-plan.types';
+import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation.types';
 
 /**
  * Layer 1 — no collaborators. Every function here takes an open `trx` plus plain values, so a fake

@@ -8,16 +8,16 @@ import {
   PlanPickingInput,
   StartPickingInput,
 } from '../picking-strategy.interface';
-import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
+import { conflict, errorMessage, isPlanValidationError } from './allocation.errors';
 import { PlanInvalidation } from './plan-invalidation';
 import {
   assertPlanningEligibility,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
-} from './picking-plan.locks';
-import { invalidateDraftPlan, requiredIds } from './picking-plan.queries';
-import { LockedAggregate, PickingPlanDeps, uniqueSorted } from './picking-plan.types';
+} from './allocation.locks';
+import { invalidateDraftPlan, requiredIds } from './allocation.queries';
+import { LockedAggregate, PickingPlanDeps, uniqueSorted } from './allocation.types';
 
 /**
  * The picking plan layer, shared by every picking strategy.

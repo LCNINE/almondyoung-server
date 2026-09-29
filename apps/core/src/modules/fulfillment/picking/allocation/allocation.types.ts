@@ -1,4 +1,4 @@
-import { wmsTables } from '../../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
 import { BatchInventorySessionService } from '../../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
@@ -60,10 +60,7 @@ export interface ShipmentCustodyBalance {
   qty: number;
 }
 
-/**
- * Collaborators the plan layer needs. Measured: the extracted methods use exactly these six and
- * never `dbService` — every one of them receives an open `trx` instead (ADR-0030).
- */
+/** @deprecated legacy-plan.ts 전용. Task 3 에서 삭제한다. */
 export interface PickingPlanDeps {
   commands: FulfillmentCommandService;
   workflowGate: FulfillmentWorkflowGate;
@@ -71,6 +68,52 @@ export interface PickingPlanDeps {
   invariant: FulfillmentInvariantService;
   controlledStock: BatchControlledStockGuard;
   waybills: WaybillService;
+}
+
+/**
+ * 세션 인계가 받는 배정 한 줄. `allocation.locks.ts`/`batch-start.ts` 가 만들고
+ * Task 3 의 `BatchInventorySessionService.startSession` 이 그대로 소비한다.
+ */
+export interface SessionStartAllocation {
+  id: string;
+  workItemId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  sourceStockVersion: number;
+}
+
+/**
+ * Task 3 에서 `BatchInventorySessionService` 가 구현할 포트. 이 Task 에서는 단위 테스트가
+ * 가짜로 채운다 — 배치 시작 진입점이 세션 계층 구현을 기다리지 않고 먼저 자리를 잡기 위해서다.
+ */
+export interface BatchStartSessionPort {
+  startSession(
+    input: { batchId: string; actorId: string; allocations: SessionStartAllocation[] },
+    tx: DbTx,
+  ): Promise<{ id: string; status: string }>;
+}
+
+/**
+ * Collaborators the batch-start entry point needs. Measured: the extracted methods use exactly
+ * these six and never `dbService` — every one of them receives an open `trx` instead (ADR-0030).
+ */
+export interface BatchStartDeps {
+  commands: FulfillmentCommandService;
+  workflowGate: FulfillmentWorkflowGate;
+  sessions: BatchStartSessionPort;
+  invariant: FulfillmentInvariantService;
+  controlledStock: BatchControlledStockGuard;
+  waybills: WaybillService;
+}
+
+export interface BatchStartResult {
+  state: 'started';
+  operationId: string;
+  batchId: string;
+  sessionId: string;
+  status: string;
 }
 
 export function uniqueSorted(values: readonly string[]): string[] {

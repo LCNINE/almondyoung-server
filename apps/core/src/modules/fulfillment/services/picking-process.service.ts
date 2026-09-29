@@ -11,8 +11,8 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { WaybillService } from '../waybill/waybill.service';
-import { planPicking, startPicking } from '../picking/plan/picking-plan';
-import { PickingPlanDeps } from '../picking/plan/picking-plan.types';
+import { planPicking, startPicking } from '../picking/allocation/legacy-plan';
+import { PickingPlanDeps } from '../picking/allocation/allocation.types';
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,

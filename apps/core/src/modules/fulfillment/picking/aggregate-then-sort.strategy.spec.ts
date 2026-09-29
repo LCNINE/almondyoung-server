@@ -15,13 +15,13 @@ import {
   HandoffPickingInput,
   UnpickShipmentInput,
 } from './picking-strategy.interface';
-import { planPicking, startPicking } from './plan/picking-plan';
+import { planPicking, startPicking } from './allocation/legacy-plan';
 import {
   assertPlanningEligibility,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
-} from './plan/picking-plan.locks';
+} from './allocation/allocation.locks';
 import {
   assertActivePlanSession,
   assertPlanMembers,
@@ -30,14 +30,14 @@ import {
   loadShipmentAllocations,
   loadWorkItem,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { PickingPlanDeps } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { PickingPlanDeps } from './allocation/allocation.types';
 
 // 계획 층은 전략 밖의 공유 구현이고 자체 스펙이 있다. 여기서는 custody 를 결정적으로
 // 돌리기 위한 만족된 선행조건으로만 stub 한다.
-jest.mock('./plan/picking-plan.locks');
-jest.mock('./plan/picking-plan.queries', () => ({
-  ...jest.requireActual('./plan/picking-plan.queries'),
+jest.mock('./allocation/allocation.locks');
+jest.mock('./allocation/allocation.queries', () => ({
+  ...jest.requireActual('./allocation/allocation.queries'),
   assertActivePlanSession: jest.fn(),
   assertPlanMembers: jest.fn(),
   databaseNow: jest.fn(),

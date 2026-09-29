@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DbTx } from '../../../inventory/schema/inventory.schema';
-import { planPicking, startPicking } from './picking-plan';
-import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
+import { planPicking, startPicking } from './legacy-plan';
+import { conflict, errorMessage, isPlanValidationError } from './allocation.errors';
 import {
   assertPlanningEligibility,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
-} from './picking-plan.locks';
+} from './allocation.locks';
 import {
   assertPlanMembers,
   assertPositiveQuantity,
@@ -19,15 +19,15 @@ import {
   invalidateDraftPlan,
   loadWorkItem,
   requiredIds,
-} from './picking-plan.queries';
-import { PickingPlanDeps } from './picking-plan.types';
+} from './allocation.queries';
+import { PickingPlanDeps } from './allocation.types';
 
 // Layer 2 does real locking against a real database; layer 1 and the entry points are what this
 // spec pins down. The DB-gated integration specs cover layer 2 (ADR-0030 §5).
-jest.mock('./picking-plan.locks');
+jest.mock('./allocation.locks');
 
 const { planStalenessReason: actualPlanStalenessReason } =
-  jest.requireActual<typeof import('./picking-plan.locks')>('./picking-plan.locks');
+  jest.requireActual<typeof import('./allocation.locks')>('./allocation.locks');
 
 const IDS = Object.freeze({
   actor: 'worker-1',

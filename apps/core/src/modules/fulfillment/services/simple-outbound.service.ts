@@ -32,7 +32,7 @@ import {
   OutboundPreparationBlocked,
 } from './outbound-preparation-result';
 import { PickingStartResult } from '../picking/picking-strategy.interface';
-import { isPlanValidationError } from '../picking/plan/picking-plan.errors';
+import { isPlanValidationError } from '../picking/allocation/allocation.errors';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
 // A structured key keeps new nested commands disjoint from every legacy string key.
@@ -797,7 +797,7 @@ export class SimpleOutboundService {
     step = '',
   ): Promise<string | Extract<PickingStartResult, { state: 'invalidated' }>> {
     // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
-    // `this.picking.plan()` 이 부르는 `plan/picking-plan.ts` 의 `planPicking()`
+    // `this.picking.plan()` 이 부르는 `allocation/legacy-plan.ts` 의 `planPicking()`
     // (SELECT … FOR UPDATE + idempotent commands.execute)이 진다. 이 쿼리는 이미 있는
     // plan 을 재사용해 중복 plan() 호출을 피하는 최적화일 뿐, race 를 막는 가드로
     // 취급하지 말 것.

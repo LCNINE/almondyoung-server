@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
 import { DiscreteScanPickingInput, PickingScanResult } from './picking-strategy.interface';
-import { assertPlanMembers } from './plan/picking-plan.queries';
+import { assertPlanMembers } from './allocation/allocation.queries';
 
 // Plan membership is a plan-layer query with its own spec; here it is a satisfied precondition.
 // Everything else in the plan layer stays real so the `tx.select` call-order assertions below
 // keep measuring the scan path itself.
-jest.mock('./plan/picking-plan.queries', () => ({
-  ...jest.requireActual('./plan/picking-plan.queries'),
+jest.mock('./allocation/allocation.queries', () => ({
+  ...jest.requireActual('./allocation/allocation.queries'),
   assertPlanMembers: jest.fn(),
 }));
 

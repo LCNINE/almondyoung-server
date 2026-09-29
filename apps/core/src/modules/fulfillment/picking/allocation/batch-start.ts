@@ -1,0 +1,127 @@
+import { NotFoundException } from '@nestjs/common';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
+import { PickingStrategyName } from '../picking-strategy.interface';
+import { allocateLines } from './allocate-lines';
+import { conflict } from './allocation.errors';
+import { assertStartEligibility, lockAggregate, lockSourceCapacities } from './allocation.locks';
+import { BatchStartDeps, BatchStartResult, SessionStartAllocation, uniqueSorted } from './allocation.types';
+
+export interface StartBatchPickingInput {
+  batchId: string;
+  actorId: string;
+  idempotencyKey: string;
+}
+
+/**
+ * 배치 시작 = 대기 작업 항목 전부를 한 트랜잭션에서 배정하고 재고 세션에 인계한다(ADR-0041).
+ * 옛 «계획 초안 → 시작» 두 단계를 합친 것이다. 배정과 인계가 한 트랜잭션이라 초안이 낡을 틈이 없다.
+ *
+ * 이미 시작된 배치는 활성 세션을 그대로 돌려준다 — 단순출고는 박스마다 이 명령을 다른 키로 부른다.
+ */
+export async function startBatchPicking(
+  deps: BatchStartDeps,
+  strategyName: PickingStrategyName,
+  input: StartBatchPickingInput,
+  tx?: DbTx,
+): Promise<BatchStartResult> {
+  const commandType = `picking.${strategyName}.start`;
+  deps.workflowGate.assertV2MutationAllowed(commandType);
+  return deps.commands.execute<BatchStartResult>(
+    {
+      commandType,
+      idempotencyKey: input.idempotencyKey,
+      canonicalRequest: { strategy: strategyName, batchId: input.batchId, actorId: input.actorId },
+    },
+    async (trx, commandRequestId) => {
+      const [batch] = await trx
+        .select({ id: wmsTables.outboundBatches.id, startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, input.batchId))
+        .limit(1);
+      if (!batch) throw new NotFoundException(`Outbound batch ${input.batchId} not found`);
+      if (batch.startedAt) {
+        const response = await existingStart(trx, input.batchId, commandRequestId);
+        return { response, resourceType: 'batch_inventory_session', resourceId: response.sessionId };
+      }
+
+      const queued = await trx
+        .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+            eq(wmsTables.outboundBatchWorkItems.status, 'queued'),
+          ),
+        )
+        .orderBy(asc(wmsTables.outboundBatchWorkItems.shipmentId));
+      const shipmentIds = uniqueSorted(queued.map((row) => row.shipmentId));
+      if (!shipmentIds.length) throw conflict('PICKING_BATCH_EMPTY', `Batch ${input.batchId} has no queued work`);
+
+      const aggregate = await lockAggregate(trx, deps.invariant, input.batchId, shipmentIds);
+      if (aggregate.batch.startedAt) {
+        // 잠금을 기다리는 사이 다른 스캔이 시작했다 — 그 세션으로 합류한다.
+        const response = await existingStart(trx, input.batchId, commandRequestId);
+        return { response, resourceType: 'batch_inventory_session', resourceId: response.sessionId };
+      }
+      await assertStartEligibility(trx, deps.waybills, aggregate, shipmentIds);
+
+      const workItemByShipment = new Map(aggregate.workItems.map((item) => [item.shipmentId, item.id]));
+      const capacities = await lockSourceCapacities(trx, deps.controlledStock, aggregate);
+      const drafts = allocateLines(
+        aggregate.lines.map((line) => ({
+          id: line.id,
+          skuId: line.skuId,
+          qty: line.qty,
+          workItemId: workItemByShipment.get(line.shipmentId)!,
+        })),
+        capacities,
+      );
+      const inserted = await trx.insert(wmsTables.pickingSourceAllocations).values(drafts).returning();
+      const skuByLine = new Map(aggregate.lines.map((line) => [line.id, line.skuId]));
+      const allocations: SessionStartAllocation[] = inserted.map((row) => ({
+        id: row.id,
+        workItemId: row.workItemId!,
+        shipmentLineId: row.shipmentLineId,
+        skuId: skuByLine.get(row.shipmentLineId)!,
+        sourceLocationId: row.sourceLocationId,
+        quantity: row.qty,
+        sourceStockVersion: row.sourceStockVersion,
+      }));
+      const session = await deps.sessions.startSession(
+        { batchId: input.batchId, actorId: input.actorId, allocations },
+        trx,
+      );
+      const [marked] = await trx
+        .update(wmsTables.outboundBatches)
+        .set({ startedAt: sql`now()` })
+        .where(and(eq(wmsTables.outboundBatches.id, input.batchId), isNull(wmsTables.outboundBatches.startedAt)))
+        .returning({ id: wmsTables.outboundBatches.id });
+      if (!marked) throw conflict('PICKING_BATCH_STALE', `Batch ${input.batchId} started concurrently`);
+      const response: BatchStartResult = {
+        state: 'started',
+        operationId: commandRequestId,
+        batchId: input.batchId,
+        sessionId: session.id,
+        status: session.status,
+      };
+      return { response, resourceType: 'batch_inventory_session', resourceId: session.id };
+    },
+    tx,
+  );
+}
+
+async function existingStart(trx: DbTx, batchId: string, operationId: string): Promise<BatchStartResult> {
+  const [session] = await trx
+    .select({ id: wmsTables.batchInventorySessions.id, status: wmsTables.batchInventorySessions.status })
+    .from(wmsTables.batchInventorySessions)
+    .where(
+      and(
+        eq(wmsTables.batchInventorySessions.batchId, batchId),
+        inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+      ),
+    )
+    .limit(1);
+  if (!session) throw conflict('PICKING_BATCH_ALREADY_FINISHED', `Batch ${batchId} has no open inventory session`);
+  return { state: 'started', operationId, batchId, sessionId: session.id, status: session.status };
+}

@@ -2,7 +2,7 @@ import * as preparationLocks from './outbound-preparation.locks';
 import { SimpleOutboundService } from './simple-outbound.service';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import * as planLocks from '../picking/plan/picking-plan.locks';
+import * as planLocks from '../picking/allocation/allocation.locks';
 import { randomUUID } from 'crypto';
 import { eq, sql as sqlQuery } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';

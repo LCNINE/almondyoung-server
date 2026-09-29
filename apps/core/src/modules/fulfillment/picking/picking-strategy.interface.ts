@@ -1,5 +1,5 @@
 import { DbTx } from '../../inventory/schema/inventory.schema';
-import { PlanInvalidationCode } from './plan/plan-invalidation';
+import { PlanInvalidationCode } from './allocation/plan-invalidation';
 
 export type PickingStrategyName = 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
 
@@ -343,7 +343,7 @@ export interface UnpickShipmentResult {
 
 /**
  * A picking strategy owns only what differs per method: custody movement and its scans.
- * Planning (`plan` / `start`) is strategy-agnostic and lives in `plan/picking-plan.ts` — measured
+ * Planning (`plan` / `start`) is strategy-agnostic and lives in `allocation/legacy-plan.ts` — measured
  * diff across the three strategies was 0~4 lines, all of them the strategy name (ADR-0030).
  */
 export interface PickingStrategy {

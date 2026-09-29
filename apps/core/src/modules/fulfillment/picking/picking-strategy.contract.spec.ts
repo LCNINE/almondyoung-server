@@ -9,13 +9,13 @@ import {
   UnpickShipmentInput,
 } from './picking-strategy.interface';
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
-import { planPicking, startPicking } from './plan/picking-plan';
+import { planPicking, startPicking } from './allocation/legacy-plan';
 import {
   assertPlanningEligibility,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
-} from './plan/picking-plan.locks';
+} from './allocation/allocation.locks';
 import {
   assertActivePlanSession,
   assertPlanMembers,
@@ -23,14 +23,14 @@ import {
   loadShipmentAllocations,
   loadWorkItem,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { PickingPlanDeps } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { PickingPlanDeps } from './allocation/allocation.types';
 
 // The plan layer is a shared implementation with its own spec. Here it is stubbed so the custody
 // contract runs against a deterministic model instead of a database.
-jest.mock('./plan/picking-plan.locks');
-jest.mock('./plan/picking-plan.queries', () => ({
-  ...jest.requireActual('./plan/picking-plan.queries'),
+jest.mock('./allocation/allocation.locks');
+jest.mock('./allocation/allocation.queries', () => ({
+  ...jest.requireActual('./allocation/allocation.queries'),
   assertActivePlanSession: jest.fn(),
   assertPlanMembers: jest.fn(),
   databaseNow: jest.fn(),
