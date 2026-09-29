@@ -133,6 +133,7 @@ export interface SmsCampaign {
   content: string;
   sendAt: string | null;
   state: SmsCampaignState;
+  createdByName: string | null;
   createdAt: string;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
   estimatedCompleteDate: string | null;

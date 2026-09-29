@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { BadRequestError, NotFoundError, SmsAudienceSummary, UserContactClient } from '@app/shared';
+import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestError, NotFoundError, SmsAudienceSummary, UserContact, UserContactClient } from '@app/shared';
 import { NotificationCampaign } from '../../../database/schemas/notification-schema';
 import { PreviewSmsCampaignDto } from '../dto';
 import { MergedAudience, mergeCampaignAudience } from '../utils/campaign-audience';
@@ -22,6 +22,7 @@ export interface SmsCampaignListItem {
   sendAt: Date | null;
   state: SmsCampaignState;
   createdBy: string;
+  createdByName: string | null;
   createdAt: Date;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
   estimatedCompleteDate: string | null;
@@ -44,6 +45,8 @@ const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 @Injectable()
 export class SmsCampaignReader {
+  private readonly logger = new Logger(SmsCampaignReader.name);
+
   constructor(
     private readonly repository: SmsGateRepository,
     private readonly deviceReader: SmsDeviceReader,
@@ -108,10 +111,11 @@ export class SmsCampaignReader {
   async list(): Promise<SmsCampaignListItem[]> {
     const now = new Date();
     const campaigns = await this.repository.listCampaigns(CAMPAIGN_LIST_LIMIT);
-    const [counts, devices, pendingSingles] = await Promise.all([
+    const [counts, devices, pendingSingles, creators] = await Promise.all([
       this.repository.countByCampaign(campaigns.map((c) => c.campaignId)),
       this.activeDevices(now),
       this.repository.countPending(true),
+      this.loadCreators([...new Set(campaigns.map((c) => c.createdBy))]),
     ]);
 
     const items = campaigns.map((campaign) => {
@@ -127,6 +131,7 @@ export class SmsCampaignReader {
         sendAt: campaign.sendAt,
         state: this.stateOf(campaign, pending, now),
         createdBy: campaign.createdBy,
+        createdByName: creators.get(campaign.createdBy)?.username ?? null,
         createdAt: campaign.createdAt,
         counts: { total, pending, sent: byStatus('SENT'), failed: byStatus('FAILED'), cancelled: byStatus('CANCELLED') },
         estimatedCompleteDate: null as string | null,
@@ -149,6 +154,15 @@ export class SmsCampaignReader {
     if (pending === 0) return 'COMPLETED';
     if (campaign.sendAt && campaign.sendAt > now) return 'SCHEDULED';
     return 'PROCESSING';
+  }
+
+  private async loadCreators(userIds: string[]): Promise<Map<string, UserContact>> {
+    try {
+      return await this.userContactClient.findContacts(userIds);
+    } catch (error) {
+      this.logger.warn(`대량 발송 작성자 이름 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
+      return new Map();
+    }
   }
 
   private async activeDevices(now: Date): Promise<(SmsDeviceStatus & BulkDevice)[]> {
