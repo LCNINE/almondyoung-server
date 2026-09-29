@@ -93,6 +93,7 @@ export class WaybillReader {
       .from(WI)
       .innerJoin(inventoryTables.outboundBatches, eq(inventoryTables.outboundBatches.id, WI.batchId))
       .where(and(eq(WI.shipmentId, shipmentId), notInArray(WI.status, ['completed', 'excluded'])))
+      // 활성 행은 최대 하나다 — uq_outbound_work_item_active_shipment 가 보장한다.
       .limit(1);
     if (!item) return { workItemId: null, batchStarted: false, lines, rows: [] };
     const rows = await trx

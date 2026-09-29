@@ -28,14 +28,6 @@ export interface WaybillLabel {
 
 /**
  * 한진 자체출력 운송장 ZPL(#913). 형(NS·NL·FS)은 HANJIN_LABEL_TYPE 이 정한다.
- * 가드는 assertDispatchable 을 그대로 쓴다 — «출력 가능 ⇔ 출고 가능».
- * 라벨은 발급 때의 사본이 아니라 현재 shipment 로 다시 조립한다. 매니페스트 버전·수하인 해시가 같음을
- * assertDispatchable 과 assertContextMatchesWaybill 두 번 확인하므로 수하인·품명은 한진 등록값과 같다 —
- * 다만 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진에 등록된 시점보다 최신 값을 실을 수 있다
- * (의도된 동작: 그 필드는 최신값을 태우는 게 맞다).
- */
-/**
- * 한진 자체출력 운송장 ZPL(#913). 형(NS·NL·FS)은 HANJIN_LABEL_TYPE 이 정한다.
  * 라벨은 현재 shipment 와 **현재 배정**으로 다시 조립한다. 조립은 `WaybillLabelContentAssembler` 한 곳 —
  * 가드(assertDispatchable·수하인 재확인·I4)와 내용 지문이 거기서 나온다.
  * 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진 등록 시점보다 최신 값을 실을 수 있다

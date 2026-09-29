@@ -97,7 +97,7 @@ describeIfDb('WaybillLabelManager.render (DB integration)', () => {
         })
         .where(eq(wmsTables.shipments.id, box.shipmentId));
       const { render } = assembleLabels(ambientDbService(tx));
-      await expect(render.render(box.shipmentId, tx)).rejects.toThrow(/WAYBILL_(STALE|NOT_DISPATCHABLE)/);
+      await expect(render.render(box.shipmentId, tx)).rejects.toThrow(/^WAYBILL_STALE:/);
     });
   });
 
