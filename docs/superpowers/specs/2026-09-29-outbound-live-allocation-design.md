@@ -229,6 +229,14 @@
 
 - 바구니는 바코드가 붙은 실물이고 `RETURN_PENDING` 의 `custody_ref` 다. 각 PC 는 «내 되돌림 바구니»를 한 번
   스캔해 기억한다(라벨 프린터와 같은 기기별 설정)
+- **등록 테이블 `return_bins`**(창고, 바코드, 폐기 시각)를 둔다. 되돌림 스캔은 등록·미폐기 바구니만 받는다
+  (오타·엉뚱한 바코드 거절), 배치 화면·적치 화면의 «바구니별 남은 물건»도 여기서 시작한다
+- **토트(`totes`, 바구니 피킹)와 합치지 않는다(2026-09-29 사용자 결정).** 토트는 박스 하나에 전용 배정되고
+  비면 풀리는 용기(`shipment_tote_assignments` 가 활성 배정 1개 강제)이고, 되돌림 바구니는 누구에게도 배정되지
+  않고 여러 배치의 물건이 섞이는 상주 용기다. 한 테이블에 섞으면 토트의 모든 조회·배정에 «종류=토트» 조건이
+  필요해지고, 하나만 빠져도 되돌림 바구니가 박스에 배정되는 조용한 결함이 된다
+- 스캔 모호성은 **바코드 접두어 `RB-`** 로 없앤다 — `return_bins` 에 CHECK(`barcode LIKE 'RB-%'`), 스캔 해석은
+  접두어로 종류를 가른다. 합치지 않고도 «같은 문자열이 두 종류로 등록»되는 일이 없다
 - **되돌림 적치 화면(신규):** 바구니 스캔 → «상품 · 원래 위치 · 수량» → 상품 스캔 → 위치 스캔.
   원래 위치만 받는다(`RETURN_LOCATION_MISMATCH`). 원장상 그 물건은 그 위치를 떠난 적이 없다.
   다른 곳에 두려면 적치 후 평소 재고 이동을 쓴다. 적치하면 `PUTAWAY_RETURN` — 세션 통제가 풀려 일반 가용재고가 된다
@@ -299,7 +307,7 @@ S1 이 S2 에 주는 입구는 둘이다: `amendBox(shipmentId, 목표 줄들, �
 
 | 곳 | 변경 |
 | --- | --- |
-| `inventory/schema/inventory.schema.ts` | §4.2 |
+| `inventory/schema/inventory.schema.ts` | §4.2, `return_bins`(§6.3) |
 | `fulfillment/picking/plan/` → 배정 층(이름 변경) | `planPicking`·`startPicking`·초안 무효화 제거. `reconcileAllocation`(순수), 위치 가용량 잠금은 유지 |
 | `fulfillment/services/box-allocation.manager.ts`(신규) | `startBatch`, `joinBatch`, `amendBox`, `withdrawBox`, `removeToReturnBin`, `putawayReturn` |
 | `picking/*.strategy.ts` | 계획·구성원 검사 → 작업 항목 배정 검사. hook 둘(되돌림 스캔, `reconcileStage`). ATS `sortScan` 여분 안내 |
@@ -347,5 +355,5 @@ core 는 라이브라 옛 태스크와 새 스키마가 겹친다. 규약을 지
    0 이 아니면 진행 중 배치를 닫는 절차를 PR 1 전에 정한다
 2. 공통 층의 3방식 diff 측정(ADR-0030 규칙)
 3. `approveShortage` 의 원장 처리(§5.5-1 이 «지금과 같다»고 전제)
-4. 되돌림 바구니 바코드 체계 — 기존 토트 바코드(`totes`)를 재사용할지 새 종류로 둘지
+4. 기존 토트 바코드 중 `RB-` 로 시작하는 것이 있는지(있으면 접두어를 바꾼다)
 5. 자동 재발급의 택배사 결정 — 이전 송장이 없는 합류 박스에 쓸 «창고 기본 택배사» 설정이 있는지. 없으면 설정을 추가하거나 합류 요청이 택배사를 받는다
