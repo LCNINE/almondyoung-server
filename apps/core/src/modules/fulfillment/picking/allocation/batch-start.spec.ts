@@ -139,6 +139,31 @@ describe('startBatchPicking', () => {
     expect(fake.updated).toHaveLength(1);
   });
 
+  it('단독 claim 으로 picking 인 작업 항목도 queued 와 함께 배정한다', async () => {
+    mockedLocks.lockAggregate.mockResolvedValue({
+      ...aggregate,
+      workItems: [
+        { id: 'wi-1', shipmentId: 'shp-1', status: 'queued' },
+        { id: 'wi-2', shipmentId: 'shp-2', status: 'picking' },
+      ],
+    } as never);
+    const fake = fakeTrx([
+      [{ id: 'batch-1', startedAt: null }],
+      [{ shipmentId: 'shp-1' }, { shipmentId: 'shp-2' }], // queued·picking 작업 항목
+    ]);
+    trxHolder.trx = fake.trx;
+    await startBatchPicking(deps(), 'discrete', { batchId: 'batch-1', actorId: 'actor-1', idempotencyKey: 'k' });
+
+    expect(mockedLocks.assertStartEligibility).toHaveBeenCalledWith(fake.trx, expect.anything(), expect.anything(), [
+      'shp-1',
+      'shp-2',
+    ]);
+    expect(fake.inserted[0]).toEqual([
+      expect.objectContaining({ workItemId: 'wi-1', shipmentLineId: 'line-1' }),
+      expect.objectContaining({ workItemId: 'wi-2', shipmentLineId: 'line-2' }),
+    ]);
+  });
+
   it('이미 시작된 배치는 활성 세션을 그대로 돌려주고 배정·인계를 하지 않는다', async () => {
     const fake = fakeTrx([
       [{ id: 'batch-1', startedAt: new Date() }],
@@ -152,7 +177,7 @@ describe('startBatchPicking', () => {
     expect(d.sessions.startSession).not.toHaveBeenCalled();
   });
 
-  it('queued 작업 항목이 없으면 PICKING_BATCH_EMPTY', async () => {
+  it('시작할 작업 항목(queued·picking)이 없으면 PICKING_BATCH_EMPTY', async () => {
     trxHolder.trx = fakeTrx([[{ id: 'batch-1', startedAt: null }], []]).trx;
     await expect(
       startBatchPicking(deps(), 'discrete', { batchId: 'batch-1', actorId: 'a', idempotencyKey: 'k' }),

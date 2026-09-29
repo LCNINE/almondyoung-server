@@ -8,7 +8,7 @@ import { FulfillmentInvariantService } from '../../services/fulfillment-invarian
 import { WaybillService } from '../../waybill/waybill.service';
 import { conflict } from './allocation.errors';
 import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
-import { LockedAggregate, SourceCapacity, uniqueSorted } from './allocation.types';
+import { LockedAggregate, SourceCapacity, UNSTARTED_BATCH_WORK_ITEM_STATUSES, uniqueSorted } from './allocation.types';
 
 /**
  * Layer 2 — each function takes exactly the one collaborator it needs, passed explicitly.
@@ -153,13 +153,15 @@ export async function assertStartEligibility(
   requestedShipmentIds: string[],
 ): Promise<void> {
   const requested = requestedShipmentIds.join(',');
-  const queued = aggregate.workItems.filter((item) => item.status === 'queued');
-  if (uniqueSorted(queued.map((item) => item.shipmentId)).join(',') !== requested) {
-    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Queued batch work items changed while starting');
+  const isStartable = (item: { status: string }) =>
+    (UNSTARTED_BATCH_WORK_ITEM_STATUSES as readonly string[]).includes(item.status);
+  const startable = aggregate.workItems.filter(isStartable);
+  if (uniqueSorted(startable.map((item) => item.shipmentId)).join(',') !== requested) {
+    throw conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Startable batch work items changed while starting');
   }
-  if (aggregate.workItems.some((item) => item.status !== 'queued')) {
-    // 시작 전 배치의 작업 항목은 전부 queued 여야 한다. 다른 상태는 계획 흡수 전의 흔적이거나 손상이다.
-    throw conflict('PICKING_BATCH_STATE_CORRUPT', 'An unstarted batch has work items beyond queued');
+  if (!aggregate.workItems.every(isStartable)) {
+    // 시작 전 배치의 작업 항목은 queued·picking 뿐이어야 한다. 그 너머는 계획 흡수 전의 흔적이거나 손상이다.
+    throw conflict('PICKING_BATCH_STATE_CORRUPT', 'An unstarted batch has work items beyond picking');
   }
   if (
     aggregate.shipments.some(

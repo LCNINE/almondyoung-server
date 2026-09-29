@@ -5,7 +5,13 @@ import { PickingStrategyName } from '../picking-strategy.interface';
 import { allocateLines } from './allocate-lines';
 import { conflict } from './allocation.errors';
 import { assertStartEligibility, lockAggregate, lockSourceCapacities } from './allocation.locks';
-import { BatchStartDeps, BatchStartResult, SessionStartAllocation, uniqueSorted } from './allocation.types';
+import {
+  BatchStartDeps,
+  BatchStartResult,
+  SessionStartAllocation,
+  UNSTARTED_BATCH_WORK_ITEM_STATUSES,
+  uniqueSorted,
+} from './allocation.types';
 
 export interface StartBatchPickingInput {
   batchId: string;
@@ -14,7 +20,7 @@ export interface StartBatchPickingInput {
 }
 
 /**
- * 배치 시작 = 대기 작업 항목 전부를 한 트랜잭션에서 배정하고 재고 세션에 인계한다(ADR-0041).
+ * 배치 시작 = 시작 전 작업 항목(queued·picking) 전부를 한 트랜잭션에서 배정하고 재고 세션에 인계한다(ADR-0041).
  * 옛 «계획 초안 → 시작» 두 단계를 합친 것이다. 배정과 인계가 한 트랜잭션이라 초안이 낡을 틈이 없다.
  *
  * 이미 시작된 배치는 활성 세션을 그대로 돌려준다 — 단순출고는 박스마다 이 명령을 다른 키로 부른다.
@@ -45,18 +51,18 @@ export async function startBatchPicking(
         return { response, resourceType: 'batch_inventory_session', resourceId: response.sessionId };
       }
 
-      const queued = await trx
+      const startable = await trx
         .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
         .from(wmsTables.outboundBatchWorkItems)
         .where(
           and(
             eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
-            eq(wmsTables.outboundBatchWorkItems.status, 'queued'),
+            inArray(wmsTables.outboundBatchWorkItems.status, [...UNSTARTED_BATCH_WORK_ITEM_STATUSES]),
           ),
         )
         .orderBy(asc(wmsTables.outboundBatchWorkItems.shipmentId));
-      const shipmentIds = uniqueSorted(queued.map((row) => row.shipmentId));
-      if (!shipmentIds.length) throw conflict('PICKING_BATCH_EMPTY', `Batch ${input.batchId} has no queued work`);
+      const shipmentIds = uniqueSorted(startable.map((row) => row.shipmentId));
+      if (!shipmentIds.length) throw conflict('PICKING_BATCH_EMPTY', `Batch ${input.batchId} has no work to start`);
 
       const aggregate = await lockAggregate(trx, deps.invariant, input.batchId, shipmentIds);
       if (aggregate.batch.startedAt) {
@@ -73,7 +79,7 @@ export async function startBatchPicking(
           id: line.id,
           skuId: line.skuId,
           qty: line.qty,
-          // holds because assertStartEligibility already proved the queued work-item set equals
+          // holds because assertStartEligibility already proved the startable (queued·picking) work-item set equals
           // the requested shipment set, so every line's shipmentId has a matching work item.
           workItemId: workItemByShipment.get(line.shipmentId)!,
         })),

@@ -1,12 +1,12 @@
 import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
+import { inRollbackTx, makeDb, seedPickableShipment, seedShipmentForExistingStock } from './__support__';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
-import { assembleSimpleOutbound } from './__support__/simple-outbound-wiring';
+import { assembleOutbound, assembleSimpleOutbound } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -138,9 +138,9 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  // 계획 흡수 전에 시작된 배치(started_at NULL, 작업 항목은 queued 를 지남)는 배치 시작이 배정할
+  // 계획 흡수 전에 시작된 배치(started_at NULL, 작업 항목은 picking 을 지남)는 배치 시작이 배정할
   // 대상이 아니다. 날 409 대신 현장 앱이 아는 차단 표지(ACTIVE_WORK_REQUIRES_REVIEW)로 나와야 한다.
-  it('시작 전 배치의 다른 작업 항목이 queued 를 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
+  it('시작 전 배치의 다른 작업 항목이 picking 을 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
       const sibling = await seedPickableShipment(tx, 1);
@@ -148,11 +148,11 @@ describeIfDb('SimpleOutboundService.prepare', () => {
         .update(wmsTables.outboundBatchWorkItems)
         .set({
           batchId: fixture.batchId,
-          status: 'picking',
+          status: 'ready_to_pack',
           pickerId: sibling.actorId,
-          pickerClaimedAt: new Date(),
-          leaseExpiresAt: new Date(Date.now() + 60_000),
-          leaseVersion: 1,
+          pickerClaimedAt: new Date(Date.now() - 60_000),
+          pickerReleasedAt: new Date(),
+          leaseExpiresAt: null,
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
       const service = assembleSimpleOutbound(tx);
@@ -184,17 +184,97 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  it('시작 전 배치인데 이 작업 항목 자신이 queued 를 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
+  // 단독 picker-claim 은 시작 전 배치의 작업 항목도 queued → picking 으로 옮긴다. 인계 전이라 커스터디가
+  // 없으므로 그 항목도 시작 대상이다 — 막으면 그 배치는 영영 시작하지 못한다.
+  it('시작 전 배치에서 다른 박스가 먼저 picker-claim 됐어도 준비가 배치를 시작하고 두 박스를 모두 배정한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const [shipment] = await tx
+        .select({ shippingProfileId: wmsTables.shipments.shippingProfileId })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipmentId));
+      const sibling = await seedShipmentForExistingStock(
+        tx,
+        { ...fixture, deliveryProfileId: shipment.shippingProfileId ?? '' },
+        1,
+      );
+      // 두 박스(각 1개)를 같은 로케이션 재고로 채울 수 있게 원장을 2로 올리고, 형제를 같은 배치로 옮긴다.
+      await tx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 2 })
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, fixture.skuId),
+            eq(wmsTables.stockLedgers.locationId, fixture.locationId),
+          ),
+        );
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ batchId: fixture.batchId })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      const { simple, batches } = assembleOutbound(tx);
+      const otherPicker = { id: randomUUID(), roles: ['logistics_worker'] };
+      await batches.claimPicker(
+        sibling.workItemId,
+        { expectedLeaseVersion: 0 },
+        `claim-${randomUUID()}`,
+        otherPicker,
+        tx,
+      );
+      const [claimed] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      expect(claimed).toMatchObject({ status: 'picking', pickerId: otherPicker.id });
+
+      const prepared = await simple.prepare(
+        fixture.shipmentId,
+        { id: fixture.actorId, roles: ['logistics_worker'] },
+        `prep-${randomUUID()}`,
+        tx,
+      );
+
+      expect(prepared.outcome).toBe('ready');
+      const [batch] = await tx
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, fixture.batchId));
+      expect(batch.startedAt).not.toBeNull();
+      const allocations = await tx
+        .select({
+          workItemId: wmsTables.pickingSourceAllocations.workItemId,
+          shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+          qty: wmsTables.pickingSourceAllocations.qty,
+        })
+        .from(wmsTables.pickingSourceAllocations)
+        .where(inArray(wmsTables.pickingSourceAllocations.workItemId, [fixture.workItemId, sibling.workItemId]));
+      expect(allocations).toEqual(
+        expect.arrayContaining([
+          { workItemId: fixture.workItemId, shipmentLineId: fixture.shipmentLineId, qty: 1 },
+          { workItemId: sibling.workItemId, shipmentLineId: sibling.shipmentLineId, qty: 1 },
+        ]),
+      );
+      expect(allocations).toHaveLength(2);
+      // 형제의 claim 은 그대로 남는다.
+      const [siblingAfter] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      expect(siblingAfter).toMatchObject({ status: 'picking', pickerId: otherPicker.id });
+    });
+  });
+
+  it('시작 전 배치인데 이 작업 항목 자신이 picking 을 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
-          status: 'picking',
+          status: 'ready_to_pack',
           pickerId: fixture.actorId,
-          pickerClaimedAt: new Date(),
-          leaseExpiresAt: new Date(Date.now() + 60_000),
-          leaseVersion: 1,
+          pickerClaimedAt: new Date(Date.now() - 60_000),
+          pickerReleasedAt: new Date(),
+          leaseExpiresAt: null,
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItemId));
       const service = assembleSimpleOutbound(tx);

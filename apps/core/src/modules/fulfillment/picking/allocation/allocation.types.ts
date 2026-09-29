@@ -102,6 +102,12 @@ export interface BatchStartResult {
   status: string;
 }
 
+/**
+ * 시작 전 배치에서 배치 시작이 배정·인계하는 작업 항목 상태. 인계(HAND_IN) 전에는 커스터디가 있을 수 없으므로
+ * 단독 picker-claim 으로 `picking` 이 된 항목도 그대로 배정할 수 있다. 이 밖의 상태는 시작 전 배치의 손상이다.
+ */
+export const UNSTARTED_BATCH_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
+
 export function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
