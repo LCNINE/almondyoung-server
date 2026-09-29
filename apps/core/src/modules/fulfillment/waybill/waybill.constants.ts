@@ -26,6 +26,10 @@ export const WAYBILL = {
     ABANDON_NOT_ALLOWED: 'WAYBILL_ABANDON_NOT_ALLOWED',
     TRANSIENT_CAP_EXCEEDED: 'WAYBILL_TRANSIENT_CAP_EXCEEDED',
     LABEL_UNAVAILABLE: 'WAYBILL_LABEL_UNAVAILABLE',
+    // 시작된 배치의 활성 작업 항목이면서 배정이 줄 수량을 덮은 박스만 송장을 그린다(스펙 I4).
+    LABEL_NOT_ALLOCATED: 'WAYBILL_LABEL_NOT_ALLOCATED',
+    // 출력 확인의 지문이 현재 내용과 다르다 — 앱은 다시 렌더한다(스펙 §10.3).
+    LABEL_CONTENT_CHANGED: 'LABEL_CONTENT_CHANGED',
   },
 } as const;
 

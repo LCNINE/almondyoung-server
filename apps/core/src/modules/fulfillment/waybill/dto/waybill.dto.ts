@@ -130,4 +130,12 @@ export class WaybillLabelResponseDto {
 
   @ApiProperty({ description: '쪽 수 — data 안의 ^XA…^XZ 개수. 품목이 4줄을 넘는 FS 는 2 이상' })
   pages: number;
+
+  @ApiProperty({
+    description: '송장 내용 지문(64자 hex). 인쇄 성공 뒤 POST shipments/:id/waybill/label-prints 에 그대로 보낸다',
+  })
+  fingerprint: string;
+
+  @ApiProperty({ description: '판차. 2 이상이면 종이에 「N판」 이 찍힌다' })
+  revision: number;
 }

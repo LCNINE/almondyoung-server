@@ -11,6 +11,8 @@ import { WaybillManager } from './waybill.manager';
 import { WaybillService } from './waybill.service';
 import { WaybillController } from './waybill.controller';
 import { WaybillLabelManager } from './waybill-label.manager';
+import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
+import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
 import { WaybillLabelService } from './waybill-label.service';
 import { WaybillLabelController } from './waybill-label.controller';
 import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
@@ -34,6 +36,8 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
     WaybillService,
     // 생성자 인자가 함수라 Nest 가 주입할 수 없다 — 팩토리로 만든다. 폰트는 첫 렌더 때 찾는다(#913).
     { provide: SvgRasterizer, useFactory: () => new SvgRasterizer() },
+    WaybillLabelContentAssembler,
+    WaybillLabelPrintRepository,
     WaybillLabelManager,
     WaybillLabelService,
   ],

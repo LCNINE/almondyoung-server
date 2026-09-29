@@ -1,4 +1,5 @@
 import type { Waybill } from '../../inventory/schema/inventory.schema';
+import type { AllocatedLabelRow } from './label/label-items';
 
 export type WaybillRow = Waybill;
 
@@ -57,4 +58,11 @@ export interface WaybillView {
   // 일시적 거절로 대기 중인지 — 「진행중」과 「내일 다시」를 화면이 구분하려면 이 둘이 필요하다(#914).
   nextAttemptAt: string | null;
   transientAttempts: number;
+}
+
+export interface LabelAllocation {
+  workItemId: string | null;
+  batchStarted: boolean;
+  lines: { id: string; qty: number }[];
+  rows: Array<AllocatedLabelRow & { shipmentLineId: string }>;
 }

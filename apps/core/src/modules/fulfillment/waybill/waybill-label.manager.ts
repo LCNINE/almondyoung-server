@@ -1,5 +1,4 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema } from '../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
@@ -8,10 +7,11 @@ import { renderHanjinLabel } from './carrier/hanjin/label/hanjin-label-templates
 import { SvgRasterizer } from './label/svg-rasterizer';
 import { encodeLabelPages } from './label/label-document';
 import { WAYBILL } from './waybill.constants';
-import { WaybillManager } from './waybill.manager';
-import { WaybillReader } from './waybill.reader';
+import { WaybillLabelContentAssembler, requirePrintable } from './waybill-label-content.assembler';
+import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
+import { revisionFor } from './label/label-print-policy';
 import { HANJIN_CONFIG, WAYBILL_LABEL_CLOCK } from './waybill.tokens';
-import type { IssueContext, WaybillRow } from './waybill.types';
+export { assertContextMatchesWaybill, assertLabelAvailable } from './label/label-guards';
 
 export interface WaybillLabel {
   waybillId: string;
@@ -20,37 +20,10 @@ export interface WaybillLabel {
   /** 쪽마다 ^XA…^XZ 를 이어 붙인 문자열 — 앱은 통째로 인쇄한다. */
   data: string;
   pages: number;
-}
-
-/** assertDispatchable 뒤에 거는 라벨 전용 조건(스펙 §5 의 4~6). */
-export function assertLabelAvailable(wb: Pick<WaybillRow, 'id' | 'source' | 'carrier' | 'labelData'>): void {
-  if (wb.source !== 'carrier') {
-    throw new ConflictError(`${WAYBILL.ERROR.LABEL_UNAVAILABLE}: manual waybill ${wb.id} has no carrier label data`);
-  }
-  if (wb.carrier !== 'HANJIN') {
-    throw new ConflictError(`${WAYBILL.ERROR.LABEL_UNAVAILABLE}: no label template for carrier ${wb.carrier}`);
-  }
-  if (wb.labelData === null || wb.labelData === undefined) {
-    throw new Error(`waybill ${wb.id} was issued by a carrier but has no labelData`);
-  }
-}
-
-/**
- * `assertDispatchable` 과 `loadIssueContext` 는 같은 트랜잭션 안이라도 별개 statement 다 — READ COMMITTED
- * 에서는 그 사이 커밋된 수하인 정정이 두 번째 읽기에만 보일 수 있다. 그러면 해시 검사(assertDispatchable)는
- * 통과했는데 실제로 조립하는 라벨은 **새** 주소를 쓰게 되어, 한진에 등록된 값과 달라진다(#913 최종리뷰).
- * `render` 는 `loadIssueContext` 직후 이 함수로 재확인한다.
- */
-export function assertContextMatchesWaybill(
-  waybill: Pick<WaybillRow, 'id' | 'manifestVersion' | 'recipientHash'>,
-  ctx: Pick<IssueContext, 'manifestVersion' | 'recipientSnapshot'>,
-  hashOf: (recipientSnapshot: unknown) => string,
-): void {
-  if (waybill.manifestVersion !== ctx.manifestVersion || waybill.recipientHash !== hashOf(ctx.recipientSnapshot)) {
-    throw new ConflictError(
-      `${WAYBILL.ERROR.STALE}: waybill ${waybill.id} manifest/recipient changed between guard and assembly`,
-    );
-  }
+  /** 이 종이의 내용 지문 — 앱이 프린터 전송에 성공한 뒤 출력 확인(POST label-prints)에 그대로 보낸다. */
+  fingerprint: string;
+  /** 판차. 같은 지문이 출력된 적 있으면 그 번호, 없으면 최대 + 1. GET 이라 계산만 하고 쓰지 않는다. */
+  revision: number;
 }
 
 /**
@@ -61,11 +34,18 @@ export function assertContextMatchesWaybill(
  * 다만 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진에 등록된 시점보다 최신 값을 실을 수 있다
  * (의도된 동작: 그 필드는 최신값을 태우는 게 맞다).
  */
+/**
+ * 한진 자체출력 운송장 ZPL(#913). 형(NS·NL·FS)은 HANJIN_LABEL_TYPE 이 정한다.
+ * 라벨은 현재 shipment 와 **현재 배정**으로 다시 조립한다. 조립은 `WaybillLabelContentAssembler` 한 곳 —
+ * 가드(assertDispatchable·수하인 재확인·I4)와 내용 지문이 거기서 나온다.
+ * 공동현관 비밀번호(⑭ 일부)는 해시 대상이 아니라서 한진 등록 시점보다 최신 값을 실을 수 있다
+ * (의도된 동작: 그 필드는 최신값을 태우는 게 맞다).
+ */
 @Injectable()
 export class WaybillLabelManager {
   constructor(
-    private readonly waybills: WaybillManager,
-    private readonly reader: WaybillReader,
+    private readonly assembler: WaybillLabelContentAssembler,
+    private readonly prints: WaybillLabelPrintRepository,
     private readonly rasterizer: SvgRasterizer,
     @Inject(HANJIN_CONFIG) private readonly config: HanjinConfig,
     @InjectTypedDb<typeof inventorySchema>() private readonly dbService: DbService<typeof inventorySchema>,
@@ -73,19 +53,25 @@ export class WaybillLabelManager {
   ) {}
 
   async render(shipmentId: string, tx?: DbTx): Promise<WaybillLabel> {
-    const { waybill, ctx } = await this.dbService.run(async (trx) => {
-      const waybill = await this.waybills.assertDispatchable(shipmentId, trx);
-      assertLabelAvailable(waybill);
-      const ctx = await this.reader.loadIssueContext(trx, shipmentId);
-      assertContextMatchesWaybill(waybill, ctx, (snapshot) => this.reader.recipientHashOf(snapshot));
-      return { waybill, ctx };
+    const { label, revision } = await this.dbService.run(async (trx) => {
+      const label = requirePrintable(await this.assembler.current(shipmentId, trx));
+      const prints = await this.prints.listByShipments(trx, [shipmentId]);
+      return { label, revision: revisionFor(prints, label.fingerprint) };
     }, tx);
 
     const pages = renderHanjinLabel(
       this.config.labelType,
-      buildHanjinLabelData({ waybill, ctx, config: this.config, now: this.now() }),
+      buildHanjinLabelData({ content: label.content, now: this.now(), revision }),
     );
     const data = encodeLabelPages(pages, this.rasterizer, WAYBILL.LABEL_ZPL_COMPRESS);
-    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '', format: 'zpl', data, pages: pages.length };
+    return {
+      waybillId: label.waybill.id,
+      trackingNo: label.waybill.trackingNo ?? '',
+      format: 'zpl',
+      data,
+      pages: pages.length,
+      fingerprint: label.fingerprint,
+      revision,
+    };
   }
 }
