@@ -8,6 +8,7 @@ import { LabelCurrencyGuard } from '../label-currency.guard';
 import { WaybillLabelContentAssembler } from '../waybill-label-content.assembler';
 import { WaybillLabelManager } from '../waybill-label.manager';
 import { WaybillLabelPrintManager } from '../waybill-label-print.manager';
+import { WaybillLabelStateReader } from '../waybill-label-state.reader';
 import { WaybillLabelPrintRepository } from '../waybill-label-print.repository';
 import { WaybillManager } from '../waybill.manager';
 import { WaybillReader } from '../waybill.reader';
@@ -91,6 +92,7 @@ export function assembleLabels(
   return {
     assembler,
     prints,
+    states: new WaybillLabelStateReader(assembler, prints, dbService),
     guard: new LabelCurrencyGuard(assembler, prints),
     confirm: new WaybillLabelPrintManager(assembler, prints, dbService),
     render: new WaybillLabelManager(assembler, prints, new SvgRasterizer(), LABEL_TEST_CONFIG, dbService, now),

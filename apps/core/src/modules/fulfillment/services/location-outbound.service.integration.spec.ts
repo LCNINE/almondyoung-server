@@ -18,6 +18,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
 import * as wiring from './__support__/simple-outbound-wiring';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -666,7 +667,13 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           },
           { provide: LocationOutboundService, useValue: service },
           { provide: SimpleOutboundService, useValue: wiring.assembleSimpleOutbound(tx) },
-          { provide: ShipmentWaybillReader, useValue: new ShipmentWaybillReader(wiring.ambientDbService(tx)) },
+          {
+            provide: ShipmentWaybillReader,
+            useValue: new ShipmentWaybillReader(
+              wiring.ambientDbService(tx),
+              assembleLabels(wiring.ambientDbService(tx)).states,
+            ),
+          },
         ],
       }).compile();
       const app = module.createNestApplication();

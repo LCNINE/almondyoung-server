@@ -30,6 +30,13 @@ export class WaybillLabelController {
     return this.labels.renderLabel(shipmentId);
   }
 
+  // 배치 카드의 «재출력 필요 N» 과 「실패·미인쇄만 다시」 대상(never_printed·reprint_required). 조회 전용.
+  @Get('outbound-batches/:batchId/waybill-label-states')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  labelStates(@Param('batchId') batchId: string) {
+    return this.labels.statesForBatch(batchId);
+  }
+
   // 앱이 프린터 전송에 성공한 뒤에만 부른다. 현재 내용과 다르면 409 LABEL_CONTENT_CHANGED → 앱이 다시 렌더한다.
   @Post('shipments/:shipmentId/waybill/label-prints')
   @HttpCode(HttpStatus.CREATED)
