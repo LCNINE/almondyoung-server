@@ -99,7 +99,7 @@
 | 대상 | 변경 |
 | --- | --- |
 | `picking_plans`, `picking_plan_members` | **삭제**(PR 2, §8) |
-| `outbound_batches` | `strategy picking_strategy NOT NULL` 추가(계획에서 이사). `started_at` 을 배치 시작 때 기록 |
+| `outbound_batches` | 전략은 `STRATEGY_BY_PICKING_METHOD[pickingMethod]` 로 도출(컬럼 없음, ADR-0041). `started_at` 을 배치 시작 때 기록 |
 | `outbound_batch_work_items` | 상태 `withdrawing` 추가. `exit_to`(`draft`\|`canceled`) 추가 — `withdrawing` 일 때만 NOT NULL(CHECK). 활성 부분 유니크 `uq_outbound_work_item_active_shipment` 는 `withdrawing` 을 활성으로 센다(기존 `NOT IN ('completed','excluded')` 그대로 성립) |
 | `picking_source_allocations` | `plan_id` → **`work_item_id`**. 유니크 `(work_item_id, shipment_line_id, source_location_id)`. CHECK `qty >= 0`. 행은 지우지 않는다 |
 | `shipment_lines` | CHECK `qty >= 0`(0 = 빠진 줄). `inspected_qty <= qty`, `reserved_qty <= qty` 는 유지 |
@@ -308,7 +308,7 @@ S1 이 S2 에 주는 입구는 둘이다: `amendBox(shipmentId, 목표 줄들, �
 | 곳 | 변경 |
 | --- | --- |
 | `inventory/schema/inventory.schema.ts` | §4.2, `return_bins`(§6.3) |
-| `fulfillment/picking/plan/` → 배정 층(이름 변경) | `planPicking`·`startPicking`·초안 무효화 제거. `reconcileAllocation`(순수), 위치 가용량 잠금은 유지 |
+| `fulfillment/picking/plan/` → `fulfillment/picking/allocation/`(이름 변경) | `planPicking`·`startPicking`·초안 무효화 제거. `reconcileAllocation`(순수), 위치 가용량 잠금은 유지 |
 | `fulfillment/services/box-allocation.manager.ts`(신규) | `startBatch`, `joinBatch`, `amendBox`, `withdrawBox`, `removeToReturnBin`, `putawayReturn` |
 | `picking/*.strategy.ts` | 계획·구성원 검사 → 작업 항목 배정 검사. hook 둘(되돌림 스캔, `reconcileStage`). ATS `sortScan` 여분 안내 |
 | `services/batch-inventory-session.service.ts` | `startSession` 의 계획 결합 제거, 새 이벤트 셋, 보존식 |
@@ -341,7 +341,7 @@ core 는 라이브라 옛 태스크와 새 스키마가 겹친다. 규약을 지
 - **PR 1 (expand, `migrate → deploy`):** §4.2 의 추가·완화 전부. `picking_source_allocations.plan_id` NULL 허용.
   새 코드는 계획 테이블을 읽지도 쓰지도 않는다
 - **PR 2 (contract, 배포 한 번 뒤, `deploy → migrate`):** 계획 테이블 둘과 `plan_id` 삭제,
-  `work_item_id NOT NULL`, `batches.strategy NOT NULL`
+  `work_item_id NOT NULL`
 
 🔴 **enum 함정:** drizzle migrate 는 전 마이그를 한 트랜잭션으로 돈다. `ADD VALUE` 한 값(`withdrawing` 등)을 같은
 실행의 CHECK·기본값·데이터에 쓰면 실패한다. CHECK 는 `::text` 캐스팅으로 쓴다(`ck_outbound_batches_cart_capacity` 선례).

@@ -25,11 +25,11 @@ describeIfDb('seedPickableShipment', () => {
       expect(workItem.pickerId).toBeNull();
       expect(workItem.leaseVersion).toBe(0);
 
-      const plans = await tx
+      const allocations = await tx
         .select()
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.batchId, fixture.batchId));
-      expect(plans).toHaveLength(0);
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItemId));
+      expect(allocations).toHaveLength(0);
 
       const [line] = await tx
         .select()
