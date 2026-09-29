@@ -46,6 +46,13 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 는 이 서비스가 실어 보낸 `error` 코드를 그대로 응답에 담고, httpClient 의 ConflictError 가 그
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
+export const WAYBILL_STALE_MESSAGE =
+  '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.';
+export const WAYBILL_NOT_DISPATCHABLE_MESSAGE =
+  '한진 등록이 끝나지 않은 송장이에요. 관리자에게 운송장 발급 상태를 확인해 달라고 해 주세요.';
+export const WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE =
+  '작업이 시작되지 않은 박스예요. 배치 화면에서 「작업 시작」을 먼저 눌러 주세요.';
+
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
     '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
@@ -72,6 +79,11 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: '다른 작업자가 이 박스를 작업 중이에요',
   SIMPLE_OUTBOUND_METHOD_UNSUPPORTED:
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
+  LABEL_REPRINT_REQUIRED:
+    '송장이 바뀌었거나 아직 출력하지 않았어요. 송장을 다시 스캔해 출력한 뒤 계속해 주세요.',
+  WAYBILL_STALE: WAYBILL_STALE_MESSAGE,
+  WAYBILL_NOT_DISPATCHABLE: WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
 };
 
 const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
@@ -95,6 +107,8 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     context === 'outbound' &&
     error.preparation
   ) {
+    if (error.preparation.reasonCode === 'BATCH_NOT_STARTED')
+      return '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.';
     if (error.preparation.recovery === 'review_batch')
       return '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.';
     if (error.preparation.reasonCode === 'SOURCE_INSUFFICIENT')

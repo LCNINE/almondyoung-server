@@ -242,3 +242,29 @@ it.each([
     ).toBe(message);
   }
 );
+
+describe('errorMessage outbound 작업 시작·재출력 게이트 (#987)', () => {
+  it.each([
+    [
+      new ApiError('작업이 반영되지 않았어요.', 400, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED', {
+        reasonCode: 'BATCH_NOT_STARTED',
+        recovery: 'review_batch',
+      }),
+      '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.',
+    ],
+    [
+      new ConflictError('m', 'LABEL_REPRINT_REQUIRED'),
+      '송장이 바뀌었거나 아직 출력하지 않았어요. 송장을 다시 스캔해 출력한 뒤 계속해 주세요.',
+    ],
+    [
+      new ConflictError('m', 'WAYBILL_STALE'),
+      '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.',
+    ],
+    [
+      new ConflictError('m', 'WAYBILL_LABEL_NOT_ALLOCATED'),
+      '작업이 시작되지 않은 박스예요. 배치 화면에서 「작업 시작」을 먼저 눌러 주세요.',
+    ],
+  ])('출고 문구 %#', (error, expected) => {
+    expect(errorMessage(error, 'outbound')).toBe(expected);
+  });
+});

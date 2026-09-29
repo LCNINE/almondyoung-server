@@ -209,3 +209,37 @@ it.each([
     expect(error.preparation).toBeUndefined();
   }
 );
+
+describe('409 errors body and rejected codes (#987)', () => {
+  it('409 본문의 errors 를 ConflictError.errors 로 싣는다(배치 시작 차단 목록)', async () => {
+    const client = createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: (async () =>
+        jsonResponse(409, {
+          code: 'BATCH_START_BLOCKED',
+          message: 'x',
+          errors: [{ shipmentId: 's1', reason: 'STOCK_SHORT' }],
+        })) as never,
+    });
+    const error = await client
+      .request({ method: 'POST', path: '/picking/v2/starts' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).errors).toEqual([
+      { shipmentId: 's1', reason: 'STOCK_SHORT' },
+    ]);
+    expect((error as ConflictError).outcome).toBe('rejected');
+  });
+
+  it.each([
+    'LABEL_REPRINT_REQUIRED',
+    'LABEL_CONTENT_CHANGED',
+    'WAYBILL_STALE',
+    'WAYBILL_NOT_DISPATCHABLE',
+    'WAYBILL_LABEL_NOT_ALLOCATED',
+  ])('%s 409 는 rejected — 오프라인 작업 큐가 재시도하지 않는다', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+});

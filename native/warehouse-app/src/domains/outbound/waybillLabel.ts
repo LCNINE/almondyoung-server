@@ -1,6 +1,11 @@
 import { ApiError, ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { DevicePrefs } from '../../core/data/devicePrefs';
-import { errorMessage } from '../../core/data/errorMessage';
+import {
+  errorMessage,
+  WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
+  WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_STALE_MESSAGE,
+} from '../../core/data/errorMessage';
 import {
   PRINTER_FAILURE_MESSAGE,
   PrinterError,
@@ -49,10 +54,9 @@ export function waybillConflictCode(error: unknown): string | undefined {
 }
 
 const CONFLICT_MESSAGES: Record<string, string> = {
-  WAYBILL_NOT_DISPATCHABLE:
-    '한진 등록이 끝나지 않은 송장이에요. 관리자에게 운송장 발급 상태를 확인해 달라고 해 주세요.',
-  WAYBILL_STALE:
-    '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.',
+  WAYBILL_NOT_DISPATCHABLE: WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_STALE: WAYBILL_STALE_MESSAGE,
+  WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
   WAYBILL_LABEL_UNAVAILABLE:
     '이 송장은 앱에서 인쇄할 수 없어요(수기 등록 또는 한진 외 택배사).',
 };
