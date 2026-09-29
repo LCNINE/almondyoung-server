@@ -34,7 +34,7 @@
 | 사실 | 좌표 |
 | --- | --- |
 | 배정 로직은 이미 있다. 배치 시작이 대기 박스 전부를 한 트랜잭션에서 배정(`picking_source_allocations`)하고 재고 세션에 인계(`HAND_IN`)한다. 멱등이다 | `fulfillment/picking/allocation/batch-start.ts` `startBatchPicking`, ADR-0041 |
-| 그런데 배치 시작은 **첫 송장 스캔의 부수효과**로만 불린다. 명시적 입구 `POST /picking/v2/starts` 는 있지만 부르는 클라이언트가 없다 | `services/simple-outbound.service.ts` `prepare`(→ `lockPreparation` → `picking.start`), `controllers/picking-v2.controller.ts` |
+| 그런데 현장 앱(warehouse-app)에서 배치 시작은 **첫 송장 스캔의 부수효과**로만 불린다. 명시적 입구 `POST /picking/v2/starts` 를 부르는 곳은 admin-web 의 v2 피킹 작업대뿐이다(시작·스캔). admin-web 의 검수·강제 발송은 `ShipmentDispatchService.lockAggregate` 를 지난다 | `services/simple-outbound.service.ts` `prepare`(→ `lockPreparation` → `picking.start`), `controllers/picking-v2.controller.ts`, `apps/admin-web/src/features/order/picking-list/components/v2-picking-workspace/index.tsx`, `apps/admin-web/src/lib/api/domains/orders/inspection.client.ts` |
 | 배치 일괄 인쇄는 배치를 시작하지 않는다. 송장 렌더러는 배정을 읽지 않는다 | `native/warehouse-app/src/domains/outbound/BatchLabelPrintButton.tsx`, `waybill/waybill-label.manager.ts` `render` |
 | 배정된 몫은 세션이 통제하고, 이동·조정 등 모든 일반 차감 경로와 다른 배치의 배정이 그 몫을 보지 못한다 | `inventory/core/services/batch-controlled-stock.guard.ts` |
 | 재고 예약은 **창고 × SKU** 단위다(로케이션 없음). 예약 가용 = 창고 `ON_HAND` 합 − 확정 예약 합 | `stock_reservations`, `inventory/shared/availability/warehouse-availability.ts` |
@@ -227,6 +227,10 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 1. 지금처럼 `assertDispatchable` + `assertContextMatchesWaybill`
 2. **활성 작업 항목과 배정을 읽는다**(로케이션 코드·SKU 명 조인, 수량 > 0). I4 를 어기면 `409`, 메시지 접두어
    `WAYBILL_LABEL_NOT_ALLOCATED:` (앱 파서 규약 — `native/warehouse-app/src/domains/outbound/waybillLabel.ts` 의 `WAYBILL_[A-Z_]+:`)
+   - **출고된 박스의 재출력:** 활성 작업 항목이 없으면 출고 완료(`completed`)된 마지막 작업 항목(`completed_at`, id 내림차순)의
+     배정을 읽는다. 배정 행은 불변이라 출력 때와 같은 내용·지문이 나온다. `excluded` 는 어느 경우에도 쓰지 않는다 — 그런 박스는
+     I4 로 거절된다. 출력 확인(§10.3)도 같은 조립을 쓰므로 출고된 박스의 재출력을 기록한다. 게이트(§10.4)와 송장 스캔 상태
+     (§10.5)가 보는 활성 박스의 판정은 이 대체와 무관하다
 3. 품목 줄 = **(로케이션, SKU) 로 묶은 배정 행**, 로케이션 코드 순 → SKU 명 순. 이름 앞에 `[<로케이션 코드>]`.
    이름 칸 폭은 `fsItemNameMaxWidthMm` 에서 접두어 폭을 뺀다(`label-items.ts` 가 합치기 단위를 SKU → (로케이션, SKU) 로 바꾼다)
 4. 판차가 2 이상이면 종이에 `N판` 을 찍는다. **PR 1 계획이 정함:** FS 의 쪽 표시 줄(y 80.6) 바로 앞에 찍는다
@@ -264,7 +268,7 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
     pick_to_tote 의 `assignTote`·`toteScan`·`completePick`, aggregate 의 `sortScan`·`completePick` — 과
     `ShipmentDispatchService.lockAggregate`(검수 스캔·검수 라인·강제 발송·자동 발송이 모두 지난다)
   - **게이트 밖:** `bulkCartScan` 은 박스 식별이 없어 비교할 송장이 없다. `claimPacker` 는 포장 완료가 검수(`lockAggregate`)로
-    덮이므로 따로 걸지 않는다. 되돌림 명령은 위 이유로 밖이다
+    덮이므로 따로 걸지 않는다. 되돌림 명령은 아래 이유로 밖이다
   - 게이트는 모든 송장에 `assertDispatchable` 을 돌린다. 그래서 무효·낡은 수기 송장은 `external` 이어도
     `WAYBILL_NOT_DISPATCHABLE`/`WAYBILL_STALE` 로 피킹이 막힌다
 - 되돌림 명령(`REMOVE_TO_RETURN_BIN`·`PUTAWAY_RETURN`)은 대상이 아니다 — 빼는 일에 종이는 필요 없고, 막으면 이탈이 끝나지 않는다
@@ -280,14 +284,15 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `never_printed` | 배정은 있으나 출력 기록 없음 | 출력(프린터 있음) / «프린터 있는 자리에서 출력» |
 | `reprint_required` | 지문이 바뀜. 마지막 출력 스냅샷과 현재 품목 줄의 차이를 싣는다 | «송장이 바뀌었습니다 · 바뀐 줄» + 재출력 |
 | `external` | 수기·한진 외 송장. 출력 기록 비교를 건너뛴다(사용자 결정 2026-09-30). 렌더는 여전히 `WAYBILL_LABEL_UNAVAILABLE` | 평소 작업(출력 없이 진행) |
-| `unavailable` | 현재 내용 조립 실패. 사유 코드를 싣는다 | «송장을 만들 수 없어요» + 사유 |
+| `unavailable` | 현재 내용 조립 실패. 사유 코드를 싣는다 — by-waybill 은 `labelIssue`, 배치 송장 상태(`GET outbound-batches/:batchId/waybill-label-states`)는 `issue` | «송장을 만들 수 없어요» + 사유 |
 | `not_started` | 배치가 시작 전 | «배치 화면에서 작업 시작» |
 | `withdrawing` | 이탈 중, 뺄 상품 목록 포함 | 뺄 상품 → 되돌림 바구니 |
 | `withdrawn` | 이탈 완료 | «빠진 박스입니다, 송장은 버리세요» |
 
 - 몇 번을 어느 PC 에서 스캔해도 같은 결과. 스캔은 아무것도 바꾸지 않는다
 - 앱의 화면 판정(`labelState` → 화면)은 순수 함수로 두고 표 테스트
-- 배치 카드에 «재출력 필요 N». 일괄 인쇄의 「실패·미인쇄만 다시」가 `never_printed`·`reprint_required` 를 대상으로 삼는다
+- 배치 카드에 «재출력 필요 N». N 이 0 보다 크면 일괄 인쇄의 「바뀐·미출력 송장만 다시」가 보인다(이 기기에서 인쇄한 적이
+  없어도). 누를 때 서버에서 대상을 새로 받아 `never_printed`·`reprint_required` 만 다시 뽑는다
 
 ## 11. 스키마
 
@@ -332,6 +337,8 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - 박스에 닿는 모든 연산(합류·이탈·스캔·결품·되돌림·출력 확인)은 **작업 항목 행 잠금**에서 줄을 선다
 - 배정을 늘리는 연산(시작·합류·결품 재배정)은 SKU 별 가용 잠금(`acquireStockAvailabilityLock`)을 거친다 — 서로, 그리고 다른 배치의 시작과 같은 재고를 두고 다투지 않는다
 - 잠금 순서는 기존 규칙: 박스 → 줄 → 예약 → 작업 항목 → 세션 → 보관·위치(id 순)
+  - 출력 확인은 박스를 `FOR KEY SHARE` 로 먼저 잡은 뒤 작업 항목을 잠근다. 출력 기록 INSERT 의 FK 검사가 박스에 암묵
+    KEY SHARE 를 잡는데, 그게 작업 항목 잠금 뒤에 오면 발송(박스 → 작업 항목)과 순서가 뒤집힌다
 - 모든 명령은 `FulfillmentCommandService` 멱등 키. 세션 이벤트 멱등 키에 연산 id·작업 항목 id·배정 id
 - 트랜잭션 밖은 택배사 호출(송장 발급, 앱이 합류 전에 부름)과 프린터 전송뿐이다
 - 복구(`batch-session-recovery.service.ts`): 배정마다 «이벤트 합 = 현재 배정», 보관 grain 이 그 배치의 작업 항목 배정에 속함

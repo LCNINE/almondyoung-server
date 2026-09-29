@@ -112,9 +112,15 @@ pending/allocated ──운영자 abandon──▶ abandoned (종료)
 - **재출력 게이트(I5):** `LabelCurrencyGuard.assertCurrent(workItemId, trx)` 가 현재 지문과 마지막 출력 기록을 비교해
   다르거나 없으면 `409 LABEL_REPRINT_REQUIRED`. 진입점 = 전략 7곳(`lockAndAssertPickerClaim`) + `ShipmentDispatchService.lockAggregate`.
   `bulkCartScan`·`claimPacker`·되돌림 명령은 밖이다(스펙 §10.4).
-- **`labelState`**(by-waybill 응답): `current` / `never_printed` / `reprint_required` / `not_started` / `withdrawing` /
-  `withdrawn` / `external` / `unavailable`. **수기·한진 외 송장은 `external`** — 출력 기록 비교를 면제한다(렌더는 여전히
+- **`labelState`**(by-waybill 응답): `current` / `never_printed` / `reprint_required` / `not_started` / `external` /
+  `unavailable` (`withdrawing` / `withdrawn` 은 PR 3 에서 더한다). **수기·한진 외 송장은 `external`** — 출력 기록 비교를 면제한다(렌더는 여전히
   `WAYBILL_LABEL_UNAVAILABLE`). 단 게이트는 모든 송장에 `assertDispatchable` 을 돌리므로 무효·낡은 수기 송장은 여전히 막힌다.
+- **출고된 박스의 재출력:** 활성 작업 항목(`completed`·`excluded` 가 아닌 것)이 없으면 렌더·출력 확인은 출고 완료
+  (`completed`)된 마지막 작업 항목의 배정으로 그린다(`WaybillReader.loadLabelAllocation`). 배정 행은 불변이라 출력 때와 같은
+  내용·지문이 나온다. `excluded` 만 남은 박스는 여전히 `WAYBILL_LABEL_NOT_ALLOCATED`. 게이트·송장 스캔 상태가 보는 활성
+  박스의 동작은 바뀌지 않는다.
+- **출력 확인의 잠금 순서:** 박스 `FOR KEY SHARE` → 활성 작업 항목 `FOR UPDATE` — 발송(`lockAggregate`)의 박스 → 작업 항목과
+  같다. 출력 기록 INSERT 의 FK 검사가 잡는 암묵 KEY SHARE 가 작업 항목 잠금 뒤에 오지 않게 먼저 잡는다.
 - **배치 시작 거절:** `409 BATCH_START_BLOCKED`, 사유 목록은 `errors: StartBlockerView[]` 에 싣는다(`details` 가 아니다 — 전역 필터가 `details` 를 준비 막힘에만 통과시킨다).
 - 운영 라벨 형은 FS(`HANJIN_LABEL_TYPE=FS`)여야 품목 줄·로케이션·판차가 종이에 나온다.
 
