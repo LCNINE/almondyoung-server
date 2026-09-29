@@ -14,6 +14,7 @@ import { useScanner } from '../../core/hardware/scan/useScanner';
 import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
+import { StartBatchButton } from './StartBatchButton';
 import { readLastBox, writeLastBox } from './lastBox';
 import { useOutboundBatches, useShipmentByWaybill } from './queries';
 
@@ -182,18 +183,22 @@ function OutboundQueueContent({
               <p className="text-sm text-neutral-500">
                 {batch.totalItems}박스 · {batch.totalQty}개
               </p>
-              {labelPrinting && (
-                <BatchLabelPrintButton
-                  batchId={batch.id}
-                  prefs={prefs}
-                  print={print}
-                  disabled={
-                    printingBatch !== null && printingBatch !== batch.id
-                  }
-                  onRunningChange={(running) =>
-                    onLabelRunChange(batch.id, running)
-                  }
-                />
+              {batch.startedAt === null ? (
+                <StartBatchButton batchId={batch.id} />
+              ) : (
+                labelPrinting && (
+                  <BatchLabelPrintButton
+                    batchId={batch.id}
+                    prefs={prefs}
+                    print={print}
+                    disabled={
+                      printingBatch !== null && printingBatch !== batch.id
+                    }
+                    onRunningChange={(running) =>
+                      onLabelRunChange(batch.id, running)
+                    }
+                  />
+                )
               )}
             </li>
           ))}

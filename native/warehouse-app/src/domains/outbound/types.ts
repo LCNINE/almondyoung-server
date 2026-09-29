@@ -46,6 +46,8 @@ export interface OutboundBatchSummary {
   status: string;
   totalItems: number;
   totalQty: number;
+  /** 「작업 시작」을 누른 시각. null 이면 아직 시작 전이다. */
+  startedAt: string | null;
 }
 
 export interface SimpleOutboundScanInput {

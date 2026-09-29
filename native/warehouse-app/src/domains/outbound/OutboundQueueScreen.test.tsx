@@ -84,6 +84,7 @@ function renderScreen(
       status: string;
       totalItems: number;
       totalQty: number;
+      startedAt: string | null;
     }>
   > = {
     picking: [
@@ -94,6 +95,7 @@ function renderScreen(
         status: 'picking',
         totalItems: 3,
         totalQty: 7,
+        startedAt: '2026-09-30T00:00:00.000Z',
       },
     ],
     created: [],
@@ -262,6 +264,7 @@ describe('OutboundQueueScreen', () => {
           status: 'picking',
           totalItems: 3,
           totalQty: 7,
+          startedAt: '2026-09-30T00:00:00.000Z',
         },
       ],
       created: [
@@ -272,6 +275,7 @@ describe('OutboundQueueScreen', () => {
           status: 'created',
           totalItems: 2,
           totalQty: 5,
+          startedAt: null,
         },
       ],
     });
@@ -294,6 +298,7 @@ describe('OutboundQueueScreen', () => {
           status: 'picking',
           totalItems: 3,
           totalQty: 7,
+          startedAt: '2026-09-30T00:00:00.000Z',
         },
       ],
       created: [
@@ -304,6 +309,7 @@ describe('OutboundQueueScreen', () => {
           status: 'created',
           totalItems: 3,
           totalQty: 7,
+          startedAt: null,
         },
       ],
     });
@@ -438,6 +444,39 @@ describe('OutboundQueueScreen', () => {
     expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeInTheDocument();
   });
 
+  it('시작 전 배치에는 「작업 시작」만 있고 송장 인쇄는 없다(station 이어도)', async () => {
+    renderScreen(
+      [],
+      undefined,
+      {
+        picking: [],
+        created: [
+          {
+            id: 'b-2',
+            batchNumber: 'OB-2',
+            name: '오후',
+            status: 'created',
+            totalItems: 1,
+            totalQty: 1,
+            startedAt: null,
+          },
+        ],
+      },
+      'w-1',
+      true
+    );
+    await screen.findByText('OB-2');
+    expect(screen.getByRole('button', { name: '작업 시작' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '라벨 인쇄' })).toBeNull();
+  });
+
+  it('시작된 배치에는 「작업 시작」이 없고 station 이면 송장 인쇄가 있다', async () => {
+    renderScreen([], undefined, undefined, 'w-1', true);
+    await screen.findByText('OB-1');
+    expect(screen.queryByRole('button', { name: '작업 시작' })).toBeNull();
+    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeInTheDocument();
+  });
+
   it('기본(핸드헬드)에서는 라벨 인쇄 버튼이 없다', async () => {
     const requests: CapturedRequest[] = [];
     renderScreen(requests);
@@ -508,6 +547,7 @@ describe('OutboundQueueScreen', () => {
             status: 'picking',
             totalItems: 1,
             totalQty: 1,
+            startedAt: '2026-09-30T00:00:00.000Z',
           },
         ],
         created: [
@@ -518,6 +558,7 @@ describe('OutboundQueueScreen', () => {
             status: 'created',
             totalItems: 1,
             totalQty: 1,
+            startedAt: '2026-09-30T00:00:00.000Z',
           },
         ],
       },
