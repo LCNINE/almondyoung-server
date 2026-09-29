@@ -119,10 +119,12 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
         .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
       expect(allocations.every((a) => a.sourceLocationId !== f.origin)).toBe(true);
       expect(allocations.reduce((sum, a) => sum + a.qty, 0)).toBe(6);
+      // 배치 시작은 배정과 인계(HAND_IN)를 한 트랜잭션에서 하므로, 배정된 선반 6개는 곧바로 세션이
+      // 통제한다 — 옛 «계획 초안»은 재고를 통제하지 않아 여기서 6이 보였다.
       expect((await contents(tx, f.locationId)).items[0]).toMatchObject({
         quantity: 6,
         inboundPendingQty: 0,
-        generallyMovableQty: 6,
+        generallyMovableQty: 0,
       });
     });
   });
@@ -392,24 +394,31 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
             { skuId: f.skuId, warehouseId: f.warehouseId, sourceLocationId: f.origin },
             tx,
           );
+          // 시작이 먼저면 적치 전의 유일한 여유분(원점의 2)을 통제한다. 적치가 먼저면 시작은 커밋된
+          // 적치를 보고 원점 여유 2·선반 6 중에서 배정한다 — 배정기는 위치 id 순이라 어느 쪽인지는
+          // 픽스처의 uuid 에 달렸다. 어느 쪽이든 입고 대기분(4)은 건드리지 않고 정확히 2개만 통제한다.
+          const originControlled = availability.batchControlledQty;
+          if (first === 'acquire') expect(originControlled).toBe(2);
+          else expect([0, 2]).toContain(originControlled);
           expect(availability).toMatchObject({
             onHandQty: 6,
             inboundPendingQty: 4,
-            batchControlledQty: first === 'acquire' ? 2 : 0,
-            generallyAvailableQty: first === 'acquire' ? 0 : 2,
+            generallyAvailableQty: 2 - originControlled,
           });
           const [line] = await tx
             .select()
             .from(wmsTables.inboundReceiptLines)
             .where(eq(wmsTables.inboundReceiptLines.id, f.lineId));
           expect(line).toMatchObject({ quantity: 10, putawayFromOriginQty: 6, returnedQty: 0, canceledQty: 0 });
-          expect((await contents(tx, f.locationId)).items[0]).toMatchObject({ quantity: 6, generallyMovableQty: 6 });
-          expect(
-            await tx
-              .select()
-              .from(wmsTables.batchInventorySessionBalances)
-              .where(eq(wmsTables.batchInventorySessionBalances.skuId, f.skuId)),
-          ).toHaveLength(first === 'acquire' ? 1 : 0);
+          expect((await contents(tx, f.locationId)).items[0]).toMatchObject({
+            quantity: 6,
+            generallyMovableQty: 6 - (2 - originControlled),
+          });
+          const balances = await tx
+            .select()
+            .from(wmsTables.batchInventorySessionBalances)
+            .where(eq(wmsTables.batchInventorySessionBalances.skuId, f.skuId));
+          expect(balances.reduce((sum, balance) => sum + balance.qty, 0)).toBe(2);
         });
       } finally {
         release();
