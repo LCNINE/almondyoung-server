@@ -53,10 +53,6 @@ export function EntryCard({
           suppressClick.current = false
         }}
       >
-        <span
-          className="absolute right-6 bottom-1 h-3 w-14 rounded-full bg-black/20 blur-lg lg:hidden"
-          aria-hidden="true"
-        />
         {entry.mediaFileIds.length > 0 && (
           <span className="logo-sticker-tilt absolute top-2 right-3 size-24 lg:inset-0 lg:size-auto">
             {entry.mediaFileIds.length === 1 ? (
@@ -140,7 +136,7 @@ export function EntryCard({
         )}
         {entry.mediaFileIds.length > 1 && (
           <span
-            className="pointer-events-none absolute inset-x-0 bottom-11 z-20 hidden justify-center lg:flex"
+            className={`pointer-events-none absolute right-3 bottom-2 z-20 w-24 justify-center lg:inset-x-0 lg:bottom-11 lg:flex lg:w-auto ${enableSwipe ? "flex" : "hidden"}`}
             aria-label={`${previewIndex + 1}/${entry.mediaFileIds.length}`}
           >
             <span className="flex items-center gap-1 rounded-full bg-[#24343d]/55 px-1.5 py-1">
