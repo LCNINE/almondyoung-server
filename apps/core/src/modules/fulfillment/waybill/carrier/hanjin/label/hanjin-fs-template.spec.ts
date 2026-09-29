@@ -1,3 +1,4 @@
+import { ConflictError } from '@app/shared';
 import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
 import type { LabelSpec } from '../../../label/label-model';
 import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
@@ -265,7 +266,13 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
         ...DATA,
         items: [{ locationCode: 'W'.repeat(64), skuId: 's1', name: '볼펜', quantity: 1 }],
       }),
-    ).toThrow(/too long to print/);
+    ).toThrow(ConflictError);
+    expect(() =>
+      renderHanjinFsLabel({
+        ...DATA,
+        items: [{ locationCode: 'W'.repeat(64), skuId: 's1', name: '볼펜', quantity: 1 }],
+      }),
+    ).toThrow(/^WAYBILL_LABEL_LOCATION_TOO_LONG: location code "W+" is too long to print/);
   });
 
   it('판차 2 이상이면 모든 쪽의 쪽 표시 앞에 「N판」, 1 이면 찍지 않는다', () => {

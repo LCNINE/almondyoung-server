@@ -1,3 +1,5 @@
+import { ConflictError } from '@app/shared';
+import { WAYBILL } from '../../../waybill.constants';
 import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
 import { paginate, type LabelItem } from '../../../label/label-items';
 import { fitSizePt, fitText, textWidthMm } from '../../../label/svg-text';
@@ -89,10 +91,11 @@ function itemElements(items: readonly LabelItem[]): string[] {
     const prefixPt = fitSizePt(prefix, prefixMax, FS_ITEM_PT, FS_ITEM_LOCATION_MIN_PT);
     const prefixWidth = textWidthMm(prefix, prefixPt);
     // 로케이션 코드는 식별자라 자르지 않는다. 겹쳐 찍힌 피킹 지시서는 틀린 지시서보다 나쁘다 — 도달 불가에
-    // 가까운 코드는 조용히 겹쳐 찍지 않고 크게 실패한다.
+    // 가까운 코드는 조용히 겹쳐 찍지 않고 크게 실패한다. 서버 결함(500)이 아니라 데이터(로케이션 코드) 문제라
+    // 코드가 붙은 409 로 돌려준다 — 현장이 사유를 읽고 로케이션 코드를 고치면 풀린다.
     if (prefixWidth > prefixMax) {
-      throw new Error(
-        `FS label: location code "${item.locationCode}" is too long to print without overlapping (max ${prefixMax.toFixed(1)}mm at ${FS_ITEM_LOCATION_MIN_PT}pt)`,
+      throw new ConflictError(
+        `${WAYBILL.ERROR.LABEL_LOCATION_TOO_LONG}: location code "${item.locationCode}" is too long to print without overlapping (max ${prefixMax.toFixed(1)}mm at ${FS_ITEM_LOCATION_MIN_PT}pt)`,
       );
     }
     const nameOffset = prefixWidth + FS_ITEM_LOCATION_GAP_MM;

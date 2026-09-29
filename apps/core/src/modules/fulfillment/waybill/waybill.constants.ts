@@ -30,6 +30,8 @@ export const WAYBILL = {
     LABEL_NOT_ALLOCATED: 'WAYBILL_LABEL_NOT_ALLOCATED',
     // 출력 확인의 지문이 현재 내용과 다르다 — 앱은 다시 렌더한다(스펙 §10.3).
     LABEL_CONTENT_CHANGED: 'LABEL_CONTENT_CHANGED',
+    // FS 송장의 품목 줄에 로케이션 코드가 겹치지 않고 들어가지 않는다 — 코드를 자르지 않고 거절한다.
+    LABEL_LOCATION_TOO_LONG: 'WAYBILL_LABEL_LOCATION_TOO_LONG',
   },
 } as const;
 
