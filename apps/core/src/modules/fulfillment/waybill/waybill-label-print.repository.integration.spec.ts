@@ -2,8 +2,8 @@ import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
-import { wmsSchema, wmsTables, DbTx } from '../../inventory/schema/inventory.schema';
-import { makeDb, inRollbackTx, seedWarehouseWithZone } from '../services/__support__';
+import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { makeDb, inRollbackTx, seedPickableShipment } from '../services/__support__';
 import { latestPrint } from './label/label-print-policy';
 import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
 
@@ -22,15 +22,9 @@ describeIfDb('WaybillLabelPrintRepository (DB integration)', () => {
     await client.end();
   });
 
-  async function shipment(tx: DbTx): Promise<string> {
-    const { warehouseId } = await seedWarehouseWithZone(tx);
-    const [s] = await tx.insert(wmsTables.shipments).values({ warehouseId, status: 'planned' }).returning();
-    return s.id;
-  }
-
   it('같은 지문을 다시 기록하면 행이 늘지 않고 printed_at 이 갱신돼 «마지막 출력»이 된다(A→B→A)', async () => {
     await inRollbackTx(db, async (tx) => {
-      const shipmentId = await shipment(tx);
+      const { shipmentId } = await seedPickableShipment(tx, 1);
       const base = { shipmentId, itemsSnapshot: [], printedBy: randomUUID() };
       await repo.record(tx, { ...base, fingerprint: 'a'.repeat(64), revision: 1 });
       await repo.record(tx, { ...base, fingerprint: 'b'.repeat(64), revision: 2 });
@@ -49,7 +43,7 @@ describeIfDb('WaybillLabelPrintRepository (DB integration)', () => {
 
   it('다른 지문이 같은 판차를 쓰면 유니크 위반 — 판차는 박스 안에서 유일하다', async () => {
     await inRollbackTx(db, async (tx) => {
-      const shipmentId = await shipment(tx);
+      const { shipmentId } = await seedPickableShipment(tx, 1);
       const base = { shipmentId, itemsSnapshot: [], printedBy: randomUUID(), revision: 1 };
       await repo.record(tx, { ...base, fingerprint: 'a'.repeat(64) });
       const failure = await tx
@@ -64,10 +58,42 @@ describeIfDb('WaybillLabelPrintRepository (DB integration)', () => {
     });
   });
 
-  it('활성 작업 항목이 없으면 lockActiveWorkItem 은 null', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const shipmentId = await shipment(tx);
-      expect(await repo.lockActiveWorkItem(tx, shipmentId)).toBeNull();
+  describe('lockActiveWorkItem', () => {
+    it('활성 작업 항목이 있으면 그 id 를 돌려준다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { shipmentId, workItemId } = await seedPickableShipment(tx, 1);
+        expect(await repo.lockActiveWorkItem(tx, shipmentId)).toEqual({ id: workItemId });
+      });
+    });
+
+    it('작업 항목이 completed 뿐이면 null', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { shipmentId, workItemId } = await seedPickableShipment(tx, 1);
+        await tx
+          .update(wmsTables.outboundBatchWorkItems)
+          .set({ status: 'completed', completedAt: new Date() })
+          .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId));
+        expect(await repo.lockActiveWorkItem(tx, shipmentId)).toBeNull();
+      });
+    });
+
+    it('작업 항목이 excluded 뿐이면 null', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { shipmentId, workItemId } = await seedPickableShipment(tx, 1);
+        await tx
+          .update(wmsTables.outboundBatchWorkItems)
+          .set({ status: 'excluded', exclusionReason: 'test' })
+          .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId));
+        expect(await repo.lockActiveWorkItem(tx, shipmentId)).toBeNull();
+      });
+    });
+
+    it('작업 항목이 아예 없는 박스는 null', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { shipmentId, workItemId } = await seedPickableShipment(tx, 1);
+        await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, workItemId));
+        expect(await repo.lockActiveWorkItem(tx, shipmentId)).toBeNull();
+      });
     });
   });
 });

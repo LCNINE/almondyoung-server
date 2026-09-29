@@ -2862,7 +2862,10 @@ export const demoCarrierShipments = pgTable(
     uqDemoCarrierRequestKey: unique('uq_demo_carrier_request_key').on(t.requestKey),
     uqDemoCarrierWaybillNo: unique('uq_demo_carrier_waybill_no').on(t.waybillNo),
     ckDemoCarrierRequestHash: check('ck_demo_carrier_request_hash', sql`length(${t.requestHash}) = 64`),
-    ckDemoCarrierStatus: check('ck_demo_carrier_status', sql`${t.status} IN ('allocated', 'registered', 'canceled')`),
+    ckDemoCarrierStatus: check(
+      'ck_demo_carrier_status',
+      sql`${t.status} IN ('allocated', 'registered', 'canceled')`,
+    ),
   }),
 );
 

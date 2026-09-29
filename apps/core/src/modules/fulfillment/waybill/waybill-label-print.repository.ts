@@ -74,6 +74,8 @@ export class WaybillLabelPrintRepository {
       .select({ id: W.id })
       .from(W)
       .where(and(eq(W.shipmentId, shipmentId), notInArray(W.status, ['completed', 'excluded'])))
+      // 한 줄이면 충분하다 — 부분 유니크 인덱스 uq_outbound_work_item_active_shipment(status NOT IN ('completed','excluded'))가
+      // 박스당 활성 작업 항목을 최대 하나로 보장한다.
       .limit(1)
       .for('update');
     return item ?? null;
