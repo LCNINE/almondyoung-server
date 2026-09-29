@@ -972,6 +972,7 @@ export interface BatchPickingAllocation {
   id: string;
   workItemId: string;
   shipmentLineId: string;
+  skuId: string;
   sourceLocationId: string;
   qty: number;
   sourceStockVersion: number;

@@ -873,6 +873,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
           id: allocation.id,
           workItemId: added.workItem.id,
           shipmentLineId: fixtureA.line.id,
+          skuId: fixtureA.line.skuId,
           sourceLocationId: fixtureA.locationId,
           qty: fixtureA.line.qty,
           sourceStockVersion: 1,

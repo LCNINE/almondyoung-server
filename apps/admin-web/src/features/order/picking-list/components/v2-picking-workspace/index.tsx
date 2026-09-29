@@ -76,9 +76,6 @@ export function V2PickingWorkspace() {
   const picking = batch?.picking;
   const session = batch?.inventorySession;
   const strategy = picking?.strategy;
-  const allocationSkuId = shipment?.lines.find(
-    (line) => line.id === allocation?.shipmentLineId
-  )?.skuId;
   const busy = [
     start,
     discreteScan,
@@ -172,7 +169,7 @@ export function V2PickingWorkspace() {
             <p className="font-mono text-xs text-muted-foreground">
               batch {batch.id} / inventory session {session?.id ?? '미시작'}
             </p>
-            {canOperateWarehouse && !session && (
+            {canOperateWarehouse && !batch.picking && (
               <Button
                 disabled={start.isPending}
                 onClick={() =>
@@ -221,18 +218,12 @@ export function V2PickingWorkspace() {
                     <SelectValue placeholder="allocation 선택" />
                   </SelectTrigger>
                   <SelectContent>
-                    {relevantAllocations.map((item) => {
-                      const skuId = shipment?.lines.find(
-                        (line) => line.id === item.shipmentLineId
-                      )?.skuId;
-                      return (
-                        <SelectItem key={item.id} value={item.id}>
-                          {skuId ?? item.shipmentLineId} ·{' '}
-                          {item.sourceLocationId} · line {item.shipmentLineId} ×{' '}
-                          {item.qty}
-                        </SelectItem>
-                      );
-                    })}
+                    {relevantAllocations.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.skuId} · {item.sourceLocationId} · line{' '}
+                        {item.shipmentLineId} × {item.qty}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -311,19 +302,16 @@ export function V2PickingWorkspace() {
                 </h3>
                 {canOperateWarehouse && strategy === 'discrete' && (
                   <Button
-                    disabled={
-                      !context || !allocation || !allocationSkuId || busy
-                    }
+                    disabled={!context || !allocation || busy}
                     onClick={() =>
                       context &&
                       allocation &&
-                      allocationSkuId &&
                       command(
                         'discrete-scan',
                         {
                           ...context,
                           shipmentLineId: allocation.shipmentLineId,
-                          skuId: allocationSkuId,
+                          skuId: allocation.skuId,
                           sourceLocationId: allocation.sourceLocationId,
                           quantity,
                           expectedLeaseVersion: workItem!.leaseVersion,
@@ -339,23 +327,16 @@ export function V2PickingWorkspace() {
                 {canOperateWarehouse && strategy === 'aggregate_then_sort' && (
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={
-                        !session ||
-                        !allocation ||
-                        !allocationSkuId ||
-                        !cartId ||
-                        busy
-                      }
+                      disabled={!session || !allocation || !cartId || busy}
                       onClick={() =>
                         session &&
                         allocation &&
-                        allocationSkuId &&
                         command(
                           'aggregate-collect',
                           {
                             batchId,
                             sessionId: session.id,
-                            skuId: allocationSkuId,
+                            skuId: allocation.skuId,
                             sourceLocationId: allocation.sourceLocationId,
                             cartId,
                             quantity,
@@ -371,23 +352,16 @@ export function V2PickingWorkspace() {
                       Source cart collect
                     </Button>
                     <Button
-                      disabled={
-                        !context ||
-                        !allocation ||
-                        !allocationSkuId ||
-                        !cartId ||
-                        busy
-                      }
+                      disabled={!context || !allocation || !cartId || busy}
                       onClick={() =>
                         context &&
                         allocation &&
-                        allocationSkuId &&
                         command(
                           'aggregate-sort',
                           {
                             ...context,
                             shipmentLineId: allocation.shipmentLineId,
-                            skuId: allocationSkuId,
+                            skuId: allocation.skuId,
                             cartId,
                             quantity,
                             expectedLeaseVersion: workItem!.leaseVersion,
@@ -461,17 +435,10 @@ export function V2PickingWorkspace() {
                       Tote 할당
                     </Button>
                     <Button
-                      disabled={
-                        !context ||
-                        !allocation ||
-                        !allocationSkuId ||
-                        !toteBarcode ||
-                        busy
-                      }
+                      disabled={!context || !allocation || !toteBarcode || busy}
                       onClick={() =>
                         context &&
                         allocation &&
-                        allocationSkuId &&
                         command(
                           'tote-scan',
                           {
@@ -479,7 +446,7 @@ export function V2PickingWorkspace() {
                             toteBarcode,
                             expectedLeaseVersion: workItem!.leaseVersion,
                             shipmentLineId: allocation.shipmentLineId,
-                            skuId: allocationSkuId,
+                            skuId: allocation.skuId,
                             sourceLocationId: allocation.sourceLocationId,
                             quantity,
                           },

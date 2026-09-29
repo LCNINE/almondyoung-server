@@ -513,11 +513,15 @@ export class OutboundBatchOrchestrator {
       if (!warehouse) throw new NotFoundException(`Warehouse ${batch.warehouseId} not found`);
       const allocations = batch.startedAt
         ? await trx
-            .select({ allocation: wmsTables.pickingSourceAllocations })
+            .select({ allocation: wmsTables.pickingSourceAllocations, skuId: wmsTables.shipmentLines.skuId })
             .from(wmsTables.pickingSourceAllocations)
             .innerJoin(
               wmsTables.outboundBatchWorkItems,
               eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+            )
+            .innerJoin(
+              wmsTables.shipmentLines,
+              eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
             )
             .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
             .orderBy(
@@ -575,11 +579,12 @@ export class OutboundBatchOrchestrator {
           ? {
               strategy: STRATEGY_BY_PICKING_METHOD[batch.pickingMethod],
               startedAt: batch.startedAt,
-              allocations: allocations.map(({ allocation }) => ({
+              allocations: allocations.map(({ allocation, skuId }) => ({
                 id: allocation.id,
                 // 시작된 배치의 배정은 전부 startBatchPicking 이 workItemId 로 넣었다. 컬럼은 PR 2 에서 NOT NULL 이 된다.
                 workItemId: allocation.workItemId!,
                 shipmentLineId: allocation.shipmentLineId,
+                skuId,
                 sourceLocationId: allocation.sourceLocationId,
                 qty: allocation.qty,
                 sourceStockVersion: allocation.sourceStockVersion,

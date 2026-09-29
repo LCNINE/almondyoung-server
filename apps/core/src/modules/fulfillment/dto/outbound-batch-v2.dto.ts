@@ -129,6 +129,7 @@ export class BatchPickingAllocationDto {
   id: string;
   workItemId: string;
   shipmentLineId: string;
+  skuId: string;
   sourceLocationId: string;
   qty: number;
   sourceStockVersion: number;
