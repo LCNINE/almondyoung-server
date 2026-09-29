@@ -1,0 +1,2 @@
+ALTER TABLE "notifications" ADD COLUMN "idempotency_key" varchar(200);--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_notifications_idempotency_channel" ON "notifications" USING btree ("idempotency_key","channel") WHERE "notifications"."idempotency_key" IS NOT NULL;

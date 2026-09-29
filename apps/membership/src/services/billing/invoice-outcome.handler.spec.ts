@@ -60,6 +60,12 @@ function makeHandler(opts: {
       .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
   };
   const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(true) };
+  // 고객 알림은 billing-notice 스펙의 관심사다 — 여기선 연락처가 없는 것으로 두어 알림 경로를 닫는다.
+  const billingNoticeManager = {
+    lookupContactForContract: jest.fn().mockResolvedValue(null),
+    queueAttemptFailed: jest.fn(),
+    queueTerminatedForNonPayment: jest.fn(),
+  };
   const handler = new InvoiceOutcomeHandler(
     { db } as never,
     contractEventManager as never,
@@ -68,6 +74,7 @@ function makeHandler(opts: {
     arrearsManager as never,
     benefitReader as never,
     termsRulesReader as never,
+    billingNoticeManager as never,
   );
   return { handler, tx, updates, contractEventManager, publisher, paymentClient, arrearsManager };
 }

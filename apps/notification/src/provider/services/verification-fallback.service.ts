@@ -134,7 +134,7 @@ export class VerificationFallbackService {
     return kakaoProvider.send({
       to: recipientNo,
       content: '',
-      metadata: { templateCode, templateParameters: { code } },
+      metadata: { templateCode, templateParameters: { code }, alimtalkMessageType: 'AUTH' },
     });
   }
 

@@ -113,7 +113,20 @@ describe('InvoiceResultConsumer 라우팅', () => {
   it('invoice.payment_failed → handlePaymentFailed (자격 유지, 연체 표시)', async () => {
     const { consumer, handler } = makeConsumer();
     await consumer.onInvoicePaymentFailed(paymentFailed());
-    expect(handler.handlePaymentFailed).toHaveBeenCalledWith('contract-1', 'inv-1', 'intent-2', 1, 'Q999', '잔액부족');
+    expect(handler.handlePaymentFailed).toHaveBeenCalledWith(
+      'contract-1',
+      'inv-1',
+      'intent-2',
+      1,
+      'Q999',
+      '잔액부족',
+      // 고객 안내용 재시도 정보는 그대로 넘긴다(주기·금액은 옛 wallet 이면 비어 온다)
+      {
+        maxAttempts: 3,
+        nextAttemptAt: '2026-08-07T00:00:00.000Z',
+        billed: { amount: null, periodStart: null, periodEnd: null },
+      },
+    );
   });
 
   it('mandate.rejected → handleMandateRejected (선적용 자격 회수)', async () => {

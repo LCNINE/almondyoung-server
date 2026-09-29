@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectPublisher, PublisherFor, type DbTx } from '@app/events';
 import {
   MEMBERSHIP_STREAM,
+  type MembershipBillingAttemptFailedPayload,
   type MembershipExpiryUpcomingPayload,
   type MembershipRenewalUpcomingPayload,
   type MembershipStatusChangedPayload,
+  type MembershipTerminatedForNonPaymentPayload,
 } from '@packages/event-contracts/streams';
 
 @Injectable()
@@ -59,6 +61,30 @@ export class MembershipEventPublisher {
   async saveExpiryUpcoming(payload: MembershipExpiryUpcomingPayload, tx: DbTx, idempotencyKey: string): Promise<void> {
     await this.publisher.enqueue(
       { eventType: 'MembershipExpiryUpcoming', aggregateId: payload.userId, payload, idempotencyKey },
+      tx,
+    );
+  }
+
+  /** 출금 실패 안내. 실패 마커와 같은 tx 로 커밋되고, 멱등키가 재배달·겹친 인스턴스의 중복을 막는다. */
+  async saveBillingAttemptFailed(
+    payload: MembershipBillingAttemptFailedPayload,
+    tx: DbTx,
+    idempotencyKey: string,
+  ): Promise<void> {
+    await this.publisher.enqueue(
+      { eventType: 'MembershipBillingAttemptFailed', aggregateId: payload.userId, payload, idempotencyKey },
+      tx,
+    );
+  }
+
+  /** 미납 해지 안내. 회수·미수 기록과 같은 tx 로 커밋된다. */
+  async saveTerminatedForNonPayment(
+    payload: MembershipTerminatedForNonPaymentPayload,
+    tx: DbTx,
+    idempotencyKey: string,
+  ): Promise<void> {
+    await this.publisher.enqueue(
+      { eventType: 'MembershipTerminatedForNonPayment', aggregateId: payload.userId, payload, idempotencyKey },
       tx,
     );
   }
