@@ -130,4 +130,41 @@ describeIfDb('재출력 게이트 (I5)', () => {
       expect(state.status).toBe('shipped');
     });
   });
+
+  // 원장 Ruling F3 — 출고된 박스도 송장을 다시 뽑을 수 있어야 한다(#913 동작). 활성 작업 항목이 없으면 출고 완료된
+  // 마지막 작업 항목의 배정으로 그린다. 배정은 불변이라 출력 때와 같은 내용·지문이다.
+  it('출고 완료(shipped)된 한진 박스도 같은 지문·판차 1 로 다시 렌더되고 출력 확인된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, scan, labels } = await preparedBox(tx, 1, true);
+      const printed = await labels.render.render(box.shipmentId, tx);
+      await labels.confirm.confirm(box.shipmentId, printed.fingerprint, { id: box.actorId }, tx);
+      const last = await scan(`scan-${randomUUID()}`);
+      if (isPreparationBlocked(last)) throw new Error('Expected prepared outbound state');
+      expect(last.status).toBe('shipped');
+      const [workItem] = await tx
+        .select({ status: wmsTables.outboundBatchWorkItems.status })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+      expect(workItem.status).toBe('completed');
+
+      const again = await labels.render.render(box.shipmentId, tx);
+      expect(again).toMatchObject({ fingerprint: printed.fingerprint, revision: 1 });
+      const confirmed = await labels.confirm.confirm(box.shipmentId, again.fingerprint, { id: box.actorId }, tx);
+      expect(confirmed.revision).toBe(1);
+    });
+  });
+
+  it('작업 항목이 excluded 뿐인 박스는 배정이 있어도 WAYBILL_LABEL_NOT_ALLOCATED', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const box = await seedPickableShipment(tx, 1);
+      await promoteToCarrierWaybill(tx, box);
+      await startBatchFor(tx, box);
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ status: 'excluded', exclusionReason: 'test' })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+      const labels = assembleLabels(ambientDbService(tx));
+      await expect(labels.render.render(box.shipmentId, tx)).rejects.toThrow(/^WAYBILL_LABEL_NOT_ALLOCATED:/);
+    });
+  });
 });

@@ -26,7 +26,10 @@ export function isAppPrintable(wb: Pick<WaybillRow, 'source' | 'carrier'>): bool
   return wb.source === 'carrier' && wb.carrier === 'HANJIN';
 }
 
-/** I4 — 시작된 배치의 활성 작업 항목이면서 배정 합이 줄 수량을 덮은 박스만 그린다. */
+/**
+ * I4 — 시작된 배치의 작업 항목(활성 작업 항목, 없으면 출고 완료된 마지막 작업 항목 — 재출력용)이면서 배정 합이
+ * 줄 수량을 덮은 박스만 그린다. `excluded` 만 남은 박스는 작업 항목이 없는 것으로 보고 거절한다.
+ */
 export function assertLabelAllocated(
   shipmentId: string,
   allocation: LabelAllocation,

@@ -96,4 +96,19 @@ describeIfDb('WaybillLabelPrintRepository (DB integration)', () => {
       });
     });
   });
+
+  describe('lockShipmentKey', () => {
+    it('박스가 있으면 그 id 를 돌려준다(KEY SHARE 로 잡는다)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { shipmentId } = await seedPickableShipment(tx, 1);
+        expect(await repo.lockShipmentKey(tx, shipmentId)).toEqual({ id: shipmentId });
+      });
+    });
+
+    it('박스가 없으면 null', async () => {
+      await inRollbackTx(db, async (tx) => {
+        expect(await repo.lockShipmentKey(tx, randomUUID())).toBeNull();
+      });
+    });
+  });
 });

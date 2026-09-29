@@ -6,6 +6,7 @@ import type { LabelPrintRecord } from './label/label-print-policy';
 
 const P = wmsTables.waybillLabelPrints;
 const W = wmsTables.outboundBatchWorkItems;
+const S = wmsTables.shipments;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -68,7 +69,21 @@ export class WaybillLabelPrintRepository {
     };
   }
 
-  /** 출력 확인은 박스의 활성 작업 항목 잠금에서 줄을 선다(스펙 §13). 작업 항목이 없으면 null — 조립이 I4 로 거절한다. */
+  /**
+   * 박스 행을 KEY SHARE 로 잡는다 — 출력 확인의 첫 잠금(스펙 §13 «박스 → 작업 항목»). 출력 기록 INSERT 의 FK 검사가
+   * 어차피 shipments 에 암묵 KEY SHARE 를 잡는데, 그게 작업 항목 FOR UPDATE **뒤**에 오면 발송
+   * (`ShipmentDispatchService.lockAggregate`: 박스 FOR UPDATE → 작업 항목 FOR UPDATE)과 순서가 뒤집혀 교착할 수 있다.
+   * 먼저 잡아 두면 두 경로가 같은 순서로 줄을 선다. 박스가 없으면 null.
+   */
+  async lockShipmentKey(trx: DbTx, shipmentId: string): Promise<{ id: string } | null> {
+    const [shipment] = await trx.select({ id: S.id }).from(S).where(eq(S.id, shipmentId)).limit(1).for('key share');
+    return shipment ?? null;
+  }
+
+  /**
+   * 출력 확인은 박스의 활성 작업 항목 잠금에서 줄을 선다(스펙 §13). 활성 작업 항목이 없으면 null — 출고된 박스의
+   * 재출력(원장 Ruling F3)이거나, 작업 항목이 아예 없어 조립이 I4 로 거절할 박스다.
+   */
   async lockActiveWorkItem(trx: DbTx, shipmentId: string): Promise<{ id: string } | null> {
     const [item] = await trx
       .select({ id: W.id })
