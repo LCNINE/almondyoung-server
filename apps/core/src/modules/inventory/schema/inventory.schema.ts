@@ -2816,6 +2816,33 @@ export const waybills = pgTable(
   }),
 );
 
+/**
+ * 송장 출력 기록(스펙 §10.3) — 앱이 프린터 전송에 성공한 뒤에만 남긴다. 박스(shipment) 단위다: 박스가 다른 배치로
+ * 옮겨 가 배정이 바뀌면 지문이 달라지므로 따로 무효화할 것이 없다. 같은 내용(지문)을 다시 출력하면 새 행이 아니라
+ * printed_at 을 갱신한다 — «마지막 출력»은 printed_at 으로 가린다(A→B→A 로 되돌아온 박스).
+ */
+export const waybillLabelPrints = pgTable(
+  'waybill_label_prints',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    revision: integer('revision').notNull(),
+    // «바뀐 줄» 표시용 — 그 판에 찍힌 품목 줄(로케이션·SKU·이름·수량).
+    itemsSnapshot: jsonb('items_snapshot').notNull(),
+    printedBy: uuid('printed_by').notNull(),
+    printedAt: timestamp('printed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqShipmentFingerprint: unique('uq_waybill_label_prints_shipment_fingerprint').on(t.shipmentId, t.fingerprint),
+    uqShipmentRevision: unique('uq_waybill_label_prints_shipment_revision').on(t.shipmentId, t.revision),
+    ckRevision: check('ck_waybill_label_prints_revision', sql`${t.revision} >= 1`),
+    ckFingerprint: check('ck_waybill_label_prints_fingerprint', sql`length(${t.fingerprint}) = 64`),
+  }),
+);
+
 /** Durable external-boundary record used only by the demo carrier provider. */
 export const demoCarrierShipments = pgTable(
   'demo_carrier_shipments',
@@ -2835,10 +2862,7 @@ export const demoCarrierShipments = pgTable(
     uqDemoCarrierRequestKey: unique('uq_demo_carrier_request_key').on(t.requestKey),
     uqDemoCarrierWaybillNo: unique('uq_demo_carrier_waybill_no').on(t.waybillNo),
     ckDemoCarrierRequestHash: check('ck_demo_carrier_request_hash', sql`length(${t.requestHash}) = 64`),
-    ckDemoCarrierStatus: check(
-      'ck_demo_carrier_status',
-      sql`${t.status} IN ('allocated', 'registered', 'canceled')`,
-    ),
+    ckDemoCarrierStatus: check('ck_demo_carrier_status', sql`${t.status} IN ('allocated', 'registered', 'canceled')`),
   }),
 );
 
@@ -3393,6 +3417,7 @@ export const wmsTables = {
   inspectionIssues,
   outboundBatches,
   waybills,
+  waybillLabelPrints,
   demoCarrierShipments,
 
   // Outbound V2 expand model
@@ -4648,6 +4673,7 @@ export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMap
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;
 export type NewWaybill = InferInsertModel<typeof waybills>;
+export type WaybillLabelPrint = InferSelectModel<typeof waybillLabelPrints>;
 export type DemoCarrierShipment = InferSelectModel<typeof demoCarrierShipments>;
 
 // Outbound V2 expand model types

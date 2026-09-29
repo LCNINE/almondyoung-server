@@ -729,6 +729,13 @@
       "when": 1790649886096,
       "tag": "20260929024446_picking-allocations-by-work-item",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790720658810,
+      "tag": "20260929222418_add-waybill-label-prints",
+      "breakpoints": true
     }
   ]
 }
