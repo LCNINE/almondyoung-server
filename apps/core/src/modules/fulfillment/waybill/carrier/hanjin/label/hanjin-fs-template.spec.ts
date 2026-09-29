@@ -209,8 +209,39 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
       quantity: i + 1,
     }));
   const pagesOf = (n: number) => renderHanjinFsLabel({ ...DATA, items: ITEMS(n) });
-  const namesOn = (page: LabelSpec) =>
-    [...page.svg.matchAll(/<text x="4.5" y="(?:57|62.2|67.4|72.6)"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  // 줄 = 접두어 요소(x 4.5, 굵게) 바로 뒤의 이름 요소. svgDocument 는 요소를 구분자 없이 잇는다.
+  const rowsOn = (page: LabelSpec) =>
+    [
+      ...page.svg.matchAll(
+        /<text x="4.5" y="[\d.]+"[^>]*font-weight="700"[^>]*>\[([^\]<]*)\]<\/text><text x="[\d.]+" y="[\d.]+"[^>]*>([^<]*)<\/text>/g,
+      ),
+    ].map((m) => `${m[1]}|${m[2]}`);
+  const namesOn = (page: LabelSpec) => rowsOn(page).map((row) => row.split('|')[1]);
+
+  it('품목 줄 이름 앞에 [로케이션 코드] 를 찍는다', () => {
+    const [first] = renderHanjinFsLabel({
+      ...DATA,
+      items: [{ locationCode: 'A-01-01', skuId: 's1', name: '볼펜', quantity: 2 }],
+    });
+    expect(rowsOn(first)).toEqual(['A-01-01|볼펜']);
+  });
+
+  it('로케이션 코드가 길어도 자르지 않고 줄이며, 이름은 수량 앞에서 멈춘다', () => {
+    const code = 'Z'.repeat(64);
+    const [first] = renderHanjinFsLabel({
+      ...DATA,
+      items: [{ locationCode: code, skuId: 's1', name: '가'.repeat(100), quantity: 1000 }],
+    });
+    expect(first.svg).toContain(`[${code}]`);
+    const name = rowsOn(first)[0].split('|')[1];
+    expect(name.endsWith('…')).toBe(true);
+  });
+
+  it('판차 2 이상이면 모든 쪽의 쪽 표시 앞에 「N판」, 1 이면 찍지 않는다', () => {
+    const twice = renderHanjinFsLabel({ ...DATA, revision: 2, items: ITEMS(5) });
+    expect(twice.map((p) => /(\d+판 · \d+\/\d+)/.exec(p.svg)?.[1])).toEqual(['2판 · 1/2', '2판 · 2/2']);
+    expect(renderHanjinFsLabel({ ...DATA, revision: 1, items: ITEMS(1) })[0].svg).not.toMatch(/\d+판/);
+  });
 
   it.each([
     [1, 1],
@@ -283,11 +314,11 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
       ...DATA,
       items: [{ locationCode: 'A-1', skuId: 's1', name: '가'.repeat(60), quantity: 1000 }],
     });
-    const m = /<text x="4.5" y="57" font-size="([\d.]+)">([^<]*)<\/text>/.exec(page.svg);
+    const m = /<text x="([\d.]+)" y="57" font-size="([\d.]+)">([^<]*)<\/text>/.exec(page.svg);
     if (!m) throw new Error('item name element not found');
-    const nameWidthMm = textWidthMm(m[2], Number(m[1]) / PT_TO_MM);
-    expect(4.5 + nameWidthMm).toBeLessThanOrEqual(119 - textWidthMm('1000', 11) - 3 + 0.05);
-    expect(m[2].endsWith('…')).toBe(true);
+    const nameWidthMm = textWidthMm(m[3], Number(m[2]) / PT_TO_MM);
+    expect(Number(m[1]) + nameWidthMm).toBeLessThanOrEqual(119 - textWidthMm('1000', 11) - 3 + 0.05);
+    expect(m[3].endsWith('…')).toBe(true);
   });
 
   it('SKU명의 XML 특수문자는 이스케이프하고 금지 제어문자는 뺀다', () => {

@@ -66,20 +66,32 @@ const FS_PAGE_MARK_Y_MM = 80.6;
 const STOP_BANNER = '발송 금지 · 상품 확인용';
 const STOP_MARK = '발송 금지';
 
-/** 품목 이름 칸 폭 — 수량 앞 FS_ITEM_QTY_GAP_MM 에서 멈춘다. 위치 코드 접두어가 붙으면 그 폭을 여기서 뺀다. */
-export function fsItemNameMaxWidthMm(qty: string): number {
-  return FS_ITEM_QTY_X_MM - textWidthMm(qty, FS_ITEM_PT) - FS_ITEM_QTY_GAP_MM - FS_ITEM_X_MM;
+/** 로케이션 접두어 칸의 최대 폭 — 코드는 식별자라 자르지 않고 FS_ITEM_MIN_PT 까지 줄인다. */
+export const FS_ITEM_LOCATION_MAX_WIDTH_MM = 30;
+const FS_ITEM_LOCATION_GAP_MM = 1.5;
+
+/** 품목 이름 칸 폭 — 수량 앞 FS_ITEM_QTY_GAP_MM 에서 멈춘다. 위치 코드 접두어가 붙으면 그 폭(+간격)을 뺀다. */
+export function fsItemNameMaxWidthMm(qty: string, locationPrefixWidthMm = 0): number {
+  return FS_ITEM_QTY_X_MM - textWidthMm(qty, FS_ITEM_PT) - FS_ITEM_QTY_GAP_MM - FS_ITEM_X_MM - locationPrefixWidthMm;
 }
+
+const round1 = (mm: number) => Math.round(mm * 10) / 10;
 
 function itemElements(items: readonly LabelItem[]): string[] {
   return items.flatMap((item, i) => {
     // 부동소수 꼬리(72.60000000000001)가 svg 좌표에 새지 않게 0.1mm 로 반올림한다.
-    const y = Math.round((FS_ITEM_FIRST_BASELINE_MM + i * FS_ITEM_PITCH_MM) * 10) / 10;
+    const y = round1(FS_ITEM_FIRST_BASELINE_MM + i * FS_ITEM_PITCH_MM);
     const qty = String(item.quantity);
-    const maxWidth = fsItemNameMaxWidthMm(qty);
+    const prefix = `[${item.locationCode}]`;
+    const prefixPt = fitSizePt(prefix, FS_ITEM_LOCATION_MAX_WIDTH_MM, FS_ITEM_PT, FS_ITEM_MIN_PT);
+    // 최소 pt 로도 칸을 넘는 코드는 이름 시작점을 칸 끝에 고정한다(이름·수량 좌표가 라벨 밖으로 새지 않게).
+    const prefixWidth =
+      Math.min(textWidthMm(prefix, prefixPt), FS_ITEM_LOCATION_MAX_WIDTH_MM) + FS_ITEM_LOCATION_GAP_MM;
+    const maxWidth = fsItemNameMaxWidthMm(qty, prefixWidth);
     const pt = fitSizePt(item.name, maxWidth, FS_ITEM_PT, FS_ITEM_MIN_PT);
     return [
-      text({ x: FS_ITEM_X_MM, y, pt, text: fitText(item.name, maxWidth, pt) }),
+      text({ x: FS_ITEM_X_MM, y, pt: prefixPt, bold: true, text: prefix }),
+      text({ x: round1(FS_ITEM_X_MM + prefixWidth), y, pt, text: fitText(item.name, maxWidth, pt) }),
       text({ x: FS_ITEM_QTY_X_MM, y, pt: FS_ITEM_PT, bold: true, anchor: 'end', text: qty }),
     ];
   });
@@ -100,7 +112,9 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec[] {
         x: FS_ITEM_X_MM,
         y: FS_PAGE_MARK_Y_MM,
         pt: 9,
-        text: `${i + 1}/${pages.length} · 총 ${d.items.length}건 ${qtySum}개`,
+        // 판차 자리: 스펙 §10.1-4 가 위치를 실측으로 정하라 했다. 실물로 자리를 확인한 이 줄(y 80.6)에 붙이면
+        // 새 좌표 실측이 필요 없다. 실물 확인은 Task 15 스모크. NS·NL 은 품목 줄·판차를 그리지 않는다(운영은 FS).
+        text: `${d.revision >= 2 ? `${d.revision}판 · ` : ''}${i + 1}/${pages.length} · 총 ${d.items.length}건 ${qtySum}개`,
       }),
     ];
     return i === 0 ? firstPage(d, shared) : continuationPage(shared);
