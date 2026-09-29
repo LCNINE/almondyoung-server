@@ -2,7 +2,7 @@ import "server-only"
 
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto"
 
-export const BEAUTYTOP_ORIGIN = "https://www.almondyoung.com"
+export const BEAUTYTOP_ORIGIN = "https://almondyoung.com"
 const TTL_SECONDS = 120
 const headers = {
   "Cache-Control": "private, no-store",
