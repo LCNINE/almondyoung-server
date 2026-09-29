@@ -28,7 +28,7 @@ import {
 
 type Phase =
   | { kind: 'idle' }
-  // retry: 「실패·미인쇄만 다시」 — 대상이 한 번도 안 나온 건뿐이라 중복 경고를 띄우지 않는다.
+  // retry: 「바뀐·미출력 송장만 다시」 — 대상이 서버 판정상 지금 내용으로 안 나온 건뿐이라 중복 경고를 띄우지 않는다.
   | { kind: 'confirm'; shipmentIds: string[]; last: BatchPrintResult | null; retry: boolean }
   | { kind: 'running'; done: number; total: number }
   | { kind: 'done'; result: BatchPrintResult };
@@ -169,7 +169,7 @@ export function BatchLabelPrintButton({
     phase.kind !== 'confirm'
       ? ''
       : phase.retry
-        ? `인쇄되지 않은 ${phase.shipmentIds.length}건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
+        ? `바뀌었거나 인쇄되지 않은 ${phase.shipmentIds.length}건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
         : printedAt
           ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 송장이 한 번 더 나와요.`
           : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
@@ -198,9 +198,11 @@ export function BatchLabelPrintButton({
             중지
           </Button>
         )}
-        {phase.kind === 'done' && reprintCount > 0 && (
+        {/* 서버 판정(바뀐 송장·안 나온 송장)이 있으면 이 기기에서 인쇄한 적이 없어도 보인다 — 다른 PC 의 출력,
+            작업 중 바뀐 송장도 여기서 다시 뽑는다(스펙 §10.5). 대상은 누를 때 서버에서 새로 받는다. */}
+        {reprintCount > 0 && phase.kind !== 'running' && (
           <Button type="button" disabled={disabled} onClick={() => void prepare(true)}>
-            실패·미인쇄만 다시
+            바뀐·미출력 송장만 다시
           </Button>
         )}
         {reprintCount > 0 && phase.kind !== 'running' && (

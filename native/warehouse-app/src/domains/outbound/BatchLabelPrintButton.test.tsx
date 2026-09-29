@@ -125,7 +125,7 @@ describe('BatchLabelPrintButton', () => {
     expect(prefs.get(BATCH_KEY)).toBeNull();
   });
 
-  it('거절 건은 사유별로 묶어 보이고, 「실패·미인쇄만 다시」는 그 건만 다시 부른다', async () => {
+  it('거절 건은 사유별로 묶어 보이고, 「바뀐·미출력 송장만 다시」는 그 건만 다시 부른다', async () => {
     let failB = true;
     const { paths } = mount({
       states: () => (failB ? [{ shipmentId: 'a', state: 'current' }, { shipmentId: 'b', state: 'never_printed' }] : []),
@@ -146,12 +146,12 @@ describe('BatchLabelPrintButton', () => {
 
     expect(await screen.findByText('재출력 필요 1')).toBeInTheDocument();
     paths.length = 0;
-    await userEvent.click(screen.getByRole('button', { name: '실패·미인쇄만 다시' }));
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
     // 방금 한 장을 찍어 이 기기 기록이 생겼지만, 다시 보내는 건 안 나온 건뿐이라 중복 경고는 거짓말이다.
     const retryDialog = await screen.findByRole('dialog', { name: '송장 1건을 인쇄할까요?' });
     failB = false;
     expect(retryDialog).toHaveTextContent(
-      '인쇄되지 않은 1건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
+      '바뀌었거나 인쇄되지 않은 1건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
     );
     expect(retryDialog).not.toHaveTextContent('이미 인쇄했어요');
     await userEvent.click(within(retryDialog).getByRole('button', { name: '인쇄' }));
@@ -231,7 +231,7 @@ describe('BatchLabelPrintButton', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 1 · 실패 0 · 미인쇄 1');
     expect(print.mock.calls).toEqual([['spooler://XP', '^XAa^XZ']]);
     expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
-    expect(screen.getByRole('button', { name: '실패·미인쇄만 다시' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' })).toBeEnabled();
   });
 
   // 인쇄 중 예외가 새면 phase 가 running 에 남아 화면 이동이 영영 막힌다.
@@ -331,11 +331,36 @@ describe('BatchLabelPrintButton', () => {
     await screen.findByRole('status');
     paths.length = 0;
     confirms.length = 0;
-    await userEvent.click(screen.getByRole('button', { name: '실패·미인쇄만 다시' }));
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
     const dialog = await screen.findByRole('dialog', { name: '송장 1건을 인쇄할까요?' });
     await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
     await screen.findByText('보냄 1 · 실패 0 · 미인쇄 0', { exact: false });
     expect(paths).toEqual(['/shipments/c/waybill/label']);
     expect(confirms.map((c) => c.path)).toEqual(['/shipments/c/waybill/label-prints']);
+  });
+
+  it('서버 판정에 재출력 대상이 있으면 이 기기에서 인쇄한 적이 없어도 「바뀐·미출력 송장만 다시」가 보인다', async () => {
+    const { paths } = mount({
+      workItems: items,
+      states: () => [
+        { shipmentId: 'a', state: 'never_printed' },
+        { shipmentId: 'c', state: 'reprint_required' },
+      ],
+    });
+    expect(await screen.findByText('재출력 필요 2')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
+    const dialog = await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' });
+    expect(dialog).toHaveTextContent('바뀌었거나 인쇄되지 않은 2건만 다시 보내요.');
+    // 대상은 누를 때 서버에서 새로 받는다 — work-items 는 부르지 않는다.
+    expect(paths).not.toContain('/outbound-batches/b-1/work-items');
+  });
+
+  it('재출력 대상이 0 이면 「바뀐·미출력 송장만 다시」가 없다', async () => {
+    mount({ workItems: items, states: () => [{ shipmentId: 'a', state: 'current' }] });
+    await screen.findByRole('button', { name: '송장 인쇄' });
+    // 판정 조회가 끝날 때까지 기다린다 — 끝나기 전엔 원래 없다.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('button', { name: '바뀐·미출력 송장만 다시' })).toBeNull();
+    expect(screen.queryByText(/재출력 필요/)).toBeNull();
   });
 });
