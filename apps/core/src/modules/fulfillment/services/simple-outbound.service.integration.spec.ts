@@ -116,12 +116,82 @@ describeIfDb('SimpleOutboundService.prepare', () => {
   it('다른 작업자가 피킹 중이면 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
-      const other = randomUUID();
+      const service = assembleSimpleOutbound(tx);
+      // 다른 작업자가 먼저 준비해 배치를 시작하고 이 박스를 claim 한다 — 시작 전 배치에 picking 을
+      // 손으로 박으면 계획 흡수 전 상태가 되어 차단 표지로 빠진다(아래 테스트).
+      const otherPrepared = await service.prepare(
+        fixture.shipmentId,
+        { id: randomUUID(), roles: ['logistics_worker'] },
+        `prep-other-${randomUUID()}`,
+        tx,
+      );
+      expect(otherPrepared.outcome).toBe('ready');
+
+      await expect(
+        service.prepare(
+          fixture.shipmentId,
+          { id: fixture.actorId, roles: ['logistics_worker'] },
+          `prep-${randomUUID()}`,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER' } });
+    });
+  });
+
+  // 계획 흡수 전에 시작된 배치(started_at NULL, 작업 항목은 queued 를 지남)는 배치 시작이 배정할
+  // 대상이 아니다. 날 409 대신 현장 앱이 아는 차단 표지(ACTIVE_WORK_REQUIRES_REVIEW)로 나와야 한다.
+  it('시작 전 배치의 다른 작업 항목이 queued 를 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const sibling = await seedPickableShipment(tx, 1);
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({
+          batchId: fixture.batchId,
+          status: 'picking',
+          pickerId: sibling.actorId,
+          pickerClaimedAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+          leaseVersion: 1,
+        })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      const service = assembleSimpleOutbound(tx);
+
+      const prepared = await service.prepare(
+        fixture.shipmentId,
+        { id: fixture.actorId, roles: ['logistics_worker'] },
+        `prep-${randomUUID()}`,
+        tx,
+      );
+
+      expect(prepared).toMatchObject({
+        outcome: 'preparation_blocked',
+        code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+        reasonCode: 'ACTIVE_WORK_REQUIRES_REVIEW',
+        batchId: fixture.batchId,
+        invalidatedPlanId: null,
+      });
+      const [batch] = await tx
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, fixture.batchId));
+      expect(batch.startedAt).toBeNull();
+      const allocations = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItemId));
+      expect(allocations).toEqual([]);
+    });
+  });
+
+  it('시작 전 배치인데 이 작업 항목 자신이 queued 를 지났으면 preparation_blocked(ACTIVE_WORK_REQUIRES_REVIEW)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx);
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
           status: 'picking',
-          pickerId: other,
+          pickerId: fixture.actorId,
           pickerClaimedAt: new Date(),
           leaseExpiresAt: new Date(Date.now() + 60_000),
           leaseVersion: 1,
@@ -136,7 +206,12 @@ describeIfDb('SimpleOutboundService.prepare', () => {
           `prep-${randomUUID()}`,
           tx,
         ),
-      ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER' } });
+      ).resolves.toMatchObject({
+        outcome: 'preparation_blocked',
+        reasonCode: 'ACTIVE_WORK_REQUIRES_REVIEW',
+        batchId: fixture.batchId,
+        invalidatedPlanId: null,
+      });
     });
   });
 
@@ -171,19 +246,20 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  // 리뷰 지적 3: ensurePlan 의 plan 멤버십 조회가 loadWorkItem 과 같은 넓은
-  // PICKABLE_WORK_ITEM_STATUSES(ready_to_pack·packing 포함)를 쓰면, 같은 배치 안의
-  // 다른 shipment 가 ready_to_pack 상태일 때 그 shipment 까지 plan 멤버십에 끼어든다.
-  // DiscretePickingStrategy.assertPlanningEligibility 는 ACTIVE_WORK_ITEM_STATUSES
-  // (queued·picking 만)로 멤버십을 정확히 비교하므로 불일치가 나 배치 전체가
-  // PICKING_WORK_ITEM_MEMBERSHIP_MISMATCH 로 막힌다 — queued 하나만 있어도 스캔 불가.
+  // 리뷰 지적 3(계획 시절): 같은 배치 안의 다른 shipment 가 ready_to_pack 이면 그 shipment 까지
+  // 계획 멤버십에 끼어들어 배치 전체가 막혔다. 지금은 ready_to_pack 이 «시작된» 배치에서만 생기고,
+  // 시작된 배치의 준비는 자기 작업 항목만 잠그므로 형제 상태와 무관하게 스캔이 흘러야 한다.
   it('배치 안의 다른 shipment 가 ready_to_pack 이어도 queued 항목은 스캔할 수 있다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
       const blocker = await seedPickableShipment(tx, 1);
-      // blocker 의 work item 을 fixture 와 같은 배치로 옮기고 ready_to_pack 으로 둔다 —
-      // "배치에 열린 plan 은 없지만 이미 ready_to_pack/packing 인 work item 이 있는" 상태를
-      // 재현한다. batchId·shipmentId 만 FK 라 warehouse 가 달라도 이 이동 자체는 허용된다.
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+      // 배치를 먼저 시작한다(배정·세션·started_at).
+      const prepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      expect(prepared.outcome).toBe('ready');
+      // blocker 의 work item 을 시작된 배치로 옮기고 ready_to_pack 으로 둔다. batchId·shipmentId 만
+      // FK 라 warehouse 가 달라도 이 이동 자체는 허용된다.
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
@@ -195,9 +271,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
           leaseExpiresAt: null,
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, blocker.workItemId));
-
-      const service = assembleSimpleOutbound(tx);
-      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
       const state = await service.scan(
         fixture.shipmentId,

@@ -112,8 +112,9 @@ export class SimpleOutboundService {
       if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
       return this.claimPrepared(workItem, sessionId, actor, idempotencyKey, tx);
     }
+    let locked: Awaited<ReturnType<typeof lockPreparation>>;
     try {
-      await lockPreparation(initial.batchId, this.invariant, tx);
+      locked = await lockPreparation(initial.batchId, this.invariant, tx);
     } catch (error) {
       const blocked = this.preparationFailure(error, initial.batchId);
       if (blocked) return blocked;
@@ -123,6 +124,11 @@ export class SimpleOutboundService {
     await this.assertBatchMethodSupported(workItem.batchId, tx);
     if (workItem.batchId !== initial.batchId)
       throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Shipment batch changed');
+    // 잠근 배치가 여전히 시작 전인데 이 작업 항목이 queued 를 지났다 = 계획 흡수 전에 시작된 배치.
+    // 배치 시작은 queued 만 배정하므로 그대로 두면 날 409(PICKING_BATCH_EMPTY)가 된다 — 현장 앱이 아는 차단 표지로 낸다.
+    // 잠금 사이에 다른 요청이 배치를 시작했다면(`startedAt` 설정) 시작 명령이 그 세션으로 합류시킨다.
+    if (!locked.batch.startedAt && workItem.status !== 'queued')
+      return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
     let started: PickingStartResult;
     try {
       // 시작이 실패하면 중첩 명령의 pending 행까지 되돌린다.
@@ -171,12 +177,12 @@ export class SimpleOutboundService {
     if (!isPlanValidationError(error)) return null;
     const response = error.getResponse();
     const code = typeof response === 'object' && 'code' in response ? response.code : undefined;
-    if (code === 'FULFILLMENT_INVARIANT_VIOLATION')
+    // 시작 안 된 배치인데 작업 항목이 queued 를 지났다 = 계획 흡수 전에 시작된 배치. 현장 앱이 아는 차단 표지로 낸다.
+    if (code === 'FULFILLMENT_INVARIANT_VIOLATION' || code === 'PICKING_BATCH_STATE_CORRUPT')
       return preparationBlocked(batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
     if (code === 'PICKING_WAYBILL_NOT_DISPATCHABLE') return preparationBlocked(batchId, null, 'ELIGIBILITY_CHANGED');
     if (code === 'PICKING_SOURCE_INSUFFICIENT') return preparationBlocked(batchId, null, 'SOURCE_INSUFFICIENT');
-    if (code === 'PICKING_SOURCE_STALE' || code === 'PICKING_PLAN_SOURCE_STALE')
-      return preparationBlocked(batchId, null, 'REPLAN_LIMIT_REACHED');
+    if (code === 'PICKING_SOURCE_STALE') return preparationBlocked(batchId, null, 'REPLAN_LIMIT_REACHED');
     return null;
   }
 
