@@ -671,6 +671,41 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.shipmentOperations.id, operation.id));
       expect(await services.recovery.rebuildFromEvents(session.id, tx)).toMatchObject({ healthy: true });
 
+      // 결품 intent 가 같은 배치의 다른 작업 항목(형제 박스)을 가리키면, 이 줄·위치의 배정은
+      // 그 작업 항목 몫이 아니므로 복구가 귀속을 거부한다.
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: operation.id,
+              shipmentId: fixture.shipment.id,
+              workItemId: siblingWorkItem.id,
+              sessionId: session.id,
+              actorId,
+              reason: operationReason,
+              lines: [
+                {
+                  shipmentLineId: fixture.line.id,
+                  sourceLocationId: fixture.source.locationId,
+                  shortQty: 1,
+                  allocationQty: 3,
+                },
+              ],
+            },
+          },
+        })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      const foreignWorkItem = await services.recovery.reconcile(session.id, tx);
+      expect(foreignWorkItem).toMatchObject({ healthy: false, recoveryRequired: true });
+      expect(foreignWorkItem.issues.join(' ')).toContain('has invalid short-pick allocation attribution');
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ beforeManifestSnapshot: operation.beforeManifestSnapshot })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      expect(await services.recovery.rebuildFromEvents(session.id, tx)).toMatchObject({ healthy: true });
+
       await tx
         .update(wmsTables.shipmentOperations)
         .set({ status: 'recovery_required', lastError: 'invoice void retry pending' })

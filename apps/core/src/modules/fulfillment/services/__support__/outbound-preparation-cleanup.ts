@@ -1,21 +1,37 @@
 import { eq, inArray } from 'drizzle-orm';
 import { outbox_events } from '@app/events';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
-import { seedPickableShipment } from './logistics-fixtures';
+import { PickableShipmentFixture, seedPickableShipment } from './logistics-fixtures';
 
-/** Deletes only this suite's committed fixture graph, including nested command and outbox rows. */
-export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<typeof seedPickableShipment>>) {
-  const [item] = await tx
-    .select()
-    .from(wmsTables.fulfillmentOrderItems)
-    .where(eq(wmsTables.fulfillmentOrderItems.skuId, f.skuId));
+/**
+ * Deletes only this suite's committed fixture graph, including nested command and outbox rows.
+ * `extras` are further boxes composed over the same SKU/location/warehouse (seedShipmentForExistingStock) —
+ * whether their work item was moved into `f`'s batch (seedTwoBoxBatch) or stayed in its own batch.
+ */
+export async function cleanupPreparationFixture(
+  tx: DbTx,
+  f: Awaited<ReturnType<typeof seedPickableShipment>>,
+  extras: PickableShipmentFixture[] = [],
+) {
+  const [firstLine] = await tx
+    .select({ fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId })
+    .from(wmsTables.shipmentLines)
+    .where(eq(wmsTables.shipmentLines.id, f.shipmentLineId));
+  const [item] = firstLine
+    ? await tx
+        .select()
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.id, firstLine.fulfillmentOrderItemId))
+    : [];
   const [sku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuId));
   if (!item?.salesOrderId || !item.salesOrderLineId || !sku?.deliveryProfileId)
     throw new Error('Incomplete fixture cleanup identity');
+  const batchIds = [f.batchId, ...extras.map((extra) => extra.batchId)];
   const sessions = await tx
     .select()
     .from(wmsTables.batchInventorySessions)
-    .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
+    .where(inArray(wmsTables.batchInventorySessions.batchId, batchIds));
+  const extraFulfillmentOrderIds = await extraFulfillmentOrders(tx, extras);
   const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
   const attempts = await tx
     .select()
@@ -26,6 +42,7 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
     f.shipmentId,
     f.batchId,
     f.workItemId,
+    ...extras.flatMap((extra) => [extra.shipmentId, extra.batchId, extra.workItemId]),
     ...sessions.map((s) => s.id),
   ];
   await tx
@@ -38,6 +55,7 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
         ...resourceIds,
         f.skuId,
         item.fulfillmentOrderId,
+        ...extraFulfillmentOrderIds,
         ...events.map((e) => e.id),
       ]),
     );
@@ -64,13 +82,15 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
         sessions.map((s) => s.id),
       ),
     );
-    await tx.delete(wmsTables.batchInventorySessions).where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
+    await tx
+      .delete(wmsTables.batchInventorySessions)
+      .where(inArray(wmsTables.batchInventorySessions.batchId, batchIds));
   }
   const workItemIds = (
     await tx
       .select({ id: wmsTables.outboundBatchWorkItems.id })
       .from(wmsTables.outboundBatchWorkItems)
-      .where(eq(wmsTables.outboundBatchWorkItems.batchId, f.batchId))
+      .where(inArray(wmsTables.outboundBatchWorkItems.batchId, batchIds))
   ).map((row) => row.id);
   if (workItemIds.length) {
     // 배정은 작업 항목을 restrict FK 로 물고 있으므로 작업 항목보다 먼저 지운다.
@@ -80,6 +100,7 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
   }
   await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.batchId, f.batchId));
   await tx.delete(wmsTables.outboundBatches).where(eq(wmsTables.outboundBatches.id, f.batchId));
+  for (const extra of extras) await deleteExtraBox(tx, extra);
   await tx.delete(wmsTables.stockReservations).where(eq(wmsTables.stockReservations.shipmentLineId, f.shipmentLineId));
   await tx.delete(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, f.shipmentId));
   await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, f.shipmentLineId));
@@ -98,4 +119,53 @@ export async function cleanupPreparationFixture(tx: DbTx, f: Awaited<ReturnType<
   await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.warehouseId, f.warehouseId));
   await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, f.warehouseId));
   await tx.delete(wmsTables.deliveryProfiles).where(eq(wmsTables.deliveryProfiles.id, sku.deliveryProfileId));
+}
+
+async function extraFulfillmentOrders(tx: DbTx, extras: PickableShipmentFixture[]): Promise<string[]> {
+  if (!extras.length) return [];
+  const rows = await tx
+    .select({ id: wmsTables.fulfillmentOrderItems.fulfillmentOrderId })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .where(
+      inArray(
+        wmsTables.shipmentLines.id,
+        extras.map((extra) => extra.shipmentLineId),
+      ),
+    );
+  return rows.map((row) => row.id);
+}
+
+/**
+ * The extra box's own graph. Its sessions and allocations (if its batch was started on its own) were already
+ * deleted with the first box's; the SKU, location and warehouse are shared and go with the first box afterwards.
+ */
+async function deleteExtraBox(tx: DbTx, extra: PickableShipmentFixture): Promise<void> {
+  const [line] = await tx
+    .select({ fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId })
+    .from(wmsTables.shipmentLines)
+    .where(eq(wmsTables.shipmentLines.id, extra.shipmentLineId));
+  const [item] = line
+    ? await tx
+        .select()
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.id, line.fulfillmentOrderItemId))
+    : [];
+  await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.batchId, extra.batchId));
+  await tx.delete(wmsTables.outboundBatches).where(eq(wmsTables.outboundBatches.id, extra.batchId));
+  await tx
+    .delete(wmsTables.stockReservations)
+    .where(eq(wmsTables.stockReservations.shipmentLineId, extra.shipmentLineId));
+  await tx.delete(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, extra.shipmentId));
+  await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, extra.shipmentLineId));
+  await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, extra.shipmentId));
+  if (item?.salesOrderId && item.salesOrderLineId) {
+    await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+    await tx.delete(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, item.fulfillmentOrderId));
+    await tx.delete(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.id, item.salesOrderLineId));
+    await tx.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, item.salesOrderId));
+  }
 }

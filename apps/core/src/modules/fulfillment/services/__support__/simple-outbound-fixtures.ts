@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
-import { PickableShipmentFixture } from './logistics-fixtures';
+import { PickableShipmentFixture, seedPickableShipment, seedShipmentForExistingStock } from './logistics-fixtures';
 
 /**
  * seedPickableShipment 의 shipment 에 두 번째 SKU 라인을 덧붙인다 — settleIfFullyPicked 의
@@ -49,7 +49,7 @@ export async function addSecondSimpleOutboundLine(
       name: 'Simple SKU (second line)',
       code: `SIMPLE2-${suffix}`,
       holderId: fixture.holderId,
-      // assertPlanningEligibility 는 라인의 delivery profile 이 shipment 의 shippingProfileId 와
+      // 배치 시작(assertStartEligibility)은 라인의 delivery profile 이 shipment 의 shippingProfileId 와
       // 같아야 한다 — 원 라인과 같은 profile 을 그대로 물려받는다.
       deliveryProfileId: shipment.shippingProfileId,
     })
@@ -110,4 +110,57 @@ export async function addSecondSimpleOutboundLine(
   });
 
   return { skuId: sku.id, barcode, shipmentLineId: line.id };
+}
+
+/**
+ * 같은 배치·같은 SKU·같은 위치에 박스 두 개. 두 번째 박스는 첫 박스의 재고 위에 만들고 작업 항목을
+ * 첫 배치로 옮긴다(seedShipmentForExistingStock 은 박스마다 배치를 새로 만든다 — 그 빈 배치는 정리 때 지운다).
+ */
+export async function seedTwoBoxBatch(
+  tx: DbTx,
+  secondQty = 3,
+  stockQty = 5,
+): Promise<{ first: PickableShipmentFixture; second: PickableShipmentFixture }> {
+  const first = await seedPickableShipment(tx, 2);
+  await tx
+    .update(wmsTables.stockLedgers)
+    .set({ qty: stockQty })
+    .where(and(eq(wmsTables.stockLedgers.skuId, first.skuId), eq(wmsTables.stockLedgers.locationId, first.locationId)));
+  const second = await seedBoxOverSameStock(tx, first, secondQty);
+  await tx
+    .update(wmsTables.outboundBatchWorkItems)
+    .set({ batchId: first.batchId })
+    .where(eq(wmsTables.outboundBatchWorkItems.id, second.workItemId));
+  return { first, second };
+}
+
+/**
+ * `base` 와 같은 SKU·위치·창고·배송 프로필 위에 박스 하나를 더 만든다. 재고 행은 만들지 않는다.
+ * 새 박스는 자기 배치(queued 작업 항목 하나)에 들어간다 — 정리는 `cleanupPreparationFixture(tx, base, [box])`.
+ */
+export async function seedBoxOverSameStock(
+  tx: DbTx,
+  base: PickableShipmentFixture,
+  qty: number,
+): Promise<PickableShipmentFixture> {
+  const [profile] = await tx
+    .select({ id: wmsTables.shipments.shippingProfileId })
+    .from(wmsTables.shipments)
+    .where(eq(wmsTables.shipments.id, base.shipmentId));
+  if (!profile?.id) throw new Error('base box has no shipping profile');
+  return seedShipmentForExistingStock(
+    tx,
+    {
+      actorId: base.actorId,
+      warehouseId: base.warehouseId,
+      holderId: base.holderId,
+      skuId: base.skuId,
+      skuCode: base.skuCode,
+      barcode: base.barcode,
+      locationId: base.locationId,
+      ledgerVersion: base.ledgerVersion,
+      deliveryProfileId: profile.id,
+    },
+    qty,
+  );
 }

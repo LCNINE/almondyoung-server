@@ -18,6 +18,7 @@ import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
+import { BatchSessionRecoveryService } from '../batch-session-recovery.service';
 import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
@@ -142,7 +143,14 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     barcodes,
     invariant,
   );
-  return { simple, picking, batches, location: new LocationOutboundService(dbService, commands, simple) };
+  return {
+    simple,
+    picking,
+    batches,
+    sessions,
+    recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
+    location: new LocationOutboundService(dbService, commands, simple),
+  };
 }
 
 export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
