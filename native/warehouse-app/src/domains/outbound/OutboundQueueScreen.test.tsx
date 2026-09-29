@@ -102,7 +102,13 @@ function renderScreen(
   },
   foundWarehouse = 'w-1',
   labelPrinting = false,
-  labelDeps: { label?: () => Promise<unknown>; print?: PrintRaw } = {}
+  labelDeps: {
+    label?: () => Promise<unknown>;
+    print?: PrintRaw;
+    labelState?: string | null;
+    labelChanges?: unknown[];
+    labelIssue?: string | null;
+  } = {}
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -125,6 +131,9 @@ function renderScreen(
           workItemStatus: 'queued',
           recipientMasked: '홍길**',
           lines: [],
+          labelState: labelDeps.labelState ?? 'current',
+          labelChanges: labelDeps.labelChanges ?? [],
+          labelIssue: labelDeps.labelIssue ?? null,
         };
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-NOWORKITEM')) {
@@ -516,7 +525,7 @@ describe('OutboundQueueScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
     expect(
-      await screen.findByText('라벨 인쇄가 끝난 뒤 스캔해 주세요.')
+      await screen.findByText('송장 인쇄가 끝난 뒤 스캔해 주세요.')
     ).toBeInTheDocument();
     expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
     expect(
@@ -528,6 +537,76 @@ describe('OutboundQueueScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
     expect(await screen.findByText('단순출고화면')).toBeInTheDocument();
+  });
+
+  describe('송장 상태(labelState)로 화면을 가른다', () => {
+    const stationPrefs = () =>
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      });
+
+    it('station 에서 never_printed 송장을 스캔하면 작업 화면으로 가지 않고 출력 패널을 보인다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], stationPrefs(), undefined, 'w-1', true, {
+        labelState: 'never_printed',
+        print: async () => {},
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText(
+          '송장을 아직 출력하지 않았어요. 출력한 뒤 송장을 다시 스캔해 주세요.'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: '송장 재출력' })
+      ).toBeInTheDocument();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
+
+    it('비station 에서 reprint_required 면 안내만 하고 출력 버튼은 없다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, {
+        labelState: 'reprint_required',
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText(
+          '송장이 바뀌었어요. 프린터 있는 자리에서 새 송장을 출력해 주세요.'
+        )
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '송장 재출력' })).toBeNull();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
+
+    it('station 의 reprint_required 는 바뀐 줄을 보여 준다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], stationPrefs(), undefined, 'w-1', true, {
+        labelState: 'reprint_required',
+        labelChanges: [
+          { locationCode: 'A-01', skuId: 's', name: '볼펜', printedQty: 1, currentQty: 2 },
+        ],
+        print: async () => {},
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(await screen.findByText('[A-01] 볼펜 1개 → 2개')).toBeInTheDocument();
+    });
+
+    it('not_started 면 작업 시작 안내', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, {
+        labelState: 'not_started',
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText('배치 화면에서 「작업 시작」을 먼저 눌러 주세요.')
+      ).toBeInTheDocument();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
   });
 
   // 프린터는 한 대다 — 두 배치가 동시에 돌면 라벨이 한 줄로 섞여 나온다.

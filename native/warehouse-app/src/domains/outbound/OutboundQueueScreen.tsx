@@ -15,6 +15,9 @@ import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
 import { StartBatchButton } from './StartBatchButton';
+import { ReprintLabelButton } from './ReprintLabelButton';
+import { labelGateOf } from './labelGate';
+import type { LabelItemChange } from './waybillLabel';
 import { readLastBox, writeLastBox } from './lastBox';
 import { useOutboundBatches, useShipmentByWaybill } from './queries';
 
@@ -31,6 +34,11 @@ function OutboundQueueContent({
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
   const [manual, setManual] = useState('');
+  const [printGate, setPrintGate] = useState<{
+    shipmentId: string;
+    message: string;
+    changes: LabelItemChange[];
+  } | null>(null);
   const [resume] = useState(() => readLastBox(prefs));
   const lookup = useShipmentByWaybill(warehouseId);
   const capabilities = useCapabilityReader();
@@ -64,12 +72,13 @@ function OutboundQueueContent({
     const code = trackingNo.trim();
     if (!code || !warehouseId || opening.current) return;
     if (labelRunning.current) {
-      setNotice('라벨 인쇄가 끝난 뒤 스캔해 주세요.');
+      setNotice('송장 인쇄가 끝난 뒤 스캔해 주세요.');
       return;
     }
     opening.current = true;
     setOpeningState(true);
     setNotice(null);
+    setPrintGate(null);
     try {
       const found = await lookup.mutateAsync(code);
       if (found.warehouseId && found.warehouseId !== warehouseId) {
@@ -82,6 +91,19 @@ function OutboundQueueContent({
       }
       if (found.workItemId === null) {
         setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
+        return;
+      }
+      const gate = labelGateOf(found, labelPrinting);
+      if (gate.kind === 'blocked') {
+        setNotice(gate.message);
+        return;
+      }
+      if (gate.kind === 'print') {
+        setPrintGate({
+          shipmentId: found.shipmentId,
+          message: gate.message,
+          changes: gate.changes,
+        });
         return;
       }
       const legacy =
@@ -158,6 +180,28 @@ function OutboundQueueContent({
         </Button>
       </form>
       {notice !== null && <p role="alert">{notice}</p>}
+      {printGate !== null && (
+        <section
+          role="alert"
+          className="space-y-2 rounded border border-amber-400 px-3 py-2"
+        >
+          <p className="font-medium">{printGate.message}</p>
+          {printGate.changes.length > 0 && (
+            <ul className="text-sm">
+              {printGate.changes.map((c) => (
+                <li key={`${c.locationCode}-${c.skuId}`}>
+                  [{c.locationCode}] {c.name} {c.printedQty}개 → {c.currentQty}개
+                </li>
+              ))}
+            </ul>
+          )}
+          <ReprintLabelButton
+            shipmentId={printGate.shipmentId}
+            prefs={prefs}
+            print={print}
+          />
+        </section>
+      )}
 
       {resume !== null && (
         <section className="space-y-1 rounded border border-blue-300 px-3 py-2">

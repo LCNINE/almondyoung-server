@@ -1,3 +1,5 @@
+import type { LabelItemChange, LabelState } from './waybillLabel';
+
 export interface SimpleOutboundLineProgress {
   shipmentLineId: string;
   skuId: string;
@@ -37,6 +39,9 @@ export interface ShipmentByWaybill {
   workItemStatus: string | null;
   recipientMasked: string;
   lines: ShipmentByWaybillLine[];
+  labelState: LabelState | null;
+  labelChanges: LabelItemChange[];
+  labelIssue: string | null;
 }
 
 export interface OutboundBatchSummary {
