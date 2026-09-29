@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -17,9 +17,7 @@ import {
 } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
-import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
 import { WaybillService } from '../waybill/waybill.service';
@@ -69,18 +67,8 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
     );
     const audit = new AuditService(dbService);
     const commands = new FulfillmentCommandService(dbService);
-    const invariant = new FulfillmentInvariantService();
     const logistics = wireLogistics(dbService, 'v2');
     const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-    const planning = new ShipmentPlanningService(
-      dbService,
-      commands,
-      logistics.shipmentReservations,
-      invariant,
-      audit,
-      authorization as never,
-      workflowGate,
-    );
     const sessions = new BatchInventorySessionService(dbService, audit);
     // short-pick 은 WaybillService.getActiveWaybill(읽기) + void(commands.execute→CAS, tx-local 동기)만 소비한다 —
     // carrier registry/issue machine/config 는 이 경로에서 호출되지 않아 stub 으로 충분. 단, void 가 commands.execute 를
@@ -106,10 +94,9 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       waybills,
       sessions,
       logistics.shipmentReservations,
-      planning,
       totes,
     );
-    return { shortPick, waybills, sessions, planning, logistics };
+    return { shortPick, waybills, sessions, logistics };
   }
 
   async function sharedBatchFixture(tx: DbTx, options: { waybillA?: boolean; waybillB?: boolean } = {}) {
@@ -250,19 +237,10 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         { batchId: batch.id, shipmentId: b.shipment.id, status: 'picking', leaseVersion: 1 },
       ])
       .returning();
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'aggregate_then_sort', status: 'draft', version: 1, createdBy: actor.id })
-      .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values([
-      { planId: plan.id, shipmentId: a.shipment.id, manifestVersion: 1, reservationVersion: 1 },
-      { planId: plan.id, shipmentId: b.shipment.id, manifestVersion: 1, reservationVersion: 1 },
-    ]);
     const allocations = await tx
       .insert(wmsTables.pickingSourceAllocations)
       .values([
         {
-          planId: plan.id,
           workItemId: workA.id,
           shipmentLineId: a.line.id,
           sourceLocationId: locationId,
@@ -270,7 +248,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
           sourceStockVersion: ledger.version,
         },
         {
-          planId: plan.id,
           workItemId: workB.id,
           shipmentLineId: b.line.id,
           sourceLocationId: locationId,
@@ -335,8 +312,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
     const dto = {
       workItemId: workA.id,
       expectedWorkItemLeaseVersion: workA.leaseVersion,
-      planId: plan.id,
-      expectedPlanVersion: plan.version,
       sessionId: session.id,
       expectedSessionVersion: session.version,
       expectedManifestVersion: a.shipment.manifestVersion,
@@ -360,7 +335,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       batch,
       workA,
       workB,
-      plan,
       session,
       tote,
       toteAssignment,
@@ -465,24 +439,10 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         .select()
         .from(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workB.id));
-      const [memberA] = await tx
-        .select()
-        .from(wmsTables.pickingPlanMembers)
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.planId, fixture.plan.id),
-            eq(wmsTables.pickingPlanMembers.shipmentId, fixture.a.shipment.id),
-          ),
-        );
-      const [memberB] = await tx
-        .select()
-        .from(wmsTables.pickingPlanMembers)
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.planId, fixture.plan.id),
-            eq(wmsTables.pickingPlanMembers.shipmentId, fixture.b.shipment.id),
-          ),
-        );
+      const allocations = await tx
+        .select({ workItemId: wmsTables.pickingSourceAllocations.workItemId })
+        .from(wmsTables.pickingSourceAllocations)
+        .where(inArray(wmsTables.pickingSourceAllocations.workItemId, [fixture.workA.id, fixture.workB.id]));
       const [shortOperation] = await tx
         .select()
         .from(wmsTables.shipmentOperations)
@@ -495,16 +455,17 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         reservationVersion: 2,
         plannedAt: null,
       });
-      expect(excludedWorkA).toMatchObject({ status: 'excluded', waitingOperationId: null });
-      expect(memberA).toMatchObject({
-        retiredByOperationId: reported.operationId,
-        retiredByOperationType: 'short_pick',
+      // 작업 항목이 excluded 가 되는 것이 곧 «이 박스가 배치를 떠났다»다(옛 계획 구성원 은퇴의 자리).
+      expect(excludedWorkA).toMatchObject({
+        status: 'excluded',
+        waitingOperationId: null,
+        exclusionReason: 'short_pick:inventory_shortage',
       });
-      expect(memberA.retiredAt).not.toBeNull();
       expect(shortOperation).toMatchObject({ status: 'completed', lastError: null });
       expect(shipmentB).toMatchObject({ status: 'planned', manifestVersion: 1, reservationVersion: 1 });
       expect(stillReadyWorkB).toMatchObject({ status: 'ready_to_pack', leaseVersion: 1 });
-      expect(memberB.retiredAt).toBeNull();
+      // 배정은 불변 이력이다 — 결품이 지우지 않는다.
+      expect(allocations.map((row) => row.workItemId).sort()).toEqual([fixture.workA.id, fixture.workB.id].sort());
     });
   });
 
@@ -604,7 +565,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       const siblingShipmentId = randomUUID();
       const affectedWorkItemId = randomUUID();
       const siblingWorkItemId = randomUUID();
-      const planId = randomUUID();
       const sessionId = randomUUID();
       const shipmentLineId = randomUUID();
 
@@ -636,14 +596,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
           plannedAt: new Date(),
         },
       ]);
-      await tx.insert(wmsTables.pickingPlans).values({
-        id: planId,
-        batchId: batch.id,
-        strategy: 'discrete',
-        status: 'active',
-        version: 1,
-        createdBy: actorId,
-      });
       await tx.insert(wmsTables.batchInventorySessions).values({
         id: sessionId,
         batchId: batch.id,
@@ -656,7 +608,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         operationId,
         shipmentId: affectedShipmentId,
         workItemId: affectedWorkItemId,
-        planId,
         sessionId,
         reason: 'inventory_shortage' as const,
         actorId,
@@ -708,7 +659,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
 
       const dbService = makeDbService(db);
       const reservations = { lockShipmentGraphForDispatch: jest.fn().mockResolvedValue(undefined) };
-      const planning = { retirePickingPlanMemberForShortPick: jest.fn().mockResolvedValue(undefined) };
       const totes = { releaseEmptyAssignmentsForShipment: jest.fn().mockResolvedValue(undefined) };
       const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
       // resume 게이트가 활성 waybill 이 남지 않았음을 확인한다 — 이 시나리오는 waybill 을 시드하지 않으므로 null.
@@ -722,7 +672,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         waybills as never,
         {} as never,
         reservations as never,
-        planning as never,
         totes as never,
       );
 
@@ -771,10 +720,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       expect(operation.completedAt).not.toBeNull();
       expect(siblingShipment).toMatchObject({ status: 'planned', manifestVersion: 2, reservationVersion: 2 });
       expect(siblingWork).toMatchObject({ status: 'ready_to_pack', leaseVersion: 2, waitingOperationId: null });
-      expect(planning.retirePickingPlanMemberForShortPick).toHaveBeenCalledWith(
-        { planId, shipmentId: affectedShipmentId, operationId, reason: intent.reason },
-        tx,
-      );
       expect(totes.releaseEmptyAssignmentsForShipment).toHaveBeenCalledWith(
         { shipmentId: affectedShipmentId, operationId },
         tx,

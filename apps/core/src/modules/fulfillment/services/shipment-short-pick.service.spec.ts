@@ -42,7 +42,6 @@ function makeService(overrides: Record<string, unknown> = {}) {
     lockShipmentGraphForDispatch: jest.fn(),
     invalidateForShortPick: jest.fn(),
   };
-  const planning = { retirePickingPlanMemberForShortPick: jest.fn() };
   const totes = { releaseEmptyAssignmentsForShipment: jest.fn() };
   const dependencies = {
     dbService: {},
@@ -53,7 +52,6 @@ function makeService(overrides: Record<string, unknown> = {}) {
     waybills,
     session,
     reservations,
-    planning,
     totes,
     ...overrides,
   };
@@ -66,7 +64,6 @@ function makeService(overrides: Record<string, unknown> = {}) {
     dependencies.waybills as never,
     dependencies.session as never,
     dependencies.reservations as never,
-    dependencies.planning as never,
     dependencies.totes as never,
   );
   return { service, ...dependencies };
@@ -76,8 +73,6 @@ describe('ShipmentShortPickService', () => {
   const dto: ReportShipmentShortPickDto = {
     workItemId: '22222222-2222-4222-8222-222222222222',
     expectedWorkItemLeaseVersion: 1,
-    planId: '33333333-3333-4333-8333-333333333333',
-    expectedPlanVersion: 1,
     sessionId: '44444444-4444-4444-8444-444444444444',
     expectedSessionVersion: 1,
     expectedManifestVersion: 1,
@@ -135,7 +130,6 @@ describe('ShipmentShortPickService', () => {
         operationId: '88888888-8888-4888-8888-888888888888',
         shipmentId: '11111111-1111-4111-8111-111111111111',
         workItemId: dto.workItemId,
-        planId: dto.planId,
         sessionId: dto.sessionId,
         reason: 'inventory_shortage',
         actorId: '77777777-7777-4777-8777-777777777777',
@@ -181,16 +175,14 @@ describe('ShipmentShortPickService', () => {
     expect([...quantities.entries()]).toEqual([['line-short', 3]]);
   });
 
-  it('rejects a session whose immutable HAND_IN plan differs from the reported plan', async () => {
+  it("rejects a session that does not belong to the work item's batch", async () => {
     const { service } = makeService();
     const batchId = '99999999-9999-4999-8999-999999999999';
+    const otherBatchId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const shipmentId = '11111111-1111-4111-8111-111111111111';
     const rows = [
       [{ id: dto.workItemId, shipmentId, batchId, status: 'picking', leaseVersion: 1 }],
-      [{ id: dto.planId, batchId, status: 'active', version: 1 }],
-      [{ shipmentId }],
-      [{ id: dto.sessionId, batchId, status: 'active', version: 1 }],
-      [{ payload: { planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }],
+      [{ id: dto.sessionId, batchId: otherBatchId, status: 'active', version: 1 }],
     ];
     const tx = { select: jest.fn(() => new QueryResult(rows.shift() ?? [])) } as unknown as DbTx;
     const validate = service as unknown as {
@@ -203,7 +195,7 @@ describe('ShipmentShortPickService', () => {
     } catch (error) {
       rejected = error;
     }
-    expect(rejected).toMatchObject({ response: { code: 'SHORT_PICK_SESSION_PLAN_MISMATCH' } });
+    expect(rejected).toMatchObject({ response: { code: 'SHORT_PICK_SESSION_STALE' } });
   });
 
   it('locks the short-pick operation before entering the shipment reservation graph on resume', async () => {
@@ -227,7 +219,6 @@ describe('ShipmentShortPickService', () => {
           operationId,
           shipmentId,
           workItemId: dto.workItemId,
-          planId: dto.planId,
           sessionId: dto.sessionId,
           reason: dto.reason,
           actorId: '77777777-7777-4777-8777-777777777777',

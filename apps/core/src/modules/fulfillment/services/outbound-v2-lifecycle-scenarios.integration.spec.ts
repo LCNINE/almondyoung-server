@@ -87,7 +87,6 @@ interface LifecycleWorld {
 
 interface StagedBatch {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemIds: string[];
 }
@@ -506,6 +505,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       tx,
     );
     const workItemIds: string[] = [];
+    const workItemIdByShipment = new Map<string, string>();
     for (const shipmentId of shipmentIds) {
       const added = await service.batches.addShipment(
         created.batchId,
@@ -515,6 +515,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         tx,
       );
       workItemIds.push(added.workItem.id);
+      workItemIdByShipment.set(shipmentId, added.workItem.id);
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
@@ -526,22 +527,11 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
     }
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: created.batchId, strategy: 'discrete', status: 'active', createdBy: actor.id })
-      .returning();
-    const shipmentRows = await tx
-      .select()
-      .from(wmsTables.shipments)
-      .where(inArray(wmsTables.shipments.id, shipmentIds));
-    await tx.insert(wmsTables.pickingPlanMembers).values(
-      shipmentRows.map((shipment) => ({
-        planId: plan.id,
-        shipmentId: shipment.id,
-        manifestVersion: shipment.manifestVersion,
-        reservationVersion: shipment.reservationVersion,
-      })),
-    );
+    // 배치 시작(startBatchPicking)이 남기는 흔적: 배치 startedAt + 작업 항목별 배정.
+    await tx
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, created.batchId));
     const lines = await tx
       .select()
       .from(wmsTables.shipmentLines)
@@ -560,7 +550,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       .limit(1);
     await tx.insert(wmsTables.pickingSourceAllocations).values(
       lines.map((line) => ({
-        planId: plan.id,
+        workItemId: workItemIdByShipment.get(line.shipmentId)!,
         shipmentLineId: line.id,
         sourceLocationId: sourceLedger.locationId,
         qty: line.qty,
@@ -574,13 +564,13 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       .returning();
     await tx.insert(wmsTables.batchInventorySessionEvents).values({
       sessionId: session.id,
-      idempotencyKey: `start:${plan.id}`,
+      idempotencyKey: `start:${created.batchId}`,
       eventType: 'HAND_IN',
       skuId: world.skuId,
       quantity: totalQty,
       toCustodyType: 'AT_SOURCE',
       toSourceLocationId: sourceLedger.locationId,
-      payload: { planId: plan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId: actor.id },
+      payload: { batchId: created.batchId, sequence: 0, requestHash: 'a'.repeat(64), actorId: actor.id },
     });
     for (const line of lines) {
       await tx
@@ -612,7 +602,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
           : []),
       ]);
     }
-    return { batchId: created.batchId, planId: plan.id, sessionId: session.id, workItemIds };
+    return { batchId: created.batchId, sessionId: session.id, workItemIds };
   }
 
   async function lastScan(tx: DbTx, world: LifecycleWorld, shipmentId: string, idempotencyKey: string) {

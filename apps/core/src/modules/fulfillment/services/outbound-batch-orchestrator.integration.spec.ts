@@ -825,6 +825,73 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_CLOSED' }) });
   });
 
+  it('refuses to join a started batch, reads its work-item allocations as the picking snapshot, and blocks excluding an allocated item', async () => {
+    const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
+    const fixtureA = await committedFixture({ warehouse });
+    const fixtureB = await committedFixture({ warehouse });
+    const batch = await createBatch(warehouse.warehouseId);
+    const added = await services.batches.addShipment(
+      batch.batchId,
+      fixtureA.shipment.id,
+      `started-add-a-${randomUUID()}`,
+      master,
+    );
+    expect((await services.batches.getBatch(batch.batchId)).picking).toBeNull();
+
+    // startBatchPicking 이 남기는 흔적만 심는다: 배치 startedAt + 작업 항목의 배정.
+    const startedAt = new Date();
+    await db
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt })
+      .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+    const [allocation] = await db
+      .insert(wmsTables.pickingSourceAllocations)
+      .values({
+        workItemId: added.workItem.id,
+        shipmentLineId: fixtureA.line.id,
+        sourceLocationId: fixtureA.locationId,
+        qty: fixtureA.line.qty,
+        sourceStockVersion: 1,
+      })
+      .returning();
+
+    await expect(
+      services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `started-add-b-${randomUUID()}`, master),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_ALREADY_STARTED' }) });
+    const joined = await db
+      .select({ id: wmsTables.outboundBatchWorkItems.id })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, fixtureB.shipment.id));
+    expect(joined).toEqual([]);
+
+    const detail = await services.batches.getBatch(batch.batchId);
+    expect(detail.picking).toEqual({
+      strategy: 'discrete',
+      startedAt,
+      allocations: [
+        {
+          id: allocation.id,
+          workItemId: added.workItem.id,
+          shipmentLineId: fixtureA.line.id,
+          sourceLocationId: fixtureA.locationId,
+          qty: fixtureA.line.qty,
+          sourceStockVersion: 1,
+          createdAt: allocation.createdAt,
+        },
+      ],
+    });
+
+    await expect(
+      services.batches.excludeShipment(
+        batch.batchId,
+        fixtureA.shipment.id,
+        { reason: 'allocated item must go through short-pick' },
+        `started-exclude-a-${randomUUID()}`,
+        master,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORK_ITEM_ALLOCATED' }) });
+  });
+
   it('preserves reservations on exclusion and blocks exclusion when custody or dispatch exists', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const [preserved, withCustody, withDispatch] = await Promise.all([

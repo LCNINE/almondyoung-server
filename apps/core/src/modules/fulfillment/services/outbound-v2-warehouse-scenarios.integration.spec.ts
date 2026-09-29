@@ -37,7 +37,6 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { PickingProcessService } from './picking-process.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
-import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
@@ -196,15 +195,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
     );
     const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-    const planning = new ShipmentPlanningService(
-      dbService,
-      commands,
-      shipmentReservations,
-      invariant,
-      audit,
-      authorization as never,
-      workflow,
-    );
     resumeTarget.shortPick = new ShipmentShortPickService(
       dbService,
       commands,
@@ -214,7 +204,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       waybills,
       sessions,
       shipmentReservations,
-      planning,
       new ToteLifecycleService(dbService),
     );
     const dispatch = new ShipmentDispatchService(
@@ -1127,10 +1116,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         {
           workItemId: added[0].workItem.id,
           expectedWorkItemLeaseVersion: claimed.workItem.leaseVersion,
-          // 결품 DTO 는 Task 7 까지 계획 신원을 요구한다. 계획이 없는 이 커밋에서는 채울 값이 없어
-          // 이 시나리오는 Task 7 이 두 필드를 지울 때까지 빨갛다(선언된 빨간 구간).
-          planId: randomUUID(),
-          expectedPlanVersion: 1,
           sessionId: session.id,
           expectedSessionVersion: session.version,
           expectedManifestVersion: world.shipments[0].shipment.manifestVersion,

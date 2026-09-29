@@ -125,6 +125,24 @@ export class EligibleShipmentResponseDto {
   trackingNo: string;
 }
 
+export class BatchPickingAllocationDto {
+  id: string;
+  workItemId: string;
+  shipmentLineId: string;
+  sourceLocationId: string;
+  qty: number;
+  sourceStockVersion: number;
+  createdAt: Date;
+}
+
+export class BatchPickingSnapshotDto {
+  @ApiProperty({ enum: ['discrete', 'aggregate_then_sort', 'pick_to_tote'] })
+  strategy: 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
+  startedAt: Date;
+  @ApiProperty({ type: [BatchPickingAllocationDto] })
+  allocations: BatchPickingAllocationDto[];
+}
+
 export class OutboundBatchV2DetailDto {
   id: string;
   batchNumber: string;
@@ -153,15 +171,8 @@ export class OutboundBatchV2DetailDto {
     supportedPickingStrategies: Array<'discrete' | 'aggregate_then_sort' | 'pick_to_tote'>;
   };
 
-  @ApiProperty({ type: Object, nullable: true })
-  pickingPlan: {
-    id: string;
-    strategy: string;
-    status: string;
-    version: number;
-    members: Array<Record<string, unknown>>;
-    allocations: Array<Record<string, unknown>>;
-  } | null;
+  @ApiProperty({ type: BatchPickingSnapshotDto, nullable: true })
+  picking: BatchPickingSnapshotDto | null;
 
   @ApiProperty({ type: Object, nullable: true })
   inventorySession: {

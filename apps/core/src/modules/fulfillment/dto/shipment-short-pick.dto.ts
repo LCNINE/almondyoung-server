@@ -47,13 +47,6 @@ export class ReportShipmentShortPickDto {
   expectedWorkItemLeaseVersion: number;
 
   @IsUUID()
-  planId: string;
-
-  @IsInt()
-  @Min(1)
-  expectedPlanVersion: number;
-
-  @IsUUID()
   sessionId: string;
 
   @IsInt()

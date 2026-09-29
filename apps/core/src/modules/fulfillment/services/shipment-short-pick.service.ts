@@ -24,7 +24,6 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { BatchInventorySessionService, BatchInventoryBucket } from './batch-inventory-session.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
-import { ShipmentPlanningService } from './shipment-planning.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
 import { WaybillService } from '../waybill/waybill.service';
 
@@ -42,7 +41,6 @@ type ShortPickIntent = {
   operationId: string;
   shipmentId: string;
   workItemId: string;
-  planId: string;
   sessionId: string;
   reason: ShipmentShortPickReason;
   actorId: string;
@@ -89,18 +87,6 @@ type ShortPickReservationPort = {
   ): Promise<unknown>;
 };
 
-type ShortPickPlanningPort = {
-  retirePickingPlanMemberForShortPick(
-    input: {
-      planId: string;
-      shipmentId: string;
-      operationId: string;
-      reason: string;
-    },
-    tx: DbTx,
-  ): Promise<unknown>;
-};
-
 @Injectable()
 export class ShipmentShortPickService {
   constructor(
@@ -112,7 +98,6 @@ export class ShipmentShortPickService {
     private readonly waybills: WaybillService,
     @Inject(BatchInventorySessionService) private readonly session: ShortPickSessionPort,
     @Inject(ShipmentReservationService) private readonly reservations: ShortPickReservationPort,
-    @Inject(ShipmentPlanningService) private readonly planning: ShortPickPlanningPort,
     private readonly totes: ToteLifecycleService,
   ) {}
 
@@ -138,7 +123,6 @@ export class ShipmentShortPickService {
           operationId,
           shipmentId,
           workItemId: dto.workItemId,
-          planId: dto.planId,
           sessionId: dto.sessionId,
           reason: dto.reason,
           actorId: actor.id,
@@ -151,7 +135,7 @@ export class ShipmentShortPickService {
             ),
         };
         // Canonical order: shared shipment graph first, then durable
-        // intent/member, then work/plan/session/custody/totes. A member insert
+        // intent/member, then work item/session/custody/totes. A member insert
         // is not lock-free — its shipment FK takes KEY SHARE — so it must
         // follow the FOI -> shipment -> line -> reservation graph order.
         // Otherwise two distinct-key operations can each hold that FK lock
@@ -240,7 +224,6 @@ export class ShipmentShortPickService {
               intent,
               shipment: context.shipment,
               workItem: context.workItem,
-              plan: context.plan,
               session: context.session,
               lines: context.lines,
             },
@@ -264,7 +247,6 @@ export class ShipmentShortPickService {
             exactVersions: {
               manifest: dto.expectedManifestVersion,
               workItemLease: dto.expectedWorkItemLeaseVersion,
-              plan: dto.expectedPlanVersion,
               session: dto.expectedSessionVersion,
               lines: intent.lines,
             },
@@ -368,13 +350,6 @@ export class ShipmentShortPickService {
     if (workItem?.status !== 'short_pick_recovery' || workItem.waitingOperationId !== operationId) {
       throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Recovery work item changed');
     }
-    const [plan] = await tx
-      .select({ id: wmsTables.pickingPlans.id })
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, intent.planId))
-      .limit(1)
-      .for('update');
-    if (!plan) throw new NotFoundException(`Picking plan ${intent.planId} not found`);
     const [session] = await tx
       .select({ id: wmsTables.batchInventorySessions.id })
       .from(wmsTables.batchInventorySessions)
@@ -383,10 +358,6 @@ export class ShipmentShortPickService {
       .for('update');
     if (!session) throw new NotFoundException(`Inventory session ${intent.sessionId} not found`);
     await this.assertNoPositiveCustody(intent, tx);
-    await this.planning.retirePickingPlanMemberForShortPick(
-      { planId: intent.planId, shipmentId: intent.shipmentId, operationId, reason: intent.reason },
-      tx,
-    );
     await this.totes.releaseEmptyAssignmentsForShipment({ shipmentId: intent.shipmentId, operationId }, tx);
     await tx
       .update(wmsTables.shipmentLines)
@@ -523,7 +494,7 @@ export class ShipmentShortPickService {
       .from(wmsTables.pickingSourceAllocations)
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, dto.planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, dto.workItemId),
           inArray(
             wmsTables.pickingSourceAllocations.shipmentLineId,
             lines.map((line) => line.id),
@@ -566,33 +537,6 @@ export class ShipmentShortPickService {
     if (workItem.leaseVersion !== dto.expectedWorkItemLeaseVersion) {
       throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Work item lease version changed');
     }
-    const [plan] = await tx
-      .select()
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, dto.planId))
-      .limit(1)
-      .for('update');
-    if (
-      !plan ||
-      plan.batchId !== workItem.batchId ||
-      plan.version !== dto.expectedPlanVersion ||
-      plan.status !== 'active'
-    ) {
-      throw this.conflict('SHORT_PICK_PLAN_STALE', 'Picking plan identity/version is invalid');
-    }
-    const member = await tx
-      .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
-      .from(wmsTables.pickingPlanMembers)
-      .where(
-        and(
-          eq(wmsTables.pickingPlanMembers.planId, dto.planId),
-          eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
-          isNull(wmsTables.pickingPlanMembers.retiredAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    if (!member.length) throw this.conflict('SHORT_PICK_PLAN_MEMBER_MISSING', 'Shipment is not an active plan member');
     const [session] = await tx
       .select()
       .from(wmsTables.batchInventorySessions)
@@ -607,22 +551,7 @@ export class ShipmentShortPickService {
     ) {
       throw this.conflict('SHORT_PICK_SESSION_STALE', 'Inventory session identity/version is invalid');
     }
-    const startEvents = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionEvents.sessionId, dto.sessionId),
-          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        ),
-      );
-    if (
-      startEvents.length === 0 ||
-      startEvents.some((event) => (event.payload as { planId?: unknown } | null)?.planId !== dto.planId)
-    ) {
-      throw this.conflict('SHORT_PICK_SESSION_PLAN_MISMATCH', 'Inventory session does not belong to the exact plan');
-    }
-    return { workItem, plan, session };
+    return { workItem, session };
   }
 
   private async quarantineWorkItem(

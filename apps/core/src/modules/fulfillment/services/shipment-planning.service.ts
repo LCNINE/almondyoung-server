@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
-import { and, asc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -69,22 +69,6 @@ type CancelResponse = {
   shipmentId: string;
   manifestVersion: number;
   shipment?: ShipmentManifestSnapshot;
-};
-
-export type RetirePickingPlanMemberForShortPickInput = {
-  planId: string;
-  shipmentId: string;
-  operationId: string;
-  reason: string;
-};
-
-export type RetiredPickingPlanMember = {
-  planId: string;
-  shipmentId: string;
-  operationId: string;
-  reason: string;
-  retiredAt: Date;
-  replayed: boolean;
 };
 
 type PendingCancellationIntent = {
@@ -187,164 +171,6 @@ export class ShipmentPlanningService {
     private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
-
-  /**
-   * Retires one shipment from a shared picking plan without deleting its
-   * immutable member/allocation history. The first mutation is owned only by
-   * an exact pending/recovery-required short-pick operation; an exact replay
-   * remains readable after that operation completes.
-   */
-  async retirePickingPlanMemberForShortPick(
-    input: RetirePickingPlanMemberForShortPickInput,
-    tx?: DbTx,
-  ): Promise<RetiredPickingPlanMember> {
-    const reason = input.reason?.trim();
-    if (!reason) throw new BadRequestException('retirement reason must be a non-blank string');
-
-    return this.dbService.run(async (trx) => {
-      const [optimisticOperation] = await trx
-        .select({
-          id: wmsTables.shipmentOperations.id,
-          type: wmsTables.shipmentOperations.type,
-          status: wmsTables.shipmentOperations.status,
-        })
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, input.operationId))
-        .limit(1);
-      if (
-        !optimisticOperation ||
-        optimisticOperation.type !== 'short_pick' ||
-        !['pending', 'recovery_required', 'completed'].includes(optimisticOperation.status)
-      ) {
-        throw this.conflict(
-          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
-          'Picking plan retirement requires an exact resumable short-pick operation',
-        );
-      }
-      const [operation] = await trx
-        .select({
-          id: wmsTables.shipmentOperations.id,
-          type: wmsTables.shipmentOperations.type,
-          status: wmsTables.shipmentOperations.status,
-        })
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, input.operationId))
-        .limit(1)
-        .for('update');
-      if (
-        !operation ||
-        operation.type !== 'short_pick' ||
-        !['pending', 'recovery_required', 'completed'].includes(operation.status)
-      ) {
-        throw this.conflict(
-          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
-          'Picking plan retirement requires an exact resumable short-pick operation',
-        );
-      }
-      const [plan] = await trx
-        .select({ id: wmsTables.pickingPlans.id, status: wmsTables.pickingPlans.status })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, input.planId))
-        .limit(1)
-        .for('update');
-      if (!plan) throw new NotFoundException(`Picking plan ${input.planId} not found`);
-
-      const [member] = await trx
-        .select()
-        .from(wmsTables.pickingPlanMembers)
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.planId, input.planId),
-            eq(wmsTables.pickingPlanMembers.shipmentId, input.shipmentId),
-          ),
-        )
-        .limit(1)
-        .for('update');
-      if (!member) {
-        throw new NotFoundException(`Shipment ${input.shipmentId} is not a member of picking plan ${input.planId}`);
-      }
-      if (member.retiredAt) {
-        if (
-          member.retiredByOperationId !== input.operationId ||
-          member.retiredByOperationType !== 'short_pick' ||
-          member.retireReason !== reason
-        ) {
-          throw this.conflict(
-            'PICKING_PLAN_MEMBER_RETIREMENT_MISMATCH',
-            `Picking plan member ${input.planId}/${input.shipmentId} was retired by another intent`,
-          );
-        }
-        return {
-          planId: member.planId,
-          shipmentId: member.shipmentId,
-          operationId: member.retiredByOperationId,
-          reason: member.retireReason,
-          retiredAt: member.retiredAt,
-          replayed: true,
-        };
-      }
-      if (!['active', 'completed'].includes(plan.status)) {
-        throw this.conflict(
-          'PICKING_PLAN_NOT_RETIRABLE',
-          `Picking plan ${input.planId} is ${plan.status}; short-pick retirement requires active or completed history`,
-        );
-      }
-      if (!['pending', 'recovery_required'].includes(operation.status)) {
-        throw this.conflict(
-          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
-          'Picking plan retirement requires the exact resumable short-pick operation',
-        );
-      }
-      const [sourceMember] = await trx
-        .select({ operationId: wmsTables.shipmentOperationMembers.operationId })
-        .from(wmsTables.shipmentOperationMembers)
-        .where(
-          and(
-            eq(wmsTables.shipmentOperationMembers.operationId, operation.id),
-            eq(wmsTables.shipmentOperationMembers.shipmentId, input.shipmentId),
-            eq(wmsTables.shipmentOperationMembers.role, 'source'),
-          ),
-        )
-        .limit(1);
-      if (!sourceMember) {
-        throw this.conflict(
-          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
-          `Short-pick operation ${operation.id} does not own shipment ${input.shipmentId}`,
-        );
-      }
-
-      const [retired] = await trx
-        .update(wmsTables.pickingPlanMembers)
-        .set({
-          retiredAt: new Date(),
-          retireReason: reason,
-          retiredByOperationId: operation.id,
-          retiredByOperationType: operation.type,
-        })
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.planId, input.planId),
-            eq(wmsTables.pickingPlanMembers.shipmentId, input.shipmentId),
-            isNull(wmsTables.pickingPlanMembers.retiredAt),
-          ),
-        )
-        .returning();
-      if (!retired) {
-        throw this.conflict(
-          'PICKING_PLAN_MEMBER_RETIREMENT_STALE',
-          `Picking plan member ${input.planId}/${input.shipmentId} changed while retiring`,
-        );
-      }
-      return {
-        planId: retired.planId,
-        shipmentId: retired.shipmentId,
-        operationId: operation.id,
-        reason,
-        retiredAt: retired.retiredAt!,
-        replayed: false,
-      };
-    }, tx);
-  }
 
   async split(
     shipmentId: string,
@@ -608,7 +434,6 @@ export class ShipmentPlanningService {
         }
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
         await this.assertNoActiveWaybill(shipmentId, tx);
-        await this.assertNoActivePickingPlan(shipmentId, tx);
         this.assertRecipientComplete(aggregate.shipment.recipientSnapshot);
         await this.assertPlanProfile(aggregate, dto.shippingProfileId, tx);
         await this.assertFullyReserved(aggregate, tx);
@@ -867,7 +692,6 @@ export class ShipmentPlanningService {
 
       await this.assertNoActiveWaybill(pending.shipmentId, trx);
       await this.assertNoCustodyOrActiveWork(aggregate, trx);
-      await this.assertNoActivePickingPlan(pending.shipmentId, trx);
       await trx
         .update(wmsTables.shipments)
         .set({ status: 'draft', recoveryCode: null, plannedAt: null, lastUpdated: new Date() })
@@ -1462,22 +1286,6 @@ export class ShipmentPlanningService {
       .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
   }
 
-  private async assertNoActivePickingPlan(shipmentId: string, tx: DbTx): Promise<void> {
-    const [plan] = await tx
-      .select({ id: wmsTables.pickingPlans.id })
-      .from(wmsTables.pickingPlanMembers)
-      .innerJoin(wmsTables.pickingPlans, eq(wmsTables.pickingPlans.id, wmsTables.pickingPlanMembers.planId))
-      .where(
-        and(
-          eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
-          isNull(wmsTables.pickingPlanMembers.retiredAt),
-          inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-        ),
-      )
-      .limit(1);
-    if (plan) throw this.conflict('SHIPMENT_STALE_PICKING_PLAN', `Picking plan ${plan.id} must be invalidated`);
-  }
-
   private async assertPlanProfile(aggregate: ShipmentAggregate, requestedProfileId: string, tx: DbTx): Promise<void> {
     if (aggregate.lines.some((line) => line.fulfillmentMode === 'drop_ship')) {
       throw this.conflict('SHIPMENT_DROP_SHIP_NOT_SUPPORTED', 'Drop-ship demand cannot enter V2 planning');
@@ -1610,7 +1418,7 @@ export class ShipmentPlanningService {
   private async requiresDurableReplan(aggregate: ShipmentAggregate, tx: DbTx): Promise<boolean> {
     if (aggregate.shipment.status !== 'draft') return true;
     if (aggregate.lines.some((line) => line.inspectedQty > 0)) return true;
-    const [waybill, workItem, consolidation, pickingPlan, sessionBalance] = await Promise.all([
+    const [waybill, workItem, consolidation, sessionBalance] = await Promise.all([
       tx
         .select({ id: wmsTables.waybills.id })
         .from(wmsTables.waybills)
@@ -1648,18 +1456,6 @@ export class ShipmentPlanningService {
         )
         .limit(1),
       tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlanMembers)
-        .innerJoin(wmsTables.pickingPlans, eq(wmsTables.pickingPlans.id, wmsTables.pickingPlanMembers.planId))
-        .where(
-          and(
-            eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
-            isNull(wmsTables.pickingPlanMembers.retiredAt),
-            inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-          ),
-        )
-        .limit(1),
-      tx
         .select({ id: wmsTables.batchInventorySessionBalances.id })
         .from(wmsTables.batchInventorySessionBalances)
         .where(
@@ -1674,7 +1470,7 @@ export class ShipmentPlanningService {
         )
         .limit(1),
     ]);
-    return Boolean(waybill[0] || workItem[0] || consolidation[0] || pickingPlan[0] || sessionBalance[0]);
+    return Boolean(waybill[0] || workItem[0] || consolidation[0] || sessionBalance[0]);
   }
 
   private assertRecipientComplete(value: unknown): void {
