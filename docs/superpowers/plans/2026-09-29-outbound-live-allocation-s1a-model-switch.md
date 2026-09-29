@@ -2506,6 +2506,7 @@ Expected: 에러 0, 실패 0, 통합은 develop 과 같거나 더 초록
 - Modify: `apps/core/src/modules/inventory/schema/outbound-v2-schema.integration.spec.ts`
 - Modify: 가드 스펙 `ALLOWED` 에서 스키마 두 줄 제거, `PATTERN` 에 `\bpickingPlans\b|\bpickingPlanMembers\b|picking_plans|picking_plan_members` 추가(스키마에서도 사라졌으므로)
 - Modify: `outbound-batch-orchestrator.service.ts`·`batch-start.ts`·`batch-session-recovery.service.ts` 의 `workItemId!` 에서 `!` 제거
+- 참고: `scripts/ops/outbound-cutover-preflight.ts` 의 출고 깔때기 집계는 PR 1 에서 `picking_plans` 대신 `outbound_batches.started_at`·배정 행을 세도록 고쳤다 — PR 2 변경 불필요. 가드 스펙은 `scripts/` 도 훑으며, `scripts/fulfillment-v2/toolkit.ts`(존재 확인 뒤에만 세는 V2 전용 테이블 목록)는 `ALLOWED` 에 남긴다
 
 - [ ] **Step 1: 라이브 배포 확인** — `aws ecs describe-services` 로 Core 태스크 정의의 `registeredAt` 이 PR 1 머지 뒤인지 확인한다(데이터가 아니라 배포 사실로 판정)
 - [ ] **Step 2: 스키마** — `pickingPlans`·`pickingPlanMembers` 테이블 정의와 관계(`pickingPlansRelations`·`pickingPlanMembersRelations`), `pickingPlanStatusEnum`, `wmsTables` 의 두 항목, `pickingSourceAllocations.planId` 와 `uq_picking_source_allocations_grain`, 관계의 `plan:` 을 지우고 `workItemId` 에 `.notNull()`

@@ -58,7 +58,7 @@ export interface ShipmentCustodyBalance {
 
 /**
  * 세션 인계가 받는 배정 한 줄. `batch-start.ts` 가 만들고
- * Task 3 의 `BatchInventorySessionService.startSession` 이 그대로 소비한다.
+ * `BatchInventorySessionService.startSession` 이 그대로 소비한다.
  */
 export interface SessionStartAllocation {
   id: string;
@@ -71,8 +71,8 @@ export interface SessionStartAllocation {
 }
 
 /**
- * Task 3 에서 `BatchInventorySessionService` 가 구현할 포트. 이 Task 에서는 단위 테스트가
- * 가짜로 채운다 — 배치 시작 진입점이 세션 계층 구현을 기다리지 않고 먼저 자리를 잡기 위해서다.
+ * 배치 시작이 재고 세션 계층에 인계하는 포트. `BatchInventorySessionService` 가 구현하고, 단위 테스트는
+ * 가짜로 채운다 — 진입점이 세션 서비스 전체를 끌어오지 않고 인계 한 동작에만 기대게 하려는 경계다.
  */
 export interface BatchStartSessionPort {
   startSession(

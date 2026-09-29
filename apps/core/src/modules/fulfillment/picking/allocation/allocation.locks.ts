@@ -43,7 +43,8 @@ export async function lockAggregate(
   await invariant.assertFulfillmentOrders(fulfillmentOrderIds, trx);
 
   // The invariant owns the recursive FOI -> shipment -> line -> reservation -> invoice/work/session locks.
-  // The following rows are re-read for strategy-specific identity and then batch -> plan -> source follows.
+  // The following rows are re-read for strategy-specific identity, then batch -> work items -> profile/SKU follow;
+  // source ledgers are locked last, by `lockSourceCapacities`.
   const shipments = await trx
     .select()
     .from(wmsTables.shipments)
@@ -87,7 +88,7 @@ export async function lockAggregate(
     )
     .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
     .for('update');
-  // Match addShipment: recursive component/invoice -> batch/work items -> execution profile/SKU -> plan/source.
+  // Match addShipment: recursive component/invoice -> batch/work items -> execution profile/SKU -> source ledgers.
   if (profileIds.length) {
     await trx
       .select({ id: wmsTables.deliveryProfiles.id })
