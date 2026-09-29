@@ -55,5 +55,7 @@ export const HANJIN_LABEL_LONG_FIXTURE: HanjinLabelData = {
   recipient: { ...HANJIN_LABEL_FIXTURE.recipient, detailAddress: '가'.repeat(80) },
   deliveryMessage: '가'.repeat(100),
   commodityName: '가'.repeat(100),
-  items: [{ locationCode: 'Z'.repeat(64), skuId: 'sku-long', name: '가'.repeat(100), quantity: 1 }],
+  items: [
+    { locationCode: `SIMPLE-ZONE-${'0123456789ab'.repeat(3)}`, skuId: 'sku-long', name: '가'.repeat(100), quantity: 1 },
+  ],
 };

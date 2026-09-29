@@ -66,8 +66,10 @@ const FS_PAGE_MARK_Y_MM = 80.6;
 const STOP_BANNER = '발송 금지 · 상품 확인용';
 const STOP_MARK = '발송 금지';
 
-/** 로케이션 접두어 칸의 최대 폭 — 코드는 식별자라 자르지 않고 FS_ITEM_MIN_PT 까지 줄인다. */
-export const FS_ITEM_LOCATION_MAX_WIDTH_MM = 30;
+/** 이름 칸이 최소한 이 폭은 남도록 로케이션 접두어 칸을 넓힌다. */
+export const FS_ITEM_NAME_MIN_WIDTH_MM = 20;
+/** 로케이션 접두어를 줄일 수 있는 최소 pt. */
+export const FS_ITEM_LOCATION_MIN_PT = 5;
 const FS_ITEM_LOCATION_GAP_MM = 1.5;
 
 /** 품목 이름 칸 폭 — 수량 앞 FS_ITEM_QTY_GAP_MM 에서 멈춘다. 위치 코드 접두어가 붙으면 그 폭(+간격)을 뺀다. */
@@ -83,15 +85,22 @@ function itemElements(items: readonly LabelItem[]): string[] {
     const y = round1(FS_ITEM_FIRST_BASELINE_MM + i * FS_ITEM_PITCH_MM);
     const qty = String(item.quantity);
     const prefix = `[${item.locationCode}]`;
-    const prefixPt = fitSizePt(prefix, FS_ITEM_LOCATION_MAX_WIDTH_MM, FS_ITEM_PT, FS_ITEM_MIN_PT);
-    // 최소 pt 로도 칸을 넘는 코드는 이름 시작점을 칸 끝에 고정한다(이름·수량 좌표가 라벨 밖으로 새지 않게).
-    const prefixWidth =
-      Math.min(textWidthMm(prefix, prefixPt), FS_ITEM_LOCATION_MAX_WIDTH_MM) + FS_ITEM_LOCATION_GAP_MM;
-    const maxWidth = fsItemNameMaxWidthMm(qty, prefixWidth);
+    const prefixMax = fsItemNameMaxWidthMm(qty) - FS_ITEM_NAME_MIN_WIDTH_MM - FS_ITEM_LOCATION_GAP_MM;
+    const prefixPt = fitSizePt(prefix, prefixMax, FS_ITEM_PT, FS_ITEM_LOCATION_MIN_PT);
+    const prefixWidth = textWidthMm(prefix, prefixPt);
+    // 로케이션 코드는 식별자라 자르지 않는다. 겹쳐 찍힌 피킹 지시서는 틀린 지시서보다 나쁘다 — 도달 불가에
+    // 가까운 코드는 조용히 겹쳐 찍지 않고 크게 실패한다.
+    if (prefixWidth > prefixMax) {
+      throw new Error(
+        `FS label: location code "${item.locationCode}" is too long to print without overlapping (max ${prefixMax.toFixed(1)}mm at ${FS_ITEM_LOCATION_MIN_PT}pt)`,
+      );
+    }
+    const nameOffset = prefixWidth + FS_ITEM_LOCATION_GAP_MM;
+    const maxWidth = fsItemNameMaxWidthMm(qty, nameOffset);
     const pt = fitSizePt(item.name, maxWidth, FS_ITEM_PT, FS_ITEM_MIN_PT);
     return [
       text({ x: FS_ITEM_X_MM, y, pt: prefixPt, bold: true, text: prefix }),
-      text({ x: round1(FS_ITEM_X_MM + prefixWidth), y, pt, text: fitText(item.name, maxWidth, pt) }),
+      text({ x: round1(FS_ITEM_X_MM + nameOffset), y, pt, text: fitText(item.name, maxWidth, pt) }),
       text({ x: FS_ITEM_QTY_X_MM, y, pt: FS_ITEM_PT, bold: true, anchor: 'end', text: qty }),
     ];
   });

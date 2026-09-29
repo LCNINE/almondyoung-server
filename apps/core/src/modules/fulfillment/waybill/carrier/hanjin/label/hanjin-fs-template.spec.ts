@@ -226,15 +226,46 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
     expect(rowsOn(first)).toEqual(['A-01-01|볼펜']);
   });
 
-  it('로케이션 코드가 길어도 자르지 않고 줄이며, 이름은 수량 앞에서 멈춘다', () => {
-    const code = 'Z'.repeat(64);
+  const rowGeometry = (svg: string, code: string) => {
+    const prefix = new RegExp(`<text x="4.5" y="57" font-size="([\\d.]+)"[^>]*>\\[${code}\\]</text>`).exec(svg);
+    const name = /<text x="([\d.]+)" y="57" font-size="([\d.]+)"[^>]*>([^<]*)<\/text><text x="119"/.exec(svg);
+    if (!prefix || !name) throw new Error('row elements not found');
+    const prefixRight = 4.5 + textWidthMm(`[${code}]`, Number(prefix[1]) / PT_TO_MM);
+    const nameX = Number(name[1]);
+    const nameRight = nameX + textWidthMm(name[3], Number(name[2]) / PT_TO_MM);
+    return { prefixRight, nameX, nameRight };
+  };
+
+  it('18자 로케이션 코드: 접두어가 이름과 겹치지 않고 이름은 수량 앞에서 멈춘다', () => {
+    const code = 'WH-BUCHEON-A-01-02';
     const [first] = renderHanjinFsLabel({
       ...DATA,
       items: [{ locationCode: code, skuId: 's1', name: '가'.repeat(100), quantity: 1000 }],
     });
-    expect(first.svg).toContain(`[${code}]`);
-    const name = rowsOn(first)[0].split('|')[1];
-    expect(name.endsWith('…')).toBe(true);
+    const g = rowGeometry(first.svg, code);
+    expect(g.prefixRight).toBeLessThanOrEqual(g.nameX - 1.4);
+    expect(g.nameRight).toBeLessThanOrEqual(119 - textWidthMm('1000', 11) - 3 + 0.05);
+  });
+
+  it('48자 로케이션 코드도 던지지 않고 겹치지 않게 찍는다', () => {
+    const code = `SIMPLE-ZONE-${'0123456789ab'.repeat(3)}`;
+    const [first] = renderHanjinFsLabel({
+      ...DATA,
+      items: [{ locationCode: code, skuId: 's1', name: '가'.repeat(100), quantity: 1 }],
+    });
+    const g = rowGeometry(first.svg, code);
+    expect(g.nameX).toBeGreaterThan(g.prefixRight);
+    expect(g.nameX).toBeLessThanOrEqual(119 - 20 - 3);
+    expect(g.nameRight).toBeLessThanOrEqual(119);
+  });
+
+  it('찍을 수 없이 넓은 로케이션 코드는 겹쳐 찍지 않고 던진다', () => {
+    expect(() =>
+      renderHanjinFsLabel({
+        ...DATA,
+        items: [{ locationCode: 'W'.repeat(64), skuId: 's1', name: '볼펜', quantity: 1 }],
+      }),
+    ).toThrow(/too long to print/);
   });
 
   it('판차 2 이상이면 모든 쪽의 쪽 표시 앞에 「N판」, 1 이면 찍지 않는다', () => {
@@ -338,7 +369,7 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
       {
         ...LONG,
         items: Array.from({ length: 5 }, () => ({
-          locationCode: 'Z'.repeat(64),
+          locationCode: `SIMPLE-ZONE-${'0123456789ab'.repeat(3)}`,
           skuId: 'sku-long',
           name: '가'.repeat(100),
           quantity: 9999,
