@@ -1,5 +1,6 @@
 import { DbTx } from '../../inventory/schema/inventory.schema';
-import { PlanInvalidationCode } from './allocation/plan-invalidation';
+import type { BatchStartResult } from './allocation/allocation.types';
+import type { StartBatchPickingInput } from './allocation/batch-start';
 
 export type PickingStrategyName = 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
 
@@ -16,25 +17,13 @@ export interface PickingActor {
   roles: string[];
 }
 
-export interface PlanPickingInput {
-  batchId: string;
-  shipmentIds: string[];
-  actorId: string;
-  idempotencyKey: string;
-}
-
-export interface StartPickingInput {
-  batchId: string;
-  planId: string;
-  actorId: string;
-  idempotencyKey: string;
-}
+/** 배치 시작 입력. 계획 id 는 없다 — 배치가 곧 시작 단위다(ADR-0041). */
+export type StartPickingInput = StartBatchPickingInput;
 
 export interface DiscreteScanPickingInput {
   strategy?: 'discrete';
   stage?: 'source';
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -51,7 +40,6 @@ export interface AggregateSourceScanInput {
   strategy: 'aggregate_then_sort';
   stage: 'bulk_collect';
   batchId: string;
-  planId: string;
   sessionId: string;
   skuId: string;
   sourceLocationId: string;
@@ -65,7 +53,6 @@ export interface AggregateSortScanInput {
   strategy: 'aggregate_then_sort';
   stage: 'sort';
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -81,7 +68,6 @@ export interface AggregateSortScanInput {
 
 export interface AggregateCartHandoffInput {
   batchId: string;
-  planId: string;
   sessionId: string;
   cartId: string;
   expectedOwnerId: string;
@@ -100,7 +86,6 @@ export interface ToteRegistrationInput {
 
 export interface ToteAssignmentInput {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -138,7 +123,6 @@ export type ScanPickingInput =
 
 export interface HandoffPickingInput {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -151,7 +135,6 @@ export interface HandoffPickingInput {
 
 export interface CompletePickInput {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -162,7 +145,6 @@ export interface CompletePickInput {
 
 export interface UnpickShipmentInput {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -171,48 +153,10 @@ export interface UnpickShipmentInput {
   idempotencyKey: string;
 }
 
-export type PickingPlanResult =
-  | {
-      state: 'planned';
-      operationId: string;
-      planId: string;
-      batchId: string;
-      strategy: PickingStrategyName;
-      version: number;
-      shipmentIds: string[];
-      allocationCount: number;
-      totalQty: number;
-    }
-  | {
-      state: 'invalidated';
-      operationId: string;
-      planId: string;
-      batchId: string;
-      reason: string;
-      reasonCode?: PlanInvalidationCode;
-    };
-
-export type PickingStartResult =
-  | {
-      state: 'started';
-      operationId: string;
-      planId: string;
-      sessionId: string;
-      batchId: string;
-      status: string;
-    }
-  | {
-      state: 'invalidated';
-      operationId: string;
-      planId: string;
-      batchId: string;
-      reason: string;
-      reasonCode?: PlanInvalidationCode;
-    };
+export type PickingStartResult = BatchStartResult;
 
 export interface PickingScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -225,7 +169,6 @@ export interface PickingScanResult {
 
 export interface AggregateSourceScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   skuId: string;
   sourceLocationId: string;
@@ -236,7 +179,6 @@ export interface AggregateSourceScanResult {
 
 export interface AggregateSortScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -343,8 +285,8 @@ export interface UnpickShipmentResult {
 
 /**
  * A picking strategy owns only what differs per method: custody movement and its scans.
- * Planning (`plan` / `start`) is strategy-agnostic and lives in `allocation/legacy-plan.ts` — measured
- * diff across the three strategies was 0~4 lines, all of them the strategy name (ADR-0030).
+ * Batch start (allocation + hand-in) is strategy-agnostic and lives in `allocation/batch-start.ts` —
+ * measured diff across the three strategies was 0~4 lines, all of them the strategy name (ADR-0030).
  */
 export interface PickingStrategy {
   readonly capabilities: PickingStrategyCapabilities;

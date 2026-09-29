@@ -18,7 +18,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     await sql.end({ timeout: 5 });
   });
 
-  it('plan·session 을 만들고 피커 claim 까지 세운다', async () => {
+  it('배치를 시작(배정·세션)하고 피커 claim 까지 세운다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
       const service = assembleSimpleOutbound(tx);
@@ -30,7 +30,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
 
       expect(context.batchId).toBe(fixture.batchId);
       expect(context.workItemId).toBe(fixture.workItemId);
-      expect(context.planId).toBeTruthy();
       expect(context.sessionId).toBeTruthy();
 
       const [workItem] = await tx
@@ -45,7 +44,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       const [allocation] = await tx
         .select()
         .from(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, context.planId))
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId))
         .limit(1);
       expect(allocation.shipmentLineId).toBe(fixture.shipmentLineId);
       expect(allocation.sourceLocationId).toBe(fixture.locationId);
@@ -53,7 +52,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  it('두 번 불러도 같은 plan·session 을 재사용한다', async () => {
+  it('두 번 불러도 같은 세션을 재사용한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
       const service = assembleSimpleOutbound(tx);
@@ -66,7 +65,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       if (secondPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
       const second = secondPrepared.context;
 
-      expect(second.planId).toBe(first.planId);
       expect(second.sessionId).toBe(first.sessionId);
       expect(second.leaseVersion).toBe(first.leaseVersion);
     });
@@ -339,7 +337,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
-      // prepare() 먼저 호출해 plan/session 을 확보한다 — plan() 이 만든 단일
+      // prepare() 먼저 호출해 배치를 시작한다 — 시작이 만든 단일
       // allocation(전체 qty=3, fixture.locationId)을 아래서 둘로 쪼갠다.
       const contextPrepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
       if (contextPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
@@ -350,7 +348,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         .from(wmsTables.pickingSourceAllocations)
         .where(
           and(
-            eq(wmsTables.pickingSourceAllocations.planId, context.planId),
+            eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
             eq(wmsTables.pickingSourceAllocations.shipmentLineId, fixture.shipmentLineId),
           ),
         )
@@ -391,7 +389,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         })
         .returning();
       await tx.insert(wmsTables.pickingSourceAllocations).values({
-        planId: context.planId,
+        workItemId: context.workItemId,
         shipmentLineId: fixture.shipmentLineId,
         sourceLocationId: location2.id,
         qty: 1,

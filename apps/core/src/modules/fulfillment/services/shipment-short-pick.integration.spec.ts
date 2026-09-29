@@ -259,24 +259,48 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       { planId: plan.id, shipmentId: a.shipment.id, manifestVersion: 1, reservationVersion: 1 },
       { planId: plan.id, shipmentId: b.shipment.id, manifestVersion: 1, reservationVersion: 1 },
     ]);
-    await tx.insert(wmsTables.pickingSourceAllocations).values([
-      {
-        planId: plan.id,
-        shipmentLineId: a.line.id,
-        sourceLocationId: locationId,
-        qty: 5,
-        sourceStockVersion: ledger.version,
-      },
-      {
-        planId: plan.id,
-        shipmentLineId: b.line.id,
-        sourceLocationId: locationId,
-        qty: 5,
-        sourceStockVersion: ledger.version,
-      },
-    ]);
+    const allocations = await tx
+      .insert(wmsTables.pickingSourceAllocations)
+      .values([
+        {
+          planId: plan.id,
+          workItemId: workA.id,
+          shipmentLineId: a.line.id,
+          sourceLocationId: locationId,
+          qty: 5,
+          sourceStockVersion: ledger.version,
+        },
+        {
+          planId: plan.id,
+          workItemId: workB.id,
+          shipmentLineId: b.line.id,
+          sourceLocationId: locationId,
+          qty: 5,
+          sourceStockVersion: ledger.version,
+        },
+      ])
+      .returning();
     const wired = services(tx);
-    const session = await wired.sessions.startSession(batch.id, plan.id, tx, actor.id);
+    const session = await wired.sessions.startSession(
+      {
+        batchId: batch.id,
+        actorId: actor.id,
+        allocations: allocations.map((allocation) => ({
+          id: allocation.id,
+          workItemId: allocation.shipmentLineId === a.line.id ? workA.id : workB.id,
+          shipmentLineId: allocation.shipmentLineId,
+          skuId,
+          sourceLocationId: allocation.sourceLocationId,
+          quantity: allocation.qty,
+          sourceStockVersion: allocation.sourceStockVersion,
+        })),
+      },
+      tx,
+    );
+    await tx
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, batch.id));
     await tx
       .update(wmsTables.outboundBatchWorkItems)
       .set({ status: 'ready_to_pack' })

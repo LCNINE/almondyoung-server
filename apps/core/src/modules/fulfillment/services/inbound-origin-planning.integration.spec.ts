@@ -2,15 +2,15 @@ import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { and, eq, sql as sqlQuery } from 'drizzle-orm';
+import { and, eq, inArray, sql as sqlQuery } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { buildWiring, makeInboundReceiptKernel } from '../../inventory/inbound/services/__fixtures__/inbound-harness';
 import { StockProjectionReader } from '../../inventory/stock-projection/services/stock-projection.reader';
 import { StockProjectionService } from '../../inventory/stock-projection/services/stock-projection.service';
 import { StockProjectionController } from '../../inventory/stock-projection/controllers/stock-projection.controller';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { planPicking } from '../picking/allocation/legacy-plan';
-import { PickingPlanDeps } from '../picking/allocation/allocation.types';
+import { startBatchPicking } from '../picking/allocation/batch-start';
+import { BatchStartDeps } from '../picking/allocation/allocation.types';
 import { WaybillService } from '../waybill/waybill.service';
 import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
@@ -24,7 +24,7 @@ import { ambientDbService, inRollbackTx, makeDb, seedPickableShipment, assembleS
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
-function planning(tx: DbTx): PickingPlanDeps {
+function planning(tx: DbTx): BatchStartDeps {
   const dbService = ambientDbService(tx);
   const { guard } = buildWiring(tx as never);
   return {
@@ -74,11 +74,11 @@ async function fixture(tx: DbTx, qty = 6, freeAtOrigin = 0) {
   return { ...f, origin: line.originLocationId!, lineId: line.id, kernel, deps: planning(tx) };
 }
 
-function plan(f: Awaited<ReturnType<typeof fixture>>, tx: DbTx) {
-  return planPicking(
+function start(f: Awaited<ReturnType<typeof fixture>>, tx: DbTx) {
+  return startBatchPicking(
     f.deps,
     'discrete',
-    { batchId: f.batchId, shipmentIds: [f.shipmentId], actorId: f.actorId, idempotencyKey: randomUUID() },
+    { batchId: f.batchId, actorId: f.actorId, idempotencyKey: randomUUID() },
     tx,
   );
 }
@@ -107,16 +107,16 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       const f = await fixture(tx);
       const locationContents = await contents(tx, f.origin);
       expect(locationContents.items[0]).toMatchObject({ quantity: 10, inboundPendingQty: 10, generallyMovableQty: 0 });
-      await expect(plan(f, tx)).rejects.toMatchObject({ response: { code: 'PICKING_SOURCE_INSUFFICIENT' } });
+      await expect(start(f, tx)).rejects.toMatchObject({ response: { code: 'PICKING_SOURCE_INSUFFICIENT' } });
       await f.kernel.putaway(
         { receiptLineId: f.lineId, toLocationId: f.locationId, quantity: 6, eventKey: randomUUID() },
         tx,
       );
-      const result = await plan(f, tx);
+      await start(f, tx);
       const allocations = await tx
         .select()
         .from(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, result.planId));
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
       expect(allocations.every((a) => a.sourceLocationId !== f.origin)).toBe(true);
       expect(allocations.reduce((sum, a) => sum + a.qty, 0)).toBe(6);
       expect((await contents(tx, f.locationId)).items[0]).toMatchObject({
@@ -126,46 +126,10 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       });
     });
   });
-  it('revalidates pending after planning even when the ledger version is unchanged', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const f = await fixture(tx, 6, 2);
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ canceledQty: 8 })
-        .where(eq(wmsTables.inboundReceiptLines.id, f.lineId));
-      const first = await plan(f, tx);
-      expect((await plan(f, tx)).planId).toBe(first.planId);
-      const [before] = await tx
-        .select()
-        .from(wmsTables.stockLedgers)
-        .where(and(eq(wmsTables.stockLedgers.skuId, f.skuId), eq(wmsTables.stockLedgers.locationId, f.origin)));
-      await tx
-        .update(wmsTables.inboundReceiptLines)
-        .set({ canceledQty: 0 })
-        .where(eq(wmsTables.inboundReceiptLines.id, f.lineId));
-      await expect(f.deps.sessions.startSession(f.batchId, first.planId, tx, f.actorId)).rejects.toMatchObject({
-        response: { code: 'PICKING_PLAN_SOURCE_STALE' },
-      });
-      expect(await plan(f, tx)).toMatchObject({ state: 'invalidated', planId: first.planId });
-      const [after] = await tx
-        .select()
-        .from(wmsTables.stockLedgers)
-        .where(and(eq(wmsTables.stockLedgers.skuId, f.skuId), eq(wmsTables.stockLedgers.locationId, f.origin)));
-      expect(after.version).toBe(before.version);
-      expect(
-        await tx
-          .select()
-          .from(wmsTables.batchInventorySessions)
-          .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId)),
-      ).toHaveLength(0);
-    });
-  });
-
   it('acquires two free units, shows pending10 + custody2 against ledger12 as zero, and rejects overlap', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await fixture(tx, 2, 2);
-      const result = await plan(f, tx);
-      const session = await f.deps.sessions.startSession(f.batchId, result.planId, tx, f.actorId);
+      const session = { id: (await start(f, tx)).sessionId };
       expect((await contents(tx, f.origin)).items[0]).toMatchObject({
         quantity: 12,
         inboundPendingQty: 10,
@@ -355,11 +319,7 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       });
       let a: Promise<unknown> | undefined;
       let b: Promise<unknown> | undefined;
-      const f = await db.transaction(async (tx) => {
-        const seeded = await fixture(tx, 2, 2);
-        const planned = await plan(seeded, tx);
-        return { ...seeded, planId: planned.planId };
-      });
+      const f = await db.transaction((tx) => fixture(tx, 2, 2));
       try {
         const [{ pid: pidA }] = await workerA.sql<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
         const [{ pid: pidB }] = await workerB.sql<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
@@ -370,10 +330,13 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
               tx,
             );
           } else {
-            const result = planning(tx).sessions.startSession(f.batchId, f.planId, tx, f.actorId);
-            if (first === 'putaway')
-              await expect(result).rejects.toMatchObject({ response: { code: 'PICKING_PLAN_SOURCE_STALE' } });
-            else await result;
+            // 배치 시작은 배정과 인계를 한 트랜잭션에서 하므로, 먼저 끝난 적치를 보고 배정한다.
+            await startBatchPicking(
+              planning(tx),
+              'discrete',
+              { batchId: f.batchId, actorId: f.actorId, idempotencyKey: randomUUID() },
+              tx,
+            );
           }
         };
         a = workerA.db.transaction(async (tx) => {
@@ -457,7 +420,7 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
     },
   );
 
-  async function cleanup(f: Awaited<ReturnType<typeof fixture>> & { planId: string }) {
+  async function cleanup(f: Awaited<ReturnType<typeof fixture>>) {
     await db.transaction(async (tx) => {
       const [item] = await tx
         .select()
@@ -467,6 +430,12 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
         throw new Error('Expected the seeded shipment to retain its sales order and line for cleanup.');
       }
       const [sku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuId));
+      const sessionIds = (
+        await tx
+          .select({ id: wmsTables.batchInventorySessions.id })
+          .from(wmsTables.batchInventorySessions)
+          .where(eq(wmsTables.batchInventorySessions.batchId, f.batchId))
+      ).map((row) => row.id);
       await tx.execute(
         sqlQuery`DELETE FROM batch_inventory_session_events WHERE session_id IN (SELECT id FROM batch_inventory_sessions WHERE batch_id = ${f.batchId})`,
       );
@@ -476,12 +445,11 @@ describeIfDb('Inbound origin planning and location contents (real PostgreSQL)', 
       await tx.delete(wmsTables.batchInventorySessions).where(eq(wmsTables.batchInventorySessions.batchId, f.batchId));
       await tx
         .delete(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, f.planId));
-      await tx.delete(wmsTables.pickingPlanMembers).where(eq(wmsTables.pickingPlanMembers.planId, f.planId));
-      await tx.delete(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, f.planId));
-      await tx
-        .delete(wmsTables.fulfillmentCommandRequests)
-        .where(eq(wmsTables.fulfillmentCommandRequests.resourceId, f.planId));
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
+      if (sessionIds.length)
+        await tx
+          .delete(wmsTables.fulfillmentCommandRequests)
+          .where(inArray(wmsTables.fulfillmentCommandRequests.resourceId, sessionIds));
       await tx.delete(wmsTables.auditLogs).where(eq(wmsTables.auditLogs.userId, f.actorId));
       await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.batchId, f.batchId));
       await tx.delete(wmsTables.outboundBatches).where(eq(wmsTables.outboundBatches.id, f.batchId));

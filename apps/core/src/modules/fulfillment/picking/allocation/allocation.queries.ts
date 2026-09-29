@@ -1,9 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
-import { PickingStrategyName, PickingPlanResult } from '../picking-strategy.interface';
+import { STRATEGY_BY_PICKING_METHOD } from '../picking-method.contract';
+import { PickingStrategyName } from '../picking-strategy.interface';
 import { conflict } from './allocation.errors';
-import { PlanInvalidation } from './plan-invalidation';
 import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation.types';
 
 /**
@@ -29,48 +29,37 @@ export function assertWorkItemIdentity(item: WorkItemRow, batchId: string, shipm
   }
 }
 
-export async function assertPlanMembers(trx: DbTx, planId: string, shipmentIds: string[]): Promise<void> {
-  const ids = uniqueSorted(shipmentIds);
-  if (!ids.length || ids.length !== shipmentIds.length) {
-    throw new BadRequestException('Plan member shipments must be unique and non-empty');
-  }
-  const rows = await trx
-    .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
-    .from(wmsTables.pickingPlanMembers)
-    .where(
-      and(
-        eq(wmsTables.pickingPlanMembers.planId, planId),
-        inArray(wmsTables.pickingPlanMembers.shipmentId, ids),
-        isNull(wmsTables.pickingPlanMembers.retiredAt),
-      ),
-    )
-    .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
-    .for('update');
-  if (rows.length !== ids.length || rows.some((row, index) => row.shipmentId !== ids[index])) {
-    throw conflict('PICKING_SHIPMENT_NOT_IN_PLAN', 'Every requested shipment must belong to the active plan');
-  }
-}
-
-/** Active custody trusts its immutable allocation; source ledger versions are a pre-HAND_IN gate only. */
-export async function assertActivePlanSession(
+/**
+ * 배치 행은 잠그지 않는다: `startedAt` 은 한 번만 쓰이고 `pickingMethod` 는 불변이다.
+ * 여기서 배치를 잠그면 작업 항목 → 배치 순서가 되어, 배치 → 작업 항목 순서로 잠그는
+ * 배치 시작·박스 추가와 교착한다.
+ */
+export async function assertActiveBatchSession(
   trx: DbTx,
-  planId: string,
   sessionId: string,
   batchId: string,
   strategyName: PickingStrategyName,
 ): Promise<void> {
-  const [plan] = await trx
+  await assertBatchSessionLifecycle(trx, sessionId, batchId, strategyName, ['active']);
+}
+
+export async function assertBatchSessionLifecycle(
+  trx: DbTx,
+  sessionId: string,
+  batchId: string,
+  strategyName: PickingStrategyName,
+  allowedSessionStatuses: readonly ('active' | 'settled')[],
+): Promise<void> {
+  const [batch] = await trx
     .select({
-      batchId: wmsTables.pickingPlans.batchId,
-      strategy: wmsTables.pickingPlans.strategy,
-      status: wmsTables.pickingPlans.status,
+      pickingMethod: wmsTables.outboundBatches.pickingMethod,
+      startedAt: wmsTables.outboundBatches.startedAt,
     })
-    .from(wmsTables.pickingPlans)
-    .where(eq(wmsTables.pickingPlans.id, planId))
-    .limit(1)
-    .for('update');
-  if (!plan || plan.batchId !== batchId || plan.strategy !== strategyName || plan.status !== 'active') {
-    throw conflict('PICKING_PLAN_NOT_ACTIVE', `Picking plan ${planId} is not an active ${strategyName} plan`);
+    .from(wmsTables.outboundBatches)
+    .where(eq(wmsTables.outboundBatches.id, batchId))
+    .limit(1);
+  if (!batch || !batch.startedAt || STRATEGY_BY_PICKING_METHOD[batch.pickingMethod] !== strategyName) {
+    throw conflict('PICKING_BATCH_NOT_STARTED', `Batch ${batchId} is not a started ${strategyName} batch`);
   }
   const [session] = await trx
     .select({ batchId: wmsTables.batchInventorySessions.batchId, status: wmsTables.batchInventorySessions.status })
@@ -78,21 +67,13 @@ export async function assertActivePlanSession(
     .where(eq(wmsTables.batchInventorySessions.id, sessionId))
     .limit(1)
     .for('update');
-  if (!session || session.batchId !== batchId || session.status !== 'active') {
+  if (
+    !session ||
+    session.batchId !== batchId ||
+    !(allowedSessionStatuses as readonly string[]).includes(session.status)
+  ) {
     throw conflict('PICKING_SESSION_NOT_ACTIVE', `Inventory session ${sessionId} is not active for the batch`);
   }
-  const [identity] = await trx
-    .select({ id: wmsTables.batchInventorySessionEvents.id })
-    .from(wmsTables.batchInventorySessionEvents)
-    .where(
-      and(
-        eq(wmsTables.batchInventorySessionEvents.sessionId, sessionId),
-        eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
-        sql`${wmsTables.batchInventorySessionEvents.payload}->>'planId' = ${planId}`,
-      ),
-    )
-    .limit(1);
-  if (!identity) throw conflict('PICKING_SESSION_PLAN_MISMATCH', 'Inventory session belongs to another plan');
 }
 
 export async function lockAndAssertPickerClaim(
@@ -122,16 +103,7 @@ export async function lockAndAssertPickerClaim(
   return item;
 }
 
-/**
- * Canonical: `aggregate_then_sort`. It is a strict superset — it also selects `id` (its custody
- * layer keys idempotency on `allocation.id`) and adds `id` as a final ORDER BY tiebreaker.
- * Planning never emits two rows for the same (line, source), so the tiebreaker never fires.
- */
-export async function loadShipmentAllocations(
-  trx: DbTx,
-  planId: string,
-  shipmentId: string,
-): Promise<ShipmentAllocation[]> {
+export async function loadWorkItemAllocations(trx: DbTx, workItemId: string): Promise<ShipmentAllocation[]> {
   const allocations = await trx
     .select({
       id: wmsTables.pickingSourceAllocations.id,
@@ -145,16 +117,14 @@ export async function loadShipmentAllocations(
       wmsTables.shipmentLines,
       eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
     )
-    .where(
-      and(eq(wmsTables.pickingSourceAllocations.planId, planId), eq(wmsTables.shipmentLines.shipmentId, shipmentId)),
-    )
+    .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
     .orderBy(
       asc(wmsTables.pickingSourceAllocations.shipmentLineId),
       asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       asc(wmsTables.pickingSourceAllocations.id),
     );
   if (!allocations.length) {
-    throw conflict('PICKING_SHIPMENT_NOT_IN_PLAN', `Shipment ${shipmentId} has no plan allocation`);
+    throw conflict('PICKING_WORK_ITEM_NOT_ALLOCATED', `Work item ${workItemId} has no picking allocation`);
   }
   return allocations;
 }
@@ -187,43 +157,6 @@ export async function loadPositiveShipmentCustody(
       ),
     )
     .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
-}
-
-/** Canonical: `discrete` (byte-identical to `pick_to_tote`; `aggregate` differed only in wording). */
-export async function invalidateDraftPlan(
-  trx: DbTx,
-  planId: string,
-  batchId: string,
-  invalidation: PlanInvalidation,
-  operationId: string,
-): Promise<PickingPlanResult> {
-  const [invalidated] = await trx
-    .update(wmsTables.pickingPlans)
-    .set({
-      status: 'invalidated',
-      invalidatedAt: sql`now()`,
-      invalidationReason: invalidation.message,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(wmsTables.pickingPlans.id, planId),
-        eq(wmsTables.pickingPlans.batchId, batchId),
-        eq(wmsTables.pickingPlans.status, 'draft'),
-      ),
-    )
-    .returning({ id: wmsTables.pickingPlans.id });
-  if (!invalidated) {
-    throw conflict('PICKING_PLAN_STALE_VERSION', `Draft plan ${planId} changed while invalidating`);
-  }
-  return {
-    state: 'invalidated',
-    operationId,
-    planId,
-    batchId,
-    reason: invalidation.message,
-    reasonCode: invalidation.code,
-  };
 }
 
 export function assertRecipientComplete(value: unknown): void {

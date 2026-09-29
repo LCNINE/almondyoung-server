@@ -1,6 +1,5 @@
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
-import type { BatchInventorySessionService } from '../../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
@@ -10,9 +9,6 @@ export type BatchRow = typeof wmsTables.outboundBatches.$inferSelect;
 export type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 export type WorkItemRow = typeof wmsTables.outboundBatchWorkItems.$inferSelect;
 export type CustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
-
-/** Work item statuses a plan may legally claim. Everything else is already downstream of picking. */
-export const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
 
 export interface LockedLine {
   id: string;
@@ -58,16 +54,6 @@ export interface ShipmentCustodyBalance {
   custodyRef: string | null;
   shipmentLineId: string | null;
   qty: number;
-}
-
-/** @deprecated legacy-plan.ts 전용. Task 3 에서 삭제한다. */
-export interface PickingPlanDeps {
-  commands: FulfillmentCommandService;
-  workflowGate: FulfillmentWorkflowGate;
-  sessions: BatchInventorySessionService;
-  invariant: FulfillmentInvariantService;
-  controlledStock: BatchControlledStockGuard;
-  waybills: WaybillService;
 }
 
 /**

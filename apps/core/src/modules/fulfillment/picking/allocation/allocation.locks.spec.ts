@@ -4,7 +4,7 @@ import { LockedAggregate } from './allocation.types';
 /**
  * Only the two `assertStartEligibility`-specific branches (queued-set membership, no-drift-beyond-
  * queued) are covered here — both throw before `trx`/`waybills` are touched, so `{} as never` stands
- * in for them. The remainder (shared with `assertPlanningEligibility` via `assertSharedEligibility`)
+ * in for them. The remainder (warehouse/profile/recipient/reservation/waybill checks)
  * already has DB-gated integration coverage via `outbound-preparation.concurrency.integration.spec.ts`
  * and friends.
  */

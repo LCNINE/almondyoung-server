@@ -18,14 +18,13 @@ import {
 } from './picking-strategy.interface';
 import { conflict } from './allocation/allocation.errors';
 import {
-  assertActivePlanSession,
-  assertPlanMembers,
+  assertActiveBatchSession,
   assertPositiveQuantity,
   assertWorkItemIdentity,
   databaseNow,
   loadPositiveShipmentCustody,
-  loadShipmentAllocations,
   loadWorkItem,
+  loadWorkItemAllocations,
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance } from './allocation/allocation.types';
@@ -62,7 +61,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -85,8 +83,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
           .from(wmsTables.shipmentLines)
@@ -103,7 +100,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           .from(wmsTables.pickingSourceAllocations)
           .where(
             and(
-              eq(wmsTables.pickingSourceAllocations.planId, input.planId),
+              eq(wmsTables.pickingSourceAllocations.workItemId, input.workItemId),
               eq(wmsTables.pickingSourceAllocations.shipmentLineId, input.shipmentLineId),
               eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
             ),
@@ -154,7 +151,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         );
         const response: PickingScanResult = {
           operationId: commandRequestId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -179,7 +175,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -218,8 +213,13 @@ export class DiscretePickingStrategy implements PickingStrategy {
         ) {
           throw conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        if (handedOff.workItem.status === 'completed' || handedOff.workItem.status === 'excluded') {
+          throw conflict(
+            'PICKING_WORK_ITEM_CLOSED',
+            `Work item ${handedOff.workItem.id} is ${handedOff.workItem.status}`,
+          );
+        }
         const balances = await loadPositiveShipmentCustody(trx, input.sessionId, input.shipmentId);
         this.assertExclusiveWorkerCustody(balances, oldOwnerId);
 
@@ -277,7 +277,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -294,9 +293,8 @@ export class DiscretePickingStrategy implements PickingStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
         for (const allocation of allocations) {
           const balances = await trx
@@ -406,7 +404,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -418,12 +415,11 @@ export class DiscretePickingStrategy implements PickingStrategy {
       async (trx, commandRequestId) => {
         const item = await loadWorkItem(trx, input.workItemId, true);
         assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         if (item.leaseVersion !== input.expectedLeaseVersion) {
           throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
         const now = await databaseNow(trx);
         if (item.status === 'picking') {
@@ -474,7 +470,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
           const allocation = allocationByGrain.get(grain);
           if (!allocation || allocation.skuId !== balance.skuId) {
-            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a plan allocation`);
+            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a work item allocation`);
           }
           attributedByGrain.set(grain, (attributedByGrain.get(grain) ?? 0) + balance.qty);
           if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
@@ -500,7 +496,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           ) {
             throw conflict(
               'PICKING_PACKING_CUSTODY_INCOMPLETE',
-              'Ready-to-pack custody must exactly match every plan allocation',
+              'Ready-to-pack custody must exactly match every work item allocation',
             );
           }
         }

@@ -271,20 +271,10 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         status: 'queued',
       })
       .returning();
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', createdBy: actorId })
-      .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: plan.id,
-      shipmentId: shipment.id,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
     const [allocation] = await tx
       .insert(wmsTables.pickingSourceAllocations)
       .values({
-        planId: plan.id,
+        workItemId: workItem.id,
         shipmentLineId: line.id,
         sourceLocationId: sourceLocation.id,
         qty: quantity,
@@ -314,7 +304,6 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       item,
       ledger,
       line,
-      plan,
       shipment,
       sku,
       sourceLocation,
@@ -323,6 +312,37 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       workItem,
       quantity,
     };
+  }
+
+  /** 배치 시작이 하는 인계(HAND_IN)와 `started_at` 표시를 픽스처의 배정 한 줄로 재현한다. */
+  async function handIn(
+    services: ReturnType<typeof serviceSet>,
+    f: Awaited<ReturnType<typeof seedReadyPlan>>,
+    tx: DbTx,
+  ) {
+    const session = await services.sessions.startSession(
+      {
+        batchId: f.batch.id,
+        actorId,
+        allocations: [
+          {
+            id: f.allocation.id,
+            workItemId: f.workItem.id,
+            shipmentLineId: f.line.id,
+            skuId: f.sku.id,
+            sourceLocationId: f.sourceLocation.id,
+            quantity: f.allocation.qty,
+            sourceStockVersion: f.allocation.sourceStockVersion,
+          },
+        ],
+      },
+      tx,
+    );
+    await tx
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, f.batch.id));
+    return session;
   }
 
   async function expectSessionConservation(tx: DbTx, sessionId: string): Promise<void> {
@@ -366,7 +386,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       await inRollbackTx(async (tx) => {
         const f = await seedReadyPlan(tx, replayQty);
         const services = serviceSet(db);
-        const session = await services.sessions.startSession(f.batch.id, f.plan.id, tx);
+        const session = await handIn(services, f, tx);
         await tx
           .update(wmsTables.locations)
           .set({ isSystem: true, systemRole: 'inbound_default' })
@@ -433,7 +453,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     await inRollbackTx(async (tx) => {
       const fixture = await seedReadyPlan(tx);
       const services = serviceSet(db);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const session = await handIn(services, fixture, tx);
       await tx.insert(wmsTables.stockLedgers).values({
         skuId: fixture.sku.id,
         warehouseId: fixture.warehouse.id,
@@ -584,7 +604,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         tx,
       );
       expect(claimed.workItem).toMatchObject({ status: 'picking', pickerId: actorId, leaseVersion: 1 });
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const session = await handIn(services, fixture, tx);
       await services.sessions.moveCustody(
         {
           sessionId: session.id,
@@ -695,7 +715,6 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       const completed = await services.picking.completePick(
         {
           batchId: fixture.batch.id,
-          planId: fixture.plan.id,
           sessionId: session.id,
           workItemId: fixture.workItem.id,
           shipmentId: fixture.shipment.id,

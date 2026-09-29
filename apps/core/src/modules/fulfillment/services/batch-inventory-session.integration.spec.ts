@@ -14,6 +14,7 @@ import { StockEventStore } from '../../inventory/core/repositories/stock-event.s
 import { LocationService } from '../../inventory/core/services/location.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { BatchInventorySessionFaultInjector, BatchInventorySessionService } from './batch-inventory-session.service';
+import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -86,7 +87,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     expect(caught).toMatchObject({ response: { code } });
   }
 
-  async function seedPlan(
+  async function seedAllocatedBatch(
     tx: DbTx,
     options: {
       quantity?: number;
@@ -186,43 +187,72 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         pickingMethod: 'individual',
       })
       .returning();
-    await tx.insert(wmsTables.outboundBatchWorkItems).values({
-      batchId: batch.id,
-      shipmentId: shipment.id,
-      status: 'queued',
-    });
-    const createdBy = randomUUID();
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', createdBy })
+    const [workItem] = await tx
+      .insert(wmsTables.outboundBatchWorkItems)
+      .values({
+        batchId: batch.id,
+        shipmentId: shipment.id,
+        status: 'queued',
+      })
       .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: plan.id,
-      shipmentId: shipment.id,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
     const [allocation] = await tx
       .insert(wmsTables.pickingSourceAllocations)
       .values({
-        planId: plan.id,
+        workItemId: workItem.id,
         shipmentLineId: line.id,
         sourceLocationId: source.locationId,
         qty: quantity,
         sourceStockVersion: source.stockVersion,
       })
       .returning();
-    return { source, salesOrder, fulfillmentOrder, item, shipment, line, batch, plan, allocation, quantity };
+    return { source, salesOrder, fulfillmentOrder, item, shipment, line, batch, workItem, allocation, quantity };
   }
 
-  it('hands in plan allocations without stock-ledger writes and replays the exact start', async () => {
-    await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const beforeStockEvents = await tx.select({ count: sql<number>`count(*)::int` }).from(wmsTables.stockEvents);
-      const started = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
-      const replayed = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+  /** 배치의 작업 항목 배정 전부 — 배치 시작(`startBatchPicking`)이 세션에 넘기는 모양 그대로. */
+  async function batchAllocations(tx: DbTx, batchId: string): Promise<SessionStartAllocation[]> {
+    return tx
+      .select({
+        id: wmsTables.pickingSourceAllocations.id,
+        workItemId: wmsTables.outboundBatchWorkItems.id,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        skuId: wmsTables.shipmentLines.skuId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        quantity: wmsTables.pickingSourceAllocations.qty,
+        sourceStockVersion: wmsTables.pickingSourceAllocations.sourceStockVersion,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId));
+  }
 
-      expect(replayed.id).toBe(started.id);
+  /** 배치 시작이 하는 인계(HAND_IN)와 `started_at` 표시를 재현한다. tx 가 없으면 자기 트랜잭션을 연다. */
+  function handIn(svc: ReturnType<typeof makeServices>, batchId: string, tx?: DbTx) {
+    return svc.dbService.run(async (trx) => {
+      const session = await svc.sessions.startSession(
+        { batchId, actorId, allocations: await batchAllocations(trx, batchId) },
+        trx,
+      );
+      await trx
+        .update(wmsTables.outboundBatches)
+        .set({ startedAt: new Date() })
+        .where(eq(wmsTables.outboundBatches.id, batchId));
+      return session;
+    }, tx);
+  }
+
+  it('hands in batch allocations without stock-ledger writes', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedAllocatedBatch(tx);
+      const beforeStockEvents = await tx.select({ count: sql<number>`count(*)::int` }).from(wmsTables.stockEvents);
+      const started = await handIn(services, fixture.batch.id, tx);
+
       expect(started).toMatchObject({ handedInQty: fixture.quantity, settledQty: 0, returnedQty: 0, version: 2 });
       const events = await tx
         .select()
@@ -230,12 +260,17 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.batchInventorySessionEvents.sessionId, started.id));
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
-        idempotencyKey: `start:${fixture.plan.id}:${fixture.allocation.id}`,
+        idempotencyKey: `start:${fixture.batch.id}:${fixture.allocation.id}`,
         eventType: 'HAND_IN',
         quantity: fixture.quantity,
       });
       expect(events[0].payload).toEqual(
-        expect.objectContaining({ sequence: 1, planId: fixture.plan.id, allocationId: fixture.allocation.id }),
+        expect.objectContaining({
+          sequence: 1,
+          batchId: fixture.batch.id,
+          workItemId: fixture.workItem.id,
+          allocationId: fixture.allocation.id,
+        }),
       );
       const availability = await services.guard.getAvailability(
         {
@@ -253,8 +288,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
 
   it('moves custody idempotently, rejects payload reuse, returns it, and replays after terminal settlement', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const fixture = await seedAllocatedBatch(tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const handoff = {
         sessionId: session.id,
         idempotencyKey: `handoff-${randomUUID()}`,
@@ -304,21 +339,12 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         tx,
       );
       expect(terminalReplay).toMatchObject({ replayed: true, event: { id: returned.event.id } });
-      expect(await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx)).toMatchObject({
-        id: session.id,
-        status: 'settled',
-      });
-      const [plan] = await tx
-        .select()
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, fixture.plan.id));
-      expect(plan.status).toBe('completed');
     });
   });
 
   it('attributes pooled short-pick outcomes to one allocation without consuming sibling custody', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx, { quantity: 3 });
+      const fixture = await seedAllocatedBatch(tx, { quantity: 3 });
       const suffix = randomUUID();
       const [salesOrder] = await tx
         .insert(wmsTables.salesOrders)
@@ -366,26 +392,23 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         status: 'confirmed',
         requestedAt: new Date(),
       });
-      await tx.insert(wmsTables.outboundBatchWorkItems).values({
-        batchId: fixture.batch.id,
-        shipmentId: siblingShipment.id,
-        status: 'queued',
-      });
-      await tx.insert(wmsTables.pickingPlanMembers).values({
-        planId: fixture.plan.id,
-        shipmentId: siblingShipment.id,
-        manifestVersion: siblingShipment.manifestVersion,
-        reservationVersion: siblingShipment.reservationVersion,
-      });
+      const [siblingWorkItem] = await tx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({
+          batchId: fixture.batch.id,
+          shipmentId: siblingShipment.id,
+          status: 'queued',
+        })
+        .returning();
       await tx.insert(wmsTables.pickingSourceAllocations).values({
-        planId: fixture.plan.id,
+        workItemId: siblingWorkItem.id,
         shipmentLineId: siblingLine.id,
         sourceLocationId: fixture.source.locationId,
         qty: 2,
         sourceStockVersion: fixture.source.stockVersion,
       });
 
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const cartRef = randomUUID();
       await services.sessions.moveCustody(
         {
@@ -703,8 +726,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
 
   it('rolls event and balance back together when the process crashes between the stages', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const fixture = await seedAllocatedBatch(tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const crashing = makeServices(db, {
         afterEventAppended: () => {
           throw new Error('simulated process crash after event append');
@@ -760,10 +783,9 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     });
   });
 
-  it('rejects another batch plan and general stock movement against controlled quantity', async () => {
+  it('rejects general stock movement against controlled quantity', async () => {
     await inRollbackTx(async (tx) => {
-      const first = await seedPlan(tx, { quantity: 7 });
-      const second = await seedPlan(tx, { quantity: 4, source: first.source });
+      const first = await seedAllocatedBatch(tx, { quantity: 7 });
       const [targetLocation] = await tx
         .insert(wmsTables.locations)
         .values({
@@ -772,11 +794,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
           locationType: 'zone',
         })
         .returning();
-      await services.sessions.startSession(first.batch.id, first.plan.id, tx);
-      await expectConflict(
-        services.sessions.startSession(second.batch.id, second.plan.id, tx),
-        'PICKING_PLAN_SOURCE_STALE',
-      );
+      await handIn(services, first.batch.id, tx);
       await expectConflict(
         services.command.moveInternal(
           {
@@ -795,8 +813,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
 
   it('marks balance drift for recovery, rebuilds only from events, and rejects corrupted event identity', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const fixture = await seedAllocatedBatch(tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const custodyRef = randomUUID();
       await services.sessions.moveCustody(
         {
@@ -883,8 +901,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
 
   it('replays generic MOVE_CUSTODY context independent of key order and rejects tampering', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const fixture = await seedAllocatedBatch(tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const moved = await services.sessions.moveCustody(
         {
           sessionId: session.id,
@@ -947,8 +965,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
 
   it('links an exact SHIP before settlement and rolls the ledger, link, event and balance back together on failure', async () => {
     await inRollbackTx(async (tx) => {
-      const fixture = await seedPlan(tx);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const fixture = await seedAllocatedBatch(tx);
+      const session = await handIn(services, fixture.batch.id, tx);
       const packing = {
         skuId: fixture.source.skuId,
         sourceLocationId: fixture.source.locationId,
@@ -1080,8 +1098,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
   });
 
   it('fails a rebuild closed when a general move consumes corrupt undercounted custody first', async () => {
-    const fixture = await db.transaction((trx) => seedPlan(trx as unknown as DbTx, { quantity: 10 }));
-    const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id);
+    const fixture = await db.transaction((trx) => seedAllocatedBatch(trx as unknown as DbTx, { quantity: 10 }));
+    const session = await handIn(services, fixture.batch.id);
     const [targetLocation] = await db
       .insert(wmsTables.locations)
       .values({
@@ -1158,8 +1176,8 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
   });
 
   it('rebuilds from the post-lock event stream when a concurrent return settles first', async () => {
-    const fixture = await db.transaction((trx) => seedPlan(trx as unknown as DbTx));
-    const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id);
+    const fixture = await db.transaction((trx) => seedAllocatedBatch(trx as unknown as DbTx));
+    const session = await handIn(services, fixture.batch.id);
     const worker = {
       skuId: fixture.source.skuId,
       sourceLocationId: fixture.source.locationId,
@@ -1233,50 +1251,9 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     expect(liveBalances).toHaveLength(0);
   });
 
-  it('uses plan-before-session locks for concurrent final return and exact start replay', async () => {
-    const fixture = await db.transaction((trx) => seedPlan(trx as unknown as DbTx));
-    const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id);
-    const worker = {
-      skuId: fixture.source.skuId,
-      sourceLocationId: fixture.source.locationId,
-      custodyType: 'WORKER' as const,
-      custodyRef: randomUUID(),
-      shipmentLineId: fixture.line.id,
-    };
-    await services.sessions.moveCustody({
-      sessionId: session.id,
-      idempotencyKey: `concurrent-move-${randomUUID()}`,
-      actorId,
-      quantity: fixture.quantity,
-      from: {
-        skuId: fixture.source.skuId,
-        sourceLocationId: fixture.source.locationId,
-        custodyType: 'AT_SOURCE',
-      },
-      to: worker,
-    });
-    const returnKey = `concurrent-return-${randomUUID()}`;
-    const [returned, replayedStart] = await Promise.all([
-      services.sessions.returnToSource({
-        sessionId: session.id,
-        idempotencyKey: returnKey,
-        actorId,
-        quantity: fixture.quantity,
-        from: worker,
-      }),
-      concurrentServices.sessions.startSession(fixture.batch.id, fixture.plan.id),
-    ]);
-    expect(returned.session.status).toBe('settled');
-    expect(replayedStart.id).toBe(session.id);
-    expect(await services.sessions.startSession(fixture.batch.id, fixture.plan.id)).toMatchObject({
-      id: session.id,
-      status: 'settled',
-    });
-  });
-
   it('serializes concurrent overdrawn custody moves so exactly one succeeds', async () => {
-    const fixture = await db.transaction((trx) => seedPlan(trx as unknown as DbTx));
-    const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id);
+    const fixture = await db.transaction((trx) => seedAllocatedBatch(trx as unknown as DbTx));
+    const session = await handIn(services, fixture.batch.id);
     const move = (service: BatchInventorySessionService, suffix: string) =>
       service.moveCustody({
         sessionId: session.id,
@@ -1307,37 +1284,5 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     expect(
       balances.filter((balance) => balance.custodyType === 'WORKER').reduce((total, balance) => total + balance.qty, 0),
     ).toBe(3);
-  });
-
-  it('replays one exact session for two concurrent starts of the same plan', async () => {
-    const fixture = await db.transaction((trx) => seedPlan(trx as unknown as DbTx));
-    const [first, second] = await Promise.all([
-      services.sessions.startSession(fixture.batch.id, fixture.plan.id),
-      concurrentServices.sessions.startSession(fixture.batch.id, fixture.plan.id),
-    ]);
-    expect(second.id).toBe(first.id);
-    const sessions = await db
-      .select()
-      .from(wmsTables.batchInventorySessions)
-      .where(eq(wmsTables.batchInventorySessions.batchId, fixture.batch.id));
-    expect(sessions).toHaveLength(1);
-  });
-
-  it('serializes two batches starting against the same source so only one controls it', async () => {
-    const first = await db.transaction((trx) => seedPlan(trx as unknown as DbTx, { quantity: 6 }));
-    const second = await db.transaction((trx) =>
-      seedPlan(trx as unknown as DbTx, { quantity: 6, source: first.source }),
-    );
-    const outcomes = await Promise.allSettled([
-      services.sessions.startSession(first.batch.id, first.plan.id),
-      concurrentServices.sessions.startSession(second.batch.id, second.plan.id),
-    ]);
-    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
-    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
-    const sessions = await db
-      .select()
-      .from(wmsTables.batchInventorySessions)
-      .where(sql`${wmsTables.batchInventorySessions.batchId} IN (${first.batch.id}::uuid, ${second.batch.id}::uuid)`);
-    expect(sessions).toHaveLength(1);
   });
 });
