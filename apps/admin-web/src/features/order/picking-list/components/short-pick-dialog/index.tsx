@@ -66,7 +66,7 @@ export function ShortPickDialog({
   );
   const workItem = batch.workItems.find((item) => item.id === workItemId);
   const line = shipment.lines.find((item) => item.id === shipmentLineId);
-  const plan = batch.pickingPlan;
+  const picking = batch.picking;
   const session = batch.inventorySession;
   const operationStatus =
     operation.data?.status ?? shortPickOperation?.operationStatus;
@@ -75,12 +75,10 @@ export function ShortPickDialog({
     operationStatus === 'completed' || operationStatus === 'succeeded';
 
   const submit = async () => {
-    if (!workItem || !line || !plan || !session) return;
+    if (!workItem || !line || !picking || !session) return;
     const payload = {
       workItemId,
       expectedWorkItemLeaseVersion: workItem.leaseVersion,
-      planId: plan.id,
-      expectedPlanVersion: plan.version,
       sessionId: session.id,
       expectedSessionVersion: session.version,
       expectedManifestVersion: shipment.manifestVersion,
@@ -137,7 +135,8 @@ export function ShortPickDialog({
               work item {workItemId} · lease v{workItem?.leaseVersion ?? '?'}
             </p>
             <p>
-              plan {plan?.id ?? '—'} · v{plan?.version ?? '?'}
+              picking {picking?.strategy ?? '—'} · 시작{' '}
+              {picking ? new Date(picking.startedAt).toLocaleString('ko-KR') : '?'}
             </p>
             <p>
               session {session?.id ?? '—'} · v{session?.version ?? '?'}
@@ -231,7 +230,7 @@ export function ShortPickDialog({
               disabled={
                 !workItem ||
                 !line ||
-                !plan ||
+                !picking ||
                 !session ||
                 shortQty < 1 ||
                 mutation.isPending

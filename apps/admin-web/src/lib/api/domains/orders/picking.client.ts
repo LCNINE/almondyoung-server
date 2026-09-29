@@ -4,12 +4,10 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
-  CreatePickingPlanRequest,
   StartPickingV2Request,
   DiscretePickingScanRequest,
   PickingHandoffRequest,
   CompletePickingRequest,
-  PickingPlanResult,
   PickingStartResult,
   PickingScanResult,
   PickingHandoffResult,
@@ -35,16 +33,6 @@ import type {
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/picking`;
 
 export const pickingClient = {
-  createPlan: async (
-    data: CreatePickingPlanRequest,
-    idempotencyKey: string
-  ): Promise<PickingPlanResult> => {
-    const res = await client.post(`${BASE}/v2/plans`, data, {
-      headers: { 'Idempotency-Key': idempotencyKey },
-    });
-    return res.data;
-  },
-
   startV2: async (
     data: StartPickingV2Request,
     idempotencyKey: string

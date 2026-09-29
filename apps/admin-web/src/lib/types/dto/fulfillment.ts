@@ -880,8 +880,6 @@ export interface ShipmentShortPickLineRequest {
 export interface ReportShipmentShortPickRequest {
   workItemId: string;
   expectedWorkItemLeaseVersion: number;
-  planId: string;
-  expectedPlanVersion: number;
   sessionId: string;
   expectedSessionVersion: number;
   expectedManifestVersion: number;
@@ -970,29 +968,20 @@ export interface PickingStrategyCapabilities {
   custodyFlow: string[];
 }
 
-export interface PickingPlanMember {
+export interface BatchPickingAllocation {
   id: string;
-  shipmentId: string;
-  workItemId?: string;
-  status: string;
-}
-
-export interface PickingPlanAllocation {
-  id: string;
+  workItemId: string;
   shipmentLineId: string;
-  skuId: string;
   sourceLocationId: string;
-  quantity: number;
+  qty: number;
+  sourceStockVersion: number;
+  createdAt: string;
 }
 
-export interface PickingPlanSnapshot {
-  id: string;
-  batchId: string;
+export interface BatchPickingSnapshot {
   strategy: PickingStrategyName;
-  status: string;
-  version: number;
-  members: PickingPlanMember[];
-  allocations: PickingPlanAllocation[];
+  startedAt: string;
+  allocations: BatchPickingAllocation[];
 }
 
 export interface InventorySessionBalance {
@@ -1048,7 +1037,7 @@ export interface OutboundBatchV2 {
     supportedPickingStrategies: PickingStrategyName[];
   };
   workItems: OutboundBatchWorkItemV2[];
-  pickingPlan: PickingPlanSnapshot | null;
+  picking: BatchPickingSnapshot | null;
   inventorySession: InventorySessionSnapshot | null;
   toteAssignments: ToteAssignmentSnapshot[];
 }
@@ -1082,19 +1071,12 @@ export interface OutboundBatchCommandResponse {
   workItem: OutboundBatchWorkItemV2;
 }
 
-export interface CreatePickingPlanRequest {
-  batchId: string;
-  shipmentIds: string[];
-}
-
 export interface StartPickingV2Request {
   batchId: string;
-  planId: string;
 }
 
 export interface DiscretePickingScanRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -1107,7 +1089,6 @@ export interface DiscretePickingScanRequest {
 
 export interface PickingHandoffRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -1118,39 +1099,22 @@ export interface PickingHandoffRequest {
 
 export interface CompletePickingRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
   expectedLeaseVersion: number;
 }
 
-export interface PickingPlanResult {
-  state: 'planned' | 'invalidated';
-  operationId: string;
-  planId: string;
-  batchId: string;
-  strategy?: PickingStrategyName;
-  version?: number;
-  shipmentIds?: string[];
-  allocationCount?: number;
-  totalQty?: number;
-  reason?: string;
-}
-
 export interface PickingStartResult {
-  state: 'started' | 'invalidated';
+  state: 'started';
   operationId: string;
-  planId: string;
   batchId: string;
-  sessionId?: string;
-  status?: string;
-  reason?: string;
+  sessionId: string;
+  status: string;
 }
 
 export interface PickingScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -1187,7 +1151,6 @@ export interface InspectionReadyOutput {
 
 export interface AggregateBulkCartScanRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   skuId: string;
   sourceLocationId: string;
@@ -1197,7 +1160,6 @@ export interface AggregateBulkCartScanRequest {
 
 export interface AggregateSortScanRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -1211,7 +1173,6 @@ export interface AggregateSortScanRequest {
 
 export interface AggregateCartHandoffRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   expectedOwnerId: string;
   targetWorkerId: string;
@@ -1221,7 +1182,6 @@ export interface AggregateCartHandoffRequest {
 
 export interface AggregateSourceScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   skuId: string;
   sourceLocationId: string;
@@ -1232,7 +1192,6 @@ export interface AggregateSourceScanResult {
 
 export interface AggregateSortScanResult {
   operationId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
@@ -1260,7 +1219,6 @@ export interface RegisterToteRequest {
 
 export interface AssignToteRequest {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemId: string;
   shipmentId: string;
