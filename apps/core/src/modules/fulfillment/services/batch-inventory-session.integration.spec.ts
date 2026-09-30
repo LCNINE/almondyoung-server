@@ -20,6 +20,9 @@ import {
 } from './batch-inventory-session.service';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';
+import { inRollbackTx, makeDb } from './__support__';
+import { seedBoxOverSameStock, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
+import { assembleOutbound } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -1333,5 +1336,166 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     expect(
       balances.filter((balance) => balance.custodyType === 'WORKER').reduce((total, balance) => total + balance.qty, 0),
     ).toBe(3);
+  });
+});
+
+describeIfDb('세션 — 실행 중 인계와 반납 (PR 2)', () => {
+  jest.setTimeout(120_000);
+  const { sql: pgClient, db: pgDb } = makeDb(DATABASE_URL as string);
+  afterAll(async () => {
+    await pgClient.end({ timeout: 5 });
+  });
+
+  async function startedTwoBoxes(tx: DbTx) {
+    const { first, second } = await seedTwoBoxBatch(tx, 1, 10);
+    const wiring = assembleOutbound(tx);
+    const started = await wiring.picking.start(
+      { batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` },
+      tx,
+    );
+    const [allocation] = await tx
+      .select()
+      .from(wmsTables.pickingSourceAllocations)
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, second.workItemId));
+    return { first, second, wiring, sessionId: started.sessionId, allocation };
+  }
+
+  const atSource = async (tx: DbTx, sessionId: string) =>
+    (
+      await tx
+        .select({ qty: wmsTables.batchInventorySessionBalances.qty })
+        .from(wmsTables.batchInventorySessionBalances)
+        .where(
+          and(
+            eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+            eq(wmsTables.batchInventorySessionBalances.custodyType, 'AT_SOURCE'),
+          ),
+        )
+    ).reduce((total, row) => total + row.qty, 0);
+
+  it('handBack 은 AT_SOURCE 를 줄이고 HAND_BACK 이벤트에 신원을 싣고 헤더 반납 수량을 올린다 — 같은 명령이면 한 번', async () => {
+    await inRollbackTx(pgDb, async (tx) => {
+      const { second, wiring, sessionId, allocation } = await startedTwoBoxes(tx);
+      const input = {
+        sessionId,
+        operationId: randomUUID(),
+        actorId: second.actorId,
+        workItemId: second.workItemId,
+        allocationId: allocation.id,
+        shipmentLineId: second.shipmentLineId,
+        skuId: second.skuId,
+        sourceLocationId: second.locationId,
+        quantity: 1,
+      };
+      const before = await atSource(tx, sessionId);
+      const first = await wiring.sessions.handBack(input, tx);
+      const replay = await wiring.sessions.handBack(input, tx);
+
+      expect(first.replayed).toBe(false);
+      expect(replay.replayed).toBe(true);
+      expect(await atSource(tx, sessionId)).toBe(before - 1);
+      expect(first.event.eventType).toBe('HAND_BACK');
+      expect(first.event.idempotencyKey).toBe(`hand-back:${input.operationId}:${allocation.id}`);
+      expect(first.event.payload).toMatchObject({
+        operationId: input.operationId,
+        workItemId: second.workItemId,
+        allocationId: allocation.id,
+        shipmentLineId: second.shipmentLineId,
+      });
+      expect(first.session.handedBackQty).toBe(1);
+      expect(first.session.handedInQty).toBe(3);
+    });
+  });
+
+  it('handIn 은 실행 중 세션에 이어서 인계한다 — 순번이 이어지고 인계 수량·AT_SOURCE 가 는다', async () => {
+    await inRollbackTx(pgDb, async (tx) => {
+      const { first, wiring, sessionId } = await startedTwoBoxes(tx);
+      const third = await seedBoxOverSameStock(tx, first, 2);
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ batchId: first.batchId })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, third.workItemId));
+      const [row] = await tx
+        .insert(wmsTables.pickingSourceAllocations)
+        .values({
+          workItemId: third.workItemId,
+          shipmentLineId: third.shipmentLineId,
+          sourceLocationId: third.locationId,
+          qty: 2,
+          sourceStockVersion: 1,
+        })
+        .returning();
+      const [before] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      const operationId = randomUUID();
+
+      const after = await wiring.sessions.handIn(
+        {
+          sessionId,
+          batchId: first.batchId,
+          actorId: first.actorId,
+          operationId,
+          allocations: [
+            {
+              id: row.id,
+              workItemId: third.workItemId,
+              shipmentLineId: third.shipmentLineId,
+              skuId: third.skuId,
+              sourceLocationId: third.locationId,
+              quantity: 2,
+              sourceStockVersion: 1,
+            },
+          ],
+        },
+        tx,
+      );
+
+      expect(after.handedInQty).toBe(before.handedInQty + 2);
+      expect(after.version).toBe(before.version + 1);
+      expect(await atSource(tx, sessionId)).toBe(5);
+      const [event] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessionEvents)
+        .where(eq(wmsTables.batchInventorySessionEvents.idempotencyKey, `hand-in:${operationId}:${row.id}`));
+      expect(event.payload).toMatchObject({
+        sequence: before.version,
+        workItemId: third.workItemId,
+        allocationId: row.id,
+      });
+    });
+  });
+
+  it('active 가 아닌 세션에는 인계하지 않는다', async () => {
+    await inRollbackTx(pgDb, async (tx) => {
+      const { first, wiring, sessionId, allocation } = await startedTwoBoxes(tx);
+      await tx
+        .update(wmsTables.batchInventorySessions)
+        .set({ status: 'recovery_required', recoveryReason: 'test' })
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      await expect(
+        wiring.sessions.handIn(
+          {
+            sessionId,
+            batchId: first.batchId,
+            actorId: first.actorId,
+            operationId: randomUUID(),
+            allocations: [
+              {
+                id: allocation.id,
+                workItemId: allocation.workItemId!,
+                shipmentLineId: allocation.shipmentLineId,
+                skuId: first.skuId,
+                sourceLocationId: allocation.sourceLocationId,
+                quantity: 1,
+                sourceStockVersion: 1,
+              },
+            ],
+          },
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SESSION_NOT_MUTABLE' } });
+    });
   });
 });

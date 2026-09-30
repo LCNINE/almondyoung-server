@@ -14,6 +14,8 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import type { SessionStartAllocation } from '../picking/allocation/allocation.types';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
+export type BatchInventorySessionRow = SessionRow;
+type MutationEventType = 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE' | 'HAND_BACK';
 export type BatchInventoryCustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
 
 export interface BatchInventoryBucket {
@@ -74,6 +76,28 @@ export interface ReturnShortPickCustodyInput {
   from: BatchInventoryBucket;
   reason: string;
   actorId: string;
+}
+
+function handInOrder(allocations: SessionStartAllocation[]): SessionStartAllocation[] {
+  return [...allocations].sort(
+    (left, right) =>
+      left.sourceLocationId.localeCompare(right.sourceLocationId) ||
+      left.shipmentLineId.localeCompare(right.shipmentLineId) ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+/** 집지 않은 몫 반납(HAND_BACK) — AT_SOURCE 에서 빼고 세션 통제를 푼다. 배정 행 감소는 호출자(BoxAllocationManager)의 몫. */
+export interface HandBackInput {
+  sessionId: string;
+  operationId: string;
+  actorId: string;
+  workItemId: string;
+  allocationId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
 }
 
 export type ShortPickOperationIntentProof = {
@@ -264,17 +288,46 @@ export class BatchInventorySessionService {
     if (existing) throw this.conflict('SESSION_ALREADY_STARTED', `Batch ${input.batchId} already has a session`);
 
     const [session] = await tx.insert(wmsTables.batchInventorySessions).values({ batchId: input.batchId }).returning();
-    let sequence = session.version;
-    const ordered = [...input.allocations].sort(
-      (left, right) =>
-        left.sourceLocationId.localeCompare(right.sourceLocationId) ||
-        left.shipmentLineId.localeCompare(right.shipmentLineId) ||
-        left.id.localeCompare(right.id),
+    const started = await this.appendHandIns(
+      tx,
+      session,
+      input.batchId,
+      input.allocations,
+      (allocation) => `start:${input.batchId}:${allocation.id}`,
     );
+    const handedInQty = started.handedInQty;
+    await this.audit.logUserActionRequired(
+      'batch_inventory_session.start',
+      'fulfillment',
+      `Started inventory session ${session.id}`,
+      { userId: input.actorId },
+      {
+        batchId: input.batchId,
+        handedInQty,
+        allocationIds: handInOrder(input.allocations).map((allocation) => allocation.id),
+      },
+      tx,
+    );
+    return started;
+  }
+
+  /**
+   * 인계 이벤트·AT_SOURCE 를 쓰고 헤더를 한 번에 올린다(배치 시작·합류 공용). 호출자가 세션 행을 잠갔다.
+   * 순번은 세션 version 에서 이어진다 — 복구가 이 순번만 믿는다(batch-session-recovery.service.ts).
+   */
+  private async appendHandIns(
+    tx: DbTx,
+    session: SessionRow,
+    batchId: string,
+    allocations: SessionStartAllocation[],
+    idempotencyKeyOf: (allocation: SessionStartAllocation) => string,
+  ): Promise<SessionRow> {
+    let sequence = session.version;
+    const ordered = handInOrder(allocations);
     for (const allocation of ordered) {
       await tx.insert(wmsTables.batchInventorySessionEvents).values({
         sessionId: session.id,
-        idempotencyKey: `start:${input.batchId}:${allocation.id}`,
+        idempotencyKey: idempotencyKeyOf(allocation),
         eventType: 'HAND_IN',
         skuId: allocation.skuId,
         quantity: allocation.quantity,
@@ -282,12 +335,12 @@ export class BatchInventorySessionService {
         toSourceLocationId: allocation.sourceLocationId,
         payload: {
           sequence,
-          batchId: input.batchId,
+          batchId,
           workItemId: allocation.workItemId,
           allocationId: allocation.id,
           shipmentLineId: allocation.shipmentLineId,
           sourceStockVersion: allocation.sourceStockVersion,
-          requestHash: handInRequestHash(input.batchId, allocation),
+          requestHash: handInRequestHash(batchId, allocation),
         },
       });
       await tx
@@ -316,8 +369,8 @@ export class BatchInventorySessionService {
         });
       sequence += 1;
     }
-    const handedInQty = ordered.reduce((total, allocation) => total + allocation.quantity, 0);
-    const [started] = await tx
+    const handedInQty = session.handedInQty + ordered.reduce((total, allocation) => total + allocation.quantity, 0);
+    const [updated] = await tx
       .update(wmsTables.batchInventorySessions)
       .set({ handedInQty, version: sequence, updatedAt: sql`now()` })
       .where(
@@ -327,17 +380,84 @@ export class BatchInventorySessionService {
         ),
       )
       .returning();
-    if (!started) throw this.conflict('SESSION_STALE_VERSION', `Session ${session.id} changed while starting`);
-    await this.assertConservation(started, tx);
+    if (!updated) throw this.conflict('SESSION_STALE_VERSION', `Session ${session.id} changed while handing in`);
+    await this.assertConservation(updated, tx);
+    return updated;
+  }
+
+  /**
+   * 실행 중 세션에 인계를 더한다(합류, PR 4 의 결품 재배정). 호출자가 이미 «작업 항목 → 세션 → 보관» 순으로 잠갔다.
+   * 키는 `hand-in:<명령 id>:<배정 id>` — 같은 배정에 두 번째 인계가 와도 명령이 다르면 다른 키다(스펙 §13).
+   */
+  async handIn(
+    input: {
+      sessionId: string;
+      batchId: string;
+      actorId: string;
+      operationId: string;
+      allocations: SessionStartAllocation[];
+    },
+    tx: DbTx,
+  ): Promise<SessionRow> {
+    if (!tx) throw new Error('handIn requires the caller transaction');
+    if (input.allocations.length === 0) {
+      throw this.conflict('SESSION_HAND_IN_EMPTY', `Nothing to hand in to session ${input.sessionId}`);
+    }
+    const session = await this.lockSession(input.sessionId, tx);
+    if (session.batchId !== input.batchId) {
+      throw this.conflict(
+        'SESSION_BATCH_MISMATCH',
+        `Session ${input.sessionId} does not belong to batch ${input.batchId}`,
+      );
+    }
+    if (session.status !== 'active') {
+      throw this.conflict('SESSION_NOT_MUTABLE', `Batch inventory session ${input.sessionId} is ${session.status}`);
+    }
+    const updated = await this.appendHandIns(
+      tx,
+      session,
+      input.batchId,
+      input.allocations,
+      (allocation) => `hand-in:${input.operationId}:${allocation.id}`,
+    );
     await this.audit.logUserActionRequired(
-      'batch_inventory_session.start',
+      'batch_inventory_session.hand_in',
       'fulfillment',
-      `Started inventory session ${session.id}`,
+      `Handed in ${updated.handedInQty - session.handedInQty} to session ${session.id}`,
       { userId: input.actorId },
-      { batchId: input.batchId, handedInQty, allocationIds: ordered.map((allocation) => allocation.id) },
+      { batchId: input.batchId, operationId: input.operationId, allocationIds: input.allocations.map((a) => a.id) },
       tx,
     );
-    return started;
+    return updated;
+  }
+
+  /** 집지 않은 몫 반납. 멱등 키 `hand-back:<명령 id>:<배정 id>`. */
+  async handBack(input: HandBackInput, tx: DbTx) {
+    if (!tx) throw new Error('handBack requires the caller transaction');
+    return this.mutate(
+      {
+        sessionId: input.sessionId,
+        idempotencyKey: `hand-back:${input.operationId}:${input.allocationId}`,
+        eventType: 'HAND_BACK',
+        actorId: input.actorId,
+        skuId: input.skuId,
+        quantity: input.quantity,
+        from: {
+          custodyType: 'AT_SOURCE',
+          custodyRef: null,
+          sourceLocationId: input.sourceLocationId,
+          shipmentLineId: null,
+        },
+        to: null,
+        context: {
+          operationId: input.operationId,
+          workItemId: input.workItemId,
+          allocationId: input.allocationId,
+          shipmentLineId: input.shipmentLineId,
+        },
+      },
+      tx,
+    );
   }
 
   async moveCustody(input: MoveBatchCustodyInput, tx?: DbTx) {
@@ -473,7 +593,7 @@ export class BatchInventorySessionService {
     input: {
       sessionId: string;
       idempotencyKey: string;
-      eventType: 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE';
+      eventType: MutationEventType;
       actorId: string;
       skuId: string;
       quantity: number;
@@ -657,6 +777,8 @@ export class BatchInventorySessionService {
             input.eventType === 'SETTLE_FOR_DISPATCH' ? session.settledQty + input.quantity : session.settledQty,
           shortageQty:
             input.eventType === 'APPROVE_SHORTAGE' ? session.shortageQty + input.quantity : session.shortageQty,
+          handedBackQty:
+            input.eventType === 'HAND_BACK' ? session.handedBackQty + input.quantity : session.handedBackQty,
           updatedAt: sql`now()`,
         })
         .where(
@@ -690,7 +812,7 @@ export class BatchInventorySessionService {
     input: {
       sessionId: string;
       idempotencyKey: string;
-      eventType: 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE';
+      eventType: MutationEventType;
       actorId: string;
       skuId: string;
       quantity: number;
@@ -1115,7 +1237,12 @@ export class BatchInventorySessionService {
           ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
         ),
       );
-    const accounted = Number(remaining?.qty ?? 0) + session.settledQty + session.returnedQty + session.shortageQty;
+    const accounted =
+      Number(remaining?.qty ?? 0) +
+      session.settledQty +
+      session.returnedQty +
+      session.shortageQty +
+      session.handedBackQty;
     if (accounted !== session.handedInQty) {
       throw this.conflict(
         'SESSION_CONSERVATION_FAILED',

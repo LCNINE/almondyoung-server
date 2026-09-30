@@ -181,6 +181,7 @@ export class OutboundBatchV2DetailDto {
     status: string;
     version: number;
     handedInQty: number;
+    handedBackQty: number;
     settledQty: number;
     returnedQty: number;
     shortageQty: number;
