@@ -16,6 +16,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
 import { StartBatchButton } from './StartBatchButton';
 import { JoinBoxPanel } from './JoinBoxPanel';
+import { RemoveBoxPanel } from './RemoveBoxPanel';
 import { ReprintLabelButton } from './ReprintLabelButton';
 import { labelGateOf } from './labelGate';
 import type { LabelItemChange } from './waybillLabel';
@@ -258,6 +259,12 @@ function OutboundQueueContent({
                   >
                     박스 넣기
                   </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setPanel({ kind: 'remove', batchId: batch.id })}
+                  >
+                    박스 빼기
+                  </Button>
                 </div>
               )}
               {panel?.kind === 'join' && panel.batchId === batch.id && (
@@ -266,6 +273,12 @@ function OutboundQueueContent({
                   prefs={prefs}
                   print={print}
                   labelPrinting={labelPrinting}
+                  onClose={() => setPanel(null)}
+                />
+              )}
+              {panel?.kind === 'remove' && panel.batchId === batch.id && (
+                <RemoveBoxPanel
+                  batchId={batch.id}
                   onClose={() => setPanel(null)}
                 />
               )}
