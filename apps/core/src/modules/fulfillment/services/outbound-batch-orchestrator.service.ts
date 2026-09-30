@@ -24,7 +24,7 @@ import {
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
-import { joinBlocked } from '../picking/allocation/allocation.errors';
+import { boxHasPickedItems, joinBlocked } from '../picking/allocation/allocation.errors';
 import { describeStartBlockers } from '../picking/allocation/allocation.locks';
 import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -308,6 +308,7 @@ export class OutboundBatchOrchestrator {
     dto: ExcludeShipmentFromBatchDto,
     idempotencyKey: string,
     actor: OutboundBatchActor,
+    tx?: DbTx,
   ): Promise<OutboundBatchCommandResponseDto> {
     this.workflowGate.assertV2MutationAllowed('outbound_batch.shipment.exclude');
     if (!dto.reason?.trim()) throw new BadRequestException('reason is required');
@@ -320,7 +321,7 @@ export class OutboundBatchOrchestrator {
       async (trx, commandRequestId) => {
         const aggregate = await this.lockEligibilityAggregate(shipmentId, trx);
         const [batch] = await trx
-          .select({ id: wmsTables.outboundBatches.id })
+          .select({ id: wmsTables.outboundBatches.id, startedAt: wmsTables.outboundBatches.startedAt })
           .from(wmsTables.outboundBatches)
           .where(eq(wmsTables.outboundBatches.id, batchId))
           .limit(1);
@@ -343,7 +344,11 @@ export class OutboundBatchOrchestrator {
         if (workItem.waitingOperationId) {
           await this.assertWaitingOperationOwnership(workItem.waitingOperationId, shipmentId, trx);
         }
-        await this.assertExcludable(aggregate, trx);
+        if (!batch.startedAt) {
+          await this.assertExcludable(aggregate, trx);
+        } else {
+          await this.withdrawFromStartedBatch(batchId, aggregate, workItem, actor, commandRequestId, trx);
+        }
         const now = await this.databaseNow(trx);
         const [excluded] = await trx
           .update(wmsTables.outboundBatchWorkItems)
@@ -376,13 +381,84 @@ export class OutboundBatchOrchestrator {
         const response = { operationId: commandRequestId, workItem: this.workItemResponse(excluded) };
         return { response, resourceType: 'outbound_batch_work_item', resourceId: excluded.id };
       },
+      tx,
     );
     // The exclusion command is durable before a dependent cancellation/consolidation is resumed.
     // Replaying the command retries this exact resume without repeating the membership mutation.
     if (response.workItem.waitingOperationId) {
-      await this.resumeWaitingOperationIfReady(response.workItem.waitingOperationId, shipmentId);
+      await this.resumeWaitingOperationIfReady(response.workItem.waitingOperationId, shipmentId, tx);
     }
     return response;
+  }
+
+  /**
+   * 시작된 배치에서의 이탈(스펙 §8, PR 2 = 집기 전만). 결과는 시작 전 제외와 같다 — 박스는 planned 로 남아
+   * 예약·송장을 그대로 들고 배치 전 풀로 돌아간다(exit_to 는 PR 3). 잠금은 구성요소(불변식 검사기가 이 박스의
+   * 작업 항목·세션·보관까지) → 작업 항목 → 세션·보관. 가용 잠금은 잡지 않는다 — 반납은 통제분을 줄이기만 한다.
+   */
+  private async withdrawFromStartedBatch(
+    batchId: string,
+    aggregate: EligibilityAggregate,
+    workItem: WorkItemRow,
+    actor: OutboundBatchActor,
+    commandRequestId: string,
+    trx: DbTx,
+  ): Promise<void> {
+    if (workItem.status === 'short_pick_recovery') {
+      throw this.conflict('WORK_ITEM_ALLOCATED', 'Work item is in short-pick recovery; use short-pick recovery');
+    }
+    const [attempt, toteAssignment] = await Promise.all([
+      trx
+        .select({ id: wmsTables.dispatchAttempts.id })
+        .from(wmsTables.dispatchAttempts)
+        .where(
+          and(
+            eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id),
+            ne(wmsTables.dispatchAttempts.status, 'recalled'),
+          ),
+        )
+        .limit(1),
+      trx
+        .select({ id: wmsTables.shipmentToteAssignments.id })
+        .from(wmsTables.shipmentToteAssignments)
+        .where(
+          and(
+            eq(wmsTables.shipmentToteAssignments.shipmentId, aggregate.shipment.id),
+            isNull(wmsTables.shipmentToteAssignments.releasedAt),
+          ),
+        )
+        .limit(1),
+    ]);
+    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(aggregate.shipment.status)) {
+      throw this.conflict('WORK_ITEM_DISPATCH_EXISTS', 'A dispatched shipment cannot be excluded from a batch');
+    }
+    if (toteAssignment[0]) {
+      throw this.conflict(
+        'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+        'Active physical tote assignments must be released before exclusion',
+      );
+    }
+    if (aggregate.lines.some((line) => line.inspectedQty > 0)) {
+      throw boxHasPickedItems(aggregate.shipment.id, []);
+    }
+    const session = await this.boxes.lockOpenSession(batchId, trx);
+    if (!session || session.status !== 'active') {
+      throw this.conflict(
+        'PICKING_SESSION_NOT_ACTIVE',
+        `Batch ${batchId} inventory session is ${session?.status ?? 'not open'}`,
+      );
+    }
+    await this.boxes.withdrawUnpicked(
+      {
+        session,
+        shipmentId: aggregate.shipment.id,
+        workItemId: workItem.id,
+        lines: aggregate.lines.map((line) => ({ id: line.id, skuId: line.skuId })),
+        actorId: actor.id,
+        operationId: commandRequestId,
+      },
+      trx,
+    );
   }
 
   claimPicker(
@@ -1425,7 +1501,8 @@ export class OutboundBatchOrchestrator {
   private derivedBatchStatus(batch: BatchRow, items: WorkItemRow[]): 'created' | 'picking' | 'completed' | 'canceled' {
     if (batch.status === 'completed' || batch.status === 'canceled') return batch.status;
     const included = items.filter((item) => item.status !== 'excluded');
-    if (!included.length) return 'created';
+    // 시작된 배치의 박스가 모두 빠지면 세션은 반납으로 settled 가 되어 다시 열 수 없다 — «시작 전»으로 보이면 안 된다.
+    if (!included.length) return batch.startedAt ? 'canceled' : 'created';
     if (included.every((item) => TERMINAL_FOR_BATCH_STATUSES.includes(item.status as never))) return 'completed';
     if (included.some((item) => item.status !== 'queued')) return 'picking';
     return 'created';

@@ -829,7 +829,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
   });
 
-  it('refuses to join a started batch without an active inventory session, reads its work-item allocations as the picking snapshot, and blocks excluding an allocated item', async () => {
+  it('refuses to join a started batch without an active inventory session, reads its work-item allocations as the picking snapshot, and refuses to withdraw an allocated item without a session to hand back to', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const fixtureA = await committedFixture({ warehouse });
     const fixtureB = await committedFixture({ warehouse });
@@ -892,11 +892,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       services.batches.excludeShipment(
         batch.batchId,
         fixtureA.shipment.id,
-        { reason: 'allocated item must go through short-pick' },
+        { reason: 'allocated item has no session to hand back to' },
         `started-exclude-a-${randomUUID()}`,
         master,
       ),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORK_ITEM_ALLOCATED' }) });
+      // 시작된 배치의 이탈(스펙 §8)은 배정을 세션에 반납(HAND_BACK)해야 끝난다 — 세션이 없으면 반납할 곳이 없어 거절한다.
+      // 세션이 있는 배치에서의 이탈 성공은 batch-withdraw.integration.spec.ts 가 본다.
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'PICKING_SESSION_NOT_ACTIVE' }) });
   });
 
   it('preserves reservations on exclusion and blocks exclusion when custody or dispatch exists', async () => {
@@ -989,7 +991,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         `exclude-custody-${randomUUID()}`,
         master,
       ),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORK_ITEM_UNPICK_REQUIRED' }) });
+      // 배치가 시작됐으므로 이탈 경로다(스펙 §8) — 작업자가 든 1개는 집은 몫이라 PR 2 에서는 BOX_HAS_PICKED_ITEMS.
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'BOX_HAS_PICKED_ITEMS',
+        errors: [expect.objectContaining({ shipmentLineId: withCustody.line.id, qty: 1 })],
+      }),
+    });
 
     await db.insert(wmsTables.dispatchAttempts).values({
       shipmentId: withDispatch.shipment.id,
