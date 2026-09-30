@@ -1,13 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
 import { DbTx, inventorySchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CurrentLabelSummary, labelStateOf, LabelStateView } from './label/label-print-policy';
 import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
 import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
 
 const WI = wmsTables.outboundBatchWorkItems;
+
+const WITHDRAWING: LabelStateView = { state: 'withdrawing', changes: [], issue: null };
+const WITHDRAWN: LabelStateView = { state: 'withdrawn', changes: [], issue: null };
 
 /**
  * 송장 상태(스펙 §10.5) — 조회 전용. 몇 번을 어느 PC 에서 불러도 같은 결과이고 아무것도 바꾸지 않는다.
@@ -24,13 +27,23 @@ export class WaybillLabelStateReader {
   async forShipment(shipmentId: string, tx?: DbTx): Promise<LabelStateView | null> {
     return this.dbService.run(async (trx) => {
       const [item] = await trx
-        .select({ batchStartedAt: wmsTables.outboundBatches.startedAt })
+        .select({ status: WI.status, batchStartedAt: wmsTables.outboundBatches.startedAt })
         .from(WI)
         .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, WI.batchId))
         .where(and(eq(WI.shipmentId, shipmentId), notInArray(WI.status, ['completed', 'excluded'])))
         .limit(1);
-      if (!item) return null;
-      return this.stateOf(trx, shipmentId, item.batchStartedAt !== null);
+      // 빠지는 박스에는 그릴 종이가 없다(I4) — 조립하지 않고 상태만.
+      if (item?.status === 'withdrawing') return WITHDRAWING;
+      if (item) return this.stateOf(trx, shipmentId, item.batchStartedAt !== null);
+      // 활성 작업 항목이 없다 — 마지막이 시작된 배치에서 빠졌으면 withdrawn(시작 전 제외는 종이가 나간 적이 없다).
+      const [last] = await trx
+        .select({ status: WI.status, batchStartedAt: wmsTables.outboundBatches.startedAt })
+        .from(WI)
+        .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, WI.batchId))
+        .where(eq(WI.shipmentId, shipmentId))
+        .orderBy(desc(WI.createdAt), desc(WI.id))
+        .limit(1);
+      return last?.status === 'excluded' && last.batchStartedAt ? WITHDRAWN : null;
     }, tx);
   }
 
@@ -46,7 +59,7 @@ export class WaybillLabelStateReader {
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
       const items = await trx
-        .select({ id: WI.id, shipmentId: WI.shipmentId })
+        .select({ id: WI.id, shipmentId: WI.shipmentId, status: WI.status })
         .from(WI)
         .where(and(eq(WI.batchId, batchId), notInArray(WI.status, ['completed', 'excluded'])))
         .orderBy(asc(WI.shipmentId));
@@ -55,7 +68,9 @@ export class WaybillLabelStateReader {
         views.push({
           shipmentId: item.shipmentId,
           workItemId: item.id,
-          ...(await this.stateOf(trx, item.shipmentId, batch.startedAt !== null)),
+          ...(item.status === 'withdrawing'
+            ? WITHDRAWING
+            : await this.stateOf(trx, item.shipmentId, batch.startedAt !== null)),
         });
       }
       return views;

@@ -32,7 +32,16 @@ export function latestPrint<T extends Pick<LabelPrintRecord, 'printedAt' | 'revi
   );
 }
 
-export type LabelState = 'current' | 'never_printed' | 'reprint_required' | 'not_started' | 'external' | 'unavailable';
+export type LabelState =
+  | 'current'
+  | 'never_printed'
+  | 'reprint_required'
+  | 'not_started'
+  | 'external'
+  | 'unavailable'
+  // 스펙 §10.5 — 이탈 중(뺄 상품 → 되돌림 바구니), 이탈 완료(«빠진 박스입니다, 송장은 버리세요»).
+  | 'withdrawing'
+  | 'withdrawn';
 
 export interface LabelItemChange {
   locationCode: string;
