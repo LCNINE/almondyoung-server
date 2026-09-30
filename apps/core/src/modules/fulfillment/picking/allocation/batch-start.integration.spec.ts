@@ -3,7 +3,7 @@ import { and, eq, sql as rawSql } from 'drizzle-orm';
 import { wmsTables } from '../../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../services/__support__';
 import { seedPickableShipment } from '../../services/__support__/logistics-fixtures';
-import { seedBoxOverSameStock, seedTwoBoxBatch } from '../../services/__support__/simple-outbound-fixtures';
+import { seedTwoBoxBatch } from '../../services/__support__/simple-outbound-fixtures';
 import { assembleOutbound } from '../../services/__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -156,26 +156,6 @@ describeIfDb('배치 시작 (startBatchPicking)', () => {
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, first.batchId));
       expect(batch.startedAt).toBeNull();
-    });
-  });
-
-  it('시작된 배치에 박스를 추가하면 OUTBOUND_BATCH_ALREADY_STARTED', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const { first } = await seedTwoBoxBatch(tx, 1, 10);
-      const { picking, batches } = assembleOutbound(tx);
-      await picking.start({ batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
-
-      const third = await seedBoxOverSameStock(tx, first, 1);
-      await tx
-        .delete(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, third.workItemId));
-
-      await expect(
-        batches.addShipment(first.batchId, third.shipmentId, `add-${randomUUID()}`, {
-          id: randomUUID(),
-          roles: ['master'],
-        }),
-      ).rejects.toMatchObject({ response: { code: 'OUTBOUND_BATCH_ALREADY_STARTED' } });
     });
   });
 

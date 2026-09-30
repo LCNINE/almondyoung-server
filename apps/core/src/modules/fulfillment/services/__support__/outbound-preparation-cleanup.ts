@@ -32,6 +32,13 @@ export async function cleanupPreparationFixture(
     .from(wmsTables.batchInventorySessions)
     .where(inArray(wmsTables.batchInventorySessions.batchId, batchIds));
   const extraFulfillmentOrderIds = await extraFulfillmentOrders(tx, extras);
+  // 합류(addShipment → 시작된 배치)로 생긴 작업 항목도 명령 기록의 resourceId 다 — 픽스처가 만든 id 만으로는 못 찾는다.
+  const batchWorkItemIds = (
+    await tx
+      .select({ id: wmsTables.outboundBatchWorkItems.id })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(inArray(wmsTables.outboundBatchWorkItems.batchId, batchIds))
+  ).map((row) => row.id);
   const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, f.skuId));
   const attempts = await tx
     .select()
@@ -44,6 +51,7 @@ export async function cleanupPreparationFixture(
     f.workItemId,
     ...extras.flatMap((extra) => [extra.shipmentId, extra.batchId, extra.workItemId]),
     ...sessions.map((s) => s.id),
+    ...batchWorkItemIds,
   ];
   await tx
     .delete(wmsTables.fulfillmentCommandRequests)

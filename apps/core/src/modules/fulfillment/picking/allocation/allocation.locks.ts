@@ -269,9 +269,27 @@ export async function lockSourceCapacities(
   controlledStock: BatchControlledStockGuard,
   aggregate: LockedAggregate,
 ): Promise<{ capacities: SourceCapacity[]; inboundPendingBySku: Map<string, number> }> {
-  const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
+  return lockSkuCapacities(
+    trx,
+    controlledStock,
+    aggregate.batch.warehouseId,
+    aggregate.lines.map((line) => line.skuId),
+  );
+}
+
+/**
+ * 한 창고의 SKU 들에 대해 가용 잠금 → ON_HAND 원장 잠금 → 로케이션별 일반 가용(세션 통제·적치 대기 제외).
+ * 배치 시작(`lockSourceCapacities`)과 합류(`BoxAllocationManager.planJoin`)가 같이 쓴다.
+ */
+export async function lockSkuCapacities(
+  trx: DbTx,
+  controlledStock: BatchControlledStockGuard,
+  warehouseId: string,
+  requestedSkuIds: readonly string[],
+): Promise<{ capacities: SourceCapacity[]; inboundPendingBySku: Map<string, number> }> {
+  const skuIds = uniqueSorted(requestedSkuIds);
   for (const skuId of skuIds) {
-    await acquireStockAvailabilityLock(trx, skuId, aggregate.batch.warehouseId);
+    await acquireStockAvailabilityLock(trx, skuId, warehouseId);
   }
   const ledgers = await trx
     .select({
@@ -283,7 +301,7 @@ export async function lockSourceCapacities(
     .where(
       and(
         inArray(wmsTables.stockLedgers.skuId, skuIds),
-        eq(wmsTables.stockLedgers.warehouseId, aggregate.batch.warehouseId),
+        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
         eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
       ),
     )
@@ -304,7 +322,7 @@ export async function lockSourceCapacities(
     const availability = await controlledStock.getAvailability(
       {
         skuId: ledger.skuId,
-        warehouseId: aggregate.batch.warehouseId,
+        warehouseId: warehouseId,
         sourceLocationId: ledger.locationId,
       },
       trx,

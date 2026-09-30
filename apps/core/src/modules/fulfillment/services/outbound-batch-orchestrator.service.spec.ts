@@ -81,6 +81,7 @@ function makeService() {
     {} as never,
     workflowGate as never,
     {} as never,
+    {} as never,
   );
   return { service, commands, workflowGate };
 }
@@ -314,6 +315,7 @@ describe('createBatch picking method contract', () => {
       {} as never,
       {} as never,
       workflowGate as never,
+      {} as never,
       {} as never,
     );
     return { orchestrator, commands };

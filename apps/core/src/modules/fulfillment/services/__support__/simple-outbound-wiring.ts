@@ -26,6 +26,8 @@ import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from '../outbound-batch-orchestrator.service';
+import { BoxAllocationManager } from '../box-allocation.manager';
+import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
 import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry';
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
@@ -99,6 +101,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   // orchestrator 의 moduleRef 는 대기 오퍼레이션 재개(ConsolidationService)에만 쓰인다.
   // 단순출고 경로는 그 분기에 닿지 않으므로 no-op stub 이면 된다.
   const moduleRef = { get: () => ({ resumePending: async () => {} }) } as never;
+  const boxes = new BoxAllocationManager(sessions, controlled);
   const batches = new OutboundBatchOrchestrator(
     dbService,
     commands,
@@ -107,6 +110,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     audit,
     workflowGate,
     moduleRef,
+    boxes,
   );
   const labelGuard = assembleLabels(dbService).guard;
   const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
@@ -138,11 +142,22 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     labelGuard,
   );
   const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
+  // 테스트 배선의 전략 레지스트리는 discrete 만 안다 — 다른 방식의 배치는 이것으로 startBatchPicking 을 직접 부른다.
+  const startDeps: BatchStartDeps = {
+    commands,
+    workflowGate,
+    sessions,
+    invariant,
+    controlledStock: controlled,
+    waybills,
+  };
   return {
     simple,
     picking,
     batches,
     sessions,
+    boxes,
+    startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
     location: new LocationOutboundService(dbService, commands, simple),
   };

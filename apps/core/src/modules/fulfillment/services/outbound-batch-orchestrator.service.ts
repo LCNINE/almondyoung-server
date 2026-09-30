@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { ApplicationException } from '@app/shared';
+import { ApplicationException, ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
@@ -24,6 +24,9 @@ import {
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
+import { joinBlocked } from '../picking/allocation/allocation.errors';
+import { describeStartBlockers } from '../picking/allocation/allocation.locks';
+import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -31,6 +34,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
 import { WaybillService } from '../waybill/waybill.service';
+import { BoxAllocationManager, notJoinable } from './box-allocation.manager';
 
 const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
@@ -69,6 +73,7 @@ export class OutboundBatchOrchestrator {
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly moduleRef: ModuleRef,
+    private readonly boxes: BoxAllocationManager,
   ) {}
 
   async createBatch(
@@ -155,14 +160,18 @@ export class OutboundBatchOrchestrator {
         // Reject a duplicate before taking the batch lock so a concurrent add cannot form
         // shipment-work-item -> batch vs batch -> active-work-item lock inversion.
         await this.assertNoActiveWorkItem(shipmentId, trx);
+        // started_at 은 한 번만 쓰인다 — 잠그지 않은 읽기로 갈래를 정해도 «시작됨» 은 뒤집히지 않는다.
+        const [peek] = await trx
+          .select({ startedAt: wmsTables.outboundBatches.startedAt })
+          .from(wmsTables.outboundBatches)
+          .where(eq(wmsTables.outboundBatches.id, batchId))
+          .limit(1);
+        if (!peek) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+        if (peek.startedAt) return this.joinStartedBatch(batchId, aggregate, actor, commandRequestId, trx);
         // Canonical component locks precede batch/work-item locks in every membership command.
         const batch = await this.lockOpenBatch(batchId, trx);
-        if (batch.startedAt) {
-          throw this.conflict(
-            'OUTBOUND_BATCH_ALREADY_STARTED',
-            `Batch ${batchId} has started picking; joining a running batch arrives with live allocation (S1-B)`,
-          );
-        }
+        // 잠금을 기다리는 사이 시작됐다 — 합류로 간다. 배치·작업 항목 잠금을 쥔 채 세션을 잡아도 발송(작업 항목 → 세션)과 같은 방향이다.
+        if (batch.startedAt) return this.joinStartedBatch(batchId, aggregate, actor, commandRequestId, trx);
         await this.assertCartCapacity(batch, trx);
         const eligible = await this.assertEligible(batch, aggregate, trx);
 
@@ -194,6 +203,95 @@ export class OutboundBatchOrchestrator {
       },
       tx,
     );
+  }
+
+  /**
+   * 합류(스펙 §7) — 한 트랜잭션: 세션 잠금 → 박스 조건 → 닫힘 판정 → 작업 항목 → 배정 계획 → (막히면 전부 보고) → 배정·인계.
+   *
+   * 배치 행과 다른 박스의 작업 항목은 잠그지 않는다. 발송은 «작업 항목 → 세션» 으로 잡는데 여기서 세션을 쥔 채 다른 박스의
+   * 작업 항목을 잠그면 교착한다. 대신 세션 잠금이 같은 배치의 합류·발송 완료와 줄을 세운다 — 그 아래에서 읽는 작업 항목
+   * 상태(닫힘 판정·카트 정원)는 동시 합류가 바꿀 수 없고, 발송 완료가 우리보다 늦게 커밋되면 새 박스가 배치를 연 채로 둔다.
+   * 불변식 검사기가 이 박스의 옛 배치 세션을 이미 잠갔을 수 있다(재합류) — 그래도 방향은 «구성요소 → 세션 → 프로필·SKU 행 →
+   * 가용 잠금 → 원장» 하나다.
+   */
+  private async joinStartedBatch(
+    batchId: string,
+    aggregate: EligibilityAggregate,
+    actor: OutboundBatchActor,
+    commandRequestId: string,
+    trx: DbTx,
+  ): Promise<{ response: OutboundBatchCommandResponseDto; resourceType: string; resourceId: string }> {
+    const shipmentId = aggregate.shipment.id;
+    const [batch] = await trx
+      .select()
+      .from(wmsTables.outboundBatches)
+      .where(eq(wmsTables.outboundBatches.id, batchId))
+      .limit(1);
+    if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+    // 세션을 박스 조건(배송 프로필·SKU 행 FOR UPDATE)보다 먼저 잡는다. 배치 시작과 시작 전 추가는 불변식 검사기에서
+    // 옛 배치 세션을 잡은 «뒤에» 프로필·SKU 행을 잠근다 — 여기서 프로필·SKU 를 쥔 채 세션을 기다리면 그들과 교착한다
+    // (예: 이 배치에서 빠졌던 박스의 재합류는 검사기에서 이 세션을 먼저 잡고 프로필을 기다린다).
+    const session = await this.boxes.lockOpenSession(batchId, trx);
+    await this.assertJoinableBox(batch, aggregate, trx);
+    const workItems = await trx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId));
+    const status = this.derivedBatchStatus(batch, workItems);
+    if (status === 'completed' || status === 'canceled') throw notJoinable(batchId, status);
+    if (!session || session.status !== 'active') {
+      throw notJoinable(batchId, `inventory session is ${session?.status ?? 'missing'}`);
+    }
+    await this.assertCartCapacity(batch, trx);
+    const waybillBlockers = await this.waybillBlockers(shipmentId, trx);
+
+    let workItem: WorkItemRow;
+    try {
+      [workItem] = await trx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({ batchId, shipmentId, status: 'queued' })
+        .returning();
+    } catch (error) {
+      if (this.isActiveWorkItemUniqueViolation(error)) {
+        throw this.conflict(
+          'SHIPMENT_ACTIVE_WORK_ITEM',
+          `Shipment ${shipmentId} already belongs to an active batch work item`,
+        );
+      }
+      throw error;
+    }
+    const lines = aggregate.lines.map((line) => ({ id: line.id, skuId: line.skuId, qty: line.qty }));
+    const plan = await this.boxes.planJoin({ warehouseId: batch.warehouseId, workItemId: workItem.id, lines }, trx);
+    const blockers: StartBlocker[] = [
+      ...plan.shortages.map((shortage) => ({
+        shipmentId,
+        reason: shortage.reason,
+        shipmentLineId: shortage.shipmentLineId,
+        skuId: shortage.skuId,
+        requiredQty: shortage.requiredQty,
+        shortQty: shortage.shortQty,
+        detail: null,
+      })),
+      ...waybillBlockers,
+    ];
+    // 전부 아니면 전무(스펙 §7-5): 여기서 던지면 명령 트랜잭션이 작업 항목까지 되돌린다.
+    if (blockers.length) throw joinBlocked(shipmentId, await describeStartBlockers(trx, blockers));
+    await this.boxes.applyJoin(
+      { session, batchId, actorId: actor.id, operationId: commandRequestId, plan, lines },
+      trx,
+    );
+    await this.auditCommand(trx, actor, 'outbound_batch.shipment.join', workItem.id, {
+      commandRequestId,
+      batchId,
+      shipmentId,
+      sessionId: session.id,
+      allocatedQty: plan.handIns.reduce((total, draft) => total + draft.qty, 0),
+    });
+    return {
+      response: { operationId: commandRequestId, workItem: this.workItemResponse(workItem) },
+      resourceType: 'outbound_batch_work_item',
+      resourceId: workItem.id,
+    };
   }
 
   async excludeShipment(
@@ -794,7 +892,7 @@ export class OutboundBatchOrchestrator {
       .orderBy(asc(wmsTables.outboundBatchWorkItems.id));
     const status = this.derivedBatchStatus(batch, workItems);
     if (status === 'completed' || status === 'canceled') {
-      throw this.conflict('OUTBOUND_BATCH_CLOSED', `Batch ${batchId} is ${status}`);
+      throw this.conflict('BATCH_NOT_JOINABLE', `Batch ${batchId} is ${status}`);
     }
     return batch;
   }
@@ -893,6 +991,40 @@ export class OutboundBatchOrchestrator {
     tx: DbTx,
     lockExecutionInputs = true,
   ): Promise<{ waybillId: string; trackingNo: string }> {
+    await this.assertJoinableBox(batch, aggregate, tx, lockExecutionInputs);
+    // assertFulfillmentOrders locked invoice rows before this validation, closing the add-vs-void TOCTOU window.
+    const waybill = await this.waybills.assertDispatchable(aggregate.shipment.id, tx);
+    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
+  }
+
+  /** 합류의 송장 사유(스펙 §6 WAYBILL_NOT_READY) — 막지 않고 모은다. 인증·SQL 오류는 그대로 샌다. */
+  private async waybillBlockers(shipmentId: string, tx: DbTx): Promise<StartBlocker[]> {
+    try {
+      await this.waybills.assertDispatchable(shipmentId, tx);
+      return [];
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      return [
+        {
+          shipmentId,
+          reason: 'WAYBILL_NOT_READY',
+          shipmentLineId: null,
+          skuId: null,
+          requiredQty: null,
+          shortQty: null,
+          detail: error.message,
+        },
+      ];
+    }
+  }
+
+  /** 송장을 뺀 박스 조건 — 시작 전 추가·합류·합류 후보 조회가 같이 쓴다. */
+  private async assertJoinableBox(
+    batch: BatchRow,
+    aggregate: EligibilityAggregate,
+    tx: DbTx,
+    lockExecutionInputs = true,
+  ): Promise<void> {
     const shipment = aggregate.shipment;
     if (shipment.status !== 'planned') {
       throw this.conflict('SHIPMENT_NOT_PLANNED', `Shipment ${shipment.id} must be Planned before batching`);
@@ -1019,10 +1151,6 @@ export class OutboundBatchOrchestrator {
     if (attempt[0]) {
       throw this.conflict('SHIPMENT_DISPATCH_EXISTS', `Shipment ${shipment.id} already has a dispatch attempt`);
     }
-
-    // assertFulfillmentOrders locked invoice rows before this validation, closing the add-vs-void TOCTOU window.
-    const waybill = await this.waybills.assertDispatchable(shipment.id, tx);
-    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
   }
 
   private async assertExcludable(aggregate: EligibilityAggregate, tx: DbTx): Promise<void> {

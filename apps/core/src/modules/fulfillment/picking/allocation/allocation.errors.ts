@@ -29,3 +29,12 @@ export function startBlocked(batchId: string, blockers: StartBlockerView[]): Con
     errors: blockers,
   });
 }
+
+/** 합류 거절 — 아무것도 쓰지 않았다. 모양은 시작 거절과 같다(사유 표 스펙 §6). */
+export function joinBlocked(shipmentId: string, blockers: StartBlockerView[]): ConflictException {
+  return new ConflictException({
+    code: 'BATCH_JOIN_BLOCKED',
+    message: `Shipment ${shipmentId} cannot join the running batch: ${blockers.length} blocker(s)`,
+    errors: blockers,
+  });
+}

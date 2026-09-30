@@ -164,3 +164,18 @@ export async function seedBoxOverSameStock(
     qty,
   );
 }
+
+/**
+ * 어느 배치에도 없는 `planned` 박스 — 합류 대상. `base` 와 같은 SKU·위치·배송 프로필 위에 만들고 자기 작업 항목을 지운다
+ * (seedShipmentForExistingStock 이 만든 빈 배치는 남는다 — 롤백 스펙이면 상관없고, 커밋 스펙은
+ * `cleanupPreparationFixture(tx, base, [box])` 가 그 배치까지 지운다).
+ */
+export async function seedLooseBox(
+  tx: DbTx,
+  base: PickableShipmentFixture,
+  qty: number,
+): Promise<PickableShipmentFixture> {
+  const box = await seedBoxOverSameStock(tx, base, qty);
+  await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+  return box;
+}

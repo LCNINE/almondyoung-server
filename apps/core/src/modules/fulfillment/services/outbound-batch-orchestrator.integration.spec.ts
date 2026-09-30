@@ -30,6 +30,9 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
+import { BatchInventorySessionService } from './batch-inventory-session.service';
+import { BoxAllocationManager } from './box-allocation.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -130,6 +133,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       audit,
       workflowGate,
       moduleRef as never,
+      new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
     );
     return { batches, planning, waybills, commands, invariant, audit, moduleRef };
   }
@@ -822,10 +826,10 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
 
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `closed-add-b-${randomUUID()}`, master),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_CLOSED' }) });
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
   });
 
-  it('refuses to join a started batch, reads its work-item allocations as the picking snapshot, and blocks excluding an allocated item', async () => {
+  it('refuses to join a started batch without an active inventory session, reads its work-item allocations as the picking snapshot, and blocks excluding an allocated item', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const fixtureA = await committedFixture({ warehouse });
     const fixtureB = await committedFixture({ warehouse });
@@ -838,7 +842,9 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     );
     expect((await services.batches.getBatch(batch.batchId)).picking).toBeNull();
 
-    // startBatchPicking 이 남기는 흔적만 심는다: 배치 startedAt + 작업 항목의 배정.
+    // startBatchPicking 이 남기는 흔적 중 배치 startedAt + 작업 항목의 배정만 심는다 — 재고 세션은 없다.
+    // 합류(스펙 §7)는 실행 중 세션에 인계하므로 세션이 active 가 아니면(여기선 없음) BATCH_NOT_JOINABLE 이고 아무것도 쓰지 않는다.
+    // 세션이 있는 배치로의 합류 성공은 batch-join.integration.spec.ts 가 본다.
     const startedAt = new Date();
     await db
       .update(wmsTables.outboundBatches)
@@ -857,7 +863,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
 
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `started-add-b-${randomUUID()}`, master),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_ALREADY_STARTED' }) });
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
     const joined = await db
       .select({ id: wmsTables.outboundBatchWorkItems.id })
       .from(wmsTables.outboundBatchWorkItems)
