@@ -179,3 +179,16 @@ export async function seedLooseBox(
   await tx.delete(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
   return box;
 }
+
+/** 되돌림 바구니 한 개 — 픽스처의 창고에 `RB-` 바코드로 등록한다. */
+export async function seedReturnBin(
+  tx: DbTx,
+  warehouseId: string,
+  actorId: string,
+): Promise<{ id: string; barcode: string }> {
+  const [bin] = await tx
+    .insert(wmsTables.returnBins)
+    .values({ warehouseId, barcode: `RB-${randomUUID().slice(0, 8)}`, registeredBy: actorId })
+    .returning();
+  return { id: bin.id, barcode: bin.barcode };
+}

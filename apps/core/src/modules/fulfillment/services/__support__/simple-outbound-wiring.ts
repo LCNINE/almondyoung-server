@@ -31,6 +31,7 @@ import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
 import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry';
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
+import { ReturnBinService } from '../return-bin.service';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
 import { LocationOutboundService } from '../location-outbound.service';
@@ -160,6 +161,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
     location: new LocationOutboundService(dbService, commands, simple),
+    returnBins: new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit),
   };
 }
 

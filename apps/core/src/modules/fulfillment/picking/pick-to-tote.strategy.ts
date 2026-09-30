@@ -951,6 +951,10 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(barcode)) {
       throw new BadRequestException('toteBarcode contains unsupported characters');
     }
+    // RB- 는 되돌림 바구니 바코드다(return_bins CHECK). 같은 문자열이 토트로도 등록되면 스캔이 두 뜻이 된다(S1 §6.3).
+    if (barcode.toUpperCase().startsWith('RB-')) {
+      throw conflict('TOTE_BARCODE_RESERVED', `Tote barcode ${barcode} uses the return-bin prefix RB-`);
+    }
     return barcode;
   }
 
