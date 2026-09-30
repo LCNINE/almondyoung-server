@@ -29,9 +29,14 @@ async function proof(): Promise<Proof> {
   // tokens are never written to localStorage, URLs or a persistent cookie.
   if (!pending) {
     pending = (async () => {
-      const response = await fetch("/api/beautytop/token", {
+      const issue = () => fetch("/api/beautytop/token", {
         method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
       })
+      let response = await issue()
+      if (response.status === 401) {
+        const restored = await fetch("/api/auth/restore-token", { method: "POST", credentials: "same-origin" })
+        if (restored.ok) response = await issue()
+      }
       if (!response.ok) throw new Error(response.status === 401 ? "로그인이 필요합니다." : "뷰티탑 연결을 잠시 후 다시 시도해 주세요.")
       return response.json() as Promise<Proof>
     })().finally(() => { pending = null })

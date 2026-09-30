@@ -150,3 +150,35 @@ export type BeautyTopPriceList = {
     value: number
   }[]
 }
+
+export type BeautyTopMetricRow = BeautyTopShopSummary & {
+  rank: number
+  instagram_score?: number | null
+  area_m2?: number | null
+  value?: number | null
+  median_gap_days?: number | null
+}
+
+export type BeautyTopMetricRanking = {
+  items: BeautyTopMetricRow[]
+  average?: number | null
+}
+
+type Ready = { ready: boolean }
+
+export type BeautyTopProcedure = {
+  id: string
+  name: string
+  category: string
+  mentions: Ready & { shops: number; share_percent: number | null }
+  growth: Ready & { change_pp: number | null }
+  adoption: { current_shops: number; checked_shops: number }
+  regional: Ready & {
+    local_percent?: number | null
+    national_percent?: number | null
+  }
+}
+
+export type BeautyTopTrends = {
+  procedures?: { available: boolean; rows: BeautyTopProcedure[] }
+}

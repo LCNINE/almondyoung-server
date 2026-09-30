@@ -13,7 +13,10 @@
   "tabs": {
     "myShop": "My shop",
     "neighborhood": "Neighborhood",
-    "franchise": "Franchises"
+    "franchise": "Franchises",
+    "shops": "Rankings",
+    "watch": "Saved",
+    "trends": "Trends"
   },
   "filter": {
     "sido": "Province",
@@ -50,16 +53,10 @@
     "note": "Card sales estimates from Seoul Credit Guarantee Foundation. District-wide trend, not individual shop sales."
   },
   "rank": {
-    "eyebrow": "Popular {category} shops in {region}",
-    "headlineReviews": "Most reviews: <b>{name}</b>",
-    "headlineFollowers": "Most followers: <b>{name}</b>",
     "byReviews": "Reviews",
     "byFollowers": "Followers",
     "reviews": "Reviews",
-    "followers": "Followers",
-    "more": "Show more",
-    "less": "Show less",
-    "note": "Based on public Naver and Instagram data."
+    "followers": "Followers"
   },
   "myShop": {
     "searchLabel": "Shop name",
@@ -121,5 +118,50 @@
     "changes": "Changes in the last 30 days",
     "add": "Add a rival shop",
     "remove": "Remove {name}"
+  },
+  "shops": {
+    "eyebrow": "{category} shop rankings in {region}",
+    "headline": "<b>{name}</b> leads in {metric}",
+    "basis": "Compared {total} shops with data",
+    "more": "Show more ({shown}/{total})",
+    "note": "Compares only figures published on Naver, Instagram and public records. Not sales or skill.",
+    "metric": {
+      "reviews": "Visitor reviews",
+      "followers": "Instagram followers",
+      "instagram": "Instagram activity",
+      "area": "Shop area",
+      "staff": "Staff",
+      "reviewStaff": "Reviews per staff",
+      "activity": "Posting interval"
+    },
+    "value": {
+      "reviews": "{value}",
+      "followers": "{value}",
+      "instagram": "{value} pts",
+      "area": "{value} m²",
+      "staff": "{value}",
+      "reviewStaff": "{value} each",
+      "activity": "Every {value} days"
+    }
+  },
+  "watch": {
+    "eyebrow": "Saved shops",
+    "emptyHeadline": "Save shops you want to keep an eye on",
+    "headline": "<b>{count}</b> saved shops",
+    "add": "Add a shop",
+    "save": "Save",
+    "saved": "Saved",
+    "full": "Up to 7 saved shops"
+  },
+  "trends": {
+    "menuEyebrow": "{category} menus in {region}",
+    "menuHeadline": "<b>{pct}%</b> of shops offer {name}",
+    "menuBasis": "{current} of {checked} shops",
+    "national": "Nationwide {pct}%",
+    "menuNote": "Based on services listed on Naver Place menus, not actual bookings.",
+    "mentionEyebrow": "Instagram mentions",
+    "mentionHeadline": "{name} is the most talked about",
+    "collecting": "Still collecting post mentions",
+    "mentionNote": "Counts shops using each hashtag in public posts from the last 30 days. Not search volume or bookings."
   }
 }

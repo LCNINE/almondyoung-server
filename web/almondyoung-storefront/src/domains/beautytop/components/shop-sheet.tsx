@@ -7,6 +7,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+import { Heart } from "lucide-react"
 import { useTranslations } from "next-intl"
 import type {
   BeautyTopBriefing,
@@ -15,6 +17,7 @@ import type {
 } from "../types"
 import { useBeautyTop } from "../use-beautytop"
 import { useNumberFormats } from "../use-number-formats"
+import { useWatchlist } from "../use-watchlist"
 import { StatTile, stripLeadingSymbols } from "./parts"
 
 const METRIC_LABELS = {
@@ -50,6 +53,7 @@ export function ShopSheet({
 function ShopDetail({ target }: { target: BeautyTopTarget }) {
   const t = useTranslations("beautytop")
   const fmt = useNumberFormats()
+  const watchlist = useWatchlist()
   const shop = useBeautyTop<BeautyTopShop>({
     resource: "shop",
     id: target.id,
@@ -84,6 +88,7 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
   }
 
   const data = shop.data
+  const saved = watchlist.has(target)
   const metrics = data.growth.metrics.filter(
     (m): m is { key: keyof typeof METRIC_LABELS; current: number } =>
       m.key in METRIC_LABELS && m.current != null
@@ -117,6 +122,32 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
       <SheetDescription className="text-muted-foreground mt-1 text-[13px]">
         {data.address}
       </SheetDescription>
+
+      <button
+        type="button"
+        aria-pressed={saved}
+        disabled={!saved && watchlist.full}
+        onClick={() =>
+          saved
+            ? watchlist.remove(target)
+            : watchlist.add({
+                ...target,
+                name: data.name,
+                category: data.category,
+              })
+        }
+        className="bg-secondary text-foreground mt-4 flex h-10 items-center gap-1 rounded-lg px-4 text-[15px] font-medium disabled:opacity-60"
+      >
+        <Heart
+          aria-hidden
+          className={cn("h-4 w-4", saved && "fill-foreground")}
+        />
+        {saved
+          ? t("watch.saved")
+          : watchlist.full
+            ? t("watch.full")
+            : t("watch.save")}
+      </button>
 
       {priceDiff != null && priceService && (
         <p className="text-foreground bg-muted mt-5 rounded-xl p-4 text-[15px] break-keep">

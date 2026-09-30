@@ -13,7 +13,10 @@
   "tabs": {
     "myShop": "自店",
     "neighborhood": "地域",
-    "franchise": "フランチャイズ"
+    "franchise": "フランチャイズ",
+    "shops": "店舗ランキング",
+    "watch": "お気に入り",
+    "trends": "施術トレンド"
   },
   "filter": {
     "sido": "市・道",
@@ -50,16 +53,10 @@
     "note": "ソウル信用保証財団のカード売上推計です。地域全体の傾向で、個別店舗の売上ではありません。"
   },
   "rank": {
-    "eyebrow": "{region}の{category}人気店",
-    "headlineReviews": "レビュー1位は<b>{name}</b>",
-    "headlineFollowers": "フォロワー1位は<b>{name}</b>",
     "byReviews": "レビュー順",
     "byFollowers": "フォロワー順",
     "reviews": "レビュー",
-    "followers": "フォロワー",
-    "more": "もっと見る",
-    "less": "閉じる",
-    "note": "NAVER・Instagramの公開情報基準です。"
+    "followers": "フォロワー"
   },
   "myShop": {
     "searchLabel": "店舗名",
@@ -121,5 +118,50 @@
     "changes": "直近30日間の変化",
     "add": "競合店を追加",
     "remove": "{name}を外す"
+  },
+  "shops": {
+    "eyebrow": "{region} {category} 店舗ランキング",
+    "headline": "{metric} 1位は<b>{name}</b>",
+    "basis": "データのある{total}店を比較しました",
+    "more": "もっと見る ({shown}/{total})",
+    "note": "Naver・Instagram・公的資料で公開された数値のみを比較しています。売上や技術ではありません。",
+    "metric": {
+      "reviews": "来店レビュー",
+      "followers": "インスタフォロワー",
+      "instagram": "インスタ活動",
+      "area": "店舗面積",
+      "staff": "従業員数",
+      "reviewStaff": "従業員あたりレビュー",
+      "activity": "投稿間隔"
+    },
+    "value": {
+      "reviews": "{value}件",
+      "followers": "{value}人",
+      "instagram": "{value}点",
+      "area": "{value}㎡",
+      "staff": "{value}人",
+      "reviewStaff": "1人あたり{value}件",
+      "activity": "{value}日ごと"
+    }
+  },
+  "watch": {
+    "eyebrow": "お気に入り店舗",
+    "emptyHeadline": "気になる店舗を保存してみましょう",
+    "headline": "お気に入り<b>{count}店</b>",
+    "add": "店舗を追加",
+    "save": "お気に入り保存",
+    "saved": "お気に入り済み",
+    "full": "お気に入りは7店まで"
+  },
+  "trends": {
+    "menuEyebrow": "{region} {category} メニュー",
+    "menuHeadline": "<b>{pct}%</b>の店舗が{name}メニューを提供しています",
+    "menuBasis": "{checked}店中 {current}店",
+    "national": "全国 {pct}%",
+    "menuNote": "Naverプレイスのメニューに掲載された施術が基準です。実際の施術件数ではありません。",
+    "mentionEyebrow": "インスタ投稿での言及",
+    "mentionHeadline": "最近は{name}の話題が最も多いです",
+    "collecting": "投稿での言及はまだ収集中です",
+    "mentionNote": "直近30日の公開投稿のハッシュタグを店舗数で数えています。検索数や予約数ではありません。"
   }
 }

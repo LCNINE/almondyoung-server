@@ -17,6 +17,7 @@ import {
 } from "../types"
 import { useBeautyTop } from "../use-beautytop"
 import { useNumberFormats } from "../use-number-formats"
+import { type WatchedShop, useWatchlist } from "../use-watchlist"
 import { DEFAULT_FILTERS, FILTERS_KEY } from "./neighborhood-tab"
 import {
   Big,
@@ -28,18 +29,10 @@ import {
 } from "./parts"
 
 const STORAGE_KEY = "beautytop:my-shop"
-const RIVALS_KEY = "beautytop:rivals"
-const MAX_RIVALS = 7
 
-type SavedShop = BeautyTopTarget &
-  Pick<BeautyTopShopSummary, "name"> &
-  Partial<Pick<BeautyTopShopSummary, "sido" | "gugun" | "category">>
+type SavedShop = WatchedShop
 
-export function MyShopTab({
-  onSelectShop,
-}: {
-  onSelectShop: (target: BeautyTopTarget) => void
-}) {
+function useMyShop() {
   const [shop, setShop] = useState<SavedShop | null>(null)
 
   useEffect(() => {
@@ -48,6 +41,25 @@ export function MyShopTab({
       if (saved) setShop({ kind: "SHOP", ...JSON.parse(saved) })
     } catch {}
   }, [])
+
+  return [shop, setShop] as const
+}
+
+export function WatchTab({
+  onSelectShop,
+}: {
+  onSelectShop: (target: BeautyTopTarget) => void
+}) {
+  const [shop] = useMyShop()
+  return <CompetitorsCard shop={shop} onSelectShop={onSelectShop} />
+}
+
+export function MyShopTab({
+  onSelectShop,
+}: {
+  onSelectShop: (target: BeautyTopTarget) => void
+}) {
+  const [shop, setShop] = useMyShop()
 
   const choose = (next: SavedShop | null) => {
     setShop(next)
@@ -410,33 +422,23 @@ function CompetitorsCard({
   shop,
   onSelectShop,
 }: {
-  shop: SavedShop
+  shop: SavedShop | null
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const t = useTranslations("beautytop")
   const fmt = useNumberFormats()
-  const [rivals, setRivals] = useState<SavedShop[]>([])
+  const watchlist = useWatchlist()
+  const rivals = watchlist.list.filter(
+    (r) => !shop || targetKey(r.kind, r.id) !== targetKey(shop.kind, shop.id)
+  )
   const [adding, setAdding] = useState(false)
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(RIVALS_KEY)
-      if (saved) setRivals(JSON.parse(saved))
-    } catch {}
-  }, [])
-
-  const save = (next: SavedShop[]) => {
-    setRivals(next)
-    try {
-      localStorage.setItem(RIVALS_KEY, JSON.stringify(next))
-    } catch {}
-  }
-
-  const targets = [shop, ...rivals]
+  const targets = [...(shop ? [shop] : []), ...rivals]
     .map((s) => targetKey(s.kind, s.id))
     .join(",")
   const isMine = (row: BeautyTopShopSummary) =>
-    row.id === shop.id && row.entity_type === shop.kind
+    shop != null && row.id === shop.id && row.entity_type === shop.kind
+
   const watch = useBeautyTop<BeautyTopWatch>(
     { resource: "watch", targets },
     rivals.length > 0
@@ -453,16 +455,19 @@ function CompetitorsCard({
 
   return (
     <Card note={t("myShop.note")}>
-      <Headline eyebrow={t("rivals.eyebrow")}>
+      <Headline eyebrow={t(shop ? "rivals.eyebrow" : "watch.eyebrow")}>
         {rivals.length === 0
-          ? t("rivals.emptyHeadline")
+          ? t(shop ? "rivals.emptyHeadline" : "watch.emptyHeadline")
           : myRank > 0
             ? t.rich("rivals.headline", {
                 count: rows.length,
                 rank: myRank,
                 b: (chunks) => <Big>{chunks}</Big>,
               })
-            : "\u00a0"}
+            : t.rich("watch.headline", {
+                count: rivals.length,
+                b: (chunks) => <Big>{chunks}</Big>,
+              })}
       </Headline>
 
       {rivals.length > 0 &&
@@ -561,13 +566,7 @@ function CompetitorsCard({
             <button
               key={targetKey(rival.kind, rival.id)}
               type="button"
-              onClick={() =>
-                save(
-                  rivals.filter(
-                    (r) => !(r.id === rival.id && r.kind === rival.kind)
-                  )
-                )
-              }
+              onClick={() => watchlist.remove(rival)}
               className="bg-secondary text-foreground h-8 shrink-0 rounded-full px-3 text-[13px] font-medium"
               aria-label={t("rivals.remove", { name: rival.name })}
             >
@@ -581,21 +580,23 @@ function CompetitorsCard({
         <div className="mt-4">
           <ShopSearch
             bare
-            exclude={[shop, ...rivals].map((r) => targetKey(r.kind, r.id))}
+            exclude={[...(shop ? [shop] : []), ...rivals].map((r) =>
+              targetKey(r.kind, r.id)
+            )}
             onPick={(picked) => {
-              save([...rivals, picked])
+              watchlist.add(picked)
               setAdding(false)
             }}
           />
         </div>
       ) : (
-        rivals.length < MAX_RIVALS && (
+        !watchlist.full && (
           <button
             type="button"
             onClick={() => setAdding(true)}
             className="bg-secondary text-foreground mt-4 h-11 w-full rounded-xl text-[15px] font-medium"
           >
-            {t("rivals.add")}
+            {t(shop ? "rivals.add" : "watch.add")}
           </button>
         )
       )}

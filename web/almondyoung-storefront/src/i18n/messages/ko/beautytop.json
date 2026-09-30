@@ -13,7 +13,10 @@
   "tabs": {
     "myShop": "내 샵",
     "neighborhood": "우리 동네",
-    "franchise": "프랜차이즈"
+    "franchise": "프랜차이즈",
+    "shops": "샵 순위",
+    "watch": "관심 샵",
+    "trends": "시술 동향"
   },
   "filter": {
     "sido": "시·도",
@@ -50,16 +53,10 @@
     "note": "서울신용보증재단 카드 매출 추정치예요. 지역 전체의 흐름이고 개별 샵 매출이 아니에요."
   },
   "rank": {
-    "eyebrow": "{region} {category} 인기 샵",
-    "headlineReviews": "리뷰 1등은 <b>{name}</b>",
-    "headlineFollowers": "팔로워 1등은 <b>{name}</b>",
     "byReviews": "리뷰순",
     "byFollowers": "팔로워순",
     "reviews": "리뷰",
-    "followers": "팔로워",
-    "more": "더보기",
-    "less": "접기",
-    "note": "네이버·인스타그램 공개 정보 기준이에요."
+    "followers": "팔로워"
   },
   "myShop": {
     "searchLabel": "샵 이름",
@@ -121,5 +118,50 @@
     "changes": "최근 30일 변화",
     "add": "경쟁 샵 추가",
     "remove": "{name} 빼기"
+  },
+  "shops": {
+    "eyebrow": "{region} {category} 샵 순위",
+    "headline": "{metric} 1등은 <b>{name}</b>",
+    "basis": "자료가 있는 {total}곳을 비교했어요",
+    "more": "더보기 ({shown}/{total})",
+    "note": "네이버·인스타그램·공공자료에 공개된 수치만 비교해요. 매출이나 시술 실력이 아니에요.",
+    "metric": {
+      "reviews": "방문자 리뷰",
+      "followers": "인스타 팔로워",
+      "instagram": "인스타 활동",
+      "area": "샵 면적",
+      "staff": "직원 수",
+      "reviewStaff": "직원당 리뷰",
+      "activity": "게시 주기"
+    },
+    "value": {
+      "reviews": "{value}개",
+      "followers": "{value}명",
+      "instagram": "{value}점",
+      "area": "{value}㎡",
+      "staff": "{value}명",
+      "reviewStaff": "1인당 {value}개",
+      "activity": "{value}일마다"
+    }
+  },
+  "watch": {
+    "eyebrow": "관심 샵",
+    "emptyHeadline": "눈여겨보는 샵을 저장해 보세요",
+    "headline": "관심 샵 <b>{count}곳</b>",
+    "add": "관심 샵 추가",
+    "save": "관심 저장",
+    "saved": "관심 샵",
+    "full": "관심 샵은 7곳까지"
+  },
+  "trends": {
+    "menuEyebrow": "{region} {category} 메뉴판",
+    "menuHeadline": "<b>{pct}%</b>의 샵이 {name} 메뉴를 두고 있어요",
+    "menuBasis": "{checked}곳 중 {current}곳",
+    "national": "전국 {pct}%",
+    "menuNote": "네이버 플레이스 메뉴판에 올라 있는 시술 기준이에요. 실제 시술 건수가 아니에요.",
+    "mentionEyebrow": "인스타 게시물 언급",
+    "mentionHeadline": "요즘 {name} 이야기가 가장 많아요",
+    "collecting": "게시물 언급은 아직 모으는 중이에요",
+    "mentionNote": "최근 30일 공개 게시물의 해시태그를 샵 수로 셌어요. 검색량이나 예약 수가 아니에요."
   }
 }

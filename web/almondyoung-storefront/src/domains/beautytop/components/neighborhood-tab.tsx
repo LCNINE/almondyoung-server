@@ -7,7 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 import {
@@ -17,7 +16,6 @@ import {
   BeautyTopPrice,
   BeautyTopPriceGroup,
   BeautyTopPriceList,
-  BeautyTopRanking,
   BeautyTopRevenue,
   BeautyTopTarget,
   targetKey,
@@ -44,17 +42,9 @@ export const DEFAULT_FILTERS = {
   category: "속눈썹",
 }
 
-type Filters = typeof DEFAULT_FILTERS
-type RankSort = "reviews" | "followers"
+export type Filters = typeof DEFAULT_FILTERS
 
-export function NeighborhoodTab({
-  options,
-  onSelectShop,
-}: {
-  options: BeautyTopOptions
-  onSelectShop: (target: BeautyTopTarget) => void
-}) {
-  const t = useTranslations("beautytop")
+export function useScopeFilters() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
 
   useEffect(() => {
@@ -74,6 +64,19 @@ export function NeighborhoodTab({
     })
   }
 
+  return [filters, update] as const
+}
+
+export function ScopeFilters({
+  options,
+  filters,
+  onChange: update,
+}: {
+  options: BeautyTopOptions
+  filters: Filters
+  onChange: (next: Partial<Filters>) => void
+}) {
+  const t = useTranslations("beautytop")
   const sidos = Array.from(new Set(options.regions.map((r) => r.sido)))
   const guguns = options.regions
     .filter((r) => r.sido === filters.sido)
@@ -118,7 +121,22 @@ export function NeighborhoodTab({
           </Chip>
         ))}
       </div>
+    </>
+  )
+}
 
+export function NeighborhoodTab({
+  options,
+  onSelectShop,
+}: {
+  options: BeautyTopOptions
+  onSelectShop: (target: BeautyTopTarget) => void
+}) {
+  const [filters, update] = useScopeFilters()
+
+  return (
+    <>
+      <ScopeFilters options={options} filters={filters} onChange={update} />
       <Sections
         key={JSON.stringify(filters)}
         filters={filters}
@@ -217,8 +235,6 @@ function Sections({
           <RevenueCard group={revenueGroup} region={filters.gugun} />
         </Card>
       )}
-
-      <RankCard scope={scope} place={place} onSelectShop={onSelectShop} />
     </div>
   )
 }
@@ -500,115 +516,6 @@ function RevenueCard({
         lastLabel={quarter(series[series.length - 1].period)}
       />
     </>
-  )
-}
-
-function RankCard({
-  scope,
-  place,
-  onSelectShop,
-}: {
-  scope: { sido: string; gugun: string; category: string }
-  place: { region: string; category: string }
-  onSelectShop: (target: BeautyTopTarget) => void
-}) {
-  const t = useTranslations("beautytop")
-  const fmt = useNumberFormats()
-  const [sort, setSort] = useState<RankSort>("reviews")
-  const [expanded, setExpanded] = useState(false)
-  const ranking = useBeautyTop<BeautyTopRanking>({
-    resource: "ranking",
-    ...scope,
-    sort,
-    page_size: 10,
-  })
-  const items = ranking.data?.items ?? []
-  const shown = expanded ? items : items.slice(0, 5)
-  const top = items[0]
-
-  return (
-    <Card note={t("rank.note")}>
-      <Headline eyebrow={t("rank.eyebrow", place)}>
-        {top
-          ? t.rich(
-              sort === "reviews"
-                ? "rank.headlineReviews"
-                : "rank.headlineFollowers",
-              { name: top.name, b: (chunks) => <strong>{chunks}</strong> }
-            )
-          : " "}
-      </Headline>
-      <Segmented
-        className="mt-4"
-        value={sort}
-        onChange={setSort}
-        options={[
-          { value: "reviews", label: t("rank.byReviews") },
-          { value: "followers", label: t("rank.byFollowers") },
-        ]}
-      />
-
-      {ranking.isPending ? (
-        <div className="mt-4 space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="bg-muted h-14 animate-pulse rounded-xl" />
-          ))}
-        </div>
-      ) : ranking.isError ? (
-        <LoadError onRetry={() => ranking.refetch()} />
-      ) : (
-        <>
-          <ol className="mt-2">
-            {shown.map((item) => (
-              <li key={targetKey(item.entity_type, item.id)}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSelectShop({ id: item.id, kind: item.entity_type })
-                  }
-                  className="hover:bg-muted -mx-2 flex w-[calc(100%+16px)] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors duration-150"
-                >
-                  <span
-                    className={cn(
-                      "w-6 shrink-0 text-center text-[17px] font-bold tabular-nums",
-                      item.rank <= 3
-                        ? "text-foreground"
-                        : "text-muted-foreground/60"
-                    )}
-                  >
-                    {item.rank}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-[17px] leading-[25.5px] font-medium">
-                      {item.name}
-                    </span>
-                    <span className="text-muted-foreground block text-[13px] tabular-nums">
-                      {[
-                        item.visitor_reviews != null &&
-                          `${t("rank.reviews")} ${fmt.full(item.visitor_reviews)}`,
-                        item.followers != null &&
-                          `${t("rank.followers")} ${fmt.compact(item.followers)}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
-          {items.length > 5 && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="bg-secondary text-foreground mt-2 h-11 w-full rounded-xl text-[15px] font-medium"
-            >
-              {expanded ? t("rank.less") : t("rank.more")}
-            </button>
-          )}
-        </>
-      )}
-    </Card>
   )
 }
 
