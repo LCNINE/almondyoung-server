@@ -9,6 +9,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDb, seedPickableShipment, wireLogistics } from './__support__';
 import { assembleOutbound, ambientDbService } from './__support__/simple-outbound-wiring';
 import { cleanupPreparationFixture } from './__support__/outbound-preparation-cleanup';
+import { overlap } from './__support__/committed-overlap';
 import { seedBoxOverSameStock, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
 import { unwrapPreparedOutbound } from '../controllers/outbound-preparation-http';
 import { isPreparationBlocked } from './outbound-preparation-result';
@@ -20,79 +21,6 @@ const describeDb = DATABASE_URL ? describe : describe.skip;
 describeDb('outbound preparation committed concurrency', () => {
   const observer = makeDb(DATABASE_URL!);
   afterAll(() => observer.sql.end());
-
-  async function overlap<T, U>(first: (tx: DbTx) => Promise<T>, second: (tx: DbTx) => Promise<U>) {
-    const a = makeDb(DATABASE_URL!);
-    const b = makeDb(DATABASE_URL!);
-    let release!: () => void;
-    let entered!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const atBarrier = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let runA: Promise<T> | undefined;
-    let runB: Promise<U> | undefined;
-    try {
-      const [{ pid: pidA }] = await a.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
-      const [{ pid: pidB }] = await b.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
-      expect(pidA).not.toBe(pidB);
-      runA = a.db.transaction(async (tx) => {
-        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '8s'`);
-        const value = await first(tx);
-        entered();
-        await barrier;
-        return value;
-      });
-      // Attach rejection handlers immediately, so failed transactions cannot leak unhandled rejections.
-      const resultA = runA.then(
-        (value) => ({ ok: true as const, value }),
-        (error) => ({ ok: false as const, error }),
-      );
-      await Promise.race([
-        atBarrier,
-        resultA.then((result) => {
-          throw result.ok ? new Error('missed barrier') : result.error;
-        }),
-      ]);
-      let completed = false;
-      runB = b.db.transaction(async (tx) => {
-        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '8s'`);
-        return second(tx);
-      });
-      const resultB = runB
-        .then(
-          (value) => ({ ok: true as const, value }),
-          (error) => ({ ok: false as const, error }),
-        )
-        .finally(() => {
-          completed = true;
-        });
-      let blocked = false;
-      const deadline = Date.now() + 5000;
-      while (!completed && Date.now() < deadline) {
-        const [{ waiting }] = await observer.sql<
-          { waiting: boolean }[]
-        >`select ${pidA}::int = any(pg_blocking_pids(${pidB}::int)) as waiting`;
-        if (waiting) {
-          blocked = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(blocked).toBe(true);
-      expect(completed).toBe(false);
-      release();
-      const firstResult = await resultA;
-      if (!firstResult.ok) throw firstResult.error;
-      return { first: firstResult.value, second: await resultB };
-    } finally {
-      release();
-      await Promise.allSettled([runA, runB].filter((value) => value !== undefined));
-      await Promise.all([a.sql.end(), b.sql.end()]);
-    }
-  }
 
   async function fixture() {
     return observer.db.transaction((tx) => seedPickableShipment(tx, 3));
@@ -153,7 +81,9 @@ describeDb('outbound preparation committed concurrency', () => {
         );
       try {
         if (first === 'stock') {
-          const result = await overlap(move, (tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx));
+          const result = await overlap(observer, move, (tx) =>
+            startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx),
+          );
           expect(result.second).toMatchObject({ ok: true, value: { state: 'started', batchId: f.batchId } });
           const allocated = await observer.db
             .select()
@@ -162,7 +92,11 @@ describeDb('outbound preparation committed concurrency', () => {
           expect(allocated.map((row) => [row.sourceLocationId, row.qty])).toEqual([[destination.id, 3]]);
           await assertSingleSession(f);
         } else {
-          const result = await overlap((tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx), move);
+          const result = await overlap(
+            observer,
+            (tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx),
+            move,
+          );
           expect(result.first).toMatchObject({ state: 'started', batchId: f.batchId });
           expect(result.second).toMatchObject({ ok: false });
           if (result.second.ok) throw new Error('Expected custody-protected move rejection');
@@ -209,6 +143,7 @@ describeDb('outbound preparation committed concurrency', () => {
       try {
         const key = `start-${randomUUID()}`;
         const result = await overlap(
+          observer,
           (tx) => startBatch(first.batchId, first.actorId, key, tx),
           (tx) => startBatch(first.batchId, first.actorId, sameKey ? key : `start-${randomUUID()}`, tx),
         );
@@ -242,6 +177,7 @@ describeDb('outbound preparation committed concurrency', () => {
     });
     try {
       const result = await overlap(
+        observer,
         (tx) => startBatch(first.batchId, first.actorId, `start-${randomUUID()}`, tx),
         (tx) => startBatch(second.batchId, second.actorId, `start-${randomUUID()}`, tx),
       );
