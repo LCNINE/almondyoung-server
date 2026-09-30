@@ -369,6 +369,9 @@ export function setup(infra: SharedInfra) {
     NHN_SMS_SEND_NO: nhnSmsSendNo.value,
     // user-service 가 /internal/sms/send 를 부를 때 쓰는 키. auth 배포에도 같은 값이 필요하다.
     NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
+    // 관리자 알림톡 «멤버십 회원만» 대상의 명단(membership internal active-all).
+    MEMBERSHIP_SERVICE_URL: url('membership'),
+    MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     RESEND_API_KEY: resendApiKey.value,
     RESEND_BASE_URL: 'https://api.resend.com',
     RESEND_FROM: `noreply@mail.${baseDomain}`,

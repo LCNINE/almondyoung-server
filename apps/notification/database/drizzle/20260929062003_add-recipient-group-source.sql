@@ -1,0 +1,1 @@
+ALTER TABLE "sms_recipient_groups" ADD COLUMN "source" varchar(20);

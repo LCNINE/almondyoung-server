@@ -185,6 +185,9 @@ export const inboundMessages = pgTable(
 export const smsRecipientGroups = pgTable('sms_recipient_groups', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 100 }).notNull().unique(),
+  // 'supabase' 는 크롤링한 업소 번호다. 우리와 거래가 없어 알림톡(정보성 전용) 대상에서 뺀다.
+  // 이 컬럼이 생기기 전에 만든 그룹은 비어 있다.
+  source: varchar('source', { length: 20 }),
   createdBy: varchar('created_by', { length: 100 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
