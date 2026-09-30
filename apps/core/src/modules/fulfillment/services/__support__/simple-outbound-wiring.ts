@@ -159,6 +159,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   };
   return {
     simple,
+    dispatch,
     picking,
     batches,
     sessions,

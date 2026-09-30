@@ -2,6 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { ConflictError } from '@app/shared';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { shipmentWithdrawn } from '../picking/allocation/allocation.errors';
 import { latestPrint } from './label/label-print-policy';
 import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
 import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
@@ -28,11 +29,16 @@ export class LabelCurrencyGuard {
 
   async assertCurrent(workItemId: string, trx: DbTx): Promise<void> {
     const [item] = await trx
-      .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
+      .select({
+        shipmentId: wmsTables.outboundBatchWorkItems.shipmentId,
+        status: wmsTables.outboundBatchWorkItems.status,
+      })
       .from(wmsTables.outboundBatchWorkItems)
       .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId))
       .limit(1);
     if (!item) throw new Error(`LabelCurrencyGuard: work item ${workItemId} vanished under its own lock`);
+    // 빠지는 박스에는 종이가 필요 없다 — 조립(I4)보다 먼저 사유를 분명히 한다.
+    if (item.status === 'withdrawing' || item.status === 'excluded') throw shipmentWithdrawn(item.shipmentId);
     const current = await this.assembler.current(item.shipmentId, trx).catch((error: unknown) => {
       throw asCodedConflict(error);
     });

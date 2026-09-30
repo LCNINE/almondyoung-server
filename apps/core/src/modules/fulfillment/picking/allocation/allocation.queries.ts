@@ -3,7 +3,7 @@ import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking-method.contract';
 import { PickingStrategyName } from '../picking-strategy.interface';
-import { conflict } from './allocation.errors';
+import { conflict, shipmentWithdrawn } from './allocation.errors';
 import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation.types';
 
 /**
@@ -89,6 +89,8 @@ export async function lockAndAssertPickerClaim(
   }
   const item = await loadWorkItem(trx, workItemId, true);
   assertWorkItemIdentity(item, batchId, shipmentId);
+  // 전략 7곳이 모두 여기를 지난다 — 빠지는 박스는 리스가 살아 있어도 더 집지 않는다(정한 것 11).
+  if (item.status === 'withdrawing' || item.status === 'excluded') throw shipmentWithdrawn(shipmentId);
   const now = await databaseNow(trx);
   if (
     item.status !== 'picking' ||
