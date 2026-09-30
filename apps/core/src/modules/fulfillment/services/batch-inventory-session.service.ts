@@ -15,8 +15,24 @@ import type { SessionStartAllocation } from '../picking/allocation/allocation.ty
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 export type BatchInventorySessionRow = SessionRow;
-type MutationEventType = 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE' | 'HAND_BACK';
+type MutationEventType =
+  | 'MOVE_CUSTODY'
+  | 'RETURN_TO_SOURCE'
+  | 'SETTLE_FOR_DISPATCH'
+  | 'APPROVE_SHORTAGE'
+  | 'HAND_BACK'
+  | 'REMOVE_TO_RETURN_BIN'
+  | 'PUTAWAY_RETURN';
 export type BatchInventoryCustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
+
+/** 박스 줄에 귀속된, 아직 나가지 않은 보관 — 이탈한 박스에서 바구니로 뺄 수 있는 곳(세 방식 공통, 스펙 §8). */
+export const BOX_CUSTODY_TYPES = [
+  'WORKER',
+  'TOTE',
+  'SORTING',
+  'PACKING',
+  'PACKED',
+] as const satisfies readonly BatchInventoryCustodyType[];
 
 export interface BatchInventoryBucket {
   skuId: string;
@@ -98,6 +114,53 @@ export interface HandBackInput {
   skuId: string;
   sourceLocationId: string;
   quantity: number;
+}
+
+export interface ReturnBinRef {
+  id: string;
+  barcode: string;
+}
+
+/** 빼는 박스의 집은 몫(또는 토탈피킹 카트 여분)을 되돌림 바구니로. 배정 행 감소는 호출자(BoxAllocationManager)의 몫이다. */
+export interface RemoveToReturnBinInput {
+  sessionId: string;
+  operationId: string;
+  actorId: string;
+  workItemId: string;
+  allocationId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  from: { custodyType: BatchInventoryCustodyType; custodyRef: string | null; shipmentLineId: string | null };
+  returnBin: ReturnBinRef;
+}
+
+/** 바구니 → 원래 로케이션. 세션 통제가 풀려 일반 재고가 된다(원장은 그대로 — 원장상 그 물건은 그 로케이션을 떠난 적이 없다). */
+export interface PutawayReturnInput {
+  sessionId: string;
+  operationId: string;
+  actorId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  returnBin: ReturnBinRef;
+}
+
+/**
+ * 한 명령이 같은 배정을 두 보관(예: WORKER 1 + PACKING 1)에서 뺄 수 있어 보관 grain 을 키에 넣는다.
+ * ref 는 길 수 있으므로(bulk-cart:<배치>:<카트>:<작업자>) 해시 16자로 줄인다 — 멱등 키 컬럼은 255자다.
+ */
+export function removeToBinIdempotencyKey(
+  operationId: string,
+  allocationId: string,
+  from: RemoveToReturnBinInput['from'],
+): string {
+  const grain = createHash('sha256')
+    .update([from.custodyType, from.custodyRef ?? '', from.shipmentLineId ?? ''].join('|'))
+    .digest('hex')
+    .slice(0, 16);
+  return `remove-to-bin:${operationId}:${allocationId}:${grain}`;
 }
 
 export type ShortPickOperationIntentProof = {
@@ -460,9 +523,70 @@ export class BatchInventorySessionService {
     );
   }
 
+  /** 집은 몫(박스 보관) 또는 카트 여분(BULK_CART) → 되돌림 바구니. 멱등 키 `removeToBinIdempotencyKey`. */
+  async removeToReturnBin(input: RemoveToReturnBinInput, tx: DbTx) {
+    if (!tx) throw new Error('removeToReturnBin requires the caller transaction');
+    const fromType = input.from.custodyType;
+    if (!(BOX_CUSTODY_TYPES as readonly string[]).includes(fromType) && fromType !== 'BULK_CART') {
+      throw new BadRequestException('Only box custody or a bulk cart can be removed to a return bin');
+    }
+    return this.mutate(
+      {
+        sessionId: input.sessionId,
+        idempotencyKey: removeToBinIdempotencyKey(input.operationId, input.allocationId, input.from),
+        eventType: 'REMOVE_TO_RETURN_BIN',
+        actorId: input.actorId,
+        skuId: input.skuId,
+        quantity: input.quantity,
+        from: normalizedBucket({ skuId: input.skuId, sourceLocationId: input.sourceLocationId, ...input.from }),
+        to: {
+          custodyType: 'RETURN_PENDING',
+          custodyRef: input.returnBin.barcode,
+          sourceLocationId: input.sourceLocationId,
+          shipmentLineId: null,
+        },
+        context: {
+          operationId: input.operationId,
+          workItemId: input.workItemId,
+          allocationId: input.allocationId,
+          shipmentLineId: input.shipmentLineId,
+          returnBinId: input.returnBin.id,
+        },
+      },
+      tx,
+    );
+  }
+
+  /** 되돌림 적치. 멱등 키 `putaway-return:<명령 id>:<세션 id>` — 한 명령은 세션마다 한 보관 grain(바구니·SKU·로케이션)만 줄인다. */
+  async putawayReturn(input: PutawayReturnInput, tx: DbTx) {
+    if (!tx) throw new Error('putawayReturn requires the caller transaction');
+    return this.mutate(
+      {
+        sessionId: input.sessionId,
+        idempotencyKey: `putaway-return:${input.operationId}:${input.sessionId}`,
+        eventType: 'PUTAWAY_RETURN',
+        actorId: input.actorId,
+        skuId: input.skuId,
+        quantity: input.quantity,
+        from: {
+          custodyType: 'RETURN_PENDING',
+          custodyRef: input.returnBin.barcode,
+          sourceLocationId: input.sourceLocationId,
+          shipmentLineId: null,
+        },
+        to: null,
+        context: { operationId: input.operationId, returnBinId: input.returnBin.id },
+      },
+      tx,
+    );
+  }
+
   async moveCustody(input: MoveBatchCustodyInput, tx?: DbTx) {
     const from = normalizedBucket(input.from);
     const to = normalizedBucket(input.to);
+    if (from.custodyType === 'RETURN_PENDING' || to.custodyType === 'RETURN_PENDING') {
+      throw new BadRequestException('Use removeToReturnBin / putawayReturn for RETURN_PENDING custody');
+    }
     if (input.from.skuId !== input.to.skuId || from.sourceLocationId !== to.sourceLocationId) {
       throw new BadRequestException('Custody movement must preserve SKU and source location');
     }
@@ -772,7 +896,9 @@ export class BatchInventorySessionService {
           status: isTerminal ? 'settled' : 'active',
           completedAt: isTerminal ? sql`now()` : null,
           returnedQty:
-            input.eventType === 'RETURN_TO_SOURCE' ? session.returnedQty + input.quantity : session.returnedQty,
+            input.eventType === 'RETURN_TO_SOURCE' || input.eventType === 'PUTAWAY_RETURN'
+              ? session.returnedQty + input.quantity
+              : session.returnedQty,
           settledQty:
             input.eventType === 'SETTLE_FOR_DISPATCH' ? session.settledQty + input.quantity : session.settledQty,
           shortageQty:
@@ -1046,7 +1172,7 @@ export class BatchInventorySessionService {
 
   private assertBucket(bucket: SessionEventSide): void {
     if (!bucket.sourceLocationId) throw new BadRequestException('sourceLocationId is required');
-    const assigned = ['WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED'] as BatchInventoryCustodyType[];
+    const assigned: readonly BatchInventoryCustodyType[] = BOX_CUSTODY_TYPES;
     if (bucket.custodyType === 'AT_SOURCE' && (bucket.custodyRef || bucket.shipmentLineId)) {
       throw new BadRequestException('AT_SOURCE custody cannot have a ref or shipment line');
     }
@@ -1056,11 +1182,11 @@ export class BatchInventorySessionService {
     if (assigned.includes(bucket.custodyType) && (!bucket.custodyRef || !bucket.shipmentLineId)) {
       throw new BadRequestException(`${bucket.custodyType} custody requires a ref and shipment line`);
     }
-    if (['RETURN_PENDING', 'SETTLED'].includes(bucket.custodyType) && !bucket.shipmentLineId) {
-      throw new BadRequestException(`${bucket.custodyType} custody requires a shipment line`);
+    if (bucket.custodyType === 'RETURN_PENDING' && (!bucket.custodyRef || bucket.shipmentLineId)) {
+      throw new BadRequestException('RETURN_PENDING custody requires a return bin ref and no shipment line');
     }
-    if (['RETURN_PENDING', 'SETTLED'].includes(bucket.custodyType) && bucket.custodyRef) {
-      throw new BadRequestException(`${bucket.custodyType} custody cannot have a custody ref`);
+    if (bucket.custodyType === 'SETTLED' && (!bucket.shipmentLineId || bucket.custodyRef)) {
+      throw new BadRequestException('SETTLED custody requires a shipment line and no custody ref');
     }
   }
 
