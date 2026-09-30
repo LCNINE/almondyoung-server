@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
+import { BoxReturnService } from './box-return.service';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -81,6 +82,7 @@ export class PickingProcessService {
     private readonly invariant: FulfillmentInvariantService,
     private readonly controlledStock: BatchControlledStockGuard,
     private readonly waybills: WaybillService,
+    private readonly returns: BoxReturnService,
     @Optional() private readonly strategyRegistry?: PickingStrategyRegistry,
   ) {}
 
@@ -123,7 +125,14 @@ export class PickingProcessService {
     input: AggregateCartSurplusReturnInput,
     tx?: DbTx,
   ): Promise<AggregateCartSurplusReturnResult> {
-    return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.returnCartSurplus(input, trx), tx);
+    const result = await this.withAggregateThenSortStrategy(
+      input.batchId,
+      (strategy, trx) => strategy.returnCartSurplus(input, trx),
+      tx,
+    );
+    // 커밋 뒤의 몫 — 세션·보관을 쥔 트랜잭션 안에서 구성요소를 잡으면 잠금 순서가 뒤집힌다.
+    await this.returns.resumeAfterDraftExit(result.exited, tx);
+    return result;
   }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {

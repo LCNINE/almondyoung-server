@@ -133,16 +133,6 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   );
   const labelGuard = assembleLabels(dbService).guard;
   const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
-  const picking = new PickingProcessService(
-    dbService,
-    commands,
-    workflowGate,
-    sessions,
-    invariant,
-    controlled,
-    waybills,
-    new PickingStrategyRegistry(dbService, [discrete]),
-  );
   const barcodes = new BarcodeService(dbService);
   const returnBins = new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit);
   const returns = new BoxReturnService(
@@ -165,6 +155,17 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     withdrawals,
     returnBins,
     returns,
+  );
+  const picking = new PickingProcessService(
+    dbService,
+    commands,
+    workflowGate,
+    sessions,
+    invariant,
+    controlled,
+    waybills,
+    returns,
+    new PickingStrategyRegistry(dbService, [discrete]),
   );
   const dispatch = new ShipmentDispatchService(
     dbService,

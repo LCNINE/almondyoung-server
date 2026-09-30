@@ -199,7 +199,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       },
       tx,
     );
-    await this.returns.resumeAfterDraftExit(response.exited, tx);
     return response;
   }
 

@@ -268,7 +268,8 @@ export class BoxAllocationManager {
         ),
       )
       .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
-    const takes: Array<{ allocation: (typeof allocations)[number]; balance: (typeof custody)[number]; qty: number }> = [];
+    const takes: Array<{ allocation: (typeof allocations)[number]; balance: (typeof custody)[number]; qty: number }> =
+      [];
     const taken = new Map<string, number>();
     let remaining = input.quantity;
     for (const allocation of allocations) {
@@ -365,7 +366,10 @@ export class BoxAllocationManager {
     trx: DbTx,
   ): Promise<Array<{ workItemId: string; qty: number }>> {
     if (!input.workItemIds.length) {
-      throw new ConflictException({ code: 'CART_SURPLUS_NOT_PENDING', message: 'No leaving box holds this SKU on a cart' });
+      throw new ConflictException({
+        code: 'CART_SURPLUS_NOT_PENDING',
+        message: 'No leaving box holds this SKU on a cart',
+      });
     }
     const allocations = await trx
       .select({
@@ -410,9 +414,12 @@ export class BoxAllocationManager {
       }
     }
     // 빼는 작업 항목마다 (줄, 로케이션) 배정 행은 하나다(uq_picking_source_allocations_work_item_grain).
-    const shares = allocations
-      .map((a) => ({ ...a, unpicked: a.qty - Math.min(a.qty, inBox.get(a.shipmentLineId) ?? 0) }))
-      .filter((a) => a.unpicked > 0);
+    const shares = allocations.flatMap((a) => {
+      // 배정 행의 workItemId 는 inArray(workItemIds) 로 골랐으니 null 일 수 없다 — 타입만 좁힌다.
+      if (a.workItemId === null) return [];
+      const unpicked = a.qty - Math.min(a.qty, inBox.get(a.shipmentLineId) ?? 0);
+      return unpicked > 0 ? [{ ...a, workItemId: a.workItemId, unpicked }] : [];
+    });
     const available = Math.min(
       cartQty,
       shares.reduce((total, a) => total + a.unpicked, 0),
@@ -428,8 +435,7 @@ export class BoxAllocationManager {
     for (const share of shares) {
       if (remaining === 0) break;
       const qty = Math.min(remaining, share.unpicked);
-      // 배정 행의 workItemId 는 inArray(workItemIds) 로 골랐으니 null 이 아니다.
-      const workItemId = share.workItemId!;
+      const workItemId = share.workItemId;
       await this.sessions.removeToReturnBin(
         {
           sessionId: input.session.id,

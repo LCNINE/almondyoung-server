@@ -190,6 +190,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
       controlled,
       waybills,
+      {} as never,
       registry,
     );
 
