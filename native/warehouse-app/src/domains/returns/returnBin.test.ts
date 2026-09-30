@@ -26,4 +26,14 @@ describe('내 되돌림 바구니', () => {
     const prefs = createMemoryPrefs({ [RETURN_BIN_KEY]: '{not json' });
     expect(readReturnBin(prefs, 'w-1')).toBeNull();
   });
+
+  it.each([
+    ['null', 'null'],
+    ['빈 객체', '{}'],
+    ['RB- 없는 바코드', JSON.stringify({ warehouseId: 'w-1', barcode: 'TOTE-1' })],
+    ['문자열이 아닌 바코드', JSON.stringify({ warehouseId: 'w-1', barcode: 5 })],
+  ])('모양이 틀린 저장값(%s)은 없는 것으로 본다', (_name, raw) => {
+    const prefs = createMemoryPrefs({ [RETURN_BIN_KEY]: raw });
+    expect(readReturnBin(prefs, 'w-1')).toBeNull();
+  });
 });

@@ -11,6 +11,12 @@ type Status = { kind: 'ok' | 'error'; text: string };
 
 /** 설정 화면의 «내 되돌림 바구니» — 이 기기에서 뺀 상품이 들어갈 바구니. 등록은 명시적으로 한 번 더 누른다(오타 방지). */
 export function ReturnBinSettings({ prefs = localStoragePrefs }: { prefs?: DevicePrefs }) {
+  const { warehouseId } = useWarehouse();
+  // 같은 설정 화면의 창고 선택이 실시간으로 바뀐다 — 창고마다 새로 시작해야 옛 창고의 바구니·등록 제안이 남지 않는다.
+  return <ReturnBinSection key={warehouseId ?? ''} prefs={prefs} />;
+}
+
+function ReturnBinSection({ prefs }: { prefs: DevicePrefs }) {
   const api = useApiClient();
   const { warehouseId } = useWarehouse();
   const [current, setCurrent] = useState(() => readReturnBin(prefs, warehouseId));
@@ -87,7 +93,10 @@ export function ReturnBinSettings({ prefs = localStoragePrefs }: { prefs?: Devic
           aria-label="되돌림 바구니 바코드"
           placeholder="RB-…"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => {
+            setCode(e.target.value);
+            setUnknown(null);
+          }}
         />
         <Button type="submit" disabled={busy || !code.trim()}>
           이 기기의 바구니로 지정
