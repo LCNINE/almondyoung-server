@@ -3013,9 +3013,10 @@ export const pickingSourceAllocations = pgTable(
   'picking_source_allocations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // PR 2(contract)에서 컬럼째 삭제한다. 새 코드는 읽지도 쓰지도 않는다(ADR-0041).
+    // ADR-0041 의 contract 단계(S1 스펙 `2026-09-29-outbound-live-allocation-design.md` §11 PR 2)에서 컬럼째 삭제한다.
+    // 새 코드는 읽지도 쓰지도 않는다.
     planId: uuid('plan_id').references(() => pickingPlans.id, { onDelete: 'restrict' }),
-    // PR 2 에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
+    // ADR-0041 의 contract 단계(S1 스펙 §11 PR 2)에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
     workItemId: uuid('work_item_id').references(() => outboundBatchWorkItems.id, { onDelete: 'restrict' }),
     shipmentLineId: uuid('shipment_line_id')
       .references(() => shipmentLines.id, { onDelete: 'restrict' })

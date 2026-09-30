@@ -174,17 +174,8 @@ export class OutboundBatchOrchestrator {
         if (!peek) throw new NotFoundException(`Outbound batch ${batchId} not found`);
         if (peek.startedAt) return this.joinStartedBatch(batchId, aggregate, actor, commandRequestId, trx);
         // Canonical component locks precede batch/work-item locks in every membership command.
+        // 잠금을 기다리는 사이 시작됐으면 lockOpenBatch 가 OUTBOUND_BATCH_STARTED_RETRY 로 거절한다(아무것도 쓰기 전).
         const batch = await this.lockOpenBatch(batchId, trx);
-        // 잠금을 기다리는 사이 시작됐다 — 여기서 합류하지 않고 재시도시킨다(아무것도 쓰기 전). 배치 행 FOR UPDATE 를 쥔 채
-        // 세션을 잡으면 두 방향과 교착한다: 동시 합류는 세션을 쥔 채 작업 항목 INSERT 의 FK 검사로 배치 행에 암묵
-        // FOR KEY SHARE 를 걸고, 두 번째 시작은 불변식 검사기에서 세션을 잡은 뒤 배치 행을 잠근다. 재시도는 peek 갈래
-        // (세션 → 배치 FK 방향 하나)로 합류한다.
-        if (batch.startedAt) {
-          throw this.conflict(
-            'OUTBOUND_BATCH_STARTED_RETRY',
-            `Batch ${batchId} started while adding; retry to join the running batch`,
-          );
-        }
         await this.assertCartCapacity(batch, trx);
         const eligible = await this.assertEligible(batch, aggregate, trx);
 
@@ -873,7 +864,7 @@ export class OutboundBatchOrchestrator {
               startedAt: batch.startedAt,
               allocations: allocations.map(({ allocation, skuId }) => ({
                 id: allocation.id,
-                // 시작된 배치의 배정은 전부 startBatchPicking 이 workItemId 로 넣었다. 컬럼은 PR 2 에서 NOT NULL 이 된다.
+                // 시작된 배치의 배정은 전부 작업 항목에 매달려 들어간다(시작·합류). 컬럼 NOT NULL 은 ADR-0041 contract 단계(S1 스펙 §11 PR 2).
                 workItemId: allocation.workItemId!,
                 shipmentLineId: allocation.shipmentLineId,
                 skuId,
@@ -1064,6 +1055,16 @@ export class OutboundBatchOrchestrator {
       .limit(1)
       .for('update');
     if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+    // 잠금을 기다리는 사이 시작됐다 — 합류하지 않고 재시도시킨다. 배치 행을 잠근 «바로 다음», 작업 항목을 잠그기 «전»
+    // 에 본다: 배치 행 FOR UPDATE 를 쥔 채 작업 항목·세션을 더 기다리면 교착한다 — 동시 합류는 세션을 쥔 채 작업 항목
+    // INSERT 의 FK 검사로 배치 행에 암묵 FOR KEY SHARE 를 걸고, 발송은 작업 항목을 쥔 채 세션을 기다리며, 두 번째 시작은
+    // 불변식 검사기에서 세션을 잡은 뒤 배치 행을 잠근다. 재시도는 peek 갈래(세션 → 배치 FK 방향 하나)로 합류한다.
+    if (batch.startedAt) {
+      throw this.conflict(
+        'OUTBOUND_BATCH_STARTED_RETRY',
+        `Batch ${batchId} started while adding; retry to join the running batch`,
+      );
+    }
     // Lock only active rows before deriving status. Terminal historical rows are immutable;
     // locking them can deadlock two concurrent re-adds that each already hold a different
     // excluded shipment component lock. A concurrent active-to-terminal transition is waited

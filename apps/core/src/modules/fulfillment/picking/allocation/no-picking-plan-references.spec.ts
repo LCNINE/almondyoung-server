@@ -4,7 +4,7 @@ import { join, relative } from 'path';
 const ROOT = join(__dirname, '../../../../../../..'); // 저장소 루트
 const SRC = join(ROOT, 'apps/core/src');
 const SCRIPTS = join(ROOT, 'scripts');
-// 스키마 정의와, 스키마 제약을 이름으로 검사하는 스펙만 예외다. PR 2 에서 스키마째 사라진다.
+// 스키마 정의와, 스키마 제약을 이름으로 검사하는 스펙만 예외다. ADR-0041 contract 단계(S1 스펙 §11 PR 2)에서 스키마째 사라진다.
 const ALLOWED = new Set([
   'apps/core/src/modules/inventory/schema/inventory.schema.ts',
   'apps/core/src/modules/inventory/schema/outbound-v2-schema.integration.spec.ts',
