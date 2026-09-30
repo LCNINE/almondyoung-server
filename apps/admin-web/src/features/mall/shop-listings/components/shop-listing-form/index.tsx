@@ -39,7 +39,7 @@ import {
   type AdminFormField,
   type AdminShopListingFormValues,
 } from '../../lib/admin-listing-rules';
-import { ImageGalleryField } from '../image-gallery-field';
+import { ImageGalleryField } from '@/components/common/image-gallery-field';
 import { MoneyInput } from '../money-input';
 import { ShopListingMarkdown } from '../shop-listing-markdown';
 

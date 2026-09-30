@@ -11,8 +11,8 @@ import { compressImageForUpload, formatBytes } from '@/lib/utils/image-compress'
 import { cn } from '@/lib/utils';
 import { CropDialog } from './crop-dialog';
 
-/** 사고 방지용 상한. 실제 권장은 8~10장이라 여기에 닿을 일은 거의 없다. */
-const MAX_IMAGES = 15;
+/** 사고 방지용 기본 상한. 샵 매매 권장은 8~10장이라 여기에 닿을 일은 거의 없다. */
+const DEFAULT_MAX_IMAGES = 15;
 /** file_contexts 의 shop-listing-image 정책(10MB, image/*)과 맞춘다 (서버도 같은 값으로 거른다) */
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -22,6 +22,8 @@ type Props = {
   onChange: (fileIds: string[]) => void;
   contextId: string;
   disabled?: boolean;
+  /** 올릴 수 있는 최대 장수. 리뷰는 5장 */
+  maxImages?: number;
 };
 
 export function ImageGalleryField({
@@ -29,6 +31,7 @@ export function ImageGalleryField({
   onChange,
   contextId,
   disabled,
+  maxImages = DEFAULT_MAX_IMAGES,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -40,15 +43,15 @@ export function ImageGalleryField({
     const picked = files.filter((f) => f.type.startsWith('image/'));
     if (picked.length === 0) return;
 
-    const room = MAX_IMAGES - value.length;
+    const room = maxImages - value.length;
     if (room <= 0) {
-      toast.error(`사진은 ${MAX_IMAGES}장까지만 올릴 수 있어요.`, {
+      toast.error(`사진은 ${maxImages}장까지만 올릴 수 있어요.`, {
         id: 'gallery-max-images',
       });
       return;
     }
     if (picked.length > room) {
-      toast.info(`${MAX_IMAGES}장까지만 올릴 수 있어 ${room}장만 올립니다.`, {
+      toast.info(`${maxImages}장까지만 올릴 수 있어 ${room}장만 올립니다.`, {
         id: 'gallery-max-images',
       });
     }
@@ -122,19 +125,19 @@ export function ImageGalleryField({
           <span
             className={cn(
               'ml-1 text-xs font-normal',
-              value.length >= MAX_IMAGES
+              value.length >= maxImages
                 ? 'text-destructive'
                 : 'text-muted-foreground'
             )}
           >
-            {value.length}/{MAX_IMAGES}
+            {value.length}/{maxImages}
           </span>
         </Label>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || uploading || value.length >= MAX_IMAGES}
+          disabled={disabled || uploading || value.length >= maxImages}
           onClick={() => inputRef.current?.click()}
         >
           {uploading ? (
