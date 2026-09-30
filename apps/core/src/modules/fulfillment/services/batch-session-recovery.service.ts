@@ -401,7 +401,8 @@ export class BatchSessionRecoveryService {
         }
         handedInQty += event.quantity;
       } else if (event.eventType === 'HAND_BACK') {
-        if (!from || to || from.custodyType !== 'AT_SOURCE') issues.push(`HAND_BACK event ${event.id} has invalid sides`);
+        if (!from || to || from.custodyType !== 'AT_SOURCE')
+          issues.push(`HAND_BACK event ${event.id} has invalid sides`);
         if (typeof payload.workItemId !== 'string' || typeof payload.allocationId !== 'string') {
           issues.push(`HAND_BACK event ${event.id} has no immutable work item/allocation identity`);
         }
