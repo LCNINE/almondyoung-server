@@ -2,7 +2,9 @@ import { AlmondTemplateEditor } from "@/domains/almond-template/components/edito
 import { AlmondTemplateGallery } from "@/domains/almond-template/components/gallery"
 import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
 import { HttpApiError } from "@/lib/api/api-error"
+import { parseDesign } from "@/domains/almond-template/lib/document"
 import {
+  getAdminAlmondTemplate,
   listAdminAlmondTemplates,
   listAlmondTemplates,
 } from "@/lib/api/ugc/almond-templates"
@@ -15,6 +17,7 @@ type Props = {
     variant?: string
     mode?: string
     size?: string
+    template?: string
   }>
 }
 
@@ -25,7 +28,13 @@ export default async function AlmondTemplatePage({
   searchParams,
 }: Props) {
   const { countryCode } = await params
-  const { product = "", variant = "", mode, size = "" } = await searchParams
+  const {
+    product = "",
+    variant = "",
+    mode,
+    size = "",
+    template = "",
+  } = await searchParams
   if (product && !PRINT_PRODUCTS[product]) notFound()
   if (mode !== "designer")
     return (
@@ -37,11 +46,25 @@ export default async function AlmondTemplatePage({
         templates={await listAlmondTemplates().catch(() => null)}
       />
     )
-  try {
-    await listAdminAlmondTemplates()
-  } catch (error) {
-    if (error instanceof HttpApiError && error.status === 403) notFound()
+  const editing = await (
+    template ? getAdminAlmondTemplate(template) : listAdminAlmondTemplates()
+  ).catch((error) => {
+    if (
+      error instanceof HttpApiError &&
+      (error.status === 403 || error.status === 404)
+    )
+      notFound()
     throw error
+  })
+  if (template && "design" in editing) {
+    return (
+      <AlmondTemplateEditor
+        productId={editing.productId}
+        size={editing.size}
+        initialDesign={parseDesign(editing.design)}
+        mode="designer"
+      />
+    )
   }
   return (
     <AlmondTemplateEditor

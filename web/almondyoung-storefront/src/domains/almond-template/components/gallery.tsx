@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS, type PrintKind } from "../lib/catalog"
 import {
   COLORS,
+  INDUSTRIES,
+  PURPOSES,
   filterTemplates,
   published,
   type PublishedTemplate,
@@ -28,21 +30,6 @@ const GROUPS = [
   { id: "board", label: "메뉴판·수료증", kinds: ["menu", "diploma"] },
 ] as const
 
-const INDUSTRIES = [
-  "미용·뷰티",
-  "카페·음료",
-  "음식점",
-  "교육",
-  "병원·복지",
-  "기타",
-]
-const PURPOSES = [
-  "이벤트·홍보",
-  "가격·메뉴",
-  "안내·주의사항",
-  "수료·증서",
-  "기타",
-]
 const PAGE_SIZE = 18
 
 function groupFor(kind: PrintKind) {

@@ -1,3 +1,4 @@
+import { INDUSTRIES, PURPOSES } from "../../../lib/gallery-filter"
 import { LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { imageSrc } from "../../../lib/image-ref"
@@ -12,6 +13,7 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
     saveNamed,
     storagePending,
     exportJson,
+    change,
   } = editor
   return (
     <div
@@ -51,6 +53,30 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
             className="mt-1 w-full border p-2"
           />
         </label>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          {(
+            [
+              ["industry", "업종", INDUSTRIES],
+              ["purpose", "용도", PURPOSES],
+            ] as const
+          ).map(([field, label, options]) => (
+            <label key={field} className="block">
+              {label}
+              <select
+                aria-label={label}
+                value={design[field] ?? options[0]}
+                onChange={(e) => change({ ...design, [field]: e.target.value })}
+                className="mt-1 w-full border p-2"
+              >
+                {options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
         <p className="mt-2 text-xs text-slate-500">
           서버에 초안으로 저장됩니다. 같은 상품·크기·이름으로 저장하면 기존
           시안을 덮어씁니다. 게시는 불러오기 목록에서 합니다.

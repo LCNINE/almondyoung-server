@@ -3,6 +3,22 @@ import { PRINT_PRODUCTS, type PrintKind } from "./catalog"
 
 export type PublishedTemplate = AlmondTemplateSummary
 
+export const INDUSTRIES = [
+  "미용·뷰티",
+  "카페·음료",
+  "음식점",
+  "교육",
+  "병원·복지",
+  "기타",
+]
+export const PURPOSES = [
+  "이벤트·홍보",
+  "가격·메뉴",
+  "안내·주의사항",
+  "수료·증서",
+  "기타",
+]
+
 export const COLORS = [
   ["#e53935", "빨강"],
   ["#f59e0b", "주황"],

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import { imageDpi, newDesign, printIssues } from "../lib/document"
+import { imageDpi, newDesign, printIssues, type Design } from "../lib/document"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
@@ -28,6 +28,7 @@ export type AlmondEditorProps = {
   variantId?: string
   size?: string
   templateId?: string
+  initialDesign?: Design
 }
 
 export function useAlmondEditor({
@@ -36,10 +37,12 @@ export function useAlmondEditor({
   variantId = "",
   size = "",
   templateId = "",
+  initialDesign,
 }: AlmondEditorProps) {
   const product = PRINT_PRODUCTS[productId]
   const { design, setDesign, history, setHistory, future, change, undo, redo } =
     useDesignHistory(() => {
+      if (initialDesign) return initialDesign
       const initial = newDesign(product?.kind ?? "pet", productId)
       const matched = PRINT_SPECS[initial.kind].sizes.find(
         ([w, h]) => `${w}x${h}` === size
@@ -108,6 +111,7 @@ export function useAlmondEditor({
     productId,
     size,
     templateId,
+    skipDraft: !!initialDesign,
     design,
     setDesign,
     change,

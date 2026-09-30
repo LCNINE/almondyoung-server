@@ -36,6 +36,7 @@ type Params = {
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
   svgRef: RefObject<SVGSVGElement>
+  skipDraft: boolean
 }
 
 export function rethrowUnauthorized(error: unknown) {
@@ -55,6 +56,7 @@ export function useTemplateStorage({
   setSelectedId,
   setMessage,
   svgRef,
+  skipDraft,
 }: Params) {
   const [saveDialog, setSaveDialog] = useState(false)
   const [loadDialog, setLoadDialog] = useState(false)
@@ -92,7 +94,7 @@ export function useTemplateStorage({
     try {
       // ponytail: 옛 intern 키 폴백. 서버 저장 전환 시 삭제
       const saved =
-        mode === "designer"
+        mode === "designer" && !skipDraft
           ? (localStorage.getItem(key) ??
             localStorage.getItem(key.replace(":designer:", ":intern:")))
           : null
