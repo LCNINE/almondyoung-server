@@ -24,6 +24,7 @@ import type {
   UpdateBannerDto,
   CreateNoticeDto,
   AdminShopListingPayload,
+  AlmondTemplateStatus,
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
@@ -1010,6 +1011,32 @@ export const useDeleteNotice = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
     },
+  });
+};
+
+// ===== 아몬드템플릿 뮤테이션 =====
+
+const useInvalidateAlmondTemplates = () => {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: productQueryKeys.almondTemplates });
+  };
+};
+
+export const useUpdateAlmondTemplateStatus = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: AlmondTemplateStatus }) =>
+      products.almondTemplates.updateStatus(id, status),
+    onSuccess: () => invalidate(),
+  });
+};
+
+export const useDeleteAlmondTemplate = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplates.remove(id),
+    onSuccess: () => invalidate(),
   });
 };
 

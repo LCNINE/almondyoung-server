@@ -894,6 +894,28 @@ export interface AdminShopListingPayload {
   kakaoOpenChatUrl: string | null;
 }
 
+// ===== 아몬드템플릿 (ugc-service) =====
+
+export const ALMOND_TEMPLATE_STATUSES = ['draft', 'published'] as const;
+export type AlmondTemplateStatus = (typeof ALMOND_TEMPLATE_STATUSES)[number];
+
+/** ugc `GET /admin/almond-templates` 요약 */
+export interface AdminAlmondTemplateDto {
+  id: string;
+  title: string;
+  productId: string;
+  kind: string | null;
+  /** `{widthMm}x{heightMm}` */
+  size: string;
+  colors: string[];
+  industry: string | null;
+  purpose: string | null;
+  status: AlmondTemplateStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== 태그 그룹 관련 =====
 
 export interface CreateTagGroupDto {

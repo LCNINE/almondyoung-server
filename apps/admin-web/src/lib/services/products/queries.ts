@@ -557,6 +557,14 @@ export const useShopListings = (query: AdminShopListingListQuery) => {
   });
 };
 
+export const useAlmondTemplates = () => {
+  return useQuery({
+    queryKey: productQueryKeys.almondTemplates,
+    queryFn: () => products.almondTemplates.list(),
+    staleTime: 30 * 1000,
+  });
+};
+
 export const useShopListing = (id: string) => {
   return useQuery({
     queryKey: productQueryKeys.shopListing(id),
