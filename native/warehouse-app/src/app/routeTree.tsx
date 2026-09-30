@@ -25,6 +25,7 @@ import { InboundRoute } from './routes/InboundRoute';
 import { PurchaseOrderReceiveRoute } from './routes/PurchaseOrderReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
+import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
@@ -161,6 +162,11 @@ const putawayRoute = createRoute({
   validateSearch: validatePutawaySearch,
   component: PutawayRoute,
 });
+const returnPutawayRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/returns/putaway',
+  component: ReturnPutawayRoute,
+});
 
 // --- 작업 · 스테이션 ---
 const packingRoute = createRoute({
@@ -214,6 +220,7 @@ export const routeTree = rootRoute.addChildren([
     inboundHistoryRoute,
     pickingRoute,
     putawayRoute,
+    returnPutawayRoute,
     packingRoute,
     outboundRoute,
     outboundSimpleRoute,

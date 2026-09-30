@@ -89,7 +89,7 @@ describe('handheld hub navigation', () => {
       </SessionProvider>
     );
 
-    const tile = await screen.findByRole('link', { name: /적치/ });
+    const tile = await screen.findByRole('link', { name: '적치' });
     await act(async () => {
       await user.click(tile);
     });

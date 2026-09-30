@@ -188,6 +188,8 @@ describe('WithdrawBoxScreen', () => {
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1].idempotencyKey).toBe(calls[0].idempotencyKey);
     await waitFor(() => expect(screen.queryByRole('button', { name: '처리 내역 확인' })).not.toBeInTheDocument());
+    // 거절된 스캔이 큐에 쌓였다가 재시도 뒤에 흘러나오지 않았음을 확인한다.
+    expect(calls).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
     await waitFor(() => expect(calls).toHaveLength(3));
     expect(calls[2].idempotencyKey).not.toBe(calls[0].idempotencyKey);

@@ -136,6 +136,13 @@ const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
   RETURN_LOCATION_MISMATCH: '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.',
 };
 
+/** 되돌림 적치 전용 — 같은 코드의 출고 문구와 뜻이 달라 RETURN_CONFLICT_MESSAGES(출고와 공유)에 못 넣는다. */
+const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
+  PICKING_SESSION_NOT_ACTIVE:
+    '이 물건의 배치가 복구 중이에요. 복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요.',
+  SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
+};
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (
     error instanceof ApiError &&
@@ -173,6 +180,13 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     RETURN_CONFLICT_MESSAGES[error.code]
   )
     return RETURN_CONFLICT_MESSAGES[error.code];
+  if (
+    error instanceof ApiError &&
+    context === 'returns' &&
+    error.code &&
+    RETURN_PUTAWAY_MESSAGES[error.code]
+  )
+    return RETURN_PUTAWAY_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     context === 'outbound' &&

@@ -32,3 +32,16 @@ export function registerReturnBin(
 export function isUnknownReturnBin(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'RETURN_BIN_UNKNOWN';
 }
+
+/** 되돌림 적치 한 개(스펙 §8). 원래 로케이션이 아니면 서버가 RETURN_LOCATION_MISMATCH 로 거절한다. */
+export function putawayReturn(
+  api: ApiClient,
+  input: { binBarcode: string; warehouseId: string; productBarcode: string; locationCode: string; idempotencyKey: string },
+): Promise<{ putAwayQty: number; items: ReturnBinItem[] }> {
+  return api.request({
+    method: 'POST',
+    path: `/return-bins/${encodeURIComponent(input.binBarcode)}/putaways`,
+    body: { warehouseId: input.warehouseId, barcode: input.productBarcode, locationCode: input.locationCode, quantity: 1 },
+    idempotencyKey: input.idempotencyKey,
+  });
+}
