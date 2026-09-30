@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, ne, notInArray, sql } from 'drizzle-orm';
-import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { and, asc, desc, eq, ne, notInArray, sql } from 'drizzle-orm';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { WaybillLabelStateReader } from '../waybill/waybill-label-state.reader';
 import type { LabelItemChange, LabelState } from '../waybill/label/label-print-policy';
+import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawal-removals.query';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
 export interface ShipmentByWaybillLine {
@@ -28,12 +29,16 @@ export interface ShipmentByWaybillResult {
   workItemStatus: string | null;
   recipientMasked: string;
   lines: ShipmentByWaybillLine[];
-  /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null. */
+  /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
   /** reprint_required 일 때 마지막 출력과 현재 품목 줄의 차이. */
   labelChanges: LabelItemChange[];
   /** unavailable 의 사유 코드. */
   labelIssue: string | null;
+  /** 이탈 중이면 뺄 목록(스펙 §10.5 withdrawing). 그 밖엔 []. */
+  removals: WithdrawalRemoval[];
+  /** withdrawing 이면 활성 작업 항목의 exit_to, withdrawn 이면 마지막 작업 항목의 exit_to. 그 밖엔 null. */
+  exitTo: 'draft' | 'canceled' | null;
 }
 
 // `short_pick_recovery` 도 활성 상태다 — uq_outbound_work_item_active_shipment 는
@@ -85,7 +90,11 @@ export class ShipmentWaybillReader {
           ),
         )
         .limit(1);
-      if (!waybill) throw new NotFoundException(`Waybill not found for tracking number ${normalized}`);
+      if (!waybill) {
+        const withdrawn = await this.canceledWithdrawal(trx, normalized, warehouseId);
+        if (withdrawn) return withdrawn;
+        throw new NotFoundException(`Waybill not found for tracking number ${normalized}`);
+      }
 
       const [shipment] = await trx
         .select({
@@ -111,6 +120,7 @@ export class ShipmentWaybillReader {
           id: wmsTables.outboundBatchWorkItems.id,
           batchId: wmsTables.outboundBatchWorkItems.batchId,
           status: wmsTables.outboundBatchWorkItems.status,
+          exitTo: wmsTables.outboundBatchWorkItems.exitTo,
         })
         .from(wmsTables.outboundBatchWorkItems)
         .where(
@@ -121,19 +131,7 @@ export class ShipmentWaybillReader {
         )
         .limit(1);
 
-      const lines = await trx
-        .select({
-          shipmentLineId: wmsTables.shipmentLines.id,
-          skuId: wmsTables.shipmentLines.skuId,
-          skuCode: wmsTables.skus.code,
-          skuName: wmsTables.skus.name,
-          qty: wmsTables.shipmentLines.qty,
-          inspectedQty: wmsTables.shipmentLines.inspectedQty,
-        })
-        .from(wmsTables.shipmentLines)
-        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
-        .where(eq(wmsTables.shipmentLines.shipmentId, waybill.shipmentId))
-        .orderBy(asc(wmsTables.shipmentLines.id));
+      const lines = await this.loadLines(trx, waybill.shipmentId);
 
       // 배치의 active session 위에서 SETTLED 를 제외한 커스터디 합계 — 박스를
       // 내려놨다가 다시 스캔하는 재개 흐름을 위해 SimpleOutboundService.pickedQtyForLine
@@ -171,7 +169,7 @@ export class ShipmentWaybillReader {
         }
       }
 
-      const label = workItem ? await this.labelStates.forShipment(waybill.shipmentId, trx) : null;
+      const label = await this.labelStates.forShipment(waybill.shipmentId, trx);
 
       return {
         shipmentId: waybill.shipmentId,
@@ -188,7 +186,94 @@ export class ShipmentWaybillReader {
         labelState: label?.state ?? null,
         labelChanges: label?.changes ?? [],
         labelIssue: label?.issue ?? null,
+        removals: workItem?.status === 'withdrawing' ? await loadWithdrawalRemovals(trx, workItem.id) : [],
+        exitTo:
+          workItem?.status === 'withdrawing'
+            ? workItem.exitTo
+            : label?.state === 'withdrawn'
+              ? (label.exitTo ?? null)
+              : null,
       };
     });
+  }
+
+  private loadLines(trx: DbTx, shipmentId: string) {
+    return trx
+      .select({
+        shipmentLineId: wmsTables.shipmentLines.id,
+        skuId: wmsTables.shipmentLines.skuId,
+        skuCode: wmsTables.skus.code,
+        skuName: wmsTables.skus.name,
+        qty: wmsTables.shipmentLines.qty,
+        inspectedQty: wmsTables.shipmentLines.inspectedQty,
+      })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+      .orderBy(asc(wmsTables.shipmentLines.id));
+  }
+
+  /**
+   * 전체 취소로 나간 박스는 송장이 무효라 활성 송장으로는 못 찾는다. 작업자가 든 종이를 다시 스캔하면 «빠진 박스 · 송장은
+   * 버리세요» 를 보여야 한다(스펙 §10.5 withdrawn, 정한 것 13) — 그 번호의 가장 최근 무효 송장으로 박스를 찾는다.
+   */
+  private async canceledWithdrawal(
+    trx: DbTx,
+    trackingNo: string,
+    warehouseId?: string,
+  ): Promise<ShipmentByWaybillResult | null> {
+    const [waybill] = await trx
+      .select({
+        shipmentId: wmsTables.waybills.shipmentId,
+        trackingNo: wmsTables.waybills.trackingNo,
+        carrier: wmsTables.waybills.carrier,
+        status: wmsTables.waybills.status,
+      })
+      .from(wmsTables.waybills)
+      .where(and(eq(wmsTables.waybills.trackingNo, trackingNo), eq(wmsTables.waybills.status, 'voided')))
+      .orderBy(
+        sql`${wmsTables.waybills.voidedAt} desc nulls last`,
+        desc(wmsTables.waybills.createdAt),
+        desc(wmsTables.waybills.id),
+      )
+      .limit(1);
+    if (!waybill) return null;
+    const [shipment] = await trx
+      .select({
+        warehouseId: wmsTables.shipments.warehouseId,
+        status: wmsTables.shipments.status,
+        recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+      })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, waybill.shipmentId))
+      .limit(1);
+    if (!shipment || shipment.status !== 'canceled') return null;
+    if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) return null;
+    const [last] = await trx
+      .select({ status: wmsTables.outboundBatchWorkItems.status, exitTo: wmsTables.outboundBatchWorkItems.exitTo })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, waybill.shipmentId))
+      .orderBy(desc(wmsTables.outboundBatchWorkItems.createdAt), desc(wmsTables.outboundBatchWorkItems.id))
+      .limit(1);
+    if (last?.status !== 'excluded' || last.exitTo !== 'canceled') return null;
+    const lines = await this.loadLines(trx, waybill.shipmentId);
+    return {
+      shipmentId: waybill.shipmentId,
+      warehouseId: shipment.warehouseId,
+      trackingNo: waybill.trackingNo ?? trackingNo,
+      carrier: waybill.carrier,
+      waybillStatus: waybill.status,
+      shipmentStatus: shipment.status,
+      batchId: null,
+      workItemId: null,
+      workItemStatus: null,
+      recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
+      lines: lines.map((line) => ({ ...line, pickedQty: 0 })),
+      labelState: 'withdrawn',
+      labelChanges: [],
+      labelIssue: null,
+      removals: [],
+      exitTo: 'canceled',
+    };
   }
 }

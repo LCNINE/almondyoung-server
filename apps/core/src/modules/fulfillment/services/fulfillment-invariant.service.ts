@@ -98,6 +98,7 @@ export interface FulfillmentInvariantSnapshot {
     skuId: string;
     sourceLocationId: string;
     qty: number;
+    workItemStatus: string;
   }>;
   dispatchAttempts: Array<{
     id: string;
@@ -256,7 +257,8 @@ export function collectFulfillmentInvariantViolations(
       }
       continue;
     }
-    if (item.status === 'completed' || item.status === 'excluded') continue;
+    // 완료·제외는 끝났고, 이탈 중은 목표가 0 이라 «배정 ≥ 목표» 가 늘 참이다(스펙 §5 I2).
+    if (item.status === 'completed' || item.status === 'excluded' || item.status === 'withdrawing') continue;
     for (const line of snapshot.shipmentLines.filter((candidate) => candidate.shipmentId === item.shipmentId)) {
       const allocatedQty = sum(
         itemAllocations.filter((allocation) => allocation.shipmentLineId === line.id),
@@ -303,9 +305,12 @@ export function collectFulfillmentInvariantViolations(
         });
       }
     }
+    // PR 3·4 경계(스펙 §13): 결품 보고는 박스 배정 전부를 보관·공유 풀에서 끝까지 정산하지만 배정 행은 줄이지 않는다.
+    // 그 행을 방으로 세면 빈 배치에 떠도는 AT_SOURCE 가 가려진다 — 제외된 작업 항목의 배정은 세지 않는다.
+    const liveBatchAllocations = batchAllocations.filter((allocation) => allocation.workItemStatus !== 'excluded');
     for (const [skuKey, sharedQty] of sharedBySku) {
       const allocatedQty = sum(
-        batchAllocations.filter((allocation) => `${allocation.skuId}|${allocation.sourceLocationId}` === skuKey),
+        liveBatchAllocations.filter((allocation) => `${allocation.skuId}|${allocation.sourceLocationId}` === skuKey),
         (allocation) => allocation.qty,
       );
       const roomQty = allocatedQty - (attributedBySku.get(skuKey) ?? 0);
@@ -611,6 +616,7 @@ export class FulfillmentInvariantService {
             skuId: wmsTables.shipmentLines.skuId,
             sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
             qty: wmsTables.pickingSourceAllocations.qty,
+            workItemStatus: wmsTables.outboundBatchWorkItems.status,
           })
           .from(wmsTables.pickingSourceAllocations)
           .innerJoin(

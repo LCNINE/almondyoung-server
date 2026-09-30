@@ -40,6 +40,7 @@ import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
 import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -96,6 +97,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       workflow,
       { get: jest.fn(() => ({ resumePending: jest.fn() })) } as never,
       new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
     const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches, assembleLabels(dbService).guard);
     return { dbService, guard, audit, sessions, recovery, inventory, batches, picking };

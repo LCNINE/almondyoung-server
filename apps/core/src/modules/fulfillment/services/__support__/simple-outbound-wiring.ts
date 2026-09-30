@@ -27,11 +27,17 @@ import { FulfillmentProgressService } from '../fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from '../outbound-batch-orchestrator.service';
 import { BoxAllocationManager } from '../box-allocation.manager';
+import { BoxWithdrawalService } from '../box-withdrawal.service';
+import { ToteLifecycleService } from '../tote-lifecycle.service';
 import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
 import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry';
+import { AggregateThenSortPickingStrategy } from '../../picking/aggregate-then-sort.strategy';
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
+import { ReturnBinService } from '../return-bin.service';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
+import { ShipmentPlanningService } from '../shipment-planning.service';
+import { BoxReturnService } from '../box-return.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
 import { LocationOutboundService } from '../location-outbound.service';
 import { SimpleOutboundService } from '../simple-outbound.service';
@@ -85,15 +91,15 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     new FulfillmentProgressService(),
     invariant,
   );
-  // dispatch·picking 은 WaybillService 의 읽기/CAS 만 소비한다 — carrier registry·issue
-  // machine 은 이 경로에서 호출되지 않아 stub 으로 충분(waybill.manager.integration.spec 패턴).
+  // dispatch·picking 은 WaybillService 의 읽기/CAS 만, 취소 이탈은 로컬 무효화(void)만 소비한다 — carrier registry·issue
+  // machine 은 이 경로에서 호출되지 않아 stub 으로 충분(waybill.manager.integration.spec 패턴). void 는 commands 를 탄다.
   const waybills = new WaybillService(
     new WaybillManager(
       new WaybillReader(dbService),
       new WaybillRepository(dbService),
       {} as never,
       {} as never,
-      {} as never,
+      commands,
       {} as never,
       dbService,
     ),
@@ -102,6 +108,18 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   // 단순출고 경로는 그 분기에 닿지 않으므로 no-op stub 이면 된다.
   const moduleRef = { get: () => ({ resumePending: async () => {} }) } as never;
   const boxes = new BoxAllocationManager(sessions, controlled);
+  const totes = new ToteLifecycleService(dbService);
+  const withdrawals = new BoxWithdrawalService(invariant, boxes, totes, waybills, audit);
+  const planning = new ShipmentPlanningService(
+    dbService,
+    commands,
+    shipmentReservations,
+    invariant,
+    audit,
+    { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
+    workflowGate,
+    withdrawals,
+  );
   const batches = new OutboundBatchOrchestrator(
     dbService,
     commands,
@@ -111,9 +129,33 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     moduleRef,
     boxes,
+    withdrawals,
   );
   const labelGuard = assembleLabels(dbService).guard;
   const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
+  const barcodes = new BarcodeService(dbService);
+  const returnBins = new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit);
+  const returns = new BoxReturnService(
+    commands,
+    workflowGate,
+    withdrawals,
+    boxes,
+    returnBins,
+    barcodes,
+    planning,
+    batches,
+  );
+  const aggregate = new AggregateThenSortPickingStrategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    labelGuard,
+    boxes,
+    withdrawals,
+    returnBins,
+    returns,
+  );
   const picking = new PickingProcessService(
     dbService,
     commands,
@@ -122,9 +164,9 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     invariant,
     controlled,
     waybills,
+    returns,
     new PickingStrategyRegistry(dbService, [discrete]),
   );
-  const barcodes = new BarcodeService(dbService);
   const dispatch = new ShipmentDispatchService(
     dbService,
     commands,
@@ -153,13 +195,20 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   };
   return {
     simple,
+    dispatch,
     picking,
     batches,
     sessions,
     boxes,
+    withdrawals,
+    planning,
+    totes,
     startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
     location: new LocationOutboundService(dbService, commands, simple),
+    returnBins,
+    returns,
+    aggregate,
   };
 }
 

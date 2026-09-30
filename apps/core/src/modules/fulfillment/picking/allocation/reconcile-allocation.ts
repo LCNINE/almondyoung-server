@@ -16,7 +16,7 @@ export interface ReconcileAllocationRow {
   sourceLocationId: string;
   locationCode: string;
   qty: number;
-  /** 이 줄·로케이션에 귀속된 보관(WORKER·TOTE·SORTING·PACKING·PACKED·RETURN_PENDING·SETTLED) 합. 0 ≤ 이것 ≤ qty(I3). */
+  /** 이 줄·로케이션에 귀속된 보관(WORKER·TOTE·SORTING·PACKING·PACKED·SETTLED) 합. 0 ≤ 이것 ≤ qty(I3). */
   attributedQty: number;
 }
 
@@ -33,7 +33,7 @@ export interface ReconcilePlan {
   handIns: AllocationDraft[];
   /** 집지 않은 몫 — AT_SOURCE 에서 빼고 배정도 뺀다(HAND_BACK). */
   handBacks: AllocationDecrement[];
-  /** 미귀속인데 AT_SOURCE 에 없다 = 토탈피킹 카트에 이미 실렸다. 배정에서 빼고 카트 여분이 된다(S1 §5.4, PR 3). */
+  /** 미귀속인데 AT_SOURCE 에 없다 = 토탈피킹 카트에 이미 실렸다. 배정은 그대로 두고, 분류대에서 여분을 바구니에 넣을 때 준다(PR 3 계획이 정함 — S1 §5.4 의 «즉시 뺀다» 대체). */
   cartSurplus: AllocationDecrement[];
   /** 집은 몫이 목표를 넘는다 = «뺄 물건 남음»(I2). 배정은 그대로 두고 되돌림(PR 3)이 줄인다. */
   excess: AllocationDecrement[];

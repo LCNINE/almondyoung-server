@@ -32,7 +32,16 @@ export function latestPrint<T extends Pick<LabelPrintRecord, 'printedAt' | 'revi
   );
 }
 
-export type LabelState = 'current' | 'never_printed' | 'reprint_required' | 'not_started' | 'external' | 'unavailable';
+export type LabelState =
+  | 'current'
+  | 'never_printed'
+  | 'reprint_required'
+  | 'not_started'
+  | 'external'
+  | 'unavailable'
+  // 스펙 §10.5 — 이탈 중(뺄 상품 → 되돌림 바구니), 이탈 완료(«빠진 박스입니다, 송장은 버리세요»).
+  | 'withdrawing'
+  | 'withdrawn';
 
 export interface LabelItemChange {
   locationCode: string;
@@ -47,6 +56,8 @@ export interface LabelStateView {
   changes: LabelItemChange[];
   /** unavailable 의 사유 코드(`WAYBILL_STALE` 등). 그 밖엔 null. */
   issue: string | null;
+  /** withdrawn 일 때 마지막 작업 항목의 exit_to(draft = 박스는 남는다, canceled = 취소). 그 밖엔 없음. */
+  exitTo?: 'draft' | 'canceled' | null;
 }
 
 const keyOf = (i: Pick<LabelItem, 'locationCode' | 'skuId'>) => `${i.locationCode}\u0000${i.skuId}`;

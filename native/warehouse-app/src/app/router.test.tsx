@@ -140,11 +140,11 @@ describe('router guard integration', () => {
   });
 });
 
-it('Windows에서 입고·적치·이동·실사에 진입할 수 있다', async () => {
+it('Windows에서 입고·적치·되돌림 적치·이동·실사에 진입할 수 있다', async () => {
   const { session, setAuthed } = makeStub();
   setAuthed(true);
   renderApp(session);
-  for (const name of ['입고', '적치', '이동', '실사']) {
+  for (const name of ['입고', '적치', '되돌림 적치', '이동', '실사']) {
     expect(await screen.findByRole('link', { name })).toBeInTheDocument();
   }
   expect(screen.queryByRole('link', { name: '출고조회' })).toBeNull();

@@ -4,6 +4,7 @@ import { assertLabelAllocated, isAppPrintable, requirePrintable } from './waybil
 const allocation = (over = {}) => ({
   workItemId: 'wi-1',
   batchStarted: true,
+  withdrawing: false,
   lines: [{ id: 'l1', qty: 2 }],
   rows: [{ shipmentLineId: 'l1', locationCode: 'A-01', skuId: 's1', skuName: '펜', qty: 2 }],
   ...over,
@@ -16,6 +17,7 @@ describe('assertLabelAllocated (I4)', () => {
   it.each([
     ['작업 항목 없음', { workItemId: null }],
     ['시작 전 배치', { batchStarted: false }],
+    ['I4 — 이탈 중인 박스는 배정이 남아 있어도 그리지 않는다', { withdrawing: true }],
     ['배정 < 줄 수량', { rows: [{ shipmentLineId: 'l1', locationCode: 'A-01', skuId: 's1', skuName: '펜', qty: 1 }] }],
     [
       '배정 없는 줄',

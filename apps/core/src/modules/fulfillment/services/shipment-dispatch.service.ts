@@ -427,7 +427,20 @@ export class ShipmentDispatchService {
         ),
       )
       .limit(1);
-    if (!initialWorkItem) throw this.conflict('SHIPMENT_WORK_ITEM_MISSING', 'Shipment has no outbound work item');
+    if (!initialWorkItem) {
+      const [leaving] = await tx
+        .select({ id: wmsTables.outboundBatchWorkItems.id })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+            eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+          ),
+        )
+        .limit(1);
+      if (leaving) throw this.conflict('SHIPMENT_WITHDRAWN', `Shipment ${shipmentId} is leaving its batch`);
+      throw this.conflict('SHIPMENT_WORK_ITEM_MISSING', 'Shipment has no outbound work item');
+    }
     const [initialSession] = await tx
       .select()
       .from(wmsTables.batchInventorySessions)

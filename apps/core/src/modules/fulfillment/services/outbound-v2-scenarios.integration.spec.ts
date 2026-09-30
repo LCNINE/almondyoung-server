@@ -48,6 +48,7 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -110,6 +111,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       scopes,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     consolidation = new ConsolidationService(
       dbService,
@@ -359,6 +361,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       authorization,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     const localConsolidation = new ConsolidationService(
       dbService,

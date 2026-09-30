@@ -245,7 +245,6 @@ describe('409 errors body and rejected codes (#987)', () => {
 
   it.each([
     'BATCH_NOT_JOINABLE',
-    'BOX_HAS_PICKED_ITEMS',
     'SHIPMENT_ACTIVE_WORK_ITEM',
     'OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED',
     'WORK_ITEM_TOTE_RELEASE_REQUIRED',
@@ -256,5 +255,25 @@ describe('409 errors body and rejected codes (#987)', () => {
     'BATCH_JOIN_BLOCKED',
   ])('%s 409 는 확정 거절 (#988)', (code) => {
     expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+
+  it.each([
+    'SHIPMENT_WITHDRAWN',
+    'SHIPMENT_ALREADY_WITHDRAWING',
+    'SHIPMENT_NOT_WITHDRAWING',
+    'REMOVAL_NOT_PENDING',
+    'RETURN_BIN_UNKNOWN',
+    'RETURN_BIN_WAREHOUSE_MISMATCH',
+    'RETURN_BIN_ITEM_NOT_FOUND',
+    'RETURN_BIN_ITEM_SHORT',
+    'RETURN_LOCATION_MISMATCH',
+    'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
+    'SHIPMENT_LINE_INSPECTION_STALE',
+  ])('%s 409 는 확정 거절 (#989)', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+
+  it('등록 안 된 바구니 조회(404 RETURN_BIN_UNKNOWN)도 확정 거절 — 다시 보내도 같다', () => {
+    expect(new ApiError('GET /return-bins/RB-x → 404', 404, 'RETURN_BIN_UNKNOWN').outcome).toBe('rejected');
   });
 });

@@ -630,6 +630,17 @@ export class SimpleOutboundService {
       )
       .limit(1);
     if (!workItem) {
+      const [leaving] = await tx
+        .select({ id: wmsTables.outboundBatchWorkItems.id })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+            eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+          ),
+        )
+        .limit(1);
+      if (leaving) throw this.conflict('SHIPMENT_WITHDRAWN', `Shipment ${shipmentId} is leaving its batch`);
       throw this.conflict(
         'SIMPLE_OUTBOUND_WORK_ITEM_MISSING',
         'Shipment is not part of an open outbound batch — ask the manager to add it',

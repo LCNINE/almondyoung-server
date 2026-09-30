@@ -1,10 +1,17 @@
 import type { StartBlockerView } from './allocation.types';
-import type { AllocationDecrement } from './reconcile-allocation';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 /** Canonical: `discrete` (byte-identical to `pick_to_tote`). */
 export function conflict(code: string, message: string): ConflictException {
   return new ConflictException({ code, message });
+}
+
+/** 빠지는(withdrawing)·빠진(excluded) 박스의 전진 명령(스펙 §12). 앱은 «빠진 박스 · 송장은 버리세요» 로 안내한다. */
+export function shipmentWithdrawn(shipmentId: string): ConflictException {
+  return new ConflictException({
+    code: 'SHIPMENT_WITHDRAWN',
+    message: `Shipment ${shipmentId} is leaving (or has left) its batch; forward work is not accepted`,
+  });
 }
 
 /**
@@ -37,14 +44,5 @@ export function joinBlocked(shipmentId: string, blockers: StartBlockerView[]): C
     code: 'BATCH_JOIN_BLOCKED',
     message: `Shipment ${shipmentId} cannot join the running batch: ${blockers.length} blocker(s)`,
     errors: blockers,
-  });
-}
-
-/** PR 2: 집은 몫이 있는 박스의 이탈 거절(PR 3 이 되돌림으로 연다). errors = 줄·로케이션·수량. */
-export function boxHasPickedItems(shipmentId: string, items: AllocationDecrement[]): ConflictException {
-  return new ConflictException({
-    code: 'BOX_HAS_PICKED_ITEMS',
-    message: `Shipment ${shipmentId} has picked items; they must be returned before it can leave the batch`,
-    errors: items,
   });
 }

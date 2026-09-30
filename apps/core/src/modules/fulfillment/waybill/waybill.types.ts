@@ -63,6 +63,8 @@ export interface WaybillView {
 export interface LabelAllocation {
   workItemId: string | null;
   batchStarted: boolean;
+  /** 활성 작업 항목이 이탈 중 — I4 는 그리지 않는다. */
+  withdrawing: boolean;
   lines: { id: string; qty: number }[];
   rows: Array<AllocatedLabelRow & { shipmentLineId: string }>;
 }

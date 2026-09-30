@@ -93,7 +93,7 @@ export class WaybillReader {
       .where(eq(inventoryTables.shipmentLines.shipmentId, shipmentId))
       .orderBy(asc(inventoryTables.shipmentLines.id));
     const [active] = await trx
-      .select({ id: WI.id, batchStartedAt: inventoryTables.outboundBatches.startedAt })
+      .select({ id: WI.id, status: WI.status, batchStartedAt: inventoryTables.outboundBatches.startedAt })
       .from(WI)
       .innerJoin(inventoryTables.outboundBatches, eq(inventoryTables.outboundBatches.id, WI.batchId))
       .where(and(eq(WI.shipmentId, shipmentId), notInArray(WI.status, ['completed', 'excluded'])))
@@ -110,7 +110,7 @@ export class WaybillReader {
           .orderBy(sql`${WI.completedAt} DESC NULLS LAST`, desc(WI.id))
           .limit(1)
       )[0];
-    if (!item) return { workItemId: null, batchStarted: false, lines, rows: [] };
+    if (!item) return { workItemId: null, batchStarted: false, withdrawing: false, lines, rows: [] };
     const rows = await trx
       .select({
         shipmentLineId: A.shipmentLineId,
@@ -125,6 +125,12 @@ export class WaybillReader {
       .innerJoin(inventoryTables.skus, eq(inventoryTables.skus.id, inventoryTables.shipmentLines.skuId))
       .where(and(eq(A.workItemId, item.id), gt(A.qty, 0)))
       .orderBy(asc(inventoryTables.locations.code), asc(inventoryTables.shipmentLines.skuId));
-    return { workItemId: item.id, batchStarted: item.batchStartedAt !== null, lines, rows };
+    return {
+      workItemId: item.id,
+      batchStarted: item.batchStartedAt !== null,
+      withdrawing: active?.status === 'withdrawing',
+      lines,
+      rows,
+    };
   }
 }

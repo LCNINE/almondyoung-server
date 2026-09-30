@@ -40,6 +40,7 @@ import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -253,6 +254,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       new AuditService(dbService),
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+      assembleBoxWithdrawal(dbService),
     );
   }
 
@@ -272,6 +274,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       workflow,
       moduleRef as never,
       new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
   }
 

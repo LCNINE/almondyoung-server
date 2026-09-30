@@ -743,6 +743,13 @@
       "when": 1790764198686,
       "tag": "20260930102958_allocation-hand-back",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790788141173,
+      "tag": "20260930170901_return-bin-withdrawal",
+      "breakpoints": true
     }
   ]
 }

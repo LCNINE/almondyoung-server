@@ -35,6 +35,8 @@ import { ShipmentReservationService } from './services/shipment-reservation.serv
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 import { BoxAllocationManager } from './services/box-allocation.manager';
+import { BoxReturnService } from './services/box-return.service';
+import { BoxWithdrawalService } from './services/box-withdrawal.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
@@ -49,6 +51,7 @@ import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
 import { LocationOutboundService } from './services/location-outbound.service';
 import { LocationOutboundController } from './controllers/location-outbound.controller';
+import { ReturnBinService } from './services/return-bin.service';
 import { SimpleOutboundService } from './services/simple-outbound.service';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 
@@ -62,6 +65,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingCommandV2Controller, PickingV2Controller } from './controllers/picking-v2.controller';
+import { ReturnBinController } from './controllers/return-bin.controller';
 import { ToteController } from './controllers/tote.controller';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { ShipmentShortPickController } from './controllers/shipment-short-pick.controller';
@@ -107,6 +111,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
+    ReturnBinController,
     ShipmentController,
     ConsolidationController,
     DirectShipController,
@@ -142,6 +147,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentReservationService,
     ShipmentPlanningService,
     BoxAllocationManager,
+    BoxWithdrawalService,
+    BoxReturnService,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
@@ -150,6 +157,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     PickToTotePickingStrategy,
     SimpleOutboundService,
     LocationOutboundService,
+    ReturnBinService,
     ShipmentWaybillReader,
     {
       provide: PICKING_STRATEGIES,

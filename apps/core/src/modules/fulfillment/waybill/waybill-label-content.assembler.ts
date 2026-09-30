@@ -28,7 +28,7 @@ export function isAppPrintable(wb: Pick<WaybillRow, 'source' | 'carrier'>): bool
 
 /**
  * I4 — 시작된 배치의 작업 항목(활성 작업 항목, 없으면 출고 완료된 마지막 작업 항목 — 재출력용)이면서 배정 합이
- * 줄 수량을 덮은 박스만 그린다. `excluded` 만 남은 박스는 작업 항목이 없는 것으로 보고 거절한다.
+ * 줄 수량을 덮고 이탈 중이 아닌 박스만 그린다. `excluded` 만 남은 박스는 작업 항목이 없는 것으로 보고 거절한다.
  */
 export function assertLabelAllocated(
   shipmentId: string,
@@ -36,6 +36,9 @@ export function assertLabelAllocated(
 ): asserts allocation is LabelAllocation & { workItemId: string } {
   if (!allocation.workItemId || !allocation.batchStarted) {
     throw new ConflictError(`${WAYBILL.ERROR.LABEL_NOT_ALLOCATED}: shipment ${shipmentId} is not in a started batch`);
+  }
+  if (allocation.withdrawing) {
+    throw new ConflictError(`${WAYBILL.ERROR.LABEL_NOT_ALLOCATED}: shipment ${shipmentId} is leaving its batch`);
   }
   const allocated = new Map<string, number>();
   for (const row of allocation.rows) {

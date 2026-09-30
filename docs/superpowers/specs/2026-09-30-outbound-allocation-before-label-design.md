@@ -232,6 +232,9 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
 지문은 송장 **내용**의 해시(§10.2)라 새 배정의 로케이션·수량이 달라야 달라진다 — 그러면 재출력 대상이 되지만, 같은 로케이션·수량에
 떨어지면 지문이 같아 `current` 로 읽힌다(출력 기록은 박스·지문 단위라 옛 종이가 다시 유효해진다). 앱 「박스 넣기」 는 합류 뒤
 언제나 출력하므로 작업자는 새 종이로 작업하고, 빼기 안내는 그대로 «송장은 버려 주세요» 다. `canceled` 는 기존 취소 경로대로 송장을 무효화한다.
+**PR 3 구현이 정함:** «옛 종이가 다시 유효해진다» 는 PR 2 까지의 동작이다. 박스에 **시작된 배치에서** `excluded` 된 이전 작업 항목이 있으면
+송장 상태는 현재 작업 항목의 `created_at` 이전 출력 기록을 세지 않는다(§10.5 구현이 정함) — 그 종이는 작업자가 버렸으므로 다시 계획된 박스는
+지문이 같아도 `never_printed` 다. 틀려도 대가는 불필요한 재출력 한 번이다.
 
 **전체 취소 연결(E10):** `shipment-planning.service.ts` 의 취소 처리에서, 시작된 배치의 박스가 전체 취소되면
 `CANCEL_REPLAN_PENDING` 표시 대신 이탈(`exit_to = canceled`)을 부른다. 부분 취소 경로는 건드리지 않는다(E11).
@@ -254,6 +257,79 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
   곳이 없거나, 반납하면 세션 변경(`mutate`)이 `SESSION_NOT_MUTABLE` 로 실패하기 때문이다. 앱 문구는 «배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.»
 - 박스가 이미 `shipped`·`in_transit`·`delivered` 면 발송 시도 행이 없어도 `WORK_ITEM_DISPATCH_EXISTS` 다(시작 전 제외와 같다)
 - `inspected_qty > 0` 검사는 세션 잠금·`reconcileAllocation` 보다 앞서므로, 그것만으로 거절될 때는 `errors` 가 비어 있다
+
+**PR 3 계획이 정함(집은 뒤 이탈·되돌림·전체 취소):**
+
+- **되돌림 스캔 지점은 hook 이 아니라 명령 둘이다.** 박스에서 `POST shipments/:shipmentId/return-bin-removals`(세 방식 공통 — 박스 줄에 귀속된
+  보관 `WORKER`·`TOTE`·`SORTING`·`PACKING`·`PACKED` 어디서든), 카트 여분에서 `POST picking/v2/aggregate-then-sort/cart-surplus-returns`(토탈피킹
+  전략의 메서드 — 카트 잠금·ref·소유 규칙이 전략에 있다). `reconcileStage` 는 늘어날 때(S2)만 필요해 PR 3 은 만들지 않는다
+- **카트 여분은 배정에서 즉시 빼지 않는다(S1 §5.4 의 «즉시 뺀다» 대체).** 카트에 실린 미귀속 몫은 «뺄 물건» 처럼 배정에 남고, 분류대에서 여분을
+  바구니에 넣는 `REMOVE_TO_RETURN_BIN`(from `BULK_CART`)이 배정을 준다. 모든 배정 감소가 세션 이벤트를 가져야 복구 규칙(§13)이 서고, I3 공유 식을
+  느슨하게 하지 않아도 된다. 대가: 토탈피킹 배치에서 카트에 몫이 실린 박스는 여분이 바구니에 들어갈 때까지 `withdrawing` 이다(취소 완료도 그때).
+  카트에서 내릴 수 있는 양 = `min(그 카트의 BULK_CART, 빼는 박스들의 미귀속 배정)`, 넘으면 `CART_SURPLUS_NOT_PENDING`
+- **이탈 시작:** 집지 않은 몫은 그 트랜잭션에서 `HAND_BACK`. 남은 배정이 0 이면 그 트랜잭션에서 나가고, 아니면 작업 항목 `withdrawing` + `exit_to`
+  + 사유(`exclusion_reason` 에 미리) + 피커·패커 claim 해제. 토트 배정·`inspected_qty > 0` 은 더 막지 않는다 — 토트는 나갈 때 비었으면 풀고,
+  `PACKED` 에서 빼면 `inspected_qty` 를 같은 수만큼 줄인다(`line_version` +1). 결품 격리·발송 시도·세션 비활성은 기존 코드로 거절
+- **나가기:** 작업 항목의 배정 합이 0 이 되는 트랜잭션에서 `excluded`, 빈 토트 해제. `exit_to = draft` 는 PR 2 처럼 박스 `planned` 그대로(예약·송장 유지),
+  기다리던 오퍼레이션(합포장·옛 부분 취소)은 되돌림 트랜잭션 밖에서 잇는다(바깥 트랜잭션이 없는 운영 경로에서는 커밋 뒤 — PR 3 구현이 정함에서 고침). `exit_to = canceled` 는 활성 송장(`registered`)을 로컬 무효화하고(아니면
+  `WITHDRAWAL_WAYBILL_NOT_VOIDABLE`) 기다리던 취소 오퍼레이션을 **같은 트랜잭션에서** 완료한다
+- **이미 빼는 중인 박스를 다시 빼면 `SHIPMENT_ALREADY_WITHDRAWING`.** 전체 취소만 `exit_to` 를 `draft` → `canceled` 로 올린다(반대는 없다)
+- **되돌림 바구니:** 등록 `POST return-bins {warehouseId, barcode}`(바코드 `RB-`. 같은 창고의 활성 행이면 그대로 돌려준다, 다른 창고면
+  `RETURN_BIN_WAREHOUSE_MISMATCH`, 폐기된 행이면 `RETURN_BIN_UNKNOWN`), 조회 `GET return-bins/:barcode?warehouseId=`(바구니 + 남은 물건:
+  SKU·원래 로케이션·수량, 없으면 404 `RETURN_BIN_UNKNOWN`). 폐기 명령은 두지 않는다. 토트 등록은 `RB-` 바코드를 `TOTE_BARCODE_RESERVED` 로 거절한다
+- **되돌림 적치:** `POST return-bins/:barcode/putaways {warehouseId, barcode, locationCode, quantity}`. 한 바구니에 여러 배치(세션)의 물건이 섞이므로
+  `active` 세션의 몫부터, 그 안에서 세션 id 순으로 뺀다(`recovery_required` 세션의 몫은 바구니에 남는다 — PR 3 구현이 정함에서 고침). 원장(`stock_events`)은 건드리지 않는다. 거절: `RETURN_BIN_ITEM_NOT_FOUND`·`RETURN_BIN_ITEM_SHORT`·`RETURN_LOCATION_MISMATCH`
+  (`errors` 에 원래 로케이션·수량)·`PICKING_SESSION_NOT_ACTIVE`(`active` 몫만으로 모자랄 때)
+- **전체 취소 연결의 조건:** 취소가 박스 전량이고, 박스의 활성 작업 항목이 시작된 배치에 있으며, 활성 송장을 나갈 때 무효화할 수 있고(없거나
+  `registered` — PR 3 구현이 정함에서 더함), 이탈을 막는 사유(결품 격리·발송 시도·세션 비활성)가
+  없을 때. 그 밖(부분 취소 — E11, 세션 `recovery_required`, 무효화할 수 없는 송장 등)은 지금처럼 `CANCEL_REPLAN_PENDING` 대기다. 취소 오퍼레이션은 `pending`(의도 기록)으로
+  만들어지고 작업 항목이 `waiting_operation_id` 로 기다린다. 박스는 그동안 `planned`(recovery 표시 없음). 집은 게 없으면 같은 트랜잭션에서 끝난다.
+  취소 완료는 `line_version` 대신 «취소 수량 = 줄 수량» 으로 줄이 그대로인지 본다(`PACKED` 에서 빼면 `line_version` 이 오른다)
+- **`SHIPMENT_WITHDRAWN` 의 범위:** 빠지는·빠진 박스의 전진 명령. 피커 claim 검사(전략 7곳 공통)·송장 게이트는 `withdrawing`·`excluded` 둘 다,
+  검수·발송 잠금·단순출고 준비는 `withdrawing` 만(`excluded` 는 기존 `SHIPMENT_WORK_ITEM_MISSING`·`SIMPLE_OUTBOUND_WORK_ITEM_MISSING` — PR 3 구현이 정함에서 고침).
+  송장 렌더는 I4 대로 `WAYBILL_LABEL_NOT_ALLOCATED`
+- **`BOX_EXCESS_PENDING` 은 PR 3 에 생산자가 없다.** «배정 > 목표» 는 PR 3 에서 `withdrawing` 박스에서만 생기고, 그 박스의 전진 명령은
+  `SHIPMENT_WITHDRAWN` 이 먼저 막는다. 줄 단위 감소(S2)가 생산자다
+- 합류 후보 조회는 이 배치에서 빼는 중인 박스에 `issue = SHIPMENT_WITHDRAWING`, 배치 목록은 `withdrawingItems`(배치 카드의 «빠지는 중 N»)를 준다
+- 이탈 생명주기(`BoxWithdrawalService`)는 계획·오케스트레이터를 모른다(둘이 그것을 주입받는다). `canceled` 로 나간 박스의 취소 완료와
+  `draft` 로 나간 박스의 대기 재개는 계획 자신(즉시 나감), 박스에서 되돌림(`BoxReturnService`), 카트 여분 되돌림(`PickingProcessService` 가
+  `BoxReturnService.resumeAfterDraftExit` 를 부른다 — PR 3 구현이 정함에서 고침)이 한다
+
+**PR 3 구현이 정함:**
+
+- **카트 여분 경로의 `draft` 대기 재개는 전략 트랜잭션 밖이다** — 바깥 트랜잭션이 없는 운영 경로에서는 커밋 뒤다. `PickingProcessService.aggregateCartSurplusReturn` 이 토탈피킹 전략의
+  `returnCartSurplus` 트랜잭션이 끝난 뒤 `BoxReturnService.resumeAfterDraftExit` 를 부른다. 전략 트랜잭션은 세션·보관을 쥐고 있는데 재개
+  (`OutboundBatchOrchestrator.resumeWaitingOperation`)는 구성요소부터 잡는다 — 안에서 부르면 «세션 → 구성요소» 로 순서가 뒤집히고, 재개 실패가
+  이미 바구니에 들어간 물건의 되돌림까지 되돌린다. 박스에서 되돌림(`BoxReturnService.removeToReturnBin`)도 같은 모양이다. 두 호출자 모두 선택 인자
+  `tx` 를 그대로 넘기므로, 호출자가 바깥 트랜잭션을 주면(테스트) 재개도 그 안에서 돈다. 그래서
+  `BoxReturnService` 를 주입받는 쪽은 `ReturnBinController`(박스에서 되돌림 명령), 토탈피킹 전략(트랜잭션 안의 `settleExit` — `canceled` 로 나간
+  박스의 취소 완료), `PickingProcessService`(전략 트랜잭션 밖의 재개)다. `canceled` 쪽 취소 완료는 계획대로 같은 트랜잭션이다
+- **되돌림 적치는 `active` 세션의 몫부터 뺀다**(`active` 중에서 세션 id 순). `recovery_required` 세션의 물건은 복구 전까지 바구니에 남는다 — 의심스러운
+  장부를 건드리는 편이 더 나쁘다. 수량 판정은 두 단계다: 열린 세션(`active`·`recovery_required`) 전부의 합이 모자라면 `RETURN_BIN_ITEM_SHORT`,
+  합은 되는데 `active` 몫만으로 모자라면 `PICKING_SESSION_NOT_ACTIVE`. 바구니 조회는 두 세션의 몫을 구별하지 않고 합쳐 보여 준다(§16)
+- **`SHIPMENT_WITHDRAWN` 의 범위를 명령마다 나눴다.** 피커 claim 검사(`lockAndAssertPickerClaim`)와 송장 게이트(`LabelCurrencyGuard`)는
+  `withdrawing`·`excluded` 둘 다 막는다. 검수·발송 잠금(`ShipmentDispatchService.lockAggregate`)과 단순출고 준비(`SimpleOutboundService`)는
+  `withdrawing` 만 `SHIPMENT_WITHDRAWN` 이고, `excluded` 로 나간 박스는 지금처럼 `SHIPMENT_WORK_ITEM_MISSING`·`SIMPLE_OUTBOUND_WORK_ITEM_MISSING` 이다 —
+  `draft` 로 나간 박스는 배치 전 풀로 돌아갔으니 «작업 항목 없음» 이 참이다. 송장 스캔 화면은 by-waybill 의 `withdrawn` 이 따로 덮는다
+- **결품 보고로 제외된 박스는 `withdrawn` 이 아니다.** 결품 보고는 박스를 취소하지 않고 송장만 무효화하므로(PR 3 은 결품 경로를 바꾸지 않는다),
+  그 종이를 스캔하면 by-waybill 은 활성 송장도 «취소로 나간 박스의 무효 송장» 도 못 찾아 404 다(앱 «이 운송장을 찾을 수 없어요»). 결품의 되돌림
+  연결은 PR 4
+- **내부 거절 코드 `SHIPMENT_LINE_INSPECTION_STALE`(§12).** 박스에서 되돌림이 `PACKED` 보관에서 뺄 때 줄의 `inspected_qty` 를 같은 수만큼 줄이는데,
+  `inspected_qty` 가 그 수보다 작으면(검수 기록과 `PACKED` 보관이 어긋남) `BoxAllocationManager.removeFromBox` 가 이 코드로 명령 전체를 되돌린다.
+  옳은 장부에서는 나지 않는다
+- **앱:** 「뺄 상품」·「되돌림 적치」 화면은 앞 스캔의 결과를 모르는(불확실한 실패) 동안 새 스캔을 받지 않고 「처리 내역 확인」 을 먼저 누르게 한다 —
+  한 개씩 되돌리는 명령이라 서버는 «두 번째 개수» 와 «재시도» 를 구별하지 못한다. 적치 스캔 큐의 payload 는 그 자체로 완결된다(바구니 바코드·상품
+  바코드·로케이션·창고) — 앱을 다시 켜면 저장된 스캔이 같은 멱등 키로 재생된다. 「뺄 상품」 의 전송은 스캔과 경로의 `shipmentId` 에만 기댄다
+- **전체 취소 연결(E10)은 나갈 때 무효화할 수 없는 송장이면 이탈로 들이지 않는다.** 활성 송장이 `registered` 가 아니면(`pending`·`allocated` 등 —
+  재발급·일시적 거절(#914) 뒤) `ShipmentPlanningService` 의 E10 갈래가 옛 `CANCEL_REPLAN_PENDING` 대기로 간다(부분 취소·세션 비활성과 같은 대체 갈래).
+  이탈로 들이면 집은 게 없는 박스는 그 트랜잭션에서 나가며 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` 로 취소 전체를 되돌린다 — 판매 주문 취소
+  (`SalesOrdersService` 가 판매 주문 취소 트랜잭션 안에서 `cancelOutstanding` 을 부른다)까지 실패하게 되는데, PR 3 전에는 대기로 받던 취소다.
+  판정은 `BoxWithdrawalService.canceledExitWaybill` 하나를 E10 과 나가기(`exitIfDrained`)가 같이 쓴다 — 둘이 갈리지 않게. 이미 빼는 중인
+  박스는 이 판정을 거치지 않고 `canceled` 로 올린다 — 그 트랜잭션에서 나가지 않으니 취소를 되돌리지 않고, 나가기는 송장이 정리된 뒤의
+  마지막 되돌림이 한다. 옛 대기로 보내면 `draft` 로 나간 뒤 재개가 `SHIPMENT_ACTIVE_INVOICE`(무효·실패·포기가 아닌 송장)나
+  `CANCELLATION_LINE_CHANGED`(`PACKED` 에서 뺄 때마다 `line_version` 이 오른다)에 막혀 풀리지 않는다
+- **카트 여분 되돌림은 PR 3 에서 core 명령뿐이다**(D3). 앱에는 그 화면도, 토트 등록 호출도 없어 `CART_SURPLUS_NOT_PENDING`·`TOTE_BARCODE_RESERVED` 는
+  앱의 확정 거절 목록·문구에 없다. 앱이 그 경로를 부르게 되는 PR 이 함께 넣는다
 
 ## 9. 결품 재배정 (S1 D9 + E12)
 
@@ -341,6 +417,15 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 
 - 몇 번을 어느 PC 에서 스캔해도 같은 결과. 스캔은 아무것도 바꾸지 않는다
 - 앱의 화면 판정(`labelState` → 화면)은 순수 함수로 두고 표 테스트
+- **PR 3 계획이 정함:** `withdrawing` 은 뺄 목록 `removals`(줄·SKU·원래 로케이션·박스에 든 몫 `boxQty`·카트에 실린 몫 `cartQty`)와 `exitTo` 를 싣는다.
+  `withdrawn` 은 활성 작업 항목이 없고 마지막 작업 항목이 **시작된 배치에서** `excluded` 인 박스다(시작 전 제외는 종이가 나간 적이 없어 `null`).
+  이때 `batchId`·`workItemId` 는 `null` 이다. `canceled` 로 나간 박스는 송장이 무효라, by-waybill 이 활성 송장을 못 찾으면 그 번호의 무효 송장으로
+  박스를 찾아 `withdrawn` 을 준다. 앱은 `withdrawn` 을 «오늘 배치에 없어요» 보다 먼저 판정한다
+- **PR 3 구현이 정함:** `withdrawn` 도 `exitTo` 를 싣는다 — 마지막 작업 항목의 `exit_to`(`draft`|`canceled`, 활성 송장으로 찾은 주 경로 포함).
+  앱은 두 경우 모두 «빠진 박스예요. 송장은 버려 주세요.» 한 문구다(어느 쪽이든 종이는 버린다). 무효 송장 폴백은 박스가 `canceled` 이고 마지막 작업
+  항목이 `exit_to = canceled` 로 `excluded` 일 때만 탄다 — 결품 보고로 무효화된 송장은 404 다(§8 구현이 정함). 버린 종이의 출력 기록은 세지 않는다:
+  박스에 시작된 배치에서 `excluded` 된 이전 작업 항목이 있으면 `WaybillLabelStateReader` 는 현재 작업 항목의 `created_at` 이후 출력만 센다
+  (`printed_at` 은 DB `now()` 이고 같은 지문을 다시 찍으면 갱신된다)
 - 배치 카드에 «재출력 필요 N». N 이 0 보다 크면 일괄 인쇄의 「바뀐·미출력 송장만 다시」가 보인다(이 기기에서 인쇄한 적이
   없어도). 누를 때 서버에서 대상을 새로 받아 `never_printed`·`reprint_required` 만 다시 뽑는다
 
@@ -363,6 +448,10 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 - 🔴 **enum 함정:** drizzle migrate 는 전 마이그를 한 트랜잭션으로 돈다. `ADD VALUE` 한 값을 같은 실행의 CHECK·기본값·데이터에
   쓰면 실패한다. CHECK 는 `::text` 캐스팅으로 쓴다(`ck_outbound_batches_cart_capacity` 선례)
 - contract(별도, 이 스펙의 PR 이 아님): `short_pick_recovery` 상태 제거, S1-A 의 계획 테이블·`plan_id` 삭제(S1 §11 PR 2)
+- **PR 3 계획이 정함:** `returned_qty` 는 PR 3 에서 `RETURN_TO_SOURCE`(결품 반환 — 생산자는 PR 4 가 없앤다)와 `PUTAWAY_RETURN` 의 합이다. 둘 다
+  «세션 통제가 풀려 원래 로케이션의 일반 재고로 돌아간 양» 이라 보존식은 그대로다. `PUTAWAY_RETURN` 만의 합으로 좁혀지는 것은 PR 4 에서다.
+  `exit_to` 는 나간 뒤(`excluded`)에도 남긴다. `return_bins` 는 `registered_by` 를 들고, 바구니 조회를 위해 보관 행에 부분 인덱스
+  (`custody_ref WHERE custody_type = 'RETURN_PENDING' AND qty > 0`)를 둔다. 세션 이벤트 `event_type` 은 varchar 라 새 값에 마이그레이션이 필요 없다
 
 ## 12. 오류 코드
 
@@ -376,12 +465,21 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `BATCH_NOT_JOINABLE` | 완료·취소된 배치·세션이 `active` 가 아닌 시작된 배치에 합류(§7) | 거절 |
 | `BATCH_JOIN_BLOCKED` | §7 합류 실패(PR 2 계획이 정함) | 무변경, 시작과 같은 박스·SKU·수량 목록 |
 | `OUTBOUND_BATCH_STARTED_RETRY` | 시작 전 배치에 넣는 중 배치 잠금을 기다리는 사이 시작됨(§7, PR 2 구현이 정함) | 무변경, 재시도하면 합류 |
-| `PICKING_SESSION_NOT_ACTIVE` | 세션이 없거나 `recovery_required` 인 시작된 배치에서 이탈(§8, PR 2 구현이 정함) | 거절 |
+| `PICKING_SESSION_NOT_ACTIVE` | 세션이 없거나 `recovery_required` 인 시작된 배치에서 이탈(§8, PR 2 구현이 정함). 박스에서 되돌림도 같다. 되돌림 적치는 `active` 세션 몫만으로 모자랄 때만(§8, PR 3 구현이 정함) | 거절 |
 | `BOX_HAS_PICKED_ITEMS` | PR 2 에서만: 집은 몫이 있는 박스의 이탈(PR 3 이 이탈로 대체) | 거절 |
-| `BOX_EXCESS_PENDING` | 뺄 물건이 남았는데 포장 완료·검수·발송 | 거절 + 뺄 목록 |
-| `SHIPMENT_WITHDRAWN` | 이탈 완료 박스의 전진 명령 | 거절 |
+| `BOX_EXCESS_PENDING` | 뺄 물건이 남았는데 포장 완료·검수·발송(PR 3 에는 생산자 없음 — S2) | 거절 + 뺄 목록 |
+| `SHIPMENT_WITHDRAWN` | 빠지는(`withdrawing`)·빠진(`excluded`) 박스의 전진 명령. 명령마다 범위가 다르다 — 검수·발송·단순출고 준비는 `withdrawing` 만(§8 PR 3 구현이 정함) | 거절 |
 | `RETURN_LOCATION_MISMATCH` | 되돌림 적치 위치 ≠ 원래 위치 | 거절 |
 | `RETURN_BIN_UNKNOWN` | 미등록·폐기된 바구니 | 거절 |
+| `SHIPMENT_ALREADY_WITHDRAWING` | 빼는 중인 박스를 다시 빼기(PR 3 계획이 정함) | 거절 |
+| `SHIPMENT_NOT_WITHDRAWING` | 빼는 중이 아닌 박스에 되돌림 스캔(PR 3 계획이 정함) | 거절 |
+| `REMOVAL_NOT_PENDING` | 박스에 그 상품의 뺄 몫이 없거나 모자람(PR 3 계획이 정함) | 무변경 |
+| `CART_SURPLUS_NOT_PENDING` | 카트 여분 되돌림이 빼는 박스들의 미귀속 배정·카트 보관을 넘음(PR 3 계획이 정함) | 무변경 |
+| `RETURN_BIN_WAREHOUSE_MISMATCH` | 다른 창고의 바구니(PR 3 계획이 정함) | 거절 |
+| `RETURN_BIN_ITEM_NOT_FOUND` · `RETURN_BIN_ITEM_SHORT` | 되돌림 적치할 상품이 바구니에 없음 · 수량 초과(PR 3 계획이 정함) | 거절 |
+| `TOTE_BARCODE_RESERVED` | `RB-` 바코드를 토트로 등록(PR 3 계획이 정함) | 거절 |
+| `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` | 전체 취소로 나가는 박스의 활성 송장이 `registered` 가 아님(PR 3 계획이 정함). 던지는 곳은 `BoxWithdrawalService.exitIfDrained` 의 `canceled` 갈래 하나 — 마지막 몫의 박스에서 되돌림·카트 여분 되돌림(PR 3 구현이 정함). 집은 게 없는 박스의 전체 취소는 E10 이 같은 판정으로 먼저 걸러 옛 대기로 보내므로 여기서 거절되지 않는다(§8 PR 3 구현이 정함) | 무변경. 앱 «이 박스의 송장을 지금 처리할 수 없어요. 이 상품은 아직 빠지지 않았어요. 관리자에게 송장 처리를 요청해 주세요.» |
+| `SHIPMENT_LINE_INSPECTION_STALE` | 박스에서 되돌림이 `PACKED` 에서 빼는데 줄의 `inspected_qty` 가 그 수보다 작음 — 검수 기록과 보관이 어긋남(`BoxAllocationManager.removeFromBox`, PR 3 구현이 정함) | 무변경. 앱 «검수 기록이 맞지 않아요. 관리자에게 문의해 주세요.» |
 
 HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ code, message })`, waybill 은 메시지 접두어 `CODE:`.
 
@@ -414,6 +512,33 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
   SKU·로케이션 배정에서 줄 귀속 보관을 뺀 나머지와 견준다. **PR 3 이 `RETURN_PENDING` 의 키를 바구니로 바꾸면(§11) 이 집합을 다시 본다**
 - 검사기는 배정을 **작업 항목 기준으로만** 읽는다(`work_item_id` 조인). S1-A 이전의 옛 배정 행(`work_item_id IS NULL`)은 0 으로 보이므로,
   그런 행이 남은 시작된 배치의 활성 박스는 I2 로, 그 배치 세션의 보관은 I3 으로 막힌다
+
+**PR 3 계획이 정함:**
+
+- **세션 이벤트 멱등 키·payload:** 되돌림 `remove-to-bin:<명령 id>:<배정 id>:<보관 grain 해시 16자>`(한 명령이 같은 배정을 두 보관에서 뺄 수 있다),
+  payload `operationId`·`workItemId`·`allocationId`·`shipmentLineId`·`returnBinId`. 적치 `putaway-return:<명령 id>:<세션 id>`, payload
+  `operationId`·`returnBinId`. `RETURN_PENDING` 은 일반 보관 이동(`moveCustody`)으로 넣고 뺄 수 없다 — 배정 감소 없이 바구니가 생기면 안 된다
+- **복구 규칙:** 배정마다 `HAND_IN` 이 하나 이상 있고 `Σ HAND_IN − Σ HAND_BACK − Σ REMOVE_TO_RETURN_BIN = qty`. `RETURN_PENDING` grain 은
+  «바구니 ref 있음·줄 없음». `PUTAWAY_RETURN` 은 `returned_qty` 로 재생한다
+- **I3 의 줄 귀속 집합에서 `RETURN_PENDING` 을 뺀다**(PR 2 구현이 정한 집합을 PR 3 이 다시 봤다): 바구니 키(줄 없음)이고, 바구니로 옮기는 이벤트가
+  그 순간 배정을 같은 수만큼 줄였으므로 어느 배정과도 견주지 않는다. `SETTLED` 는 남는다. 배정 변경·I3·복구가 같은 집합(`LINE_ATTRIBUTED_CUSTODY`)을 쓴다
+- **I2 는 `withdrawing` 을 보지 않는다**(목표 0 이라 «배정 ≥ 목표» 가 늘 참)
+- **I3 공유 식은 `excluded` 작업 항목의 배정을 세지 않는다 — PR 3·4 경계.** 결품 보고(`ShipmentShortPickService.reconcileAffectedCustody`)는 박스의
+  배정 전부(보고하지 않은 줄 포함)를 줄 보관과 공유 풀(`AT_SOURCE`·`BULK_CART`)에서 끝까지 정산하고 모자라면 `SHORT_PICK_CUSTODY_INSUFFICIENT` 로
+  전부 되돌린다. 그래서 옳은 장부에서 빈 시작된 배치의 `AT_SOURCE`·`BULK_CART` 는 0 이다. 그런데 결품으로 제외된 작업 항목의 배정 행은 줄지 않고
+  남아, 옛 식은 그 행을 공유 보관의 «방» 으로 세어 떠도는 `AT_SOURCE` 를 가렸다. 빈 시작된 배치에 정당하게 남는 보관은 되돌림 바구니뿐이고,
+  그 세션은 적치가 끝나야 `settled` 다(파생 상태는 그 전에도 `canceled`/`completed`)
+- **잠금 순서:** 박스에서 되돌림 — 구성요소 → 작업 항목 → 세션 → 보관. 카트 여분 — 카트 advisory 잠금 → 영향받는 박스들의 구성요소(불변식 검사기가
+  작업 항목·세션·보관까지 잡는다) → 작업 항목(id 순) → 세션 → 보관(PR 3 구현이 정함에서 고침 — 구성요소가 이미 세션을 잡으므로 카트를 뒤에 두면
+  카트 → 세션 순서인 분류·일괄 담기·인계와 교착한다). 되돌림 적치 — 세션(`active` 세션만, 그 안에서 id 순 — PR 3 구현이 정함에서 고침) → 보관(작업 항목·구성요소는 잡지 않는다). 전체 취소 연결 — 구성요소 → 취소 오퍼레이션 → 작업 항목 → 세션
+
+**PR 3 구현이 정함:**
+
+- 카트 여분 되돌림의 `draft` 대기 재개(구성요소부터 잡는다)는 전략 트랜잭션이 끝난 뒤 `PickingProcessService` 가 부른다(바깥 트랜잭션이 없으면 커밋 뒤) — 세션·보관을 쥔 채 부르면
+  «세션 → 구성요소» 로 뒤집힌다(§8 구현이 정함). 되돌림 적치의 세션 순서는 `active` 세션 중 id 순이다
+- 박스에서 되돌림의 `settleExit`(취소 완료)는 세션을 쥔 뒤 취소 오퍼레이션·박스 집합을 잠근다. 같은 박스의 구성요소를 먼저 쥐었으므로 줄이 선다 —
+  구성요소를 쥐지 않은 호출자가 생기면 전체 취소 연결의 순서(오퍼레이션 → 작업 항목 → 세션)로 맞춘다
+- 되돌림 적치는 바구니의 남은 몫을 잠그지 않고 읽는다. 동시 적치가 같은 몫을 다투면 한쪽이 세션 보관 부족(`SESSION_CUSTODY_SHORT`)으로 끝나고, 재시도하면 새 잔량으로 판정된다
 
 ## 14. 테스트
 
@@ -456,7 +581,7 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
   기기별 되돌림 바구니 설정, 되돌림 적치 화면
 - **끝나면 성립:** 어떤 박스든 뺄 수 있다. 시작된 배치 박스의 전체 취소가 영원히 대기하지 않는다. `BOX_HAS_PICKED_ITEMS` 는 사라진다
 - **아직 안 하는 것:** 결품 재배정. 부분 취소(E11)
-- **다음 PR 이 기대는 것:** 이탈(`exit_to = draft`)과 되돌림 흐름 전체
+- **다음 PR 이 기대는 것:** 이탈(`exit_to = draft`)과 되돌림 흐름 전체 — `BoxWithdrawalService.begin`·`exitIfDrained`, `BoxReturnService`(되돌림 명령과 나간 박스 정리), `REMOVE_TO_RETURN_BIN`·`PUTAWAY_RETURN`
 
 ### PR 4 — 결품 재배정
 
@@ -472,6 +597,11 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - **로케이션 종류 필터:** 지금 배정은 `ON_HAND` 면 어느 로케이션이든 쓴다(입고 기본존의 적치 대기가 아닌 몫 포함). 송장에 그 로케이션이 그대로 찍히므로 숨은 오류는 아니다. 막을 필요가 보이면 별건
 - **용지 걸림:** 전송 성공 뒤 실물 출력 실패는 출력 확인으로 못 잡는다(§10.3)
 - **E12 의 이동한 모자람:** 결품으로 채운 만큼 다음 시작에서 `STOCK_SHORT` 가 난다. 그 주문을 먼저 알리는 장치는 없다
+- **토탈피킹·바구니 피킹의 되돌림 화면(PR 3):** core 명령만 있다(D3 — 현장 화면은 개별 피킹만). 토탈피킹 카트 여분이 있는 박스는 분류대에서
+  여분을 바구니에 넣을 때까지 `withdrawing` 이다
+- **세션이 `recovery_required` 인 배치의 박스 전체 취소(PR 3):** 이탈하지 않고 지금처럼 `CANCEL_REPLAN_PENDING` 대기. 세션 복구가 먼저다
+- **되돌림 바구니 폐기(PR 3):** 컬럼(`retired_at`)과 거절만 있고 폐기 명령은 없다
+- **바구니 조회의 세션 구별(PR 3):** 바구니 조회는 `recovery_required` 세션의 몫을 `active` 몫과 합쳐 보여 준다. 그 몫은 적치가 `PICKING_SESSION_NOT_ACTIVE` 로 거절하므로 작업자는 거절을 보고서야 안다(조회 DTO 에 세션 상태를 싣는 후속)
 - **합류·이탈의 드문 교착(PR 2):** 불변식 검사기를 거친 뒤 세션을 명시적으로 잡는 명령(합류·이탈 모두)은, 검사기가 박스 이력으로
   잡는 세션 잠금(id 순)과 명령이 잡는 세션 잠금이 두 박스 사이에서 엇갈릴 때 드물게 교착할 수 있다(예: 박스 B 는 예전에 배치 Z 에
   있다가 X 에 합류하고, 동시에 박스 C 는 예전에 X 에 있다가 Z 에 합류하거나 Z 에서 빠진다). 합류끼리만의 일이 아니다 —

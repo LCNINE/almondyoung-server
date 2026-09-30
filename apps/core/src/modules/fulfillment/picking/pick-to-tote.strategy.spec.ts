@@ -273,6 +273,18 @@ describe('PickToTotePickingStrategy', () => {
     });
   });
 
+  it('RB- 로 시작하는 바코드는 되돌림 바구니용이라 토트로 등록하지 않는다', async () => {
+    const { service } = makeService({ selects: [], inserts: [] });
+    await expect(
+      service.registerTote({
+        warehouseId: IDS.warehouse,
+        toteBarcode: 'RB-0001',
+        actor: { id: IDS.actor, roles: ['logistics_worker'] },
+        idempotencyKey: 'k',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'TOTE_BARCODE_RESERVED' } });
+  });
+
   it('registers a warehouse-scoped physical barcode without auto-assigning it', async () => {
     const registered = tote({ status: 'available', version: 1 });
     const { service, tx, insertBuilders } = makeService({

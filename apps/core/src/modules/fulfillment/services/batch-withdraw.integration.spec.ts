@@ -7,12 +7,13 @@ import { inRollbackTx, makeDb } from './__support__';
 import { assertFulfillmentInvariantsFor } from './__support__/logistics-assertions';
 import { seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
 import { assembleOutbound } from './__support__/simple-outbound-wiring';
+import { loadWithdrawalRemovals } from './withdrawal-removals.query';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const actor = { id: randomUUID(), roles: ['master'] };
 
-describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () => {
+describeIfDb('시작된 배치에서 이탈 (스펙 §8, PR 2·3)', () => {
   const { sql, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
     await sql.end({ timeout: 5 });
@@ -52,6 +53,7 @@ describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () =
       const result = await exclude(wiring, first.batchId, second.shipmentId, tx);
 
       expect(result.workItem.status).toBe('excluded');
+      expect(result.workItem.exitTo).toBe('draft');
       const rows = await tx
         .select()
         .from(wmsTables.pickingSourceAllocations)
@@ -91,7 +93,81 @@ describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () =
     });
   });
 
-  it('집은 몫이 있으면 BOX_HAS_PICKED_ITEMS 이고 아무것도 바꾸지 않는다', async () => {
+  it('집은 몫이 있으면 withdrawing — 집지 않은 몫만 반납하고, 사유·exit_to 를 적고, 뺄 목록이 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second, wiring, sessionId } = await started(tx);
+      // 둘째 박스(수량 1)를 집는다 — 반납할 몫이 없다.
+      await wiring.sessions.moveCustody(
+        {
+          sessionId,
+          idempotencyKey: `m-${randomUUID()}`,
+          actorId: second.actorId,
+          quantity: 1,
+          from: { skuId: second.skuId, sourceLocationId: second.locationId, custodyType: 'AT_SOURCE' },
+          to: {
+            skuId: second.skuId,
+            sourceLocationId: second.locationId,
+            custodyType: 'WORKER',
+            custodyRef: second.actorId,
+            shipmentLineId: second.shipmentLineId,
+          },
+        },
+        tx,
+      );
+
+      const result = await exclude(wiring, first.batchId, second.shipmentId, tx);
+
+      expect(result.workItem).toMatchObject({ status: 'withdrawing', exitTo: 'draft', exclusionReason: '급한 변경' });
+      const [session] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      expect(session.handedBackQty).toBe(0);
+      expect(await loadWithdrawalRemovals(tx, second.workItemId)).toEqual([
+        expect.objectContaining({ shipmentLineId: second.shipmentLineId, boxQty: 1, cartQty: 0 }),
+      ]);
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId, second.shipmentId]);
+    });
+  });
+
+  it('일부만 집었으면 나머지는 그 자리에서 반납된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, sessionId } = await started(tx);
+      // 첫 박스(수량 2) 중 1 을 집는다.
+      await wiring.sessions.moveCustody(
+        {
+          sessionId,
+          idempotencyKey: `m-${randomUUID()}`,
+          actorId: first.actorId,
+          quantity: 1,
+          from: { skuId: first.skuId, sourceLocationId: first.locationId, custodyType: 'AT_SOURCE' },
+          to: {
+            skuId: first.skuId,
+            sourceLocationId: first.locationId,
+            custodyType: 'WORKER',
+            custodyRef: first.actorId,
+            shipmentLineId: first.shipmentLineId,
+          },
+        },
+        tx,
+      );
+      const availableBefore = (await general(tx, first)).generallyAvailableQty;
+
+      const result = await exclude(wiring, first.batchId, first.shipmentId, tx);
+
+      expect(result.workItem.status).toBe('withdrawing');
+      const [allocation] = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, first.workItemId));
+      expect(allocation.qty).toBe(1);
+      expect((await general(tx, first)).generallyAvailableQty).toBe(availableBefore + 1);
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+    });
+  });
+
+  it('빼는 중인 박스를 다시 빼면 SHIPMENT_ALREADY_WITHDRAWING', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second, wiring, sessionId } = await started(tx);
       await wiring.sessions.moveCustody(
@@ -111,24 +187,45 @@ describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () =
         },
         tx,
       );
-
+      await exclude(wiring, first.batchId, second.shipmentId, tx);
       await expect(
         tx.transaction((trx) => exclude(wiring, first.batchId, second.shipmentId, trx)),
-      ).rejects.toMatchObject({
-        response: {
-          code: 'BOX_HAS_PICKED_ITEMS',
-          errors: [expect.objectContaining({ shipmentLineId: second.shipmentLineId, qty: 1 })],
-        },
+      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_ALREADY_WITHDRAWING' } });
+      const listed = await wiring.batches.listBatches({ warehouseId: first.warehouseId }, tx);
+      expect(listed.find((batch) => batch.id === first.batchId)).toMatchObject({
+        status: 'picking',
+        withdrawingItems: 1,
       });
-      const [item] = await tx
-        .select()
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, second.workItemId));
-      expect(item.status).toBe('queued');
+      const candidates = await wiring.batches.findJoinCandidates(first.batchId, second.trackingNo, tx);
+      expect(candidates.map((candidate) => candidate.issue)).toEqual(['SHIPMENT_WITHDRAWING']);
     });
   });
 
-  it('토탈피킹: AT_SOURCE 가 그 박스 몫을 덮으면 반납, 카트에 다 실렸으면 BOX_HAS_PICKED_ITEMS', async () => {
+  it('토트가 배정돼 있어도 뺄 수 있다 — 비어 있으면 나가면서 토트를 푼다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second, wiring } = await started(tx);
+      const [tote] = await tx
+        .insert(wmsTables.totes)
+        .values({ warehouseId: second.warehouseId, barcode: `T-${randomUUID().slice(0, 8)}`, status: 'in_use' })
+        .returning();
+      await tx
+        .insert(wmsTables.shipmentToteAssignments)
+        .values({ shipmentId: second.shipmentId, toteId: tote.id, assignedBy: second.actorId });
+
+      const result = await exclude(wiring, first.batchId, second.shipmentId, tx);
+
+      expect(result.workItem.status).toBe('excluded');
+      const [assignment] = await tx
+        .select()
+        .from(wmsTables.shipmentToteAssignments)
+        .where(eq(wmsTables.shipmentToteAssignments.toteId, tote.id));
+      expect(assignment.releasedAt).not.toBeNull();
+      const [released] = await tx.select().from(wmsTables.totes).where(eq(wmsTables.totes.id, tote.id));
+      expect(released.status).toBe('available');
+    });
+  });
+
+  it('토탈피킹: AT_SOURCE 가 그 박스 몫을 덮으면 반납, 카트에 실린 몫은 배정에 남아 withdrawing', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second } = await seedTwoBoxBatch(tx, 1, 10);
       await tx
@@ -167,16 +264,14 @@ describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () =
         .where(eq(wmsTables.batchInventorySessions.id, run.sessionId));
       expect(afterFirst.handedBackQty).toBe(1);
 
-      // 이제 AT_SOURCE 는 0 — 첫 박스 몫 2 는 카트에 실렸을 수 있다(카트 여분). 되돌림은 PR 3.
-      await expect(
-        tx.transaction((trx) => exclude(wiring, first.batchId, first.shipmentId, trx)),
-      ).rejects.toMatchObject({
-        response: {
-          code: 'BOX_HAS_PICKED_ITEMS',
-          errors: [expect.objectContaining({ shipmentLineId: first.shipmentLineId, qty: 2 })],
-        },
-      });
+      // 이제 AT_SOURCE 는 0 — 첫 박스 몫 2 는 카트에 실렸다. 배정은 그대로 두고 withdrawing(정한 것 2).
+      const firstOut = await exclude(wiring, first.batchId, first.shipmentId, tx);
+      expect(firstOut.workItem.status).toBe('withdrawing');
+      expect(await loadWithdrawalRemovals(tx, first.workItemId)).toEqual([
+        expect.objectContaining({ boxQty: 0, cartQty: 2 }),
+      ]);
       await expect(wiring.recovery.reconcile(run.sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId, second.shipmentId]);
     });
   });
 

@@ -14,6 +14,8 @@ describe('labelGateOf', () => {
     ['never_printed', false, { kind: 'blocked', message: '송장을 아직 출력하지 않았어요. 프린터 있는 자리에서 출력해 주세요.' }],
     ['reprint_required', false, { kind: 'blocked', message: '송장이 바뀌었어요. 프린터 있는 자리에서 새 송장을 출력해 주세요.' }],
     ['not_started', true, { kind: 'blocked', message: '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.' }],
+    ['withdrawing', false, { kind: 'withdraw' }],
+    ['withdrawn', true, { kind: 'blocked', message: '빠진 박스예요. 송장은 버려 주세요.' }],
     ['unavailable', true, { kind: 'blocked', message: '송장 상태를 확인할 수 없어요. 관리자에게 문의해 주세요.' }],
   ])('%s (프린터 %s) → %o', (state, canPrint, expected) => {
     expect(labelGateOf(found(state), canPrint)).toEqual(expected);

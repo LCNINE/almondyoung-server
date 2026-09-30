@@ -38,6 +38,7 @@ const ISSUE_TEXT: Record<string, string> = {
   SHIPMENT_NOT_FULLY_RESERVED: '재고 예약이 끝나지 않은 박스예요. 관리자에게 문의해 주세요.',
   SHIPMENT_NOT_FULLY_RESERVED_PHYSICAL: '재고 예약이 끝나지 않은 박스예요. 관리자에게 문의해 주세요.',
   SHIPMENT_DISPATCH_EXISTS: '이미 출고 처리된 박스예요.',
+  SHIPMENT_WITHDRAWING: '빼는 중인 박스예요. 뺄 상품을 바구니에 다 넣은 뒤 다시 넣어 주세요.',
 };
 const WAYBILL_ISSUE_TEXT: Record<string, string> = {
   WAYBILL_STALE: WAYBILL_STALE_MESSAGE,
