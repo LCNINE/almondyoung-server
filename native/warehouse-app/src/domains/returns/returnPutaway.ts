@@ -1,8 +1,8 @@
 import type { ReturnBinContents, ReturnBinItem } from './returnBinApi';
 
+/** 바코드가 여러 SKU 후보에 걸려도 합치지 않는다 — 줄마다 자기 상품명을 들고 있다(어느 SKU 인지는 서버가 정한다). */
 export interface PutawayTarget {
-  skuName: string;
-  locations: Array<{ locationCode: string; qty: number }>;
+  locations: Array<{ key: string; skuName: string; locationCode: string; qty: number }>;
 }
 
 /** 화면은 셋 중 하나를 기다린다 — 바구니, 상품, 로케이션. 스캔은 지금 단계의 것으로만 읽는다(접두어 분류 없음). */
@@ -16,8 +16,12 @@ export function pickTarget(bin: ReturnBinContents, skuIds: string[]): PutawayTar
   const items = bin.items.filter((item) => skuIds.includes(item.skuId));
   if (!items.length) return null;
   return {
-    skuName: items[0].skuName,
-    locations: items.map((item) => ({ locationCode: item.locationCode, qty: item.qty })),
+    locations: items.map((item) => ({
+      key: `${item.sourceLocationId}|${item.skuId}`,
+      skuName: item.skuName,
+      locationCode: item.locationCode,
+      qty: item.qty,
+    })),
   };
 }
 

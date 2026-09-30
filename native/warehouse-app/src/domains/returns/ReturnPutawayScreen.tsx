@@ -11,10 +11,12 @@ import { SCAN_STORAGE_MESSAGE, useWorkScanQueue } from '../../core/hardware/scan
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { afterPutaway, pickTarget, type PutawayStep } from './returnPutaway';
-import { fetchReturnBin, putawayReturn } from './returnBinApi';
+import { fetchReturnBin, putawayReturn, type ReturnBinContents } from './returnBinApi';
+import { isReturnBinCode } from './returnBin';
+import { WorkArea } from '../../core/operations/WorkBoundary';
 
 /** 되돌림 바구니 → 원래 로케이션(스펙 §8). 바구니 스캔 → 상품·원래 로케이션·수량 → 상품 스캔 → 로케이션 스캔. */
-export function ReturnPutawayScreen() {
+function ReturnPutawayContent() {
   const api = useApiClient();
   const { warehouseId, isSet } = useWarehouse();
   const sku = useSkuByBarcode();
@@ -24,37 +26,72 @@ export function ReturnPutawayScreen() {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const busy = useRef(false);
 
-  const queue = useWorkScanQueue<{ binBarcode: string; productBarcode: string; locationCode: string }>(
+  const showBin = (bin: ReturnBinContents, emptyText: string) => {
+    setStep(bin.items.length ? { kind: 'product', bin } : { kind: 'bin' });
+    return bin.items.length ? null : emptyText;
+  };
+
+  // 재시작 뒤 복원된 스캔도 이 함수로 돌아온다 — 화면 단계(step)에 기대지 않고 이벤트만으로 보낸다.
+  const queue = useWorkScanQueue<{ binBarcode: string; warehouseId: string; productBarcode: string; locationCode: string }>(
     async (input, id) => {
-      const current = stepRef.current;
-      if (!warehouseId || current.kind !== 'location') return;
       try {
-        const result = await putawayReturn(api, { ...input, warehouseId, idempotencyKey: id });
-        const next = afterPutaway(current.bin, result.items);
+        const result = await putawayReturn(api, {
+          binBarcode: input.binBarcode,
+          warehouseId: input.warehouseId,
+          productBarcode: input.productBarcode,
+          locationCode: input.locationCode,
+          idempotencyKey: id,
+        });
+        const next = afterPutaway({ ...result.returnBin, items: result.items }, result.items);
         setStep(next);
         setNotice({
           kind: 'ok',
           text: next.kind === 'bin' ? '바구니가 비었어요. 다음 바구니를 스캔해 주세요.' : '넣었어요. 다음 상품을 스캔해 주세요.',
         });
       } catch (error) {
-        setNotice({ kind: 'error', text: errorMessage(error, 'returns') });
-        if (!(error instanceof ApiError && error.outcome === 'rejected')) throw error;
+        if (!(error instanceof ApiError && error.outcome === 'rejected')) {
+          setNotice({ kind: 'error', text: errorMessage(error, 'return-putaway') });
+          throw error;
+        }
+        const text = errorMessage(error, 'return-putaway');
+        // 로케이션만 틀렸으면 같은 상품을 계속 기다린다. 그 밖의 거절은 이 상품을 더 넣을 수 없다는 뜻이라
+        // 상품 단계로 돌아가 바구니를 다시 읽는다(다른 작업자가 비웠을 수도 있다).
+        if (error.code !== 'RETURN_LOCATION_MISMATCH') {
+          try {
+            const bin = await fetchReturnBin(api, input.binBarcode, input.warehouseId);
+            setNotice({ kind: 'error', text });
+            showBin(bin, text);
+            return;
+          } catch {
+            const current = stepRef.current;
+            if (current.kind === 'location') setStep({ kind: 'product', bin: current.bin });
+          }
+        }
+        setNotice({ kind: 'error', text });
       }
     },
     'return-putaway',
   );
 
+  const loadBin = async (code: string, wh: string) => {
+    const bin = await fetchReturnBin(api, code, wh);
+    const empty = showBin(bin, '빈 바구니예요.');
+    setNotice(empty ? { kind: 'ok', text: empty } : null);
+  };
+
   const accept = async (code: string) => {
     if (!warehouseId || busy.current) return;
     // 서버는 재시도한 한 개와 새로 찍은 한 개를 구별하지 못한다 — 앞 스캔의 결과를 확인할 때까지 새 스캔을 받지 않는다.
     if (queue.storageError() || queue.error()) return;
+    if (!queue.ready || queue.size() > 0) {
+      setNotice({ kind: 'error', text: '앞의 스캔을 처리하는 중이에요. 잠시 뒤에 다시 찍어 주세요.' });
+      return;
+    }
     const current = stepRef.current;
     busy.current = true;
     try {
-      if (current.kind === 'bin') {
-        const bin = await fetchReturnBin(api, code, warehouseId);
-        setStep(bin.items.length ? { kind: 'product', bin } : { kind: 'bin' });
-        setNotice(bin.items.length ? null : { kind: 'ok', text: '빈 바구니예요.' });
+      if (current.kind === 'bin' || isReturnBinCode(code)) {
+        await loadBin(code, warehouseId);
       } else if (current.kind === 'product') {
         const found = await sku.mutateAsync(code);
         const target = pickTarget(
@@ -69,10 +106,15 @@ export function ReturnPutawayScreen() {
         setNotice(null);
       } else {
         setNotice(null);
-        queue.enqueue({ binBarcode: current.bin.barcode, productBarcode: current.productBarcode, locationCode: code });
+        queue.enqueue({
+          binBarcode: current.bin.barcode,
+          warehouseId,
+          productBarcode: current.productBarcode,
+          locationCode: code,
+        });
       }
     } catch (error) {
-      setNotice({ kind: 'error', text: errorMessage(error, 'returns') });
+      setNotice({ kind: 'error', text: errorMessage(error, 'return-putaway') });
     } finally {
       busy.current = false;
     }
@@ -107,10 +149,20 @@ export function ReturnPutawayScreen() {
       )}
       {step.kind === 'location' && (
         <section role="region" aria-label="넣을 곳" className="rounded border border-blue-300 px-3 py-2">
-          <p className="font-medium">{step.target.skuName}</p>
           {step.target.locations.map((location) => (
-            <p key={location.locationCode}>{location.locationCode} 에 넣어 주세요</p>
+            <div key={location.key}>
+              <p className="font-medium">{location.skuName}</p>
+              <p>{location.locationCode} 에 넣어 주세요</p>
+            </div>
           ))}
+          <Button
+            onClick={() => {
+              setStep({ kind: 'product', bin: step.bin });
+              setNotice(null);
+            }}
+          >
+            다른 상품
+          </Button>
         </section>
       )}
       {queue.storageError() ? (
@@ -128,5 +180,13 @@ export function ReturnPutawayScreen() {
         onSubmit={(code) => void accept(code)}
       />
     </div>
+  );
+}
+
+export function ReturnPutawayScreen() {
+  return (
+    <WorkArea kind="return-bins">
+      <ReturnPutawayContent />
+    </WorkArea>
   );
 }

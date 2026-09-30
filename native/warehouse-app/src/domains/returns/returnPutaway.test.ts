@@ -15,12 +15,17 @@ const bin = {
 describe('되돌림 적치 판정', () => {
   it('스캔한 상품의 원래 로케이션을 모두 보여 준다(같은 상품이 두 로케이션에서 왔을 수 있다)', () => {
     expect(pickTarget(bin, ['s-1'])).toEqual({
-      skuName: '볼펜',
       locations: [
-        { locationCode: 'A-01', qty: 2 },
-        { locationCode: 'B-02', qty: 1 },
+        { key: 'l-1|s-1', skuName: '볼펜', locationCode: 'A-01', qty: 2 },
+        { key: 'l-2|s-1', skuName: '볼펜', locationCode: 'B-02', qty: 1 },
       ],
     });
+  });
+
+  it('바코드가 여러 SKU 에 걸리면 줄마다 자기 상품명을 쓰고 키가 겹치지 않는다', () => {
+    const target = pickTarget(bin, ['s-1', 's-2']);
+    expect(target?.locations.map((l) => `${l.skuName}@${l.locationCode}`)).toEqual(['볼펜@A-01', '볼펜@B-02', '노트@A-01']);
+    expect(new Set(target?.locations.map((l) => l.key)).size).toBe(3);
   });
 
   it('바구니에 없는 상품이면 null', () => {

@@ -11,9 +11,12 @@ export type ErrorContext =
   | 'po-receive'
   | 'putaway'
   | 'outbound'
-  | 'returns';
+  | 'returns'
+  // 되돌림 적치 화면 — 'returns' 와 같되 이 화면에만 맞는 문구를 덧씌운다.
+  | 'return-putaway';
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
+  'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
   returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
   location: { 404: '로케이션을 찾을 수 없어요.' },
@@ -138,12 +141,19 @@ const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
 
 /** 되돌림 적치 전용 — 같은 코드의 출고 문구와 뜻이 달라 RETURN_CONFLICT_MESSAGES(출고와 공유)에 못 넣는다. */
 const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
+  // 작업자가 바구니를 «스캔했다» — 설정 화면을 열라는 안내는 여기선 맞지 않는다.
+  RETURN_BIN_UNKNOWN: '등록되지 않은 되돌림 바구니예요. 바구니 바코드를 확인해 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
     '이 물건의 배치가 복구 중이에요. 복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요.',
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (context === 'return-putaway') {
+    if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
+      return RETURN_PUTAWAY_MESSAGES[error.code];
+    return errorMessage(error, 'returns');
+  }
   if (
     error instanceof ApiError &&
     error.outcome === 'rejected' &&
@@ -180,13 +190,6 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     RETURN_CONFLICT_MESSAGES[error.code]
   )
     return RETURN_CONFLICT_MESSAGES[error.code];
-  if (
-    error instanceof ApiError &&
-    context === 'returns' &&
-    error.code &&
-    RETURN_PUTAWAY_MESSAGES[error.code]
-  )
-    return RETURN_PUTAWAY_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     context === 'outbound' &&

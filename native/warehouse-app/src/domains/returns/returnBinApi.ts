@@ -37,7 +37,7 @@ export function isUnknownReturnBin(error: unknown): boolean {
 export function putawayReturn(
   api: ApiClient,
   input: { binBarcode: string; warehouseId: string; productBarcode: string; locationCode: string; idempotencyKey: string },
-): Promise<{ putAwayQty: number; items: ReturnBinItem[] }> {
+): Promise<{ returnBin: { id: string; barcode: string; warehouseId: string }; putAwayQty: number; items: ReturnBinItem[] }> {
   return api.request({
     method: 'POST',
     path: `/return-bins/${encodeURIComponent(input.binBarcode)}/putaways`,
