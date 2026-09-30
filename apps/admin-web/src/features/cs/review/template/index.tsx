@@ -6,26 +6,20 @@ import { ReviewTable } from '../components/table';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
-
-const PROVIDER_TABS = [
-  { value: '', label: '전체' },
-  { value: 'order', label: '주문 권한 리뷰' },
-  { value: 'admin', label: '관리자 권한 리뷰' },
-  { value: 'unassigned', label: '권한 미연결' },
-] as const;
+import {
+  REVIEW_TABS,
+  activeReviewTab,
+  nextReviewTabParams,
+} from '../lib/review-tabs';
 
 export default function ReviewListTemplate() {
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const provider = params.get('provider') ?? '';
+  const active = activeReviewTab(params);
 
-  const selectProvider = (value: string) => {
-    const next = new URLSearchParams(params.toString());
-    if (value) next.set('provider', value);
-    else next.delete('provider');
-    next.delete('page');
-    next.delete('batchId');
+  const selectTab = (key: string) => {
+    const next = nextReviewTabParams(params, key);
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
@@ -40,16 +34,16 @@ export default function ReviewListTemplate() {
         }
       />
       <nav
-        aria-label="리뷰 작성 권한"
+        aria-label="리뷰 구분"
         className="flex flex-wrap gap-2 px-4 py-3"
       >
-        {PROVIDER_TABS.map((tab) => (
+        {REVIEW_TABS.map((tab) => (
           <Button
-            key={tab.value}
+            key={tab.key}
             size="sm"
-            variant={provider === tab.value ? 'default' : 'outline'}
-            aria-pressed={provider === tab.value}
-            onClick={() => selectProvider(tab.value)}
+            variant={active === tab.key ? 'default' : 'outline'}
+            aria-pressed={active === tab.key}
+            onClick={() => selectTab(tab.key)}
           >
             {tab.label}
           </Button>
@@ -57,7 +51,7 @@ export default function ReviewListTemplate() {
       </nav>
       <p className="px-4 pb-3 text-sm text-muted-foreground">
         작성 권한과 공개 상태는 별도입니다. 권한 미연결에는 기존 이관 리뷰 등이
-        포함됩니다.
+        포함되고, 관리자가 이 화면에서 직접 적은 리뷰는 「관리자 수기 작성」에 모입니다.
       </p>
       <ReviewTable />
     </Container>

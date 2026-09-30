@@ -1,6 +1,7 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
-import { ReviewDto, REVIEW_PROVIDER_LABELS } from '@/lib/types/dto/review';
+import { ReviewDto } from '@/lib/types/dto/review';
+import { reviewAuthorityLabel } from '@/features/cs/review/lib/review-provenance';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import {
   ReviewStatusCell,
@@ -41,15 +42,7 @@ export const useReviewTableColumns = ({
       columnHelper.display({
         id: 'permission',
         header: '작성 권한',
-        cell: ({ row }) => (
-          <span>
-            {
-              REVIEW_PROVIDER_LABELS[
-                row.original.permission?.provider ?? 'unassigned'
-              ]
-            }
-          </span>
-        ),
+        cell: ({ row }) => <span>{reviewAuthorityLabel(row.original)}</span>,
       }),
       columnHelper.display({
         id: 'author',
