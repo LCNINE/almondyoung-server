@@ -117,4 +117,16 @@ describe('ReviewsService.listAllForAdmin — source 필터', () => {
       if (hasMedia === 'true') expect(text).not.toContain('not exists');
     },
   );
+  it('sourceSystem 은 source_system 정확 일치로 건다', async () => {
+    const { columns, operators } = await runQuery({ sourceSystem: 'admin-manual' });
+    expect(columns).toContain('source_system');
+    expect(operators).toContain('=');
+    expect(operators).toContain('admin-manual');
+    expect(operators).not.toContain('<>');
+  });
+
+  it('sourceSystem 미지정이면 source_system 조건을 걸지 않는다', async () => {
+    const { columns } = await runQuery({ provider: 'unassigned' });
+    expect(columns).not.toContain('source_system');
+  });
 });

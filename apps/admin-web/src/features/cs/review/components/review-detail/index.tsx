@@ -10,7 +10,6 @@ import { useMastersByIdsSuspense } from '@/lib/services/products/queries';
 import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import {
   STATUS_LABELS,
-  REVIEW_PROVIDER_LABELS,
   ReviewStatus,
 } from '@/lib/types/dto/review';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +26,7 @@ import {
 import { StarIcon } from 'lucide-react';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import Image from 'next/image';
+import { reviewAuthorityLabel } from '../../lib/review-provenance';
 import { ReviewDeleteButton } from '../review-delete-button';
 
 function buildProductThumbnailSrc(thumbnail: string | null | undefined) {
@@ -145,9 +145,14 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: '작성자', value: authorNode },
+    { key: '작성 권한', value: reviewAuthorityLabel(data) },
     {
-      key: '작성 권한',
-      value: REVIEW_PROVIDER_LABELS[data.permission?.provider ?? 'unassigned'],
+      key: '입력한 관리자',
+      value: data.createdByAdminUserId ? (
+        <Suspense fallback={<Skeleton className="w-24 h-4" />}>
+          <ReviewAuthorName userId={data.createdByAdminUserId} />
+        </Suspense>
+      ) : null,
     },
     { key: '등록 관리자/회원 ID', value: data.userId },
     { key: '등록 배치', value: data.permission?.batchId },

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService, InjectDb } from '@app/db';
+import { BadRequestError } from '@app/shared';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import {
   assertDailyRange,
@@ -19,8 +20,8 @@ import {
   reactions,
   type UgcServiceSchema,
 } from '../../db/schema';
-import { OWN_SOURCE_SYSTEM } from '../../source-system';
-import { CreateReviewDto } from '../dto/create-review.dto';
+import { ADMIN_MANUAL_SOURCE_SYSTEM, OWN_SOURCE_SYSTEM } from '../../source-system';
+import { AdminCreateReviewDto, CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import { AdminReviewListQueryDto, ReviewListQueryDto } from '../dto/review-list-query.dto';
@@ -1024,6 +1025,10 @@ export class ReviewsService {
         conditions.push(ne(reviews.sourceSystem, OWN_SOURCE_SYSTEM));
       }
 
+      if (query.sourceSystem) {
+        conditions.push(eq(reviews.sourceSystem, query.sourceSystem));
+      }
+
       if (query.provider === 'unassigned') {
         conditions.push(isNull(reviews.reviewPermissionId));
       } else if (query.provider) {
@@ -1287,5 +1292,64 @@ export class ReviewsService {
         limit,
       };
     }, tx);
+  }
+
+  /**
+   * 관리자(리테일팀)가 다른 채널의 고객 후기를 한 건씩 옮겨 적는다.
+   *
+   * 기존 이관분(smartstore·almondyoung-legacy)과 같은 모양으로 쓴다 — 회원 명의도 작성 권한도 없다.
+   * 회원이 없으니 회원용 수정·삭제의 소유자 조건을 아무도 통과하지 못하고, 출처가 자체 작성이 아니라
+   * 통계는 이관분으로 세며 베스트·보상 후보에서 빠진다. 보상 판정을 부르지 않는 것도 같은 이유다 —
+   * 줄 회원이 없다.
+   *
+   * 이 메서드가 클래스 맨 끝에 있는 것은 `scripts/security/idor-reviewed.spec.ts` 가 이 파일의
+   * 줄번호를 증거 좌표로 들고 있어서다. 위쪽에 넣으면 그 좌표가 밀린다.
+   */
+  async createByAdmin(
+    adminUserId: string,
+    dto: AdminCreateReviewDto,
+    tx?: DbTransaction,
+  ): Promise<ReviewWithMediaEntity> {
+    const writtenAt = new Date(dto.writtenAt);
+    if (Number.isNaN(writtenAt.getTime()) || writtenAt.getTime() > Date.now()) {
+      throw new BadRequestError('writtenAt must not be in the future');
+    }
+    const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
+
+    const result = await this.inTx(async (tx) => {
+      const [review] = await tx
+        .insert(reviews)
+        .values({
+          userId: null,
+          productId: dto.productId,
+          rating: dto.rating,
+          content: dto.content,
+          sourceSystem: ADMIN_MANUAL_SOURCE_SYSTEM,
+          reviewPermissionId: null,
+          legacyAuthorName: dto.authorName,
+          legacyImportedAt: new Date(),
+          createdByAdminUserId: adminUserId,
+          createdAt: writtenAt,
+        })
+        .returning();
+
+      await this.insertReviewMedia(review.id, mediaFileIds, tx);
+
+      return {
+        ...review,
+        permission: null,
+        mediaFileIds,
+        helpfulCount: 0,
+        likeCount: 0,
+        dislikeCount: 0,
+        adminComment: null,
+      };
+    }, tx);
+
+    if (!tx) {
+      this.publishStatsAfterCommit(dto.productId);
+    }
+
+    return result;
   }
 }

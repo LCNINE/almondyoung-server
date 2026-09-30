@@ -4,6 +4,7 @@ import type { DailyCountsDto } from '@/lib/types/dto/daily-counts';
 import { UGC_SERVICE_BASE_URL } from '@/const';
 import {
   AdminCommentDto,
+  AdminCreateReviewDto,
   CreateReviewCommentDto,
   ReviewDto,
   ReviewListQuery,
@@ -42,6 +43,15 @@ export const reviewApi = {
   getReview: async (id: string): Promise<ReviewDto> => {
     const response: AxiosResponse<ReviewDto> = await client.get(
       `${UGC_SERVICE_BASE_URL}/reviews/admin/reviews/${id}`
+    );
+    return response.data;
+  },
+
+  // 리뷰 수기 작성 (관리자) — 다른 채널 고객 후기를 옮겨 적는다
+  createByAdmin: async (dto: AdminCreateReviewDto): Promise<ReviewDto> => {
+    const response: AxiosResponse<ReviewDto> = await client.post(
+      `${UGC_SERVICE_BASE_URL}/reviews/admin/reviews`,
+      dto
     );
     return response.data;
   },
