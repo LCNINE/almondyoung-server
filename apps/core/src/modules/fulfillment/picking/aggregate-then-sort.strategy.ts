@@ -1,4 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { BoxAllocationManager } from '../services/box-allocation.manager';
+import { BoxReturnService } from '../services/box-return.service';
+import { BoxWithdrawalService } from '../services/box-withdrawal.service';
+import { ReturnBinService } from '../services/return-bin.service';
 import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -9,6 +13,8 @@ import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrat
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
+  AggregateCartSurplusReturnInput,
+  AggregateCartSurplusReturnResult,
   AggregateSortScanInput,
   AggregateSortScanResult,
   AggregateSourceScanInput,
@@ -60,6 +66,10 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly labels: LabelCurrencyGuard,
+    private readonly boxes: BoxAllocationManager,
+    private readonly withdrawals: BoxWithdrawalService,
+    private readonly returnBins: ReturnBinService,
+    private readonly returns: BoxReturnService,
   ) {}
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult> {
@@ -69,6 +79,128 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     if (input.stage === 'bulk_collect') return this.bulkCartScan(input, tx);
     if (input.stage === 'sort') return this.sortScan(input, tx);
     throw new BadRequestException('Aggregate picking requires stage=bulk_collect or stage=sort');
+  }
+
+  /**
+   * 분류대에서 남는 상품 → 되돌림 바구니(S1 §5.4 D11, 스펙 §8 정한 것 1·2). 카트 규칙(잠금·ref·소유)이 이 전략에 있어
+   * 되돌림 스캔 지점 중 카트 쪽은 여기다. 여분을 다 내린 박스는 같은 트랜잭션에서 나간다.
+   */
+  async returnCartSurplus(
+    input: AggregateCartSurplusReturnInput,
+    tx?: DbTx,
+  ): Promise<AggregateCartSurplusReturnResult> {
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.cart_surplus_return');
+    assertPositiveQuantity(input.quantity);
+    const cartId = this.requiredCartId(input.cartId);
+    const cartRef = this.bulkCartRef(input.batchId, cartId, input.actor.id);
+    const response = await this.commands.execute<AggregateCartSurplusReturnResult>(
+      {
+        commandType: 'picking.aggregate_then_sort.cart_surplus_return',
+        idempotencyKey: input.idempotencyKey,
+        canonicalRequest: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          cartId,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: input.quantity,
+          returnBinBarcode: input.returnBinBarcode.trim(),
+          actorId: input.actor.id,
+        },
+      },
+      async (trx, commandRequestId) => {
+        // 영향받는 박스 — 잠그지 않은 읽기로 고르고, 잠근 뒤 다시 거른다(작업 항목 FOR UPDATE 의 status 조건).
+        const candidates = await trx
+          .selectDistinct({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
+          .from(wmsTables.pickingSourceAllocations)
+          .innerJoin(
+            wmsTables.outboundBatchWorkItems,
+            eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+          )
+          .innerJoin(
+            wmsTables.shipmentLines,
+            eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+          )
+          .where(
+            and(
+              eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+              eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+              eq(wmsTables.shipmentLines.skuId, input.skuId),
+              eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
+              gt(wmsTables.pickingSourceAllocations.qty, 0),
+            ),
+          );
+        const shipmentIds = candidates.map((row) => row.shipmentId).sort();
+        await this.withdrawals.lockComponentsOf(shipmentIds, trx);
+        await this.acquireCartLock(cartId, trx);
+        const workItems = shipmentIds.length
+          ? await trx
+              .select()
+              .from(wmsTables.outboundBatchWorkItems)
+              .where(
+                and(
+                  eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+                  eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+                  inArray(wmsTables.outboundBatchWorkItems.shipmentId, shipmentIds),
+                ),
+              )
+              .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
+              .for('update')
+          : [];
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
+        const [batch] = await trx
+          .select({ warehouseId: wmsTables.outboundBatches.warehouseId })
+          .from(wmsTables.outboundBatches)
+          .where(eq(wmsTables.outboundBatches.id, input.batchId))
+          .limit(1);
+        if (!batch) throw new Error(`Outbound batch ${input.batchId} not found under an active session`);
+        const returnBin = await this.returnBins.requireActive(input.returnBinBarcode, batch.warehouseId, trx);
+        const session = await this.boxes.lockOpenSession(input.batchId, trx);
+        if (!session || session.id !== input.sessionId || session.status !== 'active') {
+          throw conflict('PICKING_SESSION_NOT_ACTIVE', `Batch ${input.batchId} inventory session is not active`);
+        }
+        const moved = await this.boxes.removeCartShare(
+          {
+            session,
+            workItemIds: workItems.map((item) => item.id),
+            cartRef,
+            skuId: input.skuId,
+            sourceLocationId: input.sourceLocationId,
+            quantity: input.quantity,
+            returnBin,
+            actorId: input.actor.id,
+            operationId: commandRequestId,
+          },
+          trx,
+        );
+        const exited: AggregateCartSurplusReturnResult['exited'] = [];
+        for (const item of workItems.filter((candidate) => moved.some((m) => m.workItemId === candidate.id))) {
+          const exit = await this.withdrawals.exitIfDrained(item, { actorId: input.actor.id, operationId: commandRequestId }, trx);
+          if (!exit.exited) continue;
+          await this.returns.settleExit(exit.workItem, trx);
+          exited.push({
+            workItemId: item.id,
+            shipmentId: item.shipmentId,
+            exitTo: exit.workItem.exitTo,
+            waitingOperationId: exit.workItem.waitingOperationId,
+          });
+        }
+        const response: AggregateCartSurplusReturnResult = {
+          operationId: commandRequestId,
+          sessionId: input.sessionId,
+          cartRef,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: input.quantity,
+          exited,
+        };
+        return { response, resourceType: 'batch_inventory_session', resourceId: input.sessionId };
+      },
+      tx,
+    );
+    await this.returns.resumeAfterDraftExit(response.exited, tx);
+    return response;
   }
 
   async bulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult> {

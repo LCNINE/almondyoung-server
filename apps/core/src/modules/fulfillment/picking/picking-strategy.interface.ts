@@ -77,6 +77,28 @@ export interface AggregateCartHandoffInput {
   idempotencyKey: string;
 }
 
+export interface AggregateCartSurplusReturnInput {
+  batchId: string;
+  sessionId: string;
+  cartId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  returnBinBarcode: string;
+  actor: PickingActor;
+  idempotencyKey: string;
+}
+
+export interface AggregateCartSurplusReturnResult {
+  operationId: string;
+  sessionId: string;
+  cartRef: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  exited: Array<{ workItemId: string; shipmentId: string; exitTo: string | null; waitingOperationId: string | null }>;
+}
+
 export interface ToteRegistrationInput {
   warehouseId: string;
   toteBarcode: string;
@@ -309,4 +331,5 @@ export interface AggregateThenSortStrategy extends PickingStrategy {
   bulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult>;
   sortScan(input: AggregateSortScanInput, tx?: DbTx): Promise<AggregateSortScanResult>;
   cartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult>;
+  returnCartSurplus(input: AggregateCartSurplusReturnInput, tx?: DbTx): Promise<AggregateCartSurplusReturnResult>;
 }

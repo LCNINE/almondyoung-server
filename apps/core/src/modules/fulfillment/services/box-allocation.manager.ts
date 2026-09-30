@@ -345,6 +345,114 @@ export class BoxAllocationManager {
     return input.quantity;
   }
 
+  /**
+   * 토탈피킹 카트 여분을 되돌림 바구니로(정한 것 2). 카트의 물건은 누구 몫인지 모른다 — 빼는 박스들의 «미귀속 배정»
+   * (배정 − 그 줄·로케이션의 박스 보관)이 카트에서 내릴 수 있는 양이다. 호출자가 구성요소·카트·작업 항목·세션을 잠갔다.
+   * 내린 뒤에도 AT_SOURCE + BULK_CART = Σ 미귀속 배정 이라 남는 박스의 분류는 그대로 채워진다.
+   */
+  async removeCartShare(
+    input: {
+      session: BatchInventorySessionRow;
+      workItemIds: string[];
+      cartRef: string;
+      skuId: string;
+      sourceLocationId: string;
+      quantity: number;
+      returnBin: ReturnBinRef;
+      actorId: string;
+      operationId: string;
+    },
+    trx: DbTx,
+  ): Promise<Array<{ workItemId: string; qty: number }>> {
+    if (!input.workItemIds.length) {
+      throw new ConflictException({ code: 'CART_SURPLUS_NOT_PENDING', message: 'No leaving box holds this SKU on a cart' });
+    }
+    const allocations = await trx
+      .select({
+        allocationId: wmsTables.pickingSourceAllocations.id,
+        workItemId: wmsTables.pickingSourceAllocations.workItemId,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(
+        and(
+          inArray(wmsTables.pickingSourceAllocations.workItemId, input.workItemIds),
+          eq(wmsTables.shipmentLines.skuId, input.skuId),
+          eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
+          gt(wmsTables.pickingSourceAllocations.qty, 0),
+        ),
+      )
+      .orderBy(asc(wmsTables.pickingSourceAllocations.workItemId), asc(wmsTables.pickingSourceAllocations.id));
+    // 보관 행은 lockOpenSession 이 잠갔다.
+    const balances = await trx
+      .select()
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, input.session.id),
+          eq(wmsTables.batchInventorySessionBalances.skuId, input.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, input.sourceLocationId),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+        ),
+      );
+    const cartQty = balances
+      .filter((b) => b.custodyType === 'BULK_CART' && b.custodyRef === input.cartRef && b.shipmentLineId === null)
+      .reduce((total, b) => total + b.qty, 0);
+    const inBox = new Map<string, number>();
+    for (const b of balances) {
+      if (b.shipmentLineId && (BOX_CUSTODY_TYPES as readonly string[]).includes(b.custodyType)) {
+        inBox.set(b.shipmentLineId, (inBox.get(b.shipmentLineId) ?? 0) + b.qty);
+      }
+    }
+    // 빼는 작업 항목마다 (줄, 로케이션) 배정 행은 하나다(uq_picking_source_allocations_work_item_grain).
+    const shares = allocations
+      .map((a) => ({ ...a, unpicked: a.qty - Math.min(a.qty, inBox.get(a.shipmentLineId) ?? 0) }))
+      .filter((a) => a.unpicked > 0);
+    const available = Math.min(
+      cartQty,
+      shares.reduce((total, a) => total + a.unpicked, 0),
+    );
+    if (input.quantity > available) {
+      throw new ConflictException({
+        code: 'CART_SURPLUS_NOT_PENDING',
+        message: `Cart ${input.cartRef} can return at most ${available} of SKU ${input.skuId} for leaving boxes`,
+      });
+    }
+    const moved = new Map<string, number>();
+    let remaining = input.quantity;
+    for (const share of shares) {
+      if (remaining === 0) break;
+      const qty = Math.min(remaining, share.unpicked);
+      // 배정 행의 workItemId 는 inArray(workItemIds) 로 골랐으니 null 이 아니다.
+      const workItemId = share.workItemId!;
+      await this.sessions.removeToReturnBin(
+        {
+          sessionId: input.session.id,
+          operationId: input.operationId,
+          actorId: input.actorId,
+          workItemId,
+          allocationId: share.allocationId,
+          shipmentLineId: share.shipmentLineId,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: qty,
+          from: { custodyType: 'BULK_CART', custodyRef: input.cartRef, shipmentLineId: null },
+          returnBin: input.returnBin,
+        },
+        trx,
+      );
+      await this.decrementAllocation(share.allocationId, qty, trx);
+      moved.set(workItemId, (moved.get(workItemId) ?? 0) + qty);
+      remaining -= qty;
+    }
+    return [...moved].map(([workItemId, qty]) => ({ workItemId, qty }));
+  }
+
   /** 배정 감소 CAS — 반납·되돌림이 같이 쓴다. 행은 지우지 않는다(0 허용, 스펙 §11). */
   private async decrementAllocation(allocationId: string, qty: number, trx: DbTx): Promise<void> {
     const [reduced] = await trx

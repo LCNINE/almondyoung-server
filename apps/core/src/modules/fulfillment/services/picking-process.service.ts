@@ -16,6 +16,8 @@ import { BatchStartDeps, BatchStartResult } from '../picking/allocation/allocati
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
+  AggregateCartSurplusReturnInput,
+  AggregateCartSurplusReturnResult,
   AggregateSortScanInput,
   AggregateSortScanResult,
   AggregateSourceScanInput,
@@ -115,6 +117,13 @@ export class PickingProcessService {
 
   async aggregateCartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult> {
     return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.cartHandoff(input, trx), tx);
+  }
+
+  async aggregateCartSurplusReturn(
+    input: AggregateCartSurplusReturnInput,
+    tx?: DbTx,
+  ): Promise<AggregateCartSurplusReturnResult> {
+    return this.withAggregateThenSortStrategy(input.batchId, (strategy, trx) => strategy.returnCartSurplus(input, trx), tx);
   }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {

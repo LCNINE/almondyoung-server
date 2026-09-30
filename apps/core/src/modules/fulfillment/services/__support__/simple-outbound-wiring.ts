@@ -32,6 +32,7 @@ import { ToteLifecycleService } from '../tote-lifecycle.service';
 import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
 import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry';
+import { AggregateThenSortPickingStrategy } from '../../picking/aggregate-then-sort.strategy';
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
 import { ReturnBinService } from '../return-bin.service';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
@@ -154,6 +155,17 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     planning,
     batches,
   );
+  const aggregate = new AggregateThenSortPickingStrategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    labelGuard,
+    boxes,
+    withdrawals,
+    returnBins,
+    returns,
+  );
   const dispatch = new ShipmentDispatchService(
     dbService,
     commands,
@@ -195,6 +207,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     location: new LocationOutboundService(dbService, commands, simple),
     returnBins,
     returns,
+    aggregate,
   };
 }
 

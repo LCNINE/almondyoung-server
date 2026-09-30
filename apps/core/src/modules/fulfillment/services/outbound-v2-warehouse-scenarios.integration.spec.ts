@@ -168,7 +168,17 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       assembleBoxWithdrawal(dbService),
     );
     const labelGuard = assembleLabels(dbService).guard;
-    const aggregate = new AggregateThenSortPickingStrategy(commands, workflow, sessions, batches, labelGuard);
+    const aggregate = new AggregateThenSortPickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      labelGuard,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches, labelGuard);
     const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit, labelGuard);
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);

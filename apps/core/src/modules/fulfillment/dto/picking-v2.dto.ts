@@ -145,3 +145,30 @@ export class AggregateCartHandoffDto {
   @MaxLength(500)
   reason: string;
 }
+
+export class AggregateCartSurplusReturnDto {
+  @IsUUID()
+  batchId: string;
+
+  @IsUUID()
+  sessionId: string;
+
+  @IsString()
+  @Matches(PHYSICAL_CART_ID)
+  cartId: string;
+
+  @IsUUID()
+  skuId: string;
+
+  @IsUUID()
+  sourceLocationId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  returnBinBarcode: string;
+}

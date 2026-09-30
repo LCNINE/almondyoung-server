@@ -5,6 +5,7 @@ import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   AggregateBulkCartScanDto,
   AggregateCartHandoffDto,
+  AggregateCartSurplusReturnDto,
   AggregateSortScanDto,
   CompletePickingV2Dto,
   HandoffPickingV2Dto,
@@ -72,6 +73,22 @@ export class PickingV2Controller {
     @User() user: AuthenticatedUser,
   ) {
     return this.picking.aggregateCartHandoff({
+      ...dto,
+      actor: this.actor(user),
+      idempotencyKey: idempotencyKey ?? '',
+    });
+  }
+
+  @Post('cart-surplus-returns')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ description: 'Cart surplus of leaving boxes moved into a return bin' })
+  cartSurplusReturn(
+    @Body() dto: AggregateCartSurplusReturnDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.picking.aggregateCartSurplusReturn({
       ...dto,
       actor: this.actor(user),
       idempotencyKey: idempotencyKey ?? '',
