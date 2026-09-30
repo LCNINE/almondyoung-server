@@ -3,145 +3,121 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
-import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, ne } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { describeStartBlockers } from '../picking/allocation/allocation.locks';
+import { StartBlockerView } from '../picking/allocation/allocation.types';
 import {
   ReportShipmentShortPickDto,
   SHIPMENT_SHORT_PICK_REASONS,
   ShipmentShortPickActor,
   ShipmentShortPickReason,
   ShipmentShortPickResponseDto,
+  ShortPickRefillDto,
+  ShortPickShortageDto,
 } from '../dto/shipment-short-pick.dto';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { ApprovedShortageReasonCode, ShortPickOperationIntentProof } from './batch-inventory-session.service';
+import { BoxAllocationManager, RefillView } from './box-allocation.manager';
+import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
+import { FulfillmentCommandResult, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { BatchInventorySessionService, BatchInventoryBucket } from './batch-inventory-session.service';
-import { ShipmentReservationService } from './shipment-reservation.service';
-import { ToteLifecycleService } from './tote-lifecycle.service';
-import { WaybillService } from '../waybill/waybill.service';
 
-const SHORT_PICK_WORK_ITEM_STATUSES = ['picking', 'ready_to_pack', 'packing', 'completed'] as const;
-
-type ShortPickLineIntent = {
-  shipmentLineId: string;
-  sourceLocationId: string;
-  expectedLineVersion: number;
-  shortQty: number;
-  allocationQty: number;
-};
-type ShortPickIntent = {
-  kind: 'short_pick';
-  operationId: string;
-  shipmentId: string;
-  workItemId: string;
-  sessionId: string;
-  reason: ShipmentShortPickReason;
-  actorId: string;
-  lines: ShortPickLineIntent[];
-};
-
-type ShortPickSessionPort = {
-  approveShortage(
-    input: {
-      sessionId: string;
-      idempotencyKey: string;
-      shortPickOperationId: string;
-      shipmentLineId: string;
-      quantity: number;
-      from: BatchInventoryBucket;
-      reasonCode: 'MISSING' | 'DAMAGED' | 'DEFECTIVE';
-      reason: string;
-      approverId: string;
-    },
-    tx: DbTx,
-  ): Promise<unknown>;
-  returnShortPickCustody(
-    input: {
-      sessionId: string;
-      idempotencyKey: string;
-      shortPickOperationId: string;
-      shipmentLineId: string;
-      quantity: number;
-      from: BatchInventoryBucket;
-      reason: string;
-      actorId: string;
-    },
-    tx: DbTx,
-  ): Promise<unknown>;
-};
-
-type ShortPickReservationPort = {
-  lockShipmentGraphForDispatch(shipmentId: string, tx: DbTx): Promise<void>;
-  invalidateForShortPick(
-    shipmentLineId: string,
-    quantity: number,
-    shortPickOperationId: string,
-    tx: DbTx,
-  ): Promise<unknown>;
-};
+/** 결품을 보고할 수 있는 작업 항목 — 아직 박스에 담기 전(집는 중이거나 대기). */
+const SHORT_PICK_WORK_ITEM_STATUSES: readonly string[] = ['queued', 'picking'];
 
 @Injectable()
 export class ShipmentShortPickService {
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commands: FulfillmentCommandService,
     private readonly authorization: AuthorizationService,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
-    private readonly waybills: WaybillService,
-    @Inject(BatchInventorySessionService) private readonly session: ShortPickSessionPort,
-    @Inject(ShipmentReservationService) private readonly reservations: ShortPickReservationPort,
-    private readonly totes: ToteLifecycleService,
+    private readonly boxes: BoxAllocationManager,
+    private readonly withdrawals: BoxWithdrawalService,
   ) {}
 
+  /**
+   * 결품 보고(스펙 §9) — 한 트랜잭션. 안 집은 몫을 부족 승인하고 결품 로케이션을 뺀 곳에서 다시 채운다. 못 채우면 이탈(exit_to=draft)이
+   * 결품 오퍼레이션을 기다리고, 나가기가 예약·송장·박스를 정리한다(PR 4 계획이 정함 1~6 — 마무리는 `ShortPickExitService`).
+   * 잠금: 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 오퍼레이션·멤버 INSERT → 부족 승인 → SKU 가용·원장.
+   */
   async report(
     shipmentId: string,
     dto: ReportShipmentShortPickDto,
     idempotencyKey: string,
     actor: ShipmentShortPickActor,
+    tx?: DbTx,
   ): Promise<ShipmentShortPickResponseDto> {
     this.workflowGate.assertV2MutationAllowed('shipment.short_pick.report');
     this.assertDto(dto);
     await this.requireScope(actor);
-    const response = await this.commands.execute<ShipmentShortPickResponseDto>(
+    return this.commands.execute<ShipmentShortPickResponseDto>(
       {
         commandType: 'shipment.short_pick.report',
         idempotencyKey,
         canonicalRequest: { shipmentId, actorId: actor.id, ...dto },
       },
-      async (tx, _commandRequestId, requestHash) => {
+      async (trx, commandRequestId, requestHash) => {
+        await this.withdrawals.lockComponentsOf([shipmentId], trx);
+        const { lines } = await this.lockAndValidateShipment(shipmentId, dto, trx);
+        const workItem = await this.lockWorkItem(shipmentId, dto, trx);
+        const [batch] = await trx
+          .select({ warehouseId: wmsTables.outboundBatches.warehouseId })
+          .from(wmsTables.outboundBatches)
+          .where(eq(wmsTables.outboundBatches.id, workItem.batchId))
+          .limit(1);
+        if (!batch) throw new Error(`Outbound batch ${workItem.batchId} referenced by a work item is missing`);
+        const session = await this.boxes.lockOpenSession(workItem.batchId, trx);
+        if (!session || session.id !== dto.sessionId || session.version !== dto.expectedSessionVersion) {
+          throw this.conflict('SHORT_PICK_SESSION_STALE', 'Inventory session identity/version is invalid');
+        }
+        if (session.status !== 'active') {
+          throw this.conflict(
+            'PICKING_SESSION_NOT_ACTIVE',
+            `Batch ${workItem.batchId} inventory session is ${session.status}`,
+          );
+        }
+        const { active: waybill, voidable } = await this.withdrawals.exitWaybill(shipmentId, trx);
+        if (waybill?.status === 'used')
+          throw this.conflict('SHORT_PICK_DISPATCH_EXISTS', 'A used waybill cannot be short-picked');
+
+        // 판정 먼저(쓰지 않는다) — 모자라면 SHORT_PICK_EXCEEDS_UNPICKED 로 전부 보고하고 오퍼레이션도 남기지 않는다.
+        const planned = await this.boxes.planShortages(
+          {
+            session,
+            workItemId: workItem.id,
+            shortages: dto.lines.map((line) => ({
+              shipmentLineId: line.shipmentLineId,
+              sourceLocationId: line.sourceLocationId,
+              qty: line.shortQty,
+            })),
+          },
+          trx,
+        );
         const operationId = randomUUID();
-        const intent: ShortPickIntent = {
+        // 의도의 allocationQty 는 보고 시점 배정(감소 전). 세션의 부족 승인이 이 의도를 읽으므로 승인보다 먼저 적는다.
+        const intent: ShortPickOperationIntentProof = {
           kind: 'short_pick',
           operationId,
           shipmentId,
-          workItemId: dto.workItemId,
-          sessionId: dto.sessionId,
+          workItemId: workItem.id,
+          sessionId: session.id,
           reason: dto.reason,
           actorId: actor.id,
-          lines: [...dto.lines]
-            .map((line) => ({ ...line, allocationQty: 0 }))
-            .sort((left, right) =>
-              `${left.shipmentLineId}:${left.sourceLocationId}`.localeCompare(
-                `${right.shipmentLineId}:${right.sourceLocationId}`,
-              ),
-            ),
+          lines: planned.map((row) => ({
+            shipmentLineId: row.shipmentLineId,
+            sourceLocationId: row.sourceLocationId,
+            shortQty: row.qty,
+            allocationQty: row.allocationQty,
+          })),
         };
-        // Canonical order: shared shipment graph first, then durable
-        // intent/member, then work item/session/custody/totes. A member insert
-        // is not lock-free — its shipment FK takes KEY SHARE — so it must
-        // follow the FOI -> shipment -> line -> reservation graph order.
-        // Otherwise two distinct-key operations can each hold that FK lock
-        // while one owns the FOI row, forming FOI -> shipment vs shipment -> FOI.
-        await this.reservations.lockShipmentGraphForDispatch(shipmentId, tx);
-        await tx.insert(wmsTables.shipmentOperations).values({
+        await trx.insert(wmsTables.shipmentOperations).values({
           id: operationId,
           type: 'short_pick',
           status: 'pending',
@@ -153,280 +129,128 @@ export class ShipmentShortPickService {
           requestHash,
           beforeManifestSnapshot: { intent },
         });
-        await tx.insert(wmsTables.shipmentOperationMembers).values({
+        await trx.insert(wmsTables.shipmentOperationMembers).values({
           operationId,
           shipmentId,
           role: 'source',
           beforeManifestVersion: dto.expectedManifestVersion,
           beforeManifestSnapshot: { expectedManifestVersion: dto.expectedManifestVersion },
         });
-
-        const shipmentContext = await this.lockAndValidateShipment(shipmentId, dto, tx);
-        const requestedByPair = new Map(
-          dto.lines.map((line) => [`${line.shipmentLineId}:${line.sourceLocationId}`, line] as const),
+        await this.boxes.approveShortages(
+          {
+            session,
+            workItemId: workItem.id,
+            shortPickOperationId: operationId,
+            actorId: actor.id,
+            reasonCode: this.reasonCode(dto.reason),
+            reason: dto.reason,
+            planned,
+          },
+          trx,
         );
-        const versionByLine = new Map(shipmentContext.lines.map((line) => [line.id, line.lineVersion]));
-        intent.lines = shipmentContext.allocations.map((allocation) => {
-          const requested = requestedByPair.get(`${allocation.shipmentLineId}:${allocation.sourceLocationId}`);
-          return {
-            shipmentLineId: allocation.shipmentLineId,
-            sourceLocationId: allocation.sourceLocationId,
-            expectedLineVersion: versionByLine.get(allocation.shipmentLineId)!,
-            shortQty: requested?.shortQty ?? 0,
-            allocationQty: allocation.qty,
-          };
-        });
-        // 활성 waybill(TERMINAL 제외 — DB uq_waybills_shipment_active 로 shipment 당 최대 1행)을 읽는다.
-        // 별도 FOR UPDATE 잠금은 불필요: 이 report tx 는 이미 shipment 그래프를 잠갔고(lockAndValidateShipment
-        // FOR UPDATE + lockShipmentGraphForDispatch), void 의 casToVoided WHERE 가 최종 원자성을 보장한다.
-        const activeWaybill = await this.waybills.getActiveWaybill(shipmentId, tx);
-        if (activeWaybill?.status === 'used') {
-          throw this.conflict('SHORT_PICK_DISPATCH_EXISTS', 'A used waybill cannot enter short-pick recovery');
-        }
-        if (activeWaybill?.status === 'registered') {
-          // 발송 전(registered) waybill 은 동기 tx-local 로 void 된다(carrier HTTP 없음). void 가 이 report tx
-          // 안에서 완료되므로 short-pick 은 인라인으로 finalize 된다 — 구 invoice-void → resume 비동기 saga
-          // (invoiceOperationId 추적/finalize 게이트)가 단일 tx 로 붕괴한다.
-          await this.waybills.void(
-            activeWaybill.id,
-            { reason: `short_pick:${dto.reason}` },
-            `${idempotencyKey}:waybill-void`,
-            actor,
-            tx,
+        const approved = planned;
+        const allLines = lines.map((line) => ({ id: line.id, skuId: line.skuId, qty: line.qty }));
+        const plan = await this.boxes.planRefill(
+          {
+            session,
+            warehouseId: batch.warehouseId,
+            workItemId: workItem.id,
+            lines: allLines,
+            excludedSources: approved.map((row) => ({ skuId: row.skuId, sourceLocationId: row.sourceLocationId })),
+          },
+          trx,
+        );
+        if (!plan.shortages.length) {
+          const refills = await this.boxes.applyRefill(
+            {
+              session,
+              batchId: workItem.batchId,
+              actorId: actor.id,
+              operationId: commandRequestId,
+              plan,
+              lines: allLines,
+            },
+            trx,
           );
-        } else if (activeWaybill) {
-          // pending/allocated 등 발급 진행 중 waybill: 발송 전 취소 불가 상태 → 계승 코드 유지(클라이언트 계약).
+          await this.completeRefilled(operationId, shipmentId, dto.expectedManifestVersion, refills, trx);
+          await this.audit.logUserActionRequired(
+            'shipment.short_pick.refilled',
+            'fulfillment',
+            `Short pick operation ${operationId} refilled shipment ${shipmentId}`,
+            { userId: actor.id },
+            { operationId, shipmentId, workItemId: workItem.id, approved, refills },
+            trx,
+          );
+          return this.done({
+            operationId,
+            shipmentId,
+            workItemId: workItem.id,
+            operationStatus: 'completed',
+            outcome: 'refilled',
+            refills: refills.map(toRefillDto),
+            shortages: [],
+          });
+        }
+        // 못 채움 → 이탈. 나갈 때 송장을 무효화하므로 지금 무효화할 수 있어야 한다(정한 것 3).
+        if (!voidable) {
           throw this.conflict(
             'SHORT_PICK_INVOICE_NOT_VOIDABLE',
-            `Waybill ${activeWaybill.id} is ${activeWaybill.status}; resolve it before short-pick recovery`,
+            `Waybill ${waybill?.id} is ${waybill?.status}; resolve it before short-pick withdrawal`,
           );
         }
-        const physicalContext = await this.lockAndValidatePhysical(shipmentId, dto, tx);
-        const context = { ...shipmentContext, ...physicalContext };
-        const [quarantinedShipment] = await tx
-          .update(wmsTables.shipments)
-          .set({ status: 'recovery_required', recoveryCode: 'SHORT_PICK_PENDING', lastUpdated: new Date() })
-          .where(
-            and(
-              eq(wmsTables.shipments.id, shipmentId),
-              eq(wmsTables.shipments.status, 'planned'),
-              eq(wmsTables.shipments.manifestVersion, dto.expectedManifestVersion),
-            ),
-          )
-          .returning({ id: wmsTables.shipments.id });
-        if (!quarantinedShipment) {
-          throw this.conflict('SHIPMENT_STALE_MANIFEST_VERSION', 'Shipment changed before short-pick quarantine');
-        }
-        await tx
-          .update(wmsTables.shipmentOperations)
-          .set({
-            beforeManifestSnapshot: {
-              intent,
-              shipment: context.shipment,
-              workItem: context.workItem,
-              session: context.session,
-              lines: context.lines,
-            },
-          })
-          .where(eq(wmsTables.shipmentOperations.id, operationId));
-        await this.quarantineWorkItem(context.workItem, operationId, dto.reason, tx);
-        await this.reconcileAffectedCustody(intent, tx);
-        for (const [shipmentLineId, quantity] of this.shortQtyByLine(intent.lines)) {
-          await this.reservations.invalidateForShortPick(shipmentLineId, quantity, operationId, tx);
-        }
-        const toteResult = await this.totes.releaseEmptyAssignmentsForShipment({ shipmentId, operationId }, tx);
-        await this.audit.logUserActionRequired(
-          'shipment.short_pick.reported',
-          'fulfillment',
-          `Short pick operation ${operationId} reported for shipment ${shipmentId}`,
-          { userId: actor.id },
-          {
-            operationId,
+        const shortages = await describeStartBlockers(
+          trx,
+          plan.shortages.map((shortage) => ({
             shipmentId,
-            reason: dto.reason,
-            exactVersions: {
-              manifest: dto.expectedManifestVersion,
-              workItemLease: dto.expectedWorkItemLeaseVersion,
-              session: dto.expectedSessionVersion,
-              lines: intent.lines,
-            },
-            releasedToteAssignmentIds: toteResult.releasedAssignmentIds,
-            retainedToteIds: toteResult.retainedToteIds,
-          },
-          tx,
+            reason: shortage.reason,
+            shipmentLineId: shortage.shipmentLineId,
+            skuId: shortage.skuId,
+            requiredQty: shortage.requiredQty,
+            shortQty: shortage.shortQty,
+            detail: null,
+          })),
         );
-
-        // void 가 동기이므로 활성 waybill 은 이 tx 안에서 이미 voided 상태다 — 인라인으로 즉시 finalize 한다.
-        // 구 세계의 pending→async-void→resume 2단계는 더 이상 존재하지 않는다(invoiceOperationId 없음).
-        await this.resumePending(operationId, tx);
-        return {
-          response: {
-            operationId,
+        const outcome = await this.withdrawals.begin(
+          {
+            batchId: workItem.batchId,
             shipmentId,
-            operationStatus: 'completed' as const,
-            invoiceOperationId: null,
-            workItemId: dto.workItemId,
+            shipmentStatus: 'planned',
+            workItem,
+            lines: lines.map((line) => ({ id: line.id, skuId: line.skuId })),
+            exitTo: 'draft',
+            reason: `short_pick:${dto.reason}`,
+            waitingOperationId: operationId,
+            actorId: actor.id,
+            operationId: commandRequestId,
           },
-          resourceType: 'shipment_operation',
-          resourceId: operationId,
+          trx,
+        );
+        await this.audit.logUserActionRequired(
+          'shipment.short_pick.withdrawing',
+          'fulfillment',
+          `Short pick operation ${operationId} could not refill shipment ${shipmentId}`,
+          { userId: actor.id },
+          { operationId, shipmentId, workItemId: workItem.id, approved, shortages, outcome: outcome.kind },
+          trx,
+        );
+        return this.done({
           operationId,
-        };
+          shipmentId,
+          workItemId: workItem.id,
+          operationStatus: outcome.kind === 'exited' ? 'completed' : 'pending',
+          outcome: outcome.kind,
+          refills: [],
+          shortages: shortages.map(toShortageDto),
+        });
       },
-    );
-    return this.currentResponse(response.operationId, response);
-  }
-
-  async resumePending(operationId: string, tx?: DbTx): Promise<ShipmentShortPickResponseDto> {
-    if (tx) return this.resumePendingInTransaction(operationId, tx);
-    try {
-      return await this.dbService.run((trx) => this.resumePendingInTransaction(operationId, trx));
-    } catch (error) {
-      await this.dbService.run((trx) => this.markRecoveryRequired(operationId, error, trx));
-      throw error;
-    }
-  }
-
-  private async resumePendingInTransaction(operationId: string, tx: DbTx): Promise<ShipmentShortPickResponseDto> {
-    const [operation] = await tx
-      .select({
-        type: wmsTables.shipmentOperations.type,
-        status: wmsTables.shipmentOperations.status,
-        snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot,
-      })
-      .from(wmsTables.shipmentOperations)
-      .where(eq(wmsTables.shipmentOperations.id, operationId))
-      .limit(1)
-      .for('update');
-    if (!operation || operation.type !== 'short_pick')
-      throw new NotFoundException(`Short pick operation ${operationId} not found`);
-    const intent = this.intent(operation.snapshot);
-    const [sourceMember] = await tx
-      .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
-      .from(wmsTables.shipmentOperationMembers)
-      .where(
-        and(
-          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
-          eq(wmsTables.shipmentOperationMembers.role, 'source'),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    if (sourceMember?.shipmentId !== intent.shipmentId) {
-      throw this.conflict('SHORT_PICK_OPERATION_MEMBER_MISMATCH', 'Short-pick source member differs from intent');
-    }
-    if (operation.status === 'completed') return this.currentResponse(operationId, undefined, tx);
-    if (!['pending', 'recovery_required'].includes(operation.status)) {
-      throw this.conflict('SHORT_PICK_OPERATION_NOT_RESUMABLE', `Short pick operation is ${operation.status}`);
-    }
-
-    await this.reservations.lockShipmentGraphForDispatch(intent.shipmentId, tx);
-    const [shipment] = await tx
-      .select()
-      .from(wmsTables.shipments)
-      .where(eq(wmsTables.shipments.id, intent.shipmentId))
-      .limit(1)
-      .for('update');
-    if (!shipment) throw new NotFoundException(`Shipment ${intent.shipmentId} not found`);
-    // finalize 게이트: 활성 waybill 이 남아있으면 안 된다(report tx 에서 void 로 이미 종료되었어야 함).
-    // 구 게이트(async invoice void 가 착지했는지 확인)의 동기 등가물 — void 가 report tx 안에서 완료되므로
-    // 인라인 resume 시점엔 항상 null. 외부에서 직접 resume 을 호출하는 경로에 대한 방어로 유지한다.
-    const activeWaybill = await this.waybills.getActiveWaybill(intent.shipmentId, tx);
-    if (shipment.status !== 'recovery_required' || shipment.recoveryCode !== 'SHORT_PICK_PENDING') {
-      throw this.conflict('SHORT_PICK_SHIPMENT_NOT_RECOVERING', 'Shipment is not in exact short-pick recovery state');
-    }
-    if (activeWaybill) {
-      throw this.conflict('SHORT_PICK_INVOICE_NOT_VOIDED', 'Short-pick recovery cannot finalize before waybill void');
-    }
-    const [workItem] = await tx
-      .select({
-        id: wmsTables.outboundBatchWorkItems.id,
-        status: wmsTables.outboundBatchWorkItems.status,
-        waitingOperationId: wmsTables.outboundBatchWorkItems.waitingOperationId,
-      })
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(eq(wmsTables.outboundBatchWorkItems.id, intent.workItemId))
-      .limit(1)
-      .for('update');
-    if (workItem?.status !== 'short_pick_recovery' || workItem.waitingOperationId !== operationId) {
-      throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Recovery work item changed');
-    }
-    const [session] = await tx
-      .select({ id: wmsTables.batchInventorySessions.id })
-      .from(wmsTables.batchInventorySessions)
-      .where(eq(wmsTables.batchInventorySessions.id, intent.sessionId))
-      .limit(1)
-      .for('update');
-    if (!session) throw new NotFoundException(`Inventory session ${intent.sessionId} not found`);
-    await this.assertNoPositiveCustody(intent, tx);
-    await this.totes.releaseEmptyAssignmentsForShipment({ shipmentId: intent.shipmentId, operationId }, tx);
-    await tx
-      .update(wmsTables.shipmentLines)
-      .set({ inspectedQty: 0, lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1` })
-      .where(eq(wmsTables.shipmentLines.shipmentId, intent.shipmentId));
-    const [updatedShipment] = await tx
-      .update(wmsTables.shipments)
-      .set({
-        status: 'draft',
-        recoveryCode: null,
-        plannedAt: null,
-        manifestVersion: shipment.manifestVersion + 1,
-        lastUpdated: new Date(),
-      })
-      .where(
-        and(
-          eq(wmsTables.shipments.id, shipment.id),
-          eq(wmsTables.shipments.status, 'recovery_required'),
-          eq(wmsTables.shipments.recoveryCode, 'SHORT_PICK_PENDING'),
-          eq(wmsTables.shipments.manifestVersion, shipment.manifestVersion),
-        ),
-      )
-      .returning();
-    if (!updatedShipment) throw this.conflict('SHIPMENT_STALE_MANIFEST_VERSION', 'Shipment changed during resume');
-    const [excluded] = await tx
-      .update(wmsTables.outboundBatchWorkItems)
-      .set({
-        status: 'excluded',
-        exclusionReason: `short_pick:${intent.reason}`,
-        recoveryReason: null,
-        waitingOperationId: null,
-        completedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(wmsTables.outboundBatchWorkItems.id, intent.workItemId),
-          eq(wmsTables.outboundBatchWorkItems.waitingOperationId, operationId),
-          eq(wmsTables.outboundBatchWorkItems.status, 'short_pick_recovery'),
-        ),
-      )
-      .returning({ id: wmsTables.outboundBatchWorkItems.id });
-    if (!excluded) throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Recovery work item changed');
-    const after = { shipment: updatedShipment, retiredWorkItemId: intent.workItemId };
-    await tx
-      .update(wmsTables.shipmentOperationMembers)
-      .set({ afterManifestVersion: updatedShipment.manifestVersion, afterManifestSnapshot: after })
-      .where(
-        and(
-          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
-          eq(wmsTables.shipmentOperationMembers.shipmentId, intent.shipmentId),
-          eq(wmsTables.shipmentOperationMembers.role, 'source'),
-        ),
-      );
-    await tx
-      .update(wmsTables.shipmentOperations)
-      .set({ status: 'completed', afterManifestSnapshot: after, lastError: null, completedAt: new Date() })
-      .where(eq(wmsTables.shipmentOperations.id, operationId));
-    await this.audit.logUserActionRequired(
-      'shipment.short_pick.completed',
-      'fulfillment',
-      `Short pick operation ${operationId} returned shipment ${intent.shipmentId} to Draft`,
-      { userId: intent.actorId },
-      { operationId, shipmentId: intent.shipmentId, workItemId: intent.workItemId, after },
       tx,
     );
-    return this.currentResponse(operationId, undefined, tx);
   }
 
+  /**
+   * 박스·줄을 잠그고 요청을 판정한다(planned·매니페스트·발송 시도·줄 버전·줄 수량·쌍 중복). 배정 행 잠금과 «안 집은 몫» 판정은
+   * `BoxAllocationManager.planShortages` 의 몫이다.
+   */
   private async lockAndValidateShipment(shipmentId: string, dto: ReportShipmentShortPickDto, tx: DbTx) {
     const [shipment] = await tx
       .select()
@@ -485,43 +309,13 @@ export class ShipmentShortPickService {
         .reduce((sum, entry) => sum + entry.shortQty, 0);
       if (totalShortQty > line.qty) throw new BadRequestException(`shortQty exceeds line ${line.id} quantity`);
     }
-    const allocations = await tx
-      .select({
-        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
-        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
-        qty: wmsTables.pickingSourceAllocations.qty,
-      })
-      .from(wmsTables.pickingSourceAllocations)
-      .where(
-        and(
-          eq(wmsTables.pickingSourceAllocations.workItemId, dto.workItemId),
-          inArray(
-            wmsTables.pickingSourceAllocations.shipmentLineId,
-            lines.map((line) => line.id),
-          ),
-        ),
-      )
-      .orderBy(
-        asc(wmsTables.pickingSourceAllocations.shipmentLineId),
-        asc(wmsTables.pickingSourceAllocations.sourceLocationId),
-      )
-      .for('update');
-    const allocationByPair = new Map(
-      allocations.map((row) => [`${row.shipmentLineId}:${row.sourceLocationId}`, row] as const),
-    );
-    for (const requested of dto.lines) {
-      const allocation = allocationByPair.get(`${requested.shipmentLineId}:${requested.sourceLocationId}`);
-      if (!allocation || requested.shortQty > allocation.qty) {
-        throw this.conflict(
-          'SHORT_PICK_ALLOCATION_MISMATCH',
-          `Short quantity exceeds persisted allocation for ${requested.shipmentLineId}/${requested.sourceLocationId}`,
-        );
-      }
-    }
-    return { shipment, lines, allocations };
+    return { shipment, lines };
   }
 
-  private async lockAndValidatePhysical(shipmentId: string, dto: ReportShipmentShortPickDto, tx: DbTx) {
+  /**
+   * 작업 항목 하나를 잠그고 판정한다 — 박스 일치 → 빼는 중 → 상태 → 임대 버전 → 다른 오퍼레이션 대기 순.
+   */
+  private async lockWorkItem(shipmentId: string, dto: ReportShipmentShortPickDto, tx: DbTx): Promise<WorkItemRow> {
     const [workItem] = await tx
       .select()
       .from(wmsTables.outboundBatchWorkItems)
@@ -531,327 +325,66 @@ export class ShipmentShortPickService {
     if (!workItem || workItem.shipmentId !== shipmentId) {
       throw this.conflict('SHORT_PICK_WORK_ITEM_MISMATCH', 'Work item mismatch');
     }
-    if (!SHORT_PICK_WORK_ITEM_STATUSES.includes(workItem.status as (typeof SHORT_PICK_WORK_ITEM_STATUSES)[number])) {
+    if (workItem.status === 'withdrawing') {
+      throw this.conflict('SHIPMENT_WITHDRAWN', `Shipment ${shipmentId} is leaving its batch`);
+    }
+    if (!SHORT_PICK_WORK_ITEM_STATUSES.includes(workItem.status)) {
       throw this.conflict('SHORT_PICK_WORK_ITEM_STATE', `Work item is ${workItem.status}`);
     }
     if (workItem.leaseVersion !== dto.expectedWorkItemLeaseVersion) {
       throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Work item lease version changed');
     }
-    const [session] = await tx
-      .select()
-      .from(wmsTables.batchInventorySessions)
-      .where(eq(wmsTables.batchInventorySessions.id, dto.sessionId))
-      .limit(1)
-      .for('update');
-    if (
-      !session ||
-      session.batchId !== workItem.batchId ||
-      session.version !== dto.expectedSessionVersion ||
-      !['active', 'recovery_required'].includes(session.status)
-    ) {
-      throw this.conflict('SHORT_PICK_SESSION_STALE', 'Inventory session identity/version is invalid');
+    if (workItem.waitingOperationId) {
+      throw this.conflict(
+        'SHORT_PICK_WORK_ITEM_WAITING',
+        `Work item ${workItem.id} waits for operation ${workItem.waitingOperationId}`,
+      );
     }
-    return { workItem, session };
+    return workItem;
   }
 
-  private async quarantineWorkItem(
-    workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect,
+  /** 채움 — 멤버·오퍼레이션을 completed 로. 박스는 그대로라 매니페스트 버전도 그대로다(`ShortPickExitService.complete` 와 같은 모양). */
+  private async completeRefilled(
     operationId: string,
-    reason: string,
+    shipmentId: string,
+    manifestVersion: number,
+    refills: RefillView[],
     tx: DbTx,
   ): Promise<void> {
-    const [updated] = await tx
-      .update(wmsTables.outboundBatchWorkItems)
-      .set({
-        status: 'short_pick_recovery',
-        pickerId: null,
-        pickerClaimedAt: null,
-        pickerReleasedAt: null,
-        packerId: null,
-        packerClaimedAt: null,
-        packerReleasedAt: null,
-        leaseExpiresAt: null,
-        leaseVersion: workItem.leaseVersion + 1,
-        completedAt: null,
-        recoveryReason: reason,
-        waitingOperationId: operationId,
-        updatedAt: new Date(),
-      })
+    const after = { outcome: 'refilled', refills };
+    await tx
+      .update(wmsTables.shipmentOperationMembers)
+      .set({ afterManifestVersion: manifestVersion, afterManifestSnapshot: after })
       .where(
         and(
-          eq(wmsTables.outboundBatchWorkItems.id, workItem.id),
-          eq(wmsTables.outboundBatchWorkItems.leaseVersion, workItem.leaseVersion),
+          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
         ),
-      )
-      .returning({ id: wmsTables.outboundBatchWorkItems.id });
-    if (!updated) throw this.conflict('SHORT_PICK_WORK_ITEM_STALE', 'Work item changed while entering recovery');
-  }
-
-  private async reconcileAffectedCustody(intent: ShortPickIntent, tx: DbTx): Promise<void> {
-    for (const line of intent.lines) {
-      const [shipmentLine] = await tx
-        .select({ skuId: wmsTables.shipmentLines.skuId })
-        .from(wmsTables.shipmentLines)
-        .where(eq(wmsTables.shipmentLines.id, line.shipmentLineId))
-        .limit(1);
-      if (!shipmentLine) throw new NotFoundException(`Shipment line ${line.shipmentLineId} not found`);
-      const attributed = await tx
-        .select()
-        .from(wmsTables.batchInventorySessionBalances)
-        .where(
-          and(
-            eq(wmsTables.batchInventorySessionBalances.sessionId, intent.sessionId),
-            eq(wmsTables.batchInventorySessionBalances.shipmentLineId, line.shipmentLineId),
-            eq(wmsTables.batchInventorySessionBalances.sourceLocationId, line.sourceLocationId),
-            gt(wmsTables.batchInventorySessionBalances.qty, 0),
-          ),
-        )
-        .orderBy(asc(wmsTables.batchInventorySessionBalances.id))
-        .for('update');
-      const attributedQty = attributed.reduce((sum, balance) => sum + balance.qty, 0);
-      if (attributedQty > line.allocationQty) {
-        throw this.conflict(
-          'SHORT_PICK_CUSTODY_EXCEEDS_ALLOCATION',
-          `Attributed custody exceeds allocation for ${line.shipmentLineId}/${line.sourceLocationId}`,
-        );
-      }
-      let shortageRemaining = line.shortQty;
-      let allocationRemaining = line.allocationQty;
-      for (const balance of attributed) {
-        const from: BatchInventoryBucket = {
-          skuId: balance.skuId,
-          sourceLocationId: balance.sourceLocationId!,
-          custodyType: balance.custodyType,
-          custodyRef: balance.custodyRef,
-          shipmentLineId: balance.shipmentLineId,
-        };
-        const terminalQty = Math.min(allocationRemaining, balance.qty);
-        const shortageQty = Math.min(shortageRemaining, terminalQty);
-        if (shortageQty > 0) {
-          await this.session.approveShortage(
-            {
-              sessionId: intent.sessionId,
-              idempotencyKey: `${intent.operationId}:${line.shipmentLineId}:${balance.id}:shortage`,
-              shortPickOperationId: intent.operationId,
-              shipmentLineId: line.shipmentLineId,
-              quantity: shortageQty,
-              from,
-              reasonCode: this.reasonCode(intent.reason),
-              reason: intent.reason,
-              approverId: intent.actorId,
-            },
-            tx,
-          );
-          shortageRemaining -= shortageQty;
-        }
-        const returnQty = terminalQty - shortageQty;
-        if (returnQty > 0) {
-          await this.session.returnShortPickCustody(
-            {
-              sessionId: intent.sessionId,
-              idempotencyKey: `${intent.operationId}:${line.shipmentLineId}:${balance.id}:return`,
-              shortPickOperationId: intent.operationId,
-              shipmentLineId: line.shipmentLineId,
-              quantity: returnQty,
-              from,
-              reason: intent.reason,
-              actorId: intent.actorId,
-            },
-            tx,
-          );
-        }
-        allocationRemaining -= terminalQty;
-      }
-      if (allocationRemaining > 0) {
-        const pooled = await tx
-          .select()
-          .from(wmsTables.batchInventorySessionBalances)
-          .where(
-            and(
-              eq(wmsTables.batchInventorySessionBalances.sessionId, intent.sessionId),
-              eq(wmsTables.batchInventorySessionBalances.skuId, shipmentLine.skuId),
-              eq(wmsTables.batchInventorySessionBalances.sourceLocationId, line.sourceLocationId),
-              isNull(wmsTables.batchInventorySessionBalances.shipmentLineId),
-              inArray(wmsTables.batchInventorySessionBalances.custodyType, ['AT_SOURCE', 'BULK_CART']),
-              gt(wmsTables.batchInventorySessionBalances.qty, 0),
-            ),
-          )
-          .orderBy(asc(wmsTables.batchInventorySessionBalances.id))
-          .for('update');
-        for (const balance of pooled) {
-          const terminalQty = Math.min(allocationRemaining, balance.qty);
-          if (terminalQty === 0) continue;
-          const from: BatchInventoryBucket = {
-            skuId: balance.skuId,
-            sourceLocationId: balance.sourceLocationId!,
-            custodyType: balance.custodyType,
-            custodyRef: balance.custodyRef,
-            shipmentLineId: null,
-          };
-          const shortageQty = Math.min(shortageRemaining, terminalQty);
-          if (shortageQty > 0) {
-            await this.session.approveShortage(
-              {
-                sessionId: intent.sessionId,
-                idempotencyKey: `${intent.operationId}:${line.shipmentLineId}:${line.sourceLocationId}:${balance.id}:pooled-shortage`,
-                shortPickOperationId: intent.operationId,
-                shipmentLineId: line.shipmentLineId,
-                quantity: shortageQty,
-                from,
-                reasonCode: this.reasonCode(intent.reason),
-                reason: intent.reason,
-                approverId: intent.actorId,
-              },
-              tx,
-            );
-            shortageRemaining -= shortageQty;
-          }
-          const returnQty = terminalQty - shortageQty;
-          if (returnQty > 0) {
-            await this.session.returnShortPickCustody(
-              {
-                sessionId: intent.sessionId,
-                idempotencyKey: `${intent.operationId}:${line.shipmentLineId}:${line.sourceLocationId}:${balance.id}:pooled-return`,
-                shortPickOperationId: intent.operationId,
-                shipmentLineId: line.shipmentLineId,
-                quantity: returnQty,
-                from,
-                reason: intent.reason,
-                actorId: intent.actorId,
-              },
-              tx,
-            );
-          }
-          allocationRemaining -= terminalQty;
-          if (allocationRemaining === 0) break;
-        }
-      }
-      if (shortageRemaining > 0 || allocationRemaining > 0) {
-        throw this.conflict(
-          'SHORT_PICK_CUSTODY_INSUFFICIENT',
-          `Allocation ${line.shipmentLineId}/${line.sourceLocationId} lacks terminal custody evidence`,
-        );
-      }
-    }
-  }
-
-  private async assertNoPositiveCustody(intent: ShortPickIntent, tx: DbTx): Promise<void> {
-    const positive = await tx
-      .select({ id: wmsTables.batchInventorySessionBalances.id })
-      .from(wmsTables.batchInventorySessionBalances)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionBalances.sessionId, intent.sessionId),
-          inArray(
-            wmsTables.batchInventorySessionBalances.shipmentLineId,
-            intent.lines.map((line) => line.shipmentLineId),
-          ),
-          gt(wmsTables.batchInventorySessionBalances.qty, 0),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    if (positive.length) throw this.conflict('SHORT_PICK_CUSTODY_REMAINS', 'Affected shipment custody is not zero');
-  }
-
-  private async markRecoveryRequired(operationId: string, error: unknown, tx: DbTx): Promise<void> {
-    const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000);
-    const [operation] = await tx
-      .select({
-        operatorId: wmsTables.shipmentOperations.operatorId,
-        status: wmsTables.shipmentOperations.status,
-      })
-      .from(wmsTables.shipmentOperations)
-      .where(and(eq(wmsTables.shipmentOperations.id, operationId), eq(wmsTables.shipmentOperations.type, 'short_pick')))
-      .limit(1)
-      .for('update');
-    if (!operation || !['pending', 'recovery_required'].includes(operation.status)) return;
-    const [updated] = await tx
+      );
+    const [done] = await tx
       .update(wmsTables.shipmentOperations)
-      .set({ status: 'recovery_required', lastError: message })
-      .where(
-        and(
-          eq(wmsTables.shipmentOperations.id, operationId),
-          eq(wmsTables.shipmentOperations.type, 'short_pick'),
-          inArray(wmsTables.shipmentOperations.status, ['pending', 'recovery_required']),
-        ),
-      )
+      .set({ status: 'completed', afterManifestSnapshot: after, lastError: null, completedAt: new Date() })
+      .where(and(eq(wmsTables.shipmentOperations.id, operationId), eq(wmsTables.shipmentOperations.status, 'pending')))
       .returning({ id: wmsTables.shipmentOperations.id });
-    if (!updated) return;
-    await this.audit.logUserActionRequired(
-      'shipment.short_pick.recovery_required',
-      'fulfillment',
-      `Short pick operation ${operationId} requires recovery`,
-      { userId: operation.operatorId },
-      { operationId, error: message },
-      tx,
-    );
+    if (!done) throw new Error(`Short-pick operation ${operationId} left pending before its refill completed`);
   }
 
-  private async currentResponse(
-    operationId: string,
-    fallback?: ShipmentShortPickResponseDto,
-    tx?: DbTx,
-  ): Promise<ShipmentShortPickResponseDto> {
-    return this.dbService.run(async (trx) => {
-      const [row] = await trx
-        .select({
-          operationId: wmsTables.shipmentOperations.id,
-          status: wmsTables.shipmentOperations.status,
-          shipmentId: wmsTables.shipmentOperationMembers.shipmentId,
-        })
-        .from(wmsTables.shipmentOperations)
-        .innerJoin(
-          wmsTables.shipmentOperationMembers,
-          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
-        )
-        .where(
-          and(eq(wmsTables.shipmentOperations.id, operationId), eq(wmsTables.shipmentOperationMembers.role, 'source')),
-        )
-        .limit(1);
-      if (!row) {
-        if (fallback) return fallback;
-        throw new NotFoundException(`Short pick operation ${operationId} not found`);
-      }
-      const intentRow = await trx
-        .select({ snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot })
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, operationId))
-        .limit(1);
-      const intent = this.intent(intentRow[0]?.snapshot);
-      return {
-        operationId,
-        shipmentId: row.shipmentId,
-        operationStatus:
-          row.status === 'completed'
-            ? 'completed'
-            : row.status === 'recovery_required'
-              ? 'recovery_required'
-              : 'pending',
-        invoiceOperationId: null,
-        workItemId: intent.workItemId,
-      };
-    }, tx);
+  private done(
+    response: Omit<ShipmentShortPickResponseDto, 'invoiceOperationId'>,
+  ): FulfillmentCommandResult<ShipmentShortPickResponseDto> {
+    return {
+      response: { ...response, invoiceOperationId: null },
+      resourceType: 'shipment_operation',
+      resourceId: response.operationId,
+      operationId: response.operationId,
+    };
   }
 
-  private intent(snapshot: unknown): ShortPickIntent {
-    const value = (snapshot ?? {}) as { intent?: ShortPickIntent };
-    if (value.intent?.kind !== 'short_pick') throw new Error('Short pick operation intent is missing');
-    return value.intent;
-  }
-
-  private reasonCode(reason: ShipmentShortPickReason): 'MISSING' | 'DAMAGED' | 'DEFECTIVE' {
+  private reasonCode(reason: ShipmentShortPickReason): ApprovedShortageReasonCode {
     if (reason === 'inventory_shortage') return 'MISSING';
     if (reason === 'item_damaged') return 'DAMAGED';
     return 'DEFECTIVE';
-  }
-
-  private shortQtyByLine(lines: ShortPickLineIntent[]): Map<string, number> {
-    const result = new Map<string, number>();
-    for (const line of lines) {
-      if (line.shortQty > 0) result.set(line.shipmentLineId, (result.get(line.shipmentLineId) ?? 0) + line.shortQty);
-    }
-    return result;
   }
 
   private assertDto(dto: ReportShipmentShortPickDto): void {
@@ -871,4 +404,28 @@ export class ShipmentShortPickService {
   private conflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, message });
   }
+}
+
+function toRefillDto(refill: RefillView): ShortPickRefillDto {
+  return {
+    shipmentLineId: refill.shipmentLineId,
+    skuId: refill.skuId,
+    sourceLocationId: refill.sourceLocationId,
+    locationCode: refill.locationCode,
+    qty: refill.qty,
+  };
+}
+
+function toShortageDto(view: StartBlockerView): ShortPickShortageDto {
+  // holds because the blockers come from plan.shortages (line reasons only) — never a waybill blocker.
+  if (view.reason === 'WAYBILL_NOT_READY') throw new Error('A refill shortage cannot be a waybill blocker');
+  return {
+    shipmentLineId: view.shipmentLineId,
+    skuId: view.skuId,
+    skuCode: view.skuCode,
+    skuName: view.skuName,
+    requiredQty: view.requiredQty,
+    shortQty: view.shortQty,
+    reason: view.reason,
+  };
 }

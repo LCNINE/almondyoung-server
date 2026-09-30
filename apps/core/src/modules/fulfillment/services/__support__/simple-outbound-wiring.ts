@@ -29,6 +29,7 @@ import { OutboundBatchOrchestrator } from '../outbound-batch-orchestrator.servic
 import { BoxAllocationManager } from '../box-allocation.manager';
 import { BoxWithdrawalService } from '../box-withdrawal.service';
 import { ShortPickExitService } from '../short-pick-exit.service';
+import { ShipmentShortPickService } from '../shipment-short-pick.service';
 import { ToteLifecycleService } from '../tote-lifecycle.service';
 import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
@@ -211,6 +212,14 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     returnBins,
     returns,
     aggregate,
+    shortPick: new ShipmentShortPickService(
+      commands,
+      { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
+      audit,
+      workflowGate,
+      boxes,
+      withdrawals,
+    ),
   };
 }
 

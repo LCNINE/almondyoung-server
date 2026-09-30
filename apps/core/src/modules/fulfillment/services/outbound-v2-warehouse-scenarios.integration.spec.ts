@@ -40,7 +40,6 @@ import { PickingProcessService } from './picking-process.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
-import { ToteLifecycleService } from './tote-lifecycle.service';
 import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
 import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
@@ -134,11 +133,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     );
     const controlled = new BatchControlledStockGuard();
     const sessions = new BatchInventorySessionService(dbService, audit);
-    const resumeTarget: { shortPick?: ShipmentShortPickService } = {};
     const moduleRef = {
-      get: jest.fn(
-        () => resumeTarget.shortPick ?? ({ resumePending: jest.fn().mockResolvedValue(undefined) } as never),
-      ),
+      get: jest.fn(() => ({ resumePending: jest.fn().mockResolvedValue(undefined) }) as never),
     };
     // 플랜3: batch add·dispatch·picking 은 assertDispatchable/markUsed 를, short-pick 은 getActiveWaybill/void
     // 를 소비한다(모두 실제 WaybillService). registry/issue machine 은 이 경로들에서 실행되지 않지만 구조적
@@ -156,6 +152,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         dbService,
       ),
     );
+    const boxes = new BoxAllocationManager(sessions, new BatchControlledStockGuard());
+    const withdrawals = assembleBoxWithdrawal(dbService);
     const batches = new OutboundBatchOrchestrator(
       dbService,
       commands,
@@ -164,8 +162,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       audit,
       workflow,
       moduleRef as never,
-      new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
-      assembleBoxWithdrawal(dbService),
+      boxes,
+      withdrawals,
     );
     const labelGuard = assembleLabels(dbService).guard;
     const aggregate = new AggregateThenSortPickingStrategy(
@@ -212,16 +210,13 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
     );
     const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-    resumeTarget.shortPick = new ShipmentShortPickService(
-      dbService,
+    const shortPick = new ShipmentShortPickService(
       commands,
       authorization as never,
       audit,
       workflow,
-      waybills,
-      sessions,
-      shipmentReservations,
-      new ToteLifecycleService(dbService),
+      boxes,
+      withdrawals,
     );
     const dispatch = new ShipmentDispatchService(
       dbService,
@@ -239,7 +234,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       labelGuard,
     );
-    return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
+    return { batches, dispatch, waybills, picking, sessions, shortPick };
   }
 
   async function seedWorld(
