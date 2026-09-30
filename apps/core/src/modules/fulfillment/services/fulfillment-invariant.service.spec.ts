@@ -56,6 +56,7 @@ const validSnapshot = (): FulfillmentInvariantSnapshot => ({
       skuId: 'sku-1',
       sourceLocationId: 'loc-1',
       qty: 7,
+      workItemStatus: 'completed',
     },
   ],
   dispatchAttempts: [],
@@ -242,6 +243,54 @@ describe('배정 불변식 I1~I3 (스펙 §5)', () => {
     snapshot.allocations[0].qty = 0;
     snapshot.sessionBalances = [];
     expect(kinds(snapshot)).not.toContain('ALLOCATION_BELOW_TARGET');
+  });
+
+  it('I2 — 이탈 중(withdrawing)은 목표가 0 이라 보지 않는다', () => {
+    const snapshot = validSnapshot();
+    snapshot.workItems[0].status = 'withdrawing';
+    snapshot.allocations[0].workItemStatus = 'withdrawing';
+    snapshot.allocations[0].qty = 3;
+    expect(kinds(snapshot)).not.toContain('ALLOCATION_BELOW_TARGET');
+  });
+
+  it('I3 — 제외된 작업 항목의 배정은 공유 보관의 방이 아니다(PR 3·4 경계: 결품 제외 뒤 떠도는 AT_SOURCE)', () => {
+    const snapshot = validSnapshot();
+    snapshot.workItems[0].status = 'excluded';
+    snapshot.allocations[0].workItemStatus = 'excluded';
+    snapshot.allocations[0].qty = 2; // 결품 보고는 배정 행을 줄이지 않는다
+    snapshot.sessionBalances = [
+      {
+        id: 'balance-2',
+        sessionId: 'session-1',
+        custodyType: 'AT_SOURCE',
+        qty: 2,
+        skuId: 'sku-1',
+        sourceLocationId: 'loc-1',
+        shipmentLineId: null,
+      },
+    ];
+    snapshot.sessions[0] = { ...snapshot.sessions[0], handedInQty: 2, settledQty: 0, returnedQty: 0, shortageQty: 0 };
+    expect(kinds(snapshot)).toContain('CUSTODY_EXCEEDS_ALLOCATION');
+  });
+
+  it('I3 — 활성 작업 항목의 배정이 덮으면 같은 AT_SOURCE 는 위반이 아니다', () => {
+    const snapshot = validSnapshot();
+    snapshot.workItems[0].status = 'queued';
+    snapshot.allocations[0].workItemStatus = 'queued';
+    snapshot.allocations[0].qty = 7;
+    snapshot.sessionBalances = [
+      {
+        id: 'balance-2',
+        sessionId: 'session-1',
+        custodyType: 'AT_SOURCE',
+        qty: 7,
+        skuId: 'sku-1',
+        sourceLocationId: 'loc-1',
+        shipmentLineId: null,
+      },
+    ];
+    snapshot.sessions[0] = { ...snapshot.sessions[0], handedInQty: 7, settledQty: 0, returnedQty: 0, shortageQty: 0 };
+    expect(kinds(snapshot)).not.toContain('CUSTODY_EXCEEDS_ALLOCATION');
   });
 
   it('I3 — 줄 귀속 보관이 그 줄·로케이션 배정을 넘으면 위반', () => {
