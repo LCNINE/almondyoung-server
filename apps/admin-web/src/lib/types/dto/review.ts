@@ -61,6 +61,21 @@ export interface ReviewDto {
   createdAt: string;
   updatedAt: string;
   adminComment: AdminCommentDto | null;
+  /** 관리자 응답에만 온다. almondyoung=자체 작성, admin-manual=관리자 수기 작성, 그 밖=이관 */
+  sourceSystem?: string;
+  /** 관리자 수기 작성분의 입력자 ID. 관리자 응답에만 온다 */
+  createdByAdminUserId?: string | null;
+}
+
+/** POST /reviews/admin/reviews 요청 — 다른 채널 고객 후기를 옮겨 적는다 */
+export interface AdminCreateReviewDto {
+  productId: string;
+  authorName: string;
+  /** ISO 8601, 오프셋 포함 (예: 2026-09-01T00:00:00+09:00) */
+  writtenAt: string;
+  rating: number;
+  content: string;
+  mediaFileIds: string[];
 }
 
 /** own = 아몬드영에서 직접 작성된 리뷰, legacy = 이전 사이트에서 이관된 리뷰 */
@@ -79,6 +94,8 @@ export interface ReviewListQuery {
   sort?: ReviewSortOption;
   q?: string;
   source?: ReviewSourceOption;
+  /** 출처 정확 일치 (예: admin-manual) */
+  sourceSystem?: string;
   createdFrom?: string;
   createdTo?: string;
 }

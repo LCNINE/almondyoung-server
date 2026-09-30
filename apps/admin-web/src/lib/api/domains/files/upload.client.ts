@@ -50,6 +50,8 @@ export const BANNER_IMAGE_CONTEXT_ID = 'banner-image';
 // 같은데 전용 컨텍스트를 새로 만들면 시드가 밀린 환경에서 업로드가 404 로 죽는다.
 export const SITE_POPUP_IMAGE_CONTEXT_ID = 'notice-content-image';
 export const SHOP_LISTING_IMAGE_CONTEXT_ID = 'shop-listing-image';
+/** file-service `review-media` 컨텍스트 (image/*·video/*, 공개). 관리자 수기 리뷰 사진에 쓴다 */
+export const REVIEW_MEDIA_CONTEXT_ID = 'review-media';
 export const ARCHIVE_PAGE_IMAGE_CONTEXT_ID = 'archive-page-image';
 /** 아카이브 본문의 «이미지가 아닌» 첨부. 비공개라 열람은 인증을 거친다. */
 export const ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID = 'archive-page-attachment';
