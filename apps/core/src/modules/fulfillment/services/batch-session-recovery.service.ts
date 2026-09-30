@@ -411,6 +411,21 @@ export class BatchSessionRecoveryService {
       } else if (event.eventType === 'MOVE_CUSTODY') {
         if (!from || !to || to.custodyType === 'SETTLED')
           issues.push(`MOVE_CUSTODY event ${event.id} has invalid sides`);
+      } else if (event.eventType === 'REMOVE_TO_RETURN_BIN') {
+        const boxOrCart =
+          from !== null &&
+          (['WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED', 'BULK_CART'] as string[]).includes(from.custodyType);
+        if (!boxOrCart || !to || to.custodyType !== 'RETURN_PENDING') {
+          issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has invalid sides`);
+        }
+        if (typeof payload.workItemId !== 'string' || typeof payload.allocationId !== 'string') {
+          issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has no immutable work item/allocation identity`);
+        }
+      } else if (event.eventType === 'PUTAWAY_RETURN') {
+        if (!from || to || from.custodyType !== 'RETURN_PENDING') {
+          issues.push(`PUTAWAY_RETURN event ${event.id} has invalid sides`);
+        }
+        returnedQty += event.quantity;
       } else if (event.eventType === 'RETURN_TO_SOURCE') {
         if (!from || to) issues.push(`RETURN_TO_SOURCE event ${event.id} has invalid sides`);
         returnedQty += event.quantity;
@@ -561,6 +576,39 @@ export class BatchSessionRecoveryService {
           ) {
             issues.push(`HAND_BACK event ${event.id} has invalid allocation attribution`);
           }
+        } else if (event.eventType === 'REMOVE_TO_RETURN_BIN') {
+          const exactContext = {
+            operationId: payload.operationId,
+            workItemId: payload.workItemId,
+            allocationId: payload.allocationId,
+            shipmentLineId: payload.shipmentLineId,
+            returnBinId: payload.returnBinId,
+          };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
+          const allocation =
+            typeof payload.allocationId === 'string' ? allocationById.get(payload.allocationId) : undefined;
+          if (
+            typeof payload.operationId !== 'string' ||
+            typeof payload.returnBinId !== 'string' ||
+            !allocation ||
+            allocation.workItemId !== payload.workItemId ||
+            allocation.shipmentLineId !== payload.shipmentLineId ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== allocation.sourceLocationId ||
+            (from.shipmentLineId !== null && from.shipmentLineId !== allocation.shipmentLineId)
+          ) {
+            issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has invalid allocation attribution`);
+          }
+        } else if (event.eventType === 'PUTAWAY_RETURN') {
+          const exactContext = { operationId: payload.operationId, returnBinId: payload.returnBinId };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`PUTAWAY_RETURN event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
         } else if (event.eventType === 'SETTLE_FOR_DISPATCH') {
           const exactContext = { dispatchAttemptSourceId: payload.dispatchAttemptSourceId };
           if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
@@ -757,20 +805,24 @@ export class BatchSessionRecoveryService {
         issues.push(`event ${event.id} changes the original source location`);
       }
     }
-    const movedByAllocation = (eventType: 'HAND_IN' | 'HAND_BACK', allocationId: string) =>
+    const movedByAllocation = (eventType: 'HAND_IN' | 'HAND_BACK' | 'REMOVE_TO_RETURN_BIN', allocationId: string) =>
       events
         .filter((event) => event.eventType === eventType && payloadOf(event.payload).allocationId === allocationId)
         .reduce((total, event) => total + event.quantity, 0);
     for (const allocation of allocations) {
       const handedIn = movedByAllocation('HAND_IN', allocation.id);
       const handedBack = movedByAllocation('HAND_BACK', allocation.id);
+      const removed = movedByAllocation('REMOVE_TO_RETURN_BIN', allocation.id);
       if (handedIn === 0) issues.push(`allocation ${allocation.id} has no HAND_IN event`);
-      if (handedIn - handedBack !== allocation.quantity) {
+      if (handedIn - handedBack - removed !== allocation.quantity) {
         issues.push(
-          `allocation ${allocation.id} quantity ${allocation.quantity} differs from hand-in ${handedIn} − hand-back ${handedBack}`,
+          `allocation ${allocation.id} quantity ${allocation.quantity} differs from ` +
+            `hand-in ${handedIn} − hand-back ${handedBack} − removed ${removed}`,
         );
       }
     }
+    // REMOVE_TO_RETURN_BIN 은 줄 보관과 배정을 같은 수만큼 줄이고 아래 합산 대상(RETURN_TO_SOURCE·
+    // SETTLE_FOR_DISPATCH·APPROVE_SHORTAGE)에 들지 않는다. PUTAWAY_RETURN 은 줄이 없어 걸리지 않는다.
     // 줄 보관은 (줄, 로케이션) 쌍마다 이 배치 배정 행의 «합» 과 견준다 — 같은 배치에 다시 합류한 박스는
     // 옛 0 행과 새 행이 같은 쌍을 가리키고, 보관은 행을 모른다(불변식 I3 와 같은 기준).
     const allocatedByLineSource = new Map<string, { shipmentLineId: string; sourceLocationId: string; qty: number }>();
@@ -832,9 +884,8 @@ export class BatchSessionRecoveryService {
     if (['WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED'].includes(bucket.custodyType)) {
       return bucket.custodyRef !== null && bucket.shipmentLineId !== null;
     }
-    if (['RETURN_PENDING', 'SETTLED'].includes(bucket.custodyType)) {
-      return bucket.custodyRef === null && bucket.shipmentLineId !== null;
-    }
+    if (bucket.custodyType === 'RETURN_PENDING') return bucket.custodyRef !== null && bucket.shipmentLineId === null;
+    if (bucket.custodyType === 'SETTLED') return bucket.custodyRef === null && bucket.shipmentLineId !== null;
     return false;
   }
 
