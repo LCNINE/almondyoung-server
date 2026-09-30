@@ -170,8 +170,16 @@ export class OutboundBatchOrchestrator {
         if (peek.startedAt) return this.joinStartedBatch(batchId, aggregate, actor, commandRequestId, trx);
         // Canonical component locks precede batch/work-item locks in every membership command.
         const batch = await this.lockOpenBatch(batchId, trx);
-        // 잠금을 기다리는 사이 시작됐다 — 합류로 간다. 배치·작업 항목 잠금을 쥔 채 세션을 잡아도 발송(작업 항목 → 세션)과 같은 방향이다.
-        if (batch.startedAt) return this.joinStartedBatch(batchId, aggregate, actor, commandRequestId, trx);
+        // 잠금을 기다리는 사이 시작됐다 — 여기서 합류하지 않고 재시도시킨다(아무것도 쓰기 전). 배치 행 FOR UPDATE 를 쥔 채
+        // 세션을 잡으면 두 방향과 교착한다: 동시 합류는 세션을 쥔 채 작업 항목 INSERT 의 FK 검사로 배치 행에 암묵
+        // FOR KEY SHARE 를 걸고, 두 번째 시작은 불변식 검사기에서 세션을 잡은 뒤 배치 행을 잠근다. 재시도는 peek 갈래
+        // (세션 → 배치 FK 방향 하나)로 합류한다.
+        if (batch.startedAt) {
+          throw this.conflict(
+            'OUTBOUND_BATCH_STARTED_RETRY',
+            `Batch ${batchId} started while adding; retry to join the running batch`,
+          );
+        }
         await this.assertCartCapacity(batch, trx);
         const eligible = await this.assertEligible(batch, aggregate, trx);
 
@@ -240,7 +248,7 @@ export class OutboundBatchOrchestrator {
     const status = this.derivedBatchStatus(batch, workItems);
     if (status === 'completed' || status === 'canceled') throw notJoinable(batchId, status);
     if (!session || session.status !== 'active') {
-      throw notJoinable(batchId, `inventory session is ${session?.status ?? 'missing'}`);
+      throw notJoinable(batchId, `inventory session is ${session?.status ?? 'not open'}`);
     }
     await this.assertCartCapacity(batch, trx);
     const waybillBlockers = await this.waybillBlockers(shipmentId, trx);

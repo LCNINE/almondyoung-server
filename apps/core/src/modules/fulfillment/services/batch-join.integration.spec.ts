@@ -191,6 +191,47 @@ describeIfDb('시작된 배치에 합류 (스펙 §7)', () => {
     });
   });
 
+  it('잠금을 기다리는 사이 시작된 배치에는 합류하지 않고 OUTBOUND_BATCH_STARTED_RETRY — 아무것도 안 쓰고, 재시도는 합류한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first } = await seedTwoBoxBatch(tx, 1, 10);
+      const loose = await seedLooseBox(tx, first, 2);
+      const wiring = assembleOutbound(tx);
+      // 이음매: 잠그지 않은 peek 는 시작 전(started_at NULL)을 보고, lockOpenBatch 가 잠그기 직전에 진짜 「작업 시작」이
+      // 같은 트랜잭션에서 끝난다 — 커밋된 동시 시작을 기다렸다 잠근 모양을 한 연결 안에서 재현한다. 두 연결 사이의
+      // 교착 자체를 보이는 테스트는 아니다; 이 갈래가 합류로 흘러가지 않고 쓰기 전에 거절하는지만 증명한다.
+      const orchestrator = wiring.batches as unknown as {
+        lockOpenBatch: (batchId: string, trx: DbTx) => Promise<unknown>;
+      };
+      const original = orchestrator.lockOpenBatch.bind(wiring.batches);
+      const spy = jest.spyOn(orchestrator, 'lockOpenBatch').mockImplementationOnce(async (batchId, trx) => {
+        await wiring.picking.start({ batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` }, trx);
+        return original(batchId, trx);
+      });
+
+      await expect(
+        tx.transaction((trx) =>
+          wiring.batches.addShipment(first.batchId, loose.shipmentId, `j-${randomUUID()}`, actor, trx),
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OUTBOUND_BATCH_STARTED_RETRY' } });
+      expect(spy).toHaveBeenCalledTimes(1);
+      const items = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, loose.shipmentId));
+      expect(items).toEqual([]);
+      spy.mockRestore();
+
+      // 재시도: 이번엔 배치가 (커밋된 것처럼) 이미 시작돼 있다 → peek 갈래로 합류한다.
+      const started = await wiring.picking.start(
+        { batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` },
+        tx,
+      );
+      const joined = await wiring.batches.addShipment(first.batchId, loose.shipmentId, `j-${randomUUID()}`, actor, tx);
+      expect(joined.workItem).toMatchObject({ batchId: first.batchId, shipmentId: loose.shipmentId });
+      expect((await sessionOf(tx, started.sessionId)).handedInQty).toBe(5);
+    });
+  });
+
   it.each(['individual', 'multi_order', 'total_picking'] as const)('%s 배치에도 합류한다', async (method) => {
     await inRollbackTx(db, async (tx) => {
       const { first, second } = await seedTwoBoxBatch(tx, 1, 10);
