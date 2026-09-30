@@ -199,7 +199,7 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
     });
   });
 
-  it('빼는 중(draft)인 박스도 송장이 registered 가 아니면 canceled 로 올리지 않고 지금처럼 대기한다', async () => {
+  it('빼는 중(draft)인 박스는 송장이 registered 가 아니어도 canceled 로 올린다 — 나가기는 송장이 정리된 뒤 마지막 되돌림에서', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second, wiring, sessionId } = await started(tx);
       await pickAll(wiring, sessionId, second, tx);
@@ -223,12 +223,9 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
         .select()
         .from(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.id, second.workItemId));
-      expect(item).toMatchObject({ status: 'withdrawing', exitTo: 'draft', waitingOperationId: result.operationId });
-      const [shipment] = await tx
-        .select()
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.id, second.shipmentId));
-      expect(shipment.recoveryCode).toBe('CANCEL_REPLAN_PENDING');
+      expect(item).toMatchObject({ status: 'withdrawing', exitTo: 'canceled', waitingOperationId: result.operationId });
+      const [waybill] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, second.waybillId));
+      expect(waybill.status).toBe('pending');
     });
   });
 

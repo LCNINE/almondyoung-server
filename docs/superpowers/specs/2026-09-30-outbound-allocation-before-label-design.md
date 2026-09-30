@@ -325,7 +325,9 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
   이탈로 들이면 집은 게 없는 박스는 그 트랜잭션에서 나가며 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` 로 취소 전체를 되돌린다 — 판매 주문 취소
   (`SalesOrdersService` 가 판매 주문 취소 트랜잭션 안에서 `cancelOutstanding` 을 부른다)까지 실패하게 되는데, PR 3 전에는 대기로 받던 취소다.
   판정은 `BoxWithdrawalService.canceledExitWaybill` 하나를 E10 과 나가기(`exitIfDrained`)가 같이 쓴다 — 둘이 갈리지 않게. 이미 빼는 중인
-  박스도 같다(송장이 무효화할 수 없으면 `canceled` 로 올리지 않고 옛 대기로 간다)
+  박스는 이 판정을 거치지 않고 `canceled` 로 올린다 — 그 트랜잭션에서 나가지 않으니 취소를 되돌리지 않고, 나가기는 송장이 정리된 뒤의
+  마지막 되돌림이 한다. 옛 대기로 보내면 `draft` 로 나간 뒤 재개가 `SHIPMENT_ACTIVE_INVOICE`(무효·실패·포기가 아닌 송장)나
+  `CANCELLATION_LINE_CHANGED`(`PACKED` 에서 뺄 때마다 `line_version` 이 오른다)에 막혀 풀리지 않는다
 - **카트 여분 되돌림은 PR 3 에서 core 명령뿐이다**(D3). 앱에는 그 화면도, 토트 등록 호출도 없어 `CART_SURPLUS_NOT_PENDING`·`TOTE_BARCODE_RESERVED` 는
   앱의 확정 거절 목록·문구에 없다. 앱이 그 경로를 부르게 되는 PR 이 함께 넣는다
 

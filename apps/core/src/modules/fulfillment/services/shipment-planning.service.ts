@@ -1075,10 +1075,12 @@ export class ShipmentPlanningService {
       .where(eq(wmsTables.outboundBatches.id, workItem.batchId))
       .limit(1);
     if (!batch?.startedAt) return null;
+    // 이미 빼는 중이면 canceled 로 올린다 — 이 트랜잭션에서 나가지 않으니 송장 조건이 취소를 되돌리지 않는다. 옛 대기로 보내면
+    // draft 로 나간 뒤 재개가 SHIPMENT_ACTIVE_INVOICE·CANCELLATION_LINE_CHANGED(PACKED 에서 뺄 때마다 line_version 이 오른다)에 막힌다.
+    if (workItem.status === 'withdrawing') return { batchId: workItem.batchId, workItem };
     // 나갈 때 무효화할 수 없는 송장(`pending`·`allocated` 등)이면 이탈로 들이지 않는다 — 집은 게 없는 박스는 이 트랜잭션에서
     // 나가며 WITHDRAWAL_WAYBILL_NOT_VOIDABLE 로 취소 전체(판매 주문 취소 포함)를 되돌린다. 옛 대기가 그 취소를 받는다.
     if (!(await this.withdrawals.canceledExitWaybill(aggregate.shipment.id, tx)).voidable) return null;
-    if (workItem.status === 'withdrawing') return { batchId: workItem.batchId, workItem };
     const checked = await this.withdrawals.blockerOf(
       {
         batchId: workItem.batchId,
