@@ -36,6 +36,7 @@ import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy
 import { ReturnBinService } from '../return-bin.service';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
 import { ShipmentPlanningService } from '../shipment-planning.service';
+import { BoxReturnService } from '../box-return.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
 import { LocationOutboundService } from '../location-outbound.service';
 import { SimpleOutboundService } from '../simple-outbound.service';
@@ -142,6 +143,17 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     new PickingStrategyRegistry(dbService, [discrete]),
   );
   const barcodes = new BarcodeService(dbService);
+  const returnBins = new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit);
+  const returns = new BoxReturnService(
+    commands,
+    workflowGate,
+    withdrawals,
+    boxes,
+    returnBins,
+    barcodes,
+    planning,
+    batches,
+  );
   const dispatch = new ShipmentDispatchService(
     dbService,
     commands,
@@ -181,7 +193,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
     location: new LocationOutboundService(dbService, commands, simple),
-    returnBins: new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit),
+    returnBins,
+    returns,
   };
 }
 

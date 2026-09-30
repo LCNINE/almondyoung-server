@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -10,10 +11,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCreatedResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiCreatedResponse, ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { RegisterReturnBinDto, ReturnBinContentsDto, ReturnBinDto } from '../dto/return-bin.dto';
+import {
+  RegisterReturnBinDto,
+  ReturnBinContentsDto,
+  ReturnBinDto,
+  ReturnBinRemovalDto,
+  ReturnBinRemovalResponseDto,
+} from '../dto/return-bin.dto';
+import { BoxReturnService } from '../services/box-return.service';
 import { ReturnBinService } from '../services/return-bin.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] } | undefined;
@@ -26,7 +34,10 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 @Controller()
 @UseGuards(ScopeGuard)
 export class ReturnBinController {
-  constructor(private readonly returnBins: ReturnBinService) {}
+  constructor(
+    private readonly returnBins: ReturnBinService,
+    private readonly returns: BoxReturnService,
+  ) {}
 
   @Post('return-bins')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -44,6 +55,20 @@ export class ReturnBinController {
   ): Promise<ReturnBinContentsDto> {
     if (!barcode.trim()) throw new BadRequestException('barcode is required');
     return this.returnBins.lookup(barcode, warehouseId);
+  }
+
+  @Post('shipments/:shipmentId/return-bin-removals')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ type: ReturnBinRemovalResponseDto })
+  removeFromBox(
+    @Param('shipmentId', new ParseUUIDPipe()) shipmentId: string,
+    @Body() dto: ReturnBinRemovalDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ): Promise<ReturnBinRemovalResponseDto> {
+    if (!idempotencyKey?.trim()) throw new BadRequestException('Idempotency-Key is required');
+    return this.returns.removeToReturnBin(shipmentId, dto, this.actor(user), idempotencyKey);
   }
 
   private actor(user: AuthenticatedUser): { id: string; roles: string[] } {
