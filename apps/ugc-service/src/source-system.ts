@@ -14,6 +14,12 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
  */
 export const OWN_SOURCE_SYSTEM = 'almondyoung';
 
+/**
+ * 관리자가 admin-web 에서 한 건씩 옮겨 적은 리뷰의 출처값(리테일팀). 다른 채널 고객 후기의 이관이라
+ * 자체 작성이 아니다 — `isOwnSource` 에 걸리지 않으므로 통계는 이관분으로 세고 베스트·보상 후보에서 빠진다.
+ */
+export const ADMIN_MANUAL_SOURCE_SYSTEM = 'admin-manual';
+
 /** 자체 작성분만 고르는 술어. */
 export function isOwnSource(column: AnyPgColumn): SQL {
   return sql`${column} = ${OWN_SOURCE_SYSTEM}`;

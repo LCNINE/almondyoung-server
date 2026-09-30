@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { reviews } from '../db/schema';
-import { isLegacySource, isOwnSource, OWN_SOURCE_SYSTEM } from '../source-system';
+import { ADMIN_MANUAL_SOURCE_SYSTEM, isLegacySource, isOwnSource, OWN_SOURCE_SYSTEM } from '../source-system';
 
 /**
  * 「자체 작성인가」의 정의가 여러 파일로 복제되는 것을 막는다.
@@ -15,16 +15,24 @@ describe('출처 판정의 정본', () => {
   const appRoot = path.resolve(__dirname, '..');
   const canonicalFile = path.join(appRoot, 'source-system.ts');
 
-  it("'almondyoung' 리터럴은 정본 파일 밖의 소스에 없다", () => {
-    const hits = execFileSync('grep', ['-rn', '--include=*.ts', `'${OWN_SOURCE_SYSTEM}'`, appRoot], {
-      encoding: 'utf8',
-    })
+  const hitsOutsideCanonical = (literal: string) =>
+    execFileSync('grep', ['-rn', '--include=*.ts', `'${literal}'`, appRoot], { encoding: 'utf8' })
       .split('\n')
       .filter(Boolean)
       .filter((line) => !line.startsWith(`${canonicalFile}:`))
       .filter((line) => !/\.spec\.ts:/.test(line));
 
-    expect(hits).toEqual([]);
+  it("'almondyoung' 리터럴은 정본 파일 밖의 소스에 없다", () => {
+    expect(hitsOutsideCanonical(OWN_SOURCE_SYSTEM)).toEqual([]);
+  });
+
+  it("'admin-manual' 리터럴도 정본 파일 밖의 소스에 없다", () => {
+    expect(hitsOutsideCanonical(ADMIN_MANUAL_SOURCE_SYSTEM)).toEqual([]);
+  });
+
+  it('관리자 수기 출처는 자체 작성이 아니고, 컬럼 길이(30)에 들어간다', () => {
+    expect(ADMIN_MANUAL_SOURCE_SYSTEM).not.toBe(OWN_SOURCE_SYSTEM);
+    expect(ADMIN_MANUAL_SOURCE_SYSTEM.length).toBeLessThanOrEqual(30);
   });
 
   it('두 술어는 서로의 여집합이다 — 어느 행도 양쪽에 들거나 어디에도 안 들지 않는다', () => {

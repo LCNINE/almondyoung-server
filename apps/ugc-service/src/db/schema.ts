@@ -99,6 +99,12 @@ export const reviews = pgTable(
     legacyImportedAt: timestamp('legacy_imported_at'),
     legacyPayload: jsonb('legacy_payload'),
 
+    /**
+     * 관리자 수기 작성분의 입력자(user-service `users.id`). 회원 작성·이관분은 NULL.
+     * FK 없음 — 사용자는 다른 서비스 소유다. 이 컬럼으로 조회하지 않아 인덱스도 없다.
+     */
+    createdByAdminUserId: uuid('created_by_admin_user_id'),
+
     deletedAt: timestamp('deleted_at'),
 
     ...timestampColumns,
