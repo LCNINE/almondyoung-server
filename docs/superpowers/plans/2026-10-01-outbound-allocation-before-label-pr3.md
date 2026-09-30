@@ -21,7 +21,7 @@
 - 트랜잭션: 공개 메서드는 `tx?: DbTx` 마지막 인자 + `this.dbService.run(fn, tx)`, private 헬퍼는 `trx: DbTx` 필수(ADR-0025). `db.query.*`·`with` 금지, `any` 금지, 근거 없는 `as` 금지(테스트 배선의 `as never` 스텁은 기존 관례).
 - **잠금 순서(스펙 §13 + PR 2 가 정한 전역 순서):** 구성요소(불변식 검사기 `assertFulfillmentOrders`) → 작업 항목 → **세션 → 보관 행** → SKU 가용 잠금 → 재고 원장. 이 계획의 새 경로:
   - 박스에서 되돌림: 구성요소 → 작업 항목 → 세션 → 보관
-  - 카트 여분 되돌림: 영향받는 박스들의 구성요소 → 카트 advisory 잠금 → 작업 항목(id 순) → 세션 → 보관
+  - 카트 여분 되돌림: 카트 advisory 잠금 → 영향받는 박스들의 구성요소(불변식 검사기가 작업 항목·세션·보관까지 잡는다) → 작업 항목(id 순) → 세션 → 보관 (최종 리뷰에서 고침 — 구성요소를 먼저 잡으면 카트 → 세션 순서인 분류·일괄 담기·인계와 교착)
   - 되돌림 적치: 세션(id 순, 한 명령이 여러 세션) → 보관. 작업 항목·구성요소를 잡지 않는다
   - 전체 취소 연결: 구성요소 → 취소 오퍼레이션 행 → 작업 항목 → 세션 → 보관
 - 게이트: `npm run type-check` 에러 0, `npx jest --maxWorkers=2` 실패 0(OOM 회피), `npx jest scripts/security`(IDOR 가드는 서비스 파일 줄번호 좌표 — 빨가면 가드가 알려 주는 대로 좌표를 갱신). 앱은 `cd native/warehouse-app && npx tsc -b && npx vitest run && npx oxlint`.
@@ -3848,7 +3848,7 @@ git commit -m "feat(fulfillment): 빼는 박스의 상품을 스캔해 되돌림
   - `interface AggregateCartSurplusReturnInput { batchId; sessionId; cartId; skuId; sourceLocationId; quantity: number; returnBinBarcode: string; actor: PickingActor; idempotencyKey: string }`
   - `interface AggregateCartSurplusReturnResult { operationId; sessionId; cartRef; skuId; sourceLocationId; quantity: number; exited: Array<{ workItemId: string; shipmentId: string; exitTo: string | null; waitingOperationId: string | null }> }`
   - `AggregateThenSortPickingStrategy` 생성자 끝에 `boxes: BoxAllocationManager, withdrawals: BoxWithdrawalService, returnBins: ReturnBinService, returns: BoxReturnService`
-  - 잠금: 영향받는 박스들의 구성요소 → 카트 advisory 잠금 → 작업 항목(id 순) → 세션 → 보관
+  - 잠금: 카트 advisory 잠금 → 영향받는 박스들의 구성요소(세션·보관 포함) → 작업 항목(id 순) → 세션 → 보관
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다** — `picking/aggregate-cart-surplus.integration.spec.ts`:
 
