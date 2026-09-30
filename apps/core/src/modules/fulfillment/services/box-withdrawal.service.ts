@@ -4,6 +4,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { databaseNow } from '../picking/allocation/allocation.queries';
 import { WaybillService } from '../waybill/waybill.service';
+import type { WaybillView } from '../waybill/waybill.types';
 import { BatchInventorySessionRow } from './batch-inventory-session.service';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -211,14 +212,24 @@ export class BoxWithdrawalService {
     await this.invariant.assertFulfillmentOrders(rows.map((row) => row.id).sort(), trx);
   }
 
+  /**
+   * 취소로 나갈 때 활성 송장을 로컬 무효화할 수 있는가 — 활성 송장이 없거나 `registered`. 나가기(`exitIfDrained` 의 canceled
+   * 갈래)와 전체 취소 연결(E10, `ShipmentPlanningService`)의 갈래가 이 판정 하나를 쓴다 — 둘이 갈리면 E10 이 이탈로 들여보낸
+   * 취소가 나가는 순간 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` 로 통째로 되돌려진다.
+   */
+  async canceledExitWaybill(shipmentId: string, trx: DbTx): Promise<{ active: WaybillView | null; voidable: boolean }> {
+    const active = await this.waybills.getActiveWaybill(shipmentId, trx);
+    return { active, voidable: !active || active.status === 'registered' };
+  }
+
   private async voidWaybillForCanceledExit(
     shipmentId: string,
     ctx: { actorId: string; operationId: string },
     trx: DbTx,
   ): Promise<void> {
-    const active = await this.waybills.getActiveWaybill(shipmentId, trx);
+    const { active, voidable } = await this.canceledExitWaybill(shipmentId, trx);
     if (!active) return;
-    if (active.status !== 'registered') {
+    if (!voidable) {
       throw conflict(
         'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
         `Waybill ${active.id} is ${active.status}; resolve it before the canceled box can leave its batch`,

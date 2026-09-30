@@ -171,6 +171,67 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
     });
   });
 
+  it('활성 송장이 registered 가 아니면(pending) 이탈하지 않고 지금처럼 대기한다 — 취소가 NOT_VOIDABLE 로 되돌려지지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { second, wiring } = await started(tx);
+      // 재발급·일시적 거절(#914) 뒤처럼 활성 송장이 아직 등록되지 않은 박스. 집은 게 없어 이탈이면 이 트랜잭션에서 나가려 한다.
+      await tx
+        .update(wmsTables.waybills)
+        .set({ source: 'carrier', status: 'pending' })
+        .where(eq(wmsTables.waybills.id, second.waybillId));
+
+      const result = await cancel(wiring, second, tx);
+
+      expect(result.operationStatus).toBe('pending');
+      const [item] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, second.workItemId));
+      expect(item.status).not.toBe('withdrawing');
+      expect(item).toMatchObject({ status: 'queued', exitTo: null, waitingOperationId: result.operationId });
+      const [shipment] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, second.shipmentId));
+      expect(shipment).toMatchObject({ status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING' });
+      const [waybill] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, second.waybillId));
+      expect(waybill.status).toBe('pending');
+    });
+  });
+
+  it('빼는 중(draft)인 박스도 송장이 registered 가 아니면 canceled 로 올리지 않고 지금처럼 대기한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second, wiring, sessionId } = await started(tx);
+      await pickAll(wiring, sessionId, second, tx);
+      await wiring.batches.excludeShipment(
+        first.batchId,
+        second.shipmentId,
+        { reason: '급한 변경' },
+        `x-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      await tx
+        .update(wmsTables.waybills)
+        .set({ source: 'carrier', status: 'pending' })
+        .where(eq(wmsTables.waybills.id, second.waybillId));
+
+      const result = await cancel(wiring, second, tx);
+
+      expect(result.operationStatus).toBe('pending');
+      const [item] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, second.workItemId));
+      expect(item).toMatchObject({ status: 'withdrawing', exitTo: 'draft', waitingOperationId: result.operationId });
+      const [shipment] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, second.shipmentId));
+      expect(shipment.recoveryCode).toBe('CANCEL_REPLAN_PENDING');
+    });
+  });
+
   it('세션이 active 가 아니면 이탈하지 않고 지금처럼 대기한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { second, wiring, sessionId } = await started(tx);
