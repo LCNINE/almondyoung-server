@@ -28,7 +28,7 @@ describe('kstToday', () => {
 
 describe('toWrittenAtIso', () => {
   it('달력 날짜를 KST 자정 시각으로 보낸다', () => {
-    expect(toWrittenAtIso('2026-09-01')).toBe('2026-09-01T00:00:00+09:00');
+    expect(toWrittenAtIso('2026-09-01')).toBe('2026-09-01T12:00:00+09:00');
   });
 });
 
@@ -52,7 +52,7 @@ describe('buildAdminReviewPayload', () => {
       payload: {
         productId: 'f7b98c38-2d6f-4b37-8b6b-2f68b1c15b0a',
         authorName: '홍길동',
-        writtenAt: '2026-09-01T00:00:00+09:00',
+        writtenAt: '2026-09-01T12:00:00+09:00',
         rating: 5,
         content: ' 원문 그대로 ',
         mediaFileIds: [],

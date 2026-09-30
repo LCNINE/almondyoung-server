@@ -54,7 +54,7 @@ export function AdminReviewCreateForm() {
   };
 
   const handleSave = async () => {
-    if (uploading || submitted) return;
+    if (uploading || submitted || createMutation.isPending) return;
     const built = buildAdminReviewPayload(values, new Date());
     if (!built.ok) {
       setInvalid(built.field);

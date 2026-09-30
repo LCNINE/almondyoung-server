@@ -124,7 +124,7 @@ FK·인덱스 없음(관리자는 user-service 소속, 이 컬럼으로 조회�
 ### 5.5 시간대
 
 `created_at` 은 `timestamp`(without time zone) 이고 postgres.js 경로에서 −9h 어긋남 사례가 있었다.
-admin-web 은 날짜 선택값을 `YYYY-MM-DDT00:00:00+09:00` 로 보내고 서버는 그 순간값을 그대로 저장한다.
+admin-web 은 날짜 선택값을 `YYYY-MM-DDT12:00:00+09:00` 로 보내고 서버는 그 순간값을 그대로 저장한다. 스토어프론트는 서버(UTC)에서 날짜를 포맷하므로, KST 정오로 보내야 UTC 와 KST 에서 달력 날짜가 같다(자정이면 하루 전으로 보인다).
 통합 스펙에서 저장 → 조회 왕복 시각이 같은지 확인한다(§7).
 
 ## 6. admin-web

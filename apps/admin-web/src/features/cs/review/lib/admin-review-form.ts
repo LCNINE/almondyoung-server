@@ -28,9 +28,13 @@ export function kstToday(now: Date): string {
   return new Date(now.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-/** 날짜만 보내면 서버가 UTC 자정으로 읽는다 — KST 자정 시각으로 보낸다 */
+/**
+ * 날짜만 보내면 서버가 UTC 자정으로 읽는다 — KST 정오 시각으로 보낸다.
+ * KST 자정(=전날 15:00Z)은 UTC 로 포맷하는 서버 렌더에서 하루 전으로 보인다.
+ * 정오는 UTC 와 KST 에서 같은 달력 날짜다.
+ */
 export function toWrittenAtIso(date: string): string {
-  return `${date}T00:00:00+09:00`;
+  return `${date}T12:00:00+09:00`;
 }
 
 export function emptyAdminReviewForm(now: Date): AdminReviewFormValues {
