@@ -83,6 +83,7 @@ export class ReturnBinController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<ReturnBinPutawayResponseDto> {
+    if (!barcode.trim()) throw new BadRequestException('barcode is required');
     if (!idempotencyKey?.trim()) throw new BadRequestException('Idempotency-Key is required');
     return this.returnBins.putaway(barcode, dto, this.actor(user), idempotencyKey);
   }

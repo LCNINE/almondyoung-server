@@ -243,15 +243,19 @@ export class ReturnBinService {
             message: `Return bin ${bin.barcode} holds only ${available} of ${barcode} for ${locationCode}`,
           });
         }
+        // recovery_required 세션의 물건은 복구 전까지 바구니에 남는다(의도) — 적치는 active 세션 몫에서만 뺀다.
+        const usable = atLocation.filter((row) => row.sessionStatus === 'active');
+        const usableQty = usable.reduce((total, row) => total + row.qty, 0);
+        if (input.quantity > usableQty) {
+          const blocked = atLocation.find((row) => row.sessionStatus !== 'active');
+          throw new ConflictException({
+            code: 'PICKING_SESSION_NOT_ACTIVE',
+            message: `Inventory session ${blocked?.sessionId} is ${blocked?.sessionStatus}`,
+          });
+        }
         let remaining = input.quantity;
-        for (const row of atLocation) {
+        for (const row of usable) {
           if (remaining === 0) break;
-          if (row.sessionStatus !== 'active') {
-            throw new ConflictException({
-              code: 'PICKING_SESSION_NOT_ACTIVE',
-              message: `Inventory session ${row.sessionId} is ${row.sessionStatus}`,
-            });
-          }
           const qty = Math.min(remaining, row.qty);
           await this.sessions.putawayReturn(
             {

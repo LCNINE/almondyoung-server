@@ -18,7 +18,12 @@ describeIfDb('되돌림 적치 (스펙 §8, PR 3)', () => {
   });
 
   /** 박스 하나뿐인 배치를 시작하고, 전부 집고, 빼고, 바구니에 넣는다 — 배치는 파생 canceled, 세션은 바구니 때문에 active. */
-  async function intoBin(tx: DbTx, wiring: ReturnType<typeof assembleOutbound>, box: PickableShipmentFixture, bin: { barcode: string }) {
+  async function intoBin(
+    tx: DbTx,
+    wiring: ReturnType<typeof assembleOutbound>,
+    box: PickableShipmentFixture,
+    bin: { barcode: string },
+  ) {
     const run = await wiring.picking.start(
       { batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` },
       tx,
@@ -107,7 +112,13 @@ describeIfDb('되돌림 적치 (스펙 §8, PR 3)', () => {
       await intoBin(tx, wiring, a, bin);
       const [location] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, a.locationId));
       const put = (input: { barcode: string; locationCode: string; quantity: number }, trx: DbTx) =>
-        wiring.returnBins.putaway(bin.barcode, { warehouseId: a.warehouseId, ...input }, { id: a.actorId }, `p-${randomUUID()}`, trx);
+        wiring.returnBins.putaway(
+          bin.barcode,
+          { warehouseId: a.warehouseId, ...input },
+          { id: a.actorId },
+          `p-${randomUUID()}`,
+          trx,
+        );
 
       await expect(
         tx.transaction((trx) => put({ barcode: a.barcode, locationCode: 'NOT-HERE', quantity: 1 }, trx)),
@@ -121,6 +132,93 @@ describeIfDb('되돌림 적치 (스펙 §8, PR 3)', () => {
       await expect(
         tx.transaction((trx) => put({ barcode: a.barcode, locationCode: location.code, quantity: 3 }, trx)),
       ).rejects.toMatchObject({ response: { code: 'RETURN_BIN_ITEM_SHORT' } });
+    });
+  });
+
+  /** 수량 2 짜리 박스 둘이 같은 재고 위에서 각자 배치로 바구니에 들어간 상태. 세션은 id 순으로 정렬해 [첫째, 둘째]. */
+  async function twoSessionBin(tx: DbTx) {
+    const a = await seedPickableShipment(tx, 2);
+    await tx
+      .update(wmsTables.stockLedgers)
+      .set({ qty: 20 })
+      .where(and(eq(wmsTables.stockLedgers.skuId, a.skuId), eq(wmsTables.stockLedgers.locationId, a.locationId)));
+    const b = await seedBoxOverSameStock(tx, a, 2);
+    const wiring = assembleOutbound(tx);
+    const bin = await seedReturnBin(tx, a.warehouseId, a.actorId);
+    const sa = await intoBin(tx, wiring, a, bin);
+    const sb = await intoBin(tx, wiring, b, bin);
+    const [location] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, a.locationId));
+    const sessions = [sa, sb].sort();
+    const pendingOf = async (sessionId: string) => {
+      const rows = await tx
+        .select({ qty: wmsTables.batchInventorySessionBalances.qty })
+        .from(wmsTables.batchInventorySessionBalances)
+        .where(
+          and(
+            eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+            eq(wmsTables.batchInventorySessionBalances.custodyType, 'RETURN_PENDING'),
+          ),
+        );
+      return rows.reduce((total, row) => total + row.qty, 0);
+    };
+    const put = (quantity: number, key: string, trx: DbTx = tx) =>
+      wiring.returnBins.putaway(
+        bin.barcode,
+        { warehouseId: a.warehouseId, barcode: a.barcode, locationCode: location.code, quantity },
+        { id: a.actorId },
+        key,
+        trx,
+      );
+    return { sessions, pendingOf, put };
+  }
+
+  it('수량이 둘째 세션 중간에서 끝나면 첫째는 0, 둘째는 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { sessions, pendingOf, put } = await twoSessionBin(tx);
+      await put(3, `p-${randomUUID()}`);
+      expect(await pendingOf(sessions[0])).toBe(0);
+      expect(await pendingOf(sessions[1])).toBe(1);
+    });
+  });
+
+  it('같은 멱등 키 재전송은 두 번 적치하지 않고, 다른 키는 별개 적치다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { sessions, pendingOf, put } = await twoSessionBin(tx);
+      const key = `p-${randomUUID()}`;
+      const first = await put(1, key);
+      const replay = await put(1, key);
+      expect(replay).toEqual(first);
+      expect((await pendingOf(sessions[0])) + (await pendingOf(sessions[1]))).toBe(3);
+      await put(1, `p-${randomUUID()}`);
+      expect((await pendingOf(sessions[0])) + (await pendingOf(sessions[1]))).toBe(2);
+    });
+  });
+
+  it('active 세션이 채우면 recovery_required 세션을 건너뛰고, 모자라면 아무것도 쓰지 않고 PICKING_SESSION_NOT_ACTIVE', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { sessions, pendingOf, put } = await twoSessionBin(tx);
+      await tx
+        .update(wmsTables.batchInventorySessions)
+        .set({ status: 'recovery_required', recoveryReason: 'test' })
+        .where(eq(wmsTables.batchInventorySessions.id, sessions[0]));
+      await put(2, `p-${randomUUID()}`);
+      expect(await pendingOf(sessions[0])).toBe(2);
+      expect(await pendingOf(sessions[1])).toBe(0);
+      await expect(tx.transaction((trx) => put(1, `p-${randomUUID()}`, trx))).rejects.toMatchObject({
+        response: { code: 'PICKING_SESSION_NOT_ACTIVE' },
+      });
+      expect(await pendingOf(sessions[0])).toBe(2);
+    });
+  });
+
+  it('모자라는 요청은 아무것도 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { sessions, pendingOf, put } = await twoSessionBin(tx);
+      await expect(tx.transaction((trx) => put(5, `p-${randomUUID()}`, trx))).rejects.toMatchObject({
+        response: { code: 'RETURN_BIN_ITEM_SHORT' },
+      });
+      expect(await pendingOf(sessions[0])).toBe(2);
+      expect(await pendingOf(sessions[1])).toBe(2);
     });
   });
 });
