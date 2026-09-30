@@ -3,6 +3,7 @@ import type { Layer } from "../lib/document"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { imageSrc } from "../lib/image-ref"
+import { fontStack } from "../lib/fonts"
 
 export function fittedFontSize(layer: Layer) {
   const lines = (layer.text ?? "").split("\n")
@@ -436,7 +437,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           }
           fill={layer.fill}
           fontSize={line}
-          fontFamily={layer.fontFamily ?? "Arial, sans-serif"}
+          fontFamily={fontStack(layer.fontFamily)}
           fontWeight={layer.fontWeight ?? "normal"}
           fontStyle={layer.italic ? "italic" : "normal"}
           letterSpacing={layer.letterSpacing ?? 0}

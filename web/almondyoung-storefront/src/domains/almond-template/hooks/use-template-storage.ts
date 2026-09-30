@@ -38,7 +38,7 @@ type Params = {
   svgRef: RefObject<SVGSVGElement>
 }
 
-function rethrowUnauthorized(error: unknown) {
+export function rethrowUnauthorized(error: unknown) {
   const err = error as Error & { digest?: string }
   if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED")
     throw error

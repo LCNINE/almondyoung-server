@@ -16,6 +16,7 @@ import { PropertyPanel } from "./property-panel"
 import { StatusBar } from "./status-bar"
 import { ToolNav } from "./tool-nav"
 import { ToolPanel } from "./tool-panel"
+import { FONT_STYLESHEET } from "../../lib/fonts"
 
 export function AlmondTemplateEditor(props: AlmondEditorProps) {
   const editor = useAlmondEditor(props)
@@ -32,6 +33,7 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
 
   return (
     <div className="fixed inset-0 z-[10000] flex h-screen flex-col overflow-hidden bg-[#f5f5f4] text-slate-900">
+      <link rel="stylesheet" href={FONT_STYLESHEET} precedence="default" />
       <EditorHeader editor={editor} />
       <div className="relative flex min-h-0 flex-1">
         <ToolNav editor={editor} />

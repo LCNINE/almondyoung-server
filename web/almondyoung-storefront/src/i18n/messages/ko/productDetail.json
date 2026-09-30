@@ -113,7 +113,8 @@
     "stockLimitToastNamed": "‘{option}’ 옵션은 재고가 {max}개 남았어요. {max}개 이하로 담아주세요.",
     "stockConflictToast": "장바구니에 담긴 수량까지 더하면 재고를 넘어요. 장바구니 수량을 확인해 주세요.",
     "stockShortToast": "재고가 부족해 담을 수 없어요. 수량을 줄여 다시 시도해 주세요.",
-    "membersOnlyCta": "멤버십 가입하고 구매하기"
+    "membersOnlyCta": "멤버십 가입하고 구매하기",
+    "almondDesignAttached": "편집한 아몬드템플릿 시안이 함께 담깁니다."
   },
   "cartModal": {
     "addingTitle": "장바구니에 담는 중",

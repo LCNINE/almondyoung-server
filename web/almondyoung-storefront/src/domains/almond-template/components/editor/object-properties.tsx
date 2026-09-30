@@ -14,6 +14,7 @@ import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { ObjectPropertiesMore } from "./object-properties-more"
+import { FONT_OPTIONS, fontStack } from "../../lib/fonts"
 
 export function ObjectProperties({
   editor,
@@ -51,21 +52,15 @@ export function ObjectProperties({
               <select
                 aria-label="폰트"
                 className="min-w-0 flex-1 border px-2 py-1"
-                value={selected.fontFamily ?? "Arial, sans-serif"}
+                value={fontStack(selected.fontFamily)}
                 disabled={!editable}
                 onChange={(event) =>
                   patch(selected.id, { fontFamily: event.target.value })
                 }
               >
-                {[
-                  "Arial, sans-serif",
-                  "Noto Sans CJK KR, sans-serif",
-                  "Apple SD Gothic Neo, sans-serif",
-                  "Nanum Gothic, sans-serif",
-                  "serif",
-                ].map((font) => (
-                  <option key={font} value={font}>
-                    {font.split(",")[0]}
+                {FONT_OPTIONS.map((font) => (
+                  <option key={font.value} value={font.value}>
+                    {font.label}
                   </option>
                 ))}
               </select>

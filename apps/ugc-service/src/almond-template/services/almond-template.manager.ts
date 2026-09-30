@@ -17,21 +17,21 @@ import { type AlmondTemplateEntity, type AlmondTemplateRecord } from '../types/a
 
 const INT4_MAX = 2_147_483_647;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SVG_START = /^\s*(?:<\?xml[^>]*\?>\s*)?<svg[\s>]/i;
 const SVG_UNSAFE = /<script|\son[a-z]+\s*=/i;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isSizeMm(value: unknown): value is number {
+export function isSizeMm(value: unknown): value is number {
   return (
     typeof value === 'number' && Number.isInteger(value) && value >= ALMOND_TEMPLATE_MIN_SIZE_MM && value <= INT4_MAX
   );
 }
 
-function readLayers(value: unknown): Record<string, unknown>[] | null {
+export function readLayers(value: unknown): Record<string, unknown>[] | null {
   if (!Array.isArray(value)) return null;
   const layers = value.filter(isRecord);
   return layers.length === value.length ? layers : null;

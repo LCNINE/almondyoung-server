@@ -9,7 +9,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import fastifyCookie from '@fastify/cookie';
 import { EventsModule, mountEventChainContext } from '@app/events';
 import type { FastifyInstance } from 'fastify';
-import { raiseAlmondTemplateUpsertBodyLimit } from './almond-template/config/almond-template.body-limit';
+import { raiseAlmondRouteBodyLimits } from './almond-template/config/almond-template.body-limit';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter(), {
@@ -17,7 +17,7 @@ async function bootstrap() {
   });
 
   const fastify: FastifyInstance = app.getHttpAdapter().getInstance();
-  raiseAlmondTemplateUpsertBodyLimit(fastify);
+  raiseAlmondRouteBodyLimits(fastify);
 
   // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
   // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.

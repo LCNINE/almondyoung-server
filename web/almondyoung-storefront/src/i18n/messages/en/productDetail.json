@@ -113,7 +113,8 @@
     "stockLimitToastNamed": "Only {max} of “{option}” left in stock. Please choose {max} or fewer.",
     "stockConflictToast": "Adding this exceeds available stock once items already in your cart are counted. Please check your cart.",
     "stockShortToast": "Not enough stock. Please reduce the quantity and try again.",
-    "membersOnlyCta": "Join membership to purchase"
+    "membersOnlyCta": "Join membership to purchase",
+    "almondDesignAttached": "Your edited Almond Template design will be added with this item."
   },
   "cartModal": {
     "addingTitle": "Adding to cart",

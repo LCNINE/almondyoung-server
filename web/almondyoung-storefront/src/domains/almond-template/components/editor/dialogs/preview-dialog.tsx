@@ -13,6 +13,9 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
     exportJson,
     exportSvg,
     printProof,
+    variantId,
+    ordering,
+    orderDesign,
   } = editor
   return (
     <div
@@ -98,9 +101,13 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
             편집 JSON 다운로드
           </button>
         ) : (
-          <span className="text-xs text-amber-800">
-            주문 파일 전송은 아직 연결되지 않았습니다.
-          </span>
+          <button
+            className="bg-primary rounded px-4 py-2 font-bold text-white disabled:opacity-50"
+            disabled={ordering || !variantId}
+            onClick={orderDesign}
+          >
+            {ordering ? "시안 저장 중…" : "이 시안으로 주문하기"}
+          </button>
         )}
       </div>
     </div>

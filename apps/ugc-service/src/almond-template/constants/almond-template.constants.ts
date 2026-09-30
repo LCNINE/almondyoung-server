@@ -12,3 +12,12 @@ export const ALMOND_TEMPLATE_MAX_THUMBNAIL_LENGTH = 10 * 1024 * 1024;
 
 export const ALMOND_TEMPLATE_UPSERT_ROUTE = { method: 'PUT', url: '/admin/almond-templates' } as const;
 export const ALMOND_TEMPLATE_UPSERT_BODY_LIMIT = 20 * 1024 * 1024;
+
+export const ALMOND_DESIGN_MAX_SVG_LENGTH = 3 * 1024 * 1024;
+export const ALMOND_DESIGN_CREATE_ROUTE = { method: 'POST', url: '/almond-designs' } as const;
+export const ALMOND_DESIGN_CREATE_BODY_LIMIT = 5 * 1024 * 1024;
+
+export const ALMOND_PRINT_SIDE_GAP_MM = 10;
+export const ALMOND_PRINT_TIMEOUT_MS = 120_000;
+export const ALMOND_PRINT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export const ALMOND_PRINT_IMAGE_FETCH_TIMEOUT_MS = 15_000;

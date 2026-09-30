@@ -1,4 +1,5 @@
 import type { Design, Layer } from "./document"
+import { SANS_FONT } from "./fonts"
 
 export const mm = (value: number) => Math.round(value * 10) / 10
 
@@ -35,7 +36,7 @@ export function makeLayer(type: Layer["type"], design: Design): Layer {
     fill: "#202020",
     text: type === "text" ? "문구를 입력하세요" : undefined,
     fontSize: Math.max(3, mm(design.widthMm / 13)),
-    fontFamily: "Arial, sans-serif",
+    fontFamily: SANS_FONT,
     opacity: 1,
     strokeWidth: 0,
     align: "left",

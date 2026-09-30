@@ -295,6 +295,14 @@ export default function ProductActions({
     ? (sizeFromOption(printKind, optionLabel) ??
       PRINT_SPECS[printKind].sizes[0])
     : undefined
+  const almondDesignId = searchParams.get("almond_design")
+  const almondDesignMetadata =
+    hasAlmondTemplate &&
+    templateVariant &&
+    almondDesignId &&
+    /^[0-9a-f-]{36}$/.test(almondDesignId)
+      ? { almond_design_id: almondDesignId }
+      : undefined
   const templateHref =
     hasAlmondTemplate && templateVariant
       ? `/almond-template?product=${printProductId}&variant=${templateVariant.id}${printSize ? `&size=${printSize.join("x")}` : ""}`
@@ -380,6 +388,7 @@ export default function ProductActions({
             variantId: item.variantId,
             quantity: item.quantity,
             countryCode,
+            metadata: almondDesignMetadata,
           })
           // 세일이 방금 끝났으면 화면이 보여준 가격과 담긴 가격이 다르다. 조용히 넘기면
           // "4,491원인 줄 알고 담았는데 4,990원" 이 된다.
@@ -428,6 +437,7 @@ export default function ProductActions({
           items: selectedItems.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
+            metadata: almondDesignMetadata,
           })),
         })
         if (result.error) {
@@ -551,6 +561,11 @@ export default function ProductActions({
               </Button>
             </LocalizedClientLink>
           )}
+          {almondDesignMetadata && (
+            <p className="text-muted-foreground text-center text-xs">
+              {t("almondDesignAttached")}
+            </p>
+          )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (
@@ -643,6 +658,7 @@ export default function ProductActions({
         isPending={isPending}
         show={!inView}
         templateHref={templateHref}
+        designAttached={!!almondDesignMetadata}
       />
 
       <CartAddedModal

@@ -638,6 +638,23 @@ export const almondTemplates = pgTable(
   ],
 );
 
+export const almondDesigns = pgTable(
+  'almond_designs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    productId: varchar('product_id', { length: 36 }).notNull(),
+    widthMm: integer('width_mm').notNull(),
+    heightMm: integer('height_mm').notNull(),
+    templateId: uuid('template_id'),
+    design: jsonb('design').$type<Record<string, unknown>>().notNull(),
+    frontSvg: text('front_svg').notNull(),
+    backSvg: text('back_svg'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('almond_designs_user_created').on(table.userId, table.createdAt)],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -659,6 +676,7 @@ export const ugcServiceSchema = {
   logoContestEntryMedia,
   logoContestVotes,
   almondTemplates,
+  almondDesigns,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

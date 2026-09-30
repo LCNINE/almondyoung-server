@@ -33,6 +33,7 @@ type MobileActionsProps = {
   isPending: boolean
   show: boolean
   templateHref?: string
+  designAttached?: boolean
 }
 
 const MobileActions: React.FC<MobileActionsProps> = ({
@@ -54,6 +55,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   isPending,
   show,
   templateHref,
+  designAttached,
 }) => {
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
@@ -86,6 +88,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>
+          )}
+          {designAttached && (
+            <p className="text-muted-foreground text-center text-xs">
+              {t("almondDesignAttached")}
+            </p>
           )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
@@ -234,6 +241,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   아몬드템플릿으로 디자인
                 </Button>
               </LocalizedClientLink>
+            )}
+            {designAttached && (
+              <p className="text-muted-foreground mb-2 text-center text-xs">
+                {t("almondDesignAttached")}
+              </p>
             )}
             <div className="flex gap-x-3">
               {/* TODO: 재입고 알림 기능 추가 후 활성화

@@ -30,6 +30,7 @@ RUN npm run build:ugc-service
 
 # === 프로덕션 단계 ===
 FROM base AS runner
+RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk
 # 런타임 이미지에서는 이미 deps 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./

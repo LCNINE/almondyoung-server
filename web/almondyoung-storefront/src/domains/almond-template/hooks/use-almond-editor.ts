@@ -6,6 +6,7 @@ import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
 import { useImageTools } from "./use-image-tools"
 import { useLayerActions } from "./use-layer-actions"
+import { useDesignOrder } from "./use-design-order"
 import { useTemplateExport } from "./use-template-export"
 import { useTemplateStorage, type EditorMode } from "./use-template-storage"
 
@@ -145,6 +146,13 @@ export function useAlmondEditor({
     svgRef: canvas.svgRef,
     setMessage,
   })
+  const order = useDesignOrder({
+    design,
+    productId,
+    variantId,
+    templateId,
+    setMessage,
+  })
   const complete = () => {
     const found = printIssues(design)
     if (found.length) {
@@ -241,6 +249,7 @@ export function useAlmondEditor({
     ...actions,
     ...images,
     ...exporter,
+    ...order,
   }
 }
 

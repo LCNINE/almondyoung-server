@@ -292,10 +292,12 @@ export async function addToCart({
   variantId,
   quantity,
   countryCode,
+  metadata,
 }: {
   variantId: string
   quantity: number
   countryCode: string
+  metadata?: Record<string, unknown>
 }): Promise<
   | { cartId: string; unitPrice: number | null; error?: never }
   | { cartId?: never; unitPrice?: never; error: string }
@@ -317,7 +319,7 @@ export async function addToCart({
   try {
     const added = await sdk.store.cart.createLineItem(
       cart.id,
-      { variant_id: variantId, quantity },
+      { variant_id: variantId, quantity, metadata },
       {},
       headers
     )
@@ -348,6 +350,7 @@ export async function createBuyNowCart(params: {
   items: Array<{
     variantId: string
     quantity: number
+    metadata?: Record<string, unknown>
   }>
 }): Promise<
   { cartId: string; error?: never } | { cartId?: never; error: string }
@@ -391,7 +394,11 @@ export async function createBuyNowCart(params: {
 
       await sdk.store.cart.createLineItem(
         cart.id,
-        { variant_id: item.variantId, quantity: item.quantity },
+        {
+          variant_id: item.variantId,
+          quantity: item.quantity,
+          metadata: item.metadata,
+        },
         {},
         headers
       )
