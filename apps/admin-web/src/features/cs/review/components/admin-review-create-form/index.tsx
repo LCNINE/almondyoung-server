@@ -39,6 +39,8 @@ export function AdminReviewCreateForm() {
   const createMutation = useCreateAdminReview();
   const [values, setValues] = useState<AdminReviewFormValues>(() => emptyAdminReviewForm(new Date()));
   const [product, setProduct] = useState<PickedProduct | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [invalid, setInvalid] = useState<AdminReviewField | null>(null);
 
   const set = <K extends AdminReviewField>(key: K, value: AdminReviewFormValues[K]) => {
@@ -52,6 +54,7 @@ export function AdminReviewCreateForm() {
   };
 
   const handleSave = async () => {
+    if (uploading || submitted) return;
     const built = buildAdminReviewPayload(values, new Date());
     if (!built.ok) {
       setInvalid(built.field);
@@ -62,6 +65,7 @@ export function AdminReviewCreateForm() {
 
     try {
       const created = await createMutation.mutateAsync(built.payload);
+      setSubmitted(true);
       toast.success('리뷰를 등록했어요. 쇼핑몰 상품 리뷰에 바로 보여요.');
       router.push(`/cs/reviews/${created.id}`);
     } catch (error) {
@@ -69,7 +73,7 @@ export function AdminReviewCreateForm() {
     }
   };
 
-  const saving = createMutation.isPending;
+  const saving = createMutation.isPending || submitted;
 
   return (
     <Card>
@@ -159,6 +163,7 @@ export function AdminReviewCreateForm() {
             label="사진"
             maxImages={ADMIN_REVIEW_MAX_MEDIA}
             disabled={saving}
+            onUploadingChange={setUploading}
           />
           <p className="text-xs text-muted-foreground">사진은 {ADMIN_REVIEW_MAX_MEDIA}장까지, 동영상은 올릴 수 없어요.</p>
         </section>
@@ -168,8 +173,8 @@ export function AdminReviewCreateForm() {
             취소
           </Button>
           {/* 저장 중 비활성 — 연타로 같은 리뷰가 두 건 생기지 않게 */}
-          <Button type="button" onClick={handleSave} disabled={saving}>
-            {saving ? '저장 중…' : '저장'}
+          <Button type="button" onClick={handleSave} disabled={saving || uploading}>
+            {uploading ? '사진 올리는 중…' : saving ? '저장 중…' : '저장'}
           </Button>
         </div>
       </CardContent>

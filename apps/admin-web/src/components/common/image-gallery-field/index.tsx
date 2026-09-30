@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ type Props = {
   maxImages?: number;
   /** 입력 제목. 기본은 샵 매매용 「샵 사진」 */
   label?: string;
+  /** 업로드가 시작·끝날 때 알린다. 호출부가 저장 버튼을 막는 데 쓴다 */
+  onUploadingChange?: (uploading: boolean) => void;
 };
 
 export function ImageGalleryField({
@@ -35,9 +37,13 @@ export function ImageGalleryField({
   disabled,
   maxImages = DEFAULT_MAX_IMAGES,
   label = '샵 사진',
+  onUploadingChange,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
   const [dragOver, setDragOver] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [cropTarget, setCropTarget] = useState<string | null>(null);

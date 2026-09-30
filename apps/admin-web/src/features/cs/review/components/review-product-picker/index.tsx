@@ -14,16 +14,19 @@ export type PickedProduct = { id: string; name: string; thumbnail: string | null
 const PAGE_SIZE = 10;
 
 function Thumb({ fileId, name }: { fileId: string | null; name: string }) {
+  const src = fileId ? resolvePublicFileUrl(fileId) : null;
   return (
     <div className="h-12 w-12 shrink-0 overflow-hidden rounded border bg-muted">
-      <Image
-        unoptimized
-        src={resolvePublicFileUrl(fileId) ?? '/placeholder.svg'}
-        alt={name}
-        width={48}
-        height={48}
-        className="h-full w-full object-cover"
-      />
+      {src && (
+        <Image
+          unoptimized
+          src={src}
+          alt={name}
+          width={48}
+          height={48}
+          className="h-full w-full object-cover"
+        />
+      )}
     </div>
   );
 }
