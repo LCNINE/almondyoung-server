@@ -924,19 +924,57 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect(excluded.workItem).toMatchObject({ id: preservedItem.workItem.id, status: 'excluded' });
     expect(after).toEqual(before);
 
+    // 보관은 시작된 배치에만 있다 — startBatchPicking 이 남기는 모양(started_at·남은 작업 항목의 배정·인계)을 심고,
+    // 그중 한 개를 작업자가 집어 든 상태로 둔다. 배정 없이 보관만 심으면 불변식 검사기(I1·I3)가 먼저 막는다.
+    await db
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+    await db.insert(wmsTables.pickingSourceAllocations).values([
+      {
+        workItemId: custodyItem.workItem.id,
+        shipmentLineId: withCustody.line.id,
+        sourceLocationId: withCustody.locationId,
+        qty: withCustody.line.qty,
+        sourceStockVersion: 1,
+      },
+      {
+        workItemId: dispatchItem.workItem.id,
+        shipmentLineId: withDispatch.line.id,
+        sourceLocationId: withDispatch.locationId,
+        qty: withDispatch.line.qty,
+        sourceStockVersion: 1,
+      },
+    ]);
     const [session] = await db
       .insert(wmsTables.batchInventorySessions)
-      .values({ batchId: batch.batchId, handedInQty: 1 })
+      .values({ batchId: batch.batchId, handedInQty: withCustody.line.qty + withDispatch.line.qty })
       .returning();
-    await db.insert(wmsTables.batchInventorySessionBalances).values({
-      sessionId: session.id,
-      skuId: withCustody.skuId,
-      sourceLocationId: withCustody.locationId,
-      custodyType: 'WORKER',
-      custodyRef: randomUUID(),
-      shipmentLineId: withCustody.line.id,
-      qty: 1,
-    });
+    await db.insert(wmsTables.batchInventorySessionBalances).values([
+      {
+        sessionId: session.id,
+        skuId: withCustody.skuId,
+        sourceLocationId: withCustody.locationId,
+        custodyType: 'WORKER',
+        custodyRef: randomUUID(),
+        shipmentLineId: withCustody.line.id,
+        qty: 1,
+      },
+      {
+        sessionId: session.id,
+        skuId: withCustody.skuId,
+        sourceLocationId: withCustody.locationId,
+        custodyType: 'AT_SOURCE',
+        qty: withCustody.line.qty - 1,
+      },
+      {
+        sessionId: session.id,
+        skuId: withDispatch.skuId,
+        sourceLocationId: withDispatch.locationId,
+        custodyType: 'AT_SOURCE',
+        qty: withDispatch.line.qty,
+      },
+    ]);
     await expect(
       services.batches.excludeShipment(
         batch.batchId,
