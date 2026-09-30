@@ -17,6 +17,7 @@ import {
   TopPointUserDto,
   PaginatedResponse,
   AdminRecurringBillingOverview,
+  RecurringBillingFinanceMonth,
   AdminRecurringBillingRow,
   AdminRecurringBillingListQuery,
   AdminRecurringInvoiceRow,
@@ -344,6 +345,16 @@ export const walletApi = {
       );
       return res.data;
     },
+
+  getRecurringBillingFinance: async (
+    month: string,
+    months: number
+  ): Promise<{ months: RecurringBillingFinanceMonth[] }> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/recurring-billing/finance?month=${month}&months=${months}`
+    );
+    return res.data;
+  },
 
   listRecurringBillingItems: async (
     query: AdminRecurringBillingListQuery

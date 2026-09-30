@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { SQL, and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { SQL, and, count, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm';
 import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import {
   WalletSchema,
@@ -24,6 +24,9 @@ import {
   AdminInvoiceRowDto,
 } from './dto/admin-recurring-billing.dto';
 import { PaginatedResponseDto } from '@app/shared';
+import { RecurringBillingFinanceReader } from './recurring-billing-finance.reader';
+import { kstDayStart, kstNextDayStart } from './kst-day-range';
+import { FinanceMonth, lastMonths, summarizeFinance } from './recurring-billing-finance';
 
 // ─── Pure classification helper ──────────────────────────────────────────────
 
@@ -102,10 +105,19 @@ export class RecurringBillingAdminService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly cmsMemberPoller: CmsMemberPollerService,
     private readonly cmsSettlementPoller: CmsSettlementPollerService,
+    private readonly financeReader: RecurringBillingFinanceReader,
   ) {}
 
   private get db() {
     return this.dbService.db;
+  }
+
+  // ── Finance ─────────────────────────────────────────────────────────────────
+
+  async getFinance(anchorMonth: string, count: number): Promise<{ months: FinanceMonth[] }> {
+    const months = lastMonths(anchorMonth, count);
+    const rows = await this.financeReader.statusRows(months[0], anchorMonth);
+    return { months: summarizeFinance(rows, months) };
   }
 
   // ── Overview ────────────────────────────────────────────────────────────────
@@ -475,11 +487,11 @@ export class RecurringBillingAdminService {
       if (query.dateFrom) conditions.push(gte(cmsWithdrawals.paymentDate, query.dateFrom));
       if (query.dateTo) conditions.push(lte(cmsWithdrawals.paymentDate, query.dateTo));
     } else if (query.dateType === 'createdAt') {
-      if (query.dateFrom) conditions.push(gte(cmsWithdrawals.createdAt, new Date(query.dateFrom)));
-      if (query.dateTo) conditions.push(lte(cmsWithdrawals.createdAt, new Date(query.dateTo)));
+      if (query.dateFrom) conditions.push(gte(cmsWithdrawals.createdAt, kstDayStart(query.dateFrom)));
+      if (query.dateTo) conditions.push(lt(cmsWithdrawals.createdAt, kstNextDayStart(query.dateTo)));
     } else if (query.dateType === 'updatedAt') {
-      if (query.dateFrom) conditions.push(gte(cmsWithdrawals.updatedAt, new Date(query.dateFrom)));
-      if (query.dateTo) conditions.push(lte(cmsWithdrawals.updatedAt, new Date(query.dateTo)));
+      if (query.dateFrom) conditions.push(gte(cmsWithdrawals.updatedAt, kstDayStart(query.dateFrom)));
+      if (query.dateTo) conditions.push(lt(cmsWithdrawals.updatedAt, kstNextDayStart(query.dateTo)));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

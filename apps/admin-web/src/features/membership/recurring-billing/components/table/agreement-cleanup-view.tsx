@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
+import { useClientPage } from './client-pager';
 import { Button } from '@/components/ui/button';
 import { membershipApi } from '@/lib/api/domains/membership';
 import { AgreementCleanupItem } from '@/lib/types/dto/membership';
@@ -43,6 +44,7 @@ export function AgreementCleanupView() {
   });
 
   const rows = data?.data ?? [];
+  const { pageRows, pager } = useClientPage(rows);
   const abandoned = rows.filter((r) => r.state === 'AGREEMENT_REVOKE_ABANDONED').length;
 
   return (
@@ -87,7 +89,7 @@ export function AgreementCleanupView() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {pageRows.map((r) => {
                 const badge = STATE_LABEL[r.state] ?? {
                   label: r.state,
                   variant: 'outline' as const,
@@ -122,6 +124,7 @@ export function AgreementCleanupView() {
           </table>
         </div>
       )}
+      {rows.length > 0 && pager}
     </div>
   );
 }

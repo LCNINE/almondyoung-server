@@ -360,6 +360,25 @@ export interface AdminRecurringBillingOverview {
   invoiceMandateRejected: number;
 }
 
+/** 정기결제 «돈» 요약의 한 칸 — 금액(원)과 청구 건수 */
+export interface RecurringBillingMoney {
+  amount: number;
+  invoices: number;
+}
+
+/** 멤버십 인보이스를 최초 출금 예정일(due_date)의 달로 묶은 한 달치 */
+export interface RecurringBillingFinanceMonth {
+  month: string;
+  billed: RecurringBillingMoney;
+  paid: RecurringBillingMoney;
+  inProgress: RecurringBillingMoney;
+  uncollectible: RecurringBillingMoney;
+  mandateRejected: RecurringBillingMoney;
+  /** 끝난 청구 금액 중 수금 비율. 끝난 청구가 없으면 null */
+  collectionRate: number | null;
+  retryRecovery: { recovered: number; lost: number; rate: number | null };
+}
+
 export interface AdminRecurringBillingListQuery {
   page?: number;
   limit?: number;

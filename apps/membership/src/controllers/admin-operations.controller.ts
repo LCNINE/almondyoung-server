@@ -944,6 +944,25 @@ export class AdminOperationsController {
   }
 
   /**
+   * 오늘(KST)부터 days 일 안에 결제일이 오는 자동갱신 계약 수와 플랜 정가 합계(추정). 정기결제 화면용.
+   */
+  @Get('billing/upcoming')
+  @ApiOperation({ summary: '다음 N일 청구 예정 (정기결제 화면)' })
+  @UseGuards(JwtAuthGuard)
+  async getUpcomingBilling(@Query('days') days?: string) {
+    const parsed = days === undefined ? 7 : Number(days);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) {
+      throw new BadRequestException('days 는 1~31 사이 정수여야 합니다.');
+    }
+    try {
+      const result = await this.adminOperationsService.getUpcomingBilling(parsed);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '다음 청구 예정');
+    }
+  }
+
+  /**
    * 멤버십 회원 상세 조회
    *
    * GET /admin/members/:userId

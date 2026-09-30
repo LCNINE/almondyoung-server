@@ -202,6 +202,30 @@ function kstDatePlus(now: Date, days: number): string {
 export class AdminMemberInsightsReader {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
+  /**
+   * 오늘(KST)부터 days 일 안에 결제일이 오는 자동갱신 계약 — 정기결제 화면의 「다음 N일 청구 예정」.
+   * 금액은 플랜 정가 합계라 추정치다(쿠폰·가격 변경은 반영하지 않는다). 사람 축 요약과 따로 둬
+   * 회원 화면의 요약 쿼리에 일을 더하지 않는다.
+   */
+  async upcomingBilling(
+    days: number,
+    now: Date = new Date(),
+  ): Promise<{ from: string; toExclusive: string; contracts: number; amount: number }> {
+    const from = kstDatePlus(now, 0);
+    const toExclusive = kstDatePlus(now, days);
+    const [row] = await this.rows(sql`
+      SELECT COUNT(*) AS contracts, COALESCE(SUM(p.price), 0) AS amount
+      FROM subscription_contracts c
+      JOIN plan p ON p.id = c.plan_id
+      WHERE c.status = 'ACTIVE'
+        AND c.auto_renewal = true
+        AND c.is_voided = false
+        AND c.next_billing_date >= ${from}::date
+        AND c.next_billing_date < ${toExclusive}::date
+    `);
+    return { from, toExclusive, contracts: num(row?.contracts), amount: num(row?.amount) };
+  }
+
   private async rows(query: SQL): Promise<Row[]> {
     const result = await this.dbService.db.execute<Row>(query);
     return Array.from(result);

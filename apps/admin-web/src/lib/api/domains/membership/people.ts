@@ -185,10 +185,25 @@ export interface MemberArrears {
   events?: ArrearsTimelineEvent[];
 }
 
+/** 오늘(KST)부터 N일 안에 결제일이 오는 자동갱신 계약. 금액은 플랜 정가 합계(추정). */
+export interface UpcomingBilling {
+  from: string;
+  toExclusive: string;
+  contracts: number;
+  amount: number;
+}
+
 export const membershipPeopleApi = {
   getInsights: async (): Promise<MembershipInsights> => {
     const res = await client.get<MembershipInsights>(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/insights`
+    );
+    return res.data;
+  },
+
+  getUpcomingBilling: async (days: number): Promise<UpcomingBilling> => {
+    const res = await client.get<UpcomingBilling>(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/upcoming?days=${days}`
     );
     return res.data;
   },

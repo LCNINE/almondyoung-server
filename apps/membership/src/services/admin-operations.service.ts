@@ -169,6 +169,10 @@ export class AdminOperationsService {
     return this.insightsReader.insights();
   }
 
+  async getUpcomingBilling(days: number) {
+    return this.insightsReader.upcomingBilling(days);
+  }
+
   /**
    * 사람 축 목록. 축이 누구를 어떤 순서로 보여줄지 정하고, 행의 회원 정보는 기존 목록과 같은
    * 매핑(findAllWithDetails)으로 채운다 — 같은 사람이 두 화면에서 다른 상태로 보이지 않게.
