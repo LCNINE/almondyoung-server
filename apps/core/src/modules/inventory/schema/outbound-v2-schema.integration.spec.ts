@@ -1254,7 +1254,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           skuId: f.sku.id,
           sourceLocationId: f.secondLocation.id,
           custodyType: 'RETURN_PENDING',
-          shipmentLineId: f.shipmentLine.id,
+          custodyRef: 'RB-1',
           qty: 1,
         },
         {
@@ -1288,7 +1288,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         {
           sourceLocationId: f.location.id,
           custodyType: 'RETURN_PENDING' as const,
-          custodyRef: 'forbidden-return-ref',
+          custodyRef: 'RB-with-line',
           shipmentLineId: f.shipmentLine.id,
         },
         {
@@ -1366,7 +1366,9 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           sp.insert(wmsTables.batchInventorySessionBalances).values({
             sessionId: session.id,
             skuId: f.sku.id,
+            sourceLocationId: f.location.id,
             custodyType: 'RETURN_PENDING',
+            custodyRef: 'RB-2',
             shipmentLineId: f.shipmentLine.id,
             qty: 1,
           }),
@@ -1423,8 +1425,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           skuId: f.sku.id,
           quantity: 1,
           fromCustodyType: 'RETURN_PENDING',
+          fromCustodyRef: 'RB-1',
           fromSourceLocationId: f.secondLocation.id,
-          fromShipmentLineId: f.shipmentLine.id,
           toCustodyType: 'AT_SOURCE',
           toSourceLocationId: f.location.id,
         })
@@ -1432,8 +1434,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       expect(returnToSource).toMatchObject({
         fromCustodyType: 'RETURN_PENDING',
         fromSourceLocationId: f.secondLocation.id,
-        fromCustodyRef: null,
-        fromShipmentLineId: f.shipmentLine.id,
+        fromCustodyRef: 'RB-1',
+        fromShipmentLineId: null,
         toCustodyType: 'AT_SOURCE',
         toSourceLocationId: f.location.id,
         toCustodyRef: null,
@@ -1550,11 +1552,11 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           sp.insert(wmsTables.batchInventorySessionEvents).values({
             sessionId: session.id,
             idempotencyKey: randomUUID(),
-            eventType: 'return_pending_with_ref',
+            eventType: 'return_pending_with_line',
             skuId: f.sku.id,
             quantity: 1,
             fromCustodyType: 'RETURN_PENDING',
-            fromCustodyRef: 'forbidden-return-ref',
+            fromCustodyRef: 'RB-1',
             fromSourceLocationId: f.location.id,
             fromShipmentLineId: f.shipmentLine.id,
           }),
