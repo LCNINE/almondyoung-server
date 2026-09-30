@@ -1,6 +1,7 @@
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -17,11 +18,13 @@ import {
   BatchInventorySessionFaultInjector,
   BatchInventorySessionService,
   handInRequestHash,
+  shortageIdempotencyKey,
 } from './batch-inventory-session.service';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';
 import { inRollbackTx, makeDb } from './__support__';
-import { seedBoxOverSameStock, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
+import { seedBoxOverSameStock, seedReturnBin, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
+import { seedShortPickOperation } from './__support__/short-pick-fixtures';
 import { assembleOutbound } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -331,32 +334,44 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         'SESSION_IDEMPOTENCY_MISMATCH',
       );
 
-      const returned = await services.sessions.returnToSource(
+      const bin = await seedReturnBin(tx, fixture.source.warehouseId, actorId);
+      await services.sessions.removeToReturnBin(
         {
           sessionId: session.id,
-          idempotencyKey: `return-${randomUUID()}`,
+          operationId: randomUUID(),
           actorId,
+          workItemId: fixture.workItem.id,
+          allocationId: fixture.allocation.id,
+          shipmentLineId: fixture.line.id,
+          skuId: fixture.source.skuId,
+          sourceLocationId: fixture.source.locationId,
           quantity: fixture.quantity,
-          from: handoff.to,
+          from: { custodyType: 'WORKER', custodyRef: handoff.to.custodyRef, shipmentLineId: fixture.line.id },
+          returnBin: bin,
         },
         tx,
       );
+      await tx
+        .update(wmsTables.pickingSourceAllocations)
+        .set({ qty: 0 })
+        .where(eq(wmsTables.pickingSourceAllocations.id, fixture.allocation.id));
+      const putaway = {
+        sessionId: session.id,
+        operationId: randomUUID(),
+        actorId,
+        skuId: fixture.source.skuId,
+        sourceLocationId: fixture.source.locationId,
+        quantity: fixture.quantity,
+        returnBin: bin,
+      };
+      const returned = await services.sessions.putawayReturn(putaway, tx);
       expect(returned.session).toMatchObject({ status: 'settled', returnedQty: fixture.quantity });
-      const terminalReplay = await services.sessions.returnToSource(
-        {
-          sessionId: session.id,
-          idempotencyKey: returned.event.idempotencyKey,
-          actorId,
-          quantity: fixture.quantity,
-          from: handoff.to,
-        },
-        tx,
-      );
+      const terminalReplay = await services.sessions.putawayReturn(putaway, tx);
       expect(terminalReplay).toMatchObject({ replayed: true, event: { id: returned.event.id } });
     });
   });
 
-  it('attributes pooled short-pick outcomes to one allocation without consuming sibling custody', async () => {
+  it('부족 승인은 안 집은 몫(AT_SOURCE)에서 배정 신원을 싣고 줄인다 — 형제 박스의 보관은 그대로, 같은 키는 재생', async () => {
     await inRollbackTx(async (tx) => {
       const fixture = await seedAllocatedBatch(tx, { quantity: 3 });
       const suffix = randomUUID();
@@ -421,358 +436,197 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         qty: 2,
         sourceStockVersion: fixture.source.stockVersion,
       });
-
       const session = await handIn(services, fixture.batch.id, tx);
-      const cartRef = randomUUID();
+      // 한 개는 집었다 — WORKER 1(줄 귀속). 안 집은 몫 = 3 − 1 = 2
       await services.sessions.moveCustody(
         {
           sessionId: session.id,
-          idempotencyKey: `pooled-cart-${randomUUID()}`,
+          idempotencyKey: `pick-${randomUUID()}`,
           actorId,
-          quantity: 5,
-          from: {
-            skuId: fixture.source.skuId,
-            sourceLocationId: fixture.source.locationId,
-            custodyType: 'AT_SOURCE',
-          },
+          quantity: 1,
+          from: { skuId: fixture.source.skuId, sourceLocationId: fixture.source.locationId, custodyType: 'AT_SOURCE' },
           to: {
             skuId: fixture.source.skuId,
             sourceLocationId: fixture.source.locationId,
-            custodyType: 'BULK_CART',
-            custodyRef: cartRef,
+            custodyType: 'WORKER',
+            custodyRef: actorId,
+            shipmentLineId: fixture.line.id,
           },
         },
         tx,
       );
-      const tote = {
-        skuId: fixture.source.skuId,
-        sourceLocationId: fixture.source.locationId,
-        custodyType: 'TOTE' as const,
-        custodyRef: randomUUID(),
-        shipmentLineId: fixture.line.id,
-      };
-      const packing = {
-        ...tote,
-        custodyType: 'PACKING' as const,
-        custodyRef: randomUUID(),
-      };
-      const sorting = {
-        ...tote,
-        custodyType: 'SORTING' as const,
-        custodyRef: randomUUID(),
-      };
-      for (const to of [tote, packing, sorting]) {
-        await services.sessions.moveCustody(
-          {
-            sessionId: session.id,
-            idempotencyKey: `attribute-${to.custodyType}-${randomUUID()}`,
-            actorId,
-            quantity: 1,
-            from: {
-              skuId: fixture.source.skuId,
-              sourceLocationId: fixture.source.locationId,
-              custodyType: 'BULK_CART',
-              custodyRef: cartRef,
-            },
-            to,
-          },
-          tx,
-        );
-      }
-      const operationId = randomUUID();
-      const operationReason = 'confirmed physical shortage';
-      const [operation] = await tx
-        .insert(wmsTables.shipmentOperations)
-        .values({
-          id: operationId,
-          type: 'short_pick',
-          operatorId: actorId,
-          reason: operationReason,
-          idempotencyKey: `session-short-${randomUUID()}`,
-          requestHash: 'd'.repeat(64),
-          beforeManifestSnapshot: {
-            intent: {
-              kind: 'short_pick',
-              operationId,
-              shipmentId: fixture.shipment.id,
-              workItemId: fixture.workItem.id,
-              sessionId: session.id,
-              actorId,
-              reason: operationReason,
-              lines: [
-                {
-                  shipmentLineId: fixture.line.id,
-                  sourceLocationId: fixture.source.locationId,
-                  shortQty: 1,
-                  allocationQty: 3,
-                },
-              ],
-            },
-          },
-        })
-        .returning();
-      await tx.insert(wmsTables.shipmentOperationMembers).values({
-        operationId: operation.id,
+      const operation = await seedShortPickOperation(tx, {
         shipmentId: fixture.shipment.id,
-        role: 'source',
-      });
-
-      const returned = await services.sessions.returnShortPickCustody(
-        {
-          sessionId: session.id,
-          idempotencyKey: `short-return-${randomUUID()}`,
-          shortPickOperationId: operation.id,
-          shipmentLineId: fixture.line.id,
-          quantity: 1,
-          from: tote,
-          reason: operationReason,
-          actorId,
-        },
-        tx,
-      );
-      const secondReturn = await services.sessions.returnShortPickCustody(
-        {
-          sessionId: session.id,
-          idempotencyKey: `short-return-sorting-${randomUUID()}`,
-          shortPickOperationId: operation.id,
-          shipmentLineId: fixture.line.id,
-          quantity: 1,
-          from: sorting,
-          reason: operationReason,
-          actorId,
-        },
-        tx,
-      );
-      const shortageInput = {
+        workItemId: fixture.workItem.id,
         sessionId: session.id,
-        idempotencyKey: `shortage-${randomUUID()}`,
+        actorId,
+        lines: [
+          {
+            shipmentLineId: fixture.line.id,
+            sourceLocationId: fixture.source.locationId,
+            shortQty: 2,
+            allocationQty: 3,
+          },
+        ],
+      });
+      const input = {
+        sessionId: session.id,
+        idempotencyKey: shortageIdempotencyKey(operation.id, fixture.allocation.id),
         shortPickOperationId: operation.id,
+        workItemId: fixture.workItem.id,
+        allocationId: fixture.allocation.id,
         shipmentLineId: fixture.line.id,
-        quantity: 1,
-        from: packing,
-        reasonCode: 'DAMAGED' as const,
-        reason: operationReason,
+        quantity: 2,
+        from: {
+          skuId: fixture.source.skuId,
+          sourceLocationId: fixture.source.locationId,
+          custodyType: 'AT_SOURCE' as const,
+        },
+        reasonCode: 'MISSING' as const,
+        reason: operation.reason,
         approverId: actorId,
       };
-      const shortage = await services.sessions.approveShortage(shortageInput, tx);
-      expect(returned.replayed).toBe(false);
-      expect(secondReturn.replayed).toBe(false);
-      expect(shortage.session.returnedQty).toBe(2);
-      expect(shortage.session.shortageQty).toBe(1);
-      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
-      await expectConflict(
-        services.sessions.approveShortage({ ...shortageInput, quantity: 2 }, tx),
-        'SESSION_IDEMPOTENCY_MISMATCH',
-      );
 
-      const wrongOperationId = randomUUID();
-      const [wrongOperation] = await tx
-        .insert(wmsTables.shipmentOperations)
-        .values({
-          id: wrongOperationId,
-          type: 'short_pick',
-          operatorId: actorId,
-          reason: operationReason,
-          idempotencyKey: `session-wrong-${randomUUID()}`,
-          requestHash: 'e'.repeat(64),
-          beforeManifestSnapshot: {
-            intent: {
-              kind: 'short_pick',
-              operationId: wrongOperationId,
-              shipmentId: fixture.shipment.id,
-              workItemId: fixture.workItem.id,
-              sessionId: session.id,
-              actorId,
-              reason: operationReason,
-              lines: [
-                {
-                  shipmentLineId: fixture.line.id,
-                  sourceLocationId: fixture.source.locationId,
-                  shortQty: 1,
-                  allocationQty: 3,
-                },
-              ],
-            },
-          },
-        })
-        .returning();
-      await expectConflict(
-        services.sessions.approveShortage(
-          {
-            ...shortageInput,
-            idempotencyKey: `wrong-owner-${randomUUID()}`,
-            shortPickOperationId: wrongOperation.id,
-            from: {
-              skuId: fixture.source.skuId,
-              sourceLocationId: fixture.source.locationId,
-              custodyType: 'BULK_CART',
-              custodyRef: cartRef,
-            },
-          },
-          tx,
-        ),
-        'SESSION_SHORTAGE_OPERATION_OWNERSHIP_MISMATCH',
-      );
-      await expectConflict(
-        services.sessions.approveShortage(
-          {
-            ...shortageInput,
-            idempotencyKey: `sibling-overdraw-${randomUUID()}`,
-            from: {
-              skuId: fixture.source.skuId,
-              sourceLocationId: fixture.source.locationId,
-              custodyType: 'BULK_CART',
-              custodyRef: cartRef,
-            },
-          },
-          tx,
-        ),
-        'SESSION_SHORTAGE_EXCEEDS_OPERATION_INTENT',
-      );
-      const [siblingPooled] = await tx
+      const approved = await services.sessions.approveShortage(input, tx);
+
+      expect(approved.session).toMatchObject({ shortageQty: 2, returnedQty: 0 });
+      expect(approved.event.payload).toMatchObject({
+        shortPickOperationId: operation.id,
+        workItemId: fixture.workItem.id,
+        allocationId: fixture.allocation.id,
+      });
+      // AT_SOURCE = 3(본 박스) + 2(형제) − 1(집음) − 2(부족) = 2 — 형제 몫 2 가 그대로다
+      const [atSource] = await tx
         .select()
         .from(wmsTables.batchInventorySessionBalances)
         .where(
           and(
             eq(wmsTables.batchInventorySessionBalances.sessionId, session.id),
-            eq(wmsTables.batchInventorySessionBalances.custodyType, 'BULK_CART'),
+            eq(wmsTables.batchInventorySessionBalances.custodyType, 'AT_SOURCE'),
           ),
         );
-      expect(siblingPooled.qty).toBe(2);
-      expect(await services.recovery.reconcile(session.id, tx)).toMatchObject({ healthy: true });
+      expect(atSource.qty).toBe(2);
+      expect((await services.sessions.approveShortage(input, tx)).replayed).toBe(true);
+    });
+  });
 
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({
-          beforeManifestSnapshot: {
-            intent: {
-              kind: 'short_pick',
-              operationId: operation.id,
-              shipmentId: fixture.shipment.id,
-              workItemId: fixture.workItem.id,
-              sessionId: session.id,
-              actorId,
-              reason: operationReason,
-              lines: [
-                {
-                  shipmentLineId: fixture.line.id,
-                  sourceLocationId: fixture.source.locationId,
-                  shortQty: 2,
-                  allocationQty: 3,
-                },
-              ],
-            },
-          },
-        })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      const tamperedIntent = await services.recovery.reconcile(session.id, tx);
-      expect(tamperedIntent).toMatchObject({ healthy: false, recoveryRequired: true });
-      expect(tamperedIntent.issues.join(' ')).toContain('differs from immutable short-pick operation intent');
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({ beforeManifestSnapshot: operation.beforeManifestSnapshot })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      expect(await services.recovery.rebuildFromEvents(session.id, tx)).toMatchObject({ healthy: true });
-
-      // 결품 intent 가 같은 배치의 다른 작업 항목(형제 박스)을 가리키면, 이 줄·위치의 배정은
-      // 그 작업 항목 몫이 아니므로 복구가 귀속을 거부한다.
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({
-          beforeManifestSnapshot: {
-            intent: {
-              kind: 'short_pick',
-              operationId: operation.id,
-              shipmentId: fixture.shipment.id,
-              workItemId: siblingWorkItem.id,
-              sessionId: session.id,
-              actorId,
-              reason: operationReason,
-              lines: [
-                {
-                  shipmentLineId: fixture.line.id,
-                  sourceLocationId: fixture.source.locationId,
-                  shortQty: 1,
-                  allocationQty: 3,
-                },
-              ],
-            },
-          },
-        })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      const foreignWorkItem = await services.recovery.reconcile(session.id, tx);
-      expect(foreignWorkItem).toMatchObject({ healthy: false, recoveryRequired: true });
-      expect(foreignWorkItem.issues.join(' ')).toContain('has invalid short-pick allocation attribution');
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({ beforeManifestSnapshot: operation.beforeManifestSnapshot })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      expect(await services.recovery.rebuildFromEvents(session.id, tx)).toMatchObject({ healthy: true });
-
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({ status: 'recovery_required', lastError: 'invoice void retry pending' })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
-      await expectConflict(
-        services.sessions.approveShortage({ ...shortageInput, idempotencyKey: `recovery-new-${randomUUID()}` }, tx),
-        'SESSION_SHORTAGE_OPERATION_RECOVERY_ONLY',
+  it('부족 승인은 줄 귀속 보관에서 하지 않고, 안 집은 몫을 넘지 않는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedAllocatedBatch(tx, { quantity: 3 });
+      const session = await handIn(services, fixture.batch.id, tx);
+      const worker = {
+        skuId: fixture.source.skuId,
+        sourceLocationId: fixture.source.locationId,
+        custodyType: 'WORKER' as const,
+        custodyRef: actorId,
+        shipmentLineId: fixture.line.id,
+      };
+      await services.sessions.moveCustody(
+        {
+          sessionId: session.id,
+          idempotencyKey: `pick-${randomUUID()}`,
+          actorId,
+          quantity: 2,
+          from: { skuId: fixture.source.skuId, sourceLocationId: fixture.source.locationId, custodyType: 'AT_SOURCE' },
+          to: worker,
+        },
+        tx,
       );
-
-      await tx
-        .update(wmsTables.shipmentOperations)
-        .set({ status: 'completed', lastError: null, completedAt: new Date() })
-        .where(eq(wmsTables.shipmentOperations.id, operation.id));
-      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
-      await expectConflict(
-        services.sessions.approveShortage({ ...shortageInput, idempotencyKey: `completed-new-${randomUUID()}` }, tx),
-        'SESSION_SHORTAGE_OPERATION_COMPLETED',
-      );
-      await expectConflict(
-        services.sessions.returnShortPickCustody(
+      const operation = await seedShortPickOperation(tx, {
+        shipmentId: fixture.shipment.id,
+        workItemId: fixture.workItem.id,
+        sessionId: session.id,
+        actorId,
+        lines: [
           {
-            ...shortageInput,
-            idempotencyKey: `completed-grain-${randomUUID()}`,
+            shipmentLineId: fixture.line.id,
+            sourceLocationId: fixture.source.locationId,
+            shortQty: 2,
+            allocationQty: 3,
+          },
+        ],
+      });
+      const base = {
+        sessionId: session.id,
+        shortPickOperationId: operation.id,
+        workItemId: fixture.workItem.id,
+        allocationId: fixture.allocation.id,
+        shipmentLineId: fixture.line.id,
+        reasonCode: 'MISSING' as const,
+        reason: operation.reason,
+        approverId: actorId,
+      };
+      await expect(
+        services.sessions.approveShortage(
+          { ...base, idempotencyKey: `s-${randomUUID()}`, quantity: 1, from: worker },
+          tx,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // 안 집은 몫 = 3 − 2 = 1 < 2
+      await expectConflict(
+        services.sessions.approveShortage(
+          {
+            ...base,
+            idempotencyKey: shortageIdempotencyKey(operation.id, fixture.allocation.id),
+            quantity: 2,
             from: {
               skuId: fixture.source.skuId,
               sourceLocationId: fixture.source.locationId,
-              custodyType: 'BULK_CART',
-              custodyRef: cartRef,
+              custodyType: 'AT_SOURCE',
             },
-            reason: operationReason,
-            actorId,
           },
           tx,
         ),
-        'SESSION_SHORTAGE_OPERATION_COMPLETED',
+        'SESSION_SHORTAGE_EXCEEDS_ALLOCATION',
       );
-      await expectConflict(
-        services.sessions.returnShortPickCustody(
-          {
-            ...shortageInput,
-            idempotencyKey: `completed-line-${randomUUID()}`,
-            shipmentLineId: siblingLine.id,
-            from: {
-              skuId: fixture.source.skuId,
-              sourceLocationId: fixture.source.locationId,
-              custodyType: 'BULK_CART',
-              custodyRef: cartRef,
-            },
-            reason: operationReason,
-            actorId,
-          },
-          tx,
-        ),
-        'SESSION_SHORTAGE_OPERATION_COMPLETED',
-      );
+    });
+  });
 
+  it('완료된 결품 오퍼레이션은 같은 키의 재생만 받는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedAllocatedBatch(tx, { quantity: 3 });
+      const session = await handIn(services, fixture.batch.id, tx);
+      const operation = await seedShortPickOperation(tx, {
+        shipmentId: fixture.shipment.id,
+        workItemId: fixture.workItem.id,
+        sessionId: session.id,
+        actorId,
+        lines: [
+          {
+            shipmentLineId: fixture.line.id,
+            sourceLocationId: fixture.source.locationId,
+            shortQty: 1,
+            allocationQty: 3,
+          },
+        ],
+      });
+      const input = {
+        sessionId: session.id,
+        idempotencyKey: shortageIdempotencyKey(operation.id, fixture.allocation.id),
+        shortPickOperationId: operation.id,
+        workItemId: fixture.workItem.id,
+        allocationId: fixture.allocation.id,
+        shipmentLineId: fixture.line.id,
+        quantity: 1,
+        from: {
+          skuId: fixture.source.skuId,
+          sourceLocationId: fixture.source.locationId,
+          custodyType: 'AT_SOURCE' as const,
+        },
+        reasonCode: 'MISSING' as const,
+        reason: operation.reason,
+        approverId: actorId,
+      };
+      await services.sessions.approveShortage(input, tx);
       await tx
-        .update(wmsTables.batchInventorySessionEvents)
-        .set({ payload: { ...(shortage.event.payload as object), requestHash: '0'.repeat(64) } })
-        .where(eq(wmsTables.batchInventorySessionEvents.id, shortage.event.id));
-      const rejected = await services.recovery.rebuildFromEvents(session.id, tx);
-      expect(rejected).toMatchObject({ healthy: false, recoveryRequired: true });
-      expect(rejected.issues.join(' ')).toContain('canonical request hash differs');
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      expect((await services.sessions.approveShortage(input, tx)).replayed).toBe(true);
+      await expectConflict(
+        services.sessions.approveShortage({ ...input, idempotencyKey: `completed-new-${randomUUID()}` }, tx),
+        'SESSION_SHORTAGE_OPERATION_COMPLETED',
+      );
     });
   });
 
@@ -1250,15 +1104,43 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
       to: worker,
     });
 
-    let rebuildPromise!: ReturnType<BatchSessionRecoveryService['rebuildFromEvents']>;
-    await concurrentDb.transaction(async (trx) => {
-      const returned = await concurrentServices.sessions.returnToSource(
+    const bin = await db.transaction(async (trx) => {
+      const tx = trx as unknown as DbTx;
+      const returnBin = await seedReturnBin(tx, fixture.source.warehouseId, actorId);
+      await services.sessions.removeToReturnBin(
         {
           sessionId: session.id,
-          idempotencyKey: `recovery-concurrent-return-${randomUUID()}`,
+          operationId: randomUUID(),
           actorId,
+          workItemId: fixture.workItem.id,
+          allocationId: fixture.allocation.id,
+          shipmentLineId: fixture.line.id,
+          skuId: fixture.source.skuId,
+          sourceLocationId: fixture.source.locationId,
           quantity: fixture.quantity,
-          from: worker,
+          from: { custodyType: 'WORKER', custodyRef: worker.custodyRef, shipmentLineId: fixture.line.id },
+          returnBin,
+        },
+        tx,
+      );
+      await tx
+        .update(wmsTables.pickingSourceAllocations)
+        .set({ qty: 0 })
+        .where(eq(wmsTables.pickingSourceAllocations.id, fixture.allocation.id));
+      return returnBin;
+    });
+
+    let rebuildPromise!: ReturnType<BatchSessionRecoveryService['rebuildFromEvents']>;
+    await concurrentDb.transaction(async (trx) => {
+      const returned = await concurrentServices.sessions.putawayReturn(
+        {
+          sessionId: session.id,
+          operationId: randomUUID(),
+          actorId,
+          skuId: fixture.source.skuId,
+          sourceLocationId: fixture.source.locationId,
+          quantity: fixture.quantity,
+          returnBin: bin,
         },
         trx as unknown as DbTx,
       );
