@@ -253,7 +253,7 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
 
 **PR 2 구현이 정함:**
 
-- **세션이 `active` 가 아닌 시작된 배치(세션 없음·`recovery_required`)의 이탈은 `PICKING_SESSION_NOT_ACTIVE` 로 거절한다.** 반납할
+- **세션이 `active` 가 아닌 시작된 배치(세션 없음·`recovery_required`)의 이탈은 `PICKING_SESSION_NOT_ACTIVE` 로 거절한다(PR 4: 배정 합이 0 이고 열린 세션이 없으면 예외 — §9 PR 4 구현이 정함 3).** 반납할
   곳이 없거나, 반납하면 세션 변경(`mutate`)이 `SESSION_NOT_MUTABLE` 로 실패하기 때문이다. 앱 문구는 «배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.»
 - 박스가 이미 `shipped`·`in_transit`·`delivered` 면 발송 시도 행이 없어도 `WORK_ITEM_DISPATCH_EXISTS` 다(시작 전 제외와 같다)
 - `inspected_qty > 0` 검사는 세션 잠금·`reconcileAllocation` 보다 앞서므로, 그것만으로 거절될 때는 `errors` 가 비어 있다
@@ -455,7 +455,7 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
   박스를 찾아 `withdrawn` 을 준다. 앱은 `withdrawn` 을 «오늘 배치에 없어요» 보다 먼저 판정한다
 - **PR 3 구현이 정함:** `withdrawn` 도 `exitTo` 를 싣는다 — 마지막 작업 항목의 `exit_to`(`draft`|`canceled`, 활성 송장으로 찾은 주 경로 포함).
   앱은 두 경우 모두 «빠진 박스예요. 송장은 버려 주세요.» 한 문구다(어느 쪽이든 종이는 버린다). 무효 송장 폴백은 박스가 `canceled` 이고 마지막 작업
-  항목이 `exit_to = canceled` 로 `excluded` 일 때만 탄다 — 결품 보고로 무효화된 송장은 404 다(§8 구현이 정함). 버린 종이의 출력 기록은 세지 않는다:
+  항목이 `exit_to = canceled` 로 `excluded` 일 때만 탄다 — 결품 보고로 무효화된 송장은 404 다(PR 3 시점. PR 4 부터는 withdrawn — §10.5)(§8 구현이 정함). 버린 종이의 출력 기록은 세지 않는다:
   박스에 시작된 배치에서 `excluded` 된 이전 작업 항목이 있으면 `WaybillLabelStateReader` 는 현재 작업 항목의 `created_at` 이후 출력만 센다
   (`printed_at` 은 DB `now()` 이고 같은 지문을 다시 찍으면 갱신된다)
 - **PR 4 계획이 정함:** 무효 송장 폴백을 결품 이탈로 넓힌다(사용자 결정 2026-10-01). 그 번호의 최근 무효 송장을 결품 마무리가 무효화했으면
@@ -502,7 +502,7 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `BATCH_NOT_JOINABLE` | 완료·취소된 배치·세션이 `active` 가 아닌 시작된 배치에 합류(§7) | 거절 |
 | `BATCH_JOIN_BLOCKED` | §7 합류 실패(PR 2 계획이 정함) | 무변경, 시작과 같은 박스·SKU·수량 목록 |
 | `OUTBOUND_BATCH_STARTED_RETRY` | 시작 전 배치에 넣는 중 배치 잠금을 기다리는 사이 시작됨(§7, PR 2 구현이 정함) | 무변경, 재시도하면 합류 |
-| `PICKING_SESSION_NOT_ACTIVE` | 세션이 없거나 `recovery_required` 인 시작된 배치에서 이탈(§8, PR 2 구현이 정함). 박스에서 되돌림도 같다. 되돌림 적치는 `active` 세션 몫만으로 모자랄 때만(§8, PR 3 구현이 정함) | 거절 |
+| `PICKING_SESSION_NOT_ACTIVE` | 세션이 없거나 `recovery_required` 인 시작된 배치에서 이탈(§8, PR 2 구현이 정함; 예외: 배정 합 0 이고 열린 세션이 없으면 이탈 진행 — §9 PR 4 구현이 정함 3). 박스에서 되돌림도 같다. 되돌림 적치는 `active` 세션 몫만으로 모자랄 때만(§8, PR 3 구현이 정함) | 거절 |
 | `BOX_HAS_PICKED_ITEMS` | PR 2 에서만: 집은 몫이 있는 박스의 이탈(PR 3 이 이탈로 대체) | 거절 |
 | `BOX_EXCESS_PENDING` | 뺄 물건이 남았는데 포장 완료·검수·발송(PR 3 에는 생산자 없음 — S2) | 거절 + 뺄 목록 |
 | `SHIPMENT_WITHDRAWN` | 빠지는(`withdrawing`)·빠진(`excluded`) 박스의 전진 명령. 명령마다 범위가 다르다 — 검수·발송·단순출고 준비는 `withdrawing` 만(§8 PR 3 구현이 정함) | 거절 |
@@ -515,9 +515,8 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `RETURN_BIN_WAREHOUSE_MISMATCH` | 다른 창고의 바구니(PR 3 계획이 정함) | 거절 |
 | `RETURN_BIN_ITEM_NOT_FOUND` · `RETURN_BIN_ITEM_SHORT` | 되돌림 적치할 상품이 바구니에 없음 · 수량 초과(PR 3 계획이 정함) | 거절 |
 | `TOTE_BARCODE_RESERVED` | `RB-` 바코드를 토트로 등록(PR 3 계획이 정함) | 거절 |
-| `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` | 전체 취소로 나가는 박스의 활성 송장이 `registered` 가 아님(PR 3 계획이 정함). 던지는 곳은 `BoxWithdrawalService.exitIfDrained` 의 `canceled` 갈래 하나 — 마지막 몫의 박스에서 되돌림·카트 여분 되돌림(PR 3 구현이 정함). 집은 게 없는 박스의 전체 취소는 E10 이 같은 판정으로 먼저 걸러 옛 대기로 보내므로 여기서 거절되지 않는다(§8 PR 3 구현이 정함) | 무변경. 앱 «이 박스의 송장을 지금 처리할 수 없어요. 이 상품은 아직 빠지지 않았어요. 관리자에게 송장 처리를 요청해 주세요.» |
+| `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` | 전체 취소로 나가는 박스의 활성 송장이 `registered` 가 아님(PR 3 계획이 정함). 던지는 곳은 `BoxWithdrawalService.exitIfDrained` 의 `canceled` 갈래와 `ShortPickExitService.finish`(결품 마무리, PR 4) 둘 — 앞쪽은 마지막 몫의 박스에서 되돌림·카트 여분 되돌림(PR 3 구현이 정함). 집은 게 없는 박스의 전체 취소는 E10 이 같은 판정으로 먼저 걸러 옛 대기로 보내므로 여기서 거절되지 않는다(§8 PR 3 구현이 정함) | 무변경. 앱 «이 박스의 송장을 지금 처리할 수 없어요. 이 상품은 아직 빠지지 않았어요. 관리자에게 송장 처리를 요청해 주세요.» |
 | `SHIPMENT_LINE_INSPECTION_STALE` | 박스에서 되돌림이 `PACKED` 에서 빼는데 줄의 `inspected_qty` 가 그 수보다 작음 — 검수 기록과 보관이 어긋남(`BoxAllocationManager.removeFromBox`, PR 3 구현이 정함) | 무변경. 앱 «검수 기록이 맞지 않아요. 관리자에게 문의해 주세요.» |
-
 | `SHORT_PICK_EXCEEDS_UNPICKED` | 결품 수량이 그 로케이션의 안 집은 몫을 넘음(§9 PR 4 계획이 정함 1) | 무변경, `errors` 에 줄·로케이션·요청·가능 수량 |
 | `SHORT_PICK_WORK_ITEM_WAITING` | 다른 오퍼레이션을 기다리는 작업 항목에 결품 보고(방어, §9 PR 4 계획이 정함 7) | 거절 |
 
@@ -589,7 +588,7 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
   - `allocationId` 가 없는 옛 결품 이벤트(`APPROVE_SHORTAGE`·`RETURN_TO_SOURCE`)는 옛 검사 그대로 재생한다
   - 줄·로케이션 «보관 ≤ 배정» 검사는 새 부족 승인을 세지 않는다(이미 배정에서 빠졌다)
 - **I3 공유 식의 `excluded` 필터를 걷는다(PR 3·4 경계 해소).** 모든 나가기가 배정을 0 으로 남긴다: 반납·되돌림·부족 승인이 모두 배정을 줄인다. 그래서 공유 보관을 배치의 모든 배정과 견준다. PR 4 이전에 결품으로 제외된 옛 행이 열린 세션에 남아 있으면 그 세션의 떠도는 `AT_SOURCE` 를 다시 못 본다 — 배포 전에 0 을 확인한다
-- **잠금 순서:**
+- **잠금 순서 (PR 4 구현이 정한 순서로 고침 — 아래):**
   - **결품 보고:** 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 결품 오퍼레이션·멤버 INSERT → 부족 승인 → SKU 가용 잠금·원장(재배정). 못 채우면 이탈(`begin`)이 이어진다
   - **PR 4 구현이 정함:** 결품 보고: …배정(판정) → 오퍼레이션·멤버 INSERT → SKU 가용·원장(재배정 계획) → 인계(`applyRefill`) → 부족 승인. 못 채우면 부족 승인 → 이탈(`begin`). 인계가 부족 승인보다 앞선다(§9 구현이 정함 2)
   - **결품 마무리**(나가기 안): 이미 쥔 구성요소·작업 항목·세션 뒤에 결품 오퍼레이션 행 → 송장 → 박스 → 예약 그래프·SKU 가용 잠금(`invalidateForShortPick`) (PR 4 구현이 정함: 예약 무효화가 박스 `draft` 뒤다, §9 구현이 정함 1)
