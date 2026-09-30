@@ -26,8 +26,8 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 
-const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
 type ShipmentRow = typeof wmsTables.shipments.$inferSelect;

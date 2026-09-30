@@ -35,6 +35,7 @@ import { ShipmentReservationService } from './services/shipment-reservation.serv
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 import { BoxAllocationManager } from './services/box-allocation.manager';
+import { BoxWithdrawalService } from './services/box-withdrawal.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
@@ -145,6 +146,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentReservationService,
     ShipmentPlanningService,
     BoxAllocationManager,
+    BoxWithdrawalService,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,

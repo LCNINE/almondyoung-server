@@ -2,7 +2,6 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, gte, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
-import { boxHasPickedItems } from '../picking/allocation/allocation.errors';
 import { lockSkuCapacities } from '../picking/allocation/allocation.locks';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { ReconcilePlan, atSourceKey, reconcileAllocation } from '../picking/allocation/reconcile-allocation';
@@ -119,15 +118,14 @@ export class BoxAllocationManager {
     );
   }
   /**
-   * 집기 전 이탈(목표 → 0). 호출자가 구성요소·작업 항목·세션을 잠갔다. 집은 몫이나 카트에 실렸을 수 있는 몫이 있으면
-   * 아무것도 바꾸지 않고 BOX_HAS_PICKED_ITEMS(PR 3 이 되돌림으로 연다). 아니면 배정마다 HAND_BACK 하고 배정을 줄인다 —
-   * 반납된 재고는 세션 통제가 풀려 그 자리에서 일반 가용이 된다. 반납과 배정 감소는 같은 트랜잭션이다(복구 규칙:
-   * 배정마다 Σ HAND_IN − Σ HAND_BACK = qty).
+   * 이탈 시작(목표 → 0)의 반납 단계. 호출자가 구성요소·작업 항목·세션을 잠갔다. 집지 않은 몫(AT_SOURCE 가 덮는 만큼)만
+   * HAND_BACK 하고 배정을 같이 줄인다 — 반납된 재고는 그 자리에서 일반 가용이 된다. 집은 몫(excess)과 카트 몫(cartSurplus)은
+   * 배정에 남는다: 실물이 되돌림 바구니에 들어갈 때 REMOVE_TO_RETURN_BIN 이 준다(스펙 §8, PR 3 계획이 정함 2·3).
+   * 반납과 배정 감소는 같은 트랜잭션이다(복구 규칙: 배정마다 Σ HAND_IN − Σ HAND_BACK − Σ REMOVE_TO_RETURN_BIN = qty).
    */
-  async withdrawUnpicked(
+  async handBackUnpicked(
     input: {
       session: BatchInventorySessionRow;
-      shipmentId: string;
       workItemId: string;
       lines: Array<{ id: string; skuId: string }>;
       actorId: string;
@@ -194,9 +192,6 @@ export class BoxAllocationManager {
       atSource,
       capacities: [],
     });
-    if (plan.excess.length || plan.cartSurplus.length) {
-      throw boxHasPickedItems(input.shipmentId, [...plan.excess, ...plan.cartSurplus]);
-    }
     for (const back of plan.handBacks) {
       await this.sessions.handBack(
         {
@@ -212,25 +207,27 @@ export class BoxAllocationManager {
         },
         trx,
       );
-      const [reduced] = await trx
-        .update(wmsTables.pickingSourceAllocations)
-        .set({ qty: sql`${wmsTables.pickingSourceAllocations.qty} - ${back.qty}` })
-        .where(
-          and(
-            eq(wmsTables.pickingSourceAllocations.id, back.allocationId),
-            gte(wmsTables.pickingSourceAllocations.qty, back.qty),
-          ),
-        )
-        .returning({ id: wmsTables.pickingSourceAllocations.id });
-      if (!reduced) {
-        throw new ConflictException({
-          code: 'PICKING_ALLOCATION_STALE',
-          error: 'PICKING_ALLOCATION_STALE',
-          message: `Allocation ${back.allocationId} changed`,
-        });
-      }
+      await this.decrementAllocation(back.allocationId, back.qty, trx);
     }
     return { handedBackQty: plan.handBacks.reduce((total, back) => total + back.qty, 0) };
+  }
+
+  /** 배정 감소 CAS — 반납·되돌림이 같이 쓴다. 행은 지우지 않는다(0 허용, 스펙 §11). */
+  private async decrementAllocation(allocationId: string, qty: number, trx: DbTx): Promise<void> {
+    const [reduced] = await trx
+      .update(wmsTables.pickingSourceAllocations)
+      .set({ qty: sql`${wmsTables.pickingSourceAllocations.qty} - ${qty}` })
+      .where(
+        and(eq(wmsTables.pickingSourceAllocations.id, allocationId), gte(wmsTables.pickingSourceAllocations.qty, qty)),
+      )
+      .returning({ id: wmsTables.pickingSourceAllocations.id });
+    if (!reduced) {
+      throw new ConflictException({
+        code: 'PICKING_ALLOCATION_STALE',
+        error: 'PICKING_ALLOCATION_STALE',
+        message: `Allocation ${allocationId} changed`,
+      });
+    }
   }
 }
 

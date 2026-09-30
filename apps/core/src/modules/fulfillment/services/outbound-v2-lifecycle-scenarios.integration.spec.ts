@@ -47,6 +47,7 @@ import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
 import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 // assertDispatchable(읽기 전용)만 소비 — carrier I/O 로 이어지는 필드는 실제로 쓰이지 않는다(더미 값).
 const HANJIN_TEST_CONFIG: HanjinConfig = {
@@ -206,6 +207,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       workflow,
       moduleRef as never,
       new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
     return { batches, dispatch, waybills, planning, recall, reservations };
   }

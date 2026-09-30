@@ -95,6 +95,8 @@ export class OutboundBatchWorkItemResponseDto {
   exclusionReason: string | null;
   recoveryReason: string | null;
   waitingOperationId: string | null;
+  @ApiPropertyOptional({ enum: ['draft', 'canceled'], nullable: true, description: '이탈이 끝나면 박스가 갈 곳' })
+  exitTo: 'draft' | 'canceled' | null;
   pickerClaim: BatchClaimStateDto;
   packerClaim: BatchClaimStateDto;
 }
@@ -214,6 +216,8 @@ export class OutboundBatchV2ListItemDto {
   cartCapacity: number | null;
   totalItems: number;
   totalQty: number;
+  @ApiProperty({ description: '빼는 중인 박스 수 — 배치 카드의 «빠지는 중 N»' })
+  withdrawingItems: number;
   scheduledPickingAt: Date | null;
   @ApiPropertyOptional({
     type: Date,

@@ -25,7 +25,7 @@ import {
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
-import { boxHasPickedItems, joinBlocked } from '../picking/allocation/allocation.errors';
+import { joinBlocked } from '../picking/allocation/allocation.errors';
 import { describeStartBlockers } from '../picking/allocation/allocation.locks';
 import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -36,12 +36,13 @@ import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { BoxAllocationManager, notJoinable } from './box-allocation.manager';
+import { BoxWithdrawalService } from './box-withdrawal.service';
+import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 import { findShipmentIdsByCode } from './join-candidate.queries';
 import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
 
-const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
 const LEASE_MS = 15 * 60_000;
 
@@ -79,6 +80,7 @@ export class OutboundBatchOrchestrator {
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly moduleRef: ModuleRef,
     private readonly boxes: BoxAllocationManager,
+    private readonly withdrawals: BoxWithdrawalService,
   ) {}
 
   async createBatch(
@@ -340,17 +342,42 @@ export class OutboundBatchOrchestrator {
         if (workItem.waitingOperationId) {
           await this.assertWaitingOperationOwnership(workItem.waitingOperationId, shipmentId, trx);
         }
-        if (!batch.startedAt) {
-          await this.assertExcludable(aggregate, trx);
-        } else {
-          await this.withdrawFromStartedBatch(batchId, aggregate, workItem, actor, commandRequestId, trx);
+        const reason = dto.reason.trim();
+        if (batch.startedAt) {
+          // 시작된 배치 — 이탈(스펙 §8). 집은 몫이 있으면 withdrawing 으로 남고, 없으면 이 트랜잭션에서 나간다.
+          const outcome = await this.withdrawals.begin(
+            {
+              batchId,
+              shipmentId,
+              shipmentStatus: aggregate.shipment.status,
+              workItem,
+              lines: aggregate.lines.map((line) => ({ id: line.id, skuId: line.skuId })),
+              exitTo: 'draft',
+              reason,
+              waitingOperationId: null,
+              actorId: actor.id,
+              operationId: commandRequestId,
+            },
+            trx,
+          );
+          await this.auditCommand(trx, actor, 'outbound_batch.shipment.withdraw', outcome.workItem.id, {
+            commandRequestId,
+            batchId,
+            shipmentId,
+            reason,
+            status: outcome.workItem.status,
+            handedBackQty: outcome.handedBackQty,
+          });
+          const response = { operationId: commandRequestId, workItem: this.workItemResponse(outcome.workItem) };
+          return { response, resourceType: 'outbound_batch_work_item', resourceId: outcome.workItem.id };
         }
+        await this.assertExcludable(aggregate, trx);
         const now = await this.databaseNow(trx);
         const [excluded] = await trx
           .update(wmsTables.outboundBatchWorkItems)
           .set({
             status: 'excluded',
-            exclusionReason: dto.reason.trim(),
+            exclusionReason: reason,
             pickerReleasedAt: workItem.status === 'picking' ? now : workItem.pickerReleasedAt,
             packerReleasedAt: workItem.status === 'packing' ? now : workItem.packerReleasedAt,
             leaseExpiresAt: null,
@@ -371,7 +398,7 @@ export class OutboundBatchOrchestrator {
           commandRequestId,
           batchId,
           shipmentId,
-          reason: dto.reason.trim(),
+          reason,
           waitingOperationId: excluded.waitingOperationId,
         });
         const response = { operationId: commandRequestId, workItem: this.workItemResponse(excluded) };
@@ -381,80 +408,11 @@ export class OutboundBatchOrchestrator {
     );
     // The exclusion command is durable before a dependent cancellation/consolidation is resumed.
     // Replaying the command retries this exact resume without repeating the membership mutation.
-    if (response.workItem.waitingOperationId) {
-      await this.resumeWaitingOperationIfReady(response.workItem.waitingOperationId, shipmentId, tx);
+    // 나간(excluded) 박스만 — 빼는 중(withdrawing)이면 아직 배치에 있다. canceled 로 나간 박스의 취소는 이미 완료돼 있어 재개가 곧 돌아온다.
+    if (response.workItem.status === 'excluded' && response.workItem.waitingOperationId) {
+      await this.resumeWaitingOperation(response.workItem.waitingOperationId, shipmentId, tx);
     }
     return response;
-  }
-
-  /**
-   * 시작된 배치에서의 이탈(스펙 §8, PR 2 = 집기 전만). 결과는 시작 전 제외와 같다 — 박스는 planned 로 남아
-   * 예약·송장을 그대로 들고 배치 전 풀로 돌아간다(exit_to 는 PR 3). 잠금은 구성요소(불변식 검사기가 이 박스의
-   * 작업 항목·세션·보관까지) → 작업 항목 → 세션·보관. 가용 잠금은 잡지 않는다 — 반납은 통제분을 줄이기만 한다.
-   */
-  private async withdrawFromStartedBatch(
-    batchId: string,
-    aggregate: EligibilityAggregate,
-    workItem: WorkItemRow,
-    actor: OutboundBatchActor,
-    commandRequestId: string,
-    trx: DbTx,
-  ): Promise<void> {
-    if (workItem.status === 'short_pick_recovery') {
-      throw this.conflict('WORK_ITEM_ALLOCATED', 'Work item is in short-pick recovery; use short-pick recovery');
-    }
-    const [attempt, toteAssignment] = await Promise.all([
-      trx
-        .select({ id: wmsTables.dispatchAttempts.id })
-        .from(wmsTables.dispatchAttempts)
-        .where(
-          and(
-            eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id),
-            ne(wmsTables.dispatchAttempts.status, 'recalled'),
-          ),
-        )
-        .limit(1),
-      trx
-        .select({ id: wmsTables.shipmentToteAssignments.id })
-        .from(wmsTables.shipmentToteAssignments)
-        .where(
-          and(
-            eq(wmsTables.shipmentToteAssignments.shipmentId, aggregate.shipment.id),
-            isNull(wmsTables.shipmentToteAssignments.releasedAt),
-          ),
-        )
-        .limit(1),
-    ]);
-    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(aggregate.shipment.status)) {
-      throw this.conflict('WORK_ITEM_DISPATCH_EXISTS', 'A dispatched shipment cannot be excluded from a batch');
-    }
-    if (toteAssignment[0]) {
-      throw this.conflict(
-        'WORK_ITEM_TOTE_RELEASE_REQUIRED',
-        'Active physical tote assignments must be released before exclusion',
-      );
-    }
-    if (aggregate.lines.some((line) => line.inspectedQty > 0)) {
-      throw boxHasPickedItems(aggregate.shipment.id, []);
-    }
-    const session = await this.boxes.lockOpenSession(batchId, trx);
-    if (!session || session.status !== 'active') {
-      throw this.conflict(
-        'PICKING_SESSION_NOT_ACTIVE',
-        `Batch ${batchId} inventory session is ${session?.status ?? 'not open'}`,
-      );
-    }
-    await this.boxes.withdrawUnpicked(
-      {
-        session,
-        shipmentId: aggregate.shipment.id,
-        workItemId: workItem.id,
-        lines: aggregate.lines.map((line) => ({ id: line.id, skuId: line.skuId })),
-        actorId: actor.id,
-        operationId: commandRequestId,
-      },
-      trx,
-    );
   }
 
   claimPicker(
@@ -642,7 +600,7 @@ export class OutboundBatchOrchestrator {
         // 이미 이 배치에 들어 있다 — 합류는 됐는데 응답을 잃은 재시도다. 일반 SHIPMENT_ACTIVE_WORK_ITEM(«다른 배치»)보다
         // 먼저 본다: 앱은 이 코드면 합류를 건너뛰고 송장 출력으로 간다.
         const [inThisBatch] = await trx
-          .select({ id: wmsTables.outboundBatchWorkItems.id })
+          .select({ id: wmsTables.outboundBatchWorkItems.id, status: wmsTables.outboundBatchWorkItems.status })
           .from(wmsTables.outboundBatchWorkItems)
           .where(
             and(
@@ -652,8 +610,11 @@ export class OutboundBatchOrchestrator {
             ),
           )
           .limit(1);
+        // 빼는 중인 박스는 합류 재시도가 아니다 — 그 박스에 송장을 뽑으면 I4 로 거절된다(정한 것 17).
         const issue = inThisBatch
-          ? 'ALREADY_IN_THIS_BATCH'
+          ? inThisBatch.status === 'withdrawing'
+            ? 'SHIPMENT_WITHDRAWING'
+            : 'ALREADY_IN_THIS_BATCH'
           : await this.rejectionCode(() => this.assertJoinableBox(batch, aggregate, trx, false));
         const [waybill] = await trx
           .select()
@@ -933,15 +894,17 @@ export class OutboundBatchOrchestrator {
         );
       const workloadByBatch = new Map<
         string,
-        { workItems: Map<string, WorkItemRow>; totalItems: number; totalQty: number }
+        { workItems: Map<string, WorkItemRow>; withdrawing: Set<string>; totalItems: number; totalQty: number }
       >();
       for (const { item, lineQty } of workloadRows) {
         const workload = workloadByBatch.get(item.batchId) ?? {
           workItems: new Map<string, WorkItemRow>(),
+          withdrawing: new Set<string>(),
           totalItems: 0,
           totalQty: 0,
         };
         workload.workItems.set(item.id, item);
+        if (item.status === 'withdrawing') workload.withdrawing.add(item.id);
         if (item.status !== 'excluded' && lineQty != null) {
           workload.totalItems += 1;
           workload.totalQty += lineQty;
@@ -963,6 +926,7 @@ export class OutboundBatchOrchestrator {
             cartCapacity: batch.cartCapacity,
             totalItems: workload?.totalItems ?? 0,
             totalQty: workload?.totalQty ?? 0,
+            withdrawingItems: workload?.withdrawing.size ?? 0,
             scheduledPickingAt: batch.scheduledPickingAt,
             startedAt: batch.startedAt,
             createdAt: batch.createdAt,
@@ -1440,7 +1404,8 @@ export class OutboundBatchOrchestrator {
       .limit(1);
   }
 
-  private async resumeWaitingOperationIfReady(operationId: string, shipmentId: string, tx?: DbTx): Promise<void> {
+  /** 박스가 배치를 떠난 뒤 그 작업 항목이 기다리던 오퍼레이션을 이어 간다. 되돌림 명령(BoxReturnService)도 draft 로 나간 박스에 대해 커밋 뒤에 부른다. */
+  async resumeWaitingOperation(operationId: string, shipmentId: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx) => {
       const [operation] = await trx
         .select({ type: wmsTables.shipmentOperations.type, status: wmsTables.shipmentOperations.status })

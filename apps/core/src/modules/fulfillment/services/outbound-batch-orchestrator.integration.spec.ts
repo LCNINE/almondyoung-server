@@ -33,6 +33,7 @@ import { WaybillService } from '../waybill/waybill.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -134,6 +135,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       workflowGate,
       moduleRef as never,
       new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
     return { batches, planning, waybills, commands, invariant, audit, moduleRef };
   }
@@ -901,7 +903,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'PICKING_SESSION_NOT_ACTIVE' }) });
   });
 
-  it('preserves reservations on exclusion and blocks exclusion when custody or dispatch exists', async () => {
+  it('preserves reservations on exclusion, withdraws a box holding custody and blocks exclusion when dispatch exists', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const [preserved, withCustody, withDispatch] = await Promise.all([
       committedFixture({ quantity: 2, warehouse }),
@@ -983,21 +985,25 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         qty: withDispatch.line.qty,
       },
     ]);
-    await expect(
-      services.batches.excludeShipment(
-        batch.batchId,
-        withCustody.shipment.id,
-        { reason: 'must unpick first' },
-        `exclude-custody-${randomUUID()}`,
-        master,
-      ),
-      // 배치가 시작됐으므로 이탈 경로다(스펙 §8) — 작업자가 든 1개는 집은 몫이라 PR 2 에서는 BOX_HAS_PICKED_ITEMS.
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        code: 'BOX_HAS_PICKED_ITEMS',
-        errors: [expect.objectContaining({ shipmentLineId: withCustody.line.id, qty: 1 })],
-      }),
-    });
+    const custodyReservationsBefore = await db
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(eq(wmsTables.stockReservations.shipmentLineId, withCustody.line.id));
+    // 배치가 시작됐으므로 이탈 경로다(스펙 §8) — 작업자가 든 1개는 집은 몫이라 배정에 남고 박스는 withdrawing(PR 3).
+    const withdrawing = await services.batches.excludeShipment(
+      batch.batchId,
+      withCustody.shipment.id,
+      { reason: 'picked item must go back' },
+      `exclude-custody-${randomUUID()}`,
+      master,
+    );
+    expect(withdrawing.workItem).toMatchObject({ id: custodyItem.workItem.id, status: 'withdrawing', exitTo: 'draft' });
+    expect(
+      await db
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, withCustody.line.id)),
+    ).toEqual(custodyReservationsBefore);
 
     await db.insert(wmsTables.dispatchAttempts).values({
       shipmentId: withDispatch.shipment.id,

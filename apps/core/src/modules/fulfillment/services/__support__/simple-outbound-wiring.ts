@@ -27,6 +27,8 @@ import { FulfillmentProgressService } from '../fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from '../outbound-batch-orchestrator.service';
 import { BoxAllocationManager } from '../box-allocation.manager';
+import { BoxWithdrawalService } from '../box-withdrawal.service';
+import { ToteLifecycleService } from '../tote-lifecycle.service';
 import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
 import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry';
@@ -103,6 +105,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   // 단순출고 경로는 그 분기에 닿지 않으므로 no-op stub 이면 된다.
   const moduleRef = { get: () => ({ resumePending: async () => {} }) } as never;
   const boxes = new BoxAllocationManager(sessions, controlled);
+  const totes = new ToteLifecycleService(dbService);
+  const withdrawals = new BoxWithdrawalService(invariant, boxes, totes, waybills, audit);
   const batches = new OutboundBatchOrchestrator(
     dbService,
     commands,
@@ -112,6 +116,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     moduleRef,
     boxes,
+    withdrawals,
   );
   const labelGuard = assembleLabels(dbService).guard;
   const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
@@ -158,6 +163,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     batches,
     sessions,
     boxes,
+    withdrawals,
+    totes,
     startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),
     location: new LocationOutboundService(dbService, commands, simple),
