@@ -1,6 +1,6 @@
 import type { ShipmentByWaybill } from './types';
 import type { LabelItemChange } from './waybillLabel';
-import { WAYBILL_STALE_MESSAGE } from '../../core/data/errorMessage';
+import { SHIPMENT_WITHDRAWN_MESSAGE, WAYBILL_STALE_MESSAGE } from '../../core/data/errorMessage';
 
 export type LabelGateDecision =
   | { kind: 'open' }
@@ -26,6 +26,8 @@ export function labelGateOf(
         : { kind: 'blocked', message: '송장이 바뀌었어요. 프린터 있는 자리에서 새 송장을 출력해 주세요.' };
     case 'not_started':
       return { kind: 'blocked', message: '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.' };
+    case 'withdrawn':
+      return { kind: 'blocked', message: SHIPMENT_WITHDRAWN_MESSAGE };
     case 'unavailable':
       return {
         kind: 'blocked',

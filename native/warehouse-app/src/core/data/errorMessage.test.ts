@@ -272,7 +272,6 @@ describe('errorMessage outbound 작업 시작·재출력 게이트 (#987)', () =
 describe('합류·이탈 거절 문구 (#988)', () => {
   it.each([
     ['BATCH_NOT_JOINABLE', '이 배치에는 더 넣을 수 없어요(끝났거나 멈춘 배치). 다른 배치를 골라 주세요.'],
-    ['BOX_HAS_PICKED_ITEMS', '이미 상품을 담은 박스라 지금은 뺄 수 없어요. 관리자에게 문의해 주세요.'],
     ['SHIPMENT_ACTIVE_WORK_ITEM', '이미 다른 배치에 들어 있는 박스예요.'],
     ['OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED', '이 배치의 카트 바구니가 다 찼어요.'],
     ['WORK_ITEM_TOTE_RELEASE_REQUIRED', '바구니 배정을 먼저 풀어야 뺄 수 있어요. 관리자에게 문의해 주세요.'],
@@ -281,6 +280,28 @@ describe('합류·이탈 거절 문구 (#988)', () => {
     ['OUTBOUND_BATCH_STARTED_RETRY', '방금 작업이 시작된 배치예요. 다시 넣어 주세요.'],
     ['PICKING_SESSION_NOT_ACTIVE', '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.'],
   ])('%s 문구', (code, text) => {
+    expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+});
+
+describe('이탈·되돌림 문구 (#989)', () => {
+  it.each([
+    ['SHIPMENT_WITHDRAWN', '빠진 박스예요. 송장은 버려 주세요.'],
+    ['SHIPMENT_ALREADY_WITHDRAWING', '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.'],
+    ['SHIPMENT_NOT_WITHDRAWING', '빼는 중인 박스가 아니에요. 송장을 다시 스캔해 주세요.'],
+    ['REMOVAL_NOT_PENDING', '이 상품은 이 박스에서 뺄 게 없어요.'],
+  ])('출고 %s', (code, text) => {
+    expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+
+  it.each([
+    ['RETURN_BIN_UNKNOWN', '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.'],
+    ['RETURN_BIN_WAREHOUSE_MISMATCH', '다른 창고의 되돌림 바구니예요.'],
+    ['RETURN_BIN_ITEM_NOT_FOUND', '이 바구니에 없는 상품이에요.'],
+    ['RETURN_BIN_ITEM_SHORT', '바구니에 남은 수량보다 많아요.'],
+    ['RETURN_LOCATION_MISMATCH', '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.'],
+  ])('되돌림 %s — 출고·되돌림 화면 둘 다', (code, text) => {
+    expect(errorMessage(new ConflictError('m', code), 'returns')).toBe(text);
     expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
   });
 });

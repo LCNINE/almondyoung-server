@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConflictError, type ApiClient } from '../../core/data/httpClient';
+import { type ApiClient } from '../../core/data/httpClient';
 import { removeBoxFromBatch } from './batchRemove';
 import type { ShipmentByWaybill } from './types';
 
@@ -18,7 +18,7 @@ describe('removeBoxFromBatch', () => {
   const found = (over: Partial<ShipmentByWaybill> = {}): ShipmentByWaybill => ({
     shipmentId: 's-1', batchId: 'b-1', workItemId: 'wi-1', warehouseId: 'wh', trackingNo: '1', carrier: 'HANJIN',
     waybillStatus: 'registered', shipmentStatus: 'planned', workItemStatus: 'queued', recipientMasked: '', lines: [],
-    labelState: 'current', labelChanges: [], labelIssue: null, ...over,
+    labelState: 'current', labelChanges: [], labelIssue: null, removals: [], exitTo: null, ...over,
   });
 
   it('송장번호로 박스를 찾아 사유와 함께 뺀다', async () => {
@@ -40,14 +40,5 @@ describe('removeBoxFromBatch', () => {
     const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
     expect(outcome).toEqual({ kind: 'blocked', message: '이 배치에 있는 박스가 아니에요. 방금 뺐다면 이미 빠진 상태예요.' });
     expect(calls.map((c) => c.method)).toEqual(['GET']);
-  });
-
-  it('집은 몫이 있으면 거절 문구', async () => {
-    const { api } = fakeApi((o) => {
-      if (o.method === 'DELETE') throw new ConflictError('m', 'BOX_HAS_PICKED_ITEMS');
-      return found();
-    });
-    const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
-    expect(outcome).toEqual({ kind: 'blocked', message: '이미 상품을 담은 박스라 지금은 뺄 수 없어요. 관리자에게 문의해 주세요.' });
   });
 });

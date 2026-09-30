@@ -95,13 +95,13 @@ function OutboundQueueContent({
         setNotice('이미 출고된 송장이에요');
         return;
       }
-      if (found.workItemId === null) {
-        setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
-        return;
-      }
       const gate = labelGateOf(found, labelPrinting);
       if (gate.kind === 'blocked') {
         setNotice(gate.message);
+        return;
+      }
+      if (found.workItemId === null) {
+        setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
         return;
       }
       if (gate.kind === 'print') {

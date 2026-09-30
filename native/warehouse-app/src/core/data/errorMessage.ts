@@ -10,9 +10,11 @@ export type ErrorContext =
   | 'inbound-cancel'
   | 'po-receive'
   | 'putaway'
-  | 'outbound';
+  | 'outbound'
+  | 'returns';
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
+  returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
   location: { 404: '로케이션을 찾을 수 없어요.' },
   stocktaking: { 400: '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.' },
@@ -53,6 +55,8 @@ export const WAYBILL_NOT_DISPATCHABLE_MESSAGE =
 export const WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE =
   '작업이 시작되지 않은 박스예요. 배치 화면에서 「작업 시작」을 먼저 눌러 주세요.';
 
+export const SHIPMENT_WITHDRAWN_MESSAGE = '빠진 박스예요. 송장은 버려 주세요.';
+
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
     '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
@@ -86,8 +90,11 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
   BATCH_NOT_JOINABLE:
     '이 배치에는 더 넣을 수 없어요(끝났거나 멈춘 배치). 다른 배치를 골라 주세요.',
-  BOX_HAS_PICKED_ITEMS:
-    '이미 상품을 담은 박스라 지금은 뺄 수 없어요. 관리자에게 문의해 주세요.',
+  SHIPMENT_WITHDRAWN: SHIPMENT_WITHDRAWN_MESSAGE,
+  SHIPMENT_ALREADY_WITHDRAWING:
+    '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
+  SHIPMENT_NOT_WITHDRAWING: '빼는 중인 박스가 아니에요. 송장을 다시 스캔해 주세요.',
+  REMOVAL_NOT_PENDING: '이 상품은 이 박스에서 뺄 게 없어요.',
   SHIPMENT_ACTIVE_WORK_ITEM:
     '이미 다른 배치에 들어 있는 박스예요.',
   OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED:
@@ -116,6 +123,15 @@ const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
 const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
   MOVEMENT_DESTINATION_INACTIVE:
     '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.',
+};
+
+/** 되돌림 바구니 — «뺄 상품»(출고)과 «되돌림 적치»·설정(returns) 화면이 같은 문구를 쓴다. */
+const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
+  RETURN_BIN_UNKNOWN: '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.',
+  RETURN_BIN_WAREHOUSE_MISMATCH: '다른 창고의 되돌림 바구니예요.',
+  RETURN_BIN_ITEM_NOT_FOUND: '이 바구니에 없는 상품이에요.',
+  RETURN_BIN_ITEM_SHORT: '바구니에 남은 수량보다 많아요.',
+  RETURN_LOCATION_MISMATCH: '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.',
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
@@ -148,6 +164,13 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     INBOUND_WORKFLOW_MESSAGES[error.code]
   )
     return INBOUND_WORKFLOW_MESSAGES[error.code];
+  if (
+    error instanceof ApiError &&
+    (context === 'outbound' || context === 'returns') &&
+    error.code &&
+    RETURN_CONFLICT_MESSAGES[error.code]
+  )
+    return RETURN_CONFLICT_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     context === 'outbound' &&

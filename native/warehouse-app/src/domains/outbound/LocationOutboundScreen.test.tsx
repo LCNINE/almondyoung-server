@@ -45,6 +45,8 @@ const shipment = {
   workItemStatus: 'queued',
   recipientMasked: '김**',
   labelState: 'current' as const,
+  removals: [],
+  exitTo: null,
   labelChanges: [],
   labelIssue: null,
   lines: [

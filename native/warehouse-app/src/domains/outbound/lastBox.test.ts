@@ -16,6 +16,8 @@ const shipment: ShipmentByWaybill = {
   labelState: 'current' as const,
   labelChanges: [],
   labelIssue: null,
+  removals: [],
+  exitTo: null,
   lines: [],
 };
 

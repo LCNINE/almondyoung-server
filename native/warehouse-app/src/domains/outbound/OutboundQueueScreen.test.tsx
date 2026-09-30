@@ -85,6 +85,7 @@ function renderScreen(
       totalItems: number;
       totalQty: number;
       startedAt: string | null;
+      withdrawingItems?: number;
     }>
   > = {
     picking: [
@@ -96,6 +97,7 @@ function renderScreen(
         totalItems: 3,
         totalQty: 7,
         startedAt: '2026-09-30T00:00:00.000Z',
+        withdrawingItems: 0,
       },
     ],
     created: [],
@@ -134,6 +136,8 @@ function renderScreen(
           labelState: labelDeps.labelState ?? 'current',
           labelChanges: labelDeps.labelChanges ?? [],
           labelIssue: labelDeps.labelIssue ?? null,
+          removals: [],
+          exitTo: null,
         };
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-NOWORKITEM')) {
@@ -149,6 +153,26 @@ function renderScreen(
           workItemStatus: null,
           recipientMasked: '홍길**',
           lines: [],
+        };
+      }
+      if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-WITHDRAWN')) {
+        return {
+          warehouseId: foundWarehouse,
+          shipmentId: 's-4',
+          trackingNo: 'T-WITHDRAWN',
+          carrier: 'HANJIN',
+          waybillStatus: 'registered',
+          shipmentStatus: 'planned',
+          batchId: null,
+          workItemId: null,
+          workItemStatus: null,
+          recipientMasked: '홍길**',
+          lines: [],
+          labelState: 'withdrawn',
+          labelChanges: [],
+          labelIssue: null,
+          removals: [],
+          exitTo: 'canceled',
         };
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-SHIPPED')) {
@@ -202,6 +226,7 @@ function renderScreen(
         <ScanButton code="T-404" />
         <ScanButton code="T-NOWORKITEM" />
         <ScanButton code="T-SHIPPED" />
+        <ScanButton code="T-WITHDRAWN" />
         <OutboundQueueScreen
           prefs={prefs}
           labelPrinting={labelPrinting}
@@ -237,10 +262,10 @@ describe('OutboundQueueScreen', () => {
   it('시작된 배치 카드에만 「박스 넣기」가 보인다', async () => {
     renderScreen([], undefined, {
       picking: [
-        { id: 'b-1', batchNumber: 'OB-1', name: '오전', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z' },
+        { id: 'b-1', batchNumber: 'OB-1', name: '오전', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z', withdrawingItems: 0 },
       ],
       created: [
-        { id: 'b-2', batchNumber: 'OB-2', name: '오후', status: 'created', totalItems: 2, totalQty: 5, startedAt: null },
+        { id: 'b-2', batchNumber: 'OB-2', name: '오후', status: 'created', totalItems: 2, totalQty: 5, startedAt: null, withdrawingItems: 0 },
       ],
     });
     await screen.findByText('OB-2');
@@ -300,6 +325,7 @@ describe('OutboundQueueScreen', () => {
           totalItems: 3,
           totalQty: 7,
           startedAt: '2026-09-30T00:00:00.000Z',
+          withdrawingItems: 0,
         },
       ],
       created: [
@@ -311,6 +337,7 @@ describe('OutboundQueueScreen', () => {
           totalItems: 2,
           totalQty: 5,
           startedAt: null,
+          withdrawingItems: 0,
         },
       ],
     });
@@ -334,6 +361,7 @@ describe('OutboundQueueScreen', () => {
           totalItems: 3,
           totalQty: 7,
           startedAt: '2026-09-30T00:00:00.000Z',
+          withdrawingItems: 0,
         },
       ],
       created: [
@@ -345,6 +373,7 @@ describe('OutboundQueueScreen', () => {
           totalItems: 3,
           totalQty: 7,
           startedAt: null,
+          withdrawingItems: 0,
         },
       ],
     });
@@ -494,6 +523,7 @@ describe('OutboundQueueScreen', () => {
             totalItems: 1,
             totalQty: 1,
             startedAt: null,
+            withdrawingItems: 0,
           },
         ],
       },
@@ -619,6 +649,15 @@ describe('OutboundQueueScreen', () => {
       expect(await screen.findByText('[A-01] 볼펜 1개 → 2개')).toBeInTheDocument();
     });
 
+    it('빠진 박스의 송장이면 «버려 주세요» — 오늘 배치에 없다고 하지 않는다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false);
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-WITHDRAWN' }));
+      expect(await screen.findByText('빠진 박스예요. 송장은 버려 주세요.')).toBeInTheDocument();
+      expect(screen.queryByText(/오늘 배치에 없어요/)).toBeNull();
+    });
+
     it('not_started 면 작업 시작 안내', async () => {
       const user = userEvent.setup();
       renderScreen([], undefined, undefined, 'w-1', false, {
@@ -653,6 +692,7 @@ describe('OutboundQueueScreen', () => {
             totalItems: 1,
             totalQty: 1,
             startedAt: '2026-09-30T00:00:00.000Z',
+            withdrawingItems: 0,
           },
         ],
         created: [
@@ -664,6 +704,7 @@ describe('OutboundQueueScreen', () => {
             totalItems: 1,
             totalQty: 1,
             startedAt: '2026-09-30T00:00:00.000Z',
+            withdrawingItems: 0,
           },
         ],
       },
