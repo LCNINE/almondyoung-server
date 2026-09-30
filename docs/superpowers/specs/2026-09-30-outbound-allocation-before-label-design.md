@@ -178,6 +178,30 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
 **앱 「이 배치에 넣기」:** 주문번호·송장번호로 박스를 찾는다 → 송장이 없으면 발급(`POST shipments/:id/waybills`) → 합류 → 출력.
 작업자에게는 한 동작이다.
 
+**PR 2 계획이 정함:**
+
+- **합류 실패 코드는 `BATCH_JOIN_BLOCKED`.** `errors` 는 시작 실패와 같은 모양(`StartBlockerView[]` — 박스·SKU·필요 수량·사유)이고,
+  사유는 `INBOUND_PENDING`·`STOCK_SHORT`·`WAYBILL_NOT_READY` 다. 시작 전 배치에 넣기의 오류 모양은 바뀌지 않는다
+- **`BATCH_NOT_JOINABLE` 의 범위:** 파생 상태가 `completed`·`canceled` 인 배치(시작 전·후 모두), 그리고 **세션이 `active` 가 아닌
+  시작된 배치**(세션 없음·`recovery_required`). 옛 `OUTBOUND_BATCH_CLOSED` 는 이 코드로 바뀐다
+- **찾기:** 새 조회 `GET outbound-batches/:batchId/join-candidates?code=`. 앱이 받는 «주문번호» 는 `sales_orders.display_order_no`
+  또는 `channel_order_id`, «송장번호» 는 활성 송장의 `tracking_no` 다
+- **앱이 합류 전에 발급하는 송장의 택배사는 `HANJIN`.** 앱이 그릴 수 있는 유일한 택배사다(admin-web 기본값도 같다)
+- **합류의 잠금 순서:** 구성요소(불변식 검사기) → **세션 → 보관 행 → 배송 프로필·SKU 행 → SKU 가용 잠금 → 재고 원장**.
+  발송이 «작업 항목 → 세션 → 보관 → 가용 잠금» 으로 잡으므로 합류도 세션을 가용 잠금보다 먼저 잡는다.
+  시작된 배치로의 합류는 **배치 행과 다른 박스의 작업 항목을 잠그지 않는다** — 세션을 쥔 채 다른 박스의 작업 항목을 잠그면
+  «작업 항목 → 세션» 으로 잡는 발송과 교착하고, 세션 잠금 하나가 같은 배치의 합류·발송 완료와 이미 줄을 세운다
+
+**PR 2 구현이 정함:**
+
+- **세션은 배송 프로필·SKU 행보다 먼저 잡는다.** 불변식 검사기는 어느 경로(시작·시작 전 추가)에서든 옛 배치의 세션을
+  프로필·SKU 행보다 먼저 잡는다. 합류가 프로필·SKU 를 쥔 채 세션을 기다리면 그들과 교착한다(예: 이 배치에서 빠졌던 박스의
+  재합류는 검사기에서 이 세션을 먼저 잡고 프로필을 기다린다). 그래서 «세션 → 프로필·SKU» 가 전역 순서다
+- **시작 전 갈래에서 배치 잠금을 기다리는 사이 배치가 시작됐으면 합류하지 않고 `OUTBOUND_BATCH_STARTED_RETRY` 로 거절한다**
+  (아무것도 쓰기 전). 배치 행 `FOR UPDATE` 를 쥔 채 세션을 잡으면, 세션을 쥔 채 작업 항목 INSERT 의 FK 검사로 배치 행에 암묵
+  `KEY SHARE` 를 거는 동시 합류와 교착한다. 재시도는 잠그지 않은 읽기(`started_at`)로 시작된 갈래를 타서 «세션 → 배치(FK)»
+  한 방향으로만 합류한다. 앱 문구는 «방금 작업이 시작된 배치예요. 다시 넣어 주세요.»
+
 ## 8. 이탈과 되돌림
 
 **입구:** 기존 `DELETE outbound-batches/:batchId/shipments/:shipmentId {reason}`(`excludeShipment`) 하나. 시작 전 배치면 지금처럼
@@ -204,6 +228,25 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
 
 **전체 취소 연결(E10):** `shipment-planning.service.ts` 의 취소 처리에서, 시작된 배치의 박스가 전체 취소되면
 `CANCEL_REPLAN_PENDING` 표시 대신 이탈(`exit_to = canceled`)을 부른다. 부분 취소 경로는 건드리지 않는다(E11).
+
+**PR 2 계획이 정함(집기 전 이탈):**
+
+- **PR 2 의 이탈 결과는 시작 전 제외와 같다:** 작업 항목 `excluded`, 박스는 **`planned` 그대로**(예약·송장 유지, 다른 배치에 다시
+  넣을 수 있다). `withdrawing`·`exit_to` 는 PR 3
+- **시작된 배치의 박스가 모두 빠지면(포함 박스 0) 파생 상태는 `canceled`.** 마지막 반납으로 세션의 남은 보관이 0 이 되어 그 순간
+  `settled` 가 되므로 배치를 되살릴 수 없다
+- **«집은 몫이 있다»** = 박스 줄에 `inspected_qty > 0`, 또는 `reconcileAllocation` 이 `excess`(줄 귀속 보관)나 `cartSurplus`
+  (토탈피킹 카트에 실렸을 수 있는 몫)를 낸다 → `BOX_HAS_PICKED_ITEMS`(목록은 `errors`), 아무것도 바꾸지 않는다.
+  토트 배정(`WORK_ITEM_TOTE_RELEASE_REQUIRED`)·발송 시도(`WORK_ITEM_DISPATCH_EXISTS`)·결품 격리(`short_pick_recovery`)는 기존 거절 코드 그대로
+- **반납 순서:** 한 줄의 배정 행 중 **로케이션 코드 역순**(채운 순서의 반대)으로 줄인다. `reconcileAllocation` 이 내는 순서는
+  반납 → 카트 여분 → 뺄 물건
+
+**PR 2 구현이 정함:**
+
+- **세션이 `active` 가 아닌 시작된 배치(세션 없음·`recovery_required`)의 이탈은 `PICKING_SESSION_NOT_ACTIVE` 로 거절한다.** 반납할
+  곳이 없거나, 반납하면 세션 변경(`mutate`)이 `SESSION_NOT_MUTABLE` 로 실패하기 때문이다. 앱 문구는 «배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.»
+- 박스가 이미 `shipped`·`in_transit`·`delivered` 면 발송 시도 행이 없어도 `WORK_ITEM_DISPATCH_EXISTS` 다(시작 전 제외와 같다)
+- `inspected_qty > 0` 검사는 세션 잠금·`reconcileAllocation` 보다 앞서므로, 그것만으로 거절될 때는 `errors` 가 비어 있다
 
 ## 9. 결품 재배정 (S1 D9 + E12)
 
@@ -324,6 +367,9 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `LABEL_CONTENT_CHANGED` | 출력 확인의 지문이 현재와 다름 | 409, 앱 재렌더 |
 | `LABEL_REPRINT_REQUIRED` | I5 | 409, 앱 재출력 화면 |
 | `BATCH_NOT_JOINABLE` | 완료·취소된 배치에 합류 | 거절 |
+| `BATCH_JOIN_BLOCKED` | §7 합류 실패(PR 2 계획이 정함) | 무변경, 시작과 같은 박스·SKU·수량 목록 |
+| `OUTBOUND_BATCH_STARTED_RETRY` | 시작 전 배치에 넣는 중 배치 잠금을 기다리는 사이 시작됨(§7, PR 2 구현이 정함) | 무변경, 재시도하면 합류 |
+| `PICKING_SESSION_NOT_ACTIVE` | 세션이 없거나 `recovery_required` 인 시작된 배치에서 이탈(§8, PR 2 구현이 정함) | 거절 |
 | `BOX_HAS_PICKED_ITEMS` | PR 2 에서만: 집은 몫이 있는 박스의 이탈(PR 3 이 이탈로 대체) | 거절 |
 | `BOX_EXCESS_PENDING` | 뺄 물건이 남았는데 포장 완료·검수·발송 | 거절 + 뺄 목록 |
 | `SHIPMENT_WITHDRAWN` | 이탈 완료 박스의 전진 명령 | 거절 |
@@ -343,6 +389,24 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - 트랜잭션 밖은 택배사 호출(송장 발급, 앱이 합류 전에 부름)과 프린터 전송뿐이다
 - 복구(`batch-session-recovery.service.ts`): 배정마다 «이벤트 합 = 현재 배정», 보관 grain 이 그 배치의 작업 항목 배정에 속함
 - `FulfillmentInvariantService` 에 I2·I3·I4 검사
+
+**PR 2 계획이 정함:**
+
+- **세션 이벤트 멱등 키:** 합류 인계 `hand-in:<명령 id>:<배정 id>`, 반납 `hand-back:<명령 id>:<배정 id>`. 배치 시작은 기존
+  `start:<배치 id>:<배정 id>` 그대로. `HAND_BACK` payload 는 `operationId`·`workItemId`·`allocationId`·`shipmentLineId`
+- **복구 규칙(«배정마다 이벤트 합 = 현재 배정»):** 배정마다 `HAND_IN` 이 하나 이상 있고 `Σ HAND_IN − Σ HAND_BACK = qty`.
+  `HAND_IN` 의 요청 해시는 **이벤트 수량**으로 계산한다(반납으로 배정 행이 줄어도 옛 인계 이벤트의 해시는 그대로 맞는다)
+- **불변식 검사기는 I1(`ALLOCATION_BEFORE_START`)·I2(`ALLOCATION_BELOW_TARGET`)·I3(`CUSTODY_EXCEEDS_ALLOCATION`) 을 본다.
+  I4 는 넣지 않는다** — 데이터 상태가 아니라 «그릴 수 있는가» 의 렌더 규칙이고 조립 함수(`assertLabelAllocated`)가 강제한다.
+  주기 대조 SQL(`FulfillmentReconciliationService`)은 세션 보존식에 `handed_back_qty` 만 더한다(I1~I3 은 명령 경로의 검사기가 맡는다)
+
+**PR 2 구현이 정함:**
+
+- **I3 의 «줄 귀속 보관» 에는 `RETURN_PENDING`·`SETTLED` 도 든다**(`WORKER`·`TOTE`·`SORTING`·`PACKING`·`PACKED` 와 함께) — 그 줄·로케이션의
+  배정과 견준다. S1 §4.3-3 의 문구보다 엄하지만, 세션 자신의 과배정 가드도 `RETURN_PENDING` 보관과 정산분을 배정에서 뺀다 — 둘이 같은 셈을 한다. 공유 보관(`AT_SOURCE`·`BULK_CART`)은
+  SKU·로케이션 배정에서 줄 귀속 보관을 뺀 나머지와 견준다. **PR 3 이 `RETURN_PENDING` 의 키를 바구니로 바꾸면(§11) 이 집합을 다시 본다**
+- 검사기는 배정을 **작업 항목 기준으로만** 읽는다(`work_item_id` 조인). S1-A 이전의 옛 배정 행(`work_item_id IS NULL`)은 0 으로 보이므로,
+  그런 행이 남은 시작된 배치의 활성 박스는 I2 로, 그 배치 세션의 보관은 I3 으로 막힌다
 
 ## 14. 테스트
 
@@ -401,3 +465,6 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - **로케이션 종류 필터:** 지금 배정은 `ON_HAND` 면 어느 로케이션이든 쓴다(입고 기본존의 적치 대기가 아닌 몫 포함). 송장에 그 로케이션이 그대로 찍히므로 숨은 오류는 아니다. 막을 필요가 보이면 별건
 - **용지 걸림:** 전송 성공 뒤 실물 출력 실패는 출력 확인으로 못 잡는다(§10.3)
 - **E12 의 이동한 모자람:** 결품으로 채운 만큼 다음 시작에서 `STOCK_SHORT` 가 난다. 그 주문을 먼저 알리는 장치는 없다
+- **합류의 드문 교착(PR 2):** 합류가 명시적으로 잡는 세션 잠금과 불변식 검사기가 박스 이력으로 잡는 세션 잠금(id 순)은, 두 박스가
+  서로 다른 옛 배치 이력을 엇갈려 공유할 때 드물게 교착할 수 있다(박스 B 는 예전에 배치 Z 에 있다가 X 에 합류하고, 동시에 박스 C 는
+  예전에 X 에 있다가 Z 에 합류) — Postgres 가 한쪽을 40P01 로 끊고 재시도로 풀린다. 없애려면 모든 세션을 id 순으로 한 번에 잡아야 한다
