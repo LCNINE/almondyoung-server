@@ -363,13 +363,20 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 4. **못 채움 → 나갈 때 결품 마무리.** 부족분 예약을 무효화하면 planned 박스는 «확정 예약 = 줄 수량» 을 어긴다. 그래서 박스는 `draft` 로, 송장은 무효로 가야 한다. 그런데 «뺄 상품» 화면은 송장 스캔으로 열린다.
    - 그래서 보고 트랜잭션은 부족 승인 → 집지 않은 몫 반납 → `withdrawing`(`exit_to = draft`, 작업 항목이 결품 오퍼레이션을 기다림)까지 한다.
    - 빼는 동안 박스는 `planned`, 송장·예약은 그대로다.
-   - **배정 합이 0 이 되는 트랜잭션**(집은 게 없으면 보고 트랜잭션)에서 나가기가 결품을 마무리한다: 부족분 예약 무효화 → 활성 송장 로컬 무효화 → 박스 `draft`(manifest +1) → 줄 `inspected_qty` 0 → 결품 오퍼레이션 `completed`(after 에 `voidedWaybillId`). 작업 항목의 대기는 비운다(커밋 뒤 재개 대상 아님).
+   - **배정 합이 0 이 되는 트랜잭션**(집은 게 없으면 보고 트랜잭션)에서 나가기가 결품을 마무리한다: 활성 송장 로컬 무효화 → 박스 `draft`(manifest +1) → 줄 `inspected_qty` 0 → 부족분 예약 무효화 → 결품 오퍼레이션 `completed`(after 에 `voidedWaybillId`). 작업 항목의 대기는 비운다(커밋 뒤 재개 대상 아님).
+   - **PR 4 구현이 정함:** 마무리 순서는 위와 같다(예약 무효화가 박스 `draft` 뒤). 박스가 아직 `planned` 일 때 부족분 예약을 무효화하면 `invalidateForShortPick` 안에서 «확정 예약 = 줄 수량»(`CONFIRMED_RESERVATION`)을 어긴다.
    - 송장이 `registered` 가 아니면 두 곳에서 거절한다: 보고에서 `SHORT_PICK_INVOICE_NOT_VOIDABLE`, 마지막 되돌림에서 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE`.
 5. **결품으로 빼는 중인 박스에 전체 취소(E10)가 오면 넘겨받는다.** 결품 오퍼레이션을 `completed`(after `{ supersededByOperationId }`)로 닫고, 작업 항목이 취소 오퍼레이션을 기다리게 바꾸고 `exit_to` 를 `canceled` 로 올린다. 부족분 예약은 무효화하지 않는다(취소 완료가 전부 푼다). 부분 취소(E11)는 기존 `CANCELLATION_WORK_ITEM_ALREADY_WAITING`.
 6. **한 트랜잭션.** 결품 보고는 비동기 재개가 없다 — `recovery_required` 결품 오퍼레이션이 생기지 않는다. 결품 반환(`RETURN_TO_SOURCE`)도 사라진다(§11).
 7. **거절:** 빼는 중인 박스의 결품 보고는 `SHIPMENT_WITHDRAWN`, 세션 `recovery_required` 는 `PICKING_SESSION_NOT_ACTIVE`, 다른 오퍼레이션을 기다리는 작업 항목은 `SHORT_PICK_WORK_ITEM_WAITING`(방어).
 8. **응답:** `outcome`(`refilled`|`withdrawing`|`exited`), `refills`(줄·SKU·로케이션·코드·수량), `shortages`(시작·합류와 같은 `STOCK_SHORT`/`INBOUND_PENDING` 판정). `operationStatus` 는 `withdrawing` 일 때만 `pending` 이다.
 9. **warehouse-app 은 바꾸지 않는다.** 결품 보고는 admin-web(피킹 작업대 다이얼로그)에만 있다. 결품 뒤 현장 흐름은 PR 1·3 이 이미 덮는다: 재출력(`reprint_required`), 뺄 상품(`withdrawing`), 빠진 박스(`withdrawn`).
+
+**PR 4 구현이 정함:**
+
+1. **마무리 순서:** 송장 로컬 무효화 → 박스 `draft`(manifest +1) → 줄 리셋 → 부족분 예약 무효화 → 오퍼레이션 `completed`(위 4 의 구현이 정함).
+2. **채움은 부족 승인보다 먼저 인계한다.** 재배정은 «부족 승인 뒤의 가상 상태» 에서 계획하고, 인계(`applyRefill`)를 부족 승인 **앞에** 실행한다. 뒤에 하면 그 박스가 배치의 마지막 보관자일 때 부족 승인이 세션을 0 으로 비워 세션이 정산되고, 인계가 실패한다. 못 채우면 부족 승인 → 이탈(`begin`) 순서다.
+3. **세션 없는 이탈:** `BoxWithdrawalService.begin` 은 열린(`active`·`recovery_required`) 세션이 없고 **그 작업 항목의 배정 합이 0** 일 때만 세션 없이 진행한다 — 되돌림을 건너뛰고 나가서 결품을 마무리한다. 이는 세션이 정산됐거나 없는 시작된 배치에서 배정 0 박스를 운영자가 제외하는 경우에도 같다. 배정이 남았거나 세션이 `recovery_required` 면 `PICKING_SESSION_NOT_ACTIVE` 다.
 
 ## 10. 송장
 
@@ -584,7 +591,8 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - **I3 공유 식의 `excluded` 필터를 걷는다(PR 3·4 경계 해소).** 모든 나가기가 배정을 0 으로 남긴다: 반납·되돌림·부족 승인이 모두 배정을 줄인다. 그래서 공유 보관을 배치의 모든 배정과 견준다. PR 4 이전에 결품으로 제외된 옛 행이 열린 세션에 남아 있으면 그 세션의 떠도는 `AT_SOURCE` 를 다시 못 본다 — 배포 전에 0 을 확인한다
 - **잠금 순서:**
   - **결품 보고:** 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 결품 오퍼레이션·멤버 INSERT → 부족 승인 → SKU 가용 잠금·원장(재배정). 못 채우면 이탈(`begin`)이 이어진다
-  - **결품 마무리**(나가기 안): 이미 쥔 구성요소·작업 항목·세션 뒤에 결품 오퍼레이션 행 → 예약 그래프·SKU 가용 잠금(`invalidateForShortPick`) → 송장 → 박스
+  - **PR 4 구현이 정함:** 결품 보고: …배정(판정) → 오퍼레이션·멤버 INSERT → SKU 가용·원장(재배정 계획) → 인계(`applyRefill`) → 부족 승인. 못 채우면 부족 승인 → 이탈(`begin`). 인계가 부족 승인보다 앞선다(§9 구현이 정함 2)
+  - **결품 마무리**(나가기 안): 이미 쥔 구성요소·작업 항목·세션 뒤에 결품 오퍼레이션 행 → 송장 → 박스 → 예약 그래프·SKU 가용 잠금(`invalidateForShortPick`) (PR 4 구현이 정함: 예약 무효화가 박스 `draft` 뒤다, §9 구현이 정함 1)
   - 세션 변경의 «결품 오퍼레이션 → 세션» 순서로 잡는 곳은 그 오퍼레이션을 만든 보고 트랜잭션뿐이고, 커밋 뒤에는 그 오퍼레이션으로 새 세션 이벤트를 쓰지 않는다. 마무리와 전체 취소의 넘겨받기는 작업 항목 잠금에서 줄을 선다
 
 ## 14. 테스트
