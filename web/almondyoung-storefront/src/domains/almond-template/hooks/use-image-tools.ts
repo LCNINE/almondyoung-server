@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { Design, Layer } from "../lib/document"
 import { makeLayer } from "../lib/layer"
+import { imageBlob } from "../lib/image-ref"
 
 type Params = {
   design: Design
@@ -145,9 +146,7 @@ export function useImageTools({
   const removeWhiteBackground = async () => {
     if (!selected?.image) return setMessage("먼저 이미지를 선택하세요.")
     try {
-      const bitmap = await createImageBitmap(
-        await (await fetch(selected.image)).blob()
-      )
+      const bitmap = await createImageBitmap(await imageBlob(selected.image))
       if (bitmap.width * bitmap.height > 20_000_000) {
         bitmap.close()
         return setMessage("배경 제거는 2천만 화소 이하에서 사용할 수 있습니다.")
@@ -201,7 +200,7 @@ export function useImageTools({
     if (!selected?.image) return
     try {
       const bitmap = await createImageBitmap(
-        await (await fetch(selected.originalImage ?? selected.image)).blob()
+        await imageBlob(selected.originalImage ?? selected.image)
       )
       if (bitmap.width * bitmap.height > 20_000_000) {
         bitmap.close()

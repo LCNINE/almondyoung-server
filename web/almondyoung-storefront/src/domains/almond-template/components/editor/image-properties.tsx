@@ -12,6 +12,7 @@ import type { Layer } from "../../lib/document"
 import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
+import { imageSrc } from "../../lib/image-ref"
 
 export function ImageProperties({
   editor,
@@ -233,7 +234,9 @@ export function ImageProperties({
                     className={`min-w-0 text-center text-[10px] ${(selected.imageFilter ?? "none") === filter ? "font-bold text-blue-600" : ""}`}
                   >
                     <img
-                      src={selected.originalImage ?? selected.image}
+                      src={imageSrc(
+                        selected.originalImage ?? selected.image ?? ""
+                      )}
                       alt=""
                       className="h-12 w-full object-cover"
                       style={{

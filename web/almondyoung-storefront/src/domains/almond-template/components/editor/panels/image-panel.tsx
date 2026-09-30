@@ -1,4 +1,5 @@
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
+import { imageSrc } from "../../../lib/image-ref"
 
 export function ImagePanel({ editor }: { editor: AlmondEditor }) {
   const { add, imageLibrary, imageFile, fillFrames, removeWhiteBackground } =
@@ -64,7 +65,7 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
                 className="flex h-24 items-center justify-center border bg-slate-50"
               >
                 <img
-                  src={item.image}
+                  src={imageSrc(item.image)}
                   alt={`업로드 이미지 ${index + 1}`}
                   className="max-h-full max-w-full object-contain"
                 />

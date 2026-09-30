@@ -28,6 +28,8 @@ export const ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID = 'archive-page-attachment';
 
 export const LOGO_CONTEST_IMAGE_CONTEXT_ID = 'logo-contest-image';
 
+export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
+
 function normalizeAllowedMimeTypes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value;
@@ -268,6 +270,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxFileSize: 10485760,
     pathPrefix: 'contests/logo-image',
+    isActive: true,
+  },
+  {
+    id: ALMOND_TEMPLATE_IMAGE_CONTEXT_ID,
+    name: 'Almond Template Image',
+    description: '아몬드템플릿 시안에 들어간 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 10485760,
+    pathPrefix: 'almond-template/image',
     isActive: true,
   },
   {

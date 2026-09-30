@@ -3,6 +3,7 @@ import type { Layer } from "../../lib/document"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { RefObject } from "react"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
+import { imageSrc } from "../../lib/image-ref"
 
 export function FrameOptions({
   editor,
@@ -137,7 +138,7 @@ export function FrameOptions({
                 }}
               >
                 <img
-                  src={selected.originalImage ?? selected.image}
+                  src={imageSrc(selected.originalImage ?? selected.image ?? "")}
                   alt=""
                   className="mb-1 h-[50px] w-full object-cover"
                   style={{

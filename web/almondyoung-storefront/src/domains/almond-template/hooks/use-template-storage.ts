@@ -15,6 +15,8 @@ import {
   upsertAlmondTemplate,
 } from "@/lib/api/ugc/almond-templates"
 import type { AdminAlmondTemplateSummary } from "@/lib/types/ui/almond-template"
+import { uploadFile } from "@/lib/api/file/upload"
+import { inlineThumbnailImages, uploadDesignImages } from "../lib/design-images"
 import { parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { svgMarkup } from "./use-template-export"
@@ -173,14 +175,18 @@ export function useTemplateStorage({
     if (!named.front.length && !named.back.length)
       return setMessage("빈 시안은 저장할 수 없습니다.")
     if (!svgRef.current) return setMessage("미리보기를 만들 수 없습니다.")
-    const thumbnailSvg = svgMarkup(svgRef.current, named)
+    const markup = svgMarkup(svgRef.current, named)
     serverTask(async () => {
+      const [stored, thumbnailSvg] = await Promise.all([
+        uploadDesignImages(named, uploadFile),
+        inlineThumbnailImages(markup),
+      ])
       const saved = await upsertAlmondTemplate({
-        design: named,
+        design: stored,
         thumbnailSvg,
         status: "draft",
       })
-      setDesign(named)
+      setDesign(stored)
       setSaveDialog(false)
       setMessage(
         saved.status === "published"

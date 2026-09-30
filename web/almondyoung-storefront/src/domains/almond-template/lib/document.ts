@@ -1,5 +1,6 @@
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
+import { FILE_IMAGE_REF } from "./image-ref"
 
 export type Layer = {
   id: string
@@ -88,7 +89,9 @@ export function newDesign(kind: PrintKind, productId = ""): Design {
 
 const kinds = new Set(Object.keys(PRINT_SPECS))
 const color = /^#[0-9a-fA-F]{6}$/
-const imageData = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
+const dataImage = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
+const isImageValue = (value: string) =>
+  dataImage.test(value) || FILE_IMAGE_REF.test(value)
 
 export function parseDesign(value: unknown): Design {
   if (!value || typeof value !== "object")
@@ -173,10 +176,10 @@ export function parseDesign(value: unknown): Design {
         (!layer.qrBits || !Number.isInteger(layer.qrSize))) ||
       (layer.text?.length ?? 0) > 500 ||
       (layer.image?.length ?? 0) > 8_000_000 ||
-      (layer.image && !imageData.test(layer.image)) ||
+      (layer.image && !isImageValue(layer.image)) ||
       (layer.originalImage !== undefined &&
         (layer.originalImage.length > 8_000_000 ||
-          !imageData.test(layer.originalImage))) ||
+          !isImageValue(layer.originalImage))) ||
       (layer.imageFilter !== undefined &&
         !["grayscale", "emboss", "boxblur", "brightness", "sepia"].includes(
           layer.imageFilter
@@ -219,7 +222,7 @@ export function parseDesign(value: unknown): Design {
   }
   if (
     data.backgroundImage &&
-    (!imageData.test(data.backgroundImage) ||
+    (!isImageValue(data.backgroundImage) ||
       data.backgroundImage.length > 8_000_000)
   )
     throw new Error("배경 이미지가 올바르지 않습니다.")

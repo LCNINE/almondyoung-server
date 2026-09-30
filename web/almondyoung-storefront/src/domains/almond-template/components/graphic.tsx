@@ -2,6 +2,7 @@ import { memo } from "react"
 import type { Layer } from "../lib/document"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
+import { imageSrc } from "../lib/image-ref"
 
 export function fittedFontSize(layer: Layer) {
   const lines = (layer.text ?? "").split("\n")
@@ -331,7 +332,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             </clipPath>
           </defs>
           <image
-            href={layer.image}
+            href={imageSrc(layer.image)}
             x={imageX}
             y={imageY}
             width={imageWidth}
@@ -368,7 +369,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           />
           {layer.image ? (
             <image
-              href={layer.image}
+              href={imageSrc(layer.image)}
               x={imageX}
               y={imageY}
               width={imageWidth}

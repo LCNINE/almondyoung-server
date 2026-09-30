@@ -1,5 +1,6 @@
 import { LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
+import { imageSrc } from "../../../lib/image-ref"
 
 export function SaveDialog({ editor }: { editor: AlmondEditor }) {
   const {
@@ -29,7 +30,7 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
             <rect width="100%" height="100%" fill={design.background} />
             {design.backgroundImage && (
               <image
-                href={design.backgroundImage}
+                href={imageSrc(design.backgroundImage)}
                 width="100%"
                 height="100%"
                 preserveAspectRatio="xMidYMid slice"
