@@ -9,12 +9,13 @@ import { WaybillService } from '../../waybill/waybill.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
 import { BoxAllocationManager } from '../box-allocation.manager';
 import { BoxWithdrawalService } from '../box-withdrawal.service';
+import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { ToteLifecycleService } from '../tote-lifecycle.service';
 
 /**
  * 오케스트레이터·계획을 직접 조립하는 스펙용 — 실제 서비스들로 이탈 서비스를 만든다(stateless 라 인스턴스가 따로여도 된다).
- * 캐리어 호출은 이 경로에 없어 stub 이다(simple-outbound-wiring 과 같다).
+ * 캐리어 호출은 이 경로에 없어 stub 이다(simple-outbound-wiring 과 같다). 취소 이탈의 송장 무효화(void)는 commands 를 탄다.
  */
 export function assembleBoxWithdrawal(dbService: DbService<typeof wmsSchema>): BoxWithdrawalService {
   const audit = new AuditService(dbService);
@@ -24,7 +25,7 @@ export function assembleBoxWithdrawal(dbService: DbService<typeof wmsSchema>): B
       new WaybillRepository(dbService),
       {} as never,
       {} as never,
-      {} as never,
+      new FulfillmentCommandService(dbService),
       {} as never,
       dbService,
     ),

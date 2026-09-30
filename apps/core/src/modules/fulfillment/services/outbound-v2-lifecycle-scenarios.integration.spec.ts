@@ -144,6 +144,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       authorization,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     const serviceRefs: { recall?: ShipmentRecallService } = {};
     const moduleRef = {

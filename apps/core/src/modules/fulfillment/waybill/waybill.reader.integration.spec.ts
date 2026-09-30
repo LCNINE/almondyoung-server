@@ -10,6 +10,7 @@ import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.s
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { seedPlannedShipmentForWaybill, type SeedDeps } from './__support__/waybill-fixtures';
 import { WaybillReader } from './waybill.reader';
+import { assembleBoxWithdrawal } from '../services/__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -42,6 +43,7 @@ describeIfDb('WaybillReader (DB integration)', () => {
       new AuditService(svc),
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       workflowGate,
+      assembleBoxWithdrawal(svc),
     );
     deps = {
       fulfillments: wired.fulfillments,

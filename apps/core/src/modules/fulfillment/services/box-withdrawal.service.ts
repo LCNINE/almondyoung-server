@@ -153,7 +153,6 @@ export class BoxWithdrawalService {
 
   /**
    * 나가기(정한 것 4). 배정 합이 0 이 아니면 아무것도 하지 않는다. 호출자가 구성요소·작업 항목을 잡았다.
-   * (`exit_to = canceled` 의 송장 무효화는 Task 8 이 이 메서드에 더한다 — 그 전에는 canceled 로 이탈을 시작하는 호출자가 없다.)
    */
   async exitIfDrained(
     workItem: WorkItemRow,
@@ -177,6 +176,9 @@ export class BoxWithdrawalService {
       { shipmentId: excluded.shipmentId, operationId: ctx.operationId },
       trx,
     );
+    // canceled 로 나가는 박스의 종이는 영영 쓰이지 않는다 — 로컬 무효화(캐리어 호출 없음, 결품 처리와 같다).
+    // 취소 오퍼레이션의 완료는 호출자가 이어서 한다(ShipmentPlanningService.finishWithdrawnCancellation).
+    if (excluded.exitTo === 'canceled') await this.voidWaybillForCanceledExit(excluded.shipmentId, ctx, trx);
     await this.audit.logUserActionRequired(
       'outbound_batch.shipment.exit',
       'fulfillment',
@@ -207,6 +209,28 @@ export class BoxWithdrawalService {
       .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
     if (!rows.length) throw new NotFoundException(`Shipments ${shipmentIds.join(',')} have no lines`);
     await this.invariant.assertFulfillmentOrders(rows.map((row) => row.id).sort(), trx);
+  }
+
+  private async voidWaybillForCanceledExit(
+    shipmentId: string,
+    ctx: { actorId: string; operationId: string },
+    trx: DbTx,
+  ): Promise<void> {
+    const active = await this.waybills.getActiveWaybill(shipmentId, trx);
+    if (!active) return;
+    if (active.status !== 'registered') {
+      throw conflict(
+        'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
+        `Waybill ${active.id} is ${active.status}; resolve it before the canceled box can leave its batch`,
+      );
+    }
+    await this.waybills.void(
+      active.id,
+      { reason: 'withdrawn:canceled' },
+      `withdrawal-exit:${ctx.operationId}:${shipmentId}`,
+      { id: ctx.actorId, roles: [] },
+      trx,
+    );
   }
 
   /** 이미 빼는 중 — 전체 취소만 draft → canceled 로 올린다(정한 것 5). */

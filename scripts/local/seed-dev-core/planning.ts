@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import type { DbService } from '@app/db';
 import type { Wired } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
+import { assembleBoxWithdrawal } from '../../../apps/core/src/modules/fulfillment/services/__support__/box-withdrawal-wiring';
 import { wmsSchema } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 import { AuditService } from '../../../apps/core/src/modules/inventory/shared/services/audit.service';
 import { FulfillmentCommandService } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-command.service';
@@ -30,5 +31,7 @@ export function buildShipmentPlanning(dbService: DbService<typeof wmsSchema>, wi
         FULFILLMENT_V2_CUTOVER_AT: '1970-01-01T00:00:00.000Z',
       }),
     ),
+    // 전체 취소 연결(E10)의 협력자 — plan() 경로는 부르지 않지만 생성자가 요구한다.
+    assembleBoxWithdrawal(dbService),
   );
 }

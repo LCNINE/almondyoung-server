@@ -35,6 +35,7 @@ import { PickingStrategyRegistry } from '../../picking/picking-strategy.registry
 import { DiscretePickingStrategy } from '../../picking/discrete-picking.strategy';
 import { ReturnBinService } from '../return-bin.service';
 import { ShipmentDispatchService } from '../shipment-dispatch.service';
+import { ShipmentPlanningService } from '../shipment-planning.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
 import { LocationOutboundService } from '../location-outbound.service';
 import { SimpleOutboundService } from '../simple-outbound.service';
@@ -88,15 +89,15 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     new FulfillmentProgressService(),
     invariant,
   );
-  // dispatch·picking 은 WaybillService 의 읽기/CAS 만 소비한다 — carrier registry·issue
-  // machine 은 이 경로에서 호출되지 않아 stub 으로 충분(waybill.manager.integration.spec 패턴).
+  // dispatch·picking 은 WaybillService 의 읽기/CAS 만, 취소 이탈은 로컬 무효화(void)만 소비한다 — carrier registry·issue
+  // machine 은 이 경로에서 호출되지 않아 stub 으로 충분(waybill.manager.integration.spec 패턴). void 는 commands 를 탄다.
   const waybills = new WaybillService(
     new WaybillManager(
       new WaybillReader(dbService),
       new WaybillRepository(dbService),
       {} as never,
       {} as never,
-      {} as never,
+      commands,
       {} as never,
       dbService,
     ),
@@ -107,6 +108,16 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const boxes = new BoxAllocationManager(sessions, controlled);
   const totes = new ToteLifecycleService(dbService);
   const withdrawals = new BoxWithdrawalService(invariant, boxes, totes, waybills, audit);
+  const planning = new ShipmentPlanningService(
+    dbService,
+    commands,
+    shipmentReservations,
+    invariant,
+    audit,
+    { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
+    workflowGate,
+    withdrawals,
+  );
   const batches = new OutboundBatchOrchestrator(
     dbService,
     commands,
@@ -165,6 +176,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     sessions,
     boxes,
     withdrawals,
+    planning,
     totes,
     startDeps,
     recovery: new BatchSessionRecoveryService(dbService, audit, controlled),

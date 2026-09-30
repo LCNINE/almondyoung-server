@@ -105,6 +105,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       audit,
       { getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) } as never,
       workflowGate,
+      assembleBoxWithdrawal(dbService),
     );
     const moduleRef = {
       get: jest.fn((token: unknown) => {
