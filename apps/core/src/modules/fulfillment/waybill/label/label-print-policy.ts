@@ -56,6 +56,8 @@ export interface LabelStateView {
   changes: LabelItemChange[];
   /** unavailable 의 사유 코드(`WAYBILL_STALE` 등). 그 밖엔 null. */
   issue: string | null;
+  /** withdrawn 일 때 마지막 작업 항목의 exit_to(draft = 박스는 남는다, canceled = 취소). 그 밖엔 없음. */
+  exitTo?: 'draft' | 'canceled' | null;
 }
 
 const keyOf = (i: Pick<LabelItem, 'locationCode' | 'skuId'>) => `${i.locationCode}\u0000${i.skuId}`;

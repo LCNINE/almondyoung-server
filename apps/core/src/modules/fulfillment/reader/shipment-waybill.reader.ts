@@ -1,11 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, desc, eq, ne, notInArray, sql } from 'drizzle-orm';
-import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { WaybillLabelStateReader } from '../waybill/waybill-label-state.reader';
 import type { LabelItemChange, LabelState } from '../waybill/label/label-print-policy';
 import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawal-removals.query';
-import { DbTx } from '../../inventory/schema/inventory.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
 export interface ShipmentByWaybillLine {
@@ -30,7 +29,7 @@ export interface ShipmentByWaybillResult {
   workItemStatus: string | null;
   recipientMasked: string;
   lines: ShipmentByWaybillLine[];
-  /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null. */
+  /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
   /** reprint_required 일 때 마지막 출력과 현재 품목 줄의 차이. */
   labelChanges: LabelItemChange[];
@@ -38,7 +37,7 @@ export interface ShipmentByWaybillResult {
   labelIssue: string | null;
   /** 이탈 중이면 뺄 목록(스펙 §10.5 withdrawing). 그 밖엔 []. */
   removals: WithdrawalRemoval[];
-  /** 활성 작업 항목의 exit_to — 이탈 중일 때만 값이 있다. */
+  /** withdrawing 이면 활성 작업 항목의 exit_to, withdrawn 이면 마지막 작업 항목의 exit_to. 그 밖엔 null. */
   exitTo: 'draft' | 'canceled' | null;
 }
 
@@ -188,7 +187,12 @@ export class ShipmentWaybillReader {
         labelChanges: label?.changes ?? [],
         labelIssue: label?.issue ?? null,
         removals: workItem?.status === 'withdrawing' ? await loadWithdrawalRemovals(trx, workItem.id) : [],
-        exitTo: workItem?.exitTo ?? null,
+        exitTo:
+          workItem?.status === 'withdrawing'
+            ? workItem.exitTo
+            : label?.state === 'withdrawn'
+              ? (label.exitTo ?? null)
+              : null,
       };
     });
   }
@@ -227,7 +231,11 @@ export class ShipmentWaybillReader {
       })
       .from(wmsTables.waybills)
       .where(and(eq(wmsTables.waybills.trackingNo, trackingNo), eq(wmsTables.waybills.status, 'voided')))
-      .orderBy(desc(wmsTables.waybills.voidedAt))
+      .orderBy(
+        sql`${wmsTables.waybills.voidedAt} desc nulls last`,
+        desc(wmsTables.waybills.createdAt),
+        desc(wmsTables.waybills.id),
+      )
       .limit(1);
     if (!waybill) return null;
     const [shipment] = await trx
