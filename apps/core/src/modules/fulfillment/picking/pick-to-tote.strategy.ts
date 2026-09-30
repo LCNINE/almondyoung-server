@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -61,6 +62,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly audit: AuditService,
+    private readonly labels: LabelCurrencyGuard,
   ) {}
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
@@ -131,6 +133,8 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
@@ -231,6 +235,8 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
@@ -617,6 +623,8 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;

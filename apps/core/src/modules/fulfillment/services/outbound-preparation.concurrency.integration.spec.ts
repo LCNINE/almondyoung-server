@@ -106,6 +106,14 @@ describeDb('outbound preparation committed concurrency', () => {
       tx,
     );
   }
+  function startBatch(batchId: string, actorId: string, key: string, tx: DbTx) {
+    return assembleOutbound(tx).picking.start({ batchId, actorId, idempotencyKey: key }, tx);
+  }
+  // 「작업 시작」으로 배치를 시작한 뒤 피커가 박스를 claim 한 상태(활성 작업)까지 만든다.
+  async function activate(f: Awaited<ReturnType<typeof fixture>>, tx: DbTx) {
+    await startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx);
+    return start(f, randomUUID(), tx);
+  }
   async function assertSingleSession(f: Awaited<ReturnType<typeof fixture>>) {
     const [batch] = await observer.db
       .select()
@@ -123,27 +131,8 @@ describeDb('outbound preparation committed concurrency', () => {
       .where(eq(wmsTables.batchInventorySessionBalances.skuId, f.skuId));
     expect(custody.reduce((sum, row) => sum + row.qty, 0)).toBe(3);
   }
-  it.each([true, false])('serializes concurrent starts across real commits (same key=%s)', async (sameKey) => {
-    const f = await fixture();
-    try {
-      const key = randomUUID();
-      const secondKey = sameKey ? key : randomUUID();
-      const result = await overlap(
-        (tx) => start(f, key, tx),
-        (tx) => start(f, secondKey, tx),
-      );
-      expect(result.first).toMatchObject({ status: 'in_progress' });
-      // 같은 키는 명령 재생으로, 다른 키는 잠금을 기다린 뒤 이미 시작된 배치의 세션에 합류한다
-      // (계획 시절에는 초안→활성 전이 때문에 PICKING_COMPONENT_CHANGED_RETRY 로 되돌려 보냈다).
-      expect(result.second).toEqual({ ok: true, value: result.first });
-      if (!sameKey) expect(await observer.db.transaction((tx) => start(f, secondKey, tx))).toEqual(result.first);
-      await assertSingleSession(f);
-    } finally {
-      await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
-    }
-  });
   it.each(['stock', 'start'] as const)(
-    'serializes stock move and preparation with %s committing first',
+    'serializes stock move and batch start with %s committing first',
     async (first) => {
       const f = await fixture();
       const [destination] = await observer.db
@@ -164,15 +153,17 @@ describeDb('outbound preparation committed concurrency', () => {
         );
       try {
         if (first === 'stock') {
-          const result = await overlap(move, (tx) => start(f, randomUUID(), tx));
-          expect(result.second).toMatchObject({
-            ok: true,
-            value: { status: 'in_progress', sources: [{ sourceLocationId: destination.id, allocatedQty: 3 }] },
-          });
+          const result = await overlap(move, (tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx));
+          expect(result.second).toMatchObject({ ok: true, value: { state: 'started', batchId: f.batchId } });
+          const allocated = await observer.db
+            .select()
+            .from(wmsTables.pickingSourceAllocations)
+            .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
+          expect(allocated.map((row) => [row.sourceLocationId, row.qty])).toEqual([[destination.id, 3]]);
           await assertSingleSession(f);
         } else {
-          const result = await overlap((tx) => start(f, randomUUID(), tx), move);
-          expect(result.first).toMatchObject({ status: 'in_progress' });
+          const result = await overlap((tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx), move);
+          expect(result.first).toMatchObject({ state: 'started', batchId: f.batchId });
           expect(result.second).toMatchObject({ ok: false });
           if (result.second.ok) throw new Error('Expected custody-protected move rejection');
           expect(result.second.error).toMatchObject({ response: { code: 'BATCH_CONTROLLED_STOCK' } });
@@ -196,9 +187,6 @@ describeDb('outbound preparation committed concurrency', () => {
       }
     },
   );
-  function startBatch(batchId: string, actorId: string, key: string, tx: DbTx) {
-    return assembleOutbound(tx).picking.start({ batchId, actorId, idempotencyKey: key }, tx);
-  }
   async function handInCount(sessionId: string) {
     const handIns = await observer.db
       .select({ id: wmsTables.batchInventorySessionEvents.id })
@@ -211,41 +199,6 @@ describeDb('outbound preparation committed concurrency', () => {
       );
     return handIns.length;
   }
-
-  it('같은 배치의 두 박스 첫 스캔이 겹쳐도 세션은 하나이고 HAND_IN 은 배정 수만큼이다', async () => {
-    const { first, second } = await observer.db.transaction((tx) => seedTwoBoxBatch(tx));
-    try {
-      const result = await overlap(
-        (tx) =>
-          assembleOutbound(tx).simple.prepare(
-            first.shipmentId,
-            { id: first.actorId, roles: ['logistics_worker'] },
-            `prep-${randomUUID()}`,
-            tx,
-          ),
-        (tx) =>
-          assembleOutbound(tx).simple.prepare(
-            second.shipmentId,
-            { id: randomUUID(), roles: ['logistics_worker'] },
-            `prep-${randomUUID()}`,
-            tx,
-          ),
-      );
-      if (result.first.outcome !== 'ready') throw new Error('first preparation was not ready');
-      if (!result.second.ok) throw result.second.error;
-      if (result.second.value.outcome !== 'ready') throw new Error('second preparation was not ready');
-      expect(result.second.value.context.sessionId).toBe(result.first.context.sessionId);
-
-      const sessions = await observer.db
-        .select()
-        .from(wmsTables.batchInventorySessions)
-        .where(eq(wmsTables.batchInventorySessions.batchId, first.batchId));
-      expect(sessions).toHaveLength(1);
-      expect(await handInCount(sessions[0].id)).toBe(2);
-    } finally {
-      await observer.db.transaction((tx) => cleanupPreparationFixture(tx, first, [second]));
-    }
-  });
 
   // 옛 «같은 계획의 동시 시작» 세션 테스트를 배치 시작으로 옮긴 것이다. 두 번째 시작은 첫 시작의 잠금에
   // 막혔다가(overlap 이 단언) 커밋된 세션에 합류한다 — 같은 키면 명령 재생, 다른 키면 시작된 배치 합류.
@@ -293,7 +246,7 @@ describeDb('outbound preparation committed concurrency', () => {
         (tx) => startBatch(second.batchId, second.actorId, `start-${randomUUID()}`, tx),
       );
       expect(result.first).toMatchObject({ state: 'started', batchId: first.batchId });
-      expect(result.second).toMatchObject({ ok: false, error: { response: { code: 'PICKING_SOURCE_INSUFFICIENT' } } });
+      expect(result.second).toMatchObject({ ok: false, error: { response: { code: 'BATCH_START_BLOCKED' } } });
 
       expect(
         await observer.db
@@ -368,7 +321,7 @@ describeDb('outbound preparation committed concurrency', () => {
     ['scan', 'scan'],
   ] as const)('finishes active %s with a direct %s paused at real mid-command locks', async (operation, competitor) => {
     const f = await fixture();
-    await observer.db.transaction((tx) => start(f, randomUUID(), tx));
+    await observer.db.transaction((tx) => activate(f, tx));
     const direct = makeDb(DATABASE_URL!);
     const resume = makeDb(DATABASE_URL!);
     let release!: () => void;
@@ -523,7 +476,7 @@ describeDb('outbound preparation committed concurrency', () => {
     'retries %s after optimistic selection without switching lock order',
     async () => {
       const f = await fixture();
-      await observer.db.transaction((tx) => start(f, randomUUID(), tx));
+      await observer.db.transaction((tx) => activate(f, tx));
       const prep = makeDb(DATABASE_URL!);
       const other = makeDb(DATABASE_URL!);
       let release!: () => void;
@@ -649,7 +602,7 @@ describeDb('outbound preparation committed concurrency', () => {
     try {
       run = prep.db.transaction(async (tx) => {
         await tx.execute(sqlQuery`SET LOCAL statement_timeout = '1500ms'`);
-        return start(f, key, tx);
+        return startBatch(f.batchId, f.actorId, key, tx);
       });
       const result = run.then(
         (value) => ({ ok: true, value }),

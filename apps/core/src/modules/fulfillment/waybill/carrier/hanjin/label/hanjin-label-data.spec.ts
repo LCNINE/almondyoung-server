@@ -1,6 +1,6 @@
 import type { HanjinConfig } from '../hanjin.config';
 import type { IssueContext } from '../../../waybill.types';
-import { buildHanjinLabelData, type BuildHanjinLabelInput } from './hanjin-label-data';
+import { buildHanjinLabelContent, buildHanjinLabelData, type BuildHanjinLabelContentInput } from './hanjin-label-data';
 
 const CONFIG: HanjinConfig = {
   clientId: 'C',
@@ -59,26 +59,26 @@ const LABEL_DATA = {
   dom_rgn: '1',
 };
 
-const input = (over: Partial<BuildHanjinLabelInput> = {}): BuildHanjinLabelInput => ({
+const ITEMS = [{ locationCode: 'A-01', skuId: 's1', name: '토익 Speaking', quantity: 1 }];
+
+const input = (over: Partial<BuildHanjinLabelContentInput> = {}): BuildHanjinLabelContentInput => ({
   waybill: { trackingNo: '452716978431', custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS', labelData: LABEL_DATA },
   ctx: CTX,
   config: CONFIG,
-  now: new Date('2026-09-27T01:00:00Z'),
+  items: ITEMS,
   ...over,
 });
 
-describe('buildHanjinLabelData', () => {
-  it('품목 줄은 SKU명·수량, 이름순 — 한진 등록 품명(주문 상품명)과 별개다', () => {
-    const d = buildHanjinLabelData(input());
-    expect(d.items).toEqual([
-      { name: '볼펜 흑색', quantity: 2 },
-      { name: '토익 스피킹 교재', quantity: 1 },
-    ]);
-    expect(d.commodityName).toBe('토익 Speaking 외 1건');
+describe('buildHanjinLabelContent', () => {
+  it('품목 줄은 조립자가 준 배정 행 그대로 — 한진 등록 품명(주문 상품명)과 별개다', () => {
+    const items = [{ locationCode: 'A-01', skuId: 's1', name: 'SKU 이름', quantity: 2 }];
+    const content = buildHanjinLabelContent(input({ items }));
+    expect(content.items).toEqual(items);
+    expect(content.commodityName).not.toBe('SKU 이름');
   });
 
   it('분류필드를 labelData 에서 옮긴다', () => {
-    expect(buildHanjinLabelData(input()).sort).toEqual({
+    expect(buildHanjinLabelContent(input()).sort).toEqual({
       hubCode: 'NX',
       terminalCode: '150',
       terminalName: '중구',
@@ -95,7 +95,7 @@ describe('buildHanjinLabelData', () => {
   });
 
   it('운송장번호를 사람용 4-4-4 로도 만든다', () => {
-    const d = buildHanjinLabelData(input());
+    const d = buildHanjinLabelContent(input());
     expect([d.trackingNo, d.trackingNoDisplay]).toEqual(['452716978431', '4527-1697-8431']);
   });
 
@@ -107,37 +107,37 @@ describe('buildHanjinLabelData', () => {
     ['9', '도서'],
     ['D', 'D'],
   ])('⑮ 권역 %s → %s (모르는 값은 원문)', (code, text) => {
-    const d = buildHanjinLabelData(
+    const d = buildHanjinLabelContent(
       input({ waybill: { ...input().waybill, labelData: { ...LABEL_DATA, dom_rgn: code } } }),
     );
     expect(d.regionText).toBe(text);
   });
 
   it('⑬ CD 는 「발지신용」', () => {
-    expect(buildHanjinLabelData(input()).freightText).toBe('발지신용');
+    expect(buildHanjinLabelContent(input()).freightText).toBe('발지신용');
   });
 
   it.each(['PP', 'CC', 'CT'])('⑬ %s 는 운송료 금액이 필요해 지원하지 않는다', (payType) => {
-    expect(() => buildHanjinLabelData(input({ config: { ...CONFIG, payType } }))).toThrow(
+    expect(() => buildHanjinLabelContent(input({ config: { ...CONFIG, payType } }))).toThrow(
       new RegExp(`payType ${payType}`),
     );
   });
 
   it('배송메시지는 발급 때와 같은 합성(메모 + 공동현관)', () => {
-    expect(buildHanjinLabelData(input()).deliveryMessage).toBe('문앞 (공동현관 #1234)');
+    expect(buildHanjinLabelContent(input()).deliveryMessage).toBe('문앞 (공동현관 #1234)');
   });
 
   it('배송메시지가 없으면 빈 문자열', () => {
     const ctx = { ...CTX, recipientSnapshot: { ...RECIPIENT, deliveryNote: '' }, entrancePassword: null };
-    expect(buildHanjinLabelData(input({ ctx })).deliveryMessage).toBe('');
+    expect(buildHanjinLabelContent(input({ ctx })).deliveryMessage).toBe('');
   });
 
   it('품명은 발급 때와 같은 규칙', () => {
-    expect(buildHanjinLabelData(input()).commodityName).toBe('토익 Speaking 외 1건');
+    expect(buildHanjinLabelContent(input()).commodityName).toBe('토익 Speaking 외 1건');
   });
 
   it('수하인은 원본으로, 송하인은 설정에서 — 마스킹은 템플릿의 일이다', () => {
-    const d = buildHanjinLabelData(input());
+    const d = buildHanjinLabelContent(input());
     expect(d.recipient).toEqual({
       name: '김한진',
       phone: '010-1234-5678',
@@ -152,16 +152,28 @@ describe('buildHanjinLabelData', () => {
   });
 
   it('출력일자는 런타임 TZ 와 무관하게 KST 날짜다 (UTC 15:30 = KST 다음 날 00:30)', () => {
-    expect(buildHanjinLabelData(input({ now: new Date('2026-09-27T15:30:00Z') })).printedDate).toBe('2026-09-28');
+    const content = buildHanjinLabelContent(input());
+    expect(buildHanjinLabelData({ content, now: new Date('2026-09-27T15:30:00Z'), revision: 1 }).printedDate).toBe(
+      '2026-09-28',
+    );
+  });
+
+  it('출력 시점 값(출력일자·판차)은 buildHanjinLabelData 가 붙인다', () => {
+    const content = buildHanjinLabelContent(input({ items: [] }));
+    expect(buildHanjinLabelData({ content, now: new Date('2026-09-27T01:00:00Z'), revision: 3 })).toEqual({
+      ...content,
+      printedDate: '2026-09-27',
+      revision: 3,
+    });
   });
 
   it('박스 1/1, 운임Type·출고번호', () => {
-    const d = buildHanjinLabelData(input());
+    const d = buildHanjinLabelContent(input());
     expect([d.boxIndex, d.boxCount, d.boxType, d.custOrdNo]).toEqual([1, 1, 'A', 'AY0123456789ABCDEFGHJKMNPQRS']);
   });
 
   it('labelData 의 숫자 값은 문자열로, 없는 키는 빈 문자열로', () => {
-    const d = buildHanjinLabelData(input({ waybill: { ...input().waybill, labelData: { hub_cod: 12 } } }));
+    const d = buildHanjinLabelContent(input({ waybill: { ...input().waybill, labelData: { hub_cod: 12 } } }));
     expect([d.sort.hubCode, d.sort.terminalCode]).toEqual(['12', '']);
     expect(d.sort.terminalName).toBe('');
   });
@@ -174,14 +186,14 @@ describe('buildHanjinLabelData', () => {
       dom_rgn: 'D',
       prt_add: '서울 종로구 세종대로 1 101',
     };
-    const d = buildHanjinLabelData(
+    const d = buildHanjinLabelContent(
       input({ waybill: { trackingNo: '912345678901', custOrdNo: 'AYX', labelData: demo } }),
     );
     expect([d.sort.hubCode, d.regionText, d.trackingNoDisplay]).toEqual(['DEMO', 'D', '9123-4567-8901']);
   });
 
   it('운송장번호·출고번호가 없으면 던진다(assertDispatchable 뒤라 불변식 위반)', () => {
-    expect(() => buildHanjinLabelData(input({ waybill: { ...input().waybill, custOrdNo: null } }))).toThrow(
+    expect(() => buildHanjinLabelContent(input({ waybill: { ...input().waybill, custOrdNo: null } }))).toThrow(
       /custOrdNo/,
     );
   });

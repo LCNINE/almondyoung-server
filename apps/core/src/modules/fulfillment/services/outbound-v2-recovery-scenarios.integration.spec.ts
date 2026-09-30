@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -88,7 +89,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const batches = new OutboundBatchOrchestrator(dbService, commands, invariant, {} as never, audit, workflow, {
       get: jest.fn(() => ({ resumePending: jest.fn() })),
     } as never);
-    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches);
+    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches, assembleLabels(dbService).guard);
     return { dbService, guard, audit, sessions, recovery, inventory, batches, picking };
   }
 
@@ -147,6 +148,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
   }
 

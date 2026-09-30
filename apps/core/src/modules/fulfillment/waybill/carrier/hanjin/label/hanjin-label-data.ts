@@ -1,7 +1,7 @@
 import type { HanjinConfig } from '../hanjin.config';
 import type { IssueContext, WaybillRow } from '../../../waybill.types';
 import { commodityNameOf, composeMessage, parseRecipient } from '../../../waybill-request.assembler';
-import { labelItemsOf, type LabelItem } from '../../../label/label-items';
+import type { LabelItem } from '../../../label/label-items';
 
 /** print-wbl 분류필드(정본 §3.2). labelData 에 없으면 '' — demo 캐리어는 일부만 채운다. */
 export interface HanjinSortFields {
@@ -19,10 +19,8 @@ export interface HanjinSortFields {
   addressSummary: string; // ⑫ prt_add
 }
 
-/**
- * 템플릿이 그리는 값 전부 — **마스킹 전 원본**이다. 어느 면에 무엇을 가리는지는 면을 아는 템플릿이 정한다.
- */
-export interface HanjinLabelData {
+/** 종이에 그려지는 «내용» — 지문의 입력이다. 출력할 때마다 달라지는 값은 여기 넣지 않는다(스펙 §10.2). */
+export interface HanjinLabelContent {
   trackingNo: string;
   trackingNoDisplay: string;
   sort: HanjinSortFields;
@@ -30,21 +28,30 @@ export interface HanjinLabelData {
   freightText: string; // ⑬
   recipient: { name: string; phone: string; baseAddress: string; detailAddress: string };
   sender: { name: string; phone: string; baseAddress: string };
-  deliveryMessage: string; // ⑭
+  deliveryMessage: string; // ⑭ — 공동현관 비밀번호 포함. 바뀌면 종이가 달라지므로 지문도 바뀐다
   commodityName: string; // 한진 등록 품명과 같은 값 — NS·NL 이 찍는다
-  items: LabelItem[]; // SKU별 품목 줄 — FS 가 찍는다(#913 품목 줄 스펙)
+  items: LabelItem[]; // (로케이션, SKU) 배정 행 — FS 가 찍는다
   boxType: string; // 운임Type
   custOrdNo: string; // 출고번호
-  printedDate: string; // YYYY-MM-DD, Asia/Seoul
   boxIndex: number; // shipment 하나 = 박스 하나
   boxCount: number;
 }
 
-export interface BuildHanjinLabelInput {
+/** 출력 시점 값 — 지문 밖. */
+export interface HanjinLabelPrintValues {
+  printedDate: string; // YYYY-MM-DD, Asia/Seoul
+  /** 판차. 1 이면 종이에 찍지 않는다(스펙 §10.1-4). */
+  revision: number;
+}
+
+/** 템플릿이 그리는 값 전부 — **마스킹 전 원본**이다. 어느 면에 무엇을 가리는지는 면을 아는 템플릿이 정한다. */
+export type HanjinLabelData = HanjinLabelContent & HanjinLabelPrintValues;
+
+export interface BuildHanjinLabelContentInput {
   waybill: Pick<WaybillRow, 'trackingNo' | 'custOrdNo' | 'labelData'>;
   ctx: IssueContext;
   config: HanjinConfig;
-  now: Date;
+  items: readonly LabelItem[];
 }
 
 // ⑮ dom_rgn (정본 §3.2): 1 수도권 / 2~6 지방 / 7 제주 / 9 도서.
@@ -76,7 +83,12 @@ function kstDate(d: Date): string {
   }).format(d);
 }
 
-export function buildHanjinLabelData({ waybill, ctx, config, now }: BuildHanjinLabelInput): HanjinLabelData {
+export function buildHanjinLabelContent({
+  waybill,
+  ctx,
+  config,
+  items,
+}: BuildHanjinLabelContentInput): HanjinLabelContent {
   const freightText = FREIGHT_TEXT[config.payType];
   if (!freightText) {
     throw new Error(
@@ -124,11 +136,18 @@ export function buildHanjinLabelData({ waybill, ctx, config, now }: BuildHanjinL
     sender: { name: config.sender.name, phone: config.sender.tel, baseAddress: config.sender.baseAddress },
     deliveryMessage: composeMessage(rc.deliveryNote, ctx.entrancePassword) ?? '',
     commodityName: commodityNameOf(ctx.lines),
-    items: labelItemsOf(ctx.lines),
+    items: [...items],
     boxType: config.boxType,
     custOrdNo,
-    printedDate: kstDate(now),
     boxIndex: 1,
     boxCount: 1,
   };
+}
+
+export function buildHanjinLabelData(input: {
+  content: HanjinLabelContent;
+  now: Date;
+  revision: number;
+}): HanjinLabelData {
+  return { ...input.content, printedDate: kstDate(input.now), revision: input.revision };
 }

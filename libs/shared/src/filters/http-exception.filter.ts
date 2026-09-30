@@ -58,6 +58,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           'SOURCE_INSUFFICIENT',
           'ACTIVE_WORK_REQUIRES_REVIEW',
           'REPLAN_LIMIT_REACHED',
+          'BATCH_NOT_STARTED',
         ].includes(candidate.reasonCode) &&
         'recovery' in candidate &&
         (candidate.recovery === 'retry_preparation' || candidate.recovery === 'review_batch')

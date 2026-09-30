@@ -17,17 +17,8 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
-import { FulfillmentInvariantService } from './fulfillment-invariant.service';
-import { lockPreparation, activePreparationSession, isBatchStarted } from './outbound-preparation.locks';
-import {
-  preparationBlocked,
-  OutboundPreparationResult,
-  PreparedOutboundResult,
-  OutboundPreparationBlocked,
-} from './outbound-preparation-result';
-import { PickingStartResult } from '../picking/picking-strategy.interface';
-import { isPlanValidationError } from '../picking/allocation/allocation.errors';
-import { UNSTARTED_BATCH_WORK_ITEM_STATUSES } from '../picking/allocation/allocation.types';
+import { activePreparationSession, isBatchStarted } from './outbound-preparation.locks';
+import { preparationBlocked, OutboundPreparationResult, PreparedOutboundResult } from './outbound-preparation-result';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
 // A structured key keeps new nested commands disjoint from every legacy string key.
@@ -79,12 +70,12 @@ export class SimpleOutboundService {
     private readonly commands: FulfillmentCommandService,
     private readonly dispatch: ShipmentDispatchService,
     private readonly barcode: BarcodeService,
-    private readonly invariant: FulfillmentInvariantService,
   ) {}
 
   /**
-   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item 확인,
-   * 배치 시작(배정 + 세션 인계, 아직 시작 전일 때만), 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
+   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item·피킹 방식 확인, 배치가 시작됐는지 확인
+   * (시작 전이면 BATCH_NOT_STARTED 로 막는다 — 시작은 「작업 시작」 하나뿐이고 여기서 시작하지 않는다), 작업 항목 잠금,
+   * 활성 세션 확인, 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
    */
   async prepare(
     shipmentId: string,
@@ -96,61 +87,26 @@ export class SimpleOutboundService {
     if (!actor?.id) throw new UnauthorizedException('Authenticated actor is required');
     const initial = await this.loadWorkItem(shipmentId, tx);
     await this.assertBatchMethodSupported(initial.batchId, tx);
-    if (await isBatchStarted(initial.batchId, tx)) {
-      // 시작된 배치: 작업 항목 → 세션 순서를 지킨다. 구성 요소 잠금은 시작 전에만 잡는다.
-      const [workItem] = await tx
-        .select()
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, initial.id))
-        .for('update');
-      if (
-        !workItem ||
-        workItem.batchId !== initial.batchId ||
-        !(PICKABLE_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status)
-      )
-        throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Active preparation changed while acquiring work item');
-      const sessionId = await activePreparationSession(workItem.batchId, tx);
-      if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-      return this.claimPrepared(workItem, sessionId, actor, idempotencyKey, tx);
+    // 배치 시작은 배치 카드의 「작업 시작」(POST /picking/v2/starts) 하나뿐이다(스펙 §6). 첫 스캔이 배치를 시작하던
+    // 지연 시작은 송장 출력보다 배정이 늦게 일어나는 원인이라 없앴다.
+    if (!(await isBatchStarted(initial.batchId, tx))) {
+      return preparationBlocked(initial.batchId, null, 'BATCH_NOT_STARTED');
     }
-    let locked: Awaited<ReturnType<typeof lockPreparation>>;
-    try {
-      locked = await lockPreparation(initial.batchId, this.invariant, tx);
-    } catch (error) {
-      const blocked = this.preparationFailure(error, initial.batchId);
-      if (blocked) return blocked;
-      throw error;
-    }
-    const workItem = await this.loadWorkItem(shipmentId, tx);
-    await this.assertBatchMethodSupported(workItem.batchId, tx);
-    if (workItem.batchId !== initial.batchId)
-      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Shipment batch changed');
-    // 잠근 배치가 여전히 시작 전인데 이 작업 항목이 picking 을 지났다 = 계획 흡수 전에 시작된 배치.
-    // 배치 시작은 queued·picking 만 배정하므로 그대로 두면 날 409(PICKING_BATCH_EMPTY)가 된다 — 현장 앱이 아는
-    // 차단 표지로 낸다. 잠금 사이에 다른 요청이 배치를 시작했다면(`startedAt` 설정) 시작 명령이 그 세션으로 합류시킨다.
-    if (!locked.batch.startedAt && !(UNSTARTED_BATCH_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status))
-      return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    let started: PickingStartResult;
-    try {
-      // 시작이 실패하면 중첩 명령의 pending 행까지 되돌린다.
-      started = await tx.transaction((trx) =>
-        this.picking.start(
-          {
-            batchId: workItem.batchId,
-            actorId: actor.id,
-            idempotencyKey: nestedCommandKey(idempotencyKey, 'start'),
-          },
-          trx,
-        ),
-      );
-    } catch (error) {
-      const blocked = this.preparationFailure(error, workItem.batchId);
-      if (blocked) return blocked;
-      throw error;
-    }
-    if (started.status !== 'active') return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    const current = await this.loadWorkItem(shipmentId, tx);
-    return this.claimPrepared(current, started.sessionId, actor, idempotencyKey, tx);
+    // 시작된 배치: 작업 항목 → 세션 순서를 지킨다.
+    const [workItem] = await tx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, initial.id))
+      .for('update');
+    if (
+      !workItem ||
+      workItem.batchId !== initial.batchId ||
+      !(PICKABLE_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status)
+    )
+      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Active preparation changed while acquiring work item');
+    const sessionId = await activePreparationSession(workItem.batchId, tx);
+    if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+    return this.claimPrepared(workItem, sessionId, actor, idempotencyKey, tx);
   }
 
   private async claimPrepared(
@@ -171,20 +127,6 @@ export class SimpleOutboundService {
         leaseVersion,
       },
     };
-  }
-
-  private preparationFailure(error: unknown, batchId: string): OutboundPreparationBlocked | null {
-    // Explicit allowlist only: authorization failures, SQL errors and unknown failures escape.
-    if (!isPlanValidationError(error)) return null;
-    const response = error.getResponse();
-    const code = typeof response === 'object' && 'code' in response ? response.code : undefined;
-    // 시작 안 된 배치인데 작업 항목이 queued 를 지났다 = 계획 흡수 전에 시작된 배치. 현장 앱이 아는 차단 표지로 낸다.
-    if (code === 'FULFILLMENT_INVARIANT_VIOLATION' || code === 'PICKING_BATCH_STATE_CORRUPT')
-      return preparationBlocked(batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    if (code === 'PICKING_WAYBILL_NOT_DISPATCHABLE') return preparationBlocked(batchId, null, 'ELIGIBILITY_CHANGED');
-    if (code === 'PICKING_SOURCE_INSUFFICIENT') return preparationBlocked(batchId, null, 'SOURCE_INSUFFICIENT');
-    if (code === 'PICKING_SOURCE_STALE') return preparationBlocked(batchId, null, 'REPLAN_LIMIT_REACHED');
-    return null;
   }
 
   async scan(
@@ -697,12 +639,13 @@ export class SimpleOutboundService {
   }
 
   /**
-   * 단순출고가 다룰 수 없는 방식의 배치를 배치 시작 전에 거른다. 시작된 배치도 같은 가드를
-   * 지나야 하므로(관리자가 admin-web 에서 먼저 시작해 둔 배치) prepare 의 두 갈래 모두 앞에서 부른다.
+   * 단순출고가 다룰 수 없는 방식의 배치를 거른다. prepare 가 배치 시작 여부를 보기 전에 부른다 — 시작 전
+   * 배치(BATCH_NOT_STARTED)든 시작된 배치(관리자가 admin-web 에서 시작해 둔 배치 포함)든 방식이 틀리면 같은 거절이다.
    *
    * 락을 걸지 않는다 — picking_method 는 outbound-batch-orchestrator.service.ts:116 의
-   * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). 조인 대신 별도 쿼리인 이유는 loadWorkItem 이
-   * `.for('update')` 라서, 조인하면 배치 행까지 잠겨 같은 배치의 작업자들이 직렬화되기 때문이다.
+   * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). loadWorkItem 은 잠그지 않는다 — 시작된 배치
+   * 분기가 작업 항목을 따로 잠근다. 조인 대신 별도 쿼리인 이유는 그 잠금이 배치 행까지 번져 같은 배치의 작업자들이
+   * 직렬화되는 것을 막기 위해서다.
    */
   private async assertBatchMethodSupported(batchId: string, tx: DbTx): Promise<void> {
     const [batch] = await tx

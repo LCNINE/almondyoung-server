@@ -12,6 +12,7 @@ const preparationReasons = [
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ] as const;
 export type PreparationBlockReason = (typeof preparationReasons)[number];
 export type PreparationRejection = {
@@ -47,14 +48,18 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly preparation?: PreparationRejection;
+  /** 409 본문의 `errors` 그대로(배치 시작 차단 목록 등). */
+  readonly errors?: unknown;
   constructor(
     message: string,
     status: number,
     code?: string,
-    preparation?: PreparationRejection
+    preparation?: PreparationRejection,
+    errors?: unknown
   ) {
     super(message);
     this.status = status;
+    this.errors = errors;
     this.code = code;
     const rejected =
       !!code &&
@@ -70,6 +75,12 @@ export class ApiError extends Error {
         'INBOUND_ORIGIN_STOCK_INCONSISTENT',
         'INBOUND_PUTAWAY_DESTINATION_INVALID',
         'MOVEMENT_DESTINATION_INACTIVE',
+        'BATCH_START_BLOCKED',
+        'LABEL_REPRINT_REQUIRED',
+        'LABEL_CONTENT_CHANGED',
+        'WAYBILL_STALE',
+        'WAYBILL_NOT_DISPATCHABLE',
+        'WAYBILL_LABEL_NOT_ALLOCATED',
       ].includes(code) ||
         /^(SIMPLE_OUTBOUND_(BARCODE_UNKNOWN|PLAN_INVALIDATED|SKU_NOT_IN_SHIPMENT|OVERSCAN|WORK_ITEM_MISSING|CLAIMED_BY_OTHER|METHOD_UNSUPPORTED)|STOCKTAKING_(RECOUNT_REQUIRED|REVISION_CONFLICT|PREVIEW_STALE|PREVIEW_CHANGED|COUNT_REQUIRED|INCOMPLETE)|LOCATION_OUTBOUND_(WAREHOUSE_MISMATCH|SOURCE_MISMATCH|OVERSCAN|PROGRESS_CHANGED|FORCE_NOT_APPLIED)|CLIENT_UPDATE_REQUIRED)$/.test(
           code
@@ -101,9 +112,10 @@ export class ConflictError extends ApiError {
   constructor(
     message: string,
     code?: string,
-    preparation?: PreparationRejection
+    preparation?: PreparationRejection,
+    errors?: unknown
   ) {
-    super(message, 409, code, preparation);
+    super(message, 409, code, preparation, errors);
   }
 }
 
@@ -176,11 +188,13 @@ export function createApiClient(deps: {
           error?: string;
           code?: string;
           details?: unknown;
+          errors?: unknown;
         };
         throw new ConflictError(
           body.message ?? 'version conflict',
           body.code ?? body.error,
-          parsePreparationRejection(body.details)
+          parsePreparationRejection(body.details),
+          body.errors
         );
       }
       if (!res.ok) {

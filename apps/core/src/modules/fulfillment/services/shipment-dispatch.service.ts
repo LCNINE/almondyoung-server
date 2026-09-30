@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import {
   BadRequestException,
   ConflictException,
@@ -172,6 +173,7 @@ export class ShipmentDispatchService {
     private readonly workflowGate: FulfillmentWorkflowGate,
     @InjectPublisher(CORE_ORDER_STREAM)
     private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
+    private readonly labels: LabelCurrencyGuard,
   ) {}
 
   async inspectionScan(shipmentId: string, input: InspectionScanInput, tx?: DbTx): Promise<ShipmentDispatchResponse> {
@@ -469,6 +471,8 @@ export class ShipmentDispatchService {
     if (!workItem || workItem.batchId !== initialWorkItem.batchId) {
       throw this.conflict('SHIPMENT_WORK_ITEM_CHANGED', 'Shipment work item changed while acquiring dispatch locks');
     }
+    // 검수·검수 줄·강제 발송·자동 발송이 모두 이 잠금을 지난다 — 낡은 송장으로는 발송하지 않는다(스펙 I5).
+    await this.labels.assertCurrent(workItem.id, tx);
 
     // 옛 «계획 구성원 버전 스냅샷» 검사는 없다: 배정 합 = 줄 수량(dispatchLocked), 송장 manifestVersion
     // 일치(assertDispatchable), 예약 소진이 박스가 시작 뒤 바뀌지 않았음을 함께 증명한다(ADR-0041).

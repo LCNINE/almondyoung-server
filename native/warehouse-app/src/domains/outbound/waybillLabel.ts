@@ -1,6 +1,11 @@
 import { ApiError, ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { DevicePrefs } from '../../core/data/devicePrefs';
-import { errorMessage } from '../../core/data/errorMessage';
+import {
+  errorMessage,
+  WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
+  WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_STALE_MESSAGE,
+} from '../../core/data/errorMessage';
 import {
   PRINTER_FAILURE_MESSAGE,
   PrinterError,
@@ -15,6 +20,41 @@ export interface WaybillLabel {
   data: string;
   /** data 안의 쪽 수(#913 품목 줄). 품목이 4줄을 넘는 FS 는 2 이상 — 이 필드가 없던 core 는 늘 1장이다. */
   pages?: number;
+  /** 이 종이의 내용 지문 — 인쇄 성공 뒤 그대로 확인에 보낸다. */
+  fingerprint: string;
+  /** 판차 — 2 이상이면 종이에 N판. */
+  revision: number;
+}
+
+export type LabelState = 'current' | 'never_printed' | 'reprint_required' | 'not_started' | 'external' | 'unavailable';
+
+export interface LabelItemChange {
+  locationCode: string;
+  skuId: string;
+  name: string;
+  printedQty: number;
+  currentQty: number;
+}
+
+export interface BatchLabelState {
+  shipmentId: string;
+  workItemId: string;
+  state: LabelState;
+  changes: LabelItemChange[];
+  issue: string | null;
+}
+
+export function confirmLabelPrinted(api: ApiClient, shipmentId: string, fingerprint: string): Promise<void> {
+  return api.request<void>({ method: 'POST', path: `/shipments/${shipmentId}/waybill/label-prints`, body: { fingerprint } });
+}
+
+export function fetchBatchLabelStates(api: ApiClient, batchId: string): Promise<BatchLabelState[]> {
+  return api.request<BatchLabelState[]>({ path: `/outbound-batches/${batchId}/waybill-label-states` });
+}
+
+/** 「실패·미인쇄만 다시」 대상(스펙 §10.5) — 서버가 판정한 상태로. 이 기기의 지난 실행 결과가 아니다. */
+export function reprintTargets(states: readonly BatchLabelState[]): string[] {
+  return states.filter((s) => s.state === 'never_printed' || s.state === 'reprint_required').map((s) => s.shipmentId);
 }
 
 export interface BatchWorkItem {
@@ -41,7 +81,7 @@ export function printableShipmentIds(items: BatchWorkItem[]): string[] {
 // 라벨 API 의 409 는 응답 code 가 전부 CONFLICT 다 — @app/shared ConflictError 가 코드를 싣지 않는다.
 // 사유는 메시지 앞머리(`WAYBILL_STALE: …`, core 의 WAYBILL.ERROR 상수)에만 있으므로 그걸 읽는다.
 // 형식이 바뀌어도 문구가 「그 밖」으로 떨어질 뿐 인쇄 흐름은 깨지지 않는다.
-const CODE_PREFIX = /^(WAYBILL_[A-Z_]+):/;
+const CODE_PREFIX = /^((?:WAYBILL|LABEL)_[A-Z_]+):/;
 
 export function waybillConflictCode(error: unknown): string | undefined {
   if (!(error instanceof ConflictError)) return undefined;
@@ -49,16 +89,15 @@ export function waybillConflictCode(error: unknown): string | undefined {
 }
 
 const CONFLICT_MESSAGES: Record<string, string> = {
-  WAYBILL_NOT_DISPATCHABLE:
-    '한진 등록이 끝나지 않은 송장이에요. 관리자에게 운송장 발급 상태를 확인해 달라고 해 주세요.',
-  WAYBILL_STALE:
-    '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.',
+  WAYBILL_NOT_DISPATCHABLE: WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_STALE: WAYBILL_STALE_MESSAGE,
+  WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
   WAYBILL_LABEL_UNAVAILABLE:
     '이 송장은 앱에서 인쇄할 수 없어요(수기 등록 또는 한진 외 택배사).',
 };
 const OTHER_CONFLICT = '송장 상태가 바뀌었어요. 관리자에게 문의해 주세요.';
 const NOT_FOUND = '출고 정보를 찾을 수 없어요.';
-const SERVER_FAILURE = '라벨을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.';
+const SERVER_FAILURE = '송장을 만들지 못했어요(서버 문제). 관리자에게 알려 주세요.';
 const NETWORK_FAILURE = '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.';
 
 /** 서버가 200 에 빈 data 를 준 경우. print_raw 의 «nothing to print» 가 프린터 오류로 오인되지 않게 먼저 거른다. */
@@ -80,6 +119,11 @@ function statusOf(error: unknown): number | undefined {
 
 export function labelErrorMessage(error: unknown): string {
   if (error instanceof PrinterError) return PRINTER_FAILURE_MESSAGE;
+  if (error instanceof LabelConfirmError) {
+    return error.reason instanceof ConflictError && /^LABEL_CONTENT_CHANGED:/.test(error.reason.message)
+      ? '인쇄하는 사이 송장 내용이 바뀌었어요. 방금 나온 송장은 버리고 다시 인쇄해 주세요.'
+      : '송장은 나왔지만 출력 확인을 저장하지 못했어요. 다시 인쇄해 주세요.';
+  }
   if (error instanceof EmptyLabelError) return SERVER_FAILURE;
   if (error instanceof ConflictError) {
     const code = waybillConflictCode(error);
@@ -94,9 +138,22 @@ export function labelErrorMessage(error: unknown): string {
   return errorMessage(error);
 }
 
+/** 종이는 나왔는데 출력 확인을 못 남겼다. 장수는 세되 건은 «다시» 대상으로 남긴다. */
+export class LabelConfirmError extends Error {
+  readonly pages: number;
+  readonly reason: unknown;
+  constructor(pages: number, reason: unknown) {
+    super('label printed but confirmation failed');
+    this.name = 'LabelConfirmError';
+    this.pages = pages;
+    this.reason = reason;
+  }
+}
+
 export type LabelPrintDeps = {
   fetchLabel: (shipmentId: string) => Promise<WaybillLabel>;
   print: PrintRaw;
+  confirm: (shipmentId: string, fingerprint: string) => Promise<void>;
   target: string;
 };
 
@@ -105,6 +162,12 @@ export async function printOneLabel(deps: LabelPrintDeps, shipmentId: string): P
   const label = await deps.fetchLabel(shipmentId);
   if (!label.data) throw new EmptyLabelError(`empty label for shipment ${shipmentId}`);
   await deps.print(deps.target, label.data);
+  // 전송 성공 뒤에만 확인한다(스펙 §10.3). 실패해도 종이는 이미 나왔다 — 장수는 세고 «다시» 대상으로 남긴다.
+  try {
+    await deps.confirm(shipmentId, label.fingerprint);
+  } catch (error) {
+    throw new LabelConfirmError(label.pages ?? 1, error);
+  }
   return label;
 }
 
@@ -148,15 +211,12 @@ export async function runBatchLabelPrint(
         result.notAttempted = o.shipmentIds.slice(i);
         return result;
       }
+      if (error instanceof LabelConfirmError) result.sheets += error.pages;
       result.skipped.push({ shipmentId, message: labelErrorMessage(error) });
     }
     o.onProgress?.(i + 1, total);
   }
   return result;
-}
-
-export function retryTargets(result: BatchPrintResult): string[] {
-  return [...result.skipped.map((s) => s.shipmentId), ...result.notAttempted];
 }
 
 const batchKey = (batchId: string) => `almondwms.labelPrinter.batch.${batchId}`;

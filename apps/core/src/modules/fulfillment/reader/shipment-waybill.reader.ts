@@ -2,6 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, ne, notInArray, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { WaybillLabelStateReader } from '../waybill/waybill-label-state.reader';
+import type { LabelItemChange, LabelState } from '../waybill/label/label-print-policy';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
 export interface ShipmentByWaybillLine {
@@ -26,6 +28,12 @@ export interface ShipmentByWaybillResult {
   workItemStatus: string | null;
   recipientMasked: string;
   lines: ShipmentByWaybillLine[];
+  /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null. */
+  labelState: LabelState | null;
+  /** reprint_required 일 때 마지막 출력과 현재 품목 줄의 차이. */
+  labelChanges: LabelItemChange[];
+  /** unavailable 의 사유 코드. */
+  labelIssue: string | null;
 }
 
 // `short_pick_recovery` 도 활성 상태다 — uq_outbound_work_item_active_shipment 는
@@ -54,7 +62,10 @@ function readRecipientName(snapshot: unknown): string {
 
 @Injectable()
 export class ShipmentWaybillReader {
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly labelStates: WaybillLabelStateReader,
+  ) {}
 
   async byTrackingNo(trackingNo: string, warehouseId?: string): Promise<ShipmentByWaybillResult> {
     const normalized = trackingNo.trim();
@@ -160,6 +171,8 @@ export class ShipmentWaybillReader {
         }
       }
 
+      const label = workItem ? await this.labelStates.forShipment(waybill.shipmentId, trx) : null;
+
       return {
         shipmentId: waybill.shipmentId,
         warehouseId: shipment.warehouseId,
@@ -172,6 +185,9 @@ export class ShipmentWaybillReader {
         workItemStatus: workItem?.status ?? null,
         recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
         lines: lines.map((line) => ({ ...line, pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0 })),
+        labelState: label?.state ?? null,
+        labelChanges: label?.changes ?? [],
+        labelIssue: label?.issue ?? null,
       };
     });
   }

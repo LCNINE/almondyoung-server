@@ -1,4 +1,4 @@
-import { isPreparationBlocked } from './outbound-preparation-result';
+import { isPreparationBlocked, preparationBlocked } from './outbound-preparation-result';
 import { unwrapPreparedOutbound } from '../controllers/outbound-preparation-http';
 
 // 옛 outbound-preparation-policy.spec.ts 에서 옮겨 왔다. 초안 교체 정책(canReplaceDraft)은 계획과 함께
@@ -18,5 +18,11 @@ describe('outbound preparation HTTP boundary', () => {
     expect(() => unwrapPreparedOutbound(marker)).toThrow('재고');
     const success = { shipmentId: 's' };
     expect(unwrapPreparedOutbound(success)).toBe(success);
+  });
+
+  it('BATCH_NOT_STARTED 는 「작업 시작」 뒤 다시 준비하면 풀리므로 retry_preparation', () => {
+    expect(preparationBlocked('b', null, 'BATCH_NOT_STARTED').recovery).toBe('retry_preparation');
+    expect(preparationBlocked('b', null, 'ACTIVE_WORK_REQUIRES_REVIEW').recovery).toBe('review_batch');
+    expect(() => unwrapPreparedOutbound(preparationBlocked('b', null, 'BATCH_NOT_STARTED'))).toThrow('작업 시작');
   });
 });

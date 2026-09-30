@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BatchInventorySessionService } from '../services/batch-inventory-session.service';
@@ -46,6 +47,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
+    private readonly labels: LabelCurrencyGuard,
   ) {}
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<PickingScanResult> {
@@ -83,6 +85,8 @@ export class DiscretePickingStrategy implements PickingStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
@@ -293,6 +297,8 @@ export class DiscretePickingStrategy implements PickingStrategy {
           input.actor.id,
           input.expectedLeaseVersion,
         );
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
         await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;

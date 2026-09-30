@@ -1,25 +1,37 @@
-import type { ManifestLineLite } from '../waybill.types';
-
-/** 운송장 품목 줄 한 줄(#913). 이름은 SKU명 — 라벨이 피킹 지시서라 «집을 물건»이 구별돼야 한다. */
+/** 송장 품목 줄 한 줄(스펙 §10.1). 송장이 피킹 지시서라 «어디서 무엇을 몇 개» 가 한 줄이다. */
 export interface LabelItem {
+  locationCode: string;
+  skuId: string;
   name: string;
   quantity: number;
 }
 
+/** 배정 행 한 줄 — `WaybillReader.loadLabelAllocation` 이 읽는다. */
+export interface AllocatedLabelRow {
+  locationCode: string;
+  skuId: string;
+  skuName: string;
+  qty: number;
+}
+
+const codepoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 /**
- * 출고 품목 줄을 SKU 로 합쳐 이름순으로 늘어놓는다. shipment_lines 는 (출고, FOI) 당 한 줄이라 같은 SKU 가
- * 여러 줄일 수 있다 — 집는 동작은 하나이므로 합친다(스펙 §2). 동명이면 skuId 순 — 입력 순서에 흔들리지 않게.
+ * 배정 행을 (로케이션, SKU) 로 합친다 — 한 SKU 가 출고 줄 여럿(FOI 별)이어도 같은 곳에서 집는 동작은 하나다.
+ * 로케이션 코드 순(동선이 코드 순이다) → 이름순 → skuId 순. 입력 순서에 흔들리지 않는다(지문이 이 순서를 먹는다).
  */
-export function labelItemsOf(lines: readonly Pick<ManifestLineLite, 'skuId' | 'skuName' | 'quantity'>[]): LabelItem[] {
-  const bySku = new Map<string, { skuId: string; name: string; quantity: number }>();
-  for (const line of lines) {
-    const prev = bySku.get(line.skuId);
-    if (prev) prev.quantity += line.quantity;
-    else bySku.set(line.skuId, { skuId: line.skuId, name: line.skuName, quantity: line.quantity });
+export function labelItemsOf(rows: readonly AllocatedLabelRow[]): LabelItem[] {
+  const byKey = new Map<string, LabelItem>();
+  for (const row of rows) {
+    const key = `${row.locationCode}\u0000${row.skuId}`;
+    const prev = byKey.get(key);
+    if (prev) prev.quantity += row.qty;
+    else byKey.set(key, { locationCode: row.locationCode, skuId: row.skuId, name: row.skuName, quantity: row.qty });
   }
-  return [...bySku.values()]
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko') || (a.skuId < b.skuId ? -1 : a.skuId > b.skuId ? 1 : 0))
-    .map(({ name, quantity }) => ({ name, quantity }));
+  return [...byKey.values()].sort(
+    (a, b) =>
+      codepoint(a.locationCode, b.locationCode) || a.name.localeCompare(b.name, 'ko') || codepoint(a.skuId, b.skuId),
+  );
 }
 
 /** perPage 개씩 쪽으로 나눈다. 빈 목록도 한 쪽 — 라벨은 늘 1장 이상이다. */

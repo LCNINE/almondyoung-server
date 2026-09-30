@@ -3,12 +3,13 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { PickingStrategyName } from '../picking-strategy.interface';
 import { allocateLines } from './allocate-lines';
-import { conflict } from './allocation.errors';
-import { assertStartEligibility, lockAggregate, lockSourceCapacities } from './allocation.locks';
+import { conflict, startBlocked } from './allocation.errors';
+import { assertStartEligibility, describeStartBlockers, lockAggregate, lockSourceCapacities } from './allocation.locks';
 import {
   BatchStartDeps,
   BatchStartResult,
   SessionStartAllocation,
+  StartBlocker,
   UNSTARTED_BATCH_WORK_ITEM_STATUSES,
   uniqueSorted,
 } from './allocation.types';
@@ -78,11 +79,12 @@ export async function startBatchPicking(
       // 잠근 행으로 다시 본다 — 첫 조회와 잠금 사이에 배치가 완료·취소됐을 수 있다.
       assertBatchStartable(input.batchId, aggregate.batch.status);
       await assertNoOpenSession(trx, input.batchId);
-      await assertStartEligibility(trx, deps.waybills, aggregate, shipmentIds);
+      const waybillBlockers = await assertStartEligibility(trx, deps.waybills, aggregate, shipmentIds);
 
       const workItemByShipment = new Map(aggregate.workItems.map((item) => [item.shipmentId, item.id]));
-      const capacities = await lockSourceCapacities(trx, deps.controlledStock, aggregate);
-      const drafts = allocateLines(
+      const shipmentByLine = new Map(aggregate.lines.map((line) => [line.id, line.shipmentId]));
+      const { capacities, inboundPendingBySku } = await lockSourceCapacities(trx, deps.controlledStock, aggregate);
+      const { drafts, shortages } = allocateLines(
         aggregate.lines.map((line) => ({
           id: line.id,
           skuId: line.skuId,
@@ -92,7 +94,23 @@ export async function startBatchPicking(
           workItemId: workItemByShipment.get(line.shipmentId)!,
         })),
         capacities,
+        inboundPendingBySku,
       );
+      const blockers: StartBlocker[] = [
+        ...shortages.map((shortage) => ({
+          // holds because every shortage came from aggregate.lines, which built shipmentByLine.
+          shipmentId: shipmentByLine.get(shortage.shipmentLineId)!,
+          reason: shortage.reason,
+          shipmentLineId: shortage.shipmentLineId,
+          skuId: shortage.skuId,
+          requiredQty: shortage.requiredQty,
+          shortQty: shortage.shortQty,
+          detail: null,
+        })),
+        ...waybillBlockers,
+      ];
+      // 전부 아니면 전무(스펙 §6): 여기서 던지면 commands.execute 의 트랜잭션이 통째로 되돌아간다.
+      if (blockers.length) throw startBlocked(input.batchId, await describeStartBlockers(trx, blockers));
       const inserted = await trx.insert(wmsTables.pickingSourceAllocations).values(drafts).returning();
       const skuByLine = new Map(aggregate.lines.map((line) => [line.id, line.skuId]));
       const allocations: SessionStartAllocation[] = inserted.map((row) => ({

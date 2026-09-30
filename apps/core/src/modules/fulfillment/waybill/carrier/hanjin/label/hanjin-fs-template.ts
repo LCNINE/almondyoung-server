@@ -1,3 +1,5 @@
+import { ConflictError } from '@app/shared';
+import { WAYBILL } from '../../../waybill.constants';
 import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
 import { paginate, type LabelItem } from '../../../label/label-items';
 import { fitSizePt, fitText, textWidthMm } from '../../../label/svg-text';
@@ -66,20 +68,42 @@ const FS_PAGE_MARK_Y_MM = 80.6;
 const STOP_BANNER = '발송 금지 · 상품 확인용';
 const STOP_MARK = '발송 금지';
 
-/** 품목 이름 칸 폭 — 수량 앞 FS_ITEM_QTY_GAP_MM 에서 멈춘다. 위치 코드 접두어가 붙으면 그 폭을 여기서 뺀다. */
-export function fsItemNameMaxWidthMm(qty: string): number {
-  return FS_ITEM_QTY_X_MM - textWidthMm(qty, FS_ITEM_PT) - FS_ITEM_QTY_GAP_MM - FS_ITEM_X_MM;
+/** 이름 칸이 최소한 이 폭은 남도록 로케이션 접두어 칸을 넓힌다. */
+export const FS_ITEM_NAME_MIN_WIDTH_MM = 20;
+/** 로케이션 접두어를 줄일 수 있는 최소 pt. */
+export const FS_ITEM_LOCATION_MIN_PT = 5;
+const FS_ITEM_LOCATION_GAP_MM = 1.5;
+
+/** 품목 이름 칸 폭 — 수량 앞 FS_ITEM_QTY_GAP_MM 에서 멈춘다. 위치 코드 접두어가 붙으면 그 폭(+간격)을 뺀다. */
+export function fsItemNameMaxWidthMm(qty: string, locationPrefixWidthMm = 0): number {
+  return FS_ITEM_QTY_X_MM - textWidthMm(qty, FS_ITEM_PT) - FS_ITEM_QTY_GAP_MM - FS_ITEM_X_MM - locationPrefixWidthMm;
 }
+
+const round1 = (mm: number) => Math.round(mm * 10) / 10;
 
 function itemElements(items: readonly LabelItem[]): string[] {
   return items.flatMap((item, i) => {
     // 부동소수 꼬리(72.60000000000001)가 svg 좌표에 새지 않게 0.1mm 로 반올림한다.
-    const y = Math.round((FS_ITEM_FIRST_BASELINE_MM + i * FS_ITEM_PITCH_MM) * 10) / 10;
+    const y = round1(FS_ITEM_FIRST_BASELINE_MM + i * FS_ITEM_PITCH_MM);
     const qty = String(item.quantity);
-    const maxWidth = fsItemNameMaxWidthMm(qty);
+    const prefix = `[${item.locationCode}]`;
+    const prefixMax = fsItemNameMaxWidthMm(qty) - FS_ITEM_NAME_MIN_WIDTH_MM - FS_ITEM_LOCATION_GAP_MM;
+    const prefixPt = fitSizePt(prefix, prefixMax, FS_ITEM_PT, FS_ITEM_LOCATION_MIN_PT);
+    const prefixWidth = textWidthMm(prefix, prefixPt);
+    // 로케이션 코드는 식별자라 자르지 않는다. 겹쳐 찍힌 피킹 지시서는 틀린 지시서보다 나쁘다 — 도달 불가에
+    // 가까운 코드는 조용히 겹쳐 찍지 않고 크게 실패한다. 서버 결함(500)이 아니라 데이터(로케이션 코드) 문제라
+    // 코드가 붙은 409 로 돌려준다 — 현장이 사유를 읽고 로케이션 코드를 고치면 풀린다.
+    if (prefixWidth > prefixMax) {
+      throw new ConflictError(
+        `${WAYBILL.ERROR.LABEL_LOCATION_TOO_LONG}: location code "${item.locationCode}" is too long to print without overlapping (max ${prefixMax.toFixed(1)}mm at ${FS_ITEM_LOCATION_MIN_PT}pt)`,
+      );
+    }
+    const nameOffset = prefixWidth + FS_ITEM_LOCATION_GAP_MM;
+    const maxWidth = fsItemNameMaxWidthMm(qty, nameOffset);
     const pt = fitSizePt(item.name, maxWidth, FS_ITEM_PT, FS_ITEM_MIN_PT);
     return [
-      text({ x: FS_ITEM_X_MM, y, pt, text: fitText(item.name, maxWidth, pt) }),
+      text({ x: FS_ITEM_X_MM, y, pt: prefixPt, bold: true, text: prefix }),
+      text({ x: round1(FS_ITEM_X_MM + nameOffset), y, pt, text: fitText(item.name, maxWidth, pt) }),
       text({ x: FS_ITEM_QTY_X_MM, y, pt: FS_ITEM_PT, bold: true, anchor: 'end', text: qty }),
     ];
   });
@@ -100,7 +124,9 @@ export function renderHanjinFsLabel(d: HanjinLabelData): LabelSpec[] {
         x: FS_ITEM_X_MM,
         y: FS_PAGE_MARK_Y_MM,
         pt: 9,
-        text: `${i + 1}/${pages.length} · 총 ${d.items.length}건 ${qtySum}개`,
+        // 판차 자리: 스펙 §10.1-4 가 위치를 실측으로 정하라 했다. 실물로 자리를 확인한 이 줄(y 80.6)에 붙이면
+        // 새 좌표 실측이 필요 없다. 실물 확인은 Task 15 스모크. NS·NL 은 품목 줄·판차를 그리지 않는다(운영은 FS).
+        text: `${d.revision >= 2 ? `${d.revision}판 · ` : ''}${i + 1}/${pages.length} · 총 ${d.items.length}건 ${qtySum}개`,
       }),
     ];
     return i === 0 ? firstPage(d, shared) : continuationPage(shared);

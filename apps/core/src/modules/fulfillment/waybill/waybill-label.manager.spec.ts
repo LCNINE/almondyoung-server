@@ -1,6 +1,8 @@
 import { ConflictError } from '@app/shared';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
+import { buildHanjinLabelContent } from './carrier/hanjin/label/hanjin-label-data';
+import type { LabelItem } from './label/label-items';
 import { SvgRasterizer } from './label/svg-rasterizer';
 import { assertContextMatchesWaybill, assertLabelAvailable, WaybillLabelManager } from './waybill-label.manager';
 import type { IssueContext } from './waybill.types';
@@ -124,20 +126,32 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     payType: 'CD',
   };
 
-  function buildManager(labelType: string, ctx: IssueContext = CTX): WaybillLabelManager {
-    const waybills = { assertDispatchable: jest.fn().mockResolvedValue(WAYBILL_ROW) } as never;
-    const reader = {
-      loadIssueContext: jest.fn().mockResolvedValue(ctx),
-      recipientHashOf: jest.fn().mockReturnValue(HASH),
+  const FINGERPRINT = 'f'.repeat(64);
+  const ITEM = { locationCode: 'A-01', skuId: 's1', name: '펜', quantity: 1 };
+
+  function buildManager(
+    labelType: string,
+    items: LabelItem[] = [ITEM],
+    prints: Array<{ fingerprint: string; revision: number }> = [],
+  ): WaybillLabelManager {
+    const config: HanjinConfig = { ...CONFIG_BASE, labelType };
+    const assembler = {
+      current: jest.fn().mockResolvedValue({
+        kind: 'printable',
+        waybill: WAYBILL_ROW,
+        workItemId: 'wi',
+        content: buildHanjinLabelContent({ waybill: WAYBILL_ROW as never, ctx: CTX, config, items }),
+        fingerprint: FINGERPRINT,
+      }),
     } as never;
+    const printRepo = { listByShipments: jest.fn().mockResolvedValue(prints) } as never;
     const FAKE_TX = {} as unknown as DbTx;
     const dbService = {
       run: (fn: (trx: DbTx) => Promise<unknown>, tx?: DbTx) => fn(tx ?? FAKE_TX),
     } as never;
-    const config: HanjinConfig = { ...CONFIG_BASE, labelType };
     return new WaybillLabelManager(
-      waybills,
-      reader,
+      assembler,
+      printRepo,
       new SvgRasterizer(),
       config,
       dbService,
@@ -173,16 +187,35 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
   });
 
   it('FS 품목 5줄이면 2쪽 — ^XA 두 개, pages 2', async () => {
-    const lines = ['가', '나', '다', '라', '마'].map((n, i) => ({
-      productName: n,
-      skuName: n,
-      quantity: 1,
+    const items = ['가', '나', '다', '라', '마'].map((n, i) => ({
+      locationCode: `A-0${i}`,
       skuId: `k${i}`,
+      name: n,
+      quantity: 1,
     }));
-    const label = await buildManager('FS', { ...CTX, lines }).render('s1');
+    const label = await buildManager('FS', items).render('s1');
     expect(label.pages).toBe(2);
     expect(label.data.match(/\^XA/g)).toHaveLength(2);
     expect(label.data.match(/\^B2R/g)).toHaveLength(1); // ITF 는 첫 쪽에만
+  });
+
+  it('지문과 판차 1(첫 판)을 싣는다', async () => {
+    const label = await buildManager('FS').render('s1');
+    expect(label).toMatchObject({ fingerprint: FINGERPRINT, revision: 1 });
+  });
+
+  it('같은 지문이 2판으로 출력된 적 있으면 그 판차를, 새 지문이면 최대 + 1 을 싣는다', async () => {
+    const same = await buildManager(
+      'FS',
+      [ITEM],
+      [
+        { fingerprint: 'a'.repeat(64), revision: 1 },
+        { fingerprint: FINGERPRINT, revision: 2 },
+      ],
+    ).render('s1');
+    expect(same.revision).toBe(2);
+    const fresh = await buildManager('FS', [ITEM], [{ fingerprint: 'a'.repeat(64), revision: 1 }]).render('s1');
+    expect(fresh.revision).toBe(2);
   });
 
   it('모르는 HANJIN_LABEL_TYPE 은 라벨 요청만 거절한다', async () => {

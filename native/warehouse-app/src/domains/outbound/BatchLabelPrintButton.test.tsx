@@ -28,13 +28,22 @@ type Item = { id: string; shipmentId: string; status: string };
 function mount(opts: {
   workItems?: Item[] | (() => Promise<Item[]>);
   label?: (shipmentId: string) => Promise<unknown>;
+  states?: () => Array<{ shipmentId: string; state: string }>;
   print?: (target: string, text: string) => Promise<void>;
   prefs?: DevicePrefs;
   onRunningChange?: (running: boolean) => void;
 }) {
   const paths: string[] = [];
+  const confirms: Array<{ path: string; body: unknown }> = [];
   const client: ApiClient = {
-    request: (async (o: { path: string }) => {
+    request: (async (o: { path: string; body?: unknown }) => {
+      if (o.path === '/outbound-batches/b-1/waybill-label-states') {
+        return (opts.states?.() ?? []).map((s) => ({ workItemId: `w-${s.shipmentId}`, changes: [], issue: null, ...s }));
+      }
+      if (/\/label-prints$/.test(o.path)) {
+        confirms.push({ path: o.path, body: o.body });
+        return undefined;
+      }
       paths.push(o.path);
       if (o.path === '/outbound-batches/b-1/work-items') {
         const w = opts.workItems ?? [];
@@ -44,7 +53,7 @@ function mount(opts: {
       if (m) {
         return opts.label
           ? opts.label(m[1])
-          : { waybillId: `w-${m[1]}`, trackingNo: `T-${m[1]}`, format: 'zpl', data: `^XA${m[1]}^XZ` };
+          : { waybillId: `w-${m[1]}`, trackingNo: `T-${m[1]}`, format: 'zpl', data: `^XA${m[1]}^XZ`, pages: 1, fingerprint: `fp-${m[1]}`, revision: 1 };
       }
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
@@ -68,7 +77,7 @@ function mount(opts: {
     />,
     { wrapper }
   );
-  return { paths, print, prefs };
+  return { paths, print, prefs, confirms };
 }
 
 const items: Item[] = [
@@ -81,8 +90,8 @@ const items: Item[] = [
 describe('BatchLabelPrintButton', () => {
   it('출고·제외 박스를 빼고 확인 후 순서대로 찍고 기록한다', async () => {
     const { print, prefs } = mount({ workItems: items });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
-    const dialog = await screen.findByRole('dialog', { name: '라벨 2건을 인쇄할까요?' });
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
+    const dialog = await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' });
     await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 2 · 실패 0 · 미인쇄 0');
     // 스풀러가 받았다는 뜻일 뿐 종이가 나왔다는 뜻이 아니다.
@@ -102,23 +111,24 @@ describe('BatchLabelPrintButton', () => {
       [BATCH_KEY]: '2026-09-27T00:12:00.000Z',
     });
     mount({ workItems: items, prefs });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('이미 인쇄했어요');
   });
 
   it('취소하면 아무것도 찍지 않는다', async () => {
     const { print, prefs } = mount({ workItems: items });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(within(dialog).getByRole('button', { name: '취소' }));
     expect(print).not.toHaveBeenCalled();
     expect(prefs.get(BATCH_KEY)).toBeNull();
   });
 
-  it('거절 건은 사유별로 묶어 보이고, 「실패·미인쇄만 다시」는 그 건만 다시 부른다', async () => {
+  it('거절 건은 사유별로 묶어 보이고, 「바뀐·미출력 송장만 다시」는 그 건만 다시 부른다', async () => {
     let failB = true;
     const { paths } = mount({
+      states: () => (failB ? [{ shipmentId: 'a', state: 'current' }, { shipmentId: 'b', state: 'never_printed' }] : []),
       workItems: [
         { id: '1', shipmentId: 'a', status: 'queued' },
         { id: '2', shipmentId: 'b', status: 'queued' },
@@ -126,21 +136,22 @@ describe('BatchLabelPrintButton', () => {
       label: async (id) => {
         if (id === 'b' && failB)
           throw new ConflictError('WAYBILL_STALE: waybill w-b changed', 'CONFLICT');
-        return { waybillId: `w-${id}`, trackingNo: `T-${id}`, format: 'zpl', data: `^XA${id}^XZ` };
+        return { waybillId: `w-${id}`, trackingNo: `T-${id}`, format: 'zpl', data: `^XA${id}^XZ`, pages: 1, fingerprint: `fp-${id}`, revision: 1 };
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 1 · 실패 1 · 미인쇄 0');
     expect(screen.getByText(/재발급을 요청해 주세요/)).toHaveTextContent('1건');
 
-    failB = false;
+    expect(await screen.findByText('재출력 필요 1')).toBeInTheDocument();
     paths.length = 0;
-    await userEvent.click(screen.getByRole('button', { name: '실패·미인쇄만 다시' }));
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
     // 방금 한 장을 찍어 이 기기 기록이 생겼지만, 다시 보내는 건 안 나온 건뿐이라 중복 경고는 거짓말이다.
-    const retryDialog = await screen.findByRole('dialog', { name: '라벨 1건을 인쇄할까요?' });
+    const retryDialog = await screen.findByRole('dialog', { name: '송장 1건을 인쇄할까요?' });
+    failB = false;
     expect(retryDialog).toHaveTextContent(
-      '인쇄되지 않은 1건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
+      '바뀌었거나 인쇄되지 않은 1건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.'
     );
     expect(retryDialog).not.toHaveTextContent('이미 인쇄했어요');
     await userEvent.click(within(retryDialog).getByRole('button', { name: '인쇄' }));
@@ -158,7 +169,7 @@ describe('BatchLabelPrintButton', () => {
         throw new PrinterError('OpenPrinterW failed: 1801');
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 0 · 실패 0 · 미인쇄 2');
     expect(screen.queryByText(/프린터에서 \d+장이 나왔는지/)).toBeNull();
@@ -176,10 +187,12 @@ describe('BatchLabelPrintButton', () => {
         format: 'zpl',
         data: `^XA${id}^XZ`,
         pages: id === 'a' ? 3 : 1,
+        fingerprint: `fp-${id}`,
+        revision: 1,
       }),
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
-    const dialog = await screen.findByRole('dialog', { name: '라벨 2건을 인쇄할까요?' });
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
+    const dialog = await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' });
     await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 2 · 실패 0 · 미인쇄 0');
     expect(screen.getByText('프린터에서 4장이 나왔는지 확인해 주세요.')).toBeInTheDocument();
@@ -192,7 +205,7 @@ describe('BatchLabelPrintButton', () => {
         throw new ConflictError('WAYBILL_NOT_DISPATCHABLE: shipment a', 'CONFLICT');
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 0 · 실패 1');
     expect(prefs.get(BATCH_KEY)).toBeNull();
@@ -201,6 +214,7 @@ describe('BatchLabelPrintButton', () => {
   it('인쇄 중 「중지」하면 남은 건을 미인쇄로 두고 다시 이어 찍을 수 있다', async () => {
     let release: (v: unknown) => void = () => {};
     const { print } = mount({
+      states: () => [{ shipmentId: 'b', state: 'never_printed' }],
       workItems: [
         { id: '1', shipmentId: 'a', status: 'queued' },
         { id: '2', shipmentId: 'b', status: 'queued' },
@@ -208,16 +222,16 @@ describe('BatchLabelPrintButton', () => {
       label: (id) =>
         id === 'a'
           ? new Promise((resolve) => (release = resolve))
-          : Promise.resolve({ waybillId: `w-${id}`, trackingNo: `T-${id}`, format: 'zpl', data: `^XA${id}^XZ` }),
+          : Promise.resolve({ waybillId: `w-${id}`, trackingNo: `T-${id}`, format: 'zpl', data: `^XA${id}^XZ`, pages: 1, fingerprint: `fp-${id}`, revision: 1 }),
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     await userEvent.click(await screen.findByRole('button', { name: '중지' }));
-    release({ waybillId: 'w-a', trackingNo: 'T-a', format: 'zpl', data: '^XAa^XZ' });
+    release({ waybillId: 'w-a', trackingNo: 'T-a', format: 'zpl', data: '^XAa^XZ', pages: 1, fingerprint: 'fp-a', revision: 1 });
     expect(await screen.findByRole('status')).toHaveTextContent('보냄 1 · 실패 0 · 미인쇄 1');
     expect(print.mock.calls).toEqual([['spooler://XP', '^XAa^XZ']]);
     expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
-    expect(screen.getByRole('button', { name: '실패·미인쇄만 다시' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' })).toBeEnabled();
   });
 
   // 인쇄 중 예외가 새면 phase 가 running 에 남아 화면 이동이 영영 막힌다.
@@ -232,17 +246,17 @@ describe('BatchLabelPrintButton', () => {
     };
     const running: boolean[] = [];
     mount({ workItems: items, prefs, onRunningChange: (r) => running.push(r) });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('알 수 없는 오류가 발생했어요.');
-    expect(screen.getByRole('button', { name: '라벨 인쇄' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '송장 인쇄' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: '중지' })).toBeNull();
     expect(running).toEqual([true, false]);
   });
 
   it('인쇄할 박스가 없으면 확인창 없이 알린다', async () => {
     mount({ workItems: [{ id: '1', shipmentId: 'a', status: 'completed' }] });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('인쇄할 박스가 없어요');
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -250,19 +264,19 @@ describe('BatchLabelPrintButton', () => {
   it('다시 눌렀는데 인쇄할 박스가 없으면 지난 결과 요약을 남기지 않는다', async () => {
     let current: Item[] = [{ id: '1', shipmentId: 'a', status: 'queued' }];
     mount({ workItems: async () => current });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
     await screen.findByRole('status');
 
     current = [{ id: '1', shipmentId: 'a', status: 'completed' }];
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('인쇄할 박스가 없어요');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('프린터 미설정이면 조회도 하지 않고 안내한다', async () => {
     const { paths } = mount({ workItems: items, prefs: createMemoryPrefs() });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     expect(screen.getByRole('alert')).toHaveTextContent('설정에서 지정해 주세요');
     expect(paths).toEqual([]);
   });
@@ -273,7 +287,7 @@ describe('BatchLabelPrintButton', () => {
         throw new Error('GET /outbound-batches/b-1/work-items → 500');
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: '라벨 인쇄' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('서버에 문제가 있어요');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(prefs.get(BATCH_KEY)).toBeNull();
@@ -284,11 +298,69 @@ describe('BatchLabelPrintButton', () => {
     const { paths } = mount({
       workItems: () => new Promise<Item[]>((resolve) => (release = resolve)),
     });
-    const button = screen.getByRole('button', { name: '라벨 인쇄' });
+    const button = screen.getByRole('button', { name: '송장 인쇄' });
     await userEvent.click(button);
     await userEvent.click(button);
     release(items);
     await screen.findByRole('dialog');
     expect(paths.filter((p) => p.endsWith('/work-items'))).toHaveLength(1);
+  });
+
+  it('인쇄한 건마다 지문으로 출력 확인을 보낸다', async () => {
+    const { confirms } = mount({ workItems: items });
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
+    await screen.findByRole('status');
+    expect(confirms).toEqual([
+      { path: '/shipments/a/waybill/label-prints', body: { fingerprint: 'fp-a' } },
+      { path: '/shipments/c/waybill/label-prints', body: { fingerprint: 'fp-c' } },
+    ]);
+  });
+
+  it('재출력 필요 N 을 보이고, 다시 누르면 그 N 건만 인쇄한다', async () => {
+    const { paths, confirms } = mount({
+      workItems: items,
+      states: () => [
+        { shipmentId: 'a', state: 'current' },
+        { shipmentId: 'c', state: 'reprint_required' },
+      ],
+    });
+    expect(await screen.findByText('재출력 필요 1')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '송장 인쇄' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '인쇄' }));
+    await screen.findByRole('status');
+    paths.length = 0;
+    confirms.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
+    const dialog = await screen.findByRole('dialog', { name: '송장 1건을 인쇄할까요?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: '인쇄' }));
+    await screen.findByText('보냄 1 · 실패 0 · 미인쇄 0', { exact: false });
+    expect(paths).toEqual(['/shipments/c/waybill/label']);
+    expect(confirms.map((c) => c.path)).toEqual(['/shipments/c/waybill/label-prints']);
+  });
+
+  it('서버 판정에 재출력 대상이 있으면 이 기기에서 인쇄한 적이 없어도 「바뀐·미출력 송장만 다시」가 보인다', async () => {
+    const { paths } = mount({
+      workItems: items,
+      states: () => [
+        { shipmentId: 'a', state: 'never_printed' },
+        { shipmentId: 'c', state: 'reprint_required' },
+      ],
+    });
+    expect(await screen.findByText('재출력 필요 2')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
+    const dialog = await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' });
+    expect(dialog).toHaveTextContent('바뀌었거나 인쇄되지 않은 2건만 다시 보내요.');
+    // 대상은 누를 때 서버에서 새로 받는다 — work-items 는 부르지 않는다.
+    expect(paths).not.toContain('/outbound-batches/b-1/work-items');
+  });
+
+  it('재출력 대상이 0 이면 「바뀐·미출력 송장만 다시」가 없다', async () => {
+    mount({ workItems: items, states: () => [{ shipmentId: 'a', state: 'current' }] });
+    await screen.findByRole('button', { name: '송장 인쇄' });
+    // 판정 조회가 끝날 때까지 기다린다 — 끝나기 전엔 원래 없다.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('button', { name: '바뀐·미출력 송장만 다시' })).toBeNull();
+    expect(screen.queryByText(/재출력 필요/)).toBeNull();
   });
 });

@@ -34,6 +34,7 @@ export interface LockedAggregate {
 export interface SourceCapacity {
   skuId: string;
   sourceLocationId: string;
+  locationCode: string;
   stockVersion: number;
   remainingQty: number;
 }
@@ -110,4 +111,37 @@ export const UNSTARTED_BATCH_WORK_ITEM_STATUSES = ['queued', 'picking'] as const
 
 export function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+/** 시작·합류가 배정을 못 채운 줄의 사유(스펙 §6 표). 송장 사유는 박스 단위라 여기 없다. */
+export type StartShortReason = 'INBOUND_PENDING' | 'STOCK_SHORT';
+
+export interface LineShortage {
+  workItemId: string;
+  shipmentLineId: string;
+  skuId: string;
+  requiredQty: number;
+  shortQty: number;
+  reason: StartShortReason;
+}
+
+export type StartBlockReason = StartShortReason | 'WAYBILL_NOT_READY';
+
+/** 시작(PR 2 부터는 합류도)을 막은 박스 하나의 사유. 줄 단위 사유면 줄·SKU·수량이 채워진다. */
+export interface StartBlocker {
+  shipmentId: string;
+  reason: StartBlockReason;
+  shipmentLineId: string | null;
+  skuId: string | null;
+  requiredQty: number | null;
+  shortQty: number | null;
+  /** WAYBILL_NOT_READY 의 원 메시지(`WAYBILL_STALE: …` 등). 줄 사유면 null. */
+  detail: string | null;
+}
+
+/** 응답용 — 현장이 읽을 수 있게 송장 번호·SKU 코드·이름을 붙인다. */
+export interface StartBlockerView extends StartBlocker {
+  trackingNo: string | null;
+  skuCode: string | null;
+  skuName: string | null;
 }

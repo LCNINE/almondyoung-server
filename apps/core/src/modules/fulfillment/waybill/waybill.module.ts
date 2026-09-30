@@ -11,8 +11,13 @@ import { WaybillManager } from './waybill.manager';
 import { WaybillService } from './waybill.service';
 import { WaybillController } from './waybill.controller';
 import { WaybillLabelManager } from './waybill-label.manager';
+import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
+import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
+import { WaybillLabelPrintManager } from './waybill-label-print.manager';
+import { WaybillLabelStateReader } from './waybill-label-state.reader';
 import { WaybillLabelService } from './waybill-label.service';
 import { WaybillLabelController } from './waybill-label.controller';
+import { LabelCurrencyGuard } from './label-currency.guard';
 import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
 
 @Module({
@@ -34,10 +39,15 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
     WaybillService,
     // 생성자 인자가 함수라 Nest 가 주입할 수 없다 — 팩토리로 만든다. 폰트는 첫 렌더 때 찾는다(#913).
     { provide: SvgRasterizer, useFactory: () => new SvgRasterizer() },
+    WaybillLabelContentAssembler,
+    WaybillLabelPrintRepository,
     WaybillLabelManager,
+    WaybillLabelPrintManager,
+    WaybillLabelStateReader,
     WaybillLabelService,
+    LabelCurrencyGuard,
   ],
   // CarrierGatewayRegistry: 배송추적 폴러(FulfillmentModule)가 캐리어 추적을 부른다(#917).
-  exports: [WaybillService, CarrierGatewayRegistry],
+  exports: [WaybillService, CarrierGatewayRegistry, LabelCurrencyGuard, WaybillLabelStateReader],
 })
 export class WaybillModule {}

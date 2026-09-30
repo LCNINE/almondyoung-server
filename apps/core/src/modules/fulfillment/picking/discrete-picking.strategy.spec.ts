@@ -124,7 +124,13 @@ function makeService(selectRows: unknown[][] = []) {
   const sessions = { moveCustody: jest.fn().mockResolvedValue({}) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const service: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, {});
+  const service: DiscretePickingStrategy = new Strategy(
+    commands,
+    workflowGate,
+    sessions,
+    {},
+    { assertCurrent: jest.fn(async () => undefined) },
+  );
   return { service, commands, sessions, workflowGate, tx };
 }
 

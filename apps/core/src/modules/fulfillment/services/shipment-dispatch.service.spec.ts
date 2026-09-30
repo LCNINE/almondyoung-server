@@ -194,6 +194,7 @@ function makeService() {
     audit as any,
     workflowGate as any,
     coreOrderOutbox as any,
+    { assertCurrent: jest.fn(async () => undefined) } as never,
   );
   return {
     service,

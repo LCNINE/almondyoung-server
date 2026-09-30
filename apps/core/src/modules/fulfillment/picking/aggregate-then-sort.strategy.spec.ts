@@ -458,7 +458,9 @@ function createHarness(): AggregateHarness {
   };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = AggregateThenSortPickingStrategy as any;
-  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches);
+  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches, {
+    assertCurrent: jest.fn(async () => undefined),
+  });
   const startDeps = {
     commands,
     workflowGate,
@@ -480,10 +482,13 @@ function createHarness(): AggregateHarness {
     workItems: Object.values(state.workItems),
   };
   jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
-  jest.mocked(assertStartEligibility).mockResolvedValue(undefined);
-  jest
-    .mocked(lockSourceCapacities)
-    .mockResolvedValue([{ skuId: IDS.sku, sourceLocationId: IDS.source, stockVersion: 7, remainingQty: 5 }]);
+  jest.mocked(assertStartEligibility).mockResolvedValue([]);
+  jest.mocked(lockSourceCapacities).mockResolvedValue({
+    capacities: [
+      { skuId: IDS.sku, sourceLocationId: IDS.source, locationCode: 'A-01', stockVersion: 7, remainingQty: 5 },
+    ],
+    inboundPendingBySku: new Map(),
+  });
   jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
   jest.spyOn(strategy as any, 'acquireCartLock').mockResolvedValue(undefined);
   jest

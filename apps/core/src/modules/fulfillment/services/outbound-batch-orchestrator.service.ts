@@ -666,6 +666,7 @@ export class OutboundBatchOrchestrator {
             totalItems: workload?.totalItems ?? 0,
             totalQty: workload?.totalQty ?? 0,
             scheduledPickingAt: batch.scheduledPickingAt,
+            startedAt: batch.startedAt,
             createdAt: batch.createdAt,
           };
         })

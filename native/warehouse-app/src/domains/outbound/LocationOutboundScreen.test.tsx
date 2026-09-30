@@ -44,6 +44,9 @@ const shipment = {
   workItemId: 'wi',
   workItemStatus: 'queued',
   recipientMasked: '김**',
+  labelState: 'current' as const,
+  labelChanges: [],
+  labelIssue: null,
   lines: [
     {
       shipmentLineId: 'line',
@@ -398,11 +401,11 @@ it('labelPrinting 이면 송장 줄 아래에 라벨 재출력 버튼이 있다'
     null,
     true
   );
-  expect(await screen.findByRole('button', { name: '라벨 재출력' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: '송장 재출력' })).toBeInTheDocument();
 });
 
 it('기본(핸드헬드)에서는 라벨 재출력 버튼이 없다', async () => {
   mount((async () => ({ capabilities: {} })) as ApiClient['request']);
   await screen.findByRole('alert');
-  expect(screen.queryByRole('button', { name: '라벨 재출력' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '송장 재출력' })).toBeNull();
 });

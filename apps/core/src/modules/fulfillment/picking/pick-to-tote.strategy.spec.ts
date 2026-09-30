@@ -228,6 +228,7 @@ function makeService(options: { selects?: unknown[][]; inserts?: unknown[][]; up
     sessions,
     batches,
     audit,
+    { assertCurrent: jest.fn(async () => undefined) },
   );
   return { service, commands, sessions, batches, audit, tx, insertBuilders, updateBuilders };
 }
@@ -1048,6 +1049,7 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     {
       logUserActionRequired: jest.fn(),
     },
+    { assertCurrent: jest.fn(async () => undefined) },
   );
   const startDeps = {
     commands,
@@ -1080,15 +1082,19 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     workItems: Object.values(state.workItems),
   };
   jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
-  jest.mocked(assertStartEligibility).mockResolvedValue(undefined);
-  jest.mocked(lockSourceCapacities).mockResolvedValue([
-    {
-      skuId: PICKING_CONTRACT_IDS.sku,
-      sourceLocationId: PICKING_CONTRACT_IDS.source,
-      stockVersion: 7,
-      remainingQty: 5,
-    },
-  ]);
+  jest.mocked(assertStartEligibility).mockResolvedValue([]);
+  jest.mocked(lockSourceCapacities).mockResolvedValue({
+    capacities: [
+      {
+        skuId: PICKING_CONTRACT_IDS.sku,
+        sourceLocationId: PICKING_CONTRACT_IDS.source,
+        locationCode: 'A-01',
+        stockVersion: 7,
+        remainingQty: 5,
+      },
+    ],
+    inboundPendingBySku: new Map(),
+  });
   jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
   jest.spyOn(strategy as any, 'acquireToteLock').mockResolvedValue(undefined);
   // 옛 계획 구성원 검사가 하던 «은퇴한 박스는 못 집는다»는 이제 작업 항목 상태가 말한다 —

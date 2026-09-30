@@ -1,4 +1,5 @@
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
@@ -193,6 +194,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
     const batches = new OutboundBatchOrchestrator(
       dbService,

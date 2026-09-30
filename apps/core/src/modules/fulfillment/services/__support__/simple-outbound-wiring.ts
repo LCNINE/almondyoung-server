@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+import { assembleLabels } from '../../waybill/__support__/label-fixtures';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { BatchControlledStockGuard } from '../../../inventory/core/services/batch-controlled-stock.guard';
@@ -106,7 +108,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     moduleRef,
   );
-  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches);
+  const labelGuard = assembleLabels(dbService).guard;
+  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
   const picking = new PickingProcessService(
     dbService,
     commands,
@@ -132,17 +135,9 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     audit,
     workflowGate,
     coreOrderPublisher,
+    labelGuard,
   );
-  const simple = new SimpleOutboundService(
-    dbService,
-    batches,
-    picking,
-    workflowGate,
-    commands,
-    dispatch,
-    barcodes,
-    invariant,
-  );
+  const simple = new SimpleOutboundService(dbService, batches, picking, workflowGate, commands, dispatch, barcodes);
   return {
     simple,
     picking,
@@ -159,4 +154,12 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
 
 export function assembleLocationOutbound(tx: DbTx): LocationOutboundService {
   return assembleOutbound(tx).location;
+}
+
+/** 「작업 시작」 — 지연 시작이 사라져 prepare 전에 반드시 불러야 한다(스펙 §6). */
+export async function startBatchFor(tx: DbTx, fixture: { batchId: string; actorId: string }) {
+  return assembleOutbound(tx).picking.start(
+    { batchId: fixture.batchId, actorId: fixture.actorId, idempotencyKey: `start-${randomUUID()}` },
+    tx,
+  );
 }
