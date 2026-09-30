@@ -25,6 +25,7 @@ import {
   isRecoverableOperation,
   isShortPickSettled,
   shortPickOutcomeMessage,
+  shortPickRejectionMessage,
   useFulfillmentOperation,
   useReportShipmentShortPick,
 } from '@/lib/services/orders';
@@ -127,7 +128,7 @@ export function ShortPickDialog({
         );
       }
     } catch (error) {
-      toast.error(getServerDenyMessage(error));
+      toast.error(shortPickRejectionMessage(error) ?? getServerDenyMessage(error));
     }
   };
 
