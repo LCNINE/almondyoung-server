@@ -39,6 +39,28 @@ async function proof(): Promise<Proof> {
   return pending
 }
 
+const MAX_IN_FLIGHT = 2
+let inFlight = 0
+const waiting: Array<() => void> = []
+
+async function limited<T>(task: () => Promise<T>): Promise<T> {
+  if (inFlight < MAX_IN_FLIGHT) inFlight++
+  else await new Promise<void>((resolve) => waiting.push(resolve))
+  try {
+    return await task()
+  } finally {
+    const next = waiting.shift()
+    if (next) next()
+    else inFlight--
+  }
+}
+
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+  })
+
 export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSignal): Promise<BeautyTopResult<T>> {
   const auth = await proof()
   const base = new URL(auth.api_base_url)
@@ -47,10 +69,15 @@ export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSig
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined) url.searchParams.set(key, String(value))
   }
-  const response = await fetch(url, {
+  const request = () => limited(() => fetch(url, {
     headers: { Authorization: `Bearer ${auth.access_token}` },
     credentials: "omit", cache: "no-store", redirect: "error", signal,
-  })
+  }))
+  let response = await request()
+  for (let attempt = 1; response.status === 503 && attempt <= 3; attempt++) {
+    await wait(400 * attempt, signal)
+    response = await request()
+  }
   if (!response.ok) throw new Error(response.status === 401 ? "로그인이 필요합니다." : response.status === 429 ? "조회가 많습니다. 잠시 후 다시 시도해 주세요." : "자료를 불러오지 못했습니다.")
   return response.json() as Promise<BeautyTopResult<T>>
 }

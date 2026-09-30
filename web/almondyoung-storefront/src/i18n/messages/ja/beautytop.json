@@ -1,0 +1,125 @@
+{
+  "title": "ビューティートップ",
+  "subtitle": "自店の順位と地域の相場を数字で確認できます。",
+  "intro": {
+    "priceTitle": "自店は何位？",
+    "priceBody": "地域・業種・全国でのレビューとフォロワー順位、同規模店との比較",
+    "marketTitle": "地域の相場",
+    "marketBody": "施術ごとの一般的な価格、店舗数、売上の増減",
+    "rankTitle": "フランチャイズ",
+    "rankBody": "ブランド別の加盟店数と平均売上",
+    "login": "ログインして見る"
+  },
+  "tabs": {
+    "myShop": "自店",
+    "neighborhood": "地域",
+    "franchise": "フランチャイズ"
+  },
+  "filter": {
+    "sido": "市・道",
+    "gugun": "区・郡",
+    "category": "業種"
+  },
+  "price": {
+    "eyebrow": "{region}の{category}相場",
+    "headline": "{service}は一般的に<b>{price}</b>です",
+    "basis": "{shops}店舗・{menus}メニュー",
+    "note": "NAVERプレイスのメニュー価格です。割引や追加料金により実際の支払額は異なる場合があります。",
+    "cheapest": "安い店",
+    "priciest": "高い店",
+    "headlineRange": "{service}の価格は<b>{price}</b>の範囲です"
+  },
+  "market": {
+    "eyebrow": "{region}の{category}",
+    "headline": "店舗が<b>{count}店</b>あります",
+    "opened": "この1年で{opened}店が開業しました",
+    "openedClosed": "この1年で{opened}店が開業し、{closed}店が閉業しました",
+    "perResidents": "住民{count}人に1店",
+    "newLabel": "開業",
+    "closedLabel": "閉業",
+    "densityLabel": "店舗密度",
+    "chartTitle": "月別の開業",
+    "note": "公的な許認可データ基準です。実際の数と多少異なる場合があります。"
+  },
+  "revenue": {
+    "eyebrow": "{region}の{industry}カード売上",
+    "up": "前年同期より<b>{pct}%</b>増えました",
+    "down": "前年同期より<b>{pct}%</b>減りました",
+    "flat": "前年同期と<b>ほぼ同じ</b>です",
+    "quarter": "{year}年第{q}四半期",
+    "note": "ソウル信用保証財団のカード売上推計です。地域全体の傾向で、個別店舗の売上ではありません。"
+  },
+  "rank": {
+    "eyebrow": "{region}の{category}人気店",
+    "headlineReviews": "レビュー1位は<b>{name}</b>",
+    "headlineFollowers": "フォロワー1位は<b>{name}</b>",
+    "byReviews": "レビュー順",
+    "byFollowers": "フォロワー順",
+    "reviews": "レビュー",
+    "followers": "フォロワー",
+    "more": "もっと見る",
+    "less": "閉じる",
+    "note": "NAVER・Instagramの公開情報基準です。"
+  },
+  "myShop": {
+    "searchLabel": "店舗名",
+    "searchPlaceholder": "店舗名を入力してください",
+    "searchHint": "店舗を選ぶと、地域での順位と同規模店との比較が表示されます。",
+    "noResult": "「{query}」に一致する店舗がありません。NAVERプレイスの登録名で検索してください。",
+    "change": "別の店舗を探す",
+    "detail": "店舗情報",
+    "positionEyebrow": "{name}の順位",
+    "positionHeadline": "{scope}で<b>{rank}位</b>です",
+    "positionSub": "{total}店中 上位{pct}%",
+    "peersEyebrow": "同規模の{count}店と比較",
+    "peersRank": "{total}店中{rank}位",
+    "mine": "自店",
+    "typical": "一般",
+    "more": "{diff}多い",
+    "fewer": "{diff}少ない",
+    "higher": "{diff}高い",
+    "lower": "{diff}安い",
+    "same": "ほぼ同じ",
+    "note": "公開されたレビュー・フォロワー・メニュー価格のみの比較です。売上や予約数ではありません。",
+    "priceLabel": "{service}の価格"
+  },
+  "franchise": {
+    "searchLabel": "ブランド名",
+    "searchPlaceholder": "ブランド名を入力してください",
+    "headline": "<b>{count}件</b>のブランドが見つかりました",
+    "stores": "加盟店{count}店",
+    "sales": "平均売上{amount}",
+    "year": "{year}年情報公開書",
+    "noFigures": "公開された数値がありません",
+    "noResult": "「{query}」に一致するブランドがありません。",
+    "note": "公正取引委員会の加盟事業情報公開書基準です。平均売上は加盟店1店あたりの年平均です。",
+    "more": "もっと見る（{shown}/{total}）"
+  },
+  "shop": {
+    "naverMap": "NAVER地図",
+    "instagram": "Instagram",
+    "reviews": "来店レビュー",
+    "blogReviews": "ブログレビュー",
+    "followers": "インスタフォロワー",
+    "posts": "投稿",
+    "menus": "メニュー価格",
+    "loading": "読み込み中",
+    "priceCompare": "{service}の価格は同規模店より<b>{verdict}</b>"
+  },
+  "unit": {
+    "won": "{value}ウォン",
+    "count": "{value}店"
+  },
+  "empty": "この地域はまだデータが少ないです。近くの地域や別の業種を選んでみてください。",
+  "error": "データを読み込めませんでした。",
+  "retry": "再試行",
+  "rivals": {
+    "eyebrow": "競合店と比較",
+    "emptyHeadline": "気になる店舗を追加してみましょう",
+    "headline": "{count}店中 レビュー<b>{rank}位</b>です",
+    "shop": "店舗",
+    "changes": "直近30日間の変化",
+    "add": "競合店を追加",
+    "remove": "{name}を外す"
+  }
+}

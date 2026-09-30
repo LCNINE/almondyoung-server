@@ -34,6 +34,20 @@ describe("BeautyTop member proof", () => {
     expect((await issueMemberToken(req({ "sec-fetch-site": "same-site" }), deps)).status).toBe(403)
     const bodyReq = new Request(BEAUTYTOP_ORIGIN, { method: "POST", headers: { origin: BEAUTYTOP_ORIGIN }, body: "{}" })
     expect((await issueMemberToken(bodyReq, deps)).status).toBe(400)
+    const emptyStream = new Request(BEAUTYTOP_ORIGIN, { method: "POST", headers: { origin: BEAUTYTOP_ORIGIN }, body: "" })
+    expect((await issueMemberToken(emptyStream, deps)).status).toBe(200)
+    let pulled = 0
+    const endless = new ReadableStream({ pull(controller) { pulled++; controller.enqueue(new Uint8Array(1024)) } })
+    const bigReq = new Request(BEAUTYTOP_ORIGIN, { method: "POST", headers: { origin: BEAUTYTOP_ORIGIN }, body: endless, duplex: "half" } as RequestInit)
+    expect((await issueMemberToken(bigReq, deps)).status).toBe(400)
+    expect(pulled).toBeLessThan(5)
+    const chunks = [new Uint8Array(0), new TextEncoder().encode("{}")]
+    const late = new ReadableStream({ pull(controller) { const next = chunks.shift(); if (next) controller.enqueue(next); else controller.close() } })
+    const lateReq = new Request(BEAUTYTOP_ORIGIN, { method: "POST", headers: { origin: BEAUTYTOP_ORIGIN }, body: late, duplex: "half" } as RequestInit)
+    expect((await issueMemberToken(lateReq, deps)).status).toBe(400)
+    const hollow = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(0)) } })
+    const hollowReq = new Request(BEAUTYTOP_ORIGIN, { method: "POST", headers: { origin: BEAUTYTOP_ORIGIN }, body: hollow, duplex: "half" } as RequestInit)
+    expect((await issueMemberToken(hollowReq, deps)).status).toBe(400)
   })
   it("returns no-store, no CORS and generic errors without secrets", async () => {
     const response = await issueMemberToken(req(), { getMemberId: async () => "valid-fixture", getConfig: () => config })
@@ -53,7 +67,7 @@ describe("BeautyTop member proof", () => {
   })
   it("limits repeated token issuance for the same member", async () => {
     const deps = { getMemberId: async () => "rate-fixture", getConfig: () => config }
-    for (let i = 0; i < 10; i++) expect((await issueMemberToken(req(), deps)).status).toBe(200)
+    for (let i = 0; i < 60; i++) expect((await issueMemberToken(req(), deps)).status).toBe(200)
     const limited = await issueMemberToken(req(), deps)
     expect(limited.status).toBe(429)
     expect(limited.headers.get("retry-after")).toBe("60")

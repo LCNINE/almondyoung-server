@@ -80,5 +80,9 @@
     "dayUnit": "日",
     "untilEnd": "終了まで",
     "endingSoon": "まもなく終了"
+  },
+  "beautytop": {
+    "title": "ビューティートップ",
+    "body": "自店の順位と地域の相場を確認しましょう"
   }
 }

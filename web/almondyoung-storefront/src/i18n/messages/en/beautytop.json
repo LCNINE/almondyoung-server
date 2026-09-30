@@ -1,0 +1,125 @@
+{
+  "title": "BeautyTop",
+  "subtitle": "See your shop's rank and local prices in numbers.",
+  "intro": {
+    "priceTitle": "Where does my shop rank",
+    "priceBody": "Review and follower rank locally, by category and nationwide, compared with similar shops",
+    "marketTitle": "Local prices",
+    "marketBody": "Typical treatment prices, shop counts and sales trends",
+    "rankTitle": "Franchises",
+    "rankBody": "Store counts and average sales by brand",
+    "login": "Log in to view"
+  },
+  "tabs": {
+    "myShop": "My shop",
+    "neighborhood": "Neighborhood",
+    "franchise": "Franchises"
+  },
+  "filter": {
+    "sido": "Province",
+    "gugun": "District",
+    "category": "Category"
+  },
+  "price": {
+    "eyebrow": "{category} prices in {region}",
+    "headline": "{service} is typically <b>{price}</b>",
+    "basis": "{shops} shops · {menus} menus",
+    "note": "Menu prices from Naver Place. Actual payment may differ with discounts or extras.",
+    "cheapest": "Cheapest",
+    "priciest": "Priciest",
+    "headlineRange": "{service} ranges <b>{price}</b>"
+  },
+  "market": {
+    "eyebrow": "{category} in {region}",
+    "headline": "<b>{count}</b> shops",
+    "opened": "{opened} opened in the last year",
+    "openedClosed": "{opened} opened and {closed} closed in the last year",
+    "perResidents": "1 per {count} residents",
+    "newLabel": "Opened",
+    "closedLabel": "Closed",
+    "densityLabel": "Density",
+    "chartTitle": "Monthly openings",
+    "note": "Based on public licensing data. Actual numbers may differ slightly."
+  },
+  "revenue": {
+    "eyebrow": "{industry} card sales in {region}",
+    "up": "Up <b>{pct}%</b> from the same quarter last year",
+    "down": "Down <b>{pct}%</b> from the same quarter last year",
+    "flat": "<b>Similar</b> to the same quarter last year",
+    "quarter": "Q{q} {year}",
+    "note": "Card sales estimates from Seoul Credit Guarantee Foundation. District-wide trend, not individual shop sales."
+  },
+  "rank": {
+    "eyebrow": "Popular {category} shops in {region}",
+    "headlineReviews": "Most reviews: <b>{name}</b>",
+    "headlineFollowers": "Most followers: <b>{name}</b>",
+    "byReviews": "Reviews",
+    "byFollowers": "Followers",
+    "reviews": "Reviews",
+    "followers": "Followers",
+    "more": "Show more",
+    "less": "Show less",
+    "note": "Based on public Naver and Instagram data."
+  },
+  "myShop": {
+    "searchLabel": "Shop name",
+    "searchPlaceholder": "Enter your shop name",
+    "searchHint": "Pick your shop to see its local rank and how it compares with similar shops.",
+    "noResult": "No shops found for ‘{query}’. Try the name registered on Naver Place.",
+    "change": "Find another shop",
+    "detail": "Shop details",
+    "positionEyebrow": "{name} rank",
+    "positionHeadline": "<b>#{rank}</b> in {scope}",
+    "positionSub": "Top {pct}% of {total}",
+    "peersEyebrow": "Compared with {count} similar shops",
+    "peersRank": "#{rank} of {total}",
+    "mine": "My shop",
+    "typical": "Typical",
+    "more": "{diff} more",
+    "fewer": "{diff} fewer",
+    "higher": "{diff} higher",
+    "lower": "{diff} lower",
+    "same": "About the same",
+    "note": "Compares public reviews, followers and menu prices only, not sales or bookings.",
+    "priceLabel": "{service} price"
+  },
+  "franchise": {
+    "searchLabel": "Brand name",
+    "searchPlaceholder": "Enter a brand name",
+    "headline": "Found <b>{count}</b> brands",
+    "stores": "{count} stores",
+    "sales": "Avg. sales {amount}",
+    "year": "{year} disclosure",
+    "noFigures": "No published figures",
+    "noResult": "No brands found for ‘{query}’.",
+    "note": "Based on KFTC franchise disclosure documents. Average sales are per store per year.",
+    "more": "Show more ({shown}/{total})"
+  },
+  "shop": {
+    "naverMap": "Naver Map",
+    "instagram": "Instagram",
+    "reviews": "Visitor reviews",
+    "blogReviews": "Blog reviews",
+    "followers": "Instagram followers",
+    "posts": "Posts",
+    "menus": "Menu prices",
+    "loading": "Loading",
+    "priceCompare": "{service} is <b>{verdict}</b> than similar shops"
+  },
+  "unit": {
+    "won": "₩{value}",
+    "count": "{value}"
+  },
+  "empty": "Not enough data for this area yet. Try a nearby district or another category.",
+  "error": "Couldn't load the data.",
+  "retry": "Try again",
+  "rivals": {
+    "eyebrow": "Compared with rivals",
+    "emptyHeadline": "Add shops you want to keep an eye on",
+    "headline": "<b>#{rank}</b> in reviews of {count}",
+    "shop": "Shop",
+    "changes": "Changes in the last 30 days",
+    "add": "Add a rival shop",
+    "remove": "Remove {name}"
+  }
+}

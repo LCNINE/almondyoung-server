@@ -1,0 +1,125 @@
+{
+  "title": "뷰티탑",
+  "subtitle": "우리 샵 순위와 동네 시세를 숫자로 확인해요.",
+  "intro": {
+    "priceTitle": "우리 샵은 몇 등일까",
+    "priceBody": "동네·업종·전국에서 리뷰와 팔로워 순위, 비슷한 규모 샵과 비교",
+    "marketTitle": "우리 동네 시세",
+    "marketBody": "시술별로 보통 얼마 받는지, 샵이 몇 곳인지, 매출이 늘었는지",
+    "rankTitle": "프랜차이즈",
+    "rankBody": "브랜드별 가맹점 수와 평균 매출",
+    "login": "로그인하고 보기"
+  },
+  "tabs": {
+    "myShop": "내 샵",
+    "neighborhood": "우리 동네",
+    "franchise": "프랜차이즈"
+  },
+  "filter": {
+    "sido": "시·도",
+    "gugun": "구·군",
+    "category": "업종"
+  },
+  "price": {
+    "eyebrow": "{region} {category} 시세",
+    "headline": "{service} 가격은 보통 <b>{price}</b>이에요",
+    "basis": "샵 {shops}곳 · 메뉴 {menus}개",
+    "note": "네이버 플레이스 메뉴 가격이에요. 할인·추가금에 따라 실제 결제액은 다를 수 있어요.",
+    "cheapest": "싼 곳",
+    "priciest": "비싼 곳",
+    "headlineRange": "{service} 가격은 <b>{price}</b> 사이예요"
+  },
+  "market": {
+    "eyebrow": "{region} {category}",
+    "headline": "샵이 <b>{count}곳</b> 있어요",
+    "opened": "지난 1년 {opened}곳이 새로 열었어요",
+    "openedClosed": "지난 1년 {opened}곳이 열고 {closed}곳이 닫았어요",
+    "perResidents": "주민 {count}명당 1곳",
+    "newLabel": "새로 연 곳",
+    "closedLabel": "닫은 곳",
+    "densityLabel": "샵 밀도",
+    "chartTitle": "월별 개업",
+    "note": "공공 인허가 자료 기준이에요. 실제 수와 조금 다를 수 있어요."
+  },
+  "revenue": {
+    "eyebrow": "{region} {industry} 카드 매출",
+    "up": "작년 같은 분기보다 <b>{pct}%</b> 늘었어요",
+    "down": "작년 같은 분기보다 <b>{pct}%</b> 줄었어요",
+    "flat": "작년 같은 분기와 <b>비슷해요</b>",
+    "quarter": "{year}년 {q}분기",
+    "note": "서울신용보증재단 카드 매출 추정치예요. 지역 전체의 흐름이고 개별 샵 매출이 아니에요."
+  },
+  "rank": {
+    "eyebrow": "{region} {category} 인기 샵",
+    "headlineReviews": "리뷰 1등은 <b>{name}</b>",
+    "headlineFollowers": "팔로워 1등은 <b>{name}</b>",
+    "byReviews": "리뷰순",
+    "byFollowers": "팔로워순",
+    "reviews": "리뷰",
+    "followers": "팔로워",
+    "more": "더보기",
+    "less": "접기",
+    "note": "네이버·인스타그램 공개 정보 기준이에요."
+  },
+  "myShop": {
+    "searchLabel": "샵 이름",
+    "searchPlaceholder": "우리 샵 이름을 입력하세요",
+    "searchHint": "샵을 고르면 동네에서 몇 등인지, 비슷한 샵보다 어떤지 알려드려요.",
+    "noResult": "‘{query}’로 찾은 샵이 없어요. 네이버 플레이스에 등록된 이름으로 찾아보세요.",
+    "change": "다른 샵 찾기",
+    "detail": "샵 정보 보기",
+    "positionEyebrow": "{name} 순위",
+    "positionHeadline": "{scope}에서 <b>{rank}등</b>이에요",
+    "positionSub": "{total}곳 중 상위 {pct}%",
+    "peersEyebrow": "비슷한 규모 샵 {count}곳과 비교",
+    "peersRank": "{total}곳 중 {rank}등",
+    "mine": "우리 샵",
+    "typical": "보통",
+    "more": "{diff} 많아요",
+    "fewer": "{diff} 적어요",
+    "higher": "{diff} 비싸요",
+    "lower": "{diff} 싸요",
+    "same": "비슷해요",
+    "note": "공개된 리뷰·팔로워·메뉴 가격만 비교해요. 매출이나 예약 수가 아니에요.",
+    "priceLabel": "{service} 가격"
+  },
+  "franchise": {
+    "searchLabel": "브랜드 이름",
+    "searchPlaceholder": "브랜드 이름을 입력하세요",
+    "headline": "<b>{count}개</b> 브랜드를 찾았어요",
+    "stores": "가맹점 {count}곳",
+    "sales": "평균 매출 {amount}",
+    "year": "{year}년 정보공개서",
+    "noFigures": "공개된 수치가 없어요",
+    "noResult": "‘{query}’로 찾은 브랜드가 없어요.",
+    "note": "공정거래위원회 가맹사업 정보공개서 기준이에요. 평균 매출은 가맹점 한 곳의 연 평균이에요.",
+    "more": "더보기 ({shown}/{total})"
+  },
+  "shop": {
+    "naverMap": "네이버 지도",
+    "instagram": "인스타그램",
+    "reviews": "방문자 리뷰",
+    "blogReviews": "블로그 리뷰",
+    "followers": "인스타 팔로워",
+    "posts": "게시물",
+    "menus": "메뉴 가격",
+    "loading": "불러오는 중이에요",
+    "priceCompare": "{service} 가격이 비슷한 샵보다 <b>{verdict}</b>"
+  },
+  "unit": {
+    "won": "{value}원",
+    "count": "{value}곳"
+  },
+  "empty": "이 동네는 아직 모인 자료가 적어요. 옆 동네나 다른 업종을 골라 보세요.",
+  "error": "자료를 불러오지 못했어요.",
+  "retry": "다시 시도",
+  "rivals": {
+    "eyebrow": "경쟁 샵과 비교",
+    "emptyHeadline": "눈여겨보는 샵을 추가해 보세요",
+    "headline": "{count}곳 중 리뷰 <b>{rank}등</b>이에요",
+    "shop": "샵",
+    "changes": "최근 30일 변화",
+    "add": "경쟁 샵 추가",
+    "remove": "{name} 빼기"
+  }
+}

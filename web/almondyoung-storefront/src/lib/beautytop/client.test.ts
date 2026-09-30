@@ -19,6 +19,15 @@ describe("BeautyTop browser client", () => {
     expect(init.redirect).toBe("error")
     expect(init.headers.Authorization).toBe("Bearer synthetic-proof")
   })
+  it("retries when the API is busy", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ access_token: "synthetic-proof", api_base_url: "https://api.example.test", expires_in: 120 }))
+      .mockResolvedValueOnce(Response.json({ error: { code: "BUSY" } }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ api_version: "1", data: { items: [] }, pagination: null }))
+    vi.stubGlobal("fetch", fetch)
+    await expect(queryBeautyTop({ resource: "market" })).resolves.toMatchObject({ data: { items: [] } })
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
   it("does not call the data API when session verification fails", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 401 }))
     vi.stubGlobal("fetch", fetch)

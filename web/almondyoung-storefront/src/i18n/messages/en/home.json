@@ -80,5 +80,9 @@
     "dayUnit": "d",
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon"
+  },
+  "beautytop": {
+    "title": "BeautyTop",
+    "body": "Check your shop's rank and local prices"
   }
 }

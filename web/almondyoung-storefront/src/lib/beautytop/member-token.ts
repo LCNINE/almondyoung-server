@@ -28,7 +28,7 @@ function allowed(subject: string) {
     if (now - entry.since >= 60_000) windows.delete(key)
   }
   const entry = windows.get(subject) ?? { since: now, count: 0 }
-  if (entry.count >= 10 || (!windows.has(subject) && windows.size >= 4096)) return false
+  if (entry.count >= 60 || (!windows.has(subject) && windows.size >= 4096)) return false
   entry.count++
   windows.set(subject, entry)
   return true
@@ -59,13 +59,29 @@ export function mintToken(memberId: string, config: Config, now = Math.floor(Dat
   return { access_token: message + "." + signature, token_type: "Bearer", expires_in: TTL_SECONDS, api_base_url: origin.origin }
 }
 
+async function hasBody(request: Request) {
+  const reader = request.body?.getReader()
+  if (!reader) return false
+  try {
+    for (let i = 0; i < 16; i++) {
+      const { done, value } = await reader.read()
+      if (done) return false
+      if (value && value.length > 0) return true
+    }
+    return true
+  } finally {
+    await reader.cancel()
+  }
+}
+
 export async function issueMemberToken(request: Request, deps: Dependencies) {
   if (request.method !== "POST") return reply(405, { error: "METHOD_NOT_ALLOWED" })
   const site = request.headers.get("sec-fetch-site")
-  if (request.headers.get("origin") !== BEAUTYTOP_ORIGIN || (site && site !== "same-origin")) {
+  const allowedOrigin = process.env.NODE_ENV === "production" ? BEAUTYTOP_ORIGIN : new URL(request.url).origin
+  if (request.headers.get("origin") !== allowedOrigin || (site && site !== "same-origin")) {
     return reply(403, { error: "ORIGIN_NOT_ALLOWED" })
   }
-  if (request.body || new URL(request.url).search) return reply(400, { error: "BODY_NOT_ALLOWED" })
+  if ((await hasBody(request)) || new URL(request.url).search) return reply(400, { error: "BODY_NOT_ALLOWED" })
   let member: string | null
   try {
     member = await deps.getMemberId()

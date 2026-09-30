@@ -37,6 +37,7 @@ export const MESSAGE_NAMESPACES = [
   "business",
   "notice",
   "shopTrade",
+  "beautytop",
 ] as const
 
 export type MessageNamespace = (typeof MESSAGE_NAMESPACES)[number]

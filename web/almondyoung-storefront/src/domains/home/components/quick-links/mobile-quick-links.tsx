@@ -3,7 +3,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight } from "lucide-react"
 import Image from "next/image"
 import { useMemo, useRef, useState } from "react"
 
@@ -13,6 +13,7 @@ export type MobileQuickLinkItem = {
   href: string
   imageUrl: string | null
   external?: boolean
+  isNew?: boolean
   imageClassName?: string
   imageWrapClassName?: string
 }
@@ -61,7 +62,7 @@ export function MobileQuickLinks({ items }: { items: MobileQuickLinkItem[] }) {
           {pages.map((page, pageIndex) => (
             <div
               key={pageIndex}
-              className="grid min-w-full grid-cols-5 grid-rows-2 gap-y-3 px-0.5"
+              className="grid min-w-full grid-cols-5 grid-rows-2 gap-y-3 px-0.5 pt-2"
             >
               {page.map((item) => (
                 <MobileQuickLink
@@ -117,23 +118,32 @@ export function MobileQuickLinks({ items }: { items: MobileQuickLinkItem[] }) {
 function MobileQuickLink({ item }: { item: MobileQuickLinkItem }) {
   const content = (
     <>
-      <span
-        className={cn(
-          "relative aspect-square w-[54px] overflow-hidden rounded-lg border border-gray-100 bg-gray-100 shadow-sm",
-          item.imageWrapClassName
-        )}
-      >
-        {item.imageUrl ? (
-          <Image
-            src={getMobileImageUrl(item.imageUrl)}
-            alt={item.label}
-            fill
-            sizes="54px"
-            className={cn("object-cover", item.imageClassName)}
-          />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-gray-300">
-            {item.label}
+      <span className="relative">
+        <span
+          className={cn(
+            "relative flex aspect-square w-[54px] items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-100 shadow-sm",
+            item.imageWrapClassName
+          )}
+        >
+          {item.imageUrl ? (
+            <Image
+              src={getMobileImageUrl(item.imageUrl)}
+              alt={item.label}
+              fill
+              sizes="54px"
+              className={cn("object-cover", item.imageClassName)}
+            />
+          ) : item.isNew ? (
+            <ChartNoAxesColumn aria-hidden className="h-6 w-6 text-white" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-gray-300">
+              {item.label}
+            </span>
+          )}
+        </span>
+        {item.isNew && (
+          <span className="bg-primary absolute -top-1.5 -right-1.5 rounded-full px-1.5 py-[3px] text-[9px] leading-none font-bold text-white">
+            NEW
           </span>
         )}
       </span>
