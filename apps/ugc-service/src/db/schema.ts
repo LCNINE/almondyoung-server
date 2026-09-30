@@ -37,6 +37,7 @@ import {
   SHOP_LISTING_MODERATION_DECISIONS,
   SHOP_LISTING_STATUSES,
 } from '../shop-listings/shop-listing.constants';
+import { ALMOND_TEMPLATE_STATUSES } from '../almond-template/constants/almond-template.constants';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -607,6 +608,36 @@ export const logoContestVotes = pgTable(
   ],
 );
 
+export const almondTemplateStatusEnum = pgEnum('almond_template_status', ALMOND_TEMPLATE_STATUSES);
+
+export const almondTemplates = pgTable(
+  'almond_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productId: varchar('product_id', { length: 36 }).notNull(),
+    widthMm: integer('width_mm').notNull(),
+    heightMm: integer('height_mm').notNull(),
+    title: varchar('title', { length: 80 }).notNull(),
+    industry: varchar('industry', { length: 40 }),
+    purpose: varchar('purpose', { length: 40 }),
+    colors: jsonb('colors').$type<string[]>().notNull(),
+    design: jsonb('design').$type<Record<string, unknown>>().notNull(),
+    thumbnailSvg: text('thumbnail_svg').notNull(),
+    status: almondTemplateStatusEnum('status').notNull().default('draft'),
+    createdBy: uuid('created_by').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('almond_templates_product_size_title_unique').on(
+      table.productId,
+      table.widthMm,
+      table.heightMm,
+      table.title,
+    ),
+    index('almond_templates_status_updated').on(table.status, table.updatedAt),
+  ],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -627,6 +658,7 @@ export const ugcServiceSchema = {
   logoContestEntries,
   logoContestEntryMedia,
   logoContestVotes,
+  almondTemplates,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;
