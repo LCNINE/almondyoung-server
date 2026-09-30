@@ -223,3 +223,60 @@ export class OutboundBatchV2ListItemDto {
   startedAt: Date | null;
   createdAt: Date;
 }
+
+export class JoinCandidateLineDto {
+  @ApiProperty()
+  skuCode: string;
+  @ApiProperty()
+  skuName: string;
+  @ApiProperty()
+  qty: number;
+}
+
+export class JoinCandidateWaybillDto {
+  @ApiProperty()
+  id: string;
+  @ApiProperty({ type: String, nullable: true })
+  trackingNo: string | null;
+  @ApiProperty()
+  status: string;
+  @ApiProperty()
+  source: string;
+  @ApiProperty()
+  carrier: string;
+  @ApiProperty({
+    description: '앱이 그릴 수 있는 송장인가(한진 발급). 아니면 합류 뒤 출력 없이 진행한다(labelState external).',
+  })
+  printable: boolean;
+}
+
+export class JoinCandidateResponseDto {
+  @ApiProperty()
+  shipmentId: string;
+  @ApiProperty()
+  shipmentStatus: string;
+  @ApiProperty()
+  manifestVersion: number;
+  @ApiProperty({ type: [String] })
+  orderNos: string[];
+  @ApiProperty()
+  recipientMasked: string;
+  @ApiProperty()
+  totalQty: number;
+  @ApiProperty({ type: [JoinCandidateLineDto] })
+  lines: JoinCandidateLineDto[];
+  @ApiProperty({ type: JoinCandidateWaybillDto, nullable: true })
+  waybill: JoinCandidateWaybillDto | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '송장 밖의 합류 불가 사유 코드(SHIPMENT_ACTIVE_WORK_ITEM 등). null 이면 송장만 보면 된다.',
+  })
+  issue: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '활성 송장이 있는데 발송할 수 없는 사유 코드(WAYBILL_STALE 등). 송장이 없으면 null — 앱이 발급한다.',
+  })
+  waybillIssue: string | null;
+}

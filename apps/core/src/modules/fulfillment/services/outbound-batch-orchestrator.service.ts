@@ -16,6 +16,7 @@ import {
   EligibleShipmentResponseDto,
   ExcludeShipmentFromBatchDto,
   HandoffBatchWorkItemDto,
+  JoinCandidateResponseDto,
   OutboundBatchActor,
   OutboundBatchCommandResponseDto,
   OutboundBatchV2DetailDto,
@@ -35,6 +36,10 @@ import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { BoxAllocationManager, notJoinable } from './box-allocation.manager';
+import { findShipmentIdsByCode } from './join-candidate.queries';
+import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
 
 const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
@@ -622,6 +627,111 @@ export class OutboundBatchOrchestrator {
       }
       return result;
     }, tx);
+  }
+
+  /** 「이 배치에 넣기」의 찾기(스펙 §7). 조회 전용 — 판정은 합류 명령이 잠금 아래에서 다시 한다. */
+  async findJoinCandidates(batchId: string, code: string, tx?: DbTx): Promise<JoinCandidateResponseDto[]> {
+    return this.dbService.run(async (trx) => {
+      const [batch] = await trx
+        .select()
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      const ids = await findShipmentIdsByCode(trx, batch.warehouseId, code);
+      const result: JoinCandidateResponseDto[] = [];
+      for (const shipmentId of ids) {
+        let aggregate: EligibilityAggregate;
+        try {
+          aggregate = await this.loadEligibilityAggregate(shipmentId, trx);
+        } catch (error) {
+          if (error instanceof NotFoundException) continue;
+          throw error;
+        }
+        const issue = await this.rejectionCode(() => this.assertJoinableBox(batch, aggregate, trx, false));
+        const [waybill] = await trx
+          .select()
+          .from(wmsTables.waybills)
+          .where(
+            and(
+              eq(wmsTables.waybills.shipmentId, shipmentId),
+              notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+            ),
+          )
+          .limit(1);
+        const waybillIssue = waybill
+          ? await this.rejectionCode(async () => {
+              await this.waybills.assertDispatchable(shipmentId, trx);
+            })
+          : null;
+        const lines = await trx
+          .select({ skuCode: wmsTables.skus.code, skuName: wmsTables.skus.name, qty: wmsTables.shipmentLines.qty })
+          .from(wmsTables.shipmentLines)
+          .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
+          .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+          .orderBy(asc(wmsTables.shipmentLines.id));
+        const orders = await trx
+          .selectDistinct({
+            displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+            channelOrderId: wmsTables.salesOrders.channelOrderId,
+          })
+          .from(wmsTables.shipmentLines)
+          .innerJoin(
+            wmsTables.fulfillmentOrderItems,
+            eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+          )
+          .innerJoin(
+            wmsTables.fulfillmentOrders,
+            eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+          )
+          .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+          .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId));
+        result.push({
+          shipmentId,
+          shipmentStatus: aggregate.shipment.status,
+          manifestVersion: aggregate.shipment.manifestVersion,
+          orderNos: [...new Set(orders.map((order) => order.displayOrderNo ?? order.channelOrderId))].sort(),
+          recipientMasked: maskName(readRecipientName(aggregate.shipment.recipientSnapshot)),
+          totalQty: lines.reduce((total, line) => total + line.qty, 0),
+          lines,
+          waybill: waybill
+            ? {
+                id: waybill.id,
+                trackingNo: waybill.trackingNo,
+                status: waybill.status,
+                source: waybill.source,
+                carrier: waybill.carrier,
+                printable: isAppPrintable(waybill),
+              }
+            : null,
+          issue,
+          waybillIssue,
+        });
+      }
+      return result;
+    }, tx);
+  }
+
+  /** 거절이면 그 코드(Nest `response.code` 또는 `CODE:` 메시지 접두어), 통과면 null. 그 밖의 오류는 그대로 샌다. */
+  private async rejectionCode(check: () => Promise<unknown>): Promise<string | null> {
+    try {
+      await check();
+      return null;
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        const body = error.getResponse();
+        // `'code' in body` 로 좁힌 뒤 값만 읽는다 — 문자열인지 아래에서 다시 확인한다.
+        const code =
+          typeof body === 'object' && body !== null && 'code' in body ? (body as { code: unknown }).code : null;
+        return typeof code === 'string' ? code : error.message;
+      }
+      if (error instanceof ApplicationException) return /^([A-Z][A-Z_]+):/.exec(error.message)?.[1] ?? error.message;
+      throw error;
+    }
   }
 
   async getWorkItems(batchId: string, tx?: DbTx): Promise<OutboundBatchWorkItemResponseDto[]> {
