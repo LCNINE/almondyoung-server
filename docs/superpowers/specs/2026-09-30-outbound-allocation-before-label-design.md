@@ -313,7 +313,8 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
   `draft` 로 나간 박스는 배치 전 풀로 돌아갔으니 «작업 항목 없음» 이 참이다. 송장 스캔 화면은 by-waybill 의 `withdrawn` 이 따로 덮는다
 - **결품 보고로 제외된 박스는 `withdrawn` 이 아니다.** 결품 보고는 박스를 취소하지 않고 송장만 무효화하므로(PR 3 은 결품 경로를 바꾸지 않는다),
   그 종이를 스캔하면 by-waybill 은 활성 송장도 «취소로 나간 박스의 무효 송장» 도 못 찾아 404 다(앱 «이 운송장을 찾을 수 없어요»). 결품의 되돌림
-  연결은 PR 4
+  연결은 PR 4. **PR 4 계획이 정함:** 결품으로 못 채운 박스는 이탈(`exit_to = draft`)로 빠지고, 집은 물건은 되돌림 바구니로 뺀다. 송장은 나가는 순간
+  무효화되고, 그 옛 번호의 스캔은 `withdrawn` 이다(§9·§10.5 PR 4 계획이 정함)
 - **내부 거절 코드 `SHIPMENT_LINE_INSPECTION_STALE`(§12).** 박스에서 되돌림이 `PACKED` 보관에서 뺄 때 줄의 `inspected_qty` 를 같은 수만큼 줄이는데,
   `inspected_qty` 가 그 수보다 작으면(검수 기록과 `PACKED` 보관이 어긋남) `BoxAllocationManager.removeFromBox` 가 이 코드로 명령 전체를 되돌린다.
   옳은 장부에서는 나지 않는다
@@ -339,12 +340,36 @@ warehouse-app 배치 카드에 「작업 시작」 버튼을 두고, 시작된 �
 4. 채워지면 박스는 남는다. 지문이 바뀌어 I5 가 막고, 앱은 «송장이 바뀌었습니다 · 바뀐 줄» + 재출력(새 종이에 판차)
 5. 못 채우면 이탈(`exit_to = draft`, §8), 부족분 예약은 기존대로 무효화(`invalidateForShortPick`), 집은 물건은 되돌림 바구니
 
-E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어간 주문의 (창고 단위) 예약분도 들어 있다. 채운 만큼 창고 가용이
-음수가 될 수 있고, 그 모자람은 다음에 그 SKU 로 시작·합류하는 박스에서 `STOCK_SHORT` 로 드러난다. 판매 가능 수량이
-0 으로 보이는 것은 지금 결품 처리와 같다.
+E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어간 주문의 (창고 단위) 예약분도 들어 있다. 채운 만큼 그 주문들의
+몫을 가져오고, 그 모자람은 다음에 그 SKU 로 시작·합류하는 박스에서 `STOCK_SHORT` 로 드러난다.
+**PR 4 계획이 정함(사실 확인으로 고침):** 부족 승인은 원장(`stock_events`)을 쓰지 않는다 — 세션 통제만 풀리고 L 의 `ON_HAND` 는
+그대로라, 없는 k 개가 L 의 일반 가용으로 되살아난다(유령 재고). 그래서 창고 가용은 음수가 되지 않고 **결품만큼 부풀어 있다.**
+다음 시작·합류가 L 을 배정받으면 결품이 또 난다(PR 4 이전과 같다). 원장 반영은 후속 이슈다(사용자 결정 2026-10-01).
 
 사라지는 것: `short_pick_recovery` 작업 항목 상태의 생산자, «격리 → 은퇴 → 초안 복귀»(`resumePending`) 경로.
 상태 값 자체의 제거는 contract 단계(§11).
+
+**PR 4 계획이 정함**(사용자 결정 2026-10-01 은 1·2·3·4·9):
+
+1. **결품 = 안 집은 몫.** «L 에서 k 개 모자람» 은 L 선반에 아직 남은 몫에서 k 를 뺀다는 뜻이다.
+   - 부족 승인은 공유 `AT_SOURCE` 에서만 한다.
+   - k 의 상한은 두 값의 작은 쪽이다: 그 줄·L 의 «배정 − 줄 귀속 보관», 그리고 L 의 `AT_SOURCE`(같은 보고의 다른 줄 몫 제외). 넘으면 `SHORT_PICK_EXCEEDS_UNPICKED`(요청 전부 판정, 무변경)다.
+   - 이미 집은 물건의 파손은 결품이 아니다(범위 밖 — 박스 빼기로 처리한다).
+   - 그래서 결품 보고는 작업 항목이 `queued`·`picking` 일 때만 받는다(포장 단계로 되돌리는 `reconcileStage` 는 S2).
+2. **재배정 후보에서 이번 보고의 (SKU, 로케이션)을 뺀다.** 부족 승인 직후 그 로케이션은 유령 재고를 일반 가용으로 보이기 때문이다(위 E12).
+   - 채울 로케이션에 이 작업 항목의 배정 행이 있으면 그 행을 늘린다(`source_stock_version` 그대로 — 복구가 인계 이벤트와 견준다).
+   - 전부 아니면 전무다 — 한 줄이라도 못 채우면 채우지 않고 5 단계로 간다.
+3. **채움:** 박스·작업 항목(상태·claim·리스)·송장·예약을 건드리지 않는다. 결품 오퍼레이션은 그 트랜잭션에서 `completed` 다. 지문이 바뀌어 I5 가 막는다.
+4. **못 채움 → 나갈 때 결품 마무리.** 부족분 예약을 무효화하면 planned 박스는 «확정 예약 = 줄 수량» 을 어긴다. 그래서 박스는 `draft` 로, 송장은 무효로 가야 한다. 그런데 «뺄 상품» 화면은 송장 스캔으로 열린다.
+   - 그래서 보고 트랜잭션은 부족 승인 → 집지 않은 몫 반납 → `withdrawing`(`exit_to = draft`, 작업 항목이 결품 오퍼레이션을 기다림)까지 한다.
+   - 빼는 동안 박스는 `planned`, 송장·예약은 그대로다.
+   - **배정 합이 0 이 되는 트랜잭션**(집은 게 없으면 보고 트랜잭션)에서 나가기가 결품을 마무리한다: 부족분 예약 무효화 → 활성 송장 로컬 무효화 → 박스 `draft`(manifest +1) → 줄 `inspected_qty` 0 → 결품 오퍼레이션 `completed`(after 에 `voidedWaybillId`). 작업 항목의 대기는 비운다(커밋 뒤 재개 대상 아님).
+   - 송장이 `registered` 가 아니면 두 곳에서 거절한다: 보고에서 `SHORT_PICK_INVOICE_NOT_VOIDABLE`, 마지막 되돌림에서 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE`.
+5. **결품으로 빼는 중인 박스에 전체 취소(E10)가 오면 넘겨받는다.** 결품 오퍼레이션을 `completed`(after `{ supersededByOperationId }`)로 닫고, 작업 항목이 취소 오퍼레이션을 기다리게 바꾸고 `exit_to` 를 `canceled` 로 올린다. 부족분 예약은 무효화하지 않는다(취소 완료가 전부 푼다). 부분 취소(E11)는 기존 `CANCELLATION_WORK_ITEM_ALREADY_WAITING`.
+6. **한 트랜잭션.** 결품 보고는 비동기 재개가 없다 — `recovery_required` 결품 오퍼레이션이 생기지 않는다. 결품 반환(`RETURN_TO_SOURCE`)도 사라진다(§11).
+7. **거절:** 빼는 중인 박스의 결품 보고는 `SHIPMENT_WITHDRAWN`, 세션 `recovery_required` 는 `PICKING_SESSION_NOT_ACTIVE`, 다른 오퍼레이션을 기다리는 작업 항목은 `SHORT_PICK_WORK_ITEM_WAITING`(방어).
+8. **응답:** `outcome`(`refilled`|`withdrawing`|`exited`), `refills`(줄·SKU·로케이션·코드·수량), `shortages`(시작·합류와 같은 `STOCK_SHORT`/`INBOUND_PENDING` 판정). `operationStatus` 는 `withdrawing` 일 때만 `pending` 이다.
+9. **warehouse-app 은 바꾸지 않는다.** 결품 보고는 admin-web(피킹 작업대 다이얼로그)에만 있다. 결품 뒤 현장 흐름은 PR 1·3 이 이미 덮는다: 재출력(`reprint_required`), 뺄 상품(`withdrawing`), 빠진 박스(`withdrawn`).
 
 ## 10. 송장
 
@@ -426,6 +451,9 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
   항목이 `exit_to = canceled` 로 `excluded` 일 때만 탄다 — 결품 보고로 무효화된 송장은 404 다(§8 구현이 정함). 버린 종이의 출력 기록은 세지 않는다:
   박스에 시작된 배치에서 `excluded` 된 이전 작업 항목이 있으면 `WaybillLabelStateReader` 는 현재 작업 항목의 `created_at` 이후 출력만 센다
   (`printed_at` 은 DB `now()` 이고 같은 지문을 다시 찍으면 갱신된다)
+- **PR 4 계획이 정함:** 무효 송장 폴백을 결품 이탈로 넓힌다(사용자 결정 2026-10-01). 그 번호의 최근 무효 송장을 결품 마무리가 무효화했으면
+  (완료된 결품 오퍼레이션 after 스냅샷의 `voidedWaybillId`) `withdrawn`, `exitTo = draft`, `batchId`·`workItemId` 는 `null` 이다. 박스가 그 뒤 다시
+  계획돼 새 송장을 받아도 옛 번호는 `withdrawn` 이다. 앱은 PR 3 대로 한 문구다(«빠진 박스예요. 송장은 버려 주세요.»)
 - 배치 카드에 «재출력 필요 N». N 이 0 보다 크면 일괄 인쇄의 「바뀐·미출력 송장만 다시」가 보인다(이 기기에서 인쇄한 적이
   없어도). 누를 때 서버에서 대상을 새로 받아 `never_printed`·`reprint_required` 만 다시 뽑는다
 
@@ -452,6 +480,8 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
   «세션 통제가 풀려 원래 로케이션의 일반 재고로 돌아간 양» 이라 보존식은 그대로다. `PUTAWAY_RETURN` 만의 합으로 좁혀지는 것은 PR 4 에서다.
   `exit_to` 는 나간 뒤(`excluded`)에도 남긴다. `return_bins` 는 `registered_by` 를 들고, 바구니 조회를 위해 보관 행에 부분 인덱스
   (`custody_ref WHERE custody_type = 'RETURN_PENDING' AND qty > 0`)를 둔다. 세션 이벤트 `event_type` 은 varchar 라 새 값에 마이그레이션이 필요 없다
+- **PR 4 계획이 정함:** 스키마 변경은 없다(마이그레이션 0). `RETURN_TO_SOURCE` 생산자(`returnShortPickCustody`·`returnToSource`)가 사라져
+  `returned_qty` 는 `PUTAWAY_RETURN` 합이다. 과거 세션의 옛 `RETURN_TO_SOURCE` 이벤트는 복구가 계속 재생한다. 부족 승인 payload 에 `workItemId`·`allocationId` 를 더한다(varchar·jsonb 라 스키마 불변)
 
 ## 12. 오류 코드
 
@@ -480,6 +510,11 @@ E12 의 결과: 3 단계의 «일반 가용»에는 아직 배치에 안 들어�
 | `TOTE_BARCODE_RESERVED` | `RB-` 바코드를 토트로 등록(PR 3 계획이 정함) | 거절 |
 | `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` | 전체 취소로 나가는 박스의 활성 송장이 `registered` 가 아님(PR 3 계획이 정함). 던지는 곳은 `BoxWithdrawalService.exitIfDrained` 의 `canceled` 갈래 하나 — 마지막 몫의 박스에서 되돌림·카트 여분 되돌림(PR 3 구현이 정함). 집은 게 없는 박스의 전체 취소는 E10 이 같은 판정으로 먼저 걸러 옛 대기로 보내므로 여기서 거절되지 않는다(§8 PR 3 구현이 정함) | 무변경. 앱 «이 박스의 송장을 지금 처리할 수 없어요. 이 상품은 아직 빠지지 않았어요. 관리자에게 송장 처리를 요청해 주세요.» |
 | `SHIPMENT_LINE_INSPECTION_STALE` | 박스에서 되돌림이 `PACKED` 에서 빼는데 줄의 `inspected_qty` 가 그 수보다 작음 — 검수 기록과 보관이 어긋남(`BoxAllocationManager.removeFromBox`, PR 3 구현이 정함) | 무변경. 앱 «검수 기록이 맞지 않아요. 관리자에게 문의해 주세요.» |
+
+| `SHORT_PICK_EXCEEDS_UNPICKED` | 결품 수량이 그 로케이션의 안 집은 몫을 넘음(§9 PR 4 계획이 정함 1) | 무변경, `errors` 에 줄·로케이션·요청·가능 수량 |
+| `SHORT_PICK_WORK_ITEM_WAITING` | 다른 오퍼레이션을 기다리는 작업 항목에 결품 보고(방어, §9 PR 4 계획이 정함 7) | 거절 |
+
+**PR 4 계획이 정함:** 결품 보고는 `SHIPMENT_WITHDRAWN`(빼는 중인 박스)·`PICKING_SESSION_NOT_ACTIVE`(세션 `recovery_required`)·`WITHDRAWAL_WAYBILL_NOT_VOIDABLE`(결품으로 나가는 마지막 되돌림)을 재사용한다. 옛 결품 경로와 함께 사라지는 코드는 다음과 같다: `SHORT_PICK_INVOICE_NOT_VOIDED`·`SHORT_PICK_OPERATION_NOT_RESUMABLE`·`SHORT_PICK_OPERATION_MEMBER_MISMATCH`·`SHORT_PICK_SHIPMENT_NOT_RECOVERING`·`SHORT_PICK_CUSTODY_REMAINS`·`SHORT_PICK_CUSTODY_EXCEEDS_ALLOCATION`·`SHORT_PICK_CUSTODY_INSUFFICIENT`·`SESSION_RETURN_EXCEEDS_OPERATION_INTENT`.
 
 HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ code, message })`, waybill 은 메시지 접두어 `CODE:`.
 
@@ -540,6 +575,18 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
   구성요소를 쥐지 않은 호출자가 생기면 전체 취소 연결의 순서(오퍼레이션 → 작업 항목 → 세션)로 맞춘다
 - 되돌림 적치는 바구니의 남은 몫을 잠그지 않고 읽는다. 동시 적치가 같은 몫을 다투면 한쪽이 세션 보관 부족(`SESSION_CUSTODY_SHORT`)으로 끝나고, 재시도하면 새 잔량으로 판정된다
 
+**PR 4 계획이 정함:**
+
+- **세션 이벤트:** 부족 승인 멱등 키는 `shortage:<결품 오퍼레이션 id>:<배정 id>`, payload 에 `workItemId`·`allocationId` 를 더한다. 재배정 인계는 합류와 같은 `hand-in:<명령 id>:<배정 id>` 다
+- **복구 규칙:** 배정마다 `Σ HAND_IN − Σ HAND_BACK − Σ REMOVE_TO_RETURN_BIN − Σ APPROVE_SHORTAGE(allocationId 있음) = qty`
+  - `allocationId` 가 없는 옛 결품 이벤트(`APPROVE_SHORTAGE`·`RETURN_TO_SOURCE`)는 옛 검사 그대로 재생한다
+  - 줄·로케이션 «보관 ≤ 배정» 검사는 새 부족 승인을 세지 않는다(이미 배정에서 빠졌다)
+- **I3 공유 식의 `excluded` 필터를 걷는다(PR 3·4 경계 해소).** 모든 나가기가 배정을 0 으로 남긴다: 반납·되돌림·부족 승인이 모두 배정을 줄인다. 그래서 공유 보관을 배치의 모든 배정과 견준다. PR 4 이전에 결품으로 제외된 옛 행이 열린 세션에 남아 있으면 그 세션의 떠도는 `AT_SOURCE` 를 다시 못 본다 — 배포 전에 0 을 확인한다
+- **잠금 순서:**
+  - **결품 보고:** 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 결품 오퍼레이션·멤버 INSERT → 부족 승인 → SKU 가용 잠금·원장(재배정). 못 채우면 이탈(`begin`)이 이어진다
+  - **결품 마무리**(나가기 안): 이미 쥔 구성요소·작업 항목·세션 뒤에 결품 오퍼레이션 행 → 예약 그래프·SKU 가용 잠금(`invalidateForShortPick`) → 송장 → 박스
+  - 세션 변경의 «결품 오퍼레이션 → 세션» 순서로 잡는 곳은 그 오퍼레이션을 만든 보고 트랜잭션뿐이고, 커밋 뒤에는 그 오퍼레이션으로 새 세션 이벤트를 쓰지 않는다. 마무리와 전체 취소의 넘겨받기는 작업 항목 잠금에서 줄을 선다
+
 ## 14. 테스트
 
 | 층 | 대상 |
@@ -588,6 +635,7 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - **범위:** §9 전부. `short_pick_recovery` 생산자 제거, `resumePending` 경로 대체. 앱: 결품 보고 뒤 «송장이 바뀌었습니다» 재출력 흐름
 - **끝나면 성립:** 성공 기준 1~6 전부
 - **남는 것:** §16
+- **PR 4 계획이 정함:** 이 PR 은 core 와 **admin-web** 을 바꾼다. warehouse-app 은 바꾸지 않는다(§9 PR 4 계획이 정함 9 — 결품 보고가 admin-web 에만 있고, 결품 뒤 현장 흐름은 PR 1·3 이 이미 덮는다). 위 «앱: 재출력 흐름» 은 PR 1 의 `reprint_required` 화면이 그대로 맡는다. 마이그레이션이 없어 배포는 `sst deploy` 하나다
 
 ## 16. 범위 밖과 알고 남기는 틈
 
@@ -597,6 +645,10 @@ HTTP 형식은 주변 관례를 따른다: fulfillment 는 `ConflictException({ 
 - **로케이션 종류 필터:** 지금 배정은 `ON_HAND` 면 어느 로케이션이든 쓴다(입고 기본존의 적치 대기가 아닌 몫 포함). 송장에 그 로케이션이 그대로 찍히므로 숨은 오류는 아니다. 막을 필요가 보이면 별건
 - **용지 걸림:** 전송 성공 뒤 실물 출력 실패는 출력 확인으로 못 잡는다(§10.3)
 - **E12 의 이동한 모자람:** 결품으로 채운 만큼 다음 시작에서 `STOCK_SHORT` 가 난다. 그 주문을 먼저 알리는 장치는 없다
+- **결품의 원장 반영(PR 4):** 부족 승인은 원장을 줄이지 않는다 — 결품 로케이션의 유령 재고가 일반 가용으로 남아 다음 시작·합류가 그것을 배정받으면
+  결품이 또 난다. 창고 가용·판매 가능 수량도 그만큼 부풀어 있다. 재배정만 그 로케이션을 피한다(§9 PR 4 계획이 정함 2). 후속 이슈
+- **집은 뒤 발견한 파손(PR 4):** 결품은 안 집은 몫만이라, 이미 집은 상품의 파손을 교체하는 명령은 없다. 박스를 빼서 처리한다
+- **현장 앱의 결품 보고(PR 4):** 결품 보고는 admin-web 피킹 작업대에만 있다
 - **토탈피킹·바구니 피킹의 되돌림 화면(PR 3):** core 명령만 있다(D3 — 현장 화면은 개별 피킹만). 토탈피킹 카트 여분이 있는 박스는 분류대에서
   여분을 바구니에 넣을 때까지 `withdrawing` 이다
 - **세션이 `recovery_required` 인 배치의 박스 전체 취소(PR 3):** 이탈하지 않고 지금처럼 `CANCEL_REPLAN_PENDING` 대기. 세션 복구가 먼저다
