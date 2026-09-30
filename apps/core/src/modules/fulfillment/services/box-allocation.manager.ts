@@ -4,14 +4,45 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { lockSkuCapacities } from '../picking/allocation/allocation.locks';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
-import { ReconcilePlan, atSourceKey, reconcileAllocation } from '../picking/allocation/reconcile-allocation';
+import {
+  ReconcileAllocationRow,
+  ReconcilePlan,
+  atSourceKey,
+  reconcileAllocation,
+} from '../picking/allocation/reconcile-allocation';
 import {
   BOX_CUSTODY_TYPES,
   BatchInventorySessionRow,
   BatchInventorySessionService,
   ReturnBinRef,
+  ApprovedShortageReasonCode,
+  shortageIdempotencyKey,
 } from './batch-inventory-session.service';
 import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
+
+export interface ShortageRequest {
+  shipmentLineId: string;
+  sourceLocationId: string;
+  qty: number;
+}
+
+export interface PlannedShortage {
+  allocationId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  /** 보고 시점 배정(감소 전) — 결품 오퍼레이션 의도에 적는다. */
+  allocationQty: number;
+  qty: number;
+}
+
+export interface RefillView {
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  locationCode: string;
+  qty: number;
+}
 
 /**
  * 배정 변경의 실행부(스펙 §5 원칙). 규칙은 `reconcileAllocation` 이 정하고, 여기서는 잠금 아래에서 적용만 한다.
@@ -138,62 +169,17 @@ export class BoxAllocationManager {
     },
     trx: DbTx,
   ): Promise<{ handedBackQty: number }> {
-    const lineIds = new Set(input.lines.map((line) => line.id));
-    const rows = await trx
-      .select({
-        allocationId: wmsTables.pickingSourceAllocations.id,
-        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
-        skuId: wmsTables.shipmentLines.skuId,
-        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
-        locationCode: wmsTables.locations.code,
-        qty: wmsTables.pickingSourceAllocations.qty,
-      })
-      .from(wmsTables.pickingSourceAllocations)
-      .innerJoin(
-        wmsTables.shipmentLines,
-        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
-      )
-      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
-      .where(
-        and(
-          eq(wmsTables.pickingSourceAllocations.workItemId, input.workItemId),
-          gt(wmsTables.pickingSourceAllocations.qty, 0),
-        ),
-      );
-    // 보관 행은 lockOpenSession 이 이미 잠갔다.
-    const balances = await trx
-      .select()
-      .from(wmsTables.batchInventorySessionBalances)
-      .where(
-        and(
-          eq(wmsTables.batchInventorySessionBalances.sessionId, input.session.id),
-          gt(wmsTables.batchInventorySessionBalances.qty, 0),
-        ),
-      );
-    const attributed = new Map<string, number>();
-    const atSource = new Map<string, number>();
-    for (const balance of balances) {
-      if (!balance.sourceLocationId) continue;
-      if (balance.custodyType === 'AT_SOURCE') {
-        const key = atSourceKey(balance.skuId, balance.sourceLocationId);
-        atSource.set(key, (atSource.get(key) ?? 0) + balance.qty);
-      } else if (
-        balance.shipmentLineId &&
-        lineIds.has(balance.shipmentLineId) &&
-        LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType)
-      ) {
-        const key = `${balance.shipmentLineId}|${balance.sourceLocationId}`;
-        attributed.set(key, (attributed.get(key) ?? 0) + balance.qty);
-      }
-    }
+    const { rows, atSource } = await this.loadReconcileState(
+      input.session.id,
+      input.workItemId,
+      new Set(input.lines.map((line) => line.id)),
+      trx,
+    );
     const plan = reconcileAllocation({
       workItemId: input.workItemId,
       targets: input.lines.map((line) => ({ shipmentLineId: line.id, skuId: line.skuId, targetQty: 0 })),
-      allocations: rows.map((row) => ({
-        ...row,
-        // I3 이 지켜졌다면 귀속 ≤ 배정이다. 넘으면 reconcileAllocation 이 입력 오류로 던진다 — 조용히 자르지 않는다.
-        attributedQty: attributed.get(`${row.shipmentLineId}|${row.sourceLocationId}`) ?? 0,
-      })),
+      // 반납 대상은 배정이 남은 행뿐이다.
+      allocations: rows.filter((row) => row.qty > 0),
       atSource,
       capacities: [],
     });
@@ -215,6 +201,324 @@ export class BoxAllocationManager {
       await this.decrementAllocation(back.allocationId, back.qty, trx);
     }
     return { handedBackQty: plan.handBacks.reduce((total, back) => total + back.qty, 0) };
+  }
+
+  /** reconcileAllocation 의 입력 — 이 작업 항목의 배정 행(로케이션 코드 포함)과 줄 귀속 보관, 세션 공유 AT_SOURCE. 보관 행은 lockOpenSession 이 잠갔다. */
+  private async loadReconcileState(
+    sessionId: string,
+    workItemId: string,
+    lineIds: ReadonlySet<string>,
+    trx: DbTx,
+  ): Promise<{ rows: ReconcileAllocationRow[]; atSource: Map<string, number> }> {
+    // qty > 0 조건이 없다 — 재배정은 0 이 된 행도 «늘릴 행» 후보로 본다(reconcileAllocation 은 0 행을 무해하게 다룬다).
+    const rows = await trx
+      .select({
+        allocationId: wmsTables.pickingSourceAllocations.id,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        skuId: wmsTables.shipmentLines.skuId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        locationCode: wmsTables.locations.code,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId));
+    const balances = await trx
+      .select()
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+        ),
+      );
+    const attributed = new Map<string, number>();
+    const atSource = new Map<string, number>();
+    for (const balance of balances) {
+      if (!balance.sourceLocationId) continue;
+      if (balance.custodyType === 'AT_SOURCE') {
+        const key = atSourceKey(balance.skuId, balance.sourceLocationId);
+        atSource.set(key, (atSource.get(key) ?? 0) + balance.qty);
+      } else if (
+        balance.shipmentLineId &&
+        lineIds.has(balance.shipmentLineId) &&
+        LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType)
+      ) {
+        const key = `${balance.shipmentLineId}|${balance.sourceLocationId}`;
+        attributed.set(key, (attributed.get(key) ?? 0) + balance.qty);
+      }
+    }
+    return {
+      rows: rows.map((row) => ({
+        ...row,
+        // I3 이 지켜졌다면 귀속 ≤ 배정이다. 넘으면 reconcileAllocation 이 입력 오류로 던진다 — 조용히 자르지 않는다.
+        attributedQty: attributed.get(`${row.shipmentLineId}|${row.sourceLocationId}`) ?? 0,
+      })),
+      atSource,
+    };
+  }
+
+  /**
+   * 결품 = 안 집은 몫(PR 4 계획이 정함 1). 판정만 한다 — 배정 행을 잠그고 요청 전부를 판정해, 모자라면 쓰기 전에 전부 보고한다.
+   * 쓰기(approveShortages)와 나눈 이유: 세션의 부족 승인은 결품 오퍼레이션의 의도(보고 시점 배정 `allocationQty` 포함)를 읽는다 —
+   * 호출자가 이 결과로 의도를 적은 오퍼레이션 행을 만든 뒤에 쓴다. 호출자가 구성요소·작업 항목·세션을 잠갔다.
+   */
+  async planShortages(
+    input: { session: BatchInventorySessionRow; workItemId: string; shortages: ShortageRequest[] },
+    trx: DbTx,
+  ): Promise<PlannedShortage[]> {
+    const rows = await trx
+      .select({
+        allocationId: wmsTables.pickingSourceAllocations.id,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        skuId: wmsTables.shipmentLines.skuId,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, input.workItemId))
+      .orderBy(asc(wmsTables.pickingSourceAllocations.id))
+      .for('update');
+    const balances = await trx
+      .select()
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, input.session.id),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+        ),
+      );
+    const atSource = new Map<string, number>();
+    const attributed = new Map<string, number>();
+    for (const balance of balances) {
+      if (!balance.sourceLocationId) continue;
+      if (balance.custodyType === 'AT_SOURCE') {
+        const key = atSourceKey(balance.skuId, balance.sourceLocationId);
+        atSource.set(key, (atSource.get(key) ?? 0) + balance.qty);
+      } else if (balance.shipmentLineId && LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType)) {
+        const key = `${balance.shipmentLineId}|${balance.sourceLocationId}`;
+        attributed.set(key, (attributed.get(key) ?? 0) + balance.qty);
+      }
+    }
+    const planned: Array<{ row: (typeof rows)[number]; qty: number }> = [];
+    const errors: Array<{
+      shipmentLineId: string;
+      sourceLocationId: string;
+      requestedQty: number;
+      unpickedQty: number;
+    }> = [];
+    const takenAtSource = new Map<string, number>();
+    const requests = [...input.shortages].sort((left, right) =>
+      `${left.shipmentLineId}|${left.sourceLocationId}`.localeCompare(
+        `${right.shipmentLineId}|${right.sourceLocationId}`,
+      ),
+    );
+    for (const request of requests) {
+      const row = rows.find(
+        (r) => r.shipmentLineId === request.shipmentLineId && r.sourceLocationId === request.sourceLocationId,
+      );
+      if (!row) {
+        throw new ConflictException({
+          code: 'SHORT_PICK_ALLOCATION_MISMATCH',
+          message: `No allocation for ${request.shipmentLineId}/${request.sourceLocationId} on work item ${input.workItemId}`,
+        });
+      }
+      const key = atSourceKey(row.skuId, row.sourceLocationId);
+      const unpicked = Math.min(
+        row.qty - (attributed.get(`${row.shipmentLineId}|${row.sourceLocationId}`) ?? 0),
+        (atSource.get(key) ?? 0) - (takenAtSource.get(key) ?? 0),
+      );
+      if (request.qty > unpicked) {
+        errors.push({
+          shipmentLineId: request.shipmentLineId,
+          sourceLocationId: request.sourceLocationId,
+          requestedQty: request.qty,
+          unpickedQty: Math.max(0, unpicked),
+        });
+        continue;
+      }
+      takenAtSource.set(key, (takenAtSource.get(key) ?? 0) + request.qty);
+      planned.push({ row, qty: request.qty });
+    }
+    if (errors.length) {
+      throw new ConflictException({
+        code: 'SHORT_PICK_EXCEEDS_UNPICKED',
+        message: 'Short quantity exceeds the unpicked share at the location',
+        errors,
+      });
+    }
+    return planned.map(({ row, qty }) => ({
+      allocationId: row.allocationId,
+      shipmentLineId: row.shipmentLineId,
+      skuId: row.skuId,
+      sourceLocationId: row.sourceLocationId,
+      allocationQty: row.qty,
+      qty,
+    }));
+  }
+
+  /**
+   * planShortages 의 결과를 적용한다 — 배정마다 AT_SOURCE 에서 부족 승인 + 배정 −k 를 같은 트랜잭션에서(복구 규칙 정한 것 9).
+   * 배정 행·보관 행은 planShortages·lockOpenSession 이 잠갔다. 세션이 «안 집은 몫» 을 다시 검사한다(방어선).
+   */
+  async approveShortages(
+    input: {
+      session: BatchInventorySessionRow;
+      workItemId: string;
+      shortPickOperationId: string;
+      actorId: string;
+      reasonCode: ApprovedShortageReasonCode;
+      reason: string;
+      planned: PlannedShortage[];
+    },
+    trx: DbTx,
+  ): Promise<void> {
+    for (const shortage of input.planned) {
+      await this.sessions.approveShortage(
+        {
+          sessionId: input.session.id,
+          idempotencyKey: shortageIdempotencyKey(input.shortPickOperationId, shortage.allocationId),
+          shortPickOperationId: input.shortPickOperationId,
+          workItemId: input.workItemId,
+          allocationId: shortage.allocationId,
+          shipmentLineId: shortage.shipmentLineId,
+          quantity: shortage.qty,
+          from: { skuId: shortage.skuId, sourceLocationId: shortage.sourceLocationId, custodyType: 'AT_SOURCE' },
+          reasonCode: input.reasonCode,
+          reason: input.reason,
+          approverId: input.actorId,
+        },
+        trx,
+      );
+      await this.decrementAllocation(shortage.allocationId, shortage.qty, trx);
+    }
+  }
+
+  /**
+   * 결품 뒤 목표(줄 수량)로 되돌리는 계획(스펙 §9-3, 정한 것 5). 쓰지 않는다. 후보에서 이번 결품의 (SKU, 로케이션)을 뺀다 —
+   * 원장은 그대로라 그 로케이션에 유령 재고가 일반 가용으로 보인다(정한 것 2). 모자란 줄이 있는 SKU 만 가용 잠금을 잡는다.
+   */
+  async planRefill(
+    input: {
+      session: BatchInventorySessionRow;
+      warehouseId: string;
+      workItemId: string;
+      lines: Array<{ id: string; skuId: string; qty: number }>;
+      excludedSources: ReadonlyArray<{ skuId: string; sourceLocationId: string }>;
+    },
+    trx: DbTx,
+  ): Promise<ReconcilePlan> {
+    const { rows, atSource } = await this.loadReconcileState(
+      input.session.id,
+      input.workItemId,
+      new Set(input.lines.map((line) => line.id)),
+      trx,
+    );
+    const allocated = new Map<string, number>();
+    for (const row of rows) allocated.set(row.shipmentLineId, (allocated.get(row.shipmentLineId) ?? 0) + row.qty);
+    const deficitSkus = input.lines
+      .filter((line) => (allocated.get(line.id) ?? 0) < line.qty)
+      .map((line) => line.skuId);
+    const excluded = new Set(input.excludedSources.map((source) => atSourceKey(source.skuId, source.sourceLocationId)));
+    const { capacities, inboundPendingBySku } = deficitSkus.length
+      ? await lockSkuCapacities(trx, this.controlledStock, input.warehouseId, deficitSkus)
+      : { capacities: [], inboundPendingBySku: new Map<string, number>() };
+    return reconcileAllocation({
+      workItemId: input.workItemId,
+      targets: input.lines.map((line) => ({ shipmentLineId: line.id, skuId: line.skuId, targetQty: line.qty })),
+      allocations: rows,
+      atSource,
+      capacities: capacities.filter(
+        (capacity) => !excluded.has(atSourceKey(capacity.skuId, capacity.sourceLocationId)),
+      ),
+      inboundPendingBySku,
+    });
+  }
+
+  /**
+   * 재배정 계획을 적용한다 — 같은 (작업 항목, 줄, 로케이션) 행이 있으면 늘리고(원래 source_stock_version 유지 — 복구가 인계 이벤트와
+   * 견준다), 없으면 만든다. 그리고 실행 중 세션에 인계한다(키 `hand-in:<명령 id>:<배정 id>`).
+   */
+  async applyRefill(
+    input: {
+      session: BatchInventorySessionRow;
+      batchId: string;
+      actorId: string;
+      operationId: string;
+      plan: ReconcilePlan;
+      lines: Array<{ id: string; skuId: string }>;
+    },
+    trx: DbTx,
+  ): Promise<RefillView[]> {
+    const { plan } = input;
+    if (
+      plan.shortages.length ||
+      plan.handBacks.length ||
+      plan.cartSurplus.length ||
+      plan.excess.length ||
+      !plan.handIns.length
+    ) {
+      throw new Error('applyRefill: a refill plan must be a non-empty pure hand-in');
+    }
+    const A = wmsTables.pickingSourceAllocations;
+    const skuByLine = new Map(input.lines.map((line) => [line.id, line.skuId]));
+    const allocations: SessionStartAllocation[] = [];
+    for (const draft of plan.handIns) {
+      const [grown] = await trx
+        .update(A)
+        .set({ qty: sql`${A.qty} + ${draft.qty}` })
+        .where(
+          and(
+            eq(A.workItemId, draft.workItemId),
+            eq(A.shipmentLineId, draft.shipmentLineId),
+            eq(A.sourceLocationId, draft.sourceLocationId),
+          ),
+        )
+        .returning();
+      const row = grown ?? (await trx.insert(A).values(draft).returning())[0];
+      allocations.push({
+        id: row.id,
+        // holds because every draft carries the refilled work item id (planRefill's workItemId).
+        workItemId: row.workItemId!,
+        shipmentLineId: row.shipmentLineId,
+        // holds because plan.handIns came from input.lines' targets.
+        skuId: skuByLine.get(row.shipmentLineId)!,
+        sourceLocationId: row.sourceLocationId,
+        quantity: draft.qty,
+        sourceStockVersion: row.sourceStockVersion,
+      });
+    }
+    await this.sessions.handIn(
+      {
+        sessionId: input.session.id,
+        batchId: input.batchId,
+        actorId: input.actorId,
+        operationId: input.operationId,
+        allocations,
+      },
+      trx,
+    );
+    const codes = await trx
+      .select({ id: wmsTables.locations.id, code: wmsTables.locations.code })
+      .from(wmsTables.locations)
+      .where(inArray(wmsTables.locations.id, [...new Set(plan.handIns.map((draft) => draft.sourceLocationId))]));
+    const codeById = new Map(codes.map((row) => [row.id, row.code]));
+    return plan.handIns.map((draft) => ({
+      shipmentLineId: draft.shipmentLineId,
+      // holds because plan.handIns came from input.lines' targets.
+      skuId: skuByLine.get(draft.shipmentLineId)!,
+      sourceLocationId: draft.sourceLocationId,
+      locationCode: codeById.get(draft.sourceLocationId) ?? '',
+      qty: draft.qty,
+    }));
   }
 
   /**
