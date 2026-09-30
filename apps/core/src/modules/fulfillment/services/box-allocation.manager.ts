@@ -7,17 +7,7 @@ import { lockSkuCapacities } from '../picking/allocation/allocation.locks';
 import { SessionStartAllocation } from '../picking/allocation/allocation.types';
 import { ReconcilePlan, atSourceKey, reconcileAllocation } from '../picking/allocation/reconcile-allocation';
 import { BatchInventorySessionRow, BatchInventorySessionService } from './batch-inventory-session.service';
-
-/** 줄에 귀속된 보관 — 집은 몫(`ReconcileAllocationRow.attributedQty`). AT_SOURCE·BULK_CART 는 줄을 모른다. */
-const LINE_ATTRIBUTED_CUSTODY: readonly string[] = [
-  'WORKER',
-  'TOTE',
-  'SORTING',
-  'PACKING',
-  'PACKED',
-  'RETURN_PENDING',
-  'SETTLED',
-];
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 /**
  * 배정 변경의 실행부(스펙 §5 원칙). 규칙은 `reconcileAllocation` 이 정하고, 여기서는 잠금 아래에서 적용만 한다.
@@ -187,7 +177,7 @@ export class BoxAllocationManager {
       } else if (
         balance.shipmentLineId &&
         lineIds.has(balance.shipmentLineId) &&
-        LINE_ATTRIBUTED_CUSTODY.includes(balance.custodyType)
+        LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType)
       ) {
         const key = `${balance.shipmentLineId}|${balance.sourceLocationId}`;
         attributed.set(key, (attributed.get(key) ?? 0) + balance.qty);

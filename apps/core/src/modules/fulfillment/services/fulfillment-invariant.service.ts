@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 const ACTIVE_SHIPMENT_STATUSES = new Set(['draft', 'planned', 'recovery_required']);
 // 활성 waybill = 종료 3상태(voided/failed/abandoned) 아닌 모든 상태(waybills 테이블 uq_waybills_shipment_active 와 동치).
@@ -9,15 +10,6 @@ const ACTIVE_SHIPMENT_STATUSES = new Set(['draft', 'planned', 'recovery_required
 const WAYBILL_TERMINAL_STATUS_SET = new Set<string>(WAYBILL_TERMINAL_STATUSES);
 const SETTLED_ATTEMPT_STATUSES = new Set(['dispatched', 'recalled']);
 // I3 의 두 갈래: 줄에 귀속된 보관은 그 줄·로케이션 배정과, 공유 보관은 SKU·로케이션의 남은 배정과 견준다.
-const LINE_ATTRIBUTED_CUSTODY = new Set([
-  'WORKER',
-  'TOTE',
-  'SORTING',
-  'PACKING',
-  'PACKED',
-  'RETURN_PENDING',
-  'SETTLED',
-]);
 const SHARED_CUSTODY = new Set(['AT_SOURCE', 'BULK_CART']);
 
 export const FULFILLMENT_INVARIANT_KINDS = [

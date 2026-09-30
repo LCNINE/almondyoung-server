@@ -12,6 +12,7 @@ import {
   isApprovedShortageReasonCode,
   shortPickOperationIntentOf,
 } from './batch-inventory-session.service';
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 type EventRow = typeof wmsTables.batchInventorySessionEvents.$inferSelect;
@@ -770,12 +771,26 @@ export class BatchSessionRecoveryService {
         );
       }
     }
+    // 줄 보관은 (줄, 로케이션) 쌍마다 이 배치 배정 행의 «합» 과 견준다 — 같은 배치에 다시 합류한 박스는
+    // 옛 0 행과 새 행이 같은 쌍을 가리키고, 보관은 행을 모른다(불변식 I3 와 같은 기준).
+    const allocatedByLineSource = new Map<string, { shipmentLineId: string; sourceLocationId: string; qty: number }>();
     for (const allocation of allocations) {
+      const key = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
+      const entry = allocatedByLineSource.get(key) ?? {
+        shipmentLineId: allocation.shipmentLineId,
+        sourceLocationId: allocation.sourceLocationId,
+        qty: 0,
+      };
+      entry.qty += allocation.quantity;
+      allocatedByLineSource.set(key, entry);
+    }
+    for (const [key, allocated] of allocatedByLineSource) {
       const activeAttributedQty = replay.balances
         .filter(
           (balance) =>
-            balance.shipmentLineId === allocation.shipmentLineId &&
-            balance.sourceLocationId === allocation.sourceLocationId &&
+            balance.shipmentLineId === allocated.shipmentLineId &&
+            balance.sourceLocationId === allocated.sourceLocationId &&
+            LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType) &&
             balance.custodyType !== 'SETTLED',
         )
         .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
@@ -783,19 +798,19 @@ export class BatchSessionRecoveryService {
       let settledQty = 0;
       let shortageQty = 0;
       for (const event of events) {
-        if (event.fromSourceLocationId !== allocation.sourceLocationId) continue;
+        if (event.fromSourceLocationId !== allocated.sourceLocationId) continue;
         const payload = payloadOf(event.payload);
         const attributedLineId = event.fromShipmentLineId ?? payload.shipmentLineId;
-        if (attributedLineId !== allocation.shipmentLineId) continue;
+        if (attributedLineId !== allocated.shipmentLineId) continue;
         if (event.eventType === 'RETURN_TO_SOURCE') returnedQty += event.quantity;
         else if (event.eventType === 'SETTLE_FOR_DISPATCH') settledQty += event.quantity;
         else if (event.eventType === 'APPROVE_SHORTAGE') shortageQty += event.quantity;
       }
       const accountedQty = activeAttributedQty + returnedQty + settledQty + shortageQty;
-      if (accountedQty > allocation.quantity) {
+      if (accountedQty > allocated.qty) {
         issues.push(
-          `allocation ${allocation.id} line custody exceeds persisted quantity: ` +
-            `allocated=${allocation.quantity}, accounted=${accountedQty}`,
+          `line|location ${key} custody exceeds persisted allocation: ` +
+            `allocated=${allocated.qty}, accounted=${accountedQty}`,
         );
       }
     }

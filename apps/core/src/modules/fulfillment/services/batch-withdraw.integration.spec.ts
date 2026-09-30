@@ -199,6 +199,36 @@ describeIfDb('시작된 배치에서 집기 전 이탈 (스펙 §8, PR 2)', () =
     });
   });
 
+  it('같은 배치에 다시 합류한 박스를 집어도 healthy — 줄 보관은 그 줄·로케이션의 배정 합과 견준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second, wiring, sessionId } = await started(tx);
+      await exclude(wiring, first.batchId, second.shipmentId, tx);
+      await wiring.batches.addShipment(first.batchId, second.shipmentId, `j-${randomUUID()}`, actor, tx);
+
+      // 옛 0 행과 새 배정 행이 같은 줄·로케이션을 가리킨다 — 집은 1 은 둘의 합(0 + 1)과 견줘야 한다.
+      await wiring.sessions.moveCustody(
+        {
+          sessionId,
+          idempotencyKey: `m-${randomUUID()}`,
+          actorId: second.actorId,
+          quantity: 1,
+          from: { skuId: second.skuId, sourceLocationId: second.locationId, custodyType: 'AT_SOURCE' },
+          to: {
+            skuId: second.skuId,
+            sourceLocationId: second.locationId,
+            custodyType: 'WORKER',
+            custodyRef: second.actorId,
+            shipmentLineId: second.shipmentLineId,
+          },
+        },
+        tx,
+      );
+
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId, second.shipmentId]);
+    });
+  });
+
   it('박스를 모두 빼면 세션은 settled, 배치는 canceled 로 보이고 다시 넣을 수 없다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second, wiring, sessionId } = await started(tx);
