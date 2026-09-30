@@ -654,8 +654,8 @@ input[type="search"]::-webkit-search-results-decoration {
 }
 
 .logo-sticker-tilt {
-  transform: perspective(500px) rotateY(-12deg) rotateZ(-6deg);
-  filter: drop-shadow(0 8px 7px rgb(0 0 0 / 28%));
+  transform: rotate(-6deg);
+  filter: drop-shadow(0 4px 3px rgb(0 0 0 / 18%));
 }
 
 @media (min-width: 1024px) {
