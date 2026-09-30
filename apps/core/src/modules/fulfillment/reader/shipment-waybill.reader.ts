@@ -250,10 +250,10 @@ export class ShipmentWaybillReader {
       .limit(1);
     if (!shipment) return null;
     if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) return null;
+    // 결품으로 빠진 초안 박스가 나중에 초안으로 취소되면 status 는 canceled 지만 이 송장은 결품이 무효화한 것이다 — 취소 이탈이 아니면 결품 이탈도 본다.
     const exitTo =
-      shipment.status === 'canceled'
-        ? await this.canceledExit(trx, waybill.shipmentId)
-        : await this.shortPickExit(trx, waybill.shipmentId, waybill.id);
+      (shipment.status === 'canceled' ? await this.canceledExit(trx, waybill.shipmentId) : null) ??
+      (await this.shortPickExit(trx, waybill.shipmentId, waybill.id));
     if (!exitTo) return null;
     const lines = await this.loadLines(trx, waybill.shipmentId);
     return {

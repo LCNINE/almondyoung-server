@@ -21,7 +21,10 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
   async function withdrawingForShortPick(tx: DbTx, picked: number) {
     const box = await seedPickableShipment(tx, 3);
     const wiring = assembleOutbound(tx);
-    const run = await wiring.picking.start({ batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
+    const run = await wiring.picking.start(
+      { batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` },
+      tx,
+    );
     if (picked) {
       await wiring.sessions.moveCustody(
         {
@@ -30,7 +33,13 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
           actorId: box.actorId,
           quantity: picked,
           from: { skuId: box.skuId, sourceLocationId: box.locationId, custodyType: 'AT_SOURCE' },
-          to: { skuId: box.skuId, sourceLocationId: box.locationId, custodyType: 'WORKER', custodyRef: box.actorId, shipmentLineId: box.shipmentLineId },
+          to: {
+            skuId: box.skuId,
+            sourceLocationId: box.locationId,
+            custodyType: 'WORKER',
+            custodyRef: box.actorId,
+            shipmentLineId: box.shipmentLineId,
+          },
         },
         tx,
       );
@@ -45,16 +54,30 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       lines: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, shortQty: 2, allocationQty: 3 }],
     });
     const planned = await wiring.boxes.planShortages(
-      { session, workItemId: box.workItemId,
-        shortages: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, qty: 2 }] },
+      {
+        session,
+        workItemId: box.workItemId,
+        shortages: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, qty: 2 }],
+      },
       tx,
     );
     await wiring.boxes.approveShortages(
-      { session, workItemId: box.workItemId, shortPickOperationId: operation.id, actorId: box.actorId,
-        reasonCode: 'MISSING', reason: operation.reason, planned },
+      {
+        session,
+        workItemId: box.workItemId,
+        shortPickOperationId: operation.id,
+        actorId: box.actorId,
+        reasonCode: 'MISSING',
+        reason: operation.reason,
+        planned,
+      },
       tx,
     );
-    const [workItem] = await tx.select().from(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId)).for('update');
+    const [workItem] = await tx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId))
+      .for('update');
     const outcome = await wiring.withdrawals.begin(
       {
         batchId: box.batchId,
@@ -73,12 +96,28 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
     return { box, wiring, sessionId: run.sessionId, operation, outcome };
   }
 
-  async function stateOf(tx: DbTx, box: { shipmentId: string; shipmentLineId: string; workItemId: string }, operationId: string) {
+  async function stateOf(
+    tx: DbTx,
+    box: { shipmentId: string; shipmentLineId: string; workItemId: string },
+    operationId: string,
+  ) {
     const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
-    const [workItem] = await tx.select().from(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
-    const waybills = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, box.shipmentId));
-    const reservations = await tx.select().from(wmsTables.stockReservations).where(eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId));
-    const [operation] = await tx.select().from(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, operationId));
+    const [workItem] = await tx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+    const waybills = await tx
+      .select()
+      .from(wmsTables.waybills)
+      .where(eq(wmsTables.waybills.shipmentId, box.shipmentId));
+    const reservations = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId));
+    const [operation] = await tx
+      .select()
+      .from(wmsTables.shipmentOperations)
+      .where(eq(wmsTables.shipmentOperations.id, operationId));
     return { shipment, workItem, waybills, reservations, operation };
   }
 
@@ -88,7 +127,12 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       expect(outcome.kind).toBe('exited');
       const state = await stateOf(tx, box, operation.id);
       expect(state.workItem).toMatchObject({ status: 'excluded', exitTo: 'draft', waitingOperationId: null });
-      expect(state.shipment).toMatchObject({ status: 'draft', manifestVersion: 2, plannedAt: null, recoveryCode: null });
+      expect(state.shipment).toMatchObject({
+        status: 'draft',
+        manifestVersion: 2,
+        plannedAt: null,
+        recoveryCode: null,
+      });
       expect(state.waybills.map((w) => w.status)).toEqual(['voided']);
       expect(state.reservations).toEqual(
         expect.arrayContaining([
@@ -136,7 +180,10 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
   async function drainedByFullShortage(tx: DbTx) {
     const box = await seedPickableShipment(tx, 3);
     const wiring = assembleOutbound(tx);
-    const run = await wiring.picking.start({ batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
+    const run = await wiring.picking.start(
+      { batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` },
+      tx,
+    );
     const session = await wiring.boxes.lockOpenSession(box.batchId, tx);
     if (!session) throw new Error('session missing');
     const operation = await seedShortPickOperation(tx, {
@@ -147,16 +194,29 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       lines: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, shortQty: 3, allocationQty: 3 }],
     });
     const planned = await wiring.boxes.planShortages(
-      { session, workItemId: box.workItemId,
-        shortages: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, qty: 3 }] },
+      {
+        session,
+        workItemId: box.workItemId,
+        shortages: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, qty: 3 }],
+      },
       tx,
     );
     await wiring.boxes.approveShortages(
-      { session, workItemId: box.workItemId, shortPickOperationId: operation.id, actorId: box.actorId,
-        reasonCode: 'MISSING', reason: operation.reason, planned },
+      {
+        session,
+        workItemId: box.workItemId,
+        shortPickOperationId: operation.id,
+        actorId: box.actorId,
+        reasonCode: 'MISSING',
+        reason: operation.reason,
+        planned,
+      },
       tx,
     );
-    const [settled] = await tx.select().from(wmsTables.batchInventorySessions).where(eq(wmsTables.batchInventorySessions.id, run.sessionId));
+    const [settled] = await tx
+      .select()
+      .from(wmsTables.batchInventorySessions)
+      .where(eq(wmsTables.batchInventorySessions.id, run.sessionId));
     expect(settled.status).toBe('settled');
     return { box, wiring, sessionId: run.sessionId, operation };
   }
@@ -167,7 +227,11 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
     box: PickableShipmentFixture,
     waitingOperationId: string | null,
   ) => {
-    const [workItem] = await tx.select().from(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId)).for('update');
+    const [workItem] = await tx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId))
+      .for('update');
     return wiring.withdrawals.begin(
       {
         batchId: box.batchId,
@@ -204,7 +268,10 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
     await inRollbackTx(db, async (tx) => {
       const box = await seedPickableShipment(tx, 3);
       const wiring = assembleOutbound(tx);
-      const run = await wiring.picking.start({ batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
+      const run = await wiring.picking.start(
+        { batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` },
+        tx,
+      );
       await tx
         .update(wmsTables.batchInventorySessions)
         .set({ status: 'settled' })
@@ -231,20 +298,37 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
   it('전체 취소가 결품으로 빼는 중인 박스를 넘겨받는다 — 결품 오퍼레이션은 닫히고 취소가 마지막 되돌림에서 완료된다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { box, wiring, operation } = await withdrawingForShortPick(tx, 1);
-      const [line] = await tx.select().from(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
       const canceled = await wiring.planning.cancelOutstanding(
         box.shipmentId,
-        { expectedManifestVersion: 1, lines: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: 3 }], reason: '고객 취소' },
+        {
+          expectedManifestVersion: 1,
+          lines: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: 3 }],
+          reason: '고객 취소',
+        },
         `c-${randomUUID()}`,
         { id: box.actorId, roles: ['master'] },
         tx,
       );
       expect(canceled.operationStatus).toBe('pending');
-      const [shortPick] = await tx.select().from(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, operation.id));
+      const [shortPick] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
       expect(shortPick.status).toBe('completed');
       expect(shortPick.afterManifestSnapshot).toMatchObject({ supersededByOperationId: canceled.operationId });
-      const [workItem] = await tx.select().from(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
-      expect(workItem).toMatchObject({ status: 'withdrawing', exitTo: 'canceled', waitingOperationId: canceled.operationId });
+      const [workItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+      expect(workItem).toMatchObject({
+        status: 'withdrawing',
+        exitTo: 'canceled',
+        waitingOperationId: canceled.operationId,
+      });
 
       const bin = await seedReturnBin(tx, box.warehouseId, box.actorId);
       await wiring.returns.removeToReturnBin(
@@ -259,7 +343,12 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       const confirmed = await tx
         .select()
         .from(wmsTables.stockReservations)
-        .where(and(eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId), eq(wmsTables.stockReservations.status, 'confirmed')));
+        .where(
+          and(
+            eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
       expect(confirmed).toEqual([]);
       await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
     });

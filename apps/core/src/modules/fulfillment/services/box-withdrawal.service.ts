@@ -5,6 +5,7 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { databaseNow } from '../picking/allocation/allocation.queries';
 import { WaybillService } from '../waybill/waybill.service';
 import type { WaybillView } from '../waybill/waybill.types';
+import { isVoidableOnExit } from './exit-waybill';
 import { BatchInventorySessionRow } from './batch-inventory-session.service';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -256,7 +257,7 @@ export class BoxWithdrawalService {
    */
   async exitWaybill(shipmentId: string, trx: DbTx): Promise<{ active: WaybillView | null; voidable: boolean }> {
     const active = await this.waybills.getActiveWaybill(shipmentId, trx);
-    return { active, voidable: !active || active.status === 'registered' };
+    return { active, voidable: isVoidableOnExit(active) };
   }
 
   private async voidWaybillForCanceledExit(

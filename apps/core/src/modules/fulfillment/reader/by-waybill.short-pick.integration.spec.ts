@@ -1,4 +1,5 @@
-import { DbTx } from '../../inventory/schema/inventory.schema';
+import { eq } from 'drizzle-orm';
+import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentWaybillReader } from './shipment-waybill.reader';
 import { inRollbackTx, makeDb } from '../services/__support__';
 import { seedSpareStock, startedShortPickBox } from '../services/__support__/short-pick-fixtures';
@@ -60,6 +61,24 @@ describeIfDb('송장 스캔 — 결품 (스펙 §10.5·§9, PR 4)', () => {
       const found = await readerFor(tx).byTrackingNo(trackingNo);
       expect(found.labelState).toBe('never_printed');
       expect(found.workItemId).toBe(box.workItemId);
+    });
+  });
+
+  it('결품으로 빠진 뒤 초안으로 취소된 박스의 옛 송장도 빠진 박스(draft)다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, report } = await startedShortPickBox(tx, 0);
+      const { trackingNo } = await promoteToCarrierWaybill(tx, box);
+      await report(3);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, box.shipmentId));
+      await expect(readerFor(tx).byTrackingNo(trackingNo)).resolves.toMatchObject({
+        shipmentId: box.shipmentId,
+        labelState: 'withdrawn',
+        exitTo: 'draft',
+        shipmentStatus: 'canceled',
+      });
     });
   });
 });

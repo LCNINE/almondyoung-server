@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { WaybillService } from '../waybill/waybill.service';
+import { isVoidableOnExit } from './exit-waybill';
 import { ShortPickOperationIntentProof, shortPickOperationIntentOf } from './batch-inventory-session.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
@@ -39,7 +40,9 @@ export class ShortPickExitService {
     if (operation?.type !== 'short_pick' || operation.status !== 'pending') return null;
     const intent = shortPickOperationIntentOf(operation.snapshot);
     if (!intent || intent.workItemId !== workItem.id) {
-      throw new Error(`Short-pick operation ${workItem.waitingOperationId} does not belong to work item ${workItem.id}`);
+      throw new Error(
+        `Short-pick operation ${workItem.waitingOperationId} does not belong to work item ${workItem.id}`,
+      );
     }
     return intent;
   }
@@ -52,10 +55,11 @@ export class ShortPickExitService {
   ): Promise<{ voidedWaybillId: string | null }> {
     const shortByLine = new Map<string, number>();
     for (const line of intent.lines) {
-      if (line.shortQty > 0) shortByLine.set(line.shipmentLineId, (shortByLine.get(line.shipmentLineId) ?? 0) + line.shortQty);
+      if (line.shortQty > 0)
+        shortByLine.set(line.shipmentLineId, (shortByLine.get(line.shipmentLineId) ?? 0) + line.shortQty);
     }
     const active = await this.waybills.getActiveWaybill(intent.shipmentId, trx);
-    if (active && active.status !== 'registered') {
+    if (active && !isVoidableOnExit(active)) {
       throw conflict(
         'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
         `Waybill ${active.id} is ${active.status}; resolve it before the short-picked box can leave its batch`,
@@ -79,7 +83,13 @@ export class ShortPickExitService {
     const [drafted] = shipment
       ? await trx
           .update(wmsTables.shipments)
-          .set({ status: 'draft', recoveryCode: null, plannedAt: null, manifestVersion: shipment.manifestVersion + 1, lastUpdated: new Date() })
+          .set({
+            status: 'draft',
+            recoveryCode: null,
+            plannedAt: null,
+            manifestVersion: shipment.manifestVersion + 1,
+            lastUpdated: new Date(),
+          })
           .where(
             and(
               eq(wmsTables.shipments.id, shipment.id),
@@ -89,7 +99,8 @@ export class ShortPickExitService {
           )
           .returning()
       : [];
-    if (!drafted) throw conflict('SHIPMENT_STALE_MANIFEST_VERSION', `Shipment ${intent.shipmentId} changed before short-pick exit`);
+    if (!drafted)
+      throw conflict('SHIPMENT_STALE_MANIFEST_VERSION', `Shipment ${intent.shipmentId} changed before short-pick exit`);
     await trx
       .update(wmsTables.shipmentLines)
       .set({ inspectedQty: 0, lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1` })
@@ -98,7 +109,12 @@ export class ShortPickExitService {
     for (const [shipmentLineId, qty] of [...shortByLine].sort(([l], [r]) => l.localeCompare(r))) {
       await this.reservations.invalidateForShortPick(shipmentLineId, qty, intent.operationId, trx);
     }
-    const after = { outcome: 'exited', shipment: drafted, retiredWorkItemId: intent.workItemId, voidedWaybillId: active?.id ?? null };
+    const after = {
+      outcome: 'exited',
+      shipment: drafted,
+      retiredWorkItemId: intent.workItemId,
+      voidedWaybillId: active?.id ?? null,
+    };
     await this.complete(intent, after, drafted.manifestVersion, trx);
     await this.audit.logUserActionRequired(
       'shipment.short_pick.completed',
@@ -137,6 +153,7 @@ export class ShortPickExitService {
       .set({ status: 'completed', afterManifestSnapshot: after, lastError: null, completedAt: new Date() })
       .where(and(eq(OPS.id, intent.operationId), eq(OPS.status, 'pending')))
       .returning({ id: OPS.id });
-    if (!done) throw conflict('SHORT_PICK_OPERATION_STALE', `Short-pick operation ${intent.operationId} is no longer pending`);
+    if (!done)
+      throw conflict('SHORT_PICK_OPERATION_STALE', `Short-pick operation ${intent.operationId} is no longer pending`);
   }
 }
