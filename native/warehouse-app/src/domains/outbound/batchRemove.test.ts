@@ -31,8 +31,15 @@ describe('removeBoxFromBatch', () => {
   it('다른 배치의 박스면 보내지 않는다', async () => {
     const { api, calls } = fakeApi(() => found({ batchId: 'b-2' }));
     const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
-    expect(outcome).toEqual({ kind: 'blocked', message: '이 배치에 있는 박스가 아니에요.' });
+    expect(outcome).toEqual({ kind: 'blocked', message: '이 배치에 있는 박스가 아니에요. 방금 뺐다면 이미 빠진 상태예요.' });
     expect(calls).toHaveLength(1);
+  });
+
+  it('빼는 응답을 잃고 다시 보내면(이미 빠져 작업 항목이 없다) DELETE 없이 «이미 빠진 상태» 를 알린다', async () => {
+    const { api, calls } = fakeApi(() => found({ batchId: null, workItemId: null, workItemStatus: null }));
+    const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
+    expect(outcome).toEqual({ kind: 'blocked', message: '이 배치에 있는 박스가 아니에요. 방금 뺐다면 이미 빠진 상태예요.' });
+    expect(calls.map((c) => c.method)).toEqual(['GET']);
   });
 
   it('집은 몫이 있으면 거절 문구', async () => {

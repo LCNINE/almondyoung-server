@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
-import { seedLooseBox, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
+import { seedBoxOverSameStock, seedLooseBox, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
 import { assembleOutbound } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -62,11 +62,30 @@ describeIfDb('합류 후보 조회 (스펙 §7 앱 「이 배치에 넣기」)',
     });
   });
 
-  it('이미 배치에 있는 박스는 issue=SHIPMENT_ACTIVE_WORK_ITEM', async () => {
+  it('다른 배치에 있는 박스는 issue=SHIPMENT_ACTIVE_WORK_ITEM', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, wiring } = await fixture(tx);
-      const [found] = await wiring.batches.findJoinCandidates(first.batchId, first.trackingNo, tx);
-      expect(found).toMatchObject({ shipmentId: first.shipmentId, issue: 'SHIPMENT_ACTIVE_WORK_ITEM' });
+      const elsewhere = await seedBoxOverSameStock(tx, first, 1);
+      const [found] = await wiring.batches.findJoinCandidates(first.batchId, elsewhere.trackingNo, tx);
+      expect(found).toMatchObject({ shipmentId: elsewhere.shipmentId, issue: 'SHIPMENT_ACTIVE_WORK_ITEM' });
+    });
+  });
+
+  it('이 배치에 이미 들어 있는 박스는 issue=ALREADY_IN_THIS_BATCH — 합류한 뒤 다시 찾아도(응답을 잃은 재시도)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, loose, wiring } = await fixture(tx);
+      const [original] = await wiring.batches.findJoinCandidates(first.batchId, first.trackingNo, tx);
+      expect(original).toMatchObject({ shipmentId: first.shipmentId, issue: 'ALREADY_IN_THIS_BATCH' });
+
+      await wiring.batches.addShipment(
+        first.batchId,
+        loose.shipmentId,
+        `j-${randomUUID()}`,
+        { id: first.actorId, roles: ['master'] },
+        tx,
+      );
+      const [rejoined] = await wiring.batches.findJoinCandidates(first.batchId, loose.trackingNo, tx);
+      expect(rejoined).toMatchObject({ shipmentId: loose.shipmentId, issue: 'ALREADY_IN_THIS_BATCH' });
     });
   });
 

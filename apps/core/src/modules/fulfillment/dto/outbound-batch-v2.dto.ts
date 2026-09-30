@@ -270,7 +270,8 @@ export class JoinCandidateResponseDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: '송장 밖의 합류 불가 사유 코드(SHIPMENT_ACTIVE_WORK_ITEM 등). null 이면 송장만 보면 된다.',
+    description:
+      '송장 밖의 합류 불가 사유 코드(SHIPMENT_ACTIVE_WORK_ITEM 등). null 이면 송장만 보면 된다. ALREADY_IN_THIS_BATCH 는 막는 사유가 아니라 «이미 이 배치에 들어 있다»(합류 응답을 잃은 재시도) — 앱은 합류 없이 송장 출력으로 간다.',
   })
   issue: string | null;
   @ApiProperty({

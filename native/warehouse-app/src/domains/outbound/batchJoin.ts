@@ -29,6 +29,9 @@ export const JOIN_BLOCKER_TEXT: BlockerText = {
   WAYBILL_NOT_READY: { title: '송장 재발급 필요', guidance: '관리자에게 송장 재발급을 요청한 뒤 다시 넣어 주세요.' },
 };
 
+/** 후보 조회가 «이 박스는 이미 이 배치에 들어 있다» 를 알리는 코드(core `findJoinCandidates`). 막는 사유가 아니다. */
+export const ALREADY_IN_THIS_BATCH = 'ALREADY_IN_THIS_BATCH';
+
 const ISSUE_TEXT: Record<string, string> = {
   SHIPMENT_ACTIVE_WORK_ITEM: '이미 다른 배치에 들어 있는 박스예요.',
   SHIPMENT_NOT_PLANNED: '출고 계획이 끝나지 않았거나 이미 출고된 박스예요.',
@@ -64,6 +67,11 @@ export interface JoinDeps {
  * 합류 전의 종이는 로케이션이 없다(I4). 발급된 송장은 합류가 막혀도 그대로 남아 다음 시도에 쓰인다.
  */
 export async function joinBoxIntoBatch(deps: JoinDeps, batchId: string, candidate: JoinCandidate): Promise<JoinOutcome> {
+  // 이미 이 배치에 들어 있다 — 합류는 됐는데 응답을 잃은 재시도다. 발급·합류를 건너뛰고 출력으로 간다(송장은 합류 뒤라
+  // 로케이션이 찍혀 있다).
+  if (candidate.issue === ALREADY_IN_THIS_BATCH) {
+    return printAfterJoin(deps, candidate.shipmentId, candidate.waybill?.printable ?? false, '이미 이 배치에 들어 있어요.');
+  }
   if (candidate.issue) {
     return { kind: 'blocked', message: ISSUE_TEXT[candidate.issue] ?? `이 박스는 넣을 수 없어요 — 관리자에게 문의해 주세요 (${candidate.issue})` };
   }
@@ -101,13 +109,18 @@ export async function joinBoxIntoBatch(deps: JoinDeps, batchId: string, candidat
     if (blockers) return { kind: 'join_blocked', groups: groupBlockers(blockers, JOIN_BLOCKER_TEXT) };
     return { kind: 'blocked', message: errorMessage(error, 'outbound') };
   }
-  const joined = { kind: 'joined' as const, shipmentId: candidate.shipmentId };
-  if (!printable) return { ...joined, print: 'external', message: '배치에 넣었어요. 수기 송장 박스라 출력 없이 진행해요.' };
+  return printAfterJoin(deps, candidate.shipmentId, printable, '배치에 넣었어요.');
+}
+
+/** 합류가 끝난 박스의 송장 출력. 결과 문구는 `lead`(방금 넣었나, 이미 들어 있었나)로 시작한다. */
+async function printAfterJoin(deps: JoinDeps, shipmentId: string, printable: boolean, lead: string): Promise<JoinOutcome> {
+  const joined = { kind: 'joined' as const, shipmentId };
+  if (!printable) return { ...joined, print: 'external', message: `${lead} 수기 송장 박스라 출력 없이 진행해요.` };
   if (!deps.printer) {
     return {
       ...joined,
       print: 'no_printer',
-      message: '배치에 넣었어요. 이 PC 에는 송장 프린터가 없어요 — 프린터 있는 자리에서 송장을 출력해야 피킹할 수 있어요.',
+      message: `${lead} 이 PC 에는 송장 프린터가 없어요 — 프린터 있는 자리에서 송장을 출력해야 피킹할 수 있어요.`,
     };
   }
   try {
@@ -118,10 +131,10 @@ export async function joinBoxIntoBatch(deps: JoinDeps, batchId: string, candidat
         print: deps.print,
         target: deps.printer,
       },
-      candidate.shipmentId,
+      shipmentId,
     );
-    return { ...joined, print: 'printed', message: `배치에 넣고 송장을 출력했어요 (${label.trackingNo}). 이 송장으로 작업하세요.` };
+    return { ...joined, print: 'printed', message: `${lead} 송장을 출력했어요 (${label.trackingNo}). 이 송장으로 작업하세요.` };
   } catch (error) {
-    return { ...joined, print: 'failed', message: `배치에 넣었어요. 송장 출력은 실패했어요: ${labelErrorMessage(error)} 아래에서 다시 출력해 주세요.` };
+    return { ...joined, print: 'failed', message: `${lead} 송장 출력은 실패했어요: ${labelErrorMessage(error)} 아래에서 다시 출력해 주세요.` };
   }
 }

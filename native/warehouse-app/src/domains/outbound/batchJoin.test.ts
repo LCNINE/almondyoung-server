@@ -70,6 +70,69 @@ describe('joinBoxIntoBatch', () => {
     expect(calls).toEqual([]);
   });
 
+  it('이미 이 배치에 들어 있으면(응답을 잃은 재시도) 발급·합류 없이 출력만 한다', async () => {
+    const printed: string[] = [];
+    const { api, calls } = fakeApi((o) => (o.path.endsWith('/waybill/label') ? label : {}));
+    const outcome = await joinBoxIntoBatch(
+      { api, print: async (_t, data) => void printed.push(data), printer: 'ZD', newKey: () => 'k' },
+      'b-1',
+      candidate({
+        issue: 'ALREADY_IN_THIS_BATCH',
+        waybill: { id: 'w', trackingNo: '452716978431', status: 'registered', source: 'carrier', carrier: 'HANJIN', printable: true },
+      }),
+    );
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET /shipments/s-1/waybill/label',
+      'POST /shipments/s-1/waybill/label-prints',
+    ]);
+    expect(calls.filter((c) => c.path.startsWith('/outbound-batches/') || c.path.endsWith('/waybills'))).toEqual([]);
+    expect(printed).toEqual(['ZPL']);
+    expect(outcome).toEqual({
+      kind: 'joined',
+      shipmentId: 's-1',
+      print: 'printed',
+      message: '이미 이 배치에 들어 있어요. 송장을 출력했어요 (452716978431). 이 송장으로 작업하세요.',
+    });
+  });
+
+  it('이미 이 배치에 들어 있고 프린터가 없거나 수기 송장이면 요청 없이 같은 안내를 한다', async () => {
+    const { api, calls } = fakeApi(() => ({}));
+    const hanjin = { id: 'w', trackingNo: '1', status: 'registered', source: 'carrier', carrier: 'HANJIN', printable: true };
+    const noPrinter = await joinBoxIntoBatch(
+      { api, print: async () => {}, printer: null, newKey: () => 'k' },
+      'b-1',
+      candidate({ issue: 'ALREADY_IN_THIS_BATCH', waybill: hanjin }),
+    );
+    const external = await joinBoxIntoBatch(
+      { api, print: async () => {}, printer: 'ZD', newKey: () => 'k' },
+      'b-1',
+      candidate({ issue: 'ALREADY_IN_THIS_BATCH', waybill: { ...hanjin, source: 'manual', printable: false } }),
+    );
+    expect(noPrinter).toMatchObject({ kind: 'joined', print: 'no_printer', message: expect.stringMatching(/^이미 이 배치에 들어 있어요\./) });
+    expect(external).toMatchObject({ kind: 'joined', print: 'external', message: expect.stringMatching(/^이미 이 배치에 들어 있어요\./) });
+    expect(calls).toEqual([]);
+  });
+
+  it('이미 이 배치에 들어 있는데 출력이 실패하면 failed 로 다시 출력을 안내한다', async () => {
+    const { api } = fakeApi((o) => (o.path.endsWith('/waybill/label') ? label : {}));
+    const outcome = await joinBoxIntoBatch(
+      {
+        api,
+        print: async () => {
+          throw new Error('offline');
+        },
+        printer: 'ZD',
+        newKey: () => 'k',
+      },
+      'b-1',
+      candidate({
+        issue: 'ALREADY_IN_THIS_BATCH',
+        waybill: { id: 'w', trackingNo: '1', status: 'registered', source: 'carrier', carrier: 'HANJIN', printable: true },
+      }),
+    );
+    expect(outcome).toMatchObject({ kind: 'joined', print: 'failed', message: expect.stringMatching(/^이미 이 배치에 들어 있어요\. 송장 출력은 실패했어요/) });
+  });
+
   it('합류가 막히면 사유별 묶음을 돌려준다', async () => {
     const { api } = fakeApi((o) => {
       if (o.path.startsWith('/outbound-batches/')) {

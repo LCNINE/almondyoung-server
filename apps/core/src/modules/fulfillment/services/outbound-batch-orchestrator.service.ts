@@ -639,7 +639,22 @@ export class OutboundBatchOrchestrator {
           if (error instanceof NotFoundException) continue;
           throw error;
         }
-        const issue = await this.rejectionCode(() => this.assertJoinableBox(batch, aggregate, trx, false));
+        // 이미 이 배치에 들어 있다 — 합류는 됐는데 응답을 잃은 재시도다. 일반 SHIPMENT_ACTIVE_WORK_ITEM(«다른 배치»)보다
+        // 먼저 본다: 앱은 이 코드면 합류를 건너뛰고 송장 출력으로 간다.
+        const [inThisBatch] = await trx
+          .select({ id: wmsTables.outboundBatchWorkItems.id })
+          .from(wmsTables.outboundBatchWorkItems)
+          .where(
+            and(
+              eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+              eq(wmsTables.outboundBatchWorkItems.batchId, batch.id),
+              inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+            ),
+          )
+          .limit(1);
+        const issue = inThisBatch
+          ? 'ALREADY_IN_THIS_BATCH'
+          : await this.rejectionCode(() => this.assertJoinableBox(batch, aggregate, trx, false));
         const [waybill] = await trx
           .select()
           .from(wmsTables.waybills)
