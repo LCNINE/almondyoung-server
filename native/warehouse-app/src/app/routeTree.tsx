@@ -27,6 +27,7 @@ import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
+import { WithdrawRoute } from './routes/WithdrawRoute';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
 export interface RouterContext {
@@ -181,6 +182,11 @@ const outboundSimpleRoute = createRoute({
   path: '/outbound/simple/$shipmentId',
   component: SimpleOutboundRoute,
 });
+const outboundWithdrawRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/outbound/withdraw/$shipmentId',
+  component: WithdrawRoute,
+});
 
 // --- 공통 유틸 ---
 const settingsRoute = createRoute({
@@ -211,6 +217,7 @@ export const routeTree = rootRoute.addChildren([
     packingRoute,
     outboundRoute,
     outboundSimpleRoute,
+    outboundWithdrawRoute,
     settingsRoute,
   ]),
 ]);

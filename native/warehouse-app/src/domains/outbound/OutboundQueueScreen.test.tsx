@@ -240,8 +240,13 @@ function renderScreen(
     path: '/outbound/simple/$shipmentId',
     component: TargetScreen,
   });
+  const withdrawRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/outbound/withdraw/$shipmentId',
+    component: () => <p>뺄상품화면</p>,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, targetRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, targetRoute, withdrawRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -656,6 +661,22 @@ describe('OutboundQueueScreen', () => {
       await user.click(screen.getByRole('button', { name: '스캔:T-WITHDRAWN' }));
       expect(await screen.findByText('빠진 박스예요. 송장은 버려 주세요.')).toBeInTheDocument();
       expect(screen.queryByText(/오늘 배치에 없어요/)).toBeNull();
+    });
+
+    it('빼는 중인 박스의 송장이면 뺄 상품 화면으로 간다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, { labelState: 'withdrawing' });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(await screen.findByText('뺄상품화면')).toBeInTheDocument();
+    });
+
+    it('배치 카드에 빠지는 중인 박스 수를 보인다', async () => {
+      renderScreen([], undefined, {
+        picking: [{ id: 'b-1', batchNumber: 'OB-1', name: '', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z', withdrawingItems: 1 }],
+        created: [],
+      });
+      expect(await screen.findByText('빠지는 중 1')).toBeInTheDocument();
     });
 
     it('not_started 면 작업 시작 안내', async () => {

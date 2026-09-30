@@ -95,6 +95,8 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
   SHIPMENT_NOT_WITHDRAWING: '빼는 중인 박스가 아니에요. 송장을 다시 스캔해 주세요.',
   REMOVAL_NOT_PENDING: '이 상품은 이 박스에서 뺄 게 없어요.',
+  WITHDRAWAL_WAYBILL_NOT_VOIDABLE: '이 박스의 송장을 지금 처리할 수 없어요. 관리자에게 송장 처리를 요청해 주세요.',
+  SHIPMENT_LINE_INSPECTION_STALE: '검수 기록이 맞지 않아요. 박스 송장을 다시 스캔하거나 관리자에게 문의해 주세요.',
   SHIPMENT_ACTIVE_WORK_ITEM:
     '이미 다른 배치에 들어 있는 박스예요.',
   OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED:

@@ -6,7 +6,7 @@ import { Button } from '../../core/design/Button';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { removeBoxFromBatch, type RemoveOutcome } from './batchRemove';
 
-/** 시작된 배치에서 집기 전 박스를 뺀다(스펙 §8, PR 2). 송장번호(스캔 가능)와 사유가 둘 다 있어야 보낸다. */
+/** 시작된 배치에서 박스를 뺀다(스펙 §8). 송장번호(스캔 가능)와 사유가 둘 다 있어야 보낸다. */
 export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose: () => void }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -29,7 +29,7 @@ export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose:
         { batchId, warehouseId, trackingNo, reason },
       );
       setOutcome(result);
-      if (result.kind === 'removed') {
+      if (result.kind === 'removed' || result.kind === 'withdrawing') {
         setTrackingNo('');
         await queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
         await queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
@@ -43,7 +43,7 @@ export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose:
   return (
     <section className="space-y-2 rounded border border-amber-300 px-3 py-2">
       <p className="font-medium">이 배치에서 박스 빼기</p>
-      <p className="text-sm text-neutral-500">아직 상품을 담지 않은 박스만 뺄 수 있어요.</p>
+      <p className="text-sm text-neutral-500">아직 담지 않은 상품은 바로 빠져요. 담은 상품이 있으면 송장을 스캔해 되돌림 바구니로 빼요.</p>
       <form
         className="space-y-2"
         onSubmit={(e) => {
@@ -69,7 +69,7 @@ export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose:
           빼기
         </Button>
       </form>
-      {outcome && <p role={outcome.kind === 'removed' ? 'status' : 'alert'}>{outcome.message}</p>}
+      {outcome && <p role={outcome.kind === 'blocked' ? 'alert' : 'status'}>{outcome.message}</p>}
       <Button type="button" className="border border-gray-300 bg-white text-gray-700" onClick={onClose}>
         닫기
       </Button>

@@ -104,6 +104,15 @@ function OutboundQueueContent({
         setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
         return;
       }
+      if (gate.kind === 'withdraw') {
+        setManual('');
+        await navigate({
+          to: '/outbound/withdraw/$shipmentId',
+          params: { shipmentId: found.shipmentId },
+          state: { shipment: found },
+        });
+        return;
+      }
       if (gate.kind === 'print') {
         setPrintGate({
           shipmentId: found.shipmentId,
@@ -236,6 +245,9 @@ function OutboundQueueContent({
               <p className="text-sm text-neutral-500">
                 {batch.totalItems}박스 · {batch.totalQty}개
               </p>
+              {batch.withdrawingItems > 0 && (
+                <p className="text-sm text-amber-700">빠지는 중 {batch.withdrawingItems}</p>
+              )}
               {batch.startedAt === null ? (
                 <StartBatchButton batchId={batch.id} />
               ) : (

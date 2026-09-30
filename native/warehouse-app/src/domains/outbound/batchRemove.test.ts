@@ -21,6 +21,17 @@ describe('removeBoxFromBatch', () => {
     labelState: 'current', labelChanges: [], labelIssue: null, removals: [], exitTo: null, ...over,
   });
 
+  it('담은 상품이 있으면 빼는 중 — 송장을 스캔해 바구니로 빼라고 안내한다', async () => {
+    const { api } = fakeApi((o) =>
+      o.method === 'DELETE' ? { operationId: 'op', workItem: { id: 'wi-1', status: 'withdrawing' } } : found(),
+    );
+    const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
+    expect(outcome).toEqual({
+      kind: 'withdrawing',
+      message: '담은 상품이 있어 빼는 중이에요. 이 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
+    });
+  });
+
   it('송장번호로 박스를 찾아 사유와 함께 뺀다', async () => {
     const { api, calls } = fakeApi((o) => (o.path.startsWith('/shipments/by-waybill') ? found() : {}));
     const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: '고객 요청' });

@@ -267,6 +267,8 @@ describe('409 errors body and rejected codes (#987)', () => {
     'RETURN_BIN_ITEM_NOT_FOUND',
     'RETURN_BIN_ITEM_SHORT',
     'RETURN_LOCATION_MISMATCH',
+    'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
+    'SHIPMENT_LINE_INSPECTION_STALE',
   ])('%s 409 는 확정 거절 (#989)', (code) => {
     expect(new ConflictError('m', code).outcome).toBe('rejected');
   });
