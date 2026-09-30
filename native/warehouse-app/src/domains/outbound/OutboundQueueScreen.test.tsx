@@ -234,6 +234,30 @@ function renderScreen(
 }
 
 describe('OutboundQueueScreen', () => {
+  it('시작된 배치 카드에만 「박스 넣기」가 보인다', async () => {
+    renderScreen([], undefined, {
+      picking: [
+        { id: 'b-1', batchNumber: 'OB-1', name: '오전', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z' },
+      ],
+      created: [
+        { id: 'b-2', batchNumber: 'OB-2', name: '오후', status: 'created', totalItems: 2, totalQty: 5, startedAt: null },
+      ],
+    });
+    await screen.findByText('OB-2');
+    expect(screen.getAllByRole('button', { name: '박스 넣기' })).toHaveLength(1);
+  });
+
+  it('박스 넣기 패널이 열려 있는 동안 스캔은 박스 열기로 가지 않는다', async () => {
+    const user = userEvent.setup();
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests);
+    await user.click(await screen.findByRole('button', { name: '박스 넣기' }));
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(requests.some((r) => r.path.startsWith('/shipments/by-waybill'))).toBe(false);
+    expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+  });
+
   it('송장을 스캔하면 단순출고 화면으로 이동한다', async () => {
     const user = userEvent.setup();
     renderScreen([]);
