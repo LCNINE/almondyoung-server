@@ -26,6 +26,15 @@ describe('출금 실패 알림 — 표기', () => {
 });
 
 describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', () => {
+  // 발송 경로는 실제 시계로 밤 시간(21:00~08:00 KST)이면 NHN 예약 시각(requestDate)을 붙인다.
+  // 시계를 고정하지 않으면 CI 가 한국 시간 밤에 돌 때만 빨개진다 — 기본은 한국 낮 12:00 으로 둔다.
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-09-29T03:00:00.000Z') });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   const makeConsumer = (isActive = true) => {
     const dispatcher = { send: jest.fn().mockResolvedValue({ notificationIds: ['n1'] }) };
     const eventMapping = {
@@ -77,7 +86,17 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     expect(dto.payload).toEqual({ name: '홍길동', phoneNumber: '01012345678' });
     expect(dto.metadata).toEqual({ smsFallback: true });
     expect(dto.idempotencyKey).toBe('membership:billing-failed:inv-1:1');
-    expect(dto.sendAt).toEqual(expect.any(String));
+    expect(dto.sendAt).toBe('2026-09-29T03:00:00.000Z');
+  });
+
+  it('출금 실패: 밤 시간이면 다음 날 08:00 으로 NHN 예약(requestDate)을 싣는다', async () => {
+    jest.setSystemTime(new Date('2026-09-29T12:45:00.000Z')); // 21:45 KST
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onBillingAttemptFailed({ correlationId: 'corr' } as never, failed);
+
+    const dto = dispatcher.send.mock.calls[0][0];
+    expect(dto.metadata).toEqual({ smsFallback: true, requestDate: '2026-09-30 08:00' });
+    expect(dto.sendAt).toBe('2026-09-29T23:00:00.000Z');
   });
 
   it('은행 사유가 없으면 일반 문구로 채운다', async () => {
