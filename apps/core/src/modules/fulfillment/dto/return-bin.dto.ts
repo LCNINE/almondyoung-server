@@ -66,3 +66,28 @@ export class ReturnBinRemovalResponseDto {
   @ApiProperty({ type: String, nullable: true }) waitingOperationId: string | null;
   @ApiProperty({ type: [WithdrawalRemovalDto] }) removals: WithdrawalRemovalDto[];
 }
+
+export class ReturnBinPutawayDto {
+  @IsUUID()
+  warehouseId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  barcode: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  locationCode: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+
+export class ReturnBinPutawayResponseDto {
+  @ApiProperty({ type: ReturnBinDto }) returnBin: ReturnBinDto;
+  @ApiProperty() putAwayQty: number;
+  @ApiProperty({ type: [ReturnBinItemDto], description: '적치 뒤 바구니에 남은 물건' }) items: ReturnBinItemDto[];
+}

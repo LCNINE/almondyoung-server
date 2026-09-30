@@ -4,10 +4,16 @@ import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
-import { ReturnBinContentsDto, ReturnBinDto, ReturnBinItemDto } from '../dto/return-bin.dto';
+import {
+  ReturnBinContentsDto,
+  ReturnBinDto,
+  ReturnBinItemDto,
+  ReturnBinPutawayResponseDto,
+} from '../dto/return-bin.dto';
 import { BatchInventorySessionService, ReturnBinRef } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 
 const RETURN_BIN_BARCODE = /^RB-[A-Za-z0-9._-]{1,125}$/;
 const B = wmsTables.batchInventorySessionBalances;
@@ -151,5 +157,132 @@ export class ReturnBinService {
       .groupBy(B.skuId, wmsTables.skus.code, wmsTables.skus.name, B.sourceLocationId, wmsTables.locations.code)
       .orderBy(asc(wmsTables.locations.code), asc(wmsTables.skus.name));
     return rows.map((row) => ({ ...row, qty: Number(row.qty) }));
+  }
+
+  /**
+   * 되돌림 적치(정한 것 8). 원래 로케이션만 받는다(S1 D12) — 원장상 그 물건은 그 로케이션을 떠난 적이 없으니 원장은 건드리지 않고
+   * 세션 통제만 푼다. 한 바구니에 여러 배치의 물건이 섞이므로 세션 id 순으로 뺀다(잠금도 그 순서 — 작업 항목은 잡지 않는다).
+   */
+  async putaway(
+    returnBinBarcode: string,
+    input: { warehouseId: string; barcode: string; locationCode: string; quantity: number },
+    actor: { id: string },
+    idempotencyKey: string,
+    tx?: DbTx,
+  ): Promise<ReturnBinPutawayResponseDto> {
+    this.workflowGate.assertV2MutationAllowed('return_bin.putaway');
+    if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
+      throw new BadRequestException('quantity must be a positive integer');
+    }
+    const barcode = input.barcode.trim();
+    const locationCode = input.locationCode.trim();
+    if (!barcode || !locationCode) throw new BadRequestException('barcode and locationCode are required');
+    return this.commands.execute<ReturnBinPutawayResponseDto>(
+      {
+        commandType: 'return_bin.putaway',
+        idempotencyKey,
+        canonicalRequest: {
+          returnBinBarcode: returnBinBarcode.trim(),
+          warehouseId: input.warehouseId,
+          barcode,
+          locationCode,
+          quantity: input.quantity,
+          actorId: actor.id,
+        },
+      },
+      async (trx, commandRequestId) => {
+        const bin = await this.requireActive(returnBinBarcode, input.warehouseId, trx);
+        const skuId = await resolveSkuIdByBarcode(this.barcodes, barcode, trx);
+        if (!skuId) {
+          throw new ConflictException({
+            code: 'SIMPLE_OUTBOUND_BARCODE_UNKNOWN',
+            message: 'Barcode does not resolve to a SKU',
+          });
+        }
+        const pending = await trx
+          .select({
+            sessionId: B.sessionId,
+            sessionStatus: wmsTables.batchInventorySessions.status,
+            sourceLocationId: sql<string>`${B.sourceLocationId}`,
+            locationCode: wmsTables.locations.code,
+            qty: B.qty,
+          })
+          .from(B)
+          .innerJoin(wmsTables.batchInventorySessions, eq(wmsTables.batchInventorySessions.id, B.sessionId))
+          .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, B.sourceLocationId))
+          .where(
+            and(
+              eq(B.custodyType, 'RETURN_PENDING'),
+              eq(B.custodyRef, bin.barcode),
+              eq(B.skuId, skuId),
+              gt(B.qty, 0),
+              inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+            ),
+          )
+          .orderBy(asc(B.sessionId), asc(B.id));
+        if (!pending.length) {
+          throw new ConflictException({
+            code: 'RETURN_BIN_ITEM_NOT_FOUND',
+            message: `Return bin ${bin.barcode} holds no ${barcode}`,
+          });
+        }
+        const atLocation = pending.filter((row) => row.locationCode === locationCode);
+        if (!atLocation.length) {
+          const expected = new Map<string, number>();
+          for (const row of pending) expected.set(row.locationCode, (expected.get(row.locationCode) ?? 0) + row.qty);
+          throw new ConflictException({
+            code: 'RETURN_LOCATION_MISMATCH',
+            message: `${barcode} in return bin ${bin.barcode} belongs to ${[...expected.keys()].join(', ')}`,
+            errors: [...expected].map(([code, qty]) => ({ locationCode: code, qty })),
+          });
+        }
+        const available = atLocation.reduce((total, row) => total + row.qty, 0);
+        if (input.quantity > available) {
+          throw new ConflictException({
+            code: 'RETURN_BIN_ITEM_SHORT',
+            message: `Return bin ${bin.barcode} holds only ${available} of ${barcode} for ${locationCode}`,
+          });
+        }
+        let remaining = input.quantity;
+        for (const row of atLocation) {
+          if (remaining === 0) break;
+          if (row.sessionStatus !== 'active') {
+            throw new ConflictException({
+              code: 'PICKING_SESSION_NOT_ACTIVE',
+              message: `Inventory session ${row.sessionId} is ${row.sessionStatus}`,
+            });
+          }
+          const qty = Math.min(remaining, row.qty);
+          await this.sessions.putawayReturn(
+            {
+              sessionId: row.sessionId,
+              operationId: commandRequestId,
+              actorId: actor.id,
+              skuId,
+              sourceLocationId: row.sourceLocationId,
+              quantity: qty,
+              returnBin: bin,
+            },
+            trx,
+          );
+          remaining -= qty;
+        }
+        await this.audit.logUserActionRequired(
+          'return_bin.putaway',
+          'fulfillment',
+          `Put away ${input.quantity} of ${barcode} from return bin ${bin.barcode} to ${locationCode}`,
+          { userId: actor.id },
+          { commandRequestId, returnBinId: bin.id, skuId, locationCode, quantity: input.quantity },
+          trx,
+        );
+        const response: ReturnBinPutawayResponseDto = {
+          returnBin: { ...bin, warehouseId: input.warehouseId },
+          putAwayQty: input.quantity,
+          items: await this.contentsOf(bin, trx),
+        };
+        return { response, resourceType: 'return_bin', resourceId: bin.id };
+      },
+      tx,
+    );
   }
 }

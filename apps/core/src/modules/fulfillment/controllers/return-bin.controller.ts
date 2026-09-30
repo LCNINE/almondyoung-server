@@ -18,6 +18,8 @@ import {
   RegisterReturnBinDto,
   ReturnBinContentsDto,
   ReturnBinDto,
+  ReturnBinPutawayDto,
+  ReturnBinPutawayResponseDto,
   ReturnBinRemovalDto,
   ReturnBinRemovalResponseDto,
 } from '../dto/return-bin.dto';
@@ -69,6 +71,20 @@ export class ReturnBinController {
   ): Promise<ReturnBinRemovalResponseDto> {
     if (!idempotencyKey?.trim()) throw new BadRequestException('Idempotency-Key is required');
     return this.returns.removeToReturnBin(shipmentId, dto, this.actor(user), idempotencyKey);
+  }
+
+  @Post('return-bins/:barcode/putaways')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ type: ReturnBinPutawayResponseDto })
+  putaway(
+    @Param('barcode') barcode: string,
+    @Body() dto: ReturnBinPutawayDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ): Promise<ReturnBinPutawayResponseDto> {
+    if (!idempotencyKey?.trim()) throw new BadRequestException('Idempotency-Key is required');
+    return this.returnBins.putaway(barcode, dto, this.actor(user), idempotencyKey);
   }
 
   private actor(user: AuthenticatedUser): { id: string; roles: string[] } {

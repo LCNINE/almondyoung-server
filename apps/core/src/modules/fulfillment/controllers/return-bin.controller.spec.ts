@@ -36,4 +36,12 @@ describe('ReturnBinController', () => {
       'key-1',
     );
   });
+
+  it('되돌림 적치는 멱등 키와 함께 위임한다', async () => {
+    const putaway = { putaway: jest.fn().mockResolvedValue({ putAwayQty: 1 }) };
+    const delegating = new ReturnBinController(putaway as never, {} as never);
+    const dto = { warehouseId: 'w', barcode: '880', locationCode: 'A-1', quantity: 1 };
+    await delegating.putaway('RB-1', dto, 'key', { userId: 'u-1', roles: [] });
+    expect(putaway.putaway).toHaveBeenCalledWith('RB-1', dto, { id: 'u-1', roles: [] }, 'key');
+  });
 });
