@@ -42,6 +42,7 @@ export class AlmondTemplateDetailResponseDto extends AlmondTemplateSummaryRespon
 }
 
 export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummaryResponseDto {
+  @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
   @ApiProperty({ enum: ALMOND_TEMPLATE_STATUSES }) status: AlmondTemplateStatus;
   @ApiProperty() createdBy: string;
   @ApiProperty() createdAt: string;

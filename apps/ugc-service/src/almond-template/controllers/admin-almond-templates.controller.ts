@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Put } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Put, Res } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { RequireScopes, User } from '@app/authorization';
+import { ALMOND_TEMPLATE_THUMBNAIL_HEADERS } from '../constants/almond-template.constants';
 import {
   AdminAlmondTemplateDetailResponseDto,
   AdminAlmondTemplateSummaryResponseDto,
@@ -8,6 +10,11 @@ import {
   UpsertAlmondTemplateDto,
 } from '../dto/almond-template.dto';
 import { AlmondTemplatesService } from '../services/almond-templates.service';
+
+const THUMBNAIL_HEADERS = {
+  ...ALMOND_TEMPLATE_THUMBNAIL_HEADERS,
+  'cache-control': 'private, no-store',
+};
 
 @ApiTags('Almond Templates (admin)')
 @ApiBearerAuth()
@@ -29,6 +36,22 @@ export class AdminAlmondTemplatesController {
   @ApiResponse({ status: 200, type: AdminAlmondTemplateDetailResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<AdminAlmondTemplateDetailResponseDto> {
     return this.service.getForAdmin(id);
+  }
+
+  @Get(':id/thumbnail.svg')
+  @RequireScopes('admin:template:write')
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOperation({ summary: '아몬드템플릿 썸네일 SVG (상태 무관)' })
+  @ApiProduces('image/svg+xml')
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 404 })
+  async thumbnail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<string> {
+    const svg = await this.service.getThumbnailForAdmin(id);
+    reply.headers(THUMBNAIL_HEADERS);
+    return svg;
   }
 
   @Put()

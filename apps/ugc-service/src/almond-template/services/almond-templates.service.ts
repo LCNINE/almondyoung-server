@@ -27,6 +27,9 @@ export class AlmondTemplatesService {
   getPublishedThumbnail(id: string): Promise<string> {
     return this.reader.findPublishedThumbnail(id);
   }
+  getThumbnailForAdmin(id: string): Promise<string> {
+    return this.reader.findThumbnail(id);
+  }
 
   async listForAdmin(): Promise<AdminAlmondTemplateSummaryResponseDto[]> {
     return (await this.reader.listAll()).map((row) => AlmondTemplateMapper.toAdminSummary(row));
@@ -40,7 +43,7 @@ export class AlmondTemplatesService {
     );
   }
   async updateStatus(id: string, status: AlmondTemplateStatus): Promise<AdminAlmondTemplateSummaryResponseDto> {
-    return AlmondTemplateMapper.toAdminSummary(await this.manager.updateStatus(id, status));
+    return AlmondTemplateMapper.toAdminSummaryFromEntity(await this.manager.updateStatus(id, status));
   }
   remove(id: string): Promise<void> {
     return this.manager.remove(id);

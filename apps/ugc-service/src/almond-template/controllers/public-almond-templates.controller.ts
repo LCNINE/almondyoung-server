@@ -2,13 +2,12 @@ import { Controller, Get, Param, ParseUUIDPipe, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { Public } from '@app/authorization';
+import { ALMOND_TEMPLATE_THUMBNAIL_HEADERS } from '../constants/almond-template.constants';
 import { AlmondTemplateDetailResponseDto, AlmondTemplateSummaryResponseDto } from '../dto/almond-template.dto';
 import { AlmondTemplatesService } from '../services/almond-templates.service';
 
 const THUMBNAIL_HEADERS = {
-  'content-type': 'image/svg+xml; charset=utf-8',
-  'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
-  'x-content-type-options': 'nosniff',
+  ...ALMOND_TEMPLATE_THUMBNAIL_HEADERS,
   'cache-control': 'public, max-age=300, stale-while-revalidate=86400',
 };
 

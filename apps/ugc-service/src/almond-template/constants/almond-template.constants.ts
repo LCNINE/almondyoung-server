@@ -10,6 +10,12 @@ export const ALMOND_TEMPLATE_DEFAULT_PURPOSE = '이벤트·홍보';
 
 export const ALMOND_TEMPLATE_MAX_THUMBNAIL_LENGTH = 10 * 1024 * 1024;
 
+export const ALMOND_TEMPLATE_THUMBNAIL_HEADERS = {
+  'content-type': 'image/svg+xml; charset=utf-8',
+  'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+  'x-content-type-options': 'nosniff',
+} as const;
+
 export const ALMOND_TEMPLATE_UPSERT_ROUTE = { method: 'PUT', url: '/admin/almond-templates' } as const;
 export const ALMOND_TEMPLATE_UPSERT_BODY_LIMIT = 20 * 1024 * 1024;
 
