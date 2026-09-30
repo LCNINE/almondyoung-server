@@ -192,13 +192,20 @@ export class AlimtalkCampaignReader {
 
   private async members(audience: PreviewAlimtalkCampaignDto['members']): Promise<AlimtalkMember[]> {
     if (audience === 'NONE') return [];
-    const [contacts, membership] = await Promise.all([
+    const [contacts, only] = await Promise.all([
       this.userContactClient.findSmsAudience(false),
-      audience === 'MEMBERSHIP' ? this.membershipClient.activeUserIds() : Promise.resolve(null),
+      this.memberFilter(audience),
     ]);
     return contacts
-      .filter((c) => membership === null || membership.has(c.userId))
+      .filter((c) => only === null || only.has(c.userId))
       .map((c) => ({ userId: c.userId, username: c.username, phoneNumber: c.phoneNumber }));
+  }
+
+  /** 회원 전체면 null(거르지 않음). 나머지는 membership 이 준 명단으로 거른다. */
+  private memberFilter(audience: PreviewAlimtalkCampaignDto['members']): Promise<Set<string> | null> {
+    if (audience === 'MEMBERSHIP') return this.membershipClient.activeUserIds();
+    if (audience === 'ARREARS') return this.membershipClient.arrearsUserIds();
+    return Promise.resolve(null);
   }
 
   private async loadCreators(userIds: string[]): Promise<Map<string, UserContact>> {

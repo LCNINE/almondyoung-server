@@ -122,6 +122,26 @@ describeIfDb('ArrearsGate 가입 관문 (PostgreSQL 통합)', () => {
     await expect(gate.assertNoOutstanding(userId)).resolves.toBeUndefined();
   });
 
+  it('미납 회원 명단은 관문과 같은 기준이다 — 청산·면제한 계정은 빠진다', async () => {
+    const owing = newUserId();
+    const settled = newUserId();
+    const waived = newUserId();
+    await record(owing);
+    await record(settled);
+    await record(waived);
+    const settledIds = await outstandingIds(settled);
+    await db.transaction((tx) => manager.settleMany(tx as never, settled, settledIds, 'intent:it-gate-list'));
+    const [waivedId] = await outstandingIds(waived);
+    await manager.waive(waivedId, 'admin-it', '오판정');
+
+    const userIds = await new ArrearsReader({ db } as never).outstandingUserIds();
+
+    expect(userIds).toContain(owing);
+    expect(userIds).not.toContain(settled);
+    expect(userIds).not.toContain(waived);
+    expect(new Set(userIds).size).toBe(userIds.length);
+  });
+
   it('남의 미납으로 막지 않는다', async () => {
     await record(newUserId());
 
