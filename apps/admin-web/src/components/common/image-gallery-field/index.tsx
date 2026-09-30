@@ -24,6 +24,8 @@ type Props = {
   disabled?: boolean;
   /** 올릴 수 있는 최대 장수. 리뷰는 5장 */
   maxImages?: number;
+  /** 입력 제목. 기본은 샵 매매용 「샵 사진」 */
+  label?: string;
 };
 
 export function ImageGalleryField({
@@ -32,6 +34,7 @@ export function ImageGalleryField({
   contextId,
   disabled,
   maxImages = DEFAULT_MAX_IMAGES,
+  label = '샵 사진',
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -121,7 +124,7 @@ export function ImageGalleryField({
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <Label>
-          샵 사진
+          {label}
           <span
             className={cn(
               'ml-1 text-xs font-normal',

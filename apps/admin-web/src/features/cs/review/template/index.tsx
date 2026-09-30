@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ReviewTable } from '../components/table';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
@@ -30,7 +31,14 @@ export default function ReviewListTemplate() {
 
   return (
     <Container>
-      <Header title="리뷰 관리" />
+      <Header
+        title="리뷰 관리"
+        right={
+          <Button asChild size="sm">
+            <Link href="/cs/reviews/new">리뷰 작성</Link>
+          </Button>
+        }
+      />
       <nav
         aria-label="리뷰 작성 권한"
         className="flex flex-wrap gap-2 px-4 py-3"
