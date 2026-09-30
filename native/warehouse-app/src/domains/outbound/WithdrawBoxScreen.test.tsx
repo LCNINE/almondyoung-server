@@ -228,4 +228,28 @@ describe('WithdrawBoxScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('이미 다 뺀 박스예요');
     expect(calls).toHaveLength(1);
   });
+
+  it('박스를 내보낸 스캔 뒤에 줄 서 있던 스캔도 보내지 않고 바구니에 넣지 말라고 알린다', async () => {
+    const calls: unknown[] = [];
+    let release!: () => void;
+    const first = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { user } = mount({
+      prefs: prefsWith('RB-1'),
+      request: async (o) => {
+        calls.push(o);
+        await first;
+        return { removedQty: 1, exited: true, exitTo: 'draft', removals: [] };
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: '스캔:880' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    // 첫 요청이 아직 돌아오지 않은 동안 한 번 더 — 이 스캔은 큐에서 첫 스캔 뒤에 선다.
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    release();
+    await screen.findByText('다 뺐어요. 이 박스의 송장은 버려 주세요.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 다 뺀 박스예요 — 이 상품은 바구니에 넣지 마세요.');
+    expect(calls).toHaveLength(1);
+  });
 });

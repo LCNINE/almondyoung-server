@@ -15,6 +15,8 @@ import { isReturnBinCode, readReturnBin } from '../returns/returnBin';
 import type { ShipmentByWaybill, WithdrawalRemoval } from './types';
 import { removeToReturnBin, withdrawalRows } from './withdraw';
 
+const ALREADY_EXITED_NOTICE = '이미 다 뺀 박스예요 — 이 상품은 바구니에 넣지 마세요.';
+
 function WithdrawBoxContent({
   shipmentId,
   shipment,
@@ -33,7 +35,11 @@ function WithdrawBoxContent({
   const [notice, setNotice] = useState<string | null>(null);
   const queue = useWorkScanQueue<{ barcode: string; returnBinBarcode: string }>(
     async (input, id) => {
-      if (doneRef.current) return;
+      // 박스를 내보낸 스캔 뒤에 줄 서 있던 스캔 — 보내지 않되, 손에 든 상품을 바구니에 넣지 않게 새 스캔과 같이 알린다.
+      if (doneRef.current) {
+        setNotice(ALREADY_EXITED_NOTICE);
+        return;
+      }
       try {
         const result = await removeToReturnBin(api, { shipmentId, ...input, idempotencyKey: id });
         setNotice(null);
@@ -54,7 +60,7 @@ function WithdrawBoxContent({
   const accept = (barcode: string) => {
     if (!shipment || !bin) return;
     if (doneRef.current) {
-      setNotice('이미 다 뺀 박스예요 — 이 상품은 바구니에 넣지 마세요.');
+      setNotice(ALREADY_EXITED_NOTICE);
       return;
     }
     // 앞 스캔의 결과를 모르는 채 같은 상품을 또 찍으면 한 개가 두 번 빠진다 — 확인이 끝날 때까지 새 스캔을 받지 않는다.
