@@ -79,7 +79,6 @@ export function fetchBatchWorkItems(api: ApiClient, batchId: string): Promise<Ba
   return api.request<BatchWorkItem[]>({ path: `/outbound-batches/${batchId}/work-items` });
 }
 
-// 이미 출고됐거나(completed) 배치에서 빠진(excluded) 박스는 라벨이 필요 없다.
 // 이미 출고됐거나(completed) 배치에서 빠졌거나(excluded) 빠지는 중인(withdrawing) 박스는 송장이 필요 없다(I4).
 const NOT_PRINTABLE = new Set(['completed', 'excluded', 'withdrawing']);
 
