@@ -23,6 +23,7 @@ import {
   type AdminReviewField,
   type AdminReviewFormValues,
 } from '../../lib/admin-review-form';
+import { createSubmitLock } from '../../lib/submit-lock';
 import { ReviewProductPicker, type PickedProduct } from '../review-product-picker';
 
 const invalidRing = 'ring-2 ring-destructive ring-offset-2';
@@ -42,6 +43,7 @@ export function AdminReviewCreateForm() {
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [invalid, setInvalid] = useState<AdminReviewField | null>(null);
+  const [submitLock] = useState(createSubmitLock);
 
   const set = <K extends AdminReviewField>(key: K, value: AdminReviewFormValues[K]) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -61,6 +63,8 @@ export function AdminReviewCreateForm() {
       toast.error(built.message);
       return;
     }
+    // 위 가드는 state 라 같은 렌더의 두 번째 클릭(더블클릭)을 못 막는다 — 동기 잠금으로 한 번만 보낸다.
+    if (!submitLock.tryAcquire()) return;
     setInvalid(null);
 
     try {
@@ -69,6 +73,7 @@ export function AdminReviewCreateForm() {
       toast.success('리뷰를 등록했어요. 쇼핑몰 상품 리뷰에 바로 보여요.');
       router.push(`/cs/reviews/${created.id}`);
     } catch (error) {
+      submitLock.release();
       toast.error(serverMessage(error) ?? '저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
     }
   };
@@ -164,8 +169,9 @@ export function AdminReviewCreateForm() {
             maxImages={ADMIN_REVIEW_MAX_MEDIA}
             disabled={saving}
             onUploadingChange={setUploading}
+            showCoverBadge={false}
+            description={`쇼핑몰 리뷰에 이 순서대로 보여요. 끌어다 놓아 순서를 바꾸고, 더블클릭하면 잘라낼 수 있어요. 사진은 ${ADMIN_REVIEW_MAX_MEDIA}장까지, 동영상은 올릴 수 없어요.`}
           />
-          <p className="text-xs text-muted-foreground">사진은 {ADMIN_REVIEW_MAX_MEDIA}장까지, 동영상은 올릴 수 없어요.</p>
         </section>
 
         <div className="flex justify-end gap-2">

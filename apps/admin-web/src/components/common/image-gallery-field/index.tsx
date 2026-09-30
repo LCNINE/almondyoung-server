@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,20 @@ type Props = {
   label?: string;
   /** 업로드가 시작·끝날 때 알린다. 호출부가 저장 버튼을 막는 데 쓴다 */
   onUploadingChange?: (uploading: boolean) => void;
+  /** 제목 아래 안내문. 기본은 샵 매매용(대표 사진·목록 카드·8~10장 권장) */
+  description?: ReactNode;
+  /** 첫 장에 「대표」 배지를 붙인다. 대표 사진 개념이 없는 곳(리뷰)은 끈다 */
+  showCoverBadge?: boolean;
 };
+
+const SHOP_LISTING_DESCRIPTION = (
+  <>
+    상세 화면 맨 위에 슬라이드로 보여줍니다. 썸네일을 끌어다 놓아 순서를
+    바꿀 수 있고, <strong>맨 앞 사진이 대표 사진</strong>이 되어 목록 카드와
+    공유 미리보기에 쓰입니다. 더블클릭하면 잘라낼 수 있어요. 8~10장을
+    권합니다.
+  </>
+);
 
 export function ImageGalleryField({
   value,
@@ -38,6 +51,8 @@ export function ImageGalleryField({
   maxImages = DEFAULT_MAX_IMAGES,
   label = '샵 사진',
   onUploadingChange,
+  description = SHOP_LISTING_DESCRIPTION,
+  showCoverBadge = true,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -158,12 +173,7 @@ export function ImageGalleryField({
         </Button>
       </div>
 
-      <p className="text-muted-foreground text-xs">
-        상세 화면 맨 위에 슬라이드로 보여줍니다. 썸네일을 끌어다 놓아 순서를
-        바꿀 수 있고, <strong>맨 앞 사진이 대표 사진</strong>이 되어 목록 카드와
-        공유 미리보기에 쓰입니다. 더블클릭하면 잘라낼 수 있어요. 8~10장을
-        권합니다.
-      </p>
+      <p className="text-muted-foreground text-xs">{description}</p>
 
       <div
         onDragOver={(e) => {
@@ -217,12 +227,12 @@ export function ImageGalleryField({
                 <span
                   className={cn(
                     'absolute left-1 top-1 rounded px-1.5 text-[10px]',
-                    index === 0
+                    showCoverBadge && index === 0
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-black/60 text-white'
                   )}
                 >
-                  {index === 0 ? '대표' : index + 1}
+                  {showCoverBadge && index === 0 ? '대표' : index + 1}
                 </span>
                 <button
                   type="button"
