@@ -19,3 +19,30 @@ describe('admin review provenance', () => {
     expect(ReviewMapper.toAdminResponse({ ...entity, permission: undefined }).permission).toBeNull();
   });
 });
+
+describe('admin review source fields', () => {
+  const entity = {
+    id: 'review',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+    sourceSystem: 'admin-manual',
+    createdByAdminUserId: 'admin-1',
+    permission: null,
+  } as ReviewWithMediaEntity;
+
+  it('출처와 입력자는 관리자 응답에만 실린다', () => {
+    const admin = ReviewMapper.toAdminResponse(entity);
+    expect(admin.sourceSystem).toBe('admin-manual');
+    expect(admin.createdByAdminUserId).toBe('admin-1');
+
+    const pub = ReviewMapper.toResponse(entity);
+    expect(pub).not.toHaveProperty('sourceSystem');
+    expect(pub).not.toHaveProperty('createdByAdminUserId');
+  });
+
+  it('입력자가 없으면 null 이다 (undefined 가 아니다)', () => {
+    const admin = ReviewMapper.toAdminResponse({ ...entity, createdByAdminUserId: null });
+    expect(admin.createdByAdminUserId).toBeNull();
+  });
+});

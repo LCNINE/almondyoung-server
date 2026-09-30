@@ -5,7 +5,12 @@ import { type ReviewCommentEntity, type ReviewWithMediaEntity } from '../types';
 
 export class ReviewMapper {
   static toAdminResponse(entity: ReviewWithMediaEntity): AdminReviewResponseDto {
-    return { ...ReviewMapper.toResponse(entity), permission: entity.permission ?? null };
+    return {
+      ...ReviewMapper.toResponse(entity),
+      permission: entity.permission ?? null,
+      sourceSystem: entity.sourceSystem,
+      createdByAdminUserId: entity.createdByAdminUserId ?? null,
+    };
   }
 
   static toResponse(entity: ReviewWithMediaEntity): ReviewResponseDto {

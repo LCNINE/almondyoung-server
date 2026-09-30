@@ -3,7 +3,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from 
 import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
 import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
-import { CreateReviewDto } from '../dto/create-review.dto';
+import { AdminCreateReviewDto, CreateReviewDto } from '../dto/create-review.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import {
   RatingSummariesQueryDto,
@@ -161,6 +161,22 @@ export class ReviewsController {
     return { summaries: await this.reviewsService.getRatingSummaries(query.productIds) };
   }
 
+  // ─── 관리자용 작성 ───
+
+  @Post('admin/reviews')
+  @RequireScopes('admin:ugc:modify')
+  @ApiOperation({ summary: '리뷰 수기 작성 (관리자) — 다른 채널 고객 후기를 옮겨 적는다' })
+  @ApiBody({ type: AdminCreateReviewDto })
+  @ApiResponse({ status: HttpStatus.CREATED, description: '작성 성공', type: AdminReviewResponseDto })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: '입력 오류 (미래 작성일·빈 본문 등)' })
+  async createByAdmin(
+    @User('userId') adminUserId: string,
+    @Body() dto: AdminCreateReviewDto,
+  ): Promise<AdminReviewResponseDto> {
+    const review = await this.reviewsService.createByAdmin(adminUserId, dto);
+    return ReviewMapper.toAdminResponse(review);
+  }
+
   // ─── 관리자용 조회 ───
 
   @Get('admin/reviews')
@@ -198,6 +214,7 @@ export class ReviewsController {
     required: false,
     enum: ['own', 'legacy'],
   })
+  @ApiQuery({ name: 'sourceSystem', description: '출처 정확 일치 (예: admin-manual)', required: false, type: String })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
   @ApiOkResponsePaginated(AdminReviewResponseDto, { description: '전체 리뷰 목록 조회 성공' })

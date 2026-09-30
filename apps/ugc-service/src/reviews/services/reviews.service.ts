@@ -1025,6 +1025,10 @@ export class ReviewsService {
         conditions.push(ne(reviews.sourceSystem, OWN_SOURCE_SYSTEM));
       }
 
+      if (query.sourceSystem) {
+        conditions.push(eq(reviews.sourceSystem, query.sourceSystem));
+      }
+
       if (query.provider === 'unassigned') {
         conditions.push(isNull(reviews.reviewPermissionId));
       } else if (query.provider) {
