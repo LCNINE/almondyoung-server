@@ -250,7 +250,7 @@ export const PRINT_SPECS: Record<
     label: "시술 후 주의사항 카드",
     sizes: [[90, 50]],
     safetyMm: 1.5,
-    bleedMm: 1.5,
+    bleedMm: 1,
     fileScale: 1,
     minImageDpi: 300,
     note: "이지템플릿 명함 90×50mm와 규격 대조. 스노우지 250g·500매, 양면은 앞/뒷면 작업.",
@@ -265,7 +265,7 @@ export const PRINT_SPECS: Record<
     safetyMm: 20,
     bleedMm: 0,
     fileScale: 0.1,
-    minImageDpi: 700,
+    minImageDpi: 100,
     note: "일반현수막은 실물의 1/10 크기로 파일을 작업합니다. 정사각 600/800/1000mm의 안전선 20mm는 임시값이며 타공·큐방 위치와 함께 칼선 및 API 접수 확인이 필요합니다.",
   },
   menu: {
