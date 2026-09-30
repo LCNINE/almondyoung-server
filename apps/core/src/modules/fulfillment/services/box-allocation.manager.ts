@@ -405,6 +405,11 @@ export class BoxAllocationManager {
   /**
    * 결품 뒤 목표(줄 수량)로 되돌리는 계획(스펙 §9-3, 정한 것 5). 쓰지 않는다. 후보에서 이번 결품의 (SKU, 로케이션)을 뺀다 —
    * 원장은 그대로라 그 로케이션에 유령 재고가 일반 가용으로 보인다(정한 것 2). 모자란 줄이 있는 SKU 만 가용 잠금을 잡는다.
+   *
+   * `pendingShortages` — 아직 승인하지 않은 결품(planShortages 의 결과). 주면 읽은 배정·AT_SOURCE 에서 그만큼을 메모리에서만
+   * 빼고(«승인 뒤 상태») 계획한다. 결품 보고는 이렇게 승인 전에 계획해, 순수 인계면 인계를 먼저 한다 — 승인이 세션 보관을 0 으로
+   * 만들면 세션이 settled 로 닫혀 인계할 곳이 없어진다(배치에 박스 하나 남은 전량 결품). k ≤ 안 집은 몫(= 배정 − 귀속)이라
+   * 가상 행도 0 ≤ 귀속 ≤ 배정을 지킨다.
    */
   async planRefill(
     input: {
@@ -413,15 +418,17 @@ export class BoxAllocationManager {
       workItemId: string;
       lines: Array<{ id: string; skuId: string; qty: number }>;
       excludedSources: ReadonlyArray<{ skuId: string; sourceLocationId: string }>;
+      pendingShortages?: readonly PlannedShortage[];
     },
     trx: DbTx,
   ): Promise<ReconcilePlan> {
-    const { rows, atSource } = await this.loadReconcileState(
+    const loaded = await this.loadReconcileState(
       input.session.id,
       input.workItemId,
       new Set(input.lines.map((line) => line.id)),
       trx,
     );
+    const { rows, atSource } = afterShortages(loaded, input.pendingShortages ?? []);
     const allocated = new Map<string, number>();
     for (const row of rows) allocated.set(row.shipmentLineId, (allocated.get(row.shipmentLineId) ?? 0) + row.qty);
     const deficitSkus = input.lines
@@ -789,4 +796,29 @@ export function notJoinable(batchId: string, why: string): ConflictException {
     error: 'BATCH_NOT_JOINABLE',
     message: `Batch ${batchId} is not joinable: ${why}`,
   });
+}
+
+/** 승인 전 결품을 메모리에서만 반영한 reconcile 입력 — 배정 행 −k, 그 (SKU, 로케이션)의 AT_SOURCE −k. 쓰지 않는다. */
+function afterShortages(
+  state: { rows: ReconcileAllocationRow[]; atSource: Map<string, number> },
+  shortages: readonly PlannedShortage[],
+): { rows: ReconcileAllocationRow[]; atSource: Map<string, number> } {
+  if (!shortages.length) return state;
+  const shortByAllocation = new Map<string, number>();
+  const atSource = new Map(state.atSource);
+  for (const shortage of shortages) {
+    shortByAllocation.set(shortage.allocationId, (shortByAllocation.get(shortage.allocationId) ?? 0) + shortage.qty);
+    const key = atSourceKey(shortage.skuId, shortage.sourceLocationId);
+    atSource.set(key, (atSource.get(key) ?? 0) - shortage.qty);
+  }
+  const rows = state.rows.map((row) => ({ ...row, qty: row.qty - (shortByAllocation.get(row.allocationId) ?? 0) }));
+  for (const allocationId of shortByAllocation.keys()) {
+    if (!rows.some((row) => row.allocationId === allocationId)) {
+      throw new Error(`planRefill: pending shortage allocation ${allocationId} is not on the work item`);
+    }
+  }
+  if ([...atSource.values()].some((qty) => qty < 0)) {
+    throw new Error('planRefill: pending shortages exceed the session AT_SOURCE custody');
+  }
+  return { rows, atSource };
 }

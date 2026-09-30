@@ -45,7 +45,9 @@ export class ShipmentShortPickService {
   /**
    * 결품 보고(스펙 §9) — 한 트랜잭션. 안 집은 몫을 부족 승인하고 결품 로케이션을 뺀 곳에서 다시 채운다. 못 채우면 이탈(exit_to=draft)이
    * 결품 오퍼레이션을 기다리고, 나가기가 예약·송장·박스를 정리한다(PR 4 계획이 정함 1~6 — 마무리는 `ShortPickExitService`).
-   * 잠금: 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 오퍼레이션·멤버 INSERT → 부족 승인 → SKU 가용·원장.
+   * 잠금: 구성요소 → 박스·줄 → 작업 항목 → 세션·보관 → 배정(판정) → 오퍼레이션·멤버 INSERT → SKU 가용·원장(재배정 계획·인계)
+   * → 부족 승인. 재배정 계획(가용 잠금)이 부족 승인보다 앞서지만 둘 다 세션 잠금 뒤라 «세션 → 가용» 순서(발송·합류와 같다)는 그대로다.
+   * 채울 수 있으면 인계 → 승인 순이다 — 승인이 세션의 마지막 보관을 비우면 세션이 settled 로 닫혀 그 뒤엔 인계할 수 없다.
    */
   async report(
     shipmentId: string,
@@ -136,20 +138,23 @@ export class ShipmentShortPickService {
           beforeManifestVersion: dto.expectedManifestVersion,
           beforeManifestSnapshot: { expectedManifestVersion: dto.expectedManifestVersion },
         });
-        await this.boxes.approveShortages(
-          {
-            session,
-            workItemId: workItem.id,
-            shortPickOperationId: operationId,
-            actorId: actor.id,
-            reasonCode: this.reasonCode(dto.reason),
-            reason: dto.reason,
-            planned,
-          },
-          trx,
-        );
+        const approve = () =>
+          this.boxes.approveShortages(
+            {
+              session,
+              workItemId: workItem.id,
+              shortPickOperationId: operationId,
+              actorId: actor.id,
+              reasonCode: this.reasonCode(dto.reason),
+              reason: dto.reason,
+              planned,
+            },
+            trx,
+          );
         const approved = planned;
         const allLines = lines.map((line) => ({ id: line.id, skuId: line.skuId, qty: line.qty }));
+        // 승인 뒤 상태로 계획하되 아직 쓰지 않는다 — 채울 수 있으면 인계를 승인보다 먼저 한다. 승인이 세션의 마지막 보관을
+        // 비우면(배치에 박스 하나, 전량 결품) 세션이 settled 로 닫혀 인계할 곳이 사라지기 때문이다.
         const plan = await this.boxes.planRefill(
           {
             session,
@@ -157,6 +162,7 @@ export class ShipmentShortPickService {
             workItemId: workItem.id,
             lines: allLines,
             excludedSources: approved.map((row) => ({ skuId: row.skuId, sourceLocationId: row.sourceLocationId })),
+            pendingShortages: planned,
           },
           trx,
         );
@@ -172,6 +178,7 @@ export class ShipmentShortPickService {
             },
             trx,
           );
+          await approve();
           await this.completeRefilled(operationId, shipmentId, dto.expectedManifestVersion, refills, trx);
           await this.audit.logUserActionRequired(
             'shipment.short_pick.refilled',
@@ -198,6 +205,8 @@ export class ShipmentShortPickService {
             `Waybill ${waybill?.id} is ${waybill?.status}; resolve it before short-pick withdrawal`,
           );
         }
+        // 승인이 세션을 닫았을 수 있다(마지막 보관) — 그러면 배정도 0 이라 이탈이 열린 세션 없이 바로 나간다(BoxWithdrawalService.begin).
+        await approve();
         const shortages = await describeStartBlockers(
           trx,
           plan.shortages.map((shortage) => ({

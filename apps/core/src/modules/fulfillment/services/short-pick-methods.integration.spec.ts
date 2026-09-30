@@ -163,12 +163,17 @@ describeIfDb('결품 재배정 × 피킹 방식 (스펙 S1 §4.4, PR 4)', () => 
     });
   });
 
-  it('바구니 피킹 — 집은 게 없고 여분도 없으면 바로 나간다(3개 중 2개 결품, 1개는 손에 안 든 채 돌려준다)(exited, 초안)', async () => {
+  it('바구니 피킹 — 집은 게 없고 여분도 없으면 전량(3개) 결품이 배치의 마지막 보관을 비워도 바로 나간다(exited, 초안)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { box, wiring, sessionId } = await startedBox(tx, 'multi_order', 'pick_to_tote');
 
-      const result = await reportShort(tx, wiring, box, sessionId, 2);
+      const result = await reportShort(tx, wiring, box, sessionId, 3);
       expect(result).toMatchObject({ outcome: 'exited', operationStatus: 'completed' });
+      const [session] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      expect(session).toMatchObject({ status: 'settled', shortageQty: 3, handedBackQty: 0 });
       const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
       expect(shipment.status).toBe('draft');
       const [item] = await tx

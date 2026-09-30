@@ -4,7 +4,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from './__support__';
 import { assertFulfillmentInvariantsFor } from './__support__/logistics-assertions';
 import { seedShortPickOperation } from './__support__/short-pick-fixtures';
-import { seedPickableShipment } from './__support__/logistics-fixtures';
+import { PickableShipmentFixture, seedPickableShipment } from './__support__/logistics-fixtures';
 import { seedReturnBin } from './__support__/simple-outbound-fixtures';
 import { assembleOutbound } from './__support__/simple-outbound-wiring';
 
@@ -129,6 +129,102 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       expect(after.operation.status).toBe('completed');
       await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
       await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
+  /** 박스(A 3개) 하나의 배치를 시작하고 안 집은 3개를 전부 부족 승인한다 — 세션 보관이 0 이 되어 세션이 settled 로 닫힌다. */
+  async function drainedByFullShortage(tx: DbTx) {
+    const box = await seedPickableShipment(tx, 3);
+    const wiring = assembleOutbound(tx);
+    const run = await wiring.picking.start({ batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
+    const session = await wiring.boxes.lockOpenSession(box.batchId, tx);
+    if (!session) throw new Error('session missing');
+    const operation = await seedShortPickOperation(tx, {
+      shipmentId: box.shipmentId,
+      workItemId: box.workItemId,
+      sessionId: session.id,
+      actorId: box.actorId,
+      lines: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, shortQty: 3, allocationQty: 3 }],
+    });
+    const planned = await wiring.boxes.planShortages(
+      { session, workItemId: box.workItemId,
+        shortages: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: box.locationId, qty: 3 }] },
+      tx,
+    );
+    await wiring.boxes.approveShortages(
+      { session, workItemId: box.workItemId, shortPickOperationId: operation.id, actorId: box.actorId,
+        reasonCode: 'MISSING', reason: operation.reason, planned },
+      tx,
+    );
+    const [settled] = await tx.select().from(wmsTables.batchInventorySessions).where(eq(wmsTables.batchInventorySessions.id, run.sessionId));
+    expect(settled.status).toBe('settled');
+    return { box, wiring, sessionId: run.sessionId, operation };
+  }
+
+  const beginFor = async (
+    tx: DbTx,
+    wiring: ReturnType<typeof assembleOutbound>,
+    box: PickableShipmentFixture,
+    waitingOperationId: string | null,
+  ) => {
+    const [workItem] = await tx.select().from(wmsTables.outboundBatchWorkItems).where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId)).for('update');
+    return wiring.withdrawals.begin(
+      {
+        batchId: box.batchId,
+        shipmentId: box.shipmentId,
+        shipmentStatus: 'planned',
+        workItem,
+        lines: [{ id: box.shipmentLineId, skuId: box.skuId }],
+        exitTo: 'draft',
+        reason: waitingOperationId ? 'short_pick:inventory_shortage' : 'test',
+        waitingOperationId,
+        actorId: box.actorId,
+        operationId: randomUUID(),
+      },
+      tx,
+    );
+  };
+
+  it('세션이 이번 부족 승인으로 닫혔고 배정이 0 이면 열린 세션 없이 나간다 — 결품이 마무리된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, wiring, sessionId, operation } = await drainedByFullShortage(tx);
+      const outcome = await beginFor(tx, wiring, box, operation.id);
+      expect(outcome).toMatchObject({ kind: 'exited', handedBackQty: 0 });
+      const state = await stateOf(tx, box, operation.id);
+      expect(state.workItem).toMatchObject({ status: 'excluded', exitTo: 'draft', waitingOperationId: null });
+      expect(state.shipment.status).toBe('draft');
+      expect(state.waybills.map((w) => w.status)).toEqual(['voided']);
+      expect(state.operation.status).toBe('completed');
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
+  it('열린 세션이 없는데 배정이 남았으면 여전히 PICKING_SESSION_NOT_ACTIVE', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const box = await seedPickableShipment(tx, 3);
+      const wiring = assembleOutbound(tx);
+      const run = await wiring.picking.start({ batchId: box.batchId, actorId: box.actorId, idempotencyKey: `s-${randomUUID()}` }, tx);
+      await tx
+        .update(wmsTables.batchInventorySessions)
+        .set({ status: 'settled' })
+        .where(eq(wmsTables.batchInventorySessions.id, run.sessionId));
+      await expect(tx.transaction((trx) => beginFor(trx, wiring, box, null))).rejects.toMatchObject({
+        response: { code: 'PICKING_SESSION_NOT_ACTIVE' },
+      });
+    });
+  });
+
+  it('세션이 recovery_required 면 배정이 0 이어도 PICKING_SESSION_NOT_ACTIVE', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, wiring, sessionId, operation } = await drainedByFullShortage(tx);
+      await tx
+        .update(wmsTables.batchInventorySessions)
+        .set({ status: 'recovery_required', recoveryReason: 'test drift' })
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      await expect(tx.transaction((trx) => beginFor(trx, wiring, box, operation.id))).rejects.toMatchObject({
+        response: { code: 'PICKING_SESSION_NOT_ACTIVE' },
+      });
     });
   });
 

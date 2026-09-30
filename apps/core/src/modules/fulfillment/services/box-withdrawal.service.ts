@@ -112,21 +112,23 @@ export class BoxWithdrawalService {
     const item = input.workItem;
     if (item.status === 'withdrawing') return this.escalate(input, trx);
     const checked = await this.blockerOf(input, trx);
-    if ('blocker' in checked) throw conflict(checked.blocker.code, checked.blocker.message);
+    const session = 'blocker' in checked ? await this.sessionlessDrain(input, checked.blocker, trx) : checked.session;
     if (!(WITHDRAWABLE_WORK_ITEM_STATUSES as readonly string[]).includes(item.status)) {
       throw new Error(`begin: work item ${item.id} is ${item.status}`);
     }
     this.assertWaitingSlot(item, input.waitingOperationId);
-    const { handedBackQty } = await this.boxes.handBackUnpicked(
-      {
-        session: checked.session,
-        workItemId: item.id,
-        lines: input.lines,
-        actorId: input.actorId,
-        operationId: input.operationId,
-      },
-      trx,
-    );
+    const { handedBackQty } = session
+      ? await this.boxes.handBackUnpicked(
+          {
+            session,
+            workItemId: item.id,
+            lines: input.lines,
+            actorId: input.actorId,
+            operationId: input.operationId,
+          },
+          trx,
+        )
+      : { handedBackQty: 0 };
     const now = await databaseNow(trx);
     const [withdrawing] = await trx
       .update(WI)
@@ -152,6 +154,29 @@ export class BoxWithdrawalService {
     if (!withdrawing) throw conflict('WORK_ITEM_STALE_LEASE_VERSION', `Work item ${item.id} changed while withdrawing`);
     const exit = await this.exitIfDrained(withdrawing, { actorId: input.actorId, operationId: input.operationId }, trx);
     return { kind: exit.exited ? 'exited' : 'withdrawing', workItem: exit.workItem, handedBackQty };
+  }
+
+  /**
+   * 열린 세션 없이 이탈해도 되는가 — `blockerOf` 가 막았을 때만 부른다. 된다면 null(반납할 세션 없음), 아니면 그 사유로 던진다.
+   * 되는 경우는 하나: 열린 세션(active·recovery_required)이 없고(settled 이거나 아예 없음) 이 작업 항목의 배정 합이 이미 0 —
+   * 반납할 것도 되돌림 바구니로 뺄 것도 없다. 결품 보고가 배치의 마지막 보관을 부족 승인해 세션이 settled 로 닫힌 경우다
+   * (`ShipmentShortPickService.report`, 배치에 박스 하나 남은 전량 결품). recovery_required 는 여전히 막는다.
+   * `blockerOf` 의 계약(전체 취소 E10 의 갈래)은 바꾸지 않는다 — 이 경우 박스는 같은 트랜잭션에서 나가므로 E10 이 볼 일이 없다.
+   */
+  private async sessionlessDrain(
+    input: BeginWithdrawalInput,
+    blocker: { code: string; message: string },
+    trx: DbTx,
+  ): Promise<null> {
+    if (blocker.code !== 'PICKING_SESSION_NOT_ACTIVE') throw conflict(blocker.code, blocker.message);
+    // blockerOf 가 이미 잠갔다 — 같은 행을 다시 읽어 «없음» 과 «recovery_required» 를 가른다.
+    if (await this.boxes.lockOpenSession(input.batchId, trx)) throw conflict(blocker.code, blocker.message);
+    const [row] = await trx
+      .select({ qty: sql<number>`coalesce(sum(${A.qty}), 0)::int` })
+      .from(A)
+      .where(eq(A.workItemId, input.workItem.id));
+    if (Number(row?.qty ?? 0) > 0) throw conflict(blocker.code, blocker.message);
+    return null;
   }
 
   /**

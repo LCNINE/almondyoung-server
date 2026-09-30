@@ -55,6 +55,86 @@ describeIfDb('결품 보고 — 재배정 (스펙 §9, PR 4)', () => {
     });
   });
 
+  it('배치에 박스 하나 — 안 집은 3개를 전부 결품해도 여분으로 채운다(세션이 비지 않게 인계를 부족 승인보다 먼저)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, wiring, sessionId, report } = await startedShortPickBox(tx, 0);
+      const spare = await seedSpareStock(tx, box, 5);
+
+      const result = await report(3);
+
+      expect(result).toMatchObject({
+        outcome: 'refilled',
+        operationStatus: 'completed',
+        refills: [{ shipmentLineId: box.shipmentLineId, sourceLocationId: spare.locationId, qty: 3 }],
+        shortages: [],
+      });
+      const allocations = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, box.workItemId));
+      const qtyAt = (locationId: string) =>
+        allocations.filter((row) => row.sourceLocationId === locationId).reduce((total, row) => total + row.qty, 0);
+      expect(qtyAt(box.locationId)).toBe(0);
+      expect(qtyAt(spare.locationId)).toBe(3);
+      const [session] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      expect(session).toMatchObject({ status: 'active', shortageQty: 3 });
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
+  it('배치에 박스 하나 — 안 집은 3개를 전부 결품하고 여분도 없으면 세션이 닫혀도 그 자리에서 나간다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { box, wiring, sessionId, report } = await startedShortPickBox(tx, 0);
+
+      const result = await report(3);
+
+      expect(result).toMatchObject({
+        outcome: 'exited',
+        operationStatus: 'completed',
+        refills: [],
+        shortages: [
+          expect.objectContaining({ shipmentLineId: box.shipmentLineId, shortQty: 3, reason: 'STOCK_SHORT' }),
+        ],
+      });
+      const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+      expect(shipment.status).toBe('draft');
+      const [workItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+      expect(workItem).toMatchObject({ status: 'excluded', exitTo: 'draft', waitingOperationId: null });
+      const waybills = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, box.shipmentId));
+      expect(waybills.map((waybill) => waybill.status)).toEqual(['voided']);
+      const reservations = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId));
+      const reservedAs = (status: string) =>
+        reservations.filter((row) => row.status === status).reduce((total, row) => total + row.quantity, 0);
+      expect(reservedAs('released')).toBe(3);
+      expect(reservedAs('confirmed')).toBe(0);
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+      expect(operation.status).toBe('completed');
+      const [session] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.id, sessionId));
+      expect(session).toMatchObject({ status: 'settled', shortageQty: 3 });
+      await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
+      await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
   it('집은 몫을 넘는 결품(3개 중 1개 집고 3개 결품)은 SHORT_PICK_EXCEEDS_UNPICKED — 오퍼레이션도 남지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { box, report } = await startedShortPickBox(tx, 1);
