@@ -122,10 +122,15 @@ export const notifications = pgTable(
     errorDetails: jsonb('error_details').$type<ErrorDetails>(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
     smsDeviceId: varchar('sms_device_id', { length: 64 }),
+    // 같은 사건을 두 번 받아도 한 번만 보내기 위한 호출자 키. 한 요청이 여러 채널로 갈라지므로 채널과 묶어 유일하다.
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
+    idempotencyIdx: uniqueIndex('uq_notifications_idempotency_channel')
+      .on(table.idempotencyKey, table.channel)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     userStatusIdx: index('idx_user_status_created').on(table.userId, table.status, table.createdAt),
     smsDeviceSentIdx: index('idx_sms_device_sent').on(table.smsDeviceId, table.sentAt),
     statusSendAtIdx: index('idx_status_send_at').on(table.status, table.sendAt),

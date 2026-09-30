@@ -177,7 +177,6 @@ export class NHNProvider implements NotificationProvider {
       const templateCode = metadata.templateCode;
       const templateParameters = metadata.templateParameters || {};
       const buttons = metadata.buttons || [];
-      const resendSendNo = metadata.resendSendNo || this.configService.get<string>('DEFAULT_SMS_NUMBER');
 
       let response;
 
@@ -186,17 +185,19 @@ export class NHNProvider implements NotificationProvider {
         const request: AlimtalkSendRequest = {
           senderKey: this.config.senderKey,
           templateCode,
+          ...(typeof metadata.requestDate === 'string' && { requestDate: metadata.requestDate }),
           recipientList: [
             {
               recipientNo: this.formatPhoneNumber(message.to),
               templateParameter: templateParameters,
               buttons: buttons.length > 0 ? buttons : undefined,
+              resendParameter: this.resendParameter(metadata),
             },
           ],
           statsId: metadata.statsId,
         };
 
-        response = await this.client.post(`/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages`, request);
+        response = await this.client.post(this.messagesPath(metadata), request);
       } else {
         // 전문 발송
         const rawRequest: AlimtalkRawMessage = {
@@ -318,8 +319,6 @@ export class NHNProvider implements NotificationProvider {
     templateCode: string,
   ): Promise<BulkNotificationResult> {
     try {
-      const resendSendNo = this.configService.get<string>('DEFAULT_SMS_NUMBER');
-
       const recipientList: AlimtalkRecipient[] = messages.map((message) => ({
         recipientNo: this.formatPhoneNumber(message.to),
         templateParameter: message.metadata?.templateParameters || {},
@@ -334,7 +333,7 @@ export class NHNProvider implements NotificationProvider {
         statsId: messages[0].metadata?.statsId,
       };
 
-      const response = await this.client.post(`/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages`, request);
+      const response = await this.client.post(this.messagesPath(messages[0].metadata || {}), request);
 
       const result = response.data;
       const sendResults = result.message?.sendResults || [];
@@ -391,6 +390,35 @@ export class NHNProvider implements NotificationProvider {
     }
 
     return phoneNumber;
+  }
+
+  /**
+   * 인증 메시지 주소는 본문에 인증 문구(인증·비밀번호·auth 등)가 없으면 NHN 이 발송을 거부한다.
+   * 인증번호처럼 호출자가 명시한 경우에만 그쪽으로 보낸다.
+   */
+  private messagesPath(metadata: Record<string, any>): string {
+    const auth = metadata.alimtalkMessageType === 'AUTH' ? 'auth/' : '';
+    return `/alimtalk/v2.3/appkeys/${this.config.appKey}/${auth}messages`;
+  }
+
+  /**
+   * 알림톡이 실패하면(카카오 미사용자·차단 등) NHN 이 문자로 대신 보낸다. 호출자가 켠 경우에만 싣는다 —
+   * 없으면 지금처럼 알림톡만 시도한다. 대체 본문을 따로 주지 않으면 NHN 이 템플릿 본문과 버튼 링크로
+   * 만들어 보내므로 알림톡과 같은 말이 나간다.
+   */
+  private resendParameter(metadata: Record<string, any>): AlimtalkRecipient['resendParameter'] {
+    const content: unknown = metadata.resendContent;
+    const hasContent = typeof content === 'string' && content.length > 0;
+    if (!hasContent && metadata.smsFallback !== true) return undefined;
+    return {
+      isResend: true,
+      ...(hasContent && { resendType: this.getResendType(content), resendContent: content }),
+      ...(typeof metadata.resendTitle === 'string' && { resendTitle: metadata.resendTitle }),
+      resendSendNo:
+        metadata.resendSendNo ||
+        this.configService.get<string>('NHN_SMS_SEND_NO') ||
+        this.configService.get<string>('DEFAULT_SMS_NUMBER'),
+    };
   }
 
   private getResendType(content: string): 'SMS' | 'LMS' {

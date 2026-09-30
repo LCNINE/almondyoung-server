@@ -72,6 +72,15 @@ export class InvoiceResultConsumer {
       payload.attemptCount ?? 0,
       payload.errorCode ?? null,
       payload.errorMessage ?? null,
+      {
+        maxAttempts: payload.maxAttempts,
+        nextAttemptAt: payload.nextAttemptAt,
+        billed: {
+          amount: payload.amount ?? null,
+          periodStart: payload.periodStart ?? null,
+          periodEnd: payload.periodEnd ?? null,
+        },
+      },
     );
   }
 

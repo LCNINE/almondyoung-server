@@ -61,6 +61,7 @@ import { BillingReader } from './services/billing/billing.reader';
 import { BillingOutcomeHandler } from './services/billing/billing-outcome.handler';
 import { InvoiceBillingManager } from './services/billing/invoice-billing.manager';
 import { InvoiceOutcomeHandler } from './services/billing/invoice-outcome.handler';
+import { BillingNoticeManager } from './services/billing/billing-notice.manager';
 import { ArrearsManager } from './services/arrears/arrears.manager';
 import { ArrearsRepaymentService } from './services/arrears/arrears-repayment.service';
 import { ArrearsPaymentConsumer } from './consumers/arrears-payment.consumer';
@@ -215,6 +216,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     // ADR-0027 인보이스(선적용) 경로
     InvoiceBillingManager,
     InvoiceOutcomeHandler,
+    BillingNoticeManager,
     ArrearsManager,
     ArrearsReader,
     ArrearsGate,

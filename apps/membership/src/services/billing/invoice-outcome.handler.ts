@@ -12,6 +12,7 @@ import { ArrearsManager } from '../arrears/arrears.manager';
 import { BenefitReader } from '../benefit/benefit.reader';
 import { TermsRulesReader } from '../terms/terms-rules.reader';
 import { isWithdrawalEligible } from '../subscription/refund-policy.service';
+import { ArrearsOutcome, BillingNoticeManager } from './billing-notice.manager';
 
 /** 인보이스가 실어 보낸 청구 정보. mandate.rejected 는 인보이스 행 없이 올 수 있어 전부 선택이다. */
 export interface BilledPeriod {
@@ -19,6 +20,13 @@ export interface BilledPeriod {
   currency?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
+}
+
+/** 출금 실패 안내에 필요한, wallet 이 실어 보낸 재시도 정보. */
+export interface AttemptNoticeInput {
+  maxAttempts: number;
+  nextAttemptAt: string;
+  billed?: BilledPeriod;
 }
 
 /** 원장 한 줄을 만들기 위해 회수 경로가 들고 가는 것. */
@@ -45,6 +53,7 @@ export class InvoiceOutcomeHandler {
     private readonly arrearsManager: ArrearsManager,
     private readonly benefitReader: BenefitReader,
     private readonly termsRulesReader: TermsRulesReader,
+    private readonly billingNoticeManager: BillingNoticeManager,
   ) {}
 
   /**
@@ -217,7 +226,10 @@ export class InvoiceOutcomeHandler {
     attemptCount: number,
     errorCode: string | null,
     errorMessage: string | null,
+    notice?: AttemptNoticeInput,
   ): Promise<void> {
+    const contact = notice ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
+
     await this.dbService.db.transaction(async (tx) => {
       const contract = await this.getContract(tx, contractId);
       if (!contract) return;
@@ -242,6 +254,22 @@ export class InvoiceOutcomeHandler {
         'SYSTEM',
         contract.userId,
       );
+
+      // 이미 끝난 계약의 뒤늦은 실패는 알리지 않는다 — 고객에게 남은 청구가 없다.
+      if (notice && contact && contract.status !== 'CANCELLED' && contract.status !== 'EXPIRED') {
+        await this.billingNoticeManager.queueAttemptFailed(tx, {
+          contact,
+          contractId,
+          userId: contract.userId,
+          invoiceId,
+          markerKey,
+          attemptCount,
+          maxAttempts: notice.maxAttempts,
+          nextAttemptAt: notice.nextAttemptAt,
+          errorMessage,
+          billed: notice.billed,
+        });
+      }
     });
   }
 
@@ -293,6 +321,10 @@ export class InvoiceOutcomeHandler {
     reason: string,
     arrears?: ArrearsContext,
   ): Promise<void> {
+    // 심사 거절은 wallet 이 따로 알린다 — 여기서 알리는 것은 출금 재시도를 모두 실패한 해지뿐이다.
+    const notifies = arrears?.cause === 'UNCOLLECTIBLE';
+    const contact = notifies ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
+
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
       const contract = await this.getContract(tx, contractId);
       if (!contract) return null;
@@ -356,7 +388,23 @@ export class InvoiceOutcomeHandler {
       );
 
       if (arrears) {
-        await this.recordArrearsForTermination(tx, contractId, contract.userId, arrears, heldEntitlement ?? null);
+        const outcome = await this.recordArrearsForTermination(
+          tx,
+          contractId,
+          contract.userId,
+          arrears,
+          heldEntitlement ?? null,
+        );
+        if (notifies && contact) {
+          await this.billingNoticeManager.queueTerminatedForNonPayment(tx, {
+            contact,
+            contractId,
+            userId: contract.userId,
+            invoiceId: arrears.invoiceRef,
+            billed: arrears.billed,
+            arrears: outcome,
+          });
+        }
       }
 
       this.logger.warn(`[invoice-outcome] 자격 회수/해지: contractId=${contractId}, reason=${reason}`);
@@ -467,10 +515,10 @@ export class InvoiceOutcomeHandler {
     userId: string,
     arrears: ArrearsContext,
     heldEntitlement: { startsAt: string; endsAt: string } | null,
-  ): Promise<void> {
+  ): Promise<ArrearsOutcome> {
     if (!heldEntitlement) {
       this.logger.log(`[arrears] 자격 없이 종결 — 미수 없음 (contractId=${contractId})`);
-      return;
+      return { skippedReason: 'NO_ENTITLEMENT' };
     }
 
     const periodEnd = arrears.billed?.periodEnd ?? null;
@@ -480,12 +528,12 @@ export class InvoiceOutcomeHandler {
       this.logger.log(
         `[arrears] 자격이 청구 주기를 덮지 않음 — 미수 없음 (contractId=${contractId}, endsAt=${heldEntitlement.endsAt}, periodEnd=${periodEnd})`,
       );
-      return;
+      return { skippedReason: 'PERIOD_NOT_COVERED' };
     }
 
     if (!(await this.termsRulesReader.newRulesApply(contractId))) {
       await this.skipArrears(tx, contractId, userId, arrears, 'TERMS_NOT_IN_FORCE');
-      return;
+      return { skippedReason: 'TERMS_NOT_IN_FORCE' };
     }
 
     // 주기 시작은 인보이스가 준 값, 없으면 자격 개시일 — 해지 화면(수금 전 선지급)과 같은 기준점이다.
@@ -493,7 +541,7 @@ export class InvoiceOutcomeHandler {
     const usage = await this.benefitReader.findMembershipBenefitUsageSince(userId, periodStart);
     if (isWithdrawalEligible({ periodStart, now: new Date(), usage })) {
       await this.skipArrears(tx, contractId, userId, arrears, 'WITHDRAWAL_ELIGIBLE');
-      return;
+      return { skippedReason: 'WITHDRAWAL_ELIGIBLE' };
     }
 
     const billedAmount = arrears.billed?.amount ?? null;
@@ -511,7 +559,7 @@ export class InvoiceOutcomeHandler {
         .limit(1);
       if (!row || row.price <= 0) {
         this.logger.warn(`[arrears] 금액을 정할 수 없어 미수를 적지 않는다 (contractId=${contractId})`);
-        return;
+        return { skippedReason: 'AMOUNT_UNKNOWN' };
       }
       amount = row.price;
       currency = row.currency ?? 'KRW';
@@ -541,6 +589,7 @@ export class InvoiceOutcomeHandler {
         userId,
       );
     }
+    return { recordedAmount: amount };
   }
 
   private async skipArrears(

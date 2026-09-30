@@ -53,7 +53,11 @@ describe('VerificationFallbackService', () => {
     expect(kakaoSend).toHaveBeenCalledWith(
       expect.objectContaining({
         to: '01012345678',
-        metadata: { templateCode: 'ALMOND_VERIFY_001', templateParameters: { code: '483920' } },
+        metadata: {
+          templateCode: 'ALMOND_VERIFY_001',
+          templateParameters: { code: '483920' },
+          alimtalkMessageType: 'AUTH',
+        },
       }),
     );
   });
@@ -129,7 +133,11 @@ describe('VerificationFallbackService', () => {
       expect(kakaoSend).toHaveBeenCalledWith(
         expect.objectContaining({
           to: '01012345678',
-          metadata: { templateCode: 'ALMOND_VERIFY_001', templateParameters: { code: '483920' } },
+          metadata: {
+            templateCode: 'ALMOND_VERIFY_001',
+            templateParameters: { code: '483920' },
+            alimtalkMessageType: 'AUTH',
+          },
         }),
       );
     });

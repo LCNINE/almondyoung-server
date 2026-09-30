@@ -319,6 +319,11 @@ export interface InvoicePaymentFailedPayload {
   attemptCount: number;
   maxAttempts: number;
   nextAttemptAt: string;
+  /** 고객 안내에 쓰는 청구 주기·금액. 옛 발행자는 싣지 않으므로 선택이다. */
+  periodStart?: string;
+  periodEnd?: string;
+  amount?: number;
+  currency?: string;
   errorCode: string | null;
   errorMessage: string | null;
   intentId: string | null;
@@ -815,6 +820,10 @@ const InvoicePaymentFailedSchema = z.object({
   attemptCount: z.number().int().nonnegative(),
   maxAttempts: z.number().int().positive(),
   nextAttemptAt: z.string().min(1),
+  periodStart: z.string().min(1).optional(),
+  periodEnd: z.string().min(1).optional(),
+  amount: z.number().int().nonnegative().optional(),
+  currency: z.string().min(1).optional(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   intentId: z.string().nullable(),
