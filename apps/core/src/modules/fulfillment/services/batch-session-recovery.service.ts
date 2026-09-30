@@ -12,6 +12,7 @@ import {
   isApprovedShortageReasonCode,
   shortPickOperationIntentOf,
 } from './batch-inventory-session.service';
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 type EventRow = typeof wmsTables.batchInventorySessionEvents.$inferSelect;
@@ -36,6 +37,7 @@ interface ReplayResult {
   handedInQty: number;
   settledQty: number;
   returnedQty: number;
+  handedBackQty: number;
   shortageQty: number;
   nextSequence: number;
   status: 'active' | 'settled';
@@ -151,6 +153,7 @@ export class BatchSessionRecoveryService {
           handedInQty: replay.handedInQty,
           settledQty: replay.settledQty,
           returnedQty: replay.returnedQty,
+          handedBackQty: replay.handedBackQty,
           shortageQty: replay.shortageQty,
           recoveryReason: null,
           completedAt,
@@ -375,6 +378,7 @@ export class BatchSessionRecoveryService {
     let handedInQty = 0;
     let settledQty = 0;
     let returnedQty = 0;
+    let handedBackQty = 0;
     let shortageQty = 0;
     const apply = (side: ReplayBucket, delta: number, eventId: string) => {
       const key = bucketKey(side);
@@ -397,6 +401,13 @@ export class BatchSessionRecoveryService {
           issues.push(`HAND_IN event ${event.id} has no immutable batch/work item/allocation identity`);
         }
         handedInQty += event.quantity;
+      } else if (event.eventType === 'HAND_BACK') {
+        if (!from || to || from.custodyType !== 'AT_SOURCE')
+          issues.push(`HAND_BACK event ${event.id} has invalid sides`);
+        if (typeof payload.workItemId !== 'string' || typeof payload.allocationId !== 'string') {
+          issues.push(`HAND_BACK event ${event.id} has no immutable work item/allocation identity`);
+        }
+        handedBackQty += event.quantity;
       } else if (event.eventType === 'MOVE_CUSTODY') {
         if (!from || !to || to.custodyType === 'SETTLED')
           issues.push(`MOVE_CUSTODY event ${event.id} has invalid sides`);
@@ -422,7 +433,7 @@ export class BatchSessionRecoveryService {
     const remainingQty = expectedBalances
       .filter((balance) => balance.custodyType !== 'SETTLED')
       .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
-    if (handedInQty !== remainingQty + settledQty + returnedQty + shortageQty) {
+    if (handedInQty !== remainingQty + settledQty + returnedQty + shortageQty + handedBackQty) {
       issues.push('event stream violates session quantity conservation');
     }
     if (session.shortageQty > 0 && shortageQty === 0) {
@@ -435,6 +446,7 @@ export class BatchSessionRecoveryService {
       handedInQty,
       settledQty,
       returnedQty,
+      handedBackQty,
       shortageQty,
       nextSequence,
       status: remainingQty === 0 ? 'settled' : 'active',
@@ -469,8 +481,6 @@ export class BatchSessionRecoveryService {
       )
       .where(eq(wmsTables.outboundBatchWorkItems.batchId, session.batchId));
     const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
-    const startEvents = events.filter((event) => event.eventType === 'HAND_IN');
-    const seenAllocationIds = new Set<string>();
     for (const event of events) {
       const payload = payloadOf(event.payload);
       const from = this.side(event, 'from');
@@ -480,11 +490,10 @@ export class BatchSessionRecoveryService {
       let expectedHash: string;
       if (event.eventType === 'HAND_IN') {
         const allocationId = payload.allocationId;
-        if (typeof allocationId !== 'string' || seenAllocationIds.has(allocationId)) {
-          issues.push(`HAND_IN event ${event.id} has a missing or duplicate allocationId`);
+        if (typeof allocationId !== 'string') {
+          issues.push(`HAND_IN event ${event.id} has a missing allocationId`);
           continue;
         }
-        seenAllocationIds.add(allocationId);
         const allocation = allocationById.get(allocationId);
         if (
           !allocation ||
@@ -493,7 +502,6 @@ export class BatchSessionRecoveryService {
           payload.shipmentLineId !== allocation.shipmentLineId ||
           payload.sourceStockVersion !== allocation.sourceStockVersion ||
           event.skuId !== allocation.skuId ||
-          event.quantity !== allocation.quantity ||
           event.toCustodyType !== 'AT_SOURCE' ||
           event.toSourceLocationId !== allocation.sourceLocationId ||
           event.toShipmentLineId !== null ||
@@ -509,7 +517,8 @@ export class BatchSessionRecoveryService {
           shipmentLineId: allocation.shipmentLineId,
           skuId: allocation.skuId,
           sourceLocationId: allocation.sourceLocationId,
-          quantity: allocation.quantity,
+          // 인계 요청의 수량은 이벤트 수량이다 — 배정 행은 반납으로 그 뒤 줄 수 있다(스펙 §13).
+          quantity: event.quantity,
           sourceStockVersion: allocation.sourceStockVersion,
         });
       } else {
@@ -528,7 +537,31 @@ export class BatchSessionRecoveryService {
         if (typeof payload.actorId !== 'string' || !payload.actorId.trim()) {
           issues.push(`event ${event.id} has no actor identity`);
         }
-        if (event.eventType === 'SETTLE_FOR_DISPATCH') {
+        if (event.eventType === 'HAND_BACK') {
+          const exactContext = {
+            operationId: payload.operationId,
+            workItemId: payload.workItemId,
+            allocationId: payload.allocationId,
+            shipmentLineId: payload.shipmentLineId,
+          };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`HAND_BACK event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
+          const allocation =
+            typeof payload.allocationId === 'string' ? allocationById.get(payload.allocationId) : undefined;
+          if (
+            typeof payload.operationId !== 'string' ||
+            !allocation ||
+            allocation.workItemId !== payload.workItemId ||
+            allocation.shipmentLineId !== payload.shipmentLineId ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== allocation.sourceLocationId
+          ) {
+            issues.push(`HAND_BACK event ${event.id} has invalid allocation attribution`);
+          }
+        } else if (event.eventType === 'SETTLE_FOR_DISPATCH') {
           const exactContext = { dispatchAttemptSourceId: payload.dispatchAttemptSourceId };
           if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
             issues.push(`SETTLE_FOR_DISPATCH event ${event.id} context is not exact`);
@@ -724,15 +757,40 @@ export class BatchSessionRecoveryService {
         issues.push(`event ${event.id} changes the original source location`);
       }
     }
-    if (startEvents.length !== allocations.length || seenAllocationIds.size !== allocations.length) {
-      issues.push('HAND_IN event set does not exactly cover persisted batch allocations');
-    }
+    const movedByAllocation = (eventType: 'HAND_IN' | 'HAND_BACK', allocationId: string) =>
+      events
+        .filter((event) => event.eventType === eventType && payloadOf(event.payload).allocationId === allocationId)
+        .reduce((total, event) => total + event.quantity, 0);
     for (const allocation of allocations) {
+      const handedIn = movedByAllocation('HAND_IN', allocation.id);
+      const handedBack = movedByAllocation('HAND_BACK', allocation.id);
+      if (handedIn === 0) issues.push(`allocation ${allocation.id} has no HAND_IN event`);
+      if (handedIn - handedBack !== allocation.quantity) {
+        issues.push(
+          `allocation ${allocation.id} quantity ${allocation.quantity} differs from hand-in ${handedIn} − hand-back ${handedBack}`,
+        );
+      }
+    }
+    // 줄 보관은 (줄, 로케이션) 쌍마다 이 배치 배정 행의 «합» 과 견준다 — 같은 배치에 다시 합류한 박스는
+    // 옛 0 행과 새 행이 같은 쌍을 가리키고, 보관은 행을 모른다(불변식 I3 와 같은 기준).
+    const allocatedByLineSource = new Map<string, { shipmentLineId: string; sourceLocationId: string; qty: number }>();
+    for (const allocation of allocations) {
+      const key = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
+      const entry = allocatedByLineSource.get(key) ?? {
+        shipmentLineId: allocation.shipmentLineId,
+        sourceLocationId: allocation.sourceLocationId,
+        qty: 0,
+      };
+      entry.qty += allocation.quantity;
+      allocatedByLineSource.set(key, entry);
+    }
+    for (const [key, allocated] of allocatedByLineSource) {
       const activeAttributedQty = replay.balances
         .filter(
           (balance) =>
-            balance.shipmentLineId === allocation.shipmentLineId &&
-            balance.sourceLocationId === allocation.sourceLocationId &&
+            balance.shipmentLineId === allocated.shipmentLineId &&
+            balance.sourceLocationId === allocated.sourceLocationId &&
+            LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType) &&
             balance.custodyType !== 'SETTLED',
         )
         .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
@@ -740,19 +798,19 @@ export class BatchSessionRecoveryService {
       let settledQty = 0;
       let shortageQty = 0;
       for (const event of events) {
-        if (event.fromSourceLocationId !== allocation.sourceLocationId) continue;
+        if (event.fromSourceLocationId !== allocated.sourceLocationId) continue;
         const payload = payloadOf(event.payload);
         const attributedLineId = event.fromShipmentLineId ?? payload.shipmentLineId;
-        if (attributedLineId !== allocation.shipmentLineId) continue;
+        if (attributedLineId !== allocated.shipmentLineId) continue;
         if (event.eventType === 'RETURN_TO_SOURCE') returnedQty += event.quantity;
         else if (event.eventType === 'SETTLE_FOR_DISPATCH') settledQty += event.quantity;
         else if (event.eventType === 'APPROVE_SHORTAGE') shortageQty += event.quantity;
       }
       const accountedQty = activeAttributedQty + returnedQty + settledQty + shortageQty;
-      if (accountedQty > allocation.quantity) {
+      if (accountedQty > allocated.qty) {
         issues.push(
-          `allocation ${allocation.id} line custody exceeds persisted quantity: ` +
-            `allocated=${allocation.quantity}, accounted=${accountedQty}`,
+          `line|location ${key} custody exceeds persisted allocation: ` +
+            `allocated=${allocated.qty}, accounted=${accountedQty}`,
         );
       }
     }
@@ -811,6 +869,7 @@ export class BatchSessionRecoveryService {
       session.handedInQty !== replay.handedInQty ||
       session.settledQty !== replay.settledQty ||
       session.returnedQty !== replay.returnedQty ||
+      session.handedBackQty !== replay.handedBackQty ||
       session.shortageQty !== replay.shortageQty
     ) {
       issues.push('session header totals differ from append-only events');

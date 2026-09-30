@@ -35,10 +35,15 @@ function isBlocker(value: unknown): value is StartBlocker {
   return typeof v.shipmentId === 'string' && REASONS.some((r) => r === v.reason);
 }
 
+/** 409 본문의 errors 가 차단 목록이면 그 목록, 아니면 null. 시작(BATCH_START_BLOCKED)·합류(BATCH_JOIN_BLOCKED) 공용. */
+export function blockersOf(error: unknown, code: string): StartBlocker[] | null {
+  if (!(error instanceof ConflictError) || error.code !== code || !Array.isArray(error.errors)) return null;
+  return error.errors.filter(isBlocker);
+}
+
 /** 시작 거절(BATCH_START_BLOCKED)이면 막힌 박스 목록, 아니면 null. */
 export function startBlockersOf(error: unknown): StartBlocker[] | null {
-  if (!(error instanceof ConflictError) || error.code !== 'BATCH_START_BLOCKED' || !Array.isArray(error.errors)) return null;
-  return error.errors.filter(isBlocker);
+  return blockersOf(error, 'BATCH_START_BLOCKED');
 }
 
 export interface BlockerGroup {
@@ -48,7 +53,9 @@ export interface BlockerGroup {
   rows: string[];
 }
 
-const GROUP_TEXT: Record<StartBlockReason, { title: string; guidance: string }> = {
+export type BlockerText = Record<StartBlockReason, { title: string; guidance: string }>;
+
+const START_BLOCKER_TEXT: BlockerText = {
   INBOUND_PENDING: {
     title: '적치 대기 중인 상품',
     guidance: '적치를 끝낸 뒤 다시 「작업 시작」을 누르거나, 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
@@ -70,10 +77,14 @@ function rowOf(b: StartBlocker): string {
   return `${tracking(b)} · ${b.skuName ?? b.skuCode ?? '상품'} ${b.requiredQty ?? '?'}개 중 ${b.shortQty ?? '?'}개 부족`;
 }
 
-/** 사유별로 묶는다(스펙 §6 «앱은 사유별로 묶어 안내한다»). 순서는 적치 대기 → 재고 부족 → 송장. */
-export function groupStartBlockers(blockers: readonly StartBlocker[]): BlockerGroup[] {
+export function groupBlockers(blockers: readonly StartBlocker[], text: BlockerText): BlockerGroup[] {
   return REASONS.flatMap((reason) => {
     const rows = blockers.filter((b) => b.reason === reason).map(rowOf);
-    return rows.length ? [{ reason, ...GROUP_TEXT[reason], rows }] : [];
+    return rows.length ? [{ reason, ...text[reason], rows }] : [];
   });
+}
+
+/** 사유별로 묶는다(스펙 §6 «앱은 사유별로 묶어 안내한다»). 순서는 적치 대기 → 재고 부족 → 송장. */
+export function groupStartBlockers(blockers: readonly StartBlocker[]): BlockerGroup[] {
+  return groupBlockers(blockers, START_BLOCKER_TEXT);
 }

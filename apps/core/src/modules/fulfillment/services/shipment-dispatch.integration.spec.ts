@@ -228,6 +228,8 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         warehouseId: warehouse.id,
         pickingMethod: 'individual',
         status: 'picking',
+        // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+        startedAt: new Date(),
       })
       .returning();
     const [workItem] = await tx
@@ -578,6 +580,8 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         warehouseId: base.shipment.warehouseId,
         pickingMethod: 'individual',
         status: 'picking',
+        // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+        startedAt: new Date(),
       })
       .returning();
     const [workItem] = await tx

@@ -15,6 +15,8 @@ import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
 import { StartBatchButton } from './StartBatchButton';
+import { JoinBoxPanel } from './JoinBoxPanel';
+import { RemoveBoxPanel } from './RemoveBoxPanel';
 import { ReprintLabelButton } from './ReprintLabelButton';
 import { labelGateOf } from './labelGate';
 import type { LabelItemChange } from './waybillLabel';
@@ -53,6 +55,10 @@ function OutboundQueueContent({
     labelRunning.current = running;
     setPrintingBatch(running ? batchId : null);
   };
+  const [panel, setPanel] = useState<{ kind: 'join' | 'remove'; batchId: string } | null>(null);
+  // 패널이 열려 있으면 스캔은 패널이 받는다 — 같은 스캔이 박스 열기로도 가면 안 된다.
+  const panelOpen = useRef(false);
+  panelOpen.current = panel !== null;
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
   // 진행 중(picking) 배치를 먼저, 아직 시작 안 한(created) 배치를 그 다음에 —
@@ -137,7 +143,10 @@ function OutboundQueueContent({
     }
   };
 
-  useScanner((event) => void open(event.code));
+  useScanner((event) => {
+    if (panelOpen.current) return;
+    void open(event.code);
+  });
 
   // 기기에 남은 건 마지막으로 열었던 스냅샷일 뿐이다 — 그 사이 다른 작업자가 더
   // 스캔했을 수 있으니 재개 시 항상 다시 조회한다. 실패하면 일반 스캔과 같은 안내를 쓴다.
@@ -230,19 +239,48 @@ function OutboundQueueContent({
               {batch.startedAt === null ? (
                 <StartBatchButton batchId={batch.id} />
               ) : (
-                labelPrinting && (
-                  <BatchLabelPrintButton
-                    batchId={batch.id}
-                    prefs={prefs}
-                    print={print}
-                    disabled={
-                      printingBatch !== null && printingBatch !== batch.id
-                    }
-                    onRunningChange={(running) =>
-                      onLabelRunChange(batch.id, running)
-                    }
-                  />
-                )
+                <div className="flex flex-wrap gap-2">
+                  {labelPrinting && (
+                    <BatchLabelPrintButton
+                      batchId={batch.id}
+                      prefs={prefs}
+                      print={print}
+                      disabled={
+                        printingBatch !== null && printingBatch !== batch.id
+                      }
+                      onRunningChange={(running) =>
+                        onLabelRunChange(batch.id, running)
+                      }
+                    />
+                  )}
+                  <Button
+                    type="button"
+                    onClick={() => setPanel({ kind: 'join', batchId: batch.id })}
+                  >
+                    박스 넣기
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setPanel({ kind: 'remove', batchId: batch.id })}
+                  >
+                    박스 빼기
+                  </Button>
+                </div>
+              )}
+              {panel?.kind === 'join' && panel.batchId === batch.id && (
+                <JoinBoxPanel
+                  batchId={batch.id}
+                  prefs={prefs}
+                  print={print}
+                  labelPrinting={labelPrinting}
+                  onClose={() => setPanel(null)}
+                />
+              )}
+              {panel?.kind === 'remove' && panel.batchId === batch.id && (
+                <RemoveBoxPanel
+                  batchId={batch.id}
+                  onClose={() => setPanel(null)}
+                />
               )}
             </li>
           ))}

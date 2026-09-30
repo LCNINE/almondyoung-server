@@ -3013,9 +3013,10 @@ export const pickingSourceAllocations = pgTable(
   'picking_source_allocations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // PR 2(contract)에서 컬럼째 삭제한다. 새 코드는 읽지도 쓰지도 않는다(ADR-0041).
+    // ADR-0041 의 contract 단계(S1 스펙 `2026-09-29-outbound-live-allocation-design.md` §11 PR 2)에서 컬럼째 삭제한다.
+    // 새 코드는 읽지도 쓰지도 않는다.
     planId: uuid('plan_id').references(() => pickingPlans.id, { onDelete: 'restrict' }),
-    // PR 2 에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
+    // ADR-0041 의 contract 단계(S1 스펙 §11 PR 2)에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
     workItemId: uuid('work_item_id').references(() => outboundBatchWorkItems.id, { onDelete: 'restrict' }),
     shipmentLineId: uuid('shipment_line_id')
       .references(() => shipmentLines.id, { onDelete: 'restrict' })
@@ -3040,7 +3041,8 @@ export const pickingSourceAllocations = pgTable(
     ),
     idxPickingAllocationWorkItem: index('idx_picking_source_allocations_work_item').on(t.workItemId),
     idxPickingAllocationLine: index('idx_picking_source_allocations_line').on(t.shipmentLineId),
-    ckPickingAllocationQty: check('ck_picking_source_allocations_qty_positive', sql`${t.qty} > 0`),
+    // 반납·이탈로 0 이 된 행은 지우지 않는다 — 이력은 세션 이벤트가, 신원은 이 행이 들고 있다(스펙 §11).
+    ckPickingAllocationQty: check('ck_picking_source_allocations_qty_nonnegative', sql`${t.qty} >= 0`),
     ckPickingAllocationStockVersion: check(
       'ck_picking_source_allocations_stock_version',
       sql`${t.sourceStockVersion} > 0`,
@@ -3058,6 +3060,7 @@ export const batchInventorySessions = pgTable(
     status: batchInventorySessionStatusEnum('status').notNull().default('active'),
     version: integer('version').notNull().default(1),
     handedInQty: integer('handed_in_qty').notNull().default(0),
+    handedBackQty: integer('handed_back_qty').notNull().default(0),
     settledQty: integer('settled_qty').notNull().default(0),
     returnedQty: integer('returned_qty').notNull().default(0),
     shortageQty: integer('shortage_qty').notNull().default(0),
@@ -3075,11 +3078,11 @@ export const batchInventorySessions = pgTable(
     ckBatchInventorySessionVersion: check('ck_batch_inventory_sessions_version_positive', sql`${t.version} > 0`),
     ckBatchInventorySessionQuantities: check(
       'ck_batch_inventory_sessions_quantities',
-      sql`${t.handedInQty} >= 0 AND ${t.settledQty} >= 0 AND ${t.returnedQty} >= 0 AND ${t.shortageQty} >= 0`,
+      sql`${t.handedInQty} >= 0 AND ${t.handedBackQty} >= 0 AND ${t.settledQty} >= 0 AND ${t.returnedQty} >= 0 AND ${t.shortageQty} >= 0`,
     ),
     ckBatchInventorySessionSettlement: check(
       'ck_batch_inventory_sessions_settlement',
-      sql`${t.settledQty} + ${t.returnedQty} + ${t.shortageQty} <= ${t.handedInQty}`,
+      sql`${t.settledQty} + ${t.returnedQty} + ${t.shortageQty} + ${t.handedBackQty} <= ${t.handedInQty}`,
     ),
     ckBatchInventorySessionRecovery: check(
       'ck_batch_inventory_sessions_recovery',

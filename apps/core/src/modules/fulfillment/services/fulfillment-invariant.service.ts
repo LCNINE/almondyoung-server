@@ -1,13 +1,16 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { asc, inArray, or, sql } from 'drizzle-orm';
+import { asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 const ACTIVE_SHIPMENT_STATUSES = new Set(['draft', 'planned', 'recovery_required']);
 // 활성 waybill = 종료 3상태(voided/failed/abandoned) 아닌 모든 상태(waybills 테이블 uq_waybills_shipment_active 와 동치).
 // 구 "활성 invoice(status ∈ allowlist)" 의 의미를 waybill 기준(terminal 제외)으로 보존 치환.
 const WAYBILL_TERMINAL_STATUS_SET = new Set<string>(WAYBILL_TERMINAL_STATUSES);
 const SETTLED_ATTEMPT_STATUSES = new Set(['dispatched', 'recalled']);
+// I3 의 두 갈래: 줄에 귀속된 보관은 그 줄·로케이션 배정과, 공유 보관은 SKU·로케이션의 남은 배정과 견준다.
+const SHARED_CUSTODY = new Set(['AT_SOURCE', 'BULK_CART']);
 
 export const FULFILLMENT_INVARIANT_KINDS = [
   'FOI_QUANTITY',
@@ -18,6 +21,9 @@ export const FULFILLMENT_INVARIANT_KINDS = [
   'SESSION_CONSERVATION',
   'DISPATCH_SOURCE_CARDINALITY',
   'DISPATCH_EVENT_CARDINALITY',
+  'ALLOCATION_BEFORE_START',
+  'ALLOCATION_BELOW_TARGET',
+  'CUSTODY_EXCEEDS_ALLOCATION',
 ] as const;
 
 export type FulfillmentInvariantViolationKind = (typeof FULFILLMENT_INVARIANT_KINDS)[number];
@@ -66,12 +72,33 @@ export interface FulfillmentInvariantSnapshot {
   }>;
   sessions: Array<{
     id: string;
+    batchId: string;
     handedInQty: number;
+    handedBackQty: number;
     settledQty: number;
     returnedQty: number;
     shortageQty: number;
   }>;
-  sessionBalances: Array<{ id: string; sessionId: string; custodyType: string; qty: number }>;
+  sessionBalances: Array<{
+    id: string;
+    sessionId: string;
+    custodyType: string;
+    qty: number;
+    skuId: string;
+    sourceLocationId: string | null;
+    shipmentLineId: string | null;
+  }>;
+  batches: Array<{ id: string; startedAt: Date | null }>;
+  workItems: Array<{ id: string; batchId: string; shipmentId: string; status: string }>;
+  allocations: Array<{
+    id: string;
+    workItemId: string;
+    batchId: string;
+    shipmentLineId: string;
+    skuId: string;
+    sourceLocationId: string;
+    qty: number;
+  }>;
   dispatchAttempts: Array<{
     id: string;
     shipmentId: string;
@@ -202,13 +229,93 @@ export function collectFulfillmentInvariantViolations(
       ),
       (balance) => balance.qty,
     );
-    const accountedQty = remainingQty + session.settledQty + session.returnedQty + session.shortageQty;
+    const accountedQty =
+      remainingQty + session.settledQty + session.returnedQty + session.shortageQty + session.handedBackQty;
     if (session.handedInQty !== accountedQty) {
       violations.push({
         kind: 'SESSION_CONSERVATION',
         resourceId: session.id,
-        message: `handedIn=${session.handedInQty}, remaining=${remainingQty}, settled=${session.settledQty}, returned=${session.returnedQty}, shortage=${session.shortageQty}`,
+        message: `handedIn=${session.handedInQty}, remaining=${remainingQty}, settled=${session.settledQty}, returned=${session.returnedQty}, shortage=${session.shortageQty}, handedBack=${session.handedBackQty}`,
       });
+    }
+  }
+
+  // 스펙 §5 — I1(시작 전 배정 0)·I2(시작된 배치의 활성 작업 항목은 배정 ≥ 목표)·I3(보관 ≤ 배정).
+  // I4 는 넣지 않는다: 데이터 상태가 아니라 «그릴 수 있는가»의 규칙이고 송장 조립(assertLabelAllocated)이 강제한다.
+  const batchById = new Map(snapshot.batches.map((batch) => [batch.id, batch]));
+  for (const item of snapshot.workItems) {
+    const itemAllocations = snapshot.allocations.filter((allocation) => allocation.workItemId === item.id);
+    if (!batchById.get(item.batchId)?.startedAt) {
+      const allocatedQty = sum(itemAllocations, (allocation) => allocation.qty);
+      if (allocatedQty > 0) {
+        violations.push({
+          kind: 'ALLOCATION_BEFORE_START',
+          resourceId: item.id,
+          message: `batch=${item.batchId}, allocated=${allocatedQty}`,
+        });
+      }
+      continue;
+    }
+    if (item.status === 'completed' || item.status === 'excluded') continue;
+    for (const line of snapshot.shipmentLines.filter((candidate) => candidate.shipmentId === item.shipmentId)) {
+      const allocatedQty = sum(
+        itemAllocations.filter((allocation) => allocation.shipmentLineId === line.id),
+        (allocation) => allocation.qty,
+      );
+      if (allocatedQty < line.qty) {
+        violations.push({
+          kind: 'ALLOCATION_BELOW_TARGET',
+          resourceId: item.id,
+          message: `line=${line.id}, lineQty=${line.qty}, allocated=${allocatedQty}`,
+        });
+      }
+    }
+  }
+  for (const session of snapshot.sessions) {
+    const batchAllocations = snapshot.allocations.filter((allocation) => allocation.batchId === session.batchId);
+    const balances = snapshot.sessionBalances.filter((balance) => balance.sessionId === session.id && balance.qty > 0);
+    const attributedByLine = new Map<string, number>();
+    const attributedBySku = new Map<string, number>();
+    const sharedBySku = new Map<string, number>();
+    for (const balance of balances) {
+      if (!balance.sourceLocationId) continue;
+      const skuKey = `${balance.skuId}|${balance.sourceLocationId}`;
+      if (balance.shipmentLineId && LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType)) {
+        const lineKey = `${balance.shipmentLineId}|${balance.sourceLocationId}`;
+        attributedByLine.set(lineKey, (attributedByLine.get(lineKey) ?? 0) + balance.qty);
+        attributedBySku.set(skuKey, (attributedBySku.get(skuKey) ?? 0) + balance.qty);
+      } else if (SHARED_CUSTODY.has(balance.custodyType)) {
+        sharedBySku.set(skuKey, (sharedBySku.get(skuKey) ?? 0) + balance.qty);
+      }
+    }
+    for (const [lineKey, custodyQty] of attributedByLine) {
+      const allocatedQty = sum(
+        batchAllocations.filter(
+          (allocation) => `${allocation.shipmentLineId}|${allocation.sourceLocationId}` === lineKey,
+        ),
+        (allocation) => allocation.qty,
+      );
+      if (custodyQty > allocatedQty) {
+        violations.push({
+          kind: 'CUSTODY_EXCEEDS_ALLOCATION',
+          resourceId: session.id,
+          message: `line|location=${lineKey}, custody=${custodyQty}, allocated=${allocatedQty}`,
+        });
+      }
+    }
+    for (const [skuKey, sharedQty] of sharedBySku) {
+      const allocatedQty = sum(
+        batchAllocations.filter((allocation) => `${allocation.skuId}|${allocation.sourceLocationId}` === skuKey),
+        (allocation) => allocation.qty,
+      );
+      const roomQty = allocatedQty - (attributedBySku.get(skuKey) ?? 0);
+      if (sharedQty > roomQty) {
+        violations.push({
+          kind: 'CUSTODY_EXCEEDS_ALLOCATION',
+          resourceId: session.id,
+          message: `sku|location=${skuKey}, shared=${sharedQty}, unattributedAllocation=${roomQty}`,
+        });
+      }
     }
   }
 
@@ -458,7 +565,12 @@ export class FulfillmentInvariantService {
       : [];
     const workItems = shipmentIds.length
       ? await tx
-          .select({ id: wmsTables.outboundBatchWorkItems.id, batchId: wmsTables.outboundBatchWorkItems.batchId })
+          .select({
+            id: wmsTables.outboundBatchWorkItems.id,
+            batchId: wmsTables.outboundBatchWorkItems.batchId,
+            shipmentId: wmsTables.outboundBatchWorkItems.shipmentId,
+            status: wmsTables.outboundBatchWorkItems.status,
+          })
           .from(wmsTables.outboundBatchWorkItems)
           .where(inArray(wmsTables.outboundBatchWorkItems.shipmentId, shipmentIds))
           .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
@@ -469,7 +581,9 @@ export class FulfillmentInvariantService {
       ? await tx
           .select({
             id: wmsTables.batchInventorySessions.id,
+            batchId: wmsTables.batchInventorySessions.batchId,
             handedInQty: wmsTables.batchInventorySessions.handedInQty,
+            handedBackQty: wmsTables.batchInventorySessions.handedBackQty,
             settledQty: wmsTables.batchInventorySessions.settledQty,
             returnedQty: wmsTables.batchInventorySessions.returnedQty,
             shortageQty: wmsTables.batchInventorySessions.shortageQty,
@@ -479,6 +593,36 @@ export class FulfillmentInvariantService {
           .orderBy(asc(wmsTables.batchInventorySessions.id))
           .for('update')
       : [];
+    // 잠그지 않는다 — 배정은 작업 항목·세션 잠금 아래에서만 바뀌고 started_at 은 한 번만 쓰인다.
+    const batches = batchIds.length
+      ? await tx
+          .select({ id: wmsTables.outboundBatches.id, startedAt: wmsTables.outboundBatches.startedAt })
+          .from(wmsTables.outboundBatches)
+          .where(inArray(wmsTables.outboundBatches.id, batchIds))
+      : [];
+    const allocations = batchIds.length
+      ? await tx
+          .select({
+            id: wmsTables.pickingSourceAllocations.id,
+            // holds because the inner join below filters to rows with a work item.
+            workItemId: sql<string>`${wmsTables.pickingSourceAllocations.workItemId}`,
+            batchId: wmsTables.outboundBatchWorkItems.batchId,
+            shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+            skuId: wmsTables.shipmentLines.skuId,
+            sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+            qty: wmsTables.pickingSourceAllocations.qty,
+          })
+          .from(wmsTables.pickingSourceAllocations)
+          .innerJoin(
+            wmsTables.outboundBatchWorkItems,
+            eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+          )
+          .innerJoin(
+            wmsTables.shipmentLines,
+            eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+          )
+          .where(inArray(wmsTables.outboundBatchWorkItems.batchId, batchIds))
+      : [];
     const sessionIds = sessions.map((session) => session.id);
     const sessionBalances = sessionIds.length
       ? await tx
@@ -487,6 +631,9 @@ export class FulfillmentInvariantService {
             sessionId: wmsTables.batchInventorySessionBalances.sessionId,
             custodyType: wmsTables.batchInventorySessionBalances.custodyType,
             qty: wmsTables.batchInventorySessionBalances.qty,
+            skuId: wmsTables.batchInventorySessionBalances.skuId,
+            sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
+            shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
           })
           .from(wmsTables.batchInventorySessionBalances)
           .where(inArray(wmsTables.batchInventorySessionBalances.sessionId, sessionIds))
@@ -552,6 +699,9 @@ export class FulfillmentInvariantService {
       waybills: waybills.filter((waybill) => !ignoredWaybillIds.has(waybill.id)),
       sessions,
       sessionBalances,
+      batches,
+      workItems,
+      allocations,
       dispatchAttempts,
       dispatchSources,
       stockEvents,

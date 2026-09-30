@@ -30,6 +30,9 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
+import { BatchInventorySessionService } from './batch-inventory-session.service';
+import { BoxAllocationManager } from './box-allocation.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -130,6 +133,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       audit,
       workflowGate,
       moduleRef as never,
+      new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
     );
     return { batches, planning, waybills, commands, invariant, audit, moduleRef };
   }
@@ -822,10 +826,10 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
 
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `closed-add-b-${randomUUID()}`, master),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_CLOSED' }) });
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
   });
 
-  it('refuses to join a started batch, reads its work-item allocations as the picking snapshot, and blocks excluding an allocated item', async () => {
+  it('refuses to join a started batch without an active inventory session, reads its work-item allocations as the picking snapshot, and refuses to withdraw an allocated item without a session to hand back to', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const fixtureA = await committedFixture({ warehouse });
     const fixtureB = await committedFixture({ warehouse });
@@ -838,7 +842,9 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     );
     expect((await services.batches.getBatch(batch.batchId)).picking).toBeNull();
 
-    // startBatchPicking 이 남기는 흔적만 심는다: 배치 startedAt + 작업 항목의 배정.
+    // startBatchPicking 이 남기는 흔적 중 배치 startedAt + 작업 항목의 배정만 심는다 — 재고 세션은 없다.
+    // 합류(스펙 §7)는 실행 중 세션에 인계하므로 세션이 active 가 아니면(여기선 없음) BATCH_NOT_JOINABLE 이고 아무것도 쓰지 않는다.
+    // 세션이 있는 배치로의 합류 성공은 batch-join.integration.spec.ts 가 본다.
     const startedAt = new Date();
     await db
       .update(wmsTables.outboundBatches)
@@ -857,7 +863,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
 
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `started-add-b-${randomUUID()}`, master),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_ALREADY_STARTED' }) });
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
     const joined = await db
       .select({ id: wmsTables.outboundBatchWorkItems.id })
       .from(wmsTables.outboundBatchWorkItems)
@@ -886,11 +892,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       services.batches.excludeShipment(
         batch.batchId,
         fixtureA.shipment.id,
-        { reason: 'allocated item must go through short-pick' },
+        { reason: 'allocated item has no session to hand back to' },
         `started-exclude-a-${randomUUID()}`,
         master,
       ),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORK_ITEM_ALLOCATED' }) });
+      // 시작된 배치의 이탈(스펙 §8)은 배정을 세션에 반납(HAND_BACK)해야 끝난다 — 세션이 없으면 반납할 곳이 없어 거절한다.
+      // 세션이 있는 배치에서의 이탈 성공은 batch-withdraw.integration.spec.ts 가 본다.
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'PICKING_SESSION_NOT_ACTIVE' }) });
   });
 
   it('preserves reservations on exclusion and blocks exclusion when custody or dispatch exists', async () => {
@@ -924,19 +932,57 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect(excluded.workItem).toMatchObject({ id: preservedItem.workItem.id, status: 'excluded' });
     expect(after).toEqual(before);
 
+    // 보관은 시작된 배치에만 있다 — startBatchPicking 이 남기는 모양(started_at·남은 작업 항목의 배정·인계)을 심고,
+    // 그중 한 개를 작업자가 집어 든 상태로 둔다. 배정 없이 보관만 심으면 불변식 검사기(I1·I3)가 먼저 막는다.
+    await db
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+    await db.insert(wmsTables.pickingSourceAllocations).values([
+      {
+        workItemId: custodyItem.workItem.id,
+        shipmentLineId: withCustody.line.id,
+        sourceLocationId: withCustody.locationId,
+        qty: withCustody.line.qty,
+        sourceStockVersion: 1,
+      },
+      {
+        workItemId: dispatchItem.workItem.id,
+        shipmentLineId: withDispatch.line.id,
+        sourceLocationId: withDispatch.locationId,
+        qty: withDispatch.line.qty,
+        sourceStockVersion: 1,
+      },
+    ]);
     const [session] = await db
       .insert(wmsTables.batchInventorySessions)
-      .values({ batchId: batch.batchId, handedInQty: 1 })
+      .values({ batchId: batch.batchId, handedInQty: withCustody.line.qty + withDispatch.line.qty })
       .returning();
-    await db.insert(wmsTables.batchInventorySessionBalances).values({
-      sessionId: session.id,
-      skuId: withCustody.skuId,
-      sourceLocationId: withCustody.locationId,
-      custodyType: 'WORKER',
-      custodyRef: randomUUID(),
-      shipmentLineId: withCustody.line.id,
-      qty: 1,
-    });
+    await db.insert(wmsTables.batchInventorySessionBalances).values([
+      {
+        sessionId: session.id,
+        skuId: withCustody.skuId,
+        sourceLocationId: withCustody.locationId,
+        custodyType: 'WORKER',
+        custodyRef: randomUUID(),
+        shipmentLineId: withCustody.line.id,
+        qty: 1,
+      },
+      {
+        sessionId: session.id,
+        skuId: withCustody.skuId,
+        sourceLocationId: withCustody.locationId,
+        custodyType: 'AT_SOURCE',
+        qty: withCustody.line.qty - 1,
+      },
+      {
+        sessionId: session.id,
+        skuId: withDispatch.skuId,
+        sourceLocationId: withDispatch.locationId,
+        custodyType: 'AT_SOURCE',
+        qty: withDispatch.line.qty,
+      },
+    ]);
     await expect(
       services.batches.excludeShipment(
         batch.batchId,
@@ -945,7 +991,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         `exclude-custody-${randomUUID()}`,
         master,
       ),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORK_ITEM_UNPICK_REQUIRED' }) });
+      // 배치가 시작됐으므로 이탈 경로다(스펙 §8) — 작업자가 든 1개는 집은 몫이라 PR 2 에서는 BOX_HAS_PICKED_ITEMS.
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'BOX_HAS_PICKED_ITEMS',
+        errors: [expect.objectContaining({ shipmentLineId: withCustody.line.id, qty: 1 })],
+      }),
+    });
 
     await db.insert(wmsTables.dispatchAttempts).values({
       shipmentId: withDispatch.shipment.id,

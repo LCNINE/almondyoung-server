@@ -242,4 +242,19 @@ describe('409 errors body and rejected codes (#987)', () => {
   ])('%s 409 는 rejected — 오프라인 작업 큐가 재시도하지 않는다', (code) => {
     expect(new ConflictError('m', code).outcome).toBe('rejected');
   });
+
+  it.each([
+    'BATCH_NOT_JOINABLE',
+    'BOX_HAS_PICKED_ITEMS',
+    'SHIPMENT_ACTIVE_WORK_ITEM',
+    'OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED',
+    'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+    'WORK_ITEM_DISPATCH_EXISTS',
+    'WORK_ITEM_ALLOCATED',
+    'OUTBOUND_BATCH_STARTED_RETRY',
+    'PICKING_SESSION_NOT_ACTIVE',
+    'BATCH_JOIN_BLOCKED',
+  ])('%s 409 는 확정 거절 (#988)', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
 });

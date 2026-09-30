@@ -268,3 +268,19 @@ describe('errorMessage outbound 작업 시작·재출력 게이트 (#987)', () =
     expect(errorMessage(error, 'outbound')).toBe(expected);
   });
 });
+
+describe('합류·이탈 거절 문구 (#988)', () => {
+  it.each([
+    ['BATCH_NOT_JOINABLE', '이 배치에는 더 넣을 수 없어요(끝났거나 멈춘 배치). 다른 배치를 골라 주세요.'],
+    ['BOX_HAS_PICKED_ITEMS', '이미 상품을 담은 박스라 지금은 뺄 수 없어요. 관리자에게 문의해 주세요.'],
+    ['SHIPMENT_ACTIVE_WORK_ITEM', '이미 다른 배치에 들어 있는 박스예요.'],
+    ['OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED', '이 배치의 카트 바구니가 다 찼어요.'],
+    ['WORK_ITEM_TOTE_RELEASE_REQUIRED', '바구니 배정을 먼저 풀어야 뺄 수 있어요. 관리자에게 문의해 주세요.'],
+    ['WORK_ITEM_DISPATCH_EXISTS', '이미 출고 처리된 박스라 뺄 수 없어요.'],
+    ['WORK_ITEM_ALLOCATED', '결품 처리 중인 박스예요. 관리자에게 문의해 주세요.'],
+    ['OUTBOUND_BATCH_STARTED_RETRY', '방금 작업이 시작된 배치예요. 다시 넣어 주세요.'],
+    ['PICKING_SESSION_NOT_ACTIVE', '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.'],
+  ])('%s 문구', (code, text) => {
+    expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+});

@@ -39,6 +39,7 @@ import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { BoxAllocationManager } from './box-allocation.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -270,6 +271,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       audit,
       workflow,
       moduleRef as never,
+      new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
     );
   }
 
@@ -562,6 +564,8 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           warehouseId: warehouse.id,
           pickingMethod: 'individual',
           status: 'picking',
+          // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+          startedAt: new Date(),
         })
         .returning();
       const [workItem] = await tx

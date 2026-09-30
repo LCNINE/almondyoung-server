@@ -1085,9 +1085,9 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           sp.insert(wmsTables.pickingSourceAllocations).values({
             ...allocation,
             sourceLocationId: f.secondLocation.id,
-            qty: 0,
+            qty: -1,
           }),
-        'ck_picking_source_allocations_qty_positive',
+        'ck_picking_source_allocations_qty_nonnegative',
       );
       await expectViolation(
         tx,

@@ -42,7 +42,7 @@ export interface ShipmentByWaybillResult {
 const TERMINAL_WORK_ITEM_STATUSES = ['completed', 'excluded'] as const;
 
 /** 이름은 뒤 절반을 가린다 — 현장 화면에 개인정보를 통째로 띄우지 않는다. */
-function maskName(name: string): string {
+export function maskName(name: string): string {
   const trimmed = name.trim();
   if (trimmed.length <= 1) return trimmed;
   const keep = Math.ceil(trimmed.length / 2);
@@ -54,7 +54,7 @@ function isRecipientRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** jsonb 스냅샷에서 이름만 안전하게 뽑는다 — `as` 캐스팅 없이 좁힌다. */
-function readRecipientName(snapshot: unknown): string {
+export function readRecipientName(snapshot: unknown): string {
   if (!isRecipientRecord(snapshot)) return '';
   const { recipientName } = snapshot;
   return typeof recipientName === 'string' ? recipientName : '';

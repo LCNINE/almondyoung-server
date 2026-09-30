@@ -34,6 +34,7 @@ import { FulfillmentReconciliationService } from './services/fulfillment-reconci
 import { ShipmentReservationService } from './services/shipment-reservation.service';
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
+import { BoxAllocationManager } from './services/box-allocation.manager';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
@@ -140,6 +141,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentReconciliationService,
     ShipmentReservationService,
     ShipmentPlanningService,
+    BoxAllocationManager,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,

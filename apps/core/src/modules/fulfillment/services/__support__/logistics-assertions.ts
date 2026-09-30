@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { wmsTables, wmsViews, DbTx } from '../../../inventory/schema/inventory.schema';
+import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 
 // 부호 맵: 우리 시나리오가 만드는 이벤트는 RECEIVE(+)·SHIP(-) 뿐. (일반화하려면 DEFECTIVE 계열 추가 필요.)
 const EVENT_SIGN: Record<string, number> = {
@@ -125,4 +126,20 @@ export async function assertConservation(
   expect(await sumReceived(tx, args.skuId)).toBe(args.received);
   expect(await sumShipped(tx, args.skuId)).toBe(args.shipped);
   expect(args.received).toBe(oh + args.shipped);
+}
+
+/** 시나리오 끝의 불변식 검사기(스펙 §14) — 박스들의 연결 구성요소를 잠그고 FULFILLMENT_INVARIANT_VIOLATION 이면 던진다. */
+export async function assertFulfillmentInvariantsFor(tx: DbTx, shipmentIds: string[]): Promise<void> {
+  const rows = await tx
+    .selectDistinct({ id: wmsTables.fulfillmentOrderItems.fulfillmentOrderId })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
+  await new FulfillmentInvariantService().assertFulfillmentOrders(
+    rows.map((row) => row.id),
+    tx,
+  );
 }
