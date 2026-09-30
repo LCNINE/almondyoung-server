@@ -889,12 +889,34 @@ export interface ReportShipmentShortPickRequest {
   note?: string;
 }
 
+export interface ShortPickRefill {
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  locationCode: string;
+  qty: number;
+}
+
+export interface ShortPickShortage {
+  shipmentLineId: string | null;
+  skuId: string | null;
+  skuCode: string | null;
+  skuName: string | null;
+  requiredQty: number | null;
+  shortQty: number | null;
+  reason: 'INBOUND_PENDING' | 'STOCK_SHORT';
+}
+
 export interface ShipmentShortPickOperation {
   operationId: string;
   shipmentId: string;
+  workItemId: string;
   operationStatus: 'pending' | 'recovery_required' | 'completed';
   invoiceOperationId: string | null;
-  workItemId: string;
+  /** 옛 서버 응답(배포 겹침) 호환으로 선택 */
+  outcome?: 'refilled' | 'withdrawing' | 'exited';
+  refills?: ShortPickRefill[];
+  shortages?: ShortPickShortage[];
 }
 
 export interface ShipmentInspectionScanRequest {
