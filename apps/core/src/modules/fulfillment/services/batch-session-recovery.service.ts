@@ -427,6 +427,7 @@ export class BatchSessionRecoveryService {
         }
         returnedQty += event.quantity;
       } else if (event.eventType === 'RETURN_TO_SOURCE') {
+        // 생산자는 PR 4 에서 사라졌다 — 과거 세션의 옛 결품 반환만 재생한다.
         if (!from || to) issues.push(`RETURN_TO_SOURCE event ${event.id} has invalid sides`);
         returnedQty += event.quantity;
       } else if (event.eventType === 'SETTLE_FOR_DISPATCH') {
@@ -436,6 +437,13 @@ export class BatchSessionRecoveryService {
         settledQty += event.quantity;
       } else if (event.eventType === 'APPROVE_SHORTAGE') {
         if (!from || to) issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid sides`);
+        // 새 결품(PR 4, allocationId 있음)은 안 집은 몫에서만 — 줄도 ref 도 없는 AT_SOURCE.
+        if (
+          typeof payload.allocationId === 'string' &&
+          (from?.custodyType !== 'AT_SOURCE' || from.shipmentLineId !== null)
+        ) {
+          issues.push(`APPROVE_SHORTAGE event ${event.id} does not come from unpicked AT_SOURCE custody`);
+        }
         shortageQty += event.quantity;
       } else {
         issues.push(`event ${event.id} has unsupported type ${event.eventType}`);
@@ -686,79 +694,56 @@ export class BatchSessionRecoveryService {
                   .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
                   .limit(1)
               : [];
-          const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
-          // The short-pick intent names the work item it was taken on; attribute
-          // the event only to that work item's allocation for this line/source.
-          const allocation = allocations.find(
-            (candidate) =>
-              intent !== null &&
-              candidate.workItemId === intent.workItemId &&
-              candidate.shipmentLineId === shipmentLineId &&
-              candidate.sourceLocationId === sourceLocationId,
-          );
-          if (
-            typeof shortPickOperationId !== 'string' ||
-            typeof shipmentLineId !== 'string' ||
-            typeof sourceLocationId !== 'string' ||
-            typeof reason !== 'string' ||
-            !reason.trim() ||
-            !allocation ||
-            allocation.skuId !== event.skuId ||
-            !from ||
-            from.sourceLocationId !== sourceLocationId ||
-            (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
-          ) {
-            issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
-          }
-          if (
-            !operationOwner ||
-            operationOwner.type !== 'short_pick' ||
-            !['pending', 'completed', 'recovery_required'].includes(operationOwner.status)
-          ) {
-            issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
-          } else {
+          if (event.eventType === 'APPROVE_SHORTAGE' && typeof payload.allocationId === 'string') {
+            // 새 결품(PR 4) — 배정 하나에 묶인다.
+            const allocation = allocationById.get(payload.allocationId);
+            const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
             const intentLine = intent?.lines.find(
               (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
             );
-            const shortageTotal = events
+            const approvedForAllocation = events
               .filter((candidate) => {
                 const candidatePayload = payloadOf(candidate.payload);
                 return (
                   candidate.eventType === 'APPROVE_SHORTAGE' &&
                   candidatePayload.shortPickOperationId === shortPickOperationId &&
-                  candidatePayload.shipmentLineId === shipmentLineId &&
-                  candidatePayload.sourceLocationId === sourceLocationId
-                );
-              })
-              .reduce((total, candidate) => total + candidate.quantity, 0);
-            const returnedTotal = events
-              .filter((candidate) => {
-                const candidatePayload = payloadOf(candidate.payload);
-                return (
-                  candidate.eventType === 'RETURN_TO_SOURCE' &&
-                  candidatePayload.shortPickOperationId === shortPickOperationId &&
-                  candidatePayload.shipmentLineId === shipmentLineId &&
-                  candidatePayload.sourceLocationId === sourceLocationId
+                  candidatePayload.allocationId === payload.allocationId
                 );
               })
               .reduce((total, candidate) => total + candidate.quantity, 0);
             if (
+              typeof shortPickOperationId !== 'string' ||
+              typeof shipmentLineId !== 'string' ||
+              typeof sourceLocationId !== 'string' ||
+              typeof reason !== 'string' ||
+              !reason.trim() ||
+              !allocation ||
+              allocation.workItemId !== payload.workItemId ||
+              allocation.shipmentLineId !== shipmentLineId ||
+              allocation.sourceLocationId !== sourceLocationId ||
+              allocation.skuId !== event.skuId ||
+              !from ||
+              from.custodyType !== 'AT_SOURCE' ||
+              from.shipmentLineId !== null
+            ) {
+              issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid allocation attribution`);
+            }
+            if (
+              !operationOwner ||
+              operationOwner.type !== 'short_pick' ||
+              !['pending', 'completed'].includes(operationOwner.status) ||
               !intent ||
               intent.operationId !== shortPickOperationId ||
               intent.shipmentId !== operationOwner.memberShipmentId ||
               intent.sessionId !== event.sessionId ||
+              intent.workItemId !== payload.workItemId ||
               intent.actorId !== payload.actorId ||
               intent.reason !== reason ||
               !intentLine ||
-              !allocation ||
-              intentLine.allocationQty !== allocation.quantity ||
-              shortageTotal !== intentLine.shortQty ||
-              returnedTotal !== intentLine.allocationQty - intentLine.shortQty
+              approvedForAllocation !== intentLine.shortQty
             ) {
-              issues.push(`${event.eventType} event ${event.id} differs from immutable short-pick operation intent`);
+              issues.push(`APPROVE_SHORTAGE event ${event.id} differs from immutable short-pick operation intent`);
             }
-          }
-          if (event.eventType === 'APPROVE_SHORTAGE') {
             if (
               !isApprovedShortageReasonCode(payload.reasonCode) ||
               typeof payload.approverId !== 'string' ||
@@ -768,6 +753,8 @@ export class BatchSessionRecoveryService {
             }
             const exactContext = {
               shortPickOperationId,
+              workItemId: payload.workItemId,
+              allocationId: payload.allocationId,
               shipmentLineId,
               sourceLocationId,
               reasonCode: payload.reasonCode,
@@ -779,11 +766,21 @@ export class BatchSessionRecoveryService {
             }
             canonicalRequest.context = exactContext;
           } else {
-            const exactContext = { shortPickOperationId, shipmentLineId, sourceLocationId, reason };
-            if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
-              issues.push(`RETURN_TO_SOURCE event ${event.id} short-pick context is not exact`);
-            }
-            canonicalRequest.context = exactContext;
+            const legacy = this.legacyShortPickIssues({
+              event,
+              payload,
+              from,
+              allocations,
+              events,
+              operationOwner,
+              persistedContext,
+              shortPickOperationId,
+              shipmentLineId,
+              sourceLocationId,
+              reason,
+            });
+            issues.push(...legacy.issues);
+            canonicalRequest.context = legacy.context;
           }
         }
         expectedHash = canonicalBatchSessionRequestHash(canonicalRequest);
@@ -805,7 +802,10 @@ export class BatchSessionRecoveryService {
         issues.push(`event ${event.id} changes the original source location`);
       }
     }
-    const movedByAllocation = (eventType: 'HAND_IN' | 'HAND_BACK' | 'REMOVE_TO_RETURN_BIN', allocationId: string) =>
+    const movedByAllocation = (
+      eventType: 'HAND_IN' | 'HAND_BACK' | 'REMOVE_TO_RETURN_BIN' | 'APPROVE_SHORTAGE',
+      allocationId: string,
+    ) =>
       events
         .filter((event) => event.eventType === eventType && payloadOf(event.payload).allocationId === allocationId)
         .reduce((total, event) => total + event.quantity, 0);
@@ -814,10 +814,12 @@ export class BatchSessionRecoveryService {
       const handedBack = movedByAllocation('HAND_BACK', allocation.id);
       const removed = movedByAllocation('REMOVE_TO_RETURN_BIN', allocation.id);
       if (handedIn === 0) issues.push(`allocation ${allocation.id} has no HAND_IN event`);
-      if (handedIn - handedBack - removed !== allocation.quantity) {
+      // allocationId 가 없는 옛 결품 이벤트는 여기서 0 으로 센다 — 옛 규칙은 위 귀속 검사가 본다.
+      const shortage = movedByAllocation('APPROVE_SHORTAGE', allocation.id);
+      if (handedIn - handedBack - removed - shortage !== allocation.quantity) {
         issues.push(
           `allocation ${allocation.id} quantity ${allocation.quantity} differs from ` +
-            `hand-in ${handedIn} − hand-back ${handedBack} − removed ${removed}`,
+            `hand-in ${handedIn} − hand-back ${handedBack} − removed ${removed} − shortage ${shortage}`,
         );
       }
     }
@@ -856,7 +858,10 @@ export class BatchSessionRecoveryService {
         if (attributedLineId !== allocated.shipmentLineId) continue;
         if (event.eventType === 'RETURN_TO_SOURCE') returnedQty += event.quantity;
         else if (event.eventType === 'SETTLE_FOR_DISPATCH') settledQty += event.quantity;
-        else if (event.eventType === 'APPROVE_SHORTAGE') shortageQty += event.quantity;
+        // 새 부족 승인은 이미 배정에서 빠졌다(정한 것 9) — 세면 두 번 뺀다.
+        else if (event.eventType === 'APPROVE_SHORTAGE' && typeof payload.allocationId !== 'string') {
+          shortageQty += event.quantity;
+        }
       }
       const accountedQty = activeAttributedQty + returnedQty + settledQty + shortageQty;
       if (accountedQty > allocated.qty) {
@@ -867,6 +872,153 @@ export class BatchSessionRecoveryService {
       }
     }
     return issues;
+  }
+
+  /**
+   * 옛 결품 이벤트(payload 에 allocationId 없음 — 옛 APPROVE_SHORTAGE 와 RETURN_TO_SOURCE)의 재생 검사.
+   * PR 4 전에 만들어진 세션을 그 시절 규칙 그대로 재생한다 — 동작을 바꾸지 말 것.
+   */
+  private legacyShortPickIssues(input: {
+    event: EventRow;
+    payload: ReturnType<typeof payloadOf>;
+    from: ReplayBucket | null;
+    allocations: Array<{
+      workItemId: string | null;
+      shipmentLineId: string;
+      sourceLocationId: string;
+      quantity: number;
+      skuId: string;
+    }>;
+    events: EventRow[];
+    operationOwner:
+      | {
+          type: string;
+          status: string;
+          snapshot: typeof wmsTables.shipmentOperations.$inferSelect.beforeManifestSnapshot;
+          memberShipmentId: string;
+        }
+      | undefined;
+    persistedContext: Record<string, unknown>;
+    shortPickOperationId: unknown;
+    shipmentLineId: unknown;
+    sourceLocationId: unknown;
+    reason: unknown;
+  }): { issues: string[]; context: Record<string, unknown> } {
+    const {
+      event,
+      payload,
+      from,
+      allocations,
+      events,
+      operationOwner,
+      persistedContext,
+      shortPickOperationId,
+      shipmentLineId,
+      sourceLocationId,
+      reason,
+    } = input;
+    const issues: string[] = [];
+    let context: Record<string, unknown> = persistedContext;
+    const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
+    // The short-pick intent names the work item it was taken on; attribute
+    // the event only to that work item's allocation for this line/source.
+    const allocation = allocations.find(
+      (candidate) =>
+        intent !== null &&
+        candidate.workItemId === intent.workItemId &&
+        candidate.shipmentLineId === shipmentLineId &&
+        candidate.sourceLocationId === sourceLocationId,
+    );
+    if (
+      typeof shortPickOperationId !== 'string' ||
+      typeof shipmentLineId !== 'string' ||
+      typeof sourceLocationId !== 'string' ||
+      typeof reason !== 'string' ||
+      !reason.trim() ||
+      !allocation ||
+      allocation.skuId !== event.skuId ||
+      !from ||
+      from.sourceLocationId !== sourceLocationId ||
+      (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
+    ) {
+      issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
+    }
+    if (
+      !operationOwner ||
+      operationOwner.type !== 'short_pick' ||
+      !['pending', 'completed', 'recovery_required'].includes(operationOwner.status)
+    ) {
+      issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
+    } else {
+      const intentLine = intent?.lines.find(
+        (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
+      );
+      const shortageTotal = events
+        .filter((candidate) => {
+          const candidatePayload = payloadOf(candidate.payload);
+          return (
+            candidate.eventType === 'APPROVE_SHORTAGE' &&
+            candidatePayload.shortPickOperationId === shortPickOperationId &&
+            candidatePayload.shipmentLineId === shipmentLineId &&
+            candidatePayload.sourceLocationId === sourceLocationId
+          );
+        })
+        .reduce((total, candidate) => total + candidate.quantity, 0);
+      const returnedTotal = events
+        .filter((candidate) => {
+          const candidatePayload = payloadOf(candidate.payload);
+          return (
+            candidate.eventType === 'RETURN_TO_SOURCE' &&
+            candidatePayload.shortPickOperationId === shortPickOperationId &&
+            candidatePayload.shipmentLineId === shipmentLineId &&
+            candidatePayload.sourceLocationId === sourceLocationId
+          );
+        })
+        .reduce((total, candidate) => total + candidate.quantity, 0);
+      if (
+        !intent ||
+        intent.operationId !== shortPickOperationId ||
+        intent.shipmentId !== operationOwner.memberShipmentId ||
+        intent.sessionId !== event.sessionId ||
+        intent.actorId !== payload.actorId ||
+        intent.reason !== reason ||
+        !intentLine ||
+        !allocation ||
+        intentLine.allocationQty !== allocation.quantity ||
+        shortageTotal !== intentLine.shortQty ||
+        returnedTotal !== intentLine.allocationQty - intentLine.shortQty
+      ) {
+        issues.push(`${event.eventType} event ${event.id} differs from immutable short-pick operation intent`);
+      }
+    }
+    if (event.eventType === 'APPROVE_SHORTAGE') {
+      if (
+        !isApprovedShortageReasonCode(payload.reasonCode) ||
+        typeof payload.approverId !== 'string' ||
+        payload.approverId !== payload.actorId
+      ) {
+        issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid approval evidence`);
+      }
+      const exactContext = {
+        shortPickOperationId,
+        shipmentLineId,
+        sourceLocationId,
+        reasonCode: payload.reasonCode,
+        reason,
+        approverId: payload.approverId,
+      };
+      if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+        issues.push(`APPROVE_SHORTAGE event ${event.id} context is not exact`);
+      }
+      context = exactContext;
+    } else {
+      const exactContext = { shortPickOperationId, shipmentLineId, sourceLocationId, reason };
+      if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+        issues.push(`RETURN_TO_SOURCE event ${event.id} short-pick context is not exact`);
+      }
+      context = exactContext;
+    }
+    return { issues, context };
   }
 
   private requestSide(side: ReplayBucket) {
