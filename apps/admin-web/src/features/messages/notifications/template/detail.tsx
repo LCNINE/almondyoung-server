@@ -24,6 +24,7 @@ import {
 } from '@/lib/services/notification';
 import { useAlimtalkTemplates } from '@/lib/services/alimtalk';
 import { StatusBadge } from '../../alimtalk/components/status-badge';
+import { linkedTemplateNote } from '../../alimtalk/lib/alimtalk';
 import { NOTIFICATION_CATALOG } from '../catalog';
 import { CHANNEL_LABEL } from '../components/channel-badges';
 import { MailImageUploadButton } from '../components/mail-image-upload-button';
@@ -204,11 +205,7 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
               </Link>
               {alimtalkTemplates.isLoading && ' · 심사 상태 확인 중'}
               {alimtalkTemplates.isError && ' · 심사 상태를 불러오지 못했습니다'}
-              {alimtalk?.status === 'TSC03'
-                ? ' · 승인됨. 목록의 발송 스위치로 켜고 끕니다.'
-                : alimtalk
-                  ? ' · 카카오 승인 전입니다. 승인 전에 켜면 알림톡이 나가지 않습니다.'
-                  : ''}
+              {alimtalkTemplates.data && ` · ${linkedTemplateNote(alimtalk ?? null)}`}
             </p>
           )}
           <p className="text-muted-foreground text-xs">

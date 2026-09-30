@@ -1,6 +1,8 @@
 import {
   defaultBinding,
   extractVariables,
+  failureListTitle,
+  linkedTemplateNote,
   parseManualRecipients,
   renderVariables,
   validateTemplateForm,
@@ -78,5 +80,24 @@ describe('알림톡 화면 도우미', () => {
       { phone: '01033334444' },
       { phone: '01055556666', name: '김 철수' },
     ]);
+  });
+
+  it('못 받은 분 제목은 전체 인원과 표시한 인원을 따로 적는다', () => {
+    expect(failureListTitle(1, 1)).toBe('못 받은 분 1명');
+    expect(failureListTitle(120, 50)).toBe(
+      '못 받은 분 120명 (앞의 50명만 표시)'
+    );
+  });
+
+  it('자동 알림에 연결된 알림톡 템플릿의 상태를 빈칸 없이 알려 준다', () => {
+    expect(linkedTemplateNote({ status: 'TSC03' })).toBe(
+      '승인됨. 목록의 발송 스위치로 켜고 끕니다.'
+    );
+    expect(linkedTemplateNote({ status: 'TSC02' })).toBe(
+      '카카오 승인 전입니다. 승인 전에 켜면 알림톡이 나가지 않습니다.'
+    );
+    expect(linkedTemplateNote(null)).toBe(
+      '카카오(NHN)에 이 코드의 템플릿이 없습니다. 켜도 알림톡이 나가지 않습니다.'
+    );
   });
 });

@@ -114,3 +114,23 @@ export function parseManualRecipients(
       return name ? { phone: phone.trim(), name } : { phone: phone.trim() };
     });
 }
+
+/** 서버는 못 받은 분을 앞에서부터 일부만 돌려준다. 전체 인원은 결과 집계의 `failed` 다. */
+export function failureListTitle(failed: number, shown: number): string {
+  const total = `못 받은 분 ${failed.toLocaleString()}명`;
+  return shown < failed
+    ? `${total} (앞의 ${shown.toLocaleString()}명만 표시)`
+    : total;
+}
+
+/** 자동 알림 상세에서 연결된 템플릿 상태를 한 줄로. 목록 조회는 끝났는데 코드가 없으면 `null` 이다. */
+export function linkedTemplateNote(
+  found: { status: AlimtalkTemplateStatus } | null
+): string {
+  if (!found) {
+    return '카카오(NHN)에 이 코드의 템플릿이 없습니다. 켜도 알림톡이 나가지 않습니다.';
+  }
+  return found.status === 'TSC03'
+    ? '승인됨. 목록의 발송 스위치로 켜고 끕니다.'
+    : '카카오 승인 전입니다. 승인 전에 켜면 알림톡이 나가지 않습니다.';
+}

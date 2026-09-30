@@ -37,7 +37,9 @@ export class AlimtalkDispatchManager {
     const sendable: { row: Notification; phone: string }[] = [];
     const noPhone: string[] = [];
     for (const row of rows) {
-      const phone = getContactForChannel({ userId: row.userId, phoneNumber: row.payload?.phoneNumber }, Channel.KAKAO);
+      const stored: unknown = row.payload?.phoneNumber;
+      const phoneNumber = typeof stored === 'string' ? stored : undefined;
+      const phone = getContactForChannel({ userId: row.userId, phoneNumber }, Channel.KAKAO);
       if (phone) sendable.push({ row, phone });
       else noPhone.push(row.notificationId);
     }

@@ -11,6 +11,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import type { AlimtalkCampaign } from '@/lib/api/domains/alimtalk';
 import { useAlimtalkCampaignResults } from '@/lib/services/alimtalk';
+import { failureListTitle } from '../lib/alimtalk';
 
 function Stat({
   label,
@@ -95,7 +96,7 @@ export function CampaignResultsDialog({
             {data.failures.length > 0 && (
               <section className="flex flex-col gap-1 text-sm">
                 <h4 className="font-semibold">
-                  못 받은 분 (최대 {data.failures.length}명까지 표시)
+                  {failureListTitle(data.failed, data.failures.length)}
                 </h4>
                 {data.failures.map((f, i) => (
                   <div
