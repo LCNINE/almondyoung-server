@@ -9,6 +9,13 @@ import { WaybillService } from '../../waybill/waybill.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
 import { BoxAllocationManager } from '../box-allocation.manager';
 import { BoxWithdrawalService } from '../box-withdrawal.service';
+import { ShortPickExitService } from '../short-pick-exit.service';
+import { ShipmentReservationService } from '../shipment-reservation.service';
+import { FulfillmentProgressService } from '../fulfillment-progress.service';
+import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
+import { outboxPublisherFor } from '../../outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { ToteLifecycleService } from '../tote-lifecycle.service';
@@ -30,11 +37,22 @@ export function assembleBoxWithdrawal(dbService: DbService<typeof wmsSchema>): B
       dbService,
     ),
   );
+  const invariant = new FulfillmentInvariantService();
+  const reservations = new ShipmentReservationService(
+    dbService,
+    new UnifiedReservationService(
+      dbService,
+      new ProductSellableQuantityService(dbService as never, outboxPublisherFor(INVENTORY_STREAM, dbService)),
+    ),
+    new FulfillmentProgressService(),
+    invariant,
+  );
   return new BoxWithdrawalService(
-    new FulfillmentInvariantService(),
+    invariant,
     new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
     new ToteLifecycleService(dbService),
     waybills,
     audit,
+    new ShortPickExitService(reservations, waybills, audit),
   );
 }

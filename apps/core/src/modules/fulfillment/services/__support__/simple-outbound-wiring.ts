@@ -28,6 +28,7 @@ import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from '../outbound-batch-orchestrator.service';
 import { BoxAllocationManager } from '../box-allocation.manager';
 import { BoxWithdrawalService } from '../box-withdrawal.service';
+import { ShortPickExitService } from '../short-pick-exit.service';
 import { ToteLifecycleService } from '../tote-lifecycle.service';
 import type { BatchStartDeps } from '../../picking/allocation/allocation.types';
 import { PickingProcessService } from '../picking-process.service';
@@ -109,7 +110,8 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
   const moduleRef = { get: () => ({ resumePending: async () => {} }) } as never;
   const boxes = new BoxAllocationManager(sessions, controlled);
   const totes = new ToteLifecycleService(dbService);
-  const withdrawals = new BoxWithdrawalService(invariant, boxes, totes, waybills, audit);
+  const shortPicks = new ShortPickExitService(shipmentReservations, waybills, audit);
+  const withdrawals = new BoxWithdrawalService(invariant, boxes, totes, waybills, audit, shortPicks);
   const planning = new ShipmentPlanningService(
     dbService,
     commands,

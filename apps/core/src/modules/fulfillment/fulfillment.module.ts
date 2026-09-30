@@ -37,6 +37,7 @@ import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrato
 import { BoxAllocationManager } from './services/box-allocation.manager';
 import { BoxReturnService } from './services/box-return.service';
 import { BoxWithdrawalService } from './services/box-withdrawal.service';
+import { ShortPickExitService } from './services/short-pick-exit.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
@@ -148,6 +149,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentPlanningService,
     BoxAllocationManager,
     BoxWithdrawalService,
+    ShortPickExitService,
     BoxReturnService,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,

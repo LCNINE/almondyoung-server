@@ -1043,7 +1043,7 @@ export class ShipmentPlanningService {
 
   /**
    * 전체 취소 연결의 대상(정한 것 10) — 박스 전량 취소, 시작된 배치의 활성 작업 항목, 활성 송장이 나갈 때 무효화할 수 있음
-   * (없거나 `registered` — `BoxWithdrawalService.canceledExitWaybill`), 이탈을 막는 사유 없음.
+   * (없거나 `registered` — `BoxWithdrawalService.exitWaybill`), 이탈을 막는 사유 없음.
    * 아니면 null — 옛 CANCEL_REPLAN_PENDING 대기(부분 취소는 E11, 세션 recovery_required·무효화할 수 없는 송장 등은 운영자 몫).
    * 작업 항목을 FOR UPDATE 로 잡는다(구성요소 다음 — 스펙 §13 순서). 이미 빼는 중이면 begin 이 canceled 로 올린다.
    */
@@ -1080,7 +1080,7 @@ export class ShipmentPlanningService {
     if (workItem.status === 'withdrawing') return { batchId: workItem.batchId, workItem };
     // 나갈 때 무효화할 수 없는 송장(`pending`·`allocated` 등)이면 이탈로 들이지 않는다 — 집은 게 없는 박스는 이 트랜잭션에서
     // 나가며 WITHDRAWAL_WAYBILL_NOT_VOIDABLE 로 취소 전체(판매 주문 취소 포함)를 되돌린다. 옛 대기가 그 취소를 받는다.
-    if (!(await this.withdrawals.canceledExitWaybill(aggregate.shipment.id, tx)).voidable) return null;
+    if (!(await this.withdrawals.exitWaybill(aggregate.shipment.id, tx)).voidable) return null;
     const checked = await this.withdrawals.blockerOf(
       {
         batchId: workItem.batchId,

@@ -8,6 +8,7 @@ import type { WaybillView } from '../waybill/waybill.types';
 import { BatchInventorySessionRow } from './batch-inventory-session.service';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
+import { ShortPickExitService } from './short-pick-exit.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
 import { WITHDRAWABLE_WORK_ITEM_STATUSES, WorkItemExitTo } from './work-item-status';
 
@@ -58,6 +59,7 @@ export class BoxWithdrawalService {
     private readonly totes: ToteLifecycleService,
     private readonly waybills: WaybillService,
     private readonly audit: AuditService,
+    private readonly shortPicks: ShortPickExitService,
   ) {}
 
   /**
@@ -167,9 +169,17 @@ export class BoxWithdrawalService {
       .from(A)
       .where(eq(A.workItemId, workItem.id));
     if (Number(row?.qty ?? 0) > 0) return { exited: false, workItem };
+    // 결품으로 빠지는 박스(PR 4 계획이 정함 3)는 이 트랜잭션에서 결품을 마무리한다 — 커밋 뒤 재개할 대기가 아니므로 비운다.
+    const shortPick = workItem.exitTo === 'draft' ? await this.shortPicks.pendingFor(workItem, trx) : null;
     const [excluded] = await trx
       .update(WI)
-      .set({ status: 'excluded', leaseExpiresAt: null, leaseVersion: workItem.leaseVersion + 1, updatedAt: sql`now()` })
+      .set({
+        status: 'excluded',
+        leaseExpiresAt: null,
+        leaseVersion: workItem.leaseVersion + 1,
+        waitingOperationId: shortPick ? null : workItem.waitingOperationId,
+        updatedAt: sql`now()`,
+      })
       .where(and(eq(WI.id, workItem.id), eq(WI.leaseVersion, workItem.leaseVersion), eq(WI.status, 'withdrawing')))
       .returning();
     if (!excluded) throw conflict('WORK_ITEM_STALE_LEASE_VERSION', `Work item ${workItem.id} changed while exiting`);
@@ -180,6 +190,7 @@ export class BoxWithdrawalService {
     // canceled 로 나가는 박스의 종이는 영영 쓰이지 않는다 — 로컬 무효화(캐리어 호출 없음, 결품 처리와 같다).
     // 취소 오퍼레이션의 완료는 호출자가 이어서 한다(ShipmentPlanningService.finishWithdrawnCancellation).
     if (excluded.exitTo === 'canceled') await this.voidWaybillForCanceledExit(excluded.shipmentId, ctx, trx);
+    if (shortPick) await this.shortPicks.finish(shortPick, ctx, trx);
     await this.audit.logUserActionRequired(
       'outbound_batch.shipment.exit',
       'fulfillment',
@@ -190,6 +201,7 @@ export class BoxWithdrawalService {
         shipmentId: excluded.shipmentId,
         exitTo: excluded.exitTo,
         waitingOperationId: excluded.waitingOperationId,
+        shortPickOperationId: shortPick?.operationId ?? null,
         releasedToteAssignmentIds: totes.releasedAssignmentIds,
       },
       trx,
@@ -213,11 +225,11 @@ export class BoxWithdrawalService {
   }
 
   /**
-   * 취소로 나갈 때 활성 송장을 로컬 무효화할 수 있는가 — 활성 송장이 없거나 `registered`. 나가기(`exitIfDrained` 의 canceled
+   * 나갈 때 활성 송장을 로컬 무효화할 수 있는가(결품 마무리는 보고 때 판정 — `ShipmentShortPickService`) — 활성 송장이 없거나 `registered`. 나가기(`exitIfDrained` 의 canceled
    * 갈래)와 전체 취소 연결(E10, `ShipmentPlanningService`)의 갈래가 이 판정 하나를 쓴다 — 둘이 갈리면 E10 이 이탈로 들여보낸
    * 취소가 나가는 순간 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE` 로 통째로 되돌려진다.
    */
-  async canceledExitWaybill(shipmentId: string, trx: DbTx): Promise<{ active: WaybillView | null; voidable: boolean }> {
+  async exitWaybill(shipmentId: string, trx: DbTx): Promise<{ active: WaybillView | null; voidable: boolean }> {
     const active = await this.waybills.getActiveWaybill(shipmentId, trx);
     return { active, voidable: !active || active.status === 'registered' };
   }
@@ -227,7 +239,7 @@ export class BoxWithdrawalService {
     ctx: { actorId: string; operationId: string },
     trx: DbTx,
   ): Promise<void> {
-    const { active, voidable } = await this.canceledExitWaybill(shipmentId, trx);
+    const { active, voidable } = await this.exitWaybill(shipmentId, trx);
     if (!active) return;
     if (!voidable) {
       throw conflict(
@@ -244,16 +256,18 @@ export class BoxWithdrawalService {
     );
   }
 
-  /** 이미 빼는 중 — 전체 취소만 draft → canceled 로 올린다(정한 것 5). */
+  /** 이미 빼는 중 — 전체 취소만 draft → canceled 로 올린다(정한 것 5). 결품을 기다리던 박스는 취소가 넘겨받는다(PR 4 계획이 정함 7). */
   private async escalate(input: BeginWithdrawalInput, trx: DbTx): Promise<BeginWithdrawalResult> {
     const item = input.workItem;
-    if (input.exitTo !== 'canceled' || item.exitTo !== 'draft') {
+    if (input.exitTo !== 'canceled' || item.exitTo !== 'draft' || !input.waitingOperationId) {
       throw conflict(
         'SHIPMENT_ALREADY_WITHDRAWING',
         `Shipment ${input.shipmentId} is already leaving batch ${item.batchId}`,
       );
     }
-    this.assertWaitingSlot(item, input.waitingOperationId);
+    const shortPick = await this.shortPicks.pendingFor(item, trx);
+    if (shortPick) await this.shortPicks.supersede(shortPick, input.waitingOperationId, trx);
+    else this.assertWaitingSlot(item, input.waitingOperationId);
     const [updated] = await trx
       .update(WI)
       .set({ exitTo: 'canceled', waitingOperationId: input.waitingOperationId, updatedAt: sql`now()` })
