@@ -131,8 +131,10 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
             ),
           );
         const shipmentIds = candidates.map((row) => row.shipmentId).sort();
-        await this.withdrawals.lockComponentsOf(shipmentIds, trx);
+        // 카트 잠금이 먼저다 — 구성요소 잠금(불변식 검사기)이 세션·보관까지 FOR UPDATE 로 잡으므로, 뒤에 두면
+        // 카트 → 세션 순서인 분류·일괄 담기·인계와 교착한다(스펙 §13).
         await this.acquireCartLock(cartId, trx);
+        await this.withdrawals.lockComponentsOf(shipmentIds, trx);
         const workItems = shipmentIds.length
           ? await trx
               .select()
