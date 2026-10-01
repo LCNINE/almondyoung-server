@@ -3,6 +3,7 @@ import type { MixRate } from './decompose';
 import type { FunnelAttribution } from './funnel';
 import type { LeverPlan } from './levers';
 import type { Pacing } from './pacing';
+import { formatWon as won } from './format';
 
 /**
  * 성장 브리핑 카드. 판정과 처방의 선을 코드로 지킨다:
@@ -36,12 +37,6 @@ export interface BriefingInput {
   repurchaseDue: { customers: number; fromDays: number | null; toDays: number | null } | null;
 }
 
-const won = (v: number) => {
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(1)}억원`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-  return `${Math.round(v).toLocaleString('ko-KR')}원`;
-};
 const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
 const signed = (v: number, digits = 1) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(digits)}%`;
 

@@ -10,17 +10,13 @@ import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { cn } from '@/lib/utils/ui';
 import { changeSignals, goalView, monitorStats, refundMap, repeatRate90 } from '@/features/statistics/growth/model';
 import { formatProbability } from '@/features/statistics/growth/probability';
+import { formatWon as won } from '@/features/statistics/growth/format';
+import { paceCopy } from '@/features/statistics/growth/pace-copy';
 
 /** 메인 관례(한국 증시 색): 증가 빨강, 감소 파랑. 통계 화면과 반대다 — 섞지 않는다. */
 const UP = 'text-[#D71952]';
 const DOWN = 'text-[#1779BA]';
 
-const won = (v: number) => {
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(2)}억원`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-  return `${Math.round(v).toLocaleString('ko-KR')}원`;
-};
 const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
 
 /** 비율 지표(전환율·재구매율)는 %p 로 — 30% → 33% 를 «+10%» 로 쓰면 «10%p 상승»으로 읽힌다. */
@@ -117,6 +113,7 @@ export function GrowthGoalCard({ className }: { className?: string }) {
     return hits.sort((a, b) => Math.abs(b.z ?? 0) - Math.abs(a.z ?? 0))[0] ?? null;
   }, [summary, refunds, waitingRefunds]);
   const repeat = summary ? repeatRate90(summary) : null;
+  const pace = goal && summary?.goal ? paceCopy(goal.pacing, summary.goal.monthlyTargets) : null;
 
   const conversion = monitor && monitor.sessionsPerDay ? monitor.ordersPerDay / monitor.sessionsPerDay : null;
   const prevConversion = monitor?.previous.sessionsPerDay ? monitor.previous.ordersPerDay / monitor.previous.sessionsPerDay : null;
@@ -164,17 +161,14 @@ export function GrowthGoalCard({ className }: { className?: string }) {
                 <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#EBEBEB]" role="img" aria-label={`연간 달성률 ${pct(goal.pacing.annualAchievement)}`}>
                   <div className="h-2 rounded-full bg-[#1A54F5]" style={{ width: `${Math.min(goal.pacing.annualAchievement, 1) * 100}%` }} />
                 </div>
-                <p className={cn('mt-2 text-sm font-bold', goal.pacing.paceGap < 0 ? 'text-[#D71952]' : 'text-[#1C1C1C]')}>
-                  계획보다 {won(Math.abs(goal.pacing.paceGap))} {goal.pacing.paceGap < 0 ? '뒤처짐' : '앞섬'}
-                </p>
-                <p className="mt-0.5 text-[12px] text-[#757575]">
-                  남은 {won(goal.pacing.remainingAmount)} · 하루 {won(goal.pacing.requiredDaily)} 필요 (지금 {won(goal.pacing.currentDaily)})
-                </p>
+                <p className={cn('mt-2 text-sm font-bold', pace?.tone === 'behind' ? 'text-[#D71952]' : 'text-[#1C1C1C]')}>{pace?.headline}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-[#757575]">{pace?.detail}</p>
+                {pace?.action ? <p className="mt-0.5 text-[12px] leading-relaxed text-[#1C1C1C]">{pace.action}</p> : null}
                 {goal.pacing.missingPreCoverage ? (
                   <p className="mt-0.5 text-[11px] text-[#D71952]">집계 시작({goal.pacing.planStart}) 전 실적이 빠져 달성률·확률이 낮게 나옵니다 — 설정에서 입력</p>
                 ) : null}
                 <p className="mt-0.5 text-[12px] text-[#757575]">
-                  달성 확률 {goal.probability ? formatProbability(goal.probability.probability) : '판정 불가'} · 이대로면 연말 {pct(goal.pacing.landingRatio, 0)}
+                  지금 속도가 이어지면 연말 {won(goal.pacing.landing)}(목표의 {pct(goal.pacing.landingRatio, 0)}) · 달성 확률 {goal.probability ? formatProbability(goal.probability.probability) : '판정 불가'}
                 </p>
               </div>
             ) : (

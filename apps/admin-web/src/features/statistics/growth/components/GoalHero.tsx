@@ -10,13 +10,9 @@ import { addDays } from '../calendar';
 import type { GoalView } from '../model';
 import { planBetween } from '../pacing';
 import { formatProbability } from '../probability';
+import { formatWon as won } from '../format';
+import { paceCopy } from '../pace-copy';
 
-function won(v: number) {
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(2)}억원`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-  return `${Math.round(v).toLocaleString('ko-KR')}원`;
-}
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'good' | 'bad' | 'neutral' }) {
   return (
@@ -101,7 +97,8 @@ export function GoalHero({
   const { pacing, probability } = view;
   const achieved = Math.min(pacing.annualAchievement, 1);
   const chart = cumulativeChart(view, year, monthlyTargets, ytdNet);
-  const behind = pacing.paceGap < 0;
+  const copy = paceCopy(pacing, monthlyTargets);
+  const behind = copy.tone === 'behind';
 
   return (
     <section className="rounded-[10px] border border-gray-200 bg-white p-4" aria-labelledby="growth-goal-title">
@@ -137,12 +134,9 @@ export function GoalHero({
           </div>
 
           <div className={cn('rounded-lg border px-3 py-2', behind ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50')}>
-            <p className={cn('text-sm font-bold', behind ? 'text-red-800' : 'text-emerald-800')}>
-              계획보다 {won(Math.abs(pacing.paceGap))} {behind ? '뒤처짐' : '앞섬'}
-            </p>
-            <p className="mt-0.5 text-[11px] text-gray-600">
-              어제까지 계획 {won(pacing.planToDate)} 대비 진척 {pacing.paceRatio != null ? formatPercent(pacing.paceRatio) : '-'}
-            </p>
+            <p className={cn('text-sm font-bold', behind ? 'text-red-800' : 'text-emerald-800')}>{copy.headline}</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-700">{copy.detail}</p>
+            {copy.action ? <p className="mt-1 text-xs font-medium leading-relaxed text-gray-900">{copy.action}</p> : null}
             {pacing.missingPreCoverage ? (
               <p className="mt-1 text-[11px] leading-snug text-amber-800">
                 집계가 {pacing.planStart}에 시작돼 그 전 실적이 빠져 있습니다. 페이스는 같은 구간끼리 비교해 정확하지만, 연간 달성률·연말 착지·달성 확률은

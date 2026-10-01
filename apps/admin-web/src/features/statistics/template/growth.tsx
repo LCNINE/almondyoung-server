@@ -29,6 +29,7 @@ import { isPartialBucket } from '../growth/calendar';
 import { GoalHero } from '../growth/components/GoalHero';
 import { changeSignals, goalView, hasExternalChannels, monitorStats, periodView, refundMap, repeatRate90, scopedDaily } from '../growth/model';
 import { buildTrust, type TrustItem } from '../growth/trust';
+import { formatWon as won } from '../growth/format';
 
 const GRANULARITIES: GrowthGranularity[] = ['day', 'week', 'month'];
 /** 창이 다 지난 고객이 이보다 적으면 비율을 내지 않는다 — 2명 중 1명 = 50% 같은 숫자가 헤드라인처럼 보인다. */
@@ -41,12 +42,6 @@ function useGrowthRange(): { from: string; to: string; granularity: GrowthGranul
   return { from: range.from, to: range.to, granularity: raw && GRANULARITIES.includes(raw) ? raw : 'day' };
 }
 
-const won = (v: number) => {
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(2)}억원`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-  return `${Math.round(v).toLocaleString('ko-KR')}원`;
-};
 const signedPct = (v: number | null, digits = 1) => (v == null ? '-' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(digits)}%`);
 const pp = (cur: number | null, prev: number | null) => {
   if (cur == null || prev == null) return '-';

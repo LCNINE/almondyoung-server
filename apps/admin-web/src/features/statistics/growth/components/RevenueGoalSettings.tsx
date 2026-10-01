@@ -6,17 +6,12 @@ import { formatKrw } from '../../shared';
 import { kstToday } from '../../as-of';
 import { hasExternalChannels, monitorStats, scopedDaily } from '../model';
 import { allocateByDays, plannedAnnual, type PlanAssumptions } from '../planner';
+import { formatWon as won } from '../format';
 
 /** 연간 목표가 이 값을 넘으면 원 단위와 만원 단위를 헷갈린 입력일 가능성이 높다(서버 상한과 같다). */
 const SANITY_MAX = 1_000_000_000_000;
 const MONTHS = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
-const won = (v: number) => {
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(2)}억원`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-  return `${Math.round(v).toLocaleString('ko-KR')}원`;
-};
 
 function parseWon(text: string): number | null {
   if (text.trim() === '') return null;
