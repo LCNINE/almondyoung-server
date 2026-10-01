@@ -59,6 +59,7 @@ export async function HomeQuickLinks({
 }) {
   const tCategories = await getTranslations("categories")
   const tQuickLinks = await getTranslations("header.quickLinks")
+  const tUtility = await getTranslations("header.utility")
   const interestKeys = await getInterestCategoryKeys()
   const interestKeySet = new Set(interestKeys)
   let dropdownCategories: StoreProductCategoryTree[] = []
@@ -127,6 +128,13 @@ export async function HomeQuickLinks({
   const isDesktopHeader = variant === "desktopHeader"
   const mobileItems: MobileQuickLinkItem[] = [
     ...externalLinks,
+    {
+      label: tUtility("almondTemplate"),
+      href: "/almond-template",
+      imageUrl: "/images/almond-template-palette.png",
+      imageClassName: "object-contain p-2",
+      imageWrapClassName: "bg-white",
+    },
     ...categoryLinks.map((link) => ({
       ...link,
       external: false,

@@ -2,6 +2,7 @@
   "utility": {
     "shipping": "Orders & Shipping",
     "support": "Support",
+    "almondTemplate": "Almond Template",
     "login": "Log in",
     "signup": "Sign up"
   },

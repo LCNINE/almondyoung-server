@@ -144,11 +144,9 @@ export async function HomeLogoutTemplate({
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      {!bannerVisible && (
-        <div className="xl:hidden">
-          <HomeQuickLinks />
-        </div>
-      )}
+      <div className="xl:hidden">
+        <HomeQuickLinks />
+      </div>
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
