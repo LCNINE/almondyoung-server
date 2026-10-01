@@ -1546,3 +1546,107 @@ git commit -m "feat(fulfillment): 스테이션 보충 대기 조회 — 결품�
   - 마이그 없음. core 배포만으로 반영(스코프·역할 매핑은 부팅 시 동기화)
   - 배포 뒤 확인: `logistics_worker` 계정으로 `GET /outbound-refills/pending?warehouseId=…` 200, 스코프 없는 계정 403
   - 앱 변경 없음 — PR C(스테이션 출고 검수)가 이 응답 필드를 쓴다. 옛 앱은 새 필드를 무시한다
+
+---
+
+### Task 8: 작업 권한 미리보기에 결품·스테이션 강제출고 (Task 7 보다 먼저 실행)
+
+> 실행 중 추가(Task 2 리뷰에서 발견). 앱은 `GET /inventory/work-context` 의 `permissions` 로 기능키를 그릴지 정한다(스펙 §6.3 «F9 결품 스코프», «F10 강제출고 스코프» — U2 «권한 없는 것은 그리지 않는다»). 지금은 `forceDispatch`(관리자 `dispatch.force`) 하나뿐이다. **`forceDispatch` 의 뜻은 바꾸지 않는다** — 배포된 앱이 위치 확인 출고의 강제출고(`location-outbound-forces`, `dispatch.force` 전용) 버튼에 쓰므로, 작업자에게 true 가 되면 누르는 순간 403 이다. 새 필드 둘을 더한다.
+
+**Files:**
+- Modify: `apps/core/src/modules/inventory/core/controllers/warehouse-work-context.controller.ts`
+- Modify: `apps/core/src/modules/inventory/core/controllers/warehouse-operation-auth.spec.ts`
+
+**Interfaces:**
+- Consumes: `FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK`, `FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE` (Task 1)
+- Produces(응답 계약, PR C 가 쓴다): `permissions: { forceDispatch: boolean; stationForceDispatch: boolean; shortPick: boolean }`
+  - `forceDispatch` = `dispatch.force` (그대로)
+  - `stationForceDispatch` = `dispatch.force` 또는 `dispatch.station_force` — 단순출고 강제완료 라우트의 가드와 같은 집합
+  - `shortPick` = `shipment.reopen` 또는 `shipment.short_pick` — 결품 보고 라우트의 가드와 같은 집합
+
+- [ ] **Step 1: 테스트를 먼저 고친다**
+
+`warehouse-operation-auth.spec.ts`:
+
+1. `AuthorizationService` mock 의 역할 분기에 `station_worker` 를 더한다(`worker` 분기보다 앞):
+
+```ts
+                      : roles.includes('station_worker')
+                        ? ['inventory.operate', 'fulfillment.dispatch.station_force', 'fulfillment.shipment.short_pick']
+```
+
+2. `'exposes authenticated identity to an operator'` 의 기대 `permissions` 를 `{ forceDispatch: false, stationForceDispatch: false, shortPick: false }` 로.
+
+3. `it.each` 표를 권한 객체 전체로 바꾼다(위치 출고 강제 라우트 기대는 여전히 `forceDispatch` 만 따른다):
+
+```ts
+  it.each([
+    ['worker', { forceDispatch: false, stationForceDispatch: false, shortPick: false }],
+    ['station_worker', { forceDispatch: false, stationForceDispatch: true, shortPick: true }],
+    ['manager', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['custom_force', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    ['mapped_master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+  ])('matches the actual force guard for %s', async (role, permissions) => {
+    const context = await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', role)
+      .expect(200);
+    expect(context.body).toHaveProperty('permissions', permissions);
+    await request(app.getHttpServer() as Server)
+      .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
+      .set('x-test-role', role)
+      .set('Idempotency-Key', 'check-force')
+      .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
+      .expect(permissions.forceDispatch ? 201 : 403);
+  });
+```
+
+(`manager` mock 스코프에 `shipment.reopen` 이 없으므로 `shortPick: false` 가 맞다 — mock 을 바꾸지 말 것. `station_worker` 행이 «스테이션 스코프로 위치 출고 강제가 열리지 않는다»(403)를 함께 고정한다.)
+
+4. `'keeps ordinary work available but denies force when its permission preview lookup fails'` 의 기대를 `{ forceDispatch: false, stationForceDispatch: false, shortPick: false }` 로.
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `npx jest apps/core/src/modules/inventory/core/controllers/warehouse-operation-auth.spec.ts`
+Expected: FAIL — 응답에 새 필드 없음
+
+- [ ] **Step 3: 구현**
+
+`warehouse-work-context.controller.ts` 의 `workContext`:
+
+```ts
+    const granted = new Set(
+      await this.scopes.getGrantedScopes(user, [
+        FULFILLMENT_SCOPE.DISPATCH_FORCE,
+        FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+        FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
+        FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+      ]),
+    );
+    return {
+      actorId,
+      operationContractVersion: 2 as const,
+      // 각 값은 그 라우트의 @RequireScopes 와 같은 «하나라도» 집합이다 — 미리보기가 실제 가드와 어긋나면 버튼이 403 을 낸다.
+      permissions: {
+        // 위치 확인 출고 강제(location-outbound-forces)·관리자 강제 발송 — dispatch.force 전용. 뜻을 바꾸지 않는다(배포된 앱이 쓴다)
+        forceDispatch: granted.has(FULFILLMENT_SCOPE.DISPATCH_FORCE),
+        // 단순출고 강제완료(simple-outbound-forces) — 스테이션 F10
+        stationForceDispatch:
+          granted.has(FULFILLMENT_SCOPE.DISPATCH_FORCE) || granted.has(FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE),
+        // 결품 보고(short-picks) — 스테이션 F9
+        shortPick: granted.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN) || granted.has(FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK),
+      },
+```
+
+- [ ] **Step 4: 통과 확인 + 타입 검사**
+
+Run: `npx jest apps/core/src/modules/inventory/core/controllers/warehouse-operation-auth.spec.ts && npm run type-check`
+Expected: PASS, 에러 0. `inventory-scope-coverage.spec.ts` 등이 이 라우트를 고정해 실패하면 기대값만 맞춘다.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core/src/modules/inventory/core/controllers/warehouse-work-context.controller.ts apps/core/src/modules/inventory/core/controllers/warehouse-operation-auth.spec.ts
+git commit -m "feat(inventory): 작업 권한 미리보기에 스테이션 강제출고·결품 보고를 더한다"
+```
