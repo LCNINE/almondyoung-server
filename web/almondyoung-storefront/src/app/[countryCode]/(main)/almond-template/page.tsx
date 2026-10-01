@@ -42,7 +42,14 @@ export default async function AlmondTemplatePage({
     template = "",
   } = await searchParams
   if (product && !PRINT_PRODUCTS[product]) notFound()
-  if (mode !== "designer")
+  if (mode !== "designer") {
+    const [templates, canDesign] = await Promise.all([
+      listAlmondTemplates().catch(() => null),
+      listAdminAlmondTemplates().then(
+        () => true,
+        () => false
+      ),
+    ])
     return (
       <AlmondTemplateGallery
         countryCode={countryCode}
@@ -50,9 +57,11 @@ export default async function AlmondTemplatePage({
         variantId={variant}
         size={size}
         initialKind={kind in PRINT_SPECS ? (kind as PrintKind) : undefined}
-        templates={await listAlmondTemplates().catch(() => null)}
+        templates={templates}
+        canDesign={canDesign}
       />
     )
+  }
   const editing = await (
     template ? getAdminAlmondTemplate(template) : listAdminAlmondTemplates()
   ).catch((error) => {

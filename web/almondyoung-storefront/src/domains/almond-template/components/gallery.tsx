@@ -19,6 +19,7 @@ type Props = {
   variantId: string
   size: string
   initialKind?: PrintKind
+  canDesign: boolean
   templates: PublishedTemplate[] | null
 }
 
@@ -71,6 +72,7 @@ export function AlmondTemplateGallery({
   variantId,
   size,
   initialKind,
+  canDesign,
   templates,
 }: Props) {
   const product = PRINT_PRODUCTS[productId]
@@ -172,6 +174,10 @@ export function AlmondTemplateGallery({
     size: startSize,
   })
   if (variantId) startParams.set("variant", variantId)
+  if (canDesign) startParams.set("mode", "designer")
+  const startHref = canDesign
+    ? `/${countryCode}/almond-template?${startParams}`
+    : `/${countryCode}/almond-template/edit?${startParams}`
   const columns = kind ? COLUMNS[kind] : COLUMNS.default
   const chip = (active: boolean) =>
     cn(
@@ -353,16 +359,13 @@ export function AlmondTemplateGallery({
           <ul className={cn("grid items-start", columns)}>
             {page === 1 && (
               <li className="px-[7px] pb-5 text-center">
-                <a
-                  href={`/${countryCode}/almond-template/edit?${startParams}`}
-                  className="block"
-                >
+                <a href={startHref} className="block">
                   <BlankDesignCard
                     name={SHORT_NAMES[startKindForBlank]}
                     size={startSize}
                   />
                   <span className="mt-[10px] block truncate text-[14px]">
-                    직접하는 나만의 디자인
+                    {canDesign ? "새 시안 만들기" : "직접하는 나만의 디자인"}
                   </span>
                 </a>
               </li>
