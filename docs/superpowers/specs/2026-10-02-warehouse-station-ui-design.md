@@ -206,7 +206,7 @@ warehouse-app 은 Windows 스테이션과 Android 핸드헬드 두 프로필을 
 
 - 송장 대기 화면 오른쪽, 최근 스캔 위. 비어 있으면 그리지 않는다
 - 행: 송장번호 · 받는 분 · 가져올 것(로케이션·상품·수량)
-- **창고 단위 서버 조회**(§9 A5) — 어느 스테이션에서 봐도 같다. 박스가 출고되거나 빠지면 사라진다
+- **창고 단위 서버 조회**(§9 A6) — 어느 스테이션에서 봐도 같다. 박스가 출고되거나 빠지면 사라진다
 - 이어 하기 = 새 송장 스캔(별도 동작 없음)
 
 ### 7.4 강제출고(F10)
@@ -242,12 +242,14 @@ U3 에 따라 스테이션은 «고정 스테이션»(선반을 보고 와서 �
 | A1 | 위치 없는 스캔·강제 채움의 배정 귀속 순서를 **로케이션 코드 순**으로(지금 `sourceLocationId` UUID 순 — 송장 인쇄 순서와 다르다) | `services/simple-outbound.service.ts` `pickScanned`·강제 채움의 `orderBy` |
 | A2 | 결품 보고 전용 스코프 `fulfillment.shipment.short_pick` 신설, `logistics_worker` 에 부여. 엔드포인트는 `@RequireScopes(SHIPMENT_REOPEN, 새 스코프)`(가드는 «하나라도» 통과) | `controllers/shipment-short-pick.controller.ts`, `platform/auth/fulfillment-scopes.ts` |
 | A3 | 강제출고 전용 스코프 `fulfillment.dispatch.station_force` 신설, `logistics_worker` 에 부여. 컨트롤러와 **서비스 내부 검사**(`forceComplete` 의 `isScopeAuthorizationDecision(…, DISPATCH_FORCE)`) 둘 다 새 스코프를 받게 | `controllers/simple-outbound.controller.ts`, `services/simple-outbound.service.ts` `forceComplete` |
-| A4 | 나뉜 줄(배정 위치 2개 이상)의 결품이면 **그 줄의 배정 위치 전부**를 재배정 후보에서 뺀다(지금은 보고된 (SKU, 로케이션)만) | `services/shipment-short-pick.service.ts` 재배정 후보 |
+| A4 | 나뉜 줄(배정 위치 2개 이상)의 결품이면 **그 줄의 배정 위치 전부**를 재배정 후보에서 뺀다(지금은 보고된 (SKU, 로케이션)만). **근거(계획 단계에서 정정):** 시작 때 나뉜 줄은 앞 위치를 전부 소진하므로(E8) 첫 결품 재배정의 후보에 앞 위치가 오지 않는다. 앞 위치가 후보가 되는 것은 **이미 결품으로 채운 줄에 또 결품이 날 때**다 — 첫 결품의 부족 승인이 원장을 줄이지 않아(#1005) 원래 위치에 유령 가용이 생긴다. A4 는 그 빈 위치로 다시 보내는 것을 막는다 | `services/shipment-short-pick.service.ts` 재배정 후보 |
 | A5 | by-waybill 응답에 추가: 배송메모 · 줄별 배정(로케이션 id·코드·수량, 송장 순서) · 결품 보고에 필요한 버전 값(작업 항목 리스 버전·세션 id·세션 버전·매니페스트 버전·줄 버전) | `controllers/simple-outbound.controller.ts` `by-waybill` 과 그 DTO |
-| A6 | 창고별 **보충 대기 조회**: 결품 결과가 `refilled` 였고 그 작업 항목이 아직 출고·제외되지 않은 박스 + 채운 줄(로케이션·SKU·수량) | 신규 GET. 결품 오퍼레이션 after 스냅샷에서 도출 가능한지, 마이그가 필요한지는 **PR A 계획이 정함** |
+| A6 | 창고별 **보충 대기 조회**: 결품 결과가 `refilled` 였고 그 작업 항목이 아직 출고·제외·이탈 중이 아닌 박스 + 채운 줄 중 아직 안 집은 몫(로케이션·SKU·수량) | 신규 `GET /outbound-refills/pending?warehouseId=`. **PR A 계획이 정함:** 결품 오퍼레이션의 after 스냅샷(`outcome`·`refills`)과 의도(`intent.workItemId`)에서 도출한다 — 마이그 없음 |
 
-- 역할→스코프 매핑은 core 부팅 시 `AuthorizationModule` 에 넘겨진다(`app.module.ts` `roleMappings`). 라이브 반영이 부팅 동기화인지
-  별도 시드인지는 **PR A 계획이 확인**한다 — 빠지면 작업자가 F9·F10 에서 403
+- 역할→스코프 매핑은 core 부팅 시 `ScopeBootstrapService.onModuleInit` 이 DB 에 맞춘다(`ensureScopesExist`·`ensureRoleScopeMappings`,
+  `app.module.ts` `roleMappings`). 시드·마이그 불필요(PR A 계획이 확인)
+- 강제출고의 감사 로그는 판정 스코프를 그대로 적는다(`shipment-dispatch.service.ts` `authorizationScope: authorization.scope`) —
+  작업자 강제출고는 `fulfillment.dispatch.station_force` 로 남으므로 사후 점검이 감사 로그에서 바로 걸러진다
 - A2·A3 은 관리자 스코프를 작업자에게 주지 않는다. 기존 `SHIPMENT_REOPEN`·`DISPATCH_FORCE` 보유자는 그대로 쓸 수 있다
 
 ## 10. 테스트와 검증
@@ -293,7 +295,7 @@ A 와 B 는 병행 가능. C 는 A 가 라이브에 있어야 결품·강제출�
 - **폰(핸드헬드) 화면 재설계** — 실사·이동 등 «움직이며 하는 작업» 부분집합(U3). 별도 트랙
 - **`location-outbound-*` 엔드포인트와 `outboundContract` 분기 삭제** — 스테이션 전환 배포 뒤 contract PR
 - **결품·파손이 원장을 줄이지 않는다**(#1005). 유령 재고는 실사·폐기 조정으로 바로잡힌다
-- **나뉜 줄의 결품은 실제와 다른 위치로 기록될 수 있다**(U11). 실사에서 바로잡힌다
+- **나뉜 줄의 결품은 실제와 다른 위치로 기록될 수 있다**(U11) — 유령 재고가 실제로 모자란 위치가 아니라 마지막 위치에 남는다. 실사에서 바로잡힌다
 - **위치별 원장의 정확도는 피커가 송장대로 집었는지에 달린다**(U5). 총량은 맞고, 위치 차이는 실사에서 드러난다
 - **강제출고는 서버가 피해 범위를 제한하지 못한다**(U15). 다른 상품이 들어간 채로 나가도 시스템은 모른다 — 사후 점검이 유일한 방어
 - **송장 재출력 뒤 옛 송장을 스캔해도 구별할 수 없다** — 재출력은 송장번호가 같고 판차만 바뀐다. 기존 #986 의 한계
