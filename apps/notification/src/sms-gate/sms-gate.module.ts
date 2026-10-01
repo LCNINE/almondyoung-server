@@ -9,6 +9,7 @@ import { SmsCampaignsController } from './controllers/sms-campaigns.controller';
 import { SmsConversationsController } from './controllers/sms-conversations.controller';
 import { SmsDevicesController } from './controllers/sms-devices.controller';
 import { SmsGateWebhookController } from './controllers/sms-gate-webhook.controller';
+import { SmsLinksController } from './controllers/sms-links.controller';
 import { SmsMessagesController } from './controllers/sms-messages.controller';
 import { SmsRecipientGroupsController } from './controllers/sms-recipient-groups.controller';
 import { SmsTemplatesController } from './controllers/sms-templates.controller';
@@ -36,7 +37,16 @@ import { SmsTemplatesService } from './services/sms-templates.service';
 
 @Module({
   imports: [HttpModule, ProviderModule],
-  controllers: [SmsDevicesController, SmsCampaignsController, SmsConversationsController, SmsMessagesController, SmsTemplatesController, SmsGateWebhookController, SmsRecipientGroupsController],
+  controllers: [
+    SmsDevicesController,
+    SmsCampaignsController,
+    SmsConversationsController,
+    SmsMessagesController,
+    SmsTemplatesController,
+    SmsGateWebhookController,
+    SmsRecipientGroupsController,
+    SmsLinksController,
+  ],
   providers: [
     SmsDevicesService,
     SmsMessagesService,

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SmsAudienceSummary } from '@app/shared';
 import { CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
 import { SmsCampaignManager } from './sms-campaign.manager';
-import { SmsCampaignListItem, SmsCampaignPreview, SmsCampaignReader } from './sms-campaign.reader';
+import { SmsCampaignClick, SmsCampaignListItem, SmsCampaignPreview, SmsCampaignReader } from './sms-campaign.reader';
 
 @Injectable()
 export class SmsCampaignsService {
@@ -25,6 +25,14 @@ export class SmsCampaignsService {
 
   create(dto: CreateSmsCampaignDto, createdBy: string): Promise<{ campaignId: string; recipients: number }> {
     return this.campaignManager.create(dto, createdBy);
+  }
+
+  clicks(campaignId: string): Promise<SmsCampaignClick[]> {
+    return this.campaignReader.clicks(campaignId);
+  }
+
+  click(code: string, userAgent?: string): Promise<{ url: string }> {
+    return this.campaignManager.click(code, userAgent);
   }
 
   stop(campaignId: string): Promise<{ cancelled: number }> {

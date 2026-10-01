@@ -32,6 +32,11 @@ export class SmsCampaignsController {
     return this.service.create(dto, user.userId);
   }
 
+  @Get(':id/clicks')
+  clicks(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.clicks(id);
+  }
+
   @Post(':id/stop')
   @HttpCode(HttpStatus.OK)
   stop(@Param('id', ParseUUIDPipe) id: string) {

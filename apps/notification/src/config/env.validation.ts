@@ -74,6 +74,7 @@ export const notificationEnvSchema = z.object({
   SMS_GATE_USERNAME: z.string().optional(),
   SMS_GATE_PASSWORD: z.string().optional(),
   SMS_GATE_WEBHOOK_SIGNING_KEY: z.string().optional(),
+  STOREFRONT_URL: z.string().url().optional(),
   // 크롤러 data lake(canonical_places). 없으면 수신자 그룹의 Supabase 가져오기만 막힌다.
   SUPABASE_PLACES_URL: z.union([z.string().url(), z.literal('')]).optional(),
   SUPABASE_PLACES_SERVICE_KEY: z.string().optional(),

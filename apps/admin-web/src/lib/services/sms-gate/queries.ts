@@ -53,6 +53,14 @@ export const useSmsCampaigns = () => {
   });
 };
 
+export const useSmsCampaignClicks = (campaignId: string | null) => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.campaignClicks(campaignId ?? ''),
+    queryFn: () => smsGateApi.getCampaignClicks(campaignId ?? ''),
+    enabled: !!campaignId,
+  });
+};
+
 const CONVERSATION_PAGE_SIZE = 30;
 
 export const useSmsConversations = (q: string) => {

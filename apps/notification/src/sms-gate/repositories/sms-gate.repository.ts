@@ -11,6 +11,7 @@ import {
   NewSmsDevice,
   NewSmsGroupRecipient,
   NewSmsTemplate,
+  NewSmsTrackedLink,
   Notification,
   NotificationCampaign,
   notificationCampaigns,
@@ -25,6 +26,7 @@ import {
   smsRecipientGroups,
   SmsTemplate,
   smsTemplates,
+  smsTrackedLinks,
 } from '../../../database/schemas/notification-schema';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 
@@ -177,13 +179,71 @@ export class SmsGateRepository {
       .limit(limit);
   }
 
-  async createCampaign(campaign: NewNotificationCampaign, rows: NewNotification[]): Promise<void> {
+  async createCampaign(
+    campaign: NewNotificationCampaign,
+    rows: NewNotification[],
+    links: NewSmsTrackedLink[] = [],
+  ): Promise<void> {
     await this.dbService.run(async (tx) => {
       await tx.insert(notificationCampaigns).values(campaign);
       for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
         await tx.insert(notifications).values(rows.slice(i, i + INSERT_CHUNK));
       }
+      for (let i = 0; i < links.length; i += INSERT_CHUNK) {
+        await tx.insert(smsTrackedLinks).values(links.slice(i, i + INSERT_CHUNK));
+      }
     });
+  }
+
+  async recordLinkClick(code: string, counted: boolean): Promise<string | undefined> {
+    if (!counted) {
+      const [row] = await this.dbService.db
+        .select({ url: smsTrackedLinks.url })
+        .from(smsTrackedLinks)
+        .where(eq(smsTrackedLinks.code, code));
+      return row?.url;
+    }
+    const [row] = await this.dbService.db
+      .update(smsTrackedLinks)
+      .set({
+        clickCount: sql`${smsTrackedLinks.clickCount} + 1`,
+        firstClickedAt: sql`coalesce(${smsTrackedLinks.firstClickedAt}, now())`,
+        lastClickedAt: sql`now()`,
+      })
+      .where(eq(smsTrackedLinks.code, code))
+      .returning({ url: smsTrackedLinks.url });
+    return row?.url;
+  }
+
+  async countClickedByCampaign(campaignIds: string[]): Promise<Map<string, number>> {
+    if (campaignIds.length === 0) return new Map();
+    const rows = await this.dbService.db
+      .select({
+        campaignId: smsTrackedLinks.campaignId,
+        clicked: sql<number>`count(distinct ${smsTrackedLinks.notificationId})::int`,
+      })
+      .from(smsTrackedLinks)
+      .where(and(inArray(smsTrackedLinks.campaignId, campaignIds), isNotNull(smsTrackedLinks.firstClickedAt)))
+      .groupBy(smsTrackedLinks.campaignId);
+    return new Map(rows.map((r) => [r.campaignId, r.clicked]));
+  }
+
+  listCampaignClicks(campaignId: string) {
+    return this.dbService.db
+      .select({
+        notificationId: notifications.notificationId,
+        userId: notifications.userId,
+        name: sql<string | null>`${notifications.payload}->>'username'`,
+        phoneNumber: sql<string | null>`${notifications.payload}->>'phoneNumber'`,
+        url: smsTrackedLinks.url,
+        clickCount: smsTrackedLinks.clickCount,
+        firstClickedAt: smsTrackedLinks.firstClickedAt,
+        lastClickedAt: smsTrackedLinks.lastClickedAt,
+      })
+      .from(smsTrackedLinks)
+      .innerJoin(notifications, eq(notifications.notificationId, smsTrackedLinks.notificationId))
+      .where(and(eq(smsTrackedLinks.campaignId, campaignId), isNotNull(smsTrackedLinks.firstClickedAt)))
+      .orderBy(desc(smsTrackedLinks.firstClickedAt));
   }
 
   listCampaigns(limit: number): Promise<NotificationCampaign[]> {
@@ -217,7 +277,11 @@ export class SmsGateRepository {
     return this.dbService.run(async (tx) => {
       const cancelled = await tx
         .update(notifications)
-        .set({ status: 'CANCELLED', errorDetails: { message: '대량 발송을 중지했습니다', timestamp: new Date() }, updatedAt: new Date() })
+        .set({
+          status: 'CANCELLED',
+          errorDetails: { message: '대량 발송을 중지했습니다', timestamp: new Date() },
+          updatedAt: new Date(),
+        })
         .where(and(isSmsGate, eq(notifications.campaignId, campaignId), eq(notifications.status, 'PENDING')))
         .returning({ id: notifications.notificationId });
       await tx
@@ -345,9 +409,7 @@ export class SmsGateRepository {
     return {
       items: rows.map((row) => ({
         inbound: row.latest,
-        lastOutbound: row.last_outbound?.at
-          ? { body: row.last_outbound.body ?? '', at: row.last_outbound.at }
-          : null,
+        lastOutbound: row.last_outbound?.at ? { body: row.last_outbound.body ?? '', at: row.last_outbound.at } : null,
       })),
       total: totalRow?.total ?? 0,
     };

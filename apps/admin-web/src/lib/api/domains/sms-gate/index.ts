@@ -136,7 +136,19 @@ export interface SmsCampaign {
   createdByName: string | null;
   createdAt: string;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
+  clicked: number;
   estimatedCompleteDate: string | null;
+}
+
+export interface SmsCampaignClick {
+  notificationId: string;
+  userId: string;
+  name: string | null;
+  phoneNumber: string | null;
+  url: string;
+  clickCount: number;
+  firstClickedAt: string;
+  lastClickedAt: string;
 }
 
 export type ConversationMessageState = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
@@ -255,6 +267,11 @@ export const smsGateApi = {
 
   getCampaigns: async (): Promise<SmsCampaign[]> => {
     const response = await client.get<SmsCampaign[]>(`${BASE}/campaigns`);
+    return response.data;
+  },
+
+  getCampaignClicks: async (campaignId: string): Promise<SmsCampaignClick[]> => {
+    const response = await client.get<SmsCampaignClick[]>(`${BASE}/campaigns/${campaignId}/clicks`);
     return response.data;
   },
 

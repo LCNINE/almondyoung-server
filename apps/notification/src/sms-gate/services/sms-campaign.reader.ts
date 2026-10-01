@@ -25,7 +25,19 @@ export interface SmsCampaignListItem {
   createdByName: string | null;
   createdAt: Date;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
+  clicked: number;
   estimatedCompleteDate: string | null;
+}
+
+export interface SmsCampaignClick {
+  notificationId: string;
+  userId: string;
+  name: string | null;
+  phoneNumber: string | null;
+  url: string;
+  clickCount: number;
+  firstClickedAt: Date | null;
+  lastClickedAt: Date | null;
 }
 
 export interface SmsCampaignPreview {
@@ -111,8 +123,10 @@ export class SmsCampaignReader {
   async list(): Promise<SmsCampaignListItem[]> {
     const now = new Date();
     const campaigns = await this.repository.listCampaigns(CAMPAIGN_LIST_LIMIT);
-    const [counts, devices, pendingSingles, creators] = await Promise.all([
-      this.repository.countByCampaign(campaigns.map((c) => c.campaignId)),
+    const campaignIds = campaigns.map((c) => c.campaignId);
+    const [counts, clicked, devices, pendingSingles, creators] = await Promise.all([
+      this.repository.countByCampaign(campaignIds),
+      this.repository.countClickedByCampaign(campaignIds),
       this.activeDevices(now),
       this.repository.countPending(true),
       this.loadCreators([...new Set(campaigns.map((c) => c.createdBy))]),
@@ -133,7 +147,14 @@ export class SmsCampaignReader {
         createdBy: campaign.createdBy,
         createdByName: creators.get(campaign.createdBy)?.username ?? null,
         createdAt: campaign.createdAt,
-        counts: { total, pending, sent: byStatus('SENT'), failed: byStatus('FAILED'), cancelled: byStatus('CANCELLED') },
+        counts: {
+          total,
+          pending,
+          sent: byStatus('SENT'),
+          failed: byStatus('FAILED'),
+          cancelled: byStatus('CANCELLED'),
+        },
+        clicked: clicked.get(campaign.campaignId) ?? 0,
         estimatedCompleteDate: null as string | null,
       };
     });
@@ -147,6 +168,13 @@ export class SmsCampaignReader {
       ahead += item.counts.pending;
     }
     return items;
+  }
+
+  async clicks(campaignId: string): Promise<SmsCampaignClick[]> {
+    if (!(await this.repository.findCampaign(campaignId))) {
+      throw new NotFoundError(`대량 발송을 찾을 수 없습니다: ${campaignId}`);
+    }
+    return this.repository.listCampaignClicks(campaignId);
   }
 
   private stateOf(campaign: NotificationCampaign, pending: number, now: Date): SmsCampaignState {

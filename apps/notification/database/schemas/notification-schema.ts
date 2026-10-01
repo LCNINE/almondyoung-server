@@ -216,6 +216,25 @@ export const smsOptOuts = pgTable('sms_opt_outs', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const smsTrackedLinks = pgTable(
+  'sms_tracked_links',
+  {
+    code: varchar('code', { length: 16 }).primaryKey(),
+    notificationId: uuid('notification_id')
+      .notNull()
+      .references(() => notifications.notificationId, { onDelete: 'cascade' }),
+    campaignId: uuid('campaign_id').notNull(),
+    url: text('url').notNull(),
+    clickCount: integer('click_count').default(0).notNull(),
+    firstClickedAt: timestamp('first_clicked_at'),
+    lastClickedAt: timestamp('last_clicked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignIdx: index('idx_sms_tracked_links_campaign').on(table.campaignId),
+  }),
+);
+
 // 대량 발송 캠페인 테이블
 export const notificationCampaigns = pgTable(
   'notification_campaigns',
@@ -563,6 +582,7 @@ export const notificationTables = {
   smsRecipientGroups,
   smsGroupRecipients,
   smsOptOuts,
+  smsTrackedLinks,
 };
 
 // Export types
@@ -600,6 +620,7 @@ export type NewInboundMessage = typeof inboundMessages.$inferInsert;
 export type SmsRecipientGroup = typeof smsRecipientGroups.$inferSelect;
 export type SmsGroupRecipient = typeof smsGroupRecipients.$inferSelect;
 export type NewSmsGroupRecipient = typeof smsGroupRecipients.$inferInsert;
+export type NewSmsTrackedLink = typeof smsTrackedLinks.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;
