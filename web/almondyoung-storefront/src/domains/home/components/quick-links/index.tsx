@@ -130,7 +130,7 @@ export async function HomeQuickLinks({
     ...externalLinks,
     {
       label: tUtility("almondTemplate"),
-      href: "/almond-template",
+      href: "/almond-template/landing",
       imageUrl: "/images/almond-template-palette.png",
       imageClassName: "object-contain p-2",
       imageWrapClassName: "bg-white",

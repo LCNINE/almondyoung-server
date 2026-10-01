@@ -1,6 +1,10 @@
 import { AlmondTemplateEditor } from "@/domains/almond-template/components/editor"
 import { AlmondTemplateGallery } from "@/domains/almond-template/components/gallery"
-import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
+import {
+  PRINT_PRODUCTS,
+  PRINT_SPECS,
+  type PrintKind,
+} from "@/domains/almond-template/lib/catalog"
 import { HttpApiError } from "@/lib/api/api-error"
 import { parseDesign } from "@/domains/almond-template/lib/document"
 import {
@@ -14,6 +18,7 @@ type Props = {
   params: Promise<{ countryCode: string }>
   searchParams: Promise<{
     product?: string
+    kind?: string
     variant?: string
     mode?: string
     size?: string
@@ -30,6 +35,7 @@ export default async function AlmondTemplatePage({
   const { countryCode } = await params
   const {
     product = "",
+    kind = "",
     variant = "",
     mode,
     size = "",
@@ -43,6 +49,7 @@ export default async function AlmondTemplatePage({
         productId={product}
         variantId={variant}
         size={size}
+        initialKind={kind in PRINT_SPECS ? (kind as PrintKind) : undefined}
         templates={await listAlmondTemplates().catch(() => null)}
       />
     )

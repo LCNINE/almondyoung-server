@@ -87,7 +87,7 @@ export async function MainHeader() {
                   <HomeQuickLinks variant="desktopHeader" />
                 </div>
                 <LocalizedClientLink
-                  href="/almond-template"
+                  href="/almond-template/landing"
                   className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-white pr-4 pl-3 text-[13px] font-medium text-gray-900 shadow-sm transition-opacity hover:opacity-90"
                 >
                   <Image

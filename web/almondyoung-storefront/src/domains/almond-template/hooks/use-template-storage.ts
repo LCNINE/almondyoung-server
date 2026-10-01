@@ -87,6 +87,7 @@ export function useTemplateStorage({
             (item) => item.productId === productId && item.size === fileSize
           )
           setPublishedTemplates(items)
+          if (!templateId) return
           if (!items.length) {
             setMessage(
               "아직 공개된 상품 시안이 없습니다. 시안 제작 후 이용할 수 있습니다."
