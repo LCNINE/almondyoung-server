@@ -226,6 +226,7 @@ export class AdminOperationsService {
     // 구버전 데이터 호환: lastPaymentIntentId로 wallet에서 최초 결제 조회
     const paymentRef = await this.adminMembersReader.findContractPaymentRef(contractId);
     if (!paymentRef?.lastPaymentIntentId) return events;
+    if (events.some((e) => e.paymentIntentId === paymentRef.lastPaymentIntentId)) return events;
 
     const synthetic = await this.buildSyntheticInitialEvent(contractId, paymentRef.lastPaymentIntentId);
     return synthetic ? [synthetic, ...events] : events;
@@ -264,11 +265,13 @@ export class AdminOperationsService {
 
     // 계약별로 최초 결제(attemptNo=1)가 없으면 legacy 호환 합성 이벤트를 앞에 붙인다(contractId 경로와 동일).
     const contractsWithInitial = new Set(events.filter((e) => e.attemptNo === 1).map((e) => e.contractId));
+    const recordedIntentIds = new Set(events.map((e) => e.paymentIntentId));
     const paymentRefs = await this.adminMembersReader.findContractPaymentRefsByUserId(userId);
 
     const synthetic: BillingEventItem[] = [];
     for (const ref of paymentRefs) {
       if (contractsWithInitial.has(ref.contractId) || !ref.lastPaymentIntentId) continue;
+      if (recordedIntentIds.has(ref.lastPaymentIntentId)) continue;
       const ev = await this.buildSyntheticInitialEvent(ref.contractId, ref.lastPaymentIntentId);
       if (ev) synthetic.push(ev);
     }
