@@ -402,11 +402,14 @@ export class ShipmentShortPickService {
     if (!dto.lines.length) throw new BadRequestException('At least one short-pick line is required');
   }
 
+  /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. ScopeGuard 를 거치지 않은 직접 호출도 같은 규칙. */
   private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
     if (actor.roles.includes('master')) return;
     const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)) {
-      throw new ForbiddenException(`Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_REOPEN}`);
+    if (!scopes.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN) && !scopes.has(FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK)) {
+      throw new ForbiddenException(
+        `Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_REOPEN} or ${FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK}`,
+      );
     }
   }
 

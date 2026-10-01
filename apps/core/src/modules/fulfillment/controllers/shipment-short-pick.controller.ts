@@ -28,7 +28,7 @@ export class ShipmentShortPickController {
 
   @Post(':shipmentId/short-picks')
   @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)
+  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN, FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({
     summary: 'Report a V2 short pick — refill from other locations, or withdraw the box to Draft',
