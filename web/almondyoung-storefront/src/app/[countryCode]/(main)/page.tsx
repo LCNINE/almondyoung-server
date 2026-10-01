@@ -8,6 +8,8 @@ import { shouldShowSurvey } from "@/lib/utils/should-show-survey"
 import { getTranslations } from "next-intl/server"
 import ProtectedRoute from "@components/protected-route"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
+import { ComingSoonPopup } from "@/domains/home/components/coming-soon-popup"
+import { Suspense } from "react"
 
 export async function generateMetadata({
   params,
@@ -49,6 +51,10 @@ export default async function Home({
       <h1 className="sr-only">{t("pageTitle")}</h1>
 
       <HomeLogoutTemplate countryCode={countryCode} />
+
+      <Suspense fallback={null}>
+        <ComingSoonPopup />
+      </Suspense>
 
       {/* 설문 유도 배너 */}
       {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}

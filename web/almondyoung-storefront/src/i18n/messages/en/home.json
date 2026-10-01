@@ -80,5 +80,9 @@
     "dayUnit": "d",
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon"
+  },
+  "comingSoon": {
+    "title": "Almond Template is coming soon",
+    "description": "Stay tuned."
   }
 }
