@@ -12,7 +12,11 @@ import {
 import { ApiCreatedResponse, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { ReportShipmentShortPickDto, ShipmentShortPickActor } from '../dto/shipment-short-pick.dto';
+import {
+  ReportShipmentShortPickDto,
+  ShipmentShortPickActor,
+  ShipmentShortPickResponseDto,
+} from '../dto/shipment-short-pick.dto';
 import { ShipmentShortPickService } from '../services/shipment-short-pick.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] } | undefined;
@@ -26,9 +30,11 @@ export class ShipmentShortPickController {
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  @ApiOperation({ summary: 'Isolate and recover an exact V2 shipment short pick' })
+  @ApiOperation({
+    summary: 'Report a V2 short pick — refill from other locations, or withdraw the box to Draft',
+  })
   @ApiParam({ name: 'shipmentId', description: 'Shipment ID' })
-  @ApiCreatedResponse({ description: 'Durable short-pick saga status' })
+  @ApiCreatedResponse({ type: ShipmentShortPickResponseDto })
   report(
     @Param('shipmentId', new ParseUUIDPipe()) shipmentId: string,
     @Body() dto: ReportShipmentShortPickDto,

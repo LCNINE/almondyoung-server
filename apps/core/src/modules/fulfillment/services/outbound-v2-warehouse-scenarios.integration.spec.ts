@@ -40,7 +40,6 @@ import { PickingProcessService } from './picking-process.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
-import { ToteLifecycleService } from './tote-lifecycle.service';
 import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
 import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
@@ -134,14 +133,11 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     );
     const controlled = new BatchControlledStockGuard();
     const sessions = new BatchInventorySessionService(dbService, audit);
-    const resumeTarget: { shortPick?: ShipmentShortPickService } = {};
     const moduleRef = {
-      get: jest.fn(
-        () => resumeTarget.shortPick ?? ({ resumePending: jest.fn().mockResolvedValue(undefined) } as never),
-      ),
+      get: jest.fn(() => ({ resumePending: jest.fn().mockResolvedValue(undefined) }) as never),
     };
-    // 플랜3: batch add·dispatch·picking 은 assertDispatchable/markUsed 를, short-pick 은 getActiveWaybill/void
-    // 를 소비한다(모두 실제 WaybillService). registry/issue machine 은 이 경로들에서 실행되지 않지만 구조적
+    // 플랜3: batch add·dispatch·picking 은 assertDispatchable/markUsed 를 소비한다(실제 WaybillService).
+    // 결품은 박스 철회 서비스(withdrawals)가 송장 void 를 맡는다. registry/issue machine 은 이 경로들에서 실행되지 않지만 구조적
     // 의존이라 empty registry + issue machine + HANJIN stub 으로 배선한다(batch-orchestrator.integration 패턴).
     const waybillRepo = new WaybillRepository(dbService);
     const waybillRegistry = new CarrierGatewayRegistry([]);
@@ -156,6 +152,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         dbService,
       ),
     );
+    const boxes = new BoxAllocationManager(sessions, new BatchControlledStockGuard());
+    const withdrawals = assembleBoxWithdrawal(dbService);
     const batches = new OutboundBatchOrchestrator(
       dbService,
       commands,
@@ -164,8 +162,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       audit,
       workflow,
       moduleRef as never,
-      new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
-      assembleBoxWithdrawal(dbService),
+      boxes,
+      withdrawals,
     );
     const labelGuard = assembleLabels(dbService).guard;
     const aggregate = new AggregateThenSortPickingStrategy(
@@ -212,16 +210,13 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
     );
     const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-    resumeTarget.shortPick = new ShipmentShortPickService(
-      dbService,
+    const shortPick = new ShipmentShortPickService(
       commands,
       authorization as never,
       audit,
       workflow,
-      waybills,
-      sessions,
-      shipmentReservations,
-      new ToteLifecycleService(dbService),
+      boxes,
+      withdrawals,
     );
     const dispatch = new ShipmentDispatchService(
       dbService,
@@ -239,7 +234,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       labelGuard,
     );
-    return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
+    return { batches, dispatch, waybills, picking, sessions, shortPick };
   }
 
   async function seedWorld(
@@ -620,10 +615,13 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       handedInQty: number;
       settledQty: number;
       returnedQty: number;
+      /** 안 집은 채 돌려준 몫(결품 철회) — 없으면 0. */
+      handedBackQty?: number;
       shortageQty: number;
       balanceQty: number;
     },
   ) {
+    const handedBackQty = expected.handedBackQty ?? 0;
     const [session] = await tx
       .select()
       .from(wmsTables.batchInventorySessions)
@@ -642,10 +640,11 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       handedInQty: expected.handedInQty,
       settledQty: expected.settledQty,
       returnedQty: expected.returnedQty,
+      handedBackQty,
       shortageQty: expected.shortageQty,
     });
     expect(balances.reduce((sum, balance) => sum + balance.qty, 0)).toBe(expected.balanceQty);
-    expect(expected.settledQty + expected.returnedQty + expected.shortageQty + expected.balanceQty).toBe(
+    expect(expected.settledQty + expected.returnedQty + handedBackQty + expected.shortageQty + expected.balanceQty).toBe(
       expected.handedInQty,
     );
   }
@@ -1100,7 +1099,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     });
   });
 
-  it('10 short pick isolates one shipment and preserves its sibling reservation and active work', async () => {
+  it('10 short pick without spare stock withdraws one shipment and preserves its sibling reservation and active work', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [5, 5], ['aggregate_then_sort']);
       await seedRegisteredWaybills(tx, world);
@@ -1155,6 +1154,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expect(reported).toMatchObject({
         shipmentId: world.shipments[0].shipment.id,
         operationStatus: 'completed',
+        outcome: 'exited',
         workItemId: added[0].workItem.id,
       });
       expect(reported.invoiceOperationId).toBeNull();
@@ -1215,7 +1215,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         status: 'active',
         handedInQty: 10,
         settledQty: 0,
-        returnedQty: 4,
+        returnedQty: 0,
+        handedBackQty: 4,
         shortageQty: 1,
         balanceQty: 5,
       });

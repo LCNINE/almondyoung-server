@@ -2,23 +2,10 @@ import {
   canonicalBatchSessionRequestHash,
   handInRequestHash,
   isApprovedShortageReasonCode,
-  remainingShortPickAllocation,
   shortPickOperationIntentOf,
 } from './batch-inventory-session.service';
 
 describe('BatchInventorySessionService short-pick accounting', () => {
-  it('reserves sibling-safe capacity after active, returned, settled, and shortage attribution', () => {
-    expect(
-      remainingShortPickAllocation({
-        allocatedQty: 10,
-        activeAttributedQty: 2,
-        returnedQty: 3,
-        settledQty: 1,
-        shortageQty: 2,
-      }),
-    ).toBe(2);
-  });
-
   it('binds approval evidence into the canonical request hash', () => {
     const request = {
       shortPickOperationId: 'operation-1',

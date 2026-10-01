@@ -56,7 +56,6 @@ const validSnapshot = (): FulfillmentInvariantSnapshot => ({
       skuId: 'sku-1',
       sourceLocationId: 'loc-1',
       qty: 7,
-      workItemStatus: 'completed',
     },
   ],
   dispatchAttempts: [],
@@ -248,16 +247,14 @@ describe('배정 불변식 I1~I3 (스펙 §5)', () => {
   it('I2 — 이탈 중(withdrawing)은 목표가 0 이라 보지 않는다', () => {
     const snapshot = validSnapshot();
     snapshot.workItems[0].status = 'withdrawing';
-    snapshot.allocations[0].workItemStatus = 'withdrawing';
     snapshot.allocations[0].qty = 3;
     expect(kinds(snapshot)).not.toContain('ALLOCATION_BELOW_TARGET');
   });
 
-  it('I3 — 제외된 작업 항목의 배정은 공유 보관의 방이 아니다(PR 3·4 경계: 결품 제외 뒤 떠도는 AT_SOURCE)', () => {
+  it('I3 — 공유 보관은 배치의 모든 작업 항목 배정과 견준다(PR 4: 나간 작업 항목의 배정은 0 이라 방을 보태지 않는다)', () => {
     const snapshot = validSnapshot();
     snapshot.workItems[0].status = 'excluded';
-    snapshot.allocations[0].workItemStatus = 'excluded';
-    snapshot.allocations[0].qty = 2; // 결품 보고는 배정 행을 줄이지 않는다
+    snapshot.allocations[0].qty = 0; // 반납·되돌림·부족 승인이 모두 배정을 줄인다
     snapshot.sessionBalances = [
       {
         id: 'balance-2',
@@ -273,10 +270,28 @@ describe('배정 불변식 I1~I3 (스펙 §5)', () => {
     expect(kinds(snapshot)).toContain('CUSTODY_EXCEEDS_ALLOCATION');
   });
 
+  it('I3 — 제외된 작업 항목에 남은 배정도 방으로 센다(옛 결품 행 — 배포 전 SQL 이 열린 세션에 없음을 확인)', () => {
+    const snapshot = validSnapshot();
+    snapshot.workItems[0].status = 'excluded';
+    snapshot.allocations[0].qty = 2;
+    snapshot.sessionBalances = [
+      {
+        id: 'balance-2',
+        sessionId: 'session-1',
+        custodyType: 'AT_SOURCE',
+        qty: 2,
+        skuId: 'sku-1',
+        sourceLocationId: 'loc-1',
+        shipmentLineId: null,
+      },
+    ];
+    snapshot.sessions[0] = { ...snapshot.sessions[0], handedInQty: 2, settledQty: 0, returnedQty: 0, shortageQty: 0 };
+    expect(kinds(snapshot)).not.toContain('CUSTODY_EXCEEDS_ALLOCATION');
+  });
+
   it('I3 — 활성 작업 항목의 배정이 덮으면 같은 AT_SOURCE 는 위반이 아니다', () => {
     const snapshot = validSnapshot();
     snapshot.workItems[0].status = 'queued';
-    snapshot.allocations[0].workItemStatus = 'queued';
     snapshot.allocations[0].qty = 7;
     snapshot.sessionBalances = [
       {

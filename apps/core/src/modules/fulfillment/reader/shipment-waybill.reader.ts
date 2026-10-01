@@ -91,7 +91,7 @@ export class ShipmentWaybillReader {
         )
         .limit(1);
       if (!waybill) {
-        const withdrawn = await this.canceledWithdrawal(trx, normalized, warehouseId);
+        const withdrawn = await this.withdrawnByVoidedWaybill(trx, normalized, warehouseId);
         if (withdrawn) return withdrawn;
         throw new NotFoundException(`Waybill not found for tracking number ${normalized}`);
       }
@@ -214,16 +214,17 @@ export class ShipmentWaybillReader {
   }
 
   /**
-   * 전체 취소로 나간 박스는 송장이 무효라 활성 송장으로는 못 찾는다. 작업자가 든 종이를 다시 스캔하면 «빠진 박스 · 송장은
+   * 전체 취소·결품으로 나간 박스는 송장이 무효라 활성 송장으로는 못 찾는다(정한 것 4). 작업자가 든 종이를 다시 스캔하면 «빠진 박스 · 송장은
    * 버리세요» 를 보여야 한다(스펙 §10.5 withdrawn, 정한 것 13) — 그 번호의 가장 최근 무효 송장으로 박스를 찾는다.
    */
-  private async canceledWithdrawal(
+  private async withdrawnByVoidedWaybill(
     trx: DbTx,
     trackingNo: string,
     warehouseId?: string,
   ): Promise<ShipmentByWaybillResult | null> {
     const [waybill] = await trx
       .select({
+        id: wmsTables.waybills.id,
         shipmentId: wmsTables.waybills.shipmentId,
         trackingNo: wmsTables.waybills.trackingNo,
         carrier: wmsTables.waybills.carrier,
@@ -247,15 +248,13 @@ export class ShipmentWaybillReader {
       .from(wmsTables.shipments)
       .where(eq(wmsTables.shipments.id, waybill.shipmentId))
       .limit(1);
-    if (!shipment || shipment.status !== 'canceled') return null;
+    if (!shipment) return null;
     if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) return null;
-    const [last] = await trx
-      .select({ status: wmsTables.outboundBatchWorkItems.status, exitTo: wmsTables.outboundBatchWorkItems.exitTo })
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, waybill.shipmentId))
-      .orderBy(desc(wmsTables.outboundBatchWorkItems.createdAt), desc(wmsTables.outboundBatchWorkItems.id))
-      .limit(1);
-    if (last?.status !== 'excluded' || last.exitTo !== 'canceled') return null;
+    // 결품으로 빠진 초안 박스가 나중에 초안으로 취소되면 status 는 canceled 지만 이 송장은 결품이 무효화한 것이다 — 취소 이탈이 아니면 결품 이탈도 본다.
+    const exitTo =
+      (shipment.status === 'canceled' ? await this.canceledExit(trx, waybill.shipmentId) : null) ??
+      (await this.shortPickExit(trx, waybill.shipmentId, waybill.id));
+    if (!exitTo) return null;
     const lines = await this.loadLines(trx, waybill.shipmentId);
     return {
       shipmentId: waybill.shipmentId,
@@ -273,7 +272,42 @@ export class ShipmentWaybillReader {
       labelChanges: [],
       labelIssue: null,
       removals: [],
-      exitTo: 'canceled',
+      exitTo,
     };
+  }
+
+  /** PR 3 — 마지막 작업 항목이 취소로 나갔다. */
+  private async canceledExit(trx: DbTx, shipmentId: string): Promise<'canceled' | null> {
+    const [last] = await trx
+      .select({ status: wmsTables.outboundBatchWorkItems.status, exitTo: wmsTables.outboundBatchWorkItems.exitTo })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId))
+      .orderBy(desc(wmsTables.outboundBatchWorkItems.createdAt), desc(wmsTables.outboundBatchWorkItems.id))
+      .limit(1);
+    return last?.status === 'excluded' && last.exitTo === 'canceled' ? 'canceled' : null;
+  }
+
+  /** PR 4 — 이 송장을 결품 마무리가 무효화했다(ShortPickExitService.finish 가 after 스냅샷에 적는다). 박스가 다시 계획돼도 옛 번호는 그대로 빠진 박스다. */
+  private async shortPickExit(trx: DbTx, shipmentId: string, waybillId: string): Promise<'draft' | null> {
+    const [operation] = await trx
+      .select({ id: wmsTables.shipmentOperations.id })
+      .from(wmsTables.shipmentOperations)
+      .innerJoin(
+        wmsTables.shipmentOperationMembers,
+        and(
+          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+        ),
+      )
+      .where(
+        and(
+          eq(wmsTables.shipmentOperations.type, 'short_pick'),
+          eq(wmsTables.shipmentOperations.status, 'completed'),
+          sql`${wmsTables.shipmentOperations.afterManifestSnapshot}->>'voidedWaybillId' = ${waybillId}`,
+        ),
+      )
+      .limit(1);
+    return operation ? 'draft' : null;
   }
 }

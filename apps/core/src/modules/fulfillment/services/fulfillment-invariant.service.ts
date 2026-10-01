@@ -98,7 +98,6 @@ export interface FulfillmentInvariantSnapshot {
     skuId: string;
     sourceLocationId: string;
     qty: number;
-    workItemStatus: string;
   }>;
   dispatchAttempts: Array<{
     id: string;
@@ -305,12 +304,11 @@ export function collectFulfillmentInvariantViolations(
         });
       }
     }
-    // PR 3·4 경계(스펙 §13): 결품 보고는 박스 배정 전부를 보관·공유 풀에서 끝까지 정산하지만 배정 행은 줄이지 않는다.
-    // 그 행을 방으로 세면 빈 배치에 떠도는 AT_SOURCE 가 가려진다 — 제외된 작업 항목의 배정은 세지 않는다.
-    const liveBatchAllocations = batchAllocations.filter((allocation) => allocation.workItemStatus !== 'excluded');
+    // 공유 보관은 배치의 모든 배정에서 줄 귀속 보관을 뺀 나머지와 견준다. PR 4 부터 모든 나가기(반납·되돌림·부족 승인)가 배정을
+    // 0 으로 남기므로 나간 작업 항목은 방을 보태지 않는다(스펙 §13 PR 4 계획이 정함). PR 3 이 둔 excluded 필터는 걷었다.
     for (const [skuKey, sharedQty] of sharedBySku) {
       const allocatedQty = sum(
-        liveBatchAllocations.filter((allocation) => `${allocation.skuId}|${allocation.sourceLocationId}` === skuKey),
+        batchAllocations.filter((allocation) => `${allocation.skuId}|${allocation.sourceLocationId}` === skuKey),
         (allocation) => allocation.qty,
       );
       const roomQty = allocatedQty - (attributedBySku.get(skuKey) ?? 0);
@@ -616,7 +614,6 @@ export class FulfillmentInvariantService {
             skuId: wmsTables.shipmentLines.skuId,
             sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
             qty: wmsTables.pickingSourceAllocations.qty,
-            workItemStatus: wmsTables.outboundBatchWorkItems.status,
           })
           .from(wmsTables.pickingSourceAllocations)
           .innerJoin(
