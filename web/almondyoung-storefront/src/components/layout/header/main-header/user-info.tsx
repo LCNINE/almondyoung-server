@@ -7,6 +7,7 @@ import { signout } from "@/lib/api/users/signout"
 import { notifyAppLogout } from "@/lib/app-context/notify-app"
 import { useTranslations } from "next-intl"
 import { useTransition } from "react"
+import { clearAllBackups } from "@/domains/almond-template/lib/draft-backup"
 
 export function MobileAuthLinks() {
   const { user } = useUser()
@@ -31,6 +32,7 @@ export function UserInfo() {
     startTransition(async () => {
       setUser(null)
       notifyAppLogout()
+      void clearAllBackups()
       await signout()
     })
   }

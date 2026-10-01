@@ -6,7 +6,9 @@ import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
 import { useImageTools } from "./use-image-tools"
 import { useLayerActions } from "./use-layer-actions"
+import { useAuthRetry } from "./use-auth-retry"
 import { useDesignOrder } from "./use-design-order"
+import { useDraftBackup } from "./use-draft-backup"
 import { useTemplateExport } from "./use-template-export"
 import { useTemplateStorage, type EditorMode } from "./use-template-storage"
 
@@ -106,12 +108,20 @@ export function useAlmondEditor({
     moveMode,
     setSelectedId,
   })
+  const auth = useAuthRetry(setMessage)
+  const backup = useDraftBackup({
+    backupKey: `${mode}:${productId}:${size}:${templateId}`,
+    design,
+    change,
+    setMessage,
+  })
   const storage = useTemplateStorage({
     mode,
     productId,
     size,
     templateId,
-    skipDraft: !!initialDesign,
+    runAuthed: auth.runAuthed,
+    forgetBackup: backup.forgetBackup,
     design,
     setDesign,
     change,
@@ -155,7 +165,8 @@ export function useAlmondEditor({
     productId,
     variantId,
     templateId,
-    setMessage,
+    runAuthed: auth.runAuthed,
+    forgetBackup: backup.forgetBackup,
   })
   const complete = () => {
     const found = printIssues(design)
@@ -163,7 +174,7 @@ export function useAlmondEditor({
       setIssues(found)
       return
     }
-    if (mode === "designer") storage.save()
+    void backup.flushBackup()
     setPreviewSide(side)
     setPreview(true)
   }
@@ -254,6 +265,8 @@ export function useAlmondEditor({
     ...images,
     ...exporter,
     ...order,
+    ...auth,
+    ...backup,
   }
 }
 

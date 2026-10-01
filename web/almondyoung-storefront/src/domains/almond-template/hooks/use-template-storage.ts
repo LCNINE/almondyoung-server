@@ -36,13 +36,8 @@ type Params = {
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
   svgRef: RefObject<SVGSVGElement>
-  skipDraft: boolean
-}
-
-export function rethrowUnauthorized(error: unknown) {
-  const err = error as Error & { digest?: string }
-  if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED")
-    throw error
+  runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
+  forgetBackup: () => Promise<unknown>
 }
 
 export function useTemplateStorage({
@@ -56,7 +51,8 @@ export function useTemplateStorage({
   setSelectedId,
   setMessage,
   svgRef,
-  skipDraft,
+  runAuthed,
+  forgetBackup,
 }: Params) {
   const [saveDialog, setSaveDialog] = useState(false)
   const [loadDialog, setLoadDialog] = useState(false)
@@ -67,8 +63,7 @@ export function useTemplateStorage({
   >([])
   const [storagePending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
-  const key = `almond-template:${mode}:${productId || "new"}:${size || "default"}${mode === "customer" && templateId ? `:${templateId}` : ""}`
-  const saveKey = `almond-template:${mode}:${design.productId || "new"}:${design.widthMm}x${design.heightMm}`
+  const key = `${mode}:${productId}:${size}:${templateId}`
   const forRoute = (value: unknown) => {
     const loaded = parseDesign(value)
     if (productId && loaded.productId !== productId)
@@ -78,33 +73,11 @@ export function useTemplateStorage({
     return loaded
   }
   const serverTask = (task: () => Promise<void>, failure: string) =>
-    startTransition(async () => {
-      try {
-        await task()
-      } catch (error) {
-        rethrowUnauthorized(error)
-        setMessage(failure)
-      }
-    })
+    startTransition(() => runAuthed(task, failure))
 
   useEffect(() => {
     let cancelled = false
-    let hasDraft = false
     setPublishedTemplates([])
-    try {
-      // ponytail: 옛 intern 키 폴백. 서버 저장 전환 시 삭제
-      const saved =
-        mode === "designer" && !skipDraft
-          ? (localStorage.getItem(key) ??
-            localStorage.getItem(key.replace(":designer:", ":intern:")))
-          : null
-      if (saved) {
-        setDesign(forRoute(JSON.parse(saved)))
-        hasDraft = true
-      }
-    } catch {
-      /* 깨진 로컬 초안은 무시 */
-    }
     if (mode === "customer" && productId) {
       const fileSize = size || `${design.widthMm}x${design.heightMm}`
       listAlmondTemplates()
@@ -124,12 +97,10 @@ export function useTemplateStorage({
             setMessage("선택한 시안을 찾을 수 없습니다.")
             return
           }
-          if (!hasDraft) {
-            const chosen =
-              items.find((item) => item.id === templateId) ?? items[0]
-            const loaded = forRoute((await getAlmondTemplate(chosen.id)).design)
-            if (!cancelled) setDesign(loaded)
-          }
+          const chosen =
+            items.find((item) => item.id === templateId) ?? items[0]
+          const loaded = forRoute((await getAlmondTemplate(chosen.id)).design)
+          if (!cancelled) setDesign(loaded)
         })
         .catch(() => {
           if (!cancelled) setMessage("공개 시안을 불러오지 못했습니다.")
@@ -146,18 +117,6 @@ export function useTemplateStorage({
       setMessage(`「${item.title}」 시안을 불러왔습니다.`)
     } catch {
       setMessage("공개 시안을 불러오지 못했습니다.")
-    }
-  }
-  const save = () => {
-    try {
-      const content = JSON.stringify(design)
-      localStorage.setItem(key, content)
-      if (saveKey !== key) localStorage.setItem(saveKey, content)
-      setMessage("이 브라우저에 초안을 저장했습니다.")
-    } catch {
-      setMessage(
-        "이미지 용량 때문에 저장하지 못했습니다. JSON 파일로 내려받으세요."
-      )
     }
   }
   const matchesRoute = (item: SavedItem) =>
@@ -190,6 +149,7 @@ export function useTemplateStorage({
       })
       setDesign(stored)
       setSaveDialog(false)
+      void forgetBackup()
       setMessage(
         saved.status === "published"
           ? `「${name}」 게시 중인 시안을 갱신했습니다. 고객 화면에 바로 반영됩니다.`
@@ -245,7 +205,6 @@ export function useTemplateStorage({
     inputRef,
     publishedTemplates,
     loadPublished,
-    save,
     saveDialog,
     setSaveDialog,
     loadDialog,

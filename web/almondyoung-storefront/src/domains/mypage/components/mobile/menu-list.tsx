@@ -9,6 +9,7 @@ import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import type { MenuItem, MenuSection } from "../../types/mypage-types"
+import { clearAllBackups } from "@/domains/almond-template/lib/draft-backup"
 
 interface MenuListProps {
   sections: MenuSection[]
@@ -24,6 +25,7 @@ export function MenuList({ sections }: MenuListProps) {
     startTransition(async () => {
       try {
         notifyAppLogout()
+        void clearAllBackups()
         await signout()
         setUser(null)
         router.replace("/")

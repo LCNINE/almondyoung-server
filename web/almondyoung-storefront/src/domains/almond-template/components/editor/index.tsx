@@ -5,6 +5,8 @@ import {
   type AlmondEditorProps,
 } from "../../hooks/use-almond-editor"
 import { Canvas } from "./canvas"
+import { BackupBanner } from "./backup-banner"
+import { AuthDialog } from "./dialogs/auth-dialog"
 import { HelpDialog } from "./dialogs/help-dialog"
 import { IssuesDialog } from "./dialogs/issues-dialog"
 import { LoadDialog } from "./dialogs/load-dialog"
@@ -35,6 +37,7 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
     <div className="fixed inset-0 z-[10000] flex h-screen flex-col overflow-hidden bg-[#f5f5f4] text-slate-900">
       <link rel="stylesheet" href={FONT_STYLESHEET} precedence="default" />
       <EditorHeader editor={editor} />
+      <BackupBanner editor={editor} />
       <div className="relative flex min-h-0 flex-1">
         <ToolNav editor={editor} />
         <ToolPanel editor={editor} />
@@ -53,6 +56,7 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
         </p>
       )}
       {saveDialog && <SaveDialog editor={editor} />}
+      <AuthDialog editor={editor} />
       {loadDialog && <LoadDialog editor={editor} />}
       <button
         aria-label="편집 도움말"
