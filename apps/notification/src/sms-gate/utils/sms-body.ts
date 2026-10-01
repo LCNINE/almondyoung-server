@@ -14,8 +14,12 @@ export function composeSmsBody(category: SmsGateCategory, content: string): stri
   return `${MARKETING_PREFIX} ${body}\n${MARKETING_FOOTER}`;
 }
 
+export const FALLBACK_NAME = '원장';
+const NOT_A_NAME = /^[\d\s\-+().]*$/;
+
 export function fillName(content: string, name: string): string {
-  return content.replaceAll(NAME_VARIABLE, () => name);
+  const shown = NOT_A_NAME.test(name) ? FALLBACK_NAME : name.trim();
+  return content.replaceAll(NAME_VARIABLE, () => shown);
 }
 
 export function isMarketingQuietHours(now: Date): boolean {
