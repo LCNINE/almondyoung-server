@@ -11,6 +11,7 @@ import {
   boolean,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -341,6 +342,51 @@ export const settingOperatingCosts = pgTable(
   (table) => [uniqueIndex('uq_setting_operating_costs_effective').on(table.effectiveFrom)],
 );
 
+/**
+ * 연간 매출 목표. 고정비와 같은 **관리자 입력값**이고 같은 이유로 여기 둔다.
+ * 수정하지 않고 새 행을 쌓는다 — 그 해의 «현재 목표»는 가장 늦게 만든 행이고, 앞의 행은 이력이다.
+ * 삭제하면 직전 행이 다시 현재 목표가 된다.
+ *
+ * 목표 금액의 정의는 «전 채널 순매출»(매출 탭과 같은 총매출 − 취소 − 환불)이다. 화면이 wallet 상품 환불을
+ * 추가로 차감한다 — 이 표는 금액만 담고 정의를 담지 않는다.
+ */
+export const settingRevenueGoals = pgTable(
+  'setting_revenue_goals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    year: integer('year').notNull(),
+    /**
+     * 목표 범위. 'own_mall' = 자사몰 순매출, 'all_channels' = 집계에 들어온 전 판매채널 순매출.
+     * 외부 채널이 집계에 없으면 두 값이 같아지므로 화면은 외부 채널 데이터가 있을 때만 'all_channels' 를 열어 준다.
+     */
+    scope: varchar('scope', { length: 20 }).notNull().default('own_mall'),
+    annualTarget: bigint('annual_target', { mode: 'number' }).notNull(),
+    /**
+     * 집계가 시작되기 전(그 해 1월 1일 ~ 집계 첫날 전날)의 실적을 관리자가 직접 넣은 값. 없으면 null —
+     * 그때 화면은 달성률을 «집계 시작일부터» 기준으로 내고 그 사실을 표기한다. 0 으로 뭉개지 않는다.
+     */
+    preCoverageActual: bigint('pre_coverage_actual', { mode: 'number' }),
+    /** 계획 도우미(바텀업)로 만든 목표면 그때의 가정(세션·전환율·객단가 등). 직접 입력이면 null. */
+    planAssumptions: jsonb('plan_assumptions'),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_setting_revenue_goals_year_created').on(table.year, table.createdAt)],
+);
+
+/** 목표의 월별 배분. 12행이 한 목표에 딸리고, 합이 연간 목표와 같아야 한다(서비스가 검증한다). */
+export const settingRevenueGoalMonths = pgTable(
+  'setting_revenue_goal_months',
+  {
+    goalId: uuid('goal_id')
+      .notNull()
+      .references(() => settingRevenueGoals.id, { onDelete: 'cascade' }),
+    month: integer('month').notNull(),
+    target: bigint('target', { mode: 'number' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.goalId, table.month] })],
+);
+
 export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
@@ -356,6 +402,8 @@ export const analyticsSchema = {
   dimProductVariants,
   dimProductCategories,
   settingOperatingCosts,
+  settingRevenueGoals,
+  settingRevenueGoalMonths,
 } as const;
 
 export type AnalyticsSchema = typeof analyticsSchema;

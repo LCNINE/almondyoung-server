@@ -115,6 +115,36 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
     note: ':id 를 받지만 전사 단일 설정 테이블의 행이라 사용자별 소유자가 없다 — staff 끼리는 같은 자원을 공유한다. 남의 자원을 넘겨다볼 경계 자체가 존재하지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
+  'analytics GET /statistics/growth': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '성장 분석 — 전사 자사몰 매출·회원 재구매 집계·GA4 리포트. 파라미터가 날짜·집계 단위뿐이고 고객 식별자를 받지도 내보내지도 않는다(건수·금액 집계만). JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics GET /statistics/growth/summary': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '성장 요약 — 올해 목표·일별 순매출·최근 고객 흐름 집계. 파라미터가 없고 응답에 고객 식별자가 없다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics GET /statistics/revenue-goals': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '연간 매출 목표 목록 — 전사 단일 설정이라 사용자·테넌트 소유 자원이 아니다. 파라미터는 연도뿐. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics POST /statistics/revenue-goals': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '연간 매출 목표 등록 — 전사 단일 설정이라 소유권 개념이 없다. 본문은 연도·금액·월 배분·가정·메모뿐이고 식별자를 받지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics DELETE /statistics/revenue-goals/:id': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: ':id 를 받지만 전사 단일 설정 표의 행이라 사용자별 소유자가 없다 — staff 끼리 같은 자원을 공유한다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
   'analytics GET /statistics/behavior': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/traffic/api/behavior.controller.ts:15',
@@ -829,15 +859,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(131);
+    expect(targets).toHaveLength(136);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(131);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(130);
+    expect(new Set(targets.map(keyOf)).size).toBe(136);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(135);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -1,6 +1,7 @@
 import {
   BehaviorStatisticsQuery,
   CustomerInsightsQuery,
+  GrowthRangeQuery,
   ProfitStatisticsQuery,
   StatisticsRangeQuery,
   TrafficStatisticsQuery,
@@ -21,4 +22,7 @@ export const analyticsQueryKeys = {
   behavior: (query: BehaviorStatisticsQuery) => [...analyticsQueryKeys.all, 'behavior', query] as const,
   realtime: (limit: number) => [...analyticsQueryKeys.all, 'realtime', { limit }] as const,
   operatingCosts: () => [...analyticsQueryKeys.all, 'operating-costs'] as const,
+  growth: (query: GrowthRangeQuery) => [...analyticsQueryKeys.all, 'growth', query] as const,
+  growthSummary: () => [...analyticsQueryKeys.all, 'growth-summary'] as const,
+  revenueGoals: (year: number) => [...analyticsQueryKeys.all, 'revenue-goals', year] as const,
 };

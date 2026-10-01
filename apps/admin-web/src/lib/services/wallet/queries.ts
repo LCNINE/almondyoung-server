@@ -190,6 +190,17 @@ export const useDailyPayments = (from: string, to: string) => {
   });
 };
 
+/** 상품 주문 환불 — 성장 화면의 목표 달성액 차감용. 실패해도 화면은 «환불 미반영»으로 계속 그린다. */
+export const useOrderRefunds = (from: string, to: string, enabled = true) => {
+  return useQuery({
+    queryKey: walletQueryKeys.orderRefunds(from, to),
+    queryFn: () => walletApi.getOrderRefunds(from, to),
+    staleTime: 5 * 60 * 1000,
+    enabled,
+    retry: 1,
+  });
+};
+
 export const useMembershipRevenue = (from: string, to: string) => {
   return useQuery({
     queryKey: walletQueryKeys.membershipRevenue(from, to),

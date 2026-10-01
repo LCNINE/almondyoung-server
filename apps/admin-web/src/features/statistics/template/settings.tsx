@@ -7,6 +7,7 @@ import { useOperatingCosts } from '@/lib/services/analytics';
 import { useCreateOperatingCost, useDeleteOperatingCost } from '@/lib/services/analytics';
 import { StatisticsShell } from '../components/shell';
 import { formatKrw } from '../shared';
+import { RevenueGoalSettings } from '../growth/components/RevenueGoalSettings';
 
 /** 월 고정비가 이 값을 넘으면 원 단위와 만원 단위를 헷갈린 입력일 가능성이 높다. */
 const SANITY_MAX = 10_000_000_000;
@@ -27,6 +28,15 @@ export default function StatisticsSettingsTemplate() {
             화면은 그때 사라집니다. 그래서 지금 항목별(임대료·인건비·광고비)로 쪼개지 않습니다.
           </p>
           <OperatingCostSettings />
+        </section>
+
+        <section id="revenue-goal" className="scroll-mt-4 rounded-[10px] border border-gray-200 bg-white p-4">
+          <h2 className="text-base font-semibold text-gray-900">경영 설정 — 연간 매출 목표</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            올해(또는 내년) <strong>전 채널 순매출</strong> 목표입니다. 넣으면 성장 탭과 관리자 메인이 남은 금액·하루에 필요한 매출·
+            연말 착지·달성 확률과 «유입·전환·재구매 중 무엇을 얼마나 올려야 하는지»를 계산합니다.
+          </p>
+          <RevenueGoalSettings />
         </section>
 
         <p className="text-xs text-gray-400">

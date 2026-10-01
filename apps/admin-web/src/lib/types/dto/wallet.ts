@@ -556,3 +556,11 @@ export interface MembershipRevenueDto {
   invoiceCount: number;
   series: Array<{ bucket: string; amount: number; count: number }>;
 }
+
+/** 상품 주문 환불(Medusa 결제만). 성장 화면이 목표 달성액에서 뺀다. */
+export interface OrderRefundsDto {
+  range: { from: string; to: string };
+  totalAmount: number;
+  refundCount: number;
+  series: Array<{ day: string; amount: number; count: number }>;
+}

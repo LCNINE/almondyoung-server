@@ -429,6 +429,16 @@ export default function OverviewStatisticsTemplate() {
           needsFixedCost={profit.data != null && profit.data.operating.fixedCost == null}
         />
 
+        <Link
+          href="/statistics/growth"
+          className="flex items-center justify-between rounded-[10px] border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-700 hover:border-orange-300"
+        >
+          <span>
+            <b className="text-gray-900">성장 탭</b> — 올해 매출 목표까지 남은 금액, 유입·전환·재구매 중 무엇을 얼마나 올려야 하는지
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-orange-600" />
+        </Link>
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiTile
             label="오늘 매출"
