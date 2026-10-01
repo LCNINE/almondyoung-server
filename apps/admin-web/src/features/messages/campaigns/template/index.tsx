@@ -15,13 +15,28 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { SmsCampaign, SmsCampaignState } from '@/lib/api/domains/sms-gate';
-import { useSmsCampaignClicks, useSmsCampaigns, useStopSmsCampaign } from '@/lib/services/sms-gate';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  useContinueSmsCampaign,
+  useSmsCampaignClicks,
+  useSmsCampaigns,
+  useStopSmsCampaign,
+} from '@/lib/services/sms-gate';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 import { HelpSheet } from '../../components/help-sheet';
 import { CategoryBadge } from '../../components/category-badge';
@@ -40,6 +55,8 @@ export default function SmsCampaignsTemplate() {
   const stopCampaign = useStopSmsCampaign();
   const [stopping, setStopping] = useState<SmsCampaign | null>(null);
   const [viewingClicks, setViewingClicks] = useState<SmsCampaign | null>(null);
+  const [continuing, setContinuing] = useState<SmsCampaign | null>(null);
+  const nameOf = (campaignId: string | null) => data?.find((c) => c.campaignId === campaignId)?.name;
 
   const handleStop = () => {
     if (!stopping) return;
@@ -77,7 +94,7 @@ export default function SmsCampaignsTemplate() {
                 <TableHead className="w-28">예상 완료일</TableHead>
                 <TableHead className="w-28">보낸 사람</TableHead>
                 <TableHead className="w-28">만든 날</TableHead>
-                <TableHead className="w-20" />
+                <TableHead className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -89,6 +106,16 @@ export default function SmsCampaignsTemplate() {
                     <TableCell>
                       <div className="font-medium">{campaign.name}</div>
                       <div className="text-muted-foreground max-w-80 truncate text-xs">{campaign.content}</div>
+                      {campaign.continuedTo && (
+                        <div className="text-muted-foreground text-xs">
+                          남은 대상은 &apos;{nameOf(campaign.continuedTo) ?? '수정본'}&apos;(으)로 이어 보냄
+                        </div>
+                      )}
+                      {campaign.continuedFrom && (
+                        <div className="text-muted-foreground text-xs">
+                          &apos;{nameOf(campaign.continuedFrom) ?? '원래 발송'}&apos;의 수정본
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <CategoryBadge category={campaign.category} />
@@ -124,9 +151,14 @@ export default function SmsCampaignsTemplate() {
                     <TableCell>{new Date(campaign.createdAt).toLocaleDateString('ko-KR')}</TableCell>
                     <TableCell>
                       {isStoppable(campaign.state) && (
-                        <Button variant="outline" size="sm" onClick={() => setStopping(campaign)}>
-                          중지
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="outline" size="sm" onClick={() => setContinuing(campaign)}>
+                            수정
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => setStopping(campaign)}>
+                            중지
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -138,6 +170,7 @@ export default function SmsCampaignsTemplate() {
       </div>
 
       <CampaignClicksDialog campaign={viewingClicks} onClose={() => setViewingClicks(null)} />
+      {continuing && <ContinueCampaignDialog campaign={continuing} onClose={() => setContinuing(null)} />}
 
       <AlertDialog open={stopping !== null} onOpenChange={(open) => !open && setStopping(null)}>
         <AlertDialogContent>
@@ -201,6 +234,79 @@ function CampaignClicksDialog({ campaign, onClose }: { campaign: SmsCampaign | n
             </Table>
           )}
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ContinueCampaignDialog({ campaign, onClose }: { campaign: SmsCampaign; onClose: () => void }) {
+  const continueCampaign = useContinueSmsCampaign();
+  const [name, setName] = useState(`${campaign.name} (수정)`);
+  const [content, setContent] = useState(campaign.content);
+  const [sendAtLocal, setSendAtLocal] = useState('');
+
+  const handleSubmit = () => {
+    continueCampaign.mutate(
+      {
+        campaignId: campaign.campaignId,
+        name: name.trim(),
+        content,
+        sendAt: sendAtLocal ? new Date(sendAtLocal).toISOString() : undefined,
+      },
+      {
+        onSuccess: (result) => {
+          toast.success(`남은 ${result.recipients.toLocaleString()}명에게 수정한 내용으로 이어 보냅니다.`);
+          onClose();
+        },
+        onError: (error) => toast.error(error.message || '이어 보내지 못했습니다.'),
+      }
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>수정해서 이어 보내기</DialogTitle>
+          <DialogDescription>
+            아직 안 나간 {campaign.counts.pending.toLocaleString()}명에게만 고친 내용으로 보냅니다. 이미 받은 사람에게는
+            다시 나가지 않고, 원래 발송과 클릭 통계가 따로 잡힙니다.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="continue-name">이름</Label>
+            <Input id="continue-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={255} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="continue-content">내용</Label>
+            <Textarea
+              id="continue-content"
+              rows={8}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              maxLength={2000}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="continue-send-at">예약 시각</Label>
+            <Input
+              id="continue-send-at"
+              type="datetime-local"
+              value={sendAtLocal}
+              onChange={(e) => setSendAtLocal(e.target.value)}
+            />
+            <p className="text-muted-foreground text-xs">비우면 원래 예약을 따르고, 예약이 지났으면 바로 시작합니다.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} disabled={continueCampaign.isPending || !name.trim() || !content.trim()}>
+            이어 보내기
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

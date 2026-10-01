@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '@app/db';
+import { DbService, TxFor } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, ne, or, sql } from 'drizzle-orm';
 import {
@@ -185,14 +185,56 @@ export class SmsGateRepository {
     links: NewSmsTrackedLink[] = [],
   ): Promise<void> {
     await this.dbService.run(async (tx) => {
-      await tx.insert(notificationCampaigns).values(campaign);
-      for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
-        await tx.insert(notifications).values(rows.slice(i, i + INSERT_CHUNK));
-      }
-      for (let i = 0; i < links.length; i += INSERT_CHUNK) {
-        await tx.insert(smsTrackedLinks).values(links.slice(i, i + INSERT_CHUNK));
-      }
+      await this.insertCampaign(tx, campaign, rows, links);
     });
+  }
+
+  async continueCampaign(
+    fromCampaignId: string,
+    toCampaignId: string,
+    build: (pending: Notification[]) => {
+      campaign: NewNotificationCampaign;
+      rows: NewNotification[];
+      links: NewSmsTrackedLink[];
+    },
+  ): Promise<number> {
+    return this.dbService.run(async (tx) => {
+      const pending = await tx
+        .update(notifications)
+        .set({
+          status: 'CANCELLED',
+          errorDetails: { message: '수정한 내용으로 이어 보냈습니다', timestamp: new Date() },
+          updatedAt: new Date(),
+        })
+        .where(and(isSmsGate, eq(notifications.campaignId, fromCampaignId), eq(notifications.status, 'PENDING')))
+        .returning();
+      if (pending.length === 0) return 0;
+      const { campaign, rows, links } = build(pending);
+      await this.insertCampaign(tx, campaign, rows, links);
+      await tx
+        .update(notificationCampaigns)
+        .set({
+          metadata: sql`${notificationCampaigns.metadata} || ${JSON.stringify({ continuedTo: toCampaignId })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(eq(notificationCampaigns.campaignId, fromCampaignId));
+      return rows.length;
+    });
+  }
+
+  private async insertCampaign(
+    tx: TxFor<Schema>,
+    campaign: NewNotificationCampaign,
+    rows: NewNotification[],
+    links: NewSmsTrackedLink[],
+  ): Promise<void> {
+    await tx.insert(notificationCampaigns).values(campaign);
+    for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+      await tx.insert(notifications).values(rows.slice(i, i + INSERT_CHUNK));
+    }
+    for (let i = 0; i < links.length; i += INSERT_CHUNK) {
+      await tx.insert(smsTrackedLinks).values(links.slice(i, i + INSERT_CHUNK));
+    }
   }
 
   async recordLinkClick(code: string, counted: boolean): Promise<string | undefined> {

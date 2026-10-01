@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../shared/decorators/user.decorator';
-import { CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
+import { ContinueSmsCampaignDto, CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsCampaignsService } from '../services/sms-campaigns.service';
 
@@ -35,6 +35,15 @@ export class SmsCampaignsController {
   @Get(':id/clicks')
   clicks(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.clicks(id);
+  }
+
+  @Post(':id/continue')
+  continueWith(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ContinueSmsCampaignDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.service.continueWith(id, dto, user.userId);
   }
 
   @Post(':id/stop')

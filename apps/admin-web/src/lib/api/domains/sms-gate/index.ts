@@ -137,6 +137,8 @@ export interface SmsCampaign {
   createdAt: string;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
   clicked: number;
+  continuedFrom: string | null;
+  continuedTo: string | null;
   estimatedCompleteDate: string | null;
 }
 
@@ -307,6 +309,17 @@ export const smsGateApi = {
 
   deleteRecipientGroup: async (groupId: string): Promise<void> => {
     await client.delete(`${BASE}/recipient-groups/${groupId}`);
+  },
+
+  continueCampaign: async (
+    campaignId: string,
+    dto: { name: string; content: string; sendAt?: string }
+  ): Promise<{ campaignId: string; recipients: number }> => {
+    const response = await client.post<{ campaignId: string; recipients: number }>(
+      `${BASE}/campaigns/${campaignId}/continue`,
+      dto
+    );
+    return response.data;
   },
 
   stopCampaign: async (campaignId: string): Promise<{ cancelled: number }> => {

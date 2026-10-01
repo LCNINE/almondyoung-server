@@ -54,3 +54,5 @@ export class PreviewSmsCampaignDto extends PickType(CreateSmsCampaignDto, [
   'includeMembers',
   'groupIds',
 ] as const) {}
+
+export class ContinueSmsCampaignDto extends PickType(CreateSmsCampaignDto, ['name', 'content', 'sendAt'] as const) {}

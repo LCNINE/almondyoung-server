@@ -75,3 +75,76 @@ describe('SmsCampaignManager.create', () => {
     });
   });
 });
+
+describe('SmsCampaignManager.continueWith', () => {
+  const pending = [
+    { userId: 'a', payload: { phoneNumber: '010-1234-5678', username: '가' }, metadata: { sentBy: 'staff' } },
+    {
+      userId: 'group:r1',
+      payload: { phoneNumber: '+821099998888', username: '아몬드네일' },
+      metadata: { sentBy: 'staff', recipientGroupId: 'g1' },
+    },
+  ];
+
+  const setup = (original: object | undefined) => {
+    const repository = {
+      findCampaign: jest.fn().mockResolvedValue(original),
+      continueCampaign: jest.fn(
+        async (_from: string, _to: string, build: (rows: typeof pending) => { rows: unknown[] }) => {
+          const built = build(pending);
+          repository.built = built;
+          return built.rows.length;
+        },
+      ),
+      built: undefined as unknown,
+    };
+    const manager = new SmsCampaignManager(
+      repository as unknown as SmsGateRepository,
+      {} as SmsCampaignReader,
+      new ConfigService({ STOREFRONT_URL: 'https://almondyoung.com' }),
+    );
+    return { repository, manager };
+  };
+
+  it('안 나간 명단으로 고친 내용의 새 발송을 만들고, 분류와 그룹 id 는 원래 것을 따른다', async () => {
+    const { repository, manager } = setup({
+      campaignId: 'old',
+      status: 'PROCESSING',
+      category: 'MARKETING',
+      sendAt: null,
+      metadata: { provider: 'sms-gate', recipients: 5 },
+    });
+
+    const result = await manager.continueWith(
+      'old',
+      { name: '가을 세일(수정)', content: '{{이름}}님 https://almondyoung.com/kr/sale' },
+      'staff2',
+    );
+
+    expect(result.recipients).toBe(2);
+    expect(repository.continueCampaign.mock.calls[0][0]).toBe('old');
+    const { campaign, rows, links } = repository.built as {
+      campaign: { campaignId: string; category: string; metadata: object; sendAt: Date | null };
+      rows: { campaignId: string; renderedContent: { body: string }; metadata: object }[];
+      links: { campaignId: string }[];
+    };
+    expect(campaign.campaignId).toBe(result.campaignId);
+    expect(campaign.metadata).toMatchObject({ provider: 'sms-gate', recipients: 2, continuedFrom: 'old' });
+    expect(campaign.sendAt).toBeNull();
+    expect(rows[0].renderedContent.body).toMatch(/^\(광고\) 가님 https:\/\/almondyoung\.com\/r\/[A-Za-z0-9_-]{8}\n/);
+    expect(rows[1].metadata).toEqual({ sentBy: 'staff2', recipientGroupId: 'g1' });
+    expect(links.every((l) => l.campaignId === result.campaignId)).toBe(true);
+  });
+
+  it('원래 예약이 아직 안 왔으면 그 시각을 이어받는다', async () => {
+    const sendAt = new Date(Date.now() + 60 * 60 * 1000);
+    const { repository, manager } = setup({ status: 'SCHEDULED', category: 'INFORMATIONAL', sendAt, metadata: {} });
+    await manager.continueWith('old', { name: 'n', content: 'c' }, 'staff');
+    expect((repository.built as { campaign: { sendAt: Date } }).campaign.sendAt).toEqual(sendAt);
+  });
+
+  it('중지한 발송은 거절한다', async () => {
+    const { manager } = setup({ status: 'CANCELLED', category: 'INFORMATIONAL', sendAt: null, metadata: {} });
+    await expect(manager.continueWith('old', { name: 'n', content: 'c' }, 'staff')).rejects.toThrow('중지한 발송');
+  });
+});

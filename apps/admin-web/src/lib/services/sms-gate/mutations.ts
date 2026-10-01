@@ -133,6 +133,15 @@ export const useDeleteSmsRecipientGroup = () => {
   });
 };
 
+export const useContinueSmsCampaign = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ campaignId, ...dto }: { campaignId: string; name: string; content: string; sendAt?: string }) =>
+      smsGateApi.continueCampaign(campaignId, dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
+  });
+};
+
 export const useStopSmsCampaign = () => {
   const queryClient = useQueryClient();
   return useMutation({

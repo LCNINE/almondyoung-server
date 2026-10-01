@@ -26,6 +26,8 @@ export interface SmsCampaignListItem {
   createdAt: Date;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
   clicked: number;
+  continuedFrom: string | null;
+  continuedTo: string | null;
   estimatedCompleteDate: string | null;
 }
 
@@ -155,6 +157,8 @@ export class SmsCampaignReader {
           cancelled: byStatus('CANCELLED'),
         },
         clicked: clicked.get(campaign.campaignId) ?? 0,
+        continuedFrom: campaign.metadata?.continuedFrom ?? null,
+        continuedTo: campaign.metadata?.continuedTo ?? null,
         estimatedCompleteDate: null as string | null,
       };
     });
