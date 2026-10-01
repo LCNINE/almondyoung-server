@@ -55,6 +55,8 @@ import { LocationOutboundController } from './controllers/location-outbound.cont
 import { ReturnBinService } from './services/return-bin.service';
 import { SimpleOutboundService } from './services/simple-outbound.service';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
+import { RefillPendingReader } from './reader/refill-pending.reader';
+import { OutboundRefillController } from './controllers/outbound-refill.controller';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -123,6 +125,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentShortPickController,
     ShipmentRecallController,
     ShipmentRecallOperationController,
+    OutboundRefillController,
   ],
   providers: [
     // Core fulfillment services
@@ -161,6 +164,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOutboundService,
     ReturnBinService,
     ShipmentWaybillReader,
+    RefillPendingReader,
     {
       provide: PICKING_STRATEGIES,
       useFactory: (
