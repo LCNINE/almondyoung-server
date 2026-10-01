@@ -307,6 +307,7 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
           eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
@@ -315,6 +316,8 @@ export class SimpleOutboundService {
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(wmsTables.locations.code),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
 
@@ -383,6 +386,7 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
           eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
@@ -394,6 +398,8 @@ export class SimpleOutboundService {
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(wmsTables.locations.code),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
     if (allocations.length === 0) {
