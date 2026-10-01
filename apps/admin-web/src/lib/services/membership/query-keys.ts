@@ -21,5 +21,8 @@ export const membershipQueryKeys = {
   tiersWithPlans: () => [...membershipQueryKeys.all, 'tiersWithPlans'] as const,
   recurringBilling: () => [...membershipQueryKeys.all, 'recurringBilling'] as const,
   recurringBillingOverview: () => [...membershipQueryKeys.all, 'recurringBilling', 'overview'] as const,
+  recurringBillingFinance: (month: string, months: number) =>
+    [...membershipQueryKeys.all, 'recurringBilling', 'finance', month, months] as const,
+  upcomingBilling: (days: number) => [...membershipQueryKeys.all, 'recurringBilling', 'upcoming', days] as const,
   recurringBillingList: (query: Record<string, unknown>) => [...membershipQueryKeys.all, 'recurringBilling', 'list', query] as const,
 };

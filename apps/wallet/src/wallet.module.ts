@@ -89,6 +89,7 @@ import { PaymentConfigController } from './payment-config/payment-config.control
 import { PointsController } from './points/points.controller';
 import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
 import { RecurringBillingAdminService } from './admin/recurring-billing-admin.service';
+import { RecurringBillingFinanceReader } from './admin/recurring-billing-finance.reader';
 import { RecurringBillingAdminController } from './admin/recurring-billing-admin.controller';
 import { StatisticsAdminService } from './admin/statistics-admin.service';
 import { StatisticsAdminController } from './admin/statistics-admin.controller';
@@ -516,6 +517,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     BankTransferAdminService,
     PaymentIntentAdminService,
     RecurringBillingAdminService,
+    RecurringBillingFinanceReader,
     StatisticsAdminService,
 
     // Billing

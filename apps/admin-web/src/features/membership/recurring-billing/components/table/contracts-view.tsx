@@ -129,7 +129,9 @@ export function RecurringContractsView({ query }: Props) {
       reason: string;
     }) => membershipApi.resetBillingInProgress(contractId, reason),
     onSuccess: () => {
+      // 같은 해제가 고착 탭 목록에서도 빠져야 한다.
       void queryClient.invalidateQueries({ queryKey: ['recurring-contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['stuck-billing-contracts'] });
       closeModal();
     },
     onError: (err: unknown) => {

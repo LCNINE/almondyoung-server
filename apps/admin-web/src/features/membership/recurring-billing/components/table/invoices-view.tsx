@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { walletApi } from '@/lib/api/domains/wallet';
 import { membershipApi } from '@/lib/api/domains/membership';
+import { membershipQueryKeys } from '@/lib/services/membership';
 import {
   AdminRecurringInvoiceRow,
   AdminRecurringInvoiceStatus,
@@ -22,7 +23,7 @@ const STATUS_LABEL: Record<AdminRecurringInvoiceStatus, { label: string; variant
   OPEN: { label: '청구 대기', variant: 'secondary' },
   MANDATE_PENDING: { label: '계좌 심사 대기', variant: 'secondary' },
   ATTEMPTING: { label: '출금 진행 중', variant: 'default' },
-  PAST_DUE: { label: '결제 실패(재시도 예정)', variant: 'destructive' },
+  PAST_DUE: { label: '재시도 중', variant: 'destructive' },
   PAID: { label: '결제 완료', variant: 'default' },
   UNCOLLECTIBLE: { label: '출금 최종 실패', variant: 'destructive' },
   MANDATE_REJECTED: { label: '계좌 심사 거절', variant: 'destructive' },
@@ -34,10 +35,10 @@ const STATUS_FILTER_OPTIONS: { value: '' | AdminRecurringInvoiceStatus; label: s
   { value: 'OPEN', label: '청구 대기' },
   { value: 'MANDATE_PENDING', label: '계좌 심사 대기' },
   { value: 'ATTEMPTING', label: '출금 진행 중' },
-  { value: 'PAST_DUE', label: '결제 실패' },
+  { value: 'PAST_DUE', label: '재시도 중' },
   { value: 'PAID', label: '결제 완료' },
   { value: 'UNCOLLECTIBLE', label: '출금 최종 실패' },
-  { value: 'MANDATE_REJECTED', label: '심사 거절' },
+  { value: 'MANDATE_REJECTED', label: '계좌 심사 거절' },
   { value: 'VOID', label: '무효화' },
 ];
 
@@ -66,8 +67,11 @@ export function RecurringInvoicesView() {
     staleTime: 15_000,
   });
 
-  const invalidate = () =>
+  // 집행·정합화는 상단 작업함·돈 요약의 숫자도 바꾼다 — 목록만 갱신하면 카드가 옛 숫자로 남는다.
+  const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['recurring-invoices'] });
+    void queryClient.invalidateQueries({ queryKey: membershipQueryKeys.recurringBilling() });
+  };
 
   const runDue = useMutation({
     mutationFn: () => walletApi.runDueInvoices(),
@@ -265,7 +269,15 @@ export function RecurringInvoicesView() {
                             variant="outline"
                             size="sm"
                             disabled={execute.isPending}
-                            onClick={() => execute.mutate(r.id)}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `이 청구(${r.amountDue.toLocaleString('ko-KR')}원)를 지금 집행합니다. 유효한 결제수단이면 실제 출금이 발생합니다. 진행할까요?`,
+                                )
+                              ) {
+                                execute.mutate(r.id);
+                              }
+                            }}
                           >
                             즉시 집행
                           </Button>

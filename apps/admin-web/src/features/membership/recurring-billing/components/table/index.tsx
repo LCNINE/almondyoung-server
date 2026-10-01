@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
 import { useRecurringBillingItems, usePollCmsMember, usePollCmsWithdrawal } from '@/lib/services/membership';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useRecurringBillingTableColumns } from '@/hooks/table/columns/use-recurring-billing-table-columns';
@@ -22,6 +23,7 @@ const PAGE_SIZE = 20;
 
 export function RecurringBillingTable() {
   const query = useRecurringBillingTableQuery(PAGE_SIZE);
+  const invoiceStatus = useSearchParams().get('status') ?? '';
 
   if (query.view === 'contracts') {
     return <RecurringContractsView query={query} />;
@@ -36,7 +38,9 @@ export function RecurringBillingTable() {
   }
 
   if (query.view === 'invoices') {
-    return <RecurringInvoicesView />;
+    // 카드에서 상태를 골라 들어오면 URL 의 status 가 바뀐다. 보기 안의 필터 상태는 처음 한 번만 URL 을 읽으므로
+    // status 가 바뀔 때 다시 만든다.
+    return <RecurringInvoicesView key={invoiceStatus} />;
   }
 
   if (query.view === 'agreement-cleanup') {

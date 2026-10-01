@@ -1254,7 +1254,8 @@ export class AdminMembersReader {
         and(
           eq(schema.subscriptionContracts.billingInProgress, true),
           notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
-          sql`COALESCE(${schema.subscriptionContracts.billingStartedAt}, ${schema.subscriptionContracts.updatedAt}) <= ${thresholdAt}`,
+          // raw sql 에 Date 를 그대로 넘기면 postgres.js 가 거절해 목록 전체가 500 이 된다 — 문자열로 넘긴다.
+          sql`COALESCE(${schema.subscriptionContracts.billingStartedAt}, ${schema.subscriptionContracts.updatedAt}) <= ${thresholdAt.toISOString()}::timestamptz`,
         ),
       )
       .orderBy(asc(schema.subscriptionContracts.billingStartedAt));

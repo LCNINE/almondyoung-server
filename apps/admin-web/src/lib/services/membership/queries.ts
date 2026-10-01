@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery, AdminTierWithPlans } from '@/lib/api/domains/membership';
 import { walletApi } from '@/lib/api/domains/wallet';
+import { membershipPeopleApi } from '@/lib/api/domains/membership/people';
 import { AdminRecurringBillingListQuery } from '@/lib/types/dto/wallet';
 import { isCustomError } from '@/lib/api/customError';
 import { membershipQueryKeys } from './query-keys';
@@ -283,6 +284,22 @@ export function useRecurringBillingOverview() {
     queryKey: membershipQueryKeys.recurringBillingOverview(),
     queryFn: () => walletApi.getRecurringBillingOverview(),
     staleTime: 30 * 1000,
+  });
+}
+
+export function useRecurringBillingFinance(month: string, months = 6) {
+  return useQuery({
+    queryKey: membershipQueryKeys.recurringBillingFinance(month, months),
+    queryFn: () => walletApi.getRecurringBillingFinance(month, months),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpcomingBilling(days = 7) {
+  return useQuery({
+    queryKey: membershipQueryKeys.upcomingBilling(days),
+    queryFn: () => membershipPeopleApi.getUpcomingBilling(days),
+    staleTime: 60 * 1000,
   });
 }
 

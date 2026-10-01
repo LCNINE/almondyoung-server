@@ -29,6 +29,16 @@ const TABS: { value: View; label: string }[] = [
   { value: 'agreement-cleanup', label: '약정 정리' },
 ];
 
+const isView = (value: string | null): value is View => TABS.some((tab) => tab.value === value);
+
+/** 탭 8개를 일의 성격으로 묶는다. 주소(`view`)는 예전 그대로라 즐겨찾기 링크가 깨지지 않는다. */
+const TAB_GROUPS: { label: string; views: View[] }[] = [
+  { label: '손볼 것', views: ['needs-action', 'stuck', 'agreement-cleanup'] },
+  { label: '심사·출금', views: ['members', 'withdrawals'] },
+  { label: '청구서', views: ['invoices', 'dunning'] },
+  { label: '계약', views: ['contracts'] },
+];
+
 const DATE_TYPE_OPTIONS_BY_VIEW: Record<View, { value: DateType; label: string }[]> = {
   'needs-action': [{ value: 'updatedAt', label: '최근 갱신일' }],
   members: [
@@ -92,7 +102,13 @@ export function RecurringBillingFilterBox() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const currentView = (searchParams.get('view') as View) ?? 'needs-action';
+  const requestedView = searchParams.get('view');
+  const currentView: View = isView(requestedView) ? requestedView : 'needs-action';
+  const currentGroup = TAB_GROUPS.find((group) => group.views.includes(currentView)) ?? TAB_GROUPS[0];
+
+  const requestedSearchType = searchParams.get('searchType');
+  const urlSearchType: SearchType =
+    SEARCH_TYPE_OPTIONS.find((option) => option.value === requestedSearchType)?.value ?? 'userId';
 
   const [filters, setFilters] = useState<FilterState>({
     dateType: (searchParams.get('dateType') as DateType) ?? 'updatedAt',
@@ -101,14 +117,28 @@ export function RecurringBillingFilterBox() {
     dateTo: searchParams.get('dateTo') ?? '',
     cmsMemberStatus: searchParams.get('cmsMemberStatus') ?? '',
     withdrawalStatus: searchParams.get('withdrawalStatus') ?? '',
-    searchType: (searchParams.get('searchType') as SearchType) ?? 'userId',
-    searchValue: searchParams.get('userId') ?? searchParams.get('contractId') ?? searchParams.get('cmsMemberId') ?? searchParams.get('transactionId') ?? searchParams.get('paymentIntentId') ?? '',
+    searchType: urlSearchType,
+    searchValue:
+      searchParams.get(urlSearchType) ??
+      searchParams.get('userId') ??
+      searchParams.get('contractId') ??
+      searchParams.get('cmsMemberId') ??
+      searchParams.get('transactionId') ??
+      searchParams.get('paymentIntentId') ??
+      '',
   });
+
+  // 위의 «돈» 영역에서 고른 달은 목록 필터와 무관하니 탭·검색·초기화에도 남긴다.
+  const keepMonth = (params: URLSearchParams) => {
+    const month = searchParams.get('month');
+    if (month) params.set('month', month);
+  };
 
   const handleTabChange = (view: View) => {
     const params = new URLSearchParams();
     params.set('view', view);
     params.set('page', '1');
+    keepMonth(params);
     router.replace(`${pathname}?${params.toString()}`);
     setFilters((prev) => ({
       ...prev,
@@ -122,6 +152,7 @@ export function RecurringBillingFilterBox() {
     const params = new URLSearchParams();
     params.set('view', currentView);
     params.set('page', '1');
+    keepMonth(params);
 
     let from = filters.dateFrom;
     let to = filters.dateTo;
@@ -140,7 +171,11 @@ export function RecurringBillingFilterBox() {
     if (filters.dateType) params.set('dateType', filters.dateType);
     if (filters.cmsMemberStatus) params.set('cmsMemberStatus', filters.cmsMemberStatus);
     if (filters.withdrawalStatus) params.set('withdrawalStatus', filters.withdrawalStatus);
-    if (filters.searchValue) params.set(filters.searchType, filters.searchValue);
+    if (filters.searchValue) {
+      params.set(filters.searchType, filters.searchValue);
+      // 새로고침해도 라디오가 값과 같은 종류를 가리키게 종류도 남긴다.
+      params.set('searchType', filters.searchType);
+    }
 
     router.replace(`${pathname}?${params.toString()}`);
   };
@@ -159,6 +194,7 @@ export function RecurringBillingFilterBox() {
     });
     const params = new URLSearchParams();
     params.set('view', currentView);
+    keepMonth(params);
     router.replace(`${pathname}?${params.toString()}`);
   };
 
@@ -166,30 +202,58 @@ export function RecurringBillingFilterBox() {
 
   return (
     <div className="mb-4 space-y-3 rounded-[10px] border border-[#D9D9D9] bg-[#F5F5F5] p-4">
-      <div className="flex gap-1 border-b border-border pb-3">
-        {TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() => handleTabChange(tab.value)}
-            className={[
-              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              currentView === tab.value
-                ? 'bg-orange-500 text-white'
-                : 'text-muted-foreground hover:bg-muted',
-            ].join(' ')}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="space-y-2 border-b border-border pb-3">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="목록 묶음">
+          {TAB_GROUPS.map((group) => (
+            <button
+              key={group.label}
+              type="button"
+              role="tab"
+              aria-selected={group.views.includes(currentView)}
+              onClick={() => handleTabChange(group.views[0])}
+              className={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                group.views.includes(currentView)
+                  ? 'bg-orange-500 text-white'
+                  : 'text-muted-foreground hover:bg-muted',
+              ].join(' ')}
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
+        {currentGroup.views.length > 1 && (
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label={`${currentGroup.label} 목록`}>
+            {currentGroup.views.map((view) => (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={currentView === view}
+                onClick={() => handleTabChange(view)}
+                className={[
+                  'rounded-full border px-3 py-1 text-xs transition-colors',
+                  currentView === view
+                    ? 'border-orange-500 bg-white font-semibold text-orange-600'
+                    : 'border-transparent text-muted-foreground hover:bg-muted',
+                ].join(' ')}
+              >
+                {TABS.find((tab) => tab.value === view)?.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {currentView === 'stuck' ||
+      {currentView === 'needs-action' ||
+      currentView === 'stuck' ||
       currentView === 'dunning' ||
       currentView === 'invoices' ||
       currentView === 'agreement-cleanup' ? (
         <p className="text-sm text-muted-foreground">
-          {currentView === 'stuck'
+          {currentView === 'needs-action'
+            ? '지금 손봐야 하는 결제수단·출금 전체입니다(심사 실패·동의자료 미등록·출금 실패·30분 넘은 결과 대기). 날짜·검색 필터는 적용되지 않습니다.'
+            : currentView === 'stuck'
             ? '48시간 이상 선점(billingInProgress) 고착된 전체 계약입니다. 별도 필터는 적용되지 않습니다.'
             : currentView === 'dunning'
               ? '결제 실패로 자동 재시도 대기 중인 전체 계약입니다. 별도 필터는 적용되지 않습니다.'

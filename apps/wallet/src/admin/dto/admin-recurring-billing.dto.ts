@@ -1,5 +1,6 @@
 import { PaginationQueryDto } from '@app/shared';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class AdminRecurringBillingListQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -156,4 +157,18 @@ export class AdminInvoiceRowDto {
   lastErrorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 정기결제 «돈» 요약 조회 — 기준 달(KST, 'YYYY-MM')부터 과거로 months 달 */
+export class AdminRecurringBillingFinanceQueryDto {
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  months?: number;
 }
