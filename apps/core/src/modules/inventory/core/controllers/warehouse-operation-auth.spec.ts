@@ -44,15 +44,17 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
             getScopesByRoles: (roles: string[]) =>
               Promise.resolve(
                 new Set(
-                  roles.includes('manager')
-                    ? ['inventory.operate', 'inventory.manage', 'inventory.adjust', 'fulfillment.dispatch.force']
-                    : roles.includes('mapped_master')
-                      ? ['master']
-                      : roles.includes('custom_force')
-                        ? ['inventory.operate', 'fulfillment.dispatch.force']
-                        : roles.includes('worker')
-                          ? ['inventory.operate']
-                          : [],
+                  roles.includes('station_worker')
+                    ? ['inventory.operate', 'fulfillment.dispatch.station_force', 'fulfillment.shipment.short_pick']
+                    : roles.includes('manager')
+                      ? ['inventory.operate', 'inventory.manage', 'inventory.adjust', 'fulfillment.dispatch.force']
+                      : roles.includes('mapped_master')
+                        ? ['master']
+                        : roles.includes('custom_force')
+                          ? ['inventory.operate', 'fulfillment.dispatch.force']
+                          : roles.includes('worker')
+                            ? ['inventory.operate']
+                            : [],
                 ),
               ),
           },
@@ -91,27 +93,28 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
       capabilities: { stocktakingAddCountItem: true, locationOutbound: true, inboundWorkflowConsistency: true },
-      permissions: { forceDispatch: false },
+      permissions: { forceDispatch: false, stationForceDispatch: false, shortPick: false },
     });
   });
   it.each([
-    ['worker', false],
-    ['manager', true],
-    ['custom_force', true],
-    ['master', true],
-    ['mapped_master', true],
-  ])('matches the actual force guard for %s', async (role, forceDispatch) => {
+    ['worker', { forceDispatch: false, stationForceDispatch: false, shortPick: false }],
+    ['station_worker', { forceDispatch: false, stationForceDispatch: true, shortPick: true }],
+    ['manager', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['custom_force', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    ['mapped_master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+  ])('matches the actual force guard for %s', async (role, permissions) => {
     const context = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
       .set('x-test-role', role)
       .expect(200);
-    expect(context.body).toHaveProperty('permissions', { forceDispatch });
+    expect(context.body).toHaveProperty('permissions', permissions);
     await request(app.getHttpServer() as Server)
       .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
       .set('x-test-role', role)
       .set('Idempotency-Key', 'check-force')
       .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
-      .expect(forceDispatch ? 201 : 403);
+      .expect(permissions.forceDispatch ? 201 : 403);
   });
   it('keeps ordinary work available but denies force when its permission preview lookup fails', async () => {
     const source = app.get(AuthorizationService);
@@ -125,7 +128,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
         .get('/inventory/work-context')
         .set('x-test-role', 'manager')
         .expect(200);
-      expect(context.body).toHaveProperty('permissions', { forceDispatch: false });
+      expect(context.body).toHaveProperty('permissions', { forceDispatch: false, stationForceDispatch: false, shortPick: false });
       await request(app.getHttpServer() as Server)
         .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
         .set('x-test-role', 'manager')
