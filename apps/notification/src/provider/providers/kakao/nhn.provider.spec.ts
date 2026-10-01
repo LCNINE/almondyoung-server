@@ -80,4 +80,57 @@ describe('NHNProvider 알림톡 템플릿 발송 요청', () => {
 
     expect(post.mock.calls[0][1].requestDate).toBe('2026-09-30 08:00');
   });
+
+  describe('발신 프로필에 대체 발송 설정이 없어 요청이 통째로 거절되면', () => {
+    const rejected = {
+      data: {
+        header: { isSuccessful: false, resultCode: -1, resultMessage: 'Please set up plus-friend resend setting.' },
+      },
+    };
+
+    it('대체 발송을 빼고 알림톡만 한 번 더 보낸다', async () => {
+      post.mockResolvedValueOnce(rejected);
+
+      const result = await provider().send({
+        to: '01012345678',
+        content: '',
+        metadata: { templateCode: 'T1', smsFallback: true },
+      });
+
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(post.mock.calls[0][1].recipientList[0].resendParameter).toEqual({
+        isResend: true,
+        resendSendNo: '0212345678',
+      });
+      expect(post.mock.calls[1][1].recipientList[0].resendParameter).toBeUndefined();
+      expect(result.success).toBe(true);
+    });
+
+    it('다른 이유의 거절은 다시 보내지 않는다', async () => {
+      post.mockResolvedValueOnce({
+        data: { header: { isSuccessful: false, resultCode: -1, resultMessage: '미승인 템플릿' } },
+      });
+
+      const result = await provider().send({
+        to: '01012345678',
+        content: '',
+        metadata: { templateCode: 'T1', smsFallback: true },
+      });
+
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(false);
+    });
+
+    it('인증번호는 다시 보내지 않는다 — 문자 대체는 호출자가 따로 맡는다', async () => {
+      post.mockResolvedValueOnce(rejected);
+
+      await provider().send({
+        to: '01012345678',
+        content: '',
+        metadata: { templateCode: 'T1', alimtalkMessageType: 'AUTH', resendContent: '[아몬드영] 인증번호 123456' },
+      });
+
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+  });
 });

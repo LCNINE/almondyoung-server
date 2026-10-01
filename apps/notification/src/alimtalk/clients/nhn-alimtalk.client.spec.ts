@@ -70,6 +70,34 @@ describe('NhnAlimtalkClient', () => {
     ).rejects.toBeInstanceOf(NhnRequestRejectedError);
   });
 
+  it('발신 프로필에 대체 발송 설정이 없어 거절되면 대체 발송을 빼고 한 번 더 보낸다', async () => {
+    http.post
+      .mockResolvedValueOnce({
+        data: {
+          header: { isSuccessful: false, resultCode: -1, resultMessage: 'Please set up plus-friend resend setting.' },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          header: { isSuccessful: true, resultCode: 0, resultMessage: '' },
+          message: {
+            requestId: 'req-2',
+            sendResults: [{ recipientGroupingKey: 'n1', resultCode: 0, resultMessage: '성공' }],
+          },
+        },
+      });
+
+    const result = await configured().sendTemplateBatch({
+      templateCode: 'NOTICE_1',
+      senderGroupingKey: 'camp-1',
+      recipients: [{ recipientNo: '01012345678', templateParameter: { name: '홍' }, recipientGroupingKey: 'n1' }],
+    });
+
+    expect(http.post).toHaveBeenCalledTimes(2);
+    expect(http.post.mock.calls[1][1].recipientList[0].resendParameter).toBeUndefined();
+    expect(result.requestId).toBe('req-2');
+  });
+
   it('템플릿 단건 조회는 목록에 코드 필터를 걸고, 코드가 정확히 같은 것만 반려 사유(comments)와 함께 돌려준다', async () => {
     const row = (templateCode: string) => ({
       templateCode,

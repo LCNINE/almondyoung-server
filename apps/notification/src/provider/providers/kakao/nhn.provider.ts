@@ -1,7 +1,7 @@
 // apps/notification/src/provider/providers/kakao/nhn.provider.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import {
   NotificationProvider,
   NotificationMessage,
@@ -9,6 +9,7 @@ import {
   BulkNotificationResult,
 } from '../../interfaces/notification-provider.interface';
 import { StructuredLogger } from '../../../shared/utils/logger.utils';
+import { isResendSettingMissing } from './nhn-resend-setting';
 
 interface NHNKakaoConfig {
   apiUrl: string;
@@ -41,6 +42,11 @@ interface AlimtalkRecipient {
   };
   buttons?: AlimtalkButton[];
   recipientGroupingKey?: string;
+}
+
+/** 발송 응답 중 재시도 판단에 쓰는 부분만 */
+interface AlimtalkSendResponse {
+  header?: { isSuccessful?: boolean; resultMessage?: string };
 }
 
 interface AlimtalkSendRequest {
@@ -198,6 +204,7 @@ export class NHNProvider implements NotificationProvider {
         };
 
         response = await this.client.post(this.messagesPath(metadata), request);
+        response = await this.withoutResendIfUnconfigured(response, request, metadata);
       } else {
         // 전문 발송
         const rawRequest: AlimtalkRawMessage = {
@@ -419,6 +426,31 @@ export class NHNProvider implements NotificationProvider {
         this.configService.get<string>('NHN_SMS_SEND_NO') ||
         this.configService.get<string>('DEFAULT_SMS_NUMBER'),
     };
+  }
+
+  /**
+   * 발신 프로필에 대체 발송 설정이 빠져 있으면 NHN 이 알림톡까지 통째로 거절한다. 그때는 대체 발송을 빼고
+   * 알림톡만 한 번 더 보낸다 — 문자 안전망은 잃어도 알림 자체가 사라지지는 않게.
+   * 인증번호는 호출자가 문자 대체를 따로 맡으므로 여기서 다시 보내지 않는다.
+   */
+  private async withoutResendIfUnconfigured(
+    response: AxiosResponse<AlimtalkSendResponse>,
+    request: AlimtalkSendRequest,
+    metadata: Record<string, unknown>,
+  ): Promise<AxiosResponse<AlimtalkSendResponse>> {
+    const header = response.data?.header;
+    const hasResend = request.recipientList.some((recipient) => recipient.resendParameter);
+    if (header?.isSuccessful || !hasResend || metadata.alimtalkMessageType === 'AUTH') return response;
+    if (!isResendSettingMissing(header?.resultMessage)) return response;
+
+    this.logger.warn('발신 프로필에 대체 발송 설정이 없어 알림톡만 다시 보낸다', {
+      templateCode: request.templateCode,
+    });
+    return this.client.post<AlimtalkSendResponse>(this.messagesPath(metadata), {
+      ...request,
+      // undefined 칸은 JSON 으로 나가지 않는다
+      recipientList: request.recipientList.map((recipient) => ({ ...recipient, resendParameter: undefined })),
+    });
   }
 
   private getResendType(content: string): 'SMS' | 'LMS' {

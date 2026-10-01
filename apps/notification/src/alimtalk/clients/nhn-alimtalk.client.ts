@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 import { BadRequestError, ServiceUnavailableError, UpstreamUnavailableError } from '@app/shared';
+import { isResendSettingMissing } from '../../provider/providers/kakao/nhn-resend-setting';
 
 export type NhnTemplateStatus = 'TSC01' | 'TSC02' | 'TSC03' | 'TSC04';
 
@@ -179,21 +180,29 @@ export class NhnAlimtalkClient {
   }): Promise<NhnBatchResult> {
     this.assertConfigured();
     const resendSendNo = this.configService.get<string>('NHN_SMS_SEND_NO');
-    const response = await this.http.post<{ header: NhnHeader; message?: RawSendMessage }>(
-      `/alimtalk/v2.3/appkeys/${this.appKey}/messages`,
-      {
-        senderKey: this.senderKey,
-        templateCode: input.templateCode,
-        senderGroupingKey: input.senderGroupingKey,
-        recipientList: input.recipients.map((r) => ({
-          recipientNo: r.recipientNo,
-          templateParameter: r.templateParameter,
-          recipientGroupingKey: r.recipientGroupingKey,
-          resendParameter: { isResend: true, ...(resendSendNo && { resendSendNo }) },
-        })),
-      },
-      { timeout: SEND_TIMEOUT_MS },
-    );
+    const send = (withResend: boolean) =>
+      this.http.post<{ header: NhnHeader; message?: RawSendMessage }>(
+        `/alimtalk/v2.3/appkeys/${this.appKey}/messages`,
+        {
+          senderKey: this.senderKey,
+          templateCode: input.templateCode,
+          senderGroupingKey: input.senderGroupingKey,
+          recipientList: input.recipients.map((r) => ({
+            recipientNo: r.recipientNo,
+            templateParameter: r.templateParameter,
+            recipientGroupingKey: r.recipientGroupingKey,
+            ...(withResend && { resendParameter: { isResend: true, ...(resendSendNo && { resendSendNo }) } }),
+          })),
+        },
+        { timeout: SEND_TIMEOUT_MS },
+      );
+    let response = await send(true);
+    // 발신 프로필에 대체 발송 설정이 빠져 있으면 알림톡까지 통째로 거절된다 — 이때는 한 명도 접수되지 않았으므로
+    // 대체 발송만 빼고 다시 보낸다.
+    if (!response.data.header?.isSuccessful && isResendSettingMissing(response.data.header?.resultMessage)) {
+      this.logger.warn(`발신 프로필에 대체 발송 설정이 없어 알림톡만 다시 보낸다 (templateCode=${input.templateCode})`);
+      response = await send(false);
+    }
     const { header, message } = response.data;
     if (!header?.isSuccessful || !message?.requestId) {
       throw new NhnRequestRejectedError(header?.resultMessage || 'NHN 이 발송 요청을 거절했습니다');
