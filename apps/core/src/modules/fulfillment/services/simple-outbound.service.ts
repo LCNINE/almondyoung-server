@@ -1,4 +1,3 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   BadRequestException,
   ConflictException,
@@ -7,7 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
+import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { ScopeAuthorizationDecision } from '@app/authorization';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
@@ -194,7 +194,7 @@ export class SimpleOutboundService {
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.force');
-    if (!isScopeAuthorizationDecision(input.authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE))
+    if (!isForceDispatchDecision(input.authorization))
       throw new ForbiddenException({
         code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
         message: 'Force dispatch scope is required',
