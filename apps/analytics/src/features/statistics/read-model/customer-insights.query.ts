@@ -12,7 +12,8 @@ import {
   dimProductMasters,
   factOrderItems,
 } from '../../../schema';
-import { SEOUL_TZ, seoulDayStart } from '../../../shared/date.util';
+import { seoulDayStart } from '../../../shared/date.util';
+import { kstWallClock } from '../../../shared/sql-time';
 
 /** 코호트 매트릭스가 다루는 개월 수 — 코호트 12개 × 경과 최대 +11개월. */
 export const COHORT_MONTHS = 12;
@@ -203,7 +204,7 @@ export class CustomerInsightsQuery {
     const windowStart = seoulDayStart(`${startMonth}-01`);
     const windowEnd = seoulDayStart(`${addMonths(endMonth, 1)}-01`);
 
-    const cohortMonthExpr = sql<string>`to_char(${aggCustomerLifetime.firstOrderAt} AT TIME ZONE ${SEOUL_TZ}, 'YYYY-MM')`;
+    const cohortMonthExpr = sql<string>`to_char(${kstWallClock(aggCustomerLifetime.firstOrderAt)}, 'YYYY-MM')`;
     const cohortWhere = and(
       gte(aggCustomerLifetime.firstOrderAt, windowStart),
       lt(aggCustomerLifetime.firstOrderAt, windowEnd),
@@ -218,7 +219,7 @@ export class CustomerInsightsQuery {
       this.db
         .select({
           cohortMonth: cohortMonthExpr,
-          activeMonth: sql<string>`to_char(${factOrderItems.occurredAt} AT TIME ZONE ${SEOUL_TZ}, 'YYYY-MM')`,
+          activeMonth: sql<string>`to_char(${kstWallClock(factOrderItems.occurredAt)}, 'YYYY-MM')`,
           customers: sql<string>`COUNT(DISTINCT ${factOrderItems.customerId})`,
         })
         .from(factOrderItems)
