@@ -6,7 +6,6 @@ import { imageSrc } from "../../../lib/image-ref"
 export function SaveDialog({ editor }: { editor: AlmondEditor }) {
   const {
     design,
-    side,
     setSaveDialog,
     saveName,
     setSaveName,
@@ -38,9 +37,11 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
                 preserveAspectRatio="xMidYMid slice"
               />
             )}
-            {design[side].map((layer) => (
-              <LayerGraphic key={layer.id} layer={layer} />
-            ))}
+            {design.front
+              .filter((layer) => layer.visible !== false)
+              .map((layer) => (
+                <LayerGraphic key={layer.id} layer={layer} />
+              ))}
           </svg>
         </div>
         <label className="block text-sm">

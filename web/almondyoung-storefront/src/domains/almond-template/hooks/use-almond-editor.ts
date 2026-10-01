@@ -127,7 +127,6 @@ export function useAlmondEditor({
     change,
     setSelectedId,
     setMessage,
-    svgRef: canvas.svgRef,
   })
   const actions = useLayerActions({
     design,

@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-  type RefObject,
-} from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import {
   deleteAlmondTemplate,
   getAdminAlmondTemplate,
@@ -19,7 +13,7 @@ import { uploadFile } from "@/lib/api/file/upload"
 import { inlineThumbnailImages, uploadDesignImages } from "../lib/design-images"
 import { parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
-import { svgMarkup } from "./use-template-export"
+import { printSvg } from "../components/print-svg"
 
 export type EditorMode = "customer" | "designer"
 export type SavedItem = AdminAlmondTemplateSummary
@@ -35,7 +29,6 @@ type Params = {
   change: (design: Design) => void
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
-  svgRef: RefObject<SVGSVGElement>
   runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
   forgetBackup: () => Promise<unknown>
 }
@@ -50,7 +43,6 @@ export function useTemplateStorage({
   change,
   setSelectedId,
   setMessage,
-  svgRef,
   runAuthed,
   forgetBackup,
 }: Params) {
@@ -136,9 +128,15 @@ export function useTemplateStorage({
     }
     if (!named.front.length && !named.back.length)
       return setMessage("빈 시안은 저장할 수 없습니다.")
-    if (!svgRef.current) return setMessage("미리보기를 만들 수 없습니다.")
-    const markup = svgMarkup(svgRef.current, named)
     serverTask(async () => {
+      const markup = await printSvg(
+        {
+          ...named,
+          front: named.front.filter((layer) => layer.visible !== false),
+        },
+        "front",
+        0
+      )
       const [stored, thumbnailSvg] = await Promise.all([
         uploadDesignImages(named, uploadFile),
         inlineThumbnailImages(markup),
