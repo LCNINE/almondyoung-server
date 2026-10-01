@@ -230,15 +230,24 @@ export function renderBody(template: AlimtalkTemplateView, bindings: VariableBin
   return renderVariables(template.templateContent, parametersFor(bindings, name));
 }
 
-function outcomeOf(m: NhnMessageResult): 'kakao' | 'sms' | 'failed' | 'inProgress' {
-  if (m.resultCode === 'MRC01') return 'kakao';
+/** 메시지 조회 API 의 알림톡 성공 코드. 결과 웹훅은 MRC01 로 준다. */
+const KAKAO_DELIVERED = new Set(['1000', 'MRC01']);
+
+/**
+ * NHN 수신 결과 한 건을 카카오·문자·못 받음·처리 중으로 나눈다.
+ * 카카오로 받으면 대체 발송은 쓰이지 않아 resendStatus 가 «대상(RSC02)» 으로 남으므로 그것만 보고 판단하지 않는다.
+ */
+export function outcomeOf(m: NhnMessageResult): 'kakao' | 'sms' | 'failed' | 'inProgress' {
+  if (m.resultCode && KAKAO_DELIVERED.has(m.resultCode)) return 'kakao';
   if (m.resendStatus === 'RSC04') return 'sms';
   if (m.resendStatus === 'RSC05') return 'failed';
-  if (m.resultCode === 'MRC02' && (m.resendStatus === 'RSC01' || !m.resendStatus)) return 'failed';
-  if (m.messageStatus === 'FAILED' || m.messageStatus === 'CANCEL') {
-    return m.resendStatus === 'RSC02' || m.resendStatus === 'RSC03' ? 'inProgress' : 'failed';
-  }
-  return 'inProgress';
+  const kakaoFailed =
+    m.resultCode === 'MRC02' ||
+    m.messageStatus === 'FAILED' ||
+    m.messageStatus === 'CANCEL' ||
+    (m.messageStatus === 'COMPLETED' && !!m.resultCode);
+  if (!kakaoFailed) return 'inProgress';
+  return m.resendStatus === 'RSC02' || m.resendStatus === 'RSC03' ? 'inProgress' : 'failed';
 }
 
 function stateOf(campaign: NotificationCampaign, pending: number, now: Date): AlimtalkCampaignState {

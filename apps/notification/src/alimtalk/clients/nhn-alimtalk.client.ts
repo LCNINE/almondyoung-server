@@ -70,8 +70,9 @@ export interface NhnMessageResult {
   recipientSeq: number;
   recipientNo: string;
   recipientGroupingKey: string | null;
-  /** COMPLETED 성공 · FAILED 실패 · CANCEL 취소, 그 밖(비어 있음 등)은 아직 처리 중 */
+  /** COMPLETED 처리 끝(성패는 resultCode) · FAILED 실패 · CANCEL 취소, 그 밖(비어 있음 등)은 아직 처리 중 */
   messageStatus: string | null;
+  /** 메시지 조회 API 는 1000 이 성공, 그 밖의 코드는 실패 */
   resultCode: string | null;
   resultCodeName: string | null;
   /** RSC01 미대상 · RSC02 대상 · RSC03 진행 중 · RSC04 성공 · RSC05 실패 */
