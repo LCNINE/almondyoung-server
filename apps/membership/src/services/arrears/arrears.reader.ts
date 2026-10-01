@@ -93,6 +93,21 @@ export class ArrearsReader {
     return { intentIds, unmarked: rows.filter((r) => !r.pendingIntentId).length };
   }
 
+  /**
+   * 미청산 잔액이 남은 계정 전부. 관리자 알림톡의 «미납 회원» 대상이 쓴다.
+   * 가입 관문(`outstandingSummary` 의 total > 0)과 같은 기준이라야 「안내는 받았는데 가입은 된다」가 안 생긴다.
+   */
+  async outstandingUserIds(): Promise<string[]> {
+    const rows = await this.dbService.db
+      .select({ userId: schema.membershipArrears.userId })
+      .from(schema.membershipArrears)
+      .where(eq(schema.membershipArrears.status, 'OUTSTANDING'))
+      .groupBy(schema.membershipArrears.userId)
+      .having(sql`SUM(${schema.membershipArrears.amount}) > 0`);
+
+    return rows.map((r) => r.userId);
+  }
+
   /** 미청산 잔액 한 줄. 고객 화면·게이트가 이것만 본다. */
   async outstandingSummary(userId: string): Promise<{ total: number; count: number; currency: string }> {
     const [row] = await this.dbService.db

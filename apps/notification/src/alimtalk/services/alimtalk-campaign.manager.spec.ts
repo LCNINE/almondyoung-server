@@ -43,7 +43,10 @@ function setup(options: { existing?: object; groups?: { id: string; name: string
       { userId: 'x1', username: '일반', phoneNumber: '01055556666', marketingConsent: true },
     ]),
   };
-  const membership = { activeUserIds: jest.fn().mockResolvedValue(new Set(['m1'])) };
+  const membership = {
+    activeUserIds: jest.fn().mockResolvedValue(new Set(['m1'])),
+    arrearsUserIds: jest.fn().mockResolvedValue(new Set(['x1'])),
+  };
   const reader = new AlimtalkCampaignReader(
     repository as never,
     templateReader as never,
@@ -111,6 +114,15 @@ describe('AlimtalkCampaignManager.create', () => {
     await manager.create(dto({ members: 'ALL', manual: [] }), 'admin-1');
     expect(membership.activeUserIds).not.toHaveBeenCalled();
     expect(repository.createCampaign.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it('미납 회원만 고르면 미납 명단에 있는 회원만 넣고 멤버십 명단은 부르지 않는다', async () => {
+    const { manager, repository, membership } = setup();
+    await manager.create(dto({ members: 'ARREARS', manual: [] }), 'admin-1');
+    expect(membership.activeUserIds).not.toHaveBeenCalled();
+    const [campaign, rows] = repository.createCampaign.mock.calls[0];
+    expect(rows.map((r: { userId: string }) => r.userId)).toEqual(['x1']);
+    expect(campaign.metadata).toMatchObject({ members: 'ARREARS', recipients: 1 });
   });
 
   it('지난 시각으로 예약하면 막는다', async () => {

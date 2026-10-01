@@ -59,7 +59,7 @@ export interface AlimtalkTemplateInput {
   buttons: AlimtalkButtonInput[];
 }
 
-export type AlimtalkMemberAudience = 'NONE' | 'ALL' | 'MEMBERSHIP';
+export type AlimtalkMemberAudience = 'NONE' | 'ALL' | 'MEMBERSHIP' | 'ARREARS';
 
 export type AlimtalkVariableBinding =
   | { name: string; source: 'RECIPIENT_NAME' }

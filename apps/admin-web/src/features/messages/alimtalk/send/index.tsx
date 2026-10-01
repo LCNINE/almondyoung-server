@@ -59,11 +59,23 @@ const MEMBER_OPTIONS: {
     hint: '지금 멤버십을 이용 중인 회원 중 휴대폰 번호가 있는 분.',
   },
   {
+    value: 'ARREARS',
+    label: '미납 요금이 있는 회원만',
+    hint: '멤버십 요금이 미납으로 남아 있는 회원 중 휴대폰 번호가 있는 분 (납부·면제한 분 제외).',
+  },
+  {
     value: 'ALL',
     label: '회원 전체',
     hint: '휴대폰 번호가 있는 회원 전원 (탈퇴·휴면 제외).',
   },
 ];
+
+const MEMBER_TARGET_NAMES: Record<AlimtalkMemberAudience, string | null> = {
+  NONE: null,
+  MEMBERSHIP: '멤버십 회원',
+  ARREARS: '미납 회원',
+  ALL: '회원 전체',
+};
 
 const errorMessage = (error: unknown, fallback: string) =>
   (error instanceof Error && error.message) || fallback;
@@ -147,11 +159,7 @@ export default function AlimtalkSendTemplate() {
       variables: bindings,
     };
     const targetNames = [
-      ...(members === 'ALL'
-        ? ['회원 전체']
-        : members === 'MEMBERSHIP'
-          ? ['멤버십 회원']
-          : []),
+      ...(MEMBER_TARGET_NAMES[members] ? [MEMBER_TARGET_NAMES[members]] : []),
       ...groupIds.map(
         (id) =>
           `${groups.data?.find((g) => g.id === id)?.name ?? '(사라진 그룹)'} 그룹`

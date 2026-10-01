@@ -17,7 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export const ALIMTALK_MEMBER_AUDIENCES = ['NONE', 'ALL', 'MEMBERSHIP'] as const;
+export const ALIMTALK_MEMBER_AUDIENCES = ['NONE', 'ALL', 'MEMBERSHIP', 'ARREARS'] as const;
 export type AlimtalkMemberAudience = (typeof ALIMTALK_MEMBER_AUDIENCES)[number];
 
 export class VariableBindingDto {
@@ -59,7 +59,7 @@ export class PreviewAlimtalkCampaignDto {
 
   @ApiProperty({
     enum: ALIMTALK_MEMBER_AUDIENCES,
-    description: '회원 넣지 않음 / 휴대폰 번호가 있는 회원 전체 / 멤버십 회원만',
+    description: '회원 넣지 않음 / 휴대폰 번호가 있는 회원 전체 / 멤버십 회원만 / 미납 멤버십 요금이 남은 회원만',
   })
   @IsIn(ALIMTALK_MEMBER_AUDIENCES)
   members: AlimtalkMemberAudience;
