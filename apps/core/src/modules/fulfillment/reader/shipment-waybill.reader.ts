@@ -7,6 +7,12 @@ import type { LabelItemChange, LabelState } from '../waybill/label/label-print-p
 import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawal-removals.query';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
+export interface ShipmentByWaybillAllocation {
+  sourceLocationId: string;
+  locationCode: string;
+  qty: number;
+}
+
 export interface ShipmentByWaybillLine {
   shipmentLineId: string;
   skuId: string;
@@ -15,6 +21,16 @@ export interface ShipmentByWaybillLine {
   qty: number;
   pickedQty: number;
   inspectedQty: number;
+  lineVersion: number;
+  /** 송장 순서(로케이션 코드 순). 시작 안 된 배치·작업 항목 없음이면 [] */
+  allocations: ShipmentByWaybillAllocation[];
+}
+
+export interface ShortPickContext {
+  workItemLeaseVersion: number;
+  sessionId: string;
+  sessionVersion: number;
+  manifestVersion: number;
 }
 
 export interface ShipmentByWaybillResult {
@@ -28,6 +44,7 @@ export interface ShipmentByWaybillResult {
   workItemId: string | null;
   workItemStatus: string | null;
   recipientMasked: string;
+  deliveryNote: string | null;
   lines: ShipmentByWaybillLine[];
   /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
@@ -39,6 +56,8 @@ export interface ShipmentByWaybillResult {
   removals: WithdrawalRemoval[];
   /** withdrawing 이면 활성 작업 항목의 exit_to, withdrawn 이면 마지막 작업 항목의 exit_to. 그 밖엔 null. */
   exitTo: 'draft' | 'canceled' | null;
+  /** 결품 보고(POST shipments/:id/short-picks)에 필요한 버전. 활성 작업 항목과 active 세션이 둘 다 있을 때만 */
+  shortPickContext: ShortPickContext | null;
 }
 
 // `short_pick_recovery` 도 활성 상태다 — uq_outbound_work_item_active_shipment 는
@@ -63,6 +82,15 @@ export function readRecipientName(snapshot: unknown): string {
   if (!isRecipientRecord(snapshot)) return '';
   const { recipientName } = snapshot;
   return typeof recipientName === 'string' ? recipientName : '';
+}
+
+/** 배송메모만 — 공동현관 비밀번호는 현장 화면에 띄우지 않는다(송장 템플릿만 섞는다). */
+export function readDeliveryNote(snapshot: unknown): string | null {
+  if (!isRecipientRecord(snapshot)) return null;
+  const { deliveryNote } = snapshot;
+  if (typeof deliveryNote !== 'string') return null;
+  const trimmed = deliveryNote.trim();
+  return trimmed ? trimmed : null;
 }
 
 @Injectable()
@@ -101,6 +129,7 @@ export class ShipmentWaybillReader {
           warehouseId: wmsTables.shipments.warehouseId,
           status: wmsTables.shipments.status,
           recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+          manifestVersion: wmsTables.shipments.manifestVersion,
         })
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, waybill.shipmentId))
@@ -121,6 +150,7 @@ export class ShipmentWaybillReader {
           batchId: wmsTables.outboundBatchWorkItems.batchId,
           status: wmsTables.outboundBatchWorkItems.status,
           exitTo: wmsTables.outboundBatchWorkItems.exitTo,
+          leaseVersion: wmsTables.outboundBatchWorkItems.leaseVersion,
         })
         .from(wmsTables.outboundBatchWorkItems)
         .where(
@@ -138,9 +168,10 @@ export class ShipmentWaybillReader {
       // 과 같은 집계를 여기서도 낸다. work item 이 없거나 active session 이 없으면
       // (아직 피킹을 시작 안 함) 모든 라인이 0 이다.
       const pickedByLine = new Map<string, number>();
+      let activeSession: { id: string; version: number } | undefined;
       if (workItem) {
         const [session] = await trx
-          .select({ id: wmsTables.batchInventorySessions.id })
+          .select({ id: wmsTables.batchInventorySessions.id, version: wmsTables.batchInventorySessions.version })
           .from(wmsTables.batchInventorySessions)
           .where(
             and(
@@ -149,6 +180,7 @@ export class ShipmentWaybillReader {
             ),
           )
           .limit(1);
+        activeSession = session;
         if (session) {
           const balances = await trx
             .select({
@@ -169,6 +201,10 @@ export class ShipmentWaybillReader {
         }
       }
 
+      const allocations = workItem
+        ? await this.loadAllocations(trx, workItem.id)
+        : new Map<string, ShipmentByWaybillAllocation[]>();
+
       const label = await this.labelStates.forShipment(waybill.shipmentId, trx);
 
       return {
@@ -182,7 +218,12 @@ export class ShipmentWaybillReader {
         workItemId: workItem?.id ?? null,
         workItemStatus: workItem?.status ?? null,
         recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
-        lines: lines.map((line) => ({ ...line, pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0 })),
+        deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+        lines: lines.map((line) => ({
+          ...line,
+          pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0,
+          allocations: allocations.get(line.shipmentLineId) ?? [],
+        })),
         labelState: label?.state ?? null,
         labelChanges: label?.changes ?? [],
         labelIssue: label?.issue ?? null,
@@ -193,8 +234,40 @@ export class ShipmentWaybillReader {
             : label?.state === 'withdrawn'
               ? (label.exitTo ?? null)
               : null,
+        shortPickContext:
+          workItem && activeSession
+            ? {
+                workItemLeaseVersion: workItem.leaseVersion,
+                sessionId: activeSession.id,
+                sessionVersion: activeSession.version,
+                manifestVersion: shipment.manifestVersion,
+              }
+            : null,
       };
     });
+  }
+
+  /** 작업 항목의 배정 — 송장 품목 줄과 같은 순서(로케이션 코드 순). 수량 0 행은 송장에 없으므로 뺀다. */
+  private async loadAllocations(trx: DbTx, workItemId: string): Promise<Map<string, ShipmentByWaybillAllocation[]>> {
+    const rows = await trx
+      .select({
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        locationCode: wmsTables.locations.code,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
+      .orderBy(asc(wmsTables.locations.code), asc(wmsTables.pickingSourceAllocations.sourceLocationId));
+    const byLine = new Map<string, ShipmentByWaybillAllocation[]>();
+    for (const row of rows) {
+      if (row.qty <= 0) continue;
+      const list = byLine.get(row.shipmentLineId) ?? [];
+      list.push({ sourceLocationId: row.sourceLocationId, locationCode: row.locationCode, qty: row.qty });
+      byLine.set(row.shipmentLineId, list);
+    }
+    return byLine;
   }
 
   private loadLines(trx: DbTx, shipmentId: string) {
@@ -206,6 +279,7 @@ export class ShipmentWaybillReader {
         skuName: wmsTables.skus.name,
         qty: wmsTables.shipmentLines.qty,
         inspectedQty: wmsTables.shipmentLines.inspectedQty,
+        lineVersion: wmsTables.shipmentLines.lineVersion,
       })
       .from(wmsTables.shipmentLines)
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
@@ -267,12 +341,14 @@ export class ShipmentWaybillReader {
       workItemId: null,
       workItemStatus: null,
       recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
-      lines: lines.map((line) => ({ ...line, pickedQty: 0 })),
+      deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+      lines: lines.map((line) => ({ ...line, pickedQty: 0, allocations: [] })),
       labelState: 'withdrawn',
       labelChanges: [],
       labelIssue: null,
       removals: [],
       exitTo,
+      shortPickContext: null,
     };
   }
 
