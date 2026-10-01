@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { DbService } from '@app/db';
 import {
   aggChannelDaily,
+  aggCustomerLifetime,
   aggMembershipDaily,
   aggProductOrderDaily,
   aggVariantOrderDaily,
@@ -277,6 +278,36 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
     // 8월 5일 00:00 KST 기준: user-1 만 열려 있다 (user-2 는 8/10 시작, user-3 은 8/1 종료).
     expect(rows).toHaveLength(1);
     expect(rows[0].membersCount).toBe(1);
+  });
+
+  it('신규 고객 버킷은 KST 달력일 기준이다 — 세션 시간대와 무관', async () => {
+    // 저장값은 UTC 벽시계다. KST 00:30·08:59·09:00·23:59 는 모두 3월 1일, 다음날 00:10 은 3월 2일.
+    const kst = ['2031-03-01T00:30', '2031-03-01T08:59', '2031-03-01T09:00', '2031-03-01T23:59', '2031-03-02T00:10'];
+    const ids = kst.map((_, i) => `${userPrefix}-kst-${i}`);
+    await db.insert(aggCustomerLifetime).values(
+      kst.map((t, i) => ({
+        customerId: ids[i],
+        firstOrderAt: new Date(`${t}:00+09:00`),
+        lastOrderAt: new Date(`${t}:00+09:00`),
+        ordersCount: 1,
+        totalRevenue: 1000,
+      })),
+    );
+    try {
+      for (const tz of ['UTC', 'Asia/Seoul']) {
+        await sql.unsafe(`SET TIME ZONE '${tz}'`);
+        const daily = await query.getCustomers('2031-03-01', '2031-03-02');
+        expect(daily.newCustomers).toEqual([
+          { bucket: '2031-03-01', count: 4 },
+          { bucket: '2031-03-02', count: 1 },
+        ]);
+        const monthly = await query.getCustomers('2031-03-01', '2031-03-02', 'month');
+        expect(monthly.newCustomers).toEqual([{ bucket: '2031-03', count: 5 }]);
+      }
+    } finally {
+      await sql`SET TIME ZONE 'UTC'`;
+      await db.delete(aggCustomerLifetime).where(inArray(aggCustomerLifetime.customerId, ids));
+    }
   });
 
   it('요약의 데이터 기준 시각은 집계 갱신 시각을 UTC ISO 로 왕복 보존한다', async () => {

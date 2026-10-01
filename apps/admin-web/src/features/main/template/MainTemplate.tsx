@@ -18,6 +18,7 @@ import { RealtimeBoard } from '@/features/main/RealtimeBoard';
 import { CsBoard, MembersBoard, OrderStatusBoard, SkeletonRows } from '@/features/main/DailyBoards';
 import { SourcingBoard } from '@/features/main/SourcingBoard';
 import { BoardHeader } from '@/features/main/BoardHeader';
+import { GrowthGoalCard } from '@/features/main/GrowthGoalCard';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 
@@ -227,6 +228,8 @@ export default function MainTemplate() {
           ))}
         </div>
       </section>
+
+      <GrowthGoalCard className={CARD_CLASS} />
 
       <section className={CARD_CLASS}>
         <div className="mx-4 flex overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_#EBEBEB]">

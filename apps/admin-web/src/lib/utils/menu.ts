@@ -490,6 +490,11 @@ const allMenus: MainMenu[] = [
             title: '종합 대시보드',
             path: '/statistics/overview',
           },
+          {
+            id: 'statistics-growth',
+            title: '성장 (유입·전환·재구매·목표)',
+            path: '/statistics/growth',
+          },
           { id: 'by-profit', title: '이익', path: '/statistics/profit' },
           { id: 'by-inventory', title: '재고', path: '/statistics/inventory' },
           { id: 'by-product', title: '상품별', path: '/statistics/products' },
@@ -514,7 +519,7 @@ const allMenus: MainMenu[] = [
           { id: 'by-review', title: '리뷰', path: '/statistics/reviews' },
           {
             id: 'statistics-settings',
-            title: '경영 설정 (고정비)',
+            title: '경영 설정 (고정비·매출 목표)',
             path: '/statistics/settings',
           },
         ],

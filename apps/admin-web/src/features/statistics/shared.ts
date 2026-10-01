@@ -55,7 +55,9 @@ export function useStatisticsRange(): StatisticsRangeQuery {
     const from = searchParams.get('from') ?? fallback.from;
     const to = searchParams.get('to') ?? fallback.to;
     const channel = searchParams.get('channel') ?? undefined;
-    const granularity = (searchParams.get('granularity') as Granularity) ?? 'day';
+    // 성장 탭의 «주» 가 다른 탭으로 넘어와도 그 탭 서버가 받지 못하는 값을 보내지 않는다.
+    const raw = searchParams.get('granularity');
+    const granularity: Granularity = raw === 'month' || raw === 'year' ? raw : 'day';
     return { from, to, channel, granularity };
   }, [searchParams]);
 }
