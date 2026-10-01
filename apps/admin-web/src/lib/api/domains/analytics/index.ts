@@ -519,6 +519,7 @@ export interface GrowthSummary {
   ytdDaily: GrowthDailyRevenue[];
   monitorDaily: GrowthDailyRevenue[];
   ga4Daily: { status: Ga4Status; points: Array<{ date: string; sessions: number; transactions: number }> };
+  buyersDaily: Array<{ date: string; buyers: number }>;
   customers: {
     range: { from: string; to: string };
     previousRange: { from: string; to: string };

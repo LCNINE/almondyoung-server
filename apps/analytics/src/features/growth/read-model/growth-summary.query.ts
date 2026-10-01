@@ -32,6 +32,8 @@ export interface GrowthSummary {
   /** 최근 MONITOR_DAYS 일 — 연초를 넘어가도 끊지 않는다(기준선·달성 확률용). */
   monitorDaily: DailyRevenue[];
   ga4Daily: { status: Ga4Status; points: Ga4DailyPoint[] };
+  /** 최근 MONITOR_DAYS 일 일별 구매자 수(서로 다른 회원) */
+  buyersDaily: Array<{ date: string; buyers: number }>;
   customers: Pick<CustomerFlowResult, 'range' | 'previousRange' | 'current' | 'previous' | 'growthAccounting' | 'repeatHeadline' | 'repurchaseDue' | 'timeToSecond'>;
 }
 
@@ -75,7 +77,7 @@ export class GrowthSummaryQuery {
     const monitorFrom = addDays(today, -(MONITOR_DAYS - 1));
     const customerFrom = addDays(today, -(CUSTOMER_WINDOW_DAYS - 1));
 
-    const [coverageStart, channels, goal, ytdDaily, monitorDaily, ga4Daily, flow, asOfRows] = await Promise.all([
+    const [coverageStart, channels, goal, ytdDaily, monitorDaily, ga4Daily, flow, asOfRows, buyersDaily] = await Promise.all([
       this.revenue.getCoverageStart(),
       this.revenue.getChannelsSince(addDays(today, -365)),
       this.goals.getCurrent(year),
@@ -86,6 +88,7 @@ export class GrowthSummaryQuery {
       this.db
         .select({ updatedAt: sql<string | null>`to_char(${max(aggChannelDaily.updatedAt)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` })
         .from(aggChannelDaily),
+      this.customers.getDailyBuyers(monitorFrom, today),
     ]);
 
     return {
@@ -98,6 +101,7 @@ export class GrowthSummaryQuery {
       ytdDaily,
       monitorDaily,
       ga4Daily,
+      buyersDaily,
       customers: {
         range: flow.range,
         previousRange: flow.previousRange,

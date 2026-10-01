@@ -71,6 +71,7 @@ function AxisTile({
   previous,
   spark,
   points,
+  noDelta,
 }: {
   label: string;
   value: string;
@@ -79,12 +80,14 @@ function AxisTile({
   previous: number | null;
   spark?: Array<number | null>;
   points?: boolean;
+  /** 비교 기준이 없는 지표 — 증감 자리를 비운다 */
+  noDelta?: boolean;
 }) {
   return (
     <div className="min-w-0 rounded-xl bg-[#FAFAFA] px-3 py-2.5">
       <div className="flex items-center justify-between gap-1 text-[12px] text-[#757575]">
         <span className="truncate">{label}</span>
-        <Delta current={current} previous={previous} points={points} />
+        {noDelta ? null : <Delta current={current} previous={previous} points={points} />}
       </div>
       <p className="mt-0.5 truncate text-lg font-bold tabular-nums text-[#1C1C1C]">{value}</p>
       <p className="truncate text-[11px] text-[#9E9E9E]">{sub}</p>
@@ -117,6 +120,10 @@ export function GrowthGoalCard({ className }: { className?: string }) {
 
   const conversion = monitor && monitor.sessionsPerDay ? monitor.ordersPerDay / monitor.sessionsPerDay : null;
   const prevConversion = monitor?.previous.sessionsPerDay ? monitor.previous.ordersPerDay / monitor.previous.sessionsPerDay : null;
+  // 1인당 = 하루 순매출 ÷ 하루 구매자(서로 다른 회원). 주문 1건당 객단가와 다르다 — 같은 날 여러 번 산 고객은 한 명으로 센다.
+  const perBuyer = monitor && monitor.buyersPerDay > 0 ? monitor.ownNetPerDay / monitor.buyersPerDay : null;
+  const prevPerBuyer = monitor && monitor.previous.buyersPerDay > 0 ? monitor.previous.ownNetPerDay / monitor.previous.buyersPerDay : null;
+  const cycle = summary?.customers.timeToSecond;
 
   return (
     <section className={className} aria-labelledby="main-growth-title">
@@ -130,7 +137,8 @@ export function GrowthGoalCard({ className }: { className?: string }) {
               label="매출 목표와 성장 3축"
               items={[
                 '달성액 = 목표 범위(기본 자사몰)의 순매출(취소·환불 차감)에서 결제 환불을 뺀 값, 어제까지 기준입니다.',
-                '유입·전환·재구매는 최근 28일(어제까지) 하루 평균이고, 화살표는 그 앞 28일 대비입니다.',
+                '유입·구매자·전환·객단가는 최근 28일(어제까지) 하루 평균이고, 화살표는 그 앞 28일 대비입니다.',
+                '재구매 주기는 첫 구매 뒤 두 번째 구매까지 걸린 날(중앙값, 최근 1년 첫 구매 고객)입니다.',
                 '재구매율은 첫 구매 후 90일 안에 다시 산 비율(자사몰 회원)입니다.',
                 '목표는 판매/통계 › 설정에서 넣습니다.',
               ]}
@@ -179,7 +187,7 @@ export function GrowthGoalCard({ className }: { className?: string }) {
               </Link>
             )}
 
-            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
               <AxisTile
                 label="유입 · 하루 방문"
                 value={monitor.sessionsPerDay != null ? Math.round(monitor.sessionsPerDay).toLocaleString('ko-KR') : 'GA4 미연동'}
@@ -204,6 +212,28 @@ export function GrowthGoalCard({ className }: { className?: string }) {
                 current={repeat?.current ?? null}
                 previous={repeat?.previous ?? null}
                 points
+              />
+              <AxisTile
+                label="하루 평균 구매자"
+                value={`${monitor.buyersPerDay.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}명`}
+                sub={conversion != null ? `구매전환율 ${(conversion * 100).toFixed(2)}%` : '최근 28일 평균'}
+                current={monitor.buyersPerDay}
+                previous={monitor.previous.buyersPerDay}
+              />
+              <AxisTile
+                label="1인당 객단가"
+                value={perBuyer != null ? won(perBuyer) : '-'}
+                sub="하루 순매출 ÷ 하루 구매자 · 최근 28일"
+                current={perBuyer}
+                previous={prevPerBuyer}
+              />
+              <AxisTile
+                label="재구매 주기"
+                value={cycle?.p50 != null ? `${Math.round(cycle.p50)}일` : '-'}
+                sub={cycle?.p25 != null && cycle.p75 != null ? `첫→두 번째 구매 · 절반이 ${Math.floor(cycle.p25)}~${Math.ceil(cycle.p75)}일` : '재구매 표본 없음'}
+                current={null}
+                previous={null}
+                noDelta
               />
             </div>
           </div>

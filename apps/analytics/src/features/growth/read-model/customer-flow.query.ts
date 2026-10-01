@@ -150,6 +150,20 @@ export class CustomerFlowQuery {
     return [...result] as Array<Record<string, unknown>>;
   }
 
+  /** 일별 구매자 수(서로 다른 회원). 빈 날은 0. 관리자 메인의 «하루 평균 구매자»와 그 비교 기준이 쓴다. */
+  async getDailyBuyers(from: string, to: string): Promise<Array<{ date: string; buyers: number }>> {
+    const until = seoulDayStart(addDays(to, 1));
+    const rows = await this.rows(sql`
+      with ${customerOrdersCte(until)}
+      select to_char(o.day, 'YYYY-MM-DD') as date, count(distinct o.customer_id) as buyers
+      from orders o where o.day between ${from}::date and ${to}::date
+      group by 1`);
+    const byDate = new Map(rows.map((r) => [String(r.date), num(r.buyers)]));
+    const out: Array<{ date: string; buyers: number }> = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) out.push({ date: d, buyers: byDate.get(d) ?? 0 });
+    return out;
+  }
+
   async getFlow(from: string, to: string, granularity: GrowthGranularity, today: string): Promise<CustomerFlowResult> {
     const prev = previousRange(from, to);
     const prevPrev = previousRange(prev.from, prev.to);

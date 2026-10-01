@@ -198,4 +198,18 @@ describeIfDb('CustomerFlowQuery (실 Postgres)', () => {
     const r = await query.getFlow('2032-03-01', '2032-03-14', 'day', today);
     expect(r.coverage).toEqual({ ownMallOrders: 12, memberOrders: 11 });
   });
+
+  it('일별 구매자 — 같은 날 두 건은 1명, 전량 취소는 0명, 빈 날은 0', async () => {
+    const days = await query.getDailyBuyers('2032-03-01', '2032-03-08');
+    expect(days).toEqual([
+      { date: '2032-03-01', buyers: 0 },
+      { date: '2032-03-02', buyers: 1 }, // c2 같은 날 두 건
+      { date: '2032-03-03', buyers: 1 },
+      { date: '2032-03-04', buyers: 1 }, // c9 같은 날 두 건
+      { date: '2032-03-05', buyers: 1 },
+      { date: '2032-03-06', buyers: 0 },
+      { date: '2032-03-07', buyers: 0 },
+      { date: '2032-03-08', buyers: 0 }, // c5 전량 취소
+    ]);
+  });
 });

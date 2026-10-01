@@ -32,6 +32,7 @@ function summary(overrides: Partial<GrowthSummary> = {}): GrowthSummary {
     ytdDaily: monitorDaily.filter((d) => d.date >= '2027-01-01'),
     monitorDaily,
     ga4Daily: { status: 'ok', points: monitorDaily.map((d) => ({ date: d.date, sessions: 200, transactions: 2 })) },
+    buyersDaily: monitorDaily.map((d, i) => ({ date: d.date, buyers: i < 28 ? 2 : 3 })),
     customers,
     ...overrides,
   };
@@ -47,6 +48,9 @@ describe('monitorStats', () => {
     expect(m.previous.ownNetPerDay).toBe(6_000);
     expect(m.best.conversion).toBeCloseTo(3 / 200, 12);
     expect(m.spark).toHaveLength(28);
+    // 최근 완료 28일 = 인덱스 28~55 → 3명, 직전 28일 = 0~27 → 2명 (오늘(56)은 빼고)
+    expect(m.buyersPerDay).toBe(3);
+    expect(m.previous.buyersPerDay).toBe(2);
     expect(m.spark[27].date).toBe(addDays(TODAY, -1));
   });
 

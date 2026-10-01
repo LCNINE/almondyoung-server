@@ -27,8 +27,10 @@ export interface MonitorStats {
   sessionsPerDay: number | null;
   ordersPerDay: number;
   ownNetPerDay: number;
+  /** 하루 평균 구매자(서로 다른 회원) */
+  buyersPerDay: number;
   /** 직전 28일 일평균 — 메인 카드의 «전 28일 대비» */
-  previous: { sessionsPerDay: number | null; ordersPerDay: number; ownNetPerDay: number };
+  previous: { sessionsPerDay: number | null; ordersPerDay: number; ownNetPerDay: number; buyersPerDay: number };
   best: { sessionsPerDay: number | null; conversion: number | null; aov: number | null };
   /** 완료일 기준 스파크라인(오래된 → 최근) */
   spark: Array<{ date: string; sessions: number | null; orders: number; ownNet: number }>;
@@ -50,6 +52,8 @@ export function monitorStats(summary: GrowthSummary, refunds: Map<string, number
   const ownNet = (d: (typeof done)[number]) => d.ownMall - refundOf(refunds, d.date);
   const sessions = (rows: typeof done) => (ga4ok ? avg(rows, (d) => sessionsByDate.get(d.date) ?? 0) : null);
 
+  const buyersByDate = new Map(summary.buyersDaily.map((b) => [b.date, b.buyers]));
+  const buyers = (rows: typeof done) => avg(rows, (d) => buyersByDate.get(d.date) ?? 0);
   const sessionsSeries = done.map((d) => sessionsByDate.get(d.date) ?? 0);
   const ordersSeries = done.map((d) => d.ownMallOrders);
   const netSeries = done.map(ownNet);
@@ -58,10 +62,12 @@ export function monitorStats(summary: GrowthSummary, refunds: Map<string, number
     sessionsPerDay: sessions(recent),
     ordersPerDay: avg(recent, (d) => d.ownMallOrders),
     ownNetPerDay: avg(recent, ownNet),
+    buyersPerDay: buyers(recent),
     previous: {
       sessionsPerDay: before.length > 0 ? sessions(before) : null,
       ordersPerDay: avg(before, (d) => d.ownMallOrders),
       ownNetPerDay: avg(before, ownNet),
+      buyersPerDay: buyers(before),
     },
     best: {
       sessionsPerDay: ga4ok ? bestRolling7(sessionsSeries) : null,
