@@ -10,6 +10,8 @@ import {
   makeDb,
   seedPickableShipment,
 } from '../services/__support__';
+import { startBatchFor } from '../services/__support__/simple-outbound-wiring';
+import { assembleLabels, promoteToCarrierWaybill } from '../waybill/__support__/label-fixtures';
 import { ShipmentWaybillReader } from './shipment-waybill.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -25,7 +27,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('운송장번호로 박스와 라인 진행을 돌려준다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
 
       const result = await reader.byTrackingNo(fixture.trackingNo);
 
@@ -35,6 +37,7 @@ describeIfDb('ShipmentWaybillReader', () => {
       expect(result.batchId).toBe(fixture.batchId);
       expect(result.workItemId).toBe(fixture.workItemId);
       expect(result.workItemStatus).toBe('queued');
+      expect(result).toMatchObject({ labelState: 'not_started', labelChanges: [], labelIssue: null });
       expect(result.recipientMasked).toBe('Simple*****');
       expect(result.lines).toEqual([
         {
@@ -45,6 +48,8 @@ describeIfDb('ShipmentWaybillReader', () => {
           qty: 2,
           pickedQty: 0,
           inspectedQty: 0,
+          lineVersion: 1,
+          allocations: [],
         },
       ]);
     });
@@ -59,6 +64,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('절반만 스캔된 라인은 pickedQty 에 그 진행을 그대로 보고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -70,8 +76,17 @@ describeIfDb('ShipmentWaybillReader', () => {
       if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       expect(state.status).toBe('in_progress');
 
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
       const result = await reader.byTrackingNo(fixture.trackingNo);
+
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fixture.shipmentLineId));
+      const [location] = await tx
+        .select()
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.id, fixture.locationId));
 
       expect(result.lines).toEqual([
         {
@@ -82,6 +97,8 @@ describeIfDb('ShipmentWaybillReader', () => {
           qty: 2,
           pickedQty: 1,
           inspectedQty: 0,
+          lineVersion: line.lineVersion,
+          allocations: [{ sourceLocationId: fixture.locationId, locationCode: location.code, qty: 2 }],
         },
       ]);
     });
@@ -94,7 +111,7 @@ describeIfDb('ShipmentWaybillReader', () => {
         .update(wmsTables.outboundBatchWorkItems)
         .set({ status: 'short_pick_recovery', recoveryReason: 'short pick found during packing' })
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItemId));
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
 
       const result = await reader.byTrackingNo(fixture.trackingNo);
 
@@ -107,7 +124,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('accepts an optional warehouse filter and rejects a different warehouse', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
       expect(await reader.byTrackingNo(fixture.trackingNo, fixture.warehouseId)).toHaveProperty(
         'shipmentId',
         fixture.shipmentId,
@@ -121,6 +138,7 @@ describeIfDb('ShipmentWaybillReader', () => {
   it('완료 송장은 활성 작업 없이 shipped로 조회된다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const state = await service.scan(
         fixture.shipmentId,
@@ -134,7 +152,7 @@ describeIfDb('ShipmentWaybillReader', () => {
       );
       if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
       expect(state.status).toBe('shipped');
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
       expect(await reader.byTrackingNo(fixture.trackingNo)).toMatchObject({
         shipmentId: fixture.shipmentId,
         shipmentStatus: 'shipped',
@@ -147,7 +165,7 @@ describeIfDb('ShipmentWaybillReader', () => {
 
   it('없는 운송장번호는 404 다', async () => {
     await inRollbackTx(db, async (tx) => {
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
       await expect(reader.byTrackingNo('NO-SUCH-TRACK')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
@@ -156,9 +174,24 @@ describeIfDb('ShipmentWaybillReader', () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
       await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, fixture.waybillId));
-      const reader = new ShipmentWaybillReader(ambientDbService(tx));
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
 
       await expect(reader.byTrackingNo(fixture.trackingNo)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  it('시작된 배치의 한진 송장 박스를 조회하면 labelState never_printed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      const { trackingNo } = await promoteToCarrierWaybill(tx, fixture);
+      await startBatchFor(tx, fixture);
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
+
+      expect(await reader.byTrackingNo(trackingNo)).toMatchObject({
+        labelState: 'never_printed',
+        labelChanges: [],
+        labelIssue: null,
+      });
     });
   });
 });

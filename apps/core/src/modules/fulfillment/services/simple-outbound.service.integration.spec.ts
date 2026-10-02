@@ -1,12 +1,12 @@
 import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
+import { inRollbackTx, makeDb, seedPickableShipment, seedShipmentForExistingStock } from './__support__';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
-import { assembleSimpleOutbound } from './__support__/simple-outbound-wiring';
+import { assembleOutbound, assembleSimpleOutbound, startBatchFor } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -18,9 +18,10 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     await sql.end({ timeout: 5 });
   });
 
-  it('plan·session 을 만들고 피커 claim 까지 세운다', async () => {
+  it('배치를 시작(배정·세션)하고 피커 claim 까지 세운다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -30,7 +31,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
 
       expect(context.batchId).toBe(fixture.batchId);
       expect(context.workItemId).toBe(fixture.workItemId);
-      expect(context.planId).toBeTruthy();
       expect(context.sessionId).toBeTruthy();
 
       const [workItem] = await tx
@@ -45,7 +45,7 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       const [allocation] = await tx
         .select()
         .from(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, context.planId))
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId))
         .limit(1);
       expect(allocation.shipmentLineId).toBe(fixture.shipmentLineId);
       expect(allocation.sourceLocationId).toBe(fixture.locationId);
@@ -53,9 +53,10 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  it('두 번 불러도 같은 plan·session 을 재사용한다', async () => {
+  it('두 번 불러도 같은 세션을 재사용한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -66,7 +67,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
       if (secondPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
       const second = secondPrepared.context;
 
-      expect(second.planId).toBe(first.planId);
       expect(second.sessionId).toBe(first.sessionId);
       expect(second.leaseVersion).toBe(first.leaseVersion);
     });
@@ -118,18 +118,17 @@ describeIfDb('SimpleOutboundService.prepare', () => {
   it('다른 작업자가 피킹 중이면 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
-      const other = randomUUID();
-      await tx
-        .update(wmsTables.outboundBatchWorkItems)
-        .set({
-          status: 'picking',
-          pickerId: other,
-          pickerClaimedAt: new Date(),
-          leaseExpiresAt: new Date(Date.now() + 60_000),
-          leaseVersion: 1,
-        })
-        .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItemId));
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
+      // 다른 작업자가 준비해 이 박스를 claim 한다 — 시작 전 배치에 picking 을
+      // 손으로 박으면 계획 흡수 전 상태가 된다.
+      const otherPrepared = await service.prepare(
+        fixture.shipmentId,
+        { id: randomUUID(), roles: ['logistics_worker'] },
+        `prep-other-${randomUUID()}`,
+        tx,
+      );
+      expect(otherPrepared.outcome).toBe('ready');
 
       await expect(
         service.prepare(
@@ -142,9 +141,130 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
+  // 배치 시작은 「작업 시작」 하나뿐이다(스펙 §6). 시작 안 된 배치의 prepare 는 배치를 시작하지 않고 막힌다.
+  it('시작 안 된 배치의 prepare 는 BATCH_NOT_STARTED 로 막히고 배정·세션을 만들지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const service = assembleSimpleOutbound(tx);
+
+      const prepared = await service.prepare(
+        fixture.shipmentId,
+        { id: fixture.actorId, roles: ['logistics_worker'] },
+        `prep-${randomUUID()}`,
+        tx,
+      );
+
+      expect(prepared).toMatchObject({
+        outcome: 'preparation_blocked',
+        code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+        reasonCode: 'BATCH_NOT_STARTED',
+        recovery: 'retry_preparation',
+        batchId: fixture.batchId,
+        invalidatedPlanId: null,
+      });
+      const [batch] = await tx
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, fixture.batchId));
+      expect(batch.startedAt).toBeNull();
+      const allocations = await tx
+        .select()
+        .from(wmsTables.pickingSourceAllocations)
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItemId));
+      expect(allocations).toEqual([]);
+      const sessions = await tx
+        .select()
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, fixture.batchId));
+      expect(sessions).toEqual([]);
+    });
+  });
+
+  // 단독 picker-claim 은 시작 전 배치의 작업 항목도 queued → picking 으로 옮긴다. 인계 전이라 커스터디가
+  // 없으므로 그 항목도 시작 대상이다 — 막으면 그 배치는 영영 시작하지 못한다.
+  it('시작 전 배치에서 다른 박스가 먼저 picker-claim 됐어도 「작업 시작」이 두 박스를 모두 배정한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 1);
+      const [shipment] = await tx
+        .select({ shippingProfileId: wmsTables.shipments.shippingProfileId })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipmentId));
+      const sibling = await seedShipmentForExistingStock(
+        tx,
+        { ...fixture, deliveryProfileId: shipment.shippingProfileId ?? '' },
+        1,
+      );
+      // 두 박스(각 1개)를 같은 로케이션 재고로 채울 수 있게 원장을 2로 올리고, 형제를 같은 배치로 옮긴다.
+      await tx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 2 })
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, fixture.skuId),
+            eq(wmsTables.stockLedgers.locationId, fixture.locationId),
+          ),
+        );
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ batchId: fixture.batchId })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      const { simple, batches } = assembleOutbound(tx);
+      const otherPicker = { id: randomUUID(), roles: ['logistics_worker'] };
+      await batches.claimPicker(
+        sibling.workItemId,
+        { expectedLeaseVersion: 0 },
+        `claim-${randomUUID()}`,
+        otherPicker,
+        tx,
+      );
+      const [claimed] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      expect(claimed).toMatchObject({ status: 'picking', pickerId: otherPicker.id });
+
+      await startBatchFor(tx, fixture);
+      const prepared = await simple.prepare(
+        fixture.shipmentId,
+        { id: fixture.actorId, roles: ['logistics_worker'] },
+        `prep-${randomUUID()}`,
+        tx,
+      );
+
+      expect(prepared.outcome).toBe('ready');
+      const [batch] = await tx
+        .select({ startedAt: wmsTables.outboundBatches.startedAt })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, fixture.batchId));
+      expect(batch.startedAt).not.toBeNull();
+      const allocations = await tx
+        .select({
+          workItemId: wmsTables.pickingSourceAllocations.workItemId,
+          shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+          qty: wmsTables.pickingSourceAllocations.qty,
+        })
+        .from(wmsTables.pickingSourceAllocations)
+        .where(inArray(wmsTables.pickingSourceAllocations.workItemId, [fixture.workItemId, sibling.workItemId]));
+      expect(allocations).toEqual(
+        expect.arrayContaining([
+          { workItemId: fixture.workItemId, shipmentLineId: fixture.shipmentLineId, qty: 1 },
+          { workItemId: sibling.workItemId, shipmentLineId: sibling.shipmentLineId, qty: 1 },
+        ]),
+      );
+      expect(allocations).toHaveLength(2);
+      // 형제의 claim 은 그대로 남는다.
+      const [siblingAfter] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      expect(siblingAfter).toMatchObject({ status: 'picking', pickerId: otherPicker.id });
+    });
+  });
+
   it('내 리스가 만료됐으면 조용히 재-claim 해 연장한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -173,19 +293,21 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
-  // 리뷰 지적 3: ensurePlan 의 plan 멤버십 조회가 loadWorkItem 과 같은 넓은
-  // PICKABLE_WORK_ITEM_STATUSES(ready_to_pack·packing 포함)를 쓰면, 같은 배치 안의
-  // 다른 shipment 가 ready_to_pack 상태일 때 그 shipment 까지 plan 멤버십에 끼어든다.
-  // DiscretePickingStrategy.assertPlanningEligibility 는 ACTIVE_WORK_ITEM_STATUSES
-  // (queued·picking 만)로 멤버십을 정확히 비교하므로 불일치가 나 배치 전체가
-  // PICKING_WORK_ITEM_MEMBERSHIP_MISMATCH 로 막힌다 — queued 하나만 있어도 스캔 불가.
+  // 리뷰 지적 3(계획 시절): 같은 배치 안의 다른 shipment 가 ready_to_pack 이면 그 shipment 까지
+  // 계획 멤버십에 끼어들어 배치 전체가 막혔다. 지금은 ready_to_pack 이 «시작된» 배치에서만 생기고,
+  // 시작된 배치의 준비는 자기 작업 항목만 잠그므로 형제 상태와 무관하게 스캔이 흘러야 한다.
   it('배치 안의 다른 shipment 가 ready_to_pack 이어도 queued 항목은 스캔할 수 있다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
+      await startBatchFor(tx, fixture);
       const blocker = await seedPickableShipment(tx, 1);
-      // blocker 의 work item 을 fixture 와 같은 배치로 옮기고 ready_to_pack 으로 둔다 —
-      // "배치에 열린 plan 은 없지만 이미 ready_to_pack/packing 인 work item 이 있는" 상태를
-      // 재현한다. batchId·shipmentId 만 FK 라 warehouse 가 달라도 이 이동 자체는 허용된다.
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+      // 배치를 먼저 시작한다(배정·세션·started_at).
+      const prepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
+      expect(prepared.outcome).toBe('ready');
+      // blocker 의 work item 을 시작된 배치로 옮기고 ready_to_pack 으로 둔다. batchId·shipmentId 만
+      // FK 라 warehouse 가 달라도 이 이동 자체는 허용된다.
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
@@ -197,9 +319,6 @@ describeIfDb('SimpleOutboundService.prepare', () => {
           leaseExpiresAt: null,
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, blocker.workItemId));
-
-      const service = assembleSimpleOutbound(tx);
-      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
       const state = await service.scan(
         fixture.shipmentId,
@@ -223,6 +342,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('바코드 1개 스캔이 그 라인의 pickedQty 를 올린다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
 
       const state = await service.scan(
@@ -247,6 +367,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('필요 수량을 넘는 스캔은 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -263,6 +384,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('이 송장에 없는 바코드는 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const other = await seedPickableShipment(tx, 1);
       const service = assembleSimpleOutbound(tx);
 
@@ -287,6 +409,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('등록 바코드 대신 SKU UUID 로 스캔해도 같은 pickedQty 로 성공한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
 
       const state = await service.scan(
@@ -311,6 +434,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('아무 것도 해석되지 않는 바코드는 SIMPLE_OUTBOUND_BARCODE_UNKNOWN 으로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
 
       await expect(
@@ -336,10 +460,11 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
   it('한 라인이 두 로케이션에 나뉘어 할당되면 스캔 하나가 두 할당을 모두 소진한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 3);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
-      // prepare() 먼저 호출해 plan/session 을 확보한다 — plan() 이 만든 단일
+      // prepare() 먼저 호출해 배치를 시작한다 — 시작이 만든 단일
       // allocation(전체 qty=3, fixture.locationId)을 아래서 둘로 쪼갠다.
       const contextPrepared = await service.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx);
       if (contextPrepared.outcome !== 'ready') throw new Error('Expected ready preparation');
@@ -350,7 +475,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         .from(wmsTables.pickingSourceAllocations)
         .where(
           and(
-            eq(wmsTables.pickingSourceAllocations.planId, context.planId),
+            eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
             eq(wmsTables.pickingSourceAllocations.shipmentLineId, fixture.shipmentLineId),
           ),
         )
@@ -391,7 +516,7 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
         })
         .returning();
       await tx.insert(wmsTables.pickingSourceAllocations).values({
-        planId: context.planId,
+        workItemId: context.workItemId,
         shipmentLineId: fixture.shipmentLineId,
         sourceLocationId: location2.id,
         qty: 1,
@@ -457,6 +582,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
   it('마지막 스캔에서 완료·검수·출고까지 한 번에 끝난다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -514,6 +640,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
   it('한 번 스캔으로 전량이면 그 스캔에서 바로 출고된다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
 
       const state = await service.scan(
@@ -536,6 +663,7 @@ describeIfDb('SimpleOutboundService.scan — 완결', () => {
   it('같은 idempotency-key 재요청은 이중 계상하지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
       const key = `scan-retry-${randomUUID()}`;
@@ -577,9 +705,54 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
     [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
   };
 
+  const stationAuthorization: ScopeAuthorizationDecision = {
+    scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    granted: true,
+    [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
+  };
+
+  it('스테이션 강제출고 판정으로도 남은 수량을 채워 출고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+
+      const state = await service.forceComplete(
+        fixture.shipmentId,
+        {
+          reason: 'station_force_command',
+          actor,
+          idempotencyKey: `force-${randomUUID()}`,
+          authorization: stationAuthorization,
+        },
+        tx,
+      );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
+      expect(state.status).toBe('shipped');
+
+      // 스펙 U15 — 사후 감사 검토가 유일한 방어선이다. 작업자 강제는 station 스코프로 남아야 하고,
+      // 누군가 dispatch.force 로 정규화하면 이 단언이 깨진다.
+      const [auditRow] = await tx
+        .select({ metadata: wmsTables.auditLogs.metadata })
+        .from(wmsTables.auditLogs)
+        .where(
+          and(
+            eq(wmsTables.auditLogs.action, 'shipment.dispatch.force'),
+            eq(wmsTables.auditLogs.userId, fixture.actorId),
+          ),
+        )
+        .limit(1);
+      expect(auditRow?.metadata).toMatchObject({
+        authorization: { scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE, granted: true },
+      });
+    });
+  });
+
   it('미피킹 수량을 강제로 채워 출고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 
@@ -637,6 +810,7 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
   it('강제출고 스코프가 없으면 403 이다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
 
       await expect(
@@ -669,6 +843,7 @@ describeIfDb('SimpleOutboundService.scan — 두 라인', () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 1);
       const second = await addSecondSimpleOutboundLine(tx, fixture, 1);
+      await startBatchFor(tx, fixture);
       const service = assembleSimpleOutbound(tx);
       const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
 

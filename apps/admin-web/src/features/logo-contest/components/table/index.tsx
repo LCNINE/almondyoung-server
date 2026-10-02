@@ -128,7 +128,7 @@ export function LogoContestEntryTable() {
                 </div>
                 {entry.description && <p className="line-clamp-2 break-words text-sm text-muted-foreground">{entry.description}</p>}
                 <div className="flex flex-wrap items-end justify-between gap-2 border-t pt-3">
-                  <EntryAuthor userId={entry.userId} maskedName={entry.authorName} />
+                  <EntryAuthor userId={entry.userId} authorName={entry.authorName} />
                   <EntryActions entry={entry} />
                 </div>
               </article>

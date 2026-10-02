@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -38,6 +39,8 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -71,7 +74,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const dbService = makeDbService(database);
     const guard = new BatchControlledStockGuard();
     const audit = new AuditService(dbService);
-    const sessions = new BatchInventorySessionService(dbService, guard, audit, faultInjector);
+    const sessions = new BatchInventorySessionService(dbService, audit, faultInjector);
     const recovery = new BatchSessionRecoveryService(dbService, audit, guard);
     const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
@@ -85,10 +88,18 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const commands = new FulfillmentCommandService(dbService);
     const invariant = new FulfillmentInvariantService();
     const workflow = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' }));
-    const batches = new OutboundBatchOrchestrator(dbService, commands, invariant, {} as never, audit, workflow, {
-      get: jest.fn(() => ({ resumePending: jest.fn() })),
-    } as never);
-    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches);
+    const batches = new OutboundBatchOrchestrator(
+      dbService,
+      commands,
+      invariant,
+      {} as never,
+      audit,
+      workflow,
+      { get: jest.fn(() => ({ resumePending: jest.fn() })) } as never,
+      new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
+    );
+    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches, assembleLabels(dbService).guard);
     return { dbService, guard, audit, sessions, recovery, inventory, batches, picking };
   }
 
@@ -137,7 +148,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, guard, audit),
+      new BatchInventorySessionService(dbService, audit),
       reservations,
       waybills,
       new BarcodeService(dbService),
@@ -147,6 +158,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
   }
 
@@ -271,20 +283,10 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         status: 'queued',
       })
       .returning();
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', createdBy: actorId })
-      .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: plan.id,
-      shipmentId: shipment.id,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
     const [allocation] = await tx
       .insert(wmsTables.pickingSourceAllocations)
       .values({
-        planId: plan.id,
+        workItemId: workItem.id,
         shipmentLineId: line.id,
         sourceLocationId: sourceLocation.id,
         qty: quantity,
@@ -314,7 +316,6 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       item,
       ledger,
       line,
-      plan,
       shipment,
       sku,
       sourceLocation,
@@ -323,6 +324,37 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       workItem,
       quantity,
     };
+  }
+
+  /** 배치 시작이 하는 인계(HAND_IN)와 `started_at` 표시를 픽스처의 배정 한 줄로 재현한다. */
+  async function handIn(
+    services: ReturnType<typeof serviceSet>,
+    f: Awaited<ReturnType<typeof seedReadyPlan>>,
+    tx: DbTx,
+  ) {
+    const session = await services.sessions.startSession(
+      {
+        batchId: f.batch.id,
+        actorId,
+        allocations: [
+          {
+            id: f.allocation.id,
+            workItemId: f.workItem.id,
+            shipmentLineId: f.line.id,
+            skuId: f.sku.id,
+            sourceLocationId: f.sourceLocation.id,
+            quantity: f.allocation.qty,
+            sourceStockVersion: f.allocation.sourceStockVersion,
+          },
+        ],
+      },
+      tx,
+    );
+    await tx
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, f.batch.id));
+    return session;
   }
 
   async function expectSessionConservation(tx: DbTx, sessionId: string): Promise<void> {
@@ -366,7 +398,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       await inRollbackTx(async (tx) => {
         const f = await seedReadyPlan(tx, replayQty);
         const services = serviceSet(db);
-        const session = await services.sessions.startSession(f.batch.id, f.plan.id, tx);
+        const session = await handIn(services, f, tx);
         await tx
           .update(wmsTables.locations)
           .set({ isSystem: true, systemRole: 'inbound_default' })
@@ -433,7 +465,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     await inRollbackTx(async (tx) => {
       const fixture = await seedReadyPlan(tx);
       const services = serviceSet(db);
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const session = await handIn(services, fixture, tx);
       await tx.insert(wmsTables.stockLedgers).values({
         skuId: fixture.sku.id,
         warehouseId: fixture.warehouse.id,
@@ -584,7 +616,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         tx,
       );
       expect(claimed.workItem).toMatchObject({ status: 'picking', pickerId: actorId, leaseVersion: 1 });
-      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const session = await handIn(services, fixture, tx);
       await services.sessions.moveCustody(
         {
           sessionId: session.id,
@@ -695,7 +727,6 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       const completed = await services.picking.completePick(
         {
           batchId: fixture.batch.id,
-          planId: fixture.plan.id,
           sessionId: session.id,
           workItemId: fixture.workItem.id,
           shipmentId: fixture.shipment.id,

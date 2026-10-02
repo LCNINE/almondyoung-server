@@ -12,7 +12,11 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { RecurringBillingAdminService } from './recurring-billing-admin.service';
-import { AdminInvoiceListQueryDto, AdminRecurringBillingListQueryDto } from './dto/admin-recurring-billing.dto';
+import {
+  AdminInvoiceListQueryDto,
+  AdminRecurringBillingFinanceQueryDto,
+  AdminRecurringBillingListQueryDto,
+} from './dto/admin-recurring-billing.dto';
 import { InvoiceExecutorService } from '../invoices/invoice-executor.service';
 
 @ApiTags('Admin - Recurring Billing')
@@ -54,6 +58,12 @@ export class RecurringBillingAdminController {
       if (msg.includes('not schedulable')) throw new ConflictException(msg);
       throw new InternalServerErrorException(msg);
     }
+  }
+
+  @Get('finance')
+  @ApiOperation({ summary: 'Monthly billed / collected / failed amounts for membership invoices (admin)' })
+  async getFinance(@Query() query: AdminRecurringBillingFinanceQueryDto) {
+    return this.service.getFinance(query.month ?? currentKstMonth(), query.months ?? 6);
   }
 
   @Get('overview')
@@ -102,4 +112,8 @@ export class RecurringBillingAdminController {
     const subscriberRefs = refs ? (Array.isArray(refs) ? refs : [refs]) : [];
     return this.service.getAgreementStateByRefs(subscriberRefs);
   }
+}
+
+function currentKstMonth(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).format(new Date());
 }

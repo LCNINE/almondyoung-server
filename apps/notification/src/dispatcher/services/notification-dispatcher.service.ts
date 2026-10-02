@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, Optional } 
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import {
   notificationTables,
   notifications,
@@ -144,29 +144,50 @@ export class NotificationDispatcherService {
         }),
       };
 
-      const [inserted] = await db
-        .insert(notifications)
-        .values({
-          userId: dto.userId,
-          category: dto.category,
-          priority,
+      const insert = db.insert(notifications).values({
+        userId: dto.userId,
+        category: dto.category,
+        priority,
+        channel,
+        language,
+        templateKey: dto.templateKey,
+        eventKey: dto.eventKey,
+        correlationId: dto.correlationId,
+        payload: {
+          ...payload,
+          // 템플릿 변수도 payload에 같이 저장 (debug / 재렌더링용)
+          __variables: finalVariables ?? undefined,
+        },
+        renderedContent,
+        status: NotificationStatus.PENDING,
+        sendAt,
+        attempts: 0,
+        metadata: channelMetadata,
+        idempotencyKey: dto.idempotencyKey,
+      });
+      // 키 없는 호출자는 전과 같은 INSERT 를 그대로 탄다.
+      const [inserted] = dto.idempotencyKey
+        ? await insert
+            .onConflictDoNothing({
+              target: [notifications.idempotencyKey, notifications.channel],
+              where: sql`${notifications.idempotencyKey} IS NOT NULL`,
+            })
+            .returning()
+        : await insert.returning();
+
+      if (!inserted) {
+        if (!dto.idempotencyKey) throw new Error('Notification insert returned no row');
+        // 같은 키로 이미 만든 알림이 있다 — 다시 보내지 않고 그 id 를 돌려준다.
+        const existing = await db.query.notifications.findFirst({
+          where: and(eq(notifications.idempotencyKey, dto.idempotencyKey), eq(notifications.channel, channel)),
+        });
+        this.logger.log('[Dispatcher] Duplicate idempotency key, skipped', {
+          idempotencyKey: dto.idempotencyKey,
           channel,
-          language,
-          templateKey: dto.templateKey,
-          eventKey: dto.eventKey,
-          correlationId: dto.correlationId,
-          payload: {
-            ...payload,
-            // 템플릿 변수도 payload에 같이 저장 (debug / 재렌더링용)
-            __variables: finalVariables ?? undefined,
-          },
-          renderedContent,
-          status: NotificationStatus.PENDING,
-          sendAt,
-          attempts: 0,
-          metadata: channelMetadata,
-        })
-        .returning();
+        });
+        if (existing) notificationIds.push(existing.notificationId);
+        continue;
+      }
 
       notificationIds.push(inserted.notificationId);
 
@@ -375,6 +396,9 @@ export class NotificationDispatcherService {
         subject: renderedContent.subject,
         metadata: providerMetadata,
       });
+      if (result.success === false) {
+        throw new Error(result.error || 'Provider reported failure');
+      }
 
       // 성공 시 상태 업데이트
       await this.db.db
@@ -457,6 +481,8 @@ export class NotificationDispatcherService {
     payload: Record<string, any>;
     channels?: string[];
     metadata?: Record<string, any>;
+    sendAt?: string;
+    idempotencyKey?: string;
   }): Promise<{ success: boolean; message: string; notificationIds?: string[] }> {
     const db = this.db.db;
 
@@ -496,6 +522,8 @@ export class NotificationDispatcherService {
         eventKey: mapping.eventKey,
       },
       priority: mapping.priority as NotificationPriority,
+      sendAt: eventData.sendAt,
+      idempotencyKey: eventData.idempotencyKey,
     };
 
     const { notificationIds } = await this.send(dto);

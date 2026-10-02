@@ -37,6 +37,13 @@ import { TrafficQuery } from './features/traffic/read-model/traffic.query';
 import { RealtimeQuery } from './features/traffic/read-model/realtime.query';
 import { BehaviorQuery } from './features/traffic/read-model/behavior.query';
 import { Ga4Client } from './features/traffic/ga4/ga4.client';
+import { GrowthController } from './features/growth/api/growth.controller';
+import { RevenueGoalController } from './features/growth/api/revenue-goal.controller';
+import { RevenueGoalService } from './features/growth/settings/revenue-goal.service';
+import { CustomerFlowQuery } from './features/growth/read-model/customer-flow.query';
+import { RevenueAxisQuery } from './features/growth/read-model/revenue-axis.query';
+import { GrowthTrafficQuery } from './features/growth/read-model/growth-traffic.query';
+import { GrowthSummaryQuery } from './features/growth/read-model/growth-summary.query';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { CronOnceModule } from '@app/cron-once';
 
@@ -87,6 +94,8 @@ import { CronOnceModule } from '@app/cron-once';
     OperatingCostController,
     TrafficController,
     BehaviorController,
+    GrowthController,
+    RevenueGoalController,
     OrderEventsConsumer,
     ProductEventsConsumer,
     MembershipEventsConsumer,
@@ -113,6 +122,11 @@ import { CronOnceModule } from '@app/cron-once';
     TrafficQuery,
     RealtimeQuery,
     BehaviorQuery,
+    RevenueGoalService,
+    CustomerFlowQuery,
+    RevenueAxisQuery,
+    GrowthTrafficQuery,
+    GrowthSummaryQuery,
   ],
 })
 export class AnalyticsModule {}

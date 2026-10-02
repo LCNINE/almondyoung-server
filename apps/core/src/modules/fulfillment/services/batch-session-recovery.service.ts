@@ -8,9 +8,11 @@ import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stoc
 import {
   BatchInventoryCustodyType,
   canonicalBatchSessionRequestHash,
+  handInRequestHash,
   isApprovedShortageReasonCode,
   shortPickOperationIntentOf,
 } from './batch-inventory-session.service';
+import { LINE_ATTRIBUTED_CUSTODY } from './line-attributed-custody';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 type EventRow = typeof wmsTables.batchInventorySessionEvents.$inferSelect;
@@ -35,9 +37,9 @@ interface ReplayResult {
   handedInQty: number;
   settledQty: number;
   returnedQty: number;
+  handedBackQty: number;
   shortageQty: number;
   nextSequence: number;
-  planId: string | null;
   status: 'active' | 'settled';
 }
 
@@ -84,10 +86,10 @@ export class BatchSessionRecoveryService {
 
   async reconcile(sessionId: string, tx?: DbTx): Promise<BatchSessionReconciliationResult> {
     return this.dbService.run(async (trx) => {
-      const session = await this.lockPlanThenSession(sessionId, trx);
+      const session = await this.lockSession(sessionId, trx);
       const events = await this.loadEvents(sessionId, trx);
       const replay = this.replay(session, events);
-      replay.issues.push(...(await this.validatePersistedPlan(session, events, replay, trx)));
+      replay.issues.push(...(await this.validatePersistedAllocations(session, events, replay, trx)));
       replay.issues = [...new Set(replay.issues)];
       replay.valid = replay.issues.length === 0;
       const actualBalances = await this.loadBalances(sessionId, trx);
@@ -103,14 +105,14 @@ export class BatchSessionRecoveryService {
   async rebuildFromEvents(sessionId: string, tx?: DbTx): Promise<BatchSessionReconciliationResult> {
     return this.dbService.run(async (trx) => {
       // Canonical lifecycle order shared with dispatch is
-      // plan -> session -> balances -> sorted stock-control locks. Holding the
+      // session -> balances -> sorted stock-control locks. Holding the
       // session header freezes the append-only replay stream while stock is
       // locked and revalidated below.
-      const session = await this.lockPlanThenSession(sessionId, trx);
+      const session = await this.lockSession(sessionId, trx);
       await this.loadBalances(sessionId, trx);
       const events = await this.loadEvents(sessionId, trx);
       const replay = this.replay(session, events);
-      replay.issues.push(...(await this.validatePersistedPlan(session, events, replay, trx)));
+      replay.issues.push(...(await this.validatePersistedAllocations(session, events, replay, trx)));
       replay.issues = [...new Set(replay.issues)];
       replay.valid = replay.issues.length === 0;
       if (!replay.valid) {
@@ -151,22 +153,13 @@ export class BatchSessionRecoveryService {
           handedInQty: replay.handedInQty,
           settledQty: replay.settledQty,
           returnedQty: replay.returnedQty,
+          handedBackQty: replay.handedBackQty,
           shortageQty: replay.shortageQty,
           recoveryReason: null,
           completedAt,
           updatedAt: sql`now()`,
         })
         .where(eq(wmsTables.batchInventorySessions.id, sessionId));
-      if (replay.planId) {
-        await trx
-          .update(wmsTables.pickingPlans)
-          .set(
-            replay.status === 'settled'
-              ? { status: 'completed', completedAt, updatedAt: sql`now()` }
-              : { status: 'active', completedAt: null, updatedAt: sql`now()` },
-          )
-          .where(eq(wmsTables.pickingPlans.id, replay.planId));
-      }
       await this.audit.logRequired(
         {
           eventType: 'SYSTEM_WARNING',
@@ -179,7 +172,7 @@ export class BatchSessionRecoveryService {
           metadata: {
             eventCount: events.length,
             balanceCount: nonZero.length,
-            planId: replay.planId,
+            batchId: session.batchId,
             nextSequence: replay.nextSequence,
           },
         },
@@ -199,26 +192,6 @@ export class BatchSessionRecoveryService {
       .for('update');
     if (!session) throw new NotFoundException(`Batch inventory session ${sessionId} not found`);
     return session;
-  }
-
-  private async lockPlanThenSession(sessionId: string, tx: DbTx): Promise<SessionRow> {
-    const [startIdentity] = await tx
-      .select({ payload: wmsTables.batchInventorySessionEvents.payload })
-      .from(wmsTables.batchInventorySessionEvents)
-      .where(
-        sql`${wmsTables.batchInventorySessionEvents.sessionId} = ${sessionId}::uuid AND ${wmsTables.batchInventorySessionEvents.eventType} = 'HAND_IN'`,
-      )
-      .limit(1);
-    const planId = payloadOf(startIdentity?.payload).planId;
-    if (typeof planId === 'string') {
-      await tx
-        .select({ id: wmsTables.pickingPlans.id })
-        .from(wmsTables.pickingPlans)
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1)
-        .for('update');
-    }
-    return this.lockSession(sessionId, tx);
   }
 
   private async prepareReplayStockLocks(events: EventRow[], sessionId: string, tx: DbTx): Promise<ReplaySourceLock[]> {
@@ -405,8 +378,8 @@ export class BatchSessionRecoveryService {
     let handedInQty = 0;
     let settledQty = 0;
     let returnedQty = 0;
+    let handedBackQty = 0;
     let shortageQty = 0;
-    let planId: string | null = null;
     const apply = (side: ReplayBucket, delta: number, eventId: string) => {
       const key = bucketKey(side);
       const current = balances.get(key) ?? { ...side, qty: 0 };
@@ -420,18 +393,41 @@ export class BatchSessionRecoveryService {
       const to = this.side(event, 'to');
       if (event.eventType === 'HAND_IN') {
         if (from || !to || to.custodyType !== 'AT_SOURCE') issues.push(`HAND_IN event ${event.id} has invalid sides`);
-        if (typeof payload.planId !== 'string' || typeof payload.allocationId !== 'string') {
-          issues.push(`HAND_IN event ${event.id} has no immutable plan/allocation identity`);
-        } else if (planId && payload.planId !== planId) {
-          issues.push(`HAND_IN event ${event.id} switches the session plan`);
-        } else {
-          planId = payload.planId;
+        if (
+          payload.batchId !== session.batchId ||
+          typeof payload.workItemId !== 'string' ||
+          typeof payload.allocationId !== 'string'
+        ) {
+          issues.push(`HAND_IN event ${event.id} has no immutable batch/work item/allocation identity`);
         }
         handedInQty += event.quantity;
+      } else if (event.eventType === 'HAND_BACK') {
+        if (!from || to || from.custodyType !== 'AT_SOURCE')
+          issues.push(`HAND_BACK event ${event.id} has invalid sides`);
+        if (typeof payload.workItemId !== 'string' || typeof payload.allocationId !== 'string') {
+          issues.push(`HAND_BACK event ${event.id} has no immutable work item/allocation identity`);
+        }
+        handedBackQty += event.quantity;
       } else if (event.eventType === 'MOVE_CUSTODY') {
         if (!from || !to || to.custodyType === 'SETTLED')
           issues.push(`MOVE_CUSTODY event ${event.id} has invalid sides`);
+      } else if (event.eventType === 'REMOVE_TO_RETURN_BIN') {
+        const boxOrCart =
+          from !== null &&
+          (['WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED', 'BULK_CART'] as string[]).includes(from.custodyType);
+        if (!boxOrCart || !to || to.custodyType !== 'RETURN_PENDING') {
+          issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has invalid sides`);
+        }
+        if (typeof payload.workItemId !== 'string' || typeof payload.allocationId !== 'string') {
+          issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has no immutable work item/allocation identity`);
+        }
+      } else if (event.eventType === 'PUTAWAY_RETURN') {
+        if (!from || to || from.custodyType !== 'RETURN_PENDING') {
+          issues.push(`PUTAWAY_RETURN event ${event.id} has invalid sides`);
+        }
+        returnedQty += event.quantity;
       } else if (event.eventType === 'RETURN_TO_SOURCE') {
+        // 생산자는 PR 4 에서 사라졌다 — 과거 세션의 옛 결품 반환만 재생한다.
         if (!from || to) issues.push(`RETURN_TO_SOURCE event ${event.id} has invalid sides`);
         returnedQty += event.quantity;
       } else if (event.eventType === 'SETTLE_FOR_DISPATCH') {
@@ -441,6 +437,13 @@ export class BatchSessionRecoveryService {
         settledQty += event.quantity;
       } else if (event.eventType === 'APPROVE_SHORTAGE') {
         if (!from || to) issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid sides`);
+        // 새 결품(PR 4, allocationId 있음)은 안 집은 몫에서만 — 줄도 ref 도 없는 AT_SOURCE.
+        if (
+          typeof payload.allocationId === 'string' &&
+          (from?.custodyType !== 'AT_SOURCE' || from.shipmentLineId !== null)
+        ) {
+          issues.push(`APPROVE_SHORTAGE event ${event.id} does not come from unpicked AT_SOURCE custody`);
+        }
         shortageQty += event.quantity;
       } else {
         issues.push(`event ${event.id} has unsupported type ${event.eventType}`);
@@ -453,7 +456,7 @@ export class BatchSessionRecoveryService {
     const remainingQty = expectedBalances
       .filter((balance) => balance.custodyType !== 'SETTLED')
       .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
-    if (handedInQty !== remainingQty + settledQty + returnedQty + shortageQty) {
+    if (handedInQty !== remainingQty + settledQty + returnedQty + shortageQty + handedBackQty) {
       issues.push('event stream violates session quantity conservation');
     }
     if (session.shortageQty > 0 && shortageQty === 0) {
@@ -466,31 +469,24 @@ export class BatchSessionRecoveryService {
       handedInQty,
       settledQty,
       returnedQty,
+      handedBackQty,
       shortageQty,
       nextSequence,
-      planId,
       status: remainingQty === 0 ? 'settled' : 'active',
     };
   }
 
-  private async validatePersistedPlan(
+  private async validatePersistedAllocations(
     session: SessionRow,
     events: EventRow[],
     replay: ReplayResult,
     tx: DbTx,
   ): Promise<string[]> {
     const issues: string[] = [];
-    if (!replay.planId) return ['session event stream has no immutable plan identity'];
-    const [plan] = await tx
-      .select({ id: wmsTables.pickingPlans.id, batchId: wmsTables.pickingPlans.batchId })
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.id, replay.planId))
-      .limit(1);
-    if (!plan || plan.batchId !== session.batchId) return ['session plan is missing or belongs to another batch'];
-
     const allocations = await tx
       .select({
         id: wmsTables.pickingSourceAllocations.id,
+        workItemId: wmsTables.pickingSourceAllocations.workItemId,
         shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
         sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
         quantity: wmsTables.pickingSourceAllocations.qty,
@@ -499,13 +495,15 @@ export class BatchSessionRecoveryService {
       })
       .from(wmsTables.pickingSourceAllocations)
       .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
+      .innerJoin(
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
-      .where(eq(wmsTables.pickingSourceAllocations.planId, replay.planId));
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, session.batchId));
     const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
-    const startEvents = events.filter((event) => event.eventType === 'HAND_IN');
-    const seenAllocationIds = new Set<string>();
     for (const event of events) {
       const payload = payloadOf(event.payload);
       const from = this.side(event, 'from');
@@ -515,19 +513,18 @@ export class BatchSessionRecoveryService {
       let expectedHash: string;
       if (event.eventType === 'HAND_IN') {
         const allocationId = payload.allocationId;
-        if (typeof allocationId !== 'string' || seenAllocationIds.has(allocationId)) {
-          issues.push(`HAND_IN event ${event.id} has a missing or duplicate allocationId`);
+        if (typeof allocationId !== 'string') {
+          issues.push(`HAND_IN event ${event.id} has a missing allocationId`);
           continue;
         }
-        seenAllocationIds.add(allocationId);
         const allocation = allocationById.get(allocationId);
         if (
           !allocation ||
-          payload.planId !== replay.planId ||
+          payload.batchId !== session.batchId ||
+          payload.workItemId !== allocation.workItemId ||
           payload.shipmentLineId !== allocation.shipmentLineId ||
           payload.sourceStockVersion !== allocation.sourceStockVersion ||
           event.skuId !== allocation.skuId ||
-          event.quantity !== allocation.quantity ||
           event.toCustodyType !== 'AT_SOURCE' ||
           event.toSourceLocationId !== allocation.sourceLocationId ||
           event.toShipmentLineId !== null ||
@@ -536,14 +533,15 @@ export class BatchSessionRecoveryService {
           issues.push(`HAND_IN event ${event.id} differs from persisted allocation ${String(allocationId)}`);
           continue;
         }
-        expectedHash = canonicalBatchSessionRequestHash({
-          eventType: 'HAND_IN',
-          planId: replay.planId,
-          allocationId,
+        expectedHash = handInRequestHash(session.batchId, {
+          id: allocation.id,
+          // Non-null: the query inner-joins work items on workItemId.
+          workItemId: allocation.workItemId!,
+          shipmentLineId: allocation.shipmentLineId,
           skuId: allocation.skuId,
           sourceLocationId: allocation.sourceLocationId,
-          shipmentLineId: allocation.shipmentLineId,
-          quantity: allocation.quantity,
+          // 인계 요청의 수량은 이벤트 수량이다 — 배정 행은 반납으로 그 뒤 줄 수 있다(스펙 §13).
+          quantity: event.quantity,
           sourceStockVersion: allocation.sourceStockVersion,
         });
       } else {
@@ -562,7 +560,64 @@ export class BatchSessionRecoveryService {
         if (typeof payload.actorId !== 'string' || !payload.actorId.trim()) {
           issues.push(`event ${event.id} has no actor identity`);
         }
-        if (event.eventType === 'SETTLE_FOR_DISPATCH') {
+        if (event.eventType === 'HAND_BACK') {
+          const exactContext = {
+            operationId: payload.operationId,
+            workItemId: payload.workItemId,
+            allocationId: payload.allocationId,
+            shipmentLineId: payload.shipmentLineId,
+          };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`HAND_BACK event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
+          const allocation =
+            typeof payload.allocationId === 'string' ? allocationById.get(payload.allocationId) : undefined;
+          if (
+            typeof payload.operationId !== 'string' ||
+            !allocation ||
+            allocation.workItemId !== payload.workItemId ||
+            allocation.shipmentLineId !== payload.shipmentLineId ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== allocation.sourceLocationId
+          ) {
+            issues.push(`HAND_BACK event ${event.id} has invalid allocation attribution`);
+          }
+        } else if (event.eventType === 'REMOVE_TO_RETURN_BIN') {
+          const exactContext = {
+            operationId: payload.operationId,
+            workItemId: payload.workItemId,
+            allocationId: payload.allocationId,
+            shipmentLineId: payload.shipmentLineId,
+            returnBinId: payload.returnBinId,
+          };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
+          const allocation =
+            typeof payload.allocationId === 'string' ? allocationById.get(payload.allocationId) : undefined;
+          if (
+            typeof payload.operationId !== 'string' ||
+            typeof payload.returnBinId !== 'string' ||
+            !allocation ||
+            allocation.workItemId !== payload.workItemId ||
+            allocation.shipmentLineId !== payload.shipmentLineId ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== allocation.sourceLocationId ||
+            (from.shipmentLineId !== null && from.shipmentLineId !== allocation.shipmentLineId)
+          ) {
+            issues.push(`REMOVE_TO_RETURN_BIN event ${event.id} has invalid allocation attribution`);
+          }
+        } else if (event.eventType === 'PUTAWAY_RETURN') {
+          const exactContext = { operationId: payload.operationId, returnBinId: payload.returnBinId };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`PUTAWAY_RETURN event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
+        } else if (event.eventType === 'SETTLE_FOR_DISPATCH') {
           const exactContext = { dispatchAttemptSourceId: payload.dispatchAttemptSourceId };
           if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
             issues.push(`SETTLE_FOR_DISPATCH event ${event.id} context is not exact`);
@@ -612,24 +667,6 @@ export class BatchSessionRecoveryService {
           const shipmentLineId = payload.shipmentLineId;
           const sourceLocationId = payload.sourceLocationId;
           const reason = payload.reason;
-          const allocation = allocations.find(
-            (candidate) =>
-              candidate.shipmentLineId === shipmentLineId && candidate.sourceLocationId === sourceLocationId,
-          );
-          if (
-            typeof shortPickOperationId !== 'string' ||
-            typeof shipmentLineId !== 'string' ||
-            typeof sourceLocationId !== 'string' ||
-            typeof reason !== 'string' ||
-            !reason.trim() ||
-            !allocation ||
-            allocation.skuId !== event.skuId ||
-            !from ||
-            from.sourceLocationId !== sourceLocationId ||
-            (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
-          ) {
-            issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
-          }
           const [operationOwner] =
             typeof shortPickOperationId === 'string' && typeof shipmentLineId === 'string'
               ? await tx
@@ -657,56 +694,56 @@ export class BatchSessionRecoveryService {
                   .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
                   .limit(1)
               : [];
-          if (
-            !operationOwner ||
-            operationOwner.type !== 'short_pick' ||
-            !['pending', 'completed', 'recovery_required'].includes(operationOwner.status)
-          ) {
-            issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
-          } else {
-            const intent = shortPickOperationIntentOf(operationOwner.snapshot);
+          if (event.eventType === 'APPROVE_SHORTAGE' && typeof payload.allocationId === 'string') {
+            // 새 결품(PR 4) — 배정 하나에 묶인다.
+            const allocation = allocationById.get(payload.allocationId);
+            const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
             const intentLine = intent?.lines.find(
               (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
             );
-            const shortageTotal = events
+            const approvedForAllocation = events
               .filter((candidate) => {
                 const candidatePayload = payloadOf(candidate.payload);
                 return (
                   candidate.eventType === 'APPROVE_SHORTAGE' &&
                   candidatePayload.shortPickOperationId === shortPickOperationId &&
-                  candidatePayload.shipmentLineId === shipmentLineId &&
-                  candidatePayload.sourceLocationId === sourceLocationId
-                );
-              })
-              .reduce((total, candidate) => total + candidate.quantity, 0);
-            const returnedTotal = events
-              .filter((candidate) => {
-                const candidatePayload = payloadOf(candidate.payload);
-                return (
-                  candidate.eventType === 'RETURN_TO_SOURCE' &&
-                  candidatePayload.shortPickOperationId === shortPickOperationId &&
-                  candidatePayload.shipmentLineId === shipmentLineId &&
-                  candidatePayload.sourceLocationId === sourceLocationId
+                  candidatePayload.allocationId === payload.allocationId
                 );
               })
               .reduce((total, candidate) => total + candidate.quantity, 0);
             if (
+              typeof shortPickOperationId !== 'string' ||
+              typeof shipmentLineId !== 'string' ||
+              typeof sourceLocationId !== 'string' ||
+              typeof reason !== 'string' ||
+              !reason.trim() ||
+              !allocation ||
+              allocation.workItemId !== payload.workItemId ||
+              allocation.shipmentLineId !== shipmentLineId ||
+              allocation.sourceLocationId !== sourceLocationId ||
+              allocation.skuId !== event.skuId ||
+              !from ||
+              from.custodyType !== 'AT_SOURCE' ||
+              from.shipmentLineId !== null
+            ) {
+              issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid allocation attribution`);
+            }
+            if (
+              !operationOwner ||
+              operationOwner.type !== 'short_pick' ||
+              !['pending', 'completed'].includes(operationOwner.status) ||
               !intent ||
               intent.operationId !== shortPickOperationId ||
               intent.shipmentId !== operationOwner.memberShipmentId ||
               intent.sessionId !== event.sessionId ||
+              intent.workItemId !== payload.workItemId ||
               intent.actorId !== payload.actorId ||
               intent.reason !== reason ||
               !intentLine ||
-              !allocation ||
-              intentLine.allocationQty !== allocation.quantity ||
-              shortageTotal !== intentLine.shortQty ||
-              returnedTotal !== intentLine.allocationQty - intentLine.shortQty
+              approvedForAllocation !== intentLine.shortQty
             ) {
-              issues.push(`${event.eventType} event ${event.id} differs from immutable short-pick operation intent`);
+              issues.push(`APPROVE_SHORTAGE event ${event.id} differs from immutable short-pick operation intent`);
             }
-          }
-          if (event.eventType === 'APPROVE_SHORTAGE') {
             if (
               !isApprovedShortageReasonCode(payload.reasonCode) ||
               typeof payload.approverId !== 'string' ||
@@ -716,6 +753,8 @@ export class BatchSessionRecoveryService {
             }
             const exactContext = {
               shortPickOperationId,
+              workItemId: payload.workItemId,
+              allocationId: payload.allocationId,
               shipmentLineId,
               sourceLocationId,
               reasonCode: payload.reasonCode,
@@ -727,11 +766,21 @@ export class BatchSessionRecoveryService {
             }
             canonicalRequest.context = exactContext;
           } else {
-            const exactContext = { shortPickOperationId, shipmentLineId, sourceLocationId, reason };
-            if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
-              issues.push(`RETURN_TO_SOURCE event ${event.id} short-pick context is not exact`);
-            }
-            canonicalRequest.context = exactContext;
+            const legacy = this.legacyShortPickIssues({
+              event,
+              payload,
+              from,
+              allocations,
+              events,
+              operationOwner,
+              persistedContext,
+              shortPickOperationId,
+              shipmentLineId,
+              sourceLocationId,
+              reason,
+            });
+            issues.push(...legacy.issues);
+            canonicalRequest.context = legacy.context;
           }
         }
         expectedHash = canonicalBatchSessionRequestHash(canonicalRequest);
@@ -747,21 +796,55 @@ export class BatchSessionRecoveryService {
             allocation.sourceLocationId === side.sourceLocationId &&
             (!side.shipmentLineId || allocation.shipmentLineId === side.shipmentLineId),
         );
-        if (!matchingAllocation) issues.push(`event ${event.id} custody is outside the session plan`);
+        if (!matchingAllocation) issues.push(`event ${event.id} custody is outside the session batch allocations`);
       }
       if (from && to && from.sourceLocationId !== to.sourceLocationId) {
         issues.push(`event ${event.id} changes the original source location`);
       }
     }
-    if (startEvents.length !== allocations.length || seenAllocationIds.size !== allocations.length) {
-      issues.push('HAND_IN event set does not exactly cover persisted plan allocations');
-    }
+    const movedByAllocation = (
+      eventType: 'HAND_IN' | 'HAND_BACK' | 'REMOVE_TO_RETURN_BIN' | 'APPROVE_SHORTAGE',
+      allocationId: string,
+    ) =>
+      events
+        .filter((event) => event.eventType === eventType && payloadOf(event.payload).allocationId === allocationId)
+        .reduce((total, event) => total + event.quantity, 0);
     for (const allocation of allocations) {
+      const handedIn = movedByAllocation('HAND_IN', allocation.id);
+      const handedBack = movedByAllocation('HAND_BACK', allocation.id);
+      const removed = movedByAllocation('REMOVE_TO_RETURN_BIN', allocation.id);
+      if (handedIn === 0) issues.push(`allocation ${allocation.id} has no HAND_IN event`);
+      // allocationId 가 없는 옛 결품 이벤트는 여기서 0 으로 센다 — 옛 규칙은 위 귀속 검사가 본다.
+      const shortage = movedByAllocation('APPROVE_SHORTAGE', allocation.id);
+      if (handedIn - handedBack - removed - shortage !== allocation.quantity) {
+        issues.push(
+          `allocation ${allocation.id} quantity ${allocation.quantity} differs from ` +
+            `hand-in ${handedIn} − hand-back ${handedBack} − removed ${removed} − shortage ${shortage}`,
+        );
+      }
+    }
+    // REMOVE_TO_RETURN_BIN 은 줄 보관과 배정을 같은 수만큼 줄이고 아래 합산 대상(RETURN_TO_SOURCE·
+    // SETTLE_FOR_DISPATCH·APPROVE_SHORTAGE)에 들지 않는다. PUTAWAY_RETURN 은 줄이 없어 걸리지 않는다.
+    // 줄 보관은 (줄, 로케이션) 쌍마다 이 배치 배정 행의 «합» 과 견준다 — 같은 배치에 다시 합류한 박스는
+    // 옛 0 행과 새 행이 같은 쌍을 가리키고, 보관은 행을 모른다(불변식 I3 와 같은 기준).
+    const allocatedByLineSource = new Map<string, { shipmentLineId: string; sourceLocationId: string; qty: number }>();
+    for (const allocation of allocations) {
+      const key = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
+      const entry = allocatedByLineSource.get(key) ?? {
+        shipmentLineId: allocation.shipmentLineId,
+        sourceLocationId: allocation.sourceLocationId,
+        qty: 0,
+      };
+      entry.qty += allocation.quantity;
+      allocatedByLineSource.set(key, entry);
+    }
+    for (const [key, allocated] of allocatedByLineSource) {
       const activeAttributedQty = replay.balances
         .filter(
           (balance) =>
-            balance.shipmentLineId === allocation.shipmentLineId &&
-            balance.sourceLocationId === allocation.sourceLocationId &&
+            balance.shipmentLineId === allocated.shipmentLineId &&
+            balance.sourceLocationId === allocated.sourceLocationId &&
+            LINE_ATTRIBUTED_CUSTODY.has(balance.custodyType) &&
             balance.custodyType !== 'SETTLED',
         )
         .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
@@ -769,23 +852,173 @@ export class BatchSessionRecoveryService {
       let settledQty = 0;
       let shortageQty = 0;
       for (const event of events) {
-        if (event.fromSourceLocationId !== allocation.sourceLocationId) continue;
+        if (event.fromSourceLocationId !== allocated.sourceLocationId) continue;
         const payload = payloadOf(event.payload);
         const attributedLineId = event.fromShipmentLineId ?? payload.shipmentLineId;
-        if (attributedLineId !== allocation.shipmentLineId) continue;
+        if (attributedLineId !== allocated.shipmentLineId) continue;
         if (event.eventType === 'RETURN_TO_SOURCE') returnedQty += event.quantity;
         else if (event.eventType === 'SETTLE_FOR_DISPATCH') settledQty += event.quantity;
-        else if (event.eventType === 'APPROVE_SHORTAGE') shortageQty += event.quantity;
+        // 새 부족 승인은 이미 배정에서 빠졌다(정한 것 9) — 세면 두 번 뺀다.
+        else if (event.eventType === 'APPROVE_SHORTAGE' && typeof payload.allocationId !== 'string') {
+          shortageQty += event.quantity;
+        }
       }
       const accountedQty = activeAttributedQty + returnedQty + settledQty + shortageQty;
-      if (accountedQty > allocation.quantity) {
+      if (accountedQty > allocated.qty) {
         issues.push(
-          `allocation ${allocation.id} line custody exceeds persisted quantity: ` +
-            `allocated=${allocation.quantity}, accounted=${accountedQty}`,
+          `line|location ${key} custody exceeds persisted allocation: ` +
+            `allocated=${allocated.qty}, accounted=${accountedQty}`,
         );
       }
     }
     return issues;
+  }
+
+  /**
+   * 옛 결품 이벤트(payload 에 allocationId 없음 — 옛 APPROVE_SHORTAGE 와 RETURN_TO_SOURCE)의 재생 검사.
+   * PR 4 전에 만들어진 세션을 그 시절 규칙 그대로 재생한다 — 동작을 바꾸지 말 것.
+   */
+  private legacyShortPickIssues(input: {
+    event: EventRow;
+    payload: ReturnType<typeof payloadOf>;
+    from: ReplayBucket | null;
+    allocations: Array<{
+      workItemId: string | null;
+      shipmentLineId: string;
+      sourceLocationId: string;
+      quantity: number;
+      skuId: string;
+    }>;
+    events: EventRow[];
+    operationOwner:
+      | {
+          type: string;
+          status: string;
+          snapshot: typeof wmsTables.shipmentOperations.$inferSelect.beforeManifestSnapshot;
+          memberShipmentId: string;
+        }
+      | undefined;
+    persistedContext: Record<string, unknown>;
+    shortPickOperationId: unknown;
+    shipmentLineId: unknown;
+    sourceLocationId: unknown;
+    reason: unknown;
+  }): { issues: string[]; context: Record<string, unknown> } {
+    const {
+      event,
+      payload,
+      from,
+      allocations,
+      events,
+      operationOwner,
+      persistedContext,
+      shortPickOperationId,
+      shipmentLineId,
+      sourceLocationId,
+      reason,
+    } = input;
+    const issues: string[] = [];
+    let context: Record<string, unknown> = persistedContext;
+    const intent = operationOwner ? shortPickOperationIntentOf(operationOwner.snapshot) : null;
+    // The short-pick intent names the work item it was taken on; attribute
+    // the event only to that work item's allocation for this line/source.
+    const allocation = allocations.find(
+      (candidate) =>
+        intent !== null &&
+        candidate.workItemId === intent.workItemId &&
+        candidate.shipmentLineId === shipmentLineId &&
+        candidate.sourceLocationId === sourceLocationId,
+    );
+    if (
+      typeof shortPickOperationId !== 'string' ||
+      typeof shipmentLineId !== 'string' ||
+      typeof sourceLocationId !== 'string' ||
+      typeof reason !== 'string' ||
+      !reason.trim() ||
+      !allocation ||
+      allocation.skuId !== event.skuId ||
+      !from ||
+      from.sourceLocationId !== sourceLocationId ||
+      (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
+    ) {
+      issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
+    }
+    if (
+      !operationOwner ||
+      operationOwner.type !== 'short_pick' ||
+      !['pending', 'completed', 'recovery_required'].includes(operationOwner.status)
+    ) {
+      issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
+    } else {
+      const intentLine = intent?.lines.find(
+        (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
+      );
+      const shortageTotal = events
+        .filter((candidate) => {
+          const candidatePayload = payloadOf(candidate.payload);
+          return (
+            candidate.eventType === 'APPROVE_SHORTAGE' &&
+            candidatePayload.shortPickOperationId === shortPickOperationId &&
+            candidatePayload.shipmentLineId === shipmentLineId &&
+            candidatePayload.sourceLocationId === sourceLocationId
+          );
+        })
+        .reduce((total, candidate) => total + candidate.quantity, 0);
+      const returnedTotal = events
+        .filter((candidate) => {
+          const candidatePayload = payloadOf(candidate.payload);
+          return (
+            candidate.eventType === 'RETURN_TO_SOURCE' &&
+            candidatePayload.shortPickOperationId === shortPickOperationId &&
+            candidatePayload.shipmentLineId === shipmentLineId &&
+            candidatePayload.sourceLocationId === sourceLocationId
+          );
+        })
+        .reduce((total, candidate) => total + candidate.quantity, 0);
+      if (
+        !intent ||
+        intent.operationId !== shortPickOperationId ||
+        intent.shipmentId !== operationOwner.memberShipmentId ||
+        intent.sessionId !== event.sessionId ||
+        intent.actorId !== payload.actorId ||
+        intent.reason !== reason ||
+        !intentLine ||
+        !allocation ||
+        intentLine.allocationQty !== allocation.quantity ||
+        shortageTotal !== intentLine.shortQty ||
+        returnedTotal !== intentLine.allocationQty - intentLine.shortQty
+      ) {
+        issues.push(`${event.eventType} event ${event.id} differs from immutable short-pick operation intent`);
+      }
+    }
+    if (event.eventType === 'APPROVE_SHORTAGE') {
+      if (
+        !isApprovedShortageReasonCode(payload.reasonCode) ||
+        typeof payload.approverId !== 'string' ||
+        payload.approverId !== payload.actorId
+      ) {
+        issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid approval evidence`);
+      }
+      const exactContext = {
+        shortPickOperationId,
+        shipmentLineId,
+        sourceLocationId,
+        reasonCode: payload.reasonCode,
+        reason,
+        approverId: payload.approverId,
+      };
+      if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+        issues.push(`APPROVE_SHORTAGE event ${event.id} context is not exact`);
+      }
+      context = exactContext;
+    } else {
+      const exactContext = { shortPickOperationId, shipmentLineId, sourceLocationId, reason };
+      if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+        issues.push(`RETURN_TO_SOURCE event ${event.id} short-pick context is not exact`);
+      }
+      context = exactContext;
+    }
+    return { issues, context };
   }
 
   private requestSide(side: ReplayBucket) {
@@ -803,9 +1036,8 @@ export class BatchSessionRecoveryService {
     if (['WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED'].includes(bucket.custodyType)) {
       return bucket.custodyRef !== null && bucket.shipmentLineId !== null;
     }
-    if (['RETURN_PENDING', 'SETTLED'].includes(bucket.custodyType)) {
-      return bucket.custodyRef === null && bucket.shipmentLineId !== null;
-    }
+    if (bucket.custodyType === 'RETURN_PENDING') return bucket.custodyRef !== null && bucket.shipmentLineId === null;
+    if (bucket.custodyType === 'SETTLED') return bucket.custodyRef === null && bucket.shipmentLineId !== null;
     return false;
   }
 
@@ -840,6 +1072,7 @@ export class BatchSessionRecoveryService {
       session.handedInQty !== replay.handedInQty ||
       session.settledQty !== replay.settledQty ||
       session.returnedQty !== replay.returnedQty ||
+      session.handedBackQty !== replay.handedBackQty ||
       session.shortageQty !== replay.shortageQty
     ) {
       issues.push('session header totals differ from append-only events');

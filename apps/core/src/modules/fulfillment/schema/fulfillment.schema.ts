@@ -7,7 +7,7 @@
  *   fulfillment_orders, fulfillment_order_items,
  *   fulfillment_order_creation_backlogs, fulfillment_command_requests,
  *   outbound_batches, outbound_batch_work_items,
- *   shipments, shipment_lines, waybills, dispatch_attempts, dispatch_attempt_sources,
+ *   shipments, shipment_lines, waybills, waybill_label_prints, dispatch_attempts, dispatch_attempt_sources,
  *   picking_plans, picking_plan_members, picking_source_allocations,
  *   outbox_events 외
  */

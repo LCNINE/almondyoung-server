@@ -19,6 +19,7 @@ import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gat
 import { ShipmentPlanningService } from '../../services/shipment-planning.service';
 import type { AllocateResult, CarrierGateway, RegisterOutcome } from '../carrier/carrier-gateway.interface';
 import type { WaybillRow } from '../waybill.types';
+import { assembleBoxWithdrawal } from '../../services/__support__/box-withdrawal-wiring';
 
 export const WAYBILL_RECIPIENT = {
   recipientName: '수취인 통합',
@@ -62,6 +63,7 @@ export function makeSeedDeps(db: PostgresJsDatabase<typeof wmsSchema>): SeedDeps
     new AuditService(svc),
     { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
+    assembleBoxWithdrawal(svc),
   );
   return {
     fulfillments: wired.fulfillments,

@@ -1,5 +1,7 @@
 # 피킹 계획 층은 전략 어댑터 바깥의 단일 순수 함수 모듈로 둔다
 
+> **부분 대체됨:** 계획 층 자체는 [[0041-picking-plan-absorbed-into-work-item-allocations]] 로 작업 항목 배정에 흡수됐다. 아래의 «3방식 diff ≤ 4 만 공유» 규칙은 `picking/allocation/` 에 그대로 적용된다.
+
 출고작업 피킹의 세 전략 어댑터(`discrete` / `pick_to_tote` / `aggregate_then_sort`)가 **계획 층 전체를 손으로 복사**하고 있었다. 이 ADR 은 그 중복을 어디까지 어떤 형태로 통합할지에 대한 결정과 근거를 못 박는다. 설계 스펙은 `docs/superpowers/specs/2026-08-15-picking-plan-layer-design.md`.
 
 [[0026-version-cow-targeted-decomposition]] 과 짝을 이룬다. 그건 "같은 규칙이 네 번 복사됐다"는 전제를 **측정으로 반증해 통합을 기각한** 사례이고, 이건 같은 종류의 측정이 **통합을 지지한** 사례다. 근거의 형식이 같으니 나란히 읽어야 한다.

@@ -5,6 +5,7 @@ import { SubscriptionService } from '../services/subscription.service';
 import { ActiveSubscriptionExistsException } from '../shared/exceptions/subscription.exceptions';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { EventPayloadOf } from '@packages/event-contracts/types';
+import { isArrearsPayment } from '../services/arrears/arrears-payment.metadata';
 
 interface CapturedEventPayload {
   intentId: string;
@@ -30,6 +31,9 @@ export class MembershipCheckoutConsumer {
   @On(PAYMENT_STREAM, 'payment.intent.captured')
   async onIntentCaptured(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'payment.intent.captured'>) {
     if (payload.metadata?.type !== 'MEMBERSHIP_FEE') return;
+    // 미수 청산 결제도 같은 type 을 쓴다(멤버십 결제 정책을 그대로 받기 위해서다). 여기서 걸러내지
+    // 않으면 빚을 갚은 사람에게 구독을 새로 만들려다 metadata 에 planId 가 없어 실패한다.
+    if (isArrearsPayment(payload.metadata)) return;
 
     this.logger.log(`[MembershipCheckout] CAPTURED 멤버십 결제 감지: intentId=${payload.intentId}`);
 

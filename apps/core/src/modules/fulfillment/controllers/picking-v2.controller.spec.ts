@@ -7,7 +7,6 @@ import { PickingCommandV2Controller, PickingV2Controller } from './picking-v2.co
 describe('PickingV2Controller aggregate-then-sort contract', () => {
   const bulkScan = {
     batchId: '11111111-1111-4111-8111-111111111111',
-    planId: '22222222-2222-4222-8222-222222222222',
     sessionId: '33333333-3333-4333-8333-333333333333',
     skuId: '66666666-6666-4666-8666-666666666666',
     sourceLocationId: '77777777-7777-4777-8777-777777777777',
@@ -28,7 +27,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
     await controller.sortScan(
       {
         batchId: bulkScan.batchId,
-        planId: bulkScan.planId,
         sessionId: bulkScan.sessionId,
         workItemId: '44444444-4444-4444-8444-444444444444',
         shipmentId: '55555555-5555-4555-8555-555555555555',
@@ -45,7 +43,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
     await controller.cartHandoff(
       {
         batchId: bulkScan.batchId,
-        planId: bulkScan.planId,
         sessionId: bulkScan.sessionId,
         expectedOwnerId: '99999999-9999-4999-8999-999999999999',
         targetWorkerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -65,7 +62,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
     });
     expect(picking.aggregateSortScan).toHaveBeenCalledWith({
       batchId: bulkScan.batchId,
-      planId: bulkScan.planId,
       sessionId: bulkScan.sessionId,
       workItemId: '44444444-4444-4444-8444-444444444444',
       shipmentId: '55555555-5555-4555-8555-555555555555',
@@ -82,7 +78,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
     });
     expect(picking.aggregateCartHandoff).toHaveBeenCalledWith({
       batchId: bulkScan.batchId,
-      planId: bulkScan.planId,
       sessionId: bulkScan.sessionId,
       expectedOwnerId: '99999999-9999-4999-8999-999999999999',
       targetWorkerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -113,7 +108,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
   it('validates all custody identities and does not accept a body actor', () => {
     const dto = Object.assign(new AggregateSortScanDto(), {
       batchId: bulkScan.batchId,
-      planId: bulkScan.planId,
       sessionId: bulkScan.sessionId,
       workItemId: '44444444-4444-4444-8444-444444444444',
       shipmentId: '55555555-5555-4555-8555-555555555555',
@@ -131,7 +125,6 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
 
     const invalid = Object.assign(new AggregateSortScanDto(), {
       batchId: bulkScan.batchId,
-      planId: bulkScan.planId,
       sessionId: bulkScan.sessionId,
       workItemId: '44444444-4444-4444-8444-444444444444',
       shipmentId: '55555555-5555-4555-8555-555555555555',
@@ -154,7 +147,6 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
   const actor = { userId: 'worker-1', roles: ['warehouse_operator'] };
   const ids = {
     batchId: '11111111-1111-4111-8111-111111111111',
-    planId: '22222222-2222-4222-8222-222222222222',
     sessionId: '33333333-3333-4333-8333-333333333333',
     workItemId: '44444444-4444-4444-8444-444444444444',
     shipmentId: '55555555-5555-4555-8555-555555555555',
@@ -165,20 +157,17 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
 
   it('exposes every generic strategy command with trusted actor and idempotency', async () => {
     const picking = {
-      plan: jest.fn(),
       start: jest.fn(),
       scan: jest.fn(),
       handoff: jest.fn(),
       completePick: jest.fn(),
     };
     const controller = new PickingCommandV2Controller(picking as never);
-    await controller.plan({ batchId: ids.batchId, shipmentIds: [ids.shipmentId] }, 'plan-key', actor);
-    await controller.start({ batchId: ids.batchId, planId: ids.planId }, 'start-key', actor);
+    await controller.start({ batchId: ids.batchId }, 'start-key', actor);
     await controller.scan({ ...ids, quantity: 2, expectedLeaseVersion: 1 }, 'scan-key', actor);
     await controller.handoff(
       {
         batchId: ids.batchId,
-        planId: ids.planId,
         sessionId: ids.sessionId,
         workItemId: ids.workItemId,
         shipmentId: ids.shipmentId,
@@ -192,7 +181,6 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
     await controller.complete(
       {
         batchId: ids.batchId,
-        planId: ids.planId,
         sessionId: ids.sessionId,
         workItemId: ids.workItemId,
         shipmentId: ids.shipmentId,
@@ -202,11 +190,10 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
       actor,
     );
 
-    expect(picking.plan).toHaveBeenCalledWith({
+    expect(picking.start).toHaveBeenCalledWith({
       batchId: ids.batchId,
-      shipmentIds: [ids.shipmentId],
       actorId: 'worker-1',
-      idempotencyKey: 'plan-key',
+      idempotencyKey: 'start-key',
     });
     expect(picking.scan).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -226,9 +213,9 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
 
   it('rejects missing/unsafe idempotency and requires warehouse scope', () => {
     const controller = new PickingCommandV2Controller({} as never);
-    expect(() => controller.start({ batchId: ids.batchId, planId: ids.planId }, undefined, actor)).toThrow();
-    expect(() => controller.start({ batchId: ids.batchId, planId: ids.planId }, 'contains space', actor)).toThrow();
-    for (const name of ['plan', 'start', 'scan', 'handoff', 'complete'] as const) {
+    expect(() => controller.start({ batchId: ids.batchId }, undefined, actor)).toThrow();
+    expect(() => controller.start({ batchId: ids.batchId }, 'contains space', actor)).toThrow();
+    for (const name of ['start', 'scan', 'handoff', 'complete'] as const) {
       const method = Object.getOwnPropertyDescriptor(PickingCommandV2Controller.prototype, name)?.value as object;
       expect(Reflect.getMetadata('required_scopes', method)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
     }

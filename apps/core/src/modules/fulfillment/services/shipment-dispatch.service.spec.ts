@@ -10,6 +10,12 @@ const FORCE_AUTHORIZATION = Object.freeze({
   [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
 });
 
+const STATION_FORCE_AUTHORIZATION = Object.freeze({
+  scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+  granted: true as const,
+  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
+});
+
 const IDS = {
   shipment: '00000000-0000-4000-8000-000000000001',
   line: '00000000-0000-4000-8000-000000000002',
@@ -25,7 +31,6 @@ const IDS = {
   session: '00000000-0000-4000-8000-00000000000b',
   workItem: '00000000-0000-4000-8000-00000000000c',
   batch: '00000000-0000-4000-8000-00000000000d',
-  plan: '00000000-0000-4000-8000-00000000000e',
   actor: '00000000-0000-4000-8000-00000000000f',
   balance: '00000000-0000-4000-8000-000000000010',
 };
@@ -135,7 +140,6 @@ function aggregate(overrides: Record<string, unknown> = {}) {
       packerReleasedAt: null,
       leaseExpiresAt: new Date(Date.now() + 60_000),
     },
-    planId: IDS.plan,
     ...overrides,
   } as any;
 }
@@ -196,6 +200,7 @@ function makeService() {
     audit as any,
     workflowGate as any,
     coreOrderOutbox as any,
+    { assertCurrent: jest.fn(async () => undefined) } as never,
   );
   return {
     service,
@@ -301,6 +306,44 @@ describe('ShipmentDispatchService', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a decision for an unrelated scope', async () => {
+    const { service, commands } = makeService();
+    await expect(
+      service.forceDispatch(IDS.shipment, {
+        reason: 'wrong scope',
+        actor: { id: IDS.actor, roles: ['logistics_worker'] },
+        idempotencyKey: 'force-wrong-scope',
+        authorization: Object.freeze({
+          scope: FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+          granted: true as const,
+          [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
+        }),
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('accepts the station force decision and runs the command', async () => {
+    const { service, commands } = makeService();
+    const locked = aggregate({ lines: [line({ qty: 4, inspectedQty: 1 })] });
+    jest.spyOn(service as any, 'lockAggregate').mockResolvedValue(locked);
+    jest.spyOn(service as any, 'moveInspectionCustody').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'dispatchLocked').mockResolvedValue({
+      shipmentId: IDS.shipment,
+      status: 'shipped',
+      dispatchAttemptId: 'attempt-1',
+      attemptNo: 1,
+      forcedQuantities: [],
+    });
+    await service.forceDispatch(IDS.shipment, {
+      reason: 'station_force_command',
+      actor: { id: IDS.actor, roles: ['logistics_worker'] },
+      idempotencyKey: 'force-station',
+      authorization: STATION_FORCE_AUTHORIZATION,
+    });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
   });
 
   it('emits internal shipment progress without fabricating an external order or v1 completion', async () => {
@@ -475,7 +518,6 @@ describe('ShipmentDispatchService', () => {
         beforeLineManifest: [expect.objectContaining({ shipmentLineId: IDS.line, inspectedQty: 1, forced: false })],
         afterLineManifest: [expect.objectContaining({ shipmentLineId: IDS.line, inspectedQty: 2, forced: true })],
         lineage: expect.objectContaining({
-          planId: IDS.plan,
           sessionId: IDS.session,
           workItemId: IDS.workItem,
           dispatchAttemptId: result.dispatchAttemptId,

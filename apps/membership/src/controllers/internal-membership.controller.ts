@@ -2,6 +2,7 @@ import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/co
 import { MembershipInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { EntitlementService } from '../services/entitlement.service';
+import { ArrearsReader } from '../services/arrears/arrears.reader';
 
 @Controller('internal')
 @MembershipInternalAuth()
@@ -11,6 +12,7 @@ export class InternalMembershipController {
   constructor(
     private readonly adminOperationsService: AdminOperationsService,
     private readonly entitlementService: EntitlementService,
+    private readonly arrearsReader: ArrearsReader,
   ) {}
 
   /**
@@ -57,5 +59,16 @@ export class InternalMembershipController {
   async getAllActiveMemberships(): Promise<{ activeUserIds: string[] }> {
     const activeUserIds = await this.entitlementService.getAllActiveUserIds();
     return { activeUserIds };
+  }
+
+  /**
+   * 미납 요금이 남은 계정의 userId 전부. notification 관리자 알림톡의 «미납 회원» 대상이 쓴다.
+   * 관리자가 미리보기·발송을 누를 때만 불린다.
+   */
+  @Post('memberships/arrears-outstanding')
+  @HttpCode(HttpStatus.OK)
+  async getArrearsOutstandingUsers(): Promise<{ userIds: string[] }> {
+    const userIds = await this.arrearsReader.outstandingUserIds();
+    return { userIds };
   }
 }

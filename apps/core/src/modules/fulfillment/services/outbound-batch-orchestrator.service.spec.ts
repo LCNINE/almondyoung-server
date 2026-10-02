@@ -81,6 +81,8 @@ function makeService() {
     {} as never,
     workflowGate as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, commands, workflowGate };
 }
@@ -185,21 +187,31 @@ describe('OutboundBatchOrchestrator policy', () => {
     expect(select).toHaveBeenCalledTimes(4);
   });
 
-  it('excludes retired membership from active-plan exclusion checks', async () => {
+  it('refuses exclusion while a live work item still holds a positive allocation', async () => {
     const predicates: unknown[] = [];
-    const select = jest.fn(() => new QueryResult([], (predicate) => predicates.push(predicate)));
+    const queryResults = [[], [], [{ id: '88888888-8888-4888-8888-888888888888' }], []];
+    const select = jest.fn(
+      () => new QueryResult(queryResults.shift() ?? [], (predicate) => predicates.push(predicate)),
+    );
     const tx = { select } as unknown as DbTx;
     const policy = servicePolicy(makeService().service);
 
-    await expect(
-      policy.assertExcludable(
+    let caught: unknown;
+    try {
+      await policy.assertExcludable(
         {
           shipment: { id: '55555555-5555-4555-8555-555555555555', status: 'ready' },
           lines: [{ id: '77777777-7777-4777-8777-777777777777', inspectedQty: 0 }],
         },
         tx,
-      ),
-    ).resolves.toBeUndefined();
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    const response = (caught as ConflictException).getResponse();
+    const code = typeof response === 'object' && response !== null && 'code' in response ? response.code : response;
+    expect(code).toBe('WORK_ITEM_ALLOCATED');
 
     const rendered = predicates.map((predicate) =>
       new PgDialect().sqlToQuery(predicate as never).sql.replace(/\s+/g, ' '),
@@ -207,10 +219,11 @@ describe('OutboundBatchOrchestrator policy', () => {
     expect(
       rendered.some(
         (query) =>
-          query.includes('"picking_plan_members"."retired_at" is null') &&
-          query.includes('"picking_plans"."status" in'),
+          query.includes('"outbound_batch_work_items"."status" not in') &&
+          query.includes('"picking_source_allocations"."qty" >'),
       ),
     ).toBe(true);
+    expect(rendered.some((query) => query.includes('picking_plan'))).toBe(false);
   });
 
   it('rejects named handoff from a non-manager before claiming a command row', async () => {
@@ -303,6 +316,8 @@ describe('createBatch picking method contract', () => {
       {} as never,
       {} as never,
       workflowGate as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     return { orchestrator, commands };

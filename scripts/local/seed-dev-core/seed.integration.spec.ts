@@ -61,17 +61,23 @@ describeIfSeedDb('dev_core 시드', () => {
       'inventory.operate',
       'inventory.warehouse.manage',
     ]);
-    // logistics_worker 가 inventory 에서 operate 하나만 받는 건 의도다 — 현장 PDA 의 조회·입고확정·
-    // 적치·실사 카운트·이동은 작업자 행위지만, 수량을 직접 고치는 adjust 와 마스터데이터를 바꾸는
-    // manage 는 아니다. 그 결과 재고조정·실사 차이 반영은 logistics_manager 를 요구한다.
-    expect(scopeKeysByRole.get('logistics_worker')).toEqual(['fulfillment.warehouse.operate', 'inventory.operate']);
+    // logistics_worker 가 inventory 에서 operate 하나만 받는 건 의도다. 현장 PDA 의 조회·입고확정·
+    // 적치는 작업자 행위; 스테이션 UI 의 결품 보고·강제출고도 새로이 작업자 스코프다.
+    expect(scopeKeysByRole.get('logistics_worker')).toEqual([
+      'fulfillment.dispatch.station_force',
+      'fulfillment.shipment.short_pick',
+      'fulfillment.warehouse.operate',
+      'inventory.operate',
+    ]);
     expect(scopeKeysByRole.get('logistics_manager')).toEqual([
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.recall',
+      'fulfillment.dispatch.station_force',
       'fulfillment.reservation.transfer',
       'fulfillment.shipment.consolidate',
       'fulfillment.shipment.override_recipient',
       'fulfillment.shipment.reopen',
+      'fulfillment.shipment.short_pick',
       'fulfillment.warehouse.operate',
       'inventory.adjust',
       'inventory.manage',
@@ -574,8 +580,7 @@ describeIfSeedDb('dev_core 시드', () => {
       if (prepared.outcome !== 'ready') throw new Error('Expected ready preparation');
       const context = prepared.context;
 
-      // prepare 가 만드는 셋 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
-      expect(context.planId).toBeTruthy();
+      // prepare 가 만드는 것 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
       expect(context.sessionId).toBeTruthy();
       expect(context.batchId).toBeTruthy();
 

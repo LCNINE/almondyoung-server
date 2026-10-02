@@ -95,6 +95,8 @@ export class OutboundBatchWorkItemResponseDto {
   exclusionReason: string | null;
   recoveryReason: string | null;
   waitingOperationId: string | null;
+  @ApiPropertyOptional({ enum: ['draft', 'canceled'], nullable: true, description: '이탈이 끝나면 박스가 갈 곳' })
+  exitTo: 'draft' | 'canceled' | null;
   pickerClaim: BatchClaimStateDto;
   packerClaim: BatchClaimStateDto;
 }
@@ -125,6 +127,25 @@ export class EligibleShipmentResponseDto {
   trackingNo: string;
 }
 
+export class BatchPickingAllocationDto {
+  id: string;
+  workItemId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  qty: number;
+  sourceStockVersion: number;
+  createdAt: Date;
+}
+
+export class BatchPickingSnapshotDto {
+  @ApiProperty({ enum: ['discrete', 'aggregate_then_sort', 'pick_to_tote'] })
+  strategy: 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
+  startedAt: Date;
+  @ApiProperty({ type: [BatchPickingAllocationDto] })
+  allocations: BatchPickingAllocationDto[];
+}
+
 export class OutboundBatchV2DetailDto {
   id: string;
   batchNumber: string;
@@ -153,15 +174,8 @@ export class OutboundBatchV2DetailDto {
     supportedPickingStrategies: Array<'discrete' | 'aggregate_then_sort' | 'pick_to_tote'>;
   };
 
-  @ApiProperty({ type: Object, nullable: true })
-  pickingPlan: {
-    id: string;
-    strategy: string;
-    status: string;
-    version: number;
-    members: Array<Record<string, unknown>>;
-    allocations: Array<Record<string, unknown>>;
-  } | null;
+  @ApiProperty({ type: BatchPickingSnapshotDto, nullable: true })
+  picking: BatchPickingSnapshotDto | null;
 
   @ApiProperty({ type: Object, nullable: true })
   inventorySession: {
@@ -169,6 +183,7 @@ export class OutboundBatchV2DetailDto {
     status: string;
     version: number;
     handedInQty: number;
+    handedBackQty: number;
     settledQty: number;
     returnedQty: number;
     shortageQty: number;
@@ -201,6 +216,72 @@ export class OutboundBatchV2ListItemDto {
   cartCapacity: number | null;
   totalItems: number;
   totalQty: number;
+  @ApiProperty({ description: '빼는 중인 박스 수 — 배치 카드의 «빠지는 중 N»' })
+  withdrawingItems: number;
   scheduledPickingAt: Date | null;
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: '「작업 시작」 시각. null 이면 시작 전 — 송장 인쇄를 켜지 않는다',
+  })
+  startedAt: Date | null;
   createdAt: Date;
+}
+
+export class JoinCandidateLineDto {
+  @ApiProperty()
+  skuCode: string;
+  @ApiProperty()
+  skuName: string;
+  @ApiProperty()
+  qty: number;
+}
+
+export class JoinCandidateWaybillDto {
+  @ApiProperty()
+  id: string;
+  @ApiProperty({ type: String, nullable: true })
+  trackingNo: string | null;
+  @ApiProperty()
+  status: string;
+  @ApiProperty()
+  source: string;
+  @ApiProperty()
+  carrier: string;
+  @ApiProperty({
+    description: '앱이 그릴 수 있는 송장인가(한진 발급). 아니면 합류 뒤 출력 없이 진행한다(labelState external).',
+  })
+  printable: boolean;
+}
+
+export class JoinCandidateResponseDto {
+  @ApiProperty()
+  shipmentId: string;
+  @ApiProperty()
+  shipmentStatus: string;
+  @ApiProperty()
+  manifestVersion: number;
+  @ApiProperty({ type: [String] })
+  orderNos: string[];
+  @ApiProperty()
+  recipientMasked: string;
+  @ApiProperty()
+  totalQty: number;
+  @ApiProperty({ type: [JoinCandidateLineDto] })
+  lines: JoinCandidateLineDto[];
+  @ApiProperty({ type: JoinCandidateWaybillDto, nullable: true })
+  waybill: JoinCandidateWaybillDto | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      '송장 밖의 합류 불가 사유 코드(SHIPMENT_ACTIVE_WORK_ITEM 등). null 이면 송장만 보면 된다. ALREADY_IN_THIS_BATCH 는 막는 사유가 아니라 «이미 이 배치에 들어 있다»(합류 응답을 잃은 재시도) — 앱은 합류 없이 송장 출력으로 간다.',
+  })
+  issue: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '활성 송장이 있는데 발송할 수 없는 사유 코드(WAYBILL_STALE 등). 송장이 없으면 null — 앱이 발급한다.',
+  })
+  waybillIssue: string | null;
 }

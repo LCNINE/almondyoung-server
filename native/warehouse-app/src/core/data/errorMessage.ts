@@ -10,9 +10,14 @@ export type ErrorContext =
   | 'inbound-cancel'
   | 'po-receive'
   | 'putaway'
-  | 'outbound';
+  | 'outbound'
+  | 'returns'
+  // 되돌림 적치 화면 — 'returns' 와 같되 이 화면에만 맞는 문구를 덧씌운다.
+  | 'return-putaway';
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
+  'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
+  returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
   location: { 404: '로케이션을 찾을 수 없어요.' },
   stocktaking: { 400: '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.' },
@@ -46,6 +51,15 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
 // 는 이 서비스가 실어 보낸 `error` 코드를 그대로 응답에 담고, httpClient 의 ConflictError 가 그
 // 코드를 들고 온다(둘 다 이 리뷰에서 함께 고침). outbound 문맥에서만 적용 — 다른 화면(적치·이동
 // 등)의 409 는 지금처럼 공용 문구를 유지한다. 목록에 없는 코드도 공용 문구로 떨어진다.
+export const WAYBILL_STALE_MESSAGE =
+  '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.';
+export const WAYBILL_NOT_DISPATCHABLE_MESSAGE =
+  '한진 등록이 끝나지 않은 송장이에요. 관리자에게 운송장 발급 상태를 확인해 달라고 해 주세요.';
+export const WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE =
+  '작업이 시작되지 않은 박스예요. 배치 화면에서 「작업 시작」을 먼저 눌러 주세요.';
+
+export const SHIPMENT_WITHDRAWN_MESSAGE = '빠진 박스예요. 송장은 버려 주세요.';
+
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
     '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
@@ -72,6 +86,34 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: '다른 작업자가 이 박스를 작업 중이에요',
   SIMPLE_OUTBOUND_METHOD_UNSUPPORTED:
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
+  LABEL_REPRINT_REQUIRED:
+    '송장이 바뀌었거나 아직 출력하지 않았어요. 송장을 다시 스캔해 출력한 뒤 계속해 주세요.',
+  WAYBILL_STALE: WAYBILL_STALE_MESSAGE,
+  WAYBILL_NOT_DISPATCHABLE: WAYBILL_NOT_DISPATCHABLE_MESSAGE,
+  WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
+  BATCH_NOT_JOINABLE:
+    '이 배치에는 더 넣을 수 없어요(끝났거나 멈춘 배치). 다른 배치를 골라 주세요.',
+  SHIPMENT_WITHDRAWN: SHIPMENT_WITHDRAWN_MESSAGE,
+  SHIPMENT_ALREADY_WITHDRAWING:
+    '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
+  SHIPMENT_NOT_WITHDRAWING: '빼는 중인 박스가 아니에요. 송장을 다시 스캔해 주세요.',
+  REMOVAL_NOT_PENDING: '이 상품은 이 박스에서 뺄 게 없어요.',
+  WITHDRAWAL_WAYBILL_NOT_VOIDABLE: '이 박스의 송장을 지금 처리할 수 없어요. 이 상품은 아직 빠지지 않았어요. 관리자에게 송장 처리를 요청해 주세요.',
+  SHIPMENT_LINE_INSPECTION_STALE: '검수 기록이 맞지 않아요. 관리자에게 문의해 주세요.',
+  SHIPMENT_ACTIVE_WORK_ITEM:
+    '이미 다른 배치에 들어 있는 박스예요.',
+  OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED:
+    '이 배치의 카트 바구니가 다 찼어요.',
+  WORK_ITEM_TOTE_RELEASE_REQUIRED:
+    '바구니 배정을 먼저 풀어야 뺄 수 있어요. 관리자에게 문의해 주세요.',
+  WORK_ITEM_DISPATCH_EXISTS:
+    '이미 출고 처리된 박스라 뺄 수 없어요.',
+  WORK_ITEM_ALLOCATED:
+    '결품 처리 중인 박스예요. 관리자에게 문의해 주세요.',
+  OUTBOUND_BATCH_STARTED_RETRY:
+    '방금 작업이 시작된 배치예요. 다시 넣어 주세요.',
+  PICKING_SESSION_NOT_ACTIVE:
+    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
 };
 
 const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
@@ -88,13 +130,38 @@ const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
     '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.',
 };
 
+/** 되돌림 바구니 — «뺄 상품»(출고)과 «되돌림 적치»·설정(returns) 화면이 같은 문구를 쓴다. */
+const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
+  RETURN_BIN_UNKNOWN: '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.',
+  RETURN_BIN_WAREHOUSE_MISMATCH: '다른 창고의 되돌림 바구니예요.',
+  RETURN_BIN_ITEM_NOT_FOUND: '이 바구니에 없는 상품이에요.',
+  RETURN_BIN_ITEM_SHORT: '바구니에 남은 수량보다 많아요.',
+  RETURN_LOCATION_MISMATCH: '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.',
+};
+
+/** 되돌림 적치 전용 — 같은 코드의 출고 문구와 뜻이 달라 RETURN_CONFLICT_MESSAGES(출고와 공유)에 못 넣는다. */
+const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
+  // 작업자가 바구니를 «스캔했다» — 설정 화면을 열라는 안내는 여기선 맞지 않는다.
+  RETURN_BIN_UNKNOWN: '등록되지 않은 되돌림 바구니예요. 바구니 바코드를 확인해 주세요.',
+  PICKING_SESSION_NOT_ACTIVE:
+    '이 물건의 배치가 복구 중이에요. 복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요.',
+  SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
+};
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (context === 'return-putaway') {
+    if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
+      return RETURN_PUTAWAY_MESSAGES[error.code];
+    return errorMessage(error, 'returns');
+  }
   if (
     error instanceof ApiError &&
     error.outcome === 'rejected' &&
     context === 'outbound' &&
     error.preparation
   ) {
+    if (error.preparation.reasonCode === 'BATCH_NOT_STARTED')
+      return '배치 화면에서 「작업 시작」을 먼저 눌러 주세요.';
     if (error.preparation.recovery === 'review_batch')
       return '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.';
     if (error.preparation.reasonCode === 'SOURCE_INSUFFICIENT')
@@ -116,6 +183,13 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     INBOUND_WORKFLOW_MESSAGES[error.code]
   )
     return INBOUND_WORKFLOW_MESSAGES[error.code];
+  if (
+    error instanceof ApiError &&
+    (context === 'outbound' || context === 'returns') &&
+    error.code &&
+    RETURN_CONFLICT_MESSAGES[error.code]
+  )
+    return RETURN_CONFLICT_MESSAGES[error.code];
   if (
     error instanceof ApiError &&
     context === 'outbound' &&

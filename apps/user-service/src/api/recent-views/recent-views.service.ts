@@ -57,7 +57,7 @@ export class RecentViewsService {
    * 30일 이상 조회하지 않은 최근 본 상품 기록 삭제
    * 매일 새벽 3시 실행
    */
-  @CronOnce('0 3 * * *', { name: 'recent-views-cleanup' })
+  @CronOnce('0 3 * * *', { name: 'recent-views-cleanup', timeZone: 'Asia/Seoul' })
   async cleanupOldRecentViews(): Promise<void> {
     this.logger.log('30일 이상 조회하지 않은 최근 본 상품 삭제 작업 시작');
 

@@ -86,6 +86,62 @@ export interface MembershipExpiryUpcomingPayload {
   occurredAt: string; // ISO 8601
 }
 
+/**
+ * 정기결제 출금 실패 안내 — 재시도가 남은 실패(1·2회차)마다 한 번.
+ *
+ * 마지막 시도의 실패는 이 이벤트가 아니라 {@link MembershipTerminatedForNonPaymentPayload} 로 온다.
+ * 알림 서비스는 사용자 조회를 하지 않으므로 이름·전화번호를 여기 실어 보낸다.
+ */
+export interface MembershipBillingAttemptFailedPayload {
+  userId: string;
+  userName: string;
+  phoneNumber: string;
+  contractId: string;
+  invoiceId: string;
+  /** 청구 주기 (YYYY-MM-DD). 옛 wallet 은 싣지 않아 없을 수 있다. */
+  periodStart?: string;
+  periodEnd?: string;
+  /** 청구 금액(원). 옛 wallet 은 싣지 않아 없을 수 있다. */
+  amount?: number;
+  /** 이번이 몇 번째 실패인지 (1부터) */
+  attemptCount: number;
+  maxAttempts: number;
+  remainingAttempts: number;
+  /** 다음 출금 «요청» 시각 (ISO 8601). 은행 영업일에 따라 실제 출금은 늦어질 수 있다. */
+  nextAttemptRequestAt: string;
+  /** 은행이 준 실패 사유 원문(짧게). 없으면 null */
+  reasonText: string | null;
+  occurredAt: string; // ISO 8601
+}
+
+/**
+ * 출금 재시도를 모두 실패해 멤버십이 해지됐다는 안내.
+ *
+ * 미납 요금이 원장에 적혔으면 arrearsAmount 에 그 금액이, 적히지 않았으면 null 과 그 이유가 온다.
+ */
+export interface MembershipTerminatedForNonPaymentPayload {
+  userId: string;
+  userName: string;
+  phoneNumber: string;
+  contractId: string;
+  invoiceId: string;
+  periodStart?: string;
+  periodEnd?: string;
+  arrearsAmount: number | null;
+  arrearsSkippedReason: MembershipArrearsSkippedReason | null;
+  occurredAt: string; // ISO 8601
+}
+
+export const MembershipArrearsSkippedReasonSchema = z.enum([
+  'NO_ENTITLEMENT',
+  'PERIOD_NOT_COVERED',
+  'TERMS_NOT_IN_FORCE',
+  'WITHDRAWAL_ELIGIBLE',
+  'AMOUNT_UNKNOWN',
+]);
+
+export type MembershipArrearsSkippedReason = z.infer<typeof MembershipArrearsSkippedReasonSchema>;
+
 // ===== Zod 스키마 정의 =====
 
 const MembershipStatusChangedSchema = z.object({
@@ -129,6 +185,36 @@ const MembershipExpiryUpcomingSchema = z.object({
   occurredAt: z.string().datetime(),
 });
 
+const MembershipBillingAttemptFailedSchema = z.object({
+  userId: z.string().min(1),
+  userName: z.string(),
+  phoneNumber: z.string().min(1),
+  contractId: z.string().min(1),
+  invoiceId: z.string().min(1),
+  periodStart: z.string().min(1).optional(),
+  periodEnd: z.string().min(1).optional(),
+  amount: z.number().int().nonnegative().optional(),
+  attemptCount: z.number().int().positive(),
+  maxAttempts: z.number().int().positive(),
+  remainingAttempts: z.number().int().nonnegative(),
+  nextAttemptRequestAt: z.string().min(1),
+  reasonText: z.string().nullable(),
+  occurredAt: z.string().datetime(),
+});
+
+const MembershipTerminatedForNonPaymentSchema = z.object({
+  userId: z.string().min(1),
+  userName: z.string(),
+  phoneNumber: z.string().min(1),
+  contractId: z.string().min(1),
+  invoiceId: z.string().min(1),
+  periodStart: z.string().min(1).optional(),
+  periodEnd: z.string().min(1).optional(),
+  arrearsAmount: z.number().int().positive().nullable(),
+  arrearsSkippedReason: MembershipArrearsSkippedReasonSchema.nullable(),
+  occurredAt: z.string().datetime(),
+});
+
 // ===== Stream Config =====
 
 export const MEMBERSHIP_STREAM = stream({
@@ -148,6 +234,14 @@ export const MEMBERSHIP_STREAM = stream({
       'MembershipExpiryUpcoming',
       MembershipExpiryUpcomingSchema,
     ),
+    MembershipBillingAttemptFailed: event<'MembershipBillingAttemptFailed', MembershipBillingAttemptFailedPayload>(
+      'MembershipBillingAttemptFailed',
+      MembershipBillingAttemptFailedSchema,
+    ),
+    MembershipTerminatedForNonPayment: event<
+      'MembershipTerminatedForNonPayment',
+      MembershipTerminatedForNonPaymentPayload
+    >('MembershipTerminatedForNonPayment', MembershipTerminatedForNonPaymentSchema),
   },
 });
 

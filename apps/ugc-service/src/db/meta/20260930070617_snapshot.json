@@ -2248,6 +2248,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "created_by_admin_user_id": {
+          "name": "created_by_admin_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp",

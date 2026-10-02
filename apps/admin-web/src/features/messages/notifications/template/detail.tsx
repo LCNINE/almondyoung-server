@@ -22,6 +22,9 @@ import {
   useUpdateNotificationEvent,
   useUpdateTemplateContents,
 } from '@/lib/services/notification';
+import { useAlimtalkTemplates } from '@/lib/services/alimtalk';
+import { StatusBadge } from '../../alimtalk/components/status-badge';
+import { linkedTemplateNote } from '../../alimtalk/lib/alimtalk';
 import { NOTIFICATION_CATALOG } from '../catalog';
 import { CHANNEL_LABEL } from '../components/channel-badges';
 import { MailImageUploadButton } from '../components/mail-image-upload-button';
@@ -50,6 +53,10 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
 
   const event = events.data?.find((e) => e.eventKey === eventKey);
   const template = templates.data?.find((t) => t.templateKey === event?.templateKey);
+  // 알림톡이 연결된 알림만 NHN 에 심사 상태를 묻는다.
+  const kakaoCode = template?.kakaoTemplateConfig?.templateCode;
+  const alimtalkTemplates = useAlimtalkTemplates(!!kakaoCode);
+  const alimtalk = alimtalkTemplates.data?.find((t) => t.templateCode === kakaoCode);
   const entry = NOTIFICATION_CATALOG.find((c) => c.kind === 'event' && c.eventKey === eventKey);
   const saved = channelBody(template?.contents, 'EMAIL');
 
@@ -175,15 +182,34 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
               />
               {CHANNEL_LABEL.EMAIL}
             </label>
-            {PLANNED_CHANNELS.map(({ channel, reason }) => (
-              <label key={channel} className="text-muted-foreground flex items-center gap-2 text-sm" title={reason}>
-                <Checkbox checked={event.defaultChannels.includes(channel)} disabled />
-                {CHANNEL_LABEL[channel]} (준비 중)
-              </label>
-            ))}
+            {PLANNED_CHANNELS.map(({ channel, reason }) =>
+              channel === 'KAKAO' && kakaoCode ? (
+                <span key={channel} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={event.defaultChannels.includes(channel)} disabled />
+                  {CHANNEL_LABEL[channel]}
+                  {alimtalk && <StatusBadge status={alimtalk.status} label={alimtalk.statusName} />}
+                </span>
+              ) : (
+                <label key={channel} className="text-muted-foreground flex items-center gap-2 text-sm" title={reason}>
+                  <Checkbox checked={event.defaultChannels.includes(channel)} disabled />
+                  {CHANNEL_LABEL[channel]} (준비 중)
+                </label>
+              )
+            )}
           </div>
+          {kakaoCode && (
+            <p className="text-xs">
+              알림톡 템플릿{' '}
+              <Link href="/messages/alimtalk/templates" className="font-mono underline underline-offset-2">
+                {kakaoCode}
+              </Link>
+              {alimtalkTemplates.isLoading && ' · 심사 상태 확인 중'}
+              {alimtalkTemplates.isError && ' · 심사 상태를 불러오지 못했습니다'}
+              {alimtalkTemplates.data && ` · ${linkedTemplateNote(alimtalk ?? null)}`}
+            </p>
+          )}
           <p className="text-muted-foreground text-xs">
-            알림톡은 {PLANNED_CHANNELS[0].reason}. SMS 는 {PLANNED_CHANNELS[1].reason}.
+            {!kakaoCode && `알림톡은 ${PLANNED_CHANNELS[0].reason}. `}SMS 는 {PLANNED_CHANNELS[1].reason}.
           </p>
         </section>
 

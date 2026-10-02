@@ -722,6 +722,34 @@
       "when": 1790276464943,
       "tag": "20260924190104_drop-shop-listings",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790649886096,
+      "tag": "20260929024446_picking-allocations-by-work-item",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790720658810,
+      "tag": "20260929222418_add-waybill-label-prints",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790764198686,
+      "tag": "20260930102958_allocation-hand-back",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790788141173,
+      "tag": "20260930170901_return-bin-withdrawal",
+      "breakpoints": true
     }
   ]
 }

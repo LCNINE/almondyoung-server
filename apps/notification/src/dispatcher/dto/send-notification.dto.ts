@@ -1,5 +1,5 @@
 // apps/notification/src/dispatcher/dto/send-notification.dto.ts
-import { IsString, IsEnum, IsOptional, IsObject, IsDateString, IsArray } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsObject, IsDateString, IsArray, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 
@@ -111,6 +111,15 @@ export class SendNotificationDto {
   @IsDateString()
   @IsOptional()
   sendAt?: string;
+
+  @ApiPropertyOptional({
+    description: '같은 키로 다시 요청하면 채널별로 새로 보내지 않는다 (이벤트 재배달 대비)',
+    example: 'membership:billing-failed:inv_123:1',
+  })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  idempotencyKey?: string;
 
   @ApiPropertyOptional({
     enum: NotificationPriority,

@@ -13,6 +13,7 @@ import {
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
 import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } from '@/lib/utils/date';
+import type { MemberAxis } from '@/lib/api/domains/membership/people';
 
 type StatusOption = '' | 'ACTIVE' | 'PAUSED' | 'RECURRING_CANCELLED' | 'EXPIRED' | 'CANCELLED';
 type SearchType = 'userId' | 'member';
@@ -34,14 +35,18 @@ const DATE_TYPE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: '', label: '전체' },
-  { value: 'ACTIVE', label: '활성화' },
+  { value: 'ACTIVE', label: '활성' },
   { value: 'PAUSED', label: '일시정지' },
-  { value: 'RECURRING_CANCELLED', label: '자동결제 취소' },
+  { value: 'RECURRING_CANCELLED', label: '해지 예약' },
   { value: 'EXPIRED', label: '만료' },
   { value: 'CANCELLED', label: '해지' },
 ];
 
-export function MembershipMemberFilterBox() {
+/**
+ * 사람 축(axis)을 보고 있으면 검색은 그 명단 안에서만 한다 — 축을 지우지 않는다.
+ * 축 명단은 가입일·상태로 거르지 않으므로 그 두 줄은 숨긴다.
+ */
+export function MembershipMemberFilterBox({ axis = null }: { axis?: MemberAxis | null } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -62,6 +67,11 @@ export function MembershipMemberFilterBox() {
     params.set('page', '1');
     if (filters.searchType === 'userId' && filters.q) params.set('q', filters.q);
     if (filters.searchType === 'member' && filters.memberQ) params.set('memberQ', filters.memberQ);
+    if (axis) {
+      params.set('axis', axis);
+      router.replace(`${pathname}?${params.toString()}`);
+      return;
+    }
     if (filters.status) params.set('status', filters.status);
 
     let from = filters.dateFrom;
@@ -82,12 +92,13 @@ export function MembershipMemberFilterBox() {
 
   const handleReset = () => {
     setFilters({ dateType: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '', status: '' });
-    router.replace(pathname);
+    router.replace(axis ? `${pathname}?axis=${axis}&page=1` : pathname);
   };
 
   return (
     <div className="mb-4 space-y-3 rounded-[10px] border border-[#D9D9D9] bg-[#F5F5F5] p-4">
       {/* Row 1: 일자 */}
+      {!axis && (
       <div className="flex flex-wrap items-start gap-4">
         <div className="w-32 shrink-0">
           <FormField label="일자" direction="horizontal">
@@ -108,8 +119,10 @@ export function MembershipMemberFilterBox() {
         </div>
       </div>
 
+      )}
+
       {/* Custom date range */}
-      {filters.datePreset === 'custom' && (
+      {!axis && filters.datePreset === 'custom' && (
         <div className="ml-36">
           <FormField label="기간">
             <FormDateRangePicker
@@ -165,9 +178,10 @@ export function MembershipMemberFilterBox() {
         )}
       </div>
 
-      {/* Row 3: 활성화 여부 */}
+      {/* Row 3: 상태 */}
+      {!axis && (
       <div className="flex items-center gap-4">
-        <FormField label="활성화 여부" direction="horizontal">
+        <FormField label="상태" direction="horizontal">
           <FormRadioGroup
             value={filters.status}
             onValueChange={(v) => setFilters((p) => ({ ...p, status: v as StatusOption }))}
@@ -176,6 +190,7 @@ export function MembershipMemberFilterBox() {
           />
         </FormField>
       </div>
+      )}
 
       {/* Search button */}
       <div className="flex justify-center gap-2 pt-1">

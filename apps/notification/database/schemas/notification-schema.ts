@@ -122,10 +122,15 @@ export const notifications = pgTable(
     errorDetails: jsonb('error_details').$type<ErrorDetails>(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
     smsDeviceId: varchar('sms_device_id', { length: 64 }),
+    // 같은 사건을 두 번 받아도 한 번만 보내기 위한 호출자 키. 한 요청이 여러 채널로 갈라지므로 채널과 묶어 유일하다.
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
+    idempotencyIdx: uniqueIndex('uq_notifications_idempotency_channel')
+      .on(table.idempotencyKey, table.channel)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     userStatusIdx: index('idx_user_status_created').on(table.userId, table.status, table.createdAt),
     smsDeviceSentIdx: index('idx_sms_device_sent').on(table.smsDeviceId, table.sentAt),
     statusSendAtIdx: index('idx_status_send_at').on(table.status, table.sendAt),
@@ -173,6 +178,60 @@ export const inboundMessages = pgTable(
   },
   (table) => ({
     phoneReceivedIdx: index('idx_inbound_phone_received').on(table.phoneNumber, table.receivedAt),
+  }),
+);
+
+// 대량 문자 수신자 그룹. 회원이 아닌 번호(엑셀·Supabase)를 모아 두고 대량 발송 대상으로 고른다.
+export const smsRecipientGroups = pgTable('sms_recipient_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  // 'supabase' 는 크롤링한 업소 번호다. 우리와 거래가 없어 알림톡(정보성 전용) 대상에서 뺀다.
+  // 이 컬럼이 생기기 전에 만든 그룹은 비어 있다.
+  source: varchar('source', { length: 20 }),
+  createdBy: varchar('created_by', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// phone 은 E.164(+8210...). 같은 그룹에 같은 번호는 한 번만.
+export const smsGroupRecipients = pgTable(
+  'sms_group_recipients',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => smsRecipientGroups.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    phone: varchar('phone', { length: 20 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    groupPhoneIdx: uniqueIndex('uq_sms_group_recipient_phone').on(table.groupId, table.phone),
+  }),
+);
+
+// 수신거부 답장한 번호(E.164). 회원 동의 철회와 별개로, 회원이 아닌 번호의 광고 발송을 막는다.
+export const smsOptOuts = pgTable('sms_opt_outs', {
+  phone: varchar('phone', { length: 20 }).primaryKey(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const smsTrackedLinks = pgTable(
+  'sms_tracked_links',
+  {
+    code: varchar('code', { length: 16 }).primaryKey(),
+    notificationId: uuid('notification_id')
+      .notNull()
+      .references(() => notifications.notificationId, { onDelete: 'cascade' }),
+    campaignId: uuid('campaign_id').notNull(),
+    url: text('url').notNull(),
+    clickCount: integer('click_count').default(0).notNull(),
+    firstClickedAt: timestamp('first_clicked_at'),
+    lastClickedAt: timestamp('last_clicked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignIdx: index('idx_sms_tracked_links_campaign').on(table.campaignId),
   }),
 );
 
@@ -520,6 +579,10 @@ export const notificationTables = {
   smsTemplates,
   inboundMessages,
   emailLayoutSettings,
+  smsRecipientGroups,
+  smsGroupRecipients,
+  smsOptOuts,
+  smsTrackedLinks,
 };
 
 // Export types
@@ -554,6 +617,10 @@ export type SmsTemplate = typeof smsTemplates.$inferSelect;
 export type NewSmsTemplate = typeof smsTemplates.$inferInsert;
 export type InboundMessage = typeof inboundMessages.$inferSelect;
 export type NewInboundMessage = typeof inboundMessages.$inferInsert;
+export type SmsRecipientGroup = typeof smsRecipientGroups.$inferSelect;
+export type SmsGroupRecipient = typeof smsGroupRecipients.$inferSelect;
+export type NewSmsGroupRecipient = typeof smsGroupRecipients.$inferInsert;
+export type NewSmsTrackedLink = typeof smsTrackedLinks.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;

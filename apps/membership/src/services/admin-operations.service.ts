@@ -4,8 +4,22 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
-import { AdminMembersReader, AdminMembersQuery, BillingEventItem, ContractEventItem, AdminBillingHistoryQuery } from './admin/admin-members.reader';
+import {
+  AdminMembersReader,
+  AdminMembersQuery,
+  AdminMemberListItem,
+  BillingEventItem,
+  ContractEventItem,
+  AdminBillingHistoryQuery,
+} from './admin/admin-members.reader';
 import { PaymentClientService } from './billing/payment-client.service';
+import {
+  AdminMemberInsightsReader,
+  ArrearsDetailExtras,
+  AxisPage,
+  MemberAxis,
+  MembershipInsights,
+} from './admin/admin-member-insights.reader';
 import { RecurringBillingService } from './billing/recurring-billing.service';
 import {
   CreateTierRequest,
@@ -37,6 +51,7 @@ export class AdminOperationsService {
     private readonly adminMembersReader: AdminMembersReader,
     private readonly paymentClientService: PaymentClientService,
     private readonly recurringBillingService: RecurringBillingService,
+    private readonly insightsReader: AdminMemberInsightsReader,
   ) {}
 
   // =================================================================
@@ -150,6 +165,54 @@ export class AdminOperationsService {
     return this.adminMembersReader.countMembersByStatus();
   }
 
+  async getMembersInsights(): Promise<MembershipInsights> {
+    return this.insightsReader.insights();
+  }
+
+  async getUpcomingBilling(days: number) {
+    return this.insightsReader.upcomingBilling(days);
+  }
+
+  /**
+   * 사람 축 목록. 축이 누구를 어떤 순서로 보여줄지 정하고, 행의 회원 정보는 기존 목록과 같은
+   * 매핑(findAllWithDetails)으로 채운다 — 같은 사람이 두 화면에서 다른 상태로 보이지 않게.
+   */
+  async getMembersByAxis(
+    axis: MemberAxis,
+    page: number,
+    limit: number,
+    userIds?: string[],
+  ): Promise<{ data: Array<AdminMemberListItem & { axisDetail: unknown }>; total: number; page: number; limit: number; axis: MemberAxis }> {
+    const axisPage: AxisPage<unknown> = await this.axisPage(axis, page, limit, userIds);
+    const ids = axisPage.rows.map((r) => r.userId);
+    const members = ids.length
+      ? (await this.adminMembersReader.findAllWithDetails({ userIds: ids, page: 1, limit: ids.length })).data
+      : [];
+    const memberByUser = new Map(members.map((m) => [m.userId, m]));
+    const data = axisPage.rows.flatMap((r) => {
+      const member = memberByUser.get(r.userId);
+      return member ? [{ ...member, axisDetail: r.detail }] : [];
+    });
+    return { data, total: axisPage.total, page, limit, axis };
+  }
+
+  private axisPage(axis: MemberAxis, page: number, limit: number, userIds?: string[]): Promise<AxisPage<unknown>> {
+    switch (axis) {
+      case 'arrears':
+        return this.insightsReader.arrearsPage(page, limit, userIds);
+      case 'past_due':
+        return this.insightsReader.pastDuePage(page, limit, userIds);
+      case 'good':
+        return this.insightsReader.goodPage(page, limit, userIds);
+      case 'ending':
+        return this.insightsReader.endingPage(page, limit, userIds);
+    }
+  }
+
+  async getArrearsDetailExtras(userId: string): Promise<ArrearsDetailExtras> {
+    return this.insightsReader.arrearsDetailExtras(userId);
+  }
+
   async getMemberDetail(userId: string) {
     return this.adminMembersReader.findDetailByUserId(userId);
   }
@@ -163,6 +226,7 @@ export class AdminOperationsService {
     // 구버전 데이터 호환: lastPaymentIntentId로 wallet에서 최초 결제 조회
     const paymentRef = await this.adminMembersReader.findContractPaymentRef(contractId);
     if (!paymentRef?.lastPaymentIntentId) return events;
+    if (events.some((e) => e.paymentIntentId === paymentRef.lastPaymentIntentId)) return events;
 
     const synthetic = await this.buildSyntheticInitialEvent(contractId, paymentRef.lastPaymentIntentId);
     return synthetic ? [synthetic, ...events] : events;
@@ -201,11 +265,13 @@ export class AdminOperationsService {
 
     // 계약별로 최초 결제(attemptNo=1)가 없으면 legacy 호환 합성 이벤트를 앞에 붙인다(contractId 경로와 동일).
     const contractsWithInitial = new Set(events.filter((e) => e.attemptNo === 1).map((e) => e.contractId));
+    const recordedIntentIds = new Set(events.map((e) => e.paymentIntentId));
     const paymentRefs = await this.adminMembersReader.findContractPaymentRefsByUserId(userId);
 
     const synthetic: BillingEventItem[] = [];
     for (const ref of paymentRefs) {
       if (contractsWithInitial.has(ref.contractId) || !ref.lastPaymentIntentId) continue;
+      if (recordedIntentIds.has(ref.lastPaymentIntentId)) continue;
       const ev = await this.buildSyntheticInitialEvent(ref.contractId, ref.lastPaymentIntentId);
       if (ev) synthetic.push(ev);
     }

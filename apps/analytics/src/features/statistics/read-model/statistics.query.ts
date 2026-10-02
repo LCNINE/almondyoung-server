@@ -17,7 +17,8 @@ import {
   factMembershipEvents,
   factOrderItems,
 } from '../../../schema';
-import { SEOUL_TZ, seoulDayStart, toSeoulDateOnly } from '../../../shared/date.util';
+import { seoulDayStart, toSeoulDateOnly } from '../../../shared/date.util';
+import { kstWallClock } from '../../../shared/sql-time';
 
 export type Granularity = 'day' | 'month' | 'year';
 
@@ -473,7 +474,7 @@ export class StatisticsQuery {
         .from(aggCustomerLifetime),
       this.db
         .select({
-          bucket: sql<string>`to_char(${aggCustomerLifetime.firstOrderAt} AT TIME ZONE ${SEOUL_TZ}, ${bucketFormat(granularity)})`,
+          bucket: sql<string>`to_char(${kstWallClock(aggCustomerLifetime.firstOrderAt)}, ${bucketFormat(granularity)})`,
           count: sql<string>`COUNT(*)`,
         })
         .from(aggCustomerLifetime)

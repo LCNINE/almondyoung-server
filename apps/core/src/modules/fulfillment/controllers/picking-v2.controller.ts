@@ -5,10 +5,10 @@ import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   AggregateBulkCartScanDto,
   AggregateCartHandoffDto,
+  AggregateCartSurplusReturnDto,
   AggregateSortScanDto,
   CompletePickingV2Dto,
   HandoffPickingV2Dto,
-  PlanPickingV2Dto,
   ScanPickingV2Dto,
   StartPickingV2Dto,
 } from '../dto/picking-v2.dto';
@@ -79,6 +79,22 @@ export class PickingV2Controller {
     });
   }
 
+  @Post('cart-surplus-returns')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ description: 'Cart surplus of leaving boxes moved into a return bin' })
+  cartSurplusReturn(
+    @Body() dto: AggregateCartSurplusReturnDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.picking.aggregateCartSurplusReturn({
+      ...dto,
+      actor: this.actor(user),
+      idempotencyKey: idempotencyKey ?? '',
+    });
+  }
+
   private actor(user: AuthenticatedUser | undefined) {
     const id = user?.userId ?? user?.id ?? user?.sub;
     if (!id) throw new UnauthorizedException('Authenticated actor is required');
@@ -92,22 +108,6 @@ export class PickingV2Controller {
 export class PickingCommandV2Controller {
   constructor(private readonly picking: PickingProcessService) {}
 
-  @Post('plans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
-  @ApiHeader({ name: 'Idempotency-Key', required: true })
-  plan(
-    @Body() dto: PlanPickingV2Dto,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @User() user: AuthenticatedUser,
-  ) {
-    return this.picking.plan({
-      batchId: dto.batchId,
-      shipmentIds: dto.shipmentIds,
-      actorId: this.actor(user).id,
-      idempotencyKey: this.idempotencyKey(idempotencyKey),
-    });
-  }
-
   @Post('starts')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -117,7 +117,7 @@ export class PickingCommandV2Controller {
     @User() user: AuthenticatedUser,
   ) {
     return this.picking.start({
-      ...dto,
+      batchId: dto.batchId,
       actorId: this.actor(user).id,
       idempotencyKey: this.idempotencyKey(idempotencyKey),
     });

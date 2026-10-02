@@ -69,13 +69,13 @@ export function V2PickingWorkspace() {
   const releaseTote = useReleaseTote();
 
   const workItem = batch?.workItems.find((item) => item.id === workItemId);
-  const allocation = batch?.pickingPlan?.allocations.find(
+  const allocation = batch?.picking?.allocations.find(
     (item) => item.id === allocationId
   );
   const { data: shipment } = useShipmentDetail(workItem?.shipmentId ?? '');
-  const plan = batch?.pickingPlan;
+  const picking = batch?.picking;
   const session = batch?.inventorySession;
-  const strategy = plan?.strategy;
+  const strategy = picking?.strategy;
   const busy = [
     start,
     discreteScan,
@@ -98,13 +98,12 @@ export function V2PickingWorkspace() {
   );
 
   const relevantAllocations = useMemo(() => {
-    if (!batch?.pickingPlan) return [];
-    if (!workItem) return batch.pickingPlan.allocations;
-    const lineIds = new Set(shipment?.lines.map((line) => line.id) ?? []);
-    return batch.pickingPlan.allocations.filter(
-      (item) => lineIds.size === 0 || lineIds.has(item.shipmentLineId)
+    if (!batch?.picking) return [];
+    if (!workItem) return batch.picking.allocations;
+    return batch.picking.allocations.filter(
+      (item) => item.workItemId === workItem.id
     );
-  }, [batch?.pickingPlan, shipment?.lines, workItem]);
+  }, [batch?.picking, workItem]);
 
   const command = async <T,>(
     action: string,
@@ -121,10 +120,9 @@ export function V2PickingWorkspace() {
   };
 
   const context =
-    plan && session && workItem
+    session && workItem
       ? {
           batchId,
-          planId: plan.id,
           sessionId: session.id,
           workItemId: workItem.id,
           shipmentId: workItem.shipmentId,
@@ -161,25 +159,22 @@ export function V2PickingWorkspace() {
             <div className="flex flex-wrap items-center gap-2">
               <b>{batch.name || batch.batchNumber}</b>
               <Badge>{batch.status}</Badge>
-              {plan && (
+              {picking && (
                 <Badge variant="secondary">
-                  {plan.strategy} · {plan.status} · v{plan.version}
+                  {picking.strategy} · 시작{' '}
+                  {new Date(picking.startedAt).toLocaleString('ko-KR')}
                 </Badge>
               )}
             </div>
             <p className="font-mono text-xs text-muted-foreground">
-              batch {batch.id} / plan {plan?.id ?? '미생성'} / inventory session{' '}
-              {session?.id ?? '미시작'}
+              batch {batch.id} / inventory session {session?.id ?? '미시작'}
             </p>
-            {canOperateWarehouse && plan && !session && (
+            {canOperateWarehouse && !batch.picking && (
               <Button
                 disabled={start.isPending}
                 onClick={() =>
-                  command(
-                    'start',
-                    { batchId, planId: plan.id },
-                    (data, idempotencyKey) =>
-                      start.mutateAsync({ data, idempotencyKey })
+                  command('start', { batchId }, (data, idempotencyKey) =>
+                    start.mutateAsync({ data, idempotencyKey })
                   )
                 }
               >
@@ -226,7 +221,7 @@ export function V2PickingWorkspace() {
                     {relevantAllocations.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         {item.skuId} · {item.sourceLocationId} · line{' '}
-                        {item.shipmentLineId} × {item.quantity}
+                        {item.shipmentLineId} × {item.qty}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -302,7 +297,7 @@ export function V2PickingWorkspace() {
                   {canOperateWarehouse
                     ? strategy
                       ? `${strategy} 명령`
-                      : '계획을 먼저 생성하세요'
+                      : '배치를 먼저 시작하세요'
                     : 'Short-pick'}
                 </h3>
                 {canOperateWarehouse && strategy === 'discrete' && (
@@ -332,18 +327,14 @@ export function V2PickingWorkspace() {
                 {canOperateWarehouse && strategy === 'aggregate_then_sort' && (
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={
-                        !plan || !session || !allocation || !cartId || busy
-                      }
+                      disabled={!session || !allocation || !cartId || busy}
                       onClick={() =>
-                        plan &&
                         session &&
                         allocation &&
                         command(
                           'aggregate-collect',
                           {
                             batchId,
-                            planId: plan.id,
                             sessionId: session.id,
                             skuId: allocation.skuId,
                             sourceLocationId: allocation.sourceLocationId,
@@ -384,17 +375,13 @@ export function V2PickingWorkspace() {
                       Shipment sort
                     </Button>
                     <Button
-                      disabled={
-                        !plan || !session || !cartId || !targetWorkerId || busy
-                      }
+                      disabled={!session || !cartId || !targetWorkerId || busy}
                       onClick={() =>
-                        plan &&
                         session &&
                         command(
                           'cart-handoff',
                           {
                             batchId,
-                            planId: plan.id,
                             sessionId: session.id,
                             expectedOwnerId:
                               workItem?.pickerClaim.workerId || '',

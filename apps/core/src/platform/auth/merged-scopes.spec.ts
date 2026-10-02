@@ -6,7 +6,7 @@ describe('merged authorization contract', () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain('fulfillment.warehouse.operate');
     expect(keys).toContain('inventory.warehouse.manage');
-    expect(keys).toHaveLength(12); // fulfillment 8 + inventory 4
+    expect(keys).toHaveLength(14); // fulfillment 10 + inventory 4
   });
 
   // ensureRoleScopeMappings 는 중복 roleName 을 만나면 던지고(authorization.service.ts:97),
@@ -32,14 +32,21 @@ describe('merged authorization contract', () => {
       'inventory.operate',
       'inventory.warehouse.manage',
     ]);
-    expect(scopesFor('logistics_worker')).toEqual(['fulfillment.warehouse.operate', 'inventory.operate']);
+    expect(scopesFor('logistics_worker')).toEqual([
+      'fulfillment.dispatch.station_force',
+      'fulfillment.shipment.short_pick',
+      'fulfillment.warehouse.operate',
+      'inventory.operate',
+    ]);
     expect(scopesFor('logistics_manager')).toEqual([
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.recall',
+      'fulfillment.dispatch.station_force',
       'fulfillment.reservation.transfer',
       'fulfillment.shipment.consolidate',
       'fulfillment.shipment.override_recipient',
       'fulfillment.shipment.reopen',
+      'fulfillment.shipment.short_pick',
       'fulfillment.warehouse.operate',
       'inventory.adjust',
       'inventory.manage',

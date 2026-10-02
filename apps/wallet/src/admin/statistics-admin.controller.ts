@@ -83,6 +83,12 @@ export class StatisticsAdminController {
     return this.service.getDailyPayments(query.from, query.to);
   }
 
+  @Get('order-refunds')
+  @ApiOperation({ summary: '일별 상품 주문 환불 (Medusa 결제만, SUCCEEDED, KST 달력일 귀속) — 멤버십·정기결제 환불 제외' })
+  async getOrderRefunds(@Query() query: StatisticsRangeQueryDto) {
+    return this.service.getOrderRefunds(query.from, query.to);
+  }
+
   @Get('points/daily')
   @ApiOperation({ summary: '일별 적립금 지급(EARN) 시계열 — KST 달력일 귀속' })
   async getDailyPoints(@Query() query: StatisticsRangeQueryDto) {

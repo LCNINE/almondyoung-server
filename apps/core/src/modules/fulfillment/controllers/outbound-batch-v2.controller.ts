@@ -22,6 +22,7 @@ import {
   EligibleShipmentResponseDto,
   ExcludeShipmentFromBatchDto,
   HandoffBatchWorkItemDto,
+  JoinCandidateResponseDto,
   OutboundBatchActor,
   OutboundBatchCommandResponseDto,
   OutboundBatchV2DetailDto,
@@ -131,6 +132,14 @@ export class OutboundBatchV2Controller {
   @ApiOkResponse({ type: [EligibleShipmentResponseDto] })
   eligibleShipments(@Param('batchId') batchId: string) {
     return this.batches.getEligibleShipments(batchId);
+  }
+
+  @Get('outbound-batches/:batchId/join-candidates')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiOkResponse({ type: [JoinCandidateResponseDto] })
+  findJoinCandidates(@Param('batchId') batchId: string, @Query('code') code: string | undefined) {
+    if (!code?.trim()) throw new BadRequestException('code is required');
+    return this.batches.findJoinCandidates(batchId, code);
   }
 
   @Get('outbound-batches/:batchId/work-items')

@@ -1,4 +1,4 @@
-import { safeReturnUrl } from './return-url';
+import { isSubscribeReturnUrl, safeReturnUrl } from './return-url';
 
 describe('safeReturnUrl', () => {
   const prevSuffixes = process.env.ALLOWED_RETURN_HOST_SUFFIXES;
@@ -10,9 +10,7 @@ describe('safeReturnUrl', () => {
   });
 
   it('allows relative paths but blocks protocol-relative and non-http schemes', () => {
-    expect(safeReturnUrl('/kr/mypage/membership/payment-method')).toBe(
-      '/kr/mypage/membership/payment-method',
-    );
+    expect(safeReturnUrl('/kr/mypage/membership/payment-method')).toBe('/kr/mypage/membership/payment-method');
     expect(safeReturnUrl('//evil.com')).toBe('/');
     expect(safeReturnUrl('javascript:alert(1)')).toBe('/');
     expect(safeReturnUrl('data:text/html,<script>1</script>')).toBe('/');
@@ -56,5 +54,25 @@ describe('safeReturnUrl', () => {
     expect(safeReturnUrl(null)).toBe('/');
     expect(safeReturnUrl('')).toBe('/');
     expect(safeReturnUrl('not a url')).toBe('/');
+  });
+});
+
+describe('isSubscribeReturnUrl', () => {
+  it('is true only when the storefront will resume the signup (redirect=subscribe + planId)', () => {
+    expect(
+      isSubscribeReturnUrl(
+        'https://shop.example.com/kr/mypage/membership/payment-method?redirect=subscribe&planId=p1&termsAgreementId=a1',
+      ),
+    ).toBe(true);
+    expect(isSubscribeReturnUrl('/kr/mypage/membership/payment-method?redirect=subscribe&planId=p1')).toBe(true);
+  });
+
+  it('is false for the account-change flow and for incomplete signup params', () => {
+    expect(isSubscribeReturnUrl('https://shop.example.com/kr/mypage/membership/payment-method')).toBe(false);
+    expect(
+      isSubscribeReturnUrl('https://shop.example.com/kr/mypage/membership/payment-method?redirect=subscribe'),
+    ).toBe(false);
+    expect(isSubscribeReturnUrl('https://shop.example.com/kr/mypage/membership/payment-method?planId=p1')).toBe(false);
+    expect(isSubscribeReturnUrl('/')).toBe(false);
   });
 });

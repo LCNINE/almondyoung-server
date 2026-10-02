@@ -59,6 +59,8 @@ export const walletQueryKeys = {
     [...walletQueryKeys.statistics(), 'payments-daily', { from, to }] as const,
   dailyPoints: (from: string, to: string) =>
     [...walletQueryKeys.statistics(), 'points-daily', { from, to }] as const,
+  orderRefunds: (from: string, to: string) =>
+    [...walletQueryKeys.all, 'statistics', 'order-refunds', { from, to }] as const,
   membershipRevenue: (from: string, to: string) =>
     [...walletQueryKeys.statistics(), 'membership-revenue', { from, to }] as const,
 } as const;

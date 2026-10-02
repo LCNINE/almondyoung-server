@@ -16,6 +16,8 @@ import { BillingManager } from './billing/billing.manager';
 import { BillingReader } from './billing/billing.reader';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 import { ConfigService } from '@nestjs/config';
+import { TermsAgreementManager } from './terms/terms-agreement.manager';
+import { ArrearsGate } from './arrears/arrears.gate';
 import { SavingsService } from './savings/savings.service';
 import { format } from 'date-fns';
 
@@ -52,6 +54,8 @@ export class SubscriptionService {
     private readonly invoiceBillingManager: InvoiceBillingManager,
     private readonly configService: ConfigService,
     private readonly savingsService: SavingsService,
+    private readonly termsAgreementManager: TermsAgreementManager,
+    private readonly arrearsGate: ArrearsGate,
   ) {}
 
   /** ADR-0027 Phase 2 dual-path flag — 신규 정기 가입에만 적용, 기존 계약 경로는 불변. */
@@ -182,6 +186,7 @@ export class SubscriptionService {
     returnUrl: string,
     email?: string,
     billingMode?: 'one_time' | 'recurring',
+    termsAgreementId?: string,
   ): Promise<{ intentId: string }> {
     if (billingMode === 'recurring') {
       throw new SubscriptionBadRequestException(
@@ -191,10 +196,18 @@ export class SubscriptionService {
 
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
+    await this.arrearsGate.assertNoOutstanding(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();
     if (!planDetails.plan.isActive) throw new PlanNotFoundException();
+
+    const agreementId = await this.termsAgreementManager.resolveForSubscription(
+      userId,
+      termsAgreementId,
+      planDetails.plan.id,
+      'one_time',
+    );
 
     return this.paymentClientService.createMembershipCheckoutIntent({
       userId,
@@ -204,6 +217,7 @@ export class SubscriptionService {
       currency: planDetails.plan.currency ?? 'KRW',
       email,
       billingMode,
+      termsAgreementId: agreementId ?? undefined,
     });
   }
 
@@ -239,6 +253,11 @@ export class SubscriptionService {
       },
       billingMode,
     );
+
+    const termsAgreementId = intent.metadata?.termsAgreementId;
+    if (typeof termsAgreementId === 'string') {
+      await this.termsAgreementManager.linkContract(userId, termsAgreementId, result.contractId);
+    }
 
     if (billingMode === 'recurring') {
       // checkout 경로는 billingMethodId가 없어 recurring 설정 불가.
@@ -532,13 +551,24 @@ export class SubscriptionService {
     billingMethodId: string,
     billingMode: 'one_time' | 'recurring' = 'one_time',
     checkoutAttemptId?: string,
+    termsAgreementId?: string,
   ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
+    // 결제보다 먼저 — 미납이 남은 계정은 새 달 요금만 내고 다시 쓰지 못하게 한다.
+    await this.arrearsGate.assertNoOutstanding(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();
     if (!planDetails.plan.isActive) throw new PlanNotFoundException();
+
+    // 결제보다 먼저 — 동의가 안 맞아 거절할 가입에서 돈부터 빠지면 안 된다.
+    const agreementId = await this.termsAgreementManager.resolveForSubscription(
+      userId,
+      termsAgreementId,
+      planDetails.plan.id,
+      billingMode,
+    );
 
     let initialPaymentIntentId: string | undefined;
     if (billingMode === 'one_time') {
@@ -608,6 +638,12 @@ export class SubscriptionService {
           );
         }
       }
+    }
+
+    // 무를 수 있는 단계(정기결제 약정 실패 → void)를 다 지난 뒤에 잇는다. 무른 가입에 이어 붙이면
+    // 그 동의가 「이미 쓰인 것」이 되어, 같은 동의로 다시 시도하는 가입이 거절된다.
+    if (agreementId) {
+      await this.termsAgreementManager.linkContract(userId, agreementId, result.contractId);
     }
 
     // one_time 은 createNewSubscription 이 아웃박스에 원자적으로 기록하므로 여기서 발행하지 않는다.

@@ -299,13 +299,6 @@ export function MembershipCancelModal({
                           amount: won(immediate.breakdown.usageDeduction),
                         })}
                       </span>
-                      {immediate.breakdown.benefitDeduction > 0 && (
-                        <span>
-                          {t("breakdownBenefit", {
-                            amount: won(immediate.breakdown.benefitDeduction),
-                          })}
-                        </span>
-                      )}
                     </span>
                   )}
                   {immediate?.refundExecution === "MANUAL" && (

@@ -1,9 +1,21 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { WaybillLabelResponseDto } from './dto/waybill.dto';
+import { ConfirmLabelPrintDto, LabelPrintConfirmationDto, WaybillLabelResponseDto } from './dto/waybill.dto';
 import { WaybillLabelService } from './waybill-label.service';
+
+type AuthenticatedUser = { id?: string; userId?: string; sub?: string };
 
 @Controller()
 @UseGuards(ScopeGuard)
@@ -16,5 +28,27 @@ export class WaybillLabelController {
   @ApiOkResponse({ type: WaybillLabelResponseDto })
   label(@Param('shipmentId') shipmentId: string) {
     return this.labels.renderLabel(shipmentId);
+  }
+
+  // 배치 카드의 «재출력 필요 N» 과 「실패·미인쇄만 다시」 대상(never_printed·reprint_required). 조회 전용.
+  @Get('outbound-batches/:batchId/waybill-label-states')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  labelStates(@Param('batchId') batchId: string) {
+    return this.labels.statesForBatch(batchId);
+  }
+
+  // 앱이 프린터 전송에 성공한 뒤에만 부른다. 현재 내용과 다르면 409 LABEL_CONTENT_CHANGED → 앱이 다시 렌더한다.
+  @Post('shipments/:shipmentId/waybill/label-prints')
+  @HttpCode(HttpStatus.CREATED)
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiCreatedResponse({ type: LabelPrintConfirmationDto })
+  confirmPrint(
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: ConfirmLabelPrintDto,
+    @User() user: AuthenticatedUser,
+  ) {
+    const id = user?.userId ?? user?.id ?? user?.sub;
+    if (!id) throw new UnauthorizedException('Authenticated actor is required');
+    return this.labels.confirmPrint(shipmentId, dto.fingerprint, { id });
   }
 }

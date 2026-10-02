@@ -14,11 +14,11 @@ export const PCHeader = () => {
         <div className="relative container mx-auto flex max-w-[1080px] items-center justify-between px-0 py-5">
           <Link href={storefrontOrigin} className="shrink-0">
             <Image
-              src="/images/almond-logo-black.png"
+              src="/images/almond-logo.png"
               alt={tCheckout("logoAltAlmondyoung")}
-              className="h-7 w-auto"
-              width={200}
-              height={150}
+              className="h-9 w-auto"
+              width={1024}
+              height={386}
             />
           </Link>
           <h1 className="absolute left-1/2 -translate-x-1/2 transform text-2xl font-bold">

@@ -14,7 +14,8 @@ import {
   emptyCmsAccountDetails,
   CmsVerifiedAccount,
 } from '@/components/cms-account-fields';
-import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { buildReturnUrl, isSubscribeReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { SignupContinueFooter } from '@/components/signup-continue-footer';
 import { redirectToWalletLogin } from '@/lib/auth-expired';
 
 interface BillingChangeFormProps {
@@ -119,6 +120,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
     // 뒤 4자리만 남긴다 — 「내가 등록한 그 계좌가 맞나」를 확인하는 데는 그걸로 충분하다.
     const maskedAccount =
       paymentNumber.length > 4 ? `${'•'.repeat(paymentNumber.length - 4)}${paymentNumber.slice(-4)}` : paymentNumber;
+    // 멤버십 가입 도중이면 다음 할 일은 «가입 마무리»다. 동의자료 업로드가 실패했으면 확인이 먼저라 멈춘다.
+    const continueSignup = isSubscribeReturnUrl(returnUrl) && !agreementUploadFailed;
     const rows = [
       { label: '은행', value: getBankName(paymentCompany) },
       { label: '계좌번호', value: maskedAccount },
@@ -143,6 +146,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
             <h1 className="mt-5 text-[22px] font-bold tracking-tight text-foreground animate-in fade-in slide-in-from-bottom-2 delay-150 duration-500 fill-mode-both">
               {agreementUploadFailed ? '계좌 등록 확인 필요' : isRegister ? '계좌 등록 완료' : '계좌 변경 완료'}
             </h1>
+            {continueSignup && (
+              <p className="mt-2 text-[15px] font-semibold text-primary animate-in fade-in slide-in-from-bottom-2 delay-200 duration-500 fill-mode-both">
+                아직 멤버십 가입 전이에요
+              </p>
+            )}
           </div>
 
           <dl className="mt-9">
@@ -172,28 +180,41 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
 
           {/* 여기까지 온 이유는 «멤버십 가입 중 결제수단이 없어서» 다. 다음 할 일이 그 가입을
               마치는 것이라는 걸 맨 앞에 둔다 — 안내문 여러 줄 안에 묻어두면 읽히지 않는다. */}
-          <ul className="mt-5 space-y-2 text-[13px] leading-relaxed text-muted-foreground">
-            {agreementUploadFailed ? (
-              <li>· 동의자료 등록에 실패했습니다. 관리자 확인이 필요하니 고객센터로 문의해주세요.</li>
-            ) : (
-              <li>
-                ·{' '}
-                {isRegister
-                  ? '이어서 멤버십 가입을 마무리하면, 심사 승인과 함께 결제가 자동으로 출금됩니다.'
-                  : '심사가 끝나면 다음 결제부터 새 계좌로 자동 출금됩니다.'}
-              </li>
-            )}
-          </ul>
+          {continueSignup ? (
+            <div className="mt-5 rounded-xl border border-primary/40 p-4 animate-in fade-in duration-500 delay-[500ms] fill-mode-both">
+              <p className="text-[14px] font-bold text-foreground">한 단계 남았어요</p>
+              <p className="mt-1 text-[13px] leading-relaxed break-keep text-muted-foreground">
+                가입 화면으로 돌아가면 멤버십 가입이 마무리됩니다. 결제는 심사 승인과 함께 자동으로 출금돼요.
+              </p>
+            </div>
+          ) : (
+            <ul className="mt-5 space-y-2 text-[13px] leading-relaxed text-muted-foreground">
+              {agreementUploadFailed ? (
+                <li>· 동의자료 등록에 실패했습니다. 관리자 확인이 필요하니 고객센터로 문의해주세요.</li>
+              ) : (
+                <li>
+                  ·{' '}
+                  {isRegister
+                    ? '이어서 멤버십 가입을 마무리하면, 심사 승인과 함께 결제가 자동으로 출금됩니다.'
+                    : '심사가 끝나면 다음 결제부터 새 계좌로 자동 출금됩니다.'}
+                </li>
+              )}
+            </ul>
+          )}
         </div>
 
-        <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
-          <Button
-            onClick={goBack}
-            className="h-14 w-full rounded-2xl text-[16px] font-semibold animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[650ms] fill-mode-both"
-          >
-            {agreementUploadFailed ? '확인' : isRegister ? '멤버십 가입 계속하기' : '확인'}
-          </Button>
-        </footer>
+        {continueSignup ? (
+          <SignupContinueFooter onLeave={goBack} label="지금 가입 마무리하기" />
+        ) : (
+          <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
+            <Button
+              onClick={goBack}
+              className="h-14 w-full rounded-2xl text-[16px] font-semibold animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[650ms] fill-mode-both"
+            >
+              {agreementUploadFailed ? '확인' : isRegister ? '멤버십 가입 계속하기' : '확인'}
+            </Button>
+          </footer>
+        )}
       </div>
     );
   }

@@ -4,10 +4,7 @@ import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { EntryCard } from "@/domains/logo-contest/components/entry-card"
 import { JoinPanel } from "@/domains/logo-contest/components/join-panel"
 import { LiveRanking } from "@/domains/logo-contest/components/live-ranking"
-import {
-  logoContestHeroImage,
-  logoContestPrizeBubble,
-} from "@/domains/logo-contest/banner-assets"
+import { logoContestHeroImage } from "@/domains/logo-contest/banner-assets"
 import {
   getLogoContestStatus,
   getMyLogoContestState,
@@ -92,7 +89,6 @@ export default async function LogoContestPage({
     start: formatContestDate(status.startsAt),
     end: formatContestDate(status.endsAt),
   })
-  const phase = status.isClosed ? "closed" : status.isOpen ? "open" : "upcoming"
 
   return (
     <div className="container mx-auto max-w-[1360px] px-4 pt-6 pb-16 xl:px-[40px]">
@@ -101,47 +97,13 @@ export default async function LogoContestPage({
       <header className="relative -mx-4 aspect-[780/360] overflow-hidden bg-[#dff6ff] text-[#143247] md:mx-0 md:aspect-auto md:min-h-[380px] md:rounded-[28px] md:border md:border-[#9bd9ef]">
         <Image
           src={logoContestHeroImage}
-          alt=""
+          alt={t("headline")}
           fill
           sizes="(max-width: 767px) 100vw, (min-width: 1360px) 1360px, 100vw"
-          className="object-cover object-[75%_center] md:object-[center_10%]"
+          className="object-cover object-left-top"
           priority
         />
-        <div className="absolute top-[9%] left-[6%] z-10 max-w-[650px] md:relative md:top-auto md:left-auto md:px-6 md:py-11 lg:px-12">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[10px] font-extrabold tracking-[0.05em] text-[#143247] md:text-sm">
-              {t("title")}
-            </span>
-            {phase !== "upcoming" && (
-              <span className="border-l border-[#a8d2e5] pl-3 text-[10px] font-medium text-[#55778a] md:text-xs">
-                {t(`status.${phase}`)}
-              </span>
-            )}
-          </div>
-          <h1
-            className="mt-1 text-[23px] leading-[1.12] tracking-[-0.04em] whitespace-pre-line text-[#143247] [text-shadow:0_2px_0_#9bdcf5,0_4px_0_#5fb9df] md:mt-5 md:text-5xl md:leading-[1.2] md:[-webkit-text-stroke:1px_#0b2940] lg:text-[3.25rem]"
-            style={{ fontFamily: '"Jua Logo Contest", Pretendard, sans-serif' }}
-          >
-            {t("headline")}
-          </h1>
-        </div>
-        <div className="absolute top-[52%] left-[6%] z-10 h-[54px] w-[145px] md:top-[220px] md:left-12 md:h-[100px] md:w-[240px]">
-          <Image
-            src={logoContestPrizeBubble}
-            alt=""
-            fill
-            sizes="(max-width: 767px) 145px, 240px"
-            className="object-contain"
-          />
-          <div className="absolute inset-0 flex flex-col items-center justify-center pt-1 text-[#143247] md:pt-3">
-            <span className="text-[8px] font-semibold md:text-xs">
-              {t("prizeLabel")}
-            </span>
-            <strong className="text-[13px] font-extrabold tracking-tight md:mt-1 md:text-xl">
-              {t("prizeAmount")}
-            </strong>
-          </div>
-        </div>
+        {/* 헤드라인·상금 문구는 손글씨 히어로 이미지에 포함돼 있어 별도 오버레이를 두지 않는다. */}
         {!status.isClosed && !myState?.entry && (
           <div className="absolute right-4 bottom-4 z-20 w-[118px] md:right-8 md:bottom-8 md:w-auto">
             <JoinPanel

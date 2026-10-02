@@ -72,6 +72,15 @@ export class InvoiceResultConsumer {
       payload.attemptCount ?? 0,
       payload.errorCode ?? null,
       payload.errorMessage ?? null,
+      {
+        maxAttempts: payload.maxAttempts,
+        nextAttemptAt: payload.nextAttemptAt,
+        billed: {
+          amount: payload.amount ?? null,
+          periodStart: payload.periodStart ?? null,
+          periodEnd: payload.periodEnd ?? null,
+        },
+      },
     );
   }
 
@@ -88,6 +97,12 @@ export class InvoiceResultConsumer {
       payload.subscriberRef,
       payload.invoiceId,
       payload.errorCode ?? null,
+      {
+        amount: payload.amount ?? null,
+        currency: payload.currency ?? null,
+        periodStart: payload.periodStart ?? null,
+        periodEnd: payload.periodEnd ?? null,
+      },
     );
   }
 
@@ -112,6 +127,12 @@ export class InvoiceResultConsumer {
       payload.subscriberRef,
       payload.invoiceId ?? null,
       payload.reasonCode ?? null,
+      {
+        amount: payload.amount ?? null,
+        currency: payload.currency ?? null,
+        periodStart: payload.periodStart ?? null,
+        periodEnd: payload.periodEnd ?? null,
+      },
     );
   }
 }

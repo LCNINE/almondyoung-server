@@ -47,13 +47,6 @@ export class ReportShipmentShortPickDto {
   expectedWorkItemLeaseVersion: number;
 
   @IsUUID()
-  planId: string;
-
-  @IsInt()
-  @Min(1)
-  expectedPlanVersion: number;
-
-  @IsUUID()
   sessionId: string;
 
   @IsInt()
@@ -85,6 +78,48 @@ export class ReportShipmentShortPickDto {
 
 export type ShipmentShortPickActor = { id: string; roles: string[] };
 
+/** 결품 로케이션을 뺀 곳에서 다시 채운 몫 — 현장이 그 로케이션으로 가서 집는다. */
+export class ShortPickRefillDto {
+  @ApiProperty()
+  shipmentLineId: string;
+
+  @ApiProperty()
+  skuId: string;
+
+  @ApiProperty()
+  sourceLocationId: string;
+
+  @ApiProperty()
+  locationCode: string;
+
+  @ApiProperty()
+  qty: number;
+}
+
+/** 못 채운 줄 — 박스가 빠지는 이유. */
+export class ShortPickShortageDto {
+  @ApiPropertyOptional({ type: String, nullable: true })
+  shipmentLineId: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  skuId: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  skuCode: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  skuName: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  requiredQty: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  shortQty: number | null;
+
+  @ApiProperty({ enum: ['INBOUND_PENDING', 'STOCK_SHORT'] })
+  reason: 'INBOUND_PENDING' | 'STOCK_SHORT';
+}
+
 export class ShipmentShortPickResponseDto {
   @ApiProperty()
   operationId: string;
@@ -92,12 +127,29 @@ export class ShipmentShortPickResponseDto {
   @ApiProperty()
   shipmentId: string;
 
-  @ApiProperty({ enum: ['pending', 'recovery_required', 'completed'] })
-  operationStatus: 'pending' | 'recovery_required' | 'completed';
-
-  @ApiPropertyOptional({ nullable: true })
-  invoiceOperationId: string | null;
-
   @ApiProperty()
   workItemId: string;
+
+  @ApiProperty({ enum: ['pending', 'completed'] })
+  operationStatus: 'pending' | 'completed';
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: '항상 null — 옛 비동기 송장 무효화 추적의 자리(클라이언트 계약)',
+  })
+  invoiceOperationId: null;
+
+  @ApiProperty({
+    enum: ['refilled', 'withdrawing', 'exited'],
+    description:
+      'refilled = 다른 로케이션에서 채움, withdrawing = 집은 몫을 되돌리는 중(오퍼레이션 pending), exited = 그 자리에서 빠짐',
+  })
+  outcome: 'refilled' | 'withdrawing' | 'exited';
+
+  @ApiProperty({ type: [ShortPickRefillDto] })
+  refills: ShortPickRefillDto[];
+
+  @ApiProperty({ type: [ShortPickShortageDto] })
+  shortages: ShortPickShortageDto[];
 }

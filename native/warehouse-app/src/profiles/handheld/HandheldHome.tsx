@@ -7,6 +7,7 @@ import {
   PackagePlus,
   ListChecks,
   ClipboardList,
+  Undo2,
   Wrench,
   Settings,
 } from 'lucide-react';
@@ -28,6 +29,9 @@ export function HandheldHome() {
         </Link>
         <Link to="/putaway">
           <HubTile icon={ClipboardList} label="적치" />
+        </Link>
+        <Link to="/returns/putaway">
+          <HubTile icon={Undo2} label="되돌림 적치" />
         </Link>
         <Link to="/inbound">
           <HubTile icon={PackagePlus} label="입고/검수" />

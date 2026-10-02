@@ -89,7 +89,7 @@ describe('handheld hub navigation', () => {
       </SessionProvider>
     );
 
-    const tile = await screen.findByRole('link', { name: /적치/ });
+    const tile = await screen.findByRole('link', { name: '적치' });
     await act(async () => {
       await user.click(tile);
     });
@@ -97,6 +97,40 @@ describe('handheld hub navigation', () => {
     // 창고 선택을 먼저 요구하는 카드를 보여준다(플레이스홀더가 아니다).
     expect(await screen.findByRole('heading', { name: '적치' })).toBeInTheDocument();
     expect(screen.getByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
+  });
+
+  it('허브의 되돌림 적치 타일이 되돌림 적치 화면으로 간다', async () => {
+    const session = stub();
+    const user = userEvent.setup();
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path === '/inventory/warehouses') return [];
+        return { data: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <SessionProvider session={session}>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={createMemoryPrefs()}>
+              <ScanProvider>
+                <RouterProvider router={createAppRouter(session)} />
+              </ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+
+    const tile = await screen.findByRole('link', { name: '되돌림 적치' });
+    await act(async () => {
+      await user.click(tile);
+    });
+    // 이 테스트는 창고 미설정 상태로 렌더한다 — 큐 화면은 실제 화면이지만
+    // 창고 선택을 먼저 요구하는 카드를 보여준다(플레이스홀더가 아니다).
+    expect(await screen.findByRole('heading', { name: '되돌림 적치' })).toBeInTheDocument();
+    expect(screen.getByText('등록된 창고가 없어요.')).toBeInTheDocument();
   });
 
   it('입고 타일이 예정 목록으로 간다 (플레이스홀더가 아니다)', async () => {

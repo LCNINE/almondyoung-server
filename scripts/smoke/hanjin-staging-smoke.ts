@@ -44,7 +44,7 @@ async function main(): Promise<void> {
       detailAddress: '101',
       deliveryNote: '스모크',
     },
-    lines: [{ productName: '스모크상품', quantity: 1, skuId: 'smoke' }],
+    lines: [{ productName: '스모크상품', skuName: '스모크상품', quantity: 1, skuId: 'smoke' }],
     config,
   });
 

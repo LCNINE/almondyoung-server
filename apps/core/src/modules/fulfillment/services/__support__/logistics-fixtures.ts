@@ -274,8 +274,8 @@ export interface PickableShipmentFixture {
 
 /**
  * 단순출고 시작 지점 픽스처 — 재고·예약·운송장은 준비됐고 피킹은 아직 시작하지
- * 않은 상태(work item `queued`, plan·session 없음). `seedReadyShipment`(검수 직전)
- * 와 달리 plan/session/HAND_IN 을 심지 않는다 — 그것을 만드는 것이 피검증 대상이다.
+ * 않은 상태(work item `queued`, 배정·session 없음). `seedReadyShipment`(검수 직전)
+ * 와 달리 배정/session/HAND_IN 을 심지 않는다 — 그것을 만드는 것(배치 시작)이 피검증 대상이다.
  */
 export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableShipmentFixture> {
   const suffix = randomUUID();
@@ -288,7 +288,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     .insert(wmsTables.holders)
     .values({ name: `simple-holder-${suffix}` })
     .returning();
-  // discrete-picking.strategy.assertPlanningEligibility 가 plan() 진입에 요구하는 최소 조건 —
+  // 배치 시작(allocation.locks 의 assertStartEligibility)이 요구하는 최소 조건 —
   // shipment.shippingProfileId + sku.deliveryProfileId 가 같은 완전한 delivery profile 을 가리켜야 한다.
   const [deliveryProfile] = await tx
     .insert(wmsTables.deliveryProfiles)

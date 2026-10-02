@@ -14,7 +14,6 @@ jest.mock('../../client', () => ({
 import { client } from '../../client';
 import { fulfillmentOrder } from './fulfillment-order.client';
 import { outboundBatchesClient } from './outbound-batches.client';
-import { pickingClient } from './picking.client';
 
 const KEY = '4e8e3b7f-37df-41fb-a084-47915ba7b6cf';
 const config = { headers: { 'Idempotency-Key': KEY } };
@@ -55,7 +54,7 @@ describe('fulfillment V2 typed clients', () => {
     );
   });
 
-  it('reuses the caller-owned key for planning, batch, and picking commands', async () => {
+  it('reuses the caller-owned key for planning and batch commands', async () => {
     await fulfillmentOrder.planShipment(
       'shipment-1',
       {
@@ -72,10 +71,6 @@ describe('fulfillment V2 typed clients', () => {
       },
       KEY
     );
-    await pickingClient.createPlan(
-      { batchId: 'batch-1', shipmentIds: ['shipment-1'] },
-      KEY
-    );
 
     expect(mockedClient.post).toHaveBeenNthCalledWith(
       1,
@@ -86,12 +81,6 @@ describe('fulfillment V2 typed clients', () => {
     expect(mockedClient.post).toHaveBeenNthCalledWith(
       2,
       '/core/outbound-batches/v2',
-      expect.any(Object),
-      config
-    );
-    expect(mockedClient.post).toHaveBeenNthCalledWith(
-      3,
-      '/core/picking/v2/plans',
       expect.any(Object),
       config
     );

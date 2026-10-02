@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { useClientPage } from './client-pager';
 import {
   Dialog,
   DialogContent,
@@ -33,7 +34,9 @@ export function StuckBillingView() {
     mutationFn: ({ contractId, reason }: { contractId: string; reason: string }) =>
       membershipApi.resetBillingInProgress(contractId, reason),
     onSuccess: () => {
+      // 같은 해제가 계약 탭의 선점 표시에도 반영돼야 한다.
       void queryClient.invalidateQueries({ queryKey: ['stuck-billing-contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['recurring-contracts'] });
       setSelected(null);
       setReason('');
       toast.success('선점 플래그를 해제했습니다.');
@@ -44,6 +47,7 @@ export function StuckBillingView() {
   });
 
   const rows = data?.data ?? [];
+  const { pageRows, pager } = useClientPage(rows);
 
   return (
     <div className="space-y-3">
@@ -77,7 +81,7 @@ export function StuckBillingView() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.contractId} className="border-b last:border-0">
                   <td className="p-2 font-mono text-xs">{r.contractId.slice(0, 8)}…</td>
                   <td className="p-2 font-mono text-xs">{r.userId.slice(0, 10)}</td>
@@ -104,6 +108,7 @@ export function StuckBillingView() {
           </table>
         </div>
       )}
+      {rows.length > 0 && pager}
 
       <Dialog
         open={!!selected}

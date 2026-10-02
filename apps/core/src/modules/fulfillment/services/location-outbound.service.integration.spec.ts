@@ -18,6 +18,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
 import * as wiring from './__support__/simple-outbound-wiring';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -37,11 +38,11 @@ const authorization: ScopeAuthorizationDecision = {
 
 async function setup(tx: DbTx, split = false) {
   const f = await seedPickableShipment(tx, 3);
+  await wiring.startBatchFor(tx, f);
   const service = wiring.assembleLocationOutbound(tx);
   const actor = { id: f.actorId, roles: ['logistics_worker'] };
   const first = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
   if (isPreparationBlocked(first)) throw new Error('Expected prepared outbound state');
-  const [plan] = await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId));
   const [session] = await tx
     .select()
     .from(wmsTables.batchInventorySessions)
@@ -58,7 +59,7 @@ async function setup(tx: DbTx, split = false) {
     await tx
       .update(wmsTables.pickingSourceAllocations)
       .set({ qty: 2 })
-      .where(eq(wmsTables.pickingSourceAllocations.planId, plan.id));
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
     await tx
       .update(wmsTables.batchInventorySessionBalances)
       .set({ qty: 2 })
@@ -69,7 +70,7 @@ async function setup(tx: DbTx, split = false) {
         ),
       );
     await tx.insert(wmsTables.pickingSourceAllocations).values({
-      planId: plan.id,
+      workItemId: f.workItemId,
       shipmentLineId: f.shipmentLineId,
       sourceLocationId: b.id,
       qty: 1,
@@ -111,7 +112,15 @@ function forceInput(f: Awaited<ReturnType<typeof seedPickableShipment>>) {
 
 async function effects(tx: DbTx, batchId: string) {
   return {
-    plans: await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, batchId)),
+    // 배치 시작이 만든 배정 — 계획을 흡수한 작업 항목 키로 센다.
+    batchAllocations: await tx
+      .select({ id: wmsTables.pickingSourceAllocations.id })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.outboundBatchWorkItems,
+        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+      )
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId)),
     sessions: await tx
       .select()
       .from(wmsTables.batchInventorySessions)
@@ -235,7 +244,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     });
   });
 
-  it('GET is read-only, wrong warehouse rejects before preparing, start and replay create one plan/session/claim', async () => {
+  it('GET is read-only, wrong warehouse rejects before preparing, start and replay create one allocation set/session/claim', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seedPickableShipment(tx, 2);
       const service = wiring.assembleLocationOutbound(tx);
@@ -248,6 +257,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         service.start(f.shipmentId, { warehouseId: randomUUID() }, actor, randomUUID(), tx),
       ).rejects.toMatchObject({ response: { code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH' } });
       expect(await effects(tx, f.batchId)).toEqual(before);
+      await wiring.startBatchFor(tx, f);
       const key = randomUUID();
       const started = await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, key, tx);
       if (isPreparationBlocked(started)) throw new Error('Expected prepared outbound state');
@@ -256,7 +266,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         expect.objectContaining({ sourceLocationId: f.locationId, allocatedQty: 2, pickedQty: 0, remainingQty: 2 }),
       ]);
       const after = await effects(tx, f.batchId);
-      expect(after.plans).toHaveLength(1);
+      expect(after.batchAllocations).toHaveLength(1);
       expect(after.sessions).toHaveLength(1);
       expect(after.work[0].pickerId).toBe(actor.id);
       await service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx);
@@ -391,6 +401,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     async (legacyPrefix) => {
       await inRollbackTx(db, async (tx) => {
         const f = await seedPickableShipment(tx, 4);
+        await wiring.startBatchFor(tx, f);
         const service = wiring.assembleLocationOutbound(tx);
         const actor = { id: f.actorId, roles: ['logistics_worker'] };
         const key = randomUUID();
@@ -441,10 +452,15 @@ describeIfDb('LocationOutboundService — real inventory', () => {
         .select()
         .from(wmsTables.batchInventorySessionBalances)
         .where(eq(wmsTables.batchInventorySessionBalances.sessionId, session.id));
-      await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, f.waybillId));
+      // 발송 단계만 보는 실패를 심는다 — 확정 예약이 사라지면 피킹·완료는 통과하고 consumeForDispatch 에서만 거절된다.
+      // (송장을 무효화하면 재출력 게이트 I5 가 첫 피킹 스캔에서 먼저 잡아 롤백 검증이 공허해진다.)
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, f.shipmentLineId));
       const key = randomUUID();
       await expect(service.force(f.shipmentId, input, actor, key, authorization, tx)).rejects.toMatchObject({
-        response: { code: 'SHIPMENT_INVOICE_NOT_READY' },
+        response: { message: expect.stringContaining('confirmed reservations') },
       });
       expect(
         await tx
@@ -525,11 +541,12 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       await expect(
         service.start(f.shipmentId, { warehouseId: f.warehouseId }, actor, randomUUID(), tx),
       ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED' } });
-      expect((await effects(tx, f.batchId)).plans).toHaveLength(0);
+      expect((await effects(tx, f.batchId)).batchAllocations).toHaveLength(0);
       await tx
         .update(wmsTables.outboundBatches)
         .set({ pickingMethod: 'individual' })
         .where(eq(wmsTables.outboundBatches.id, f.batchId));
+      await wiring.startBatchFor(tx, f);
       await service.scan(
         f.shipmentId,
         { warehouseId: f.warehouseId, sourceLocationId: f.locationId, barcode: f.barcode, quantity: 1 },
@@ -547,6 +564,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seedPickableShipment(tx, 2);
       const second = await addSecondSimpleOutboundLine(tx, f, 1);
+      await wiring.startBatchFor(tx, f);
       const service = wiring.assembleLocationOutbound(tx);
       const actor = { id: f.actorId, roles: ['logistics_worker'] };
       const first = await service.scan(
@@ -649,7 +667,13 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           },
           { provide: LocationOutboundService, useValue: service },
           { provide: SimpleOutboundService, useValue: wiring.assembleSimpleOutbound(tx) },
-          { provide: ShipmentWaybillReader, useValue: new ShipmentWaybillReader(wiring.ambientDbService(tx)) },
+          {
+            provide: ShipmentWaybillReader,
+            useValue: new ShipmentWaybillReader(
+              wiring.ambientDbService(tx),
+              assembleLabels(wiring.ambientDbService(tx)).states,
+            ),
+          },
         ],
       }).compile();
       const app = module.createNestApplication();
@@ -755,7 +779,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it.each(['force', 'resolution'] as const)('serializes force/resolver while %s is uncommitted', async (winner) => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actor = { id: f.actorId, roles: ['logistics_worker'] };
     const input = forceInput(f);
     const key = randomUUID();
@@ -839,7 +867,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it('serializes same-key starts and different-key source scans without duplicate custody', async () => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actor = { id: f.actorId, roles: ['logistics_worker'] };
     const key = randomUUID();
     const results = await Promise.all(
@@ -852,7 +884,7 @@ describeIfDb('location outbound concurrent commands on independent connections',
     expect(results[1]).toEqual(results[0]);
     await first.db.transaction(async (tx) => {
       const state = await effects(tx, f.batchId);
-      expect(state.plans).toHaveLength(1);
+      expect(state.batchAllocations).toHaveLength(1);
       expect(state.sessions).toHaveLength(1);
       expect(state.work[0]).toMatchObject({ pickerId: actor.id, leaseVersion: 1 });
     });
@@ -875,7 +907,11 @@ describeIfDb('location outbound concurrent commands on independent connections',
   });
 
   it('allows only one of two actors to start and own the same box', async () => {
-    const f = await first.db.transaction((tx) => seedPickableShipment(tx, 3));
+    const f = await first.db.transaction(async (tx) => {
+      const seeded = await seedPickableShipment(tx, 3);
+      await wiring.startBatchFor(tx, seeded);
+      return seeded;
+    });
     const actors = [
       { id: f.actorId, roles: ['logistics_worker'] },
       { id: randomUUID(), roles: ['logistics_worker'] },
@@ -898,7 +934,7 @@ describeIfDb('location outbound concurrent commands on independent connections',
       loser.reason.response.code,
     );
     // A draft-to-active race rolls back its key. Retrying that original request
-    // must still enforce the winning actor's claim, without creating another plan/session.
+    // must still enforce the winning actor's claim, without creating another allocation set/session.
     await expect(
       first.db.transaction((tx) =>
         wiring
@@ -908,7 +944,7 @@ describeIfDb('location outbound concurrent commands on independent connections',
     ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER' } });
     await first.db.transaction(async (tx) => {
       const state = await effects(tx, f.batchId);
-      expect(state.plans).toHaveLength(1);
+      expect(state.batchAllocations).toHaveLength(1);
       expect(state.sessions).toHaveLength(1);
       expect(state.work[0].leaseVersion).toBe(1);
       expect(actors.map((actor) => actor.id)).toContain(state.work[0].pickerId);

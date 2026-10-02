@@ -23,6 +23,9 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   getServerDenyMessage,
   isRecoverableOperation,
+  isShortPickSettled,
+  shortPickOutcomeMessage,
+  shortPickRejectionMessage,
   useFulfillmentOperation,
   useReportShipmentShortPick,
 } from '@/lib/services/orders';
@@ -66,7 +69,7 @@ export function ShortPickDialog({
   );
   const workItem = batch.workItems.find((item) => item.id === workItemId);
   const line = shipment.lines.find((item) => item.id === shipmentLineId);
-  const plan = batch.pickingPlan;
+  const picking = batch.picking;
   const session = batch.inventorySession;
   const operationStatus =
     operation.data?.status ?? shortPickOperation?.operationStatus;
@@ -75,12 +78,10 @@ export function ShortPickDialog({
     operationStatus === 'completed' || operationStatus === 'succeeded';
 
   const submit = async () => {
-    if (!workItem || !line || !plan || !session) return;
+    if (!workItem || !line || !picking || !session) return;
     const payload = {
       workItemId,
       expectedWorkItemLeaseVersion: workItem.leaseVersion,
-      planId: plan.id,
-      expectedPlanVersion: plan.version,
       sessionId: session.id,
       expectedSessionVersion: session.version,
       expectedManifestVersion: shipment.manifestVersion,
@@ -108,11 +109,17 @@ export function ShortPickDialog({
           }),
         {
           retainAfterResponse: (response) =>
+            !isShortPickSettled(response) &&
             isRecoverableOperation(response.operationStatus),
         }
       );
       setShortPickOperation(result);
-      if (result.operationStatus === 'completed') {
+      const message = shortPickOutcomeMessage(result);
+      if (message) {
+        if (message.tone === 'success') toast.success(message.text);
+        else toast.info(message.text);
+        onClose();
+      } else if (result.operationStatus === 'completed') {
         toast.success('short-pick 작업이 완료되었습니다.');
         onClose();
       } else {
@@ -121,7 +128,7 @@ export function ShortPickDialog({
         );
       }
     } catch (error) {
-      toast.error(getServerDenyMessage(error));
+      toast.error(shortPickRejectionMessage(error) ?? getServerDenyMessage(error));
     }
   };
 
@@ -129,7 +136,7 @@ export function ShortPickDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Short-pick 보고</DialogTitle>
+          <DialogTitle>결품 보고</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
           <div className="rounded border p-3 font-mono text-xs">
@@ -137,7 +144,8 @@ export function ShortPickDialog({
               work item {workItemId} · lease v{workItem?.leaseVersion ?? '?'}
             </p>
             <p>
-              plan {plan?.id ?? '—'} · v{plan?.version ?? '?'}
+              picking {picking?.strategy ?? '—'} · 시작{' '}
+              {picking ? new Date(picking.startedAt).toLocaleString('ko-KR') : '?'}
             </p>
             <p>
               session {session?.id ?? '—'} · v{session?.version ?? '?'}
@@ -159,6 +167,10 @@ export function ShortPickDialog({
                 value={shortQty}
                 onChange={(event) => setShortQty(Number(event.target.value))}
               />
+              <p className="text-xs text-muted-foreground">
+                아직 집지 않은 수량 중 로케이션에 없는 것만 적어요. 이미 집은
+                상품의 파손은 결품이 아니에요.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>사유</Label>
@@ -231,7 +243,7 @@ export function ShortPickDialog({
               disabled={
                 !workItem ||
                 !line ||
-                !plan ||
+                !picking ||
                 !session ||
                 shortQty < 1 ||
                 mutation.isPending

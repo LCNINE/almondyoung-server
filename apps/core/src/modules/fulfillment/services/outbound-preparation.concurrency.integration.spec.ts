@@ -2,13 +2,15 @@ import * as preparationLocks from './outbound-preparation.locks';
 import { SimpleOutboundService } from './simple-outbound.service';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import * as planLocks from '../picking/plan/picking-plan.locks';
+import * as planLocks from '../picking/allocation/allocation.locks';
 import { randomUUID } from 'crypto';
-import { eq, sql as sqlQuery } from 'drizzle-orm';
+import { and, eq, inArray, sql as sqlQuery } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { makeDb, seedPickableShipment, receiveStock, wireLogistics } from './__support__';
+import { makeDb, seedPickableShipment, wireLogistics } from './__support__';
 import { assembleOutbound, ambientDbService } from './__support__/simple-outbound-wiring';
 import { cleanupPreparationFixture } from './__support__/outbound-preparation-cleanup';
+import { overlap } from './__support__/committed-overlap';
+import { seedBoxOverSameStock, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
 import { unwrapPreparedOutbound } from '../controllers/outbound-preparation-http';
 import { isPreparationBlocked } from './outbound-preparation-result';
 
@@ -20,95 +22,8 @@ describeDb('outbound preparation committed concurrency', () => {
   const observer = makeDb(DATABASE_URL!);
   afterAll(() => observer.sql.end());
 
-  async function overlap<T, U>(first: (tx: DbTx) => Promise<T>, second: (tx: DbTx) => Promise<U>) {
-    const a = makeDb(DATABASE_URL!);
-    const b = makeDb(DATABASE_URL!);
-    let release!: () => void;
-    let entered!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const atBarrier = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let runA: Promise<T> | undefined;
-    let runB: Promise<U> | undefined;
-    try {
-      const [{ pid: pidA }] = await a.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
-      const [{ pid: pidB }] = await b.sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
-      expect(pidA).not.toBe(pidB);
-      runA = a.db.transaction(async (tx) => {
-        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '8s'`);
-        const value = await first(tx);
-        entered();
-        await barrier;
-        return value;
-      });
-      // Attach rejection handlers immediately, so failed transactions cannot leak unhandled rejections.
-      const resultA = runA.then(
-        (value) => ({ ok: true as const, value }),
-        (error) => ({ ok: false as const, error }),
-      );
-      await Promise.race([
-        atBarrier,
-        resultA.then((result) => {
-          throw result.ok ? new Error('missed barrier') : result.error;
-        }),
-      ]);
-      let completed = false;
-      runB = b.db.transaction(async (tx) => {
-        await tx.execute(sqlQuery`SET LOCAL statement_timeout = '8s'`);
-        return second(tx);
-      });
-      const resultB = runB
-        .then(
-          (value) => ({ ok: true as const, value }),
-          (error) => ({ ok: false as const, error }),
-        )
-        .finally(() => {
-          completed = true;
-        });
-      let blocked = false;
-      const deadline = Date.now() + 5000;
-      while (!completed && Date.now() < deadline) {
-        const [{ waiting }] = await observer.sql<
-          { waiting: boolean }[]
-        >`select ${pidA}::int = any(pg_blocking_pids(${pidB}::int)) as waiting`;
-        if (waiting) {
-          blocked = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(blocked).toBe(true);
-      expect(completed).toBe(false);
-      release();
-      const firstResult = await resultA;
-      if (!firstResult.ok) throw firstResult.error;
-      return { first: firstResult.value, second: await resultB };
-    } finally {
-      release();
-      await Promise.allSettled([runA, runB].filter((value) => value !== undefined));
-      await Promise.all([a.sql.end(), b.sql.end()]);
-    }
-  }
-
-  async function fixture(stale = false) {
-    return observer.db.transaction(async (tx) => {
-      const f = await seedPickableShipment(tx, 3);
-      await assembleOutbound(tx).picking.plan(
-        { batchId: f.batchId, shipmentIds: [f.shipmentId], actorId: f.actorId, idempotencyKey: randomUUID() },
-        tx,
-      );
-      if (stale)
-        await receiveStock(wireLogistics(ambientDbService(tx)).command, tx, {
-          skuId: f.skuId,
-          warehouseId: f.warehouseId,
-          locationId: f.locationId,
-          quantity: 1,
-        });
-      return f;
-    });
+  async function fixture() {
+    return observer.db.transaction((tx) => seedPickableShipment(tx, 3));
   }
   function start(f: Awaited<ReturnType<typeof fixture>>, key: string, tx: DbTx) {
     return assembleOutbound(tx).location.start(
@@ -119,13 +34,20 @@ describeDb('outbound preparation committed concurrency', () => {
       tx,
     );
   }
-  async function assertSingleSession(f: Awaited<ReturnType<typeof fixture>>, expectedPlans: number) {
-    const plans = await observer.db
+  function startBatch(batchId: string, actorId: string, key: string, tx: DbTx) {
+    return assembleOutbound(tx).picking.start({ batchId, actorId, idempotencyKey: key }, tx);
+  }
+  // 「작업 시작」으로 배치를 시작한 뒤 피커가 박스를 claim 한 상태(활성 작업)까지 만든다.
+  async function activate(f: Awaited<ReturnType<typeof fixture>>, tx: DbTx) {
+    await startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx);
+    return start(f, randomUUID(), tx);
+  }
+  async function assertSingleSession(f: Awaited<ReturnType<typeof fixture>>) {
+    const [batch] = await observer.db
       .select()
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.batchId, f.batchId));
-    expect(plans).toHaveLength(expectedPlans);
-    expect(plans.filter((p) => p.status === 'active')).toHaveLength(1);
+      .from(wmsTables.outboundBatches)
+      .where(eq(wmsTables.outboundBatches.id, f.batchId));
+    expect(batch.startedAt).not.toBeNull();
     const sessions = await observer.db
       .select()
       .from(wmsTables.batchInventorySessions)
@@ -137,33 +59,8 @@ describeDb('outbound preparation committed concurrency', () => {
       .where(eq(wmsTables.batchInventorySessionBalances.skuId, f.skuId));
     expect(custody.reduce((sum, row) => sum + row.qty, 0)).toBe(3);
   }
-  it.each([true, false])('serializes concurrent starts across real commits (same key=%s)', async (sameKey) => {
-    const f = await fixture(true);
-    try {
-      const key = randomUUID();
-      const secondKey = sameKey ? key : randomUUID();
-      const result = await overlap(
-        (tx) => start(f, key, tx),
-        (tx) => start(f, secondKey, tx),
-      );
-      expect(result.first).toMatchObject({ status: 'in_progress' });
-      if (sameKey) expect(result.second).toEqual({ ok: true, value: result.first });
-      else {
-        expect(result.second).toMatchObject({
-          ok: false,
-          error: {
-            response: { code: 'PICKING_COMPONENT_CHANGED_RETRY' },
-          },
-        });
-        expect(await observer.db.transaction((tx) => start(f, secondKey, tx))).toEqual(result.first);
-      }
-      await assertSingleSession(f, 2);
-    } finally {
-      await observer.db.transaction((tx) => cleanupPreparationFixture(tx, f));
-    }
-  });
   it.each(['stock', 'start'] as const)(
-    'serializes stock move and preparation with %s committing first',
+    'serializes stock move and batch start with %s committing first',
     async (first) => {
       const f = await fixture();
       const [destination] = await observer.db
@@ -184,19 +81,27 @@ describeDb('outbound preparation committed concurrency', () => {
         );
       try {
         if (first === 'stock') {
-          const result = await overlap(move, (tx) => start(f, randomUUID(), tx));
-          expect(result.second).toMatchObject({
-            ok: true,
-            value: { status: 'in_progress', sources: [{ sourceLocationId: destination.id, allocatedQty: 3 }] },
-          });
-          await assertSingleSession(f, 2);
+          const result = await overlap(observer, move, (tx) =>
+            startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx),
+          );
+          expect(result.second).toMatchObject({ ok: true, value: { state: 'started', batchId: f.batchId } });
+          const allocated = await observer.db
+            .select()
+            .from(wmsTables.pickingSourceAllocations)
+            .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId));
+          expect(allocated.map((row) => [row.sourceLocationId, row.qty])).toEqual([[destination.id, 3]]);
+          await assertSingleSession(f);
         } else {
-          const result = await overlap((tx) => start(f, randomUUID(), tx), move);
-          expect(result.first).toMatchObject({ status: 'in_progress' });
+          const result = await overlap(
+            observer,
+            (tx) => startBatch(f.batchId, f.actorId, `start-${randomUUID()}`, tx),
+            move,
+          );
+          expect(result.first).toMatchObject({ state: 'started', batchId: f.batchId });
           expect(result.second).toMatchObject({ ok: false });
           if (result.second.ok) throw new Error('Expected custody-protected move rejection');
           expect(result.second.error).toMatchObject({ response: { code: 'BATCH_CONTROLLED_STOCK' } });
-          await assertSingleSession(f, 1);
+          await assertSingleSession(f);
         }
         const ledgers = await observer.db
           .select()
@@ -216,6 +121,96 @@ describeDb('outbound preparation committed concurrency', () => {
       }
     },
   );
+  async function handInCount(sessionId: string) {
+    const handIns = await observer.db
+      .select({ id: wmsTables.batchInventorySessionEvents.id })
+      .from(wmsTables.batchInventorySessionEvents)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionEvents.sessionId, sessionId),
+          eq(wmsTables.batchInventorySessionEvents.eventType, 'HAND_IN'),
+        ),
+      );
+    return handIns.length;
+  }
+
+  // 옛 «같은 계획의 동시 시작» 세션 테스트를 배치 시작으로 옮긴 것이다. 두 번째 시작은 첫 시작의 잠금에
+  // 막혔다가(overlap 이 단언) 커밋된 세션에 합류한다 — 같은 키면 명령 재생, 다른 키면 시작된 배치 합류.
+  it.each([true, false])(
+    '같은 배치의 동시 배치 시작(같은 키=%s)은 세션 하나·배정 수만큼의 HAND_IN 으로 끝난다',
+    async (sameKey) => {
+      const { first, second } = await observer.db.transaction((tx) => seedTwoBoxBatch(tx));
+      try {
+        const key = `start-${randomUUID()}`;
+        const result = await overlap(
+          observer,
+          (tx) => startBatch(first.batchId, first.actorId, key, tx),
+          (tx) => startBatch(first.batchId, first.actorId, sameKey ? key : `start-${randomUUID()}`, tx),
+        );
+        expect(result.second).toMatchObject({
+          ok: true,
+          value: { state: 'started', batchId: first.batchId, sessionId: result.first.sessionId },
+        });
+        const sessions = await observer.db
+          .select()
+          .from(wmsTables.batchInventorySessions)
+          .where(eq(wmsTables.batchInventorySessions.batchId, first.batchId));
+        expect(sessions).toHaveLength(1);
+        const allocations = await observer.db
+          .select()
+          .from(wmsTables.pickingSourceAllocations)
+          .where(inArray(wmsTables.pickingSourceAllocations.workItemId, [first.workItemId, second.workItemId]));
+        expect(allocations).toHaveLength(2);
+        expect(await handInCount(sessions[0].id)).toBe(allocations.length);
+      } finally {
+        await observer.db.transaction((tx) => cleanupPreparationFixture(tx, first, [second]));
+      }
+    },
+  );
+
+  // 옛 «두 배치가 같은 출처로 시작하면 하나만 통제한다» 세션 테스트를 배치 시작으로 옮긴 것이다.
+  it('두 배치가 같은 위치의 마지막 재고로 동시에 시작하면 하나만 배정받고 다른 쪽은 아무것도 남기지 않는다', async () => {
+    const { first, second } = await observer.db.transaction(async (tx) => {
+      const base = await seedPickableShipment(tx, 3);
+      // 두 번째 박스는 자기 배치에 남는다 — 재고 3 을 두 배치(각 3)가 다툰다.
+      return { first: base, second: await seedBoxOverSameStock(tx, base, 3) };
+    });
+    try {
+      const result = await overlap(
+        observer,
+        (tx) => startBatch(first.batchId, first.actorId, `start-${randomUUID()}`, tx),
+        (tx) => startBatch(second.batchId, second.actorId, `start-${randomUUID()}`, tx),
+      );
+      expect(result.first).toMatchObject({ state: 'started', batchId: first.batchId });
+      expect(result.second).toMatchObject({ ok: false, error: { response: { code: 'BATCH_START_BLOCKED' } } });
+
+      expect(
+        await observer.db
+          .select()
+          .from(wmsTables.pickingSourceAllocations)
+          .where(eq(wmsTables.pickingSourceAllocations.workItemId, second.workItemId)),
+      ).toHaveLength(0);
+      expect(
+        await observer.db
+          .select()
+          .from(wmsTables.batchInventorySessions)
+          .where(eq(wmsTables.batchInventorySessions.batchId, second.batchId)),
+      ).toHaveLength(0);
+      const [loser] = await observer.db
+        .select()
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, second.batchId));
+      expect(loser.startedAt).toBeNull();
+      const custody = await observer.db
+        .select()
+        .from(wmsTables.batchInventorySessionBalances)
+        .where(eq(wmsTables.batchInventorySessionBalances.skuId, first.skuId));
+      expect(custody.reduce((sum, row) => sum + row.qty, 0)).toBe(3);
+    } finally {
+      await observer.db.transaction((tx) => cleanupPreparationFixture(tx, first, [second]));
+    }
+  });
+
   it('persists a rejected preparation across commit and HTTP mapping on another connection', async () => {
     const f = await fixture();
     const key = randomUUID();
@@ -236,11 +231,12 @@ describeDb('outbound preparation committed concurrency', () => {
           .from(wmsTables.fulfillmentCommandRequests)
           .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key));
         expect(saved).toMatchObject({ status: 'completed', responseSnapshot: rejected });
-        const plans = await other.db
-          .select()
-          .from(wmsTables.pickingPlans)
-          .where(eq(wmsTables.pickingPlans.batchId, f.batchId));
-        expect(plans.map((p) => p.status)).toEqual(['invalidated']);
+        expect(
+          await other.db
+            .select()
+            .from(wmsTables.pickingSourceAllocations)
+            .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId)),
+        ).toHaveLength(0);
         expect(
           await other.db
             .select()
@@ -261,11 +257,7 @@ describeDb('outbound preparation committed concurrency', () => {
     ['scan', 'scan'],
   ] as const)('finishes active %s with a direct %s paused at real mid-command locks', async (operation, competitor) => {
     const f = await fixture();
-    await observer.db.transaction((tx) => start(f, randomUUID(), tx));
-    const [plan] = await observer.db
-      .select()
-      .from(wmsTables.pickingPlans)
-      .where(eq(wmsTables.pickingPlans.batchId, f.batchId));
+    await observer.db.transaction((tx) => activate(f, tx));
     const direct = makeDb(DATABASE_URL!);
     const resume = makeDb(DATABASE_URL!);
     let release!: () => void;
@@ -351,7 +343,6 @@ describeDb('outbound preparation committed concurrency', () => {
               strategy: 'discrete',
               stage: 'source',
               batchId: f.batchId,
-              planId: plan.id,
               sessionId: session.id,
               workItemId: f.workItemId,
               shipmentId: f.shipmentId,
@@ -369,7 +360,6 @@ describeDb('outbound preparation committed concurrency', () => {
         return assembleOutbound(tx).picking.start(
           {
             batchId: f.batchId,
-            planId: plan.id,
             actorId: f.actorId,
             idempotencyKey: randomUUID(),
           },
@@ -418,11 +408,11 @@ describeDb('outbound preparation committed concurrency', () => {
     }
   });
 
-  it.each(['draft-to-active', 'active-to-completed'] as const)(
+  it.each(['active-to-completed'] as const)(
     'retries %s after optimistic selection without switching lock order',
-    async (transition) => {
+    async () => {
       const f = await fixture();
-      if (transition === 'active-to-completed') await observer.db.transaction((tx) => start(f, randomUUID(), tx));
+      await observer.db.transaction((tx) => activate(f, tx));
       const prep = makeDb(DATABASE_URL!);
       const other = makeDb(DATABASE_URL!);
       let release!: () => void;
@@ -433,16 +423,16 @@ describeDb('outbound preparation committed concurrency', () => {
       const selected = new Promise<void>((resolve) => {
         entered = resolve;
       });
-      const read = preparationLocks.readPreparationPlan;
+      const read = preparationLocks.isBatchStarted;
       let first = true;
-      const spy = jest.spyOn(preparationLocks, 'readPreparationPlan').mockImplementation(async (...args) => {
-        const plan = await read(...args);
+      const spy = jest.spyOn(preparationLocks, 'isBatchStarted').mockImplementation(async (...args) => {
+        const started = await read(...args);
         if (first) {
           first = false;
           entered();
           await barrier;
         }
-        return plan;
+        return started;
       });
       let run: Promise<unknown> | undefined;
       const key = randomUUID();
@@ -460,13 +450,6 @@ describeDb('outbound preparation committed concurrency', () => {
         ]);
         await other.db.transaction(async (tx) => {
           const services = assembleOutbound(tx);
-          if (transition === 'draft-to-active') {
-            const plan = await read(f.batchId, tx);
-            return services.picking.start(
-              { batchId: f.batchId, planId: plan.id, actorId: f.actorId, idempotencyKey: randomUUID() },
-              tx,
-            );
-          }
           return services.location.force(
             f.shipmentId,
             {
@@ -555,7 +538,7 @@ describeDb('outbound preparation committed concurrency', () => {
     try {
       run = prep.db.transaction(async (tx) => {
         await tx.execute(sqlQuery`SET LOCAL statement_timeout = '1500ms'`);
-        return start(f, key, tx);
+        return startBatch(f.batchId, f.actorId, key, tx);
       });
       const result = run.then(
         (value) => ({ ok: true, value }),
@@ -601,7 +584,10 @@ describeDb('outbound preparation committed concurrency', () => {
           .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
       ).toHaveLength(0);
       expect(
-        await observer.db.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.batchId, f.batchId)),
+        await observer.db
+          .select()
+          .from(wmsTables.pickingSourceAllocations)
+          .where(eq(wmsTables.pickingSourceAllocations.workItemId, f.workItemId)),
       ).toHaveLength(0);
     } finally {
       continuePreparation();

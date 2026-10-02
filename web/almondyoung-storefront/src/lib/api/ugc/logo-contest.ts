@@ -40,10 +40,13 @@ export const listLogoContestEntries = async ({
 export const listTopLogoContestEntries = async (): Promise<
   LogoContestEntryDto[]
 > =>
+  // 관리자 숨김/노출은 ugc API 를 직접 호출해 스토어프론트의 revalidateTag 를 거치지 않는다.
+  // 캐시를 두면 숨김이 홈 섹션에 최대 revalidate 초만큼 늦게 반영되므로, 목록 조회와 동일하게
+  // no-store 로 항상 최신을 가져온다(top 쿼리는 LIMIT 소량이라 부담이 작다).
   await api("ugc", `/logo-contest/entries/top`, {
     method: "GET",
     withAuth: false,
-    next: { tags: [LOGO_CONTEST_TAG], revalidate: 300 },
+    cache: "no-store",
   })
 
 export const getLogoContestEntry = async (

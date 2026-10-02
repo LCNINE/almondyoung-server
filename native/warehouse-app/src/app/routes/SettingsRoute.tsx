@@ -7,6 +7,7 @@ import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { resolveProfile } from '../profile';
 import { LabelPrinterSettings } from '../../core/hardware/print/LabelPrinterSettings';
 import { isStationDevice } from '../station';
+import { ReturnBinSettings } from '../../domains/returns/ReturnBinSettings';
 
 export function SettingsRoute() {
   const developer = useDeveloperMode();
@@ -23,6 +24,8 @@ export function SettingsRoute() {
       </section>
 
       {isStationDevice() && <LabelPrinterSettings />}
+
+      <ReturnBinSettings />
 
       <section className="space-y-1">
         <h2 className="text-sm font-semibold text-gray-700">프로필</h2>

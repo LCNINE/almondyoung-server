@@ -7,6 +7,7 @@ import {
   ClipboardList,
   ArrowLeftRight,
   ClipboardCheck,
+  Undo2,
   Wrench,
   Settings,
 } from 'lucide-react';
@@ -31,6 +32,9 @@ export function StationHome() {
         </Link>
         <Link to="/putaway">
           <HubTile icon={ClipboardList} label="적치" />
+        </Link>
+        <Link to="/returns/putaway">
+          <HubTile icon={Undo2} label="되돌림 적치" />
         </Link>
         <Link to="/movement">
           <HubTile icon={ArrowLeftRight} label="이동" />

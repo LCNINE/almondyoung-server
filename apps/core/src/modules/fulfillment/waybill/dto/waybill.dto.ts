@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Length, MaxLength, Min } from 'class-validator';
 import { carrierValues, CarrierEnum } from '../../../inventory/schema/enum-values';
 
 export class IssueWaybillDto {
@@ -127,4 +127,28 @@ export class WaybillLabelResponseDto {
 
   @ApiProperty({ description: '프린터에 그대로 보낼 ZPL (ASCII)' })
   data: string;
+
+  @ApiProperty({ description: '쪽 수 — data 안의 ^XA…^XZ 개수. 품목이 4줄을 넘는 FS 는 2 이상' })
+  pages: number;
+
+  @ApiProperty({
+    description: '송장 내용 지문(64자 hex). 인쇄 성공 뒤 POST shipments/:id/waybill/label-prints 에 그대로 보낸다',
+  })
+  fingerprint: string;
+
+  @ApiProperty({ description: '판차. 2 이상이면 종이에 「N판」 이 찍힌다' })
+  revision: number;
+}
+
+export class ConfirmLabelPrintDto {
+  @ApiProperty({ description: '렌더 응답의 fingerprint 그대로' })
+  @IsString()
+  @Length(64, 64)
+  fingerprint: string;
+}
+
+export class LabelPrintConfirmationDto {
+  @ApiProperty() fingerprint: string;
+  @ApiProperty() revision: number;
+  @ApiProperty() printedAt: string;
 }

@@ -47,10 +47,12 @@ export class WelcomeMembershipController {
   @Post('eligibility/:userId/purchased')
   @MembershipInternalAuth()
   @ApiOperation({ summary: '웰컴 멤버십 구매 완료 기록' })
-  async markPurchased(@Param('userId') userId: string, @Body() body: { orderId: string }) {
+  async markPurchased(@Param('userId') userId: string, @Body() body: { orderId: string; orderedAt?: string }) {
     try {
       if (!body.orderId) throw new Error('orderId is required');
-      await this.service.markPurchased(userId, body.orderId);
+      const orderedAt = body.orderedAt ? new Date(body.orderedAt) : undefined;
+      if (orderedAt && Number.isNaN(orderedAt.getTime())) throw new Error('orderedAt is required to be ISO 8601');
+      await this.service.markPurchased(userId, body.orderId, orderedAt);
       return { success: true };
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();

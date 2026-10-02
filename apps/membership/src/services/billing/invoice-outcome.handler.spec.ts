@@ -49,13 +49,34 @@ function makeHandler(opts: {
     refundByIntent: jest.fn().mockResolvedValue({ status: 'SUCCEEDED', refundedAmount: 0 }),
     revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
   };
+  // 미수 원장은 이 스펙의 관심사가 아니다 — 회수 경로가 원장을 «부르는지»만 관찰한다.
+  const arrearsManager = {
+    record: jest.fn().mockResolvedValue(true),
+    outstandingTotal: jest.fn().mockResolvedValue(0),
+  };
+  const benefitReader = {
+    findMembershipBenefitUsageSince: jest
+      .fn()
+      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
+  };
+  const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(true) };
+  // 고객 알림은 billing-notice 스펙의 관심사다 — 여기선 연락처가 없는 것으로 두어 알림 경로를 닫는다.
+  const billingNoticeManager = {
+    lookupContactForContract: jest.fn().mockResolvedValue(null),
+    queueAttemptFailed: jest.fn(),
+    queueTerminatedForNonPayment: jest.fn(),
+  };
   const handler = new InvoiceOutcomeHandler(
     { db } as never,
     contractEventManager as never,
     publisher as never,
     paymentClient as never,
+    arrearsManager as never,
+    benefitReader as never,
+    termsRulesReader as never,
+    billingNoticeManager as never,
   );
-  return { handler, tx, updates, contractEventManager, publisher, paymentClient };
+  return { handler, tx, updates, contractEventManager, publisher, paymentClient, arrearsManager };
 }
 
 const activeContract = { userId: 'u1', status: 'ACTIVE', autoRenewal: true, billingPath: 'INVOICE' };

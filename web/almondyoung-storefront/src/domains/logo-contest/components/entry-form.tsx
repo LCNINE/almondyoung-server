@@ -6,6 +6,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { uploadFile } from "@/lib/api/file/upload"
+import {
+  compressImageForUpload,
+  MAX_UPLOAD_BYTES,
+} from "@/lib/utils/image-compress"
 import { createLogoContestEntry } from "@/lib/api/ugc/logo-contest"
 import {
   LOGO_CONTEST_DESCRIPTION_MAX_LENGTH,
@@ -86,21 +90,51 @@ export function EntryForm({ countryCode }: { countryCode: string }) {
 
     startTransition(async () => {
       try {
-        const uploaded = await Promise.all(
-          images
-            .filter((image): image is ImagePreview => !!image)
-            .map((image) => {
-              const formData = new FormData()
-              formData.append("file", image.file)
-              formData.append("contextId", LOGO_CONTEST_IMAGE_CONTEXT_ID)
-              return uploadFile(formData)
-            })
-        ).catch(() => null)
+        // 폰 사진 원본은 업로드 서버 액션이 거치는 Lambda 프록시의 본문 상한(~6MB)을
+        // base64 인코딩 뒤 쉽게 넘어, file-service 에 닿기 전에 조용히 끊긴다. 업로드 전에
+        // 무손실 webp 로 줄이고(image-compress.ts), 그래도 상한을 넘으면 이유를 알려준다.
+        const picked = images.filter(
+          (image): image is ImagePreview => !!image
+        )
+        const compressed = await Promise.all(
+          picked.map((image) => compressImageForUpload(image.file))
+        )
+        if (compressed.some((result) => result.file.size > MAX_UPLOAD_BYTES)) {
+          toast.error(t("imageTooLarge"))
+          return
+        }
 
-        if (!uploaded) {
+        // 두 장 모두 필요하므로 하나라도 실패하면 출품하지 않는다.
+        const results = await Promise.allSettled(
+          compressed.map(({ file }) => {
+            const formData = new FormData()
+            formData.append("file", file)
+            formData.append("contextId", LOGO_CONTEST_IMAGE_CONTEXT_ID)
+            return uploadFile(formData)
+          })
+        )
+        const failed = results.find((r) => r.status === "rejected")
+        if (failed) {
+          const reason = (failed as PromiseRejectedResult).reason as Error & {
+            digest?: string
+          }
+          if (
+            reason?.digest === "UNAUTHORIZED" ||
+            reason?.message === "UNAUTHORIZED"
+          ) {
+            throw reason
+          }
           toast.error(t("uploadFail"))
           return
         }
+        const uploaded = results.map(
+          (r) =>
+            (
+              r as PromiseFulfilledResult<
+                Awaited<ReturnType<typeof uploadFile>>
+              >
+            ).value
+        )
 
         const result = await createLogoContestEntry({
           title: title.trim(),

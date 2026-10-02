@@ -20,6 +20,21 @@ export function buildReturnUrl(baseUrl: string, params: Record<string, string>):
   return url.origin === RELATIVE_BASE ? `${url.pathname}${url.search}${url.hash}` : url.toString();
 }
 
+/**
+ * 이 returnUrl 로 돌아가면 멤버십 가입이 이어지는가. 스토어프론트 결제수단 화면이 가입을 자동으로
+ * 이어 가는 조건(`redirect=subscribe` + `planId`)과 같게 판정한다 — 둘이 갈리면 자동으로 돌려보냈는데
+ * 아무 일도 안 일어나거나, 가입 중인 고객을 계좌 변경 화면처럼 대하게 된다.
+ */
+export function isSubscribeReturnUrl(returnUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(returnUrl, RELATIVE_BASE);
+  } catch {
+    return false;
+  }
+  return url.searchParams.get('redirect') === 'subscribe' && !!url.searchParams.get('planId');
+}
+
 function parseList(env: string | undefined): string[] {
   return (env ?? '')
     .split(',')

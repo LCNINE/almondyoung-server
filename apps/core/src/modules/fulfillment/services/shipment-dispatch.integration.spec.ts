@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -101,7 +102,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, controlled, audit),
+      new BatchInventorySessionService(dbService, audit),
       shipmentReservations,
       waybills,
       new BarcodeService(dbService),
@@ -111,6 +112,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
   }
 
@@ -226,6 +228,8 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         warehouseId: warehouse.id,
         pickingMethod: 'individual',
         status: 'picking',
+        // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+        startedAt: new Date(),
       })
       .returning();
     const [workItem] = await tx
@@ -240,36 +244,37 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         leaseVersion: 1,
       })
       .returning();
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', status: 'active', createdBy: actorId })
+    const [allocation] = await tx
+      .insert(wmsTables.pickingSourceAllocations)
+      .values({
+        workItemId: workItem.id,
+        shipmentLineId: line.id,
+        sourceLocationId: location.id,
+        qty: 2,
+        sourceStockVersion: ledger.version,
+      })
       .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: plan.id,
-      shipmentId: shipment.id,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
-    await tx.insert(wmsTables.pickingSourceAllocations).values({
-      planId: plan.id,
-      shipmentLineId: line.id,
-      sourceLocationId: location.id,
-      qty: 2,
-      sourceStockVersion: ledger.version,
-    });
     const [session] = await tx
       .insert(wmsTables.batchInventorySessions)
       .values({ batchId: batch.id, status: 'active', handedInQty: 2 })
       .returning();
     await tx.insert(wmsTables.batchInventorySessionEvents).values({
       sessionId: session.id,
-      idempotencyKey: `start:${plan.id}`,
+      idempotencyKey: `start:${batch.id}:${allocation.id}`,
       eventType: 'HAND_IN',
       skuId: sku.id,
       quantity: 2,
       toCustodyType: 'AT_SOURCE',
       toSourceLocationId: location.id,
-      payload: { planId: plan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId },
+      payload: {
+        sequence: 0,
+        batchId: batch.id,
+        workItemId: workItem.id,
+        allocationId: allocation.id,
+        shipmentLineId: line.id,
+        sourceStockVersion: ledger.version,
+        requestHash: 'a'.repeat(64),
+      },
     });
     await tx.insert(wmsTables.batchInventorySessionBalances).values([
       {
@@ -314,7 +319,6 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       ledger,
       line,
       location,
-      plan,
       salesOrder,
       salesOrderLine,
       session,
@@ -326,7 +330,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
   }
 
   /**
-   * seedReadyShipment 이 만든 라인 1개짜리 shipment 에, 같은 shipment/batch/plan/session 위에
+   * seedReadyShipment 이 만든 라인 1개짜리 shipment 에, 같은 shipment/batch/작업항목/session 위에
    * "이미 픽·핸드인은 끝났지만 아직 검수 전"인 두 번째 라인을 덧붙인다. inspectShipmentLines 의
    * 다중 라인 경로(루프·라인별 키 파생·전량 검수 후 자동 dispatch)를 검증하기 위한 전용 헬퍼 —
    * seedReadyShipment 자체는 다른 다수 테스트가 의존하므로 건드리지 않는다.
@@ -399,7 +403,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       requestedAt: new Date(),
     });
     await tx.insert(wmsTables.pickingSourceAllocations).values({
-      planId: fixture.plan.id,
+      workItemId: fixture.workItem.id,
       shipmentLineId: line.id,
       sourceLocationId: fixture.location.id,
       qty,
@@ -482,9 +486,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.batchInventorySessions.id, fixture.session.id));
       await tx
         .delete(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlanMembers).where(eq(wmsTables.pickingPlanMembers.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, fixture.plan.id));
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItem.id));
       await tx
         .delete(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItem.id));
@@ -578,47 +580,53 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         warehouseId: base.shipment.warehouseId,
         pickingMethod: 'individual',
         status: 'picking',
+        // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+        startedAt: new Date(),
       })
       .returning();
-    await tx.insert(wmsTables.outboundBatchWorkItems).values({
-      batchId: batch.id,
-      shipmentId: shipment.id,
-      status: 'packing',
-      packerId: base.actorId,
-      packerClaimedAt: new Date(),
-      leaseExpiresAt: new Date(Date.now() + 60_000),
-      leaseVersion: 1,
-    });
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', status: 'active', createdBy: base.actorId })
+    const [workItem] = await tx
+      .insert(wmsTables.outboundBatchWorkItems)
+      .values({
+        batchId: batch.id,
+        shipmentId: shipment.id,
+        status: 'packing',
+        packerId: base.actorId,
+        packerClaimedAt: new Date(),
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        leaseVersion: 1,
+      })
       .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: plan.id,
-      shipmentId: shipment.id,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
-    await tx.insert(wmsTables.pickingSourceAllocations).values({
-      planId: plan.id,
-      shipmentLineId: line.id,
-      sourceLocationId: sourceBalance.sourceLocationId!,
-      qty: quantity,
-      sourceStockVersion: base.ledger.version,
-    });
+    const [allocation] = await tx
+      .insert(wmsTables.pickingSourceAllocations)
+      .values({
+        workItemId: workItem.id,
+        shipmentLineId: line.id,
+        sourceLocationId: sourceBalance.sourceLocationId!,
+        qty: quantity,
+        sourceStockVersion: base.ledger.version,
+      })
+      .returning();
     const [session] = await tx
       .insert(wmsTables.batchInventorySessions)
       .values({ batchId: batch.id, status: 'active', handedInQty: quantity })
       .returning();
     await tx.insert(wmsTables.batchInventorySessionEvents).values({
       sessionId: session.id,
-      idempotencyKey: `start:${plan.id}`,
+      idempotencyKey: `start:${batch.id}:${allocation.id}`,
       eventType: 'HAND_IN',
       skuId: base.sku.id,
       quantity,
       toCustodyType: 'AT_SOURCE',
       toSourceLocationId: sourceBalance.sourceLocationId,
-      payload: { planId: plan.id, sequence: 0, requestHash: 'b'.repeat(64), actorId: base.actorId },
+      payload: {
+        sequence: 0,
+        batchId: batch.id,
+        workItemId: workItem.id,
+        allocationId: allocation.id,
+        shipmentLineId: line.id,
+        sourceStockVersion: base.ledger.version,
+        requestHash: 'b'.repeat(64),
+      },
     });
     await tx.insert(wmsTables.batchInventorySessionBalances).values([
       {

@@ -1,6 +1,6 @@
 {
   "id": "2e12f1fc-0874-47b8-8864-352d1d80169e",
-  "prevId": "85a15b31-9adc-4560-9c1a-b24b75695b29",
+  "prevId": "b12e7ec9-621c-41bf-804d-adbb6d898529",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2148,6 +2148,12 @@
         "legacy_payload": {
           "name": "legacy_payload",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_admin_user_id": {
+          "name": "created_by_admin_user_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

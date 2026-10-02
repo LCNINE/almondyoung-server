@@ -3,7 +3,7 @@
   "metaTitle": "Logo Contest | Almondyoung",
   "metaDescription": "Help create Almondyoung's new logo. Submit your design and vote for your favorite.",
   "headline": "Help create\nAlmondyoung's new logo",
-  "lead": "Submit a logo and vote for your favorite. The entry with the most votes becomes Almondyoung's new logo.",
+  "lead": "We build a brand for beauty professionals, together with beauty professionals.\n\nSubmit a logo and vote for your favorite. The entry with the most votes becomes Almondyoung's new logo.",
   "prizeLabel": "Grand prize · 1 winner",
   "prizeAmount": "200,000 KRW in points",
   "period": "{start} – {end}",
@@ -24,7 +24,10 @@
     },
     "close": "Close"
   },
-  "pageSize": { "label": "Entries per page", "option": "Show {count}" },
+  "pageSize": {
+    "label": "Entries per page",
+    "option": "Show {count}"
+  },
   "entryCount": "{count} entries",
   "sortLabel": "Sort entries",
   "paginationLabel": "Entry pages",
@@ -121,7 +124,8 @@
     "cancel": "Cancel",
     "done": "Your entry was submitted.",
     "fail": "We couldn't submit your entry. Please try again in a moment.",
-    "uploadFail": "We couldn't upload your images. Please try again in a moment.",
-    "loginRequired": "Please sign in to submit an entry. Go to the sign-in page?"
+    "uploadFail": "Couldn't upload the image. Large files may fail — please try again with a smaller image.",
+    "loginRequired": "Please sign in to submit an entry. Go to the sign-in page?",
+    "imageTooLarge": "This image is too large. Please upload a smaller one."
   }
 }

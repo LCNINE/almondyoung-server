@@ -84,12 +84,39 @@ export interface CreateSmsCampaignDto {
   category: SmsGateCategory;
   content: string;
   sendAt?: string;
+  /** 아몬드영 회원 전체 포함 */
+  includeMembers?: boolean;
+  /** 수신자 그룹들. 회원·그룹 사이 겹치는 번호는 한 통만 */
+  groupIds?: string[];
+}
+
+export interface SmsRecipientGroup {
+  id: string;
+  name: string;
+  recipients: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SmsGroupRecipientInput {
+  name?: string;
+  phone: string;
+}
+
+export interface SmsGroupRecipientsResult {
+  groupId: string;
+  received: number;
+  added: number;
+  /** 휴대폰 번호가 아니거나 같은 파일 안에서 겹친 행 */
+  skipped: number;
+  /** 이미 그룹에 있던 번호 */
+  duplicated: number;
 }
 
 export interface SmsCampaignPreview {
-  audience: SmsAudienceSummary;
   recipients: number;
   excluded: number;
+  duplicates: number;
   ahead: number;
   window: { start: string; end: string };
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
@@ -106,9 +133,24 @@ export interface SmsCampaign {
   content: string;
   sendAt: string | null;
   state: SmsCampaignState;
+  createdByName: string | null;
   createdAt: string;
   counts: { total: number; pending: number; sent: number; failed: number; cancelled: number };
+  clicked: number;
+  continuedFrom: string | null;
+  continuedTo: string | null;
   estimatedCompleteDate: string | null;
+}
+
+export interface SmsCampaignClick {
+  notificationId: string;
+  userId: string;
+  name: string | null;
+  phoneNumber: string | null;
+  url: string;
+  clickCount: number;
+  firstClickedAt: string;
+  lastClickedAt: string;
 }
 
 export type ConversationMessageState = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
@@ -219,7 +261,7 @@ export const smsGateApi = {
   },
 
   previewCampaign: async (
-    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt'>
+    dto: Pick<CreateSmsCampaignDto, 'category' | 'sendAt' | 'includeMembers' | 'groupIds'>
   ): Promise<SmsCampaignPreview> => {
     const response = await client.post<SmsCampaignPreview>(`${BASE}/campaigns/preview`, dto);
     return response.data;
@@ -230,8 +272,53 @@ export const smsGateApi = {
     return response.data;
   },
 
+  getCampaignClicks: async (campaignId: string): Promise<SmsCampaignClick[]> => {
+    const response = await client.get<SmsCampaignClick[]>(`${BASE}/campaigns/${campaignId}/clicks`);
+    return response.data;
+  },
+
   createCampaign: async (dto: CreateSmsCampaignDto): Promise<{ campaignId: string; recipients: number }> => {
     const response = await client.post<{ campaignId: string; recipients: number }>(`${BASE}/campaigns`, dto);
+    return response.data;
+  },
+
+  getRecipientGroups: async (): Promise<SmsRecipientGroup[]> => {
+    const response = await client.get<SmsRecipientGroup[]>(`${BASE}/recipient-groups`);
+    return response.data;
+  },
+
+  createRecipientGroup: async (name: string): Promise<{ id: string }> => {
+    const response = await client.post<{ id: string }>(`${BASE}/recipient-groups`, { name });
+    return response.data;
+  },
+
+  addGroupRecipients: async (
+    groupId: string,
+    recipients: SmsGroupRecipientInput[]
+  ): Promise<SmsGroupRecipientsResult> => {
+    const response = await client.post<SmsGroupRecipientsResult>(`${BASE}/recipient-groups/${groupId}/recipients`, {
+      recipients,
+    });
+    return response.data;
+  },
+
+  importSupabaseGroup: async (dto: { name: string; category: string }): Promise<SmsGroupRecipientsResult> => {
+    const response = await client.post<SmsGroupRecipientsResult>(`${BASE}/recipient-groups/import/supabase`, dto);
+    return response.data;
+  },
+
+  deleteRecipientGroup: async (groupId: string): Promise<void> => {
+    await client.delete(`${BASE}/recipient-groups/${groupId}`);
+  },
+
+  continueCampaign: async (
+    campaignId: string,
+    dto: { name: string; content: string; sendAt?: string }
+  ): Promise<{ campaignId: string; recipients: number }> => {
+    const response = await client.post<{ campaignId: string; recipients: number }>(
+      `${BASE}/campaigns/${campaignId}/continue`,
+      dto
+    );
     return response.data;
   },
 

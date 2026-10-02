@@ -5,6 +5,7 @@ import {
   analyticsApi,
   BehaviorStatisticsQuery,
   CustomerInsightsQuery,
+  GrowthRangeQuery,
   ProductStatisticsQuery,
   ProfitStatisticsQuery,
   StatisticsRangeQuery,
@@ -105,5 +106,30 @@ export const useOperatingCosts = () => {
     queryKey: analyticsQueryKeys.operatingCosts(),
     queryFn: () => analyticsApi.listOperatingCosts(),
     staleTime: 60 * 1000,
+  });
+};
+
+/** 성장 탭 본문. GA4 축이 실패해도 응답은 온다(ga4.status). */
+export const useGrowthAnalysis = (query: GrowthRangeQuery) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.growth(query),
+    queryFn: () => analyticsApi.getGrowth(query),
+    placeholderData: (previous) => previous,
+  });
+};
+
+/** 관리자 메인 «올해 목표» 카드·성장 탭 머리. 서버가 60초 재사용한다. */
+export const useGrowthSummary = () => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.growthSummary(),
+    queryFn: () => analyticsApi.getGrowthSummary(),
+    staleTime: 60 * 1000,
+  });
+};
+
+export const useRevenueGoals = (year: number) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.revenueGoals(year),
+    queryFn: () => analyticsApi.listRevenueGoals(year),
   });
 };

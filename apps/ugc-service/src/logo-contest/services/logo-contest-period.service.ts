@@ -9,7 +9,7 @@ import { BadRequestError } from '@app/shared';
  * 값은 오프셋을 붙여 적는다 (`2026-10-01T00:00:00+09:00`) — 서버는 UTC 라
  * 오프셋 없이 적으면 9시간 밀린다.
  */
-const DEFAULT_STARTS_AT = '2026-10-01T00:00:00+09:00';
+const DEFAULT_STARTS_AT = '2026-09-28T00:00:00+09:00';
 const DEFAULT_ENDS_AT = '2026-10-30T23:59:59+09:00';
 
 @Injectable()

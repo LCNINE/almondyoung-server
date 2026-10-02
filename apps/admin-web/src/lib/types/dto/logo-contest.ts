@@ -14,7 +14,7 @@ export interface AdminLogoContestEntryDto {
   id: string;
   title: string;
   description: string | null;
-  /** 출품자가 보낸 이름을 서버가 가린 값 ('정*식'). 정본은 userId 로 회원 정보를 붙여 본다. */
+  /** 스토어프론트에 보이는 닉네임 ('귀여운 아몬드 #12'). 실명은 userId 로 회원 정보를 붙여 본다. */
   authorName: string;
   /** 첫 장이 대표 이미지 */
   mediaFileIds: string[];

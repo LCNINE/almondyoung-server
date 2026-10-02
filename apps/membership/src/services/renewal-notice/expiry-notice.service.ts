@@ -38,7 +38,7 @@ export class ExpiryNoticeService {
   /**
    * 매일 10시 30분 — 갱신 고지(10시)가 끝난 뒤에 돈다.
    */
-  @CronOnce('30 10 * * *', { name: 'expiry-notice' })
+  @CronOnce('30 10 * * *', { name: 'expiry-notice', timeZone: 'Asia/Seoul' })
   async runExpiryNoticeScheduler(): Promise<void> {
     const targetDate = format(addDays(new Date(), NOTICE_DAYS_BEFORE), 'yyyy-MM-dd');
     try {

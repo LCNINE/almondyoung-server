@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { BoxAllocationManager } from '../services/box-allocation.manager';
+import { BoxReturnService } from '../services/box-return.service';
+import { BoxWithdrawalService } from '../services/box-withdrawal.service';
+import { ReturnBinService } from '../services/return-bin.service';
+import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
+import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BatchInventorySessionService } from '../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
@@ -8,6 +13,8 @@ import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrat
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
+  AggregateCartSurplusReturnInput,
+  AggregateCartSurplusReturnResult,
   AggregateSortScanInput,
   AggregateSortScanResult,
   AggregateSourceScanInput,
@@ -22,19 +29,18 @@ import {
   UnpickShipmentInput,
   UnpickShipmentResult,
 } from './picking-strategy.interface';
-import { conflict } from './plan/picking-plan.errors';
+import { conflict } from './allocation/allocation.errors';
 import {
-  assertActivePlanSession,
-  assertPlanMembers,
+  assertActiveBatchSession,
   assertPositiveQuantity,
   assertWorkItemIdentity,
   databaseNow,
   loadPositiveShipmentCustody,
-  loadShipmentAllocations,
   loadWorkItem,
+  loadWorkItemAllocations,
   lockAndAssertPickerClaim,
-} from './plan/picking-plan.queries';
-import { ShipmentAllocation, ShipmentCustodyBalance } from './plan/picking-plan.types';
+} from './allocation/allocation.queries';
+import { ShipmentAllocation, ShipmentCustodyBalance } from './allocation/allocation.types';
 
 const ASSIGNED_REF_PREFIX = 'work-item:';
 const BULK_CART_REF_PREFIX = 'bulk-cart:';
@@ -59,6 +65,11 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
+    private readonly labels: LabelCurrencyGuard,
+    private readonly boxes: BoxAllocationManager,
+    private readonly withdrawals: BoxWithdrawalService,
+    private readonly returnBins: ReturnBinService,
+    private readonly returns: BoxReturnService,
   ) {}
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult> {
@@ -68,6 +79,129 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     if (input.stage === 'bulk_collect') return this.bulkCartScan(input, tx);
     if (input.stage === 'sort') return this.sortScan(input, tx);
     throw new BadRequestException('Aggregate picking requires stage=bulk_collect or stage=sort');
+  }
+
+  /**
+   * 분류대에서 남는 상품 → 되돌림 바구니(S1 §5.4 D11, 스펙 §8 정한 것 1·2). 카트 규칙(잠금·ref·소유)이 이 전략에 있어
+   * 되돌림 스캔 지점 중 카트 쪽은 여기다. 여분을 다 내린 박스는 같은 트랜잭션에서 나간다.
+   */
+  async returnCartSurplus(
+    input: AggregateCartSurplusReturnInput,
+    tx?: DbTx,
+  ): Promise<AggregateCartSurplusReturnResult> {
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.cart_surplus_return');
+    assertPositiveQuantity(input.quantity);
+    const cartId = this.requiredCartId(input.cartId);
+    const cartRef = this.bulkCartRef(input.batchId, cartId, input.actor.id);
+    const response = await this.commands.execute<AggregateCartSurplusReturnResult>(
+      {
+        commandType: 'picking.aggregate_then_sort.cart_surplus_return',
+        idempotencyKey: input.idempotencyKey,
+        canonicalRequest: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          cartId,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: input.quantity,
+          returnBinBarcode: input.returnBinBarcode.trim(),
+          actorId: input.actor.id,
+        },
+      },
+      async (trx, commandRequestId) => {
+        // 영향받는 박스 — 잠그지 않은 읽기로 고르고, 잠근 뒤 다시 거른다(작업 항목 FOR UPDATE 의 status 조건).
+        const candidates = await trx
+          .selectDistinct({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
+          .from(wmsTables.pickingSourceAllocations)
+          .innerJoin(
+            wmsTables.outboundBatchWorkItems,
+            eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+          )
+          .innerJoin(
+            wmsTables.shipmentLines,
+            eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+          )
+          .where(
+            and(
+              eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+              eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+              eq(wmsTables.shipmentLines.skuId, input.skuId),
+              eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
+              gt(wmsTables.pickingSourceAllocations.qty, 0),
+            ),
+          );
+        const shipmentIds = candidates.map((row) => row.shipmentId).sort();
+        // 카트 잠금이 먼저다 — 구성요소 잠금(불변식 검사기)이 세션·보관까지 FOR UPDATE 로 잡으므로, 뒤에 두면
+        // 카트 → 세션 순서인 분류·일괄 담기·인계와 교착한다(스펙 §13).
+        await this.acquireCartLock(cartId, trx);
+        await this.withdrawals.lockComponentsOf(shipmentIds, trx);
+        const workItems = shipmentIds.length
+          ? await trx
+              .select()
+              .from(wmsTables.outboundBatchWorkItems)
+              .where(
+                and(
+                  eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+                  eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+                  inArray(wmsTables.outboundBatchWorkItems.shipmentId, shipmentIds),
+                ),
+              )
+              .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
+              .for('update')
+          : [];
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
+        const [batch] = await trx
+          .select({ warehouseId: wmsTables.outboundBatches.warehouseId })
+          .from(wmsTables.outboundBatches)
+          .where(eq(wmsTables.outboundBatches.id, input.batchId))
+          .limit(1);
+        if (!batch) throw new Error(`Outbound batch ${input.batchId} not found under an active session`);
+        const returnBin = await this.returnBins.requireActive(input.returnBinBarcode, batch.warehouseId, trx);
+        const session = await this.boxes.lockOpenSession(input.batchId, trx);
+        if (!session || session.id !== input.sessionId || session.status !== 'active') {
+          throw conflict('PICKING_SESSION_NOT_ACTIVE', `Batch ${input.batchId} inventory session is not active`);
+        }
+        const moved = await this.boxes.removeCartShare(
+          {
+            session,
+            workItemIds: workItems.map((item) => item.id),
+            cartRef,
+            skuId: input.skuId,
+            sourceLocationId: input.sourceLocationId,
+            quantity: input.quantity,
+            returnBin,
+            actorId: input.actor.id,
+            operationId: commandRequestId,
+          },
+          trx,
+        );
+        const exited: AggregateCartSurplusReturnResult['exited'] = [];
+        for (const item of workItems.filter((candidate) => moved.some((m) => m.workItemId === candidate.id))) {
+          const exit = await this.withdrawals.exitIfDrained(item, { actorId: input.actor.id, operationId: commandRequestId }, trx);
+          if (!exit.exited) continue;
+          await this.returns.settleExit(exit.workItem, trx);
+          exited.push({
+            workItemId: item.id,
+            shipmentId: item.shipmentId,
+            exitTo: exit.workItem.exitTo,
+            waitingOperationId: exit.workItem.waitingOperationId,
+          });
+        }
+        const response: AggregateCartSurplusReturnResult = {
+          operationId: commandRequestId,
+          sessionId: input.sessionId,
+          cartRef,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: input.quantity,
+          exited,
+        };
+        return { response, resourceType: 'batch_inventory_session', resourceId: input.sessionId };
+      },
+      tx,
+    );
+    return response;
   }
 
   async bulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult> {
@@ -86,7 +220,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           strategy: this.capabilities.name,
           stage: 'bulk_collect',
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           skuId: input.skuId,
           sourceLocationId: input.sourceLocationId,
@@ -97,33 +230,30 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       },
       async (trx, commandRequestId) => {
         await this.acquireCartLock(cartId, trx);
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx);
 
         const [allocated] = await trx
           .select({ qty: sql<number>`coalesce(sum(${wmsTables.pickingSourceAllocations.qty}), 0)::int` })
           .from(wmsTables.pickingSourceAllocations)
           .innerJoin(
+            wmsTables.outboundBatchWorkItems,
+            eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+          )
+          .innerJoin(
             wmsTables.shipmentLines,
             eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
           )
-          .innerJoin(
-            wmsTables.pickingPlanMembers,
-            and(
-              eq(wmsTables.pickingPlanMembers.planId, wmsTables.pickingSourceAllocations.planId),
-              eq(wmsTables.pickingPlanMembers.shipmentId, wmsTables.shipmentLines.shipmentId),
-            ),
-          )
           .where(
             and(
-              eq(wmsTables.pickingSourceAllocations.planId, input.planId),
+              eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
+              notInArray(wmsTables.outboundBatchWorkItems.status, ['completed', 'excluded']),
               eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
               eq(wmsTables.shipmentLines.skuId, input.skuId),
-              isNull(wmsTables.pickingPlanMembers.retiredAt),
             ),
           );
         if (Number(allocated?.qty ?? 0) <= 0) {
-          throw conflict('PICKING_WRONG_SOURCE', 'SKU/source is not allocated by this picking plan');
+          throw conflict('PICKING_WRONG_SOURCE', 'SKU/source is not allocated in this batch');
         }
 
         await this.sessions.moveCustody(
@@ -148,7 +278,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         );
         const response: AggregateSourceScanResult = {
           operationId: commandRequestId,
-          planId: input.planId,
           sessionId: input.sessionId,
           skuId: input.skuId,
           sourceLocationId: input.sourceLocationId,
@@ -181,7 +310,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           strategy: this.capabilities.name,
           stage: 'sort',
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -204,8 +332,9 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
@@ -218,7 +347,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         if (line.skuId !== input.skuId) {
           throw conflict('PICKING_WRONG_SKU', 'Sorted SKU does not match the shipment line');
         }
-        const allocations = await this.loadLineAllocations(input.planId, input.shipmentLineId, trx);
+        const allocations = await this.loadLineAllocations(input.workItemId, input.shipmentLineId, trx);
         const destinationRef =
           input.destinationCustody === 'SORTING'
             ? this.sortingRef(input.workItemId, input.actor.id)
@@ -240,7 +369,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
             throw conflict('PICKING_CUSTODY_OWNER_MISMATCH', 'Line custody belongs to another sort destination');
           }
           if (attributed > allocation.qty) {
-            throw conflict('PICKING_CUSTODY_OVERATTRIBUTED', 'Sorted custody exceeds its plan allocation');
+            throw conflict('PICKING_CUSTODY_OVERATTRIBUTED', 'Sorted custody exceeds its work item allocation');
           }
           const capacity = allocation.qty - attributed;
           if (remaining === 0 || capacity === 0) continue;
@@ -301,7 +430,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         }
         const response: AggregateSortScanResult = {
           operationId: commandRequestId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -341,7 +469,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           cartId,
           expectedOwnerId: input.expectedOwnerId,
@@ -356,7 +483,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           throw conflict('AGGREGATE_CART_HANDOFF_FORBIDDEN', 'Cart handoff requires logistics_manager or master');
         }
         await this.acquireCartLock(cartId, trx);
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.expectedOwnerId, trx, true);
         const sourceCartRef = this.bulkCartRef(input.batchId, cartId, input.expectedOwnerId);
         const targetCartRef = this.bulkCartRef(input.batchId, cartId, input.targetWorkerId);
@@ -425,7 +552,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -463,8 +589,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         ) {
           throw conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const balances = await this.assertAggregateAssignedCustody(
           input.sessionId,
           input.shipmentId,
@@ -528,7 +653,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -545,9 +669,10 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           input.actor.id,
           input.expectedLeaseVersion,
         );
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
+        await this.labels.assertCurrent(input.workItemId, trx);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const sortingRef = this.sortingRef(input.workItemId, input.actor.id);
         const packingRef = this.packingRef(input.workItemId);
         for (const allocation of allocations) {
@@ -649,7 +774,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
-          planId: input.planId,
           sessionId: input.sessionId,
           workItemId: input.workItemId,
           shipmentId: input.shipmentId,
@@ -661,12 +785,11 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       async (trx, commandRequestId) => {
         const item = await loadWorkItem(trx, input.workItemId, true);
         assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        await assertActivePlanSession(trx, input.planId, input.sessionId, input.batchId, this.capabilities.name);
-        await assertPlanMembers(trx, input.planId, [input.shipmentId]);
+        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         if (item.leaseVersion !== input.expectedLeaseVersion) {
           throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
-        const allocations = await loadShipmentAllocations(trx, input.planId, input.shipmentId);
+        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
         const now = await databaseNow(trx);
         if (item.status === 'picking') {
@@ -697,7 +820,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
           const allocation = allocationByGrain.get(grain);
           if (!allocation || allocation.skuId !== balance.skuId) {
-            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a plan allocation`);
+            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a work item allocation`);
           }
           attributedByGrain.set(grain, (attributedByGrain.get(grain) ?? 0) + balance.qty);
           if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
@@ -721,7 +844,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         ) {
           throw conflict(
             'PICKING_PACKING_CUSTODY_INCOMPLETE',
-            'Ready-to-pack custody must exactly match every plan allocation',
+            'Ready-to-pack custody must exactly match every work item allocation',
           );
         }
         let returnedToSourceQty = 0;
@@ -786,7 +909,11 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     );
   }
 
-  private async loadLineAllocations(planId: string, shipmentLineId: string, tx: DbTx): Promise<ShipmentAllocation[]> {
+  private async loadLineAllocations(
+    workItemId: string,
+    shipmentLineId: string,
+    tx: DbTx,
+  ): Promise<ShipmentAllocation[]> {
     const allocations = await tx
       .select({
         id: wmsTables.pickingSourceAllocations.id,
@@ -802,13 +929,13 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       )
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, workItemId),
           eq(wmsTables.pickingSourceAllocations.shipmentLineId, shipmentLineId),
         ),
       )
       .orderBy(asc(wmsTables.pickingSourceAllocations.sourceLocationId), asc(wmsTables.pickingSourceAllocations.id));
     if (!allocations.length) {
-      throw conflict('PICKING_SHIPMENT_LINE_NOT_IN_PLAN', `Shipment line ${shipmentLineId} has no allocation`);
+      throw conflict('PICKING_SHIPMENT_LINE_NOT_ALLOCATED', `Shipment line ${shipmentLineId} has no allocation`);
     }
     return allocations;
   }

@@ -20,6 +20,7 @@ import { defaultRange, useStatisticsRange } from '../shared';
 /** 탭마다 "이 탭이 답하는 질문"을 함께 둔다 — 탭 아래 안내줄과 종합 탭의 길잡이가 같이 쓴다. */
 export const TABS = [
   { href: '/statistics/overview', label: '종합', question: '오늘 뭘 해야 하나 — 핵심 지표와 처리할 일을 한눈에' },
+  { href: '/statistics/growth', label: '성장', question: '목표까지 가고 있나 — 유입·전환·재구매 중 무엇을 얼마나 움직여야 하나' },
   { href: '/statistics/sales', label: '매출', question: '얼마나 팔리고 있나' },
   { href: '/statistics/profit', label: '이익', question: '팔아서 실제로 남고 있나 (원가·수수료 반영)' },
   { href: '/statistics/inventory', label: '재고', question: '재고가 돈을 얼마나 묶고 있나 — 뭘 털어야 하나' },
@@ -30,25 +31,33 @@ export const TABS = [
   { href: '/statistics/insights', label: '고객 분석', question: '한 번 산 고객이 다시 사고 있나' },
   { href: '/statistics/behavior', label: '행동 분석', question: '보다가 어디서 이탈하나' },
   { href: '/statistics/reviews', label: '리뷰', question: '산 뒤에 만족했나' },
-  { href: '/statistics/settings', label: '설정', question: '월 고정비 — 흑자·적자 판정에 필요한 값' },
+  { href: '/statistics/settings', label: '설정', question: '월 고정비·연간 매출 목표 — 흑자·적자와 목표 페이스 판정에 필요한 값' },
 ];
 
 /** 탭별로 의미 없는 필터를 숨긴다 — 검색 키워드 통계는 채널·집계 단위가 없다. */
 export interface StatisticsFilterOptions {
   channel?: boolean;
   granularity?: boolean;
+  /** 이 탭이 지원하는 집계 단위. 기본은 일·월·연 — «주»는 지원하는 탭만 켠다(성장 탭). */
+  granularities?: GranularityOption[];
 }
 
-const GRANULARITY_OPTIONS = [
-  { value: 'day', label: '일별' },
-  { value: 'month', label: '월별' },
-  { value: 'year', label: '연별' },
-];
+export type GranularityOption = 'day' | 'week' | 'month' | 'year';
+
+const GRANULARITY_LABELS: Record<GranularityOption, string> = {
+  day: '일별',
+  week: '주별',
+  month: '월별',
+  year: '연별',
+};
+
+export const DEFAULT_GRANULARITIES: GranularityOption[] = ['day', 'month', 'year'];
 
 // '전체' 는 기간 필수인 통계에선 의미가 없어 뺀다.
 const PRESET_OPTIONS = DATE_PRESET_OPTIONS.filter((option) => option.value !== 'all');
 
 function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptions> }) {
+  const granularityOptions = options.granularities.map((value) => ({ value, label: GRANULARITY_LABELS[value] }));
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -58,7 +67,11 @@ function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptio
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
   const [channel, setChannel] = useState(range.channel ?? '');
-  const [granularity, setGranularity] = useState(range.granularity ?? 'day');
+  // URL 의 단위가 이 탭에서 지원하지 않는 값이면(다른 탭에서 «주»로 넘어온 경우) 일별로 둔다.
+  const urlGranularity = searchParams.get('granularity') as GranularityOption | null;
+  const [granularity, setGranularity] = useState<GranularityOption>(
+    urlGranularity && options.granularities.includes(urlGranularity) ? urlGranularity : 'day',
+  );
 
   const apply = () => {
     let nextFrom = from;
@@ -123,7 +136,7 @@ function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptio
               <FormRadioGroup
                 value={granularity}
                 onValueChange={(v) => setGranularity(v as typeof granularity)}
-                options={GRANULARITY_OPTIONS}
+                options={granularityOptions}
                 orientation="horizontal"
               />
             </FormField>
@@ -169,7 +182,7 @@ export function StatisticsShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
-  const options = { channel: true, granularity: true, ...filterOptions };
+  const options = { channel: true, granularity: true, granularities: DEFAULT_GRANULARITIES, ...filterOptions };
   const activeTab = TABS.find((tab) => pathname.startsWith(tab.href));
 
   return (
