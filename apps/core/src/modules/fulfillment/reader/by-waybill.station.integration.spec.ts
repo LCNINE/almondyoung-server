@@ -54,7 +54,7 @@ describeIfDb('송장 스캔 — 스테이션 필드 (스펙 A5)', () => {
         expect.objectContaining({
           shipmentLineId: box.shipmentLineId,
           lineVersion: line.lineVersion,
-          allocations: [{ sourceLocationId: box.locationId, locationCode: location.code, qty: 3 }],
+          allocations: [{ sourceLocationId: box.locationId, locationCode: location.code, qty: 3, pickedQty: 0 }],
         }),
       ]);
       expect(found.shortPickContext).toEqual({
@@ -97,6 +97,54 @@ describeIfDb('송장 스캔 — 스테이션 필드 (스펙 A5)', () => {
       expect(found.lines[0].allocations.map((allocation) => allocation.locationCode)).toEqual([
         `ZB-1-1-${suffix}`,
         `ZB-10-${suffix}`,
+      ]);
+    });
+  });
+
+  it('위치별 pickedQty 는 코드 순이 아니라 실제 귀속(LINE_ATTRIBUTED 보관)을 따른다 — AT_SOURCE 는 세지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const box = await seedPickableShipment(tx, 3);
+      const suffix = randomUUID();
+      await tx
+        .update(wmsTables.locations)
+        .set({ code: `ZB-10-${suffix}` })
+        .where(eq(wmsTables.locations.id, box.locationId));
+      await tx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 2 })
+        .where(and(eq(wmsTables.stockLedgers.skuId, box.skuId), eq(wmsTables.stockLedgers.locationId, box.locationId)));
+      const [front] = await tx
+        .insert(wmsTables.locations)
+        .values({ warehouseId: box.warehouseId, code: `ZB-1-1-${suffix}`, locationType: 'zone' })
+        .returning();
+      await tx.insert(wmsTables.stockLedgers).values({
+        skuId: box.skuId,
+        warehouseId: box.warehouseId,
+        locationId: front.id,
+        stockState: 'ON_HAND',
+        qty: 1,
+      });
+      await startBatchFor(tx, box);
+      const [{ sessionId }] = await tx
+        .select({ sessionId: wmsTables.batchInventorySessions.id })
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, box.batchId));
+      // 코드 순으로는 앞(front) 인 위치가 아니라 뒤(box.locationId) 위치에 2개가 귀속됐다
+      await tx.insert(wmsTables.batchInventorySessionBalances).values({
+        sessionId,
+        skuId: box.skuId,
+        sourceLocationId: box.locationId,
+        custodyType: 'WORKER',
+        custodyRef: randomUUID(),
+        shipmentLineId: box.shipmentLineId,
+        qty: 2,
+      });
+
+      const found = await readerFor(tx).byTrackingNo(box.trackingNo);
+
+      expect(found.lines[0].allocations.map((a) => [a.locationCode, a.qty, a.pickedQty])).toEqual([
+        [`ZB-1-1-${suffix}`, 1, 0],
+        [`ZB-10-${suffix}`, 2, 2],
       ]);
     });
   });
