@@ -22,7 +22,7 @@ import {
   type SalesOrderShipmentDispatchedPayload,
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { and, asc, eq, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -669,6 +669,8 @@ export class ShipmentDispatchService {
             wmsTables.pickingSourceAllocations.shipmentLineId,
             aggregate.lines.map((line) => line.id),
           ),
+          // 결품·되돌림이 남긴 0 배정(행은 지우지 않는다, 스펙 §11)은 들 것이 없다 — 잔고와 맞춰 볼 출처가 아니다.
+          gt(wmsTables.pickingSourceAllocations.qty, 0),
         ),
       )
       .orderBy(

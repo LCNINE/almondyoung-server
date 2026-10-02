@@ -55,6 +55,26 @@ describeIfDb('결품 보고 — 재배정 (스펙 §9, PR 4)', () => {
     });
   });
 
+  // 10-03 스테이션 실기: 채움 뒤 새 송장을 찍고 마지막 상품을 찍으면 PICKING_INCOMPLETE 였다. 결품 승인이 옛 위치의
+  // 배정을 0 으로 남기는데, 완료 판정이 0 짜리 배정에도 «작업자가 그만큼 들고 있나» 를 물었다(잔고 행이 없어 거절).
+  it('채운 뒤 나머지를 찍으면 출고까지 끝난다 — 결품으로 0 이 된 옛 배정은 완료 판정에서 빠진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 하나도 안 집은 줄을 전부 결품한다 — 옛 위치 배정이 0 으로 남는 경우(실기의 B3 와 같은 모양).
+      const { box, wiring, report } = await startedShortPickBox(tx, 0);
+      await seedSpareStock(tx, box, 5);
+      expect(await report(3)).toMatchObject({ outcome: 'refilled' });
+
+      const actor = { id: box.actorId, roles: ['logistics_worker'] };
+      const done = await wiring.simple.scan(
+        box.shipmentId,
+        { barcode: box.barcode, quantity: 3, actor, idempotencyKey: `scan-${randomUUID()}` },
+        tx,
+      );
+      expect(done).toMatchObject({ status: 'shipped' });
+      await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
   it('배치에 박스 하나 — 안 집은 3개를 전부 결품해도 여분으로 채운다(세션이 비지 않게 인계를 부족 승인보다 먼저)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { box, wiring, sessionId, report } = await startedShortPickBox(tx, 0);
