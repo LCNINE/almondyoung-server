@@ -20,19 +20,11 @@ import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { useDigitCommands, useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { INSPECTION_ACTIONS } from './inspectionActions';
-import type { Alert } from './model';
+import type { Alert, BoxWorkHandle } from './model';
 import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
-
-/** 부모(출고 검수 화면)가 송장인지 상품인지 가른 뒤 상품을 넘기는 곳. 내려놓기·전환 전에 앞 스캔을 다 보낸다 */
-export interface BoxWorkHandle {
-  accept(code: string): void;
-  /** 스캔이 이 화면에 닿았다 — 부모가 거절한 송장 스캔도 «한 번 더» 대기를 푼다 */
-  disarm(): void;
-  settle(): Promise<void>;
-}
 
 /**
  * 결과를 모르는 결품(응답을 잃음·5xx·처리 중) — 반영됐을 수 있다. 다음 F9 는 이것을 같은 키·같은 본문으로 다시 보낸다(서버가
@@ -56,6 +48,7 @@ type Armed = 'force' | 'withdraw' | null;
 /** 검수 중(스펙 §6.3·§6.4, 목업 ②) — 박스마다 새로 마운트된다(key) */
 export function InspectWork({
   box,
+  seq,
   handleRef,
   alert,
   recent,
@@ -74,6 +67,8 @@ export function InspectWork({
   onShortPickRefused,
 }: {
   box: ShipmentByWaybill;
+  /** 부모가 이 화면에 붙인 번호 — 손잡이에 싣는다 */
+  seq: number;
   handleRef: RefObject<BoxWorkHandle | null>;
   alert: Alert | null;
   recent: readonly RecentEntry[];
@@ -123,6 +118,8 @@ export function InspectWork({
   // 옛 박스의 정리가 새 박스의 손잡이를 지우지 않게(React 는 정리를 등록보다 먼저 돌린다)
   useEffect(() => {
     const own: BoxWorkHandle = {
+      shipmentId: box.shipmentId,
+      seq,
       accept(code) {
         // 스캔은 무장을 푼다. 수량은 이 스캔 한 번에 쓰고 1 로 돌아간다(§6.3)
         setArmed(null);

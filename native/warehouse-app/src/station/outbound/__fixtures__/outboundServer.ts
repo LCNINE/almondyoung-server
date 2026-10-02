@@ -53,7 +53,8 @@ interface LiveBox extends FakeBox {
 
 export interface OutboundServerConfig {
   shortPickOutcome: 'refilled' | 'withdrawing' | 'exited';
-  excludeOutcome: 'withdrawing' | 'removed';
+  /** fail — 박스 빼기를 거절한다(409) */
+  excludeOutcome: 'withdrawing' | 'removed' | 'fail';
   refills: unknown[];
   refillsFail: boolean;
   batches: { picking: OutboundBatchSummary[]; created: OutboundBatchSummary[] };
@@ -291,6 +292,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
 
   function excludeBox(o: Req, batchId: string, shipmentId: string) {
     const box = byId(shipmentId);
+    if (config.excludeOutcome === 'fail') throw new ConflictError('cannot exclude', 'OUTBOUND_BATCH_SHIPMENT_NOT_REMOVABLE');
     excludes.push({ batchId, shipmentId, reason: (o.body as { reason: string }).reason });
     if (config.excludeOutcome === 'withdrawing') {
       box.labelState = 'withdrawing';

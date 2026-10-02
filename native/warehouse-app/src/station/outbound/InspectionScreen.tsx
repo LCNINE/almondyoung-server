@@ -12,7 +12,6 @@ import { clearLastBox, readLastBox, writeLastBox } from '../../domains/outbound/
 import { fetchShipmentByWaybill, useOutboundBatches } from '../../domains/outbound/queries';
 import type { ShortPickResult } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
-import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
@@ -20,8 +19,8 @@ import { useFeedback } from '../feedback/FeedbackProvider';
 import { useBatchProgress } from '../status/batchProgress';
 import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
-import { InspectWork, type BoxWorkHandle, type PendingShortPick } from './InspectWork';
-import type { Alert, LastBox, PrintStatus } from './model';
+import { InspectWork, type PendingShortPick } from './InspectWork';
+import { workFor, type Alert, type BoxWorkHandle, type LastBox, type PrintStatus, type View } from './model';
 import {
   BigPanel,
   BoxCard,
@@ -38,13 +37,6 @@ import { pushRecent, type RecentEntry } from './recent';
 import { WithdrawWork } from './WithdrawWork';
 import { INTAKE_BLOCKED_MESSAGE, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
-type View =
-  | { kind: 'waiting' }
-  | { kind: 'inspect'; box: ShipmentByWaybill; seq: number }
-  | { kind: 'reprint'; box: ShipmentByWaybill; changes: LabelItemChange[]; print: PrintStatus }
-  | { kind: 'withdraw'; box: ShipmentByWaybill; seq: number }
-  | { kind: 'withdrawn'; box: ShipmentByWaybill };
-
 /** 화면이 스스로 거절한 것 — 문구를 그대로 보인다(서버 오류 문구 변환을 거치지 않는다) */
 class Refusal extends Error {}
 
@@ -52,6 +44,7 @@ const LOOKING_UP_MESSAGE = '송장을 확인하고 있어요. 다시 찍어 주�
 const EXCESS_MESSAGE = '출고가 끝난 박스에 찍은 상품은 반영되지 않았어요. 상품을 확인해 주세요.';
 const SHORT_PICKED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영됐어요. 그 송장을 다시 찍어 주세요.';
 const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장을 출력했어요. 보충 대기예요.';
+const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
 export function InspectionScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
@@ -145,7 +138,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     }
   };
 
-  /** 든 박스의 앞 스캔을 다 보낸다. 확인 못 한 스캔이 있으면 거절 — 내려놓으면 그 스캔이 재생될 길이 없다 */
+  /**
+   * 든 박스의 앞 스캔을 다 보낸다. 확인 못 한 스캔이 있으면 거절 — 내려놓으면 그 스캔이 재생될 길이 없다.
+   * 상품과 달리 workFor 로 거르지 않는다 — 걸린 손잡이가 옛 박스 것이면 그 박스의 큐를 비우는 것이 맞다(새 박스의 큐는 아직 비었다)
+   */
   const settleWork = async () => {
     try {
       await work.current?.settle();
@@ -194,14 +190,15 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
 
   const open = (code: string) => run(async () => show(await lookup(code)));
 
-  /** 상품을 든 박스로. 손잡이가 없으면(새 화면이 아직 안 그려졌다) 받지 않는다 */
+  /** 상품을 든 박스로. 정한 화면의 손잡이가 없으면(새 화면이 아직 안 그려졌다·옛 박스의 손잡이) 받지 않는다 */
   const giveProduct = (code: string) => {
-    if (!work.current) {
+    const own = workFor(viewRef.current, work.current);
+    if (!own) {
       reject(INTAKE_BLOCKED_MESSAGE, code);
       return;
     }
     setAlert(null);
-    work.current.accept(code);
+    own.accept(code);
   };
 
   /** 박스를 든 채 찍은 송장(U13) — 앞 상품 스캔을 다 보낸 뒤 내려놓고 연다. 송장이 아니었으면(404) 상품으로 넘긴다 */
@@ -239,7 +236,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       return;
     }
     setManual(null);
-    work.current?.disarm();
+    workFor(viewRef.current, work.current)?.disarm();
     const current = viewRef.current;
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);
@@ -291,6 +288,22 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     restore?.();
   }, []);
 
+  /** 지금 이 박스를 검수 중인가 — 결품·박스 빼기 결과가 늦게 와도 다른 박스의 화면을 뺏지 않게 */
+  const inspecting = (shipmentId: string) => {
+    const current = viewRef.current;
+    return current.kind === 'inspect' && current.box.shipmentId === shipmentId;
+  };
+
+  /**
+   * 박스 화면이 내는 거절. 화면이 아직 그 박스면 알리고, 다른 박스로 넘어간 뒤 늦게 온 것(박스 빼기 실패)이면
+   * 든 박스에 빨간 칸·오류음을 내지 않고 최근 목록에만 적는다
+   */
+  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string) => {
+    const current = viewRef.current;
+    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail);
+    else note({ kind: 'error', text: `${box.trackingNo} ${message}` });
+  };
+
   const onShipped = (box: ShipmentByWaybill) => {
     clearLastBox(prefs);
     signal('complete');
@@ -300,12 +313,20 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     go({ kind: 'waiting' });
   };
 
-  /** 박스 빼기(F11) 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스) */
-  const reopen = (box: ShipmentByWaybill) =>
-    run(async () => {
+  /**
+   * 박스 빼기(F11) 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스). 빼기는 반영됐다. 응답을 기다리는 사이 다른 박스를
+   * 들었거나 화면이 다른 일 중이면 화면은 두고 알린다 — 다른 박스의 화면을 뺏으면 든 박스의 상품이 앞 박스의 되돌림으로 간다
+   */
+  const reopen = (box: ShipmentByWaybill) => {
+    if (busy.current > 0 || !inspecting(box.shipmentId)) {
+      reject(WITHDRAWN_ELSEWHERE_MESSAGE, box.trackingNo);
+      return;
+    }
+    void run(async () => {
       await settleWork();
       await show(await lookup(box.trackingNo));
     });
+  };
 
   /** F12 — 든 박스의 송장을 다시 뽑는다 */
   const reprintBox = (box: ShipmentByWaybill) =>
@@ -318,12 +339,6 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       note({ kind: 'printed', text: box.trackingNo });
       signal('success');
     });
-
-  /** 지금 이 박스를 검수 중인가 — 결품 결과가 늦게 와도 다른 박스의 화면을 뺏지 않게 */
-  const inspecting = (shipmentId: string) => {
-    const current = viewRef.current;
-    return current.kind === 'inspect' && current.box.shipmentId === shipmentId;
-  };
 
   /**
    * 결품 결과(스펙 §7.2) — 채움이면 새 송장 자동 출력 + 송장 대기(박스는 보충 대기), 아니면 다시 조회해 뺄 상품·빠진 박스로.
@@ -433,10 +448,11 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <InspectWork
           key={`${view.box.shipmentId}:${view.seq}`}
           box={view.box}
+          seq={view.seq}
           handleRef={work}
           alert={alert}
           recent={recent}
-          onAlert={reject}
+          onAlert={boxAlert(view.box)}
           onScanned={(name, quantity) => {
             setAlert(null);
             signal('success');
@@ -446,7 +462,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           onExcess={() => reject(EXCESS_MESSAGE)}
           onPutDown={() => void putDown()}
           canPrint={canPrint}
-          onReopen={(box) => void reopen(box)}
+          onReopen={reopen}
           onReprint={(box) => void reprintBox(box)}
           warehouseId={warehouseId}
           parentBusy={running}
@@ -490,12 +506,13 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WithdrawWork
           key={`${view.box.shipmentId}:${view.seq}`}
           box={view.box}
+          seq={view.seq}
           handleRef={work}
           prefs={prefs}
           warehouseId={warehouseId}
           alert={alert}
           recent={recent}
-          onAlert={reject}
+          onAlert={boxAlert(view.box)}
           onRemoved={(barcode) => {
             setAlert(null);
             signal('success');

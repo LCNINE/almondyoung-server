@@ -8,8 +8,7 @@ import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import type { ShipmentByWaybill, WithdrawalRemoval } from '../../domains/outbound/types';
 import { removeToReturnBin, withdrawalRows } from '../../domains/outbound/withdraw';
 import { isReturnBinCode, readReturnBin } from '../../domains/returns/returnBin';
-import type { BoxWorkHandle } from './InspectWork';
-import type { Alert } from './model';
+import type { Alert, BoxWorkHandle } from './model';
 import { BigPanel, BoxCard, QueueTrouble, RecentList, WorkGrid } from './panels';
 import type { RecentEntry } from './recent';
 import { INTAKE_BLOCKED_MESSAGE } from './useInspectionBox';
@@ -23,6 +22,7 @@ const NO_BIN_MESSAGE = '설정에서 이 기기의 되돌림 바구니를 먼저
  */
 export function WithdrawWork({
   box,
+  seq,
   handleRef,
   prefs,
   warehouseId,
@@ -33,6 +33,8 @@ export function WithdrawWork({
   onDone,
 }: {
   box: ShipmentByWaybill;
+  /** 부모가 이 화면에 붙인 번호 — 손잡이에 싣는다 */
+  seq: number;
   handleRef: RefObject<BoxWorkHandle | null>;
   prefs: DevicePrefs;
   warehouseId: string;
@@ -71,6 +73,8 @@ export function WithdrawWork({
   // 부모가 상품 스캔·내려놓기에 쓰는 손잡이(InspectWork 와 같은 규칙 — 커밋 뒤에 건다)
   useEffect(() => {
     const own: BoxWorkHandle = {
+      shipmentId: box.shipmentId,
+      seq,
       accept(code) {
         if (!bin) return onAlert(NO_BIN_MESSAGE);
         if (done.current) return onAlert(ALREADY_EXITED_MESSAGE, code);
