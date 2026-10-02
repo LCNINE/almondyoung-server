@@ -1075,7 +1075,8 @@
       "keepBillingMethodSafe": "残しても解約後に引き落としが行われることはありません。",
       "whyWithdrawal": "お支払いから{days}日以内で、特典を一度もご利用でないため全額返金が可能です。",
       "whyAnnual": "年間プランはご利用期間を月額定価で精算し、残額を返金いたします。",
-      "atPeriodEndPreCollectionNote": "こちらを選ぶと今回の料金は予定どおり引き落とされ、その期間の終了後に解約となります。"
+      "atPeriodEndPreCollectionNote": "こちらを選ぶと今回の料金は予定どおり引き落とされ、その期間の終了後に解約となります。",
+      "beautytopLoss": "メンバーシップが終了すると、ビューティートップの自店分析も閉じます。{gugun}の{category}店 <b>{count}店舗</b>中の自店順位も見られなくなります。"
     },
     "manageTitle": "メンバーシップ管理",
     "refundStatus": {

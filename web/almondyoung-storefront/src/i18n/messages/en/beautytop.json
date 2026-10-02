@@ -236,7 +236,12 @@
     "withDiscount": "Member prices on supplies come with it.",
     "start": "See membership",
     "login": "Sign in to continue",
-    "later": "Keep browsing the area"
+    "later": "Keep browsing the area",
+    "chips": {
+      "rank": "Your shop's rank",
+      "peers": "Nearby shop comparison",
+      "prices": "Where your prices sit"
+    }
   },
   "compare": {
     "title": "Compare with another district",

@@ -1075,7 +1075,8 @@
       "keepBillingMethodSafe": "Keeping it does not allow any further withdrawals after cancellation.",
       "whyWithdrawal": "You are within {days} days of payment and have not used any membership benefit, so a full refund is available.",
       "whyAnnual": "For annual plans we settle the period you used at the monthly list price and refund the rest.",
-      "atPeriodEndPreCollectionNote": "If you choose this, this cycle will be charged as scheduled and your membership ends after that period."
+      "atPeriodEndPreCollectionNote": "If you choose this, this cycle will be charged as scheduled and your membership ends after that period.",
+      "beautytopLoss": "When your membership ends, BeautyTop shop analysis closes too, including your rank among <b>{count}</b> {category} shops in {gugun}."
     },
     "manageTitle": "Membership",
     "refundStatus": {

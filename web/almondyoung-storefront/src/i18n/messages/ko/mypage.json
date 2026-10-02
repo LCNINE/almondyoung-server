@@ -1075,7 +1075,8 @@
       "keepBillingMethodSafe": "남겨두셔도 해지 후에는 출금되지 않아요.",
       "whyWithdrawal": "결제 후 {days}일 이내이고 멤버십 혜택을 한 번도 사용하지 않으셔서 전액 환불받으실 수 있어요.",
       "whyAnnual": "연간 플랜은 이용하신 기간을 월 정가로 정산하고 남은 금액을 돌려드려요.",
-      "atPeriodEndPreCollectionNote": "이 방법을 고르시면 이번 기간 요금은 예정대로 출금되고, 그 기간까지 이용하신 뒤 종료돼요."
+      "atPeriodEndPreCollectionNote": "이 방법을 고르시면 이번 기간 요금은 예정대로 출금되고, 그 기간까지 이용하신 뒤 종료돼요.",
+      "beautytopLoss": "멤버십이 끝나면 뷰티탑 우리 샵 분석도 함께 닫혀요. {gugun} {category} 샵 <b>{count}곳</b> 중 우리 샵 순위도 더는 볼 수 없어요."
     },
     "manageTitle": "멤버십 관리",
     "refundStatus": {
