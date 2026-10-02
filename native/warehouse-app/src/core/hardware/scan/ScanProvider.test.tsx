@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ScanProvider } from './ScanProvider';
-import { useScanner, useScanEmit, useScanObserver, useCommandScans } from './useScanner';
+import { useScanner, useScanEmit, useScanObserver, useCommandScans, useHumanKeys } from './useScanner';
 import { preventScanEnterActivation } from './hidScanBoundary';
 import { scanHid } from './__fixtures__/hid';
 
@@ -228,5 +229,96 @@ describe('명령 바코드(스테이션 UI 스펙 §5.3)', () => {
     );
     scanKeys('8801234');
     expect(order).toEqual(['observer', 'subscriber']);
+  });
+});
+
+function KeysProbe({ onKey }: { onKey: (key: string) => void }) {
+  useHumanKeys(onKey);
+  return null;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('사람 키 채널(스펙 §5.6)', () => {
+  it('사람이 친 숫자와 Enter 는 사람 키로 오고 스캔으로 오지 않는다', async () => {
+    const onKey = vi.fn();
+    const onScan = vi.fn();
+    render(
+      <ScanProvider>
+        <KeysProbe onKey={onKey} />
+        <Probe onScan={onScan} />
+      </ScanProvider>
+    );
+    fireKey('7');
+    await wait(80);
+    fireKey('Enter');
+    expect(onKey.mock.calls).toEqual([['7'], ['Enter']]);
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it('스캐너 묶음은 사람 키를 내지 않는다', async () => {
+    const onKey = vi.fn();
+    const onScan = vi.fn();
+    render(
+      <ScanProvider>
+        <KeysProbe onKey={onKey} />
+        <Probe onScan={onScan} />
+      </ScanProvider>
+    );
+    for (const key of [...'8801234', 'Enter']) fireKey(key);
+    await wait(80);
+    expect(onScan).toHaveBeenCalledWith('8801234');
+    expect(onKey).not.toHaveBeenCalled();
+  });
+
+  it('Shift 가 끼인 스캐너 묶음도 사람 키를 내지 않는다', async () => {
+    const onKey = vi.fn();
+    render(
+      <ScanProvider>
+        <KeysProbe onKey={onKey} />
+      </ScanProvider>
+    );
+    for (const key of ['Shift', 'A', 'B', 'Shift', '-', '1', '2', 'Enter']) fireKey(key);
+    await wait(80);
+    expect(onKey).not.toHaveBeenCalled();
+  });
+
+  it('입력칸에서 친 키는 입력칸이 받는다 — 사람 키로 오지 않는다', async () => {
+    const onKey = vi.fn();
+    render(
+      <ScanProvider>
+        <KeysProbe onKey={onKey} />
+        <input aria-label="칸" />
+      </ScanProvider>
+    );
+    const input = screen.getByLabelText('칸');
+    input.focus();
+    fireEvent.keyDown(input, { key: '7' });
+    await wait(80);
+    expect(onKey).not.toHaveBeenCalled();
+  });
+
+  it('null 을 주면 구독하지 않고, 켰다 끄면 따라간다', () => {
+    const onKey = vi.fn();
+    let setOn: (v: boolean) => void = () => {};
+    function Toggle() {
+      const [on, set] = useState(false);
+      setOn = set;
+      useHumanKeys(on ? onKey : null);
+      return null;
+    }
+    render(
+      <ScanProvider>
+        <Toggle />
+      </ScanProvider>
+    );
+    fireKey('Escape');
+    expect(onKey).not.toHaveBeenCalled();
+    act(() => setOn(true));
+    fireKey('Escape');
+    expect(onKey.mock.calls).toEqual([['Escape']]);
+    act(() => setOn(false));
+    fireKey('Backspace');
+    expect(onKey.mock.calls).toEqual([['Escape']]);
   });
 });
