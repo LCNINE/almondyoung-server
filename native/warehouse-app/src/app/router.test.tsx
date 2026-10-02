@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
 import { WarehouseProvider } from './warehouse-context';
-import { createMemoryPrefs } from '../core/data/devicePrefs';
+import { createMemoryPrefs, type DevicePrefs } from '../core/data/devicePrefs';
 import { ApiClientProvider } from '../core/data/ApiClientProvider';
 import type { ApiClient } from '../core/data/httpClient';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
@@ -50,7 +50,12 @@ const client: ApiClient = {
     opts.path === '/inventory/warehouses' ? [] : { data: [], total: 0 }) as unknown as ApiClient['request'],
 };
 
-function renderAppRouter(initialEntries: string[], session: Session) {
+function renderAppRouter(
+  initialEntries: string[],
+  session: Session,
+  prefs: DevicePrefs = createMemoryPrefs(),
+  api: ApiClient = client
+) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries }),
@@ -60,8 +65,8 @@ function renderAppRouter(initialEntries: string[], session: Session) {
   render(
     <SessionProvider session={session}>
       <QueryClientProvider client={qc}>
-        <ApiClientProvider client={client}>
-          <WarehouseProvider prefs={createMemoryPrefs()}>
+        <ApiClientProvider client={api}>
+          <WarehouseProvider prefs={prefs}>
             <ScanProvider>
               <RouterProvider router={router} />
             </ScanProvider>
@@ -162,4 +167,21 @@ it('스테이션 설정에서 명령 바코드 시트를 연다', async () => {
   fireEvent.click(await screen.findByRole('link', { name: '명령 바코드 시트' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/station/command-sheet'));
   expect(await screen.findByRole('button', { name: '인쇄' })).toBeInTheDocument();
+});
+
+it('스테이션의 F1 은 출고 검수, F2 는 배치 현황 화면이다', async () => {
+  const { session, setAuthed } = makeStub();
+  setAuthed(true);
+  const prefs = createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) });
+  const stationClient: ApiClient = {
+    request: (async (opts: { path: string }) =>
+      opts.path.startsWith('/outbound-batches') || opts.path.startsWith('/outbound-refills')
+        ? []
+        : { data: [], total: 0 }) as unknown as ApiClient['request'],
+  };
+  const router = renderAppRouter(['/outbound'], session, prefs, stationClient);
+  expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: 'F2' });
+  await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches'));
+  expect(await screen.findByText('진행 중인 배치가 없어요.')).toBeInTheDocument();
 });
