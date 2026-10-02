@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { writeLastBox } from '../../domains/outbound/lastBox';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { batchSummary, type FakeBox } from './__fixtures__/outboundServer';
@@ -164,6 +165,74 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     await setupInspection({ boxes: [{ ...BOX1, labelState: 'never_printed' }], prefs: stationPrefs({}, false) });
     scan('421033881907');
     expect(await screen.findByRole('alert')).toHaveTextContent('프린터 있는 자리에서 출력해 주세요');
+  });
+
+  it('새 송장·빠진 박스 화면에서도 거절 사유 한 줄을 보인다', async () => {
+    const { server } = await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required' }, { ...BOX2, shipped: true }],
+    });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('421033881915');
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 출고된 송장이에요');
+    expect(flash()).toBe('error');
+
+    const box = server.box('421033881907');
+    if (!box) throw new Error('fixture');
+    box.withdrawn = true;
+    scan('421033881907');
+    expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    scan('421033881915');
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 출고된 송장이에요');
+  });
+
+  it('새 박스가 그려지기 전 틈에 찍은 상품은 옛 박스로 가지 않는다 — 받지 않고 알린다', async () => {
+    // 전환의 마지막 걸음(새 박스를 기기에 적는 순간)을 잡아, React 가 새 화면을 그리기 전(마이크로태스크 안)에 상품을 찍는다.
+    // 두 번 찍는다 — 첫 거절이 부른 동기 렌더가 옛 화면을 다시 커밋해도 두 번째가 옛 박스로 새지 않는지까지 본다
+    const base = stationPrefs();
+    let armed = false;
+    let fired = 0;
+    const hops = async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    const rawScan = (code: string) => {
+      for (const key of [...code, 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+      fired += 1;
+    };
+    const prefs: DevicePrefs = {
+      get: (key) => base.get(key),
+      remove: (key) => base.remove(key),
+      set(key, value) {
+        base.set(key, value);
+        if (!armed || !value.includes('"shipmentId":"s-2"')) return;
+        armed = false;
+        void (async () => {
+          await hops();
+          rawScan('8801001');
+          await hops();
+          rawScan('8801001');
+        })();
+      },
+    };
+    const { server } = await setupInspection({ prefs });
+    await openBox('421033881907');
+    const release = server.holdSends();
+    scan('8801002');
+    await waitFor(() => expect(server.scanCalls).toHaveLength(1));
+    scan('421033881915');
+    await act(async () => {
+      await sleep(30);
+    });
+    armed = true;
+    release();
+    expect(await screen.findByRole('heading', { name: '4210-3388-1915' })).toBeInTheDocument();
+    await act(async () => {
+      await sleep(50);
+    });
+    expect(fired).toBe(2);
+    expect(screen.getByRole('alert')).toHaveTextContent('앞 스캔을 확인하고 있어요');
+    expect(server.scans.filter((s) => s.shipmentId === 's-1').map((s) => s.barcode)).toEqual(['8801002']);
+    expect(server.box('421033881907')?.shipped).toBe(false);
   });
 
   it('빠진 박스의 송장이면 «빠진 박스», Esc 로 송장 대기', async () => {

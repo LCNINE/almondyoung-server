@@ -61,8 +61,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const { signal } = useFeedback();
   const emit = useScanEmit();
   const [view, setView] = useState<View>({ kind: 'waiting' });
+  // 스캔 처리는 그려진 화면이 아니라 «정한» 화면을 본다 — go() 만 바꾼다
   const viewRef = useRef(view);
-  viewRef.current = view;
   const [alert, setAlert] = useState<Alert | null>(null);
   const [last, setLast] = useState<LastBox | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
@@ -72,6 +72,16 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const busy = useRef(false);
   const seq = useRef(0);
   const canPrint = readLabelPrinter(prefs) !== null;
+
+  /**
+   * 화면을 바꾸는 유일한 길. 박스 손잡이는 바로 비운다 — 새 화면이 그려지기 전(별도 태스크)에 온 상품 스캔이
+   * 옛 박스의 큐로 가지 않고 «앞 스캔 확인 중» 으로 거절되게. 새 박스는 커밋 뒤 자기 손잡이를 단다
+   */
+  const go = (next: View) => {
+    viewRef.current = next;
+    work.current = null;
+    setView(next);
+  };
 
   // 상태바의 배치 진행(스펙 §5.5) — 마지막으로 연 박스의 배치
   const batches = useOutboundBatches(warehouseId, 'picking');
@@ -97,6 +107,11 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     const outcome = await printWaybill({ api, print, prefs }, shipmentId);
     void queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
     return outcome.ok ? { kind: 'printed' } : { kind: 'failed', message: outcome.message };
+  };
+  /** 출력 결과를 그 박스의 새 송장 화면에 싣는다 — 그 사이 다른 화면으로 갔으면 버린다 */
+  const settlePrint = (shipmentId: string, status: PrintStatus) => {
+    const current = viewRef.current;
+    if (current.kind === 'reprint' && current.box.shipmentId === shipmentId) go({ ...current, print: status });
   };
 
   /** 한 번에 하나 — 조회·전환·내려놓기가 겹치면 뒤의 것을 거절한다 */
@@ -139,29 +154,30 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     signal('success');
     if (gate.kind === 'withdrawn') {
       clearLastBox(prefs);
-      setView({ kind: 'withdrawn', box: found });
+      go({ kind: 'withdrawn', box: found });
       return;
     }
     if (gate.kind === 'withdraw') {
       writeLastBox(prefs, found);
-      setView({ kind: 'withdraw', box: found, seq: ++seq.current });
+      go({ kind: 'withdraw', box: found, seq: ++seq.current });
       return;
     }
     if (gate.kind === 'reprint') {
       clearLastBox(prefs);
-      setView({ kind: 'reprint', box: found, changes: gate.changes, print: { kind: 'printing' } });
+      go({ kind: 'reprint', box: found, changes: gate.changes, print: { kind: 'printing' } });
       const status = await printFor(found.shipmentId);
-      setView((v) => (v.kind === 'reprint' && v.box.shipmentId === found.shipmentId ? { ...v, print: status } : v));
+      settlePrint(found.shipmentId, status);
       if (status.kind === 'printed') note({ kind: 'printed', text: found.trackingNo });
       else signal('error');
       return;
     }
     writeLastBox(prefs, found);
-    setView({ kind: 'inspect', box: found, seq: ++seq.current });
+    go({ kind: 'inspect', box: found, seq: ++seq.current });
   };
 
   const open = (code: string) => run(async () => show(await lookup(code)));
 
+  /** 상품을 든 박스로. 손잡이가 없으면(새 화면이 아직 안 그려졌다) 받지 않는다 */
   const giveProduct = (code: string) => {
     if (!work.current) {
       reject(INTAKE_BLOCKED_MESSAGE, code);
@@ -196,7 +212,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       await settleWork();
       clearLastBox(prefs);
       setAlert(null);
-      setView({ kind: 'waiting' });
+      go({ kind: 'waiting' });
     });
 
   const onScan = (code: string) => {
@@ -263,16 +279,16 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     note({ kind: 'shipped', text: box.trackingNo });
     setLast({ kind: 'shipped', trackingNo: box.trackingNo });
     setAlert(null);
-    setView({ kind: 'waiting' });
+    go({ kind: 'waiting' });
   };
 
   const reprintView = () =>
     run(async () => {
       const current = viewRef.current;
       if (current.kind !== 'reprint') return;
-      setView({ ...current, print: { kind: 'printing' } });
+      go({ ...current, print: { kind: 'printing' } });
       const status = await printFor(current.box.shipmentId);
-      setView((v) => (v.kind === 'reprint' && v.box.shipmentId === current.box.shipmentId ? { ...v, print: status } : v));
+      settlePrint(current.box.shipmentId, status);
       if (status.kind === 'printed') note({ kind: 'printed', text: current.box.trackingNo });
       else signal('error');
     });
@@ -320,7 +336,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           left={
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
-              {view.print.kind === 'failed' ? (
+              {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄») */}
+              {alert ? (
+                <BigPanel content={{ kind: 'alert', ...alert }} />
+              ) : view.print.kind === 'failed' ? (
                 <BigPanel content={{ kind: 'alert', message: view.print.message }} />
               ) : (
                 <BigPanel
@@ -359,7 +378,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           left={
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
-              <BigPanel content={{ kind: 'notice', title: '빠진 박스', message: '송장은 버려 주세요' }} />
+              <BigPanel
+                content={alert ? { kind: 'alert', ...alert } : { kind: 'notice', title: '빠진 박스', message: '송장은 버려 주세요' }}
+              />
             </>
           }
           right={<RecentList entries={recent} grow />}

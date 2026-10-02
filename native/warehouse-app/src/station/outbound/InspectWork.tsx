@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { inspectionRows, inspectionTotals } from '../../domains/outbound/inspection';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { useStationActions } from '../ActionRegistry';
@@ -44,14 +44,19 @@ export function InspectWork({
     onExcess,
   });
 
+  // 손잡이는 마지막 렌더의 큐를 부른다 — 화면이 «받음» 으로 그려진 뒤 이 커밋의 effect 가 돌기 전에 온 스캔이
+  // 앞 렌더(아직 막힘)의 판정으로 거절되지 않게
+  const latest = useRef(work);
+  latest.current = work;
+
   // 부모가 상품 스캔·내려놓기에 쓰는 손잡이. 렌더가 아니라 커밋 뒤에 건다 — 박스가 바뀌는 같은 커밋에서
   // 옛 박스의 정리가 새 박스의 손잡이를 지우지 않게(React 는 정리를 등록보다 먼저 돌린다)
   useEffect(() => {
     const own: BoxWorkHandle = {
       accept(code) {
-        if (!work.accept(code, 1)) onAlert(INTAKE_BLOCKED_MESSAGE, code);
+        if (!latest.current.accept(code, 1)) onAlert(INTAKE_BLOCKED_MESSAGE, code);
       },
-      settle: work.settle,
+      settle: () => latest.current.settle(),
     };
     handleRef.current = own;
     return () => {
