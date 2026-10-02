@@ -197,6 +197,7 @@ npx jest             # 전체 유닛 테스트. 실패 0 이 기준선이다
 
 ```bash
 npm run test:admin-web            # admin-web 전용
+(cd native/warehouse-app && npx tsc -b && npx vitest run)  # warehouse-app — native/warehouse-app/** 변경 PR 에 warehouse-app-gates.yml 이 돈다
 npm run test:user-service         # user-service 전용 config
 npm run test:membership           # itdoc (전용 config)
 npm run test:membership:integration  # 실 membership DB (--runInBand 고정)
