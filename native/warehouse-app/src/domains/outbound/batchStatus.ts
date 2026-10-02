@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type { OutboundBatchSummary } from './types';
-import { fetchBatchWorkItems, type BatchWorkItem } from './waybillLabel';
+import { fetchBatchWorkItems, type BatchLabelState, type BatchWorkItem } from './waybillLabel';
 
 /** GET /outbound-batches/:id/work-items — 스테이션 상태바의 배치 진행·F2 건수. 출고 뒤 무효화된다(mutations.ts) */
 export function useBatchWorkItems(batchId: string | null) {
@@ -55,4 +55,37 @@ export function mergeBatches(
     seen.add(batch.id);
     return true;
   });
+}
+
+export interface BoxRow {
+  shipmentId: string;
+  trackingNo: string;
+  recipient: string;
+  status: string;
+  /** alert = 송장 손볼 것, warn = 빠지는 중·결품 처리, work = 검수 중, idle = 대기 */
+  tone: 'alert' | 'warn' | 'work' | 'idle';
+}
+
+const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack', 'packing']);
+
+/** 배치 현황 박스 한 줄(스펙 §8 F2, 목업 ⑤). 송장번호가 없으면(옛 core) null — 현장이 읽을 수 없는 id 를 그리지 않는다 */
+export function boxRowOf(state: BatchLabelState): BoxRow | null {
+  if (!state.trackingNo) return null;
+  const base = { shipmentId: state.shipmentId, trackingNo: state.trackingNo, recipient: state.recipientMasked ?? '' };
+  if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing') return { ...base, status: '빠지는 중', tone: 'warn' };
+  if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert' };
+  if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert' };
+  if (state.state === 'unavailable') return { ...base, status: '송장 확인', tone: 'alert' };
+  if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn' };
+  if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus)) return { ...base, status: '검수 중', tone: 'work' };
+  return { ...base, status: '대기', tone: 'idle' };
+}
+
+const TONE_ORDER: Record<BoxRow['tone'], number> = { alert: 0, warn: 1, work: 2, idle: 3 };
+
+/** 손이 가야 하는 박스가 위로 — 같은 무리 안에서는 송장번호 순 */
+export function sortBoxRows(rows: readonly BoxRow[]): BoxRow[] {
+  return [...rows].sort(
+    (a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || (a.trackingNo < b.trackingNo ? -1 : a.trackingNo > b.trackingNo ? 1 : 0)
+  );
 }
