@@ -6,7 +6,7 @@ import type {
   BeautyTopProcedure,
   BeautyTopTrends,
 } from "../types"
-import { useBeautyTop } from "../use-beautytop"
+import { useArea } from "../use-area"
 import { type Filters, ScopeFilters, useScopeFilters } from "./neighborhood-tab"
 import { Big, Card, CardSkeleton, Headline, LoadError } from "./parts"
 
@@ -29,12 +29,10 @@ export function TrendsTab({ options }: { options: BeautyTopOptions }) {
   )
 }
 
-function Trends({ filters }: { filters: Filters }) {
+export function Trends({ filters, onWiden }: { filters: Filters; onWiden?: () => void }) {
   const t = useTranslations("beautytop")
-  const trends = useBeautyTop<BeautyTopTrends>({
-    resource: "trends",
-    ...filters,
-  })
+  // Public aggregate: read through the shared cache, not the member token.
+  const trends = useArea<BeautyTopTrends>("trends", filters)
 
   if (trends.isPending) return <CardSkeleton />
   if (trends.isError)
@@ -64,6 +62,11 @@ function Trends({ filters }: { filters: Filters }) {
           <p className="text-muted-foreground py-6 text-center text-[15px] break-keep">
             {t("empty")}
           </p>
+          {onWiden && filters.gugun && (
+            <button type="button" onClick={onWiden} className="bg-secondary mx-auto mb-4 block h-10 rounded-full px-4 text-[13px] font-medium">
+              {t("trends.widen", { sido: filters.sido })}
+            </button>
+          )}
         </Card>
       ) : (
         <Card note={t("trends.menuNote")}>

@@ -1,22 +1,12 @@
 {
   "title": "BeautyTop",
   "subtitle": "See your shop's rank and local prices in numbers.",
-  "intro": {
-    "priceTitle": "Where does my shop rank",
-    "priceBody": "Review and follower rank locally, by category and nationwide, compared with similar shops",
-    "marketTitle": "Local prices",
-    "marketBody": "Typical treatment prices, shop counts and sales trends",
-    "rankTitle": "Franchises",
-    "rankBody": "Store counts and average sales by brand",
-    "login": "Log in to view"
-  },
   "tabs": {
     "myShop": "My shop",
     "neighborhood": "Neighborhood",
-    "franchise": "Franchises",
     "shops": "Rankings",
     "watch": "Saved",
-    "trends": "Trends"
+    "brand": "Brands"
   },
   "filter": {
     "sido": "Province",
@@ -162,6 +152,161 @@
     "mentionEyebrow": "Instagram mentions",
     "mentionHeadline": "{name} is the most talked about",
     "collecting": "Still collecting post mentions",
-    "mentionNote": "Counts shops using each hashtag in public posts from the last 30 days. Not search volume or bookings."
+    "mentionNote": "Counts shops using each hashtag in public posts from the last 30 days. Not search volume or bookings.",
+    "widen": "See all of {sido}"
+  },
+  "area": {
+    "empty": "No shops are counted here yet. Try another district.",
+    "eyebrow": "{sido} {gugun} {category} · one dot is one shop",
+    "eyebrowGrouped": "{sido} {gugun} {category} · one dot is {per} shops",
+    "headline": "Among {count} {category} shops, where does yours stand?",
+    "dotsLabel": "Of {count} shops, the {opened} opened in the last year are shown as black dots",
+    "legendNew": "{opened} opened this year",
+    "legendOld": "Open longer",
+    "legendMine": "Your shop?",
+    "dotNote": "Dot positions do not reflect rank. Based on public permit records, so counts may differ slightly.",
+    "toMyShop": "See where your shop ranks",
+    "dotsLabelNoOpened": "{count} shops shown as dots",
+    "closed": "In the same year {closed} closed.",
+    "closedUnknown": "Closures are unknown: public permits do not list this category separately.",
+    "density": "That is one shop per {residents} residents."
+  },
+  "teaser": {
+    "title": "Find your shop",
+    "label": "Shop name",
+    "placeholder": "Shop name (2+ characters)…",
+    "loginHint": "Sign in to preview where your shop sits in the neighbourhood.",
+    "login": "Sign in to find your shop",
+    "searchError": "Search is unavailable right now. Please try again shortly.",
+    "noResult": "No shop found for ‘{term}’. Try the name listed on Naver Place.",
+    "found": "Found {name}",
+    "again": "Search again",
+    "summaryError": "There is not enough data to compare this shop yet.",
+    "outOf": "Out of {total}",
+    "hiddenRank": "#?",
+    "metricsTitle": "{count} comparisons with similar shops",
+    "metric": {
+      "ahead": "Ahead",
+      "behind": "Behind",
+      "even": "Level",
+      "pricePosition": "Price position",
+      "unknown": "Too few samples"
+    },
+    "whichHidden": "Which ones you lead on stays hidden for now.",
+    "inArea": "Searching in {gugun}, {sido}. Change the area at the top."
+  },
+  "ruler": {
+    "title": "Try your {name} price",
+    "won": "₩{value}",
+    "sliderLabel": "{name} price",
+    "tick": {
+      "min": "Low {value}",
+      "median": "Median {value}",
+      "max": "High {value}"
+    },
+    "verdict": {
+      "aboveMedian": "₩{diff} above the local median.",
+      "belowMedian": "₩{diff} below the local median.",
+      "atMedian": "Same as the local median.",
+      "aboveMax": "₩{diff} above the highest price seen locally.",
+      "belowMin": "₩{diff} below the lowest price seen locally."
+    },
+    "basis": "Based on listed prices from {brands} local brands and {menus} menu items.",
+    "private": "Your price is calculated on this screen only and never saved.",
+    "prompt": "Move the slider to your shop's price."
+  },
+  "unlock": {
+    "cta": "So where is my shop? See the answer",
+    "everyoneTitle": "Everyone can see this much",
+    "everyoneBody": "The answers behind the question marks, your rank and neighbouring shops' names and prices, open to members.",
+    "title": "We turn the question marks <em>into numbers</em>",
+    "description": "BeautyTop is a membership benefit. It is in beta and may pause while data is checked.",
+    "item": {
+      "rank": "Rank in area, district, category and nationwide",
+      "peers": "Names and figures of the shops you are compared with",
+      "prices": "Test your prices against neighbours' menus",
+      "changes": "See changes at watched shops on your next visit"
+    },
+    "amount": {
+      "rank": "4 levels",
+      "peers": "With names",
+      "prices": "Per menu",
+      "changes": "Every visit"
+    },
+    "withDiscount": "Member prices on supplies come with it.",
+    "start": "See membership",
+    "login": "Sign in to continue",
+    "later": "Keep browsing the area"
+  },
+  "compare": {
+    "title": "Compare with another district",
+    "metric": "Metric",
+    "pick": "District",
+    "unit": {
+      "shops": "{value}",
+      "people": "{value}",
+      "won": "₩{value}"
+    },
+    "row": {
+      "shops": "Shops",
+      "residents": "Residents/shop",
+      "opened": "Opened (1y)",
+      "price": "{name} median"
+    },
+    "note": "Based on public permits and menu prices. Use it as a reference when choosing where to open."
+  },
+  "insta": {
+    "title": "Local Instagram lately"
+  },
+  "confirm": {
+    "title": "Open your shop analysis?",
+    "body": "Opening it counts as using a membership benefit, so the 7-day full refund (withdrawal) will no longer apply. You can keep viewing the area figures without opening it.",
+    "daysLeft": "{days} days left to get a full refund.",
+    "policy": "Refund policy",
+    "later": "Maybe later",
+    "open": "Open it",
+    "lapsed": "Your membership has ended, so the shop analysis is unavailable.",
+    "toMembership": "Check membership"
+  },
+  "simulator": {
+    "title": "Price simulator",
+    "subtitle": "Place your price among neighbouring {category} shops in {region}",
+    "won": "₩{value}",
+    "sliderLabel": "Your {name} price",
+    "prompt": "Move the slider to see where you stand among nearby shops.",
+    "place": "#{place} cheapest of {total} menus{same, plural, =0 {.} other { (# at the same price).}}",
+    "mine": "Your shop",
+    "tooFew": "Too few shops have a checked price for this service yet.",
+    "note": "Based on {count} checked menus. Your price stays on this screen and is not saved."
+  },
+  "receipt": {
+    "title": "What membership did this billing period",
+    "since": "Since {date}",
+    "discount": "Member discounts on supplies",
+    "discountValue": "₩{amount} · {orders} orders",
+    "beautytop": "BeautyTop shop analysis",
+    "inUse": "In use",
+    "more": "See details by order",
+    "discountNone": "None yet this period"
+  },
+  "share": {
+    "heading": "Share your area card",
+    "eyebrow": "{sido} · Area in numbers",
+    "title": "{count} {category} shops\nin {gugun}",
+    "opened": "Opened in the last year",
+    "residents": "Residents per shop",
+    "median": "{name} median",
+    "shops": "{count}",
+    "people": "{count}",
+    "won": "₩{value}",
+    "brand": "Almondyoung BeautyTop",
+    "tagline": "Where does your shop rank? Look it up by name",
+    "save": "Save image",
+    "link": "Share link",
+    "status": {
+      "saved": "Image created.",
+      "copied": "Link copied.",
+      "failed": "Sharing is unavailable right now. Please try again."
+    }
   }
 }

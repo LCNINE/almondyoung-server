@@ -8,8 +8,8 @@ export type BeautyTopPriceGroup = {
   name: string
   brands: number
   menus: number
-  minimum: number
-  maximum: number
+  min: number
+  max: number
   median: number | null
 }
 
@@ -27,6 +27,7 @@ export type BeautyTopMarket = {
 
 export type BeautyTopLifecycle = {
   available: boolean
+  reason?: string | null
   opened?: number
   closed?: number
   monthly?: { month: string; opened: number; closed: number }[]

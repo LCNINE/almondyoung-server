@@ -1,22 +1,12 @@
 {
   "title": "ビューティートップ",
   "subtitle": "自店の順位と地域の相場を数字で確認できます。",
-  "intro": {
-    "priceTitle": "自店は何位？",
-    "priceBody": "地域・業種・全国でのレビューとフォロワー順位、同規模店との比較",
-    "marketTitle": "地域の相場",
-    "marketBody": "施術ごとの一般的な価格、店舗数、売上の増減",
-    "rankTitle": "フランチャイズ",
-    "rankBody": "ブランド別の加盟店数と平均売上",
-    "login": "ログインして見る"
-  },
   "tabs": {
     "myShop": "自店",
     "neighborhood": "地域",
-    "franchise": "フランチャイズ",
     "shops": "店舗ランキング",
     "watch": "お気に入り",
-    "trends": "施術トレンド"
+    "brand": "ブランド"
   },
   "filter": {
     "sido": "市・道",
@@ -162,6 +152,161 @@
     "mentionEyebrow": "インスタ投稿での言及",
     "mentionHeadline": "最近は{name}の話題が最も多いです",
     "collecting": "投稿での言及はまだ収集中です",
-    "mentionNote": "直近30日の公開投稿のハッシュタグを店舗数で数えています。検索数や予約数ではありません。"
+    "mentionNote": "直近30日の公開投稿のハッシュタグを店舗数で数えています。検索数や予約数ではありません。",
+    "widen": "{sido}全体で見る"
+  },
+  "area": {
+    "empty": "このエリアにはまだ集計されたサロンがありません。別の区を選んでください。",
+    "eyebrow": "{sido} {gugun} {category} · 点1つがサロン1軒",
+    "eyebrowGrouped": "{sido} {gugun} {category} · 点1つがサロン{per}軒",
+    "headline": "{category}サロン{count}軒の中で、あなたのサロンはどのあたり?",
+    "dotsLabel": "サロン{count}軒のうち、この1年で開業した{opened}軒を黒い点で表示しています",
+    "legendNew": "1年以内に開業した{opened}軒",
+    "legendOld": "それ以前から営業",
+    "legendMine": "あなたのサロンは?",
+    "dotNote": "点の配置は順位と関係ありません。公的な許認可データに基づくため、実数と少し異なる場合があります。",
+    "toMyShop": "あなたのサロンの順位を見る",
+    "dotsLabelNoOpened": "サロン{count}軒を点で表示しています",
+    "closed": "同じ1年で{closed}軒が閉店しました。",
+    "closedUnknown": "公的な許認可ではこの業種を区別していないため、閉店数は分かりません。",
+    "density": "住民{residents}人あたり1軒です。"
+  },
+  "teaser": {
+    "title": "あなたのサロンを探す",
+    "label": "サロン名",
+    "placeholder": "サロン名(2文字以上)…",
+    "loginHint": "ログインすると、あなたのサロンがエリアのどのあたりかをプレビューできます。",
+    "login": "ログインしてサロンを探す",
+    "searchError": "現在検索できません。しばらくしてからもう一度お試しください。",
+    "noResult": "「{term}」に一致するサロンがありません。NAVERプレイスの登録名で探してください。",
+    "found": "{name}が見つかりました",
+    "again": "探し直す",
+    "summaryError": "このサロンはまだ比較できるデータが足りません。",
+    "outOf": "{total}軒中",
+    "hiddenRank": "?位",
+    "metricsTitle": "同規模サロンとの比較{count}項目",
+    "metric": {
+      "ahead": "上回る項目",
+      "behind": "下回る項目",
+      "even": "同程度の項目",
+      "pricePosition": "価格の位置",
+      "unknown": "サンプル不足"
+    },
+    "whichHidden": "どの項目で上回っているかはまだ非公開です。",
+    "inArea": "{sido} {gugun}で探します。エリアは上部で変更できます。"
+  },
+  "ruler": {
+    "title": "{name}の価格を当ててみましょう",
+    "won": "{value}ウォン",
+    "sliderLabel": "{name}の価格",
+    "tick": {
+      "min": "最安 {value}",
+      "median": "中央 {value}",
+      "max": "最高 {value}"
+    },
+    "verdict": {
+      "aboveMedian": "エリアの中央値より{diff}ウォン高いです。",
+      "belowMedian": "エリアの中央値より{diff}ウォン安いです。",
+      "atMedian": "エリアの中央値と同じです。",
+      "aboveMax": "エリアで確認した最高値より{diff}ウォン高いです。",
+      "belowMin": "エリアで確認した最安値より{diff}ウォン安いです。"
+    },
+    "basis": "エリアのブランド{brands}軒・メニュー{menus}件の表示価格に基づきます。",
+    "private": "入力した価格はこの画面でのみ計算し、保存しません。",
+    "prompt": "スライダーをあなたのサロンの価格に合わせてください。"
+  },
+  "unlock": {
+    "cta": "じゃあ私のサロンは? 答えを見る",
+    "everyoneTitle": "ここまでは誰でも見られます",
+    "everyoneBody": "「?」の答え、つまりあなたのサロンの順位や近くのサロンの名前・価格はメンバーシップ会員に公開されます。",
+    "title": "「?」を<em>数字に</em>変えます",
+    "description": "ビューティートップはメンバーシップ特典です。現在ベータ版のため、データ点検中は一時停止することがあります。",
+    "item": {
+      "rank": "エリア・区・業種・全国の順位",
+      "peers": "比較したサロンの名前と数値",
+      "prices": "近くのサロンの価格表で価格をテスト",
+      "changes": "お気に入りサロンの変化を次回訪問時にお知らせ"
+    },
+    "amount": {
+      "rank": "4段階",
+      "peers": "名前まで",
+      "prices": "メニュー別",
+      "changes": "訪問のたびに"
+    },
+    "withDiscount": "材料のメンバー価格割引も一緒に受けられます。",
+    "start": "メンバーシップを見る",
+    "login": "ログインして続ける",
+    "later": "エリアの情報をもっと見る"
+  },
+  "compare": {
+    "title": "ほかのエリアと比べる",
+    "metric": "項目",
+    "pick": "比較する区",
+    "unit": {
+      "shops": "{value}軒",
+      "people": "{value}人",
+      "won": "{value}ウォン"
+    },
+    "row": {
+      "shops": "サロン数",
+      "residents": "住民/軒",
+      "opened": "1年の開業",
+      "price": "{name}の中央値"
+    },
+    "note": "公的な許認可とメニュー価格に基づきます。開業エリア選びの参考にしてください。"
+  },
+  "insta": {
+    "title": "最近のエリアのインスタ"
+  },
+  "confirm": {
+    "title": "サロン分析を開きますか?",
+    "body": "開くとメンバーシップ特典を利用したものとして扱われ、加入7日以内の全額返金(申込みの撤回)は受けられなくなります。エリアの数字は開かなくてもこれまで通り見られます。",
+    "daysLeft": "全額返金できる期間が残り{days}日です。",
+    "policy": "返金基準を詳しく見る",
+    "later": "あとで見る",
+    "open": "開いて見る",
+    "lapsed": "メンバーシップが終了したため、サロン分析は開けません。",
+    "toMembership": "メンバーシップを確認"
+  },
+  "simulator": {
+    "title": "価格シミュレーター",
+    "subtitle": "{region}の{category}サロンのメニュー価格の中にあなたの価格を置いてみましょう",
+    "won": "{value}ウォン",
+    "sliderLabel": "あなたの{name}価格",
+    "prompt": "スライダーを動かすと、近くのサロンの中での位置をすぐに表示します。",
+    "place": "{total}件のメニュー中、安い方から{place}番目です{same, plural, =0 {。} other {(同価格#軒)。}}",
+    "mine": "あなたのサロン",
+    "tooFew": "この施術は価格を確認したサロンがまだ少ないです。",
+    "note": "確認済みメニュー{count}件に基づきます。入力した価格はこの画面でのみ使い、保存しません。"
+  },
+  "receipt": {
+    "title": "今回の請求期間にメンバーシップがしたこと",
+    "since": "{date}から",
+    "discount": "材料のメンバー割引",
+    "discountValue": "{amount}ウォン · 注文{orders}件",
+    "beautytop": "ビューティートップのサロン分析",
+    "inUse": "利用中",
+    "more": "注文別に詳しく見る",
+    "discountNone": "今回の期間はまだありません"
+  },
+  "share": {
+    "heading": "エリアカードで共有",
+    "eyebrow": "{sido} · エリアの数字",
+    "title": "{gugun}の{category}サロン\n{count}軒",
+    "opened": "1年以内に開業",
+    "residents": "住民何人に1軒",
+    "median": "{name}の中央値",
+    "shops": "{count}軒",
+    "people": "{count}人",
+    "won": "{value}ウォン",
+    "brand": "アーモンドヤング ビューティートップ",
+    "tagline": "あなたのサロンは何位? 名前で確認しましょう",
+    "save": "画像を保存",
+    "link": "リンクを共有",
+    "status": {
+      "saved": "画像を作成しました。",
+      "copied": "リンクをコピーしました。",
+      "failed": "現在共有できません。もう一度お試しください。"
+    }
   }
 }

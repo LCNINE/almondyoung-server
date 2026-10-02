@@ -17,7 +17,7 @@ import {
 } from "../types"
 import { useBeautyTop } from "../use-beautytop"
 import { useNumberFormats } from "../use-number-formats"
-import { type WatchedShop, useWatchlist } from "../use-watchlist"
+import { type WatchedShop, useMyShop, useWatchlist } from "../use-watchlist"
 import { DEFAULT_FILTERS, FILTERS_KEY } from "./neighborhood-tab"
 import {
   Big,
@@ -28,22 +28,7 @@ import {
   Segmented,
 } from "./parts"
 
-const STORAGE_KEY = "beautytop:my-shop"
-
 type SavedShop = WatchedShop
-
-function useMyShop() {
-  const [shop, setShop] = useState<SavedShop | null>(null)
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) setShop({ kind: "SHOP", ...JSON.parse(saved) })
-    } catch {}
-  }, [])
-
-  return [shop, setShop] as const
-}
 
 export function WatchTab({
   onSelectShop,
@@ -51,7 +36,7 @@ export function WatchTab({
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const [shop] = useMyShop()
-  return <CompetitorsCard shop={shop} onSelectShop={onSelectShop} />
+  return <CompetitorsCard shop={shop ?? null} onSelectShop={onSelectShop} />
 }
 
 export function MyShopTab({
@@ -62,10 +47,8 @@ export function MyShopTab({
   const [shop, setShop] = useMyShop()
 
   const choose = (next: SavedShop | null) => {
-    setShop(next)
+    void setShop(next)
     try {
-      if (next) localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      else localStorage.removeItem(STORAGE_KEY)
       if (next) {
         const located = Boolean(next.sido && next.gugun)
         localStorage.setItem(
@@ -80,6 +63,7 @@ export function MyShopTab({
     } catch {}
   }
 
+  if (shop === undefined) return <CardSkeleton />
   if (!shop) return <ShopSearch onPick={choose} />
   return (
     <ShopReport

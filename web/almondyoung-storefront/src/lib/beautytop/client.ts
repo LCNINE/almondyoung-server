@@ -22,26 +22,78 @@ export type BeautyTopResult<T> = {
 }
 
 type Proof = { access_token: string; api_base_url: string; expires_in: number }
+
+export type BeautyTopErrorCode =
+  | "LOGIN_REQUIRED"
+  | "MEMBERSHIP_REQUIRED"
+  | "CONFIRMATION_REQUIRED"
+  | "RATE_LIMITED"
+  | "UNAVAILABLE"
+  | "FAILED"
+
+// Screens translate the code; the client never carries user-facing copy.
+export class BeautyTopError extends Error {
+  constructor(
+    readonly code: BeautyTopErrorCode,
+    /** Only with CONFIRMATION_REQUIRED: days left of the full-refund window, as the server counts them. */
+    readonly withdrawalDaysRemaining: number | null = null
+  ) {
+    super(code)
+    this.name = "BeautyTopError"
+  }
+}
+
+const TOKEN_ERRORS: Record<number, BeautyTopErrorCode> = {
+  401: "LOGIN_REQUIRED",
+  403: "MEMBERSHIP_REQUIRED",
+  409: "CONFIRMATION_REQUIRED",
+  429: "RATE_LIMITED",
+}
+
+// Reused until shortly before expiry: issuing one per query cost a membership call per query.
+const EXPIRY_MARGIN_MS = 10_000
+let cached: { proof: Proof; until: number } | null = null
 let pending: Promise<Proof> | null = null
 
-async function proof(): Promise<Proof> {
-  // Share only concurrent requests. Every later query rechecks the login session;
-  // tokens are never written to localStorage, URLs or a persistent cookie.
-  if (!pending) {
-    pending = (async () => {
-      const issue = () => fetch("/api/beautytop/token", {
-        method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
-      })
-      let response = await issue()
-      if (response.status === 401) {
-        const restored = await fetch("/api/auth/restore-token", { method: "POST", credentials: "same-origin" })
-        if (restored.ok) response = await issue()
-      }
-      if (!response.ok) throw new Error(response.status === 401 ? "로그인이 필요합니다." : "뷰티탑 연결을 잠시 후 다시 시도해 주세요.")
-      return response.json() as Promise<Proof>
-    })().finally(() => { pending = null })
+export function forgetBeautyTopToken() {
+  cached = null
+}
+
+async function issue(acknowledged: boolean): Promise<Proof> {
+  const url = acknowledged ? "/api/beautytop/token?acknowledged=1" : "/api/beautytop/token"
+  const call = () => fetch(url, { method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error" })
+  let response = await call()
+  if (response.status === 401) {
+    const restored = await fetch("/api/auth/restore-token", { method: "POST", credentials: "same-origin" })
+    if (restored.ok) response = await call()
   }
+  if (!response.ok) {
+    const code = TOKEN_ERRORS[response.status] ?? "UNAVAILABLE"
+    const body = code === "CONFIRMATION_REQUIRED" ? await response.json().catch(() => null) : null
+    const days = body?.withdrawalDaysRemaining
+    throw new BeautyTopError(code, typeof days === "number" ? days : null)
+  }
+  const proof = (await response.json()) as Proof
+  cached = { proof, until: Date.now() + proof.expires_in * 1000 - EXPIRY_MARGIN_MS }
+  return proof
+}
+
+async function proof(): Promise<Proof> {
+  if (cached && cached.until > Date.now()) return cached.proof
+  // Share only concurrent requests. Tokens live in memory only — never localStorage, URLs or cookies.
+  if (!pending) pending = issue(false).finally(() => { pending = null })
   return pending
+}
+
+/** Opens the premium view: throws CONFIRMATION_REQUIRED before anything is shown or recorded. */
+export async function openPremium(): Promise<void> {
+  await proof()
+}
+
+/** Called after the member agreed that opening ends the 7-day full-refund window. */
+export async function acknowledgePremiumUse(): Promise<void> {
+  cached = null
+  await issue(true)
 }
 
 const MAX_IN_FLIGHT = 2
@@ -67,22 +119,33 @@ const wait = (ms: number, signal?: AbortSignal) =>
   })
 
 export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSignal): Promise<BeautyTopResult<T>> {
-  const auth = await proof()
+  let response = await send(await proof(), query, signal)
+  if (response.status === 401) {
+    // The cached token can be rejected early (clock skew, key rotation): get a fresh one once.
+    cached = null
+    response = await send(await proof(), query, signal)
+  }
+  for (let attempt = 1; response.status === 503 && attempt <= 3; attempt++) {
+    await wait(400 * attempt, signal)
+    response = await send(await proof(), query, signal)
+  }
+  if (!response.ok) {
+    throw new BeautyTopError(
+      response.status === 401 ? "LOGIN_REQUIRED" : response.status === 429 ? "RATE_LIMITED" : response.status === 503 ? "UNAVAILABLE" : "FAILED",
+    )
+  }
+  return response.json() as Promise<BeautyTopResult<T>>
+}
+
+function send(auth: Proof, query: BeautyTopQuery, signal?: AbortSignal) {
   const base = new URL(auth.api_base_url)
-  if (base.protocol !== "https:" || base.username || base.password) throw new Error("뷰티탑 연결 주소를 확인해 주세요.")
+  if (base.protocol !== "https:" || base.username || base.password) throw new BeautyTopError("FAILED")
   const url = new URL("/v1/query", base)
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined) url.searchParams.set(key, String(value))
   }
-  const request = () => limited(() => fetch(url, {
+  return limited(() => fetch(url, {
     headers: { Authorization: `Bearer ${auth.access_token}` },
     credentials: "omit", cache: "no-store", redirect: "error", signal,
   }))
-  let response = await request()
-  for (let attempt = 1; response.status === 503 && attempt <= 3; attempt++) {
-    await wait(400 * attempt, signal)
-    response = await request()
-  }
-  if (!response.ok) throw new Error(response.status === 401 ? "로그인이 필요합니다." : response.status === 429 ? "조회가 많습니다. 잠시 후 다시 시도해 주세요." : "자료를 불러오지 못했습니다.")
-  return response.json() as Promise<BeautyTopResult<T>>
 }
