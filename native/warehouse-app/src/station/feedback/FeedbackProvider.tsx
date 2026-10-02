@@ -10,9 +10,11 @@ export type Flash = 'error' | 'complete' | null;
 
 interface FeedbackApi {
   signal(kind: FeedbackKind): void;
+  /** 테두리를 지운다 — 셸이 탭이 바뀔 때 부른다. */
+  clearFlash(): void;
 }
 
-const SignalContext = createContext<FeedbackApi>({ signal: () => {} });
+const SignalContext = createContext<FeedbackApi>({ signal: () => {}, clearFlash: () => {} });
 const FlashContext = createContext<Flash>(null);
 
 /**
@@ -40,6 +42,9 @@ export function FeedbackProvider({
       signal(kind) {
         player.play(kind);
         setFlash(kind === 'error' ? 'error' : kind === 'complete' ? 'complete' : null);
+      },
+      clearFlash() {
+        setFlash(null);
       },
     };
   }, [sink, prefs]);

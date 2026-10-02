@@ -55,14 +55,22 @@ describe('useStationKeyCapture', () => {
   });
 
   it.each([
-    ['F4', { altKey: true }],
     ['F5', { ctrlKey: true }],
+    ['F5', { shiftKey: true }],
     ['F10', { shiftKey: true }],
-  ] as const)('%s + 수식키 %o 는 건드리지 않는다(Alt+F4 로 창이 닫혀야 한다)', (key, mods) => {
+  ] as const)('%s + 수식키 %o 는 기본 동작(강력 새로고침 등)만 막고 아무것도 돌리지 않는다', (key, mods) => {
     const target = make(key);
-    setup([target.action]);
-    expect(fireEvent.keyDown(window, { key, ...mods })).toBe(true);
+    const { onRejected } = setup([target.action]);
+    expect(fireEvent.keyDown(window, { key, ...mods })).toBe(false);
     expect(target.run).not.toHaveBeenCalled();
+    expect(onRejected).not.toHaveBeenCalled();
+  });
+
+  it('Alt+F4 는 건드리지 않는다(창이 닫혀야 한다)', () => {
+    const f4 = make('F4');
+    setup([f4.action]);
+    expect(fireEvent.keyDown(window, { key: 'F4', altKey: true })).toBe(true);
+    expect(f4.run).not.toHaveBeenCalled();
   });
 
   it('누르고 있는 자동 반복은 한 번만 돌린다(반복 이벤트도 기본 동작은 막는다)', () => {
@@ -85,14 +93,15 @@ describe('useStationKeyCapture', () => {
     expect(esc.run).toHaveBeenCalledTimes(1);
   });
 
-  it('확인창이 열려 있으면 Esc 는 확인창 몫, 기능키는 막기만 하고 돌리지 않는다', () => {
+  it('확인창이 열려 있으면 Esc 는 확인창 몫, 기능키는 막고 돌리지 않고 거절을 알린다', () => {
     const esc = make('Escape');
     const f10 = make('F10');
-    setup([esc.action, f10.action], <div role="dialog" aria-modal="true" />);
+    const { onRejected } = setup([esc.action, f10.action], <div role="dialog" aria-modal="true" />);
     expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(true);
     expect(esc.run).not.toHaveBeenCalled();
     expect(fireEvent.keyDown(window, { key: 'F10' })).toBe(false);
     expect(f10.run).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledTimes(1);
   });
 
   it('셸 밖(Provider 없음)에서는 useStationActions 가 아무 일도 하지 않는다 — 핸드헬드 공유 화면', () => {

@@ -99,6 +99,16 @@ describe('StationShell', () => {
     expect(beeps.some((b) => b.wave === 'square')).toBe(true);
   });
 
+  it('오류 테두리는 탭을 옮기면 사라진다', async () => {
+    const { router } = renderShell();
+    await screen.findByRole('button', { name: /수량/ });
+    fireEvent.keyDown(window, { key: 'F8' });
+    expect(flash()).toBe('error');
+    fireEvent.keyDown(window, { key: 'F3' });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+    await waitFor(() => expect(flash()).toBeNull());
+  });
+
   it('기능키 바 버튼을 마우스로 눌러도 같은 액션이 돈다', async () => {
     renderShell();
     fireEvent.click(await screen.findByRole('button', { name: /수량/ }));

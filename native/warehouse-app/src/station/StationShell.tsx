@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { Wrench } from 'lucide-react';
 import { useWarehouse } from '../app/warehouse-context';
@@ -47,7 +47,7 @@ function ShellFrame() {
   const navigate = useNavigate();
   const { warehouseName } = useWarehouse();
   const developer = useDeveloperMode();
-  const { signal } = useFeedback();
+  const { signal, clearFlash } = useFeedback();
   const flash = useFlash();
   const registry = useRegistryApi();
 
@@ -64,6 +64,9 @@ function ShellFrame() {
     [navigate]
   );
   useStationActions(tabActions);
+
+  // 오류·완료 테두리는 탭을 옮기면 사라진다 — 스캔이 없는 화면에서 영영 남지 않게
+  useEffect(() => clearFlash(), [pathname, clearFlash]);
 
   const reject = useCallback(() => signal('error'), [signal]);
   useStationKeyCapture(reject);
