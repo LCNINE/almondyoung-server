@@ -1,4 +1,6 @@
 import {
+  autoSendOutcomeLabel,
+  autoSendStatusLabel,
   defaultBinding,
   extractVariables,
   failureListTitle,
@@ -99,5 +101,32 @@ describe('알림톡 화면 도우미', () => {
     expect(linkedTemplateNote(null)).toBe(
       '카카오(NHN)에 이 코드의 템플릿이 없습니다. 켜도 알림톡이 나가지 않습니다.'
     );
+  });
+});
+
+describe('자동 발송 기록 표기', () => {
+  it('접수 상태: 접수됨 / 접수 실패 / 보내기 전', () => {
+    expect(autoSendStatusLabel('SENT')).toBe('카카오 접수');
+    expect(autoSendStatusLabel('FAILED')).toBe('접수 실패');
+    expect(autoSendStatusLabel('PENDING')).toBe('보내기 전');
+    expect(autoSendStatusLabel('PROCESSING')).toBe('보내기 전');
+  });
+
+  it('수신 결과: 카카오·문자 대체·못 받음·처리 중·접수 안 됨', () => {
+    expect(autoSendOutcomeLabel({ outcome: 'kakao', detail: null })).toBe(
+      '카카오톡으로 받음'
+    );
+    expect(autoSendOutcomeLabel({ outcome: 'sms', detail: null })).toBe(
+      '문자로 대신 받음'
+    );
+    expect(
+      autoSendOutcomeLabel({ outcome: 'failed', detail: '카카오톡 미사용자' })
+    ).toBe('못 받음 (카카오톡 미사용자)');
+    expect(autoSendOutcomeLabel({ outcome: 'inProgress', detail: null })).toBe(
+      '처리 중'
+    );
+    expect(
+      autoSendOutcomeLabel({ outcome: 'NOT_ACCEPTED', detail: '거절' })
+    ).toBe('접수되지 않음 (거절)');
   });
 });

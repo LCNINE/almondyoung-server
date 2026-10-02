@@ -59,6 +59,33 @@ export interface AlimtalkTemplateInput {
   buttons: AlimtalkButtonInput[];
 }
 
+/** 사건이 생겨 자동으로 나간 알림톡 한 건 (관리자 캠페인과 별개) */
+export interface AlimtalkAutoSend {
+  notificationId: string;
+  eventKey: string | null;
+  eventName: string | null;
+  templateCode: string | null;
+  recipientName: string;
+  phone: string;
+  status: string;
+  createdAt: string;
+  sentAt: string | null;
+  scheduledFor: string | null;
+  requestId: string | null;
+  error: string | null;
+}
+
+export interface AlimtalkAutoSendPage {
+  items: AlimtalkAutoSend[];
+  nextBefore: string | null;
+}
+
+export interface AlimtalkAutoSendResult {
+  notificationId: string;
+  outcome: 'kakao' | 'sms' | 'failed' | 'inProgress' | 'NOT_ACCEPTED';
+  detail: string | null;
+}
+
 export type AlimtalkMemberAudience = 'NONE' | 'ALL' | 'MEMBERSHIP' | 'ARREARS';
 
 export type AlimtalkVariableBinding =
@@ -223,6 +250,25 @@ export const alimtalkApi = {
 
   getCampaigns: async (): Promise<AlimtalkCampaign[]> => {
     const response = await client.get<AlimtalkCampaign[]>(`${BASE}/campaigns`);
+    return response.data;
+  },
+
+  getAutoSends: async (before?: string): Promise<AlimtalkAutoSendPage> => {
+    const response = await client.get<AlimtalkAutoSendPage>(
+      `${BASE}/auto-sends`,
+      {
+        params: before ? { before } : {},
+      }
+    );
+    return response.data;
+  },
+
+  getAutoSendResult: async (
+    notificationId: string
+  ): Promise<AlimtalkAutoSendResult> => {
+    const response = await client.get<AlimtalkAutoSendResult>(
+      `${BASE}/auto-sends/${notificationId}/result`
+    );
     return response.data;
   },
 

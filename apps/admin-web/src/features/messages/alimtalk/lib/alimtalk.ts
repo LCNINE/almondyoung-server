@@ -1,4 +1,5 @@
 import type {
+  AlimtalkAutoSendResult,
   AlimtalkButtonInput,
   AlimtalkTemplateStatus,
   AlimtalkVariableBinding,
@@ -133,4 +134,31 @@ export function linkedTemplateNote(
   return found.status === 'TSC03'
     ? '승인됨. 목록의 발송 스위치로 켜고 끕니다.'
     : '카카오 승인 전입니다. 승인 전에 켜면 알림톡이 나가지 않습니다.';
+}
+
+/** 자동 발송 기록의 우리 쪽 상태 — NHN 이 받았는지까지만 안다 */
+export function autoSendStatusLabel(status: string): string {
+  if (status === 'SENT') return '카카오 접수';
+  if (status === 'FAILED') return '접수 실패';
+  return '보내기 전';
+}
+
+/** 「결과 보기」로 NHN 에 물어본 수신 결과 */
+export function autoSendOutcomeLabel(
+  result: Pick<AlimtalkAutoSendResult, 'outcome' | 'detail'>
+): string {
+  const withDetail = (label: string) =>
+    result.detail ? `${label} (${result.detail})` : label;
+  switch (result.outcome) {
+    case 'kakao':
+      return '카카오톡으로 받음';
+    case 'sms':
+      return '문자로 대신 받음';
+    case 'failed':
+      return withDetail('못 받음');
+    case 'NOT_ACCEPTED':
+      return withDetail('접수되지 않음');
+    default:
+      return '처리 중';
+  }
 }

@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import {
+  ErrorDetails,
   NewNotification,
   NewNotificationCampaign,
   Notification,
@@ -44,9 +45,72 @@ export interface CampaignStatusCount {
   count: number;
 }
 
+/** 이벤트로 나간 알림톡 한 줄(관리자 캠페인이 아닌 것). */
+export interface AutoSendRow {
+  notificationId: string;
+  eventKey: string | null;
+  eventName: string | null;
+  status: string;
+  createdAt: Date;
+  sentAt: Date | null;
+  payload: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  errorDetails: ErrorDetails | null;
+}
+
+/** 캠페인이 아니고 이벤트 키가 있는 카카오 행 = 사건이 생겨 자동으로 나간 알림톡 */
+const isAutoAlimtalk = and(
+  eq(notifications.channel, 'KAKAO'),
+  isNull(notifications.campaignId),
+  isNotNull(notifications.eventKey),
+);
+
 @Injectable()
 export class AlimtalkRepository {
   constructor(@InjectTypedDb<Schema>() private readonly dbService: DbService<Schema>) {}
+
+  /**
+   * 자동 알림톡 최근 순. 관리자가 화면을 열 때만 돈다. 표 전체가 작아(수만 행) 채널·날짜 인덱스 없이 훑는다 —
+   * 커지면 (channel, created_at) 인덱스를 붙인다.
+   */
+  listAutoSends(limit: number, before?: Date): Promise<AutoSendRow[]> {
+    return this.dbService.db
+      .select({
+        notificationId: notifications.notificationId,
+        eventKey: notifications.eventKey,
+        eventName: notificationEvents.name,
+        status: notifications.status,
+        createdAt: notifications.createdAt,
+        sentAt: notifications.sentAt,
+        payload: notifications.payload,
+        metadata: notifications.metadata,
+        errorDetails: notifications.errorDetails,
+      })
+      .from(notifications)
+      .leftJoin(notificationEvents, eq(notificationEvents.eventKey, notifications.eventKey))
+      .where(before ? and(isAutoAlimtalk, lt(notifications.createdAt, before)) : isAutoAlimtalk)
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async findAutoSend(notificationId: string): Promise<AutoSendRow | undefined> {
+    const [row] = await this.dbService.db
+      .select({
+        notificationId: notifications.notificationId,
+        eventKey: notifications.eventKey,
+        eventName: notificationEvents.name,
+        status: notifications.status,
+        createdAt: notifications.createdAt,
+        sentAt: notifications.sentAt,
+        payload: notifications.payload,
+        metadata: notifications.metadata,
+        errorDetails: notifications.errorDetails,
+      })
+      .from(notifications)
+      .leftJoin(notificationEvents, eq(notificationEvents.eventKey, notifications.eventKey))
+      .where(and(isAutoAlimtalk, eq(notifications.notificationId, notificationId)));
+    return row;
+  }
 
   listRecipientGroups(): Promise<RecipientGroupSummary[]> {
     return this.dbService.db

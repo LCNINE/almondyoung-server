@@ -76,6 +76,59 @@ describeIfDb('AlimtalkRepository (PostgreSQL 통합)', () => {
     await client.end();
   });
 
+  it('자동 발송 기록은 이벤트로 나간 카카오 행만 최신 순으로, 이벤트 이름과 함께 준다', async () => {
+    const run = randomUUID().slice(0, 8);
+    const eventKey = `IT_AUTO_${run}`;
+    await db.insert(schema.notificationEvents).values({
+      eventKey,
+      name: '통합 테스트 자동 알림',
+      description: 'it',
+      templateKey: eventKey,
+      category: 'TRANSACTIONAL',
+      defaultChannels: ['KAKAO'],
+    });
+    const base = {
+      userId: `it-auto-${run}`,
+      category: 'TRANSACTIONAL' as const,
+      language: 'ko' as const,
+      payload: { name: '홍길동', phoneNumber: '01000000000' },
+    };
+    const inserted = await db
+      .insert(schema.notifications)
+      .values([
+        { ...base, eventKey, channel: 'KAKAO', status: 'SENT', createdAt: new Date('2031-01-01T00:00:00Z') },
+        { ...base, eventKey, channel: 'KAKAO', status: 'FAILED', createdAt: new Date('2031-01-02T00:00:00Z') },
+        { ...base, eventKey, channel: 'EMAIL', status: 'SENT', createdAt: new Date('2031-01-03T00:00:00Z') },
+      ])
+      .returning({ id: schema.notifications.notificationId });
+    const campaignId = await newCampaign(1); // 캠페인 행은 빠져야 한다
+    try {
+      const rows = await repository.listAutoSends(50, new Date('2031-01-04T00:00:00Z'));
+      const mine = rows.filter((r) => r.eventKey === eventKey);
+      expect(mine.map((r) => r.status)).toEqual(['FAILED', 'SENT']);
+      expect(mine[0].eventName).toBe('통합 테스트 자동 알림');
+      const campaignRows = await db
+        .select({ id: schema.notifications.notificationId })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.campaignId, campaignId));
+      expect(rows.some((r) => campaignRows.some((c) => c.id === r.notificationId))).toBe(false);
+
+      const older = await repository.listAutoSends(50, new Date('2031-01-02T00:00:00Z'));
+      expect(older.filter((r) => r.eventKey === eventKey).map((r) => r.status)).toEqual(['SENT']);
+
+      expect(await repository.findAutoSend(inserted[2].id)).toBeUndefined(); // 이메일
+      expect((await repository.findAutoSend(inserted[0].id))?.status).toBe('SENT');
+    } finally {
+      await db.delete(schema.notifications).where(
+        inArray(
+          schema.notifications.notificationId,
+          inserted.map((r) => r.id),
+        ),
+      );
+      await db.delete(schema.notificationEvents).where(eq(schema.notificationEvents.eventKey, eventKey));
+    }
+  });
+
   it('같은 campaignId 로 두 번 만들면 두 번째는 아무것도 만들지 않는다', async () => {
     const id = randomUUID();
     campaignIds.push(id);
