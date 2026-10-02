@@ -694,6 +694,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: "남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.",
   },
+  'ugc-service GET /almond-designs/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-design.reader.ts:25',
+    predicate: 'and(eq(almondDesigns.id, id), eq(almondDesigns.userId, userId))',
+    note: "findOwned — SELECT WHERE 에 소유자 조건. 0행이면 404(존재 은닉). userId 는 @User('userId') 토큰값.",
+  },
+  'ugc-service POST /almond-designs': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-design.manager.ts:82',
+    predicate: '',
+    note: "생성 전용. userId 는 @User('userId') 토큰값으로만 채우고 바디로 받지 않는다. templateId 는 공개 시안 참조라 남의 자원이 아니다.",
+  },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/qna/qna.service.ts:185',
@@ -859,15 +871,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(136);
+    expect(targets).toHaveLength(138);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(136);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(135);
+    expect(new Set(targets.map(keyOf)).size).toBe(138);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(137);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

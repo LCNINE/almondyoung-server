@@ -5,6 +5,7 @@ import {
   type AlmondDesignResponseDto,
   type CreateAlmondDesignDto,
 } from '../dto/almond-design.dto';
+import { ALMOND_PRINT_DEFAULT_DPI } from '../constants/almond-template.constants';
 import { AlmondDesignMapper } from '../mappers/almond-design.mapper';
 import { type AlmondPrintFile, type AlmondPrintFormat } from '../types/almond-design.types';
 import { AlmondDesignManager } from './almond-design.manager';
@@ -28,7 +29,11 @@ export class AlmondDesignsService {
   async getForAdmin(id: string): Promise<AdminAlmondDesignResponseDto> {
     return AlmondDesignMapper.toAdminResponse(await this.reader.findById(id));
   }
-  async renderPrintFile(id: string, format: AlmondPrintFormat): Promise<AlmondPrintFile> {
-    return this.printer.print(await this.reader.findPrintSource(id), format);
+  async renderPrintFile(
+    id: string,
+    format: AlmondPrintFormat,
+    dpi = ALMOND_PRINT_DEFAULT_DPI,
+  ): Promise<AlmondPrintFile> {
+    return this.printer.print(await this.reader.findPrintSource(id), format, dpi);
   }
 }
