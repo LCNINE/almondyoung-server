@@ -94,6 +94,12 @@ it('preserves unknown or malformed errors as uncertain', () => {
   ).toBe('rejected');
 });
 
+it('작업자가 이미 다른 박스를 잡고 있다는 거절은 확정 거절이다 — 불확실로 두면 그 뒤 스캔이 전부 막힌다', () => {
+  expect(
+    new ConflictError('busy', 'WORKER_ACTIVE_CLAIM_EXISTS').outcome
+  ).toBe('rejected');
+});
+
 it('classifies only the named inactive movement destination conflict as rejected', () => {
   expect(
     new ApiError('inactive destination', 409, 'MOVEMENT_DESTINATION_INACTIVE')
