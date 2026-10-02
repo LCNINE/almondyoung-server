@@ -17,7 +17,7 @@ import { TAB_KEYS, type StationKey } from './keys';
 import { BatchProgressProvider } from './status/batchProgress';
 import { StatusBar } from './status/StatusBar';
 import { STATION_TABS, activeSectionOf, activeTabOf } from './tabs';
-import { useStationKeyCapture } from './useStationKeys';
+import { modalOpen, useStationKeyCapture } from './useStationKeys';
 
 const TAB_KEY_SET: ReadonlySet<StationKey> = new Set<StationKey>(TAB_KEYS);
 const STATION_CHROME = { hidesHomeBack: true };
@@ -73,6 +73,11 @@ function ShellFrame() {
       (code: string) => {
         const command = parseCommand(code);
         if (command.kind === 'key') {
+          // 키 명령은 그 키를 누른 것과 같다 — 열린 확인창 뒤의 화면 액션은 돌리지 않는다
+          if (modalOpen()) {
+            signal('error');
+            return;
+          }
           const dispatch = registry?.resolveKey(command.key);
           if (dispatch?.kind === 'run') {
             signal('command');

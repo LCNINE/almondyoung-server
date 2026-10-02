@@ -3,7 +3,7 @@ import { useRegistryApi } from './ActionRegistry';
 import { stationKeyOf } from './keys';
 
 /** 열린 확인창이 있으면 그 창이 키를 쓴다(취소 Esc 등) — 셸은 그 뒤의 화면 액션을 돌리지 않는다. */
-function modalOpen(): boolean {
+export function modalOpen(): boolean {
   return document.querySelector('[aria-modal="true"]') !== null;
 }
 

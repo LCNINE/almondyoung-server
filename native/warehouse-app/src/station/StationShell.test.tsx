@@ -117,6 +117,22 @@ describe('StationShell', () => {
     expect(flash()).toBeNull();
   });
 
+  it('확인창이 열려 있으면 명령 바코드도 키처럼 막힌다 — 화면 액션은 안 돌고 오류음', async () => {
+    renderShell();
+    await screen.findByRole('button', { name: /수량/ });
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.appendChild(dialog);
+    try {
+      scan('%90%07');
+      expect(qtyRun).not.toHaveBeenCalled();
+      expect(flash()).toBe('error');
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it('명령 바코드 %90%03 은 입고 탭으로 — 출고 화면의 송장 조회로 새지 않는다', async () => {
     const { router } = renderShell();
     await screen.findByLabelText('운송장번호');
