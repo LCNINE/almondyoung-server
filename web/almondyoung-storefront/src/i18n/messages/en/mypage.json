@@ -924,6 +924,12 @@
       "benefit08": {
         "title": "Monthly coupons",
         "description": "Special coupons offered to members every month!"
+      },
+      "benefit17": {
+        "title": "BeautyTop (beta)",
+        "description": "See the number of shops and treatment prices in your area, plus your shop's rank and how it compares with nearby shops. It may pause briefly while we check the data.",
+        "link": "Go to BeautyTop",
+        "teaser": "<b>{count}</b> {category} shops in {gugun} — where does yours rank?"
       }
     },
     "upcomingBenefits": {
@@ -979,7 +985,7 @@
       },
       "q5": {
         "question": "How can I cancel?",
-        "answer": "Cancel any time from My Page > Membership. You can keep using the service until the end of the billing period you already paid for, after which it ends automatically. Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, etc.), you may withdraw for a full refund. Otherwise, a monthly plan's paid period is not refunded, and a yearly plan is settled at the regular monthly price for the period used and the remainder is refunded."
+        "answer": "Cancel any time from My Page > Membership. You can keep using the service until the end of the billing period you already paid for, after which it ends automatically. Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, viewing your shop's analysis on BeautyTop, etc.), you may withdraw for a full refund. Otherwise, a monthly plan's paid period is not refunded, and a yearly plan is settled at the regular monthly price for the period used and the remainder is refunded."
       }
     },
     "history": {
