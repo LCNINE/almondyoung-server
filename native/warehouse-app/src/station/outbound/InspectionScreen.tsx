@@ -33,6 +33,7 @@ import {
 } from './panels';
 import { printWaybill } from './printWaybill';
 import { pushRecent, type RecentEntry } from './recent';
+import { WithdrawWork } from './WithdrawWork';
 import { INTAKE_BLOCKED_MESSAGE, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
 type View =
@@ -385,14 +386,26 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       );
     case 'withdraw':
       return (
-        <WorkGrid
-          left={
-            <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
-              <BigPanel content={alert ? { kind: 'alert', ...alert } : { kind: 'notice', title: '뺄 상품' }} />
-            </>
-          }
-          right={<RecentList entries={recent} grow />}
+        <WithdrawWork
+          key={`${view.box.shipmentId}:${view.seq}`}
+          box={view.box}
+          handleRef={work}
+          prefs={prefs}
+          warehouseId={warehouseId}
+          alert={alert}
+          recent={recent}
+          onAlert={reject}
+          onRemoved={(barcode) => {
+            setAlert(null);
+            signal('success');
+            note({ kind: 'scan', text: barcode, qty: 1 });
+          }}
+          onDone={(box) => {
+            clearLastBox(prefs);
+            signal('complete');
+            setAlert(null);
+            setView({ kind: 'withdrawn', box });
+          }}
         />
       );
     case 'withdrawn':
