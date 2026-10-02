@@ -222,6 +222,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       return;
     }
     setManual(null);
+    work.current?.disarm();
     const current = viewRef.current;
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);

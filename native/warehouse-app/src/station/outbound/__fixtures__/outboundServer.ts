@@ -103,6 +103,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   const confirmedPrints: string[] = [];
   const applied = new Map<string, SimpleOutboundState>();
   let sendGate: Promise<void> | null = null;
+  let writeGate: Promise<void> | null = null;
   let losing = false;
 
   const byTracking = (trackingNo: string) => boxes.find((b) => b.trackingNo === trackingNo);
@@ -305,11 +306,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const scan = /^\/shipments\/([^/]+)\/simple-outbound-scans$/.exec(path);
     if (scan) return reply(await scanBox(o, scan[1]));
     const force = /^\/shipments\/([^/]+)\/simple-outbound-forces$/.exec(path);
-    if (force) return reply(forceBox(o, force[1]));
+    if (force) {
+      if (writeGate) await writeGate;
+      return reply(forceBox(o, force[1]));
+    }
     const short = /^\/shipments\/([^/]+)\/short-picks$/.exec(path);
     if (short) return reply(shortPick(o, short[1]));
     const exclude = /^\/outbound-batches\/([^/]+)\/shipments\/([^/]+)$/.exec(path);
-    if (exclude && method === 'DELETE') return reply(excludeBox(o, exclude[1], exclude[2]));
+    if (exclude && method === 'DELETE') {
+      if (writeGate) await writeGate;
+      return reply(excludeBox(o, exclude[1], exclude[2]));
+    }
     const label = /^\/shipments\/([^/]+)\/waybill\/label$/.exec(path);
     if (label) {
       const box = byId(label[1]);
@@ -380,6 +387,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       sendGate = new Promise<void>((resolve) => {
         release = () => {
           sendGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 강제출고·박스 빼기 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdWrites(): () => void {
+      let release!: () => void;
+      writeGate = new Promise<void>((resolve) => {
+        release = () => {
+          writeGate = null;
           resolve();
         };
       });

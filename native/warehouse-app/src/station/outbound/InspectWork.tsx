@@ -17,6 +17,8 @@ import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } fro
 /** 부모(출고 검수 화면)가 송장인지 상품인지 가른 뒤 상품을 넘기는 곳. 내려놓기·전환 전에 앞 스캔을 다 보낸다 */
 export interface BoxWorkHandle {
   accept(code: string): void;
+  /** 스캔이 이 화면에 닿았다 — 부모가 거절한 송장 스캔도 «한 번 더» 대기를 푼다 */
+  disarm(): void;
   settle(): Promise<void>;
 }
 
@@ -69,6 +71,7 @@ export function InspectWork({
   const quantityRef = useRef(quantity);
   quantityRef.current = quantity;
   const [armed, setArmed] = useState<Armed>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   // 손잡이는 마지막 렌더의 큐를 부른다 — 화면이 «받음» 으로 그려진 뒤 이 커밋의 effect 가 돌기 전에 온 스캔이
   // 앞 렌더(아직 막힘)의 판정으로 거절되지 않게
@@ -87,6 +90,7 @@ export function InspectWork({
         const count = typed ? Math.max(1, Number(typed)) : 1;
         if (!latest.current.accept(code, count)) onAlert(INTAKE_BLOCKED_MESSAGE, code);
       },
+      disarm: () => setArmed(null),
       settle: () => latest.current.settle(),
     };
     handleRef.current = own;
@@ -126,6 +130,7 @@ export function InspectWork({
 
   const withdrawBox = async () => {
     if (!box.batchId) return;
+    setWithdrawing(true);
     try {
       await excludeFromBatch(api, {
         batchId: box.batchId,
@@ -136,6 +141,7 @@ export function InspectWork({
       onReopen(box);
     } catch (error) {
       onAlert(errorMessage(error, 'outbound'));
+      setWithdrawing(false);
     }
   };
 
@@ -163,7 +169,7 @@ export function InspectWork({
           {
             ...INSPECTION_ACTIONS.force,
             label: armed === 'force' ? '강제출고 확정' : INSPECTION_ACTIONS.force.label,
-            enabled: work.idle,
+            enabled: work.idle && !work.forcing,
             run: () => arm('force', () => void work.forceOut()),
           },
         ]
@@ -171,21 +177,17 @@ export function InspectWork({
     {
       ...INSPECTION_ACTIONS.withdraw,
       label: armed === 'withdraw' ? '박스 빼기 확정' : INSPECTION_ACTIONS.withdraw.label,
-      enabled: work.idle && box.batchId !== null,
+      enabled: work.idle && box.batchId !== null && !withdrawing,
       run: () => arm('withdraw', () => void withdrawBox()),
     },
-    ...(canPrint
-      ? [
-          {
-            ...INSPECTION_ACTIONS.reprint,
-            enabled: true,
-            run: () => {
-              setArmed(null);
-              onReprint(box);
-            },
-          },
-        ]
-      : []),
+    {
+      ...INSPECTION_ACTIONS.reprint,
+      enabled: canPrint,
+      run: () => {
+        setArmed(null);
+        onReprint(box);
+      },
+    },
     {
       ...INSPECTION_ACTIONS.putDown,
       label: quantity !== null ? '수량 취소' : armed ? '취소' : INSPECTION_ACTIONS.putDown.label,
