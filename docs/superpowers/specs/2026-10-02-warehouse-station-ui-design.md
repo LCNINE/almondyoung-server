@@ -290,6 +290,14 @@ U3 에 따라 스테이션은 «고정 스테이션»(선반을 보고 와서 �
 A 와 B 는 병행 가능. C 는 A 가 라이브에 있어야 결품·강제출고·보충 대기가 동작한다(앱이 옛 core 를 만나면 A5 필드가 없다 — C 계획이
 없는 필드에 대한 처리를 정한다).
 
+**PR A 가 남긴 C 의 계약 메모(PR A 최종 리뷰에서 도출):**
+
+- 기능키 표시는 `GET /inventory/work-context` 의 `permissions.shortPick`(F9)·`permissions.stationForceDispatch`(F10)로 판정한다.
+  `permissions.forceDispatch` 는 관리자 `dispatch.force` 전용 의미 그대로다(위치 확인 출고 강제·관리자 강제 발송)
+- F9 는 `workItemStatus` 가 `queued`·`picking` 일 때만 켠다 — `shortPickContext` 는 빼는 중·다른 오퍼레이션 대기 중에도 채워질 수 있고, 그때 결품 보고는 409 다
+- by-waybill 의 버전 값(`shortPickContext`·`lineVersion`)은 스캔마다 낡는다(스캔 응답은 버전을 돌려주지 않는다). **F9 확정 직전에 by-waybill 을 다시 조회**해 그 값으로 보낸다
+- 강제출고 사유는 고정 문자열 `station_force_command`(서버는 강제하지 않는다 — 클라이언트 몫)
+
 ## 12. 범위 밖과 알고 남기는 틈
 
 - **폰(핸드헬드) 화면 재설계** — 실사·이동 등 «움직이며 하는 작업» 부분집합(U3). 별도 트랙
