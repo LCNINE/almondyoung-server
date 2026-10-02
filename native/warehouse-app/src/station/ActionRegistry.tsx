@@ -1,4 +1,4 @@
-/* oxlint-disable react/only-export-components -- 컨텍스트 하나를 Provider 와 훅들이 공유한다. 한 파일로 두어야 컨텍스트가 모듈 밖에 새지 않는다. */
+/* oxlint-disable react/only-export-components -- Provider 와 use… 훅을 한 파일에서 내보내면 이 규칙은 항상 걸린다(src/app/session-context.tsx·warehouse-context.tsx 도 같은 경고를 낸다). 컨텍스트를 모듈 밖에 노출하지 않으려고 한 파일로 둔다. */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   actionsSignature,
@@ -20,6 +20,7 @@ export interface RegistryApi {
 }
 
 const ApiContext = createContext<RegistryApi | null>(null);
+/** 표시용 — `run` 이 낡았을 수 있다(서명 불변이면 갱신 안 함). 실행은 `RegistryApi.resolveKey`. */
 const ResolvedContext = createContext<ReadonlyMap<StationKey, StationAction>>(new Map());
 
 let nextLayerId = 0;
@@ -96,5 +97,14 @@ export function useDigitCommands(handler: ((digit: number) => void) | null): voi
   }, [api, layerId, handler]);
 }
 
-export const useRegistryApi = (): RegistryApi | null => useContext(ApiContext);
-export const useResolvedActions = (): ReadonlyMap<StationKey, StationAction> => useContext(ResolvedContext);
+export function useRegistryApi(): RegistryApi | null {
+  return useContext(ApiContext);
+}
+
+/**
+ * 기능키 바가 «그릴» 맵 — 표시용(id·key·label·enabled)이다. 서명이 바뀔 때만 갱신되므로 여기 든 `run` 은 낡았을 수 있다.
+ * 실행은 반드시 `useRegistryApi().resolveKey(key)` 로 한다(늘 최신 `run`).
+ */
+export function useResolvedActions(): ReadonlyMap<StationKey, StationAction> {
+  return useContext(ResolvedContext);
+}
