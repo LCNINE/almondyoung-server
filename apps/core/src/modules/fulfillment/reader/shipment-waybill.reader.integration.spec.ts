@@ -48,6 +48,8 @@ describeIfDb('ShipmentWaybillReader', () => {
           qty: 2,
           pickedQty: 0,
           inspectedQty: 0,
+          lineVersion: 1,
+          allocations: [],
         },
       ]);
     });
@@ -77,6 +79,15 @@ describeIfDb('ShipmentWaybillReader', () => {
       const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
       const result = await reader.byTrackingNo(fixture.trackingNo);
 
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fixture.shipmentLineId));
+      const [location] = await tx
+        .select()
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.id, fixture.locationId));
+
       expect(result.lines).toEqual([
         {
           shipmentLineId: fixture.shipmentLineId,
@@ -86,6 +97,8 @@ describeIfDb('ShipmentWaybillReader', () => {
           qty: 2,
           pickedQty: 1,
           inspectedQty: 0,
+          lineVersion: line.lineVersion,
+          allocations: [{ sourceLocationId: fixture.locationId, locationCode: location.code, qty: 2 }],
         },
       ]);
     });

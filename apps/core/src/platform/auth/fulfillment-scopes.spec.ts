@@ -15,12 +15,20 @@ describe('fulfillment authorization contract', () => {
       'fulfillment.dispatch.recall',
       'fulfillment.shipment.reopen',
       'fulfillment.tracking.ingest',
+      'fulfillment.shipment.short_pick',
+      'fulfillment.dispatch.station_force',
     ]);
-    expect(new Set(scopeKeys)).toHaveProperty('size', 8);
+    expect(new Set(scopeKeys)).toHaveProperty('size', 10);
   });
 
-  it('does not grant tracking ingest to the default logistics roles', () => {
-    expect(roleScopes.get('logistics_worker')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+  it('gives the worker only operate + station short-pick/force, never the manager scopes', () => {
+    expect(roleScopes.get('logistics_worker')).toEqual([
+      FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+      FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+      FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    ]);
+    expect(roleScopes.get('logistics_worker')).not.toContain(FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+    expect(roleScopes.get('logistics_worker')).not.toContain(FULFILLMENT_SCOPE.DISPATCH_FORCE);
     expect(roleScopes.get('logistics_manager')).toEqual(
       scopeKeys.filter((scope) => scope !== FULFILLMENT_SCOPE.TRACKING_INGEST),
     );

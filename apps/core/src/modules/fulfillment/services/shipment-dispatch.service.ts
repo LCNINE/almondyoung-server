@@ -8,7 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
+import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { ScopeAuthorizationDecision } from '@app/authorization';
 import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
@@ -39,7 +40,6 @@ import { ShipmentReservationService } from './shipment-reservation.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
 
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
@@ -334,7 +334,7 @@ export class ShipmentDispatchService {
     if (!input.reason.trim()) throw new BadRequestException('reason is required');
     if (input.reason.trim().length > 500) throw new BadRequestException('reason must be at most 500 characters');
     const authorization = input.authorization;
-    if (!isScopeAuthorizationDecision(authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE)) {
+    if (!isForceDispatchDecision(authorization)) {
       throw new ForbiddenException({
         code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
         message: 'Force dispatch scope is required',

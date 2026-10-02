@@ -1,5 +1,5 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { getScopeAuthorizationDecision, ScopeGuard } from '@app/authorization';
+import { getScopeAuthorizationDecision, REQUIRED_SCOPES_KEY, ScopeGuard } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { SimpleOutboundController } from './simple-outbound.controller';
 
@@ -20,11 +20,13 @@ describe('SimpleOutboundController', () => {
 
   // Mirrors shipment.controller.spec.ts's requestAuthorizedByMappedRole: runs the real ScopeGuard so
   // the request carries a genuine ScopeAuthorizationDecision, rather than fabricating one by hand.
-  async function requestAuthorizedForForce(): Promise<object> {
+  async function requestAuthorizedForForce(granted: string = FULFILLMENT_SCOPE.DISPATCH_FORCE): Promise<object> {
     const request = { user: { roles: ['warehouse_dispatcher'] } };
     const guard = new ScopeGuard(
-      { getAllAndOverride: () => [FULFILLMENT_SCOPE.DISPATCH_FORCE] } as never,
-      { getScopesByRoles: jest.fn().mockResolvedValue(new Set([FULFILLMENT_SCOPE.DISPATCH_FORCE])) } as never,
+      {
+        getAllAndOverride: () => [FULFILLMENT_SCOPE.DISPATCH_FORCE, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE],
+      } as never,
+      { getScopesByRoles: jest.fn().mockResolvedValue(new Set([granted])) } as never,
     );
     const context = {
       getHandler: () => SimpleOutboundController.prototype.force,
@@ -97,5 +99,29 @@ describe('SimpleOutboundController', () => {
     // Exact identity, not just shape — proves the controller forwards the request's own decision
     // rather than re-deriving/reconstructing one.
     expect(service.forceComplete.mock.calls[0][1].authorization).toBe(decision);
+  });
+
+  it('강제완료 라우트는 관리자 또는 스테이션 강제출고 스코프를 요구한다', () => {
+    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, SimpleOutboundController.prototype.force)).toEqual([
+      FULFILLMENT_SCOPE.DISPATCH_FORCE,
+      FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    ]);
+  });
+
+  it('스테이션 작업자의 강제완료는 station 판정을 그대로 서비스에 넘긴다', async () => {
+    const { service, controller } = build();
+    const request = await requestAuthorizedForForce(FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE);
+
+    await controller.force(
+      's-1',
+      { reason: 'station_force_command' },
+      'key-2',
+      { userId: 'u-2', roles: ['logistics_worker'] },
+      request,
+    );
+
+    expect(service.forceComplete.mock.calls[0][1].authorization).toBe(
+      getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE),
+    );
   });
 });

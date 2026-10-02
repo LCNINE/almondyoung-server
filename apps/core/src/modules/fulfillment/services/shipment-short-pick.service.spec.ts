@@ -43,9 +43,21 @@ describe('ShipmentShortPickService', () => {
     expect(commands.execute).not.toHaveBeenCalled();
   });
 
-  it('shipment.reopen 스코프가 없으면 403 — 명령을 실행하지 않는다', async () => {
+  it('reopen·short_pick 스코프가 둘 다 없으면 403 — 명령을 실행하지 않는다', async () => {
     const { service, commands } = makeService(new Set());
     await expect(service.report('s', dto, 'k', { id: 'a', roles: [] })).rejects.toBeInstanceOf(ForbiddenException);
     expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('결품 스코프(short_pick)만 있어도 명령을 실행한다', async () => {
+    const { service, commands } = makeService(new Set([FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK]));
+    await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("'master' 스코프를 가졌으면 ScopeGuard 처럼 통과한다", async () => {
+    const { service, commands } = makeService(new Set(['master']));
+    await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
   });
 });

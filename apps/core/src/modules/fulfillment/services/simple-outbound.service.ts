@@ -1,4 +1,3 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   BadRequestException,
   ConflictException,
@@ -7,7 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
+import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { ScopeAuthorizationDecision } from '@app/authorization';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
@@ -194,7 +194,7 @@ export class SimpleOutboundService {
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.force');
-    if (!isScopeAuthorizationDecision(input.authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE))
+    if (!isForceDispatchDecision(input.authorization))
       throw new ForbiddenException({
         code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
         message: 'Force dispatch scope is required',
@@ -307,6 +307,7 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
           eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
@@ -315,6 +316,8 @@ export class SimpleOutboundService {
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(sql`${wmsTables.locations.code} collate "C"`),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
 
@@ -383,6 +386,7 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
           eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
@@ -394,6 +398,8 @@ export class SimpleOutboundService {
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(sql`${wmsTables.locations.code} collate "C"`),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
     if (allocations.length === 0) {

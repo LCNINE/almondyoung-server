@@ -1,6 +1,10 @@
 import { Controller, Get, HttpCode, UseGuards } from '@nestjs/common';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../../platform/auth/fulfillment-scopes';
+import {
+  FULFILLMENT_SCOPE,
+  SHORT_PICK_REPORT_SCOPES,
+  SIMPLE_OUTBOUND_FORCE_SCOPES,
+} from '../../../../platform/auth/fulfillment-scopes';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { authenticatedWarehouseActor, WarehouseActor } from '../services/warehouse-operation-contract';
 
@@ -13,11 +17,21 @@ export class WarehouseWorkContextController {
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   async workContext(@User() user: WarehouseActor & { roles?: string[] }) {
     const actorId = authenticatedWarehouseActor(user);
-    const granted = await this.scopes.getGrantedScopes(user, [FULFILLMENT_SCOPE.DISPATCH_FORCE]);
+    const granted = new Set(
+      await this.scopes.getGrantedScopes(user, [...SIMPLE_OUTBOUND_FORCE_SCOPES, ...SHORT_PICK_REPORT_SCOPES]),
+    );
     return {
       actorId,
       operationContractVersion: 2 as const,
-      permissions: { forceDispatch: granted.includes(FULFILLMENT_SCOPE.DISPATCH_FORCE) },
+      // 각 값은 그 라우트의 @RequireScopes 와 같은 «하나라도» 집합이다 — 미리보기가 실제 가드와 어긋나면 버튼이 403 을 낸다.
+      permissions: {
+        // 위치 확인 출고 강제(location-outbound-forces)·관리자 강제 발송 — dispatch.force 전용. 뜻을 바꾸지 않는다(배포된 앱이 쓴다)
+        forceDispatch: granted.has(FULFILLMENT_SCOPE.DISPATCH_FORCE),
+        // 단순출고 강제완료(simple-outbound-forces) — 스테이션 F10
+        stationForceDispatch: SIMPLE_OUTBOUND_FORCE_SCOPES.some((scope) => granted.has(scope)),
+        // 결품 보고(short-picks) — 스테이션 F9
+        shortPick: SHORT_PICK_REPORT_SCOPES.some((scope) => granted.has(scope)),
+      },
       capabilities: {
         stocktakingAddCountItem: true as const,
         locationOutbound: true as const,

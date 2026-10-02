@@ -705,6 +705,50 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
     [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
   };
 
+  const stationAuthorization: ScopeAuthorizationDecision = {
+    scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    granted: true,
+    [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
+  };
+
+  it('스테이션 강제출고 판정으로도 남은 수량을 채워 출고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+
+      const state = await service.forceComplete(
+        fixture.shipmentId,
+        {
+          reason: 'station_force_command',
+          actor,
+          idempotencyKey: `force-${randomUUID()}`,
+          authorization: stationAuthorization,
+        },
+        tx,
+      );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
+      expect(state.status).toBe('shipped');
+
+      // 스펙 U15 — 사후 감사 검토가 유일한 방어선이다. 작업자 강제는 station 스코프로 남아야 하고,
+      // 누군가 dispatch.force 로 정규화하면 이 단언이 깨진다.
+      const [auditRow] = await tx
+        .select({ metadata: wmsTables.auditLogs.metadata })
+        .from(wmsTables.auditLogs)
+        .where(
+          and(
+            eq(wmsTables.auditLogs.action, 'shipment.dispatch.force'),
+            eq(wmsTables.auditLogs.userId, fixture.actorId),
+          ),
+        )
+        .limit(1);
+      expect(auditRow?.metadata).toMatchObject({
+        authorization: { scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE, granted: true },
+      });
+    });
+  });
+
   it('미피킹 수량을 강제로 채워 출고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);

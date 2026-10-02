@@ -9,7 +9,21 @@ export const FULFILLMENT_SCOPE = {
   DISPATCH_RECALL: 'fulfillment.dispatch.recall',
   SHIPMENT_REOPEN: 'fulfillment.shipment.reopen',
   TRACKING_INGEST: 'fulfillment.tracking.ingest',
+  SHIPMENT_SHORT_PICK: 'fulfillment.shipment.short_pick',
+  DISPATCH_STATION_FORCE: 'fulfillment.dispatch.station_force',
 } as const;
+
+/** 결품 보고 라우트·서비스·작업 권한 미리보기가 공유하는 «하나라도» 집합. */
+export const SHORT_PICK_REPORT_SCOPES = [
+  FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
+  FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+] as const;
+
+/** 단순출고 강제완료 라우트·판정 헬퍼·작업 권한 미리보기가 공유하는 «하나라도» 집합. */
+export const SIMPLE_OUTBOUND_FORCE_SCOPES = [
+  FULFILLMENT_SCOPE.DISPATCH_FORCE,
+  FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+] as const;
 
 export type FulfillmentScope = (typeof FULFILLMENT_SCOPE)[keyof typeof FULFILLMENT_SCOPE];
 
@@ -54,6 +68,16 @@ export const FULFILLMENT_SCOPES: ScopeDefinition[] = [
     category: 'fulfillment',
     description: '신뢰된 배송사 tracking event 수신',
   },
+  {
+    key: FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+    category: 'fulfillment',
+    description: '스테이션 결품·파손 보고(다른 위치 재배정 또는 박스 이탈)',
+  },
+  {
+    key: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    category: 'fulfillment',
+    description: '스테이션 강제출고 — 남은 미스캔 수량을 채우고 출고(감사 로그에 이 스코프로 남는다)',
+  },
 ];
 
 const LOGISTICS_MANAGER_SCOPE_KEYS = FULFILLMENT_SCOPES.map((scope) => scope.key).filter(
@@ -63,7 +87,11 @@ const LOGISTICS_MANAGER_SCOPE_KEYS = FULFILLMENT_SCOPES.map((scope) => scope.key
 export const FULFILLMENT_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
   {
     roleName: 'logistics_worker',
-    scopeKeys: [FULFILLMENT_SCOPE.WAREHOUSE_OPERATE],
+    scopeKeys: [
+      FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+      FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+      FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+    ],
   },
   {
     roleName: 'logistics_manager',

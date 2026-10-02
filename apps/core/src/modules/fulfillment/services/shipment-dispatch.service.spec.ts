@@ -10,6 +10,12 @@ const FORCE_AUTHORIZATION = Object.freeze({
   [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
 });
 
+const STATION_FORCE_AUTHORIZATION = Object.freeze({
+  scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+  granted: true as const,
+  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
+});
+
 const IDS = {
   shipment: '00000000-0000-4000-8000-000000000001',
   line: '00000000-0000-4000-8000-000000000002',
@@ -300,6 +306,44 @@ describe('ShipmentDispatchService', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a decision for an unrelated scope', async () => {
+    const { service, commands } = makeService();
+    await expect(
+      service.forceDispatch(IDS.shipment, {
+        reason: 'wrong scope',
+        actor: { id: IDS.actor, roles: ['logistics_worker'] },
+        idempotencyKey: 'force-wrong-scope',
+        authorization: Object.freeze({
+          scope: FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+          granted: true as const,
+          [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
+        }),
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('accepts the station force decision and runs the command', async () => {
+    const { service, commands } = makeService();
+    const locked = aggregate({ lines: [line({ qty: 4, inspectedQty: 1 })] });
+    jest.spyOn(service as any, 'lockAggregate').mockResolvedValue(locked);
+    jest.spyOn(service as any, 'moveInspectionCustody').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'dispatchLocked').mockResolvedValue({
+      shipmentId: IDS.shipment,
+      status: 'shipped',
+      dispatchAttemptId: 'attempt-1',
+      attemptNo: 1,
+      forcedQuantities: [],
+    });
+    await service.forceDispatch(IDS.shipment, {
+      reason: 'station_force_command',
+      actor: { id: IDS.actor, roles: ['logistics_worker'] },
+      idempotencyKey: 'force-station',
+      authorization: STATION_FORCE_AUTHORIZATION,
+    });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
   });
 
   it('emits internal shipment progress without fabricating an external order or v1 completion', async () => {

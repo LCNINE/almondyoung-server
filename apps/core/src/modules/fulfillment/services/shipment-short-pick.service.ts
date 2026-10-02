@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { and, asc, eq, ne } from 'drizzle-orm';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { describeStartBlockers } from '../picking/allocation/allocation.locks';
@@ -161,7 +161,15 @@ export class ShipmentShortPickService {
             warehouseId: batch.warehouseId,
             workItemId: workItem.id,
             lines: allLines,
-            excludedSources: approved.map((row) => ({ skuId: row.skuId, sourceLocationId: row.sourceLocationId })),
+            excludedSources: [
+              ...approved.map((row) => ({ skuId: row.skuId, sourceLocationId: row.sourceLocationId })),
+              ...(await this.lineSourcesOf(
+                workItem.id,
+                lines,
+                dto.lines.map((line) => line.shipmentLineId),
+                trx,
+              )),
+            ],
             pendingShortages: planned,
           },
           trx,
@@ -402,11 +410,48 @@ export class ShipmentShortPickService {
     if (!dto.lines.length) throw new BadRequestException('At least one short-pick line is required');
   }
 
+  /**
+   * 보고된 줄 중 배정 위치가 둘 이상인 줄의 위치 전부(스펙 A4·U11). 이미 결품으로 채운 줄은 원래 위치에 유령 가용이 남아(#1005)
+   * 그 위치가 다시 재배정 후보가 된다 — 보고는 송장 순서상 마지막 위치로 오므로 원래 위치는 보고된 쌍에 없다.
+   * 한 위치뿐인 줄은 보고된 쌍과 같아 아무것도 더하지 않는다.
+   */
+  private async lineSourcesOf(
+    workItemId: string,
+    lines: ReadonlyArray<{ id: string; skuId: string }>,
+    reportedLineIds: readonly string[],
+    tx: DbTx,
+  ): Promise<Array<{ skuId: string; sourceLocationId: string }>> {
+    const rows = await tx
+      .select({
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId));
+    const skuByLine = new Map(lines.map((line) => [line.id, line.skuId]));
+    const sourcesByLine = new Map<string, Set<string>>();
+    for (const row of rows) {
+      if (!reportedLineIds.includes(row.shipmentLineId)) continue;
+      const set = sourcesByLine.get(row.shipmentLineId) ?? new Set<string>();
+      set.add(row.sourceLocationId);
+      sourcesByLine.set(row.shipmentLineId, set);
+    }
+    const result: Array<{ skuId: string; sourceLocationId: string }> = [];
+    for (const [lineId, sources] of sourcesByLine) {
+      const skuId = skuByLine.get(lineId);
+      if (!skuId || sources.size < 2) continue;
+      for (const sourceLocationId of sources) result.push({ skuId, sourceLocationId });
+    }
+    return result;
+  }
+
+  /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. ScopeGuard 를 거치지 않은 직접 호출도 같은 규칙. */
   private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
     if (actor.roles.includes('master')) return;
     const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)) {
-      throw new ForbiddenException(`Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_REOPEN}`);
+    if (scopes.has('master')) return;
+    if (!SHORT_PICK_REPORT_SCOPES.some((scope) => scopes.has(scope))) {
+      throw new ForbiddenException(`Missing required scope: ${SHORT_PICK_REPORT_SCOPES.join(' or ')}`);
     }
   }
 
