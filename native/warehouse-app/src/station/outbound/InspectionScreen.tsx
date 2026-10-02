@@ -404,7 +404,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             clearLastBox(prefs);
             signal('complete');
             setAlert(null);
-            setView({ kind: 'withdrawn', box });
+            go({ kind: 'withdrawn', box });
           }}
         />
       );

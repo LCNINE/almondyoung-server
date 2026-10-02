@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { RETURN_BIN_KEY } from '../../domains/returns/returnBin';
 import type { FakeBox } from './__fixtures__/outboundServer';
-import { BOX1, flash, openBox, press, scan, setupInspection, stationPrefs } from './__fixtures__/renderStation';
+import { BOX1, BOX2, flash, openBox, press, scan, setupInspection, stationPrefs } from './__fixtures__/renderStation';
 
 const withBin = () => stationPrefs({ [RETURN_BIN_KEY]: JSON.stringify({ warehouseId: 'w-1', barcode: 'RB-01' }) });
 const WITHDRAWING: FakeBox = {
@@ -76,5 +76,32 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     await screen.findByText('뺄 상품');
     press('Escape');
     expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+  });
+
+  it('빠진 박스 화면에서 다른 송장은 새 박스로 열고, 상품은 앞 스캔 확인 중이라고 하지 않는다', async () => {
+    const { server } = await setupInspection({ boxes: [WITHDRAWING, BOX2], prefs: withBin() });
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    await screen.findByText('빠진 박스');
+    scan('8801002');
+    await waitFor(() => expect(flash()).toBe('error'));
+    expect(screen.queryByText('앞 스캔을 확인하고 있어요. 확인이 끝난 뒤 다시 찍어 주세요.')).toBeNull();
+    scan('421033881915');
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    expect(screen.queryByText('빠진 박스')).toBeNull();
+    expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals') && r.path.includes('421033881915'))).toBe(false);
+  });
+
+  it('스캔 큐가 준비되기 전에 찍은 상품은 받지 않고 이유를 보인다', async () => {
+    const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
+    scan('421033881907');
+    await screen.findByText('뺄 상품');
+    expect(document.querySelector('[data-intake="blocked"]')).not.toBeNull();
+    scan('8801002');
+    expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔을 확인하고 있어요');
+    expect(flash()).toBe('error');
+    expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals'))).toBe(false);
   });
 });
