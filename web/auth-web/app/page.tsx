@@ -3,7 +3,6 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { AccountList } from "@/components/account-list"
-import { ReloginNotice } from "@/components/relogin-notice"
 import { Button } from "@/components/ui/button"
 import { listAccounts } from "@/lib/account-store"
 import { hasIdpRefreshToken } from "@/lib/idp-session"
@@ -49,7 +48,6 @@ export default async function AccountHubPage({
 
   return (
     <AuthShell>
-      <ReloginNotice />
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl leading-8 font-bold text-foreground">
           {hasAccounts ? "계정 선택" : "로그인"}

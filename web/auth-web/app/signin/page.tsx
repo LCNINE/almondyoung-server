@@ -1,5 +1,4 @@
 import { AuthShell } from "@/components/auth-shell"
-import { ReloginNotice } from "@/components/relogin-notice"
 import { SignInForm } from "@/components/signin-form"
 import { listAccounts } from "@/lib/account-store"
 import { sanitizeRedirectTo } from "@/lib/redirect"
@@ -29,7 +28,6 @@ export default async function SignInPage({
 
   return (
     <AuthShell>
-      <ReloginNotice />
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl leading-8 font-bold text-foreground">
           {isReauth ? "비밀번호 재입력" : "로그인"}
