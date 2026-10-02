@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { MedusaProductItem } from '@/lib/api/domains/medusa/catalog';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { useMedusaProductSearch, useTimeSaleVariantMap } from '@/lib/services/time-sale';
 
 const PAGE_SIZE = 20;
@@ -152,7 +153,7 @@ export function TimeSaleProductPicker({
                     {product.thumbnail ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={product.thumbnail}
+                        src={resolvePublicFileUrl(product.thumbnail) ?? ''}
                         alt=""
                         className="h-10 w-10 rounded object-cover"
                       />
