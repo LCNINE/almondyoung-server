@@ -121,6 +121,11 @@ export default async function MembershipSuccessScreen() {
           </div>
         </div>
 
+        {/* 결제 완료 안내 = 계약 내용 서면. 청약철회 기한·제한을 여기서도 알린다(전자상거래법 제13조 제2항). */}
+        <p className="text-muted-foreground mt-8 text-xs leading-4 break-keep">
+          {t("withdrawNotice")}
+        </p>
+
         <footer className="relative z-10 w-full shrink-0 pt-12 pb-4">
           <LocalizedClientLink
             href="/"

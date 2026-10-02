@@ -1,5 +1,6 @@
 import { OutboundQueueScreen } from '../../domains/outbound/OutboundQueueScreen';
+import { isStationDevice } from '../station';
 
 export function OutboundRoute() {
-  return <OutboundQueueScreen />;
+  return <OutboundQueueScreen labelPrinting={isStationDevice()} />;
 }

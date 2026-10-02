@@ -1,5 +1,5 @@
 import { addDays } from 'date-fns';
-import { CancellationPolicyInput, RefundPolicyService } from '../refund-policy.service';
+import { CancellationPolicyInput, isWithdrawalEligible, RefundPolicyService } from '../refund-policy.service';
 
 /**
  * 연간 환불 정책의 수치를 고정한다.
@@ -31,8 +31,7 @@ describe('RefundPolicyService', () => {
       autoRefundSupported: true,
       requiresReceiveAccount: false,
       refundableAmount: null,
-      currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0 },
-      termBenefitDiscount: 0,
+      currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false },
       ...overrides,
     };
   }
@@ -44,7 +43,7 @@ describe('RefundPolicyService', () => {
         plan: { price: ANNUAL_PRICE, durationDays: 365 },
         paidPeriodStart: addDays(now, -75),
         periodEndsAt: addDays(now, 290),
-        currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1000 },
+        currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1000, welcomeDeal: false },
       };
 
       // 75일 경과 → 3개월 차감(34,930원). 그중 40일이 정지였다면 35일 이용 → 2개월 차감(39,920원).
@@ -85,31 +84,29 @@ describe('RefundPolicyService', () => {
         paidAmount: ANNUAL_PRICE,
         monthlyListPrice: MONTHLY_PRICE,
         daysElapsed,
-        benefitDiscount: 0,
       });
 
       expect(result.breakdown.monthsElapsed).toBe(expectedMonths);
       expect(result.refundAmount).toBe(expectedRefund);
     });
 
-    it('사용한 할인 혜택액을 추가로 차감한다', () => {
+    it('받은 할인액은 따로 빼지 않는다 — 이용 개월을 월 정가로 받은 것으로 끝난다', () => {
       const result = policy.calculateAnnualProration({
         paidAmount: ANNUAL_PRICE,
         monthlyListPrice: MONTHLY_PRICE,
         daysElapsed: 75,
-        benefitDiscount: 12000,
       });
 
-      expect(result.refundAmount).toBe(34930 - 12000);
-      expect(result.breakdown.benefitDeduction).toBe(12000);
+      expect(result.refundAmount).toBe(34930);
+      expect(result.breakdown).not.toHaveProperty('benefitDeduction');
     });
 
     it('차감액이 결제액을 넘어도 음수가 되지 않는다', () => {
+      // 14개월 × 월 정가 > 연간 결제액
       const result = policy.calculateAnnualProration({
         paidAmount: ANNUAL_PRICE,
         monthlyListPrice: MONTHLY_PRICE,
-        daysElapsed: 200,
-        benefitDiscount: 999999,
+        daysElapsed: 400,
       });
 
       expect(result.refundAmount).toBe(0);
@@ -136,14 +133,23 @@ describe('RefundPolicyService', () => {
     });
 
     it('할인을 1원이라도 받았으면 7일 내라도 환불 불가', () => {
-      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1 } }));
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1, welcomeDeal: false } }));
 
       expect(decision.immediateRefund.available).toBe(false);
       expect(decision.immediateRefund.unavailableReason).toContain('혜택');
     });
 
+    it('할인이 0원이라도 웰컴딜을 샀으면 7일 내라도 환불 불가 — 혜택은 할인만이 아니다', () => {
+      const decision = policy.evaluate(
+        input({ currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true } }),
+      );
+
+      expect(decision.immediateRefund.available).toBe(false);
+      expect(decision.withdrawalDaysRemaining).toBe(0);
+    });
+
     it('주문은 했지만 멤버십 할인이 0원이면 혜택 미사용 — 전액 환불', () => {
-      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 3, totalDiscountAmount: 0 } }));
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 3, totalDiscountAmount: 0, welcomeDeal: false } }));
 
       expect(decision.immediateRefund.available).toBe(true);
       expect(decision.immediateRefund.refundKind).toBe('WITHDRAWAL_FULL');
@@ -241,5 +247,28 @@ describe('RefundPolicyService', () => {
         policy.resolvePaidPeriodStart({ periodEndsAt: new Date('2026-08-28'), durationDays: 30, hasPayment: false }),
       ).toBeNull();
     });
+  });
+});
+
+describe('isWithdrawalEligible — 해지 화면과 미납 요금이 함께 쓰는 판정', () => {
+  const unused = { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false };
+  const now = new Date('2026-09-23T03:00:00Z');
+
+  it('주기 시작 7일째까지 · 미사용이면 대상', () => {
+    expect(isWithdrawalEligible({ periodStart: new Date('2026-09-16'), now, usage: unused })).toBe(true);
+  });
+
+  it('8일째부터는 대상이 아니다', () => {
+    expect(isWithdrawalEligible({ periodStart: new Date('2026-09-15'), now, usage: unused })).toBe(false);
+  });
+
+  it('혜택을 하나라도 썼으면 대상이 아니다', () => {
+    const start = new Date('2026-09-22');
+    expect(isWithdrawalEligible({ periodStart: start, now, usage: { ...unused, totalDiscountAmount: 1 } })).toBe(false);
+    expect(isWithdrawalEligible({ periodStart: start, now, usage: { ...unused, welcomeDeal: true } })).toBe(false);
+  });
+
+  it('주기 시작을 모르면 대상이 아니다', () => {
+    expect(isWithdrawalEligible({ periodStart: null, now, usage: unused })).toBe(false);
   });
 });

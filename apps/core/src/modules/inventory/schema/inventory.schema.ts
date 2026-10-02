@@ -254,7 +254,11 @@ export const outboundBatchWorkItemStatusEnum = pgEnum('outbound_batch_work_item_
   'completed',
   'short_pick_recovery',
   'excluded',
+  // 이탈 중 — 목표 0, 집은 물건을 되돌림 바구니로 빼는 동안(스펙 §8). 활성으로 센다(uq_outbound_work_item_active_shipment).
+  'withdrawing',
 ]);
+// 이탈이 끝나면 박스가 갈 곳 — draft: 배치 전 풀(planned 그대로), canceled: 전체 취소 완료(스펙 §8).
+export const outboundWorkItemExitToEnum = pgEnum('outbound_work_item_exit_to', ['draft', 'canceled']);
 export const pickingPlanStatusEnum = pgEnum('picking_plan_status', [
   'draft',
   'active',
@@ -2816,6 +2820,33 @@ export const waybills = pgTable(
   }),
 );
 
+/**
+ * 송장 출력 기록(스펙 §10.3) — 앱이 프린터 전송에 성공한 뒤에만 남긴다. 박스(shipment) 단위다: 박스가 다른 배치로
+ * 옮겨 가 배정이 바뀌면 지문이 달라지므로 따로 무효화할 것이 없다. 같은 내용(지문)을 다시 출력하면 새 행이 아니라
+ * printed_at 을 갱신한다 — «마지막 출력»은 printed_at 으로 가린다(A→B→A 로 되돌아온 박스).
+ */
+export const waybillLabelPrints = pgTable(
+  'waybill_label_prints',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    revision: integer('revision').notNull(),
+    // «바뀐 줄» 표시용 — 그 판에 찍힌 품목 줄(로케이션·SKU·이름·수량).
+    itemsSnapshot: jsonb('items_snapshot').notNull(),
+    printedBy: uuid('printed_by').notNull(),
+    printedAt: timestamp('printed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqShipmentFingerprint: unique('uq_waybill_label_prints_shipment_fingerprint').on(t.shipmentId, t.fingerprint),
+    uqShipmentRevision: unique('uq_waybill_label_prints_shipment_revision').on(t.shipmentId, t.revision),
+    ckRevision: check('ck_waybill_label_prints_revision', sql`${t.revision} >= 1`),
+    ckFingerprint: check('ck_waybill_label_prints_fingerprint', sql`length(${t.fingerprint}) = 64`),
+  }),
+);
+
 /** Durable external-boundary record used only by the demo carrier provider. */
 export const demoCarrierShipments = pgTable(
   'demo_carrier_shipments',
@@ -2865,6 +2896,7 @@ export const outboundBatchWorkItems = pgTable(
     leaseVersion: integer('lease_version').notNull().default(0),
     exclusionReason: text('exclusion_reason'),
     recoveryReason: text('recovery_reason'),
+    exitTo: outboundWorkItemExitToEnum('exit_to'),
     waitingOperationId: uuid('waiting_operation_id').references(() => shipmentOperations.id, {
       onDelete: 'restrict',
     }),
@@ -2885,6 +2917,12 @@ export const outboundBatchWorkItems = pgTable(
     ckOutboundWorkItemRecovery: check(
       'ck_outbound_work_items_recovery',
       sql`${t.status} <> 'short_pick_recovery' OR ${t.recoveryReason} IS NOT NULL`,
+    ),
+    // withdrawing 은 같은 마이그레이션에서 ADD VALUE 한 값이라 텍스트로 비교한다(enum 함정, 스펙 §11).
+    // 나간 뒤(excluded)에도 exit_to 는 남긴다 — 송장 스캔(withdrawn)과 감사가 읽는다.
+    ckOutboundWorkItemWithdrawingExit: check(
+      'ck_outbound_work_items_withdrawing_exit',
+      sql`${t.status}::text <> 'withdrawing' OR ${t.exitTo} IS NOT NULL`,
     ),
     ckOutboundWorkItemCompletion: check(
       'ck_outbound_work_items_completion',
@@ -2986,9 +3024,11 @@ export const pickingSourceAllocations = pgTable(
   'picking_source_allocations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    planId: uuid('plan_id')
-      .references(() => pickingPlans.id, { onDelete: 'restrict' })
-      .notNull(),
+    // ADR-0041 의 contract 단계(S1 스펙 `2026-09-29-outbound-live-allocation-design.md` §11 PR 2)에서 컬럼째 삭제한다.
+    // 새 코드는 읽지도 쓰지도 않는다.
+    planId: uuid('plan_id').references(() => pickingPlans.id, { onDelete: 'restrict' }),
+    // ADR-0041 의 contract 단계(S1 스펙 §11 PR 2)에서 NOT NULL. 배정은 «이 박스가 이 배치에 있는 한 번의 기간»(작업 항목)에 매달린다.
+    workItemId: uuid('work_item_id').references(() => outboundBatchWorkItems.id, { onDelete: 'restrict' }),
     shipmentLineId: uuid('shipment_line_id')
       .references(() => shipmentLines.id, { onDelete: 'restrict' })
       .notNull(),
@@ -3005,8 +3045,15 @@ export const pickingSourceAllocations = pgTable(
       t.shipmentLineId,
       t.sourceLocationId,
     ),
+    uqPickingSourceWorkItemGrain: unique('uq_picking_source_allocations_work_item_grain').on(
+      t.workItemId,
+      t.shipmentLineId,
+      t.sourceLocationId,
+    ),
+    idxPickingAllocationWorkItem: index('idx_picking_source_allocations_work_item').on(t.workItemId),
     idxPickingAllocationLine: index('idx_picking_source_allocations_line').on(t.shipmentLineId),
-    ckPickingAllocationQty: check('ck_picking_source_allocations_qty_positive', sql`${t.qty} > 0`),
+    // 반납·이탈로 0 이 된 행은 지우지 않는다 — 이력은 세션 이벤트가, 신원은 이 행이 들고 있다(스펙 §11).
+    ckPickingAllocationQty: check('ck_picking_source_allocations_qty_nonnegative', sql`${t.qty} >= 0`),
     ckPickingAllocationStockVersion: check(
       'ck_picking_source_allocations_stock_version',
       sql`${t.sourceStockVersion} > 0`,
@@ -3024,6 +3071,7 @@ export const batchInventorySessions = pgTable(
     status: batchInventorySessionStatusEnum('status').notNull().default('active'),
     version: integer('version').notNull().default(1),
     handedInQty: integer('handed_in_qty').notNull().default(0),
+    handedBackQty: integer('handed_back_qty').notNull().default(0),
     settledQty: integer('settled_qty').notNull().default(0),
     returnedQty: integer('returned_qty').notNull().default(0),
     shortageQty: integer('shortage_qty').notNull().default(0),
@@ -3041,11 +3089,11 @@ export const batchInventorySessions = pgTable(
     ckBatchInventorySessionVersion: check('ck_batch_inventory_sessions_version_positive', sql`${t.version} > 0`),
     ckBatchInventorySessionQuantities: check(
       'ck_batch_inventory_sessions_quantities',
-      sql`${t.handedInQty} >= 0 AND ${t.settledQty} >= 0 AND ${t.returnedQty} >= 0 AND ${t.shortageQty} >= 0`,
+      sql`${t.handedInQty} >= 0 AND ${t.handedBackQty} >= 0 AND ${t.settledQty} >= 0 AND ${t.returnedQty} >= 0 AND ${t.shortageQty} >= 0`,
     ),
     ckBatchInventorySessionSettlement: check(
       'ck_batch_inventory_sessions_settlement',
-      sql`${t.settledQty} + ${t.returnedQty} + ${t.shortageQty} <= ${t.handedInQty}`,
+      sql`${t.settledQty} + ${t.returnedQty} + ${t.shortageQty} + ${t.handedBackQty} <= ${t.handedInQty}`,
     ),
     ckBatchInventorySessionRecovery: check(
       'ck_batch_inventory_sessions_recovery',
@@ -3082,6 +3130,9 @@ export const batchInventorySessionBalances = pgTable(
       t.custodyType,
     ),
     idxBatchInventoryBalanceShipmentLine: index('idx_batch_inventory_session_balances_line').on(t.shipmentLineId),
+    idxBatchInventoryBalanceReturnBin: index('idx_batch_inventory_session_balances_return_bin')
+      .on(t.custodyRef)
+      .where(sql`${t.custodyType} = 'RETURN_PENDING' AND ${t.qty} > 0`),
     ckBatchInventoryBalanceQty: check('ck_batch_inventory_session_balances_qty', sql`${t.qty} >= 0`),
     ckBatchInventoryBalanceVersion: check('ck_batch_inventory_session_balances_version', sql`${t.version} > 0`),
     ckBatchInventoryBalanceCustody: check(
@@ -3090,7 +3141,8 @@ export const batchInventorySessionBalances = pgTable(
         (${t.custodyType} = 'AT_SOURCE' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NULL)
         OR (${t.custodyType} = 'BULK_CART' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NULL)
         OR (${t.custodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NOT NULL)
-        OR (${t.custodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NOT NULL)
+        OR (${t.custodyType} = 'RETURN_PENDING' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NULL)
+        OR (${t.custodyType} = 'SETTLED' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NOT NULL)
       )`,
     ),
   }),
@@ -3148,7 +3200,8 @@ export const batchInventorySessionEvents = pgTable(
           (${t.fromCustodyType} = 'AT_SOURCE' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NULL)
           OR (${t.fromCustodyType} = 'BULK_CART' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NULL)
           OR (${t.fromCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NOT NULL)
-          OR (${t.fromCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NOT NULL)
+          OR (${t.fromCustodyType} = 'RETURN_PENDING' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NULL)
+          OR (${t.fromCustodyType} = 'SETTLED' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NOT NULL)
         ))
       )`,
     ),
@@ -3160,7 +3213,8 @@ export const batchInventorySessionEvents = pgTable(
           (${t.toCustodyType} = 'AT_SOURCE' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NULL)
           OR (${t.toCustodyType} = 'BULK_CART' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NULL)
           OR (${t.toCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NOT NULL)
-          OR (${t.toCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NOT NULL)
+          OR (${t.toCustodyType} = 'RETURN_PENDING' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NULL)
+          OR (${t.toCustodyType} = 'SETTLED' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NOT NULL)
         ))
       )`,
     ),
@@ -3184,6 +3238,29 @@ export const totes = pgTable(
     uqToteBarcode: unique('uq_totes_barcode').on(t.barcode),
     idxToteWarehouseStatus: index('idx_totes_warehouse_status').on(t.warehouseId, t.status),
     ckToteVersion: check('ck_totes_version_positive', sql`${t.version} > 0`),
+  }),
+);
+
+/**
+ * 되돌림 바구니(스펙 §8, S1 §6.3) — 이탈한 박스에서 뺀 물건을 원래 로케이션에 적치할 때까지 담는 상주 용기.
+ * 토트(박스 하나에 전용 배정)와 합치지 않는다. 보관 행의 `custody_ref` 가 이 바코드다(FK 아님 — 보관은 문자열 ref 를 쓴다).
+ */
+export const returnBins = pgTable(
+  'return_bins',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    barcode: varchar('barcode', { length: 128 }).notNull(),
+    registeredBy: uuid('registered_by').notNull(),
+    retiredAt: timestamp('retired_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqReturnBinBarcode: unique('uq_return_bins_barcode').on(t.barcode),
+    idxReturnBinWarehouse: index('idx_return_bins_warehouse').on(t.warehouseId),
+    ckReturnBinBarcodePrefix: check('ck_return_bins_barcode_prefix', sql`${t.barcode} LIKE 'RB-%'`),
   }),
 );
 
@@ -3386,6 +3463,7 @@ export const wmsTables = {
   inspectionIssues,
   outboundBatches,
   waybills,
+  waybillLabelPrints,
   demoCarrierShipments,
 
   // Outbound V2 expand model
@@ -3400,6 +3478,7 @@ export const wmsTables = {
   batchInventorySessionBalances,
   batchInventorySessionEvents,
   totes,
+  returnBins,
   shipmentToteAssignments,
   dispatchAttempts,
   dispatchAttemptSources,
@@ -3983,6 +4062,10 @@ export const pickingSourceAllocationsRelations = relations(pickingSourceAllocati
   plan: one(pickingPlans, {
     fields: [pickingSourceAllocations.planId],
     references: [pickingPlans.id],
+  }),
+  workItem: one(outboundBatchWorkItems, {
+    fields: [pickingSourceAllocations.workItemId],
+    references: [outboundBatchWorkItems.id],
   }),
   shipmentLine: one(shipmentLines, {
     fields: [pickingSourceAllocations.shipmentLineId],
@@ -4637,6 +4720,7 @@ export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMap
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;
 export type NewWaybill = InferInsertModel<typeof waybills>;
+export type WaybillLabelPrint = InferSelectModel<typeof waybillLabelPrints>;
 export type DemoCarrierShipment = InferSelectModel<typeof demoCarrierShipments>;
 
 // Outbound V2 expand model types

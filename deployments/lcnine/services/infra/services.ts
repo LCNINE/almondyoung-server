@@ -110,6 +110,7 @@ export function setup(infra: SharedInfra) {
   const smsGatePassword = new sst.Secret('SmsGatePassword', '');
   // 중계 서버에 웹훅을 등록할 때 쓴 서명키와 같아야 한다. 라이브는 비어 있으면 수신 웹훅을 전부 거절한다.
   const smsGateWebhookSigningKey = new sst.Secret('SmsGateWebhookSigningKey', '');
+  const supabasePlacesServiceKey = new sst.Secret('SupabasePlacesServiceKey', '');
 
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
@@ -261,6 +262,11 @@ export function setup(infra: SharedInfra) {
   // 유예·창(ELIGIBILITY_{DELIVERED,SHIPPED,ORDER_AGE,WINDOW}_DAYS)은 코드 기본값(0·10·30·30)을 쓴다.
   const eligibilityAutoIssue = 'true';
 
+  // 멤버십 가입에 약관 동의 기록을 필수로 할지. 켜는 순서가 있다: membership 배포(동의 기록 API) →
+  // storefront 배포(가입 폼이 동의를 기록하고 그 id 를 가입 요청에 싣는다) → 이 값을 'true' 로.
+  // 먼저 켜면 옛 화면으로 들어온 가입이 전부 400 이 된다.
+  const membershipTermsAgreementRequired = 'false';
+
   // 한 틱이 «보는» 주문 수 상한. 이건 정책이 아니라 실행시간 안전장치다 — 발급 루프가 직렬이라
   // (건당 query.graph 3 + ugc 왕복 1 + 표식 update 1) 상한이 없으면 한 회차가 무한정 길어진다.
   //
@@ -333,6 +339,11 @@ export function setup(infra: SharedInfra) {
     WALLET_API_URL: url('wallet'),
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
+    MEMBERSHIP_TERMS_AGREEMENT_REQUIRED: membershipTermsAgreementRequired,
+    // 이 시각부터 기존 계약에도 미납 조항을 적용한다(비우면 새 약관 동의 계약만). 이용약관 부칙 시행일과 같다.
+    MEMBERSHIP_TERMS_EXISTING_MEMBERS_EFFECTIVE_AT: '2026-09-30T00:00:00+09:00',
+    // 미수 납부 결제가 돌아올 주소의 출처 검사 기준. 없으면 형식 검사까지만 한다.
+    STOREFRONT_URL: storefrontUrl,
     OIDC_ISSUER_URL: idpUserServiceUrl,
     // 갱신 사전 고지 크론이 수신자 이메일을 조회하는 경로.
     USER_SERVICE_URL: idpUserServiceUrl,
@@ -360,6 +371,9 @@ export function setup(infra: SharedInfra) {
     NHN_SMS_SEND_NO: nhnSmsSendNo.value,
     // user-service 가 /internal/sms/send 를 부를 때 쓰는 키. auth 배포에도 같은 값이 필요하다.
     NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
+    // 관리자 알림톡 «멤버십 회원만» 대상의 명단(membership internal active-all).
+    MEMBERSHIP_SERVICE_URL: url('membership'),
+    MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     RESEND_API_KEY: resendApiKey.value,
     RESEND_BASE_URL: 'https://api.resend.com',
     RESEND_FROM: `noreply@mail.${baseDomain}`,
@@ -370,6 +384,8 @@ export function setup(infra: SharedInfra) {
     SMS_GATE_USERNAME: smsGateUsername.value,
     SMS_GATE_PASSWORD: smsGatePassword.value,
     SMS_GATE_WEBHOOK_SIGNING_KEY: smsGateWebhookSigningKey.value,
+    SUPABASE_PLACES_URL: 'https://xsjyvxbnmwwsdvyofjfy.supabase.co',
+    SUPABASE_PLACES_SERVICE_KEY: supabasePlacesServiceKey.value,
     USER_SERVICE_URL: idpUserServiceUrl,
     USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
     // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.
@@ -401,6 +417,8 @@ export function setup(infra: SharedInfra) {
     JWT_ISSUER: 'almondyoung-auth',
     OIDC_ISSUER_URL: idpUserServiceUrl,
     UGC_INTERNAL_KEY: ugcInternalKey.value,
+    FILE_SERVICE_URL: url('file'),
+    FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
   });
   const searchEnv = withPrefix('SEARCH', {
     ...searchBackendEnv,

@@ -121,6 +121,33 @@ describeIfDb('CustomerInsightsQuery (실 Postgres)', () => {
     expect(july?.retention.slice(0, 2)).toEqual([1, 1]);
   });
 
+  it('코호트 월·활동 월은 KST 달력 기준이다 — 월 첫날 이른 시각이 전월로 새지 않는다', async () => {
+    // 첫구매 KST 9/1 00:30, 재구매 KST 10/1 08:00 — UTC 로는 둘 다 전월 말일이다.
+    const uK = `itest-user-${randomUUID().slice(0, 8)}`;
+    const first = new Date('2030-09-01T00:30:00+09:00');
+    const second = new Date('2030-10-01T08:00:00+09:00');
+    await db.insert(aggCustomerLifetime).values({
+      customerId: uK, firstOrderAt: first, lastOrderAt: second, ordersCount: 2, totalRevenue: 2000,
+    });
+    await db.insert(factOrderItems).values([
+      { messageId: messageId(), orderKey: `${uK}-1`, salesChannel: channel, customerId: uK, masterId: masterR, quantity: 1, occurredAt: first },
+      { messageId: messageId(), orderKey: `${uK}-2`, salesChannel: channel, customerId: uK, masterId: masterR, quantity: 1, occurredAt: second },
+    ]);
+    try {
+      for (const tz of ['UTC', 'Asia/Seoul']) {
+        await sql.unsafe(`SET TIME ZONE '${tz}'`);
+        const result = await query.getInsights('2030-10-01', '2030-10-31');
+        const sept = result.cohorts.rows.find((row) => row.cohortMonth === '2030-09');
+        expect(sept?.size).toBe(1);
+        expect(sept?.retention.slice(0, 2)).toEqual([1, 1]);
+        expect(result.cohorts.rows.find((row) => row.cohortMonth === '2030-08')?.size ?? 0).toBe(0);
+      }
+    } finally {
+      await sql`SET TIME ZONE 'UTC'`;
+      await db.delete(aggCustomerLifetime).where(eq(aggCustomerLifetime.customerId, uK));
+    }
+  });
+
   it('RFM — 휴면 셀과 세그먼트에 시드 고객이 잡히고 셀 합 = 전체', async () => {
     const result = await query.getInsights('2030-08-01', '2030-08-31');
 

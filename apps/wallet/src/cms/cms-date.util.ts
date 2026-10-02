@@ -113,7 +113,12 @@ export function nextCmsPaymentDate(now = kstNow()): string {
   return formatYyyymmdd(candidate);
 }
 
-/** D-1 날짜를 YYYYMMDD (KST 기준). CMS 출금 결과 조회 기준일. */
+/** 오늘 날짜를 YYYYMMDD (KST 기준). */
+export function kstTodayYyyymmdd(): string {
+  return formatYyyymmdd(kstNow());
+}
+
+/** D-1 날짜를 YYYYMMDD (KST 기준). 조회 지연을 «확정 실패»로 읽어도 되는 경계. */
 export function kstYesterdayYyyymmdd(): string {
   const yesterday = kstNow();
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);

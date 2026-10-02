@@ -3,6 +3,7 @@ import { differenceInDays } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { SubscriptionContractReader } from './subscription-contract.reader';
 import { BenefitReader } from '../benefit/benefit.reader';
+import { MembershipBenefitUsage, NO_BENEFIT_USAGE } from '../benefit/benefit-usage';
 import { PauseReader } from '../pause/pause.reader';
 import { PaymentClientService } from '../billing/payment-client.service';
 import {
@@ -26,7 +27,7 @@ export interface CancellationContext {
    *
    * 고객·CS 가 "왜 환불이 막혔는지" 를 숫자로 확인할 수 있어야 문의에 답할 수 있다.
    */
-  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
+  currentPeriodBenefit: MembershipBenefitUsage;
   /** 혜택 사용량을 센 구간의 시작(=이번 결제 주기 시작). 결제 기록이 없으면 null. */
   benefitPeriodStart: string | null;
   /** 정기결제 계약인지 — 1회 결제는 '해지'가 아니라 '만료 시 종료'다 */
@@ -103,10 +104,8 @@ export class CancellationContextReader {
     // 연간 계약에서 기간 경계가 어긋나고, 가입 전 주문이나 옛 계약의 할인이 섞여 들어온다.
     // 청약철회 창과 같은 기준점(paidPeriodStart)을 써야 화면 금액과 판정 근거가 어긋나지 않는다.
     const currentPeriodBenefit = paidPeriodStart
-      ? await this.benefitReader.findBenefitUsageBetween(contract.userId, paidPeriodStart)
-      : { orderCount: 0, totalDiscountAmount: 0 };
-    // 연간 정산 차감액은 같은 집계에서 나온다 — 두 함수가 같은 할인을 다르게 세지 않게 한다.
-    const termBenefitDiscount = isAnnual ? currentPeriodBenefit.totalDiscountAmount : 0;
+      ? await this.benefitReader.findMembershipBenefitUsageSince(contract.userId, paidPeriodStart)
+      : NO_BENEFIT_USAGE;
 
     const monthlyListPrice = isAnnual
       ? await this.contractReader.findMonthlyListPrice(plan.tierId, plan.price)
@@ -144,7 +143,6 @@ export class CancellationContextReader {
           Math.max(0, refundability.refundableAmount - refundability.alreadyRefundedAmount))
         : null,
       currentPeriodBenefit,
-      termBenefitDiscount,
     });
 
     return {

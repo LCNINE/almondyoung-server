@@ -288,7 +288,6 @@ export interface AdminCancellationOption {
     monthlyListPrice: number;
     monthsElapsed: number;
     usageDeduction: number;
-    benefitDeduction: number;
   };
 }
 

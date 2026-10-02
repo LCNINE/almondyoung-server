@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '@app/db';
+import { DbService, TxFor } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, ne, or, sql } from 'drizzle-orm';
 import {
@@ -9,7 +9,9 @@ import {
   NewNotification,
   NewNotificationCampaign,
   NewSmsDevice,
+  NewSmsGroupRecipient,
   NewSmsTemplate,
+  NewSmsTrackedLink,
   Notification,
   NotificationCampaign,
   notificationCampaigns,
@@ -17,8 +19,14 @@ import {
   notificationTables,
   SmsDevice,
   smsDevices,
+  SmsGroupRecipient,
+  smsGroupRecipients,
+  smsOptOuts,
+  SmsRecipientGroup,
+  smsRecipientGroups,
   SmsTemplate,
   smsTemplates,
+  smsTrackedLinks,
 } from '../../../database/schemas/notification-schema';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
 
@@ -35,6 +43,10 @@ const outboundAt = sql`coalesce(${notifications.sentAt}, ${notifications.created
 export interface ConversationRow {
   inbound: InboundMessage;
   lastOutbound: { body: string; at: Date } | null;
+}
+
+export interface RecipientGroupRow extends SmsRecipientGroup {
+  recipients: number;
 }
 
 export interface CampaignStatusCount {
@@ -167,13 +179,113 @@ export class SmsGateRepository {
       .limit(limit);
   }
 
-  async createCampaign(campaign: NewNotificationCampaign, rows: NewNotification[]): Promise<void> {
+  async createCampaign(
+    campaign: NewNotificationCampaign,
+    rows: NewNotification[],
+    links: NewSmsTrackedLink[] = [],
+  ): Promise<void> {
     await this.dbService.run(async (tx) => {
-      await tx.insert(notificationCampaigns).values(campaign);
-      for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
-        await tx.insert(notifications).values(rows.slice(i, i + INSERT_CHUNK));
-      }
+      await this.insertCampaign(tx, campaign, rows, links);
     });
+  }
+
+  async continueCampaign(
+    fromCampaignId: string,
+    toCampaignId: string,
+    build: (pending: Notification[]) => {
+      campaign: NewNotificationCampaign;
+      rows: NewNotification[];
+      links: NewSmsTrackedLink[];
+    },
+  ): Promise<number> {
+    return this.dbService.run(async (tx) => {
+      const pending = await tx
+        .update(notifications)
+        .set({
+          status: 'CANCELLED',
+          errorDetails: { message: '수정한 내용으로 이어 보냈습니다', timestamp: new Date() },
+          updatedAt: new Date(),
+        })
+        .where(and(isSmsGate, eq(notifications.campaignId, fromCampaignId), eq(notifications.status, 'PENDING')))
+        .returning();
+      if (pending.length === 0) return 0;
+      const { campaign, rows, links } = build(pending);
+      await this.insertCampaign(tx, campaign, rows, links);
+      await tx
+        .update(notificationCampaigns)
+        .set({
+          metadata: sql`${notificationCampaigns.metadata} || ${JSON.stringify({ continuedTo: toCampaignId })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(eq(notificationCampaigns.campaignId, fromCampaignId));
+      return rows.length;
+    });
+  }
+
+  private async insertCampaign(
+    tx: TxFor<Schema>,
+    campaign: NewNotificationCampaign,
+    rows: NewNotification[],
+    links: NewSmsTrackedLink[],
+  ): Promise<void> {
+    await tx.insert(notificationCampaigns).values(campaign);
+    for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+      await tx.insert(notifications).values(rows.slice(i, i + INSERT_CHUNK));
+    }
+    for (let i = 0; i < links.length; i += INSERT_CHUNK) {
+      await tx.insert(smsTrackedLinks).values(links.slice(i, i + INSERT_CHUNK));
+    }
+  }
+
+  async recordLinkClick(code: string, counted: boolean): Promise<string | undefined> {
+    if (!counted) {
+      const [row] = await this.dbService.db
+        .select({ url: smsTrackedLinks.url })
+        .from(smsTrackedLinks)
+        .where(eq(smsTrackedLinks.code, code));
+      return row?.url;
+    }
+    const [row] = await this.dbService.db
+      .update(smsTrackedLinks)
+      .set({
+        clickCount: sql`${smsTrackedLinks.clickCount} + 1`,
+        firstClickedAt: sql`coalesce(${smsTrackedLinks.firstClickedAt}, now())`,
+        lastClickedAt: sql`now()`,
+      })
+      .where(eq(smsTrackedLinks.code, code))
+      .returning({ url: smsTrackedLinks.url });
+    return row?.url;
+  }
+
+  async countClickedByCampaign(campaignIds: string[]): Promise<Map<string, number>> {
+    if (campaignIds.length === 0) return new Map();
+    const rows = await this.dbService.db
+      .select({
+        campaignId: smsTrackedLinks.campaignId,
+        clicked: sql<number>`count(distinct ${smsTrackedLinks.notificationId})::int`,
+      })
+      .from(smsTrackedLinks)
+      .where(and(inArray(smsTrackedLinks.campaignId, campaignIds), isNotNull(smsTrackedLinks.firstClickedAt)))
+      .groupBy(smsTrackedLinks.campaignId);
+    return new Map(rows.map((r) => [r.campaignId, r.clicked]));
+  }
+
+  listCampaignClicks(campaignId: string) {
+    return this.dbService.db
+      .select({
+        notificationId: notifications.notificationId,
+        userId: notifications.userId,
+        name: sql<string | null>`${notifications.payload}->>'username'`,
+        phoneNumber: sql<string | null>`${notifications.payload}->>'phoneNumber'`,
+        url: smsTrackedLinks.url,
+        clickCount: smsTrackedLinks.clickCount,
+        firstClickedAt: smsTrackedLinks.firstClickedAt,
+        lastClickedAt: smsTrackedLinks.lastClickedAt,
+      })
+      .from(smsTrackedLinks)
+      .innerJoin(notifications, eq(notifications.notificationId, smsTrackedLinks.notificationId))
+      .where(and(eq(smsTrackedLinks.campaignId, campaignId), isNotNull(smsTrackedLinks.firstClickedAt)))
+      .orderBy(desc(smsTrackedLinks.firstClickedAt));
   }
 
   listCampaigns(limit: number): Promise<NotificationCampaign[]> {
@@ -207,7 +319,11 @@ export class SmsGateRepository {
     return this.dbService.run(async (tx) => {
       const cancelled = await tx
         .update(notifications)
-        .set({ status: 'CANCELLED', errorDetails: { message: '대량 발송을 중지했습니다', timestamp: new Date() }, updatedAt: new Date() })
+        .set({
+          status: 'CANCELLED',
+          errorDetails: { message: '대량 발송을 중지했습니다', timestamp: new Date() },
+          updatedAt: new Date(),
+        })
         .where(and(isSmsGate, eq(notifications.campaignId, campaignId), eq(notifications.status, 'PENDING')))
         .returning({ id: notifications.notificationId });
       await tx
@@ -335,9 +451,7 @@ export class SmsGateRepository {
     return {
       items: rows.map((row) => ({
         inbound: row.latest,
-        lastOutbound: row.last_outbound?.at
-          ? { body: row.last_outbound.body ?? '', at: row.last_outbound.at }
-          : null,
+        lastOutbound: row.last_outbound?.at ? { body: row.last_outbound.body ?? '', at: row.last_outbound.at } : null,
       })),
       total: totalRow?.total ?? 0,
     };
@@ -391,5 +505,90 @@ export class SmsGateRepository {
       .select()
       .from(notifications)
       .where(and(eq(notifications.channel, 'SMS'), inArray(notifications.notificationId, ids)));
+  }
+
+  async listRecipientGroups(): Promise<RecipientGroupRow[]> {
+    return this.dbService.db
+      .select({
+        id: smsRecipientGroups.id,
+        name: smsRecipientGroups.name,
+        source: smsRecipientGroups.source,
+        createdBy: smsRecipientGroups.createdBy,
+        createdAt: smsRecipientGroups.createdAt,
+        updatedAt: smsRecipientGroups.updatedAt,
+        recipients: count(smsGroupRecipients.id),
+      })
+      .from(smsRecipientGroups)
+      .leftJoin(smsGroupRecipients, eq(smsGroupRecipients.groupId, smsRecipientGroups.id))
+      .groupBy(smsRecipientGroups.id)
+      .orderBy(desc(smsRecipientGroups.createdAt));
+  }
+
+  async findRecipientGroup(id: string): Promise<SmsRecipientGroup | undefined> {
+    const [row] = await this.dbService.db.select().from(smsRecipientGroups).where(eq(smsRecipientGroups.id, id));
+    return row;
+  }
+
+  async findRecipientGroupByName(name: string): Promise<SmsRecipientGroup | undefined> {
+    const [row] = await this.dbService.db.select().from(smsRecipientGroups).where(eq(smsRecipientGroups.name, name));
+    return row;
+  }
+
+  async createRecipientGroup(name: string, createdBy: string, source?: 'supabase'): Promise<SmsRecipientGroup> {
+    const [row] = await this.dbService.db.insert(smsRecipientGroups).values({ name, createdBy, source }).returning();
+    return row;
+  }
+
+  /** 이미 그룹에 있는 번호는 건너뛴다. 새로 들어간 수를 돌려준다. */
+  async addGroupRecipients(rows: NewSmsGroupRecipient[]): Promise<number> {
+    let added = 0;
+    await this.dbService.run(async (tx) => {
+      for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+        const inserted = await tx
+          .insert(smsGroupRecipients)
+          .values(rows.slice(i, i + INSERT_CHUNK))
+          .onConflictDoNothing()
+          .returning({ id: smsGroupRecipients.id });
+        added += inserted.length;
+      }
+      if (rows.length > 0) {
+        await tx
+          .update(smsRecipientGroups)
+          .set({ updatedAt: new Date() })
+          .where(eq(smsRecipientGroups.id, rows[0].groupId));
+      }
+    });
+    return added;
+  }
+
+  async deleteRecipientGroup(id: string): Promise<void> {
+    await this.dbService.db.delete(smsRecipientGroups).where(eq(smsRecipientGroups.id, id));
+  }
+
+  async findRecipientGroupsByIds(ids: string[]): Promise<SmsRecipientGroup[]> {
+    if (ids.length === 0) return [];
+    return this.dbService.db.select().from(smsRecipientGroups).where(inArray(smsRecipientGroups.id, ids));
+  }
+
+  findGroupRecipients(groupIds: string[]): Promise<SmsGroupRecipient[]> {
+    if (groupIds.length === 0) return Promise.resolve([]);
+    return this.dbService.db
+      .select()
+      .from(smsGroupRecipients)
+      .where(inArray(smsGroupRecipients.groupId, groupIds))
+      .orderBy(asc(smsGroupRecipients.createdAt));
+  }
+
+  async addOptOut(phoneE164: string): Promise<void> {
+    await this.dbService.db.insert(smsOptOuts).values({ phone: phoneE164 }).onConflictDoNothing();
+  }
+
+  async findOptedOut(phonesE164: string[]): Promise<Set<string>> {
+    if (phonesE164.length === 0) return new Set();
+    const rows = await this.dbService.db
+      .select({ phone: smsOptOuts.phone })
+      .from(smsOptOuts)
+      .where(inArray(smsOptOuts.phone, phonesE164));
+    return new Set(rows.map((r) => r.phone));
   }
 }

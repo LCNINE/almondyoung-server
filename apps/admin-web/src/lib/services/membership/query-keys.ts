@@ -5,6 +5,10 @@ export const membershipQueryKeys = {
   members: () => [...membershipQueryKeys.all, 'members'] as const,
   memberList: (query: AdminMembersQuery) => [...membershipQueryKeys.members(), query] as const,
   membersSummary: () => [...membershipQueryKeys.members(), 'summary'] as const,
+  membersInsights: () => [...membershipQueryKeys.members(), 'insights'] as const,
+  memberAxisList: (axis: string, query: Record<string, unknown>) =>
+    [...membershipQueryKeys.members(), 'axis', axis, query] as const,
+  memberArrears: (userId: string) => [...membershipQueryKeys.all, 'memberArrears', userId] as const,
   memberDetail: (userId: string) => [...membershipQueryKeys.all, 'memberDetail', userId] as const,
   billingEvents: (userId: string) =>
     [...membershipQueryKeys.all, 'billingEvents', userId] as const,
@@ -17,5 +21,12 @@ export const membershipQueryKeys = {
   tiersWithPlans: () => [...membershipQueryKeys.all, 'tiersWithPlans'] as const,
   recurringBilling: () => [...membershipQueryKeys.all, 'recurringBilling'] as const,
   recurringBillingOverview: () => [...membershipQueryKeys.all, 'recurringBilling', 'overview'] as const,
+  recurringBillingFinance: (month: string, months: number) =>
+    [...membershipQueryKeys.all, 'recurringBilling', 'finance', month, months] as const,
+  upcomingBilling: (days: number) => [...membershipQueryKeys.all, 'recurringBilling', 'upcoming', days] as const,
+  billingRecovery: (month: string) => [...membershipQueryKeys.all, 'billingRecovery', month] as const,
+  billingRecoveryJourney: (userId: string) =>
+    [...membershipQueryKeys.all, 'billingRecovery', 'journey', userId] as const,
+  membershipNotices: (refs: string[]) => [...membershipQueryKeys.all, 'billingRecovery', 'notices', refs] as const,
   recurringBillingList: (query: Record<string, unknown>) => [...membershipQueryKeys.all, 'recurringBilling', 'list', query] as const,
 };

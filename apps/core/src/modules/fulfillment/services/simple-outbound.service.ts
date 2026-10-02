@@ -1,5 +1,3 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { canReplaceDraft } from './outbound-preparation-policy';
 import {
   BadRequestException,
   ConflictException,
@@ -8,7 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
+import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { ScopeAuthorizationDecision } from '@app/authorization';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
@@ -18,21 +17,8 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
-import { FulfillmentInvariantService } from './fulfillment-invariant.service';
-import {
-  lockPreparation,
-  activePreparationSession,
-  preparationExecutionFacts,
-  readPreparationPlan,
-} from './outbound-preparation.locks';
-import {
-  preparationBlocked,
-  OutboundPreparationResult,
-  PreparedOutboundResult,
-  OutboundPreparationBlocked,
-} from './outbound-preparation-result';
-import { PickingStartResult } from '../picking/picking-strategy.interface';
-import { isPlanValidationError } from '../picking/plan/picking-plan.errors';
+import { activePreparationSession, isBatchStarted } from './outbound-preparation.locks';
+import { preparationBlocked, OutboundPreparationResult, PreparedOutboundResult } from './outbound-preparation-result';
 import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
 // A structured key keeps new nested commands disjoint from every legacy string key.
@@ -52,7 +38,6 @@ export interface SimpleOutboundContext {
   batchId: string;
   workItemId: string;
   shipmentId: string;
-  planId: string;
   sessionId: string;
   leaseVersion: number;
 }
@@ -74,13 +59,6 @@ export interface SimpleOutboundState {
 }
 
 const PICKABLE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing'] as const;
-// DiscretePickingStrategy.assertPlanningEligibility 는 plan 멤버십을 ACTIVE_WORK_ITEM_STATUSES
-// (discrete-picking.strategy.ts:33, queued·picking 만)와 정확히 일치시킨다. ensurePlan 의
-// members 조회가 더 넓은 PICKABLE_WORK_ITEM_STATUSES 를 쓰면 같은 배치의 ready_to_pack/packing
-// shipment 까지 plan 요청에 끼어들어 그 비교가 항상 어긋나고, PICKING_WORK_ITEM_MEMBERSHIP_MISMATCH
-// 로 배치 전체(다른 queued 항목까지)가 막힌다. loadWorkItem 은 이 좁은 목록을 쓰면 안 된다 —
-// 그건 "이 work item 자체가 아직 피킹 가능한가"이지 "plan 에 새로 넣을 멤버인가"가 아니다.
-const PLAN_MEMBER_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
 
 @Injectable()
 export class SimpleOutboundService {
@@ -92,12 +70,12 @@ export class SimpleOutboundService {
     private readonly commands: FulfillmentCommandService,
     private readonly dispatch: ShipmentDispatchService,
     private readonly barcode: BarcodeService,
-    private readonly invariant: FulfillmentInvariantService,
   ) {}
 
   /**
-   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item 확인,
-   * plan·session 생성(없을 때만), 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
+   * 단순출고 스캔이 성립하기 위한 선행 상태를 확보한다 — 배치 work item·피킹 방식 확인, 배치가 시작됐는지 확인
+   * (시작 전이면 BATCH_NOT_STARTED 로 막는다 — 시작은 「작업 시작」 하나뿐이고 여기서 시작하지 않는다), 작업 항목 잠금,
+   * 활성 세션 확인, 피커 claim. 모두 호출자의 트랜잭션 안에서 돈다.
    */
   async prepare(
     shipmentId: string,
@@ -109,109 +87,30 @@ export class SimpleOutboundService {
     if (!actor?.id) throw new UnauthorizedException('Authenticated actor is required');
     const initial = await this.loadWorkItem(shipmentId, tx);
     await this.assertBatchMethodSupported(initial.batchId, tx);
-    const selectedPlan = await readPreparationPlan(initial.batchId, tx);
-    if (selectedPlan?.status === 'active') {
-      // Preserve active execution's work -> plan -> session ordering. Canonical
-      // component locks belong only to draft preparation, before HAND_IN.
-      const [workItem] = await tx
-        .select()
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, initial.id))
-        .for('update');
-      const currentPlan = await readPreparationPlan(initial.batchId, tx);
-      if (
-        !workItem ||
-        workItem.batchId !== initial.batchId ||
-        !(PICKABLE_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status) ||
-        currentPlan?.id !== selectedPlan.id ||
-        currentPlan.status !== 'active'
-      )
-        throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Active preparation changed while acquiring work item');
-      const sessionId = await activePreparationSession(workItem.batchId, currentPlan.id, tx);
-      if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-      return this.claimPrepared(workItem, currentPlan.id, sessionId, actor, idempotencyKey, tx);
+    // 배치 시작은 배치 카드의 「작업 시작」(POST /picking/v2/starts) 하나뿐이다(스펙 §6). 첫 스캔이 배치를 시작하던
+    // 지연 시작은 송장 출력보다 배정이 늦게 일어나는 원인이라 없앴다.
+    if (!(await isBatchStarted(initial.batchId, tx))) {
+      return preparationBlocked(initial.batchId, null, 'BATCH_NOT_STARTED');
     }
-    try {
-      await lockPreparation(initial.batchId, this.invariant, tx);
-    } catch (error) {
-      const blocked = this.preparationFailure(error, initial.batchId, null);
-      if (blocked) return blocked;
-      throw error;
-    }
-    const workItem = await this.loadWorkItem(shipmentId, tx);
-    await this.assertBatchMethodSupported(workItem.batchId, tx);
-    if (workItem.batchId !== initial.batchId)
-      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Shipment batch changed');
-    const openPlan = await readPreparationPlan(workItem.batchId, tx);
-    // Never resume under draft preparation's invariant/session locks: subsequent scan
-    // would take plan after session, opposite to a direct historical start.
-    if (openPlan?.status === 'active')
-      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Draft became active while acquiring preparation locks');
-    const facts = await preparationExecutionFacts(workItem.batchId, actor.id, tx);
-    if (openPlan?.status === 'draft' && Object.values(facts).some(Boolean)) {
-      return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    }
-    const attempt = async (step: string, trx: DbTx): Promise<PickingStartResult> => {
-      const plan = await this.ensurePlan(workItem.batchId, actor, idempotencyKey, trx, step);
-      if (typeof plan !== 'string') return plan;
-      return this.picking.start(
-        {
-          batchId: workItem.batchId,
-          planId: plan,
-          actorId: actor.id,
-          idempotencyKey: nestedCommandKey(idempotencyKey, `${step}start`),
-        },
-        trx,
-      );
-    };
-    let started: PickingStartResult;
-    try {
-      // Roll back nested pending commands on a first-plan shortage. A returned invalidation commits
-      // this savepoint, so the replacement savepoint below cannot undo the old draft's invalidation.
-      started = await tx.transaction((trx) => attempt('', trx));
-    } catch (error) {
-      const blocked = this.preparationFailure(error, workItem.batchId, null);
-      if (blocked) return blocked;
-      throw error;
-    }
-    if (started.state === 'invalidated') {
-      const oldPlanId = started.planId;
-      // SOURCE_STOCK_CHANGED is emitted only after locked membership/version/waybill validation.
-      if (
-        !canReplaceDraft({
-          ...facts,
-          reasonCode: started.reasonCode,
-          supportedIndividual: true,
-          shipmentSnapshotUnchanged: started.reasonCode === 'SOURCE_STOCK_CHANGED',
-        })
-      ) {
-        return preparationBlocked(workItem.batchId, oldPlanId, started.reasonCode ?? 'ACTIVE_WORK_REQUIRES_REVIEW');
-      }
-      try {
-        started = await tx.transaction(async (trx) => {
-          const replacement = await attempt(`replan:${oldPlanId}:`, trx);
-          if (replacement.state === 'invalidated')
-            throw new PreparationAttemptBlocked(
-              preparationBlocked(workItem.batchId, oldPlanId, 'REPLAN_LIMIT_REACHED'),
-            );
-          return replacement;
-        });
-      } catch (error) {
-        if (error instanceof PreparationAttemptBlocked) return error.result;
-        const blocked = this.preparationFailure(error, workItem.batchId, oldPlanId);
-        if (blocked) return blocked;
-        throw error;
-      }
-    }
-    if (started.state !== 'started') throw new Error('Preparation did not start a session');
-    if (started.status !== 'active') return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    const current = await this.loadWorkItem(shipmentId, tx);
-    return this.claimPrepared(current, started.planId, started.sessionId, actor, idempotencyKey, tx);
+    // 시작된 배치: 작업 항목 → 세션 순서를 지킨다.
+    const [workItem] = await tx
+      .select()
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(eq(wmsTables.outboundBatchWorkItems.id, initial.id))
+      .for('update');
+    if (
+      !workItem ||
+      workItem.batchId !== initial.batchId ||
+      !(PICKABLE_WORK_ITEM_STATUSES as readonly string[]).includes(workItem.status)
+    )
+      throw this.conflict('PICKING_COMPONENT_CHANGED_RETRY', 'Active preparation changed while acquiring work item');
+    const sessionId = await activePreparationSession(workItem.batchId, tx);
+    if (!sessionId) return preparationBlocked(workItem.batchId, null, 'ACTIVE_WORK_REQUIRES_REVIEW');
+    return this.claimPrepared(workItem, sessionId, actor, idempotencyKey, tx);
   }
 
   private async claimPrepared(
     workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect,
-    planId: string,
     sessionId: string,
     actor: SimpleOutboundActor,
     idempotencyKey: OutboundCommandKey,
@@ -224,29 +123,10 @@ export class SimpleOutboundService {
         batchId: workItem.batchId,
         workItemId: workItem.id,
         shipmentId: workItem.shipmentId,
-        planId,
         sessionId,
         leaseVersion,
       },
     };
-  }
-
-  private preparationFailure(
-    error: unknown,
-    batchId: string,
-    planId: string | null,
-  ): OutboundPreparationBlocked | null {
-    // Explicit allowlist only: authorization failures, SQL errors and unknown failures escape.
-    if (!isPlanValidationError(error)) return null;
-    const response = error.getResponse();
-    const code = typeof response === 'object' && 'code' in response ? response.code : undefined;
-    if (code === 'FULFILLMENT_INVARIANT_VIOLATION')
-      return preparationBlocked(batchId, planId, 'ACTIVE_WORK_REQUIRES_REVIEW');
-    if (code === 'PICKING_WAYBILL_NOT_DISPATCHABLE') return preparationBlocked(batchId, planId, 'ELIGIBILITY_CHANGED');
-    if (code === 'PICKING_SOURCE_INSUFFICIENT') return preparationBlocked(batchId, planId, 'SOURCE_INSUFFICIENT');
-    if (code === 'PICKING_SOURCE_STALE' || code === 'PICKING_PLAN_SOURCE_STALE')
-      return preparationBlocked(batchId, planId, 'REPLAN_LIMIT_REACHED');
-    return null;
   }
 
   async scan(
@@ -314,7 +194,7 @@ export class SimpleOutboundService {
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.force');
-    if (!isScopeAuthorizationDecision(input.authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE))
+    if (!isForceDispatchDecision(input.authorization))
       throw new ForbiddenException({
         code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
         message: 'Force dispatch scope is required',
@@ -382,7 +262,6 @@ export class SimpleOutboundService {
       await this.picking.completePick(
         {
           batchId: context.batchId,
-          planId: context.planId,
           sessionId: context.sessionId,
           workItemId: context.workItemId,
           shipmentId: context.shipmentId,
@@ -428,14 +307,17 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, context.planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
           eq(wmsTables.shipmentLines.shipmentId, context.shipmentId),
         ),
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(sql`${wmsTables.locations.code} collate "C"`),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
 
@@ -453,7 +335,6 @@ export class SimpleOutboundService {
           strategy: 'discrete',
           stage: 'source',
           batchId: context.batchId,
-          planId: context.planId,
           sessionId: context.sessionId,
           workItemId: context.workItemId,
           shipmentId: context.shipmentId,
@@ -481,7 +362,7 @@ export class SimpleOutboundService {
 
   /**
    * 스캔 수량을 이 SKU 의 할당(allocation)들에 나눠 담는다. 한 라인이 여러
-   * 로케이션에서 나올 수 있고(unique 키가 plan+line+location), 전략의 과다피킹
+   * 로케이션에서 나올 수 있고(배정 한 줄 = 작업 항목+라인+로케이션), 전략의 과다피킹
    * 가드도 로케이션 단위라 분배가 필요하다.
    */
   async pickScanned(
@@ -505,9 +386,10 @@ export class SimpleOutboundService {
         wmsTables.shipmentLines,
         eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
       )
+      .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(
         and(
-          eq(wmsTables.pickingSourceAllocations.planId, context.planId),
+          eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
           eq(wmsTables.shipmentLines.shipmentId, context.shipmentId),
           eq(wmsTables.shipmentLines.skuId, skuId),
           source ? eq(wmsTables.pickingSourceAllocations.sourceLocationId, source.sourceLocationId) : undefined,
@@ -516,6 +398,8 @@ export class SimpleOutboundService {
       )
       .orderBy(
         asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        // 송장 품목 줄과 같은 순서(로케이션 코드 순, #986 스펙 §10.1-3) — 작업자가 송장대로 집었다고 보고 그 순서로 귀속한다(스펙 U11)
+        asc(sql`${wmsTables.locations.code} collate "C"`),
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
     if (allocations.length === 0) {
@@ -556,7 +440,6 @@ export class SimpleOutboundService {
           strategy: 'discrete',
           stage: 'source',
           batchId: context.batchId,
-          planId: context.planId,
           sessionId: context.sessionId,
           workItemId: context.workItemId,
           shipmentId: context.shipmentId,
@@ -654,7 +537,6 @@ export class SimpleOutboundService {
       await this.picking.completePick(
         {
           batchId: context.batchId,
-          planId: context.planId,
           sessionId: context.sessionId,
           workItemId: context.workItemId,
           shipmentId: context.shipmentId,
@@ -754,6 +636,17 @@ export class SimpleOutboundService {
       )
       .limit(1);
     if (!workItem) {
+      const [leaving] = await tx
+        .select({ id: wmsTables.outboundBatchWorkItems.id })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+            eq(wmsTables.outboundBatchWorkItems.status, 'withdrawing'),
+          ),
+        )
+        .limit(1);
+      if (leaving) throw this.conflict('SHIPMENT_WITHDRAWN', `Shipment ${shipmentId} is leaving its batch`);
       throw this.conflict(
         'SIMPLE_OUTBOUND_WORK_ITEM_MISSING',
         'Shipment is not part of an open outbound batch — ask the manager to add it',
@@ -763,13 +656,13 @@ export class SimpleOutboundService {
   }
 
   /**
-   * 단순출고가 다룰 수 없는 방식의 배치를 plan 생성 전에 거른다. ensurePlan 안이 아니라
-   * 여기인 이유: ensurePlan 은 이미 draft/active plan 이 있으면 조기 반환하므로(:561),
-   * 관리자가 admin-web 에서 계획을 만들어 둔 배치는 그 안의 가드를 영원히 지나친다.
+   * 단순출고가 다룰 수 없는 방식의 배치를 거른다. prepare 가 배치 시작 여부를 보기 전에 부른다 — 시작 전
+   * 배치(BATCH_NOT_STARTED)든 시작된 배치(관리자가 admin-web 에서 시작해 둔 배치 포함)든 방식이 틀리면 같은 거절이다.
    *
    * 락을 걸지 않는다 — picking_method 는 outbound-batch-orchestrator.service.ts:116 의
-   * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). 조인 대신 별도 쿼리인 이유는 loadWorkItem 이
-   * `.for('update')` 라서, 조인하면 배치 행까지 잠겨 같은 배치의 작업자들이 직렬화되기 때문이다.
+   * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). loadWorkItem 은 잠그지 않는다 — 시작된 배치
+   * 분기가 작업 항목을 따로 잠근다. 조인 대신 별도 쿼리인 이유는 그 잠금이 배치 행까지 번져 같은 배치의 작업자들이
+   * 직렬화되는 것을 막기 위해서다.
    */
   private async assertBatchMethodSupported(batchId: string, tx: DbTx): Promise<void> {
     const [batch] = await tx
@@ -787,52 +680,6 @@ export class SimpleOutboundService {
         `Simple outbound handles discrete picking only — this batch uses ${batch.pickingMethod}`,
       );
     }
-  }
-
-  private async ensurePlan(
-    batchId: string,
-    actor: SimpleOutboundActor,
-    idempotencyKey: OutboundCommandKey,
-    tx: DbTx,
-    step = '',
-  ): Promise<string | Extract<PickingStartResult, { state: 'invalidated' }>> {
-    // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
-    // `this.picking.plan()` 이 부르는 `plan/picking-plan.ts` 의 `planPicking()`
-    // (SELECT … FOR UPDATE + idempotent commands.execute)이 진다. 이 쿼리는 이미 있는
-    // plan 을 재사용해 중복 plan() 호출을 피하는 최적화일 뿐, race 를 막는 가드로
-    // 취급하지 말 것.
-    const [existing] = await tx
-      .select({ id: wmsTables.pickingPlans.id })
-      .from(wmsTables.pickingPlans)
-      .where(
-        and(eq(wmsTables.pickingPlans.batchId, batchId), inArray(wmsTables.pickingPlans.status, ['draft', 'active'])),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
-    const members = await tx
-      .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(
-        and(
-          eq(wmsTables.outboundBatchWorkItems.batchId, batchId),
-          inArray(wmsTables.outboundBatchWorkItems.status, [...PLAN_MEMBER_WORK_ITEM_STATUSES]),
-        ),
-      )
-      .orderBy(asc(wmsTables.outboundBatchWorkItems.shipmentId));
-    const planned = await this.picking.plan(
-      {
-        batchId,
-        shipmentIds: members.map((member) => member.shipmentId),
-        actorId: actor.id,
-        idempotencyKey: nestedCommandKey(idempotencyKey, `${step}plan`),
-      },
-      tx,
-    );
-    if (planned.state !== 'planned') {
-      return planned;
-    }
-    return planned.planId;
   }
 
   private async ensurePickerClaim(
@@ -870,11 +717,5 @@ export class SimpleOutboundService {
   // 먼저 변경했어요" 하나로만 본다 — SKU_NOT_IN_SHIPMENT·OVERSCAN·CLAIMED_BY_OTHER 가 다 같은 문구가 된다.
   private conflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, error: code, message });
-  }
-}
-
-class PreparationAttemptBlocked extends Error {
-  constructor(readonly result: OutboundPreparationBlocked) {
-    super(result.reasonCode);
   }
 }

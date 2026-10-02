@@ -12,6 +12,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { PreparedOutboundResult, isPreparationBlocked } from './outbound-preparation-result';
+import { isBatchStarted } from './outbound-preparation.locks';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import {
   OutboundCommandKey,
@@ -64,7 +65,7 @@ const FORCE_NOT_APPLIED: LocationOutboundForceRejection = {
 function isForceRejection(result: LocationOutboundForceCommandResult): result is LocationOutboundForceRejection {
   return 'outcome' in result && result.outcome === 'rejected' && result.code === FORCE_NOT_APPLIED.code;
 }
-type ReadContext = { shipmentId: string; workItemId: string | null; sessionId: string | null; planId: string | null };
+type ReadContext = { shipmentId: string; workItemId: string | null; sessionId: string | null; started: boolean };
 export const LOCATION_OUTBOUND_MAX_QUANTITY = 2147483647;
 const locationCommandKey = (operation: 'start' | 'scan' | 'force', key: string): OutboundCommandKey => ({
   contract: 'location',
@@ -104,7 +105,7 @@ export class LocationOutboundService {
     );
   }
 
-  /** Read the existing work only. No prepare, plan creation, claim, or inventory commands. */
+  /** Read the existing work only. No prepare, batch start, claim, or inventory commands. */
   getState(shipmentId: string, warehouseId: string, tx?: DbTx): Promise<LocationOutboundState> {
     return this.dbService.run(async (trx) => {
       await this.assertWarehouse(shipmentId, warehouseId, trx);
@@ -117,19 +118,7 @@ export class LocationOutboundService {
           desc(wmsTables.outboundBatchWorkItems.createdAt),
         )
         .limit(1);
-      const [plan] = workItem
-        ? await trx
-            .select({ id: wmsTables.pickingPlans.id })
-            .from(wmsTables.pickingPlans)
-            .where(
-              and(
-                eq(wmsTables.pickingPlans.batchId, workItem.batchId),
-                inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
-              ),
-            )
-            .orderBy(desc(wmsTables.pickingPlans.version))
-            .limit(1)
-        : [];
+      const started = workItem ? await isBatchStarted(workItem.batchId, trx) : false;
       const [session] = workItem
         ? await trx
             .select({ id: wmsTables.batchInventorySessions.id })
@@ -143,7 +132,7 @@ export class LocationOutboundService {
             .limit(1)
         : [];
       return this.loadState(
-        { shipmentId, workItemId: workItem?.id ?? null, planId: plan?.id ?? null, sessionId: session?.id ?? null },
+        { shipmentId, workItemId: workItem?.id ?? null, sessionId: session?.id ?? null, started },
         warehouseId,
         trx,
       );
@@ -354,7 +343,9 @@ export class LocationOutboundService {
   ): Promise<LocationOutboundState> {
     const state = await this.simple.loadState(context, tx);
     const sources: OutboundSourceLine[] = [];
-    if (state.status !== 'shipped' && context.planId) {
+    // 준비를 마친 컨텍스트(SimpleOutboundContext)는 배치가 시작된 뒤에만 만들어진다.
+    const started = 'started' in context ? context.started : true;
+    if (state.status !== 'shipped' && started && context.workItemId) {
       const allocations = await tx
         .select({
           shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
@@ -371,7 +362,7 @@ export class LocationOutboundService {
         .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
         .where(
           and(
-            eq(wmsTables.pickingSourceAllocations.planId, context.planId),
+            eq(wmsTables.pickingSourceAllocations.workItemId, context.workItemId),
             eq(wmsTables.shipmentLines.shipmentId, context.shipmentId),
           ),
         )

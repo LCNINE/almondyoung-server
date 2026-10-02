@@ -369,6 +369,179 @@ function rangeQs(query: StatisticsRangeQuery): string {
   return params.toString();
 }
 
+
+/* ───────────── 성장 3축 + 연간 목표 ───────────── */
+
+export type GrowthGranularity = 'day' | 'week' | 'month';
+
+export interface GrowthRangeQuery {
+  from: string;
+  to: string;
+  granularity: GrowthGranularity;
+}
+
+export interface GrowthRevenueTotals {
+  orders: number;
+  grossRevenue: number;
+  cancelledAmount: number;
+  refundedAmount: number;
+  netRevenue: number;
+}
+
+export interface GrowthPeriodCustomers {
+  buyers: number;
+  newBuyers: number;
+  returningBuyers: number;
+  repeatBuyers: number;
+  newBuyerRevenue: number;
+  returningBuyerRevenue: number;
+}
+
+export interface GrowthAccounting {
+  newCustomers: number;
+  retained: number;
+  resurrected: number;
+  churned: number;
+  quickRatio: number | null;
+}
+
+export interface RepeatHeadline {
+  days: number;
+  current: { firstBuyers: number; repeaters: number; from: string; to: string };
+  previous: { firstBuyers: number; repeaters: number; from: string; to: string };
+}
+
+export interface RepurchaseDue {
+  customers: number;
+  fromDays: number | null;
+  toDays: number | null;
+}
+
+export interface TimeToSecond {
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  n: number;
+}
+
+export type Ga4Status = 'ok' | 'disabled' | 'failed';
+
+export interface Ga4SplitRow {
+  label: string;
+  current: { sessions: number; transactions: number };
+  previous: { sessions: number; transactions: number };
+}
+
+export interface Ga4Totals {
+  sessions: number;
+  totalUsers: number;
+  newUsers: number;
+  transactions: number;
+}
+
+export interface GrowthAnalysis {
+  range: { from: string; to: string };
+  granularity: GrowthGranularity;
+  today: string;
+  revenue: {
+    previousRange: { from: string; to: string };
+    ownMall: { series: Array<{ bucket: string } & GrowthRevenueTotals>; current: GrowthRevenueTotals; previous: GrowthRevenueTotals };
+    channels: Array<{ salesChannel: string; current: GrowthRevenueTotals; previous: GrowthRevenueTotals }>;
+  };
+  customers: {
+    previousRange: { from: string; to: string };
+    series: Array<{ bucket: string; buyers: number; newBuyers: number; returningBuyers: number }>;
+    current: GrowthPeriodCustomers;
+    previous: GrowthPeriodCustomers;
+    growthAccounting: { current: GrowthAccounting; previous: GrowthAccounting };
+    repeatHeadline: RepeatHeadline;
+    cohorts: Array<{
+      cohortMonth: string;
+      size: number;
+      windows: Array<{ days: number; matured: number; repeaters: number; immature: number }>;
+    }>;
+    timeToSecond: TimeToSecond;
+    repurchaseDue: RepurchaseDue;
+    coverage: { ownMallOrders: number; memberOrders: number };
+  };
+  ga4: {
+    status: Ga4Status;
+    previousRange: { from: string; to: string };
+    totals: { current: Ga4Totals; previous: Ga4Totals } | null;
+    series: Array<{ bucket: string; sessions: number; newUsers: number; transactions: number }>;
+    channelSeries: Array<{ bucket: string; channel: string; sessions: number }>;
+    channels: Ga4SplitRow[];
+    devices: Ga4SplitRow[];
+    visitorTypes: Ga4SplitRow[];
+    funnel: { current: Record<string, number>; previous: Record<string, number> } | null;
+    paymentReturns: {
+      current: { sessions: number; transactions: number };
+      previous: { sessions: number; transactions: number };
+    } | null;
+  };
+}
+
+export interface PlanAssumptions {
+  dailySessions: number;
+  orderConversionRate: number;
+  averageOrderValue: number;
+  externalDailyRevenue: number;
+}
+
+export type GoalScope = 'own_mall' | 'all_channels';
+
+export interface RevenueGoal {
+  id: string;
+  year: number;
+  scope: GoalScope;
+  annualTarget: number;
+  monthlyTargets: number[];
+  preCoverageActual: number | null;
+  planAssumptions: PlanAssumptions | null;
+  memo: string | null;
+  createdAt: string;
+}
+
+export interface GrowthDailyRevenue {
+  date: string;
+  allChannels: number;
+  ownMall: number;
+  ownMallOrders: number;
+}
+
+export interface GrowthSummary {
+  today: string;
+  year: number;
+  dataAsOf: string | null;
+  coverageStart: string | null;
+  channels: string[];
+  goal: RevenueGoal | null;
+  ytdDaily: GrowthDailyRevenue[];
+  monitorDaily: GrowthDailyRevenue[];
+  ga4Daily: { status: Ga4Status; points: Array<{ date: string; sessions: number; transactions: number }> };
+  buyersDaily: Array<{ date: string; buyers: number }>;
+  customers: {
+    range: { from: string; to: string };
+    previousRange: { from: string; to: string };
+    current: GrowthPeriodCustomers;
+    previous: GrowthPeriodCustomers;
+    growthAccounting: { current: GrowthAccounting; previous: GrowthAccounting };
+    repeatHeadline: RepeatHeadline;
+    repurchaseDue: RepurchaseDue;
+    timeToSecond: TimeToSecond;
+  };
+}
+
+export interface CreateRevenueGoalPayload {
+  year: number;
+  scope?: GoalScope;
+  annualTarget: number;
+  monthlyTargets?: number[];
+  preCoverageActual?: number;
+  planAssumptions?: PlanAssumptions;
+  memo?: string;
+}
+
 export const analyticsApi = {
   getOverview: async (): Promise<AnalyticsOverview> => {
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/summary`);
@@ -464,6 +637,32 @@ export const analyticsApi = {
     const params = new URLSearchParams({ from: query.from, to: query.to });
     if (query.limit) params.set('limit', String(query.limit));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/behavior?${params.toString()}`);
+    return res.data;
+  },
+
+  getGrowth: async (query: GrowthRangeQuery): Promise<GrowthAnalysis> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to, granularity: query.granularity });
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/growth?${params.toString()}`);
+    return res.data;
+  },
+
+  getGrowthSummary: async (): Promise<GrowthSummary> => {
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/growth/summary`);
+    return res.data;
+  },
+
+  listRevenueGoals: async (year: number): Promise<{ year: number; current: RevenueGoal | null; history: RevenueGoal[] }> => {
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/revenue-goals?year=${year}`);
+    return res.data;
+  },
+
+  createRevenueGoal: async (payload: CreateRevenueGoalPayload): Promise<{ id: string }> => {
+    const res = await client.post(`${ANALYTICS_SERVICE_BASE_URL}/statistics/revenue-goals`, payload);
+    return res.data;
+  },
+
+  deleteRevenueGoal: async (id: string): Promise<{ deleted: true }> => {
+    const res = await client.delete(`${ANALYTICS_SERVICE_BASE_URL}/statistics/revenue-goals/${encodeURIComponent(id)}`);
     return res.data;
   },
 };

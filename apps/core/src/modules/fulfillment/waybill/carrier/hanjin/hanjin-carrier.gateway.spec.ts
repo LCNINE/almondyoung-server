@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { HanjinCarrierGateway } from './hanjin-carrier.gateway';
 import type { WaybillRequest } from '../carrier-gateway.interface';
 import type { HanjinConfig } from './hanjin.config';
@@ -14,6 +15,7 @@ const config = {
   sender: { name: '창고', zip: '08588', baseAddress: '금천구', detailAddress: '지점', tel: '02-1' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 } as HanjinConfig;
 
 const req: WaybillRequest = {
@@ -229,6 +231,127 @@ describe('HanjinCarrierGateway.track', () => {
     const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-01', resultMessage: '존재하지 않는 운송장번호' });
     expect(await new HanjinCarrierGateway(config, { post } as any).track('777')).toEqual([]);
   });
+
+  // ERROR-01 만 「아직 스캔 없음」이다. 나머지를 빈 배열로 삼키면 체크디지트 오류(ERROR-02)나 인증 오류(ERROR-90)
+  // 가 「아직 집하 전」과 구별되지 않아, 번호가 틀린 운송장을 폴러가 영원히 조용히 다시 부른다.
+  it.each(['ERROR-02', 'ERROR-90', 'ERROR-99'])('%s → definitive_rejection 으로 던진다', async (code) => {
+    const post = jest.fn().mockResolvedValue({ resultCode: code, resultMessage: '오류' });
+    await expect(new HanjinCarrierGateway(config, { post } as any).track('777')).rejects.toMatchObject({
+      name: 'CarrierError',
+      outcome: 'definitive_rejection',
+      details: { carrier: 'hanjin', code },
+    });
+  });
+
+  it('호출마다 추적 페이서를 거친다 (10 TPS 제한, #916 이관)', async () => {
+    const order: string[] = [];
+    const pacer = {
+      acquire: jest.fn(() => {
+        order.push('acquire');
+        return Promise.resolve();
+      }),
+    };
+    const post = jest.fn(() => {
+      order.push('post');
+      return Promise.resolve({ resultCode: 'ERROR-01' });
+    });
+    const gateway = new HanjinCarrierGateway(config, { post } as any, undefined, pacer);
+    await gateway.track('777');
+    await gateway.track('778');
+    expect(order).toEqual(['acquire', 'post', 'acquire', 'post']);
+  });
+});
+
+// #915 — 정본 §4.4 의 작업상태코드는 이 12개가 전부다. 표를 늘리거나 줄이려면 정본부터 확인할 것.
+describe('HanjinCarrierGateway.track 상태맵 (#915)', () => {
+  const trackOne = async (item: Record<string, unknown>) => {
+    const post = jest.fn().mockResolvedValue({
+      resultCode: 'OK',
+      wrkList: [{ statusDate: '2023-07-29 19:10:00', ...item }],
+    });
+    const [scan] = await new HanjinCarrierGateway(config, { post } as any).track('777');
+    return scan;
+  };
+
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => warn.mockRestore());
+
+  it.each([
+    ['01', 'pending'], // 예약등록
+    ['03', 'canceled'], // 예약취소
+    ['05', 'pending'], // 운송장출력
+    ['07', 'in_transit'], // 집하출발
+    ['08', 'pickup_missed'], // 미집하 — 진행 중이 아니라 예외 상태
+    ['11', 'in_transit'], // 집하완료
+    ['14', 'in_transit'], // 입고
+    ['31', 'in_transit'], // 상품출발
+    ['32', 'in_transit'], // 상품도착
+    ['63', 'in_transit'], // 배송출발
+    ['66', 'delivered'], // 배송완료
+    ['92', 'failed'], // 배송불가
+  ])('작업상태코드 %s → %s', async (statusCode, status) => {
+    expect(await trackOne({ statusCode })).toMatchObject({ statusCode, status });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // 미집하는 다시 집하되면 11 로 넘어가는 되돌릴 수 있는 상태다. failed(배송불가, 종료)와 섞이면
+  // 미집하 적체를 운영에서 볼 수 없다.
+  it('미집하(08)는 배송불가(92)와 다른 상태다', async () => {
+    const missed = await trackOne({ statusCode: '08' });
+    const failed = await trackOne({ statusCode: '92' });
+    expect(missed.status).not.toBe(failed.status);
+  });
+
+  // 65 는 공식 목록에 없다. 배송완료는 66 하나뿐이다.
+  it.each(['65', '99', ''])('목록에 없는 코드 %p → unknown + 경고 로그', async (statusCode) => {
+    expect(await trackOne({ statusCode })).toMatchObject({ statusCode, status: 'unknown' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('777'));
+  });
+
+  it('statusCode 가 숫자로 와도 같은 표를 탄다', async () => {
+    // 선행 0 이 있는 코드는 숫자로 오면 깨지므로 두 자리 코드만 본다.
+    expect(await trackOne({ statusCode: 66 })).toMatchObject({ statusCode: '66', status: 'delivered' });
+  });
+
+  describe('사유/관계코드 해석', () => {
+    it.each([
+      ['92', '01', '수취거부'],
+      ['92', '06', '고객부재'],
+      ['92', '17', '기업체 휴무'],
+      ['03', '02', '화물미준비 및 재고부족'],
+      ['03', '18', '기업체휴무'],
+      ['66', '05', '경비실'], // 66 은 사유가 아니라 인수 관계다
+      ['66', '06', '문앞'],
+    ])('%s / %s → %s', async (statusCode, reasonCode, label) => {
+      expect(await trackOne({ statusCode, reasonCode })).toMatchObject({ reasonCode, reasonLabel: label });
+    });
+
+    it('같은 사유코드라도 작업상태에 따라 뜻이 다르다', async () => {
+      expect((await trackOne({ statusCode: '92', reasonCode: '01' })).reasonLabel).toBe('수취거부');
+      expect((await trackOne({ statusCode: '03', reasonCode: '01' })).reasonLabel).toBe('송하인부재');
+      expect((await trackOne({ statusCode: '66', reasonCode: '01' })).reasonLabel).toBe('본인');
+    });
+
+    it('표에 없는 사유코드는 한진이 준 reasonMessage 로 폴백한다', async () => {
+      expect(await trackOne({ statusCode: '92', reasonCode: '42', reasonMessage: '새 사유' })).toMatchObject({
+        reasonCode: '42',
+        reasonMessage: '새 사유',
+        reasonLabel: '새 사유',
+      });
+    });
+
+    it('사유표가 없는 작업상태는 reasonMessage 를 그대로 쓴다', async () => {
+      expect((await trackOne({ statusCode: '63', reasonCode: '01', reasonMessage: '원문' })).reasonLabel).toBe('원문');
+    });
+
+    it('사유코드도 메시지도 없으면 reasonLabel 이 없다', async () => {
+      expect((await trackOne({ statusCode: '11' })).reasonLabel).toBeUndefined();
+    });
+  });
 });
 
 // #911 회귀 — 결함이 assembler(단일 phone → mobile)와 gateway(tel 그대로 전송) 사이에서 났으므로
@@ -244,7 +367,7 @@ describe('주문 스냅샷 → insert-order 바디 (#911)', () => {
         roadAddress: '서울시 중구 소공로 88',
         detailAddress: '999층',
       },
-      lines: [{ productName: '의류', quantity: 1, skuId: 'sku-1' }],
+      lines: [{ productName: '의류', skuName: '의류', quantity: 1, skuId: 'sku-1' }],
       config,
     });
     const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });

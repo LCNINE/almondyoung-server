@@ -82,6 +82,12 @@ export class AdminReviewListQueryDto extends PaginationQueryDto {
   @MaxLength(64)
   batchId?: string;
 
+  @ApiPropertyOptional({ description: '출처 정확 일치 (예: admin-manual)', maxLength: 30 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  sourceSystem?: string;
+
   @ApiPropertyOptional({
     description: '상태 필터 (미지정 시 삭제됨 제외, deleted 지정 시 삭제됨만)',
     enum: REVIEW_STATUS_FILTERS,

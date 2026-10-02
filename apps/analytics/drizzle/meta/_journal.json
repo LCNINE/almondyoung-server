@@ -64,6 +64,13 @@
       "when": 1788980605927,
       "tag": "20260909190325_add-cron-runs",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790834361805,
+      "tag": "20261001055921_add-revenue-goals",
+      "breakpoints": true
     }
   ]
 }

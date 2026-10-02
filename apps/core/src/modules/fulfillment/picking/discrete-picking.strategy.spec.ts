@@ -1,21 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
 import { DiscreteScanPickingInput, PickingScanResult } from './picking-strategy.interface';
-import { assertPlanMembers } from './plan/picking-plan.queries';
 
-// Plan membership is a plan-layer query with its own spec; here it is a satisfied precondition.
-// Everything else in the plan layer stays real so the `tx.select` call-order assertions below
-// keep measuring the scan path itself.
-jest.mock('./plan/picking-plan.queries', () => ({
-  ...jest.requireActual('./plan/picking-plan.queries'),
-  assertPlanMembers: jest.fn(),
-}));
+// The allocation-layer queries stay real so the `tx.select` call-order assertions below keep
+// measuring the scan path itself.
 
 const IDS = Object.freeze({
   actor: '11111111-1111-4111-8111-111111111111',
   otherActor: '22222222-2222-4222-8222-222222222222',
   batch: '33333333-3333-4333-8333-333333333333',
-  plan: '44444444-4444-4444-8444-444444444444',
   session: '55555555-5555-4555-8555-555555555555',
   workItem: '66666666-6666-4666-8666-666666666666',
   shipment: '77777777-7777-4777-8777-777777777777',
@@ -63,7 +56,6 @@ class SelectResult<T> implements PromiseLike<T[]> {
 function scanInput(overrides: Partial<DiscreteScanPickingInput> = {}): DiscreteScanPickingInput {
   return {
     batchId: IDS.batch,
-    planId: IDS.plan,
     sessionId: IDS.session,
     workItemId: IDS.workItem,
     shipmentId: IDS.shipment,
@@ -106,9 +98,8 @@ function workItem(overrides: Record<string, unknown> = {}) {
 function activeIdentityRows(item = workItem()): unknown[][] {
   return [
     [item],
-    [{ batchId: IDS.batch, strategy: 'discrete', status: 'active' }],
+    [{ pickingMethod: 'individual', startedAt: new Date('2026-07-15T00:00:00.000Z') }],
     [{ batchId: IDS.batch, status: 'active' }],
-    [{ id: 'hand-in-event' }],
   ];
 }
 
@@ -117,7 +108,7 @@ function makeService(selectRows: unknown[][] = []) {
   const updateBuilder = {
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
-    returning: jest.fn().mockResolvedValue([{ id: IDS.plan }]),
+    returning: jest.fn().mockResolvedValue([{ id: IDS.workItem }]),
   };
   const tx = {
     select: jest.fn(() => new SelectResult(queuedRows.shift() ?? [])),
@@ -133,8 +124,13 @@ function makeService(selectRows: unknown[][] = []) {
   const sessions = { moveCustody: jest.fn().mockResolvedValue({}) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const service: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, {});
-  jest.mocked(assertPlanMembers).mockResolvedValue(undefined);
+  const service: DiscretePickingStrategy = new Strategy(
+    commands,
+    workflowGate,
+    sessions,
+    {},
+    { assertCurrent: jest.fn(async () => undefined) },
+  );
   return { service, commands, sessions, workflowGate, tx };
 }
 
@@ -152,12 +148,11 @@ describe('DiscretePickingStrategy', () => {
     expect(Object.isFrozen(service.capabilities)).toBe(true);
   });
 
-  // 계획 층(plan/start)은 더 이상 전략의 것이 아니다 — plan/picking-plan.spec.ts 로 이사했다.
+  // 배치 시작(배정·인계)은 전략의 것이 아니다 — allocation/batch-start.spec.ts 가 맡는다.
 
   it('lets the command replay envelope return before claim validation or custody mutation', async () => {
     const stored: PickingScanResult = {
       operationId: 'original-operation',
-      planId: IDS.plan,
       sessionId: IDS.session,
       workItemId: IDS.workItem,
       shipmentId: IDS.shipment,
@@ -212,11 +207,11 @@ describe('DiscretePickingStrategy', () => {
     await expect(service.scan(scanInput())).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'PICKING_WRONG_SKU' }),
     });
-    expect(tx.select).toHaveBeenCalledTimes(5);
+    expect(tx.select).toHaveBeenCalledTimes(4);
     expect(sessions.moveCustody).not.toHaveBeenCalled();
   });
 
-  it('rejects a source outside the plan allocation before mutating custody', async () => {
+  it('rejects a source outside the work item allocation before mutating custody', async () => {
     const rows = [...activeIdentityRows(), [{ shipmentId: IDS.shipment, skuId: IDS.sku }], []];
     const { service, sessions } = makeService(rows);
 
@@ -242,7 +237,6 @@ describe('DiscretePickingStrategy', () => {
 
     await expect(service.scan(scanInput({ quantity: 2 }))).resolves.toEqual({
       operationId: 'command-request-1',
-      planId: IDS.plan,
       sessionId: IDS.session,
       workItemId: IDS.workItem,
       shipmentId: IDS.shipment,

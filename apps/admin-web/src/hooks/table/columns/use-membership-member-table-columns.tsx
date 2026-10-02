@@ -17,7 +17,7 @@ const statusConfig: Record<
     variant: 'default' | 'secondary' | 'destructive' | 'outline';
   }
 > = {
-  ACTIVE: { label: '활성화', variant: 'default' },
+  ACTIVE: { label: '활성', variant: 'default' },
   PAUSED: { label: '일시정지', variant: 'secondary' },
   CANCELLED: { label: '해지', variant: 'destructive' },
   EXPIRED: { label: '만료', variant: 'outline' },
@@ -97,8 +97,12 @@ export const useMembershipMemberTableColumns = ({
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => {
+        cell: ({ getValue, row }) => {
           const status = getValue();
+          // 해지 예약은 계약상 ACTIVE 다(잔여기간 이용 중). 상태 칩과 같은 말로 보여 준다.
+          if (status === 'ACTIVE' && row.original.recurringCancelledAt) {
+            return <Badge variant="outline">해지 예약</Badge>;
+          }
           const config = statusConfig[status] ?? {
             label: status,
             variant: 'outline' as const,

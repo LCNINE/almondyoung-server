@@ -34,6 +34,10 @@ import { FulfillmentReconciliationService } from './services/fulfillment-reconci
 import { ShipmentReservationService } from './services/shipment-reservation.service';
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
+import { BoxAllocationManager } from './services/box-allocation.manager';
+import { BoxReturnService } from './services/box-return.service';
+import { BoxWithdrawalService } from './services/box-withdrawal.service';
+import { ShortPickExitService } from './services/short-pick-exit.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
@@ -42,13 +46,17 @@ import { AggregateThenSortPickingStrategy } from './picking/aggregate-then-sort.
 import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
 import { ShipmentDispatchService } from './services/shipment-dispatch.service';
 import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tracking.service';
+import { CarrierTrackingPoller } from './services/carrier-tracking.poller';
 import { ShipmentShortPickService } from './services/shipment-short-pick.service';
 import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
 import { LocationOutboundService } from './services/location-outbound.service';
 import { LocationOutboundController } from './controllers/location-outbound.controller';
+import { ReturnBinService } from './services/return-bin.service';
 import { SimpleOutboundService } from './services/simple-outbound.service';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
+import { RefillPendingReader } from './reader/refill-pending.reader';
+import { OutboundRefillController } from './controllers/outbound-refill.controller';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -60,6 +68,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingCommandV2Controller, PickingV2Controller } from './controllers/picking-v2.controller';
+import { ReturnBinController } from './controllers/return-bin.controller';
 import { ToteController } from './controllers/tote.controller';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { ShipmentShortPickController } from './controllers/shipment-short-pick.controller';
@@ -105,6 +114,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
+    ReturnBinController,
     ShipmentController,
     ConsolidationController,
     DirectShipController,
@@ -115,6 +125,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentShortPickController,
     ShipmentRecallController,
     ShipmentRecallOperationController,
+    OutboundRefillController,
   ],
   providers: [
     // Core fulfillment services
@@ -128,6 +139,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     PickingProcessService,
     ShipmentDispatchService,
     ShipmentDeliveryTrackingService,
+    CarrierTrackingPoller,
     ShipmentShortPickService,
     ShipmentRecallService,
     ToteLifecycleService,
@@ -138,6 +150,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentReconciliationService,
     ShipmentReservationService,
     ShipmentPlanningService,
+    BoxAllocationManager,
+    BoxWithdrawalService,
+    ShortPickExitService,
+    BoxReturnService,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
@@ -146,7 +162,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     PickToTotePickingStrategy,
     SimpleOutboundService,
     LocationOutboundService,
+    ReturnBinService,
     ShipmentWaybillReader,
+    RefillPendingReader,
     {
       provide: PICKING_STRATEGIES,
       useFactory: (

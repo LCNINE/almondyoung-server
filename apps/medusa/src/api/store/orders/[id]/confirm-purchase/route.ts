@@ -12,6 +12,7 @@ const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 async function markWelcomeMembershipPurchased(
   customerId: string,
   orderId: string,
+  orderedAt: string | null,
   productIds: string[],
   container: any,
 ) {
@@ -41,7 +42,8 @@ async function markWelcomeMembershipPurchased(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${MEMBERSHIP_INTERNAL_KEY}`,
       },
-      body: JSON.stringify({ orderId }),
+      // 구매 시각은 주문 시각이다 — 빼면 membership 이 이 호출(구매확정) 시각을 구매 시각으로 적는다.
+      body: JSON.stringify({ orderId, ...(orderedAt && { orderedAt }) }),
       signal: AbortSignal.timeout(5000),
     });
   } catch (err) {
@@ -78,6 +80,7 @@ async function markReviewEligibilityIssued(
 type OrderWithPayments = {
   id: string;
   customer_id?: string | null;
+  created_at?: string | Date | null;
   metadata?: Record<string, unknown> | null;
   items?: Array<{
     id: string;
@@ -116,6 +119,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
     fields: [
       'id',
       'customer_id',
+      'created_at',
       'metadata',
       'items.id',
       'items.product_id',
@@ -184,7 +188,8 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
   // 웰컴 멤버십 상품 구매 기록 (비동기, 주문 완료에 영향 없음)
   const productIds = (order.items ?? []).map((item) => item.product_id).filter(Boolean);
   if (productIds.length > 0) {
-    void markWelcomeMembershipPurchased(customerId, orderId, productIds, req.scope);
+    const orderedAt = order.created_at ? new Date(order.created_at).toISOString() : null;
+    void markWelcomeMembershipPurchased(customerId, orderId, orderedAt, productIds, req.scope);
   }
 
   const { data: refreshed } = await query.graph({

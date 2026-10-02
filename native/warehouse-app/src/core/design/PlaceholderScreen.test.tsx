@@ -7,6 +7,7 @@ import {
   createMemoryHistory,
 } from '@tanstack/react-router';
 import { PlaceholderScreen } from './PlaceholderScreen';
+import { ShellChromeContext } from './shellChrome';
 
 function renderInRouter(node: React.ReactNode) {
   const root = createRootRoute({ component: () => node });
@@ -25,5 +26,15 @@ describe('PlaceholderScreen', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Phase 1에서 구현됩니다.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /홈/ })).toBeInTheDocument();
+  });
+
+  it('스테이션 셸 안에서는 홈 링크를 그리지 않는다', async () => {
+    renderInRouter(
+      <ShellChromeContext.Provider value={{ hidesHomeBack: true }}>
+        <PlaceholderScreen title="실사" />
+      </ShellChromeContext.Provider>
+    );
+    await screen.findByRole('heading', { name: '실사' });
+    expect(screen.queryByRole('link', { name: /홈/ })).toBeNull();
   });
 });

@@ -6,12 +6,20 @@ import {
   charges,
   invoices,
   paymentFeeRates,
+  paymentIntents,
   paymentMethods,
   PaymentMethodType,
   pointEvents,
   refunds,
   WalletSchema,
 } from '../schema';
+
+export interface OrderRefundsResponse {
+  range: { from: string; to: string };
+  totalAmount: number;
+  refundCount: number;
+  series: Array<{ day: string; amount: number; count: number }>;
+}
 
 export interface FeeRateDto {
   id: string;
@@ -406,6 +414,37 @@ export class StatisticsAdminService {
       rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
 
     return { range: { from, to }, series: buildDailyPaymentSeries(toRows(capturedRows), toRows(refundedRows), from, to) };
+  }
+
+  /**
+   * 일별 «상품 주문» 환불. Medusa 결제 provider 가 만든 결제(intent 메타데이터에 `medusaSessionId`)만 센다 —
+   * 멤버십 요금·정기결제 환불은 상품 매출이 아니라서 빠진다. 관리자 성장 화면이 목표 달성액(analytics 순매출)에서
+   * 이 금액을 빼는 데 쓴다: wallet 환불은 analytics 순매출에 들어오지 않기 때문이다.
+   */
+  async getOrderRefunds(from: string, to: string): Promise<OrderRefundsResponse> {
+    assertRange(from, to);
+    const refundDay = sql<string>`((${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`;
+    const rows = await this.db
+      .select({ day: refundDay, amount: sql<string>`SUM(${refunds.amount})`, count: sql<string>`COUNT(*)` })
+      .from(refunds)
+      .innerJoin(paymentIntents, eq(paymentIntents.id, refunds.intentId))
+      .where(
+        and(
+          eq(refunds.status, 'SUCCEEDED'),
+          eq(paymentIntents.purpose, 'PURCHASE'),
+          sql`${paymentIntents.metadata} ? 'medusaSessionId'`,
+          kstDayRange(refunds.createdAt, from, to),
+        ),
+      )
+      .groupBy(sql`1`)
+      .orderBy(sql`1`);
+    const series = rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
+    return {
+      range: { from, to },
+      totalAmount: series.reduce((sum, point) => sum + point.amount, 0),
+      refundCount: series.reduce((sum, point) => sum + point.count, 0),
+      series,
+    };
   }
 
   async getDailyPoints(from: string, to: string): Promise<DailyPointsResponse> {

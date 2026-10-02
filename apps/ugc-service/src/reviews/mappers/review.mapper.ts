@@ -1,11 +1,18 @@
 import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
 import { CommentResponseDto } from '../dto/comment-response.dto';
 import { ReviewResponseDto } from '../dto/review-response.dto';
+import { maskAuthorName } from './mask-author-name';
 import { type ReviewCommentEntity, type ReviewWithMediaEntity } from '../types';
 
 export class ReviewMapper {
   static toAdminResponse(entity: ReviewWithMediaEntity): AdminReviewResponseDto {
-    return { ...ReviewMapper.toResponse(entity), permission: entity.permission ?? null };
+    return {
+      ...ReviewMapper.toResponse(entity),
+      legacy_author_name: entity.legacyAuthorName ?? null,
+      permission: entity.permission ?? null,
+      sourceSystem: entity.sourceSystem,
+      createdByAdminUserId: entity.createdByAdminUserId ?? null,
+    };
   }
 
   static toResponse(entity: ReviewWithMediaEntity): ReviewResponseDto {
@@ -15,7 +22,7 @@ export class ReviewMapper {
       productId: entity.productId,
       rating: entity.rating,
       content: entity.content,
-      legacy_author_name: entity.legacyAuthorName ?? null,
+      legacy_author_name: entity.legacyAuthorName ? maskAuthorName(entity.legacyAuthorName) : null,
       mediaFileIds: entity.mediaFileIds,
       helpfulCount: entity.helpfulCount,
       likeCount: entity.likeCount,

@@ -130,6 +130,7 @@ export class SubscriptionController {
       dto.returnUrl,
       user?.email,
       dto.billingMode,
+      dto.termsAgreementId,
     );
   }
 
@@ -353,6 +354,7 @@ export class SubscriptionController {
       body.billingMethodId,
       body.billingMode ?? 'one_time',
       body.checkoutAttemptId,
+      body.termsAgreementId,
     );
   }
 

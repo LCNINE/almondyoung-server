@@ -9,6 +9,7 @@ export type AutoTabOptionRow = {
 export type AutoTabState = {
   holderId: string;
   supplierId: string;
+  deliveryProfileId: string;
   businessProductName: string;
   importDeclarationNumber: string;
   optionKey: string;
@@ -26,7 +27,7 @@ export type BuildResult =
   | { ok: false; reason: BuildFailureReason };
 
 export const BUILD_FAILURE_MESSAGES: Record<BuildFailureReason, string> = {
-  'missing-required': '공급처와 재고소유를 선택해주세요.',
+  'missing-required': '공급처·재고소유·배송 프로필을 선택해주세요.',
   'no-options': '최소 1개 이상의 옵션명을 입력해주세요.',
 };
 
@@ -52,7 +53,7 @@ function optionalPositiveInt(value: string): number | undefined {
  * 그것들이 이 판매상품 variant 의 구성품으로 링크된다.
  */
 export function buildMatchingLinks(state: AutoTabState): BuildResult {
-  if (!state.supplierId || !state.holderId) {
+  if (!state.supplierId || !state.holderId || !state.deliveryProfileId) {
     return { ok: false, reason: 'missing-required' };
   }
 
@@ -75,6 +76,7 @@ export function buildMatchingLinks(state: AutoTabState): BuildResult {
       name: row.name.trim(),
       holderId: state.holderId,
       supplierIds: [state.supplierId],
+      deliveryProfileId: state.deliveryProfileId,
       ...(businessProductName !== undefined ? { businessProductName } : {}),
       ...(importDeclarationNumber !== undefined ? { importDeclarationNumber } : {}),
       ...(optionKey !== undefined ? { optionKey } : {}),

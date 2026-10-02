@@ -115,6 +115,36 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
     note: ':id 를 받지만 전사 단일 설정 테이블의 행이라 사용자별 소유자가 없다 — staff 끼리는 같은 자원을 공유한다. 남의 자원을 넘겨다볼 경계 자체가 존재하지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
+  'analytics GET /statistics/growth': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '성장 분석 — 전사 자사몰 매출·회원 재구매 집계·GA4 리포트. 파라미터가 날짜·집계 단위뿐이고 고객 식별자를 받지도 내보내지도 않는다(건수·금액 집계만). JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics GET /statistics/growth/summary': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '성장 요약 — 올해 목표·일별 순매출·최근 고객 흐름 집계. 파라미터가 없고 응답에 고객 식별자가 없다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics GET /statistics/revenue-goals': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '연간 매출 목표 목록 — 전사 단일 설정이라 사용자·테넌트 소유 자원이 아니다. 파라미터는 연도뿐. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics POST /statistics/revenue-goals': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '연간 매출 목표 등록 — 전사 단일 설정이라 소유권 개념이 없다. 본문은 연도·금액·월 배분·가정·메모뿐이고 식별자를 받지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics DELETE /statistics/revenue-goals/:id': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: ':id 를 받지만 전사 단일 설정 표의 행이라 사용자별 소유자가 없다 — staff 끼리 같은 자원을 공유한다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
   'analytics GET /statistics/behavior': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/traffic/api/behavior.controller.ts:15',
@@ -291,7 +321,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service POST /files/upload/confirm': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/upload/upload.service.ts:173',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:187',
     predicate: 'if (file.uploadedBy !== userId) {',
     note: 'UploadController.confirmUpload -> UploadService.confirmUpload(dto.fileId, user.userId). 바디의 fileId 가 기존 pending 행을 가리키는 client-supplied id 지만, 행을 읽자마자 file.uploadedBy 를 호출자 userId 와 대조해 다르면 ForbiddenError — 타인의 pending 업로드를 대신 activate 하거나 존재 여부를 활성화로 확인할 수 없다. upload.service.spec.ts 가 발급자 불일치 거부를 고정한다.',
   },
@@ -301,15 +331,33 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: 'Pure creation route: presignUpload() always inserts a brand-new pending row (id: uuidv7(), uploadedBy: userId); POST /files/upload 과 같은 이유로 client-supplied id 가 기존 타인 소유 행으로 해석되는 경로가 없다. dto.contextId 는 공유 설정(file_contexts) 조회일 뿐이다.',
   },
+  'membership GET /me/arrears': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/arrears/arrears.reader.ts:72',
+    predicate: 'and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, \'OUTSTANDING\'))',
+    note: '조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User(\'userId\')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:105)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.',
+  },
+  'membership POST /me/arrears/checkout': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/arrears/arrears-repayment.service.ts:124',
+    predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
+    note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:124-155). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:155 eq(schema.membershipArrears.userId, userId)).',
+  },
+  'membership POST /me/membership-terms-agreements': {
+    verdict: 'N/A',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:55',
+    predicate: '',
+    note: '순수 생성 라우트: 호출자 JWT userId(@User(\'userId\'), me-terms-agreement.controller.ts)로 새 동의 행을 insert 할 뿐이다. 바디는 termsVersion·billingMode·planId 인데 planId 는 공유 플랜 설정을 가리키지 사용자별 객체가 아니고, userId 는 받지 않는다. 기존 타인 소유 행으로 해석되는 id 가 없다.',
+  },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:77',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:80',
     predicate: 'eq(schema.membershipCycleBenefits.userId, userId),',
     note: 'BenefitTrackingController.getCurrentCycleBenefit -> BenefitTrackingService.getCurrentCycleBenefit(userId) -> BenefitReader.findCurrentCycleBenefit(userId,...) 의 where 절에 userId가 들어간다.',
   },
   'membership GET /membership/benefits/history': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:121',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:124',
     predicate: '.where(eq(schema.membershipCycleBenefits.userId, userId))',
     note: 'getCycleBenefitHistory -> BenefitReader.findCycleBenefitHistory(userId, limit) 의 where 절에 userId가 들어간다.',
   },
@@ -333,7 +381,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'membership GET /membership/savings/periods/:periodId': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:186',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:217',
     predicate: 'eq(schema.membershipDiscountEvents.userId, userId),',
     note: "SavingsController.getPeriodDetail -> SavingsService.getPeriodDetail(userId, periodId). periodId 는 먼저 resolvePeriods(userId)가 만든 '이 userId 소유 주기 목록'에서만 매칭되고(다른 사용자의 periodId를 넣으면 목록에 없어 BadRequestError), 매칭된 주기의 주문 상세도 findDiscountEventsBetween(userId,...) 의 where 절에 userId가 들어간다.",
   },
@@ -444,10 +492,10 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     note: 'undoCancellation -> SubscriptionCancellationService.undoCancellation(userId,...) -> contractReader.findContractWithPlan(userId) -> findActiveContract(userId) 의 where 절에 userId가 들어간다(뒤이은 findCurrentEntitlement(userId) 도 동일하게 userId로 필터).',
   },
   'membership POST /subscriptions/checkout-intent': {
-    verdict: 'N/A',
-    evidence: 'apps/membership/src/controllers/subscription.controller.ts:118',
-    predicate: '',
-    note: 'createCheckoutIntent 는 신규 결제 intent 생성 라우트다. userId 는 오직 @User() 로 취한 호출자 자신의 JWT 값이고(바디로 override 불가), 아직 존재하지 않는 대상 객체를 만드는 것이므로 IDOR이 성립하지 않는다.',
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:94',
+    predicate: 'eq(schema.membershipTermsAgreements.userId, userId),',
+    note: '신규 결제 intent 생성 라우트이고 userId 는 @User() 로 취한 호출자 JWT 값뿐이다. 바디가 받는 기존 행 id 는 termsAgreementId(약관 동의 기록) 하나인데, TermsAgreementManager.resolveForSubscription 이 id + 호출자 userId 두 조건으로만 찾고(terms-agreement.manager.ts:94) 못 찾으면 400 — 남의 동의로 가입하거나 존재 여부를 알아낼 수 없다. 실 DB 통합 스펙(terms-agreement.manager.integration.spec.ts)이 남의 동의 거절을 고정한다.',
   },
   'membership POST /subscriptions/confirm-checkout-intent': {
     verdict: 'VULN',
@@ -456,10 +504,10 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     note: '소유권 검사 없음. 핸들러(subscription.controller.ts:163-167)가 호출자 신원을 전혀 받지 않고 바디의 intentId 만 받으며, 서비스가 userId 를 intent 메타데이터에서 뽑는다. 재현: 인증된 A 가 B 의 intentId 로 호출하면 B 명의 구독이 생성된다. 영향 제한적 — intent 가 AUTHORIZED/CAPTURED 여야 하므로 B 가 이미 결제한 건이고 A 는 이득이 없다. 오케스트레이터 직접 확인 (조사 에이전트는 N/A 로 오판, 자기 observations 와 모순이었음).',
   },
   'membership POST /subscriptions/subscribe-with-method': {
-    verdict: 'N/A',
-    evidence: 'apps/membership/src/services/subscription.service.ts:527',
-    predicate: '',
-    note: 'subscribeWithBillingMethod 는 신규 구독 생성 라우트다. userId 는 @User() 로 취한 호출자 자신의 JWT 값만 쓰이고(멤버십 계약은 그 userId로 새로 생성됨), 기존 소유 리소스를 조회/변경하는 경로가 아니라 IDOR이 성립하지 않는다. billingMethodId 소유권 검사는 wallet 쪽 책임이라 observations 참고.',
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:94',
+    predicate: 'eq(schema.membershipTermsAgreements.userId, userId),',
+    note: '신규 구독 생성 라우트이고 userId 는 @User() 로 취한 호출자 JWT 값뿐이다(계약은 그 userId 로 새로 생성). 바디의 termsAgreementId 는 기존 행을 가리키지만 resolveForSubscription 이 id + 호출자 userId 로만 찾고(terms-agreement.manager.ts:94) 결제보다 먼저 검사한다. 가입 후 연결(linkContract)도 같은 소유자 조건을 건다(:118). billingMethodId 소유권 검사는 wallet 쪽 책임이라 observations 참고.',
   },
   'notification DELETE /devices/fcm-token': {
     verdict: 'SAFE',
@@ -534,9 +582,56 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)))',
     note: 'soft delete UPDATE 자체에 userId 조건 포함(분리 가드 없음, PATCH보다 더 견고).',
   },
+  'ugc-service DELETE /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.manager.ts:129',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'soft delete UPDATE 의 WHERE 에 작성자 조건. 0행이면 404(존재 은닉).',
+  },
+  'ugc-service GET /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User(\'userId\') 토큰값.',
+  },
+  'ugc-service GET /shop-listings/mine': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:70',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+  },
+  'ugc-service GET /shop-listings/public/:slug/contact': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:44',
+    predicate: '',
+    note: '소유자 자원이 아니다 — 공개(published·closed) 매물의 연락처를 로그인 회원 누구에게나 보여주는 것이 설계다(spec §7.2). 비공개 상태는 404.',
+  },
+  'ugc-service POST /shop-listings': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/shop-listings/controllers/member-shop-listings.controller.ts:19',
+    predicate: '',
+    note: '생성 — 대상 id 가 없다. 작성자는 토큰(@User(\'userId\'))에서만 오고 DTO 에 작성자 필드가 없다.',
+  },
+  'ugc-service POST /shop-listings/:id/close': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'setDealStatusByMember 가 findOwned 로 먼저 소유권을 확인한다(남의 글 404).',
+  },
+  'ugc-service POST /shop-listings/:id/reopen': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'close 와 같은 경로.',
+  },
+  'ugc-service PUT /shop-listings/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
+    predicate: 'eq(shopListings.authorUserId, userId)',
+    note: 'updateByMember 가 findOwned 로 소유권 확인 후 상태 CAS UPDATE.',
+  },
   'ugc-service DELETE /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:703',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:705',
     predicate: 'eq(reviews.userId, userId),',
     note: 'soft delete UPDATE의 WHERE절에 직접 userId 포함.',
   },
@@ -565,9 +660,51 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /reviews/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:829',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:831',
     predicate:
       "const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];",
+  },
+  'ugc-service DELETE /logo-contest/entries/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:212',
+    predicate: "if (entry.userId !== userId) throw new ForbiddenError('본인 출품작만 삭제할 수 있습니다.');",
+    note: "같은 트랜잭션 안의 사전 SELECT 뒤 앱 레벨 체크다. userId 는 @User('userId') 토큰값이고 삭제 대상은 경로의 id 뿐 — 남의 출품작을 지우면 403 이다. 표 삭제도 같은 트랜잭션에서 그 entryId 로만 한정된다.",
+  },
+  'ugc-service GET /logo-contest/me': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:130',
+    predicate: '.where(and(eq(logoContestEntries.userId, userId), isNull(logoContestEntries.deletedAt)));',
+    note: "내 출품작과 내 표만 돌려준다. userId 는 토큰값이고 이 라우트는 쿼리 파라미터를 받지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:38',
+    predicate: 'if (file.uploadedBy !== userId) {',
+    note: "생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.",
+  },
+  'ugc-service DELETE /logo-contest/entries/:id/vote': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:256',
+    predicate: '.where(and(eq(logoContestVotes.userId, userId), eq(logoContestVotes.entryId, entryId)));',
+    note: "지우는 것은 내 표뿐이다. userId 는 토큰값이라 경로의 id 로 남의 표를 지울 수 없고, 그 출품작에 내 표가 없으면 아무 행도 지워지지 않는다.",
+  },
+  'ugc-service POST /logo-contest/entries/:id/vote': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:234',
+    predicate: '',
+    note: "남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.",
+  },
+  'ugc-service GET /almond-designs/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-design.reader.ts:25',
+    predicate: 'and(eq(almondDesigns.id, id), eq(almondDesigns.userId, userId))',
+    note: "findOwned — SELECT WHERE 에 소유자 조건. 0행이면 404(존재 은닉). userId 는 @User('userId') 토큰값.",
+  },
+  'ugc-service POST /almond-designs': {
+    verdict: 'N/A',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-design.manager.ts:82',
+    predicate: '',
+    note: "생성 전용. userId 는 @User('userId') 토큰값으로만 채우고 바디로 받지 않는다. templateId 는 공개 시안 참조라 남의 자원이 아니다.",
   },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
@@ -577,7 +714,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:647',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:649',
     predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
@@ -595,7 +732,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /reviews/:id/reactions': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:429',
+    evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:431',
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
@@ -734,15 +871,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(115);
+    expect(targets).toHaveLength(138);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(115);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(114);
+    expect(new Set(targets.map(keyOf)).size).toBe(138);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(137);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

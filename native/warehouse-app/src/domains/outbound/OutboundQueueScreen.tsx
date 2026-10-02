@@ -11,24 +11,54 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { Button } from '../../core/design/Button';
 import { useScanner } from '../../core/hardware/scan/useScanner';
+import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
+import { BatchLabelPrintButton } from './BatchLabelPrintButton';
+import { StartBatchButton } from './StartBatchButton';
+import { JoinBoxPanel } from './JoinBoxPanel';
+import { RemoveBoxPanel } from './RemoveBoxPanel';
+import { ReprintLabelButton } from './ReprintLabelButton';
+import { labelGateOf } from './labelGate';
+import type { LabelItemChange } from './waybillLabel';
 import { readLastBox, writeLastBox } from './lastBox';
 import { useOutboundBatches, useShipmentByWaybill } from './queries';
 
 function OutboundQueueContent({
   prefs = localStoragePrefs,
+  labelPrinting = false,
+  print,
 }: {
   prefs?: DevicePrefs;
+  labelPrinting?: boolean;
+  print?: PrintRaw;
 }) {
   const { warehouseId, isSet } = useWarehouse();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
   const [manual, setManual] = useState('');
+  const [printGate, setPrintGate] = useState<{
+    shipmentId: string;
+    message: string;
+    changes: LabelItemChange[];
+  } | null>(null);
   const [resume] = useState(() => readLastBox(prefs));
   const lookup = useShipmentByWaybill(warehouseId);
   const capabilities = useCapabilityReader();
   const opening = useRef(false);
   const [openingState, setOpeningState] = useState(false);
+  // 라벨 인쇄 중엔 useUnsavedWork 가 라우터를 막는다. 그때 navigate 하면 promise 가 끝나지 않아
+  // opening 이 영영 true 로 남고 이후 스캔이 전부 무시된다 — 그래서 스캔을 입구에서 돌려보낸다.
+  // 프린터도 한 대라 다른 배치의 인쇄도 같이 막는다(라벨이 섞여 나온다).
+  const labelRunning = useRef(false);
+  const [printingBatch, setPrintingBatch] = useState<string | null>(null);
+  const onLabelRunChange = (batchId: string, running: boolean) => {
+    labelRunning.current = running;
+    setPrintingBatch(running ? batchId : null);
+  };
+  const [panel, setPanel] = useState<{ kind: 'join' | 'remove'; batchId: string } | null>(null);
+  // 패널이 열려 있으면 스캔은 패널이 받는다 — 같은 스캔이 박스 열기로도 가면 안 된다.
+  const panelOpen = useRef(false);
+  panelOpen.current = panel !== null;
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
   // 진행 중(picking) 배치를 먼저, 아직 시작 안 한(created) 배치를 그 다음에 —
@@ -47,9 +77,14 @@ function OutboundQueueContent({
   const open = async (trackingNo: string) => {
     const code = trackingNo.trim();
     if (!code || !warehouseId || opening.current) return;
+    if (labelRunning.current) {
+      setNotice('송장 인쇄가 끝난 뒤 스캔해 주세요.');
+      return;
+    }
     opening.current = true;
     setOpeningState(true);
     setNotice(null);
+    setPrintGate(null);
     try {
       const found = await lookup.mutateAsync(code);
       if (found.warehouseId && found.warehouseId !== warehouseId) {
@@ -60,8 +95,30 @@ function OutboundQueueContent({
         setNotice('이미 출고된 송장이에요');
         return;
       }
+      const gate = labelGateOf(found, labelPrinting);
+      if (gate.kind === 'blocked') {
+        setNotice(gate.message);
+        return;
+      }
       if (found.workItemId === null) {
         setNotice('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
+        return;
+      }
+      if (gate.kind === 'withdraw') {
+        setManual('');
+        await navigate({
+          to: '/outbound/withdraw/$shipmentId',
+          params: { shipmentId: found.shipmentId },
+          state: { shipment: found },
+        });
+        return;
+      }
+      if (gate.kind === 'print') {
+        setPrintGate({
+          shipmentId: found.shipmentId,
+          message: gate.message,
+          changes: gate.changes,
+        });
         return;
       }
       const legacy =
@@ -95,7 +152,10 @@ function OutboundQueueContent({
     }
   };
 
-  useScanner((event) => void open(event.code));
+  useScanner((event) => {
+    if (panelOpen.current) return;
+    void open(event.code);
+  });
 
   // 기기에 남은 건 마지막으로 열었던 스냅샷일 뿐이다 — 그 사이 다른 작업자가 더
   // 스캔했을 수 있으니 재개 시 항상 다시 조회한다. 실패하면 일반 스캔과 같은 안내를 쓴다.
@@ -138,6 +198,28 @@ function OutboundQueueContent({
         </Button>
       </form>
       {notice !== null && <p role="alert">{notice}</p>}
+      {printGate !== null && (
+        <section
+          role="alert"
+          className="space-y-2 rounded border border-amber-400 px-3 py-2"
+        >
+          <p className="font-medium">{printGate.message}</p>
+          {printGate.changes.length > 0 && (
+            <ul className="text-sm">
+              {printGate.changes.map((c) => (
+                <li key={`${c.locationCode}-${c.skuId}`}>
+                  [{c.locationCode}] {c.name} {c.printedQty}개 → {c.currentQty}개
+                </li>
+              ))}
+            </ul>
+          )}
+          <ReprintLabelButton
+            shipmentId={printGate.shipmentId}
+            prefs={prefs}
+            print={print}
+          />
+        </section>
+      )}
 
       {resume !== null && (
         <section className="space-y-1 rounded border border-blue-300 px-3 py-2">
@@ -163,6 +245,55 @@ function OutboundQueueContent({
               <p className="text-sm text-neutral-500">
                 {batch.totalItems}박스 · {batch.totalQty}개
               </p>
+              {batch.withdrawingItems > 0 && (
+                <p className="text-sm text-amber-700">빠지는 중 {batch.withdrawingItems}</p>
+              )}
+              {batch.startedAt === null ? (
+                <StartBatchButton batchId={batch.id} />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {labelPrinting && (
+                    <BatchLabelPrintButton
+                      batchId={batch.id}
+                      prefs={prefs}
+                      print={print}
+                      disabled={
+                        printingBatch !== null && printingBatch !== batch.id
+                      }
+                      onRunningChange={(running) =>
+                        onLabelRunChange(batch.id, running)
+                      }
+                    />
+                  )}
+                  <Button
+                    type="button"
+                    onClick={() => setPanel({ kind: 'join', batchId: batch.id })}
+                  >
+                    박스 넣기
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setPanel({ kind: 'remove', batchId: batch.id })}
+                  >
+                    박스 빼기
+                  </Button>
+                </div>
+              )}
+              {panel?.kind === 'join' && panel.batchId === batch.id && (
+                <JoinBoxPanel
+                  batchId={batch.id}
+                  prefs={prefs}
+                  print={print}
+                  labelPrinting={labelPrinting}
+                  onClose={() => setPanel(null)}
+                />
+              )}
+              {panel?.kind === 'remove' && panel.batchId === batch.id && (
+                <RemoveBoxPanel
+                  batchId={batch.id}
+                  onClose={() => setPanel(null)}
+                />
+              )}
             </li>
           ))}
         </ul>

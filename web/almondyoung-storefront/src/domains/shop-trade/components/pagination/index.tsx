@@ -25,9 +25,13 @@ export async function Pagination({
     "flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm transition-colors"
 
   return (
-    <nav className="mt-8 flex items-center justify-center gap-1.5">
+    <nav
+      data-pagination
+      className="mt-8 flex items-center justify-center gap-1.5"
+    >
       {params.page > 1 && (
         <LocalizedClientLink
+          data-page-prev
           href={buildListHref(params, { page: params.page - 1 })}
           aria-label={t("prevPage")}
           className={cn(
@@ -57,6 +61,7 @@ export async function Pagination({
 
       {params.page < totalPages && (
         <LocalizedClientLink
+          data-page-next
           href={buildListHref(params, { page: params.page + 1 })}
           aria-label={t("nextPage")}
           className={cn(

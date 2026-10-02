@@ -33,6 +33,7 @@ const CONFIG: HanjinConfig = {
   sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 const actor = { id: randomUUID(), roles: ['master'] };
 

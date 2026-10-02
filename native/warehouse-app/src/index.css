@@ -1,1 +1,7 @@
 @import 'tailwindcss';
+
+/* 명령 바코드 시트(스테이션) — OS 인쇄 대화상자로 A4 한 장 */
+@page {
+  size: A4;
+  margin: 12mm;
+}

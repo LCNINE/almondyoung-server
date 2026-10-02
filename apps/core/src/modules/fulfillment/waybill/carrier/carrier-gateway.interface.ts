@@ -31,7 +31,20 @@ export type RegisterOutcome =
   | { kind: 'already_registered' } // 한진 ERROR-09 → 멱등 성공
   | { kind: 'rejected'; reason: string };
 
-export type CarrierScanStatus = 'pending' | 'in_transit' | 'delivered' | 'failed' | 'canceled';
+/**
+ * - `pickup_missed`: 집하가 이뤄지지 않은 예외 상태(한진 08 미집하). 다시 집하되면 `in_transit` 으로
+ *   넘어가므로 종료 상태인 `failed`(배송불가)와 섞지 말 것 — 섞으면 미집하 적체를 볼 수 없다.
+ * - `unknown`: 캐리어가 우리 표에 없는 코드를 보냈다. 소비자는 이 스캔을 «건너뛰어야» 한다 —
+ *   `pending` 으로 읽으면 이미 배송 중인 운송장이 뒤로 가는 것처럼 보인다.
+ */
+export type CarrierScanStatus =
+  | 'pending'
+  | 'in_transit'
+  | 'pickup_missed'
+  | 'delivered'
+  | 'failed'
+  | 'canceled'
+  | 'unknown';
 
 export interface CarrierScan {
   statusCode: string;
@@ -41,6 +54,8 @@ export interface CarrierScan {
   description?: string;
   reasonCode?: string;
   reasonMessage?: string;
+  /** 사유(또는 배송완료의 인수 관계)를 사람이 읽을 말로 푼 것. 캐리어 원문은 `reasonMessage` 에 그대로 남는다. */
+  reasonLabel?: string;
 }
 
 /**

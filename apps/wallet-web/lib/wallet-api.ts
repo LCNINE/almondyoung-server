@@ -53,6 +53,8 @@ export interface BillingMethod {
   status: string;
   expiresAt: string | null;
   createdAt: string;
+  /** CMS 수단의 은행 심사 상태(PENDING=심사 중). 조회 응답에 함께 온다. */
+  cmsMemberStatus?: string | null;
 }
 
 export interface BillingAgreement {
@@ -366,11 +368,18 @@ export async function issueTossBillingKey(
   return res.json();
 }
 
-export async function getBillingMethods(cookieHeader?: string): Promise<BillingMethod[]> {
+export async function getBillingMethods(
+  cookieHeader?: string,
+  opts?: {
+    /** 심사 중(PENDING) CMS 수단도 받는다. 기본 조회는 승인된 수단만 준다. */
+    includePendingMandate?: boolean;
+  },
+): Promise<BillingMethod[]> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;
 
-  const res = await fetch(`${BASE_URL}/v1/billing-methods`, {
+  const qs = opts?.includePendingMandate ? '?includePendingMandate=true' : '';
+  const res = await fetch(`${BASE_URL}/v1/billing-methods${qs}`, {
     headers,
     credentials: cookieHeader ? undefined : 'include',
     cache: 'no-store',

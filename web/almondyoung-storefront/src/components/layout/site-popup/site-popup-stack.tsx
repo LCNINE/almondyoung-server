@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { X } from "lucide-react"
+import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 
@@ -9,7 +9,6 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -20,7 +19,7 @@ import { sanitizeNoticeHtml } from "@/lib/utils/sanitize-html"
 import {
   dismissPopup,
   isExternalLink,
-  resolvePopupSize,
+  resolvePopupStackSize,
   selectVisiblePopups,
   stripCountryCode,
 } from "./site-popup.helpers"
@@ -35,8 +34,7 @@ const DESKTOP_QUERY = "(min-width: 768px)"
 /**
  * 노출 대상까지 걸러진 팝업 목록을 받아 실제로 띄운다.
  *
- * 여러 개가 동시에 해당돼도 모달을 겹쳐 띄우지 않고 순서대로 하나씩 보여준다 —
- * 모달이 쌓이면 닫기 버튼이 어느 팝업 것인지 알 수 없다.
+ * 여러 개가 해당돼도 모달 하나에서 넘겨 보고, 닫기는 전부 닫는다.
  */
 export function SitePopupStack({ popups, countryCode }: Props) {
   const t = useTranslations("notice.popup")
@@ -53,23 +51,31 @@ export function SitePopupStack({ popups, countryCode }: Props) {
   // localStorage 는 서버에 없다. 첫 렌더는 아무것도 띄우지 않고, 마운트 후
   // 숨김 여부를 확인해 남은 것만 보여준다(하이드레이션 불일치 방지).
   const [queue, setQueue] = useState<SitePopup[]>([])
+  const [activeIndex, setActiveIndex] = useState(0)
 
   useEffect(() => {
     setQueue(selectVisiblePopups(popups, path, closedIds))
   }, [popups, path, closedIds])
 
-  const current = queue[0]
+  const index = Math.min(activeIndex, queue.length - 1)
+  const current = queue[index]
   if (!current) return null
 
   const closeCurrent = () =>
     setClosedIds((prev) => new Set(prev).add(current.id))
+  const closeAll = () =>
+    setClosedIds((prev) => {
+      const closed = new Set(prev)
+      queue.forEach((popup) => closed.add(popup.id))
+      return closed
+    })
 
   const handleDismiss = () => {
     dismissPopup(current)
     closeCurrent()
   }
 
-  const { width, height } = resolvePopupSize(current, isDesktop)
+  const { width, height } = resolvePopupStackSize(popups, path, isDesktop)
 
   const body =
     current.contentType === "image" ? (
@@ -82,74 +88,110 @@ export function SitePopupStack({ popups, countryCode }: Props) {
         }}
       />
     )
-
   return (
     <Dialog
-      // 팝업이 바뀌면 내부 상태를 새로 시작한다.
-      key={current.id}
       open
       onOpenChange={(open) => {
-        if (!open) closeCurrent()
+        if (!open) closeAll()
       }}
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+        className="flex max-h-[90vh] flex-col gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-none"
         // 크기는 관리자가 px 로 정하는 값이라 클래스로 표현할 수 없다.
         // 화면보다 넓게 지정돼도 화면 안에 들어오도록 maxWidth 로 막는다.
         style={{
           width,
           maxWidth: "calc(100vw - 2rem)",
-          height: height ?? undefined,
         }}
       >
-        <DialogHeader className="shrink-0 space-y-0 py-4 pr-16 pl-6 text-left">
-          <DialogTitle className="text-foreground text-[19px] leading-snug font-bold tracking-tight">
-            {current.title}
-          </DialogTitle>
-        </DialogHeader>
+        <div
+          className="bg-background flex min-h-0 flex-col overflow-hidden rounded-lg border shadow-lg"
+          style={{
+            height,
+            maxHeight: "calc(90vh - 7rem)",
+          }}
+        >
+          <DialogHeader className="shrink-0 space-y-0 px-5 py-3 text-left">
+            <DialogTitle className="text-foreground text-base leading-snug font-bold">
+              {current.title}
+            </DialogTitle>
+          </DialogHeader>
 
-        <DialogClose className="text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-ring absolute top-2.5 right-2.5 flex size-11 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none">
-          <X className="size-6" />
-          <span className="sr-only">{t("close")}</span>
-        </DialogClose>
+          <div key={current.id} className="min-h-0 flex-1 overflow-y-auto">
+            <PopupBodyLink popup={current} onNavigate={closeAll}>
+              {body}
+            </PopupBodyLink>
+          </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <PopupBodyLink popup={current} onNavigate={closeCurrent}>
-            {body}
-          </PopupBodyLink>
-        </div>
-
-        <div className="border-border flex shrink-0 items-center justify-between gap-3 border-t px-6 py-4">
-          {current.dismissMode === "none" ? (
-            <span />
-          ) : (
-            <button
-              type="button"
-              onClick={handleDismiss}
-              className="text-muted-foreground hover:text-foreground text-[13px] transition-colors"
-            >
-              {current.dismissMode === "today"
-                ? t("hideForToday")
-                : t("hideForDays", { days: current.dismissDays ?? 1 })}
-            </button>
-          )}
-
-          <div className="flex items-center gap-2">
-            {current.noticeId && (
+          {current.noticeId && (
+            <div className="border-border flex shrink-0 justify-end border-t px-5 py-3">
               <Button variant="outline" asChild>
                 <LocalizedClientLink
                   href={`/cs?tab=notice&noticeId=${current.noticeId}`}
-                  onClick={closeCurrent}
+                  onClick={closeAll}
                 >
                   {t("viewDetail")}
                 </LocalizedClientLink>
               </Button>
-            )}
-            <Button type="button" onClick={closeCurrent} className="px-6">
-              {t("close")}
-            </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid shrink-0 grid-cols-[9.5rem_minmax(0,1fr)] grid-rows-2 items-center gap-2 pt-4 sm:grid-cols-[9.5rem_minmax(0,1fr)_7rem] sm:grid-rows-1">
+          <div className="bg-background col-start-1 row-start-1 flex h-11 w-[9.5rem] items-center rounded-full shadow-sm">
+            <button
+              type="button"
+              aria-label={t("previous")}
+              disabled={queue.length === 1}
+              onClick={() =>
+                setActiveIndex((index + queue.length - 1) % queue.length)
+              }
+              className="hover:bg-secondary focus-visible:ring-ring flex size-11 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+            <span
+              className="min-w-16 text-center text-sm font-medium"
+              aria-live="polite"
+            >
+              {index + 1} / {queue.length}
+            </span>
+            <button
+              type="button"
+              aria-label={t("next")}
+              disabled={queue.length === 1}
+              onClick={() => setActiveIndex((index + 1) % queue.length)}
+              className="hover:bg-secondary focus-visible:ring-ring flex size-11 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight className="size-5" />
+            </button>
           </div>
+          {current.dismissMode !== "none" && (
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="bg-background hover:bg-secondary focus-visible:ring-ring col-span-2 col-start-1 row-start-2 h-11 w-full rounded-full px-2 text-xs shadow-sm focus-visible:ring-2 focus-visible:outline-none sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:text-sm"
+            >
+              {current.dismissMode === "today"
+                ? t("hideThisForToday")
+                : t("hideThisForDays", { days: current.dismissDays ?? 1 })}
+            </button>
+          )}
+          {current.dismissMode === "none" && (
+            <span
+              className="col-span-2 col-start-1 row-start-2 h-11 sm:col-span-1 sm:col-start-2 sm:row-start-1"
+              aria-hidden="true"
+            />
+          )}
+          <button
+            type="button"
+            onClick={closeAll}
+            className="bg-background hover:bg-secondary focus-visible:ring-ring col-start-2 row-start-1 flex h-11 w-28 items-center justify-center gap-2 justify-self-end rounded-full px-2 text-sm font-medium shadow-sm focus-visible:ring-2 focus-visible:outline-none sm:col-start-3"
+          >
+            {queue.length > 1 ? t("closeAll") : t("close")}
+            <X className="size-4" aria-hidden="true" />
+          </button>
         </div>
       </DialogContent>
     </Dialog>

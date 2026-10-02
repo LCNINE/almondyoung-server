@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -25,6 +25,10 @@ import {
 } from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
+import {
+  LABEL_PRINTER_KEY,
+  type PrintRaw,
+} from '../../core/hardware/print/labelPrinter';
 import { OutboundQueueScreen } from './OutboundQueueScreen';
 
 const session = {
@@ -80,6 +84,8 @@ function renderScreen(
       status: string;
       totalItems: number;
       totalQty: number;
+      startedAt: string | null;
+      withdrawingItems?: number;
     }>
   > = {
     picking: [
@@ -90,11 +96,21 @@ function renderScreen(
         status: 'picking',
         totalItems: 3,
         totalQty: 7,
+        startedAt: '2026-09-30T00:00:00.000Z',
+        withdrawingItems: 0,
       },
     ],
     created: [],
   },
-  foundWarehouse = 'w-1'
+  foundWarehouse = 'w-1',
+  labelPrinting = false,
+  labelDeps: {
+    label?: () => Promise<unknown>;
+    print?: PrintRaw;
+    labelState?: string | null;
+    labelChanges?: unknown[];
+    labelIssue?: string | null;
+  } = {}
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -117,6 +133,11 @@ function renderScreen(
           workItemStatus: 'queued',
           recipientMasked: '홍길**',
           lines: [],
+          labelState: labelDeps.labelState ?? 'current',
+          labelChanges: labelDeps.labelChanges ?? [],
+          labelIssue: labelDeps.labelIssue ?? null,
+          removals: [],
+          exitTo: null,
         };
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-NOWORKITEM')) {
@@ -132,6 +153,26 @@ function renderScreen(
           workItemStatus: null,
           recipientMasked: '홍길**',
           lines: [],
+        };
+      }
+      if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-WITHDRAWN')) {
+        return {
+          warehouseId: foundWarehouse,
+          shipmentId: 's-4',
+          trackingNo: 'T-WITHDRAWN',
+          carrier: 'HANJIN',
+          waybillStatus: 'registered',
+          shipmentStatus: 'planned',
+          batchId: null,
+          workItemId: null,
+          workItemStatus: null,
+          recipientMasked: '홍길**',
+          lines: [],
+          labelState: 'withdrawn',
+          labelChanges: [],
+          labelIssue: null,
+          removals: [],
+          exitTo: 'canceled',
         };
       }
       if (o.path.startsWith('/shipments/by-waybill?trackingNo=T-SHIPPED')) {
@@ -151,6 +192,20 @@ function renderScreen(
       }
       if (o.path.startsWith('/shipments/by-waybill'))
         throw new Error(`GET ${o.path} → 404`);
+      const workItems = /^\/outbound-batches\/([^/]+)\/work-items$/.exec(
+        o.path
+      );
+      if (workItems)
+        return [
+          { id: `wi-${workItems[1]}`, shipmentId: 's-1', status: 'queued' },
+        ];
+      if (o.path === '/shipments/s-1/waybill/label') {
+        return labelDeps.label
+          ? labelDeps.label()
+          : { waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 };
+      }
+      if (o.path === '/shipments/s-1/waybill/label-prints') return undefined;
+      if (/^\/outbound-batches\/[^/]+\/waybill-label-states$/.test(o.path)) return [];
       if (o.path.startsWith('/outbound-batches/v2')) {
         const [, qs] = o.path.split('?');
         const status = new URLSearchParams(qs ?? '').get('status');
@@ -171,7 +226,12 @@ function renderScreen(
         <ScanButton code="T-404" />
         <ScanButton code="T-NOWORKITEM" />
         <ScanButton code="T-SHIPPED" />
-        <OutboundQueueScreen prefs={prefs} />
+        <ScanButton code="T-WITHDRAWN" />
+        <OutboundQueueScreen
+          prefs={prefs}
+          labelPrinting={labelPrinting}
+          print={labelDeps.print}
+        />
       </>
     ),
   });
@@ -180,8 +240,13 @@ function renderScreen(
     path: '/outbound/simple/$shipmentId',
     component: TargetScreen,
   });
+  const withdrawRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/outbound/withdraw/$shipmentId',
+    component: () => <p>뺄상품화면</p>,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, targetRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, targetRoute, withdrawRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -199,6 +264,30 @@ function renderScreen(
 }
 
 describe('OutboundQueueScreen', () => {
+  it('시작된 배치 카드에만 「박스 넣기」가 보인다', async () => {
+    renderScreen([], undefined, {
+      picking: [
+        { id: 'b-1', batchNumber: 'OB-1', name: '오전', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z', withdrawingItems: 0 },
+      ],
+      created: [
+        { id: 'b-2', batchNumber: 'OB-2', name: '오후', status: 'created', totalItems: 2, totalQty: 5, startedAt: null, withdrawingItems: 0 },
+      ],
+    });
+    await screen.findByText('OB-2');
+    expect(screen.getAllByRole('button', { name: '박스 넣기' })).toHaveLength(1);
+  });
+
+  it('박스 넣기 패널이 열려 있는 동안 스캔은 박스 열기로 가지 않는다', async () => {
+    const user = userEvent.setup();
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests);
+    await user.click(await screen.findByRole('button', { name: '박스 넣기' }));
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(requests.some((r) => r.path.startsWith('/shipments/by-waybill'))).toBe(false);
+    expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+  });
+
   it('송장을 스캔하면 단순출고 화면으로 이동한다', async () => {
     const user = userEvent.setup();
     renderScreen([]);
@@ -240,6 +329,8 @@ describe('OutboundQueueScreen', () => {
           status: 'picking',
           totalItems: 3,
           totalQty: 7,
+          startedAt: '2026-09-30T00:00:00.000Z',
+          withdrawingItems: 0,
         },
       ],
       created: [
@@ -250,6 +341,8 @@ describe('OutboundQueueScreen', () => {
           status: 'created',
           totalItems: 2,
           totalQty: 5,
+          startedAt: null,
+          withdrawingItems: 0,
         },
       ],
     });
@@ -272,6 +365,8 @@ describe('OutboundQueueScreen', () => {
           status: 'picking',
           totalItems: 3,
           totalQty: 7,
+          startedAt: '2026-09-30T00:00:00.000Z',
+          withdrawingItems: 0,
         },
       ],
       created: [
@@ -282,6 +377,8 @@ describe('OutboundQueueScreen', () => {
           status: 'created',
           totalItems: 3,
           totalQty: 7,
+          startedAt: null,
+          withdrawingItems: 0,
         },
       ],
     });
@@ -407,6 +504,252 @@ describe('OutboundQueueScreen', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
     expect(requests.filter(({ method }) => method === 'POST')).toHaveLength(0);
+  });
+
+  it('labelPrinting 이면 배치 행마다 라벨 인쇄 버튼이 있다', async () => {
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests, undefined, undefined, 'w-1', true);
+    await screen.findByText('OB-1');
+    expect(screen.getByRole('button', { name: '송장 인쇄' })).toBeInTheDocument();
+  });
+
+  it('시작 전 배치에는 「작업 시작」만 있고 송장 인쇄는 없다(station 이어도)', async () => {
+    renderScreen(
+      [],
+      undefined,
+      {
+        picking: [],
+        created: [
+          {
+            id: 'b-2',
+            batchNumber: 'OB-2',
+            name: '오후',
+            status: 'created',
+            totalItems: 1,
+            totalQty: 1,
+            startedAt: null,
+            withdrawingItems: 0,
+          },
+        ],
+      },
+      'w-1',
+      true
+    );
+    await screen.findByText('OB-2');
+    expect(screen.getByRole('button', { name: '작업 시작' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '송장 인쇄' })).toBeNull();
+  });
+
+  it('시작된 배치에는 「작업 시작」이 없고 station 이면 송장 인쇄가 있다', async () => {
+    renderScreen([], undefined, undefined, 'w-1', true);
+    await screen.findByText('OB-1');
+    expect(screen.queryByRole('button', { name: '작업 시작' })).toBeNull();
+    expect(screen.getByRole('button', { name: '송장 인쇄' })).toBeInTheDocument();
+  });
+
+  it('기본(핸드헬드)에서는 라벨 인쇄 버튼이 없다', async () => {
+    const requests: CapturedRequest[] = [];
+    renderScreen(requests);
+    await screen.findByText('OB-1');
+    expect(screen.queryByRole('button', { name: '송장 인쇄' })).toBeNull();
+  });
+
+  // 인쇄 중엔 useUnsavedWork 가 라우터를 막는다 — 그때 스캔이 navigate 까지 가면 그 promise 가
+  // 끝나지 않아 이후 스캔이 전부 무시된다(스캐너가 조용히 죽는다).
+  it('라벨 인쇄 중 스캔은 안내만 하고, 인쇄가 끝나면 다시 박스를 연다', async () => {
+    const user = userEvent.setup();
+    const requests: CapturedRequest[] = [];
+    let release: (v: unknown) => void = () => {};
+    renderScreen(
+      requests,
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      }),
+      undefined,
+      'w-1',
+      true,
+      {
+        label: () => new Promise((resolve) => (release = resolve)),
+        print: async () => {},
+      }
+    );
+    await user.click(await screen.findByRole('button', { name: '송장 인쇄' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: '인쇄',
+      })
+    );
+    await screen.findByRole('button', { name: '인쇄 중 0/1' });
+
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(
+      await screen.findByText('송장 인쇄가 끝난 뒤 스캔해 주세요.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    expect(
+      requests.filter(({ path }) => path.startsWith('/shipments/by-waybill'))
+    ).toHaveLength(0);
+
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 });
+    expect(await screen.findByRole('status')).toHaveTextContent('보냄 1');
+
+    await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+    expect(await screen.findByText('단순출고화면')).toBeInTheDocument();
+  });
+
+  describe('송장 상태(labelState)로 화면을 가른다', () => {
+    const stationPrefs = () =>
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      });
+
+    it('station 에서 never_printed 송장을 스캔하면 작업 화면으로 가지 않고 출력 패널을 보인다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], stationPrefs(), undefined, 'w-1', true, {
+        labelState: 'never_printed',
+        print: async () => {},
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText(
+          '송장을 아직 출력하지 않았어요. 출력한 뒤 송장을 다시 스캔해 주세요.'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: '송장 재출력' })
+      ).toBeInTheDocument();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
+
+    it('비station 에서 reprint_required 면 안내만 하고 출력 버튼은 없다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, {
+        labelState: 'reprint_required',
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText(
+          '송장이 바뀌었어요. 프린터 있는 자리에서 새 송장을 출력해 주세요.'
+        )
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '송장 재출력' })).toBeNull();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
+
+    it('station 의 reprint_required 는 바뀐 줄을 보여 준다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], stationPrefs(), undefined, 'w-1', true, {
+        labelState: 'reprint_required',
+        labelChanges: [
+          { locationCode: 'A-01', skuId: 's', name: '볼펜', printedQty: 1, currentQty: 2 },
+        ],
+        print: async () => {},
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(await screen.findByText('[A-01] 볼펜 1개 → 2개')).toBeInTheDocument();
+    });
+
+    it('빠진 박스의 송장이면 «버려 주세요» — 오늘 배치에 없다고 하지 않는다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false);
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-WITHDRAWN' }));
+      expect(await screen.findByText('빠진 박스예요. 송장은 버려 주세요.')).toBeInTheDocument();
+      expect(screen.queryByText(/오늘 배치에 없어요/)).toBeNull();
+    });
+
+    it('빼는 중인 박스의 송장이면 뺄 상품 화면으로 간다', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, { labelState: 'withdrawing' });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(await screen.findByText('뺄상품화면')).toBeInTheDocument();
+    });
+
+    it('배치 카드에 빠지는 중인 박스 수를 보인다', async () => {
+      renderScreen([], undefined, {
+        picking: [{ id: 'b-1', batchNumber: 'OB-1', name: '', status: 'picking', totalItems: 3, totalQty: 7, startedAt: '2026-09-30T00:00:00.000Z', withdrawingItems: 1 }],
+        created: [],
+      });
+      expect(await screen.findByText('빠지는 중 1')).toBeInTheDocument();
+    });
+
+    it('not_started 면 작업 시작 안내', async () => {
+      const user = userEvent.setup();
+      renderScreen([], undefined, undefined, 'w-1', false, {
+        labelState: 'not_started',
+      });
+      await screen.findByText('OB-1');
+      await user.click(screen.getByRole('button', { name: '스캔:T-1' }));
+      expect(
+        await screen.findByText('배치 화면에서 「작업 시작」을 먼저 눌러 주세요.')
+      ).toBeInTheDocument();
+      expect(screen.queryByText('단순출고화면')).not.toBeInTheDocument();
+    });
+  });
+
+  // 프린터는 한 대다 — 두 배치가 동시에 돌면 라벨이 한 줄로 섞여 나온다.
+  it('한 배치를 인쇄하는 동안 다른 배치의 라벨 인쇄는 막힌다', async () => {
+    const user = userEvent.setup();
+    let release: (v: unknown) => void = () => {};
+    renderScreen(
+      [],
+      createMemoryPrefs({
+        'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+        [LABEL_PRINTER_KEY]: 'spooler://XP',
+      }),
+      {
+        picking: [
+          {
+            id: 'b-1',
+            batchNumber: 'OB-1',
+            name: '오전',
+            status: 'picking',
+            totalItems: 1,
+            totalQty: 1,
+            startedAt: '2026-09-30T00:00:00.000Z',
+            withdrawingItems: 0,
+          },
+        ],
+        created: [
+          {
+            id: 'b-2',
+            batchNumber: 'OB-2',
+            name: '오후',
+            status: 'created',
+            totalItems: 1,
+            totalQty: 1,
+            startedAt: '2026-09-30T00:00:00.000Z',
+            withdrawingItems: 0,
+          },
+        ],
+      },
+      'w-1',
+      true,
+      {
+        label: () => new Promise((resolve) => (release = resolve)),
+        print: async () => {},
+      }
+    );
+    await screen.findByText('OB-2');
+    const [first, second] = screen.getAllByRole('button', { name: '송장 인쇄' });
+    await user.click(first);
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: '인쇄',
+      })
+    );
+    await screen.findByRole('button', { name: '인쇄 중 0/1' });
+    expect(second).toBeDisabled();
+
+    release({ waybillId: 'w', trackingNo: 'T-1', format: 'zpl', data: '^XA^XZ', pages: 1, fingerprint: 'f'.repeat(64), revision: 1 });
+    await screen.findByRole('status');
+    expect(second).toBeEnabled();
   });
 });
 

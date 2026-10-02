@@ -343,6 +343,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/warehouses',
       },
       {
+        id: 'inventory-delivery-profiles',
+        title: '배송 프로필',
+        path: '/inventory/delivery-profiles',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
@@ -458,9 +463,13 @@ const allMenus: MainMenu[] = [
           children: [
             { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
             { id: 'message-bulk', title: '대량 메시지 전송', path: '/messages/bulk' },
+            { id: 'message-groups', title: '수신자 그룹', path: '/messages/groups' },
             { id: 'message-campaigns', title: '발송 목록', path: '/messages/campaigns' },
             { id: 'message-inbox', title: '메시지함', path: '/messages/inbox' },
             { id: 'message-templates', title: '문자 템플릿', path: '/messages/templates' },
+            { id: 'alimtalk-send', title: '알림톡 보내기', path: '/messages/alimtalk/send' },
+            { id: 'alimtalk-campaigns', title: '알림톡 발송 목록', path: '/messages/alimtalk/campaigns' },
+            { id: 'alimtalk-templates', title: '알림톡 템플릿', path: '/messages/alimtalk/templates' },
             { id: 'message-devices', title: '발송폰 디바이스', path: '/messages/devices' },
           ],
         },
@@ -480,6 +489,11 @@ const allMenus: MainMenu[] = [
             id: 'statistics-overview',
             title: '종합 대시보드',
             path: '/statistics/overview',
+          },
+          {
+            id: 'statistics-growth',
+            title: '성장 (유입·전환·재구매·목표)',
+            path: '/statistics/growth',
           },
           { id: 'by-profit', title: '이익', path: '/statistics/profit' },
           { id: 'by-inventory', title: '재고', path: '/statistics/inventory' },
@@ -505,7 +519,7 @@ const allMenus: MainMenu[] = [
           { id: 'by-review', title: '리뷰', path: '/statistics/reviews' },
           {
             id: 'statistics-settings',
-            title: '경영 설정 (고정비)',
+            title: '경영 설정 (고정비·매출 목표)',
             path: '/statistics/settings',
           },
         ],
@@ -569,6 +583,7 @@ const allMenus: MainMenu[] = [
           },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'shop-listings', title: '샵매매', path: '/mall/shop-listings' },
+          { id: 'almond-templates', title: '아몬드템플릿', path: '/mall/almond-templates' },
           { id: 'deposit', title: '예치금' },
         ],
       },
@@ -658,6 +673,11 @@ const allMenus: MainMenu[] = [
             path: '/membership/recurring-billing',
           },
           {
+            id: 'collections',
+            title: '출금 실패·미납 현황',
+            path: '/membership/collections',
+          },
+          {
             id: 'payment-history',
             title: '결제 내역 조회',
             path: '/membership/billing-history',
@@ -680,6 +700,15 @@ const allMenus: MainMenu[] = [
           },
         ],
       },
+    ],
+  },
+  {
+    id: 'logo-contest',
+    title: '로고 공모전',
+    icon: 'Trophy',
+    defaultPath: '/logo-contest',
+    children: [
+      { id: 'logo-contest-entries', title: '출품작', path: '/logo-contest' },
     ],
   },
   {

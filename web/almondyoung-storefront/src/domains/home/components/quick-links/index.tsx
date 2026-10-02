@@ -62,6 +62,7 @@ export async function HomeQuickLinks({
 }) {
   const tCategories = await getTranslations("categories")
   const tQuickLinks = await getTranslations("header.quickLinks")
+  const tUtility = await getTranslations("header.utility")
   const interestKeys = await getInterestCategoryKeys()
   const interestKeySet = new Set(interestKeys)
   let dropdownCategories: StoreProductCategoryTree[] = []
@@ -103,6 +104,15 @@ export async function HomeQuickLinks({
       imageWrapClassName: "bg-white",
     },
     {
+      label: "미용필기시험",
+      displayLabel: "미용필기시험",
+      href: "https://www.xn--ok0b94xilff7df2wpza.com/",
+      imageUrl: "/images/miyong-pilgi-logo.png",
+      external: true,
+      imageClassName: "object-contain p-2.5",
+      imageWrapClassName: "bg-white",
+    },
+    {
       label: tQuickLinks("beautytop"),
       href: "/beautytop",
       imageUrl: null,
@@ -126,8 +136,17 @@ export async function HomeQuickLinks({
     },
   ]
   const isDesktopHeader = variant === "desktopHeader"
+  // 드롭다운 1칸 + 링크 전부를 한 줄에 둔다
+  const desktopColumnCount = 1 + externalLinks.length + categoryLinks.length
   const mobileItems: MobileQuickLinkItem[] = [
     ...externalLinks,
+    {
+      label: tUtility("almondTemplate"),
+      href: "/almond-template/landing",
+      imageUrl: "/images/almond-template-palette.png",
+      imageClassName: "object-contain p-2",
+      imageWrapClassName: "bg-white",
+    },
     ...categoryLinks.map((link) => ({
       ...link,
       external: false,
@@ -165,9 +184,10 @@ export async function HomeQuickLinks({
   // 데스크톱 헤더
   if (isDesktopHeader) {
     return (
-      <nav aria-label={tQuickLinks("ariaLabel")}>
+      <nav aria-label={tQuickLinks("ariaLabel")} className="text-white">
         <ScrollRow
           labels={{ prev: tQuickLinks("prev"), next: tQuickLinks("next") }}
+          fadeClassName="from-header-background"
           className="grid auto-cols-max grid-flow-col items-center gap-5 px-0.5"
         >
           {linkItems}
@@ -184,7 +204,10 @@ export async function HomeQuickLinks({
 
           <nav
             aria-label={tQuickLinks("ariaLabel")}
-            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(14,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
+            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
+            style={{
+              gridTemplateColumns: `repeat(${desktopColumnCount},minmax(0,1fr))`,
+            }}
           >
             <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
               <CategoryDropdown

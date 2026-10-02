@@ -1,4 +1,4 @@
-import { assembleWaybillRequest, parseRecipient } from './waybill-request.assembler';
+import { assembleWaybillRequest, parseRecipient, commodityNameOf, composeMessage } from './waybill-request.assembler';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 
@@ -19,6 +19,7 @@ const config: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 const snapshot = {
   recipientName: '홍길동',
@@ -44,8 +45,8 @@ describe('parseRecipient', () => {
 
 describe('assembleWaybillRequest', () => {
   const lines = [
-    { productName: '아몬드유 30입', quantity: 2, skuId: 's1' },
-    { productName: '아몬드유 60입', quantity: 1, skuId: 's2' },
+    { productName: '아몬드유 30입', skuName: '아몬드유 30입', quantity: 2, skuId: 's1' },
+    { productName: '아몬드유 60입', skuName: '아몬드유 60입', quantity: 1, skuId: 's2' },
   ];
   const req: WaybillRequest = assembleWaybillRequest({ shipmentId, recipientSnapshot: snapshot, lines, config });
 
@@ -99,7 +100,7 @@ describe('assembleWaybillRequest — 공동현관 비번 합성', () => {
       deliveryNote: '문 앞에 놓아주세요',
     },
     // ManifestLineLite 는 skuId 를 요구한다(브리프 원문에는 없었음) — type-check 통과를 위해 추가.
-    lines: [{ productName: '상품', quantity: 1, skuId: 'sku_1' }],
+    lines: [{ productName: '상품', skuName: '상품', quantity: 1, skuId: 'sku_1' }],
     config,
   };
 
@@ -129,5 +130,32 @@ describe('assembleWaybillRequest — 공동현관 비번 합성', () => {
       entrancePassword: null,
     });
     expect(req.recipient.message).toBeUndefined();
+  });
+});
+
+describe('commodityNameOf', () => {
+  it('한 줄이면 상품명 그대로', () => {
+    expect(commodityNameOf([{ productName: '펜', skuName: '펜', quantity: 1, skuId: 'a' }])).toBe('펜');
+  });
+  it('여러 줄이면 「첫 상품명 외 N건」', () => {
+    expect(
+      commodityNameOf([
+        { productName: '펜', skuName: '펜', quantity: 1, skuId: 'a' },
+        { productName: '자', skuName: '자', quantity: 2, skuId: 'b' },
+        { productName: '풀', skuName: '풀', quantity: 1, skuId: 'c' },
+      ]),
+    ).toBe('펜 외 2건');
+  });
+  it('줄이 없으면 빈 문자열', () => {
+    expect(commodityNameOf([])).toBe('');
+  });
+});
+
+describe('composeMessage', () => {
+  it('메모와 공동현관 비번을 합친다', () => {
+    expect(composeMessage('문앞', '#1234')).toBe('문앞 (공동현관 #1234)');
+  });
+  it('둘 다 없으면 undefined', () => {
+    expect(composeMessage(undefined, null)).toBeUndefined();
   });
 });

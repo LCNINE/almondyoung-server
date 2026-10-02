@@ -43,7 +43,7 @@ export class RenewalNoticeService {
   /**
    * 매일 10시 — 정기결제 스케줄러(09시)와 겹치지 않게 한 시간 뒤에 돈다.
    */
-  @CronOnce('0 10 * * *', { name: 'renewal-notice' })
+  @CronOnce('0 10 * * *', { name: 'renewal-notice', timeZone: 'Asia/Seoul' })
   async runRenewalNoticeScheduler(): Promise<void> {
     const targetDate = format(addDays(new Date(), NOTICE_DAYS_BEFORE), 'yyyy-MM-dd');
     try {

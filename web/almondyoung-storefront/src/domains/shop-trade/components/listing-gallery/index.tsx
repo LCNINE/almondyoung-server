@@ -18,9 +18,10 @@ interface Props {
   /** file-service fileId 목록 */
   images: string[]
   alt: string
+  fit?: "cover" | "contain"
 }
 
-export function ListingGallery({ images, alt }: Props) {
+export function ListingGallery({ images, alt, fit = "cover" }: Props) {
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
   const [zoomed, setZoomed] = useState<number | null>(null)
@@ -56,7 +57,13 @@ export function ListingGallery({ images, alt }: Props) {
                   fill
                   sizes="(min-width: 800px) 800px, 100vw"
                   priority={index === 0}
-                  className="object-cover"
+                  className={
+                    fit === "contain"
+                      ? index === 1
+                        ? "m-auto max-h-64 max-w-64 object-contain"
+                        : "object-scale-down p-6"
+                      : "object-cover"
+                  }
                 />
               </button>
             </CarouselItem>
@@ -93,6 +100,7 @@ export function ListingGallery({ images, alt }: Props) {
 
       <GalleryLightbox
         images={images}
+        fit={fit}
         index={zoomed}
         onIndexChange={(next) => {
           setZoomed(next)

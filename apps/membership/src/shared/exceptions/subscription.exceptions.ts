@@ -85,6 +85,16 @@ export class PaymentIntentAlreadyUsedException extends SubscriptionException {
   }
 }
 
+/**
+ * 미납 멤버십 요금이 남은 계정이 멤버십을 새로 시작하려 할 때 사용합니다.
+ * 화면은 문구가 아니라 code 로 갈라 「미납 요금 먼저 납부」로 보냅니다.
+ */
+export class ArrearsOutstandingException extends SubscriptionException {
+  constructor() {
+    super('미납된 멤버십 요금을 먼저 납부해야 멤버십을 새로 시작할 수 있습니다.', 'ARREARS_OUTSTANDING', HttpStatus.CONFLICT);
+  }
+}
+
 // =================================================================
 // [제거] 아래 예외들은 PolicyViolationException으로 대체되거나,
 // 서비스 로직 내 일반 예외로 처리되어 더 이상 필요하지 않습니다.

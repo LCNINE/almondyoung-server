@@ -18,6 +18,14 @@
   font-display: swap;
 }
 
+/* ponytail: 제목에 쓰는 글자만 포함한 서브셋입니다. 제목 문구가 바뀌면 폰트를 다시 생성하세요. */
+@font-face {
+  font-family: "Jua Logo Contest";
+  src: url("/fonts/Jua-logo-contest.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
 /* Pretendard 는 globals.css 의 dynamic-subset CDN 담당. 로컬로 재선언하면 전체 폰트를 받는다 */
 
 @theme inline {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ScanProvider } from './ScanProvider';
-import { useScanner } from './useScanner';
+import { useScanner, useScanEmit, useScanObserver, useCommandScans } from './useScanner';
 import { preventScanEnterActivation } from './hidScanBoundary';
 import { scanHid } from './__fixtures__/hid';
 
@@ -156,4 +156,77 @@ it('완료된 HID 스캔의 Enter는 포커스된 업무 버튼을 누르지 않
   expect(scan).toHaveBeenCalledWith('9912');
   expect(enter.defaultPrevented).toBe(true);
   expect(click).not.toHaveBeenCalled();
+});
+
+function CommandProbe({ onCommand }: { onCommand: (code: string) => void }) {
+  useCommandScans(onCommand);
+  return null;
+}
+
+function scanKeys(code: string) {
+  for (const key of [...code, 'Enter']) fireKey(key);
+}
+
+describe('명령 바코드(스테이션 UI 스펙 §5.3)', () => {
+  it('% 로 시작하는 스캔은 일반 구독자에게 가지 않고 명령 수신처로 간다', () => {
+    const scan = vi.fn();
+    const command = vi.fn();
+    render(
+      <ScanProvider>
+        <Probe onScan={scan} />
+        <CommandProbe onCommand={command} />
+      </ScanProvider>
+    );
+    scanKeys('%90%07');
+    scanKeys('8801234');
+    expect(command.mock.calls).toEqual([['%90%07']]);
+    expect(scan.mock.calls).toEqual([['8801234']]);
+  });
+
+  it('명령 수신처가 없으면(핸드헬드) 명령 스캔은 버린다 — 송장·상품 조회로 새지 않는다', () => {
+    const scan = vi.fn();
+    render(
+      <ScanProvider>
+        <Probe onScan={scan} />
+      </ScanProvider>
+    );
+    scanKeys('%90%03');
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('카메라 스캔(emit)도 같은 규칙을 따른다', () => {
+    const scan = vi.fn();
+    const command = vi.fn();
+    function Camera() {
+      const emit = useScanEmit();
+      return <button onClick={() => emit({ code: '%90%01', source: 'camera', at: 0 })}>카메라</button>;
+    }
+    render(
+      <ScanProvider>
+        <Probe onScan={scan} />
+        <CommandProbe onCommand={command} />
+        <Camera />
+      </ScanProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: '카메라' }));
+    expect(command).toHaveBeenCalledWith('%90%01');
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('observe 는 같은 스캔의 일반 구독자보다 먼저 받는다', () => {
+    const order: string[] = [];
+    function Observer() {
+      useScanObserver(() => order.push('observer'));
+      return null;
+    }
+    // 일반 구독자를 먼저 마운트해도(effect 는 자식부터 돈다) observe 가 앞선다
+    render(
+      <ScanProvider>
+        <Probe onScan={() => order.push('subscriber')} />
+        <Observer />
+      </ScanProvider>
+    );
+    scanKeys('8801234');
+    expect(order).toEqual(['observer', 'subscriber']);
+  });
 });

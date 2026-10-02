@@ -1,11 +1,16 @@
-import type { PlanInvalidationCode } from '../picking/plan/plan-invalidation';
 import type { SimpleOutboundContext } from './simple-outbound.service';
 
 export type PreparationBlockReason =
-  | PlanInvalidationCode
+  | 'SOURCE_STOCK_CHANGED'
+  | 'PLAN_IDENTITY_CHANGED'
+  | 'PLAN_NOT_DRAFT'
+  | 'SHIPMENT_SNAPSHOT_CHANGED'
+  | 'ALLOCATION_INVALID'
+  | 'ELIGIBILITY_CHANGED'
   | 'SOURCE_INSUFFICIENT'
   | 'ACTIVE_WORK_REQUIRES_REVIEW'
-  | 'REPLAN_LIMIT_REACHED';
+  | 'REPLAN_LIMIT_REACHED'
+  | 'BATCH_NOT_STARTED';
 export type OutboundPreparationBlocked = {
   outcome: 'preparation_blocked';
   code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED';
@@ -28,6 +33,7 @@ const reasons: readonly string[] = [
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ];
 
 export function isPreparationBlocked(value: unknown): value is OutboundPreparationBlocked {
@@ -60,8 +66,11 @@ export function preparationBlocked(
     reasonCode,
     batchId,
     invalidatedPlanId,
+    // BATCH_NOT_STARTED 는 배치 카드의 「작업 시작」을 누른 뒤 다시 준비하면 풀린다 — 배치를 들여다볼 일이 아니다.
     recovery:
-      reasonCode === 'SOURCE_INSUFFICIENT' || reasonCode === 'REPLAN_LIMIT_REACHED'
+      reasonCode === 'SOURCE_INSUFFICIENT' ||
+      reasonCode === 'REPLAN_LIMIT_REACHED' ||
+      reasonCode === 'BATCH_NOT_STARTED'
         ? 'retry_preparation'
         : 'review_batch',
   };

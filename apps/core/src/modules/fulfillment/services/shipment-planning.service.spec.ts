@@ -18,6 +18,7 @@ function planningHarness() {
     {} as never,
     {} as never,
     { assertV2MutationAllowed: jest.fn() } as never,
+    {} as never,
   );
   return { service, execute };
 }

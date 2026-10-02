@@ -667,6 +667,172 @@ const MEMBER_EVENTS = [
   csEvent('COUPON_EXPIRING', '쿠폰 만료예정', '보유한 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
 ];
 
+/**
+ * 정기결제 출금 실패·미납 해지 알림톡. 카카오 심사를 받은 템플릿 코드로만 나가므로 본문은 심사 받은 문구와
+ * 한 글자도 달라선 안 된다(다르면 NHN 이 발송을 거부한다). 버튼은 NHN 템플릿에 등록돼 있다.
+ *
+ * 매핑은 꺼진 채로 넣는다 — 심사 통과 전에 켜지면 발송이 전부 실패한다. 통과하면 관리자 알림 화면에서 켠다.
+ * 알림톡이 안 닿으면 NHN 이 같은 본문으로 문자를 대신 보낸다(컨슈머가 smsFallback 을 싣는다).
+ */
+const STOREFRONT = 'https://almondyoung.com/kr';
+
+/** 카카오 심사에 함께 올라가는 웹링크 버튼. 이름은 14자까지다. */
+const webLink = (name: string, path: string) => ({
+  ordering: 1,
+  type: 'WL',
+  name,
+  linkMo: `${STOREFRONT}${path}`,
+  linkPc: `${STOREFRONT}${path}`,
+});
+
+const kakaoNotice = (
+  templateId: string,
+  templateKey: string,
+  kakaoTemplateCode: string,
+  name: string,
+  body: string,
+  button: ReturnType<typeof webLink>,
+  variablesSchema: Record<string, { type: string; required: boolean }>,
+) => ({
+  templateId,
+  templateKey,
+  name,
+  category: 'TRANSACTIONAL',
+  kakaoTemplateCode,
+  kakaoButtons: [button],
+  contents: { KAKAO: { ko: { body } } },
+  variablesSchema,
+});
+
+const kakaoNoticeEvent = (eventKey: string, name: string, description: string) => ({
+  eventKey,
+  name,
+  description,
+  templateKey: eventKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['KAKAO'],
+  priority: 'HIGH',
+  isActive: false,
+});
+
+/** NHN 템플릿 등록 스크립트도 이 정의를 읽는다 — 심사 받은 문구와 시드 본문이 갈리지 않게 한 곳에 둔다. */
+export const BILLING_NOTICE_TEMPLATES = [
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_BILLING_ATTEMPT_FAILED,
+    'MEMBERSHIP_BILLING_ATTEMPT_FAILED',
+    'MEMB_BILL_FAIL',
+    '멤버십 요금 출금 실패 안내',
+    [
+      '#{name}님, 멤버십 #{period} 요금 #{amount} 출금이 #{attempt}번째 실패했어요.',
+      '사유: #{reason}',
+      '#{nextDate}에 다시 출금을 요청해요. 은행 영업일에 따라 실제 출금은 하루 정도 늦어질 수 있어요.',
+      '남은 시도 #{remaining}번이 모두 실패하면 멤버십이 해지되고, 이용하신 기간의 요금은 미납으로 남을 수 있어요.',
+    ].join('\n'),
+    webLink('결제 수단 확인하기', '/mypage/membership/payment-method'),
+    {
+      name: { type: 'string', required: true },
+      period: { type: 'string', required: true },
+      amount: { type: 'string', required: true },
+      attempt: { type: 'number', required: true },
+      reason: { type: 'string', required: true },
+      nextDate: { type: 'string', required: true },
+      remaining: { type: 'number', required: true },
+    },
+  ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_TERMINATED_WITH_ARREARS,
+    'MEMBERSHIP_TERMINATED_WITH_ARREARS',
+    'MEMB_TERM_ARREARS',
+    '멤버십 해지 안내 (미납 있음)',
+    [
+      '#{name}님, 멤버십 #{period} 요금 출금이 모두 실패해 멤버십이 해지되었어요.',
+      '이용하신 기간의 요금 #{arrearsAmount}이 미납으로 남아 있어요.',
+      '자세한 내용은 멤버십 화면에서 확인하실 수 있어요.',
+    ].join('\n'),
+    // 알림톡은 결제·납부를 유도하는 문구와 버튼을 허용하지 않는다. 결제는 멤버십 화면에서 한다.
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+      period: { type: 'string', required: true },
+      arrearsAmount: { type: 'string', required: true },
+    },
+  ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_TERMINATED_NO_ARREARS,
+    'MEMBERSHIP_TERMINATED_NO_ARREARS',
+    'MEMB_TERM_NOARREARS',
+    '멤버십 해지 안내 (미납 없음)',
+    [
+      '#{name}님, 멤버십 #{period} 요금 출금이 모두 실패해 멤버십이 해지되었어요. 남은 요금은 없어요.',
+      '다시 이용하시려면 멤버십 화면에서 가입해 주세요.',
+    ].join('\n'),
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+      period: { type: 'string', required: true },
+    },
+  ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS,
+    'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS',
+    'MEMB_MREJ_ARREARS',
+    '멤버십 해지 안내 (계좌 심사 거절, 미납 있음)',
+    [
+      '#{name}님, 등록하신 자동이체 계좌의 은행 심사가 거절되어 멤버십이 해지되었어요.',
+      '이용하신 기간(#{period})의 요금 #{arrearsAmount}이 미납으로 남아 있어요.',
+      '자세한 내용은 멤버십 화면에서 확인하실 수 있어요.',
+    ].join('\n'),
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+      period: { type: 'string', required: true },
+      arrearsAmount: { type: 'string', required: true },
+    },
+  ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS,
+    'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS',
+    'MEMB_MREJ_NOARREARS',
+    '멤버십 해지 안내 (계좌 심사 거절, 미납 없음)',
+    [
+      '#{name}님, 등록하신 자동이체 계좌의 은행 심사가 거절되어 멤버십이 해지되었어요. 남은 요금은 없어요.',
+      '다시 이용하시려면 멤버십 화면에서 계좌를 다시 등록하고 가입해 주세요.',
+    ].join('\n'),
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+    },
+  ),
+];
+
+const BILLING_NOTICE_EVENTS = [
+  kakaoNoticeEvent(
+    'MEMBERSHIP_BILLING_ATTEMPT_FAILED',
+    '멤버십 요금 출금 실패',
+    '정기결제 출금이 실패하고 재시도가 남았을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_TERMINATED_WITH_ARREARS',
+    '멤버십 해지 (미납 있음)',
+    '출금 재시도가 모두 실패해 해지되고 미납 요금이 남았을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_TERMINATED_NO_ARREARS',
+    '멤버십 해지 (미납 없음)',
+    '출금 재시도가 모두 실패해 해지됐지만 남은 요금이 없을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS',
+    '멤버십 해지 (계좌 심사 거절, 미납 있음)',
+    '자동이체 계좌 심사가 거절되어 해지되고 미납 요금이 남았을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS',
+    '멤버십 해지 (계좌 심사 거절, 미납 없음)',
+    '자동이체 계좌 심사가 거절되어 해지됐지만 남은 요금이 없을 때',
+  ),
+];
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
@@ -677,6 +843,7 @@ const NOTICE_TEMPLATES = [
   ORDER_PARTIALLY_SHIPPED_TEMPLATE,
   ...CS_TEMPLATES,
   ...MEMBER_TEMPLATES,
+  ...BILLING_NOTICE_TEMPLATES,
 ];
 const NOTICE_EVENTS = [
   RENEWAL_NOTICE_EVENT,
@@ -688,6 +855,7 @@ const NOTICE_EVENTS = [
   ORDER_PARTIALLY_SHIPPED_EVENT,
   ...CS_EVENTS,
   ...MEMBER_EVENTS,
+  ...BILLING_NOTICE_EVENTS,
 ];
 
 const PROVIDER_IDS = [
@@ -831,7 +999,7 @@ export class NotificationSeedStep extends SeedStep {
       this.logger.step(2, 3, 'Inserting notification templates');
       for (const template of NOTICE_TEMPLATES) {
         await this.db.execute(sql`
-          INSERT INTO templates (template_id, template_key, name, category, contents, default_contents, variables_schema, is_active)
+          INSERT INTO templates (template_id, template_key, name, category, contents, default_contents, variables_schema, kakao_template_code, is_active)
           VALUES (
             ${template.templateId},
             ${template.templateKey},
@@ -840,6 +1008,7 @@ export class NotificationSeedStep extends SeedStep {
             ${JSON.stringify(template.contents)},
             ${JSON.stringify(template.contents)},
             ${JSON.stringify(template.variablesSchema)},
+            ${'kakaoTemplateCode' in template ? template.kakaoTemplateCode : null},
             ${true}
           )
           ON CONFLICT (template_id) DO UPDATE SET default_contents = EXCLUDED.default_contents

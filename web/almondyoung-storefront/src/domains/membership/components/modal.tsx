@@ -214,7 +214,7 @@ export function MembershipCancelModal({
                 className={cn(
                   "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 transition-colors",
                   mode === "AT_PERIOD_END"
-                    ? "border-primary bg-[#fff2ec]"
+                    ? "border-primary bg-yellow-10"
                     : "border-border hover:bg-muted"
                 )}
               >
@@ -249,7 +249,7 @@ export function MembershipCancelModal({
                 className={cn(
                   "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 transition-colors",
                   mode === "IMMEDIATE_REFUND"
-                    ? "border-primary bg-[#fff2ec]"
+                    ? "border-primary bg-yellow-10"
                     : "border-border hover:bg-muted"
                 )}
               >
@@ -299,13 +299,6 @@ export function MembershipCancelModal({
                           amount: won(immediate.breakdown.usageDeduction),
                         })}
                       </span>
-                      {immediate.breakdown.benefitDeduction > 0 && (
-                        <span>
-                          {t("breakdownBenefit", {
-                            amount: won(immediate.breakdown.benefitDeduction),
-                          })}
-                        </span>
-                      )}
                     </span>
                   )}
                   {immediate?.refundExecution === "MANUAL" && (
@@ -376,7 +369,7 @@ export function MembershipCancelModal({
                     htmlFor={reason.code}
                     className={cn(
                       "flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 transition-colors",
-                      active ? "bg-[#fff2ec]" : "hover:bg-muted"
+                      active ? "bg-yellow-10" : "hover:bg-muted"
                     )}
                   >
                     <RadioGroupItem

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { analyticsApi } from '@/lib/api/domains/analytics';
+import { analyticsApi, CreateRevenueGoalPayload } from '@/lib/api/domains/analytics';
 import { analyticsQueryKeys } from './query-keys';
 
 /**
@@ -27,5 +27,27 @@ export const useDeleteOperatingCost = () => {
   return useMutation({
     mutationFn: (id: string) => analyticsApi.deleteOperatingCost(id),
     onSuccess: () => invalidateOperatingCost(queryClient),
+  });
+};
+
+/** 목표를 바꾸면 성장 요약(메인 카드)도 바뀐다 — 고정비 쿼리는 건드리지 않는다. */
+function invalidateRevenueGoal(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: [...analyticsQueryKeys.all, 'revenue-goals'] });
+  queryClient.invalidateQueries({ queryKey: analyticsQueryKeys.growthSummary() });
+}
+
+export const useCreateRevenueGoal = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateRevenueGoalPayload) => analyticsApi.createRevenueGoal(payload),
+    onSuccess: () => invalidateRevenueGoal(queryClient),
+  });
+};
+
+export const useDeleteRevenueGoal = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => analyticsApi.deleteRevenueGoal(id),
+    onSuccess: () => invalidateRevenueGoal(queryClient),
   });
 };

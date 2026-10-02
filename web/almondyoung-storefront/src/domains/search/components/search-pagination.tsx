@@ -57,11 +57,13 @@ export function SearchResultPagination({
 
   return (
     <nav
+      data-pagination
       className="flex items-center justify-center gap-1"
       aria-label={t("ariaLabel")}
     >
       {/* 이전 페이지 */}
       <button
+        data-page-prev
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
         className={cn(
@@ -110,6 +112,7 @@ export function SearchResultPagination({
 
       {/* 다음 페이지 */}
       <button
+        data-page-next
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
         className={cn(

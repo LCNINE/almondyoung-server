@@ -1,4 +1,5 @@
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
@@ -45,6 +46,8 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 // assertDispatchable(읽기 전용)만 소비 — carrier I/O 로 이어지는 필드는 실제로 쓰이지 않는다(더미 값).
 const HANJIN_TEST_CONFIG: HanjinConfig = {
@@ -58,6 +61,7 @@ const HANJIN_TEST_CONFIG: HanjinConfig = {
   sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
   boxType: 'A',
   payType: 'PP',
+  labelType: 'NS',
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -86,7 +90,6 @@ interface LifecycleWorld {
 
 interface StagedBatch {
   batchId: string;
-  planId: string;
   sessionId: string;
   workItemIds: string[];
 }
@@ -141,6 +144,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       authorization,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     const serviceRefs: { recall?: ShipmentRecallService } = {};
     const moduleRef = {
@@ -150,7 +154,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         return { resumePending: jest.fn().mockResolvedValue(undefined) };
       }),
     };
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     // 플랜3: dispatch(assertDispatchable/markUsed)·recall(getActiveWaybill/voidForRecall) 둘 다 실제
     // WaybillService 를 소비한다. registry/machine 은 이 경로들에서 실행되지 않지만(carrier HTTP 없음) 구조적
     // 의존이므로 empty registry + issue machine 으로 배선한다(waybill.manager.integration.spec.ts 패턴).
@@ -193,6 +197,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
     const batches = new OutboundBatchOrchestrator(
       dbService,
@@ -202,6 +207,8 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       workflow,
       moduleRef as never,
+      new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
     return { batches, dispatch, waybills, planning, recall, reservations };
   }
@@ -505,6 +512,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       tx,
     );
     const workItemIds: string[] = [];
+    const workItemIdByShipment = new Map<string, string>();
     for (const shipmentId of shipmentIds) {
       const added = await service.batches.addShipment(
         created.batchId,
@@ -514,6 +522,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         tx,
       );
       workItemIds.push(added.workItem.id);
+      workItemIdByShipment.set(shipmentId, added.workItem.id);
       await tx
         .update(wmsTables.outboundBatchWorkItems)
         .set({
@@ -525,22 +534,11 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         })
         .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
     }
-    const [plan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: created.batchId, strategy: 'discrete', status: 'active', createdBy: actor.id })
-      .returning();
-    const shipmentRows = await tx
-      .select()
-      .from(wmsTables.shipments)
-      .where(inArray(wmsTables.shipments.id, shipmentIds));
-    await tx.insert(wmsTables.pickingPlanMembers).values(
-      shipmentRows.map((shipment) => ({
-        planId: plan.id,
-        shipmentId: shipment.id,
-        manifestVersion: shipment.manifestVersion,
-        reservationVersion: shipment.reservationVersion,
-      })),
-    );
+    // 배치 시작(startBatchPicking)이 남기는 흔적: 배치 startedAt + 작업 항목별 배정.
+    await tx
+      .update(wmsTables.outboundBatches)
+      .set({ startedAt: new Date() })
+      .where(eq(wmsTables.outboundBatches.id, created.batchId));
     const lines = await tx
       .select()
       .from(wmsTables.shipmentLines)
@@ -559,7 +557,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       .limit(1);
     await tx.insert(wmsTables.pickingSourceAllocations).values(
       lines.map((line) => ({
-        planId: plan.id,
+        workItemId: workItemIdByShipment.get(line.shipmentId)!,
         shipmentLineId: line.id,
         sourceLocationId: sourceLedger.locationId,
         qty: line.qty,
@@ -573,13 +571,13 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       .returning();
     await tx.insert(wmsTables.batchInventorySessionEvents).values({
       sessionId: session.id,
-      idempotencyKey: `start:${plan.id}`,
+      idempotencyKey: `start:${created.batchId}`,
       eventType: 'HAND_IN',
       skuId: world.skuId,
       quantity: totalQty,
       toCustodyType: 'AT_SOURCE',
       toSourceLocationId: sourceLedger.locationId,
-      payload: { planId: plan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId: actor.id },
+      payload: { batchId: created.batchId, sequence: 0, requestHash: 'a'.repeat(64), actorId: actor.id },
     });
     for (const line of lines) {
       await tx
@@ -611,7 +609,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
           : []),
       ]);
     }
-    return { batchId: created.batchId, planId: plan.id, sessionId: session.id, workItemIds };
+    return { batchId: created.batchId, sessionId: session.id, workItemIds };
   }
 
   async function lastScan(tx: DbTx, world: LifecycleWorld, shipmentId: string, idempotencyKey: string) {

@@ -14,8 +14,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { getScopeAuthorizationDecision, RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { forceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { FULFILLMENT_SCOPE, SIMPLE_OUTBOUND_FORCE_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import { ForceSimpleOutboundDto, SimpleOutboundScanDto, SimpleOutboundStateDto } from '../dto/simple-outbound.dto';
 import { ShipmentWaybillReader, ShipmentByWaybillResult } from '../reader/shipment-waybill.reader';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
@@ -71,7 +72,7 @@ export class SimpleOutboundController {
   }
 
   @Post(':shipmentId/simple-outbound-forces')
-  @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
+  @RequireScopes(...SIMPLE_OUTBOUND_FORCE_SCOPES)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: '단순출고 강제완료 — 미피킹 수량을 채우고 강제 출고' })
   async force(
@@ -88,7 +89,7 @@ export class SimpleOutboundController {
         note: dto.note,
         actor: this.actor(user),
         idempotencyKey: this.idempotencyKey(idempotencyKey),
-        authorization: getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
+        authorization: forceDispatchDecisionFrom(request),
       }),
     );
   }

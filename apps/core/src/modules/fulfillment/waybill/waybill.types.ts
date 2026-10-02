@@ -1,4 +1,5 @@
 import type { Waybill } from '../../inventory/schema/inventory.schema';
+import type { AllocatedLabelRow } from './label/label-items';
 
 export type WaybillRow = Waybill;
 
@@ -13,7 +14,8 @@ export interface WaybillRecipient {
 }
 
 export interface ManifestLineLite {
-  productName: string;
+  productName: string; // 주문 상품명(없으면 SKU명) — 한진 등록 품명이 쓴다
+  skuName: string; // 창고 품목 이름 — 운송장 품목 줄이 쓴다(#913)
   quantity: number;
   skuId: string;
 }
@@ -56,4 +58,13 @@ export interface WaybillView {
   // 일시적 거절로 대기 중인지 — 「진행중」과 「내일 다시」를 화면이 구분하려면 이 둘이 필요하다(#914).
   nextAttemptAt: string | null;
   transientAttempts: number;
+}
+
+export interface LabelAllocation {
+  workItemId: string | null;
+  batchStarted: boolean;
+  /** 활성 작업 항목이 이탈 중 — I4 는 그리지 않는다. */
+  withdrawing: boolean;
+  lines: { id: string; qty: number }[];
+  rows: Array<AllocatedLabelRow & { shipmentLineId: string }>;
 }

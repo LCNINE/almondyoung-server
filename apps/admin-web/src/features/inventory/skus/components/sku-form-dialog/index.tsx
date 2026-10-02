@@ -15,10 +15,19 @@ import { FormField } from '@/components/common/form/form-field';
 import { FormInput } from '@/components/common/form/form-input';
 import { FormSelect } from '@/components/common/form/form-select';
 import { FormSection } from '@/components/common/form/form-section';
-import { useCreateSku, useUpdateSku, useSkuGroups } from '@/lib/services/inventory';
+import {
+  useCreateSku,
+  useUpdateSku,
+  useSkuGroups,
+  useDeliveryProfiles,
+} from '@/lib/services/inventory';
 import { useSku } from '@/lib/services/inventory';
 import type { SkuResponseDto, CreateSkuDto } from '@/lib/types/dto/inventory';
 import { BarcodeListSection } from '../barcode-list-section';
+import {
+  deliveryProfileMissing,
+  requiresDeliveryProfile,
+} from '../../lib/delivery-profile-requirement';
 
 const STOCK_TYPE_OPTIONS = [
   { value: 'physical', label: '사입' },
@@ -26,6 +35,10 @@ const STOCK_TYPE_OPTIONS = [
   { value: 'drop_shipped', label: '직배' },
   { value: 'consignment', label: '위탁' },
 ];
+
+// Radix SelectItem 은 value="" 를 금지한다. 폼 상태는 '' 을 「프로필 없음」으로 쓰므로,
+// 화면 표시용으로만 이 센티널을 쓰고 onValueChange 에서 즉시 '' 로 되돌린다.
+const NO_DELIVERY_PROFILE = '__none__';
 
 type Props = {
   open: boolean;
@@ -38,6 +51,7 @@ type FormState = {
   businessProductName: string;
   stockType: string;
   groupId: string;
+  deliveryProfileId: string;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -45,6 +59,7 @@ const DEFAULT_FORM: FormState = {
   businessProductName: '',
   stockType: 'physical',
   groupId: '',
+  deliveryProfileId: '',
 };
 
 function formFromSku(sku: SkuResponseDto): FormState {
@@ -53,17 +68,31 @@ function formFromSku(sku: SkuResponseDto): FormState {
     businessProductName: sku.businessProductName ?? '',
     stockType: sku.stockType,
     groupId: sku.groupId ?? '',
+    deliveryProfileId: sku.deliveryProfileId ?? '',
   };
 }
 
 export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
   const isEdit = !!sku;
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof FormState, string>>
+  >({});
 
   const createMutation = useCreateSku();
   const updateMutation = useUpdateSku();
   const { data: groups } = useSkuGroups();
+  const {
+    data: profiles = [],
+    isLoading: profilesLoading,
+    isError: profilesError,
+  } = useDeliveryProfiles();
+  const original = sku
+    ? {
+        stockType: sku.stockType,
+        deliveryProfileId: sku.deliveryProfileId ?? '',
+      }
+    : null;
 
   // 편집 시 최신 SKU 데이터(바코드 포함) 가져오기
   const { data: freshSku } = useSku(sku?.id ?? '');
@@ -81,6 +110,15 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
   const validate = (): boolean => {
     const next: typeof errors = {};
     if (!form.name.trim()) next.name = '이름은 필수입니다.';
+    if (
+      deliveryProfileMissing({
+        original,
+        stockType: form.stockType,
+        deliveryProfileId: form.deliveryProfileId,
+      })
+    ) {
+      next.deliveryProfileId = '사입·위탁 SKU 는 배송 프로필이 필요합니다.';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -88,11 +126,21 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
   const handleSubmit = async () => {
     if (!validate()) return;
 
+    const profileChanged =
+      form.deliveryProfileId !== (original?.deliveryProfileId ?? '');
     const payload: CreateSkuDto = {
       name: form.name.trim(),
       businessProductName: form.businessProductName || undefined,
       stockType: form.stockType as CreateSkuDto['stockType'],
       skuGroupId: form.groupId || undefined,
+      // 수정에선 바뀌었을 때만 보낸다('' → null 은 지움). 생성에선 고른 값만.
+      ...(isEdit
+        ? profileChanged
+          ? { deliveryProfileId: form.deliveryProfileId || null }
+          : {}
+        : form.deliveryProfileId
+          ? { deliveryProfileId: form.deliveryProfileId }
+          : {}),
     };
 
     try {
@@ -105,7 +153,8 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
       }
       onOpenChange(false);
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? '오류가 발생했습니다.';
+      const msg =
+        e?.response?.data?.message ?? e?.message ?? '오류가 발생했습니다.';
       toast.error(msg);
     }
   };
@@ -162,6 +211,46 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
                 onValueChange={set('stockType')}
                 options={STOCK_TYPE_OPTIONS}
               />
+            </FormField>
+
+            <FormField
+              label="배송 프로필"
+              required={requiresDeliveryProfile(form.stockType)}
+              errorMessage={errors.deliveryProfileId}
+            >
+              {profilesLoading ? (
+                <p className="text-sm text-muted-foreground">불러오는 중…</p>
+              ) : profilesError ? (
+                <p className="text-sm text-destructive">
+                  배송 프로필을 불러오지 못했습니다.
+                </p>
+              ) : profiles.length === 0 ? (
+                <p className="text-sm text-destructive">
+                  배송 프로필이 없습니다 —{' '}
+                  <Link
+                    href="/inventory/delivery-profiles"
+                    className="underline"
+                  >
+                    먼저 등록하세요
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <FormSelect
+                  value={form.deliveryProfileId || NO_DELIVERY_PROFILE}
+                  onValueChange={(value) =>
+                    set('deliveryProfileId')(
+                      value === NO_DELIVERY_PROFILE ? '' : value
+                    )
+                  }
+                  options={[
+                    { value: NO_DELIVERY_PROFILE, label: '선택 안 함' },
+                    ...profiles.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                  placeholder="배송 프로필 선택"
+                  error={!!errors.deliveryProfileId}
+                />
+              )}
             </FormField>
 
             <p className="text-xs text-muted-foreground">

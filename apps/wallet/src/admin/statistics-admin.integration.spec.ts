@@ -47,7 +47,9 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
   const methodTossId = randomUUID();
   const intentIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const chargeIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
-  const refundIds = [randomUUID(), randomUUID()];
+  const refundIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  // 상품 주문 환불 판별용: 정기결제(SUBSCRIPTION), 표식 없는 PURCHASE, Medusa 표식 PURCHASE
+  const extraIntentIds = [randomUUID(), randomUUID(), randomUUID()];
   const billingMethodId = randomUUID();
   const invoiceIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const createdFeeRateIds: string[] = [];
@@ -71,8 +73,18 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
         status: 'SUCCEEDED' as const,
         clientSecret: `itest-${id.slice(0, 20)}`,
         expiresAt,
+        // intent 0 은 Medusa 결제(상품 주문)다.
+        metadata: id === intentIds[0] ? { medusaSessionId: 'itest-session' } : {},
       })),
     );
+    await db.insert(paymentIntents).values([
+      { id: extraIntentIds[0], payableAmount: 9_900, currency: 'KRW', status: 'SUCCEEDED' as const, purpose: 'SUBSCRIPTION' as const,
+        clientSecret: `itest-${extraIntentIds[0].slice(0, 20)}`, expiresAt, metadata: { medusaSessionId: 'itest-sub' } },
+      { id: extraIntentIds[1], payableAmount: 9_900, currency: 'KRW', status: 'SUCCEEDED' as const,
+        clientSecret: `itest-${extraIntentIds[1].slice(0, 20)}`, expiresAt },
+      { id: extraIntentIds[2], payableAmount: 50_000, currency: 'KRW', status: 'SUCCEEDED' as const,
+        clientSecret: `itest-${extraIntentIds[2].slice(0, 20)}`, expiresAt, metadata: { medusaSessionId: 'itest-session-2' } },
+    ]);
 
     await db.insert(charges).values([
       // CARD: 3/10 KST 캡처 100,000 (요율 290bp 구간)
@@ -167,6 +179,20 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
         status: 'FAILED',
         createdAt: new Date('2031-03-21T12:00:00+09:00'),
       },
+      // 아래는 상품 주문 환불 판별용 — 3월 수수료 스펙과 겹치지 않게 4월에 둔다.
+      // 정기결제 환불 — 제외
+      { id: refundIds[2], chargeId: chargeIds[0], intentId: extraIntentIds[0], amount: 9_900, currency: 'KRW', status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-22T12:00:00+09:00') },
+      // Medusa 표식 없는 PURCHASE 환불 — 제외
+      { id: refundIds[3], chargeId: chargeIds[0], intentId: extraIntentIds[1], amount: 7_000, currency: 'KRW', status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-22T12:00:00+09:00') },
+      // Medusa 상품 환불 — KST 4/1 00:10(UTC 로는 3/31)·4/30 23:50 은 4월, 5/1 00:10 은 기간 밖
+      { id: refundIds[4], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 3_000, currency: 'KRW', status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-01T00:10:00+09:00') },
+      { id: refundIds[5], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 5_000, currency: 'KRW', status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-30T23:50:00+09:00') },
+      { id: refundIds[6], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 4_000, currency: 'KRW', status: 'SUCCEEDED',
+        createdAt: new Date('2031-05-01T00:10:00+09:00') },
     ]);
 
     await db.insert(billingMethods).values([{ id: billingMethodId, userId: 'itest-user', providerType: 'CMS' }]);
@@ -231,7 +257,7 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
       }
       await db.delete(refunds).where(inArray(refunds.id, refundIds));
       await db.delete(charges).where(inArray(charges.id, chargeIds));
-      await db.delete(paymentIntents).where(inArray(paymentIntents.id, intentIds));
+      await db.delete(paymentIntents).where(inArray(paymentIntents.id, [...intentIds, ...extraIntentIds]));
       await db.delete(paymentMethods).where(inArray(paymentMethods.id, [methodCardId, methodTossId]));
       await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
       await db.delete(billingMethods).where(inArray(billingMethods.id, [billingMethodId]));
@@ -297,6 +323,19 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
     expect(result.totalAmount).toBe(19_800);
     expect(result.invoiceCount).toBe(2);
     expect(result.series).toEqual([{ bucket: '2031-03-05', amount: 19_800, count: 2 }]);
+  });
+
+  it('상품 주문 환불 — Medusa 결제(PURCHASE + medusaSessionId)의 성공 환불만, KST 달력일', async () => {
+    const march = await service.getOrderRefunds(FROM, TO);
+    expect(march.series).toEqual([{ day: '2031-03-20', amount: 30_000, count: 1 }]);
+
+    const april = await service.getOrderRefunds('2031-04-01', '2031-04-30');
+    expect(april.series).toEqual([
+      { day: '2031-04-01', amount: 3_000, count: 1 },
+      { day: '2031-04-30', amount: 5_000, count: 1 },
+    ]);
+    expect(april.totalAmount).toBe(8_000);
+    expect(april.refundCount).toBe(2);
   });
 
   it('기간 뒤집힘은 400', async () => {

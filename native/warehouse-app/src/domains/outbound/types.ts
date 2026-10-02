@@ -1,3 +1,5 @@
+import type { LabelItemChange, LabelState } from './waybillLabel';
+
 export interface SimpleOutboundLineProgress {
   shipmentLineId: string;
   skuId: string;
@@ -24,6 +26,17 @@ export interface ShipmentByWaybillLine {
   inspectedQty: number;
 }
 
+export interface WithdrawalRemoval {
+  shipmentLineId: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  sourceLocationId: string;
+  locationCode: string;
+  boxQty: number;
+  cartQty: number;
+}
+
 export interface ShipmentByWaybill {
   warehouseId?: string;
   outboundContract?: 'legacy' | 'location';
@@ -37,6 +50,11 @@ export interface ShipmentByWaybill {
   workItemStatus: string | null;
   recipientMasked: string;
   lines: ShipmentByWaybillLine[];
+  labelState: LabelState | null;
+  labelChanges: LabelItemChange[];
+  labelIssue: string | null;
+  removals: WithdrawalRemoval[];
+  exitTo: 'draft' | 'canceled' | null;
 }
 
 export interface OutboundBatchSummary {
@@ -46,6 +64,10 @@ export interface OutboundBatchSummary {
   status: string;
   totalItems: number;
   totalQty: number;
+  /** 「작업 시작」을 누른 시각. null 이면 아직 시작 전이다. */
+  startedAt: string | null;
+  /** 이 배치에서 빼는 중인 박스 수 — 배치 카드의 «빠지는 중 N». */
+  withdrawingItems: number;
 }
 
 export interface SimpleOutboundScanInput {

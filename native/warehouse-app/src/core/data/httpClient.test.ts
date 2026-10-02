@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiError, ConflictError, createApiClient } from './httpClient';
+import { currentServerReach } from './serverStatus';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -136,6 +137,7 @@ it.each([
   'SOURCE_INSUFFICIENT',
   'ACTIVE_WORK_REQUIRES_REVIEW',
   'REPLAN_LIMIT_REACHED',
+  'BATCH_NOT_STARTED',
 ])(
   'preserves validated preparation reason %s without diagnostic extras',
   async (reasonCode) => {
@@ -208,3 +210,90 @@ it.each([
     expect(error.preparation).toBeUndefined();
   }
 );
+
+describe('409 errors body and rejected codes (#987)', () => {
+  it('409 본문의 errors 를 ConflictError.errors 로 싣는다(배치 시작 차단 목록)', async () => {
+    const client = createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: (async () =>
+        jsonResponse(409, {
+          code: 'BATCH_START_BLOCKED',
+          message: 'x',
+          errors: [{ shipmentId: 's1', reason: 'STOCK_SHORT' }],
+        })) as never,
+    });
+    const error = await client
+      .request({ method: 'POST', path: '/picking/v2/starts' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).errors).toEqual([
+      { shipmentId: 's1', reason: 'STOCK_SHORT' },
+    ]);
+    expect((error as ConflictError).outcome).toBe('rejected');
+  });
+
+  it.each([
+    'LABEL_REPRINT_REQUIRED',
+    'LABEL_CONTENT_CHANGED',
+    'WAYBILL_STALE',
+    'WAYBILL_NOT_DISPATCHABLE',
+    'WAYBILL_LABEL_NOT_ALLOCATED',
+  ])('%s 409 는 rejected — 오프라인 작업 큐가 재시도하지 않는다', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+
+  it.each([
+    'BATCH_NOT_JOINABLE',
+    'SHIPMENT_ACTIVE_WORK_ITEM',
+    'OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED',
+    'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+    'WORK_ITEM_DISPATCH_EXISTS',
+    'WORK_ITEM_ALLOCATED',
+    'OUTBOUND_BATCH_STARTED_RETRY',
+    'PICKING_SESSION_NOT_ACTIVE',
+    'BATCH_JOIN_BLOCKED',
+  ])('%s 409 는 확정 거절 (#988)', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+
+  it.each([
+    'SHIPMENT_WITHDRAWN',
+    'SHIPMENT_ALREADY_WITHDRAWING',
+    'SHIPMENT_NOT_WITHDRAWING',
+    'REMOVAL_NOT_PENDING',
+    'RETURN_BIN_UNKNOWN',
+    'RETURN_BIN_WAREHOUSE_MISMATCH',
+    'RETURN_BIN_ITEM_NOT_FOUND',
+    'RETURN_BIN_ITEM_SHORT',
+    'RETURN_LOCATION_MISMATCH',
+    'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
+    'SHIPMENT_LINE_INSPECTION_STALE',
+  ])('%s 409 는 확정 거절 (#989)', (code) => {
+    expect(new ConflictError('m', code).outcome).toBe('rejected');
+  });
+
+  it('등록 안 된 바구니 조회(404 RETURN_BIN_UNKNOWN)도 확정 거절 — 다시 보내도 같다', () => {
+    expect(new ApiError('GET /return-bins/RB-x → 404', 404, 'RETURN_BIN_UNKNOWN').outcome).toBe('rejected');
+  });
+});
+
+describe('서버 도달 기록(상태바 «서버»)', () => {
+  it('fetch 가 던지면 down, 응답이 오면(4xx 여도) up', async () => {
+    const doFetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'NOT_FOUND' }), { status: 404 }));
+    const api = createApiClient({
+      baseUrl: 'https://core.test',
+      getToken: async () => 't',
+      authMode: 'bearer',
+      doFetch: doFetch as never,
+    });
+    await expect(api.request({ path: '/x' })).rejects.toThrow('network');
+    expect(currentServerReach()).toBe('down');
+    await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(ApiError);
+    expect(currentServerReach()).toBe('up');
+  });
+});

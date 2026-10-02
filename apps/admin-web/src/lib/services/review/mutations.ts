@@ -2,6 +2,7 @@
 
 import { reviewApi } from '@/lib/api/domains/review';
 import {
+  AdminCreateReviewDto,
   CreateReviewCommentDto,
   UpdateReviewStatusDto,
 } from '@/lib/types/dto/review';
@@ -76,6 +77,17 @@ export const useDeleteReview = (reviewId: string) => {
       queryClient.invalidateQueries({
         queryKey: reviewQueryKeys.review(reviewId),
       });
+      queryClient.invalidateQueries({ queryKey: reviewQueryKeys.all });
+    },
+  });
+};
+
+export const useCreateAdminReview = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (dto: AdminCreateReviewDto) => reviewApi.createByAdmin(dto),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: reviewQueryKeys.all });
     },
   });

@@ -6,17 +6,20 @@ import { UserContactClient } from '@app/shared';
 import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
-import { NotificationCategory } from '../../shared/enums';
+import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDate } from '../../shared/utils/template-helpers';
+import { formatBillingPeriod, formatKstMonthDay, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
+import { billingFailedNoticeKey, terminatedNoticeKey } from './membership-notice-keys';
 
 /**
  * Membership Service 이벤트 컨슈머
  *
  * - MembershipRenewalUpcoming: 자동갱신 결제 사전 고지 (전자상거래법 계속거래 고지)
  * - MembershipExpiryUpcoming: 자동갱신이 없는 이용권의 만료 사전 고지
+ * - MembershipBillingAttemptFailed / MembershipTerminatedForNonPayment: 정기결제 출금 실패·미납 해지 알림톡
  *
  * 수신자 이메일은 membership 이 payload 에 실어 보낸다 — 이 서비스는 사용자 조회를 하지 않는다.
  */
@@ -167,4 +170,93 @@ export class MembershipEventConsumer {
     });
   }
 
+  @On(MEMBERSHIP_STREAM, 'MembershipBillingAttemptFailed')
+  async onBillingAttemptFailed(
+    @EventEnvelope() envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipBillingAttemptFailed'>,
+    @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipBillingAttemptFailed'>,
+  ) {
+    await this.sendBillingNotice({
+      eventKey: 'MEMBERSHIP_BILLING_ATTEMPT_FAILED',
+      idempotencyKey: billingFailedNoticeKey(payload.invoiceId, payload.attemptCount),
+      correlationId: envelope.correlationId,
+      payload,
+      variables: {
+        name: payload.userName || '고객',
+        period: formatBillingPeriod(payload.periodStart, payload.periodEnd),
+        amount: payload.amount != null ? `${formatAmount(payload.amount)}원` : '',
+        attempt: payload.attemptCount,
+        reason: payload.reasonText ?? '은행에서 출금이 거절됐어요',
+        nextDate: formatKstMonthDay(payload.nextAttemptRequestAt),
+        remaining: payload.remainingAttempts,
+      },
+    });
+  }
+
+  @On(MEMBERSHIP_STREAM, 'MembershipTerminatedForNonPayment')
+  async onTerminatedForNonPayment(
+    @EventEnvelope() envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipTerminatedForNonPayment'>,
+    @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipTerminatedForNonPayment'>,
+  ) {
+    const withArrears = payload.arrearsAmount != null;
+    // 원인 칸이 없던 때의 이벤트는 전부 출금 재시도 소진 해지였다.
+    const mandateRejected = payload.cause === 'MANDATE_REJECTED';
+    const name = payload.userName || '고객';
+    const period = formatBillingPeriod(payload.periodStart, payload.periodEnd);
+    const arrearsAmount = withArrears ? `${formatAmount(payload.arrearsAmount)}원` : undefined;
+
+    await this.sendBillingNotice({
+      eventKey: terminationNoticeKey(mandateRejected, withArrears),
+      idempotencyKey: terminatedNoticeKey(payload.contractId),
+      correlationId: envelope.correlationId,
+      payload,
+      // 계좌 거절·미납 없음 문구는 주기를 말하지 않는다 — 계좌가 거절돼 그 주기 요금을 걷지 않았다.
+      variables: mandateRejected && !withArrears ? { name } : { name, period, ...(arrearsAmount && { arrearsAmount }) },
+    });
+  }
+
+  /**
+   * 출금 실패·미납 해지 알림톡. 알림톡이 안 닿으면 NHN 이 같은 본문으로 문자를 대신 보낸다(smsFallback).
+   * 같은 사건이 다시 와도 멱등키가 한 번만 보내게 하고, 한밤중에 생긴 알림은 아침 8시에 보낸다.
+   */
+  private async sendBillingNotice(input: {
+    eventKey: string;
+    idempotencyKey: string;
+    correlationId?: string;
+    payload: { userId: string; userName: string; phoneNumber: string };
+    variables: Record<string, string | number>;
+  }): Promise<void> {
+    const mapping = await this.eventMappingService.getEventMapping(input.eventKey);
+    if (!mapping || !mapping.isActive) {
+      this.logger.warn(`Event mapping for ${input.eventKey} not found or inactive.`);
+      return;
+    }
+
+    const now = new Date();
+    const sendAt = nextSendableAt(now);
+    const requestDate = nhnRequestDateIfQuiet(now);
+    await this.notificationDispatcherService.send({
+      userId: input.payload.userId,
+      channels: mapping.defaultChannels as Channel[],
+      category: mapping.category as NotificationCategory,
+      templateKey: mapping.templateKey,
+      eventKey: mapping.eventKey,
+      payload: { name: input.payload.userName, phoneNumber: input.payload.phoneNumber },
+      correlationId: input.correlationId,
+      priority: mapping.priority as NotificationPriority,
+      variables: input.variables,
+      // 직접 발송 경로는 sendAt 을 보지 않는다 — 밤 시간 이연은 NHN 예약 발송(requestDate)에 맡긴다.
+      metadata: { smsFallback: true, ...(requestDate && { requestDate }) },
+      sendAt: sendAt.toISOString(),
+      idempotencyKey: input.idempotencyKey,
+    });
+    this.logger.log(`[Event] Dispatched ${input.eventKey} for ${input.payload.userId}`);
+  }
+}
+
+/** 해지 원인(출금 재시도 소진 / 계좌 심사 거절) × 미납 여부마다 문구가 다른 알림톡을 쓴다. */
+function terminationNoticeKey(mandateRejected: boolean, withArrears: boolean): string {
+  if (mandateRejected) {
+    return withArrears ? 'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS' : 'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS';
+  }
+  return withArrears ? 'MEMBERSHIP_TERMINATED_WITH_ARREARS' : 'MEMBERSHIP_TERMINATED_NO_ARREARS';
 }

@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -30,7 +31,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
-import { BatchInventorySessionService } from './batch-inventory-session.service';
+import { BatchInventorySessionService, handInRequestHash } from './batch-inventory-session.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 import { WaybillManager } from '../waybill/waybill.manager';
@@ -38,6 +39,8 @@ import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { BoxAllocationManager } from './box-allocation.manager';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -251,6 +254,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       new AuditService(dbService),
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+      assembleBoxWithdrawal(dbService),
     );
   }
 
@@ -269,6 +273,8 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       audit,
       workflow,
       moduleRef as never,
+      new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
+      assembleBoxWithdrawal(dbService),
     );
   }
 
@@ -380,7 +386,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       dbService,
       new FulfillmentCommandService(dbService),
       inventory,
-      new BatchInventorySessionService(dbService, controlled, audit),
+      new BatchInventorySessionService(dbService, audit),
       reservations,
       waybills,
       new BarcodeService(dbService),
@@ -390,6 +396,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
   }
 
@@ -560,6 +567,8 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           warehouseId: warehouse.id,
           pickingMethod: 'individual',
           status: 'picking',
+          // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
+          startedAt: new Date(),
         })
         .returning();
       const [workItem] = await tx
@@ -574,36 +583,45 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           leaseVersion: 1,
         })
         .returning();
-      const [plan] = await tx
-        .insert(wmsTables.pickingPlans)
-        .values({ batchId: batch.id, strategy: 'discrete', status: 'active', createdBy: actorId })
+      const [allocation] = await tx
+        .insert(wmsTables.pickingSourceAllocations)
+        .values({
+          workItemId: workItem.id,
+          shipmentLineId: line.id,
+          sourceLocationId: sourceLocation.id,
+          qty: 2,
+          sourceStockVersion: ledger.version,
+        })
         .returning();
-      await tx.insert(wmsTables.pickingPlanMembers).values({
-        planId: plan.id,
-        shipmentId: shipment.id,
-        manifestVersion: shipment.manifestVersion,
-        reservationVersion: shipment.reservationVersion,
-      });
-      await tx.insert(wmsTables.pickingSourceAllocations).values({
-        planId: plan.id,
-        shipmentLineId: line.id,
-        sourceLocationId: sourceLocation.id,
-        qty: 2,
-        sourceStockVersion: ledger.version,
-      });
       const [session] = await tx
         .insert(wmsTables.batchInventorySessions)
         .values({ batchId: batch.id, status: 'active', handedInQty: 2 })
         .returning();
       await tx.insert(wmsTables.batchInventorySessionEvents).values({
         sessionId: session.id,
-        idempotencyKey: `start:${plan.id}`,
+        idempotencyKey: `start:${batch.id}:${allocation.id}`,
         eventType: 'HAND_IN',
         skuId: sku.id,
         quantity: 2,
         toCustodyType: 'AT_SOURCE',
         toSourceLocationId: sourceLocation.id,
-        payload: { planId: plan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId },
+        payload: {
+          sequence: 0,
+          batchId: batch.id,
+          workItemId: workItem.id,
+          allocationId: allocation.id,
+          shipmentLineId: line.id,
+          sourceStockVersion: ledger.version,
+          requestHash: handInRequestHash(batch.id, {
+            id: allocation.id,
+            workItemId: workItem.id,
+            shipmentLineId: line.id,
+            skuId: sku.id,
+            sourceLocationId: sourceLocation.id,
+            quantity: 2,
+            sourceStockVersion: ledger.version,
+          }),
+        },
       });
       await tx.insert(wmsTables.batchInventorySessionBalances).values([
         {
@@ -649,7 +667,6 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
         item,
         ledger,
         line,
-        plan,
         reworkLocation,
         salesOrder,
         salesOrderLine,
@@ -743,9 +760,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
         .where(eq(wmsTables.batchInventorySessions.id, fixture.session.id));
       await tx
         .delete(wmsTables.pickingSourceAllocations)
-        .where(eq(wmsTables.pickingSourceAllocations.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlanMembers).where(eq(wmsTables.pickingPlanMembers.planId, fixture.plan.id));
-      await tx.delete(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, fixture.plan.id));
+        .where(eq(wmsTables.pickingSourceAllocations.workItemId, fixture.workItem.id));
       await tx
         .delete(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workItem.id));

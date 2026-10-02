@@ -287,6 +287,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
+  const smsLink = request.nextUrl.pathname.match(/^\/r\/([A-Za-z0-9_-]{8})$/)
+  if (smsLink) {
+    const url = new URL(request.url)
+    url.pathname = "/api/sms-link"
+    url.search = ""
+    url.searchParams.set("code", smsLink[1])
+    return NextResponse.rewrite(url)
+  }
+
   const accessToken = request.cookies.get("accessToken")?.value
   const refreshToken = request.cookies.get("refreshToken")?.value
 

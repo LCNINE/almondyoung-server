@@ -16,9 +16,6 @@ export class AssignToteDto {
   batchId: string;
 
   @IsUUID()
-  planId: string;
-
-  @IsUUID()
   sessionId: string;
 
   @IsUUID()

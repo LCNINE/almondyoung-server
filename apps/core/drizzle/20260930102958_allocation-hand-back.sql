@@ -1,0 +1,7 @@
+ALTER TABLE "batch_inventory_sessions" DROP CONSTRAINT "ck_batch_inventory_sessions_quantities";--> statement-breakpoint
+ALTER TABLE "batch_inventory_sessions" DROP CONSTRAINT "ck_batch_inventory_sessions_settlement";--> statement-breakpoint
+ALTER TABLE "picking_source_allocations" DROP CONSTRAINT "ck_picking_source_allocations_qty_positive";--> statement-breakpoint
+ALTER TABLE "batch_inventory_sessions" ADD COLUMN "handed_back_qty" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "batch_inventory_sessions" ADD CONSTRAINT "ck_batch_inventory_sessions_quantities" CHECK ("batch_inventory_sessions"."handed_in_qty" >= 0 AND "batch_inventory_sessions"."handed_back_qty" >= 0 AND "batch_inventory_sessions"."settled_qty" >= 0 AND "batch_inventory_sessions"."returned_qty" >= 0 AND "batch_inventory_sessions"."shortage_qty" >= 0);--> statement-breakpoint
+ALTER TABLE "batch_inventory_sessions" ADD CONSTRAINT "ck_batch_inventory_sessions_settlement" CHECK ("batch_inventory_sessions"."settled_qty" + "batch_inventory_sessions"."returned_qty" + "batch_inventory_sessions"."shortage_qty" + "batch_inventory_sessions"."handed_back_qty" <= "batch_inventory_sessions"."handed_in_qty");--> statement-breakpoint
+ALTER TABLE "picking_source_allocations" ADD CONSTRAINT "ck_picking_source_allocations_qty_nonnegative" CHECK ("picking_source_allocations"."qty" >= 0);

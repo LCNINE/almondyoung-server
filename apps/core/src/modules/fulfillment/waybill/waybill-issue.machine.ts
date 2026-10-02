@@ -104,7 +104,7 @@ export class WaybillIssueMachine {
     } catch (e) {
       // allocated 단계의 transient 는 unknown_outcome 과 같은 취급이다 — 이미 채번된 wblNo 가 있으므로
       // 어느 쪽이든 「같은 번호로 다시 등록을 시도한다」가 정답이고, pending 처럼 되돌릴 것이 없다.
-      // insert-order 쪽 일시적 사유(-103 10 TPS 초과)의 본격 처리는 #916 이 가져간다.
+      // 한진 -103(호출량 초과)은 HanjinApiClient 가 어느 API 에서든 transient_rejection 으로 올린다(#916).
       if (e instanceof CarrierError && (e.outcome === 'unknown_outcome' || e.outcome === 'transient_rejection')) {
         // allocated 는 CAP 없음 — 동일 wblNo 로 재구동(ERROR-09 가 등록 확인). 자동 포기 금지.
         await this.dbService.run(async (trx) => {

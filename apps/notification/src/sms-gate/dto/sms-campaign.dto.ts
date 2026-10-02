@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
-import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { SmsGateCategory } from '../utils/sms-body';
 
 export class CreateSmsCampaignDto {
@@ -23,6 +34,25 @@ export class CreateSmsCampaignDto {
   @IsOptional()
   @IsDateString()
   sendAt?: string;
+
+  @ApiPropertyOptional({ description: '아몬드영 회원 전체를 넣는다. groupIds 와 같이 쓸 수 있다' })
+  @IsOptional()
+  @IsBoolean()
+  includeMembers?: boolean;
+
+  @ApiPropertyOptional({ type: [String], description: '수신자 그룹들. 겹치는 번호는 한 통만 보낸다' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsUUID('all', { each: true })
+  groupIds?: string[];
 }
 
-export class PreviewSmsCampaignDto extends PickType(CreateSmsCampaignDto, ['category', 'sendAt'] as const) {}
+export class PreviewSmsCampaignDto extends PickType(CreateSmsCampaignDto, [
+  'category',
+  'sendAt',
+  'includeMembers',
+  'groupIds',
+] as const) {}
+
+export class ContinueSmsCampaignDto extends PickType(CreateSmsCampaignDto, ['name', 'content', 'sendAt'] as const) {}

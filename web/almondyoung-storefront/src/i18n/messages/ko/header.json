@@ -2,6 +2,7 @@
   "utility": {
     "shipping": "주문배송",
     "support": "고객센터",
+    "almondTemplate": "아몬드템플릿",
     "login": "로그인",
     "signup": "회원가입"
   },

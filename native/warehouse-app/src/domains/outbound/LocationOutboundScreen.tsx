@@ -33,6 +33,7 @@ import {
   outboundRemainingSignature,
 } from './locationOutbound';
 import { OutboundSourcePicker } from './OutboundSourcePicker';
+import { ReprintLabelButton } from './ReprintLabelButton';
 import type { LocationOutboundState, ShipmentByWaybill } from './types';
 type ScanInput = {
   warehouseId: string;
@@ -44,10 +45,12 @@ function LocationWork({
   shipment,
   warehouseId,
   prefs,
+  labelPrinting,
 }: {
   shipment: ShipmentByWaybill;
   warehouseId: string;
   prefs: DevicePrefs;
+  labelPrinting: boolean;
 }) {
   const shipmentId = shipment.shipmentId;
   const runtime = useWorkRuntime();
@@ -361,6 +364,9 @@ function LocationWork({
       <p>
         {shipment.carrier} {shipment.trackingNo} · {shipment.recipientMasked}
       </p>
+      {labelPrinting && (
+        <ReprintLabelButton shipmentId={shipment.shipmentId} prefs={prefs} />
+      )}
       {notice && <p role="alert">{notice}</p>}
       {(busy || !draft.ready || !queue.ready) && !queue.error() && (
         <p role="status">작업을 확인하고 있어요. 잠시만 기다려 주세요.</p>
@@ -668,10 +674,12 @@ export function LocationOutboundScreen({
   shipmentId,
   shipment,
   prefs = localStoragePrefs,
+  labelPrinting = false,
 }: {
   shipmentId: string;
   shipment: ShipmentByWaybill | null;
   prefs?: DevicePrefs;
+  labelPrinting?: boolean;
 }) {
   const { warehouseId } = useWarehouse();
   return (
@@ -695,6 +703,7 @@ export function LocationOutboundScreen({
           shipment={shipment}
           warehouseId={warehouseId}
           prefs={prefs}
+          labelPrinting={labelPrinting}
         />
       )}
     </>

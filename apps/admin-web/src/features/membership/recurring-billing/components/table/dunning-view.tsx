@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
+import { useClientPage } from './client-pager';
 import { Button } from '@/components/ui/button';
 import { membershipApi } from '@/lib/api/domains/membership';
 
@@ -13,6 +14,7 @@ export function DunningView() {
   });
 
   const rows = data?.data ?? [];
+  const { pageRows, pager } = useClientPage(rows);
 
   return (
     <div className="space-y-3">
@@ -47,7 +49,7 @@ export function DunningView() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {pageRows.map((r) => {
                 const exhausted = r.attempts >= r.maxAttempts;
                 return (
                   <tr key={r.contractId} className="border-b last:border-0">
@@ -72,6 +74,7 @@ export function DunningView() {
           </table>
         </div>
       )}
+      {rows.length > 0 && pager}
     </div>
   );
 }

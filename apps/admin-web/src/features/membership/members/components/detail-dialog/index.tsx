@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Crown, CalendarClock, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Crown, CalendarClock, SlidersHorizontal } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -53,6 +53,8 @@ import {
   useGrantSubscriptionByDays,
 } from '@/lib/services/membership';
 import { useUserNames } from '@/hooks/use-user-names';
+import { useMemberArrears } from '@/lib/services/membership';
+import { ArrearsTab } from './arrears-tab';
 import { formatDate, formatDateTime } from '@/lib/utils/date';
 import {
   getRemainingDays,
@@ -66,7 +68,11 @@ interface MembershipMemberDetailDialogProps {
   member: AdminMemberListItem | null;
   open: boolean;
   onClose: () => void;
+  /** 어느 탭으로 열지. 미납자 명단에서 열면 미납 요금 탭이 먼저 보여야 한다. */
+  initialTab?: MemberDetailTab;
 }
+
+export type MemberDetailTab = 'period' | 'plan' | 'billing' | 'arrears' | 'log';
 
 /** 서버가 내려준 안내 메시지(환불 한도 초과 사유 등)를 그대로 쓰기 위한 추출기. */
 function serverMessage(error: unknown): string | undefined {
@@ -294,12 +300,6 @@ function ForceCancelDialog({
                       {immediate.breakdown.monthlyListPrice.toLocaleString()}원 =
                       -{immediate.breakdown.usageDeduction.toLocaleString()}원
                     </li>
-                    {immediate.breakdown.benefitDeduction > 0 && (
-                      <li>
-                        사용한 할인 혜택 -
-                        {immediate.breakdown.benefitDeduction.toLocaleString()}원
-                      </li>
-                    )}
                   </ul>
                 )}
                 {!immediate.available && immediate.unavailableReason && (
@@ -1483,12 +1483,16 @@ function LogTab({ userId }: { userId: string }) {
 export function MembershipDetailPanel({
   userId,
   allowAdminActions = true,
+  initialTab = 'period',
 }: {
   userId: string;
   allowAdminActions?: boolean;
+  initialTab?: MemberDetailTab;
 }) {
   const { data: detail, isLoading } = useMemberDetail(userId);
+  const { data: arrears } = useMemberArrears(userId);
   const userNames = useUserNames(userId ? [userId] : []);
+  const outstandingArrears = arrears?.outstanding.total ?? 0;
 
   if (isLoading) return <Skeleton className="w-full h-64 bg-gray-200" />;
 
@@ -1541,11 +1545,22 @@ export function MembershipDetailPanel({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="period">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="period">멤버십 기간 관리</TabsTrigger>
+      {outstandingArrears > 0 && (
+        <p className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          미납 요금 {outstandingArrears.toLocaleString('ko-KR')}원이 남아 있습니다 — 「미납 요금」 탭에서 확인하세요.
+        </p>
+      )}
+
+      <Tabs defaultValue={initialTab}>
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="period">기간 관리</TabsTrigger>
           <TabsTrigger value="plan">해지 · 환불</TabsTrigger>
           <TabsTrigger value="billing">결제 기록</TabsTrigger>
+          <TabsTrigger value="arrears" className="gap-1">
+            미납 요금
+            {outstandingArrears > 0 && <span className="size-1.5 rounded-full bg-red-500" aria-label="남은 미납 있음" />}
+          </TabsTrigger>
           <TabsTrigger value="log">로그</TabsTrigger>
         </TabsList>
 
@@ -1570,6 +1585,10 @@ export function MembershipDetailPanel({
           />
         </TabsContent>
 
+        <TabsContent value="arrears" className="mt-4">
+          <ArrearsTab userId={userId} allowActions={allowAdminActions} />
+        </TabsContent>
+
         <TabsContent value="log" className="mt-4">
           <LogTab userId={userId} />
         </TabsContent>
@@ -1583,6 +1602,7 @@ export function MembershipMemberDetailDialog({
   member,
   open,
   onClose,
+  initialTab,
 }: MembershipMemberDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -1594,7 +1614,7 @@ export function MembershipMemberDetailDialog({
         </DialogHeader>
 
         <div className="p-6">
-          {member && <MembershipDetailPanel userId={member.userId} />}
+          {member && <MembershipDetailPanel userId={member.userId} initialTab={initialTab} />}
         </div>
       </DialogContent>
     </Dialog>

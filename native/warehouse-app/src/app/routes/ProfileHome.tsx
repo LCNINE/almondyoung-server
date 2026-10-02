@@ -1,12 +1,8 @@
-import { platform } from '@tauri-apps/plugin-os';
-import { resolveProfile } from '../profile';
-import { StationHome } from '../../profiles/station/StationHome';
+import { Navigate } from '@tanstack/react-router';
+import { isStationDevice } from '../station';
 import { HandheldHome } from '../../profiles/handheld/HandheldHome';
 
+/** 스테이션엔 홈이 없다 — 탭 바가 홈이고 첫 화면은 F1 출고 검수다. */
 export function ProfileHome() {
-  return resolveProfile(platform()) === 'station' ? (
-    <StationHome />
-  ) : (
-    <HandheldHome />
-  );
+  return isStationDevice() ? <Navigate to="/outbound" replace /> : <HandheldHome />;
 }

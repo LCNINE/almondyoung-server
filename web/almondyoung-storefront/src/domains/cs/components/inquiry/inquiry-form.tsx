@@ -268,7 +268,7 @@ export function InquiryForm({
           <Button
             type="submit"
             disabled={isBusy}
-            className="h-12 w-full bg-[#ff6600] text-base font-bold hover:bg-[#e14d00]"
+            className="h-12 w-full bg-[#ffa500] text-base font-bold hover:bg-[#e69500]"
           >
             {isBusy ? tForm("processing") : tForm("submit")}
           </Button>

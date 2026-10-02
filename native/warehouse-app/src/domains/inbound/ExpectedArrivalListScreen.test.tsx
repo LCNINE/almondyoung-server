@@ -113,4 +113,17 @@ describe('ExpectedArrivalListScreen', () => {
     renderScreen(SELECTED);
     expect(await screen.findByRole('link', { name: '간편입고' })).toBeInTheDocument();
   });
+
+  it('간편입고·입고내역 링크가 있다 — 스테이션 홈이 사라져도 닿는 유일한 길(U3)', async () => {
+    renderScreen(SELECTED);
+    expect(await screen.findByRole('link', { name: '간편입고' })).toHaveAttribute(
+      'href',
+      '/inbound/quick'
+    );
+    // 링크 이름은 「입고내역 · 취소」다
+    expect(screen.getByRole('link', { name: /입고내역/ })).toHaveAttribute(
+      'href',
+      '/inbound/history'
+    );
+  });
 });

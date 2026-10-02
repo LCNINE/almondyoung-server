@@ -159,7 +159,7 @@ export function setup(infra: IdpInfra) {
       CAFE24_MALL_ID: 'lcnine',
       DATA_GO_KR_SERVICE_KEY: dataGoKrServiceKey.value,
       ANTHROPIC_API_KEY: anthropicApiKey.value,
-      BUSINESS_LICENSE_AUTO_APPROVE: 'false',
+      BUSINESS_LICENSE_AUTO_APPROVE: 'true',
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
     },

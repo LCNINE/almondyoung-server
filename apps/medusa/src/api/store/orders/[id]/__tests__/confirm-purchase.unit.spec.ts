@@ -166,3 +166,42 @@ describe('POST /store/orders/:id/confirm-purchase — 수동 확정 주문의 �
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });
+
+describe('POST /store/orders/:id/confirm-purchase — 웰컴 멤버십 구매 기록', () => {
+  it('구매 시각으로 쓰도록 주문 시각을 함께 보낸다 (구매확정 시각이 아니라)', async () => {
+    const order = {
+      id: 'order_welcome',
+      customer_id: 'cust_1',
+      created_at: '2026-08-30T03:00:00.000Z',
+      metadata: {},
+      items: [{ id: 'li_1', product_id: 'prod_welcome' }],
+      payment_collections: [{ id: 'pc_1', payments: [{ id: 'pay_1', captures: [{ id: 'cap_1' }] }] }],
+    };
+    const graph = jest.fn(async () => ({ data: [order] }));
+    const req = {
+      params: { id: order.id },
+      auth_context: { actor_id: 'cust_1' },
+      scope: {
+        resolve: jest.fn((key: string) => {
+          if (key === ContainerRegistrationKeys.QUERY) return { graph };
+          if (key === Modules.PRODUCT)
+            return { listProducts: async () => [{ id: 'prod_welcome', tags: [{ value: 'welcome-membership' }] }] };
+          if (key === Modules.CUSTOMER)
+            return { retrieveCustomer: async () => ({ metadata: { almond_user_id: 'u1' } }) };
+          return undefined;
+        }),
+      },
+    } as any;
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('{}'));
+
+    await POST(req, makeRes());
+    await new Promise((r) => setImmediate(r));
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/welcome-membership/'));
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      orderId: 'order_welcome',
+      orderedAt: '2026-08-30T03:00:00.000Z',
+    });
+    fetchMock.mockRestore();
+  });
+});

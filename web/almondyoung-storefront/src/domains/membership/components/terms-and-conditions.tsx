@@ -13,7 +13,7 @@ export function TermsAndConditions({
   return (
     <div className="space-y-6 text-sm leading-[19px] text-[#555d6d]">
       <div>
-        <h1 className="mb-2 text-lg font-bold text-[#1a1c20]">
+        <h1 className="mb-2 text-lg font-bold text-[#000000]">
           {isRecurring
             ? "정기 자동 결제 및 이용 약관 동의서"
             : "멤버십 이용 및 환불 약관 동의서"}
@@ -26,7 +26,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 목적 및 내용
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -41,8 +41,8 @@ export function TermsAndConditions({
           ) : (
             <>
               <li>
-                본 서비스는 1회 결제를 통해 선택하신 기간의 멤버십 구독 및 제공을
-                목적으로 합니다.
+                본 서비스는 1회 결제를 통해 선택하신 기간의 멤버십 구독 및
+                제공을 목적으로 합니다.
               </li>
               <li>결제는 신용·체크카드 등 선택하신 결제수단으로 진행됩니다.</li>
             </>
@@ -51,7 +51,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 주기 및 금액
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -96,7 +96,7 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+        <h2 className="mb-2 text-base font-bold text-[#000000]">
           결제 정보 수집 항목
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -122,12 +122,13 @@ export function TermsAndConditions({
 
       {isRecurring && (
         <div>
-          <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          <h2 className="mb-2 text-base font-bold text-[#000000]">
             동의 철회 및 변경
           </h2>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
             <li>
-              귀하는 언제든 동의를 철회하거나 결제 정보를 변경할 권리가 있습니다.
+              귀하는 언제든 동의를 철회하거나 결제 정보를 변경할 권리가
+              있습니다.
             </li>
             <li>
               고객센터(1877-7184)로 연락 또는 아몬드영 홈페이지를 통해 해지가
@@ -143,11 +144,17 @@ export function TermsAndConditions({
       )}
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">유의사항</h2>
+        <h2 className="mb-2 text-base font-bold text-[#000000]">유의사항</h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           {isRecurring ? (
             <>
               <li>결제 실패 시 서비스 이용이 제한될 수 있습니다.</li>
+              <li>
+                출금이 실패하거나 자동이체 계좌 등록이 거절되어 멤버십 자격이
+                회수되면, 자격이 부여되어 있던 결제 주기의 요금이 미납 요금으로
+                남을 수 있으며, 미납 요금을 납부하기 전에는 멤버십을 새로 시작할
+                수 없습니다(제5조).
+              </li>
               <li>
                 사전 고지 없이 결제 수단이 유효하지 않을 경우, 결제 처리가
                 진행되지 않을 수 있습니다.
@@ -155,10 +162,12 @@ export function TermsAndConditions({
             </>
           ) : (
             <>
-              <li>1회 결제 상품으로 자동 갱신·정기 출금이 발생하지 않습니다.</li>
               <li>
-                구독 기간이 만료되면 멤버십 혜택이 종료되며, 계속 이용하려면 다시
-                결제해야 합니다.
+                1회 결제 상품으로 자동 갱신·정기 출금이 발생하지 않습니다.
+              </li>
+              <li>
+                구독 기간이 만료되면 멤버십 혜택이 종료되며, 계속 이용하려면
+                다시 결제해야 합니다.
               </li>
             </>
           )}
@@ -166,31 +175,56 @@ export function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">환불 정책</h2>
+        <h2 className="mb-2 text-base font-bold text-[#000000]">환불 정책</h2>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 1조 목적
         </h3>
         <p>
           본 약관은 주식회사 엘씨나인(이하 &quot;회사&quot;)이 운영하는 아몬드영
-          멤버십 서비스(이하 &quot;서비스&quot;)를 이용함에 있어 회원과 회사 간의
-          권리·의무 및 책임 사항을 규정함을 목적으로 합니다.
+          멤버십 서비스(이하 &quot;서비스&quot;)를 이용함에 있어 회원과 회사
+          간의 권리·의무 및 책임 사항을 규정함을 목적으로 합니다.
         </p>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 2조 청약철회 및 중도해지 환급
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             회원은 결제일부터 7일 이내에 청약을 철회할 수 있으며, 이 경우 회사는
-            결제금액 전액을 환급합니다. 다만 해당 결제 주기에 멤버십
-            혜택(멤버십가 구매, 웰컴딜 등)을 이용하신 사실이 있는 경우에는
-            그러하지 아니합니다.
+            결제금액 전액을 환급합니다. 결제가 확인되기 전에 멤버십 자격이 먼저
+            부여된 경우에는 자격이 부여된 날부터 7일 이내에 철회할 수 있고, 이
+            경우 요금을 청구하지 않습니다.
+          </li>
+          <li>
+            회원이 해당 결제 주기에 멤버십 혜택을 1회라도 이용한 경우에는 멤버십
+            서비스의 제공이 개시된 것으로 보아 제1항의 청약철회를 할 수
+            없습니다.
+          </li>
+          <li>
+            &quot;멤버십 혜택&quot;이란 멤버십 회원에게만 제공되는 모든 혜택을
+            말하며, 다음을 포함합니다. 회사가 제공하는 멤버십 혜택의 목록은
+            멤버십 안내 화면에 게시합니다.
+            <ul className="mt-1.5 list-[circle] space-y-1.5 pl-5 marker:text-[#b0b3ba]">
+              <li>멤버십가(회원가)로 상품을 구매한 경우</li>
+              <li>멤버십 회원 전용 웰컴딜 상품을 구매한 경우</li>
+              <li>
+                멤버십 회원 전용 쿠폰을 직접 내려받거나 사용한 경우(회사가
+                자동으로 지급한 쿠폰은 사용한 경우에 한합니다)
+              </li>
+              <li>멤버십 회원만 구매할 수 있는 상품을 구매한 경우</li>
+              <li>그 밖에 멤버십 회원에게만 제공되는 혜택을 이용한 경우</li>
+            </ul>
+          </li>
+          <li>
+            월간 플랜(정기결제 및 1회 결제)은 제1항에 해당하는 경우를 제외하고
+            이미 결제한 주기의 요금을 환급하지 않습니다. 해지하시면 해당 결제
+            주기의 종료일까지 서비스를 이용하실 수 있고, 다음 주기부터 청구되지
+            않습니다.
           </li>
           <li>
             연간 플랜 회원은 기간 중 언제든지 해지할 수 있으며, 회사는
-            결제금액에서 이용한 기간에 해당하는 금액과 회원이 실제로 적용받은
-            멤버십 할인 총액을 공제한 잔액을 환급합니다.
+            결제금액에서 이용한 기간에 해당하는 금액을 공제한 잔액을 환급합니다.
             <ul className="mt-1.5 list-[circle] space-y-1.5 pl-5 marker:text-[#b0b3ba]">
               <li>
                 이용한 기간은 30일을 1개월로 하여 계산하며, 시작일이 포함된 달도
@@ -200,7 +234,9 @@ export function TermsAndConditions({
                 이용한 기간에 해당하는 금액은 월간 플랜 정가
                 {monthlyPrice !== undefined &&
                   `(${monthlyPrice.toLocaleString()}원)`}
-                에 이용 개월 수를 곱하여 산정합니다.
+                에 이용 개월 수를 곱하여 산정합니다. 연간 플랜은 12개월 이용을
+                전제로 할인된 가격이므로, 중도 해지 시 그 할인은 적용되지
+                않습니다.
               </li>
               <li>일시정지 기간은 이용한 기간에서 제외합니다.</li>
               <li>
@@ -210,18 +246,12 @@ export function TermsAndConditions({
             </ul>
           </li>
           <li>
-            월간 플랜 회원이 제1항의 기간이 지난 뒤 해지하는 경우, 해당 결제
-            주기의 종료일까지 서비스를 이용하실 수 있고 다음 주기부터 청구되지
-            않습니다. 이미 결제한 주기의 요금은 이용한 기간에 대한 대가이므로
-            환급되지 않습니다.
-          </li>
-          <li>
             서비스 장애, 기술적 오류 등 회사의 사유로 정상 이용이 어려웠던
             경우에는 이용하지 못한 기간에 대해 별도로 환급합니다.
           </li>
         </ul>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           {isRecurring ? "제 3조 구독 해지 및 갱신" : "제 3조 구독 기간"}
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -254,7 +284,7 @@ export function TermsAndConditions({
           )}
         </ul>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#000000]">
           제 4조 회원의 동의
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
@@ -268,6 +298,49 @@ export function TermsAndConditions({
             고지합니다.
           </li>
         </ul>
+
+        {/* 미납 조항. 청약철회(제2조)와 같은 줄로 긋는다 — 돈을 냈다면 환불받았을 주기에는 미납이 생기지 않는다. */}
+        {isRecurring && (
+          <>
+            <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+              제 5조 미납 요금
+            </h3>
+            <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
+              <li>
+                회원의 결제 수단에서 요금이 수납되지 않아(출금 실패, 자동이체
+                계좌 등록 거절 등) 회사가 멤버십 자격을 회수한 경우, 회수
+                시점까지 이용 자격이 부여되어 있던 결제 주기의 요금은 미납
+                요금으로 남습니다.
+              </li>
+              <li>
+                미납 요금은 그 주기의 요금을 정상적으로 납부한 회원이 해지했다면
+                환급받을 수 없었던 경우에만 발생합니다. 따라서 자격이 부여된
+                날부터 7일 이내이고 그 주기에 멤버십 혜택(제2조 제3항)을
+                이용하지 않은 경우에는 미납 요금이 발생하지 않습니다.
+              </li>
+              <li>
+                미납 요금의 금액은 해당 주기에 청구된 금액 전액이며, 이용 일수에
+                따라 나누어 계산하지 않습니다. 정상 납부한 회원이 같은 경우 그
+                주기의 요금을 환급받지 않는 것과 같은 기준입니다.
+              </li>
+              <li>
+                회원은 마이페이지 &gt; 멤버십에서 미납 요금을 언제든지 납부할 수
+                있습니다. 납부 전까지 새 결제 주기의 이용 자격은 결제가 확인되기
+                전에 미리 부여되지 않습니다.
+              </li>
+              <li>
+                미납 요금이 남아 있는 동안에는 멤버십을 새로 시작(재가입)할 수
+                없으며, 미납 요금을 납부하면 다시 가입할 수 있습니다. 회사는
+                미납을 이유로 결제 수단 등록과 상품 구매를 제한하지 않습니다.
+              </li>
+              <li>
+                회사의 귀책 사유로 수납이 이루어지지 않은 경우 또는 회원의
+                요청에 상당한 이유가 있는 경우, 회사는 미납 요금을 감면할 수
+                있습니다.
+              </li>
+            </ul>
+          </>
+        )}
       </div>
     </div>
   )

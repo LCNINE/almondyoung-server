@@ -19,7 +19,11 @@ function makeQueryClient() {
         refetchOnReconnect: true,
       },
       mutations: {
-        retry: 1,
+        // mutation 은 재시도하지 않는다(#963). 재시도가 안전한지는 메서드·멱등 키를 보는
+        // axios 인터셉터(lib/api/client.ts)가 판단하는데, 여기서 mutationFn 을 다시 부르면
+        // 그 판단을 건너뛴 새 요청이 나간다 — 커밋 후 응답만 잃은 요청이 두 번 처리되거나
+        // (생성 중복) 상태 전이 409 로 돌아와 성공한 동작이 실패로 보인다.
+        retry: false,
       },
     },
   });

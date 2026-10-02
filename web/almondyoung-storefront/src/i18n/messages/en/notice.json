@@ -10,9 +10,12 @@
     "hideForToday": "Don't show again today"
   },
   "popup": {
-    "hideForToday": "Don't show again today",
-    "hideForDays": "Don't show for {days} days",
+    "hideThisForToday": "Hide this popup today",
+    "hideThisForDays": "Hide this popup for {days} days",
+    "previous": "Previous popup",
+    "next": "Next popup",
     "viewDetail": "View details",
-    "close": "Close"
+    "close": "Close",
+    "closeAll": "Close all"
   }
 }

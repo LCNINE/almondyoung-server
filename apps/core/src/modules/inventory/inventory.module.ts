@@ -9,6 +9,7 @@ import { StocktakingModule } from './stocktaking/stocktaking.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { SharedModule } from './shared/shared.module';
 import { WarehouseModule } from './warehouse/warehouse.module';
+import { DeliveryProfileModule } from './delivery-profile/delivery-profile.module';
 import { SkuGroupModule } from './sku-group/sku-group.module';
 import { StockProjectionModule } from './stock-projection/stock-projection.module';
 import { StockValuationModule } from './stock-valuation/stock-valuation.module';
@@ -27,6 +28,7 @@ import { ReplenishmentModule } from './replenishment/replenishment.module';
     SharedModule,
     CoreInventoryModule,
     WarehouseModule,
+    DeliveryProfileModule,
     SkuGroupModule,
     StockProjectionModule,
     StockValuationModule,
@@ -43,6 +45,7 @@ import { ReplenishmentModule } from './replenishment/replenishment.module';
   exports: [
     CoreInventoryModule,
     WarehouseModule,
+    DeliveryProfileModule,
     SkuGroupModule,
     StockProjectionModule,
     ProductSellableQuantityModule,

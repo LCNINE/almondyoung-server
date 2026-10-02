@@ -8,6 +8,7 @@ import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
+import { LogoContestWrapper } from "./logo-contest"
 import { ShopTradeWrapper } from "./shop-trade"
 import { TimeSaleWrapper } from "./time-sale"
 import {
@@ -144,11 +145,15 @@ export async function HomeLogoutTemplate({
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      {!bannerVisible && (
-        <div className="xl:hidden">
-          <HomeQuickLinks />
-        </div>
-      )}
+      <div className="xl:hidden">
+        <HomeQuickLinks />
+      </div>
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <LogoContestWrapper countryCode={countryCode} />
+        </Suspense>
+      </ErrorBoundary>
 
       {bannerVisible && <BeautyTopHomeCard />}
 

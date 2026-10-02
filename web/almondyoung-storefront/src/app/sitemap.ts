@@ -1,4 +1,4 @@
-import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
+import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
 import { sdk } from "@/lib/config/medusa"
 import { siteConfig } from "@/lib/config/site"
 import { MetadataRoute } from "next"

@@ -26,6 +26,10 @@ export const DIGITAL_ASSET_FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 /** 아카이브 문서에 딸린 비이미지 첨부. 비공개라 열람은 signed URL 로만 나간다. */
 export const ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID = 'archive-page-attachment';
 
+export const LOGO_CONTEST_IMAGE_CONTEXT_ID = 'logo-contest-image';
+
+export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
+
 function normalizeAllowedMimeTypes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value;
@@ -179,6 +183,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     isActive: true,
   },
   {
+    id: 'shop-listing-image',
+    name: 'Shop Listing Image',
+    description: '샵 매매 글 사진 (관리자·회원 업로드). 첫 장이 썸네일',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'shop-listings/images',
+    isActive: true,
+  },
+  {
     id: 'product-bulk-form',
     name: 'Product Bulk Form',
     description: '상품 일괄 등록/수정 양식 워크북(xlsx)',
@@ -242,6 +257,30 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/*', 'video/*'],
     maxFileSize: 104857600,
     pathPrefix: 'reviews/media',
+    isActive: true,
+  },
+  {
+    // 로고 공모전 출품 이미지. mime 을 `image/*` 로 두면 svg 가 통과해 스크립트가 섞인
+    // 이미지를 게시판에 띄우게 된다 — 래스터 세 종류만 명시한다.
+    id: LOGO_CONTEST_IMAGE_CONTEXT_ID,
+    name: 'Logo Contest Image',
+    description: '로고 공모전 출품 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 10485760,
+    pathPrefix: 'contests/logo-image',
+    isActive: true,
+  },
+  {
+    id: ALMOND_TEMPLATE_IMAGE_CONTEXT_ID,
+    name: 'Almond Template Image',
+    description: '아몬드템플릿 시안에 들어간 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 10485760,
+    pathPrefix: 'almond-template/image',
     isActive: true,
   },
   {

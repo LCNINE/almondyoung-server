@@ -1,0 +1,50 @@
+name: Warehouse app gates
+
+# warehouse-app 자체 타입 검사(tsc -b)와 vitest 를 PR 게이트로 고정한다 (스테이션 UI 스펙 §10.2).
+#
+# verification-gates.yml 은 이 앱의 의존성을 «설치만» 한다 — 루트 core 통합 스펙이 앱의 httpClient·
+# operationRunner 를 import 하므로 루트 타입 검사의 모듈 해석에 필요해서다. 루트 tsconfig 는 native 를
+# exclude 하므로 앱의 화면·훅 타입과 테스트는 이 워크플로가 없으면 어느 PR 에서도 돌지 않는다
+# (warehouse-demo-windows.yml 은 데모 설정·스캔 경계 테스트 일부만 돈다).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'native/warehouse-app/**'
+      - '.github/workflows/warehouse-app-gates.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'native/warehouse-app/**'
+      - '.github/workflows/warehouse-app-gates.yml'
+
+concurrency:
+  group: warehouse-app-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: native/warehouse-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: native/warehouse-app/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # spec 파일 포함 전 범위(tsconfig.app.json 의 include 가 src 전체). 기준선은 에러 0 이다.
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Unit tests
+        run: npx vitest run

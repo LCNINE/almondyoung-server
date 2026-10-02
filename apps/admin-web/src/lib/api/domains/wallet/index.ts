@@ -17,6 +17,7 @@ import {
   TopPointUserDto,
   PaginatedResponse,
   AdminRecurringBillingOverview,
+  RecurringBillingFinanceMonth,
   AdminRecurringBillingRow,
   AdminRecurringBillingListQuery,
   AdminRecurringInvoiceRow,
@@ -36,6 +37,7 @@ import {
   DailyPaymentsDto,
   DailyPointsDto,
   MembershipRevenueDto,
+  OrderRefundsDto,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -203,7 +205,11 @@ export const walletApi = {
   },
 
   rejectRefundRequest: async (id: string, adminNote?: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/refund-requests/${id}/reject`, { adminNote });
+    await client.post(
+      `${BASE}/v1/admin/refund-requests/${id}/reject`,
+      { adminNote },
+      idempotencyConfig()
+    );
   },
 
   // ── Points ───────────────────────────────────────────────────────────────
@@ -340,6 +346,16 @@ export const walletApi = {
       );
       return res.data;
     },
+
+  getRecurringBillingFinance: async (
+    month: string,
+    months: number
+  ): Promise<{ months: RecurringBillingFinanceMonth[] }> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/recurring-billing/finance?month=${month}&months=${months}`
+    );
+    return res.data;
+  },
 
   listRecurringBillingItems: async (
     query: AdminRecurringBillingListQuery
@@ -529,6 +545,11 @@ export const walletApi = {
 
   getDailyPoints: async (from: string, to: string): Promise<DailyPointsDto> => {
     const res = await client.get(`${BASE}/v1/admin/statistics/points/daily?${buildQueryString({ from, to })}`);
+    return res.data;
+  },
+
+  getOrderRefunds: async (from: string, to: string): Promise<OrderRefundsDto> => {
+    const res = await client.get(`${BASE}/v1/admin/statistics/order-refunds?${buildQueryString({ from, to })}`);
     return res.data;
   },
 

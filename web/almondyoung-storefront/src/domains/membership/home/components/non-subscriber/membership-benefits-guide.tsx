@@ -69,7 +69,7 @@ export default function MembershipBenefitsGuide({
             {showSubscribeCta && (
               <CustomButton
                 onClick={handleSubscribe}
-                className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-primary text-base font-semibold text-white hover:bg-[#e14d00]"
+                className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-primary text-base font-semibold text-white hover:bg-[#e69500]"
               >
                 {t("history.subscribe")}
               </CustomButton>

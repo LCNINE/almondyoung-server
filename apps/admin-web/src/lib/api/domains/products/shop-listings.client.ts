@@ -1,40 +1,57 @@
 'use client';
 
 // src/lib/api/domains/products/shop-listings.client.ts
-import { ALMONDYOUNG_API_BASE_URL } from '@/const';
+// 샵 매매는 2026-09 ugc-service 로 옮겼다(spec 2026-09-23-shop-listings-to-ugc-design §7.4).
+import { UGC_SERVICE_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
-  CreateShopListingDto,
-  ShopListingDto,
-  ShopListingListQuery,
-  UpdateShopListingDto,
+  AdminShopListingDetailDto,
+  AdminShopListingDto,
+  AdminShopListingListQuery,
+  AdminShopListingPayload,
 } from '../../../types/dto/products';
 
-const BASE = `${ALMONDYOUNG_API_BASE_URL}/shop-listings`;
+const BASE = `${UGC_SERVICE_BASE_URL}/admin/shop-listings`;
+
+const post = async (path: string, body?: object): Promise<AdminShopListingDto> => {
+  const response = await client.post(`${BASE}${path}`, body ?? {});
+  return response.data;
+};
 
 export const shopListingsClient = {
-  list: async (query?: ShopListingListQuery): Promise<ShopListingDto[]> => {
+  list: async (query: AdminShopListingListQuery): Promise<AdminShopListingDto[]> => {
     const response = await client.get(BASE, { params: query });
     return response.data;
   },
 
-  get: async (id: string): Promise<ShopListingDto> => {
+  get: async (id: string): Promise<AdminShopListingDetailDto> => {
     const response = await client.get(`${BASE}/${id}`);
     return response.data;
   },
 
-  create: async (dto: CreateShopListingDto): Promise<ShopListingDto> => {
-    const response = await client.post(BASE, dto);
+  create: async (payload: AdminShopListingPayload): Promise<AdminShopListingDto> => {
+    const response = await client.post(BASE, payload);
     return response.data;
   },
 
-  update: async (id: string, dto: UpdateShopListingDto): Promise<ShopListingDto> => {
-    const response = await client.put(`${BASE}/${id}`, dto);
+  /** 전체 교체 — payload 는 buildAdminPayload 가 만든 것만 넘긴다 */
+  update: async (id: string, payload: AdminShopListingPayload): Promise<AdminShopListingDto> => {
+    const response = await client.put(`${BASE}/${id}`, payload);
     return response.data;
   },
 
-  remove: async (id: string): Promise<{ message: string }> => {
-    const response = await client.delete(`${BASE}/${id}`);
-    return response.data;
+  approve: (id: string, expectedSubmittedAt: string | null) =>
+    post(`/${id}/approve`, expectedSubmittedAt ? { expectedSubmittedAt } : {}),
+
+  reject: (id: string, reason: string, expectedSubmittedAt: string | null) =>
+    post(`/${id}/reject`, expectedSubmittedAt ? { reason, expectedSubmittedAt } : { reason }),
+
+  hide: (id: string) => post(`/${id}/hide`),
+  unhide: (id: string) => post(`/${id}/unhide`),
+  close: (id: string) => post(`/${id}/close`),
+  reopen: (id: string) => post(`/${id}/reopen`),
+
+  remove: async (id: string): Promise<void> => {
+    await client.delete(`${BASE}/${id}`);
   },
 };

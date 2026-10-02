@@ -45,7 +45,13 @@
       "entryFile": "main",
       "sourceRoot": "apps/core/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/core/tsconfig.app.json"
+        "tsConfigPath": "apps/core/tsconfig.app.json",
+        "assets": [
+          {
+            "include": "../assets/fonts/**/*",
+            "outDir": "dist/apps/core/assets"
+          }
+        ]
       }
     },
     "cron-once": {

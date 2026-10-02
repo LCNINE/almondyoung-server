@@ -35,7 +35,6 @@ import type {
   CreateOutboundBatchV2Request,
   ClaimBatchWorkItemRequest,
   HandoffBatchWorkItemRequest,
-  CreatePickingPlanRequest,
   StartPickingV2Request,
   DiscretePickingScanRequest,
   PickingHandoffRequest,
@@ -910,9 +909,6 @@ function pickingMutation<T extends { batchId: string }>(
   };
 }
 
-export const useCreatePickingPlan = pickingMutation<CreatePickingPlanRequest>(
-  orders.picking.createPlan
-);
 export const useStartPickingV2 = pickingMutation<StartPickingV2Request>(
   orders.picking.startV2
 );

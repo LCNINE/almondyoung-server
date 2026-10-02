@@ -8,6 +8,7 @@ import {
 } from "@lib/api/wallet"
 import {
   getCurrentSubscription,
+  getMyArrears,
   subscribeWithBillingMethod,
 } from "@lib/api/membership"
 import type {
@@ -31,6 +32,8 @@ import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-ske
 import { providerLabel } from "@lib/utils/billing-provider"
 import { getCmsFailureReasonKey } from "@lib/utils/cms-failure-reason"
 import { formatDate } from "@lib/utils/format-date"
+import SignupResumeCard from "@/domains/membership/components/signup-resume-card"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { deleteBillingMethodAction } from "./actions"
 
 const IconCheckCircle = () => (
@@ -57,6 +60,8 @@ export default function MembershipPaymentMethodContent() {
   const t = useTranslations("mypage.membershipPaymentMethod")
 
   const planId = searchParams.get("planId")
+  // 가입 폼이 떠나기 전에 남긴 약관 동의. 가입 요청에 실어 보내 그 동의에 이어 붙인다.
+  const termsAgreementId = searchParams.get("termsAgreementId") ?? undefined
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
   const autoSubscribeOnLoad = useRef(
@@ -72,6 +77,11 @@ export default function MembershipPaymentMethodContent() {
   const [nextBillingDate, setNextBillingDate] = useState<string | null>(null)
   const [isChanging, setIsChanging] = useState<string | null>(null)
   const [detailOpenId, setDetailOpenId] = useState<string | null>(null)
+  // 자동 가입이 실패하면 토스트만으론 사라진다 — 다시 시도할 수 있게 화면에 남긴다.
+  const [subscribeFailure, setSubscribeFailure] = useState<{
+    billingMethodId: string
+    pendingMandate: boolean
+  } | null>(null)
   const [isActionPending, startActionTransition] = useTransition()
 
   const currentMethod =
@@ -183,11 +193,13 @@ export default function MembershipPaymentMethodContent() {
     startActionTransition(async () => {
       try {
         setIsChanging(billingMethodId)
+        setSubscribeFailure(null)
         const res = await subscribeWithBillingMethod(
           currentPlanId,
           billingMethodId,
           "recurring",
-          crypto.randomUUID()
+          crypto.randomUUID(),
+          termsAgreementId
         )
         // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
         const appliedTrialDays = res.effectiveTrialDays ?? 0
@@ -202,7 +214,25 @@ export default function MembershipPaymentMethodContent() {
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } catch (error) {
         if (isUnauthorizedError(error)) throw error
+        // 미납이 있으면 서버가 가입을 거절한다 — 일반 실패 문구 대신 납부 먼저로 보낸다.
+        const { outstanding } = await getMyArrears()
+        if (outstanding.total > 0) {
+          toast.error(t("arrearsFirstToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
+        }
+        // 응답만 잃고 가입은 됐거나(시간 초과) 이미 가입돼 있으면, 다시 시도는 거절만 받는다.
+        const current = await getCurrentSubscription().catch(() => undefined)
+        if (current) {
+          toast.success(t("alreadyMemberToast"))
+          router.push(`/${countryCode}/mypage/membership`)
+          return
+        }
         toast.error(t("subscribeFail"))
+        setSubscribeFailure({
+          billingMethodId,
+          pendingMandate: !!opts?.pendingMandate,
+        })
       } finally {
         setIsChanging(null)
       }
@@ -421,6 +451,42 @@ export default function MembershipPaymentMethodContent() {
         {/* 콘텐츠 */}
         <div>
           <div className="flex flex-col gap-8">
+            {isSubscribeFlow && subscribeFailure && (
+              <section
+                role="alert"
+                className="border-destructive/30 bg-destructive/5 rounded-md border p-4"
+              >
+                <p className="text-sm font-semibold text-black">
+                  {t("subscribeFailTitle")}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-700">
+                  {t("subscribeFailDesc")}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    className="bg-primary hover:bg-primary/90 rounded-sm px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    onClick={() =>
+                      handleSubscribeWithMethod(
+                        subscribeFailure.billingMethodId,
+                        { pendingMandate: subscribeFailure.pendingMandate }
+                      )
+                    }
+                    disabled={!!isChanging || isActionPending}
+                  >
+                    {isChanging === subscribeFailure.billingMethodId
+                      ? t("processing")
+                      : t("subscribeRetry")}
+                  </button>
+                  <LocalizedClientLink
+                    href="/mypage/membership/subscribe/payment"
+                    className="rounded-sm border border-gray-300 bg-white px-3 py-2 text-xs text-black hover:bg-gray-50"
+                  >
+                    {t("subscribeGoToForm")}
+                  </LocalizedClientLink>
+                </div>
+              </section>
+            )}
+            {!isSubscribeFlow && <SignupResumeCard />}
             {!isSubscribeFlow && (
               <>
                 {/* 현재 정기결제 카드 */}
@@ -793,7 +859,7 @@ export default function MembershipPaymentMethodContent() {
         {/* 새 카드 등록 CTA — 콘텐츠 영역 하단에 고정 */}
         <div className="mt-auto pt-8">
           <button
-            className="bg-primary w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-[#e14d00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e14d00] disabled:cursor-not-allowed disabled:opacity-50"
+            className="bg-primary w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-[#e69500] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e69500] disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRegisterNewCard}
             disabled={!!isChanging || isActionPending}
           >

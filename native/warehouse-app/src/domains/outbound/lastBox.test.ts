@@ -13,6 +13,11 @@ const shipment: ShipmentByWaybill = {
   workItemId: 'wi-1',
   workItemStatus: 'queued',
   recipientMasked: '홍길**',
+  labelState: 'current' as const,
+  labelChanges: [],
+  labelIssue: null,
+  removals: [],
+  exitTo: null,
   lines: [],
 };
 

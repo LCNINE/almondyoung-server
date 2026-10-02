@@ -1,7 +1,10 @@
 import {
+  bigint,
+  date,
   integer,
   pgEnum,
   pgTable,
+  real,
   uuid,
   text,
   timestamp,
@@ -14,6 +17,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import type { TxFor } from '@app/db';
 import type {
   BestSelectionStatus,
@@ -27,6 +31,13 @@ import type {
 } from '../reviews/rewards/reward-rule.types';
 import type { ReviewPermissionProvider } from '../review-permissions/types';
 import { OWN_SOURCE_SYSTEM } from '../source-system';
+import {
+  SHOP_LISTING_AUTHOR_TYPES,
+  SHOP_LISTING_MODERATION_DECIDERS,
+  SHOP_LISTING_MODERATION_DECISIONS,
+  SHOP_LISTING_STATUSES,
+} from '../shop-listings/shop-listing.constants';
+import { ALMOND_TEMPLATE_STATUSES } from '../almond-template/constants/almond-template.constants';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -88,6 +99,12 @@ export const reviews = pgTable(
     legacySourceOrderId: varchar('legacy_source_order_id', { length: 50 }),
     legacyImportedAt: timestamp('legacy_imported_at'),
     legacyPayload: jsonb('legacy_payload'),
+
+    /**
+     * 관리자 수기 작성분의 입력자(user-service `users.id`). 회원 작성·이관분은 NULL.
+     * FK 없음 — 사용자는 다른 서비스 소유다. 이 컬럼으로 조회하지 않아 인덱스도 없다.
+     */
+    createdByAdminUserId: uuid('created_by_admin_user_id'),
 
     deletedAt: timestamp('deleted_at'),
 
@@ -403,6 +420,247 @@ export const reviewBestSelections = pgTable(
   ],
 );
 
+// ===== SHOP LISTINGS (샵 매매) — core 에서 이전 (spec 2026-09-23) =====
+export const shopListingStatusEnum = pgEnum('shop_listing_status', SHOP_LISTING_STATUSES);
+export const shopListingAuthorTypeEnum = pgEnum('shop_listing_author_type', SHOP_LISTING_AUTHOR_TYPES);
+export const shopListingModerationDeciderEnum = pgEnum(
+  'shop_listing_moderation_decider',
+  SHOP_LISTING_MODERATION_DECIDERS,
+);
+export const shopListingModerationDecisionEnum = pgEnum(
+  'shop_listing_moderation_decision',
+  SHOP_LISTING_MODERATION_DECISIONS,
+);
+
+export const shopListings = pgTable(
+  'shop_listings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    slug: varchar('slug', { length: 120 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    /** 마크다운. 원시 HTML 은 렌더러가 이스케이프한다. */
+    content: text('content').notNull(),
+    region: varchar('region', { length: 20 }),
+    businessType: varchar('business_type', { length: 20 }),
+    dealType: varchar('deal_type', { length: 20 }),
+    areaPyeong: integer('area_pyeong'),
+    /** 원 단위. null 이면 「협의」. */
+    deposit: bigint('deposit', { mode: 'number' }),
+    monthlyRent: bigint('monthly_rent', { mode: 'number' }),
+    keyMoney: bigint('key_money', { mode: 'number' }),
+    /** 숫자만. 공개 응답에 넣지 않는다 — 로그인 라우트로만 나간다. */
+    contactPhone: varchar('contact_phone', { length: 20 }),
+    kakaoOpenChatUrl: varchar('kakao_open_chat_url', { length: 255 }),
+    authorType: shopListingAuthorTypeEnum('author_type').notNull(),
+    authorUserId: uuid('author_user_id'),
+    status: shopListingStatusEnum('status').notNull(),
+    rejectReason: text('reject_reason'),
+    /** 가장 최근 pending 진입 시각. 검토 대기열 정렬 기준. */
+    submittedAt: timestamp('submitted_at'),
+    viewCount: integer('view_count').notNull().default(0),
+    updatedBy: uuid('updated_by'),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('shop_listings_slug_unique')
+      .on(table.slug)
+      .where(sql`${table.deletedAt} is null`),
+    index('shop_listings_status').on(table.status),
+    index('shop_listings_author_user_id').on(table.authorUserId),
+    index('shop_listings_created_at').on(table.createdAt),
+    index('shop_listings_deleted_at').on(table.deletedAt),
+    index('shop_listings_region').on(table.region),
+    index('shop_listings_business_type').on(table.businessType),
+    index('shop_listings_deal_type').on(table.dealType),
+  ],
+);
+
+/** review_media 와 같은 모양. order = 0 이 썸네일이다. */
+export const shopListingImages = pgTable(
+  'shop_listing_images',
+  {
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    primaryKey({ columns: [table.listingId, table.fileId], name: 'shop_listing_images_pkey' }),
+    uniqueIndex('shop_listing_images_listing_order_unique').on(table.listingId, table.order),
+    index('shop_listing_images_file_id').on(table.fileId),
+  ],
+);
+
+/** 판정 이력. 추가만 한다. Jev 임계값을 재는 정답셋이 된다. */
+export const shopListingModerations = pgTable(
+  'shop_listing_moderations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    decidedBy: shopListingModerationDeciderEnum('decided_by').notNull(),
+    decision: shopListingModerationDecisionEnum('decision').notNull(),
+    label: varchar('label', { length: 40 }),
+    confidence: real('confidence'),
+    reason: text('reason'),
+    actorUserId: uuid('actor_user_id'),
+    titleSnapshot: varchar('title_snapshot', { length: 255 }).notNull(),
+    contentSnapshot: text('content_snapshot').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('shop_listing_moderations_listing_created').on(table.listingId, table.createdAt)],
+);
+
+export const shopListingViews = pgTable(
+  'shop_listing_views',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => shopListings.id, { onDelete: 'cascade' }),
+    /** 방문자 IP + 매물 id 해시. 원본 IP 는 저장하지 않는다. */
+    visitorHash: varchar('visitor_hash', { length: 64 }).notNull(),
+    /** KST 날짜. 같은 방문자·같은 매물·같은 날은 1행만 남는다. */
+    viewedOn: date('viewed_on').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('shop_listing_views_per_day_unique').on(table.listingId, table.visitorHash, table.viewedOn),
+  ],
+);
+
+export const logoContestEntryStatusEnum = pgEnum('logo_contest_entry_status', ['active', 'hidden']);
+
+/**
+ * 로고 공모전 출품작. 공모전은 이번 한 번뿐이라 `contests` 테이블이 없다 —
+ * 기간은 `LOGO_CONTEST_STARTS_AT`/`LOGO_CONTEST_ENDS_AT` 설정값이 들고 있다.
+ *
+ * `authorName` 은 출품 시점 스냅샷이다(`questions.nickname` 과 같은 결). 공개 응답에는
+ * 출품작 id 로 만든 닉네임이 나가고, 원본은 어드민만 본다.
+ */
+export const logoContestEntries = pgTable(
+  'logo_contest_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    authorName: varchar('author_name', { length: 100 }).notNull(),
+    title: varchar('title', { length: 30 }).notNull(),
+    description: varchar('description', { length: 500 }),
+    status: logoContestEntryStatusEnum('status').notNull().default('active'),
+    isWinner: boolean('is_winner').notNull().default(false),
+    agreedAt: timestamp('agreed_at').notNull(),
+    deletedAt: timestamp('deleted_at'),
+    ...timestampColumns,
+  },
+  (table) => [
+    // 1계정 1출품. 삭제하면 다시 낼 수 있다 — 수정이 없는 대신 삭제 후 재출품이 유일한 정정 수단이다.
+    uniqueIndex('logo_contest_entries_user_unique')
+      .on(table.userId)
+      .where(sql`${table.deletedAt} is null`),
+    uniqueIndex('logo_contest_entries_winner_unique')
+      .on(table.isWinner)
+      .where(sql`${table.isWinner} = true`),
+    index('logo_contest_entries_visible_created')
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
+  ],
+);
+
+export const logoContestEntryMedia = pgTable(
+  'logo_contest_entry_media',
+  {
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => logoContestEntries.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('logo_contest_entry_media_order_unique').on(table.entryId, table.order),
+    primaryKey({ columns: [table.entryId, table.fileId], name: 'logo_contest_entry_media_pkey' }),
+    index('logo_contest_entry_media_entry_id').on(table.entryId),
+  ],
+);
+
+/**
+ * 1계정 1표, 취소·변경 없음. 작품이 삭제·숨김되면 그 작품의 표를 지워
+ * 투표자가 다시 투표할 수 있게 한다 — 그래서 unique 는 `userId` 하나다.
+ */
+export const logoContestVotes = pgTable(
+  'logo_contest_votes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => logoContestEntries.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('logo_contest_votes_user_unique').on(table.userId),
+    index('logo_contest_votes_entry').on(table.entryId),
+  ],
+);
+
+export const almondTemplateStatusEnum = pgEnum('almond_template_status', ALMOND_TEMPLATE_STATUSES);
+
+export const almondTemplates = pgTable(
+  'almond_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productId: varchar('product_id', { length: 36 }).notNull(),
+    widthMm: integer('width_mm').notNull(),
+    heightMm: integer('height_mm').notNull(),
+    title: varchar('title', { length: 80 }).notNull(),
+    industry: varchar('industry', { length: 40 }),
+    purpose: varchar('purpose', { length: 40 }),
+    colors: jsonb('colors').$type<string[]>().notNull(),
+    design: jsonb('design').$type<Record<string, unknown>>().notNull(),
+    thumbnailSvg: text('thumbnail_svg').notNull(),
+    status: almondTemplateStatusEnum('status').notNull().default('draft'),
+    createdBy: uuid('created_by').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('almond_templates_product_size_title_unique').on(
+      table.productId,
+      table.widthMm,
+      table.heightMm,
+      table.title,
+    ),
+    index('almond_templates_status_updated').on(table.status, table.updatedAt),
+  ],
+);
+
+export const almondDesigns = pgTable(
+  'almond_designs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    productId: varchar('product_id', { length: 36 }).notNull(),
+    widthMm: integer('width_mm').notNull(),
+    heightMm: integer('height_mm').notNull(),
+    templateId: uuid('template_id'),
+    design: jsonb('design').$type<Record<string, unknown>>().notNull(),
+    frontSvg: text('front_svg').notNull(),
+    backSvg: text('back_svg'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('almond_designs_user_created').on(table.userId, table.createdAt)],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -416,6 +674,15 @@ export const ugcServiceSchema = {
   questions,
   questionMedia,
   answers,
+  shopListings,
+  shopListingImages,
+  shopListingModerations,
+  shopListingViews,
+  logoContestEntries,
+  logoContestEntryMedia,
+  logoContestVotes,
+  almondTemplates,
+  almondDesigns,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

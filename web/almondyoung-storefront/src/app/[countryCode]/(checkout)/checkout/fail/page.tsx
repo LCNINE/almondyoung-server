@@ -110,7 +110,7 @@ export default function CheckoutFailPage() {
           {isStockError && (
             <LocalizedClientLink
               href="/cart"
-              className="block w-full rounded-lg bg-[#ff6600] py-3 text-center font-medium text-white transition-colors hover:bg-[#e14d00]"
+              className="block w-full rounded-lg bg-[#ffa500] py-3 text-center font-medium text-white transition-colors hover:bg-[#e69500]"
             >
               {t("stock.goToCart")}
             </LocalizedClientLink>
@@ -118,7 +118,7 @@ export default function CheckoutFailPage() {
           {!isStockError && (
             <button
               onClick={handleRetry}
-              className="w-full rounded-lg bg-[#ff6600] py-3 font-medium text-white transition-colors hover:bg-[#e14d00]"
+              className="w-full rounded-lg bg-[#ffa500] py-3 font-medium text-white transition-colors hover:bg-[#e69500]"
             >
               {t("retry")}
             </button>

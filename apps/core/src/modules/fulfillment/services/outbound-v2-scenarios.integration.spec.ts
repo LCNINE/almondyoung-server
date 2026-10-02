@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { AddressDto } from '../dto/address.dto';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
@@ -47,6 +48,7 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
+import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -109,6 +111,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       scopes,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     consolidation = new ConsolidationService(
       dbService,
@@ -358,6 +361,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       authorization,
       workflow,
+      assembleBoxWithdrawal(dbService),
     );
     const localConsolidation = new ConsolidationService(
       dbService,
@@ -399,7 +403,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       new FulfillmentProgressService(),
       invariant,
     );
-    const sessions = new BatchInventorySessionService(dbService, controlled, audit);
+    const sessions = new BatchInventorySessionService(dbService, audit);
     const dispatch = new ShipmentDispatchService(
       dbService,
       commands,
@@ -414,6 +418,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       workflow,
       outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      assembleLabels(dbService).guard,
     );
     return { planning: localPlanning, consolidation: localConsolidation, waybills, dispatch, sessions };
   }
@@ -515,7 +520,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
   }
 
   async function preparePackingAndDispatch(tx: DbTx, world: ScenarioWorld, shipmentId: string) {
-    const shipment = await planShipment(tx, world, shipmentId);
+    await planShipment(tx, world, shipmentId);
     const lines = await tx
       .select()
       .from(wmsTables.shipmentLines)
@@ -540,30 +545,24 @@ describeIfDb('Outbound V2 release scenarios', () => {
         warehouseId: world.warehouseId,
         pickingMethod: 'individual',
         status: 'picking',
+        startedAt: new Date(),
       })
       .returning();
-    await tx.insert(wmsTables.outboundBatchWorkItems).values({
-      batchId: batch.id,
-      shipmentId,
-      status: 'packing',
-      packerId: actorId,
-      packerClaimedAt: new Date(),
-      leaseExpiresAt: new Date(Date.now() + 60_000),
-      leaseVersion: 1,
-    });
-    const [pickPlan] = await tx
-      .insert(wmsTables.pickingPlans)
-      .values({ batchId: batch.id, strategy: 'discrete', status: 'active', createdBy: actorId })
+    const [workItem] = await tx
+      .insert(wmsTables.outboundBatchWorkItems)
+      .values({
+        batchId: batch.id,
+        shipmentId,
+        status: 'packing',
+        packerId: actorId,
+        packerClaimedAt: new Date(),
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        leaseVersion: 1,
+      })
       .returning();
-    await tx.insert(wmsTables.pickingPlanMembers).values({
-      planId: pickPlan.id,
-      shipmentId,
-      manifestVersion: shipment.manifestVersion,
-      reservationVersion: shipment.reservationVersion,
-    });
     await tx.insert(wmsTables.pickingSourceAllocations).values(
       lines.map((line) => ({
-        planId: pickPlan.id,
+        workItemId: workItem.id,
         shipmentLineId: line.id,
         sourceLocationId: world.locationId,
         qty: line.qty,
@@ -584,13 +583,13 @@ describeIfDb('Outbound V2 release scenarios', () => {
       .returning();
     await tx.insert(wmsTables.batchInventorySessionEvents).values({
       sessionId: session.id,
-      idempotencyKey: `start:${pickPlan.id}`,
+      idempotencyKey: `start:${batch.id}`,
       eventType: 'HAND_IN',
       skuId: world.skuId,
       quantity: totalQty,
       toCustodyType: 'AT_SOURCE',
       toSourceLocationId: world.locationId,
-      payload: { planId: pickPlan.id, sequence: 0, requestHash: 'a'.repeat(64), actorId },
+      payload: { batchId: batch.id, sequence: 0, requestHash: 'a'.repeat(64), actorId },
     });
     const balances = lines.flatMap((line) => {
       const packingQty = line.id === lastLine.id ? 1 : 0;

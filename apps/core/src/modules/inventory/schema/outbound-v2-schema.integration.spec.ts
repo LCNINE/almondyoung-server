@@ -851,13 +851,16 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           }),
         'outbound_batch_work_items_waiting_operation_id',
       );
-      await tx.insert(wmsTables.outboundBatchWorkItems).values({
-        batchId: f.batch.id,
-        shipmentId: f.shipment.id,
-        status: 'short_pick_recovery',
-        recoveryReason: 'one source was short',
-        waitingOperationId: resumeOperation.id,
-      });
+      const [recoveryWorkItem] = await tx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({
+          batchId: f.batch.id,
+          shipmentId: f.shipment.id,
+          status: 'short_pick_recovery',
+          recoveryReason: 'one source was short',
+          waitingOperationId: resumeOperation.id,
+        })
+        .returning();
       await expectViolation(
         tx,
         (sp) => sp.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, resumeOperation.id)),
@@ -1059,15 +1062,32 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         (sp) => sp.insert(wmsTables.pickingSourceAllocations).values(allocation),
         'uq_picking_source_allocations_grain',
       );
+
+      // workItemId 는 planId 와 별개 grain 을 갖는다(PR 2 이전엔 둘 다 nullable, NULLS DISTINCT 라
+      // 서로 다른 컬럼 값이면 충돌하지 않는다). idx_picking_source_allocations_work_item 은 조회용
+      // 인덱스라 위반을 유발할 수 없어 이 스펙에서 직접 검증하지 않는다.
+      const workItemAllocation = {
+        workItemId: recoveryWorkItem.id,
+        shipmentLineId: f.shipmentLine.id,
+        sourceLocationId: f.location.id,
+        qty: 1,
+        sourceStockVersion: 1,
+      };
+      await tx.insert(wmsTables.pickingSourceAllocations).values(workItemAllocation);
+      await expectViolation(
+        tx,
+        (sp) => sp.insert(wmsTables.pickingSourceAllocations).values(workItemAllocation),
+        'uq_picking_source_allocations_work_item_grain',
+      );
       await expectViolation(
         tx,
         (sp) =>
           sp.insert(wmsTables.pickingSourceAllocations).values({
             ...allocation,
             sourceLocationId: f.secondLocation.id,
-            qty: 0,
+            qty: -1,
           }),
-        'ck_picking_source_allocations_qty_positive',
+        'ck_picking_source_allocations_qty_nonnegative',
       );
       await expectViolation(
         tx,
@@ -1234,7 +1254,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           skuId: f.sku.id,
           sourceLocationId: f.secondLocation.id,
           custodyType: 'RETURN_PENDING',
-          shipmentLineId: f.shipmentLine.id,
+          custodyRef: 'RB-1',
           qty: 1,
         },
         {
@@ -1268,7 +1288,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         {
           sourceLocationId: f.location.id,
           custodyType: 'RETURN_PENDING' as const,
-          custodyRef: 'forbidden-return-ref',
+          custodyRef: 'RB-with-line',
           shipmentLineId: f.shipmentLine.id,
         },
         {
@@ -1346,7 +1366,9 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           sp.insert(wmsTables.batchInventorySessionBalances).values({
             sessionId: session.id,
             skuId: f.sku.id,
+            sourceLocationId: f.location.id,
             custodyType: 'RETURN_PENDING',
+            custodyRef: 'RB-2',
             shipmentLineId: f.shipmentLine.id,
             qty: 1,
           }),
@@ -1403,8 +1425,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           skuId: f.sku.id,
           quantity: 1,
           fromCustodyType: 'RETURN_PENDING',
+          fromCustodyRef: 'RB-1',
           fromSourceLocationId: f.secondLocation.id,
-          fromShipmentLineId: f.shipmentLine.id,
           toCustodyType: 'AT_SOURCE',
           toSourceLocationId: f.location.id,
         })
@@ -1412,8 +1434,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       expect(returnToSource).toMatchObject({
         fromCustodyType: 'RETURN_PENDING',
         fromSourceLocationId: f.secondLocation.id,
-        fromCustodyRef: null,
-        fromShipmentLineId: f.shipmentLine.id,
+        fromCustodyRef: 'RB-1',
+        fromShipmentLineId: null,
         toCustodyType: 'AT_SOURCE',
         toSourceLocationId: f.location.id,
         toCustodyRef: null,
@@ -1530,11 +1552,11 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           sp.insert(wmsTables.batchInventorySessionEvents).values({
             sessionId: session.id,
             idempotencyKey: randomUUID(),
-            eventType: 'return_pending_with_ref',
+            eventType: 'return_pending_with_line',
             skuId: f.sku.id,
             quantity: 1,
             fromCustodyType: 'RETURN_PENDING',
-            fromCustodyRef: 'forbidden-return-ref',
+            fromCustodyRef: 'RB-1',
             fromSourceLocationId: f.location.id,
             fromShipmentLineId: f.shipmentLine.id,
           }),

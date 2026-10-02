@@ -1,5 +1,5 @@
 const LIST_SEGMENTS = new Set(["category", "best", "new", "time-sale", "search"])
-const BOARD_SEGMENTS = new Set(["cs", "shop-trade", "events"])
+const BOARD_SEGMENTS = new Set(["cs", "shop-trade", "events", "logo-contest"])
 
 /**
  * 경로 → 화면 종류 GA4 이벤트. 어드민 실시간 접속자가 이 이벤트 이름으로 화면을 나눈다.

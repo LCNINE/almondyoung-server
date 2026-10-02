@@ -10,9 +10,12 @@
     "hideForToday": "今日は表示しない"
   },
   "popup": {
-    "hideForToday": "今日は表示しない",
-    "hideForDays": "{days}日間表示しない",
+    "hideThisForToday": "このポップアップを今日は表示しない",
+    "hideThisForDays": "このポップアップを{days}日間表示しない",
+    "previous": "前のポップアップ",
+    "next": "次のポップアップ",
     "viewDetail": "詳細を見る",
-    "close": "閉じる"
+    "close": "閉じる",
+    "closeAll": "すべて閉じる"
   }
 }

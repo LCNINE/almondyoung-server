@@ -31,6 +31,13 @@ export const useSmsTemplates = () => {
   });
 };
 
+export const useSmsRecipientGroups = () => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.recipientGroups(),
+    queryFn: () => smsGateApi.getRecipientGroups(),
+  });
+};
+
 export const useSmsAudience = () => {
   return useQuery({
     queryKey: smsGateQueryKeys.audience(),
@@ -43,6 +50,14 @@ export const useSmsCampaigns = () => {
     queryKey: smsGateQueryKeys.campaigns(),
     queryFn: () => smsGateApi.getCampaigns(),
     refetchInterval: 30_000,
+  });
+};
+
+export const useSmsCampaignClicks = (campaignId: string | null) => {
+  return useQuery({
+    queryKey: smsGateQueryKeys.campaignClicks(campaignId ?? ''),
+    queryFn: () => smsGateApi.getCampaignClicks(campaignId ?? ''),
+    enabled: !!campaignId,
   });
 };
 

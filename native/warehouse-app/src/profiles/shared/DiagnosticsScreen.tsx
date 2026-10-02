@@ -1,11 +1,11 @@
 import { useDeveloperMode } from '../../core/diagnostics/DeveloperModeProvider';
 import { readDiagnostics } from '../../core/diagnostics/operationDiagnostics';
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../../core/design/Button';
 import { useScanner, useScanEmit } from '../../core/hardware/scan/useScanner';
 import { scanWithCamera } from '../../core/hardware/scan/camera';
 import { renderTestLabel } from '../../core/hardware/print/zpl';
+import { printRaw } from '../../core/hardware/print/labelPrinter';
 import type { ScanEvent } from '../../core/hardware/scan/ScanProvider';
 import { useSession, useIsAuthenticated } from '../../app/session-context';
 
@@ -57,10 +57,7 @@ function AuthorizedDiagnostics() {
             const target =
               prompt('Printer target', 'tcp://192.168.0.100:9100') ?? '';
             try {
-              await invoke('print_raw', {
-                target,
-                data: Array.from(new TextEncoder().encode(zpl)),
-              });
+              await printRaw(target, zpl);
               setStatus('printed');
             } catch (e) {
               setStatus(`print error: ${e}`);

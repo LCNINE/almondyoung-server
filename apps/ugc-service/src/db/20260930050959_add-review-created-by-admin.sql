@@ -1,0 +1,1 @@
+ALTER TABLE "reviews" ADD COLUMN "created_by_admin_user_id" uuid;

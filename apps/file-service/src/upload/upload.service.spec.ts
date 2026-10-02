@@ -9,6 +9,9 @@ import { FileContextValidator } from '../shared/services/file-context-validator.
 import { FileTypeDetector } from '../shared/services/file-type-detector.service';
 import { StorageProviderType } from '../storage/storage-provider.interface';
 import { FileContext, Upload } from '../shared/types/file.types';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../database/default-file-contexts';
 
 describe('UploadService (direct upload)', () => {
   let service: UploadService;
@@ -25,6 +28,7 @@ describe('UploadService (direct upload)', () => {
     softDelete: jest.Mock;
   };
   let fileContextRepository: { findById: jest.Mock };
+  let fileTypeDetector: FileTypeDetector;
 
   const imageContext = {
     id: 'banner-image',
@@ -94,6 +98,45 @@ describe('UploadService (direct upload)', () => {
     }).compile();
 
     service = module.get(UploadService);
+    fileTypeDetector = module.get(FileTypeDetector);
+  });
+
+  it('공모전 이미지의 실제 크기를 파일 메타데이터에 저장한다', async () => {
+    fileContextRepository.findById.mockResolvedValue({
+      ...imageContext,
+      id: LOGO_CONTEST_IMAGE_CONTEXT_ID,
+      allowedMimeTypes: ['image/png'],
+    });
+    jest.spyOn(fileTypeDetector, 'detectMimeType').mockResolvedValue('image/png');
+    storageService.upload.mockResolvedValue({
+      key: 'contests/logo.png',
+      url: 'https://bucket.example/contests/logo.png',
+      provider: StorageProviderType.S3,
+      isPublic: true,
+    });
+    const buffer = readFileSync(
+      join(__dirname, '../../../../web/almondyoung-storefront/public/images/almond-logo-black.png'),
+    );
+
+    await service.uploadFile(
+      { buffer, size: buffer.length, mimetype: 'image/png', originalname: 'logo.png' } as Express.Multer.File,
+      { contextId: LOGO_CONTEST_IMAGE_CONTEXT_ID },
+      'user-1',
+    );
+
+    expect(fileRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { width: 275, height: 36 } }),
+    );
+  });
+
+  it('공모전 이미지는 크기를 검증할 수 없는 직접 업로드를 허용하지 않는다', async () => {
+    fileContextRepository.findById.mockResolvedValue({ ...imageContext, id: LOGO_CONTEST_IMAGE_CONTEXT_ID });
+    await expect(
+      service.presignUpload(
+        { contextId: LOGO_CONTEST_IMAGE_CONTEXT_ID, fileName: 'logo.png', size: 100, mimeType: 'image/png' },
+        'user-1',
+      ),
+    ).rejects.toThrow(BadRequestError);
   });
 
   describe('presignUpload', () => {

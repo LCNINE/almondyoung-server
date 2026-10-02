@@ -21,7 +21,10 @@ const nextConfig = {
   // 비운 상태에서 확인해야 하는 시나리오는 디렉터리 자체를 분리해야 한다.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
-  transpilePackages: ["@packages/web-observability"],
+  transpilePackages: [
+    "@packages/web-observability",
+    "@packages/shop-listing-markdown",
+  ],
   experimental: {
     // 동적 페이지의 라우터 캐시 유효 시간 (초)
     // 뒤로 가기 시 loading.tsx 깜빡임 방지

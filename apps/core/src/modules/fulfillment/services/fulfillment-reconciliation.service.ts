@@ -126,14 +126,15 @@ export class FulfillmentReconciliationService {
         JOIN shipments s ON s.id = w.shipment_id
        WHERE w.status NOT IN ('voided', 'failed', 'abandoned') AND w.manifest_version IS DISTINCT FROM s.manifest_version
       UNION ALL
+      -- 배정 불변식(I1~I3)은 명령 경로의 검사기(FulfillmentInvariantService)가 막는다 — 여기서는 0 으로 보고된다.
       SELECT 'SESSION_CONSERVATION', bis.id::text,
              concat('handedIn=', bis.handed_in_qty, ', remaining=', coalesce(sr.qty, 0),
                     ', settled=', bis.settled_qty, ', returned=', bis.returned_qty,
-                    ', shortage=', bis.shortage_qty)
+                    ', shortage=', bis.shortage_qty, ', handedBack=', bis.handed_back_qty)
         FROM batch_inventory_sessions bis
         LEFT JOIN session_remaining sr ON sr.session_id = bis.id
        WHERE bis.handed_in_qty <>
-             coalesce(sr.qty, 0) + bis.settled_qty + bis.returned_qty + bis.shortage_qty
+             coalesce(sr.qty, 0) + bis.settled_qty + bis.returned_qty + bis.shortage_qty + bis.handed_back_qty
       UNION ALL
       SELECT 'DISPATCH_SOURCE_CARDINALITY', als.attempt_id::text,
              concat('line=', als.line_id, ', lineQty=', als.line_qty, ', sourceQty=', als.source_qty)

@@ -12,7 +12,7 @@ export class AssistantChatPurgeService {
 
   constructor(private readonly repository: AssistantChatRepository) {}
 
-  @CronOnce('30 4 * * *', { name: 'assistant-chat-purge' })
+  @CronOnce('30 4 * * *', { name: 'assistant-chat-purge', timeZone: 'Asia/Seoul' })
   async purge(): Promise<void> {
     const cutoff = new Date(Date.now() - PURGE_GRACE_DAYS * 24 * 60 * 60 * 1000);
     const purged = await this.repository.purgeSoftDeletedBefore(cutoff);

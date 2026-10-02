@@ -1,7 +1,7 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { PATH_METADATA } from '@nestjs/common/constants';
-import { ScopeGuard } from '@app/authorization';
+import { REQUIRED_SCOPES_KEY, ScopeGuard } from '@app/authorization';
 import { Test } from '@nestjs/testing';
 import { validateSync } from 'class-validator';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -200,5 +200,11 @@ describe('ShipmentController V2 dispatch commands', () => {
     expect(force.operatorId).toBeUndefined();
     expect(force.actor).toBeUndefined();
     expect(force.authorization).toBeUndefined();
+  });
+
+  it('관리자 강제 발송 라우트는 dispatch.force 만 요구한다(스테이션 스코프로 열리지 않는다)', () => {
+    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, ShipmentController.prototype.forceDispatch)).toEqual([
+      FULFILLMENT_SCOPE.DISPATCH_FORCE,
+    ]);
   });
 });

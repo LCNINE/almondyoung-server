@@ -56,6 +56,15 @@ async function main(): Promise<void> {
         allowedScopes: ['openid', 'profile', 'email'],
         clientSecret: LOCAL_CLIENT_SECRET,
       },
+      {
+        // clip(다뷰) — 백엔드 :4000, 프론트 :5173
+        clientId: 'dabeau',
+        clientType: 'confidential',
+        redirectUris: ['http://localhost:4000/auth/oauth/callback'],
+        postLogoutRedirectUris: ['http://localhost:5173/sign-in'],
+        allowedScopes: ['openid', 'profile', 'email', 'offline_access'],
+        clientSecret: LOCAL_CLIENT_SECRET,
+      },
     ],
   });
 

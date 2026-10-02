@@ -1,42 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  ArrayMinSize,
-  IsArray,
-  IsIn,
-  IsInt,
-  IsNotEmpty,
-  IsString,
-  IsUUID,
-  Matches,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 const PHYSICAL_CART_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-
-export class PlanPickingV2Dto {
-  @IsUUID()
-  batchId: string;
-
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsUUID(undefined, { each: true })
-  shipmentIds: string[];
-}
 
 export class StartPickingV2Dto {
   @IsUUID()
   batchId: string;
-
-  @IsUUID()
-  planId: string;
 }
 
 export class ScanPickingV2Dto {
   @IsUUID()
   batchId: string;
-  @IsUUID()
-  planId: string;
   @IsUUID()
   sessionId: string;
   @IsUUID()
@@ -61,8 +35,6 @@ export class HandoffPickingV2Dto {
   @IsUUID()
   batchId: string;
   @IsUUID()
-  planId: string;
-  @IsUUID()
   sessionId: string;
   @IsUUID()
   workItemId: string;
@@ -83,8 +55,6 @@ export class CompletePickingV2Dto {
   @IsUUID()
   batchId: string;
   @IsUUID()
-  planId: string;
-  @IsUUID()
   sessionId: string;
   @IsUUID()
   workItemId: string;
@@ -98,9 +68,6 @@ export class CompletePickingV2Dto {
 export class AggregateBulkCartScanDto {
   @IsUUID()
   batchId: string;
-
-  @IsUUID()
-  planId: string;
 
   @IsUUID()
   sessionId: string;
@@ -123,9 +90,6 @@ export class AggregateBulkCartScanDto {
 export class AggregateSortScanDto {
   @IsUUID()
   batchId: string;
-
-  @IsUUID()
-  planId: string;
 
   @IsUUID()
   sessionId: string;
@@ -164,9 +128,6 @@ export class AggregateCartHandoffDto {
   batchId: string;
 
   @IsUUID()
-  planId: string;
-
-  @IsUUID()
   sessionId: string;
 
   @IsUUID()
@@ -183,4 +144,31 @@ export class AggregateCartHandoffDto {
   @IsNotEmpty()
   @MaxLength(500)
   reason: string;
+}
+
+export class AggregateCartSurplusReturnDto {
+  @IsUUID()
+  batchId: string;
+
+  @IsUUID()
+  sessionId: string;
+
+  @IsString()
+  @Matches(PHYSICAL_CART_ID)
+  cartId: string;
+
+  @IsUUID()
+  skuId: string;
+
+  @IsUUID()
+  sourceLocationId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  returnBinBarcode: string;
 }

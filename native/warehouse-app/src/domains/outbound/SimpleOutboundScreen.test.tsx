@@ -45,6 +45,11 @@ const shipment: ShipmentByWaybill = {
   workItemId: 'wi-1',
   workItemStatus: 'queued',
   recipientMasked: '홍길**',
+  labelState: 'current' as const,
+  labelChanges: [],
+  labelIssue: null,
+  removals: [],
+  exitTo: null,
   lines: [
     {
       shipmentLineId: 'ln-1',
@@ -78,7 +83,8 @@ function renderScreen(
   }>,
   bodies: Array<{ barcode: string; quantity: number }> = [],
   prefs: DevicePrefs = createMemoryPrefs(),
-  shipmentOverride: ShipmentByWaybill | null = shipment
+  shipmentOverride: ShipmentByWaybill | null = shipment,
+  labelPrinting = false
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -120,6 +126,7 @@ function renderScreen(
           shipmentId="s-1"
           shipment={shipmentOverride}
           prefs={prefs}
+          labelPrinting={labelPrinting}
         />
       </>
     ),
@@ -266,4 +273,17 @@ it('송장 상태를 잃은 화면에서는 HID로 구형 출고 요청을 만�
     await screen.findByRole('button', { name: '스캔:8801' })
   );
   expect(bodies).toHaveLength(0);
+});
+
+describe('라벨 재출력 배선', () => {
+  it('labelPrinting 이면 송장 카드에 재출력 버튼이 있다', async () => {
+    renderScreen([], [], createMemoryPrefs(), shipment, true);
+    expect(await screen.findByRole('button', { name: '송장 재출력' })).toBeInTheDocument();
+  });
+
+  it('기본(핸드헬드)에서는 없다', async () => {
+    renderScreen([]);
+    await screen.findByText('HANJIN T-1');
+    expect(screen.queryByRole('button', { name: '송장 재출력' })).toBeNull();
+  });
 });

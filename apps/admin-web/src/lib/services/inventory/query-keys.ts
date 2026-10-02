@@ -44,6 +44,10 @@ export const inventoryQueryKeys = {
   warehouseStockSummary: (warehouseId: string) =>
     ['warehouses', warehouseId, 'stock-summary'] as const,
 
+  // 배송 프로필 관련
+  // 인자 없는 팩토리로 만들면 invalidate 가 undefined 키를 받아 조용히 무효가 된다 — 상수 배열로 둔다
+  deliveryProfiles: ['delivery-profiles'] as const,
+
   // 입고 관련
   inbounds: ['inbounds'] as const,
   inbound: (id: string) => ['inbounds', id] as const,

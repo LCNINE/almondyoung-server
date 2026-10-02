@@ -11,6 +11,7 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import { deliveryProfilesClient } from '../../api/domains/inventory/delivery-profiles.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -204,6 +205,18 @@ export const useWarehouseStockSummary = (warehouseId: string) => {
     queryKey: inventoryQueryKeys.warehouseStockSummary(warehouseId),
     queryFn: () => warehousesClient.getWarehouseStockSummary(warehouseId),
     enabled: !!warehouseId,
+  });
+};
+
+// 배송 프로필 관련 쿼리
+export const useDeliveryProfiles = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.deliveryProfiles,
+    queryFn: () => deliveryProfilesClient.list(),
+    staleTime: 60 * 1000,
+    // 다른 탭(배송 프로필 관리 화면)에서 새로 만든 프로필을 이 창이 즉시 보게 한다.
+    // 전역 refetchOnWindowFocus:false 위에 이 훅만 되돌린다 — 목록이 작고 자주 안 바뀌어 비용이 싸다.
+    refetchOnWindowFocus: true,
   });
 };
 

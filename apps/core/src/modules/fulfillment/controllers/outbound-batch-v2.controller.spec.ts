@@ -9,7 +9,7 @@ describe('OutboundBatchV2Controller read snapshot contract', () => {
         id: 'batch-1',
         warehouse: { supportedPickingStrategies: ['discrete'] },
         workItems: [],
-        pickingPlan: null,
+        picking: null,
         inventorySession: null,
         toteAssignments: [],
       }),
@@ -35,5 +35,13 @@ describe('OutboundBatchV2Controller read snapshot contract', () => {
     const controller = new OutboundBatchV2Controller(batches as never);
     expect(() => controller.list(undefined, 'not-a-status')).toThrow(/Unsupported outbound batch status/);
     expect(batches.listBatches).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty join-candidates code with 400', () => {
+    const batches = { findJoinCandidates: jest.fn() };
+    const controller = new OutboundBatchV2Controller(batches as never);
+    expect(() => controller.findJoinCandidates('batch-1', '  ')).toThrow(/code is required/);
+    expect(() => controller.findJoinCandidates('batch-1', undefined)).toThrow(/code is required/);
+    expect(batches.findJoinCandidates).not.toHaveBeenCalled();
   });
 });

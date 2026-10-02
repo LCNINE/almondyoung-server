@@ -95,7 +95,10 @@ export class WelcomeMembershipService {
   /**
    * 새 시스템(Medusa)에서 웰컴 멤버십 상품 구매 완료 시 호출
    */
-  async markPurchased(userId: string, orderId: string): Promise<void> {
+  async markPurchased(userId: string, orderId: string, orderedAt?: Date): Promise<void> {
+    // 청약철회 판정은 «그 주기에 웰컴딜을 샀는가»를 이 시각으로 본다. 구매확정은 다음 주기에 올 수 있어
+    // 호출 시각을 쓰면 앞 주기의 구매가 다음 주기의 혜택 사용으로 잡힌다. 옛 호출자는 주문 시각을 안 보낸다.
+    const purchasedAt = orderedAt ?? new Date();
     await this.dbService.db
       .insert(welcomeMembershipEligibility)
       .values({
@@ -103,7 +106,7 @@ export class WelcomeMembershipService {
         hasPurchased: true,
         purchaseSource: 'medusa',
         firstOrderId: orderId,
-        purchasedAt: new Date(),
+        purchasedAt,
       })
       .onConflictDoUpdate({
         target: welcomeMembershipEligibility.userId,
@@ -111,7 +114,7 @@ export class WelcomeMembershipService {
           hasPurchased: true,
           purchaseSource: 'medusa',
           firstOrderId: orderId,
-          purchasedAt: new Date(),
+          purchasedAt,
           updatedAt: new Date(),
         },
       });
