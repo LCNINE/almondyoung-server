@@ -6,6 +6,10 @@ import { WaybillLabelStateReader } from '../waybill/waybill-label-state.reader';
 import type { LabelItemChange, LabelState } from '../waybill/label/label-print-policy';
 import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawal-removals.query';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
+
+// 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
+export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
 
 export interface ShipmentByWaybillAllocation {
   sourceLocationId: string;
@@ -64,34 +68,6 @@ export interface ShipmentByWaybillResult {
 // completed/excluded 만 제외한다. 열린 상태를 나열하면 이 예외 상태가 "작업 없음" 으로
 // 조용히 보고된다. DB 자신의 "활성" 정의(종결 2개만 제외)를 그대로 따른다.
 const TERMINAL_WORK_ITEM_STATUSES = ['completed', 'excluded'] as const;
-
-/** 이름은 뒤 절반을 가린다 — 현장 화면에 개인정보를 통째로 띄우지 않는다. */
-export function maskName(name: string): string {
-  const trimmed = name.trim();
-  if (trimmed.length <= 1) return trimmed;
-  const keep = Math.ceil(trimmed.length / 2);
-  return `${trimmed.slice(0, keep)}${'*'.repeat(trimmed.length - keep)}`;
-}
-
-function isRecipientRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/** jsonb 스냅샷에서 이름만 안전하게 뽑는다 — `as` 캐스팅 없이 좁힌다. */
-export function readRecipientName(snapshot: unknown): string {
-  if (!isRecipientRecord(snapshot)) return '';
-  const { recipientName } = snapshot;
-  return typeof recipientName === 'string' ? recipientName : '';
-}
-
-/** 배송메모만 — 공동현관 비밀번호는 현장 화면에 띄우지 않는다(송장 템플릿만 섞는다). */
-export function readDeliveryNote(snapshot: unknown): string | null {
-  if (!isRecipientRecord(snapshot)) return null;
-  const { deliveryNote } = snapshot;
-  if (typeof deliveryNote !== 'string') return null;
-  const trimmed = deliveryNote.trim();
-  return trimmed ? trimmed : null;
-}
 
 @Injectable()
 export class ShipmentWaybillReader {

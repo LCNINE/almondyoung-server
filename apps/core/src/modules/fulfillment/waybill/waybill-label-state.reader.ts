@@ -1,15 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, isNotNull, ne, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, ne, notInArray } from 'drizzle-orm';
 import { DbTx, inventorySchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CurrentLabelSummary, labelStateOf, LabelStateView } from './label/label-print-policy';
 import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
 import { WaybillLabelPrintRepository } from './waybill-label-print.repository';
+import { maskName, readRecipientName } from '../reader/recipient-snapshot';
+import { WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 
 const WI = wmsTables.outboundBatchWorkItems;
 
 const WITHDRAWING: LabelStateView = { state: 'withdrawing', changes: [], issue: null };
+
+/** 배치 현황(스테이션 F2) 박스 한 줄 — 송장 상태에 현장이 읽을 값을 붙인다 */
+export type BatchBoxLabelState = LabelStateView & {
+  shipmentId: string;
+  workItemId: string;
+  /** 작업 항목 상태 — «대기·검수 중·빠지는 중» */
+  workItemStatus: string;
+  /** 지금 쓰는 송장 번호(무효·종결 송장 제외). 없으면 null */
+  trackingNo: string | null;
+  recipientMasked: string;
+};
 
 /**
  * 송장 상태(스펙 §10.5) — 조회 전용. 몇 번을 어느 PC 에서 불러도 같은 결과이고 아무것도 바꾸지 않는다.
@@ -64,10 +77,7 @@ export class WaybillLabelStateReader {
     }, tx);
   }
 
-  async forBatch(
-    batchId: string,
-    tx?: DbTx,
-  ): Promise<Array<{ shipmentId: string; workItemId: string } & LabelStateView>> {
+  async forBatch(batchId: string, tx?: DbTx): Promise<BatchBoxLabelState[]> {
     return this.dbService.run(async (trx) => {
       const [batch] = await trx
         .select({ startedAt: wmsTables.outboundBatches.startedAt })
@@ -80,11 +90,17 @@ export class WaybillLabelStateReader {
         .from(WI)
         .where(and(eq(WI.batchId, batchId), notInArray(WI.status, ['completed', 'excluded'])))
         .orderBy(asc(WI.shipmentId));
-      const views: Array<{ shipmentId: string; workItemId: string } & LabelStateView> = [];
+      const shipmentIds = items.map((item) => item.shipmentId);
+      const trackingNos = await this.trackingNosOf(trx, shipmentIds);
+      const recipients = await this.recipientsOf(trx, shipmentIds);
+      const views: BatchBoxLabelState[] = [];
       for (const item of items) {
         views.push({
           shipmentId: item.shipmentId,
           workItemId: item.id,
+          workItemStatus: item.status,
+          trackingNo: trackingNos.get(item.shipmentId) ?? null,
+          recipientMasked: recipients.get(item.shipmentId) ?? '',
           ...(item.status === 'withdrawing'
             ? WITHDRAWING
             : await this.stateOf(
@@ -97,6 +113,34 @@ export class WaybillLabelStateReader {
       }
       return views;
     }, tx);
+  }
+
+  /** 박스마다 지금 쓰는 송장 번호 — 송장 스캔 조회(`ShipmentWaybillReader.byTrackingNo`)와 같은 기준(종결 송장 제외). */
+  private async trackingNosOf(trx: DbTx, shipmentIds: string[]): Promise<Map<string, string>> {
+    if (shipmentIds.length === 0) return new Map();
+    const rows = await trx
+      .select({ shipmentId: wmsTables.waybills.shipmentId, trackingNo: wmsTables.waybills.trackingNo })
+      .from(wmsTables.waybills)
+      .where(
+        and(
+          inArray(wmsTables.waybills.shipmentId, shipmentIds),
+          notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+        ),
+      );
+    const byShipment = new Map<string, string>();
+    for (const row of rows) {
+      if (row.trackingNo && !byShipment.has(row.shipmentId)) byShipment.set(row.shipmentId, row.trackingNo);
+    }
+    return byShipment;
+  }
+
+  private async recipientsOf(trx: DbTx, shipmentIds: string[]): Promise<Map<string, string>> {
+    if (shipmentIds.length === 0) return new Map();
+    const rows = await trx
+      .select({ id: wmsTables.shipments.id, snapshot: wmsTables.shipments.recipientSnapshot })
+      .from(wmsTables.shipments)
+      .where(inArray(wmsTables.shipments.id, shipmentIds));
+    return new Map(rows.map((row) => [row.id, maskName(readRecipientName(row.snapshot))]));
   }
 
   /**
