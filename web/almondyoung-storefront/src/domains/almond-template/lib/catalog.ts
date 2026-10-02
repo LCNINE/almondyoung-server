@@ -265,8 +265,8 @@ export const PRINT_SPECS: Record<
     safetyMm: 20,
     bleedMm: 0,
     fileScale: 0.1,
-    minImageDpi: 100,
-    note: "일반현수막은 실물의 1/10 크기로 파일을 작업합니다. 정사각 600/800/1000mm의 안전선 20mm는 임시값이며 타공·큐방 위치와 함께 칼선 및 API 접수 확인이 필요합니다.",
+    minImageDpi: 700,
+    note: "일반현수막은 실물의 1/10 크기로 파일을 작업하고 이미지는 700dpi로 저장합니다. 선은 1mm, 글자는 5pt 이상(1/10 기준)이어야 하며 정사각은 비규격으로 주문합니다. 큐방(4cm)은 별도 부자재이고 안전선 20mm는 임시값입니다.",
   },
   menu: {
     label: "메뉴판·가격표",
