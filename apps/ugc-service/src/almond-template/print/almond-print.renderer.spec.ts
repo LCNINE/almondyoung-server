@@ -19,6 +19,19 @@ const side = (label: string, color: string): string =>
   `<rect width="94" height="54" fill="${color}"/>` +
   `<text x="10" y="30" font-size="8" font-family="'Noto Sans CJK KR', sans-serif">${label}</text></svg>`;
 
+function jpegFrame(jpg: Buffer): { width: number; height: number; components: number } {
+  let at = 2;
+  while (at < jpg.length) {
+    const marker = jpg[at + 1];
+    const length = jpg.readUInt16BE(at + 2);
+    if (marker >= 0xc0 && marker <= 0xc2) {
+      return { height: jpg.readUInt16BE(at + 5), width: jpg.readUInt16BE(at + 7), components: jpg[at + 9] };
+    }
+    at += 2 + length;
+  }
+  throw new Error('SOF 없음');
+}
+
 const configOf = (values: Record<string, string>): ConfigService => new ConfigService(values);
 
 describeIfBinaries('AlmondPrintRenderer (실제 gs·rsvg-convert)', () => {
@@ -39,6 +52,16 @@ describeIfBinaries('AlmondPrintRenderer (실제 gs·rsvg-convert)', () => {
     expect(pdf.startsWith('%PDF')).toBe(true);
     expect(pdf).toMatch(/\/Count 2/);
     expect(pdf).not.toContain('/FontFile');
+  }, 60_000);
+
+  it('양면을 한 장짜리 CMYK JPG 로, 요청한 dpi 크기대로 만든다', async () => {
+    const jpg = await renderer.renderJpg(side('앞면', '#ff6600'), side('뒷면', '#ffffff'), 300);
+    expect(jpg.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+    expect(jpegFrame(jpg)).toEqual({
+      width: Math.round((198 / 25.4) * 300),
+      height: Math.round((54 / 25.4) * 300),
+      components: 4,
+    });
   }, 60_000);
 
   it('동시에 불러도 차례로 끝낸다', async () => {

@@ -11,6 +11,7 @@ import {
 const CONTENT_TYPES: Record<AlmondPrintFormat, string> = {
   eps: 'application/postscript',
   pdf: 'application/pdf',
+  jpg: 'image/jpeg',
 };
 
 @Injectable()
@@ -20,7 +21,7 @@ export class AlmondDesignPrinter {
     private readonly renderer: AlmondPrintRenderer,
   ) {}
 
-  async print(source: AlmondDesignPrintSource, format: AlmondPrintFormat): Promise<AlmondPrintFile> {
+  async print(source: AlmondDesignPrintSource, format: AlmondPrintFormat, dpi: number): Promise<AlmondPrintFile> {
     const svgs = source.backSvg === null ? [source.frontSvg] : [source.frontSvg, source.backSvg];
     const fileIds = [...new Set(svgs.flatMap(extractPublicFileIds))];
     const dataUris = new Map<string, string>();
@@ -31,7 +32,11 @@ export class AlmondDesignPrinter {
     const front = inlinePublicImages(source.frontSvg, dataUris);
     const back = source.backSvg === null ? null : inlinePublicImages(source.backSvg, dataUris);
     const body =
-      format === 'eps' ? await this.renderer.renderEps(front, back) : await this.renderer.renderPdf(front, back);
+      format === 'eps'
+        ? await this.renderer.renderEps(front, back)
+        : format === 'pdf'
+          ? await this.renderer.renderPdf(front, back)
+          : await this.renderer.renderJpg(front, back, dpi);
 
     return { fileName: `almond-design-${source.id}.${format}`, contentType: CONTENT_TYPES[format], body };
   }

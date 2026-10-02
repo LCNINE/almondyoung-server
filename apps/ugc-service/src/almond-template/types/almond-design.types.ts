@@ -15,7 +15,7 @@ export interface AlmondDesignRecord {
   backSvg: string | null;
 }
 
-export type AlmondPrintFormat = 'eps' | 'pdf';
+export type AlmondPrintFormat = 'eps' | 'pdf' | 'jpg';
 
 export interface AlmondPrintFile {
   fileName: string;

@@ -39,6 +39,33 @@ export class AlmondPrintRenderer {
     return this.exclusive((dir) => this.convertPdf(dir, frontSvg, backSvg));
   }
 
+  renderJpg(frontSvg: string, backSvg: string | null, dpi: number): Promise<Buffer> {
+    return this.exclusive((dir) => this.convertJpg(dir, frontSvg, backSvg, dpi));
+  }
+
+  private async convertJpg(dir: string, frontSvg: string, backSvg: string | null, dpi: number): Promise<Buffer> {
+    const svgPath = join(dir, 'sheet.svg');
+    const pdfPath = join(dir, 'sheet.pdf');
+    const jpgPath = join(dir, 'print.jpg');
+    await writeFile(svgPath, composeSideBySide(frontSvg, backSvg, ALMOND_PRINT_SIDE_GAP_MM), 'utf8');
+    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
+    await this.exec(this.gsBin, [
+      '-dSAFER',
+      '-dBATCH',
+      '-dNOPAUSE',
+      '-sDEVICE=jpegcmyk',
+      `-r${dpi}`,
+      '-dJPEGQ=95',
+      '-dTextAlphaBits=4',
+      '-dGraphicsAlphaBits=4',
+      ...this.iccArgs(),
+      '-o',
+      jpgPath,
+      pdfPath,
+    ]);
+    return readFile(jpgPath);
+  }
+
   private async convertEps(dir: string, frontSvg: string, backSvg: string | null): Promise<Buffer> {
     const svgPath = join(dir, 'sheet.svg');
     const pdfPath = join(dir, 'sheet.pdf');
@@ -69,10 +96,19 @@ export class AlmondPrintRenderer {
   }
 
   private ghostscriptArgs(device: 'eps2write' | 'pdfwrite'): string[] {
-    const icc = this.iccProfile
-      ? [`--permit-file-read=${this.iccProfile}`, `-sOutputICCProfile=${this.iccProfile}`]
-      : [];
-    return ['-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNoOutputFonts', `-sDEVICE=${device}`, ...CMYK_ARGS, ...icc];
+    return [
+      '-dSAFER',
+      '-dBATCH',
+      '-dNOPAUSE',
+      '-dNoOutputFonts',
+      `-sDEVICE=${device}`,
+      ...CMYK_ARGS,
+      ...this.iccArgs(),
+    ];
+  }
+
+  private iccArgs(): string[] {
+    return this.iccProfile ? [`--permit-file-read=${this.iccProfile}`, `-sOutputICCProfile=${this.iccProfile}`] : [];
   }
 
   private exclusive<T>(task: (dir: string) => Promise<T>): Promise<T> {
