@@ -108,10 +108,13 @@ export async function setupInspection(
     permissions?: WorkPermissions;
     print?: PrintRaw;
     picking?: OutboundBatchSummary[];
+    refills?: unknown[] | 'fail';
   } = {}
 ) {
   const server = createOutboundServer({ boxes: opts.boxes ?? [BOX1, BOX2] });
   server.config.batches.picking = opts.picking ?? [];
+  if (opts.refills === 'fail') server.config.refillsFail = true;
+  else server.config.refills = opts.refills ?? [];
   const runtime = createTestRuntime(server, opts.permissions);
   const print = opts.print ?? vi.fn<PrintRaw>(async () => {});
   const prefs = opts.prefs ?? stationPrefs();

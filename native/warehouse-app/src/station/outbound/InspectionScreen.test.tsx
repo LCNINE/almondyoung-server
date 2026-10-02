@@ -242,6 +242,8 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     box.withdrawn = true;
     scan('421033881907');
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    // 화면이 바뀐 커밋의 effect(기능키 등록)까지 돈 뒤에 누른다 — 부하가 크면 Esc 가 앞 렌더의 키 표로 판정된다
+    await act(async () => {});
     press('Escape');
     expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
   });

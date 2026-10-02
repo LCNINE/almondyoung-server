@@ -32,6 +32,7 @@ import {
   WaitingPrompt,
   WorkGrid,
 } from './panels';
+import { RefillPanel } from './RefillPanel';
 import { printWaybill } from './printWaybill';
 import { pushRecent, type RecentEntry } from './recent';
 import { WithdrawWork } from './WithdrawWork';
@@ -549,6 +550,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           right={
             <>
               {last ? <DoneBanner last={last} /> : null}
+              <RefillPanel warehouseId={warehouseId} />
               <RecentList entries={recent} grow />
             </>
           }
