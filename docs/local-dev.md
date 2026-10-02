@@ -303,12 +303,29 @@ npm run start:main:dev               # core :3100
     curl --cookie "accessToken=$TOKEN" http://localhost:8002/api/proxy/api/purchase-orders
     ```
 - 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`,
-  운송장번호 `DEV-WAYBILL-0001…` 이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
-- **출고작업(단순출고)이 시드만으로 바로 열린다.** 주문 10건 중 planned 인 5건이 배치
-  `DEV-BATCH-0001` 에 묶이고 각각 `registered` 운송장을 갖는다 — 앱의 `출고작업` 큐가 비지 않고,
-  운송장번호를 스캔하면 그대로 단순출고가 시작된다. plan·session·피커 claim 은 시드가 만들지 않는다.
-  `SimpleOutboundService.prepare()` 가 `queued` work item 에서 직접 만드는 것이 실제 경로라, 미리
-  만들어두면 앱이 그 경로를 밟지 못한다.
+  송장번호 `900000000001…`(12자리 숫자 — 실제 한진 형식) 이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+- **출고작업(단순출고)이 시드만으로 열린다.** planned 13건(기본 주문 5 + 아래 출고 시나리오 8)이 배치
+  `DEV-BATCH-0001` 에 묶이고 각각 `registered` 송장을 갖는다. 배치는 `created` 로 남으므로 **먼저 «작업 시작»을
+  누른다**(스테이션 F2 배치 현황, 또는 어드민) — 안 누르면 송장을 찍어도 `BATCH_NOT_STARTED` 다.
+  plan·session·피커 claim 은 시드가 만들지 않는다. `SimpleOutboundService.prepare()` 가 `queued` work item 에서
+  직접 만드는 것이 실제 경로라, 미리 만들어두면 앱이 그 경로를 밟지 못한다.
+- **출고 시나리오 박스** (`scripts/local/seed-dev-core/outbound-scenarios.ts`) — 스테이션 출고 검수의 경로마다 박스
+  하나. 기본 박스 5개(`…0001`~`…0005`)는 **수기 송장**이라 송장 출력 검사를 건너뛰고(external), 시나리오 박스는
+  **한진 발급 송장**이라 «출력 전» 상태로 시작한다 — F2 에서 송장을 먼저 출력해야 검수로 들어간다. 결품 결과는
+  서버가 재고로 정하므로 재고 배치가 곧 시나리오다(바꾸면 그 박스가 다른 경로로 간다).
+
+  | 송장번호 | 줄 | 쓰임 |
+  | --- | --- | --- |
+  | 900000000006 | 컬러크림 ×1 · 집게핀 ×3 · 퍼머넌트 ×2 | 검수 중 화면 · 정상 완료 |
+  | 900000000007 | 컬러크림 ×1 · 헤어롤 ×3 | 결품 위치 나눔 — 헤어롤이 A-01-05 ×2 + A-01-06 ×1 로 배정된다 |
+  | 900000000008 | 집게핀 ×1 · 염색볼 ×2 | 결품 → 채움(A-01-06) → 보충 대기 |
+  | 900000000009 | 컬러크림 ×2 · 앰플 ×2 | 컬러크림을 찍고 앰플 결품 → 뺄 상품 → 되돌림 바구니 |
+  | 900000000010 | 왁스 ×1 | 결품 → 빠진 박스 |
+  | 900000000011 | 퍼머넌트 ×1 · 가위 ×2 | 강제출고(F10) |
+  | 900000000012 | 집게핀 ×1 · 가위 ×1 | 박스 빼기(F11) |
+  | 900000000013 | 컬러크림 ×1 · 퍼머넌트 ×1 · 가위 ×1 | 검수 중 다른 송장 찍기 · 예비 |
+
+  상품 바코드는 `8809990000001`~`8809990000008`(13자리, 위 순서: 컬러크림·집게핀·퍼머넌트·염색볼·헤어롤·앰플·왁스·가위).
 - **창고 피킹 방식**: 부천(판매 창고)만 `supported_picking_strategies = ['discrete']` 이고 중국
   (비판매)은 빈 배열이다 — 라이브 `WAREHOUSE_CONSTANTS` 와 같은 구분. 이 컬럼이 비면
   `picking-strategy.registry.ts` 의 `resolveForWarehouse` 가 409 를 던져 **출고 배치를 아예 만들 수
@@ -316,10 +333,15 @@ npm run start:main:dev               # core :3100
 - **시드 로직을 바꾼 뒤 검증**: `npm run test:seed-dev-core:integration` 이 `scripts/local/seed-dev-core/`
   전체(스코프·마스터데이터·재고·입고·주문·출고대기·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
   두 번(기본 + `--bulk`) 부르므로 `--runInBand` 로 직렬 실행되고, 로컬 `dev_core` 를 실제로 drop/create 한다.
-  테스트 완료 후 DB 는 `--bulk` 상태(SKU 320개, 로케이션 64개)로 남으므로, 기본 시드(SKU 20개, 로케이션 14개)로
-  돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.
+  테스트 완료 후 DB 는 `--bulk` 상태(SKU 328개, 로케이션 64개)로 남으므로, 기본 시드(SKU 28개, 로케이션 14개)로
+  돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다. 로컬 E2E 를 함께 쓰면 그다음 `npm run bootstrap:e2e:local`
+  로 판매채널·공급처 시드를 되살린다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
+  데스크톱(Windows·Linux·macOS)에서는 **스테이션** 프로필로 뜬다. 핸드헬드 화면을 개발하려면
+  `npm run tauri:dev:handheld`(`VITE_PROFILE=handheld`). 리눅스·macOS 에는 Windows 스풀러가 없으므로 송장 프린터는
+  설정에서 `tcp://127.0.0.1:9100` 같은 raw TCP 대상으로 둔다 — 그 포트에 ZPL 을 받아 두는 수신기를 띄우면 출력 성공
+  경로까지 그대로 탄다(`nc -lk 9100 > labels.zpl` 정도로 충분하다).
   **core 의 포트나 호스트를 바꾸면 `native/warehouse-app/src-tauri/capabilities/default.json` 의
   `http:default` → `allow` 목록도 같이 고쳐야 한다.** Tauri 의 `plugin-http` 는 deny-by-default 라
   scope 에 없는 URL 은 요청이 앱 밖으로 나가기 전에 거부된다 — `.env` 만 고치면 화면엔 평범한
