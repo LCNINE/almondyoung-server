@@ -23,10 +23,27 @@ describe('createHumanKeyDetector', () => {
     expect([...out, ...d.feed('Enter', 40), ...d.flush(500)]).toEqual([]);
   });
 
-  it('묶음이 끝나고 늦게 온 Enter 는 사람 것이다', () => {
+  it('묶음 끝의 Enter 가 조금 늦어도(스캐너 끝 지연·긴 렌더) 스캔의 끝이다 — 사람 Enter 로 내지 않는다', () => {
     const d = createHumanKeyDetector();
     [...'8801'].forEach((key, i) => d.feed(key, i * 5));
-    expect(d.feed('Enter', 300)).toEqual(['Enter']);
+    // 마지막 글자(15ms) 뒤 120ms
+    expect(d.feed('Enter', 135)).toEqual([]);
+    expect(d.flush(1000)).toEqual([]);
+  });
+
+  it('묶음이 끝나고 한참(300ms 넘게) 뒤에 온 Enter 는 사람 것이다', () => {
+    const d = createHumanKeyDetector();
+    [...'8801'].forEach((key, i) => d.feed(key, i * 5));
+    // 마지막 글자(15ms) 뒤 400ms
+    expect(d.feed('Enter', 415)).toEqual(['Enter']);
+  });
+
+  it('묶음 뒤 늦게 온 Enter 아닌 키는 전처럼 바로 내고 묶음 상태를 끊는다', () => {
+    const d = createHumanKeyDetector();
+    [...'8801'].forEach((key, i) => d.feed(key, i * 5));
+    expect(d.feed('Backspace', 135)).toEqual(['Backspace']);
+    // 끊겼으니 다음 Enter 는 사람 것이다
+    expect(d.feed('Enter', 200)).toEqual(['Enter']);
   });
 
   it('제어 키는 바로 내고, 미뤄 둔 글자를 먼저 낸다', () => {
