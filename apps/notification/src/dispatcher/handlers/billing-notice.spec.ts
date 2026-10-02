@@ -144,6 +144,63 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     expect(dto.variables).toEqual({ name: '홍길동', period: '이번 주기' });
   });
 
+  it('계좌 심사 거절로 해지되고 미납이 남으면 「계좌 거절·미납 있음」 템플릿으로 금액을 넘긴다', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onTerminatedForNonPayment({} as never, {
+      userId: 'u1',
+      userName: '홍길동',
+      phoneNumber: '01012345678',
+      contractId: 'c1',
+      invoiceId: 'inv-1',
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+      arrearsAmount: 4990,
+      arrearsSkippedReason: null,
+      cause: 'MANDATE_REJECTED',
+      occurredAt: '2026-09-07T01:00:00.000Z',
+    });
+
+    const dto = dispatcher.send.mock.calls[0][0];
+    expect(dto.eventKey).toBe('MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS');
+    expect(dto.variables).toEqual({ name: '홍길동', period: '9월 1일~9월 30일', arrearsAmount: '4,990원' });
+    expect(dto.idempotencyKey).toBe('membership:terminated-notice:c1');
+  });
+
+  it('계좌 심사 거절로 해지됐지만 미납이 없으면 「계좌 거절·미납 없음」 템플릿', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onTerminatedForNonPayment({} as never, {
+      userId: 'u1',
+      userName: '홍길동',
+      phoneNumber: '01012345678',
+      contractId: 'c1',
+      invoiceId: 'inv-1',
+      arrearsAmount: null,
+      arrearsSkippedReason: 'WITHDRAWAL_ELIGIBLE',
+      cause: 'MANDATE_REJECTED',
+      occurredAt: '2026-09-07T01:00:00.000Z',
+    });
+
+    const dto = dispatcher.send.mock.calls[0][0];
+    expect(dto.eventKey).toBe('MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS');
+    expect(dto.variables).toEqual({ name: '홍길동' });
+  });
+
+  it('원인 칸이 없는 이벤트(이 칸이 생기기 전)는 출금 실패 해지로 본다', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onTerminatedForNonPayment({} as never, {
+      userId: 'u1',
+      userName: '홍길동',
+      phoneNumber: '01012345678',
+      contractId: 'c1',
+      invoiceId: 'inv-1',
+      arrearsAmount: 4990,
+      arrearsSkippedReason: null,
+      occurredAt: '2026-09-07T01:00:00.000Z',
+    });
+
+    expect(dispatcher.send.mock.calls[0][0].eventKey).toBe('MEMBERSHIP_TERMINATED_WITH_ARREARS');
+  });
+
   it('매핑이 꺼져 있으면(카카오 심사 전) 보내지 않는다', async () => {
     const { consumer, dispatcher } = makeConsumer(false);
     await consumer.onBillingAttemptFailed({} as never, failed);

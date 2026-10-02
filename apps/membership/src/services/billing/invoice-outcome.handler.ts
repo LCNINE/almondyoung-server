@@ -321,8 +321,9 @@ export class InvoiceOutcomeHandler {
     reason: string,
     arrears?: ArrearsContext,
   ): Promise<void> {
-    // 심사 거절은 wallet 이 따로 알린다 — 여기서 알리는 것은 출금 재시도를 모두 실패한 해지뿐이다.
-    const notifies = arrears?.cause === 'UNCOLLECTIBLE';
+    // 요금을 못 걷어 해지되면 원인(출금 재시도 소진 / 계좌 심사 거절)과 함께 알린다 — 문구가 다르다.
+    // 계좌 거절 «재등록 안내» 메일은 wallet 이 따로 보내고, 이것은 «멤버십이 해지됐다»는 안내다.
+    const notifies = arrears != null;
     const contact = notifies ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
 
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
@@ -403,6 +404,7 @@ export class InvoiceOutcomeHandler {
             invoiceId: arrears.invoiceRef,
             billed: arrears.billed,
             arrears: outcome,
+            cause: arrears.cause,
           });
         }
       }

@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { UserContact, UserContactClient } from '@app/shared';
 import { eq } from 'drizzle-orm';
-import type { MembershipArrearsSkippedReason } from '@packages/event-contracts/streams/membership.stream';
+import type {
+  MembershipArrearsSkippedReason,
+  MembershipTerminationCause,
+} from '@packages/event-contracts/streams/membership.stream';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
@@ -119,7 +122,7 @@ export class BillingNoticeManager {
     await this.recordQueued(tx, input.contractId, input.userId, 'ATTEMPT_FAILED', { attemptNo: input.attemptCount });
   }
 
-  /** 재시도 소진으로 해지된 한 건. 회수·미수 기록과 같은 트랜잭션 끝에서 부른다. */
+  /** 요금을 못 걷어 해지된 한 건(재시도 소진·계좌 심사 거절). 회수·미수 기록과 같은 트랜잭션 끝에서 부른다. */
   async queueTerminatedForNonPayment(
     tx: DrizzleTransaction,
     input: {
@@ -129,6 +132,7 @@ export class BillingNoticeManager {
       invoiceId: string;
       billed?: BilledPeriodForNotice;
       arrears: ArrearsOutcome;
+      cause: MembershipTerminationCause;
     },
   ): Promise<void> {
     if (!input.contact.ok) {
@@ -150,6 +154,7 @@ export class BillingNoticeManager {
         ...this.billedFields(input.billed),
         arrearsAmount,
         arrearsSkippedReason,
+        cause: input.cause,
         occurredAt: new Date().toISOString(),
       },
       tx,

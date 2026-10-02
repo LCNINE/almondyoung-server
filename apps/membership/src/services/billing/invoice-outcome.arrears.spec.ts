@@ -13,6 +13,7 @@ function makeHandler(opts: {
   plan?: { price: number; currency: string } | null;
   usage?: MembershipBenefitUsage;
   newRules?: boolean;
+  contact?: unknown;
 }) {
   const contract = opts.contract ?? {
     userId: 'u1',
@@ -74,7 +75,7 @@ function makeHandler(opts: {
   const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(opts.newRules ?? true) };
   // 고객 알림은 billing-notice 스펙의 관심사다 — 여기선 연락처가 없는 것으로 두어 알림 경로를 닫는다.
   const billingNoticeManager = {
-    lookupContactForContract: jest.fn().mockResolvedValue(null),
+    lookupContactForContract: jest.fn().mockResolvedValue(opts.contact ?? null),
     queueAttemptFailed: jest.fn(),
     queueTerminatedForNonPayment: jest.fn(),
   };
@@ -89,7 +90,7 @@ function makeHandler(opts: {
     termsRulesReader as never,
     billingNoticeManager as never,
   );
-  return { handler, arrearsManager, contractEventManager };
+  return { handler, arrearsManager, contractEventManager, billingNoticeManager };
 }
 
 const COVERING = { startsAt: '2026-07-07', endsAt: '2026-08-07' };
@@ -122,6 +123,31 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
       cause: 'MANDATE_REJECTED',
       causeCode: 'Q201',
       amount: 4990,
+    });
+  });
+
+  describe('해지 안내는 원인을 실어 보낸다 — 계좌 거절과 출금 실패는 문구가 다르다', () => {
+    const contact = { ok: true, contact: { userId: 'u1', username: '홍길동', phoneNumber: '01012345678' } };
+
+    it('계좌 심사 거절 해지도 안내한다(미납 여부와 상관없이), 원인은 MANDATE_REJECTED', async () => {
+      const { handler, billingNoticeManager } = makeHandler({ heldEntitlement: COVERING, contact });
+      await handler.handleMandateRejected('c1', 'inv-1', 'Q201', BILLED);
+
+      expect(billingNoticeManager.queueTerminatedForNonPayment).toHaveBeenCalledTimes(1);
+      expect(billingNoticeManager.queueTerminatedForNonPayment.mock.calls[0][1]).toMatchObject({
+        contractId: 'c1',
+        cause: 'MANDATE_REJECTED',
+        arrears: { recordedAmount: 4990 },
+      });
+    });
+
+    it('출금 재시도 소진 해지는 원인 UNCOLLECTIBLE', async () => {
+      const { handler, billingNoticeManager } = makeHandler({ heldEntitlement: COVERING, contact });
+      await handler.handleUncollectible('c1', 'inv-1', 'Q301', BILLED);
+
+      expect(billingNoticeManager.queueTerminatedForNonPayment.mock.calls[0][1]).toMatchObject({
+        cause: 'UNCOLLECTIBLE',
+      });
     });
   });
 

@@ -115,9 +115,11 @@ export interface MembershipBillingAttemptFailedPayload {
 }
 
 /**
- * 출금 재시도를 모두 실패해 멤버십이 해지됐다는 안내.
+ * 요금을 못 걷어 멤버십이 해지됐다는 안내.
  *
  * 미납 요금이 원장에 적혔으면 arrearsAmount 에 그 금액이, 적히지 않았으면 null 과 그 이유가 온다.
+ * cause 가 없으면 출금 재시도를 모두 실패한 해지(UNCOLLECTIBLE)다 — 이 칸이 생기기 전 이벤트가 그랬다.
+ * 자동이체 계좌 심사 거절(MANDATE_REJECTED)로 해지된 경우는 cause 로 구별한다 — 안내 문구가 다르다.
  */
 export interface MembershipTerminatedForNonPaymentPayload {
   userId: string;
@@ -129,8 +131,12 @@ export interface MembershipTerminatedForNonPaymentPayload {
   periodEnd?: string;
   arrearsAmount: number | null;
   arrearsSkippedReason: MembershipArrearsSkippedReason | null;
+  cause?: MembershipTerminationCause;
   occurredAt: string; // ISO 8601
 }
+
+export const MembershipTerminationCauseSchema = z.enum(['UNCOLLECTIBLE', 'MANDATE_REJECTED']);
+export type MembershipTerminationCause = z.infer<typeof MembershipTerminationCauseSchema>;
 
 export const MembershipArrearsSkippedReasonSchema = z.enum([
   'NO_ENTITLEMENT',
@@ -212,6 +218,7 @@ const MembershipTerminatedForNonPaymentSchema = z.object({
   periodEnd: z.string().min(1).optional(),
   arrearsAmount: z.number().int().positive().nullable(),
   arrearsSkippedReason: MembershipArrearsSkippedReasonSchema.nullable(),
+  cause: MembershipTerminationCauseSchema.optional(),
   occurredAt: z.string().datetime(),
 });
 

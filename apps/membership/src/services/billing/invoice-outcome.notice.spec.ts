@@ -209,10 +209,14 @@ describe('미납 해지 알림', () => {
     expect(payload).toMatchObject({ arrearsAmount: null, arrearsSkippedReason: 'WITHDRAWAL_ELIGIBLE' });
   });
 
-  it('계좌 심사 거절 해지는 여기서 알리지 않는다(wallet 이 따로 알린다)', async () => {
+  it('계좌 심사 거절 해지도 «해지됐다»를 알리고 원인을 싣는다 — 재등록 안내 메일과는 다른 안내다', async () => {
     const { handler, publisher } = makeHandler({ heldEntitlement: COVERING });
     await handler.handleMandateRejected('c1', 'inv-1', 'Q201', BILLED);
-    expect(publisher.saveTerminatedForNonPayment).not.toHaveBeenCalled();
+    expect(publisher.saveTerminatedForNonPayment).toHaveBeenCalledTimes(1);
+    expect(publisher.saveTerminatedForNonPayment.mock.calls[0][0]).toMatchObject({
+      cause: 'MANDATE_REJECTED',
+      arrearsAmount: 4990,
+    });
   });
 
   it('관리자 무효화(voided)는 알리지 않는다', async () => {

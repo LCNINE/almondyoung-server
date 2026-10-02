@@ -197,16 +197,19 @@ export class MembershipEventConsumer {
     @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipTerminatedForNonPayment'>,
   ) {
     const withArrears = payload.arrearsAmount != null;
+    // 원인 칸이 없던 때의 이벤트는 전부 출금 재시도 소진 해지였다.
+    const mandateRejected = payload.cause === 'MANDATE_REJECTED';
+    const name = payload.userName || '고객';
+    const period = formatBillingPeriod(payload.periodStart, payload.periodEnd);
+    const arrearsAmount = withArrears ? `${formatAmount(payload.arrearsAmount)}원` : undefined;
+
     await this.sendBillingNotice({
-      eventKey: withArrears ? 'MEMBERSHIP_TERMINATED_WITH_ARREARS' : 'MEMBERSHIP_TERMINATED_NO_ARREARS',
+      eventKey: terminationNoticeKey(mandateRejected, withArrears),
       idempotencyKey: `membership:terminated-notice:${payload.contractId}`,
       correlationId: envelope.correlationId,
       payload,
-      variables: {
-        name: payload.userName || '고객',
-        period: formatBillingPeriod(payload.periodStart, payload.periodEnd),
-        ...(withArrears && { arrearsAmount: `${formatAmount(payload.arrearsAmount)}원` }),
-      },
+      // 계좌 거절·미납 없음 문구는 주기를 말하지 않는다 — 계좌가 거절돼 그 주기 요금을 걷지 않았다.
+      variables: mandateRejected && !withArrears ? { name } : { name, period, ...(arrearsAmount && { arrearsAmount }) },
     });
   }
 
@@ -247,4 +250,12 @@ export class MembershipEventConsumer {
     });
     this.logger.log(`[Event] Dispatched ${input.eventKey} for ${input.payload.userId}`);
   }
+}
+
+/** 해지 원인(출금 재시도 소진 / 계좌 심사 거절) × 미납 여부마다 문구가 다른 알림톡을 쓴다. */
+function terminationNoticeKey(mandateRejected: boolean, withArrears: boolean): string {
+  if (mandateRejected) {
+    return withArrears ? 'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS' : 'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS';
+  }
+  return withArrears ? 'MEMBERSHIP_TERMINATED_WITH_ARREARS' : 'MEMBERSHIP_TERMINATED_NO_ARREARS';
 }

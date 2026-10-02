@@ -772,6 +772,37 @@ export const BILLING_NOTICE_TEMPLATES = [
       period: { type: 'string', required: true },
     },
   ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS,
+    'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS',
+    'MEMB_MREJ_ARREARS',
+    '멤버십 해지 안내 (계좌 심사 거절, 미납 있음)',
+    [
+      '#{name}님, 등록하신 자동이체 계좌의 은행 심사가 거절되어 멤버십이 해지되었어요.',
+      '이용하신 기간(#{period})의 요금 #{arrearsAmount}이 미납으로 남아 있어요.',
+      '자세한 내용은 멤버십 화면에서 확인하실 수 있어요.',
+    ].join('\n'),
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+      period: { type: 'string', required: true },
+      arrearsAmount: { type: 'string', required: true },
+    },
+  ),
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS,
+    'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS',
+    'MEMB_MREJ_NOARREARS',
+    '멤버십 해지 안내 (계좌 심사 거절, 미납 없음)',
+    [
+      '#{name}님, 등록하신 자동이체 계좌의 은행 심사가 거절되어 멤버십이 해지되었어요. 남은 요금은 없어요.',
+      '다시 이용하시려면 멤버십 화면에서 계좌를 다시 등록하고 가입해 주세요.',
+    ].join('\n'),
+    webLink('멤버십 보기', '/mypage/membership'),
+    {
+      name: { type: 'string', required: true },
+    },
+  ),
 ];
 
 const BILLING_NOTICE_EVENTS = [
@@ -789,6 +820,16 @@ const BILLING_NOTICE_EVENTS = [
     'MEMBERSHIP_TERMINATED_NO_ARREARS',
     '멤버십 해지 (미납 없음)',
     '출금 재시도가 모두 실패해 해지됐지만 남은 요금이 없을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS',
+    '멤버십 해지 (계좌 심사 거절, 미납 있음)',
+    '자동이체 계좌 심사가 거절되어 해지되고 미납 요금이 남았을 때',
+  ),
+  kakaoNoticeEvent(
+    'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS',
+    '멤버십 해지 (계좌 심사 거절, 미납 없음)',
+    '자동이체 계좌 심사가 거절되어 해지됐지만 남은 요금이 없을 때',
   ),
 ];
 

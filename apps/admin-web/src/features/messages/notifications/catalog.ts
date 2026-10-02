@@ -45,6 +45,8 @@ export const NOTIFICATION_CATALOG: CatalogEntry[] = [
   { id: 'membership-billing-failed', group: '멤버십', title: '멤버십 요금 출금 실패', condition: '정기결제 출금이 실패하고 재시도가 남았을 때 (알림톡, 안 닿으면 문자)', kind: 'event', eventKey: 'MEMBERSHIP_BILLING_ATTEMPT_FAILED' },
   { id: 'membership-terminated-arrears', group: '멤버십', title: '멤버십 해지 (미납 있음)', condition: '출금 재시도가 모두 실패해 해지되고 미납 요금이 남았을 때', kind: 'event', eventKey: 'MEMBERSHIP_TERMINATED_WITH_ARREARS' },
   { id: 'membership-terminated-no-arrears', group: '멤버십', title: '멤버십 해지 (미납 없음)', condition: '출금 재시도가 모두 실패해 해지됐지만 남은 요금이 없을 때', kind: 'event', eventKey: 'MEMBERSHIP_TERMINATED_NO_ARREARS' },
+  { id: 'membership-mandate-rejected-arrears', group: '멤버십', title: '멤버십 해지 (계좌 거절, 미납 있음)', condition: '자동이체 계좌 심사가 거절되어 해지되고 미납 요금이 남았을 때', kind: 'event', eventKey: 'MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS' },
+  { id: 'membership-mandate-rejected-no-arrears', group: '멤버십', title: '멤버십 해지 (계좌 거절, 미납 없음)', condition: '자동이체 계좌 심사가 거절되어 해지됐지만 남은 요금이 없을 때', kind: 'event', eventKey: 'MEMBERSHIP_MANDATE_REJECTED_NO_ARREARS' },
   { id: 'mandate-pending', group: '멤버십', title: '멤버십 선적용 안내', condition: '자동이체 계좌 심사 중에 멤버십을 먼저 적용하면', kind: 'event', eventKey: 'MANDATE_PENDING' },
   { id: 'cms-registered', group: '멤버십', title: '자동이체 계좌 등록 완료', condition: '자동이체 계좌 심사가 통과되면', kind: 'event', eventKey: 'CMS_MEMBER_REGISTERED' },
   { id: 'cms-rejected', group: '멤버십', title: '자동이체 계좌 등록 실패', condition: '자동이체 계좌 심사가 반려되면', kind: 'event', eventKey: 'CMS_MEMBER_REJECTED' },
