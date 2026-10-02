@@ -19,6 +19,7 @@ import { createMemoryPrefs, type DevicePrefs } from '../../../core/data/devicePr
 import { LABEL_PRINTER_KEY, type PrintRaw } from '../../../core/hardware/print/labelPrinter';
 import { ScanProvider } from '../../../core/hardware/scan/ScanProvider';
 import { OperationContext, type WorkPermissions, type WorkRuntime } from '../../../core/operations/OperationContext';
+import type { OperationStore } from '../../../core/operations/operationStore';
 import { WorkBoundary } from '../../../core/operations/WorkBoundary';
 import type { OutboundBatchSummary } from '../../../domains/outbound/types';
 import type { Beep, ToneSink } from '../../feedback/soundPlayer';
@@ -109,13 +110,15 @@ export async function setupInspection(
     print?: PrintRaw;
     picking?: OutboundBatchSummary[];
     refills?: unknown[] | 'fail';
+    /** 기기 저장소를 바꿔 끼운다 — 저장된 스캔 복구를 붙잡는 테스트 */
+    store?: OperationStore;
   } = {}
 ) {
   const server = createOutboundServer({ boxes: opts.boxes ?? [BOX1, BOX2] });
   server.config.batches.picking = opts.picking ?? [];
   if (opts.refills === 'fail') server.config.refillsFail = true;
   else server.config.refills = opts.refills ?? [];
-  const runtime = createTestRuntime(server, opts.permissions);
+  const runtime = createTestRuntime(server, opts.permissions, opts.store);
   const print = opts.print ?? vi.fn<PrintRaw>(async () => {});
   const prefs = opts.prefs ?? stationPrefs();
   const view = renderStation(() => <InspectionScreen prefs={prefs} print={print} />, { runtime, prefs });

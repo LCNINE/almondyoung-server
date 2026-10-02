@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
-import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { createOperationStore } from '../../core/operations/operationStore';
 import { RETURN_BIN_KEY } from '../../domains/returns/returnBin';
 import type { FakeBox } from './__fixtures__/outboundServer';
 import { BOX1, BOX2, flash, openBox, press, scan, setupInspection, stationPrefs } from './__fixtures__/renderStation';
@@ -96,7 +97,18 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   });
 
   it('스캔 큐가 준비되기 전에 찍은 상품은 받지 않고 이유를 보인다', async () => {
-    const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
+    // 이 박스의 저장된 스캔 읽기를 붙잡는다 — 복구가 끝나기 전(큐 준비 전)을 시간에 맡기지 않고 만든다
+    const store = createOperationStore(crypto.randomUUID());
+    const draft = store.draft;
+    let releaseRestore!: () => void;
+    const restoreHeld = new Promise<void>((resolve) => {
+      releaseRestore = resolve;
+    });
+    vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
+      if (!update && id.includes(':scan:withdraw:')) await restoreHeld;
+      return draft(id, update);
+    });
+    const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin(), store });
     scan('421033881907');
     await screen.findByText('뺄 상품');
     expect(document.querySelector('[data-intake="blocked"]')).not.toBeNull();
@@ -104,5 +116,11 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔을 확인하고 있어요');
     expect(flash()).toBe('error');
     expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals'))).toBe(false);
+    // 복구가 끝나면 받는다
+    await act(async () => releaseRestore());
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    expect(server.requests.filter((r) => r.path.endsWith('/return-bin-removals'))).toHaveLength(1);
   });
 });
