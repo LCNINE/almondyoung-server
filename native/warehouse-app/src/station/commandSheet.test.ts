@@ -9,6 +9,12 @@ describe('명령 바코드 시트', () => {
     expect(COMMAND_SHEET_SECTIONS[0].actions.map((a) => a.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6']);
   });
 
+  it('둘째 절은 출고 검수 — 화면이 선언하는 액션과 같은 값(F7~F12, Esc)', () => {
+    expect(COMMAND_SHEET_SECTIONS[1].title).toBe('출고 검수');
+    expect(COMMAND_SHEET_SECTIONS[1].actions.map((a) => a.key)).toEqual(['F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Escape']);
+    expect(COMMAND_SHEET_SECTIONS[1].actions).toContainEqual(expect.objectContaining({ key: 'F10', label: '강제출고' }));
+  });
+
   it('절마다 키가 겹치지 않고, 모든 바코드가 그 키로 되읽힌다', () => {
     for (const section of COMMAND_SHEET_SECTIONS) {
       expect(() => assertUniqueKeys(section.actions.map((a) => ({ ...a, id: a.key })))).not.toThrow();

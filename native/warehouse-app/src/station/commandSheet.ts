@@ -1,6 +1,7 @@
 import type { ActionSpec } from './actions';
 import { encodeCode128B } from './code128';
 import { commandCodeOfDigit, commandCodeOfKey } from './commandCode';
+import { INSPECTION_ACTIONS } from './outbound/inspectionActions';
 import { STATION_TABS } from './tabs';
 
 export interface CommandSheetSection {
@@ -14,6 +15,8 @@ export interface CommandSheetSection {
  */
 export const COMMAND_SHEET_SECTIONS: readonly CommandSheetSection[] = [
   { title: '탭', actions: STATION_TABS.map((tab) => ({ key: tab.key, label: tab.label })) },
+  // 화면 선언과 같은 상수 — 시트와 기능키 바가 갈리지 않는다(PR B 계약 메모)
+  { title: '출고 검수', actions: Object.values(INSPECTION_ACTIONS) },
 ];
 
 /** 키패드처럼 1~9 다음 0. */

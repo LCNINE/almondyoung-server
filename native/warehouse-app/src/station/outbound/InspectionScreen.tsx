@@ -282,6 +282,25 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     go({ kind: 'waiting' });
   };
 
+  /** 박스 빼기(F11) 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스) */
+  const reopen = (box: ShipmentByWaybill) =>
+    run(async () => {
+      await settleWork();
+      await show(await lookup(box.trackingNo));
+    });
+
+  /** F12 — 든 박스의 송장을 다시 뽑는다 */
+  const reprintBox = (box: ShipmentByWaybill) =>
+    run(async () => {
+      const status = await printFor(box.shipmentId);
+      if (status.kind === 'failed') {
+        reject(status.message);
+        return;
+      }
+      note({ kind: 'printed', text: box.trackingNo });
+      signal('success');
+    });
+
   const reprintView = () =>
     run(async () => {
       const current = viewRef.current;
@@ -328,6 +347,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           onShipped={onShipped}
           onExcess={() => reject(EXCESS_MESSAGE)}
           onPutDown={() => void putDown()}
+          canPrint={canPrint}
+          onReopen={(box) => void reopen(box)}
+          onReprint={(box) => void reprintBox(box)}
         />
       );
     case 'reprint':

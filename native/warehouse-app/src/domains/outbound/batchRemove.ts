@@ -4,6 +4,19 @@ import type { ShipmentByWaybill } from './types';
 
 export type RemoveOutcome = { kind: 'removed' | 'withdrawing' | 'blocked'; message: string };
 
+/** DELETE /outbound-batches/:batchId/shipments/:shipmentId — 시작된 배치에서 박스를 뺀다. 담은 상품이 있으면 서버가 «빼는 중» 으로 둔다(스펙 §8) */
+export function excludeFromBatch(
+  api: ApiClient,
+  input: { batchId: string; shipmentId: string; reason: string; idempotencyKey: string },
+): Promise<{ workItem?: { status?: string } }> {
+  return api.request<{ workItem?: { status?: string } }>({
+    method: 'DELETE',
+    path: `/outbound-batches/${input.batchId}/shipments/${input.shipmentId}`,
+    body: { reason: input.reason.trim() },
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
 const NOT_IN_THIS_BATCH = '이 배치에 있는 박스가 아니에요. 방금 뺐다면 이미 빠진 상태예요.';
 
 /**
@@ -19,10 +32,10 @@ export async function removeBoxFromBatch(
     const found = await deps.api.request<ShipmentByWaybill>({ path: `/shipments/by-waybill?${qs.toString()}` });
     // 빼는 응답을 잃고 다시 스캔하면 박스는 이미 빠져 이 배치에 없다 — 같은 문구가 그 경우도 알려 준다.
     if (found.batchId !== input.batchId || !found.workItemId) return { kind: 'blocked', message: NOT_IN_THIS_BATCH };
-    const result = await deps.api.request<{ workItem?: { status?: string } }>({
-      method: 'DELETE',
-      path: `/outbound-batches/${input.batchId}/shipments/${found.shipmentId}`,
-      body: { reason: input.reason.trim() },
+    const result = await excludeFromBatch(deps.api, {
+      batchId: input.batchId,
+      shipmentId: found.shipmentId,
+      reason: input.reason,
       idempotencyKey: deps.newKey(),
     });
     // 담은 상품이 있으면 서버는 박스를 «빼는 중» 으로 둔다 — 상품이 바구니에 다 들어가야 빠진다(스펙 §8).
