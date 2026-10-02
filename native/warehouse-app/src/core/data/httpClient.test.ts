@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiError, ConflictError, createApiClient } from './httpClient';
+import { currentServerReach } from './serverStatus';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -275,5 +276,24 @@ describe('409 errors body and rejected codes (#987)', () => {
 
   it('등록 안 된 바구니 조회(404 RETURN_BIN_UNKNOWN)도 확정 거절 — 다시 보내도 같다', () => {
     expect(new ApiError('GET /return-bins/RB-x → 404', 404, 'RETURN_BIN_UNKNOWN').outcome).toBe('rejected');
+  });
+});
+
+describe('서버 도달 기록(상태바 «서버»)', () => {
+  it('fetch 가 던지면 down, 응답이 오면(4xx 여도) up', async () => {
+    const doFetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'NOT_FOUND' }), { status: 404 }));
+    const api = createApiClient({
+      baseUrl: 'https://core.test',
+      getToken: async () => 't',
+      authMode: 'bearer',
+      doFetch: doFetch as never,
+    });
+    await expect(api.request({ path: '/x' })).rejects.toThrow('network');
+    expect(currentServerReach()).toBe('down');
+    await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(ApiError);
+    expect(currentServerReach()).toBe('up');
   });
 });
