@@ -112,6 +112,27 @@ export class AlimtalkRepository {
     return row;
   }
 
+  /** 멱등 키로 자동 알림톡을 찾는다. (idempotency_key, channel) 유니크 인덱스를 탄다 */
+  findAutoSendsByKeys(keys: string[]): Promise<Array<AutoSendRow & { idempotencyKey: string | null }>> {
+    if (keys.length === 0) return Promise.resolve([]);
+    return this.dbService.db
+      .select({
+        notificationId: notifications.notificationId,
+        idempotencyKey: notifications.idempotencyKey,
+        eventKey: notifications.eventKey,
+        eventName: notificationEvents.name,
+        status: notifications.status,
+        createdAt: notifications.createdAt,
+        sentAt: notifications.sentAt,
+        payload: notifications.payload,
+        metadata: notifications.metadata,
+        errorDetails: notifications.errorDetails,
+      })
+      .from(notifications)
+      .leftJoin(notificationEvents, eq(notificationEvents.eventKey, notifications.eventKey))
+      .where(and(isAutoAlimtalk, inArray(notifications.idempotencyKey, keys)));
+  }
+
   listRecipientGroups(): Promise<RecipientGroupSummary[]> {
     return this.dbService.db
       .select({

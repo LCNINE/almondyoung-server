@@ -12,6 +12,7 @@ import { formatAmount, formatDate } from '../../shared/utils/template-helpers';
 import { formatBillingPeriod, formatKstMonthDay, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
+import { billingFailedNoticeKey, terminatedNoticeKey } from './membership-notice-keys';
 
 /**
  * Membership Service 이벤트 컨슈머
@@ -176,7 +177,7 @@ export class MembershipEventConsumer {
   ) {
     await this.sendBillingNotice({
       eventKey: 'MEMBERSHIP_BILLING_ATTEMPT_FAILED',
-      idempotencyKey: `membership:billing-failed:${payload.invoiceId}:${payload.attemptCount}`,
+      idempotencyKey: billingFailedNoticeKey(payload.invoiceId, payload.attemptCount),
       correlationId: envelope.correlationId,
       payload,
       variables: {
@@ -205,7 +206,7 @@ export class MembershipEventConsumer {
 
     await this.sendBillingNotice({
       eventKey: terminationNoticeKey(mandateRejected, withArrears),
-      idempotencyKey: `membership:terminated-notice:${payload.contractId}`,
+      idempotencyKey: terminatedNoticeKey(payload.contractId),
       correlationId: envelope.correlationId,
       payload,
       // 계좌 거절·미납 없음 문구는 주기를 말하지 않는다 — 계좌가 거절돼 그 주기 요금을 걷지 않았다.

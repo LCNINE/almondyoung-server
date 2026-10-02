@@ -22,6 +22,11 @@ import {
 } from './admin/admin-member-insights.reader';
 import { RecurringBillingService } from './billing/recurring-billing.service';
 import {
+  AdminBillingRecoveryReader,
+  BillingRecoveryOverview,
+  UserRecoveryJourney,
+} from './admin/admin-billing-recovery.reader';
+import {
   CreateTierRequest,
   UpdateTierRequest,
   CreatePlanRequest,
@@ -52,6 +57,7 @@ export class AdminOperationsService {
     private readonly paymentClientService: PaymentClientService,
     private readonly recurringBillingService: RecurringBillingService,
     private readonly insightsReader: AdminMemberInsightsReader,
+    private readonly billingRecoveryReader: AdminBillingRecoveryReader,
   ) {}
 
   // =================================================================
@@ -173,6 +179,14 @@ export class AdminOperationsService {
     return this.insightsReader.upcomingBilling(days);
   }
 
+  async getBillingRecovery(month: string): Promise<BillingRecoveryOverview> {
+    return this.billingRecoveryReader.overview(month);
+  }
+
+  async getBillingRecoveryJourney(userId: string): Promise<UserRecoveryJourney> {
+    return this.billingRecoveryReader.journey(userId);
+  }
+
   /**
    * 사람 축 목록. 축이 누구를 어떤 순서로 보여줄지 정하고, 행의 회원 정보는 기존 목록과 같은
    * 매핑(findAllWithDetails)으로 채운다 — 같은 사람이 두 화면에서 다른 상태로 보이지 않게.
@@ -182,7 +196,13 @@ export class AdminOperationsService {
     page: number,
     limit: number,
     userIds?: string[],
-  ): Promise<{ data: Array<AdminMemberListItem & { axisDetail: unknown }>; total: number; page: number; limit: number; axis: MemberAxis }> {
+  ): Promise<{
+    data: Array<AdminMemberListItem & { axisDetail: unknown }>;
+    total: number;
+    page: number;
+    limit: number;
+    axis: MemberAxis;
+  }> {
     const axisPage: AxisPage<unknown> = await this.axisPage(axis, page, limit, userIds);
     const ids = axisPage.rows.map((r) => r.userId);
     const members = ids.length

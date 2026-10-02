@@ -4,6 +4,8 @@ import { NhnAlimtalkClient } from '../clients/nhn-alimtalk.client';
 import { AlimtalkRepository, AutoSendRow } from '../repositories/alimtalk.repository';
 import { maskPhone } from '../utils/mask-phone';
 import { outcomeOf } from './alimtalk-campaign.reader';
+import { billingFailedNoticeKey, terminatedNoticeKey } from '../../dispatcher/handlers/membership-notice-keys';
+import { LookupMembershipNoticesDto } from '../dto';
 
 const PAGE_SIZE = 50;
 
@@ -31,6 +33,18 @@ export interface AlimtalkAutoSendResult {
   /** NHN 에 물어본 수신 결과. 접수되지 않은 건은 NOT_ACCEPTED */
   outcome: 'kakao' | 'sms' | 'failed' | 'inProgress' | 'NOT_ACCEPTED';
   detail: string | null;
+}
+
+/** 멤버십 요금 안내 한 건의 발송 기록. 기록이 없으면 found=false(이벤트를 아직 못 받았거나 꺼져 있던 때) */
+export interface MembershipNoticeStatus {
+  /** 묻는 쪽이 넘긴 것을 그대로 돌려준다: 'attempt:<invoiceId>:<회차>' | 'terminated:<contractId>' */
+  ref: string;
+  found: boolean;
+  notificationId: string | null;
+  status: string | null;
+  sentAt: string | null;
+  scheduledFor: string | null;
+  error: string | null;
 }
 
 const text = (source: Record<string, unknown> | null | undefined, key: string): string | null => {
@@ -79,6 +93,34 @@ export class AlimtalkAutoSendReader {
     const rows = await this.repository.listAutoSends(PAGE_SIZE, before);
     const items = rows.map(toAutoSendItem);
     return { items, nextBefore: rows.length === PAGE_SIZE ? items[items.length - 1].createdAt : null };
+  }
+
+  /** 받았는지(카카오 도착)는 묻지 않는다 — 건마다 NHN 을 부르면 화면 한 장이 외부 호출 수백 번이 된다 */
+  async lookupMembershipNotices(dto: LookupMembershipNoticesDto): Promise<MembershipNoticeStatus[]> {
+    const refs = [
+      ...(dto.attempts ?? []).map((a) => ({
+        ref: `attempt:${a.invoiceId}:${a.attemptNo}`,
+        key: billingFailedNoticeKey(a.invoiceId, a.attemptNo),
+      })),
+      ...(dto.terminations ?? []).map((t) => ({
+        ref: `terminated:${t.contractId}`,
+        key: terminatedNoticeKey(t.contractId),
+      })),
+    ];
+    const rows = await this.repository.findAutoSendsByKeys([...new Set(refs.map((r) => r.key))]);
+    const byKey = new Map(rows.map((row) => [row.idempotencyKey, toAutoSendItem(row)]));
+    return refs.map(({ ref, key }) => {
+      const item = byKey.get(key);
+      return {
+        ref,
+        found: !!item,
+        notificationId: item?.notificationId ?? null,
+        status: item?.status ?? null,
+        sentAt: item?.sentAt ?? null,
+        scheduledFor: item?.scheduledFor ?? null,
+        error: item?.error ?? null,
+      };
+    });
   }
 
   async result(notificationId: string): Promise<AlimtalkAutoSendResult> {

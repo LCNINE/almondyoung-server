@@ -673,6 +673,11 @@ const allMenus: MainMenu[] = [
             path: '/membership/recurring-billing',
           },
           {
+            id: 'collections',
+            title: '출금 실패·미납 현황',
+            path: '/membership/collections',
+          },
+          {
             id: 'payment-history',
             title: '결제 내역 조회',
             path: '/membership/billing-history',

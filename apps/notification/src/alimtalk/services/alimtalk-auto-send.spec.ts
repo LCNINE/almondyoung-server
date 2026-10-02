@@ -105,3 +105,40 @@ describe('자동 발송 결과 조회', () => {
     await expect(reader(undefined).reader.result('nx')).rejects.toThrow('자동 발송 알림톡을 찾을 수 없습니다');
   });
 });
+
+describe('멤버십 요금 안내 발송 여부 일괄 조회', () => {
+  it('인보이스·회차와 계약 id 로 컨슈머와 같은 키를 만들어 찾고, 못 찾은 건은 found=false 로 돌려준다', async () => {
+    const repository = {
+      findAutoSendsByKeys: jest.fn().mockResolvedValue([
+        { ...row(), idempotencyKey: 'membership:billing-failed:inv-1:1' },
+        {
+          ...row({ notificationId: 'n2', status: 'FAILED', sentAt: null }),
+          idempotencyKey: 'membership:terminated-notice:c-1',
+        },
+      ]),
+    };
+    const client = { listMessageResults: jest.fn() };
+    const reader = new AlimtalkAutoSendReader(repository as never, client as never);
+
+    const result = await reader.lookupMembershipNotices({
+      attempts: [
+        { invoiceId: 'inv-1', attemptNo: 1 },
+        { invoiceId: 'inv-1', attemptNo: 2 },
+      ],
+      terminations: [{ contractId: 'c-1' }],
+    });
+
+    expect(repository.findAutoSendsByKeys).toHaveBeenCalledWith([
+      'membership:billing-failed:inv-1:1',
+      'membership:billing-failed:inv-1:2',
+      'membership:terminated-notice:c-1',
+    ]);
+    expect(result.map((r) => [r.ref, r.found, r.status])).toEqual([
+      ['attempt:inv-1:1', true, 'SENT'],
+      ['attempt:inv-1:2', false, null],
+      ['terminated:c-1', true, 'FAILED'],
+    ]);
+    // 카카오 도착 여부는 묻지 않는다 — 화면 한 장이 외부 호출 수백 번이 되지 않게
+    expect(client.listMessageResults).not.toHaveBeenCalled();
+  });
+});

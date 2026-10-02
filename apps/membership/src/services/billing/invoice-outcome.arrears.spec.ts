@@ -96,6 +96,10 @@ function makeHandler(opts: {
 const COVERING = { startsAt: '2026-07-07', endsAt: '2026-08-07' };
 const BILLED = { amount: 4990, currency: 'KRW', periodStart: '2026-07-07', periodEnd: '2026-08-07' };
 
+// addEvent(tx, contractId, eventType, metadata, causedBy, userId) — 미수를 안 적은 이유는 어느 갈래든 남아야 한다.
+const skippedReasonOf = (addEvent: jest.Mock): unknown =>
+  addEvent.mock.calls.find((c) => c[2] === 'ARREARS_SKIPPED')?.[3]?.reason;
+
 describe('인보이스 터미널 실패 → 미수 원장', () => {
   it('UNCOLLECTIBLE: 인보이스 금액 그대로 적는다', async () => {
     const { handler, arrearsManager } = makeHandler({ heldEntitlement: COVERING });
@@ -161,15 +165,19 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
   });
 
   it('자격을 한 번도 안 받았으면 미수를 안 적는다 — 공짜로 쓴 것이 없다', async () => {
-    const { handler, arrearsManager } = makeHandler({ heldEntitlement: null });
+    const { handler, arrearsManager, contractEventManager } = makeHandler({ heldEntitlement: null });
     await handler.handleUncollectible('c1', 'inv-1', 'Q301', BILLED);
     expect(arrearsManager.record).not.toHaveBeenCalled();
+    expect(skippedReasonOf(contractEventManager.addEvent)).toBe('NO_ENTITLEMENT');
   });
 
   it('자격이 청구 주기를 못 덮으면 미수를 안 적는다 — 선적용이 걸린 적 없는 주기다', async () => {
-    const { handler, arrearsManager } = makeHandler({ heldEntitlement: { startsAt: '2026-06-07', endsAt: '2026-07-07' } });
+    const { handler, arrearsManager, contractEventManager } = makeHandler({
+      heldEntitlement: { startsAt: '2026-06-07', endsAt: '2026-07-07' },
+    });
     await handler.handleUncollectible('c1', 'inv-1', 'Q301', BILLED);
     expect(arrearsManager.record).not.toHaveBeenCalled();
+    expect(skippedReasonOf(contractEventManager.addEvent)).toBe('PERIOD_NOT_COVERED');
   });
 
   it('인보이스 행 없이 거절되면 플랜가로 유도하고 그 사실을 남긴다', async () => {
@@ -189,9 +197,10 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
   });
 
   it('금액을 끝내 못 정하면 미수를 안 적는다 — 0원 빚을 만들지 않는다', async () => {
-    const { handler, arrearsManager } = makeHandler({ heldEntitlement: COVERING, plan: null });
+    const { handler, arrearsManager, contractEventManager } = makeHandler({ heldEntitlement: COVERING, plan: null });
     await handler.handleMandateRejected('c1', null, 'BILLING_METHOD_NOT_ACTIVE');
     expect(arrearsManager.record).not.toHaveBeenCalled();
+    expect(skippedReasonOf(contractEventManager.addEvent)).toBe('AMOUNT_UNKNOWN');
   });
 
   it('원장에 새로 적혔을 때만 감사 이벤트를 남긴다', async () => {
@@ -258,8 +267,8 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
     await handler.handleUncollectible('c1', 'inv-1', 'Q301', BILLED);
 
     expect(arrearsManager.record).not.toHaveBeenCalled();
-    expect(
-      contractEventManager.addEvent.mock.calls.find((c) => c[2] === 'ARREARS_SKIPPED')?.[3]?.reason,
-    ).toBe('TERMS_NOT_IN_FORCE');
+    expect(contractEventManager.addEvent.mock.calls.find((c) => c[2] === 'ARREARS_SKIPPED')?.[3]?.reason).toBe(
+      'TERMS_NOT_IN_FORCE',
+    );
   });
 });

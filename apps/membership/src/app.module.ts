@@ -38,6 +38,7 @@ import { SubscriptionManager } from './services/subscription/subscription.manage
 import { EntitlementReader } from './services/entitlement/entitlement.reader';
 import { AdminMembersReader } from './services/admin/admin-members.reader';
 import { AdminMemberInsightsReader } from './services/admin/admin-member-insights.reader';
+import { AdminBillingRecoveryReader } from './services/admin/admin-billing-recovery.reader';
 import { EntitlementManager } from './services/entitlement/entitlement.manager';
 import { PauseReader } from './services/pause/pause.reader';
 import { PauseManager } from './services/pause/pause.manager';
@@ -192,6 +193,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     EntitlementManager,
     AdminMembersReader,
     AdminMemberInsightsReader,
+    AdminBillingRecoveryReader,
     ContractEventManager,
     SubscriptionContractReader,
     SubscriptionCreator,

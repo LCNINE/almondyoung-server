@@ -40,7 +40,8 @@ export class TermsRulesReader {
     return !!agreed;
   }
 
-  private existingMembersEffectiveAt(): Date | null {
+  /** 기존 회원에게 미납 조항이 적용되기 시작한 시각 — 관리자 현황이 «정책 시행 전/후»를 가르는 경계이기도 하다 */
+  existingMembersEffectiveAt(): Date | null {
     const raw = this.configService.get<string>('MEMBERSHIP_TERMS_EXISTING_MEMBERS_EFFECTIVE_AT');
     if (!raw) return null;
     const at = new Date(raw);

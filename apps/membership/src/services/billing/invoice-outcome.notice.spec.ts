@@ -99,7 +99,8 @@ function makeHandler(opts: {
   );
   const eventTypes = () => contractEventManager.addEvent.mock.calls.map((c) => c[2]);
   const skipped = () => contractEventManager.addEvent.mock.calls.find((c) => c[2] === 'BILLING_NOTICE_SKIPPED')?.[3];
-  return { handler, publisher, tx, eventTypes, skipped };
+  const failedEvent = () => contractEventManager.addEvent.mock.calls.find((c) => c[2] === 'BILLING_FAILED')?.[3];
+  return { handler, publisher, tx, eventTypes, skipped, failedEvent };
 }
 
 const ATTEMPT = {
@@ -133,6 +134,16 @@ describe('출금 실패 알림', () => {
     });
     expect(key).toBe('membership:billing-failed:pi-1');
     expect(eventTypes()).toEqual(expect.arrayContaining(['BILLING_FAILED', 'BILLING_NOTICE_QUEUED']));
+  });
+
+  it('실패 기록에 다음 출금 시각을 남긴다 — 관리자 화면이 «다음 시도»를 추정하지 않게', async () => {
+    const { handler, failedEvent } = makeHandler({});
+    await failAttempt(handler);
+    expect(failedEvent()).toMatchObject({
+      invoiceId: 'inv-1',
+      attemptNo: 1,
+      nextAttemptAt: '2026-09-03T00:00:00.000Z',
+    });
   });
 
   it('같은 실패가 다시 오면(마커 충돌) 싣지 않는다', async () => {

@@ -13,6 +13,7 @@ import { BenefitReader } from '../benefit/benefit.reader';
 import { TermsRulesReader } from '../terms/terms-rules.reader';
 import { isWithdrawalEligible } from '../subscription/refund-policy.service';
 import { ArrearsOutcome, BillingNoticeManager } from './billing-notice.manager';
+import type { MembershipArrearsSkippedReason } from '@packages/event-contracts/streams/membership.stream';
 
 /** 인보이스가 실어 보낸 청구 정보. mandate.rejected 는 인보이스 행 없이 올 수 있어 전부 선택이다. */
 export interface BilledPeriod {
@@ -250,7 +251,7 @@ export class InvoiceOutcomeHandler {
         tx,
         contractId,
         'BILLING_FAILED',
-        { invoiceId, attemptNo: attemptCount, errorCode },
+        { invoiceId, attemptNo: attemptCount, errorCode, ...(notice && { nextAttemptAt: notice.nextAttemptAt }) },
         'SYSTEM',
         contract.userId,
       );
@@ -509,7 +510,7 @@ export class InvoiceOutcomeHandler {
    * 자격이 그 주기를 덮지 못했으면(선적용이 걸린 적 없음) 공짜로 쓴 것이 없으므로 적지 않는다.
    *
    * 미납 요금은 기존 회원에게 불리한 새 약관 조항이라, 그 약관이 적용되는 계약에만 적는다(`TermsRulesReader`).
-   * 적지 않은 이유는 계약 이벤트(`ARREARS_SKIPPED`)로 남긴다 — 로그만 남기면 관리자가 「왜 외상이 없지」를 못 본다.
+   * 적지 않은 이유는 어느 갈래든 계약 이벤트(`ARREARS_SKIPPED`)로 남긴다 — 로그만 남기면 관리자가 「왜 외상이 없지」를 못 본다.
    */
   private async recordArrearsForTermination(
     tx: DrizzleTransaction,
@@ -519,7 +520,7 @@ export class InvoiceOutcomeHandler {
     heldEntitlement: { startsAt: string; endsAt: string } | null,
   ): Promise<ArrearsOutcome> {
     if (!heldEntitlement) {
-      this.logger.log(`[arrears] 자격 없이 종결 — 미수 없음 (contractId=${contractId})`);
+      await this.skipArrears(tx, contractId, userId, arrears, 'NO_ENTITLEMENT');
       return { skippedReason: 'NO_ENTITLEMENT' };
     }
 
@@ -528,8 +529,9 @@ export class InvoiceOutcomeHandler {
     // 있었다는 사실만으로 판정한다 — 그 자격은 이 계약이 만든 것이다.
     if (periodEnd && heldEntitlement.endsAt < periodEnd) {
       this.logger.log(
-        `[arrears] 자격이 청구 주기를 덮지 않음 — 미수 없음 (contractId=${contractId}, endsAt=${heldEntitlement.endsAt}, periodEnd=${periodEnd})`,
+        `[arrears] 자격이 청구 주기를 덮지 않음 (contractId=${contractId}, endsAt=${heldEntitlement.endsAt}, periodEnd=${periodEnd})`,
       );
+      await this.skipArrears(tx, contractId, userId, arrears, 'PERIOD_NOT_COVERED');
       return { skippedReason: 'PERIOD_NOT_COVERED' };
     }
 
@@ -561,6 +563,7 @@ export class InvoiceOutcomeHandler {
         .limit(1);
       if (!row || row.price <= 0) {
         this.logger.warn(`[arrears] 금액을 정할 수 없어 미수를 적지 않는다 (contractId=${contractId})`);
+        await this.skipArrears(tx, contractId, userId, arrears, 'AMOUNT_UNKNOWN');
         return { skippedReason: 'AMOUNT_UNKNOWN' };
       }
       amount = row.price;
@@ -599,7 +602,7 @@ export class InvoiceOutcomeHandler {
     contractId: string,
     userId: string,
     arrears: ArrearsContext,
-    reason: 'TERMS_NOT_IN_FORCE' | 'WITHDRAWAL_ELIGIBLE',
+    reason: MembershipArrearsSkippedReason,
   ): Promise<void> {
     this.logger.log(`[arrears] 미수 적지 않음 — ${reason} (contractId=${contractId})`);
     await this.contractEventManager.addEvent(

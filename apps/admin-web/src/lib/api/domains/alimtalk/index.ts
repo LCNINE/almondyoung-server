@@ -86,6 +86,23 @@ export interface AlimtalkAutoSendResult {
   detail: string | null;
 }
 
+/** 멤버십 요금 안내 한 건의 발송 기록(우리 쪽 접수 상태). 카카오 도착 여부는 getAutoSendResult 로 따로 묻는다 */
+export interface MembershipNoticeStatus {
+  /** 'attempt:<invoiceId>:<회차>' | 'terminated:<contractId>' */
+  ref: string;
+  found: boolean;
+  notificationId: string | null;
+  status: string | null;
+  sentAt: string | null;
+  scheduledFor: string | null;
+  error: string | null;
+}
+
+export interface MembershipNoticeLookup {
+  attempts: Array<{ invoiceId: string; attemptNo: number }>;
+  terminations: Array<{ contractId: string }>;
+}
+
 export type AlimtalkMemberAudience = 'NONE' | 'ALL' | 'MEMBERSHIP' | 'ARREARS';
 
 export type AlimtalkVariableBinding =
@@ -259,6 +276,16 @@ export const alimtalkApi = {
       {
         params: before ? { before } : {},
       }
+    );
+    return response.data;
+  },
+
+  lookupMembershipNotices: async (
+    refs: MembershipNoticeLookup
+  ): Promise<MembershipNoticeStatus[]> => {
+    const response = await client.post<MembershipNoticeStatus[]>(
+      `${BASE}/auto-sends/membership-notices/lookup`,
+      refs
     );
     return response.data;
   },

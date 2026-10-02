@@ -60,6 +60,14 @@ import { SubscriptionService } from '../services/subscription.service';
 import { ArrearsManager } from '../services/arrears/arrears.manager';
 import { ArrearsReader } from '../services/arrears/arrears.reader';
 import { MEMBER_AXES, MemberAxis } from '../services/admin/admin-member-insights.reader';
+import { kstMonthOf } from '../services/admin/admin-billing-recovery.reader';
+
+/** 'YYYY-MM' 에서 n 달 전 */
+function monthsBefore(month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 - n, 1));
+  return d.toISOString().slice(0, 7);
+}
 /**
  * 관리자 운영 컨트롤러
  *
@@ -960,6 +968,30 @@ export class AdminOperationsController {
     } catch (error) {
       this.handleError(error, '다음 청구 예정');
     }
+  }
+
+  /**
+   * 출금 실패·미납 처리 현황. month(한국 시간 'YYYY-MM')에 시작된 건의 흐름 + 지금 상태(보드·경보) + 최근 12주 추이.
+   * 최근 24개월까지만 고를 수 있다 — 화면이 조회 범위를 무한히 넓히지 못하게.
+   */
+  @Get('billing-recovery')
+  @ApiOperation({ summary: '출금 실패·미납 처리 현황' })
+  @UseGuards(JwtAuthGuard)
+  async getBillingRecovery(@Query('month') month?: string) {
+    const current = kstMonthOf(new Date());
+    const picked = month ?? current;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(picked) || picked > current || picked < monthsBefore(current, 23)) {
+      throw new BadRequestException('month 는 최근 24개월 안의 YYYY-MM 이어야 합니다.');
+    }
+    return { success: true, data: await this.adminOperationsService.getBillingRecovery(picked) };
+  }
+
+  /** 한 회원의 출금 실패·미납 건 전부 — 현황 화면에서 카드를 눌렀을 때 */
+  @Get('billing-recovery/users/:userId')
+  @ApiOperation({ summary: '회원 한 명의 출금 실패·미납 이야기' })
+  @UseGuards(JwtAuthGuard)
+  async getBillingRecoveryJourney(@Param('userId') userId: string) {
+    return { success: true, data: await this.adminOperationsService.getBillingRecoveryJourney(userId) };
   }
 
   /**

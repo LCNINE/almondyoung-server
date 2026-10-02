@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { AlimtalkAutoSendItem, AlimtalkAutoSendReader, AlimtalkAutoSendResult } from './alimtalk-auto-send.reader';
+import { LookupMembershipNoticesDto } from '../dto';
+import {
+  AlimtalkAutoSendItem,
+  AlimtalkAutoSendReader,
+  AlimtalkAutoSendResult,
+  MembershipNoticeStatus,
+} from './alimtalk-auto-send.reader';
 
 @Injectable()
 export class AlimtalkAutoSendsService {
@@ -11,5 +17,9 @@ export class AlimtalkAutoSendsService {
 
   result(notificationId: string): Promise<AlimtalkAutoSendResult> {
     return this.reader.result(notificationId);
+  }
+
+  lookupMembershipNotices(dto: LookupMembershipNoticesDto): Promise<MembershipNoticeStatus[]> {
+    return this.reader.lookupMembershipNotices(dto);
   }
 }
