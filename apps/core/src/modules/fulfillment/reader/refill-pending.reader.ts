@@ -139,10 +139,12 @@ export class RefillPendingReader {
           ),
         );
 
+      // 오퍼레이션 완료 순(`boxes` 삽입 순)을 지킨다 — inArray 결과 순서에 기대면 폴링마다 목록이 섞일 수 있다.
+      const workItemById = new Map(workItems.map((workItem) => [workItem.id, workItem]));
       const result: RefillPendingBox[] = [];
-      for (const workItem of workItems) {
-        const box = boxes.get(workItem.id);
-        if (!box) continue;
+      for (const box of boxes.values()) {
+        const workItem = workItemById.get(box.workItemId);
+        if (!workItem) continue;
         const [session] = await trx
           .select({ id: wmsTables.batchInventorySessions.id })
           .from(wmsTables.batchInventorySessions)
@@ -211,7 +213,8 @@ export class RefillPendingReader {
       );
     const heldByKey = new Map<string, number>();
     for (const row of held) {
-      if (row.shipmentLineId && row.sourceLocationId) heldByKey.set(key(row.shipmentLineId, row.sourceLocationId), Number(row.qty));
+      if (row.shipmentLineId && row.sourceLocationId)
+        heldByKey.set(key(row.shipmentLineId, row.sourceLocationId), Number(row.qty));
     }
     const remaining = new Map<string, number>();
     for (const row of allocations) {

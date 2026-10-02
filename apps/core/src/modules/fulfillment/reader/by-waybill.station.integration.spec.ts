@@ -1,9 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentWaybillReader } from './shipment-waybill.reader';
 import { inRollbackTx, makeDb, seedPickableShipment } from '../services/__support__';
 import { startedShortPickBox } from '../services/__support__/short-pick-fixtures';
-import { ambientDbService } from '../services/__support__/simple-outbound-wiring';
+import { ambientDbService, startBatchFor } from '../services/__support__/simple-outbound-wiring';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -24,13 +25,18 @@ describeIfDb('송장 스캔 — 스테이션 필드 (스펙 A5)', () => {
       const { box, sessionId } = await startedShortPickBox(tx, 0);
       const [before] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
       const snapshot =
-        typeof before.recipientSnapshot === 'object' && before.recipientSnapshot !== null ? before.recipientSnapshot : {};
+        typeof before.recipientSnapshot === 'object' && before.recipientSnapshot !== null
+          ? before.recipientSnapshot
+          : {};
       await tx
         .update(wmsTables.shipments)
         .set({ recipientSnapshot: { ...snapshot, deliveryNote: '문 앞' } })
         .where(eq(wmsTables.shipments.id, box.shipmentId));
       const [location] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, box.locationId));
-      const [line] = await tx.select().from(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
       const [workItem] = await tx
         .select()
         .from(wmsTables.outboundBatchWorkItems)
@@ -57,6 +63,41 @@ describeIfDb('송장 스캔 — 스테이션 필드 (스펙 A5)', () => {
         sessionVersion: session.version,
         manifestVersion: shipment.manifestVersion,
       });
+    });
+  });
+
+  it('줄별 배정은 DB 콜레이션이 아니라 코드 포인트 순(인쇄된 송장 순서)으로 나온다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const box = await seedPickableShipment(tx, 3);
+      // en_US 콜레이션은 '-' 를 무시해 'ZB-10-…' < 'ZB-1-1-…' 로 센다. 코드 포인트 순('-' < '0')은 반대다.
+      const suffix = randomUUID();
+      await tx
+        .update(wmsTables.locations)
+        .set({ code: `ZB-10-${suffix}` })
+        .where(eq(wmsTables.locations.id, box.locationId));
+      await tx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 2 })
+        .where(and(eq(wmsTables.stockLedgers.skuId, box.skuId), eq(wmsTables.stockLedgers.locationId, box.locationId)));
+      const [front] = await tx
+        .insert(wmsTables.locations)
+        .values({ warehouseId: box.warehouseId, code: `ZB-1-1-${suffix}`, locationType: 'zone' })
+        .returning();
+      await tx.insert(wmsTables.stockLedgers).values({
+        skuId: box.skuId,
+        warehouseId: box.warehouseId,
+        locationId: front.id,
+        stockState: 'ON_HAND',
+        qty: 1,
+      });
+      await startBatchFor(tx, box);
+
+      const found = await readerFor(tx).byTrackingNo(box.trackingNo);
+
+      expect(found.lines[0].allocations.map((allocation) => allocation.locationCode)).toEqual([
+        `ZB-1-1-${suffix}`,
+        `ZB-10-${suffix}`,
+      ]);
     });
   });
 

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import {
   ReportShipmentShortPickDto,
   ShipmentShortPickActor,
@@ -28,7 +28,7 @@ export class ShipmentShortPickController {
 
   @Post(':shipmentId/short-picks')
   @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN, FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK)
+  @RequireScopes(...SHORT_PICK_REPORT_SCOPES)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({
     summary: 'Report a V2 short pick — refill from other locations, or withdraw the box to Draft',

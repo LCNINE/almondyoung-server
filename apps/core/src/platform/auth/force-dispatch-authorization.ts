@@ -3,7 +3,7 @@ import {
   isScopeAuthorizationDecision,
   ScopeAuthorizationDecision,
 } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from './fulfillment-scopes';
+import { SIMPLE_OUTBOUND_FORCE_SCOPES } from './fulfillment-scopes';
 
 /**
  * 강제출고를 허락하는 판정 — 관리자(`dispatch.force`) 또는 스테이션 작업자(`dispatch.station_force`, 스펙 U15).
@@ -11,16 +11,14 @@ import { FULFILLMENT_SCOPE } from './fulfillment-scopes';
  * 라우트(단순출고 강제완료)로 들어온 요청에만 존재하고, 관리자 전용 강제 발송 라우트로는 만들어지지 않는다.
  */
 export function isForceDispatchDecision(value: unknown): value is ScopeAuthorizationDecision {
-  return (
-    isScopeAuthorizationDecision(value, FULFILLMENT_SCOPE.DISPATCH_FORCE) ||
-    isScopeAuthorizationDecision(value, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE)
-  );
+  return SIMPLE_OUTBOUND_FORCE_SCOPES.some((scope) => isScopeAuthorizationDecision(value, scope));
 }
 
 /** 요청에 기록된 강제출고 판정. 관리자 판정을 우선한다(둘 다 있으면 감사 로그에 관리자로 남는다). */
 export function forceDispatchDecisionFrom(request: unknown): ScopeAuthorizationDecision | undefined {
-  return (
-    getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE) ??
-    getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE)
-  );
+  for (const scope of SIMPLE_OUTBOUND_FORCE_SCOPES) {
+    const decision = getScopeAuthorizationDecision(request, scope);
+    if (decision) return decision;
+  }
+  return undefined;
 }

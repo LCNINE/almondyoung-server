@@ -1,6 +1,10 @@
 import { Controller, Get, HttpCode, UseGuards } from '@nestjs/common';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../../platform/auth/fulfillment-scopes';
+import {
+  FULFILLMENT_SCOPE,
+  SHORT_PICK_REPORT_SCOPES,
+  SIMPLE_OUTBOUND_FORCE_SCOPES,
+} from '../../../../platform/auth/fulfillment-scopes';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { authenticatedWarehouseActor, WarehouseActor } from '../services/warehouse-operation-contract';
 
@@ -14,12 +18,7 @@ export class WarehouseWorkContextController {
   async workContext(@User() user: WarehouseActor & { roles?: string[] }) {
     const actorId = authenticatedWarehouseActor(user);
     const granted = new Set(
-      await this.scopes.getGrantedScopes(user, [
-        FULFILLMENT_SCOPE.DISPATCH_FORCE,
-        FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
-        FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-        FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
-      ]),
+      await this.scopes.getGrantedScopes(user, [...SIMPLE_OUTBOUND_FORCE_SCOPES, ...SHORT_PICK_REPORT_SCOPES]),
     );
     return {
       actorId,
@@ -29,10 +28,9 @@ export class WarehouseWorkContextController {
         // 위치 확인 출고 강제(location-outbound-forces)·관리자 강제 발송 — dispatch.force 전용. 뜻을 바꾸지 않는다(배포된 앱이 쓴다)
         forceDispatch: granted.has(FULFILLMENT_SCOPE.DISPATCH_FORCE),
         // 단순출고 강제완료(simple-outbound-forces) — 스테이션 F10
-        stationForceDispatch:
-          granted.has(FULFILLMENT_SCOPE.DISPATCH_FORCE) || granted.has(FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE),
+        stationForceDispatch: SIMPLE_OUTBOUND_FORCE_SCOPES.some((scope) => granted.has(scope)),
         // 결품 보고(short-picks) — 스테이션 F9
-        shortPick: granted.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN) || granted.has(FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK),
+        shortPick: SHORT_PICK_REPORT_SCOPES.some((scope) => granted.has(scope)),
       },
       capabilities: {
         stocktakingAddCountItem: true as const,

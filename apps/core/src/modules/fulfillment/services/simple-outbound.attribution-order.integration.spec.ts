@@ -9,18 +9,21 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 /** 줄 3개를 L1(SIMPLE-ZONE-…, 재고 2) 과 앞 코드 위치(AAA-…, 재고 1)로 나눈다. 앞 위치의 UUID 는 뒤로 심는다. */
-async function splitLineBox(tx: DbTx) {
+async function splitLineBox(tx: DbTx, codes?: { box: string; front: string }) {
   const box = await seedPickableShipment(tx, 3);
   await tx
     .update(wmsTables.stockLedgers)
     .set({ qty: 2 })
     .where(and(eq(wmsTables.stockLedgers.skuId, box.skuId), eq(wmsTables.stockLedgers.locationId, box.locationId)));
+  if (codes) {
+    await tx.update(wmsTables.locations).set({ code: codes.box }).where(eq(wmsTables.locations.id, box.locationId));
+  }
   const [front] = await tx
     .insert(wmsTables.locations)
     .values({
       id: `ffffffff-ffff-4fff-8fff-${randomUUID().slice(-12)}`,
       warehouseId: box.warehouseId,
-      code: `AAA-${randomUUID()}`,
+      code: codes?.front ?? `AAA-${randomUUID()}`,
       locationType: 'zone',
     })
     .returning();
@@ -78,6 +81,26 @@ describeIfDb('위치 없는 스캔의 귀속 순서 (스펙 A1)', () => {
   it('첫 스캔은 송장에 먼저 찍힌(코드 순 첫) 위치에 귀속한다 — UUID 순이 아니다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { box, frontId, sessionId } = await splitLineBox(tx);
+      const actor = { id: box.actorId, roles: ['logistics_worker'] };
+      const state = await assembleSimpleOutbound(tx).scan(
+        box.shipmentId,
+        { barcode: box.barcode, quantity: 1, actor, idempotencyKey: `scan-${randomUUID()}` },
+        tx,
+      );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
+      expect(await attributed(tx, sessionId, box.shipmentLineId, frontId)).toBe(1);
+      expect(await attributed(tx, sessionId, box.shipmentLineId, box.locationId)).toBe(0);
+    });
+  });
+
+  it('위치 코드 순서는 DB 콜레이션이 아니라 코드 포인트 순이다 — 인쇄된 송장 순서와 같다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // en_US 콜레이션은 '-' 를 무시해 'ZB-10-…' < 'ZB-1-1-…' 로 센다. 코드 포인트 순('-' < '0')은 반대다.
+      const suffix = randomUUID();
+      const { box, frontId, sessionId } = await splitLineBox(tx, {
+        box: `ZB-10-${suffix}`,
+        front: `ZB-1-1-${suffix}`,
+      });
       const actor = { id: box.actorId, roles: ['logistics_worker'] };
       const state = await assembleSimpleOutbound(tx).scan(
         box.shipmentId,

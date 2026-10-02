@@ -54,4 +54,10 @@ describe('ShipmentShortPickService', () => {
     await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
     expect(commands.execute).toHaveBeenCalledTimes(1);
   });
+
+  it("'master' 스코프를 가졌으면 ScopeGuard 처럼 통과한다", async () => {
+    const { service, commands } = makeService(new Set(['master']));
+    await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
+  });
 });

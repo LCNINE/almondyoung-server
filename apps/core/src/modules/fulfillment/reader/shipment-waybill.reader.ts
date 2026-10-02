@@ -259,7 +259,10 @@ export class ShipmentWaybillReader {
       .from(wmsTables.pickingSourceAllocations)
       .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
       .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
-      .orderBy(asc(wmsTables.locations.code), asc(wmsTables.pickingSourceAllocations.sourceLocationId));
+      .orderBy(
+        asc(sql`${wmsTables.locations.code} collate "C"`),
+        asc(wmsTables.pickingSourceAllocations.sourceLocationId),
+      );
     const byLine = new Map<string, ShipmentByWaybillAllocation[]>();
     for (const row of rows) {
       if (row.qty <= 0) continue;

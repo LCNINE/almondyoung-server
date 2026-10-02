@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { and, asc, eq, ne } from 'drizzle-orm';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { describeStartBlockers } from '../picking/allocation/allocation.locks';
@@ -449,10 +449,9 @@ export class ShipmentShortPickService {
   private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
     if (actor.roles.includes('master')) return;
     const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(FULFILLMENT_SCOPE.SHIPMENT_REOPEN) && !scopes.has(FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK)) {
-      throw new ForbiddenException(
-        `Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_REOPEN} or ${FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK}`,
-      );
+    if (scopes.has('master')) return;
+    if (!SHORT_PICK_REPORT_SCOPES.some((scope) => scopes.has(scope))) {
+      throw new ForbiddenException(`Missing required scope: ${SHORT_PICK_REPORT_SCOPES.join(' or ')}`);
     }
   }
 

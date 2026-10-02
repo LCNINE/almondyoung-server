@@ -13,6 +13,18 @@ export const FULFILLMENT_SCOPE = {
   DISPATCH_STATION_FORCE: 'fulfillment.dispatch.station_force',
 } as const;
 
+/** 결품 보고 라우트·서비스·작업 권한 미리보기가 공유하는 «하나라도» 집합. */
+export const SHORT_PICK_REPORT_SCOPES = [
+  FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
+  FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+] as const;
+
+/** 단순출고 강제완료 라우트·판정 헬퍼·작업 권한 미리보기가 공유하는 «하나라도» 집합. */
+export const SIMPLE_OUTBOUND_FORCE_SCOPES = [
+  FULFILLMENT_SCOPE.DISPATCH_FORCE,
+  FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+] as const;
+
 export type FulfillmentScope = (typeof FULFILLMENT_SCOPE)[keyof typeof FULFILLMENT_SCOPE];
 
 export const FULFILLMENT_SCOPES: ScopeDefinition[] = [
