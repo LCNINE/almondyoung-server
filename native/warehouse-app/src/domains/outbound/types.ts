@@ -21,6 +21,8 @@ export interface ShipmentLineAllocation {
   sourceLocationId: string;
   locationCode: string;
   qty: number;
+  /** 이 위치에 귀속된 집은 수량(서버 귀속 그대로). 옛 core 에는 없다 */
+  pickedQty?: number;
 }
 
 export interface ShipmentByWaybillLine {

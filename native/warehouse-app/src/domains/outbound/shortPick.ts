@@ -41,8 +41,14 @@ export function shortPickSources(
   pickedQty: number,
   shortQty: number
 ): Array<{ sourceLocationId: string; shortQty: number }> | null {
+  // 서버가 위치별 귀속(pickedQty)을 주면 그대로 쓴다 — 핸드헬드의 위치 지정 스캔·보충 배정은 코드 순 채우기와 어긋난다.
+  // 없으면(옛 core) 줄 합계를 배정 순서대로 채워 재구성한다.
+  const serverAttributed = allocations.every((allocation) => allocation.pickedQty !== undefined);
   let picked = pickedQty;
   const unpicked = allocations.map((allocation) => {
+    if (serverAttributed) {
+      return { sourceLocationId: allocation.sourceLocationId, unpicked: allocation.qty - (allocation.pickedQty ?? 0) };
+    }
     const attributed = Math.min(allocation.qty, Math.max(0, picked));
     picked -= attributed;
     return { sourceLocationId: allocation.sourceLocationId, unpicked: allocation.qty - attributed };
@@ -164,6 +170,7 @@ const STALE_CODES: ReadonlySet<string> = new Set([
 const SHORT_PICK_MESSAGES: Record<string, string> = {
   SHORT_PICK_WORK_ITEM_STATE: SHORT_PICK_UNAVAILABLE_MESSAGE,
   SHORT_PICK_WORK_ITEM_WAITING: SHORT_PICK_UNAVAILABLE_MESSAGE,
+  PICKING_SESSION_NOT_ACTIVE: SHORT_PICK_UNAVAILABLE_MESSAGE,
   SHORT_PICK_DISPATCH_EXISTS: '이미 출고된 박스예요.',
   SHORT_PICK_SHIPMENT_NOT_PLANNED: '출고 계획이 바뀐 박스예요. 관리자에게 문의해 주세요.',
   SHORT_PICK_INVOICE_NOT_VOIDABLE: '송장을 지금 처리할 수 없어 결품을 보고하지 못했어요. 관리자에게 문의해 주세요.',

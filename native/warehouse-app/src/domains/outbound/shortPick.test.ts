@@ -24,6 +24,20 @@ describe('shortPickSources — 송장 순서 귀속을 재구성해 마지막 �
     expect(shortPickSources(allocations, picked, short)).toEqual(expected);
   });
 
+  it('서버 귀속(pickedQty)이 있으면 코드 순 채우기 대신 그대로 쓴다', () => {
+    // 줄 합계 2 — 코드 순 재구성이면 A 가 찬 것으로 보지만 서버는 B 에 귀속했다
+    const attributed = [{ ...A, pickedQty: 0 }, { ...B, pickedQty: 2 }];
+    expect(shortPickSources(attributed, 2, 2)).toEqual([{ sourceLocationId: 'la', shortQty: 1 }, { sourceLocationId: 'lb', shortQty: 1 }]);
+    expect(shortPickSources(attributed, 2, 3)).toEqual([{ sourceLocationId: 'la', shortQty: 2 }, { sourceLocationId: 'lb', shortQty: 1 }]);
+    expect(shortPickSources(attributed, 2, 4)).toBeNull();
+    // 필드가 없으면 옛 방식: A 가 찬 것으로 보고 B 에서만 3
+    expect(shortPickSources([A, B], 2, 3)).toEqual([{ sourceLocationId: 'lb', shortQty: 3 }]);
+  });
+
+  it('pickedQty 가 일부 배정에만 있으면 옛 core 로 보고 코드 순 채우기', () => {
+    expect(shortPickSources([{ ...A, pickedQty: 0 }, B], 3, 2)).toEqual([{ sourceLocationId: 'lb', shortQty: 2 }]);
+  });
+
   it('안 집은 몫보다 많거나, 0 이거나, 배정이 없으면 null', () => {
     expect(shortPickSources([A, B], 1, 5)).toBeNull();
     expect(shortPickSources([A], 0, 0)).toBeNull();
@@ -143,6 +157,7 @@ describe('shortPickErrorMessage', () => {
     [new ConflictError('x', 'SHORT_PICK_EXCEEDS_UNPICKED'), SHORT_PICK_STALE_MESSAGE],
     [new ConflictError('x', 'SHORT_PICK_LINE_STALE'), SHORT_PICK_STALE_MESSAGE],
     [new ConflictError('x', 'SHORT_PICK_WORK_ITEM_WAITING'), SHORT_PICK_UNAVAILABLE_MESSAGE],
+    [new ConflictError('x', 'PICKING_SESSION_NOT_ACTIVE'), SHORT_PICK_UNAVAILABLE_MESSAGE],
     [new ConflictError('x', 'SHORT_PICK_DISPATCH_EXISTS'), '이미 출고된 박스예요.'],
     [new ApiError('POST /shipments/s/short-picks → 403', 403, 'FORBIDDEN'), '결품 보고 권한이 없어요. 관리자에게 요청해 주세요.'],
   ])('%s', (error, message) => {
