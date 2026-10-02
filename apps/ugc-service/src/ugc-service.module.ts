@@ -13,6 +13,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
 import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { LogoContestModule } from './logo-contest/logo-contest.module';
+import { AlmondTemplateModule } from './almond-template/almond-template.module';
 import { ugcServiceSchema } from './db/schema';
 import { UGC_ROLE_MAPPINGS, UGC_SCOPES } from './shared/auth/ugc-scopes';
 
@@ -42,6 +43,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     QnaModule,
     ShopListingsModule,
     LogoContestModule,
+    AlmondTemplateModule,
   ],
   controllers: [UgcServiceController],
   providers: [

@@ -4,11 +4,13 @@ import type { RoleScopeMappingDefinition, ScopeDefinition } from '@app/authoriza
 export const UGC_SCOPE = {
   READ: 'admin:ugc:read',
   MODIFY: 'admin:ugc:modify',
+  TEMPLATE_WRITE: 'admin:template:write',
 } as const;
 
 export const UGC_SCOPES: ScopeDefinition[] = [
   { key: UGC_SCOPE.READ, category: 'admin', description: '관리자 - UGC 조회 (리뷰, Q&A, 샵 매매 목록 조회)' },
   { key: UGC_SCOPE.MODIFY, category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변, 샵 매매 작성·검토)' },
+  { key: UGC_SCOPE.TEMPLATE_WRITE, category: 'admin', description: '관리자 - 아몬드템플릿 시안 조회·저장·게시·삭제' },
 ];
 
 /**
@@ -21,5 +23,5 @@ export const UGC_SCOPES: ScopeDefinition[] = [
  * 여기 없는 역할은 스코프를 전혀 얻지 못한다(AuthorizationService 가 미등록 역할을 거른다).
  */
 export const UGC_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
-  { roleName: 'admin', scopeKeys: [UGC_SCOPE.READ, UGC_SCOPE.MODIFY] },
+  { roleName: 'admin', scopeKeys: [UGC_SCOPE.READ, UGC_SCOPE.MODIFY, UGC_SCOPE.TEMPLATE_WRITE] },
 ];

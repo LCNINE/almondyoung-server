@@ -7,6 +7,7 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { HomeQuickLinks } from "@/domains/home/components/quick-links"
 import { listRootCategoriesCached } from "@/lib/data/category"
 import { getTranslations } from "next-intl/server"
+import Image from "next/image"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 import { MobileAuthLinks, UserInfo } from "./user-info"
@@ -81,7 +82,23 @@ export async function MainHeader() {
                 </div>
               </div>
 
-              <HomeQuickLinks variant="desktopHeader" />
+              <div className="flex items-center gap-5">
+                <div className="min-w-0 flex-1">
+                  <HomeQuickLinks variant="desktopHeader" />
+                </div>
+                <LocalizedClientLink
+                  href="/almond-template/landing"
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-white pr-4 pl-3 text-[13px] font-medium text-gray-900 shadow-sm transition-opacity hover:opacity-90"
+                >
+                  <Image
+                    src="/images/almond-template-palette.png"
+                    alt=""
+                    width={22}
+                    height={22}
+                  />
+                  {t("almondTemplate")}
+                </LocalizedClientLink>
+              </div>
             </div>
           </div>
         </div>
@@ -91,3 +108,4 @@ export async function MainHeader() {
     </AutoHideHeader>
   )
 }
+

@@ -10,6 +10,8 @@ import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import ProtectedRoute from "@components/protected-route"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
+import { ComingSoonPopup } from "@/domains/home/components/coming-soon-popup"
+import { Suspense } from "react"
 
 export async function generateMetadata({
   params,
@@ -59,6 +61,10 @@ export default async function Home({
       )}
 
       <HomeLogoutTemplate countryCode={countryCode} />
+
+      <Suspense fallback={null}>
+        <ComingSoonPopup />
+      </Suspense>
 
       {/* 설문 유도 배너 */}
       {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}

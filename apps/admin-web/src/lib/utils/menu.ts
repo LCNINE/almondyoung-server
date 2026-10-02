@@ -583,6 +583,7 @@ const allMenus: MainMenu[] = [
           },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'shop-listings', title: '샵매매', path: '/mall/shop-listings' },
+          { id: 'almond-templates', title: '아몬드템플릿', path: '/mall/almond-templates' },
           { id: 'deposit', title: '예치금' },
         ],
       },

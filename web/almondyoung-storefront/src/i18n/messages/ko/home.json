@@ -80,5 +80,9 @@
     "dayUnit": "일",
     "untilEnd": "종료까지",
     "endingSoon": "마감 임박"
+  },
+  "comingSoon": {
+    "title": "아몬드템플릿은 준비 중이에요",
+    "description": "조금만 기다려 주세요"
   }
 }

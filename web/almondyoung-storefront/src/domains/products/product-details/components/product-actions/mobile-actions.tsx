@@ -32,6 +32,8 @@ type MobileActionsProps = {
   handleBuyNow: () => void
   isPending: boolean
   show: boolean
+  templateHref?: string
+  designAttached?: boolean
 }
 
 const MobileActions: React.FC<MobileActionsProps> = ({
@@ -52,6 +54,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   handleBuyNow,
   isPending,
   show,
+  templateHref,
+  designAttached,
 }) => {
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
@@ -75,10 +79,23 @@ const MobileActions: React.FC<MobileActionsProps> = ({
         )}
       >
         <div
-          className="flex w-full gap-x-3 border-t border-gray-200 bg-white p-4"
+          className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white p-4"
           data-testid="mobile-actions"
         >
-          {/* TODO: 재입고 알림 기능 추가 후 활성화
+          {templateHref && (
+            <LocalizedClientLink href={templateHref} className="w-full">
+              <Button variant="outline" className="h-12 w-full">
+                아몬드템플릿으로 디자인
+              </Button>
+            </LocalizedClientLink>
+          )}
+          {designAttached && (
+            <p className="text-muted-foreground text-center text-xs">
+              {t("almondDesignAttached")}
+            </p>
+          )}
+          <div className="flex w-full gap-x-3">
+            {/* TODO: 재입고 알림 기능 추가 후 활성화
           {isSimple && !inStock ? (
             <Button
               variant="default"
@@ -90,62 +107,65 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             </Button>
           ) : ( ... )} */}
 
-          {membersOnlyPurchase ? (
-            <LocalizedClientLink href="/mypage/membership" className="w-full">
-              <Button
-                className="h-12 w-full cursor-pointer text-base font-medium"
-                data-testid="members-only-cta"
-              >
-                {t("membersOnlyCta")}
-              </Button>
-            </LocalizedClientLink>
-          ) : isSimple && !inStock ? (
-            <div className="w-full">
-              {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
-                <RestockNotice variants={selectedItems.map((i) => i.variant)} />
-              ) : (
+            {membersOnlyPurchase ? (
+              <LocalizedClientLink href="/mypage/membership" className="w-full">
                 <Button
-                  variant="default"
-                  disabled
                   className="h-12 w-full cursor-pointer text-base font-medium"
-                  data-testid="sold-out-button"
+                  data-testid="members-only-cta"
                 >
-                  {t("soldOut")}
+                  {t("membersOnlyCta")}
                 </Button>
-              )}
-            </div>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (isSimple && selectedItems.length > 0) {
-                    handleAddToCart()
-                  } else {
-                    setOpen(true)
-                  }
-                }}
-                className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
-                data-testid="mobile-cart-button"
-              >
-                {t("addToCart")}
-              </Button>
-              <Button
-                onClick={() => {
-                  if (isSimple && selectedItems.length > 0) {
-                    handleBuyNow()
-                  } else {
-                    setOpen(true)
-                  }
-                }}
-                disabled={isPending}
-                className="h-12 flex-1 cursor-pointer text-base"
-                data-testid="mobile-buy-button"
-              >
-                {t("buyNow")}
-              </Button>
-            </>
-          )}
+              </LocalizedClientLink>
+            ) : isSimple && !inStock ? (
+              <div className="w-full">
+                {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
+                  <RestockNotice
+                    variants={selectedItems.map((i) => i.variant)}
+                  />
+                ) : (
+                  <Button
+                    variant="default"
+                    disabled
+                    className="h-12 w-full cursor-pointer text-base font-medium"
+                    data-testid="sold-out-button"
+                  >
+                    {t("soldOut")}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (isSimple && selectedItems.length > 0) {
+                      handleAddToCart()
+                    } else {
+                      setOpen(true)
+                    }
+                  }}
+                  className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                  data-testid="mobile-cart-button"
+                >
+                  {t("addToCart")}
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (isSimple && selectedItems.length > 0) {
+                      handleBuyNow()
+                    } else {
+                      setOpen(true)
+                    }
+                  }}
+                  disabled={isPending}
+                  className="h-12 flex-1 cursor-pointer text-base"
+                  data-testid="mobile-buy-button"
+                >
+                  {t("buyNow")}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -212,6 +232,21 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 {t("totalPrice", { amount: totalPrice.toLocaleString() })}
               </span>
             </div>
+            {templateHref && (
+              <LocalizedClientLink
+                href={templateHref}
+                className="mb-2 block w-full"
+              >
+                <Button variant="outline" className="h-12 w-full">
+                  아몬드템플릿으로 디자인
+                </Button>
+              </LocalizedClientLink>
+            )}
+            {designAttached && (
+              <p className="text-muted-foreground mb-2 text-center text-xs">
+                {t("almondDesignAttached")}
+              </p>
+            )}
             <div className="flex gap-x-3">
               {/* TODO: 재입고 알림 기능 추가 후 활성화
               {!inStock && selectedItems.length > 0 ? (

@@ -16,6 +16,7 @@ const DISABLED_PREFIXES = [
   '/mall/digital-assets',
   '/mall/ownerships',
   '/mall/shop-listings',
+  '/mall/almond-templates',
   '/api/ai',
   '/api/proxy/medusa',
   '/api/proxy/wallet',
