@@ -29,6 +29,7 @@ import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
+import { CommandSheetScreen } from '../station/CommandSheetScreen';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
 export interface RouterContext {
@@ -206,6 +207,12 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsRoute,
 });
+// 스테이션 명령 바코드 시트(설정에서 연다). 어느 탭에도 속하지 않는다.
+const commandSheetRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/station/command-sheet',
+  component: CommandSheetScreen,
+});
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -233,5 +240,6 @@ export const routeTree = rootRoute.addChildren([
     outboundSimpleRoute,
     outboundWithdrawRoute,
     settingsRoute,
+    commandSheetRoute,
   ]),
 ]);

@@ -154,3 +154,12 @@ it('예전 스테이션 홈 타일의 작업에 탭·하위 탭으로 모두 닿
   fireEvent.click(screen.getByRole('link', { name: '창고 미설정' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
 });
+
+it('스테이션 설정에서 명령 바코드 시트를 연다', async () => {
+  const { session, setAuthed } = makeStub();
+  setAuthed(true);
+  const router = renderAppRouter(['/settings'], session);
+  fireEvent.click(await screen.findByRole('link', { name: '명령 바코드 시트' }));
+  await waitFor(() => expect(router.state.location.pathname).toBe('/station/command-sheet'));
+  expect(await screen.findByRole('button', { name: '인쇄' })).toBeInTheDocument();
+});

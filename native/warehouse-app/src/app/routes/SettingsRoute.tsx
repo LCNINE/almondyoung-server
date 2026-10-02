@@ -28,6 +28,9 @@ export function SettingsRoute() {
         <>
           <LabelPrinterSettings />
           <SoundSettings />
+          <Link to="/station/command-sheet" className="text-sm font-medium text-blue-700 underline">
+            명령 바코드 시트
+          </Link>
         </>
       )}
 
