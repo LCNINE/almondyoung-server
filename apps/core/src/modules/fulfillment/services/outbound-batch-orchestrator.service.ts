@@ -415,14 +415,20 @@ export class OutboundBatchOrchestrator {
     return response;
   }
 
+  /**
+   * `putDownOwnOtherBox` — 같은 작업자가 이미 다른 박스의 피커 점유를 갖고 있으면 거절하는 대신 그 박스의 리스를
+   * 지금 끝낸다(15분이 지난 것과 같은 상태 — 상태·작업자·찍은 수량은 그대로). 단순출고가 쓴다: 스테이션은 박스를
+   * «내려놓고» 다른 송장을 찍는다(스테이션 UI 스펙 U13). 일반 v2 점유·관리자 인계는 지금처럼 거절한다.
+   */
   claimPicker(
     workItemId: string,
     dto: ClaimBatchWorkItemDto,
     idempotencyKey: string,
     actor: OutboundBatchActor,
     tx?: DbTx,
+    options: { putDownOwnOtherBox?: boolean } = {},
   ): Promise<OutboundBatchCommandResponseDto> {
-    return this.claim('picker', workItemId, dto, idempotencyKey, actor, tx);
+    return this.claim('picker', workItemId, dto, idempotencyKey, actor, tx, options.putDownOwnOtherBox === true);
   }
 
   claimPacker(
@@ -943,21 +949,31 @@ export class OutboundBatchOrchestrator {
     idempotencyKey: string,
     actor: OutboundBatchActor,
     tx?: DbTx,
+    putDownOwnOtherBox = false,
   ): Promise<OutboundBatchCommandResponseDto> {
     this.workflowGate.assertV2MutationAllowed(`outbound_batch.work_item.${claimType}.claim`);
     return this.commands.execute(
       {
         commandType: `outbound_batch.work_item.${claimType}.claim`,
         idempotencyKey,
-        canonicalRequest: { actorId: actor.id, workItemId, expectedLeaseVersion: dto.expectedLeaseVersion },
+        canonicalRequest: {
+          actorId: actor.id,
+          workItemId,
+          expectedLeaseVersion: dto.expectedLeaseVersion,
+          // 켠 경우에만 싣는다 — 기존 요청의 정규형(멱등 비교)을 바꾸지 않는다.
+          ...(putDownOwnOtherBox ? { putDownOwnOtherBox } : {}),
+        },
       },
       async (trx, commandRequestId) => {
         // Prevent one actor from racing claims on separate work items in separate transactions.
         await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${claimType}:${actor.id}`}, 0))`);
         const item = await this.loadWorkItem(workItemId, trx);
         this.assertLeaseVersion(item, dto.expectedLeaseVersion);
-        await this.assertActorHasNoOtherActiveClaim(claimType, actor.id, workItemId, trx);
         const now = await this.databaseNow(trx);
+        if (putDownOwnOtherBox && claimType === 'picker') {
+          await this.expireOwnOtherPickerLeases(actor.id, workItemId, now, trx);
+        }
+        await this.assertActorHasNoOtherActiveClaim(claimType, actor.id, workItemId, trx);
         this.assertClaimable(claimType, item, actor.id, now);
 
         const leaseExpiresAt = new Date(now.getTime() + LEASE_MS);
@@ -1519,6 +1535,31 @@ export class OutboundBatchOrchestrator {
       );
     }
     throw this.conflict('WORK_ITEM_NOT_CLAIMABLE', `Work item ${item.id} is ${item.status}`);
+  }
+
+  /**
+   * 이 작업자의 다른 살아 있는 피커 리스를 지금 끝낸다. 리스 버전을 올려 옛 리스로 들고 있던 요청은 CAS 에서 막히고,
+   * 그 박스로 돌아오면 `ensurePickerClaim` 이 만료된 자기 점유를 다시 잡는다.
+   */
+  private async expireOwnOtherPickerLeases(actorId: string, workItemId: string, now: Date, tx: DbTx): Promise<void> {
+    await tx
+      .update(wmsTables.outboundBatchWorkItems)
+      .set({
+        leaseExpiresAt: now,
+        leaseVersion: sql`${wmsTables.outboundBatchWorkItems.leaseVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          ne(wmsTables.outboundBatchWorkItems.id, workItemId),
+          eq(wmsTables.outboundBatchWorkItems.status, 'picking'),
+          eq(wmsTables.outboundBatchWorkItems.pickerId, actorId),
+          or(
+            isNull(wmsTables.outboundBatchWorkItems.leaseExpiresAt),
+            sql`${wmsTables.outboundBatchWorkItems.leaseExpiresAt} > CURRENT_TIMESTAMP`,
+          ),
+        ),
+      );
   }
 
   private async assertActorHasNoOtherActiveClaim(
