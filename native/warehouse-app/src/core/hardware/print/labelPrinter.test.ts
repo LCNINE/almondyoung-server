@@ -8,6 +8,7 @@ import {
   readLabelPrinter,
   writeLabelPrinter,
 } from './labelPrinter';
+import { lastPrintFailed } from './printerStatus';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
@@ -65,5 +66,25 @@ describe('printRaw', () => {
     const error = await printRaw('spooler://XP', '^XA').catch((e) => e);
     expect(error).toBeInstanceOf(PrinterError);
     expect((error as PrinterError).detail).toBe('OpenPrinterW failed: 1801');
+  });
+});
+
+describe('출력 결과 기록(상태바 «프린터»)', () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  it('보내지 못하면 실패로, 보내면 성공으로 남는다', async () => {
+    invokeMock.mockRejectedValueOnce('spooler offline');
+    await expect(printRaw('spooler://P', '^XA^XZ')).rejects.toBeInstanceOf(PrinterError);
+    expect(lastPrintFailed()).toBe(true);
+    invokeMock.mockResolvedValueOnce(undefined);
+    await printRaw('spooler://P', '^XA^XZ');
+    expect(lastPrintFailed()).toBe(false);
+  });
+
+  it('프린터 설정을 바꾸면 옛 프린터의 실패는 지운다', async () => {
+    invokeMock.mockRejectedValueOnce('spooler offline');
+    await expect(printRaw('spooler://P', '^XA^XZ')).rejects.toBeInstanceOf(PrinterError);
+    writeLabelPrinter(createMemoryPrefs(), 'XP-DT108B');
+    expect(lastPrintFailed()).toBe(false);
   });
 });

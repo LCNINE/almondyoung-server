@@ -3,6 +3,8 @@ import { Outlet, useNavigate, Link } from '@tanstack/react-router';
 import { Warehouse as WarehouseIcon } from 'lucide-react';
 import { useIsAuthenticated } from '../session-context';
 import { useWarehouse } from '../warehouse-context';
+import { isStationDevice } from '../station';
+import { StationShell } from '../../station/StationShell';
 
 export function AuthedLayout() {
   const authed = useIsAuthenticated();
@@ -13,6 +15,8 @@ export function AuthedLayout() {
   useEffect(() => {
     if (!authed) navigate({ to: '/login' });
   }, [authed, navigate]);
+  // 셸 선택은 여기 한 곳(스펙 §4). 스테이션은 탭 셸 안에 화면을 그리고, 핸드헬드는 지금 그대로다.
+  if (isStationDevice()) return <StationShell />;
   return (
     <div className="space-y-3">
       <div className="flex justify-end">

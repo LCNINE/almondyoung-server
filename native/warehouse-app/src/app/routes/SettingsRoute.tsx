@@ -8,6 +8,7 @@ import { resolveProfile } from '../profile';
 import { LabelPrinterSettings } from '../../core/hardware/print/LabelPrinterSettings';
 import { isStationDevice } from '../station';
 import { ReturnBinSettings } from '../../domains/returns/ReturnBinSettings';
+import { SoundSettings } from '../../station/feedback/SoundSettings';
 
 export function SettingsRoute() {
   const developer = useDeveloperMode();
@@ -23,7 +24,15 @@ export function SettingsRoute() {
         <WarehousePicker />
       </section>
 
-      {isStationDevice() && <LabelPrinterSettings />}
+      {isStationDevice() && (
+        <>
+          <LabelPrinterSettings />
+          <SoundSettings />
+          <Link to="/station/command-sheet" className="text-sm font-medium text-blue-700 underline">
+            명령 바코드 시트
+          </Link>
+        </>
+      )}
 
       <ReturnBinSettings />
 

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { DevicePrefs } from '../../data/devicePrefs';
+import { reportPrintOutcome, resetPrintOutcome } from './printerStatus';
 
 /**
  * 이 PC 의 라벨 프린터 설정과 원시 인쇄(#913). 창고 XP-DT108B 는 USB 로 PC 에 물려 있어
@@ -24,6 +25,7 @@ export function writeLabelPrinter(prefs: DevicePrefs, name: string): void {
   const bare = printerNameOf(name.trim()).trim();
   if (!bare) prefs.remove(LABEL_PRINTER_KEY);
   else prefs.set(LABEL_PRINTER_KEY, `${SPOOLER}${bare}`);
+  resetPrintOutcome();
 }
 
 export function printerNameOf(target: string): string {
@@ -49,6 +51,8 @@ export const printRaw: PrintRaw = async (target, text) => {
       data: Array.from(new TextEncoder().encode(text)),
     });
   } catch (error) {
+    reportPrintOutcome(false);
     throw new PrinterError(String(error));
   }
+  reportPrintOutcome(true);
 };

@@ -1,5 +1,6 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { authHeader } from './authHeader';
+import { reportServerReach } from './serverStatus';
 
 // Keep aligned with outbound-preparation-result.ts and the HTTP exception filter.
 const preparationReasons = [
@@ -177,7 +178,7 @@ export function createApiClient(deps: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      return await doFetch(`${deps.baseUrl}${opts.path}`, {
+      const res = await doFetch(`${deps.baseUrl}${opts.path}`, {
         method: opts.method,
         signal: controller.signal,
         headers,
@@ -185,6 +186,11 @@ export function createApiClient(deps: {
           opts.bodyJson ??
           (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
       });
+      reportServerReach('up');
+      return res;
+    } catch (error) {
+      reportServerReach('down');
+      throw error;
     } finally {
       clearTimeout(timeout);
     }

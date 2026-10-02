@@ -29,6 +29,7 @@ import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
+import { CommandSheetScreen } from '../station/CommandSheetScreen';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
 export interface RouterContext {
@@ -183,6 +184,12 @@ const outboundRoute = createRoute({
   path: '/outbound',
   component: OutboundRoute,
 });
+// 스테이션 F2 배치 현황 — PR C 가 배치 현황 화면으로 바꾸기 전까지 출고 화면(배치 카드 포함)을 그대로 그린다(스펙 §4).
+const outboundBatchesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/outbound/batches',
+  component: OutboundRoute,
+});
 const outboundSimpleRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/outbound/simple/$shipmentId',
@@ -199,6 +206,12 @@ const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/settings',
   component: SettingsRoute,
+});
+// 스테이션 명령 바코드 시트(설정에서 연다). 어느 탭에도 속하지 않는다.
+const commandSheetRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/station/command-sheet',
+  component: CommandSheetScreen,
 });
 
 export const routeTree = rootRoute.addChildren([
@@ -223,8 +236,10 @@ export const routeTree = rootRoute.addChildren([
     returnPutawayRoute,
     packingRoute,
     outboundRoute,
+    outboundBatchesRoute,
     outboundSimpleRoute,
     outboundWithdrawRoute,
     settingsRoute,
+    commandSheetRoute,
   ]),
 ]);
