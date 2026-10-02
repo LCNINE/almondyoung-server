@@ -10,6 +10,7 @@ import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batch
 import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
 import { clearLastBox, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
 import { fetchShipmentByWaybill, useOutboundBatches } from '../../domains/outbound/queries';
+import type { ShortPickResult } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
@@ -303,6 +304,44 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       signal('success');
     });
 
+  /** 결품 결과(스펙 §7.2) — 채움이면 새 송장 자동 출력 + 송장 대기(박스는 보충 대기), 아니면 다시 조회해 뺄 상품·빠진 박스로 */
+  const onShortPicked = (box: ShipmentByWaybill, result: ShortPickResult) =>
+    run(async () => {
+      void queryClient.invalidateQueries({ queryKey: ['outbound-refills'] });
+      void queryClient.invalidateQueries({ queryKey: ['batch-work-items'] });
+      if (result.outcome !== 'refilled') {
+        await show(await lookup(box.trackingNo));
+        return;
+      }
+      clearLastBox(prefs);
+      const nameOf = (skuId: string) => box.lines.find((line) => line.skuId === skuId)?.skuName ?? skuId;
+      const items = result.refills.map((refill) => ({ locationCode: refill.locationCode, name: nameOf(refill.skuId), qty: refill.qty }));
+      setAlert(null);
+      go({ kind: 'waiting' });
+      setLast({ kind: 'refilled', trackingNo: box.trackingNo, shipmentId: box.shipmentId, items, print: { kind: 'printing' } });
+      signal('success');
+      const status = await printFor(box.shipmentId);
+      setLast((current) =>
+        current?.kind === 'refilled' && current.shipmentId === box.shipmentId ? { ...current, print: status } : current
+      );
+      if (status.kind === 'printed') note({ kind: 'printed', text: box.trackingNo });
+      else signal('error');
+    });
+
+  /** 송장 대기의 F12 — 방금 채운 박스의 송장을 다시 뽑는다(자동 출력이 실패했을 때, 목업 ①) */
+  const reprintLast = () =>
+    run(async () => {
+      if (last?.kind !== 'refilled') return;
+      const target = last;
+      setLast({ ...target, print: { kind: 'printing' } });
+      const status = await printFor(target.shipmentId);
+      setLast((current) =>
+        current?.kind === 'refilled' && current.shipmentId === target.shipmentId ? { ...current, print: status } : current
+      );
+      if (status.kind === 'printed') note({ kind: 'printed', text: target.trackingNo });
+      else signal('error');
+    });
+
   const reprintView = () =>
     run(async () => {
       const current = viewRef.current;
@@ -328,7 +367,15 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         ]
       : view.kind === 'withdraw' || view.kind === 'withdrawn'
         ? [putDownAction]
-        : [];
+        : view.kind === 'waiting' && last?.kind === 'refilled'
+          ? [
+              {
+                ...INSPECTION_ACTIONS.reprint,
+                enabled: canPrint && last.print.kind !== 'printing',
+                run: () => void reprintLast(),
+              },
+            ]
+          : [];
   useStationActions(actions);
 
   switch (view.kind) {
@@ -352,6 +399,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           canPrint={canPrint}
           onReopen={(box) => void reopen(box)}
           onReprint={(box) => void reprintBox(box)}
+          warehouseId={warehouseId}
+          onShortPicked={(box, result) => void onShortPicked(box, result)}
         />
       );
     case 'reprint':

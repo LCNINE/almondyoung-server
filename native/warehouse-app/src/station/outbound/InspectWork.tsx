@@ -5,6 +5,15 @@ import { useHumanKeys } from '../../core/hardware/scan/useScanner';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { excludeFromBatch } from '../../domains/outbound/batchRemove';
 import { inspectionRows, inspectionTotals, remainingOf } from '../../domains/outbound/inspection';
+import { fetchShipmentByWaybill } from '../../domains/outbound/queries';
+import {
+  buildShortPickRequest,
+  reportShortPick,
+  shortPickDraft,
+  shortPickErrorMessage,
+  type ShortPickReason,
+  type ShortPickResult,
+} from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { useDigitCommands, useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
@@ -12,6 +21,7 @@ import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert } from './model';
 import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
+import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
 
 /** 부모(출고 검수 화면)가 송장인지 상품인지 가른 뒤 상품을 넘기는 곳. 내려놓기·전환 전에 앞 스캔을 다 보낸다 */
@@ -42,6 +52,8 @@ export function InspectWork({
   onPutDown,
   onReopen,
   onReprint,
+  warehouseId,
+  onShortPicked,
 }: {
   box: ShipmentByWaybill;
   handleRef: RefObject<BoxWorkHandle | null>;
@@ -56,6 +68,9 @@ export function InspectWork({
   /** 박스 빼기 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스) */
   onReopen(box: ShipmentByWaybill): void;
   onReprint(box: ShipmentByWaybill): void;
+  warehouseId: string;
+  /** 결품 결과 — 부모가 채움이면 자동 출력·송장 대기, 아니면 다시 조회한다(§7.2) */
+  onShortPicked(box: ShipmentByWaybill, result: ShortPickResult): void;
 }) {
   const api = useApiClient();
   const permissions = useWorkPermissions();
@@ -72,6 +87,8 @@ export function InspectWork({
   quantityRef.current = quantity;
   const [armed, setArmed] = useState<Armed>(null);
   const [withdrawing, setWithdrawing] = useState(false);
+  const [shortOpen, setShortOpen] = useState(false);
+  const [shortBusy, setShortBusy] = useState(false);
 
   // 손잡이는 마지막 렌더의 큐를 부른다 — 화면이 «받음» 으로 그려진 뒤 이 커밋의 effect 가 돌기 전에 온 스캔이
   // 앞 렌더(아직 막힘)의 판정으로 거절되지 않게
@@ -118,6 +135,35 @@ export function InspectWork({
 
   const remaining = work.lastScan ? remainingOf(work.progress, work.lastScan.shipmentLineId) : 0;
   const canForce = permissions.data?.stationForceDispatch === true;
+  // F9 — 권한 미리보기의 shortPick(PR A 계약 메모), 옛 core 가 아님(버전 필드), 대기·피킹 중일 때만(빼는 중·다른 오퍼레이션 대기면 서버가 409)
+  const draft = shortPickDraft(box.lines, work.progress);
+  const canShortPick =
+    permissions.data?.shortPick === true &&
+    box.shortPickContext !== undefined &&
+    (work.workItemStatus === 'queued' || work.workItemStatus === 'picking');
+
+  const confirmShortPick = async (lines: ReadonlyArray<{ shipmentLineId: string; qty: number }>, reason: ShortPickReason) => {
+    setShortBusy(true);
+    try {
+      // 버전은 스캔마다 낡는다 — 보내기 직전에 다시 조회한 값으로 보낸다(PR A 계약 메모). 남은 수량이 창의 수량보다
+      // 줄었으면(다른 스테이션이 더 찍음) 보내지 않고 «다시 F9» 를 안내한다
+      const fresh = await fetchShipmentByWaybill(api, box.trackingNo, warehouseId);
+      const built = buildShortPickRequest(fresh, lines, reason);
+      if (!built.ok) {
+        setShortOpen(false);
+        onAlert(built.message);
+        return;
+      }
+      const result = await reportShortPick(api, box.shipmentId, built.request, crypto.randomUUID());
+      setShortOpen(false);
+      onShortPicked(box, result);
+    } catch (error) {
+      setShortOpen(false);
+      onAlert(shortPickErrorMessage(error));
+    } finally {
+      setShortBusy(false);
+    }
+  };
 
   /** 첫 누름은 무장, 같은 키를 한 번 더 누르면 실행(§6.3 F10·F11, §7.4) */
   const arm = (kind: 'force' | 'withdraw', act: () => void) => {
@@ -164,6 +210,19 @@ export function InspectWork({
         if (work.lastScan && !work.accept(work.lastScan.barcode, remaining)) onAlert(INTAKE_BLOCKED_MESSAGE);
       },
     },
+    ...(canShortPick
+      ? [
+          {
+            ...INSPECTION_ACTIONS.shortPick,
+            enabled: work.idle && draft.length > 0 && !shortBusy,
+            run: () => {
+              setArmed(null);
+              setQuantity(null);
+              setShortOpen(true);
+            },
+          },
+        ]
+      : []),
     ...(canForce
       ? [
           {
@@ -211,23 +270,33 @@ export function InspectWork({
         ? { kind: 'alert', ...alert }
         : { kind: 'progress', ...totals };
   return (
-    <WorkGrid
-      intake={work.intakeBlocked ? 'blocked' : 'open'}
-      left={
-        <>
-          <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
-          <BigPanel content={big} />
-          {work.queueError ? (
-            <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
-          ) : null}
-        </>
-      }
-      right={
-        <>
-          <LineTable rows={rows} currentLineId={work.lastScan?.shipmentLineId ?? null} />
-          <RecentList entries={recent} />
-        </>
-      }
-    />
+    <>
+      <WorkGrid
+        intake={work.intakeBlocked ? 'blocked' : 'open'}
+        left={
+          <>
+            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
+            <BigPanel content={big} />
+            {work.queueError ? (
+              <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
+            ) : null}
+          </>
+        }
+        right={
+          <>
+            <LineTable rows={rows} currentLineId={work.lastScan?.shipmentLineId ?? null} />
+            <RecentList entries={recent} />
+          </>
+        }
+      />
+      {shortOpen ? (
+        <ShortPickDialog
+          lines={draft}
+          busy={shortBusy}
+          onCancel={() => setShortOpen(false)}
+          onConfirm={(lines, reason) => void confirmShortPick(lines, reason)}
+        />
+      ) : null}
+    </>
   );
 }
