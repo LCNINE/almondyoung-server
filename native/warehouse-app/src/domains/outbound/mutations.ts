@@ -26,6 +26,9 @@ export function useSimpleOutboundScan() {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['outbound-batches'] });
       void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
+      // 스테이션 상태바의 배치 진행과 보충 대기도 출고로 바뀐다
+      void qc.invalidateQueries({ queryKey: ['batch-work-items'] });
+      void qc.invalidateQueries({ queryKey: ['outbound-refills'] });
     },
   });
 }
@@ -46,6 +49,9 @@ export function useForceSimpleOutbound() {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['outbound-batches'] });
       void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
+      // 스테이션 상태바의 배치 진행과 보충 대기도 출고로 바뀐다
+      void qc.invalidateQueries({ queryKey: ['batch-work-items'] });
+      void qc.invalidateQueries({ queryKey: ['outbound-refills'] });
     },
   });
 }

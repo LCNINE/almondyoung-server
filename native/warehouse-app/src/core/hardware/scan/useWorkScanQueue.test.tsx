@@ -175,3 +175,48 @@ it('keeps restored inputs in recovery until replay and reconciliation finish', a
   await waitFor(() => expect(result.current.ready).toBe(true));
   expect(await store.draft('worker:scan:outbound:s1')).toEqual([]);
 });
+
+it('settle 은 저장·처리가 다 끝난 뒤 풀리고, 머리가 실패하면 그 오류로 거절한다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const getScope = async () => 'local-test-worker';
+  const runtime = { store, getScope, runner: createOperationRunner({ store, getScope, api: { request: vi.fn() } }) };
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = false;
+  const consumed: string[] = [];
+  const { result } = renderHook(
+    () =>
+      useWorkScanQueue<string>(async (code) => {
+        await gate;
+        if (fail) throw new Error('lost');
+        consumed.push(code);
+      }, 'settle:s1'),
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <OperationContext.Provider value={runtime}>{children}</OperationContext.Provider>
+      ),
+    }
+  );
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  act(() => {
+    result.current.enqueue('A');
+    result.current.enqueue('B');
+  });
+  let settled = false;
+  const done = result.current.settle().then(() => {
+    settled = true;
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(settled).toBe(false);
+  release();
+  await act(async () => done);
+  expect(consumed).toEqual(['A', 'B']);
+
+  fail = true;
+  act(() => result.current.enqueue('C'));
+  await expect(result.current.settle()).rejects.toThrow('lost');
+});
