@@ -20,7 +20,7 @@ import { useFeedback } from '../feedback/FeedbackProvider';
 import { useBatchProgress } from '../status/batchProgress';
 import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
-import { InspectWork, type BoxWorkHandle } from './InspectWork';
+import { InspectWork, type BoxWorkHandle, type PendingShortPick } from './InspectWork';
 import type { Alert, LastBox, PrintStatus } from './model';
 import {
   BigPanel,
@@ -49,6 +49,8 @@ class Refusal extends Error {}
 
 const LOOKING_UP_MESSAGE = '송장을 확인하고 있어요. 다시 찍어 주세요.';
 const EXCESS_MESSAGE = '출고가 끝난 박스에 찍은 상품은 반영되지 않았어요. 상품을 확인해 주세요.';
+const SHORT_PICKED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영됐어요. 그 송장을 다시 찍어 주세요.';
+const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장을 출력했어요. 보충 대기예요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
 export function InspectionScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
@@ -71,7 +73,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const [manual, setManual] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(() => readLastBox(prefs)?.batchId ?? null);
   const work = useRef<BoxWorkHandle | null>(null);
-  const busy = useRef(false);
+  // 진행 중인 작업 수 — 결품 결과는 거절하지 않고 겹쳐 들어온다(run 의 force)
+  const busy = useRef(0);
+  // 같은 값을 그리기용으로 — 박스 화면이 조회·전환·출력 중에 F9 를 끈다
+  const [running, setRunning] = useState(false);
+  // 결과를 모르는 결품, 박스별 — 박스가 다시 마운트돼도 같은 키로 다시 보내게
+  const shortPickRetries = useRef(new Map<string, PendingShortPick>()).current;
   const seq = useRef(0);
   const canPrint = readLabelPrinter(prefs) !== null;
 
@@ -116,19 +123,24 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     if (current.kind === 'reprint' && current.box.shipmentId === shipmentId) go({ ...current, print: status });
   };
 
-  /** 한 번에 하나 — 조회·전환·내려놓기가 겹치면 뒤의 것을 거절한다 */
-  const run = async (task: () => Promise<void>) => {
-    if (busy.current) {
+  /**
+   * 한 번에 하나 — 조회·전환·내려놓기가 겹치면 뒤의 것을 거절한다. force 는 이미 서버에 반영된 결과(결품)를 받는 쪽이다 —
+   * 거절하면 반영된 일이 화면에서 사라지므로 겹쳐도 돈다
+   */
+  const run = async (task: () => Promise<void>, force = false) => {
+    if (busy.current > 0 && !force) {
       reject(LOOKING_UP_MESSAGE);
       return;
     }
-    busy.current = true;
+    busy.current += 1;
+    setRunning(true);
     try {
       await task();
     } catch (error) {
       reject(error instanceof Refusal ? error.message : errorMessage(error, 'outbound'));
     } finally {
-      busy.current = false;
+      busy.current -= 1;
+      setRunning(busy.current > 0);
     }
   };
 
@@ -142,7 +154,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   };
 
   /** 조회 결과로 화면을 정한다(스펙 §6.2). quiet 는 하던 박스 복구 — 거절이면 조용히 대기로 */
-  const show = async (found: ShipmentByWaybill, quiet = false) => {
+  const show = async (found: ShipmentByWaybill, quiet = false, announce = true) => {
     const gate = inspectionGateOf(found, { warehouseId, canPrint });
     if (gate.kind === 'reject') {
       if (quiet) clearLastBox(prefs);
@@ -152,8 +164,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     setAlert(null);
     setLast(null);
     if (found.batchId) setBatchId(found.batchId);
-    note({ kind: 'waybill', text: found.trackingNo });
-    signal('success');
+    if (announce) {
+      note({ kind: 'waybill', text: found.trackingNo });
+      signal('success');
+    }
     if (gate.kind === 'withdrawn') {
       clearLastBox(prefs);
       go({ kind: 'withdrawn', box: found });
@@ -304,11 +318,30 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       signal('success');
     });
 
-  /** 결품 결과(스펙 §7.2) — 채움이면 새 송장 자동 출력 + 송장 대기(박스는 보충 대기), 아니면 다시 조회해 뺄 상품·빠진 박스로 */
+  /** 지금 이 박스를 검수 중인가 — 결품 결과가 늦게 와도 다른 박스의 화면을 뺏지 않게 */
+  const inspecting = (shipmentId: string) => {
+    const current = viewRef.current;
+    return current.kind === 'inspect' && current.box.shipmentId === shipmentId;
+  };
+
+  /**
+   * 결품 결과(스펙 §7.2) — 채움이면 새 송장 자동 출력 + 송장 대기(박스는 보충 대기), 아니면 다시 조회해 뺄 상품·빠진 박스로.
+   * 이미 반영된 결과라 겹쳐도 받는다(force). 그 사이 다른 박스가 열렸으면 화면은 두고 알린다 — 채움이면 새 송장은 뽑는다
+   */
   const onShortPicked = (box: ShipmentByWaybill, result: ShortPickResult) =>
     run(async () => {
       void queryClient.invalidateQueries({ queryKey: ['outbound-refills'] });
       void queryClient.invalidateQueries({ queryKey: ['batch-work-items'] });
+      if (!inspecting(box.shipmentId)) {
+        if (result.outcome !== 'refilled') {
+          reject(SHORT_PICKED_ELSEWHERE_MESSAGE, box.trackingNo);
+          return;
+        }
+        const status = await printFor(box.shipmentId);
+        if (status.kind === 'printed') note({ kind: 'printed', text: box.trackingNo });
+        reject(status.kind === 'failed' ? status.message : REFILLED_ELSEWHERE_MESSAGE, box.trackingNo);
+        return;
+      }
       if (result.outcome !== 'refilled') {
         await show(await lookup(box.trackingNo));
         return;
@@ -326,7 +359,22 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       );
       if (status.kind === 'printed') note({ kind: 'printed', text: box.trackingNo });
       else signal('error');
+    }, true);
+
+  /** 결품이 확정 거절됐다 — 박스를 다시 조회해 새 수량으로 다시 그린 뒤 사유를 보인다(«다시 F9» 가 같은 낡은 수량으로 열리지 않게) */
+  const onShortPickRefused = (box: ShipmentByWaybill, message: string) => {
+    if (busy.current > 0 || !inspecting(box.shipmentId)) {
+      reject(message);
+      return;
+    }
+    void run(async () => {
+      // 다시 그리지 못해도(조회 실패·확인 못 한 스캔) 거절 사유가 먼저다 — 다음 F9 가 다시 거절되면 그때 또 다시 조회한다
+      await settleWork()
+        .then(async () => show(await lookup(box.trackingNo), false, false))
+        .catch(() => {});
+      reject(message);
     });
+  };
 
   /** 송장 대기의 F12 — 방금 채운 박스의 송장을 다시 뽑는다(자동 출력이 실패했을 때, 목업 ①) */
   const reprintLast = () =>
@@ -400,7 +448,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           onReopen={(box) => void reopen(box)}
           onReprint={(box) => void reprintBox(box)}
           warehouseId={warehouseId}
+          parentBusy={running}
+          shortPickRetries={shortPickRetries}
           onShortPicked={(box, result) => void onShortPicked(box, result)}
+          onShortPickRefused={onShortPickRefused}
         />
       );
     case 'reprint':

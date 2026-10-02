@@ -72,7 +72,8 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
 
   it('Esc 는 뺄 상품을 내려놓는다', async () => {
     await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
-    scan('421033881907');
+    // 스캔 큐가 준비되고 Esc 가 등록될 때까지 — 준비 전 내려놓기는 «확인 못 한 스캔» 거절이 맞다
+    await openBox('421033881907');
     await screen.findByText('뺄 상품');
     press('Escape');
     expect(await screen.findByText('송장 바코드')).toBeInTheDocument();

@@ -10,8 +10,10 @@ import {
   buildShortPickRequest,
   reportShortPick,
   shortPickDraft,
-  shortPickErrorMessage,
+  shortPickFailure,
+  type ShortPickDraftLine,
   type ShortPickReason,
+  type ShortPickRequest,
   type ShortPickResult,
 } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
@@ -30,6 +32,19 @@ export interface BoxWorkHandle {
   /** 스캔이 이 화면에 닿았다 — 부모가 거절한 송장 스캔도 «한 번 더» 대기를 푼다 */
   disarm(): void;
   settle(): Promise<void>;
+}
+
+/**
+ * 결과를 모르는 결품(응답을 잃음·5xx·처리 중) — 반영됐을 수 있다. 다음 F9 는 이것을 같은 키·같은 본문으로 다시 보낸다(서버가
+ * 저장한 응답을 돌려준다). 새로 조회해 새 키로 보내면 채움(refilled)은 줄·버전을 바꾸지 않아 두 번째 결품으로 받아들여진다.
+ * 박스가 다시 마운트돼도(같은 송장 다시 찍기) 남도록 부모가 박스별로 들고 있다. 확정 성공·확정 거절에서만 지운다
+ */
+export interface PendingShortPick {
+  idempotencyKey: string;
+  request: ShortPickRequest;
+  /** 창에 그대로 다시 보일 것 — 바꿀 수 없다 */
+  lines: ShortPickDraftLine[];
+  reason: ShortPickReason;
 }
 
 /** 수량은 세 자리까지 — 그보다 많은 줄은 F8(이 상품 전량)이 맡는다 */
@@ -53,7 +68,10 @@ export function InspectWork({
   onReopen,
   onReprint,
   warehouseId,
+  parentBusy,
+  shortPickRetries,
   onShortPicked,
+  onShortPickRefused,
 }: {
   box: ShipmentByWaybill;
   handleRef: RefObject<BoxWorkHandle | null>;
@@ -69,8 +87,14 @@ export function InspectWork({
   onReopen(box: ShipmentByWaybill): void;
   onReprint(box: ShipmentByWaybill): void;
   warehouseId: string;
+  /** 부모가 조회·전환·출력 중이다 — 그 결과가 이 박스를 바꿀 수 있으니 결품을 시작하지 않는다 */
+  parentBusy: boolean;
+  /** 결과를 모르는 결품, 박스(shipmentId)별 */
+  shortPickRetries: Map<string, PendingShortPick>;
   /** 결품 결과 — 부모가 채움이면 자동 출력·송장 대기, 아니면 다시 조회한다(§7.2) */
   onShortPicked(box: ShipmentByWaybill, result: ShortPickResult): void;
+  /** 결품이 확정 거절됐다(보내기 전 판정 포함) — 부모가 박스를 다시 조회해 새 수량으로 다시 그린 뒤 사유를 보인다 */
+  onShortPickRefused(box: ShipmentByWaybill, message: string): void;
 }) {
   const api = useApiClient();
   const permissions = useWorkPermissions();
@@ -142,24 +166,50 @@ export function InspectWork({
     box.shortPickContext !== undefined &&
     (work.workItemStatus === 'queued' || work.workItemStatus === 'picking');
 
+  const retry = shortPickRetries.get(box.shipmentId) ?? null;
+
   const confirmShortPick = async (lines: ReadonlyArray<{ shipmentLineId: string; qty: number }>, reason: ShortPickReason) => {
     setShortBusy(true);
     try {
-      // 버전은 스캔마다 낡는다 — 보내기 직전에 다시 조회한 값으로 보낸다(PR A 계약 메모). 남은 수량이 창의 수량보다
-      // 줄었으면(다른 스테이션이 더 찍음) 보내지 않고 «다시 F9» 를 안내한다
-      const fresh = await fetchShipmentByWaybill(api, box.trackingNo, warehouseId);
-      const built = buildShortPickRequest(fresh, lines, reason);
-      if (!built.ok) {
-        setShortOpen(false);
-        onAlert(built.message);
-        return;
+      let sent = shortPickRetries.get(box.shipmentId);
+      if (!sent) {
+        // 버전은 스캔마다 낡는다 — 보내기 직전에 다시 조회한 값으로 보낸다(PR A 계약 메모). 남은 수량이 창의 수량보다
+        // 줄었으면(다른 스테이션이 더 찍음) 보내지 않는다 — 부모가 박스를 다시 그려 «다시 F9» 가 새 수량으로 열린다
+        let fresh: ShipmentByWaybill;
+        try {
+          fresh = await fetchShipmentByWaybill(api, box.trackingNo, warehouseId);
+        } catch (error) {
+          setShortOpen(false);
+          onAlert(errorMessage(error, 'outbound'));
+          return;
+        }
+        const built = buildShortPickRequest(fresh, lines, reason);
+        if (!built.ok) {
+          setShortOpen(false);
+          onShortPickRefused(box, built.message);
+          return;
+        }
+        sent = {
+          idempotencyKey: crypto.randomUUID(),
+          request: built.request,
+          lines: draft.map((line) => ({ ...line, qty: lines.find((l) => l.shipmentLineId === line.shipmentLineId)?.qty ?? 0 })),
+          reason,
+        };
+        shortPickRetries.set(box.shipmentId, sent);
       }
-      const result = await reportShortPick(api, box.shipmentId, built.request, crypto.randomUUID());
-      setShortOpen(false);
-      onShortPicked(box, result);
-    } catch (error) {
-      setShortOpen(false);
-      onAlert(shortPickErrorMessage(error));
+      try {
+        const result = await reportShortPick(api, box.shipmentId, sent.request, sent.idempotencyKey);
+        shortPickRetries.delete(box.shipmentId);
+        setShortOpen(false);
+        onShortPicked(box, result);
+      } catch (error) {
+        setShortOpen(false);
+        const failure = shortPickFailure(error);
+        if (failure.kind === 'rejected') {
+          shortPickRetries.delete(box.shipmentId);
+          onShortPickRefused(box, failure.message);
+        } else onAlert(failure.message);
+      }
     } finally {
       setShortBusy(false);
     }
@@ -214,7 +264,7 @@ export function InspectWork({
       ? [
           {
             ...INSPECTION_ACTIONS.shortPick,
-            enabled: work.idle && draft.length > 0 && !shortBusy,
+            enabled: work.idle && (draft.length > 0 || retry !== null) && !shortBusy && !withdrawing && !parentBusy,
             run: () => {
               setArmed(null);
               setQuantity(null);
@@ -291,7 +341,9 @@ export function InspectWork({
       />
       {shortOpen ? (
         <ShortPickDialog
-          lines={draft}
+          lines={retry?.lines ?? draft}
+          initialReason={retry?.reason}
+          locked={retry !== null}
           busy={shortBusy}
           onCancel={() => setShortOpen(false)}
           onConfirm={(lines, reason) => void confirmShortPick(lines, reason)}

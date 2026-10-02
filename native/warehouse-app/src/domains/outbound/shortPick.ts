@@ -78,6 +78,7 @@ export interface ShortPickRequest {
 
 export const SHORT_PICK_STALE_MESSAGE = '박스 상태가 바뀌었어요. 다시 F9 를 눌러 주세요.';
 export const SHORT_PICK_UNAVAILABLE_MESSAGE = '이 박스는 지금 결품을 보고할 수 없어요. 송장을 다시 찍어 주세요.';
+export const SHORT_PICK_UNCERTAIN_MESSAGE = '결품이 반영됐는지 확인하지 못했어요. F9 로 같은 결품을 다시 보내 주세요.';
 
 /** 결품은 대기·피킹 중일 때만(스펙 §11 PR A 계약 메모 — 빼는 중·다른 오퍼레이션 대기 중이면 서버가 409) */
 const REPORTABLE_WORK_ITEM_STATUSES: readonly string[] = ['queued', 'picking'];
@@ -184,4 +185,24 @@ export function shortPickErrorMessage(error: unknown): string {
     if (error.status === 403) return '결품 보고 권한이 없어요. 관리자에게 요청해 주세요.';
   }
   return errorMessage(error, 'outbound');
+}
+
+/** 결과를 모르는 상태 코드 — 401·403 은 앱 공통 분류(httpClient)대로, 408·429 는 다시 보낼 것 */
+const UNCERTAIN_STATUSES: ReadonlySet<number> = new Set([401, 403, 408, 429]);
+
+/**
+ * 결품 보고가 실패했다 — 서버가 확정 거절했나(`rejected`: 아무것도 남지 않았다), 결과를 모르나(`uncertain`: 반영됐을 수도 있다).
+ * core 는 멱등 키 행·판정·쓰기를 한 트랜잭션에 묶으므로(`fulfillment-command.service.ts`) 4xx 면 롤백됐다 — 코드를 몰라도 거절이다.
+ * 처리 중(FULFILLMENT_COMMAND_IN_PROGRESS)·네트워크·5xx 는 결과를 모른다: 같은 키·같은 본문으로 다시 보내면 서버가 저장한 응답을
+ * 돌려준다. 새 키로 다시 조회해 보내면 채움(refilled)은 줄·버전을 바꾸지 않으므로 두 번째 결품으로 받아들여진다.
+ */
+export function shortPickFailure(error: unknown): { kind: 'rejected' | 'uncertain'; message: string } {
+  if (error instanceof ApiError) {
+    const definitive =
+      error.outcome === 'rejected' ||
+      (error.status >= 400 && error.status < 500 && !UNCERTAIN_STATUSES.has(error.status) && !error.retryable);
+    if (definitive) return { kind: 'rejected', message: shortPickErrorMessage(error) };
+    if (error.status === 403) return { kind: 'uncertain', message: shortPickErrorMessage(error) };
+  }
+  return { kind: 'uncertain', message: SHORT_PICK_UNCERTAIN_MESSAGE };
 }

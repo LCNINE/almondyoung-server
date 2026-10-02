@@ -6,17 +6,21 @@ import { useDigitCommands } from '../ActionRegistry';
 import { Kbd } from '../Kbd';
 
 /**
- * F9 결품(스펙 §7.1). 두 단계(계획이 정함): ① 수량 — ↑↓ 줄, 숫자 덮어쓰기(줄을 고른 뒤 첫 숫자)·이어 치기(상한 = 남은 수량),
+ * F9 결품(스펙 §7.1). `locked` 는 결과를 모르는 결품을 다시 보낼 때 — 보낸 것을 그대로 보이고 수량·사유를 바꾸지 않는다. 두 단계(계획이 정함): ① 수량 — ↑↓ 줄, 숫자 덮어쓰기(줄을 고른 뒤 첫 숫자)·이어 치기(상한 = 남은 수량),
  * Backspace, Enter 다음 ② 사유 — 1 재고 부족(기본)·2 파손, Enter 보냄. Esc 는 한 단계 뒤로(①에서는 닫기).
  * 키는 사람 키 채널로만 받는다 — 스캐너의 Enter 가 창을 확정하지 않는다. aria-modal 이라 셸이 기능키·키 명령을 막는다.
  */
 export function ShortPickDialog({
   lines,
+  initialReason = 'inventory_shortage',
+  locked = false,
   busy,
   onConfirm,
   onCancel,
 }: {
   lines: readonly ShortPickDraftLine[];
+  initialReason?: ShortPickReason;
+  locked?: boolean;
   busy: boolean;
   onConfirm(lines: Array<{ shipmentLineId: string; qty: number }>, reason: ShortPickReason): void;
   onCancel(): void;
@@ -25,11 +29,11 @@ export function ShortPickDialog({
   const [selected, setSelected] = useState(0);
   const [fresh, setFresh] = useState(true);
   const [step, setStep] = useState<'qty' | 'reason'>('qty');
-  const [reason, setReason] = useState<ShortPickReason>('inventory_shortage');
+  const [reason, setReason] = useState<ShortPickReason>(initialReason);
   const total = rows.reduce((sum, row) => sum + row.qty, 0);
 
   const typeDigit = (digit: number) => {
-    if (busy) return;
+    if (busy || locked) return;
     if (step === 'reason') {
       const picked = SHORT_PICK_REASON_KEYS.find((option) => option.key === String(digit));
       if (picked) setReason(picked.reason);
@@ -60,10 +64,10 @@ export function ShortPickDialog({
     if (/^\d$/.test(key)) typeDigit(Number(key));
     else if (key === 'Enter') next();
     else if (key === 'Escape') back();
-    else if (step === 'qty' && !busy && (key === 'ArrowUp' || key === 'ArrowDown')) {
+    else if (step === 'qty' && !busy && !locked && (key === 'ArrowUp' || key === 'ArrowDown')) {
       setSelected((i) => Math.max(0, Math.min(rows.length - 1, i + (key === 'ArrowUp' ? -1 : 1))));
       setFresh(true);
-    } else if (step === 'qty' && !busy && key === 'Backspace') {
+    } else if (step === 'qty' && !busy && !locked && key === 'Backspace') {
       setRows((list) => list.map((row, i) => (i === selected ? { ...row, qty: Math.floor(row.qty / 10) } : row)));
       setFresh(false);
     }

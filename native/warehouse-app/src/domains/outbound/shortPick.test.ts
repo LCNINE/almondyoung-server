@@ -3,10 +3,12 @@ import { ApiError, ConflictError } from '../../core/data/httpClient';
 import {
   SHORT_PICK_STALE_MESSAGE,
   SHORT_PICK_UNAVAILABLE_MESSAGE,
+  SHORT_PICK_UNCERTAIN_MESSAGE,
   buildShortPickRequest,
   reportShortPick,
   shortPickDraft,
   shortPickErrorMessage,
+  shortPickFailure,
   shortPickSources,
 } from './shortPick';
 import type { ShipmentByWaybill, ShipmentByWaybillLine } from './types';
@@ -162,5 +164,36 @@ describe('shortPickErrorMessage', () => {
     [new ApiError('POST /shipments/s/short-picks → 403', 403, 'FORBIDDEN'), '결품 보고 권한이 없어요. 관리자에게 요청해 주세요.'],
   ])('%s', (error, message) => {
     expect(shortPickErrorMessage(error)).toBe(message);
+  });
+});
+
+describe('shortPickFailure — 서버가 확정 거절했나, 결과를 모르나', () => {
+  it.each([
+    ['버전 어긋남(409)', new ConflictError('x', 'SHORT_PICK_LINE_STALE'), SHORT_PICK_STALE_MESSAGE],
+    ['몫 초과(409)', new ConflictError('x', 'SHORT_PICK_EXCEEDS_UNPICKED'), SHORT_PICK_STALE_MESSAGE],
+    ['세션 닫힘(409)', new ConflictError('x', 'PICKING_SESSION_NOT_ACTIVE'), SHORT_PICK_UNAVAILABLE_MESSAGE],
+  ])('%s — 거절(아무것도 남지 않았다)', (_name, error, message) => {
+    expect(shortPickFailure(error)).toEqual({ kind: 'rejected', message });
+  });
+
+  it('모르는 코드의 4xx 도 거절이다 — 한 트랜잭션이라 4xx 면 아무것도 남지 않는다', () => {
+    expect(shortPickFailure(new ConflictError('x', 'SOMETHING_NEW')).kind).toBe('rejected');
+    expect(shortPickFailure(new ApiError('x', 400, 'Bad Request')).kind).toBe('rejected');
+  });
+
+  it.each([
+    ['네트워크', new TypeError('Failed to fetch')],
+    ['5xx', new ApiError('x', 503)],
+    ['처리 중', new ConflictError('x', 'FULFILLMENT_COMMAND_IN_PROGRESS')],
+    ['시간 초과', new ApiError('x', 408)],
+  ])('%s — 결과를 모른다(같은 키로 다시 보낸다)', (_name, error) => {
+    expect(shortPickFailure(error)).toEqual({ kind: 'uncertain', message: SHORT_PICK_UNCERTAIN_MESSAGE });
+  });
+
+  it('403 은 결과를 모르는 쪽이지만 권한 문구를 보인다', () => {
+    expect(shortPickFailure(new ApiError('x', 403, 'FORBIDDEN'))).toEqual({
+      kind: 'uncertain',
+      message: '결품 보고 권한이 없어요. 관리자에게 요청해 주세요.',
+    });
   });
 });

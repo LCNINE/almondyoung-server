@@ -98,7 +98,14 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   const scanCalls: string[] = [];
   const scans: Array<{ key: string; shipmentId: string; barcode: string; quantity: number }> = [];
   const forces: Array<{ shipmentId: string; reason: string }> = [];
-  const shortPicks: Array<{ shipmentId: string; body: unknown }> = [];
+  /** 반영된 결품(멱등 키당 한 번) */
+  const shortPicks: Array<{ shipmentId: string; key: string; body: unknown }> = [];
+  /** 받은 결품 요청 전부(같은 키로 다시 온 것 포함) */
+  const shortPickCalls: Array<{ key: string; body: unknown }> = [];
+  const shortPickReplies = new Map<string, unknown>();
+  let loseShortPick = false;
+  let lookupGate: Promise<void> | null = null;
+  let shortPickGate: Promise<void> | null = null;
   const excludes: Array<{ batchId: string; shipmentId: string; reason: string }> = [];
   const confirmedPrints: string[] = [];
   const applied = new Map<string, SimpleOutboundState>();
@@ -235,9 +242,23 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     return applied.get(key);
   }
 
-  function shortPick(o: Req, shipmentId: string) {
+  /** 멱등 키 — core 처럼 같은 키면 저장한 응답을 돌려준다(fulfillment-command.service.ts) */
+  async function shortPick(o: Req, shipmentId: string) {
+    const key = o.idempotencyKey ?? '';
+    shortPickCalls.push({ key, body: o.body });
+    if (shortPickGate) await shortPickGate;
+    if (!shortPickReplies.has(key)) shortPickReplies.set(key, applyShortPick(o, shipmentId, key));
+    // 서버는 반영했는데 응답을 잃었다
+    if (loseShortPick) {
+      loseShortPick = false;
+      throw new TypeError('Failed to fetch');
+    }
+    return shortPickReplies.get(key);
+  }
+
+  function applyShortPick(o: Req, shipmentId: string, key: string) {
     const box = byId(shipmentId);
-    shortPicks.push({ shipmentId, body: o.body });
+    shortPicks.push({ shipmentId, key, body: o.body });
     const outcome = config.shortPickOutcome;
     const lines = (o.body as { lines: Array<{ shipmentLineId: string; shortQty: number }> }).lines;
     box.lineVersion += 1;
@@ -299,6 +320,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const params = new URLSearchParams(query);
     const reply = (value: unknown) => value as T;
     if (method === 'GET' && path === '/shipments/by-waybill') {
+      if (lookupGate) await lookupGate;
       const box = byTracking(params.get('trackingNo') ?? '');
       if (!box) throw new ApiError(`GET ${o.path} → 404`, 404, 'NOT_FOUND');
       return reply(found(box));
@@ -311,7 +333,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       return reply(forceBox(o, force[1]));
     }
     const short = /^\/shipments\/([^/]+)\/short-picks$/.exec(path);
-    if (short) return reply(shortPick(o, short[1]));
+    if (short) return reply(await shortPick(o, short[1]));
     const exclude = /^\/outbound-batches\/([^/]+)\/shipments\/([^/]+)$/.exec(path);
     if (exclude && method === 'DELETE') {
       if (writeGate) await writeGate;
@@ -379,6 +401,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     scans,
     forces,
     shortPicks,
+    shortPickCalls,
     excludes,
     confirmedPrints,
     /** 다음 스캔 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
@@ -402,6 +425,32 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
         };
       });
       return release;
+    },
+    /** 송장 조회 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdLookups(): () => void {
+      let release!: () => void;
+      lookupGate = new Promise<void>((resolve) => {
+        release = () => {
+          lookupGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 결품 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdShortPicks(): () => void {
+      let release!: () => void;
+      shortPickGate = new Promise<void>((resolve) => {
+        release = () => {
+          shortPickGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 다음 결품은 반영하고 응답만 잃는다 */
+    loseNextShortPick() {
+      loseShortPick = true;
     },
     loseResponses(value: boolean) {
       losing = value;
