@@ -8,6 +8,10 @@ export interface WorkCapabilities {
 }
 export interface WorkPermissions {
   forceDispatch?: boolean;
+  /** 스테이션 강제출고(F10, core A3). 관리자 `forceDispatch` 와 다른 뜻이다 */
+  stationForceDispatch?: boolean;
+  /** 결품 보고(F9, core A2) */
+  shortPick?: boolean;
 }
 export interface WorkRuntime {
   getPermissions?: () => Promise<WorkPermissions>;

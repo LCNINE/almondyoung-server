@@ -16,8 +16,9 @@ import { useWorkReadiness } from './useWorkReadiness';
 export interface ScanAllowance {
   path: string;
   operationId?: string;
-  warehouseId: string;
-  sourceLocationId: string;
+  /** 위치 확인 출고(`location-outbound-scans`)만 — 본문의 창고·출발 위치가 지금 고른 것과 같아야 한다 */
+  warehouseId?: string;
+  sourceLocationId?: string;
 }
 const AreaContext = createContext({
   operations: [] as StoredOperation[],
@@ -25,6 +26,7 @@ const AreaContext = createContext({
   problem: false,
   restoring: false,
 });
+const SCAN_PATH = /^\/shipments\/[^/]+\/(location|simple)-outbound-scans$/;
 /** A scan region can accept more inputs only for its first, normal send. */
 export function useWorkAreaBlocked(
   kind: string,
@@ -38,11 +40,13 @@ export function useWorkAreaBlocked(
         op.scope !== state.scope ||
         op.id !== scanAllowance.operationId ||
         op.path !== scanAllowance.path ||
-        !/^\/shipments\/[^/]+\/location-outbound-scans$/.test(op.path) ||
+        !SCAN_PATH.test(op.path) ||
         !['queued', 'sending'].includes(op.status) ||
         op.attempts > 1
       )
         return false;
+      // 단순출고 스캔 본문(바코드·수량)엔 창고·위치가 없다 — 경로와 오퍼레이션 id 가 같으면 그 박스의 첫 전송이다
+      if (op.path.endsWith('/simple-outbound-scans')) return true;
       try {
         const body = JSON.parse(op.bodyJson);
         return (

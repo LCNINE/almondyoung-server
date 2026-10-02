@@ -387,3 +387,52 @@ it('allows matching scans while sending and blocks them after the result becomes
     attempts: 1,
   });
 });
+
+function SimpleScanRequest() {
+  const api = useApiClient();
+  return (
+    <WorkArea
+      kind="outbound"
+      scanAllowance={{ path: '/shipments/shipment-1/simple-outbound-scans', operationId: 'simple-1' }}
+    >
+      <button
+        onClick={() => {
+          void api.request({
+            method: 'POST',
+            path: '/shipments/shipment-1/simple-outbound-scans',
+            idempotencyKey: 'simple-1',
+            body: { barcode: '8801', quantity: 1 },
+          });
+        }}
+      >
+        단순 스캔
+      </button>
+    </WorkArea>
+  );
+}
+
+it('단순출고 스캔도 첫 전송 중엔 막지 않고, 결과가 불확실해지면 막는다', async () => {
+  let resolveScan!: (response: Response) => void;
+  const scanResponse = new Promise<Response>((resolve) => {
+    resolveScan = resolve;
+  });
+  const defaultHandler = fetchHandler;
+  fetchHandler = async (...args) =>
+    String(args[0]).endsWith('/shipments/shipment-1/simple-outbound-scans') ? scanResponse : defaultHandler(...args);
+  authed = true;
+  renderBoundary(<SimpleScanRequest />);
+  await waitFor(() => expect(screen.getByText('단순 스캔').closest('[inert]')).toBeNull());
+
+  await userEvent.click(screen.getByRole('button', { name: '단순 스캔' }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/shipments/shipment-1/simple-outbound-scans'))
+    ).toBe(true)
+  );
+  expect(screen.getByText('단순 스캔').closest('[inert]')).toBeNull();
+
+  resolveScan(Response.json({ error: 'Forbidden' }, { status: 403 }));
+
+  await waitFor(() => expect(screen.getByText('단순 스캔').closest('[inert]')).not.toBeNull());
+  expect(await createOperationStore().get('simple-1')).toMatchObject({ status: 'uncertain', attempts: 1 });
+});

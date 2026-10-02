@@ -98,7 +98,7 @@ describeIfDb('ShipmentWaybillReader', () => {
           pickedQty: 1,
           inspectedQty: 0,
           lineVersion: line.lineVersion,
-          allocations: [{ sourceLocationId: fixture.locationId, locationCode: location.code, qty: 2 }],
+          allocations: [{ sourceLocationId: fixture.locationId, locationCode: location.code, qty: 2, pickedQty: 1 }],
         },
       ]);
     });

@@ -204,4 +204,34 @@ describe('handheld hub navigation', () => {
     expect(screen.queryByRole('navigation', { name: '탭' })).toBeNull();
     expect(fireEvent.keyDown(window, { key: 'F5' })).toBe(true);
   });
+
+  it('출고작업 타일은 지금 출고작업 화면 그대로다 — 스테이션 출고 검수가 아니다', async () => {
+    const session = stub();
+    const user = userEvent.setup();
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path === '/inventory/warehouses') return [];
+        return { data: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <SessionProvider session={session}>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={createMemoryPrefs()}>
+              <ScanProvider>
+                <RouterProvider router={createAppRouter(session)} />
+              </ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+    await act(async () => {
+      await user.click(await screen.findByRole('link', { name: /출고작업/ }));
+    });
+    expect(await screen.findByRole('heading', { name: '출고작업' })).toBeInTheDocument();
+    expect(screen.queryByText('송장 바코드')).toBeNull();
+  });
 });

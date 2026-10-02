@@ -1,6 +1,18 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import type { ApiClient } from '../../core/data/httpClient';
 import type { OutboundBatchSummary, ShipmentByWaybill } from './types';
+
+/** GET /shipments/by-waybill — 조회 전용이라 몇 번을 불러도 서버가 바뀌지 않는다(#986 스펙 §10.5). */
+export function fetchShipmentByWaybill(
+  api: ApiClient,
+  trackingNo: string,
+  warehouseId: string | null
+): Promise<ShipmentByWaybill> {
+  const qs = new URLSearchParams({ trackingNo });
+  if (warehouseId) qs.set('warehouseId', warehouseId);
+  return api.request<ShipmentByWaybill>({ path: `/shipments/by-waybill?${qs.toString()}` });
+}
 
 /**
  * GET /shipments/by-waybill?trackingNo=…
@@ -11,13 +23,7 @@ import type { OutboundBatchSummary, ShipmentByWaybill } from './types';
 export function useShipmentByWaybill(warehouseId?: string | null) {
   const api = useApiClient();
   return useMutation({
-    mutationFn: (trackingNo: string) => {
-      const qs = new URLSearchParams({ trackingNo });
-      if (warehouseId) qs.set('warehouseId', warehouseId);
-      return api.request<ShipmentByWaybill>({
-        path: `/shipments/by-waybill?${qs.toString()}`,
-      });
-    },
+    mutationFn: (trackingNo: string) => fetchShipmentByWaybill(api, trackingNo, warehouseId ?? null),
   });
 }
 

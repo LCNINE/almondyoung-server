@@ -50,6 +50,10 @@ export interface BatchLabelState {
   state: LabelState;
   changes: LabelItemChange[];
   issue: string | null;
+  /** 배치 현황(스테이션 F2) 박스 목록용 — core 가 PR C 부터 싣는다. 옛 core 면 없다 */
+  workItemStatus?: string;
+  trackingNo?: string | null;
+  recipientMasked?: string;
 }
 
 export function confirmLabelPrinted(api: ApiClient, shipmentId: string, fingerprint: string): Promise<void> {

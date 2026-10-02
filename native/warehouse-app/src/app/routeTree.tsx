@@ -26,6 +26,7 @@ import { PurchaseOrderReceiveRoute } from './routes/PurchaseOrderReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
 import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
+import { OutboundBatchesRoute } from './routes/OutboundBatchesRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
@@ -184,11 +185,11 @@ const outboundRoute = createRoute({
   path: '/outbound',
   component: OutboundRoute,
 });
-// 스테이션 F2 배치 현황 — PR C 가 배치 현황 화면으로 바꾸기 전까지 출고 화면(배치 카드 포함)을 그대로 그린다(스펙 §4).
+// 스테이션 F2 배치 현황(스펙 §8). 핸드헬드는 지금 출고작업을 그린다
 const outboundBatchesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/outbound/batches',
-  component: OutboundRoute,
+  component: OutboundBatchesRoute,
 });
 const outboundSimpleRoute = createRoute({
   getParentRoute: () => authedRoute,

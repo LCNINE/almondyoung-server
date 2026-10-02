@@ -116,6 +116,17 @@ export function useWorkScanQueue<T>(
       }
       savingQueue.enqueue(event);
     },
+    /**
+     * 저장 중·처리 중인 입력이 다 끝날 때까지 기다린다. 머리가 실패했으면(결과를 모르는 입력) 그 오류로 거절한다 — 화면을 떠나기 전에.
+     * 기다리는 사이 받은 입력도 기다린다 — 처리 큐가 비는 순간 저장 큐에 남은 입력이 있으면 한 번 더 돈다
+     */
+    async settle() {
+      if (saveError) throw saveError;
+      do {
+        await savingQueue.drain();
+        await queue.drain();
+      } while (savingQueue.size() > 0 || queue.size() > 0);
+    },
     async retryHead() {
       if (saveError) {
         serial.current = restore.current();

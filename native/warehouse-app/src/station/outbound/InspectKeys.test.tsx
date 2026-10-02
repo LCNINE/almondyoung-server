@@ -1,0 +1,273 @@
+import 'fake-indexeddb/auto';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { readLastBox } from '../../domains/outbound/lastBox';
+import { STATION_FORCE_REASON, STATION_WITHDRAW_REASON } from './useInspectionBox';
+import { BOX1, BOX2, flash, openBox, press, scan, setupInspection, stationPrefs, typeHuman } from './__fixtures__/renderStation';
+
+const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
+const SLOW = { timeout: 4000 };
+const big = (name: string) => screen.getByRole('status', { name });
+/** 키가 켜질 때까지 — 꺼진 키에 누르면 아무 일도 안 일어나 «무장» 이 검증되지 않는다 */
+const enabledKey = (name: RegExp) => waitFor(() => expect(bar().getByRole('button', { name })).toBeEnabled());
+
+describe('검수 중 기능키(스펙 §6.3)', () => {
+  it('F7 수량 → 키보드 숫자 → 다음 스캔 한 번에 그 수량, 그 뒤엔 1', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    press('F7');
+    await typeHuman(['2']);
+    expect(big('수량')).toHaveTextContent('2');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toEqual([expect.objectContaining({ barcode: '8801002', quantity: 2 })]), SLOW);
+    await waitFor(() => expect(big('진행')).toHaveTextContent('2 / 4'), SLOW);
+    scan('8801002');
+    await waitFor(() => expect(server.scans[1]).toMatchObject({ barcode: '8801002', quantity: 1 }));
+  });
+
+  it('F7 수량은 숫자 명령(%91%N)으로도 넣고 Backspace 로 지운다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    press('F7');
+    scan('%91%3');
+    scan('%91%1');
+    expect(big('수량')).toHaveTextContent('31');
+    await typeHuman(['Backspace']);
+    expect(big('수량')).toHaveTextContent('3');
+    scan('8801002');
+    await waitFor(() => expect(server.scans[0]).toMatchObject({ quantity: 3 }));
+  });
+
+  it('Esc 는 수량 입력만 먼저 취소한다 — 박스는 그대로', async () => {
+    await setupInspection();
+    await openBox('421033881907');
+    press('F7');
+    expect(bar().getByRole('button', { name: /수량 취소/ })).toBeInTheDocument();
+    press('Escape');
+    expect(big('진행')).toHaveTextContent('0 / 4');
+    expect(screen.getByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
+  });
+
+  it('F8 이 상품 전량 — 직전에 찍은 줄의 남은 수량을 그 바코드로 한 번에(직전 스캔이 없으면 꺼짐)', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    expect(bar().queryByRole('button', { name: /이 상품 전량/ })).toBeNull();
+    scan('8801002');
+    await enabledKey(/이 상품 전량/);
+    press('F8');
+    await waitFor(() => expect(server.scans[1]).toMatchObject({ barcode: '8801002', quantity: 2 }));
+    await waitFor(() => expect(big('진행')).toHaveTextContent('3 / 4'));
+  });
+
+  it('F10 강제출고는 한 번 더 눌러야 나간다 — 고정 사유', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    // 권한 미리보기(work-context)가 도착해야 F10 이 선언된다
+    await enabledKey(/강제출고/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    expect(screen.getByText('강제출고')).toBeInTheDocument();
+    expect(server.forces).toEqual([]);
+    press('F10');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    expect(server.forces).toEqual([{ shipmentId: 's-1', reason: STATION_FORCE_REASON }]);
+  });
+
+  it('무장은 스캔·다른 키로 풀린다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    await enabledKey(/강제출고/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    scan('8801001');
+    await waitFor(() => expect(big('진행')).toHaveTextContent('1 / 4'));
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    press('F7');
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    expect(server.forces).toEqual([]);
+  });
+
+  it('Esc 는 무장만 푼다 — 박스는 그대로, 다시 F10 은 첫 누름', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    press('Escape');
+    await enabledKey(/강제출고$/);
+    expect(screen.getByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    expect(server.forces).toEqual([]);
+  });
+
+  it('부모가 거절한 송장 스캔도 무장을 푼다 — 다음 F10 은 다시 첫 누름', async () => {
+    const { server } = await setupInspection({ boxes: [BOX1, { ...BOX2, shipped: true }] });
+    await openBox('421033881907');
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    scan('421033881915'); // 이미 출고된 송장 — 화면이 거절한다
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 출고된 송장이에요');
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    expect(server.forces).toEqual([]);
+  });
+
+  it('강제출고 응답을 기다리는 동안 F10 을 다시 눌러도 더 보내지 않는다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    await enabledKey(/강제출고$/);
+    press('F10');
+    await enabledKey(/강제출고 확정/);
+    const release = server.holdWrites();
+    press('F10');
+    await waitFor(() => expect(bar().queryByRole('button', { name: /강제출고/ })).toBeNull());
+    press('F10');
+    press('F10');
+    release();
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    expect(server.forces).toHaveLength(1);
+  });
+
+  it('박스 빼기 응답을 기다리는 동안 F11 을 다시 눌러도 더 보내지 않는다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    await enabledKey(/박스 빼기$/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    const release = server.holdWrites();
+    press('F11');
+    await waitFor(() => expect(bar().queryByRole('button', { name: /박스 빼기/ })).toBeNull());
+    press('F11');
+    press('F11');
+    release();
+    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(server.excludes).toHaveLength(1);
+  });
+
+  it('강제출고 권한이 없으면 F10 을 그리지 않는다', async () => {
+    await setupInspection({ permissions: { shortPick: true } });
+    await openBox('421033881907');
+    await waitFor(() => expect(bar().getByRole('button', { name: /박스 빼기/ })).toBeInTheDocument());
+    expect(bar().queryByRole('button', { name: /강제출고/ })).toBeNull();
+  });
+
+  it('F11 박스 빼기 — 한 번 더 누르면 고정 사유로 빼고, 담은 상품이 있으면 뺄 상품으로', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    await enabledKey(/박스 빼기/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    expect(server.excludes).toEqual([]);
+    press('F11');
+    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(server.excludes).toEqual([{ batchId: 'b-1', shipmentId: 's-1', reason: STATION_WITHDRAW_REASON }]);
+  });
+
+  it('F11 — 담은 상품이 없으면 바로 빠진 박스', async () => {
+    const { server } = await setupInspection();
+    server.config.excludeOutcome = 'removed';
+    await openBox('421033881907');
+    await enabledKey(/박스 빼기/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    press('F11');
+    expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+  });
+
+  it('박스 빼기 응답이 늦게 와도 그 사이 연 다른 박스를 뺏지 않는다 — 알리기만 한다', async () => {
+    const { server, prefs } = await setupInspection();
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    await enabledKey(/박스 빼기$/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    const release = server.holdWrites();
+    press('F11');
+    await waitFor(() => expect(server.requests.some((r) => r.method === 'DELETE')).toBe(true));
+    // 박스를 옆에 두고 다음 박스를 연다
+    await openBox('421033881915');
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('박스를 뺐어요'));
+    expect(screen.getByRole('alert')).toHaveTextContent('421033881907');
+    expect(flash()).toBe('error');
+    expect(screen.getByRole('heading', { name: '4210-3388-1915' })).toBeInTheDocument();
+    expect(screen.queryByText('뺄 상품')).toBeNull();
+    expect(readLastBox(prefs)?.trackingNo).toBe('421033881915');
+    // 든 박스의 상품은 그 박스로 간다 — 앞 박스의 되돌림 바구니로 가지 않는다
+    scan('8801003');
+    await waitFor(() => expect(server.scans.map((s) => s.shipmentId)).toEqual(['s-1', 's-2']));
+    expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals'))).toBe(false);
+  });
+
+  it('박스 빼기가 반영됐는데 화면이 다른 일 중이라 다시 열지 못하면 알리고 박스를 그대로 든다 — F11 은 다시 보내지 않는다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    await enabledKey(/박스 빼기$/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    const releaseWrite = server.holdWrites();
+    press('F11');
+    await waitFor(() => expect(server.requests.some((r) => r.method === 'DELETE')).toBe(true));
+    // 같은 송장을 다시 찍어 조회가 떠 있는 사이 빼기 응답이 온다
+    const releaseLookup = server.holdLookups();
+    scan('421033881907');
+    await act(async () => releaseWrite());
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('박스를 뺐어요'));
+    expect(screen.getByRole('alert')).toHaveTextContent('421033881907');
+    expect(flash()).toBe('error');
+    expect(screen.getByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
+    expect(bar().queryByRole('button', { name: /박스 빼기/ })).toBeNull();
+    press('F11');
+    press('F11');
+    expect(server.excludes).toHaveLength(1);
+    // 떠 있던 조회가 서버의 지금 상태(빼는 중)로 연다
+    await act(async () => releaseLookup());
+    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(server.excludes).toHaveLength(1);
+  });
+
+  it('박스 빼기 실패가 늦게 와도 그 사이 연 다른 박스에 오류를 칠하지 않는다 — 최근 목록에만 적는다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    await enabledKey(/박스 빼기$/);
+    press('F11');
+    await enabledKey(/박스 빼기 확정/);
+    const release = server.holdWrites();
+    press('F11');
+    await waitFor(() => expect(server.requests.some((r) => r.method === 'DELETE')).toBe(true));
+    await openBox('421033881915');
+    server.config.excludeOutcome = 'fail';
+    await act(async () => release());
+    const recentList = within(screen.getByRole('list', { name: '최근 스캔' }));
+    await waitFor(() => expect(recentList.getByText(/421033881907/)).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(flash()).not.toBe('error');
+    expect(screen.getByRole('heading', { name: '4210-3388-1915' })).toBeInTheDocument();
+  });
+
+  it('F12 송장 재출력 — 프린터로 다시 보낸다', async () => {
+    const { print } = await setupInspection();
+    await openBox('421033881907');
+    press('F12');
+    await waitFor(() => expect(print).toHaveBeenCalledWith('spooler://XP-DT108B', '^XA421033881907^XZ'));
+  });
+
+  it('프린터가 없으면 F12 는 오류음만 낸다', async () => {
+    await setupInspection({ prefs: stationPrefs({}, false) });
+    await openBox('421033881907');
+    press('F12');
+    expect(flash()).toBe('error');
+  });
+});

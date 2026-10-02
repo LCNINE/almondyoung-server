@@ -175,3 +175,100 @@ it('keeps restored inputs in recovery until replay and reconciliation finish', a
   await waitFor(() => expect(result.current.ready).toBe(true));
   expect(await store.draft('worker:scan:outbound:s1')).toEqual([]);
 });
+
+it('settle 은 저장·처리가 다 끝난 뒤 풀리고, 머리가 실패하면 그 오류로 거절한다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const getScope = async () => 'local-test-worker';
+  const runtime = { store, getScope, runner: createOperationRunner({ store, getScope, api: { request: vi.fn() } }) };
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = false;
+  const consumed: string[] = [];
+  const { result } = renderHook(
+    () =>
+      useWorkScanQueue<string>(async (code) => {
+        await gate;
+        if (fail) throw new Error('lost');
+        consumed.push(code);
+      }, 'settle:s1'),
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <OperationContext.Provider value={runtime}>{children}</OperationContext.Provider>
+      ),
+    }
+  );
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  act(() => {
+    result.current.enqueue('A');
+    result.current.enqueue('B');
+  });
+  let settled = false;
+  const done = result.current.settle().then(() => {
+    settled = true;
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(settled).toBe(false);
+  release();
+  await act(async () => done);
+  expect(consumed).toEqual(['A', 'B']);
+
+  fail = true;
+  act(() => result.current.enqueue('C'));
+  await expect(result.current.settle()).rejects.toThrow('lost');
+});
+
+it('settle 은 기다리는 사이 새로 받은 입력(아직 저장 중)까지 보낸 뒤에 풀린다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const getScope = async () => 'local-test-worker';
+  const runtime = { store, getScope, runner: createOperationRunner({ store, getScope, api: { request: vi.fn() } }) };
+  const draft = store.draft;
+  // B 의 저장을 붙잡는다 — A 가 다 보내져 처리 큐가 비는 순간 B 는 아직 저장 큐에 있다
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
+    if (update && (update([]) as { data: string }[]).some((e) => e.data === 'B')) await saveHeld;
+    return draft(id, update);
+  });
+  let releaseA!: () => void;
+  const aHeld = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  const consumed: string[] = [];
+  const { result } = renderHook(
+    () =>
+      useWorkScanQueue<string>(async (code) => {
+        if (code === 'A') await aHeld;
+        consumed.push(code);
+      }, 'settle-late:s1'),
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <OperationContext.Provider value={runtime}>{children}</OperationContext.Provider>
+      ),
+    }
+  );
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  act(() => result.current.enqueue('A'));
+  // A 가 저장을 마치고 처리 중(붙잡힘)이다
+  await waitFor(() => expect(result.current.head()?.data).toBe('A'));
+  let settled = false;
+  const done = result.current.settle().then(() => {
+    settled = true;
+  });
+  // settle 이 시작된 뒤에 받은 입력
+  act(() => result.current.enqueue('B'));
+  releaseA();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(consumed).toEqual(['A']);
+  expect(settled).toBe(false);
+  releaseSave();
+  await act(async () => done);
+  expect(consumed).toEqual(['A', 'B']);
+});

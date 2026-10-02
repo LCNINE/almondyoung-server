@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { maskName, readRecipientName } from '../reader/recipient-snapshot';
 import { ambientDbService, inRollbackTx, makeDb, seedPickableShipment, startBatchFor } from '../services/__support__';
 import { seedTwoBoxBatch } from '../services/__support__/simple-outbound-fixtures';
 import { assembleLabels, promoteToCarrierWaybill } from './__support__/label-fixtures';
+import { WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -69,6 +71,42 @@ describeIfDb('송장 상태 리더 (DB integration)', () => {
           [second.shipmentId, 'external'],
         ].sort(),
       );
+    });
+  });
+
+  it('forBatch 는 박스마다 작업 상태·지금 송장번호·가린 받는 분을 싣는다(배치 현황 박스 목록)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second } = await seedTwoBoxBatch(tx);
+      await promoteToCarrierWaybill(tx, first);
+      await startBatchFor(tx, first);
+      const labels = assembleLabels(ambientDbService(tx));
+      const states = await labels.states.forBatch(first.batchId, tx);
+      for (const box of [first, second]) {
+        const [waybill] = await tx
+          .select({ trackingNo: wmsTables.waybills.trackingNo })
+          .from(wmsTables.waybills)
+          .where(
+            and(
+              eq(wmsTables.waybills.shipmentId, box.shipmentId),
+              notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+            ),
+          );
+        const [shipment] = await tx
+          .select({ snapshot: wmsTables.shipments.recipientSnapshot })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, box.shipmentId));
+        const [item] = await tx
+          .select({ status: wmsTables.outboundBatchWorkItems.status })
+          .from(wmsTables.outboundBatchWorkItems)
+          .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId));
+        expect(states.find((s) => s.shipmentId === box.shipmentId)).toMatchObject({
+          workItemStatus: item.status,
+          trackingNo: waybill?.trackingNo ?? null,
+          recipientMasked: maskName(readRecipientName(shipment.snapshot)),
+        });
+      }
+      // 택배사 송장으로 올린 박스는 송장번호가 있다 — 비교가 null = null 로 헛돌지 않게
+      expect(states.find((s) => s.shipmentId === first.shipmentId)?.trackingNo).toEqual(expect.any(String));
     });
   });
 });

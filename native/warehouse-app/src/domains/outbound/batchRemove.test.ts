@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type ApiClient } from '../../core/data/httpClient';
-import { removeBoxFromBatch } from './batchRemove';
+import { excludeFromBatch, removeBoxFromBatch } from './batchRemove';
 import type { ShipmentByWaybill } from './types';
 
 function fakeApi(handler: (o: { method?: string; path: string; body?: unknown }) => unknown) {
@@ -51,5 +51,23 @@ describe('removeBoxFromBatch', () => {
     const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
     expect(outcome).toEqual({ kind: 'blocked', message: '이 배치에 있는 박스가 아니에요. 방금 뺐다면 이미 빠진 상태예요.' });
     expect(calls.map((c) => c.method)).toEqual(['GET']);
+  });
+});
+
+describe('excludeFromBatch', () => {
+  it('사유를 다듬어 DELETE 로 보낸다 — 멱등 키와 함께', async () => {
+    const request = vi.fn(async () => ({ workItem: { status: 'withdrawing' } }));
+    await excludeFromBatch({ request } as never, {
+      batchId: 'b-1',
+      shipmentId: 's-1',
+      reason: ' station_withdraw_command ',
+      idempotencyKey: 'k-1',
+    });
+    expect(request).toHaveBeenCalledWith({
+      method: 'DELETE',
+      path: '/outbound-batches/b-1/shipments/s-1',
+      body: { reason: 'station_withdraw_command' },
+      idempotencyKey: 'k-1',
+    });
   });
 });
