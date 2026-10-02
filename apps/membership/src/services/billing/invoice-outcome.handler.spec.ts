@@ -57,7 +57,7 @@ function makeHandler(opts: {
   const benefitReader = {
     findMembershipBenefitUsageSince: jest
       .fn()
-      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
+      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false, beautytopPremium: false }),
   };
   const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(true) };
   // 고객 알림은 billing-notice 스펙의 관심사다 — 여기선 연락처가 없는 것으로 두어 알림 경로를 닫는다.

@@ -86,6 +86,17 @@ export class SubscriptionController {
   async getCurrentSubscriptionDetails(@User('userId') userId: string) {
     return this.subscriptionService.getCurrentSubscriptionDetails(userId);
   }
+
+  /**
+   * 멤버십 혜택을 지금 쓸 수 있는지. 할인 그룹 동기화와 같은 판정(현재 권한·미만료·미정지)이라
+   * 다른 화면이 멤버십 전용 기능의 문을 열 때 이 값 하나만 본다.
+   */
+  @Get('current/active')
+  @ApiOperation({ summary: '멤버십 혜택 이용 가능 여부' })
+  @UseGuards(JwtAuthGuard)
+  async getCurrentActive(@User('userId') userId: string): Promise<{ active: boolean }> {
+    return { active: await this.subscriptionService.isMembershipActive(userId) };
+  }
   // 구독 생성은 결제 확인을 거친 경로(checkout-intent → confirm-checkout-intent, subscribe-with-method)로만
   // 이뤄진다. 결제 없이 계약/권한을 발급하던 `POST /subscriptions` 직접 경로는 무료 멤버십 발급 취약점이라 제거했다.
 
