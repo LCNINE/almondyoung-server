@@ -38,6 +38,8 @@ export interface FakeBox {
   /** PR A 이전 core — 배송메모·줄 버전·배정·결품 버전을 싣지 않는다 */
   legacy?: boolean;
   removals?: WithdrawalRemoval[];
+  /** 되돌림 응답에 removedSkuName 을 싣지 않는 옛 core */
+  omitRemovedName?: boolean;
   lines: FakeLine[];
 }
 
@@ -312,7 +314,13 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     box.removals = box.removals.filter((r) => r.boxQty > 0 || r.cartQty > 0);
     const exited = box.removals.length === 0;
     if (exited) box.withdrawn = true;
-    return { removedQty: 1, exited, exitTo: exited ? 'draft' : null, removals: box.removals };
+    return {
+      removedQty: 1,
+      ...(box.omitRemovedName ? {} : { removedSkuName: removal.skuName }),
+      exited,
+      exitTo: exited ? 'draft' : null,
+      removals: box.removals,
+    };
   }
 
   async function request<T>(o: Req): Promise<T> {

@@ -73,8 +73,8 @@ export function progressOf(found: Pick<ShipmentByWaybill, 'lines'>): SimpleOutbo
 export interface InspectionRow {
   shipmentLineId: string;
   name: string;
-  /** 배정 위치 코드(송장 순서) — 보여 주기만 한다(§6.4). 옛 core 면 '' */
-  locations: string;
+  /** 배정 위치(송장 순서)와 위치별 수량 — 보여 주기만 한다(§6.4). 옛 core 면 [] */
+  locations: Array<{ code: string; qty: number }>;
   ordered: number;
   scanned: number;
   done: boolean;
@@ -82,10 +82,12 @@ export interface InspectionRow {
 
 /** 송장 품목 줄 순서(로케이션 코드 순 — core 의 collate "C" 와 같은 코드 단위 비교). 위치 없는 줄은 뒤로, 같으면 원래 순서. */
 function byLocation(a: InspectionRow, b: InspectionRow): number {
-  if (a.locations === b.locations) return 0;
-  if (!a.locations) return 1;
-  if (!b.locations) return -1;
-  return a.locations < b.locations ? -1 : 1;
+  const left = a.locations.map((l) => l.code).join(' ');
+  const right = b.locations.map((l) => l.code).join(' ');
+  if (left === right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left < right ? -1 : 1;
 }
 
 export function inspectionRows(
@@ -99,7 +101,7 @@ export function inspectionRows(
       return {
         shipmentLineId: line.shipmentLineId,
         name: line.skuName,
-        locations: (line.allocations ?? []).map((a) => a.locationCode).join(' · '),
+        locations: (line.allocations ?? []).map((a) => ({ code: a.locationCode, qty: a.qty })),
         ordered: line.qty,
         scanned,
         done: scanned >= line.qty,

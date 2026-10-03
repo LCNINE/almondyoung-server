@@ -171,7 +171,8 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
         </div>
       ) : null}
       {rows.length > 0 ? (
-        <ol aria-label="박스" className="min-h-0 flex-1 overflow-auto">
+        <ol aria-label="박스" className="min-h-0 flex-1 overflow-auto pr-2 [scrollbar-gutter:stable]">
+          {/* 스크롤바가 내용 위에 겹치는 웹뷰(리눅스)에서도 오른쪽 상태 칸을 가리지 않게 자리를 잡아 둔다 */}
           {rows.map((row) => (
             <li
               key={row.shipmentId}

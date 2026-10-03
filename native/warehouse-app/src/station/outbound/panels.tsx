@@ -6,7 +6,7 @@ import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue'
 import { formatTrackingNo, type InspectionRow } from '../../domains/outbound/inspection';
 import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
 import { Kbd } from '../Kbd';
-import type { LastBox } from './model';
+import { bigTextPx, type LastBox } from './model';
 import { clockOf, type RecentEntry, type RecentKind } from './recent';
 import { UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
@@ -57,7 +57,10 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
       return (
         <div role="status" aria-label="진행" className={cn(base, 'border border-[#D5D8DE] bg-white')}>
           <div className="text-[30px] font-bold text-[#1D5BD8]">상품 바코드</div>
-          <div className="font-mono text-[120px] font-semibold leading-none tracking-tight">
+          <div
+            className="whitespace-nowrap font-mono font-semibold leading-none tracking-tight"
+            style={{ fontSize: bigTextPx(`${content.scanned} / ${content.ordered}`) }}
+          >
             {content.scanned}
             <span className="text-[#A3A9B4]"> / {content.ordered}</span>
           </div>
@@ -67,7 +70,12 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
       return (
         <div role="status" aria-label="수량" className={cn(base, 'border-2 border-[#1D5BD8] bg-white')}>
           <div className="text-[30px] font-bold text-[#1D5BD8]">수량</div>
-          <div className="font-mono text-[120px] font-semibold leading-none">{content.value || '_'}</div>
+          <div
+            className="whitespace-nowrap font-mono font-semibold leading-none"
+            style={{ fontSize: bigTextPx(content.value || '_') }}
+          >
+            {content.value || '_'}
+          </div>
         </div>
       );
     case 'armed':
@@ -101,6 +109,21 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
 
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
+/** 위치 하나면 코드만, 나뉜 줄은 위치마다 한 줄 + 위치별 수량 — 코드 중간에서 꺾이지 않게 */
+function LocationCell({ locations }: { locations: InspectionRow['locations'] }) {
+  if (locations.length === 0) return <>—</>;
+  if (locations.length === 1) return <span className="whitespace-nowrap">{locations[0].code}</span>;
+  return (
+    <ul className="list-none">
+      {locations.map((location) => (
+        <li key={location.code} className="whitespace-nowrap">
+          {location.code} ×{location.qty}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** 품목 표 `위치 | 상품 | 주문 | 스캔` — 완료 줄 회색, 방금 찍은 줄 노랑, 수량 2 이상은 ×N(스펙 §6.4). 위치는 보여 주기만 */
 export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRow[]; currentLineId: string | null }) {
   return (
@@ -127,7 +150,9 @@ export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRo
                   current && 'bg-[#FFF1C7]'
                 )}
               >
-                <td className="px-4 font-mono font-semibold">{row.locations || '—'}</td>
+                <td className="px-4 font-mono font-semibold">
+                  <LocationCell locations={row.locations} />
+                </td>
                 <td className={cn('px-4', !row.done && 'font-semibold')}>{row.name}</td>
                 <td className="px-4 text-right font-mono">
                   {row.ordered >= 2 ? (
