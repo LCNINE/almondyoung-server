@@ -2,5 +2,8 @@
   "title": "カテゴリ",
   "errorLine1": "カテゴリの読み込み中に",
   "errorLine2": "エラーが発生しました。",
-  "viewProducts": "商品を見る"
+  "viewProducts": "商品を見る",
+  "shortcuts": "ショートカット",
+  "almondyoungPlay": "アーモンドヤングプレイ",
+  "dabeau": "予約管理アプリ"
 }

@@ -1,0 +1,317 @@
+{
+  "title": "뷰티탑",
+  "subtitle": "우리 샵 순위와 동네 시세를 숫자로 확인해요.",
+  "tabs": {
+    "myShop": "우리 샵",
+    "neighborhood": "우리 동네",
+    "shops": "샵 순위",
+    "watch": "관심 샵",
+    "brand": "브랜드"
+  },
+  "filter": {
+    "sido": "시·도",
+    "gugun": "구·군",
+    "category": "업종"
+  },
+  "price": {
+    "eyebrow": "{region} {category} 시세",
+    "headline": "{service} 가격은 보통 <b>{price}</b>이에요",
+    "basis": "샵 {shops}곳 · 메뉴 {menus}개",
+    "note": "네이버 플레이스 메뉴 가격이에요. 할인·추가금에 따라 실제 결제액은 다를 수 있어요.",
+    "cheapest": "싼 곳",
+    "priciest": "비싼 곳",
+    "headlineRange": "{service} 가격은 <b>{price}</b> 사이예요"
+  },
+  "market": {
+    "eyebrow": "{region} {category}",
+    "headline": "샵이 <b>{count}곳</b> 있어요",
+    "opened": "지난 1년 {opened}곳이 새로 열었어요",
+    "openedClosed": "지난 1년 {opened}곳이 열고 {closed}곳이 닫았어요",
+    "perResidents": "주민 {count}명당 1곳",
+    "newLabel": "새로 연 곳",
+    "closedLabel": "닫은 곳",
+    "densityLabel": "샵 밀도",
+    "chartTitle": "월별 개업",
+    "note": "공공 인허가 자료 기준이에요. 실제 수와 조금 다를 수 있어요."
+  },
+  "revenue": {
+    "eyebrow": "{region} {industry} 카드 매출",
+    "up": "작년 같은 분기보다 <b>{pct}%</b> 늘었어요",
+    "down": "작년 같은 분기보다 <b>{pct}%</b> 줄었어요",
+    "flat": "작년 같은 분기와 <b>비슷해요</b>",
+    "quarter": "{year}년 {q}분기",
+    "note": "서울신용보증재단 카드 매출 추정치예요. 지역 전체의 흐름이고 개별 샵 매출이 아니에요."
+  },
+  "rank": {
+    "byReviews": "리뷰순",
+    "byFollowers": "팔로워순",
+    "reviews": "리뷰",
+    "followers": "팔로워"
+  },
+  "myShop": {
+    "searchLabel": "샵 이름",
+    "searchPlaceholder": "우리 샵 이름을 입력하세요",
+    "searchHint": "샵을 고르면 동네에서 몇 등인지, 비슷한 샵보다 어떤지 알려드려요.",
+    "noResult": "‘{query}’로 찾은 샵이 없어요. 네이버 플레이스에 등록된 이름으로 찾아보세요.",
+    "change": "다른 샵 찾기",
+    "detail": "샵 정보 보기",
+    "positionEyebrow": "{name} 순위",
+    "positionHeadline": "{scope}에서 <b>{rank}등</b>이에요",
+    "positionSub": "{total}곳 중 상위 {pct}%",
+    "peersEyebrow": "비슷한 규모 샵 {count}곳과 비교",
+    "peersRank": "{total}곳 중 {rank}등",
+    "mine": "우리 샵",
+    "typical": "보통",
+    "more": "{diff} 많아요",
+    "fewer": "{diff} 적어요",
+    "higher": "{diff} 비싸요",
+    "lower": "{diff} 싸요",
+    "same": "비슷해요",
+    "note": "공개된 리뷰·팔로워·메뉴 가격만 비교해요. 매출이나 예약 수가 아니에요.",
+    "priceLabel": "{service} 가격"
+  },
+  "franchise": {
+    "searchLabel": "브랜드 이름",
+    "searchPlaceholder": "브랜드 이름을 입력하세요",
+    "headline": "<b>{count}개</b> 브랜드를 찾았어요",
+    "stores": "가맹점 {count}곳",
+    "sales": "평균 매출 {amount}",
+    "year": "{year}년 정보공개서",
+    "noFigures": "공개된 수치가 없어요",
+    "noResult": "‘{query}’로 찾은 브랜드가 없어요.",
+    "note": "공정거래위원회 가맹사업 정보공개서 기준이에요. 평균 매출은 가맹점 한 곳의 연 평균이에요.",
+    "more": "더보기 ({shown}/{total})"
+  },
+  "shop": {
+    "naverMap": "네이버 지도",
+    "instagram": "인스타그램",
+    "reviews": "방문자 리뷰",
+    "blogReviews": "블로그 리뷰",
+    "followers": "인스타 팔로워",
+    "posts": "게시물",
+    "menus": "메뉴 가격",
+    "loading": "불러오는 중이에요",
+    "priceCompare": "{service} 가격이 비슷한 샵보다 <b>{verdict}</b>"
+  },
+  "unit": {
+    "won": "{value}원",
+    "count": "{value}곳"
+  },
+  "empty": "이 동네는 아직 모인 자료가 적어요. 옆 동네나 다른 업종을 골라 보세요.",
+  "error": "자료를 불러오지 못했어요.",
+  "retry": "다시 시도",
+  "rivals": {
+    "eyebrow": "경쟁 샵과 비교",
+    "emptyHeadline": "눈여겨보는 샵을 추가해 보세요",
+    "headline": "{count}곳 중 리뷰 <b>{rank}등</b>이에요",
+    "shop": "샵",
+    "changes": "최근 30일 변화",
+    "add": "경쟁 샵 추가",
+    "remove": "{name} 빼기"
+  },
+  "shops": {
+    "eyebrow": "{region} {category} 샵 순위",
+    "headline": "{metric} 1등은 <b>{name}</b>",
+    "basis": "자료가 있는 {total}곳을 비교했어요",
+    "more": "더보기 ({shown}/{total})",
+    "note": "네이버·인스타그램·공공자료에 공개된 수치만 비교해요. 매출이나 시술 실력이 아니에요.",
+    "metric": {
+      "reviews": "방문자 리뷰",
+      "followers": "인스타 팔로워",
+      "instagram": "인스타 활동",
+      "area": "샵 면적",
+      "staff": "직원 수",
+      "reviewStaff": "직원당 리뷰",
+      "activity": "게시 주기"
+    },
+    "value": {
+      "reviews": "{value}개",
+      "followers": "{value}명",
+      "instagram": "{value}점",
+      "area": "{value}㎡",
+      "staff": "{value}명",
+      "reviewStaff": "1인당 {value}개",
+      "activity": "{value}일마다"
+    }
+  },
+  "watch": {
+    "eyebrow": "관심 샵",
+    "emptyHeadline": "눈여겨보는 샵을 저장해 보세요",
+    "headline": "관심 샵 <b>{count}곳</b>",
+    "add": "관심 샵 추가",
+    "save": "관심 저장",
+    "saved": "관심 샵",
+    "full": "관심 샵은 7곳까지"
+  },
+  "trends": {
+    "menuEyebrow": "{region} {category} 메뉴판",
+    "menuHeadline": "<b>{pct}%</b>의 샵이 {name} 메뉴를 두고 있어요",
+    "menuBasis": "{checked}곳 중 {current}곳",
+    "national": "전국 {pct}%",
+    "menuNote": "네이버 플레이스 메뉴판에 올라 있는 시술 기준이에요. 실제 시술 건수가 아니에요.",
+    "mentionEyebrow": "인스타 게시물 언급",
+    "mentionHeadline": "요즘 {name} 이야기가 가장 많아요",
+    "collecting": "게시물 언급은 아직 모으는 중이에요",
+    "mentionNote": "최근 30일 공개 게시물의 해시태그를 샵 수로 셌어요. 검색량이나 예약 수가 아니에요.",
+    "widen": "{sido} 전체로 보기"
+  },
+  "area": {
+    "empty": "이 동네는 아직 집계된 샵이 없어요. 다른 구를 골라 보세요.",
+    "eyebrow": "{sido} {gugun} {category} · 점 하나가 샵 한 곳",
+    "eyebrowGrouped": "{sido} {gugun} {category} · 점 하나가 샵 {per}곳",
+    "headline": "{category} 샵 {count}곳 사이에서 우리 샵은 어디쯤일까요?",
+    "dotsLabel": "샵 {count}곳 중 지난 1년 새로 연 {opened}곳을 검은 점으로 표시했어요",
+    "legendNew": "1년 새 문 연 {opened}곳",
+    "legendOld": "그 전부터 있던 곳",
+    "legendMine": "우리 샵은?",
+    "dotNote": "점의 배치는 순위와 상관없어요. 공공 인허가 자료 기준이라 실제 수와 조금 다를 수 있어요.",
+    "toMyShop": "우리 샵은 이 중 몇 등인지 보기",
+    "dotsLabelNoOpened": "샵 {count}곳을 점으로 표시했어요",
+    "closed": "같은 1년 동안 {closed}곳이 문을 닫았어요.",
+    "closedUnknown": "닫은 샵 수는 공공 인허가가 이 업종을 따로 나누지 않아 알 수 없어요.",
+    "density": "주민 {residents}명당 한 곳꼴이에요."
+  },
+  "teaser": {
+    "title": "우리 샵을 찾아 보세요",
+    "label": "샵 이름",
+    "placeholder": "샵 이름(두 글자 이상)…",
+    "loginHint": "로그인하면 우리 샵이 동네에서 어느 쪽에 있는지 미리 볼 수 있어요.",
+    "login": "로그인하고 우리 샵 찾기",
+    "searchError": "지금은 찾을 수 없어요. 잠시 뒤 다시 시도해 주세요.",
+    "noResult": "‘{term}’로 찾은 샵이 없어요. 네이버 플레이스에 등록된 이름으로 찾아보세요.",
+    "found": "{name}을(를) 찾았어요",
+    "again": "다시 찾기",
+    "summaryError": "이 샵은 아직 비교할 자료가 모자라요.",
+    "outOf": "{total}곳 중",
+    "hiddenRank": "?등",
+    "metricsTitle": "비슷한 규모 샵과 견준 {count}가지",
+    "metric": {
+      "ahead": "앞서는 지표",
+      "behind": "뒤지는 지표",
+      "even": "비슷한 지표",
+      "pricePosition": "가격 위치",
+      "unknown": "표본이 적어 보류"
+    },
+    "whichHidden": "무엇에서 앞서고 뒤지는지는 아직 몰라요.",
+    "inArea": "{sido} {gugun}에서 찾아요. 동네는 맨 위에서 바꿀 수 있어요."
+  },
+  "ruler": {
+    "title": "우리 {name} 가격을 대 보세요",
+    "won": "{value}원",
+    "sliderLabel": "{name} 가격",
+    "tick": {
+      "min": "최저 {value}",
+      "median": "중간 {value}",
+      "max": "최고 {value}"
+    },
+    "verdict": {
+      "aboveMedian": "동네 중간값보다 {diff}원 높아요.",
+      "belowMedian": "동네 중간값보다 {diff}원 낮아요.",
+      "atMedian": "동네 중간값과 같아요.",
+      "aboveMax": "동네에서 확인한 최고가보다 {diff}원 높아요.",
+      "belowMin": "동네에서 확인한 최저가보다 {diff}원 낮아요."
+    },
+    "basis": "동네 브랜드 {brands}곳 · 메뉴 {menus}개의 표시 가격 기준이에요.",
+    "private": "입력한 가격은 이 화면에서만 계산하고 저장하지 않아요.",
+    "prompt": "막대를 움직여 우리 샵 가격에 맞춰 보세요."
+  },
+  "unlock": {
+    "cta": "그럼 우리 샵은? 답 보기",
+    "everyoneTitle": "여기까지는 누구나 봐요",
+    "everyoneBody": "물음표 뒤의 답, 그러니까 우리 샵 순위와 이웃 샵 이름·가격은 멤버십 회원에게 열려요.",
+    "title": "물음표를 <em>숫자로</em> 바꿔 드려요",
+    "description": "뷰티탑은 멤버십 혜택이에요. 지금은 베타라 자료 점검 중에는 잠시 멈출 수 있어요.",
+    "item": {
+      "rank": "동네·구·업종·전국 순위",
+      "peers": "비교한 이웃 샵 이름과 수치",
+      "prices": "이웃 샵 가격표로 내 가격 시험",
+      "changes": "관심 샵이 바뀌면 다음 방문 때 알림"
+    },
+    "amount": {
+      "rank": "4단계",
+      "peers": "이름까지",
+      "prices": "메뉴별",
+      "changes": "방문할 때마다"
+    },
+    "withDiscount": "재료 멤버십가 할인도 함께 받아요.",
+    "start": "멤버십 보러 가기",
+    "login": "로그인하고 계속하기",
+    "later": "동네 자료 더 둘러볼게요",
+    "chips": {
+      "rank": "우리 샵 순위",
+      "peers": "이웃 샵 비교",
+      "prices": "내 가격 위치"
+    }
+  },
+  "compare": {
+    "title": "다른 동네와 견줘 보기",
+    "metric": "항목",
+    "pick": "비교할 구",
+    "unit": {
+      "shops": "{value}곳",
+      "people": "{value}명",
+      "won": "{value}원"
+    },
+    "row": {
+      "shops": "샵 수",
+      "residents": "주민/곳",
+      "opened": "1년 개업",
+      "price": "{name} 중간"
+    },
+    "note": "공공 인허가·메뉴 가격 기준이에요. 창업 지역을 고를 때 참고만 하세요."
+  },
+  "insta": {
+    "title": "요즘 동네 인스타"
+  },
+  "confirm": {
+    "title": "우리 샵 분석을 열까요?",
+    "body": "열면 멤버십 혜택을 이용한 것으로 처리돼요. 그러면 가입 7일 안 전액 환불(청약철회)은 받을 수 없어요. 동네 숫자는 열지 않아도 지금처럼 볼 수 있어요.",
+    "daysLeft": "전액 환불 가능 기간이 {days}일 남아 있어요.",
+    "policy": "환불 기준 자세히 보기",
+    "later": "나중에 볼게요",
+    "open": "열고 볼게요",
+    "lapsed": "멤버십이 끝나 우리 샵 분석을 열 수 없어요.",
+    "toMembership": "멤버십 확인하기"
+  },
+  "simulator": {
+    "title": "가격 시뮬레이터",
+    "subtitle": "{region} {category} 이웃 샵 메뉴 가격 사이에 우리 가격을 넣어 보세요",
+    "won": "{value}원",
+    "sliderLabel": "{name} 우리 가격",
+    "prompt": "막대를 움직이면 이웃 샵 사이 어디쯤인지 바로 보여 드려요.",
+    "place": "메뉴 {total}개 중 {place}번째로 싼 쪽이에요{same, plural, =0 {.} other {(같은 가격 #곳).}}",
+    "mine": "우리 샵",
+    "tooFew": "이 시술은 가격을 확인한 샵이 아직 적어요.",
+    "note": "가격을 확인한 메뉴 {count}개 기준이에요. 우리 가격은 이 화면에서만 쓰고 저장하지 않아요."
+  },
+  "receipt": {
+    "title": "이번 결제 주기에 멤버십이 해 준 일",
+    "since": "{date}부터",
+    "discount": "재료 멤버십 할인",
+    "discountValue": "{amount}원 · 주문 {orders}건",
+    "beautytop": "뷰티탑 우리 샵 분석",
+    "inUse": "이용 중",
+    "more": "주문별로 자세히 보기",
+    "discountNone": "이번 주기엔 아직 없어요"
+  },
+  "share": {
+    "heading": "우리 동네 카드로 공유하기",
+    "eyebrow": "{sido} · 우리 동네 숫자",
+    "title": "{gugun} {category} 샵\n{count}곳",
+    "opened": "1년 새 문 연 곳",
+    "residents": "주민 몇 명당 1곳",
+    "median": "{name} 중간값",
+    "shops": "{count}곳",
+    "people": "{count}명",
+    "won": "{value}원",
+    "brand": "아몬드영 뷰티탑",
+    "tagline": "우리 샵은 몇 등일까? 이름으로 확인해 보세요",
+    "save": "이미지 저장",
+    "link": "링크 공유",
+    "status": {
+      "saved": "이미지를 만들었어요.",
+      "copied": "링크를 복사했어요.",
+      "failed": "지금은 공유할 수 없어요. 다시 시도해 주세요."
+    }
+  }
+}

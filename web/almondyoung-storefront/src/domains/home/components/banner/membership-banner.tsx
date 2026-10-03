@@ -8,10 +8,12 @@ import { Banner } from "../shared/banner"
 
 interface MembershipBannerProps {
   className?: string
+  showOnMobile?: boolean
 }
 
 export default async function MembershipBanner({
   className = "",
+  showOnMobile = false,
 }: MembershipBannerProps) {
   const bannerGroup: BannerGroup | null = await getBannerGroupByCode(
     "MEMBER_SHIP_HERO"
@@ -43,7 +45,7 @@ export default async function MembershipBanner({
         pcSrc={banner.pcImageFileId}
         mobileSrc={banner.mobileImageFileId}
         alt={banner.title || "membership banner"}
-        hideOnMobile
+        hideOnMobile={!(showOnMobile && banner.mobileImageFileId)}
         dimensions={{
           pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
           mobile: {

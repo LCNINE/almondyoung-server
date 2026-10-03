@@ -21,6 +21,7 @@ import {
 } from "@components/common/ui/select"
 import { TOSS_BANKS } from "@lib/constants/toss-banks"
 import { cn } from "@lib/utils"
+import { CancelAreaLine } from "@/domains/beautytop/area/cancel-area-line"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type {
   CancellationMode,
@@ -346,6 +347,8 @@ export function MembershipCancelModal({
                 {immediate.unavailableReason}
               </p>
             )}
+
+            <CancelAreaLine />
 
             <div className="text-center">
               <p className="text-foreground text-base leading-6 font-bold">

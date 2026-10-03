@@ -37,6 +37,7 @@ export const MESSAGE_NAMESPACES = [
   "business",
   "notice",
   "shopTrade",
+  "beautytop",
   "logoContest",
 ] as const
 

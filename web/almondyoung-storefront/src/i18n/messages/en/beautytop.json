@@ -1,0 +1,317 @@
+{
+  "title": "BeautyTop",
+  "subtitle": "See your shop's rank and local prices in numbers.",
+  "tabs": {
+    "myShop": "My shop",
+    "neighborhood": "Neighborhood",
+    "shops": "Rankings",
+    "watch": "Saved",
+    "brand": "Brands"
+  },
+  "filter": {
+    "sido": "Province",
+    "gugun": "District",
+    "category": "Category"
+  },
+  "price": {
+    "eyebrow": "{category} prices in {region}",
+    "headline": "{service} is typically <b>{price}</b>",
+    "basis": "{shops} shops · {menus} menus",
+    "note": "Menu prices from Naver Place. Actual payment may differ with discounts or extras.",
+    "cheapest": "Cheapest",
+    "priciest": "Priciest",
+    "headlineRange": "{service} ranges <b>{price}</b>"
+  },
+  "market": {
+    "eyebrow": "{category} in {region}",
+    "headline": "<b>{count}</b> shops",
+    "opened": "{opened} opened in the last year",
+    "openedClosed": "{opened} opened and {closed} closed in the last year",
+    "perResidents": "1 per {count} residents",
+    "newLabel": "Opened",
+    "closedLabel": "Closed",
+    "densityLabel": "Density",
+    "chartTitle": "Monthly openings",
+    "note": "Based on public licensing data. Actual numbers may differ slightly."
+  },
+  "revenue": {
+    "eyebrow": "{industry} card sales in {region}",
+    "up": "Up <b>{pct}%</b> from the same quarter last year",
+    "down": "Down <b>{pct}%</b> from the same quarter last year",
+    "flat": "<b>Similar</b> to the same quarter last year",
+    "quarter": "Q{q} {year}",
+    "note": "Card sales estimates from Seoul Credit Guarantee Foundation. District-wide trend, not individual shop sales."
+  },
+  "rank": {
+    "byReviews": "Reviews",
+    "byFollowers": "Followers",
+    "reviews": "Reviews",
+    "followers": "Followers"
+  },
+  "myShop": {
+    "searchLabel": "Shop name",
+    "searchPlaceholder": "Enter your shop name",
+    "searchHint": "Pick your shop to see its local rank and how it compares with similar shops.",
+    "noResult": "No shops found for ‘{query}’. Try the name registered on Naver Place.",
+    "change": "Find another shop",
+    "detail": "Shop details",
+    "positionEyebrow": "{name} rank",
+    "positionHeadline": "<b>#{rank}</b> in {scope}",
+    "positionSub": "Top {pct}% of {total}",
+    "peersEyebrow": "Compared with {count} similar shops",
+    "peersRank": "#{rank} of {total}",
+    "mine": "My shop",
+    "typical": "Typical",
+    "more": "{diff} more",
+    "fewer": "{diff} fewer",
+    "higher": "{diff} higher",
+    "lower": "{diff} lower",
+    "same": "About the same",
+    "note": "Compares public reviews, followers and menu prices only, not sales or bookings.",
+    "priceLabel": "{service} price"
+  },
+  "franchise": {
+    "searchLabel": "Brand name",
+    "searchPlaceholder": "Enter a brand name",
+    "headline": "Found <b>{count}</b> brands",
+    "stores": "{count} stores",
+    "sales": "Avg. sales {amount}",
+    "year": "{year} disclosure",
+    "noFigures": "No published figures",
+    "noResult": "No brands found for ‘{query}’.",
+    "note": "Based on KFTC franchise disclosure documents. Average sales are per store per year.",
+    "more": "Show more ({shown}/{total})"
+  },
+  "shop": {
+    "naverMap": "Naver Map",
+    "instagram": "Instagram",
+    "reviews": "Visitor reviews",
+    "blogReviews": "Blog reviews",
+    "followers": "Instagram followers",
+    "posts": "Posts",
+    "menus": "Menu prices",
+    "loading": "Loading",
+    "priceCompare": "{service} is <b>{verdict}</b> than similar shops"
+  },
+  "unit": {
+    "won": "₩{value}",
+    "count": "{value}"
+  },
+  "empty": "Not enough data for this area yet. Try a nearby district or another category.",
+  "error": "Couldn't load the data.",
+  "retry": "Try again",
+  "rivals": {
+    "eyebrow": "Compared with rivals",
+    "emptyHeadline": "Add shops you want to keep an eye on",
+    "headline": "<b>#{rank}</b> in reviews of {count}",
+    "shop": "Shop",
+    "changes": "Changes in the last 30 days",
+    "add": "Add a rival shop",
+    "remove": "Remove {name}"
+  },
+  "shops": {
+    "eyebrow": "{category} shop rankings in {region}",
+    "headline": "<b>{name}</b> leads in {metric}",
+    "basis": "Compared {total} shops with data",
+    "more": "Show more ({shown}/{total})",
+    "note": "Compares only figures published on Naver, Instagram and public records. Not sales or skill.",
+    "metric": {
+      "reviews": "Visitor reviews",
+      "followers": "Instagram followers",
+      "instagram": "Instagram activity",
+      "area": "Shop area",
+      "staff": "Staff",
+      "reviewStaff": "Reviews per staff",
+      "activity": "Posting interval"
+    },
+    "value": {
+      "reviews": "{value}",
+      "followers": "{value}",
+      "instagram": "{value} pts",
+      "area": "{value} m²",
+      "staff": "{value}",
+      "reviewStaff": "{value} each",
+      "activity": "Every {value} days"
+    }
+  },
+  "watch": {
+    "eyebrow": "Saved shops",
+    "emptyHeadline": "Save shops you want to keep an eye on",
+    "headline": "<b>{count}</b> saved shops",
+    "add": "Add a shop",
+    "save": "Save",
+    "saved": "Saved",
+    "full": "Up to 7 saved shops"
+  },
+  "trends": {
+    "menuEyebrow": "{category} menus in {region}",
+    "menuHeadline": "<b>{pct}%</b> of shops offer {name}",
+    "menuBasis": "{current} of {checked} shops",
+    "national": "Nationwide {pct}%",
+    "menuNote": "Based on services listed on Naver Place menus, not actual bookings.",
+    "mentionEyebrow": "Instagram mentions",
+    "mentionHeadline": "{name} is the most talked about",
+    "collecting": "Still collecting post mentions",
+    "mentionNote": "Counts shops using each hashtag in public posts from the last 30 days. Not search volume or bookings.",
+    "widen": "See all of {sido}"
+  },
+  "area": {
+    "empty": "No shops are counted here yet. Try another district.",
+    "eyebrow": "{sido} {gugun} {category} · one dot is one shop",
+    "eyebrowGrouped": "{sido} {gugun} {category} · one dot is {per} shops",
+    "headline": "Among {count} {category} shops, where does yours stand?",
+    "dotsLabel": "Of {count} shops, the {opened} opened in the last year are shown as black dots",
+    "legendNew": "{opened} opened this year",
+    "legendOld": "Open longer",
+    "legendMine": "Your shop?",
+    "dotNote": "Dot positions do not reflect rank. Based on public permit records, so counts may differ slightly.",
+    "toMyShop": "See where your shop ranks",
+    "dotsLabelNoOpened": "{count} shops shown as dots",
+    "closed": "In the same year {closed} closed.",
+    "closedUnknown": "Closures are unknown: public permits do not list this category separately.",
+    "density": "That is one shop per {residents} residents."
+  },
+  "teaser": {
+    "title": "Find your shop",
+    "label": "Shop name",
+    "placeholder": "Shop name (2+ characters)…",
+    "loginHint": "Sign in to preview where your shop sits in the neighbourhood.",
+    "login": "Sign in to find your shop",
+    "searchError": "Search is unavailable right now. Please try again shortly.",
+    "noResult": "No shop found for ‘{term}’. Try the name listed on Naver Place.",
+    "found": "Found {name}",
+    "again": "Search again",
+    "summaryError": "There is not enough data to compare this shop yet.",
+    "outOf": "Out of {total}",
+    "hiddenRank": "#?",
+    "metricsTitle": "{count} comparisons with similar shops",
+    "metric": {
+      "ahead": "Ahead",
+      "behind": "Behind",
+      "even": "Level",
+      "pricePosition": "Price position",
+      "unknown": "Too few samples"
+    },
+    "whichHidden": "Which ones you lead on stays hidden for now.",
+    "inArea": "Searching in {gugun}, {sido}. Change the area at the top."
+  },
+  "ruler": {
+    "title": "Try your {name} price",
+    "won": "₩{value}",
+    "sliderLabel": "{name} price",
+    "tick": {
+      "min": "Low {value}",
+      "median": "Median {value}",
+      "max": "High {value}"
+    },
+    "verdict": {
+      "aboveMedian": "₩{diff} above the local median.",
+      "belowMedian": "₩{diff} below the local median.",
+      "atMedian": "Same as the local median.",
+      "aboveMax": "₩{diff} above the highest price seen locally.",
+      "belowMin": "₩{diff} below the lowest price seen locally."
+    },
+    "basis": "Based on listed prices from {brands} local brands and {menus} menu items.",
+    "private": "Your price is calculated on this screen only and never saved.",
+    "prompt": "Move the slider to your shop's price."
+  },
+  "unlock": {
+    "cta": "So where is my shop? See the answer",
+    "everyoneTitle": "Everyone can see this much",
+    "everyoneBody": "The answers behind the question marks, your rank and neighbouring shops' names and prices, open to members.",
+    "title": "We turn the question marks <em>into numbers</em>",
+    "description": "BeautyTop is a membership benefit. It is in beta and may pause while data is checked.",
+    "item": {
+      "rank": "Rank in area, district, category and nationwide",
+      "peers": "Names and figures of the shops you are compared with",
+      "prices": "Test your prices against neighbours' menus",
+      "changes": "See changes at watched shops on your next visit"
+    },
+    "amount": {
+      "rank": "4 levels",
+      "peers": "With names",
+      "prices": "Per menu",
+      "changes": "Every visit"
+    },
+    "withDiscount": "Member prices on supplies come with it.",
+    "start": "See membership",
+    "login": "Sign in to continue",
+    "later": "Keep browsing the area",
+    "chips": {
+      "rank": "Your shop's rank",
+      "peers": "Nearby shop comparison",
+      "prices": "Where your prices sit"
+    }
+  },
+  "compare": {
+    "title": "Compare with another district",
+    "metric": "Metric",
+    "pick": "District",
+    "unit": {
+      "shops": "{value}",
+      "people": "{value}",
+      "won": "₩{value}"
+    },
+    "row": {
+      "shops": "Shops",
+      "residents": "Residents/shop",
+      "opened": "Opened (1y)",
+      "price": "{name} median"
+    },
+    "note": "Based on public permits and menu prices. Use it as a reference when choosing where to open."
+  },
+  "insta": {
+    "title": "Local Instagram lately"
+  },
+  "confirm": {
+    "title": "Open your shop analysis?",
+    "body": "Opening it counts as using a membership benefit, so the 7-day full refund (withdrawal) will no longer apply. You can keep viewing the area figures without opening it.",
+    "daysLeft": "{days} days left to get a full refund.",
+    "policy": "Refund policy",
+    "later": "Maybe later",
+    "open": "Open it",
+    "lapsed": "Your membership has ended, so the shop analysis is unavailable.",
+    "toMembership": "Check membership"
+  },
+  "simulator": {
+    "title": "Price simulator",
+    "subtitle": "Place your price among neighbouring {category} shops in {region}",
+    "won": "₩{value}",
+    "sliderLabel": "Your {name} price",
+    "prompt": "Move the slider to see where you stand among nearby shops.",
+    "place": "#{place} cheapest of {total} menus{same, plural, =0 {.} other { (# at the same price).}}",
+    "mine": "Your shop",
+    "tooFew": "Too few shops have a checked price for this service yet.",
+    "note": "Based on {count} checked menus. Your price stays on this screen and is not saved."
+  },
+  "receipt": {
+    "title": "What membership did this billing period",
+    "since": "Since {date}",
+    "discount": "Member discounts on supplies",
+    "discountValue": "₩{amount} · {orders} orders",
+    "beautytop": "BeautyTop shop analysis",
+    "inUse": "In use",
+    "more": "See details by order",
+    "discountNone": "None yet this period"
+  },
+  "share": {
+    "heading": "Share your area card",
+    "eyebrow": "{sido} · Area in numbers",
+    "title": "{count} {category} shops\nin {gugun}",
+    "opened": "Opened in the last year",
+    "residents": "Residents per shop",
+    "median": "{name} median",
+    "shops": "{count}",
+    "people": "{count}",
+    "won": "₩{value}",
+    "brand": "Almondyoung BeautyTop",
+    "tagline": "Where does your shop rank? Look it up by name",
+    "save": "Save image",
+    "link": "Share link",
+    "status": {
+      "saved": "Image created.",
+      "copied": "Link copied.",
+      "failed": "Sharing is unavailable right now. Please try again."
+    }
+  }
+}

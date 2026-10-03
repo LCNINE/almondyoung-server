@@ -11,12 +11,17 @@ import {
 import { useScrollSpy } from "@/hooks/use-scroll-spy"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@/lib/types/medusa-category"
-import { AlertCircle, ChevronRight } from "lucide-react"
+import { AlertCircle, ArrowUpRight, ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CategorySection } from "./category-section"
 import { SidebarTabs } from "./sidebar-tabs"
+
+const EXTERNAL_SHORTCUTS = [
+  { key: "almondyoungPlay", href: "https://www.almondyoungplay.com/" },
+  { key: "dabeau", href: "https://dabeau.kr" },
+] as const
 
 interface CategorySheetProps {
   trigger: React.ReactNode
@@ -29,6 +34,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
   const [isError, setIsError] = useState(false)
   const t = useTranslations("categorySheet")
   const tCategories = useTranslations("categories")
+  const tQuickLinks = useTranslations("header.quickLinks")
 
   const scrollRef = useRef<HTMLElement>(null)
   const sectionIds = useMemo(() => categories.map((c) => c.id), [categories])
@@ -73,6 +79,32 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
           </SheetTitle>
           <SheetDescription className="sr-only">{t("title")}</SheetDescription>
         </SheetHeader>
+
+        <nav
+          aria-label={t("shortcuts")}
+          className="scrollbar-hide flex gap-2 overflow-x-auto border-b border-gray-100 px-5 py-3"
+        >
+          <LocalizedClientLink
+            href="/beautytop"
+            onClick={closeSheet}
+            className="bg-header-background flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-white"
+          >
+            {tQuickLinks("beautytop")}
+            <span className="text-primary text-[10px] font-bold">NEW</span>
+          </LocalizedClientLink>
+          {EXTERNAL_SHORTCUTS.map((link) => (
+            <a
+              key={link.key}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="bg-secondary text-foreground flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-[13px] font-medium"
+            >
+              {t(link.key)}
+              <ArrowUpRight aria-hidden className="h-3.5 w-3.5 opacity-60" />
+            </a>
+          ))}
+        </nav>
 
         {/* 샵매매는 Medusa 카테고리가 아니라 자체 게시판이라 아래 목록에 안 섞인다 */}
         <LocalizedClientLink

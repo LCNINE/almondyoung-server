@@ -31,6 +31,12 @@ export function isWithdrawalEligible(params: {
   return days <= WITHDRAWAL_WINDOW_DAYS && !hasUsedMembershipBenefit(params.usage);
 }
 
+/** 청약철회 창이 며칠 남았는지(지났거나 주기 시작을 모르면 0). 혜택 사용 여부는 보지 않는다. */
+export function withdrawalDaysRemaining(periodStart: Date | null, now: Date): number {
+  if (!periodStart) return 0;
+  return Math.max(0, WITHDRAWAL_WINDOW_DAYS - differenceInCalendarDays(now, periodStart));
+}
+
 /** 연간 플랜 판정 기준일수. 365 를 그대로 쓰지 않는 이유는 366/360 같은 변형 플랜도 연간으로 보기 위함. */
 export const ANNUAL_PLAN_MIN_DURATION_DAYS = 180;
 
@@ -163,8 +169,7 @@ export class RefundPolicyService {
       now: input.now,
       usage: input.currentPeriodBenefit,
     });
-    const withdrawalDaysRemaining =
-      daysSincePeriodStart === null ? 0 : Math.max(0, WITHDRAWAL_WINDOW_DAYS - daysSincePeriodStart);
+    const daysRemaining = withdrawalDaysRemaining(input.paidPeriodStart, input.now);
 
     const immediateRefund = this.resolveImmediateOption({
       input,
@@ -185,7 +190,7 @@ export class RefundPolicyService {
         (immediateRefund.refundAmount > 0 || immediateRefund.refundKind === 'PRE_COLLECTION_WITHDRAWAL')
           ? 'IMMEDIATE_REFUND'
           : 'AT_PERIOD_END',
-      withdrawalDaysRemaining: benefitUnused ? withdrawalDaysRemaining : 0,
+      withdrawalDaysRemaining: benefitUnused ? daysRemaining : 0,
     };
   }
 

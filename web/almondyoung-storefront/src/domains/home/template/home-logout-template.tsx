@@ -2,6 +2,7 @@ import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { MainSectionSkeleton } from "@/components/skeletons/page-skeletons"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
+import { BeautyTopHomeCard } from "../components/beautytop-home-card"
 import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
@@ -153,6 +154,8 @@ export async function HomeLogoutTemplate({
           <LogoContestWrapper countryCode={countryCode} />
         </Suspense>
       </ErrorBoundary>
+
+      {bannerVisible && <BeautyTopHomeCard />}
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>

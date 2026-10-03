@@ -31,7 +31,7 @@ describe('RefundPolicyService', () => {
       autoRefundSupported: true,
       requiresReceiveAccount: false,
       refundableAmount: null,
-      currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false },
+      currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false, beautytopPremium: false },
       ...overrides,
     };
   }
@@ -43,7 +43,7 @@ describe('RefundPolicyService', () => {
         plan: { price: ANNUAL_PRICE, durationDays: 365 },
         paidPeriodStart: addDays(now, -75),
         periodEndsAt: addDays(now, 290),
-        currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1000, welcomeDeal: false },
+        currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1000, welcomeDeal: false, beautytopPremium: false },
       };
 
       // 75일 경과 → 3개월 차감(34,930원). 그중 40일이 정지였다면 35일 이용 → 2개월 차감(39,920원).
@@ -133,7 +133,7 @@ describe('RefundPolicyService', () => {
     });
 
     it('할인을 1원이라도 받았으면 7일 내라도 환불 불가', () => {
-      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1, welcomeDeal: false } }));
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1, welcomeDeal: false, beautytopPremium: false } }));
 
       expect(decision.immediateRefund.available).toBe(false);
       expect(decision.immediateRefund.unavailableReason).toContain('혜택');
@@ -141,7 +141,7 @@ describe('RefundPolicyService', () => {
 
     it('할인이 0원이라도 웰컴딜을 샀으면 7일 내라도 환불 불가 — 혜택은 할인만이 아니다', () => {
       const decision = policy.evaluate(
-        input({ currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true } }),
+        input({ currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true, beautytopPremium: false } }),
       );
 
       expect(decision.immediateRefund.available).toBe(false);
@@ -149,7 +149,7 @@ describe('RefundPolicyService', () => {
     });
 
     it('주문은 했지만 멤버십 할인이 0원이면 혜택 미사용 — 전액 환불', () => {
-      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 3, totalDiscountAmount: 0, welcomeDeal: false } }));
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 3, totalDiscountAmount: 0, welcomeDeal: false, beautytopPremium: false } }));
 
       expect(decision.immediateRefund.available).toBe(true);
       expect(decision.immediateRefund.refundKind).toBe('WITHDRAWAL_FULL');
@@ -251,7 +251,7 @@ describe('RefundPolicyService', () => {
 });
 
 describe('isWithdrawalEligible — 해지 화면과 미납 요금이 함께 쓰는 판정', () => {
-  const unused = { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false };
+  const unused = { orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false, beautytopPremium: false };
   const now = new Date('2026-09-23T03:00:00Z');
 
   it('주기 시작 7일째까지 · 미사용이면 대상', () => {
@@ -265,10 +265,53 @@ describe('isWithdrawalEligible — 해지 화면과 미납 요금이 함께 쓰�
   it('혜택을 하나라도 썼으면 대상이 아니다', () => {
     const start = new Date('2026-09-22');
     expect(isWithdrawalEligible({ periodStart: start, now, usage: { ...unused, totalDiscountAmount: 1 } })).toBe(false);
-    expect(isWithdrawalEligible({ periodStart: start, now, usage: { ...unused, welcomeDeal: true } })).toBe(false);
+    expect(isWithdrawalEligible({ periodStart: start, now, usage: { ...unused, welcomeDeal: true, beautytopPremium: false } })).toBe(false);
   });
 
   it('주기 시작을 모르면 대상이 아니다', () => {
     expect(isWithdrawalEligible({ periodStart: null, now, usage: unused })).toBe(false);
+  });
+
+  describe('뷰티탑 프리미엄 열람', () => {
+    const rows = [0, 3, 7, 8].flatMap((daysAgo) =>
+      [0, 1].flatMap((totalDiscountAmount) =>
+        [false, true].map((welcomeDeal) => ({ daysAgo, totalDiscountAmount, welcomeDeal })),
+      ),
+    );
+
+    it.each(rows)(
+      '안 열었으면 기존 판정 그대로 (경과 $daysAgo일 · 할인 $totalDiscountAmount · 웰컴딜 $welcomeDeal)',
+      ({ daysAgo, totalDiscountAmount, welcomeDeal }) => {
+        const periodStart = new Date(now.getTime() - daysAgo * 86_400_000);
+        const usage = { orderCount: totalDiscountAmount, totalDiscountAmount, welcomeDeal, beautytopPremium: false };
+        const expected = daysAgo <= 7 && totalDiscountAmount === 0 && !welcomeDeal;
+
+        expect(isWithdrawalEligible({ periodStart, now, usage })).toBe(expected);
+
+        const decision = new RefundPolicyService().evaluate({
+          now,
+          isRecurring: true,
+          plan: { price: 4990, durationDays: 30 },
+          monthlyListPrice: 4990,
+          paidPeriodStart: periodStart,
+          pausedDaysInPeriod: 0,
+          periodEndsAt: addDays(periodStart, 30),
+          pausedDaysAccrued: 0,
+          hasPayment: true,
+          awaitingCollection: false,
+          autoRefundSupported: true,
+          requiresReceiveAccount: false,
+          refundableAmount: null,
+          currentPeriodBenefit: usage,
+        });
+        expect(decision.immediateRefund.refundKind === 'WITHDRAWAL_FULL').toBe(expected);
+        expect(decision.withdrawalDaysRemaining > 0).toBe(expected && daysAgo < 7);
+      },
+    );
+
+    it.each([0, 3, 7])('열었으면 %i일째라도 대상이 아니다', (daysAgo) => {
+      const periodStart = new Date(now.getTime() - daysAgo * 86_400_000);
+      expect(isWithdrawalEligible({ periodStart, now, usage: { ...unused, beautytopPremium: true } })).toBe(false);
+    });
   });
 });

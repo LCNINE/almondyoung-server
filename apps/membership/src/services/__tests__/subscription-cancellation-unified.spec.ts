@@ -111,7 +111,7 @@ describe('SubscriptionCancellationService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockContractReader.findMonthlyListPrice.mockResolvedValue(4990);
-    mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false });
+    mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false, beautytopPremium: false });
     mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
     mockPauseReader.findPausedEntitlement.mockResolvedValue(null);
     // 기본은 카드/무통장처럼 PG 자동환불이 되는 수단
@@ -235,7 +235,7 @@ describe('SubscriptionCancellationService', () => {
 
     it('7일 내라도 이번 주기에 혜택을 썼으면 환불 불가', async () => {
       givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
-      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000, welcomeDeal: false });
+      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000, welcomeDeal: false, beautytopPremium: false });
 
       await expect(
         service.cancelSubscription('user_001', 'a@b.com', {
@@ -247,7 +247,20 @@ describe('SubscriptionCancellationService', () => {
 
     it('웰컴딜을 샀으면 할인이 0원이라도 혜택 사용이라 7일 내라도 환불 불가', async () => {
       givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
-      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true });
+      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: true, beautytopPremium: false });
+
+      const preview = await service.previewCancellation('user_001');
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')?.available).toBe(false);
+    });
+
+    it('뷰티탑 프리미엄을 열었으면 7일 내라도 환불 불가', async () => {
+      givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
+      mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({
+        orderCount: 0,
+        totalDiscountAmount: 0,
+        welcomeDeal: false,
+        beautytopPremium: true,
+      });
 
       const preview = await service.previewCancellation('user_001');
       expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')?.available).toBe(false);
