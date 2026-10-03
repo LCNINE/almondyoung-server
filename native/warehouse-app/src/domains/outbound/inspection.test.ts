@@ -131,10 +131,16 @@ describe('품목 표', () => {
   it('송장 순서(첫 위치의 코드 순)로, 위치 없는 줄(옛 core)은 뒤로', () => {
     const rows = inspectionRows(lines, progressOf({ lines }));
     expect(rows.map((r) => [r.shipmentLineId, r.locations])).toEqual([
-      ['a', 'A-03-2'],
-      ['b', 'B-10 · B-11-1'],
-      ['c', 'C-02-4'],
-      ['x', ''],
+      ['a', [{ code: 'A-03-2', qty: 1 }]],
+      [
+        'b',
+        [
+          { code: 'B-10', qty: 1 },
+          { code: 'B-11-1', qty: 2 },
+        ],
+      ],
+      ['c', [{ code: 'C-02-4', qty: 2 }]],
+      ['x', []],
     ]);
   });
 

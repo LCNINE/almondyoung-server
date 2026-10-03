@@ -51,3 +51,10 @@ export function workFor(view: View, handle: BoxWorkHandle | null): BoxWorkHandle
   if (!handle || (view.kind !== 'inspect' && view.kind !== 'withdraw')) return null;
   return handle.shipmentId === view.box.shipmentId && handle.seq === view.seq ? handle : null;
 }
+
+/** 큰 칸(왼쪽 380px − 여백 48px)에 한 줄로 들어가는 글자 크기 — 기본 120px, 고정폭 글자 하나 ≈ 0.6em 로 잰다 */
+const BIG_TEXT_WIDTH_PX = 332;
+const MONO_EM = 0.6;
+export function bigTextPx(text: string): number {
+  return Math.min(120, Math.floor(BIG_TEXT_WIDTH_PX / (Math.max(text.length, 1) * MONO_EM)));
+}

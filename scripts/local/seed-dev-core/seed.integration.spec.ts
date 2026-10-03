@@ -1,13 +1,20 @@
 import { execFileSync } from 'child_process';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, notLike, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 import { canonicalFulfillmentRequestHash } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-command.service';
-import { assembleSimpleOutbound } from '../../../apps/core/src/modules/fulfillment/services/__support__/simple-outbound-wiring';
+import {
+  assembleSimpleOutbound,
+  startBatchFor,
+} from '../../../apps/core/src/modules/fulfillment/services/__support__/simple-outbound-wiring';
 import { inRollbackTx } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
+// constants.ts 레지스트리의 019d000f(출고 시나리오 SKU). 기본 시드 단언에서 그 행을 걸러낼 때만 쓴다.
+const SCENARIO_SKU_ID_PREFIX = '019d000f';
+// constants.ts 레지스트리의 019d000b(출고 배치) 첫 id — 리터럴(위 주석들과 같은 이유).
+const DEV_BATCH_ID = '019d000b-0001-7000-a000-000000000001';
 const describeIfSeedDb = SEED_URL ? describe : describe.skip;
 
 describeIfSeedDb('dev_core 시드', () => {
@@ -30,11 +37,12 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
-    // 정확히 12개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
+    // 정확히 14개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
     // 부팅 시 시딩되는 개수다(import 하지 않음: ALL_SCOPES 에서 스코프 하나가 빠지는 회귀는
-    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(4) + FULFILLMENT_SCOPES(8).
+    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(4) + FULFILLMENT_SCOPES(10 — 스테이션 UI
+    // PR A 가 shipment.short_pick·dispatch.station_force 를 더했다).
     const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(scopeCountRows[0].n).toBe(12);
+    expect(scopeCountRows[0].n).toBe(14);
 
     const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
       SELECT rsm.role_name, s.key AS scope_key
@@ -135,7 +143,10 @@ describeIfSeedDb('dev_core 시드', () => {
     }
     expect(locations.filter((l) => l.isSystem)).toHaveLength(4); // 창고 2개 × (RECEIVING, RETURN)
 
-    const skus = await db.select().from(wmsTables.skus).orderBy(wmsTables.skus.code);
+    // 출고 시나리오 SKU(DEV-BOX-SKU-*)는 아래 「출고 시나리오」 테스트가 따로 본다.
+    const skus = (await db.select().from(wmsTables.skus).orderBy(wmsTables.skus.code)).filter((s) =>
+      s.code.startsWith('DEV-SKU-'),
+    );
     expect(skus).toHaveLength(20);
 
     // 20개 SKU 코드 전체를 리터럴로 적어 코드 유일성·순서·zero-padding 자릿수를 한 번에 검증한다.
@@ -174,7 +185,10 @@ describeIfSeedDb('dev_core 시드', () => {
       expect(sku.safetyStock).toBe(expectedSafetyStock);
     }
 
-    const barcodes = await db.select().from(wmsTables.skuBarcodes).orderBy(wmsTables.skuBarcodes.barcode);
+    const baseSkuIds = new Set(skus.map((s) => s.id));
+    const barcodes = (await db.select().from(wmsTables.skuBarcodes).orderBy(wmsTables.skuBarcodes.barcode)).filter(
+      (b) => baseSkuIds.has(b.skuId),
+    );
     expect(barcodes).toHaveLength(20);
 
     // 바코드도 20개 전체를 리터럴로 적어 유일성과 zero-padding 자릿수를 한 번에 검증한다 (계산 없이 나열).
@@ -232,7 +246,8 @@ describeIfSeedDb('dev_core 시드', () => {
         qty: wmsTables.stockLedgers.qty,
       })
       .from(wmsTables.stockLedgers)
-      .where(eq(wmsTables.stockLedgers.stockState, 'ON_HAND'));
+      .where(eq(wmsTables.stockLedgers.stockState, 'ON_HAND'))
+      .then((rows) => rows.filter((row) => !row.skuId.startsWith(SCENARIO_SKU_ID_PREFIX)));
 
     // 기대값은 constants.ts/stock.ts 의 SEED_SKUS/SEED_RACK_LOCATIONS/SEED_IDS 와 배치 규칙을
     // import 하거나 재계산하지 않고 리터럴로 옮겨 적는다 — 계산 로직을 그대로 가져와 비교하면
@@ -375,7 +390,12 @@ describeIfSeedDb('dev_core 시드', () => {
     const receiveEvents = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(wmsTables.stockEvents)
-      .where(eq(wmsTables.stockEvents.transitionType, 'RECEIVE'));
+      .where(
+        and(
+          eq(wmsTables.stockEvents.transitionType, 'RECEIVE'),
+          notLike(sql`${wmsTables.stockEvents.skuId}::text`, `${SCENARIO_SKU_ID_PREFIX}%`),
+        ),
+      );
     expect(Number(receiveEvents[0].n)).toBe(25);
     expect(Number(receiveEvents[0].n)).toBe(ledgers.length);
   });
@@ -423,20 +443,21 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('판매주문 10건이 FO 와 draft shipment 로 변환된다', async () => {
+    // 출고 시나리오 주문(DEV-BOX-*) 8건이 함께 있다 — 그쪽은 아래 「출고 시나리오」 테스트가 본다.
     const orders = await db.select().from(wmsTables.salesOrders).orderBy(wmsTables.salesOrders.channelOrderId);
-    expect(orders).toHaveLength(10);
-    expect(orders[0].channelOrderId).toBe('DEV-ORDER-0001');
+    expect(orders.filter((o) => o.channelOrderId.startsWith('DEV-ORDER-'))).toHaveLength(10);
+    expect(orders).toHaveLength(18);
 
     const fulfillmentOrders = await db.select().from(wmsTables.fulfillmentOrders);
-    expect(fulfillmentOrders).toHaveLength(10);
+    expect(fulfillmentOrders).toHaveLength(18);
 
     const items = await db.select().from(wmsTables.fulfillmentOrderItems);
-    expect(items).toHaveLength(10);
+    expect(items).toHaveLength(10 + 17); // 기본 10 + 시나리오 박스 줄 17
     // 예약이 함께 섰는지 — 직접 insert 로는 만들 수 없는 상태다.
     expect(items.every((item) => item.reservedQty > 0)).toBe(true);
 
     const shipments = await db.select().from(wmsTables.shipments);
-    expect(shipments).toHaveLength(10);
+    expect(shipments).toHaveLength(18);
 
     // 리뷰 지적사항: 위 assertion 들은 FulfillmentsService.create 가 실제로 계산하는 핵심 값 —
     // FO item 의 qty(= sales_order_line.quantity × product_variant_sku_link.quantity)와 그
@@ -478,6 +499,7 @@ describeIfSeedDb('dev_core 시드', () => {
         wmsTables.fulfillmentOrderItems,
         eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, wmsTables.fulfillmentOrders.id),
       )
+      .where(like(wmsTables.salesOrders.channelOrderId, 'DEV-ORDER-%'))
       .orderBy(wmsTables.salesOrders.channelOrderId);
     expect(itemsByOrder).toHaveLength(10);
 
@@ -497,10 +519,10 @@ describeIfSeedDb('dev_core 시드', () => {
       acc[row.status] = (acc[row.status] ?? 0) + 1;
       return acc;
     }, {});
-    expect(byStatus).toEqual({ draft: 5, planned: 5 });
+    expect(byStatus).toEqual({ draft: 5, planned: 5 + 8 }); // 시나리오 박스 8개는 전부 planned
   });
 
-  it('planned shipment 5건이 배치·work item·송장까지 출고 대기 상태로 들어간다', async () => {
+  it('planned shipment 13건(기본 5 + 시나리오 8)이 배치·work item·송장까지 출고 대기 상태로 들어간다', async () => {
     const batches = await db.select().from(wmsTables.outboundBatches);
     expect(batches).toHaveLength(1);
     const [batch] = batches;
@@ -515,11 +537,11 @@ describeIfSeedDb('dev_core 시드', () => {
       .select({ id: wmsTables.shipments.id, manifestVersion: wmsTables.shipments.manifestVersion })
       .from(wmsTables.shipments)
       .where(eq(wmsTables.shipments.status, 'planned'));
-    expect(plannedShipments).toHaveLength(5);
+    expect(plannedShipments).toHaveLength(13);
     const plannedIds = new Set(plannedShipments.map((s) => s.id));
 
     const workItems = await db.select().from(wmsTables.outboundBatchWorkItems);
-    expect(workItems).toHaveLength(5);
+    expect(workItems).toHaveLength(13);
     expect(new Set(workItems.map((w) => w.shipmentId))).toEqual(plannedIds);
     for (const workItem of workItems) {
       expect(workItem.batchId).toBe(batch.id);
@@ -532,13 +554,23 @@ describeIfSeedDb('dev_core 시드', () => {
     }
 
     const waybills = await db.select().from(wmsTables.waybills).orderBy(wmsTables.waybills.trackingNo);
-    expect(waybills).toHaveLength(5);
+    expect(waybills).toHaveLength(13);
+    // 12자리 숫자 — 실제 한진 형식이다. 앱의 검수 중 송장/상품 판정이 «10자리 이상 숫자» 를 송장 후보로 보므로,
+    // 문자가 섞인 번호로는 그 경로가 로컬에서 한 번도 안 밟힌다.
     expect(waybills.map((w) => w.trackingNo)).toEqual([
-      'DEV-WAYBILL-0001',
-      'DEV-WAYBILL-0002',
-      'DEV-WAYBILL-0003',
-      'DEV-WAYBILL-0004',
-      'DEV-WAYBILL-0005',
+      '900000000001',
+      '900000000002',
+      '900000000003',
+      '900000000004',
+      '900000000005',
+      '900000000006',
+      '900000000007',
+      '900000000008',
+      '900000000009',
+      '900000000010',
+      '900000000011',
+      '900000000012',
+      '900000000013',
     ]);
     expect(new Set(waybills.map((w) => w.shipmentId))).toEqual(plannedIds);
 
@@ -553,7 +585,8 @@ describeIfSeedDb('dev_core 시드', () => {
       // lockAggregate 는 active waybill 정확히 1건을 요구한다(registered 가 active). manual 이 아닌
       // source 는 ck_waybills_manual_status 밖이고, pending 이면 단순출고가 SHIPMENT_INVOICE_NOT_READY.
       expect(waybill.status).toBe('registered');
-      expect(waybill.source).toBe('manual');
+      // 기본 5건은 수기 송장(출력 검사 면제 경로), 시나리오 8건은 «한진이 발급한» 송장(출력·재출력 경로)이다.
+      expect(waybill.source).toBe(Number(waybill.trackingNo) <= 900000000005 ? 'manual' : 'carrier');
       expect(waybill.carrier).toBe('HANJIN');
       expect(waybill.manifestVersion).toBe(manifestVersionByShipment.get(waybill.shipmentId));
       // 해시가 shipment 의 recipientSnapshot 이 아닌 다른 값(예: salesOrder.shippingAddress)에서
@@ -569,13 +602,16 @@ describeIfSeedDb('dev_core 시드', () => {
     const [waybill] = await db
       .select({ shipmentId: wmsTables.waybills.shipmentId })
       .from(wmsTables.waybills)
-      .where(eq(wmsTables.waybills.trackingNo, 'DEV-WAYBILL-0001'));
+      .where(eq(wmsTables.waybills.trackingNo, '900000000001'));
     expect(waybill).toBeDefined();
 
     await inRollbackTx(db, async (tx) => {
       const service = assembleSimpleOutbound(tx);
       const actor = { id: '019d0008-0001-7000-a000-000000000001', roles: ['logistics_worker'] };
 
+      // 시드는 배치를 created 로 남긴다 — 「작업 시작」(앱 F2·어드민)이 실제 경로이고, #988 이후 그것 없이는
+      // prepare 가 BATCH_NOT_STARTED 다. 여기서 대신 눌러 본다.
+      await startBatchFor(tx, { batchId: DEV_BATCH_ID, actorId: actor.id });
       const prepared = await service.prepare(waybill.shipmentId, actor, 'seed-smoke-0001', tx);
       if (prepared.outcome !== 'ready') throw new Error('Expected ready preparation');
       const context = prepared.context;
@@ -593,6 +629,115 @@ describeIfSeedDb('dev_core 시드', () => {
         .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId));
       expect(workItem.status).toBe('picking');
       expect(workItem.pickerId).toBe(actor.id);
+    });
+  });
+  // 출고 시나리오 박스(outbound-scenarios.ts) — 스테이션 출고 검수의 경로마다 박스 하나씩. 기대값은 그 파일을
+  // import 하지 않고 리터럴로 적는다(위 주석들과 같은 이유). 표는 docs/local-dev.md «출고 시나리오 박스».
+  describe('출고 시나리오', () => {
+    const SCENARIO_BOXES: Array<{ order: string; trackingNo: string; lines: string[] }> = [
+      {
+        order: 'DEV-BOX-0001',
+        trackingNo: '900000000006',
+        lines: ['DEV-BOX-SKU-01×1', 'DEV-BOX-SKU-02×3', 'DEV-BOX-SKU-03×2'],
+      },
+      { order: 'DEV-BOX-0002', trackingNo: '900000000007', lines: ['DEV-BOX-SKU-01×1', 'DEV-BOX-SKU-05×3'] },
+      { order: 'DEV-BOX-0003', trackingNo: '900000000008', lines: ['DEV-BOX-SKU-02×1', 'DEV-BOX-SKU-04×2'] },
+      { order: 'DEV-BOX-0004', trackingNo: '900000000009', lines: ['DEV-BOX-SKU-01×2', 'DEV-BOX-SKU-06×2'] },
+      { order: 'DEV-BOX-0005', trackingNo: '900000000010', lines: ['DEV-BOX-SKU-07×1'] },
+      { order: 'DEV-BOX-0006', trackingNo: '900000000011', lines: ['DEV-BOX-SKU-03×1', 'DEV-BOX-SKU-08×2'] },
+      { order: 'DEV-BOX-0007', trackingNo: '900000000012', lines: ['DEV-BOX-SKU-02×1', 'DEV-BOX-SKU-08×1'] },
+      {
+        order: 'DEV-BOX-0008',
+        trackingNo: '900000000013',
+        lines: ['DEV-BOX-SKU-01×1', 'DEV-BOX-SKU-03×1', 'DEV-BOX-SKU-08×1'],
+      },
+    ];
+
+    async function boxOf(trackingNo: string) {
+      const rows = await db
+        .select({
+          shipmentId: wmsTables.waybills.shipmentId,
+          source: wmsTables.waybills.source,
+          custOrdNo: wmsTables.waybills.custOrdNo,
+          labelData: wmsTables.waybills.labelData,
+          lineId: wmsTables.shipmentLines.id,
+          skuCode: wmsTables.skus.code,
+          qty: wmsTables.shipmentLines.qty,
+        })
+        .from(wmsTables.waybills)
+        .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.waybills.shipmentId))
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
+        .where(eq(wmsTables.waybills.trackingNo, trackingNo))
+        .orderBy(wmsTables.skus.code);
+      return rows;
+    }
+
+    it('박스 8개가 정해진 줄·한진 발급 송장으로 들어간다', async () => {
+      for (const box of SCENARIO_BOXES) {
+        const rows = await boxOf(box.trackingNo);
+        expect(rows.map((r) => `${r.skuCode}×${r.qty}`)).toEqual(box.lines);
+        const [first] = rows;
+        // 한진 발급 송장 — 출력·재출력 게이트를 타려면 수기가 아니어야 하고, 송장을 그리려면 분류필드·고객주문번호가 있어야 한다.
+        expect(first.source).toBe('carrier');
+        expect(first.custOrdNo).toMatch(/^AY[0-9A-Z]{26}$/);
+        expect(first.labelData).toMatchObject({ hub_cod: expect.any(String), tml_cod: expect.any(String) });
+      }
+
+      const orders = await db
+        .select({ id: wmsTables.salesOrders.channelOrderId })
+        .from(wmsTables.salesOrders)
+        .where(like(wmsTables.salesOrders.channelOrderId, 'DEV-BOX-%'))
+        .orderBy(wmsTables.salesOrders.channelOrderId);
+      expect(orders.map((o) => o.id)).toEqual(SCENARIO_BOXES.map((b) => b.order));
+    });
+
+    it('결품 경로를 가르는 재고 배치 — 채움 출처가 있는 상품·없는 상품·두 위치에 나뉜 상품', async () => {
+      const rows = await db
+        .select({ code: wmsTables.skus.code, location: wmsTables.locations.code, qty: wmsTables.stockLedgers.qty })
+        .from(wmsTables.stockLedgers)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.stockLedgers.skuId))
+        .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.stockLedgers.locationId))
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+            inArray(wmsTables.skus.code, ['DEV-BOX-SKU-04', 'DEV-BOX-SKU-05', 'DEV-BOX-SKU-06', 'DEV-BOX-SKU-07']),
+          ),
+        )
+        .orderBy(wmsTables.skus.code, wmsTables.locations.code);
+      expect(rows.map((r) => `${r.code}@${r.location}=${r.qty}`)).toEqual([
+        'DEV-BOX-SKU-04@A-01-04=20', // 결품 → 채움: 결품 위치를 빼고도 A-01-06 에 남는다
+        'DEV-BOX-SKU-04@A-01-06=10',
+        'DEV-BOX-SKU-05@A-01-05=2', // ×3 은 어느 한 곳으로도 안 채워져 2+1 로 나뉜다
+        'DEV-BOX-SKU-05@A-01-06=2',
+        'DEV-BOX-SKU-06@A-01-03=2', // 박스 몫뿐 — 결품이면 채울 곳이 없어 뺄 상품으로
+        'DEV-BOX-SKU-07@A-01-05=1', // 박스 몫뿐, 한 줄짜리 — 결품이면 빠진 박스로
+      ]);
+    });
+
+    // 위 테스트는 재고 «배치»까지만 본다. 나뉨은 작업 시작 때 배정(allocateLines)이 정하므로 실제로 돌려 증명한다.
+    it('위치 나눔 박스는 작업을 시작하면 헤어롤 줄이 두 위치로 나뉘어 배정된다', async () => {
+      const rows = await boxOf('900000000007');
+      const rollerLine = rows.find((r) => r.skuCode === 'DEV-BOX-SKU-05');
+      expect(rollerLine).toBeDefined();
+
+      await inRollbackTx(db, async (tx) => {
+        const service = assembleSimpleOutbound(tx);
+        const actor = { id: '019d0008-0001-7000-a000-000000000001', roles: ['logistics_worker'] };
+        await startBatchFor(tx, { batchId: DEV_BATCH_ID, actorId: actor.id });
+        const prepared = await service.prepare(rows[0].shipmentId, actor, 'seed-smoke-split', tx);
+        if (prepared.outcome !== 'ready') throw new Error('Expected ready preparation');
+
+        const allocations = await tx
+          .select({ location: wmsTables.locations.code, qty: wmsTables.pickingSourceAllocations.qty })
+          .from(wmsTables.pickingSourceAllocations)
+          .innerJoin(
+            wmsTables.locations,
+            eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId),
+          )
+          .where(eq(wmsTables.pickingSourceAllocations.shipmentLineId, rollerLine!.lineId))
+          .orderBy(wmsTables.locations.code);
+        expect(allocations.map((a) => `${a.location}=${a.qty}`)).toEqual(['A-01-05=2', 'A-01-06=1']);
+      });
     });
   });
 });
@@ -623,9 +768,9 @@ describeIfSeedDb('dev_core 시드 --bulk', () => {
     await client?.end();
   });
 
-  it('SKU 320건 · 로케이션 64건이 된다', async () => {
+  it('SKU 328건 · 로케이션 64건이 된다', async () => {
     const skus = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.skus);
-    expect(Number(skus[0].n)).toBe(320);
+    expect(Number(skus[0].n)).toBe(328); // 기본 20 + 시나리오 8 + 벌크 300
 
     const locations = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.locations);
     expect(Number(locations[0].n)).toBe(64);
@@ -672,6 +817,6 @@ describeIfSeedDb('dev_core 시드 --bulk', () => {
     // 300개 SKU 각각 바코드 1개 = 총 300건. skuBarcodes insert 가 통째로 빠지거나 일부만
     // 들어가는 회귀(개수 드리프트)를 잡는다.
     const barcodeCount = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.skuBarcodes);
-    expect(Number(barcodeCount[0].n)).toBe(320); // 기본 시드 20 + 벌크 300
+    expect(Number(barcodeCount[0].n)).toBe(328); // 기본 시드 20 + 시나리오 8 + 벌크 300
   });
 });

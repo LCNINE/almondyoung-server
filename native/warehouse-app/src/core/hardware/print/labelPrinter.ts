@@ -4,11 +4,13 @@ import { reportPrintOutcome, resetPrintOutcome } from './printerStatus';
 
 /**
  * 이 PC 의 라벨 프린터 설정과 원시 인쇄(#913). 창고 XP-DT108B 는 USB 로 PC 에 물려 있어
- * Windows 스풀러 이름만 받는다 — `print_raw` 는 `tcp://` 도 알지만 설정 UI 는 만들지 않았다.
+ * 입력칸은 Windows 스풀러 이름을 받는다. `tcp://호스트:포트` 로 시작하면 raw TCP 대상으로 그대로 둔다 —
+ * 스풀러가 없는 리눅스·macOS 스테이션(개발 PC)이 이 길로 출력한다.
  * 바이트는 core 가 다 만들어 준다: 여기서는 언어(ZPL/TSPL)를 모른 채 그대로 넘긴다.
  */
 export const LABEL_PRINTER_KEY = 'almondwms.labelPrinter';
 const SPOOLER = 'spooler://';
+const TCP = 'tcp://';
 
 export const NO_PRINTER_MESSAGE =
   '이 PC 에 라벨 프린터가 설정되지 않았어요. 설정에서 지정해 주세요.';
@@ -24,7 +26,7 @@ export function writeLabelPrinter(prefs: DevicePrefs, name: string): void {
   // 붙여 넣은 `spooler://` 를 벗겨야 접두어가 겹치지 않는다 — 겹치면 인쇄가 전부 실패한다.
   const bare = printerNameOf(name.trim()).trim();
   if (!bare) prefs.remove(LABEL_PRINTER_KEY);
-  else prefs.set(LABEL_PRINTER_KEY, `${SPOOLER}${bare}`);
+  else prefs.set(LABEL_PRINTER_KEY, bare.startsWith(TCP) ? bare : `${SPOOLER}${bare}`);
   resetPrintOutcome();
 }
 

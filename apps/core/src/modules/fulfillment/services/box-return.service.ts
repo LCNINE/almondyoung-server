@@ -102,6 +102,13 @@ export class BoxReturnService {
           },
           trx,
         );
+        // 화면의 최근 목록에 쓸 이름 — 마지막 몫이면 removals 가 비어 앱이 그 목록에서 찾을 수 없다
+        const [sku] = await trx
+          .select({ name: wmsTables.skus.name })
+          .from(wmsTables.skus)
+          .where(eq(wmsTables.skus.id, skuId))
+          .limit(1);
+        if (!sku) throw new Error(`SKU ${skuId} resolved from a barcode is missing`);
         const exit = await this.withdrawals.exitIfDrained(
           workItem,
           { actorId: actor.id, operationId: commandRequestId },
@@ -113,6 +120,7 @@ export class BoxReturnService {
             shipmentId,
             workItemId: workItem.id,
             removedQty,
+            removedSkuName: sku.name,
             exited: exit.exited,
             exitTo: exit.workItem.exitTo,
             waitingOperationId: exit.workItem.waitingOperationId,

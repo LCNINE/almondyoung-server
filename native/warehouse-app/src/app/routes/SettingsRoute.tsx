@@ -1,10 +1,8 @@
 import { useDeveloperMode } from '../../core/diagnostics/DeveloperModeProvider';
 import { Button } from '../../core/design/Button';
 import { Link } from '@tanstack/react-router';
-import { platform } from '@tauri-apps/plugin-os';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
-import { resolveProfile } from '../profile';
 import { LabelPrinterSettings } from '../../core/hardware/print/LabelPrinterSettings';
 import { isStationDevice } from '../station';
 import { ReturnBinSettings } from '../../domains/returns/ReturnBinSettings';
@@ -39,9 +37,7 @@ export function SettingsRoute() {
       <section className="space-y-1">
         <h2 className="text-sm font-semibold text-gray-700">프로필</h2>
         <p className="text-sm text-gray-600">
-          {resolveProfile(platform()) === 'station'
-            ? '스테이션 (Windows)'
-            : '핸드헬드'}
+          {isStationDevice() ? '스테이션' : '핸드헬드'}
         </p>
       </section>
 

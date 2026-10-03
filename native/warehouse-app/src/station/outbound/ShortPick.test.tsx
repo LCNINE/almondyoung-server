@@ -225,6 +225,9 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     server.config.shortPickOutcome = 'exited';
     await typeHuman(['Enter', 'Enter']);
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    // 결과로 다시 그리기만 한다 — 송장 줄은 처음 찍었을 때 한 줄뿐
+    const recent = screen.getByRole('list', { name: '최근 스캔' });
+    expect(within(recent).getAllByText('4210-3388-1907')).toHaveLength(1);
   });
 
   const hidden: Array<[string, { permissions?: WorkPermissions; boxes?: FakeBox[] }]> = [

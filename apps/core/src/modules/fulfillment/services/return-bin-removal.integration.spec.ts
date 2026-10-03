@@ -104,6 +104,12 @@ describeIfDb('박스에서 되돌림 바구니로 (스펙 §8, PR 3)', () => {
       );
       expect(firstScan).toMatchObject({ removedQty: 1, exited: false });
       expect(firstScan.removals).toEqual([expect.objectContaining({ boxQty: 1, cartQty: 0 })]);
+      // 화면의 최근 목록이 바코드 숫자 대신 상품 이름을 쓰게 — 마지막 한 개로 removals 가 비어도 실린다(아래 last)
+      const [sku] = await tx
+        .select({ name: wmsTables.skus.name })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, first.skuId));
+      expect(firstScan.removedSkuName).toBe(sku.name);
 
       const last = await remove(
         wiring,
@@ -111,7 +117,13 @@ describeIfDb('박스에서 되돌림 바구니로 (스펙 §8, PR 3)', () => {
         { barcode: first.barcode, returnBinBarcode: bin.barcode },
         tx,
       );
-      expect(last).toMatchObject({ removedQty: 1, exited: true, exitTo: 'draft', removals: [] });
+      expect(last).toMatchObject({
+        removedQty: 1,
+        exited: true,
+        exitTo: 'draft',
+        removals: [],
+        removedSkuName: sku.name,
+      });
 
       const [item] = await tx
         .select()

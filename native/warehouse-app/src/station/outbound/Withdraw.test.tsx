@@ -24,6 +24,9 @@ const WITHDRAWING: FakeBox = {
   ],
 };
 const list = () => screen.getByRole('list', { name: '뺄 상품' });
+const recent = () => screen.getByRole('list', { name: '최근 스캔' });
+const batchReads = (server: { requests: Array<{ path: string }> }) =>
+  server.requests.filter((r) => /^\/outbound-batches\/[^/]+\/work-items$/.test(r.path)).length;
 
 describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('빼는 중인 박스 송장이면 뺄 목록 — 상품을 찍으면 바구니로, 다 빼면 «빠진 박스»', async () => {
@@ -34,10 +37,24 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     expect(within(list()).getByText('2')).toBeInTheDocument();
     scan('8801002');
     await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    // 최근 목록은 바코드 숫자가 아니라 서버가 알려 준 뺀 상품 이름(removedSkuName)
+    expect(within(recent()).getByText('헤어클립 집게핀')).toBeInTheDocument();
+    expect(within(recent()).queryByText('8801002')).toBeNull();
+    const before = batchReads(server);
     scan('8801002');
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
     expect(flash()).toBe('complete');
     expect(server.box('421033881907')?.withdrawn).toBe(true);
+    // 박스가 빠지면 상태바 배치 분모가 바로 줄도록 배치 항목을 다시 읽는다
+    await waitFor(() => expect(batchReads(server)).toBeGreaterThan(before));
+  });
+
+  it('응답에 뺀 상품 이름이 없으면(옛 core) 바코드를 적는다', async () => {
+    await setupInspection({ boxes: [{ ...WITHDRAWING, omitRemovedName: true }], prefs: withBin() });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품');
+    scan('8801002');
+    await waitFor(() => expect(within(recent()).getByText('8801002')).toBeInTheDocument());
   });
 
   it('되돌림 바구니가 없으면 알리고 상품을 받지 않는다', async () => {
@@ -66,6 +83,8 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     press('F11');
     press('F11');
     await screen.findByText('뺄 상품');
+    // 다시 그린 화면이 송장 줄을 한 번 더 남기지 않는다(처음 찍었을 때 한 줄뿐)
+    expect(within(recent()).getAllByText('4210-3388-1907')).toHaveLength(1);
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
     scan('8801002');
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();

@@ -47,6 +47,13 @@ describe('라벨 프린터 설정', () => {
     expect(printerNameOf('spooler://XP-DT108B')).toBe('XP-DT108B');
     expect(printerNameOf('')).toBe('');
   });
+
+  it('tcp:// 대상은 그대로 저장하고 입력칸에도 그대로 돌려준다 — 스풀러가 없는 데스크톱(리눅스·macOS)용', () => {
+    const prefs = createMemoryPrefs();
+    writeLabelPrinter(prefs, ' tcp://127.0.0.1:9100 ');
+    expect(readLabelPrinter(prefs)).toBe('tcp://127.0.0.1:9100');
+    expect(printerNameOf('tcp://127.0.0.1:9100')).toBe('tcp://127.0.0.1:9100');
+  });
 });
 
 describe('printRaw', () => {

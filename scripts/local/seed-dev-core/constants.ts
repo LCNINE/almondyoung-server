@@ -20,12 +20,14 @@
  *   019d0009 — bulk.ts        bulkLocationId (벌크 로케이션 50개)
  *   019d000a — bulk.ts        bulkSkuId (벌크 SKU 300개)
  *   019d000b — outbound.ts    outboundBatchId (출고 배치 1개)
- *   019d000c — outbound.ts    workItemId (배치 work item 5개)
- *   019d000d — outbound.ts    waybillId (운송장 5개)
+ *   019d000c — outbound.ts    workItemId (배치 work item 13개 — 기본 5 + 출고 시나리오 8)
+ *   019d000d — outbound.ts    waybillId (운송장 13개 — 같은 구성)
  *   019d000e — constants.ts   SEED_IDS.supplier
  *                             (`scripts/local/supplier.seed-step.ts` 가 **같은 값을 import 해서**
  *                              쓴다 — 두 로컬 시드를 다 돌려도 공급처가 두 벌이 되지 않는다.
  *                              값을 바꾸려면 그쪽도 같이 본다)
+ *   019d000f — outbound-scenarios.ts  scenarioSkuId (출고 시나리오 SKU 8개)
+ *   019d0010 — outbound-scenarios.ts  scenarioVariantId (출고 시나리오 variant 8개)
  */
 export const SEED_IDS = {
   warehouseBucheon: '019d0001-0001-7000-a000-000000000001',

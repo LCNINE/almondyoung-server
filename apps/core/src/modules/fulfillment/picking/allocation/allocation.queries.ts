@@ -119,7 +119,14 @@ export async function loadWorkItemAllocations(trx: DbTx, workItemId: string): Pr
       wmsTables.shipmentLines,
       eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
     )
-    .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
+    // 결품 승인은 옛 위치의 배정을 0 으로 남긴다(box-allocation.manager). 0 은 들 것이 없으니 피킹·완료·언픽 어디서도
+    // 볼 이유가 없고, 남겨 두면 완료 판정이 «0 개를 들고 있나» 에 잔고 행이 없어 PICKING_INCOMPLETE 로 막는다.
+    .where(
+      and(
+        eq(wmsTables.pickingSourceAllocations.workItemId, workItemId),
+        gt(wmsTables.pickingSourceAllocations.qty, 0),
+      ),
+    )
     .orderBy(
       asc(wmsTables.pickingSourceAllocations.shipmentLineId),
       asc(wmsTables.pickingSourceAllocations.sourceLocationId),

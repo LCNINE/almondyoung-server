@@ -84,6 +84,8 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_WORK_ITEM_MISSING:
     '이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요',
   SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: '다른 작업자가 이 박스를 작업 중이에요',
+  WORKER_ACTIVE_CLAIM_EXISTS:
+    '다른 박스를 아직 작업 중이에요. 그 박스를 마치거나 내려놓은 뒤 다시 찍어 주세요.',
   SIMPLE_OUTBOUND_METHOD_UNSUPPORTED:
     '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
   LABEL_REPRINT_REQUIRED:

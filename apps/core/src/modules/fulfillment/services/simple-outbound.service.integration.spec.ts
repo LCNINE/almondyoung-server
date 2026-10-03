@@ -261,6 +261,96 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
+  // 스테이션은 박스를 «내려놓고» 다른 송장을 찍는다(스테이션 UI 스펙 U13). 작업자당 피커 점유는 하나라,
+  // 앞 박스 점유가 리스(15분) 동안 남으면 다음 박스가 WORKER_ACTIVE_CLAIM_EXISTS 로 막혔다(10-03 실기).
+  // 단순출고에서 같은 작업자가 다른 박스를 잡으면 앞 박스의 리스를 지금 끝낸다 — 15분이 지난 것과 같은 상태다.
+  describe('같은 작업자가 다른 박스로 옮겨 가면', () => {
+    async function twoBoxesInOneBatch(tx: Parameters<Parameters<typeof inRollbackTx>[1]>[0]) {
+      const fixture = await seedPickableShipment(tx, 1);
+      const [shipment] = await tx
+        .select({ shippingProfileId: wmsTables.shipments.shippingProfileId })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipmentId));
+      const sibling = await seedShipmentForExistingStock(
+        tx,
+        { ...fixture, deliveryProfileId: shipment.shippingProfileId ?? '' },
+        1,
+      );
+      await tx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 2 })
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, fixture.skuId),
+            eq(wmsTables.stockLedgers.locationId, fixture.locationId),
+          ),
+        );
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ batchId: fixture.batchId })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, sibling.workItemId));
+      await startBatchFor(tx, fixture);
+      return { fixture, sibling };
+    }
+
+    async function itemOf(tx: Parameters<Parameters<typeof inRollbackTx>[1]>[0], workItemId: string) {
+      const [row] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId));
+      return row;
+    }
+
+    it('앞 박스의 리스를 끝내고 새 박스를 잡는다 — 되돌아가면 반대로', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { fixture, sibling } = await twoBoxesInOneBatch(tx);
+        const service = assembleSimpleOutbound(tx);
+        const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+
+        const first = await service.prepare(fixture.shipmentId, actor, `prep-a-${randomUUID()}`, tx);
+        expect(first.outcome).toBe('ready');
+        const holding = await itemOf(tx, fixture.workItemId);
+
+        const second = await service.prepare(sibling.shipmentId, actor, `prep-b-${randomUUID()}`, tx);
+        expect(second.outcome).toBe('ready');
+
+        const putDown = await itemOf(tx, fixture.workItemId);
+        // 내려놓은 박스: 상태·작업자는 그대로(찍은 수량은 남는다), 리스만 끝났고 버전이 올라 옛 리스로는 못 쓴다.
+        expect(putDown).toMatchObject({ status: 'picking', pickerId: actor.id });
+        expect((putDown.leaseExpiresAt as Date).getTime()).toBeLessThanOrEqual(Date.now());
+        expect(putDown.leaseVersion).toBe(holding.leaseVersion + 1);
+        expect(await itemOf(tx, sibling.workItemId)).toMatchObject({ status: 'picking', pickerId: actor.id });
+
+        const back = await service.prepare(fixture.shipmentId, actor, `prep-c-${randomUUID()}`, tx);
+        expect(back.outcome).toBe('ready');
+        expect(((await itemOf(tx, fixture.workItemId)).leaseExpiresAt as Date).getTime()).toBeGreaterThan(Date.now());
+        expect(((await itemOf(tx, sibling.workItemId)).leaseExpiresAt as Date).getTime()).toBeLessThanOrEqual(
+          Date.now(),
+        );
+      });
+    });
+
+    it('일반 피커 점유(v2)는 지금처럼 WORKER_ACTIVE_CLAIM_EXISTS 로 거절한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const { fixture, sibling } = await twoBoxesInOneBatch(tx);
+        const { simple, batches } = assembleOutbound(tx);
+        const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+        expect((await simple.prepare(fixture.shipmentId, actor, `prep-${randomUUID()}`, tx)).outcome).toBe('ready');
+        const siblingItem = await itemOf(tx, sibling.workItemId);
+
+        await expect(
+          batches.claimPicker(
+            sibling.workItemId,
+            { expectedLeaseVersion: siblingItem.leaseVersion },
+            `claim-${randomUUID()}`,
+            actor,
+            tx,
+          ),
+        ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'WORKER_ACTIVE_CLAIM_EXISTS' }) });
+      });
+    });
+  });
+
   it('내 리스가 만료됐으면 조용히 재-claim 해 연장한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);

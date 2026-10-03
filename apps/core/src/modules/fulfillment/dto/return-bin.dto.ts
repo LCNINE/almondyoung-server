@@ -61,6 +61,8 @@ export class ReturnBinRemovalResponseDto {
   @ApiProperty() shipmentId: string;
   @ApiProperty() workItemId: string;
   @ApiProperty() removedQty: number;
+  @ApiProperty({ description: '방금 바구니로 뺀 상품 이름 — 마지막 몫이라 removals 가 비어도 실린다' })
+  removedSkuName: string;
   @ApiProperty({ description: '마지막 몫이라 이 스캔으로 배치에서 나갔다' }) exited: boolean;
   @ApiProperty({ enum: ['draft', 'canceled'], nullable: true }) exitTo: 'draft' | 'canceled' | null;
   @ApiProperty({ type: String, nullable: true }) waitingOperationId: string | null;

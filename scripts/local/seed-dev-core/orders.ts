@@ -15,78 +15,114 @@ function variantIdFor(index: number): string {
   return `019d0007-${seq}-7000-a000-00000000${seq}`;
 }
 
+export interface SeedOrderLine {
+  productName: string;
+  /** `matchVariant` 로 SKU 에 매칭된 variant 여야 한다 — 매칭이 없으면 FO 가 서지 않는다. */
+  variantId: string;
+  channelProductId: string;
+  quantity: number;
+}
+
+export interface SeedOrder {
+  channelOrderId: string;
+  /** 줄마다 `${channelOrderId}-${n}` 이 아니라 호출자가 정한다 — 기존 주문의 채널 키를 리셋 사이에 보존하려고. */
+  channelItemIds: string[];
+  shippingAddress: Record<string, string>;
+  lines: SeedOrderLine[];
+}
+
 /**
  * SO/라인/매칭은 결정론이 필요해 직접 insert 하고,
  * FO·예약·draft shipment 는 FulfillmentsService.create 가 만든다.
- * 재고가 있는 SKU(index 2 이상)만 쓴다 — 예약이 서야 하기 때문.
+ * 줄의 SKU 는 재고가 있어야 한다 — 예약이 서야 하기 때문.
  */
+/** variant 1개 → SKU 1개 매칭(배수 1). variant 하나에 한 번만 부른다. */
+export async function matchVariant(tx: DbTx, variantId: string, skuId: string): Promise<void> {
+  const [matching] = await tx
+    .insert(wmsTables.productMatchings)
+    .values({ variantId, status: 'matched', strategy: 'variant', isResolved: true, preStockSellable: true })
+    .returning();
+  await tx.insert(wmsTables.productVariantSkuLinks).values({ productMatchingId: matching.id, skuId, quantity: 1 });
+}
+
+export async function createOrderShipment(wired: Wired, order: SeedOrder, tx: DbTx): Promise<string> {
+  const [salesOrder] = await tx
+    .insert(wmsTables.salesOrders)
+    .values({
+      channelOrderId: order.channelOrderId,
+      salesChannel: 'medusa',
+      status: 'confirmed',
+      shippingAddress: order.shippingAddress,
+      orderDate: new Date('2026-07-20T00:00:00.000Z'),
+    })
+    .returning();
+
+  for (const [index, line] of order.lines.entries()) {
+    await tx.insert(wmsTables.salesOrderLines).values({
+      salesOrderId: salesOrder.id,
+      variantId: line.variantId,
+      productName: line.productName,
+      quantity: line.quantity,
+      unitPrice: 10_000,
+      channelOrderItemId: order.channelItemIds[index],
+      channelProductId: line.channelProductId,
+    });
+  }
+
+  await wired.fulfillments.create({ salesOrderId: salesOrder.id, warehouseId: SEED_IDS.warehouseBucheon }, tx);
+
+  // 방금 만든 SO 의 shipment 를 그래프로 되짚는다. shipments 테이블에는 salesOrderId 가 없고
+  // shipment_lines → fulfillment_order_items → fulfillment_orders 로만 이어진다.
+  // "마지막 행" 같은 순서 의존은 쓰지 않는다 — ORDER BY 없는 select 의 행 순서는 보장되지 않는다.
+  const shipments = await tx
+    .selectDistinct({ id: wmsTables.shipments.id })
+    .from(wmsTables.shipments)
+    .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .innerJoin(
+      wmsTables.fulfillmentOrders,
+      eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+    )
+    .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrder.id));
+
+  // 박스 하나 = shipment 하나여야 시나리오가 성립한다(여러 줄 주문이 둘로 쪼개지면 «여러 줄 박스» 가 아니다).
+  if (shipments.length !== 1) {
+    throw new Error(`[seed-dev-core] ${order.channelOrderId} 의 shipment 가 ${shipments.length}개다 (1개여야 한다)`);
+  }
+  return shipments[0].id;
+}
+
 export async function seedOrders(wired: Wired, tx: DbTx): Promise<string[]> {
   const shipmentIds: string[] = [];
 
   for (let index = 0; index < ORDER_COUNT; index += 1) {
     const sku = SEED_SKUS[index + 2];
-    const variantId = variantIdFor(index);
-    const quantity = (index % 3) + 1;
     const seq = String(index + 1).padStart(4, '0');
-
-    const [salesOrder] = await tx
-      .insert(wmsTables.salesOrders)
-      .values({
-        channelOrderId: `DEV-ORDER-${seq}`,
-        salesChannel: 'medusa',
-        status: 'confirmed',
-        shippingAddress: {
-          recipientName: `개발 수취인 ${seq}`,
-          phone: '010-0000-0000',
-          postalCode: '14547',
-          roadAddress: '경기도 부천시 길주로 1',
-          detailAddress: `${seq}호`,
+    const variantId = variantIdFor(index);
+    await matchVariant(tx, variantId, sku.id);
+    shipmentIds.push(
+      await createOrderShipment(
+        wired,
+        {
+          channelOrderId: `DEV-ORDER-${seq}`,
+          channelItemIds: [`DEV-ITEM-${seq}`],
+          shippingAddress: {
+            recipientName: `개발 수취인 ${seq}`,
+            phone: '010-0000-0000',
+            postalCode: '14547',
+            roadAddress: '경기도 부천시 길주로 1',
+            detailAddress: `${seq}호`,
+          },
+          lines: [
+            { productName: sku.name, variantId, channelProductId: `DEV-PRODUCT-${seq}`, quantity: (index % 3) + 1 },
+          ],
         },
-        orderDate: new Date('2026-07-20T00:00:00.000Z'),
-      })
-      .returning();
-
-    await tx.insert(wmsTables.salesOrderLines).values({
-      salesOrderId: salesOrder.id,
-      variantId,
-      productName: sku.name,
-      quantity,
-      unitPrice: 10_000,
-      channelOrderItemId: `DEV-ITEM-${seq}`,
-      channelProductId: `DEV-PRODUCT-${seq}`,
-    });
-
-    const [matching] = await tx
-      .insert(wmsTables.productMatchings)
-      .values({ variantId, status: 'matched', strategy: 'variant', isResolved: true, preStockSellable: true })
-      .returning();
-    await tx
-      .insert(wmsTables.productVariantSkuLinks)
-      .values({ productMatchingId: matching.id, skuId: sku.id, quantity: 1 });
-
-    await wired.fulfillments.create({ salesOrderId: salesOrder.id, warehouseId: SEED_IDS.warehouseBucheon }, tx);
-
-    // 방금 만든 SO 의 shipment 를 그래프로 되짚는다. shipments 테이블에는 salesOrderId 가 없고
-    // shipment_lines → fulfillment_order_items → fulfillment_orders 로만 이어진다.
-    // "마지막 행" 같은 순서 의존은 쓰지 않는다 — ORDER BY 없는 select 의 행 순서는 보장되지 않는다.
-    const [shipment] = await tx
-      .selectDistinct({ id: wmsTables.shipments.id })
-      .from(wmsTables.shipments)
-      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
-      )
-      .innerJoin(
-        wmsTables.fulfillmentOrders,
-        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
-      )
-      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrder.id));
-
-    if (!shipment) {
-      throw new Error(`[seed-dev-core] ${salesOrder.channelOrderId} 의 shipment 를 찾지 못했습니다`);
-    }
-    shipmentIds.push(shipment.id);
+        tx,
+      ),
+    );
   }
 
   return shipmentIds;

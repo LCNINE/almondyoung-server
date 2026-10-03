@@ -22,8 +22,18 @@ export async function planShipments(
   tx: DbTx,
 ): Promise<string[]> {
   const target = shipmentIds.slice(0, Math.floor(shipmentIds.length / 2));
+  await planEach(planning, target, 'dev-seed-plan', tx);
+  return target;
+}
 
-  for (const [index, shipmentId] of target.entries()) {
+/** 넘긴 shipment 를 전부 planned 로 올린다. 멱등 키는 `${keyPrefix}-000N` — 결정론 규약. */
+export async function planEach(
+  planning: ShipmentPlanningService,
+  shipmentIds: string[],
+  keyPrefix: string,
+  tx: DbTx,
+): Promise<void> {
+  for (const [index, shipmentId] of shipmentIds.entries()) {
     const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
     await planning.plan(
       shipmentId,
@@ -32,11 +42,9 @@ export async function planShipments(
         expectedManifestVersion: shipment.manifestVersion,
         expectedReservationVersion: shipment.reservationVersion,
       },
-      `dev-seed-plan-${String(index + 1).padStart(4, '0')}`,
+      `${keyPrefix}-${String(index + 1).padStart(4, '0')}`,
       SEED_ACTOR,
       tx,
     );
   }
-
-  return target;
 }

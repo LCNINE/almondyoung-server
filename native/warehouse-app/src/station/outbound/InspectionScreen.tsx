@@ -84,6 +84,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     viewRef.current = next;
     work.current = null;
     setView(next);
+    // 빠진 박스는 배치 분모에서 빠진다 — 어느 경로(결품·F11·뺄 상품)로 왔든 상태바가 바로 따라오게
+    if (next.kind === 'withdrawn') void queryClient.invalidateQueries({ queryKey: ['batch-work-items'] });
   };
 
   // 상태바의 배치 진행(스펙 §5.5) — 마지막으로 연 박스의 배치
@@ -324,7 +326,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     }
     void run(async () => {
       await settleWork();
-      await show(await lookup(box.trackingNo));
+      // 같은 박스를 다시 그리기만 한다 — 송장 줄은 처음 찍었을 때 이미 있다
+      await show(await lookup(box.trackingNo), false, false);
+      signal('success');
     });
   };
 
@@ -359,7 +363,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         return;
       }
       if (result.outcome !== 'refilled') {
-        await show(await lookup(box.trackingNo));
+        await show(await lookup(box.trackingNo), false, false);
+        signal('success');
         return;
       }
       clearLastBox(prefs);
@@ -513,10 +518,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           alert={alert}
           recent={recent}
           onAlert={boxAlert(view.box)}
-          onRemoved={(barcode) => {
+          onRemoved={(label) => {
             setAlert(null);
             signal('success');
-            note({ kind: 'scan', text: barcode, qty: 1 });
+            note({ kind: 'scan', text: label, qty: 1 });
           }}
           onDone={(box) => {
             clearLastBox(prefs);

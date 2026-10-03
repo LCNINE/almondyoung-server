@@ -701,12 +701,14 @@ export class SimpleOutboundService {
       return workItem.leaseVersion;
     }
 
+    // 같은 작업자가 든 다른 박스는 내려놓은 것으로 본다(스테이션 U13 — 송장을 찍어 박스를 옮겨 간다).
     const claimed = await this.batches.claimPicker(
       workItem.id,
       { expectedLeaseVersion: workItem.leaseVersion },
       nestedCommandKey(idempotencyKey, 'claim-picker'),
       { id: actor.id, roles: actor.roles },
       tx,
+      { putDownOwnOtherBox: true },
     );
     return claimed.workItem.leaseVersion;
   }

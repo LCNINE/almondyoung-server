@@ -3,6 +3,8 @@ import type { WithdrawalRemoval } from './types';
 
 export interface RemovalResult {
   removedQty: number;
+  /** 방금 바구니로 뺀 상품 이름 — 옛 core 에는 없다 */
+  removedSkuName?: string;
   exited: boolean;
   exitTo: 'draft' | 'canceled' | null;
   removals: WithdrawalRemoval[];

@@ -180,6 +180,17 @@ describe('outbound 문맥', () => {
     ).toBe('다른 작업자가 이 박스를 작업 중이에요');
   });
 
+  it('이미 다른 박스를 잡고 있으면 전용 문구를 준다', () => {
+    expect(
+      errorMessage(
+        new ConflictError('x', 'WORKER_ACTIVE_CLAIM_EXISTS'),
+        'outbound'
+      )
+    ).toBe(
+      '다른 박스를 아직 작업 중이에요. 그 박스를 마치거나 내려놓은 뒤 다시 찍어 주세요.'
+    );
+  });
+
   it('개별피킹이 아닌 배치는 전용 문구를 준다', () => {
     expect(
       errorMessage(

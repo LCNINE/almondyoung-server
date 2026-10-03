@@ -41,7 +41,8 @@ export function WithdrawWork({
   alert: Alert | null;
   recent: readonly RecentEntry[];
   onAlert(message: string, detail?: string): void;
-  onRemoved(barcode: string): void;
+  /** 최근 목록에 적을 것 — 서버가 알려 준 상품 이름, 옛 core 면 찍은 바코드 */
+  onRemoved(label: string): void;
   onDone(box: ShipmentByWaybill): void;
 }) {
   const api = useApiClient();
@@ -57,7 +58,7 @@ export function WithdrawWork({
     try {
       const result = await removeToReturnBin(api, { shipmentId: box.shipmentId, ...input, idempotencyKey: id });
       setRemovals(result.removals);
-      onRemoved(input.barcode);
+      onRemoved(result.removedSkuName ?? input.barcode);
       if (result.exited) {
         done.current = true;
         onDone(box);
