@@ -11,7 +11,6 @@ import { Suspense } from "react"
 import ProtectedRoute from "@components/protected-route"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
 import { ComingSoonPopup } from "@/domains/home/components/coming-soon-popup"
-import { Suspense } from "react"
 
 export async function generateMetadata({
   params,
