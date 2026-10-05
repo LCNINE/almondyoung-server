@@ -1591,6 +1591,155 @@ describe('OrderPollerOrchestrator — 채널 활성 게이트 (#654)', () => {
   });
 });
 
+describe('OrderPollerOrchestrator.syncOrder — 즉시 끌어오기 (#1016 5번 행, 스펙 §9.1)', () => {
+  function setup(options: { activeSites?: string[]; collected?: string[] } = {}) {
+    const db = makeDb({ collected: options.collected });
+    const provider = {
+      channel: 'medusa' as const,
+      fetchOrders: jest.fn(),
+      fetchOrderForSync: jest.fn(),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+    const salesChannels = makeSalesChannelClient(options.activeSites ?? ['medusa']);
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider as any],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+      salesChannels as any,
+    );
+    const eventTypes = () => outbox.enqueue.mock.calls.map(([event]) => event.eventType);
+    return { orchestrator, provider, syncStatus, outbox, hashes, failures, eventTypes };
+  }
+
+  function expectWatermarkUntouched(syncStatus: ReturnType<typeof makeSyncStatus>) {
+    expect(syncStatus.recordSyncStart).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
+  }
+
+  it('처음 보는 주문은 created, 같은 내용은 unchanged, 바뀐 내용은 emitted(OrderModified)', async () => {
+    const { orchestrator, provider, syncStatus, eventTypes } = setup();
+    provider.fetchOrderForSync
+      .mockResolvedValueOnce({ outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') }, lifecycle: [] })
+      .mockResolvedValueOnce({ outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') }, lifecycle: [] })
+      .mockResolvedValueOnce({
+        outcome: { kind: 'order', order: makeOrder('2026-10-05T01:10:00.000Z', { totalAmount: 12000 }) },
+        lifecycle: [],
+      });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({ outcome: 'created' });
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({ outcome: 'unchanged' });
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({ outcome: 'emitted' });
+
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderModified']);
+    expect(provider.fetchOrderForSync).toHaveBeenCalledWith('medusa_order_1');
+    expectWatermarkUntouched(syncStatus);
+  });
+
+  it('force 는 같은 해시에도 OrderModified 를 낸다(백필 전용)', async () => {
+    const { orchestrator, provider, syncStatus, eventTypes } = setup();
+    const same = { outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') }, lifecycle: [] };
+    provider.fetchOrderForSync.mockResolvedValue(same);
+
+    await orchestrator.syncOrder('medusa', 'medusa_order_1');
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1', { force: true })).resolves.toEqual({
+      outcome: 'emitted',
+    });
+    // 폴러가 같은 해시를 이미 선점한 뒤에도 — force 는 선점 결과와 무관하게 발행한다.
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1', { force: true })).resolves.toEqual({
+      outcome: 'emitted',
+    });
+
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderModified', 'OrderModified']);
+    expectWatermarkUntouched(syncStatus);
+  });
+
+  it('force 는 아직 수집 안 된 주문을 두 번 만들지 않는다 — 생성 경로의 멱등은 매핑이 지킨다', async () => {
+    const { orchestrator, provider, eventTypes } = setup();
+    provider.fetchOrderForSync.mockResolvedValue({
+      outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') },
+      lifecycle: [],
+    });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1', { force: true })).resolves.toEqual({
+      outcome: 'created',
+    });
+    expect(eventTypes()).toEqual(['OrderCreated']);
+  });
+
+  it('주문을 먼저 처리하고 그 주문의 lifecycle 을 이어서 낸다', async () => {
+    const { orchestrator, provider, eventTypes } = setup();
+    provider.fetchOrderForSync.mockResolvedValue({
+      outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') },
+      lifecycle: [makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-10-05T00:59:00.000Z')],
+    });
+
+    await orchestrator.syncOrder('medusa', 'medusa_order_1');
+
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderCancelled']);
+  });
+
+  it('채널에 없으면 not_found 이고 아무것도 내지 않는다', async () => {
+    const { orchestrator, provider, outbox } = setup();
+    provider.fetchOrderForSync.mockResolvedValue(null);
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({ outcome: 'not_found' });
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('수집 대상이 아닌(결제 미완·종결) 미수집 주문은 not_eligible', async () => {
+    const { orchestrator, provider, outbox } = setup();
+    provider.fetchOrderForSync.mockResolvedValue({
+      outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z', { eligibleForOrderCreation: false }) },
+      lifecycle: [],
+    });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({ outcome: 'not_eligible' });
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('식별 실패 — 미수집 주문이면 폴링처럼 격리한다', async () => {
+    const { orchestrator, provider, failures } = setup();
+    const failure = makeFailure('2026-10-05T01:00:00.000Z');
+    provider.fetchOrderForSync.mockResolvedValue({ outcome: { kind: 'failure', failure }, lifecycle: [] });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({
+      outcome: 'identification_failed',
+    });
+    expect(failures.recordFailure).toHaveBeenCalledWith('medusa', failure);
+  });
+
+  it('식별 실패 — 이미 수집된 주문이면 격리하지 않고 열린 격리를 닫는다(#647 과 같은 처리)', async () => {
+    const { orchestrator, provider, failures } = setup({ collected: ['medusa_order_1'] });
+    failures.findOpenByExternalOrderId.mockResolvedValue({ id: 'failure_1' });
+    provider.fetchOrderForSync.mockResolvedValue({
+      outcome: { kind: 'failure', failure: makeFailure('2026-10-05T01:00:00.000Z') },
+      lifecycle: [],
+    });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({
+      outcome: 'identification_failed',
+    });
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith('failure_1', expect.any(String), 'wms_medusa_order_1');
+  });
+
+  it('비활성 채널이면 채널을 부르지 않고 channel_inactive', async () => {
+    const { orchestrator, provider, outbox } = setup({ activeSites: ['naver'] });
+
+    await expect(orchestrator.syncOrder('medusa', 'medusa_order_1')).resolves.toEqual({
+      outcome: 'channel_inactive',
+    });
+    expect(provider.fetchOrderForSync).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+});
+
 /** 활성 사이트 목록을 주는 Core 클라이언트의 목. Error 를 주면 조회 실패를 흉내낸다. */
 function makeSalesChannelClient(sitesOrError: string[] | Error) {
   return {

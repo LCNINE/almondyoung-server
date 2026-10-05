@@ -3,7 +3,7 @@ import { CronOnce } from '@app/cron-once';
 import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
+import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload, SalesChannel } from '@packages/event-contracts/streams';
 import { SyncStatusService } from '../sync-status.service';
 import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
@@ -14,8 +14,10 @@ import {
   COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
   OrderCollectionFailureItem,
   OrderFetchItem,
+  OrderFetchOutcome,
   OrderLifecycleEventItem,
   ReplayableChannelOrderProvider,
+  SyncableChannelOrderProvider,
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 import { OrderCollectionFailureService } from './order-collection-failure.service';
@@ -39,7 +41,19 @@ type ProcessPollItemResult = {
   // Lifecycle items only: whether the observation was durably recorded (a Core mapping existed).
   // false means it was skipped for a missing mapping and may need the watermark held.
   recorded?: boolean;
+  // 이번 호출이 매핑을 새로 만들었는가(OrderCreated). 즉시 끌어오기의 응답을 가른다.
+  created?: boolean;
 };
+
+/** 즉시 끌어오기의 결과 (스펙 §9.1 의 네 값 + 계획 단계에서 더한 셋). */
+export type OrderSyncOutcome =
+  | 'unchanged'
+  | 'emitted'
+  | 'created'
+  | 'not_found'
+  | 'not_eligible'
+  | 'identification_failed'
+  | 'channel_inactive';
 
 @Injectable()
 export class OrderPollerOrchestrator {
@@ -290,6 +304,37 @@ export class OrderPollerOrchestrator {
     return results;
   }
 
+  /**
+   * 주문 하나를 지금 채널에서 다시 가져와 폴링과 **같은** 처리를 태운다 (#1016 5번 행, 스펙 §9.1).
+   *
+   * 워터마크·sync_status 는 건드리지 않는다 — 주문 하나의 관측이라 채널 진행 상태와 무관하다.
+   * 비활성 채널은 폴링의 킬스위치와 같은 뜻으로 거절한다. 주문을 먼저 처리해야 그 주문의 lifecycle 이
+   * 매핑을 찾는다(폴링 정렬의 order < lifecycle 과 같다).
+   */
+  async syncOrder(
+    channel: SalesChannel,
+    externalOrderId: string,
+    options: { force?: boolean } = {},
+  ): Promise<{ outcome: OrderSyncOutcome }> {
+    const activeSites = await this.salesChannelClient.getActiveSites();
+    if (!activeSites.includes(channel)) {
+      return { outcome: 'channel_inactive' };
+    }
+    const provider = this.providers.find((candidate) => candidate.channel === channel);
+    if (!provider || !this.isSyncableProvider(provider)) {
+      throw new Error(`No syncable order provider registered for channel: ${channel}`);
+    }
+    const fetched = await provider.fetchOrderForSync(externalOrderId);
+    if (!fetched) {
+      return { outcome: 'not_found' };
+    }
+    const outcome = await this.syncFetched(provider, fetched.outcome, options);
+    for (const lifecycle of fetched.lifecycle) {
+      await this.processLifecycleItem(provider, lifecycle);
+    }
+    return { outcome };
+  }
+
   async replayFailure(failureId: string): Promise<{
     status:
       | 'replayed'
@@ -407,7 +452,11 @@ export class OrderPollerOrchestrator {
     };
   }
 
-  private async processOrderItem(provider: ChannelOrderProvider, item: OrderFetchItem): Promise<ProcessPollItemResult> {
+  private async processOrderItem(
+    provider: ChannelOrderProvider,
+    item: OrderFetchItem,
+    options: { force?: boolean } = {},
+  ): Promise<ProcessPollItemResult> {
     const mapping = await this.db.db
       .select()
       .from(wmsOrderMappings)
@@ -494,6 +543,7 @@ export class OrderPollerOrchestrator {
       return {
         emitted: created ? 1 : 0,
         dedupedUnchanged: 0,
+        created,
         wmsOrderId: created ? payload.orderId : undefined,
       };
     }
@@ -513,7 +563,9 @@ export class OrderPollerOrchestrator {
         newHash,
         tx,
       );
-      if (!won) {
+      // force(백필 전용, 스펙 §9.1): 해시가 같아도 낸다. 해시는 claimChanged 가 이미 이 값으로 맞춰 두었다.
+      // 폴러와 겹치면 같은 스냅샷이 두 번 갈 수 있다 — core 가 두 번째를 실질 차이 0 으로 버린다.
+      if (!won && !options.force) {
         return false;
       }
 
@@ -648,6 +700,38 @@ export class OrderPollerOrchestrator {
       recorded: true,
       wmsOrderId,
     };
+  }
+
+  // 타입 가드 — 선택 메서드의 존재만 본다(isReplayableProvider 와 같은 관례).
+  private isSyncableProvider(provider: ChannelOrderProvider): provider is SyncableChannelOrderProvider {
+    return typeof (provider as SyncableChannelOrderProvider).fetchOrderForSync === 'function';
+  }
+
+  /** 폴링 루프의 failure·order 갈래와 같은 처리. 워터마크 계산만 없다. */
+  private async syncFetched(
+    provider: ChannelOrderProvider,
+    fetched: OrderFetchOutcome,
+    options: { force?: boolean },
+  ): Promise<OrderSyncOutcome> {
+    if (fetched.kind === 'failure') {
+      const collected = await this.findCollectedOrders(provider.channel, [fetched.failure.externalOrderId]);
+      if (this.isAlreadyCollectedIdentificationFailure(fetched.failure, collected)) {
+        await this.closeOpenQuarantineAsCollected(
+          provider.channel,
+          fetched.failure.externalOrderId,
+          collected.get(fetched.failure.externalOrderId),
+        );
+      } else {
+        await this.orderCollectionFailureService.recordFailure(provider.channel, fetched.failure);
+      }
+      return 'identification_failed';
+    }
+    const result = await this.processOrderItem(provider, fetched.order, options);
+    if (result.created) return 'created';
+    if (!result.wmsOrderId) {
+      return fetched.order.eligibleForOrderCreation === false ? 'not_eligible' : 'unchanged';
+    }
+    return result.emitted > 0 ? 'emitted' : 'unchanged';
   }
 
   private isReplayableProvider(provider: ChannelOrderProvider): provider is ReplayableChannelOrderProvider {
