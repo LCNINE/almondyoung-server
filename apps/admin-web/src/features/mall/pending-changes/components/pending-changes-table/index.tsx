@@ -3,6 +3,7 @@
 // src/features/mall/pending-changes/components/pending-changes-table/index.tsx
 // 채널에서 바뀌었는데 core 가 자동 반영하지 못한 변경(#1016 5번 행). 닫기(처리완료·무시)는 6번 행 몫이다.
 
+import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { usePendingChannelChanges } from '@/lib/services/orders';
 import {
@@ -12,7 +13,7 @@ import {
 } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 
 export function PendingChangesTable() {
-  const { data, isLoading } = usePendingChannelChanges();
+  const { data, isLoading, isError, refetch } = usePendingChannelChanges();
   const rows = data?.items ?? [];
 
   return (
@@ -36,6 +37,15 @@ export function PendingChangesTable() {
           {isLoading ? (
             <TableRow>
               <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">불러오는 중…</TableCell>
+            </TableRow>
+          ) : isError ? (
+            <TableRow>
+              <TableCell colSpan={5} className="py-12 text-center text-sm text-destructive">
+                불러오지 못했습니다.
+                <Button variant="outline" size="sm" className="ml-2" onClick={() => void refetch()}>
+                  다시 시도
+                </Button>
+              </TableCell>
             </TableRow>
           ) : rows.length === 0 ? (
             <TableRow>

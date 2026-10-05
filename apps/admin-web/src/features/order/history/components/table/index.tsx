@@ -569,7 +569,7 @@ function BusinessTimelineModal({
     (a, b) =>
       new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
   );
-  const { data: amendments } = useSalesOrderAmendments(
+  const { data: amendments, isError: amendmentsFailed } = useSalesOrderAmendments(
     open && order ? order.orderId : ''
   );
 
@@ -598,6 +598,11 @@ function BusinessTimelineModal({
                 <TimelineItem key={item.id} item={item} />
               ))}
             </div>
+          )}
+          {amendmentsFailed && (
+            <p className="mt-4 border-t px-1 pt-3 text-sm text-destructive">
+              채널 변경 기록을 불러오지 못했습니다.
+            </p>
           )}
           {(amendments ?? []).some((amendment) => amendment.origin === 'channel') && (
             <div className="mt-4 border-t px-1 pt-3">
