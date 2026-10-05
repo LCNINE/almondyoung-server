@@ -16,13 +16,7 @@ import { ApiBearerAuth, ApiOperation, ApiPropertyOptional, ApiTags } from '@nest
 import { IsBoolean, IsOptional } from 'class-validator';
 import { Public } from '@app/authorization';
 import { OrderPollerOrchestrator, OrderSyncOutcome } from '../services/order-collection/order-poller.orchestrator';
-
-const SYNCABLE_CHANNELS = ['medusa', 'naver'] as const;
-type SyncableChannel = (typeof SYNCABLE_CHANNELS)[number];
-
-function isSyncableChannel(value: string): value is SyncableChannel {
-  return SYNCABLE_CHANNELS.some((channel) => channel === value);
-}
+import { isSyncableChannel } from '../services/order-collection/syncable-channels';
 
 export class SyncOrderBodyDto {
   @ApiPropertyOptional({ description: '해시가 같아도 OrderModified 를 낸다. 백필 전용' })
