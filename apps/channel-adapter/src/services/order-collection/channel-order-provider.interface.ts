@@ -103,6 +103,16 @@ export interface ReplayableChannelOrderProvider extends ChannelOrderProvider {
   fetchOrder(externalOrderId: string): Promise<OrderFetchOutcome | null>;
 }
 
+/** 즉시 끌어오기(#1016 5번 행, 스펙 §9.1)가 받는 것 — 폴링과 같은 처리를 태우려면 lifecycle 도 함께 필요하다. */
+export interface OrderSyncFetch {
+  outcome: OrderFetchOutcome;
+  lifecycle: OrderLifecycleEventItem[];
+}
+
+export interface SyncableChannelOrderProvider extends ChannelOrderProvider {
+  fetchOrderForSync(externalOrderId: string): Promise<OrderSyncFetch | null>;
+}
+
 export interface ChannelOrderProvider {
   // 유일한 구현(`TranslatingOrderProvider`)과 `ChannelOrderSource` 가 이미 `SalesChannel` 이다.
   // 여기만 `string` 이라 호출부가 캐스팅을 강요당했다 (#656).

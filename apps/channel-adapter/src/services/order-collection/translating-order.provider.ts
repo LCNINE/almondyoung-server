@@ -14,7 +14,9 @@ import {
   OrderFetchItem,
   OrderFetchOutcome,
   OrderLifecycleEventItem,
+  OrderSyncFetch,
   ReplayableChannelOrderProvider,
+  SyncableChannelOrderProvider,
 } from './channel-order-provider.interface';
 
 /**
@@ -72,7 +74,7 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
 /** 격리 재처리를 지원하는 source 를 감싼 판본. */
 export class ReplayableTranslatingOrderProvider
   extends TranslatingOrderProvider
-  implements ReplayableChannelOrderProvider
+  implements ReplayableChannelOrderProvider, SyncableChannelOrderProvider
 {
   constructor(
     private readonly replayableSource: ReplayableChannelOrderSource,
@@ -87,6 +89,14 @@ export class ReplayableTranslatingOrderProvider
       return null;
     }
     return this.translateOne(snapshot);
+  }
+
+  async fetchOrderForSync(externalOrderId: string): Promise<OrderSyncFetch | null> {
+    const snapshot = await this.replayableSource.fetchOrder(externalOrderId);
+    if (!snapshot) {
+      return null;
+    }
+    return this.translator.translate(this.channel, snapshot);
   }
 }
 

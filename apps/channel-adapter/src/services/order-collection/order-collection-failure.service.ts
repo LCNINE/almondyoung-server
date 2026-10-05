@@ -120,8 +120,13 @@ export class OrderCollectionFailureService {
   /**
    * 채널 + externalOrderId 로 아직 열려 있는(quarantined) 격리 레코드를 찾는다.
    * 이전 poll 에서 격리된 주문이 이후 terminal lifecycle 로 바뀌었는지 판단할 때 사용.
+   * `reason` 을 주면 그 사유의 행만 찾는다(수집된 주문의 «변경» 격리를 식별 실패 격리와 구별해야 할 때).
    */
-  async findOpenByExternalOrderId(channel: string, externalOrderId: string): Promise<OrderCollectionFailure | null> {
+  async findOpenByExternalOrderId(
+    channel: string,
+    externalOrderId: string,
+    reason?: OrderCollectionFailureReason,
+  ): Promise<OrderCollectionFailure | null> {
     const rows = await this.db.db
       .select()
       .from(orderCollectionFailures)
@@ -130,6 +135,7 @@ export class OrderCollectionFailureService {
           eq(orderCollectionFailures.channel, channel),
           eq(orderCollectionFailures.externalOrderId, externalOrderId),
           eq(orderCollectionFailures.status, 'quarantined'),
+          reason ? eq(orderCollectionFailures.reason, reason) : undefined,
         ),
       )
       .limit(1);

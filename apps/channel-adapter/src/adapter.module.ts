@@ -90,6 +90,7 @@ import { MembershipDailySyncService } from './services/membership-daily-sync.ser
 import { CouponIssueReconciliationService } from './services/coupon-issue-reconciliation.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
+import { ChannelOrderSyncController } from './controllers/channel-order-sync.controller';
 import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderSource } from './services/order-collection/medusa-order.source';
@@ -234,6 +235,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           UserEventConsumer,
           PaymentEventsConsumer,
           OrderCollectionFailuresController,
+          ChannelOrderSyncController,
         ]),
   ],
   providers: [

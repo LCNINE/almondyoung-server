@@ -22,6 +22,14 @@ import {
 
 const CHANNEL_ACTOR = { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
 
+/**
+ * 셀메이트 과도기에 `scripts/sellmate/mark-shipped-from-csv.ts` 가 직접 찍는 출고 표시(#1016 15번 행).
+ * core 출고 기록이 없어도 물건은 이미 떠났다 — `isFullyShipped` 는 core 출고지시·박스만 보므로 이걸 못 본다.
+ * 지금 이 status 를 쓰는 코드는 없다. 생기더라도 «떠났다» 는 뜻은 같다.
+ */
+const MARKED_SHIPPED_STATUSES: ReadonlySet<string> = new Set(['shipped', 'delivered']);
+const MARKED_SHIPPED_DETAIL = 'sales order marked shipped';
+
 /** savepoint 를 되돌리려고 던지는 표지. 밖으로 새지 않는다. */
 class Refused extends Error {
   constructor(readonly blocker: ChannelBlocker) {
@@ -68,9 +76,28 @@ export class ChannelOrderChangeManager {
     ctx: { amendmentId: string; allRemoved: boolean; occurredAt: string },
     tx: DbTx,
   ): Promise<RecordedChannelDelta> {
-    if (delta.type === 'shipping_address_change') return this.tryAddress(order, delta, ctx.amendmentId, tx);
+    const markedShipped = MARKED_SHIPPED_STATUSES.has(order.status);
+    if (delta.type === 'shipping_address_change') {
+      if (markedShipped) {
+        return {
+          ...delta,
+          outcome: 'pending',
+          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: MARKED_SHIPPED_DETAIL }],
+        };
+      }
+      return this.tryAddress(order, delta, ctx.amendmentId, tx);
+    }
     if (isDecrease(delta)) {
       if (ctx.allRemoved) return { ...delta, outcome: 'pending', blockers: [{ code: 'ALL_LINES_REMOVED' }] };
+      // V1 cancelPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
+      // awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
+      if (markedShipped) {
+        return {
+          ...delta,
+          outcome: 'pending',
+          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: MARKED_SHIPPED_DETAIL }],
+        };
+      }
       return this.tryDecrease(order, delta, ctx, tx);
     }
     if (delta.type === 'unmatched_line') {

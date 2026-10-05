@@ -154,6 +154,11 @@ diff 는 순수 함수(`channel-order-diff.ts`)다. 입력: 유효 판매주문 
 판매주문 `FOR UPDATE` 아래 같은 트랜잭션에서 시도하고 적용한다. 판정과 적용 사이에 단계가 바뀌는 틈이 없다.
 잠금 순서는 판매주문 → 출고지시 → 박스(취소 경로와 같다). 시도는 델타마다 savepoint 하나(`tx.transaction`)다.
 
+> **계획 단계 수정(PR 2, 2026-10-05):** 판매주문 status 가 `shipped`·`delivered` 면 시도하지 않고 대기한다 — 배송지
+> `SHIPMENT_NOT_REVISABLE`, 감소 `CANCEL_NOT_IMMEDIATE`(둘 다 `detail: 'sales order marked shipped'`). 셀메이트 과도기에
+> 스크립트가 이 status 를 직접 찍어, core 출고 기록이 없어도 물건은 이미 떠났다. 그대로 시도하면 배송지는 «반영됨» 으로
+> 묻히고, 감소는 V1 부분취소가 status 를 보지 않아 `awaiting_matching` 백로그를 다시 매칭 대기로 돌린다.
+
 ### 7.1 배송지
 
 이미 발송된(`shipped`·`in_transit`·`delivered`) 박스와 끝난(`canceled`·`superseded`) 박스는 보지 않는다. savepoint 안에서:
@@ -268,6 +273,10 @@ channel-adapter 에 `POST /adapter/orders/:channel/:externalOrderId/sync` 를 �
 - 같은 주문을 폴러가 동시에 처리해도 `claimChanged` 가 한쪽만 이기게 한다(지금 구조). `force` 는 이긴 쪽이 아니어도 발행하므로
   같은 스냅샷이 두 번 갈 수 있다 — core 는 두 번째를 실질 차이 0 으로 버린다
 
+> **계획 단계 수정(PR 2, 2026-10-05):** 응답 `outcome` 에 셋을 더했다 — `not_eligible`(수집 대상이 아닌 미수집 주문),
+> `identification_failed`(번역이 식별 실패를 냄 — 폴링과 같이 미수집이면 격리, 수집됐으면 열린 격리를 닫는다),
+> 그리고 비활성 채널은 409(폴링의 킬스위치와 같은 뜻). 주문을 먼저, 그 주문의 lifecycle 을 이어서 처리한다.
+
 이 스펙에서 이 입구의 호출자는 백필뿐이다. 운영자 취소·수정의 호출자는 35번 행이 만든다.
 
 ### 9.2 백필(R8)
@@ -278,6 +287,11 @@ core 판매주문이 끝나지 않은(취소·출고 완료가 아닌) 주문만
 - 대상 수를 먼저 세고(읽기 전용), 실행은 사람이 한다
 - 실제 주소 변경은 반영되고, 오탐은 기록 없이 사라진다
 - 격리 행은 닫지 않는다(6번 행)
+
+> **계획 단계 수정(PR 2, 2026-10-05):** «끝나지 않은» = 판매주문 status 가 `cancelled`·`timeout`·`shipped`·`delivered` 가
+> 아닌 것. core diff 는 `shipped`·`delivered` 를 건너뛰지 않으므로 스크립트가 거른다. 판매주문이 없는 격리도 뺀다(보내면
+> NotFound → DLQ). 스크립트는 `sst shell` 안에서 channel_adapter·core 를 읽기 전용으로 읽고, 쓰기는 입구가 한다.
+> 스크립트: `scripts/ops/1016-backfill-channel-order-modifications.ts`.
 
 지금 출고는 셀메이트가 하므로(#923) core 박스 주소를 고쳐도 실제 발송에는 영향이 없다. core 출고가 돌기 시작하는 컷오버 전에
 core 판매주문의 주소를 맞춰 두는 의미다.
@@ -362,3 +376,5 @@ core 판매주문의 주소를 맞춰 두는 의미다.
 - **공동현관 비밀번호 변경:** 이벤트에 없다. 운영자 경로로만 고친다
 - **Medusa 라인 제거의 실제 모양:** 수량 0 으로 남는지 라인이 사라지는지 실측하지 않았다. diff 는 둘을 같게 다루므로 결과는 같다.
   PR 1 통합 테스트 픽스처를 만들 때 dev Medusa 에서 한 번 확인한다
+- **셀메이트 출고 뒤 표시 전의 변경:** 셀메이트가 실제로 출고한 뒤 일일 표시 스크립트(`mark-shipped-from-csv.ts`)가 돌기 전에 온 변경은
+  판매주문이 아직 `pending` 이라 그대로 반영된다(셀메이트 과도기 한정, 컷오버하면 사라진다)
