@@ -27,6 +27,10 @@ const ADDRESS_APPLIED: RecordedChannelDelta = {
 };
 
 describe('deltaFingerprint', () => {
+  it('undefined 값 키는 없는 키와 같다 — jsonb 왕복은 그 키를 버린다', () => {
+    expect(deltaFingerprint({ ...ADD, channelProductId: undefined })).toBe(deltaFingerprint(JSON.parse(JSON.stringify({ ...ADD, channelProductId: undefined }))));
+  });
+
   it('막힌 사유·결과는 지문 밖이다 — 무시는 «이 차이»를 받아들인 것', () => {
     const later = { ...ADD, blockers: [{ code: 'WAYBILL_ISSUED', shipmentId: 'sh-1' }] };
     expect(deltaFingerprint(later)).toBe(deltaFingerprint(ADD));
