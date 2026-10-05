@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsISO8601, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class ListSalesOrderAmendmentsQueryDto {
   @ApiPropertyOptional({ enum: ['applied', 'pending', 'superseded'] })
@@ -21,8 +21,9 @@ export class ListSalesOrderAmendmentsQueryDto {
   @Max(200)
   limit?: number;
 
-  @ApiPropertyOptional({ description: '이 시각보다 이전 행(다음 쪽 커서 = 응답의 nextBefore)' })
+  @ApiPropertyOptional({ description: '다음 쪽 커서(불투명 문자열) = 응답의 nextCursor' })
   @IsOptional()
-  @IsISO8601()
-  before?: string;
+  @IsString()
+  @Matches(/^[^|]+\|[0-9a-f-]{36}$/i)
+  cursor?: string;
 }

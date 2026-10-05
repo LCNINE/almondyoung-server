@@ -92,4 +92,26 @@ describeIfDb('SalesOrderAmendmentsService 채널 기록·목록 (DB integration,
       expect(page.items.find((item) => item.id === visible)).toMatchObject({ salesChannel: 'medusa', salesOrderId: open });
     });
   });
+
+  it('같은 occurredAt 3행을 limit 2 로 두 쪽에 걸쳐 한 번씩 낸다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const service = new SalesOrderAmendmentsService(ambientDbService(tx));
+      const occurredAt = new Date('2099-01-01T00:00:00.000Z');
+      const ids: string[] = [];
+      for (let n = 0; n < 3; n += 1) {
+        const id = randomUUID();
+        await service.recordChannelAmendment(
+          { id, salesOrderId: await salesOrder(tx), deltas: [PENDING], occurredAt, sourceEventId: `msg-${id}`, salesChannel: 'medusa', externalOrderId: 'ext' },
+          tx,
+        );
+        ids.push(id);
+      }
+      const first = await service.list({ status: 'pending', origin: 'channel', limit: 2 }, tx);
+      expect(first.nextCursor).not.toBeNull();
+      const second = await service.list({ status: 'pending', origin: 'channel', limit: 2, cursor: first.nextCursor ?? undefined }, tx);
+      const seen = [...first.items, ...second.items].map((item) => item.id).filter((id) => ids.includes(id));
+      expect([...seen].sort()).toEqual([...ids].sort());
+      expect(second.nextCursor).toBeNull();
+    });
+  });
 });

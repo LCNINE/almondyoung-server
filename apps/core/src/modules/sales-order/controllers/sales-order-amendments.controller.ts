@@ -23,7 +23,7 @@ export class SalesOrderAmendmentsController {
   @Get()
   @ApiOperation({ summary: '정정 목록 — 반영 대기 변경 화면' })
   list(@Query() query: ListSalesOrderAmendmentsQueryDto) {
-    return this.service.list({ status: query.status, origin: query.origin, limit: query.limit ?? 50, before: query.before });
+    return this.service.list({ status: query.status, origin: query.origin, limit: query.limit ?? 50, cursor: query.cursor });
   }
 
   @Get(':id')

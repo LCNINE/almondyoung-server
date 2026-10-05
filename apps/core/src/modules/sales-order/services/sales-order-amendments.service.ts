@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, desc, eq, lt, ne, notInArray, type InferInsertModel } from 'drizzle-orm';
+import { and, desc, eq, ne, notInArray, sql, type InferInsertModel } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   CreateSalesOrderAmendmentDto,
@@ -265,12 +265,21 @@ export class SalesOrderAmendmentsService {
 
   /** 대기 목록(#1016 5번 행 화면). 끝난 판매주문의 행은 뺀다 — Medusa 취소 직전 스냅샷이 남긴 pending 이 거기 남는다. */
   async list(
-    query: { status?: AmendmentStatus; origin?: AmendmentOrigin; limit: number; before?: string },
+    query: { status?: AmendmentStatus; origin?: AmendmentOrigin; limit: number; cursor?: string },
     tx?: DbTx,
-  ): Promise<{ items: AmendmentListItem[]; nextBefore: string | null }> {
+  ): Promise<{ items: AmendmentListItem[]; nextCursor: string | null }> {
     const db = tx ?? this.db.db;
     const table = wmsTables.salesOrderAmendments;
     const orders = wmsTables.salesOrders;
+    // 정렬·커서 키를 밀리초로 맞춘다 — ISO 왕복이 µs 를 자르므로 같은 키를 양쪽에 쓴다.
+    const occurredMs = sql`date_trunc('milliseconds', ${table.occurredAt})`;
+    let after: ReturnType<typeof sql> | undefined;
+    if (query.cursor) {
+      const sep = query.cursor.lastIndexOf('|');
+      const cursorDate = new Date(query.cursor.slice(0, sep));
+      if (sep < 0 || Number.isNaN(cursorDate.getTime())) throw new BadRequestException('Invalid cursor');
+      after = sql`(${occurredMs}, ${table.id}) < (${cursorDate.toISOString()}::timestamptz, ${query.cursor.slice(sep + 1)}::uuid)`;
+    }
     const rows = await db
       .select({
         id: table.id,
@@ -289,16 +298,16 @@ export class SalesOrderAmendmentsService {
         and(
           query.status ? eq(table.status, query.status) : undefined,
           query.origin ? eq(table.origin, query.origin) : undefined,
-          query.before ? lt(table.occurredAt, new Date(query.before)) : undefined,
+          after,
           notInArray(orders.status, [...HIDDEN_ORDER_STATUSES]),
         ),
       )
-      .orderBy(desc(table.occurredAt), desc(table.id))
+      .orderBy(desc(occurredMs), desc(table.id))
       .limit(query.limit + 1);
     const page = rows.slice(0, query.limit);
     return {
       items: page.map((row) => ({ ...row, deltas: Array.isArray(row.deltas) ? row.deltas : [] })),
-      nextBefore: rows.length > query.limit ? page[page.length - 1].occurredAt.toISOString() : null,
+      nextCursor: rows.length > query.limit ? `${page[page.length - 1].occurredAt.toISOString()}|${page[page.length - 1].id}` : null,
     };
   }
 
