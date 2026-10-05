@@ -154,6 +154,11 @@ diff 는 순수 함수(`channel-order-diff.ts`)다. 입력: 유효 판매주문 
 판매주문 `FOR UPDATE` 아래 같은 트랜잭션에서 시도하고 적용한다. 판정과 적용 사이에 단계가 바뀌는 틈이 없다.
 잠금 순서는 판매주문 → 출고지시 → 박스(취소 경로와 같다). 시도는 델타마다 savepoint 하나(`tx.transaction`)다.
 
+> **계획 단계 수정(PR 2, 2026-10-05):** 판매주문 status 가 `shipped`·`delivered` 면 시도하지 않고 대기한다 — 배송지
+> `SHIPMENT_NOT_REVISABLE`, 감소 `CANCEL_NOT_IMMEDIATE`(둘 다 `detail: 'sales order marked shipped'`). 셀메이트 과도기에
+> 스크립트가 이 status 를 직접 찍어, core 출고 기록이 없어도 물건은 이미 떠났다. 그대로 시도하면 배송지는 «반영됨» 으로
+> 묻히고, 감소는 V1 부분취소가 status 를 보지 않아 `awaiting_matching` 백로그를 다시 매칭 대기로 돌린다.
+
 ### 7.1 배송지
 
 이미 발송된(`shipped`·`in_transit`·`delivered`) 박스와 끝난(`canceled`·`superseded`) 박스는 보지 않는다. savepoint 안에서:
