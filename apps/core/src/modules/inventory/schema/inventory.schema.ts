@@ -1464,6 +1464,13 @@ export const salesOrderAmendments = pgTable(
     metadata: jsonb('metadata')
       .notNull()
       .default(sql`'{}'::jsonb`),
+    // #1016 판단 6: 채널 변경과 운영자 수정을 함께 담는 단일 변경 기록. `decision` 은 운영자 승인 축, `status` 는 적용 축이다.
+    origin: varchar('origin', { length: 16 }).$type<'channel' | 'operator'>().notNull().default('operator'),
+    status: varchar('status', { length: 16 }).$type<'applied' | 'pending' | 'superseded'>().notNull().default('pending'),
+    sourceEventId: varchar('source_event_id', { length: 255 }),
+    supersededById: uuid('superseded_by_id').references((): AnyPgColumn => salesOrderAmendments.id, {
+      onDelete: 'set null',
+    }),
     createdBy: uuid('created_by'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1482,6 +1489,15 @@ export const salesOrderAmendments = pgTable(
       sql`${t.decision} IN ('approved', 'rejected', 'pending')`,
     ),
     deltasArrayCheck: check('sales_order_amendments_deltas_array_check', sql`jsonb_typeof(${t.deltas}) = 'array'`),
+    uqSourceEventId: uniqueIndex('uq_sales_order_amendments_source_event_id')
+      .on(t.sourceEventId)
+      .where(sql`${t.sourceEventId} IS NOT NULL`),
+    idxPendingList: index('idx_sales_order_amendments_status_origin_occurred').on(t.status, t.origin, t.occurredAt),
+    originCheck: check('sales_order_amendments_origin_check', sql`${t.origin} IN ('channel', 'operator')`),
+    statusCheck: check(
+      'sales_order_amendments_status_check',
+      sql`${t.status} IN ('applied', 'pending', 'superseded')`,
+    ),
   }),
 );
 
