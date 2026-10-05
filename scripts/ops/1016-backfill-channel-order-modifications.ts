@@ -34,8 +34,7 @@ function argValue(flag: string): string | undefined {
 
 // `Resource` 의 타입 선언에는 `Db`·시크릿이 없다(SST 가 실행 시점에 채운다). 기존 ops 스크립트
 // (647-close-already-collected-quarantines.ts)와 같은 이유로 캐스팅한다.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const linked = Resource as any as {
+const linked = Resource as unknown as {
   Db: { host: string; port: number; username: string; password: string };
   ChannelAdapterInternalKey?: { value: string };
 };
@@ -51,7 +50,7 @@ function connect(database: string) {
     max: 1,
     connect_timeout: 30,
     // 이 스크립트는 읽기만 한다 — 실수로 쓰는 문장이 들어와도 서버가 거절하게 한다.
-    connection: { default_transaction_read_only: 'on' as never },
+    connection: { default_transaction_read_only: true },
   });
 }
 
@@ -68,12 +67,16 @@ async function loadQuarantined(): Promise<QuarantinedModification[]> {
   }
 }
 
-async function loadSalesOrders(rows: QuarantinedModification[]): Promise<CoreSalesOrderStatus[]> {
+// 대상 목록에 주문일을 함께 찍기 위한 행 — 선별 순수 함수는 CoreSalesOrderStatus 만 본다.
+type CoreSalesOrderRow = CoreSalesOrderStatus & { orderDate: Date | null };
+
+async function loadSalesOrders(rows: QuarantinedModification[]): Promise<CoreSalesOrderRow[]> {
   if (rows.length === 0) return [];
   const sql = connect('core');
   try {
-    return await sql<CoreSalesOrderStatus[]>`
-      SELECT sales_channel AS "salesChannel", channel_order_id AS "channelOrderId", status::text AS status
+    return await sql<CoreSalesOrderRow[]>`
+      SELECT sales_channel AS "salesChannel", channel_order_id AS "channelOrderId", status::text AS status,
+             order_date AS "orderDate"
       FROM sales_orders
       WHERE channel_order_id = ANY(${rows.map((row) => row.externalOrderId)})`;
   } finally {
@@ -92,23 +95,40 @@ async function syncOne(baseUrl: string, key: string, row: QuarantinedModificatio
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`);
   const parsed: unknown = JSON.parse(text);
   const outcome = typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'outcome') : undefined;
-  return typeof outcome === 'string' ? outcome : `unexpected body: ${text.slice(0, 300)}`;
+  if (typeof outcome !== 'string') throw new Error(`응답에 outcome 이 없다: ${text.slice(0, 300)}`);
+  return outcome;
 }
 
 async function main(): Promise<void> {
-  console.log(`모드: ${APPLY ? '실행 (--apply)' : '대상만 센다 — 실행하려면 --apply --base-url <channel-adapter URL>'}\n`);
+  console.log(
+    `모드: ${APPLY ? '실행 (--apply)' : '대상만 센다 — 실행하려면 --apply --base-url <channel-adapter URL>'}\n`,
+  );
+
+  // 실행 모드의 전제는 DB 를 읽기 전에 확인한다 — 읽고 나서 죽으면 헛수고다.
+  const key = linked.ChannelAdapterInternalKey?.value ?? process.env.CHANNEL_ADAPTER_INTERNAL_KEY;
+  if (APPLY) {
+    if (!BASE_URL) throw new Error('--apply 에는 --base-url 이 필요하다 (예: https://channel-adapter.almondyoung.com)');
+    if (!key)
+      throw new Error(
+        'ChannelAdapterInternalKey 를 읽지 못했다 — sst shell 안에서 돌리거나 CHANNEL_ADAPTER_INTERNAL_KEY 를 넘긴다',
+      );
+  }
 
   const quarantined = await loadQuarantined();
-  const { targets, skipped } = selectBackfillTargets(quarantined, await loadSalesOrders(quarantined));
+  const salesOrders = await loadSalesOrders(quarantined);
+  const { targets, skipped } = selectBackfillTargets(quarantined, salesOrders);
   console.log(`격리 ${quarantined.length}건 → 대상 ${targets.length}건, 제외 ${skipped.length}건`);
   console.table(countByReason(skipped));
-  // 무엇을 승인했는지 확인할 수 있게 대상 행을 전부 찍는다.
-  for (const row of targets) console.log(`  ${row.channel}  ${row.externalOrderId}`);
+  // 무엇을 승인했는지 확인할 수 있게 대상 행을 전부 찍는다. 오래된 pending 은 셀메이트가 이미 출고했는데
+  // 표시 스크립트가 아직 안 돈 주문일 수 있으니, 운영자가 눈으로 볼 수 있게 core 상태와 주문일을 붙인다.
+  const orderByKey = new Map(salesOrders.map((order) => [`${order.salesChannel}:${order.channelOrderId}`, order]));
+  for (const row of targets) {
+    const order = orderByKey.get(`${row.channel}:${row.externalOrderId}`);
+    const date = order?.orderDate ? new Date(order.orderDate).toISOString().slice(0, 10) : '-';
+    console.log(`  ${row.channel}  ${row.externalOrderId}  ${order?.status ?? '-'}  ${date}`);
+  }
 
-  if (!APPLY) return;
-  if (!BASE_URL) throw new Error('--apply 에는 --base-url 이 필요하다 (예: https://channel-adapter.almondyoung.com)');
-  const key = linked.ChannelAdapterInternalKey?.value ?? process.env.CHANNEL_ADAPTER_INTERNAL_KEY;
-  if (!key) throw new Error('ChannelAdapterInternalKey 를 읽지 못했다 — sst shell 안에서 돌리거나 CHANNEL_ADAPTER_INTERNAL_KEY 를 넘긴다');
+  if (!APPLY || !BASE_URL || !key) return;
 
   const outcomes: Record<string, number> = {};
   let failed = 0;
@@ -126,7 +146,9 @@ async function main(): Promise<void> {
   console.log('\n결과');
   console.table(outcomes);
   if (failed > 0) {
-    console.log(`실패 ${failed}건 — 같은 명령을 다시 돌려도 안전하다(이미 반영된 주문은 core 가 실질 차이 0 으로 버린다).`);
+    console.log(
+      `실패 ${failed}건 — 같은 명령을 다시 돌려도 안전하다 — 이미 반영된 변경은 no-op 으로 돌아오고, 계속 pending 인 주문은 새 pending 행이 옛 행을 대체한다.`,
+    );
     process.exitCode = 1;
   }
 }

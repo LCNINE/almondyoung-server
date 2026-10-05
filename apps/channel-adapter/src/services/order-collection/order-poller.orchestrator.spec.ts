@@ -942,6 +942,11 @@ describe('OrderPollerOrchestrator', () => {
 
     await orchestrator.poll();
 
+    expect(failures.findOpenByExternalOrderId).toHaveBeenCalledWith(
+      'medusa',
+      'medusa_order_1',
+      CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+    );
     expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith(
       'stale_failure_1',
       expect.any(String),
@@ -1726,6 +1731,11 @@ describe('OrderPollerOrchestrator.syncOrder — 즉시 끌어오기 (#1016 5번 
       outcome: 'identification_failed',
     });
     expect(failures.recordFailure).not.toHaveBeenCalled();
+    expect(failures.findOpenByExternalOrderId).toHaveBeenCalledWith(
+      'medusa',
+      'medusa_order_1',
+      CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+    );
     expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith('failure_1', expect.any(String), 'wms_medusa_order_1');
   });
 

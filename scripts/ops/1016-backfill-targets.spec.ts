@@ -1,7 +1,11 @@
 import { countByReason, selectBackfillTargets } from './1016-backfill-targets';
 
 const q = (externalOrderId: string, channel = 'medusa') => ({ channel, externalOrderId });
-const so = (channelOrderId: string, status: string, salesChannel = 'medusa') => ({ salesChannel, channelOrderId, status });
+const so = (channelOrderId: string, status: string, salesChannel = 'medusa') => ({
+  salesChannel,
+  channelOrderId,
+  status,
+});
 
 describe('selectBackfillTargets (#1016 5번 행, 스펙 §9.2)', () => {
   it('끝나지 않은 판매주문만 대상이다 — pending·confirmed·processing', () => {

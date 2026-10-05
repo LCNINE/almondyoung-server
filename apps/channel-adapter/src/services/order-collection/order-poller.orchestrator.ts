@@ -3,7 +3,12 @@ import { CronOnce } from '@app/cron-once';
 import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload, SalesChannel } from '@packages/event-contracts/streams';
+import {
+  ORDER_STREAM,
+  OrderCancelledPayload,
+  OrderRefundCreatedPayload,
+  SalesChannel,
+} from '@packages/event-contracts/streams';
 import { SyncStatusService } from '../sync-status.service';
 import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
@@ -755,7 +760,12 @@ export class OrderPollerOrchestrator {
     externalOrderId: string,
     wmsOrderId: string | undefined,
   ): Promise<void> {
-    const open = await this.orderCollectionFailureService.findOpenByExternalOrderId(channel, externalOrderId);
+    // 수집된 주문의 «변경» 격리는 6번 행 몫이라 여기서 닫지 않는다 — 식별 실패 격리만 닫는다.
+    const open = await this.orderCollectionFailureService.findOpenByExternalOrderId(
+      channel,
+      externalOrderId,
+      CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+    );
     if (!open) {
       return;
     }

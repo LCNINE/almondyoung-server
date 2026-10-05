@@ -455,49 +455,58 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('셀메이트가 shipped 로 찍은 판매주문(core 출고 기록 없음) — 배송지는 판매주문 그대로 SHIPMENT_NOT_REVISABLE 대기', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const seed = await seedOrder(tx, w, { withFo: false });
-      // scripts/sellmate/mark-shipped-from-csv.ts 가 하는 일 그대로 — status 만 바꾼다(#1016 15번 행).
-      await tx.update(wmsTables.salesOrders).set({ status: 'shipped' }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
-      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
-      const [so] = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
-      expect(so.shippingAddress).toEqual(ADDRESS);
-      const [row] = await amendmentsOf(tx, seed.salesOrderId);
-      expect(row.status).toBe('pending');
-      expect(row.deltas).toEqual([
-        expect.objectContaining({
-          type: 'shipping_address_change',
-          outcome: 'pending',
-          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: 'sales order marked shipped' }],
-        }),
-      ]);
-    });
-  });
+  it.each(['shipped', 'delivered'] as const)(
+    '셀메이트가 %s 로 찍은 판매주문(core 출고 기록 없음) — 배송지는 판매주문 그대로 SHIPMENT_NOT_REVISABLE 대기',
+    async (status) => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire(tx);
+        const seed = await seedOrder(tx, w, { withFo: false });
+        // scripts/sellmate/mark-shipped-from-csv.ts 가 하는 일 그대로 — status 만 바꾼다(#1016 15번 행).
+        await tx.update(wmsTables.salesOrders).set({ status }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+        await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+        const [so] = await tx
+          .select()
+          .from(wmsTables.salesOrders)
+          .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+        expect(so.shippingAddress).toEqual(ADDRESS);
+        const [row] = await amendmentsOf(tx, seed.salesOrderId);
+        expect(row.status).toBe('pending');
+        expect(row.deltas).toEqual([
+          expect.objectContaining({
+            type: 'shipping_address_change',
+            outcome: 'pending',
+            blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: 'sales order marked shipped' }],
+          }),
+        ]);
+      });
+    },
+  );
 
-  it('셀메이트가 shipped 로 찍은 판매주문 — 감소는 취소하지 않고 CANCEL_NOT_IMMEDIATE 대기', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const seed = await seedOrder(tx, w, { withFo: false });
-      await tx.update(wmsTables.salesOrders).set({ status: 'shipped' }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
-      const p = payload(seed, {});
-      p.snapshot.lines[0].quantity = 1;
-      await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
-      const cancellations = await tx
-        .select()
-        .from(wmsTables.salesOrderCancellations)
-        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
-      expect(cancellations).toHaveLength(0);
-      const [row] = await amendmentsOf(tx, seed.salesOrderId);
-      expect(row.status).toBe('pending');
-      expect(row.deltas).toEqual([
-        expect.objectContaining({
-          type: 'quantity_correction',
-          outcome: 'pending',
-          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'sales order marked shipped' }],
-        }),
-      ]);
-    });
-  });
+  it.each(['shipped', 'delivered'] as const)(
+    '셀메이트가 %s 로 찍은 판매주문 — 감소는 취소하지 않고 CANCEL_NOT_IMMEDIATE 대기',
+    async (status) => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire(tx);
+        const seed = await seedOrder(tx, w, { withFo: false });
+        await tx.update(wmsTables.salesOrders).set({ status }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+        const p = payload(seed, {});
+        p.snapshot.lines[0].quantity = 1;
+        await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
+        const cancellations = await tx
+          .select()
+          .from(wmsTables.salesOrderCancellations)
+          .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
+        expect(cancellations).toHaveLength(0);
+        const [row] = await amendmentsOf(tx, seed.salesOrderId);
+        expect(row.status).toBe('pending');
+        expect(row.deltas).toEqual([
+          expect.objectContaining({
+            type: 'quantity_correction',
+            outcome: 'pending',
+            blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'sales order marked shipped' }],
+          }),
+        ]);
+      });
+    },
+  );
 });

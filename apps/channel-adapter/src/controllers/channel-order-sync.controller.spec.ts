@@ -24,7 +24,9 @@ describe('ChannelOrderSyncController', () => {
 
   it('틀린 키는 채널을 부르기 전에 401', async () => {
     const { controller, orderPoller } = makeController();
-    await expect(controller.sync('Bearer wrong', 'medusa', 'order_1', {})).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(controller.sync('Bearer wrong', 'medusa', 'order_1', {})).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
     expect(orderPoller.syncOrder).not.toHaveBeenCalled();
   });
 

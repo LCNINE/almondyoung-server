@@ -79,7 +79,11 @@ export class ChannelOrderChangeManager {
     const markedShipped = MARKED_SHIPPED_STATUSES.has(order.status);
     if (delta.type === 'shipping_address_change') {
       if (markedShipped) {
-        return { ...delta, outcome: 'pending', blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: MARKED_SHIPPED_DETAIL }] };
+        return {
+          ...delta,
+          outcome: 'pending',
+          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: MARKED_SHIPPED_DETAIL }],
+        };
       }
       return this.tryAddress(order, delta, ctx.amendmentId, tx);
     }
@@ -88,7 +92,11 @@ export class ChannelOrderChangeManager {
       // V1 cancelPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
       // awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
       if (markedShipped) {
-        return { ...delta, outcome: 'pending', blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: MARKED_SHIPPED_DETAIL }] };
+        return {
+          ...delta,
+          outcome: 'pending',
+          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: MARKED_SHIPPED_DETAIL }],
+        };
       }
       return this.tryDecrease(order, delta, ctx, tx);
     }
