@@ -15,6 +15,8 @@ export * from './order-actions';
 // 쿼리 훅들
 export {
   useOrderStats,
+  usePendingChannelChanges,
+  useSalesOrderAmendments,
   useDailyOrderStatus,
   useSalesOrders,
   useSalesOrder,

@@ -103,20 +103,29 @@ export interface OrderCreatedPayload {
 }
 
 /**
- * 주문 수정 이벤트
+ * 수집 뒤 채널 변경 (#1016 5번 행). 변경분이 아니라 **채널이 지금 보여 주는 전체 스냅샷**이다 —
+ * channel-adapter 는 이전 값을 들고 있지 않고, 비교는 core 가 유효 판매주문과 한다.
+ * 공동현관 비밀번호는 싣지 않는다. core 가 그 값의 정본이고 «없음»은 «지워라»가 아니다.
  */
+export interface OrderModifiedSnapshotLine {
+  channelOrderItemId: string | null;
+  channelProductId: string | null;
+  quantity: number;
+  unitPrice: number;
+  /** 채널이 라인 취소로 표시한 라인. 감소는 lifecycle `OrderCancelled` 가 맡으므로 diff 가 건너뛴다. */
+  cancelled: boolean;
+}
+
 export interface OrderModifiedPayload {
+  /** channel-adapter 의 wms_order_id — core 판매주문 id 가 아니다. 참고용. */
   orderId: string;
-
-  changes: {
-    items?: OrderItem[];
-    shippingAddress?: ShippingAddress;
-    totalAmount?: number;
-  };
-
-  modifiedBy: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
   modifiedAt: string;
-  reason?: string;
+  snapshot: {
+    lines: OrderModifiedSnapshotLine[];
+    shippingAddress: ShippingAddress;
+  };
 }
 
 /**
@@ -280,16 +289,25 @@ const OrderCreatedSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+// 기존 OrderItemSchema 를 쓰지 않는다 — 수량 0(Medusa 라인 제거)·미식별 라인이 소비 단계에서 거부된다.
+const OrderModifiedSnapshotLineSchema = z.object({
+  channelOrderItemId: z.string().trim().min(1).nullable(),
+  channelProductId: z.string().trim().min(1).nullable(),
+  quantity: z.number().int().nonnegative(),
+  unitPrice: z.number().nonnegative(),
+  cancelled: z.boolean(),
+});
+
 const OrderModifiedSchema = z.object({
   orderId: z.string().min(1),
-  changes: z.object({
-    items: z.array(OrderItemSchema).optional(),
-    shippingAddress: ShippingAddressSchema.optional(),
-    totalAmount: z.number().nonnegative().optional(),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
+  // 네이버 시각은 +09:00 오프셋을 단다(#1016 2번 행과 같은 병) — offset 을 받아야 한다.
+  modifiedAt: z.string().datetime({ offset: true }),
+  snapshot: z.object({
+    lines: z.array(OrderModifiedSnapshotLineSchema),
+    shippingAddress: ShippingAddressSchema,
   }),
-  modifiedBy: z.string().min(1),
-  modifiedAt: z.string().datetime(),
-  reason: z.string().optional(),
 });
 
 const OrderCancelledSchema = z.object({

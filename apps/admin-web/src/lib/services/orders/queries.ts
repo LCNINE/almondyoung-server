@@ -522,3 +522,21 @@ export const useOrderLines = (query: OrderLinesQuery = {}) => {
 
 // 기존 호환성을 위한 별칭
 export const useVariantSkuMapping = useVariantSkuLookup;
+
+// ===== 정정(채널 변경 반영 대기, #1016 5번 행) =====
+
+export const usePendingChannelChanges = () => {
+  const params = { status: 'pending', origin: 'channel' };
+  return useQuery({
+    queryKey: orderQueryKeys.amendmentsList(params),
+    queryFn: () => orders.amendments.list({ ...params, limit: 200 }),
+  });
+};
+
+export const useSalesOrderAmendments = (salesOrderId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderAmendments(salesOrderId),
+    queryFn: () => orders.amendments.listForOrder(salesOrderId),
+    enabled: !!salesOrderId,
+  });
+};

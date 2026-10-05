@@ -12,6 +12,7 @@ import { consolidationClient } from './consolidation.client';
 import { locationOptimizationClient } from './location-optimization.client';
 import { matchingClient } from '../matching/matching.client';
 import { waybillsClient } from './waybills.client';
+import { salesOrderAmendmentsClient } from './sales-order-amendments.client';
 
 export const orders = {
   salesOrders,
@@ -25,6 +26,7 @@ export const orders = {
   locationOptimization: locationOptimizationClient,
   matching: matchingClient,
   waybills: waybillsClient,
+  amendments: salesOrderAmendmentsClient,
 };
 
 export { salesOrders } from './sales-orders.client';
@@ -37,3 +39,4 @@ export { directShipClient } from './direct-ship.client';
 export { consolidationClient } from './consolidation.client';
 export { locationOptimizationClient } from './location-optimization.client';
 export { waybillsClient } from './waybills.client';
+export { salesOrderAmendmentsClient } from './sales-order-amendments.client';

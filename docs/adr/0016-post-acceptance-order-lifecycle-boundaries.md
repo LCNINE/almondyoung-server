@@ -11,6 +11,11 @@ Payment Accepted 된 채널주문을 Core 가 수집하면 Core 판매주문은 
 - 출고 조정은 아직 출고되지 않은 수량에만 적용한다. 이미 출고된 수량은 출고주문에서 제거하지 않고 반품/회수/환불/보상 정책으로 처리한다.
 - channel-adapter 가 이미 수집한 Medusa 주문의 상품/금액 변경은 계속 `collected_order_modification_not_accepted` 로 격리한다. 다만 취소/환불은 별도 lifecycle event 로 수집할 수 있다.
 
+> **2026-10-05 갱신 (#1016 5번 행):** 수집 뒤 채널 변경은 더 이상 channel-adapter 에서 격리하지 않는다. `OrderModified`(전체 스냅샷)로 core 에
+> 전달되고, core 가 배송지(송장 발급 전)·수량 감소·라인 제거를 자동 반영하며 나머지는 `sales_order_amendments`(`origin=channel`,
+> `status=pending`)로 남긴다. 수락된 라인을 제자리에서 고치지 않는다는 이 ADR 의 원칙은 그대로다 — 감소는 취소 기록으로, 주소는 정정 기록과
+> 함께 반영된다. 설계: `docs/superpowers/specs/2026-10-05-channel-order-change-sync-design.md`
+
 ## Why this shape
 
 Medusa 는 OrderChange 를 주문에 누적하는 방식으로 사후 변경을 표현하지만, Core 는 출고, 디지털 권리 부여, 결제, CS 기록을 서로 다른 bounded context 로 가진다. 판매주문 line 을 직접 수정하거나 주문취소를 line 제거로 표현하면 "고객이 무엇을 결제했고, 무엇이 출고됐고, 나중에 무엇이 보정됐는지"가 한 row 에 섞인다. 반대로 모든 후속 사건을 주문정정의 하위 엔티티로 넣으면 Wallet/CS/Fulfillment 의 SoT 경계가 깨진다.

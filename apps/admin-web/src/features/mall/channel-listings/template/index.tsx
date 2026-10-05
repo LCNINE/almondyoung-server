@@ -10,8 +10,9 @@ import { cn } from '@/lib/utils/ui';
 import { ChannelListingsTable } from '../components/channel-listings-table';
 import { ChannelListingFormDialog } from '../components/channel-listing-form-dialog';
 import { QuarantineTable } from '@/features/mall/quarantine/components/quarantine-table';
+import { PendingChangesTable } from '@/features/mall/pending-changes/components/pending-changes-table';
 
-type Tab = 'listings' | 'quarantine';
+type Tab = 'listings' | 'quarantine' | 'pending-changes';
 
 export default function ChannelListingsTemplate() {
   const [tab, setTab] = useState<Tab>('listings');
@@ -57,6 +58,19 @@ export default function ChannelListingsTemplate() {
         >
           미매핑 주문
         </button>
+        <button
+          type="button"
+          aria-pressed={tab === 'pending-changes'}
+          onClick={() => setTab('pending-changes')}
+          className={cn(
+            'px-3 py-2 text-sm font-medium border-b-2 -mb-px',
+            tab === 'pending-changes'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          반영 대기 변경
+        </button>
       </nav>
 
       {tab === 'listings' ? (
@@ -101,8 +115,10 @@ export default function ChannelListingsTemplate() {
             />
           )}
         </>
-      ) : (
+      ) : tab === 'quarantine' ? (
         <QuarantineTable />
+      ) : (
+        <PendingChangesTable />
       )}
     </Container>
   );

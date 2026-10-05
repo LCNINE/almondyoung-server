@@ -142,32 +142,23 @@ describe('OrderPollerOrchestrator', () => {
     expect(outbox.enqueue.mock.calls.map(([event]) => event.partitionKey)).toEqual(['medusa', 'medusa']);
   });
 
-  it('quarantines collected Medusa order modifications instead of emitting OrderModified', async () => {
+  it('수집된 주문의 해시가 바뀌면 격리하지 않고 OrderModified 를 한 번 보낸다', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
       fetchOrders: jest
         .fn()
         .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] })
-        .mockResolvedValueOnce({
-          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
-          failures: [],
-        })
-        .mockResolvedValueOnce({
-          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
-          failures: [],
-        }),
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })], failures: [] })
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })], failures: [] }),
     };
-    const syncStatus = makeSyncStatus();
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const hashes = makeHashService();
     const failures = makeFailureService();
-
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
-      syncStatus as any,
+      makeSyncStatus() as any,
       outbox as any,
-      hashes as any,
+      makeHashService() as any,
       failures as any,
       db as any,
       makeSalesChannelClient(['medusa', 'naver']) as any,
@@ -177,20 +168,20 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
-    expect(outbox.enqueue).not.toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: 'OrderModified' }),
-      expect.anything(),
-    );
-    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
-    expect(failures.recordFailure).toHaveBeenCalledWith(
-      'medusa',
-      expect.objectContaining({
+    const modified = outbox.enqueue.mock.calls.filter(([event]) => event.eventType === 'OrderModified');
+    expect(modified).toHaveLength(1);
+    expect(modified[0][0]).toMatchObject({
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      partitionKey: 'medusa',
+      payload: {
+        orderId: '11111111-1111-4111-8111-111111111111',
+        salesChannel: 'medusa',
         externalOrderId: 'medusa_order_1',
-        reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-      }),
-      expect.anything(),
-    );
+        modifiedAt: '2026-05-26T01:10:00.000Z',
+        snapshot: { lines: [expect.objectContaining({ channelOrderItemId: 'item_1', quantity: 1 })] },
+      },
+    });
+    expect(failures.recordFailure).not.toHaveBeenCalled();
   });
 
   it('emits collected Medusa cancellation and refund lifecycle events separately from order modifications', async () => {
@@ -260,7 +251,7 @@ describe('OrderPollerOrchestrator', () => {
     );
   });
 
-  it('still quarantines contract changes observed with refunded Medusa lifecycle snapshots', async () => {
+  it('환불 lifecycle 이 함께 와도 내용 변경은 OrderModified 로 간다', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
@@ -296,26 +287,19 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue).toHaveBeenCalledTimes(3);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderRefundCreated' }),
       expect.anything(),
     );
-    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
-    expect(failures.recordFailure).toHaveBeenCalledWith(
-      'medusa',
-      expect.objectContaining({
-        externalOrderId: 'medusa_order_1',
-        reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-        rawOrder: expect.objectContaining({
-          changes: expect.objectContaining({ totalAmount: 12000 }),
-        }),
-      }),
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'OrderModified' }),
       expect.anything(),
     );
+    expect(failures.recordFailure).not.toHaveBeenCalled();
   });
 
-  it('quarantines refunded Medusa snapshots even when concrete refund rows are delayed', async () => {
+  it('환불 행이 늦어도 내용 변경은 OrderModified 로 간다', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
@@ -351,18 +335,12 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
-    expect(failures.recordFailure).toHaveBeenCalledWith(
-      'medusa',
-      expect.objectContaining({
-        externalOrderId: 'medusa_order_1',
-        reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-        rawOrder: expect.objectContaining({
-          changes: expect.objectContaining({ totalAmount: 12000 }),
-        }),
-      }),
+    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'OrderModified' }),
       expect.anything(),
     );
+    expect(failures.recordFailure).not.toHaveBeenCalled();
   });
 
   it('does not create a Core order from an uncollected lifecycle-only Medusa snapshot but advances the watermark', async () => {
@@ -743,7 +721,7 @@ describe('OrderPollerOrchestrator', () => {
   });
 
   // #599: 변경 격리 경로도 해시 확인이 트랜잭션 밖이라 같은 레이스를 갖는다.
-  it('quarantines a collected-order modification once when two concurrent polls observe the same stale hash', async () => {
+  it('두 폴링이 같은 낡은 해시를 봐도 OrderModified 는 한 번', async () => {
     const db = makeDb();
     db.mappings.set('medusa:medusa_order_1', {
       salesChannel: 'medusa',
@@ -779,11 +757,8 @@ describe('OrderPollerOrchestrator', () => {
 
     await Promise.all([orchestrator.poll(), orchestrator.poll()]);
 
-    const quarantines = failures.recordFailure.mock.calls.filter(
-      ([, failure]: [string, OrderCollectionFailureItem]) =>
-        failure.reason === COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-    );
-    expect(quarantines).toHaveLength(1);
+    const modified = outbox.enqueue.mock.calls.filter(([e]) => e.eventType === 'OrderModified');
+    expect(modified).toHaveLength(1);
   });
 
   it('uses the mapping insert as the OrderCreated idempotency gate', async () => {
@@ -1676,6 +1651,10 @@ function makeOrder(
       totalAmount,
     },
     modifiedAt: sourceUpdatedAt,
+    modification: {
+      lines: [{ channelOrderItemId: 'item_1', channelProductId: 'variant_1', quantity: 1, unitPrice: 10000, cancelled: false }],
+      shippingAddress,
+    },
   };
 }
 
@@ -1732,6 +1711,13 @@ function makeOrderWithCancelledLine(sourceUpdatedAt: string): OrderFetchItem {
       totalAmount: 13000,
     },
     modifiedAt: sourceUpdatedAt,
+    modification: {
+      lines: [
+        { channelOrderItemId: 'po-1', channelProductId: 'naver_product_1', quantity: 1, unitPrice: 10000, cancelled: false },
+        { channelOrderItemId: 'po-2', channelProductId: 'naver_product_1', quantity: 1, unitPrice: 3000, cancelled: true },
+      ],
+      shippingAddress,
+    },
   };
 }
 

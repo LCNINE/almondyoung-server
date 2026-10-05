@@ -142,3 +142,34 @@ describe('OrderCreated 계약 — entrancePassword', () => {
     expect((parsed.shippingAddress as unknown as Record<string, unknown>).entrancePassword).toBeUndefined();
   });
 });
+
+describe('ORDER_STREAM OrderModified snapshot', () => {
+  const schema = ORDER_STREAM.events.OrderModified.schema!;
+  const base = {
+    orderId: 'wms-order-1',
+    salesChannel: 'naver' as const,
+    externalOrderId: 'channel-order-1',
+    modifiedAt: '2026-10-05T10:00:00+09:00',
+    snapshot: {
+      lines: [
+        { channelOrderItemId: 'po-1', channelProductId: 'p-1', quantity: 0, unitPrice: 5000, cancelled: false },
+        { channelOrderItemId: null, channelProductId: null, quantity: 1, unitPrice: 0, cancelled: true },
+      ],
+      shippingAddress: { recipientName: 'R', phone: '', postalCode: '', roadAddress: '', detailAddress: '' },
+    },
+  };
+
+  it('네이버 +09:00 시각·수량 0·식별 없는 라인을 받는다', () => {
+    expect(schema.parse(base)).toEqual(base);
+  });
+
+  it('채널 키가 없으면 거부한다 — core 가 판매주문을 못 찾는다', () => {
+    const { externalOrderId: _drop, ...withoutKey } = base;
+    expect(() => schema.parse(withoutKey)).toThrow();
+  });
+
+  it('음수 수량은 거부한다', () => {
+    const bad = { ...base, snapshot: { ...base.snapshot, lines: [{ ...base.snapshot.lines[0], quantity: -1 }] } };
+    expect(() => schema.parse(bad)).toThrow();
+  });
+});

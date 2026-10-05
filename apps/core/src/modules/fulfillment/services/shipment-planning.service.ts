@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
+import type { ShippingAddress } from '@packages/event-contracts/streams';
 import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -409,6 +410,91 @@ export class ShipmentPlanningService {
 
         const response = { operationId: operation.id, shipment: after };
         return { response, resourceType: 'shipment', resourceId: shipmentId, operationId: operation.id };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * 채널 변경(#1016 5번 행)이 박스 수령인을 따라가게 한다. `reviseRecipient`(운영자)와 같은 검사·같은 기록을 하되 둘이 다르다:
+   * 배치 밖 `planned` 도 받고(작업 항목은 `assertNoCustodyOrActiveWork` 가 막는다), 이 판매주문 밖의 라인을 실은 박스는 거절한다.
+   * 거절은 `ConflictException({ code })` 다 — 호출자가 savepoint 를 되돌리고 대기로 남긴다.
+   */
+  async reviseRecipientFromChannel(
+    shipmentId: string,
+    salesOrderId: string,
+    recipientSnapshot: ShippingAddress,
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+    tx: DbTx,
+  ): Promise<{ changed: boolean }> {
+    this.workflowGate.assertV2MutationAllowed('shipment.revise_recipient');
+    return this.commands.execute<{ changed: boolean }>(
+      {
+        commandType: 'shipment.recipient_revision',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, salesOrderId, recipientSnapshot, origin: 'channel' },
+      },
+      async (tx, _commandRequestId, requestHash) => {
+        // 출발한 박스는 잠금·불변식 검사에 들어가기 전에 거절한다 — 잠금 뒤에 한 번 더 확인한다.
+        const [current] = await tx
+          .select({ status: wmsTables.shipments.status })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, shipmentId))
+          .limit(1);
+        if (!current) throw new NotFoundException(`Shipment ${shipmentId} not found`);
+        if (current.status !== 'draft' && current.status !== 'planned') {
+          throw this.conflict('SHIPMENT_REOPEN_REQUIRED', `Shipment ${shipmentId} is ${current.status}`);
+        }
+        const aggregate = await this.lockAggregate(shipmentId, tx);
+        if (aggregate.shipment.status !== 'draft' && aggregate.shipment.status !== 'planned') {
+          throw this.conflict('SHIPMENT_REOPEN_REQUIRED', `Shipment ${shipmentId} is ${aggregate.shipment.status}`);
+        }
+        if (aggregate.lines.some((line) => line.salesOrderId !== salesOrderId)) {
+          throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
+        }
+        await this.assertNoCustodyOrActiveWork(aggregate, tx);
+        await this.assertNoActiveWaybill(shipmentId, tx);
+        if (aggregate.shipment.status === 'planned') this.assertRecipientComplete(recipientSnapshot);
+
+        const revision = resolveRecipientRevision(
+          {
+            recipientSnapshot: aggregate.shipment.recipientSnapshot,
+            manifestVersion: aggregate.shipment.manifestVersion,
+            entrancePassword: aggregate.shipment.entrancePassword,
+          },
+          { recipientSnapshot },
+        );
+        if (!revision.snapshotChanged) {
+          return { response: { changed: false }, resourceType: 'shipment', resourceId: shipmentId };
+        }
+
+        const before = this.snapshot(aggregate);
+        const operation = await this.createOperation(
+          tx,
+          'recipient_revision',
+          actor,
+          'CHANNEL_ORDER_MODIFIED',
+          undefined,
+          undefined,
+          idempotencyKey,
+          requestHash,
+          before,
+        );
+        await tx
+          .update(wmsTables.shipments)
+          .set({ ...revision.update, lastUpdated: new Date() })
+          .where(eq(wmsTables.shipments.id, shipmentId));
+        await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
+        const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
+        await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
+        await this.auditCommand(tx, actor, 'shipment.revise_recipient_from_channel', operation.id, 'CHANNEL_ORDER_MODIFIED', {
+          shipmentId,
+          salesOrderId,
+          before,
+          after,
+        });
+        return { response: { changed: true }, resourceType: 'shipment', resourceId: shipmentId, operationId: operation.id };
       },
       tx,
     );
