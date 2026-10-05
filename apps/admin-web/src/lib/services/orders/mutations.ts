@@ -1066,3 +1066,26 @@ export const useBatchIssueWaybills = () =>
       idempotencyKey?: string;
     }) => orders.waybills.batch(data, commandKey(idempotencyKey)),
   });
+
+// ===== 반영 대기 채널 변경 닫기 (#1016 6번 행) =====
+// 성공이든 409(그 사이 superseded·이미 닫힘)든 목록을 다시 불러온다 — 409 면 지금 상태가 답이다.
+
+export const useDismissChannelChange = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => orders.amendments.dismiss(id, note),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.amendments });
+    },
+  });
+};
+
+export const useResyncChannelChange = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => orders.amendments.resync(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.amendments });
+    },
+  });
+};

@@ -1,4 +1,4 @@
-import { blockerLabel, summarizeDelta, toAmendmentPage, toAmendmentRecords } from './sales-order-amendments.shape';
+import { blockerLabel, dismissedLabel, resyncLabel, summarizeDelta, toAmendmentPage, toAmendmentRecords } from './sales-order-amendments.shape';
 
 describe('toAmendmentPage', () => {
   const page = { items: [{ id: 'a1', salesOrderId: 's1', salesChannel: 'medusa', channelOrderId: 'o1', displayOrderNo: '2332', origin: 'channel', status: 'pending', deltas: [], occurredAt: '2026-10-05T00:00:00.000Z' }], nextCursor: null };
@@ -44,5 +44,29 @@ describe('blockerLabel', () => {
   it('아는 코드는 한국어, 모르는 코드는 그대로', () => {
     expect(blockerLabel('WAYBILL_ISSUED')).toBe('송장 발급됨');
     expect(blockerLabel('NEW_CODE')).toBe('NEW_CODE');
+  });
+});
+
+describe('resyncLabel', () => {
+  const now = new Date('2026-10-06T10:00:00.000Z');
+
+  it.each([
+    [null, null],
+    [undefined, null],
+    ['not-a-date', null],
+    ['2026-10-06T09:59:40.000Z', '확인 요청 방금'],
+    ['2026-10-06T09:55:00.000Z', '확인 요청 5분 전'],
+    ['2026-10-06T07:00:00.000Z', '확인 요청 3시간 전'],
+    ['2026-10-04T10:00:00.000Z', '확인 요청 2일 전'],
+  ])('%s → %s', (requestedAt, expected) => {
+    expect(resyncLabel(requestedAt, now)).toBe(expected);
+  });
+});
+
+describe('dismissedLabel', () => {
+  it('메모가 있으면 붙이고 없으면 날짜까지만', () => {
+    expect(dismissedLabel({ dismissedAt: '2026-10-06T01:00:00.000Z', dismissNote: '채널 쪽 오류' })).toBe('무시됨 · 10. 6. · 채널 쪽 오류');
+    expect(dismissedLabel({ dismissedAt: '2026-10-06T01:00:00.000Z', dismissNote: null })).toBe('무시됨 · 10. 6.');
+    expect(dismissedLabel({ dismissedAt: null, dismissNote: null })).toBe('무시됨');
   });
 });

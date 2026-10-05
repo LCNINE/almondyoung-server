@@ -14,6 +14,7 @@ import { useSalesOrder, useAdminRetryRefund, useSalesOrderAmendments } from '@/l
 import {
   blockerCodes,
   blockerLabel,
+  dismissedLabel,
   summarizeDelta,
 } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import { MergedDataTable } from '@/components/common/merged-data-table';
@@ -611,8 +612,11 @@ function BusinessTimelineModal({
                 .filter((amendment) => amendment.origin === 'channel' && amendment.status !== 'superseded')
                 .map((amendment) => (
                   <div key={amendment.id} className="mb-2 text-sm">
+                    {amendment.status === 'dismissed' && (
+                      <div className="text-xs text-muted-foreground">{dismissedLabel(amendment)}</div>
+                    )}
                     {amendment.deltas.map((delta, index) => (
-                      <div key={index} className={delta.outcome === 'pending' ? 'text-amber-700' : 'text-muted-foreground'}>
+                      <div key={index} className={delta.outcome === 'pending' && amendment.status === 'pending' ? 'text-amber-700' : 'text-muted-foreground'}>
                         {summarizeDelta(delta)}
                         {delta.outcome === 'pending' && ` · ${blockerCodes(delta).map(blockerLabel).join(', ')}`}
                       </div>

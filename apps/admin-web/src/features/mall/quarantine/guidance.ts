@@ -4,7 +4,8 @@ export type QuarantineStatus =
   | 'quarantined'
   | 'replayed'
   | 'closed_lifecycle'
-  | 'closed_already_collected';
+  | 'closed_already_collected'
+  | 'closed_obsolete';
 
 export type QuarantineReason =
   | 'channel_product_identification_failed'
