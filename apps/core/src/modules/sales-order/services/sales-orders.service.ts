@@ -55,7 +55,6 @@ import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
 import {
   OrderCreatedPayload,
-  OrderModifiedPayload,
   OrderCancelledPayload,
   SalesOrderCancelledPayload,
   ShippingAddress,
