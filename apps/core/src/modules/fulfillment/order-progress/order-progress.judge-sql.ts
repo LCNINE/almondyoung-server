@@ -125,7 +125,9 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
                 u.est ASC NULLS LAST
     ),
     open_box AS (
-      SELECT DISTINCT sales_order_id FROM box WHERE status IN ('draft', 'planned', 'recovery_required')
+      SELECT DISTINCT ON (sales_order_id) sales_order_id, recovery_code
+        FROM box WHERE status IN ('draft', 'planned', 'recovery_required')
+       ORDER BY sales_order_id, (recovery_code IS NULL), recovery_code
     ),
     -- 상자 상태와 무관하게(취소된 상자 포함) 그 주문 라인에 걸린 확정 예약
     open_res AS (
@@ -161,7 +163,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              bl.status AS bl_status, bl.created_at AS bl_created_at,
              rep.stage AS rep_stage, rep.state AS rep_state, rep.est AS rep_est,
              lc.at AS cancel_at, rx.state AS rx_state, rx.created_at AS rx_at,
-             (ob.sales_order_id IS NOT NULL) AS has_open_box,
+             (ob.sales_order_id IS NOT NULL) AS has_open_box, ob.recovery_code AS open_recovery_code,
              (hf.sales_order_id IS NOT NULL) AS has_fo,
              CASE
                WHEN so.status IN ('shipped', 'delivered') THEN 'external_shipped'
@@ -195,7 +197,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
            END AS stage,
            CASE d.rule
              WHEN 'cancel_open' THEN coalesce(
-               CASE WHEN d.rep_stage = 'cancel' THEN d.rep_state END,
+               d.open_recovery_code,
                CASE WHEN d.has_open_box THEN 'open_shipment' ELSE 'open_reservation' END)
              WHEN 'return_exchange' THEN d.rx_state
              WHEN 'accept' THEN 'no_backlog'
@@ -213,7 +215,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
                 WHEN 'return_exchange' THEN d.rx_at
                 WHEN 'accept' THEN d.so_created_at
                 WHEN 'fo' THEN d.bl_created_at
-                WHEN 'unit' THEN coalesce(d.rep_est, ${now})
+                WHEN 'unit' THEN coalesce(d.rep_est, CASE WHEN d.rep_stage = 'cancel' THEN d.cancel_at END, ${now})
                 ELSE ${now}
               END) AT TIME ZONE 'UTC',
              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'

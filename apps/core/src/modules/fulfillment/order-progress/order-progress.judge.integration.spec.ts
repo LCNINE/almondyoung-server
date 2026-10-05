@@ -237,14 +237,26 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(r).toMatchObject({ stage: null, outcome: 'cancelled' });
   });
 
-  it('살아 있는 주문의 상자가 CANCEL_REPLAN_PENDING → cancel/<코드>', async () => {
+  it('살아 있는 주문의 상자가 CANCEL_REPLAN_PENDING → cancel/<코드>, 진입 = 마지막 취소 시각', async () => {
+    const at = new Date('2026-09-20T00:00:00.000Z');
     const r = await one(async (tx, w) => {
       const o = await f.seedOrder(tx);
       const fo = await f.seedFo(tx, w, o, { status: 'ready' });
       await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', recoveryCode: 'CANCEL_REPLAN_PENDING' });
+      await f.seedCancellation(tx, o.salesOrderId, at);
       return o.salesOrderId;
     });
-    expect(r).toMatchObject({ stage: 'cancel', state: 'CANCEL_REPLAN_PENDING' });
+    expect(r).toMatchObject({ stage: 'cancel', state: 'CANCEL_REPLAN_PENDING', estimatedEnteredAt: at.toISOString() });
+  });
+
+  it('취소됐고 상자에 복구 코드(CONSOLIDATION_PENDING)가 있음 → cancel/<코드>', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx, { status: 'cancelled' });
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', recoveryCode: 'CONSOLIDATION_PENDING' });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'cancel', state: 'CONSOLIDATION_PENDING' });
   });
 
   it('CONSOLIDATION_PENDING → pick, 모르는 복구 코드 → unclassified', async () => {
