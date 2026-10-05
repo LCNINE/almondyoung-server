@@ -279,6 +279,28 @@ describe('ChannelOrderTranslator — 취소된 라인', () => {
     expect(outcome.order.changes.items.map((i) => i.orderItemId)).toEqual(['po-1', 'po-2']);
   });
 
+  it('modification 은 취소 라인까지 전 라인을 cancelled 표시와 함께 싣는다 — 우리 쪽 식별은 싣지 않는다', async () => {
+    const { translator } = makeTranslator(LISTING);
+    const { outcome } = await translator.translate(
+      'naver',
+      makeSnapshot({
+        lines: [
+          { channelOrderItemId: 'po-1', channelProductId: 'naver-product-1', productName: 'a', quantity: 1, unitPrice: 5000 },
+          { channelOrderItemId: 'po-2', channelProductId: 'naver-product-2', productName: 'b', quantity: 1, unitPrice: 3000, cancelled: true },
+        ],
+      }),
+    );
+    expect(outcome.kind).toBe('order');
+    if (outcome.kind !== 'order') return;
+    expect(outcome.order.modification).toEqual({
+      lines: [
+        { channelOrderItemId: 'po-1', channelProductId: 'naver-product-1', quantity: 1, unitPrice: 5000, cancelled: false },
+        { channelOrderItemId: 'po-2', channelProductId: 'naver-product-2', quantity: 1, unitPrice: 3000, cancelled: true },
+      ],
+      shippingAddress: SHIPPING_ADDRESS,
+    });
+  });
+
   it('취소된 라인의 미식별은 격리를 부르지 않는다', async () => {
     const { translator, resolveByChannelCode } = makeTranslator(LISTING);
     resolveByChannelCode.mockImplementation(async (_channelCode: string, channelItemId: string) =>

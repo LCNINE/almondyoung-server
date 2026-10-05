@@ -182,5 +182,15 @@ function buildDemoOrder(
     createPayload,
     changes: { items, shippingAddress, totalAmount: totalPrice },
     modifiedAt: createdAt,
+    modification: {
+      lines: items.map((item) => ({
+        channelOrderItemId: item.orderItemId ?? null,
+        channelProductId: item.channelProductId ?? null,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        cancelled: false,
+      })),
+      shippingAddress,
+    },
   };
 }

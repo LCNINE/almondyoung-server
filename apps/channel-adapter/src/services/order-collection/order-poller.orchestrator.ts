@@ -498,14 +498,14 @@ export class OrderPollerOrchestrator {
       };
     }
 
-    // 이미 Core로 넘긴 Medusa 주문 변경은 자동 반영하지 않는다.
-    // 무의미한 updated_at bump는 hash로 거르고, 실제 변경은 운영 예외로 격리한다.
+    // 이미 Core 로 넘긴 주문의 변경은 판정하지 않고 전달한다 (#1016 5번 행, 스펙 R2).
+    // 무의미한 updated_at bump 는 해시가 거르고, 반영·대기 판정은 core 가 유효 판매주문과 비교해서 한다.
     const newHash = this.pollingHashService.computeHash(item.changes);
 
     // lifecycle 경로와 같은 이유로 확인과 기록이 한 트랜잭션·한 문장이다 (#599).
     const claimed = await this.db.db.transaction(async (tx) => {
-      // 격리 저장보다 **먼저** 선점한다. 같은 트랜잭션이므로 격리가 실패하면 선점도 함께
-      // 롤백되고, 다음 폴링이 다시 시도한다 — 옛 코드의 "성공 후에만 갱신" 성질이 그대로다.
+      // 발행보다 **먼저** 선점한다. 같은 트랜잭션이므로 적재가 실패하면 선점도 함께 롤백되고,
+      // 다음 폴링이 다시 시도한다.
       const won = await this.pollingHashService.claimChanged(
         provider.channel,
         POLLING_RESOURCE_TYPE_ORDER,
@@ -517,30 +517,28 @@ export class OrderPollerOrchestrator {
         return false;
       }
 
-      await this.orderCollectionFailureService.recordFailure(
-        provider.channel,
+      await this.ordersPublisher.enqueue(
         {
-          externalOrderId: item.externalOrderId,
-          sourceUpdatedAt: item.sourceUpdatedAt,
-          reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-          affectedLineIds: item.changes.items.flatMap((line) => (line.orderItemId ? [line.orderItemId] : [])),
-          rawOrder: {
+          eventType: 'OrderModified',
+          aggregateId: mapping[0].wmsOrderId,
+          payload: {
+            orderId: mapping[0].wmsOrderId,
+            salesChannel: provider.channel,
             externalOrderId: item.externalOrderId,
-            wmsOrderId: mapping[0].wmsOrderId,
             modifiedAt: item.modifiedAt,
-            changes: item.changes,
-            policy: 'Medusa order changes are not accepted after channel-adapter has collected the order.',
+            snapshot: item.modification,
           },
+          // OrderCreated·lifecycle 과 같은 키 — 채널 단위 순서가 유지돼야 core 가 생성보다 변경을 먼저 받지 않는다.
+          partitionKey: provider.channel,
+          metadata: { partitionKey: provider.channel },
         },
         tx,
       );
-
-      // 해시 기록은 `claimChanged` 가 이미 같은 트랜잭션에서 끝냈다.
       return true;
     });
 
     return {
-      emitted: 0,
+      emitted: claimed ? 1 : 0,
       dedupedUnchanged: claimed ? 0 : 1,
       wmsOrderId: mapping[0].wmsOrderId,
     };

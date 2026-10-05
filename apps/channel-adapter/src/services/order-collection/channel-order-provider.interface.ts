@@ -1,6 +1,7 @@
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
+  OrderModifiedPayload,
   OrderRefundCreatedPayload,
   OrderItem,
   SalesChannel,
@@ -73,6 +74,11 @@ export interface OrderFetchItem {
     totalAmount: number;
   };
   modifiedAt: string;
+  /**
+   * 수집된 주문의 해시가 바뀌면 `OrderModified` 로 그대로 나가는 스냅샷 (#1016 5번 행).
+   * `changes`(해시 입력)와 따로 둔다 — 해시 입력은 배포 직후 오격리를 막으려고 모양을 고정했다.
+   */
+  modification: OrderModifiedPayload['snapshot'];
 }
 
 export interface FetchOrdersResult {

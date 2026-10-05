@@ -145,6 +145,8 @@ export class FulfillmentEventsConsumer {
    *    정책 없이 자동 호출하면 채널 자체 환불 + Wallet 환불이 중복될 수 있음.
    * 3. 부분취소 환불 상태는 Core businessLink에 manual_pending으로 기록되고,
    *    운영자가 admin-web에서 수동 완료 처리한다.
+   * 4. 메아리 방지: 채널 변경을 core 가 반영한 부분취소(cancelledBy 'channel')도 이 이벤트로 나온다.
+   *    부분취소 전파를 켤 때(#1016 35번 행) 그 이벤트는 제외해야 한다 — 안 그러면 채널 변경이 채널로 되돌아간다.
    *
    * 외부채널 부분취소 자동 통보가 필요해지면 별도 핸들러를 추가하고,
    * Naver/Coupang 채널별 정책을 확정한 뒤 구현한다.

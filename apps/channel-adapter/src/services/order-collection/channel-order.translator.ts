@@ -119,6 +119,16 @@ export class ChannelOrderTranslator {
         totalAmount: snapshot.amounts.allLinesTotal ?? snapshot.amounts.total,
       },
       modifiedAt: snapshot.sourceUpdatedAt,
+      modification: {
+        lines: snapshot.lines.map((line) => ({
+          channelOrderItemId: line.channelOrderItemId.trim() || null,
+          channelProductId: line.channelProductId?.trim() || null,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          cancelled: line.cancelled === true,
+        })),
+        shippingAddress: snapshot.shippingAddress,
+      },
     };
 
     return { outcome: { kind: 'order', order }, lifecycle };
