@@ -31,7 +31,6 @@ describe('OrderEventsConsumer', () => {
         | 'createFromEvent'
         | 'getOne'
         | 'cancel'
-        | 'updateFromEvent'
         | 'findLineIdsByChannelOrderItemIds'
       >
     >;
@@ -80,7 +79,6 @@ describe('OrderEventsConsumer', () => {
         createFromEvent: jest.fn(),
         getOne: jest.fn(),
         cancel: jest.fn(),
-        updateFromEvent: jest.fn(),
         findLineIdsByChannelOrderItemIds: jest.fn(),
       } as any,
       library: {
@@ -476,36 +474,18 @@ describe('OrderEventsConsumer', () => {
   it('OrderModified 는 수락된 판매주문 계약 데이터를 업데이트하지 않고 처리 이력만 남긴다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
-    const payload = {
+    const payload: OrderModifiedPayload = {
       orderId: 'so-accepted-1',
-      changes: {
-        totalAmount: 12000,
-        shippingAddress: {
-          recipientName: 'R',
-          phone: '',
-          postalCode: '',
-          roadAddress: 'Changed',
-          detailAddress: '',
-        },
-        items: [
-          {
-            orderItemId: 'line-1',
-            skuId: 'variant-1',
-            masterId: 'master-1',
-            versionId: 'version-1',
-            variantId: 'variant-1',
-            productName: 'Changed Product',
-            channelProductId: 'variant-1',
-            quantity: 2,
-            unitPrice: 6000,
-            totalPrice: 12000,
-          },
-        ],
-      },
-      modifiedBy: 'ADMIN',
+      salesChannel: 'medusa',
+      externalOrderId: 'ext-accepted-1',
       modifiedAt: new Date().toISOString(),
-      reason: 'post-acceptance change',
-    } as OrderModifiedPayload;
+      snapshot: {
+        lines: [
+          { channelOrderItemId: 'line-1', channelProductId: 'variant-1', quantity: 2, unitPrice: 6000, cancelled: false },
+        ],
+        shippingAddress: { recipientName: 'R', phone: '', postalCode: '', roadAddress: 'Changed', detailAddress: '' },
+      },
+    };
     const modifiedEnvelope = {
       messageId: 'modified-msg-1',
       correlationId: 'corr-1',
@@ -514,7 +494,6 @@ describe('OrderEventsConsumer', () => {
 
     await consumer.handleOrderModified(payload, modifiedEnvelope);
 
-    expect(mocks.salesOrders.updateFromEvent).not.toHaveBeenCalled();
     expect(mocks.txInserts).toHaveLength(1);
     expect(mocks.txInserts[0].values).toMatchObject({
       eventId: 'modified-msg-1',

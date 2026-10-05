@@ -1339,16 +1339,6 @@ export class SalesOrdersService {
     }
   }
 
-  async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
-    return this.db.run(async (trx) => {
-      this.logger.warn(
-        `[updateFromEvent] Ignored post-acceptance OrderModified for sales order ${id}; ` +
-          'use SalesOrderAmendment or OrderCancellation workflows for contract changes.',
-      );
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
   private normalizeCancelArgs(
     optionsOrTx?: CancelSalesOrderOptions | DbTx,
     tx?: DbTx,

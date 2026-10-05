@@ -626,45 +626,6 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     });
     expect(outbox.enqueue).toHaveBeenCalledTimes(1);
   });
-
-  it('ignores OrderModified contract changes at the service boundary', async () => {
-    const { service, state, outbox } = makeService();
-
-    const updated = await service.updateFromEvent(salesOrderId, {
-      totalAmount: 12000,
-      shippingAddress: {
-        recipientName: 'Jane Kim',
-        phone: '010-0000-0000',
-        postalCode: '54321',
-        roadAddress: 'Changed',
-        detailAddress: '202',
-      },
-      items: [
-        {
-          orderItemId: 'line-1',
-          skuId: 'variant-1',
-          masterId: 'master-1',
-          versionId: 'version-1',
-          variantId: 'variant-1',
-          productName: 'Changed Product',
-          channelProductId: 'variant-1',
-          quantity: 2,
-          unitPrice: 6000,
-          totalPrice: 12000,
-        },
-      ],
-    });
-
-    expect(updated).toMatchObject({
-      id: salesOrderId,
-      totalAmount: 10000,
-      shippingAddress: expect.objectContaining({ roadAddress: 'Seoul' }),
-      lines: expect.arrayContaining([expect.objectContaining({ quantity: 1 })]),
-    });
-    expect(state.salesOrders[0].totalAmount).toBe(10000);
-    expect(state.salesOrderLines[0].quantity).toBe(1);
-    expect(outbox.enqueue).not.toHaveBeenCalled();
-  });
 });
 
 describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
