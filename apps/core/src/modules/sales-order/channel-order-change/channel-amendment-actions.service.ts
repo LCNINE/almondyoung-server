@@ -37,6 +37,7 @@ export class ChannelAmendmentActionsService {
 
   async dismiss(id: string, input: { note?: string; operatorId?: string }, tx?: DbTx): Promise<{ id: string; status: 'dismissed' }> {
     return this.db.run(async (trx) => {
+      await this.lockSalesOrderOf(id, trx);
       await this.lockPendingChannel(id, trx);
       const now = new Date();
       await trx
@@ -69,6 +70,25 @@ export class ChannelAmendmentActionsService {
       );
       return { id, resyncRequestedAt: requestedAt };
     }, tx);
+  }
+
+  /**
+   * 무시는 판매주문부터 잠근다(§6.3). `handle` 은 판매주문을 잠근 채 «무시한 행이 없다» 를 읽고 새 pending 을 넣는데,
+   * amendment 행만 잠그면 그 사이에 무시가 끼어들어 같은 차이로 dismissed 행과 pending 행이 함께 남는다.
+   * 잠금 순서를 handle 과 같게(판매주문 → amendment) 둬서 교착 없이 직렬화한다. 판매주문 id 는 잠그기 전에 읽어도 된다 —
+   * amendment 의 sales_order_id 는 바뀌지 않는다.
+   */
+  private async lockSalesOrderOf(id: string, trx: DbTx): Promise<void> {
+    const [amendment] = await trx
+      .select({ salesOrderId: wmsTables.salesOrderAmendments.salesOrderId })
+      .from(wmsTables.salesOrderAmendments)
+      .where(eq(wmsTables.salesOrderAmendments.id, id));
+    if (!amendment) throw new NotFoundError(`SalesOrderAmendment ${id} not found`);
+    await trx
+      .select({ id: wmsTables.salesOrders.id })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, amendment.salesOrderId))
+      .for('update');
   }
 
   private async lockPendingChannel(id: string, trx: DbTx): Promise<AmendmentRow> {

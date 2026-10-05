@@ -15,8 +15,11 @@ const OPERATOR = '7d0a3c6e-0000-4000-8000-000000000001';
 
 describeIfDb('ChannelAmendmentActionsService (DB integration, rollback-only)', () => {
   const { sql, db } = makeDb(DATABASE_URL as string);
+  // 잠금 경합 케이스 전용 두 번째 커넥션 — makeDb 는 max: 1 이라 한 풀로는 두 트랜잭션을 동시에 못 연다.
+  const contender = makeDb(DATABASE_URL as string);
   afterAll(async () => {
     await sql.end({ timeout: 5 });
+    await contender.sql.end({ timeout: 5 });
   });
 
   function wire(tx: DbTx) {
@@ -100,4 +103,74 @@ describeIfDb('ChannelAmendmentActionsService (DB integration, rollback-only)', (
       });
     });
   });
+
+  /**
+   * 무시는 판매주문 잠금을 먼저 잡는다(§6.3). `OrderModified` 처리(`handle`)가 판매주문을 잠근 채 «무시한 행이 없다» 를
+   * 읽은 뒤 무시가 끼어들면, 같은 차이로 dismissed 행과 새 pending 행이 동시에 남는다. 잠금 순서(판매주문 → amendment)를
+   * handle 과 맞춰 둘을 직렬화했는지를 본다 — 두 커넥션이 서로의 행을 봐야 하므로 이 케이스만 커밋된 행을 쓰고 직접 지운다.
+   */
+  it('무시는 판매주문 잠금을 기다린다 — 처리 중인 OrderModified 와 직렬화', async () => {
+    const externalOrderId = `ext-${randomUUID().slice(0, 8)}`;
+    const [so] = await db
+      .insert(wmsTables.salesOrders)
+      .values({ channelOrderId: externalOrderId, salesChannel: 'medusa', status: 'pending', shippingAddress: ADDRESS, orderDate: new Date() })
+      .returning();
+    let amendmentId: string | undefined;
+    try {
+      const [row] = await db
+        .insert(wmsTables.salesOrderAmendments)
+        .values({
+          salesOrderId: so.id,
+          amendmentKind: 'commercial',
+          reasonCode: 'CHANNEL_ORDER_MODIFIED',
+          deltas: [],
+          metadata: { salesChannel: 'medusa', externalOrderId },
+          origin: 'channel',
+          status: 'pending',
+        })
+        .returning();
+      amendmentId = row.id;
+      const id = row.id;
+
+      let entered!: () => void;
+      const enteredSignal = new Promise<void>((resolve) => (entered = resolve));
+      let release!: () => void;
+      const releaseSignal = new Promise<void>((resolve) => (release = resolve));
+      // handle 이 lockEffectiveOrder 로 잡는 것과 같은 잠금을 쥐고 놓지 않는다.
+      const held = db.transaction(async (tx) => {
+        await tx.select({ id: wmsTables.salesOrders.id }).from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, so.id)).for('update');
+        entered();
+        await releaseSignal;
+      });
+      await Promise.race([enteredSignal, held]);
+      try {
+        const outcome = await contender.db
+          .transaction(async (tx) => {
+            await tx.execute(drizzleSql`SET LOCAL lock_timeout = '300ms'`);
+            await wire(tx as unknown as DbTx).dismiss(id, {}, tx as unknown as DbTx);
+          })
+          .then(
+            () => 'dismissed',
+            (error: unknown) => error,
+          );
+        expect(pgErrorCode(outcome) ?? outcome).toBe('55P03'); // 잠금을 안 기다리면 'dismissed' 로 끝난다
+      } finally {
+        release();
+        await held;
+      }
+    } finally {
+      if (amendmentId) await db.delete(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.id, amendmentId));
+      await db.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, so.id));
+    }
+  });
 });
+
+/** drizzle 0.44 는 쿼리 에러를 DrizzleQueryError 로 감싸 Postgres 코드가 `.cause` 에만 남는다. */
+function pgErrorCode(error: unknown, depth = 5): string | undefined {
+  let current: unknown = error;
+  for (let i = 0; i < depth && current !== null && typeof current === 'object'; i += 1) {
+    if ('code' in current && typeof current.code === 'string') return current.code;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return undefined;
+}

@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { suppressDismissed } from './channel-change-dismissal';
 import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
 import { and, eq, notInArray } from 'drizzle-orm';
@@ -11,6 +10,7 @@ import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
 import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
+import { suppressDismissed } from './channel-change-dismissal';
 import {
   CHANNEL_ORDER_MODIFIED_REASON,
   ChannelBlocker,
