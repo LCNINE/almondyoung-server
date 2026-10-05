@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>정체 보드 목업</title>
+<style>
+:root {
+  --bg: #ffffff; --muted-bg: #f8fafc; --border: #e2e8f0; --ink: #0f172a; --muted: #64748b;
+  --primary: hsl(224.3 76.3% 48%); --primary-bg: #eef2ff;
+  --danger: #dc2626; --danger-bg: #fef2f2; --warn: #b45309;
+  --radius: 8px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; color: var(--ink); background: var(--muted-bg); font-size: 14px; }
+.shell { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
+aside { background: var(--bg); border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+aside .logo { font-weight: 700; padding: 4px 10px 14px; }
+aside .grp { font-size: 12px; color: var(--muted); padding: 12px 10px 4px; }
+aside a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+aside a.on { background: var(--primary-bg); color: var(--primary); font-weight: 600; }
+main { padding: 20px 28px 40px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+h1 { font-size: 20px; margin: 0; }
+.fresh { font-size: 12px; color: var(--muted); }
+.mocktag { font-size: 11px; color: var(--warn); border: 1px dashed var(--warn); padding: 1px 6px; border-radius: 4px; margin-left: 8px; }
+
+/* 흐름 띠 */
+.band { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)) 14px repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+.sep { border-left: 1px dashed var(--border); margin: 6px 6px; }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 10px 9px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; position: relative; min-width: 0; transition: border-color .1s; }
+.card:hover { border-color: #94a3b8; }
+.card.sel { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.card.zero { opacity: .5; }
+.card.hot { border-top: 3px solid var(--danger); padding-top: 8px; }
+.card .nm { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .nm b { color: var(--ink); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.card .st { font-size: 12px; font-weight: 600; color: var(--danger); font-variant-numeric: tabular-nums; min-height: 16px; }
+.card .old { font-size: 11px; color: var(--muted); min-height: 14px; }
+.card:not(:nth-child(9)):not(.special)::after { content: ""; }
+
+/* 상세 */
+.panel { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; }
+.ph { padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border); }
+.ph h2 { font-size: 16px; margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 13px; cursor: pointer; background: var(--bg); white-space: nowrap; }
+.chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.chip .c { font-variant-numeric: tabular-nums; margin-left: 4px; opacity: .75; }
+.chip .s { color: var(--danger); margin-left: 4px; font-weight: 600; }
+.chip.on .s { color: #fca5a5; }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tog { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 13px; user-select: none; }
+.tog.on { border-color: var(--danger); color: var(--danger); background: var(--danger-bg); font-weight: 600; }
+select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; background: var(--muted-bg); }
+th.sorted { color: var(--ink); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--muted-bg); }
+td.dw.stuck { color: var(--danger); font-weight: 600; }
+.state { font-size: 12px; border-radius: 4px; padding: 1px 7px; background: #f1f5f9; }
+.ord { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+.foot { padding: 10px 16px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+.empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+.hint { position: fixed; right: 16px; bottom: 16px; background: var(--ink); color: #fff; font-size: 12px; padding: 8px 12px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.hint.show { opacity: .92; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="logo">almondyoung admin</div>
+    <div class="grp">주문</div>
+    <a href="#">주문 목록</a>
+    <a href="#" class="on">정체 보드</a>
+    <a href="#">수집 격리</a>
+    <a href="#">반품·교환</a>
+    <div class="grp">출고</div>
+    <a href="#">출고 배치</a>
+    <a href="#">재고 매칭</a>
+  </aside>
+  <main>
+    <div class="top">
+      <h1>정체 보드<span class="mocktag">목업 · 예시 데이터</span></h1>
+      <span class="fresh" id="fresh">12초 전 갱신</span>
+    </div>
+
+    <div class="band" id="band"></div>
+
+    <section class="panel">
+      <div class="ph">
+        <h2 id="ptitle"></h2>
+        <div class="chips" id="chips"></div>
+        <div class="tools">
+          <span class="tog" id="stuckTog">갇힘만</span>
+          <select id="chan"><option value="">모든 채널</option><option>medusa</option><option>naver</option><option>수기</option></select>
+          <select id="sort"><option value="dwell">체류 긴 순</option><option value="ordered">주문일 최신순</option></select>
+        </div>
+      </div>
+      <div id="tbl"></div>
+      <div class="foot"><span id="cnt"></span><span>행을 누르면 주문 상세로 이동</span></div>
+    </section>
+  </main>
+</div>
+<div class="hint" id="hint">주문 상세 화면으로 이동 (목업)</div>
+
+<script>
+// 체류 시간(분)·기준(분). 갇힘 = 체류 > 기준.
+const H = 60, D = 1440;
+const STAGES = [
+  { k: 's0', no: '0', name: '수집', limit: 0, states: [['격리', 12]], open: 12, stuck: 12, oldest: 9 * D, ext: true },
+  { k: 's1', no: '1', name: '접수', limit: H, states: [['출고 대기열 미적재', 3]], open: 3, stuck: 0, oldest: 4 },
+  { k: 's2', no: '2', name: 'FO 생성', limit: D, states: [['매칭 대기', 1041], ['실패', 4], ['대기', 1]], open: 1046, stuck: 1040, oldest: 82 * D },
+  { k: 's3', no: '3', name: '예약', limit: 3 * D, states: [['재고 부족', 15], ['부분 예약', 3]], open: 18, stuck: 2, oldest: 5 * D },
+  { k: 's4', no: '4', name: '계획', limit: D, states: [['계획 대기', 7]], open: 7, stuck: 0, oldest: 6 * H },
+  { k: 's5', no: '5', name: '송장', limit: H, states: [], open: 0, stuck: 0, oldest: 0 },
+  { k: 's6', no: '6', name: '배치·피킹', limit: 12 * H, states: [], open: 0, stuck: 0, oldest: 0 },
+  { k: 's7', no: '7', name: '발송', limit: H, states: [], open: 0, stuck: 0, oldest: 0 },
+  { k: 's8', no: '8', name: '추적', limit: 5 * D, states: [], open: 0, stuck: 0, oldest: 0 },
+  { k: 'cx', no: '', name: '취소', limit: H, states: [['재계획 대기', 2]], open: 2, stuck: 2, oldest: 41 * D, special: true },
+  { k: 'rx', no: '', name: '반품·교환', limit: 7 * D, states: [['회수 대기', 3], ['검수 완료', 2]], open: 5, stuck: 1, oldest: 9 * D, special: true },
+];
+const NAMES = ['김*영', '이*수', '박*진', '최*아', '정*호', '강*린', '윤*서', '임*현'];
+function rowsFor(s) {
+  const out = [];
+  s.states.forEach(([st, n], si) => {
+    const show = Math.min(n, si === 0 ? 9 : 3);
+    for (let i = 0; i < show; i++) {
+      const dwell = Math.max(2, Math.round(s.oldest * (1 - (i + si * 2) / 12)));
+      out.push({
+        ord: String(3900 - out.length * 37 - si * 11),
+        ch: s.k === 's2' && i % 4 === 3 ? 'naver' : 'medusa',
+        cust: NAMES[(out.length + si) % NAMES.length],
+        ordered: dwell + 30,
+        state: st, dwell,
+      });
+    }
+  });
+  return out;
+}
+function fmt(m) {
+  if (m <= 0) return '';
+  if (m < H) return `${m}분`;
+  if (m < D) return `${Math.floor(m / H)}시간${m % H ? ' ' + (m % H) + '분' : ''}`;
+  return `${Math.floor(m / D)}일`;
+}
+function fmtDate(minsAgo) {
+  const d = new Date(Date.now() - minsAgo * 60000);
+  return `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+const n = x => x.toLocaleString('ko-KR');
+
+let sel = 's2', stateSel = '', stuckOnly = false, sortBy = 'dwell', chan = '';
+
+function renderBand() {
+  const band = document.getElementById('band');
+  band.innerHTML = STAGES.map((s, i) => {
+    const cls = ['card', s.open ? '' : 'zero', s.stuck ? 'hot' : '', sel === s.k ? 'sel' : '', s.special ? 'special' : ''].join(' ');
+    const card = `<div class="${cls}" data-k="${s.k}">
+      <div class="nm">${s.no ? `<b>${s.no}</b>` : ''}${s.name}</div>
+      <div class="n">${n(s.open)}</div>
+      <div class="st">${s.stuck ? `갇힘 ${n(s.stuck)}` : ''}</div>
+      <div class="old">${s.oldest ? '최장 ' + fmt(s.oldest) : ''}</div>
+    </div>`;
+    return i === 9 ? `<div class="sep"></div>${card}` : card;
+  }).join('');
+  band.querySelectorAll('.card').forEach(c => c.onclick = () => { sel = c.dataset.k; stateSel = ''; renderAll(); });
+}
+
+function renderPanel() {
+  const s = STAGES.find(x => x.k === sel);
+  document.getElementById('ptitle').textContent = (s.no ? s.no + ' ' : '') + s.name;
+  const chips = document.getElementById('chips');
+  const all = `<span class="chip ${stateSel === '' ? 'on' : ''}" data-st="">전체<span class="c">${n(s.open)}</span></span>`;
+  chips.innerHTML = s.states.length ? all + s.states.map(([st, c]) => {
+    const st_stuck = st === '매칭 대기' ? 1036 : st === '실패' ? 4 : st === '재고 부족' ? 2 : st === '재계획 대기' ? 2 : st === '회수 대기' ? 1 : st === '격리' ? 12 : 0;
+    return `<span class="chip ${stateSel === st ? 'on' : ''}" data-st="${st}">${st}<span class="c">${n(c)}</span>${st_stuck ? `<span class="s">⚠${n(st_stuck)}</span>` : ''}</span>`;
+  }).join('') : '';
+  chips.querySelectorAll('.chip').forEach(c => c.onclick = () => { stateSel = c.dataset.st; renderPanel(); });
+
+  let rows = rowsFor(s);
+  if (stateSel) rows = rows.filter(r => r.state === stateSel);
+  if (chan) rows = rows.filter(r => r.ch === chan);
+  if (stuckOnly) rows = rows.filter(r => r.dwell > s.limit);
+  rows.sort((a, b) => sortBy === 'dwell' ? b.dwell - a.dwell : a.ordered - b.ordered);
+
+  const tbl = document.getElementById('tbl');
+  if (!rows.length) {
+    tbl.innerHTML = `<div class="empty">${s.open ? '조건에 맞는 주문 없음' : '이 단계에 머무는 주문 없음'}</div>`;
+  } else {
+    tbl.innerHTML = `<table><thead><tr>
+      <th>${s.ext ? '채널 주문번호' : '주문번호'}</th><th>채널</th><th>고객</th>
+      <th class="${sortBy === 'ordered' ? 'sorted' : ''}">주문일${sortBy === 'ordered' ? ' ▼' : ''}</th>
+      <th>세부 상태</th><th class="num ${sortBy === 'dwell' ? 'sorted' : ''}">체류${sortBy === 'dwell' ? ' ▼' : ''}</th>
+    </tr></thead><tbody>${rows.map(r => `<tr>
+      <td class="ord">${r.ord}</td><td>${r.ch}</td><td>${r.cust}</td><td>${fmtDate(r.ordered)}</td>
+      <td><span class="state">${r.state}</span></td>
+      <td class="num dw ${r.dwell > s.limit ? 'stuck' : ''}">${fmt(r.dwell)}</td>
+    </tr>`).join('')}</tbody></table>`;
+    tbl.querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => {
+      const h = document.getElementById('hint');
+      h.textContent = s.ext ? '수집 격리 화면으로 이동 (목업)' : '주문 상세 화면으로 이동 (목업)';
+      h.classList.add('show'); setTimeout(() => h.classList.remove('show'), 1200);
+    });
+  }
+  const total = stateSel ? (s.states.find(x => x[0] === stateSel) || [0, 0])[1] : s.open;
+  document.getElementById('cnt').textContent = s.open ? `${n(total)}건 중 ${rows.length}건 표시 (목업)` : '';
+}
+
+function renderAll() { renderBand(); renderPanel(); }
+document.getElementById('stuckTog').onclick = e => { stuckOnly = !stuckOnly; e.currentTarget.classList.toggle('on', stuckOnly); renderPanel(); };
+document.getElementById('sort').onchange = e => { sortBy = e.target.value; renderPanel(); };
+document.getElementById('chan').onchange = e => { chan = e.target.value; renderPanel(); };
+renderAll();
+</script>
+</body>
+</html>
