@@ -59,7 +59,10 @@ export function diffChannelSnapshot(order: EffectiveSalesOrder, snapshot: Channe
 
   for (const line of order.lines) {
     if (!line.channelOrderItemId) {
-      deltas.push({ type: 'unmatched_line', salesOrderLineId: line.id, quantity: line.effectiveQuantity });
+      // Don't emit unmatched_line if already fully cancelled (effectiveQuantity === 0)
+      if (line.effectiveQuantity > 0) {
+        deltas.push({ type: 'unmatched_line', salesOrderLineId: line.id, quantity: line.effectiveQuantity });
+      }
       continue;
     }
     if (cancelledItemIds.has(line.channelOrderItemId)) continue;
@@ -75,6 +78,8 @@ export function diffChannelSnapshot(order: EffectiveSalesOrder, snapshot: Channe
       });
     }
     if (!next) continue;
+    // When snapshot quantity is 0, don't emit replace_product or amount_correction
+    if (nextQuantity === 0) continue;
     if (line.channelProductId && next.channelProductId && line.channelProductId !== next.channelProductId) {
       deltas.push({
         type: 'replace_product',
@@ -98,7 +103,10 @@ export function diffChannelSnapshot(order: EffectiveSalesOrder, snapshot: Channe
   const knownItemIds = new Set(order.lines.flatMap((line) => (line.channelOrderItemId ? [line.channelOrderItemId] : [])));
   for (const next of liveLines) {
     if (!next.channelOrderItemId) {
-      deltas.push({ type: 'unmatched_line', salesOrderLineId: null, quantity: next.quantity });
+      // Don't emit unmatched_line if snapshot line is already removed (quantity === 0)
+      if (next.quantity > 0) {
+        deltas.push({ type: 'unmatched_line', salesOrderLineId: null, quantity: next.quantity });
+      }
       continue;
     }
     if (!knownItemIds.has(next.channelOrderItemId) && next.quantity > 0) {
@@ -118,9 +126,11 @@ export function isDecrease(delta: ChannelDelta): delta is QuantityCorrectionDelt
   return delta.type === 'quantity_correction' && delta.correctedQuantity < delta.quantityBefore;
 }
 
-/** 감소를 다 적용하면 남는 수량 합이 0 인가. 추가 라인이 있으면 거짓. */
+/** 감소를 다 적용하면 남는 수량 합이 0 인가. 추가 라인이나 미확인 라인이 있으면 거짓. */
 export function removesAllLines(order: EffectiveSalesOrder, deltas: ChannelDelta[]): boolean {
   if (deltas.some((delta) => delta.type === 'add_product')) return false;
+  // If there's an unmatched snapshot line (null-id with qty > 0), we can't remove all
+  if (deltas.some((delta) => delta.type === 'unmatched_line' && delta.salesOrderLineId === null && delta.quantity > 0)) return false;
   const corrected = new Map(
     deltas.flatMap((delta) => (delta.type === 'quantity_correction' ? [[delta.salesOrderLineId, delta.correctedQuantity] as const] : [])),
   );
