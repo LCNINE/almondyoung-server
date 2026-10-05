@@ -86,7 +86,7 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 
 `POST /sales-order-amendments/:id/dismiss` · 본문 `{ note?: string }`
 
-- 행을 잠그고(`FOR UPDATE`) `origin = channel`·`status = pending` 이 아니면 `ConflictError`(409). 없으면 `NotFoundError`
+- 그 행의 **판매주문을 먼저 잠그고**(`FOR UPDATE`, §6.3) 행을 잠근 뒤(`FOR UPDATE`) `origin = channel`·`status = pending` 이 아니면 `ConflictError`(409). 없으면 `NotFoundError`
 - `status = dismissed`, `dismissed_at = now()`, `dismissed_by = 사용자`, `dismiss_note = note`
 - 같은 판매주문의 `opened_amendment` 링크 metadata 는 고치지 않는다(생성 시점 기록이다)
 
@@ -139,13 +139,20 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 
 ### 6.3 순서와 동시성
 
-판정은 `lockEffectiveOrder` 가 잡은 판매주문 잠금 아래에서 일어난다. 무시(§5.2)는 amendment 행만 잠그므로, 무시와 같은 주문의
-`OrderModified` 처리가 겹치면 두 순서가 다 가능하다:
+판정은 `lockEffectiveOrder` 가 잡은 판매주문 잠금 아래에서 일어난다. 무시(§5.2)도 그 판매주문을 **먼저** 잠그고 나서 amendment 행을
+잠근다 — `handle` 과 같은 순서(판매주문 → amendment)라 교착 없이 둘이 직렬화되고, 가능한 순서는 아래 둘뿐이다:
 
 - 무시가 먼저 커밋 → 이벤트가 그 무시를 보고 억제
 - 이벤트가 먼저 커밋 → 무시하려던 행이 `superseded` 가 되어 무시가 409. 화면은 목록을 다시 불러 새 행을 보여 준다
 
-둘 다 결과가 맞다. 추가 잠금을 두지 않는다.
+둘 다 결과가 맞다.
+
+> **최종 리뷰 수정(2026-10-06):** 처음엔 무시가 amendment 행만 잠갔다. 그러면 이벤트가 판매주문을 잠근 채 «무시 행 없음»을 읽은 뒤
+> 무시가 끼어들어 커밋할 수 있다(amendment 행은 아직 안 잠겼으니 안 막힌다). 이벤트는 같은 차이로 새 pending 을 넣고, superseded
+> 갱신은 `status = pending` 만 보므로 방금 무시된 행은 그대로다 — 같은 차이로 dismissed 와 pending 이 함께 남아 §2 의 성공 기준 4 가
+> 깨지고, 채널 주문이 또 바뀌기 전엔 낫지 않는다. 그래서 판매주문 잠금을 더했다(`channel-amendment-actions.integration.spec.ts` 가 지킨다).
+> 다시 확인(§5.3)에는 더하지 않는다 — status 를 쓰지 않아서 둘이 겹쳐도 «pending 이 둘» 같은 모순이 안 생긴다. 행 잠금끼리
+> 직렬화되고, 이벤트가 먼저면 409, 다시 확인이 먼저면 그 행이 이벤트에 superseded 될 뿐이다(그때 표시가 일찍 사라질 수 있다 — §8).
 
 ## 7. 명령 스트림
 
@@ -204,6 +211,11 @@ interface ResyncChannelOrderPayload {
 
 > **계획 단계 수정(2026-10-06):** 주문 상세의 무시 표시는 «무시됨 · 날짜 · 메모»다. `dismissed_by` 는 저장만 하고 이름 조회는 하지 않는다.
 
+> **최종 리뷰 수정(2026-10-06):** 다시 확인 뒤에도 차이가 그대로면 이벤트가 새 pending 행을 넣어 옛 행을 대체하는데, 새 행엔
+> `resync_requested_at` 이 없다 — «확인 요청 n분 전» 표시는 사라지고 행은 남는다. 읽는 법: **표시가 있다 = 아직 처리 안 됨,
+> 표시가 없는데 행이 남았다 = 확인했는데 여전히 다르다.** 무시·다시 확인이 409 가 아닌 이유로 실패하면 짧은 toast
+> («무시하지 못했습니다.» / «다시 확인을 요청하지 못했습니다.»)로 알린다 — 409 는 위대로 목록만 다시 불러온다.
+
 ## 9. 변경 지점
 
 | 곳 | 변경 |
@@ -242,8 +254,10 @@ interface ResyncChannelOrderPayload {
 **PR 하나.** §5~§8 을 함께 낸다 — 나누면 버튼은 있는데 명령을 받는 소비자가 없는 틈이 생긴다. §4.2 스크립트도 같은 PR.
 
 - 마이그레이션은 추가·넓히기뿐 → **`migrate → deploy`**
-- 한 SST 스택이라 core 와 channel-adapter 의 배포 순서를 못 정한다. 새 core 가 먼저 뜨면 그 사이 «다시 확인» 명령은 토픽에 쌓였다가
-  새 channel-adapter 가 뜨면 소비된다(토픽은 발행 쪽 `publishes` 선언으로도 기동 때 만들어진다) — 유실 없음
+- 한 SST 스택이라 core 와 channel-adapter 의 배포 순서를 못 정한다. 새 core 가 먼저 뜨면 그 사이 «다시 확인» 명령은 토픽에 쌓이지만
+  (토픽은 발행 쪽 `publishes` 선언으로도 기동 때 만들어진다) **유실될 수 있다** — 소비자는 `fromBeginning: false` 로 구독하므로, 새
+  channel-adapter 가 그룹에 처음 붙기 전에 발행된 명령은 건너뛴다. 영향은 작다: D5 대로 결과가 돌아오지 않으니 행에 «확인 요청» 표시가
+  남고, 운영자가 다시 누르면 된다
 - 배포 뒤: 스크립트 dry-run 으로 수 확인(3,004 근처 기대) → 사람이 `--apply`
 
 ## 12. 범위 밖
