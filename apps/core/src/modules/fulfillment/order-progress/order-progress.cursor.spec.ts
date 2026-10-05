@@ -9,10 +9,11 @@ describe('order-progress cursor', () => {
     expect(decodeCursor(encodeCursor(at, id))).toEqual({ at, id });
   });
 
-  it.each([['구분자 없음', id], ['시각이 아님', `nope|${id}`], ['uuid 아님', '2026-10-06T00:00:00.000Z|x']])(
-    '%s 는 BadRequestError',
-    (_label, cursor) => {
-      expect(() => decodeCursor(cursor)).toThrow(BadRequestError);
-    },
-  );
+  it.each([
+    ['구분자 없음', id],
+    ['시각이 아님', `nope|${id}`],
+    ['uuid 아님', '2026-10-06T00:00:00.000Z|x'],
+  ])('%s 는 BadRequestError', (_label, cursor) => {
+    expect(() => decodeCursor(cursor)).toThrow(BadRequestError);
+  });
 });

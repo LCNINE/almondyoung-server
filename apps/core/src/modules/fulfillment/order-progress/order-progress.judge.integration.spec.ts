@@ -45,7 +45,12 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
   it('backlog 없음 → accept/no_backlog, 진입 = 판매주문 created_at', async () => {
     const created = new Date('2026-10-06T02:00:00.000Z');
     const r = await one(async (tx) => (await f.seedOrder(tx, { createdAt: created })).salesOrderId);
-    expect(r).toMatchObject({ stage: 'accept', state: 'no_backlog', outcome: null, estimatedEnteredAt: created.toISOString() });
+    expect(r).toMatchObject({
+      stage: 'accept',
+      state: 'no_backlog',
+      outcome: null,
+      estimatedEnteredAt: created.toISOString(),
+    });
   });
 
   it('backlog awaiting_matching → fo, 진입 = backlog created_at', async () => {
@@ -150,7 +155,10 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
         status: 'planned',
         plannedAt: new Date('2026-10-05T12:00:00.000Z'),
       });
-      await f.seedWorkItem(tx, w, box.shipmentId, { status: 'completed', completedAt: new Date('2026-10-04T00:00:00.000Z') });
+      await f.seedWorkItem(tx, w, box.shipmentId, {
+        status: 'completed',
+        completedAt: new Date('2026-10-04T00:00:00.000Z'),
+      });
       return o.salesOrderId;
     });
     expect(r).toMatchObject({ stage: 'waybill', state: 'none' });
@@ -286,7 +294,11 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       await f.seedReturn(tx, o.salesOrderId, 'requested', at);
       return o.salesOrderId;
     });
-    expect(r).toMatchObject({ stage: 'return_exchange', state: 'return:requested', estimatedEnteredAt: at.toISOString() });
+    expect(r).toMatchObject({
+      stage: 'return_exchange',
+      state: 'return:requested',
+      estimatedEnteredAt: at.toISOString(),
+    });
   });
 
   it('FO 는 있는데 세는 상자가 없음 → unclassified/no_units', async () => {

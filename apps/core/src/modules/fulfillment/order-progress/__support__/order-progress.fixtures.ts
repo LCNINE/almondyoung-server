@@ -10,7 +10,10 @@ export async function seedWorld(tx: DbTx): Promise<World> {
     .insert(wmsTables.warehouses)
     .values({ name: `op-wh-${suffix}`, supportedPickingStrategies: ['discrete'], isSellable: true })
     .returning();
-  const [holder] = await tx.insert(wmsTables.holders).values({ name: `op-holder-${suffix}` }).returning();
+  const [holder] = await tx
+    .insert(wmsTables.holders)
+    .values({ name: `op-holder-${suffix}` })
+    .returning();
   const [sku] = await tx
     .insert(wmsTables.skus)
     .values({ name: 'op-sku', code: `OP-${randomUUID().toUpperCase()}`, holderId: holder.id })
@@ -122,7 +125,11 @@ export async function seedWorkItem(
   tx: DbTx,
   w: World,
   shipmentId: string,
-  args: { status: 'queued' | 'picking' | 'packing' | 'completed' | 'excluded'; completedAt?: Date; pickerClaimedAt?: Date },
+  args: {
+    status: 'queued' | 'picking' | 'packing' | 'completed' | 'excluded';
+    completedAt?: Date;
+    pickerClaimedAt?: Date;
+  },
 ): Promise<void> {
   const [batch] = await tx
     .insert(wmsTables.outboundBatches)

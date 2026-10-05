@@ -111,7 +111,8 @@ export class OrderProgressReader {
     if (query.state) conds.push(eq(t.state, query.state));
     if (query.channel) conds.push(sql`${t.salesChannel}::text = ${query.channel}`);
     if (query.stuck === true) conds.push(lt(t.stageEnteredAt, stuckCutoff(query.stage, now)));
-    if (query.stuck === false) conds.push(sql`${t.stageEnteredAt} >= ${stuckCutoff(query.stage, now).toISOString()}::timestamptz`);
+    if (query.stuck === false)
+      conds.push(sql`${t.stageEnteredAt} >= ${stuckCutoff(query.stage, now).toISOString()}::timestamptz`);
     if (query.cursor) {
       const c = decodeCursor(query.cursor);
       conds.push(

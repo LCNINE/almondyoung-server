@@ -39,7 +39,10 @@ describe('assembleSummary', () => {
       ],
       null,
     );
-    expect(out.stages.find((s) => s.stage === 'pick')!.states.map((s) => s.state)).toEqual(['awaiting_batch', 'queued']);
+    expect(out.stages.find((s) => s.stage === 'pick')!.states.map((s) => s.state)).toEqual([
+      'awaiting_batch',
+      'queued',
+    ]);
   });
 
   it('알 수 없는 단계 행은 unclassified 로 모은다', () => {

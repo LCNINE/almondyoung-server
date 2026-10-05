@@ -10,8 +10,10 @@ export const orderQueryKeys = {
 
   // 정정(채널 변경)
   amendments: ['sales-order-amendments'] as const,
-  amendmentsList: (params: { status: string; origin: string }) => ['sales-order-amendments', 'list', params] as const,
-  orderAmendments: (salesOrderId: string) => ['sales-order-amendments', 'order', salesOrderId] as const,
+  amendmentsList: (params: { status: string; origin: string }) =>
+    ['sales-order-amendments', 'list', params] as const,
+  orderAmendments: (salesOrderId: string) =>
+    ['sales-order-amendments', 'order', salesOrderId] as const,
 
   // 출고 배치 관련
   outboundBatches: ['outbound-batches'] as const,
@@ -113,10 +115,16 @@ export const orderQueryKeys = {
 
   // 통계
   orderStats: ['orders', 'stats'] as const,
-  dailyOrderStatus: (from: string, to: string) => ['orders', 'stats', 'daily', { from, to }] as const,
+  dailyOrderStatus: (from: string, to: string) =>
+    ['orders', 'stats', 'daily', { from, to }] as const,
 
   // 정체 보드
   progressSummary: ['order-progress', 'summary'] as const,
-  progressOrders: (params: { stage: string; state: string; stuck: boolean; channel: string; sort: string }) =>
-    ['order-progress', 'orders', params] as const,
+  progressOrders: (params: {
+    stage: string;
+    state: string;
+    stuck: boolean;
+    channel: string;
+    sort: string;
+  }) => ['order-progress', 'orders', params] as const,
 } as const;

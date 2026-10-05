@@ -109,13 +109,17 @@ export class OrderCollectionFailureService {
    * 격리 건수 요약 — 정체 보드 0단계(스펙 2026-10-06 §7.3). 목록은 상한 200건이라 건수로 쓸 수 없다.
    * created_at 은 tz 없는 timestamp 이고 DB 세션이 UTC 로 쓴다는 전제로 그대로 Z 를 붙인다.
    */
-  async summarizeQuarantined(options: { channel?: string } = {}): Promise<{ quarantined: number; oldestCreatedAt: string | null }> {
+  async summarizeQuarantined(
+    options: { channel?: string } = {},
+  ): Promise<{ quarantined: number; oldestCreatedAt: string | null }> {
     const conditions: SQL[] = [eq(orderCollectionFailures.status, 'quarantined')];
     if (options.channel) conditions.push(eq(orderCollectionFailures.channel, options.channel));
     const [row] = await this.db.db
       .select({
         quarantined: sql<number>`count(*)::int`,
-        oldestCreatedAt: sql<string | null>`to_char(min(${orderCollectionFailures.createdAt}), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+        oldestCreatedAt: sql<
+          string | null
+        >`to_char(min(${orderCollectionFailures.createdAt}), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
       })
       .from(orderCollectionFailures)
       .where(and(...conditions));

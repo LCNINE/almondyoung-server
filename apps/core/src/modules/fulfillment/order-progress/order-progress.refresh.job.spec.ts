@@ -5,7 +5,12 @@ describe('OrderProgressRefreshJob', () => {
   it('앞 실행이 끝나기 전 틱은 건너뛴다', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const manager = { refresh: jest.fn(async () => { await gate; return { upserted: 1 }; }) };
+    const manager = {
+      refresh: jest.fn(async () => {
+        await gate;
+        return { upserted: 1 };
+      }),
+    };
     const job = new OrderProgressRefreshJob(manager as unknown as OrderProgressManager);
 
     const first = job.runOnce();

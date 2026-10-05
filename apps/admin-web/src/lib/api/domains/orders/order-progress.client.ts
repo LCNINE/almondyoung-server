@@ -20,11 +20,16 @@ export type OrderProgressListParams = {
 
 export const orderProgressClient = {
   summary: async (): Promise<ProgressSummary> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/order-progress/summary`);
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/order-progress/summary`
+    );
     return toProgressSummary(response.data);
   },
   list: async (params: OrderProgressListParams): Promise<ProgressPage> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/order-progress/orders`, { params });
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/order-progress/orders`,
+      { params }
+    );
     return toProgressPage(response.data);
   },
 };

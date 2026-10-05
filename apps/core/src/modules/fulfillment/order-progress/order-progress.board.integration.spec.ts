@@ -32,20 +32,24 @@ describeIfDb('정체 보드 요약·목록 (PostgreSQL integration)', () => {
         const manager = new OrderProgressManager(dbs);
         const reader = new OrderProgressReader(dbs);
         // 이 트랜잭션 안의 행만 보이도록 다른 행을 지우지는 않는다 — 대신 우리 주문 id 로 걸러 검증한다.
-        const now = new Date('2026-10-06T00:00:00.000Z');
+        const now = new Date('2099-01-01T00:00:00.000Z');
         const ids: string[] = [];
-        for (const at of ['2026-07-16T00:00:00.000Z', '2026-10-05T12:00:00.000Z', '2026-10-05T23:30:00.000Z']) {
+        for (const at of ['2098-10-11T00:00:00.000Z', '2098-12-31T12:00:00.000Z', '2098-12-31T23:30:00.000Z']) {
           const o = await f.seedOrder(tx);
           await f.seedBacklog(tx, o.salesOrderId, 'awaiting_matching', new Date(at));
           ids.push(o.salesOrderId);
         }
         await manager.refreshScope(
-          sql`SELECT unnest(ARRAY[${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}])`,
+          sql`SELECT unnest(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}])`,
           now,
           tx,
         );
 
-        const ours = <T extends { salesOrderId: string }>(items: T[]) => items.filter((i) => ids.includes(i.salesOrderId));
+        const ours = <T extends { salesOrderId: string }>(items: T[]) =>
+          items.filter((i) => ids.includes(i.salesOrderId));
 
         // 체류순: 가장 오래된 것부터
         const first = await reader.listOrders({ stage: 'fo', sort: 'dwell', limit: 200 }, now, tx);
@@ -71,7 +75,7 @@ describeIfDb('정체 보드 요약·목록 (PostgreSQL integration)', () => {
         const fo = summary.stages.find((s) => s.stage === 'fo')!;
         expect(fo.open).toBeGreaterThanOrEqual(3);
         expect(fo.stuck).toBeGreaterThanOrEqual(1);
-        expect(summary.evaluatedAt).toBe('2026-10-06T00:00:00.000Z');
+        expect(summary.evaluatedAt).toBe('2099-01-01T00:00:00.000Z');
         throw new Rollback();
       }),
     ).rejects.toBeInstanceOf(Rollback);

@@ -554,7 +554,13 @@ export function useOrderProgressSummary() {
 }
 
 /** 정체 보드 단계별 목록. 키에 undefined 를 넣지 않는다 — 빈 문자열/false 로 고정(무효화가 조용히 빗나가지 않게). */
-export function useOrderProgressOrders(params: { stage: string; state: string; stuck: boolean; channel: string; sort: 'dwell' | 'ordered' }) {
+export function useOrderProgressOrders(params: {
+  stage: string;
+  state: string;
+  stuck: boolean;
+  channel: string;
+  sort: 'dwell' | 'ordered';
+}) {
   return useInfiniteQuery({
     queryKey: orderQueryKeys.progressOrders(params),
     queryFn: ({ pageParam }) =>

@@ -4,7 +4,12 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useOrderProgressSummary } from '@/lib/services/orders/queries';
 import { useQuarantineSummary } from '@/lib/services/channel/queries';
-import { BoardStageKey, formatDwell, freshness } from '@/lib/api/domains/orders/order-progress.shape';
+import {
+  BOARD_STAGES,
+  BoardStageKey,
+  cellCount,
+  headerStatus,
+} from '@/lib/api/domains/orders/order-progress.shape';
 import { StageBand, BandCell } from '../components/stage-band';
 import { StageOrders } from '../components/stage-orders';
 import { cn } from '@/lib/utils/ui';
@@ -20,33 +25,78 @@ export default function StallBoardTemplate() {
   const quarantine = useQuarantineSummary();
 
   const stages = summary.data?.stages ?? [];
+  const hasSummary = summary.data !== undefined;
+  const qCount = quarantine.isSuccess
+    ? quarantine.data?.quarantined
+    : undefined;
   const cells: BandCell[] = [
     {
       key: 'collect',
-      open: quarantine.data?.quarantined ?? 0,
-      stuck: quarantine.data?.quarantined ?? 0, // 격리는 전부 사람 일(스펙 §6)
-      oldestAt: quarantine.data?.oldestCreatedAt ?? null,
+      open: cellCount(qCount, quarantine.isSuccess),
+      stuck: qCount ?? 0, // 격리는 전부 사람 일(스펙 §6)
+      oldestAt: quarantine.isSuccess
+        ? (quarantine.data?.oldestCreatedAt ?? null)
+        : null,
     },
-    ...stages.map((s) => ({ key: s.stage as BoardStageKey, open: s.open, stuck: s.stuck, oldestAt: s.oldestEnteredAt })),
+    ...BOARD_STAGES.slice(1, 9).map((b) => {
+      const s = stages.find((x) => x.stage === b.key);
+      return {
+        key: b.key,
+        open: cellCount(s?.open ?? (hasSummary ? 0 : undefined), hasSummary),
+        stuck: s?.stuck ?? 0,
+        oldestAt: s?.oldestEnteredAt ?? null,
+      };
+    }),
+    ...stages
+      .filter((s) => !BOARD_STAGES.slice(0, 9).some((b) => b.key === s.stage))
+      .map((s) => ({
+        key: s.stage as BoardStageKey,
+        open: s.open,
+        stuck: s.stuck,
+        oldestAt: s.oldestEnteredAt,
+      })),
   ];
   const evaluatedAt = summary.data?.evaluatedAt ?? null;
-  const stale = summary.isSuccess && freshness(evaluatedAt, now) === 'stale';
+  const header = headerStatus(
+    { isError: summary.isError, hasData: hasSummary },
+    evaluatedAt,
+    now
+  );
+  const stale = header.tone === 'stale';
 
   return (
     <div className="flex flex-col gap-4 p-5">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-xl font-bold">정체 보드</h1>
-        <span className={cn('text-xs text-muted-foreground', stale && 'font-semibold text-red-600')}>
-          {evaluatedAt ? `${formatDwell(now.getTime() - new Date(evaluatedAt).getTime())} 전 판정` : summary.isSuccess ? '판정 전' : ''}
+        <span
+          className={cn(
+            'text-xs text-muted-foreground',
+            stale && 'font-semibold text-red-600'
+          )}
+        >
+          {header.text}
         </span>
       </div>
-      <StageBand cells={cells} selected={selected} onSelect={setSelected} now={now} />
+      <StageBand
+        cells={cells}
+        selected={selected}
+        onSelect={setSelected}
+        now={now}
+      />
       {selected === 'collect' ? (
-        <Link href="/mall/channel-listings" className="rounded-lg border bg-white px-4 py-10 text-center text-sm">
+        <Link
+          href="/mall/channel-listings"
+          className="rounded-lg border bg-white px-4 py-10 text-center text-sm"
+        >
           수집 격리 목록으로
         </Link>
       ) : (
-        <StageOrders key={selected} stage={selected} summary={stages.find((s) => s.stage === selected)} now={now} />
+        <StageOrders
+          key={selected}
+          stage={selected}
+          summary={stages.find((s) => s.stage === selected)}
+          now={now}
+        />
       )}
     </div>
   );

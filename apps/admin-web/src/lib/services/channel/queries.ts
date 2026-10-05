@@ -19,7 +19,11 @@ import {
 export function useQuarantinedFailures(
   params: { channel?: string; status?: string; limit?: number } = {}
 ) {
-  const query = { status: 'quarantined', limit: QUARANTINE_LIST_LIMIT, ...params };
+  const query = {
+    status: 'quarantined',
+    limit: QUARANTINE_LIST_LIMIT,
+    ...params,
+  };
   return useQuery({
     queryKey: channelQueryKeys.failuresList(query),
     queryFn: () => orderCollectionFailuresClient.list(query),

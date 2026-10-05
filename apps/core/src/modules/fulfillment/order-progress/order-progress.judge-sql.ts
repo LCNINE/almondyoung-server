@@ -195,7 +195,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              WHEN 'accept' THEN 'accept' WHEN 'fo' THEN 'fo' WHEN 'unclassified' THEN 'unclassified'
              WHEN 'unit' THEN d.rep_stage ELSE NULL
            END AS stage,
-           CASE d.rule
+           left(CASE d.rule
              WHEN 'cancel_open' THEN coalesce(
                d.open_recovery_code,
                CASE WHEN d.has_open_box THEN 'open_shipment' ELSE 'open_reservation' END)
@@ -204,7 +204,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              WHEN 'fo' THEN d.bl_status
              WHEN 'unclassified' THEN CASE WHEN d.has_fo THEN 'no_units' ELSE 'fo_missing' END
              WHEN 'unit' THEN d.rep_state ELSE NULL
-           END AS state,
+           END, 64) AS state,
            CASE d.rule
              WHEN 'external_shipped' THEN 'external_shipped' WHEN 'cancelled' THEN 'cancelled'
              WHEN 'not_required' THEN 'not_required' WHEN 'delivered' THEN 'delivered' ELSE NULL
