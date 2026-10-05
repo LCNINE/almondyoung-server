@@ -24,18 +24,25 @@ import {
   toFailureDetail,
   toFailureListResult,
   toReplayResult,
+  toQuarantineSummary,
 } from './order-collection-failures.shape';
-import type { FailureListResult, OrderCollectionFailureDto, ReplayResultDto } from './order-collection-failures.shape';
+import type { FailureListResult, OrderCollectionFailureDto, ReplayResultDto, QuarantineSummary } from './order-collection-failures.shape';
 
 export type {
   FailureListResult,
   OrderCollectionFailureDto,
   ReplayResultDto,
   ReplayResultStatus,
+  QuarantineSummary,
 } from './order-collection-failures.shape';
 export { QUARANTINE_LIST_LIMIT, formatQuarantineCount } from './order-collection-failures.shape';
 
 export const orderCollectionFailuresClient = {
+  summary: async (): Promise<QuarantineSummary> => {
+    const response = await client.get(`${CHANNEL_ADAPTER_SERVICE_BASE_URL}/adapter/order-collection-failures/summary`);
+    return toQuarantineSummary(response.data);
+  },
+
   list: async (params: {
     channel?: string;
     reason?: string;

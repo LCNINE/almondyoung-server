@@ -147,3 +147,13 @@ export function toReplayResult(body: unknown): ReplayResultDto | null {
 export function formatQuarantineCount(result: Pick<FailureListResult, 'count' | 'truncated'>): string {
   return result.truncated ? `${result.count}+` : String(result.count);
 }
+
+export interface QuarantineSummary { quarantined: number; oldestCreatedAt: string | null }
+
+/** GET /adapter/order-collection-failures/summary — 정체 보드 0단계. */
+export function toQuarantineSummary(body: unknown): QuarantineSummary {
+  const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const v = record(body) && body.success === true && 'data' in body ? body.data : body;
+  if (!record(v) || typeof v.quarantined !== 'number') return { quarantined: 0, oldestCreatedAt: null };
+  return { quarantined: v.quarantined, oldestCreatedAt: typeof v.oldestCreatedAt === 'string' ? v.oldestCreatedAt : null };
+}

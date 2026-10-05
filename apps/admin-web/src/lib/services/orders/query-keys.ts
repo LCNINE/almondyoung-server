@@ -114,4 +114,9 @@ export const orderQueryKeys = {
   // 통계
   orderStats: ['orders', 'stats'] as const,
   dailyOrderStatus: (from: string, to: string) => ['orders', 'stats', 'daily', { from, to }] as const,
+
+  // 정체 보드
+  progressSummary: ['order-progress', 'summary'] as const,
+  progressOrders: (params: { stage: string; state: string; stuck: boolean; channel: string; sort: string }) =>
+    ['order-progress', 'orders', params] as const,
 } as const;

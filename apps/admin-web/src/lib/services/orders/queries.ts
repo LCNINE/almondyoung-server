@@ -4,6 +4,7 @@
 import {
   useQuery,
   useMutation,
+  useInfiniteQuery,
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
@@ -540,3 +541,35 @@ export const useSalesOrderAmendments = (salesOrderId: string) => {
     enabled: !!salesOrderId,
   });
 };
+
+// ===== 정체 보드 =====
+
+/** 정체 보드 요약 — 투영이 1분 주기라 60초마다 다시 부른다. */
+export function useOrderProgressSummary() {
+  return useQuery({
+    queryKey: orderQueryKeys.progressSummary,
+    queryFn: () => orders.progress.summary(),
+    refetchInterval: 60_000,
+  });
+}
+
+/** 정체 보드 단계별 목록. 키에 undefined 를 넣지 않는다 — 빈 문자열/false 로 고정(무효화가 조용히 빗나가지 않게). */
+export function useOrderProgressOrders(params: { stage: string; state: string; stuck: boolean; channel: string; sort: 'dwell' | 'ordered' }) {
+  return useInfiniteQuery({
+    queryKey: orderQueryKeys.progressOrders(params),
+    queryFn: ({ pageParam }) =>
+      orders.progress.list({
+        stage: params.stage,
+        state: params.state || undefined,
+        stuck: params.stuck || undefined,
+        channel: params.channel || undefined,
+        sort: params.sort,
+        limit: 50,
+        cursor: pageParam ?? undefined,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: params.stage !== 'collect',
+    refetchInterval: 60_000,
+  });
+}

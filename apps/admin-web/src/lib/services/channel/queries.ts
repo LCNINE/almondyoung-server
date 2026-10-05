@@ -29,3 +29,12 @@ export function useQuarantinedFailures(
 // `useFailureDetail` 은 삭제했다. 호출부가 한 곳도 없었고(상세 다이얼로그는 목록 행을 그대로
 // 받는다), 목록과 같은 이중 unwrap 버그를 안고 있어 되살아나면 같은 사고를 다시 낸다.
 // 상세 단건 조회가 필요해지면 `orderCollectionFailuresClient.get` 위에 새로 쓰면 된다.
+
+/** 정체 보드 0단계 — 격리 건수. 목록(상한 200)과 달리 진짜 건수다. */
+export function useQuarantineSummary() {
+  return useQuery({
+    queryKey: channelQueryKeys.summary,
+    queryFn: () => orderCollectionFailuresClient.summary(),
+    refetchInterval: 60_000,
+  });
+}
