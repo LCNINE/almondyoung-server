@@ -218,6 +218,25 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('배송지 — 박스 수정이 도메인 거절이 아닌 예외(Error)로 실패하면 대기로 삼키지 않고 그대로 던진다(스펙 §11)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      const failingPlanning = {
+        reviseRecipientFromChannel: () => Promise.reject(new Error('boom')),
+      };
+      const manager = new ChannelOrderChangeManager(
+        new ChannelOrderChangeReader(w.salesOrders),
+        w.salesOrders,
+        new SalesOrderAmendmentsService(ambientDbService(tx)),
+        { get: () => failingPlanning } as never,
+      );
+      await expect(
+        manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx),
+      ).rejects.toThrow('boom');
+    });
+  });
+
   it('배송지 — 직배가 아직 공급처에 넘어가지 않았으면(pending) 막지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

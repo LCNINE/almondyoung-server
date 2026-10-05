@@ -9,7 +9,7 @@ import { FULFILLMENT_SYSTEM_ACTOR_ID, SalesOrdersService } from '../services/sal
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
-import { errorDetail, toAddressBlocker } from './channel-change-blockers';
+import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
 import {
   CHANNEL_ORDER_MODIFIED_REASON,
   ChannelBlocker,
@@ -103,6 +103,7 @@ export class ChannelOrderChangeManager {
             sp,
           );
         } catch (error) {
+          if (!isDomainRefusal(error)) throw error;
           throw new Refused(toAddressBlocker(error, shipmentId));
         }
       }
@@ -135,6 +136,7 @@ export class ChannelOrderChangeManager {
           sp,
         );
       } catch (error) {
+        if (!isDomainRefusal(error)) throw error;
         throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: errorDetail(error) });
       }
       if (await this.reader.cancellationLeftPendingShipment(order.id, sourceEventId, sp)) {
@@ -162,7 +164,11 @@ export class ChannelOrderChangeManager {
       );
   }
 
-  /** savepoint 하나. 거절이면 되돌리고 사유를, 성공이면 null 을. 예상 밖 예외는 그대로 던진다(스펙 §11). */
+  /**
+   * savepoint 하나. 성공이면 null. `Refused`(도메인 거절 — `isDomainRefusal` 을 통과한 HttpException·
+   * ApplicationException 과 직배 가드)면 savepoint 만 되돌리고 그 사유를 돌려준다. 그 밖의 모든 예외
+   * (DB 교착·잠금 시간 초과·직렬화 실패, 버그)는 그대로 던져 바깥 트랜잭션을 되돌리고 재시도시킨다(스펙 §11).
+   */
   private async attempt(tx: DbTx, fn: (sp: DbTx) => Promise<void>): Promise<ChannelBlocker | null> {
     try {
       await tx.transaction(async (sp) => fn(sp));
