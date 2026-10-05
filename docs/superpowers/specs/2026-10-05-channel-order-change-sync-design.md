@@ -146,53 +146,50 @@ diff 는 순수 함수(`channel-order-diff.ts`)다. 입력: 유효 판매주문 
 
 ## 7. 분류와 자동 반영
 
-판매주문 `FOR UPDATE` 아래 같은 트랜잭션에서 판정하고 적용한다. 판정과 적용 사이에 단계가 바뀌는 틈이 없다.
-잠금 순서는 판매주문 → 출고지시 → 박스(취소 경로와 같다).
+> **계획 단계 수정(2026-10-05):** 처음 안은 `requiresDurableReplan`·`withdrawalTarget` 술어를 공유 함수로 뽑아 순수 분류기가
+> 판정하는 것이었다. 코드를 보니 «즉시 끝나는가»가 V1·V2 경로, 백로그, 박스별 `cancelOutstanding`, 이탈 판정에 흩어져 있어
+> 뽑아내기가 크고 위험했다. 그래서 **같은 경로를 savepoint 안에서 실제로 시도하고, 그 자리에서 끝나지 않으면 savepoint 만
+> 되돌린다.** 판정과 적용이 같은 코드라 구조적으로 갈릴 수 없다. outbox 적재도 같은 DB 트랜잭션이라 함께 되돌아간다.
 
-분류는 순수 함수다. 입력: 델타 + 박스별 단계 사실(Reader 가 읽음). 출력: 델타마다 `outcome` 과 `blockers`.
+판매주문 `FOR UPDATE` 아래 같은 트랜잭션에서 시도하고 적용한다. 판정과 적용 사이에 단계가 바뀌는 틈이 없다.
+잠금 순서는 판매주문 → 출고지시 → 박스(취소 경로와 같다). 시도는 델타마다 savepoint 하나(`tx.transaction`)다.
 
 ### 7.1 배송지
 
-이미 발송된(`shipped`·`in_transit`·`delivered`) 박스와 끝난(`canceled`·`superseded`) 박스는 보지 않는다. 남은 박스가
-**전부** 아래를 만족할 때만 `applied`:
+이미 발송된(`shipped`·`in_transit`·`delivered`) 박스와 끝난(`canceled`·`superseded`) 박스는 보지 않는다. savepoint 안에서:
 
-| 조건 | 어기면 |
+1. 끝나지 않은(`shipped`·`completed`·`canceled` 밖) 출고지시 중 직배(`drop_ship`)이고 `direct_ship_status` 가 있는 것이 있으면
+   멈춘다 → `SHIPMENT_NOT_REVISABLE`(공급처에 이미 넘어간 주소)
+2. `sales_orders.shipping_address` 갱신(`shipping_address_hash` 는 건드리지 않는다 — 채널 주문은 생성 때도 null 이다)
+3. 끝나지 않은 출고지시의 `shipping_address` 갱신
+4. 남은 박스마다 `ShipmentPlanningService.reviseRecipientFromChannel` — 운영자용 `reviseRecipient` 와 같은 검사·같은 기록
+   (`recipient_revision` 작업, 시스템 행위자, 사유 `CHANNEL_ORDER_MODIFIED`)을 하되 아래 둘이 다르다
+   - `planned` 도 받는다(작업 항목이 없을 때만 — 기존 `assertNoCustodyOrActiveWork` 가 그대로 막는다). 그때 새 주소의
+     완전성(`assertRecipientComplete`)을 검사한다
+   - 박스가 이 판매주문 밖의 라인을 싣고 있으면 거절한다
+
+어느 단계든 거절되면 savepoint 를 되돌리고 **이 델타 전체가 `pending`** 이다(성공 기준 5). 거절 코드는 이렇게 옮긴다:
+
+| 거절 | 사유 |
 | --- | --- |
-| `draft`, 또는 작업 항목이 없는 `planned`(배치 밖, R5) | 작업 항목이 있으면 `SHIPMENT_IN_BATCH`, 그 밖 상태(`recovery_required` 등)는 `SHIPMENT_NOT_REVISABLE` |
-| 살아 있는(`WAYBILL_TERMINAL_STATUSES` 밖) 송장 없음 | `WAYBILL_ISSUED` |
-| 보관 재고·세션 잔량 없음(`assertNoCustodyOrActiveWork` 와 같은 판정) | `SHIPMENT_IN_BATCH` |
-| 이 주문의 라인만 싣고 있음 | `CONSOLIDATED_SHIPMENT` |
-| `planned` 면 새 주소가 완전함(`assertRecipientComplete` 와 같은 판정) | `RECIPIENT_INCOMPLETE` |
-
-한 박스라도 막히면 **이 델타 전체가 `pending`** 이고 아무것도 고치지 않는다(성공 기준 5).
-
-`applied` 면 한 트랜잭션에서:
-
-1. `sales_orders.shipping_address` 와 `shipping_address_hash`(생성 때와 같은 계산)
-2. `CANCELLABLE_FULFILLMENT_STATUSES` 에 든 출고지시의 `shipping_address`
-3. 남은 박스마다 `resolveRecipientRevision` 으로 `recipient_snapshot`·`manifestVersion` 갱신, `recipient_revision` 작업 기록을
-   시스템 행위자로 남긴다(사유 `CHANNEL_ORDER_MODIFIED`). 박스 쪽 판정·갱신은 `reviseRecipient` 와 같은 함수를 공유하도록
-   뽑아낸다 — `reviseRecipient` 는 운영자 경로라 `draft` 제한·스코프 검사를 그대로 둔다
+| `SHIPMENT_ACTIVE_INVOICE` | `WAYBILL_ISSUED` |
+| `SHIPMENT_ACTIVE_WORK_ITEM` · `SHIPMENT_CUSTODY_EXISTS` | `SHIPMENT_IN_BATCH` |
+| `SHIPMENT_RECIPIENT_INCOMPLETE` | `RECIPIENT_INCOMPLETE` |
+| `SHIPMENT_CONSOLIDATED` | `CONSOLIDATED_SHIPMENT` |
+| 그 밖(`SHIPMENT_REOPEN_REQUIRED` 등 모든 예외) | `SHIPMENT_NOT_REVISABLE` |
 
 ### 7.2 수량 감소·라인 제거
 
-«기존 취소가 그 자리에서 끝나는» 줄만 `applied`:
+감소 라인마다 savepoint 하나에서 `SalesOrdersService.cancel(soId, { lines: [그 라인], cancelledBy: 'channel',
+reasonCode: 'CHANNEL_ORDER_MODIFIED', metadata: { sourceEventId: '<amendment id>:<라인 id>' } }, sp)` 를 부른다.
+**`walletRefund` 를 넘기지 않는다**(R6).
 
-- 출고지시 전(백로그만 줄임)
-- V1 경로에서 피킹·출고 흔적 없는 몫
-- V2 경로에서 그 몫을 줄일 박스가 전부 `requiresDurableReplan` 거짓·`withdrawalTarget` 없음(= `applyDraftCancellation` 으로 끝남)
-
-판정은 `requiresDurableReplan`·`withdrawalTarget` 의 술어를 **공유 함수로 뽑아** 분류기와 `cancelOutstanding` 이 함께 부른다.
-따로 규칙을 쓰면 둘이 갈린다.
-
-| 그 밖 | 사유 |
-| --- | --- |
-| `planned`·배치·송장·보관 재고 때문에 즉시 끝나지 않음 | `CANCEL_NOT_IMMEDIATE` |
-| 줄인 수량이 이미 나간 수량보다 작음 | `ALREADY_DISPATCHED` |
-| 모든 라인이 0 이 됨 | `ALL_LINES_REMOVED` — 부분취소를 전 라인에 거는 것은 전체취소와 뜻이 다르다. 정상이면 채널이 주문 취소로 보낸다 |
-
-`applied` 줄은 한 번의 `SalesOrdersService.cancel(soId, { lines, cancelledBy: 'channel', reasonCode: 'CHANNEL_ORDER_MODIFIED',
-metadata: { sourceEventId: <amendment id> } }, tx)` 로 적용한다. **`walletRefund` 를 넘기지 않는다**(R6).
+- 예외가 나면 되돌리고 `CANCEL_NOT_IMMEDIATE`, 원래 메시지를 `detail` 에 담는다(이미 나간 수량·피킹 흔적 등)
+- 성공했어도 그 취소 행(`sales_order_cancellations.metadata.sourceEventId` 로 찾음)의 `effects` 에 `operationStatus: 'pending'` 인
+  `shipment_outstanding_cancellation` 이 있으면 되돌리고 `CANCEL_NOT_IMMEDIATE` — 박스가 `CANCEL_REPLAN_PENDING` 이나
+  이탈 대기로 갔다는 뜻이다(R1: 새 대기를 만들지 않는다)
+- 시도 전에 **모든 라인이 0 이 되면** 시도하지 않고 `ALL_LINES_REMOVED` — 부분취소를 전 라인에 거는 것은 전체취소와
+  뜻이 다르다. 정상이면 채널이 주문 취소로 보낸다
 
 이때 `SalesOrderCancelled(partial)` 이 나간다. channel-adapter 가 부분취소를 채널에 전파하지 않는 것(`handleCoreOrderCancelled`)이
 **메아리를 막는 장치**다 — 부분취소 전파를 켤 때(35번 행) 이 경로의 이벤트는 제외해야 한다. 그 처리기 주석에 이 사실을 적는다.
@@ -225,7 +222,7 @@ metadata: { sourceEventId: <amendment id> } }, tx)` 로 적용한다. **`walletR
 행 `status` 는 하나라도 `pending` 이면 `pending`, 아니면 `applied`.
 
 델타 타입은 기존 것을 쓰고 `shipping_address_change` 하나를 더한다. 라인 델타에는 `channelOrderItemId` 를 싣는다
-(`add_product` 는 core 라인이 없다). 운영자 DTO 검증(`validateDeltas`)도 새 타입을 안다 — 운영자 경로는 여전히 기록만 한다.
+(`add_product` 는 core 라인이 없다). 채널 델타는 운영자 DTO 검증(`validateDeltas`)을 거치지 않는다 — 운영자 DTO 에 배송지 델타를 더하는 건 쓰는 곳이 생길 때 한다.
 
 ### 8.3 superseded
 
@@ -240,11 +237,10 @@ metadata: { sourceEventId: <amendment id> } }, tx)` 로 적용한다. **`walletR
 | --- | --- |
 | `WAYBILL_ISSUED` | 송장이 이미 있다 |
 | `SHIPMENT_IN_BATCH` | 배치에 들어갔다(작업 항목·보관 재고·세션 잔량) |
-| `SHIPMENT_NOT_REVISABLE` | 그 밖에 수령인을 고칠 수 없는 박스 상태(`recovery_required` 등) |
+| `SHIPMENT_NOT_REVISABLE` | 그 밖에 수령인을 고칠 수 없는 상태(`recovery_required` 박스, 진행 중인 직배 등) |
 | `CONSOLIDATED_SHIPMENT` | 다른 주문과 같은 상자 |
 | `RECIPIENT_INCOMPLETE` | 계획된 박스에 불완전한 새 주소 |
-| `CANCEL_NOT_IMMEDIATE` | 취소가 그 자리에서 끝나지 않는다 |
-| `ALREADY_DISPATCHED` | 줄인 수량이 이미 나간 수량보다 작다 |
+| `CANCEL_NOT_IMMEDIATE` | 취소가 그 자리에서 끝나지 않는다(예외 또는 대기 결과, 원인은 `detail`) |
 | `ALL_LINES_REMOVED` | 전 라인이 0 |
 | `LINE_IDENTITY_MISSING` | 채널 라인 id 가 없어 짝을 못 지음 |
 | `OUT_OF_SCOPE` | 증가·추가·교체·단가(판단 5) |
@@ -290,7 +286,7 @@ core 판매주문의 주소를 맞춰 두는 의미다.
 
 - core API: `GET /sales-order-amendments?status=&origin=&cursor=` (목록, 최신순). 기존 `GET /sales-orders/:id/amendments` 응답에
   새 칸을 싣는다
-- **«반영 대기 변경» 목록**: 주문번호·채널·변경 시각·델타 한 줄 요약·막힌 사유. 행을 누르면 주문 상세. 기본 필터 `status = pending`
+- **«반영 대기 변경» 목록**: 주문번호·채널·변경 시각·델타 한 줄 요약·막힌 사유. 행을 누르면 주문 상세. 기본 필터 `status = pending`. **판매주문이 `cancelled`·`timeout` 인 행은 목록에서 뺀다** — Medusa 취소 직전 스냅샷이 남긴 pending 이 끝난 주문에 남는다
 - **주문 상세의 변경 기록**: amendment 마다 델타별 결과(반영됨·대기 + 사유)
 - 문구는 최소로. 요약·사유 문구는 `.ts` 순수 함수(admin-web 은 컴포넌트 테스트를 못 한다)
 - 기존 «수집 후 변경(재처리 불가)» 격리 행 표시는 그대로 둔다
@@ -314,9 +310,9 @@ core 판매주문의 주소를 맞춰 두는 의미다.
 | `apps/channel-adapter/CLAUDE.md` §3-5 | 정책 문장 갱신(격리 → 전달) |
 | `apps/core/src/modules/inventory/schema/inventory.schema.ts` + 마이그레이션 | §8.1 |
 | `apps/core/src/modules/sales-order/consumers/order-events.consumer.ts` | `handleOrderModified` → 서비스 호출, 채널 키로 판매주문 해석 |
-| `apps/core/src/modules/sales-order/channel-order-change/`(신규) | `channel-order-diff.ts`(순수), 분류기(순수), `ChannelOrderChangeReader`, `ChannelOrderChangeManager`, 서비스 |
+| `apps/core/src/modules/sales-order/channel-order-change/`(신규) | `channel-order-diff.ts`(순수), 거절 코드 변환(순수), `ChannelOrderChangeReader`, `ChannelOrderChangeManager`, 서비스 |
 | `apps/core/src/modules/sales-order/services/sales-order-amendments.service.ts`·DTO | 새 칸, 새 델타 타입, 목록 조회 |
-| `apps/core/src/modules/fulfillment/services/shipment-planning.service.ts` | `requiresDurableReplan`·`withdrawalTarget`·수령인 갱신 판정을 공유 함수로 추출 |
+| `apps/core/src/modules/fulfillment/services/shipment-planning.service.ts` | `reviseRecipientFromChannel` 추가(§7.1) |
 | `apps/channel-adapter/src/consumers/fulfillment-events.consumer.ts` | `handleCoreOrderCancelled` 주석에 메아리 방지 사실 추가(§7.2) |
 | `apps/admin-web` | §10 |
 | `scripts/ops/` | §9.2 백필 |
@@ -326,8 +322,8 @@ core 판매주문의 주소를 맞춰 두는 의미다.
 
 - **diff 순수 함수**(표 테스트): 네이버 취소 라인 건너뜀 · Medusa 수량 0 과 라인 소멸이 같은 결과 · 감소·증가·추가 · `channelProductId`
   교체 · 단가 · 라인 id 없음 · 주소 필드별 · 우리 쪽 식별만 바뀜 → 델타 0 · 취소된 판매주문 → 델타 0
-- **분류기 순수 함수**: §7.1 조건 하나씩 어긴 경우, 박스 여럿 중 하나만 막힘 → 델타 전체 pending · §7.2 세 경로 · `ALL_LINES_REMOVED`
-- **공유 술어**: 추출 전후 `cancelOutstanding` 기존 스펙이 그대로 통과
+- **거절 코드 변환 순수 함수**: §7.1 표의 각 행
+- **`reviseRecipientFromChannel` 통합**: draft·배치 밖 planned 통과, 송장·작업 항목·합포장·불완전 주소 거절
 - **core 통합**(`describeIfDb`):
   - 주소가 판매주문·출고지시·초안 박스·배치 밖 계획 박스에 한 번에 반영되고 manifestVersion 이 오른다
   - 송장 있는 박스 하나 때문에 막히면 세 곳 모두 그대로
