@@ -6,6 +6,7 @@ import {
   SHIPMENT_STREAM,
   FULFILLMENT_V2_STREAM,
 } from '@packages/event-contracts';
+import { CHANNEL_ORDERS_COMMAND_STREAM } from '@packages/event-contracts/streams';
 
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
@@ -78,8 +79,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
   imports: [
     // FULFILLMENT_STREAM Kafka producer (공용 OutboxDispatcher 가 발행 — ADR-0029 §5-1)
     // INVENTORY_STREAM publisher는 InventoryModule이 전역으로 등록
+    // CHANNEL_ORDERS_COMMAND_STREAM: «다시 확인» 명령(#1016 6번 행). 선언이 기동 때 토픽도 만든다
     EventsModule.forApp({
-      publishes: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM],
+      publishes: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM, CHANNEL_ORDERS_COMMAND_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
     }),

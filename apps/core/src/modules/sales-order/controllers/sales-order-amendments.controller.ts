@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import { ListSalesOrderAmendmentsQueryDto } from '../dto/list-sales-order-amendments.dto';
 import { CreateSalesOrderAmendmentDto } from '../dto/create-sales-order-amendment.dto';
 import { SalesOrderAmendmentResponseDto } from '../dto/sales-order-amendment-response.dto';
+import { DismissSalesOrderAmendmentDto } from '../dto/dismiss-sales-order-amendment.dto';
+import { ChannelAmendmentActionsService } from '../channel-order-change/channel-amendment-actions.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
@@ -11,7 +13,10 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 @ApiTags('Sales Order Amendments')
 @Controller('sales-order-amendments')
 export class SalesOrderAmendmentsController {
-  constructor(private readonly service: SalesOrderAmendmentsService) {}
+  constructor(
+    private readonly service: SalesOrderAmendmentsService,
+    private readonly channelActions: ChannelAmendmentActionsService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a SalesOrderAmendment for a post-acceptance delta' })
@@ -32,6 +37,22 @@ export class SalesOrderAmendmentsController {
   @ApiResponse({ status: 200, description: 'SalesOrderAmendment', type: SalesOrderAmendmentResponseDto })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
+  }
+
+  @Post(':id/dismiss')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '반영 대기 채널 변경을 무시로 닫는다 (#1016 6번 행)' })
+  @ApiParam({ name: 'id', description: 'SalesOrderAmendment ID' })
+  dismiss(@Param('id') id: string, @Body() dto: DismissSalesOrderAmendmentDto, @User() user: AuthenticatedUser) {
+    return this.channelActions.dismiss(id, { note: dto.note, operatorId: this.getUserId(user) });
+  }
+
+  @Post(':id/resync')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '반영 대기 채널 변경의 주문을 채널에서 다시 확인하도록 요청한다 (#1016 6번 행)' })
+  @ApiParam({ name: 'id', description: 'SalesOrderAmendment ID' })
+  resync(@Param('id') id: string) {
+    return this.channelActions.requestResync(id);
   }
 
   private getUserId(user: AuthenticatedUser): string | undefined {
