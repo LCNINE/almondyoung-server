@@ -42,8 +42,10 @@ describeIfDb('order-progress 갱신 upsert (PostgreSQL integration)', () => {
       const orderedAt = new Date('2026-07-15T12:34:56.789Z');
       const o = await f.seedOrder(tx, { createdAt: orderedAt });
       await f.seedBacklog(tx, o.salesOrderId, 'awaiting_matching', new Date('2026-07-16T00:00:00.000Z'));
-      await manager.refreshScope(only(o.salesOrderId), new Date('2026-10-06T00:00:00.000Z'), tx);
-      const first = await read(tx, o.salesOrderId);
+      await expect(
+        manager.refreshScope(only(o.salesOrderId), new Date('2026-10-06T00:00:00.000Z'), tx),
+      ).resolves.toEqual({ upserted: 1 });
+      const first =await read(tx, o.salesOrderId);
       expect(first).toMatchObject({ stage: 'fo', state: 'awaiting_matching', outcome: null });
       expect(first.stageEnteredAt.toISOString()).toBe('2026-07-16T00:00:00.000Z');
       // R6: 커서가 밀리초라 투영 시각도 밀리초 이하 자릿수가 없어야 한다

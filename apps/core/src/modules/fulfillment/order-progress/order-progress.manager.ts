@@ -37,6 +37,8 @@ export class OrderProgressManager {
                CASE WHEN j.outcome IS NULL THEN NULL ELSE ${at} END,
                ${at}
           FROM (${judgedRowsSql(scope, nowIso)}) j
+         -- 겹친 인스턴스(1분 넘는 백필)가 같은 행을 같은 순서로 잠그게 해 교착(40P01)을 막는다
+         ORDER BY j.sales_order_id
         ON CONFLICT (sales_order_id) DO UPDATE SET
           stage = EXCLUDED.stage,
           state = EXCLUDED.state,
