@@ -1,0 +1,39 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { ORDER_PROGRESS_STAGES } from '../order-progress.thresholds';
+
+export class OrderProgressStateSummaryDto {
+  @ApiProperty() state!: string;
+  @ApiProperty() open!: number;
+  @ApiProperty() stuck!: number;
+}
+
+export class OrderProgressStageSummaryDto {
+  @ApiProperty({ enum: ORDER_PROGRESS_STAGES }) stage!: string;
+  @ApiProperty() open!: number;
+  @ApiProperty() stuck!: number;
+  @ApiProperty({ nullable: true, type: String }) oldestEnteredAt!: string | null;
+  @ApiProperty({ type: [OrderProgressStateSummaryDto] }) states!: OrderProgressStateSummaryDto[];
+}
+
+export class OrderProgressSummaryResponseDto {
+  @ApiProperty({ nullable: true, type: String, description: '가장 최근 판정 시각. 5분 넘게 멈추면 화면이 경고한다' })
+  evaluatedAt!: string | null;
+  @ApiProperty({ type: [OrderProgressStageSummaryDto] }) stages!: OrderProgressStageSummaryDto[];
+}
+
+export class OrderProgressItemDto {
+  @ApiProperty() salesOrderId!: string;
+  @ApiProperty({ description: 'display_order_no ?? channel_order_id' }) orderNo!: string;
+  @ApiProperty() channelOrderId!: string;
+  @ApiProperty() salesChannel!: string;
+  @ApiProperty({ nullable: true, type: String }) customerName!: string | null;
+  @ApiProperty() orderedAt!: string;
+  @ApiProperty({ nullable: true, type: String }) state!: string | null;
+  @ApiProperty() stageEnteredAt!: string;
+  @ApiProperty() stuck!: boolean;
+}
+
+export class OrderProgressPageDto {
+  @ApiProperty({ type: [OrderProgressItemDto] }) items!: OrderProgressItemDto[];
+  @ApiProperty({ nullable: true, type: String }) nextCursor!: string | null;
+}
