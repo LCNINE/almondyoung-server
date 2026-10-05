@@ -147,7 +147,7 @@ const WALLET_EFFECT_REF_TYPES = new Set([
 ]);
 const LOGISTICS_EFFECT_REF_TYPES = new Set(['return', 'return_handoff']);
 const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_handoff', 'compensation_handoff']);
-const FULFILLMENT_SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
+export const FULFILLMENT_SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
@@ -1945,6 +1945,11 @@ export class SalesOrdersService {
       byLineId.set(line.salesOrderLineId, (byLineId.get(line.salesOrderLineId) ?? 0) + line.quantity);
     }
     return [...byLineId.entries()].map(([salesOrderLineId, quantity]) => ({ salesOrderLineId, quantity }));
+  }
+
+  /** 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다. */
+  async getCancelledQuantityByLine(salesOrderId: string, tx: DbTx): Promise<Map<string, number>> {
+    return (await this.loadPriorPartialCancellationContext(salesOrderId, tx)).cancelledByLine;
   }
 
   private async loadPriorPartialCancellationContext(

@@ -1,13 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { eq, type InferInsertModel } from 'drizzle-orm';
+import { and, desc, eq, lt, ne, notInArray, type InferInsertModel } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   CreateSalesOrderAmendmentDto,
   SalesOrderAmendmentDeltaDto,
   SalesOrderAmendmentDeltaType,
 } from '../dto/create-sales-order-amendment.dto';
+import { CHANNEL_ORDER_MODIFIED_REASON, type RecordedChannelDelta } from '../channel-order-change/channel-order-change.types';
 
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
 type SalesOrderAmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
@@ -16,6 +17,20 @@ type SalesOrderLineRow = typeof wmsTables.salesOrderLines.$inferSelect;
 const AMENDMENT_REF_TYPE = 'sales_order_amendment';
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const FULFILLMENT_ONLY_DELTA_TYPES = new Set<SalesOrderAmendmentDeltaType>(['fulfillment_only_correction']);
+export type AmendmentStatus = 'applied' | 'pending' | 'superseded';
+export type AmendmentOrigin = 'channel' | 'operator';
+export interface AmendmentListItem {
+  id: string;
+  salesOrderId: string;
+  salesChannel: string;
+  channelOrderId: string;
+  displayOrderNo: string | null;
+  origin: AmendmentOrigin;
+  status: AmendmentStatus;
+  deltas: unknown[];
+  occurredAt: Date;
+}
+const HIDDEN_ORDER_STATUSES = ['cancelled', 'timeout'] as const;
 const FULFILLMENT_ONLY_FORBIDDEN_FIELDS: Array<keyof SalesOrderAmendmentDeltaDto> = [
   'replacementForLineId',
   'variantId',
@@ -188,9 +203,109 @@ export class SalesOrderAmendmentsService {
     }
   }
 
+  /**
+   * 채널 변경 한 건 = 한 행 (#1016 판단 6). 같은 판매주문의 이전 채널 pending 은 superseded —
+   * diff 가 매번 판매주문과 새로 비교하므로 최신 행이 남은 차이를 전부 담는다. 델타가 비면 행을 쓰지 않는다.
+   */
+  async recordChannelAmendment(
+    input: {
+      id: string;
+      salesOrderId: string;
+      deltas: RecordedChannelDelta[];
+      occurredAt: Date;
+      sourceEventId: string;
+      salesChannel: string;
+      externalOrderId: string;
+    },
+    tx: DbTx,
+  ): Promise<void> {
+    const table = wmsTables.salesOrderAmendments;
+    if (input.deltas.length > 0) {
+      const pending = input.deltas.some((delta) => delta.outcome === 'pending');
+      const [amendment] = await tx
+        .insert(table)
+        .values({
+          id: input.id,
+          salesOrderId: input.salesOrderId,
+          amendmentKind: input.deltas.every((delta) => delta.type === 'shipping_address_change') ? 'fulfillment_only' : 'commercial',
+          reasonCode: CHANNEL_ORDER_MODIFIED_REASON,
+          deltas: input.deltas,
+          metadata: { salesChannel: input.salesChannel, externalOrderId: input.externalOrderId },
+          createdBy: null,
+          occurredAt: input.occurredAt,
+          origin: 'channel',
+          status: pending ? 'pending' : 'applied',
+          sourceEventId: input.sourceEventId,
+        })
+        .returning();
+      await tx.insert(wmsTables.businessLinks).values({
+        sourceType: SALES_ORDER_REF_TYPE,
+        sourceId: input.salesOrderId,
+        sourceExternalRef: null,
+        targetType: AMENDMENT_REF_TYPE,
+        targetId: amendment.id,
+        targetExternalRef: null,
+        relationName: 'opened_amendment',
+        metadata: { amendmentKind: amendment.amendmentKind, origin: 'channel', status: amendment.status, deltaTypes: input.deltas.map((delta) => delta.type) },
+        occurredAt: amendment.occurredAt,
+      });
+    }
+    await tx
+      .update(table)
+      .set({ status: 'superseded', supersededById: input.deltas.length > 0 ? input.id : null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(table.salesOrderId, input.salesOrderId),
+          eq(table.origin, 'channel'),
+          eq(table.status, 'pending'),
+          ne(table.id, input.id),
+        ),
+      );
+  }
+
+  /** 대기 목록(#1016 5번 행 화면). 끝난 판매주문의 행은 뺀다 — Medusa 취소 직전 스냅샷이 남긴 pending 이 거기 남는다. */
+  async list(
+    query: { status?: AmendmentStatus; origin?: AmendmentOrigin; limit: number; before?: string },
+    tx?: DbTx,
+  ): Promise<{ items: AmendmentListItem[]; nextBefore: string | null }> {
+    const db = tx ?? this.db.db;
+    const table = wmsTables.salesOrderAmendments;
+    const orders = wmsTables.salesOrders;
+    const rows = await db
+      .select({
+        id: table.id,
+        salesOrderId: table.salesOrderId,
+        salesChannel: orders.salesChannel,
+        channelOrderId: orders.channelOrderId,
+        displayOrderNo: orders.displayOrderNo,
+        origin: table.origin,
+        status: table.status,
+        deltas: table.deltas,
+        occurredAt: table.occurredAt,
+      })
+      .from(table)
+      .innerJoin(orders, eq(orders.id, table.salesOrderId))
+      .where(
+        and(
+          query.status ? eq(table.status, query.status) : undefined,
+          query.origin ? eq(table.origin, query.origin) : undefined,
+          query.before ? lt(table.occurredAt, new Date(query.before)) : undefined,
+          notInArray(orders.status, [...HIDDEN_ORDER_STATUSES]),
+        ),
+      )
+      .orderBy(desc(table.occurredAt), desc(table.id))
+      .limit(query.limit + 1);
+    const page = rows.slice(0, query.limit);
+    return {
+      items: page.map((row) => ({ ...row, deltas: Array.isArray(row.deltas) ? row.deltas : [] })),
+      nextBefore: rows.length > query.limit ? page[page.length - 1].occurredAt.toISOString() : null,
+    };
+  }
+
   private toResponse(amendment: SalesOrderAmendmentRow) {
     return {
       ...amendment,
+      // jsonb 의 모양은 쓰는 쪽이 보장한다 — 운영자 행은 DTO 검증, 채널 행은 RecordedChannelDelta(recordChannelAmendment).
       deltas: (amendment.deltas ?? []) as SalesOrderAmendmentDeltaDto[],
       metadata: (amendment.metadata ?? {}) as Record<string, unknown>,
     };

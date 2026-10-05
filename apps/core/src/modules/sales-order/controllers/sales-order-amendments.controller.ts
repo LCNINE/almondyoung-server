@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
+import { ListSalesOrderAmendmentsQueryDto } from '../dto/list-sales-order-amendments.dto';
 import { CreateSalesOrderAmendmentDto } from '../dto/create-sales-order-amendment.dto';
 import { SalesOrderAmendmentResponseDto } from '../dto/sales-order-amendment-response.dto';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
@@ -17,6 +18,12 @@ export class SalesOrderAmendmentsController {
   @ApiResponse({ status: 201, description: 'SalesOrderAmendment created', type: SalesOrderAmendmentResponseDto })
   create(@Body() dto: CreateSalesOrderAmendmentDto, @User() user: AuthenticatedUser) {
     return this.service.create(dto, this.getUserId(user));
+  }
+
+  @Get()
+  @ApiOperation({ summary: '정정 목록 — 반영 대기 변경 화면' })
+  list(@Query() query: ListSalesOrderAmendmentsQueryDto) {
+    return this.service.list({ status: query.status, origin: query.origin, limit: query.limit ?? 50, before: query.before });
   }
 
   @Get(':id')

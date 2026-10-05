@@ -37,4 +37,16 @@ export class SalesOrderAmendmentResponseDto {
 
   @ApiProperty({ description: 'Updated time' })
   updatedAt: Date;
+
+  @ApiProperty({ description: '변경을 만든 곳', enum: ['channel', 'operator'] })
+  origin: string;
+
+  @ApiProperty({ description: '적용 상태', enum: ['applied', 'pending', 'superseded'] })
+  status: string;
+
+  @ApiProperty({ description: '채널 이벤트 messageId', nullable: true })
+  sourceEventId: string | null;
+
+  @ApiProperty({ description: '이 행을 대체한 행', nullable: true })
+  supersededById: string | null;
 }
