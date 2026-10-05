@@ -1633,6 +1633,38 @@ export const fulfillmentOrderCreationBacklogs = pgTable(
   }),
 );
 
+/**
+ * 정체 보드 진행 투영 (스펙 docs/superpowers/specs/2026-10-06-order-stall-board-design.md §5).
+ * 판매주문당 한 행. 1분 크론(order-progress-refresh)만 쓴다 — 원천은 판매주문·FO·상자·송장·작업 항목이고
+ * 이 테이블은 그 판정 결과의 캐시이자 «단계에 들어온 시각»의 유일한 기록이다.
+ * stage·outcome 은 varchar 다(pgEnum 은 값을 더할 때마다 마이그가 필요하다). 값 목록은 order-progress.thresholds.ts.
+ */
+export const orderProgress = pgTable(
+  'order_progress',
+  {
+    salesOrderId: uuid('sales_order_id')
+      .primaryKey()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    salesChannel: salesChannelEnum('sales_channel').notNull(),
+    orderedAt: timestamp('ordered_at', { withTimezone: true }).notNull(),
+    // NULL = 종료(outcome 이 있다)
+    stage: varchar('stage', { length: 32 }),
+    state: varchar('state', { length: 64 }),
+    // 갇힘 판정은 이 칸만 본다. 단계가 같으면 세부 상태가 바뀌어도 그대로 둔다(스펙 D5).
+    stageEnteredAt: timestamp('stage_entered_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중
+    outcome: varchar('outcome', { length: 32 }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    // 요약 집계·단계별 체류순 목록·갇힘 필터를 이 하나가 받는다(스펙 §5.1).
+    idxOrderProgressOpenStage: index('idx_order_progress_open_stage')
+      .on(t.stage, t.stageEnteredAt)
+      .where(sql`${t.outcome} IS NULL`),
+  }),
+);
+
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
@@ -3436,6 +3468,7 @@ export const wmsTables = {
   orderEvents,
   businessLinks,
   salesOrderAmendments,
+  orderProgress,
   salesOrderCancellations,
   mergeGroups,
   stockReservations,
@@ -4625,6 +4658,8 @@ export type NewBusinessLink = InferInsertModel<typeof businessLinks>;
 
 export type SalesOrderAmendment = InferSelectModel<typeof salesOrderAmendments>;
 export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendments>;
+
+export type OrderProgressRow = InferSelectModel<typeof orderProgress>;
 
 export type SalesOrderCancellation = InferSelectModel<typeof salesOrderCancellations>;
 export type NewSalesOrderCancellation = InferInsertModel<typeof salesOrderCancellations>;
