@@ -55,6 +55,15 @@ export class OrderCollectionFailuresController {
     };
   }
 
+  // `:id` 보다 먼저 선언해야 한다 — 뒤에 두면 'summary' 가 id 로 잡힌다.
+  @Get('summary')
+  @ApiOperation({ summary: '격리 건수 요약 (정체 보드 0단계)' })
+  @ApiQuery({ name: 'channel', required: false, example: 'medusa' })
+  async summary(@Query('channel') channel?: string) {
+    const data = await this.failures.summarizeQuarantined({ channel });
+    return { success: true, data, timestamp: new Date().toISOString() };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '격리된 주문 수집 실패 상세 조회' })
   async inspect(@Param('id') id: string) {
