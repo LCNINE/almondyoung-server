@@ -8,6 +8,11 @@ export const orderQueryKeys = {
   order: (id: string) => ['orders', id] as const,
   orderItems: (orderId: string) => ['orders', orderId, 'items'] as const,
 
+  // 정정(채널 변경)
+  amendments: ['sales-order-amendments'] as const,
+  amendmentsList: (params: { status: string; origin: string }) => ['sales-order-amendments', 'list', params] as const,
+  orderAmendments: (salesOrderId: string) => ['sales-order-amendments', 'order', salesOrderId] as const,
+
   // 출고 배치 관련
   outboundBatches: ['outbound-batches'] as const,
   outboundBatchesV2Root: ['outbound-batches', 'v2'] as const,

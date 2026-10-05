@@ -10,7 +10,12 @@ import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
-import { useSalesOrder, useAdminRetryRefund } from '@/lib/services/orders';
+import { useSalesOrder, useAdminRetryRefund, useSalesOrderAmendments } from '@/lib/services/orders';
+import {
+  blockerCodes,
+  blockerLabel,
+  summarizeDelta,
+} from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import { MergedDataTable } from '@/components/common/merged-data-table';
 import type { MergedTableColumn } from '@/components/common/merged-data-table';
 import { Table } from '@/components/admin-ui-experimental/common/table/table';
@@ -564,6 +569,9 @@ function BusinessTimelineModal({
     (a, b) =>
       new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
   );
+  const { data: amendments } = useSalesOrderAmendments(
+    open && order ? order.orderId : ''
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -589,6 +597,23 @@ function BusinessTimelineModal({
               {timeline.map((item) => (
                 <TimelineItem key={item.id} item={item} />
               ))}
+            </div>
+          )}
+          {(amendments ?? []).some((amendment) => amendment.origin === 'channel') && (
+            <div className="mt-4 border-t px-1 pt-3">
+              <p className="mb-2 text-sm font-medium">채널 변경</p>
+              {(amendments ?? [])
+                .filter((amendment) => amendment.origin === 'channel' && amendment.status !== 'superseded')
+                .map((amendment) => (
+                  <div key={amendment.id} className="mb-2 text-sm">
+                    {amendment.deltas.map((delta, index) => (
+                      <div key={index} className={delta.outcome === 'pending' ? 'text-amber-700' : 'text-muted-foreground'}>
+                        {summarizeDelta(delta)}
+                        {delta.outcome === 'pending' && ` · ${blockerCodes(delta).map(blockerLabel).join(', ')}`}
+                      </div>
+                    ))}
+                  </div>
+                ))}
             </div>
           )}
         </div>
