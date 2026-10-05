@@ -288,6 +288,11 @@ core 판매주문이 끝나지 않은(취소·출고 완료가 아닌) 주문만
 - 실제 주소 변경은 반영되고, 오탐은 기록 없이 사라진다
 - 격리 행은 닫지 않는다(6번 행)
 
+> **계획 단계 수정(PR 2, 2026-10-05):** «끝나지 않은» = 판매주문 status 가 `cancelled`·`timeout`·`shipped`·`delivered` 가
+> 아닌 것. core diff 는 `shipped`·`delivered` 를 건너뛰지 않으므로 스크립트가 거른다. 판매주문이 없는 격리도 뺀다(보내면
+> NotFound → DLQ). 스크립트는 `sst shell` 안에서 channel_adapter·core 를 읽기 전용으로 읽고, 쓰기는 입구가 한다.
+> 스크립트: `scripts/ops/1016-backfill-channel-order-modifications.ts`.
+
 지금 출고는 셀메이트가 하므로(#923) core 박스 주소를 고쳐도 실제 발송에는 영향이 없다. core 출고가 돌기 시작하는 컷오버 전에
 core 판매주문의 주소를 맞춰 두는 의미다.
 
