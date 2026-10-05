@@ -1466,11 +1466,20 @@ export const salesOrderAmendments = pgTable(
       .default(sql`'{}'::jsonb`),
     // #1016 판단 6: 채널 변경과 운영자 수정을 함께 담는 단일 변경 기록. `decision` 은 운영자 승인 축, `status` 는 적용 축이다.
     origin: varchar('origin', { length: 16 }).$type<'channel' | 'operator'>().notNull().default('operator'),
-    status: varchar('status', { length: 16 }).$type<'applied' | 'pending' | 'superseded'>().notNull().default('pending'),
+    status: varchar('status', { length: 16 })
+      .$type<'applied' | 'pending' | 'superseded' | 'dismissed'>()
+      .notNull()
+      .default('pending'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
     supersededById: uuid('superseded_by_id').references((): AnyPgColumn => salesOrderAmendments.id, {
       onDelete: 'set null',
     }),
+    // #1016 6번 행: 운영자가 «어긋난 채 둔다»고 닫은 채널 행. 이 행의 pending 델타와 똑같은 차이는 다시 띄우지 않는다.
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    dismissedBy: uuid('dismissed_by'),
+    dismissNote: text('dismiss_note'),
+    // 마지막 «다시 확인»(ResyncChannelOrder 명령) 시각. 결과는 돌아오지 않으므로 화면이 이 시각을 보여 준다.
+    resyncRequestedAt: timestamp('resync_requested_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1496,7 +1505,7 @@ export const salesOrderAmendments = pgTable(
     originCheck: check('sales_order_amendments_origin_check', sql`${t.origin} IN ('channel', 'operator')`),
     statusCheck: check(
       'sales_order_amendments_status_check',
-      sql`${t.status} IN ('applied', 'pending', 'superseded')`,
+      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed')`,
     ),
   }),
 );

@@ -41,7 +41,7 @@ export class SalesOrderAmendmentResponseDto {
   @ApiProperty({ description: '변경을 만든 곳', enum: ['channel', 'operator'] })
   origin: string;
 
-  @ApiProperty({ description: '적용 상태', enum: ['applied', 'pending', 'superseded'] })
+  @ApiProperty({ description: '적용 상태', enum: ['applied', 'pending', 'superseded', 'dismissed'] })
   status: string;
 
   @ApiProperty({ description: '채널 이벤트 messageId', nullable: true })
@@ -49,4 +49,16 @@ export class SalesOrderAmendmentResponseDto {
 
   @ApiProperty({ description: '이 행을 대체한 행', nullable: true })
   supersededById: string | null;
+
+  @ApiProperty({ description: '무시한 시각', nullable: true })
+  dismissedAt: Date | null;
+
+  @ApiProperty({ description: '무시한 운영자 ID', nullable: true })
+  dismissedBy: string | null;
+
+  @ApiProperty({ description: '무시 메모', nullable: true })
+  dismissNote: string | null;
+
+  @ApiProperty({ description: '마지막 다시 확인 요청 시각', nullable: true })
+  resyncRequestedAt: Date | null;
 }

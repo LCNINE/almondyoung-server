@@ -145,4 +145,29 @@ describeIfDb('SalesOrderAmendmentsService 채널 기록·목록 (DB integration,
       await expect(service.getOne(randomUUID(), tx)).rejects.toBeInstanceOf(NotFoundError);
     });
   });
+
+  it('dismissed 는 목록 status 필터로 따로 보이고 pending 목록에서는 빠진다. resyncRequestedAt 이 목록에 실린다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const service = new SalesOrderAmendmentsService(ambientDbService(tx));
+      const soId = await salesOrder(tx);
+      const dismissedId = await record(service, soId, [PENDING], tx);
+      await tx
+        .update(wmsTables.salesOrderAmendments)
+        .set({ status: 'dismissed', dismissedAt: new Date(), dismissNote: '채널 쪽 오류' })
+        .where(eq(wmsTables.salesOrderAmendments.id, dismissedId));
+      const otherSo = await salesOrder(tx);
+      const pendingId = await record(service, otherSo, [PENDING], tx);
+      const requestedAt = new Date('2026-10-06T01:00:00.000Z');
+      await tx
+        .update(wmsTables.salesOrderAmendments)
+        .set({ resyncRequestedAt: requestedAt })
+        .where(eq(wmsTables.salesOrderAmendments.id, pendingId));
+
+      const dismissed = await service.list({ status: 'dismissed', origin: 'channel', limit: 50 }, tx);
+      const pending = await service.list({ status: 'pending', origin: 'channel', limit: 50 }, tx);
+      expect(dismissed.items.map((item) => item.id)).toContain(dismissedId);
+      expect(pending.items.map((item) => item.id)).not.toContain(dismissedId);
+      expect(pending.items.find((item) => item.id === pendingId)?.resyncRequestedAt).toEqual(requestedAt);
+    });
+  });
 });
