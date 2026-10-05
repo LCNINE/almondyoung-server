@@ -24,6 +24,6 @@ export class ListSalesOrderAmendmentsQueryDto {
   @ApiPropertyOptional({ description: '다음 쪽 커서(불투명 문자열) = 응답의 nextCursor' })
   @IsOptional()
   @IsString()
-  @Matches(/^[^|]+\|[0-9a-f-]{36}$/i)
+  @Matches(/^[^|]+\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   cursor?: string;
 }

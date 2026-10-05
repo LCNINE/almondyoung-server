@@ -93,8 +93,13 @@ export class ChannelOrderChangeReader {
     return Boolean(row);
   }
 
-  /** 이 취소가 박스 쪽에서 대기(CANCEL_REPLAN_PENDING·이탈 대기)로 끝났는가. */
-  async cancellationLeftPendingShipment(salesOrderId: string, sourceEventId: string, tx: DbTx): Promise<boolean> {
+  /**
+   * 이 취소가 그 자리에서 끝나지 않았는가 — 끝나지 않았으면 그 사유(blocker detail), 끝났으면 null.
+   * ① 박스 쪽에서 대기(CANCEL_REPLAN_PENDING·이탈 대기)로 끝남 — V2 경로.
+   * ② 이미 출고된 수량을 건드려 출고분 보존·회수 이관이 생김 — V1 경로(`toPostShipmentCancellationEffects`).
+   *    채널 정정은 회수를 열지 않는다(스펙 §7.2 R1) — 사람이 판단할 대기로 남긴다.
+   */
+  async cancellationNeedsFollowUp(salesOrderId: string, sourceEventId: string, tx: DbTx): Promise<string | null> {
     const rows = await tx
       .select({ effects: wmsTables.salesOrderCancellations.effects })
       .from(wmsTables.salesOrderCancellations)
@@ -104,17 +109,41 @@ export class ChannelOrderChangeReader {
           sql`${wmsTables.salesOrderCancellations.metadata}->>'sourceEventId' = ${sourceEventId}`,
         ),
       );
-    return rows.some((row) =>
-      (Array.isArray(row.effects) ? row.effects : []).some((effect: unknown) => {
-        if (typeof effect !== 'object' || effect === null) return false;
-        const metadata: unknown = Reflect.get(effect, 'metadata');
-        return (
-          Reflect.get(effect, 'type') === 'shipment_outstanding_cancellation' &&
-          typeof metadata === 'object' &&
-          metadata !== null &&
-          Reflect.get(metadata, 'operationStatus') === 'pending'
-        );
-      }),
-    );
+    const effects = rows.flatMap((row) => (Array.isArray(row.effects) ? row.effects : []));
+    if (effects.some(isPendingShipmentCancellation)) return 'shipment cancellation would wait';
+    if (effects.some(isPostShipmentFollowUp)) return 'cancellation needs post-shipment follow-up';
+    return null;
   }
+
+  /** 주문의 출고지시가 하나 이상 있고, 끝나지 않은 출고지시도 아직 떠나지 않은 박스도 없는가(전량 출고). */
+  async isFullyShipped(salesOrderId: string, tx: DbTx): Promise<boolean> {
+    const fulfillmentOrders = await tx
+      .select({ status: wmsTables.fulfillmentOrders.status })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
+    if (fulfillmentOrders.length === 0) return false;
+    const finished: readonly string[] = FINISHED_FULFILLMENT_STATUSES;
+    if (fulfillmentOrders.some((fo) => !finished.includes(fo.status))) return false;
+    return (await this.remainingShipmentIds(salesOrderId, tx)).length === 0;
+  }
+}
+
+function effectType(effect: unknown): unknown {
+  return typeof effect === 'object' && effect !== null ? Reflect.get(effect, 'type') : undefined;
+}
+
+function isPendingShipmentCancellation(effect: unknown): boolean {
+  if (typeof effect !== 'object' || effect === null) return false;
+  if (Reflect.get(effect, 'type') !== 'shipment_outstanding_cancellation') return false;
+  const metadata: unknown = Reflect.get(effect, 'metadata');
+  return typeof metadata === 'object' && metadata !== null && Reflect.get(metadata, 'operationStatus') === 'pending';
+}
+
+/** `SalesOrdersService.toPostShipmentCancellationEffects` 가 남기는 두 효과 형식. */
+function isPostShipmentFollowUp(effect: unknown): boolean {
+  const type = effectType(effect);
+  return (
+    type === 'preserved_shipped_fulfillment_order_item' ||
+    (typeof type === 'string' && type.startsWith('linked_post_shipment_'))
+  );
 }

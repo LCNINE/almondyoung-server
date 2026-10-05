@@ -91,6 +91,10 @@ export class ChannelOrderChangeManager {
       if (await this.reader.hasDropShipInProgress(order.id, sp)) {
         throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'drop_ship already handed to supplier' });
       }
+      // 전량 출고 — 소포는 이미 옛 주소로 떠났다. 판매주문만 고치면 «반영됨» 으로 보여 정정이 묻힌다.
+      if (await this.reader.isFullyShipped(order.id, sp)) {
+        throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'already shipped' });
+      }
       await this.updateOrderAddress(order.id, delta.after, sp);
       for (const shipmentId of await this.reader.remainingShipmentIds(order.id, sp)) {
         try {
@@ -111,7 +115,10 @@ export class ChannelOrderChangeManager {
     return refusal ? { ...delta, outcome: 'pending', blockers: [refusal] } : { ...delta, outcome: 'applied' };
   }
 
-  /** 스펙 §7.2 — 기존 취소를 그대로 시도. 그 자리에서 끝나지 않으면 되돌린다(R1: 새 대기를 만들지 않는다). */
+  /**
+   * 스펙 §7.2 — 기존 취소를 그대로 시도. 그 자리에서 끝나지 않으면(박스 대기, 출고분 회수 이관) 되돌린다
+   * (R1: 새 대기·회수를 만들지 않는다).
+   */
   private async tryDecrease(
     order: EffectiveSalesOrder,
     delta: QuantityCorrectionDelta,
@@ -139,9 +146,8 @@ export class ChannelOrderChangeManager {
         if (!isDomainRefusal(error)) throw error;
         throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: errorDetail(error) });
       }
-      if (await this.reader.cancellationLeftPendingShipment(order.id, sourceEventId, sp)) {
-        throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: 'shipment cancellation would wait' });
-      }
+      const followUp = await this.reader.cancellationNeedsFollowUp(order.id, sourceEventId, sp);
+      if (followUp) throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: followUp });
     });
     return refusal ? { ...delta, outcome: 'pending', blockers: [refusal] } : { ...delta, outcome: 'applied' };
   }

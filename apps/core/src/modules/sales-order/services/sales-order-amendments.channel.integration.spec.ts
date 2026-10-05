@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { ambientDbService } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
@@ -112,6 +113,36 @@ describeIfDb('SalesOrderAmendmentsService 채널 기록·목록 (DB integration,
       const seen = [...first.items, ...second.items].map((item) => item.id).filter((id) => ids.includes(id));
       expect([...seen].sort()).toEqual([...ids].sort());
       expect(second.nextCursor).toBeNull();
+    });
+  });
+
+  it('판매주문의 정정 기록은 occurredAt·id 오름차순', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const service = new SalesOrderAmendmentsService(ambientDbService(tx));
+      const soId = await salesOrder(tx);
+      const later = new Date('2099-01-02T00:00:00.000Z');
+      const earlier = new Date('2099-01-01T00:00:00.000Z');
+      const written: Array<{ id: string; occurredAt: Date }> = [];
+      for (const occurredAt of [later, earlier, earlier]) {
+        const id = randomUUID();
+        await service.recordChannelAmendment(
+          { id, salesOrderId: soId, deltas: [PENDING], occurredAt, sourceEventId: `msg-${id}`, salesChannel: 'medusa', externalOrderId: 'ext' },
+          tx,
+        );
+        written.push({ id, occurredAt });
+      }
+      const expected = [...written]
+        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : 1))
+        .map((row) => row.id);
+      expect((await service.listForSalesOrder(soId, tx)).map((row) => row.id)).toEqual(expected);
+    });
+  });
+
+  it('도메인 예외로 거절한다 — 잘못된 커서는 BadRequestError, 없는 정정은 NotFoundError', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const service = new SalesOrderAmendmentsService(ambientDbService(tx));
+      await expect(service.list({ limit: 1, cursor: 'not-a-date' }, tx)).rejects.toBeInstanceOf(BadRequestError);
+      await expect(service.getOne(randomUUID(), tx)).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 });

@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, desc, eq, ne, notInArray, sql, type InferInsertModel } from 'drizzle-orm';
+import { and, asc, desc, eq, ne, notInArray, sql, type InferInsertModel } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   CreateSalesOrderAmendmentDto,
@@ -60,10 +61,10 @@ export class SalesOrderAmendmentsService {
         .limit(1);
 
       if (!salesOrder) {
-        throw new NotFoundException(`Sales order ${dto.salesOrderId} not found`);
+        throw new NotFoundError(`Sales order ${dto.salesOrderId} not found`);
       }
       if (salesOrder.status === 'cancelled') {
-        throw new BadRequestException('Cannot amend a cancelled SalesOrder');
+        throw new BadRequestError('Cannot amend a cancelled SalesOrder');
       }
 
       const originalLines = await trx
@@ -117,7 +118,7 @@ export class SalesOrderAmendmentsService {
       .where(eq(wmsTables.salesOrderAmendments.id, id))
       .limit(1);
     if (!amendment) {
-      throw new NotFoundException(`SalesOrderAmendment ${id} not found`);
+      throw new NotFoundError(`SalesOrderAmendment ${id} not found`);
     }
     return this.toResponse(amendment);
   }
@@ -127,7 +128,8 @@ export class SalesOrderAmendmentsService {
     const rows = await db
       .select()
       .from(wmsTables.salesOrderAmendments)
-      .where(eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId));
+      .where(eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.salesOrderAmendments.occurredAt), asc(wmsTables.salesOrderAmendments.id));
     return rows.map((row) => this.toResponse(row));
   }
 
@@ -137,7 +139,7 @@ export class SalesOrderAmendmentsService {
     if (dto.amendmentKind === 'fulfillment_only') {
       const commercialDelta = dto.deltas.find((delta) => !FULFILLMENT_ONLY_DELTA_TYPES.has(delta.type));
       if (commercialDelta) {
-        throw new BadRequestException(`fulfillment_only amendments cannot include ${commercialDelta.type} deltas`);
+        throw new BadRequestError(`fulfillment_only amendments cannot include ${commercialDelta.type} deltas`);
       }
       const deltaWithCommercialFields = dto.deltas.find((delta) =>
         FULFILLMENT_ONLY_FORBIDDEN_FIELDS.some((field) => delta[field] !== undefined),
@@ -146,7 +148,7 @@ export class SalesOrderAmendmentsService {
         const forbiddenFields = FULFILLMENT_ONLY_FORBIDDEN_FIELDS.filter(
           (field) => deltaWithCommercialFields[field] !== undefined,
         );
-        throw new BadRequestException(
+        throw new BadRequestError(
           `fulfillment_only amendments cannot include commercial fields: ${forbiddenFields.join(', ')}`,
         );
       }
@@ -160,7 +162,7 @@ export class SalesOrderAmendmentsService {
       );
       const missingLineId = referencedLineIds.find((lineId) => !originalLineIds.has(lineId));
       if (missingLineId) {
-        throw new BadRequestException(`SalesOrder line ${missingLineId} does not belong to the target SalesOrder`);
+        throw new BadRequestError(`SalesOrder line ${missingLineId} does not belong to the target SalesOrder`);
       }
     }
   }
@@ -176,30 +178,30 @@ export class SalesOrderAmendmentsService {
       case 'quantity_correction':
         this.requireFields(delta, ['salesOrderLineId']);
         if (delta.quantityDelta === undefined && delta.correctedQuantity === undefined) {
-          throw new BadRequestException('quantity_correction requires quantityDelta or correctedQuantity');
+          throw new BadRequestError('quantity_correction requires quantityDelta or correctedQuantity');
         }
         return;
       case 'amount_correction':
         if (delta.amountDelta === undefined && delta.correctedAmount === undefined) {
-          throw new BadRequestException('amount_correction requires amountDelta or correctedAmount');
+          throw new BadRequestError('amount_correction requires amountDelta or correctedAmount');
         }
         return;
       case 'fulfillment_only_correction':
         if (!delta.salesOrderLineId && !delta.fulfillmentInstruction) {
-          throw new BadRequestException(
+          throw new BadRequestError(
             'fulfillment_only_correction requires salesOrderLineId or fulfillmentInstruction',
           );
         }
         return;
       default:
-        throw new BadRequestException(`Unsupported amendment delta type: ${(delta as { type?: string }).type}`);
+        throw new BadRequestError(`Unsupported amendment delta type: ${(delta as { type?: string }).type}`);
     }
   }
 
   private requireFields(delta: SalesOrderAmendmentDeltaDto, fields: Array<keyof SalesOrderAmendmentDeltaDto>): void {
     const missing = fields.filter((field) => delta[field] === undefined || delta[field] === null);
     if (missing.length > 0) {
-      throw new BadRequestException(`${delta.type} requires ${missing.join(', ')}`);
+      throw new BadRequestError(`${delta.type} requires ${missing.join(', ')}`);
     }
   }
 
@@ -277,7 +279,7 @@ export class SalesOrderAmendmentsService {
     if (query.cursor) {
       const sep = query.cursor.lastIndexOf('|');
       const cursorDate = new Date(query.cursor.slice(0, sep));
-      if (sep < 0 || Number.isNaN(cursorDate.getTime())) throw new BadRequestException('Invalid cursor');
+      if (sep < 0 || Number.isNaN(cursorDate.getTime())) throw new BadRequestError('Invalid cursor');
       after = sql`(${occurredMs}, ${table.id}) < (${cursorDate.toISOString()}::timestamptz, ${query.cursor.slice(sep + 1)}::uuid)`;
     }
     const rows = await db

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -71,8 +71,10 @@ async function seedOrder(tx: DbTx, w: ReturnType<typeof wire>, opts: { withFo: b
     })
     .returning();
   const lineIds: string[] = [];
+  const skuIds: string[] = [];
   for (const line of lines) {
     const { skuId } = await seedSku(tx, holderId);
+    skuIds.push(skuId);
     await receiveStock(w.logistics.command, tx, { skuId, warehouseId, locationId, quantity: 10 });
     const variantId = randomUUID();
     await seedMatching(tx, { variantId, skuId, quantity: 1 });
@@ -91,7 +93,7 @@ async function seedOrder(tx: DbTx, w: ReturnType<typeof wire>, opts: { withFo: b
     lineIds.push(row.id);
   }
   if (opts.withFo) await w.logistics.fulfillments.create({ salesOrderId: so.id, warehouseId }, tx);
-  return { salesOrderId: so.id, externalOrderId: so.channelOrderId, lines, lineIds };
+  return { salesOrderId: so.id, externalOrderId: so.channelOrderId, lines, lineIds, skuIds, warehouseId };
 }
 
 function payload(
@@ -202,6 +204,32 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('배송지 — 출고지시·박스가 전부 떠났으면 판매주문 주소도 그대로이고 SHIPMENT_NOT_REVISABLE(already shipped) 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      for (const box of await boxesOf(tx, seed.salesOrderId)) {
+        await tx.update(wmsTables.shipments).set({ status: 'shipped' }).where(eq(wmsTables.shipments.id, box.id));
+      }
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'shipped', shippedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, seed.salesOrderId));
+      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+      const [so] = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      expect(so.shippingAddress).toEqual(ADDRESS);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.status).toBe('pending');
+      expect(row.deltas).toEqual([
+        expect.objectContaining({
+          type: 'shipping_address_change',
+          outcome: 'pending',
+          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: 'already shipped' }],
+        }),
+      ]);
+    });
+  });
+
   it('배송지 — 진행 중인 직배가 있으면 SHIPMENT_NOT_REVISABLE 대기', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
@@ -300,6 +328,67 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       ]);
       const boxes = await boxesOf(tx, seed.salesOrderId);
       expect(boxes.every((box) => box.status === 'planned')).toBe(true);
+    });
+  });
+
+  it('감소 — V1 출고지시(박스 이력 없음)에서 이미 출고된 수량이면 되돌리고 CANCEL_NOT_IMMEDIATE(취소·회수 이관 없음)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      // V2 박스가 없는 옛 출고지시 — `hasV2FulfillmentHistory` 가 거짓이라 `cancelPartial` 경로로 간다.
+      const [fo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({
+          salesOrderId: seed.salesOrderId,
+          warehouseId: seed.warehouseId,
+          status: 'shipped',
+          shippedAt: new Date(),
+          totalItems: 1,
+          totalQty: 2,
+          shippingAddress: ADDRESS,
+        })
+        .returning();
+      await tx.insert(wmsTables.fulfillmentOrderItems).values({
+        fulfillmentOrderId: fo.id,
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: seed.lineIds[0],
+        skuId: seed.skuIds[0],
+        qty: 2,
+        pickedQty: 2,
+        shippedQty: 2,
+        status: 'shipped',
+      });
+      const p = payload(seed, {});
+      p.snapshot.lines[0].quantity = 1;
+      const sourceEventId = `m-${randomUUID()}`;
+      await w.manager.handle(seed.salesOrderId, p, sourceEventId, tx);
+
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.status).toBe('pending');
+      expect(row.deltas).toEqual([
+        expect.objectContaining({
+          type: 'quantity_correction',
+          salesOrderLineId: seed.lineIds[0],
+          outcome: 'pending',
+          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'cancellation needs post-shipment follow-up' }],
+        }),
+      ]);
+      const cancellations = await tx
+        .select()
+        .from(wmsTables.salesOrderCancellations)
+        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
+      expect(cancellations).toEqual([]);
+      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(new Map());
+      const handoffLinks = await tx
+        .select()
+        .from(wmsTables.businessLinks)
+        .where(
+          and(
+            eq(wmsTables.businessLinks.sourceId, seed.salesOrderId),
+            like(wmsTables.businessLinks.relationName, 'cancellation_linked_post_shipment_%'),
+          ),
+        );
+      expect(handoffLinks).toEqual([]);
     });
   });
 
