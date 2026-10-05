@@ -3,6 +3,7 @@ import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import type { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
+import type { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
 import type {
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -39,6 +40,7 @@ describe('OrderEventsConsumer', () => {
       Pick<FulfillmentOrderCreationBacklogService, 'enqueueForSalesOrder' | 'closeOpenForSalesOrder'>
     >;
     workflowGate: jest.Mocked<Pick<FulfillmentWorkflowGate, 'shouldEnqueueFo'>>;
+    channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -92,6 +94,7 @@ describe('OrderEventsConsumer', () => {
       workflowGate: {
         shouldEnqueueFo: jest.fn().mockReturnValue(true),
       },
+      channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -106,6 +109,7 @@ describe('OrderEventsConsumer', () => {
       mocks.backlog as any,
       mocks.workflowGate as any,
       mocks.dbService as any,
+      mocks.channelOrderChanges as any,
     );
   }
 
@@ -471,35 +475,56 @@ describe('OrderEventsConsumer', () => {
     );
   });
 
-  it('OrderModified 는 수락된 판매주문 계약 데이터를 업데이트하지 않고 처리 이력만 남긴다', async () => {
+  it('OrderModified 는 채널 키로 판매주문을 찾아 한 번만 반영을 맡긴다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     const payload: OrderModifiedPayload = {
-      orderId: 'so-accepted-1',
+      orderId: 'wms-1',
       salesChannel: 'medusa',
-      externalOrderId: 'ext-accepted-1',
+      externalOrderId: 'ext-1',
       modifiedAt: new Date().toISOString(),
       snapshot: {
-        lines: [
-          { channelOrderItemId: 'line-1', channelProductId: 'variant-1', quantity: 2, unitPrice: 6000, cancelled: false },
-        ],
-        shippingAddress: { recipientName: 'R', phone: '', postalCode: '', roadAddress: 'Changed', detailAddress: '' },
+        lines: [],
+        shippingAddress: { recipientName: 'R', phone: '', postalCode: '', roadAddress: '', detailAddress: '' },
       },
     };
-    const modifiedEnvelope = {
-      messageId: 'modified-msg-1',
-      correlationId: 'corr-1',
-    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderModified'>;
-    mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
+    const envelope = { messageId: 'modified-msg-1', correlationId: 'c' } as EnvelopeOf<
+      typeof ORDER_STREAM,
+      'OrderModified'
+    >;
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
 
-    await consumer.handleOrderModified(payload, modifiedEnvelope);
+    await consumer.handleOrderModified(payload, envelope);
 
-    expect(mocks.txInserts).toHaveLength(1);
+    expect(mocks.salesOrders.findByChannelOrderId).toHaveBeenCalledWith('medusa', 'ext-1', expect.anything());
+    expect(mocks.channelOrderChanges.handle).toHaveBeenCalledWith('so-1', payload, 'modified-msg-1', expect.anything());
     expect(mocks.txInserts[0].values).toMatchObject({
       eventId: 'modified-msg-1',
-      orderId: payload.orderId,
+      orderId: 'so-1',
       eventType: 'ORDER_MODIFIED',
     });
+  });
+
+  it('OrderModified 가 판매주문을 못 찾으면 NotFound(비재시도) — 생성보다 변경이 먼저 올 수 없다(같은 파티션)', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue(null as any);
+    await expect(
+      consumer.handleOrderModified(
+        {
+          orderId: 'w',
+          salesChannel: 'naver',
+          externalOrderId: 'x',
+          modifiedAt: new Date().toISOString(),
+          snapshot: {
+            lines: [],
+            shippingAddress: { recipientName: 'R', phone: '', postalCode: '', roadAddress: '', detailAddress: '' },
+          },
+        },
+        { messageId: 'm', correlationId: 'c' } as EnvelopeOf<typeof ORDER_STREAM, 'OrderModified'>,
+      ),
+    ).rejects.toThrow(NotFoundException);
+    expect(mocks.channelOrderChanges.handle).not.toHaveBeenCalled();
   });
 
   it('OrderRefundCreated 는 판매주문 timeline 에 wallet_refund 업무 연결을 남긴다', async () => {
@@ -635,8 +660,8 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
     expect(policy?.nonRetryableErrors).toBeUndefined();
   });
 
-  it('leaves OrderModified on the default policy (수정 무시 = 의도적 무변경)', () => {
+  it('classifies OrderModified SO-not-found as non-retryable (즉시 DLQ, 스펙 §11)', () => {
     const policy = retryPolicyOf(proto.handleOrderModified);
-    expect(policy).toBeUndefined();
+    expect(policy?.nonRetryableErrors).toEqual([NotFoundException]);
   });
 });

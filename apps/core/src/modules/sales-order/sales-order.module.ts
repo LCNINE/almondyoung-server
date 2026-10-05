@@ -22,6 +22,9 @@ import { PoliciesService } from './services/policies.service';
 import { StoreSalesOrdersService } from './services/store-sales-orders.service';
 import { StoreReturnExchangeService } from './services/store-return-exchange.service';
 import { WalletRefundClient } from './services/wallet-refund.client';
+import { ChannelOrderChangeReader } from './channel-order-change/channel-order-change.reader';
+import { ChannelOrderChangeManager } from './channel-order-change/channel-order-change.manager';
+import { ChannelOrderChangeService } from './channel-order-change/channel-order-change.service';
 
 @Module({
   imports: [
@@ -82,6 +85,11 @@ import { WalletRefundClient } from './services/wallet-refund.client';
     StoreSalesOrdersService,
     StoreReturnExchangeService,
     WalletRefundClient,
+
+    // 수집 뒤 채널 변경(OrderModified) 반영 — #1016 5번 행
+    ChannelOrderChangeReader,
+    ChannelOrderChangeManager,
+    ChannelOrderChangeService,
 
     // 만료된 공동현관 비번 파기 배치. `ScheduleModule` 을 여기서 다시 import 하지 않는다 —
     // 전역으로 이미 떠 있는 단 하나의 `SCHEDULE_ROOT`(CoreInventoryModule 이 import)의

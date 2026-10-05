@@ -4,6 +4,7 @@ import { DbService } from '@app/db';
 import { EventPayload, EventEnvelope, RetryPolicy, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
@@ -33,6 +34,7 @@ export class OrderEventsConsumer {
     private readonly fulfillmentWorkflowGate: FulfillmentWorkflowGate,
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly channelOrderChanges: ChannelOrderChangeService,
   ) {}
 
   private async checkAndRecordEvent(
@@ -256,44 +258,36 @@ export class OrderEventsConsumer {
     }
   }
 
+  /**
+   * 수집 뒤 채널 변경 (#1016 5번 행). 판정·반영은 `ChannelOrderChangeService` 가 한다.
+   * 공동현관 비밀번호는 이 이벤트에 없다 — «없음»을 «지워라»로 읽지 않는다(core 가 정본).
+   */
   @On(ORDER_STREAM, 'OrderModified')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderModified(
     @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderModified'>,
     @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderModified'>,
   ) {
-    this.logger.log(`[OrderModified] Received: orderId=${payload.orderId}`, {
+    this.logger.log(`[OrderModified] Received: ${payload.salesChannel}/${payload.externalOrderId}`, {
       correlationId: envelope.correlationId,
     });
-
-    try {
-      await this.dbService.run(async (tx) => {
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
-          this.logger.warn(`[OrderModified] Sales order not found, skipping: ${payload.orderId}`);
-          return;
-        }
-
-        const alreadyProcessed = await this.checkAndRecordEvent(
-          envelope.messageId,
-          payload.orderId,
-          'ORDER_MODIFIED',
-          payload,
-          tx,
+    await this.dbService.run(async (tx) => {
+      const salesOrderId = await this.resolveSalesOrderId(payload, tx);
+      if (!salesOrderId) {
+        throw new NotFoundException(
+          `Sales order ${payload.salesChannel}/${payload.externalOrderId} not found for OrderModified`,
         );
-        if (alreadyProcessed) return;
-
-        // 여기가 no-op 이라는 사실이 sales_orders.entrance_password 의 리플레이 안전성을 보장한다.
-        // 나중에 이 핸들러가 실제로 변경을 적용하게 된다면, OrderModified 페이로드에는
-        // entrancePassword 가 실리지 않으므로(계약상 changes 에 없음) "이벤트에 없음"을
-        // "지워라"로 해석하면 안 된다 — core 가 이 값의 SoT 이며, 정정은 운영자 경로로만 이뤄진다.
-        this.logger.warn(
-          `[OrderModified] Ignored post-acceptance contract mutation for sales order: ${payload.orderId}`,
-        );
-      });
-    } catch (error) {
-      this.logger.error(`[OrderModified] Failed to process: ${payload.orderId}`, error.stack);
-      throw error;
-    }
+      }
+      const alreadyProcessed = await this.checkAndRecordEvent(
+        envelope.messageId,
+        salesOrderId,
+        'ORDER_MODIFIED',
+        payload,
+        tx,
+      );
+      if (alreadyProcessed) return;
+      await this.channelOrderChanges.handle(salesOrderId, payload, envelope.messageId, tx);
+    });
   }
 
   @On(ORDER_STREAM, 'OrderRefundCreated')
