@@ -36,6 +36,7 @@ import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss
 import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
 import { CustomTossCheckout } from '@/components/payment/custom-toss-checkout';
 import { stagePaymentPreference, type PaymentPreference } from '@/lib/payment-preference';
+import { isTossWidgetReady } from '@/lib/toss-widget-readiness';
 import type { CheckoutSelection } from '@/components/payment/card-checkout';
 import type { TossPaymentsBrandpay, TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import {
@@ -201,10 +202,12 @@ export function PayForm({
       return;
     }
     if (
-      !custom &&
-      isTossSelected &&
-      tossWidgetConfig &&
-      (tossWidgetReadyAmount !== remaining || !tossWidgetsRef.current)
+      !isTossWidgetReady(
+        remaining,
+        !custom && isTossSelected && !!tossWidgetConfig,
+        tossWidgetReadyAmount,
+        !!tossWidgetsRef.current,
+      )
     ) {
       setError('토스 결제 UI를 준비하고 있습니다. 잠시 후 다시 시도해주세요.');
       return;
@@ -369,7 +372,12 @@ export function PayForm({
 
   const canConfirm =
     (remainingAmount === 0 || !!selectedMethodId) &&
-    (!isTossSelected || !tossWidgetConfig || tossWidgetReadyAmount === remainingAmount);
+    isTossWidgetReady(
+      remainingAmount,
+      isTossSelected && !!tossWidgetConfig,
+      tossWidgetReadyAmount,
+      !!tossWidgetsRef.current,
+    );
 
   if (bankTransferPending) {
     return (
