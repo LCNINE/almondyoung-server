@@ -115,7 +115,11 @@ export class PaymentIntentsController {
     if (!body.code || typeof body.code !== 'string') {
       throw new BadRequestException({ error: 'BRANDPAY_CODE_REQUIRED' });
     }
-    if (!process.env.TOSS_WIDGET_SECRET_KEY) {
+    if (
+      !(process.env.TOSS_CHECKOUT_MODE === 'CUSTOM'
+        ? process.env.TOSS_BRANDPAY_SECRET_KEY
+        : process.env.TOSS_WIDGET_SECRET_KEY)
+    ) {
       throw new BadRequestException({ error: 'TOSS_WIDGET_NOT_CONFIGURED' });
     }
     await this.claimOrVerify(id, req.jwtUserId);

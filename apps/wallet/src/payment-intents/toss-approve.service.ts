@@ -9,7 +9,7 @@ import { StateTransitionService } from '../domain/state-transition/state-transit
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { TossApiClient } from '../providers/toss/toss-api.client';
 import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
-import { usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { usesTossWidget, usesCustomTossCheckout } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
 
@@ -68,7 +68,13 @@ export class TossApproveService {
 
     // 3. Call Toss API confirm
     const result = customerKey
-      ? await this.tossApi.confirmBrandPayPayment(paymentKey, amount, orderId, customerKey)
+      ? await this.tossApi.confirmBrandPayPayment(
+          paymentKey,
+          amount,
+          orderId,
+          customerKey,
+          ...(usesCustomTossCheckout(charge.responsePayload) ? [false] : []),
+        )
       : await this.tossApi.confirmPayment(paymentKey, amount, orderId, usesTossWidget(charge.responsePayload));
     this.logger.log(`Toss API confirm response: ok=${result.ok}`);
 
@@ -81,7 +87,7 @@ export class TossApproveService {
       });
     }
 
-    await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
+    await this.finalizeApproval(charge, result.data.paymentKey, correlationId, paymentType);
   }
 
   /**
@@ -159,6 +165,7 @@ export class TossApproveService {
             staged.amount,
             staged.orderId,
             staged.customerKey!,
+            ...(usesCustomTossCheckout(charge.responsePayload) ? [false] : []),
           )
         : await this.tossApi.confirmPayment(
             staged.providerToken,
@@ -177,15 +184,28 @@ export class TossApproveService {
       });
     }
 
-    await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
+    await this.finalizeApproval(charge, result.data.paymentKey, correlationId, staged.paymentType);
   }
 
-  async finalizeApproval(charge: Charge, paymentKey: string, correlationId: string): Promise<void> {
+  async finalizeApproval(
+    charge: Charge,
+    paymentKey: string,
+    correlationId: string,
+    paymentType?: string,
+  ): Promise<void> {
     const intent = await this.loadIntent(charge.intentId);
     const now = new Date().toISOString();
 
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(charge.id, 'SUCCEEDED', { providerTransactionId: paymentKey }, tx);
+      await this.chargesService.updateStatus(
+        charge.id,
+        'SUCCEEDED',
+        {
+          providerTransactionId: paymentKey,
+          ...(paymentType ? { responsePayload: { ...(charge.responsePayload ?? {}), paymentType } } : {}),
+        },
+        tx,
+      );
 
       await this.stateTransitionService.transitionIntent(
         intent.id,
