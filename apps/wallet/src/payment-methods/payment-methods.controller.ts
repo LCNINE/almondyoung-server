@@ -89,6 +89,24 @@ export class PaymentMethodsController {
     };
   }
 
+  @Get('toss-card-promotions')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'Get current card interest-free installment promotions' })
+  async getCardPromotions(@Req() req: AuthenticatedRequest) {
+    if (!req.jwtUserId) throw new UnauthorizedException({ error: 'UNAUTHORIZED' });
+    const clientKey = process.env.TOSS_WIDGET_CLIENT_KEY;
+    if (!clientKey) throw new BadRequestException({ error: 'TOSS_WIDGET_NOT_CONFIGURED' });
+    const url = new URL('https://payment-widget.tosspayments.com/free-installment');
+    url.searchParams.set('client-key', clientKey);
+    url.searchParams.set('variant-key', process.env.TOSS_WIDGET_VARIANT_KEY ?? 'DEFAULT');
+    const promotions = await this.tossApi.getCardPromotions();
+    return {
+      url: url.toString(),
+      interestFreeCards: promotions.ok ? promotions.data.interestFreeCards : [],
+      testMode: process.env.TOSS_SECRET_KEY?.startsWith('test_') ?? false,
+    };
+  }
+
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Register a payment method (API-key authenticated, merchant backend)' })
