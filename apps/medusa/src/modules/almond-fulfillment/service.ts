@@ -64,7 +64,10 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     data: Record<string, unknown>,
     _context?: unknown,
   ): Promise<Record<string, unknown>> {
-    const { policy, shippingGroupCode, shippingProfileId } = this.readOptionData(optionData);
+    // 정책 없는 옵션(고정가 등)은 calculatePrice 가 안 돌 수 있다 — 거절하지 않고 스냅샷만 생략한다.
+    const option = this.tryReadOptionData(optionData);
+    if (!option) return data ?? {};
+    const { policy, shippingGroupCode, shippingProfileId } = option;
     const snapshot: ShippingPolicySnapshot = { policy, shippingGroupCode, shippingProfileId };
     return { ...(data ?? {}), [POLICY_SNAPSHOT_KEY]: snapshot };
   }
@@ -97,14 +100,9 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     return {};
   }
 
-  private readOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData {
+  private tryReadOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData | null {
     const data = optionData as unknown as Partial<ShippingGroupOptionData>;
-    if (!data?.policy || !data.shippingProfileId) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `[almond-fulfillment] shipping option 의 data 에 배송비 그룹 정책이 없다. data=${JSON.stringify(optionData)}`,
-      );
-    }
+    if (!data?.policy || !data.shippingProfileId) return null;
     return {
       policy: data.policy,
       shippingProfileId: data.shippingProfileId,
@@ -112,6 +110,17 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
       areaTemplateCode: data.areaTemplateCode,
       delivery: data.delivery ?? DEFAULT_SHIPPING_GROUP_DELIVERY,
     };
+  }
+
+  private readOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData {
+    const read = this.tryReadOptionData(optionData);
+    if (!read) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[almond-fulfillment] shipping option 의 data 에 배송비 그룹 정책이 없다. data=${JSON.stringify(optionData)}`,
+      );
+    }
+    return read;
   }
 
   /**

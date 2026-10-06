@@ -13,7 +13,9 @@ describe('validateFulfillmentData', () => {
     expect(out).toEqual({ foo: 1, policySnapshot: { policy: optionData.policy, shippingGroupCode: 'g1', shippingProfileId: 'sp_1' } });
   });
 
-  it('옵션에 정책이 없으면 지금처럼 거절한다', async () => {
-    await expect(svc.validateFulfillmentData({}, {}, {} as any)).rejects.toThrow();
+  it('옵션에 정책이 없으면 스냅샷 없이 data 를 그대로 통과시킨다 — 체크아웃을 막지 않는다', async () => {
+    const out = await svc.validateFulfillmentData({}, { foo: 1 }, {} as any);
+    expect(out).toEqual({ foo: 1 });
+    expect(out).not.toHaveProperty('policySnapshot');
   });
 });
