@@ -66,7 +66,7 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 | D6 | 부분취소의 배송비 | **주문 시점 정책으로 다시 계산해 차이를 반영.** 그룹 통째 취소 → 그 그룹 배송비 환불, 조건부 무료 미달 → 기본 배송비 차감, 수량당 → 차액 환불. 차감은 그 부분취소의 상품 환불액을 넘지 않는다(고객 추가 청구 없음) | 손대지 않음: 그룹이 통째로 비어도 배송비를 안 돌려준다 / 고객 유리한 쪽만: 무료배송 기준을 맞추려 담았다 빼는 손해를 회사가 진다 |
 | D7 | 스냅샷 없는 주문 | **배송비 미조정 + 표시.** 배포 전 주문, 구매 뒤 상품의 배송 그룹이 바뀐 주문 | 지금 정책으로 계산: 그사이 정책을 바꾼 그룹이면 조용히 틀린다 |
 | D8 | 31번 행 | **이 스펙이 닫는다.** 출고된 몫이 있는 전체취소 요청 → 출고 안 된 몫의 부분취소로 바꾼다 | 컷오버 준비 때 따로 |
-| D9 | 배송비를 «돌려주는» 장부 처리 | **크레딧 라인.** 환불한 배송비만큼 `createOrderRefundCreditLinesWorkflow` — Medusa `cancelOrderWorkflow` 가 쓰는 같은 패턴 | 원래 배송 방법을 `SHIPPING_REMOVE` + `SHIPPING_ADD` 로 갈기: 동작 종류는 문서에 있지만 core-flows 어디에도 원래 배송 방법에 쓰는 워크플로가 없다. 업그레이드 때 우리만 깨진다. 최신 문서의 `SHIPPING_ADJUSTMENTS_REPLACE` 는 2.13.4 에 없다 |
+| D9 | 배송비를 «돌려주는» 장부 처리 | **크레딧 라인.** 별도 단계는 없다 — 표준 `refundPaymentWorkflow` 가 돌려줄 금액을 넘는 환불 몫(= 환불한 배송비)에 크레딧 라인을 스스로 붙인다(§6.2-7) | 원래 배송 방법을 `SHIPPING_REMOVE` + `SHIPPING_ADD` 로 갈기: 동작 종류는 문서에 있지만 core-flows 어디에도 원래 배송 방법에 쓰는 워크플로가 없다. 업그레이드 때 우리만 깨진다. 최신 문서의 `SHIPPING_ADJUSTMENTS_REPLACE` 는 2.13.4 에 없다 |
 | D10 | 자동 취소 불가 채널(네이버·쿠팡) | **명령을 보내지 않는다.** core 가 요청을 거절하고 admin-web 은 «○○ 판매자센터에서 취소»만 보인다. 채널의 취소는 지금처럼 수집으로만 받는다 | 명령을 보내 «수동 처리 필요»로 돌려받기: 받아들이기만 하는 채널에 왕복이 하나 더 생긴다 |
 | D11 | 결과 통지 | **거절, 그리고 «수정됨 · 환불 미완» 진행만 사실로 낸다.** 성공은 재수집된 `OrderCancelled`/`OrderModified` 가 곧 사실이다 | 성공 사실도 발행: 같은 사실이 두 경로로 온다 / 진행 사실 없이: core 가 Medusa 안의 단계를 몰라 가장 급한 상태(주문은 줄고 돈은 안 돌아감)를 구분 못 한다 |
 | D12 | ADR | **새 ADR-0042** 가 ADR-0040 §5.5 를 부분 대체 | §5.5 개정 |
@@ -251,7 +251,7 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 
 - Medusa 가 시작하지 않은 wallet 환불 사실이 오면 `handleRefundProjection` 이 metadata 기록에 더해 **Medusa 환불 레코드를 만든다**.
   이를 위해 `gateway.refund.succeeded` 를 `REFUND_EVENT_TYPES` 에 더해 연결했다(§1 — 그 전엔 버려졌다). **배포 즉시 이 투영이
-  라이브에서 처음 돈다**
+  라이브에서 처음 돈다**(코드 추론, 라이브 미실측)
 - 캡처 투영(`handleCaptureProjection` 의 `captured: true`)과 같은 패턴: 결제 `data` 에 단일 표식
   `externalRefund: { walletRefundId, amount }` 를 남기고 `refundPaymentWorkflow` 를 돌리면, `almond-payment.refundPayment` 가
   표식(금액이 같을 때)을 보고 wallet 호출을 건너뛰며 표식을 `null` 로 지운다(§6.2 의 JSON 병합 함정)
