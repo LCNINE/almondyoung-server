@@ -24,6 +24,7 @@ import { StoreReturnExchangeService } from './services/store-return-exchange.ser
 import { WalletRefundClient } from './services/wallet-refund.client';
 import { ChannelOrderChangeReader } from './channel-order-change/channel-order-change.reader';
 import { ChannelOrderChangeManager } from './channel-order-change/channel-order-change.manager';
+import { ChannelAmendmentActionsService } from './channel-order-change/channel-amendment-actions.service';
 import { ChannelOrderChangeService } from './channel-order-change/channel-order-change.service';
 
 @Module({
@@ -90,6 +91,7 @@ import { ChannelOrderChangeService } from './channel-order-change/channel-order-
     ChannelOrderChangeReader,
     ChannelOrderChangeManager,
     ChannelOrderChangeService,
+    ChannelAmendmentActionsService,
 
     // 만료된 공동현관 비번 파기 배치. `ScheduleModule` 을 여기서 다시 import 하지 않는다 —
     // 전역으로 이미 떠 있는 단 하나의 `SCHEDULE_ROOT`(CoreInventoryModule 이 import)의

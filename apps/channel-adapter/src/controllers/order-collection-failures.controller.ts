@@ -28,7 +28,7 @@ export class OrderCollectionFailuresController {
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ['quarantined', 'replayed', 'closed_lifecycle', 'closed_already_collected'],
+    enum: ['quarantined', 'replayed', 'closed_lifecycle', 'closed_already_collected', 'closed_obsolete'],
   })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })

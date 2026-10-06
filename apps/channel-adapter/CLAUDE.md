@@ -87,6 +87,7 @@ OrderPollerOrchestrator (@Cron 5분)
 - 증분 수집은 `sync_statuses.lastSyncAt` 에서 2분을 되감아 조회한다. 중복은 `wms_order_mappings`와 change hash로 흡수하고, `updated_at` 경계 주문 누락을 피하는 것이 우선이다.
 - 수집된 주문의 해시가 바뀌면 `OrderModified`(전체 스냅샷)를 보낸다. 반영·대기 판정은 core 가 한다(#1016 5번 행, `docs/superpowers/specs/2026-10-05-channel-order-change-sync-design.md`). 기존 `collected_order_modification_not_accepted` 행은 남고 replay 는 계속 거부된다. CS 주문 정정/추가출고는 별도 Core workflow 에서 다룬다.
 - 주문 하나를 지금 다시 끌어오는 입구: `POST /adapter/orders/:channel/:externalOrderId/sync`(내부 키, 본문 `{ force?: boolean }`). 폴링과 같은 `processOrderItem` + lifecycle 을 타고 워터마크는 건드리지 않는다. `force` 는 해시가 같아도 `OrderModified` 를 낸다(백필 전용). 지원 `medusa`·`naver`, 비활성 채널은 409.
+- core 는 이 앱을 직접 부르지 않는다. 채널 쪽 일을 원하면 `channel-orders.commands.v1` 에 명령을 낸다(지금은 `ResyncChannelOrder` — #1016 6번 행). 소비자는 `consumers/channel-orders-command.consumer.ts`.
 
 ### 3-5b. 채널 능력 레지스트리 (ADR-0031)
 `src/services/channel-capabilities.ts` 의 `CHANNEL_CAPABILITIES` 가 채널 차이의 **유일한 선언
