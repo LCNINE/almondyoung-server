@@ -74,8 +74,8 @@ export function SheetSelect({ value, options, onChange, title, placeholder, trig
                   }}
                   className="flex w-full items-center justify-between px-3 py-4 text-left"
                 >
-                  <span className={isSelected ? 'font-semibold text-[#ffa500]' : 'text-gray-800'}>{option.label}</span>
-                  {isSelected && <Check className="h-5 w-5 text-[#ffa500]" />}
+                  <span className={isSelected ? 'font-semibold text-primary' : 'text-gray-800'}>{option.label}</span>
+                  {isSelected && <Check className="h-5 w-5 text-primary" />}
                 </button>
               );
             })}

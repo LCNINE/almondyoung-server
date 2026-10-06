@@ -10,6 +10,7 @@ import {
   getAvailablePaymentMethods,
   getMyBusinessLicense,
   getBankTransferDepositAccount,
+  getTossWidgetConfig,
 } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
@@ -24,12 +25,12 @@ export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ region?: string; toss_fail?: string }>;
+  searchParams: Promise<{ region?: string; toss_fail?: string; brandpay_error?: string }>;
 }
 
 export default async function PayPage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { region, toss_fail } = await searchParams;
+  const { region, toss_fail, brandpay_error } = await searchParams;
 
   const cookieStore = await cookies();
 
@@ -65,6 +66,9 @@ export default async function PayPage({ params, searchParams }: Props) {
     // region 명시 → 가용 결제수단 목록. 조회 실패해도 [] 로 막아, 설정 안 된 리전에 다른 리전(KR) 수단이 새지 않게 한다.
     region ? getAvailablePaymentMethods(region, cookieHeader).catch(() => []) : Promise.resolve(null),
   ]);
+  const tossWidgetConfig = methods.some((method) => method.type === 'TOSS')
+    ? await getTossWidgetConfig(cookieHeader).catch(() => null)
+    : null;
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
@@ -144,8 +148,10 @@ export default async function PayPage({ params, searchParams }: Props) {
       availableMethods={availableMethods}
       region={region ?? null}
       tossFailed={toss_fail === '1'}
+      brandpayFailed={brandpay_error === '1'}
       businessInfo={businessInfo}
       depositAccount={depositAccount}
+      tossWidgetConfig={tossWidgetConfig}
     />
   );
 }
