@@ -18,7 +18,7 @@ type SalesOrderLineRow = typeof wmsTables.salesOrderLines.$inferSelect;
 const AMENDMENT_REF_TYPE = 'sales_order_amendment';
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const FULFILLMENT_ONLY_DELTA_TYPES = new Set<SalesOrderAmendmentDeltaType>(['fulfillment_only_correction']);
-export type AmendmentStatus = 'applied' | 'pending' | 'superseded';
+export type AmendmentStatus = 'applied' | 'pending' | 'superseded' | 'dismissed';
 export type AmendmentOrigin = 'channel' | 'operator';
 export interface AmendmentListItem {
   id: string;
@@ -30,6 +30,7 @@ export interface AmendmentListItem {
   status: AmendmentStatus;
   deltas: unknown[];
   occurredAt: Date;
+  resyncRequestedAt: Date | null;
 }
 const HIDDEN_ORDER_STATUSES = ['cancelled', 'timeout'] as const;
 const FULFILLMENT_ONLY_FORBIDDEN_FIELDS: Array<keyof SalesOrderAmendmentDeltaDto> = [
@@ -293,6 +294,7 @@ export class SalesOrderAmendmentsService {
         status: table.status,
         deltas: table.deltas,
         occurredAt: table.occurredAt,
+        resyncRequestedAt: table.resyncRequestedAt,
       })
       .from(table)
       .innerJoin(orders, eq(orders.id, table.salesOrderId))

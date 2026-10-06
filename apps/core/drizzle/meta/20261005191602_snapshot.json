@@ -1,5 +1,5 @@
 {
-  "id": "f719d74c-2be3-4c13-83f3-9ffff9cc2c44",
+  "id": "769ba344-b66e-4470-8cc9-628583fa542e",
   "prevId": "ee935e2b-bc1a-48cf-adf2-5fa6e3572c33",
   "version": "7",
   "dialect": "postgresql",
@@ -10725,111 +10725,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.order_progress": {
-      "name": "order_progress",
-      "schema": "",
-      "columns": {
-        "sales_order_id": {
-          "name": "sales_order_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "sales_channel": {
-          "name": "sales_channel",
-          "type": "sales_channel",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ordered_at": {
-          "name": "ordered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stage": {
-          "name": "stage",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stage_entered_at": {
-          "name": "stage_entered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evaluated_at": {
-          "name": "evaluated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_order_progress_open_stage": {
-          "name": "idx_order_progress_open_stage",
-          "columns": [
-            {
-              "expression": "stage",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "stage_entered_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"order_progress\".\"outcome\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "order_progress_sales_order_id_sales_orders_id_fk": {
-          "name": "order_progress_sales_order_id_sales_orders_id_fk",
-          "tableFrom": "order_progress",
-          "tableTo": "sales_orders",
-          "columnsFrom": [
-            "sales_order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.outbound_batch_work_items": {
       "name": "outbound_batch_work_items",
       "schema": "",
@@ -14546,6 +14441,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dismissed_by": {
+          "name": "dismissed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dismiss_note": {
+          "name": "dismiss_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resync_requested_at": {
+          "name": "resync_requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -14714,7 +14633,7 @@
         },
         "sales_order_amendments_status_check": {
           "name": "sales_order_amendments_status_check",
-          "value": "\"sales_order_amendments\".\"status\" IN ('applied', 'pending', 'superseded')"
+          "value": "\"sales_order_amendments\".\"status\" IN ('applied', 'pending', 'superseded', 'dismissed')"
         }
       },
       "isRLSEnabled": false

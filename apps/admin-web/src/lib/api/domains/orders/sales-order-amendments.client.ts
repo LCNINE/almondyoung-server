@@ -17,4 +17,10 @@ export const salesOrderAmendmentsClient = {
     const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(salesOrderId)}/amendments`);
     return toAmendmentRecords(response.data);
   },
+  dismiss: async (id: string, note?: string): Promise<void> => {
+    await client.post(`${ALMONDYOUNG_API_BASE_URL}/sales-order-amendments/${encodeURIComponent(id)}/dismiss`, { note });
+  },
+  resync: async (id: string): Promise<void> => {
+    await client.post(`${ALMONDYOUNG_API_BASE_URL}/sales-order-amendments/${encodeURIComponent(id)}/resync`);
+  },
 };

@@ -10,6 +10,7 @@ import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
 import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
+import { suppressDismissed } from './channel-change-dismissal';
 import {
   CHANNEL_ORDER_MODIFIED_REASON,
   ChannelBlocker,
@@ -56,11 +57,14 @@ export class ChannelOrderChangeManager {
     for (const delta of deltas) {
       recorded.push(await this.settle(order, delta, { amendmentId, allRemoved, occurredAt: payload.modifiedAt }, tx));
     }
+    // 운영자가 무시한 차이와 똑같은 차이면 pending 을 다시 띄우지 않는다(#1016 6번 행 §6).
+    const dismissed = await this.reader.latestDismissedChannelDeltas(salesOrderId, tx);
+    const kept = suppressDismissed(recorded, dismissed);
     await this.amendments.recordChannelAmendment(
       {
         id: amendmentId,
         salesOrderId,
-        deltas: recorded,
+        deltas: kept,
         occurredAt: new Date(payload.modifiedAt),
         sourceEventId,
         salesChannel: payload.salesChannel,

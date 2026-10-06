@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { toShippingAddress } from './channel-order-diff';
@@ -13,6 +13,19 @@ const HANDED_OFF_DIRECT_SHIP_STATUSES = ['forwarded', 'completed'] as const;
 @Injectable()
 export class ChannelOrderChangeReader {
   constructor(private readonly salesOrders: SalesOrdersService) {}
+
+  /** 그 판매주문의 가장 최근 «무시» 채널 행의 델타(스펙 §6.2). 없으면 null. */
+  async latestDismissedChannelDeltas(salesOrderId: string, tx: DbTx): Promise<unknown[] | null> {
+    const table = wmsTables.salesOrderAmendments;
+    const [row] = await tx
+      .select({ deltas: table.deltas })
+      .from(table)
+      .where(and(eq(table.salesOrderId, salesOrderId), eq(table.origin, 'channel'), eq(table.status, 'dismissed')))
+      .orderBy(sql`${table.dismissedAt} DESC NULLS LAST`, desc(table.id))
+      .limit(1);
+    if (!row) return null;
+    return Array.isArray(row.deltas) ? row.deltas : [];
+  }
 
   /** 판매주문을 FOR UPDATE 로 잡고 «지금 유효한» 모양으로 읽는다(스펙 §6). 없으면 null. */
   async lockEffectiveOrder(salesOrderId: string, tx: DbTx): Promise<EffectiveSalesOrder | null> {

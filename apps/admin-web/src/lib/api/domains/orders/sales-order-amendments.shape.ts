@@ -4,6 +4,8 @@
 // 화면이 읽는 판정은 전부 여기서 하고 스펙으로 지킨다. 인터셉터가 `{ success, data }` 를 이미
 // 벗기지만, 술어가 바뀌어도 화면이 조용히 비지 않게 두 모양을 다 받는다(order-collection-failures.shape 와 같은 이유).
 
+import { parseServerError } from '@/lib/api/server-error';
+
 export type AmendmentDelta = Record<string, unknown> & { type?: unknown };
 
 export interface AmendmentRecord {
@@ -13,6 +15,9 @@ export interface AmendmentRecord {
   status: string;
   deltas: AmendmentDelta[];
   occurredAt: string;
+  dismissedAt?: string | null;
+  dismissNote?: string | null;
+  resyncRequestedAt?: string | null;
 }
 
 export interface AmendmentListItem extends AmendmentRecord {
@@ -102,4 +107,34 @@ export function blockerCodes(delta: AmendmentDelta): string[] {
   return Array.isArray(delta.blockers)
     ? delta.blockers.flatMap((blocker) => (isRecord(blocker) && typeof blocker.code === 'string' ? [blocker.code] : []))
     : [];
+}
+
+/** «다시 확인»은 결과가 돌아오지 않는다(스펙 D5) — 요청 시각만 보여 주고, 오래 그대로면 사람이 알아챈다. */
+export function resyncLabel(resyncRequestedAt: string | null | undefined, now: Date): string | null {
+  if (!resyncRequestedAt) return null;
+  const at = new Date(resyncRequestedAt).getTime();
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.floor((now.getTime() - at) / 60_000);
+  if (minutes < 1) return '확인 요청 방금';
+  if (minutes < 60) return `확인 요청 ${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `확인 요청 ${hours}시간 전`;
+  return `확인 요청 ${Math.floor(hours / 24)}일 전`;
+}
+
+const shortDate = new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric', timeZone: 'Asia/Seoul' });
+
+export function dismissedLabel(record: Pick<AmendmentRecord, 'dismissedAt' | 'dismissNote'>): string {
+  const parts = ['무시됨'];
+  if (record.dismissedAt) parts.push(shortDate.format(new Date(record.dismissedAt)));
+  if (record.dismissNote) parts.push(record.dismissNote);
+  return parts.join(' · ');
+}
+
+/**
+ * 무시·다시 확인이 409 로 거절됐는가. 409 는 그 행이 이미 닫혔거나 새 변경에 대체됐다는 뜻이라 다시 읽은 목록이 답이다 —
+ * 알릴 것이 없다. 그 밖의 실패는 아무것도 바뀌지 않았으니 알려야 한다(안 알리면 클릭이 먹힌 줄 안다).
+ */
+export function isConflict(error: unknown): boolean {
+  return parseServerError(error).conflict;
 }

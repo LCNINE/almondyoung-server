@@ -24,12 +24,7 @@
     },
     "close": "閉じる"
   },
-  "pageSize": {
-    "label": "1ページの作品数",
-    "option": "{count}件ずつ表示"
-  },
   "entryCount": "{count}作品",
-  "sortLabel": "作品の並び替え",
   "paginationLabel": "作品のページ",
   "previousPage": "前のページ",
   "nextPage": "次のページ",
@@ -40,10 +35,6 @@
   "homeDescription": "気に入ったロゴに投票してください",
   "viewAll": "すべて見る",
   "join": "参加する",
-  "sort": {
-    "latest": "新着順",
-    "popular": "人気順"
-  },
   "voteCount": "{count}票",
   "winner": "大賞",
   "empty": "まだ応募作品がありません。最初の応募をしてみませんか。",

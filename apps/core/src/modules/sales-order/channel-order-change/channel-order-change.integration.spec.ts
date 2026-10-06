@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -509,4 +509,70 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       });
     },
   );
+
+  async function dismissLatestPending(tx: DbTx, salesOrderId: string) {
+    const [row] = await tx
+      .select({ id: wmsTables.salesOrderAmendments.id })
+      .from(wmsTables.salesOrderAmendments)
+      .where(and(eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId), eq(wmsTables.salesOrderAmendments.status, 'pending')))
+      .orderBy(desc(wmsTables.salesOrderAmendments.createdAt))
+      .limit(1);
+    await tx
+      .update(wmsTables.salesOrderAmendments)
+      .set({ status: 'dismissed', dismissedAt: new Date() })
+      .where(eq(wmsTables.salesOrderAmendments.id, row.id));
+    return row.id;
+  }
+
+  it('무시 — 똑같은 스냅샷이 다시 오면 pending 이 생기지 않고 무시 행은 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      const increased = payload(seed, {
+        lines: seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? 5 : line.qty, unitPrice: 1000, cancelled: false })),
+      });
+      await w.manager.handle(seed.salesOrderId, increased, `msg-${randomUUID()}`, tx);
+      const dismissedId = await dismissLatestPending(tx, seed.salesOrderId);
+
+      await w.manager.handle(seed.salesOrderId, { ...increased, orderId: randomUUID() }, `msg-${randomUUID()}`, tx);
+
+      const rows = await amendmentsOf(tx, seed.salesOrderId);
+      expect(rows.filter((row) => row.status === 'pending')).toHaveLength(0);
+      expect(rows.find((row) => row.id === dismissedId)?.status).toBe('dismissed');
+    });
+  });
+
+  it('무시 — 새 범위 밖 차이가 섞이면 델타 전부를 담은 pending 하나', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      const lineOf = (qty0: number, qty1: number) =>
+        seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? qty0 : qty1, unitPrice: 1000, cancelled: false }));
+      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: lineOf(5, 1) }), `msg-${randomUUID()}`, tx);
+      await dismissLatestPending(tx, seed.salesOrderId);
+
+      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: lineOf(5, 4) }), `msg-${randomUUID()}`, tx);
+
+      const pending = (await amendmentsOf(tx, seed.salesOrderId)).filter((row) => row.status === 'pending');
+      expect(pending).toHaveLength(1);
+      expect(pending[0].deltas).toHaveLength(2);
+    });
+  });
+
+  it('무시 — 뒤이어 반영 가능한 주소 변경이 오면 applied 행 하나, pending 0, 무시 행 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      const increasedLines = seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? 5 : line.qty, unitPrice: 1000, cancelled: false }));
+      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: increasedLines }), `msg-${randomUUID()}`, tx);
+      const dismissedId = await dismissLatestPending(tx, seed.salesOrderId);
+
+      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: increasedLines, shippingAddress: NEXT }), `msg-${randomUUID()}`, tx);
+
+      const rows = await amendmentsOf(tx, seed.salesOrderId);
+      expect(rows.filter((row) => row.status === 'pending')).toHaveLength(0);
+      expect(rows.filter((row) => row.status === 'applied')).toHaveLength(1);
+      expect(rows.find((row) => row.id === dismissedId)?.status).toBe('dismissed');
+    });
+  });
 });

@@ -2,8 +2,10 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
+import { isConflict } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import type {
   CancelSalesOrderDto,
   ResolveMatchingDto,
@@ -1066,3 +1068,34 @@ export const useBatchIssueWaybills = () =>
       idempotencyKey?: string;
     }) => orders.waybills.batch(data, commandKey(idempotencyKey)),
   });
+
+// ===== 반영 대기 채널 변경 닫기 (#1016 6번 행) =====
+// 성공이든 409(그 사이 superseded·이미 닫힘)든 목록을 다시 불러온다 — 409 면 지금 상태가 답이다.
+
+// 무시·다시 확인: 409(이미 닫힘·새 변경에 대체됨)는 다시 읽은 목록이 답이라 알리지 않고, 그 밖의 실패만 알린다.
+// toast 를 mutate 호출별 콜백이 아니라 여기 두는 건, 호출별 콜백은 마지막 호출에만 불려 다른 행을 연달아 누르면 앞 실패가 묻히기 때문이다.
+export const useDismissChannelChange = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => orders.amendments.dismiss(id, note),
+    onError: (error) => {
+      if (!isConflict(error)) toast.error('무시하지 못했습니다.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.amendments });
+    },
+  });
+};
+
+export const useResyncChannelChange = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => orders.amendments.resync(id),
+    onError: (error) => {
+      if (!isConflict(error)) toast.error('다시 확인을 요청하지 못했습니다.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.amendments });
+    },
+  });
+};

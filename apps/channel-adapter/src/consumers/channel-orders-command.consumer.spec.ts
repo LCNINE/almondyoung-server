@@ -1,0 +1,52 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { ChannelOrdersCommandConsumer } from './channel-orders-command.consumer';
+import type { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
+
+const envelope = { messageId: 'msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as never;
+
+function consumerWith(syncOrder: jest.Mock) {
+  return new ChannelOrdersCommandConsumer({ syncOrder } as unknown as OrderPollerOrchestrator);
+}
+
+describe('ChannelOrdersCommandConsumer — ResyncChannelOrder (#1016 6번 행)', () => {
+  it('지원 채널이면 force 로 즉시 끌어오기를 탄다', async () => {
+    const syncOrder = jest.fn().mockResolvedValue({ outcome: 'emitted' });
+    await consumerWith(syncOrder).handleResync(
+      { salesChannel: 'medusa', externalOrderId: 'order_1', requestedAt: '2026-10-06T00:00:00.000Z' },
+      envelope,
+    );
+    expect(syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
+  });
+
+  it.each(['3pl', 'coupang', 'unknown'])('지원하지 않는 채널(%s)은 부르지도 던지지도 않는다', async (salesChannel) => {
+    const syncOrder = jest.fn();
+    await expect(
+      consumerWith(syncOrder).handleResync({ salesChannel, externalOrderId: 'o', requestedAt: '2026-10-06T00:00:00.000Z' }, envelope),
+    ).resolves.toBeUndefined();
+    expect(syncOrder).not.toHaveBeenCalled();
+  });
+
+  it.each(['channel_inactive', 'not_found', 'not_eligible', 'identification_failed', 'unchanged'])(
+    '결과가 %s 여도 던지지 않는다 — 재시도해도 같다',
+    async (outcome) => {
+      const syncOrder = jest.fn().mockResolvedValue({ outcome });
+      await expect(
+        consumerWith(syncOrder).handleResync({ salesChannel: 'naver', externalOrderId: 'o', requestedAt: '2026-10-06T00:00:00.000Z' }, envelope),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it('예상 밖 예외(채널 API 5xx 등)는 던진다 — 재시도·DLQ 를 탄다', async () => {
+    const syncOrder = jest.fn().mockRejectedValue(new Error('Request failed with status code 503'));
+    await expect(
+      consumerWith(syncOrder).handleResync({ salesChannel: 'medusa', externalOrderId: 'o', requestedAt: '2026-10-06T00:00:00.000Z' }, envelope),
+    ).rejects.toThrow('503');
+  });
+
+  it('adapter.module 의 controllers 에 등록돼 있다 — 빠지면 구독이 조용히 안 된다', () => {
+    const source = readFileSync(join(__dirname, '..', 'adapter.module.ts'), 'utf8');
+    const controllers = source.slice(source.indexOf('controllers: ['));
+    expect(controllers).toMatch(/\bChannelOrdersCommandConsumer\b/);
+  });
+});

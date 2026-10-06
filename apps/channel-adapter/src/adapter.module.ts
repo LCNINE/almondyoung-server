@@ -91,6 +91,7 @@ import { CouponIssueReconciliationService } from './services/coupon-issue-reconc
 import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { ChannelOrderSyncController } from './controllers/channel-order-sync.controller';
+import { ChannelOrdersCommandConsumer } from './consumers/channel-orders-command.consumer';
 import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderSource } from './services/order-collection/medusa-order.source';
@@ -236,6 +237,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           PaymentEventsConsumer,
           OrderCollectionFailuresController,
           ChannelOrderSyncController,
+          ChannelOrdersCommandConsumer,
         ]),
   ],
   providers: [

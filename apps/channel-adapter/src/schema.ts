@@ -239,12 +239,16 @@ export const orderCollectionFailures = pgTable(
     sourceUpdatedAt: timestamp('source_updated_at').notNull(),
 
     status: varchar('status', { length: 30 }).notNull().default('quarantined'),
-    // 'quarantined' | 'replayed' | 'closed_lifecycle' | 'closed_already_collected'
+    // 'quarantined' | 'replayed' | 'closed_lifecycle' | 'closed_already_collected' | 'closed_obsolete'
     // closed_lifecycle: order went terminal (canceled/refunded) before its mapping gap was fixed.
     // closed_already_collected: the order already has a Core sales order, so this quarantine has
     //   nothing left to collect (#647). Usually a false positive from re-polling an order whose
     //   Medusa variant was deleted; it also covers a genuine quarantine that was resolved by a
     //   later poll. Either way there is no action left.
+    // closed_obsolete: the path that created this quarantine is gone. Today that is only
+    //   `collected_order_modification_not_accepted` — post-collection changes go to Core as
+    //   OrderModified since #1016 row 5. Closed in bulk by
+    //   scripts/ops/1016-close-obsolete-modification-quarantines.ts.
     replayedAt: timestamp('replayed_at'),
     replayedWmsOrderId: uuid('replayed_wms_order_id'),
     errorMessage: text('error_message'),

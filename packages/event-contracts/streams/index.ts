@@ -44,3 +44,6 @@ export * from './ugc.stream';
 
 // Wallet Command Stream
 export * from './wallet-command.stream';
+
+// Channel Orders Command Stream (#1016 6번 행)
+export * from './channel-orders-command.stream';
