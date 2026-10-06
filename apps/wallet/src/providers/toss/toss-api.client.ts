@@ -77,6 +77,15 @@ export interface TossApiError {
 
 export type TossApiResult<T> = { ok: true; data: T } | { ok: false; error: TossApiError; statusCode: number };
 
+export interface TossCardPromotion {
+  interestFreeCards: Array<{
+    issuerCode: string;
+    minimumPaymentAmount: number;
+    dueDate: string;
+    installmentFreeMonths: number[];
+  }>;
+}
+
 interface BrandPayMethods {
   cards: Array<{
     id: string;
@@ -93,6 +102,9 @@ interface BrandPayMethods {
 
 @Injectable()
 export class TossApiClient {
+  async getCardPromotions(): Promise<TossApiResult<TossCardPromotion>> {
+    return this.get<TossCardPromotion>('/promotions/card');
+  }
   private readonly logger = new Logger(TossApiClient.name);
   private readonly baseUrl = 'https://api.tosspayments.com/v1';
 
