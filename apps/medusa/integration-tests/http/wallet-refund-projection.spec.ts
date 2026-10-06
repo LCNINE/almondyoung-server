@@ -1,0 +1,58 @@
+import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
+import { handleRefundProjection } from '../../src/api/hooks/payment-events/route';
+import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
+
+jest.setTimeout(300 * 1000);
+process.env.WALLET_BASE_URL = WALLET_BASE_URL;
+process.env.WALLET_API_KEY = 'test-wallet-key';
+const wallet = new FakeWallet();
+const num = (v: any) => Number(v?.numeric_ ?? v?.value ?? v);
+const logger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+
+medusaIntegrationTestRunner({
+  inApp: true,
+  env: { WALLET_BASE_URL, WALLET_API_KEY: 'test-wallet-key' },
+  disableAutoTeardown: true,
+  testSuite: ({ api, getContainer }) => {
+    let c: Commerce;
+    const ctx = { api, getContainer };
+    beforeAll(async () => { await wallet.start(); c = await setupCommerce(ctx); });
+    afterAll(async () => wallet.stop());
+    beforeEach(() => wallet.reset());
+
+    const refundsOf = async (orderId: string) =>
+      (await loadOrder(getContainer(), orderId)).payment_collections[0].payments[0].refunds.map((r: any) => num(r.amount));
+
+    it('외부 wallet 환불은 Medusa 환불 레코드가 되고 wallet 은 다시 불리지 않는다', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      await handleRefundProjection(getContainer(), intentId, 13000, 'msg-ext-1', orderId, logger, { refundId: 'wr-ext-1', reasonCode: 'ADMIN_REFUND' });
+
+      expect(await refundsOf(orderId)).toEqual([13000]);
+      expect(wallet.callsTo('/refund')).toBe(0);
+    });
+
+    it('같은 사실이 두 번 와도 한 번만 기록한다', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      for (const m of ['msg-dup-1', 'msg-dup-2']) {
+        await handleRefundProjection(getContainer(), intentId, 13000, m, orderId, logger, { refundId: 'wr-dup', reasonCode: 'ADMIN_REFUND' });
+      }
+      expect(await refundsOf(orderId)).toEqual([13000]);
+    });
+
+    it('Medusa 가 낸 환불의 사실은 기록하지 않는다 (reasonCode)', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      await handleRefundProjection(getContainer(), intentId, 13000, 'msg-own', orderId, logger, { refundId: 'wr-own', reasonCode: 'MEDUSA_REFUND' });
+      expect(await refundsOf(orderId)).toEqual([]);
+    });
+
+    it('외부 환불을 기록한 뒤 코어 취소는 wallet 환불을 다시 부르지 않는다 (35번의 이중 시도 제거)', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      await handleRefundProjection(getContainer(), intentId, 13000, 'msg-pre', orderId, logger, { refundId: 'wr-pre', reasonCode: 'ADMIN_REFUND' });
+
+      await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders);
+
+      expect(wallet.callsTo('/refund')).toBe(0);
+      expect((await loadOrder(getContainer(), orderId)).status).toBe('canceled');
+    });
+  },
+});

@@ -1,6 +1,8 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
-import { capturePaymentWorkflow } from '@medusajs/core-flows';
+import { capturePaymentWorkflow, refundPaymentWorkflow } from '@medusajs/core-flows';
+import { classifyWalletRefund } from './classify-wallet-refund';
+import { readWalletRefundIds, withExternalRefund } from '../../../modules/almond-payment/refund-data';
 import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 // Process-level idempotency store (in-memory, resets on restart).
@@ -88,7 +90,10 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     } else if (CANCEL_EVENT_TYPES.has(effectiveEventType)) {
       await handleCancelProjection(req.scope, intentId, messageId, logger);
     } else if (REFUND_EVENT_TYPES.has(effectiveEventType)) {
-      await handleRefundProjection(req.scope, intentId, amount, messageId, channelOrderId, logger);
+      await handleRefundProjection(req.scope, intentId, amount, messageId, channelOrderId, logger, {
+        refundId: typeof payload?.refundId === 'string' ? payload.refundId : undefined,
+        reasonCode: typeof payload?.reasonCode === 'string' ? payload.reasonCode : undefined,
+      });
     } else if (REFUND_REQUESTED_EVENT_TYPES.has(effectiveEventType)) {
       await handleRefundRequestFlag(req.scope, intentId, 'requested', messageId, logger);
     } else if (REFUND_REQUEST_CLEARED_EVENT_TYPES.has(effectiveEventType)) {
@@ -243,6 +248,7 @@ export async function handleRefundProjection(
   messageId: string,
   channelOrderId: string | undefined,
   logger: { info: Function; warn: Function; debug: Function; error: Function },
+  refund?: { refundId?: string; reasonCode?: string },
 ) {
   const paymentModule = scope.resolve(Modules.PAYMENT);
   const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
@@ -296,6 +302,26 @@ export async function handleRefundProjection(
     logger.debug(
       `[payment-events] handleRefundProjection: already recorded messageId=${messageId}, skipping payment update. payment_id=${payment.id}`,
     );
+  }
+
+  // ── Step 1.5: Medusa 장부에 환불 레코드 (ADR-0042 원칙 3) ─────────────────
+  // Medusa 밖에서 끝난 환불만 넣는다. 넣지 않으면 나중의 Medusa 취소가 「캡처 − 환불」을 전액으로 보고
+  // wallet 에 환불을 다시 요청한다(#1016 35번).
+  const fresh = (await paymentModule.retrievePayment(payment.id, { select: ['id', 'data'] })) as { id: string; data?: Record<string, unknown> };
+  const decision = classifyWalletRefund({
+    refundId: refund?.refundId,
+    reasonCode: refund?.reasonCode,
+    knownWalletRefundIds: readWalletRefundIds(fresh.data),
+  });
+  if (decision === 'record_external') {
+    await paymentModule.updatePayment({
+      id: payment.id,
+      data: withExternalRefund(fresh.data ?? {}, { walletRefundId: refund!.refundId!, amount: refundAmount }),
+    });
+    await refundPaymentWorkflow(scope).run({
+      input: { payment_id: payment.id, amount: refundAmount, note: `wallet:${refund!.refundId}` },
+    });
+    logger.info(`[payment-events] handleRefundProjection: recorded external refund payment_id=${payment.id} walletRefundId=${refund!.refundId}`);
   }
 
   // ── Step 2: order.metadata 업데이트 (best-effort, non-fatal) ────────────
