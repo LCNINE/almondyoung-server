@@ -60,5 +60,42 @@ medusaIntegrationTestRunner({
       expect(wallet.callsTo('/refund')).toBe(0);
       expect((await loadOrder(getContainer(), orderId)).status).toBe('canceled');
     });
+
+    it('wallet 이 실제로 내보내는 gateway.refund.succeeded 가 HTTP 훅을 거쳐 환불 레코드가 된다', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      // buildRefundEventPayload 의 출력 모양: eventType·orderId·channelOrderId 가 없다
+      const res = await api.post('/hooks/payment-events', {
+        messageId: 'msg-http-1',
+        messageType: 'gateway.refund.succeeded',
+        source: 'wallet',
+        payload: {
+          refundId: 'wr-http-1',
+          chargeId: 'ch-1',
+          intentId,
+          userId: 'u1',
+          status: 'SUCCEEDED',
+          amount: 13000,
+          currency: 'KRW',
+          reasonCode: 'ADMIN_REFUND',
+          occurredAt: new Date().toISOString(),
+        },
+      });
+      expect(res.status).toBe(200);
+      expect(await refundsOf(orderId)).toEqual([13000]);
+      expect(wallet.callsTo('/refund')).toBe(0);
+    });
+
+    it('워크플로가 영구 실패하면 던지고 표식을 남기지 않는다', async () => {
+      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+      // 워크플로는 Error 인스턴스가 아닌 객체를 던지므로 toThrow() 대신 직접 잡는다
+      let thrown: unknown;
+      await handleRefundProjection(getContainer(), intentId, 999999, 'msg-fail', orderId, logger, { refundId: 'wr-fail', reasonCode: 'ADMIN_REFUND' }).catch((e) => { thrown = e; });
+      expect(thrown).toBeDefined();
+
+      const data = (await loadOrder(getContainer(), orderId)).payment_collections[0].payments[0].data;
+      expect(readExternalRefund(data)).toBeNull();
+      expect(await refundsOf(orderId)).toEqual([]);
+      expect(wallet.callsTo('/refund')).toBe(0);
+    });
   },
 });

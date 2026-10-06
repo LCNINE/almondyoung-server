@@ -31,3 +31,9 @@ export function withoutExternalRefund(data: Record<string, unknown>): Record<str
   // 빠진 키는 지워지지 않고 남는다. readExternalRefund 는 객체가 아니면 없는 것으로 본다.
   return { ...data, externalRefund: null };
 }
+
+/**
+ * 한 결제의 환불 기록·표식 쓰기를 직렬화하는 잠금 키. 환불 투영(payment-events)과 환불을 내는 쪽이 같은 키를 쓴다 —
+ * 서로 다른 Medusa 태스크에서 같은 환불 사실이 동시에 처리돼도 한 번만 기록되게 한다.
+ */
+export const paymentRefundLockKey = (paymentId: string): string => `almond-payment-refund:${paymentId}`;

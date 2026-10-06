@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { capturePaymentWorkflow, refundPaymentWorkflow } from '@medusajs/core-flows';
 import { classifyWalletRefund } from './classify-wallet-refund';
-import { readWalletRefundIds, withExternalRefund } from '../../../modules/almond-payment/refund-data';
+import { paymentRefundLockKey, readWalletRefundIds, withExternalRefund } from '../../../modules/almond-payment/refund-data';
 import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 // Process-level idempotency store (in-memory, resets on restart).
@@ -34,6 +34,7 @@ const REFUND_EVENT_TYPES = new Set([
   'RefundApproved',
   'payment.intent.refunded',
   'gateway.charge.refunded',
+  'gateway.refund.succeeded', // wallet 이 실제로 내보내는 환불 사실 (payload.eventType 없음)
 ]);
 
 // 무통장 환불 '신청'(REQUESTED) — 주문에 refund_status marker 를 달아/떼어 WMS 수집/발송 게이트를 제어.
@@ -307,22 +308,43 @@ export async function handleRefundProjection(
   // ── Step 1.5: Medusa 장부에 환불 레코드 (ADR-0042 원칙 3) ─────────────────
   // Medusa 밖에서 끝난 환불만 넣는다. 넣지 않으면 나중의 Medusa 취소가 「캡처 − 환불」을 전액으로 보고
   // wallet 에 환불을 다시 요청한다(#1016 35번).
-  const fresh = (await paymentModule.retrievePayment(payment.id, { select: ['id', 'data'] })) as { id: string; data?: Record<string, unknown> };
-  const decision = classifyWalletRefund({
-    refundId: refund?.refundId,
-    reasonCode: refund?.reasonCode,
-    knownWalletRefundIds: readWalletRefundIds(fresh.data),
-  });
-  if (decision === 'record_external') {
-    await paymentModule.updatePayment({
-      id: payment.id,
-      data: withExternalRefund(fresh.data ?? {}, { walletRefundId: refund!.refundId!, amount: refundAmount }),
-    });
-    await refundPaymentWorkflow(scope).run({
-      input: { payment_id: payment.id, amount: refundAmount, note: `wallet:${refund!.refundId}` },
-    });
-    logger.info(`[payment-events] handleRefundProjection: recorded external refund payment_id=${payment.id} walletRefundId=${refund!.refundId}`);
-  }
+  // 같은 환불 사실의 동시 배달(다른 태스크로의 재배달 등)이 표식을 두 번 쓰거나 환불을 두 번 기록하지 않게
+  // 결제 단위로 직렬화한다. 판정을 위한 재조회도 잠금 안에서 한다.
+  const lockingModule = scope.resolve(Modules.LOCKING);
+  await lockingModule.execute(
+    paymentRefundLockKey(payment.id),
+    async () => {
+      // retrievePayment 의 반환 타입이 select 결과를 좁혀주지 않아 data 모양만 단언한다.
+      const fresh = (await paymentModule.retrievePayment(payment.id, { select: ['id', 'data'] })) as {
+        id: string;
+        data?: Record<string, unknown>;
+      };
+      const walletRefundId = refund?.refundId;
+      const decision = classifyWalletRefund({
+        refundId: walletRefundId,
+        reasonCode: refund?.reasonCode,
+        knownWalletRefundIds: readWalletRefundIds(fresh.data),
+      });
+      if (decision !== 'record_external' || !walletRefundId) return;
+
+      await paymentModule.updatePayment({
+        id: payment.id,
+        data: withExternalRefund(fresh.data ?? {}, { walletRefundId, amount: refundAmount }),
+      });
+      try {
+        await refundPaymentWorkflow(scope).run({
+          input: { payment_id: payment.id, amount: refundAmount, note: `wallet:${walletRefundId}` },
+        });
+      } catch (err) {
+        // 영구 실패(캡처 없음·캡처 초과 등)면 표식이 남아 같은 금액의 다음 Medusa 환불이 wallet 을 건너뛴다.
+        // Medusa 는 JSON 컬럼을 병합 갱신하므로 null 로 지운다. 재배달이 표식을 다시 쓴다.
+        await paymentModule.updatePayment({ id: payment.id, data: { externalRefund: null } });
+        throw err;
+      }
+      logger.info(`[payment-events] handleRefundProjection: recorded external refund payment_id=${payment.id} walletRefundId=${walletRefundId}`);
+    },
+    { timeout: 30 },
+  );
 
   // ── Step 2: order.metadata 업데이트 (best-effort, non-fatal) ────────────
   // channelOrderId는 channel-adapter가 wms_order_mappings에서 조회해 payload에 실어 보냄
