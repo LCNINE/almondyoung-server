@@ -159,7 +159,7 @@ export function ProductSection<T extends TabItem>({
       {hideTabs ? (
         renderProducts()
       ) : (
-        <Tabs defaultValue={activeTab.id} onValueChange={handleTabChange}>
+        <Tabs value={activeTab.id} onValueChange={handleTabChange}>
           <ResponsiveTabList
             items={tabs}
             activeId={activeTab.id}
