@@ -23,6 +23,7 @@ import type {
 import type { ProviderWebhookPayload, WebhookActionResult } from '@medusajs/framework/types';
 
 import type { AlmondPaymentOptions, WalletSessionData } from './types';
+import { readExternalRefund, withoutExternalRefund, withWalletRefundIds } from './refund-data';
 
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
@@ -234,7 +235,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   }
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
-    const { intentId } = input.data as unknown as WalletSessionData;
+    const data = (input.data ?? {}) as Record<string, unknown>;
+    const { intentId } = data as unknown as WalletSessionData;
     // Medusa 는 환불 금액을 BigNumber raw 객체({ value, precision })로 넘긴다. Number() 는 NaN 이 된다.
     let refundAmount: number;
     try {
@@ -245,11 +247,22 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     if (!Number.isInteger(refundAmount) || refundAmount <= 0) {
       throw new Error(`환불 금액이 올바르지 않습니다: ${JSON.stringify(input.amount)}`);
     }
-    await this.walletFetch(`/v1/payment-intents/${intentId}/refund`, {
+
+    // Medusa 밖에서 이미 끝난 wallet 환불을 장부에 넣는 중이다(payment-events 의 환불 투영) — wallet 을 다시 부르지 않는다.
+    const external = readExternalRefund(data);
+    if (external && external.amount === refundAmount) {
+      return { data: withWalletRefundIds(withoutExternalRefund(data), [external.walletRefundId]) };
+    }
+
+    // Medusa 결제 모듈이 refund 행 id 를 idempotency_key 로 준다 — 같은 환불의 재시도가 wallet 에서 한 번으로 접힌다.
+    const idempotencyKey = (input as { context?: { idempotency_key?: string } }).context?.idempotency_key;
+    const res = await this.walletFetch<{ refunds?: Array<{ id?: string }> }>(`/v1/payment-intents/${intentId}/refund`, {
       method: 'POST',
+      ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
       body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
     });
-    return { data: input.data };
+    const ids = (res?.refunds ?? []).map((r) => r.id).filter((id): id is string => typeof id === 'string');
+    return { data: withWalletRefundIds(data, ids) };
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {
