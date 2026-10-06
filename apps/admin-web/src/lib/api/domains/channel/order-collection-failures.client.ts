@@ -24,18 +24,35 @@ import {
   toFailureDetail,
   toFailureListResult,
   toReplayResult,
+  toQuarantineSummary,
 } from './order-collection-failures.shape';
-import type { FailureListResult, OrderCollectionFailureDto, ReplayResultDto } from './order-collection-failures.shape';
+import type {
+  FailureListResult,
+  OrderCollectionFailureDto,
+  ReplayResultDto,
+  QuarantineSummary,
+} from './order-collection-failures.shape';
 
 export type {
   FailureListResult,
   OrderCollectionFailureDto,
   ReplayResultDto,
   ReplayResultStatus,
+  QuarantineSummary,
 } from './order-collection-failures.shape';
-export { QUARANTINE_LIST_LIMIT, formatQuarantineCount } from './order-collection-failures.shape';
+export {
+  QUARANTINE_LIST_LIMIT,
+  formatQuarantineCount,
+} from './order-collection-failures.shape';
 
 export const orderCollectionFailuresClient = {
+  summary: async (): Promise<QuarantineSummary> => {
+    const response = await client.get(
+      `${CHANNEL_ADAPTER_SERVICE_BASE_URL}/adapter/order-collection-failures/summary`
+    );
+    return toQuarantineSummary(response.data);
+  },
+
   list: async (params: {
     channel?: string;
     reason?: string;
@@ -46,9 +63,12 @@ export const orderCollectionFailuresClient = {
     // 서버 기본값은 50 이다. 개통 직후엔 수백 건이 격리될 수 있으므로 명시적으로 올려 보내고,
     // 그래도 상한에 닿으면 `truncated` 로 화면에 알린다.
     const limit = params.limit ?? QUARANTINE_LIST_LIMIT;
-    const response = await client.get(`${CHANNEL_ADAPTER_SERVICE_BASE_URL}/adapter/order-collection-failures`, {
-      params: { ...params, limit },
-    });
+    const response = await client.get(
+      `${CHANNEL_ADAPTER_SERVICE_BASE_URL}/adapter/order-collection-failures`,
+      {
+        params: { ...params, limit },
+      }
+    );
     return toFailureListResult(response.data, limit);
   },
 
