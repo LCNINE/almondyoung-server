@@ -1,5 +1,8 @@
 # Medusa 는 거래 엔진이다 — 표시는 Core, 거래는 Medusa
 
+> **부분 대체됨:** §5.5 의 채널 주문 취소·환불(누가 시작하는가, Core → Medusa 취소 역투영)은
+> [[0042-channel-order-cancel-is-initiated-by-the-channel]] 이 대체했다. 나머지 결정은 그대로다.
+
 ## Status
 Accepted (2026-09-21). 트래킹 이슈 **#904**. ADR-0037 이 마지막 항에서 「결정하지 않는다」로
 비워 둔 자리(Medusa 를 읽기 경로에서 빼는 것)를 이 ADR 이 채운다. 구현은 §8 의 4단계이고 1단계는 #856.
@@ -120,6 +123,11 @@ Medusa admin API 로 상품 **1건씩** 동기화한다 (`apps/channel-adapter/s
 sales-order(`apps/core/src/modules/sales-order`), 돈 이동은 wallet. Core → Medusa 역투영(취소·배송 상태,
 `medusa.client.ts` 의 `cancelOrder`·`updateOrderShippingProjection`)은 유지한다. 이 ADR 은 바꾸지 않고
 이름만 붙인다. 확인 항목: 수집된 주문이 **할인 배분**을 실어 부분취소 환불 계산이 맞는가.
+
+> **부분 대체됨 (2026-10-07, ADR-0042).** 채널 주문의 취소·환불은 채널(Medusa)이 시작하고, core 는 판정·출고 보류 뒤
+> 명령을 낸다. **Core → Medusa 취소 역투영(`cancelOrder`)은 없앤다.** 위 «확인 항목»(core 의 부분취소 환불 계산)은 환불액을
+> Medusa 가 계산하게 되면서 사라졌다. 성립은 Medusa, 이행·취소 가능 판정은 Core, 돈 이동의 실행은 wallet, 배송 상태
+> 역투영(`updateOrderShippingProjection`)은 그대로다. 위 본문은 역사 기록으로 남긴다.
 
 **5.6 Medusa 대시보드는 개발자 진단 전용이다.** 운영 편집 표면은 admin-web 하나. 대시보드에서 투영 데이터를
 고치면 다음 투영이 덮어쓴다 — 결함이 아니라 설계다.
