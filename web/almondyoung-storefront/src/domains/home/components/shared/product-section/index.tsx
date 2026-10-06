@@ -109,7 +109,8 @@ export function ProductSection<T extends TabItem>({
       />
     )
 
-    const chunkedProducts = chunk(products, mobileRows)
+    const rows = products.length <= mobileRows ? 1 : mobileRows
+    const chunkedProducts = chunk(products, rows)
 
     return (
       <>
@@ -121,7 +122,7 @@ export function ProductSection<T extends TabItem>({
                 <div className="flex flex-col gap-4">
                   {chunk.map((p, index) => (
                     <div key={p.id}>
-                      {renderProductCard(p, chunkIndex * mobileRows + index)}
+                      {renderProductCard(p, chunkIndex * rows + index)}
                     </div>
                   ))}
                 </div>
