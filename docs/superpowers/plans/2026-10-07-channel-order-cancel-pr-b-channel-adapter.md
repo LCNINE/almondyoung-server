@@ -6,7 +6,7 @@
 
 **Architecture:** 계약은 기존 명령 스트림 `channel-orders.commands.v1` 에 명령 하나, `orders.events.v1` 에 사실 둘을 더한다. channel-adapter 는 소비자(얇음) → `ChannelOrderCancelManager`(능력·매핑 확인, 결과 분류, 재수집) → `MedusaClient`(HTTP 응답을 «결과 값»으로 분류) / `ChannelOrderCancelRepository`(매핑 조회, 사실 아웃박스 적재) 로 나눈다. Medusa 응답 본문의 `type`·`code` 가 분류 근거라 SDK 대신 네이티브 fetch 로 부른다.
 
-**Tech Stack:** NestJS, `@app/events`(StreamPublisher.enqueue 아웃박스), zod 4 이벤트 계약, drizzle, Medusa 2.13.4(almond-payment provider), jest.
+**Tech Stack:** NestJS, `@app/events`(StreamPublisher.enqueue 아웃박스), zod 4 이벤트 계약, drizzle, jest. Medusa 2.13.4 는 부르기만 한다 — **이 PR 은 `apps/medusa` 를 건드리지 않는다**(사용자 결정 2026-10-07).
 
 **Spec:** `docs/superpowers/specs/2026-10-07-channel-order-cancel-design.md` (§7.1~7.3 계약·channel-adapter, §9 경합, §10-5, §11 PR-B, §12 테스트). ADR-0042. 앞선 계획: `docs/superpowers/plans/2026-10-07-channel-order-cancel-pr-a-medusa.md`(PR #1024 머지).
 
@@ -21,24 +21,25 @@
 - 일시 실패는 던진다 — `@app/events` 기본 재시도(3회, 지수 1s~30s) 뒤 DLQ. 정해진 실패는 사실을 내고 정상 종료
 - core 는 channel-adapter 를 직접 부르지 않는다 / channel-adapter 는 wallet 을 부르지 않는다
 - 기존 `CoreOrderCancelled` 역투영(`inbox-worker.service.ts`)의 **결과 동작은 바꾸지 않는다** — 지우는 건 PR-D
-- 검증 게이트: 루트 `npm run type-check` 0 · `npx jest --maxWorkers=2` 0(무제한은 OOM) · `apps/medusa` `npm run test:unit` 초록 · `scripts/local/run-medusa-integration.sh` 초록(postgres + redis 둘 다)
+- 전체취소에서 wallet 이 «환불 불가»로 거절해도 Medusa 는 500 으로 답한다 — **일시 실패로 던진다**(재시도 → DLQ → core 5분 정체 보드). 계약의 `REFUND_FAILED` 는 남기되 이 PR 은 내지 않는다
+- 검증 게이트: 루트 `npm run type-check` 0 · `npx jest --maxWorkers=2` 0(무제한은 OOM)
 
 ## 계획 단계에서 스펙과 달라진 점 (마지막 태스크가 스펙에 반영)
 
 1. **Medusa JS SDK 의 `FetchError` 는 응답 본문을 버린다** — `message`·`status`·`statusText` 만 남는다(`@medusajs/js-sdk/dist/client.js` `normalizeResponse`). 부분취소의 `code: 'partial_cancel_rejected'` 와 502 `type: 'refund_pending'` 을 SDK 로는 볼 수 없다. → 취소 두 호출은 네이티브 fetch(`refreshCustomerCartPrices` 와 같은 Basic 인증)로 부르고 상태로 던지지 않는다. ALB 가 Medusa 다운 때 내는 502(본문 없음)와 우리 라우트의 502 `refund_pending` 을 가르는 것도 이 덕이다.
-2. **`REFUND_FAILED` 는 Medusa 쪽 수정 없이는 판별할 수 없다.** almond-payment 의 `walletFetch` 가 일반 `Error` 를 던지고, Medusa 오류 처리기(`@medusajs/framework/dist/http/middlewares/error-handler.js`)는 `MedusaError` 가 아닌 오류를 500 `{ type: 'unknown_error', message: 'An unknown error occurred.' }` 로 **가려서** 보낸다. → Task 3 이 wallet 의 «환불 불가» 거절(계획 단계 400 다섯 코드)을 `MedusaError(NOT_ALLOWED)` + 표지 `WALLET_REFUND_REFUSED` 로 바꾼다. 결과적으로 이 PR 은 Medusa 를 조금 건드린다. **Task 3 의 통합 테스트가 400 을 못 보이면(오류 유형이 결제 모듈·워크플로를 지나며 사라지면) Task 3 을 버리고 `REFUND_FAILED` 를 일시 실패(재시도 → DLQ → core 5분 정체 보드)로 둔다** — 그 경우 사람에게 알리고 스펙 §7.2 에 «미판별»로 적는다.
-3. **전체취소는 `requestId` 를 Medusa 에 넘기지 않는다.** 코어 라우트 `POST /admin/orders/:id/cancel` 이 받지 않는다. 멱등은 «이미 취소됨 = 성공»(400 `invalid_data` `Order with id … has been canceled.` — `core-flows` `throwIfOrderIsCancelled`)으로 선다. `requestId` 는 로그에만 남는다.
-4. **`cancelOrder` 는 결과 값(`MedusaCancelOutcome`)을 돌려준다.** 스펙 §7.3 «400 분류를 고친다»의 구현이다. 옛 역투영 호출부는 그 값을 받아 **지금과 같은 결과**를 낸다: 이미 취소됨·없음·취소 불가 → 건너뜀(published), `refund_refused` → 던짐. 마지막이 중요하다 — 지금 그 경우는 500 이라 inbox 가 재시도 끝에 `failed` 로 굳고, 스펙 §11 «PR-D 전 라이브 확인»이 바로 그 `failed` 행을 센다. 건너뜀으로 바꾸면 그 증거가 사라진다.
+2. **`REFUND_FAILED` 는 판별하지 않는다(사용자 결정 2026-10-07).** almond-payment 의 `walletFetch` 가 일반 `Error` 를 던지고, Medusa 오류 처리기(`@medusajs/framework/dist/http/middlewares/error-handler.js`)는 `MedusaError` 가 아닌 오류를 500 `{ type: 'unknown_error', message: 'An unknown error occurred.' }` 로 **가려서** 보낸다 — channel-adapter 는 wallet 거절과 Medusa 장애를 구분할 수 없다. 판별하려면 Medusa 를 고쳐야 해서(almond-payment 가 wallet «환불 불가» 400 을 `MedusaError(NOT_ALLOWED)` + 표지로 바꾸기) 이 PR 에서 뺐다. 그 경우는 일시 실패로 재시도 → DLQ → core 5분 정체 보드로 간다. 운영자는 사유 없이 «취소 요청 미반영»을 보고 [요청 접기]로 정리한다(사유는 DLQ·로그). wallet 은 돈을 움직이기 전에 거절하므로 재시도는 해가 없다. 흔했던 원인(Medusa 밖 wallet 환불, 무통장 이중 시도)은 PR-A 투영과 PR-C 가 없애므로 드물다고 본다(채널 주문의 실제 빈도는 미확인). **`REFUND_FAILED` 는 계약에 남긴다** — enum 값은 나중에 더하면 소비자 선배포가 필요하지만, 지금 넣어 두면 Medusa 쪽만 고쳐 켤 수 있다.
+3. **전체취소는 `requestId` 를 Medusa 에 넘기지 않는다.** 코어 라우트 `POST /admin/orders/:id/cancel` 이 받지 않는다. 멱등은 «이미 취소됨 = 성공»(400 `invalid_data` `Order with id … has been canceled.` — `core-flows/dist/order/utils/order-validation.js` `throwIfOrderIsCancelled`)으로 선다. `requestId` 는 로그에만 남는다. 이 문구 판정은 Medusa 업그레이드가 문구를 바꾸면 «재전달된 명령이 거절로 닫히는» 쪽으로 틀어진다 — 그래도 수집이 오면 판단 10 대로 반영된다(§9-8). Medusa 를 올릴 때 이 문구를 확인한다.
+4. **`cancelOrder` 는 결과 값(`MedusaCancelOutcome`)을 돌려준다.** 스펙 §7.3 «400 분류를 고친다»의 구현이다. 옛 역투영 호출부는 그 값을 받아 **지금과 같은 결과**를 낸다: 400·404 → 건너뜀(published), 5xx·네트워크 → 던짐(→ inbox 재시도 끝에 `failed`). 후자가 중요하다 — 스펙 §11 «PR-D 전 라이브 확인»이 그 `failed` 행을 센다.
 5. **§10-5 답: 미등록 이벤트는 조용히 버려진다.** 전역 `SchemaValidationInterceptor` 가 `Event type not found in stream config` 경고만 남기고 통과시키고, `EventTypeGuard` 가 `of(undefined)` 로 정상 종료한다 — 오프셋이 넘어가 메시지는 사라진다(`libs/events/src/interceptors/schema-validation.interceptor.ts`, `libs/events/src/guards/event-type.guard.ts`). 스펙 §11 롤링 함정(«처리기가 없으면 `requested` 로 남아 5분 뒤 정체 보드»)의 전제가 맞다. **같은 일이 PR-C 롤링 중 반대 방향으로도 난다** — 옛 core 태스크가 `ChannelOrderCancelRejected`·`Stalled` 를 받으면 버린다. PR-C 계획에 옮길 것.
 6. **매핑 확인은 `wms_order_mappings (sales_channel, channel_order_id)` 존재 여부다.** Medusa 주문의 `externalOrderId` 가 곧 Medusa 주문 id 이고(`medusa-order.source.ts`), 줄의 `channelOrderItemId` 가 곧 Medusa 줄 id 다(`medusa-order.source.ts:115`). 그래서 id 변환은 없고, 매핑은 «우리가 수집한 주문인가»만 본다.
 
 ## Review Focus
 
-1. **옛 역투영이 wallet 환불 거절을 만났을 때** — Task 3 뒤엔 Medusa 가 400 을 주는데, `CoreOrderCancelled` 처리는 지금처럼 **던져야** 한다(건너뛰면 PR-D 전 대사 근거인 `failed` 행이 안 생긴다). Task 4 테스트가 지킨다
-2. **본문 없는 502(ALB·게이트웨이)** — 진행 사실(`Stalled`)을 내면 안 된다. `type === 'refund_pending'` 일 때만. Task 4 테스트
-3. **같은 명령이 두 번 온다(최소 1회 전달)** — 전체는 두 번째가 «이미 취소됨»이라 거절 없이 재수집, 부분은 Medusa 가 같은 `requestId` 결과를 돌려준다. Task 5 테스트(`already_cancelled` → 재수집, 거절 없음)
-4. **Medusa 는 성공했는데 재수집이 실패** — 거절 사실을 내지 말고 던져야 한다(재시도가 멱등 호출 → 재수집). Task 5 테스트
-5. **잘못된 명령 모양** — `partial` 인데 줄 없음, `full` 인데 줄 있음, 같은 줄 두 번. 소비 검증에서 막혀 Medusa 에 닿지 않아야 한다. Task 1 테스트. (모르는 채널 문자열 `cafe24` 는 모양은 맞으므로 `NOT_SUPPORTED` 거절 — Task 5 테스트)
+1. **옛 역투영이 Medusa 500 을 만났을 때** — `cancelOrder` 를 결과 값으로 바꾼 뒤에도 5xx 는 **던져야** 한다(건너뛰면 PR-D 전 대사 근거인 `failed` 행이 안 생긴다). 무통장 이중 시도가 바로 이 경우다. Task 3 테스트가 지킨다
+2. **본문 없는 502(ALB·게이트웨이)** — 진행 사실(`Stalled`)을 내면 안 된다. `type === 'refund_pending'` 일 때만. Task 3 테스트
+3. **같은 명령이 두 번 온다(최소 1회 전달)** — 전체는 두 번째가 «이미 취소됨»이라 거절 없이 재수집, 부분은 Medusa 가 같은 `requestId` 결과를 돌려준다. Task 4 테스트(`already_cancelled` → 재수집, 거절 없음)
+4. **Medusa 는 성공했는데 재수집이 실패** — 거절 사실을 내지 말고 던져야 한다(재시도가 멱등 호출 → 재수집). Task 4 테스트
+5. **잘못된 명령 모양** — `partial` 인데 줄 없음, `full` 인데 줄 있음, 같은 줄 두 번. 소비 검증에서 막혀 Medusa 에 닿지 않아야 한다. Task 1 테스트. (모르는 채널 문자열 `cafe24` 는 모양은 맞으므로 `NOT_SUPPORTED` 거절 — Task 4 테스트)
 
 ---
 
@@ -50,20 +51,16 @@
 | `packages/event-contracts/streams/__tests__/channel-orders-command-stream.spec.ts` | 명령 스키마 (Task 1) |
 | `packages/event-contracts/streams/orders.stream.ts` | `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 사실 계약 (Task 2) |
 | `packages/event-contracts/streams/__tests__/channel-order-cancel-facts.spec.ts` (신규) | 사실 스키마 (Task 2) |
-| `apps/medusa/src/modules/almond-payment/wallet-api-error.ts` (신규) | wallet 오류 타입 + «환불 불가» → `MedusaError` 변환 (Task 3) |
-| `apps/medusa/src/modules/almond-payment/service.ts` | `walletFetch` 가 `WalletApiError` 를, `refundPayment` 가 변환을 (Task 3) |
-| `apps/medusa/src/modules/almond-payment/__tests__/wallet-refund-refusal.unit.spec.ts` (신규) | 변환 (Task 3) |
-| `apps/medusa/integration-tests/http/order-cancel-errors.spec.ts` (신규) | 코어 취소 라우트의 400 두 갈래를 실 DB 로 고정 (Task 3) |
-| `apps/channel-adapter/src/adapters/medusa/medusa.client.ts` | `cancelOrder` 결과 값, `partialCancelOrder`, `postAdmin` (Task 4) |
-| `apps/channel-adapter/src/adapters/medusa/medusa.client.spec.ts` | 분류 (Task 4) |
-| `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.ts` | 옛 역투영이 결과 값을 받아 같은 동작 (Task 4) |
-| `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts` | 옛 동작 유지 (Task 4) |
-| `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.repository.ts` (신규) | 매핑 존재, 사실 적재 (Task 5) |
-| `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.ts` (신규) | 판정·라우팅·분류·재수집 (Task 5) |
-| `apps/channel-adapter/src/services/order-cancel/*.spec.ts` (신규) | (Task 5) |
-| `apps/channel-adapter/src/consumers/channel-orders-command.consumer.ts` | `CancelChannelOrder` 처리기 (Task 6) |
-| `apps/channel-adapter/src/adapter.module.ts` | 매니저·리포지토리 등록 (Task 6) |
-| `apps/channel-adapter/CLAUDE.md`, `libs/shared/src/streams/README.md`, 스펙 | 문서 (Task 7) |
+| `apps/channel-adapter/src/adapters/medusa/medusa.client.ts` | `cancelOrder` 결과 값, `partialCancelOrder`, `postAdmin` (Task 3) |
+| `apps/channel-adapter/src/adapters/medusa/medusa.client.spec.ts` | 분류 (Task 3) |
+| `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.ts` | 옛 역투영이 결과 값을 받아 같은 동작 (Task 3) |
+| `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts` | 옛 동작 유지 (Task 3) |
+| `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.repository.ts` (신규) | 매핑 존재, 사실 적재 (Task 4) |
+| `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.ts` (신규) | 판정·라우팅·분류·재수집 (Task 4) |
+| `apps/channel-adapter/src/services/order-cancel/*.spec.ts` (신규) | (Task 4) |
+| `apps/channel-adapter/src/consumers/channel-orders-command.consumer.ts` | `CancelChannelOrder` 처리기 (Task 5) |
+| `apps/channel-adapter/src/adapter.module.ts` | 매니저·리포지토리 등록 (Task 5) |
+| `apps/channel-adapter/CLAUDE.md`, `libs/shared/src/streams/README.md`, 스펙 | 문서 (Task 6) |
 
 ---
 
@@ -287,7 +284,8 @@ Expected: FAIL — `CHANNEL_ORDER_CANCEL_REJECTION_CODES` 가 없어 import 실�
  * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
  * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
  * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
- * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다
+ * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
+ *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
  */
 export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED'] as const;
 export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
@@ -361,243 +359,7 @@ git commit -m "feat(event-contracts): ChannelOrderCancelRejected·Stalled 사실
 
 ---
 
-### Task 3: Medusa — wallet «환불 불가»를 밖에서 보이는 400 으로
-
-`REFUND_FAILED` 의 판별 근거를 만든다. **Step 6 의 통합 테스트가 이 태스크의 전제를 판정한다** — 실패하면 «달라진 점» 2 의 대체안으로 간다(코드 커밋하지 말고 사람에게 알린다).
-
-**Files:**
-- Create: `apps/medusa/src/modules/almond-payment/wallet-api-error.ts`
-- Modify: `apps/medusa/src/modules/almond-payment/service.ts` (`walletFetch` 60-82행, `refundPayment` 275-279행)
-- Create: `apps/medusa/src/modules/almond-payment/__tests__/wallet-refund-refusal.unit.spec.ts`
-- Create: `apps/medusa/integration-tests/http/order-cancel-errors.spec.ts`
-
-**Interfaces:**
-- Produces:
-  - `class WalletApiError extends Error { readonly status: number; readonly code: string | undefined }` — `message` 는 옛 형식(`CODE: 메시지`) 그대로
-  - `const WALLET_REFUND_REFUSED_MARKER = 'WALLET_REFUND_REFUSED'`
-  - `function toRefundRefusal(error: unknown): MedusaError | undefined`
-  - HTTP 계약(Task 4 가 읽는다): 코어 `POST /admin/orders/:id/cancel` 이 wallet 거절 때 400 `{ type: 'not_allowed', message: 'WALLET_REFUND_REFUSED <CODE>: <wallet message>' }`, 이미 취소된 주문엔 400 `{ type: 'invalid_data', message: 'Order with id <id> has been canceled.' }`
-
-- [ ] **Step 1: 실패하는 유닛 테스트**
-
-```ts
-// apps/medusa/src/modules/almond-payment/__tests__/wallet-refund-refusal.unit.spec.ts
-import { MedusaError } from '@medusajs/framework/utils';
-import { AlmondPaymentProviderService } from '../service';
-import { WalletApiError } from '../wallet-api-error';
-
-const makeLogger = () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() });
-const makeService = () =>
-  new AlmondPaymentProviderService({ logger: makeLogger() }, { walletBaseUrl: 'http://wallet.test', walletApiKey: 'k' } as any);
-
-describe('almond-payment — wallet 환불 거절의 모양 (#1016 35번 PR-B)', () => {
-  const originalFetch = global.fetch;
-  afterEach(() => {
-    global.fetch = originalFetch;
-  });
-
-  it('walletFetch 는 상태·코드를 실은 WalletApiError 를 던지고 message 는 옛 형식 그대로다', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => ({ error: 'REFUND_NOT_AUTOMATABLE', message: 'CMS 는 자동환불 불가' }),
-    }) as any;
-    const err = await (makeService() as any).walletFetch('/v1/payment-intents/i1/refund', { method: 'POST' }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(WalletApiError);
-    expect(err).toMatchObject({ status: 400, code: 'REFUND_NOT_AUTOMATABLE', message: 'REFUND_NOT_AUTOMATABLE: CMS 는 자동환불 불가' });
-  });
-
-  it.each([
-    'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-    'REFUND_AMOUNT_EXCEEDS_TOTAL',
-    'REFUND_AMOUNT_EXCEEDS_CHARGE',
-    'CHARGE_NOT_REFUNDABLE',
-    'REFUND_NOT_AUTOMATABLE',
-  ])('refundPayment 는 %s 를 표지 붙은 NOT_ALLOWED 로 바꾼다 — 밖에서 400 으로 보인다', async (code) => {
-    const svc = makeService();
-    jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(new WalletApiError(400, code, '거절'));
-    const err = await svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000, context: { idempotency_key: 'ref_1' } } as any).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(MedusaError);
-    expect(err).toMatchObject({ type: MedusaError.Types.NOT_ALLOWED, message: `WALLET_REFUND_REFUSED ${code}: 거절` });
-  });
-
-  it('그 밖의 wallet 오류(PG 장애 등)는 그대로 던진다 — 일시 실패로 재시도된다', async () => {
-    const svc = makeService();
-    const original = new WalletApiError(502, 'PG_UNAVAILABLE', 'down');
-    jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(original);
-    await expect(svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000 } as any)).rejects.toBe(original);
-  });
-
-  it('네트워크 오류도 그대로 던진다', async () => {
-    const svc = makeService();
-    const original = new TypeError('fetch failed');
-    jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(original);
-    await expect(svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000 } as any)).rejects.toBe(original);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-Run: `cd apps/medusa && TEST_TYPE=unit npx jest src/modules/almond-payment/__tests__/wallet-refund-refusal.unit.spec.ts`
-Expected: FAIL — `Cannot find module '../wallet-api-error'`
-
-- [ ] **Step 3: 구현**
-
-```ts
-// apps/medusa/src/modules/almond-payment/wallet-api-error.ts
-import { MedusaError } from '@medusajs/framework/utils';
-
-/** wallet 이 2xx 가 아닌 상태로 답했다. message 는 옛 형식(`CODE: 메시지`) 그대로라 문구로 분기하던 호출부가 깨지지 않는다. */
-export class WalletApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string | undefined,
-    message: string,
-  ) {
-    super(code ? `${code}: ${message}` : message);
-    this.name = 'WalletApiError';
-  }
-}
-
-/** 다시 해도 같은 답이 나오는 wallet 의 환불 거절 — 돈을 움직이기 전 계획 단계의 400 이다(`apps/wallet/src/refunds/refunds.service.ts`). */
-const WALLET_REFUND_REFUSAL_CODES = new Set([
-  'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-  'REFUND_AMOUNT_EXCEEDS_TOTAL',
-  'REFUND_AMOUNT_EXCEEDS_CHARGE',
-  'CHARGE_NOT_REFUNDABLE',
-  'REFUND_NOT_AUTOMATABLE',
-]);
-
-/**
- * channel-adapter 가 전체취소 응답에서 «환불 불가»를 가리는 표지다(`apps/channel-adapter/.../medusa.client.ts` 의 같은 이름 상수).
- * Medusa 는 MedusaError 가 아닌 오류를 500 «An unknown error occurred.» 로 가려 보내므로, NOT_ALLOWED(400)로 바꾸고
- * 문구 앞에 표지를 붙여야 밖에서 보인다. 문구는 wallet 이 준 그대로 뒤에 붙는다.
- */
-export const WALLET_REFUND_REFUSED_MARKER = 'WALLET_REFUND_REFUSED';
-
-export function toRefundRefusal(error: unknown): MedusaError | undefined {
-  if (!(error instanceof WalletApiError) || !error.code || !WALLET_REFUND_REFUSAL_CODES.has(error.code)) return undefined;
-  return new MedusaError(MedusaError.Types.NOT_ALLOWED, `${WALLET_REFUND_REFUSED_MARKER} ${error.message}`);
-}
-```
-
-`service.ts` — import 에 `import { WalletApiError, toRefundRefusal } from './wallet-api-error';` 를 더하고, `walletFetch` 의 throw 를 바꾼다(주석은 그대로 둔다):
-
-```ts
-      throw new WalletApiError(res.status, typeof body?.error === 'string' ? body.error : undefined, message);
-```
-
-`refundPayment` 의 wallet 호출을 감싼다:
-
-```ts
-    // wallet 의 «환불 불가» 거절은 NOT_ALLOWED 로 바꿔 밖(channel-adapter)에서 400 으로 보이게 한다. 그 밖의 오류는 그대로(일시 실패).
-    let res: { refunds?: WalletRefundRow[] };
-    try {
-      res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
-        method: 'POST',
-        ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
-        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
-      });
-    } catch (error) {
-      throw toRefundRefusal(error) ?? error;
-    }
-```
-
-- [ ] **Step 4: 유닛 통과 + 기존 유닛 회귀 없음**
-
-Run: `cd apps/medusa && TEST_TYPE=unit npx jest src/modules/almond-payment`
-Expected: PASS (기존 `refund-payment*.unit.spec.ts` 포함)
-
-- [ ] **Step 5: 실 DB 통합 테스트 작성**
-
-```ts
-// apps/medusa/integration-tests/http/order-cancel-errors.spec.ts
-import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
-import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
-
-jest.setTimeout(300 * 1000);
-process.env.WALLET_BASE_URL = WALLET_BASE_URL;
-process.env.WALLET_API_KEY = 'test-wallet-key';
-const wallet = new FakeWallet();
-
-/**
- * channel-adapter(`medusa.client.ts` `cancelOrder`)가 코어 취소 라우트의 400 을 문구로 가른다(#1016 35번 PR-B).
- * 그 문구가 Medusa 업그레이드·우리 provider 수정으로 바뀌면 «이미 취소됨»이 거절로, «환불 불가»가 일시 실패로 조용히 바뀐다 — 여기서 고정한다.
- */
-medusaIntegrationTestRunner({
-  inApp: true,
-  env: { WALLET_BASE_URL, WALLET_API_KEY: 'test-wallet-key' },
-  disableAutoTeardown: true,
-  testSuite: ({ api, getContainer }) => {
-    let c: Commerce;
-    const ctx = { api, getContainer };
-    beforeAll(async () => {
-      await wallet.start();
-      c = await setupCommerce(ctx);
-    });
-    afterAll(async () => wallet.stop());
-    beforeEach(() => wallet.reset());
-
-    it('이미 취소된 주문을 다시 취소하면 400 invalid_data «has been canceled»', async () => {
-      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
-      await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders);
-
-      const again = await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
-
-      expect(again.status).toBe(400);
-      expect(again.data.type).toBe('invalid_data');
-      expect(again.data.message).toMatch(/has been canceled/);
-    });
-
-    it('wallet 이 환불을 거절하면 400 not_allowed + 표지, 주문은 취소되지 않는다', async () => {
-      const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
-      // Medusa 장부에 없는 wallet 환불이 이미 다 나간 상태 — 가짜 wallet 이 REFUND_AMOUNT_EXCEEDS_AVAILABLE(400)을 준다
-      const intent = wallet.intents.get(intentId)!;
-      intent.refunded = intent.captured;
-
-      const res = await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
-
-      expect(res.status).toBe(400);
-      expect(res.data.type).toBe('not_allowed');
-      expect(res.data.message).toMatch(/^WALLET_REFUND_REFUSED REFUND_AMOUNT_EXCEEDS_AVAILABLE:/);
-      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
-    });
-
-    it('wallet 장애(502)는 여전히 500 이다 — 일시 실패로 남는다', async () => {
-      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
-      wallet.failNextRefund = true;
-
-      const res = await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
-
-      expect(res.status).toBe(500);
-      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
-    });
-  },
-});
-```
-
-- [ ] **Step 6: 통합 테스트 실행 — 이 태스크의 전제 판정**
-
-Run: `scripts/local/run-medusa-integration.sh --testPathPattern order-cancel-errors`
-Expected: PASS 3건.
-**두 번째 테스트가 500 이면 멈춘다** — `MedusaError` 유형이 결제 모듈·워크플로를 지나며 사라진 것이다. 이 태스크의 변경을 되돌리고(`git checkout -- apps/medusa`, 새 파일 삭제) 사람에게 보고한다. 그 경우 Task 4·5 에서 `refund_refused`·`REFUND_FAILED` 매핑은 그대로 두되(옛 Medusa 와 같은 동작이라 해가 없다) Task 7 에서 스펙에 «미판별»로 적는다.
-
-- [ ] **Step 7: PR-A 통합 회귀 없음**
-
-Run: `scripts/local/run-medusa-integration.sh --testPathPattern "partial-cancel|wallet-refund-projection"`
-Expected: PASS (부분취소의 환불 실패는 여전히 502 `refund_pending` — 오케스트레이터가 환불 단계의 모든 오류를 `PartialCancelRefundPending` 으로 감싼다)
-
-- [ ] **Step 8: 커밋**
-
-```bash
-git add apps/medusa/src/modules/almond-payment/wallet-api-error.ts apps/medusa/src/modules/almond-payment/service.ts apps/medusa/src/modules/almond-payment/__tests__/wallet-refund-refusal.unit.spec.ts apps/medusa/integration-tests/http/order-cancel-errors.spec.ts
-git commit -m "fix(medusa): wallet 환불 불가 거절을 400 not_allowed 로 — 전체취소의 REFUND_FAILED 판별 근거 (#1016 35번 PR-B)"
-```
-
----
-
-### Task 4: channel-adapter `MedusaClient` — 취소 응답을 결과 값으로
+### Task 3: channel-adapter `MedusaClient` — 취소 응답을 결과 값으로
 
 **Files:**
 - Modify: `apps/channel-adapter/src/adapters/medusa/medusa.client.ts` (`cancelOrder` 1898-1917행 교체, 클래스 끝에 `partialCancelOrder`·`postAdmin`, 파일 위쪽에 타입·상수)
@@ -605,14 +367,13 @@ git commit -m "fix(medusa): wallet 환불 불가 거절을 400 not_allowed 로 �
 - Test: `apps/channel-adapter/src/adapters/medusa/medusa.client.spec.ts`, `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 3 의 HTTP 계약(표지 `WALLET_REFUND_REFUSED`, «has been canceled»), PR-A 부분취소 라우트 계약(Global Constraints)
+- Consumes: 코어 취소 라우트의 «이미 취소됨» 400(`Order with id … has been canceled.`), PR-A 부분취소 라우트 계약(Global Constraints)
 - Produces (모두 `medusa.client.ts` 에서 export):
   ```ts
   export type MedusaCancelOutcome =
     | { kind: 'cancelled' }
     | { kind: 'already_cancelled' }
     | { kind: 'not_found'; message: string }
-    | { kind: 'refund_refused'; message: string }
     | { kind: 'not_cancelable'; message: string };
   export type MedusaPartialCancelOutcome =
     | { kind: 'cancelled'; refundAmount: number | null; shippingDelta: number | null; shippingNotAdjusted: boolean }
@@ -667,12 +428,6 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'already_cancelled' });
     });
 
-    it('표지 붙은 400 은 환불 불가다', async () => {
-      const message = 'WALLET_REFUND_REFUSED REFUND_NOT_AUTOMATABLE: CMS';
-      global.fetch = respond(400, { type: 'not_allowed', message });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'refund_refused', message });
-    });
-
     it('그 밖의 400 은 취소 불가다 — 옛 코드처럼 성공으로 삼키지 않는다', async () => {
       const message = 'All fulfillments must be canceled before canceling an order';
       global.fetch = respond(400, { type: 'not_allowed', message });
@@ -684,7 +439,7 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_found', message: 'Order id not found: order_1' });
     });
 
-    it('5xx 는 status 를 실어 던진다 — 일시 실패', async () => {
+    it('5xx 는 status 를 실어 던진다 — wallet «환불 불가»도 Medusa 가 500 으로 가리므로 여기다(일시 실패)', async () => {
       global.fetch = respond(500, { type: 'unknown_error', message: 'An unknown error occurred.' });
       const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
       expect(err).toBeInstanceOf(MedusaHttpError);
@@ -756,14 +511,14 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
 `inbox-worker.service.spec.ts` 의 `'looks up the mapping by channelOrderId, not wmsOrderId'` 에서 `cancelOrder: jest.fn(async () => undefined)` 를 `cancelOrder: jest.fn(async () => ({ kind: 'cancelled' }))` 로 바꾸고, 그 `it` 아래에 더한다(같은 생성자 인자 모양을 쓴다):
 
 ```ts
-  function cancelService(outcome: unknown) {
+  function cancelService(cancelOrder: jest.Mock) {
     const queryResults = [[], [{ salesChannel: 'medusa', channelOrderId: 'order_01ABC' }]];
     const select = jest.fn(() => ({
       from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })) })),
     }));
     const updateSet = jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) }));
     const update = jest.fn(() => ({ set: updateSet }));
-    const medusaClient = { cancelOrder: jest.fn(async () => outcome) };
+    const medusaClient = { cancelOrder };
     const service = new (InboxWorkerService as any)(
       { db: { select, update } },
       {},
@@ -794,25 +549,28 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
     { kind: 'not_found', message: 'gone' },
     { kind: 'not_cancelable', message: 'fulfilled' },
   ])('옛 역투영은 $kind 를 지금처럼 건너뛴다(published) — PR-D 까지 동작 불변', async (outcome) => {
-    const { service, handleFailure, updateSet, event } = cancelService(outcome);
+    const { service, handleFailure, updateSet, event } = cancelService(jest.fn(async () => outcome));
     await service.doProcessInboxEvent(event);
     expect(handleFailure).not.toHaveBeenCalled();
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'published' }));
   });
 
-  it('옛 역투영은 환불 불가를 지금처럼 실패로 둔다 — PR-D 전 대사가 세는 failed 행이 남아야 한다', async () => {
-    const { service, handleFailure, event } = cancelService({ kind: 'refund_refused', message: 'WALLET_REFUND_REFUSED X: y' });
+  it('옛 역투영은 Medusa 5xx 를 지금처럼 실패로 둔다 — PR-D 전 대사가 세는 failed 행이 남아야 한다', async () => {
+    const error = new MedusaHttpError(500, 'Medusa cancelOrder failed (status=500): An unknown error occurred.');
+    const { service, handleFailure, event } = cancelService(jest.fn().mockRejectedValue(error));
     await service.doProcessInboxEvent(event);
-    expect(handleFailure).toHaveBeenCalledWith(event, expect.objectContaining({ message: expect.stringContaining('WALLET_REFUND_REFUSED') }));
+    expect(handleFailure).toHaveBeenCalledWith(event, error);
   });
 ```
+
+inbox-worker spec 머리에 `import { MedusaHttpError } from './medusa.client';` 를 더한다.
 
 > `doProcessInboxEvent` 의 성공 처리가 `update(inboxEvents).set({ status: 'published', … })` 이고 실패는 `handleFailure(event, error)` 다(`inbox-worker.service.ts` 630-650행). 테스트 작성 전에 그 두 줄을 읽어 확인한다.
 
 - [ ] **Step 3: 실패 확인**
 
 Run: `npx jest apps/channel-adapter/src/adapters/medusa/medusa.client.spec.ts apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts`
-Expected: FAIL — `MedusaHttpError` export 없음, `partialCancelOrder is not a function`, 환불 불가 테스트에서 `handleFailure` 미호출
+Expected: FAIL — `MedusaHttpError` export 없음(두 spec 모두 import 단계에서 빨갛다), `partialCancelOrder is not a function`
 
 - [ ] **Step 4: 구현 — MedusaClient**
 
@@ -824,7 +582,6 @@ export type MedusaCancelOutcome =
   | { kind: 'cancelled' }
   | { kind: 'already_cancelled' }
   | { kind: 'not_found'; message: string }
-  | { kind: 'refund_refused'; message: string }
   | { kind: 'not_cancelable'; message: string };
 
 /** Medusa 부분취소 결과(PR-A 라우트 계약). `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
@@ -844,10 +601,11 @@ export class MedusaHttpError extends Error {
   }
 }
 
-/** 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`). Medusa 통합 스펙 `order-cancel-errors` 가 고정한다. */
+/**
+ * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4).
+ * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 거절(NOT_CANCELABLE)로 닫힌다.
+ */
 const ALREADY_CANCELLED_MESSAGE = /has been canceled/;
-/** almond-payment 가 wallet «환불 불가»에 붙이는 표지(`apps/medusa/src/modules/almond-payment/wallet-api-error.ts` 의 같은 이름 상수). */
-const WALLET_REFUND_REFUSED_MARKER = 'WALLET_REFUND_REFUSED';
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -860,6 +618,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   /**
    * 전체취소. 400 은 문구로 가른다 — «이미 취소됨»만 성공 쪽이고(멱등: 같은 명령의 재전달), 나머지 400 을 성공으로 삼키지 않는다.
    * 코어 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»으로만 선다.
+   * wallet 이 환불을 거절하면 Medusa 는 그 오류를 500 «An unknown error occurred.» 로 가린다 — 장애와 구분할 수 없어 던진다(일시 실패).
    */
   async cancelOrder(orderId: string): Promise<MedusaCancelOutcome> {
     const path = `/admin/orders/${encodeURIComponent(orderId)}/cancel`;
@@ -872,7 +631,6 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
     if (status === 404) return { kind: 'not_found', message };
     if (status === 400) {
       if (ALREADY_CANCELLED_MESSAGE.test(message)) return { kind: 'already_cancelled' };
-      if (message.startsWith(WALLET_REFUND_REFUSED_MARKER)) return { kind: 'refund_refused', message };
       return { kind: 'not_cancelable', message };
     }
     this.logger.error(`Failed to cancel Medusa order: ${orderId} (status=${status})`, message);
@@ -939,11 +697,8 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 
 ```ts
           const outcome = await this.medusaClient.cancelOrder(mapping.channelOrderId);
-          // 옛 동작 유지(PR-D 가 이 분기를 지운다): 400·404 는 건너뛰고, 환불 불가는 던져 failed 로 남긴다.
-          // 환불 불가는 전엔 500 이었다 — 그 failed 행을 PR-D 전 대사가 센다(스펙 §11).
-          if (outcome.kind === 'refund_refused') {
-            throw new Error(`Medusa cancelOrder failed: ${outcome.message}`);
-          }
+          // 옛 동작 유지(PR-D 가 이 분기를 지운다): 400·404 는 건너뛴다. 5xx 는 cancelOrder 가 던져 failed 로 남는다 —
+          // 그 failed 행을 PR-D 전 대사가 센다(스펙 §11).
           if (outcome.kind !== 'cancelled') {
             this.logger.warn(`[CoreOrderCancelled] Medusa 취소 건너뜀(${outcome.kind}): medusaOrderId=${mapping.channelOrderId}`);
           }
@@ -963,7 +718,7 @@ git commit -m "feat(channel-adapter): Medusa 전체·부분취소 응답을 결�
 
 ---
 
-### Task 5: 취소 실행기 — 매니저와 리포지토리
+### Task 4: 취소 실행기 — 매니저와 리포지토리
 
 **Files:**
 - Create: `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.repository.ts`
@@ -972,7 +727,7 @@ git commit -m "feat(channel-adapter): Medusa 전체·부분취소 응답을 결�
 - Create: `apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 1 `CancelChannelOrderPayload`, Task 2 `ChannelOrderCancelRejectedPayload`·`ChannelOrderCancelStalledPayload`·`ChannelOrderCancelRejectionCode`, Task 4 `MedusaClient.cancelOrder`·`partialCancelOrder`, 기존 `OrderPollerOrchestrator.syncOrder(channel: SalesChannel, externalOrderId: string, options?: { force?: boolean }): Promise<{ outcome: OrderSyncOutcome }>`, `getChannelFulfillmentCapabilities(channel: SalesChannel)`
+- Consumes: Task 1 `CancelChannelOrderPayload`, Task 2 `ChannelOrderCancelRejectedPayload`·`ChannelOrderCancelStalledPayload`·`ChannelOrderCancelRejectionCode`, Task 3 `MedusaClient.cancelOrder`·`partialCancelOrder`, 기존 `OrderPollerOrchestrator.syncOrder(channel: SalesChannel, externalOrderId: string, options?: { force?: boolean }): Promise<{ outcome: OrderSyncOutcome }>`, `getChannelFulfillmentCapabilities(channel: SalesChannel)`
 - Produces:
   - `ChannelOrderCancelRepository.hasCollectedOrder(salesChannel: string, externalOrderId: string): Promise<boolean>`
   - `ChannelOrderCancelRepository.recordRejected(payload: ChannelOrderCancelRejectedPayload): Promise<void>`
@@ -1103,7 +858,6 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
 
     it.each([
       [{ kind: 'not_found', message: 'gone' }, 'ORDER_NOT_FOUND'],
-      [{ kind: 'refund_refused', message: 'WALLET_REFUND_REFUSED X: y' }, 'REFUND_FAILED'],
       [{ kind: 'not_cancelable', message: 'fulfilled' }, 'NOT_CANCELABLE'],
     ])('%o 는 %s 거절이고 재수집하지 않는다', async (outcome, reasonCode) => {
       const { manager, repository, medusa, poller } = setup();
@@ -1113,10 +867,10 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
-    it('Medusa 일시 실패는 던진다 — 거절 사실을 내지 않는다', async () => {
+    it('Medusa 500 은 던진다 — wallet «환불 불가»도 여기로 온다(REFUND_FAILED 미판별). 거절 사실을 내지 않는다', async () => {
       const { manager, repository, medusa } = setup();
-      medusa.cancelOrder.mockRejectedValue(new Error('Medusa cancelOrder failed (status=503)'));
-      await expect(manager.execute(full)).rejects.toThrow('503');
+      medusa.cancelOrder.mockRejectedValue(new Error('Medusa cancelOrder failed (status=500): An unknown error occurred.'));
+      await expect(manager.execute(full)).rejects.toThrow('status=500');
       expect(repository.recordRejected).not.toHaveBeenCalled();
     });
 
@@ -1300,8 +1054,6 @@ export class ChannelOrderCancelManager {
         return undefined;
       case 'not_found':
         return { reasonCode: 'ORDER_NOT_FOUND', message: outcome.message };
-      case 'refund_refused':
-        return { reasonCode: 'REFUND_FAILED', message: outcome.message };
       case 'not_cancelable':
         return { reasonCode: 'NOT_CANCELABLE', message: outcome.message };
     }
@@ -1352,7 +1104,7 @@ git commit -m "feat(channel-adapter): 채널 주문 취소 실행기 — 능력�
 
 ---
 
-### Task 6: 소비자 처리기와 모듈 등록
+### Task 5: 소비자 처리기와 모듈 등록
 
 **Files:**
 - Modify: `apps/channel-adapter/src/consumers/channel-orders-command.consumer.ts`
@@ -1360,7 +1112,7 @@ git commit -m "feat(channel-adapter): 채널 주문 취소 실행기 — 능력�
 - Test: `apps/channel-adapter/src/consumers/channel-orders-command.consumer.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 5 `ChannelOrderCancelManager.execute(command: CancelChannelOrderPayload): Promise<void>`
+- Consumes: Task 4 `ChannelOrderCancelManager.execute(command: CancelChannelOrderPayload): Promise<void>`
 - Produces: `ChannelOrdersCommandConsumer.handleCancel(payload, envelope): Promise<void>` — `@On(CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder')`
 
 - [ ] **Step 1: 실패하는 테스트**
@@ -1459,7 +1211,7 @@ git commit -m "feat(channel-adapter): CancelChannelOrder 명령 처리기 (#1016
 
 ---
 
-### Task 7: 게이트와 문서
+### Task 6: 게이트와 문서
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-10-07-channel-order-cancel-design.md`
@@ -1472,19 +1224,19 @@ Run (차례로):
 ```bash
 npm run type-check
 npx jest --maxWorkers=2
-(cd apps/medusa && npm run test:unit)
-scripts/local/run-medusa-integration.sh
+git diff --stat origin/develop -- apps/medusa
 ```
-Expected: type-check 에러 0, jest 실패 0, medusa 유닛 초록, medusa 통합 초록(postgres + redis 떠 있어야 한다 — 없으면 `npm run bootstrap:e2e:local` 이 띄운다). 하나라도 빨가면 고치고 다시 돈다. 개수를 셀 땐 `tail` 로 자른 출력에서 세지 않는다.
+Expected: type-check 에러 0, jest 실패 0, 마지막 명령 출력 없음(`apps/medusa` 를 건드리지 않았다). 하나라도 빨가면 고치고 다시 돈다. 개수를 셀 땐 `tail` 로 자른 출력에서 세지 않는다.
 
 - [ ] **Step 2: 스펙 반영**
 
 `2026-10-07-channel-order-cancel-design.md` 에 아래를 반영한다(문장은 그 자리의 문체에 맞춘다):
 
-- §7.2 표 `REFUND_FAILED` 행: «almond-payment 가 wallet 의 «환불 불가» 400(`REFUND_AMOUNT_EXCEEDS_*`·`CHARGE_NOT_REFUNDABLE`·`REFUND_NOT_AUTOMATABLE`)을 `MedusaError(NOT_ALLOWED)` + 표지 `WALLET_REFUND_REFUSED` 로 바꿔 코어 취소 라우트가 400 으로 낸다(PR-B). 그 전엔 Medusa 가 500 `unknown_error` 로 가려 판별할 수 없었다». (Task 3 을 버렸으면 대신 «미판별 — 일시 실패로 재시도 뒤 DLQ, 5분 정체 보드가 받는다»)
-- §7.3 «실패 분류» 끝에: «Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — 두 취소 호출은 네이티브 fetch 로 부른다. 전체취소는 `requestId` 를 Medusa 에 넘기지 않는다(코어 라우트가 받지 않는다) — 멱등은 «이미 취소됨 = 성공»이다. 옛 역투영(`CoreOrderCancelled`)은 같은 결과 값을 받아 지금 동작(400·404 건너뜀, 환불 불가는 실패)을 유지한다»
+- §7.2 표 `REFUND_FAILED` 행 뒤에: «**지금은 내지 않는다**(사용자 결정 2026-10-07). Medusa 가 MedusaError 아닌 오류를 500 `unknown_error` 로 가려, wallet 거절과 장애를 channel-adapter 가 구분할 수 없다. 일시 실패로 재시도 → DLQ → 5분 정체 보드(사유 없음, [요청 접기]로 정리). 값은 계약에 남긴다 — 켜려면 almond-payment 가 wallet «환불 불가» 400 을 `MedusaError(NOT_ALLOWED)` + 표지로 바꾸고 channel-adapter 가 그 표지를 읽는다(Medusa 만의 후속)»
+- §2 성공 기준 4 끝에: «(전체취소의 wallet «환불 불가»는 사유 없이 정체 보드로만 보인다 — §7.2)»
+- §7.3 «실패 분류» 끝에: «Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — 두 취소 호출은 네이티브 fetch 로 부른다. 전체취소는 `requestId` 를 Medusa 에 넘기지 않는다(코어 라우트가 받지 않는다) — 멱등은 «이미 취소됨 = 성공»이다. 옛 역투영(`CoreOrderCancelled`)은 같은 결과 값을 받아 지금 동작(400·404 건너뜀, 5xx 는 실패)을 유지한다»
 - §10-5 에 답: «**답(2026-10-07): 조용히 버린다.** 전역 `SchemaValidationInterceptor` 가 경고만 남기고 `EventTypeGuard` 가 정상 종료해 오프셋이 넘어간다. PR-C 롤링 중엔 반대로 옛 core 가 `ChannelOrderCancelRejected`·`Stalled` 를 버린다 — 둘 다 5분 정체 보드가 받는다»
-- §11 표 B 행 «배포 직후»: «보내는 쪽 없음. Medusa: 코어 취소·어드민 환불이 wallet «환불 불가»를 500 대신 400 으로 답한다(옛 역투영은 그대로 실패 처리)»
+- §11 표 B 행 «배포 직후»: «보내는 쪽 없음. `apps/medusa` 는 건드리지 않는다»
 
 - [ ] **Step 3: `apps/channel-adapter/CLAUDE.md`**
 
@@ -1509,7 +1261,7 @@ Expected: type-check 에러 0, jest 실패 0, medusa 유닛 초록, medusa 통�
 
 ```bash
 git add docs/superpowers/specs/2026-10-07-channel-order-cancel-design.md apps/channel-adapter/CLAUDE.md libs/shared/src/streams/README.md
-git commit -m "docs: PR-B 의 계획 단계 발견(SDK 본문 유실·REFUND_FAILED 판별·§10-5 답)을 스펙에 반영 (#1016 35번 PR-B)"
+git commit -m "docs: PR-B 의 계획 단계 발견(SDK 본문 유실·REFUND_FAILED 미판별·§10-5 답)을 스펙에 반영 (#1016 35번 PR-B)"
 ```
 
 ---
@@ -1517,6 +1269,5 @@ git commit -m "docs: PR-B 의 계획 단계 발견(SDK 본문 유실·REFUND_FAI
 ## 배포 메모 (PR 설명에 옮길 것)
 
 - **배포 직후 효과 없음** — `CancelChannelOrder` 를 보내는 쪽(PR-C core)이 없다. 마이그레이션 0
-- **Medusa 동작 변화 하나:** wallet 이 «환불 불가»(계획 단계 400 다섯 코드)로 거절하면 코어 취소·Medusa 어드민 «환불»이 500 대신 400 + `WALLET_REFUND_REFUSED …` 문구로 답한다. 돈의 흐름·롤백은 같다. 옛 역투영은 그 경우를 지금처럼 실패로 둔다
-- 롤링 겹침(한 SST 스택): 새 channel-adapter + 옛 Medusa → 환불 불가가 500 → 일시 실패로 재시도 → DLQ. 보내는 쪽이 없어 실제로는 일어나지 않는다
+- `apps/medusa` 변경 없음. 옛 역투영(`CoreOrderCancelled`)의 동작도 같다(400·404 건너뜀, 5xx 실패)
 - **PR-C 로 넘길 것:** core 가 `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 처리기를 둔다. PR-C 롤링 중 옛 core 태스크는 이 사실을 **조용히 버린다**(§10-5 답) — 요청이 `requested` 로 남아 5분 정체 보드가 받는다. 명령의 `lines[].channelOrderItemId` 는 Medusa 줄 id 여야 한다 — 수집 때 `OrderCreated.items[].orderItemId` 로 들어온 값(`medusa-order.source.ts:115`)을 core 가 어디에 들고 있는지 PR-C 계획에서 확인
