@@ -16,6 +16,8 @@ describe('refund-data', () => {
     const d = withExternalRefund({ intentId: 'i' }, { walletRefundId: 'r9', amount: 1000 });
     expect(readExternalRefund(d)).toEqual({ walletRefundId: 'r9', amount: 1000 });
     expect(readExternalRefund(withoutExternalRefund(d))).toBeNull();
+    // 병합 갱신에서도 지워지도록 키는 남기고 값을 null 로 둔다
+    expect(withoutExternalRefund(d)).toEqual({ intentId: 'i', externalRefund: null });
   });
   it('모양이 틀린 표식은 없는 것으로 본다', () => {
     expect(readExternalRefund({ externalRefund: { walletRefundId: 1 } })).toBeNull();

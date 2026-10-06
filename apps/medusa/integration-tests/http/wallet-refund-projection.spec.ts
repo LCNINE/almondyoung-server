@@ -1,4 +1,5 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
+import { readExternalRefund, readWalletRefundIds } from '../../src/modules/almond-payment/refund-data';
 import { handleRefundProjection } from '../../src/api/hooks/payment-events/route';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 
@@ -29,6 +30,11 @@ medusaIntegrationTestRunner({
 
       expect(await refundsOf(orderId)).toEqual([13000]);
       expect(wallet.callsTo('/refund')).toBe(0);
+
+      // 표식이 남으면 같은 금액의 다음 Medusa 환불이 wallet 을 건너뛴다 — 병합 갱신이라 null 로 지워야 한다
+      const data = (await loadOrder(getContainer(), orderId)).payment_collections[0].payments[0].data;
+      expect(readExternalRefund(data)).toBeNull();
+      expect(readWalletRefundIds(data)).toContain('wr-ext-1');
     });
 
     it('같은 사실이 두 번 와도 한 번만 기록한다', async () => {

@@ -27,6 +27,7 @@ export function withExternalRefund(data: Record<string, unknown>, marker: Extern
 }
 
 export function withoutExternalRefund(data: Record<string, unknown>): Record<string, unknown> {
-  const { externalRefund: _drop, ...rest } = data;
-  return rest;
+  // 키를 빼는 게 아니라 null 로 쓴다 — Medusa 의 repository update 는 JSON 컬럼을 병합(mergeObjectProperties)해서
+  // 빠진 키는 지워지지 않고 남는다. readExternalRefund 는 객체가 아니면 없는 것으로 본다.
+  return { ...data, externalRefund: null };
 }

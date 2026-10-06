@@ -32,7 +32,8 @@ describe('almond-payment refundPayment', () => {
     } as any);
 
     expect(spy).not.toHaveBeenCalled();
-    expect(out.data).toEqual({ intentId: 'i1', walletRefundIds: ['wr7'] });
+    // 표식은 null 로 쓴다: Medusa 가 JSON 컬럼을 병합 갱신하므로 키를 빼면 남는다
+    expect(out.data).toEqual({ intentId: 'i1', externalRefund: null, walletRefundIds: ['wr7'] });
   });
 
   it('raw amount 객체여도 변환된 금액으로 표식과 비교한다', async () => {
@@ -43,7 +44,8 @@ describe('almond-payment refundPayment', () => {
       amount: { value: '5000', precision: 20 },
     } as any);
     expect(spy).not.toHaveBeenCalled();
-    expect(out.data).toEqual({ intentId: 'i1', walletRefundIds: ['wr7'] });
+    // 표식은 null 로 쓴다: Medusa 가 JSON 컬럼을 병합 갱신하므로 키를 빼면 남는다
+    expect(out.data).toEqual({ intentId: 'i1', externalRefund: null, walletRefundIds: ['wr7'] });
   });
 
   it('표식 금액과 환불 금액이 다르면 표식을 무시하고 wallet 을 부른다(다른 환불이 끼어든 것)', async () => {
