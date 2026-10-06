@@ -235,7 +235,16 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
     const { intentId } = input.data as unknown as WalletSessionData;
-    const refundAmount = Number(input.amount);
+    // Medusa 는 환불 금액을 BigNumber raw 객체({ value, precision })로 넘긴다. Number() 는 NaN 이 된다.
+    let refundAmount: number;
+    try {
+      refundAmount = new BigNumber(input.amount).numeric;
+    } catch {
+      refundAmount = NaN;
+    }
+    if (!Number.isInteger(refundAmount) || refundAmount <= 0) {
+      throw new Error(`환불 금액이 올바르지 않습니다: ${JSON.stringify(input.amount)}`);
+    }
     await this.walletFetch(`/v1/payment-intents/${intentId}/refund`, {
       method: 'POST',
       body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
