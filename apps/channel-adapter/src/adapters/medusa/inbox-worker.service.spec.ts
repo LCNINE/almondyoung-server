@@ -2,6 +2,7 @@ import { InboxWorkerService, INBOX_HANDLER_TIMEOUT_MS } from './inbox-worker.ser
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { SlowRetryInboxError } from './slow-retry.error';
+import { MedusaHttpError } from './medusa.client';
 
 function collectValues(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || value === undefined) return [];
@@ -761,7 +762,7 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
     const update = jest.fn(() => ({
       set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
     }));
-    const medusaClient = { cancelOrder: jest.fn(async () => undefined) };
+    const medusaClient = { cancelOrder: jest.fn(async () => ({ kind: 'cancelled' })) };
     const service = new (InboxWorkerService as any)(
       { db: { select, update } },
       {},
@@ -794,6 +795,57 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
     const columns = (mappingWhere.queryChunks ?? []).map((chunk) => chunk?.name).filter(Boolean);
     expect(columns).toContain('channel_order_id');
     expect(columns).not.toContain('wms_order_id');
+  });
+
+  function cancelService(cancelOrder: jest.Mock) {
+    const queryResults = [[], [{ salesChannel: 'medusa', channelOrderId: 'order_01ABC' }]];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })) })),
+    }));
+    const updateSet = jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) }));
+    const update = jest.fn(() => ({ set: updateSet }));
+    const medusaClient = { cancelOrder };
+    const service = new (InboxWorkerService as any)(
+      { db: { select, update } },
+      {},
+      {},
+      {},
+      {},
+      medusaClient,
+      {},
+      {},
+      { get: jest.fn() },
+      { runWithChain: jest.fn() },
+    );
+    const handleFailure = jest.spyOn(service as any, 'handleFailure').mockResolvedValue(undefined);
+    const event = {
+      id: 'inbox-cancel',
+      eventType: 'CoreOrderCancelled',
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: { orderId: '11111111-1111-4111-8111-111111111111', channelOrderId: 'order_01ABC' },
+      attempts: 1,
+      createdAt: new Date('2026-10-07T00:00:00.000Z'),
+      metadata: {},
+    };
+    return { service, handleFailure, updateSet, event };
+  }
+
+  it.each([
+    { kind: 'already_cancelled' },
+    { kind: 'not_found', message: 'gone' },
+    { kind: 'not_cancelable', message: 'fulfilled' },
+  ])('옛 역투영은 $kind 를 지금처럼 건너뛴다(published) — PR-D 까지 동작 불변', async (outcome) => {
+    const { service, handleFailure, updateSet, event } = cancelService(jest.fn(async () => outcome));
+    await service.doProcessInboxEvent(event);
+    expect(handleFailure).not.toHaveBeenCalled();
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'published' }));
+  });
+
+  it('옛 역투영은 Medusa 5xx 를 지금처럼 실패로 둔다 — PR-D 전 대사가 세는 failed 행이 남아야 한다', async () => {
+    const error = new MedusaHttpError(500, 'Medusa cancelOrder failed (status=500): An unknown error occurred.');
+    const { service, handleFailure, event } = cancelService(jest.fn().mockRejectedValue(error));
+    await service.doProcessInboxEvent(event);
+    expect(handleFailure).toHaveBeenCalledWith(event, error);
   });
 
   it('persists non-Medusa cancellation as a durable manual channel operation', async () => {

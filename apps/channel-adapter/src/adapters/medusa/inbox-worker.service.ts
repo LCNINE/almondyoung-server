@@ -624,7 +624,12 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           this.logger.log(
             `[CoreOrderCancelled] Medusa 주문 취소 동기화: coreOrderId=${cancelPayload.orderId}, medusaOrderId=${mapping.channelOrderId}`,
           );
-          await this.medusaClient.cancelOrder(mapping.channelOrderId);
+          const outcome = await this.medusaClient.cancelOrder(mapping.channelOrderId);
+          // 옛 동작 유지(PR-D 가 이 분기를 지운다): 400·404 는 건너뛴다. 5xx 는 cancelOrder 가 던져 failed 로 남는다 —
+          // 그 failed 행을 PR-D 전 대사가 센다(스펙 §11).
+          if (outcome.kind !== 'cancelled') {
+            this.logger.warn(`[CoreOrderCancelled] Medusa 취소 건너뜀(${outcome.kind}): medusaOrderId=${mapping.channelOrderId}`);
+          }
           break;
         }
 
