@@ -24,12 +24,7 @@
     },
     "close": "Close"
   },
-  "pageSize": {
-    "label": "Entries per page",
-    "option": "Show {count}"
-  },
   "entryCount": "{count} entries",
-  "sortLabel": "Sort entries",
   "paginationLabel": "Entry pages",
   "previousPage": "Previous page",
   "nextPage": "Next page",
@@ -40,10 +35,6 @@
   "homeDescription": "Vote for the logo you like",
   "viewAll": "See all",
   "join": "Take part",
-  "sort": {
-    "latest": "Newest",
-    "popular": "Most voted"
-  },
   "voteCount": "{count} votes",
   "winner": "Grand prize",
   "empty": "No entries yet. Be the first to submit one.",

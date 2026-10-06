@@ -12,12 +12,11 @@ import {
 } from "@/lib/api/ugc/logo-contest"
 import type { LogoContestEntry } from "@/lib/types/ui/logo-contest"
 import { cn } from "@/lib/utils"
-import { Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import Image from "next/image"
 
-const PAGE_SIZES = [12, 24, 60] as const
-const SORTS = ["latest", "popular"] as const
+const PAGE_SIZE = 50
 
 const formatContestDate = (iso: string) =>
   new Intl.DateTimeFormat("sv-SE", {
@@ -56,30 +55,22 @@ export default async function LogoContestPage({
   const raw = await searchParams
   const t = await getTranslations("logoContest")
 
-  const sort = SORTS.includes(raw.sort as (typeof SORTS)[number])
-    ? (raw.sort as (typeof SORTS)[number])
-    : "latest"
   const requestedPage = Number(raw.page)
   const page =
     Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
-  const requestedLimit = Number(raw.limit)
-  const pageSize = PAGE_SIZES.includes(
-    requestedLimit as (typeof PAGE_SIZES)[number]
-  )
-    ? requestedLimit
-    : 12
 
   const [status, entries, ranking, myState] = await Promise.all([
     getLogoContestStatus(),
-    listLogoContestEntries({ sort, page, limit: pageSize }).catch(() => null),
+    listLogoContestEntries({ sort: "popular", page, limit: PAGE_SIZE }).catch(
+      () => null
+    ),
     listLogoContestEntries({ sort: "popular", limit: 4 }).catch(() => null),
     getMyLogoContestState().catch(() => null),
   ])
-  const displaySort = status.isClosed ? "popular" : sort
 
   const items: LogoContestEntry[] = entries?.data ?? []
   const total = entries?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const firstVisiblePage = Math.max(1, Math.min(page - 2, totalPages - 4))
   const visiblePages = Array.from(
     { length: Math.min(5, totalPages) },
@@ -132,62 +123,8 @@ export default async function LogoContestPage({
 
       {ranking && <LiveRanking initialEntries={ranking.data} />}
 
-      <div className="mb-8 grid grid-cols-[1fr_auto] items-center gap-y-2 sm:flex sm:gap-4">
+      <div className="mb-8">
         <h2 className="text-foreground text-xl font-bold">{t("browse")}</h2>
-        {!status.isClosed && (
-          <nav
-            className="col-start-2 row-start-1 flex gap-5 sm:ml-auto"
-            aria-label={t("sortLabel")}
-          >
-            {SORTS.map((value) => (
-              <LocalizedClientLink
-                key={value}
-                href={`/logo-contest?sort=${value}&limit=${pageSize}`}
-                aria-current={displaySort === value ? "page" : undefined}
-                className={cn(
-                  "px-1 py-2 text-sm font-semibold transition-colors",
-                  displaySort === value
-                    ? "text-[#ffa500]"
-                    : "text-[#607585] hover:text-[#ffa500]"
-                )}
-              >
-                {t(`sort.${value}`)}
-              </LocalizedClientLink>
-            ))}
-          </nav>
-        )}
-        <details
-          className={cn(
-            "group relative col-start-1 row-start-2 w-36 text-sm",
-            status.isClosed && "sm:ml-auto"
-          )}
-        >
-          <summary
-            aria-label={t("pageSize.label")}
-            className="flex h-9 cursor-pointer list-none items-center justify-between rounded-xl px-3 font-medium text-[#24343d] outline-none focus-visible:ring-2 focus-visible:ring-[#ffa500] [&::-webkit-details-marker]:hidden"
-          >
-            {t("pageSize.option", { count: pageSize })}
-            <ChevronDown
-              className="size-4 text-[#607585] transition-transform group-open:rotate-180"
-              aria-hidden="true"
-            />
-          </summary>
-          <div className="absolute top-full left-0 z-20 mt-1 w-36 rounded-xl border border-[#dce3e8] bg-white p-1 shadow-lg">
-            {PAGE_SIZES.map((size) => (
-              <LocalizedClientLink
-                key={size}
-                href={`/logo-contest?sort=${displaySort}&limit=${size}`}
-                aria-current={size === pageSize ? "page" : undefined}
-                className="flex h-8 items-center justify-between rounded-lg px-2 text-[#24343d] hover:bg-[#f7f8fa]"
-              >
-                {t("pageSize.option", { count: size })}
-                {size === pageSize && (
-                  <Check className="size-4" aria-hidden="true" />
-                )}
-              </LocalizedClientLink>
-            ))}
-          </div>
-        </details>
       </div>
 
       {!entries && (
@@ -234,7 +171,7 @@ export default async function LogoContestPage({
           {page > 1 ? (
             <LocalizedClientLink
               data-page-prev
-              href={`/logo-contest?sort=${displaySort}&limit=${pageSize}&page=${page - 1}`}
+              href={`/logo-contest?page=${page - 1}`}
               aria-label={t("previousPage")}
               className="flex size-8 items-center justify-center text-[#607585] hover:text-[#143247]"
             >
@@ -251,7 +188,7 @@ export default async function LogoContestPage({
           {visiblePages.map((value) => (
             <LocalizedClientLink
               key={value}
-              href={`/logo-contest?sort=${displaySort}&limit=${pageSize}&page=${value}`}
+              href={`/logo-contest?page=${value}`}
               aria-current={value === page ? "page" : undefined}
               className={cn(
                 "flex min-w-5 items-center justify-center text-sm transition-colors",
@@ -266,7 +203,7 @@ export default async function LogoContestPage({
           {page < totalPages ? (
             <LocalizedClientLink
               data-page-next
-              href={`/logo-contest?sort=${displaySort}&limit=${pageSize}&page=${page + 1}`}
+              href={`/logo-contest?page=${page + 1}`}
               aria-label={t("nextPage")}
               className="flex size-8 items-center justify-center text-[#607585] hover:text-[#143247]"
             >
