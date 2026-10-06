@@ -49,6 +49,14 @@ medusaIntegrationTestRunner({
       expect(payment.captures.length).toBe(1);
     });
 
+    it('배송 정책 스냅샷이 주문의 배송 방법 data 까지 복사된다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      expect(o.shipping_methods[0].data.policySnapshot).toEqual(
+        expect.objectContaining({ shippingGroupCode: 'pc-cond', shippingProfileId: c.groups.cond.shippingProfileId }),
+      );
+    });
+
     const editQuantity = async (orderId: string, itemId: string, quantity: number) => {
       const container = getContainer();
       await beginOrderEditOrderWorkflow(container).run({ input: { order_id: orderId } });

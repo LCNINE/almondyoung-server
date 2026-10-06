@@ -85,3 +85,10 @@ export const DEFAULT_SHIPPING_GROUP_DELIVERY: ShippingGroupDelivery = {
   leadTimeMinDays: 2,
   leadTimeMaxDays: 3,
 };
+
+/**
+ * 주문 시점의 배송비 정책. 배송 방법 data 에 남아 카트 → 주문으로 복사된다.
+ * 그룹 정책을 나중에 바꿔도 부분취소 배송비는 이 값으로 다시 계산한다(#1016 35번, 스펙 §6.1).
+ */
+export type ShippingPolicySnapshot = { policy: ShippingFeePolicy; shippingGroupCode: string; shippingProfileId: string };
+export const POLICY_SNAPSHOT_KEY = 'policySnapshot';

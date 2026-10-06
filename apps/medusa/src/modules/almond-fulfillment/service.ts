@@ -10,7 +10,9 @@ import { calculateShippingFee, type ShippingFeeLine } from './calculate-shipping
 import {
   DEFAULT_SHIPPING_GROUP_CODE,
   DEFAULT_SHIPPING_GROUP_DELIVERY,
+  POLICY_SNAPSHOT_KEY,
   type ShippingGroupOptionData,
+  type ShippingPolicySnapshot,
 } from './types';
 
 type QueryGraph = {
@@ -58,10 +60,13 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
   }
 
   async validateFulfillmentData(
-    _optionData: Record<string, unknown>,
+    optionData: Record<string, unknown>,
     data: Record<string, unknown>,
+    _context?: unknown,
   ): Promise<Record<string, unknown>> {
-    return data ?? {};
+    const { policy, shippingGroupCode, shippingProfileId } = this.readOptionData(optionData);
+    const snapshot: ShippingPolicySnapshot = { policy, shippingGroupCode, shippingProfileId };
+    return { ...(data ?? {}), [POLICY_SNAPSHOT_KEY]: snapshot };
   }
 
   async validateOption(): Promise<boolean> {
