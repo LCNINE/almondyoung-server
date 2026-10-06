@@ -18,4 +18,17 @@ describe('validateFulfillmentData', () => {
     expect(out).toEqual({ foo: 1 });
     expect(out).not.toHaveProperty('policySnapshot');
   });
+
+  it('정책 없는 옵션에 클라이언트가 보낸 policySnapshot 은 버린다 — 부분취소가 믿는 근거를 밖에서 심지 못하게', async () => {
+    const forged = { policy: { type: 'free' }, shippingGroupCode: 'x', shippingProfileId: 'sp_x' };
+    const out = await svc.validateFulfillmentData({}, { foo: 1, policySnapshot: forged }, {} as any);
+    expect(out).toEqual({ foo: 1 });
+  });
+
+  it('정책 있는 옵션은 클라이언트가 보낸 policySnapshot 을 옵션의 정책으로 덮어쓴다', async () => {
+    const forged = { policy: { type: 'free' }, shippingGroupCode: 'x', shippingProfileId: 'sp_x' };
+    const out = await svc.validateFulfillmentData(optionData, { policySnapshot: forged }, {} as any);
+    expect(out.policySnapshot).toEqual({ policy: optionData.policy, shippingGroupCode: 'g1', shippingProfileId: 'sp_1' });
+  });
 });
+

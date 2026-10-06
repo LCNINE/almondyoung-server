@@ -84,4 +84,6 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
  * 한 결제의 환불 기록·표식 쓰기를 직렬화하는 잠금 키. 환불 투영(payment-events)과 환불을 내는 쪽이 같은 키를 쓴다 —
  * 서로 다른 Medusa 태스크에서 같은 환불 사실이 동시에 처리돼도 한 번만 기록되게 한다.
  */
+// 주의: Medusa 레디스 locking provider 는 `timeout` 을 대기 한도이자 잠금 만료로 같이 쓰고, 풀 때 owner "*" 로 푼다.
+// 이 잠금 안의 일(환불 워크플로 한 번)이 timeout 을 넘기면 잠금이 먼저 풀려 다른 태스크가 들어온다 — timeout 보다 넉넉히 짧게 둘 것.
 export const paymentRefundLockKey = (paymentId: string): string => `almond-payment-refund:${paymentId}`;

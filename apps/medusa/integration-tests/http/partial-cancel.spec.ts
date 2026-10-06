@@ -354,6 +354,7 @@ medusaIntegrationTestRunner({
       const bad = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-1', items: [{ item_id: item, quantity: 3 }] }, c.adminHeaders).catch((e: any) => e.response);
       expect(bad.status).toBe(400);
       expect(bad.data.type).toBe('not_allowed');
+      expect(bad.data.code).toBe('partial_cancel_rejected');
 
       wallet.failNextRefund = true;
       const pending = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-2', items: [{ item_id: item, quantity: 1 }] }, c.adminHeaders).catch((e: any) => e.response);

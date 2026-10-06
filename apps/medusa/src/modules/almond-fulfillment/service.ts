@@ -65,8 +65,13 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     _context?: unknown,
   ): Promise<Record<string, unknown>> {
     // 정책 없는 옵션(고정가 등)은 calculatePrice 가 안 돌 수 있다 — 거절하지 않고 스냅샷만 생략한다.
+    // data 는 클라이언트가 보낸 값이라 스냅샷 키가 섞여 올 수 있다. 부분취소가 그걸 주문 시점 정책으로 믿으므로 뺀다.
+    // (새 배송 방법에 넘길 새 객체라 키를 빼도 된다 — JSON 병합 갱신 주의는 기존 행 갱신에만 해당한다.)
     const option = this.tryReadOptionData(optionData);
-    if (!option) return data ?? {};
+    if (!option) {
+      const { [POLICY_SNAPSHOT_KEY]: _forged, ...rest } = data ?? {};
+      return rest;
+    }
     const { policy, shippingGroupCode, shippingProfileId } = option;
     const snapshot: ShippingPolicySnapshot = { policy, shippingGroupCode, shippingProfileId };
     return { ...(data ?? {}), [POLICY_SNAPSHOT_KEY]: snapshot };
