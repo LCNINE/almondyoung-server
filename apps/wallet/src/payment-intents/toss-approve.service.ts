@@ -66,6 +66,14 @@ export class TossApproveService {
       return;
     }
 
+    // 외부 승인 직후 프로세스가 중단되거나 웹훅이 먼저 도착해도 올바른 키로 재조회할 수 있어야 한다.
+    if (paymentType === 'BRANDPAY') {
+      charge.responsePayload = { ...(charge.responsePayload ?? {}), paymentType };
+      await this.chargesService.updateStatus(charge.id, 'REQUIRES_ACTION', {
+        responsePayload: charge.responsePayload,
+      });
+    }
+
     // 3. Call Toss API confirm
     const result = customerKey
       ? await this.tossApi.confirmBrandPayPayment(

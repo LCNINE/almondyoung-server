@@ -27,6 +27,7 @@ interface BuildOpts {
   /** VA 발급 시 charge 에 저장돼 있던 secret (있으면 secret 대조 대상). */
   storedSecret?: string;
   widgetCheckout?: boolean;
+  customBrandPay?: boolean;
 }
 
 function buildService(chargeStatus: string, opts: BuildOpts = {}) {
@@ -37,6 +38,7 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
     reQueryError,
     storedSecret,
     widgetCheckout,
+    customBrandPay,
   } = opts;
 
   const updateStatus = jest.fn().mockResolvedValue(undefined);
@@ -54,6 +56,7 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
       responsePayload: {
         ...(storedSecret ? { secret: storedSecret } : {}),
         ...(widgetCheckout ? { nextAction: { checkoutMode: 'WIDGET' } } : {}),
+        ...(customBrandPay ? { nextAction: { checkoutMode: 'CUSTOM' }, paymentType: 'BRANDPAY' } : {}),
       },
     }),
   };
@@ -161,6 +164,14 @@ describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조
 });
 
 describe('TossWebhookService — 기존 동작 회귀', () => {
+  it('즉시 승인 전에 저장한 custom BrandPay 유형으로 전용 키를 재조회한다', async () => {
+    const { service, getPaymentByOrderId, finalizeApproval } = buildService('REQUIRES_ACTION', {
+      customBrandPay: true,
+    });
+    await service.handle(depositWebhook());
+    expect(getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, false, true);
+    expect(finalizeApproval).toHaveBeenCalled();
+  });
   it('위젯 결제는 위젯 키로 재조회한다', async () => {
     const { service, getPaymentByOrderId } = buildService('REQUIRES_ACTION', { widgetCheckout: true });
 
