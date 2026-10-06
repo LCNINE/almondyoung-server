@@ -10,7 +10,9 @@ import { calculateShippingFee, type ShippingFeeLine } from './calculate-shipping
 import {
   DEFAULT_SHIPPING_GROUP_CODE,
   DEFAULT_SHIPPING_GROUP_DELIVERY,
+  POLICY_SNAPSHOT_KEY,
   type ShippingGroupOptionData,
+  type ShippingPolicySnapshot,
 } from './types';
 
 type QueryGraph = {
@@ -58,10 +60,21 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
   }
 
   async validateFulfillmentData(
-    _optionData: Record<string, unknown>,
+    optionData: Record<string, unknown>,
     data: Record<string, unknown>,
+    _context?: unknown,
   ): Promise<Record<string, unknown>> {
-    return data ?? {};
+    // 정책 없는 옵션(고정가 등)은 calculatePrice 가 안 돌 수 있다 — 거절하지 않고 스냅샷만 생략한다.
+    // data 는 클라이언트가 보낸 값이라 스냅샷 키가 섞여 올 수 있다. 부분취소가 그걸 주문 시점 정책으로 믿으므로 뺀다.
+    // (새 배송 방법에 넘길 새 객체라 키를 빼도 된다 — JSON 병합 갱신 주의는 기존 행 갱신에만 해당한다.)
+    const option = this.tryReadOptionData(optionData);
+    if (!option) {
+      const { [POLICY_SNAPSHOT_KEY]: _forged, ...rest } = data ?? {};
+      return rest;
+    }
+    const { policy, shippingGroupCode, shippingProfileId } = option;
+    const snapshot: ShippingPolicySnapshot = { policy, shippingGroupCode, shippingProfileId };
+    return { ...(data ?? {}), [POLICY_SNAPSHOT_KEY]: snapshot };
   }
 
   async validateOption(): Promise<boolean> {
@@ -92,14 +105,9 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     return {};
   }
 
-  private readOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData {
+  private tryReadOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData | null {
     const data = optionData as unknown as Partial<ShippingGroupOptionData>;
-    if (!data?.policy || !data.shippingProfileId) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `[almond-fulfillment] shipping option 의 data 에 배송비 그룹 정책이 없다. data=${JSON.stringify(optionData)}`,
-      );
-    }
+    if (!data?.policy || !data.shippingProfileId) return null;
     return {
       policy: data.policy,
       shippingProfileId: data.shippingProfileId,
@@ -107,6 +115,17 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
       areaTemplateCode: data.areaTemplateCode,
       delivery: data.delivery ?? DEFAULT_SHIPPING_GROUP_DELIVERY,
     };
+  }
+
+  private readOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData {
+    const read = this.tryReadOptionData(optionData);
+    if (!read) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[almond-fulfillment] shipping option 의 data 에 배송비 그룹 정책이 없다. data=${JSON.stringify(optionData)}`,
+      );
+    }
+    return read;
   }
 
   /**
