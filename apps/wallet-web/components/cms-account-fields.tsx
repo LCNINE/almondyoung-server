@@ -1,5 +1,6 @@
 'use client';
 
+import { createRequestId } from '@/lib/request-id';
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -144,7 +145,7 @@ export function CmsAccountFields({ value, onChange, onComplete, verified, onVeri
    */
   const attempt = useRef<{ combo: string; id: string } | null>(null);
   const attemptIdFor = (combo: string) => {
-    if (attempt.current?.combo !== combo) attempt.current = { combo, id: crypto.randomUUID() };
+    if (attempt.current?.combo !== combo) attempt.current = { combo, id: createRequestId() };
     return attempt.current.id;
   };
   /**

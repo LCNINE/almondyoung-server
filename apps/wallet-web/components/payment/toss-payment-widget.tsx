@@ -138,7 +138,7 @@ export function TossPaymentWidget({
   }, [amount, initialized, widgetsRef, setReadyAmount, setError]);
 
   return (
-    <div className="rounded-lg border bg-card px-2 py-4 shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-[#e9e9e9] bg-white">
       <div id="toss-payment-methods" />
       <div id="toss-payment-agreement" />
     </div>

@@ -1,3 +1,4 @@
+import { createRequestId } from './request-id';
 import { fetchWithAuthBounce } from './fetch-with-refresh';
 
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
@@ -25,6 +26,8 @@ export interface PaymentMethod {
 }
 
 export interface TossWidgetConfig {
+  checkoutMode?: 'CUSTOM' | 'WIDGET';
+  brandpayClientKey?: string;
   clientKey: string;
   variantKey: string;
   customerKey: string;
@@ -205,7 +208,7 @@ export async function confirmPaymentIntent(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
     body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt }),
@@ -253,7 +256,7 @@ export interface CmsBankAccountPayload {
 export async function registerCmsBankAccount(dto: CmsBankAccountPayload, cookieHeader: string): Promise<BillingMethod> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(dto),
     cache: 'no-store',
   });
@@ -271,7 +274,7 @@ export async function updateCmsBankAccount(
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/${billingMethodId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(dto),
     cache: 'no-store',
   });
@@ -303,7 +306,7 @@ export async function checkCmsAccount(
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
-      'Idempotency-Key': idempotencyKey ?? crypto.randomUUID(),
+      'Idempotency-Key': idempotencyKey ?? createRequestId(),
     },
     body: JSON.stringify(dto),
     cache: 'no-store',
@@ -332,7 +335,7 @@ export async function approveNicepay(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     body: JSON.stringify({ tid, orderId, amount, authToken, clientId, signature }),
   });
@@ -353,7 +356,7 @@ export async function issueNicepayBillingKey(
   if (encMode) payload['encMode'] = encMode;
   const res = await fetch(`${BASE_URL}/v1/billing-methods/nicepay`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(payload),
     cache: 'no-store',
   });
@@ -374,7 +377,7 @@ export async function issueTossBillingKey(
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     body: JSON.stringify({ authKey, customerKey }),
     cache: 'no-store',
@@ -439,7 +442,7 @@ export async function cancelPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'cancel'), {
     method: 'POST',
     headers: {
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
   });
@@ -458,7 +461,7 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'abandon'), {
     method: 'POST',
     headers: {
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
   });
