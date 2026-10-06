@@ -8,7 +8,7 @@ import {
 import { PartialCancelRejected } from '../../src/workflows/orders/partial-cancel/plan-partial-cancel';
 import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
 import {
-  FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, createOrderFixedPromo, loadOrder, Commerce,
+  FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, createOrderFixedPromo, createShippingFixedPromo, loadOrder, Commerce,
 } from './fixtures/partial-cancel-fixture';
 
 jest.setTimeout(300 * 1000);
@@ -33,6 +33,7 @@ medusaIntegrationTestRunner({
       c = await setupCommerce(ctx);
       await createOrderFixedPromo(ctx, c, 'PC6000', 6000);
       await createOrderFixedPromo(ctx, c, 'PC61750', 61750);
+      await createShippingFixedPromo(ctx, c, 'PCSHIP3000', 3000);
     });
     afterAll(async () => wallet.stop());
     beforeEach(() => wallet.reset());
@@ -180,6 +181,23 @@ medusaIntegrationTestRunner({
       const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-8', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }] });
       expect(res.shippingNotAdjusted).toBe(true);
       expect(res.refundAmount).toBe(10000);
+    });
+
+    it('배송비 할인이 붙은 주문은 그룹이 비어도 배송비를 돌려주지 않는다 — 고객은 할인 뒤 금액을 냈다', async () => {
+      // A×2 60,000(cond 무료) + C 10,000(flat 3,000 − 배송비 할인 3,000 = 0)
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }], shippingPromoCode: 'PCSHIP3000' });
+      const o = await loadOrder(getContainer(), orderId);
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      const [withAdj] = await orderModule.listOrders({ id: orderId }, { select: ['id'], relations: ['shipping_methods', 'shipping_methods.adjustments'] });
+      const shipAdj = (withAdj.shipping_methods ?? []).flatMap((m: any) => m.adjustments ?? []).reduce((s: number, a: any) => s + num(a.amount), 0);
+      expect(shipAdj).toBe(3000);
+
+      // C 를 빼면 flat 그룹이 빈다. 할인 전 3,000 을 돌려주면 고객이 내지 않은 돈을 크레딧 라인으로 내준다.
+      const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-ship-disc', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }] });
+      expect(res.shippingNotAdjusted).toBe(true);
+      expect(res.shippingDelta).toBe(0);
+      expect(res.refundAmount).toBe(10000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([10000]);
     });
 
     it('검증 거절은 주문을 건드리지 않는다', async () => {

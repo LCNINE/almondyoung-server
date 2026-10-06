@@ -232,11 +232,31 @@ export async function createOrderFixedPromo({ api }: Ctx, c: Commerce, code: str
   return res.data.promotion.id as string;
 }
 
+/** 배송비 할인(어드민의 «배송비 할인» 쿠폰과 같은 모양: target_type shipping_methods). */
+export async function createShippingFixedPromo({ api }: Ctx, c: Commerce, code: string, value: number) {
+  const res = await api.post(
+    '/admin/promotions',
+    {
+      code, type: 'standard', is_automatic: false, status: 'active',
+      application_method: { type: 'fixed', value, target_type: 'shipping_methods', allocation: 'each', max_quantity: 1, currency_code: 'krw' },
+      additional_data: { visibility: 'public' },
+    },
+    c.adminHeaders,
+  );
+  return res.data.promotion.id as string;
+}
+
 export async function placeOrder(
   { api, getContainer }: Ctx,
   c: Commerce,
   wallet: FakeWallet,
-  opts: { lines: Array<{ variant: 'A' | 'B' | 'C' | 'D'; quantity: number }>; promoCode?: string; postalCode?: string },
+  opts: {
+    lines: Array<{ variant: 'A' | 'B' | 'C' | 'D'; quantity: number }>;
+    promoCode?: string;
+    /** 배송 방법을 넣은 «뒤»에 적용한다 — 배송 방법이 없는 카트에선 배송비 할인이 붙을 대상이 없다. */
+    shippingPromoCode?: string;
+    postalCode?: string;
+  },
 ) {
   const cartRes = await api.post(
     '/store/carts',
@@ -262,6 +282,9 @@ export async function placeOrder(
     { option_ids: used.map((g) => c.groups[g].shippingOptionId) },
     c.storeHeaders,
   );
+  if (opts.shippingPromoCode) {
+    await api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [opts.shippingPromoCode] }, c.storeHeaders);
+  }
 
   const pc = await api.post('/store/payment-collections', { cart_id: cartId }, c.storeHeaders);
   const ses = await api.post(

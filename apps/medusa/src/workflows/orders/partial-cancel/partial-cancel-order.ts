@@ -252,7 +252,15 @@ async function loadOrder(container: MedusaContainer, orderId: string): Promise<O
     { id: orderId },
     {
       select: ['id', 'status', 'version', 'metadata'],
-      relations: ['items', 'items.detail', 'items.adjustments', 'shipping_methods', 'summary', 'shipping_address'],
+      relations: [
+        'items',
+        'items.detail',
+        'items.adjustments',
+        'shipping_methods',
+        'shipping_methods.adjustments',
+        'summary',
+        'shipping_address',
+      ],
     },
   );
   if (!o) throw new PartialCancelRejected(`주문을 찾을 수 없습니다: ${orderId}`);
@@ -282,15 +290,28 @@ async function loadOrder(container: MedusaContainer, orderId: string): Promise<O
         is_tax_inclusive: !!(a as { is_tax_inclusive?: boolean | null }).is_tax_inclusive,
       })),
     })),
-    shippingMethods: (o.shipping_methods ?? []).map((m) => ({
-      id: m.id,
-      shippingOptionId: m.shipping_option_id ?? null,
-      amount: toNumber(m.amount),
-      snapshot: readSnapshot(m.data),
-      isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
-    })),
+    shippingMethods: (o.shipping_methods ?? []).map((m) => toShippingMethodView(m)),
     postalCode: o.shipping_address?.postal_code ?? null,
     pendingDifference,
+  };
+}
+
+/** 배송 방법 → 계획 입력. amount 는 할인 «전» 금액이라, 할인이 붙었는지를 따로 넘긴다(planShipping 이 조정을 멈춘다). */
+export function toShippingMethodView(m: {
+  id: string;
+  shipping_option_id?: string | null;
+  amount: unknown;
+  name?: string | null;
+  data?: Record<string, unknown> | null;
+  adjustments?: Array<{ amount: unknown } | null> | null;
+}): ShippingMethodView {
+  return {
+    id: m.id,
+    shippingOptionId: m.shipping_option_id ?? null,
+    amount: toNumber(m.amount),
+    snapshot: readSnapshot(m.data),
+    isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
+    hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
 }
 
