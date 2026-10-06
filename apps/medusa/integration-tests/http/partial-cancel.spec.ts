@@ -299,6 +299,34 @@ medusaIntegrationTestRunner({
       expect(balance(after)).toBe(0);
     });
 
+    it('라우트: 성공 200, 거절 400 not_allowed, 환불 실패 502 refund_pending, 본문 오류 400 invalid_data, 무인증 거절', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const item = o.items[0].id;
+
+      const noAuth = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-0', items: [{ item_id: item, quantity: 1 }] }).catch((e: any) => e.response);
+      expect(noAuth.status).toBe(401);
+
+      const invalid = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-0', items: [] }, c.adminHeaders).catch((e: any) => e.response);
+      expect(invalid.status).toBe(400);
+      expect(invalid.data.type).toBe('invalid_data');
+
+      const bad = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-1', items: [{ item_id: item, quantity: 3 }] }, c.adminHeaders).catch((e: any) => e.response);
+      expect(bad.status).toBe(400);
+      expect(bad.data.type).toBe('not_allowed');
+
+      wallet.failNextRefund = true;
+      const pending = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-2', items: [{ item_id: item, quantity: 1 }] }, c.adminHeaders).catch((e: any) => e.response);
+      expect(pending.status).toBe(502);
+      expect(pending.data).toEqual(expect.objectContaining({ type: 'refund_pending', stage: 'edited', requestId: 'r-route-2' }));
+
+      const ok = await api.post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-route-2', items: [{ item_id: item, quantity: 1 }] }, c.adminHeaders);
+      expect(ok.status).toBe(200);
+      expect(ok.data).toEqual(expect.objectContaining({ requestId: 'r-route-2', refundAmount: 30000, stage: 'refunded' }));
+      expect(ok.data).toHaveProperty('shippingDelta');
+      expect(ok.data).toHaveProperty('shippingNotAdjusted');
+    });
+
     it('상한에 깎인 배송비 청구는 깎인 만큼만 기록되고, 그 그룹이 나중에 비면 실제로 청구한 만큼만 돌려준다', async () => {
       // A 30,000 + B 30,000 + D 5,000 = 65,000, 할인 61,750 across → A 28,500 · B 28,500 · D 4,750.
       // 배송비: cond 0(60,000 ≥ 50,000) · perq 1,000.
