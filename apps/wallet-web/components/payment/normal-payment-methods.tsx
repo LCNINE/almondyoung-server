@@ -69,6 +69,11 @@ export function NormalPaymentMethods({
     };
   }, [methodsCarousel]);
   const [more, setMore] = useState(false);
+  useEffect(() => {
+    const index = ['신용·체크카드', '카카오페이', '토스페이', '네이버페이'].indexOf(method);
+    if (index >= 0) methodsCarousel?.scrollTo(index);
+    if (cardCompany && CARDS.findIndex((card) => card.code === cardCompany) >= 11) setMore(true);
+  }, [methodsCarousel, method, cardCompany]);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideUrl, setGuideUrl] = useState<string | null>(null);
   const [guideError, setGuideError] = useState(false);

@@ -32,6 +32,7 @@ export function CustomTossCheckout({
   onPay,
 }: Props) {
   const [cards, setCards] = useState<CheckoutCard[]>([]);
+  const [preferredCardId, setPreferredCardId] = useState<string | null>(null);
   const [agreementAccepted, setAgreementAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sdkError, setSdkError] = useState<string | null>(null);
@@ -39,9 +40,14 @@ export function CustomTossCheckout({
 
   const loadCards = async (signal?: AbortSignal) => {
     const response = await fetch('/api/toss/brandpay/cards', { cache: 'no-store', signal });
-    const body = (await response.json()) as { cards?: CheckoutCard[]; message?: string };
+    const body = (await response.json()) as {
+      cards?: CheckoutCard[];
+      selectedMethodId?: string | null;
+      message?: string;
+    };
     if (!response.ok) throw new Error(body.message ?? '등록된 카드를 불러오지 못했습니다.');
     setCards(body.cards ?? []);
+    setPreferredCardId(body.selectedMethodId ?? null);
   };
 
   useEffect(() => {
@@ -99,6 +105,8 @@ export function CustomTossCheckout({
       amount={amount}
       availablePoints={availablePoints}
       cards={cards}
+      preferenceScope={config.customerKey}
+      preferredCardId={preferredCardId}
       loading={busy || loading}
       error={error ?? sdkError}
       onClose={onClose}

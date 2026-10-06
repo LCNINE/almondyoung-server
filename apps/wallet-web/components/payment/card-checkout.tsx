@@ -9,6 +9,7 @@ import { VirtualAccountDialog } from './virtual-account-dialog';
 import type { BusinessLicenseInfo } from '@/lib/wallet-api';
 import { SheetSelect } from '@/components/ui/sheet-select';
 import { NormalPaymentMethods } from './normal-payment-methods';
+import { readPaymentPreference } from '@/lib/payment-preference';
 
 export interface CheckoutCard {
   id: string;
@@ -30,6 +31,8 @@ export interface CheckoutSelection {
 }
 
 interface Props {
+  preferenceScope?: string;
+  preferredCardId?: string | null;
   agreement?: ReactNode;
   agreementAccepted?: boolean;
   customer?: BusinessLicenseInfo | null;
@@ -76,6 +79,8 @@ function RadioMark({ selected }: { selected: boolean }) {
 
 /** 직접 만든 카드 선택 UI. 등록과 결제는 호출자가 연결하며 카드 번호 원문은 받지 않는다. */
 export function CardCheckout({
+  preferenceScope,
+  preferredCardId,
   agreement,
   agreementAccepted,
   customer,
@@ -121,6 +126,18 @@ export function CardCheckout({
   const validationRef = useRef<HTMLParagraphElement>(null);
   const [depositOpen, setDepositOpen] = useState(false);
   const [carouselRef, carousel] = useEmblaCarousel({ align: 'center', containScroll: false });
+  const restoredCard = useRef(false);
+
+  useEffect(() => {
+    if (!preferenceScope) return;
+    const previous = readPaymentPreference(preferenceScope);
+    if (!previous) return;
+    setMode(previous.method === 'BRANDPAY' ? 'saved' : 'normal');
+    if (previous.method !== 'BRANDPAY') {
+      setNormalMethod(previous.method);
+      setNormalCardCompany(previous.cardCompany ?? null);
+    }
+  }, [preferenceScope]);
 
   useEffect(() => {
     if (!carousel) return;
@@ -129,11 +146,16 @@ export function CardCheckout({
       setInstallment(0);
     };
     carousel.on('select', selectCard).on('reInit', selectCard);
+    if (!restoredCard.current && cards.length > 0) {
+      const preferredIndex = cards.findIndex((card) => card.id === preferredCardId);
+      carousel.scrollTo(preferredIndex >= 0 ? preferredIndex : 0, true);
+      restoredCard.current = true;
+    }
     selectCard();
     return () => {
       carousel.off('select', selectCard).off('reInit', selectCard);
     };
-  }, [carousel, cards]);
+  }, [carousel, cards, preferredCardId]);
 
   const promotions = useCardPromotions();
   const selectedCard = cards.find((card) => card.id === cardId);
