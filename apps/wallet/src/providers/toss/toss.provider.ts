@@ -13,7 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
-import { usesTossWidget } from './toss-widget-mode';
+import { usesTossWidget, usesCustomBrandPay } from './toss-widget-mode';
 import { and } from 'drizzle-orm';
 import { isTossRefundRetryable } from './toss-refund-errors';
 
@@ -29,7 +29,9 @@ export class TossPaymentProvider implements PaymentProvider {
   ) {}
 
   async getUserMethods(userId: string): Promise<PaymentMethod[]> {
-    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
+    const widgetEnabled =
+      process.env.TOSS_CHECKOUT_MODE !== 'CUSTOM' &&
+      !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return this.dbService.db.transaction(async (tx) => {
       const db = tx as typeof this.dbService.db;
       const existing = await db
@@ -79,7 +81,9 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const meta = params.metadata ?? {};
-    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
+    const widgetEnabled =
+      process.env.TOSS_CHECKOUT_MODE !== 'CUSTOM' &&
+      !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return {
       status: 'REQUIRES_ACTION',
       nextAction: {
@@ -87,7 +91,11 @@ export class TossPaymentProvider implements PaymentProvider {
         orderId,
         orderName: (meta.orderName as string) ?? '결제',
         clientKey: process.env.TOSS_CLIENT_KEY ?? '',
-        ...(widgetEnabled ? { checkoutMode: 'WIDGET' } : {}),
+        ...(widgetEnabled
+          ? { checkoutMode: 'WIDGET' }
+          : process.env.TOSS_CHECKOUT_MODE === 'CUSTOM'
+            ? { checkoutMode: 'CUSTOM' }
+            : {}),
         amount: params.amount,
         currency: params.currency,
         ...(meta.customerName ? { customerName: meta.customerName } : {}),
@@ -114,6 +122,7 @@ export class TossPaymentProvider implements PaymentProvider {
       params.idempotencyKey,
       undefined,
       payment.useWidgetKey,
+      payment.useBrandPayKey,
     );
     if (result.ok) return { status: 'SUCCEEDED' };
     return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
@@ -132,6 +141,7 @@ export class TossPaymentProvider implements PaymentProvider {
       params.idempotencyKey,
       undefined,
       payment.useWidgetKey,
+      payment.useBrandPayKey,
     );
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: payment.paymentKey };
@@ -144,7 +154,9 @@ export class TossPaymentProvider implements PaymentProvider {
     };
   }
 
-  private async getPayment(chargeId: string): Promise<{ paymentKey: string; useWidgetKey: boolean } | null> {
+  private async getPayment(
+    chargeId: string,
+  ): Promise<{ paymentKey: string; useWidgetKey: boolean; useBrandPayKey: boolean } | null> {
     const rows = await this.dbService.db
       .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
       .from(charges)
@@ -152,6 +164,10 @@ export class TossPaymentProvider implements PaymentProvider {
       .limit(1);
     const charge = rows[0];
     if (!charge?.providerTransactionId) return null;
-    return { paymentKey: charge.providerTransactionId, useWidgetKey: usesTossWidget(charge.responsePayload) };
+    return {
+      paymentKey: charge.providerTransactionId,
+      useWidgetKey: usesTossWidget(charge.responsePayload),
+      useBrandPayKey: usesCustomBrandPay(charge.responsePayload),
+    };
   }
 }
