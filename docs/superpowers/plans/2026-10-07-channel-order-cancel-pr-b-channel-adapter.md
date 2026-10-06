@@ -1270,4 +1270,4 @@ git commit -m "docs: PR-B 의 계획 단계 발견(SDK 본문 유실·REFUND_FAI
 
 - **배포 직후 효과 없음** — `CancelChannelOrder` 를 보내는 쪽(PR-C core)이 없다. 마이그레이션 0
 - `apps/medusa` 변경 없음. 옛 역투영(`CoreOrderCancelled`)의 동작도 같다(400·404 건너뜀, 5xx 실패)
-- **PR-C 로 넘길 것:** core 가 `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 처리기를 둔다. PR-C 롤링 중 옛 core 태스크는 이 사실을 **조용히 버린다**(§10-5 답) — 요청이 `requested` 로 남아 5분 정체 보드가 받는다. 명령의 `lines[].channelOrderItemId` 는 Medusa 줄 id 여야 한다 — 수집 때 `OrderCreated.items[].orderItemId` 로 들어온 값(`medusa-order.source.ts:115`)을 core 가 어디에 들고 있는지 PR-C 계획에서 확인
+- **PR-C 로 넘길 것:** core 가 `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 처리기를 둔다. **두 처리기는 같은 `requestId` 의 반복을 무해하게 받아야 한다** — channel-adapter 는 사실을 «명령 전달 단위»(`${requestId}:${envelope.messageId}`)로 멱등 처리하므로, [다시 보내기]마다 같은 사실이 다시 올 수 있다(최종 리뷰 반영, 일부러 그렇게 했다: 첫 사실이 유실돼도 다시 보내기가 사유를 다시 낸다). PR-C 롤링 중 옛 core 태스크는 이 사실을 **조용히 버린다**(§10-5 답) — 요청이 `requested` 로 남아 5분 정체 보드가 받는다. 명령의 `lines[].channelOrderItemId` 는 Medusa 줄 id 여야 한다 — 수집 때 `OrderCreated.items[].orderItemId` 로 들어온 값(`medusa-order.source.ts:115`)을 core 가 어디에 들고 있는지 PR-C 계획에서 확인
