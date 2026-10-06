@@ -1,0 +1,283 @@
+// apps/medusa/integration-tests/http/partial-cancel.spec.ts
+import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
+import { Modules } from '@medusajs/framework/utils';
+import { refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
+import {
+  partialCancelOrder, PartialCancelRefundPending,
+} from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
+import { PartialCancelRejected } from '../../src/workflows/orders/partial-cancel/plan-partial-cancel';
+import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
+import {
+  FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, createOrderFixedPromo, loadOrder, Commerce,
+} from './fixtures/partial-cancel-fixture';
+
+jest.setTimeout(300 * 1000);
+process.env.WALLET_BASE_URL = WALLET_BASE_URL;
+process.env.WALLET_API_KEY = 'test-wallet-key';
+const wallet = new FakeWallet();
+const num = (v: any) => Number(v?.numeric_ ?? v?.value ?? v);
+
+/**
+ * 채널 주문 부분취소 오케스트레이터(#1016 35번 PR-A, 스펙 §6.2). 금액은 픽스처 상품으로 손으로 계산한 값이다:
+ * A·B 30,000 (조건부 무료 50,000 / 3,000), C 10,000 (고정 3,000), D 5,000 (수량당 1,000).
+ */
+medusaIntegrationTestRunner({
+  inApp: true,
+  env: { WALLET_BASE_URL, WALLET_API_KEY: 'test-wallet-key' },
+  disableAutoTeardown: true,
+  testSuite: ({ api, getContainer }) => {
+    let c: Commerce;
+    const ctx = { api, getContainer };
+    beforeAll(async () => {
+      await wallet.start();
+      c = await setupCommerce(ctx);
+      await createOrderFixedPromo(ctx, c, 'PC6000', 6000);
+      await createOrderFixedPromo(ctx, c, 'PC61750', 61750);
+    });
+    afterAll(async () => wallet.stop());
+    beforeEach(() => wallet.reset());
+
+    const itemOf = (o: any, unitPrice: number) => o.items.find((i: any) => num(i.unit_price) === unitPrice);
+    const balance = (o: any) => num(o.summary.pending_difference);
+
+    it('줄 제거 + 조건부 무료 미달: 상품값 − 할인분 − 배송비를 한 번 환불하고 장부가 0 이 된다', async () => {
+      // A 30,000 + B 30,000 (cond, 60,000 ≥ 50,000 → 무료), 할인 6,000 across → 줄마다 3,000
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }], promoCode: 'PC6000' });
+      const o = await loadOrder(getContainer(), orderId);
+      const b = o.items.find((i: any) => i.product_id !== itemOf(o, 30000).product_id) ?? o.items[1];
+
+      const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-1', items: [{ itemId: b.id, quantity: 1 }] });
+
+      // 30,000 − 3,000(B 의 할인) − 3,000(남은 A 가 기준 미달)
+      expect(res.refundAmount).toBe(24000);
+      expect(res.shippingDelta).toBe(3000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([24000]);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(balance(after)).toBe(0);
+      expect(after.metadata.partialCancels['req-1'].stage).toBe('refunded');
+      const charge = after.shipping_methods.find((m: any) => m.name === '부분취소 배송비');
+      expect(num(charge?.amount)).toBe(3000);
+    });
+
+    it('수량 감소: 할인을 비례로 다시 쓴다', async () => {
+      // A × 3 = 90,000, 할인 6,000 전부 A 줄. 1개 취소 → 남길 할인 4,000, 취소분 2,000. 남은 60,000 ≥ 50,000 → 배송비 변화 없음
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }], promoCode: 'PC6000' });
+      const o = await loadOrder(getContainer(), orderId);
+
+      const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-2', items: [{ itemId: o.items[0].id, quantity: 1 }] });
+
+      expect(res.refundAmount).toBe(28000);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(after.items[0].adjustments.reduce((s: number, a: any) => s + num(a.amount), 0)).toBe(4000);
+      expect(balance(after)).toBe(0);
+    });
+
+    it('그룹이 통째로 비면 그 그룹 배송비를 함께 돌려주고, 그 몫은 크레딧 라인으로 장부를 맞춘다', async () => {
+      // A 60,000 이상 위해 A × 2(cond 무료) + C 10,000(flat 3,000)
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+
+      const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-3', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }] });
+
+      expect(res.refundAmount).toBe(13000);
+      expect(res.shippingDelta).toBe(-3000);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(balance(after)).toBe(0);
+      expect(after.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0)).toBe(3000);
+    });
+
+    it('같은 requestId 로 다시 부르면 아무것도 다시 하지 않고 같은 결과를 돌려준다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-4', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+
+      const first = await partialCancelOrder(getContainer(), input);
+      const second = await partialCancelOrder(getContainer(), input);
+
+      expect(second).toEqual(first);
+      expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('같은 requestId 인데 내용이 다르면 거절한다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      await partialCancelOrder(getContainer(), { orderId, requestId: 'req-5', items: [{ itemId: o.items[0].id, quantity: 1 }] });
+
+      await expect(
+        partialCancelOrder(getContainer(), { orderId, requestId: 'req-5', items: [{ itemId: o.items[0].id, quantity: 2 }] }),
+      ).rejects.toThrow(PartialCancelRejected);
+    });
+
+    it('환불이 한 번 실패하면 refund_pending 으로 멈추고, 다시 부르면 환불 단계부터 이어 간다(주문 수정은 한 번)', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-6', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+      wallet.failNextRefund = true;
+
+      const failure = await partialCancelOrder(getContainer(), input).catch((e) => e);
+      expect(failure).toBeInstanceOf(PartialCancelRefundPending);
+      expect(failure.requestId).toBe('req-6');
+      expect(failure.message).not.toContain('[object Object]');
+      const mid = await loadOrder(getContainer(), orderId);
+      expect(mid.metadata.partialCancels['req-6'].stage).toBe('edited');
+      const versionAfterEdit = mid.version;
+
+      const res = await partialCancelOrder(getContainer(), input);
+      expect(res.refundAmount).toBe(30000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([30000]);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(after.version).toBe(versionAfterEdit);
+      expect(balance(after)).toBe(0);
+    });
+
+    it('같은 주문 두 번째 부분취소는 첫 번째가 남긴 그룹 요금에서 계산한다', async () => {
+      // A × 2 (60,000 무료) → A 1개 취소(30,000 → 기준 미달, 3,000 차감) → 남은 A 1개 취소는 전체취소라 거절, 대신 D 를 섞는다
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'D', quantity: 2 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const a = itemOf(o, 30000);
+      const d = itemOf(o, 5000);
+
+      const first = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-7a', items: [{ itemId: a.id, quantity: 1 }] });
+      expect(first.shippingDelta).toBe(3000);
+      const second = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-7b', items: [{ itemId: d.id, quantity: 1 }] });
+      // cond 그룹은 그대로(이미 3,000), perq 는 2,000 → 1,000
+      expect(second.shippingDelta).toBe(-1000);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+
+    it('스냅샷 없는 주문은 배송비를 건드리지 않고 표시한다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }] });
+      // 배포 전 주문을 흉내: 배송 방법 data 에서 스냅샷을 지운다.
+      // Medusa 는 JSON 컬럼을 병합 갱신하므로 `data: {}` 로는 안 지워진다 — 키를 null 로 쓴다.
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      const o = await loadOrder(getContainer(), orderId);
+      await orderModule.updateOrderShippingMethods(o.shipping_methods.map((m: any) => ({ id: m.id, data: { [POLICY_SNAPSHOT_KEY]: null } })));
+      const wiped = await loadOrder(getContainer(), orderId);
+      expect(wiped.shipping_methods.every((m: any) => m.data?.[POLICY_SNAPSHOT_KEY] == null)).toBe(true);
+
+      const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-8', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }] });
+      expect(res.shippingNotAdjusted).toBe(true);
+      expect(res.refundAmount).toBe(10000);
+    });
+
+    it('검증 거절은 주문을 건드리지 않는다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      await expect(
+        partialCancelOrder(getContainer(), { orderId, requestId: 'req-9', items: [{ itemId: o.items[0].id, quantity: 1 }] }),
+      ).rejects.toThrow(PartialCancelRejected);
+      expect((await loadOrder(getContainer(), orderId)).version).toBe(o.version);
+    });
+
+    it('첫 부분취소가 배송비를 돌려주며 붙인 크레딧 라인은 두 번째 부분취소의 환불을 줄이지 않는다', async () => {
+      // A×2 60,000 + C 10,000 + D×2 10,000 = 80,000, 할인 6,000 across → A 4,500 · C 750 · D 750.
+      // 배송비: cond 0(60,000 ≥ 50,000) · flat 3,000 · perq 2,000.
+      const { orderId } = await placeOrder(ctx, c, wallet, {
+        lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }, { variant: 'D', quantity: 2 }],
+        promoCode: 'PC6000',
+      });
+      const o = await loadOrder(getContainer(), orderId);
+      const adj = (i: any) => i.adjustments.reduce((s: number, a: any) => s + num(a.amount), 0);
+      expect([adj(itemOf(o, 30000)), adj(itemOf(o, 10000)), adj(itemOf(o, 5000))]).toEqual([4500, 750, 750]);
+
+      // C 를 빼면 flat 그룹이 빈다: 10,000 − 750 + 3,000 = 12,250. 배송비 3,000 은 크레딧 라인으로 맞춘다.
+      const first = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-10a', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }] });
+      expect(first.refundAmount).toBe(12250);
+      expect(first.shippingDelta).toBe(-3000);
+      const mid = await loadOrder(getContainer(), orderId);
+      expect(balance(mid)).toBe(0);
+      expect(mid.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0)).toBe(3000);
+
+      // D 2 → 1: 5,000 − 375(D 할인의 절반) + 1,000(perq 2,000 → 1,000) = 5,625. 첫 취소의 크레딧 라인 3,000 이 깎으면 안 된다.
+      const second = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-10b', items: [{ itemId: itemOf(o, 5000).id, quantity: 1 }] });
+      expect(second.refundAmount).toBe(5625);
+      expect(second.shippingDelta).toBe(-1000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([12250, 5625]);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(balance(after)).toBe(0);
+      expect(adj(after.items.find((i: any) => i.id === itemOf(o, 5000).id))).toBe(375);
+    });
+
+    it('환불이 밀린 부분취소가 있어도 다음 부분취소는 자기 몫만 돌려주고, 밀린 것은 다시 부를 때 자기 몫을 돌려준다', async () => {
+      // A×3 90,000(cond 무료) + D×2 10,000(perq 2,000)
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }, { variant: 'D', quantity: 2 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const first = { orderId, requestId: 'req-12a', items: [{ itemId: itemOf(o, 30000).id, quantity: 1 }] };
+
+      wallet.failNextRefund = true;
+      await expect(partialCancelOrder(getContainer(), first)).rejects.toThrow(PartialCancelRefundPending);
+
+      // 수정 전부터 남아 있던 −30,000 을 같이 돌려주면 안 된다: 5,000 + 1,000(perq 2,000 → 1,000)
+      const second = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-12b', items: [{ itemId: itemOf(o, 5000).id, quantity: 1 }] });
+      expect(second.refundAmount).toBe(6000);
+
+      const resumed = await partialCancelOrder(getContainer(), first);
+      expect(resumed.refundAmount).toBe(30000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([6000, 30000]);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+
+    it('환불은 냈는데 기록 전에 끊겼다면, 다시 불러도 같은 요청의 환불을 두 번 내지 않는다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-13', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+      wallet.failNextRefund = true;
+      await expect(partialCancelOrder(getContainer(), input)).rejects.toThrow(PartialCancelRefundPending);
+
+      // 환불은 나갔지만 기록(stage refunded)을 쓰기 전에 끊긴 상황을 흉내: 같은 메모로 환불만 낸다
+      const payment = o.payment_collections[0].payments[0];
+      await refundPaymentWorkflow(getContainer()).run({ input: { payment_id: payment.id, amount: 30000, note: 'partial-cancel:req-13' } });
+
+      const res = await partialCancelOrder(getContainer(), input);
+      expect(res.refundAmount).toBe(30000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([30000]);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+
+    it('주문 수정이 확정됐는데 진행 기록이 없으면 두 번 취소하지 않고 멈춘다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-14', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+      await partialCancelOrder(getContainer(), input);
+
+      // 확정과 기록 사이에 끊긴 상황을 흉내: 기록만 지운다(JSON 병합 갱신이라 null 로 쓴다)
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      await orderModule.updateOrders([{ id: orderId, metadata: { partialCancels: { 'req-14': null } } }]);
+      const before = await loadOrder(getContainer(), orderId);
+
+      await expect(partialCancelOrder(getContainer(), input)).rejects.toThrow(/진행 기록이 없습니다/);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(after.version).toBe(before.version);
+      expect(num(after.items[0].quantity)).toBe(2);
+      expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('상한에 깎인 배송비 청구는 깎인 만큼만 기록되고, 그 그룹이 나중에 비면 실제로 청구한 만큼만 돌려준다', async () => {
+      // A 30,000 + B 30,000 + D 5,000 = 65,000, 할인 61,750 across → A 28,500 · B 28,500 · D 4,750.
+      // 배송비: cond 0(60,000 ≥ 50,000) · perq 1,000.
+      const { orderId } = await placeOrder(ctx, c, wallet, {
+        lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }, { variant: 'D', quantity: 1 }],
+        promoCode: 'PC61750',
+      });
+      const o = await loadOrder(getContainer(), orderId);
+      const [first30, second30] = o.items.filter((i: any) => num(i.unit_price) === 30000);
+      expect(first30.adjustments.reduce((s: number, a: any) => s + num(a.amount), 0)).toBe(28500);
+
+      // 하나를 빼면 cond 가 기준 미달(3,000)이 되지만 청구는 상한(30,000 − 28,500 = 1,500)에 깎인다 → 환불 0.
+      const first = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-11a', items: [{ itemId: second30.id, quantity: 1 }] });
+      expect(first.refundAmount).toBe(0);
+      expect(first.shippingDelta).toBe(1500);
+      expect(wallet.refunds).toHaveLength(0);
+      const mid = await loadOrder(getContainer(), orderId);
+      expect(balance(mid)).toBe(0);
+      expect(mid.metadata.partialCancels['req-11a'].groupFees[c.groups.cond.shippingProfileId]).toBe(1500);
+
+      // 남은 30,000 을 빼면 cond 그룹이 빈다: 상품 1,500(30,000 − 28,500) + 실제로 청구했던 1,500 = 3,000 (3,000 이 아니라 4,500 이면 과환불).
+      const second = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-11b', items: [{ itemId: first30.id, quantity: 1 }] });
+      expect(second.shippingDelta).toBe(-1500);
+      expect(second.refundAmount).toBe(3000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([3000]);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+  },
+});
