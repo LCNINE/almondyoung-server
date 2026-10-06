@@ -189,7 +189,12 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
   프로필 중 정확히 하나에 맞을 때만** 배송비를 조정한다. 어긋나거나 스냅샷이 없으면 미조정(D7). 같은 배송 프로필에 원래
   배송 방법이 둘이면 그것도 미조정
 - 정책 없는 배송 옵션(고정가 등)은 스냅샷 없이 통과한다 — 체크아웃을 막지 않는다(옛 코드도 그 단계에서 거절하지 않았다).
+  이때 클라이언트가 `data` 에 실어 보낸 `policySnapshot` 은 지운다(밖에서 부분취소의 근거를 심지 못하게).
   스토어프론트의 `/store/carts/:id/shipping-methods/bulk` 도 `validateFulfillmentData` 를 거친다(확인됨)
+- **배송비 할인이 붙은 주문은 미조정**(`SHIPPING_DISCOUNTED`): 원래 배송 방법 중 하나라도 0 이 아닌 adjustment(어드민 «배송비 할인»
+  쿠폰, `target_type: 'shipping_methods'`)가 있으면 배송비를 건드리지 않는다. 배송 방법 `amount` 는 할인 «전» 금액이라, 그대로
+  쓰면 0 원을 낸 그룹이 비었을 때 3,000 을 크레딧 라인으로 내준다. 순 배송비 계산은 하지 않는다(fail-safe)
+- 저장된 스냅샷을 지금 코드가 계산하지 못하면(모르는 정책 종류) 스냅샷이 없는 것으로 본다 — 매번 500 대신 미조정
 - 우편번호는 Medusa 주문의 배송지(청구 당시 맥락)
 
 ### 6.2 부분취소 라우트와 오케스트레이터
@@ -198,9 +203,12 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 `{ requestId: string, items: [{ item_id: string, quantity: number }] }` — `quantity` 는 **취소할** 수량.
 응답 `{ requestId, refundAmount, shippingDelta, shippingNotAdjusted, stage }`.
 
-- 응답 구분: 본문 파싱 실패는 400 `type: 'invalid_data'`, 업무 거절은 400 `type: 'not_allowed'`, 수정은 됐는데 환불이 안
-  끝났으면 502 `type: 'refund_pending'`(`stage: 'edited'`). **호출자(PR-B)는 status 가 아니라 `type` 으로 가른다.** 기존
-  `medusaClient.cancelOrder` 는 400/404 를 성공으로 삼키는데 부분취소 클라이언트는 그걸 베끼면 안 된다(§7.3)
+- 응답 구분: 본문 파싱 실패는 400 `type: 'invalid_data'`, 업무 거절은 400
+  `{ type: 'not_allowed', code: 'partial_cancel_rejected', message }`, 수정은 됐는데 환불이 안 끝났으면 502
+  `type: 'refund_pending'`(`stage: 'edited'`). **호출자(PR-B)는 status 가 아니라 본문으로 가른다.** Medusa 자신의
+  `NOT_ALLOWED`(예: 다른 주문 수정이 열려 있음 — 일시적)도 400 `type: 'not_allowed'` 로 나오므로, **정해진 거절은
+  `code === 'partial_cancel_rejected'` 뿐**이다. 기존 `medusaClient.cancelOrder` 는 400/404 를 성공으로 삼키는데 부분취소
+  클라이언트는 그걸 베끼면 안 된다(§7.3)
 - 인증은 `/admin/*` POST 의 `authenticate('user', [... 'api-key'])` 라 channel-adapter 의 secret API key 로 부를 수 있다
 
 오케스트레이터 `partialCancelOrder`(공식 워크플로를 차례로 부르는 함수 — `createWorkflow` 가 아니다). 주문 잠금
@@ -264,7 +272,14 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 - 대상: wallet 관리자 환불, 무통장 환불 승인. Medusa 결제가 없는 intent 는 지금처럼 건너뛴다
 - `refundPayment` 의 wallet 호출 Idempotency-Key 는 `medusa-refund:<context.idempotency_key>`(= Medusa refund 행 id)다.
   **한계:** provider 호출이 실패하면 Medusa 가 refund 행을 지우므로, «wallet 은 환불했는데 응답만 유실» 된 경우 재시도는 새 키로
-  나간다 — wallet 환불가능액 검사가 남은 방어선이다(기존 Medusa 동작)
+  나간다 — wallet 환불가능액 검사가 남은 방어선이다(기존 Medusa 동작). 행과 무관한 키로 바꾸지 않는다: `cancelOrderWorkflow` 는
+  결제 잠금을 잡지 않아 같은 금액의 동시 환불 둘이 한 번으로 접힐 수 있다. 대신 투영이 `MEDUSA_REFUND` 사실인데
+  `walletRefundIds` 에 없는 id 를 만나면 error 로그를 남긴다(«응답 유실 의심 · 잠시 뒤 재확인» — provider 가 id 를 쓰기 전에
+  사실이 먼저 오면 정상인데도 찍힌다)
+- **wallet 은 PG 거절도 200 으로 답한다** — `RefundsService.create` 가 예외·`FAILED` 를 삼켜 환불 행을 `FAILED` 로 돌려준다.
+  `refundPayment` 는 응답 행을 보고, `FAILED` 가 하나라도 있거나 `SUCCEEDED`+`PENDING` 합이 요청보다 적으면 던진다(Medusa 가
+  refund 행을 지운다). `PENDING`(무통장 송금 대기)은 성공이다. 결제분이 여럿이라 앞의 것은 나가고 뒤의 것이 실패하면, 나간 wallet
+  환불 id 를 error 로그에 남긴다 — `MEDUSA_REFUND` 라 투영도 건너뛰므로 로그가 유일한 흔적이다
 
 ## 7. 계약·channel-adapter·화면
 
@@ -318,8 +333,9 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 - 일시 실패(Medusa 5xx, 네트워크, **부분취소 라우트 404** — 롤링 중 옛 Medusa) → 던진다(재시도·DLQ). 재수집 실패도 여기다
 - **`cancelOrder` 의 400 분류를 고친다:** 지금은 400 이면 무엇이든 «이미 취소됨»으로 성공 처리한다(`medusa.client.ts`).
   «이미 취소됨»만 성공, 나머지 400 은 `NOT_CANCELABLE`
-- **부분취소 클라이언트는 그걸 베끼지 않는다:** 400 은 `type` 으로 가른다 — `not_allowed` 만 정해진 거절, `invalid_data`(본문 오류)는
-  호출 쪽 버그라 던진다. 502 `refund_pending` 은 일시 실패(§6.2, §9-5)
+- **부분취소 클라이언트는 그걸 베끼지 않는다:** 400 은 본문으로 가른다 — `code === 'partial_cancel_rejected'` 만 정해진 거절이다.
+  그 밖의 400 `type: 'not_allowed'`(Medusa 자신의 거절 — 다른 주문 수정이 열려 있음 등)는 일시 실패로 던진다. `invalid_data`
+  (본문 오류)는 호출 쪽 버그라 던진다. 502 `refund_pending` 은 일시 실패(§6.2, §9-5)
 
 ### 7.4 admin-web
 
@@ -399,6 +415,17 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 
 - 새 core 가 옛 channel-adapter 에 명령을 보내면 처리기가 없다 → 요청이 `requested` 로 남아 5분 뒤 정체 보드 → [다시 보내기]
 - 새 channel-adapter 가 옛 Medusa 의 부분취소 라우트를 부르면 404 → 일시 실패로 재시도(§7.3)
+
+### ⚠️ PR-A 배포 전·직후
+
+- **배포 «전»에 아래 PR-D 의 `inbox_events` 카운트를 먼저 돌린다**(같은 읽기 전용 쿼리, `sst shell --stage live`, 사람이 실행).
+  PR-A 의 환불 금액 수정(`amount: null` 결함)으로 Medusa 가 시작하는 환불이 처음으로 실제 돈을 움직인다. 배포 뒤 재시도·재처리되는
+  `CoreOrderCancelled` 행은 wallet 에 «캡처 − Medusa 가 아는 환불» 을 실제로 요청하는데, 배포 «전»에 wallet 에서 난 환불은 Medusa
+  장부에 없다 — 이미 환불된 주문을 한 번 더 환불할 수 있다. 행이 있으면 재처리 전에 §6.4 로 장부부터 맞춘다
+- **Medusa 어드민의 «환불» 버튼이 배포 순간부터 실제 돈을 움직인다**(전에는 wallet 이 `amount: null` 을 400 으로 거절했다)
+- **배포 겹침 창은 양방향이다.** (1) 옛 wallet 이 `reasonCode` 없는 사실을 내는 동안(§9-14) — 한 번 더 기록될 수 있다.
+  (2) 옛 Medusa 태스크가 아직 응답하는 동안 `gateway.refund.succeeded` 는 «Unhandled» 200 으로 끝나 사실이 영영 사라진다 — 그 창에
+  wallet 에서 난 환불은 Medusa 장부에 들어오지 않는다. 배포 직후 그 창의 wallet 환불을 사람이 대조한다
 
 ### ⚠️ PR-D 전 라이브 확인 — 이미 어긋난 주문
 
