@@ -35,6 +35,7 @@ import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
 import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
 import { CustomTossCheckout } from '@/components/payment/custom-toss-checkout';
+import { stagePaymentPreference, type PaymentPreference } from '@/lib/payment-preference';
 import type { CheckoutSelection } from '@/components/payment/card-checkout';
 import type { TossPaymentsBrandpay, TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import {
@@ -247,6 +248,12 @@ export function PayForm({
           ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         };
+        if (custom && selection && remaining > 0) {
+          stagePaymentPreference(intent.id, tossWidgetConfig.customerKey, {
+            method: selection.method as PaymentPreference['method'],
+            cardCompany: selection.cardCompany,
+          });
+        }
         if (custom && selection?.method === 'BRANDPAY') {
           if (!brandpay || !selection.cardId) throw new Error('결제할 카드를 선택해주세요.');
           await brandpay.requestPayment({
@@ -278,6 +285,15 @@ export function PayForm({
             method: custom ? ('CARD' as const) : isTossSelected ? tossSubMethod : ('CARD' as const),
             amount: { currency: 'KRW' as const, value: na.amount as number },
             ...(custom && easyPay ? { card: { flowMode: 'DIRECT' as const, easyPay } } : {}),
+            ...(custom && selection?.method === '신용·체크카드' && selection.cardCompany
+              ? {
+                  card: {
+                    flowMode: 'DIRECT' as const,
+                    cardCompany: selection.cardCompany,
+                    cardInstallmentPlan: selection.installment,
+                  },
+                }
+              : {}),
           });
         }
         return; // requestPayment redirects
