@@ -29,6 +29,8 @@ export class FakeWallet {
   refunds: Array<{ id: string; intentId: string; amount: number; idempotencyKey?: string; reasonCode?: string }> = [];
   calls: Array<{ path: string; method: string }> = [];
   failNextRefund = false;
+  /** 실제 wallet 처럼 PG 거절을 200 + FAILED 환불 행으로 돌려준다(RefundsService.create 가 예외를 삼킨다). */
+  failNextRefundAs200Failed = false;
   private seq = 0;
 
   async start() {
@@ -53,6 +55,7 @@ export class FakeWallet {
     this.refunds = [];
     this.calls = [];
     this.failNextRefund = false;
+    this.failNextRefundAs200Failed = false;
   }
   /** 결제창 완료 = 즉시 승인 + 캡처(지연 승인 표식이 없을 때의 wallet 동작). */
   simulateCheckout(intentId: string) {
@@ -91,7 +94,22 @@ export class FakeWallet {
         this.failNextRefund = false;
         return { status: 502, payload: { error: 'PG_UNAVAILABLE', message: 'injected' } };
       }
-      const amount = Number(body.amount ?? 0);
+      // 실제 wallet 의 DTO 검증(@IsInt @Min(1))처럼 거절한다 — amount:null 같은 결함이 0 원 환불로 조용히 통과하지 않게.
+      const amount = body.amount;
+      if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0) {
+        return { status: 400, payload: { error: 'VALIDATION_ERROR', message: `amount must be a positive integer: ${JSON.stringify(amount)}` } };
+      }
+      if (this.failNextRefundAs200Failed) {
+        this.failNextRefundAs200Failed = false;
+        const failedId = `ref_${++this.seq}`;
+        return {
+          status: 200,
+          payload: {
+            intentId: intent.id,
+            refunds: [{ id: failedId, amount, status: 'FAILED', reasonCode: body.reasonCode ?? null, reasonMessage: 'injected PG decline' }],
+          },
+        };
+      }
       if (amount > intent.captured - intent.refunded) {
         return { status: 400, payload: { error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: `${amount}` } };
       }

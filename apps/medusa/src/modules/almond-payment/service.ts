@@ -20,16 +20,32 @@ import type {
   GetPaymentStatusInput,
   GetPaymentStatusOutput,
 } from '@medusajs/framework/types';
-import type { ProviderWebhookPayload, WebhookActionResult } from '@medusajs/framework/types';
+import type { Logger, ProviderWebhookPayload, WebhookActionResult } from '@medusajs/framework/types';
 
 import type { AlmondPaymentOptions, WalletSessionData } from './types';
-import { readExternalRefund, withoutExternalRefund, withWalletRefundIds } from './refund-data';
+import {
+  judgeWalletRefund,
+  readExternalRefund,
+  withoutExternalRefund,
+  withWalletRefundIds,
+  type WalletRefundRow,
+} from './refund-data';
 
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
 
+  private readonly logger_: Logger;
+
   constructor(container: Record<string, unknown>, options: AlmondPaymentOptions) {
     super(container, options);
+    // 모듈 컨테이너는 awilix cradle 프록시라 미등록 키 접근이 throw 한다.
+    let logger: Logger | undefined;
+    try {
+      logger = container.logger as Logger | undefined;
+    } catch {
+      logger = undefined;
+    }
+    this.logger_ = logger ?? (console as unknown as Logger);
   }
 
   static validateOptions(options: Record<string, unknown>): void {
@@ -256,13 +272,25 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
     // Medusa 결제 모듈이 refund 행 id 를 idempotency_key 로 준다 — 같은 환불의 재시도가 wallet 에서 한 번으로 접힌다.
     const idempotencyKey = (input as { context?: { idempotency_key?: string } }).context?.idempotency_key;
-    const res = await this.walletFetch<{ refunds?: Array<{ id?: string }> }>(`/v1/payment-intents/${intentId}/refund`, {
+    const res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
       method: 'POST',
       ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
       body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
     });
-    const ids = (res?.refunds ?? []).map((r) => r.id).filter((id): id is string => typeof id === 'string');
-    return { data: withWalletRefundIds(data, ids) };
+    // wallet 은 PG 가 거절한 환불도 200 + FAILED 행으로 준다. 여기서 던져야 Medusa 가 환불 행을 지우고 장부에 안 남긴다.
+    const verdict = judgeWalletRefund(res?.refunds ?? [], refundAmount);
+    if (!verdict.ok) {
+      if (verdict.moved.length > 0) {
+        // 결제분(charge)이 여럿이면 앞의 것은 나가고 뒤의 것이 실패할 수 있다. 나간 환불은 reasonCode=MEDUSA_REFUND 라
+        // 환불 투영이 건너뛰고, Medusa 장부에도 안 남는다 — 이 로그가 유일한 흔적이다.
+        this.logger_.error(
+          `[almond-payment] refundPayment 실패했지만 wallet 에서 이미 나간 환불이 있습니다 — Medusa 장부에 없음, 수동 대사 필요. ` +
+            `intentId=${intentId} requested=${refundAmount} moved=${verdict.moved.map((r) => `${r.id}:${r.amount}:${r.status}`).join(',')}`,
+        );
+      }
+      throw new Error(`wallet 환불 실패(intentId=${intentId}, 요청 ${refundAmount}): ${verdict.reason}`);
+    }
+    return { data: withWalletRefundIds(data, verdict.ids) };
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {

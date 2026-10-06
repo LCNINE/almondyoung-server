@@ -130,6 +130,28 @@ medusaIntegrationTestRunner({
       expect(balance(after)).toBe(0);
     });
 
+    it('wallet 이 200 에 FAILED 환불 행을 담아 돌려주면 환불로 치지 않고 refund_pending 으로 멈추고, 다시 부르면 끝낸다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-6f', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+      wallet.failNextRefundAs200Failed = true;
+
+      const failure = await partialCancelOrder(getContainer(), input).catch((e) => e);
+      expect(failure).toBeInstanceOf(PartialCancelRefundPending);
+      expect(failure.message).toMatch(/FAILED/);
+      expect(wallet.refunds).toHaveLength(0);
+      const mid = await loadOrder(getContainer(), orderId);
+      expect(mid.metadata.partialCancels['req-6f'].stage).toBe('edited');
+      // Medusa 장부에 환불이 남지 않는다 — 남으면 차액이 0 이 되어 아무도 다시 환불하지 않는다
+      expect(mid.payment_collections[0].payments[0].refunds ?? []).toHaveLength(0);
+      expect(balance(mid)).toBe(-30000);
+
+      const res = await partialCancelOrder(getContainer(), input);
+      expect(res.refundAmount).toBe(30000);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([30000]);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+
     it('같은 주문 두 번째 부분취소는 첫 번째가 남긴 그룹 요금에서 계산한다', async () => {
       // A × 2 (60,000 무료) → A 1개 취소(30,000 → 기준 미달, 3,000 차감) → 남은 A 1개 취소는 전체취소라 거절, 대신 D 를 섞는다
       const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'D', quantity: 2 }] });

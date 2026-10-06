@@ -8,7 +8,11 @@ import { AlmondPaymentProviderService } from '../service';
 describe('almond-payment refundPayment 금액 변환', () => {
   const build = () => {
     const svc = new AlmondPaymentProviderService({}, { walletBaseUrl: 'http://wallet.test', walletApiKey: 'k' } as any);
-    const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({});
+    const spy = jest
+      .spyOn(svc as any, 'walletFetch')
+      .mockImplementation(async (_path: any, init: any) => ({
+        refunds: [{ id: 'wr1', amount: JSON.parse(init.body).amount, status: 'SUCCEEDED' }],
+      }));
     return { svc, spy };
   };
   const refund = (svc: AlmondPaymentProviderService, amount: any) =>
