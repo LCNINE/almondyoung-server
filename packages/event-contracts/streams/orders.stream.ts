@@ -556,6 +556,58 @@ const SalesOrderClaimProgressedSchema = z.object({
   occurredAt: z.string().datetime(),
 });
 
+// ===== 채널 주문 취소 결과 (#1016 35번 행, ADR-0042) =====
+
+/**
+ * core 의 `CancelChannelOrder` 명령을 채널이 받아들이지 않은 이유. core 내부 값(`OPERATOR_WITHDRAWN`)은 사실이 아니라 넣지 않는다.
+ * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
+ * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
+ * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
+ * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
+ *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
+ */
+export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED'] as const;
+export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
+
+/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
+export interface ChannelOrderCancelRejectedPayload {
+  /** `CancelChannelOrderPayload.requestId` 그대로 */
+  requestId: string;
+  salesChannel: string;
+  externalOrderId: string;
+  reasonCode: ChannelOrderCancelRejectionCode;
+  /** 운영자에게 보일 사유. 채널이 준 문구를 그대로 담는다 */
+  message: string;
+}
+
+const ChannelOrderCancelRejectedSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  reasonCode: z.enum(CHANNEL_ORDER_CANCEL_REJECTION_CODES),
+  message: z.string(),
+});
+
+/**
+ * 진행 사실 — 종결이 아니다. 부분취소가 주문 수정까지 확정하고 환불에서 멈췄다(주문은 줄었는데 돈은 아직).
+ * channel-adapter 는 이것을 낸 뒤 재시도하고, core 는 요청을 `requested` 로 둔 채 단계만 적는다(같은 값이라 여러 번 와도 멱등).
+ */
+export interface ChannelOrderCancelStalledPayload {
+  requestId: string;
+  salesChannel: string;
+  externalOrderId: string;
+  stage: 'edited';
+  message: string;
+}
+
+const ChannelOrderCancelStalledSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  stage: z.literal('edited'),
+  message: z.string(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -579,6 +631,14 @@ export const ORDER_STREAM = stream({
       OrderRefundCreatedSchema,
     ),
     OrderMerged: event<'OrderMerged', OrderMergedPayload>('OrderMerged', OrderMergedSchema),
+    ChannelOrderCancelRejected: event<'ChannelOrderCancelRejected', ChannelOrderCancelRejectedPayload>(
+      'ChannelOrderCancelRejected',
+      ChannelOrderCancelRejectedSchema,
+    ),
+    ChannelOrderCancelStalled: event<'ChannelOrderCancelStalled', ChannelOrderCancelStalledPayload>(
+      'ChannelOrderCancelStalled',
+      ChannelOrderCancelStalledSchema,
+    ),
   },
 });
 
