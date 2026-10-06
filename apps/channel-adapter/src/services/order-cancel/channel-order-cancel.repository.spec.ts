@@ -57,7 +57,12 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     const payload = { ...key, stage: 'edited' as const, message: '환불 미완' };
     await repository.recordStalled(payload, 'd1');
     expect(enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: 'ChannelOrderCancelStalled', idempotencyKey: 'cancel-stalled:req-1:d1', partitionKey: 'medusa', payload }),
+      expect.objectContaining({
+        eventType: 'ChannelOrderCancelStalled',
+        idempotencyKey: 'cancel-stalled:req-1:d1',
+        partitionKey: 'medusa',
+        payload,
+      }),
       'tx',
     );
   });
@@ -71,7 +76,12 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     await repository.recordStalled(stalled, 'd1');
     await repository.recordStalled(stalled, 'd2');
     const keys = enqueue.mock.calls.map(([event]) => event.idempotencyKey);
-    expect(keys).toEqual(['cancel-rejected:req-1:d1', 'cancel-rejected:req-1:d2', 'cancel-stalled:req-1:d1', 'cancel-stalled:req-1:d2']);
+    expect(keys).toEqual([
+      'cancel-rejected:req-1:d1',
+      'cancel-rejected:req-1:d2',
+      'cancel-stalled:req-1:d1',
+      'cancel-stalled:req-1:d2',
+    ]);
     expect(new Set(keys).size).toBe(4);
   });
 });

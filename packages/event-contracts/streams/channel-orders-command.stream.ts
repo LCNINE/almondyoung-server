@@ -70,7 +70,11 @@ const CancelChannelOrderSchema = z
       context.addIssue({ code: 'custom', path: ['lines'], message: '부분취소는 취소할 줄이 필요하다' });
     }
     if (payload.scope === 'full' && payload.lines !== undefined) {
-      context.addIssue({ code: 'custom', path: ['lines'], message: '전체취소는 줄을 싣지 않는다 — 실으면 어느 쪽이 정본인지 갈린다' });
+      context.addIssue({
+        code: 'custom',
+        path: ['lines'],
+        message: '전체취소는 줄을 싣지 않는다 — 실으면 어느 쪽이 정본인지 갈린다',
+      });
     }
     const ids = (payload.lines ?? []).map((line) => line.channelOrderItemId);
     if (new Set(ids).size !== ids.length) {
@@ -89,7 +93,10 @@ export const CHANNEL_ORDERS_COMMAND_STREAM = stream({
       'ResyncChannelOrder',
       ResyncChannelOrderSchema,
     ),
-    CancelChannelOrder: event<'CancelChannelOrder', CancelChannelOrderPayload>('CancelChannelOrder', CancelChannelOrderSchema),
+    CancelChannelOrder: event<'CancelChannelOrder', CancelChannelOrderPayload>(
+      'CancelChannelOrder',
+      CancelChannelOrderSchema,
+    ),
   },
 });
 

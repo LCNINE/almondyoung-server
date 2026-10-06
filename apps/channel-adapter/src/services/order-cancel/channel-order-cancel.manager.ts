@@ -31,13 +31,20 @@ export class ChannelOrderCancelManager {
     const { requestId, salesChannel, externalOrderId } = command;
     // 실행기가 Medusa 하나뿐이라 채널 이름을 함께 본다 — 다른 채널이 능력을 켜면 여기에 실행기를 더해야 하고, 그 전엔 거절한다
     if (salesChannel !== 'medusa' || !getChannelFulfillmentCapabilities(salesChannel)?.automatedCancellation) {
-      return this.reject(command, deliveryId, { reasonCode: 'NOT_SUPPORTED', message: `${salesChannel} 주문은 자동 취소를 지원하지 않습니다` });
+      return this.reject(command, deliveryId, {
+        reasonCode: 'NOT_SUPPORTED',
+        message: `${salesChannel} 주문은 자동 취소를 지원하지 않습니다`,
+      });
     }
     if (!(await this.repository.hasCollectedOrder(salesChannel, externalOrderId))) {
-      return this.reject(command, deliveryId, { reasonCode: 'ORDER_NOT_FOUND', message: `수집된 적 없는 주문입니다: ${salesChannel}:${externalOrderId}` });
+      return this.reject(command, deliveryId, {
+        reasonCode: 'ORDER_NOT_FOUND',
+        message: `수집된 적 없는 주문입니다: ${salesChannel}:${externalOrderId}`,
+      });
     }
 
-    const rejection = command.scope === 'full' ? await this.cancelFull(command) : await this.cancelPartial(command, deliveryId);
+    const rejection =
+      command.scope === 'full' ? await this.cancelFull(command) : await this.cancelPartial(command, deliveryId);
     if (rejection) return this.reject(command, deliveryId, rejection);
 
     const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
@@ -79,14 +86,19 @@ export class ChannelOrderCancelManager {
         return { reasonCode: 'NOT_CANCELABLE', message: outcome.message };
       case 'refund_pending':
         // 주문은 줄었는데 돈은 아직 — core 가 정체 보드에서 이 상태를 따로 보이게 진행 사실을 먼저 내고, 던져서 재시도한다
-        await this.repository.recordStalled({ requestId, salesChannel, externalOrderId, stage: 'edited', message: outcome.message }, deliveryId);
+        await this.repository.recordStalled(
+          { requestId, salesChannel, externalOrderId, stage: 'edited', message: outcome.message },
+          deliveryId,
+        );
         throw new Error(`부분취소 환불 미완(${requestId}): ${outcome.message}`);
     }
   }
 
   private async reject(command: CancelChannelOrderPayload, deliveryId: string, rejection: Rejection): Promise<void> {
     const { requestId, salesChannel, externalOrderId } = command;
-    this.logger.warn(`[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 거절 ${rejection.reasonCode}: ${rejection.message}`);
+    this.logger.warn(
+      `[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 거절 ${rejection.reasonCode}: ${rejection.message}`,
+    );
     await this.repository.recordRejected({ requestId, salesChannel, externalOrderId, ...rejection }, deliveryId);
   }
 }

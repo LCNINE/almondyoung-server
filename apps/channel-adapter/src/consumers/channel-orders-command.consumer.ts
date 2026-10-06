@@ -40,7 +40,9 @@ export class ChannelOrdersCommandConsumer {
       return;
     }
     const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
-    this.logger.log(`[RESYNC] ${salesChannel}:${externalOrderId} → ${outcome}`, { correlationId: envelope.correlationId });
+    this.logger.log(`[RESYNC] ${salesChannel}:${externalOrderId} → ${outcome}`, {
+      correlationId: envelope.correlationId,
+    });
   }
 
   @On(CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder')
@@ -48,9 +50,12 @@ export class ChannelOrdersCommandConsumer {
     @EventPayload() payload: EventPayloadOf<typeof CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder'>,
     @EventEnvelope() envelope: EnvelopeOf<typeof CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder'>,
   ): Promise<void> {
-    this.logger.log(`[CANCEL] ${payload.requestId} ${payload.salesChannel}:${payload.externalOrderId} ${payload.scope} 수신`, {
-      correlationId: envelope.correlationId,
-    });
+    this.logger.log(
+      `[CANCEL] ${payload.requestId} ${payload.salesChannel}:${payload.externalOrderId} ${payload.scope} 수신`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
     await this.cancelManager.execute(payload, envelope.messageId);
   }
 }

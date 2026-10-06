@@ -11,7 +11,11 @@ const full: CancelChannelOrderPayload = {
   requestedBy: 'operator',
   requestedAt: '2026-10-07T00:00:00.000Z',
 };
-const partial: CancelChannelOrderPayload = { ...full, scope: 'partial', lines: [{ channelOrderItemId: 'ordli_1', quantity: 2 }] };
+const partial: CancelChannelOrderPayload = {
+  ...full,
+  scope: 'partial',
+  lines: [{ channelOrderItemId: 'ordli_1', quantity: 2 }],
+};
 const key = { requestId: 'req-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
 
 function setup(opts: { mapped?: boolean } = {}) {
@@ -27,47 +31,62 @@ function setup(opts: { mapped?: boolean } = {}) {
 }
 
 describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
-  it.each(['naver', 'coupang', '3pl', 'cafe24'])('자동 취소 불가 채널(%s)은 NOT_SUPPORTED — 채널을 부르지 않는다', async (salesChannel) => {
-    const { manager, repository, medusa, poller } = setup();
-    await manager.execute({ ...full, salesChannel }, 'd1');
-    expect(repository.recordRejected).toHaveBeenCalledWith(expect.objectContaining({ salesChannel, reasonCode: 'NOT_SUPPORTED' }), 'd1');
-    expect(repository.hasCollectedOrder).not.toHaveBeenCalled();
-    expect(medusa.cancelOrder).not.toHaveBeenCalled();
-    expect(poller.syncOrder).not.toHaveBeenCalled();
-  });
+  it.each(['naver', 'coupang', '3pl', 'cafe24'])(
+    '자동 취소 불가 채널(%s)은 NOT_SUPPORTED — 채널을 부르지 않는다',
+    async (salesChannel) => {
+      const { manager, repository, medusa, poller } = setup();
+      await manager.execute({ ...full, salesChannel }, 'd1');
+      expect(repository.recordRejected).toHaveBeenCalledWith(
+        expect.objectContaining({ salesChannel, reasonCode: 'NOT_SUPPORTED' }),
+        'd1',
+      );
+      expect(repository.hasCollectedOrder).not.toHaveBeenCalled();
+      expect(medusa.cancelOrder).not.toHaveBeenCalled();
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+    },
+  );
 
   it('수집한 적 없는 주문은 ORDER_NOT_FOUND', async () => {
     const { manager, repository, medusa } = setup({ mapped: false });
     await manager.execute(full, 'd1');
-    expect(repository.recordRejected).toHaveBeenCalledWith(expect.objectContaining({ ...key, reasonCode: 'ORDER_NOT_FOUND' }), 'd1');
+    expect(repository.recordRejected).toHaveBeenCalledWith(
+      expect.objectContaining({ ...key, reasonCode: 'ORDER_NOT_FOUND' }),
+      'd1',
+    );
     expect(medusa.cancelOrder).not.toHaveBeenCalled();
   });
 
-  it.each(['channel_inactive', 'not_found'])('취소 뒤 재수집이 %s 면 warn 으로 남긴다 — 돌아가는 사실이 없다', async (outcome) => {
-    const { manager, medusa, poller } = setup();
-    medusa.cancelOrder.mockResolvedValue({ kind: 'cancelled' });
-    poller.syncOrder.mockResolvedValue({ outcome });
-    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    try {
-      await manager.execute(full, 'd1');
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`재수집 ${outcome}`));
-      expect(log).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-      log.mockRestore();
-    }
-  });
+  it.each(['channel_inactive', 'not_found'])(
+    '취소 뒤 재수집이 %s 면 warn 으로 남긴다 — 돌아가는 사실이 없다',
+    async (outcome) => {
+      const { manager, medusa, poller } = setup();
+      medusa.cancelOrder.mockResolvedValue({ kind: 'cancelled' });
+      poller.syncOrder.mockResolvedValue({ outcome });
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      try {
+        await manager.execute(full, 'd1');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`재수집 ${outcome}`));
+        expect(log).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+        log.mockRestore();
+      }
+    },
+  );
 
   describe('전체취소', () => {
-    it.each([{ kind: 'cancelled' }, { kind: 'already_cancelled' }])('$kind 면 거절 없이 즉시 재수집한다', async (outcome) => {
-      const { manager, repository, medusa, poller } = setup();
-      medusa.cancelOrder.mockResolvedValue(outcome);
-      await manager.execute(full, 'd1');
-      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1');
-      expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
-      expect(repository.recordRejected).not.toHaveBeenCalled();
-    });
+    it.each([{ kind: 'cancelled' }, { kind: 'already_cancelled' }])(
+      '$kind 면 거절 없이 즉시 재수집한다',
+      async (outcome) => {
+        const { manager, repository, medusa, poller } = setup();
+        medusa.cancelOrder.mockResolvedValue(outcome);
+        await manager.execute(full, 'd1');
+        expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1');
+        expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
+        expect(repository.recordRejected).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       [{ kind: 'not_found', message: 'gone' }, 'ORDER_NOT_FOUND'],
@@ -76,13 +95,18 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
       const { manager, repository, medusa, poller } = setup();
       medusa.cancelOrder.mockResolvedValue(outcome);
       await manager.execute(full, 'd1');
-      expect(repository.recordRejected).toHaveBeenCalledWith({ ...key, reasonCode, message: (outcome as { message: string }).message }, 'd1');
+      expect(repository.recordRejected).toHaveBeenCalledWith(
+        { ...key, reasonCode, message: (outcome as { message: string }).message },
+        'd1',
+      );
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
     it('Medusa 500 은 던진다 — wallet «환불 불가»도 여기로 온다(REFUND_FAILED 미판별). 거절 사실을 내지 않는다', async () => {
       const { manager, repository, medusa } = setup();
-      medusa.cancelOrder.mockRejectedValue(new Error('Medusa cancelOrder failed (status=500): An unknown error occurred.'));
+      medusa.cancelOrder.mockRejectedValue(
+        new Error('Medusa cancelOrder failed (status=500): An unknown error occurred.'),
+      );
       await expect(manager.execute(full, 'd1')).rejects.toThrow('status=500');
       expect(repository.recordRejected).not.toHaveBeenCalled();
     });
@@ -99,9 +123,17 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
   describe('부분취소', () => {
     it('requestId 와 Medusa 줄 id·취소할 수량을 넘기고, 성공이면 재수집한다', async () => {
       const { manager, medusa, poller } = setup();
-      medusa.partialCancelOrder.mockResolvedValue({ kind: 'cancelled', refundAmount: 1000, shippingDelta: 0, shippingNotAdjusted: false });
+      medusa.partialCancelOrder.mockResolvedValue({
+        kind: 'cancelled',
+        refundAmount: 1000,
+        shippingDelta: 0,
+        shippingNotAdjusted: false,
+      });
       await manager.execute(partial, 'd1');
-      expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }] });
+      expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', {
+        requestId: 'req-1',
+        items: [{ itemId: 'ordli_1', quantity: 2 }],
+      });
       expect(medusa.cancelOrder).not.toHaveBeenCalled();
       expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
     });
@@ -110,7 +142,10 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
       const { manager, repository, medusa, poller } = setup();
       medusa.partialCancelOrder.mockResolvedValue({ kind: 'rejected', message: '수량 초과' });
       await manager.execute(partial, 'd1');
-      expect(repository.recordRejected).toHaveBeenCalledWith({ ...key, reasonCode: 'NOT_CANCELABLE', message: '수량 초과' }, 'd1');
+      expect(repository.recordRejected).toHaveBeenCalledWith(
+        { ...key, reasonCode: 'NOT_CANCELABLE', message: '수량 초과' },
+        'd1',
+      );
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
