@@ -303,7 +303,14 @@ export class PaymentIntentsService {
   async tossApprove(intentId: string, dto: TossApproveDto): Promise<void> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `toss-approve:${intentId}:${Date.now()}`;
-    await this.tossApproveService.approve(intentId, dto.paymentKey, dto.orderId, dto.amount, correlationId);
+    await this.tossApproveService.approve(
+      intentId,
+      dto.paymentKey,
+      dto.orderId,
+      dto.amount,
+      correlationId,
+      dto.paymentType,
+    );
   }
 
   /**

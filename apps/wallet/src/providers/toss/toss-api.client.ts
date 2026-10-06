@@ -75,22 +75,53 @@ export interface TossApiError {
   message: string;
 }
 
-export type TossApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: TossApiError; statusCode: number };
+export type TossApiResult<T> = { ok: true; data: T } | { ok: false; error: TossApiError; statusCode: number };
 
 @Injectable()
 export class TossApiClient {
   private readonly logger = new Logger(TossApiClient.name);
   private readonly baseUrl = 'https://api.tosspayments.com/v1';
 
-  private get auth(): string {
-    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
+  private auth(useWidgetKey = false): string {
+    const secretKey = (useWidgetKey ? process.env.TOSS_WIDGET_SECRET_KEY : process.env.TOSS_SECRET_KEY) ?? '';
     return Buffer.from(`${secretKey}:`).toString('base64');
   }
 
-  async confirmPayment(paymentKey: string, amount: number, orderId: string): Promise<TossApiResult<TossConfirmResponse>> {
-    return this.post<TossConfirmResponse>('/payments/confirm', { paymentKey, orderId, amount });
+  async confirmPayment(
+    paymentKey: string,
+    amount: number,
+    orderId: string,
+    useWidgetKey = false,
+  ): Promise<TossApiResult<TossConfirmResponse>> {
+    return this.post<TossConfirmResponse>(
+      '/payments/confirm',
+      { paymentKey, orderId, amount },
+      undefined,
+      useWidgetKey,
+    );
+  }
+
+  async confirmBrandPayPayment(
+    paymentKey: string,
+    amount: number,
+    orderId: string,
+    customerKey: string,
+  ): Promise<TossApiResult<TossConfirmResponse>> {
+    return this.post<TossConfirmResponse>(
+      '/brandpay/payments/confirm',
+      { paymentKey, orderId, amount, customerKey },
+      undefined,
+      true,
+    );
+  }
+
+  async issueBrandPayAccessToken(code: string, customerKey: string): Promise<TossApiResult<{ accessToken: string }>> {
+    return this.post<{ accessToken: string }>(
+      '/brandpay/authorizations/access-token',
+      { grantType: 'AuthorizationCode', code, customerKey },
+      undefined,
+      true,
+    );
   }
 
   async cancelPayment(
@@ -100,6 +131,7 @@ export class TossApiClient {
     idempotencyKey?: string,
     // 가상계좌 결제의 입금 후 환불은 환불받을 계좌가 필수 (토스가 그 계좌로 송금).
     refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string },
+    useWidgetKey = false,
   ): Promise<TossApiResult<TossCancelResponse>> {
     const body: Record<string, unknown> = { cancelReason };
     if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
@@ -108,6 +140,7 @@ export class TossApiClient {
       `/payments/${paymentKey}/cancel`,
       body,
       idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      useWidgetKey,
     );
   }
 
@@ -183,17 +216,17 @@ export class TossApiClient {
    * status/totalAmount/paymentKey 를 authoritative 로 쓴다. paymentKey 가 아니라 orderId 로
    * 조회하는 이유: 공격자가 본문 paymentKey 로 남의 결제를 우리 charge 에 갖다 붙이지 못하게 하기 위함.
    */
-  async getPaymentByOrderId(orderId: string): Promise<TossApiResult<TossPaymentQueryResponse>> {
-    return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`);
+  async getPaymentByOrderId(orderId: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`, useWidgetKey);
   }
 
-  private async get<T>(path: string): Promise<TossApiResult<T>> {
+  private async get<T>(path: string, useWidgetKey = false): Promise<TossApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug(`GET ${url}`);
 
     const res = await fetch(url, {
       method: 'GET',
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${this.auth(useWidgetKey)}` },
     });
 
     if (res.ok) {
@@ -210,6 +243,7 @@ export class TossApiClient {
     path: string,
     body: Record<string, unknown>,
     extraHeaders?: Record<string, string>,
+    useWidgetKey = false,
   ): Promise<TossApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug(`POST ${url}`);
@@ -217,7 +251,7 @@ export class TossApiClient {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Basic ${this.auth}`,
+        Authorization: `Basic ${this.auth(useWidgetKey)}`,
         'Content-Type': 'application/json',
         ...extraHeaders,
       },

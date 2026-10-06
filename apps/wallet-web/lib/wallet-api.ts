@@ -24,6 +24,23 @@ export interface PaymentMethod {
   isReusable: boolean;
 }
 
+export interface TossWidgetConfig {
+  clientKey: string;
+  variantKey: string;
+  customerKey: string;
+}
+
+export async function getTossWidgetConfig(cookieHeader?: string): Promise<TossWidgetConfig | null> {
+  const res = await fetch(`${BASE_URL}/v1/payment-methods/toss-widget-config`, {
+    headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export interface AvailablePaymentMethod {
   code: string;
   displayName: string;
@@ -205,6 +222,7 @@ export async function approveToss(
   paymentKey: string,
   orderId: string,
   amount: number,
+  paymentType: 'NORMAL' | 'BRANDPAY' = 'NORMAL',
 ): Promise<{ status: string; returnUrl: string | null; metadata?: Record<string, unknown> }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/toss-approve`, {
     method: 'POST',
@@ -215,7 +233,7 @@ export async function approveToss(
       // 첫 승인 성공 응답을 그대로 반환하게 한다. 랜덤 UUID면 매번 재실행 → NO_REQUIRES_ACTION_CHARGE 실패화면.
       'Idempotency-Key': `toss-approve:${intentId}:${paymentKey}`,
     },
-    body: JSON.stringify({ paymentKey, orderId, amount }),
+    body: JSON.stringify({ paymentKey, orderId, amount, paymentType }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
