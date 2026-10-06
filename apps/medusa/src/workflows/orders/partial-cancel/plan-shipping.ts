@@ -22,7 +22,12 @@ export type ShippingPlan =
   | { adjustable: false; reason: 'NO_SNAPSHOT' | 'GROUP_MISMATCH' }
   | {
       adjustable: true;
-      groups: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number }>;
+      /**
+       * newFee = 정책이 계산한 그룹 요금(로깅용). recordedFee = 이번 취소 뒤 «실제로 유효한» 그룹 요금.
+       * 호출자(Task 7)는 groupFees 에 newFee 가 아니라 recordedFee 를 기록해야 한다 —
+       * 상한이 청구를 깎았는데 newFee 를 기록하면 다음 취소가 청구하지 않은 금액을 환불한다.
+       */
+      groups: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number; recordedFee: number }>;
       charge: number;
       refund: number;
     };
@@ -47,12 +52,13 @@ export function planShipping(input: {
   }
 
   const profileIds = new Set(withSnapshot.map((m) => m.snapshot.shippingProfileId));
+  if (profileIds.size !== withSnapshot.length) return { adjustable: false, reason: 'GROUP_MISMATCH' };
   const shipLines = input.lines.filter((l) => l.requiresShipping);
   if (shipLines.some((l) => !l.productShippingProfileId || !profileIds.has(l.productShippingProfileId))) {
     return { adjustable: false, reason: 'GROUP_MISMATCH' };
   }
 
-  const groups = withSnapshot.map((m) => {
+  const computed = withSnapshot.map((m) => {
     const profileId = m.snapshot.shippingProfileId;
     const remaining = shipLines
       .filter((l) => l.productShippingProfileId === profileId && l.newQty > 0)
@@ -62,7 +68,17 @@ export function planShipping(input: {
     return { shippingProfileId: profileId, shippingOptionId: m.shippingOptionId, currentFee, newFee };
   });
 
-  const up = groups.reduce((s, g) => s + Math.max(0, g.newFee - g.currentFee), 0);
-  const down = groups.reduce((s, g) => s + Math.max(0, g.currentFee - g.newFee), 0);
-  return { adjustable: true, groups, charge: Math.min(up, Math.max(0, input.chargeCap)), refund: down };
+  const up = computed.reduce((s, g) => s + Math.max(0, g.newFee - g.currentFee), 0);
+  const down = computed.reduce((s, g) => s + Math.max(0, g.currentFee - g.newFee), 0);
+  const charge = Math.min(up, Math.max(0, input.chargeCap));
+
+  // 올라가는 그룹에 청구분을 그룹 순서대로 배분한다. 내려가거나 그대로인 그룹은 newFee 그대로.
+  let left = charge;
+  const groups = computed.map((g) => {
+    if (g.newFee <= g.currentFee) return { ...g, recordedFee: g.newFee };
+    const share = Math.min(left, g.newFee - g.currentFee);
+    left -= share;
+    return { ...g, recordedFee: g.currentFee + share };
+  });
+  return { adjustable: true, groups, charge, refund: down };
 }
