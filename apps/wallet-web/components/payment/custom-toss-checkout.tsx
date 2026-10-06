@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { TossPaymentsBrandpay } from '@tosspayments/tosspayments-sdk';
-import type { TossWidgetConfig } from '@/lib/wallet-api';
+import type { BusinessLicenseInfo, TossWidgetConfig } from '@/lib/wallet-api';
+import { TossAgreement } from './toss-agreement';
 import { CardCheckout, type CheckoutCard, type CheckoutSelection } from './card-checkout';
 
 interface Props {
+  customer?: BusinessLicenseInfo | null;
   intentId: string;
   orderName: string;
   amount: number;
@@ -18,6 +20,7 @@ interface Props {
 }
 
 export function CustomTossCheckout({
+  customer,
   intentId,
   orderName,
   amount,
@@ -29,6 +32,7 @@ export function CustomTossCheckout({
   onPay,
 }: Props) {
   const [cards, setCards] = useState<CheckoutCard[]>([]);
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sdkError, setSdkError] = useState<string | null>(null);
   const brandpayRef = useRef<Promise<TossPaymentsBrandpay> | null>(null);
@@ -88,6 +92,9 @@ export function CustomTossCheckout({
 
   return (
     <CardCheckout
+      agreementAccepted={agreementAccepted}
+      agreement={<TossAgreement onChange={setAgreementAccepted} />}
+      customer={customer}
       orderName={orderName}
       amount={amount}
       availablePoints={availablePoints}
