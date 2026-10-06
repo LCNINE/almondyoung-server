@@ -104,8 +104,10 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
 
 async function edit(container: MedusaContainer, input: PartialCancelInput, order: OrderView, requestHash: string): Promise<PartialCancelRecord> {
   if (order.status === 'canceled') throw new PartialCancelRejected('이미 취소된 주문입니다');
-  const plan = planPartialCancel(order.lines, input.items);
+  // 계획 검증보다 «먼저» 본다: 확정 뒤 기록 전에 끊긴 요청은 이미 수량을 줄여 놨다. 줄을 통째로 뺐다면 계획 검증이
+  // «주문에 없는 줄»로 업무 거절(400)을 내고, 호출자가 취소를 닫아 주문은 수정된 채 환불 0 으로 남는다.
   await ensureNoDanglingEdit(container, order.id, input.requestId);
+  const plan = planPartialCancel(order.lines, input.items);
 
   const profiles = await productShippingProfiles(
     container,

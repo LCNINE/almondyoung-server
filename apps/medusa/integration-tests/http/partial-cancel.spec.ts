@@ -252,6 +252,53 @@ medusaIntegrationTestRunner({
       expect(wallet.refunds).toHaveLength(1);
     });
 
+    it('확정 뒤 기록 전에 끊긴 요청이 줄을 통째로 뺐어도, 재시도는 업무 거절이 아니라 «진행 기록이 없습니다»로 멈춘다', async () => {
+      // A + B, B 를 통째로 뺀다 → 재시도 시점엔 B 줄이 주문에 없다. 계획 검증이 먼저 돌면 «주문에 없는 줄»(400) 이 되어
+      // 호출자가 취소를 닫아 버리고, 주문은 수정된 채 환불은 0 으로 남는다.
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const input = { orderId, requestId: 'req-15', items: [{ itemId: o.items[1].id, quantity: 1 }] };
+      await partialCancelOrder(getContainer(), input);
+
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      await orderModule.updateOrders([{ id: orderId, metadata: { partialCancels: { 'req-15': null } } }]);
+      const before = await loadOrder(getContainer(), orderId);
+
+      const err = await partialCancelOrder(getContainer(), input).catch((e) => e);
+      expect(err).not.toBeInstanceOf(PartialCancelRejected);
+      expect(err.message).toMatch(/진행 기록이 없습니다/);
+      expect((await loadOrder(getContainer(), orderId)).version).toBe(before.version);
+      expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('한 요청이 한 줄은 통째로 빼고 할인이 붙은 다른 줄은 수량을 줄이면, 줄인 줄의 할인을 비례로 다시 쓰고 한 번 환불한다', async () => {
+      // A×2 60,000 + C 10,000 + D×2 10,000 = 80,000, 할인 6,000 across → A 4,500 · C 750 · D 750.
+      // C 통째로(10,000 − 750) + A 2 → 1(30,000 − 2,250) = 37,000.
+      // 배송비: cond 0 → 3,000(남은 A 30,000 기준 미달, 청구) · flat 3,000 → 0(비어 환불) — 서로 상쇄돼 0.
+      const { orderId } = await placeOrder(ctx, c, wallet, {
+        lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }, { variant: 'D', quantity: 2 }],
+        promoCode: 'PC6000',
+      });
+      const o = await loadOrder(getContainer(), orderId);
+      const a = itemOf(o, 30000);
+      const cl = itemOf(o, 10000);
+
+      const res = await partialCancelOrder(getContainer(), {
+        orderId, requestId: 'req-16', items: [{ itemId: cl.id, quantity: 1 }, { itemId: a.id, quantity: 1 }],
+      });
+
+      expect(res.refundAmount).toBe(37000);
+      expect(res.shippingDelta).toBe(0);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([37000]);
+      const after = await loadOrder(getContainer(), orderId);
+      const aAfter = after.items.find((i: any) => i.id === a.id);
+      expect(num(aAfter.quantity)).toBe(1);
+      expect(aAfter.adjustments.reduce((s: number, x: any) => s + num(x.amount), 0)).toBe(2250);
+      const cAfter = after.items.find((i: any) => i.id === cl.id);
+      expect(!cAfter || num(cAfter.quantity) === 0).toBe(true);
+      expect(balance(after)).toBe(0);
+    });
+
     it('상한에 깎인 배송비 청구는 깎인 만큼만 기록되고, 그 그룹이 나중에 비면 실제로 청구한 만큼만 돌려준다', async () => {
       // A 30,000 + B 30,000 + D 5,000 = 65,000, 할인 61,750 across → A 28,500 · B 28,500 · D 4,750.
       // 배송비: cond 0(60,000 ≥ 50,000) · perq 1,000.
