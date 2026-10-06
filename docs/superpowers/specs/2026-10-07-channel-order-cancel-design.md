@@ -279,7 +279,8 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 - **wallet 은 PG 거절도 200 으로 답한다** — `RefundsService.create` 가 예외·`FAILED` 를 삼켜 환불 행을 `FAILED` 로 돌려준다.
   `refundPayment` 는 응답 행을 보고, `FAILED` 가 하나라도 있거나 `SUCCEEDED`+`PENDING` 합이 요청보다 적으면 던진다(Medusa 가
   refund 행을 지운다). `PENDING`(무통장 송금 대기)은 성공이다. 결제분이 여럿이라 앞의 것은 나가고 뒤의 것이 실패하면, 나간 wallet
-  환불 id 를 error 로그에 남긴다 — `MEDUSA_REFUND` 라 투영도 건너뛰므로 로그가 유일한 흔적이다
+  환불 id 를 error 로그에 남긴다 — `MEDUSA_REFUND` 라 투영도 건너뛰므로 로그가 유일한 흔적이다.
+  wallet 이 외부 결제를 먼저·포인트를 마지막에 하고 첫 실패에서 멈추므로(§9-10) 이 경우는 «PG 는 나갔고 포인트가 실패» 하나로 좁혀졌다
 
 ## 7. 계약·channel-adapter·화면
 
@@ -379,7 +380,18 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 8. **요청을 접은 뒤 늦은 수집**: 판단 10 대로 반영. 부분취소면 5번 규칙이라 박스가 `planned` 면 «반영 대기 변경»에 남는다 — 운영자가 거기서 처리
 9. **메아리**: PR-D 뒤 역투영이 없으므로 채널 쪽 취소 반영이 채널로 돌아가지 않는다. PR-C~PR-D 사이에는 역투영이
    «이미 취소됨»으로 무해하게 끝난다
-10. **포인트 병용 결제**: wallet `createByIntent` 가 charge 비례로 나눈다 — 바뀌지 않는다
+10. **포인트 병용 결제**: wallet `createByIntent` 가 **계획 먼저, 돈은 그 뒤**로 바뀌었다(PR-A).
+    - charge 별 남은 금액(원금 − `SUCCEEDED`·`PENDING` 환불)의 비례로 나눈다(`refund-plan.ts`). 앞선 환불이 다 비례였다면 옛 원금
+      비례와 같은 금액이다. 관리자가 charge 하나만 따로 환불한 뒤에도 leg 의 남은 금액을 넘지 않는다
+    - 돈을 움직이기 전에 거절: 남은 합 < 요청 → `REFUND_AMOUNT_EXCEEDS_TOTAL`, 자동환불 못 하는 수단(효성 CMS) leg →
+      `REFUND_NOT_AUTOMATABLE`(400 — 전엔 `CMS_REFUND_NOT_SUPPORTED` FAILED 행)
+    - 집행은 외부 결제 먼저, 포인트 마지막. 첫 `FAILED`·예외에서 멈춘다 — **카드 실패면 포인트는 안 나간다.** 그래서 core
+      `WalletRefundClient` 가 재시도의 400 을 `already_refunded`(성공)로 접던 구멍(«포인트만 나가고 카드는 미환불인데 성공 기록»)이 이
+      경우엔 닫혔다
+    - **남은 구멍:** 외부 결제가 나간 뒤 포인트가 실패(원장 불변식 위반 수준). 보상·자동 재시도 없음 — wallet 이 «수동 대사 필요»
+      error 로그를 남긴다. 같은 금액 재시도는 남은 합(포인트분) < 요청이라 `REFUND_AMOUNT_EXCEEDS_TOTAL` → core 가 여전히
+      `already_refunded` 로 접는다. 그 로그가 유일한 흔적이다
+    - core 가 연결 id 로 남기는 `refunds[0]` 은 이제 PG 환불 id 다(표시·감사용 externalRef 뿐, 그 id 로 찾는 곳 없음)
 11. **무통장 환불**: Medusa 가 환불 레코드를 남기고 wallet 은 `PENDING` 으로 송금을 추적한다 — 두 번째 요청이 없으므로 충돌 없음
 12. **`edited` 에 멈춘 부분취소 뒤에 전체취소가 옴**: 전체취소가 캡처 잔액을 다 환불하므로 그 부분취소의 재시도는 «캡처 잔액 부족»으로
     영원히 실패한다. 돈은 맞는데 끝 상태가 없다 — PR-B/C 가 정체 보드에서 이 경우를 닫아야 한다
@@ -426,6 +438,9 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 - **배포 겹침 창은 양방향이다.** (1) 옛 wallet 이 `reasonCode` 없는 사실을 내는 동안(§9-14) — 한 번 더 기록될 수 있다.
   (2) 옛 Medusa 태스크가 아직 응답하는 동안 `gateway.refund.succeeded` 는 «Unhandled» 200 으로 끝나 사실이 영영 사라진다 — 그 창에
   wallet 에서 난 환불은 Medusa 장부에 들어오지 않는다. 배포 직후 그 창의 wallet 환불을 사람이 대조한다
+- **wallet `POST /v1/payment-intents/:id/refund` 의 응답이 바뀐다**(§9-10, 부르는 쪽 core·membership·Medusa 셋 다): 행 순서가
+  외부 결제 먼저가 되고, 효성 CMS 는 `FAILED` 행 대신 400 `REFUND_NOT_AUTOMATABLE` 이다. membership 은 CMS 를 `getRefundability` 로
+  미리 걸러 wallet 을 안 부르고, 조회가 실패해 부르더라도 예외를 `FAILED`(`REFUND_REQUEST_ERROR`)로 접는다 — 결과 상태는 같다
 
 ### ⚠️ PR-D 전 라이브 확인 — 이미 어긋난 주문
 
