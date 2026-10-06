@@ -87,6 +87,7 @@ export interface TossCardPromotion {
 }
 
 interface BrandPayMethods {
+  selectedMethodId?: string;
   cards: Array<{
     id: string;
     alias?: string;

@@ -74,6 +74,7 @@ export class PaymentMethodsController {
 
     if (!result.ok) throw new BadRequestException({ error: result.error.code, message: result.error.message });
     return {
+      selectedMethodId: result.data.selectedMethodId ?? null,
       cards: result.data.cards
         .filter((card) => ['신용', '체크'].includes(card.cardType))
         .map((card) => ({
