@@ -59,4 +59,19 @@ describe('BrandPay SDK authorization callback', () => {
     expect(response.headers.get('location')).toBeNull();
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('reuses a hashed key on SDK retry and changes it for a different code', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    global.fetch = fetchMock;
+    await GET(request());
+    await GET(request());
+    const differentCode = request();
+    differentCode.nextUrl.searchParams.set('code', 'another-code');
+    await GET(differentCode);
+    const keys = fetchMock.mock.calls.map(([, init]) => init.headers['Idempotency-Key']);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(keys[0]).toMatch(/^brandpay-authorize:[a-f0-9]{64}$/);
+    expect(keys[0]).not.toContain('test-code');
+  });
 });

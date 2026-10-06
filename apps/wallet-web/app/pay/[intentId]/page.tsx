@@ -13,6 +13,7 @@ import {
   getTossWidgetConfig,
 } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
+import { isWalletSessionExpiredError } from '@/lib/auth-expired';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -66,9 +67,6 @@ export default async function PayPage({ params, searchParams }: Props) {
     // region 명시 → 가용 결제수단 목록. 조회 실패해도 [] 로 막아, 설정 안 된 리전에 다른 리전(KR) 수단이 새지 않게 한다.
     region ? getAvailablePaymentMethods(region, cookieHeader).catch(() => []) : Promise.resolve(null),
   ]);
-  const tossWidgetConfig = methods.some((method) => method.type === 'TOSS')
-    ? await getTossWidgetConfig(cookieHeader).catch(() => null)
-    : null;
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
@@ -138,6 +136,31 @@ export default async function PayPage({ params, searchParams }: Props) {
   // 발급된 계좌를 서버에서 다시 읽어 넘겨 같은 안내 화면을 그대로 복원한다.
   const depositAccount =
     intent.status === 'AWAITING_DEPOSIT' ? await getBankTransferDepositAccount(intentId, cookieHeader) : null;
+
+  let tossWidgetConfig = null;
+  try {
+    if (methods.some((method) => method.type === 'TOSS')) tossWidgetConfig = await getTossWidgetConfig(cookieHeader);
+  } catch (error) {
+    const retryPath = `/pay/${intentId}${region ? `?region=${encodeURIComponent(region)}` : ''}`;
+    if (isWalletSessionExpiredError(error)) {
+      redirect(`/auth/ensure?redirect_to=${encodeURIComponent(retryPath)}`);
+    }
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="space-y-4 pt-6 text-center">
+            <h1 className="text-lg font-semibold">결제 설정을 불러오지 못했어요</h1>
+            <p role="alert" className="text-sm text-muted-foreground">
+              잠시 후 다시 시도해주세요.
+            </p>
+            <Button asChild className="w-full">
+              <a href={retryPath}>다시 시도</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
 
   return (
     <PayForm
