@@ -19,11 +19,9 @@ import type {
   PointsBalance,
   TossWidgetConfig,
 } from '@/lib/wallet-api';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Lock, RefreshCw, ShoppingBag } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import {
   buildStorefrontOrderListUrl,
   formatAmount,
@@ -31,11 +29,14 @@ import {
   isBankTransferPendingAction,
   type BankTransferPendingAction,
 } from '@/components/payment/utils';
-import { PointsCard } from '@/components/payment/points-card';
+import { CheckoutPoints } from '@/components/payment/checkout-points';
+import { CheckoutFrame } from '@/components/payment/checkout-frame';
 import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
 import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
-import type { TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
+import { CustomTossCheckout } from '@/components/payment/custom-toss-checkout';
+import type { CheckoutSelection } from '@/components/payment/card-checkout';
+import type { TossPaymentsBrandpay, TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import {
   CashReceiptCard,
   EMPTY_CASH_RECEIPT,
@@ -189,20 +190,27 @@ export function PayForm({
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - pointsUsed;
 
-  async function handleConfirm() {
-    const pts = pointsUsed;
+  async function handleConfirm(selection?: CheckoutSelection, brandpay?: TossPaymentsBrandpay) {
+    const custom = tossWidgetConfig?.checkoutMode === 'CUSTOM' && !!selection;
+    const pts = selection ? Math.min(maxPoints, Math.max(0, selection.points)) : pointsUsed;
+    const methodId = custom ? externalMethods.find((method) => method.type === 'TOSS')?.id : selectedMethodId;
     const remaining = intent.payableAmount - pts;
-    if (remaining > 0 && !selectedMethodId) {
+    if (remaining > 0 && !methodId) {
       setError('결제 수단을 선택해주세요.');
       return;
     }
-    if (isTossSelected && tossWidgetConfig && (tossWidgetReadyAmount !== remaining || !tossWidgetsRef.current)) {
+    if (
+      !custom &&
+      isTossSelected &&
+      tossWidgetConfig &&
+      (tossWidgetReadyAmount !== remaining || !tossWidgetsRef.current)
+    ) {
       setError('토스 결제 UI를 준비하고 있습니다. 잠시 후 다시 시도해주세요.');
       return;
     }
     // 무통장 + 증빙 신청 검증
     let cashReceipt;
-    if (isBankTransferSelected) {
+    if (!custom && isBankTransferSelected) {
       const built = buildCashReceipt(cashReceiptState, userBizNumber);
       if (!built.ok) {
         setError(built.error);
@@ -221,7 +229,7 @@ export function PayForm({
     try {
       const result = await confirmPaymentIntent(
         intent.id,
-        remaining > 0 ? selectedMethodId : null,
+        remaining > 0 ? methodId! : null,
         pts > 0 ? pts : undefined,
         cashReceipt,
       );
@@ -239,7 +247,16 @@ export function PayForm({
           ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         };
-        if (isTossSelected && tossWidgetConfig) {
+        if (custom && selection?.method === 'BRANDPAY') {
+          if (!brandpay || !selection.cardId) throw new Error('결제할 카드를 선택해주세요.');
+          await brandpay.requestPayment({
+            ...tossParams,
+            successUrl: `${tossParams.successUrl}${tossParams.successUrl.includes('?') ? '&' : '?'}paymentType=BRANDPAY`,
+            amount: { currency: 'KRW', value: na.amount as number },
+            methodId: selection.cardId,
+            card: { cardInstallmentPlan: selection.installment },
+          });
+        } else if (!custom && isTossSelected && tossWidgetConfig) {
           if (na.amount !== tossWidgetReadyAmount || !tossWidgetsRef.current) {
             throw new Error('결제 금액이 변경되었습니다. 화면을 새로고침한 뒤 다시 시도해주세요.');
           }
@@ -247,11 +264,16 @@ export function PayForm({
         } else {
           const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
           const tossPayments = await loadTossPayments(na.clientKey as string);
-          const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
+          const payment = tossPayments.payment({
+            customerKey: custom ? tossWidgetConfig.customerKey : `user-${intent.userId}`,
+          });
           await payment.requestPayment({
             ...tossParams,
             method: isTossSelected ? tossSubMethod : ('CARD' as const),
             amount: { currency: 'KRW' as const, value: na.amount as number },
+            ...(custom && selection?.method !== '신용·체크카드'
+              ? { card: { flowMode: 'DIRECT' as const, easyPay: selection?.method } }
+              : {}),
           });
         }
         return; // requestPayment redirects
@@ -289,6 +311,8 @@ export function PayForm({
         redirectToWalletLogin();
         return;
       }
+
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'USER_CANCEL') return;
 
       setError(err instanceof Error ? err.message : '결제에 실패했어요.');
     } finally {
@@ -339,168 +363,149 @@ export function PayForm({
     );
   }
 
+  if (
+    !isMembership &&
+    tossWidgetConfig?.checkoutMode === 'CUSTOM' &&
+    externalMethods.some((method) => method.type === 'TOSS')
+  ) {
+    return (
+      <CustomTossCheckout
+        key={intent.id}
+        intentId={intent.id}
+        orderName={typeof intent.metadata?.orderName === 'string' ? intent.metadata.orderName : '주문 결제'}
+        amount={intent.payableAmount}
+        availablePoints={availablePoints}
+        config={tossWidgetConfig}
+        loading={loading}
+        error={error}
+        onClose={() => void handleCancel()}
+        onPay={handleConfirm}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-muted/40">
-      {/* 상단 보안 바 */}
-      <div className="border-b bg-card">
-        <div className="flex items-center justify-center gap-1.5 py-2.5">
-          <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
+    <CheckoutFrame
+      orderName={typeof intent.metadata?.orderName === 'string' ? intent.metadata.orderName : '주문 결제'}
+      originalPrice={formatAmount(intent.payableAmount, intent.currency)}
+      finalPrice={formatAmount(remainingAmount, intent.currency)}
+      discounted={remainingAmount < intent.payableAmount}
+      onClose={() => void handleCancel()}
+      footer={
+        <>
+          <p aria-live="polite" className="text-sm text-muted-foreground">
+            {remainingAmount === 0
+              ? '포인트로 전액 결제'
+              : pointsUsed > 0
+                ? `포인트 ${pointsUsed.toLocaleString('ko-KR')}P 사용`
+                : '총 결제금액'}
+          </p>
+          <Button
+            onClick={() => void handleConfirm()}
+            disabled={loading || !canConfirm}
+            className="h-14 w-full rounded-xl text-lg font-bold"
+          >
+            {loading ? (
+              <>
+                <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                처리 중...
+              </>
+            ) : (
+              `${formatAmount(remainingAmount, intent.currency)} 결제하기`
+            )}
+          </Button>
+          <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
+            주문 내용을 확인했으며, 결제 서비스 이용에 동의합니다.
+          </p>
+        </>
+      }
+    >
+      {isRecurring && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <RefreshCw className="size-3" />
+          정기결제 · 매월 자동갱신
+        </p>
+      )}
+      {remainingAmount > 0 && (externalMethods.length > 1 || !tossWidgetConfig) && (
+        <PaymentMethodCard
+          methods={externalMethods}
+          availableMethodMap={availableMethodMap}
+          regionFilterApplied={Array.isArray(availableMethods)}
+          region={region}
+          selectedMethodId={selectedMethodId}
+          onSelect={handleSelectMethod}
+        />
+      )}
+      <div ref={methodExtrasRef} className="empty:hidden space-y-4 scroll-mb-44">
+        {remainingAmount > 0 && isTossSelected && tossWidgetConfig && (
+          <TossPaymentWidget
+            intentId={intent.id}
+            clientKey={tossWidgetConfig.clientKey}
+            variantKey={tossWidgetConfig.variantKey}
+            customerKey={tossWidgetConfig.customerKey}
+            amount={remainingAmount}
+            widgetsRef={tossWidgetsRef}
+            setReadyAmount={setTossWidgetReadyAmount}
+            setError={setError}
+          />
+        )}
+        {remainingAmount > 0 && isTossSelected && !tossWidgetConfig && (
+          <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
+        )}
+        {remainingAmount > 0 && isBankTransferSelected && (
+          <CashReceiptCard
+            value={cashReceiptState}
+            onChange={handleCashReceiptChange}
+            userPhone={userPhone}
+            userBizNumber={userBizNumber}
+          />
+        )}
       </div>
-
-      {/* 메인 콘텐츠 */}
-      <div className="max-w-4xl px-4 py-8 mx-auto md:py-16">
-        <div className="flex flex-col gap-6 md:flex-row md:gap-8 md:items-start">
-          {/* 좌측 패널: 주문 요약 */}
-          <div className="w-full md:w-[380px] md:shrink-0">
-            <Card className="border shadow-sm border-border/60">
-              <CardContent className="space-y-5 p-6">
-                <div className="space-y-2">
-                  {typeof intent.metadata?.orderName === 'string' && (
-                    <p className="text-[17px] leading-snug font-bold break-keep text-foreground">
-                      {intent.metadata.orderName}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ShoppingBag className="h-3.5 w-3.5" />
-                    <span>주문번호 {intent.id.slice(-8).toUpperCase()}</span>
-                  </div>
-                </div>
-
-                {isRecurring && (
-                  <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
-                    <RefreshCw className="w-3 h-3" />
-                    정기결제 · 매월 자동갱신
-                  </div>
-                )}
-
-                <Separator />
-
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">결제 금액</p>
-                  {/* 포인트를 쓰면 실제 낼 돈은 총액이 아니다. 큰 숫자를 실결제액으로 두고
-                      총액은 취소선으로 남긴다(무통장은 이 금액 그대로 입금해야 함). */}
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-3xl font-bold tracking-tight whitespace-nowrap text-foreground">
-                      {formatAmount(remainingAmount, intent.currency)}
-                    </span>
-                    {remainingAmount !== intent.payableAmount && (
-                      <span className="text-sm whitespace-nowrap line-through text-muted-foreground">
-                        {formatAmount(intent.payableAmount, intent.currency)}
-                      </span>
-                    )}
-                  </div>
-                  {remainingAmount !== intent.payableAmount && (
-                    <p className="text-xs font-medium text-primary">
-                      포인트 {formatAmount(intent.payableAmount - remainingAmount, intent.currency)} 사용
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1.5 border-t border-border/60 pt-4 text-xs text-muted-foreground">
-                  {intent.expiresAt && (
-                    <p suppressHydrationWarning>{formatExpiry(intent.expiresAt)}까지 결제해주세요</p>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <Lock className="h-3 w-3" />
-                    <span>SSL 암호화로 보호됩니다</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      {!isZeroAmount && !isMembership && (
+        <CheckoutPoints
+          availablePoints={availablePoints}
+          maxPoints={maxPoints}
+          points={pointsUsed}
+          onChange={setPointsUsed}
+        />
+      )}
+      <section aria-label="결제 금액" className="border-t border-border/60 bg-white py-5">
+        <h2 className="font-bold">결제 금액</h2>
+        <dl className="mt-4 space-y-3 text-sm">
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">주문 금액</dt>
+            <dd>{formatAmount(intent.payableAmount, intent.currency)}</dd>
           </div>
-
-          {/* 우측 패널: 포인트 + 결제수단 + CTA */}
-          <div className="flex-1 space-y-4">
-            {!isZeroAmount && !isMembership && (
-              <PointsCard
-                availablePoints={availablePoints}
-                maxPoints={maxPoints}
-                pointsAmount={pointsUsed}
-                onAmountChange={setPointsUsed}
-              />
-            )}
-
-            {/* 결제수단 선택 (잔액이 있을 때만 표시) */}
-            {remainingAmount > 0 && (
-              <PaymentMethodCard
-                methods={externalMethods}
-                availableMethodMap={availableMethodMap}
-                regionFilterApplied={Array.isArray(availableMethods)}
-                region={region}
-                selectedMethodId={selectedMethodId}
-                onSelect={handleSelectMethod}
-              />
-            )}
-
-            <div ref={methodExtrasRef} className="empty:hidden space-y-4 scroll-mb-32 md:scroll-mb-0">
-              {remainingAmount > 0 && isTossSelected && tossWidgetConfig && (
-                <TossPaymentWidget
-                  intentId={intent.id}
-                  clientKey={tossWidgetConfig.clientKey}
-                  variantKey={tossWidgetConfig.variantKey}
-                  customerKey={tossWidgetConfig.customerKey}
-                  amount={remainingAmount}
-                  widgetsRef={tossWidgetsRef}
-                  setReadyAmount={setTossWidgetReadyAmount}
-                  setError={setError}
-                />
-              )}
-              {remainingAmount > 0 && isTossSelected && !tossWidgetConfig && (
-                <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
-              )}
-
-              {remainingAmount > 0 && isBankTransferSelected && (
-                <CashReceiptCard
-                  value={cashReceiptState}
-                  onChange={handleCashReceiptChange}
-                  userPhone={userPhone}
-                  userBizNumber={userBizNumber}
-                />
-              )}
+          {pointsUsed > 0 && (
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">포인트 사용</dt>
+              <dd className="text-primary">−{formatAmount(pointsUsed, intent.currency)}</dd>
             </div>
-
-            {/* 에러 */}
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="w-4 h-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            {/* CTA */}
-            {/* 모바일은 카드가 세로로 쌓여 결제 버튼이 폴드 아래로 내려간다. 하단에 고정한다. */}
-            <div className="bg-background border-border sticky bottom-0 -mx-4 space-y-2 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0">
-              <Button
-                onClick={() => void handleConfirm()}
-                disabled={loading || !canConfirm}
-                className="w-full h-12 text-sm font-semibold"
-              >
-                {loading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-current rounded-full animate-spin border-t-transparent" />
-                    처리 중...
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-4 h-4" />
-                    {formatAmount(remainingAmount, intent.currency)} 결제하기
-                  </>
-                )}
-              </Button>
-              <div className="flex justify-center">
-                <button
-                  onClick={() => void handleCancel()}
-                  disabled={loading}
-                  className="text-sm transition-colors text-muted-foreground hover:text-foreground underline-offset-4 hover:underline disabled:opacity-50"
-                >
-                  취소하기
-                </button>
-              </div>
-            </div>
+          )}
+          <div className="flex justify-between border-t border-border/50 pt-3 font-bold">
+            <dt>최종 결제 금액</dt>
+            <dd>{formatAmount(remainingAmount, intent.currency)}</dd>
           </div>
-        </div>
+        </dl>
+      </section>
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <div className="space-y-1 text-center text-xs text-muted-foreground">
+        <p>주문번호 {intent.id.slice(-8).toUpperCase()}</p>
+        {intent.expiresAt && <p suppressHydrationWarning>{formatExpiry(intent.expiresAt)}까지 결제해주세요</p>}
+        <button
+          type="button"
+          onClick={() => void handleCancel()}
+          disabled={loading}
+          className="min-h-10 underline underline-offset-4 disabled:opacity-50"
+        >
+          취소하기
+        </button>
       </div>
-    </div>
+    </CheckoutFrame>
   );
 }

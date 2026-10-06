@@ -4,11 +4,17 @@ describe('TossApiClient', () => {
   const originalFetch = global.fetch;
   const originalSecretKey = process.env.TOSS_SECRET_KEY;
   const originalWidgetSecretKey = process.env.TOSS_WIDGET_SECRET_KEY;
+  const originalBrandPaySecretKey = process.env.TOSS_BRANDPAY_SECRET_KEY;
+  const originalCheckoutMode = process.env.TOSS_CHECKOUT_MODE;
 
   afterEach(() => {
     global.fetch = originalFetch;
     process.env.TOSS_SECRET_KEY = originalSecretKey;
     process.env.TOSS_WIDGET_SECRET_KEY = originalWidgetSecretKey;
+    if (originalBrandPaySecretKey === undefined) delete process.env.TOSS_BRANDPAY_SECRET_KEY;
+    else process.env.TOSS_BRANDPAY_SECRET_KEY = originalBrandPaySecretKey;
+    if (originalCheckoutMode === undefined) delete process.env.TOSS_CHECKOUT_MODE;
+    else process.env.TOSS_CHECKOUT_MODE = originalCheckoutMode;
     jest.restoreAllMocks();
   });
 
@@ -119,5 +125,26 @@ describe('TossApiClient', () => {
       },
       body: JSON.stringify({ grantType: 'AuthorizationCode', code: 'auth_code', customerKey: 'user-123' }),
     });
+  });
+
+  it('uses the individual BrandPay key for custom registration, cards, approval and refunds', async () => {
+    process.env.TOSS_CHECKOUT_MODE = 'CUSTOM';
+    process.env.TOSS_BRANDPAY_SECRET_KEY = 'test_sk_brandpay';
+    process.env.TOSS_SECRET_KEY = 'test_sk_normal';
+    process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ cards: [] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const client = new TossApiClient();
+    await client.issueBrandPayAccessToken('code', 'customer');
+    await client.getBrandPayMethods('customer');
+    await client.confirmBrandPayPayment('payment', 12300, 'order', 'customer', false);
+    await client.cancelPayment('payment', 'cancel', undefined, undefined, undefined, false, true);
+    await client.getPaymentByOrderId('order', false, true);
+    await client.confirmPayment('normal', 12300, 'order');
+    const calls = fetchMock.mock.calls as unknown as Array<[string, { headers: { Authorization: string } }]>;
+    for (const call of calls.slice(0, 5)) {
+      expect(call[1].headers.Authorization).toBe(`Basic ${Buffer.from('test_sk_brandpay:').toString('base64')}`);
+    }
+    expect(calls[5][1].headers.Authorization).toBe(`Basic ${Buffer.from('test_sk_normal:').toString('base64')}`);
   });
 });
