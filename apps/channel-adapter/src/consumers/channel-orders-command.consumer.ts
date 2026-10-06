@@ -5,12 +5,14 @@ import { CHANNEL_ORDERS_COMMAND_STREAM } from '@packages/event-contracts/streams
 import { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
 import { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
 import { isSyncableChannel } from '../services/order-collection/syncable-channels';
+import { ChannelOrderCancelManager } from '../services/order-cancel/channel-order-cancel.manager';
 
 /**
  * `channel-orders.commands.v1` 소비자 (#1016 6번 행 스펙 §7.3).
  *
  * core 는 channel-adapter 를 직접 부르지 않는다 — 채널 쪽 일을 원하면 이 명령 스트림에 요청한다.
  * «다시 확인»은 5번 행의 즉시 끌어오기와 같은 메서드를 `force` 로 탄다. 결과는 `OrderModified` 로 돌아간다.
+ * «취소»(35번 행)는 `ChannelOrderCancelManager` 가 채널에 실행하고, 결과는 재수집 또는 `ChannelOrderCancelRejected` 로 돌아간다.
  *
  * 결과가 정해진 실패(미지원 채널·비활성·주문 없음 등)는 로그만 남기고 정상 종료한다 — 재시도해도 같다.
  * 예상 밖 예외(채널 API 5xx·네트워크)는 던져서 재시도·DLQ 를 탄다.
@@ -20,7 +22,10 @@ import { isSyncableChannel } from '../services/order-collection/syncable-channel
 export class ChannelOrdersCommandConsumer {
   private readonly logger = new Logger(ChannelOrdersCommandConsumer.name);
 
-  constructor(private readonly orderPoller: OrderPollerOrchestrator) {}
+  constructor(
+    private readonly orderPoller: OrderPollerOrchestrator,
+    private readonly cancelManager: ChannelOrderCancelManager,
+  ) {}
 
   @On(CHANNEL_ORDERS_COMMAND_STREAM, 'ResyncChannelOrder')
   async handleResync(
@@ -36,5 +41,16 @@ export class ChannelOrdersCommandConsumer {
     }
     const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
     this.logger.log(`[RESYNC] ${salesChannel}:${externalOrderId} → ${outcome}`, { correlationId: envelope.correlationId });
+  }
+
+  @On(CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder')
+  async handleCancel(
+    @EventPayload() payload: EventPayloadOf<typeof CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof CHANNEL_ORDERS_COMMAND_STREAM, 'CancelChannelOrder'>,
+  ): Promise<void> {
+    this.logger.log(`[CANCEL] ${payload.requestId} ${payload.salesChannel}:${payload.externalOrderId} ${payload.scope} 수신`, {
+      correlationId: envelope.correlationId,
+    });
+    await this.cancelManager.execute(payload);
   }
 }
