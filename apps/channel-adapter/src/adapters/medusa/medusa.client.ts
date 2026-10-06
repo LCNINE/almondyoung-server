@@ -266,7 +266,7 @@ export class MedusaHttpError extends Error {
  * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4).
  * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 거절(NOT_CANCELABLE)로 닫힌다.
  */
-const ALREADY_CANCELLED_MESSAGE = /has been canceled/;
+const ALREADY_CANCELLED_MESSAGE = /^Order with id .+ has been canceled\.$/;
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1942,7 +1942,8 @@ export class MedusaClient {
       this.logger.log(`Cancelled Medusa order: ${orderId}`);
       return { kind: 'cancelled' };
     }
-    if (status === 404) return { kind: 'not_found', message };
+    // 본문 없는 404 는 게이트웨이·오라우팅이다 — 주문 없음으로 읽지 않고 던진다(롤링 중 옛 Medusa 포함)
+    if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
     if (status === 400) {
       if (ALREADY_CANCELLED_MESSAGE.test(message)) return { kind: 'already_cancelled' };
       return { kind: 'not_cancelable', message };

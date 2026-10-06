@@ -68,7 +68,7 @@ describe('ChannelOrdersCommandConsumer — CancelChannelOrder (#1016 35번 행)'
   it('명령을 실행기에 그대로 넘긴다', async () => {
     const execute = jest.fn().mockResolvedValue(undefined);
     await consumerWith(jest.fn(), execute).handleCancel(command, envelope);
-    expect(execute).toHaveBeenCalledWith(command);
+    expect(execute).toHaveBeenCalledWith(command, 'msg-1');
   });
 
   it('실행기의 예외는 삼키지 않는다 — 재시도·DLQ 를 탄다', async () => {

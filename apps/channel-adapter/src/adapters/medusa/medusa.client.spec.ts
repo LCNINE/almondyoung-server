@@ -1510,6 +1510,17 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_found', message: 'Order id not found: order_1' });
     });
 
+    it('본문 없는 404 는 던진다 — 게이트웨이·오라우팅을 주문 없음으로 읽지 않는다', async () => {
+      global.fetch = respond(404, undefined);
+      await expect(makeClient().cancelOrder('order_1')).rejects.toBeInstanceOf(MedusaHttpError);
+    });
+
+    it('다른 대상의 «has been canceled» 400 은 취소 불가다', async () => {
+      const message = 'Return with id ret_1 has been canceled.';
+      global.fetch = respond(400, { type: 'invalid_data', message });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message });
+    });
+
     it('5xx 는 status 를 실어 던진다 — wallet «환불 불가»도 Medusa 가 500 으로 가리므로 여기다(일시 실패)', async () => {
       global.fetch = respond(500, { type: 'unknown_error', message: 'An unknown error occurred.' });
       const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);

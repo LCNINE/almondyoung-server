@@ -30,34 +30,33 @@ export class ChannelOrderCancelRepository {
     return row !== undefined;
   }
 
-  async recordRejected(payload: ChannelOrderCancelRejectedPayload): Promise<void> {
-    await this.db.db.transaction((tx) =>
-      this.orders.enqueue(
-        {
-          eventType: 'ChannelOrderCancelRejected',
-          aggregateId: channelOrderPartitionKey(payload.salesChannel, payload.externalOrderId),
-          // 수집 사실(OrderCreated·OrderModified·OrderCancelled)과 같은 키 — 같은 채널 안에서 순서가 유지된다
-          partitionKey: payload.salesChannel,
-          metadata: { partitionKey: payload.salesChannel },
-          // 같은 명령이 두 번 와도(최소 1회 전달) 사실은 한 번
-          idempotencyKey: `cancel-rejected:${payload.requestId}`,
-          payload,
-        },
-        tx,
-      ),
-    );
+  async recordRejected(payload: ChannelOrderCancelRejectedPayload, deliveryId: string): Promise<void> {
+    await this.enqueueFact('ChannelOrderCancelRejected', `cancel-rejected:${payload.requestId}:${deliveryId}`, payload);
   }
 
-  async recordStalled(payload: ChannelOrderCancelStalledPayload): Promise<void> {
+  async recordStalled(payload: ChannelOrderCancelStalledPayload, deliveryId: string): Promise<void> {
+    await this.enqueueFact('ChannelOrderCancelStalled', `cancel-stalled:${payload.requestId}:${deliveryId}`, payload);
+  }
+
+  /**
+   * 멱등 키에 deliveryId(명령 봉투 messageId)를 넣는다 — Kafka 가 같은 메시지를 다시 주면 messageId 가 같아 한 번만 적재되고,
+   * core 의 «다시 보내기»는 새 messageId 라 사실을 다시 낸다(첫 사실이 유실됐어도 두 번째 시도가 빈손이 되지 않는다).
+   * 따라서 core 는 같은 requestId 의 반복된 사실을 no-op 으로 다뤄야 한다.
+   */
+  private async enqueueFact(
+    eventType: 'ChannelOrderCancelRejected' | 'ChannelOrderCancelStalled',
+    idempotencyKey: string,
+    payload: ChannelOrderCancelRejectedPayload | ChannelOrderCancelStalledPayload,
+  ): Promise<void> {
     await this.db.db.transaction((tx) =>
       this.orders.enqueue(
         {
-          eventType: 'ChannelOrderCancelStalled',
+          eventType,
           aggregateId: channelOrderPartitionKey(payload.salesChannel, payload.externalOrderId),
+          // 수집 사실(OrderCreated·OrderModified·OrderCancelled)과 같은 파티션 키 — 같은 파티션에 실린다(아웃박스를 거치므로 엄밀한 순서를 주장하진 않는다)
           partitionKey: payload.salesChannel,
           metadata: { partitionKey: payload.salesChannel },
-          // 재시도마다 다시 오지만 core 에겐 같은 값(stage=edited)이다
-          idempotencyKey: `cancel-stalled:${payload.requestId}`,
+          idempotencyKey,
           payload,
         },
         tx,

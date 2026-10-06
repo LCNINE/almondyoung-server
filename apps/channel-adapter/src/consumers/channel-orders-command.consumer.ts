@@ -51,6 +51,6 @@ export class ChannelOrdersCommandConsumer {
     this.logger.log(`[CANCEL] ${payload.requestId} ${payload.salesChannel}:${payload.externalOrderId} ${payload.scope} 수신`, {
       correlationId: envelope.correlationId,
     });
-    await this.cancelManager.execute(payload);
+    await this.cancelManager.execute(payload, envelope.messageId);
   }
 }
