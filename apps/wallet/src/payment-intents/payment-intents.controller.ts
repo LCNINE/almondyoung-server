@@ -25,6 +25,8 @@ import {
 import { RefundResponseDto } from '../refunds/dto';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
+import { TossApiClient } from '../providers/toss/toss-api.client';
+import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
 
 @ApiTags('Payment Intents')
 @Controller('v1/payment-intents')
@@ -32,6 +34,7 @@ export class PaymentIntentsController {
   constructor(
     private readonly service: PaymentIntentsService,
     private readonly refundsService: RefundsService,
+    private readonly tossApi: TossApiClient,
   ) {}
 
   @Post()
@@ -95,6 +98,31 @@ export class PaymentIntentsController {
     const { nextAction } = await this.service.confirm(id, dto);
     const updated = await this.service.findByIdOrThrow(id);
     return this.toResponse(updated, nextAction);
+  }
+
+  @Post(':id/brandpay-authorize')
+  @HttpCode(204)
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'Exchange a BrandPay authorization code for the intent owner' })
+  async authorizeBrandPay(
+    @Param('id') id: string,
+    @Body() body: { code?: string; customerKey?: string },
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    if (!req.jwtUserId || body.customerKey !== tossBrandPayCustomerKey(req.jwtUserId)) {
+      throw new ForbiddenException({ error: 'BRANDPAY_CUSTOMER_MISMATCH' });
+    }
+    if (!body.code || typeof body.code !== 'string') {
+      throw new BadRequestException({ error: 'BRANDPAY_CODE_REQUIRED' });
+    }
+    if (!process.env.TOSS_WIDGET_SECRET_KEY) {
+      throw new BadRequestException({ error: 'TOSS_WIDGET_NOT_CONFIGURED' });
+    }
+    await this.claimOrVerify(id, req.jwtUserId);
+    const result = await this.tossApi.issueBrandPayAccessToken(body.code, body.customerKey);
+    if (!result.ok) {
+      throw new BadRequestException({ error: result.error.code, message: result.error.message });
+    }
   }
 
   @Post(':id/toss-approve')

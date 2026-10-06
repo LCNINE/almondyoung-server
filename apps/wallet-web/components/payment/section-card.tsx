@@ -51,7 +51,7 @@ export function SectionCard({
           <button
             type="button"
             onClick={action.onClick}
-            className="shrink-0 rounded border border-[#ff6600] px-3 py-1.5 text-[14px] font-medium text-[#ff6600] transition-colors hover:bg-gray-50"
+            className="shrink-0 rounded border border-primary px-3 py-1.5 text-[14px] font-medium text-primary transition-colors hover:bg-gray-50"
           >
             {action.label}
           </button>

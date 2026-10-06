@@ -10,7 +10,13 @@ export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ paymentKey?: string; orderId?: string; amount?: string; region?: string }>;
+  searchParams: Promise<{
+    paymentKey?: string;
+    orderId?: string;
+    amount?: string;
+    region?: string;
+    paymentType?: string;
+  }>;
 }
 
 function buildPayPath(intentId: string, region?: string, extra?: Record<string, string>) {
@@ -27,7 +33,7 @@ const logger = createWebLogger({
 
 export default async function TossCompletePage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { paymentKey, orderId, amount, region } = await searchParams;
+  const { paymentKey, orderId, amount, region, paymentType } = await searchParams;
 
   logger.info('wallet.toss_complete.received', {
     attributes: {
@@ -52,7 +58,13 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
   }
 
   try {
-    const result = await approveToss(intentId, paymentKey, orderId, Number(amount));
+    const result = await approveToss(
+      intentId,
+      paymentKey,
+      orderId,
+      Number(amount),
+      paymentType === 'BRANDPAY' ? 'BRANDPAY' : 'NORMAL',
+    );
     logger.info('wallet.toss_complete.approved', {
       attributes: {
         intent_id: intentId,

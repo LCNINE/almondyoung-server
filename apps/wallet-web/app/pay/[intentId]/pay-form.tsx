@@ -17,6 +17,7 @@ import type {
   PaymentIntent,
   PaymentMethod,
   PointsBalance,
+  TossWidgetConfig,
 } from '@/lib/wallet-api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,8 @@ import {
 import { PointsCard } from '@/components/payment/points-card';
 import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
+import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
+import type { TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import {
   CashReceiptCard,
   EMPTY_CASH_RECEIPT,
@@ -55,6 +58,7 @@ interface Props {
   region?: string | null;
   /** Toss 결제가 실패/취소로 돌아왔을 때(failUrl ?toss_fail=1) true. mount 시 abandon 신호 전송. */
   tossFailed?: boolean;
+  brandpayFailed?: boolean;
   /** 로그인 사용자의 사업자 정보 — 세금계산서/지출증빙 prefill 용. 없으면 null. */
   businessInfo?: BusinessLicenseInfo | null;
   /**
@@ -62,6 +66,7 @@ interface Props {
    * 있으면 결제 폼 대신 입금 안내 화면을 바로 띄운다(취소 버튼 없는 화면).
    */
   depositAccount?: BankTransferDepositAccount | null;
+  tossWidgetConfig?: TossWidgetConfig | null;
 }
 
 function buildPayPath(intentId: string, region?: string | null, extra?: Record<string, string>) {
@@ -79,8 +84,10 @@ export function PayForm({
   availableMethods,
   region,
   tossFailed,
+  brandpayFailed,
   businessInfo,
   depositAccount,
+  tossWidgetConfig,
 }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
@@ -108,7 +115,11 @@ export function PayForm({
   const [pointsUsed, setPointsUsed] = useState(0);
   const [tossSubMethod, setTossSubMethod] = useState<TossSubMethod>('CARD');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    brandpayFailed ? '브랜드페이 인증을 완료하지 못했습니다. 다시 시도해주세요.' : null,
+  );
+  const tossWidgetsRef = useRef<TossPaymentsWidgets | null>(null);
+  const [tossWidgetReadyAmount, setTossWidgetReadyAmount] = useState<number | null>(null);
   // 재진입(AWAITING_DEPOSIT)이면 서버가 넘긴 계좌로 초기화 → 안내 화면이 그대로 복원된다.
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(
     depositAccount
@@ -185,6 +196,10 @@ export function PayForm({
       setError('결제 수단을 선택해주세요.');
       return;
     }
+    if (isTossSelected && tossWidgetConfig && (tossWidgetReadyAmount !== remaining || !tossWidgetsRef.current)) {
+      setError('토스 결제 UI를 준비하고 있습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     // 무통장 + 증빙 신청 검증
     let cashReceipt;
     if (isBankTransferSelected) {
@@ -202,6 +217,7 @@ export function PayForm({
     }
     setLoading(true);
     setError(null);
+    let tossActionStarted = false;
     try {
       const result = await confirmPaymentIntent(
         intent.id,
@@ -211,24 +227,33 @@ export function PayForm({
       );
 
       if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'TOSS_CHECKOUT') {
+        tossActionStarted = true;
         const na = result.nextAction;
-        const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
-        const tossPayments = await loadTossPayments(na.clientKey as string);
-        const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
         const tossCompletePath = buildPayPath(`${intent.id}/toss-complete`, region);
         const tossParams = {
-          method: isTossSelected ? tossSubMethod : 'CARD',
           orderId: na.orderId as string,
           orderName: na.orderName as string,
-          amount: { currency: 'KRW' as const, value: na.amount as number },
           successUrl: `${window.location.origin}${tossCompletePath}`,
           failUrl: `${window.location.origin}${buildPayPath(intent.id, region, { toss_fail: '1' })}`,
           ...(na.customerName ? { customerName: na.customerName as string } : {}),
           ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await payment.requestPayment(tossParams as any);
+        if (isTossSelected && tossWidgetConfig) {
+          if (na.amount !== tossWidgetReadyAmount || !tossWidgetsRef.current) {
+            throw new Error('결제 금액이 변경되었습니다. 화면을 새로고침한 뒤 다시 시도해주세요.');
+          }
+          await tossWidgetsRef.current.requestPayment(tossParams);
+        } else {
+          const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
+          const tossPayments = await loadTossPayments(na.clientKey as string);
+          const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
+          await payment.requestPayment({
+            ...tossParams,
+            method: isTossSelected ? tossSubMethod : ('CARD' as const),
+            amount: { currency: 'KRW' as const, value: na.amount as number },
+          });
+        }
         return; // requestPayment redirects
       }
 
@@ -259,6 +284,7 @@ export function PayForm({
         router.replace(buildPayPath(intent.id, region));
       }
     } catch (err) {
+      if (tossActionStarted) await abandonPaymentIntent(intent.id).catch(() => undefined);
       if (isWalletSessionExpiredError(err)) {
         redirectToWalletLogin();
         return;
@@ -297,7 +323,9 @@ export function PayForm({
     }
   }
 
-  const canConfirm = remainingAmount === 0 || !!selectedMethodId;
+  const canConfirm =
+    (remainingAmount === 0 || !!selectedMethodId) &&
+    (!isTossSelected || !tossWidgetConfig || tossWidgetReadyAmount === remainingAmount);
 
   if (bankTransferPending) {
     return (
@@ -406,7 +434,19 @@ export function PayForm({
             )}
 
             <div ref={methodExtrasRef} className="empty:hidden space-y-4 scroll-mb-32 md:scroll-mb-0">
-              {remainingAmount > 0 && isTossSelected && (
+              {remainingAmount > 0 && isTossSelected && tossWidgetConfig && (
+                <TossPaymentWidget
+                  intentId={intent.id}
+                  clientKey={tossWidgetConfig.clientKey}
+                  variantKey={tossWidgetConfig.variantKey}
+                  customerKey={tossWidgetConfig.customerKey}
+                  amount={remainingAmount}
+                  widgetsRef={tossWidgetsRef}
+                  setReadyAmount={setTossWidgetReadyAmount}
+                  setError={setError}
+                />
+              )}
+              {remainingAmount > 0 && isTossSelected && !tossWidgetConfig && (
                 <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
               )}
 
@@ -432,7 +472,7 @@ export function PayForm({
             {/* 모바일은 카드가 세로로 쌓여 결제 버튼이 폴드 아래로 내려간다. 하단에 고정한다. */}
             <div className="bg-background border-border sticky bottom-0 -mx-4 space-y-2 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0">
               <Button
-                onClick={handleConfirm}
+                onClick={() => void handleConfirm()}
                 disabled={loading || !canConfirm}
                 className="w-full h-12 text-sm font-semibold"
               >
@@ -450,7 +490,7 @@ export function PayForm({
               </Button>
               <div className="flex justify-center">
                 <button
-                  onClick={handleCancel}
+                  onClick={() => void handleCancel()}
                   disabled={loading}
                   className="text-sm transition-colors text-muted-foreground hover:text-foreground underline-offset-4 hover:underline disabled:opacity-50"
                 >

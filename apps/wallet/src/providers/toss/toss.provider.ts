@@ -13,6 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
+import { usesTossWidget } from './toss-widget-mode';
 import { and } from 'drizzle-orm';
 
 @Injectable()
@@ -27,6 +28,7 @@ export class TossPaymentProvider implements PaymentProvider {
   ) {}
 
   async getUserMethods(userId: string): Promise<PaymentMethod[]> {
+    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return this.dbService.db.transaction(async (tx) => {
       const db = tx as typeof this.dbService.db;
       const existing = await db
@@ -36,14 +38,16 @@ export class TossPaymentProvider implements PaymentProvider {
           and(eq(paymentMethods.userId, userId), eq(paymentMethods.type, 'TOSS'), eq(paymentMethods.isDeleted, false)),
         );
 
-      if (existing.length > 0) return existing;
+      if (existing.length > 0) {
+        return widgetEnabled ? existing.map((method) => ({ ...method, displayName: '토스 결제' })) : existing;
+      }
 
       return db
         .insert(paymentMethods)
         .values({
           userId,
           type: 'TOSS',
-          displayName: '카드결제',
+          displayName: widgetEnabled ? '토스 결제' : '카드결제',
           isReusable: true,
           isDeleted: false,
           providerData: {},
@@ -74,6 +78,7 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const meta = params.metadata ?? {};
+    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return {
       status: 'REQUIRES_ACTION',
       nextAction: {
@@ -81,6 +86,7 @@ export class TossPaymentProvider implements PaymentProvider {
         orderId,
         orderName: (meta.orderName as string) ?? '결제',
         clientKey: process.env.TOSS_CLIENT_KEY ?? '',
+        ...(widgetEnabled ? { checkoutMode: 'WIDGET' } : {}),
         amount: params.amount,
         currency: params.currency,
         ...(meta.customerName ? { customerName: meta.customerName } : {}),
@@ -95,40 +101,51 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
-    const paymentKey = await this.getPaymentKey(params.chargeId);
-    if (!paymentKey) {
+    const payment = await this.getPayment(params.chargeId);
+    if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const result = await this.tossApi.cancelPayment(paymentKey, '고객 요청', params.amount, params.idempotencyKey);
+    const result = await this.tossApi.cancelPayment(
+      payment.paymentKey,
+      '고객 요청',
+      params.amount,
+      params.idempotencyKey,
+      undefined,
+      payment.useWidgetKey,
+    );
     if (result.ok) return { status: 'SUCCEEDED' };
     return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
-    const paymentKey = await this.getPaymentKey(params.chargeId);
-    if (!paymentKey) {
+    const payment = await this.getPayment(params.chargeId);
+    if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
     const result = await this.tossApi.cancelPayment(
-      paymentKey,
+      payment.paymentKey,
       params.reasonCode ?? '고객 요청',
       params.amount,
       params.idempotencyKey,
+      undefined,
+      payment.useWidgetKey,
     );
     if (result.ok) {
-      return { status: 'SUCCEEDED', providerRefundId: paymentKey };
+      return { status: 'SUCCEEDED', providerRefundId: payment.paymentKey };
     }
     return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
 
-  private async getPaymentKey(chargeId: string): Promise<string | undefined> {
+  private async getPayment(chargeId: string): Promise<{ paymentKey: string; useWidgetKey: boolean } | null> {
     const rows = await this.dbService.db
-      .select({ providerTransactionId: charges.providerTransactionId })
+      .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
       .from(charges)
       .where(eq(charges.id, chargeId))
       .limit(1);
-    return rows[0]?.providerTransactionId ?? undefined;
+    const charge = rows[0];
+    if (!charge?.providerTransactionId) return null;
+    return { paymentKey: charge.providerTransactionId, useWidgetKey: usesTossWidget(charge.responsePayload) };
   }
 }

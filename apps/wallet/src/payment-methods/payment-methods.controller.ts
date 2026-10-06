@@ -4,11 +4,28 @@ import { PaymentMethodsService } from './payment-methods.service';
 import { CreatePaymentMethodDto, PaymentMethodResponseDto } from './dto';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
+import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
 
 @ApiTags('Payment Methods')
 @Controller('v1/payment-methods')
 export class PaymentMethodsController {
   constructor(private readonly service: PaymentMethodsService) {}
+
+  @Get('toss-widget-config')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'Get the public Toss order-form widget configuration' })
+  getTossWidgetConfig(
+    @Req() req: AuthenticatedRequest,
+  ): { clientKey: string; variantKey: string; customerKey: string } | null {
+    const clientKey = process.env.TOSS_WIDGET_CLIENT_KEY;
+    if (!clientKey || !process.env.TOSS_WIDGET_SECRET_KEY) return null;
+    if (!req.jwtUserId) throw new UnauthorizedException({ error: 'UNAUTHORIZED' });
+    return {
+      clientKey,
+      variantKey: process.env.TOSS_WIDGET_VARIANT_KEY ?? 'widgetA',
+      customerKey: tossBrandPayCustomerKey(req.jwtUserId),
+    };
+  }
 
   @Post()
   @HttpCode(201)
