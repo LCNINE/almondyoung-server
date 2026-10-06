@@ -14,3 +14,21 @@ export function classifyWalletRefund(input: {
   if (!input.refundId || input.knownWalletRefundIds.includes(input.refundId)) return 'skip_already_recorded';
   return 'record_external';
 }
+
+/**
+ * Medusa 가 낸 환불(MEDUSA_REFUND)인데 provider 가 기록한 wallet 환불 id 에 없는가.
+ * wallet 은 환불을 냈는데 응답이 유실되면 Medusa 는 자기 환불 행을 지우고, 재시도는 새 키로 또 낸다 — 그 고아 환불은
+ * MEDUSA_REFUND 라 투영도 건너뛰어 어디에도 안 남는다. 이 판정이 참이면 로그로만 남긴다(던지지 않는다):
+ * provider 가 walletRefundIds 를 쓰는 건 wallet 응답 «뒤»라, 사실이 그 쓰기보다 먼저 오면 정상인데도 참이 될 수 있다.
+ */
+export function isUnbookedMedusaRefund(input: {
+  refundId: string | undefined;
+  reasonCode: string | undefined;
+  knownWalletRefundIds: string[];
+}): boolean {
+  return (
+    classifyWalletRefund(input) === 'skip_medusa_originated' &&
+    !!input.refundId &&
+    !input.knownWalletRefundIds.includes(input.refundId)
+  );
+}

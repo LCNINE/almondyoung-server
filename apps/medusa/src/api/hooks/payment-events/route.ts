@@ -1,7 +1,8 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { capturePaymentWorkflow, refundPaymentWorkflow } from '@medusajs/core-flows';
-import { classifyWalletRefund } from './classify-wallet-refund';
+import { classifyWalletRefund, isUnbookedMedusaRefund } from './classify-wallet-refund';
+import { describeError } from '../../../utils/describe-error';
 import { paymentRefundLockKey, readWalletRefundIds, withExternalRefund } from '../../../modules/almond-payment/refund-data';
 import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
@@ -103,7 +104,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       logger.debug(`[payment-events] Unhandled eventType=${effectiveEventType}, intentId=${intentId}`);
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    // 워크플로(refundPaymentWorkflow 등)는 평범한 객체를 던진다 — String(err) 는 «[object Object]» 가 된다.
+    const msg = describeError(err);
     logger.error(
       `[payment-events] Projection update failed: eventType=${effectiveEventType}, intentId=${intentId}, error=${msg}`,
     );
@@ -320,11 +322,19 @@ export async function handleRefundProjection(
         data?: Record<string, unknown>;
       };
       const walletRefundId = refund?.refundId;
-      const decision = classifyWalletRefund({
+      const fact = {
         refundId: walletRefundId,
         reasonCode: refund?.reasonCode,
         knownWalletRefundIds: readWalletRefundIds(fresh.data),
-      });
+      };
+      if (isUnbookedMedusaRefund(fact)) {
+        // 응답 유실 고아 환불의 유일한 흔적. provider 가 id 를 쓰기 전에 사실이 먼저 오면 정상인데도 찍힌다 — 그래서 던지지 않는다.
+        logger.error(
+          `[payment-events] handleRefundProjection: Medusa 가 낸 환불인데 장부에 없음 — 응답 유실 의심(잠시 뒤 재확인: payment.data.walletRefundIds 에 생겼으면 정상). ` +
+            `intentId=${intentId} refundId=${walletRefundId} amount=${refundAmount} paymentId=${payment.id} messageId=${messageId}`,
+        );
+      }
+      const decision = classifyWalletRefund(fact);
       if (decision !== 'record_external' || !walletRefundId) return;
 
       await paymentModule.updatePayment({
