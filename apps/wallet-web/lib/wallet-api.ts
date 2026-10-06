@@ -1,5 +1,6 @@
 import { createRequestId } from './request-id';
 import { fetchWithAuthBounce } from './fetch-with-refresh';
+import { WalletSessionExpiredError } from './auth-expired';
 
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
@@ -40,7 +41,8 @@ export async function getTossWidgetConfig(cookieHeader?: string): Promise<TossWi
     cache: 'no-store',
   });
 
-  if (!res.ok) return null;
+  if (res.status === 401) throw new WalletSessionExpiredError();
+  if (!res.ok) throw new Error(`결제 설정을 불러오지 못했습니다. (${res.status})`);
   return res.json();
 }
 
