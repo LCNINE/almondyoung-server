@@ -47,6 +47,13 @@ ALMOND_PAYMENT_ENDPOINT=http://localhost:3000/api/v1
 - `GET /payment/status/{paymentEventId}` - 결제 상태 조회
 - `POST /payment/refund` - 환불 처리
 
+### refundPayment 규약 (ADR-0042)
+- **금액**: Medusa 는 `raw_amount` 를 BigNumber(`{ value, precision }`)로 넘긴다. `Number()` 는 NaN 이라 `new BigNumber(input.amount).numeric` 으로 바꾸고, 양의 정수가 아니면 wallet 을 부르기 전에 throw 한다(wallet 은 `@IsInt @Min(1)`).
+- **Idempotency-Key**: `medusa-refund:<context.idempotency_key>`(= Medusa refund 행 id). 한계 — provider 호출이 실패하면 Medusa 가 refund 행을 지우므로, wallet 은 환불했는데 응답만 유실된 경우 재시도는 새 키로 나간다. 그때의 방어선은 wallet 환불가능액 검사다.
+- **`walletRefundIds`**: 결제 `data` 에 wallet 이 돌려준 환불 id 를 쌓는다. wallet 환불 사실이 돌아왔을 때 «Medusa 가 낸 것»을 가리는 근거다(`reasonCode: 'MEDUSA_REFUND'` 와 함께).
+- **`externalRefund` 표식**: `{ walletRefundId, amount }` 가 있고 금액이 같으면 wallet 을 부르지 않고(Medusa 밖에서 이미 끝난 환불을 장부에 넣는 중) 표식을 지운다. 지울 땐 키를 빼지 말고 `null` 로 쓴다 — Medusa 는 JSON 컬럼을 병합 갱신한다.
+- **결제 잠금**: 표식·기록 쓰기는 `paymentRefundLockKey(paymentId)` 안에서 한다. 환불 투영(`api/hooks/payment-events`)과 부분취소 환불이 같은 키를 쓴다. 정의는 `refund-data.ts`.
+
 ### 지원하는 결제 방식
 1. **BNPL**: Buy Now Pay Later
 2. **REWARD_POINT**: 포인트 사용
