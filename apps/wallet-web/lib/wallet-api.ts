@@ -474,6 +474,8 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
 // ─── Business license (사업자 정보 — 세금계산서/지출증빙 prefill용) ──────────────
 
 export interface BusinessLicenseInfo {
+  username?: string | null;
+  email?: string | null;
   businessNumber: string | null;
   representativeName: string | null;
   phoneNumber: string | null;
@@ -507,6 +509,8 @@ export async function getMyBusinessLicense(accessToken: string | undefined): Pro
   const profileObj = (profile?.profile ?? null) as { phoneNumber?: string | null } | null;
 
   return {
+    username: typeof profile?.username === 'string' ? profile.username : null,
+    email: typeof profile?.email === 'string' ? profile.email : null,
     businessNumber: (license?.businessNumber as string | null) ?? null,
     representativeName: (license?.representativeName as string | null) ?? null,
     phoneNumber: toKrLocalPhone(profileObj?.phoneNumber ?? (profile?.phoneNumber as string | null)),

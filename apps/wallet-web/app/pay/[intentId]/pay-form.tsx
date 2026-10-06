@@ -267,13 +267,17 @@ export function PayForm({
           const payment = tossPayments.payment({
             customerKey: custom ? tossWidgetConfig.customerKey : `user-${intent.userId}`,
           });
+          // 화면의 한글 명칭 대신 API 버전에 관계없이 사용할 수 있는 간편결제 코드를 전달한다.
+          const easyPay = {
+            카카오페이: 'KAKAOPAY',
+            네이버페이: 'NAVERPAY',
+            토스페이: 'TOSSPAY',
+          }[selection?.method ?? ''];
           await payment.requestPayment({
             ...tossParams,
-            method: isTossSelected ? tossSubMethod : ('CARD' as const),
+            method: custom ? ('CARD' as const) : isTossSelected ? tossSubMethod : ('CARD' as const),
             amount: { currency: 'KRW' as const, value: na.amount as number },
-            ...(custom && selection?.method !== '신용·체크카드'
-              ? { card: { flowMode: 'DIRECT' as const, easyPay: selection?.method } }
-              : {}),
+            ...(custom && easyPay ? { card: { flowMode: 'DIRECT' as const, easyPay } } : {}),
           });
         }
         return; // requestPayment redirects
@@ -370,6 +374,7 @@ export function PayForm({
   ) {
     return (
       <CustomTossCheckout
+        customer={businessInfo}
         key={intent.id}
         intentId={intent.id}
         orderName={typeof intent.metadata?.orderName === 'string' ? intent.metadata.orderName : '주문 결제'}
