@@ -197,6 +197,8 @@ WMS 통합을 위한 확장된 주문 이벤트 스트림입니다. 재고 차�
 | `OrderReturnRequested` | 반품 요청 | `orderId`, `returnId`, `items` |
 | `OrderRefundCreated` | 환불 생성 | `orderId`, `refundId`, `amount` |
 | `OrderMerged` | 주문 병합 | `targetOrderId`, `sourceOrderIds` |
+| `ChannelOrderCancelRejected` | 채널이 core 의 취소 요청을 거절 (#1016 35번) | `requestId`, `reasonCode`, `message` |
+| `ChannelOrderCancelStalled` | 부분취소가 수정 뒤 환불에서 멈춤(진행 사실) | `requestId`, `stage` |
 
 #### SalesChannel Types
 
