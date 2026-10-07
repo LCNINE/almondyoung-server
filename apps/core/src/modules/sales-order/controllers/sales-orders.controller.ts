@@ -56,7 +56,7 @@ export class SalesOrdersController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — Wallet 환불 포함)' })
+  @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — 채널 주문은 취소 요청, core 주문은 Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiResponse({ status: 200, description: '취소 성공. { status, refundStatus } 반환' })
   cancel(

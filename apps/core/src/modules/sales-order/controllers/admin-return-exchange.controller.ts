@@ -74,7 +74,7 @@ export class AdminReturnExchangeController {
 
   @Post('sales-orders/:id/cancel')
   @HttpCode(200)
-  @ApiOperation({ summary: '관리자 주문 취소 + Wallet 자동 환불 연동' })
+  @ApiOperation({ summary: '관리자 주문 취소 — 채널 주문은 취소 요청, core 주문은 Wallet 자동 환불 연동' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   adminCancelOrder(
     @Param('id') id: string,

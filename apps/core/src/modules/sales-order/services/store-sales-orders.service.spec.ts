@@ -45,8 +45,8 @@ function makeContext(
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
-    cancellationReplay?: boolean;
-    replayError?: Error;
+    openRequestView?: Record<string, unknown> | null;
+    replayView?: Record<string, unknown> | null;
     /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
     exercisedDigital?: boolean;
   } = {},
@@ -92,7 +92,8 @@ function makeContext(
         from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
             const idx = whereCallIndex++;
-            const isOwnership = getTableName(table as Parameters<typeof getTableName>[0]) === 'digital_asset_ownerships';
+            const isOwnership =
+              getTableName(table as Parameters<typeof getTableName>[0]) === 'digital_asset_ownerships';
             return {
               limit: jest.fn().mockReturnValue({
                 then: jest.fn((fn: (r: unknown[]) => unknown) =>
@@ -140,149 +141,55 @@ function makeContext(
           recordedRefundMetadata = dto.metadata;
           return Promise.resolve(undefined);
         }),
-    validateCancellationReplay: options.replayError
-      ? jest.fn().mockRejectedValue(options.replayError)
-      : jest.fn().mockResolvedValue(options.cancellationReplay ?? false),
   };
 
   const walletClientMock: Partial<WalletRefundClient> = {
     refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
   };
 
+  const cancelRequestsMock = {
+    request: jest.fn().mockResolvedValue({
+      id: 'req-1',
+      status: 'requested',
+      scope: 'full',
+      stage: null,
+      convertedFromFull: false,
+      requestedAt: '2026-10-07T00:00:00.000Z',
+      rejection: null,
+      outcome: null,
+    }),
+    findBySourceKey: jest.fn().mockResolvedValue(options.replayView ?? null),
+    latestFor: jest.fn().mockResolvedValue(options.openRequestView ?? null),
+  };
+
   const service = new StoreSalesOrdersService(
     dbMock as any,
     salesOrdersServiceMock as any,
     walletClientMock as WalletRefundClient,
+    cancelRequestsMock as any,
   );
 
-  return { service, dbMock, salesOrdersServiceMock, walletClientMock };
+  return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('StoreSalesOrdersService', () => {
   describe('cancelRequestByChannelOrder', () => {
-    it('취소 후 Wallet 환불 성공 시 refundStatus=succeeded 반환', async () => {
-      const { service } = makeContext();
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('succeeded');
-      expect(result.orderStatus).toBe('cancelled');
-    });
-
-    it('walletIntentId가 없으면 refundStatus=manual_pending 반환, Wallet 호출 없음', async () => {
-      const { service, walletClientMock } = makeContext({ so: makeSo({ walletIntentId: null }) });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-    });
-
-    it('totalAmount가 null이면 refundStatus=manual_pending 반환, Wallet 호출 없음', async () => {
-      const { service, walletClientMock } = makeContext({ so: makeSo({ totalAmount: null }) });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-    });
-
-    it('Wallet이 PENDING 환불 반환 시 refundStatus=pending', async () => {
-      const { service } = makeContext({
-        walletOutcome: {
-          kind: 'partial_pending',
-          refunds: [
-            {
-              refundId: 'rf-002',
-              intentId: WALLET_INTENT_ID,
-              status: 'PENDING',
-              amount: 50000,
-              currency: 'KRW',
-              reasonCode: null,
-              reasonMessage: null,
-              manualConfirmable: true,
-            },
-          ],
-        },
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('pending');
-    });
-
-    it('Wallet이 FAILED 반환 시 refundStatus=failed (취소는 유지)', async () => {
-      const { service } = makeContext({
-        // determinate: PG 응답으로 최종 실패가 확정됐는지. 확정 실패라 true.
-        walletOutcome: { kind: 'failed', errorCode: 'TOSS_ERROR', errorMessage: 'PG 오류', determinate: true },
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('failed');
-      expect(result.orderStatus).toBe('cancelled');
-    });
-
-    it('Wallet이 already_refunded 반환 시 refundStatus=succeeded (이미 환불 완료)', async () => {
-      const { service } = makeContext({
-        walletOutcome: {
-          kind: 'already_refunded',
-          errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-          errorMessage: '환불 가능 금액 초과',
-        },
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('succeeded');
-      expect(result.orderStatus).toBe('cancelled');
-    });
-
-    it('최초 고객 취소 correlationId는 :initial: 포함 per-attempt 형식, 고정 key 미사용', async () => {
-      const { service, walletClientMock } = makeContext();
-      await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
-      expect(calledWith.correlationId).toMatch(/^cancel:so-001:initial:[0-9a-f-]{36}$/);
-      expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
-    });
-
-    it('Wallet 서비스 unavailable 시 refundStatus=manual_pending (취소는 유지)', async () => {
-      const { service } = makeContext({
-        walletOutcome: { kind: 'wallet_unavailable', errorMessage: 'Connection refused' },
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.orderStatus).toBe('cancelled');
-    });
-
-    it('Wallet이 in_flight 반환 시 refundStatus=manual_pending (취소는 유지, 이중환불 없음)', async () => {
-      const { service } = makeContext({
-        walletOutcome: { kind: 'in_flight', errorCode: 'IDEMPOTENCY_KEY_IN_FLIGHT', errorMessage: 'in progress' },
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.orderStatus).toBe('cancelled');
-    });
-
-    it('business link 기록 실패 시에도 refundStatus는 정상 반환', async () => {
-      const { service } = makeContext({
-        businessLinkError: new Error('DB write failed'),
-      });
-      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      // Wallet 성공 + businessLink 실패 → refundStatus succeeded로 유지 (link 실패는 non-blocking)
-      expect(result.refundStatus).toBe('succeeded');
-    });
-
-    it('Core 취소 자체가 실패하면 예외를 throw하고 Wallet 호출 안 함', async () => {
-      const { service, walletClientMock } = makeContext({
-        cancelError: new Error('출고 완료된 항목 포함'),
-      });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow();
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-    });
-
     it('이미 취소된 주문에 중복 취소 요청 시 400', async () => {
-      const { service } = makeContext({ so: makeSo({ status: 'cancelled' }) });
+      const { service, cancelRequestsMock } = makeContext({ so: makeSo({ status: 'cancelled' }) });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 취소된 주문입니다.',
       );
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('타임아웃 주문 취소 요청 시 400', async () => {
-      const { service } = makeContext({ so: makeSo({ status: 'timeout' }) });
+      const { service, cancelRequestsMock } = makeContext({ so: makeSo({ status: 'timeout' }) });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '타임아웃된 주문은 취소할 수 없습니다.',
       );
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('본인이 아닌 고객이 취소 요청 시 403', async () => {
@@ -293,111 +200,107 @@ describe('StoreSalesOrdersService', () => {
     });
 
     it('Medusa가 아닌 채널 주문은 취소 불가', async () => {
-      const { service } = makeContext({ so: makeSo({ salesChannel: 'naver' }) });
+      const { service, cancelRequestsMock } = makeContext({ so: makeSo({ salesChannel: 'naver' }) });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         'naver 채널 주문은 해당 채널에서 직접 취소해 주세요.',
       );
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('출고증거(shippedAt) 있는 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped' }] });
+      const { service, cancelRequestsMock } = makeContext({ fos: [{ status: 'shipped' }] });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 출고된 주문은 취소할 수 없습니다.',
       );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('피킹 시작(FO processing) 주문은 셀프 취소 시 400', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'processing' }] });
+      const { service, cancelRequestsMock } = makeContext({ fos: [{ status: 'processing' }] });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '피킹이 시작된',
       );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('부분 출고(상자 shipped) 주문은 셀프 취소 시 400', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({
+      const { service, cancelRequestsMock } = makeContext({
         fos: [{ status: 'partially_shipped' }],
         activeShipmentStatuses: ['shipped', 'draft'],
       });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '이미 출고',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow('이미 출고');
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('다운로드한 디지털 상품이 포함된 주문은 셀프 취소 시 400', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ exercisedDigital: true });
+      const { service, cancelRequestsMock } = makeContext({ exercisedDigital: true });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 다운로드한 디지털 상품',
       );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
     it('디지털 상품이 있어도 미다운로드면 셀프 취소 성공', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ exercisedDigital: false });
-      await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
+      const { service, cancelRequestsMock } = makeContext({ exercisedDigital: false });
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      expect(cancelRequestsMock.request).toHaveBeenCalled();
     });
 
     it('준비중(FO ready, 미피킹) 주문은 셀프 취소 성공', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'ready' }] });
-      const r = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
-      expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
-      expect(r.orderStatus).toBe('cancelled');
+      const { service, cancelRequestsMock } = makeContext({ fos: [{ status: 'ready' }] });
+      const r = await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      expect(cancelRequestsMock.request).toHaveBeenCalled();
+      expect(r.orderStatus).toBe('confirmed');
     });
 
-    it('동일 취소 key replay는 cancelled status guard보다 먼저 stored view를 반환한다', async () => {
-      const { service, salesOrdersServiceMock, walletClientMock } = makeContext({
-        so: makeSo({ status: 'cancelled' }),
-        cancellationReplay: true,
+    it('고객 취소는 요청을 기록하고 core 취소·Wallet 을 부르지 않는다 (ADR-0042 원칙 1)', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeContext();
+      const context = { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        { reasonCode: 'OTHER', reasonDetail: '변심' },
+        context,
+      );
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith({
+        salesOrderId: SO_ID,
+        requester: { kind: 'customer', customerId: CUSTOMER_ID },
+        sourceKey: 'k-1',
+        reasonCode: 'OTHER',
+        reasonDetail: '변심',
       });
-      const context = { idempotencyKey: 'same-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
-      await expect(
-        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {}, context),
-      ).resolves.toBeDefined();
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
     });
 
-    it('동일 취소 key에 다른 hash면 replay shortcut 없이 mismatch를 전파한다', async () => {
-      const mismatch = new Error('FULFILLMENT_IDEMPOTENCY_MISMATCH');
-      const { service } = makeContext({ so: makeSo({ status: 'cancelled' }), replayError: mismatch });
-      const context = { idempotencyKey: 'reused-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+    it('같은 키 재요청은 가드보다 먼저 지금 뷰를 돌려준다 — 이미 취소된 뒤여도 400 이 아니다', async () => {
+      const { service, cancelRequestsMock } = makeContext({
+        so: makeSo({ status: 'cancelled' }),
+        replayView: { id: 'req-1', status: 'applied' },
+      });
+      const context = { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
       await expect(
-        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, { reasonCode: 'OTHER' }, context),
-      ).rejects.toThrow('FULFILLMENT_IDEMPOTENCY_MISMATCH');
+        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {}, context),
+      ).resolves.toMatchObject({
+        orderStatus: 'cancelled',
+      });
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
-    it('동일 key 동시 환불은 DB claim을 재생해 Wallet을 정확히 한 번만 호출한다', async () => {
-      const { service, salesOrdersServiceMock, walletClientMock } = makeContext();
-      const once = service as unknown as {
-        requestWalletRefundOnce: (
-          so: ReturnType<typeof makeSo>,
-          dto: Record<string, never>,
-          idempotencyKey: string,
-          options: { attemptType: 'initial'; actor: 'customer' },
-        ) => Promise<string>;
-      };
-
-      const results = await Promise.all([
-        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
-          attemptType: 'initial',
-          actor: 'customer',
-        }),
-        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
-          attemptType: 'initial',
-          actor: 'customer',
-        }),
-      ]);
-
-      expect(results).toEqual(['succeeded', 'succeeded']);
-      expect(walletClientMock.refundByIntent).toHaveBeenCalledTimes(1);
-      expect(salesOrdersServiceMock.createBusinessLink).toHaveBeenCalledTimes(1);
-      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
-        WALLET_INTENT_ID,
-        50000,
-        expect.objectContaining({ correlationId: expect.stringMatching(/^cancel:so-001:initial:[a-f0-9]{32}$/) }),
+    it('Idempotency-Key 없는 고객 취소는 400', async () => {
+      const { service } = makeContext();
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        'Idempotency-Key header is required',
       );
     });
 
@@ -445,6 +348,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
+        {} as any,
       );
       return { service, dbMock };
     }
@@ -683,36 +587,53 @@ describe('StoreSalesOrdersService', () => {
       refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
     };
 
+    const cancelRequestsMock = {
+      request: jest.fn().mockResolvedValue({
+        id: 'req-1',
+        status: 'requested',
+        scope: 'full',
+        stage: null,
+        convertedFromFull: false,
+        requestedAt: '2026-10-07T00:00:00.000Z',
+        rejection: null,
+        outcome: null,
+      }),
+      findBySourceKey: jest.fn().mockResolvedValue(null),
+      latestFor: jest.fn().mockResolvedValue(null),
+    };
+
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
+      cancelRequestsMock as any,
     );
 
-    return { service, dbMock, salesOrdersServiceMock, walletClientMock };
+    return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock };
   }
 
   describe('adminCancelRequest', () => {
-    it('lines 없으면 전체취소 — Wallet 환불 호출, refundStatus=succeeded', async () => {
-      const { service, walletClientMock } = makeAdminContext();
+    const CORE_SO = () => makeSo({ salesChannel: '3pl' });
+
+    it('core 경로(3pl) — lines 없으면 전체취소 — Wallet 환불 호출, refundStatus=succeeded', async () => {
+      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO() });
       const result = await service.adminCancelRequest(SO_ID, {});
       expect(walletClientMock.refundByIntent).toHaveBeenCalled();
-      expect(result.refundStatus).toBe('succeeded');
-      expect(result.status).toBe('cancelled');
+      expect(result).toMatchObject({ refundStatus: 'succeeded' });
+      expect(result).toMatchObject({ status: 'cancelled' });
     });
 
-    it('관리자 최초 취소 correlationId는 :initial: 포함 per-attempt 형식', async () => {
-      const { service, walletClientMock } = makeAdminContext();
+    it('core 경로(3pl) — 관리자 최초 취소 correlationId는 :initial: 포함 per-attempt 형식', async () => {
+      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO() });
       await service.adminCancelRequest(SO_ID, {});
       const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
       expect(calledWith.correlationId).toMatch(/^cancel:so-001:initial:[0-9a-f-]{36}$/);
       expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
     });
 
-    it('부분취소 — 조건 충족 시에도 항상 manual_pending (쿠폰/포인트 배분 불확실)', async () => {
-      // line-001: qty=2, unitPrice=25000 → cancel qty=1
-      // 자동환불 정책이 manual_review로 변경되어 Wallet 미호출, refundAmount는 참고용으로만 반환
+    it('core 경로(3pl) — 부분취소는 지금처럼 manual_pending 기록, Wallet 미호출', async () => {
       const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext({
+        so: CORE_SO(),
         orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
       });
       const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
@@ -722,70 +643,137 @@ describe('StoreSalesOrdersService', () => {
         SO_ID,
         expect.objectContaining({ lines, cancelledBy: 'admin' }),
       );
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.manualReason).toBe('PARTIAL_CANCEL_MANUAL_REVIEW');
+      expect(result).toMatchObject({ refundStatus: 'manual_pending', manualReason: 'CHANNEL_ORDER' });
     });
 
-    it('부분취소 — walletIntentId 없음 → manual_pending, Wallet 미호출', async () => {
-      const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext({
-        so: makeSo({ walletIntentId: null }),
-        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+    it.each([
+      ['naver', '네이버 판매자센터에서 취소해 주세요.'],
+      ['coupang', '쿠팡 판매자센터에서 취소해 주세요.'],
+    ])('%s 주문은 판매자센터 문구로 400 — core 취소·요청 둘 다 없음', async (salesChannel, message) => {
+      const { service, salesOrdersServiceMock, cancelRequestsMock } = makeAdminContext({
+        so: makeSo({ salesChannel }),
       });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-      const result = await service.adminCancelRequest(SO_ID, { lines });
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(salesOrdersServiceMock.cancel).toHaveBeenCalledWith(
-        SO_ID,
-        expect.objectContaining({ lines, cancelledBy: 'admin' }),
-      );
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.manualReason).toBe('NO_WALLET_INTENT');
+      await expect(
+        service.adminCancelRequest(SO_ID, { lines: [{ salesOrderLineId: 'line-001', quantity: 1 }] }),
+      ).rejects.toThrow(message);
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
-    it('부분취소 — 채널 주문(naver) → manual_pending, Wallet 미호출', async () => {
-      const { service, walletClientMock } = makeAdminContext({
-        so: makeSo({ salesChannel: 'naver' }),
-        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+    it('Medusa 주문 — 요청 경로, 응답은 { requestId, status, scope, convertedFromFull }, core 취소·Wallet 없음', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext();
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+      const result = await service.adminCancelRequest(SO_ID, {
+        lines,
+        reasonCode: 'CUSTOMER_REQUEST',
+        fulfillmentCommandContext: { idempotencyKey: 'k-9', actorId: 'admin-1', actorRoles: ['admin'] },
       });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-      const result = await service.adminCancelRequest(SO_ID, { lines });
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.manualReason).toBe('CHANNEL_ORDER');
-    });
-
-    it('부분취소 — unitPrice 없는 라인 취소 → manual_pending', async () => {
-      const { service, walletClientMock } = makeAdminContext({
-        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: null }],
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith({
+        salesOrderId: SO_ID,
+        lines,
+        requester: { kind: 'operator', actorId: 'admin-1' },
+        sourceKey: 'k-9',
+        reasonCode: 'CUSTOMER_REQUEST',
+        reasonDetail: undefined,
       });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-      const result = await service.adminCancelRequest(SO_ID, { lines });
+      expect(result).toEqual({ requestId: 'req-1', status: 'requested', scope: 'full', convertedFromFull: false });
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result.refundStatus).toBe('manual_pending');
-      expect(result.manualReason).toBe('NO_LINE_PRICING');
     });
 
-    it('이미 취소된 주문이면 400', async () => {
-      const { service } = makeAdminContext({ so: makeSo({ status: 'cancelled' }) });
+    it('Medusa 주문인데 Idempotency-Key 컨텍스트가 없으면 400', async () => {
+      const { service } = makeAdminContext();
+      await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('Idempotency-Key header is required');
+    });
+
+    it('core 경로(3pl) — 이미 취소된 주문이면 400', async () => {
+      const { service } = makeAdminContext({ so: makeSo({ salesChannel: '3pl', status: 'cancelled' }) });
       await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('이미 취소된 주문입니다.');
     });
 
-    it('타임아웃 주문이면 400', async () => {
-      const { service } = makeAdminContext({ so: makeSo({ status: 'timeout' }) });
+    it('core 경로(3pl) — 타임아웃 주문이면 400', async () => {
+      const { service } = makeAdminContext({ so: makeSo({ salesChannel: '3pl', status: 'timeout' }) });
       await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('타임아웃된 주문은 취소할 수 없습니다.');
     });
 
-    it('Core 취소 실패 시 예외 throw, Wallet 미호출', async () => {
-      const { service, walletClientMock } = makeAdminContext({ cancelError: new Error('재고 부족') });
+    it('core 경로(3pl) — Core 취소 실패 시 예외 throw, Wallet 미호출', async () => {
+      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO(), cancelError: new Error('재고 부족') });
       await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('재고 부족');
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
     });
 
-    it('walletIntentId 없으면 전체취소도 refundStatus=manual_pending', async () => {
-      const { service, walletClientMock } = makeAdminContext({ so: makeSo({ walletIntentId: null }) });
+    it('core 경로(3pl) — walletIntentId 없으면 전체취소도 refundStatus=manual_pending', async () => {
+      const { service, walletClientMock } = makeAdminContext({
+        so: makeSo({ salesChannel: '3pl', walletIntentId: null }),
+      });
       const result = await service.adminCancelRequest(SO_ID, {});
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result.refundStatus).toBe('manual_pending');
+      expect(result).toMatchObject({ refundStatus: 'manual_pending' });
+    });
+  });
+
+  describe('cancelByWalletIntentAfterRefund', () => {
+    it('Medusa 주문은 wallet 승인 요청자로 전체취소를 요청한다 — core 취소·Wallet 없음', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext();
+      const result = await service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID, { amount: 50000 });
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith({
+        salesOrderId: SO_ID,
+        requester: { kind: 'wallet-refund-approval', intentId: WALLET_INTENT_ID },
+        sourceKey: `wallet-refund-approval:${WALLET_INTENT_ID}`,
+        reasonCode: 'CUSTOMER_REFUND_REQUEST',
+      });
+      expect(result).toEqual({ status: 'requested', requestId: 'req-1' });
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('이미 취소·출고면 지금처럼 건너뛴다', async () => {
+      const cancelled = makeAdminContext({ so: makeSo({ status: 'cancelled' }) });
+      await expect(cancelled.service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID)).resolves.toEqual({
+        status: 'cancelled',
+        skipped: 'already_cancelled',
+      });
+      const shipped = makeAdminContext({ so: makeSo({ status: 'shipped' }) });
+      await expect(shipped.service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID)).resolves.toMatchObject({
+        skipped: 'already_shipped',
+      });
+      expect(shipped.cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('가드 — 채널(Medusa) 주문 취소 경로는 WalletRefundClient 를 부르지 않는다 (스펙 §5.7)', () => {
+    it.each([
+      [
+        '운영자 전체',
+        (s: StoreSalesOrdersService) =>
+          s.adminCancelRequest(SO_ID, {
+            fulfillmentCommandContext: { idempotencyKey: 'k', actorId: 'a', actorRoles: [] },
+          }),
+      ],
+      [
+        '운영자 부분',
+        (s: StoreSalesOrdersService) =>
+          s.adminCancelRequest(SO_ID, {
+            lines: [{ salesOrderLineId: 'line-001', quantity: 1 }],
+            fulfillmentCommandContext: { idempotencyKey: 'k', actorId: 'a', actorRoles: [] },
+          }),
+      ],
+      ['wallet 환불 승인', (s: StoreSalesOrdersService) => s.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID)],
+    ])('%s', async (_label, call) => {
+      const { service, walletClientMock } = makeAdminContext();
+      await call(service);
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('고객', async () => {
+      const { service, walletClientMock } = makeContext();
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
     });
   });
 
@@ -849,13 +837,29 @@ describe('StoreSalesOrdersService', () => {
       refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
     };
 
+    const cancelRequestsMock = {
+      request: jest.fn().mockResolvedValue({
+        id: 'req-1',
+        status: 'requested',
+        scope: 'full',
+        stage: null,
+        convertedFromFull: false,
+        requestedAt: '2026-10-07T00:00:00.000Z',
+        rejection: null,
+        outcome: null,
+      }),
+      findBySourceKey: jest.fn().mockResolvedValue(null),
+      latestFor: jest.fn().mockResolvedValue(null),
+    };
+
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
+      cancelRequestsMock as any,
     );
 
-    return { service, walletClientMock };
+    return { service, walletClientMock, cancelRequestsMock };
   }
 
   describe('retryWalletRefund', () => {
@@ -863,7 +867,7 @@ describe('StoreSalesOrdersService', () => {
       const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'succeeded' });
       const result = await service.retryWalletRefund(SO_ID);
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result.refundStatus).toBe('succeeded');
+      expect(result).toMatchObject({ refundStatus: 'succeeded' });
     });
 
     it('status=pending → Wallet 미호출, pending 반환 (중복 재시도 방지)', async () => {
@@ -899,7 +903,7 @@ describe('StoreSalesOrdersService', () => {
           correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
         }),
       );
-      expect(result.refundStatus).toBe('succeeded');
+      expect(result).toMatchObject({ refundStatus: 'succeeded' });
     });
 
     it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
@@ -913,7 +917,7 @@ describe('StoreSalesOrdersService', () => {
           correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
         }),
       );
-      expect(result.refundStatus).toBe('succeeded');
+      expect(result).toMatchObject({ refundStatus: 'succeeded' });
     });
 
     it('failed 재시도에서 초기 취소 key cancel:{id}는 사용하지 않음', async () => {
@@ -957,7 +961,7 @@ describe('StoreSalesOrdersService', () => {
           })),
         },
       };
-      return new StoreSalesOrdersService(dbMock as never, {} as never, {} as WalletRefundClient);
+      return new StoreSalesOrdersService(dbMock as never, {} as never, {} as WalletRefundClient, {} as never);
     }
 
     const fo = (id: string, overrides: Record<string, unknown> = {}) => ({
