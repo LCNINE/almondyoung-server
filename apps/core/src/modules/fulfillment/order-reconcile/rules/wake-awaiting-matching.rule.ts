@@ -26,16 +26,23 @@ export class WakeAwaitingMatchingRule implements OrderReconcileRule {
     private readonly skuMapping: ProductSkuMappingService,
   ) {}
 
-  /** 기다리는 variant 목록 + 그 매칭들의 최종 수정 시각. 운영자가 매칭을 손보면 바뀌어 횟수·포기가 리셋된다. */
+  /**
+   * 기다리는 variant 목록 + 각 매칭의 상태·전략·링크. updated_at 은 upsert 가 올리지 않아(링크만 갈아끼운다) 쓰지 않고,
+   * check 가 판정하는 내용 자체를 읽는다 — 운영자가 매칭을 손보면 바뀌어 횟수·포기가 리셋된다.
+   */
   async fingerprint(salesOrderId: string, tx: DbTx): Promise<string> {
     const ids = await this.waitingVariantIds(salesOrderId, tx);
-    let latest = '';
+    const parts: string[] = [];
     for (const id of ids) {
       const matching = await this.skuMapping.getByVariant(id, tx);
-      const at = matching?.updatedAt ? matching.updatedAt.toISOString() : '';
-      if (at > latest) latest = at;
+      if (!matching) {
+        parts.push('none');
+        continue;
+      }
+      const links = (matching.links ?? []).map((l) => `${l.skuId}:${l.quantity}`).sort();
+      parts.push(`${matching.status}|${matching.strategy ?? ''}|${links.join(',')}`);
     }
-    return `${ids.join(',')}|${latest}`;
+    return `${ids.join(',')}|${parts.join(';')}`;
   }
 
   async check(salesOrderId: string, tx: DbTx): Promise<boolean> {

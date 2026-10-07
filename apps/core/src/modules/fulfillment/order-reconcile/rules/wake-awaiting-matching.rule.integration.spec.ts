@@ -1,5 +1,4 @@
 // apps/core/src/modules/fulfillment/order-reconcile/rules/wake-awaiting-matching.rule.integration.spec.ts
-import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
@@ -125,18 +124,26 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
     });
   });
 
-  it('지문은 매칭을 고치면 바뀐다', async () => {
+  it('지문은 기존 매칭의 링크를 upsert 로 고치면 바뀌고, 그대로면 같다', async () => {
     await inRollbackTx(db, async (tx) => {
-      const { rule } = wire();
+      const { w, rule } = wire();
       const world = await f.seedWorld(tx);
+      const other = await f.seedWorld(tx);
       const o = await seedAwaiting(tx);
-      const before = await rule.fingerprint(o.salesOrderId, tx);
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
-      await tx
-        .update(wmsTables.productMatchings)
-        .set({ updatedAt: new Date('2099-01-01T00:00:00Z') })
-        .where(eq(wmsTables.productMatchings.variantId, o.variantId));
-      expect(await rule.fingerprint(o.salesOrderId, tx)).not.toBe(before);
+      const f1 = await rule.fingerprint(o.salesOrderId, tx);
+      expect(await rule.fingerprint(o.salesOrderId, tx)).toBe(f1);
+
+      // 실제 경로: upsert 는 product_matchings.updated_at 을 올리지 않고 링크만 갈아끼운다
+      await w.productSkuMapping.upsert(
+        o.variantId,
+        {
+          links: [{ skuId: other.skuId, quantity: 2 }],
+          policy: { preStockSellable: true, alwaysSellableZeroStock: false },
+        },
+        tx,
+      );
+      expect(await rule.fingerprint(o.salesOrderId, tx)).not.toBe(f1);
     });
   });
 
