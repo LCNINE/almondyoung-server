@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }))
-import { fetchFromSource, isPublicResource, normalizePublicQuery } from "./public-query"
+import { MAX_BATCH, fetchFromSource, isPublicResource, normalizePublicQuery, queryPublicBatch } from "./public-query"
 
 describe("BeautyTop public query", () => {
   it("exposes area aggregates only, never shop-level resources", () => {
@@ -58,5 +58,40 @@ describe("BeautyTop server calls to the source", () => {
     expect(peak).toBeLessThanOrEqual(2)
     expect(results.every((r) => r.ok)).toBe(true)
     expect(calls).toBe(6)
+  })
+  it("answers a batch item by item and never reaches the source for invalid items", async () => {
+    const results = await queryPublicBatch(["resource=shops", "resource=market&gugun=마포구"])
+    expect(results).toEqual([
+      { ok: false, error: "INVALID_QUERY" },
+      { ok: false, error: "INVALID_QUERY" },
+    ])
+  })
+  it("paces a whole page's batch to two requests at the source", async () => {
+    vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
+    vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
+    let running = 0
+    let peak = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      running++
+      peak = Math.max(peak, running)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      running--
+      return Response.json({ data: { ok: true } })
+    }))
+    const area = "sido=서울&gugun=강서구&category=반영구"
+    const results = await queryPublicBatch([
+      "resource=options",
+      `resource=market&${area}`,
+      `resource=lifecycle&${area}`,
+      `resource=revenue&${area}`,
+      `resource=trends&${area}`,
+      `resource=prices&${area}&service=basic`,
+    ])
+    expect(results.every((r) => r.ok)).toBe(true)
+    expect(peak).toBe(2)
+  })
+  it("caps a batch", async () => {
+    const results = await queryPublicBatch(Array.from({ length: MAX_BATCH + 3 }, () => "resource=shops"))
+    expect(results).toHaveLength(MAX_BATCH)
   })
 })

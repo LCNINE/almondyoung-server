@@ -158,3 +158,20 @@ export async function queryPublic(
   inFlight.set(key, task)
   return task
 }
+
+// One page needs several aggregates at once. Asked as separate HTTP requests, each lands in
+// its own serverless instance and the per-process slot above stops limiting anything, so
+// the source sees all of them at once under one subject and answers BUSY. Batched, they share
+// one instance and therefore the two slots.
+export const MAX_BATCH = 8
+
+export async function queryPublicBatch(items: string[]): Promise<PublicQueryResult[]> {
+  return Promise.all(
+    items.slice(0, MAX_BATCH).map((item) => {
+      const input = Object.fromEntries(new URLSearchParams(item))
+      const resource = input.resource ?? ""
+      if (!isPublicResource(resource)) return { ok: false, error: "INVALID_QUERY" } as const
+      return queryPublic(resource, input)
+    })
+  )
+}
