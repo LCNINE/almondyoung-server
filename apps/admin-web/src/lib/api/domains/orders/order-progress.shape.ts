@@ -44,7 +44,12 @@ export interface StageSummary {
   oldestEnteredAt: string | null;
   states: { state: string; open: number; stuck: number; gaveUp?: number }[];
 }
-export type GaveUpMark = { rule: string; row: number; since: string; lastError: string | null };
+export type GaveUpMark = {
+  rule: string;
+  row: number;
+  since: string;
+  lastError: string | null;
+};
 export interface ProgressSummary {
   evaluatedAt: string | null;
   stages: StageSummary[];
@@ -212,7 +217,9 @@ export function cardAlertText(stuck: number, gaveUp: number): string {
 }
 
 /** 목록 행의 «자동 멈춤» 배지 — 리컨실러가 다섯 번 시도하고 멈춘 주문(스펙 2026-10-08 §6). title 은 마지막 오류. */
-export function gaveUpBadge(marks: GaveUpMark[] | undefined): { text: string; title: string } | null {
+export function gaveUpBadge(
+  marks: GaveUpMark[] | undefined
+): { text: string; title: string } | null {
   if (!marks || marks.length === 0) return null;
   return {
     text: `자동 멈춤 · ${marks.map((m) => `#${m.row}`).join(' ')}`,

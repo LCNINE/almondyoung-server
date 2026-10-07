@@ -147,7 +147,8 @@ interface OrderReconcileRule {
 | `gave_up_at` | timestamptz | NULL 이면 진행 중 |
 | `first_seen_at` · `updated_at` | timestamptz | |
 
-인덱스: `(rule, next_check_at)`. `rule`·`last_result` 는 `varchar` + TS 유니온(보드 스펙 §4.1 과 같은 이유 — pgEnum 은 값마다 마이그).
+인덱스: `(rule, next_check_at)`, 그리고 정체 보드가 «포기한 주문»만 찾는 부분 인덱스 `idx_order_reconcile_state_gave_up`
+(`sales_order_id` `WHERE gave_up_at IS NOT NULL`). `rule`·`last_result` 는 `varchar` + TS 유니온(보드 스펙 §4.1 과 같은 이유 — pgEnum 은 값마다 마이그).
 
 **다음 확인 시각** (순수 함수 `nextReconcileState(이전, 결과, 지문, now)` 하나가 정한다):
 
@@ -182,7 +183,8 @@ interface OrderReconcileRule {
 **FO 없이 반환**한다(로그 한 줄). 잠금 아래에서 검사해야 «판정 직후 셀메이트 스크립트가 돈» 틈까지 막힌다.
 
 워커는 이미 «`create` 가 FO 없이 돌아오면 backlog 를 `not_required` 로 닫는다»(디지털 전용 주문과 같은 길)라 워커는 고치지 않는다.
-`create` 를 부르는 곳은 워커 하나뿐이다(나머지는 테스트 픽스처). 컷오버 뒤에는 core 가 판매주문을 `shipped` 로 쓰지 않으므로(ADR-0017)
+`create` 를 부르는 곳은 워커와 `POST /fulfillments` 컨트롤러다(나머지는 테스트 픽스처). admin-web 의 수동 생성은 `salesOrderId` 없는
+단독 FO(`createStandalone`, items 기반)라 가드에 닿지 않고, 컨트롤러에 `salesOrderId` 를 넘긴 호출이 오면 같은 가드가 걸려 FO 없이 돌아온다. 컷오버 뒤에는 core 가 판매주문을 `shipped` 로 쓰지 않으므로(ADR-0017)
 이 가드는 저절로 할 일이 없어진다.
 
 ### 5.2 공유 판정 `isFulfillableMatching`

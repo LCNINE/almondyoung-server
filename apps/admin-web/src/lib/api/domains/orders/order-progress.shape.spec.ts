@@ -146,16 +146,28 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
     expect(gaveUpBadge([])).toBeNull();
     expect(
       gaveUpBadge([
-        { rule: 'wake-awaiting-matching', row: 12, since: '2026-10-08T00:00:00.000Z', lastError: 'boom' },
-        { rule: 'x', row: 16, since: '2026-10-08T00:00:00.000Z', lastError: null },
-      ]),
+        {
+          rule: 'wake-awaiting-matching',
+          row: 12,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: 'boom',
+        },
+        {
+          rule: 'x',
+          row: 16,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: null,
+        },
+      ])
     ).toEqual({ text: '자동 멈춤 · #12 #16', title: '#12 boom' });
   });
 
   it('옛 core 응답(gaveUp 없음)도 그대로 받는다', () => {
     const s = toProgressSummary({
       evaluatedAt: null,
-      stages: [{ stage: 'fo', open: 1, stuck: 0, oldestEnteredAt: null, states: [] }],
+      stages: [
+        { stage: 'fo', open: 1, stuck: 0, oldestEnteredAt: null, states: [] },
+      ],
     });
     expect(s.stages[0].gaveUp ?? 0).toBe(0);
   });
