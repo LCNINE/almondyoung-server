@@ -26,7 +26,7 @@ import {
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
 import { joinBlocked } from '../picking/allocation/allocation.errors';
-import { describeStartBlockers } from '../picking/allocation/allocation.locks';
+import { describeStartBlockers, dispatchBlocker } from '../picking/allocation/allocation.locks';
 import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
@@ -1187,24 +1187,14 @@ export class OutboundBatchOrchestrator {
     return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
   }
 
-  /** 합류의 송장 사유(스펙 §6 WAYBILL_NOT_READY) — 막지 않고 모은다. 인증·SQL 오류는 그대로 샌다. */
+  /** 합류의 송장·보류 사유 — 막지 않고 모은다. 인증·SQL 오류는 그대로 샌다. */
   private async waybillBlockers(shipmentId: string, tx: DbTx): Promise<StartBlocker[]> {
     try {
       await this.waybills.assertDispatchable(shipmentId, tx);
       return [];
     } catch (error) {
       if (!(error instanceof ConflictError)) throw error;
-      return [
-        {
-          shipmentId,
-          reason: 'WAYBILL_NOT_READY',
-          shipmentLineId: null,
-          skuId: null,
-          requiredQty: null,
-          shortQty: null,
-          detail: error.message,
-        },
-      ];
+      return [dispatchBlocker(shipmentId, error)];
     }
   }
 

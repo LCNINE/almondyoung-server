@@ -127,6 +127,8 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
   표를 core 쪽에 하나 둔다(medusa 만 true). 채널 어휘가 아니라 «core 가 명령을 보낼 수 있는 채널» 목록이다
 - **31번:** 운영자 전체취소 요청인데 출고된 몫이 있으면, 출고 안 된 몫을 줄·수량으로 계산해 `scope: 'partial'`,
   `convertedFromFull: true` 로 기록한다. 출고된 몫은 지금처럼 회수·반품 경로다. 남은 몫이 0 이면 지금처럼 거절
+- 부분 요청이 남는 수량을 0 으로 만들면 전체취소로 보낸다. 채널 줄 번호가 없는 줄의 부분 요청은 400 — 명령 `lines[].channelOrderItemId` 는 `sales_order_lines.channel_order_item_id`(곧 Medusa 줄 id)
+- 박스 이력이 없는(V2 아닌) 주문의 `planCancellation` 은 옛 취소 가드를 같은 한국어 문구로 그대로 따른다
 
 ### 5.3 보류 — 주문 단위 판정 하나, 관문 셋
 
@@ -141,6 +143,9 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 
 - 요청을 만드는 트랜잭션은 지금 취소 코드와 같은 행 잠금(출고지시·박스)을 잡는다. 관문도 그 박스 행을 잠그므로 둘이
   직렬화된다 — «판정 통과 뒤 그사이 출고»가 없다
+- 송장 발급은 명령 트랜잭션에서 박스 행을 `FOR UPDATE` 로 잠근 뒤 묻는다(원래 아무것도 잠그지 않았다). 발송 사전검사(`assertDispatchable`)는 라벨 렌더도 지나므로 보류 중엔 라벨도 막힌다. 피킹·분류 스캔(`LabelCurrencyGuard` 경로)도 같은 관문을 지나 멈춘다 — «보류는 출고 전체를 멈춘다»가 의도이고, 박스를 배치에서 빼는 것은 된다
+- 배치 시작·합류의 차단 사유는 `CANCEL_REQUESTED`(창고 앱이 모르는 사유는 버리므로 앱도 함께 바꿨다)
+- 막지 않는 곳: 송장 발급 명령이 커밋된 뒤(같은 키 재전송 포함)의 택배사 `drive()` 호출. 대기 행 커밋과 `drive` 사이에 보류된 박스는 택배사 송장을 받을 수 있다 — 발송·배치 시작은 여전히 거절한다
 - 보류는 주문 단위다. 부분취소 요청이어도 그 주문 전체가 멈춘다(보통 몇 초)
 - 배치 시작은 «전부 아니면 전무»(#986)라 보류된 주문이 든 배치는 그동안 시작되지 않는다. 사유 문구: «취소 처리 중인 주문이 있습니다»
 
@@ -148,8 +153,8 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 
 - **`OrderCancelled`**(Medusa 전체취소 수집): 기존 처리기(`order-events.consumer.ts` `handleOrderCancelled`)가 core 를
   취소한다. 열린 요청이 있으면 `applied` 로 닫는다. 열린 요청이 부분이면 `superseded`
-- **`OrderModified`**(부분취소 수집 → 5번 diff): 수량 감소·줄 제거 델타가 열린 요청의 `deltas` 와 **정확히 같으면**
-  5.2 의 «적용»(운영자 범위)으로 반영하고 요청 행을 `applied` 로 닫는다. 같은 변경으로 채널 행을 하나 더 만들지 않는다
+- **`OrderModified`**(부분취소 수집 → 5번 diff): 수집된 변경의 `snapshot.cancelRequests`(channel-adapter 가 Medusa `metadata.partialCancels` 에서 싣는다)에 열린 요청의 기록이 있을 때만 맞춘다. 물리 취소는 델타가 요청 줄과 정확히 같을 때 운영자 범위(5.2 의 «적용»)로 한 번 반영하고(`metadata.request.appliedAt`), `stage = edited` 면 요청을 연 채 «수정됨 · 환불 미완», `refunded` 면 `applied` + `outcome`. 어긋나면 `superseded`(`CHANNEL_CHANGE_MISMATCH`), 물리 취소가 도메인 거절되면 `superseded`(`APPLY_REFUSED`) — 둘 다 델타는 5번 규칙. 같은 변경으로 채널 행을 하나 더 만들지 않는다. 왜: 수정 확정 뒤 환불 실패에도 주문이 줄어 `OrderModified` 가 나가고, 환불 성공은 items·total 을 바꾸지 않아 다시 오지 않는다(2026-10-07 사용자 결정)
+- 전부 빠졌는지(`ALL_LINES_REMOVED`)는 열린 요청이 델타를 소비하기 «전» 채널 diff 전체로 계산한다
 - 요청과 맞지 않는 나머지 델타(그사이 바뀐 배송지 등)는 지금처럼 5번 규칙을 탄다
 - 맞추기는 열린 요청이 하나뿐이라(5.1) 모호하지 않다
 - 환불 기록: core 가 wallet 호출로 남기던 `cancellation_linked_wallet_refund` 대신 이미 있는 수집 경로
@@ -177,6 +182,7 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
   `requestWalletRefundAfterCancel` 호출, 채널 주문 부분취소의 `manual_pending` 기록
 - core 직접 주문 경로, `partial-cancellation-refund-calculator`, 옛 기록을 위한 `retryWalletRefund`·수동 완료는 남긴다
 - 가드 스펙: 채널 주문 취소 경로가 `WalletRefundClient` 를 부르지 않는다
+- `requestWalletRefundOnce` 를 지우며 3pl(core) 운영자 전체취소 경로의 «같은 키 동시 이중 제출» 보장도 사라졌다. 받아들인다: 3pl 주문에는 `walletIntentId` 가 붙지 않고(Medusa 수집·일반 생성만 세팅) 순차 재전송은 여전히 걸리며, 최종 방어선은 wallet 의 환불 가능액 검사다
 
 ## 6. Medusa
 
@@ -321,6 +327,8 @@ core 의 거절 처리 사유에는 `OPERATOR_WITHDRAWN`(§5.5)이 더 있다 �
 종결이 아니다 — core 는 요청 행 `metadata.request.stage = 'edited'` 만 적고 `requested` 를 유지한다(같은 값이라 여러 번 와도 멱등).
 core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드가 «수정됨 · 환불 미완»을 구분하려면 이 사실이 필요하다(§7.4).
 
+`OrderModified.snapshot.cancelRequests?`(PR-C 가 더함) — 비면 키를 생략한다(해시 입력이라).
+
 ### 7.3 channel-adapter
 
 `ChannelOrdersCommandConsumer` 에 처리기 하나:
@@ -374,7 +382,7 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
 ## 9. 경합과 실패
 
 1. **요청 vs 출고**: §5.3 의 같은 행 잠금으로 직렬화
-2. **고객·운영자 동시 요청**: 열린 요청 하나(§5.1). 늦은 쪽은 먼저 온 요청을 돌려받는다
+2. **고객·운영자 동시 요청**: 열린 요청 하나(§5.1). 늦은 쪽은 먼저 온 요청을 돌려받는다. 같은 `Idempotency-Key` 에 본문이 다르게 와도 저장된 요청을 돌려준다(`FULFILLMENT_IDEMPOTENCY_MISMATCH` 409 없음 — 같은 취지)
 3. **명령 중복 처리**(최소 1회 전달): 전체 — 이미 취소됨 → 성공. 부분 — 같은 `requestId` 의 `stage`
 4. **Medusa 성공 뒤 재수집 전 channel-adapter 사망**: 재시도 → 멱등 → 재수집. DLQ 여도 5분 폴링이 끌어와 요청을 닫는다
 5. **부분취소의 수정 확정 뒤 환불 실패**: `ChannelOrderCancelStalled` 를 낸 뒤 일시 실패로 재시도, `stage = edited` 부터 이어 간다.
@@ -402,7 +410,7 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
     - core 가 연결 id 로 남기는 `refunds[0]` 은 이제 PG 환불 id 다(표시·감사용 externalRef 뿐, 그 id 로 찾는 곳 없음)
 11. **무통장 환불**: Medusa 가 환불 레코드를 남기고 wallet 은 `PENDING` 으로 송금을 추적한다 — 두 번째 요청이 없으므로 충돌 없음
 12. **`edited` 에 멈춘 부분취소 뒤에 전체취소가 옴**: 전체취소가 캡처 잔액을 다 환불하므로 그 부분취소의 재시도는 «캡처 잔액 부족»으로
-    영원히 실패한다. 돈은 맞는데 끝 상태가 없다 — PR-B/C 가 정체 보드에서 이 경우를 닫아야 한다
+    영원히 실패한다. 돈은 맞는데 끝 상태가 없다 — PR-B/C 가 정체 보드에서 이 경우를 닫아야 한다. PR-C: 전체취소 수집이 열린 부분 요청을 `superseded`(`CHANNEL_FULL_CANCEL`)로 닫는다
 13. **품목과 무관한 wallet 일부 환불 뒤 같은 품목의 부분취소**: 외부 환불은 크레딧 라인으로 투영될 뿐 품목에 묶이지 않아, 같은
     품목을 Medusa 에서 부분취소하면 다시 환불한다
 14. **배포 겹침 창**: `reasonCode` 없는 옛 wallet 의 사실이 아직 `walletRefundIds` 에 안 실린 Medusa 환불의 것이면 한 번 더
@@ -429,7 +437,7 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
 | --- | --- | --- |
 | **A** Medusa | 배송 정책 스냅샷, 부분취소 라우트·오케스트레이터, §6.4 환불 투영 | 부르는 쪽 없음. §6.4 만 즉시 효과(무통장 충돌 감소). 먼저 나갈수록 스냅샷 있는 주문이 쌓인다 |
 | **B** 계약 + channel-adapter | 명령·거절 사실, 명령 처리기, 400 분류 | 보내는 쪽 없음. `apps/medusa` 는 건드리지 않는다 |
-| **C** core + admin-web + 스토어프론트 | 요청·보류·관문·확정·거절·정체, wallet 호출 제거, 화면. 마이그 additive → **`migrate → deploy`** | 전환. 역투영은 살아 있다(무해한 중복, 롤링 중 옛 core 태스크의 취소도 Medusa 에 닿는다) |
+| **C** core + admin-web + 스토어프론트 | 요청·보류·관문·확정·거절·정체, wallet 호출 제거, 화면 + 계약 `OrderModified.snapshot.cancelRequests` + channel-adapter Medusa 수집 + 창고 앱 차단 사유. 마이그 additive → **`migrate → deploy`** | 전환. 역투영은 살아 있다(무해한 중복, 롤링 중 옛 core 태스크의 취소도 Medusa 에 닿는다). 옛 core 태스크는 거절·정체 사실을 버린다 → 5분 정체 보드(§10-5 반대 방향). 창고 앱 배포 전에는 «취소 처리 중» 박스가 차단 목록에서 빠져 보인다 |
 | **D** channel-adapter | 역투영 제거 | **C 배포가 끝난 뒤**(expand-contract — 사이에 배포 한 번) |
 
 롤링 중 함정:
@@ -469,7 +477,7 @@ select status, count(*), min(created_at), max(created_at)
 
 - **core**(유닛 + `describeIfDb`): 계획/적용 분리(순수 함수) · 요청(멱등, 열린 요청 하나, 자동 취소 불가 채널 거절, 고객 가드,
   31번 전환, 남은 몫 0 거절) · 관문 셋의 `CANCEL_REQUESTED` · 확정 맞추기(정확히 맞음 → 운영자 범위 적용 / 일부 → 나머지 5번 /
-  안 맞음) · 전체취소 수집 시 열린 부분 요청 `superseded` · 거절 처리 · 정체 항목 · 요청 행이 «반영 대기 변경»·무시·다시
+  안 맞음 / edited → refunded 두 번에 걸친 확정 / 안 맞음 → superseded) · 전체취소 수집 시 열린 부분 요청 `superseded` · 거절 처리 · 정체 항목 · 요청 행이 «반영 대기 변경»·무시·다시
   확인에 섞이지 않음 · 요청 vs 배치 시작 직렬화(실 DB) · **가드: 채널 주문 취소가 `WalletRefundClient` 를 부르지 않음**
 - **이벤트 계약**: `CancelChannelOrder`·`ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 스키마·레지스트리
 - **channel-adapter**(유닛): 능력 확인, 전체/부분 라우팅, 400 분류(이미 취소됨만 성공), 부분 라우트 404 는 던짐, 일시 실패는 던짐,

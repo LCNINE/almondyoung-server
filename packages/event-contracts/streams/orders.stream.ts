@@ -116,6 +116,25 @@ export interface OrderModifiedSnapshotLine {
   cancelled: boolean;
 }
 
+/**
+ * 채널이 core 의 `CancelChannelOrder`(부분취소)를 어디까지 처리했는가 — requestId 별 (#1016 35번 PR-C).
+ * Medusa 만 싣는다(`metadata.partialCancels`). 주문 수정이 확정된 뒤 환불이 실패해도 주문은 이미 줄어 있어
+ * 이 변경 이벤트가 나간다 — core 는 `edited` 면 요청을 연 채 두고, `refunded` 에서 닫는다.
+ */
+export interface OrderModifiedCancelRequest {
+  requestId: string;
+  /** edited: 주문 수정은 확정됐고 환불이 남았다 / refunded: 환불까지 끝났다 */
+  stage: 'edited' | 'refunded';
+  /** 이번 부분취소로 돌려줄(돌려준) 총액 */
+  refundAmount: number;
+  /** 조건부 무료 미달 등으로 새로 받은 배송비 */
+  shippingCharge: number;
+  /** 그룹이 비어 돌려준 배송비 */
+  shippingRefund: number;
+  /** 스냅샷이 없거나 그룹이 어긋나 배송비를 건드리지 않았다 */
+  shippingNotAdjusted: boolean;
+}
+
 export interface OrderModifiedPayload {
   /** channel-adapter 의 wms_order_id — core 판매주문 id 가 아니다. 참고용. */
   orderId: string;
@@ -125,6 +144,8 @@ export interface OrderModifiedPayload {
   snapshot: {
     lines: OrderModifiedSnapshotLine[];
     shippingAddress: ShippingAddress;
+    /** 없으면 진행 중인 부분취소가 없다. 키를 생략한다 — 빈 배열을 싣지 않는다. */
+    cancelRequests?: OrderModifiedCancelRequest[];
   };
 }
 
@@ -298,6 +319,15 @@ const OrderModifiedSnapshotLineSchema = z.object({
   cancelled: z.boolean(),
 });
 
+const OrderModifiedCancelRequestSchema = z.object({
+  requestId: z.string().min(1),
+  stage: z.enum(['edited', 'refunded']),
+  refundAmount: z.number().nonnegative(),
+  shippingCharge: z.number().nonnegative(),
+  shippingRefund: z.number().nonnegative(),
+  shippingNotAdjusted: z.boolean(),
+});
+
 const OrderModifiedSchema = z.object({
   orderId: z.string().min(1),
   salesChannel: SalesChannelSchema,
@@ -307,6 +337,7 @@ const OrderModifiedSchema = z.object({
   snapshot: z.object({
     lines: z.array(OrderModifiedSnapshotLineSchema),
     shippingAddress: ShippingAddressSchema,
+    cancelRequests: z.array(OrderModifiedCancelRequestSchema).optional(),
   }),
 });
 

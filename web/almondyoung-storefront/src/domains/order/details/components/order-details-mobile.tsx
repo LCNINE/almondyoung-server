@@ -34,7 +34,11 @@ import {
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
 import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
-import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
+import {
+  cancelOrderByMedusaId,
+  getOrderActionsByMedusaId,
+} from "@/lib/api/orders/store-orders"
+import { cancelOutcomeOf, waitForCancelOutcome } from "@/lib/orders/cancel-outcome"
 import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
 import { CashReceiptInfo } from "./cash-receipt-info"
 import { HttpTypes } from "@medusajs/types"
@@ -195,18 +199,17 @@ export const OrderDetailsMobile = ({
           toast.error(result.error)
           return
         }
-        const message =
-          result.actions.refundStatus === "succeeded"
-            ? tActions("cancelSuccess")
-            : result.actions.refundStatus === "pending"
-              ? tActions("cancelSuccessPending")
-              : result.actions.refundStatus === "failed"
-                ? tActions("cancelSuccessFailed")
-                : result.actions.refundStatus === "manual_pending"
-                  ? tActions("cancelSuccessManual")
-                  : tActions("cancelOrder")
-        toast.success(message)
         setShowCancelDialog(false)
+        // 채널 주문 취소는 비동기다 — 처리 중이면 잠깐 다시 읽어 결과를 알린다(#1016 35번 §7.5)
+        const first = cancelOutcomeOf(result.actions)
+        if (first === "pending") toast.info(tActions("cancelRequested"))
+        const outcome =
+          first === "pending"
+            ? await waitForCancelOutcome(() => getOrderActionsByMedusaId(order.id).catch(() => null))
+            : first
+        if (outcome === "cancelled") toast.success(tActions("cancelCompleted"))
+        else if (outcome === "rejected") toast.error(tActions("cancelRejected"))
+        else toast.info(tActions("cancelStillProcessing"))
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파

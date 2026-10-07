@@ -11,6 +11,7 @@ export const ORDER_PROGRESS_STAGES = [
   'pick',
   'dispatch',
   'track',
+  'cancel_request',
   'cancel',
   'return_exchange',
   'unclassified',
@@ -24,6 +25,7 @@ export function isOrderProgressStage(value: string): value is OrderProgressStage
   return (ORDER_PROGRESS_STAGES as readonly string[]).includes(value);
 }
 
+const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
@@ -37,6 +39,8 @@ export const STUCK_AFTER_MS: Record<OrderProgressStage, number> = {
   pick: 12 * HOUR,
   dispatch: HOUR,
   track: 5 * DAY,
+  // 채널 취소 요청(#1016 35번 §5.5) — 보통 몇 초. 5분이면 명령이 처리되지 않았거나 결과가 유실됐다.
+  cancel_request: 5 * MINUTE,
   cancel: HOUR,
   return_exchange: 7 * DAY,
   unclassified: 0,

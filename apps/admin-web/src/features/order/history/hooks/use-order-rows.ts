@@ -1,12 +1,14 @@
 // src/features/order/history/hooks/use-order-rows.ts
  
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
 import { isOrderLineMatched } from './demo-order-line';
+import { hasFreshOpenCancelRequest, settledCancelRequestIds, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
+import type { CancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 주문한 회원의 신원. user-service 조회가 실패하면 «없다» 가 아니라 «모른다» 라 전부 undefined. */
@@ -34,6 +36,7 @@ export type OrderLineRow = {
   channelOrderId: string;
   orderDate: string;
   channel: string;
+  cancelRequest: CancelRequestView | null;
   phone?: string;
   /** 배송지에 적힌 이름 (= core sales_orders.customer_name). 회원 이름과 다를 수 있다. */
   receiverName?: string;
@@ -120,6 +123,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     staleTime: 30 * 1000,
     // 페이지 이동으로 대상 주문이 바뀌어도 이전 enrichment 를 유지 (테이블 깜빡임 방지)
     placeholderData: keepPreviousData,
+    // 방금 낸(2분 이내) 취소 요청이 처리 중인 동안만 3초마다 다시 읽는다 — «취소 요청됨»이 끝나는 걸 보이려고.
+    // 더 오래 막힌 요청은 정체 보드의 몫이다.
+    refetchInterval: (query) => (hasFreshOpenCancelRequest(query.state.data ?? [], Date.now()) ? 3000 : false),
     queryFn: async () => {
       if (!orderIds.length) return [];
       const details = await Promise.all(
@@ -130,6 +136,17 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       return details;
     },
   });
+
+  // 요청이 끝나면(requested → 그 밖) 목록도 다시 읽는다 — 전부 반영된 요청은 목록의 주문 상태가 «취소됨»으로 바뀐다.
+  const queryClient = useQueryClient();
+  const prevDetails = useRef<ReadonlyArray<unknown>>([]);
+  useEffect(() => {
+    const next = detailQueries.data ?? [];
+    if (settledCancelRequestIds(prevDetails.current, next).length > 0) {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders', 'list-view'] });
+    }
+    prevDetails.current = next;
+  }, [detailQueries.data, queryClient]);
 
   // 3) Variant 맵 (옵션 표시용)
   // 주문 라인에는 옵션 정보가 없고 PIM Variant 에만 있으므로 variantId 로 batch 조회한다.
@@ -334,6 +351,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? detail?.salesChannel ?? 'medusa',
+          cancelRequest: toCancelRequestView(detail?.cancelRequest),
           phone,
           customerName,
           receiverName,
@@ -405,6 +423,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? 'medusa',
+          cancelRequest: null,
           phone,
           customerName,
           receiverName,

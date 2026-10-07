@@ -7,6 +7,7 @@ import { BatchControlledStockGuard } from '../../../inventory/core/services/batc
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../../waybill/waybill.constants';
 import { WaybillService } from '../../waybill/waybill.service';
+import { isCancelRequestedError } from '../../hold/cancel-request-hold';
 import { conflict } from './allocation.errors';
 import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
 import {
@@ -222,15 +223,7 @@ export async function assertStartEligibility(
     } catch (error) {
       // 송장 문제는 박스 사유로 모은다(스펙 §6 WAYBILL_NOT_READY). 인증·SQL 오류는 그대로 샌다.
       if (!(error instanceof ConflictError)) throw error;
-      blockers.push({
-        shipmentId: shipment.id,
-        reason: 'WAYBILL_NOT_READY',
-        shipmentLineId: null,
-        skuId: null,
-        requiredQty: null,
-        shortQty: null,
-        detail: error.message,
-      });
+      blockers.push(dispatchBlocker(shipment.id, error));
     }
   }
   const lineIds = aggregate.lines.map((line) => line.id);
@@ -371,7 +364,12 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
     );
   const skuById = new Map(skus.map((sku) => [sku.id, sku]));
   const trackingByShipment = new Map(waybills.map((row) => [row.shipmentId, row.trackingNo]));
-  const order: Record<StartBlockReason, number> = { INBOUND_PENDING: 0, STOCK_SHORT: 1, WAYBILL_NOT_READY: 2 };
+  const order: Record<StartBlockReason, number> = {
+    INBOUND_PENDING: 0,
+    STOCK_SHORT: 1,
+    WAYBILL_NOT_READY: 2,
+    CANCEL_REQUESTED: 3,
+  };
   return blockers
     .map((blocker) => ({
       ...blocker,
@@ -385,4 +383,20 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
         order[left.reason] - order[right.reason] ||
         (left.shipmentLineId ?? '').localeCompare(right.shipmentLineId ?? ''),
     );
+}
+
+/**
+ * `assertDispatchable` 의 거절을 박스 사유로 바꾼다. 출고 보류(취소 요청, #1016 35번)는 송장 문제가 아니다 —
+ * `WAYBILL_NOT_READY` 에 섞으면 현장이 «송장 재발급»으로 읽는다.
+ */
+export function dispatchBlocker(shipmentId: string, error: ConflictError): StartBlocker {
+  return {
+    shipmentId,
+    reason: isCancelRequestedError(error) ? 'CANCEL_REQUESTED' : 'WAYBILL_NOT_READY',
+    shipmentLineId: null,
+    skuId: null,
+    requiredQty: null,
+    shortQty: null,
+    detail: error.message,
+  };
 }

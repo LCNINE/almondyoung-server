@@ -2,7 +2,12 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useOrderProgressOrders } from '@/lib/services/orders/queries';
+import {
+  useResendCancelRequest,
+  useWithdrawCancelRequest,
+} from '@/lib/services/orders/mutations';
 import {
   BOARD_STAGES,
   BoardStageKey,
@@ -22,6 +27,11 @@ export function StageOrders(props: {
   const [stuck, setStuck] = useState(false);
   const [channel, setChannel] = useState('');
   const [sort, setSort] = useState<'dwell' | 'ordered'>('dwell');
+  const isCancelRequest = props.stage === 'cancel_request';
+  const resend = useResendCancelRequest();
+  const withdraw = useWithdrawCancelRequest();
+  // 접기는 출고 보류를 푸는 조치라 두 번 누르게 한다 — 브라우저 confirm 대화상자는 쓰지 않는다.
+  const [confirmWithdraw, setConfirmWithdraw] = useState<string | null>(null);
   const q = useOrderProgressOrders({
     stage: props.stage,
     state,
@@ -117,6 +127,9 @@ export function StageOrders(props: {
               <th className="px-4 py-2 text-left font-medium">주문일</th>
               <th className="px-4 py-2 text-left font-medium">세부 상태</th>
               <th className="px-4 py-2 text-right font-medium">체류</th>
+              {isCancelRequest && (
+                <th className="px-4 py-2 text-right font-medium">조치</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -152,6 +165,64 @@ export function StageOrders(props: {
                     props.now.getTime() - new Date(r.stageEnteredAt).getTime()
                   )}
                 </td>
+                {isCancelRequest && (
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="mr-1.5 rounded border px-2 py-0.5 text-xs disabled:opacity-40"
+                      disabled={resend.isPending}
+                      onClick={() =>
+                        resend.mutate(r.salesOrderId, {
+                          onSuccess: () =>
+                            toast.success('취소 요청을 다시 보냈습니다.'),
+                          onError: (e) =>
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : '다시 보내지 못했습니다.'
+                            ),
+                        })
+                      }
+                    >
+                      다시 보내기
+                    </button>
+                    {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. */}
+                    {r.state !== 'cancel_edited' && (
+                    <button
+                      type="button"
+                      className={cn(
+                        'rounded border px-2 py-0.5 text-xs disabled:opacity-40',
+                        confirmWithdraw === r.salesOrderId &&
+                          'border-red-600 text-red-600'
+                      )}
+                      disabled={withdraw.isPending}
+                      onClick={() => {
+                        if (confirmWithdraw !== r.salesOrderId) {
+                          setConfirmWithdraw(r.salesOrderId);
+                          return;
+                        }
+                        withdraw.mutate(r.salesOrderId, {
+                          onSuccess: () =>
+                            toast.success(
+                              '요청을 접었습니다. 출고 보류가 풀렸습니다.'
+                            ),
+                          onError: (e) =>
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : '요청을 접지 못했습니다.'
+                            ),
+                          onSettled: () => setConfirmWithdraw(null),
+                        });
+                      }}
+                    >
+                      {confirmWithdraw === r.salesOrderId
+                        ? '접기 확인'
+                        : '요청 접기'}
+                    </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -1,6 +1,6 @@
 import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 
-export type StartBlockReason = 'INBOUND_PENDING' | 'STOCK_SHORT' | 'WAYBILL_NOT_READY';
+export type StartBlockReason = 'INBOUND_PENDING' | 'STOCK_SHORT' | 'WAYBILL_NOT_READY' | 'CANCEL_REQUESTED';
 
 /** core `StartBlockerView` 와 같은 모양(picking/allocation/allocation.types.ts). */
 export interface StartBlocker {
@@ -27,7 +27,7 @@ export function startBatch(api: ApiClient, batchId: string, idempotencyKey: stri
   return api.request<BatchStartResult>({ method: 'POST', path: '/picking/v2/starts', body: { batchId }, idempotencyKey });
 }
 
-const REASONS: readonly StartBlockReason[] = ['INBOUND_PENDING', 'STOCK_SHORT', 'WAYBILL_NOT_READY'];
+const REASONS: readonly StartBlockReason[] = ['INBOUND_PENDING', 'STOCK_SHORT', 'WAYBILL_NOT_READY', 'CANCEL_REQUESTED'];
 
 function isBlocker(value: unknown): value is StartBlocker {
   if (typeof value !== 'object' || value === null) return false;
@@ -65,6 +65,10 @@ const START_BLOCKER_TEXT: BlockerText = {
     title: '송장 미발급·재발급 필요',
     guidance: '송장을 발급(재발급)한 뒤 다시 시작하거나, 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
   },
+  CANCEL_REQUESTED: {
+    title: '취소 처리 중인 주문',
+    guidance: '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
+  },
 };
 
 const tracking = (b: StartBlocker) =>
@@ -73,6 +77,7 @@ const tracking = (b: StartBlocker) =>
     : (b.trackingNo ?? `박스 ${b.shipmentId.slice(0, 8)}`);
 
 function rowOf(b: StartBlocker): string {
+  if (b.reason === 'CANCEL_REQUESTED') return `${tracking(b)} · 취소 처리 중`;
   if (b.reason === 'WAYBILL_NOT_READY') return `${tracking(b)} · 송장 재발급 필요`;
   return `${tracking(b)} · ${b.skuName ?? b.skuCode ?? '상품'} ${b.requiredQty ?? '?'}개 중 ${b.shortQty ?? '?'}개 부족`;
 }

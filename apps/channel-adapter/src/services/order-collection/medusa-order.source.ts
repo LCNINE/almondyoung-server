@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { SalesChannel, ShippingAddress } from '@packages/event-contracts/streams';
+import type { OrderModifiedCancelRequest, SalesChannel, ShippingAddress } from '@packages/event-contracts/streams';
 import { MedusaClient, MedusaOrder } from '../../adapters/medusa/medusa.client';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from '../../adapters/medusa/medusa-order-status';
 import {
@@ -58,6 +58,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
     const entrancePassword = readEntrancePassword(
       order.metadata as Record<string, unknown> | null | undefined,
     );
+    const cancelRequests = this.readCancelRequests(order);
 
     return {
       externalOrderId: order.id,
@@ -78,6 +79,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       },
       shippingAddress: this.buildShippingAddress(order),
       ...(entrancePassword ? { entrancePassword } : {}),
+      ...(cancelRequests.length > 0 ? { cancelRequests } : {}),
       createdAt: order.created_at ?? new Date().toISOString(),
       lifecycle,
       raw: order as unknown as Record<string, unknown>,
@@ -201,6 +203,35 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
         (order.metadata?.personalCustomsCode as string | undefined) ??
         undefined,
     };
+  }
+
+  /**
+   * 부분취소 진행 기록(`apps/medusa/src/workflows/orders/partial-cancel/partial-cancel-order.ts` 의 `PartialCancelRecord`).
+   * Medusa metadata 는 병합 갱신이라 지운 기록이 null 로 남는다 — 객체가 아니거나 모양이 어긋난 기록은 버린다.
+   * requestId 순으로 정렬해 해시를 안정시킨다.
+   */
+  private readCancelRequests(order: MedusaOrder): OrderModifiedCancelRequest[] {
+    const raw = (order.metadata as Record<string, unknown> | null | undefined)?.partialCancels;
+    if (!raw || typeof raw !== 'object') return [];
+    return Object.entries(raw as Record<string, unknown>)
+      .flatMap(([requestId, value]): OrderModifiedCancelRequest[] => {
+        if (!value || typeof value !== 'object') return [];
+        const r = value as Record<string, unknown>;
+        const stage = r.stage === 'edited' || r.stage === 'refunded' ? r.stage : null;
+        const amounts = [r.refundAmount, r.shippingCharge, r.shippingRefund];
+        if (!stage || !amounts.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return [];
+        return [
+          {
+            requestId,
+            stage,
+            refundAmount: r.refundAmount as number,
+            shippingCharge: r.shippingCharge as number,
+            shippingRefund: r.shippingRefund as number,
+            shippingNotAdjusted: r.shippingNotAdjusted === true,
+          },
+        ];
+      })
+      .sort((a, b) => a.requestId.localeCompare(b.requestId));
   }
 
   private stringMetadata(value: unknown): string | undefined {

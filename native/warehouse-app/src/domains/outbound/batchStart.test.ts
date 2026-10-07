@@ -19,6 +19,10 @@ describe('startBlockersOf', () => {
   it('모양이 깨진 항목은 버린다', () => {
     expect(startBlockersOf(new ConflictError('m', 'BATCH_START_BLOCKED', undefined, [{ reason: 'STOCK_SHORT' }, blocker({})]))).toEqual([blocker({})]);
   });
+  it('CANCEL_REQUESTED 차단도 버리지 않는다', () => {
+    const b = blocker({ reason: 'CANCEL_REQUESTED' });
+    expect(startBlockersOf(new ConflictError('m', 'BATCH_START_BLOCKED', undefined, [b]))).toEqual([b]);
+  });
 });
 
 describe('groupStartBlockers', () => {
@@ -31,5 +35,14 @@ describe('groupStartBlockers', () => {
     expect(groups.map((g) => g.reason)).toEqual(['INBOUND_PENDING', 'STOCK_SHORT', 'WAYBILL_NOT_READY']);
     expect(groups[1].rows).toEqual(['4527-1697-8431 · 볼펜 3개 중 1개 부족']);
     expect(groups[2].rows).toEqual(['4527-1697-8431 · 송장 재발급 필요']);
+  });
+  it('취소 처리 중 박스는 따로 묶어 맨 뒤에, 송장 사유로 섞지 않는다', () => {
+    const groups = groupStartBlockers([
+      blocker({ reason: 'CANCEL_REQUESTED', shipmentLineId: null, skuId: null, skuName: null, requiredQty: null, shortQty: null, detail: 'CANCEL_REQUESTED: 취소 처리 중인 주문이 있습니다 (shipment s1)' }),
+      blocker({ reason: 'WAYBILL_NOT_READY', shipmentLineId: null, skuId: null, skuName: null, requiredQty: null, shortQty: null, detail: 'WAYBILL_STALE: x' }),
+    ]);
+    expect(groups.map((g) => g.reason)).toEqual(['WAYBILL_NOT_READY', 'CANCEL_REQUESTED']);
+    expect(groups[1].rows).toEqual(['4527-1697-8431 · 취소 처리 중']);
+    expect(groups[1].title).toBe('취소 처리 중인 주문');
   });
 });

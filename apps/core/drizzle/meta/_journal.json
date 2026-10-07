@@ -771,6 +771,13 @@
       "when": 1791264113586,
       "tag": "20261006052153_add-order-progress",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791334622272,
+      "tag": "20261007005702_add-channel-cancel-request",
+      "breakpoints": true
     }
   ]
 }

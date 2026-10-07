@@ -18,7 +18,7 @@ type SalesOrderLineRow = typeof wmsTables.salesOrderLines.$inferSelect;
 const AMENDMENT_REF_TYPE = 'sales_order_amendment';
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const FULFILLMENT_ONLY_DELTA_TYPES = new Set<SalesOrderAmendmentDeltaType>(['fulfillment_only_correction']);
-export type AmendmentStatus = 'applied' | 'pending' | 'superseded' | 'dismissed';
+export type AmendmentStatus = 'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'rejected';
 export type AmendmentOrigin = 'channel' | 'operator';
 export interface AmendmentListItem {
   id: string;

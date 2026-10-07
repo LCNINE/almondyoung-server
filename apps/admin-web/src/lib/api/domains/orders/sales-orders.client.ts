@@ -4,6 +4,7 @@
 // Sales Orders API 클라이언트
 
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
+import type { AdminCancelResponse, CancelRequestView } from './cancel-request.shape';
 import type {
   CancelSalesOrderDto,
   CancelSalesOrderResponseDto,
@@ -105,7 +106,7 @@ export const salesOrders = {
   cancelSalesOrderByIntent: async (
     intentId: string,
     body?: { reasonCode?: string; amount?: number }
-  ): Promise<{ status: string; skipped?: string }> => {
+  ): Promise<{ status: string; skipped?: string; requestId?: string }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/cancel-by-intent`,
       { intentId, ...body }
@@ -118,16 +119,27 @@ export const salesOrders = {
     id: string,
     body?: CancelSalesOrderDto,
     idempotencyKey: string = crypto.randomUUID()
-  ): Promise<{
-    status: string;
-    refundStatus: string;
-    refundAmount?: number;
-    manualReason?: string | null;
-  }> => {
+  ): Promise<AdminCancelResponse> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/cancel`,
       body,
       { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  // 채널 취소 요청 다시 보내기·접기 (정체 보드 «취소 요청», #1016 35번)
+  resendCancelRequest: async (id: string): Promise<CancelRequestView> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/resend`,
+      {}
+    );
+    return response.data;
+  },
+  withdrawCancelRequest: async (id: string): Promise<CancelRequestView> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/withdraw`,
+      {}
     );
     return response.data;
   },

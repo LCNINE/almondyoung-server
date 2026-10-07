@@ -25,6 +25,9 @@ import {
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
 import { WalletRefundClient } from './wallet-refund.client';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
+import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
+import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import {
   deriveFulfillmentPhase,
   isPickingStarted,
@@ -35,6 +38,10 @@ import {
 } from './fulfillment-phase';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
+
+type AdminCancelResult =
+  | { status: string; refundStatus: string; refundEstimateAmount?: number; manualReason?: string | null }
+  | { requestId: string; status: CancelRequestStatus; scope: 'full' | 'partial'; convertedFromFull: boolean };
 
 const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string }> = {
   naver: {
@@ -74,6 +81,7 @@ export class StoreSalesOrdersService {
     private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
     private readonly salesOrdersService: SalesOrdersService,
     private readonly walletRefundClient: WalletRefundClient,
+    private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
   // ── 공개 메서드: Core SO UUID 기반 ──────────────────────────────────────
@@ -114,8 +122,8 @@ export class StoreSalesOrdersService {
   }
 
   /**
-   * 관리자 취소 + Wallet 환불 orchestration.
-   * 전체취소: Core 취소 → Wallet 자동 환불 시도 → 결과 기록.
+   * 관리자 취소. 채널(Medusa) 주문은 취소 요청(#1016 35번), core 직접 주문은 core 취소 + Wallet 환불.
+   * core 경로 — 전체취소: Core 취소 → Wallet 자동 환불 시도 → 결과 기록.
    * 부분취소: Core 취소 → 환불 추정액 계산 → manual_pending 기록 (자동 환불 없음).
    * walletIntentId가 없으면 환불은 manual_pending으로 기록되고 취소는 완료된다.
    */
@@ -127,8 +135,24 @@ export class StoreSalesOrdersService {
       lines?: Array<{ salesOrderLineId: string; quantity: number }>;
       fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] };
     },
-  ): Promise<{ status: string; refundStatus: string; refundEstimateAmount?: number; manualReason?: string | null }> {
+  ): Promise<AdminCancelResult> {
     const so = await this.findSoOrThrow({ id: orderId });
+    // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042) — 판정·기록·보류 뒤 명령. 마켓은 판매자센터로.
+    const route = channelCancelRoute(so.salesChannel);
+    if (route === 'seller_center') throw new BadRequestException(sellerCenterMessage(so.salesChannel));
+    if (route === 'command') {
+      const ctx = dto.fulfillmentCommandContext;
+      if (!ctx) throw new BadRequestException('Idempotency-Key header is required');
+      const view = await this.cancelRequests.request({
+        salesOrderId: so.id,
+        ...(dto.lines ? { lines: dto.lines } : {}),
+        requester: { kind: 'operator', actorId: ctx.actorId },
+        sourceKey: ctx.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+      });
+      return { requestId: view.id, status: view.status, scope: view.scope, convertedFromFull: view.convertedFromFull };
+    }
     if (
       dto.fulfillmentCommandContext &&
       (await this.salesOrdersService.validateCancellationReplay(so.id, {
@@ -199,32 +223,25 @@ export class StoreSalesOrdersService {
     }
 
     const refundOptions = { actor: 'admin' as const, attemptType: 'initial' as const };
-    const refundStatus = dto.fulfillmentCommandContext
-      ? await this.requestWalletRefundOnce(
-          { ...so, status: 'cancelled' } as SalesOrderRow,
-          { reasonCode: dto.reasonCode },
-          dto.fulfillmentCommandContext.idempotencyKey,
-          refundOptions,
-        )
-      : await this.requestWalletRefundAfterCancel(
-          { ...so, status: 'cancelled' } as SalesOrderRow,
-          { reasonCode: dto.reasonCode },
-          refundOptions,
-        );
+    const refundStatus = await this.requestWalletRefundAfterCancel(
+      { ...so, status: 'cancelled' } as SalesOrderRow,
+      { reasonCode: dto.reasonCode },
+      refundOptions,
+    );
 
     return { status: 'cancelled', refundStatus };
   }
 
   /**
-   * Wallet 에서 이미 환불이 완료된 결제(무통장 환불신청 승인 등)의 주문을 취소한다.
-   * core→wallet 재환불 없이 sales_order 취소 + 재고 복원만 수행하고, walletRefund effect 를
-   * SUCCEEDED 로 기록해 감사 타임라인에 남긴다. walletIntentId 로 medusa 주문을 찾으며,
+   * Wallet 에서 이미 환불이 완료된 결제(무통장 환불신청 승인 등)의 주문 취소를 «요청»한다.
+   * core→wallet 재환불은 없다. walletIntentId 로 medusa 주문을 찾으며,
    * 없거나(직접결제 등) 이미 취소/출고면 멱등 처리한다.
+   * opts.amount 는 무시한다(환불액은 wallet·Medusa 장부가 안다) — 호출부 호환으로 매개변수만 남긴다.
    */
   async cancelByWalletIntentAfterRefund(
     intentId: string,
     opts: { reasonCode?: string; amount?: number } = {},
-  ): Promise<{ status: string; skipped?: string }> {
+  ): Promise<{ status: string; skipped?: string; requestId?: string }> {
     const so = await this.db.db
       .select()
       .from(inventoryTables.salesOrders)
@@ -246,20 +263,18 @@ export class StoreSalesOrdersService {
       return { status: so.status, skipped: 'already_shipped' };
     }
 
-    await this.salesOrdersService.cancel(so.id, {
+    // 환불은 wallet 에서 끝났고 Medusa 장부에는 환불 투영(스펙 §6.4)이 넣는다 — Medusa 취소는 환불 없이 끝난다.
+    // 31번 전환을 하지 않는다: 돈이 이미 다 나갔으므로 전체취소가 맞다(계획 단계 발견 8).
+    const view = await this.cancelRequests.request({
+      salesOrderId: so.id,
+      requester: { kind: 'wallet-refund-approval', intentId },
+      sourceKey: `wallet-refund-approval:${intentId}`,
       reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
-      cancelledBy: 'admin:refund-approval',
-      walletRefund: {
-        externalRef: `wallet:refund:intent:${intentId}`,
-        refundStatus: 'SUCCEEDED',
-        ...(opts.amount ? { amount: opts.amount } : {}),
-      },
     });
-
     this.logger.log(
-      `[cancelByWalletIntentAfterRefund] SO ${so.id} cancelled (intent=${intentId}, refund already done in wallet)`,
+      `[cancelByWalletIntentAfterRefund] SO ${so.id} cancel requested (intent=${intentId}, request=${view.id})`,
     );
-    return { status: 'cancelled' };
+    return { status: view.status, requestId: view.id };
   }
 
   /**
@@ -386,6 +401,11 @@ export class StoreSalesOrdersService {
       .orderBy(desc(inventoryTables.businessLinks.createdAt))
       .limit(1)
       .then((r) => r[0]);
+
+    // 채널 경로 주문의 환불은 채널이 한다 — 옛 wallet 환불 링크가 없으면 여기서 wallet 을 부를 근거가 없다.
+    if (!refundLink && channelCancelRoute(so.salesChannel) === 'command') {
+      throw new BadRequestException('채널 주문의 환불은 채널이 처리합니다.');
+    }
 
     const currentStatus = (refundLink?.metadata as Record<string, unknown>)?.refundStatus as string | undefined;
 
@@ -523,6 +543,10 @@ export class StoreSalesOrdersService {
     overrideRefundStatus?: StoreRefundStatus,
   ): Promise<StoreOrderActionsResponseDto> {
     const foRows = await this.loadFoRows(so.id);
+    // 취소된 주문엔 요청 상태를 싣지 않는다 — 끝난 일을 «처리 중»으로 보이게 하지 않으려는 것
+    const cancelRequest = so.status === 'cancelled' ? null : await this.cancelRequests.latestFor(so.id);
+    const cancelRequestStatus =
+      cancelRequest?.status === 'requested' || cancelRequest?.status === 'rejected' ? cancelRequest.status : undefined;
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
@@ -543,6 +567,7 @@ export class StoreSalesOrdersService {
       const refundLinks = await this.db.db
         .select({
           id: inventoryTables.businessLinks.id,
+          relationName: inventoryTables.businessLinks.relationName,
           metadata: inventoryTables.businessLinks.metadata,
           createdAt: inventoryTables.businessLinks.createdAt,
         })
@@ -551,12 +576,22 @@ export class StoreSalesOrdersService {
           and(
             eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
             eq(inventoryTables.businessLinks.sourceId, so.id),
-            eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+            inArray(inventoryTables.businessLinks.relationName, [
+              'cancellation_linked_wallet_refund',
+              'order_lifecycle_refund_collected',
+            ]),
           ),
         )
         .orderBy(desc(inventoryTables.businessLinks.createdAt));
 
-      const latestLink = refundLinks[0];
+      // 채널 주문의 환불은 채널이 한다 — 수집된 환불(order_lifecycle_refund_collected)이 그 기록이다(#1016 35번 §7.5).
+      const walletLinks = refundLinks.filter((r) => r.relationName === 'cancellation_linked_wallet_refund');
+      const collected = refundLinks.filter((r) => r.relationName === 'order_lifecycle_refund_collected');
+      const collectedAmount = collected.reduce((sum, r) => {
+        const amount = (r.metadata as Record<string, unknown>)?.amount;
+        return sum + (typeof amount === 'number' ? amount : 0);
+      }, 0);
+      const latestLink = walletLinks[0];
 
       if (so.status === 'cancelled' && !overrideRefundStatus) {
         if (latestLink) {
@@ -565,6 +600,8 @@ export class StoreSalesOrdersService {
             typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
               ? (stored as StoreRefundStatus)
               : 'pending';
+        } else if (collected.length > 0) {
+          refundStatus = 'succeeded';
         } else {
           refundStatus = so.walletIntentId ? 'pending' : 'none';
         }
@@ -574,7 +611,7 @@ export class StoreSalesOrdersService {
       const summaryLink =
         latestLink ??
         // 아직 cancelled가 아닌 주문에서 manual_pending 부분취소 링크 탐색
-        refundLinks.find((r) => {
+        walletLinks.find((r) => {
           const m = r.metadata as Record<string, unknown>;
           return m?.refundStatus === 'manual_pending';
         });
@@ -603,6 +640,14 @@ export class StoreSalesOrdersService {
             lastUpdatedAt: summaryLink.createdAt?.toISOString() ?? null,
           });
         }
+      } else if (collected.length > 0) {
+        // refundLinks 는 createdAt desc 정렬이라 collected[0] 이 최근이다
+        refundSummary = buildRefundSummary({
+          status: 'succeeded',
+          amount: collectedAmount,
+          manualRequired: false,
+          lastUpdatedAt: collected[0].createdAt?.toISOString() ?? null,
+        });
       } else if (refundStatus !== 'none') {
         // businessLink 없지만 refundStatus가 있는 경우 (walletIntentId 있는 대기 상태)
         refundSummary = buildRefundSummary({
@@ -657,6 +702,10 @@ export class StoreSalesOrdersService {
           availableActions.push('exchange');
         }
       }
+    } else if (cancelRequestStatus === 'requested') {
+      // 채널 취소가 처리 중 — 다시 누르면 같은 요청을 돌려받을 뿐이다
+      availableActions.push('receipt');
+      cancelUnavailableReason = 'cancel_requested';
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
@@ -688,6 +737,7 @@ export class StoreSalesOrdersService {
       // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
       channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
+      cancelRequestStatus,
     };
   }
 
@@ -697,15 +747,9 @@ export class StoreSalesOrdersService {
     dto: StoreCancelOrderDto,
     fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
-    if (
-      fulfillmentCommandContext &&
-      (await this.salesOrdersService.validateCancellationReplay(so.id, {
-        sourceKey: fulfillmentCommandContext.idempotencyKey,
-        reasonCode: dto.reasonCode,
-        reasonDetail: dto.reasonDetail,
-      }))
-    ) {
-      return this.buildActionsView(so);
+    if (fulfillmentCommandContext) {
+      const replay = await this.cancelRequests.findBySourceKey(so.id, fulfillmentCommandContext.idempotencyKey);
+      if (replay) return this.buildActionsView(so);
     }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
@@ -727,48 +771,15 @@ export class StoreSalesOrdersService {
       );
     }
 
-    await this.salesOrdersService.cancel(so.id, {
+    if (!fulfillmentCommandContext) throw new BadRequestException('Idempotency-Key header is required');
+    await this.cancelRequests.request({
+      salesOrderId: so.id,
+      requester: { kind: 'customer', customerId },
+      sourceKey: fulfillmentCommandContext.idempotencyKey,
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
-      cancelledBy: `customer:${customerId}`,
-      fulfillmentCommandContext,
     });
-
-    const refundOptions = { actor: 'customer' as const, attemptType: 'initial' as const };
-    const refundStatus = fulfillmentCommandContext
-      ? await this.requestWalletRefundOnce(so, dto, fulfillmentCommandContext.idempotencyKey, refundOptions)
-      : await this.requestWalletRefundAfterCancel(so, dto, refundOptions);
-    return this.buildActionsView({ ...so, status: 'cancelled' }, refundStatus);
-  }
-
-  private async requestWalletRefundOnce(
-    so: SalesOrderRow,
-    dto: StoreCancelOrderDto,
-    idempotencyKey: string,
-    options: { attemptType: 'initial'; actor: 'customer' | 'admin' },
-  ): Promise<StoreRefundStatus> {
-    const keyDigest = createHash('sha256').update(idempotencyKey.trim()).digest('hex').slice(0, 32);
-    const correlationId = `cancel:${so.id}:initial:${keyDigest}`;
-    return this.db.db.transaction(async (rawTx) => {
-      const tx = rawTx as unknown as DbTx;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${correlationId}, 0))`);
-      const rows = await tx.execute(sql`
-        SELECT metadata
-          FROM business_links
-         WHERE source_type = 'sales_order'
-           AND source_id = ${so.id}
-           AND relation_name = 'cancellation_linked_wallet_refund'
-           AND metadata->>'correlationId' = ${correlationId}
-         ORDER BY created_at DESC
-         LIMIT 1
-      `);
-      const existing = Array.from(rows as unknown as ArrayLike<{ metadata?: Record<string, unknown> }>)[0];
-      const storedStatus = existing?.metadata?.refundStatus;
-      if (typeof storedStatus === 'string' && VALID_REFUND_STATUSES.has(storedStatus as StoreRefundStatus)) {
-        return storedStatus as StoreRefundStatus;
-      }
-      return this.requestWalletRefundAfterCancel(so, dto, { ...options, correlationId, tx });
-    });
+    return this.buildActionsView(so);
   }
 
   /**

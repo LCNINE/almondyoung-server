@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { DbTx, returnRequests, wmsTables } from '../../../inventory/schema/inventory.schema';
 
 /** 정체 보드 판정 스펙 전용 — 판정이 읽는 칸만 채운다(실제 흐름 서비스는 부르지 않는다). */
-export type World = { warehouseId: string; skuId: string };
+export type World = { warehouseId: string; skuId: string; holderId: string };
 
 export async function seedWorld(tx: DbTx): Promise<World> {
   const suffix = randomUUID().slice(0, 8);
@@ -18,7 +18,7 @@ export async function seedWorld(tx: DbTx): Promise<World> {
     .insert(wmsTables.skus)
     .values({ name: 'op-sku', code: `OP-${randomUUID().toUpperCase()}`, holderId: holder.id })
     .returning();
-  return { warehouseId: wh.id, skuId: sku.id };
+  return { warehouseId: wh.id, skuId: sku.id, holderId: holder.id };
 }
 
 export async function seedOrder(

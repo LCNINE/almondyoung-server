@@ -3,10 +3,10 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class ListSalesOrderAmendmentsQueryDto {
-  @ApiPropertyOptional({ enum: ['applied', 'pending', 'superseded', 'dismissed'] })
+  @ApiPropertyOptional({ enum: ['applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected'] })
   @IsOptional()
-  @IsIn(['applied', 'pending', 'superseded', 'dismissed'])
-  status?: 'applied' | 'pending' | 'superseded' | 'dismissed';
+  @IsIn(['applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected'])
+  status?: 'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'rejected';
 
   @ApiPropertyOptional({ enum: ['channel', 'operator'] })
   @IsOptional()

@@ -5,6 +5,8 @@ import { EventPayload, EventEnvelope, RetryPolicy, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
@@ -35,6 +37,8 @@ export class OrderEventsConsumer {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly channelOrderChanges: ChannelOrderChangeService,
+    private readonly cancelSettler: ChannelCancelSettler,
+    private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
   private async checkAndRecordEvent(
@@ -249,6 +253,8 @@ export class OrderEventsConsumer {
           },
           tx,
         );
+        // 우리가 낸 취소 요청이 열려 있으면 닫는다(#1016 35번 §5.4). 줄 단위 취소(마켓)는 요청과 무관하다.
+        if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
       });
@@ -288,6 +294,31 @@ export class OrderEventsConsumer {
       if (alreadyProcessed) return;
       await this.channelOrderChanges.handle(salesOrderId, payload, envelope.messageId, tx);
     });
+  }
+
+  /**
+   * 채널이 우리 취소 요청을 거절했다(#1016 35번 §5.5). 같은 requestId 가 [다시 보내기]마다 다시 올 수 있다 — 처리기가 무해하게 받는다.
+   * order_events 에 기록하지 않는다(그 테이블의 event_type 은 pg enum 이고 이 사실은 판매주문 생애가 아니다).
+   */
+  @On(ORDER_STREAM, 'ChannelOrderCancelRejected')
+  async handleChannelOrderCancelRejected(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelOrderCancelRejected'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelOrderCancelRejected'>,
+  ) {
+    this.logger.log(`[ChannelOrderCancelRejected] ${payload.requestId} ${payload.reasonCode}`, {
+      correlationId: envelope.correlationId,
+    });
+    await this.cancelRequests.reject(payload);
+  }
+
+  /** 부분취소가 «수정됨 · 환불 미완»에 멈췄다 — 종결이 아니다(§7.2). */
+  @On(ORDER_STREAM, 'ChannelOrderCancelStalled')
+  async handleChannelOrderCancelStalled(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelOrderCancelStalled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelOrderCancelStalled'>,
+  ) {
+    this.logger.log(`[ChannelOrderCancelStalled] ${payload.requestId}`, { correlationId: envelope.correlationId });
+    await this.cancelRequests.markStalled(payload);
   }
 
   @On(ORDER_STREAM, 'OrderRefundCreated')

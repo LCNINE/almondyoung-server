@@ -18,7 +18,9 @@ export type StoreCancelUnavailableReason =
   | 'channel_order'
   | 'already_processing'
   // 다운로드(exercise)된 디지털 상품이 포함된 주문 — 회수가 불가하므로 셀프 취소 차단
-  | 'digital_downloaded';
+  | 'digital_downloaded'
+  // 채널 취소 요청이 처리 중(#1016 35번)
+  | 'cancel_requested';
 
 export type StoreClaimStatus =
   | 'none'
@@ -99,9 +101,22 @@ export class StoreOrderActionsResponseDto {
   claimStatus: StoreClaimStatus;
 
   @ApiPropertyOptional({
-    enum: ['already_shipped', 'already_cancelled', 'channel_order', 'already_processing'],
+    enum: [
+      'already_shipped',
+      'already_cancelled',
+      'channel_order',
+      'already_processing',
+      'digital_downloaded',
+      'cancel_requested',
+    ],
   })
   cancelUnavailableReason?: StoreCancelUnavailableReason;
+
+  @ApiPropertyOptional({
+    enum: ['requested', 'rejected'],
+    description: '채널 취소 요청 상태(#1016 35번). requested = 처리 중, rejected = 마지막 요청이 실패',
+  })
+  cancelRequestStatus?: 'requested' | 'rejected';
 
   /**
    * 결제 상태. 현재는 결제확인된 주문만 WMS로 수집되므로 항상 'paid'.

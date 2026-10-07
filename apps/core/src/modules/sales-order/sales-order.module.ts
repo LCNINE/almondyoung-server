@@ -26,6 +26,10 @@ import { ChannelOrderChangeReader } from './channel-order-change/channel-order-c
 import { ChannelOrderChangeManager } from './channel-order-change/channel-order-change.manager';
 import { ChannelAmendmentActionsService } from './channel-order-change/channel-amendment-actions.service';
 import { ChannelOrderChangeService } from './channel-order-change/channel-order-change.service';
+import { ChannelCancelSettler } from './channel-cancel-request/channel-cancel-settler';
+import { ChannelCancelRequestReader } from './channel-cancel-request/channel-cancel-request.reader';
+import { ChannelCancelRequestManager } from './channel-cancel-request/channel-cancel-request.manager';
+import { ChannelCancelRequestService } from './channel-cancel-request/channel-cancel-request.service';
 
 @Module({
   imports: [
@@ -40,7 +44,7 @@ import { ChannelOrderChangeService } from './channel-order-change/channel-order-
       // 소비 스키마 검증 ON (ADR-0029 §8, 플랜 Task 5-C — 이 앱이 첫 번째다).
       //
       // 근거는 샘플링이 아니라 **발행 경로를 전수로 닫은 정적 증명**이다. 이 앱이 구독하는
-      // 4개 이벤트는 전부 `orders.events.v1` 이고, 그 토픽의 발행자는 channel-adapter 의
+      // 6개 이벤트(…, `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 포함)는 전부 `orders.events.v1` 이고, 그 토픽의 발행자는 channel-adapter 의
       // order publisher 2벌 + 자체 outbox dispatcher 뿐이며 셋 다 `StreamPublisher.publishEvent`
       // 를 지난다. `publishEvent` 는 envelope 에 원본이 아니라 **zod 가 파싱한 결과**를 싣기
       // 때문에(`stream-publisher.service.ts:123`) 같은 스키마로 다시 검증하면 반드시 통과한다.
@@ -92,6 +96,12 @@ import { ChannelOrderChangeService } from './channel-order-change/channel-order-
     ChannelOrderChangeManager,
     ChannelOrderChangeService,
     ChannelAmendmentActionsService,
+
+    // 채널 주문 취소 요청 — #1016 35번 행(ADR-0042). core 는 판정·기록·보류·명령, 환불은 채널
+    ChannelCancelRequestReader,
+    ChannelCancelSettler,
+    ChannelCancelRequestManager,
+    ChannelCancelRequestService,
 
     // 만료된 공동현관 비번 파기 배치. `ScheduleModule` 을 여기서 다시 import 하지 않는다 —
     // 전역으로 이미 떠 있는 단 하나의 `SCHEDULE_ROOT`(CoreInventoryModule 이 import)의
