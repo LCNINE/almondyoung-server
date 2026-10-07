@@ -3,6 +3,7 @@ import {
   ReconcilePrior,
   chooseStep,
   effectivePrior,
+  errorStep,
   nextRecord,
 } from './order-reconcile.state';
 
@@ -63,6 +64,24 @@ describe('chooseStep', () => {
   });
 });
 
+describe('errorStep', () => {
+  it('다섯 번 전의 예외는 act 로 센다', () => {
+    for (const attempts of [0, 1, 2, 3, 4]) expect(errorStep({ ...fresh, attempts }, 'act')).toBe('act');
+  });
+
+  it('다섯 번 뒤의 예외는 give_up — fingerprint·check 가 늘 던져도 멈춘다', () => {
+    expect(errorStep({ ...fresh, attempts: 5 }, 'act')).toBe('give_up');
+  });
+
+  it('이미 포기했으면 act(1024분마다 재시도의 실패)', () => {
+    expect(errorStep({ ...fresh, attempts: 5, gaveUpAt: NOW }, 'act')).toBe('act');
+  });
+
+  it('관찰 모드는 포기하지 않는다', () => {
+    expect(errorStep({ ...fresh, attempts: 9 }, 'observe')).toBe('act');
+  });
+});
+
 describe('nextRecord', () => {
   const base = { fingerprint: 'fp', mode: 'act' as const };
 
@@ -99,6 +118,18 @@ describe('nextRecord', () => {
       attempts: 5,
       lastResult: 'error',
       lastError: 'boom',
+      gaveUpAt: NOW,
+      nextCheckAt: plusMin(1024),
+    });
+  });
+
+  it('오류로 포기하면 마지막 결과·오류를 이번 오류로 남긴다(1000자)', () => {
+    const eff = { attempts: 5, gaveUpAt: null, lastResult: 'error' as const, lastError: 'old' };
+    expect(nextRecord(eff, { ...base, step: 'give_up', error: 'y'.repeat(1500) }, NOW)).toEqual({
+      ...base,
+      attempts: 5,
+      lastResult: 'error',
+      lastError: 'y'.repeat(1000),
       gaveUpAt: NOW,
       nextCheckAt: plusMin(1024),
     });

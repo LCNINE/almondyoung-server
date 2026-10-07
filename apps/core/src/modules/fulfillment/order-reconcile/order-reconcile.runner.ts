@@ -10,6 +10,7 @@ import {
   ReconcileStep,
   chooseStep,
   effectivePrior,
+  errorStep,
   nextRecord,
 } from './order-reconcile.state';
 
@@ -91,11 +92,14 @@ export class OrderReconcileRunner {
     now: Date,
     tx?: DbTx,
   ): Promise<ReconcileStep | 'error'> {
+    // savepoint 가 롤백돼도 이번 바퀴에 구한 지문은 남긴다 — 이전 지문으로 세면 운영자가 원인을 고친 뒤에도 리셋되지 않는다
+    let seen: string | undefined;
     try {
       return await this.dbService.run(
         (trx) =>
           trx.transaction(async (sp) => {
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
+            seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);
             const step = chooseStep(eff, rule.mode, await rule.check(salesOrderId, sp));
             if (step === 'act') await rule.act(salesOrderId, sp);
@@ -115,20 +119,22 @@ export class OrderReconcileRunner {
         tx,
       );
     } catch (error) {
-      // 지문을 못 구했으면 이전 지문으로 센다 — 같은 예외가 매분 반복돼도 백오프가 걸리게
-      const fingerprint = prior?.fingerprint ?? '';
+      // 지문을 못 구했으면 이전 지문으로 센다 — 같은 예외가 매분 반복돼도 백오프·포기가 걸리게
+      const fingerprint = seen ?? prior?.fingerprint ?? '';
       const eff = effectivePrior(prior, fingerprint, rule.mode);
-      await this.dbService.run(
-        (trx) =>
-          this.repository.save(
-            rule,
-            salesOrderId,
-            nextRecord(eff, { fingerprint, mode: rule.mode, step: 'act', outcome: 'error', error: messageOf(error) }, now),
-            now,
-            trx,
-          ),
-        tx,
+      const step = errorStep(eff, rule.mode);
+      const record = nextRecord(
+        eff,
+        {
+          fingerprint,
+          mode: rule.mode,
+          step,
+          outcome: step === 'act' ? 'error' : undefined,
+          error: messageOf(error),
+        },
+        now,
       );
+      await this.dbService.run((trx) => this.repository.save(rule, salesOrderId, record, now, trx), tx);
       this.logger.warn(`order-reconcile ${rule.name} failed on sales order ${salesOrderId}: ${messageOf(error)}`);
       return 'error';
     }

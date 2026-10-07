@@ -126,6 +126,118 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
     });
   });
 
+  /** 매 바퀴를 그 행의 next_check_at 에 돌린다 — 백오프를 건너뛰지 않고 n 번째 시도까지 간다 */
+  const runTimes = async (runner: OrderReconcileRunner, rule: OrderReconcileRule, id: string, n: number, tx: DbTx) => {
+    let at = NOW;
+    for (let i = 0; i < n; i++) {
+      await runner.runRule(rule, at, tx);
+      const row = (await statesOf(tx, rule.name)).get(id);
+      if (!row) throw new Error(`row missing after run ${i + 1}`);
+      at = row.nextCheckAt;
+    }
+    return (await statesOf(tx, rule.name)).get(id);
+  };
+
+  it('act 가 늘 던지면 여섯 번째 바퀴에 포기한다 — 첫 예외의 지문도 실제 지문으로 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => {
+        throw new Error('act boom');
+      });
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
+
+      const row = await runTimes(runner, rule, id, 6, tx);
+
+      expect(rule.act).toHaveBeenCalledTimes(5);
+      expect(row).toMatchObject({ fingerprint: 'fp', attempts: 5, lastResult: 'error', lastError: 'act boom' });
+      expect(row?.gaveUpAt).not.toBeNull();
+    });
+  });
+
+  it('check 가 늘 던져도 여섯 번째 바퀴에 포기하고, 마지막 오류는 이번 예외다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => undefined);
+      let calls = 0;
+      (rule.check as jest.Mock).mockImplementation(async () => {
+        calls++;
+        throw new Error(`check boom ${calls}`);
+      });
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
+
+      const row = await runTimes(runner, rule, id, 6, tx);
+
+      expect(rule.act).not.toHaveBeenCalled();
+      expect(row).toMatchObject({ attempts: 5, lastResult: 'error', lastError: 'check boom 6' });
+      expect(row?.gaveUpAt).not.toBeNull();
+    });
+  });
+
+  it('첫 방문에 fingerprint 가 던지면 빈 지문으로 남기고, 다음 바퀴에 성공하면 실제 지문으로 이어간다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => undefined);
+      (rule.fingerprint as jest.Mock).mockRejectedValueOnce(new Error('fp boom'));
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
+
+      await runner.runRule(rule, NOW, tx);
+      const first = (await statesOf(tx, rule.name)).get(id);
+      expect(first).toMatchObject({ fingerprint: '', attempts: 1, lastResult: 'error', lastError: 'fp boom' });
+
+      await runner.runRule(rule, first?.nextCheckAt ?? NOW, tx);
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        fingerprint: 'fp',
+        attempts: 1,
+        lastResult: 'acted',
+        lastError: null,
+      });
+    });
+  });
+
+  it('지문이 바뀐 바퀴에 act 가 던지면 새 지문으로 1 회부터 다시 센다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const repo = new OrderReconcileRepository(dbs);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => {
+        throw new Error('still boom');
+      });
+      (rule.fingerprint as jest.Mock).mockResolvedValue('b');
+      await repo.save(
+        rule,
+        id,
+        {
+          fingerprint: 'a',
+          mode: 'act',
+          attempts: 3,
+          lastResult: 'error',
+          lastError: 'old boom',
+          gaveUpAt: null,
+          nextCheckAt: new Date('2099-05-31T00:00:00.000Z'),
+        },
+        new Date('2099-05-31T00:00:00.000Z'),
+        tx,
+      );
+      const runner = new OrderReconcileRunner(dbs, repo, [rule]);
+
+      await runner.runRule(rule, NOW, tx);
+
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        fingerprint: 'b',
+        attempts: 1,
+        lastResult: 'error',
+        lastError: 'still boom',
+      });
+    });
+  });
+
   it('상황을 떠난 주문의 행은 다음 바퀴에 지워진다', async () => {
     await inRollbackTx(db, async (tx) => {
       const dbs = makeDbService(db);

@@ -79,6 +79,15 @@ export function chooseStep(eff: EffectivePrior, mode: ReconcileMode, checkPassed
   return 'act';
 }
 
+/**
+ * 후보 처리 중 예외가 났을 때의 단계. fingerprint·check 가 늘 던지면 chooseStep 에 닿지 못하므로 상한을 여기서도 지킨다 —
+ * 그러지 않으면 같은 예외가 256분마다 영원히 반복되고 보드에 «자동 멈춤»도 안 뜬다. 관찰 모드는 chooseStep 처럼 포기하지 않는다.
+ */
+export function errorStep(eff: EffectivePrior, mode: ReconcileMode): 'act' | 'give_up' {
+  if (mode === 'act' && eff.gaveUpAt === null && eff.attempts >= MAX_ATTEMPTS) return 'give_up';
+  return 'act';
+}
+
 export function nextRecord(
   eff: EffectivePrior,
   input: {
@@ -102,13 +111,15 @@ export function nextRecord(
     };
   }
   if (input.step === 'give_up') {
+    // 포기는 실행이 아니다 — 보드가 보여 줄 «마지막으로 무슨 일이 있었나»를 덮지 않는다.
+    // 다만 이번 바퀴의 예외 때문에 포기하는 것이면 그 예외가 «마지막 일»이다
+    const error = input.error ?? null;
     return {
       ...head,
       attempts: eff.attempts,
       gaveUpAt: now,
-      // 포기는 실행이 아니다 — 보드가 보여 줄 «마지막으로 무슨 일이 있었나»를 덮지 않는다
-      lastResult: eff.lastResult ?? 'acted',
-      lastError: eff.lastError,
+      lastResult: error !== null ? 'error' : (eff.lastResult ?? 'acted'),
+      lastError: error !== null ? error.slice(0, LAST_ERROR_MAX) : eff.lastError,
       nextCheckAt: plusMinutes(now, GAVE_UP_RECHECK_MIN),
     };
   }
