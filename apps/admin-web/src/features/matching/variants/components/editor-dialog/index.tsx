@@ -29,6 +29,7 @@ import {
   normalizeStockPolicy,
   buildUpsertMatchingPayload,
   isSameSkuLinks,
+  planMatchingSave,
 } from '@/lib/services/matching';
 import { toast } from 'sonner';
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
@@ -87,44 +88,44 @@ export function VariantMatchingEditorDialog({
 
     const currentSkuLinks = getCurrentSkuLinks(matching);
     const changedLinks = !isSameSkuLinks(links, currentSkuLinks);
-    const changedPolicy =
-      JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(matching.stockPolicy));
-    const changedStrategy = strategy !== matching.strategy;
-    const changedPriority = priority !== matching.priority;
+    const plan = planMatchingSave({
+      currentStrategy: matching.strategy ?? null,
+      strategy,
+      linkCount: links.length,
+      changedLinks,
+      changedPolicy:
+        JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(matching.stockPolicy)),
+      changedPriority: priority !== matching.priority,
+    });
 
-    const promises: Promise<unknown>[] = [];
-
-    if (changedLinks || changedPolicy) {
-      promises.push(
-        upsert.mutateAsync({
-          variantId: matching.variantId,
-          data: buildUpsertMatchingPayload({
-            masterId: matching.master?.id ?? '',
-            links,
-            policy: stockPolicy,
-            changedLinks,
-          }),
-        })
-      );
+    if (!plan.ok) {
+      toast.error(plan.message);
+      return;
     }
-    if (changedStrategy) {
-      promises.push(
-        setStrategy.mutateAsync({ id: matching.id, data: { strategy } })
-      );
-    }
-    if (changedPriority) {
-      promises.push(
-        setPriority.mutateAsync({ id: matching.id, data: { priority } })
-      );
-    }
-
-    if (promises.length === 0) {
+    if (plan.steps.length === 0) {
       toast.info('변경된 내용이 없습니다.');
       return;
     }
 
     try {
-      await Promise.all(promises);
+      // 순서대로 — void 전환 뒤 정책 저장, variant 는 upsert 하나(동시에 보내면 서로 덮는다)
+      for (const step of plan.steps) {
+        if (step.kind === 'upsert') {
+          await upsert.mutateAsync({
+            variantId: matching.variantId,
+            data: buildUpsertMatchingPayload({
+              masterId: matching.master?.id ?? '',
+              links,
+              policy: stockPolicy,
+              changedLinks: step.changedLinks,
+            }),
+          });
+        } else if (step.kind === 'setStrategy') {
+          await setStrategy.mutateAsync({ id: matching.id, data: { strategy: step.strategy } });
+        } else {
+          await setPriority.mutateAsync({ id: matching.id, data: { priority } });
+        }
+      }
       toast.success('매칭을 저장했습니다.');
       onOpenChange(false);
     } catch (error) {
