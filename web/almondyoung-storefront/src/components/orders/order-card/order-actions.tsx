@@ -23,10 +23,12 @@ import {
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import {
   cancelOrderByMedusaId,
+  getOrderActionsByMedusaId,
   type StoreCancelUnavailableReason,
   type StoreOrderAction,
   type StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
+import { cancelOutcomeOf, waitForCancelOutcome } from "@/lib/orders/cancel-outcome"
 import {
   ExternalLink,
   MoreVertical,
@@ -164,18 +166,17 @@ export default function OrderActions({
           toast.error(result.error)
           return
         }
-        const message =
-          result.actions.refundStatus === "succeeded"
-            ? "주문이 취소되고 환불이 완료되었습니다."
-            : result.actions.refundStatus === "pending"
-              ? "주문이 취소되었습니다. 환불 처리 중입니다."
-              : result.actions.refundStatus === "failed"
-                ? "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요."
-                : result.actions.refundStatus === "manual_pending"
-                  ? "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다."
-                  : "주문이 취소되었습니다."
-        toast.success(message)
         setShowCancelDialog(false)
+        // 채널 주문 취소는 비동기다 — 처리 중이면 잠깐 다시 읽어 결과를 알린다(#1016 35번 §7.5)
+        const first = cancelOutcomeOf(result.actions)
+        if (first === "pending") toast.info("취소를 요청했어요. 처리하고 있습니다.")
+        const outcome =
+          first === "pending"
+            ? await waitForCancelOutcome(() => getOrderActionsByMedusaId(orderId).catch(() => null))
+            : first
+        if (outcome === "cancelled") toast.success("주문이 취소되었습니다.")
+        else if (outcome === "rejected") toast.error("취소를 완료하지 못했습니다. 고객센터로 문의해 주세요.")
+        else toast.info("취소 처리 중입니다. 잠시 뒤 주문 상세에서 확인해 주세요.")
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
