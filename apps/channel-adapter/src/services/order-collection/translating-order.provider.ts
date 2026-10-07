@@ -1,6 +1,7 @@
 import type { SalesChannel } from '@packages/event-contracts/streams';
 import { ChannelOrderTranslator } from './channel-order.translator';
 import {
+  ChannelOrderFetchFailure,
   ChannelOrderSource,
   ChannelOrderSnapshot,
   ReplayableChannelOrderSource,
@@ -41,20 +42,29 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
   async fetchOrders(since: Date | null): Promise<FetchOrdersResult> {
     // 닫힌 창을 쓰는 source 만 창의 끝을 보고한다. 열린 질의(Medusa)는 이 갈래를 타지 않으므로
     // `completedWindowEnd` 가 `undefined` 로 남고, 오케스트레이터의 워터마크 계산이 전과 같다.
+    // 열린 질의 갈래의 빈 배열에 타입을 준다 — 맨 `[]` 이면 삼항의 결과가 `never[]` 와 합쳐져
+    // 아래 `map` 콜백 인자가 암묵적 `any` 가 된다.
+    const noFetchFailures: ChannelOrderFetchFailure[] = [];
     const { snapshots, completedWindowEnd, fetchFailures } = isWindowedSource(this.source)
       ? await this.source.fetchOrdersInWindow(since)
-      : { snapshots: await this.source.fetchOrders(since), completedWindowEnd: undefined, fetchFailures: [] };
+      : {
+          snapshots: await this.source.fetchOrders(since),
+          completedWindowEnd: undefined,
+          fetchFailures: noFetchFailures,
+        };
 
     const orders: OrderFetchItem[] = [];
     const failures: OrderCollectionFailureItem[] = [];
     const lifecycleEvents: OrderLifecycleEventItem[] = [];
-    const processingFailures: OrderProcessingFailureItem[] = fetchFailures.map((failure): OrderProcessingFailureItem => ({
-      externalOrderId: failure.externalOrderId,
-      sourceUpdatedAt: failure.changedAt,
-      stage: 'fetch',
-      error: failure.error,
-      input: {},
-    }));
+    const processingFailures: OrderProcessingFailureItem[] = fetchFailures.map(
+      (failure): OrderProcessingFailureItem => ({
+        externalOrderId: failure.externalOrderId,
+        sourceUpdatedAt: failure.changedAt,
+        stage: 'fetch',
+        error: failure.error,
+        input: {},
+      }),
+    );
 
     for (const snapshot of snapshots) {
       let translated: Awaited<ReturnType<ChannelOrderTranslator['translate']>>;
