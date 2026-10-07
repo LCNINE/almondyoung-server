@@ -66,7 +66,7 @@ describe("BeautyTop server calls to the source", () => {
       { ok: false, error: "INVALID_QUERY" },
     ])
   })
-  it("paces a whole page's batch to two requests at the source", async () => {
+  it("lets a whole page's public aggregates use the dedicated eight-slot pool", async () => {
     vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
     vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
     let running = 0
@@ -88,7 +88,66 @@ describe("BeautyTop server calls to the source", () => {
       `resource=prices&${area}&service=basic`,
     ])
     expect(results.every((r) => r.ok)).toBe(true)
-    expect(peak).toBe(2)
+    expect(peak).toBe(6)
+  })
+  it.each([
+    ["almondyoung-server:public", 8],
+    ["almondyoung-server:teaser", 2],
+    ["almondyoung-server.public", 2],
+  ])("bounds source concurrency for %s at %i", async (subject, maximum) => {
+    vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
+    vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
+    let running = 0
+    let peak = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      running++
+      peak = Math.max(peak, running)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      running--
+      return Response.json({ data: { ok: true } })
+    }))
+    const results = await Promise.all(Array.from({ length: 12 }, () => fetchFromSource("market", {}, subject)))
+    expect(results.every((r) => r.ok)).toBe(true)
+    expect(peak).toBe(maximum)
+  })
+  it.each(["5", "Wed, 07 Oct 2026 08:00:05 GMT"])("honors Retry-After %s before retrying", async (header) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-10-07T08:00:00Z"))
+    vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
+    vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ error: { code: "BUSY" } }, { status: 503, headers: { "Retry-After": header } }))
+      .mockResolvedValue(Response.json({ data: { ok: true } }))
+    vi.stubGlobal("fetch", fetch)
+    const result = fetchFromSource("market", {})
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await result).ok).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+  it("returns BUSY without an early retry when Retry-After exceeds the wait budget", async () => {
+    vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
+    vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
+    const fetch = vi.fn().mockResolvedValue(Response.json({ error: { code: "RATE_LIMITED" } }, {
+      status: 429, headers: { "Retry-After": "60" },
+    }))
+    vi.stubGlobal("fetch", fetch)
+    expect(await fetchFromSource("market", {})).toEqual({ ok: false, error: "BUSY" })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it("caps cumulative retry waits and leaves internal timing out of the public result", async () => {
+    vi.useFakeTimers()
+    vi.stubEnv("BEAUTYTOP_SIGNING_PRIVATE_KEY", key)
+    vi.stubEnv("BEAUTYTOP_API_ORIGIN", "https://api.example.test")
+    const fetch = vi.fn(async () => Response.json({ error: { code: "BUSY" } }, {
+      status: 503, headers: { "Retry-After": "5" },
+    }))
+    vi.stubGlobal("fetch", fetch)
+    const result = fetchFromSource("market", {})
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(await result).toEqual({ ok: false, error: "BUSY" })
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
   it("caps a batch", async () => {
     const results = await queryPublicBatch(Array.from({ length: MAX_BATCH + 3 }, () => "resource=shops"))
