@@ -119,6 +119,32 @@ type PriorPartialCancellationContext = {
   cancelledByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
+type V2OutstandingPlan = {
+  salesOrderLines: Array<typeof wmsTables.salesOrderLines.$inferSelect>;
+  salesLineById: Map<string, typeof wmsTables.salesOrderLines.$inferSelect>;
+  fulfillmentItems: Array<{
+    id: string;
+    qty: number;
+    shippedQty: number;
+    canceledQty: number;
+    salesOrderLineId: string | null;
+  }>;
+  prior: PriorPartialCancellationContext;
+  requestedSalesLines: PartialCancellationLine[];
+  cancellationByShipment: Map<
+    string,
+    { manifestVersion: number; lines: Array<{ shipmentLineId: string; expectedLineVersion: number; qty: number }> }
+  >;
+};
+
+export interface CancellationPlan {
+  /** 이 취소가 실제로 줄일 판매주문 줄과 수량(0 인 줄 없음). 전체취소면 줄마다 «안 나간·안 취소된» 몫 전부 */
+  lines: PartialCancellationLine[];
+  /** 이미 출고된 몫이 있다 — 운영자 전체취소는 31번 전환 대상 */
+  hasShippedQuantity: boolean;
+  /** 이 취소 뒤 주문에 남는 수량이 0 이다 — 부분 요청이어도 주문 전체다 */
+  leavesNothing: boolean;
+}
 type V2PlanningSalesOrderLineIdentity = {
   id: string;
   channelOrderItemId: string | null;
@@ -1592,33 +1618,15 @@ export class SalesOrdersService {
   }
 
   /**
-   * V2 commercial cancellation seam. SO cancellation remains the commercial
-   * coordinator, while ShipmentPlanningService exclusively mutates outstanding
-   * physical demand. FOI.qty is never rewritten on this path.
+   * V2 취소의 계획 — 요청 줄 → 박스 줄 배분과 거절 사유. 읽기만 한다(스펙 §5.2). 거절 문구는 옮기기 전과 같다.
+   * `cancelV2Outstanding`(적용)과 `planCancellation`(요청 때 판정)이 함께 쓴다.
    */
-  private async cancelV2Outstanding(
+  private async planV2Outstanding(
     salesOrderId: string,
-    salesOrder: typeof wmsTables.salesOrders.$inferSelect,
     options: CancelSalesOrderOptions,
     isFullCancel: boolean,
     tx: DbTx,
-  ) {
-    const planning = this.moduleRef?.get(ShipmentPlanningService, { strict: false });
-    if (!planning) throw new Error('ShipmentPlanningService is required for V2 sales-order cancellation');
-
-    if (isFullCancel) {
-      const [existing] = await tx
-        .select({ id: wmsTables.salesOrderCancellations.id })
-        .from(wmsTables.salesOrderCancellations)
-        .where(
-          and(
-            eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
-            eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
-          ),
-        )
-        .limit(1);
-      if (existing) return this.getOne(salesOrderId, tx);
-    }
+  ): Promise<V2OutstandingPlan> {
 
     const salesOrderLines = await tx
       .select()
@@ -1761,6 +1769,40 @@ export class SalesOrdersService {
         }
       }
     }
+    return { salesOrderLines, salesLineById, fulfillmentItems, prior, requestedSalesLines, cancellationByShipment };
+  }
+
+  /**
+   * V2 commercial cancellation seam. SO cancellation remains the commercial
+   * coordinator, while ShipmentPlanningService exclusively mutates outstanding
+   * physical demand. FOI.qty is never rewritten on this path.
+   */
+  private async cancelV2Outstanding(
+    salesOrderId: string,
+    salesOrder: typeof wmsTables.salesOrders.$inferSelect,
+    options: CancelSalesOrderOptions,
+    isFullCancel: boolean,
+    tx: DbTx,
+  ) {
+    const planning = this.moduleRef?.get(ShipmentPlanningService, { strict: false });
+    if (!planning) throw new Error('ShipmentPlanningService is required for V2 sales-order cancellation');
+
+    if (isFullCancel) {
+      const [existing] = await tx
+        .select({ id: wmsTables.salesOrderCancellations.id })
+        .from(wmsTables.salesOrderCancellations)
+        .where(
+          and(
+            eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+            eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+          ),
+        )
+        .limit(1);
+      if (existing) return this.getOne(salesOrderId, tx);
+    }
+
+    const { fulfillmentItems, requestedSalesLines, salesLineById, cancellationByShipment } =
+      await this.planV2Outstanding(salesOrderId, options, isFullCancel, tx);
 
     const reason = options.reasonDetail?.trim() || options.reasonCode?.trim() || 'Sales order cancellation';
     const sourceKey =
@@ -1948,6 +1990,88 @@ export class SalesOrdersService {
   }
 
   /** 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다. */
+  /**
+   * 취소 «계획» — 부작용 없이 지금 취소가 받는 범위를 판정한다(#1016 35번, 스펙 §5.2). 채널 주문 취소 요청이
+   * 요청 때 이것만 부르고, 적용은 확정 때 `cancel` 이 한다. 거절은 `cancel` 과 같은 예외·같은 문구다.
+   * 잠그지 않는다 — 부르는 쪽이 판매주문·박스를 잠근 트랜잭션 안에서 부른다.
+   */
+  async planCancellation(
+    salesOrderId: string,
+    lines: PartialCancellationLine[] | undefined,
+    tx: DbTx,
+  ): Promise<CancellationPlan> {
+    const options: CancelSalesOrderOptions = lines ? { lines } : {};
+    const isFullCancel = !lines;
+    if (Array.isArray(lines) && lines.length === 0) {
+      throw new BadRequestException('Partial cancellation lines cannot be empty; omit lines for full cancellation');
+    }
+    if (await this.hasV2FulfillmentHistory(salesOrderId, tx)) {
+      const plan = await this.planV2Outstanding(salesOrderId, options, isFullCancel, tx);
+      const requested = plan.requestedSalesLines.filter((line) => line.quantity > 0);
+      return {
+        lines: requested,
+        hasShippedQuantity: plan.fulfillmentItems.some((item) => item.shippedQty > 0),
+        leavesNothing: this.leavesNothing(plan.salesOrderLines, plan.prior, requested),
+      };
+    }
+    const [salesOrder] = await tx
+      .select({ status: wmsTables.salesOrders.status })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, salesOrderId))
+      .limit(1);
+    if (!salesOrder) throw new NotFoundException(`Sales order ${salesOrderId} not found`);
+    const salesOrderLines = await tx
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+    const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
+    const remainingOf = (line: { id: string; quantity: number }) =>
+      line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+    if (!lines) {
+      if (salesOrder.status === 'shipped' || salesOrder.status === 'delivered') {
+        throw new BadRequestException(
+          '이미 출고/배송 완료된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
+        );
+      }
+      const requested = salesOrderLines
+        .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(line) }))
+        .filter((line) => line.quantity > 0);
+      if (requested.length === 0) {
+        throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
+      }
+      return { lines: requested, hasShippedQuantity: false, leavesNothing: true };
+    }
+    const requested = this.normalizePartialCancellationLines(lines);
+    const byId = new Map(salesOrderLines.map((line) => [line.id, line]));
+    for (const request of requested) {
+      const line = byId.get(request.salesOrderLineId);
+      if (!line) {
+        throw new BadRequestException(`Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`);
+      }
+      const remaining = remainingOf(line);
+      if (request.quantity > remaining) {
+        throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${remaining}`);
+      }
+    }
+    return {
+      lines: requested,
+      hasShippedQuantity: false,
+      leavesNothing: this.leavesNothing(salesOrderLines, prior, requested),
+    };
+  }
+
+  /** 이 취소 뒤 남는 수량(줄 수량 − 이미 취소 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. */
+  private leavesNothing(
+    salesOrderLines: Array<{ id: string; quantity: number }>,
+    prior: PriorPartialCancellationContext,
+    requested: PartialCancellationLine[],
+  ): boolean {
+    const now = new Map(requested.map((line) => [line.salesOrderLineId, line.quantity]));
+    return salesOrderLines.every(
+      (line) => line.quantity - (prior.cancelledByLine.get(line.id) ?? 0) - (now.get(line.id) ?? 0) <= 0,
+    );
+  }
+
   async getCancelledQuantityByLine(salesOrderId: string, tx: DbTx): Promise<Map<string, number>> {
     return (await this.loadPriorPartialCancellationContext(salesOrderId, tx)).cancelledByLine;
   }
