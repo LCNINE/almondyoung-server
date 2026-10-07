@@ -2,6 +2,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
+import { cancelActionOf, cancelRequestFromAmendment, cancelRequestLine } from '@/lib/api/domains/orders/cancel-request.shape';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
@@ -605,6 +607,22 @@ function BusinessTimelineModal({
               채널 변경 기록을 불러오지 못했습니다.
             </p>
           )}
+          {(() => {
+            const requests = (amendments ?? []).flatMap((a) => {
+              const view = cancelRequestFromAmendment(a);
+              return view ? [view] : [];
+            });
+            return requests.length > 0 ? (
+              <div className="mt-4 border-t px-1 pt-3">
+                <p className="mb-2 text-sm font-medium">취소 요청</p>
+                {requests.map((view) => (
+                  <div key={view.id} className={view.status === 'requested' ? 'mb-1 text-sm text-amber-700' : 'mb-1 text-sm text-muted-foreground'}>
+                    {cancelRequestLine(view)}
+                  </div>
+                ))}
+              </div>
+            ) : null;
+          })()}
           {(amendments ?? []).some((amendment) => amendment.origin === 'channel') && (
             <div className="mt-4 border-t px-1 pt-3">
               <p className="mb-2 text-sm font-medium">채널 변경</p>
@@ -849,18 +867,34 @@ export default function OrderTable() {
               </div>
             ) : (
               <div className="flex flex-col gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
-                  onClick={(e) => {
+                {(() => {
+                  const action = cancelActionOf(r);
+                  if (action.kind === 'seller_center') {
+                    return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
+                  }
+                  if (action.kind === 'requested') {
+                    return (
+                      <span className="inline-flex items-center h-7 px-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-700 whitespace-nowrap">
+                        {action.label}
+                      </span>
+                    );
+                  }
+                  const open = (e: MouseEvent) => {
                     e.stopPropagation();
                     setSelectedOrder(r);
                     setShowCancelModal(true);
-                  }}
-                >
-                  {r.orderStatus === 'processing' ? '강제취소' : '취소'}
-                </Button>
+                  };
+                  return (
+                    <>
+                      {action.kind === 'rejected' && (
+                        <span className="text-[11px] text-red-600 whitespace-normal leading-tight">취소 실패 · {action.reason}</span>
+                      )}
+                      <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50" onClick={open}>
+                        {action.kind === 'rejected' ? '다시 요청' : action.label}
+                      </Button>
+                    </>
+                  );
+                })()}
                 {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
                   <>
                     <RefundStatusBadge status={r.refundStatus} />

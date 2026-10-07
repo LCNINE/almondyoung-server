@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
+import { isCancelRequested } from '@/lib/api/domains/orders/cancel-request.shape';
 
 const REASON_CODES = [
   { value: 'CUSTOMER_REQUEST', label: '고객 요청' },
@@ -168,6 +169,14 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           cancelledBy: 'admin',
         },
       });
+      if (isCancelRequested(result)) {
+        // 채널 주문 — 채널이 취소·환불하고 수집으로 반영된다(#1016 35번). 결과는 주문 행의 배지가 보여 준다.
+        toast.success(
+          result.convertedFromFull ? '출고된 상품을 뺀 나머지의 취소를 요청했습니다.' : '취소를 요청했습니다.'
+        );
+        onOpenChange(false);
+        return;
+      }
       setCancelResult({
         scope,
         refundStatus: result.refundStatus,
@@ -257,7 +266,6 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-amber-600">부분 취소 시 미출고 상품은 라인 단가 비중으로 자동 환불을 시도합니다. 채널 주문·단가 정보 없음 등 일부 케이스는 수동 처리가 필요합니다.</p>
                 </div>
               )}
 

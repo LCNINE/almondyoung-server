@@ -18,6 +18,8 @@ export interface AmendmentRecord {
   dismissedAt?: string | null;
   dismissNote?: string | null;
   resyncRequestedAt?: string | null;
+  reasonCode?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AmendmentListItem extends AmendmentRecord {

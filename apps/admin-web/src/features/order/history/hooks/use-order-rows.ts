@@ -7,6 +7,8 @@ import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
 import { isOrderLineMatched } from './demo-order-line';
+import { hasOpenCancelRequest, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
+import type { CancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 주문한 회원의 신원. user-service 조회가 실패하면 «없다» 가 아니라 «모른다» 라 전부 undefined. */
@@ -34,6 +36,7 @@ export type OrderLineRow = {
   channelOrderId: string;
   orderDate: string;
   channel: string;
+  cancelRequest: CancelRequestView | null;
   phone?: string;
   /** 배송지에 적힌 이름 (= core sales_orders.customer_name). 회원 이름과 다를 수 있다. */
   receiverName?: string;
@@ -120,6 +123,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     staleTime: 30 * 1000,
     // 페이지 이동으로 대상 주문이 바뀌어도 이전 enrichment 를 유지 (테이블 깜빡임 방지)
     placeholderData: keepPreviousData,
+    // 처리 중인 취소 요청이 있는 동안만 3초마다 다시 읽는다 — «취소 요청됨»이 끝나는 걸 보이려고
+    refetchInterval: (query) => (hasOpenCancelRequest(query.state.data ?? []) ? 3000 : false),
     queryFn: async () => {
       if (!orderIds.length) return [];
       const details = await Promise.all(
@@ -334,6 +339,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? detail?.salesChannel ?? 'medusa',
+          cancelRequest: toCancelRequestView(detail?.cancelRequest),
           phone,
           customerName,
           receiverName,
@@ -405,6 +411,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           channelOrderId,
           orderDate: listItem.orderDate ?? listItem.createdAt,
           channel: listItem.salesChannel ?? 'medusa',
+          cancelRequest: null,
           phone,
           customerName,
           receiverName,
