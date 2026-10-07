@@ -9,8 +9,10 @@ import {
   OrderCollectionFailureItem,
   OrderFetchItem,
   OrderLifecycleEventItem,
+  ORDER_COLLECTION_PROCESSING_FAILED,
   OrderProcessingFailureItem,
 } from './channel-order-provider.interface';
+import { OrderProcessingStageError } from './order-processing-stage.error';
 
 describe('OrderPollerOrchestrator', () => {
   it('ingests a virtual provider through the transactional mapping and typed outbox path without polling Core', async () => {
@@ -1437,6 +1439,205 @@ describe('OrderPollerOrchestrator — 주문 단위 격리 (#1016 1번 행)', ()
       }),
     );
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:02:00.000Z'));
+  });
+});
+
+describe('OrderPollerOrchestrator — 처리 실패 되살리기 (#1016 1번 행)', () => {
+  const ORDER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const retryRow = (overrides: Record<string, unknown> = {}) => ({
+    id: 'processing_A',
+    channel: 'medusa',
+    externalOrderId: 'A',
+    reason: ORDER_COLLECTION_PROCESSING_FAILED,
+    status: 'quarantined',
+    attemptCount: 1,
+    sourceUpdatedAt: new Date('2026-10-07T01:00:00.000Z'),
+    ...overrides,
+  });
+  const orderA = () => makeOrder('2026-10-07T01:00:00.000Z', { externalOrderId: 'A', orderId: ORDER_ID });
+
+  function setup(options: { syncable?: boolean; fetchOrders?: jest.Mock } = {}) {
+    const db = makeDb();
+    const provider = {
+      channel: 'medusa' as const,
+      fetchOrders:
+        options.fetchOrders ?? jest.fn().mockResolvedValue({ orders: [], failures: [], lifecycleEvents: [] }),
+      ...(options.syncable === false ? {} : { fetchOrderForSync: jest.fn() }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const failures = makeFailureService();
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider as any],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      db as any,
+      makeSalesChannelClient(['medusa']) as any,
+    );
+    const eventTypes = () => outbox.enqueue.mock.calls.map(([event]) => event.eventType);
+    return { orchestrator, provider, syncStatus, outbox, failures, eventTypes };
+  }
+
+  it('채널 주기 끝에 이번 주기 시작 시각과 상한 20 으로 대상을 고른다', async () => {
+    const { orchestrator, failures } = setup();
+    const before = Date.now();
+
+    await orchestrator.poll();
+
+    expect(failures.findRetryableProcessingFailures).toHaveBeenCalledWith('medusa', expect.any(Date), 20);
+    const [, cycleStartedAt] = failures.findRetryableProcessingFailures.mock.calls[0];
+    expect(cycleStartedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(cycleStartedAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('성공하면 주문과 lifecycle 을 다시 내고 replayed 로 닫는다 — lifecycle 저장본 없이 스냅샷에서 되살아난다', async () => {
+    const { orchestrator, provider, failures, eventTypes } = setup();
+    failures.findRetryableProcessingFailures.mockResolvedValue([retryRow()]);
+    provider.fetchOrderForSync!.mockResolvedValue({
+      outcome: { kind: 'order', order: orderA() },
+      lifecycle: [makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-10-07T01:00:00.000Z', 'A')],
+    });
+
+    await orchestrator.poll();
+
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderCancelled']);
+    expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', ORDER_ID);
+    expect(failures.recordProcessingFailure).not.toHaveBeenCalled();
+  });
+
+  it('종결돼 수집 대상이 아니면 closed_lifecycle 로 닫는다', async () => {
+    const { orchestrator, provider, failures } = setup();
+    failures.findRetryableProcessingFailures.mockResolvedValue([retryRow()]);
+    provider.fetchOrderForSync!.mockResolvedValue({
+      outcome: {
+        kind: 'order',
+        order: makeOrder('2026-10-07T01:00:00.000Z', {
+          externalOrderId: 'A',
+          orderId: ORDER_ID,
+          eligibleForOrderCreation: false,
+        }),
+      },
+      lifecycle: [],
+    });
+
+    await orchestrator.poll();
+
+    expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('processing_A', expect.any(String));
+    expect(failures.markReplayed).not.toHaveBeenCalled();
+  });
+
+  it('식별 실패로 바뀌면 식별 격리를 기록하고 이 행은 메모와 함께 replayed 로 닫는다', async () => {
+    const { orchestrator, provider, failures } = setup();
+    failures.findRetryableProcessingFailures.mockResolvedValue([retryRow()]);
+    provider.fetchOrderForSync!.mockResolvedValue({
+      outcome: { kind: 'failure', failure: { ...makeFailure('2026-10-07T01:00:00.000Z'), externalOrderId: 'A' } },
+      lifecycle: [],
+    });
+
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).toHaveBeenCalledWith('medusa', expect.objectContaining({ externalOrderId: 'A' }));
+    expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', undefined, expect.stringContaining('식별'));
+  });
+
+  it('채널에서 못 찾으면 바로 닫지 않고 fetch 실패 1회로 센다', async () => {
+    const { orchestrator, provider, failures } = setup();
+    failures.findRetryableProcessingFailures.mockResolvedValue([retryRow()]);
+    provider.fetchOrderForSync!.mockResolvedValue(null);
+
+    await orchestrator.poll();
+
+    expect(failures.recordProcessingFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({ externalOrderId: 'A', stage: 'fetch', sourceUpdatedAt: '2026-10-07T01:00:00.000Z' }),
+    );
+    expect(failures.markReplayed).not.toHaveBeenCalled();
+    expect(failures.closeAsTerminalLifecycle).not.toHaveBeenCalled();
+  });
+
+  it('실패 단계를 그대로 기록한다 — 조회 throw 는 fetch, 번역 태그는 translate, 적재는 enqueue_order', async () => {
+    const { orchestrator, provider, failures, outbox } = setup();
+    failures.findRetryableProcessingFailures.mockResolvedValue([
+      retryRow({ id: 'p1', externalOrderId: 'A' }),
+      retryRow({ id: 'p2', externalOrderId: 'B' }),
+      retryRow({ id: 'p3', externalOrderId: 'C' }),
+    ]);
+    provider.fetchOrderForSync!.mockImplementation(async (externalOrderId: string) => {
+      if (externalOrderId === 'A') throw new Error('naver 500');
+      if (externalOrderId === 'B')
+        throw new OrderProcessingStageError('translate', new Error('translator broke'), { id: 'B' });
+      return {
+        outcome: {
+          kind: 'order',
+          order: makeOrder('2026-10-07T01:00:00.000Z', {
+            externalOrderId: 'C',
+            orderId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          }),
+        },
+        lifecycle: [],
+      };
+    });
+    outbox.enqueue.mockRejectedValue(new Error('contract violation'));
+
+    await orchestrator.poll();
+
+    const stages = failures.recordProcessingFailure.mock.calls.map(
+      ([, failure]) => `${failure.externalOrderId}:${failure.stage}`,
+    );
+    expect(stages).toEqual(['A:fetch', 'B:translate', 'C:enqueue_order']);
+  });
+
+  it('syncable 이 아닌 provider 는 재시도를 건너뛴다', async () => {
+    const { orchestrator, failures } = setup({ syncable: false });
+
+    await orchestrator.poll();
+
+    expect(failures.findRetryableProcessingFailures).not.toHaveBeenCalled();
+  });
+
+  it('본 루프가 실패한 주기에는 재시도하지 않는다', async () => {
+    const { orchestrator, failures } = setup({ fetchOrders: jest.fn().mockRejectedValue(new Error('medusa down')) });
+
+    await orchestrator.poll();
+
+    expect(failures.findRetryableProcessingFailures).not.toHaveBeenCalled();
+  });
+
+  it('재시도가 터져도 채널 sync 상태를 실패로 바꾸지 않는다', async () => {
+    const { orchestrator, failures, syncStatus } = setup();
+    failures.findRetryableProcessingFailures.mockRejectedValue(new Error('db blip'));
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncComplete).toHaveBeenCalledTimes(1);
+    expect(syncStatus.recordSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it('수동 replay 는 상한을 다 쓴 행도 되살린다', async () => {
+    const { orchestrator, provider, failures } = setup();
+    failures.findById.mockResolvedValue(retryRow({ attemptCount: 4 }));
+    provider.fetchOrderForSync!.mockResolvedValue({ outcome: { kind: 'order', order: orderA() }, lifecycle: [] });
+
+    const result = await orchestrator.replayFailure('processing_A');
+
+    expect(result).toEqual({
+      status: 'replayed',
+      failureId: 'processing_A',
+      externalOrderId: 'A',
+      emitted: 1,
+      dedupedUnchanged: 0,
+    });
+    expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', ORDER_ID);
+  });
+
+  it('syncOrder 의 호출자는 단계 태그가 아니라 원래 에러를 받는다', async () => {
+    const { orchestrator, provider } = setup();
+    const original = new Error('translator broke');
+    provider.fetchOrderForSync!.mockRejectedValue(new OrderProcessingStageError('translate', original, {}));
+
+    await expect(orchestrator.syncOrder('medusa', 'A')).rejects.toBe(original);
   });
 });
 
