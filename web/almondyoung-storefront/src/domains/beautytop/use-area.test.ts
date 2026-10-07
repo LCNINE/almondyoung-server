@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { decodeBatchItem } from "@/lib/beautytop/batch-item"
 import { AreaError, areaRetryDelay, loadArea } from "./use-area"
 
 afterEach(() => vi.unstubAllGlobals())
@@ -18,7 +19,9 @@ describe("area batching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
     expect(url.pathname).toBe("/api/beautytop/area/batch")
-    expect(url.searchParams.getAll("q").map((q) => new URLSearchParams(q).get("resource"))).toEqual(["market", "lifecycle"])
+    const items = url.searchParams.getAll("q").map((q) => new URLSearchParams(decodeBatchItem(q) ?? ""))
+    expect(items.map((i) => i.get("resource"))).toEqual(["market", "lifecycle"])
+    expect(items.map((i) => i.get("gugun"))).toEqual(["마포구", "마포구"])
     expect(market).toEqual({ shops: 3 })
     expect(lifecycle).toEqual({ opened: 1 })
   })

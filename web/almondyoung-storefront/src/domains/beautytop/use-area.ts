@@ -1,5 +1,6 @@
 "use client"
 
+import { encodeBatchItem } from "@/lib/beautytop/batch-item"
 import { useQuery } from "@tanstack/react-query"
 
 type AreaResource = "options" | "market" | "lifecycle" | "trends" | "prices" | "revenue"
@@ -34,7 +35,7 @@ async function flush() {
   for (let i = 0; i < pending.length; i += MAX_BATCH) {
     const chunk = pending.slice(i, i + MAX_BATCH)
     const search = new URLSearchParams()
-    for (const p of chunk) search.append("q", p.item)
+    for (const p of chunk) search.append("q", encodeBatchItem(p.item))
     try {
       const response = await fetch(`/api/beautytop/area/batch?${search}`, { credentials: "omit" })
       if (!response.ok) {

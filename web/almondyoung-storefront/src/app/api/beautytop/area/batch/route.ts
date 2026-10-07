@@ -1,3 +1,4 @@
+import { decodeBatchItem } from "../../../../../lib/beautytop/batch-item"
 import { MAX_BATCH, queryPublicBatch } from "../../../../../lib/beautytop/public-query"
 
 export const runtime = "nodejs"
@@ -7,7 +8,8 @@ export async function GET(request: Request) {
   if (items.length === 0 || items.length > MAX_BATCH) {
     return Response.json({ error: "INVALID_QUERY" }, { status: 400 })
   }
-  const results = await queryPublicBatch(items)
+  // An item that does not decode is answered as INVALID_QUERY, like any unknown resource.
+  const results = await queryPublicBatch(items.map((q) => decodeBatchItem(q) ?? ""))
   // Only a fully answered batch may be shared by the CDN; a BUSY item must be asked again.
   const complete = results.every((r) => r.ok)
   return Response.json(
