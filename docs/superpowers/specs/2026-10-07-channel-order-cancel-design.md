@@ -375,7 +375,9 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
 ## 8. 지우는 것
 
 - **core → Medusa 취소 역투영**: `fulfillment-events.consumer.ts` `handleCoreOrderCancelled` 와 `inbox-worker.service.ts`
-  `CoreOrderCancelled` 분기. **PR-D 에서**(§11). 그 처리기 주석의 35번 행 언급도 함께
+  `CoreOrderCancelled` 분기. **PR-D 에서 지웠다**(§11) — channel-adapter 는 `core.orders.events.v1` 구독을 멈췄고,
+  가드 스펙(`fulfillment-events.consumer.spec.ts`)이 `SalesOrderCancelled` 구독의 재등장을 막는다. 배포 순간 남은
+  `CoreOrderCancelled` 인박스 행은 집지 않는다 — PR-C 이후 그 행은 전부 «Medusa 가 이미 취소됨» 의 메아리였다
 - §5.7 의 core 쪽
 - `apps/channel-adapter/CLAUDE.md` 에 한 줄: «`CancelChannelOrder` 를 받아 채널에 취소를 요청한다 — core 는 직접 부르지 않는다»
 
@@ -438,7 +440,7 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
 | **A** Medusa | 배송 정책 스냅샷, 부분취소 라우트·오케스트레이터, §6.4 환불 투영 | 부르는 쪽 없음. §6.4 만 즉시 효과(무통장 충돌 감소). 먼저 나갈수록 스냅샷 있는 주문이 쌓인다 |
 | **B** 계약 + channel-adapter | 명령·거절 사실, 명령 처리기, 400 분류 | 보내는 쪽 없음. `apps/medusa` 는 건드리지 않는다 |
 | **C** core + admin-web + 스토어프론트 | 요청·보류·관문·확정·거절·정체, wallet 호출 제거, 화면 + 계약 `OrderModified.snapshot.cancelRequests` + channel-adapter Medusa 수집 + 창고 앱 차단 사유. 마이그 additive → **`migrate → deploy`** | 전환. 역투영은 살아 있다(무해한 중복, 롤링 중 옛 core 태스크의 취소도 Medusa 에 닿는다). 옛 core 태스크는 거절·정체 사실을 버린다 → 5분 정체 보드(§10-5 반대 방향). 창고 앱 배포 전에는 «취소 처리 중» 박스가 차단 목록에서 빠져 보인다 |
-| **D** channel-adapter | 역투영 제거 | **C 배포가 끝난 뒤**(expand-contract — 사이에 배포 한 번) |
+| **D** channel-adapter | 역투영 제거 | **C 배포가 끝난 뒤**(expand-contract — 사이에 배포 한 번). 직후 마켓 전체취소의 `manual_adjustment_required` 행이 더 안 생긴다(PR-C 이후엔 거짓 경보였다) |
 
 롤링 중 함정:
 
@@ -472,6 +474,12 @@ select status, count(*), min(created_at), max(created_at)
 ```
 
 있으면 정리 스크립트를 따로 둔다: §6.4 로 wallet 환불을 Medusa 장부에 먼저 넣고 → Medusa 를 취소해 환불 없이 끝나게 한다.
+
+**`failed` 0 은 «어긋난 주문 0» 이 아니다**(PR-D 최종 리뷰, 2026-10-07). 옛 분기는 Medusa 400(`not_cancelable`)·404 도
+`published` 로 닫고 경고 로그만 남겼다 — 그 주문은 core 취소 · Medusa 결제완료로 남았어도 `published` 에 섞인다. 다시 돌려도
+같은 400 이 나므로 역투영을 지운 것이 고칠 길을 닫지는 않지만, 후보를 세려면 인박스가 아니라 대조로 본다: core
+`sales_orders` 의 `status = 'cancelled' and sales_channel = 'medusa'` 의 `channel_order_id` 중 Medusa `order.status <> 'canceled'`
+인 것. 2026-10-07 라이브 카운트는 `published` 153 · `failed` 0 이었고, 이 대조는 아직 하지 않았다.
 
 ## 12. 테스트
 
