@@ -32,6 +32,7 @@ import {
   normalizeStockPolicy,
   buildUpsertMatchingPayload,
   isSameSkuLinks,
+  planMatchingSave,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
@@ -119,68 +120,65 @@ export function VariantMatchingPanel({
   const handleSave = async () => {
     const currentSkuLinks = getCurrentSkuLinks(current);
     const currentStockPolicy = current?.stockPolicy ?? variantStockPolicy;
-    const changedLinks = !isSameSkuLinks(links, currentSkuLinks);
-    const changedPolicy =
-      JSON.stringify(stockPolicy) !==
-      JSON.stringify(normalizeStockPolicy(currentStockPolicy));
-    const changedStrategy =
-      strategy !==
-      (current as { strategy?: MatchingStrategy } | undefined)?.strategy;
-    const changedPriority =
-      priority !==
-      (current as { priority?: MatchingPriority } | undefined)?.priority;
+    const matchingId = current?.id;
+    const plan = planMatchingSave({
+      hasMatching: matchingId !== undefined,
+      currentStrategy: current?.strategy ?? null,
+      strategy,
+      linkCount: links.length,
+      changedLinks: !isSameSkuLinks(links, currentSkuLinks),
+      changedPolicy:
+        JSON.stringify(stockPolicy) !==
+        JSON.stringify(normalizeStockPolicy(currentStockPolicy)),
+      changedPriority: priority !== current?.priority,
+    });
 
-    const promises: Promise<unknown>[] = [];
-
-    if (changedLinks) {
-      promises.push(
-        upsert.mutateAsync({
-          variantId,
-          data: buildUpsertMatchingPayload({
-            masterId,
-            links,
-            policy: stockPolicy,
-            changedLinks,
-          }),
-        })
-      );
-    } else if (changedPolicy) {
-      // 링크가 그대로면 upsert 를 태우지 않는다 — 매칭이 없는 variant 에서 upsert 는
-      // 정책만 바꾸려다 매칭까지 만들어버린다. stock-policy 경로는 정책만 건드린다.
-      promises.push(
-        updateStockPolicy.mutateAsync({ variantId, data: stockPolicy })
-      );
+    if (!plan.ok) {
+      toast.error(plan.message);
+      return;
     }
-    if (changedStrategy && current && 'id' in current) {
-      promises.push(
-        setStrategy.mutateAsync({
-          id: (current as { id: string }).id,
-          data: { strategy },
-        })
-      );
-    }
-    if (changedPriority && current && 'id' in current) {
-      promises.push(
-        setPriority.mutateAsync({
-          id: (current as { id: string }).id,
-          data: { priority },
-        })
-      );
-    }
-
-    if (promises.length === 0) {
+    if (plan.steps.length === 0) {
       toast.info('변경된 내용이 없습니다.');
       return;
     }
 
     try {
-      await Promise.all(promises);
+      // 순서대로 — void 전환 뒤 정책 저장, variant 는 upsert 하나(동시에 보내면 서로 덮는다)
+      for (const step of plan.steps) {
+        if (step.kind === 'upsert') {
+          await upsert.mutateAsync({
+            variantId,
+            data: buildUpsertMatchingPayload({
+              masterId,
+              links,
+              policy: stockPolicy,
+              changedLinks: step.changedLinks,
+            }),
+          });
+        } else if (step.kind === 'stockPolicy') {
+          await updateStockPolicy.mutateAsync({ variantId, data: stockPolicy });
+        } else if (matchingId === undefined) {
+          // 계획이 매칭 없는 variant 에는 전략·우선순위 단계를 내지 않는다
+          continue;
+        } else if (step.kind === 'setStrategy') {
+          await setStrategy.mutateAsync({
+            id: matchingId,
+            data: { strategy: step.strategy },
+          });
+        } else {
+          await setPriority.mutateAsync({
+            id: matchingId,
+            data: { priority },
+          });
+        }
+      }
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.mastersBatchStats([masterId]),
       });
       toast.success('매칭을 저장했습니다.');
       onSaved?.();
     } catch (error) {
+      // 앞 단계가 저장됐어도 실패를 알린다 — 패널은 열린 채로 남아 다시 저장할 수 있다
       toast.error(
         error instanceof Error ? error.message : '매칭 저장에 실패했습니다.'
       );

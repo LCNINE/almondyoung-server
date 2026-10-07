@@ -89,12 +89,14 @@ export function VariantMatchingEditorDialog({
     const currentSkuLinks = getCurrentSkuLinks(matching);
     const changedLinks = !isSameSkuLinks(links, currentSkuLinks);
     const plan = planMatchingSave({
+      hasMatching: true,
       currentStrategy: matching.strategy ?? null,
       strategy,
       linkCount: links.length,
       changedLinks,
       changedPolicy:
-        JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(matching.stockPolicy)),
+        JSON.stringify(stockPolicy) !==
+        JSON.stringify(normalizeStockPolicy(matching.stockPolicy)),
       changedPriority: priority !== matching.priority,
     });
 
@@ -121,9 +123,15 @@ export function VariantMatchingEditorDialog({
             }),
           });
         } else if (step.kind === 'setStrategy') {
-          await setStrategy.mutateAsync({ id: matching.id, data: { strategy: step.strategy } });
-        } else {
-          await setPriority.mutateAsync({ id: matching.id, data: { priority } });
+          await setStrategy.mutateAsync({
+            id: matching.id,
+            data: { strategy: step.strategy },
+          });
+        } else if (step.kind === 'setPriority') {
+          await setPriority.mutateAsync({
+            id: matching.id,
+            data: { priority },
+          });
         }
       }
       toast.success('매칭을 저장했습니다.');

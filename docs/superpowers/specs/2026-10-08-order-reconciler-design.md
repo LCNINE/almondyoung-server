@@ -220,12 +220,17 @@ backlog 서비스에 `requeueAwaitingMatching(salesOrderId, tx)` 를 더한다. 
 
 ### 5.6 admin-web 매칭 편집 창
 
-`features/matching/variants/components/editor-dialog` 는 링크 저장(upsert)과 전략 변경을 `Promise.all` 로 동시에 보내 void → variant +
-링크 추가에서 경합한다. 고친 뒤:
+`features/matching/variants/components/editor-dialog` 와 `features/matching/products/components/variant-editor-dialog`
+(`VariantMatchingPanel` — 매칭 상품 표와 판매상품 상세의 variants 탭이 쓴다) 는 링크 저장(upsert)과 전략 변경을 `Promise.all` 로 동시에 보내
+void → variant + 링크 추가에서 경합한다(뒤쪽은 core 가 variant 전략 변경을 거절한 뒤로 저장이 돼도 늘 실패 토스트를 띄운다). 고친 뒤:
 
 - **variant 로**: upsert 하나만(upsert 가 `variant` 를 직접 쓴다). 링크가 비면 화면에서 막는다
 - **void 로**: 전략 변경 → 정책 저장 순서로
 - 우선순위 변경은 지금처럼 따로
+- **매칭이 아직 없는 variant**(products 쪽 패널만): 링크가 붙으면 upsert 하나(매칭을 만든다), 정책만 바뀌면 variant 재고 정책
+  경로(`PUT /matchings/variants/:variantId/stock-policy`). 바꿀 매칭이 없으니 전략·우선순위는 보내지 않는다
+- `pending` 매칭의 화면 기본값 `variant` 는 전략 변경으로 치지 않는다 — 정책만 바꾸면 링크 없는 upsert(정책만 저장)
+- 실패하면 창(패널)을 닫지 않는다 — 앞 단계가 저장됐어도 실패 토스트를 띄우고 다시 저장할 수 있게 둔다
 
 이 판단은 `.ts` 순수 함수 `planMatchingSave(현재, 편집본)` 로 두고 테스트한다(admin-web 은 컴포넌트 테스트를 쓸 수 없다).
 `features/order/matching/.../InventoryMatchingDialog.tsx` 는 `void` 로만 전략을 바꾸므로 고치지 않는다.
