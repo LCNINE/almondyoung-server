@@ -1,3 +1,4 @@
+import { privateTimeSaleProductIds } from '../../../../utils/time-sale-settings';
 import type { AuthenticatedMedusaRequest, MedusaNextFunction, MedusaResponse } from '@medusajs/framework/http';
 import {
   isRecord,
@@ -25,6 +26,7 @@ export const membershipPriceVisibilityMiddleware = async (
 ) => {
   const { isMember } = await resolveMemberState(req);
 
+  const privateIds = isMember ? new Set<string>() : await privateTimeSaleProductIds(req.scope);
   const originalJson = res.json.bind(res);
   res.json = (body: unknown) => {
     if (
@@ -37,7 +39,7 @@ export const membershipPriceVisibilityMiddleware = async (
       return originalJson({ type: 'not_found', message: 'Product not found' });
     }
 
-    return originalJson(transformStoreProductsPayload(body, isMember));
+    return originalJson(transformStoreProductsPayload(body, isMember, privateIds));
   };
 
   next();

@@ -1,31 +1,29 @@
-import { listActiveTimeSales } from "@/lib/api/medusa/time-sale"
-import { listCategories } from "@/lib/api/medusa/categories"
+import { getTimeSalePresentation } from "@/lib/api/medusa/time-sale"
 import { listProducts } from "@/lib/api/medusa/products"
-import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getRegion } from "@/lib/api/medusa/regions"
-import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { PRODUCT_LIST_FIELDS_WITH_CATEGORIES } from "@lib/data/product-fields"
-import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
-import { deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
 import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
-import { getWishlist } from "@lib/api/users/wishlist"
-import { getTranslations } from "next-intl/server"
-import { TimeSaleSection } from "../../components/sections/time-sale-section"
+import { ConfiguredTimeSale } from "../../components/sections/time-sale-section/configured"
+import { getProductPrice } from "@/lib/utils/get-product-price"
+import type { SaleSurface } from "@packages/domain-types/time-sale"
 
 /** 세일 상품은 수십 개 규모라 한 번에 받는다. 넘치면 캐러셀이 잘라 보여준다. */
 const MAX_PRODUCTS = 100
 
 /** 홈에는 세일마다 데스크톱 두 줄(lg 5열)만 내보낸다. 나머지는 "더보기" 로 전용 페이지에서 본다. */
-const HOME_ROWS = 10
+
 
 export async function TimeSaleWrapper({
   countryCode,
-  background,
+  surface = "main",
 }: {
   countryCode: string
   background?: "white" | "muted"
+  surface?: SaleSurface
 }) {
-  const sales = (await listActiveTimeSales()).filter(
+  const { timeSales, settings } = await getTimeSalePresentation()
+  if (!settings.environment[surface]) return null
+  const sales = timeSales.filter(
     (sale) => sale.endsAt && sale.productIds.length > 0
   )
   if (sales.length === 0) return null
@@ -50,36 +48,9 @@ export async function TimeSaleWrapper({
     regionId: region?.id,
   })
 
-  // 품절은 빼고 세일에 걸린 다음 상품을 당겨 올린다. 세일 상품 전체(MAX_PRODUCTS)를 이미
-  // 받아둔 뒤 세일별로 HOME_ROWS 만큼 자르므로 추가 조회 없이 칸이 채워진다.
-  const products = filterSoldOut(fetched)
+  const products = fetched
   if (products.length === 0) return null
-
-  const [customer, categories, t] = await Promise.all([
-    retrieveCustomer(),
-    listCategories(),
-    getTranslations("home.timeSale"),
-  ])
-
-  const rootHandles = new Set<string>(
-    FIXED_CATEGORIES.map((category) => category.handle)
-  )
-  const sources = categories
-    .filter((category) => rootHandles.has(category.handle))
-    .map((category) => {
-      const fixed = FIXED_CATEGORIES.find(
-        (item) => (item.handle as string) === category.handle
-      )!
-      return {
-        key: fixed.key,
-        name: category.name,
-        handle: category.handle,
-        categoryIds: collectCategoryIds(category),
-      }
-    })
-
-  const wishlist = customer ? await getWishlist().catch(() => []) : []
-  const wishlistIds = new Set(wishlist.map((item) => item.productId))
+  const availableIds = new Set(filterSoldOut(products).map((p) => p.id))
 
   // `/store/time-sale` 이 판매순 → 리뷰순 → 최신순으로 준 순서를 지킨다. `listProducts` 는 id
   // 필터라 그 순서를 보존하지 않으므로 여기서 되돌린다.
@@ -88,33 +59,39 @@ export async function TimeSaleWrapper({
     sale,
     products: sale.productIds
       .map((id) => byId.get(id))
-      .filter((product): product is (typeof products)[number] => Boolean(product))
-      .slice(0, HOME_ROWS),
+      .filter((product): product is (typeof products)[number] =>
+        Boolean(product)
+      ),
   }))
+
+  const toSaleProduct = (product: (typeof products)[number]) => {
+    const { cheapestPrice } = getProductPrice({ product })
+    return {
+      id: product.id,
+      name: product.title,
+      image: product.thumbnail,
+      href: `/${countryCode}/products/${product.handle}`,
+      price: cheapestPrice?.calculated_price_number ?? null,
+      originalPrice: cheapestPrice?.original_price_number ?? null,
+      soldOut: !availableIds.has(product.id),
+    }
+  }
 
   return (
     <>
       {sections
         .filter((section) => section.products.length > 0)
-        .map((section) => (
-          <TimeSaleSection
-            key={section.sale.title}
-            title={sections.length > 1 ? section.sale.title : undefined}
-            endsAt={section.sale.endsAt!}
-            products={section.products}
-            tabs={deriveTimeSaleTabs(
-              section.products.map((product) => ({
-                id: product.id,
-                categoryIds: (product.categories ?? []).map(
-                  (category) => category.id
-                ),
-              })),
-              sources,
-              t("allTab")
-            )}
-            customer={customer}
-            wishlistIds={wishlistIds}
-            background={background}
+        .map(({ sale, products }) => (
+          <ConfiguredTimeSale
+            key={sale.priceListIds[0]}
+            settings={settings}
+            surface={surface}
+            saleId={sale.priceListIds[0]}
+            title={sale.title}
+            startsAt={sale.startsAt ?? new Date().toISOString()}
+            endsAt={sale.endsAt!}
+            countryCode={countryCode}
+            products={products.map(toSaleProduct)}
           />
         ))}
     </>

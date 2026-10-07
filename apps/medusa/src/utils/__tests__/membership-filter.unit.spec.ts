@@ -290,3 +290,34 @@ describe('transformStoreProductsPayload - 멤버십 전용 구매 게이트', ()
     expect(result.products).toHaveLength(1);
   });
 });
+
+describe('time-sale private pricing', () => {
+  it('removes every price location for a private product without changing member responses', () => {
+    const payload = {
+      products: [
+        {
+          id: 'private',
+          variants: [
+            {
+              id: 'v',
+              prices: [{ amount: 100 }],
+              calculated_price: { calculated_amount: 100 },
+              metadata: { membershipPrice: 80, color: 'red' },
+            },
+          ],
+        },
+      ],
+    };
+    const hidden = transformStoreProductsPayload(payload, false, new Set(['private']));
+    expect(hidden).toEqual({
+      products: [
+        {
+          id: 'private',
+          metadata: { timeSalePriceHidden: true },
+          variants: [{ id: 'v', metadata: { color: 'red' } }],
+        },
+      ],
+    });
+    expect(transformStoreProductsPayload(payload, true, new Set(['private']))).toEqual(payload);
+  });
+});

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "lib": ["dom", "esnext"],
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": {
+      "react": ["../../apps/admin-web/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../apps/admin-web/node_modules/@types/react/jsx-runtime"],
+      "react-dom": ["../../apps/admin-web/node_modules/@types/react-dom"],
+      "@packages/domain-types/*": ["../domain-types/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,281 @@
+.ts-workspace {
+  display: flex;
+  min-height: 700px;
+  width: 100%;
+  font-family: Arial, 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+  background: #fafafa;
+  color: #212121;
+  border: 1px solid #ddd;
+}
+.ts-navigation {
+  width: 190px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid #ddd;
+  padding-top: 12px;
+}
+.ts-navigation button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+}
+.ts-navigation button.active {
+  color: #1976d2;
+  background: #e3f2fd;
+  border-left-color: #1976d2;
+}
+.ts-body {
+  min-width: 0;
+  flex: 1;
+}
+.ts-appbar {
+  min-height: 64px;
+  padding: 12px 20px;
+  background: #1976d2;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 2px 5px #0003;
+}
+.ts-appbar strong {
+  flex: 1;
+}
+.ts-workspace button {
+  cursor: pointer;
+}
+.ts-workspace button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ts-appbar button,
+.ts-actions button,
+.ts-settings > button,
+.ts-properties button {
+  background: white;
+  color: #1976d2;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 6px 12px;
+}
+.ts-toolbar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 16px;
+  flex-wrap: wrap;
+}
+.ts-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ts-toolbar input[type='number'] {
+  width: 70px;
+}
+.ts-workspace input:not([type='checkbox']):not([type='radio']),
+.ts-workspace select,
+.ts-workspace textarea {
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  padding: 6px;
+  background: white;
+  max-width: 100%;
+  min-width: 0;
+  color: #212121;
+}
+.ts-workspace input[type='checkbox'],
+.ts-workspace input[type='radio'] {
+  accent-color: #1976d2;
+}
+.ts-workspace textarea {
+  width: 100%;
+  height: 100px;
+  resize: vertical;
+}
+.ts-workspace button:focus-visible,
+.ts-workspace input:focus-visible,
+.ts-workspace select:focus-visible,
+.ts-workspace textarea:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+.ts-editor {
+  display: grid;
+  grid-template-columns: 260px 300px minmax(0, 1fr);
+  border-top: 1px solid #ddd;
+  min-height: 650px;
+}
+.ts-components,
+.ts-properties {
+  padding: 16px;
+  overflow: auto;
+  max-height: 900px;
+  background: white;
+  border-right: 1px solid #ddd;
+}
+.ts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 12px 0;
+}
+.ts-field > span {
+  font-size: 12px;
+  color: #666;
+}
+.ts-field input[type='checkbox'] {
+  align-self: flex-start;
+}
+.ts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ts-component {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 6px 0;
+  padding: 10px 8px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  width: 100%;
+  text-align: left;
+}
+.ts-component.active {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+}
+.ts-component span {
+  display: flex;
+  gap: 8px;
+}
+.ts-components h3,
+.ts-properties h3 {
+  font-weight: 600;
+  margin: 16px 0;
+}
+.ts-inline {
+  display: flex;
+  gap: 10px;
+}
+.ts-preview {
+  padding: 16px;
+  overflow: auto;
+  background: #f1f1f1;
+}
+.ts-preview-canvas {
+  background: white;
+  margin: 0 auto;
+  box-shadow: 0 1px 4px #0003;
+  min-height: 500px;
+}
+.ts-settings {
+  background: white;
+  padding: 24px;
+  max-width: 800px;
+  min-height: 650px;
+}
+.ts-settings h2 {
+  font-weight: 600;
+  font-size: 18px;
+}
+.ts-settings table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+.ts-settings td,
+.ts-settings th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
+.ts-settings td button {
+  margin-left: 8px;
+  color: #1976d2;
+}
+.ts-dialog-veil {
+  position: fixed;
+  inset: 0;
+  background: #0005;
+  z-index: 10003;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.ts-dialog {
+  background: white;
+  border-radius: 4px;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 6px 24px #0004;
+}
+.ts-dialog h2 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+.ts-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;
+  margin-top: 24px;
+  color: #1976d2;
+}
+.ts-empty {
+  padding: 32px;
+}
+.time-sale-toast-success {
+  background: #4caf50 !important;
+  color: white !important;
+  border: 0 !important;
+  min-height: 48px;
+}
+.time-sale-toast-error {
+  background: #f44336 !important;
+  color: white !important;
+  border: 0 !important;
+  min-height: 48px;
+}
+@media (max-width: 1100px) {
+  .ts-editor {
+    grid-template-columns: 210px 260px minmax(0, 1fr);
+  }
+  .ts-navigation {
+    width: 160px;
+  }
+}
+@media (max-width: 800px) {
+  .ts-workspace {
+    display: block;
+  }
+  .ts-navigation {
+    display: flex;
+    overflow: auto;
+    width: 100%;
+    padding: 0;
+  }
+  .ts-navigation button {
+    white-space: nowrap;
+  }
+  .ts-editor {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .ts-components,
+  .ts-properties {
+    width: 50%;
+  }
+  .ts-preview {
+    width: 100%;
+  }
+}

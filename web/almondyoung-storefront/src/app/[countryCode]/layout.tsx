@@ -1,5 +1,5 @@
 import { listRegions } from "@/lib/api/medusa/regions"
-import { listActiveTimeSales } from "@/lib/api/medusa/time-sale"
+import { getTimeSalePresentation } from "@/lib/api/medusa/time-sale"
 import { TimeSaleProvider } from "@/components/providers/time-sale-provider"
 import { PageTypeTracker } from "@/components/analytics/page-type-tracker"
 import { notFound } from "next/navigation"
@@ -12,9 +12,9 @@ export default async function CountryCodeLayout(props: {
   const { countryCode } = await props.params
 
   // 조회 실패는 통과 — Medusa 장애로 전 페이지가 404 되면 안 된다
-  const [regions, timeSales] = await Promise.all([
+  const [regions, presentation] = await Promise.all([
     listRegions().catch(() => null),
-    listActiveTimeSales(),
+    getTimeSalePresentation(),
   ])
   const isKnown =
     regions === null ||
@@ -27,7 +27,10 @@ export default async function CountryCodeLayout(props: {
   }
 
   return (
-    <TimeSaleProvider sales={timeSales}>
+    <TimeSaleProvider
+      sales={presentation.timeSales}
+      settings={presentation.settings}
+    >
       <PageTypeTracker />
       {props.children}
     </TimeSaleProvider>

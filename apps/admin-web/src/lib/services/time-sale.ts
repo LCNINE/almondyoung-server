@@ -6,6 +6,8 @@ import {
   medusaPriceListsApi,
   medusaProductPricingApi,
 } from '@/lib/api/domains/medusa/price-lists';
+import type { SaleDisplay } from '@packages/domain-types/time-sale';
+import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
 import { medusaTimeSalesApi } from '@/lib/api/domains/medusa/time-sales';
 import { medusaCatalogApi } from '@/lib/api/domains/medusa/catalog';
 import { medusaRegionsApi } from '@/lib/api/domains/medusa/regions';
@@ -26,11 +28,13 @@ const timeSaleKeys = {
   lists: () => [...timeSaleKeys.all, 'list'] as const,
   products: (ids: string[]) => [...timeSaleKeys.all, 'products', ids] as const,
   variantMap: () => [...timeSaleKeys.all, 'variant-map'] as const,
-  detail: (generalId: string) => [...timeSaleKeys.all, 'detail', generalId] as const,
+  detail: (generalId: string) =>
+    [...timeSaleKeys.all, 'detail', generalId] as const,
   search: (params: unknown) => [...timeSaleKeys.all, 'search', params] as const,
 };
 
-const MEMBERSHIP_GROUP_ID = process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID ?? '';
+const MEMBERSHIP_GROUP_ID =
+  process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID ?? '';
 
 /** 어드민 읽기는 전부 이 하나로 끝난다 — price list 를 세일 단위로 묶고 variant 별 가격까지 준다. */
 function useAllTimeSales() {
@@ -70,9 +74,15 @@ export function useTimeSaleVariantMap() {
   const now = new Date();
   for (const sale of data ?? []) {
     const period = { startsAt: sale.startsAt ?? '', endsAt: sale.endsAt ?? '' };
-    if (resolveTimeSaleStatus(period, now) === 'ended') continue;
-    for (const variantId of Object.keys(sale.generalPrices)) map.set(variantId, sale.title);
-    for (const variantId of Object.keys(sale.membershipPrices)) map.set(variantId, sale.title);
+    if (
+      sale.status === 'draft' ||
+      resolveTimeSaleStatus(period, now) === 'ended'
+    )
+      continue;
+    for (const variantId of Object.keys(sale.generalPrices))
+      map.set(variantId, sale.title);
+    for (const variantId of Object.keys(sale.membershipPrices))
+      map.set(variantId, sale.title);
   }
 
   return { data: map };
@@ -113,13 +123,15 @@ export function useTimeSaleDetail(priceListId: string | null) {
   const { data, isLoading } = useAllTimeSales();
   const sale = priceListId
     ? data?.find(
-        (item) => item.generalId === priceListId || item.membershipId === priceListId
+        (item) =>
+          item.generalId === priceListId || item.membershipId === priceListId
       )
     : undefined;
 
   return {
     isLoading: Boolean(priceListId) && isLoading,
     data: sale && {
+      status: sale.status,
       generalId: sale.generalId,
       membershipId: sale.membershipId,
       title: sale.title,
@@ -147,10 +159,17 @@ export function useCreateTimeSale() {
   const { data: sales } = useAllTimeSales();
 
   return useMutation({
-    mutationFn: async (input: { title: string; period: TimeSalePeriod; rows: TimeSaleRow[] }) => {
+    mutationFn: async (input: {
+      title: string;
+      period: TimeSalePeriod;
+      rows: TimeSaleRow[];
+      display?: SaleDisplay;
+    }) => {
       const errors = validateRows(input.rows);
       if (errors.length > 0) {
-        throw new TimeSaleValidationError(`${errors.length}개 품목의 세일가를 고쳐야 합니다.`);
+        throw new TimeSaleValidationError(
+          `${errors.length}개 품목의 세일가를 고쳐야 합니다.`
+        );
       }
 
       // 기간 겹침 자체는 통과다 — 카테고리마다 기간이 다른 세일을 동시에 거는 게 목적이다.
@@ -172,7 +191,10 @@ export function useCreateTimeSale() {
       if (conflicts.length > 0) {
         throw new TimeSaleValidationError(
           `같은 품목이 이미 다른 세일에 걸려 있습니다: ${conflicts
-            .map((sale) => `${sale.title} (${sale.conflictingVariantIds.length}개 품목)`)
+            .map(
+              (sale) =>
+                `${sale.title} (${sale.conflictingVariantIds.length}개 품목)`
+            )
             .join(', ')}`
         );
       }
@@ -180,17 +202,21 @@ export function useCreateTimeSale() {
       const { regions } = await medusaRegionsApi.list();
       const regionIds = regions.map((region) => region.id);
       if (regionIds.length === 0) {
-        throw new TimeSaleValidationError('리전을 찾지 못해 세일 가격 규칙을 만들 수 없습니다.');
+        throw new TimeSaleValidationError(
+          '리전을 찾지 못해 세일 가격 규칙을 만들 수 없습니다.'
+        );
       }
 
       // 그룹 id 가 없으면 멤버십 리스트를 만들 수 없다. 조용히 건너뛰면 운영자가 입력한 멤버십
       // 세일가가 통째로 버려지고 "멤버십 세일가 없음" 으로만 남는다 — 저장 전에 막는다.
       const wantsMembership = input.rows.some(
-        (row) => row.membershipBasePrice !== null && row.membershipSalePrice !== null
+        (row) =>
+          row.membershipBasePrice !== null && row.membershipSalePrice !== null
       );
       if (wantsMembership && !MEMBERSHIP_GROUP_ID) {
         throw new TimeSaleValidationError(
-          '멤버십 고객그룹 id 가 설정되지 않아 멤버십 세일가를 저장할 수 없습니다 (NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID).'
+          '멤버십 고객그룹 id 가 설정되지 않아 멤버십 세일가를 저장할 수 없습니다 ' +
+            '(NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID).'
         );
       }
 
@@ -202,13 +228,46 @@ export function useCreateTimeSale() {
         membershipGroupId: MEMBERSHIP_GROUP_ID,
       });
 
-      const created = await medusaPriceListsApi.create(general);
-      if (membership && MEMBERSHIP_GROUP_ID) {
-        await medusaPriceListsApi.create(membership);
+      const createdIds: string[] = [];
+      try {
+        const created = await medusaPriceListsApi.create({
+          ...general,
+          status: 'draft',
+        });
+        createdIds.push(created.id);
+
+        if (membership && MEMBERSHIP_GROUP_ID)
+          createdIds.push(
+            (
+              await medusaPriceListsApi.create({
+                ...membership,
+                status: 'draft',
+              })
+            ).id
+          );
+
+        if (input.display) {
+          const current = await medusaTimeSaleSettingsApi.get();
+          current.settings.sales[created.id] = input.display;
+          await medusaTimeSaleSettingsApi.save(
+            current.settings,
+            current.revision
+          );
+        }
+
+        for (const id of createdIds)
+          await medusaPriceListsApi.update(id, { status: 'active' });
+
+        return created;
+      } catch (error) {
+        await Promise.allSettled(
+          createdIds.map((id) => medusaPriceListsApi.remove(id))
+        );
+        throw error;
       }
-      return created;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
 
@@ -231,25 +290,32 @@ export function useUpdateTimeSale() {
       title: string;
       period: TimeSalePeriod;
       rows: TimeSaleRow[];
+      display?: SaleDisplay;
     }) => {
       const errors = validateRows(input.rows);
       if (errors.length > 0) {
-        throw new TimeSaleValidationError(`${errors.length}개 품목의 세일가를 고쳐야 합니다.`);
+        throw new TimeSaleValidationError(
+          `${errors.length}개 품목의 세일가를 고쳐야 합니다.`
+        );
       }
 
       const wantsMembership = input.rows.some(
-        (row) => row.membershipBasePrice !== null && row.membershipSalePrice !== null
+        (row) =>
+          row.membershipBasePrice !== null && row.membershipSalePrice !== null
       );
       if (wantsMembership && !MEMBERSHIP_GROUP_ID) {
         throw new TimeSaleValidationError(
-          '멤버십 고객그룹 id 가 설정되지 않아 멤버십 세일가를 저장할 수 없습니다 (NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID).'
+          '멤버십 고객그룹 id 가 설정되지 않아 멤버십 세일가를 저장할 수 없습니다 ' +
+            '(NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID).'
         );
       }
 
       const { regions } = await medusaRegionsApi.list();
       const regionIds = regions.map((region) => region.id);
       if (regionIds.length === 0) {
-        throw new TimeSaleValidationError('리전을 찾지 못해 세일 가격 규칙을 만들 수 없습니다.');
+        throw new TimeSaleValidationError(
+          '리전을 찾지 못해 세일 가격 규칙을 만들 수 없습니다.'
+        );
       }
 
       const { general, membership } = buildPriceListPayloads({
@@ -260,7 +326,10 @@ export function useUpdateTimeSale() {
         membershipGroupId: MEMBERSHIP_GROUP_ID,
       });
 
-      const replacePrices = async (listId: string, prices: CreatePriceListPayload['prices']) => {
+      const replacePrices = async (
+        listId: string,
+        prices: CreatePriceListPayload['prices']
+      ) => {
         const current = await medusaPriceListsApi.get(listId);
         await medusaPriceListsApi.batchPrices(listId, {
           create: prices,
@@ -274,6 +343,7 @@ export function useUpdateTimeSale() {
           starts_at: general.starts_at,
           ends_at: general.ends_at,
         });
+
         await replacePrices(input.generalId, general.prices);
       }
 
@@ -284,6 +354,7 @@ export function useUpdateTimeSale() {
             starts_at: membership.starts_at,
             ends_at: membership.ends_at,
           });
+
           await replacePrices(input.membershipId, membership.prices);
         } else {
           await medusaPriceListsApi.create(membership);
@@ -291,8 +362,22 @@ export function useUpdateTimeSale() {
       } else if (input.membershipId) {
         await medusaPriceListsApi.remove(input.membershipId);
       }
+
+      if (input.display) {
+        const current = await medusaTimeSaleSettingsApi.get();
+        const id = input.generalId ?? input.membershipId;
+
+        if (id) {
+          current.settings.sales[id] = input.display;
+          await medusaTimeSaleSettingsApi.save(
+            current.settings,
+            current.revision
+          );
+        }
+      }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
 
@@ -306,6 +391,30 @@ export function useDeleteTimeSale() {
         await medusaPriceListsApi.remove(id);
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+  });
+}
+
+export function useSetTimeSaleStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ ids, active }: { ids: string[]; active: boolean }) => {
+      // On a partial failure deactivate both; never leave one audience unexpectedly on sale.
+      try {
+        for (const id of ids)
+          await medusaPriceListsApi.update(id, {
+            status: active ? 'active' : 'draft',
+          });
+      } catch (error) {
+        await Promise.allSettled(
+          ids.map((id) => medusaPriceListsApi.update(id, { status: 'draft' }))
+        );
+        throw error;
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }

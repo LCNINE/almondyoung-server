@@ -10,6 +10,7 @@ import { client } from '../../client';
  * pricing 모듈이 product 를 모르기 때문이고, `*prices.price_set.variant` 확장은 그대로 터진다.
  */
 export interface AdminTimeSale {
+  status: 'active' | 'draft';
   generalId: string | null;
   membershipId: string | null;
   title: string;
@@ -29,4 +30,22 @@ export const medusaTimeSalesApi = {
     );
     return res.data.timeSales;
   },
+};
+
+import type { TimeSaleSettings } from '@packages/domain-types/time-sale';
+
+export const medusaTimeSaleSettingsApi = {
+  get: async () =>
+    (
+      await client.get<{ settings: TimeSaleSettings; revision: string }>(
+        `${MEDUSA_BASE_URL}/admin/time-sale-settings`
+      )
+    ).data,
+  save: async (settings: TimeSaleSettings, revision: string) =>
+    (
+      await client.post<{ settings: TimeSaleSettings; revision: string }>(
+        `${MEDUSA_BASE_URL}/admin/time-sale-settings`,
+        { settings, revision }
+      )
+    ).data,
 };

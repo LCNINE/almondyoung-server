@@ -1,6 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  defaultSaleDisplay,
+  type SaleDisplay,
+} from '@packages/domain-types/time-sale';
+import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
+import { saleToast } from '../components/time-sale-workspace';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
@@ -64,11 +77,129 @@ function Section({
   );
 }
 
+const DISPLAY_ID_KEYS = ['partitionId', 'webId'] as const;
+
+const DISPLAY_ID_LABELS = { partitionId: '파티션 ID', webId: '웹 ID' };
+
+const DISPLAY_FLAG_KEYS = [
+  'showSoldOut',
+  'showScheduled',
+  'showEnded',
+  'membershipPriceOnly',
+  'main',
+  'more',
+  'detail',
+] as const;
+
+const DISPLAY_FLAG_LABELS = {
+  showSoldOut: '품절 상품 노출',
+  showScheduled: '예정 세일 노출',
+  showEnded: '종료 세일 노출',
+  membershipPriceOnly: '멤버십 회원에게만 가격 공개',
+  main: '메인',
+  more: '더보기',
+  detail: '상품상세',
+};
+
+function SaleDisplayFields({
+  display,
+  setDisplay,
+  variables,
+}: {
+  display: SaleDisplay;
+  setDisplay: Dispatch<SetStateAction<SaleDisplay>>;
+  variables: { name: string; description: string }[] | undefined;
+}) {
+  const patch = (next: Partial<SaleDisplay>) =>
+    setDisplay((prev) => ({ ...prev, ...next }));
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-3">
+        {DISPLAY_ID_KEYS.map((key) => (
+          <label key={key} className="space-y-1 text-sm">
+            {DISPLAY_ID_LABELS[key]}
+            <Input
+              maxLength={10}
+              value={display[key]}
+              onChange={(e) => patch({ [key]: e.target.value })}
+            />
+          </label>
+        ))}
+        <label className="space-y-1 text-sm">
+          반복 주기(시간, 0 = 반복 없음)
+          <Input
+            type="number"
+            min={0}
+            max={8760}
+            value={display.repeatHours}
+            onChange={(e) => patch({ repeatHours: Number(e.target.value) })}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          반복 종료 시각(비우면 계속)
+          <Input
+            type="datetime-local"
+            value={display.repeatUntil ? toLocalInput(display.repeatUntil) : ''}
+            onChange={(e) =>
+              patch({
+                repeatUntil: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : null,
+              })
+            }
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-4">
+        {DISPLAY_FLAG_KEYS.map((key) => (
+          <label key={key} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={display[key]}
+              onChange={(e) => patch({ [key]: e.target.checked })}
+            />
+            {DISPLAY_FLAG_LABELS[key]}
+          </label>
+        ))}
+      </div>
+      {variables?.map((v) => (
+        <label key={v.name} className="block space-y-1 text-sm">
+          {v.name} · {v.description}
+          <Input
+            maxLength={256}
+            value={display.variables[v.name] ?? ''}
+            onChange={(e) =>
+              setDisplay((prev) => ({
+                ...prev,
+                variables: { ...prev.variables, [v.name]: e.target.value },
+              }))
+            }
+          />
+        </label>
+      ))}
+    </>
+  );
+}
+
 /** 등록과 수정이 같은 화면이다 — 입력·검증·미리보기가 전부 같아 갈라두면 한쪽만 고쳐진다. */
 export default function TimeSaleFormTemplate({ generalId }: { generalId?: string }) {
   const router = useRouter();
   const isEdit = Boolean(generalId);
 
+  const settingsQuery = useQuery({
+    queryKey: ['time-sale-settings'],
+    queryFn: medusaTimeSaleSettingsApi.get,
+  });
+  const [display, setDisplay] = useState<SaleDisplay>(defaultSaleDisplay);
+  const [displayRestored, setDisplayRestored] = useState(false);
+  useEffect(() => {
+    if (generalId && settingsQuery.data && !displayRestored) {
+      setDisplay(
+        settingsQuery.data.settings.sales[generalId] ?? defaultSaleDisplay()
+      );
+      setDisplayRestored(true);
+    }
+  }, [generalId, settingsQuery.data, displayRestored]);
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
@@ -145,7 +276,14 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
       toast.error('멤버십 할인율은 1~99 사이여야 합니다.');
       return;
     }
-    setRows(applyPercentDiscount(mergedRows, value, resolvedMembershipPercent ?? value));
+    setRows(
+      applyPercentDiscount(
+        mergedRows,
+        value,
+        resolvedMembershipPercent ?? value,
+        settingsQuery.data?.settings.environment.rounding ?? 'round'
+      )
+    );
   };
 
   const isPending = createTimeSale.isPending || updateTimeSale.isPending;
@@ -168,6 +306,19 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
       return;
     }
 
+    const durationMs =
+      new Date(endsAt).getTime() - new Date(startsAt).getTime();
+    if (durationMs < 300000) {
+      saleToast('타임세일은 5분 이상이어야 합니다.', true);
+      return;
+    }
+    if (
+      display.repeatHours > 0 &&
+      display.repeatHours * 3600000 < durationMs + 600000
+    ) {
+      saleToast('반복 간격은 세일 기간보다 10분 이상 길어야 합니다.', true);
+      return;
+    }
     const period = {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: new Date(endsAt).toISOString(),
@@ -181,11 +332,17 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
           title: title.trim(),
           period,
           rows: mergedRows,
+          display,
         });
-        toast.success('타임세일이 수정되었습니다.');
+        saleToast('타임세일을 수정하였습니다.');
       } else {
-        await createTimeSale.mutateAsync({ title: title.trim(), period, rows: mergedRows });
-        toast.success('타임세일이 등록되었습니다.');
+        await createTimeSale.mutateAsync({
+          title: title.trim(),
+          period,
+          rows: mergedRows,
+          display,
+        });
+        saleToast('신규 타임세일을 생성하였습니다.');
       }
       router.push(TIME_SALE_LIST_PATH);
     } catch (error) {
@@ -207,6 +364,18 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     );
   }
 
+  if (isEdit && !loadingDetail && !detail) {
+    return (
+      <Container>
+        <p role="alert" className="p-8">
+          타임세일을 찾을 수 없습니다.{' '}
+          <Button onClick={() => router.push(TIME_SALE_LIST_PATH)}>
+            목록으로
+          </Button>
+        </p>
+      </Container>
+    );
+  }
   return (
     <Container>
       <Header
@@ -267,8 +436,15 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
           </div>
         </Section>
 
+        <Section step={2} title="노출 / 반복 / 회원 가격 설정">
+          <SaleDisplayFields
+            display={display}
+            setDisplay={setDisplay}
+            variables={settingsQuery.data?.settings.variables}
+          />
+        </Section>
         <Section
-          step={2}
+          step={3}
           title="대상 상품"
           description="이미 다른 세일에 걸린 상품은 고를 수 없습니다 — 같은 품목이 두 세일에 걸리면 한쪽 가격만 적용됩니다."
         >
@@ -288,7 +464,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
 
         {mergedRows.length > 0 && (
           <Section
-            step={3}
+            step={4}
             title="세일가"
             description="일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. 세일가를 비운 품목은 세일에서 빠집니다."
           >
@@ -338,6 +514,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
             <TimeSalePriceEditor
               rows={mergedRows}
               errorByVariant={errorByVariant}
+              rounding={settingsQuery.data?.settings.environment.rounding}
               membershipPercent={resolvedMembershipPercent}
               disabled={membershipPercentInvalid}
               onChange={setRows}

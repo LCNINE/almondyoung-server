@@ -16,6 +16,7 @@ export type TimeSaleList = {
   startsAt: string | null;
   endsAt: string | null;
   isMembershipOnly: boolean;
+  status: 'active' | 'draft';
 };
 
 export type ActiveTimeSale = {
@@ -30,6 +31,7 @@ export type ActiveTimeSale = {
 const TIME_SALE_LIST_COLUMNS = `
   pl.id,
   pl.title,
+  pl.status,
   pl.starts_at,
   pl.ends_at,
   exists (
@@ -88,6 +90,7 @@ type ListRow = {
   starts_at: Date | string | null;
   ends_at: Date | string | null;
   is_membership_only: boolean;
+  status: 'active' | 'draft';
 };
 
 type ProductRow = { id: string; handle: string; price_list_id: string };
@@ -104,6 +107,7 @@ const toLists = (rows: ListRow[]): TimeSaleList[] =>
     startsAt: toIso(row.starts_at),
     endsAt: toIso(row.ends_at),
     isMembershipOnly: row.is_membership_only,
+    status: row.status ?? 'active',
   }));
 
 /**
@@ -167,6 +171,7 @@ const saleTitle = (list: TimeSaleList): string =>
 const saleKey = (list: TimeSaleList): string => `${saleTitle(list)}\u0000${list.startsAt ?? ''}`;
 
 export type TimeSaleDetail = {
+  status: 'active' | 'draft';
   generalId: string | null;
   membershipId: string | null;
   title: string;
@@ -189,7 +194,7 @@ type PriceRow = {
 const ALL_SQL = `
   select ${TIME_SALE_LIST_COLUMNS}
   from price_list pl
-  where ${TIME_SALE_BASE_WHERE}
+  where ${TIME_SALE_BASE_WHERE.replace("and pl.status = 'active'", '')}
   order by pl.starts_at desc nulls last
 `;
 
@@ -250,6 +255,7 @@ export async function listAllTimeSales(container: MedusaContainer): Promise<Time
     }
 
     return {
+      status: face.status,
       generalId: general?.id ?? null,
       membershipId: membership?.id ?? null,
       title: saleTitle(face),

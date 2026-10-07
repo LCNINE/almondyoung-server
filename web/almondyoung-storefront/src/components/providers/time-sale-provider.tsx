@@ -1,15 +1,24 @@
 "use client"
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import {
+  defaultTimeSaleSettings,
+  type TimeSaleSettings,
+} from "@packages/domain-types/time-sale"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
 
 type TimeSaleContextValue = {
+  settings: TimeSaleSettings
   sales: TimeSale[]
   /** price list id → 그 리스트를 만든 세일. */
   byPriceListId: Map<string, TimeSale>
 }
 
-const EMPTY: TimeSaleContextValue = { sales: [], byPriceListId: new Map() }
+const EMPTY: TimeSaleContextValue = {
+  settings: defaultTimeSaleSettings(),
+  sales: [],
+  byPriceListId: new Map(),
+}
 
 const TimeSaleContext = createContext<TimeSaleContextValue>(EMPTY)
 
@@ -26,19 +35,22 @@ const TimeSaleContext = createContext<TimeSaleContextValue>(EMPTY)
  */
 export function TimeSaleProvider({
   sales,
+  settings = EMPTY.settings,
   children,
 }: {
   sales: TimeSale[]
+  settings?: TimeSaleSettings
   children: ReactNode
 }) {
   const value = useMemo(
     () => ({
       sales,
+      settings,
       byPriceListId: new Map(
         sales.flatMap((sale) => sale.priceListIds.map((id) => [id, sale] as const))
       ),
     }),
-    [sales]
+    [sales, settings]
   )
 
   return <TimeSaleContext.Provider value={value}>{children}</TimeSaleContext.Provider>

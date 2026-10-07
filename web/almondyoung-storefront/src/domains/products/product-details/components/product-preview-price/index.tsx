@@ -1,9 +1,13 @@
 "use client"
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import { TimeSaleBadge } from "@/components/shared/badges/time-sale-badge"
-import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
-import { useTimeSaleForVariant } from "@/components/providers/time-sale-provider"
+import sanitizeHtml from "sanitize-html"
+import { SaleRenderer } from "@packages/time-sale-ui"
+import {
+  useTimeSale,
+  useTimeSaleForProduct,
+  useTimeSaleForVariant,
+} from "@/components/providers/time-sale-provider"
 import {
   getPricesForVariant,
   getProductPrice,
@@ -23,14 +27,36 @@ interface Props {
 
 export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const t = useTranslations("productDetail.price")
-  const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })
   // 세일이 여럿이라 전역 종료 시각이 없다 — 이 품목의 가격을 만든 세일의 것을 쓴다.
-  const timeSale = useTimeSaleForVariant(cheapestVariant)
-  const isTimeSale = timeSale !== null
-  const endsAt = timeSale?.endsAt ?? null
+  const variantSale = useTimeSaleForVariant(cheapestVariant)
+  const productSale = useTimeSaleForProduct(product.id)
+  const { settings } = useTimeSale()
+  const timeSale = variantSale ?? productSale
 
-  if (!cheapestPrice) return null
+  const salePresentation = timeSale?.endsAt ? (
+    <SaleRenderer
+      settings={settings}
+      surface="detail"
+      saleId={timeSale.priceListIds[0]}
+      title={timeSale.title}
+      startsAt={timeSale.startsAt ?? new Date().toISOString()}
+      endsAt={timeSale.endsAt}
+      products={[]}
+      sanitizeHtml={sanitizeHtml}
+    />
+  ) : null
+  if (!cheapestPrice) {
+    if (!product.metadata?.timeSalePriceHidden) return null
+    return (
+      <div>
+        {salePresentation}
+        <p className="text-muted-foreground py-3 text-sm">
+          멤버십 회원에게 가격을 공개합니다.
+        </p>
+      </div>
+    )
+  }
 
   // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
   const isMembershipOnly = getIsMembershipOnly(product)
@@ -91,20 +117,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   return (
     <div className="flex flex-col gap-1.5 pt-0 pb-2">
-      {isTimeSale && endsAt && (
-        <div className="flex items-baseline gap-2">
-          <TimeSaleBadge className="self-center" />
-          <span className="text-muted-foreground text-[12px]">
-            {tSale("countdownLabel")}
-          </span>
-          <TimeSaleCountdown
-            endsAt={endsAt}
-            compact
-            refreshOnEnd
-            className="text-primary text-[17px] leading-none font-bold tabular-nums"
-          />
-        </div>
-      )}
+      {salePresentation}
 
       {/* 원래 가격 (취소선) */}
       {showOriginalPrice && (

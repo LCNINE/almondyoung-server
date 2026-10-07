@@ -166,16 +166,19 @@ export function findVariantConflicts<T extends { variantIds: string[] }>(
 export function applyPercentDiscount(
   rows: TimeSaleRow[],
   percent: number,
-  membershipPercent: number = percent
+  membershipPercent: number = percent,
+  rounding: 'round' | 'ceil' | 'floor' = 'round'
 ): TimeSaleRow[] {
   const rate = 1 - percent / 100;
   const membershipRate = 1 - membershipPercent / 100;
 
   return rows.map((row) => ({
     ...row,
-    generalSalePrice: Math.round(row.basePrice * rate),
+    generalSalePrice: Math[rounding](row.basePrice * rate),
     membershipSalePrice:
-      row.membershipBasePrice === null ? null : Math.round(row.membershipBasePrice * membershipRate),
+      row.membershipBasePrice === null
+        ? null
+        : Math[rounding](row.membershipBasePrice * membershipRate),
   }));
 }
 

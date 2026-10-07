@@ -167,7 +167,43 @@ export const applyMembershipPriceVisibility = (product: MembershipProduct, isMem
  * 멤버십가 표시 정책과 멤버십 회원 전용 노출 정책을 적용한다.
  * 표준 /store/products response filtering은 count mismatch가 있을 수 있다.
  */
-export const transformStoreProductsPayload = (payload: unknown, isMember: boolean): unknown => {
+export const hideTimeSalePrices = (
+  product: MembershipProduct,
+  isMember: boolean,
+  privateIds: Set<string>,
+): MembershipProduct => {
+  if (isMember || !product.id || !privateIds.has(product.id)) return product;
+  const clean = (entry: Record<string, unknown>) => {
+    const result = { ...entry };
+    for (const key of [
+      'prices',
+      'calculated_price',
+      'price',
+      'original_price',
+      'membership_price',
+      'calculated_price_incl_tax',
+      'original_price_incl_tax',
+      'calculated_amount',
+      'original_amount',
+    ])
+      delete result[key];
+    return result;
+  };
+  return {
+    ...clean(product),
+    metadata: { ...product.metadata, timeSalePriceHidden: true },
+    variants: product.variants?.map((variant) => ({
+      ...clean(variant),
+      ...(variant.metadata ? { metadata: sanitizeMembershipPriceMetadata(variant.metadata) } : {}),
+    })),
+  };
+};
+
+export const transformStoreProductsPayload = (
+  payload: unknown,
+  isMember: boolean,
+  privateIds = new Set<string>(),
+): unknown => {
   if (!isRecord(payload)) {
     return payload;
   }
@@ -179,14 +215,19 @@ export const transformStoreProductsPayload = (payload: unknown, isMember: boolea
     const products = payload.products.filter((item): item is MembershipProduct => isRecord(item));
     next.products = filterProductsForMemberState(products, isMember)
       .map((item) => applyMembershipPriceVisibility(item, isMember))
-      .map((item) => applyPurchaseGateForNonMember(item, isMember));
+      .map((item) => applyPurchaseGateForNonMember(item, isMember))
+      .map((item) => hideTimeSalePrices(item, isMember, privateIds));
   }
 
   if (isRecord(payload.product)) {
     next = next ?? { ...payload };
-    next.product = applyPurchaseGateForNonMember(
-      applyMembershipPriceVisibility(payload.product as MembershipProduct, isMember),
+    next.product = hideTimeSalePrices(
+      applyPurchaseGateForNonMember(
+        applyMembershipPriceVisibility(payload.product as MembershipProduct, isMember),
+        isMember,
+      ),
       isMember,
+      privateIds,
     );
   }
 

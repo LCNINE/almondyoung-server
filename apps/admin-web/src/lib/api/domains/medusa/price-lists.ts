@@ -36,7 +36,7 @@ export interface CreatePriceListPayload {
   title: string;
   description: string;
   type: 'sale';
-  status: 'active';
+  status: 'active' | 'draft';
   starts_at: string;
   ends_at: string;
   rules: Record<string, string[]>;

@@ -41,6 +41,7 @@ export function TimeSalePriceEditor({
   rows,
   errorByVariant,
   membershipPercent,
+  rounding = 'round',
   disabled,
   onChange,
 }: {
@@ -48,6 +49,7 @@ export function TimeSalePriceEditor({
   errorByVariant: Map<string, string>;
   /** null 이면 상품 줄에 적은 할인율을 멤버십가에도 그대로 쓴다. */
   membershipPercent: number | null;
+  rounding?: 'round' | 'ceil' | 'floor';
   /** 멤버십 할인율 입력이 틀렸을 때. 이때 적용을 허용하면 그 값이 일반 할인율로 대체돼
    * 조용히 저장된다 — 값이 그럴듯해서 검증에도 안 걸린다. */
   disabled?: boolean;
@@ -78,7 +80,8 @@ export function TimeSalePriceEditor({
       applyPercentDiscount(
         group.rows,
         percent,
-        membershipPercent ?? percent
+        membershipPercent ?? percent,
+        rounding
       ).map((row) => [row.variantId, row])
     );
     onChange(rows.map((row) => discounted.get(row.variantId) ?? row));
