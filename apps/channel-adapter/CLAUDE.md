@@ -12,6 +12,8 @@
 - **Medusa 주문 수집 → WMS 전달** — Medusa 주문을 폴링하여 `orders.events.v1`으로 발행 (WMS가 구독)
 - **채널 간 데이터 형식 변환** — 채널별 API 응답을 `InternalOrderEvent` 등 내부 표준 모델로 정규화
 - **주문 수집 실패 격리** — 라인을 판매상품 variant 로 식별하지 못한 주문을 `order_collection_failures` 에 격리하고, 매핑을 고친 뒤 replay 한다 (구 `pending_orders` 계류는 제거됨)
+  - 주문 하나의 처리 실패(조회·번역·`enqueue_order`·`enqueue_lifecycle`)도 그 주문만 `order_collection_processing_failed` 로 격리하고 채널 폴링은 계속한다 (#1016 1번 행). 채널 주기 끝에 한 번씩 자동 재시도하며 상한은 4회(최초 1 + 재시도 3), 수동 replay 는 상한을 보지 않는다
+  - 정체 보드 0단계와 사이드바 배지는 **사람 몫**만 센다 — 식별 실패 등 다른 사유 전부 + 재시도를 다 쓴 처리 실패. 재시도 중인 행은 안 보인다
 
 ### 책임지지 않는 것
 - 주문 이행/재고 관리 → **WMS**
@@ -29,7 +31,7 @@
 | Cafe24 회원 매핑 | `cafe24_member_mappings` | cafe24MemberId ↔ userId/email 매핑 |
 | 이벤트 처리 상태 | `inbox_events`, `processed_events` | 멱등성 보장 + 비동기 처리 상태 |
 | 동기화 상태 | `sync_statuses` | 채널별 수집 워터마크와 폴링 통계. **`last_sync_at` 은 하트비트가 아니다** — 폴링에서 항목을 처리했을 때만 갱신된다. 살아있는지는 `updated_at` 으로 본다 |
-| 수집 실패 격리 | `order_collection_failures` | 식별 실패/사후 변경을 `(channel, externalOrderId, reason)` 당 1행으로 보관 |
+| 수집 실패 격리 | `order_collection_failures` | 식별 실패/사후 변경/처리 실패(`order_collection_processing_failed`, `attempt_count` 누적)를 `(channel, externalOrderId, reason)` 당 1행으로 보관 |
 
 > 채널 어댑터는 **매핑 테이블의 주인**이다. 원본 데이터(상품, 주문, 회원)의 SoT는 각 도메인 서비스에 있다.
 
@@ -86,6 +88,7 @@ OrderPollerOrchestrator (@Cron 5분)
 - **legacy `/adapter/poll` 경로는 제거됐다.** 수집 경로는 이 orchestrator 뿐이다.
 - 증분 수집은 `sync_statuses.lastSyncAt` 에서 2분을 되감아 조회한다. 중복은 `wms_order_mappings`와 change hash로 흡수하고, `updated_at` 경계 주문 누락을 피하는 것이 우선이다.
 - 수집된 주문의 해시가 바뀌면 `OrderModified`(전체 스냅샷)를 보낸다. 반영·대기 판정은 core 가 한다(#1016 5번 행, `docs/superpowers/specs/2026-10-05-channel-order-change-sync-design.md`). 기존 `collected_order_modification_not_accepted` 행은 남고 replay 는 계속 거부된다. CS 주문 정정/추가출고는 별도 Core workflow 에서 다룬다.
+- 한 주문의 실패가 채널을 멈추지 않는다 — 실패 주문만 처리 실패로 격리하고 워터마크는 그 주문 너머로 민다(성공 0건인 주기만 error 로그). 즉시 끌어오기와 처리 실패의 자동 재시도·수동 replay 는 `processSyncFetch` 한 처리부로 주문과 그 lifecycle 을 함께 되살린다. 식별 실패 replay 는 자기 갈래를 유지하되 syncable provider 면 lifecycle 도 낸다 — 워터마크가 이미 지나간 주문의 취소·환불을 잃지 않으려는 것이다. 설계는 `docs/superpowers/specs/2026-10-07-order-poll-per-order-isolation-design.md`.
 - 주문 하나를 지금 다시 끌어오는 입구: `POST /adapter/orders/:channel/:externalOrderId/sync`(내부 키, 본문 `{ force?: boolean }`). 폴링과 같은 `processOrderItem` + lifecycle 을 타고 워터마크는 건드리지 않는다. `force` 는 해시가 같아도 `OrderModified` 를 낸다(백필 전용). 지원 `medusa`·`naver`, 비활성 채널은 409.
 - core 는 이 앱을 직접 부르지 않는다. 채널 쪽 일을 원하면 `channel-orders.commands.v1` 에 명령을 낸다 — `ResyncChannelOrder`(#1016 6번 행), `CancelChannelOrder`(35번 행: 채널에 취소·부분취소를 요청하고 결과는 재수집 또는 `ChannelOrderCancelRejected`/`Stalled` 로 돌려준다, `services/order-cancel/`). 소비자는 `consumers/channel-orders-command.consumer.ts`.
 
