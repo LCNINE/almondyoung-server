@@ -1,6 +1,7 @@
+import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { inRollbackTx, makeDb, wireLogistics } from '../../fulfillment/services/__support__';
+import { inRollbackTx, makeDb, seedHolder, seedSku, wireLogistics } from '../../fulfillment/services/__support__';
 import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
@@ -132,7 +133,65 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
       expect(full.leavesNothing).toBe(true);
       await expect(
         w.salesOrders.planCancellation(seed.salesOrderId, [{ salesOrderLineId: seed.lineIds[1], quantity: 5 }], tx),
-      ).rejects.toThrow('exceeds remaining');
+      ).rejects.toThrow('취소 수량(5개)이 취소 가능 수량(1개)을 초과합니다.');
+    });
+  });
+
+  it('박스 이력 없음 — 이미 전체 취소된 주문의 부분 요청은 cancelPartial 과 같은 400', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: false });
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled' })
+        .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      await expect(
+        w.salesOrders.planCancellation(seed.salesOrderId, [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], tx),
+      ).rejects.toThrow('이미 전체 취소된 주문입니다.');
+    });
+  });
+
+  it('박스 이력 없음 — 전체 요청인데 출고 수량이 있는 FO 항목이 있으면 cancel 과 같은 400', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: false });
+      const { holderId } = await seedHolder(tx);
+      const { skuId } = await seedSku(tx, holderId);
+      const [fo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: seed.salesOrderId, warehouseId: seed.warehouseId, status: 'created' })
+        .returning();
+      await tx.insert(wmsTables.fulfillmentOrderItems).values({
+        fulfillmentOrderId: fo.id,
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: seed.lineIds[0],
+        skuId,
+        qty: 2,
+        shippedQty: 1,
+      });
+      await expect(w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx)).rejects.toThrow(
+        '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
+      );
+    });
+  });
+
+  it('V2 전체 — 디지털 줄(박스 없음)이 있어도 나간 게 없으면 leavesNothing', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await tx.insert(wmsTables.salesOrderLines).values({
+        salesOrderId: seed.salesOrderId,
+        variantId: randomUUID(),
+        productName: 'digital',
+        quantity: 1,
+        unitPrice: 1000,
+        fulfillmentKind: 'digital',
+        requiresShipping: false,
+      });
+      const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
+      expect(plan.lines).toHaveLength(2);
+      expect(plan.hasShippedQuantity).toBe(false);
+      expect(plan.leavesNothing).toBe(true);
     });
   });
 });

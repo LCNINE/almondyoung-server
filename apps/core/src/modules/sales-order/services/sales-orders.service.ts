@@ -161,6 +161,14 @@ const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
   'items',
   'lines',
 ];
+// 취소 거절 문구 — `cancel`·`cancelPartial` 과 `planCancellation`(요청 때 판정)이 같은 문구를 쓰게 한 곳에 둔다.
+const CANCEL_MSG_ALREADY_CANCELLED = '이미 전체 취소된 주문입니다.';
+const CANCEL_MSG_FULL_CANCELLATION_EXISTS = '이미 전체 취소 처리된 주문입니다.';
+const CANCEL_MSG_SHIPPED_FULFILLMENT =
+  '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
+const CANCEL_MSG_SHIPPED_ITEMS = '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
+const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
+  `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const ORDER_CANCELLATION_REF_TYPE = 'order_cancellation';
 const SALES_ORDER_AMENDMENT_REF_TYPE = 'sales_order_amendment';
@@ -553,9 +561,7 @@ export class SalesOrdersService {
         (fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null,
       );
       if (hasShippedFulfillment) {
-        throw new BadRequestException(
-          '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
-        );
+        throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
       }
 
       if (fulfillmentOrders.length > 0) {
@@ -571,9 +577,7 @@ export class SalesOrdersService {
           )
           .limit(1);
         if (shippedItems.length > 0) {
-          throw new BadRequestException(
-            '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
-          );
+          throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
         }
       }
 
@@ -1391,7 +1395,7 @@ export class SalesOrdersService {
     trx: DbTx,
   ) {
     if (salesOrder.status === 'cancelled') {
-      throw new BadRequestException('이미 전체 취소된 주문입니다.');
+      throw new BadRequestException(CANCEL_MSG_ALREADY_CANCELLED);
     }
 
     const [fullCancellation] = await trx
@@ -1405,7 +1409,7 @@ export class SalesOrdersService {
       )
       .limit(1);
     if (fullCancellation) {
-      throw new BadRequestException('이미 전체 취소 처리된 주문입니다.');
+      throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
     }
 
     const requestedLines = this.normalizePartialCancellationLines(options.lines);
@@ -1425,9 +1429,7 @@ export class SalesOrdersService {
       }
       const remainingQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
       if (request.quantity > remainingQuantity) {
-        throw new BadRequestException(
-          `취소 수량(${request.quantity}개)이 취소 가능 수량(${remainingQuantity}개)을 초과합니다.`,
-        );
+        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remainingQuantity));
       }
     }
 
@@ -1627,7 +1629,6 @@ export class SalesOrdersService {
     isFullCancel: boolean,
     tx: DbTx,
   ): Promise<V2OutstandingPlan> {
-
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
@@ -1989,7 +1990,6 @@ export class SalesOrdersService {
     return [...byLineId.entries()].map(([salesOrderLineId, quantity]) => ({ salesOrderLineId, quantity }));
   }
 
-  /** 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다. */
   /**
    * 취소 «계획» — 부작용 없이 지금 취소가 받는 범위를 판정한다(#1016 35번, 스펙 §5.2). 채널 주문 취소 요청이
    * 요청 때 이것만 부르고, 적용은 확정 때 `cancel` 이 한다. 거절은 `cancel` 과 같은 예외·같은 문구다.
@@ -2008,10 +2008,14 @@ export class SalesOrdersService {
     if (await this.hasV2FulfillmentHistory(salesOrderId, tx)) {
       const plan = await this.planV2Outstanding(salesOrderId, options, isFullCancel, tx);
       const requested = plan.requestedSalesLines.filter((line) => line.quantity > 0);
+      const hasShippedQuantity = plan.fulfillmentItems.some((item) => item.shippedQty > 0);
       return {
         lines: requested,
-        hasShippedQuantity: plan.fulfillmentItems.some((item) => item.shippedQty > 0),
-        leavesNothing: this.leavesNothing(plan.salesOrderLines, plan.prior, requested),
+        hasShippedQuantity,
+        // 전체 요청은 디지털 줄(계획에서 건너뜀)이 있어도 «나간 것만 빼고 전부»다 — 줄 합산으로 보면 틀린다.
+        leavesNothing: isFullCancel
+          ? !hasShippedQuantity
+          : this.leavesNothing(plan.salesOrderLines, plan.prior, requested),
       };
     }
     const [salesOrder] = await tx
@@ -2025,6 +2029,16 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
     const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
+    const [fullCancellation] = await tx
+      .select({ id: wmsTables.salesOrderCancellations.id })
+      .from(wmsTables.salesOrderCancellations)
+      .where(
+        and(
+          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+          eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+        ),
+      )
+      .limit(1);
     const remainingOf = (line: { id: string; quantity: number }) =>
       line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
     if (!lines) {
@@ -2039,8 +2053,35 @@ export class SalesOrdersService {
       if (requested.length === 0) {
         throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
       }
+      // `cancel` 의 전체 취소 경로와 같은 출고 증거 거절(박스 이력은 없지만 FO 가 나갔을 수 있다).
+      const fulfillmentOrders = await tx
+        .select()
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
+      if (fulfillmentOrders.some((fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null)) {
+        throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
+      }
+      if (fulfillmentOrders.length > 0) {
+        const shippedItems = await tx
+          .select({ id: wmsTables.fulfillmentOrderItems.id })
+          .from(wmsTables.fulfillmentOrderItems)
+          .where(
+            and(
+              inArray(
+                wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+                fulfillmentOrders.map((fo) => fo.id),
+              ),
+              sql`${wmsTables.fulfillmentOrderItems.shippedQty} > 0`,
+            ),
+          )
+          .limit(1);
+        if (shippedItems.length > 0) throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
+      }
       return { lines: requested, hasShippedQuantity: false, leavesNothing: true };
     }
+    // `cancelPartial` 과 같은 거절 순서·문구.
+    if (salesOrder.status === 'cancelled') throw new BadRequestException(CANCEL_MSG_ALREADY_CANCELLED);
+    if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
     const requested = this.normalizePartialCancellationLines(lines);
     const byId = new Map(salesOrderLines.map((line) => [line.id, line]));
     for (const request of requested) {
@@ -2050,7 +2091,7 @@ export class SalesOrdersService {
       }
       const remaining = remainingOf(line);
       if (request.quantity > remaining) {
-        throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${remaining}`);
+        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remaining));
       }
     }
     return {
@@ -2072,6 +2113,7 @@ export class SalesOrdersService {
     );
   }
 
+  /** 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다. */
   async getCancelledQuantityByLine(salesOrderId: string, tx: DbTx): Promise<Map<string, number>> {
     return (await this.loadPriorPartialCancellationContext(salesOrderId, tx)).cancelledByLine;
   }
