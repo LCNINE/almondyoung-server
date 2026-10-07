@@ -111,4 +111,31 @@ describe('FulfillmentOrderCreationBacklogService', () => {
     ).resolves.toBeUndefined();
     await expect(service.claimPending()).resolves.toEqual([]);
   });
+
+  it('requeueAwaitingMatching 은 그 주문의 awaiting_matching 행만 pending 으로 되돌린다 (CAS)', async () => {
+    const { service, tx, updates } = makeService();
+
+    const n = await service.requeueAwaitingMatching('so-1', tx);
+
+    expect(n).toBe(1);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].set).toMatchObject({
+      status: 'pending',
+      waitingVariantIds: [],
+      failureReason: null,
+      failureDetails: null,
+      lockedAt: null,
+    });
+    const whereSql = normalizeSql(updates[0].where);
+    expect(whereSql).toMatch(/"sales_order_id" = \$1/);
+    expect(whereSql).toMatch(/"status" = \$2/);
+  });
+
+  it('requeueAwaitingMatching 은 정비 모드면 아무것도 하지 않는다', async () => {
+    const { service, tx, updates, workflowGate } = makeService();
+    workflowGate.shouldRunFoCreation.mockReturnValue(false);
+
+    expect(await service.requeueAwaitingMatching('so-1', tx)).toBe(0);
+    expect(updates).toHaveLength(0);
+  });
 });
