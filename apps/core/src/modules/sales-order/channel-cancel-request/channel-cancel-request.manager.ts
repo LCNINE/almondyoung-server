@@ -74,7 +74,11 @@ export class ChannelCancelRequestManager {
       await this.lockOpenShipments(so.id, trx);
       const plan = await this.salesOrders.planCancellation(so.id, input.lines, trx);
       const convertedFromFull = !input.lines && plan.hasShippedQuantity && input.requester.kind === 'operator';
-      const scope: 'full' | 'partial' = convertedFromFull ? 'partial' : !input.lines || plan.leavesNothing ? 'full' : 'partial';
+      const scope: 'full' | 'partial' = convertedFromFull
+        ? 'partial'
+        : !input.lines || plan.leavesNothing
+          ? 'full'
+          : 'partial';
 
       const channelItems = await this.channelItemIds(so.id, trx);
       const lines: CancelRequestLine[] = plan.lines.map((line) => ({
@@ -89,7 +93,9 @@ export class ChannelCancelRequestManager {
         if (line.channelOrderItemId) {
           channelLines.push({ channelOrderItemId: line.channelOrderItemId, quantity: line.quantity });
         } else if (scope === 'partial') {
-          throw new BadRequestError(`채널 줄 번호가 없는 줄은 채널에 취소를 요청할 수 없습니다: ${line.salesOrderLineId}`);
+          throw new BadRequestError(
+            `채널 줄 번호가 없는 줄은 채널에 취소를 요청할 수 없습니다: ${line.salesOrderLineId}`,
+          );
         }
       }
 
@@ -100,9 +106,7 @@ export class ChannelCancelRequestManager {
         salesChannel: so.salesChannel,
         externalOrderId: so.channelOrderId,
         scope,
-        ...(scope === 'partial'
-          ? { lines: channelLines }
-          : {}),
+        ...(scope === 'partial' ? { lines: channelLines } : {}),
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
         requestedAt: requestedAt.toISOString(),
@@ -174,7 +178,12 @@ export class ChannelCancelRequestManager {
     await trx
       .select({ id: wmsTables.shipments.id })
       .from(wmsTables.shipments)
-      .where(and(inArray(wmsTables.shipments.id, shipmentIds), inArray(wmsTables.shipments.status, [...OPEN_SHIPMENT_STATUSES])))
+      .where(
+        and(
+          inArray(wmsTables.shipments.id, shipmentIds),
+          inArray(wmsTables.shipments.status, [...OPEN_SHIPMENT_STATUSES]),
+        ),
+      )
       .orderBy(asc(wmsTables.shipments.id))
       .for('update');
   }

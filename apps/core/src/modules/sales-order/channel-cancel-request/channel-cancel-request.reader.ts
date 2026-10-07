@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbService } from '@app/db';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
@@ -15,7 +16,13 @@ export class ChannelCancelRequestReader {
     const [row] = await tx
       .select()
       .from(t)
-      .where(and(eq(t.salesOrderId, salesOrderId), isCancelRequest, sql`${t.metadata}->'request'->>'sourceKey' = ${sourceKey}`))
+      .where(
+        and(
+          eq(t.salesOrderId, salesOrderId),
+          isCancelRequest,
+          sql`${t.metadata}->'request'->>'sourceKey' = ${sourceKey}`,
+        ),
+      )
       .limit(1);
     return row ?? null;
   }
@@ -32,12 +39,15 @@ export class ChannelCancelRequestReader {
   /** 사실의 requestId 는 밖에서 온 값이다 — uuid 가 아니면 조회하지 않는다(uuid 캐스트 오류로 DLQ 에 가지 않게). */
   async findById(id: string, tx: DbTx, opts: { lock?: boolean } = {}): Promise<AmendmentRow | null> {
     if (!UUID.test(id)) return null;
-    const base = tx.select().from(t).where(and(eq(t.id, id), isCancelRequest));
+    const base = tx
+      .select()
+      .from(t)
+      .where(and(eq(t.id, id), isCancelRequest));
     const [row] = opts.lock ? await base.limit(1).for('update') : await base.limit(1);
     return row ?? null;
   }
 
-  async latestFor(salesOrderId: string, tx: DbTx): Promise<AmendmentRow | null> {
+  async latestFor(salesOrderId: string, tx: DbTx | DbService<typeof wmsSchema>['db']): Promise<AmendmentRow | null> {
     const [row] = await tx
       .select()
       .from(t)

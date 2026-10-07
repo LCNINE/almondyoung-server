@@ -39,7 +39,10 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
-      const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const view = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       expect(view).toMatchObject({ status: 'requested', scope: 'full', stage: null, convertedFromFull: false });
 
       const [row] = await requestsOf(tx, seed.salesOrderId);
@@ -76,8 +79,14 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
-      const first = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
-      const again = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const first = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      const again = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       expect(again.id).toBe(first.id);
       expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(1);
       expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(1);
@@ -88,7 +97,10 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
-      const first = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const first = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       const other = await w.manager.request(
         { salesOrderId: seed.salesOrderId, requester: { kind: 'customer', customerId: randomUUID() }, sourceKey: 'k2' },
         tx,
@@ -98,16 +110,44 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('요청 뒤 주문이 취소돼도 같은 키 재전송은 저장된 그 행 — 상태 가드가 재전송을 막지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const first = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled' })
+        .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      const replay = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      expect(replay).toEqual(first);
+      expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(1);
+      expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(1);
+    });
+  });
+
   it('닫힌 요청의 키로 다시 오면 그 행(새 요청을 만들지 않는다)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
-      const first = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const first = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       await tx
         .update(wmsTables.salesOrderAmendments)
         .set({ status: 'rejected' })
         .where(eq(wmsTables.salesOrderAmendments.id, first.id));
-      const replay = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const replay = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       expect(replay).toMatchObject({ id: first.id, status: 'rejected' });
       expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(1);
     });
@@ -118,7 +158,12 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       const view = await w.manager.request(
-        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], requester: OPERATOR, sourceKey: 'k1' },
+        {
+          salesOrderId: seed.salesOrderId,
+          lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+          requester: OPERATOR,
+          sourceKey: 'k1',
+        },
         tx,
       );
       expect(view.scope).toBe('partial');
@@ -155,10 +200,16 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       await markLineShipped(tx, seed.lineIds[0], 2);
-      const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const view = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
       expect(view).toMatchObject({ scope: 'partial', convertedFromFull: true });
       const [command] = await commandsOf(tx, seed.externalOrderId);
-      expect(command.payload.payload).toMatchObject({ scope: 'partial', lines: [{ channelOrderItemId: seed.lines[1].item, quantity: 1 }] });
+      expect(command.payload.payload).toMatchObject({
+        scope: 'partial',
+        lines: [{ channelOrderItemId: seed.lines[1].item, quantity: 1 }],
+      });
     });
   });
 
@@ -196,7 +247,12 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       const seed = await seedChannelOrder(tx, w, { withFo: true, noChannelItemIds: true });
       await expect(
         w.manager.request(
-          { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], requester: OPERATOR, sourceKey: 'k1' },
+          {
+            salesOrderId: seed.salesOrderId,
+            lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+            requester: OPERATOR,
+            sourceKey: 'k1',
+          },
           tx,
         ),
       ).rejects.toBeInstanceOf(BadRequestError);
@@ -207,7 +263,10 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: false });
-      await tx.update(wmsTables.salesOrders).set({ status: 'cancelled' }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled' })
+        .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
       await expect(
         w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx),
       ).rejects.toThrow('이미 취소된 주문입니다.');

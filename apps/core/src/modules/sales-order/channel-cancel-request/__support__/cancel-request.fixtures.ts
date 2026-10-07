@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
-import { CHANNEL_ORDERS_COMMAND_STREAM, CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import {
+  CHANNEL_ORDERS_COMMAND_STREAM,
+  CORE_ORDER_STREAM,
+  FULFILLMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import {
@@ -18,7 +22,13 @@ import { SalesOrdersService } from '../../services/sales-orders.service';
 import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
 
-export const ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '서울', detailAddress: '101' };
+export const ADDRESS = {
+  recipientName: '김',
+  phone: '010-1',
+  postalCode: '12345',
+  roadAddress: '서울',
+  detailAddress: '101',
+};
 
 /** 판매주문(채널 라인 2개 — 수량 2·1) → 선택적으로 FO(→ draft 박스). channel-order-change 스펙의 seedOrder 와 같은 모양. */
 export async function seedChannelOrder(
@@ -71,7 +81,11 @@ export type SeededOrder = Awaited<ReturnType<typeof seedChannelOrder>>;
 /** 수집된 변경. 기본은 «아무것도 안 바뀜». */
 export function modifiedPayload(
   seed: SeededOrder,
-  over: { quantities?: number[]; cancelRequests?: OrderModifiedPayload['snapshot']['cancelRequests']; address?: typeof ADDRESS } = {},
+  over: {
+    quantities?: number[];
+    cancelRequests?: OrderModifiedPayload['snapshot']['cancelRequests'];
+    address?: typeof ADDRESS;
+  } = {},
 ): OrderModifiedPayload {
   return {
     orderId: randomUUID(),

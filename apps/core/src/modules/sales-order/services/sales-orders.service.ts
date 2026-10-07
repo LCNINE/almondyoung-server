@@ -49,7 +49,8 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { kstDayStart, kstDayEndInclusive, kstTodayRange } from '../utils/kst-date.util';
 import { extractDisplayOrderNo } from '../utils/display-order-no.util';
-import { CHANNEL_CANCEL_REQUEST_REASON, toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
+import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
+import { toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
@@ -763,17 +764,8 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
-    const [cancelRequestRow] = await db
-      .select()
-      .from(wmsTables.salesOrderAmendments)
-      .where(
-        and(
-          eq(wmsTables.salesOrderAmendments.salesOrderId, id),
-          eq(wmsTables.salesOrderAmendments.reasonCode, CHANNEL_CANCEL_REQUEST_REASON),
-        ),
-      )
-      .orderBy(desc(wmsTables.salesOrderAmendments.createdAt), desc(wmsTables.salesOrderAmendments.id))
-      .limit(1);
+    // 리더는 상태가 없다 — 생성자에 넣으면 이 서비스를 위치 인자로 만드는 통합 스펙이 깨진다
+    const cancelRequestRow = await new ChannelCancelRequestReader().latestFor(id, db);
     return {
       ...order,
       lines,

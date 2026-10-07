@@ -75,7 +75,12 @@ export interface CancelRequestView {
   convertedFromFull: boolean;
   requestedAt: string;
   rejection: { reasonCode: string; message: string; at: string } | null;
-  outcome: { refundAmount: number; shippingCharge: number; shippingRefund: number; shippingNotAdjusted: boolean } | null;
+  outcome: {
+    refundAmount: number;
+    shippingCharge: number;
+    shippingRefund: number;
+    shippingNotAdjusted: boolean;
+  } | null;
 }
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
@@ -86,7 +91,9 @@ function isViewStatus(value: string): value is CancelRequestStatus {
   return VIEW_STATUSES.has(value);
 }
 
-export function toCancelRequestView(row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'>): CancelRequestView {
+export function toCancelRequestView(
+  row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'>,
+): CancelRequestView {
   if (!isViewStatus(row.status)) throw new Error(`Cancel request ${row.id} has status ${row.status}`);
   const meta = readCancelRequestMetadata(row.metadata);
   return {
