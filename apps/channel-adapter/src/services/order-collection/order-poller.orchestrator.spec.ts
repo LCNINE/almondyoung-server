@@ -1405,6 +1405,38 @@ describe('OrderPollerOrchestrator — 주문 단위 격리 (#1016 1번 행)', ()
     errorSpy.mockRestore();
   });
 
+  it('주기의 항목이 전부 처리에 실패하면 채널과 건수를 error 로 한 번 남긴다 — 계약 배포 사고가 warn 에 묻히지 않게', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const outbox = outboxFailingWhen(() => true);
+    const { orchestrator } = setup(
+      { orders: [order('A', '00'), order('B', '01')], failures: [], lifecycleEvents: [] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    const wholeCycleLogs = errorSpy.mock.calls.filter(([message]) => String(message).includes('전부'));
+    expect(wholeCycleLogs).toHaveLength(1);
+    expect(String(wholeCycleLogs[0][0])).toContain('[medusa]');
+    expect(String(wholeCycleLogs[0][0])).toContain('2건');
+    errorSpy.mockRestore();
+  });
+
+  it('하나라도 성공한 주기에는 그 error 로그를 남기지 않는다', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'A');
+    const { orchestrator } = setup(
+      { orders: [order('A', '00'), order('C', '01')], failures: [], lifecycleEvents: [] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueued).toEqual(['C:OrderCreated']);
+    expect(errorSpy.mock.calls.filter(([message]) => String(message).includes('전부'))).toHaveLength(0);
+    errorSpy.mockRestore();
+  });
+
   it('네이버 +09:00 시각처럼 계약을 못 통과하는 주문만 격리된다 — 실제 OrderCreated 스키마로 (2번 행 재현)', async () => {
     const schema = ORDER_STREAM.events.OrderCreated.schema;
     if (!schema) throw new Error('OrderCreated 계약 스키마가 없다');

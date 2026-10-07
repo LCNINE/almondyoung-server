@@ -173,6 +173,8 @@ export class OrderPollerOrchestrator {
         const skippedExternalOrderIds: string[] = [];
         let lifecycleRecorded = 0;
         let processingFailed = 0;
+        // 처리 실패 없이 결과에 닿은 항목 수(주문·lifecycle·식별 격리). 0 인데 실패가 있으면 주기 전체가 실패한 것이다.
+        let itemsHandled = 0;
         // 이번 주기에 처리에 실패한 주문. 같은 주문의 남은 항목은 건너뛴다 — 되살릴 때 주문과 lifecycle 을
         // 통째로 다시 가져오므로 잃지 않고, 건너뛰지 않으면 그 주문의 lifecycle 이 매핑을 못 찾아 «종결»로
         // 판정돼 방금 만든 실패 행을 닫아 버린다 (스펙 §5.2).
@@ -262,11 +264,13 @@ export class OrderPollerOrchestrator {
               );
               skippedAlreadyCollected++;
               skippedExternalOrderIds.push(orderedItem.item.externalOrderId);
+              itemsHandled++;
               advanceWatermark(orderedItem.item.sourceUpdatedAt);
               continue;
             }
             await this.orderCollectionFailureService.recordFailure(provider.channel, orderedItem.item);
             quarantined++;
+            itemsHandled++;
             advanceWatermark(orderedItem.item.sourceUpdatedAt);
             continue;
           }
@@ -285,6 +289,7 @@ export class OrderPollerOrchestrator {
               });
               continue;
             }
+            itemsHandled++;
             if (result.recorded) {
               noteSucceeded(orderedItem.item.externalOrderId, result.wmsOrderId, false);
             }
@@ -322,6 +327,7 @@ export class OrderPollerOrchestrator {
             });
             continue;
           }
+          itemsHandled++;
           emitted += result.emitted;
           dedupedUnchanged += result.dedupedUnchanged;
           noteSucceeded(
@@ -368,7 +374,13 @@ export class OrderPollerOrchestrator {
           );
         }
 
-        if (processingFailed > 0) {
+        if (processingFailed > 0 && itemsHandled === 0) {
+          // 한 건도 성공하지 못했다 — 계약 배포 사고처럼 모든 적재가 실패하는 경우다. 주문 단위 격리 덕에 워터마크는
+          // 전진하므로 sync 상태도 «성공»으로 남는다. warn 으로만 두면 그 사고가 일상적인 격리 로그에 묻힌다.
+          this.logger.error(
+            `[${provider.channel}] 이번 주기 항목이 전부 처리에 실패했다 — ${processingFailed}건 격리, 성공 0건. 배포·계약 문제를 의심하라 (#1016 1번 행)`,
+          );
+        } else if (processingFailed > 0) {
           this.logger.warn(
             `[${provider.channel}] ${processingFailed}건의 주문이 처리에 실패해 그 주문만 격리했다 — 나머지는 수집했다 (#1016 1번 행)`,
           );
