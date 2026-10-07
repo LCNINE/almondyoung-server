@@ -498,11 +498,30 @@ export class OrderPollerOrchestrator {
     }
 
     const provider = this.providers.find((candidate) => candidate.channel === failure.channel);
-    if (!provider || !this.isReplayableProvider(provider)) {
+    if (!provider) {
       throw new Error(`No replayable order provider registered for channel: ${failure.channel}`);
     }
 
-    const fetched = await provider.fetchOrder(failure.externalOrderId);
+    // syncable provider 는 주문과 함께 그 lifecycle 도 가져온다 (스펙 D5 «되살리는 길은 하나»). 처리 실패 행을
+    // 재시도하다 식별 실패로 넘어온 주문은 폴링 워터마크가 이미 지나갔으므로, 여기서 lifecycle 을 내지 않으면
+    // 매핑을 고친 뒤에도 그 주문의 취소·환불이 영영 Core 에 가지 않는다.
+    let fetched: OrderFetchOutcome | null;
+    let lifecycle: OrderLifecycleEventItem[] = [];
+    if (this.isSyncableProvider(provider)) {
+      let syncFetch: OrderSyncFetch | null;
+      try {
+        syncFetch = await provider.fetchOrderForSync(failure.externalOrderId);
+      } catch (error) {
+        // 단계 태그는 처리 실패 행을 채우는 내부 용도다 — syncOrder 와 같이 원래 에러를 돌려준다.
+        throw error instanceof OrderProcessingStageError ? error.original : error;
+      }
+      fetched = syncFetch?.outcome ?? null;
+      lifecycle = syncFetch?.lifecycle ?? [];
+    } else if (this.isReplayableProvider(provider)) {
+      fetched = await provider.fetchOrder(failure.externalOrderId);
+    } else {
+      throw new Error(`No replayable order provider registered for channel: ${failure.channel}`);
+    }
     if (!fetched) {
       return {
         status: 'not_found_or_not_payment_accepted',
@@ -574,14 +593,25 @@ export class OrderPollerOrchestrator {
       };
     }
 
+    // 주문이 매핑을 만든 **뒤**에 lifecycle 을 낸다(폴링 정렬의 order < lifecycle 과 같다). 중복은
+    // claimFirstSeen 이 막으므로 다시 replay 해도 같은 관측이 두 번 가지 않는다. 행은 lifecycle 까지 끝난 뒤에
+    // 닫는다 — 중간에 터지면 행이 열린 채 남아 다음 replay 가 이어서 낸다.
+    let emitted = result.emitted;
+    let dedupedUnchanged = result.dedupedUnchanged;
+    for (const item of lifecycle) {
+      const lifecycleResult = await this.processLifecycleItem(provider, item);
+      emitted += lifecycleResult.emitted;
+      dedupedUnchanged += lifecycleResult.dedupedUnchanged;
+    }
+
     await this.orderCollectionFailureService.markReplayed(failure.id, result.wmsOrderId);
 
     return {
-      status: result.emitted > 0 ? 'replayed' : 'already_processed',
+      status: emitted > 0 ? 'replayed' : 'already_processed',
       failureId,
       externalOrderId: failure.externalOrderId,
-      emitted: result.emitted,
-      dedupedUnchanged: result.dedupedUnchanged,
+      emitted,
+      dedupedUnchanged,
     };
   }
 

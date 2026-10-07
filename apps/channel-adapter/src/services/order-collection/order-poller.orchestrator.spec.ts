@@ -1642,6 +1642,84 @@ describe('OrderPollerOrchestrator — 처리 실패 되살리기 (#1016 1번 행
 });
 
 /**
+ * 식별 실패 replay 도 lifecycle 을 되살린다 (#1016 1번 행, 스펙 D5 «되살리는 길은 하나»).
+ *
+ * 처리 실패 행을 재시도하다 식별 실패로 넘어간 주문은 폴링 워터마크가 이미 지나갔다. 식별 replay 가 주문만
+ * 다시 만들고 lifecycle 을 안 내면, 매핑을 고친 뒤에도 그 주문의 취소·환불이 영영 Core 에 가지 않는다.
+ */
+describe('OrderPollerOrchestrator — 식별 실패 replay 의 lifecycle (#1016 1번 행)', () => {
+  const ORDER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const identificationRow = {
+    id: 'identification_A',
+    channel: 'medusa',
+    externalOrderId: 'A',
+    reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+    status: 'quarantined',
+    sourceUpdatedAt: new Date('2026-10-07T01:00:00.000Z'),
+  };
+
+  function setup() {
+    const provider = {
+      channel: 'medusa' as const,
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [], lifecycleEvents: [] }),
+      fetchOrder: jest.fn(),
+      fetchOrderForSync: jest.fn(),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const failures = makeFailureService();
+    failures.findById.mockResolvedValue(identificationRow);
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider as any],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa']) as any,
+    );
+    const eventTypes = () => outbox.enqueue.mock.calls.map(([event]) => event.eventType);
+    return { orchestrator, provider, failures, eventTypes };
+  }
+
+  it('식별이 풀린 스냅샷이 취소를 싣고 있으면 OrderCreated 다음 OrderCancelled 를 내고 replayed 로 닫는다', async () => {
+    const { orchestrator, provider, failures, eventTypes } = setup();
+    provider.fetchOrderForSync.mockResolvedValue({
+      outcome: {
+        kind: 'order',
+        order: makeOrder('2026-10-07T01:00:00.000Z', { externalOrderId: 'A', orderId: ORDER_ID }),
+      },
+      lifecycle: [makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-10-07T01:00:00.000Z', 'A')],
+    });
+
+    const result = await orchestrator.replayFailure('identification_A');
+
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderCancelled']);
+    expect(failures.markReplayed).toHaveBeenCalledWith('identification_A', ORDER_ID);
+    expect(result).toEqual({
+      status: 'replayed',
+      failureId: 'identification_A',
+      externalOrderId: 'A',
+      emitted: 2,
+      dedupedUnchanged: 0,
+    });
+    expect(provider.fetchOrder).not.toHaveBeenCalled();
+
+    // 다시 replay 해도 같은 관측은 한 번만 나간다 — lifecycle 중복은 claimFirstSeen 이 막는다.
+    const again = await orchestrator.replayFailure('identification_A');
+    expect(eventTypes()).toEqual(['OrderCreated', 'OrderCancelled']);
+    expect(again).toMatchObject({ status: 'already_processed', emitted: 0, dedupedUnchanged: 2 });
+  });
+
+  it('호출자는 단계 태그가 아니라 원래 에러를 받는다', async () => {
+    const { orchestrator, provider } = setup();
+    const original = new Error('translator broke');
+    provider.fetchOrderForSync.mockRejectedValue(new OrderProcessingStageError('translate', original, {}));
+
+    await expect(orchestrator.replayFailure('identification_A')).rejects.toBe(original);
+  });
+});
+
+/**
  * 채널 활성 게이트 (#654).
  *
  * ADR-0031 이 "활성화는 `sales_channels.is_active` 가 갖는다" 고 정했지만 그 자리를 물려받은
