@@ -22,6 +22,8 @@ export const OPENING_CATEGORIES = {
 
 export type OpeningCategory = keyof typeof OPENING_CATEGORIES
 
+export const OPENING_CATEGORY_KEYS: readonly OpeningCategory[] = ["네일", "속눈썹", "반영구", "피부관리"]
+
 export function isOpeningArea(gugun: string, category: string): category is OpeningCategory {
   return (
     (OPENING_GUGUN as readonly string[]).includes(gugun) &&
@@ -35,6 +37,6 @@ export function openingPath(gugun: string, category: string) {
 
 export function listOpeningAreas() {
   return OPENING_GUGUN.flatMap((gugun) =>
-    (Object.keys(OPENING_CATEGORIES) as OpeningCategory[]).map((category) => ({ gugun, category }))
+    OPENING_CATEGORY_KEYS.map((category) => ({ gugun, category }))
   )
 }

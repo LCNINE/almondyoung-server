@@ -1,11 +1,6 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
-import {
-  OPENING_CATEGORIES,
-  OPENING_GUGUN,
-  type OpeningCategory,
-  openingPath,
-} from "@/lib/beautytop/opening-areas"
+import { OPENING_CATEGORY_KEYS, OPENING_GUGUN, openingPath } from "@/lib/beautytop/opening-areas"
 import type { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
 
@@ -26,7 +21,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // Links only: no source data is read here, so this page costs nothing upstream.
 export default async function OpeningIndexPage() {
   const t = await getTranslations("beautytop.opening")
-  const categories = Object.keys(OPENING_CATEGORIES) as OpeningCategory[]
 
   return (
     <div className="bg-secondary">
@@ -42,7 +36,7 @@ export default async function OpeningIndexPage() {
         <h1 className="text-foreground mt-2 text-[22px] leading-[31px] font-bold">{t("indexHeadline")}</h1>
         <p className="text-muted-foreground mt-1 text-[15px] leading-[22.5px]">{t("indexSub")}</p>
 
-        {categories.map((category) => (
+        {OPENING_CATEGORY_KEYS.map((category) => (
           <section key={category} className="bg-background mt-4 rounded-2xl p-5">
             <h2 className="text-foreground text-[17px] font-bold">{t("indexCategory", { category })}</h2>
             <ul className="mt-3 flex flex-wrap gap-2">
