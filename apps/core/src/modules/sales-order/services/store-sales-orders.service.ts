@@ -538,6 +538,10 @@ export class StoreSalesOrdersService {
     overrideRefundStatus?: StoreRefundStatus,
   ): Promise<StoreOrderActionsResponseDto> {
     const foRows = await this.loadFoRows(so.id);
+    // 취소된 주문엔 요청 상태를 싣지 않는다 — 끝난 일을 «처리 중»으로 보이게 하지 않으려는 것
+    const cancelRequest = so.status === 'cancelled' ? null : await this.cancelRequests.latestFor(so.id);
+    const cancelRequestStatus =
+      cancelRequest?.status === 'requested' || cancelRequest?.status === 'rejected' ? cancelRequest.status : undefined;
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
@@ -558,6 +562,7 @@ export class StoreSalesOrdersService {
       const refundLinks = await this.db.db
         .select({
           id: inventoryTables.businessLinks.id,
+          relationName: inventoryTables.businessLinks.relationName,
           metadata: inventoryTables.businessLinks.metadata,
           createdAt: inventoryTables.businessLinks.createdAt,
         })
@@ -566,12 +571,22 @@ export class StoreSalesOrdersService {
           and(
             eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
             eq(inventoryTables.businessLinks.sourceId, so.id),
-            eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+            inArray(inventoryTables.businessLinks.relationName, [
+              'cancellation_linked_wallet_refund',
+              'order_lifecycle_refund_collected',
+            ]),
           ),
         )
         .orderBy(desc(inventoryTables.businessLinks.createdAt));
 
-      const latestLink = refundLinks[0];
+      // 채널 주문의 환불은 채널이 한다 — 수집된 환불(order_lifecycle_refund_collected)이 그 기록이다(#1016 35번 §7.5).
+      const walletLinks = refundLinks.filter((r) => r.relationName === 'cancellation_linked_wallet_refund');
+      const collected = refundLinks.filter((r) => r.relationName === 'order_lifecycle_refund_collected');
+      const collectedAmount = collected.reduce((sum, r) => {
+        const amount = (r.metadata as Record<string, unknown>)?.amount;
+        return sum + (typeof amount === 'number' ? amount : 0);
+      }, 0);
+      const latestLink = walletLinks[0];
 
       if (so.status === 'cancelled' && !overrideRefundStatus) {
         if (latestLink) {
@@ -580,6 +595,8 @@ export class StoreSalesOrdersService {
             typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
               ? (stored as StoreRefundStatus)
               : 'pending';
+        } else if (collected.length > 0) {
+          refundStatus = 'succeeded';
         } else {
           refundStatus = so.walletIntentId ? 'pending' : 'none';
         }
@@ -589,7 +606,7 @@ export class StoreSalesOrdersService {
       const summaryLink =
         latestLink ??
         // 아직 cancelled가 아닌 주문에서 manual_pending 부분취소 링크 탐색
-        refundLinks.find((r) => {
+        walletLinks.find((r) => {
           const m = r.metadata as Record<string, unknown>;
           return m?.refundStatus === 'manual_pending';
         });
@@ -618,6 +635,14 @@ export class StoreSalesOrdersService {
             lastUpdatedAt: summaryLink.createdAt?.toISOString() ?? null,
           });
         }
+      } else if (collected.length > 0) {
+        // refundLinks 는 createdAt desc 정렬이라 collected[0] 이 최근이다
+        refundSummary = buildRefundSummary({
+          status: 'succeeded',
+          amount: collectedAmount,
+          manualRequired: false,
+          lastUpdatedAt: collected[0].createdAt?.toISOString() ?? null,
+        });
       } else if (refundStatus !== 'none') {
         // businessLink 없지만 refundStatus가 있는 경우 (walletIntentId 있는 대기 상태)
         refundSummary = buildRefundSummary({
@@ -672,6 +697,10 @@ export class StoreSalesOrdersService {
           availableActions.push('exchange');
         }
       }
+    } else if (cancelRequestStatus === 'requested') {
+      // 채널 취소가 처리 중 — 다시 누르면 같은 요청을 돌려받을 뿐이다
+      availableActions.push('receipt');
+      cancelUnavailableReason = 'cancel_requested';
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
@@ -703,6 +732,7 @@ export class StoreSalesOrdersService {
       // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
       channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
+      cancelRequestStatus,
     };
   }
 

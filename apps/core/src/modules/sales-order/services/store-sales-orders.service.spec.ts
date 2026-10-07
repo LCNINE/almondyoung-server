@@ -47,6 +47,7 @@ function makeContext(
     businessLinkError?: Error;
     openRequestView?: Record<string, unknown> | null;
     replayView?: Record<string, unknown> | null;
+    refundLinks?: Array<{ relationName: string; metadata: Record<string, unknown>; createdAt: Date }>;
     /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
     exercisedDigital?: boolean;
   } = {},
@@ -102,7 +103,7 @@ function makeContext(
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
               orderBy: jest.fn().mockReturnValue({
-                then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
+                then: jest.fn((fn: (r: unknown[]) => unknown) => fn(options.refundLinks ?? [])),
                 limit: jest.fn().mockReturnValue({
                   then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
                 }),
@@ -348,7 +349,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
-        {} as any,
+        { latestFor: jest.fn().mockResolvedValue(null) } as any,
       );
       return { service, dbMock };
     }
@@ -374,6 +375,55 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('getActionsByChannelOrder', () => {
+    it('열린 취소 요청 — 취소 버튼 없이 cancel_requested, cancelRequestStatus=requested', async () => {
+      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'requested' } });
+      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+      expect(r.availableActions).toEqual(['receipt']);
+      expect(r.cancelUnavailableReason).toBe('cancel_requested');
+      expect(r.cancelRequestStatus).toBe('requested');
+    });
+
+    it('거절된 최근 요청 — 다시 취소할 수 있고 cancelRequestStatus=rejected', async () => {
+      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'rejected' } });
+      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+      expect(r.availableActions).toContain('cancel');
+      expect(r.cancelRequestStatus).toBe('rejected');
+    });
+
+    it('취소된 주문은 요청 상태를 싣지 않는다', async () => {
+      const { service } = makeContext({
+        so: makeSo({ status: 'cancelled' }),
+        openRequestView: { id: 'req-1', status: 'applied' },
+      });
+      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+      expect(r.cancelRequestStatus).toBeUndefined();
+    });
+
+    it('wallet 연결 없이 수집된 환불만 있으면 합계로 succeeded 요약(스펙 §7.5)', async () => {
+      const { service } = makeContext({
+        so: makeSo({ status: 'cancelled' }),
+        refundLinks: [
+          {
+            relationName: 'order_lifecycle_refund_collected',
+            metadata: { amount: 7000 },
+            createdAt: new Date('2026-10-07T01:00:00.000Z'),
+          },
+          {
+            relationName: 'order_lifecycle_refund_collected',
+            metadata: { amount: 3000 },
+            createdAt: new Date('2026-10-07T00:00:00.000Z'),
+          },
+        ],
+      });
+      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+      expect(r.refundStatus).toBe('succeeded');
+      expect(r.refundSummary).toMatchObject({
+        status: 'succeeded',
+        amount: 10000,
+        lastUpdatedAt: '2026-10-07T01:00:00.000Z',
+      });
+    });
+
     it('취소된 주문에 walletIntentId가 있으면 refundStatus=pending', async () => {
       const { service } = makeContext({ so: makeSo({ status: 'cancelled' }) });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
