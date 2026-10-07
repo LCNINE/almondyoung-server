@@ -19,4 +19,58 @@ describe('CHANNEL_ORDERS_COMMAND_STREAM', () => {
   it('파티션 키는 채널:주문 id — 같은 주문의 명령이 한 파티션으로 간다', () => {
     expect(channelOrderPartitionKey('naver', '2026100612345')).toBe('naver:2026100612345');
   });
+
+  describe('CancelChannelOrder (#1016 35번 행)', () => {
+    const schema = CHANNEL_ORDERS_COMMAND_STREAM.events.CancelChannelOrder.schema!;
+    const full = {
+      requestId: '0192f0aa-0000-7000-8000-000000000001',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      scope: 'full',
+      requestedBy: 'operator',
+      requestedAt: '2026-10-07T00:00:00.000Z',
+    };
+    const partial = { ...full, scope: 'partial', lines: [{ channelOrderItemId: 'ordli_1', quantity: 2 }] };
+
+    it('전체취소는 줄 없이, 부분취소는 줄과 함께 통과한다', () => {
+      expect(schema.parse(full)).toEqual(full);
+      expect(schema.parse(partial)).toEqual(partial);
+      expect(schema.parse({ ...full, reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'wallet-refund-approval' })).toMatchObject({
+        reasonCode: 'CUSTOMER_REQUEST',
+      });
+    });
+
+    it('부분취소인데 줄이 없거나 비면 거절한다', () => {
+      expect(() => schema.parse({ ...full, scope: 'partial' })).toThrow();
+      expect(() => schema.parse({ ...partial, lines: [] })).toThrow();
+    });
+
+    it('전체취소에 줄을 실으면 거절한다 — 어느 쪽이 정본인지 갈린다', () => {
+      expect(() => schema.parse({ ...full, lines: partial.lines })).toThrow();
+    });
+
+    it('같은 줄이 두 번 실리면 거절한다', () => {
+      expect(() =>
+        schema.parse({
+          ...partial,
+          lines: [
+            { channelOrderItemId: 'ordli_1', quantity: 1 },
+            { channelOrderItemId: 'ordli_1', quantity: 1 },
+          ],
+        }),
+      ).toThrow();
+    });
+
+    it.each([
+      ['수량 0', { lines: [{ channelOrderItemId: 'ordli_1', quantity: 0 }] }],
+      ['소수 수량', { lines: [{ channelOrderItemId: 'ordli_1', quantity: 1.5 }] }],
+      ['빈 줄 id', { lines: [{ channelOrderItemId: '', quantity: 1 }] }],
+      ['빈 requestId', { requestId: '' }],
+      ['모르는 scope', { scope: 'some' }],
+      ['모르는 요청자', { requestedBy: 'robot' }],
+      ['ISO 아닌 시각', { requestedAt: 'yesterday' }],
+    ])('%s 는 거절한다', (_label, patch) => {
+      expect(() => schema.parse({ ...partial, ...patch })).toThrow();
+    });
+  });
 });

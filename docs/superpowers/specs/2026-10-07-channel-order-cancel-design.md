@@ -49,7 +49,7 @@ Medusa 는 core 가 한 환불을 모른다. wallet 환불 사실은 Medusa 에 
 1. 채널 주문 하나의 취소·부분취소에 **환불 시도는 한 번**이다 — Medusa 안에서만 일어난다
 2. 끝난 뒤 core 판매주문·Medusa 주문 장부(합계 − 거래 = 0)·wallet 환불 합이 **같은 금액**을 가리킨다
 3. 취소 요청이 열려 있는 동안 그 주문은 **송장 발급·배치 시작·발송**이 되지 않는다
-4. 거절·실패는 운영자에게 사유와 함께 보이고, 결과가 안 오면 5분 뒤 정체 보드에 뜬다
+4. 거절·실패는 운영자에게 사유와 함께 보이고, 결과가 안 오면 5분 뒤 정체 보드에 뜬다 (전체취소의 wallet «환불 불가»는 사유 없이 정체 보드로만 보인다 — §7.2)
 5. 부분취소 환불액은 **구매 시점 기준**이다 — 할인은 원래 배분, 배송비는 주문 시점 정책으로 다시 계산
 6. core 는 채널 주문 취소에서 wallet 을 부르지 않고, channel-adapter 를 직접 부르지 않는다
 7. `npm run type-check` 0 · `npx jest` 0 · admin-web `tsc --noEmit` 0 · Medusa 통합 스펙 초록
@@ -312,6 +312,8 @@ interface CancelChannelOrderPayload {
 | `NOT_CANCELABLE` | Medusa 가 상태상 거절(`NOT_ALLOWED`) |
 | `REFUND_FAILED` | wallet 이 «환불 불가»류로 거절해 Medusa 워크플로가 롤백(`REFUND_AMOUNT_EXCEEDS_*`·`CHARGE_NOT_REFUNDABLE`) |
 
+**`REFUND_FAILED` 는 지금은 내지 않는다**(사용자 결정 2026-10-07). Medusa 가 MedusaError 아닌 오류를 500 `unknown_error` 로 가려, wallet 거절과 장애를 channel-adapter 가 구분할 수 없다. 일시 실패로 재시도 → DLQ → 5분 정체 보드(사유 없음, [요청 접기]로 정리). 값은 계약에 남긴다 — 켜려면 almond-payment 가 wallet «환불 불가» 400 을 `MedusaError(NOT_ALLOWED)` + 표지로 바꾸고 channel-adapter 가 그 표지를 읽는다(Medusa 만의 후속).
+
 core 의 거절 처리 사유에는 `OPERATOR_WITHDRAWN`(§5.5)이 더 있다 — 사실이 아니라 core 내부 값이다.
 
 **진행 사실 — `ChannelOrderCancelStalled { requestId, salesChannel, externalOrderId, stage: 'edited', message }`.**
@@ -337,6 +339,8 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 - **부분취소 클라이언트는 그걸 베끼지 않는다:** 400 은 본문으로 가른다 — `code === 'partial_cancel_rejected'` 만 정해진 거절이다.
   그 밖의 400 `type: 'not_allowed'`(Medusa 자신의 거절 — 다른 주문 수정이 열려 있음 등)는 일시 실패로 던진다. `invalid_data`
   (본문 오류)는 호출 쪽 버그라 던진다. 502 `refund_pending` 은 일시 실패(§6.2, §9-5)
+
+Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — 두 취소 호출은 네이티브 fetch 로 부른다. 전체취소는 `requestId` 를 Medusa 에 넘기지 않는다(코어 라우트가 받지 않는다) — 멱등은 «이미 취소됨 = 성공»이다. 옛 역투영(`CoreOrderCancelled`)은 같은 결과 값을 받아 지금 동작(400·404 건너뜀, 5xx 는 실패)을 유지한다.
 
 ### 7.4 admin-web
 
@@ -417,13 +421,14 @@ core 는 Medusa 안의 진행 단계를 볼 길이 없으므로, 정체 보드�
 4. wallet 환불 사실 payload 에 `reasonCode` 가 실리는가 — §6.4 의 판별 근거
    **답(2026-10-07): 실리지 않았다 → wallet 이 싣게 했다(PR-A).**
 5. (core) 미등록 명령을 `EventTypeGuard` 가 조용히 넘기는가 — §11 롤링 함정
+   **답(2026-10-07): 조용히 버린다.** 전역 `SchemaValidationInterceptor` 가 경고만 남기고 `EventTypeGuard` 가 정상 종료해 오프셋이 넘어간다. PR-C 롤링 중엔 반대로 옛 core 가 `ChannelOrderCancelRejected`·`Stalled` 를 버린다 — 둘 다 5분 정체 보드가 받는다
 
 ## 11. 배포 — 한 SST 스택이라 각 PR 이 혼자 안전하게
 
 | PR | 내용 | 배포 직후 |
 | --- | --- | --- |
 | **A** Medusa | 배송 정책 스냅샷, 부분취소 라우트·오케스트레이터, §6.4 환불 투영 | 부르는 쪽 없음. §6.4 만 즉시 효과(무통장 충돌 감소). 먼저 나갈수록 스냅샷 있는 주문이 쌓인다 |
-| **B** 계약 + channel-adapter | 명령·거절 사실, 명령 처리기, 400 분류 | 보내는 쪽 없음 |
+| **B** 계약 + channel-adapter | 명령·거절 사실, 명령 처리기, 400 분류 | 보내는 쪽 없음. `apps/medusa` 는 건드리지 않는다 |
 | **C** core + admin-web + 스토어프론트 | 요청·보류·관문·확정·거절·정체, wallet 호출 제거, 화면. 마이그 additive → **`migrate → deploy`** | 전환. 역투영은 살아 있다(무해한 중복, 롤링 중 옛 core 태스크의 취소도 Medusa 에 닿는다) |
 | **D** channel-adapter | 역투영 제거 | **C 배포가 끝난 뒤**(expand-contract — 사이에 배포 한 번) |
 

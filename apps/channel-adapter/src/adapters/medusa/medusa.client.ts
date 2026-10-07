@@ -238,6 +238,40 @@ const ORDER_FIELDS = [
   'transactions.created_at',
 ].join(',');
 
+/** Medusa 전체취소 결과. 정해진 결과만 값이고, 일시 실패(5xx·네트워크)는 던진다(#1016 35번 PR-B). */
+export type MedusaCancelOutcome =
+  | { kind: 'cancelled' }
+  | { kind: 'already_cancelled' }
+  | { kind: 'not_found'; message: string }
+  | { kind: 'not_cancelable'; message: string };
+
+/** Medusa 부분취소 결과(PR-A 라우트 계약). `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
+export type MedusaPartialCancelOutcome =
+  | { kind: 'cancelled'; refundAmount: number | null; shippingDelta: number | null; shippingNotAdjusted: boolean }
+  | { kind: 'rejected'; message: string }
+  | { kind: 'refund_pending'; message: string };
+
+/** Medusa 가 정해진 결과가 아닌 상태로 답했다. status 를 실어 `isTransientMedusaError` 가 읽는다. */
+export class MedusaHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'MedusaHttpError';
+  }
+}
+
+/**
+ * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4).
+ * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 거절(NOT_CANCELABLE)로 닫힌다.
+ */
+const ALREADY_CANCELLED_MESSAGE = /^Order with id .+ has been canceled\.$/;
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 @Injectable()
 export class MedusaClient {
   private readonly logger = new Logger(MedusaClient.name);
@@ -1895,25 +1929,27 @@ export class MedusaClient {
     }
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
-    try {
-      await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}/cancel`, {
-        method: 'POST',
-      });
+  /**
+   * 전체취소. 400 은 문구로 가른다 — «이미 취소됨»만 성공 쪽이고(멱등: 같은 명령의 재전달), 나머지 400 을 성공으로 삼키지 않는다.
+   * 코어 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»으로만 선다.
+   * wallet 이 환불을 거절하면 Medusa 는 그 오류를 500 «An unknown error occurred.» 로 가린다 — 장애와 구분할 수 없어 던진다(일시 실패).
+   */
+  async cancelOrder(orderId: string): Promise<MedusaCancelOutcome> {
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/cancel`;
+    const { status, body } = await this.postAdmin(path);
+    const message = typeof body.message === 'string' ? body.message : `status ${status}`;
+    if (status >= 200 && status < 300) {
       this.logger.log(`Cancelled Medusa order: ${orderId}`);
-    } catch (error) {
-      const fetchError = error as FetchError;
-      // 400: already cancelled / invalid state transition — treat as success (idempotent)
-      // 404: order not found (maybe quarantined order that never reached Medusa)
-      if (fetchError.status === 400 || fetchError.status === 404) {
-        this.logger.warn(
-          `Medusa cancelOrder skipped (status=${fetchError.status}): ${orderId} - ${fetchError.message}`,
-        );
-        return;
-      }
-      this.logger.error(`Failed to cancel Medusa order: ${orderId}`, fetchError.message);
-      throw new Error(`Medusa cancelOrder failed: ${fetchError.message}`, { cause: fetchError });
+      return { kind: 'cancelled' };
     }
+    // 본문 없는 404 는 게이트웨이·오라우팅이다 — 주문 없음으로 읽지 않고 던진다(롤링 중 옛 Medusa 포함)
+    if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
+    if (status === 400) {
+      if (ALREADY_CANCELLED_MESSAGE.test(message)) return { kind: 'already_cancelled' };
+      return { kind: 'not_cancelable', message };
+    }
+    this.logger.error(`Failed to cancel Medusa order: ${orderId} (status=${status})`, message);
+    throw new MedusaHttpError(status, `Medusa cancelOrder failed (status=${status}): ${message}`);
   }
 
   /**
@@ -2541,5 +2577,54 @@ export class MedusaClient {
         cause: error,
       });
     }
+  }
+
+  /**
+   * 부분취소(PR-A 라우트). 정해진 거절은 `code === 'partial_cancel_rejected'` 뿐이다 — Medusa 자신의 not_allowed(다른 주문 수정이
+   * 열려 있음 등)도 같은 400 type 이라 type 으로 가르면 일시 실패를 종결로 닫는다. 그 밖의 400·404(롤링 중 옛 Medusa)·5xx 는 던진다.
+   */
+  async partialCancelOrder(
+    orderId: string,
+    input: { requestId: string; items: Array<{ itemId: string; quantity: number }> },
+  ): Promise<MedusaPartialCancelOutcome> {
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/partial-cancel`;
+    const { status, body } = await this.postAdmin(path, {
+      requestId: input.requestId,
+      items: input.items.map((item) => ({ item_id: item.itemId, quantity: item.quantity })),
+    });
+    const message = typeof body.message === 'string' ? body.message : `status ${status}`;
+    if (status >= 200 && status < 300) {
+      return {
+        kind: 'cancelled',
+        refundAmount: typeof body.refundAmount === 'number' ? body.refundAmount : null,
+        shippingDelta: typeof body.shippingDelta === 'number' ? body.shippingDelta : null,
+        shippingNotAdjusted: body.shippingNotAdjusted === true,
+      };
+    }
+    if (status === 400 && body.code === 'partial_cancel_rejected') return { kind: 'rejected', message };
+    // 본문으로 가린다 — ALB 가 Medusa 다운 때 내는 502 에는 이 본문이 없다
+    if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
+    this.logger.error(`Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`, message);
+    throw new MedusaHttpError(status, `Medusa partialCancelOrder failed (status=${status}, type=${String(body.type)}): ${message}`);
+  }
+
+  /**
+   * 관리자 POST 를 네이티브 fetch 로 보낸다. SDK 의 FetchError 는 본문에서 message 만 남기고 type·code 를 버리는데, 취소 응답은
+   * 그 둘로 갈린다. HTTP 상태로는 던지지 않는다(분류는 호출부의 일). 연결 실패는 원래 오류를 cause 로 달아 던진다.
+   */
+  private async postAdmin(path: string, body?: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+    const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
+    let res: Response;
+    try {
+      res = await fetch(`${this.apiUrl}${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${encodedKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      });
+    } catch (error) {
+      throw new Error(`Medusa POST ${path} 연결 실패: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    const parsed: unknown = await res.json().catch(() => undefined);
+    return { status: res.status, body: isJsonObject(parsed) ? parsed : {} };
   }
 }

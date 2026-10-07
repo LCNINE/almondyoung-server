@@ -101,6 +101,8 @@ import { ChannelLineIdentityResolver } from './services/order-collection/channel
 import { createOrderProvider } from './services/order-collection/translating-order.provider';
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
+import { ChannelOrderCancelManager } from './services/order-cancel/channel-order-cancel.manager';
+import { ChannelOrderCancelRepository } from './services/order-cancel/channel-order-cancel.repository';
 import { EventTraceController } from './controllers/event-trace.controller';
 import { isSafeDemoMode } from './demo/demo-mode';
 import { DemoController } from './demo/demo.controller';
@@ -297,6 +299,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           DeferredRevalidateService,
           CategoryEnsureMemoService,
           InboxWorkerService,
+          ChannelOrderCancelRepository,
+          ChannelOrderCancelManager,
         ]
       : []),
 

@@ -3,7 +3,8 @@ jest.mock('./medusa-sdk.config', () => ({
   createMedusaSdk: jest.fn(),
 }));
 
-import { MedusaClient } from './medusa.client';
+import { MedusaClient, MedusaHttpError } from './medusa.client';
+import { isTransientMedusaError } from './transient-error';
 
 function makeShippingProjectionClient(initialMetadata: Record<string, unknown>) {
   let postedMetadata: Record<string, unknown> | undefined;
@@ -1456,6 +1457,130 @@ describe('MedusaClient 회원 생애주기 (#786)', () => {
       );
       expect(logger.warn).toHaveBeenCalledTimes(1);
       expect(logger.error).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
+  function makeClient() {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).apiUrl = 'http://medusa.local';
+    (client as any).apiKey = 'sk_test';
+    (client as any).logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+    return client;
+  }
+  const respond = (status: number, body?: unknown) =>
+    jest.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: body === undefined ? async () => { throw new SyntaxError('Unexpected end of JSON input'); } : async () => body,
+    }) as any;
+
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  describe('cancelOrder', () => {
+    it('코어 취소 라우트를 Basic 인증으로 POST 한다', async () => {
+      global.fetch = respond(200, { order: { id: 'order_1' } });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'cancelled' });
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://medusa.local/admin/orders/order_1/cancel',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: `Basic ${Buffer.from('sk_test:').toString('base64')}` }),
+        }),
+      );
+    });
+
+    it('«이미 취소됨» 400 만 성공 쪽이다', async () => {
+      global.fetch = respond(400, { type: 'invalid_data', message: 'Order with id order_1 has been canceled.' });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'already_cancelled' });
+    });
+
+    it('그 밖의 400 은 취소 불가다 — 옛 코드처럼 성공으로 삼키지 않는다', async () => {
+      const message = 'All fulfillments must be canceled before canceling an order';
+      global.fetch = respond(400, { type: 'not_allowed', message });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message });
+    });
+
+    it('404 는 주문 없음이다', async () => {
+      global.fetch = respond(404, { type: 'not_found', message: 'Order id not found: order_1' });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_found', message: 'Order id not found: order_1' });
+    });
+
+    it('본문 없는 404 는 던진다 — 게이트웨이·오라우팅을 주문 없음으로 읽지 않는다', async () => {
+      global.fetch = respond(404, undefined);
+      await expect(makeClient().cancelOrder('order_1')).rejects.toBeInstanceOf(MedusaHttpError);
+    });
+
+    it('다른 대상의 «has been canceled» 400 은 취소 불가다', async () => {
+      const message = 'Return with id ret_1 has been canceled.';
+      global.fetch = respond(400, { type: 'invalid_data', message });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message });
+    });
+
+    it('5xx 는 status 를 실어 던진다 — wallet «환불 불가»도 Medusa 가 500 으로 가리므로 여기다(일시 실패)', async () => {
+      global.fetch = respond(500, { type: 'unknown_error', message: 'An unknown error occurred.' });
+      const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MedusaHttpError);
+      expect(isTransientMedusaError(err)).toBe(true);
+    });
+
+    it('연결 실패는 cause 를 단 채 던진다', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })) as any;
+      const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
+      expect(isTransientMedusaError(err)).toBe(true);
+    });
+  });
+
+  describe('partialCancelOrder', () => {
+    const input = { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }] };
+
+    it('부분취소 라우트에 item_id·취소할 수량을 보낸다', async () => {
+      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 27500, shippingDelta: -3000, shippingNotAdjusted: false, stage: 'refunded' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'cancelled',
+        refundAmount: 27500,
+        shippingDelta: -3000,
+        shippingNotAdjusted: false,
+      });
+      const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toBe('http://medusa.local/admin/orders/order_1/partial-cancel');
+      expect(JSON.parse(init.body)).toEqual({ requestId: 'req-1', items: [{ item_id: 'ordli_1', quantity: 2 }] });
+    });
+
+    it('code=partial_cancel_rejected 만 정해진 거절이다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'partial_cancel_rejected', message: '수량이 남은 수량보다 많습니다' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'rejected', message: '수량이 남은 수량보다 많습니다' });
+    });
+
+    it('Medusa 자신의 not_allowed(다른 주문 수정이 열려 있음)는 던진다 — 일시적이다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', message: 'Order order_1 already has an existing active order change' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toBeInstanceOf(MedusaHttpError);
+    });
+
+    it('invalid_data 는 던진다 — 우리 본문 버그다', async () => {
+      global.fetch = respond(400, { type: 'invalid_data', message: 'items 가 비어 있습니다' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toThrow(/invalid_data/);
+    });
+
+    it('404 는 던진다 — 롤링 중 옛 Medusa 에 라우트가 없다', async () => {
+      global.fetch = respond(404, undefined);
+      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toBeInstanceOf(MedusaHttpError);
+    });
+
+    it('502 refund_pending 은 환불 미완 결과다', async () => {
+      global.fetch = respond(502, { type: 'refund_pending', stage: 'edited', requestId: 'req-1', message: '환불이 끝나지 않았습니다' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'refund_pending', message: '환불이 끝나지 않았습니다' });
+    });
+
+    it('본문 없는 502(ALB)는 환불 미완이 아니다 — 던진다', async () => {
+      global.fetch = respond(502, undefined);
+      const err = await makeClient().partialCancelOrder('order_1', input).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MedusaHttpError);
+      expect(isTransientMedusaError(err)).toBe(true);
     });
   });
 });
