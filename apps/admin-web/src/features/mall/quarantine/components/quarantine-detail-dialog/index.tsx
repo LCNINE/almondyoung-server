@@ -14,7 +14,12 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { actionForCause, replayResultMessage } from '../../guidance';
+import {
+  actionForCause,
+  isProcessingFailure,
+  replayResultMessage,
+  stageLabel,
+} from '../../guidance';
 import { useReplayFailure } from '@/lib/services/channel/mutations';
 import { ChannelListingFormDialog } from '@/features/mall/channel-listings/components/channel-listing-form-dialog';
 import type { OrderCollectionFailureDto } from '@/lib/api/domains/channel/order-collection-failures.client';
@@ -63,7 +68,22 @@ export function QuarantineDetailDialog({ failure, onClose }: Props) {
 
               <div className="space-y-3 text-sm">
                 {/* 옛 행에는 라인별 사유가 없다. 이건 정상 상태이므로 빈 화면이 아니라 설명을 렌더한다. */}
-                {!lines || lines.length === 0 ? (
+                {isProcessingFailure(failure.reason) ? (
+                  // 처리 실패는 라인 사유가 없다 — 단계와 마지막 에러가 원인이다(#1016 1번 행).
+                  <div className="space-y-2">
+                    <div className="font-medium">
+                      {stageLabel(failure.failedStage) ?? '처리 실패'}
+                    </div>
+                    {failure.lastError && (
+                      <p className="break-all font-mono text-xs text-muted-foreground">
+                        {failure.lastError}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground">
+                      원인을 고친 뒤 재처리하세요.
+                    </p>
+                  </div>
+                ) : !lines || lines.length === 0 ? (
                   <p className="text-muted-foreground">
                     사유 정보가 없는 옛 격리입니다. 원본을 확인해 직접
                     매핑하세요.

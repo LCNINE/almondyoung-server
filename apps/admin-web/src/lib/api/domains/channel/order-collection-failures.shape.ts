@@ -49,6 +49,10 @@ export interface OrderCollectionFailureDto {
   replayedAt: string | null;
   replayedWmsOrderId: string | null;
   errorMessage: string | null;
+  /** 처리 실패(`order_collection_processing_failed`) 행만 의미가 있다. 옛 서버 응답엔 없으므로 선택 필드다. */
+  attemptCount?: number;
+  failedStage?: string | null;
+  lastError?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,7 +68,8 @@ export type ReplayResultStatus =
   | 'closed_terminal'
   | 'closed_already_collected'
   | 'not_found_or_not_payment_accepted'
-  | 'not_replayable';
+  | 'not_replayable'
+  | 'moved_to_identification_quarantine';
 
 export interface ReplayResultDto {
   status: ReplayResultStatus;
@@ -152,13 +157,6 @@ export function toReplayResult(body: unknown): ReplayResultDto | null {
   return typeof record.status === 'string'
     ? (record as unknown as ReplayResultDto)
     : null;
-}
-
-/** 배지·헤더에 쓸 건수 표기. 상한에 닿았으면 "더 있다" 는 사실을 숫자에 실어 보낸다. */
-export function formatQuarantineCount(
-  result: Pick<FailureListResult, 'count' | 'truncated'>
-): string {
-  return result.truncated ? `${result.count}+` : String(result.count);
 }
 
 export interface QuarantineSummary {

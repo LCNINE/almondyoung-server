@@ -1,8 +1,11 @@
 import {
   actionForCause,
   canReplay,
+  isProcessingFailure,
   reasonLabel,
   replayResultMessage,
+  retryProgressLabel,
+  stageLabel,
 } from './guidance';
 
 describe('actionForCause', () => {
@@ -92,5 +95,42 @@ describe('reasonLabel', () => {
 
   it('모르는 값은 원본을 그대로 보여준다', () => {
     expect(reasonLabel('weird_new_reason')).toBe('weird_new_reason');
+  });
+});
+
+describe('수집 처리 실패 (#1016 1번 행)', () => {
+  it('사유 라벨이 있다', () => {
+    expect(reasonLabel('order_collection_processing_failed')).toBe('수집 처리 실패');
+    expect(isProcessingFailure('order_collection_processing_failed')).toBe(true);
+    expect(isProcessingFailure('channel_product_identification_failed')).toBe(false);
+  });
+
+  it('재처리할 수 있다 — 재시도 중이어도 사람이 먼저 누를 수 있다', () => {
+    expect(canReplay('quarantined', 'order_collection_processing_failed')).toBe(true);
+  });
+
+  it('단계 라벨을 옮기고, 모르는 값은 원문, 없으면 null', () => {
+    expect(stageLabel('fetch')).toBe('조회 실패');
+    expect(stageLabel('translate')).toBe('변환 실패');
+    expect(stageLabel('enqueue_order')).toBe('주문 적재 실패');
+    expect(stageLabel('enqueue_lifecycle')).toBe('취소·환불 적재 실패');
+    expect(stageLabel('mystery')).toBe('mystery');
+    expect(stageLabel(null)).toBeNull();
+    expect(stageLabel(undefined)).toBeNull();
+  });
+
+  it('재시도 중일 때만 진행 라벨을 준다 — 소진·종결·다른 사유는 null', () => {
+    const row = { reason: 'order_collection_processing_failed', status: 'quarantined' };
+    expect(retryProgressLabel({ ...row, attemptCount: 1 })).toBe('자동 재시도 중 (1/4)');
+    expect(retryProgressLabel({ ...row, attemptCount: 3 })).toBe('자동 재시도 중 (3/4)');
+    expect(retryProgressLabel({ ...row, attemptCount: 4 })).toBeNull();
+    expect(retryProgressLabel({ ...row, status: 'replayed', attemptCount: 1 })).toBeNull();
+    expect(retryProgressLabel({ reason: 'channel_product_identification_failed', status: 'quarantined', attemptCount: 0 })).toBeNull();
+  });
+
+  it('식별 실패로 넘어간 replay 결과에 문구가 있다', () => {
+    expect(replayResultMessage('moved_to_identification_quarantine')).toBe(
+      '상품 식별 실패로 넘어갔습니다. 식별 실패 격리 행에서 조치하세요.'
+    );
   });
 });
