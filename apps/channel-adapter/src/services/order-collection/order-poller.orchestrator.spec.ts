@@ -1,3 +1,6 @@
+import { Logger } from '@nestjs/common';
+import { Param, SQL } from 'drizzle-orm';
+import { ORDER_STREAM } from '@packages/event-contracts/streams';
 import { OrderPollerOrchestrator } from './order-poller.orchestrator';
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
@@ -6,6 +9,7 @@ import {
   OrderCollectionFailureItem,
   OrderFetchItem,
   OrderLifecycleEventItem,
+  OrderProcessingFailureItem,
 } from './channel-order-provider.interface';
 
 describe('OrderPollerOrchestrator', () => {
@@ -532,74 +536,6 @@ describe('OrderPollerOrchestrator', () => {
       expect.objectContaining({ watermark: new Date('2026-05-26T01:00:00.000Z') }),
     );
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:00:00.000Z'));
-  });
-
-  it('does not advance the polling watermark when lifecycle recording fails', async () => {
-    const db = makeDb();
-    db.mappings.set('medusa:medusa_order_1', {
-      salesChannel: 'medusa',
-      channelOrderId: 'medusa_order_1',
-      wmsOrderId: '11111111-1111-4111-8111-111111111111',
-    });
-    const provider: ChannelOrderProvider = {
-      channel: 'medusa',
-      fetchOrders: jest.fn().mockResolvedValue({
-        orders: [],
-        failures: [],
-        lifecycleEvents: [makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-05-26T01:10:00.000Z')],
-      }),
-    };
-    const syncStatus = makeSyncStatus();
-    const outbox = { enqueue: jest.fn().mockRejectedValue(new Error('lifecycle enqueue failed')) };
-    const hashes = makeHashService();
-    const failures = makeFailureService();
-
-    const orchestrator = new OrderPollerOrchestrator(
-      [provider],
-      syncStatus as any,
-      outbox as any,
-      hashes as any,
-      failures as any,
-      db as any,
-      makeSalesChannelClient(['medusa', 'naver']) as any,
-    );
-
-    await orchestrator.poll();
-
-    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
-    expect(syncStatus.recordSyncFailure).toHaveBeenCalledWith('medusa', 'orders', {
-      message: 'lifecycle enqueue failed',
-    });
-    expect(syncStatus.lastSyncAt()).toBeNull();
-  });
-
-  it('does not advance the polling watermark when processing fails before completion', async () => {
-    const db = makeDb();
-    const provider: ChannelOrderProvider = {
-      channel: 'medusa',
-      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
-    };
-    const syncStatus = makeSyncStatus();
-    const outbox = { enqueue: jest.fn().mockRejectedValue(new Error('enqueue failed')) };
-    const hashes = makeHashService();
-    const failures = makeFailureService();
-
-    const orchestrator = new OrderPollerOrchestrator(
-      [provider],
-      syncStatus as any,
-      outbox as any,
-      hashes as any,
-      failures as any,
-      db as any,
-      makeSalesChannelClient(['medusa', 'naver']) as any,
-    );
-
-    await orchestrator.poll();
-
-    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
-    expect(syncStatus.recordSyncFailure).toHaveBeenCalledWith('medusa', 'orders', { message: 'enqueue failed' });
-    expect(syncStatus.lastSyncAt()).toBeNull();
-    expect(db.mappings.size).toBe(0);
   });
 
   it('rewinds the existing watermark by two minutes when fetching incremental orders', async () => {
@@ -1211,7 +1147,7 @@ describe('OrderPollerOrchestrator', () => {
     const hashes = makeHashService();
     const failures = makeFailureService();
     // The durable quarantine from poll 1 is still open when poll 2 observes the cancellation.
-    failures.findOpenByExternalOrderId.mockResolvedValue({ id: 'failure_q', externalOrderId: 'medusa_order_q' });
+    failures.findAllOpenByExternalOrderId.mockResolvedValue([{ id: 'failure_q', externalOrderId: 'medusa_order_q' }]);
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
@@ -1234,6 +1170,273 @@ describe('OrderPollerOrchestrator', () => {
     // Poll 2: terminal cancel observation with an orphaned open quarantine → closed, watermark advances.
     expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('failure_q', expect.any(String));
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:08:00.000Z'));
+  });
+});
+
+describe('OrderPollerOrchestrator — 주문 단위 격리 (#1016 1번 행)', () => {
+  const ids = {
+    A: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    B: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    C: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  } as const;
+  const order = (key: keyof typeof ids, minute: string, overrides: { createdAt?: string } = {}) =>
+    makeOrder(`2026-10-07T01:${minute}:00.000Z`, { externalOrderId: key, orderId: ids[key], ...overrides });
+  const cancel = (key: keyof typeof ids, minute: string) =>
+    makeLifecycleEvent('OrderCancelled', 'cancelled', `2026-10-07T01:${minute}:00.000Z`, key);
+
+  /** 주어진 술어에 맞는 적재만 실패시키는 outbox. 성공한 적재는 `enqueued` 에 «주문:이벤트» 로 남는다. */
+  function outboxFailingWhen(
+    shouldFail: (event: { eventType: string; payload: { externalOrderId?: string } }) => boolean,
+  ) {
+    const enqueued: string[] = [];
+    const enqueue = jest.fn(async (event: { eventType: string; payload: { externalOrderId?: string } }) => {
+      if (shouldFail(event)) throw new Error(`contract violation: ${event.payload.externalOrderId}`);
+      enqueued.push(`${event.payload.externalOrderId}:${event.eventType}`);
+    });
+    return { enqueue, enqueued };
+  }
+
+  function setup(fetchResult: object, outbox: { enqueue: jest.Mock }) {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue(fetchResult) };
+    const syncStatus = makeSyncStatus();
+    const failures = makeFailureService();
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      db as any,
+      makeSalesChannelClient(['medusa']) as any,
+    );
+    return { orchestrator, syncStatus, failures, db };
+  }
+
+  it('독이 든 주문 하나가 있어도 앞뒤 주문을 적재하고 워터마크를 끝까지 민다', async () => {
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'B');
+    const { orchestrator, syncStatus, failures, db } = setup(
+      { orders: [order('A', '00'), order('B', '01'), order('C', '02')], failures: [], lifecycleEvents: [] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueued).toEqual(['A:OrderCreated', 'C:OrderCreated']);
+    expect(failures.recordProcessingFailure).toHaveBeenCalledTimes(1);
+    expect(failures.recordProcessingFailure).toHaveBeenCalledWith('medusa', {
+      externalOrderId: 'B',
+      sourceUpdatedAt: '2026-10-07T01:01:00.000Z',
+      stage: 'enqueue_order',
+      error: 'contract violation: B',
+      input: expect.objectContaining({ createPayload: expect.objectContaining({ externalOrderId: 'B' }) }),
+    });
+    // B 의 매핑은 적재와 같은 트랜잭션이라 함께 롤백됐다 — 되살릴 때 처음부터 다시 만든다.
+    expect([...db.mappings.values()].map((mapping) => mapping.channelOrderId).sort()).toEqual(['A', 'C']);
+    expect(syncStatus.recordSyncFailure).not.toHaveBeenCalled();
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:02:00.000Z'));
+  });
+
+  it('lifecycle 적재가 실패해도 그 주문만 격리하고 다른 주문은 수집한다', async () => {
+    const outbox = outboxFailingWhen((event) => event.eventType === 'OrderCancelled');
+    const { orchestrator, syncStatus, failures } = setup(
+      { orders: [order('A', '00'), order('B', '02')], failures: [], lifecycleEvents: [cancel('A', '01')] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueued).toEqual(['A:OrderCreated', 'B:OrderCreated']);
+    expect(failures.recordProcessingFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({
+        externalOrderId: 'A',
+        stage: 'enqueue_lifecycle',
+        input: expect.objectContaining({ eventType: 'OrderCancelled', eventKey: 'cancelled' }),
+      }),
+    );
+    expect(syncStatus.recordSyncFailure).not.toHaveBeenCalled();
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:02:00.000Z'));
+  });
+
+  it('실패한 주문의 같은 주기 lifecycle 은 건너뛰고, 방금 만든 실패 행을 고아로 닫지 않는다', async () => {
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'A');
+    const { orchestrator, failures, syncStatus } = setup(
+      { orders: [order('A', '00')], failures: [], lifecycleEvents: [cancel('A', '00')] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1); // OrderCreated 시도 1회 — lifecycle 은 시도조차 안 한다
+    expect(failures.findAllOpenByExternalOrderId).not.toHaveBeenCalled();
+    expect(failures.closeAsTerminalLifecycle).not.toHaveBeenCalled();
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:00:00.000Z'));
+  });
+
+  it('실패 주문의 lifecycle 만 건너뛰고 다른 주문의 lifecycle 은 낸다', async () => {
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'A');
+    const { orchestrator } = setup(
+      {
+        orders: [order('A', '00'), order('B', '00')],
+        failures: [],
+        lifecycleEvents: [cancel('A', '01'), cancel('B', '01')],
+      },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueued).toEqual(['B:OrderCreated', 'B:OrderCancelled']);
+  });
+
+  it('실패를 기록하지 못하면 지금처럼 주기 전체를 실패시키고 워터마크를 멈춘다', async () => {
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'A');
+    const { orchestrator, syncStatus, failures } = setup(
+      { orders: [order('A', '00')], failures: [], lifecycleEvents: [] },
+      outbox,
+    );
+    failures.recordProcessingFailure.mockRejectedValue(new Error('db down'));
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncFailure).toHaveBeenCalledWith('medusa', 'orders', { message: 'db down' });
+    expect(syncStatus.lastSyncAt()).toBeNull();
+  });
+
+  it('provider 가 올린 조회·번역 실패를 기록하고 워터마크 근거로 쓴다', async () => {
+    const fetchFailure: OrderProcessingFailureItem = {
+      externalOrderId: 'B',
+      sourceUpdatedAt: '2026-10-07T01:05:00.000Z',
+      stage: 'fetch',
+      error: 'naver 500',
+      input: {},
+    };
+    const outbox = outboxFailingWhen(() => false);
+    const { orchestrator, syncStatus, failures } = setup(
+      { orders: [order('A', '00')], failures: [], lifecycleEvents: [], processingFailures: [fetchFailure] },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueued).toEqual(['A:OrderCreated']);
+    expect(failures.recordProcessingFailure).toHaveBeenCalledWith('medusa', fetchFailure);
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:05:00.000Z'));
+  });
+
+  it('열린 처리 실패 행이 있는 주문이 이번 주기에 성공하면 replayed 로 닫는다', async () => {
+    const outbox = outboxFailingWhen(() => false);
+    const { orchestrator, failures } = setup({ orders: [order('A', '00')], failures: [], lifecycleEvents: [] }, outbox);
+    failures.findOpenProcessingFailures.mockResolvedValue(
+      new Map([['A', { id: 'processing_A', externalOrderId: 'A' }]]),
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.findOpenProcessingFailures).toHaveBeenCalledWith('medusa', ['A']);
+    expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', ids.A);
+  });
+
+  it('이번 주기에도 실패하면 열린 행을 닫지 않는다', async () => {
+    const outbox = outboxFailingWhen(() => true);
+    const { orchestrator, failures } = setup({ orders: [order('A', '00')], failures: [], lifecycleEvents: [] }, outbox);
+    failures.findOpenProcessingFailures.mockResolvedValue(
+      new Map([['A', { id: 'processing_A', externalOrderId: 'A' }]]),
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.markReplayed).not.toHaveBeenCalled();
+  });
+
+  it('미수집 주문이 종결돼 수집 대상이 아니면 열린 처리 실패 행을 종결로 닫는다', async () => {
+    const outbox = outboxFailingWhen(() => false);
+    const terminal = makeOrder('2026-10-07T01:00:00.000Z', {
+      externalOrderId: 'A',
+      orderId: ids.A,
+      eligibleForOrderCreation: false,
+    });
+    const { orchestrator, failures } = setup({ orders: [terminal], failures: [], lifecycleEvents: [] }, outbox);
+    failures.findOpenProcessingFailures.mockResolvedValue(
+      new Map([['A', { id: 'processing_A', externalOrderId: 'A' }]]),
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('processing_A', expect.any(String));
+    expect(failures.markReplayed).not.toHaveBeenCalled();
+  });
+
+  it('종결 관측이 고아 격리를 닫을 때 사유가 다른 열린 행까지 전부 닫는다', async () => {
+    const outbox = outboxFailingWhen(() => false);
+    const { orchestrator, failures } = setup(
+      { orders: [], failures: [], lifecycleEvents: [cancel('A', '00')] },
+      outbox,
+    );
+    failures.findAllOpenByExternalOrderId.mockResolvedValue([
+      { id: 'identification_A', externalOrderId: 'A' },
+      { id: 'processing_A', externalOrderId: 'A' },
+    ]);
+
+    await orchestrator.poll();
+
+    expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('identification_A', expect.any(String));
+    expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('processing_A', expect.any(String));
+  });
+
+  it('소진 순간에만 error 로그를 남긴다', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const outbox = outboxFailingWhen((event) => event.payload.externalOrderId === 'A');
+    const { orchestrator, failures } = setup({ orders: [order('A', '00')], failures: [], lifecycleEvents: [] }, outbox);
+    failures.recordProcessingFailure.mockResolvedValueOnce({
+      record: { id: 'processing_A', externalOrderId: 'A', attemptCount: 4 },
+      exhaustedNow: true,
+    });
+
+    await orchestrator.poll();
+
+    const exhaustedLogs = errorSpy.mock.calls.filter(([message]) => String(message).includes('소진'));
+    expect(exhaustedLogs).toHaveLength(1);
+    expect(String(exhaustedLogs[0][0])).toContain('A');
+    errorSpy.mockRestore();
+  });
+
+  it('네이버 +09:00 시각처럼 계약을 못 통과하는 주문만 격리된다 — 실제 OrderCreated 스키마로 (2번 행 재현)', async () => {
+    const schema = ORDER_STREAM.events.OrderCreated.schema;
+    if (!schema) throw new Error('OrderCreated 계약 스키마가 없다');
+    const enqueued: string[] = [];
+    const outbox = {
+      // 실제 발행기처럼 적재 시점에 계약으로 파싱한다(`StreamPublisher.buildEventEnvelope`).
+      enqueue: jest.fn(async (event: { eventType: string; payload: { externalOrderId?: string } }) => {
+        if (event.eventType === 'OrderCreated') schema.parse(event.payload);
+        enqueued.push(`${event.payload.externalOrderId}:${event.eventType}`);
+      }),
+    };
+    const { orchestrator, failures, syncStatus } = setup(
+      {
+        orders: [order('A', '00'), order('B', '01', { createdAt: '2026-08-19T00:00:00.000+09:00' }), order('C', '02')],
+        failures: [],
+        lifecycleEvents: [],
+      },
+      outbox,
+    );
+
+    await orchestrator.poll();
+
+    expect(enqueued).toEqual(['A:OrderCreated', 'C:OrderCreated']);
+    expect(failures.recordProcessingFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({
+        externalOrderId: 'B',
+        stage: 'enqueue_order',
+        input: expect.objectContaining({
+          createPayload: expect.objectContaining({ createdAt: '2026-08-19T00:00:00.000+09:00' }),
+        }),
+      }),
+    );
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:02:00.000Z'));
   });
 });
 
@@ -1762,9 +1965,17 @@ function makeSalesChannelClient(sitesOrError: string[] | Error) {
 
 function makeOrder(
   sourceUpdatedAt: string,
-  overrides: { totalAmount?: number; eligibleForOrderCreation?: boolean } = {},
+  overrides: {
+    totalAmount?: number;
+    eligibleForOrderCreation?: boolean;
+    externalOrderId?: string;
+    orderId?: string;
+    createdAt?: string;
+  } = {},
 ): OrderFetchItem {
   const totalAmount = overrides.totalAmount ?? 10000;
+  const externalOrderId = overrides.externalOrderId ?? 'medusa_order_1';
+  const orderId = overrides.orderId ?? '11111111-1111-4111-8111-111111111111';
   const item = {
     orderItemId: 'item_1',
     skuId: 'pim_variant_1',
@@ -1786,12 +1997,12 @@ function makeOrder(
   };
 
   return {
-    externalOrderId: 'medusa_order_1',
+    externalOrderId,
     sourceUpdatedAt,
     eligibleForOrderCreation: overrides.eligibleForOrderCreation,
     createPayload: {
-      orderId: '11111111-1111-4111-8111-111111111111',
-      externalOrderId: 'medusa_order_1',
+      orderId,
+      externalOrderId,
       salesChannel: 'medusa',
       customerId: 'cus_1',
       items: [item],
@@ -1802,7 +2013,7 @@ function makeOrder(
       currency: 'KRW',
       shippingAddress,
       status: 'confirmed',
-      createdAt: '2026-05-26T00:00:00.000Z',
+      createdAt: overrides.createdAt ?? '2026-05-26T00:00:00.000Z',
     },
     changes: {
       items: [item],
@@ -1906,10 +2117,11 @@ function makeLifecycleEvent(
   eventType: 'OrderCancelled' | 'OrderRefundCreated',
   eventKey: string,
   sourceUpdatedAt: string,
+  externalOrderId = 'medusa_order_1',
 ): OrderLifecycleEventItem {
   if (eventType === 'OrderCancelled') {
     return {
-      externalOrderId: 'medusa_order_1',
+      externalOrderId,
       sourceUpdatedAt,
       eventType,
       eventKey,
@@ -1922,14 +2134,14 @@ function makeLifecycleEvent(
         refundAmount: 10000,
       },
       rawEvent: {
-        externalOrderId: 'medusa_order_1',
+        externalOrderId,
         status: 'canceled',
       },
     };
   }
 
   return {
-    externalOrderId: 'medusa_order_1',
+    externalOrderId,
     sourceUpdatedAt,
     eventType,
     eventKey,
@@ -1943,7 +2155,7 @@ function makeLifecycleEvent(
       createdAt: sourceUpdatedAt,
     },
     rawEvent: {
-      externalOrderId: 'medusa_order_1',
+      externalOrderId,
       refundId: 'ref_1',
     },
   };
@@ -2022,6 +2234,17 @@ function makeFailureService() {
     findOpenByExternalOrderId: jest.fn().mockResolvedValue(null),
     closeAsTerminalLifecycle: jest.fn().mockResolvedValue(undefined),
     closeAsAlreadyCollected: jest.fn().mockResolvedValue(undefined),
+    recordProcessingFailure: jest.fn(async (_channel: string, failure: OrderProcessingFailureItem) => ({
+      record: {
+        id: `processing_${failure.externalOrderId}`,
+        externalOrderId: failure.externalOrderId,
+        attemptCount: 1,
+      },
+      exhaustedNow: false,
+    })),
+    findOpenProcessingFailures: jest.fn().mockResolvedValue(new Map()),
+    findRetryableProcessingFailures: jest.fn().mockResolvedValue([]),
+    findAllOpenByExternalOrderId: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -2029,16 +2252,14 @@ function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = 
   const mappings = new Map<string, any>();
   // 이 폴링 이전에 이미 존재하던 매핑. **배치 조회에만** 보인다.
   //
-  // 왜 분리하는가: 이 목은 drizzle SQL 객체를 들여다볼 수 없어 술어를 흉내낼 수 없고,
-  // 단건 조회(`.limit(1)`)는 어떤 id 를 물었든 첫 행을 돌려준다. 시드 행을 같은 통에 넣으면
-  // `collected: ['A']` 를 심은 테스트가 주문 B 를 처리할 때 B 가 A 의 매핑을 얻어, 틀린
+  // 왜 분리하는가: 단건 조회(`.limit(1)`)는 `boundValues` 로 물은 주문 id 를 꺼내 이 폴링의
+  // 매핑에서만 찾는다. 시드 행을 같은 통에 넣으면 `collected: ['A']` 를 심은 테스트가 주문 B 를 처리할 때 B 가 A 의 매핑을 얻어, 틀린
   // 동작이 초록으로 통과한다. 배치 조회 결과는 호출부가 id 로 다시 거르므로 안전하다.
   const preexisting = (options.collected ?? []).map((channelOrderId) => ({
     salesChannel: 'medusa',
     channelOrderId,
     wmsOrderId: `wms_${channelOrderId}`,
   }));
-  const latestMapping = async () => Array.from(mappings.values()).slice(0, 1);
   const insert = () => ({
     values: (value: any) => ({
       onConflictDoNothing: () => ({
@@ -2058,11 +2279,16 @@ function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = 
     db: {
       select: () => ({
         from: () => ({
-          // `.limit()` = 단건 매핑 조회(이 폴링에서 만들어진 것만),
-          // `await where()` = 배치 매핑 조회(시드 포함).
-          where: () =>
+          // `.limit()` = 단건 매핑 조회(이 폴링에서 만들어진 것 중 물은 주문의 것만),
+          // `await where()` = 배치 매핑 조회(시드 포함 — 호출부가 id 로 다시 거른다).
+          where: (condition: unknown) =>
             Object.assign(Promise.resolve([...preexisting, ...Array.from(mappings.values())]), {
-              limit: latestMapping,
+              limit: async () => {
+                const asked = boundValues(condition);
+                return Array.from(mappings.values())
+                  .filter((mapping) => asked.includes(mapping.channelOrderId))
+                  .slice(0, 1);
+              },
             }),
         }),
       }),
@@ -2080,4 +2306,15 @@ function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = 
       },
     },
   };
+}
+
+/**
+ * drizzle 조건식에 바인딩된 값들. 목이 «어느 주문을 물었나»를 알아내는 길이다 — `eq`·`and`·`inArray` 가
+ * 만든 `SQL` 의 `queryChunks` 를 따라 내려가 `Param` 값을 모은다.
+ */
+function boundValues(node: unknown): unknown[] {
+  if (node instanceof Param) return [node.value];
+  if (Array.isArray(node)) return node.flatMap(boundValues);
+  if (node instanceof SQL) return node.queryChunks.flatMap(boundValues);
+  return [];
 }

@@ -21,11 +21,14 @@ import {
   OrderFetchItem,
   OrderFetchOutcome,
   OrderLifecycleEventItem,
+  OrderProcessingFailureItem,
   ReplayableChannelOrderProvider,
   SyncableChannelOrderProvider,
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
-import { OrderCollectionFailureService } from './order-collection-failure.service';
+import { OrderCollectionFailureService, PROCESSING_FAILURE_MAX_ATTEMPTS } from './order-collection-failure.service';
+import { errorMessage } from './order-processing-stage.error';
+import { OrderCollectionFailure } from '../../types';
 import { SalesChannelClient } from '../clients/sales-channel.client';
 
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
@@ -37,6 +40,7 @@ const SKIPPED_LOG_SAMPLE_SIZE = 20;
 type OrderedPollItem =
   | { kind: 'order'; item: OrderFetchItem }
   | { kind: 'failure'; item: OrderCollectionFailureItem }
+  | { kind: 'processing_failure'; item: OrderProcessingFailureItem }
   | { kind: 'lifecycle'; item: OrderLifecycleEventItem };
 
 type ProcessPollItemResult = {
@@ -113,10 +117,17 @@ export class OrderPollerOrchestrator {
         await this.syncStatusService.recordSyncStart(channelType, 'orders');
 
         const startTime = Date.now();
-        const { orders, failures, lifecycleEvents = [], completedWindowEnd } = await provider.fetchOrders(since);
+        const {
+          orders,
+          failures,
+          lifecycleEvents = [],
+          processingFailures = [],
+          completedWindowEnd,
+        } = await provider.fetchOrders(since);
         const orderedItems: OrderedPollItem[] = [
           ...orders.map((item) => ({ kind: 'order' as const, item })),
           ...failures.map((item) => ({ kind: 'failure' as const, item })),
+          ...processingFailures.map((item) => ({ kind: 'processing_failure' as const, item })),
           ...lifecycleEvents.map((item) => ({ kind: 'lifecycle' as const, item })),
         ].sort((a, b) => {
           const byTime = new Date(a.item.sourceUpdatedAt).getTime() - new Date(b.item.sourceUpdatedAt).getTime();
@@ -129,6 +140,11 @@ export class OrderPollerOrchestrator {
           provider.channel,
           failures.map((failure) => failure.externalOrderId),
         );
+        // 이전 주기에 처리에 실패해 열려 있는 행. 이번 주기에 그 주문이 성공하면 닫는다 (#1016 1번 행 스펙 §5.4).
+        const openProcessingFailures = await this.orderCollectionFailureService.findOpenProcessingFailures(
+          provider.channel,
+          [...new Set(orderedItems.map((entry) => entry.item.externalOrderId))],
+        );
 
         let emitted = 0;
         let dedupedUnchanged = 0;
@@ -136,6 +152,20 @@ export class OrderPollerOrchestrator {
         let skippedAlreadyCollected = 0;
         const skippedExternalOrderIds: string[] = [];
         let lifecycleRecorded = 0;
+        let processingFailed = 0;
+        // 이번 주기에 처리에 실패한 주문. 같은 주문의 남은 항목은 건너뛴다 — 되살릴 때 주문과 lifecycle 을
+        // 통째로 다시 가져오므로 잃지 않고, 건너뛰지 않으면 그 주문의 lifecycle 이 매핑을 못 찾아 «종결»로
+        // 판정돼 방금 만든 실패 행을 닫아 버린다 (스펙 §5.2).
+        const failedExternalOrderIds = new Set<string>();
+        // 이번 주기에 항목이 성공한 주문. 열린 처리 실패 행을 닫는 근거다.
+        const succeededOrders = new Map<string, { wmsOrderId?: string; terminal: boolean }>();
+        const noteSucceeded = (externalOrderId: string, wmsOrderId: string | undefined, terminal: boolean) => {
+          const previous = succeededOrders.get(externalOrderId);
+          succeededOrders.set(externalOrderId, {
+            wmsOrderId: wmsOrderId ?? previous?.wmsOrderId,
+            terminal: terminal || (previous?.terminal ?? false),
+          });
+        };
         let watermark: Date | null = null;
         // An unrecorded lifecycle observation (no Core mapping yet) for an order that is still
         // collectable — currently quarantined and awaiting replay — must NOT let the durable
@@ -177,8 +207,26 @@ export class OrderPollerOrchestrator {
           }
           watermarkHeldAt = this.minDate(watermarkHeldAt, itemTimestamp);
         };
+        // 기록했으면 지나간다. 기록이 throw 하면 그대로 바깥 catch 로 가서 주기 전체가 실패하고 워터마크가
+        // 멈춘다 — 그때는 DB 장애라 멈추는 게 맞다 (스펙 D4).
+        const recordItemFailure = async (failure: OrderProcessingFailureItem) => {
+          await this.recordProcessingFailure(provider.channel, failure);
+          failedExternalOrderIds.add(failure.externalOrderId);
+          processingFailed++;
+          advanceWatermark(failure.sourceUpdatedAt);
+        };
 
         for (const orderedItem of orderedItems) {
+          if (failedExternalOrderIds.has(orderedItem.item.externalOrderId)) {
+            advanceWatermark(orderedItem.item.sourceUpdatedAt);
+            continue;
+          }
+
+          if (orderedItem.kind === 'processing_failure') {
+            await recordItemFailure(orderedItem.item);
+            continue;
+          }
+
           if (orderedItem.kind === 'failure') {
             if (this.isAlreadyCollectedIdentificationFailure(orderedItem.item, collectedOrders)) {
               // 만들 주문이 이미 있다. 변경 여부는 계산할 수 없다 — 라인을 식별하지 못하면
@@ -204,7 +252,22 @@ export class OrderPollerOrchestrator {
           }
 
           if (orderedItem.kind === 'lifecycle') {
-            const result = await this.processLifecycleItem(provider, orderedItem.item);
+            let result: ProcessPollItemResult;
+            try {
+              result = await this.processLifecycleItem(provider, orderedItem.item);
+            } catch (error) {
+              await recordItemFailure({
+                externalOrderId: orderedItem.item.externalOrderId,
+                sourceUpdatedAt: orderedItem.item.sourceUpdatedAt,
+                stage: 'enqueue_lifecycle',
+                error: errorMessage(error),
+                input: lifecycleInput(orderedItem.item),
+              });
+              continue;
+            }
+            if (result.recorded) {
+              noteSucceeded(orderedItem.item.externalOrderId, result.wmsOrderId, false);
+            }
             emitted += result.emitted;
             dedupedUnchanged += result.dedupedUnchanged;
             lifecycleRecorded += result.emitted;
@@ -226,11 +289,30 @@ export class OrderPollerOrchestrator {
             continue;
           }
 
-          const result = await this.processOrderItem(provider, orderedItem.item);
+          let result: ProcessPollItemResult;
+          try {
+            result = await this.processOrderItem(provider, orderedItem.item);
+          } catch (error) {
+            await recordItemFailure({
+              externalOrderId: orderedItem.item.externalOrderId,
+              sourceUpdatedAt: orderedItem.item.sourceUpdatedAt,
+              stage: 'enqueue_order',
+              error: errorMessage(error),
+              input: orderInput(orderedItem.item),
+            });
+            continue;
+          }
           emitted += result.emitted;
           dedupedUnchanged += result.dedupedUnchanged;
+          noteSucceeded(
+            orderedItem.item.externalOrderId,
+            result.wmsOrderId,
+            orderedItem.item.eligibleForOrderCreation === false,
+          );
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
         }
+
+        await this.closeRecoveredProcessingFailures(openProcessingFailures, failedExternalOrderIds, succeededOrders);
 
         // 🔴 조용한 창은 워터마크를 영원히 묶는다. 닫힌 조회 창(`[since, since+24h]`)을 쓰는
         // source 는 그 창에 변경이 하나도 없으면 항목 0건을 낸다 — 그러면 워터마크가 `null` 로
@@ -266,6 +348,12 @@ export class OrderPollerOrchestrator {
           );
         }
 
+        if (processingFailed > 0) {
+          this.logger.warn(
+            `[${provider.channel}] ${processingFailed}건의 주문이 처리에 실패해 그 주문만 격리했다 — 나머지는 수집했다 (#1016 1번 행)`,
+          );
+        }
+
         await this.syncStatusService.recordSyncComplete(channelType, 'orders', {
           eventCount: emitted,
           processingTime: Date.now() - startTime,
@@ -273,7 +361,7 @@ export class OrderPollerOrchestrator {
         });
 
         this.logger.log(
-          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined}, skippedAlreadyCollected: ${skippedAlreadyCollected})`,
+          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined}, skippedAlreadyCollected: ${skippedAlreadyCollected}, processingFailed: ${processingFailed})`,
         );
       } catch (error) {
         await this.syncStatusService.recordSyncFailure(channelType, 'orders', {
@@ -749,6 +837,43 @@ export class OrderPollerOrchestrator {
    * order went terminal before its mapping gap was fixed — it can never be collected, so close the
    * quarantine to record the terminal outcome and stop a replay from getting stuck on it.
    */
+  /** 처리 실패를 기록하고 로그를 남긴다. 루프와 재시도가 같이 쓴다 (스펙 §5.3·§6.4). */
+  private async recordProcessingFailure(channel: SalesChannel, failure: OrderProcessingFailureItem): Promise<void> {
+    const { exhaustedNow } = await this.orderCollectionFailureService.recordProcessingFailure(channel, failure);
+    this.logger.warn(
+      `[${channel}] 주문 ${failure.externalOrderId} 처리 실패(${failure.stage}) — 그 주문만 격리하고 계속한다: ${failure.error}`,
+    );
+    if (exhaustedNow) {
+      this.logger.error(
+        `[${channel}] 주문 ${failure.externalOrderId} 자동 재시도 ${PROCESSING_FAILURE_MAX_ATTEMPTS}회 소진 — 격리 화면에서 조치가 필요하다 (${failure.stage}): ${failure.error}`,
+      );
+    }
+  }
+
+  /**
+   * 다음 폴링이 우연히 그 주문을 다시 가져와 성공한 경우 열린 처리 실패 행을 닫는다 (스펙 §5.4).
+   * 채널은 주문을 다시 내보낼 때 그 주문의 lifecycle 도 함께 내보내므로 주문 항목의 성공이 곧 그 주문 전체의 성공이다.
+   */
+  private async closeRecoveredProcessingFailures(
+    open: Map<string, OrderCollectionFailure>,
+    failed: Set<string>,
+    succeeded: Map<string, { wmsOrderId?: string; terminal: boolean }>,
+  ): Promise<void> {
+    for (const [externalOrderId, row] of open) {
+      if (failed.has(externalOrderId)) continue;
+      const success = succeeded.get(externalOrderId);
+      if (!success) continue;
+      if (success.wmsOrderId) {
+        await this.orderCollectionFailureService.markReplayed(row.id, success.wmsOrderId);
+      } else if (success.terminal) {
+        await this.orderCollectionFailureService.closeAsTerminalLifecycle(
+          row.id,
+          `Closed on poll: order ${externalOrderId} reached a terminal lifecycle before collection`,
+        );
+      }
+    }
+  }
+
   /**
    * 이미 수집된 주문에 열려 있는 격리가 있으면 닫는다 (#647).
    *
@@ -778,17 +903,20 @@ export class OrderPollerOrchestrator {
   }
 
   private async resolveOrphanedQuarantine(channel: string, item: OrderLifecycleEventItem): Promise<void> {
-    const open = await this.orderCollectionFailureService.findOpenByExternalOrderId(channel, item.externalOrderId);
-    if (!open) {
-      return;
+    // 열린 행을 **전부** 닫는다 — 식별 실패와 처리 실패가 함께 열려 있을 수 있고, 종결된 주문은 어느 사유로도
+    // 수집할 수 없다 (#1016 1번 행 스펙 §5.5).
+    const open = await this.orderCollectionFailureService.findAllOpenByExternalOrderId(channel, item.externalOrderId);
+    for (const row of open) {
+      await this.orderCollectionFailureService.closeAsTerminalLifecycle(
+        row.id,
+        `Closed by ${item.eventType} (${item.eventKey}): order reached a terminal lifecycle before collection`,
+      );
     }
-    await this.orderCollectionFailureService.closeAsTerminalLifecycle(
-      open.id,
-      `Closed by ${item.eventType} (${item.eventKey}): order reached a terminal lifecycle before collection`,
-    );
-    this.logger.warn(
-      `[${channel}] Closed orphaned quarantine for ${item.externalOrderId} after ${item.eventType}; order is no longer collectable`,
-    );
+    if (open.length > 0) {
+      this.logger.warn(
+        `[${channel}] Closed ${open.length} orphaned quarantine(s) for ${item.externalOrderId} after ${item.eventType}; order is no longer collectable`,
+      );
+    }
   }
 
   /**
@@ -863,6 +991,17 @@ export class OrderPollerOrchestrator {
   private pollItemPriority(kind: OrderedPollItem['kind']): number {
     if (kind === 'order') return 0;
     if (kind === 'failure') return 1;
-    return 2;
+    if (kind === 'processing_failure') return 2;
+    return 3;
   }
+}
+
+/** 주문 적재 실패 행의 `raw_order` — zod 가 거부한 그 값이 행 안에서 보이게 한다 (스펙 §4.3). */
+function orderInput(item: OrderFetchItem): Record<string, unknown> {
+  return { createPayload: item.createPayload, modification: item.modification };
+}
+
+/** lifecycle 적재 실패 행의 `raw_order`. */
+function lifecycleInput(item: OrderLifecycleEventItem): Record<string, unknown> {
+  return { eventType: item.eventType, eventKey: item.eventKey, payload: item.payload };
 }
