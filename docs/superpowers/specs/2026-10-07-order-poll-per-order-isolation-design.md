@@ -139,6 +139,8 @@ order(0) < failure(1) < processing_failure(2) < lifecycle(3) — 같은 시각�
 ### 5.3 실패 로그
 
 항목 실패마다 `logger.warn` 으로 채널·주문 id·단계·에러를 남긴다. 주기 끝 요약 로그에 `processingFailed` 건수를 더한다.
+처리 실패가 있었는데 그 주기에 처리된 항목이 하나도 없으면(계약을 깨는 배포 등) 주기 끝에 `logger.error` 를 한 번 남긴다 —
+자동 재시도가 소진되기(≥15분) 전에 «수집이 통째로 막혔다»가 보이게 하려는 것이다. 식별 격리·dedupe 도 «처리된 항목»으로 센다.
 
 ### 5.4 다음 폴링이 성공하면 저절로 닫힌다
 
@@ -197,7 +199,8 @@ medusa·naver 둘 다 syncable 이다). `provider.fetchOrderForSync(externalOrde
 | --- | --- | --- |
 | `created` · `emitted` · `unchanged`, lifecycle 모두 성공 | `replayed` 로 닫음 | `replayed`(발행 있음) / `already_processed`(없음) |
 | `not_eligible` (종결돼 수집 대상 아님) | `closed_lifecycle` 로 닫음 | `closed_terminal` |
-| `identification_failed` (식별 실패로 바뀜 — `processSyncFetch` 가 식별 격리 행을 기록) | `replayed` 로 닫고 `error_message` 에 «식별 실패 격리로 넘어감» | `moved_to_identification_quarantine` |
+| `identification_failed`, 미수집 주문 (식별 실패로 바뀜 — `processSyncFetch` 가 식별 격리 행을 기록) | `replayed` 로 닫고 `error_message` 에 «식별 실패 격리로 넘어감» | `moved_to_identification_quarantine` |
+| `identification_failed`, 이미 수집된 주문 (식별 격리 행은 «이미 수집됨»으로 닫힌다) | 그 매핑으로 `replayed` 로 닫음 | `replayed` / `already_processed` |
 | `fetchOrderForSync` 가 `null` | `recordProcessingFailure(stage: 'fetch', error: 'not found')` | `still_quarantined` |
 | 어느 단계든 throw | `recordProcessingFailure` (단계는 throw 지점: 조회 `fetch`, 번역 `translate`, 주문 `enqueue_order`, lifecycle `enqueue_lifecycle`) | `still_quarantined` |
 
@@ -218,6 +221,11 @@ upsert 의 `returning()` 으로 새 횟수를 받아 판정한다. 매 주기 �
 `replayFailure(id)` 가 reason 이 처리 실패면 §6.3 의 `retryProcessingFailure` 를 **상한을 무시하고 한 번** 부르고 그 결과를
 돌려준다. 실패하면 횟수만 늘고 사람 몫으로 남는다. 2번 행을 고쳐 배포한 뒤 운영자가 소진된 행을 누르면 바로 수집된다.
 응답 status 유니온에 `moved_to_identification_quarantine` 을 더한다.
+
+**식별 실패 replay 도 lifecycle 을 되살린다.** 처리 실패 행이 재시도에서 식별 실패로 넘어가면 그 주문은 워터마크가 이미
+지나가 있어 폴링의 `holdWatermark` 보호를 받지 못한다. 그래서 식별 실패 replay 는 provider 가 syncable 이면 `fetchOrderForSync`
+로 가져와, 주문이 수집되면(`wmsOrderId`) 그 주문의 lifecycle 을 이어서 낸다(중복은 `claimFirstSeen` 이 막는다). 식별 실패
+replay 의 다른 갈래·응답은 그대로다. syncable 이 아닌 provider 는 옛 `fetchOrder` 경로를 쓴다.
 
 ### 6.6 겹쳐 돌아도 안전하다
 
