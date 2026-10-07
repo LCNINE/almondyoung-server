@@ -1,5 +1,7 @@
 "use client"
 
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { OPENING_SIDO, isOpeningArea, openingPath } from "@/lib/beautytop/opening-areas"
 import { useTranslations } from "next-intl"
 import { useState } from "react"
 import { type Filters, RevenueCard, ScopeFilters, useScopeFilters } from "../components/neighborhood-tab"
@@ -66,6 +68,14 @@ export function AreaView({
       </section>
       <Divider />
       <ShareCard key={`s:${filters.gugun}:${filters.category}`} filters={filters} />
+      {filters.sido === OPENING_SIDO && isOpeningArea(filters.gugun, filters.category) && (
+        <LocalizedClientLink
+          href={openingPath(filters.gugun, filters.category)}
+          className="text-foreground w-fit text-sm underline underline-offset-4 transition-colors duration-150 hover:opacity-80"
+        >
+          {t("opening.fromArea")} →
+        </LocalizedClientLink>
+      )}
     </div>
   )
 }

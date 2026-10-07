@@ -107,7 +107,10 @@
     "shop": "Shop",
     "changes": "Changes in the last 30 days",
     "add": "Add a rival shop",
-    "remove": "Remove {name}"
+    "remove": "Remove {name}",
+    "sinceLastVisit": "<b>{count}</b> {count, plural, one {change} other {changes}} at shops you watch since your last visit",
+    "sinceLastVisitView": "View",
+    "newBadge": "New"
   },
   "shops": {
     "eyebrow": "{category} shop rankings in {region}",
@@ -313,5 +316,42 @@
       "copied": "Link copied.",
       "failed": "Sharing is unavailable right now. Please try again."
     }
+  },
+  "opening": {
+    "metaTitle": "{category} shops in {gugun}: openings and closings",
+    "metaDescription": "Thinking of opening a {category} shop in {gugun}, {sido}? See how many there are and how many opened or closed in the past year, from public permit records.",
+    "crumbBeautytop": "BeautyTop",
+    "crumbOpening": "Opening radar",
+    "eyebrow": "BeautyTop · Opening radar",
+    "beta": "Beta",
+    "headline": "Opening a {category} shop in {gugun}?\nStart with the neighborhood",
+    "nowLabel": "{category} shops open now",
+    "places": "{count, number}",
+    "opened": "Opened in a year",
+    "closed": "Closed in a year",
+    "density": "Residents per shop",
+    "densityValue": "About {count, number}",
+    "unknown": "Unknown",
+    "monthlyTitle": "When shops opened and closed",
+    "legendOpened": "Opened",
+    "legendClosed": "Closed",
+    "monthLabel": "M{month}",
+    "peak": "In {month}, <b>{opened}</b> opened and {closed} closed, the busiest month for openings this year.",
+    "partial": "This month is still being counted, so it is left out.",
+    "othersTitle": "Other categories in {gugun}",
+    "othersCurrent": "(this page)",
+    "nextTitle": "Ready to open?",
+    "materials": "Shop {name} supplies",
+    "memberTitle": "Once you open, we show where your shop ranks among {category} shops in this neighborhood",
+    "memberLink": "See what membership unlocks",
+    "elsewhere": "{category} shops in other districts",
+    "note": "Based on public permit records, so counts may differ slightly from reality.",
+    "unavailable": "We couldn't load the data just now. Please check back shortly.",
+    "indexTitle": "Opening radar: beauty shop openings and closings by Seoul district",
+    "indexDescription": "How many nail, lash, semi-permanent makeup and skincare shops each of Seoul's 25 districts has, and how many opened or closed in the past year.",
+    "indexHeadline": "Deciding where to open?",
+    "indexSub": "Pick a district and category to see how many shops there are and how many opened or closed in the past year.",
+    "indexCategory": "{category} shops",
+    "fromArea": "Planning to open in this area?"
   }
 }

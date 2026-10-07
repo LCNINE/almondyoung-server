@@ -107,7 +107,10 @@
     "shop": "샵",
     "changes": "최근 30일 변화",
     "add": "경쟁 샵 추가",
-    "remove": "{name} 빼기"
+    "remove": "{name} 빼기",
+    "sinceLastVisit": "지난 방문 뒤 관심 샵 변화 <b>{count}건</b>",
+    "sinceLastVisitView": "보기",
+    "newBadge": "새로"
   },
   "shops": {
     "eyebrow": "{region} {category} 샵 순위",
@@ -313,5 +316,42 @@
       "copied": "링크를 복사했어요.",
       "failed": "지금은 공유할 수 없어요. 다시 시도해 주세요."
     }
+  },
+  "opening": {
+    "metaTitle": "{gugun} {category}샵 개업·폐업 현황",
+    "metaDescription": "{sido} {gugun}에 {category}샵을 연다면 먼저 보세요. 지금 몇 곳이 있고 1년 새 몇 곳이 열고 닫았는지 공공 인허가 자료로 정리했어요.",
+    "crumbBeautytop": "뷰티탑",
+    "crumbOpening": "개업 레이더",
+    "eyebrow": "뷰티탑 · 개업 레이더",
+    "beta": "베타",
+    "headline": "{gugun}에 {category}샵을 연다면,\n먼저 동네부터 보세요",
+    "nowLabel": "지금 문을 연 {category}샵",
+    "places": "{count, number}곳",
+    "opened": "1년 새 열었어요",
+    "closed": "1년 새 닫았어요",
+    "density": "주민 몇 명당",
+    "densityValue": "약 {count, number}명",
+    "unknown": "알 수 없어요",
+    "monthlyTitle": "언제 많이 열고 닫았나",
+    "legendOpened": "열었어요",
+    "legendClosed": "닫았어요",
+    "monthLabel": "{month}월",
+    "peak": "{month}에 <b>{opened}곳</b>이 열고 {closed}곳이 닫았어요. 1년 중 가장 많이 연 달이에요.",
+    "partial": "이번 달은 아직 집계 중이라 빼고 보여 드려요.",
+    "othersTitle": "{gugun}의 다른 업종은?",
+    "othersCurrent": "(지금 보는 업종)",
+    "nextTitle": "열 준비가 됐다면",
+    "materials": "{name} 재료 보기",
+    "memberTitle": "문을 열면, 이 동네 {category}샵 사이에서 우리 샵이 몇 등인지 알려 드려요",
+    "memberLink": "멤버십으로 볼 수 있는 것 보기",
+    "elsewhere": "다른 구의 {category}샵",
+    "note": "공공 인허가 자료 기준이라 실제 수와 조금 다를 수 있어요.",
+    "unavailable": "자료를 잠시 불러오지 못했어요. 조금 뒤에 다시 와 주세요.",
+    "indexTitle": "개업 레이더 — 서울 구별 미용샵 개업·폐업",
+    "indexDescription": "서울 25개 구의 네일·속눈썹·반영구·피부관리샵이 지금 몇 곳이고 1년 새 몇 곳이 열고 닫았는지 공공 인허가 자료로 보여 드려요.",
+    "indexHeadline": "어느 동네에 열지 고민 중이라면",
+    "indexSub": "구와 업종을 고르면 지금 몇 곳이 있고 1년 새 몇 곳이 열고 닫았는지 보여 드려요.",
+    "indexCategory": "{category}샵",
+    "fromArea": "이 동네에서 창업을 준비 중이라면"
   }
 }

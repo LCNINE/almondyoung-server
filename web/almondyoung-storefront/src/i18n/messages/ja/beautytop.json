@@ -107,7 +107,10 @@
     "shop": "店舗",
     "changes": "直近30日間の変化",
     "add": "競合店を追加",
-    "remove": "{name}を外す"
+    "remove": "{name}を外す",
+    "sinceLastVisit": "前回の訪問後、気になる店舗の変化 <b>{count}件</b>",
+    "sinceLastVisitView": "見る",
+    "newBadge": "新着"
   },
   "shops": {
     "eyebrow": "{region} {category} 店舗ランキング",
@@ -313,5 +316,42 @@
       "copied": "リンクをコピーしました。",
       "failed": "現在共有できません。もう一度お試しください。"
     }
+  },
+  "opening": {
+    "metaTitle": "{gugun}の{category}店 開業・廃業の状況",
+    "metaDescription": "{sido} {gugun}で{category}店を開くなら、まずここを。現在の店舗数と1年間の開業・廃業数を公的な許認可データでまとめました。",
+    "crumbBeautytop": "ビューティートップ",
+    "crumbOpening": "開業レーダー",
+    "eyebrow": "ビューティートップ · 開業レーダー",
+    "beta": "ベータ",
+    "headline": "{gugun}で{category}店を開くなら、\nまず地域から見てください",
+    "nowLabel": "現在営業中の{category}店",
+    "places": "{count, number}店",
+    "opened": "1年間の開業",
+    "closed": "1年間の廃業",
+    "density": "住民何人あたり",
+    "densityValue": "約{count, number}人",
+    "unknown": "不明",
+    "monthlyTitle": "いつ多く開業・廃業したか",
+    "legendOpened": "開業",
+    "legendClosed": "廃業",
+    "monthLabel": "{month}月",
+    "peak": "{month}に<b>{opened}店</b>が開業し、{closed}店が廃業しました。1年で最も開業が多かった月です。",
+    "partial": "今月はまだ集計中のため除いています。",
+    "othersTitle": "{gugun}の他の業種は？",
+    "othersCurrent": "(表示中の業種)",
+    "nextTitle": "開業の準備ができたら",
+    "materials": "{name}の材料を見る",
+    "memberTitle": "開業したら、この地域の{category}店の中で自店が何位かお知らせします",
+    "memberLink": "メンバーシップで見られるものを見る",
+    "elsewhere": "他の区の{category}店",
+    "note": "公的な許認可データに基づくため、実際の数と少し異なる場合があります。",
+    "unavailable": "データを読み込めませんでした。しばらくしてからもう一度お越しください。",
+    "indexTitle": "開業レーダー — ソウル区別 美容店の開業・廃業",
+    "indexDescription": "ソウル25区のネイル・まつげ・アートメイク・スキンケア店の現在の数と、1年間の開業・廃業数を公的な許認可データでお見せします。",
+    "indexHeadline": "どの地域で開くか迷っているなら",
+    "indexSub": "区と業種を選ぶと、現在の店舗数と1年間の開業・廃業数をお見せします。",
+    "indexCategory": "{category}店",
+    "fromArea": "この地域で開業を準備中なら"
   }
 }

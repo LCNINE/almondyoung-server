@@ -188,6 +188,11 @@ function ShopReport({
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const t = useTranslations("beautytop")
+  const { changes } = useRivalChanges(shop)
+  const since = useChangesSeenAt(changes.isSuccess)
+  const fresh = (changes.data?.events ?? []).filter((event) =>
+    isAfter(event.observed_at, since)
+  ).length
 
   return (
     <div className="space-y-4">
@@ -212,11 +217,70 @@ function ShopReport({
           </button>
         </div>
       </div>
+      {fresh > 0 && (
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById(CHANGES_ANCHOR)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+          className="bg-foreground text-background flex h-12 w-full items-center justify-between rounded-xl px-4 text-[14px] transition-opacity duration-150 hover:opacity-90"
+        >
+          <span>
+            {t.rich("rivals.sinceLastVisit", {
+              count: fresh,
+              b: (chunks) => <b>{chunks}</b>,
+            })}
+          </span>
+          <span>{t("rivals.sinceLastVisitView")}</span>
+        </button>
+      )}
       <PositionCard shop={shop} />
       <PeersCard shop={shop} />
-      <CompetitorsCard shop={shop} onSelectShop={onSelectShop} />
+      <CompetitorsCard shop={shop} onSelectShop={onSelectShop} since={since} />
     </div>
   )
+}
+
+const CHANGES_ANCHOR = "rival-changes"
+const CHANGES_SEEN_KEY = "beautytop:changes-seen-at"
+
+function isAfter(observedAt: string, since: number | null) {
+  if (since === null) return false
+  const at = Date.parse(observedAt)
+  return Number.isFinite(at) && at > since
+}
+
+/** When the member last saw rival changes on this device; moves to now once this visit's changes have loaded. */
+function useChangesSeenAt(loaded: boolean) {
+  const [since, setSince] = useState<number | null>(null)
+  useEffect(() => {
+    if (!loaded) return
+    let previous: number | null = null
+    try {
+      const raw = localStorage.getItem(CHANGES_SEEN_KEY)
+      previous = raw === null ? null : Number(raw)
+      localStorage.setItem(CHANGES_SEEN_KEY, String(Date.now()))
+    } catch {}
+    setSince(previous !== null && Number.isFinite(previous) ? previous : null)
+  }, [loaded])
+  return since
+}
+
+function useRivalChanges(shop: SavedShop | null) {
+  const watchlist = useWatchlist()
+  const rivals = watchlist.list.filter(
+    (r) => !shop || targetKey(r.kind, r.id) !== targetKey(shop.kind, shop.id)
+  )
+  const targets = [...(shop ? [shop] : []), ...rivals]
+    .map((s) => targetKey(s.kind, s.id))
+    .join(",")
+  const changes = useBeautyTop<BeautyTopChanges>(
+    { resource: "changes", targets, days: "30" },
+    rivals.length > 0
+  )
+  return { watchlist, rivals, targets, changes }
 }
 
 function PositionCard({ shop }: { shop: SavedShop }) {
@@ -405,30 +469,22 @@ function PeerRow({
 function CompetitorsCard({
   shop,
   onSelectShop,
+  since = null,
 }: {
   shop: SavedShop | null
   onSelectShop: (target: BeautyTopTarget) => void
+  since?: number | null
 }) {
   const t = useTranslations("beautytop")
   const fmt = useNumberFormats()
-  const watchlist = useWatchlist()
-  const rivals = watchlist.list.filter(
-    (r) => !shop || targetKey(r.kind, r.id) !== targetKey(shop.kind, shop.id)
-  )
+  const { watchlist, rivals, targets, changes } = useRivalChanges(shop)
   const [adding, setAdding] = useState(false)
 
-  const targets = [...(shop ? [shop] : []), ...rivals]
-    .map((s) => targetKey(s.kind, s.id))
-    .join(",")
   const isMine = (row: BeautyTopShopSummary) =>
     shop != null && row.id === shop.id && row.entity_type === shop.kind
 
   const watch = useBeautyTop<BeautyTopWatch>(
     { resource: "watch", targets },
-    rivals.length > 0
-  )
-  const changes = useBeautyTop<BeautyTopChanges>(
-    { resource: "changes", targets, days: "30" },
     rivals.length > 0
   )
   const rows = [...(watch.data?.items ?? [])].sort(
@@ -510,7 +566,10 @@ function CompetitorsCard({
 
       {events.length > 0 && (
         <>
-          <p className="text-foreground mt-6 text-[15px] font-medium">
+          <p
+            id={CHANGES_ANCHOR}
+            className="text-foreground mt-6 scroll-mt-24 text-[15px] font-medium"
+          >
             {t("rivals.changes")}
           </p>
           <ul className="mt-2 space-y-2">
@@ -520,8 +579,13 @@ function CompetitorsCard({
                 className="bg-muted flex items-baseline justify-between gap-3 rounded-xl px-4 py-3 text-[15px]"
               >
                 <span className="min-w-0">
-                  <span className="text-foreground block truncate font-medium">
-                    {event.brand.name}
+                  <span className="text-foreground flex items-center gap-1.5 font-medium">
+                    <span className="truncate">{event.brand.name}</span>
+                    {isAfter(event.observed_at, since) && (
+                      <span className="bg-foreground text-background shrink-0 rounded-full px-1.5 text-[11px] leading-[18px] font-bold">
+                        {t("rivals.newBadge")}
+                      </span>
+                    )}
                   </span>
                   <span className="text-muted-foreground block text-[13px]">
                     {event.label}
