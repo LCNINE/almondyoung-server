@@ -41,6 +41,7 @@ describe('OrderEventsConsumer', () => {
     >;
     workflowGate: jest.Mocked<Pick<FulfillmentWorkflowGate, 'shouldEnqueueFo'>>;
     channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
+    cancelSettler: { settleCancelled: jest.Mock };
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -95,6 +96,7 @@ describe('OrderEventsConsumer', () => {
         shouldEnqueueFo: jest.fn().mockReturnValue(true),
       },
       channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
+      cancelSettler: { settleCancelled: jest.fn().mockResolvedValue(undefined) },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -110,6 +112,7 @@ describe('OrderEventsConsumer', () => {
       mocks.workflowGate as any,
       mocks.dbService as any,
       mocks.channelOrderChanges as any,
+      mocks.cancelSettler as any,
     );
   }
 
@@ -390,6 +393,29 @@ describe('OrderEventsConsumer', () => {
       expect.objectContaining({ lines: [{ salesOrderLineId: 'sol-1', quantity: 2 }] }),
       expect.anything(),
     );
+  });
+
+  it('전체 OrderCancelled 는 취소 뒤 열린 요청을 닫으러 간다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    await consumer.handleOrderCancelled(
+      { orderId: 'ord-1', salesChannel: 'medusa', externalOrderId: 'order_1', reason: 'ADMIN_CANCEL', cancelledBy: 'medusa', cancelledAt: '2026-10-07T00:00:00.000Z', refundRequired: false } as any,
+      { messageId: 'msg-c', correlationId: 'c' } as any,
+    );
+    expect(mocks.cancelSettler.settleCancelled).toHaveBeenCalledWith('so-1', mocks.fakeTx);
+  });
+
+  it('줄 단위 OrderCancelled 는 요청을 건드리지 않는다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map([['ci-1', 'line-1']]));
+    await consumer.handleOrderCancelled(
+      { orderId: 'ord-1', salesChannel: 'naver', externalOrderId: 'n1', reason: 'CUSTOMER_REQUEST', cancelledBy: 'naver', cancelledAt: '2026-10-07T00:00:00.000Z', refundRequired: true, cancelledLines: [{ channelOrderItemId: 'ci-1', quantity: 1 }] } as any,
+      { messageId: 'msg-l', correlationId: 'c' } as any,
+    );
+    expect(mocks.cancelSettler.settleCancelled).not.toHaveBeenCalled();
   });
 
   it('cancelledLines 가 없으면 lines 를 넘기지 않는다 (전체 취소)', async () => {

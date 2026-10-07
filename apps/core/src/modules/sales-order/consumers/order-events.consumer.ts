@@ -5,6 +5,7 @@ import { EventPayload, EventEnvelope, RetryPolicy, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
@@ -35,6 +36,7 @@ export class OrderEventsConsumer {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly channelOrderChanges: ChannelOrderChangeService,
+    private readonly cancelSettler: ChannelCancelSettler,
   ) {}
 
   private async checkAndRecordEvent(
@@ -249,6 +251,8 @@ export class OrderEventsConsumer {
           },
           tx,
         );
+        // 우리가 낸 취소 요청이 열려 있으면 닫는다(#1016 35번 §5.4). 줄 단위 취소(마켓)는 요청과 무관하다.
+        if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
       });

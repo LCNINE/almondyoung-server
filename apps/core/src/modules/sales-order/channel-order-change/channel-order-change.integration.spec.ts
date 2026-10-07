@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto';
 import { and, desc, eq, like } from 'drizzle-orm';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
+import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   inRollbackTx,
@@ -48,7 +50,7 @@ function wire(tx: DbTx) {
   const reader = new ChannelOrderChangeReader(salesOrders);
   const manager = new ChannelOrderChangeManager(reader, salesOrders, amendments, {
     get: () => outbound.planning,
-  } as never);
+  } as never, new ChannelCancelSettler(new ChannelCancelRequestReader(), salesOrders));
   return { logistics, outbound, salesOrders, manager };
 }
 
@@ -258,6 +260,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         w.salesOrders,
         new SalesOrderAmendmentsService(ambientDbService(tx)),
         { get: () => failingPlanning } as never,
+        new ChannelCancelSettler(new ChannelCancelRequestReader(), w.salesOrders),
       );
       await expect(
         manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx),

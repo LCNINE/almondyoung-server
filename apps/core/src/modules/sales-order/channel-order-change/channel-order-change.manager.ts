@@ -8,6 +8,7 @@ import { ShipmentPlanningService } from '../../fulfillment/services/shipment-pla
 import { FULFILLMENT_SYSTEM_ACTOR_ID, SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
 import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
 import { suppressDismissed } from './channel-change-dismissal';
@@ -45,12 +46,20 @@ export class ChannelOrderChangeManager {
     private readonly salesOrders: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly moduleRef: ModuleRef,
+    private readonly cancelSettler: ChannelCancelSettler,
   ) {}
 
   async handle(salesOrderId: string, payload: OrderModifiedPayload, sourceEventId: string, tx: DbTx): Promise<void> {
     const order = await this.reader.lockEffectiveOrder(salesOrderId, tx);
     if (!order) throw new Error(`Sales order ${salesOrderId} vanished after resolve`);
-    const deltas = diffChannelSnapshot(order, payload.snapshot);
+    // 열린 채널 취소 요청이 먹는 감소는 5번 규칙을 타지 않는다 — 우리가 요청한 변경이다(#1016 35번 §5.4).
+    const deltas = await this.cancelSettler.settleModified(
+      salesOrderId,
+      diffChannelSnapshot(order, payload.snapshot),
+      payload.snapshot.cancelRequests ?? [],
+      payload.modifiedAt,
+      tx,
+    );
     const amendmentId = randomUUID();
     const allRemoved = removesAllLines(order, deltas);
     const recorded: RecordedChannelDelta[] = [];

@@ -26,6 +26,7 @@ import { ChannelOrderChangeReader } from './channel-order-change/channel-order-c
 import { ChannelOrderChangeManager } from './channel-order-change/channel-order-change.manager';
 import { ChannelAmendmentActionsService } from './channel-order-change/channel-amendment-actions.service';
 import { ChannelOrderChangeService } from './channel-order-change/channel-order-change.service';
+import { ChannelCancelSettler } from './channel-cancel-request/channel-cancel-settler';
 import { ChannelCancelRequestReader } from './channel-cancel-request/channel-cancel-request.reader';
 import { ChannelCancelRequestManager } from './channel-cancel-request/channel-cancel-request.manager';
 import { ChannelCancelRequestService } from './channel-cancel-request/channel-cancel-request.service';
@@ -98,6 +99,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
 
     // 채널 주문 취소 요청 — #1016 35번 행(ADR-0042). core 는 판정·기록·보류·명령, 환불은 채널
     ChannelCancelRequestReader,
+    ChannelCancelSettler,
     ChannelCancelRequestManager,
     ChannelCancelRequestService,
 

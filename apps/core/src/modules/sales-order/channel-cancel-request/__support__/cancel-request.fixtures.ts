@@ -19,6 +19,10 @@ import { ambientDbService, assembleOutbound } from '../../../fulfillment/service
 import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { PoliciesService } from '../../services/policies.service';
 import { SalesOrdersService } from '../../services/sales-orders.service';
+import { SalesOrderAmendmentsService } from '../../services/sales-order-amendments.service';
+import { ChannelOrderChangeManager } from '../../channel-order-change/channel-order-change.manager';
+import { ChannelOrderChangeReader } from '../../channel-order-change/channel-order-change.reader';
+import { ChannelCancelSettler } from '../channel-cancel-settler';
 import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
 
@@ -116,7 +120,6 @@ export async function markLineShipped(tx: DbTx, salesOrderLineId: string, shippe
 
 /**
  * 취소 요청 통합 스펙의 배선. 롤백 트랜잭션 하나에 판매주문·요청 reader/manager 를 묶는다.
- * (확정 settler·변경 manager 는 Task 8 에서 여기에 더한다.)
  */
 export function wireCancelRequest(tx: DbTx) {
   const dbService = ambientDbService(tx);
@@ -143,7 +146,16 @@ export function wireCancelRequest(tx: DbTx) {
     salesOrders,
     outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
   );
-  return { dbService, logistics, outbound, salesOrders, reader, manager };
+  const settler = new ChannelCancelSettler(reader, salesOrders);
+  const amendments = new SalesOrderAmendmentsService(dbService);
+  const changes = new ChannelOrderChangeManager(
+    new ChannelOrderChangeReader(salesOrders),
+    salesOrders,
+    amendments,
+    { get: () => outbound.planning } as never,
+    settler,
+  );
+  return { dbService, logistics, outbound, salesOrders, reader, manager, settler, amendments, changes };
 }
 
 export type CancelWiring = ReturnType<typeof wireCancelRequest>;
