@@ -475,6 +475,12 @@ select status, count(*), min(created_at), max(created_at)
 
 있으면 정리 스크립트를 따로 둔다: §6.4 로 wallet 환불을 Medusa 장부에 먼저 넣고 → Medusa 를 취소해 환불 없이 끝나게 한다.
 
+**`failed` 0 은 «어긋난 주문 0» 이 아니다**(PR-D 최종 리뷰, 2026-10-07). 옛 분기는 Medusa 400(`not_cancelable`)·404 도
+`published` 로 닫고 경고 로그만 남겼다 — 그 주문은 core 취소 · Medusa 결제완료로 남았어도 `published` 에 섞인다. 다시 돌려도
+같은 400 이 나므로 역투영을 지운 것이 고칠 길을 닫지는 않지만, 후보를 세려면 인박스가 아니라 대조로 본다: core
+`sales_orders` 의 `status = 'cancelled' and sales_channel = 'medusa'` 의 `channel_order_id` 중 Medusa `order.status <> 'canceled'`
+인 것. 2026-10-07 라이브 카운트는 `published` 153 · `failed` 0 이었고, 이 대조는 아직 하지 않았다.
+
 ## 12. 테스트
 
 - **core**(유닛 + `describeIfDb`): 계획/적용 분리(순수 함수) · 요청(멱등, 열린 요청 하나, 자동 취소 불가 채널 거절, 고객 가드,
