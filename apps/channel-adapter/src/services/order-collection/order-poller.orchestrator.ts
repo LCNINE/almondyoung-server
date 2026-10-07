@@ -962,7 +962,9 @@ export class OrderPollerOrchestrator {
       return fail(error.stage, error.message, error.input);
     }
 
-    if (result.outcome === 'identification_failed') {
+    // 이미 수집된 주문의 식별 실패는 syncFetched 가 식별 격리를 «이미 수집됨»으로 닫았다 — 넘어갈 행이 없으니
+    // 이 행도 그 주문으로 닫고 아래 성공 갈래를 탄다. 여기서 «식별 실패 격리로 넘어감» 을 적으면 운영자가 없는 행을 찾는다.
+    if (result.outcome === 'identification_failed' && !result.wmsOrderId) {
       await this.orderCollectionFailureService.markReplayed(
         row.id,
         undefined,
@@ -994,14 +996,12 @@ export class OrderPollerOrchestrator {
     if (fetched.kind === 'failure') {
       const collected = await this.findCollectedOrders(provider.channel, [fetched.failure.externalOrderId]);
       if (this.isAlreadyCollectedIdentificationFailure(fetched.failure, collected)) {
-        await this.closeOpenQuarantineAsCollected(
-          provider.channel,
-          fetched.failure.externalOrderId,
-          collected.get(fetched.failure.externalOrderId),
-        );
-      } else {
-        await this.orderCollectionFailureService.recordFailure(provider.channel, fetched.failure);
+        const wmsOrderId = collected.get(fetched.failure.externalOrderId);
+        await this.closeOpenQuarantineAsCollected(provider.channel, fetched.failure.externalOrderId, wmsOrderId);
+        // 수집된 주문 id 를 싣는다 — 재시도가 처리 실패 행을 «식별 격리로 넘어감» 이 아니라 그 주문으로 닫는 근거다.
+        return { outcome: 'identification_failed', emitted: 0, dedupedUnchanged: 0, wmsOrderId };
       }
+      await this.orderCollectionFailureService.recordFailure(provider.channel, fetched.failure);
       return { outcome: 'identification_failed', emitted: 0, dedupedUnchanged: 0 };
     }
     const result = await this.processOrderItem(provider, fetched.order, options);

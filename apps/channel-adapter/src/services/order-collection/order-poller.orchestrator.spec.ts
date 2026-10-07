@@ -1456,8 +1456,8 @@ describe('OrderPollerOrchestrator — 처리 실패 되살리기 (#1016 1번 행
   });
   const orderA = () => makeOrder('2026-10-07T01:00:00.000Z', { externalOrderId: 'A', orderId: ORDER_ID });
 
-  function setup(options: { syncable?: boolean; fetchOrders?: jest.Mock } = {}) {
-    const db = makeDb();
+  function setup(options: { syncable?: boolean; fetchOrders?: jest.Mock; collected?: string[] } = {}) {
+    const db = makeDb({ collected: options.collected });
     const provider = {
       channel: 'medusa' as const,
       fetchOrders:
@@ -1540,6 +1540,28 @@ describe('OrderPollerOrchestrator — 처리 실패 되살리기 (#1016 1번 행
 
     expect(failures.recordFailure).toHaveBeenCalledWith('medusa', expect.objectContaining({ externalOrderId: 'A' }));
     expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', undefined, expect.stringContaining('식별'));
+  });
+
+  it('식별 실패로 바뀌었어도 이미 수집된 주문이면 식별 격리로 넘기지 않고 그 주문으로 닫는다', async () => {
+    const { orchestrator, provider, failures } = setup({ collected: ['A'] });
+    failures.findById.mockResolvedValue(retryRow());
+    provider.fetchOrderForSync!.mockResolvedValue({
+      outcome: { kind: 'failure', failure: { ...makeFailure('2026-10-07T01:00:00.000Z'), externalOrderId: 'A' } },
+      lifecycle: [],
+    });
+
+    const result = await orchestrator.replayFailure('processing_A');
+
+    // 식별 격리 행은 «이미 수집됨»으로 닫혔다 — 이 행에 «식별 실패 격리로 넘어감» 을 적으면 운영자가 없는 행을 찾는다.
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+    expect(failures.markReplayed).toHaveBeenCalledWith('processing_A', 'wms_A');
+    expect(result).toEqual({
+      status: 'already_processed',
+      failureId: 'processing_A',
+      externalOrderId: 'A',
+      emitted: 0,
+      dedupedUnchanged: 0,
+    });
   });
 
   it('채널에서 못 찾으면 바로 닫지 않고 fetch 실패 1회로 센다', async () => {
