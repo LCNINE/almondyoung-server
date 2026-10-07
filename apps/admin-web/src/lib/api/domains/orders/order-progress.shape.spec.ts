@@ -1,5 +1,7 @@
 import {
   BOARD_STAGES,
+  cardAlertText,
+  gaveUpBadge,
   formatDwell,
   cellCount,
   freshness,
@@ -128,5 +130,45 @@ describe('order-progress shape', () => {
     expect(stateLabel(null)).toBe('');
     expect(stateLabel('DISPATCH_RECALL_PENDING')).toBe('회수 재처리 대기');
     expect(stateLabel('recovery_required')).toBe('복구 필요');
+  });
+});
+
+describe('자동 멈춤 표시 (#1016 12번)', () => {
+  it('카드 경고 문구 — 0 이면 안 보인다', () => {
+    expect(cardAlertText(0, 0)).toBe('');
+    expect(cardAlertText(3, 0)).toBe('갇힘 3');
+    expect(cardAlertText(0, 1)).toBe('자동 멈춤 1');
+    expect(cardAlertText(1200, 2)).toBe('갇힘 1,200 · 자동 멈춤 2');
+  });
+
+  it('행 배지 — 없으면 null, 여럿이면 행 번호를 잇고 마지막 오류를 title 에', () => {
+    expect(gaveUpBadge(undefined)).toBeNull();
+    expect(gaveUpBadge([])).toBeNull();
+    expect(
+      gaveUpBadge([
+        {
+          rule: 'wake-awaiting-matching',
+          row: 12,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: 'boom',
+        },
+        {
+          rule: 'x',
+          row: 16,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: null,
+        },
+      ])
+    ).toEqual({ text: '자동 멈춤 · #12 #16', title: '#12 boom' });
+  });
+
+  it('옛 core 응답(gaveUp 없음)도 그대로 받는다', () => {
+    const s = toProgressSummary({
+      evaluatedAt: null,
+      stages: [
+        { stage: 'fo', open: 1, stuck: 0, oldestEnteredAt: null, states: [] },
+      ],
+    });
+    expect(s.stages[0].gaveUp ?? 0).toBe(0);
   });
 });

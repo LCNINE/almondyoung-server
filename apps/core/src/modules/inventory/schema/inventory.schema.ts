@@ -1681,6 +1681,41 @@ export const orderProgress = pgTable(
   }),
 );
 
+/**
+ * 리컨실러 재판정 상태 (스펙 docs/superpowers/specs/2026-10-08-order-reconciler-design.md §4.5).
+ * 행 하나 = «규칙 × 주문». 주문이 규칙의 상황을 떠나면 러너가 지운다 — 남은 행은 «아직 그 상황에 있다»는 뜻이다.
+ * rule·mode·last_result 는 varchar 다(값 목록은 order-reconcile.state.ts). tracking_row 는 #1016 행 번호 —
+ * 정체 보드가 리컨실러 모듈을 import 하지 않고도 «자동 멈춤 · #12» 를 그리게 행에 둔다.
+ */
+export const orderReconcileState = pgTable(
+  'order_reconcile_state',
+  {
+    rule: varchar('rule', { length: 64 }).notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    trackingRow: integer('tracking_row').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    mode: varchar('mode', { length: 16 }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    lastResult: varchar('last_result', { length: 16 }).notNull(),
+    lastError: text('last_error'),
+    nextCheckAt: timestamp('next_check_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중. 찍히면 정체 보드에 «자동 멈춤»으로 보인다
+    gaveUpAt: timestamp('gave_up_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.rule, t.salesOrderId] }),
+    idxRuleNextCheck: index('idx_order_reconcile_state_rule_next_check').on(t.rule, t.nextCheckAt),
+    // 정체 보드 요약·목록이 «포기한 주문»만 찾는다
+    idxGaveUp: index('idx_order_reconcile_state_gave_up')
+      .on(t.salesOrderId)
+      .where(sql`${t.gaveUpAt} IS NOT NULL`),
+  }),
+);
+
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
@@ -3485,6 +3520,7 @@ export const wmsTables = {
   businessLinks,
   salesOrderAmendments,
   orderProgress,
+  orderReconcileState,
   salesOrderCancellations,
   mergeGroups,
   stockReservations,
@@ -4676,6 +4712,7 @@ export type SalesOrderAmendment = InferSelectModel<typeof salesOrderAmendments>;
 export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendments>;
 
 export type OrderProgressRow = InferSelectModel<typeof orderProgress>;
+export type OrderReconcileStateRow = InferSelectModel<typeof orderReconcileState>;
 
 export type SalesOrderCancellation = InferSelectModel<typeof salesOrderCancellations>;
 export type NewSalesOrderCancellation = InferInsertModel<typeof salesOrderCancellations>;

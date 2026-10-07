@@ -348,6 +348,33 @@ export class ProductSkuMappingService {
           return this.getByVariant(variantId, trx);
         }
 
+        if (isClearingExistingLinks && existing) {
+          // 연결을 전부 지우면 «더는 매칭되지 않음»이다. matched+variant+링크 0개는 판매·출고에서 미매칭처럼 동작하면서
+          // 화면엔 매칭됨으로 보여 운영자가 고칠 기회가 없다 — pending 으로 내려 매칭 작업 목록에 다시 띄운다(#1016 12번, 스펙 §5.5).
+          const now = new Date();
+          await trx
+            .delete(wmsTables.productVariantSkuLinks)
+            .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, existing.id));
+          await trx
+            .update(wmsTables.productMatchings)
+            .set({ status: 'pending', strategy: null, isResolved: false, updatedAt: now })
+            .where(eq(wmsTables.productMatchings.id, existing.id));
+          if (dto.policy !== undefined) {
+            await this.upsertSalesVariantPolicy(
+              trx,
+              variantId,
+              dto.policy,
+              {
+                preStockSellable: existing.preStockSellable,
+                alwaysSellableZeroStock: existing.alwaysSellableZeroStock,
+              },
+              now,
+            );
+          }
+          await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+          return this.getByVariant(variantId, trx);
+        }
+
         const base = {
           variantId: variantId,
           masterId: dto.masterId ?? existing?.masterId ?? null,

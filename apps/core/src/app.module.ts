@@ -19,6 +19,7 @@ import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 import { FulfillmentOutboxDispatchGateModule } from './modules/fulfillment/outbox/fulfillment-dispatch-gate.module';
 import { WaybillModule } from './modules/fulfillment/waybill/waybill.module';
 import { OrderProgressModule } from './modules/fulfillment/order-progress/order-progress.module';
+import { OrderReconcileModule } from './modules/fulfillment/order-reconcile/order-reconcile.module';
 import { LibraryModule } from './modules/library/library.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 import { ArchiveModule } from './modules/archive/archive.module';
@@ -55,6 +56,7 @@ import { DemoModule } from './modules/demo/demo.module';
     FulfillmentModule,
     WaybillModule,
     OrderProgressModule,
+    OrderReconcileModule,
     LibraryModule,
     CustomerServiceModule,
     ArchiveModule,
