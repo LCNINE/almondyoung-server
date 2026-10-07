@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
+import { CHANNEL_ORDERS_COMMAND_STREAM, CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import {
@@ -10,6 +11,12 @@ import {
   seedMatching,
   receiveStock,
 } from '../../../fulfillment/services/__support__';
+import { ambientDbService, assembleOutbound } from '../../../fulfillment/services/__support__/simple-outbound-wiring';
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { PoliciesService } from '../../services/policies.service';
+import { SalesOrdersService } from '../../services/sales-orders.service';
+import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
+import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
 
 export const ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '서울', detailAddress: '101' };
 
@@ -92,3 +99,37 @@ export async function markLineShipped(tx: DbTx, salesOrderLineId: string, shippe
     .set({ shippedQty })
     .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
 }
+
+/**
+ * 취소 요청 통합 스펙의 배선. 롤백 트랜잭션 하나에 판매주문·요청 reader/manager 를 묶는다.
+ * (확정 settler·변경 manager 는 Task 8 에서 여기에 더한다.)
+ */
+export function wireCancelRequest(tx: DbTx) {
+  const dbService = ambientDbService(tx);
+  const logistics = wireLogistics(dbService);
+  const outbound = assembleOutbound(tx);
+  const salesOrders = new SalesOrdersService(
+    dbService,
+    new PoliciesService(dbService),
+    outboxPublisherFor(FULFILLMENT_STREAM, dbService),
+    outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+    logistics.lifecycle,
+    logistics.productSkuMapping,
+    logistics.sellable,
+    logistics.backlog,
+    undefined,
+    undefined,
+    undefined,
+    { get: () => outbound.planning } as never,
+  );
+  const reader = new ChannelCancelRequestReader();
+  const manager = new ChannelCancelRequestManager(
+    dbService,
+    reader,
+    salesOrders,
+    outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
+  );
+  return { dbService, logistics, outbound, salesOrders, reader, manager };
+}
+
+export type CancelWiring = ReturnType<typeof wireCancelRequest>;

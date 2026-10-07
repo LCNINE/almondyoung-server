@@ -49,6 +49,7 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { kstDayStart, kstDayEndInclusive, kstTodayRange } from '../utils/kst-date.util';
 import { extractDisplayOrderNo } from '../utils/display-order-no.util';
+import { CHANNEL_CANCEL_REQUEST_REASON, toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
@@ -762,7 +763,24 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
-    return { ...order, lines, businessTimeline: this.toBusinessTimeline(context, businessLinks) };
+    const [cancelRequestRow] = await db
+      .select()
+      .from(wmsTables.salesOrderAmendments)
+      .where(
+        and(
+          eq(wmsTables.salesOrderAmendments.salesOrderId, id),
+          eq(wmsTables.salesOrderAmendments.reasonCode, CHANNEL_CANCEL_REQUEST_REASON),
+        ),
+      )
+      .orderBy(desc(wmsTables.salesOrderAmendments.createdAt), desc(wmsTables.salesOrderAmendments.id))
+      .limit(1);
+    return {
+      ...order,
+      lines,
+      businessTimeline: this.toBusinessTimeline(context, businessLinks),
+      // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다
+      cancelRequest: cancelRequestRow ? toCancelRequestView(cancelRequestRow) : null,
+    };
   }
 
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: DbTx) {
