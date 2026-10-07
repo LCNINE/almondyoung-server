@@ -35,7 +35,8 @@ export function BeautyTopPreview({ signedIn, loginHref }: { signedIn: boolean; l
           <p className="text-muted-foreground text-sm leading-[19px] break-keep">{t("everyoneBody")}</p>
         </section>
       </div>
-      <div className="border-border bg-background sticky bottom-0 z-10 -mx-4 border-t px-4 pt-3 pb-4">
+      {/* Above the fixed mobile bottom navigation (h-16 + safe area); that bar is hidden from xl up. */}
+      <div className="border-border bg-background sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 -mx-4 border-t px-4 pt-3 pb-4 xl:bottom-0">
         <ul className="text-muted-foreground mb-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[13px]">
           {CHIPS.map((key) => (
             <li key={key} className="flex items-center gap-1">
