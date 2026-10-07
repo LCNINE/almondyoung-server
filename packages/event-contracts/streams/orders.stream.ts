@@ -422,22 +422,23 @@ const OrderMergedSchema = z.object({
 });
 
 /**
- * Core → Channel Adapter 주문 취소 완료 이벤트
+ * Core 주문 취소 완료 사실
  *
  * orders.events.v1 / OrderCancelled 는 외부 채널(Medusa/Naver/Coupang) → Core 인바운드 이벤트.
- * 이 타입은 Core 가 취소를 완료한 뒤 Channel Adapter 에 전파하는 아웃바운드 이벤트.
+ * 이 타입은 Core 가 취소를 반영한 뒤 내는 아웃바운드 사실이다. 소비자: ugc-service(리뷰 적립 회수).
+ * 채널에 취소를 «요청»하는 것은 이 사실이 아니라 `CancelChannelOrder` 명령이다(ADR-0042) —
+ * 이 사실을 구독해 채널을 부르면 채널이 먼저 한 취소가 채널로 되돌아간다.
  * 스트림: core.orders.events.v1
  */
 export interface SalesOrderCancelledPayload {
   orderId: string;
-  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호).
-   *  채널어댑터가 wms_order_mappings를 조회할 때 사용한다. */
+  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호). */
   channelOrderId?: string;
   reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
   cancelledAt: string;
-  /** full: 전체취소 → Medusa cancelOrder 동기화 대상. partial: 부분취소 → Medusa 동기화 제외. */
+  /** full: 전체취소. partial: 부분취소(`cancelledLines` 에 줄). */
   cancellationScope: 'full' | 'partial';
   refundRequired: boolean;
   refundAmount?: number;
