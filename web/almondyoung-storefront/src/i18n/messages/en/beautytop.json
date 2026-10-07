@@ -354,5 +354,11 @@
     "indexCategory": "{category} shops",
     "fromArea": "Planning to open in this area?"
   },
-  "memberNotice": "Opening the My shop and Brands tabs is recorded as <b>using a membership benefit</b>. If you open them within 7 days of payment, a full refund (withdrawal) is limited. <link>Details</link>"
+  "memberNotice": "Opening the My shop and Brands tabs is recorded as <b>using a membership benefit</b>. If you open them within 7 days of payment, a full refund (withdrawal) is limited. <link>Details</link>",
+  "beta": {
+    "badge": "BETA",
+    "title": "A beta service we're growing together with you",
+    "body": "To help your shop succeed, we keep gathering shop information from across the country and keep adding features. If you're curious about something, like \"What does a lash lift usually cost around here?\", let us know.",
+    "link": "Tell us what you're curious about"
+  }
 }
