@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { modifiedPayload, seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
+import { markLineShipped, modifiedPayload, seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -119,8 +119,57 @@ describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
       const { w, seed, requestId } = await partialRequest(tx);
       await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { address: NEXT_ADDRESS }), 'm-1', tx);
       expect((await requestOf(tx, requestId)).status).toBe('requested');
-      const pending = await w.amendments.list({ status: 'pending', origin: 'channel', limit: 200 }, tx);
+      const channelRows = (await amendmentsOf(tx, seed.salesOrderId)).filter((a) => a.origin === 'channel');
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('applied');
+      const after = await requestOf(tx, requestId);
+      expect(after.supersededById).toBeNull();
+      expect(after.metadata).not.toHaveProperty('supersededReason');
+      const pending = await w.amendments.list({ status: 'pending', limit: 200 }, tx);
       expect(pending.items.some((item) => item.id === requestId)).toBe(false);
+    });
+  });
+
+  it('요청이 먹은 감소 + 채널이 더 지운 감소로 전 라인이 0 이면 남은 감소는 ALL_LINES_REMOVED 로 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const view = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }], requester: OPERATOR, sourceKey: 'k-all' },
+        tx,
+      );
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, { quantities: [0, 0], cancelRequests: progress(view.id, 'refunded') }),
+        'm-1',
+        tx,
+      );
+      expect((await requestOf(tx, view.id)).status).toBe('applied');
+      const channelRows = (await amendmentsOf(tx, seed.salesOrderId)).filter((a) => a.origin === 'channel');
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('pending');
+      expect(JSON.stringify(channelRows[0].deltas)).toContain('ALL_LINES_REMOVED');
+    });
+  });
+
+  it('물리 취소가 거절되면 요청 superseded(APPLY_REFUSED), 취소 행 없음, 같은 감소는 5번이 대기로 둔다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, requestId } = await partialRequest(tx);
+      await markLineShipped(tx, seed.lineIds[0], 1);
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, { quantities: [1, 1], cancelRequests: progress(requestId, 'refunded') }),
+        'm-1',
+        tx,
+      );
+      const row = await requestOf(tx, requestId);
+      expect(row.status).toBe('superseded');
+      expect(row.metadata).toMatchObject({ supersededReason: 'APPLY_REFUSED' });
+      expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(0);
+      const channelRows = (await amendmentsOf(tx, seed.salesOrderId)).filter((a) => a.origin === 'channel');
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('pending');
+      expect(JSON.stringify(channelRows[0].deltas)).toContain('CANCEL_NOT_IMMEDIATE');
     });
   });
 
