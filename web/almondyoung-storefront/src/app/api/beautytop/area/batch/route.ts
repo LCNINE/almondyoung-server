@@ -11,7 +11,15 @@ export async function GET(request: Request) {
   // Only a fully answered batch may be shared by the CDN; a BUSY item must be asked again.
   const complete = results.every((r) => r.ok)
   return Response.json(
-    { results: results.map((r) => (r.ok ? { data: r.data } : { error: r.error })) },
+    {
+      results: results.map((r) =>
+        r.ok
+          ? { data: r.data }
+          : r.retryAfterMs !== undefined
+            ? { error: r.error, retryAfter: Math.ceil(r.retryAfterMs / 1000) }
+            : { error: r.error }
+      ),
+    },
     { headers: { "Cache-Control": complete ? "public, max-age=300, stale-while-revalidate=3600" : "no-store" } }
   )
 }

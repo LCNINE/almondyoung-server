@@ -28,7 +28,8 @@ export type PublicResource = keyof typeof PUBLIC_RESOURCES
 
 export type PublicQueryResult =
   | { ok: true; data: unknown }
-  | { ok: false; error: "INVALID_QUERY" | "SOURCE_UNAVAILABLE" | "BUSY" | "NOT_CONFIGURED" }
+  // retryAfterMs: the source's own wait hint, passed on when it was too long to wait out here.
+  | { ok: false; error: "INVALID_QUERY" | "SOURCE_UNAVAILABLE" | "BUSY" | "NOT_CONFIGURED"; retryAfterMs?: number }
 
 export function isPublicResource(value: string): value is PublicResource {
   return Object.prototype.hasOwnProperty.call(PUBLIC_RESOURCES, value)
@@ -57,8 +58,6 @@ function config() {
   }
 }
 
-type SourceResult = PublicQueryResult & { retryAfterMs?: number }
-
 function retryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined
   if (/^\d+$/.test(value.trim())) return Number(value.trim()) * 1000
@@ -66,7 +65,12 @@ function retryAfterMs(value: string | null): number | undefined {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined
 }
 
-async function attemptSource(resource: string, params: Record<string, string>, subject: string): Promise<SourceResult> {
+async function attemptSource(
+  resource: string,
+  params: Record<string, string>,
+  subject: string,
+  timeoutMs: number
+): Promise<PublicQueryResult> {
   let token: ReturnType<typeof mintToken>
   try {
     token = mintToken(subject, config())
@@ -85,7 +89,7 @@ async function attemptSource(resource: string, params: Record<string, string>, s
     cache: "no-store",
     redirect: "error",
     // Cold aggregates can take over ten seconds at the source; the answer is then cached for hours.
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   if (response.status === 429 || response.status === 503) {
     const body = await response.json().catch(() => null)
@@ -107,6 +111,8 @@ const MAX_OTHER_CONCURRENT = 2
 const BUSY_RETRY_MS = [400, 800, 1200]
 const MAX_RETRY_DELAY_MS = 5000
 const MAX_TOTAL_RETRY_DELAY_MS = 10000
+// The server function is cut off at 20s; leave room to answer instead of being killed mid-wait.
+const SOURCE_DEADLINE_MS = 15_000
 const slots = new Map<string, { running: number; waiting: Array<() => void> }>()
 
 async function withSlot<T>(subject: string, task: () => Promise<T>): Promise<T> {
@@ -129,7 +135,10 @@ export async function fetchFromSource(
   params: Record<string, string>,
   subject: string = SERVER_SUBJECT
 ): Promise<PublicQueryResult> {
-  let result = await withSlot(subject, () => attemptSource(resource, params, subject))
+  const deadline = Date.now() + SOURCE_DEADLINE_MS
+  const attempt = () =>
+    withSlot(subject, () => attemptSource(resource, params, subject, Math.max(1, deadline - Date.now())))
+  let result = await attempt()
   let waited = 0
   for (const fallbackDelay of BUSY_RETRY_MS) {
     if (result.ok || result.error !== "BUSY") break
@@ -137,11 +146,16 @@ export async function fetchFromSource(
     // A minute-long rate window should return BUSY to the caller instead of holding
     // the request open or retrying before the source's Retry-After permits it.
     if (delay > MAX_RETRY_DELAY_MS || waited + delay > MAX_TOTAL_RETRY_DELAY_MS) break
+    if (Date.now() + delay >= deadline) break
     waited += delay
     await new Promise((resolve) => setTimeout(resolve, delay))
-    result = await withSlot(subject, () => attemptSource(resource, params, subject))
+    result = await attempt()
   }
-  return result.ok ? result : { ok: false, error: result.error }
+  if (result.ok) return result
+  // Only BUSY carries a wait; the caller must not ask again before the source said it may.
+  return result.error === "BUSY" && result.retryAfterMs !== undefined
+    ? { ok: false, error: "BUSY", retryAfterMs: result.retryAfterMs }
+    : { ok: false, error: result.error }
 }
 
 class NotCacheable extends Error {

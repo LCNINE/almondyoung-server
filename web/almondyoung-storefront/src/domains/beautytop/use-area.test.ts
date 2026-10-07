@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { AreaError, loadArea } from "./use-area"
+import { AreaError, areaRetryDelay, loadArea } from "./use-area"
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -33,5 +33,18 @@ describe("area batching", () => {
     const reason = busy.status === "rejected" ? busy.reason : null
     expect(reason).toBeInstanceOf(AreaError)
     expect(reason instanceof AreaError && reason.code).toBe("BUSY")
+  })
+
+  it("keeps the wait the server passed for an item", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ results: [{ error: "BUSY", retryAfter: 60 }] })))
+    const error = await loadArea("market", { sido: "서울" }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(AreaError)
+    expect(error instanceof AreaError && error.retryAfterMs).toBe(60_000)
+  })
+
+  it("never retries earlier than the source allowed", () => {
+    expect(areaRetryDelay(0, new AreaError("BUSY", 60_000), 0)).toBe(60_000)
+    expect(areaRetryDelay(2, new AreaError("BUSY", 5_000), 0.99)).toBeGreaterThanOrEqual(5_000)
+    expect(areaRetryDelay(1, new AreaError("BUSY"), 0)).toBe(2_000)
   })
 })
