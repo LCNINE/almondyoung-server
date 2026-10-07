@@ -991,12 +991,6 @@ export class OrderPollerOrchestrator {
     return typeof (provider as ReplayableChannelOrderProvider).fetchOrder === 'function';
   }
 
-  /**
-   * A terminal lifecycle event (cancel/refund) was observed for an order with no Core mapping that
-   * is NOT re-quarantined this poll. If it still has an open quarantine from an earlier poll, the
-   * order went terminal before its mapping gap was fixed — it can never be collected, so close the
-   * quarantine to record the terminal outcome and stop a replay from getting stuck on it.
-   */
   /** 처리 실패를 기록하고 로그를 남긴다. 루프와 재시도가 같이 쓴다 (스펙 §5.3·§6.4). */
   private async recordProcessingFailure(channel: SalesChannel, failure: OrderProcessingFailureItem): Promise<void> {
     const { exhaustedNow } = await this.orderCollectionFailureService.recordProcessingFailure(channel, failure);
@@ -1062,6 +1056,12 @@ export class OrderPollerOrchestrator {
     this.logger.log(`[${channel}] Closed stale quarantine for already-collected order ${externalOrderId}`);
   }
 
+  /**
+   * A terminal lifecycle event (cancel/refund) was observed for an order with no Core mapping that
+   * is NOT re-quarantined this poll. If it still has an open quarantine from an earlier poll, the
+   * order went terminal before its mapping gap was fixed — it can never be collected, so close the
+   * quarantine to record the terminal outcome and stop a replay from getting stuck on it.
+   */
   private async resolveOrphanedQuarantine(channel: string, item: OrderLifecycleEventItem): Promise<void> {
     // 열린 행을 **전부** 닫는다 — 식별 실패와 처리 실패가 함께 열려 있을 수 있고, 종결된 주문은 어느 사유로도
     // 수집할 수 없다 (#1016 1번 행 스펙 §5.5).
