@@ -158,6 +158,14 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
        ORDER BY x.sales_order_id, x.created_at ASC
     ),
     has_fo AS (SELECT DISTINCT sales_order_id FROM fo),
+    -- 열린 채널 취소 요청(#1016 35번) — 출고 보류 중이라 다른 단계는 멈춰 있다. 한 주문에 하나(부분 유니크).
+    creq AS (
+      SELECT a.sales_order_id, a.created_at,
+             CASE WHEN a.metadata->'request'->>'stage' = 'edited' THEN 'cancel_edited' ELSE 'cancel_requested' END AS state
+        FROM sales_order_amendments a
+        JOIN so ON so.id = a.sales_order_id
+       WHERE a.status = 'requested'
+    ),
     decided AS (
       SELECT so.id, so.sales_channel, so.order_date, so.created_at AS so_created_at, so.updated_at AS so_updated_at,
              bl.status AS bl_status, bl.created_at AS bl_created_at,
@@ -165,7 +173,9 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              lc.at AS cancel_at, rx.state AS rx_state, rx.created_at AS rx_at,
              (ob.sales_order_id IS NOT NULL) AS has_open_box, ob.recovery_code AS open_recovery_code,
              (hf.sales_order_id IS NOT NULL) AS has_fo,
+             cr.state AS creq_state, cr.created_at AS creq_at,
              CASE
+               WHEN cr.sales_order_id IS NOT NULL THEN 'cancel_request'
                WHEN so.status IN ('shipped', 'delivered') THEN 'external_shipped'
                WHEN so.status IN ('cancelled', 'timeout')
                  AND (ob.sales_order_id IS NOT NULL OR orr.sales_order_id IS NOT NULL) THEN 'cancel_open'
@@ -186,16 +196,18 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
         LEFT JOIN last_cancel lc ON lc.sales_order_id = so.id
         LEFT JOIN rx ON rx.sales_order_id = so.id
         LEFT JOIN has_fo hf ON hf.sales_order_id = so.id
+        LEFT JOIN creq cr ON cr.sales_order_id = so.id
     )
     SELECT d.id AS sales_order_id,
            d.sales_channel,
            d.order_date AS ordered_at,
            CASE d.rule
-             WHEN 'cancel_open' THEN 'cancel' WHEN 'return_exchange' THEN 'return_exchange'
+             WHEN 'cancel_request' THEN 'cancel_request' WHEN 'cancel_open' THEN 'cancel' WHEN 'return_exchange' THEN 'return_exchange'
              WHEN 'accept' THEN 'accept' WHEN 'fo' THEN 'fo' WHEN 'unclassified' THEN 'unclassified'
              WHEN 'unit' THEN d.rep_stage ELSE NULL
            END AS stage,
            left(CASE d.rule
+             WHEN 'cancel_request' THEN d.creq_state
              WHEN 'cancel_open' THEN coalesce(
                d.open_recovery_code,
                CASE WHEN d.has_open_box THEN 'open_shipment' ELSE 'open_reservation' END)
@@ -211,6 +223,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
            END AS outcome,
            to_char(
              (CASE d.rule
+                WHEN 'cancel_request' THEN d.creq_at
                 WHEN 'cancel_open' THEN coalesce(d.cancel_at, d.so_updated_at)
                 WHEN 'return_exchange' THEN d.rx_at
                 WHEN 'accept' THEN d.so_created_at
@@ -225,7 +238,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
 }
 
 /**
- * 갱신 대상(스펙 §5.2): 진행 중 행 + 행 없는 판매주문 + 직전 주기 뒤 판매주문·반품·교환·취소가 바뀐 주문.
+ * 갱신 대상(스펙 §5.2): 진행 중 행 + 행 없는 판매주문 + 직전 주기 뒤 판매주문·반품·교환·취소·변경 기록(취소 요청)이 바뀐 주문.
  * sinceIso 가 null 이면(첫 실행) 전 판매주문. 2분 겹침은 직전 주기의 스냅샷 뒤·evaluated_at 앞에 커밋된 변경을 놓치지 않기 위해서다.
  */
 export function candidateIdsSql(sinceIso: string | null): SQL {
@@ -239,5 +252,6 @@ export function candidateIdsSql(sinceIso: string | null): SQL {
     UNION SELECT r.sales_order_id FROM return_requests r WHERE r.updated_at > ${since}
     UNION SELECT e.sales_order_id FROM exchange_requests e WHERE e.updated_at > ${since}
     UNION SELECT c.sales_order_id FROM sales_order_cancellations c WHERE c.updated_at > ${since}
+    UNION SELECT a.sales_order_id FROM sales_order_amendments a WHERE a.updated_at > ${since}
   `;
 }

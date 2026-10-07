@@ -14,6 +14,7 @@ describe('order-progress thresholds', () => {
       pick: 12 * HOUR,
       dispatch: HOUR,
       track: 5 * DAY,
+      cancel_request: 5 * 60_000,
       cancel: HOUR,
       return_exchange: 7 * DAY,
       unclassified: 0,

@@ -1,6 +1,6 @@
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDbService } from '../services/__support__';
 import { OrderProgressReader, JudgedRow } from './order-progress.reader';
 import * as f from './__support__/order-progress.fixtures';
@@ -243,6 +243,58 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       return o.salesOrderId;
     });
     expect(r).toMatchObject({ stage: null, outcome: 'cancelled' });
+  });
+
+  it('열린 취소 요청 → cancel_request/cancel_requested, 진입 = 요청 시각(다른 단계보다 앞선다)', async () => {
+    const at = new Date('2026-10-06T02:50:00.000Z');
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', plannedAt: new Date('2026-10-01T00:00:00.000Z') });
+      await tx.insert(wmsTables.salesOrderAmendments).values({
+        salesOrderId: o.salesOrderId,
+        amendmentKind: 'commercial',
+        reasonCode: 'CHANNEL_CANCEL_REQUEST',
+        deltas: [],
+        metadata: { request: { kind: 'cancel' } },
+        origin: 'operator',
+        status: 'requested',
+        createdAt: at,
+      });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'cancel_request', state: 'cancel_requested', outcome: null, estimatedEnteredAt: at.toISOString() });
+  });
+
+  it('수정됨 · 환불 미완 → cancel_request/cancel_edited · 닫힌 요청은 단계에 영향 없음', async () => {
+    const edited = await one(async (tx) => {
+      const o = await f.seedOrder(tx);
+      await tx.insert(wmsTables.salesOrderAmendments).values({
+        salesOrderId: o.salesOrderId,
+        amendmentKind: 'commercial',
+        reasonCode: 'CHANNEL_CANCEL_REQUEST',
+        deltas: [],
+        metadata: { request: { kind: 'cancel', stage: 'edited' } },
+        origin: 'operator',
+        status: 'requested',
+      });
+      return o.salesOrderId;
+    });
+    expect(edited).toMatchObject({ stage: 'cancel_request', state: 'cancel_edited' });
+
+    const closed = await one(async (tx) => {
+      const o = await f.seedOrder(tx);
+      await tx.insert(wmsTables.salesOrderAmendments).values({
+        salesOrderId: o.salesOrderId,
+        amendmentKind: 'commercial',
+        reasonCode: 'CHANNEL_CANCEL_REQUEST',
+        deltas: [],
+        origin: 'operator',
+        status: 'rejected',
+      });
+      return o.salesOrderId;
+    });
+    expect(closed.stage).not.toBe('cancel_request');
   });
 
   it('살아 있는 주문의 상자가 CANCEL_REPLAN_PENDING → cancel/<코드>, 진입 = 마지막 취소 시각', async () => {
