@@ -402,6 +402,11 @@ export class StoreSalesOrdersService {
       .limit(1)
       .then((r) => r[0]);
 
+    // 채널 경로 주문의 환불은 채널이 한다 — 옛 wallet 환불 링크가 없으면 여기서 wallet 을 부를 근거가 없다.
+    if (!refundLink && channelCancelRoute(so.salesChannel) === 'command') {
+      throw new BadRequestException('채널 주문의 환불은 채널이 처리합니다.');
+    }
+
     const currentStatus = (refundLink?.metadata as Record<string, unknown>)?.refundStatus as string | undefined;
 
     if (currentStatus === 'succeeded') {

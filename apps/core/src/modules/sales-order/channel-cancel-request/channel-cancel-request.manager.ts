@@ -63,7 +63,13 @@ export class ChannelCancelRequestManager {
       const replay = await this.reader.findBySourceKey(so.id, input.sourceKey, trx);
       if (replay) return toCancelRequestView(replay);
       const open = await this.reader.findOpen(so.id, trx);
-      if (open) return toCancelRequestView(open);
+      if (open) {
+        // 운영자 부분취소가 열려 있는데 고객이 전체취소를 누르면 «이미 접수됨»으로 보이게 돌려주면 거짓이다 — 다른 요청이다.
+        if (input.requester.kind === 'customer' && readCancelRequestMetadata(open.metadata).request.scope === 'partial') {
+          throw new ConflictError('처리 중인 부분취소가 있어 지금은 전체 취소를 요청할 수 없습니다. 잠시 뒤 다시 시도해 주세요.');
+        }
+        return toCancelRequestView(open);
+      }
 
       const route = channelCancelRoute(so.salesChannel);
       if (route === 'seller_center') throw new BadRequestError(sellerCenterMessage(so.salesChannel));
@@ -195,6 +201,10 @@ export class ChannelCancelRequestManager {
       const row = await this.reader.findOpen(salesOrderId, trx, { lock: true });
       if (!row) throw new ConflictError(`열린 취소 요청이 없습니다: ${salesOrderId}`);
       const meta = readCancelRequestMetadata(row.metadata);
+      // 수정됨·미반영 — Medusa 주문은 이미 줄었다. 보류를 풀면 창고가 취소분을 보내는데 채널 어댑터는 환불을 계속 재시도한다.
+      if (meta.request.stage === 'edited' && !meta.request.appliedAt) {
+        throw new ConflictError('채널 주문이 이미 줄었습니다 — 다시 보내기로 환불을 마치거나 수집을 기다려 주세요.');
+      }
       const next: CancelRequestMetadata = {
         ...meta,
         rejection: {

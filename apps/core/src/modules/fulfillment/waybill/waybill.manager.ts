@@ -377,6 +377,8 @@ export class WaybillManager {
   // 활성 waybill 을 void 후 새로 발급(§11) — 원자적 한 커맨드처럼 호출자에게 노출.
   // carrier I/O 포함(issueForShipment 경유) → tx? 를 받지 않는다.
   async reissue(shipmentId: string, opts: IssueOpts, idempotencyKey: string, actor: Actor): Promise<WaybillRow> {
+    // 보류는 발급(issueForShipment)도 거절한다 — void 가 먼저 나가면 보류된 박스가 송장 없이 남는다.
+    await this.dbService.run((trx) => assertShipmentNotHeld(trx, shipmentId));
     const active = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId));
     if (active && active.status === 'registered') {
       await this.void(active.id, { reason: 'reissue' }, `${idempotencyKey}:void`, actor);

@@ -1467,6 +1467,7 @@ export const salesOrderAmendments = pgTable(
     // #1016 판단 6: 채널 변경과 운영자 수정을 함께 담는 단일 변경 기록. `decision` 은 운영자 승인 축, `status` 는 적용 축이다.
     origin: varchar('origin', { length: 16 }).$type<'channel' | 'operator'>().notNull().default('operator'),
     // requested·rejected: 채널 주문 취소 요청(#1016 35번, ADR-0042). requested 인 행이 곧 «출고 보류»다.
+    // 'requested' 는 채널 취소 요청 전용으로 예약됐다 — 보류·정체 보드·유니크 인덱스가 reason_code 없이 이 값만으로 키를 잡는다.
     status: varchar('status', { length: 16 })
       .$type<'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'rejected'>()
       .notNull()

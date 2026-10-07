@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { and, eq, sql as drizzleSql } from 'drizzle-orm';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
@@ -149,6 +149,29 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
         tx,
       );
       expect(replay).toMatchObject({ id: first.id, status: 'rejected' });
+      expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(1);
+    });
+  });
+
+  it('운영자 부분취소가 열려 있으면 고객 전체취소는 409 — 요청은 늘지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await w.manager.request(
+        {
+          salesOrderId: seed.salesOrderId,
+          lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+          requester: OPERATOR,
+          sourceKey: 'k1',
+        },
+        tx,
+      );
+      await expect(
+        w.manager.request(
+          { salesOrderId: seed.salesOrderId, requester: { kind: 'customer', customerId: randomUUID() }, sourceKey: 'k2' },
+          tx,
+        ),
+      ).rejects.toBeInstanceOf(ConflictError);
       expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(1);
     });
   });

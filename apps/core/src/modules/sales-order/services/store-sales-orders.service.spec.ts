@@ -956,9 +956,15 @@ describe('StoreSalesOrdersService', () => {
       expect(result).toMatchObject({ refundStatus: 'succeeded' });
     });
 
-    it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
-      // currentRefundStatus undefined → refundLink 없음
+    it('채널(medusa) 주문인데 옛 환불 링크가 없으면 400 — wallet 을 부르지 않는다', async () => {
       const { service, walletClientMock } = makeRetryContext();
+      await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('채널 주문의 환불은 채널이 처리합니다.');
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
+      // currentRefundStatus undefined → refundLink 없음 (채널 경로가 아닌 주문 — 채널 경로는 아래에서 400)
+      const { service, walletClientMock } = makeRetryContext({ so: makeSo({ status: 'cancelled', salesChannel: 'manual' }) });
       const result = await service.retryWalletRefund(SO_ID);
       expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
         WALLET_INTENT_ID,

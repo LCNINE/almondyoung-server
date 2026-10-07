@@ -67,7 +67,7 @@ const START_BLOCKER_TEXT: BlockerText = {
   },
   CANCEL_REQUESTED: {
     title: '취소 처리 중인 주문',
-    guidance: '취소가 끝나면 이 박스는 빠집니다. 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
+    guidance: '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
   },
 };
 

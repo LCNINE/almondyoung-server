@@ -82,4 +82,28 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
       await expect(w.manager.resend(seed.salesOrderId, tx)).rejects.toBeInstanceOf(ConflictError);
     });
   });
+
+  it('요청 접기 — 수정됨·미반영이면 409 로 거절하고 행은 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      await w.manager.markStalled({ requestId: id }, tx);
+      await expect(w.manager.withdraw(seed.salesOrderId, OPERATOR.actorId, tx)).rejects.toBeInstanceOf(ConflictError);
+      expect((await rowOf(tx, id)).status).toBe('requested');
+    });
+  });
+
+  it('요청 접기 — 수정됨이어도 반영(appliedAt)이 끝났으면 접을 수 있다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      await w.manager.markStalled({ requestId: id }, tx);
+      const row = await rowOf(tx, id);
+      const meta = row.metadata as { request: Record<string, unknown> };
+      await tx
+        .update(wmsTables.salesOrderAmendments)
+        .set({ metadata: { ...meta, request: { ...meta.request, appliedAt: new Date().toISOString() } } })
+        .where(eq(wmsTables.salesOrderAmendments.id, id));
+      const view = await w.manager.withdraw(seed.salesOrderId, OPERATOR.actorId, tx);
+      expect(view.status).toBe('rejected');
+    });
+  });
 });

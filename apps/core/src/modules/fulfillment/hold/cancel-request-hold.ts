@@ -7,6 +7,7 @@ export const CANCEL_REQUESTED = 'CANCEL_REQUESTED';
 
 /**
  * 열린 채널 취소 요청(`sales_order_amendments.status = 'requested'`)이 걸린 판매주문을 담은 박스 (#1016 35번, ADR-0042 원칙 2).
+ * `requested` 는 채널 취소 요청 전용으로 예약된 상태다 — 이 질의는 reason_code 없이 status 만 본다.
  * 요청 행의 존재가 곧 «출고 보류»다 — 따로 풀 일이 없다. 합포장 박스는 한 주문만 걸려도 통째로 멈춘다.
  * 잠그지 않는다: 부르는 쪽이 박스 행을 먼저 잠근다(요청 트랜잭션도 같은 행을 잠가 직렬화된다).
  */

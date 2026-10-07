@@ -56,4 +56,15 @@ describe('송장 관문 — 열린 취소 요청 (#1016 35번 §5.3)', () => {
     expect(trx.for).toHaveBeenCalledWith('update');
     expect(reader.loadIssueContext).not.toHaveBeenCalled();
   });
+
+  it('재발급: 보류면 void 를 내기 전에 CANCEL_REQUESTED — 송장이 그대로 남는다', async () => {
+    held.mockRejectedValue(new ConflictError('CANCEL_REQUESTED: x'));
+    const { manager, reader } = makeManager();
+    reader.getActiveWaybill.mockResolvedValue({ id: 'w-1', status: 'registered' });
+    const voidSpy = jest.spyOn(manager, 'void');
+    await expect(
+      manager.reissue('sh-1', { carrier: 'HANJIN', expectedManifestVersion: 1 }, 'k', { id: 'a', roles: [] }),
+    ).rejects.toThrow('CANCEL_REQUESTED');
+    expect(voidSpy).not.toHaveBeenCalled();
+  });
 });
