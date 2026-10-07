@@ -32,4 +32,20 @@ export class ChannelCancelRequestService {
       return row ? toCancelRequestView(row) : null;
     });
   }
+
+  reject(fact: { requestId: string; reasonCode: string; message: string }): Promise<void> {
+    return this.manager.reject(fact);
+  }
+
+  markStalled(fact: { requestId: string }): Promise<void> {
+    return this.manager.markStalled(fact);
+  }
+
+  resend(salesOrderId: string): Promise<CancelRequestView> {
+    return this.manager.resend(salesOrderId);
+  }
+
+  withdraw(salesOrderId: string, operatorId: string | null): Promise<CancelRequestView> {
+    return this.manager.withdraw(salesOrderId, operatorId);
+  }
 }

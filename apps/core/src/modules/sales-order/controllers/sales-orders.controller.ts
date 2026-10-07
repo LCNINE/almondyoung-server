@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { User } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
@@ -30,6 +31,7 @@ export class SalesOrdersController {
     private readonly service: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly storeSalesOrders: StoreSalesOrdersService,
+    private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
   @Post()
@@ -92,6 +94,23 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       amount: dto.amount,
     });
+  }
+
+  @Post(':id/cancel-request/resend')
+  @ApiOperation({ summary: '채널 취소 요청 다시 보내기 — 같은 requestId (정체 보드 «취소 요청 미반영»)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  resendCancelRequest(@Param('id') id: string) {
+    return this.cancelRequests.resend(id);
+  }
+
+  @Post(':id/cancel-request/withdraw')
+  @ApiOperation({ summary: '채널 취소 요청 접기 — 보류를 푼다(OPERATOR_WITHDRAWN)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  withdrawCancelRequest(
+    @Param('id') id: string,
+    @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
+  ) {
+    return this.cancelRequests.withdraw(id, user?.userId ?? user?.id ?? user?.sub ?? null);
   }
 
   @Post(':id/business-links')
