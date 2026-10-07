@@ -125,7 +125,7 @@ export interface LineShortage {
   reason: StartShortReason;
 }
 
-export type StartBlockReason = StartShortReason | 'WAYBILL_NOT_READY';
+export type StartBlockReason = StartShortReason | 'WAYBILL_NOT_READY' | 'CANCEL_REQUESTED';
 
 /** 시작(PR 2 부터는 합류도)을 막은 박스 하나의 사유. 줄 단위 사유면 줄·SKU·수량이 채워진다. */
 export interface StartBlocker {
@@ -135,7 +135,7 @@ export interface StartBlocker {
   skuId: string | null;
   requiredQty: number | null;
   shortQty: number | null;
-  /** WAYBILL_NOT_READY 의 원 메시지(`WAYBILL_STALE: …` 등). 줄 사유면 null. */
+  /** WAYBILL_NOT_READY·CANCEL_REQUESTED 의 원 메시지(`WAYBILL_STALE: …` 등). 줄 사유면 null. */
   detail: string | null;
 }
 

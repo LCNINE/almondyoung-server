@@ -472,7 +472,9 @@ function toRefillDto(refill: RefillView): ShortPickRefillDto {
 
 function toShortageDto(view: StartBlockerView): ShortPickShortageDto {
   // holds because the blockers come from plan.shortages (line reasons only) — never a waybill blocker.
-  if (view.reason === 'WAYBILL_NOT_READY') throw new Error('A refill shortage cannot be a waybill blocker');
+  if (view.reason === 'WAYBILL_NOT_READY' || view.reason === 'CANCEL_REQUESTED') {
+    throw new Error('A refill shortage cannot be a waybill or cancel-hold blocker');
+  }
   return {
     shipmentLineId: view.shipmentLineId,
     skuId: view.skuId,

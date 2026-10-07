@@ -4,6 +4,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
+import { assertShipmentNotHeld } from '../hold/cancel-request-hold';
 import { HANJIN_CONFIG } from './waybill.tokens';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { CarrierCode } from './carrier/carrier-gateway.interface';
@@ -54,6 +55,14 @@ export class WaybillManager {
           canonicalRequest: { actorId: actor.id, shipmentId, ...opts },
         },
         async (trx) => {
+          // 열린 채널 취소 요청과 직렬화한다(#1016 35번 §5.3) — 요청 트랜잭션이 같은 박스 행을 잠근다.
+          // 발급은 원래 아무것도 잠그지 않았다(활성 송장 유니크만 기댔다).
+          await trx
+            .select({ id: inventoryTables.shipments.id })
+            .from(inventoryTables.shipments)
+            .where(eq(inventoryTables.shipments.id, shipmentId))
+            .for('update');
+          await assertShipmentNotHeld(trx, shipmentId);
           const ctx = await this.reader.loadIssueContext(trx, shipmentId);
           if (ctx.status !== 'planned') {
             throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);
@@ -398,6 +407,8 @@ export class WaybillManager {
         .where(eq(inventoryTables.shipments.id, shipmentId))
         .limit(1);
       if (!shipment) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId}`);
+      // 출고 보류(#1016 35번 §5.3). 발송·배치 시작·합류·시작 전 추가·라벨 렌더가 모두 여기를 지난다 — 보류는 출고 전체를 멈춘다.
+      await assertShipmentNotHeld(trx, shipmentId);
       const wb = await this.reader.getActiveWaybill(trx, shipmentId);
       if (!wb || !WAYBILL_DISPATCHABLE_STATUSES.some((s) => s === wb.status)) {
         throw new ConflictError(
