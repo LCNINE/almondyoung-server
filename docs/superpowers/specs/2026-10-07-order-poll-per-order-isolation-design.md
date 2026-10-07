@@ -70,7 +70,7 @@ throw 의 대표 원인은 계약 위반이다. `StreamPublisher.enqueue` 는 �
 | --- | --- |
 | `fetch` | `{}` — 원본을 받지 못했다 |
 | `translate` | 번역하려던 스냅샷 |
-| `enqueue_order` | zod 가 거부한 `createPayload`(신규) 또는 `OrderModified` payload(수집된 주문) |
+| `enqueue_order` | `{ createPayload, modification }` — 신규면 `OrderCreated` 로, 수집된 주문이면 `OrderModified` 의 `snapshot` 으로 나가려던 값. throw 를 잡는 자리에선 어느 갈래였는지 모르므로 둘 다 싣는다 |
 | `enqueue_lifecycle` | `{ eventType, eventKey, payload }` |
 
 적재 실패의 원인(예: 2번 행의 `+09:00`)이 행 안에서 바로 보이게 하려는 것이다. 되살릴 때는 이 값을 쓰지 않는다(D5).
