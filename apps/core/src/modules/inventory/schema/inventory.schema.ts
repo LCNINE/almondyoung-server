@@ -1466,8 +1466,9 @@ export const salesOrderAmendments = pgTable(
       .default(sql`'{}'::jsonb`),
     // #1016 판단 6: 채널 변경과 운영자 수정을 함께 담는 단일 변경 기록. `decision` 은 운영자 승인 축, `status` 는 적용 축이다.
     origin: varchar('origin', { length: 16 }).$type<'channel' | 'operator'>().notNull().default('operator'),
+    // requested·rejected: 채널 주문 취소 요청(#1016 35번, ADR-0042). requested 인 행이 곧 «출고 보류»다.
     status: varchar('status', { length: 16 })
-      .$type<'applied' | 'pending' | 'superseded' | 'dismissed'>()
+      .$type<'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'rejected'>()
       .notNull()
       .default('pending'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
@@ -1505,8 +1506,13 @@ export const salesOrderAmendments = pgTable(
     originCheck: check('sales_order_amendments_origin_check', sql`${t.origin} IN ('channel', 'operator')`),
     statusCheck: check(
       'sales_order_amendments_status_check',
-      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed')`,
+      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected')`,
     ),
+    // 한 주문에 열린 취소 요청은 하나(스펙 §5.1) — 늦게 온 요청은 열린 요청을 돌려받는다. 요청 트랜잭션이 판매주문을
+    // 먼저 잠가 직렬화하므로 이 인덱스는 코드 밖 경로(손 SQL 등)에 대한 마지막 방어선이다.
+    uqOpenCancelRequest: uniqueIndex('uq_sales_order_amendments_open_cancel_request')
+      .on(t.salesOrderId)
+      .where(sql`${t.status} = 'requested'`),
   }),
 );
 

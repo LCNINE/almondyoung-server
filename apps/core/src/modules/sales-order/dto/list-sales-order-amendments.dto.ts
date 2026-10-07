@@ -5,7 +5,7 @@ import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-vali
 export class ListSalesOrderAmendmentsQueryDto {
   @ApiPropertyOptional({ enum: ['applied', 'pending', 'superseded', 'dismissed'] })
   @IsOptional()
-  @IsIn(['applied', 'pending', 'superseded', 'dismissed'])
+  @IsIn(['applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected'])
   status?: 'applied' | 'pending' | 'superseded' | 'dismissed';
 
   @ApiPropertyOptional({ enum: ['channel', 'operator'] })
