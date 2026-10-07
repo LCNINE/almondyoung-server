@@ -2,7 +2,8 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
-  hasOpenCancelRequest,
+  hasFreshOpenCancelRequest,
+  settledCancelRequestIds,
   isCancelRequested,
   toCancelRequestView,
 } from './cancel-request.shape';
@@ -81,7 +82,23 @@ describe('cancel-request shape', () => {
   it('응답 가르기·열린 요청 감지', () => {
     expect(isCancelRequested({ requestId: 'r1', status: 'requested', scope: 'full', convertedFromFull: false })).toBe(true);
     expect(isCancelRequested({ status: 'cancelled', refundStatus: 'succeeded' })).toBe(false);
-    expect(hasOpenCancelRequest([null, { cancelRequest: view() }])).toBe(true);
-    expect(hasOpenCancelRequest([{ cancelRequest: view({ status: 'applied' }) }, { cancelRequest: null }])).toBe(false);
+  });
+
+  it('방금 낸 열린 요청만 폴링 대상 — 2분을 넘기면 정체 보드의 몫', () => {
+    const at = Date.parse('2026-10-07T00:00:00.000Z');
+    expect(hasFreshOpenCancelRequest([null, { cancelRequest: view() }], at + 60_000)).toBe(true);
+    expect(hasFreshOpenCancelRequest([{ cancelRequest: view() }], at + 120_001)).toBe(false);
+    expect(hasFreshOpenCancelRequest([{ cancelRequest: view({ status: 'applied' }) }, { cancelRequest: null }], at)).toBe(false);
+    expect(hasFreshOpenCancelRequest([{ cancelRequest: view({ requestedAt: '' }) }], at)).toBe(false);
+  });
+
+  it('requested 였다가 requested 가 아니게 된 요청 id 만 «끝남»', () => {
+    const open = [{ cancelRequest: view() }, { cancelRequest: view({ id: 'r2' }) }];
+    expect(settledCancelRequestIds(open, [{ cancelRequest: view({ status: 'applied' }) }, { cancelRequest: view({ id: 'r2' }) }])).toEqual(['r1']);
+    expect(settledCancelRequestIds(open, open)).toEqual([]);
+    expect(settledCancelRequestIds([{ cancelRequest: view({ status: 'applied' }) }], [{ cancelRequest: view({ status: 'applied' }) }])).toEqual([]);
+    expect(settledCancelRequestIds([], open)).toEqual([]);
+    // 요청이 응답에서 사라져도(null) 끝난 것이다
+    expect(settledCancelRequestIds(open.slice(0, 1), [{ cancelRequest: null }])).toEqual(['r1']);
   });
 });

@@ -138,7 +138,28 @@ export function isCancelRequested(r: AdminCancelResponse): r is Extract<AdminCan
   return 'requestId' in r && typeof r.requestId === 'string';
 }
 
-/** 상세 목록에 처리 중인 요청이 하나라도 있으면 true — 행을 잠깐 다시 읽어 «취소 요청됨»이 끝나는 걸 보인다. */
-export function hasOpenCancelRequest(details: ReadonlyArray<unknown>): boolean {
-  return details.some((d) => isRecord(d) && toCancelRequestView(d.cancelRequest)?.status === 'requested');
+function openRequestsOf(details: ReadonlyArray<unknown>): CancelRequestView[] {
+  return details.flatMap((d) => {
+    const view = isRecord(d) ? toCancelRequestView(d.cancelRequest) : null;
+    return view?.status === 'requested' ? [view] : [];
+  });
+}
+
+/**
+ * 상세 목록에 «방금 낸» 처리 중 요청이 있으면 true — 행을 잠깐 다시 읽어 «취소 요청됨»이 끝나는 걸 보인다.
+ * 오래 열린 요청은 세지 않는다: 막힌 요청을 영원히 3초마다 읽지 않게, 그건 정체 보드의 몫이다.
+ */
+export function hasFreshOpenCancelRequest(details: ReadonlyArray<unknown>, now: number, windowMs = 120_000): boolean {
+  return openRequestsOf(details).some((v) => {
+    const at = Date.parse(v.requestedAt);
+    return Number.isFinite(at) && now - at <= windowMs;
+  });
+}
+
+/** 이전 읽기에서 requested 였는데 이번에는 requested 가 아닌 요청의 id — 주문 목록의 상태(`orderStatus`)를 다시 읽을 때다. */
+export function settledCancelRequestIds(prev: ReadonlyArray<unknown>, next: ReadonlyArray<unknown>): string[] {
+  const stillOpen = new Set(openRequestsOf(next).map((v) => v.id));
+  return openRequestsOf(prev)
+    .map((v) => v.id)
+    .filter((id) => !stillOpen.has(id));
 }

@@ -186,6 +186,8 @@ export function StageOrders(props: {
                     >
                       다시 보내기
                     </button>
+                    {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. */}
+                    {r.state !== 'cancel_edited' && (
                     <button
                       type="button"
                       className={cn(
@@ -218,6 +220,7 @@ export function StageOrders(props: {
                         ? '접기 확인'
                         : '요청 접기'}
                     </button>
+                    )}
                   </td>
                 )}
               </tr>
