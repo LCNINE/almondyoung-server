@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, lt, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql, SQL } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
@@ -50,6 +50,8 @@ export type OrderProgressItem = {
   state: string | null;
   stageEnteredAt: string;
   stuck: boolean;
+  /** 리컨실러가 포기한 규칙들(스펙 2026-10-08 §6). 없으면 빈 배열 */
+  gaveUp: { rule: string; row: number; since: string; lastError: string | null }[];
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -94,6 +96,10 @@ export class OrderProgressReader {
           state: sql<string>`coalesce(${t.state}, '')`,
           open: sql<number>`count(*)::int`,
           stuck: sql<number>`(count(*) FILTER (WHERE ${t.stageEnteredAt} < ${cutoff}))::int`,
+          gaveUp: sql<number>`(count(*) FILTER (WHERE EXISTS (
+            SELECT 1 FROM ${wmsTables.orderReconcileState} r
+             WHERE r.sales_order_id = ${t.salesOrderId} AND r.gave_up_at IS NOT NULL
+          )))::int`,
           oldest: isoOf(sql`min(${t.stageEnteredAt})`),
         })
         .from(t)
@@ -144,17 +150,41 @@ export class OrderProgressReader {
         .limit(query.limit + 1);
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
+      const r = wmsTables.orderReconcileState;
+      const ids = page.map((row) => row.salesOrderId);
+      const marks =
+        ids.length === 0
+          ? []
+          : await trx
+              .select({
+                salesOrderId: r.salesOrderId,
+                rule: r.rule,
+                row: r.trackingRow,
+                since: r.gaveUpAt,
+                lastError: r.lastError,
+              })
+              .from(r)
+              .where(and(inArray(r.salesOrderId, ids), isNotNull(r.gaveUpAt)))
+              .orderBy(asc(r.trackingRow));
+      const gaveUpBy = new Map<string, OrderProgressItem['gaveUp']>();
+      for (const m of marks) {
+        if (!m.since) continue;
+        const list = gaveUpBy.get(m.salesOrderId) ?? [];
+        list.push({ rule: m.rule, row: m.row, since: m.since.toISOString(), lastError: m.lastError });
+        gaveUpBy.set(m.salesOrderId, list);
+      }
       return {
-        items: page.map((r) => ({
-          salesOrderId: r.salesOrderId,
-          orderNo: r.displayOrderNo ?? r.channelOrderId,
-          channelOrderId: r.channelOrderId,
-          salesChannel: r.salesChannel,
-          customerName: r.customerName ?? null,
-          orderedAt: r.orderedAt.toISOString(),
-          state: r.state ?? null,
-          stageEnteredAt: r.stageEnteredAt.toISOString(),
-          stuck: isStuck(query.stage, r.stageEnteredAt, now),
+        items: page.map((row) => ({
+          salesOrderId: row.salesOrderId,
+          orderNo: row.displayOrderNo ?? row.channelOrderId,
+          channelOrderId: row.channelOrderId,
+          salesChannel: row.salesChannel,
+          customerName: row.customerName ?? null,
+          orderedAt: row.orderedAt.toISOString(),
+          state: row.state ?? null,
+          stageEnteredAt: row.stageEnteredAt.toISOString(),
+          stuck: isStuck(query.stage, row.stageEnteredAt, now),
+          gaveUp: gaveUpBy.get(row.salesOrderId) ?? [],
         })),
         nextCursor:
           rows.length > query.limit && last

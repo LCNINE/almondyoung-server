@@ -1,7 +1,7 @@
 import * as postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDbService } from '../services/__support__';
 import { OrderProgressManager } from './order-progress.manager';
 import { OrderProgressReader } from './order-progress.reader';
@@ -79,5 +79,45 @@ describeIfDb('정체 보드 요약·목록 (PostgreSQL integration)', () => {
         throw new Rollback();
       }),
     ).rejects.toBeInstanceOf(Rollback);
+  });
+
+  it('리컨실러가 포기한 주문은 요약·목록에 «자동 멈춤»으로 나온다', async () => {
+    await expect(
+      db.transaction(async (rawTx) => {
+        const tx = rawTx as unknown as DbTx;
+        const dbs = makeDbService(db);
+        const manager = new OrderProgressManager(dbs);
+        const reader = new OrderProgressReader(dbs);
+        const now = new Date('2099-01-01T00:00:00.000Z');
+        const o = await f.seedOrder(tx);
+        await f.seedBacklog(tx, o.salesOrderId, 'awaiting_matching', new Date('2098-10-11T00:00:00.000Z'));
+        await manager.refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
+        await tx.insert(wmsTables.orderReconcileState).values({
+          rule: 'wake-awaiting-matching',
+          salesOrderId: o.salesOrderId,
+          trackingRow: 12,
+          fingerprint: 'fp',
+          mode: 'act',
+          attempts: 5,
+          lastResult: 'error',
+          lastError: 'boom',
+          nextCheckAt: now,
+          gaveUpAt: new Date('2098-12-31T00:00:00.000Z'),
+          firstSeenAt: now,
+          updatedAt: now,
+        });
+
+        const page = await reader.listOrders({ stage: 'fo', sort: 'dwell', limit: 200 }, now, tx);
+        const item = page.items.find((i) => i.salesOrderId === o.salesOrderId)!;
+        expect(item.gaveUp).toEqual([
+          { rule: 'wake-awaiting-matching', row: 12, since: '2098-12-31T00:00:00.000Z', lastError: 'boom' },
+        ]);
+        const summary = await reader.summary(now, tx);
+        const fo = summary.stages.find((s) => s.stage === 'fo')!;
+        expect(fo.gaveUp).toBeGreaterThanOrEqual(1);
+        expect(fo.states.find((s) => s.state === 'awaiting_matching')!.gaveUp).toBeGreaterThanOrEqual(1);
+        throw new Rollback();
+      }),
+    ).rejects.toThrow(Rollback);
   });
 });
