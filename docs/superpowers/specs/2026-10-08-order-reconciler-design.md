@@ -134,6 +134,7 @@ interface OrderReconcileRule {
 | --- | --- | --- |
 | `rule` | varchar(64) | PK 1 |
 | `sales_order_id` | uuid | PK 2, FK `sales_orders` cascade |
+| `tracking_row` | integer | #1016 행 번호. 정체 보드가 리컨실러 모듈 없이 «자동 멈춤 · #12» 를 그리게 행에 둔다 |
 | `fingerprint` | text | 마지막으로 본 상황 지문 |
 | `mode` | varchar(16) | 마지막 기록 때의 모드 |
 | `attempts` | integer | 실행 모드에서 `act` 한 횟수. 오류도 1회 |
