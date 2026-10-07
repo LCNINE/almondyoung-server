@@ -18,7 +18,8 @@ import postgres from 'postgres';
 import { Resource } from 'sst';
 
 const APPLY = process.argv.includes('--apply');
-const OUT = path.resolve(__dirname, '../../apps/core/tmp/1016-row12-demoted-variant-ids.txt');
+const OUT_REL = 'apps/core/tmp/1016-row12-demoted-variant-ids.txt';
+const OUT = path.resolve(__dirname, '../..', OUT_REL);
 
 type TargetRow = { id: string; variant_id: string; updated_at: Date; open_orders: number };
 
@@ -73,10 +74,20 @@ async function main() {
          AND NOT EXISTS (SELECT 1 FROM product_variant_sku_links l WHERE l.product_matching_id = pm.id)
       RETURNING pm.variant_id`;
 
+    if (updated.length === 0) {
+      // 빈 파일(줄바꿈 하나)을 남기면 recalc 가 빈 VARIANT_IDS 로 돈다
+      console.log('\n되돌린 행 없음 — recalc 불필요 (그 사이 링크가 붙었다).');
+      return;
+    }
+
+    const variantIds = updated.map((r) => r.variant_id);
+    console.log(`\n되돌림: ${updated.length}건`);
+    for (const id of variantIds) console.log(`  ${id}`);
     fs.mkdirSync(path.dirname(OUT), { recursive: true });
-    fs.writeFileSync(OUT, updated.map((r) => r.variant_id).join('\n') + '\n');
-    console.log(`\n되돌림: ${updated.length}건 → ${OUT}`);
-    console.log('이어서 recalc-sellable 을 돌릴 것(파일 머리 주석).');
+    fs.writeFileSync(OUT, variantIds.join('\n') + '\n');
+    console.log(`→ ${OUT}`);
+    console.log('\n이어서 저장소 루트에서:');
+    console.log(`  VARIANT_IDS=$(paste -sd, ${OUT_REL}) bash scripts/sellmate/run.sh live recalc-sellable .`);
   } finally {
     await sql.end();
   }
