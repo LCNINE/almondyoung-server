@@ -39,9 +39,12 @@ export interface StageSummary {
   stage: string;
   open: number;
   stuck: number;
+  /** 리컨실러가 포기한 주문 수. 옛 core 응답엔 없다 */
+  gaveUp?: number;
   oldestEnteredAt: string | null;
-  states: { state: string; open: number; stuck: number }[];
+  states: { state: string; open: number; stuck: number; gaveUp?: number }[];
 }
+export type GaveUpMark = { rule: string; row: number; since: string; lastError: string | null };
 export interface ProgressSummary {
   evaluatedAt: string | null;
   stages: StageSummary[];
@@ -56,6 +59,7 @@ export interface ProgressItem {
   state: string | null;
   stageEnteredAt: string;
   stuck: boolean;
+  gaveUp?: GaveUpMark[];
 }
 export interface ProgressPage {
   items: ProgressItem[];
@@ -197,4 +201,24 @@ export function stateLabel(state: string | null): string {
   if (rx)
     return `${rx[1] === 'return' ? '반품' : '교환'} ${REQUEST_STATUS[rx[2]] ?? rx[2]}`;
   return STATE_LABELS[state] ?? state;
+}
+
+/** 카드의 빨간 줄 문구. 0 인 항목은 쓰지 않는다(작은 글씨 최소화). */
+export function cardAlertText(stuck: number, gaveUp: number): string {
+  const parts: string[] = [];
+  if (stuck > 0) parts.push(`갇힘 ${stuck.toLocaleString('ko-KR')}`);
+  if (gaveUp > 0) parts.push(`자동 멈춤 ${gaveUp.toLocaleString('ko-KR')}`);
+  return parts.join(' · ');
+}
+
+/** 목록 행의 «자동 멈춤» 배지 — 리컨실러가 다섯 번 시도하고 멈춘 주문(스펙 2026-10-08 §6). title 은 마지막 오류. */
+export function gaveUpBadge(marks: GaveUpMark[] | undefined): { text: string; title: string } | null {
+  if (!marks || marks.length === 0) return null;
+  return {
+    text: `자동 멈춤 · ${marks.map((m) => `#${m.row}`).join(' ')}`,
+    title: marks
+      .filter((m) => m.lastError)
+      .map((m) => `#${m.row} ${m.lastError}`)
+      .join('\n'),
+  };
 }

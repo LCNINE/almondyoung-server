@@ -34,6 +34,7 @@ export default function StallBoardTemplate() {
       key: 'collect',
       open: cellCount(qCount, quarantine.isSuccess),
       stuck: qCount ?? 0, // 격리는 전부 사람 일(스펙 §6)
+      gaveUp: 0,
       oldestAt: quarantine.isSuccess
         ? (quarantine.data?.oldestCreatedAt ?? null)
         : null,
@@ -44,6 +45,7 @@ export default function StallBoardTemplate() {
         key: b.key,
         open: cellCount(s?.open ?? (hasSummary ? 0 : undefined), hasSummary),
         stuck: s?.stuck ?? 0,
+        gaveUp: s?.gaveUp ?? 0,
         oldestAt: s?.oldestEnteredAt ?? null,
       };
     }),
@@ -53,6 +55,7 @@ export default function StallBoardTemplate() {
         key: s.stage as BoardStageKey,
         open: s.open,
         stuck: s.stuck,
+        gaveUp: s.gaveUp ?? 0,
         oldestAt: s.oldestEnteredAt,
       })),
   ];

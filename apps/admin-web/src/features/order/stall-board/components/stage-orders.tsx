@@ -13,6 +13,7 @@ import {
   BoardStageKey,
   StageSummary,
   formatDwell,
+  gaveUpBadge,
   stateLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { cn } from '@/lib/utils/ui';
@@ -133,98 +134,109 @@ export function StageOrders(props: {
             </tr>
           </thead>
           <tbody>
-            {items.map((r) => (
-              <tr key={r.salesOrderId} className="border-t hover:bg-slate-50">
-                <td className="px-4 py-2 font-mono text-[13px]">
-                  <Link
-                    href={`/order/history?orderNo=${encodeURIComponent(r.channelOrderId)}`}
-                  >
-                    {r.orderNo}
-                  </Link>
-                </td>
-                <td className="px-4 py-2">{r.salesChannel}</td>
-                <td className="px-4 py-2">{r.customerName ?? ''}</td>
-                <td className="px-4 py-2">
-                  {new Date(r.orderedAt).toLocaleString('ko-KR', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  })}
-                </td>
-                <td className="px-4 py-2">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-                    {stateLabel(r.state)}
-                  </span>
-                </td>
-                <td
-                  className={cn(
-                    'px-4 py-2 text-right tabular-nums',
-                    r.stuck && 'font-semibold text-red-600'
-                  )}
-                >
-                  {formatDwell(
-                    props.now.getTime() - new Date(r.stageEnteredAt).getTime()
-                  )}
-                </td>
-                {isCancelRequest && (
-                  <td className="px-4 py-2 text-right whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="mr-1.5 rounded border px-2 py-0.5 text-xs disabled:opacity-40"
-                      disabled={resend.isPending}
-                      onClick={() =>
-                        resend.mutate(r.salesOrderId, {
-                          onSuccess: () =>
-                            toast.success('취소 요청을 다시 보냈습니다.'),
-                          onError: (e) =>
-                            toast.error(
-                              e instanceof Error
-                                ? e.message
-                                : '다시 보내지 못했습니다.'
-                            ),
-                        })
-                      }
+            {items.map((r) => {
+              const badge = gaveUpBadge(r.gaveUp);
+              return (
+                <tr key={r.salesOrderId} className="border-t hover:bg-slate-50">
+                  <td className="px-4 py-2 font-mono text-[13px]">
+                    <Link
+                      href={`/order/history?orderNo=${encodeURIComponent(r.channelOrderId)}`}
                     >
-                      다시 보내기
-                    </button>
-                    {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. */}
-                    {r.state !== 'cancel_edited' && (
-                    <button
-                      type="button"
-                      className={cn(
-                        'rounded border px-2 py-0.5 text-xs disabled:opacity-40',
-                        confirmWithdraw === r.salesOrderId &&
-                          'border-red-600 text-red-600'
-                      )}
-                      disabled={withdraw.isPending}
-                      onClick={() => {
-                        if (confirmWithdraw !== r.salesOrderId) {
-                          setConfirmWithdraw(r.salesOrderId);
-                          return;
-                        }
-                        withdraw.mutate(r.salesOrderId, {
-                          onSuccess: () =>
-                            toast.success(
-                              '요청을 접었습니다. 출고 보류가 풀렸습니다.'
-                            ),
-                          onError: (e) =>
-                            toast.error(
-                              e instanceof Error
-                                ? e.message
-                                : '요청을 접지 못했습니다.'
-                            ),
-                          onSettled: () => setConfirmWithdraw(null),
-                        });
-                      }}
-                    >
-                      {confirmWithdraw === r.salesOrderId
-                        ? '접기 확인'
-                        : '요청 접기'}
-                    </button>
+                      {r.orderNo}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2">{r.salesChannel}</td>
+                  <td className="px-4 py-2">{r.customerName ?? ''}</td>
+                  <td className="px-4 py-2">
+                    {new Date(r.orderedAt).toLocaleString('ko-KR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
+                      {stateLabel(r.state)}
+                    </span>
+                    {badge && (
+                      <span
+                        className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600"
+                        title={badge.title}
+                      >
+                        {badge.text}
+                      </span>
                     )}
                   </td>
-                )}
-              </tr>
-            ))}
+                  <td
+                    className={cn(
+                      'px-4 py-2 text-right tabular-nums',
+                      r.stuck && 'font-semibold text-red-600'
+                    )}
+                  >
+                    {formatDwell(
+                      props.now.getTime() - new Date(r.stageEnteredAt).getTime()
+                    )}
+                  </td>
+                  {isCancelRequest && (
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="mr-1.5 rounded border px-2 py-0.5 text-xs disabled:opacity-40"
+                        disabled={resend.isPending}
+                        onClick={() =>
+                          resend.mutate(r.salesOrderId, {
+                            onSuccess: () =>
+                              toast.success('취소 요청을 다시 보냈습니다.'),
+                            onError: (e) =>
+                              toast.error(
+                                e instanceof Error
+                                  ? e.message
+                                  : '다시 보내지 못했습니다.'
+                              ),
+                          })
+                        }
+                      >
+                        다시 보내기
+                      </button>
+                      {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. */}
+                      {r.state !== 'cancel_edited' && (
+                        <button
+                          type="button"
+                          className={cn(
+                            'rounded border px-2 py-0.5 text-xs disabled:opacity-40',
+                            confirmWithdraw === r.salesOrderId &&
+                              'border-red-600 text-red-600'
+                          )}
+                          disabled={withdraw.isPending}
+                          onClick={() => {
+                            if (confirmWithdraw !== r.salesOrderId) {
+                              setConfirmWithdraw(r.salesOrderId);
+                              return;
+                            }
+                            withdraw.mutate(r.salesOrderId, {
+                              onSuccess: () =>
+                                toast.success(
+                                  '요청을 접었습니다. 출고 보류가 풀렸습니다.'
+                                ),
+                              onError: (e) =>
+                                toast.error(
+                                  e instanceof Error
+                                    ? e.message
+                                    : '요청을 접지 못했습니다.'
+                                ),
+                              onSettled: () => setConfirmWithdraw(null),
+                            });
+                          }}
+                        >
+                          {confirmWithdraw === r.salesOrderId
+                            ? '접기 확인'
+                            : '요청 접기'}
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
