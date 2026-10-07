@@ -343,6 +343,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'const items = await this.arrearsReader.findOutstandingByUserId(userId);',
     note: '결제 금액과 청산 대상 원장 id 를 «서버가» 호출자 본인의 미청산 줄에서만 만든다(arrears-repayment.service.ts:124-155). 본문은 returnUrl 만 받고 금액·arrearsId·userId 를 받지 않으므로 남의 미수를 지목할 파라미터 자체가 없다. 실제 청산도 소유자 조건이 걸린 한 문장으로만 일어난다(ArrearsManager.settleMany: arrears.manager.ts:155 eq(schema.membershipArrears.userId, userId)).',
   },
+  'membership POST /me/benefit-usages': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/benefit/benefit-usage.manager.ts:67',
+    predicate: '.values({ userId, kind, contractId: contractWithPlan?.contract.id ?? null, periodStart })',
+    note: "본문은 kind(화이트리스트)와 acknowledged 만 받고 userId·계약 id·주기 시작을 받지 않는다. 컨트롤러가 @User('userId') 로 JWT 에서만 userId 를 얻고, 매니저의 조회(getActiveUserIds([userId]) · findCurrentEntitlement(userId) · findContractWithPlan(userId) · hasBenefitUsageSince(userId, …))와 쓰기가 모두 그 userId 로만 좁혀진다. 계약 id·주기 시작은 서버가 그 사용자의 현재 계약에서 계산한다.",
+  },
   'membership POST /me/membership-terms-agreements': {
     verdict: 'N/A',
     evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:55',
@@ -381,7 +387,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'membership GET /membership/savings/periods/:periodId': {
     verdict: 'SAFE',
-    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:217',
+    evidence: 'apps/membership/src/services/benefit/benefit.reader.ts:233',
     predicate: 'eq(schema.membershipDiscountEvents.userId, userId),',
     note: "SavingsController.getPeriodDetail -> SavingsService.getPeriodDetail(userId, periodId). periodId 는 먼저 resolvePeriods(userId)가 만든 '이 userId 소유 주기 목록'에서만 매칭되고(다른 사용자의 periodId를 넣으면 목록에 없어 BadRequestError), 매칭된 주기의 주문 상세도 findDiscountEventsBetween(userId,...) 의 where 절에 userId가 들어간다.",
   },
@@ -415,6 +421,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     evidence: 'apps/membership/src/services/subscription/cancellation-reason.reader.ts:35',
     predicate: '',
     note: "getCancellationReasons -> CancellationReasonReader.findActiveReasons() 는 isActive 로만 필터하는 전역 마스터 데이터(취소 이유 목록)라 사용자 소유 개념이 없다. 컨트롤러가 @User('userId') userId 를 받지만 서비스에 전달되지 않는 죽은 코드다 — 실제 데이터가 사용자 무관이라 VULN은 아니다.",
+  },
+  'membership GET /subscriptions/current/active': {
+    verdict: 'SAFE',
+    evidence: 'apps/membership/src/services/entitlement/entitlement.reader.ts:114',
+    predicate: 'inArray(schema.subscriptionEntitlement.userId, userIds),',
+    note: 'SubscriptionController.getCurrentActive(@User userId) -> SubscriptionService.isMembershipActive(userId) -> EntitlementService.getActiveUserIds([userId]). 호출자 JWT 의 userId 하나만 후보로 넘기고 결과도 boolean 만 돌려준다.',
   },
   'membership GET /subscriptions/current': {
     verdict: 'SAFE',
@@ -786,6 +798,29 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(eq(schema.users.id, userId))',
     note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(63행 동일 predicate)와 getUserExtendedInfo(userId)(115행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
   },
+  'user-service GET /beautytop/shops': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:42',
+    predicate: '.where(eq(schema.beautytopSavedShops.userId, userId))',
+  },
+  'user-service PUT /beautytop/shops/my-shop': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:52',
+    predicate: ".where(and(eq(schema.beautytopSavedShops.userId, userId), eq(schema.beautytopSavedShops.role, 'MY_SHOP')));",
+    note: '대상 사용자는 @CurrentUser 의 id 하나다. 지우기·넣기 모두 그 userId 로만 좁혀지고(넣기는 53행 values(userId, …)), 본문은 샵 정보만 받는다.',
+  },
+  'user-service POST /beautytop/shops/watch': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:67',
+    predicate: ".values(values(userId, 'WATCH', shop))",
+    note: '본문은 뷰티탑 샵 정보만 받고 userId 는 받지 않는다. 상한 판정에 쓰는 목록도 같은 userId 로 읽는다(list).',
+  },
+  'user-service DELETE /beautytop/shops/watch/:shopKind/:shopId': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:78',
+    predicate: 'eq(schema.beautytopSavedShops.userId, userId),',
+    note: '경로의 shopKind·shopId 는 «어느 샵을» 지울지일 뿐 «누구의» 것인지가 아니다 — 삭제 조건에 호출자 userId 가 함께 걸린다.',
+  },
   'user-service GET /wishlist': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/wishlist/wishlist.service.ts:51',
@@ -871,15 +906,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(138);
+    expect(targets).toHaveLength(144);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(138);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(137);
+    expect(new Set(targets.map(keyOf)).size).toBe(144);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(143);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

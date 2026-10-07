@@ -637,6 +637,28 @@ export const membershipDiscountEvents = pgTable(
   ],
 );
 
+/**
+ * 쇼핑 주문 밖에서 쓰는 멤버십 혜택(뷰티탑 프리미엄 등)의 이용 기록. 결제 주기당 종류별 한 줄.
+ *
+ * `period_start` 는 멱등 키일 뿐이고, 판정은 할인 원장처럼 «`used_at` 이 기간 시작 이후인가»로 한다.
+ */
+export const membershipBenefitUsages = pgTable(
+  'membership_benefit_usages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(),
+    kind: text('kind').notNull(),
+    /** 계약 없이 관리자가 부여한 이용권이면 null — 그런 이용권엔 환불·미납 판정이 없다. */
+    contractId: uuid('contract_id'),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_benefit_usages_user_kind_period').on(table.userId, table.kind, table.periodStart),
+    index('idx_benefit_usages_user_used_at').on(table.userId, table.usedAt),
+  ],
+);
+
 // Relations for Benefits Tracking
 export const membershipCycleBenefitsRelations = relations(membershipCycleBenefits, ({ one }) => ({
   subscription: one(subscriptionContracts, {
@@ -726,6 +748,7 @@ export const membershipSchema = {
   subscriptionPolicies,
   membershipCycleBenefits,
   membershipDiscountEvents,
+  membershipBenefitUsages,
   membershipArrears,
   membershipArrearsAdjustments,
   membershipTermsAgreements,

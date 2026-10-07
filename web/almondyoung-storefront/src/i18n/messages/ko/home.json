@@ -81,6 +81,10 @@
     "untilEnd": "종료까지",
     "endingSoon": "마감 임박"
   },
+  "beautytop": {
+    "title": "뷰티탑",
+    "body": "우리 샵 순위와 동네 시세를 확인해 보세요"
+  },
   "comingSoon": {
     "title": "아몬드템플릿은 준비 중이에요",
     "description": "조금만 기다려 주세요"

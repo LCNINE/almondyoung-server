@@ -81,6 +81,10 @@
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon"
   },
+  "beautytop": {
+    "title": "BeautyTop",
+    "body": "Check your shop's rank and local prices"
+  },
   "comingSoon": {
     "title": "Almond Template is coming soon",
     "description": "Stay tuned."

@@ -81,6 +81,10 @@
     "untilEnd": "終了まで",
     "endingSoon": "まもなく終了"
   },
+  "beautytop": {
+    "title": "ビューティートップ",
+    "body": "自店の順位と地域の相場を確認しましょう"
+  },
   "comingSoon": {
     "title": "アーモンドテンプレートは準備中です",
     "description": "もう少々お待ちください"

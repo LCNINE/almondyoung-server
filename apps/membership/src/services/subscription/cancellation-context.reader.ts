@@ -56,6 +56,33 @@ export class CancellationContextReader {
   ) {}
 
   /**
+   * 이번 결제 주기의 시작. 청약철회 창과 «이번 주기에 혜택을 썼는가»가 모두 이 한 점에서 센다.
+   * 결제 기록도 수금 대기도 없으면(무상 부여 등) null — 청약철회 창이 없다.
+   */
+  async resolvePaidPeriodStart(
+    contract: Contract,
+    plan: Plan,
+    entitlement: { endsAt: string; startsAt: string },
+  ): Promise<Date | null> {
+    const hasPayment = !!contract.lastPaymentIntentId;
+    // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
+    // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.
+    if (hasPayment) {
+      return (
+        (await this.contractReader.findLastChargeSuccessAt(contract.id)) ??
+        this.refundPolicy.resolvePaidPeriodStart({
+          periodEndsAt: new Date(entitlement.endsAt),
+          durationDays: plan.durationDays,
+          hasPayment,
+          billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
+        })
+      );
+    }
+    // 수금 전 선지급은 결제일이 없다. 청약철회 창은 재화 공급일(=자격 개시일)부터 센다.
+    return contract.billingPath === 'INVOICE' ? new Date(entitlement.startsAt) : null;
+  }
+
+  /**
    * @param params.fresh 환불 상한을 캐시 없이 확정한다. 실제로 환불을 집행하는 경로만 켠다 —
    *   미리보기는 마이페이지 렌더링 경로라 짧은 캐시가 필요하지만, 집행 직전의 상한은 결제관리에서
    *   방금 나간 환불까지 반영해야 한다.
@@ -81,20 +108,7 @@ export class CancellationContextReader {
     // 인보이스 경로는 자격을 먼저 주고 효성 출금이 나중에 확정된다(lastPaymentIntentId 는 그때 붙는다).
     // 그 사이 해지하면 돌려줄 돈은 없지만 나갈 돈은 남아 있다 — 예정 출금을 지우는 쪽이 정석이다.
     const awaitingCollection = !hasPayment && contract.billingPath === 'INVOICE';
-    // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
-    // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.
-    const paidPeriodStart = hasPayment
-      ? ((await this.contractReader.findLastChargeSuccessAt(contract.id)) ??
-        this.refundPolicy.resolvePaidPeriodStart({
-          periodEndsAt,
-          durationDays: plan.durationDays,
-          hasPayment,
-          billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
-        }))
-      : // 수금 전 선지급은 결제일이 없다. 청약철회 창은 재화 공급일(=자격 개시일)부터 센다.
-        awaitingCollection
-        ? new Date(entitlement.startsAt)
-        : null;
+    const paidPeriodStart = await this.resolvePaidPeriodStart(contract, plan, entitlement);
     const pausedDaysInPeriod = paidPeriodStart
       ? await this.pauseReader.sumPausedDaysSince(contract.userId, paidPeriodStart)
       : 0;

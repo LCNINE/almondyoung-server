@@ -50,6 +50,13 @@
       "when": 1789715139379,
       "tag": "20260918070539_add-marketing-consent-withdrawal",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790921762538,
+      "tag": "20261002061602_add-beautytop-saved-shops",
+      "breakpoints": true
     }
   ]
 }

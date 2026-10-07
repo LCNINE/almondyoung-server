@@ -297,6 +297,39 @@ export const wishlist = pgTable(
 );
 
 /***
+ * 뷰티탑에 저장한 샵 — «내 샵» 하나와 관심 샵 목록. 기기를 바꿔도 남게 서버에 둔다.
+ * 샵 id 는 뷰티탑 원천의 id 이고, 이름·지역은 목록을 원천 호출 없이 그리려고 함께 둔다.
+ */
+export const beautytopSavedShops = pgTable(
+  'beautytop_saved_shops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    role: varchar('role', { length: 16 }).notNull(), // 'MY_SHOP' | 'WATCH'
+    shopKind: varchar('shop_kind', { length: 16 }).notNull(), // 'SHOP' | 'PERSON'
+    shopId: integer('shop_id').notNull(),
+    name: varchar('name', { length: 200 }).notNull(),
+    sido: varchar('sido', { length: 40 }),
+    gugun: varchar('gugun', { length: 40 }),
+    category: varchar('category', { length: 40 }),
+    ...timestampColumns,
+  },
+  (table) => ({
+    userRoleShopUnique: unique('uq_beautytop_saved_user_role_shop').on(
+      table.userId,
+      table.role,
+      table.shopKind,
+      table.shopId,
+    ),
+    oneMyShopPerUser: uniqueIndex('uq_beautytop_saved_one_my_shop')
+      .on(table.userId)
+      .where(sql`${table.role} = 'MY_SHOP'`),
+  }),
+);
+
+/***
  * recent views (최근 본 상품)
  */
 export const userRecentViews = pgTable(
@@ -658,6 +691,7 @@ export const userServiceTables = {
   profiles,
   blacklists,
   wishlist,
+  beautytopSavedShops,
   userRecentViews,
   phoneVerifications,
   emailVerifications,
@@ -716,6 +750,7 @@ export type User = typeof users.$inferSelect;
 export type UserWithoutPassword = Omit<User, 'password'>;
 export type Shop = typeof shops.$inferSelect;
 export type Wishlist = typeof wishlist.$inferSelect;
+export type BeautytopSavedShop = typeof beautytopSavedShops.$inferSelect;
 export type RecentView = typeof userRecentViews.$inferSelect;
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
 export type Cafe24Token = typeof cafe24Tokens.$inferSelect;
