@@ -117,6 +117,8 @@ export class ChannelOrderTranslator {
         // 그 사유는 replay 가 거부한다. `allLinesTotal` 을 내지 않는 source(Medusa)는 `total`
         // 로 폴백하므로 해시 입력이 바이트 단위로 예전과 같다.
         totalAmount: snapshot.amounts.allLinesTotal ?? snapshot.amounts.total,
+        // 우리 부분취소의 진행 기록(#1016 35번 PR-C). 있을 때만 — 없는 주문의 해시 입력은 예전과 바이트 단위로 같다.
+        ...(snapshot.cancelRequests?.length ? { cancelRequests: snapshot.cancelRequests } : {}),
       },
       modifiedAt: snapshot.sourceUpdatedAt,
       modification: {
@@ -128,6 +130,7 @@ export class ChannelOrderTranslator {
           cancelled: line.cancelled === true,
         })),
         shippingAddress: snapshot.shippingAddress,
+        ...(snapshot.cancelRequests?.length ? { cancelRequests: snapshot.cancelRequests } : {}),
       },
     };
 

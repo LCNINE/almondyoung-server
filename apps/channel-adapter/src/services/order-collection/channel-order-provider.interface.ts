@@ -1,6 +1,7 @@
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
+  OrderModifiedCancelRequest,
   OrderModifiedPayload,
   OrderRefundCreatedPayload,
   OrderItem,
@@ -72,6 +73,7 @@ export interface OrderFetchItem {
     items: OrderItem[];
     shippingAddress: ShippingAddress;
     totalAmount: number;
+    cancelRequests?: OrderModifiedCancelRequest[];
   };
   modifiedAt: string;
   /**

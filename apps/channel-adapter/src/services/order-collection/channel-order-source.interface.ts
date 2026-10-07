@@ -1,5 +1,6 @@
 import {
   OrderCancelledPayload,
+  OrderModifiedCancelRequest,
   OrderRefundCreatedPayload,
   SalesChannel,
   ShippingAddress,
@@ -112,6 +113,12 @@ export interface ChannelOrderSnapshot {
    * 저장되고 그룹핑 키를 오염시키므로 별도 슬롯으로 흘려보낸다.
    */
   entrancePassword?: string;
+  /**
+   * 우리 부분취소 명령(`CancelChannelOrder`)의 채널 쪽 진행 기록 (#1016 35번 PR-C). Medusa 만 낸다.
+   * **비면 키를 두지 않는다** — 이 값은 `changes`(해시 입력)에도 들어가는데 빈 배열·undefined 키도
+   * `stableStringify` 결과를 바꿔 배포 직후 모든 Medusa 주문이 `OrderModified` 를 낸다.
+   */
+  cancelRequests?: OrderModifiedCancelRequest[];
   createdAt: string;
   lifecycle: LifecycleObservation[];
   /** 격리 시 운영자가 볼 채널 원본. */
