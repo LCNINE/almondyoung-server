@@ -57,7 +57,16 @@ function config() {
   }
 }
 
-async function attemptSource(resource: string, params: Record<string, string>, subject: string): Promise<PublicQueryResult> {
+type SourceResult = PublicQueryResult & { retryAfterMs?: number }
+
+function retryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined
+  if (/^\d+$/.test(value.trim())) return Number(value.trim()) * 1000
+  const date = Date.parse(value)
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined
+}
+
+async function attemptSource(resource: string, params: Record<string, string>, subject: string): Promise<SourceResult> {
   let token: ReturnType<typeof mintToken>
   try {
     token = mintToken(subject, config())
@@ -80,23 +89,31 @@ async function attemptSource(resource: string, params: Record<string, string>, s
   })
   if (response.status === 429 || response.status === 503) {
     const body = await response.json().catch(() => null)
-    return { ok: false, error: body?.error?.code === "SOURCE_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "BUSY" } as const
+    return {
+      ok: false,
+      error: body?.error?.code === "SOURCE_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "BUSY",
+      retryAfterMs: retryAfterMs(response.headers.get("Retry-After")),
+    } as const
   }
   if (!response.ok) return { ok: false, error: "SOURCE_UNAVAILABLE" } as const
   const body = await response.json()
   return { ok: true, data: body?.data ?? null } as const
 }
 
-// The source answers BUSY beyond two concurrent requests per subject. This limit is per
-// server process, so several instances can still exceed it — hence the short retries below.
-const MAX_CONCURRENT_PER_SUBJECT = 2
+// Match the source's dedicated public aggregate pool. Teasers and other subjects keep
+// their existing two slots. This is per process; the source enforces the shared ceiling.
+const MAX_PUBLIC_CONCURRENT = 8
+const MAX_OTHER_CONCURRENT = 2
 const BUSY_RETRY_MS = [400, 800, 1200]
+const MAX_RETRY_DELAY_MS = 5000
+const MAX_TOTAL_RETRY_DELAY_MS = 10000
 const slots = new Map<string, { running: number; waiting: Array<() => void> }>()
 
 async function withSlot<T>(subject: string, task: () => Promise<T>): Promise<T> {
   const slot = slots.get(subject) ?? { running: 0, waiting: [] }
   slots.set(subject, slot)
-  if (slot.running < MAX_CONCURRENT_PER_SUBJECT) slot.running++
+  const maximum = subject === SERVER_SUBJECT ? MAX_PUBLIC_CONCURRENT : MAX_OTHER_CONCURRENT
+  if (slot.running < maximum) slot.running++
   else await new Promise<void>((resolve) => slot.waiting.push(resolve))
   try {
     return await task()
@@ -113,12 +130,18 @@ export async function fetchFromSource(
   subject: string = SERVER_SUBJECT
 ): Promise<PublicQueryResult> {
   let result = await withSlot(subject, () => attemptSource(resource, params, subject))
-  for (const delay of BUSY_RETRY_MS) {
+  let waited = 0
+  for (const fallbackDelay of BUSY_RETRY_MS) {
     if (result.ok || result.error !== "BUSY") break
+    const delay = Math.max(fallbackDelay, result.retryAfterMs ?? 0)
+    // A minute-long rate window should return BUSY to the caller instead of holding
+    // the request open or retrying before the source's Retry-After permits it.
+    if (delay > MAX_RETRY_DELAY_MS || waited + delay > MAX_TOTAL_RETRY_DELAY_MS) break
+    waited += delay
     await new Promise((resolve) => setTimeout(resolve, delay))
     result = await withSlot(subject, () => attemptSource(resource, params, subject))
   }
-  return result
+  return result.ok ? result : { ok: false, error: result.error }
 }
 
 class NotCacheable extends Error {
@@ -162,7 +185,7 @@ export async function queryPublic(
 // One page needs several aggregates at once. Asked as separate HTTP requests, each lands in
 // its own serverless instance and the per-process slot above stops limiting anything, so
 // the source sees all of them at once under one subject and answers BUSY. Batched, they share
-// one instance and therefore the two slots.
+// one instance and therefore the bounded public pool.
 export const MAX_BATCH = 8
 
 export async function queryPublicBatch(items: string[]): Promise<PublicQueryResult[]> {
