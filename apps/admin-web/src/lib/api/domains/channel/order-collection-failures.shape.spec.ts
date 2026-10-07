@@ -1,6 +1,5 @@
 import {
   QUARANTINE_LIST_LIMIT,
-  formatQuarantineCount,
   toFailureDetail,
   toFailureListResult,
   toReplayResult,
@@ -112,15 +111,5 @@ describe('toReplayResult', () => {
   it('모양이 어긋나면 null 을 준다', () => {
     expect(toReplayResult(null)).toBeNull();
     expect(toReplayResult({ success: true })).toBeNull();
-  });
-});
-
-describe('formatQuarantineCount', () => {
-  it('상한에 닿았으면 "더 있다" 를 숫자에 싣는다', () => {
-    expect(formatQuarantineCount({ count: 200, truncated: true })).toBe('200+');
-  });
-
-  it('상한 미만이면 숫자를 그대로 적는다', () => {
-    expect(formatQuarantineCount({ count: 7, truncated: false })).toBe('7');
   });
 });

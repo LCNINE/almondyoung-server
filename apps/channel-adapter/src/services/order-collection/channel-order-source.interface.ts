@@ -139,6 +139,14 @@ export function isReplayableSource(source: ChannelOrderSource): source is Replay
   return typeof (source as ReplayableChannelOrderSource).fetchOrder === 'function';
 }
 
+/** 창 안에서 단건 조회에 실패한 주문 (#1016 1번 행). 삼키면 다른 주문이 워터마크를 밀어 그 주문이 조용히 사라진다. */
+export interface ChannelOrderFetchFailure {
+  externalOrderId: string;
+  /** 변경 피드가 알려 준 그 주문의 변경 시각 — 워터마크 근거다. */
+  changedAt: string;
+  error: string;
+}
+
 /**
  * **닫힌 조회 창**을 쓰는 source. 워터마크가 항목 없이도 전진할 수 있게 창의 끝을 함께 보고한다.
  *
@@ -155,6 +163,7 @@ export function isReplayableSource(source: ChannelOrderSource): source is Replay
  */
 export interface WindowedFetchResult {
   snapshots: ChannelOrderSnapshot[];
+  fetchFailures: ChannelOrderFetchFailure[];
   /** 방금 **끝까지 훑은** 닫힌 창의 끝. 창이 열려 있거나 페이징이 잘렸으면 `null`. */
   completedWindowEnd: Date | null;
 }

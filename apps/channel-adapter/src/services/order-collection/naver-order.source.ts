@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { SalesChannel } from '@packages/event-contracts/streams';
 import { NaverOrderClient } from '../../adapters/naver/clients/naver-order.client';
 import {
+  ChannelOrderFetchFailure,
   ChannelOrderLineSnapshot,
   ChannelOrderSnapshot,
   ChannelPaymentState,
@@ -71,7 +72,7 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
   async fetchOrdersInWindow(since: Date | null): Promise<WindowedFetchResult> {
     const { changedAtByOrderId, completedWindowEnd } = await this.collectChangedOrderIds(since);
     const snapshots: ChannelOrderSnapshot[] = [];
-    let failedCount = 0;
+    const fetchFailures: ChannelOrderFetchFailure[] = [];
     for (const [orderId, changedAt] of changedAtByOrderId) {
       try {
         // 🔴 채널이 말한 변경 시각을 그대로 싣는다. `now` 를 쓰면 워터마크가 조회 창을 건너뛰어
@@ -79,25 +80,22 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
         const snapshot = await this.fetchSnapshot(orderId, changedAt);
         if (snapshot) snapshots.push(snapshot);
       } catch (error) {
-        // 실패 단위는 주문 하나다, 사이클 전체가 아니다 (FIX 2). 여기서 throw 하면 오케스트레이터가
-        // 사이클 전체를 실패로 기록하고 워터마크를 멈춘다 — 그러면 이 한 주문 뒤에 있는(맵 순서상)
-        // 나머지 정상 주문들도 다음 폴링에서 똑같이 막혀, 잘못된 응답 하나가 수집 전체를 영구히
-        // 정지시킨다. 개별 주문 실패는 로그로 표면화하고 나머지는 계속 처리한다.
-        failedCount += 1;
+        // 실패 단위는 주문 하나다, 사이클 전체가 아니다 (FIX 2). 그렇다고 삼키지도 않는다 — 같은 창의 다른 주문이
+        // 워터마크를 이 주문의 변경 시각 뒤로 밀면 이 주문은 조회 범위 밖으로 빠져 영영 사라진다. 그래서 올려 보내고,
+        // 오케스트레이터가 처리 실패 행으로 기록한 뒤 재시도한다 (#1016 1번 행).
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`[naver] 주문 ${orderId} 수집 실패, 건너뛴다: ${message}`);
+        fetchFailures.push({ externalOrderId: orderId, changedAt, error: message });
+        this.logger.error(`[naver] 주문 ${orderId} 수집 실패 — 처리 실패로 올린다: ${message}`);
       }
     }
-    if (failedCount > 0) {
+    if (fetchFailures.length > 0) {
       this.logger.error(
-        `[naver] 이번 주기 ${changedAtByOrderId.size}건 중 ${failedCount}건 수집 실패 — 개별 사유는 위 로그 참고.`,
+        `[naver] 이번 주기 ${changedAtByOrderId.size}건 중 ${fetchFailures.length}건 수집 실패 — 개별 사유는 위 로그 참고.`,
       );
     }
-    // 🔴 실패한 주문이 하나라도 있으면 창을 다 봤다고 말하지 않는다. 그 창의 주문이 **전부**
-    // 실패했다면 스냅샷이 0건이라 오케스트레이터가 "변경 없음" 갈래로 들어가는데, 거기서
-    // 창의 끝까지 워터마크를 밀면 실패한 주문들이 조회 범위 밖으로 빠져 영영 사라진다 —
-    // FIX G 가 없애려던 손실 모드가 다른 문으로 되돌아온다.
-    return { snapshots, completedWindowEnd: failedCount > 0 ? null : completedWindowEnd };
+    // 🔴 실패한 주문이 하나라도 있으면 창을 다 봤다고 말하지 않는다 (FIX F × FIX G). 실패가 항목으로 올라가므로
+    // 지금은 이 값이 쓰이지 않지만(항목이 있으면 창의 끝을 보지 않는다), 기록이 빠지는 날의 마지막 방어선으로 둔다.
+    return { snapshots, fetchFailures, completedWindowEnd: fetchFailures.length > 0 ? null : completedWindowEnd };
   }
 
   /**
@@ -116,8 +114,8 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
       // 🔴 조용히 `null` 을 내면 그 주문은 **영영 사라진다**: 같은 폴의 다른 항목들이 워터마크를
       // 이 주문 너머로 밀어버리므로 다음 주기의 조회 창에 다시 들어오지 못한다. 변경 피드가
       // 준 주문번호에 상품주문이 하나도 없다는 것은 정상 응답이 아니므로 시끄럽게 실패시킨다 —
-      // `fetchOrders` 의 주문 단위 try/catch 가 다른 주문처럼 잡아 건너뛰고, 워터마크는
-      // 그 주문 시각 아래에 머문 채 다음 주기가 다시 시도한다(무손실).
+      // `fetchOrdersInWindow` 의 주문 단위 try/catch 가 잡아 처리 실패로 올리고, 오케스트레이터가 기록한 뒤
+      // 재시도한다(#1016 1번 행) — 조용히 건너뛰면 다른 주문이 워터마크를 이 주문 너머로 민다.
       this.logger.warn(`[naver] 주문 ${externalOrderId} 의 상품주문 id 목록이 비어 있다 — 수집을 실패로 처리한다.`);
       throw new Error(`네이버 상품주문 id 목록이 비었다: 주문 ${externalOrderId}`);
     }

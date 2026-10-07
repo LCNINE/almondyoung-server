@@ -40,10 +40,7 @@ export type {
   ReplayResultStatus,
   QuarantineSummary,
 } from './order-collection-failures.shape';
-export {
-  QUARANTINE_LIST_LIMIT,
-  formatQuarantineCount,
-} from './order-collection-failures.shape';
+export { QUARANTINE_LIST_LIMIT } from './order-collection-failures.shape';
 
 export const orderCollectionFailuresClient = {
   summary: async (): Promise<QuarantineSummary> => {

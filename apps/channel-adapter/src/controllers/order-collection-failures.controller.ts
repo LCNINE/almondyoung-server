@@ -5,6 +5,7 @@ import { OrderPollerOrchestrator } from '../services/order-collection/order-poll
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
   COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+  ORDER_COLLECTION_PROCESSING_FAILED,
   OrderCollectionFailureReason,
 } from '../services/order-collection/channel-order-provider.interface';
 import { OrderCollectionFailureStatus } from '../types';
@@ -23,7 +24,11 @@ export class OrderCollectionFailuresController {
   @ApiQuery({
     name: 'reason',
     required: false,
-    enum: [CHANNEL_PRODUCT_IDENTIFICATION_FAILED, COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED],
+    enum: [
+      CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+      COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+      ORDER_COLLECTION_PROCESSING_FAILED,
+    ],
   })
   @ApiQuery({
     name: 'status',
@@ -119,10 +124,17 @@ function buildReplayPath(id: string, status: string, reason: string) {
   }
 
   return {
-    fix:
-      reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED
-        ? 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.'
-        : 'Collected Medusa order changes are not replayable. Handle this as a separate CS/order amendment workflow.',
+    fix: replayFix(reason),
     endpoint: `POST /adapter/order-collection-failures/${id}/replay`,
   };
+}
+
+function replayFix(reason: string): string {
+  if (reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED) {
+    return 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.';
+  }
+  if (reason === ORDER_COLLECTION_PROCESSING_FAILED) {
+    return 'Retried automatically each poll up to 4 attempts. Fix the cause in last_error, then replay this failure.';
+  }
+  return 'Collected Medusa order changes are not replayable. Handle this as a separate CS/order amendment workflow.';
 }

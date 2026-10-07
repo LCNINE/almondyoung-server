@@ -112,6 +112,30 @@ describe('NaverOrderSource', () => {
     expect(snapshots.map((s) => s.externalOrderId).sort()).toEqual(['ord-1', 'ord-3']);
   });
 
+  it('상세가 깨진 주문은 버리지 않고 fetchFailures 로 올린다 — 변경 시각을 실어 워터마크 근거가 된다 (#1016 1번 행)', async () => {
+    client.getLastChangedStatuses.mockResolvedValue({
+      data: { count: 2, lastChangeStatuses: [changed('po-1', 'ord-1'), changed('po-2', 'ord-2')] },
+    });
+    client.getProductOrderIdsByOrderId.mockImplementation(async (orderId: string) => ({
+      data: [orderId === 'ord-1' ? 'po-1' : 'po-2'],
+    }));
+    client.getOrderDetails.mockImplementation(async (ids: string[]) => {
+      const id = ids[0];
+      if (id === 'po-2') return { data: [detail('po-2', 'ord-2', { quantity: undefined })] };
+      return { data: [detail(id, 'ord-1')] };
+    });
+
+    const { snapshots, fetchFailures, completedWindowEnd } = await source.fetchOrdersInWindow(
+      new Date('2026-08-19T00:00:00.000Z'),
+    );
+
+    expect(snapshots.map((s) => s.externalOrderId)).toEqual(['ord-1']);
+    expect(fetchFailures).toEqual([
+      { externalOrderId: 'ord-2', changedAt: '2026-08-19T01:00:00.000+09:00', error: expect.any(String) },
+    ]);
+    expect(completedWindowEnd).toBeNull();
+  });
+
   it('more 를 따라 다음 페이지를 이어 받는다', async () => {
     client.getLastChangedStatuses
       .mockResolvedValueOnce({
