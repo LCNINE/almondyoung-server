@@ -21,6 +21,7 @@ describe('order-progress shape', () => {
       'pick',
       'dispatch',
       'track',
+      'cancel_request',
       'cancel',
       'return_exchange',
       'unclassified',
@@ -36,6 +37,11 @@ describe('order-progress shape', () => {
       '7',
       '8',
     ]);
+  });
+
+  it('취소 요청 단계의 세부 상태 이름', () => {
+    expect(stateLabel('cancel_requested')).toBe('취소 요청 미반영');
+    expect(stateLabel('cancel_edited')).toBe('수정됨 · 환불 미완');
   });
 
   it('요약은 envelope 여부와 무관하게 읽고, 깨진 몸통은 빈 요약', () => {

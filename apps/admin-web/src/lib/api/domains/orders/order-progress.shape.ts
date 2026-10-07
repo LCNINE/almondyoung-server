@@ -13,6 +13,7 @@ export type BoardStageKey =
   | 'pick'
   | 'dispatch'
   | 'track'
+  | 'cancel_request'
   | 'cancel'
   | 'return_exchange'
   | 'unclassified';
@@ -28,6 +29,7 @@ export const BOARD_STAGES: { key: BoardStageKey; no: string; name: string }[] =
     { key: 'pick', no: '6', name: '배치·피킹' },
     { key: 'dispatch', no: '7', name: '발송' },
     { key: 'track', no: '8', name: '추적' },
+    { key: 'cancel_request', no: '', name: '취소 요청' },
     { key: 'cancel', no: '', name: '취소' },
     { key: 'return_exchange', no: '', name: '반품·교환' },
     { key: 'unclassified', no: '', name: '분류 안 됨' },
@@ -147,6 +149,8 @@ export function cellCount(
 }
 
 const STATE_LABELS: Record<string, string> = {
+  cancel_requested: '취소 요청 미반영',
+  cancel_edited: '수정됨 · 환불 미완',
   no_backlog: '출고 대기열 미적재',
   pending: '대기',
   processing: '처리 중',
