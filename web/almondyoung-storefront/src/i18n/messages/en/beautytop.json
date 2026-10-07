@@ -353,5 +353,6 @@
     "indexSub": "Pick a district and category to see how many shops there are and how many opened or closed in the past year.",
     "indexCategory": "{category} shops",
     "fromArea": "Planning to open in this area?"
-  }
+  },
+  "memberNotice": "Opening the My shop and Brands tabs is recorded as <b>using a membership benefit</b>. If you open them within 7 days of payment, a full refund (withdrawal) is limited. <link>Details</link>"
 }

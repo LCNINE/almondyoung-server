@@ -1,6 +1,8 @@
 "use client"
 
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { cn } from "@/lib/utils"
+import { Info } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 import { AreaView } from "../area/area-view"
@@ -79,6 +81,20 @@ export function BeautyTopBoard() {
           </button>
         ))}
       </div>
+
+      <p className="bg-muted text-muted-foreground mt-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[13px] leading-[19px] break-keep">
+        <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          {t.rich("memberNotice", {
+            b: (chunks) => <b className="text-foreground font-bold">{chunks}</b>,
+            link: (chunks) => (
+              <LocalizedClientLink href="/mypage/membership/benefits" className="text-foreground underline underline-offset-2">
+                {chunks}
+              </LocalizedClientLink>
+            ),
+          })}
+        </span>
+      </p>
 
       <div className="mt-5">
         {tab === "neighborhood" && (

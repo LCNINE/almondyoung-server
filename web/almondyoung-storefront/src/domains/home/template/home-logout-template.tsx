@@ -149,13 +149,13 @@ export async function HomeLogoutTemplate({
         <HomeQuickLinks />
       </div>
 
+      <BeautyTopHomeCard />
+
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
           <LogoContestWrapper countryCode={countryCode} />
         </Suspense>
       </ErrorBoundary>
-
-      {bannerVisible && <BeautyTopHomeCard />}
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>

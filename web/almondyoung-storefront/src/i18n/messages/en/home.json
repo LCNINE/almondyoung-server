@@ -83,7 +83,9 @@
   },
   "beautytop": {
     "title": "BeautyTop",
-    "body": "Check your shop's rank and local prices"
+    "headline": "Where does your shop rank in the neighborhood?",
+    "body": "From how many similar shops there are to your own rank, all in numbers",
+    "cta": "Check it out"
   },
   "comingSoon": {
     "title": "Almond Template is coming soon",
