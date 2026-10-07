@@ -1,3 +1,4 @@
+import { BadRequestError } from '@app/shared';
 import { ProductMatchingService } from './product-matching.service';
 import { ResolveMatchingDto } from '../dto/resolve-matching.dto';
 
@@ -688,6 +689,27 @@ describe('ProductMatchingService strategy semantics', () => {
       availabilityOverride: 'manual_out_of_stock',
       comingSoonDate: null,
     });
+  });
+
+  it('variant 로의 전략 변경은 거절한다 — 링크 없이 variant 가 되면 숨은 미매칭이 생긴다 (#1016 12번)', async () => {
+    const { service } = makeService();
+    const tx = makeTx([[{ ...matching, status: 'matched', strategy: 'void' }]]);
+
+    await expect(service.changeMatchingStrategy(matching.id, 'variant', tx as never)).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(tx.updates).toHaveLength(0);
+    expect(tx.deletes).toHaveLength(0);
+  });
+
+  it('variant → variant 요청도 거절한다 — 옛 전략 delete 가 링크를 지우던 길', async () => {
+    const { service } = makeService();
+    const tx = makeTx([[{ ...matching, status: 'matched', strategy: 'variant' }]]);
+
+    await expect(service.changeMatchingStrategy(matching.id, 'variant', tx as never)).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(tx.deletes).toHaveLength(0);
   });
 });
 
