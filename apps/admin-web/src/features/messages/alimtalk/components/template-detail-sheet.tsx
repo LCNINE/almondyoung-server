@@ -3,7 +3,6 @@
 import { Loader } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +20,7 @@ import {
   useAlimtalkTestSend,
 } from '@/lib/services/alimtalk';
 import { COMMENT_STATUS_LABEL, renderVariables } from '../lib/alimtalk';
+import { AutoNoticeLink } from './auto-notice-link';
 import { KakaoBubble } from './kakao-bubble';
 import { StatusBadge } from './status-badge';
 
@@ -119,25 +119,7 @@ function DetailBody({
         buttons={template.buttons}
       />
 
-      {template.linkedEvents.length > 0 && (
-        <section className="flex flex-col gap-1 text-sm">
-          <h4 className="font-semibold">이 템플릿을 쓰는 자동 알림</h4>
-          {template.linkedEvents.map((e) => (
-            <div key={e.eventKey} className="flex items-center gap-2">
-              <span>{e.name}</span>
-              <Badge variant={e.isActive ? 'default' : 'secondary'}>
-                {e.isActive ? '발송 중' : '꺼짐'}
-              </Badge>
-            </div>
-          ))}
-          {!approved && template.linkedEvents.some((e) => !e.isActive) && (
-            <p className="text-muted-foreground text-xs">
-              승인된 뒤에 메시지 관리에서 켜세요. 승인 전에 켜면 발송이
-              실패합니다.
-            </p>
-          )}
-        </section>
-      )}
+      <AutoNoticeLink template={template} />
 
       <section className="flex flex-col gap-2 text-sm">
         <h4 className="font-semibold">심사 기록</h4>

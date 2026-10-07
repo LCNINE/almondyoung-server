@@ -45,6 +45,25 @@ export interface CampaignStatusCount {
   count: number;
 }
 
+/** 알림톡 자동 알림 한 건의 우리 쪽 설정 상태 */
+export interface AutoNoticeSetting {
+  eventKey: string;
+  templateKey: string;
+  isActive: boolean;
+  kakaoTemplateCode: string | null;
+}
+
+/** 자동 알림에 승인된 알림톡 템플릿을 잇는 데 필요한 것 */
+export interface AutoNoticeLink {
+  eventKey: string;
+  name: string;
+  description: string;
+  variables: string[];
+  templateCode: string;
+  templateName: string;
+  templateBody: string;
+}
+
 /** 이벤트로 나간 알림톡 한 줄(관리자 캠페인이 아닌 것). */
 export interface AutoSendRow {
   notificationId: string;
@@ -182,6 +201,82 @@ export class AlimtalkRepository {
       .from(notificationEvents)
       .innerJoin(templates, eq(templates.templateKey, notificationEvents.templateKey))
       .where(inArray(templates.kakaoTemplateCode, templateCodes));
+  }
+
+  /** 자동 알림 설정 행과 그 템플릿의 알림톡 코드. 설정 행이 없는 이벤트는 결과에 없다. */
+  findAutoNoticeSettings(eventKeys: string[]): Promise<AutoNoticeSetting[]> {
+    if (eventKeys.length === 0) return Promise.resolve([]);
+    return this.dbService.db
+      .select({
+        eventKey: notificationEvents.eventKey,
+        templateKey: notificationEvents.templateKey,
+        isActive: notificationEvents.isActive,
+        kakaoTemplateCode: templates.kakaoTemplateCode,
+      })
+      .from(notificationEvents)
+      .leftJoin(templates, and(eq(templates.templateKey, notificationEvents.templateKey), eq(templates.isActive, true)))
+      .where(inArray(notificationEvents.eventKey, eventKeys));
+  }
+
+  /**
+   * 자동 알림이 이 알림톡 템플릿으로 나가게 한다. 설정 행이 없으면 시드와 같은 모양으로 만들되 꺼진 채로 둔다 —
+   * 켜는 것은 사람이 따로 한다. 본문 사본은 카카오에 승인된 본문으로 맞춘다(미리보기·문자 대체가 이 사본을 쓴다).
+   */
+  async linkAutoNotice(link: AutoNoticeLink): Promise<void> {
+    await this.dbService.run(async (tx) => {
+      const [event] = await tx
+        .select({ templateKey: notificationEvents.templateKey })
+        .from(notificationEvents)
+        .where(eq(notificationEvents.eventKey, link.eventKey));
+      const templateKey = event?.templateKey ?? link.eventKey;
+      const contents = { KAKAO: { ko: { body: link.templateBody } } };
+
+      const updated = await tx
+        .update(templates)
+        .set({
+          kakaoTemplateCode: link.templateCode,
+          kakaoTemplateStatus: 'APPROVED',
+          contents: sql`coalesce(${templates.contents}, '{}'::jsonb) || ${JSON.stringify(contents)}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(templates.templateKey, templateKey), eq(templates.isActive, true)))
+        .returning({ templateId: templates.templateId });
+      if (updated.length === 0) {
+        await tx.insert(templates).values({
+          templateKey,
+          name: link.templateName,
+          category: 'TRANSACTIONAL',
+          contents,
+          defaultContents: contents,
+          variablesSchema: Object.fromEntries(link.variables.map((v) => [v, { type: 'string', required: true }])),
+          kakaoTemplateCode: link.templateCode,
+          kakaoTemplateStatus: 'APPROVED',
+        });
+      }
+      if (!event) {
+        await tx
+          .insert(notificationEvents)
+          .values({
+            eventKey: link.eventKey,
+            name: link.name,
+            description: link.description,
+            templateKey,
+            category: 'TRANSACTIONAL',
+            defaultChannels: ['KAKAO'],
+            priority: 'HIGH',
+            isActive: false,
+          })
+          .onConflictDoNothing({ target: notificationEvents.eventKey });
+      }
+    });
+  }
+
+  /** 자동 알림에서 알림톡 템플릿을 뗀다. 켜진 알림은 호출하는 쪽이 먼저 막는다. */
+  async unlinkAutoNotice(templateKey: string): Promise<void> {
+    await this.dbService.db
+      .update(templates)
+      .set({ kakaoTemplateCode: null, kakaoTemplateStatus: null, updatedAt: new Date() })
+      .where(and(eq(templates.templateKey, templateKey), eq(templates.isActive, true)));
   }
 
   /** 같은 campaignId 로 다시 오면(두 번 누름·재시도) 아무것도 만들지 않고 false 를 돌려준다. */

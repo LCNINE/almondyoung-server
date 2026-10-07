@@ -8,6 +8,7 @@ import {
   parseManualRecipients,
   renderVariables,
   validateTemplateForm,
+  autoNoticeFit,
 } from './alimtalk';
 
 describe('알림톡 화면 도우미', () => {
@@ -128,5 +129,19 @@ describe('자동 발송 기록 표기', () => {
     expect(
       autoSendOutcomeLabel({ outcome: 'NOT_ACCEPTED', detail: '거절' })
     ).toBe('접수되지 않음 (거절)');
+  });
+});
+
+describe('autoNoticeFit', () => {
+  it('알림이 채우는 변수 안에서만 쓰면 이을 수 있다(일부만 써도 된다)', () => {
+    expect(autoNoticeFit(['name'], ['name', 'period', 'arrearsAmount'])).toEqual({ ok: true });
+    expect(autoNoticeFit([], ['name'])).toEqual({ ok: true });
+  });
+
+  it('알림이 채우지 않는 변수를 쓰면 그 변수를 알려 준다', () => {
+    expect(autoNoticeFit(['name', 'reason', 'nextDate'], ['name', 'period'])).toEqual({
+      ok: false,
+      unknown: ['reason', 'nextDate'],
+    });
   });
 });

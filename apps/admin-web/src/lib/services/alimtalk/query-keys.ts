@@ -8,6 +8,7 @@ export const alimtalkQueryKeys = {
   campaignResults: (campaignId: string) =>
     [...alimtalkQueryKeys.campaigns(), 'results', campaignId] as const,
   autoSends: () => [...alimtalkQueryKeys.all, 'auto-sends'] as const,
+  autoNotices: () => [...alimtalkQueryKeys.all, 'auto-notices'] as const,
   autoSendResult: (notificationId: string) =>
     [...alimtalkQueryKeys.autoSends(), 'result', notificationId] as const,
 };

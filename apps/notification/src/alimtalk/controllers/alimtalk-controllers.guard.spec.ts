@@ -1,4 +1,5 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { AlimtalkAutoNoticesController } from './alimtalk-auto-notices.controller';
 import { AlimtalkCampaignsController } from './alimtalk-campaigns.controller';
 import { AlimtalkTemplatesController } from './alimtalk-templates.controller';
 
@@ -15,6 +16,8 @@ describe('알림톡 라우트 권한', () => {
     [AlimtalkTemplatesController, 'testSend'],
     [AlimtalkCampaignsController, 'create'],
     [AlimtalkCampaignsController, 'stop'],
+    [AlimtalkAutoNoticesController, 'link'],
+    [AlimtalkAutoNoticesController, 'unlink'],
   ])('카카오에 쓰거나 실제로 보내는 %p.%s 는 역할 가드를 단다', (controller, method) => {
     expect(guarded(controller, method)).toBe(true);
   });

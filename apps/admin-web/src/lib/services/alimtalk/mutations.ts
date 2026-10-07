@@ -7,6 +7,7 @@ import {
   CreateAlimtalkCampaignDto,
 } from '@/lib/api/domains/alimtalk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { notificationAdminApi } from '@/lib/api/domains/notification';
 import { alimtalkQueryKeys } from './query-keys';
 
 export const useCreateAlimtalkTemplate = () => {
@@ -99,5 +100,50 @@ export const useStopAlimtalkCampaign = () => {
       queryClient.invalidateQueries({
         queryKey: alimtalkQueryKeys.campaigns(),
       }),
+  });
+};
+
+/** 연결이 바뀌면 템플릿 목록의 «쓰는 자동 알림»과 메시지 관리의 설정도 바뀐다. */
+function useInvalidateAutoNotices() {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: alimtalkQueryKeys.autoNotices() }),
+      queryClient.invalidateQueries({ queryKey: alimtalkQueryKeys.templates() }),
+      queryClient.invalidateQueries({ queryKey: ['notification'] }),
+    ]);
+}
+
+export const useLinkAlimtalkAutoNotice = () => {
+  const invalidate = useInvalidateAutoNotices();
+  return useMutation({
+    mutationFn: ({
+      eventKey,
+      templateCode,
+      replaceActive,
+    }: {
+      eventKey: string;
+      templateCode: string;
+      replaceActive?: boolean;
+    }) => alimtalkApi.linkAutoNotice(eventKey, templateCode, replaceActive),
+    onSuccess: invalidate,
+  });
+};
+
+export const useUnlinkAlimtalkAutoNotice = () => {
+  const invalidate = useInvalidateAutoNotices();
+  return useMutation({
+    mutationFn: (eventKey: string) => alimtalkApi.unlinkAutoNotice(eventKey),
+    onSuccess: invalidate,
+  });
+};
+
+/** 자동 알림 켜고 끄기 — 메시지 관리와 같은 이벤트 설정을 바꾼다. */
+export const useToggleAlimtalkAutoNotice = () => {
+  const invalidate = useInvalidateAutoNotices();
+  return useMutation({
+    mutationFn: ({ eventKey, isActive }: { eventKey: string; isActive: boolean }) =>
+      notificationAdminApi.updateEvent(eventKey, { isActive }),
+    onSuccess: invalidate,
   });
 };

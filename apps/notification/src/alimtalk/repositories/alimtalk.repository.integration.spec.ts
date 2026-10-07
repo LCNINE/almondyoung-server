@@ -212,4 +212,75 @@ describeIfDb('AlimtalkRepository (PostgreSQL 통합)', () => {
     expect(await repository.claimBatch(id, new Date(), 10)).toEqual([]);
     expect(await repository.claimBatch(id, new Date(later.getTime() + 1000), 10)).toHaveLength(2);
   });
+  describe('자동 알림 연결', () => {
+    const keys: string[] = [];
+    const key = () => {
+      const k = `IT_NOTICE_${randomUUID().slice(0, 8)}`;
+      keys.push(k);
+      return k;
+    };
+    const link = (eventKey: string, templateCode: string, templateBody: string) => ({
+      eventKey,
+      name: '통합 테스트 자동 알림',
+      description: '통합 테스트',
+      variables: ['name', 'period'],
+      templateCode,
+      templateName: '통합 테스트 템플릿',
+      templateBody,
+    });
+
+    afterAll(async () => {
+      if (keys.length === 0) return;
+      await db.delete(schema.notificationEvents).where(inArray(schema.notificationEvents.eventKey, keys));
+      await db.delete(schema.templates).where(inArray(schema.templates.templateKey, keys));
+    });
+
+    it('설정 행이 없으면 시드와 같은 모양으로 꺼진 채 만들고, 다시 이으면 코드와 본문만 바꾼다', async () => {
+      const k = key();
+      await repository.linkAutoNotice(link(k, 'IT_A', '#{name}님 첫 본문'));
+      expect(await repository.findAutoNoticeSettings([k])).toEqual([
+        { eventKey: k, templateKey: k, isActive: false, kakaoTemplateCode: 'IT_A' },
+      ]);
+      const [event] = await db
+        .select()
+        .from(schema.notificationEvents)
+        .where(eq(schema.notificationEvents.eventKey, k));
+      expect(event).toMatchObject({ defaultChannels: ['KAKAO'], category: 'TRANSACTIONAL', priority: 'HIGH' });
+
+      await db
+        .update(schema.notificationEvents)
+        .set({ isActive: true })
+        .where(eq(schema.notificationEvents.eventKey, k));
+      await repository.linkAutoNotice(link(k, 'IT_B', '#{name}님 바뀐 본문'));
+      const tpl = await db.select().from(schema.templates).where(eq(schema.templates.templateKey, k));
+      expect(tpl).toHaveLength(1);
+      expect(tpl[0]).toMatchObject({
+        kakaoTemplateCode: 'IT_B',
+        contents: { KAKAO: { ko: { body: '#{name}님 바뀐 본문' } } },
+      });
+      // 이어 붙이기는 켜고 끄는 상태를 건드리지 않는다
+      expect((await repository.findAutoNoticeSettings([k]))[0].isActive).toBe(true);
+    });
+
+    it('본문 사본은 알림톡 칸만 갈아 끼우고 다른 채널 본문은 남긴다', async () => {
+      const k = key();
+      await db.insert(schema.templates).values({
+        templateKey: k,
+        name: '기존',
+        category: 'TRANSACTIONAL',
+        contents: { SMS: { ko: { body: '문자 본문' } } },
+        variablesSchema: {},
+      });
+      await repository.linkAutoNotice(link(k, 'IT_C', '알림톡 본문'));
+      const [tpl] = await db.select().from(schema.templates).where(eq(schema.templates.templateKey, k));
+      expect(tpl.contents).toEqual({ SMS: { ko: { body: '문자 본문' } }, KAKAO: { ko: { body: '알림톡 본문' } } });
+    });
+
+    it('떼면 코드만 비운다', async () => {
+      const k = key();
+      await repository.linkAutoNotice(link(k, 'IT_D', '본문'));
+      await repository.unlinkAutoNotice(k);
+      expect((await repository.findAutoNoticeSettings([k]))[0].kakaoTemplateCode).toBeNull();
+    });
+  });
 });

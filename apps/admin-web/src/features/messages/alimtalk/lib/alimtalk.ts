@@ -162,3 +162,15 @@ export function autoSendOutcomeLabel(
       return '처리 중';
   }
 }
+
+/**
+ * 이 템플릿을 그 자동 알림에 이을 수 있는가. 알림이 채우지 않는 변수(#{…})를 템플릿이 쓰면 카카오가 발송을 거절한다.
+ * 서버가 같은 판정으로 막는다 — 여기서는 고르기 전에 미리 보여 주기만 한다.
+ */
+export function autoNoticeFit(
+  templateVariables: string[],
+  noticeVariables: string[]
+): { ok: true } | { ok: false; unknown: string[] } {
+  const unknown = templateVariables.filter((v) => !noticeVariables.includes(v));
+  return unknown.length === 0 ? { ok: true } : { ok: false, unknown };
+}

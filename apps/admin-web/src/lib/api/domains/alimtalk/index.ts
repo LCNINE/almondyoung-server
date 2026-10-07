@@ -86,6 +86,19 @@ export interface AlimtalkAutoSendResult {
   detail: string | null;
 }
 
+/** 알림톡으로 나가는 자동 알림과 지금 쓰는 템플릿 */
+export interface AlimtalkAutoNotice {
+  eventKey: string;
+  name: string;
+  condition: string;
+  /** 이 알림이 채우는 변수 — 이을 템플릿은 이 안의 변수만 써야 한다 */
+  variables: string[];
+  /** 발송 설정이 있는가. 없으면 연결할 때 꺼진 채로 만들어진다 */
+  configured: boolean;
+  isActive: boolean;
+  templateCode: string | null;
+}
+
 /** 멤버십 요금 안내 한 건의 발송 기록(우리 쪽 접수 상태). 카카오 도착 여부는 getAutoSendResult 로 따로 묻는다 */
 export interface MembershipNoticeStatus {
   /** 'attempt:<invoiceId>:<회차>' | 'terminated:<contractId>' */
@@ -276,6 +289,30 @@ export const alimtalkApi = {
       {
         params: before ? { before } : {},
       }
+    );
+    return response.data;
+  },
+
+  getAutoNotices: async (): Promise<AlimtalkAutoNotice[]> => {
+    const response = await client.get<AlimtalkAutoNotice[]>(`${BASE}/auto-notices`);
+    return response.data;
+  },
+
+  linkAutoNotice: async (
+    eventKey: string,
+    templateCode: string,
+    replaceActive?: boolean
+  ): Promise<AlimtalkAutoNotice> => {
+    const response = await client.put<AlimtalkAutoNotice>(
+      `${BASE}/auto-notices/${encodeURIComponent(eventKey)}`,
+      { templateCode, ...(replaceActive && { replaceActive }) }
+    );
+    return response.data;
+  },
+
+  unlinkAutoNotice: async (eventKey: string): Promise<AlimtalkAutoNotice> => {
+    const response = await client.delete<AlimtalkAutoNotice>(
+      `${BASE}/auto-notices/${encodeURIComponent(eventKey)}`
     );
     return response.data;
   },
