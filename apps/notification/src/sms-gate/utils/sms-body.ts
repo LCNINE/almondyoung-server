@@ -22,6 +22,13 @@ export function fillName(content: string, name: string): string {
   return content.replaceAll(NAME_VARIABLE, () => shown);
 }
 
+export function longestFilledName(names: string[]): string | null {
+  return names.reduce<string | null>((longest, name) => {
+    const filled = fillName(NAME_VARIABLE, name);
+    return longest === null || filled.length > longest.length ? filled : longest;
+  }, null);
+}
+
 export function isMarketingQuietHours(now: Date): boolean {
   const hour = new Date(now.getTime() + KST_OFFSET_MS).getUTCHours();
   return hour >= 21 || hour < 8;

@@ -151,7 +151,7 @@ export default function SmsBulkTemplate() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr_280px]">
           <section className="flex flex-col gap-2">
             <h3 className="font-semibold">메시지 작성</h3>
-            <MessageComposer category={category} content={content} onChange={setContent}>
+            <MessageComposer category={category} content={content} onChange={setContent} trackedLinks>
               <Button type="button" onClick={handleOpenConfirm} disabled={!canSubmit}>
                 {previewCampaign.isPending ? <Loader className="animate-spin" /> : '발송하기'}
               </Button>

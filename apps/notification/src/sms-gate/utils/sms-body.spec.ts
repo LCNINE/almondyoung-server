@@ -1,4 +1,4 @@
-import { composeSmsBody, fillName, isMarketingQuietHours } from './sms-body';
+import { composeSmsBody, fillName, isMarketingQuietHours, longestFilledName } from './sms-body';
 
 describe('composeSmsBody', () => {
   it('정보성은 본문 그대로', () => {
@@ -41,5 +41,19 @@ describe('fillName', () => {
 
   it('숫자가 섞인 상호는 그대로 쓴다', () => {
     expect(fillName('{{이름}}님', '뷰티24')).toBe('뷰티24님');
+  });
+});
+
+describe('longestFilledName', () => {
+  it('발송 때 채워질 이름 중 가장 긴 것을 고른다', () => {
+    expect(longestFilledName(['김철수', '소랑뷰티 반영구', '010-1234-5678'])).toBe('소랑뷰티 반영구');
+  });
+
+  it('이름 대신 번호가 든 수신자는 대체 이름으로 센다', () => {
+    expect(longestFilledName(['010-1234-5678'])).toBe('원장');
+  });
+
+  it('수신자가 없으면 null', () => {
+    expect(longestFilledName([])).toBeNull();
   });
 });

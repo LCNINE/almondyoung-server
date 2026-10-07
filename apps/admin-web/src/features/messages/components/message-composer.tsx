@@ -3,19 +3,21 @@
 import { useRef, type ReactNode } from 'react';
 import type { SmsGateCategory } from '@/lib/api/domains/sms-gate';
 import { MARKETING_FOOTER, MARKETING_PREFIX, composeSmsBody } from '../lib/sms-body';
-import { isLongSms, smsByteLength } from '../lib/sms-bytes';
 import { NameVariableButton } from './name-variable-button';
 import { PhoneFrame } from './phone-frame';
+import { SmsSegmentHint } from './sms-segment-hint';
 
 export function MessageComposer({
   category,
   content,
   onChange,
+  trackedLinks = false,
   children,
 }: {
   category: SmsGateCategory;
   content: string;
   onChange: (content: string) => void;
+  trackedLinks?: boolean;
   children: ReactNode;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -37,8 +39,7 @@ export function MessageComposer({
         <NameVariableButton textareaRef={contentRef} value={content} onChange={onChange} />
       </div>
       <div className="py-1 text-right text-xs text-neutral-500">
-        {smsByteLength(finalBody)} byte
-        {isLongSms(finalBody) ? ' · 장문(여러 통으로 나뉘어 발송)' : ''}
+        <SmsSegmentHint body={finalBody} trackedLinks={trackedLinks} />
       </div>
       {children}
     </PhoneFrame>

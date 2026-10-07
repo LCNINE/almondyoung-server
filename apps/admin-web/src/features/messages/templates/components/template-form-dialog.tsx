@@ -23,7 +23,8 @@ import { Textarea } from '@/components/ui/textarea';
 import type { SmsGateCategory, SmsTemplate, SmsTemplateFormValues } from '@/lib/api/domains/sms-gate';
 import { useCreateSmsTemplate, useDeleteSmsTemplate, useUpdateSmsTemplate } from '@/lib/services/sms-gate';
 import { NameVariableButton } from '../../components/name-variable-button';
-import { smsByteLength } from '../../lib/sms-bytes';
+import { SmsSegmentHint } from '../../components/sms-segment-hint';
+import { composeSmsBody } from '../../lib/sms-body';
 
 const DEFAULT_FORM: SmsTemplateFormValues = { name: '', category: 'INFORMATIONAL', content: '' };
 
@@ -158,7 +159,9 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
           onChange={(event) => setForm({ ...form, content: event.target.value })}
           required
         />
-        <p className="text-muted-foreground text-right text-xs">{smsByteLength(form.content)} byte</p>
+        <p className="text-muted-foreground text-right text-xs">
+          <SmsSegmentHint body={composeSmsBody(form.category, form.content)} />
+        </p>
       </div>
 
       <div className="flex items-center gap-2 pt-2">
