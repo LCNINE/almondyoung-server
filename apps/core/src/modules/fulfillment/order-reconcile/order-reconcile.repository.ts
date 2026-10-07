@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ReconcileRuleRef } from './order-reconcile.rule';
-import { ReconcilePrior, ReconcileRecord, isReconcileMode, isReconcileResult } from './order-reconcile.state';
+import {
+  DEPARTURE_GRACE_MIN,
+  ReconcilePrior,
+  ReconcileRecord,
+  isReconcileMode,
+  isReconcileResult,
+} from './order-reconcile.state';
 
 export type ReconcileCandidate = { salesOrderId: string; prior: ReconcilePrior | null };
 
@@ -43,16 +49,21 @@ export class OrderReconcileRepository {
     }, tx);
   }
 
-  /** 그 규칙의 상황을 떠난 주문의 행을 지운다 — «해결됨». 지운 행 수를 낸다. */
-  async deleteDeparted(rule: ReconcileRuleRef, tx?: DbTx): Promise<number> {
+  /**
+   * 그 규칙의 상황을 떠난 주문의 행을 지운다 — «해결됨». 지운 행 수를 낸다.
+   * 막 act 했거나 실패한 행은 DEPARTURE_GRACE_MIN 동안 남긴다 — 깨운 직후의 잠깐을 떠남으로 보면 횟수가 리셋된다.
+   */
+  async deleteDeparted(rule: ReconcileRuleRef, now: Date, tx?: DbTx): Promise<number> {
     const p = wmsTables.orderProgress;
     const s = wmsTables.orderReconcileState;
+    const graceFrom = new Date(now.getTime() - DEPARTURE_GRACE_MIN * 60_000);
     return this.dbService.run(async (trx) => {
       const deleted = await trx
         .delete(s)
         .where(
           and(
             eq(s.rule, rule.name),
+            or(notInArray(s.lastResult, ['acted', 'error']), lte(s.updatedAt, graceFrom)),
             sql`NOT EXISTS (
               SELECT 1 FROM ${p}
                WHERE ${p.salesOrderId} = ${s.salesOrderId}
@@ -62,6 +73,18 @@ export class OrderReconcileRepository {
             )`,
           ),
         )
+        .returning({ salesOrderId: s.salesOrderId });
+      return deleted.length;
+    }, tx);
+  }
+
+  /** 등록되지 않은(이름을 바꿨거나 뺀) 규칙의 행을 지운다 — 남겨 두면 다시 볼 규칙이 없어 «자동 멈춤»이 영원히 남는다. */
+  async deleteUnregistered(names: readonly string[], tx?: DbTx): Promise<number> {
+    const s = wmsTables.orderReconcileState;
+    return this.dbService.run(async (trx) => {
+      const deleted = await trx
+        .delete(s)
+        .where(names.length > 0 ? notInArray(s.rule, [...names]) : undefined)
         .returning({ salesOrderId: s.salesOrderId });
       return deleted.length;
     }, tx);

@@ -129,9 +129,56 @@ describeIfDb('OrderReconcileRepository (PostgreSQL integration)', () => {
       const closed = await seedProgress(tx, { stage: null, state, outcome: 'delivered', enteredAt: new Date('2000-01-01T00:00:00Z') });
       for (const id of [stays, left, closed]) await repo.save(rule, id, record(), NOW, tx);
 
-      expect(await repo.deleteDeparted(rule, tx)).toBe(2);
+      // 유예(10분)가 지난 시각 — 유예는 아래 테스트가 본다
+      expect(await repo.deleteDeparted(rule, new Date('2099-06-01T01:00:00.000Z'), tx)).toBe(2);
       const remaining = (await tx.select().from(wmsTables.orderReconcileState)).filter((r) => r.rule === rule.name);
       expect(remaining.map((r) => r.salesOrderId)).toEqual([stays]);
+    });
+  });
+
+  it('deleteDeparted 는 막 깨웠거나 실패한 행을 10분 동안 남긴다 — 깨운 직후의 pending 을 «떠남»으로 보지 않게', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const repo = new OrderReconcileRepository(makeDbService(db));
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const rule = ruleFor(state);
+      const leave = () => seedProgress(tx, { stage: 'fo', state: 'pending', enteredAt: new Date('2000-01-01T00:00:00Z') });
+      const minAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
+      const acted5 = await leave();
+      const error5 = await leave();
+      const acted11 = await leave();
+      const notNeeded5 = await leave();
+      await repo.save(rule, acted5, record({ lastResult: 'acted' }), minAgo(5), tx);
+      await repo.save(rule, error5, record({ lastResult: 'error', lastError: 'boom' }), minAgo(5), tx);
+      await repo.save(rule, acted11, record({ lastResult: 'acted' }), minAgo(11), tx);
+      await repo.save(rule, notNeeded5, record({ lastResult: 'not_needed' }), minAgo(5), tx);
+
+      expect(await repo.deleteDeparted(rule, NOW, tx)).toBe(2);
+      const remaining = (await tx.select().from(wmsTables.orderReconcileState))
+        .filter((r) => r.rule === rule.name)
+        .map((r) => r.salesOrderId);
+      expect(remaining.sort()).toEqual([acted5, error5].sort());
+    });
+  });
+
+  it('deleteUnregistered 는 등록되지 않은 규칙의 행만 지우고, 이름이 없으면 전부 지운다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const repo = new OrderReconcileRepository(makeDbService(db));
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const kept = ruleFor(`${state}-kept`);
+      const gone = ruleFor(`${state}-gone`);
+      const id = await seedProgress(tx, { stage: 'fo', state, enteredAt: new Date('2000-01-01T00:00:00Z') });
+      await repo.save(kept, id, record(), NOW, tx);
+      await repo.save(gone, id, record(), NOW, tx);
+      const ours = async () =>
+        (await tx.select().from(wmsTables.orderReconcileState))
+          .filter((r) => r.salesOrderId === id)
+          .map((r) => r.rule);
+
+      expect(await repo.deleteUnregistered([kept.name], tx)).toBeGreaterThanOrEqual(1);
+      expect(await ours()).toEqual([kept.name]);
+
+      await repo.deleteUnregistered([], tx);
+      expect(await ours()).toEqual([]);
     });
   });
 });

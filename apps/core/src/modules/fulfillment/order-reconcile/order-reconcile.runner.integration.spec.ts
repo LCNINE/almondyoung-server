@@ -238,6 +238,39 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
     });
   });
 
+  it('runAll 은 먼저 등록되지 않은 규칙(이름을 바꿨거나 뺀)의 행을 지운다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const repo = new OrderReconcileRepository(dbs);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => undefined);
+      (rule.check as jest.Mock).mockResolvedValue(false);
+      const stale = { name: `it-stale-${state}`, row: 98, situation: { stage: 'fo' as const, states: [state] } };
+      await repo.save(
+        stale,
+        id,
+        {
+          fingerprint: 'fp',
+          mode: 'act',
+          attempts: 5,
+          lastResult: 'error',
+          lastError: 'boom',
+          gaveUpAt: NOW,
+          nextCheckAt: NOW,
+        },
+        NOW,
+        tx,
+      );
+      const runner = new OrderReconcileRunner(dbs, repo, [rule]);
+
+      await runner.runAll(NOW, tx);
+
+      expect((await statesOf(tx, stale.name)).size).toBe(0);
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({ lastResult: 'not_needed' });
+    });
+  });
+
   it('상황을 떠난 주문의 행은 다음 바퀴에 지워진다', async () => {
     await inRollbackTx(db, async (tx) => {
       const dbs = makeDbService(db);

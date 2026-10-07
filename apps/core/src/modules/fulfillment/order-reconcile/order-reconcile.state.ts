@@ -8,6 +8,9 @@ export const RETRY_DELAYS_MIN = [1, 4, 16, 64, 256] as const;
 export const GAVE_UP_RECHECK_MIN = 1024;
 // 할 일이 없었거나 관찰만 한 주문을 다시 볼 간격. 기록하지 않으면 주기당 상한 때문에 늘 같은 오래된 주문만 본다.
 export const IDLE_RECHECK_MIN = 10;
+// 깨운 backlog 는 10~20초 pending·processing 에 머문다. 1분 투영이 그 순간을 잡아 행을 지우면 횟수가 리셋돼
+// «깨움→되돌아옴» 반복이 포기에 닿지 못한다 — 막 act 한(또는 실패한) 행은 이만큼 «떠남»으로 보지 않는다.
+export const DEPARTURE_GRACE_MIN = 10;
 export const RECONCILE_CANDIDATE_LIMIT = 50;
 export const LAST_ERROR_MAX = 1000;
 

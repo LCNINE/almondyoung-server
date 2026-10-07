@@ -40,11 +40,21 @@ export class OrderReconcileRunner {
     @Inject(ORDER_RECONCILE_RULES) private readonly rules: OrderReconcileRule[],
   ) {}
 
-  async runAll(now: Date): Promise<RuleRunSummary[]> {
+  async runAll(now: Date, tx?: DbTx): Promise<RuleRunSummary[]> {
+    try {
+      const removed = await this.repository.deleteUnregistered(
+        this.rules.map((r) => r.name),
+        tx,
+      );
+      if (removed > 0) this.logger.log(`order-reconcile removed ${removed} rows of unregistered rules`);
+    } catch (error) {
+      // 정리는 부수 작업이다 — 실패해도 규칙은 돈다
+      this.logger.error(`order-reconcile unregistered cleanup failed: ${messageOf(error)}`);
+    }
     const out: RuleRunSummary[] = [];
     for (const rule of this.rules) {
       try {
-        out.push(await this.runRule(rule, now));
+        out.push(await this.runRule(rule, now, tx));
       } catch (error) {
         this.logger.error(
           `order-reconcile rule ${rule.name} failed: ${messageOf(error)}`,
@@ -58,7 +68,7 @@ export class OrderReconcileRunner {
   async runRule(rule: OrderReconcileRule, now: Date, tx?: DbTx): Promise<RuleRunSummary> {
     const summary: RuleRunSummary = {
       rule: rule.name,
-      departed: await this.repository.deleteDeparted(rule, tx),
+      departed: await this.repository.deleteDeparted(rule, now, tx),
       acted: 0,
       wouldAct: 0,
       notNeeded: 0,
