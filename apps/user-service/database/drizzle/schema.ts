@@ -1,9 +1,11 @@
 // apps/user-service/src/database/schema.ts
 
 import { relations, sql } from 'drizzle-orm';
+import type { TxFor } from '@app/db';
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -326,6 +328,44 @@ export const beautytopSavedShops = pgTable(
     oneMyShopPerUser: uniqueIndex('uq_beautytop_saved_one_my_shop')
       .on(table.userId)
       .where(sql`${table.role} = 'MY_SHOP'`),
+  }),
+);
+
+export const beautytopGrowthNotes = pgTable(
+  'beautytop_growth_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    shopKind: varchar('shop_kind', { length: 16 }).notNull(),
+    shopId: integer('shop_id').notNull(),
+    action: varchar('action', { length: 32 }).notNull(),
+    memo: varchar('memo', { length: 240 }).notNull().default(''),
+    recordedOn: date('recorded_on')
+      .notNull()
+      .default(sql`(now() AT TIME ZONE 'Asia/Seoul')::date`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    dailyActionUnique: unique('uq_beautytop_growth_daily_action').on(
+      table.userId,
+      table.shopKind,
+      table.shopId,
+      table.recordedOn,
+      table.action,
+    ),
+    shopHistoryIndex: index('idx_beautytop_growth_user_shop_created').on(
+      table.userId,
+      table.shopKind,
+      table.shopId,
+      table.createdAt,
+    ),
+    actionCheck: check(
+      'ck_beautytop_growth_action',
+      sql`${table.action} IN ('MENU_CLARITY', 'SHOWCASE', 'PRICE_CHANGE')`,
+    ),
+    kindCheck: check('ck_beautytop_growth_kind', sql`${table.shopKind} IN ('SHOP', 'PERSON')`),
   }),
 );
 
@@ -692,6 +732,7 @@ export const userServiceTables = {
   blacklists,
   wishlist,
   beautytopSavedShops,
+  beautytopGrowthNotes,
   userRecentViews,
   phoneVerifications,
   emailVerifications,
@@ -743,6 +784,7 @@ export const userServiceSchema = {
  * TYPE EXPORTS
  *──────────────────────────*/
 export type UserServiceSchema = typeof userServiceSchema;
+export type UserServiceTx = TxFor<UserServiceSchema>;
 export type UserServiceTables = typeof userServiceTables;
 export type UserServiceEnums = typeof userServiceEnums;
 
