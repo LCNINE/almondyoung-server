@@ -513,3 +513,34 @@ describe('렌더러 옵션', () => {
     expect(preventDefault).toHaveBeenCalledTimes(1);
   });
 });
+
+it('uses a sale-specific style, platform visibility and saved product display order', () => {
+  const settings = defaultTimeSaleSettings();
+  const layout = structuredClone(settings.styles.main.pc);
+  layout.id = 'sale-style';
+  layout.header = '선택한 매대';
+  layout.components = [createSaleComponent('grid', 'sale-grid')];
+  settings.savedStyles = [layout];
+  settings.sales.s1 = {
+    ...defaultSaleDisplay(),
+    styles: { main: { pc: { styleId: layout.id, enabled: true } } },
+    productOrder: ['p2', 'p1'],
+  };
+  const props = {
+    settings,
+    surface: 'main' as const,
+    platform: 'pc' as const,
+    saleId: 's1',
+    title: '세일',
+    startsAt: '2026-01-01T00:00:00Z',
+    endsAt: '2026-01-02T00:00:00Z',
+    products: [product, { ...product, id: 'p2', name: '상품B' }],
+    previewState: 'active' as const,
+    sanitizeHtml: (html: string) => html,
+  };
+  const html = renderToStaticMarkup(createElement(SaleRenderer, props));
+  expect(html).toContain('선택한 매대');
+  expect(html.indexOf('상품B')).toBeLessThan(html.indexOf('상품A'));
+  settings.sales.s1.styles!.main!.pc!.enabled = false;
+  expect(renderToStaticMarkup(createElement(SaleRenderer, props))).toBe('');
+});

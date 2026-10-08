@@ -20,3 +20,11 @@ export function mainProductIds(
 export function saleSectionPeriods(sale: TimeSale): SalePeriodLike[] {
   return sale.productIds.map((id) => productSalePeriod(sale, id) ?? {})
 }
+
+// Unassigned sales use the existing home slot; named slots only render matching sales.
+export function matchesSalePartition(
+  configuredId: string | undefined,
+  partitionId: string
+): boolean {
+  return (configuredId || "home-sale") === partitionId
+}

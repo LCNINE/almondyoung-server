@@ -48,6 +48,18 @@ import {
 } from '../time-sale-model';
 import { TimeSaleColorPicker } from './time-sale-color-picker';
 import './time-sale-workspace.css';
+import {
+  DoorOpen,
+  CircleHelp,
+  Timer,
+  PanelsTopLeft,
+  List,
+  Flag,
+  Tags,
+  Settings,
+  Menu,
+} from 'lucide-react';
+import { TimeSaleHelpDialog, TimeSaleSwitch } from './time-sale-dialog';
 
 // 타임세일 화면 공용 토스트(성공/오류).
 export const saleToast = (message: string, error = false) =>
@@ -61,7 +73,7 @@ const RESET_STYLE_TEXT =
   "타임세일 스타일을 초기화 합니다. 안전하게 진행하기 위해 입력란에 '초기화'를 입력하여 주십시오.";
 
 const sections = {
-  management: '타임세일 섹션',
+  management: '타임세일',
   main: '메인 매대 스타일',
   more: '더보기 매대 스타일',
   detail: '상품상세 스타일',
@@ -430,6 +442,8 @@ function ProductTextsEditor({
 // 섹션(매대 스타일·환경설정)을 전환한다. 목록·등록 화면도 이 안에 들어간다.
 export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ['time-sale-settings'],
@@ -711,21 +725,52 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   return (
     <div className="ts-workspace">
-      <aside className="ts-navigation">
-        {Object.entries(sections).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={section === key ? 'active' : ''}
-            onClick={() => switchSection(key as keyof typeof sections)}
-          >
-            {label}
-          </button>
-        ))}
-      </aside>
+      {navigationOpen && (
+        <aside className="ts-navigation">
+          <div className="ts-navigation-brand">
+            타임세일{' '}
+            <button
+              aria-label="메뉴 닫기"
+              onClick={() => setNavigationOpen(false)}
+            >
+              ‹
+            </button>
+          </div>
+          {Object.entries(sections).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={section === key ? 'active' : ''}
+              onClick={() => switchSection(key as keyof typeof sections)}
+            >
+              {(() => {
+                const Icon = {
+                  management: Timer,
+                  main: PanelsTopLeft,
+                  more: List,
+                  detail: Flag,
+                  variables: Tags,
+                  environment: Settings,
+                }[key as keyof typeof sections];
+
+                return <Icon size={20} />;
+              })()}
+              {label}
+            </button>
+          ))}
+        </aside>
+      )}
       <div className="ts-body">
         <header className="ts-appbar">
-          <strong>타임세일 · {sections[section]}</strong>
+          <button
+            className="ts-appbar-icon"
+            aria-label="타임세일 메뉴"
+            title="타임세일 메뉴"
+            onClick={() => setNavigationOpen(!navigationOpen)}
+          >
+            <Menu size={22} />
+          </button>
+          <strong>{sections[section]}</strong>
           {section !== 'management' && (
             <>
               <span>{dirty ? '저장되지 않은 변경 사항' : '저장됨'}</span>
@@ -737,6 +782,97 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
               </button>
             </>
           )}
+          <label className="ts-service-switch">
+            서비스 {settings?.environment.enabled ? '켜짐' : '꺼짐'}
+            <TimeSaleSwitch
+              label="타임세일 서비스"
+              checked={settings?.environment.enabled ?? false}
+              disabled={!settings || saving || query.isError}
+              onChange={(enabled) =>
+                ask({
+                  text: `타임세일 서비스를 ${enabled ? '활성화' : '중지'} 하시겠습니까?`,
+                  run: () => {
+                    void (async () => {
+                      if (!settings) return;
+
+                      setSaving(true);
+
+                      try {
+                        const next = structuredClone(settings);
+                        next.environment.enabled = enabled;
+
+                        if (
+                          section === 'main' ||
+                          section === 'more' ||
+                          section === 'detail'
+                        ) {
+                          linkActiveStyle(next, section, platform);
+                        }
+
+                        validateTimeSaleSettings(next);
+
+                        const result = await medusaTimeSaleSettingsApi.save(
+                          next,
+                          revision
+                        );
+
+                        setSettings(result.settings);
+                        setRevision(result.revision);
+                        setDirty(false);
+                        queryClient.setQueryData(
+                          ['time-sale-settings'],
+                          result
+                        );
+                        await queryClient.invalidateQueries({
+                          queryKey: ['time-sales'],
+                        });
+                        saleToast(
+                          `서비스를 ${enabled ? '활성화' : '중지'} 하였습니다.`
+                        );
+                      } catch (error) {
+                        saleToast(
+                          error instanceof Error
+                            ? error.message
+                            : '서비스 변경에 실패했습니다.',
+                          true
+                        );
+                      } finally {
+                        setSaving(false);
+                      }
+                    })();
+                  },
+                })
+              }
+            />
+          </label>
+          <button
+            className="ts-appbar-icon"
+            aria-label="위치 지정 HTML Tag안내"
+            title="위치 지정 HTML Tag안내"
+            onClick={() => setHelpOpen(true)}
+          >
+            <CircleHelp size={21} />
+          </button>
+          <button
+            className="ts-new-window"
+            onClick={() =>
+              window.open(
+                '/mall/marketing/time-sale',
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }
+          >
+            새 창 띄우기
+          </button>
+          <button
+            className="ts-appbar-icon"
+            aria-label="메인페이지로 나가기"
+            title="메인페이지로 나가기"
+            onClick={() => guarded(() => router.push('/'))}
+          >
+            <DoorOpen size={22} />
+          </button>
         </header>
         {query.isError && section !== 'management' ? (
           <div role="alert" className="ts-empty">
@@ -1150,7 +1286,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                       }
                       onClick={() =>
                         ask({
-                          text: `[${layout.name}] 매대 스타일을 삭제 하시겠습니까?`,
+                          text: `[${layout.name}] 스타일을 삭제하시겠습니까? 변경 사항을 저장하면 삭제된 스타일은 복구할 수 없습니다. 삭제를 취소하려면 아니오를 선택하세요.`,
                           run: () =>
                             update((s) =>
                               deleteSavedStyle(s, surface, platform)
@@ -1525,6 +1661,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           )
         )}
       </div>
+      <TimeSaleHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <AlertDialog
         open={!!confirmation}
         onOpenChange={(open) => {

@@ -1,3 +1,4 @@
+import { syncTimeSaleProductActions } from '../../../../utils/time-sale-product-actions';
 import type { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { MedusaError } from '@medusajs/framework/utils';
 import {
@@ -65,7 +66,11 @@ const toPayload = (value: unknown, name: string): TimeSalePriceListPayload | nul
   return {
     description: typeof payload.description === 'string' ? payload.description : '',
     rules: rules as Record<string, string[]>,
-    prices: payload.prices as TimeSalePriceListPayload['prices'],
+    prices: (payload.prices as TimeSalePriceListPayload['prices']).map((price) => ({
+      amount: price.amount,
+      currency_code: price.currency_code,
+      variant_id: price.variant_id,
+    })),
   };
 };
 
@@ -136,6 +141,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             ...period,
           },
         ];
+  if ([period, ...groups].some((group) => Date.parse(group.endsAt!) - Date.parse(group.startsAt!) < 5 * 60 * 1000)) {
+    throw invalid('타임세일은 5분 이상이어야 합니다. 상품별 기간도 같은 기준입니다.');
+  }
+
   const display = body.display as SaleDisplay;
   // 반복 간격은 기간보다 10분 이상 길어야 한다(다음 회차가 현재 회차와 겹치지 않게).
   const tooShort = repeatTooShortFor(Number(display.repeatHours) || 0, groups);
@@ -165,6 +174,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // 4) 세일에서 빠진 상품까지 포함해 상품 캐시를 비운다(Ruling 22).
   const { productIds, ...result } = saved.value.result;
   await clearTimeSaleProductCache(req.scope, productIds);
+  await syncTimeSaleProductActions(req.scope);
+
   await revalidateTimeSaleCache(req.scope);
 
   return res.json(result);

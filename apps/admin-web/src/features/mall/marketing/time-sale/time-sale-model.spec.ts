@@ -1,4 +1,5 @@
 import {
+  moveSelectedItems,
   formatShiftRepeat,
   shortSaleNumber,
   TIME_SALE_LIST_STATUS_LABEL,
@@ -22,6 +23,37 @@ import {
   shouldKeepDraftOnRefetch,
 } from './time-sale-model';
 import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
+
+it('moves selected rows together without crossing the list boundaries or changing the source', () => {
+  const items = ['a', 'b', 'c', 'd'];
+  expect(moveSelectedItems(items, ['b', 'c'], 'up')).toEqual([
+    'b',
+    'c',
+    'a',
+    'd',
+  ]);
+  expect(moveSelectedItems(items, ['b', 'c'], 'down')).toEqual([
+    'a',
+    'd',
+    'b',
+    'c',
+  ]);
+  expect(moveSelectedItems(items, ['a', 'b'], 'up')).toEqual(items);
+  expect(moveSelectedItems(items, ['c', 'd'], 'down')).toEqual(items);
+  expect(moveSelectedItems(items, ['b', 'd'], 'first')).toEqual([
+    'b',
+    'd',
+    'a',
+    'c',
+  ]);
+  expect(moveSelectedItems(items, ['a', 'c'], 'last')).toEqual([
+    'b',
+    'd',
+    'a',
+    'c',
+  ]);
+  expect(items).toEqual(['a', 'b', 'c', 'd']);
+});
 
 const row = (over: Partial<TimeSaleRow> = {}): TimeSaleRow => ({
   variantId: 'variant_1',
@@ -171,7 +203,7 @@ describe('validateRows', () => {
     const errors = validateRows([
       row({ generalSalePrice: 9000, membershipSalePrice: 8000 }),
     ]);
-    expect(errors[0].message).toContain('멤버십가');
+    expect(errors[0].message).toContain('기존 가격(8,000원)');
   });
 
   // 빈 칸은 "이 품목은 세일에서 뺀다" 는 뜻이다. 상품 하나에 옵션이 백 개씩 딸려오는데 전부
@@ -368,14 +400,14 @@ describe('applySavedSalePrices', () => {
     expect(restored.membershipSalePrice).toBe(7000);
   });
 
-  // 멤버십가가 없는 상품(라이브 기준 54%)에 멤버십 세일가를 남기면 저장 단계에서 거부된다.
-  it('멤버십가가 없는 품목은 멤버십 세일가를 복원하지 않는다', () => {
+  // 기존 멤버십가가 없어도 회원 전용 세일에 저장한 할인가는 복원한다.
+  it('기존 멤버십가가 없는 품목도 저장된 멤버십 세일가를 복원한다', () => {
     const [restored] = applySavedSalePrices(
       [row({ variantId: 'v1', membershipBasePrice: null })],
       { general: new Map([['v1', 9000]]), membership: new Map([['v1', 7000]]) }
     );
 
-    expect(restored.membershipSalePrice).toBeNull();
+    expect(restored.membershipSalePrice).toBe(7000);
   });
 });
 
@@ -550,5 +582,53 @@ describe('목록 칸 표기', () => {
   it('번호: 새 세일은 앞 8자, 옛 가격표 id 는 끝 8자', () => {
     expect(shortSaleNumber('abcdef12-3456-7890')).toBe('abcdef12');
     expect(shortSaleNumber('plist_01JABCDEFGH')).toBe('ABCDEFGH');
+  });
+});
+
+describe('멤버십 회원 전용 할인', () => {
+  it('회원 전용이면 일반 세일가 없이 회원 가격만 입력할 수 있다', () => {
+    expect(validateRows([row({ membershipSalePrice: 6000 })], true)).toEqual(
+      []
+    );
+    expect(
+      validateRows([row({ membershipSalePrice: 6000 })], false)
+    ).toHaveLength(1);
+  });
+
+  it('기존 멤버십가가 없으면 일반가를 기준으로 검증한다', () => {
+    expect(
+      validateRows(
+        [row({ membershipBasePrice: null, membershipSalePrice: 9000 })],
+        true
+      )
+    ).toEqual([]);
+    expect(
+      validateRows([row({ membershipSalePrice: 9000 })], true)
+    ).toHaveLength(1);
+    expect(
+      validateRows([row({ membershipSalePrice: NaN })], true)
+    ).toHaveLength(1);
+  });
+
+  it('일반 할인 가격표를 비우고 회원 세일가가 입력된 옵션만 포함한다', () => {
+    const { general, membership } = buildPriceListPayloads({
+      title: '회원 특가',
+      period: {
+        startsAt: '2026-10-09T00:00:00Z',
+        endsAt: '2026-10-10T00:00:00Z',
+      },
+      rows: [
+        row({ membershipSalePrice: 6000 }),
+        row({ variantId: 'excluded' }),
+      ],
+      regionIds: ['reg_kr'],
+      membershipGroupId: 'members',
+      membershipOnly: true,
+    });
+
+    expect(general.prices).toEqual([]);
+    expect(membership?.prices).toEqual([
+      expect.objectContaining({ variant_id: 'variant_1', amount: 6000 }),
+    ]);
   });
 });

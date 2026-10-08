@@ -25,12 +25,14 @@ export interface MedusaPriceListPrice {
 }
 
 /** 이 가격이 걸린 variant. Medusa 버전에 따라 실리는 자리가 달라 둘 다 본다. */
-export const priceVariantId = (price: MedusaPriceListPrice): string | undefined =>
-  price.variant_id ?? price.price_set?.variant?.id;
+export const priceVariantId = (
+  price: MedusaPriceListPrice
+): string | undefined => price.variant_id ?? price.price_set?.variant?.id;
 
 /** 이 가격이 걸린 상품. 편집 화면이 "어떤 상품이 이 세일에 있나" 를 복원할 때 쓴다. */
-export const priceProductId = (price: MedusaPriceListPrice): string | undefined =>
-  price.price_set?.variant?.product_id;
+export const priceProductId = (
+  price: MedusaPriceListPrice
+): string | undefined => price.price_set?.variant?.product_id;
 
 export interface CreatePriceListPayload {
   title: string;
@@ -62,9 +64,10 @@ export const medusaPriceListsApi = {
   /** 상시 리스트(Membership/Tiered)까지 전부 돌아온다. 타임세일 골라내기는 isTimeSalePriceList 가 한다. */
   list: async () => {
     const params = new URLSearchParams({ limit: '200', fields: LIST_FIELDS });
-    const res = await client.get<{ price_lists: MedusaPriceList[]; count: number }>(
-      `${MEDUSA_BASE_URL}/admin/price-lists?${params}`
-    );
+    const res = await client.get<{
+      price_lists: MedusaPriceList[];
+      count: number;
+    }>(`${MEDUSA_BASE_URL}/admin/price-lists?${params}`);
     return res.data;
   },
 
@@ -97,23 +100,34 @@ export const medusaPriceListsApi = {
   },
 
   batchPrices: async (id: string, payload: BatchPricesPayload) => {
-    await client.post(`${MEDUSA_BASE_URL}/admin/price-lists/${id}/prices/batch`, {
-      create: payload.create ?? [],
-      update: payload.update ?? [],
-      delete: payload.delete ?? [],
-    });
+    await client.post(
+      `${MEDUSA_BASE_URL}/admin/price-lists/${id}/prices/batch`,
+      {
+        create: payload.create ?? [],
+        update: payload.update ?? [],
+        delete: payload.delete ?? [],
+      }
+    );
   },
 };
 
 export interface MedusaVariantForPricing {
   id: string;
+  sku?: string | null;
   title: string;
   metadata?: Record<string, unknown> | null;
-  prices?: Array<{ amount: number; currency_code: string; price_list_id?: string | null }>;
+  prices?: Array<{
+    amount: number;
+    currency_code: string;
+    price_list_id?: string | null;
+  }>;
 }
 
 export interface MedusaProductForPricing {
   id: string;
+  handle?: string | null;
+  metadata?: Record<string, unknown> | null;
+  status?: string;
   title: string;
   thumbnail?: string | null;
   variants: MedusaVariantForPricing[];
@@ -126,7 +140,8 @@ export const medusaProductPricingApi = {
 
     const params = new URLSearchParams({
       limit: String(productIds.length),
-      fields: 'id,title,thumbnail,*variants,*variants.prices',
+      fields:
+        'id,title,handle,status,thumbnail,metadata,*variants,*variants.prices',
     });
     for (const id of productIds) params.append('id', id);
 

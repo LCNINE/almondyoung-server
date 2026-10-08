@@ -226,6 +226,10 @@ const handleValidateCartItemsInventory = async ({ input }: { input: CartInput },
     { relations: ['product', 'product.tags'] },
   );
 
+  if (variants.some((variant) => variant.product?.metadata?.timeSaleSelling === false)) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '타임세일 설정에 따라 판매가 중지된 상품입니다.');
+  }
+
   // TEMP: 재고 부족 주문 차단을 장바구니 플로우에서 임시 비활성화.
   // await validateInventoryForItems({ items: validItems, variants }, container);
 

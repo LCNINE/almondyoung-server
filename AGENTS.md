@@ -1,9 +1,11 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
+
 This repository is a Yarn-based monorepo centered on NestJS services. `apps/` contains deployable applications such as `core` (catalog+inventory 통합 백엔드), `membership`, `user-service`, `channel-adapter`, `search`, and `analytics`, plus the standalone Medusa service in `apps/medusa` and web frontends in `apps/admin-web` and `apps/wallet-web`. Shared code lives in `libs/{shared,db,events,authorization}/src`, reusable typed packages live in `packages/`, automation lives in `scripts/`, and reference material lives in `docs/` or `apps/*/docs`.
 
 ## Build, Test, and Development Commands
+
 Use Yarn at the repository root.
 
 - `yarn build`: build the main Nest applications defined in the root workspace.
@@ -15,13 +17,21 @@ Use Yarn at the repository root.
 - `npm run db:setup`: interactive dev wrapper that bootstraps logical DBs, runs `drizzle-kit migrate`, and seeds. For non-interactive / deploy paths use the split commands `db:bootstrap` / `db:migrate` / `db:seed:ref` / `db:seed:demo` (see ADR-0005). Service-specific drizzle generation is exposed as `db:generate:*`.
 
 ## Coding Style & Naming Conventions
+
 TypeScript is the default language. Prettier enforces single quotes, trailing commas, 120-character lines, and standard 2-space indentation. Follow existing naming patterns: kebab-case filenames like `channel-adapter.service.ts`, PascalCase classes, and camelCase functions and variables. Prefer workspace aliases such as `@app/*` and `@packages/*` over deep relative imports.
 
+Keep code and JSX readable instead of packing them tightly onto one line. Break attributes, conditions, and statements across lines where appropriate. Always insert blank lines between distinct logical units. Related declarations such as consecutive `useState` calls may stay together, but separate data-fetching hooks, derived values, function definitions, statements, and `return` blocks with blank lines. Inside functions, also separate value calculations, conditional handling, and returns. Follow this rule while writing code, then run Prettier on changed files. Running Prettier alone does not satisfy this readability requirement.
+
 ## Testing Guidelines
+
+Run focused Jest checks serially with `--runInBand`. Do not launch multiple test runners or Testcontainers concurrently unless explicitly requested.
+
 Jest is the standard test runner. Use `*.spec.ts` or `*.test.ts` filenames, keep e2e tests in `apps/*/test`, and place Medusa HTTP integration tests in `apps/medusa/integration-tests/http`. WMS tests use Testcontainers and run serially, so Docker must be available locally. There is no global coverage threshold configured, but new changes should ship with focused tests or updated fixtures.
 
 ## Commit & Pull Request Guidelines
+
 Recent commits use short imperative subjects with optional scopes, often bracketed: `[medusa] ...`, `[channel-adapter] ...`, `[users] ...`, or `fix: ...`. Keep each commit scoped to one service or library. PRs should state the impacted apps/libs, required env or migration changes, commands/tests run, and linked issues. Include screenshots for `apps/admin-web` or `apps/wallet-web` UI changes.
 
 ## Configuration Tips
+
 Do not commit real secrets. Start from `envs/`, `env-templates/`, or each app's `.env.example`/`.env.template`, and keep local overrides untracked. For Medusa work, `apps/medusa/docker-compose.yml` is the local dependency baseline.

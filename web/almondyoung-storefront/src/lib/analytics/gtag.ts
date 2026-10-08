@@ -44,4 +44,5 @@ export type GaPromotion = {
   promotion_id: string
   promotion_name: string
   creative_slot?: string
+  items?: { item_id: string; item_name: string }[]
 }

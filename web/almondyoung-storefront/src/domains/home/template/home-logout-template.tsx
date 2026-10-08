@@ -151,6 +151,7 @@ export async function HomeLogoutTemplate({
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
+          <TimeSaleWrapper countryCode={countryCode} partitionId="home-top" />
           <LogoContestWrapper countryCode={countryCode} />
         </Suspense>
       </ErrorBoundary>

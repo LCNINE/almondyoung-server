@@ -34,8 +34,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       setActiveItem(itemId || undefined);
     }
 
-    // 타임세일 편집 화면은 3열 작업 공간이라 들어올 때 사이드바를 접는다
-    if (pathname.startsWith('/mall/marketing/time-sale')) setSidebarOpen(false);
+    if (pathname === '/') setSidebarOpen(true);
   }, [pathname]);
 
   const handleMenuChange = (menuId: string) => {
@@ -52,11 +51,16 @@ export function MainLayout({ children }: MainLayoutProps) {
       <span>
         <strong>DEMO</strong> · 시연 데이터 · 택배와 알림은 모의 처리됩니다.
       </span>
-      <Link href="/demo" className="shrink-0 whitespace-nowrap font-semibold underline">
+      <Link
+        href="/demo"
+        className="shrink-0 whitespace-nowrap font-semibold underline"
+      >
         시연 콘솔
       </Link>
     </div>
   );
+
+  if (pathname.startsWith('/mall/marketing/time-sale')) return <>{children}</>;
 
   // 로그인 페이지와 모바일 전용 페이지는 PC 레이아웃 제외
   if (pathname === '/login' || pathname === '/unauthorized') {

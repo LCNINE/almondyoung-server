@@ -10,15 +10,7 @@ import {
   validateTimeSaleSettings,
   type TimeSaleSettings,
 } from '@packages/domain-types/time-sale';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { TimeSaleDialog } from './time-sale-dialog';
 import { Input } from '@/components/ui/input';
 import { saleToast } from './time-sale-workspace';
 
@@ -39,7 +31,9 @@ export function TimeSaleProductVariablesDialog({
   onClose,
 }: Props) {
   const queryClient = useQueryClient();
+
   const { data: rows } = useTimeSaleProductRows(sale?.productIds ?? []);
+
   const [values, setValues] = useState<Record<string, Record<string, string>>>(
     {}
   );
@@ -58,6 +52,7 @@ export function TimeSaleProductVariablesDialog({
   const products = [
     ...new Map((rows ?? []).map((r) => [r.productId, r.productTitle])),
   ];
+
   const variables = settings?.variables ?? [];
 
   const save = async () => {
@@ -98,76 +93,70 @@ export function TimeSaleProductVariablesDialog({
   };
 
   return (
-    <Dialog open={!!sale} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>
-            타임세일 상품 사용자 변수 설정 [{index} : {sale?.title}]
-          </DialogTitle>
-          <DialogDescription>
-            값을 비우면 변수의 프리뷰 값이 보입니다.
-          </DialogDescription>
-        </DialogHeader>
-        {variables.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            정의된 사용자 변수가 없습니다. 사용자 정의 변수 메뉴에서 먼저
-            추가하세요.
-          </p>
-        ) : (
-          <div className="max-h-[60vh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-xs">
-                <tr>
-                  <th className="px-2 py-2 text-left">상품코드</th>
-                  <th className="px-2 py-2 text-left">상품명</th>
+    <TimeSaleDialog
+      open={!!sale}
+      wide
+      title={`타임세일 상품 사용자 변수 설정 [${index} : ${sale?.title ?? ''}]`}
+      onClose={onClose}
+      footer={
+        <button
+          className="ts-button ts-button-neutral"
+          disabled={saving || variables.length === 0}
+          onClick={() => void save()}
+        >
+          저장
+        </button>
+      }
+    >
+      <p className="ts-field-hint">값을 비우면 변수의 프리뷰 값이 보입니다.</p>
+      {variables.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          정의된 사용자 변수가 없습니다. 사용자 정의 변수 메뉴에서 먼저
+          추가하세요.
+        </p>
+      ) : (
+        <div className="max-h-[60vh] overflow-auto">
+          <table className="ts-table">
+            <thead className="bg-muted text-xs">
+              <tr>
+                <th className="px-2 py-2 text-left">상품코드</th>
+                <th className="px-2 py-2 text-left">상품명</th>
+                {variables.map((v) => (
+                  <th key={v.name} className="px-2 py-2 text-left">
+                    {v.name} ({v.description})
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(([productId, title]) => (
+                <tr key={productId} className="border-t">
+                  <td className="px-2 py-2">{productId}</td>
+                  <td className="px-2 py-2">{title}</td>
                   {variables.map((v) => (
-                    <th key={v.name} className="px-2 py-2 text-left">
-                      {v.name} ({v.description})
-                    </th>
+                    <td key={v.name} className="px-2 py-2">
+                      <Input
+                        aria-label={`${title} ${v.name}`}
+                        maxLength={MAX_VARIABLE_VALUE_LENGTH}
+                        value={values[productId]?.[v.name] ?? ''}
+                        onChange={(e) =>
+                          setValues((prev) => ({
+                            ...prev,
+                            [productId]: {
+                              ...prev[productId],
+                              [v.name]: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {products.map(([productId, title]) => (
-                  <tr key={productId} className="border-t">
-                    <td className="px-2 py-2">{productId}</td>
-                    <td className="px-2 py-2">{title}</td>
-                    {variables.map((v) => (
-                      <td key={v.name} className="px-2 py-2">
-                        <Input
-                          aria-label={`${title} ${v.name}`}
-                          maxLength={MAX_VARIABLE_VALUE_LENGTH}
-                          value={values[productId]?.[v.name] ?? ''}
-                          onChange={(e) =>
-                            setValues((prev) => ({
-                              ...prev,
-                              [productId]: {
-                                ...prev[productId],
-                                [v.name]: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <DialogFooter>
-          <Button
-            disabled={saving || variables.length === 0}
-            onClick={() => void save()}
-          >
-            저장
-          </Button>
-          <Button variant="outline" onClick={onClose}>
-            닫기
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </TimeSaleDialog>
   );
 }

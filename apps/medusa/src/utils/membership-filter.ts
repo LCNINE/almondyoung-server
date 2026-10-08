@@ -108,7 +108,7 @@ export const applyPurchaseGateForNonMember = (product: MembershipProduct, isMemb
 };
 
 export const filterProductsForMemberState = (products: MembershipProduct[], isMember: boolean): MembershipProduct[] => {
-  return isMember ? products : products.filter((product) => !isVisibleToMembersOnlyProduct(product));
+  return products.filter((product) => product.metadata?.timeSaleDisplay !== false && (isMember || !isVisibleToMembersOnlyProduct(product)));
 };
 
 export const assertProductVisibleToCustomer = (product: MembershipProduct, isMember: boolean): void => {

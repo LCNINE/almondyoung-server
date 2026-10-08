@@ -23,7 +23,12 @@ export function PromotionTracker({
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting || viewed.current) return
+        if (
+          !entry.isIntersecting ||
+          entry.intersectionRatio < 0.5 ||
+          viewed.current
+        )
+          return
         viewed.current = true
         trackEvent("view_promotion", promotion)
         observer.disconnect()
@@ -39,7 +44,15 @@ export function PromotionTracker({
     <div
       ref={ref}
       className={className}
-      onClick={() => trackEvent("select_promotion", promotion)}
+      onClick={(event) => {
+        if (
+          !(event.target instanceof Element) ||
+          !event.target.closest("a, button")
+        )
+          return
+
+        trackEvent("select_promotion", promotion)
+      }}
     >
       {children}
     </div>

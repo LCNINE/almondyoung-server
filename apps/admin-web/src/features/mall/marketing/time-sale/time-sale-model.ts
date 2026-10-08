@@ -27,9 +27,16 @@ export type TimeSaleRow = {
   variantId: string;
   productId: string;
   productTitle: string;
+  productHandle?: string | null;
+  productThumbnail?: string | null;
+  productStatus?: string;
+  productDisplay?: boolean;
+  productSelling?: boolean;
+  productCode?: string | null;
   variantTitle: string;
   basePrice: number;
-  /** 멤버십가가 없는 상품(라이브 기준 54%)은 null. 이때 멤버십 세일가도 만들지 않는다. */
+
+  /** 기존 멤버십가가 없으면 null. 이 경우 일반 판매가를 기준으로 멤버십 할인을 검증한다. */
   membershipBasePrice: number | null;
   generalSalePrice: number | null;
   membershipSalePrice: number | null;
@@ -40,6 +47,7 @@ export type RowError = { variantId: string; message: string };
 export type SaleRowsSummary = {
   total: number;
   filled: number;
+
   /** 정가 대비 할인율. 품목마다 다르면 최소~최대. 입력된 게 없으면 null. */
   minPercent: number | null;
   maxPercent: number | null;
@@ -66,10 +74,7 @@ export function applySavedSalePrices(
   return rows.map((row) => ({
     ...row,
     generalSalePrice: saved.general.get(row.variantId) ?? null,
-    membershipSalePrice:
-      row.membershipBasePrice === null
-        ? null
-        : (saved.membership.get(row.variantId) ?? null),
+    membershipSalePrice: saved.membership.get(row.variantId) ?? null,
   }));
 }
 
@@ -94,6 +99,7 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
       ((row.basePrice - (row.generalSalePrice as number)) / row.basePrice) * 100
     )
   );
+
   const prices = filled.map((row) => row.generalSalePrice as number);
 
   return {
@@ -111,11 +117,14 @@ export function resolveTimeSaleStatus(
   now: Date
 ): TimeSaleStatus {
   const start = Date.parse(period.startsAt);
+
   const end = Date.parse(period.endsAt);
+
   const at = now.getTime();
 
   if (at < start) return 'scheduled';
   if (at >= end) return 'ended';
+
   return 'active';
 }
 
@@ -153,6 +162,7 @@ export function formatShiftRepeat(display: {
 }): string {
   if (display.repeatHours <= 0) return '-';
   if (!display.repeatUntil) return `${display.repeatHours}시간 · 무한`;
+
   return `${display.repeatHours}시간 · ${display.repeatUntil.slice(0, 10)}까지`;
 }
 
@@ -173,6 +183,7 @@ export function deriveTimeSaleListStatus(
       sale.priceListIds.some((id) =>
         service.suspendedPriceListIds.includes(id)
       );
+
     return suspended ? 'suspended' : 'stopped';
   }
 
@@ -181,6 +192,7 @@ export function deriveTimeSaleListStatus(
   );
   if (states.includes('active')) return 'active';
   if (states.includes('scheduled')) return 'scheduled';
+
   return 'ended';
 }
 
@@ -197,10 +209,12 @@ export function findOverlapping<T extends TimeSalePeriod & { id?: string }>(
   existing: T[]
 ): T[] {
   const start = Date.parse(candidate.startsAt);
+
   const end = Date.parse(candidate.endsAt);
 
   return existing.filter((other) => {
     if (candidate.id && other.id === candidate.id) return false;
+
     return start < Date.parse(other.endsAt) && end > Date.parse(other.startsAt);
   });
 }
@@ -243,6 +257,7 @@ export function applyPercentDiscount(
   rounding: 'round' | 'ceil' | 'floor' = 'round'
 ): TimeSaleRow[] {
   const rate = 1 - percent / 100;
+
   const membershipRate = 1 - membershipPercent / 100;
 
   return rows.map((row) => ({
@@ -265,11 +280,14 @@ export function applyPercentDiscount(
  * 딸려오는데(라이브에 143 개짜리가 있다) 전부 채워야만 저장되면 "안 팔리는 옵션만 세일" 이
  * 불가능하고, 그렇게 만든 세일은 편집 화면에서 다시 저장할 수도 없다.
  */
-export function validateRows(rows: TimeSaleRow[]): RowError[] {
+export function validateRows(
+  rows: TimeSaleRow[],
+  membershipOnly = false
+): RowError[] {
   const errors: RowError[] = [];
 
   for (const row of rows) {
-    if (row.generalSalePrice === null) {
+    if (!membershipOnly && row.generalSalePrice === null) {
       if (row.membershipSalePrice !== null) {
         errors.push({
           variantId: row.variantId,
@@ -281,20 +299,26 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
     }
     // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
     // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
-    if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
+    if (
+      !membershipOnly &&
+      (!Number.isFinite(row.generalSalePrice) ||
+        (row.generalSalePrice ?? 0) <= 0)
+    ) {
       errors.push({
         variantId: row.variantId,
         message: '세일가는 0원보다 큰 숫자여야 합니다.',
       });
       continue;
     }
-    if (row.generalSalePrice >= row.basePrice) {
+    if (!membershipOnly && (row.generalSalePrice ?? 0) >= row.basePrice) {
       errors.push({
         variantId: row.variantId,
         message: `세일가는 정가(${row.basePrice.toLocaleString()}원)보다 낮아야 합니다.`,
       });
     }
-    if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
+    if (row.membershipSalePrice !== null) {
+      const membershipBase = row.membershipBasePrice ?? row.basePrice;
+
       if (
         !Number.isFinite(row.membershipSalePrice) ||
         row.membershipSalePrice <= 0
@@ -303,10 +327,10 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
           variantId: row.variantId,
           message: '멤버십 세일가는 0원보다 큰 숫자여야 합니다.',
         });
-      } else if (row.membershipSalePrice >= row.membershipBasePrice) {
+      } else if (row.membershipSalePrice >= membershipBase) {
         errors.push({
           variantId: row.variantId,
-          message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
+          message: `멤버십 세일가는 기존 가격(${membershipBase.toLocaleString()}원)보다 낮아야 합니다.`,
         });
       }
     }
@@ -365,11 +389,12 @@ export function buildPriceListPayloads(params: {
   rows: TimeSaleRow[];
   regionIds: string[];
   membershipGroupId: string;
+  membershipOnly?: boolean;
 }): { general: PriceListPayload; membership: PriceListPayload | null } {
   const { title, period, rows, regionIds, membershipGroupId } = params;
 
   const generalPrices = rows
-    .filter((row) => row.generalSalePrice !== null)
+    .filter((row) => !params.membershipOnly && row.generalSalePrice !== null)
     .map((row) => ({
       amount: row.generalSalePrice as number,
       currency_code: CURRENCY,
@@ -377,10 +402,7 @@ export function buildPriceListPayloads(params: {
     }));
 
   const membershipPrices = rows
-    .filter(
-      (row) =>
-        row.membershipBasePrice !== null && row.membershipSalePrice !== null
-    )
+    .filter((row) => row.membershipSalePrice !== null)
     .map((row) => ({
       amount: row.membershipSalePrice as number,
       currency_code: CURRENCY,
@@ -426,15 +448,25 @@ type RawVariant = {
   }>;
 };
 
-type RawProduct = { id: string; title: string; variants: RawVariant[] };
+type RawProduct = {
+  id: string;
+  handle?: string | null;
+  title: string;
+  thumbnail?: string | null;
+  status?: string;
+  metadata?: Record<string, unknown> | null;
+  variants: (RawVariant & { sku?: string | null })[];
+};
 
 const toAmount = (raw: unknown): number | null => {
   if (typeof raw === 'number')
     return Number.isFinite(raw) && raw > 0 ? raw : null;
   if (typeof raw === 'string') {
     const parsed = Number(raw);
+
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
+
   return null;
 };
 
@@ -459,6 +491,16 @@ export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
         variantId: variant.id,
         productId: product.id,
         productTitle: product.title,
+        productThumbnail: product.thumbnail,
+        productHandle: product.handle,
+        productStatus: product.status,
+        productDisplay:
+          product.status === 'published' &&
+          product.metadata?.timeSaleDisplay !== false,
+        productSelling:
+          product.status === 'published' &&
+          product.metadata?.timeSaleSelling !== false,
+        productCode: variant.sku,
         variantTitle: variant.title,
         basePrice: base?.amount ?? 0,
         membershipBasePrice: toAmount(variant.metadata?.membershipPrice),
@@ -496,6 +538,7 @@ export function saveNewStyle(
   newId: string
 ) {
   const active = settings.styles[surface][platform];
+
   const snapshot = { ...structuredClone(active), id: newId };
 
   settings.savedStyles.push(snapshot);
@@ -511,6 +554,7 @@ export function linkActiveStyle(
   platform: SalePlatform
 ) {
   const active = settings.styles[surface][platform];
+
   const index = settings.savedStyles.findIndex((l) => l.id === active.id);
 
   if (index < 0) return false;
@@ -557,4 +601,40 @@ export function removeVariableValues(
   for (const sale of Object.values(sales))
     for (const values of Object.values(sale.productVariables ?? {}))
       delete values[name];
+}
+
+// 목록과 상품진열의 선택 행을 이동한다. 저장 전에는 원본 순서를 건드리지 않는다.
+export function moveSelectedItems<T>(
+  items: T[],
+  selected: T[],
+  direction: 'first' | 'up' | 'down' | 'last'
+): T[] {
+  const picked = new Set(selected);
+  if (direction === 'first' || direction === 'last') {
+    const yes = items.filter((item) => picked.has(item));
+
+    const no = items.filter((item) => !picked.has(item));
+
+    return direction === 'first' ? [...yes, ...no] : [...no, ...yes];
+  }
+
+  const next = [...items];
+
+  const delta = direction === 'up' ? -1 : 1;
+
+  const indices = items.map((_, i) => i);
+  if (delta === 1) indices.reverse();
+  for (const i of indices) {
+    const j = i + delta;
+    if (
+      picked.has(next[i]) &&
+      j >= 0 &&
+      j < next.length &&
+      !picked.has(next[j])
+    ) {
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+  }
+
+  return next;
 }

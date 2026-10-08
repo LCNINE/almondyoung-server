@@ -1,3 +1,4 @@
+import { syncTimeSaleProductActions } from '../../../../utils/time-sale-product-actions';
 import type { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { MedusaError } from '@medusajs/framework/utils';
 import { respondConflictWithMessage } from '../conflict';
@@ -22,6 +23,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   // 가격표 상태만 바뀌면 Medusa 상품 캐시가 안 비워져 옛 가격이 남는다(Ruling 22).
   await clearTimeSaleProductCache(req.scope, changed.value.result.productIds);
+  await syncTimeSaleProductActions(req.scope);
+
   await revalidateTimeSaleCache(req.scope);
 
   return res.json({ priceListIds: ids, active });

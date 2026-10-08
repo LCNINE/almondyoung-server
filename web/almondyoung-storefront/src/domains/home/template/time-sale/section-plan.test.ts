@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
-import { mainProductIds, saleSectionPeriods } from "./section-plan"
+import {
+  mainProductIds,
+  matchesSalePartition,
+  saleSectionPeriods,
+} from "./section-plan"
 
 const ids = Array.from({ length: 120 }, (_, i) => `p${i + 1}`)
 
@@ -36,5 +40,15 @@ describe("섹션 기준 기간", () => {
       { startsAt: "2026-10-07T04:00:00Z", endsAt: "2026-10-07T05:00:00Z" },
       { startsAt: "2026-10-07T04:00:00Z", endsAt: "2026-10-07T07:00:00Z" },
     ])
+  })
+})
+
+describe("partition placement", () => {
+  it("unassigned sales stay in the default home slot and named sales only match their slot", () => {
+    expect(matchesSalePartition(undefined, "home-sale")).toBe(true)
+    expect(matchesSalePartition("", "home-top")).toBe(false)
+    expect(matchesSalePartition("home-top", "home-top")).toBe(true)
+    expect(matchesSalePartition("home-top", "home-sale")).toBe(false)
+    expect(matchesSalePartition("summer", "summer")).toBe(true)
   })
 })

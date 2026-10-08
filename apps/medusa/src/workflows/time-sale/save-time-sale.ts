@@ -43,7 +43,12 @@ import {
   type TimeSaleSettingsSnapshot,
 } from '../../utils/time-sale-settings';
 
-export type TimeSalePrice = { amount: number; currency_code: string; variant_id: string };
+export type TimeSalePrice = {
+  amount: number;
+  currency_code: string;
+  variant_id: string;
+  rules?: Record<string, string>;
+};
 
 export type TimeSalePriceListPayload = {
   description: string;
@@ -184,9 +189,16 @@ export function buildSavePlan(
     ];
 
     for (const [kind, id, payload, title] of slots) {
-      const prices = (payload?.prices ?? []).filter(
-        (price) => group.productId === null || variantProducts[price.variant_id] === group.productId,
-      );
+      const prices = (payload?.prices ?? [])
+        .filter((price) => group.productId === null || variantProducts[price.variant_id] === group.productId)
+        .map((price) => {
+          const productId = variantProducts[price.variant_id];
+          const disabled = input.display.productActions?.[productId]?.autoUpdate === false;
+
+          // This rule is absent from storefront/cart pricing contexts, so OFF prices never match.
+          // Medusa then resolves the existing regular or membership price without changing it.
+          return disabled ? { ...price, rules: { time_sale_auto_update: 'disabled' } } : price;
+        });
       for (const price of prices) {
         const productId = variantProducts[price.variant_id];
         if (productId) products.add(productId);

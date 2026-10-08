@@ -42,10 +42,10 @@ export const membershipPriceVisibilityMiddleware = async (
   const originalJson = res.json.bind(res);
   res.json = (body: unknown) => {
     if (
-      !isMember &&
       isRecord(body) &&
       isRecord(body.product) &&
-      isVisibleToMembersOnlyProduct(body.product as MembershipProduct)
+      (body.product.metadata && isRecord(body.product.metadata) && body.product.metadata.timeSaleDisplay === false ||
+        !isMember && isVisibleToMembersOnlyProduct(body.product as MembershipProduct))
     ) {
       res.status(404);
       return originalJson({ type: 'not_found', message: 'Product not found' });

@@ -11,7 +11,11 @@ import {
 import type { SaleSurface } from "@packages/domain-types/time-sale"
 import { buildSaleProducts } from "./sale-products"
 import { fetchProductsByIds } from "./fetch-products"
-import { mainProductIds, saleSectionPeriods } from "./section-plan"
+import {
+  mainProductIds,
+  matchesSalePartition,
+  saleSectionPeriods,
+} from "./section-plan"
 
 // 홈/더보기의 타임세일 서버 컴포넌트:
 // 세일 목록 → 세일별 상품 id 결정 → 상품 한 번에 조회 → 진열순위 첫 세일 하나만 섹션 렌더.
@@ -20,17 +24,29 @@ export async function TimeSaleWrapper({
   countryCode,
   surface = "main",
   page: rawPage,
+  partitionId = "home-sale",
+  saleId,
 }: {
   countryCode: string
   background?: "white" | "muted"
   surface?: SaleSurface
   page?: string
+  partitionId?: string
+  saleId?: string
 }) {
   // 1) 세일·설정 조회. 이 면(surface)이 꺼져 있거나 보여줄 세일이 없으면 렌더하지 않는다.
   const { timeSales, settings } = await getTimeSalePresentation()
   if (!settings.environment[surface]) return null
   const sales = timeSales.filter(
-    (sale) => sale.endsAt && sale.productIds.length > 0
+    (sale) =>
+      sale.endsAt &&
+      sale.productIds.length > 0 &&
+      (!saleId || sale.saleId === saleId) &&
+      (surface !== "main" ||
+        matchesSalePartition(
+          settings.sales[sale.saleId]?.partitionId,
+          partitionId
+        ))
   )
   if (sales.length === 0) return null
 
@@ -48,7 +64,8 @@ export async function TimeSaleWrapper({
 
     const pages = pageCount(sale.productIds.length, pageSize)
     const page = parsePage(rawPage, pages)
-    const hrefFor = (n: number) => `/${countryCode}/time-sale?page=${n}`
+    const hrefFor = (n: number) =>
+      `/${countryCode}/time-sale?sale=${encodeURIComponent(sale.saleId)}&page=${n}`
 
     return {
       sale,

@@ -14,7 +14,10 @@ import {
 import { isCustomError } from '@/lib/api/customError';
 import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
 import { medusaTimeSalesApi } from '@/lib/api/domains/medusa/time-sales';
-import { medusaCatalogApi } from '@/lib/api/domains/medusa/catalog';
+import {
+  medusaCatalogApi,
+  type MedusaCategoryItem,
+} from '@/lib/api/domains/medusa/catalog';
 import { medusaRegionsApi } from '@/lib/api/domains/medusa/regions';
 import {
   buildPriceListPayloads,
@@ -43,7 +46,8 @@ const MEMBERSHIP_GROUP_ID =
 function useAllTimeSales() {
   return useQuery({
     queryKey: timeSaleKeys.lists(),
-    queryFn: () => medusaTimeSalesApi.list(),
+    queryFn: ({ signal }) => medusaTimeSalesApi.list(signal),
+    retry: false,
     staleTime: 30_000,
   });
 }
@@ -89,6 +93,33 @@ export function useTimeSaleVariantMap() {
   return { data: map };
 }
 
+export function useMedusaProductCategories() {
+  return useQuery({
+    queryKey: ['medusa-product-categories', 'all'],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const result: MedusaCategoryItem[] = [];
+
+      let count = Infinity;
+
+      while (result.length < count) {
+        const page = await medusaCatalogApi.listCategories(undefined, {
+          limit: 100,
+          offset: result.length,
+        });
+
+        if (!page.product_categories.length) break;
+
+        result.push(...page.product_categories);
+        count = page.count;
+      }
+
+      return result;
+    },
+  });
+}
+
 /** 세일에 올릴 상품 고르기용 Medusa 상품 목록. 상품관리 목록과 같은 페이지 크기로 넘긴다. */
 export function useMedusaProductSearch(params: {
   keyword: string;
@@ -98,6 +129,7 @@ export function useMedusaProductSearch(params: {
 }) {
   return useQuery({
     queryKey: timeSaleKeys.search(params),
+    retry: false,
     queryFn: () =>
       medusaCatalogApi.searchProducts(params.keyword || undefined, {
         limit: params.pageSize,
@@ -112,6 +144,7 @@ export function useMedusaProductSearch(params: {
 export function useTimeSaleProductRows(productIds: string[]) {
   return useQuery({
     queryKey: timeSaleKeys.products(productIds),
+    retry: false,
     queryFn: async (): Promise<TimeSaleRow[]> => {
       const products = await medusaProductPricingApi.getProducts(productIds);
       return toTimeSaleRows(products);
@@ -171,6 +204,7 @@ type SaleInput = {
   display?: SaleDisplay;
   periodMode?: SalePeriodMode;
   productPeriods?: Record<string, TimeSalePeriod>;
+  preservePrices?: boolean;
 };
 
 // 상품별 기간 모드의 요청 본문: 세일가가 있는 상품만, 개별 기간이
@@ -180,8 +214,7 @@ function buildProductPeriods(input: SaleInput) {
     input.rows
       .filter(
         (row) =>
-          row.generalSalePrice !== null ||
-          (row.membershipBasePrice !== null && row.membershipSalePrice !== null)
+          row.generalSalePrice !== null || row.membershipSalePrice !== null
       )
       .map((row) => row.productId)
   );
@@ -216,7 +249,14 @@ const toValidationError = (error: unknown) =>
 // 저장 요청 본문 조립: 1) 행 검증 2) 멤버십 그룹·리전 확인
 // 3) 가격표 payload 4) 현재 설정 revision 과 표시 설정 결합.
 async function buildSaveBody(input: SaleInput, key: string | null) {
-  const errors = validateRows(input.rows);
+  const { settings, revision } = await medusaTimeSaleSettingsApi.get();
+  const membershipOnly =
+    settings.environment.membershipPriceOnly ||
+    !!input.display?.membershipPriceOnly;
+
+  const errors = input.preservePrices
+    ? []
+    : validateRows(input.rows, membershipOnly);
   if (errors.length > 0) {
     throw new TimeSaleValidationError(
       `${errors.length}개 품목의 세일가를 고쳐야 합니다.`
@@ -226,8 +266,7 @@ async function buildSaveBody(input: SaleInput, key: string | null) {
   // 그룹 id 가 없으면 멤버십 리스트를 만들 수 없다. 조용히 건너뛰면 운영자가 입력한 멤버십
   // 세일가가 통째로 버려지고 "멤버십 세일가 없음" 으로만 남는다 — 저장 전에 막는다.
   const wantsMembership = input.rows.some(
-    (row) =>
-      row.membershipBasePrice !== null && row.membershipSalePrice !== null
+    (row) => row.membershipSalePrice !== null
   );
   if (wantsMembership && !MEMBERSHIP_GROUP_ID) {
     throw new TimeSaleValidationError(
@@ -250,8 +289,8 @@ async function buildSaveBody(input: SaleInput, key: string | null) {
     rows: input.rows,
     regionIds,
     membershipGroupId: MEMBERSHIP_GROUP_ID,
+    membershipOnly,
   });
-  const { settings, revision } = await medusaTimeSaleSettingsApi.get();
   const periodMode = input.periodMode ?? 'sale';
 
   return {
@@ -295,7 +334,10 @@ export function useCreateTimeSale() {
         });
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['time-sale-settings'] }),
+      ]),
   });
 }
 
@@ -335,7 +377,10 @@ export function useUpdateTimeSale() {
         });
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['time-sale-settings'] }),
+      ]),
   });
 }
 

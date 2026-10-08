@@ -129,6 +129,10 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     variant?: { product?: (MembershipProduct & { tags?: Array<{ value?: string }> }) | null } | null;
   }> = fullCart?.items ?? [];
 
+  if (cartItems.some((item) => item.variant?.product?.metadata?.timeSaleSelling === false)) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '타임세일 설정에 따라 판매가 중지된 상품입니다.');
+  }
+
   // 멤버십 전용 구매 상품 최종 방어 — 게이트 적용 전에 담아둔 카트, 담은 뒤 멤버십 만료를 잡는다.
   const hasMembersOnlyPurchase = cartItems.some((item) => {
     const product = item?.variant?.product;

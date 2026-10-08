@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useRef, useState, type CSSProperties } from
 import {
   USER_VARIABLE_NAME_SOURCE,
   defaultSaleDisplay,
+  saleLayoutFor,
   type TimeSaleSettings,
   type SaleSurface,
   type SalePlatform,
@@ -25,6 +26,7 @@ export type SaleProduct = {
   variables?: Record<string, string>;
   startsAt?: string | null;
   endsAt?: string | null;
+  membershipOnly?: boolean;
 };
 
 // 서버 페이지 나누기용 페이지 링크 한 칸. href 가 없으면 말줄임이다.
@@ -49,9 +51,11 @@ export type SaleRendererProps = {
   previewSoldOut?: boolean;
   sanitizeHtml: (html: string) => string;
   moreHref?: string;
+
   // 있으면 그리드는 받은 상품을 한 페이지로 그대로 그리고 링크형 페이지 번호를 둔다.
   // 더보기 서버 페이지네이션용.
   pager?: SalePagerItem[];
+
   // 섹션 타이머·진행바·노출 판단의 기준 기간들. 없으면 받은 상품으로 계산한다.
   sectionPeriods?: SalePeriodLike[];
 };
@@ -61,6 +65,7 @@ const names = { scheduled: '할인(예정)', active: '할인(실행중)', ended:
 function formatToken(value: string, format?: string) {
   if (!value) return '';
   if (format?.includes('?')) return format.replace('?', value);
+
   return format ?? value;
 }
 
@@ -68,6 +73,7 @@ function formatToken(value: string, format?: string) {
 function resolveState(now: number, startsAt: string, endsAt: string): SalePreviewState {
   if (now < Date.parse(startsAt)) return 'scheduled';
   if (now >= Date.parse(endsAt)) return 'ended';
+
   return 'active';
 }
 
@@ -88,7 +94,9 @@ export function resolveProductState(now: number, product: SalePeriodLike, sale: 
 // 임박 > 예정 중 시작 임박 > 모두 끝났으면 가장 늦게 끝난 기간.
 export function resolveSectionPeriod(now: number, sale: SalePeriod, products: SalePeriodLike[]): SalePeriod {
   const periods = products.map((product) => periodOf(product, sale));
+
   const byEnd = (a: SalePeriod, b: SalePeriod) => Date.parse(a.endsAt) - Date.parse(b.endsAt);
+
   const byStart = (a: SalePeriod, b: SalePeriod) => Date.parse(a.startsAt) - Date.parse(b.startsAt);
 
   const active = periods.filter((p) => resolveState(now, p.startsAt, p.endsAt) === 'active').sort(byEnd);
@@ -113,14 +121,20 @@ export type SectionInput = {
 // 마운트 전(now=0)·미리보기에서는 거르지도 숨기지도 않는다.
 export function resolveSection(now: number, input: SectionInput) {
   const { sale, products, sectionPeriods, display, previewState } = input;
+
   const period = resolveSectionPeriod(now, sale, sectionPeriods ?? products);
+
   const state = previewState ?? resolveState(now, period.startsAt, period.endsAt);
+
   const settled = !previewState && now !== 0;
+
   const shown = (current: SalePreviewState) =>
     current === 'scheduled' ? display.showScheduled : current === 'ended' ? display.showEnded : true;
+
   const inPeriod = products.filter(
     (p) => !settled || (!p.startsAt && !p.endsAt) || shown(resolveProductState(now, p, sale)),
   );
+
   const hidden = !settled
     ? false
     : sectionPeriods
@@ -156,12 +170,14 @@ export function previewRemainingSeconds(anchor: SalePeriod, state: SalePreviewSt
 function previewOffsetMs(state: SalePreviewState) {
   if (state === 'active') return 86400000 + 123000;
   if (state === 'scheduled') return 3600000;
+
   return 0;
 }
 
 function previewProgress(state: SalePreviewState) {
   if (state === 'active') return 50;
   if (state === 'ended') return 100;
+
   return 0;
 }
 
@@ -194,6 +210,7 @@ const TOKEN_PATTERN = new RegExp(`\\{\\{(${USER_VARIABLE_NAME_SOURCE}|[a-z_]+)(?
 function expand(text: string, values: Record<string, string>) {
   return text.replace(TOKEN_PATTERN, (_, key: string, format?: string) => {
     const value = values[key] ?? '';
+
     return formatToken(value, format);
   });
 }
@@ -207,9 +224,11 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   useEffect(() => {
     const media = matchMedia('(max-width: 767px)');
+
     const update = () => setMobile(media.matches);
     update();
     media.addEventListener('change', update);
+
     return () => media.removeEventListener('change', update);
   }, []);
 
@@ -217,18 +236,27 @@ export function SaleRenderer(props: SaleRendererProps) {
   // 뒤에 시작한다(now=0 동안은 필터를 적용하지 않는다).
   useEffect(() => {
     setNow(Date.now());
+
     const id = setInterval(() => setNow(Date.now()), 1000);
+
     return () => clearInterval(id);
   }, []);
 
   const { settings, surface, products, previewState, previewSoldOut, sanitizeHtml } = props;
+
   const d = settings.sales[props.saleId] ?? defaultSaleDisplay();
+
   const platform = props.platform ?? (mobile ? 'mobile' : 'pc');
-  const layout = settings.styles[surface][platform];
+
+  const layout = saleLayoutFor(settings, d, surface, platform);
+
+  const moreLayout = saleLayoutFor(settings, d, 'more', platform);
 
   // 1) 기간·상태·남은 시간 계산(previewState 가 있으면 어드민 미리보기용 가짜 값)
   const sale = { startsAt: props.startsAt, endsAt: props.endsAt };
+
   const filtered = previewSoldOut === false ? products.map((p) => ({ ...p, soldOut: false })) : products;
+
   const section = resolveSection(now, {
     sale,
     products: filtered,
@@ -237,11 +265,15 @@ export function SaleRenderer(props: SaleRendererProps) {
     previewState,
     paged: Boolean(props.pager),
   });
+
   const { period, state } = section;
+
   const countdownTarget = state === 'scheduled' ? period.startsAt : period.endsAt;
+
   const anchorTarget = props.previewAnchor
     ? Date.parse(state === 'scheduled' ? props.previewAnchor.startsAt : props.previewAnchor.endsAt)
     : 0;
+
   const end = previewState
     ? props.previewAnchor
       ? now === 0
@@ -249,16 +281,22 @@ export function SaleRenderer(props: SaleRendererProps) {
         : anchorTarget
       : now + previewOffsetMs(state)
     : Date.parse(countdownTarget);
+
   const fixedRemaining = (current: SalePreviewState) =>
     now === 0 || !props.previewAnchor ? 0 : previewRemainingSeconds(props.previewAnchor, current, now);
+
   const remaining =
     previewState && props.previewAnchor ? fixedRemaining(state) : Math.max(0, Math.ceil((end - now) / 1000));
 
   const productState = (product: SaleProduct) => previewState ?? resolveProductState(now, product, sale);
+
   const productRemaining = (product: SaleProduct) => {
     const own = periodOf(product, sale);
+
     const current = productState(product);
+
     const target = current === 'scheduled' ? Date.parse(own.startsAt) : Date.parse(own.endsAt);
+
     const until = previewState ? now + previewOffsetMs(current) : target;
 
     if (previewState && props.previewAnchor) return formatRemaining(fixedRemaining(current));
@@ -278,10 +316,20 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   // 3) 노출 여부 판단: 환경/세일 설정에서 꺼져 있거나
   // 기간 기준으로 숨겨야 하면 아무것도 그리지 않는다.
-  if (!settings.environment.enabled || !settings.environment[surface] || !d[surface]) return null;
+  if (
+    !settings.environment.enabled ||
+    !settings.environment[surface] ||
+    !d[surface] ||
+    d.styles?.[surface]?.[platform]?.enabled === false
+  )
+    return null;
   if (section.hidden) return null;
 
-  const visible = d.showSoldOut ? section.products : section.products.filter((p) => !p.soldOut);
+  const visible = (d.showSoldOut ? section.products : section.products.filter((p) => !p.soldOut)).slice();
+
+  const order = new Map((d.productOrder ?? []).map((id, index) => [id, index]));
+  if (order.size) visible.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
+
   const html = (content: string, values = vars) => ({ __html: sanitizeHtml(expand(content, values)) });
 
   // 4) 레이아웃의 컴포넌트를 현재 상태(state)에 해당하는 것만 순서대로 그린다.
@@ -347,10 +395,12 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   // 진행바: 섹션 기간 중 얼마나 지났는지(%).
   const total = Math.max(1, Date.parse(period.endsAt) - Date.parse(period.startsAt));
+
   const elapsedPercent = ((now - Date.parse(period.startsAt)) / total) * 100;
+
   const progress = previewState ? previewProgress(state) : Math.max(0, Math.min(100, elapsedPercent));
 
-  const hasFlip = [layout, settings.styles.more[platform]].some((l) =>
+  const hasFlip = [layout, moreLayout].some((l) =>
     l.components.some((c) => c.type === 'timer' && c.options.timer === 'flip'),
   );
 
@@ -377,7 +427,7 @@ export function SaleRenderer(props: SaleRendererProps) {
             <button autoFocus type="button" aria-label="닫기" onClick={() => setPopup(false)} style={popupCloseStyle}>
               ×
             </button>
-            {drawLayout(settings.styles.more[platform], 'more')}
+            {d.styles?.more?.[platform]?.enabled !== false && drawLayout(moreLayout, 'more')}
           </div>
         </div>
       )}
@@ -500,6 +550,7 @@ const productImagePlaceholderStyle: CSSProperties = { aspectRatio: '1', backgrou
 function starPolygon(points: number, inner: number) {
   const coords = Array.from({ length: points * 2 }, (_, i) => {
     const radius = i % 2 === 0 ? 50 : 50 * inner;
+
     const angle = (Math.PI * i) / points - Math.PI / 2;
 
     return `${(50 + radius * Math.cos(angle)).toFixed(1)}% ${(50 + radius * Math.sin(angle)).toFixed(1)}%`;
@@ -691,6 +742,7 @@ const flipCss = `
 // 숫자가 바뀌면 이전 값 위쪽 반쪽이 접히고 새 값 아래쪽 반쪽이 펴지는 플립 숫자.
 function FlipDigit({ value, style }: { value: string; style: CSSProperties }) {
   const previous = useRef(value);
+
   const from = previous.current;
 
   useEffect(() => {
@@ -735,8 +787,11 @@ export function timerParts(
   options: { daysToHours: boolean; hideZeroDays: boolean },
 ): [number, string][] {
   const remaining = Math.max(0, Math.ceil((end - now) / 1000));
+
   const days = Math.floor(remaining / 86400);
+
   const hours = options.daysToHours ? Math.floor(remaining / 3600) : Math.floor(remaining / 3600) % 24;
+
   const showDays = !options.daysToHours && (!options.hideZeroDays || days > 0);
 
   return [
@@ -750,6 +805,7 @@ export function timerParts(
 // 남은 시간을 일·시간·분·초 칸으로 보여주는 타이머.
 function Timer({ component: c, end, now }: { component: SaleComponent; end: number; now: number }) {
   const flip = c.options.timer === 'flip';
+
   const parts = timerParts(end, now, c.options);
 
   return (
@@ -791,6 +847,7 @@ export function activePageOf(scrollLeft: number, starts: number[], maxScroll: nu
 
 const startsOf = (el: HTMLElement, columns: number) => {
   const box = el.getBoundingClientRect().left;
+
   const offsets = Array.from(el.children).map((child) => child.getBoundingClientRect().left - box + el.scrollLeft);
 
   return pageStarts(offsets, columns);
@@ -803,11 +860,14 @@ function scrollToX(el: HTMLElement, left: number, duration: number) {
 
   if (duration <= 0 || matchMedia('(prefers-reduced-motion: reduce)').matches) {
     el.scrollLeft = target;
+
     return () => undefined;
   }
 
   const from = el.scrollLeft;
+
   const snap = el.style.scrollSnapType;
+
   const startedAt = performance.now();
   let frame = 0;
   el.style.scrollSnapType = 'none';
@@ -854,12 +914,16 @@ function Products({
   saleProductVariables?: Record<string, Record<string, string>>;
 }) {
   const badgePrefix = `ts-badge-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+
   const [page, setPage] = useState(0);
   const [dot, setDot] = useState(0);
+
   const scroll = useRef<HTMLDivElement>(null);
+
   const size = c.options.columns * c.options.rows,
     pages = Math.ceil(products.length / size),
     dotCount = Math.ceil(products.length / c.options.columns);
+
   const cancelScroll = useRef<() => void>(() => undefined);
 
   useEffect(() => setPage(0), [products.length, size]);
@@ -872,6 +936,7 @@ function Products({
 
   const goToPage = (el: HTMLElement, index: number) => {
     const starts = startsOf(el, c.options.columns);
+
     const last = starts.length - 1;
 
     goTo(el, starts[Math.max(0, Math.min(index, last))] ?? 0);
@@ -895,6 +960,7 @@ function Products({
         return;
 
       const current = pageOf(el);
+
       const lastPage = startsOf(el, c.options.columns).length - 1;
 
       if (current >= lastPage) {
@@ -917,8 +983,10 @@ function Products({
   };
 
   const hasTexts = (c.productTexts ?? []).length > 0;
+
   // 서버가 이미 한 페이지만 보냈으면(pager) 다시 자르지 않는다.
   const list = c.type === 'grid' && !pager ? products.slice(page * size, (page + 1) * size) : products;
+
   const currency = (n: number | null) =>
     n === null
       ? '멤버십 회원에게 가격 공개'
@@ -938,6 +1006,7 @@ function Products({
       >
         {list.map((p) => {
           const discount = p.price !== null && p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0;
+
           const showBadge = c.options.badge !== 'none' && discount > 0;
 
           const values = {
@@ -965,6 +1034,21 @@ function Products({
 
           return (
             <a key={p.id} href={p.href} style={productCardStyle(c, stateOf(p), p.soldOut)}>
+              {p.membershipOnly && (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    marginBottom: 6,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    background: '#eaf2ff',
+                    color: '#245fae',
+                    fontSize: 12,
+                  }}
+                >
+                  멤버십 회원 특가
+                </span>
+              )}
               {texts('header', values)}
               <div style={{ position: 'relative' }}>
                 {p.image ? (

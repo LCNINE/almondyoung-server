@@ -1,8 +1,8 @@
 "use client"
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import sanitizeHtml from "sanitize-html"
-import { SaleRenderer, type SaleProduct } from "@packages/time-sale-ui"
+import { ConfiguredTimeSale } from "@/domains/home/components/sections/time-sale-section/configured"
+import { type SaleProduct } from "@packages/time-sale-ui"
 import {
   useTimeSale,
   useTimeSaleForProduct,
@@ -73,7 +73,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   const salePresentation =
     timeSale && endsAt ? (
-      <SaleRenderer
+      <ConfiguredTimeSale
         settings={settings}
         surface="detail"
         saleId={timeSale.saleId}
@@ -84,7 +84,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         endsAt={endsAt}
         products={saleProducts}
         sectionPeriods={[{ startsAt: period?.startsAt, endsAt }]}
-        sanitizeHtml={sanitizeHtml}
+        countryCode={countryCode}
       />
     ) : null
   if (!cheapestPrice) {

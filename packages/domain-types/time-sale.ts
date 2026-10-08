@@ -86,6 +86,21 @@ export const MAX_USER_VARIABLES = 5;
 export const MAX_VARIABLE_VALUE_LENGTH = 256;
 
 // 세일 하나의 노출 설정(구좌·반복·공개 제한·가격표 묶음). 설정 JSON 의 sales[saleId] 값이다.
+export type SaleProductAction = {
+  displayOnStart?: boolean;
+  displayOffStop?: boolean;
+  sellingOnStart?: boolean;
+  sellingOffStop?: boolean;
+  autoUpdate?: boolean;
+  related?: {
+    productId: string;
+    displayOffStart?: boolean;
+    displayOnStop?: boolean;
+    sellingOffStart?: boolean;
+    sellingOnStop?: boolean;
+  }[];
+};
+
 export type SaleDisplay = {
   partitionId: string;
   webId: string;
@@ -99,6 +114,10 @@ export type SaleDisplay = {
   more: boolean;
   detail: boolean;
   order: number;
+  productOrder?: string[];
+  productActions?: Record<string, SaleProductAction>;
+  styles?: Partial<Record<SaleSurface, Partial<Record<SalePlatform, { styleId: string; enabled: boolean }>>>>;
+
   // 상품별 사용자 변수 값: 상품 id → 변수명 → 값. 값이 없으면 변수의 preview 값을 쓴다.
   productVariables: Record<string, Record<string, string>>;
   periodMode: SalePeriodMode;
@@ -122,6 +141,7 @@ export type TimeSaleSettings = {
     popupWidth: number;
     popupHeight: number;
     veilOpacity: number;
+
     // 서비스를 끌 때 active 였던 타임세일 가격표 id. 켤 때 이것만 되살린다(서버만 쓴다).
     suspendedPriceListIds: string[];
   };
@@ -149,9 +169,21 @@ export const defaultSaleDisplay = (): SaleDisplay => ({
   groups: [],
 });
 
+export function saleLayoutFor(
+  settings: TimeSaleSettings,
+  display: SaleDisplay,
+  surface: SaleSurface,
+  platform: SalePlatform,
+): SaleLayout {
+  const id = display.styles?.[surface]?.[platform]?.styleId;
+
+  return settings.savedStyles.find((style) => style.id === id) ?? settings.styles[surface][platform];
+}
+
 const defaultComponentContent = (type: SaleComponent['type']) => {
   if (type === 'text') return '{{title}}';
   if (type === 'button') return '더보기';
+
   return '';
 };
 
@@ -213,6 +245,7 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
             surface === 'main' ? 'carousel' : 'grid',
             ...(surface === 'main' ? ['button' as const] : []),
           ];
+
     return {
       id: `${surface}-${platform}`,
       name: '기본 스타일',
@@ -229,10 +262,12 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
           c.css.fontWeight = 'bold';
           c.css.fontSize = '24px';
         }
+
         return c;
       }),
     };
   };
+
   return {
     version: 1,
     environment: {
@@ -335,6 +370,9 @@ export const MAX_SUSPENDED_PRICE_LISTS = 200;
 
 // 설정 저장·읽기 경계의 검증(250KB 이하, 환경값 범위,
 // 스타일·컴포넌트·사용자 변수·세일별 설정). 어긋나면 Error.
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
 export function validateTimeSaleSettings(input: unknown): asserts input is TimeSaleSettings {
   // JSON structure is checked before typed access; shared contract cast is confined to this boundary.
   if (!input || typeof input !== 'object' || JSON.stringify(input).length > 250000)
@@ -533,6 +571,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
         if (!/^#[0-9a-f]{3,8}$/i.test(o[key])) throw new Error('색상은 HEX 형식으로 입력하세요.');
 
       const hasImageSource = c.type === 'image' && Boolean(c.content);
+
       const isAllowedImageSource = /^https?:\/\//.test(c.content) || /^\/(?!\/)/.test(c.content);
 
       if (hasImageSource && !isAllowedImageSource)
@@ -572,6 +611,51 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     )
       throw new Error('타임세일 노출 설정을 확인하세요.');
 
+    if (d.productActions !== undefined) {
+      if (!isObject(d.productActions) || Object.keys(d.productActions).length > MAX_PRODUCT_PERIOD_GROUPS) {
+        throw new Error('상품 실행/중지 설정을 확인하세요.');
+      }
+
+      for (const [productId, action] of Object.entries(d.productActions)) {
+        if (!productId || productId.length > 64 || !isObject(action)) {
+          throw new Error('상품 실행/중지 설정을 확인하세요.');
+        }
+
+        if (
+          action.related !== undefined &&
+          (!Array.isArray(action.related) ||
+            action.related.length > 5 ||
+            action.related.some(
+              (item) =>
+                !isObject(item) || typeof item.productId !== 'string' || !item.productId || item.productId.length > 64,
+            ) ||
+            new Set(action.related.map((item) => item.productId)).size !== action.related.length)
+        )
+          throw new Error('전/후처리 연관 상품은 중복 없이 최대 5개입니다.');
+
+        const changes = [action, ...(action.related ?? [])];
+
+        for (const change of changes) {
+          if (
+            !isObject(change) ||
+            [
+              'displayOnStart',
+              'displayOffStop',
+              'sellingOnStart',
+              'sellingOffStop',
+              'autoUpdate',
+              'displayOffStart',
+              'displayOnStop',
+              'sellingOffStart',
+              'sellingOnStop',
+            ].some((key) => Reflect.get(change, key) !== undefined && typeof Reflect.get(change, key) !== 'boolean')
+          ) {
+            throw new Error('상품 실행/중지 설정은 체크 여부여야 합니다.');
+          }
+        }
+      }
+    }
+
     for (const key of [
       'showSoldOut',
       'showScheduled',
@@ -583,6 +667,38 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     ] as const)
       if (typeof d[key] !== 'boolean') throw new Error('타임세일 옵션을 확인하세요.');
 
+    if (
+      d.productOrder !== undefined &&
+      (!Array.isArray(d.productOrder) ||
+        d.productOrder.length > 200 ||
+        d.productOrder.some((productId) => typeof productId !== 'string' || !productId || productId.length > 64) ||
+        new Set(d.productOrder).size !== d.productOrder.length)
+    )
+      throw new Error('상품 진열순위를 확인하세요.');
+    if (d.styles !== undefined) {
+      if (!d.styles || typeof d.styles !== 'object' || Array.isArray(d.styles))
+        throw new Error('진열매대 스타일을 확인하세요.');
+      for (const [surface, platforms] of Object.entries(d.styles)) {
+        if (
+          !['main', 'more', 'detail'].includes(surface) ||
+          !platforms ||
+          typeof platforms !== 'object' ||
+          Array.isArray(platforms)
+        )
+          throw new Error('진열매대 스타일을 확인하세요.');
+        for (const [platform, value] of Object.entries(platforms)) {
+          if (
+            !['mobile', 'pc'].includes(platform) ||
+            !value ||
+            typeof value !== 'object' ||
+            typeof value.enabled !== 'boolean' ||
+            typeof value.styleId !== 'string' ||
+            value.styleId.length > 100
+          )
+            throw new Error('진열매대 스타일을 확인하세요.');
+        }
+      }
+    }
     validateProductVariables(d.productVariables, s.variables);
 
     validateSaleGroups(d);
@@ -670,6 +786,7 @@ export function nextRepeatedPeriod(start: string, end: string, hours: number, un
     return null;
 
   const steps = Math.floor((now - b) / interval) + 1;
+
   const nextStart = a + steps * interval,
     nextEnd = b + steps * interval;
 

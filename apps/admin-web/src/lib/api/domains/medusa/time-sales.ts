@@ -64,9 +64,12 @@ export type SaveTimeSaleResult = {
 };
 
 export const medusaTimeSalesApi = {
-  list: async () => {
+  list: async (signal?: AbortSignal) => {
+    const config = { timeout: 15_000, retry: 0, signal };
+
     const res = await client.get<{ timeSales: AdminTimeSale[] }>(
-      `${MEDUSA_BASE_URL}/admin/time-sales`
+      `${MEDUSA_BASE_URL}/admin/time-sales`,
+      config
     );
     return res.data.timeSales;
   },

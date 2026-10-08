@@ -1,3 +1,4 @@
+import { syncTimeSaleProductActions } from '../../../utils/time-sale-product-actions';
 import type { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { loadTimeSaleSettings } from '../../../utils/time-sale-settings';
 import { saveTimeSaleSettingsFromAdmin } from '../../../workflows/time-sale/save-time-sale-settings';
@@ -11,5 +12,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const body = req.body as { settings?: unknown; revision?: unknown };
 
-  return res.json(await saveTimeSaleSettingsFromAdmin(req.scope, body?.settings, body?.revision));
+  const result = await saveTimeSaleSettingsFromAdmin(req.scope, body?.settings, body?.revision);
+
+  await syncTimeSaleProductActions(req.scope);
+
+  return res.json(result);
 }
