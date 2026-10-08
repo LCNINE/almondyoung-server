@@ -446,7 +446,9 @@ function PeerRow({
   const value = (n: number) =>
     isPrice ? t("unit.won", { value: fmt.full(n) }) : fmt.full(Math.round(n))
   const diff = Math.round(Math.abs(current - median))
-  const same = median === 0 || diff / median < 0.03
+  const same =
+    current === median ||
+    (median > 0 && Math.abs(current - median) / median < 0.03)
   const verdict = same
     ? t("myShop.same")
     : isPrice

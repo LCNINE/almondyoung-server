@@ -33,7 +33,8 @@
     "closedLabel": "Closed",
     "densityLabel": "Density",
     "chartTitle": "Monthly openings",
-    "note": "Based on public licensing data. Actual numbers may differ slightly."
+    "note": "Based on public licensing data. Actual numbers may differ slightly.",
+    "partialMonth": "Some months cover only part of the period. Bar heights alone do not establish month-to-month growth."
   },
   "revenue": {
     "eyebrow": "{industry} card sales in {region}",
@@ -41,7 +42,19 @@
     "down": "Down <b>{pct}%</b> from the same quarter last year",
     "flat": "<b>Similar</b> to the same quarter last year",
     "quarter": "Q{q} {year}",
-    "note": "Card sales estimates from Seoul Credit Guarantee Foundation. District-wide trend, not individual shop sales."
+    "note": "Card sales estimates from Seoul Credit Guarantee Foundation. District-wide trend, not individual shop sales.",
+    "year": "{year}",
+    "annualEyebrow": "Official annual revenue estimate · {region} · {industry}",
+    "yearUp": "Up <b>{pct}%</b> from the previous year",
+    "yearDown": "Down <b>{pct}%</b> from the previous year",
+    "yearFlat": "<b>Similar</b> to the previous year",
+    "changeUnknown": "Comparable previous revenue is not available yet",
+    "averageAnnual": "Official annual revenue per establishment",
+    "establishments": "Establishments in official statistics",
+    "workers": "Workers in official statistics",
+    "history": "View revenue estimates by reference period",
+    "referencePeriod": "Statistical reference period",
+    "estimatedSales": "Regional industry revenue estimate"
   },
   "rank": {
     "byReviews": "Reviews",
@@ -149,15 +162,37 @@
   },
   "trends": {
     "menuEyebrow": "{category} menus in {region}",
-    "menuHeadline": "<b>{pct}%</b> of shops offer {name}",
+    "menuHeadline": "{name} appeared in <b>{pct}%</b> of the checked menu sample",
     "menuBasis": "{current} of {checked} shops",
     "national": "Nationwide {pct}%",
     "menuNote": "Based on services listed on Naver Place menus, not actual bookings.",
     "mentionEyebrow": "Instagram mentions",
-    "mentionHeadline": "{name} is the most talked about",
-    "collecting": "Still collecting post mentions",
+    "mentionHeadline": "{name} has the highest mention share in the observed sample",
+    "collecting": "Service-specific mention shares are not comparable yet",
     "mentionNote": "Counts shops using each hashtag in public posts from the last 30 days. Not search volume or bookings.",
-    "widen": "See all of {sido}"
+    "widen": "See all of {sido}",
+    "menuCollecting": "This scope does not yet have enough observed menus by service. Public post observations are reported separately.",
+    "observedHeadline": "{name} appeared on menus at <b>{current} shops</b>",
+    "observedShops": "Observed at {count} shops",
+    "comparisonPending": "Current menu observations are available, but earlier comparable data is insufficient to identify new adoption or growth.",
+    "sampleEyebrow": "Public post sample · {region} · {category}",
+    "sampleTitle": "What appeared in the observed posts?",
+    "accounts": "Accounts with observed posts",
+    "posts": "Observed posts",
+    "window": "Post window: after {start} through {end}",
+    "truncated": "The query limit applies to this sample. It is not a count of all accounts or posts.",
+    "sampleDetails": "View formats, hashtags and observation coverage",
+    "freshAccounts": "Recently checked accounts",
+    "tags": "Accounts using each hashtag",
+    "tagAccounts": "{count} accounts",
+    "sampleNote": "An observed sample of public posts, not customer searches, bookings or Instagram-wide trends.",
+    "format": {
+      "PHOTO": "Photo posts",
+      "REEL": "Reel posts",
+      "CAROUSEL": "Carousel posts"
+    },
+    "menuTruncated": "This menu sample is limited by query caps and does not represent menus at every shop.",
+    "recentCollecting": "Recent post and menu observations are insufficient to compare trends yet."
   },
   "area": {
     "empty": "We have not confirmed aggregated shops for this scope yet. Try another region or category.",

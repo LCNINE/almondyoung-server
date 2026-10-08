@@ -15,6 +15,7 @@ import {
   LoadError,
 } from "../components/parts"
 import { layoutDots } from "./dot-field"
+import { formatDate } from "@/lib/utils/format-date"
 import { useMarketSummary } from "./use-market-summary"
 
 const DOT_CLASS = {
@@ -151,7 +152,7 @@ function MonthlyOpenings({
   monthly: NonNullable<BeautyTopLifecycle["monthly"]>
 }) {
   const t = useTranslations("beautytop")
-  const label = (month: string) => month.slice(2).replace("-", ".")
+  const label = (month: string) => formatDate(`${month}-01`, "yy.MM")
   return (
     <div>
       <p className="text-foreground text-[15px] font-medium">
@@ -163,6 +164,11 @@ function MonthlyOpenings({
         lastLabel={label(monthly[monthly.length - 1].month)}
         lastAnnotation={`+${monthly[monthly.length - 1].opened}`}
       />
+      {monthly.some((month) => month.partial) && (
+        <p className="text-muted-foreground mt-3 text-xs">
+          {t("market.partialMonth")}
+        </p>
+      )}
     </div>
   )
 }

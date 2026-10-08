@@ -30,18 +30,36 @@ export type BeautyTopLifecycle = {
   reason?: string | null
   opened?: number
   closed?: number
-  monthly?: { month: string; opened: number; closed: number }[]
+  monthly?: {
+    month: string
+    opened: number
+    closed: number
+    partial?: boolean
+  }[]
 }
 
-export type BeautyTopRevenue = {
+export type BeautyTopRevenueDataset = {
   available: boolean
+  period_unit?: string
+  note?: string
+  amount_note?: string
+  category_note?: string
+  average_note?: string
+  estimation_note?: string
   groups?: {
     industry: string
     period: string
     yoy_percent: number | null
-    qoq_percent: number | null
+    qoq_percent?: number | null
+    average_won?: number | null
+    establishments?: number | null
+    workers?: number | null
     series: { period: string; sales_won: number }[]
   }[]
+}
+
+export type BeautyTopRevenue = BeautyTopRevenueDataset & {
+  national_comparison?: BeautyTopRevenueDataset
 }
 
 export type BeautyTopKind = "SHOP" | "PERSON"
@@ -254,5 +272,22 @@ export type BeautyTopProcedure = {
 }
 
 export type BeautyTopTrends = {
-  procedures?: { available: boolean; rows: BeautyTopProcedure[] }
+  available?: boolean
+  reason?: string | null
+  accounts?: number
+  posts?: number
+  fresh_accounts_checked?: number
+  tags?: { tag: string; accounts: number }[]
+  formats?: Record<string, number>
+  start_exclusive?: string
+  end?: string
+  note?: string
+  sampled_accounts?: number
+  truncated?: boolean
+  procedures?: {
+    available: boolean
+    rows: BeautyTopProcedure[]
+    note?: string
+    truncated?: { national?: boolean; local?: boolean; menu_records?: boolean }
+  }
 }

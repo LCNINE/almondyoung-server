@@ -33,7 +33,8 @@
     "closedLabel": "閉業",
     "densityLabel": "店舗密度",
     "chartTitle": "月別の開業",
-    "note": "公的な許認可データ基準です。実際の数と多少異なる場合があります。"
+    "note": "公的な許認可データ基準です。実際の数と多少異なる場合があります。",
+    "partialMonth": "期間の一部しか含まない月があります。棒の高さだけで前月比の増減は判断できません。"
   },
   "revenue": {
     "eyebrow": "{region}の{industry}カード売上",
@@ -41,7 +42,19 @@
     "down": "前年同期より<b>{pct}%</b>減りました",
     "flat": "前年同期と<b>ほぼ同じ</b>です",
     "quarter": "{year}年第{q}四半期",
-    "note": "ソウル信用保証財団のカード売上推計です。地域全体の傾向で、個別店舗の売上ではありません。"
+    "note": "ソウル信用保証財団のカード売上推計です。地域全体の傾向で、個別店舗の売上ではありません。",
+    "year": "{year}年",
+    "annualEyebrow": "{region}・{industry}の公式年間売上推計",
+    "yearUp": "前年より<b>{pct}%</b>増えました",
+    "yearDown": "前年より<b>{pct}%</b>減りました",
+    "yearFlat": "前年と<b>ほぼ同じ</b>です",
+    "changeUnknown": "同じ基準の過去売上とはまだ比較できません",
+    "averageAnnual": "公式統計の事業所あたり年間売上平均",
+    "establishments": "公式統計の事業所数",
+    "workers": "公式統計の従業者数",
+    "history": "基準期間別の売上推計を見る",
+    "referencePeriod": "統計の基準期間",
+    "estimatedSales": "地域・業種の売上推計"
   },
   "rank": {
     "byReviews": "レビュー順",
@@ -149,15 +162,37 @@
   },
   "trends": {
     "menuEyebrow": "{region} {category} メニュー",
-    "menuHeadline": "<b>{pct}%</b>の店舗が{name}メニューを提供しています",
+    "menuHeadline": "確認したメニュー標本の<b>{pct}%</b>で{name}を確認しました",
     "menuBasis": "{checked}店中 {current}店",
     "national": "全国 {pct}%",
     "menuNote": "Naverプレイスのメニューに掲載された施術が基準です。実際の施術件数ではありません。",
     "mentionEyebrow": "インスタ投稿での言及",
-    "mentionHeadline": "最近は{name}の話題が最も多いです",
-    "collecting": "投稿での言及はまだ収集中です",
+    "mentionHeadline": "観測した標本では{name}の言及割合が最も高いです",
+    "collecting": "施術別の投稿言及割合はまだ比較できません",
     "mentionNote": "直近30日の公開投稿のハッシュタグを店舗数で数えています。検索数や予約数ではありません。",
-    "widen": "{sido}全体で見る"
+    "widen": "{sido}全体で見る",
+    "menuCollecting": "この範囲では施術別メニューの観測標本がまだ不足しています。投稿の観測情報は別に確認できます。",
+    "observedHeadline": "{name}の表記を<b>{current}店</b>のメニューで確認しました",
+    "observedShops": "{count}店で観測",
+    "comparisonPending": "現在のメニュー観測数は確認できますが、比較可能な過去資料が不足しているため、新規導入や増加率はまだ判断できません。",
+    "sampleEyebrow": "{region}・{category}の公開投稿標本",
+    "sampleTitle": "観測した投稿には何が含まれていましたか？",
+    "accounts": "投稿を観測したアカウント",
+    "posts": "観測した投稿",
+    "window": "投稿期間：{start}より後〜{end}",
+    "truncated": "取得上限のある一部標本です。全アカウントや全投稿の件数ではありません。",
+    "sampleDetails": "投稿形式・ハッシュタグと観測範囲を見る",
+    "freshAccounts": "最近確認したアカウント",
+    "tags": "ハッシュタグを使用したアカウント数",
+    "tagAccounts": "{count}アカウント",
+    "sampleNote": "公開投稿の観測標本です。顧客の検索数・予約数やインスタ全体の流行を意味しません。",
+    "format": {
+      "PHOTO": "写真投稿",
+      "REEL": "リール投稿",
+      "CAROUSEL": "複数画像の投稿"
+    },
+    "menuTruncated": "取得上限のあるメニュー標本です。全サロンのメニュー分布を表すものではありません。",
+    "recentCollecting": "最近の投稿・メニューの観測標本が不足しており、動向はまだ比較できません。"
   },
   "area": {
     "empty": "この範囲のサロン集計はまだ確認できていません。他の地域や業種を選んでください。",

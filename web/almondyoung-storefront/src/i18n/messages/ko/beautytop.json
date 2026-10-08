@@ -33,7 +33,8 @@
     "closedLabel": "닫은 곳",
     "densityLabel": "샵 밀도",
     "chartTitle": "월별 개업",
-    "note": "공공 인허가 자료 기준이에요. 실제 수와 조금 다를 수 있어요."
+    "note": "공공 인허가 자료 기준이에요. 실제 수와 조금 다를 수 있어요.",
+    "partialMonth": "기간 일부만 포함된 월이 있어요. 막대 높이만으로 전월 대비 증감을 판단하지 마세요."
   },
   "revenue": {
     "eyebrow": "{region} {industry} 카드 매출",
@@ -41,7 +42,19 @@
     "down": "작년 같은 분기보다 <b>{pct}%</b> 줄었어요",
     "flat": "작년 같은 분기와 <b>비슷해요</b>",
     "quarter": "{year}년 {q}분기",
-    "note": "서울신용보증재단 카드 매출 추정치예요. 지역 전체의 흐름이고 개별 샵 매출이 아니에요."
+    "note": "서울신용보증재단 카드 매출 추정치예요. 지역 전체의 흐름이고 개별 샵 매출이 아니에요.",
+    "year": "{year}년",
+    "annualEyebrow": "{region} {industry} 공식 연매출 추정",
+    "yearUp": "지난해보다 <b>{pct}%</b> 늘었어요",
+    "yearDown": "지난해보다 <b>{pct}%</b> 줄었어요",
+    "yearFlat": "지난해와 <b>비슷해요</b>",
+    "changeUnknown": "같은 기준의 이전 매출과는 아직 비교할 수 없어요",
+    "averageAnnual": "공식 사업체당 연매출 평균",
+    "establishments": "공식 통계의 사업체 수",
+    "workers": "공식 통계의 종사자 수",
+    "history": "기간별 매출 추정치 보기",
+    "referencePeriod": "통계 기준 기간",
+    "estimatedSales": "지역·업종 매출 추정치"
   },
   "rank": {
     "byReviews": "리뷰순",
@@ -149,15 +162,37 @@
   },
   "trends": {
     "menuEyebrow": "{region} {category} 메뉴판",
-    "menuHeadline": "<b>{pct}%</b>의 샵이 {name} 메뉴를 두고 있어요",
+    "menuHeadline": "메뉴를 확인한 표본 중 <b>{pct}%</b>에서 {name}을 확인했어요",
     "menuBasis": "{checked}곳 중 {current}곳",
     "national": "전국 {pct}%",
     "menuNote": "네이버 플레이스 메뉴판에 올라 있는 시술 기준이에요. 실제 시술 건수가 아니에요.",
     "mentionEyebrow": "인스타 게시물 언급",
-    "mentionHeadline": "요즘 {name} 이야기가 가장 많아요",
-    "collecting": "게시물 언급은 아직 모으는 중이에요",
+    "mentionHeadline": "관측한 게시물에서는 {name} 언급 비중이 가장 높아요",
+    "collecting": "시술별 게시물 언급 비중은 아직 비교할 수 없어요",
     "mentionNote": "최근 30일 공개 게시물의 해시태그를 샵 수로 셌어요. 검색량이나 예약 수가 아니에요.",
-    "widen": "{sido} 전체로 보기"
+    "widen": "{sido} 전체로 보기",
+    "menuCollecting": "이 범위에서 시술별 메뉴를 확인한 표본은 아직 부족해요. 게시물 관측 자료는 별도로 확인할 수 있어요.",
+    "observedHeadline": "메뉴판에서 {name} 표기를 <b>{current}곳</b> 확인했어요",
+    "observedShops": "관측 {count}곳",
+    "comparisonPending": "현재 메뉴 관측 수는 확인할 수 있지만, 비교 가능한 이전 자료가 부족해 신규 도입이나 증가율은 아직 판단할 수 없어요.",
+    "sampleEyebrow": "{region} {category} 공개 게시물 표본",
+    "sampleTitle": "관측한 게시물에는 무엇이 담겼을까요?",
+    "accounts": "게시물이 관측된 계정",
+    "posts": "관측된 게시물",
+    "window": "게시물 기간: {start} 이후 ~ {end}",
+    "truncated": "조회 상한이 적용된 일부 표본이에요. 전체 계정이나 게시물 수가 아니에요.",
+    "sampleDetails": "게시물 형식·해시태그와 확인 범위 보기",
+    "freshAccounts": "최근 확인한 계정",
+    "tags": "해시태그를 사용한 계정 수",
+    "tagAccounts": "{count}개 계정",
+    "sampleNote": "공개 게시물의 관측 표본이에요. 고객 검색량·예약 수나 인스타 전체 유행을 뜻하지 않아요.",
+    "format": {
+      "PHOTO": "사진 게시물",
+      "REEL": "릴스 게시물",
+      "CAROUSEL": "여러 장 게시물"
+    },
+    "menuTruncated": "메뉴 집계에 조회 상한이 적용된 표본이에요. 전체 샵의 메뉴 분포를 뜻하지 않아요.",
+    "recentCollecting": "최근 관측한 게시물·메뉴 표본이 부족해 동향을 아직 비교할 수 없어요."
   },
   "area": {
     "empty": "이 범위는 아직 집계된 샵을 확인하지 못했어요. 다른 지역이나 업종을 골라 보세요.",

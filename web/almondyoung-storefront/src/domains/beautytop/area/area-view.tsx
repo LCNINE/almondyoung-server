@@ -25,10 +25,9 @@ import { PriceRuler } from "./price-ruler"
 import { ShareCard } from "./share-card"
 
 function AreaRevenue({ filters }: { filters: Filters }) {
-  const t = useTranslations("beautytop")
+  const scope = useTranslations("beautytop.scope")
   const region = useScopeLabel(filters)
   const revenue = useArea<BeautyTopRevenue>("revenue", filters)
-  const group = revenue.data?.available ? revenue.data.groups?.[0] : undefined
   if (revenue.isPending)
     return (
       <>
@@ -43,14 +42,40 @@ function AreaRevenue({ filters }: { filters: Filters }) {
         <LoadError onRetry={() => revenue.refetch()} />
       </>
     )
-  if (!group || group.series.length < 2) return null
+  const datasets = [
+    { data: revenue.data, region },
+    { data: revenue.data?.national_comparison, region: scope("national") },
+  ].filter((dataset) => dataset.data?.available && dataset.data.groups?.length)
+  if (!datasets.length) return null
   return (
     <>
       <Divider />
-      <section className="flex flex-col gap-2">
-        <RevenueCard group={group} region={region} />
-        <p className="text-muted-foreground text-xs">{t("revenue.note")}</p>
-      </section>
+      {datasets.map((dataset, index) => (
+        <section key={index} className="flex flex-col gap-2">
+          {dataset.data?.groups?.map((group) => (
+            <RevenueCard
+              key={`${group.industry}:${group.period}`}
+              group={group}
+              region={dataset.region}
+            />
+          ))}
+          {Array.from(
+            new Set(
+              [
+                dataset.data?.note,
+                dataset.data?.amount_note,
+                dataset.data?.category_note,
+                dataset.data?.average_note,
+                dataset.data?.estimation_note,
+              ].filter(Boolean)
+            )
+          ).map((note) => (
+            <p key={note} className="text-muted-foreground text-xs">
+              {note}
+            </p>
+          ))}
+        </section>
+      ))}
     </>
   )
 }

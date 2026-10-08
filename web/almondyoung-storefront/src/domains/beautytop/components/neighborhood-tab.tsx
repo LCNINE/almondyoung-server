@@ -1,5 +1,8 @@
 "use client"
 
+import { revenuePeriod } from "./revenue-period"
+import { useNumberFormats } from "../use-number-formats"
+
 import {
   Select,
   SelectContent,
@@ -116,29 +119,122 @@ export function RevenueCard({
   region: string
 }) {
   const t = useTranslations("beautytop")
-  const series = group.series.slice(-8)
-  const yoy = group.yoy_percent
-  const quarter = (period: string) =>
-    t("revenue.quarter", { year: period.slice(2, 4), q: period.slice(4) })
+  const history = group.series
+    .filter((point) => Number.isFinite(point.sales_won) && point.sales_won >= 0)
+    .sort((a, b) => a.period.localeCompare(b.period))
+  const series = history.slice(-8)
+  const yoy =
+    typeof group.yoy_percent === "number" && Number.isFinite(group.yoy_percent)
+      ? group.yoy_percent
+      : null
+  const annual = revenuePeriod(group.period).kind === "year"
+  const fmt = useNumberFormats()
+  const periodLabel = (period: string) => {
+    const parsed = revenuePeriod(period)
+    return parsed.kind === "year"
+      ? t("revenue.year", { year: parsed.year })
+      : parsed.kind === "quarter"
+        ? t("revenue.quarter", { year: parsed.year, q: parsed.quarter })
+        : period
+  }
   const b = (chunks: React.ReactNode) => <Big>{chunks}</Big>
 
   return (
     <>
       <Headline
-        eyebrow={t("revenue.eyebrow", { region, industry: group.industry })}
+        eyebrow={t(annual ? "revenue.annualEyebrow" : "revenue.eyebrow", {
+          region,
+          industry: group.industry,
+        })}
       >
-        {yoy == null || Math.abs(yoy) < 1
-          ? t.rich("revenue.flat", { b })
-          : t.rich(yoy > 0 ? "revenue.up" : "revenue.down", {
-              pct: Math.abs(yoy).toFixed(1),
-              b,
-            })}
+        {yoy == null
+          ? t("revenue.changeUnknown")
+          : yoy === 0
+            ? t.rich(annual ? "revenue.yearFlat" : "revenue.flat", { b })
+            : t.rich(
+                annual
+                  ? yoy > 0
+                    ? "revenue.yearUp"
+                    : "revenue.yearDown"
+                  : yoy > 0
+                    ? "revenue.up"
+                    : "revenue.down",
+                {
+                  pct: fmt.full(Math.abs(yoy)),
+                  b,
+                }
+              )}
       </Headline>
-      <Bars
-        values={series.map((s) => s.sales_won)}
-        firstLabel={quarter(series[0].period)}
-        lastLabel={quarter(series[series.length - 1].period)}
-      />
+      {annual && (
+        <dl className="mt-4 space-y-3 text-sm">
+          {typeof group.average_won === "number" &&
+            Number.isFinite(group.average_won) && (
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt>{t("revenue.averageAnnual")}</dt>
+                <dd className="font-bold">
+                  {t("unit.won", {
+                    value: fmt.full(Math.round(group.average_won)),
+                  })}
+                </dd>
+              </div>
+            )}
+          {typeof group.establishments === "number" && (
+            <div className="flex justify-between gap-4">
+              <dt>{t("revenue.establishments")}</dt>
+              <dd>{fmt.full(group.establishments)}</dd>
+            </div>
+          )}
+          {typeof group.workers === "number" && (
+            <div className="flex justify-between gap-4">
+              <dt>{t("revenue.workers")}</dt>
+              <dd>{fmt.full(group.workers)}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      {series.length > 1 ? (
+        <Bars
+          values={series.map((s) => s.sales_won)}
+          firstLabel={periodLabel(series[0].period)}
+          lastLabel={periodLabel(series[series.length - 1].period)}
+        />
+      ) : (
+        <p className="text-muted-foreground mt-3 text-xs">
+          {periodLabel(group.period)}
+        </p>
+      )}
+      {history.length > 0 && (
+        <details className="mt-4">
+          <summary className="text-foreground cursor-pointer text-sm font-medium">
+            {t("revenue.history")}
+          </summary>
+          <table className="mt-3 w-full table-fixed text-sm">
+            <caption className="sr-only">{t("revenue.estimatedSales")}</caption>
+            <thead>
+              <tr className="border-border border-b">
+                <th scope="col" className="w-24 py-2 text-left font-medium">
+                  {t("revenue.referencePeriod")}
+                </th>
+                <th scope="col" className="py-2 text-right font-medium">
+                  {t("revenue.estimatedSales")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((point) => (
+                <tr key={point.period} className="border-border border-b">
+                  <th scope="row" className="py-2 text-left font-normal">
+                    {periodLabel(point.period)}
+                  </th>
+                  <td className="py-2 text-right break-words tabular-nums">
+                    {t("unit.won", { value: fmt.full(point.sales_won) })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </>
   )
 }
