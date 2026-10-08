@@ -1,6 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
+import { useScopeLabel } from "../use-scope"
 import type {
   BeautyTopOptions,
   BeautyTopProcedure,
@@ -29,8 +30,15 @@ export function TrendsTab({ options }: { options: BeautyTopOptions }) {
   )
 }
 
-export function Trends({ filters, onWiden }: { filters: Filters; onWiden?: () => void }) {
+export function Trends({
+  filters,
+  onWiden,
+}: {
+  filters: Filters
+  onWiden?: () => void
+}) {
   const t = useTranslations("beautytop")
+  const region = useScopeLabel(filters)
   // Public aggregate: read through the shared cache, not the member token.
   const trends = useArea<BeautyTopTrends>("trends", filters)
 
@@ -46,14 +54,17 @@ export function Trends({ filters, onWiden }: { filters: Filters; onWiden?: () =>
     trends.data.procedures?.available ? trends.data.procedures.rows : []
   ).filter((row) => row.category === filters.category)
   const menus = rows
-    .filter((row) => row.adoption.checked_shops > 0)
+    .filter(
+      (row) => row.adoption.ready === true && row.adoption.checked_shops > 0
+    )
     .sort((a, b) => menuPercent(b) - menuPercent(a))
   const mentions = rows
     .filter((row) => row.mentions.ready && row.mentions.share_percent != null)
     .sort(
-      (a, b) => (b.mentions.share_percent ?? 0) - (a.mentions.share_percent ?? 0)
+      (a, b) =>
+        (b.mentions.share_percent ?? 0) - (a.mentions.share_percent ?? 0)
     )
-  const place = { region: filters.gugun, category: filters.category }
+  const place = { region, category: filters.category }
 
   return (
     <>
@@ -63,7 +74,11 @@ export function Trends({ filters, onWiden }: { filters: Filters; onWiden?: () =>
             {t("empty")}
           </p>
           {onWiden && filters.gugun && (
-            <button type="button" onClick={onWiden} className="bg-secondary mx-auto mb-4 block h-10 rounded-full px-4 text-[13px] font-medium">
+            <button
+              type="button"
+              onClick={onWiden}
+              className="bg-secondary mx-auto mb-4 block h-10 rounded-full px-4 text-[13px] font-medium"
+            >
               {t("trends.widen", { sido: filters.sido })}
             </button>
           )}

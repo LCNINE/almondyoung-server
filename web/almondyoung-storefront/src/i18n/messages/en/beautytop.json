@@ -3,10 +3,11 @@
   "subtitle": "See your shop's rank and local prices in numbers.",
   "tabs": {
     "myShop": "My shop",
-    "neighborhood": "Neighborhood",
+    "neighborhood": "Market",
     "shops": "Rankings",
     "watch": "Saved",
-    "brand": "Brands"
+    "brand": "Brands",
+    "discovery": "Discover"
   },
   "filter": {
     "sido": "Province",
@@ -97,7 +98,7 @@
     "won": "₩{value}",
     "count": "{value}"
   },
-  "empty": "Not enough data for this area yet. Try a nearby district or another category.",
+  "empty": "There are too few observations for this scope and category. Try another region or category.",
   "error": "Couldn't load the data.",
   "retry": "Try again",
   "rivals": {
@@ -113,18 +114,18 @@
     "newBadge": "New"
   },
   "shops": {
-    "eyebrow": "{category} shop rankings in {region}",
+    "eyebrow": "{region} {category} public metric ranking",
     "headline": "<b>{name}</b> leads in {metric}",
-    "basis": "Compared {total} shops with data",
+    "basis": "Based on {total} observed comparison targets",
     "more": "Show more ({shown}/{total})",
-    "note": "Compares only figures published on Naver, Instagram and public records. Not sales or skill.",
+    "note": "Public observations only. Insured headcount may differ from current staff. Cumulative reviews per insured person do not measure monthly output or productivity.",
     "metric": {
       "reviews": "Visitor reviews",
       "followers": "Instagram followers",
       "instagram": "Instagram activity",
       "area": "Shop area",
-      "staff": "Staff",
-      "reviewStaff": "Reviews per staff",
+      "staff": "Insured headcount",
+      "reviewStaff": "Reviews / insured person",
       "activity": "Posting interval"
     },
     "value": {
@@ -159,7 +160,7 @@
     "widen": "See all of {sido}"
   },
   "area": {
-    "empty": "No shops are counted here yet. Try another district.",
+    "empty": "We have not confirmed aggregated shops for this scope yet. Try another region or category.",
     "eyebrow": "{sido} {gugun} {category} · one dot is one shop",
     "eyebrowGrouped": "{sido} {gugun} {category} · one dot is {per} shops",
     "headline": "Among {count} {category} shops, where does yours stand?",
@@ -196,7 +197,8 @@
       "unknown": "Too few samples"
     },
     "whichHidden": "Which ones you lead on stays hidden for now.",
-    "inArea": "Searching in {gugun}, {sido}. Change the area at the top."
+    "inArea": "Searching in {gugun}, {sido}. Change the area at the top.",
+    "pickDistrict": "Select District above and choose a local area to find your shop."
   },
   "ruler": {
     "title": "Try your {name} price",
@@ -208,27 +210,27 @@
       "max": "High {value}"
     },
     "verdict": {
-      "aboveMedian": "₩{diff} above the local median.",
-      "belowMedian": "₩{diff} below the local median.",
-      "atMedian": "Same as the local median.",
-      "aboveMax": "₩{diff} above the highest price seen locally.",
-      "belowMin": "₩{diff} below the lowest price seen locally."
+      "aboveMedian": "{diff} KRW above the median in {region}.",
+      "belowMedian": "{diff} KRW below the median in {region}.",
+      "atMedian": "Matches the median in {region}.",
+      "aboveMax": "{diff} KRW above the observed maximum in {region}.",
+      "belowMin": "{diff} KRW below the observed minimum in {region}."
     },
-    "basis": "Based on listed prices from {brands} local brands and {menus} menu items.",
+    "basis": "Listed prices for {menus} menus from {brands} brands in {region}.",
     "private": "Your price is calculated on this screen only and never saved.",
     "prompt": "Move the slider to your shop's price."
   },
   "unlock": {
     "cta": "So where is my shop? See the answer",
-    "everyoneTitle": "Everyone can see this much",
-    "everyoneBody": "The answers behind the question marks, your rank and neighbouring shops' names and prices, open to members.",
+    "everyoneTitle": "Start with nationwide and local data",
+    "everyoneBody": "Shop counts, openings, closures and menu price distributions are available before joining.",
     "title": "We turn the question marks <em>into numbers</em>",
     "description": "BeautyTop is a membership benefit. It is in beta and may pause while data is checked.",
     "item": {
       "rank": "Rank in area, district, category and nationwide",
       "peers": "Names and figures of the shops you are compared with",
       "prices": "Test your prices against neighbours' menus",
-      "changes": "See changes at watched shops on your next visit"
+      "changes": "Watched-shop changes and personal action notes"
     },
     "amount": {
       "rank": "4 levels",
@@ -244,12 +246,20 @@
       "rank": "Your shop's rank",
       "peers": "Nearby shop comparison",
       "prices": "Where your prices sit"
+    },
+    "publicLabel": "Public access",
+    "stickyLabel": "Continue with membership",
+    "membershipCta": "Explore membership benefits",
+    "sticky": {
+      "reviews": "Shops · public figures",
+      "followers": "Your shop · comparison",
+      "price": "Pricing · scenarios"
     }
   },
   "compare": {
-    "title": "Compare with another district",
+    "title": "Compare with other regions",
     "metric": "Metric",
-    "pick": "District",
+    "pick": "Compare region",
     "unit": {
       "shops": "{value}",
       "people": "{value}",
@@ -264,7 +274,7 @@
     "note": "Based on public permits and menu prices. Use it as a reference when choosing where to open."
   },
   "insta": {
-    "title": "Local Instagram lately"
+    "title": "Observed posts and menu trends"
   },
   "confirm": {
     "title": "Open your shop analysis?",
@@ -278,7 +288,7 @@
   },
   "simulator": {
     "title": "Price simulator",
-    "subtitle": "Place your price among neighbouring {category} shops in {region}",
+    "subtitle": "Place your price among observed {category} menus in {region}",
     "won": "₩{value}",
     "sliderLabel": "Your {name} price",
     "prompt": "Move the slider to see where you stand among nearby shops.",
@@ -298,8 +308,8 @@
     "discountNone": "None yet this period"
   },
   "share": {
-    "heading": "Share your area card",
-    "eyebrow": "{sido} · Area in numbers",
+    "heading": "Share this market snapshot",
+    "eyebrow": "{sido} · Public aggregates",
     "title": "{count} {category} shops\nin {gugun}",
     "opened": "Opened in the last year",
     "residents": "Residents per shop",
@@ -354,11 +364,217 @@
     "indexCategory": "{category} shops",
     "fromArea": "Planning to open in this area?"
   },
-  "memberNotice": "Opening the My shop and Brands tabs is recorded as <b>using a membership benefit</b>. If you open them within 7 days of payment, a full refund (withdrawal) is limited. <link>Details</link>",
+  "memberNotice": "Opening Discover, My shop or Brands counts as <b>using a membership benefit</b>. Opening within 7 days of payment limits full-refund withdrawal. <link>Details</link>",
   "beta": {
     "badge": "BETA",
     "title": "A beta service we're growing together with you",
     "body": "To help your shop succeed, we keep gathering shop information from across the country and keep adding features. If you're curious about something, like \"What does a lash lift usually cost around here?\", let us know.",
     "link": "Tell us what you're curious about"
+  },
+  "scope": {
+    "national": "Nationwide",
+    "province": "Province",
+    "district": "District"
+  },
+  "discovery": {
+    "title": "Find ideas from standout shops",
+    "subtitle": "Explore observed public metrics nationwide or locally, then compare with your shop.",
+    "compare": "Compare with my shop",
+    "openEvidence": "View menus and public data",
+    "observedScope": "Rankings cover observed public data and may include shops and personal accounts. They do not rank sales or service quality.",
+    "person": "Personal account",
+    "approximate": "Approx. {value}",
+    "chooseMine": "Choose your shop first",
+    "chooseMineHint": "Register once to compare observed figures with shops you follow.",
+    "findMine": "Find my shop",
+    "close": "Close",
+    "comparisonTitle": "How do these shops compare?",
+    "metric": "Metric",
+    "mine": "My shop",
+    "unknown": "Not yet verified",
+    "oldObservation": "Older observation",
+    "cadence": "Every {days} days",
+    "metricLabel": {
+      "visitor_reviews": "Visitor reviews",
+      "followers": "Followers",
+      "cadence": "Posting interval"
+    },
+    "comparisonNote": "Observation dates may differ. Cumulative reviews, followers and observed posting intervals do not measure sales, bookings or service quality. Abbreviated follower counts may be approximate.",
+    "learnTitle": "What could you try this week?",
+    "learnMenu": "Review removal, care and surcharge terms, then clarify your own menu descriptions.",
+    "learnPosts": "Look at how public posts showcase signature services, then try an approach suited to your strengths.",
+    "learnObserve": "Save a shop to your watchlist and check newly observed changes on your next visit.",
+    "learnNote": "These are ideas to test, not proven causes of a high ranking or guaranteed success.",
+    "nationalPosition": "Position {rank} among {total} observed {category} comparison targets nationwide.",
+    "observedAt": "Source observation date: {date}",
+    "questions": {
+      "reviews": "Which shops have more reviews?",
+      "followers": "Which shops attract attention?",
+      "activity": "How often do shops post?"
+    },
+    "nextActions": {
+      "MENU_CLARITY": "Review my menu descriptions",
+      "SHOWCASE": "Consider posting treatment examples",
+      "PRICE_CHANGE": "Calculate a price change"
+    },
+    "nextActionNote": "Choose a next step to open your calculator or note form.",
+    "rankingList": "Explore rankings and figures",
+    "leaderLabel": "Leading observed entry for this metric",
+    "chooseQuestion": "What are you curious about?",
+    "questionLabels": {
+      "reviews": "Most reviews",
+      "followers": "Follower reach",
+      "activity": "Posting cadence"
+    },
+    "selectedShop": "Selected shop",
+    "comparisonSummary": "Observed public figures · not revenue, bookings or skill"
+  },
+  "calculator": {
+    "title": "Calculate before changing prices",
+    "subtitle": "Enter the price and monthly visits for the same service.",
+    "example": "Try an example",
+    "exampleNotice": "These figures are hypothetical. Replace them with your own.",
+    "input": {
+      "currentPrice": "Current service price (KRW)",
+      "nextPrice": "New service price (KRW)",
+      "visits": "Current monthly visits",
+      "cost": "Variable cost per visit (KRW, optional)",
+      "minutes": "Service time (minutes, optional)"
+    },
+    "won": "KRW {value}",
+    "prompt": "Enter both prices and monthly visits to calculate.",
+    "invalid": "Enter prices from 1 to 10,000,000 and whole visits from 1 to 1,000,000. Cost: 0–10,000,000; time: 1–1,440 minutes.",
+    "sameVisits": "If monthly visits stay at {visits}",
+    "before": "Current scenario revenue: {amount}",
+    "breakEven": "{visits} monthly visits would maintain current revenue.",
+    "changeVisits": "Difference from current visits: {visits}",
+    "contribution": "New monthly contribution: {amount}",
+    "contributionBreakEven": "{visits} monthly visits would maintain current contribution.",
+    "hourly": "New contribution per service hour: {amount}",
+    "note": "This calculates your assumptions, not customer response or future sales. Contribution deducts only the entered variable cost, not rent or fixed payroll, and is not net profit. Inputs stay on this screen and are not saved.",
+    "clear": "Clear inputs"
+  },
+  "growthNotes": {
+    "title": "My growth notes",
+    "subtitle": "Record what you changed and check public metrics on your next visit.",
+    "actionPrompt": "What did you do today?",
+    "actions": {
+      "MENU_CLARITY": "Updated my menu and treatment descriptions",
+      "SHOWCASE": "Posted treatment examples",
+      "PRICE_CHANGE": "Changed prices"
+    },
+    "memo": "Memo (optional · up to 240 characters)",
+    "save": "Save action",
+    "saving": "Working…",
+    "dailyLimit": "Each action can be saved once per day in Korea time. Delete and record again to edit.",
+    "status": {
+      "saved": "Action saved.",
+      "removed": "Action deleted.",
+      "FAILED": "Could not complete this. Please try again shortly.",
+      "SHOP_CHANGED": "Your saved shop changed. Please check My shop again."
+    },
+    "history": "30 recent actions",
+    "empty": "Record your first action.",
+    "genericAction": "Recorded action",
+    "removeLabel": "Delete action recorded on {date}",
+    "remove": "Delete",
+    "note": "Private notes you enter yourself. Dates show when notes were saved; actions are not verified. Changes in public metrics do not establish that an action caused them.",
+    "suggested": "Your choice is prepared in the note form. Nothing is saved automatically; record it after taking action."
+  },
+  "dataOverview": {
+    "title": "My shop at a glance",
+    "subtitle": "Explore current figures, observation history, menu prices and operating data.",
+    "metrics": {
+      "visitor_reviews": "Visitor reviews",
+      "blog_reviews": "Blog reviews",
+      "followers": "Followers",
+      "posts": "Observed posts",
+      "instagram": "Instagram metric (points)",
+      "area": "Registered area (m²)"
+    },
+    "dateUnknown": "Observation date unavailable",
+    "unknown": "Not yet confirmed",
+    "change": "{value} since prior observation",
+    "stale": "Older observation · change withheld",
+    "baseline": "Prior baseline insufficient · change withheld",
+    "metricNote": "Observed public data. Follower counts may be approximate when the source is abbreviated. Instagram metrics do not measure revenue or treatment skill. Percentage changes are shown only when prior observations are comparable.",
+    "history": "Explore review and follower history",
+    "historyNote": "Only actual observation dates and values are shown. Intervals vary; unobserved dates are not filled with zeros.",
+    "noHistory": "Not enough dated observations yet.",
+    "date": "Observed on",
+    "value": "Observed value",
+    "approximate": "About {value}",
+    "menus": "Explore menu prices and price history",
+    "menuNote": "Prices are in KRW. The median covers all observed fixed-price menus, not the same treatment across shops.",
+    "min": "Lowest",
+    "median": "Median",
+    "max": "Highest",
+    "noMenus": "Verified menu prices are not connected yet.",
+    "won": "KRW",
+    "priceBasis": "Check price ranges, labels and conditions. These may not represent a change for an identical treatment.",
+    "operations": "Explore posting activity and headcount",
+    "headcount": "Registered or insured headcount",
+    "reviewPending": "Source matching under review",
+    "cadence": "Observed posting interval",
+    "days": "{value} days",
+    "cadencePending": "Insufficient observations to compare posting intervals.",
+    "window": "Posts observed over {days} days",
+    "atLeast": "At least {value}",
+    "operationNote": "Post counts cover collected observations, not all posts or booking conversions.",
+    "headcountNote": "Registered or insured counts may differ from total staff. Missing source matching does not mean zero staff. Post counts cover observed data.",
+    "otherMetric": "Other public metric",
+    "rate": "{value}% since prior observation",
+    "publicTitle": "Public data at a glance",
+    "chartTitle": "Explore the observed values",
+    "chartSelect": "Select an observation",
+    "allValues": "View all dated values",
+    "chartNote": "Dots are actual observations. Check the date spacing and vertical scale."
+  },
+  "navigationLabel": "BeautyTop information",
+  "insights": {
+    "eyebrow": "Your next business question",
+    "memberEyebrow": "Go further with membership",
+    "title": "What makes a shop stand out?",
+    "subtitle": "Explore nationwide and find ideas to try in your shop.",
+    "pick": "Choose a question",
+    "memberLabel": "Member analysis",
+    "included": "Included analysis",
+    "previewAction": "What can I discover?",
+    "previewNote": "This previews analysis features. Shop-level figures require membership. Revenue, bookings and causes of success are not inferred.",
+    "membershipBridge": "Explore nationwide → compare with your shop → review prices and record actions. Turn questions into a next step with membership.",
+    "reviews": {
+      "label": "Explore shops",
+      "scope": "Nationwide · public metrics",
+      "question": "How do shops with many reviews present themselves?",
+      "why": "Find shops that stand out, then look at their menus and treatment descriptions.",
+      "first": "Shop rankings by public metric, with observation dates",
+      "second": "Selected shop figures, menu prices and history",
+      "action": "Explore shops nationwide"
+    },
+    "followers": {
+      "label": "Find differences",
+      "scope": "Your shop · selected shops",
+      "question": "How does your shop compare with one that stands out?",
+      "why": "Place reviews, followers and posting intervals side by side to find ideas to examine.",
+      "first": "Compare observed figures for your shop and a selected shop",
+      "second": "Move to reviewing treatment examples and menu clarity",
+      "action": "Explore shops attracting attention"
+    },
+    "price": {
+      "label": "Review pricing",
+      "scope": "Menu prices · assumption calculator",
+      "question": "After a price increase, how many visits would you need?",
+      "why": "Explore nearby menu prices and compare scenarios using your own assumptions.",
+      "first": "See your price among observed public menu prices",
+      "second": "Calculate using visits, variable costs and treatment time",
+      "action": "Review my shop pricing"
+    }
+  },
+  "memberNoticeSummary": "Viewing analysis records benefit use · restricts the 7-day full refund",
+  "workspace": {
+    "label": "Choose a shop tool",
+    "report": "Shop report",
+    "pricing": "Pricing",
+    "notes": "Action notes"
   }
 }

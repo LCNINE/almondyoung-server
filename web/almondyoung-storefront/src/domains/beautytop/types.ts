@@ -69,7 +69,12 @@ export type BeautyTopSearch = { items: BeautyTopShopSummary[]; total: number }
 
 export type BeautyTopPosition = {
   available: boolean
-  ranks?: { label: string; rank: number; total: number }[]
+  ranks?: {
+    label: string
+    rank: number
+    total: number
+    filters?: { category?: string; sido?: string; gugun?: string }
+  }[]
 }
 
 export type BeautyTopPeerMetric = {
@@ -112,10 +117,72 @@ export type BeautyTopShop = {
   naver: { url: string } | null
   social_accounts: { handle: string }[]
   growth: {
-    metrics: { key: string; current: number | null }[]
+    metrics: {
+      key: string
+      current: number | null
+      current_at?: string | null
+      status?: string
+      previous?: number | null
+      delta?: number | null
+      rate_pct?: number | null
+      unit?: string
+      label?: string
+    }[]
+    activity?: { is_lower_bound: boolean; observed_at?: string; since?: string }
+    history?: {
+      note?: string
+      series: {
+        key: string
+        label: string
+        unit: string
+        status: string
+        stale?: boolean
+        points: { at: string; value: number; approximate?: boolean }[]
+      }[]
+    }
+  }
+  posting?: {
+    rank_eligible: boolean
+    median_gap_days: number | null
+    observed_at?: string | null
+    recent_posts?: number
+    sample_posts?: number
+    windows?: Record<string, { observed: number; is_lower_bound: boolean }>
+  }
+  metrics?: {
+    instagram_score?: number | null
+    area_m2?: number | null
+    source_dates?: Record<string, string | null>
+  }
+  workforce?: {
+    selected: {
+      count: number | null
+      label: string
+      period: string | null
+      source_date: string | null
+      is_actual_total: boolean
+    }
+    review_pending?: boolean
+  }
+  menu_benchmark?: {
+    fixed_price_menus: number
+    min: number | null
+    median: number | null
+    max: number | null
+    note?: string
   }
   price_history: {
-    series: { name: string; points: { value: number }[] }[]
+    stale?: boolean
+    series: {
+      name: string
+      points: {
+        value: number
+        at?: string
+        high?: number | null
+        kind?: string
+        basis_changed?: boolean
+      }[]
+    }[]
   }
 }
 
@@ -158,11 +225,17 @@ export type BeautyTopMetricRow = BeautyTopShopSummary & {
   area_m2?: number | null
   value?: number | null
   median_gap_days?: number | null
+  followers_approximate?: boolean
+  source_dates?: Record<string, string | null>
+  headcount?: { label: string; period: string | null; is_actual_total: boolean }
 }
 
 export type BeautyTopMetricRanking = {
   items: BeautyTopMetricRow[]
   average?: number | null
+  total?: number
+  note?: string
+  metrics_updated_at?: string
 }
 
 type Ready = { ready: boolean }
@@ -173,7 +246,7 @@ export type BeautyTopProcedure = {
   category: string
   mentions: Ready & { shops: number; share_percent: number | null }
   growth: Ready & { change_pp: number | null }
-  adoption: { current_shops: number; checked_shops: number }
+  adoption: { ready?: boolean; current_shops: number; checked_shops: number }
   regional: Ready & {
     local_percent?: number | null
     national_percent?: number | null

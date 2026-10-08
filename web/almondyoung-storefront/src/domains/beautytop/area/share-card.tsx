@@ -1,6 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
+import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
 import type { Filters } from "../components/neighborhood-tab"
 import type { BeautyTopMarket, BeautyTopPrice } from "../types"
@@ -14,7 +15,13 @@ const FONT = "Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif"
 type Line = { label: string; value: string }
 
 // Drawn in the browser with the page's own font: no server work, no image service.
-async function drawCard(title: string, eyebrow: string, lines: Line[], brand: string, tagline: string): Promise<Blob | null> {
+async function drawCard(
+  title: string,
+  eyebrow: string,
+  lines: Line[],
+  brand: string,
+  tagline: string
+): Promise<Blob | null> {
   await document.fonts.ready
   const canvas = document.createElement("canvas")
   canvas.width = W
@@ -60,18 +67,50 @@ async function drawCard(title: string, eyebrow: string, lines: Line[], brand: st
 export function ShareCard({ filters }: { filters: Filters }) {
   const t = useTranslations("beautytop.share")
   const fmt = useNumberFormats()
+  const region = useScopeLabel(filters)
   const market = useArea<BeautyTopMarket>("market", filters).data
-  const median = useArea<BeautyTopPrice>("prices", filters).data?.groups?.find((g) => typeof g.median === "number")
-  const [status, setStatus] = useState<"idle" | "saved" | "copied" | "failed">("idle")
+  const median = useArea<BeautyTopPrice>("prices", filters).data?.groups?.find(
+    (g) => typeof g.median === "number"
+  )
+  const [status, setStatus] = useState<"idle" | "saved" | "copied" | "failed">(
+    "idle"
+  )
 
   if (!market?.available || !market.shops) return null
 
   const lines: Line[] = [
-    ...(typeof market.opened_last_year === "number" ? [{ label: t("opened"), value: t("shops", { count: fmt.full(market.opened_last_year) }) }] : []),
-    ...(market.residents_per_shop ? [{ label: t("residents"), value: t("people", { count: fmt.full(Math.round(market.residents_per_shop)) }) }] : []),
-    ...(median?.median ? [{ label: t("median", { name: median.name }), value: t("won", { value: fmt.full(median.median) }) }] : []),
+    ...(typeof market.opened_last_year === "number"
+      ? [
+          {
+            label: t("opened"),
+            value: t("shops", { count: fmt.full(market.opened_last_year) }),
+          },
+        ]
+      : []),
+    ...(market.residents_per_shop
+      ? [
+          {
+            label: t("residents"),
+            value: t("people", {
+              count: fmt.full(Math.round(market.residents_per_shop)),
+            }),
+          },
+        ]
+      : []),
+    ...(median?.median
+      ? [
+          {
+            label: t("median", { name: median.name }),
+            value: t("won", { value: fmt.full(median.median) }),
+          },
+        ]
+      : []),
   ]
-  const title = t("title", { gugun: filters.gugun, category: filters.category, count: fmt.full(market.shops) })
+  const title = t("title", {
+    gugun: region,
+    category: filters.category,
+    count: fmt.full(market.shops),
+  })
   const link = () => {
     const url = new URL(window.location.href)
     url.search = new URLSearchParams(filters).toString()
@@ -81,7 +120,13 @@ export function ShareCard({ filters }: { filters: Filters }) {
 
   const saveImage = async () => {
     try {
-      const blob = await drawCard(title, t("eyebrow", { sido: filters.sido }), lines, t("brand"), t("tagline"))
+      const blob = await drawCard(
+        title,
+        t("eyebrow", { sido: region }),
+        lines,
+        t("brand"),
+        t("tagline")
+      )
       if (!blob) throw new Error("canvas")
       const file = new File([blob], "beautytop.png", { type: "image/png" })
       if (navigator.canShare?.({ files: [file] })) {
@@ -96,34 +141,52 @@ export function ShareCard({ filters }: { filters: Filters }) {
       setStatus("saved")
     } catch (error) {
       // Closing the share sheet is not a failure.
-      setStatus(error instanceof DOMException && error.name === "AbortError" ? "idle" : "failed")
+      setStatus(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "idle"
+          : "failed"
+      )
     }
   }
 
   const shareLink = async () => {
     try {
-      if (navigator.share) await navigator.share({ title: title.replace("\n", " "), url: link() })
+      if (navigator.share)
+        await navigator.share({ title: title.replace("\n", " "), url: link() })
       else {
         await navigator.clipboard.writeText(link())
         setStatus("copied")
       }
     } catch (error) {
-      setStatus(error instanceof DOMException && error.name === "AbortError" ? "idle" : "failed")
+      setStatus(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "idle"
+          : "failed"
+      )
     }
   }
 
   return (
     <section aria-labelledby="share-title" className="flex flex-col gap-4">
-      <h2 id="share-title" className="text-lg font-bold">{t("heading")}</h2>
+      <h2 id="share-title" className="text-lg font-bold">
+        {t("heading")}
+      </h2>
       <div className="bg-secondary rounded-2xl p-4">
         <div className="bg-background flex flex-col gap-5 rounded-2xl p-6 shadow-[0_2px_10px_rgba(0,0,0,.1)]">
           <div className="flex flex-col gap-1">
-            <span className="text-muted-foreground text-sm">{t("eyebrow", { sido: filters.sido })}</span>
-            <span className="text-[26px] leading-[35px] font-bold whitespace-pre-line">{title}</span>
+            <span className="text-muted-foreground text-sm">
+              {t("eyebrow", { sido: region })}
+            </span>
+            <span className="text-[26px] leading-[35px] font-bold whitespace-pre-line">
+              {title}
+            </span>
           </div>
           <dl className="flex flex-col text-base">
             {lines.map((line) => (
-              <div key={line.label} className="border-border flex justify-between border-b py-3 last:border-0">
+              <div
+                key={line.label}
+                className="border-border flex justify-between border-b py-3 last:border-0"
+              >
                 <dt className="text-muted-foreground">{line.label}</dt>
                 <dd className="font-bold tabular-nums">{line.value}</dd>
               </div>
@@ -132,15 +195,31 @@ export function ShareCard({ filters }: { filters: Filters }) {
           <div className="flex flex-col gap-0.5">
             <span className="bg-primary mb-2 h-1 w-8" />
             <span className="text-sm font-bold">{t("brand")}</span>
-            <span className="text-muted-foreground text-xs">{t("tagline")}</span>
+            <span className="text-muted-foreground text-xs">
+              {t("tagline")}
+            </span>
           </div>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={saveImage} className="bg-secondary hover:bg-border h-12 rounded-lg text-sm font-medium transition-colors duration-150">{t("save")}</button>
-        <button type="button" onClick={shareLink} className="bg-secondary hover:bg-border h-12 rounded-lg text-sm font-medium transition-colors duration-150">{t("link")}</button>
+        <button
+          type="button"
+          onClick={saveImage}
+          className="bg-secondary hover:bg-border h-12 rounded-lg text-sm font-medium transition-colors duration-150"
+        >
+          {t("save")}
+        </button>
+        <button
+          type="button"
+          onClick={shareLink}
+          className="bg-secondary hover:bg-border h-12 rounded-lg text-sm font-medium transition-colors duration-150"
+        >
+          {t("link")}
+        </button>
       </div>
-      <p className="text-muted-foreground min-h-4 text-xs" aria-live="polite">{status === "idle" ? "" : t(`status.${status}`)}</p>
+      <p className="text-muted-foreground min-h-4 text-xs" aria-live="polite">
+        {status === "idle" ? "" : t(`status.${status}`)}
+      </p>
     </section>
   )
 }

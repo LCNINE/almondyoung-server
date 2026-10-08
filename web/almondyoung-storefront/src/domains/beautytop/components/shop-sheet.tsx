@@ -18,14 +18,7 @@ import type {
 import { useBeautyTop } from "../use-beautytop"
 import { useNumberFormats } from "../use-number-formats"
 import { useWatchlist } from "../use-watchlist"
-import { StatTile, stripLeadingSymbols } from "./parts"
-
-const METRIC_LABELS = {
-  visitor_reviews: "shop.reviews",
-  blog_reviews: "shop.blogReviews",
-  followers: "shop.followers",
-  posts: "shop.posts",
-} as const
+import { ShopDataOverview } from "../growth/shop-data-overview"
 
 export function ShopSheet({
   target,
@@ -69,6 +62,7 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
     return (
       <>
         <SheetTitle className="sr-only">{t("error")}</SheetTitle>
+        <SheetDescription className="sr-only">{t("error")}</SheetDescription>
         <p className="text-muted-foreground py-8 text-center text-[15px]">
           {t("error")}
         </p>
@@ -80,6 +74,9 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
     return (
       <div className="space-y-4">
         <SheetTitle className="sr-only">{t("shop.loading")}</SheetTitle>
+        <SheetDescription className="sr-only">
+          {t("shop.loading")}
+        </SheetDescription>
         <Skeleton className="h-7 w-1/2" />
         <Skeleton className="h-4 w-3/4" />
         <Skeleton className="h-24 w-full" />
@@ -89,17 +86,6 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
 
   const data = shop.data
   const saved = watchlist.has(target)
-  const metrics = data.growth.metrics.filter(
-    (m): m is { key: keyof typeof METRIC_LABELS; current: number } =>
-      m.key in METRIC_LABELS && m.current != null
-  )
-  const menus = data.price_history.series
-    .map((s) => ({
-      name: stripLeadingSymbols(s.name),
-      value: s.points.at(-1)?.value,
-    }))
-    .filter((m): m is { name: string; value: number } => m.value != null)
-    .slice(0, 10)
   const instagram = data.social_accounts[0]?.handle
   const peers = briefing.data?.peers
   const price = peers?.metrics.find(
@@ -166,40 +152,9 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
         </p>
       )}
 
-      {metrics.length > 0 && (
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          {metrics.map((m) => (
-            <StatTile
-              key={m.key}
-              label={t(METRIC_LABELS[m.key])}
-              value={fmt.full(m.current)}
-            />
-          ))}
-        </div>
-      )}
-
-      {menus.length > 0 && (
-        <section className="mt-8">
-          <h3 className="text-foreground text-[17px] font-bold">
-            {t("shop.menus")}
-          </h3>
-          <ul className="divide-border mt-2 divide-y">
-            {menus.map((menu, index) => (
-              <li
-                key={`${menu.name}-${index}`}
-                className="flex items-baseline justify-between gap-4 py-3 text-[15px]"
-              >
-                <span className="text-foreground min-w-0 truncate">
-                  {menu.name}
-                </span>
-                <span className="text-foreground shrink-0 font-bold tabular-nums">
-                  {t("unit.won", { value: fmt.full(menu.value) })}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <div className="mt-5">
+        <ShopDataOverview shop={data} headingId="bt-detail-data-overview" />
+      </div>
 
       {(data.naver?.url || instagram) && (
         <div className="mt-8 grid grid-cols-2 gap-2">
