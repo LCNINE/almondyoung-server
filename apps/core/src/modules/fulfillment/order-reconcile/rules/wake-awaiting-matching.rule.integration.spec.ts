@@ -5,6 +5,7 @@ import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, seedMatching, wireLogistics } from '../../services/__support__';
 import * as f from '../../order-progress/__support__/order-progress.fixtures';
 import { OrderProgressManager } from '../../order-progress/order-progress.manager';
+import { OrderProgressReader } from '../../order-progress/order-progress.reader';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
 import { OrderReconcileRepository } from '../order-reconcile.repository';
 import { OrderReconcileRunner } from '../order-reconcile.runner';
@@ -66,7 +67,9 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
 
       expect(await rule.check(o.salesOrderId, tx)).toBe(true);
-      await rule.act(o.salesOrderId, tx);
+      expect(await rule.act(o.salesOrderId, tx)).toBe('acted');
+      // 이미 pending 이라 CAS 가 진다 — 할 일이 없었음을 알린다
+      expect(await rule.act(o.salesOrderId, tx)).toBe('noop');
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('pending');
     });
   });
@@ -155,7 +158,7 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
       const now = new Date('2099-06-01T00:00:00.000Z');
       await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new OrderProgressReader(dbs), [rule]);
 
       // 첫 배포 모드(observe): 깨우지 않는다
       const observed = await runner.runRule(rule, now, tx);
@@ -170,6 +173,35 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       const acted = await runner.runRule(acting, new Date('2099-06-01T00:11:00.000Z'), tx);
       expect(acted.acted).toBeGreaterThanOrEqual(1);
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('pending');
+    });
+  });
+
+  it('게이트: 투영 뒤 판매주문이 셀메이트로 출고되면 실행 모드여도 깨우지 않는다 — check 만으로는 true 였을 상태', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { dbs, w } = wire();
+      const world = await f.seedWorld(tx);
+      const o = await seedAwaiting(tx);
+      await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
+      const now = new Date('2099-06-01T00:00:00.000Z');
+      await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
+      // 투영은 fo/awaiting_matching 인 채로, 원천만 외부 출고로 바뀐다(셀메이트 스크립트)
+      await tx.update(wmsTables.salesOrders).set({ status: 'shipped' }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+      class ActingRule extends WakeAwaitingMatchingRule {
+        readonly mode: ReconcileMode = 'act';
+      }
+      const acting = new ActingRule(w.backlog, gate('v2'), w.productSkuMapping);
+      expect(await acting.check(o.salesOrderId, tx)).toBe(true);
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new OrderProgressReader(dbs), [acting]);
+
+      await runner.runRule(acting, now, tx);
+
+      expect(await backlogStatus(tx, o.salesOrderId)).toBe('awaiting_matching');
+      const rows = await tx
+        .select()
+        .from(wmsTables.orderReconcileState)
+        .where(eq(wmsTables.orderReconcileState.salesOrderId, o.salesOrderId));
+      // 기록이 없던 후보라 not_needed 로 남겨 10분 물러난다 — 시도로 세지 않는다
+      expect(rows).toEqual([expect.objectContaining({ lastResult: 'not_needed', attempts: 0 })]);
     });
   });
 });

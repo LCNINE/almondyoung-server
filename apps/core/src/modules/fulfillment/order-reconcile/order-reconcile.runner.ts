@@ -2,8 +2,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { OrderProgressReader } from '../order-progress/order-progress.reader';
+import { shouldRecordGateOut, stillInSituation } from './order-reconcile.gate';
 import { OrderReconcileRepository } from './order-reconcile.repository';
-import { ORDER_RECONCILE_RULES, OrderReconcileRule } from './order-reconcile.rule';
+import { ORDER_RECONCILE_RULES, RunnableReconcileRule } from './order-reconcile.rule';
 import {
   RECONCILE_CANDIDATE_LIMIT,
   ReconcilePrior,
@@ -20,6 +22,8 @@ export type RuleRunSummary = {
   acted: number;
   wouldAct: number;
   notNeeded: number;
+  /** 실행 직전 판정이 칸 밖이라 규칙을 부르지 않은 후보. 매분 0 이 아니면 투영 갱신이 늦거나 멈춘 것이다 */
+  gated: number;
   gaveUp: number;
   errors: number;
 };
@@ -37,7 +41,10 @@ export class OrderReconcileRunner {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly repository: OrderReconcileRepository,
-    @Inject(ORDER_RECONCILE_RULES) private readonly rules: OrderReconcileRule[],
+    // 실행 직전 재판정(D12)에 judge 만 쓴다. 통합 스펙이 판정을 흉내 낼 수 있게 좁힌 타입으로 받는다 —
+    // 타입 별칭은 DI 메타데이터가 Object 가 되므로 토큰을 명시한다
+    @Inject(OrderProgressReader) private readonly progress: Pick<OrderProgressReader, 'judge'>,
+    @Inject(ORDER_RECONCILE_RULES) private readonly rules: RunnableReconcileRule[],
   ) {}
 
   async runAll(now: Date, tx?: DbTx): Promise<RuleRunSummary[]> {
@@ -65,13 +72,14 @@ export class OrderReconcileRunner {
     return out;
   }
 
-  async runRule(rule: OrderReconcileRule, now: Date, tx?: DbTx): Promise<RuleRunSummary> {
+  async runRule(rule: RunnableReconcileRule, now: Date, tx?: DbTx): Promise<RuleRunSummary> {
     const summary: RuleRunSummary = {
       rule: rule.name,
       departed: await this.repository.deleteDeparted(rule, now, tx),
       acted: 0,
       wouldAct: 0,
       notNeeded: 0,
+      gated: 0,
       gaveUp: 0,
       errors: 0,
     };
@@ -81,38 +89,64 @@ export class OrderReconcileRunner {
       if (step === 'act') summary.acted++;
       else if (step === 'would_act') summary.wouldAct++;
       else if (step === 'not_needed') summary.notNeeded++;
+      else if (step === 'gated') summary.gated++;
       else if (step === 'give_up') summary.gaveUp++;
       else summary.errors++;
     }
     const touched =
-      summary.departed + summary.acted + summary.wouldAct + summary.notNeeded + summary.gaveUp + summary.errors;
+      summary.departed +
+      summary.acted +
+      summary.wouldAct +
+      summary.notNeeded +
+      summary.gated +
+      summary.gaveUp +
+      summary.errors;
     if (touched > 0) {
       this.logger.log(
         `order-reconcile ${rule.name}(#${rule.row}, ${rule.mode}): acted=${summary.acted} would_act=${summary.wouldAct} ` +
-          `not_needed=${summary.notNeeded} gave_up=${summary.gaveUp} error=${summary.errors} departed=${summary.departed}`,
+          `not_needed=${summary.notNeeded} gated=${summary.gated} gave_up=${summary.gaveUp} error=${summary.errors} departed=${summary.departed}`,
       );
     }
     return summary;
   }
 
   private async reconcileOne(
-    rule: OrderReconcileRule,
+    rule: RunnableReconcileRule,
     salesOrderId: string,
     prior: ReconcilePrior | null,
     now: Date,
     tx?: DbTx,
-  ): Promise<ReconcileStep | 'error'> {
+  ): Promise<ReconcileStep | 'gated' | 'error'> {
     // savepoint 가 롤백돼도 이번 바퀴에 구한 지문은 남긴다 — 이전 지문으로 세면 운영자가 원인을 고친 뒤에도 리셋되지 않는다
     let seen: string | undefined;
     try {
       return await this.dbService.run(
         (trx) =>
           trx.transaction(async (sp) => {
+            // 투영은 최대 1분 늦다 — 지금 판정이 칸을 벗어났으면 규칙을 부르지 않는다(D12).
+            // 기록은 shouldRecordGateOut 이 정한다: 막 acted·error 한 행은 덮지 않고(떠남 유예 보호), 나머지는 not_needed 로
+            // 10분 물러나게 한다. 지문은 구하지 않았으니 이전 지문을 그대로 쓴다 — 횟수·포기가 리셋되지 않게
+            const [judged] = await this.progress.judge([salesOrderId], now, sp);
+            if (!stillInSituation(rule.situation, judged)) {
+              if (shouldRecordGateOut(prior, now)) {
+                const fingerprint = prior?.fingerprint ?? '';
+                const eff = effectivePrior(prior, fingerprint, rule.mode);
+                await this.repository.save(
+                  rule,
+                  salesOrderId,
+                  nextRecord(eff, { fingerprint, mode: rule.mode, step: 'not_needed' }, now),
+                  now,
+                  sp,
+                );
+              }
+              return 'gated';
+            }
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
             seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);
-            const step = chooseStep(eff, rule.mode, await rule.check(salesOrderId, sp));
-            if (step === 'act') await rule.act(salesOrderId, sp);
+            let step = chooseStep(eff, rule.mode, await rule.check(salesOrderId, sp));
+            // 할 일이 없었으면 시도가 아니다 — acted 로 세면 사람이 먼저 처리한 주문이 포기로 간다(D13)
+            if (step === 'act' && (await rule.act(salesOrderId, sp)) === 'noop') step = 'not_needed';
             if (step === 'would_act' && (prior?.lastResult !== 'would_act' || prior.fingerprint !== fingerprint)) {
               // 관찰 기록은 처음 볼 때만 로그 — 매분 같은 줄이 쌓이지 않게
               this.logger.log(`order-reconcile ${rule.name} would act on sales order ${salesOrderId}`);
@@ -120,7 +154,11 @@ export class OrderReconcileRunner {
             await this.repository.save(
               rule,
               salesOrderId,
-              nextRecord(eff, { fingerprint, mode: rule.mode, step, outcome: step === 'act' ? 'acted' : undefined }, now),
+              nextRecord(
+                eff,
+                { fingerprint, mode: rule.mode, step, outcome: step === 'act' ? 'acted' : undefined },
+                now,
+              ),
               now,
               sp,
             );

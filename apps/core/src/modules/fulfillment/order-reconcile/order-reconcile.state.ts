@@ -35,6 +35,8 @@ export type ReconcilePrior = {
   lastResult: ReconcileResult;
   lastError: string | null;
   gaveUpAt: Date | null;
+  /** 게이트에 걸린 후보를 덮어도 되는지(떠남 유예 안인지) 판단할 때 쓴다 */
+  updatedAt: Date;
 };
 
 export type EffectivePrior = {

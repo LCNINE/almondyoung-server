@@ -91,7 +91,16 @@ describeIfDb('OrderReconcileRepository (PostgreSQL integration)', () => {
       expect(got).toEqual([
         {
           salesOrderId: due,
-          prior: { fingerprint: 'fp', mode: 'act', attempts: 2, lastResult: 'error', lastError: 'boom', gaveUpAt: null },
+          prior: {
+            fingerprint: 'fp',
+            mode: 'act',
+            attempts: 2,
+            lastResult: 'error',
+            lastError: 'boom',
+            gaveUpAt: null,
+            // 게이트에 걸린 후보를 덮어도 되는지(떠남 유예) 판단에 쓴다
+            updatedAt: NOW,
+          },
         },
       ]);
     });
