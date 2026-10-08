@@ -115,7 +115,7 @@ export interface ProductCard {
   basePrice?: number // 정가
   membershipPrice?: number // 멤버십가
   actualPrice?: number // 현재 유저 기준 계산가
-  isMembershipOnly?: boolean // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
+  isMembershipOnly?: boolean // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원에게 가격 공개" 표시)
 
   // ===== 재고/판매 상태 (서버 제공) =====
   // 📡 서버: 실시간 재고, 판매 상태 제공

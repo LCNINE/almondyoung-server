@@ -104,7 +104,7 @@ function ProductItem({
   showDivider: boolean
 }) {
   const t = useTranslations("checkout.orderProducts")
-  const isTimeSale = useTimeSaleForProduct(item.product_id) !== null
+  const isTimeSale = useTimeSaleForProduct(item.product_id)?.state === "active"
   const { thumbnail, product_title, title, variant_title, subtitle, quantity } =
     item
   const productTitle = product_title ?? title

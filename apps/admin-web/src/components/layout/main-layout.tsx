@@ -33,6 +33,9 @@ export function MainLayout({ children }: MainLayoutProps) {
       setActiveMenu(menuId);
       setActiveItem(itemId || undefined);
     }
+
+    // 타임세일 편집 화면은 3열 작업 공간이라 들어올 때 사이드바를 접는다
+    if (pathname.startsWith('/mall/marketing/time-sale')) setSidebarOpen(false);
   }, [pathname]);
 
   const handleMenuChange = (menuId: string) => {

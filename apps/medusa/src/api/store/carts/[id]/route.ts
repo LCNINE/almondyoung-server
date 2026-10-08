@@ -1,7 +1,9 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { refreshCartItemsWorkflow } from '@medusajs/medusa/core-flows';
 import { refetchCart } from '../helpers';
 import { defaultStoreCartFields } from '../query-config';
 import { autoFillShipping, isValidAddress } from '../../customers/me/cart/auto-fill-shipping';
+import { findStaleTimeSalePriceLines } from '../../../../workflows/hooks/cart/private-time-sale-price';
 
 /**
  * GET /store/carts/:id
@@ -22,6 +24,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.status(404).json({
       message: 'Cart not found',
     });
+  }
+
+  // 지금 이 고객이 받을 수 없는 옛 타임세일가가 남은 라인이 있으면 가격을 다시 계산한 뒤 응답한다
+  try {
+    if ((await findStaleTimeSalePriceLines(req.scope, cartId)).length) {
+      await refreshCartItemsWorkflow(req.scope).run({ input: { cart_id: cartId, force_refresh: true } });
+      cart = await refetchCart(cartId, req.scope, fields);
+    }
+  } catch (error) {
+    console.error('[GET /store/carts/:id] stale time-sale price refresh failed:', error);
   }
 
   // 고객 카트이고 배송지/메모가 비어있으면 자동 채우기

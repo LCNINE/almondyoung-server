@@ -8,6 +8,17 @@ import {
   type MembershipProduct,
 } from '../../../../utils/membership-filter';
 
+// 공개 제한 상품 id 조회. 실패하면 경고만 남기고 빈
+// Set(fail-open): 조회 실패로 상품 응답 전체를 막지는 않는다.
+const loadPrivateIds = async (req: AuthenticatedMedusaRequest) => {
+  try {
+    return await privateTimeSaleProductIds(req.scope);
+  } catch (error) {
+    req.scope.resolve('logger').warn(`[time-sale] 가격 공개 제한 상품을 읽지 못했습니다: ${String(error)}`);
+    return new Set<string>();
+  }
+};
+
 /**
  * 멤버십가 표시 정책 응답 미들웨어
  *
@@ -26,7 +37,8 @@ export const membershipPriceVisibilityMiddleware = async (
 ) => {
   const { isMember } = await resolveMemberState(req);
 
-  const privateIds = isMember ? new Set<string>() : await privateTimeSaleProductIds(req.scope);
+  // 회원은 가릴 게 없어 조회 자체를 건너뛴다.
+  const privateIds = isMember ? new Set<string>() : await loadPrivateIds(req);
   const originalJson = res.json.bind(res);
   res.json = (body: unknown) => {
     if (

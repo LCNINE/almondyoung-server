@@ -5,7 +5,12 @@ import type {
   TimeSaleSettings,
   SaleSurface,
 } from "@packages/domain-types/time-sale"
-import { SaleRenderer, type SaleProduct } from "@packages/time-sale-ui"
+import {
+  SaleRenderer,
+  type SalePagerItem,
+  type SalePeriodLike,
+  type SaleProduct,
+} from "@packages/time-sale-ui"
 
 export function ConfiguredTimeSale({
   settings,
@@ -16,6 +21,8 @@ export function ConfiguredTimeSale({
   endsAt,
   products,
   countryCode,
+  pager,
+  sectionPeriods,
 }: {
   settings: TimeSaleSettings
   surface: SaleSurface
@@ -25,6 +32,8 @@ export function ConfiguredTimeSale({
   endsAt: string
   products: SaleProduct[]
   countryCode: string
+  pager?: SalePagerItem[]
+  sectionPeriods: SalePeriodLike[]
 }) {
   return (
     <SaleRenderer
@@ -37,6 +46,8 @@ export function ConfiguredTimeSale({
       products={products}
       sanitizeHtml={sanitizeHtml}
       moreHref={`/${countryCode}/time-sale`}
+      pager={pager}
+      sectionPeriods={sectionPeriods}
     />
   )
 }

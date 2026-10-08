@@ -51,7 +51,7 @@ export const ProductPrice = ({
   // }
 
   // ===== 2. 멤버십가 비공개 상품 (비회원) =====
-  // 상품과 일반 판매가는 그대로 노출하고, 멤버십가 숫자 영역만 "멤버십 회원 공개"로 대체
+  // 상품과 일반 판매가는 그대로 노출하고, 멤버십가 숫자 영역만 "멤버십 회원에게 가격 공개"로 대체
   // 멤버십 회원은 price list가 적용된 실제 가격을 일반 흐름으로 표시
   if (isMembershipOnly && !isMember) {
     return (
@@ -62,7 +62,7 @@ export const ProductPrice = ({
         <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
           <span className="text-[15px] font-bold text-[#ffa500]">
-            멤버십 회원 공개
+            멤버십 회원에게 가격 공개
           </span>
         </div>
       </div>

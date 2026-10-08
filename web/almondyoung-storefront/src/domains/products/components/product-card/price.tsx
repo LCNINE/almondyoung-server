@@ -53,7 +53,7 @@ export default function ProductPrice({
   }
 
   // 멤버십가 비공개 상품: 비회원에게 일반 판매가는 그대로 보여주고,
-  // 멤버십가 숫자 영역만 "멤버십 회원 공개"로 대체 (상품 숨김/구매 제한 아님)
+  // 멤버십가 숫자 영역만 "멤버십 회원에게 가격 공개"로 대체 (상품 숨김/구매 제한 아님)
   if (!isMembership && isMembershipOnly) {
     return (
       <div className="flex flex-col gap-1">
@@ -62,7 +62,7 @@ export default function ProductPrice({
         </span>
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
-          <span className="text-[15px] font-bold">멤버십 회원 공개</span>
+          <span className="text-[15px] font-bold">멤버십 회원에게 가격 공개</span>
         </div>
       </div>
     )

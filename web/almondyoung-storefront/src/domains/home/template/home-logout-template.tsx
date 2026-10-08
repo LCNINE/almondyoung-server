@@ -58,7 +58,7 @@ import MembershipBanner from "../components/banner/membership-banner"
  *   const products = await getProductsByIds(productIds)
  *   ```
  *
- * ### 타임세일 (TimeSaleSection)
+ * ### 타임세일 (TimeSaleWrapper → ConfiguredTimeSale)
  * - Campaign: "time-sale"
  * - 조건: starts_at, ends_at 설정 (시간 제한)
  * - 구현:

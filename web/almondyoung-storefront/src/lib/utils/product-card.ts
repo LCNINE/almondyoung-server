@@ -10,7 +10,7 @@ import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 export type ReviewSummary = { rating: number; reviewCount: number }
 
 /**
- * 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시).
+ * 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원에게 가격 공개" 표시).
  * 상품 숨김/구매 제한이 아니다.
  */
 export function getHideMembershipPriceForNonMembers(
@@ -20,7 +20,8 @@ export function getHideMembershipPriceForNonMembers(
     product.metadata?.hideMembershipPriceForNonMembers === true ||
     product.metadata?.hideMembershipPriceForNonMembers === "true" ||
     product.metadata?.isMembershipOnly === true ||
-    product.metadata?.isMembershipOnly === "true"
+    product.metadata?.isMembershipOnly === "true" ||
+    product.metadata?.timeSalePriceHidden === true
   )
 }
 

@@ -11,10 +11,13 @@ export const metadata: Metadata = { robots: NOINDEX }
 
 export default async function TimeSalePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ page?: string }>
 }) {
   const { countryCode } = await params
+  const { page } = await searchParams
   const [sales, t] = await Promise.all([
     listActiveTimeSales(),
     getTranslations("home.timeSale"),
@@ -31,11 +34,14 @@ export default async function TimeSalePage({
           countryCode={countryCode}
           background="white"
           surface="more"
+          page={page}
         />
       ) : (
         <div className="py-24 text-center">
           <p className="text-lg font-semibold">{t("noSaleTitle")}</p>
-          <p className="mt-2 text-sm text-muted-foreground">{t("noSaleDescription")}</p>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {t("noSaleDescription")}
+          </p>
         </div>
       )}
     </div>

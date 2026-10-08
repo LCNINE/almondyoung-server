@@ -1,10 +1,10 @@
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { listActiveTimeSales, listProductsInPriceLists } from '../time-sale';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { listActiveTimeSales, listAllTimeSales, listProductsInPriceLists } from '../time-sale';
 import timeSaleCacheBoundaryJob from '../../jobs/time-sale-cache-boundary';
 
 type RawCall = { sql: string; bindings: unknown[] };
 
-function makeContainer(handler: (call: RawCall) => unknown[]) {
+function makeContainer(handler: (call: RawCall) => unknown[], sales: Record<string, unknown> = {}) {
   const calls: RawCall[] = [];
   const logs: string[] = [];
 
@@ -18,6 +18,9 @@ function makeContainer(handler: (call: RawCall) => unknown[]) {
 
   const registry: Record<string, unknown> = {
     [ContainerRegistrationKeys.PG_CONNECTION]: knex,
+    [Modules.STORE]: {
+      listStores: async () => [{ id: 'store', metadata: { timeSaleSettings: { sales } } }],
+    },
     [ContainerRegistrationKeys.LOGGER]: {
       info: (m: string) => logs.push(m),
       warn: (m: string) => logs.push(m),
@@ -72,7 +75,7 @@ describe('listActiveTimeSales', () => {
         : [
             { price_list_id: 'plist_a', id: 'prod_1', handle: 'h1' },
             { price_list_id: 'plist_b', id: 'prod_2', handle: 'h2' },
-          ]
+          ],
     );
 
     const sales = await listActiveTimeSales(container);
@@ -110,7 +113,7 @@ describe('listActiveTimeSales', () => {
         : [
             { price_list_id: 'plist_1', id: 'prod_1', handle: 'h1' },
             { price_list_id: 'plist_2', id: 'prod_2', handle: 'h2' },
-          ]
+          ],
     );
 
     const sales = await listActiveTimeSales(container);
@@ -131,7 +134,7 @@ describe('listActiveTimeSales', () => {
         : [
             { price_list_id: 'plist_g', id: 'prod_1', handle: 'h1' },
             { price_list_id: 'plist_m', id: 'prod_1', handle: 'h1' },
-          ]
+          ],
     );
 
     const sales = await listActiveTimeSales(container);
@@ -145,9 +148,7 @@ describe('listActiveTimeSales', () => {
 
   it('멤버십용 리스트만 남은 세일은 접미사를 뗀 제목을 쓴다', async () => {
     const { container } = makeContainer(({ sql }) =>
-      isListQuery(sql)
-        ? [listRow({ id: 'plist_m', title: '8월 마감 세일 (멤버십)', is_membership_only: true })]
-        : []
+      isListQuery(sql) ? [listRow({ id: 'plist_m', title: '8월 마감 세일 (멤버십)', is_membership_only: true })] : [],
     );
 
     const [sale] = await listActiveTimeSales(container);
@@ -168,12 +169,122 @@ describe('listActiveTimeSales', () => {
               ends_at: new Date('2026-08-29T00:00:00Z'),
             }),
           ]
-        : []
+        : [],
     );
 
     const [sale] = await listActiveTimeSales(container);
 
     expect(sale.endsAt).toBe('2026-08-29T00:00:00.000Z');
+  });
+});
+
+const productGroups = {
+  'a6f1c2d4-1b2c-4d3e-8f90-123456789abc': {
+    periodMode: 'product',
+    groups: [
+      { generalId: 'plist_ag', membershipId: 'plist_am', productId: 'prod_a' },
+      { generalId: 'plist_bg', membershipId: 'plist_bm', productId: 'prod_b' },
+    ],
+  },
+};
+
+const productModeLists = () => [
+  listRow({ id: 'plist_ag', title: '상품별', starts_at: '2026-10-07T04:00:00Z', ends_at: '2026-10-07T05:00:00Z' }),
+  listRow({
+    id: 'plist_am',
+    title: '상품별 (멤버십)',
+    is_membership_only: true,
+    starts_at: '2026-10-07T04:00:00Z',
+    ends_at: '2026-10-07T05:00:00Z',
+  }),
+  listRow({ id: 'plist_bg', title: '상품별', starts_at: '2026-10-07T06:00:00Z', ends_at: '2026-10-07T07:00:00Z' }),
+  listRow({
+    id: 'plist_bm',
+    title: '상품별 (멤버십)',
+    is_membership_only: true,
+    starts_at: '2026-10-07T06:00:00Z',
+    ends_at: '2026-10-07T07:00:00Z',
+  }),
+];
+
+describe('상품별 기간 묶음', () => {
+  it('(a) groups 가 있는 세일은 시작 시각이 다른 리스트 4개를 세일 하나로 묶는다', async () => {
+    const { container } = makeContainer(
+      ({ sql }) =>
+        isListQuery(sql)
+          ? productModeLists()
+          : [
+              { price_list_id: 'plist_ag', amount: 800, variant_id: 'var_a', product_id: 'prod_a' },
+              { price_list_id: 'plist_am', amount: 700, variant_id: 'var_a', product_id: 'prod_a' },
+              { price_list_id: 'plist_bg', amount: 900, variant_id: 'var_b', product_id: 'prod_b' },
+              { price_list_id: 'plist_bm', amount: 850, variant_id: 'var_b', product_id: 'prod_b' },
+            ],
+      productGroups,
+    );
+
+    const sales = await listAllTimeSales(container);
+
+    expect(sales).toHaveLength(1);
+    expect(sales[0]).toMatchObject({
+      saleId: 'a6f1c2d4-1b2c-4d3e-8f90-123456789abc',
+      title: '상품별',
+      startsAt: '2026-10-07T04:00:00.000Z',
+      endsAt: '2026-10-07T07:00:00.000Z',
+      generalPrices: { var_a: 800, var_b: 900 },
+      membershipPrices: { var_a: 700, var_b: 850 },
+    });
+    expect(sales[0].products).toEqual([
+      { productId: 'prod_a', startsAt: '2026-10-07T04:00:00.000Z', endsAt: '2026-10-07T05:00:00.000Z' },
+      { productId: 'prod_b', startsAt: '2026-10-07T06:00:00.000Z', endsAt: '2026-10-07T07:00:00.000Z' },
+    ]);
+    expect([...sales[0].priceListIds].sort()).toEqual(['plist_ag', 'plist_am', 'plist_bg', 'plist_bm']);
+  });
+
+  it('(a) 진행 중 목록도 같은 세일 하나로 묶고 상품마다 자기 기간을 준다', async () => {
+    const { container } = makeContainer(
+      ({ sql }) =>
+        isListQuery(sql)
+          ? productModeLists()
+          : [
+              { price_list_id: 'plist_bg', id: 'prod_b', handle: 'hb' },
+              { price_list_id: 'plist_ag', id: 'prod_a', handle: 'ha' },
+              { price_list_id: 'plist_am', id: 'prod_a', handle: 'ha' },
+            ],
+      productGroups,
+    );
+
+    const sales = await listActiveTimeSales(container);
+
+    expect(sales).toHaveLength(1);
+    expect(sales[0].saleId).toBe('a6f1c2d4-1b2c-4d3e-8f90-123456789abc');
+    expect(sales[0].productIds).toEqual(['prod_b', 'prod_a']);
+    expect(sales[0].products).toEqual([
+      { productId: 'prod_b', startsAt: '2026-10-07T06:00:00.000Z', endsAt: '2026-10-07T07:00:00.000Z' },
+      { productId: 'prod_a', startsAt: '2026-10-07T04:00:00.000Z', endsAt: '2026-10-07T05:00:00.000Z' },
+    ]);
+  });
+
+  it('(b) groups 가 없는 옛 데이터는 제목과 시작 시각으로 묶고 saleId 는 일반용 리스트 id 다', async () => {
+    const { container } = makeContainer(
+      ({ sql }) =>
+        isListQuery(sql)
+          ? [
+              listRow({ id: 'plist_g', title: '옛 세일' }),
+              listRow({ id: 'plist_m', title: '옛 세일 (멤버십)', is_membership_only: true }),
+              listRow({ id: 'plist_x', title: '옛 세일', starts_at: new Date('2026-09-01T00:00:00Z') }),
+            ]
+          : [{ price_list_id: 'plist_g', amount: 800, variant_id: 'var_1', product_id: 'prod_1' }],
+      { plist_g: { repeatHours: 0 } },
+    );
+
+    const sales = await listAllTimeSales(container);
+
+    expect(sales).toHaveLength(2);
+    expect(sales[0]).toMatchObject({ saleId: 'plist_g', generalId: 'plist_g', membershipId: 'plist_m' });
+    expect(sales[0].products).toEqual([
+      { productId: 'prod_1', startsAt: '2026-08-28T00:00:00.000Z', endsAt: '2026-08-30T11:00:00.000Z' },
+    ]);
+    expect(sales[1]).toMatchObject({ saleId: 'plist_x', productIds: [] });
   });
 });
 
@@ -219,7 +330,8 @@ describe('time-sale-cache-boundary job', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  // 라우트는 handle 이 실렸을 때만 전역 목록 태그를 비운다 — 상품마다 실으면 캐시가 데워질 틈이 없다.
+  // 라우트는 handle 이 실렸을 때만 전역 목록 태그를 비운다 —
+  // 상품마다 실으면 캐시가 데워질 틈이 없다.
   it('첫 상품만 handle 로 싣고 나머지는 태그로 지운다', async () => {
     const { container } = makeContainer(({ sql }) =>
       isListQuery(sql)
@@ -228,7 +340,7 @@ describe('time-sale-cache-boundary job', () => {
             { price_list_id: 'plist_general', id: 'prod_1', handle: 'h1' },
             { price_list_id: 'plist_general', id: 'prod_2', handle: 'h2' },
             { price_list_id: 'plist_general', id: 'prod_3', handle: 'h3' },
-          ]
+          ],
     );
 
     await timeSaleCacheBoundaryJob(container);
@@ -259,7 +371,7 @@ describe('time-sale-cache-boundary job', () => {
     const { sql, bindings } = calls[0];
     expect(sql).toContain("pl.starts_at <= now() + (?::int * interval '1 second')");
     expect(sql).toContain('pl.ends_at <= now()');
-    expect(sql).not.toContain("pl.ends_at <= now() +");
+    expect(sql).not.toContain('pl.ends_at <= now() +');
     // [prewarm, window, prewarm, window] — 예열이 창보다 커야 같은 시작이 두 번 안 잡힌다.
     expect(bindings).toEqual([120, 70, 120, 70]);
     expect(bindings[0]).toBeGreaterThan(bindings[1] as number);

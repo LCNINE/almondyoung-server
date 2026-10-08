@@ -11,6 +11,7 @@ import { grantsFor, grantsGovernUsage } from '../../../modules/promotion-meta/gr
 import { consumeCouponGrantsForCart, restoreConsumedCouponGrants, type ConsumeRequest } from './consume-coupon-grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
+import { findStaleTimeSalePriceLines } from './private-time-sale-price';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
@@ -87,6 +88,14 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
       '쿠폰 할인 한도가 초과되었습니다. 장바구니를 새로고침한 뒤 다시 시도해주세요.',
+    );
+  }
+
+  const staleTimeSaleLines = await findStaleTimeSalePriceLines(container, cart.id);
+  if (staleTimeSaleLines.length) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      '가격이 바뀐 상품이 있습니다. 장바구니를 새로고침한 뒤 다시 시도해주세요.',
     );
   }
 

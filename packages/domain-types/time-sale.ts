@@ -62,6 +62,30 @@ export type SaleLayout = {
   components: SaleComponent[];
 };
 
+// 기간 모드: sale = 세일 전체가 한 기간, product = 상품마다 기간이 따로.
+export type SalePeriodMode = 'sale' | 'product';
+
+// 가격표 묶음 하나: 일반·멤버십 가격표 짝과(상품별 기간 모드면) 그 묶음이 맡은 상품.
+export type SaleGroup = {
+  generalId: string | null;
+  membershipId: string | null;
+  productId: string | null;
+};
+
+// 상품별 기간 모드에서 한 세일에 둘 수 있는 상품(묶음) 수 상한.
+export const MAX_PRODUCT_PERIOD_GROUPS = 200;
+
+// 사용자 변수 이름 문법. 검증기와 문구 치환기가 같은 식을 쓴다.
+export const USER_VARIABLE_NAME_SOURCE = 'user_[a-z][a-z0-9_]{0,29}';
+
+// 상품별 변수 값의 상한: 상품 수·상품당 변수 수·값 길이(250KB 설정 크기 안에서 넉넉히 잡은 값).
+export const MAX_VARIABLE_PRODUCTS = 200;
+
+export const MAX_USER_VARIABLES = 5;
+
+export const MAX_VARIABLE_VALUE_LENGTH = 256;
+
+// 세일 하나의 노출 설정(구좌·반복·공개 제한·가격표 묶음). 설정 JSON 의 sales[saleId] 값이다.
 export type SaleDisplay = {
   partitionId: string;
   webId: string;
@@ -75,9 +99,13 @@ export type SaleDisplay = {
   more: boolean;
   detail: boolean;
   order: number;
-  variables: Record<string, string>;
+  // 상품별 사용자 변수 값: 상품 id → 변수명 → 값. 값이 없으면 변수의 preview 값을 쓴다.
+  productVariables: Record<string, Record<string, string>>;
+  periodMode: SalePeriodMode;
+  groups: SaleGroup[];
 };
 
+// 타임세일 전체 설정. Medusa Store.metadata 에 저장되고 숫자 가격은 가격표가 들고 있다.
 export type TimeSaleSettings = {
   version: 1;
   environment: {
@@ -94,6 +122,8 @@ export type TimeSaleSettings = {
     popupWidth: number;
     popupHeight: number;
     veilOpacity: number;
+    // 서비스를 끌 때 active 였던 타임세일 가격표 id. 켤 때 이것만 되살린다(서버만 쓴다).
+    suspendedPriceListIds: string[];
   };
   styles: Record<SaleSurface, Record<SalePlatform, SaleLayout>>;
   savedStyles: SaleLayout[];
@@ -114,7 +144,9 @@ export const defaultSaleDisplay = (): SaleDisplay => ({
   more: true,
   detail: true,
   order: 0,
-  variables: {},
+  productVariables: {},
+  periodMode: 'sale',
+  groups: [],
 });
 
 const defaultComponentContent = (type: SaleComponent['type']) => {
@@ -123,6 +155,7 @@ const defaultComponentContent = (type: SaleComponent['type']) => {
   return '';
 };
 
+// 스타일 편집기에서 새 컴포넌트를 만들 때 쓰는 기본값.
 export const createSaleComponent = (type: SaleComponent['type'], id = `${type}-${Date.now()}`): SaleComponent => ({
   id,
   type,
@@ -166,6 +199,7 @@ export const createSaleComponent = (type: SaleComponent['type'], id = `${type}-$
   },
 });
 
+// 설정이 한 번도 저장되지 않았을 때의 기본값(면·기기별 기본 스타일 포함).
 export function defaultTimeSaleSettings(): TimeSaleSettings {
   const layout = (surface: SaleSurface, platform: SalePlatform): SaleLayout => {
     const types: SaleComponent['type'][] =
@@ -215,6 +249,7 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
       popupWidth: 90,
       popupHeight: 80,
       veilOpacity: 0.5,
+      suspendedPriceListIds: [],
     },
     styles: {
       main: { mobile: layout('main', 'mobile'), pc: layout('main', 'pc') },
@@ -227,6 +262,7 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
   };
 }
 
+// 스타일에 허용하는 CSS 속성 화이트리스트. 목록 밖의 속성은 저장 단계에서 거절한다.
 const cssKeys = new Set([
   'color',
   'backgroundColor',
@@ -271,6 +307,8 @@ const cssKeys = new Set([
   'backgroundRepeat',
 ]);
 
+// CSS 값 검사: 배경 이미지는 https url 만, 문자열은 256자 이하이며
+// 스크립트·주입에 쓰일 구문(url(), expression, @import 등)을 막는다.
 function cssValueValid(key: string, value: unknown): boolean {
   if (key === 'backgroundImage') {
     return typeof value === 'string' && /^url\(["']?https:\/\/[^()"'<>\s]+["']?\)$/.test(value);
@@ -292,6 +330,11 @@ function cssValid(css: unknown): boolean {
   );
 }
 
+// 서비스 OFF 동안 기억해 둘 수 있는 active 가격표 수의 상한.
+export const MAX_SUSPENDED_PRICE_LISTS = 200;
+
+// 설정 저장·읽기 경계의 검증(250KB 이하, 환경값 범위,
+// 스타일·컴포넌트·사용자 변수·세일별 설정). 어긋나면 Error.
 export function validateTimeSaleSettings(input: unknown): asserts input is TimeSaleSettings {
   // JSON structure is checked before typed access; shared contract cast is confined to this boundary.
   if (!input || typeof input !== 'object' || JSON.stringify(input).length > 250000)
@@ -329,6 +372,16 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
   for (const key of ['enabled', 'membershipPriceOnly', 'main', 'more', 'detail'] as const)
     if (typeof e[key] !== 'boolean') throw new Error('노출 설정은 참/거짓이어야 합니다.');
 
+  // 이 필드가 없던 옛 설정은 빈 목록으로 읽는다. 상한 200개는 저장 크기(250KB) 안에서 넉넉히 잡은 값.
+  const suspended: unknown = e.suspendedPriceListIds;
+  if (
+    suspended !== undefined &&
+    (!Array.isArray(suspended) ||
+      suspended.length > MAX_SUSPENDED_PRICE_LISTS ||
+      suspended.some((id) => typeof id !== 'string' || !id || id.length > 100))
+  )
+    throw new Error(`중지된 가격표 목록이 올바르지 않습니다(최대 ${MAX_SUSPENDED_PRICE_LISTS}개).`);
+
   if (
     typeof e.currencyPrefix !== 'string' ||
     typeof e.currencySuffix !== 'string' ||
@@ -344,8 +397,10 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       layouts.push(s.styles[surface][platform]);
     }
 
+  // 저장 스타일은 최대 50개, 한 스타일의 컴포넌트는 15개까지.
   if (s.savedStyles.length > 50) throw new Error('스타일은 최대 50개입니다.');
   for (const l of layouts) {
+    // 스타일(레이아웃) 단위 검사: 필드 타입·길이, 컴포넌트 수·id 중복.
     if (
       !l ||
       typeof l.id !== 'string' ||
@@ -386,6 +441,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       )
         throw new Error('상태별 CSS를 확인하세요.');
 
+      // 상품 문구는 헤더/푸터 합쳐 최대 7개(상품 카드가 길어지는 걸 막는 제한).
       if (
         c.productTexts &&
         (!Array.isArray(c.productTexts) ||
@@ -423,6 +479,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       )
         throw new Error('상품 수치 형식을 확인하세요.');
 
+      // 컴포넌트 수치(열·행·간격·딜레이 등) 허용 범위.
       if (
         !['normal', 'flip'].includes(o.timer) ||
         !Number.isInteger(o.columns) ||
@@ -484,11 +541,12 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
   }
 
   if (
-    s.variables.length > 5 ||
+    // 사용자 변수는 최대 5개, user_ 로 시작하는 영문 소문자 이름만.
+    s.variables.length > MAX_USER_VARIABLES ||
     new Set(s.variables.map((v) => v.name)).size !== s.variables.length ||
     s.variables.some(
       (v) =>
-        !/^user_[a-z][a-z0-9_]{0,29}$/.test(v.name) ||
+        !new RegExp(`^${USER_VARIABLE_NAME_SOURCE}$`).test(v.name) ||
         typeof v.description !== 'string' ||
         v.description.length > 30 ||
         typeof v.preview !== 'string' ||
@@ -497,9 +555,10 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
   )
     throw new Error('사용자 변수는 최대 5개이며 영문 소문자로 시작해야 합니다.');
 
+  // 세일별 노출 설정 검사(반복 간격은 최대 8760시간 = 1년).
   for (const [id, d] of Object.entries(s.sales)) {
     if (
-      !/^plist_[a-zA-Z0-9]+$/.test(id) ||
+      !isSaleKey(id) ||
       !d ||
       typeof d.partitionId !== 'string' ||
       d.partitionId.length > 10 ||
@@ -509,9 +568,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       !Number.isFinite(d.repeatHours) ||
       d.repeatHours < 0 ||
       d.repeatHours > 8760 ||
-      (d.repeatUntil !== null && !Number.isFinite(Date.parse(d.repeatUntil))) ||
-      !d.variables ||
-      Array.isArray(d.variables)
+      (d.repeatUntil !== null && !Number.isFinite(Date.parse(d.repeatUntil)))
     )
       throw new Error('타임세일 노출 설정을 확인하세요.');
 
@@ -526,15 +583,84 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     ] as const)
       if (typeof d[key] !== 'boolean') throw new Error('타임세일 옵션을 확인하세요.');
 
-    if (
-      Object.entries(d.variables).some(
-        ([key, value]) => !s.variables.some((v) => v.name === key) || typeof value !== 'string' || value.length > 256,
-      )
-    )
-      throw new Error('사용자 변수 값을 확인하세요.');
+    validateProductVariables(d.productVariables, s.variables);
+
+    validateSaleGroups(d);
   }
 }
 
+// 세일 키: 옛 세일은 가격표 id(plist_…), 새 세일은 UUID(saleId).
+const LEGACY_SALE_KEY = /^plist_[a-zA-Z0-9]+$/;
+
+const SALE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+export const isSaleKey = (key: string) => LEGACY_SALE_KEY.test(key) || SALE_ID.test(key);
+
+export const isSaleId = (key: string) => SALE_ID.test(key);
+
+const isListId = (value: unknown) => value === null || (typeof value === 'string' && LEGACY_SALE_KEY.test(value));
+
+// 상품별 변수 값 검사: 옛 설정엔 필드가 없으므로 undefined 는 빈 값으로 읽는다.
+// 상품 200개, 상품당 변수 5개, 값 256자 이하이며 정의된 변수 이름만 쓸 수 있다.
+function validateProductVariables(input: unknown, defined: { name: string }[]) {
+  if (input === undefined) return;
+
+  const fail = () => {
+    throw new Error('사용자 변수 값을 확인하세요.');
+  };
+
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail();
+
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > MAX_VARIABLE_PRODUCTS) fail();
+
+  for (const [productId, values] of entries) {
+    if (!productId || productId.length > 64 || !values || typeof values !== 'object' || Array.isArray(values)) fail();
+
+    const pairs = Object.entries(values as Record<string, unknown>);
+    if (pairs.length > MAX_USER_VARIABLES) fail();
+
+    for (const [name, value] of pairs)
+      if (
+        !defined.some((v) => v.name === name) ||
+        typeof value !== 'string' ||
+        value.length > MAX_VARIABLE_VALUE_LENGTH
+      )
+        fail();
+  }
+}
+
+// 기간 모드와 가격표 묶음의 일관성 검사: sale 은 묶음 1개, product 는 상품마다 1개(200개 상한).
+function validateSaleGroups(d: Partial<SaleDisplay>) {
+  if (d.periodMode === undefined && d.groups === undefined) return;
+
+  const groups = d.groups;
+  if (!['sale', 'product'].includes(d.periodMode ?? '') || !Array.isArray(groups))
+    throw new Error('타임세일 기간 구분을 확인하세요.');
+
+  const invalidGroup = groups.some(
+    (g) =>
+      !g ||
+      !isListId(g.generalId) ||
+      !isListId(g.membershipId) ||
+      (g.productId !== null && (typeof g.productId !== 'string' || !g.productId || g.productId.length > 64)),
+  );
+  if (invalidGroup) throw new Error('타임세일 가격표 묶음을 확인하세요.');
+
+  if (d.periodMode === 'sale') {
+    if (groups.length > 1 || groups.some((g) => g.productId !== null))
+      throw new Error('세일 단위 기간은 가격표 묶음이 하나입니다.');
+    return;
+  }
+
+  const productIds = groups.map((g) => g.productId);
+  if (groups.length > MAX_PRODUCT_PERIOD_GROUPS) throw new Error('상품별 기간은 상품 200개까지입니다.');
+  if (productIds.some((id) => id === null) || new Set(productIds).size !== productIds.length)
+    throw new Error('상품별 기간은 상품마다 하나씩입니다.');
+}
+
+// 반복 세일이 끝났을 때 다음 회차 기간. 반복 간격이 (기간 +
+// 10분)보다 짧거나 아직 안 끝났거나 반복 종료일을 넘으면 null.
 export function nextRepeatedPeriod(start: string, end: string, hours: number, until: string | null, now = Date.now()) {
   const a = Date.parse(start),
     b = Date.parse(end),
@@ -550,4 +676,21 @@ export function nextRepeatedPeriod(start: string, end: string, hours: number, un
   if (until && nextEnd > Date.parse(until)) return null;
 
   return { startsAt: new Date(nextStart).toISOString(), endsAt: new Date(nextEnd).toISOString() };
+}
+
+// 한 회차가 끝난 뒤 다음 회차가 시작하기까지 최소로 비워 두는 간격(10분).
+export const REPEAT_GAP_MS = 600000;
+
+// 반복 간격이 (기간 + 10분)보다 짧은 기간을 찾는다(없으면 null).
+export function repeatTooShortFor<T extends { startsAt: string; endsAt: string }>(
+  repeatHours: number,
+  periods: T[],
+): T | null {
+  if (!(repeatHours > 0)) return null;
+
+  const interval = repeatHours * 3600000;
+
+  return (
+    periods.find((period) => interval < Date.parse(period.endsAt) - Date.parse(period.startsAt) + REPEAT_GAP_MS) ?? null
+  );
 }

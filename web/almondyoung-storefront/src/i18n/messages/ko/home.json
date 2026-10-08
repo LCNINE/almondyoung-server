@@ -66,20 +66,9 @@
     "listNext": "다음 목록 보기"
   },
   "timeSale": {
-    "titleFirst": "타임",
-    "titleSecond": "세일",
-    "allTab": "전체",
-    "emptyTitle": "진행 중인 타임세일이 없습니다",
-    "pageDescription": "정해진 시간 동안만 이 가격입니다.",
     "noSaleTitle": "진행 중인 타임세일이 없습니다",
     "noSaleDescription": "다음 타임세일을 준비하고 있어요.",
-    "nextSale": "다음 타임세일 {date} 시작",
-    "endsIn": "타임세일 종료까지 {remaining}",
-    "countdownLabel": "타임세일 종료까지",
-    "endsOn": "{date}까지",
-    "dayUnit": "일",
-    "untilEnd": "종료까지",
-    "endingSoon": "마감 임박"
+    "endsIn": "타임세일 종료까지 {remaining}"
   },
   "beautytop": {
     "title": "뷰티탑",

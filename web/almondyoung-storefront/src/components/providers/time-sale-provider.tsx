@@ -1,23 +1,39 @@
 "use client"
 
-import { createContext, useContext, useMemo, type ReactNode } from "react"
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 import {
   defaultTimeSaleSettings,
   type TimeSaleSettings,
 } from "@packages/domain-types/time-sale"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
+import {
+  createSaleClock,
+  earliestActiveSaleEnd,
+  matchProductSale,
+  type ProductSaleMatch,
+} from "@/lib/utils/time-sale-product-period"
 
 type TimeSaleContextValue = {
   settings: TimeSaleSettings
   sales: TimeSale[]
   /** price list id → 그 리스트를 만든 세일. */
   byPriceListId: Map<string, TimeSale>
+  now: number
 }
 
+// Provider 밖에서 쓰일 때의 빈 값(세일 없음).
 const EMPTY: TimeSaleContextValue = {
   settings: defaultTimeSaleSettings(),
   sales: [],
   byPriceListId: new Map(),
+  now: 0,
 }
 
 const TimeSaleContext = createContext<TimeSaleContextValue>(EMPTY)
@@ -42,20 +58,38 @@ export function TimeSaleProvider({
   settings?: TimeSaleSettings
   children: ReactNode
 }) {
+  // now 는 세일 경계마다만 갱신된다(createSaleClock).
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const clock = createSaleClock(setNow)
+    clock.setSales(sales)
+
+    return () => clock.dispose()
+  }, [sales])
+
   const value = useMemo(
     () => ({
       sales,
       settings,
+      now,
       byPriceListId: new Map(
-        sales.flatMap((sale) => sale.priceListIds.map((id) => [id, sale] as const))
+        sales.flatMap((sale) =>
+          sale.priceListIds.map((id) => [id, sale] as const)
+        )
       ),
     }),
-    [sales, settings]
+    [sales, settings, now]
   )
 
-  return <TimeSaleContext.Provider value={value}>{children}</TimeSaleContext.Provider>
+  return (
+    <TimeSaleContext.Provider value={value}>
+      {children}
+    </TimeSaleContext.Provider>
+  )
 }
 
+// 세일 목록·설정·현재 시각 컨텍스트 읽기.
 export function useTimeSale() {
   return useContext(TimeSaleContext)
 }
@@ -87,13 +121,15 @@ export function useIsTimeSalePrice(variant: VariantLike): boolean {
  * 이 상품이 걸린 타임세일. 없으면 null.
  * 카트 라인은 `price_list_id` 를 안 실어 오므로 variant 대신 상품 id 로 가른다.
  */
-export function useTimeSaleForProduct(productId: string | null | undefined): TimeSale | null {
-  const { sales } = useTimeSale()
+export function useTimeSaleForProduct(
+  productId: string | null | undefined
+): ProductSaleMatch | null {
+  const { sales, now } = useTimeSale()
 
-  return useMemo(() => {
-    if (!productId) return null
-    return sales.find((sale) => sale.productIds.includes(productId)) ?? null
-  }, [sales, productId])
+  return useMemo(
+    () => (productId ? matchProductSale(sales, productId, now) : null),
+    [sales, productId, now]
+  )
 }
 
 /**
@@ -103,13 +139,10 @@ export function useTimeSaleForProduct(productId: string | null | undefined): Tim
  * 늦게 알아차리지 않는다.
  */
 export function useEarliestSaleEnd(productIds: string[]): string | null {
-  const { sales } = useTimeSale()
+  const { sales, now } = useTimeSale()
 
-  return useMemo(() => {
-    const ids = new Set(productIds)
-    return sales.reduce<string | null>((earliest, sale) => {
-      if (!sale.endsAt || !sale.productIds.some((id) => ids.has(id))) return earliest
-      return !earliest || sale.endsAt < earliest ? sale.endsAt : earliest
-    }, null)
-  }, [sales, productIds])
+  return useMemo(
+    () => earliestActiveSaleEnd(sales, productIds, now),
+    [sales, productIds, now]
+  )
 }

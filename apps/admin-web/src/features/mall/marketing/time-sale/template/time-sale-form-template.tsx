@@ -10,7 +10,9 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import {
   defaultSaleDisplay,
+  repeatTooShortFor,
   type SaleDisplay,
+  type SalePeriodMode,
 } from '@packages/domain-types/time-sale';
 import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
 import { saleToast } from '../components/time-sale-workspace';
@@ -70,12 +72,16 @@ function Section({
           </span>
           {title}
         </h2>
-        {description && <p className="text-muted-foreground mt-1 text-xs">{description}</p>}
+        {description && (
+          <p className="text-muted-foreground mt-1 text-xs">{description}</p>
+        )}
       </div>
       {children}
     </section>
   );
 }
+
+type ProductPeriodInput = { startsAt: string; endsAt: string };
 
 const DISPLAY_ID_KEYS = ['partitionId', 'webId'] as const;
 
@@ -95,7 +101,7 @@ const DISPLAY_FLAG_LABELS = {
   showSoldOut: '품절 상품 노출',
   showScheduled: '예정 세일 노출',
   showEnded: '종료 세일 노출',
-  membershipPriceOnly: '멤버십 회원에게만 가격 공개',
+  membershipPriceOnly: '가격 공개 제한 (멤버십 회원에게만 세일가 공개)',
   main: '메인',
   more: '더보기',
   detail: '상품상세',
@@ -104,11 +110,9 @@ const DISPLAY_FLAG_LABELS = {
 function SaleDisplayFields({
   display,
   setDisplay,
-  variables,
 }: {
   display: SaleDisplay;
   setDisplay: Dispatch<SetStateAction<SaleDisplay>>;
-  variables: { name: string; description: string }[] | undefined;
 }) {
   const patch = (next: Partial<SaleDisplay>) =>
     setDisplay((prev) => ({ ...prev, ...next }));
@@ -162,27 +166,16 @@ function SaleDisplayFields({
           </label>
         ))}
       </div>
-      {variables?.map((v) => (
-        <label key={v.name} className="block space-y-1 text-sm">
-          {v.name} · {v.description}
-          <Input
-            maxLength={256}
-            value={display.variables[v.name] ?? ''}
-            onChange={(e) =>
-              setDisplay((prev) => ({
-                ...prev,
-                variables: { ...prev.variables, [v.name]: e.target.value },
-              }))
-            }
-          />
-        </label>
-      ))}
     </>
   );
 }
 
 /** 등록과 수정이 같은 화면이다 — 입력·검증·미리보기가 전부 같아 갈라두면 한쪽만 고쳐진다. */
-export default function TimeSaleFormTemplate({ generalId }: { generalId?: string }) {
+export default function TimeSaleFormTemplate({
+  generalId,
+}: {
+  generalId?: string;
+}) {
   const router = useRouter();
   const isEdit = Boolean(generalId);
 
@@ -190,16 +183,26 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     queryKey: ['time-sale-settings'],
     queryFn: medusaTimeSaleSettingsApi.get,
   });
+  // 1) 설정(환경·노출) 조회. 환경설정이나 이 세일이
+  // 가격 공개 제한이면 privatePrice 로 화면에 안내한다.
   const [display, setDisplay] = useState<SaleDisplay>(defaultSaleDisplay);
+  const privatePrice =
+    !!settingsQuery.data?.settings.environment.membershipPriceOnly ||
+    display.membershipPriceOnly;
   const [displayRestored, setDisplayRestored] = useState(false);
+  const { data: detail, isLoading: loadingDetail } = useTimeSaleDetail(
+    generalId ?? null
+  );
+
+  // 편집 진입 시 저장된 노출 설정을 한 번만 채운다.
   useEffect(() => {
-    if (generalId && settingsQuery.data && !displayRestored) {
+    if (detail && settingsQuery.data && !displayRestored) {
       setDisplay(
-        settingsQuery.data.settings.sales[generalId] ?? defaultSaleDisplay()
+        settingsQuery.data.settings.sales[detail.saleId] ?? defaultSaleDisplay()
       );
       setDisplayRestored(true);
     }
-  }, [generalId, settingsQuery.data, displayRestored]);
+  }, [detail, settingsQuery.data, displayRestored]);
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
@@ -208,8 +211,11 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rows, setRows] = useState<TimeSaleRow[]>([]);
   const [restored, setRestored] = useState(false);
+  const [periodMode, setPeriodMode] = useState<SalePeriodMode>('sale');
+  const [productPeriods, setProductPeriods] = useState<
+    Record<string, ProductPeriodInput>
+  >({});
 
-  const { data: detail, isLoading: loadingDetail } = useTimeSaleDetail(generalId ?? null);
   const { data: loadedRows, isFetching } = useTimeSaleProductRows(selectedIds);
   const createTimeSale = useCreateTimeSale();
   const updateTimeSale = useUpdateTimeSale();
@@ -221,6 +227,18 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     setStartsAt(toLocalInput(detail.period.startsAt));
     setEndsAt(toLocalInput(detail.period.endsAt));
     setSelectedIds(detail.productIds);
+    setPeriodMode(detail.periodMode);
+    setProductPeriods(
+      Object.fromEntries(
+        Object.entries(detail.productPeriods).map(([productId, period]) => [
+          productId,
+          {
+            startsAt: period.startsAt ? toLocalInput(period.startsAt) : '',
+            endsAt: period.endsAt ? toLocalInput(period.endsAt) : '',
+          },
+        ])
+      )
+    );
     setRestored(true);
   }, [detail, restored]);
 
@@ -240,12 +258,16 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
   }, [loadedRows, rows]);
 
   const errors = validateRows(mergedRows);
-  const errorByVariant = new Map(errors.map((error) => [error.variantId, error.message]));
+  const errorByVariant = new Map(
+    errors.map((error) => [error.variantId, error.message])
+  );
   const saleSummary = summarizeSaleRows(mergedRows);
 
   const toggleProduct = (productId: string) => {
     setSelectedIds((prev) =>
-      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
     );
   };
 
@@ -256,7 +278,9 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     });
   };
 
-  const isValidPercent = (value: number) => Number.isFinite(value) && value > 0 && value < 100;
+  // 할인율은 0 초과 100 미만만 유효하다.
+  const isValidPercent = (value: number) =>
+    Number.isFinite(value) && value > 0 && value < 100;
 
   const membershipPercentTyped = membershipPercent.trim() !== '';
   const membershipPercentInvalid =
@@ -264,8 +288,11 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
   // 비워두거나 값이 틀리면 일반 할인율을 그대로 쓴다 — 틀린 값이 상품별 적용으로 새면 음수나
   // NaN 세일가가 만들어진다.
   const resolvedMembershipPercent =
-    membershipPercentTyped && !membershipPercentInvalid ? Number(membershipPercent) : null;
+    membershipPercentTyped && !membershipPercentInvalid
+      ? Number(membershipPercent)
+      : null;
 
+  // 할인율 일괄 적용: 일반·멤버십 할인율을 검증한 뒤 모든 행에 세일가를 채운다.
   const fillByPercent = () => {
     const value = Number(percent);
     if (!isValidPercent(value)) {
@@ -288,6 +315,23 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
 
   const isPending = createTimeSale.isPending || updateTimeSale.isPending;
 
+  // 상품별 기간 모드에서 한 상품의 시작/종료 입력을 바꾼다.
+  const changeProductPeriod = (
+    productId: string,
+    field: keyof ProductPeriodInput,
+    value: string
+  ) => {
+    setProductPeriods((prev) => ({
+      ...prev,
+      [productId]: {
+        ...(prev[productId] ?? { startsAt: '', endsAt: '' }),
+        [field]: value,
+      },
+    }));
+  };
+
+  // 저장: 1) 입력 검증(이름·기간·품목·세일가) 2) 기간 최소 길이·반복
+  // 간격 검사 3) 상품별 기간 ISO 변환 4) 등록/수정 호출 후 목록으로 이동.
   const submit = async () => {
     if (!title.trim() || !startsAt || !endsAt) {
       toast.error('세일 이름과 기간을 입력하세요.');
@@ -308,31 +352,67 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
 
     const durationMs =
       new Date(endsAt).getTime() - new Date(startsAt).getTime();
+    // 정책: 타임세일 최소 길이 5분.
     if (durationMs < 300000) {
       saleToast('타임세일은 5분 이상이어야 합니다.', true);
-      return;
-    }
-    if (
-      display.repeatHours > 0 &&
-      display.repeatHours * 3600000 < durationMs + 600000
-    ) {
-      saleToast('반복 간격은 세일 기간보다 10분 이상 길어야 합니다.', true);
       return;
     }
     const period = {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: new Date(endsAt).toISOString(),
     };
+    const resolvedProductPeriods = Object.fromEntries(
+      Object.entries(productPeriods).map(([productId, input]) => [
+        productId,
+        {
+          startsAt: input.startsAt
+            ? new Date(input.startsAt).toISOString()
+            : period.startsAt,
+          endsAt: input.endsAt
+            ? new Date(input.endsAt).toISOString()
+            : period.endsAt,
+        },
+      ])
+    );
+    const repeatPeriods =
+      periodMode === 'product'
+        ? [...new Set(mergedRows.map((row) => row.productId))].map(
+            (productId) => resolvedProductPeriods[productId] ?? period
+          )
+        : [period];
+    // 정책: 반복 간격은 기간보다 10분 이상 길어야 한다(서버 검증과 같은 규칙).
+    if (repeatTooShortFor(display.repeatHours, repeatPeriods)) {
+      saleToast(
+        periodMode === 'product'
+          ? '반복 간격은 각 상품 기간보다 10분 이상 길어야 합니다.'
+          : '반복 간격은 세일 기간보다 10분 이상 길어야 합니다.',
+        true
+      );
+      return;
+    }
+
+    // 세일에서 뺀 상품의 변수 값은 같이 정리한다(설정 크기 상한 보호).
+    const savedDisplay: SaleDisplay = {
+      ...display,
+      productVariables: Object.fromEntries(
+        Object.entries(display.productVariables ?? {}).filter(([id]) =>
+          selectedIds.includes(id)
+        )
+      ),
+    };
 
     try {
       if (isEdit && detail) {
         await updateTimeSale.mutateAsync({
+          saleId: detail.saleId,
           generalId: detail.generalId,
           membershipId: detail.membershipId,
           title: title.trim(),
           period,
           rows: mergedRows,
-          display,
+          display: savedDisplay,
+          periodMode,
+          productPeriods: resolvedProductPeriods,
         });
         saleToast('타임세일을 수정하였습니다.');
       } else {
@@ -340,7 +420,9 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
           title: title.trim(),
           period,
           rows: mergedRows,
-          display,
+          display: savedDisplay,
+          periodMode,
+          productPeriods: resolvedProductPeriods,
         });
         saleToast('신규 타임세일을 생성하였습니다.');
       }
@@ -377,13 +459,18 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     );
   }
   return (
-    <Container>
+    <Container className="[&_button:not(:disabled)]:cursor-pointer [&_label:has(input)]:cursor-pointer [&_select]:cursor-pointer">
       <Header
-        title={isEdit ? `타임세일 수정 · ${detail?.title ?? ''}` : '타임세일 등록'}
+        title={
+          isEdit ? `타임세일 수정 · ${detail?.title ?? ''}` : '타임세일 등록'
+        }
         subtitle="기간이 끝나면 가격은 자동으로 원래대로 돌아갑니다. 되돌릴 작업이 없습니다."
         right={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push(TIME_SALE_LIST_PATH)}>
+            <Button
+              variant="outline"
+              onClick={() => router.push(TIME_SALE_LIST_PATH)}
+            >
               취소
             </Button>
             <Button
@@ -434,19 +521,33 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={periodMode === 'product'}
+              disabled={isEdit}
+              onChange={(event) =>
+                setPeriodMode(event.target.checked ? 'product' : 'sale')
+              }
+            />
+            상품별 기간 구분
+          </label>
+          <p className="text-muted-foreground text-xs">
+            신규 타임 세일을 생성할 때만 설정이 가능하며 이후 수정이 불가합니다.
+            상품별 기간을 비워 두면 세일 기간을 씁니다.
+          </p>
         </Section>
 
         <Section step={2} title="노출 / 반복 / 회원 가격 설정">
-          <SaleDisplayFields
-            display={display}
-            setDisplay={setDisplay}
-            variables={settingsQuery.data?.settings.variables}
-          />
+          <SaleDisplayFields display={display} setDisplay={setDisplay} />
         </Section>
         <Section
           step={3}
           title="대상 상품"
-          description="이미 다른 세일에 걸린 상품은 고를 수 없습니다 — 같은 품목이 두 세일에 걸리면 한쪽 가격만 적용됩니다."
+          description={
+            '이미 다른 세일에 걸린 상품은 고를 수 없습니다 — ' +
+            '같은 품목이 두 세일에 걸리면 한쪽 가격만 적용됩니다.'
+          }
         >
           <TimeSaleSelectedList
             rows={mergedRows}
@@ -466,7 +567,10 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
           <Section
             step={4}
             title="세일가"
-            description="일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. 세일가를 비운 품목은 세일에서 빠집니다."
+            description={
+              '일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. ' +
+              '세일가를 비운 품목은 세일에서 빠집니다.'
+            }
           >
             <div className="flex flex-wrap items-end gap-2">
               <div className="space-y-1">
@@ -480,7 +584,9 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="time-sale-membership-percent">멤버십 할인율(%)</Label>
+                <Label htmlFor="time-sale-membership-percent">
+                  멤버십 할인율(%)
+                </Label>
                 <Input
                   id="time-sale-membership-percent"
                   type="number"
@@ -507,8 +613,9 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
             </div>
 
             <p className="text-muted-foreground text-xs">
-              멤버십가가 이미 많이 깎여 있으면 같은 할인율로는 구독자에게 값이 안 변합니다 — 둘 중
-              싼 값이 적용되기 때문입니다. 그럴 땐 멤버십 할인율을 낮춰 잡으세요.
+              멤버십가가 이미 많이 깎여 있으면 같은 할인율로는 구독자에게 값이
+              안 변합니다 — 둘 중 싼 값이 적용되기 때문입니다. 그럴 땐 멤버십
+              할인율을 낮춰 잡으세요.
             </p>
 
             <TimeSalePriceEditor
@@ -518,15 +625,23 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
               membershipPercent={resolvedMembershipPercent}
               disabled={membershipPercentInvalid}
               onChange={setRows}
+              productPeriods={
+                periodMode === 'product' ? productPeriods : undefined
+              }
+              onProductPeriodChange={changeProductPeriod}
+              generalPriceDisabled={privatePrice}
             />
 
             <p className="text-muted-foreground text-xs">
-              세일에 들어갈 품목 {saleSummary.filled}개 / 고른 품목 {saleSummary.total}개
+              세일에 들어갈 품목 {saleSummary.filled}개 / 고른 품목{' '}
+              {saleSummary.total}개
             </p>
           </Section>
         )}
 
-        {isFetching && <p className="text-muted-foreground text-xs">가격을 불러오는 중…</p>}
+        {isFetching && (
+          <p className="text-muted-foreground text-xs">가격을 불러오는 중…</p>
+        )}
       </div>
     </Container>
   );

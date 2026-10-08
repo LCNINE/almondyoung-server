@@ -231,7 +231,9 @@ function DesktopItem({
   maxQuantity,
 }: DesktopItemProps) {
   const t = useTranslations("cart.items")
-  const isTimeSale = useTimeSaleForProduct(item?.product_id) !== null
+  const isTimeSale =
+    useTimeSaleForProduct(item?.product_id)?.state === "active" &&
+    (discountPercentage ?? 0) > 0
   const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
@@ -518,7 +520,9 @@ function MobileItem({
   maxQuantity,
 }: MobileItemProps) {
   const t = useTranslations("cart.items")
-  const isTimeSale = useTimeSaleForProduct(item?.product_id) !== null
+  const isTimeSale =
+    useTimeSaleForProduct(item?.product_id)?.state === "active" &&
+    (discountPercentage ?? 0) > 0
   const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")

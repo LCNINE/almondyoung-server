@@ -13,7 +13,6 @@
   flex-shrink: 0;
   background: white;
   border-right: 1px solid #ddd;
-  padding-top: 12px;
 }
 .ts-navigation button {
   display: block;
@@ -278,4 +277,72 @@
   .ts-preview {
     width: 100%;
   }
+}
+.ts-workspace
+  :is(
+    button,
+    select,
+    summary,
+    label:has(input[type='checkbox'], input[type='radio']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='color'],
+    input[type='range']
+  ):not(:disabled) {
+  cursor: pointer;
+}
+.ts-workspace :is(button, select, input):disabled {
+  cursor: not-allowed;
+}
+.ts-color-checker {
+  background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+}
+.ts-color-range {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  border-radius: 2px;
+  appearance: none;
+  cursor: pointer;
+}
+.ts-color-range::-webkit-slider-thumb {
+  width: 6px;
+  height: 14px;
+  border: 1px solid #888;
+  border-radius: 1px;
+  background: white;
+  appearance: none;
+}
+.ts-color-range::-moz-range-thumb {
+  width: 6px;
+  height: 14px;
+  border: 1px solid #888;
+  border-radius: 1px;
+  background: white;
+}
+.ts-color-hue {
+  background: linear-gradient(
+    to right,
+    #f00,
+    #ff0,
+    #0f0,
+    #0ff,
+    #00f,
+    #f0f,
+    #f00
+  );
+}
+.ts-workspace .ts-color-trigger {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  color: #212121;
+  font-size: 13px;
+  cursor: pointer;
 }

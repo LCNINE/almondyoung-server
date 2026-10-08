@@ -162,10 +162,39 @@ export const applyMembershipPriceVisibility = (product: MembershipProduct, isMem
   return isMember ? product : sanitizeProductForNonMember(product);
 };
 
+// 가격표(price list)가 아닌 기본 가격인지.
+const isBasePrice = (price: unknown) => isRecord(price) && 'price_list_id' in price && price.price_list_id === null;
+
+// 객체 안쪽까지 키 이름에 membership 이 들어간 항목을 모두 제거한다.
+const stripMembershipKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(stripMembershipKeys);
+  if (!isRecord(value)) return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !/membership/i.test(key))
+      .map(([key, entry]) => [key, stripMembershipKeys(entry)]),
+  );
+};
+
+// 공개 제한 variant 에서 세일·멤버십 가격 필드를 걷어내고 기본 가격만 남긴다.
+const hidePrivateSaleVariant = (variant: ProductVariant): ProductVariant => {
+  const next: ProductVariant = { ...variant };
+  delete next.membership_price;
+  delete next.price_list;
+  delete next.price_lists;
+
+  if (Array.isArray(variant.prices)) next.prices = variant.prices.filter(isBasePrice);
+  if (isRecord(variant.metadata)) next.metadata = sanitizeMembershipPriceMetadata(variant.metadata);
+  if (isRecord(variant.calculated_price)) next.calculated_price = stripMembershipKeys(variant.calculated_price);
+
+  return next;
+};
+
 /**
- * /store/products, /store/products/:id, /store/products-sorted 등의 응답 payload에
- * 멤버십가 표시 정책과 멤버십 회원 전용 노출 정책을 적용한다.
- * 표준 /store/products response filtering은 count mismatch가 있을 수 있다.
+ * 가격 공개 제한 세일 상품이면 비회원 응답에서
+ * 세일가·멤버십가 흔적을 지우고 metadata.timeSalePriceHidden 을 심는다.
+ * 회원이거나 제한 대상이 아니면 그대로 돌려준다.
  */
 export const hideTimeSalePrices = (
   product: MembershipProduct,
@@ -173,32 +202,21 @@ export const hideTimeSalePrices = (
   privateIds: Set<string>,
 ): MembershipProduct => {
   if (isMember || !product.id || !privateIds.has(product.id)) return product;
-  const clean = (entry: Record<string, unknown>) => {
-    const result = { ...entry };
-    for (const key of [
-      'prices',
-      'calculated_price',
-      'price',
-      'original_price',
-      'membership_price',
-      'calculated_price_incl_tax',
-      'original_price_incl_tax',
-      'calculated_amount',
-      'original_amount',
-    ])
-      delete result[key];
-    return result;
-  };
+
+  const metadata = isRecord(product.metadata) ? sanitizeMembershipPriceMetadata(product.metadata) : {};
+
   return {
-    ...clean(product),
-    metadata: { ...product.metadata, timeSalePriceHidden: true },
-    variants: product.variants?.map((variant) => ({
-      ...clean(variant),
-      ...(variant.metadata ? { metadata: sanitizeMembershipPriceMetadata(variant.metadata) } : {}),
-    })),
+    ...product,
+    metadata: { ...metadata, timeSalePriceHidden: true },
+    variants: Array.isArray(product.variants) ? product.variants.map(hidePrivateSaleVariant) : product.variants,
   };
 };
 
+/**
+ * /store/products, /store/products/:id, /store/products-sorted 등의 응답 payload에
+ * 멤버십가 표시 정책과 멤버십 회원 전용 노출 정책을 적용한다.
+ * 표준 /store/products response filtering은 count mismatch가 있을 수 있다.
+ */
 export const transformStoreProductsPayload = (
   payload: unknown,
   isMember: boolean,

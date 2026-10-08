@@ -8,13 +8,21 @@ import {
 import { sdk } from "@/lib/config/medusa"
 import { TIME_SALE_TAG } from "@lib/data/cache-tags"
 
+export type TimeSaleProductPeriod = {
+  productId: string
+  startsAt: string | null
+  endsAt: string | null
+}
+
 export type TimeSale = {
+  saleId: string
   title: string
   startsAt: string | null
   endsAt: string | null
   /** 카드가 "이 가격이 타임세일에서 나왔는가" 를 판별할 때 쓴다. */
   priceListIds: string[]
   productIds: string[]
+  products: TimeSaleProductPeriod[]
   display?: SaleDisplay
 }
 
@@ -46,5 +54,6 @@ export const getTimeSalePresentation = async (): Promise<{
     .catch(() => ({ timeSales: [], settings: defaultTimeSaleSettings() }))
 }
 
+// 진행 중 세일 목록만 필요할 때의 단축 함수.
 export const listActiveTimeSales = async (): Promise<TimeSale[]> =>
   (await getTimeSalePresentation()).timeSales

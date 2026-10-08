@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import sanitizeHtml from 'sanitize-html';
 import { toast } from 'sonner';
@@ -16,14 +17,48 @@ import {
   type SaleCss,
   type SaleComponent,
 } from '@packages/domain-types/time-sale';
-import { SaleRenderer, type SaleProduct } from '@packages/time-sale-ui';
+import {
+  SaleRenderer,
+  previewAnchorFor,
+  type SaleProduct,
+} from '@packages/time-sale-ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  createBackGuard,
+  navigateTo,
+  registerNavigationGuard,
+  routeLinkClick,
+} from '@/lib/navigation-guard';
+import {
+  canDeleteSavedStyle,
+  deleteSavedStyle,
+  linkActiveStyle,
+  removeVariableValues,
+  saveNewStyle,
+  shouldKeepDraftOnRefetch,
+} from '../time-sale-model';
+import { TimeSaleColorPicker } from './time-sale-color-picker';
 import './time-sale-workspace.css';
 
+// 타임세일 화면 공용 토스트(성공/오류).
 export const saleToast = (message: string, error = false) =>
   toast[error ? 'error' : 'success'](message, {
     className: error ? 'time-sale-toast-error' : 'time-sale-toast-success',
     position: 'bottom-right',
   });
+
+// 원본 서비스의 초기화 확인 문구.
+const RESET_STYLE_TEXT =
+  "타임세일 스타일을 초기화 합니다. 안전하게 진행하기 위해 입력란에 '초기화'를 입력하여 주십시오.";
 
 const sections = {
   management: '타임세일 섹션',
@@ -43,6 +78,8 @@ const typeLabels = {
   carousel: '상품 캐러셀',
   grid: '상품 그리드',
 };
+
+const isShelf = (type: string) => type === 'carousel' || type === 'grid';
 
 const optionLabels: Record<keyof SaleComponent['options'], string> = {
   timer: '타이머 형식',
@@ -64,6 +101,15 @@ const optionLabels: Record<keyof SaleComponent['options'], string> = {
   imageRadius: '이미지 모서리(px)',
   showOriginal: '정가 표시',
   showDiscount: '할인율 표시',
+  productCss: '[JSON] 상품 컨테이너 JSX Style',
+  soldOutCss: '[JSON] 상품 컨테이너 품절 JSX Style',
+  scheduledCss: '[JSON] 상품 컨테이너 예정 JSX Style',
+  endedCss: '[JSON] 상품 컨테이너 마감 JSX Style',
+  badgeCss: '[JSON] 엠블럼 컨테이너 JSX Style',
+  overlayCss: '[JSON] 상품 이미지 레이어 JSX Style',
+  imageCss: '[JSON] 상품 이미지 JSX Style',
+  headerCss: '[JSON] 상품 머리말 JSX Style',
+  footerCss: '[JSON] 상품 꼬리말 JSX Style',
   overlay: '품절 오버레이',
   header: '상품 Header',
   footer: '상품 Footer',
@@ -133,7 +179,31 @@ const TIMER_OPTION_KEYS = ['timer', 'hideZeroDays', 'daysToHours'];
 
 const PROGRESS_OPTION_KEYS = ['progressColor', 'progressBackground'];
 
+const CSS_OPTION_KEYS = [
+  'productCss',
+  'soldOutCss',
+  'scheduledCss',
+  'endedCss',
+  'badgeCss',
+  'overlayCss',
+  'imageCss',
+  'headerCss',
+  'footerCss',
+] as const;
+
+// 상품 메시지 텍스트 최대 개수. 서버 검증(domain-types)의 상한과 같은 값이다.
+const MAX_PRODUCT_TEXTS = 7;
+
+const stateTabLabels: Record<SalePreviewState, string> = {
+  scheduled: '예정',
+  active: '할인',
+  ended: '마감',
+};
+
+// 컴포넌트 종류별로 편집 화면에 보여줄 옵션 키를
+// 거른다(타이머·진행바·상품 목록이 각자 쓰는 옵션만).
 const optionAppliesTo = (type: SaleComponent['type'], key: string) => {
+  if ((CSS_OPTION_KEYS as readonly string[]).includes(key)) return false;
   if (type === 'timer') return TIMER_OPTION_KEYS.includes(key);
   if (type === 'progress') return PROGRESS_OPTION_KEYS.includes(key);
   if (type === 'carousel' || type === 'grid') {
@@ -174,18 +244,23 @@ function CssEditor({
         <summary>컨테이너 / 텍스트 스타일</summary>
         {cssFields.map(([key, label]) => (
           <Field key={key} label={label}>
-            <input
-              type={
-                key === 'color' || key === 'backgroundColor' ? 'color' : 'text'
-              }
-              value={value[key] ?? cssFieldDefault(key)}
-              onChange={(e) => {
-                const next = { ...value };
-                if (e.target.value) next[key] = e.target.value;
-                else delete next[key];
-                onChange(next);
-              }}
-            />
+            {key === 'color' || key === 'backgroundColor' ? (
+              <TimeSaleColorPicker
+                value={String(value[key] ?? cssFieldDefault(key))}
+                onChange={(color) => onChange({ ...value, [key]: color })}
+              />
+            ) : (
+              <input
+                type="text"
+                value={value[key] ?? cssFieldDefault(key)}
+                onChange={(e) => {
+                  const next = { ...value };
+                  if (e.target.value) next[key] = e.target.value;
+                  else delete next[key];
+                  onChange(next);
+                }}
+              />
+            )}
           </Field>
         ))}
       </details>
@@ -225,6 +300,134 @@ function CssEditor({
   );
 }
 
+type ProductText = NonNullable<SaleComponent['productTexts']>[number];
+
+function StateCssEditor({
+  component,
+  onChange,
+}: {
+  component: SaleComponent;
+  onChange: (state: SalePreviewState, css: SaleCss) => void;
+}) {
+  const [tab, setTab] = useState<SalePreviewState>('scheduled');
+
+  return (
+    <details>
+      <summary>상태별 컴포넌트 CSS</summary>
+      <div className="ts-inline">
+        {(Object.keys(stateTabLabels) as SalePreviewState[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={tab === v}
+            onClick={() => setTab(v)}
+          >
+            {stateTabLabels[v]}
+          </button>
+        ))}
+      </div>
+      <CssEditor
+        key={`${component.id}-${tab}`}
+        value={component.stateCss?.[tab] ?? {}}
+        onChange={(css) => onChange(tab, css)}
+      />
+    </details>
+  );
+}
+
+function ProductTextsEditor({
+  component,
+  onChange,
+}: {
+  component: SaleComponent;
+  onChange: (texts: ProductText[]) => void;
+}) {
+  const texts = component.productTexts ?? [];
+
+  const update = (index: number, patch: Partial<ProductText>) =>
+    onChange(texts.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+
+  const move = (index: number, delta: number) => {
+    const next = [...texts];
+    const [item] = next.splice(index, 1);
+    next.splice(index + delta, 0, item);
+
+    onChange(next);
+  };
+
+  return (
+    <details>
+      <summary>상품 메시지 텍스트</summary>
+      <button
+        type="button"
+        disabled={texts.length >= MAX_PRODUCT_TEXTS}
+        onClick={() =>
+          onChange([
+            ...texts,
+            {
+              id: `text-${Date.now()}`,
+              position: 'footer',
+              content: '{{product_name}}',
+              css: {},
+            },
+          ])
+        }
+      >
+        메시지 텍스트 추가
+      </button>
+      {texts.map((t, i) => (
+        <div key={t.id}>
+          <strong>
+            {i + 1} / {MAX_PRODUCT_TEXTS}
+          </strong>
+          <button type="button" disabled={i === 0} onClick={() => move(i, -1)}>
+            위로
+          </button>
+          <button
+            type="button"
+            disabled={i === texts.length - 1}
+            onClick={() => move(i, 1)}
+          >
+            아래로
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange(texts.filter((_, j) => j !== i))}
+          >
+            삭제
+          </button>
+          <Field label="위치">
+            <select
+              value={t.position}
+              onChange={(e) =>
+                update(i, {
+                  position: e.target.value as ProductText['position'],
+                })
+              }
+            >
+              <option value="header">머리말</option>
+              <option value="footer">꼬리말</option>
+            </select>
+          </Field>
+          <Field label="메시지 형식">
+            <textarea
+              value={t.content}
+              onChange={(e) => update(i, { content: e.target.value })}
+            />
+          </Field>
+          <CssEditor
+            key={t.id}
+            value={t.css}
+            onChange={(css) => update(i, { css })}
+          />
+        </div>
+      ))}
+    </details>
+  );
+}
+
+// 타임세일 관리 화면의 공통 틀: 설정을 불러와 편집(update)·저장(save)하고
+// 섹션(매대 스타일·환경설정)을 전환한다. 목록·등록 화면도 이 안에 들어간다.
 export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
@@ -244,12 +447,16 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     [soldOut, setSoldOut] = useState(true),
     [selected, setSelected] = useState('container'),
     [refresh, setRefresh] = useState(0),
+    [previewAnchor, setPreviewAnchor] = useState(() =>
+      previewAnchorFor('active', Date.now())
+    ),
     [width, setWidth] = useState(375);
 
   const [confirmation, setConfirmation] = useState<{
       text: string;
       run: () => void;
       reset?: boolean;
+      title?: string;
     } | null>(null),
     [resetText, setResetText] = useState('');
 
@@ -258,13 +465,155 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     [variablePreview, setVariablePreview] = useState(''),
     [editingVariable, setEditingVariable] = useState<string | null>(null);
 
+  // 서버 설정을 편집본으로 복사한다. 편집 중(dirty)이거나 이미 같은 revision 이면 덮어쓰지 않는다.
   useEffect(() => {
-    if (query.data && !dirty) {
+    if (!query.data) return;
+    if (
+      shouldKeepDraftOnRefetch(dirty, query.data.revision, revision) &&
+      settings
+    )
+      return;
+
+    setSettings(structuredClone(query.data.settings));
+    setRevision(query.data.revision);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.data, dirty]);
+
+  // 저장하지 않은 변경을 버리고 서버 설정으로 되돌린다(이동 확인 후).
+  const discardDraft = () => {
+    // 센티넬 정리는 dirty 효과(backGuard.sync)가 한 길로 맡는다. 라우트 이동이면 그 전에 release 된다.
+    if (query.data) {
       setSettings(structuredClone(query.data.settings));
       setRevision(query.data.revision);
     }
-  }, [query.data, dirty]);
+    setDirty(false);
+  };
 
+  // dirty 면 확인창을 거쳐 편집본을 버리고 이동하고, 아니면 바로 이동한다.
+  const guarded = (go: () => void) => {
+    if (!dirty) return go();
+
+    ask({
+      title: '확인',
+      text: '수정 사항이 존재합니다. 무시하고 탭을 이동하시겠습니까?',
+      run: () => {
+        discardDraft();
+        go();
+      },
+    });
+  };
+
+  // 라우트 이동 승인: 센티넬은 navigateTo 가 replace 로 덮으므로 back 으로 지우지 않게 풀어 둔다.
+  const guardedLeave = (go: () => void) =>
+    guarded(() => {
+      backGuard.current?.release();
+      go();
+    });
+
+  const backGuard = useRef<ReturnType<typeof createBackGuard> | null>(null);
+
+  // 확인창 직전 포커스를 기억했다가 닫을 때 돌려준다(트리거 없는 제어형 다이얼로그라 직접 처리).
+  const returnFocus = useRef<HTMLElement | null>(null);
+
+  function ask(next: NonNullable<typeof confirmation>) {
+    returnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setConfirmation(next);
+  }
+
+  // Next 앱 라우터에는 routeChangeStart 가 없다. dirty 동안 두 길을 막는다(뒤로가기는 아래 createBackGuard):
+  // 1) 링크 클릭(캡처, 미리보기 제외) 2) 사이드바 router.push(navigation-guard)
+  const router = useRouter();
+  const guardedRef = useRef(guardedLeave);
+  guardedRef.current = guardedLeave;
+
+  useEffect(() => {
+    if (!dirty) return;
+
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as Element | null)?.closest?.('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (e.defaultPrevented || e.button !== 0) return;
+
+      const url = new URL(anchor.href, window.location.href);
+      const action = routeLinkClick({
+        insidePreview: !!anchor.closest('.ts-preview'),
+        dirty: true,
+        sameOrigin: url.origin === window.location.origin,
+        samePage:
+          url.pathname === window.location.pathname &&
+          url.search === window.location.search,
+        modified: e.metaKey || e.ctrlKey || e.shiftKey || e.altKey,
+        newTab: !!anchor.target && anchor.target !== '_self',
+      });
+
+      if (action === 'pass') return;
+
+      e.preventDefault();
+      if (action === 'block') return;
+
+      e.stopPropagation();
+      guardedRef.current(() =>
+        navigateTo(router, url.pathname + url.search + url.hash)
+      );
+    };
+
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [dirty, router]);
+
+  // 사이드바처럼 router.push 를 직접 부르는 곳이 확인을 거치도록 가드를 등록한다.
+  useEffect(() => {
+    if (!dirty) return;
+
+    return registerNavigationGuard((go) => guardedRef.current(go));
+  }, [dirty]);
+
+  // 뒤로가기 경고(navigation-guard 의 createBackGuard): popstate 에 네이티브 confirm.
+  // 확인 후 못 떠나면(직접 진입) 목록으로 replace 한다. 언마운트 때는 history 를 건드리지 않는다.
+  const discardRef = useRef(discardDraft);
+  discardRef.current = discardDraft;
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
+  useEffect(() => {
+    const g = createBackGuard({
+      history: window.history,
+      href: () => window.location.href,
+      confirm: (message) => window.confirm(message),
+      discard: () => discardRef.current(),
+      fallback: () => routerRef.current.replace('/mall/marketing/time-sale'),
+      setTimer: (run, ms) => {
+        const id = window.setTimeout(run, ms);
+        return () => window.clearTimeout(id);
+      },
+    });
+    backGuard.current = g;
+
+    const onPopState = () => g.onPopState();
+    // 다른 문서로 떠나는 신호(pagehide·beforeunload)도 폴백 취소로 본다.
+    const onLeave = () => g.left();
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('pagehide', onLeave);
+    window.addEventListener('beforeunload', onLeave);
+
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('pagehide', onLeave);
+      window.removeEventListener('beforeunload', onLeave);
+      g.dispose();
+      backGuard.current = null;
+    };
+  }, []);
+
+  // dirty 켜짐: 센티넬 쌓기. 꺼짐(저장·전환 버림·확인 버림): 센티넬이 맨 위면 지운다.
+  useEffect(() => {
+    backGuard.current?.sync(dirty);
+  }, [dirty]);
+
+  // 저장하지 않은 변경이 있으면 탭을 닫을 때 경고한다.
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -272,6 +621,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
+  // 설정 편집본을 복제해 고친 뒤 dirty 로 표시한다(원본 불변).
   const update = (run: (s: TimeSaleSettings) => void) => {
     if (!settings) return;
     const next = structuredClone(settings);
@@ -280,20 +630,32 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     setDirty(true);
   };
 
+  // 저장: 클라이언트에서 먼저 검증하고, 서버에는 불러올 때의
+  // revision 을 같이 보낸다(다른 관리자가 먼저 바꿨으면 거절).
   const save = async (
     message = '타임세일 스타일 변경 사항을 저장하였습니다.'
   ) => {
     if (!settings) return;
 
     try {
-      validateTimeSaleSettings(settings);
+      // 활성 레이아웃이 라이브러리 스타일과 이어져 있으면 그 항목도 같이 갱신한다.
+      const toSave = structuredClone(settings);
+      if (section === 'main' || section === 'more' || section === 'detail')
+        linkActiveStyle(toSave, section, platform);
+
+      validateTimeSaleSettings(toSave);
 
       setSaving(true);
-      const result = await medusaTimeSaleSettingsApi.save(settings, revision);
+      const result = await medusaTimeSaleSettingsApi.save(toSave, revision);
 
       setRevision(result.revision);
       setSettings(result.settings);
       setDirty(false);
+      // 오래된 캐시가 방금 저장한 편집본을 덮지 않게 캐시도 같이 맞춘다.
+      queryClient.setQueryData(['time-sale-settings'], {
+        settings: result.settings,
+        revision: result.revision,
+      });
 
       await queryClient.invalidateQueries({ queryKey: ['time-sale-settings'] });
       saleToast(message);
@@ -312,6 +674,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   const layout = settings?.styles[surface][platform];
   const component = layout?.components.find((c) => c.id === selected);
+  const hasShelf = !!layout?.components.some((c) => isShelf(c.type));
 
   const changeLayout = (run: (l: NonNullable<typeof layout>) => void) =>
     update((s) => run(s.styles[surface][platform]));
@@ -323,10 +686,15 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     });
 
   const switchSection = (next: keyof typeof sections) => {
-    setSection(next);
-    setSelected('container');
+    if (next === section) return;
+
+    guarded(() => {
+      setSection(next);
+      setSelected('container');
+    });
   };
 
+  // 컴포넌트 종류 변경. 상품 캐러셀/그리드는 한 레이아웃에 하나만 허용한다.
   const changeType = (type: SaleComponent['type']) => {
     if (!component) return;
     if (
@@ -396,7 +764,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 label={
                   {
                     enabled: '타임세일 서비스',
-                    membershipPriceOnly: '비회원에게 멤버십 가격 숨김',
+                    membershipPriceOnly: '가격 공개 제한 (모든 세일)',
                     main: '메인 매대 노출',
                     more: '더보기 매대 노출',
                     detail: '상품상세 노출',
@@ -534,15 +902,14 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                       </button>
                       <button
                         onClick={() =>
-                          setConfirmation({
+                          ask({
                             text: `${v.name} 변수를 삭제하시겠습니까?`,
                             run: () =>
                               update((s) => {
                                 s.variables = s.variables.filter(
                                   (x) => x.name !== v.name
                                 );
-                                for (const d of Object.values(s.sales))
-                                  delete d.variables[v.name];
+                                removeVariableValues(s.sales, v.name);
                               }),
                           })
                         }
@@ -634,7 +1001,12 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 <select
                   aria-label="프리뷰 상태"
                   value={state}
-                  onChange={(e) => setState(e.target.value as SalePreviewState)}
+                  onChange={(e) => {
+                    const next = e.target.value as SalePreviewState;
+
+                    setState(next);
+                    setPreviewAnchor(previewAnchorFor(next, Date.now()));
+                  }}
                 >
                   <option value="scheduled">할인(예정)</option>
                   <option value="active">할인(실행중)</option>
@@ -654,18 +1026,23 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                       type="radio"
                       name="ts-platform"
                       checked={p === platform}
-                      onChange={() => {
-                        setPlatform(p);
-                        setWidth(p === 'mobile' ? 375 : 1000);
-                        setSelected('container');
-                      }}
+                      onChange={() =>
+                        guarded(() => {
+                          setPlatform(p);
+                          setWidth(p === 'mobile' ? 375 : 1000);
+                          setSelected('container');
+                        })
+                      }
                     />{' '}
                     {p === 'mobile' ? '모바일' : 'PC'}
                   </label>
                 ))}
                 <button
                   aria-label="프리뷰 새로고침"
-                  onClick={() => setRefresh((v) => v + 1)}
+                  onClick={() => {
+                    setPreviewAnchor(previewAnchorFor(state, Date.now()));
+                    setRefresh((v) => v + 1);
+                  }}
                 >
                   ↻
                 </button>
@@ -700,10 +1077,20 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                   <div className="ts-actions">
                     <button
                       onClick={() => {
-                        const copy = structuredClone(layout);
-                        copy.id = `style-${Date.now()}`;
+                        if (settings.savedStyles.length >= 50) {
+                          saleToast('스타일은 최대 50개입니다.', true);
+                          return;
+                        }
 
-                        update((s) => s.savedStyles.push(copy));
+                        // 활성 레이아웃을 새 스타일로 저장하고 그 id 로 이어 붙인다.
+                        update((s) =>
+                          saveNewStyle(
+                            s,
+                            surface,
+                            platform,
+                            `style-${Date.now()}`
+                          )
+                        );
                         saleToast('신규 스타일을 생성하였습니다.');
                       }}
                     >
@@ -717,7 +1104,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                           (s) => s.id === e.target.value
                         );
                         if (imported)
-                          setConfirmation({
+                          ask({
                             text: '현재 스타일을 선택한 스타일로 덮어쓰시겠습니까?',
                             run: () => {
                               changeLayout((l) =>
@@ -738,8 +1125,8 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                     </select>
                     <button
                       onClick={() =>
-                        setConfirmation({
-                          text: '초기화 입력 후 현재 스타일을 기본값으로 되돌립니다.',
+                        ask({
+                          text: RESET_STYLE_TEXT,
                           reset: true,
                           run: () => {
                             changeLayout((l) =>
@@ -759,17 +1146,15 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                     </button>
                     <button
                       disabled={
-                        !settings.savedStyles.some((l) => l.id === layout.id)
+                        !canDeleteSavedStyle(settings, surface, platform)
                       }
                       onClick={() =>
-                        setConfirmation({
-                          text: '저장된 스타일을 삭제하시겠습니까?',
+                        ask({
+                          text: `[${layout.name}] 매대 스타일을 삭제 하시겠습니까?`,
                           run: () =>
-                            update((s) => {
-                              s.savedStyles = s.savedStyles.filter(
-                                (l) => l.id !== layout.id
-                              );
-                            }),
+                            update((s) =>
+                              deleteSavedStyle(s, surface, platform)
+                            ),
                         })
                       }
                     >
@@ -826,7 +1211,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                         <button
                           aria-label={`${c.name} 삭제`}
                           onClick={() =>
-                            setConfirmation({
+                            ask({
                               text: `${c.name}을 삭제하시겠습니까?`,
                               run: () => {
                                 changeLayout((l) => {
@@ -849,15 +1234,16 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                     value=""
                     onChange={(e) => {
                       const type = e.target.value as SaleComponent['type'];
-                      if (
-                        layout.components.length >= 15 ||
-                        ((type === 'carousel' || type === 'grid') &&
-                          layout.components.some(
-                            (c) => c.type === 'carousel' || c.type === 'grid'
-                          ))
-                      ) {
+                      if (layout.components.length >= 15) {
                         saleToast(
-                          '컴포넌트는 최대 15개, 상품 매대는 하나까지 추가할 수 있습니다.',
+                          '컴포넌트는 최대 15개까지 추가할 수 있습니다.',
+                          true
+                        );
+                        return;
+                      }
+                      if (isShelf(type) && hasShelf) {
+                        saleToast(
+                          "'캐로셀', '상품목록'은 매대에 오직 1개만 존재할 수 있습니다.",
                           true
                         );
                         return;
@@ -869,7 +1255,11 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                   >
                     <option value="">+ 컴포넌트 추가</option>
                     {Object.entries(typeLabels).map(([key, label]) => (
-                      <option key={key} value={key}>
+                      <option
+                        key={key}
+                        value={key}
+                        disabled={isShelf(key) && hasShelf}
+                      >
                         {label}
                       </option>
                     ))}
@@ -1028,6 +1418,17 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                                     <option key={v}>{v}</option>
                                   ))}
                                 </select>
+                              ) : optionInputType(k, component.options[k]) ===
+                                'color' ? (
+                                <TimeSaleColorPicker
+                                  value={String(component.options[k])}
+                                  transparentValue="#00000000"
+                                  onChange={(color) =>
+                                    changeComponent((c) => {
+                                      Object.assign(c.options, { [k]: color });
+                                    })
+                                  }
+                                />
                               ) : (
                                 <input
                                   type={optionInputType(
@@ -1052,7 +1453,43 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                               )}
                             </Field>
                           ))}
+                        {(component.type === 'carousel' ||
+                          component.type === 'grid') && (
+                          <>
+                            {CSS_OPTION_KEYS.map((k) => (
+                              <details key={k}>
+                                <summary>{optionLabels[k]}</summary>
+                                <CssEditor
+                                  key={`${component.id}-${k}`}
+                                  value={component.options[k] ?? {}}
+                                  onChange={(css) =>
+                                    changeComponent((c) => {
+                                      c.options[k] = css;
+                                    })
+                                  }
+                                />
+                              </details>
+                            ))}
+                            <ProductTextsEditor
+                              component={component}
+                              onChange={(texts) =>
+                                changeComponent((c) => {
+                                  c.productTexts = texts;
+                                })
+                              }
+                            />
+                          </>
+                        )}
+                        <StateCssEditor
+                          component={component}
+                          onChange={(st, css) =>
+                            changeComponent((c) => {
+                              c.stateCss = { ...c.stateCss, [st]: css };
+                            })
+                          }
+                        />
                         <CssEditor
+                          key={component.id}
                           value={component.css}
                           onChange={(css) =>
                             changeComponent((c) => {
@@ -1077,6 +1514,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                       endsAt="2026-10-08T00:00:00Z"
                       products={sampleProducts}
                       previewState={state}
+                      previewAnchor={previewAnchor}
                       previewSoldOut={soldOut}
                       sanitizeHtml={sanitizeHtml}
                     />
@@ -1087,48 +1525,51 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           )
         )}
       </div>
-      {confirmation && (
-        <div className="ts-dialog-veil">
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="ts-confirm-heading"
-            className="ts-dialog"
-          >
-            <h2 id="ts-confirm-heading">확인</h2>
-            <p>{confirmation.text}</p>
-            {confirmation.reset && (
-              <input
-                autoFocus
-                aria-label="초기화 확인"
-                value={resetText}
-                onChange={(e) => setResetText(e.target.value)}
-              />
-            )}
-            <div>
-              <button
-                onClick={() => {
-                  setConfirmation(null);
-                  setResetText('');
-                }}
-              >
-                아니오
-              </button>
-              <button
-                disabled={confirmation.reset && resetText !== '초기화'}
-                onClick={() => {
-                  confirmation.run();
+      <AlertDialog
+        open={!!confirmation}
+        onOpenChange={(open) => {
+          if (open) return;
 
-                  setConfirmation(null);
-                  setResetText('');
-                }}
-              >
-                예
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          setConfirmation(null);
+          setResetText('');
+        }}
+      >
+        <AlertDialogContent
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            returnFocus.current?.focus();
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmation?.title ?? '확인'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmation?.text}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {confirmation?.reset && (
+            <input
+              autoFocus
+              aria-label="초기화 확인"
+              className="h-12 w-full rounded border border-gray-300 px-3 text-sm focus:border-blue-600 focus:outline-none"
+              placeholder="여기에 초기화를 입력하세요."
+              value={resetText}
+              onChange={(e) => setResetText(e.target.value)}
+            />
+          )}
+          <AlertDialogFooter>
+            <AlertDialogAction
+              className="cursor-pointer disabled:cursor-not-allowed"
+              disabled={confirmation?.reset && resetText !== '초기화'}
+              onClick={() => confirmation?.run()}
+            >
+              {confirmation?.reset ? '완료' : '예'}
+            </AlertDialogAction>
+            <AlertDialogCancel className="cursor-pointer">
+              {confirmation?.reset ? '취소' : '아니오'}
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

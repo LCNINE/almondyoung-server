@@ -1,16 +1,27 @@
 import {
+  formatShiftRepeat,
+  shortSaleNumber,
+  TIME_SALE_LIST_STATUS_LABEL,
   applyPercentDiscount,
   applySavedSalePrices,
   summarizeSaleRows,
   buildPriceListPayloads,
   findOverlapping,
   findVariantConflicts,
+  deriveTimeSaleListStatus,
   resolveTimeSaleStatus,
   saleVariantIds,
   validateRows,
   toTimeSaleRows,
   type TimeSaleRow,
+  canDeleteSavedStyle,
+  deleteSavedStyle,
+  linkActiveStyle,
+  removeVariableValues,
+  saveNewStyle,
+  shouldKeepDraftOnRefetch,
 } from './time-sale-model';
+import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
 
 const row = (over: Partial<TimeSaleRow> = {}): TimeSaleRow => ({
   variantId: 'variant_1',
@@ -25,7 +36,10 @@ const row = (over: Partial<TimeSaleRow> = {}): TimeSaleRow => ({
 });
 
 describe('resolveTimeSaleStatus', () => {
-  const period = { startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' };
+  const period = {
+    startsAt: '2026-08-28T00:00:00Z',
+    endsAt: '2026-08-30T00:00:00Z',
+  };
 
   it.each([
     ['2026-08-27T23:59:59Z', 'scheduled'],
@@ -38,7 +52,11 @@ describe('resolveTimeSaleStatus', () => {
 
 describe('findOverlapping', () => {
   const existing = [
-    { id: 'a', startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
+    {
+      id: 'a',
+      startsAt: '2026-08-28T00:00:00Z',
+      endsAt: '2026-08-30T00:00:00Z',
+    },
   ];
 
   it('기간이 겹치면 잡는다', () => {
@@ -49,17 +67,25 @@ describe('findOverlapping', () => {
     expect(hit.map((s) => s.id)).toEqual(['a']);
   });
 
-  // 앞 세일이 끝나는 순간 다음 세일을 시작하는 건 정상 운영이다. 여기서 막으면 세일을 연달아 못 건다.
+  // 앞 세일이 끝나는 순간 다음 세일을 시작하는 건 정상 운영이다.
+  // 여기서 막으면 세일을 연달아 못 건다.
   it('경계가 맞닿는 건 겹침이 아니다', () => {
     expect(
-      findOverlapping({ startsAt: '2026-08-30T00:00:00Z', endsAt: '2026-09-01T00:00:00Z' }, existing)
+      findOverlapping(
+        { startsAt: '2026-08-30T00:00:00Z', endsAt: '2026-09-01T00:00:00Z' },
+        existing
+      )
     ).toEqual([]);
   });
 
   it('자기 자신은 겹침으로 보지 않는다 (수정 시)', () => {
     expect(
       findOverlapping(
-        { id: 'a', startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
+        {
+          id: 'a',
+          startsAt: '2026-08-28T00:00:00Z',
+          endsAt: '2026-08-30T00:00:00Z',
+        },
         existing
       )
     ).toEqual([]);
@@ -99,7 +125,10 @@ describe('applyPercentDiscount', () => {
   });
 
   it('멤버십가가 없는 상품은 멤버십 세일가도 만들지 않는다', () => {
-    const [result] = applyPercentDiscount([row({ membershipBasePrice: null })], 20);
+    const [result] = applyPercentDiscount(
+      [row({ membershipBasePrice: null })],
+      20
+    );
 
     expect(result.generalSalePrice).toBe(8000);
     expect(result.membershipSalePrice).toBeNull();
@@ -118,7 +147,11 @@ describe('applyPercentDiscount', () => {
   // 멤버십가가 이미 정가의 30% 를 깎은 값이면 20% 세일가(8000)보다 싸서 Medusa 가 멤버십가를
   // 그대로 적용한다 — 구독자에겐 세일이 없는 것과 같다. 멤버십만 얕게 깎아 그걸 피한다.
   it('멤버십 할인율을 따로 주면 멤버십가만 그 비율로 깎는다', () => {
-    const [result] = applyPercentDiscount([row({ membershipBasePrice: 7000 })], 20, 10);
+    const [result] = applyPercentDiscount(
+      [row({ membershipBasePrice: 7000 })],
+      20,
+      10
+    );
 
     expect(result.generalSalePrice).toBe(8000);
     expect(result.membershipSalePrice).toBe(6300);
@@ -128,12 +161,16 @@ describe('applyPercentDiscount', () => {
 
 describe('validateRows', () => {
   it('세일가가 정가 이상이면 막는다', () => {
-    const errors = validateRows([row({ generalSalePrice: 10000, membershipSalePrice: 7000 })]);
+    const errors = validateRows([
+      row({ generalSalePrice: 10000, membershipSalePrice: 7000 }),
+    ]);
     expect(errors[0].message).toContain('정가');
   });
 
   it('멤버십 세일가가 멤버십가 이상이면 막는다', () => {
-    const errors = validateRows([row({ generalSalePrice: 9000, membershipSalePrice: 8000 })]);
+    const errors = validateRows([
+      row({ generalSalePrice: 9000, membershipSalePrice: 8000 }),
+    ]);
     expect(errors[0].message).toContain('멤버십가');
   });
 
@@ -151,14 +188,20 @@ describe('validateRows', () => {
   // 할인율 100 이상이면 음수가, NaN 이면 `amount: null` 이 Medusa 까지 간다. 멤버십 쪽은
   // "멤버십가보다 싼가" 만 봐서 둘 다 통과했다 — 음수도 NaN 비교도 그 검사를 뚫는다.
   it('멤버십 세일가가 0 이하면 막는다', () => {
-    const errors = validateRows([row({ generalSalePrice: 8000, membershipSalePrice: -100 })]);
+    const errors = validateRows([
+      row({ generalSalePrice: 8000, membershipSalePrice: -100 }),
+    ]);
     expect(errors[0].message).toContain('멤버십 세일가는 0원보다');
   });
 
   it('세일가가 숫자가 아니면 막는다', () => {
-    expect(validateRows([row({ generalSalePrice: NaN })])[0].message).toContain('숫자여야');
+    expect(validateRows([row({ generalSalePrice: NaN })])[0].message).toContain(
+      '숫자여야'
+    );
     expect(
-      validateRows([row({ generalSalePrice: 8000, membershipSalePrice: NaN })])[0].message
+      validateRows([
+        row({ generalSalePrice: 8000, membershipSalePrice: NaN }),
+      ])[0].message
     ).toContain('멤버십 세일가는 0원보다');
   });
 });
@@ -179,7 +222,10 @@ describe('saleVariantIds', () => {
 describe('buildPriceListPayloads', () => {
   const params = {
     title: '8월 마감 세일',
-    period: { startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
+    period: {
+      startsAt: '2026-08-28T00:00:00Z',
+      endsAt: '2026-08-30T00:00:00Z',
+    },
     regionIds: ['reg_kr'],
     membershipGroupId: 'cusgroup_membership',
   };
@@ -195,7 +241,9 @@ describe('buildPriceListPayloads', () => {
     expect(Object.keys(general.rules)).toHaveLength(1);
     expect(general.rules).toEqual({ region_id: ['reg_kr'] });
     expect(Object.keys(membership!.rules)).toHaveLength(1);
-    expect(membership!.rules).toEqual({ 'customer.groups.id': ['cusgroup_membership'] });
+    expect(membership!.rules).toEqual({
+      'customer.groups.id': ['cusgroup_membership'],
+    });
   });
 
   it('기간은 두 리스트에 같이 실린다', () => {
@@ -246,7 +294,12 @@ describe('toTimeSaleRows', () => {
 
   it('문자열로 들어온 멤버십가도 숫자로 읽는다', () => {
     const [row] = toTimeSaleRows([
-      { ...product, variants: [{ ...product.variants[0], metadata: { membershipPrice: '8000' } }] },
+      {
+        ...product,
+        variants: [
+          { ...product.variants[0], metadata: { membershipPrice: '8000' } },
+        ],
+      },
     ]);
 
     expect(row.membershipBasePrice).toBe(8000);
@@ -323,5 +376,179 @@ describe('applySavedSalePrices', () => {
     );
 
     expect(restored.membershipSalePrice).toBeNull();
+  });
+});
+
+describe('스타일 라이브러리 연동', () => {
+  it('새 스타일 저장 시 활성 레이아웃 id 가 새 snapshot id 가 된다', () => {
+    const settings = defaultTimeSaleSettings();
+    saveNewStyle(settings, 'main', 'pc', 'style-1');
+
+    const last = settings.savedStyles[settings.savedStyles.length - 1];
+
+    expect(settings.styles.main.pc.id).toBe(last.id);
+    expect(last.id).toBe('style-1');
+  });
+
+  it('저장할 때마다 같은 id 의 snapshot 이 갱신되고 다른 항목은 그대로다', () => {
+    const settings = defaultTimeSaleSettings();
+    saveNewStyle(settings, 'main', 'pc', 'style-1');
+    saveNewStyle(settings, 'main', 'mobile', 'style-2');
+
+    settings.styles.main.pc.name = '바뀐 이름';
+
+    expect(linkActiveStyle(settings, 'main', 'pc')).toBe(true);
+    expect(settings.savedStyles[0].name).toBe('바뀐 이름');
+    expect(settings.savedStyles[1].name).toBe('기본 스타일');
+    expect(settings.savedStyles).toHaveLength(2);
+  });
+
+  it('연결된 snapshot 이 없으면 갱신하지 않는다', () => {
+    const settings = defaultTimeSaleSettings();
+
+    expect(linkActiveStyle(settings, 'main', 'pc')).toBe(false);
+    expect(settings.savedStyles).toHaveLength(0);
+  });
+
+  it('기본 스타일은 삭제할 수 없고 저장된 스타일은 삭제 후 기본 id 로 돌아간다', () => {
+    const settings = defaultTimeSaleSettings();
+
+    expect(canDeleteSavedStyle(settings, 'main', 'pc')).toBe(false);
+
+    saveNewStyle(settings, 'main', 'pc', 'style-1');
+    expect(canDeleteSavedStyle(settings, 'main', 'pc')).toBe(true);
+
+    deleteSavedStyle(settings, 'main', 'pc');
+
+    expect(settings.savedStyles).toHaveLength(0);
+    expect(settings.styles.main.pc.id).toBe('main-pc');
+  });
+});
+
+describe('미저장 변경 보호', () => {
+  it('dirty 면 서버 revision 이 달라도 편집본을 유지한다', () => {
+    expect(shouldKeepDraftOnRefetch(true, 'r2', 'r1')).toBe(true);
+  });
+
+  it('dirty 가 아니고 revision 이 다르면 서버 값을 받아들인다', () => {
+    expect(shouldKeepDraftOnRefetch(false, 'r2', 'r1')).toBe(false);
+    expect(shouldKeepDraftOnRefetch(false, 'r1', 'r1')).toBe(true);
+  });
+});
+
+describe('removeVariableValues', () => {
+  it('모든 세일의 상품별 값에서 그 변수만 지운다', () => {
+    const sales = {
+      a: { productVariables: { p1: { user_x: '1', user_y: '2' } } },
+      b: {},
+    };
+
+    removeVariableValues(sales, 'user_x');
+
+    expect(sales.a.productVariables.p1).toEqual({ user_y: '2' });
+  });
+});
+
+describe('deriveTimeSaleListStatus', () => {
+  const now = new Date('2026-08-29T00:00:00Z');
+  const on = { enabled: true, suspendedPriceListIds: [] as string[] };
+  const upcoming = {
+    startsAt: '2026-09-01T00:00:00Z',
+    endsAt: '2026-09-02T00:00:00Z',
+  };
+  const running = {
+    startsAt: '2026-08-28T00:00:00Z',
+    endsAt: '2026-08-30T00:00:00Z',
+  };
+  const past = {
+    startsAt: '2026-08-01T00:00:00Z',
+    endsAt: '2026-08-02T00:00:00Z',
+  };
+  const sale = (
+    status: 'active' | 'draft',
+    periods: { startsAt: string; endsAt: string }[]
+  ) => ({ status, priceListIds: ['pl_1'], periods });
+
+  it('active + 시작 전 = 대기중', () => {
+    expect(deriveTimeSaleListStatus(sale('active', [upcoming]), on, now)).toBe(
+      'scheduled'
+    );
+  });
+
+  it('active + 기간 중 = 실행중', () => {
+    expect(deriveTimeSaleListStatus(sale('active', [running]), on, now)).toBe(
+      'active'
+    );
+  });
+
+  it('active + 기간 끝 = 마감', () => {
+    expect(deriveTimeSaleListStatus(sale('active', [past]), on, now)).toBe(
+      'ended'
+    );
+  });
+
+  it('draft = 중지(없음)', () => {
+    expect(deriveTimeSaleListStatus(sale('draft', [running]), on, now)).toBe(
+      'stopped'
+    );
+  });
+
+  it('상품별 기간: 하나라도 진행 중이면 실행중, 아니면 예정 우선, 전부 끝나면 마감', () => {
+    expect(
+      deriveTimeSaleListStatus(
+        sale('active', [past, running, upcoming]),
+        on,
+        now
+      )
+    ).toBe('active');
+    expect(
+      deriveTimeSaleListStatus(sale('active', [past, upcoming]), on, now)
+    ).toBe('scheduled');
+    expect(
+      deriveTimeSaleListStatus(sale('active', [past, past]), on, now)
+    ).toBe('ended');
+  });
+
+  it('서비스 OFF 로 멈춘 가격표는 중지(서비스 OFF)', () => {
+    const off = { enabled: false, suspendedPriceListIds: ['pl_1'] };
+    expect(deriveTimeSaleListStatus(sale('draft', [running]), off, now)).toBe(
+      'suspended'
+    );
+  });
+
+  it('서비스 OFF 여도 목록에 없는 중지 세일은 중지(없음)', () => {
+    const off = { enabled: false, suspendedPriceListIds: ['pl_other'] };
+    expect(deriveTimeSaleListStatus(sale('draft', [running]), off, now)).toBe(
+      'stopped'
+    );
+  });
+});
+
+describe('TIME_SALE_LIST_STATUS_LABEL', () => {
+  it('중지 계열 문구는 없음/마감/서비스 OFF 로 나뉘고 중지중은 쓰지 않는다', () => {
+    expect(TIME_SALE_LIST_STATUS_LABEL.stopped).toBe('중지(없음)');
+    expect(TIME_SALE_LIST_STATUS_LABEL.ended).toBe('중지(마감)');
+    expect(TIME_SALE_LIST_STATUS_LABEL.suspended).toBe('중지(서비스 OFF)');
+    expect(Object.values(TIME_SALE_LIST_STATUS_LABEL)).not.toContain('중지중');
+  });
+});
+
+describe('목록 칸 표기', () => {
+  it('SHIFT 반복: 없음 / 무한 / 만료일', () => {
+    expect(formatShiftRepeat({ repeatHours: 0, repeatUntil: null })).toBe('-');
+    expect(formatShiftRepeat({ repeatHours: 24, repeatUntil: null })).toBe(
+      '24시간 · 무한'
+    );
+    expect(
+      formatShiftRepeat({
+        repeatHours: 24,
+        repeatUntil: '2026-10-08T13:50:00.000Z',
+      })
+    ).toBe('24시간 · 2026-10-08까지');
+  });
+
+  it('번호: 새 세일은 앞 8자, 옛 가격표 id 는 끝 8자', () => {
+    expect(shortSaleNumber('abcdef12-3456-7890')).toBe('abcdef12');
+    expect(shortSaleNumber('plist_01JABCDEFGH')).toBe('ABCDEFGH');
   });
 });

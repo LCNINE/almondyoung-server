@@ -2,12 +2,13 @@
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import sanitizeHtml from "sanitize-html"
-import { SaleRenderer } from "@packages/time-sale-ui"
+import { SaleRenderer, type SaleProduct } from "@packages/time-sale-ui"
 import {
   useTimeSale,
   useTimeSaleForProduct,
   useTimeSaleForVariant,
 } from "@/components/providers/time-sale-provider"
+import { productSalePeriod } from "@/lib/utils/time-sale-product-period"
 import {
   getPricesForVariant,
   getProductPrice,
@@ -16,9 +17,12 @@ import {
   getIsMembershipOnly,
   getRequiresMembershipToPurchase,
 } from "@/lib/utils/product-card"
+import { listSaleSiblingProducts } from "@/lib/api/medusa/time-sale-products"
 import { HttpTypes } from "@medusajs/types"
 import { Lock } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { useParams } from "next/navigation"
+import { useEffect, useState } from "react"
 
 interface Props {
   hasMembership: boolean
@@ -32,33 +36,70 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const variantSale = useTimeSaleForVariant(cheapestVariant)
   const productSale = useTimeSaleForProduct(product.id)
   const { settings } = useTimeSale()
-  const timeSale = variantSale ?? productSale
+  const timeSale = variantSale ?? productSale?.sale ?? null
+  const period = timeSale ? productSalePeriod(timeSale, product.id) : null
+  const endsAt = period?.endsAt ?? timeSale?.endsAt
+  const countryCode = useParams().countryCode as string
+  const saleId = timeSale?.saleId
+  const requestKey = saleId ? `${saleId}:${product.id}` : null
+  // 어느 요청(세일·상품)의 결과인지 함께 들고, 현재 키와 같을 때만 쓴다.
+  const [fetched, setFetched] = useState<{
+    key: string
+    items: SaleProduct[]
+  } | null>(null)
+  const saleProducts = fetched?.key === requestKey ? fetched.items : []
 
-  const salePresentation = timeSale?.endsAt ? (
-    <SaleRenderer
-      settings={settings}
-      surface="detail"
-      saleId={timeSale.priceListIds[0]}
-      title={timeSale.title}
-      startsAt={timeSale.startsAt ?? new Date().toISOString()}
-      endsAt={timeSale.endsAt}
-      products={[]}
-      sanitizeHtml={sanitizeHtml}
-    />
-  ) : null
+  // 같은 세일의 다른 상품을 서버 액션으로 받아 상세 블록 목록에 채운다(실패하면 빈 목록).
+  useEffect(() => {
+    if (!saleId) return
+
+    let cancelled = false
+    listSaleSiblingProducts({
+      saleId,
+      excludeProductId: product.id,
+      countryCode,
+    })
+      .then((items) => {
+        if (!cancelled) setFetched({ key: `${saleId}:${product.id}`, items })
+      })
+      .catch(() => {
+        if (!cancelled) setFetched(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [saleId, product.id, countryCode])
+
+  const salePresentation =
+    timeSale && endsAt ? (
+      <SaleRenderer
+        settings={settings}
+        surface="detail"
+        saleId={timeSale.saleId}
+        title={timeSale.title}
+        startsAt={
+          period?.startsAt ?? timeSale.startsAt ?? new Date().toISOString()
+        }
+        endsAt={endsAt}
+        products={saleProducts}
+        sectionPeriods={[{ startsAt: period?.startsAt, endsAt }]}
+        sanitizeHtml={sanitizeHtml}
+      />
+    ) : null
   if (!cheapestPrice) {
     if (!product.metadata?.timeSalePriceHidden) return null
     return (
       <div>
         {salePresentation}
         <p className="text-muted-foreground py-3 text-sm">
-          멤버십 회원에게 가격을 공개합니다.
+          {t("membershipOnlyPrice")}
         </p>
       </div>
     )
   }
 
-  // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
+  // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원에게 가격 공개" 표시)
   const isMembershipOnly = getIsMembershipOnly(product)
 
   const membershipPrice = cheapestVariant?.metadata?.membershipPrice as
@@ -71,7 +112,8 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   // 멤버십가는 지금 보고 있는 값보다 쌀 때만 가입 유인이 된다. 타임세일가가 더 싸면 "가입 시 절약"
   // 은 거짓말이 되고, 실제로 20,000원을 19,800원보다 싸다고 광고하게 된다.
   const membershipBeatsCurrentPrice =
-    hasMembershipPrice && membershipPrice < cheapestPrice.calculated_price_number
+    hasMembershipPrice &&
+    membershipPrice < cheapestPrice.calculated_price_number
 
   const membershipDiscountRate = membershipBeatsCurrentPrice
     ? Math.round(
@@ -109,7 +151,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
     Math.min(...variantAmounts) !== Math.max(...variantAmounts)
 
   // 멤버십가 비공개 상품: 비회원에게도 일반 판매가는 그대로 보여주고,
-  // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원 공개"를 표시
+  // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원에게 가격 공개"를 표시
   const showMembershipPriceHiddenNotice = !hasMembership && isMembershipOnly
 
   const showMembersOnlyPurchaseNotice =

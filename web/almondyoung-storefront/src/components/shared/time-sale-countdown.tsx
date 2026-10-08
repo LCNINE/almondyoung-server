@@ -43,6 +43,10 @@ export function TimeSaleCountdown({
   }, [])
 
   useEffect(() => {
+    endedRef.current = false
+  }, [endsAt])
+
+  useEffect(() => {
     if (now === null) return
 
     const delay = nextTickDelayMs(endsAt, now)
@@ -73,7 +77,10 @@ export function TimeSaleCountdown({
 
   return (
     <span className={className}>
-      <Clock className="inline-block h-[1em] w-[1em] align-[-0.1em]" aria-hidden />
+      <Clock
+        className="inline-block h-[1em] w-[1em] align-[-0.1em]"
+        aria-hidden
+      />
       <span className="ml-1 tabular-nums">
         {t("endsIn", { remaining: formatCountdown(view) })}
       </span>
