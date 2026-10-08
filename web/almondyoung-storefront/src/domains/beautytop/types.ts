@@ -69,7 +69,12 @@ export type BeautyTopSearch = { items: BeautyTopShopSummary[]; total: number }
 
 export type BeautyTopPosition = {
   available: boolean
-  ranks?: { label: string; rank: number; total: number }[]
+  ranks?: {
+    label: string
+    rank: number
+    total: number
+    filters?: { category?: string; sido?: string; gugun?: string }
+  }[]
 }
 
 export type BeautyTopPeerMetric = {
@@ -112,7 +117,17 @@ export type BeautyTopShop = {
   naver: { url: string } | null
   social_accounts: { handle: string }[]
   growth: {
-    metrics: { key: string; current: number | null }[]
+    metrics: {
+      key: string
+      current: number | null
+      current_at?: string | null
+      status?: string
+    }[]
+  }
+  posting?: {
+    rank_eligible: boolean
+    median_gap_days: number | null
+    observed_at?: string | null
   }
   price_history: {
     series: { name: string; points: { value: number }[] }[]
@@ -158,11 +173,17 @@ export type BeautyTopMetricRow = BeautyTopShopSummary & {
   area_m2?: number | null
   value?: number | null
   median_gap_days?: number | null
+  followers_approximate?: boolean
+  source_dates?: Record<string, string | null>
+  headcount?: { label: string; period: string | null; is_actual_total: boolean }
 }
 
 export type BeautyTopMetricRanking = {
   items: BeautyTopMetricRow[]
   average?: number | null
+  total?: number
+  note?: string
+  metrics_updated_at?: string
 }
 
 type Ready = { ready: boolean }
@@ -173,7 +194,7 @@ export type BeautyTopProcedure = {
   category: string
   mentions: Ready & { shops: number; share_percent: number | null }
   growth: Ready & { change_pp: number | null }
-  adoption: { current_shops: number; checked_shops: number }
+  adoption: { ready?: boolean; current_shops: number; checked_shops: number }
   regional: Ready & {
     local_percent?: number | null
     national_percent?: number | null

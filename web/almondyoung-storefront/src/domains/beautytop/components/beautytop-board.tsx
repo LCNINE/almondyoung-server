@@ -17,27 +17,48 @@ import { MyShopTab, WatchTab } from "./my-shop-tab"
 import { CardSkeleton, LoadError } from "./parts"
 import { ShopSheet } from "./shop-sheet"
 import { ShopsTab } from "./shops-tab"
+import { setScopeFilters } from "../use-scope"
+import { PriceCalculator } from "../growth/price-calculator"
+import { GrowthNotes } from "../growth/growth-notes"
 
 const TAB_KEY = "beautytop:tab:v2"
-const TABS = ["neighborhood", "myShop", "brand"] as const
+const TABS = ["neighborhood", "discovery", "myShop", "brand"] as const
 
 type Tab = (typeof TABS)[number]
 
-function Rankings({ onSelectShop }: { onSelectShop: (target: BeautyTopTarget) => void }) {
+function Rankings({
+  onSelectShop,
+  onFindMine,
+}: {
+  onSelectShop: (target: BeautyTopTarget) => void
+  onFindMine: () => void
+}) {
   const options = useArea<BeautyTopOptions>("options")
   if (options.isPending) return <CardSkeleton />
   if (options.isError) return <LoadError onRetry={() => options.refetch()} />
-  return <ShopsTab options={options.data} onSelectShop={onSelectShop} />
+  return (
+    <ShopsTab
+      options={options.data}
+      onSelectShop={onSelectShop}
+      onFindMine={onFindMine}
+    />
+  )
 }
 
 // With «my shop» chosen, its report already carries the watched shops; showing them again here duplicated the card.
-function WatchSection({ onSelectShop }: { onSelectShop: (target: BeautyTopTarget) => void }) {
+function WatchSection({
+  onSelectShop,
+}: {
+  onSelectShop: (target: BeautyTopTarget) => void
+}) {
   const t = useTranslations("beautytop")
   const [shop] = useMyShop()
   if (shop !== null) return null
   return (
     <section aria-labelledby="bt-watch" className="flex flex-col gap-3">
-      <h2 id="bt-watch" className="text-lg font-bold">{t("tabs.watch")}</h2>
+      <h2 id="bt-watch" className="text-lg font-bold">
+        {t("tabs.watch")}
+      </h2>
       <WatchTab onSelectShop={onSelectShop} />
     </section>
   )
@@ -50,12 +71,14 @@ export function BeautyTopBoard() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(TAB_KEY) as Tab | null
-      if (saved && TABS.includes(saved)) setTab(saved)
+      const cached = localStorage.getItem(TAB_KEY)
+      const saved = TABS.find((value) => value === cached)
+      if (saved) setTab(saved)
     } catch {}
   }, [])
 
   const changeTab = (next: Tab) => {
+    if (next === "discovery") setScopeFilters({ sido: "", gugun: "" })
     setTab(next)
     try {
       localStorage.setItem(TAB_KEY, next)
@@ -64,7 +87,10 @@ export function BeautyTopBoard() {
 
   return (
     <div className="mt-6">
-      <div role="tablist" className="border-border -mx-4 grid grid-cols-3 border-b">
+      <div
+        role="tablist"
+        className="border-border -mx-4 grid grid-cols-4 border-b"
+      >
         {TABS.map((value) => (
           <button
             key={value}
@@ -74,7 +100,9 @@ export function BeautyTopBoard() {
             onClick={() => changeTab(value)}
             className={cn(
               "-mb-px h-12 border-b-2 text-[16px] transition-colors duration-150",
-              tab === value ? "border-foreground text-foreground font-bold" : "text-muted-foreground border-transparent font-medium"
+              tab === value
+                ? "border-foreground text-foreground font-bold"
+                : "text-muted-foreground border-transparent font-medium"
             )}
           >
             {t(`tabs.${value}`)}
@@ -86,9 +114,14 @@ export function BeautyTopBoard() {
         <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
           {t.rich("memberNotice", {
-            b: (chunks) => <b className="text-foreground font-bold">{chunks}</b>,
+            b: (chunks) => (
+              <b className="text-foreground font-bold">{chunks}</b>
+            ),
             link: (chunks) => (
-              <LocalizedClientLink href="/mypage/membership/benefits" className="text-foreground underline underline-offset-2">
+              <LocalizedClientLink
+                href="/mypage/membership/benefits"
+                className="text-foreground underline underline-offset-2"
+              >
                 {chunks}
               </LocalizedClientLink>
             ),
@@ -104,23 +137,41 @@ export function BeautyTopBoard() {
               <button
                 type="button"
                 onClick={() => changeTab("myShop")}
-                className="flex w-full items-center justify-between rounded-lg bg-zinc-800 p-4 text-left text-white transition-colors hover:bg-zinc-700"
+                className="bg-foreground text-background hover:bg-foreground/90 flex w-full items-center justify-between rounded-lg p-4 text-left transition-colors"
               >
-                <span className="text-[15px] font-medium">{t("area.toMyShop")}</span>
-                <span aria-hidden className="text-primary">→</span>
+                <span className="text-[15px] font-medium">
+                  {t("area.toMyShop")}
+                </span>
+                <span aria-hidden className="text-primary">
+                  →
+                </span>
               </button>
             )}
           />
+        )}
+        {tab === "discovery" && (
+          <PremiumGate onDecline={() => changeTab("neighborhood")}>
+            <div className="flex flex-col gap-6">
+              <div>
+                <h2 className="text-xl font-bold">{t("discovery.title")}</h2>
+                <p className="text-muted-foreground mt-2 text-sm">
+                  {t("discovery.subtitle")}
+                </p>
+              </div>
+              <Rankings
+                onSelectShop={setTarget}
+                onFindMine={() => changeTab("myShop")}
+              />
+            </div>
+          </PremiumGate>
         )}
         {tab === "myShop" && (
           <PremiumGate onDecline={() => changeTab("neighborhood")}>
             <div className="flex flex-col gap-8">
               <MyShopTab onSelectShop={setTarget} />
               <PriceSimulator onSelectShop={setTarget} />
-              <section aria-labelledby="bt-rankings" className="flex flex-col gap-3">
-                <h2 id="bt-rankings" className="text-lg font-bold">{t("tabs.shops")}</h2>
-                <Rankings onSelectShop={setTarget} />
-              </section>
+              <PriceCalculator />
+              <GrowthNotes />
               <WatchSection onSelectShop={setTarget} />
               <MembershipReceipt />
             </div>

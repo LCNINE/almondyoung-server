@@ -1,9 +1,28 @@
 "use client"
 
 export type BeautyTopQuery = {
-  resource: "shops" | "search" | "ranking" | "operating" | "price-comparison" | "activity" |
-    "shop" | "position" | "briefing" | "changes" | "watch" | "leaders" | "prices" |
-    "market" | "lifecycle" | "trends" | "revenue" | "franchise" | "options" | "analysis" | "map"
+  resource:
+    | "shops"
+    | "search"
+    | "ranking"
+    | "operating"
+    | "price-comparison"
+    | "activity"
+    | "shop"
+    | "position"
+    | "briefing"
+    | "changes"
+    | "watch"
+    | "leaders"
+    | "prices"
+    | "market"
+    | "lifecycle"
+    | "trends"
+    | "revenue"
+    | "franchise"
+    | "options"
+    | "analysis"
+    | "map"
   page?: number
   page_size?: number
   after_id?: number
@@ -15,8 +34,13 @@ export type BeautyTopResult<T> = {
   resource: BeautyTopQuery["resource"]
   data: T
   pagination: null | {
-    page: number | null; page_size: number; total: number; total_pages: number
-    has_next: boolean; next_page: number | null; next_after_id?: number | null
+    page: number | null
+    page_size: number
+    total: number
+    total_pages: number
+    has_next: boolean
+    next_page: number | null
+    next_after_id?: number | null
     mode?: "page" | "cursor"
   }
 }
@@ -60,28 +84,48 @@ export function forgetBeautyTopToken() {
 }
 
 async function issue(acknowledged: boolean): Promise<Proof> {
-  const url = acknowledged ? "/api/beautytop/token?acknowledged=1" : "/api/beautytop/token"
-  const call = () => fetch(url, { method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error" })
+  const url = acknowledged
+    ? "/api/beautytop/token?acknowledged=1"
+    : "/api/beautytop/token"
+  const call = () =>
+    fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "error",
+    })
   let response = await call()
   if (response.status === 401) {
-    const restored = await fetch("/api/auth/restore-token", { method: "POST", credentials: "same-origin" })
+    const restored = await fetch("/api/auth/restore-token", {
+      method: "POST",
+      credentials: "same-origin",
+    })
     if (restored.ok) response = await call()
   }
   if (!response.ok) {
     const code = TOKEN_ERRORS[response.status] ?? "UNAVAILABLE"
-    const body = code === "CONFIRMATION_REQUIRED" ? await response.json().catch(() => null) : null
+    const body =
+      code === "CONFIRMATION_REQUIRED"
+        ? await response.json().catch(() => null)
+        : null
     const days = body?.withdrawalDaysRemaining
     throw new BeautyTopError(code, typeof days === "number" ? days : null)
   }
   const proof = (await response.json()) as Proof
-  cached = { proof, until: Date.now() + proof.expires_in * 1000 - EXPIRY_MARGIN_MS }
+  cached = {
+    proof,
+    until: Date.now() + proof.expires_in * 1000 - EXPIRY_MARGIN_MS,
+  }
   return proof
 }
 
 async function proof(): Promise<Proof> {
   if (cached && cached.until > Date.now()) return cached.proof
   // Share only concurrent requests. Tokens live in memory only — never localStorage, URLs or cookies.
-  if (!pending) pending = issue(false).finally(() => { pending = null })
+  if (!pending)
+    pending = issue(false).finally(() => {
+      pending = null
+    })
   return pending
 }
 
@@ -115,10 +159,20 @@ async function limited<T>(task: () => Promise<T>): Promise<T> {
 const wait = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, ms)
-    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer)
+        reject(signal.reason)
+      },
+      { once: true }
+    )
   })
 
-export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSignal): Promise<BeautyTopResult<T>> {
+export async function queryBeautyTop<T>(
+  query: BeautyTopQuery,
+  signal?: AbortSignal
+): Promise<BeautyTopResult<T>> {
   let response = await send(await proof(), query, signal)
   if (response.status === 401) {
     // The cached token can be rejected early (clock skew, key rotation): get a fresh one once.
@@ -131,7 +185,13 @@ export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSig
   }
   if (!response.ok) {
     throw new BeautyTopError(
-      response.status === 401 ? "LOGIN_REQUIRED" : response.status === 429 ? "RATE_LIMITED" : response.status === 503 ? "UNAVAILABLE" : "FAILED",
+      response.status === 401
+        ? "LOGIN_REQUIRED"
+        : response.status === 429
+          ? "RATE_LIMITED"
+          : response.status === 503
+            ? "UNAVAILABLE"
+            : "FAILED"
     )
   }
   return response.json() as Promise<BeautyTopResult<T>>
@@ -139,13 +199,20 @@ export async function queryBeautyTop<T>(query: BeautyTopQuery, signal?: AbortSig
 
 function send(auth: Proof, query: BeautyTopQuery, signal?: AbortSignal) {
   const base = new URL(auth.api_base_url)
-  if (base.protocol !== "https:" || base.username || base.password) throw new BeautyTopError("FAILED")
+  if (base.protocol !== "https:" || base.username || base.password)
+    throw new BeautyTopError("FAILED")
   const url = new URL("/v1/query", base)
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined) url.searchParams.set(key, String(value))
+    if (value !== undefined && value !== "")
+      url.searchParams.set(key, String(value))
   }
-  return limited(() => fetch(url, {
-    headers: { Authorization: `Bearer ${auth.access_token}` },
-    credentials: "omit", cache: "no-store", redirect: "error", signal,
-  }))
+  return limited(() =>
+    fetch(url, {
+      headers: { Authorization: `Bearer ${auth.access_token}` },
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "error",
+      signal,
+    })
+  )
 }

@@ -8,48 +8,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useTranslations } from "next-intl"
-import { useEffect, useState } from "react"
+import { scopeLevel } from "../scope"
+import { Segmented } from "./parts"
 import type { BeautyTopOptions, BeautyTopRevenue } from "../types"
 import { Bars, Big, Chip, Headline } from "./parts"
 
-export const FILTERS_KEY = "beautytop:filters"
-export const DEFAULT_FILTERS = {
-  sido: "서울",
-  gugun: "강남구",
-  category: "속눈썹",
-}
-
-export type Filters = typeof DEFAULT_FILTERS
-
-export function useScopeFilters() {
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
-
-  useEffect(() => {
-    // A shared card links here with the area in the query: it wins over the saved choice.
-    const query = new URLSearchParams(window.location.search)
-    const linked = { sido: query.get("sido") ?? "", gugun: query.get("gugun") ?? "", category: query.get("category") ?? "" }
-    if (linked.sido && linked.gugun && linked.category && Object.values(linked).every((v) => v.length <= 40)) {
-      setFilters(linked)
-      return
-    }
-    try {
-      const saved = localStorage.getItem(FILTERS_KEY)
-      if (saved) setFilters({ ...DEFAULT_FILTERS, ...JSON.parse(saved) })
-    } catch {}
-  }, [])
-
-  const update = (next: Partial<Filters>) => {
-    setFilters((prev) => {
-      const merged = { ...prev, ...next }
-      try {
-        localStorage.setItem(FILTERS_KEY, JSON.stringify(merged))
-      } catch {}
-      return merged
-    })
-  }
-
-  return [filters, update] as const
-}
+export { DEFAULT_FILTERS, FILTERS_KEY } from "../scope"
+export type { ScopeFilters as Filters } from "../scope"
+export { useScopeFilters } from "../use-scope"
+import type { ScopeFilters as Filters } from "../scope"
 
 export function ScopeFilters({
   options,
@@ -62,6 +29,7 @@ export function ScopeFilters({
 }) {
   const t = useTranslations("beautytop")
   const sidos = Array.from(new Set(options.regions.map((r) => r.sido)))
+  const level = scopeLevel(filters)
   const guguns = options.regions
     .filter((r) => r.sido === filters.sido)
     .map((r) => r.gugun)
@@ -71,25 +39,56 @@ export function ScopeFilters({
 
   return (
     <>
-      <div className="flex gap-2">
-        <FilterSelect
-          label={t("filter.sido")}
-          value={filters.sido}
-          options={sidos}
-          onChange={(sido) =>
-            update({
-              sido,
-              gugun: options.regions.find((r) => r.sido === sido)?.gugun ?? "",
-            })
-          }
-        />
-        <FilterSelect
-          label={t("filter.gugun")}
-          value={filters.gugun}
-          options={guguns}
-          onChange={(gugun) => update({ gugun })}
-        />
-      </div>
+      <Segmented
+        value={level}
+        options={[
+          { value: "national", label: t("scope.national") },
+          { value: "province", label: t("scope.province") },
+          { value: "district", label: t("scope.district") },
+        ]}
+        onChange={(next) => {
+          const sido = filters.sido || sidos[0] || ""
+          update(
+            next === "national"
+              ? { sido: "", gugun: "" }
+              : {
+                  sido,
+                  gugun:
+                    next === "district"
+                      ? (options.regions.find((r) => r.sido === sido)?.gugun ??
+                        "")
+                      : "",
+                }
+          )
+        }}
+      />
+      {level !== "national" && (
+        <div className="mt-3 flex gap-2">
+          <FilterSelect
+            label={t("filter.sido")}
+            value={filters.sido}
+            options={sidos}
+            onChange={(sido) =>
+              update({
+                sido,
+                gugun:
+                  level === "district"
+                    ? (options.regions.find((r) => r.sido === sido)?.gugun ??
+                      "")
+                    : "",
+              })
+            }
+          />
+          {level === "district" && (
+            <FilterSelect
+              label={t("filter.gugun")}
+              value={filters.gugun}
+              options={guguns}
+              onChange={(gugun) => update({ gugun })}
+            />
+          )}
+        </div>
+      )}
       <div
         aria-label={t("filter.category")}
         className="scrollbar-hide -mx-4 mt-3 flex gap-2 overflow-x-auto px-4"

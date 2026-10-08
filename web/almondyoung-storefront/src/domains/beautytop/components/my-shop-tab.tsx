@@ -18,7 +18,8 @@ import {
 import { useBeautyTop } from "../use-beautytop"
 import { useNumberFormats } from "../use-number-formats"
 import { type WatchedShop, useMyShop, useWatchlist } from "../use-watchlist"
-import { DEFAULT_FILTERS, FILTERS_KEY } from "./neighborhood-tab"
+import { DEFAULT_FILTERS } from "../scope"
+import { setScopeFilters } from "../use-scope"
 import {
   Big,
   Card,
@@ -48,19 +49,18 @@ export function MyShopTab({
 
   const choose = (next: SavedShop | null) => {
     void setShop(next)
-    try {
-      if (next) {
-        const located = Boolean(next.sido && next.gugun)
-        localStorage.setItem(
-          FILTERS_KEY,
-          JSON.stringify({
-            sido: located ? next.sido : DEFAULT_FILTERS.sido,
-            gugun: located ? next.gugun : DEFAULT_FILTERS.gugun,
-            category: next.category || DEFAULT_FILTERS.category,
-          })
-        )
-      }
-    } catch {}
+    if (next) {
+      const located = Boolean(next.sido && next.gugun)
+      setScopeFilters({
+        sido: located
+          ? (next.sido ?? DEFAULT_FILTERS.sido)
+          : DEFAULT_FILTERS.sido,
+        gugun: located
+          ? (next.gugun ?? DEFAULT_FILTERS.gugun)
+          : DEFAULT_FILTERS.gugun,
+        category: next.category || DEFAULT_FILTERS.category,
+      })
+    }
   }
 
   if (shop === undefined) return <CardSkeleton />
@@ -301,10 +301,18 @@ function PositionCard({ shop }: { shop: SavedShop }) {
         <LoadError onRetry={() => position.refetch()} />
       </Card>
     )
-  const ranks = position.data.available ? (position.data.ranks ?? []) : []
+  const ranks = (
+    position.data.available ? (position.data.ranks ?? []) : []
+  ).filter((r) => r.total > 0 && r.rank > 0 && r.rank <= r.total)
   if (ranks.length === 0) return null
 
   const local = ranks[ranks.length - 1]
+  const nationalSameCategory = ranks.find(
+    (r) =>
+      r.filters?.category === shop.category &&
+      !r.filters?.sido &&
+      !r.filters?.gugun
+  )
   const topPct = (r: { rank: number; total: number }) =>
     Math.max(1, Math.ceil((r.rank / r.total) * 100))
 
@@ -323,6 +331,15 @@ function PositionCard({ shop }: { shop: SavedShop }) {
           pct: topPct(local),
         })}
       </p>
+      {nationalSameCategory && (
+        <p className="bg-muted mt-4 rounded-lg p-4 text-sm">
+          {t("discovery.nationalPosition", {
+            category: shop.category ?? "",
+            rank: fmt.full(nationalSameCategory.rank),
+            total: fmt.full(nationalSameCategory.total),
+          })}
+        </p>
+      )}
       <Segmented
         className="mt-4"
         value={sort}

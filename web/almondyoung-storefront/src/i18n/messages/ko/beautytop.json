@@ -3,10 +3,11 @@
   "subtitle": "우리 샵 순위와 동네 시세를 숫자로 확인해요.",
   "tabs": {
     "myShop": "우리 샵",
-    "neighborhood": "우리 동네",
+    "neighborhood": "전국·동네",
     "shops": "샵 순위",
     "watch": "관심 샵",
-    "brand": "브랜드"
+    "brand": "브랜드",
+    "discovery": "발견"
   },
   "filter": {
     "sido": "시·도",
@@ -97,7 +98,7 @@
     "won": "{value}원",
     "count": "{value}곳"
   },
-  "empty": "이 동네는 아직 모인 자료가 적어요. 옆 동네나 다른 업종을 골라 보세요.",
+  "empty": "이 범위·업종은 아직 비교할 자료가 적어요. 다른 지역이나 업종을 골라 보세요.",
   "error": "자료를 불러오지 못했어요.",
   "retry": "다시 시도",
   "rivals": {
@@ -113,18 +114,18 @@
     "newBadge": "새로"
   },
   "shops": {
-    "eyebrow": "{region} {category} 샵 순위",
+    "eyebrow": "{region} {category} 공개 지표 순위",
     "headline": "{metric} 1등은 <b>{name}</b>",
-    "basis": "자료가 있는 {total}곳을 비교했어요",
+    "basis": "자료가 있는 비교 대상 {total}개 기준이에요",
     "more": "더보기 ({shown}/{total})",
-    "note": "네이버·인스타그램·공공자료에 공개된 수치만 비교해요. 매출이나 시술 실력이 아니에요.",
+    "note": "확인한 공개 자료만 비교해요. 가입 인원은 현재 전체 직원 수와 다를 수 있고, 누적 리뷰÷가입 인원은 월 실적이나 생산성이 아니에요.",
     "metric": {
       "reviews": "방문자 리뷰",
       "followers": "인스타 팔로워",
       "instagram": "인스타 활동",
       "area": "샵 면적",
-      "staff": "직원 수",
-      "reviewStaff": "직원당 리뷰",
+      "staff": "고용보험 가입 인원",
+      "reviewStaff": "리뷰/가입 인원",
       "activity": "게시 주기"
     },
     "value": {
@@ -159,7 +160,7 @@
     "widen": "{sido} 전체로 보기"
   },
   "area": {
-    "empty": "이 동네는 아직 집계된 샵이 없어요. 다른 구를 골라 보세요.",
+    "empty": "이 범위는 아직 집계된 샵을 확인하지 못했어요. 다른 지역이나 업종을 골라 보세요.",
     "eyebrow": "{sido} {gugun} {category} · 점 하나가 샵 한 곳",
     "eyebrowGrouped": "{sido} {gugun} {category} · 점 하나가 샵 {per}곳",
     "headline": "{category} 샵 {count}곳 사이에서 우리 샵은 어디쯤일까요?",
@@ -196,7 +197,8 @@
       "unknown": "표본이 적어 보류"
     },
     "whichHidden": "무엇에서 앞서고 뒤지는지는 아직 몰라요.",
-    "inArea": "{sido} {gugun}에서 찾아요. 동네는 맨 위에서 바꿀 수 있어요."
+    "inArea": "{sido} {gugun}에서 찾아요. 동네는 맨 위에서 바꿀 수 있어요.",
+    "pickDistrict": "우리 샵 검색은 동네 안에서 해요. 맨 위에서 ‘우리 동네’를 고르고 구를 선택해 주세요."
   },
   "ruler": {
     "title": "우리 {name} 가격을 대 보세요",
@@ -208,13 +210,13 @@
       "max": "최고 {value}"
     },
     "verdict": {
-      "aboveMedian": "동네 중간값보다 {diff}원 높아요.",
-      "belowMedian": "동네 중간값보다 {diff}원 낮아요.",
-      "atMedian": "동네 중간값과 같아요.",
-      "aboveMax": "동네에서 확인한 최고가보다 {diff}원 높아요.",
-      "belowMin": "동네에서 확인한 최저가보다 {diff}원 낮아요."
+      "aboveMedian": "{region} 중간값보다 {diff}원 높아요.",
+      "belowMedian": "{region} 중간값보다 {diff}원 낮아요.",
+      "atMedian": "{region} 중간값과 같아요.",
+      "aboveMax": "{region}에서 확인한 최고가보다 {diff}원 높아요.",
+      "belowMin": "{region}에서 확인한 최저가보다 {diff}원 낮아요."
     },
-    "basis": "동네 브랜드 {brands}곳 · 메뉴 {menus}개의 표시 가격 기준이에요.",
+    "basis": "{region} 브랜드 {brands}곳 · 메뉴 {menus}개의 표시 가격 기준이에요.",
     "private": "입력한 가격은 이 화면에서만 계산하고 저장하지 않아요.",
     "prompt": "막대를 움직여 우리 샵 가격에 맞춰 보세요."
   },
@@ -247,9 +249,9 @@
     }
   },
   "compare": {
-    "title": "다른 동네와 견줘 보기",
+    "title": "전국·다른 지역과 견줘 보기",
     "metric": "항목",
-    "pick": "비교할 구",
+    "pick": "비교 지역",
     "unit": {
       "shops": "{value}곳",
       "people": "{value}명",
@@ -264,7 +266,7 @@
     "note": "공공 인허가·메뉴 가격 기준이에요. 창업 지역을 고를 때 참고만 하세요."
   },
   "insta": {
-    "title": "요즘 동네 인스타"
+    "title": "관측된 인스타·메뉴 동향"
   },
   "confirm": {
     "title": "우리 샵 분석을 열까요?",
@@ -278,7 +280,7 @@
   },
   "simulator": {
     "title": "가격 시뮬레이터",
-    "subtitle": "{region} {category} 이웃 샵 메뉴 가격 사이에 우리 가격을 넣어 보세요",
+    "subtitle": "{region} {category} 메뉴 가격 사이에 우리 가격을 넣어 보세요",
     "won": "{value}원",
     "sliderLabel": "{name} 우리 가격",
     "prompt": "막대를 움직이면 이웃 샵 사이 어디쯤인지 바로 보여 드려요.",
@@ -298,8 +300,8 @@
     "discountNone": "이번 주기엔 아직 없어요"
   },
   "share": {
-    "heading": "우리 동네 카드로 공유하기",
-    "eyebrow": "{sido} · 우리 동네 숫자",
+    "heading": "이 지역 숫자 카드로 공유하기",
+    "eyebrow": "{sido} · 공개 집계",
     "title": "{gugun} {category} 샵\n{count}곳",
     "opened": "1년 새 문 연 곳",
     "residents": "주민 몇 명당 1곳",
@@ -354,11 +356,99 @@
     "indexCategory": "{category}샵",
     "fromArea": "이 동네에서 창업을 준비 중이라면"
   },
-  "memberNotice": "우리 샵·브랜드 탭 열람은 <b>멤버십 혜택 이용</b>으로 기록돼요. 결제 후 7일 안에 열면 전액 환불(청약철회)이 제한돼요. <link>자세히</link>",
+  "memberNotice": "발견·우리 샵·브랜드 탭 열람은 <b>멤버십 혜택 이용</b>으로 기록돼요. 결제 후 7일 안에 열면 전액 환불(청약철회)이 제한돼요. <link>자세히</link>",
   "beta": {
     "badge": "BETA",
     "title": "원장님과 함께 키워 가는 베타 서비스예요",
     "body": "원장님의 성공에 도움이 되도록 전국의 샵 정보를 계속 모으고, 기능도 넓혀 가고 있어요. «우리 동네 속눈썹펌 가격은 보통 얼마일까?»처럼 궁금한 게 있다면 알려 주세요.",
     "link": "궁금한 것 알려 주기"
+  },
+  "scope": {
+    "national": "전국",
+    "province": "시·도",
+    "district": "우리 동네"
+  },
+  "discovery": {
+    "title": "눈에 띄는 샵에서 배울 점 찾기",
+    "subtitle": "전국과 우리 동네의 공개 지표를 보고, 우리 샵과 나란히 비교해 보세요.",
+    "compare": "우리 샵과 나란히 보기",
+    "openEvidence": "가격표와 공개 자료 보기",
+    "observedScope": "확인한 공개 자료 안의 순위예요. 샵과 개인 계정이 포함될 수 있으며 매출·실력 순위는 아니에요.",
+    "person": "개인 계정",
+    "approximate": "약 {value}",
+    "chooseMine": "먼저 우리 샵을 골라 주세요",
+    "chooseMineHint": "한 번 등록하면 눈여겨보는 샵과 실제 관측 수치를 비교할 수 있어요.",
+    "findMine": "우리 샵 찾기",
+    "close": "닫기",
+    "comparisonTitle": "우리 샵과 어떤 점이 다를까요?",
+    "metric": "항목",
+    "mine": "우리 샵",
+    "unknown": "확인 중",
+    "oldObservation": "오래된 관측",
+    "cadence": "{days}일 간격",
+    "metricLabel": {
+      "visitor_reviews": "방문자 리뷰",
+      "followers": "팔로워",
+      "cadence": "게시 간격"
+    },
+    "comparisonNote": "각 값의 관측일이 다를 수 있어요. 누적 리뷰·팔로워·관측된 게시 간격을 비교하며, 매출·예약·시술 실력을 뜻하지 않아요. 축약 팔로워 수치는 근사값일 수 있어요.",
+    "learnTitle": "이번 주에 무엇을 참고할까요?",
+    "learnMenu": "가격표의 제거·케어·추가금 조건을 확인하고 우리 메뉴의 설명을 정리해 보세요.",
+    "learnPosts": "공개 게시물에서 대표 시술을 어떻게 보여 주는지 살펴보고 내 샵의 강점으로 시험해 보세요.",
+    "learnObserve": "관심 샵으로 저장하고 다음 방문 때 새로 관측된 변화를 확인해 보세요.",
+    "learnNote": "직접 시험해 볼 제안이에요. 순위가 높은 원인이나 효과가 입증된 성공 비결은 아니에요.",
+    "nationalPosition": "전국 {category} 비교 대상 {total}개 중 {rank}번째예요.",
+    "observedAt": "이 수치의 원천 관측일: {date}"
+  },
+  "calculator": {
+    "title": "가격을 바꾸기 전에 계산해 보세요",
+    "subtitle": "같은 시술의 가격과 월 방문 횟수를 입력해 보세요.",
+    "example": "예시로 계산해 보기",
+    "exampleNotice": "지금 값은 가상 예시예요. 우리 샵 값으로 바꿔 보세요.",
+    "input": {
+      "currentPrice": "현재 시술 가격 (원)",
+      "nextPrice": "바꿀 시술 가격 (원)",
+      "visits": "현재 월 방문 횟수 (회)",
+      "cost": "시술 1회 변동비 (원·선택)",
+      "minutes": "시술 1회 소요 시간 (분·선택)"
+    },
+    "won": "{value}원",
+    "prompt": "현재 가격·바꿀 가격·월 방문 횟수를 입력하면 계산해 드려요.",
+    "invalid": "가격은 1~1천만 원, 방문은 1~100만 회의 정수로 입력해 주세요. 변동비는 0~1천만 원, 시간은 1~1,440분이에요.",
+    "sameVisits": "월 {visits}회 방문이 유지된다면",
+    "before": "현재 가정 매출 {amount}",
+    "breakEven": "현재 매출을 유지하려면 월 {visits}회 방문이 필요해요.",
+    "changeVisits": "현재 방문 횟수와 차이: {visits}회",
+    "contribution": "변경 후 월 기여이익 {amount}",
+    "contributionBreakEven": "현재 기여이익을 유지하려면 월 {visits}회 방문이 필요해요.",
+    "hourly": "변경 후 시술 시간당 기여이익 {amount}",
+    "note": "입력한 가정으로 계산하며 고객 반응이나 매출을 예측하지 않아요. 기여이익은 매출에서 입력한 변동비를 뺀 값으로 임대료·고정 인건비 등을 차감한 순이익과 달라요. 입력은 이 화면에서만 사용하고 저장하지 않아요.",
+    "clear": "입력 지우기"
+  },
+  "growthNotes": {
+    "title": "내 샵 성장 노트",
+    "subtitle": "바꾼 것을 기록하고, 다음 방문 때 공개 지표의 변화를 살펴보세요.",
+    "actionPrompt": "오늘 무엇을 실행했나요?",
+    "actions": {
+      "MENU_CLARITY": "메뉴판과 시술 설명을 정리했어요",
+      "SHOWCASE": "시술 사례를 게시했어요",
+      "PRICE_CHANGE": "가격을 변경했어요"
+    },
+    "memo": "메모 (선택 · 최대 240자)",
+    "save": "실행 기록 저장",
+    "saving": "처리 중…",
+    "dailyLimit": "같은 실행은 한국 시간 기준 하루 한 번 저장합니다. 수정하려면 삭제 후 다시 기록하세요.",
+    "status": {
+      "saved": "기록을 저장했어요.",
+      "removed": "기록을 삭제했어요.",
+      "FAILED": "처리하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      "SHOP_CHANGED": "내 샵 등록이 바뀌었어요. 내 샵을 다시 확인해 주세요."
+    },
+    "history": "최근 실행 30개",
+    "empty": "첫 실행을 남겨보세요.",
+    "genericAction": "실행 기록",
+    "removeLabel": "{date} 실행 기록 삭제",
+    "remove": "삭제",
+    "note": "나만 볼 수 있는 직접 입력 기록입니다. 날짜는 저장 시점이며 실행 여부를 검증하지 않습니다. 공개 지표의 변화가 이 실행 때문이라는 뜻은 아닙니다."
   }
 }

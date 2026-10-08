@@ -3,10 +3,11 @@
   "subtitle": "自店の順位と地域の相場を数字で確認できます。",
   "tabs": {
     "myShop": "自店",
-    "neighborhood": "地域",
+    "neighborhood": "市場",
     "shops": "店舗ランキング",
     "watch": "お気に入り",
-    "brand": "ブランド"
+    "brand": "ブランド",
+    "discovery": "発見"
   },
   "filter": {
     "sido": "市・道",
@@ -97,7 +98,7 @@
     "won": "{value}ウォン",
     "count": "{value}店"
   },
-  "empty": "この地域はまだデータが少ないです。近くの地域や別の業種を選んでみてください。",
+  "empty": "この範囲・業種は比較できる資料がまだ少ないです。他の地域や業種を選んでください。",
   "error": "データを読み込めませんでした。",
   "retry": "再試行",
   "rivals": {
@@ -113,18 +114,18 @@
     "newBadge": "新着"
   },
   "shops": {
-    "eyebrow": "{region} {category} 店舗ランキング",
+    "eyebrow": "{region} {category} 公開指標順位",
     "headline": "{metric} 1位は<b>{name}</b>",
-    "basis": "データのある{total}店を比較しました",
+    "basis": "資料がある比較対象{total}件を基準にしています",
     "more": "もっと見る ({shown}/{total})",
-    "note": "Naver・Instagram・公的資料で公開された数値のみを比較しています。売上や技術ではありません。",
+    "note": "確認できた公開資料を比較します。保険加入人数は現在の全従業員数と異なる場合があり、累積レビュー÷加入人数は月間実績や生産性ではありません。",
     "metric": {
       "reviews": "来店レビュー",
       "followers": "インスタフォロワー",
       "instagram": "インスタ活動",
       "area": "店舗面積",
-      "staff": "従業員数",
-      "reviewStaff": "従業員あたりレビュー",
+      "staff": "雇用保険加入人数",
+      "reviewStaff": "レビュー / 加入人数",
       "activity": "投稿間隔"
     },
     "value": {
@@ -159,7 +160,7 @@
     "widen": "{sido}全体で見る"
   },
   "area": {
-    "empty": "このエリアにはまだ集計されたサロンがありません。別の区を選んでください。",
+    "empty": "この範囲のサロン集計はまだ確認できていません。他の地域や業種を選んでください。",
     "eyebrow": "{sido} {gugun} {category} · 点1つがサロン1軒",
     "eyebrowGrouped": "{sido} {gugun} {category} · 点1つがサロン{per}軒",
     "headline": "{category}サロン{count}軒の中で、あなたのサロンはどのあたり?",
@@ -196,7 +197,8 @@
       "unknown": "サンプル不足"
     },
     "whichHidden": "どの項目で上回っているかはまだ非公開です。",
-    "inArea": "{sido} {gugun}で探します。エリアは上部で変更できます。"
+    "inArea": "{sido} {gugun}で探します。エリアは上部で変更できます。",
+    "pickDistrict": "上で「近隣」を選び、地域を指定してサロンを検索してください。"
   },
   "ruler": {
     "title": "{name}の価格を当ててみましょう",
@@ -208,13 +210,13 @@
       "max": "最高 {value}"
     },
     "verdict": {
-      "aboveMedian": "エリアの中央値より{diff}ウォン高いです。",
-      "belowMedian": "エリアの中央値より{diff}ウォン安いです。",
-      "atMedian": "エリアの中央値と同じです。",
-      "aboveMax": "エリアで確認した最高値より{diff}ウォン高いです。",
-      "belowMin": "エリアで確認した最安値より{diff}ウォン安いです。"
+      "aboveMedian": "{region}の中央値より{diff}ウォン高いです。",
+      "belowMedian": "{region}の中央値より{diff}ウォン低いです。",
+      "atMedian": "{region}の中央値と同じです。",
+      "aboveMax": "{region}で確認した最高値より{diff}ウォン高いです。",
+      "belowMin": "{region}で確認した最低値より{diff}ウォン低いです。"
     },
-    "basis": "エリアのブランド{brands}軒・メニュー{menus}件の表示価格に基づきます。",
+    "basis": "{region}の{brands}ブランド・{menus}メニューの表示価格が基準です。",
     "private": "入力した価格はこの画面でのみ計算し、保存しません。",
     "prompt": "スライダーをあなたのサロンの価格に合わせてください。"
   },
@@ -247,9 +249,9 @@
     }
   },
   "compare": {
-    "title": "ほかのエリアと比べる",
+    "title": "全国・他の地域と比較",
     "metric": "項目",
-    "pick": "比較する区",
+    "pick": "比較地域",
     "unit": {
       "shops": "{value}軒",
       "people": "{value}人",
@@ -264,7 +266,7 @@
     "note": "公的な許認可とメニュー価格に基づきます。開業エリア選びの参考にしてください。"
   },
   "insta": {
-    "title": "最近のエリアのインスタ"
+    "title": "観測された投稿・メニュー動向"
   },
   "confirm": {
     "title": "サロン分析を開きますか?",
@@ -278,7 +280,7 @@
   },
   "simulator": {
     "title": "価格シミュレーター",
-    "subtitle": "{region}の{category}サロンのメニュー価格の中にあなたの価格を置いてみましょう",
+    "subtitle": "{region}の{category}メニューの中に自分の価格を置いてみましょう",
     "won": "{value}ウォン",
     "sliderLabel": "あなたの{name}価格",
     "prompt": "スライダーを動かすと、近くのサロンの中での位置をすぐに表示します。",
@@ -298,8 +300,8 @@
     "discountNone": "今回の期間はまだありません"
   },
   "share": {
-    "heading": "エリアカードで共有",
-    "eyebrow": "{sido} · エリアの数字",
+    "heading": "この地域の数値を共有する",
+    "eyebrow": "{sido} · 公開集計",
     "title": "{gugun}の{category}サロン\n{count}軒",
     "opened": "1年以内に開業",
     "residents": "住民何人に1軒",
@@ -354,11 +356,99 @@
     "indexCategory": "{category}店",
     "fromArea": "この地域で開業を準備中なら"
   },
-  "memberNotice": "自店・ブランドタブの閲覧は<b>メンバーシップ特典の利用</b>として記録されます。決済後7日以内に開くと、全額返金（申込撤回）が制限されます。<link>詳しく</link>",
+  "memberNotice": "発見・自分のサロン・ブランドタブの閲覧は<b>メンバーシップ特典の利用</b>として記録されます。決済後7日以内に開くと全額返金の撤回が制限されます。<link>詳細</link>",
   "beta": {
     "badge": "BETA",
     "title": "オーナーの皆さまと一緒に育てるベータサービスです",
     "body": "オーナーの皆さまの成功に役立つよう、全国の店舗情報を集め続け、機能も広げています。「近所のまつげパーマの相場はいくら？」のように気になることがあれば教えてください。",
     "link": "気になることを教える"
+  },
+  "scope": {
+    "national": "全国",
+    "province": "市・道",
+    "district": "近隣"
+  },
+  "discovery": {
+    "title": "注目のサロンからヒントを探す",
+    "subtitle": "全国・近隣の公開指標を見て、自分のサロンと比較しましょう。",
+    "compare": "自分のサロンと比較する",
+    "openEvidence": "料金表と公開資料を見る",
+    "observedScope": "確認できた公開資料内の順位です。サロンと個人アカウントが含まれる場合があります。売上や技術の順位ではありません。",
+    "person": "個人アカウント",
+    "approximate": "約 {value}",
+    "chooseMine": "まず自分のサロンを選んでください",
+    "chooseMineHint": "一度登録すると、気になるサロンと実際の観測数値を比較できます。",
+    "findMine": "自分のサロンを探す",
+    "close": "閉じる",
+    "comparisonTitle": "どのような違いがありますか？",
+    "metric": "項目",
+    "mine": "自分のサロン",
+    "unknown": "確認中",
+    "oldObservation": "過去の観測",
+    "cadence": "{days}日間隔",
+    "metricLabel": {
+      "visitor_reviews": "来店者レビュー",
+      "followers": "フォロワー",
+      "cadence": "投稿間隔"
+    },
+    "comparisonNote": "観測日が異なる場合があります。累積レビュー・フォロワー・観測された投稿間隔は売上・予約・技術を示しません。省略表示のフォロワー数は概数の場合があります。",
+    "learnTitle": "今週試せることは？",
+    "learnMenu": "除去・ケア・追加料金の条件を確認し、自分のメニュー説明を整理しましょう。",
+    "learnPosts": "公開投稿で代表施術をどう紹介しているか確認し、自分の強みを生かして試しましょう。",
+    "learnObserve": "気になるサロンを保存し、次回、新しく観測された変化を確認しましょう。",
+    "learnNote": "試すための提案です。順位の原因や成功効果が証明された方法ではありません。",
+    "nationalPosition": "全国の{category}比較対象{total}件中、{rank}番目です。",
+    "observedAt": "この数値の観測日：{date}"
+  },
+  "calculator": {
+    "title": "価格を変える前に計算しましょう",
+    "subtitle": "同じ施術の価格と月間来店回数を入力してください。",
+    "example": "例で計算する",
+    "exampleNotice": "仮の数値です。自分のサロンの数値に変更してください。",
+    "input": {
+      "currentPrice": "現在の施術価格（ウォン）",
+      "nextPrice": "変更後の施術価格（ウォン）",
+      "visits": "現在の月間来店回数",
+      "cost": "施術1回の変動費（ウォン・任意）",
+      "minutes": "施術1回の時間（分・任意）"
+    },
+    "won": "{value}ウォン",
+    "prompt": "現在・変更後の価格と月間来店回数を入力すると計算できます。",
+    "invalid": "価格は1〜1,000万、来店は1〜100万回の整数で入力してください。変動費は0〜1,000万、時間は1〜1,440分です。",
+    "sameVisits": "月{visits}回の来店が続く場合",
+    "before": "現在の仮定売上 {amount}",
+    "breakEven": "現在の売上を維持するには月{visits}回の来店が必要です。",
+    "changeVisits": "現在の来店回数との差：{visits}回",
+    "contribution": "変更後の月間限界利益 {amount}",
+    "contributionBreakEven": "現在の限界利益を維持するには月{visits}回の来店が必要です。",
+    "hourly": "変更後の施術1時間当たり限界利益 {amount}",
+    "note": "入力した仮定による計算で、顧客反応や売上の予測ではありません。限界利益は入力した変動費のみを差し引いた値で、家賃・固定人件費などを差し引いた純利益とは異なります。入力はこの画面でのみ使用し、保存しません。",
+    "clear": "入力を消す"
+  },
+  "growthNotes": {
+    "title": "マイサロン成長ノート",
+    "subtitle": "変更したことを記録して、次回の訪問で公開指標の変化を確認しましょう。",
+    "actionPrompt": "今日は何を実行しましたか？",
+    "actions": {
+      "MENU_CLARITY": "メニューと施術説明を整えました",
+      "SHOWCASE": "施術事例を投稿しました",
+      "PRICE_CHANGE": "価格を変更しました"
+    },
+    "memo": "メモ（任意・240文字まで）",
+    "save": "実行を記録",
+    "saving": "処理中…",
+    "dailyLimit": "同じ実行は韓国時間で1日1回保存できます。修正する場合は削除して再記録してください。",
+    "status": {
+      "saved": "記録を保存しました。",
+      "removed": "記録を削除しました。",
+      "FAILED": "処理できませんでした。しばらくしてから再試行してください。",
+      "SHOP_CHANGED": "登録サロンが変わりました。マイサロンを再確認してください。"
+    },
+    "history": "最近の実行30件",
+    "empty": "最初の実行を記録しましょう。",
+    "genericAction": "実行記録",
+    "removeLabel": "{date}の実行記録を削除",
+    "remove": "削除",
+    "note": "自分だけが閲覧できる手入力の記録です。日付は保存時点を示し、実行の事実は検証しません。公開指標の変化が実行によるものと証明する情報ではありません。"
   }
 }

@@ -4,7 +4,12 @@ import { queryBeautyTop } from "@/lib/beautytop/client"
 import { cn } from "@/lib/utils"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useTranslations } from "next-intl"
+import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
+import { scopeQuery } from "../scope"
+import { ShopComparison } from "../growth/shop-comparison"
 import {
   type BeautyTopMetricRanking,
   type BeautyTopMetricRow,
@@ -30,7 +35,15 @@ const METRICS = {
 
 type Metric = keyof typeof METRICS
 
-const METRIC_KEYS = Object.keys(METRICS) as Metric[]
+const METRIC_KEYS: Metric[] = [
+  "reviews",
+  "followers",
+  "instagram",
+  "area",
+  "staff",
+  "reviewStaff",
+  "activity",
+]
 
 function metricValue(row: BeautyTopMetricRow, metric: Metric) {
   switch (metric) {
@@ -52,7 +65,9 @@ function metricValue(row: BeautyTopMetricRow, metric: Metric) {
 export function ShopsTab({
   options,
   onSelectShop,
+  onFindMine,
 }: {
+  onFindMine: () => void
   options: BeautyTopOptions
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
@@ -62,7 +77,12 @@ export function ShopsTab({
     <>
       <ScopeFilters options={options} filters={filters} onChange={update} />
       <div className="mt-6">
-        <Ranking filters={filters} onSelectShop={onSelectShop} />
+        <Ranking
+          key={JSON.stringify(filters)}
+          filters={filters}
+          onSelectShop={onSelectShop}
+          onFindMine={onFindMine}
+        />
       </div>
     </>
   )
@@ -71,12 +91,16 @@ export function ShopsTab({
 function Ranking({
   filters,
   onSelectShop,
+  onFindMine,
 }: {
+  onFindMine: () => void
   filters: Filters
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const t = useTranslations("beautytop")
   const fmt = useNumberFormats()
+  const region = useScopeLabel(filters)
+  const [benchmark, setBenchmark] = useState<BeautyTopTarget | null>(null)
   const [metric, setMetric] = useState<Metric>("reviews")
   const { resource, sort } = METRICS[metric]
 
@@ -84,7 +108,13 @@ function Ranking({
     queryKey: ["beautytop", "shops", metric, filters],
     queryFn: ({ pageParam, signal }) =>
       queryBeautyTop<BeautyTopMetricRanking>(
-        { resource, sort, ...filters, page: pageParam, page_size: PAGE_SIZE },
+        {
+          resource,
+          sort,
+          ...scopeQuery(filters),
+          page: pageParam,
+          page_size: PAGE_SIZE,
+        },
         signal
       ),
     initialPageParam: 1,
@@ -96,9 +126,27 @@ function Ranking({
   })
 
   const pages = ranking.data?.pages ?? []
-  const total = pages[0]?.pagination?.total ?? 0
-  const rows = pages.flatMap((page) => page.data.items)
+  const total = pages[0]?.pagination?.total ?? pages[0]?.data.total ?? null
+  const rows = Array.from(
+    new Map(
+      pages
+        .flatMap((page) => page.data.items ?? [])
+        .map((row) => [targetKey(row.entity_type, row.id), row])
+    ).values()
+  )
   const top = rows[0]
+  const observation =
+    top?.source_dates?.[
+      metric === "followers"
+        ? "followers"
+        : metric === "reviews"
+          ? "naver"
+          : metric === "instagram"
+            ? "instagram"
+            : metric === "staff" || metric === "reviewStaff"
+              ? "workforce"
+              : "public_updated"
+    ]
   const format = (row: BeautyTopMetricRow) => {
     const value = metricValue(row, metric)
     if (value == null) return "–"
@@ -107,8 +155,11 @@ function Ranking({
         ? fmt.compact(value)
         : metric === "instagram"
           ? value.toFixed(1)
-          : fmt.full(Math.round(value))
-    return t(`shops.value.${metric}`, { value: text })
+          : fmt.full(Math.round(value * 10) / 10)
+    const formatted = t(`shops.value.${metric}`, { value: text })
+    return metric === "followers" && row.followers_approximate
+      ? t("discovery.approximate", { value: formatted })
+      : formatted
   }
 
   return (
@@ -118,7 +169,10 @@ function Ranking({
           <Chip
             key={key}
             active={metric === key}
-            onClick={() => setMetric(key)}
+            onClick={() => {
+              setBenchmark(null)
+              setMetric(key)
+            }}
           >
             {t(`shops.metric.${key}`)}
           </Chip>
@@ -128,7 +182,7 @@ function Ranking({
       <div className="mt-6">
         <Headline
           eyebrow={t("shops.eyebrow", {
-            region: filters.gugun,
+            region,
             category: filters.category,
           })}
         >
@@ -140,13 +194,54 @@ function Ranking({
               })
             : " "}
         </Headline>
-        {total > 0 && (
+        {total !== null && total > 0 && (
           <p className="text-muted-foreground mt-2 text-[15px] tabular-nums">
             {t("shops.basis", { total: fmt.full(total) })}
           </p>
         )}
       </div>
 
+      {top && !ranking.isPending && (
+        <div className="mt-4 flex flex-col gap-3">
+          <p className="text-[26px] leading-[35px] font-bold tabular-nums">
+            {format(top)}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {t("discovery.observedScope")}
+          </p>
+          {observation && (
+            <p className="text-muted-foreground text-xs">
+              {t("discovery.observedAt", {
+                date: formatDate(observation, DATE_FORMATS.ISO_DATE),
+              })}
+            </p>
+          )}
+          {benchmark ? (
+            <ShopComparison
+              key={`${filters.sido}:${filters.gugun}:${filters.category}:${metric}`}
+              target={benchmark}
+              onFindMine={onFindMine}
+              onClose={() => setBenchmark(null)}
+            />
+          ) : (
+            <Button
+              onClick={() =>
+                setBenchmark({ id: top.id, kind: top.entity_type })
+              }
+              className="h-[52px] rounded-xl"
+            >
+              {t("discovery.compare")}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => onSelectShop({ id: top.id, kind: top.entity_type })}
+            className="h-12"
+          >
+            {t("discovery.openEvidence")}
+          </Button>
+        </div>
+      )}
       {ranking.isPending ? (
         <div className="mt-4 space-y-2">
           {[0, 1, 2].map((i) => (
@@ -186,7 +281,14 @@ function Ranking({
                       {row.name}
                     </span>
                     <span className="text-muted-foreground block truncate text-[13px]">
-                      {[row.sido, row.gugun, row.category]
+                      {[
+                        row.sido,
+                        row.gugun,
+                        row.category,
+                        row.entity_type === "PERSON"
+                          ? t("discovery.person")
+                          : null,
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -207,7 +309,7 @@ function Ranking({
             >
               {t("shops.more", {
                 shown: fmt.full(rows.length),
-                total: fmt.full(total),
+                total: total === null ? "—" : fmt.full(total),
               })}
             </button>
           )}
