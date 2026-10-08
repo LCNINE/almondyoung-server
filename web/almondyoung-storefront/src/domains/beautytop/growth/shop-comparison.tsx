@@ -1,6 +1,7 @@
 "use client"
 
 import type { GrowthAction } from "@/lib/types/ui/beautytop-growth"
+import { observedNumber } from "./shop-data"
 import { Button } from "@/components/ui/button"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import { useTranslations } from "next-intl"
@@ -68,8 +69,11 @@ export function ShopComparison({
       return (
         <>
           <span className="block font-bold tabular-nums">
-            {shop.posting?.rank_eligible && shop.posting.median_gap_days != null
-              ? t("cadence", { days: fmt.full(shop.posting.median_gap_days) })
+            {shop.posting?.rank_eligible &&
+            observedNumber(shop.posting.median_gap_days) !== null
+              ? t("cadence", {
+                  days: fmt.full(shop.posting.median_gap_days ?? 0),
+                })
               : t("unknown")}
           </span>
           {shop.posting?.observed_at && (
@@ -83,7 +87,11 @@ export function ShopComparison({
     return (
       <>
         <span className="block font-bold tabular-nums">
-          {metric?.current == null ? t("unknown") : fmt.full(metric.current)}
+          {observedNumber(metric?.current) === null
+            ? t("unknown")
+            : key === "followers"
+              ? t("approximate", { value: fmt.full(metric?.current ?? 0) })
+              : fmt.full(metric?.current ?? 0)}
         </span>
         {metric?.current_at && (
           <span className="text-muted-foreground block text-xs">
@@ -111,41 +119,75 @@ export function ShopComparison({
           {t("close")}
         </Button>
       </div>
-      <table className="w-full table-fixed text-sm">
-        <thead>
-          <tr className="border-border border-b text-left">
-            <th scope="col" className="w-20 py-3 pr-2 font-normal">
-              {t("metric")}
-            </th>
-            <th scope="col" className="px-2 py-3 break-words">
-              {own.data.name}
-              <span className="text-muted-foreground block text-xs font-normal">
-                {t("mine")}
-              </span>
-            </th>
-            <th scope="col" className="px-2 py-3 break-words">
-              {other.data.name}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((key) => (
-            <tr key={key} className="border-border border-b">
-              <th
-                scope="row"
-                className="text-muted-foreground py-4 pr-2 text-left font-normal"
-              >
+      <div className="border-border grid grid-cols-2 gap-3 border-b pb-4 text-sm">
+        <div className="min-w-0">
+          <span className="text-muted-foreground text-xs">{t("mine")}</span>
+          <p className="mt-1 font-bold break-words">{own.data.name}</p>
+        </div>
+        <div className="min-w-0">
+          <span className="text-muted-foreground text-xs">
+            {t("selectedShop")}
+          </span>
+          <p className="mt-1 font-bold break-words">{other.data.name}</p>
+        </div>
+      </div>
+      <dl className="space-y-4">
+        {rows.map((key) => {
+          const ownValue = observedNumber(
+            observedMetric(own.data, key)?.current
+          )
+          const otherValue = observedNumber(
+            observedMetric(other.data, key)?.current
+          )
+          const max = Math.max(ownValue ?? 0, otherValue ?? 0)
+          return (
+            <div key={key}>
+              <dt className="mb-2 text-sm font-medium">
                 {t(`metricLabel.${key}`)}
-              </th>
-              <td className="px-2 py-4 align-top">{value(own.data, key)}</td>
-              <td className="px-2 py-4 align-top">{value(other.data, key)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-muted-foreground text-xs leading-5">
-        {t("comparisonNote")}
-      </p>
+              </dt>
+              <dd className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  { shop: own.data, number: ownValue },
+                  { shop: other.data, number: otherValue },
+                ].map((entry, index) => (
+                  <div
+                    key={index}
+                    className="bg-background min-w-0 rounded-lg p-3"
+                  >
+                    {value(entry.shop, key)}
+                    {key !== "cadence" &&
+                      ownValue !== null &&
+                      otherValue !== null &&
+                      max > 0 && (
+                        <div
+                          aria-hidden
+                          className="bg-secondary mt-3 h-1 overflow-hidden rounded-full"
+                        >
+                          <div
+                            className={
+                              index === 0
+                                ? "bg-foreground h-full"
+                                : "bg-muted-foreground h-full"
+                            }
+                            style={{
+                              width: `${((entry.number ?? 0) / max) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
+      <details className="text-muted-foreground text-xs leading-5">
+        <summary className="cursor-pointer py-2">
+          {t("comparisonSummary")}
+        </summary>
+        <p className="mt-2">{t("comparisonNote")}</p>
+      </details>
       <details className="border-border border-t pt-4">
         <summary className="min-h-11 text-sm font-medium">
           {t("learnTitle")}

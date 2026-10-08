@@ -1,5 +1,6 @@
 "use client"
 
+import { ObservationChart } from "./observation-chart"
 import { useState } from "react"
 import { useTranslations } from "next-intl"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
@@ -71,18 +72,21 @@ export function ShopDataOverview({
         </h2>
         <p className="text-muted-foreground mt-2 text-sm">{t("subtitle")}</p>
       </div>
-      <dl className="grid grid-cols-2 gap-3">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {metrics.map(({ key, metric }) => {
           const delta = metric ? observedChange(metric) : null
           const rate = metric ? observedRate(metric) : null
           return (
-            <div key={key} className="bg-muted min-w-0 rounded-lg p-3">
+            <div
+              key={key}
+              className="border-border min-w-0 rounded-xl border p-4"
+            >
               <dt className="text-muted-foreground text-sm">
                 {keys.includes(key)
                   ? t(`metrics.${key}`)
                   : metric?.label || t("otherMetric")}
               </dt>
-              <dd className="mt-2 text-lg font-bold break-words tabular-nums">
+              <dd className="mt-2 text-2xl font-bold break-words tabular-nums">
                 {key === "followers" && observedNumber(metric?.current) !== null
                   ? t("approximate", { value: number(metric?.current) })
                   : key === "posts" &&
@@ -125,11 +129,14 @@ export function ShopDataOverview({
             at: shop.metrics?.source_dates?.public_updated,
           },
         ].map((metric) => (
-          <div key={metric.key} className="bg-muted min-w-0 rounded-lg p-3">
+          <div
+            key={metric.key}
+            className="border-border min-w-0 rounded-xl border p-4"
+          >
             <dt className="text-muted-foreground text-sm">
               {t(`metrics.${metric.key}`)}
             </dt>
-            <dd className="mt-2 text-lg font-bold break-words tabular-nums">
+            <dd className="mt-2 text-2xl font-bold break-words tabular-nums">
               {number(metric.value)}
             </dd>
             <dd className="text-muted-foreground mt-2 text-xs">
@@ -176,36 +183,50 @@ export function ShopDataOverview({
                         {t("noHistory")}
                       </p>
                     ) : (
-                      <table className="mt-2 w-full text-sm tabular-nums">
-                        <caption className="sr-only">{series.label}</caption>
-                        <thead>
-                          <tr>
-                            <th className="py-2 text-left font-medium">
-                              {t("date")}
-                            </th>
-                            <th className="py-2 text-right font-medium">
-                              {t("value")}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {points.map((point, index) => (
-                            <tr
-                              key={`${point.at}:${index}`}
-                              className="border-border border-t"
-                            >
-                              <td className="py-3">{date(point.at)}</td>
-                              <td className="py-3 text-right">
-                                {point.approximate
-                                  ? t("approximate", {
-                                      value: number(point.value),
-                                    })
-                                  : number(point.value)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <>
+                        <ObservationChart
+                          points={points}
+                          label={series.label}
+                          unit={series.unit}
+                        />
+                        <details>
+                          <summary className="min-h-12 cursor-pointer text-sm font-medium">
+                            {t("allValues")}
+                          </summary>
+                          <table className="mt-2 w-full text-sm tabular-nums">
+                            <caption className="sr-only">
+                              {series.label}
+                            </caption>
+                            <thead>
+                              <tr>
+                                <th className="py-2 text-left font-medium">
+                                  {t("date")}
+                                </th>
+                                <th className="py-2 text-right font-medium">
+                                  {t("value")}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {points.map((point, index) => (
+                                <tr
+                                  key={`${point.at}:${index}`}
+                                  className="border-border border-t"
+                                >
+                                  <td className="py-3">{date(point.at)}</td>
+                                  <td className="py-3 text-right">
+                                    {point.approximate
+                                      ? t("approximate", {
+                                          value: number(point.value),
+                                        })
+                                      : number(point.value)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </details>
+                      </>
                     )}
                   </details>
                 )

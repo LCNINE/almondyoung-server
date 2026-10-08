@@ -222,15 +222,15 @@
   },
   "unlock": {
     "cta": "그럼 우리 샵은? 답 보기",
-    "everyoneTitle": "여기까지는 누구나 봐요",
-    "everyoneBody": "물음표 뒤의 답, 그러니까 우리 샵 순위와 이웃 샵 이름·가격은 멤버십 회원에게 열려요.",
+    "everyoneTitle": "먼저 전국과 우리 동네를 살펴보세요",
+    "everyoneBody": "샵 수·개폐업·메뉴 가격 분포는 가입 전에도 볼 수 있어요.",
     "title": "물음표를 <em>숫자로</em> 바꿔 드려요",
     "description": "뷰티탑은 멤버십 혜택이에요. 지금은 베타라 자료 점검 중에는 잠시 멈출 수 있어요.",
     "item": {
       "rank": "동네·구·업종·전국 순위",
       "peers": "비교한 이웃 샵 이름과 수치",
       "prices": "이웃 샵 가격표로 내 가격 시험",
-      "changes": "관심 샵이 바뀌면 다음 방문 때 알림"
+      "changes": "관심 샵 변화와 개인 실행 기록"
     },
     "amount": {
       "rank": "4단계",
@@ -246,6 +246,14 @@
       "rank": "우리 샵 순위",
       "peers": "이웃 샵 비교",
       "prices": "내 가격 위치"
+    },
+    "publicLabel": "무료 공개",
+    "stickyLabel": "멤버십에서 이어보기",
+    "membershipCta": "멤버십으로 볼 수 있는 것 확인",
+    "sticky": {
+      "reviews": "전국 샵 · 공개 수치",
+      "followers": "우리 샵 · 나란히 비교",
+      "price": "가격 위치 · 변경 계산"
     }
   },
   "compare": {
@@ -409,7 +417,17 @@
       "SHOWCASE": "시술 사례 게시 검토하기",
       "PRICE_CHANGE": "가격 변경 계산하기"
     },
-    "nextActionNote": "검토할 일을 선택하면 내 샵의 계산기나 기록 화면으로 이동해요."
+    "nextActionNote": "검토할 일을 선택하면 내 샵의 계산기나 기록 화면으로 이동해요.",
+    "rankingList": "순위와 수치 전체 보기",
+    "leaderLabel": "이 지표에서 가장 앞선 관측 대상",
+    "chooseQuestion": "지금 궁금한 것은?",
+    "questionLabels": {
+      "reviews": "리뷰가 많은 곳",
+      "followers": "관심을 모으는 곳",
+      "activity": "꾸준히 게시하는 곳"
+    },
+    "selectedShop": "비교 샵",
+    "comparisonSummary": "공개 관측값 비교 · 매출·예약·실력을 뜻하지 않아요"
   },
   "calculator": {
     "title": "가격을 바꾸기 전에 계산해 보세요",
@@ -506,7 +524,57 @@
     "headcountNote": "가입·신고 인원은 실제 전체 직원 수와 다를 수 있어요. 자료 연결이 안 된 경우 0명으로 보지 않습니다. 게시 수는 관측 범위 안의 값이에요.",
     "otherMetric": "기타 공개 지표",
     "rate": "이전 관측 대비 {value}%",
-    "publicTitle": "공개 수치 한눈에"
+    "publicTitle": "공개 수치 한눈에",
+    "chartTitle": "관측값을 직접 살펴보세요",
+    "chartSelect": "관측 시점 선택",
+    "allValues": "날짜별 수치 모두 보기",
+    "chartNote": "점은 실제 관측값입니다. 날짜 간격과 세로축 범위를 확인하세요."
   },
-  "navigationLabel": "뷰티탑 정보 탐색"
+  "navigationLabel": "뷰티탑 정보 탐색",
+  "insights": {
+    "eyebrow": "샵 운영의 다음 질문",
+    "memberEyebrow": "멤버십으로 한 단계 더",
+    "title": "잘되는 샵, 무엇이 다를까요?",
+    "subtitle": "전국에서 찾아보고, 우리 샵에 적용할 힌트를 얻으세요.",
+    "pick": "궁금한 질문 선택",
+    "memberLabel": "멤버십 분석",
+    "included": "이용 가능한 분석",
+    "previewAction": "어떤 답을 볼 수 있나요?",
+    "previewNote": "분석 항목 안내예요. 실제 샵별 수치는 멤버십에서 확인하며, 매출·예약·성공 원인을 추정하지 않아요.",
+    "membershipBridge": "전국 탐색 → 우리 샵과 비교 → 가격 검토와 실행 기록. 멤버십에서 질문을 다음 행동으로 연결하세요.",
+    "reviews": {
+      "label": "전국에서 찾기",
+      "scope": "전국 · 업종별 공개 지표",
+      "question": "후기가 많은 샵은 어떻게 보여줄까요?",
+      "why": "어떤 샵이 눈에 띄는지 찾고, 가격표와 시술 설명을 직접 살펴보세요.",
+      "first": "방문자 리뷰 등 지표별 샵 순위와 관측일",
+      "second": "선택한 샵의 공개 수치·메뉴 가격·이력",
+      "action": "전국 샵 탐색하기"
+    },
+    "followers": {
+      "label": "차이 찾아보기",
+      "scope": "우리 샵 · 관심 샵 비교",
+      "question": "우리 샵과 눈에 띄는 샵, 차이는 뭘까요?",
+      "why": "리뷰·팔로워·게시 간격을 나란히 놓으면 참고할 항목이 보입니다.",
+      "first": "우리 샵과 선택한 샵의 관측 수치 비교",
+      "second": "시술 사례와 메뉴 설명 점검으로 연결",
+      "action": "관심을 모으는 샵 보기"
+    },
+    "price": {
+      "label": "가격 검토하기",
+      "scope": "메뉴 가격 · 입력 가정 계산",
+      "question": "가격을 올리면, 몇 번의 방문이 필요할까요?",
+      "why": "주변 메뉴 가격을 보고, 우리 샵 조건으로 변경 전후를 계산해 보세요.",
+      "first": "공개 메뉴 가격 사이에서 내 가격 위치 확인",
+      "second": "방문 횟수·변동비·시술 시간으로 가격 계산",
+      "action": "우리 샵 가격 검토하기"
+    }
+  },
+  "memberNoticeSummary": "분석 열람은 혜택 이용으로 기록돼요 · 7일 내 전액 환불 제한",
+  "workspace": {
+    "label": "우리 샵 도구 선택",
+    "report": "수치·리포트",
+    "pricing": "가격 검토",
+    "notes": "실행 기록"
+  }
 }

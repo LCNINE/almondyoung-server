@@ -68,14 +68,16 @@ export function ShopsTab({
   onSelectShop,
   onFindMine,
   onPlanAction,
+  initialMetric = "reviews",
 }: {
+  initialMetric?: "reviews" | "followers"
   onFindMine: () => void
   onPlanAction: (action: GrowthAction) => void
   options: BeautyTopOptions
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const [filters, update] = useScopeFilters()
-  const [metric, setMetric] = useState<Metric>("reviews")
+  const [metric, setMetric] = useState<Metric>(initialMetric)
 
   return (
     <>
@@ -165,7 +167,8 @@ function Ranking({
     ]
   const format = (row: BeautyTopMetricRow) => {
     const value = metricValue(row, metric)
-    if (value == null) return "–"
+    if (value == null || !Number.isFinite(value) || value < 0)
+      return t("discovery.unknown")
     const text =
       metric === "followers"
         ? fmt.compact(value)
@@ -179,24 +182,32 @@ function Ranking({
   }
 
   return (
-    <Card note={t("shops.note")}>
-      <div className="mb-4 grid gap-2">
+    <Card
+      note={t("shops.note")}
+      className="border-border rounded-xl border p-4 sm:p-6"
+    >
+      <p className="mb-3 text-sm font-medium">
+        {t("discovery.chooseQuestion")}
+      </p>
+      <div className="mb-4 grid grid-cols-3 gap-2">
         {(["reviews", "followers", "activity"] as const).map((key) => (
           <Button
             key={key}
             variant="secondary"
             aria-pressed={metric === key}
             onClick={() => chooseMetric(key)}
-            className="h-auto min-h-12 justify-between text-left whitespace-normal"
+            aria-label={`${t(`discovery.questionLabels.${key}`)} · ${t(`discovery.questions.${key}`)}`}
+            className={cn(
+              "h-auto min-h-12 px-2 py-3 text-xs whitespace-normal sm:text-sm",
+              metric === key &&
+                "bg-foreground text-background hover:bg-foreground/90"
+            )}
           >
-            <span>{t(`discovery.questions.${key}`)}</span>
-            <span aria-hidden className="ml-3 shrink-0">
-              →
-            </span>
+            {t(`discovery.questionLabels.${key}`)}
           </Button>
         ))}
       </div>
-      <div className="scrollbar-hide -mx-6 flex gap-2 overflow-x-auto px-6">
+      <div className="flex flex-wrap gap-2">
         {METRIC_KEYS.map((key) => (
           <Chip
             key={key}
@@ -210,7 +221,10 @@ function Ranking({
         ))}
       </div>
 
-      <div className="mt-6">
+      <div className="bg-muted mt-6 rounded-xl p-4">
+        <p className="text-muted-foreground mb-3 text-xs font-medium">
+          {t("discovery.leaderLabel")}
+        </p>
         <Headline
           eyebrow={t("shops.eyebrow", {
             region,
@@ -230,50 +244,58 @@ function Ranking({
             {t("shops.basis", { total: fmt.full(total) })}
           </p>
         )}
-      </div>
 
-      {top && !ranking.isPending && (
-        <div className="mt-4 flex flex-col gap-3">
-          <p className="text-[26px] leading-[35px] font-bold tabular-nums">
-            {format(top)}
-          </p>
-          <p className="text-muted-foreground text-xs">
-            {t("discovery.observedScope")}
-          </p>
-          {observation && (
-            <p className="text-muted-foreground text-xs">
-              {t("discovery.observedAt", {
-                date: formatDate(observation, DATE_FORMATS.ISO_DATE),
-              })}
+        {top && !ranking.isPending && (
+          <div className="mt-4 flex flex-col gap-3">
+            <p className="text-[26px] leading-[35px] font-bold tabular-nums">
+              {format(top)}
             </p>
-          )}
-          {benchmark ? (
-            <ShopComparison
-              key={`${filters.sido}:${filters.gugun}:${filters.category}:${metric}`}
-              target={benchmark}
-              onFindMine={onFindMine}
-              onPlanAction={onPlanAction}
-              onClose={() => setBenchmark(null)}
-            />
-          ) : (
+            <p className="text-muted-foreground text-xs">
+              {t("discovery.observedScope")}
+            </p>
+            {observation && (
+              <p className="text-muted-foreground text-xs">
+                {t("discovery.observedAt", {
+                  date: formatDate(observation, DATE_FORMATS.ISO_DATE),
+                })}
+              </p>
+            )}
             <Button
               onClick={() =>
                 setBenchmark({ id: top.id, kind: top.entity_type })
               }
               className="h-[52px] rounded-xl"
+              aria-expanded={benchmark !== null}
+              aria-controls="bt-ranking-comparison"
             >
               {t("discovery.compare")}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => onSelectShop({ id: top.id, kind: top.entity_type })}
-            className="h-12"
-          >
-            {t("discovery.openEvidence")}
-          </Button>
-        </div>
-      )}
+            <Button
+              variant="outline"
+              onClick={() =>
+                onSelectShop({ id: top.id, kind: top.entity_type })
+              }
+              className="h-12"
+            >
+              {t("discovery.openEvidence")}
+            </Button>
+          </div>
+        )}
+      </div>
+      <div
+        id="bt-ranking-comparison"
+        className={benchmark ? "mt-4" : undefined}
+      >
+        {benchmark && (
+          <ShopComparison
+            key={`${filters.sido}:${filters.gugun}:${filters.category}:${metric}`}
+            target={benchmark}
+            onFindMine={onFindMine}
+            onPlanAction={onPlanAction}
+            onClose={() => setBenchmark(null)}
+          />
+        )}
+      </div>
       {ranking.isPending ? (
         <div className="mt-4 space-y-2">
           {[0, 1, 2].map((i) => (
@@ -288,7 +310,10 @@ function Ranking({
         </p>
       ) : (
         <>
-          <ol className="mt-2">
+          <h3 className="mt-6 mb-2 text-base font-bold">
+            {t("discovery.rankingList")}
+          </h3>
+          <ol className="divide-border divide-y">
             {rows.map((row) => (
               <li key={targetKey(row.entity_type, row.id)}>
                 <button
@@ -309,7 +334,7 @@ function Ranking({
                     {row.rank}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-[17px] leading-[25.5px] font-medium">
+                    <span className="text-foreground block truncate text-base leading-6 font-medium">
                       {row.name}
                     </span>
                     <span className="text-muted-foreground block truncate text-[13px]">
@@ -325,7 +350,7 @@ function Ranking({
                         .join(" · ")}
                     </span>
                   </span>
-                  <span className="text-foreground shrink-0 text-[15px] font-bold tabular-nums">
+                  <span className="text-foreground max-w-[40%] shrink-0 text-right text-sm font-bold break-words tabular-nums">
                     {format(row)}
                   </span>
                 </button>

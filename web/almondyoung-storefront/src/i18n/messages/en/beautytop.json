@@ -222,15 +222,15 @@
   },
   "unlock": {
     "cta": "So where is my shop? See the answer",
-    "everyoneTitle": "Everyone can see this much",
-    "everyoneBody": "The answers behind the question marks, your rank and neighbouring shops' names and prices, open to members.",
+    "everyoneTitle": "Start with nationwide and local data",
+    "everyoneBody": "Shop counts, openings, closures and menu price distributions are available before joining.",
     "title": "We turn the question marks <em>into numbers</em>",
     "description": "BeautyTop is a membership benefit. It is in beta and may pause while data is checked.",
     "item": {
       "rank": "Rank in area, district, category and nationwide",
       "peers": "Names and figures of the shops you are compared with",
       "prices": "Test your prices against neighbours' menus",
-      "changes": "See changes at watched shops on your next visit"
+      "changes": "Watched-shop changes and personal action notes"
     },
     "amount": {
       "rank": "4 levels",
@@ -246,6 +246,14 @@
       "rank": "Your shop's rank",
       "peers": "Nearby shop comparison",
       "prices": "Where your prices sit"
+    },
+    "publicLabel": "Public access",
+    "stickyLabel": "Continue with membership",
+    "membershipCta": "Explore membership benefits",
+    "sticky": {
+      "reviews": "Shops · public figures",
+      "followers": "Your shop · comparison",
+      "price": "Pricing · scenarios"
     }
   },
   "compare": {
@@ -409,7 +417,17 @@
       "SHOWCASE": "Consider posting treatment examples",
       "PRICE_CHANGE": "Calculate a price change"
     },
-    "nextActionNote": "Choose a next step to open your calculator or note form."
+    "nextActionNote": "Choose a next step to open your calculator or note form.",
+    "rankingList": "Explore rankings and figures",
+    "leaderLabel": "Leading observed entry for this metric",
+    "chooseQuestion": "What are you curious about?",
+    "questionLabels": {
+      "reviews": "Most reviews",
+      "followers": "Follower reach",
+      "activity": "Posting cadence"
+    },
+    "selectedShop": "Selected shop",
+    "comparisonSummary": "Observed public figures · not revenue, bookings or skill"
   },
   "calculator": {
     "title": "Calculate before changing prices",
@@ -506,7 +524,57 @@
     "headcountNote": "Registered or insured counts may differ from total staff. Missing source matching does not mean zero staff. Post counts cover observed data.",
     "otherMetric": "Other public metric",
     "rate": "{value}% since prior observation",
-    "publicTitle": "Public data at a glance"
+    "publicTitle": "Public data at a glance",
+    "chartTitle": "Explore the observed values",
+    "chartSelect": "Select an observation",
+    "allValues": "View all dated values",
+    "chartNote": "Dots are actual observations. Check the date spacing and vertical scale."
   },
-  "navigationLabel": "BeautyTop information"
+  "navigationLabel": "BeautyTop information",
+  "insights": {
+    "eyebrow": "Your next business question",
+    "memberEyebrow": "Go further with membership",
+    "title": "What makes a shop stand out?",
+    "subtitle": "Explore nationwide and find ideas to try in your shop.",
+    "pick": "Choose a question",
+    "memberLabel": "Member analysis",
+    "included": "Included analysis",
+    "previewAction": "What can I discover?",
+    "previewNote": "This previews analysis features. Shop-level figures require membership. Revenue, bookings and causes of success are not inferred.",
+    "membershipBridge": "Explore nationwide → compare with your shop → review prices and record actions. Turn questions into a next step with membership.",
+    "reviews": {
+      "label": "Explore shops",
+      "scope": "Nationwide · public metrics",
+      "question": "How do shops with many reviews present themselves?",
+      "why": "Find shops that stand out, then look at their menus and treatment descriptions.",
+      "first": "Shop rankings by public metric, with observation dates",
+      "second": "Selected shop figures, menu prices and history",
+      "action": "Explore shops nationwide"
+    },
+    "followers": {
+      "label": "Find differences",
+      "scope": "Your shop · selected shops",
+      "question": "How does your shop compare with one that stands out?",
+      "why": "Place reviews, followers and posting intervals side by side to find ideas to examine.",
+      "first": "Compare observed figures for your shop and a selected shop",
+      "second": "Move to reviewing treatment examples and menu clarity",
+      "action": "Explore shops attracting attention"
+    },
+    "price": {
+      "label": "Review pricing",
+      "scope": "Menu prices · assumption calculator",
+      "question": "After a price increase, how many visits would you need?",
+      "why": "Explore nearby menu prices and compare scenarios using your own assumptions.",
+      "first": "See your price among observed public menu prices",
+      "second": "Calculate using visits, variable costs and treatment time",
+      "action": "Review my shop pricing"
+    }
+  },
+  "memberNoticeSummary": "Viewing analysis records benefit use · restricts the 7-day full refund",
+  "workspace": {
+    "label": "Choose a shop tool",
+    "report": "Shop report",
+    "pricing": "Pricing",
+    "notes": "Action notes"
+  }
 }
