@@ -392,5 +392,5 @@ interface ReconcileRule<K extends ReconcileSubject> {
 
 ### 11.7 범위 밖
 
-- 판정 SQL 을 CI 에서 돌리는 것 — core 통합 스펙(`describeIfDb`)을 CI 에서 돌리는 job 이 없다. 별도 이슈로 둔다
+- 판정 SQL 을 CI 에서 돌리는 것 — core 통합 스펙(`describeIfDb`)을 CI 에서 돌리는 job 이 없다. #1034
 - 16번(backlog `failed` 상한)의 재시도 장치 중복 — backlog 자체 백오프와 리컨실러 백오프 중 하나만 상한을 가진다. 그 행에서 정한다
