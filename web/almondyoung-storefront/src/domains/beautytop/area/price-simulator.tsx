@@ -6,7 +6,12 @@ import { useTranslations } from "next-intl"
 import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
 import { useScopeFilters } from "../components/neighborhood-tab"
-import { Chip, LoadError, stripLeadingSymbols } from "../components/parts"
+import {
+  CardSkeleton,
+  Chip,
+  LoadError,
+  stripLeadingSymbols,
+} from "../components/parts"
 import type {
   BeautyTopPrice,
   BeautyTopPriceList,
@@ -53,8 +58,7 @@ function Simulator({
   const value =
     mine ?? (values.length ? values[Math.floor(values.length / 2)] : 0)
 
-  if (list.isPending)
-    return <div className="bg-muted h-40 animate-pulse rounded-xl" />
+  if (list.isPending) return <CardSkeleton variant="list" />
   if (list.isError) return <LoadError onRetry={() => list.refetch()} />
   if (items.length < 3)
     return <p className="text-muted-foreground text-sm">{t("tooFew")}</p>
@@ -151,11 +155,19 @@ export function PriceSimulator({
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const t = useTranslations("beautytop.simulator")
+  const ruler = useTranslations("beautytop.ruler")
   const [filters] = useScopeFilters()
   const region = useScopeLabel(filters)
-  const groups = useArea<BeautyTopPrice>("prices", filters).data?.groups ?? []
+  const prices = useArea<BeautyTopPrice>("prices", filters, !!filters.gugun)
+  const groups = prices.data?.groups ?? []
   const [picked, setPicked] = useState<string | null>(null)
   const group = groups.find((g) => g.service_id === picked) ?? groups[0]
+  if (!filters.gugun)
+    return (
+      <p className="text-muted-foreground text-sm">{ruler("districtOnly")}</p>
+    )
+  if (prices.isPending) return <CardSkeleton />
+  if (prices.isError) return <LoadError onRetry={() => prices.refetch()} />
   if (!group) return null
 
   return (

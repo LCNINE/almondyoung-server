@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils/format-date"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslations } from "next-intl"
 import { useNumberFormats } from "../use-number-formats"
+import { CardSkeleton } from "../components/parts"
 
 // Same period boundaries as the refund decision (membership savings overview).
 // Loaded only when a member opens the shop tab, never on every page view.
@@ -23,6 +24,7 @@ export function MembershipReceipt() {
     retry: false,
   })
   const period = overview.data?.currentPeriod
+  if (user && overview.isPending) return <CardSkeleton />
   if (!period) return null
 
   return (

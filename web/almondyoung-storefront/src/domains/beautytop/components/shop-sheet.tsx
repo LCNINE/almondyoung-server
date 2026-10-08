@@ -6,7 +6,7 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Skeleton } from "@/components/ui/skeleton"
+import { LoadingSkeleton } from "./parts"
 import { cn } from "@/lib/utils"
 import { Heart } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -77,9 +77,9 @@ function ShopDetail({ target }: { target: BeautyTopTarget }) {
         <SheetDescription className="sr-only">
           {t("shop.loading")}
         </SheetDescription>
-        <Skeleton className="h-7 w-1/2" />
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-24 w-full" />
+        <LoadingSkeleton className="h-7 w-1/2" />
+        <LoadingSkeleton className="h-4 w-3/4" />
+        <LoadingSkeleton className="h-24 w-full" />
       </div>
     )
   }

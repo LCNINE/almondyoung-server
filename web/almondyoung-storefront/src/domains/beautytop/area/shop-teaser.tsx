@@ -8,7 +8,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Skeleton } from "@/components/ui/skeleton"
+import { LoadingSkeleton } from "../components/parts"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
@@ -132,8 +132,8 @@ export function ShopTeaser({
             <CommandList>
               {results.isPending ? (
                 <div className="space-y-2 p-3">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-5 w-1/2" />
+                  <LoadingSkeleton className="h-5 w-2/3" />
+                  <LoadingSkeleton className="h-5 w-1/2" />
                 </div>
               ) : results.isError ? (
                 <p className="text-muted-foreground p-3 text-sm">
@@ -185,7 +185,7 @@ export function ShopTeaser({
         </button>
       </div>
       {summary.isPending ? (
-        <Skeleton className="h-40 w-full rounded-xl" />
+        <LoadingSkeleton className="h-40 w-full rounded-xl" />
       ) : summary.isError || !local || !m ? (
         <p className="text-muted-foreground text-sm">{t("summaryError")}</p>
       ) : (

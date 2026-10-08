@@ -29,6 +29,20 @@ function AreaRevenue({ filters }: { filters: Filters }) {
   const region = useScopeLabel(filters)
   const revenue = useArea<BeautyTopRevenue>("revenue", filters)
   const group = revenue.data?.available ? revenue.data.groups?.[0] : undefined
+  if (revenue.isPending)
+    return (
+      <>
+        <Divider />
+        <CardSkeleton variant="chart" />
+      </>
+    )
+  if (revenue.isError)
+    return (
+      <>
+        <Divider />
+        <LoadError onRetry={() => revenue.refetch()} />
+      </>
+    )
   if (!group || group.series.length < 2) return null
   return (
     <>

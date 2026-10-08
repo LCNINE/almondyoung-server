@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl"
 import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
 import type { Filters } from "../components/neighborhood-tab"
-import { Chip } from "../components/parts"
+import { CardSkeleton, Chip, LoadError } from "../components/parts"
 import type { BeautyTopPrice, BeautyTopPriceGroup } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
@@ -105,7 +105,9 @@ export function PriceRuler({ filters }: { filters: Filters }) {
 
   if (!filters.gugun)
     return <p className="text-muted-foreground text-sm">{t("districtOnly")}</p>
-  if (prices.isPending || prices.isError || !group) return null
+  if (prices.isPending) return <CardSkeleton />
+  if (prices.isError) return <LoadError onRetry={() => prices.refetch()} />
+  if (!group) return null
 
   return (
     <section aria-labelledby="ruler-title" className="flex flex-col gap-4">

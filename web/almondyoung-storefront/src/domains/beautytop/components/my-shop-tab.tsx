@@ -119,9 +119,7 @@ function ShopSearch({
         </p>
       ) : search.isPending ? (
         <div className="mt-4 space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="bg-muted h-14 animate-pulse rounded-xl" />
-          ))}
+          <CardSkeleton variant="list" />
         </div>
       ) : search.isError ? (
         <LoadError onRetry={() => search.refetch()} />

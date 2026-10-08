@@ -20,17 +20,30 @@ import type {
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
 import { useMarketSummary } from "./use-market-summary"
+import { LoadingSkeleton } from "../components/parts"
 
-type Column = { market?: BeautyTopMarket; prices?: BeautyTopPrice }
+type Column = {
+  market?: BeautyTopMarket
+  prices?: BeautyTopPrice
+  marketPending: boolean
+  pricesPending: boolean
+}
 
 // The second column loads only after a scope is picked; national consumers share one summary.
 function useColumn(filters: Filters | null, options: BeautyTopOptions): Column {
   const params = filters ?? { sido: "", gugun: "", category: "" }
   const enabled = !!filters
+  const market = useMarketSummary(params, options, enabled)
+  const prices = useArea<BeautyTopPrice>(
+    "prices",
+    params,
+    enabled && !!params.gugun
+  )
   return {
-    market: useMarketSummary(params, options, enabled).data,
-    prices: useArea<BeautyTopPrice>("prices", params, enabled && !!params.gugun)
-      .data,
+    market: market.data,
+    prices: prices.data,
+    marketPending: enabled && market.isPending,
+    pricesPending: enabled && !!params.gugun && prices.isPending,
   }
 }
 
@@ -125,7 +138,16 @@ export function AreaCompare({
   ]
 
   return (
-    <section aria-labelledby="compare-title" className="flex flex-col gap-4">
+    <section
+      aria-labelledby="compare-title"
+      aria-busy={
+        left.marketPending ||
+        left.pricesPending ||
+        right.marketPending ||
+        right.pricesPending
+      }
+      className="flex flex-col gap-4"
+    >
       <h2 id="compare-title" className="text-lg font-bold break-keep">
         {t("title")}
       </h2>
@@ -168,10 +190,26 @@ export function AreaCompare({
                   ? t("row.price", { name: service?.name ?? "" })
                   : t(`row.${row.key}`)}
               </th>
-              <td className="p-3 tabular-nums">{row.l}</td>
+              <td className="p-3 tabular-nums">
+                {(
+                  row.key === "price" ? left.pricesPending : left.marketPending
+                ) ? (
+                  <LoadingSkeleton className="h-4 w-12 max-w-full" />
+                ) : (
+                  row.l
+                )}
+              </td>
               <td className="p-3 tabular-nums">
                 {other ? (
-                  row.r
+                  (
+                    row.key === "price"
+                      ? right.pricesPending
+                      : right.marketPending
+                  ) ? (
+                    <LoadingSkeleton className="h-4 w-12 max-w-full" />
+                  ) : (
+                    row.r
+                  )
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}

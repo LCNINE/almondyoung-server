@@ -8,7 +8,12 @@ import type { Filters } from "../components/neighborhood-tab"
 import type { BeautyTopLifecycle, BeautyTopOptions } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
-import { Bars, CardSkeleton, LoadError } from "../components/parts"
+import {
+  Bars,
+  CardSkeleton,
+  LoadingSkeleton,
+  LoadError,
+} from "../components/parts"
 import { layoutDots } from "./dot-field"
 import { useMarketSummary } from "./use-market-summary"
 
@@ -106,6 +111,9 @@ export function AreaHero({
           {mineLabel ?? t("legendMine")}
         </li>
       </ul>
+      {filters.sido && lifecycle.isPending && (
+        <LoadingSkeleton className="h-4 w-2/3" />
+      )}
       <p className="text-muted-foreground text-sm leading-[19px] break-keep">
         {[
           !filters.sido

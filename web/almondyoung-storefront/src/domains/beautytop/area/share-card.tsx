@@ -8,6 +8,7 @@ import type { BeautyTopOptions, BeautyTopPrice } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
 import { useMarketSummary } from "./use-market-summary"
+import { CardSkeleton } from "../components/parts"
 
 const W = 1080
 const H = 1350
@@ -75,16 +76,19 @@ export function ShareCard({
   const t = useTranslations("beautytop.share")
   const fmt = useNumberFormats()
   const region = useScopeLabel(filters)
-  const market = useMarketSummary(filters, options).data
-  const median = useArea<BeautyTopPrice>(
-    "prices",
-    filters,
-    !!filters.gugun
-  ).data?.groups?.find((g) => typeof g.median === "number")
+  const summary = useMarketSummary(filters, options)
+  const market = summary.data
+  const prices = useArea<BeautyTopPrice>("prices", filters, !!filters.gugun)
+  const median = prices.data?.groups?.find((g) => typeof g.median === "number")
   const [status, setStatus] = useState<"idle" | "saved" | "copied" | "failed">(
     "idle"
   )
 
+  if (
+    summary.isPending ||
+    (market?.available && !!filters.gugun && prices.isPending)
+  )
+    return <CardSkeleton />
   if (!market?.available || !market.shops) return null
 
   const lines: Line[] = [
