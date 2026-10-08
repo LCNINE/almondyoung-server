@@ -73,7 +73,7 @@ export function AreaView({
           update(next)
         }}
       />
-      <AreaHero key={scopeKey} filters={filters} mineLabel={mineLabel} />
+      <AreaHero key={`h:${scopeKey}`} filters={filters} mineLabel={mineLabel} />
       {shopSlot && (
         <>
           <Divider />
@@ -84,7 +84,7 @@ export function AreaView({
       <PriceRuler key={`p:${scopeKey}`} filters={filters} />
       <AreaRevenue key={`r:${scopeKey}`} filters={filters} />
       <Divider />
-      <AreaCompare key={scopeKey} options={options.data} filters={filters} />
+      <AreaCompare key={`c:${scopeKey}`} options={options.data} filters={filters} />
       <Divider />
       <section aria-labelledby="insta-title" className="flex flex-col gap-3">
         <h2 id="insta-title" className="text-lg font-bold">
