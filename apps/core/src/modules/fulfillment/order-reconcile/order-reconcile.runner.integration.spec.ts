@@ -374,7 +374,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
 
       const summary = await runner.runRule(rule, NOW, tx);
 
-      expect(summary).toMatchObject({ acted: 0, notNeeded: 1 });
+      expect(summary).toMatchObject({ acted: 0, notNeeded: 0, gated: 1 });
       expect(rule.fingerprint).not.toHaveBeenCalled();
       expect(rule.check).not.toHaveBeenCalled();
       expect(rule.act).not.toHaveBeenCalled();
@@ -398,7 +398,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
 
       const summary = await runner.runRule(rule, NOW, tx);
 
-      expect(summary).toMatchObject({ wouldAct: 0, notNeeded: 1 });
+      expect(summary).toMatchObject({ wouldAct: 0, notNeeded: 0, gated: 1 });
       expect((await statesOf(tx, rule.name)).get(id)).toBeUndefined();
     });
   });

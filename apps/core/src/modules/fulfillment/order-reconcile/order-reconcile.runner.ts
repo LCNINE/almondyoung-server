@@ -22,6 +22,8 @@ export type RuleRunSummary = {
   acted: number;
   wouldAct: number;
   notNeeded: number;
+  /** 실행 직전 판정이 칸 밖이라 규칙을 부르지 않은 후보. 매분 0 이 아니면 투영 갱신이 늦거나 멈춘 것이다 */
+  gated: number;
   gaveUp: number;
   errors: number;
 };
@@ -77,6 +79,7 @@ export class OrderReconcileRunner {
       acted: 0,
       wouldAct: 0,
       notNeeded: 0,
+      gated: 0,
       gaveUp: 0,
       errors: 0,
     };
@@ -86,15 +89,22 @@ export class OrderReconcileRunner {
       if (step === 'act') summary.acted++;
       else if (step === 'would_act') summary.wouldAct++;
       else if (step === 'not_needed') summary.notNeeded++;
+      else if (step === 'gated') summary.gated++;
       else if (step === 'give_up') summary.gaveUp++;
       else summary.errors++;
     }
     const touched =
-      summary.departed + summary.acted + summary.wouldAct + summary.notNeeded + summary.gaveUp + summary.errors;
+      summary.departed +
+      summary.acted +
+      summary.wouldAct +
+      summary.notNeeded +
+      summary.gated +
+      summary.gaveUp +
+      summary.errors;
     if (touched > 0) {
       this.logger.log(
         `order-reconcile ${rule.name}(#${rule.row}, ${rule.mode}): acted=${summary.acted} would_act=${summary.wouldAct} ` +
-          `not_needed=${summary.notNeeded} gave_up=${summary.gaveUp} error=${summary.errors} departed=${summary.departed}`,
+          `not_needed=${summary.notNeeded} gated=${summary.gated} gave_up=${summary.gaveUp} error=${summary.errors} departed=${summary.departed}`,
       );
     }
     return summary;
@@ -106,7 +116,7 @@ export class OrderReconcileRunner {
     prior: ReconcilePrior | null,
     now: Date,
     tx?: DbTx,
-  ): Promise<ReconcileStep | 'error'> {
+  ): Promise<ReconcileStep | 'gated' | 'error'> {
     // savepoint 가 롤백돼도 이번 바퀴에 구한 지문은 남긴다 — 이전 지문으로 세면 운영자가 원인을 고친 뒤에도 리셋되지 않는다
     let seen: string | undefined;
     try {
@@ -117,7 +127,7 @@ export class OrderReconcileRunner {
             // 기록도 쓰지 않는다: 막 act 한 행을 not_needed 로 덮으면 떠남 유예가 풀려, 깨운 backlog 가 pending 인 순간을
             // 투영이 잡을 때 행이 지워지고 «깨움→되돌아옴» 반복이 포기에 닿지 못한다. 투영은 1분 안에 따라잡는다
             const [judged] = await this.progress.judge([salesOrderId], now, sp);
-            if (!stillInSituation(rule.situation, judged)) return 'not_needed';
+            if (!stillInSituation(rule.situation, judged)) return 'gated';
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
             seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);
@@ -131,7 +141,11 @@ export class OrderReconcileRunner {
             await this.repository.save(
               rule,
               salesOrderId,
-              nextRecord(eff, { fingerprint, mode: rule.mode, step, outcome: step === 'act' ? 'acted' : undefined }, now),
+              nextRecord(
+                eff,
+                { fingerprint, mode: rule.mode, step, outcome: step === 'act' ? 'acted' : undefined },
+                now,
+              ),
               now,
               sp,
             );
