@@ -173,7 +173,10 @@
     "dotsLabelNoOpened": "{count} shops shown as dots",
     "closed": "In the same year {closed} closed.",
     "closedUnknown": "Closures are unknown: public permits do not list this category separately.",
-    "density": "That is one shop per {residents} residents."
+    "density": "That is one shop per {residents} residents.",
+    "regionRequired": "Choose a province or neighborhood to view this statistic.",
+    "nationalBasis": "Sum of regional counts of shops confirmed open. Shops with unknown regions are excluded. Observation dates vary by region, and counts may differ from actual shop numbers.",
+    "nationalLifecycle": "Nationwide closure trends are not available yet. Choose a province or neighborhood to check regional trends."
   },
   "teaser": {
     "title": "Find your shop",
@@ -218,7 +221,8 @@
     },
     "basis": "Listed prices for {menus} menus from {brands} brands in {region}.",
     "private": "Your price is calculated on this screen only and never saved.",
-    "prompt": "Move the slider to your shop's price."
+    "prompt": "Move the slider to your shop's price.",
+    "districtOnly": "Median service prices are available by district. Choose “District” and select an area to compare."
   },
   "unlock": {
     "cta": "So where is my shop? See the answer",
@@ -271,7 +275,8 @@
       "opened": "Opened (1y)",
       "price": "{name} median"
     },
-    "note": "Based on public permits and menu prices. Use it as a reference when choosing where to open."
+    "note": "Based on public permits and menu prices. Use it as a reference when choosing where to open.",
+    "nationalNote": "Nationwide shop and opening counts are sums of regional aggregates. Population ratios and median prices are not added together."
   },
   "insta": {
     "title": "Observed posts and menu trends"
@@ -325,7 +330,8 @@
       "saved": "Image created.",
       "copied": "Link copied.",
       "failed": "Sharing is unavailable right now. Please try again."
-    }
+    },
+    "nationalBasis": "Sum of confirmed regional shop counts"
   },
   "opening": {
     "metaTitle": "{category} shops in {gugun}: openings and closings",

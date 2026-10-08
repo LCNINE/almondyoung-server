@@ -31,7 +31,7 @@ function Ruler({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[40px] leading-[48px] font-bold tabular-nums">
+      <p className="text-[26px] leading-[35px] font-bold tabular-nums">
         {t("won", { value: fmt.full(value) })}
       </p>
       <Slider
@@ -95,7 +95,7 @@ function Ruler({
 export function PriceRuler({ filters }: { filters: Filters }) {
   const region = useScopeLabel(filters)
   const t = useTranslations("beautytop.ruler")
-  const prices = useArea<BeautyTopPrice>("prices", filters)
+  const prices = useArea<BeautyTopPrice>("prices", filters, !!filters.gugun)
   const groups = (prices.data?.groups ?? []).filter(
     (g): g is BeautyTopPriceGroup & { median: number } =>
       typeof g.median === "number" && g.max >= g.min
@@ -103,6 +103,8 @@ export function PriceRuler({ filters }: { filters: Filters }) {
   const [picked, setPicked] = useState<string | null>(null)
   const group = groups.find((g) => g.service_id === picked) ?? groups[0]
 
+  if (!filters.gugun)
+    return <p className="text-muted-foreground text-sm">{t("districtOnly")}</p>
   if (prices.isPending || prices.isError || !group) return null
 
   return (

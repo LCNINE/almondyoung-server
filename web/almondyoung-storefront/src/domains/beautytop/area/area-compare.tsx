@@ -19,16 +19,18 @@ import type {
 } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
+import { useMarketSummary } from "./use-market-summary"
 
 type Column = { market?: BeautyTopMarket; prices?: BeautyTopPrice }
 
-// The second column loads only after a district is picked: two cached calls, none before.
-function useColumn(filters: Filters | null): Column {
+// The second column loads only after a scope is picked; national consumers share one summary.
+function useColumn(filters: Filters | null, options: BeautyTopOptions): Column {
   const params = filters ?? { sido: "", gugun: "", category: "" }
   const enabled = !!filters
   return {
-    market: useArea<BeautyTopMarket>("market", params, enabled).data,
-    prices: useArea<BeautyTopPrice>("prices", params, enabled).data,
+    market: useMarketSummary(params, options, enabled).data,
+    prices: useArea<BeautyTopPrice>("prices", params, enabled && !!params.gugun)
+      .data,
   }
 }
 
@@ -80,8 +82,8 @@ export function AreaCompare({
           }))),
   ]
   const selected = choices.find((c) => c.id === other)
-  const left = useColumn(filters)
-  const right = useColumn(selected?.filters ?? null)
+  const left = useColumn(filters, options)
+  const right = useColumn(selected?.filters ?? null, options)
 
   const service = left.prices?.groups?.find((g) => typeof g.median === "number")
   const medianOf = (c: Column) =>
@@ -179,6 +181,9 @@ export function AreaCompare({
         </tbody>
       </table>
       <p className="text-muted-foreground text-xs">{t("note")}</p>
+      {(!filters.sido || selected?.id === "national") && (
+        <p className="text-muted-foreground text-xs">{t("nationalNote")}</p>
+      )}
     </section>
   )
 }

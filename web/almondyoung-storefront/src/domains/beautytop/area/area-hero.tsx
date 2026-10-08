@@ -5,11 +5,12 @@ import { useTranslations } from "next-intl"
 import { useScopeLabel } from "../use-scope"
 import { useMemo } from "react"
 import type { Filters } from "../components/neighborhood-tab"
-import type { BeautyTopLifecycle, BeautyTopMarket } from "../types"
+import type { BeautyTopLifecycle, BeautyTopOptions } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
 import { Bars, CardSkeleton, LoadError } from "../components/parts"
 import { layoutDots } from "./dot-field"
+import { useMarketSummary } from "./use-market-summary"
 
 const DOT_CLASS = {
   new: "bg-foreground",
@@ -20,15 +21,21 @@ const DOT_CLASS = {
 export function AreaHero({
   filters,
   mineLabel,
+  options,
 }: {
   filters: Filters
   mineLabel: string | null
+  options: BeautyTopOptions
 }) {
   const t = useTranslations("beautytop.area")
   const fmt = useNumberFormats()
   const region = useScopeLabel(filters)
-  const market = useArea<BeautyTopMarket>("market", filters)
-  const lifecycle = useArea<BeautyTopLifecycle>("lifecycle", filters)
+  const market = useMarketSummary(filters, options)
+  const lifecycle = useArea<BeautyTopLifecycle>(
+    "lifecycle",
+    filters,
+    !!filters.sido
+  )
 
   const shops = market.data?.shops ?? 0
   // Same response as the shop count, so the two numbers describe the same population.
@@ -43,7 +50,9 @@ export function AreaHero({
   if (market.isError) return <LoadError onRetry={() => market.refetch()} />
   if (!market.data?.available || shops === 0) {
     return (
-      <p className="text-muted-foreground py-6 text-[15px]">{t("empty")}</p>
+      <p className="text-muted-foreground py-6 text-[15px]">
+        {t(!market.data?.available ? "regionRequired" : "empty")}
+      </p>
     )
   }
 
@@ -99,12 +108,14 @@ export function AreaHero({
       </ul>
       <p className="text-muted-foreground text-sm leading-[19px] break-keep">
         {[
-          lifecycle.isPending || lifecycle.isError
-            ? null
-            : lifecycle.data?.available &&
-                typeof lifecycle.data.closed === "number"
-              ? t("closed", { closed: lifecycle.data.closed })
-              : t("closedUnknown"),
+          !filters.sido
+            ? t("nationalLifecycle")
+            : lifecycle.isPending || lifecycle.isError
+              ? null
+              : lifecycle.data?.available &&
+                  typeof lifecycle.data.closed === "number"
+                ? t("closed", { closed: lifecycle.data.closed })
+                : t("closedUnknown"),
           market.data.residents_per_shop
             ? t("density", {
                 residents: fmt.full(Math.round(market.data.residents_per_shop)),
@@ -119,6 +130,9 @@ export function AreaHero({
           <MonthlyOpenings monthly={lifecycle.data.monthly ?? []} />
         )}
       <p className="text-muted-foreground text-xs">{t("dotNote")}</p>
+      {!filters.sido && (
+        <p className="text-muted-foreground text-xs">{t("nationalBasis")}</p>
+      )}
     </section>
   )
 }

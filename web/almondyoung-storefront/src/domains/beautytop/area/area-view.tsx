@@ -73,7 +73,12 @@ export function AreaView({
           update(next)
         }}
       />
-      <AreaHero key={`h:${scopeKey}`} filters={filters} mineLabel={mineLabel} />
+      <AreaHero
+        key={`h:${scopeKey}`}
+        filters={filters}
+        mineLabel={mineLabel}
+        options={options.data}
+      />
       {shopSlot && (
         <>
           <Divider />
@@ -84,7 +89,11 @@ export function AreaView({
       <PriceRuler key={`p:${scopeKey}`} filters={filters} />
       <AreaRevenue key={`r:${scopeKey}`} filters={filters} />
       <Divider />
-      <AreaCompare key={`c:${scopeKey}`} options={options.data} filters={filters} />
+      <AreaCompare
+        key={`c:${scopeKey}`}
+        options={options.data}
+        filters={filters}
+      />
       <Divider />
       <section aria-labelledby="insta-title" className="flex flex-col gap-3">
         <h2 id="insta-title" className="text-lg font-bold">
@@ -97,7 +106,11 @@ export function AreaView({
         />
       </section>
       <Divider />
-      <ShareCard key={`s:${scopeKey}`} filters={filters} />
+      <ShareCard
+        key={`s:${scopeKey}`}
+        filters={filters}
+        options={options.data}
+      />
       {filters.sido === OPENING_SIDO &&
         isOpeningArea(filters.gugun, filters.category) && (
           <LocalizedClientLink

@@ -4,9 +4,10 @@ import { useTranslations } from "next-intl"
 import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
 import type { Filters } from "../components/neighborhood-tab"
-import type { BeautyTopMarket, BeautyTopPrice } from "../types"
+import type { BeautyTopOptions, BeautyTopPrice } from "../types"
 import { useArea } from "../use-area"
 import { useNumberFormats } from "../use-number-formats"
+import { useMarketSummary } from "./use-market-summary"
 
 const W = 1080
 const H = 1350
@@ -64,14 +65,22 @@ async function drawCard(
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"))
 }
 
-export function ShareCard({ filters }: { filters: Filters }) {
+export function ShareCard({
+  filters,
+  options,
+}: {
+  filters: Filters
+  options: BeautyTopOptions
+}) {
   const t = useTranslations("beautytop.share")
   const fmt = useNumberFormats()
   const region = useScopeLabel(filters)
-  const market = useArea<BeautyTopMarket>("market", filters).data
-  const median = useArea<BeautyTopPrice>("prices", filters).data?.groups?.find(
-    (g) => typeof g.median === "number"
-  )
+  const market = useMarketSummary(filters, options).data
+  const median = useArea<BeautyTopPrice>(
+    "prices",
+    filters,
+    !!filters.gugun
+  ).data?.groups?.find((g) => typeof g.median === "number")
   const [status, setStatus] = useState<"idle" | "saved" | "copied" | "failed">(
     "idle"
   )
@@ -111,6 +120,7 @@ export function ShareCard({ filters }: { filters: Filters }) {
     category: filters.category,
     count: fmt.full(market.shops),
   })
+  const tagline = t(filters.sido ? "tagline" : "nationalBasis")
   const link = () => {
     const url = new URL(window.location.href)
     url.search = new URLSearchParams(filters).toString()
@@ -125,7 +135,7 @@ export function ShareCard({ filters }: { filters: Filters }) {
         t("eyebrow", { sido: region }),
         lines,
         t("brand"),
-        t("tagline")
+        tagline
       )
       if (!blob) throw new Error("canvas")
       const file = new File([blob], "beautytop.png", { type: "image/png" })
@@ -195,9 +205,7 @@ export function ShareCard({ filters }: { filters: Filters }) {
           <div className="flex flex-col gap-0.5">
             <span className="bg-primary mb-2 h-1 w-8" />
             <span className="text-sm font-bold">{t("brand")}</span>
-            <span className="text-muted-foreground text-xs">
-              {t("tagline")}
-            </span>
+            <span className="text-muted-foreground text-xs">{tagline}</span>
           </div>
         </div>
       </div>
