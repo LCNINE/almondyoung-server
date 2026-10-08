@@ -14,6 +14,8 @@
  *
  * 판정 기준은 FO 상태다: 한 상자에 걸린 FO 가 **전부** terminal(shipped/completed/canceled)
  * 일 때만 닫는다. 합배송으로 진행 중 FO 가 하나라도 섞여 있으면 살아있는 출고 지시다.
+ * FO 가 ready/partially_reserved 에 멈춰 있어도 그 판매주문이 이미 terminal 이면 같이 닫는다
+ * (2026-10-08 유키반 3511: 판매주문 shipped · FO ready 인 상자 6개가 예약 42개를 물고 있었다).
  *
  * 남기는 예약: 진행 중 FO 의 예약은 건드리지 않는다. 그게 예약의 정당한 역할
  * (주문 ~ 다음 sync-stock 사이의 oversell 홀드)이다.
@@ -38,14 +40,16 @@ const OUT_VARIANTS = process.env.OUT_VARIANTS || 'apps/core/tmp/closeout-variant
 // 종결 대상 상자. 라인이 없는 상자는 판단 근거가 없으므로 JOIN 으로 자연히 빠진다.
 const CLOSEOUT_CTE = `
   SELECT s.id     AS shipment_id,
-         CASE WHEN bool_and(fo.status = 'canceled') THEN 'canceled' ELSE 'shipped' END AS new_status
+         CASE WHEN bool_and(fo.status = 'canceled' OR so.status = 'cancelled') THEN 'canceled' ELSE 'shipped' END AS new_status
     FROM shipments s
     JOIN shipment_lines sl ON sl.shipment_id = s.id
     JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
     JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+    LEFT JOIN sales_orders so ON so.id = fo.sales_order_id
    WHERE s.status IN ('draft','planned','recovery_required')
    GROUP BY s.id
-  HAVING bool_and(fo.status IN ('shipped','completed','canceled'))
+  HAVING bool_and(fo.status IN ('shipped','completed','canceled')
+               OR so.status IN ('shipped','delivered','cancelled'))
 `;
 
 async function main() {
