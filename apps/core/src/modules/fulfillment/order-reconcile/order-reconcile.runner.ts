@@ -2,6 +2,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { OrderProgressReader } from '../order-progress/order-progress.reader';
+import { stillInSituation } from './order-reconcile.gate';
 import { OrderReconcileRepository } from './order-reconcile.repository';
 import { ORDER_RECONCILE_RULES, RunnableReconcileRule } from './order-reconcile.rule';
 import {
@@ -37,6 +39,9 @@ export class OrderReconcileRunner {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly repository: OrderReconcileRepository,
+    // 실행 직전 재판정(D12)에 judge 만 쓴다. 통합 스펙이 판정을 흉내 낼 수 있게 좁힌 타입으로 받는다 —
+    // 타입 별칭은 DI 메타데이터가 Object 가 되므로 토큰을 명시한다
+    @Inject(OrderProgressReader) private readonly progress: Pick<OrderProgressReader, 'judge'>,
     @Inject(ORDER_RECONCILE_RULES) private readonly rules: RunnableReconcileRule[],
   ) {}
 
@@ -108,6 +113,11 @@ export class OrderReconcileRunner {
       return await this.dbService.run(
         (trx) =>
           trx.transaction(async (sp) => {
+            // 투영은 최대 1분 늦다 — 지금 판정이 칸을 벗어났으면 규칙을 부르지 않는다(D12).
+            // 기록도 쓰지 않는다: 막 act 한 행을 not_needed 로 덮으면 떠남 유예가 풀려, 깨운 backlog 가 pending 인 순간을
+            // 투영이 잡을 때 행이 지워지고 «깨움→되돌아옴» 반복이 포기에 닿지 못한다. 투영은 1분 안에 따라잡는다
+            const [judged] = await this.progress.judge([salesOrderId], now, sp);
+            if (!stillInSituation(rule.situation, judged)) return 'not_needed';
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
             seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);
