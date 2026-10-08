@@ -122,15 +122,67 @@ export type BeautyTopShop = {
       current: number | null
       current_at?: string | null
       status?: string
+      previous?: number | null
+      delta?: number | null
+      rate_pct?: number | null
+      unit?: string
+      label?: string
     }[]
+    activity?: { is_lower_bound: boolean; observed_at?: string; since?: string }
+    history?: {
+      note?: string
+      series: {
+        key: string
+        label: string
+        unit: string
+        status: string
+        stale?: boolean
+        points: { at: string; value: number; approximate?: boolean }[]
+      }[]
+    }
   }
   posting?: {
     rank_eligible: boolean
     median_gap_days: number | null
     observed_at?: string | null
+    recent_posts?: number
+    sample_posts?: number
+    windows?: Record<string, { observed: number; is_lower_bound: boolean }>
+  }
+  metrics?: {
+    instagram_score?: number | null
+    area_m2?: number | null
+    source_dates?: Record<string, string | null>
+  }
+  workforce?: {
+    selected: {
+      count: number | null
+      label: string
+      period: string | null
+      source_date: string | null
+      is_actual_total: boolean
+    }
+    review_pending?: boolean
+  }
+  menu_benchmark?: {
+    fixed_price_menus: number
+    min: number | null
+    median: number | null
+    max: number | null
+    note?: string
   }
   price_history: {
-    series: { name: string; points: { value: number }[] }[]
+    stale?: boolean
+    series: {
+      name: string
+      points: {
+        value: number
+        at?: string
+        high?: number | null
+        kind?: string
+        basis_changed?: boolean
+      }[]
+    }[]
   }
 }
 

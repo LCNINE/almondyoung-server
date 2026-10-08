@@ -76,7 +76,7 @@ function Simulator({
         aria-label={t("sliderLabel", { name })}
         className="h-11"
       />
-      <p className="text-base leading-[22px] break-keep" aria-live="polite">
+      <p className="text-base leading-[22px] break-normal" aria-live="polite">
         {mine === null
           ? t("prompt")
           : t("place", {

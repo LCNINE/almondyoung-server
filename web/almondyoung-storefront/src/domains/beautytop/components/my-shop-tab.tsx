@@ -1,5 +1,6 @@
 "use client"
 
+import { MyShopData } from "../growth/shop-data-overview"
 import { cn } from "@/lib/utils"
 import { Search } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -236,6 +237,7 @@ function ShopReport({
           <span>{t("rivals.sinceLastVisitView")}</span>
         </button>
       )}
+      <MyShopData target={shop} />
       <PositionCard shop={shop} />
       <PeersCard shop={shop} />
       <CompetitorsCard shop={shop} onSelectShop={onSelectShop} since={since} />
@@ -611,13 +613,19 @@ function CompetitorsCard({
                 <span
                   className={cn(
                     "shrink-0 font-bold tabular-nums",
-                    (event.delta ?? 0) < 0
+                    event.delta != null && event.delta < 0
                       ? "text-muted-foreground"
                       : "text-foreground"
                   )}
                 >
-                  {(event.delta ?? 0) > 0 ? "▲" : "▼"}{" "}
-                  {fmt.full(Math.abs(event.delta ?? 0))}
+                  {event.delta == null || !Number.isFinite(event.delta) ? (
+                    t("discovery.unknown")
+                  ) : (
+                    <>
+                      {event.delta > 0 ? "▲" : event.delta < 0 ? "▼" : "–"}{" "}
+                      {fmt.full(Math.abs(event.delta))}
+                    </>
+                  )}
                 </span>
               </li>
             ))}

@@ -1,5 +1,6 @@
 "use client"
 
+import { useUser } from "@/contexts/user-context"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -17,31 +18,42 @@ import {
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useTranslations } from "next-intl"
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect, useRef } from "react"
 import { useMyShop } from "../use-watchlist"
 import { CardSkeleton, LoadError } from "../components/parts"
 
-export function GrowthNotes() {
+export function GrowthNotes({
+  suggestedAction = null,
+}: {
+  suggestedAction?: GrowthAction | null
+}) {
   const [shop] = useMyShop()
-  return shop ? (
+  const { user } = useUser()
+  return shop && user ? (
     <ShopGrowthNotes
-      key={`${shop.kind}:${shop.id}`}
+      key={`${user.id}:${shop.kind}:${shop.id}`}
+      userId={user.id}
       shopKind={shop.kind}
       shopId={shop.id}
+      suggestedAction={suggestedAction}
     />
   ) : null
 }
 
 function ShopGrowthNotes({
+  userId,
   shopKind,
   shopId,
+  suggestedAction,
 }: {
+  userId: string
   shopKind: "SHOP" | "PERSON"
   shopId: number
+  suggestedAction: GrowthAction | null
 }) {
   const t = useTranslations("beautytop.growthNotes")
   const client = useQueryClient()
-  const queryKey = ["beautytop-growth-notes", shopKind, shopId]
+  const queryKey = ["beautytop-growth-notes", userId, shopKind, shopId]
   const target = { shopKind, shopId }
   const notes = useQuery<GrowthNote[]>({
     queryKey,
@@ -49,7 +61,9 @@ function ShopGrowthNotes({
     staleTime: 60_000,
     retry: false,
   })
-  const [picked, setPicked] = useState<GrowthAction>("MENU_CLARITY")
+  const [picked, setPicked] = useState<GrowthAction>(
+    suggestedAction ?? "MENU_CLARITY"
+  )
   const [memo, setMemo] = useState("")
   const [pending, startTransition] = useTransition()
   const [status, setStatus] = useState<
@@ -71,18 +85,33 @@ function ShopGrowthNotes({
     })
   }
 
+  const section = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (suggestedAction && !notes.isPending && !notes.isError) {
+      section.current?.scrollIntoView({ block: "start" })
+      section.current?.focus({ preventScroll: true })
+    }
+  }, [suggestedAction, notes.isPending, notes.isError])
+
   if (notes.isPending) return <CardSkeleton />
   if (notes.isError) return <LoadError onRetry={() => notes.refetch()} />
 
   return (
     <section
+      ref={section}
+      tabIndex={-1}
       aria-labelledby="bt-growth-notes"
-      className="bg-background border-border flex flex-col gap-4 rounded-xl border p-4"
+      className="bg-background border-border focus-visible:ring-ring flex scroll-mt-24 flex-col gap-4 rounded-xl border p-4 focus-visible:ring-2"
     >
       <h2 id="bt-growth-notes" className="text-xl font-bold">
         {t("title")}
       </h2>
       <p className="text-muted-foreground text-sm">{t("subtitle")}</p>
+      {suggestedAction && (
+        <p role="status" className="bg-muted rounded-lg p-3 text-sm">
+          {t("suggested")}
+        </p>
+      )}
       <fieldset disabled={pending} className="flex flex-col gap-2">
         <legend className="mb-3 text-sm font-medium">
           {t("actionPrompt")}

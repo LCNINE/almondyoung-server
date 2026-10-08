@@ -1,5 +1,6 @@
 "use client"
 
+import type { GrowthAction } from "@/lib/types/ui/beautytop-growth"
 import { queryBeautyTop } from "@/lib/beautytop/client"
 import { cn } from "@/lib/utils"
 import { useInfiniteQuery } from "@tanstack/react-query"
@@ -66,12 +67,15 @@ export function ShopsTab({
   options,
   onSelectShop,
   onFindMine,
+  onPlanAction,
 }: {
   onFindMine: () => void
+  onPlanAction: (action: GrowthAction) => void
   options: BeautyTopOptions
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const [filters, update] = useScopeFilters()
+  const [metric, setMetric] = useState<Metric>("reviews")
 
   return (
     <>
@@ -80,8 +84,11 @@ export function ShopsTab({
         <Ranking
           key={JSON.stringify(filters)}
           filters={filters}
+          metric={metric}
+          onMetricChange={setMetric}
           onSelectShop={onSelectShop}
           onFindMine={onFindMine}
+          onPlanAction={onPlanAction}
         />
       </div>
     </>
@@ -90,18 +97,27 @@ export function ShopsTab({
 
 function Ranking({
   filters,
+  metric,
+  onMetricChange,
   onSelectShop,
   onFindMine,
+  onPlanAction,
 }: {
   onFindMine: () => void
+  onPlanAction: (action: GrowthAction) => void
   filters: Filters
+  metric: Metric
+  onMetricChange: (metric: Metric) => void
   onSelectShop: (target: BeautyTopTarget) => void
 }) {
   const t = useTranslations("beautytop")
   const fmt = useNumberFormats()
   const region = useScopeLabel(filters)
   const [benchmark, setBenchmark] = useState<BeautyTopTarget | null>(null)
-  const [metric, setMetric] = useState<Metric>("reviews")
+  const chooseMetric = (next: Metric) => {
+    setBenchmark(null)
+    onMetricChange(next)
+  }
   const { resource, sort } = METRICS[metric]
 
   const ranking = useInfiniteQuery({
@@ -164,14 +180,29 @@ function Ranking({
 
   return (
     <Card note={t("shops.note")}>
+      <div className="mb-4 grid gap-2">
+        {(["reviews", "followers", "activity"] as const).map((key) => (
+          <Button
+            key={key}
+            variant="secondary"
+            aria-pressed={metric === key}
+            onClick={() => chooseMetric(key)}
+            className="h-auto min-h-12 justify-between text-left whitespace-normal"
+          >
+            <span>{t(`discovery.questions.${key}`)}</span>
+            <span aria-hidden className="ml-3 shrink-0">
+              →
+            </span>
+          </Button>
+        ))}
+      </div>
       <div className="scrollbar-hide -mx-6 flex gap-2 overflow-x-auto px-6">
         {METRIC_KEYS.map((key) => (
           <Chip
             key={key}
             active={metric === key}
             onClick={() => {
-              setBenchmark(null)
-              setMetric(key)
+              chooseMetric(key)
             }}
           >
             {t(`shops.metric.${key}`)}
@@ -221,6 +252,7 @@ function Ranking({
               key={`${filters.sido}:${filters.gugun}:${filters.category}:${metric}`}
               target={benchmark}
               onFindMine={onFindMine}
+              onPlanAction={onPlanAction}
               onClose={() => setBenchmark(null)}
             />
           ) : (

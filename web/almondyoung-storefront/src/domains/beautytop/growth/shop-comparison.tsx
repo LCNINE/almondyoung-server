@@ -1,5 +1,6 @@
 "use client"
 
+import type { GrowthAction } from "@/lib/types/ui/beautytop-growth"
 import { Button } from "@/components/ui/button"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import { useTranslations } from "next-intl"
@@ -17,10 +18,12 @@ export function ShopComparison({
   target,
   onFindMine,
   onClose,
+  onPlanAction,
 }: {
   target: BeautyTopTarget
   onFindMine: () => void
   onClose: () => void
+  onPlanAction: (action: GrowthAction) => void
 }) {
   const t = useTranslations("beautytop.discovery")
   const fmt = useNumberFormats()
@@ -154,6 +157,21 @@ export function ShopComparison({
         </ul>
         <p className="text-muted-foreground mt-4 text-xs">{t("learnNote")}</p>
       </details>
+      <div className="grid gap-2">
+        {(["MENU_CLARITY", "SHOWCASE", "PRICE_CHANGE"] as const).map(
+          (action) => (
+            <Button
+              key={action}
+              variant="secondary"
+              onClick={() => onPlanAction(action)}
+              className="h-auto min-h-12 whitespace-normal"
+            >
+              {t(`nextActions.${action}`)}
+            </Button>
+          )
+        )}
+      </div>
+      <p className="text-muted-foreground text-xs">{t("nextActionNote")}</p>
     </section>
   )
 }

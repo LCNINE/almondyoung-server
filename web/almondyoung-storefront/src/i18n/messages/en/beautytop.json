@@ -398,7 +398,18 @@
     "learnObserve": "Save a shop to your watchlist and check newly observed changes on your next visit.",
     "learnNote": "These are ideas to test, not proven causes of a high ranking or guaranteed success.",
     "nationalPosition": "Position {rank} among {total} observed {category} comparison targets nationwide.",
-    "observedAt": "Source observation date: {date}"
+    "observedAt": "Source observation date: {date}",
+    "questions": {
+      "reviews": "Which shops have more reviews?",
+      "followers": "Which shops attract attention?",
+      "activity": "How often do shops post?"
+    },
+    "nextActions": {
+      "MENU_CLARITY": "Review my menu descriptions",
+      "SHOWCASE": "Consider posting treatment examples",
+      "PRICE_CHANGE": "Calculate a price change"
+    },
+    "nextActionNote": "Choose a next step to open your calculator or note form."
   },
   "calculator": {
     "title": "Calculate before changing prices",
@@ -449,6 +460,53 @@
     "genericAction": "Recorded action",
     "removeLabel": "Delete action recorded on {date}",
     "remove": "Delete",
-    "note": "Private notes you enter yourself. Dates show when notes were saved; actions are not verified. Changes in public metrics do not establish that an action caused them."
-  }
+    "note": "Private notes you enter yourself. Dates show when notes were saved; actions are not verified. Changes in public metrics do not establish that an action caused them.",
+    "suggested": "Your choice is prepared in the note form. Nothing is saved automatically; record it after taking action."
+  },
+  "dataOverview": {
+    "title": "My shop at a glance",
+    "subtitle": "Explore current figures, observation history, menu prices and operating data.",
+    "metrics": {
+      "visitor_reviews": "Visitor reviews",
+      "blog_reviews": "Blog reviews",
+      "followers": "Followers",
+      "posts": "Observed posts",
+      "instagram": "Instagram metric (points)",
+      "area": "Registered area (m²)"
+    },
+    "dateUnknown": "Observation date unavailable",
+    "unknown": "Not yet confirmed",
+    "change": "{value} since prior observation",
+    "stale": "Older observation · change withheld",
+    "baseline": "Prior baseline insufficient · change withheld",
+    "metricNote": "Observed public data. Follower counts may be approximate when the source is abbreviated. Instagram metrics do not measure revenue or treatment skill. Percentage changes are shown only when prior observations are comparable.",
+    "history": "Explore review and follower history",
+    "historyNote": "Only actual observation dates and values are shown. Intervals vary; unobserved dates are not filled with zeros.",
+    "noHistory": "Not enough dated observations yet.",
+    "date": "Observed on",
+    "value": "Observed value",
+    "approximate": "About {value}",
+    "menus": "Explore menu prices and price history",
+    "menuNote": "Prices are in KRW. The median covers all observed fixed-price menus, not the same treatment across shops.",
+    "min": "Lowest",
+    "median": "Median",
+    "max": "Highest",
+    "noMenus": "Verified menu prices are not connected yet.",
+    "won": "KRW",
+    "priceBasis": "Check price ranges, labels and conditions. These may not represent a change for an identical treatment.",
+    "operations": "Explore posting activity and headcount",
+    "headcount": "Registered or insured headcount",
+    "reviewPending": "Source matching under review",
+    "cadence": "Observed posting interval",
+    "days": "{value} days",
+    "cadencePending": "Insufficient observations to compare posting intervals.",
+    "window": "Posts observed over {days} days",
+    "atLeast": "At least {value}",
+    "operationNote": "Post counts cover collected observations, not all posts or booking conversions.",
+    "headcountNote": "Registered or insured counts may differ from total staff. Missing source matching does not mean zero staff. Post counts cover observed data.",
+    "otherMetric": "Other public metric",
+    "rate": "{value}% since prior observation",
+    "publicTitle": "Public data at a glance"
+  },
+  "navigationLabel": "BeautyTop information"
 }

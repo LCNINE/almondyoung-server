@@ -3,11 +3,22 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTranslations } from "next-intl"
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useNumberFormats } from "../use-number-formats"
 import { calculatePriceScenario } from "./price-scenario"
 
-export function PriceCalculator() {
+export function PriceCalculator({
+  focusRequested = false,
+}: {
+  focusRequested?: boolean
+}) {
+  const section = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (focusRequested) {
+      section.current?.scrollIntoView({ block: "start" })
+      section.current?.focus({ preventScroll: true })
+    }
+  }, [focusRequested])
   const t = useTranslations("beautytop.calculator")
   const fmt = useNumberFormats()
   const [currentPrice, setCurrentPrice] = useState("")
@@ -42,8 +53,10 @@ export function PriceCalculator() {
   ]
   return (
     <section
+      ref={section}
+      tabIndex={-1}
       aria-labelledby="bt-calculator"
-      className="bg-background border-border flex flex-col gap-4 rounded-xl border p-4"
+      className="bg-background border-border focus-visible:ring-ring flex scroll-mt-24 flex-col gap-4 rounded-xl border p-4 focus-visible:ring-2"
     >
       <h2 id="bt-calculator" className="text-xl font-bold">
         {t("title")}

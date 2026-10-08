@@ -1,5 +1,6 @@
 "use client"
 
+import type { GrowthAction } from "@/lib/types/ui/beautytop-growth"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { cn } from "@/lib/utils"
 import { Info } from "lucide-react"
@@ -29,9 +30,11 @@ type Tab = (typeof TABS)[number]
 function Rankings({
   onSelectShop,
   onFindMine,
+  onPlanAction,
 }: {
   onSelectShop: (target: BeautyTopTarget) => void
   onFindMine: () => void
+  onPlanAction: (action: GrowthAction) => void
 }) {
   const options = useArea<BeautyTopOptions>("options")
   if (options.isPending) return <CardSkeleton />
@@ -41,6 +44,7 @@ function Rankings({
       options={options.data}
       onSelectShop={onSelectShop}
       onFindMine={onFindMine}
+      onPlanAction={onPlanAction}
     />
   )
 }
@@ -67,6 +71,7 @@ function WatchSection({
 export function BeautyTopBoard() {
   const t = useTranslations("beautytop")
   const [tab, setTab] = useState<Tab>("neighborhood")
+  const [intent, setIntent] = useState<GrowthAction | null>(null)
   const [target, setTarget] = useState<BeautyTopTarget | null>(null)
 
   useEffect(() => {
@@ -78,6 +83,7 @@ export function BeautyTopBoard() {
   }, [])
 
   const changeTab = (next: Tab) => {
+    setIntent(null)
     if (next === "discovery") setScopeFilters({ sido: "", gugun: "" })
     setTab(next)
     try {
@@ -89,6 +95,7 @@ export function BeautyTopBoard() {
     <div className="mt-6">
       <div
         role="tablist"
+        aria-label={t("navigationLabel")}
         className="border-border -mx-4 grid grid-cols-4 border-b"
       >
         {TABS.map((value) => (
@@ -96,7 +103,26 @@ export function BeautyTopBoard() {
             key={value}
             type="button"
             role="tab"
+            id={`bt-tab-${value}`}
+            aria-controls={`bt-panel-${value}`}
+            tabIndex={tab === value ? 0 : -1}
             aria-selected={tab === value}
+            onKeyDown={(event) => {
+              const index = TABS.indexOf(value)
+              const next =
+                event.key === "ArrowRight"
+                  ? (index + 1) % TABS.length
+                  : event.key === "ArrowLeft"
+                    ? (index + TABS.length - 1) % TABS.length
+                    : event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? TABS.length - 1
+                        : null
+              if (next === null) return
+              event.preventDefault()
+              document.getElementById(`bt-tab-${TABS[next]}`)?.focus()
+            }}
             onClick={() => changeTab(value)}
             className={cn(
               "-mb-px h-12 border-b-2 text-[16px] transition-colors duration-150",
@@ -112,7 +138,7 @@ export function BeautyTopBoard() {
 
       <p className="bg-muted text-muted-foreground mt-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[13px] leading-[19px] break-keep">
         <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
+        <span className="min-w-0 flex-1 break-normal">
           {t.rich("memberNotice", {
             b: (chunks) => (
               <b className="text-foreground font-bold">{chunks}</b>
@@ -129,7 +155,22 @@ export function BeautyTopBoard() {
         </span>
       </p>
 
-      <div className="mt-5">
+      {TABS.filter((value) => value !== tab).map((value) => (
+        <div
+          key={value}
+          id={`bt-panel-${value}`}
+          role="tabpanel"
+          aria-labelledby={`bt-tab-${value}`}
+          hidden
+        />
+      ))}
+      <div
+        tabIndex={0}
+        id={`bt-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`bt-tab-${tab}`}
+        className="mt-5"
+      >
         {tab === "neighborhood" && (
           <AreaView
             mineLabel={null}
@@ -161,6 +202,10 @@ export function BeautyTopBoard() {
               <Rankings
                 onSelectShop={setTarget}
                 onFindMine={() => changeTab("myShop")}
+                onPlanAction={(action) => {
+                  changeTab("myShop")
+                  setIntent(action)
+                }}
               />
             </div>
           </PremiumGate>
@@ -170,8 +215,10 @@ export function BeautyTopBoard() {
             <div className="flex flex-col gap-8">
               <MyShopTab onSelectShop={setTarget} />
               <PriceSimulator onSelectShop={setTarget} />
-              <PriceCalculator />
-              <GrowthNotes />
+              <PriceCalculator focusRequested={intent === "PRICE_CHANGE"} />
+              <GrowthNotes
+                suggestedAction={intent === "PRICE_CHANGE" ? null : intent}
+              />
               <WatchSection onSelectShop={setTarget} />
               <MembershipReceipt />
             </div>
