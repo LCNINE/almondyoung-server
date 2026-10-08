@@ -5,7 +5,7 @@ import { isFulfillableMatching } from '../../../product-matching/fulfillable-mat
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
-import { OrderReconcileRule } from '../order-reconcile.rule';
+import { OrderReconcileRule, OrderReconcileSituation } from '../order-reconcile.rule';
 import { ReconcileMode } from '../order-reconcile.state';
 
 /**
@@ -18,7 +18,7 @@ export class WakeAwaitingMatchingRule implements OrderReconcileRule {
   readonly row = 12;
   // 첫 배포는 관찰. 거짓 양성 0건을 확인한 뒤 PR 로 'act' 로 바꾼다(스펙 §7)
   readonly mode: ReconcileMode = 'observe';
-  readonly situation = { stage: 'fo' as const, states: ['awaiting_matching'] };
+  readonly situation: OrderReconcileSituation = { stage: 'fo', states: ['awaiting_matching'] };
 
   constructor(
     private readonly backlog: FulfillmentOrderCreationBacklogService,

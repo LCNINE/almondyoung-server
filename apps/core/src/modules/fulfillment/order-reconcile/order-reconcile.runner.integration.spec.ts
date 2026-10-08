@@ -5,7 +5,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
 import * as f from '../order-progress/__support__/order-progress.fixtures';
 import { OrderReconcileRepository } from './order-reconcile.repository';
-import { OrderReconcileRule } from './order-reconcile.rule';
+import { RunnableReconcileRule } from './order-reconcile.rule';
 import { OrderReconcileRunner } from './order-reconcile.runner';
 import { ReconcileMode } from './order-reconcile.state';
 
@@ -30,7 +30,7 @@ async function seedProgress(tx: DbTx, args: { stage: string | null; state: strin
 }
 
 function fakeRule(state: string, mode: ReconcileMode, act: (id: string) => Promise<void>) {
-  const rule: OrderReconcileRule = {
+  const rule: RunnableReconcileRule = {
     name: `it-runner-${state}`,
     row: 99,
     mode,
@@ -127,7 +127,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
   });
 
   /** 매 바퀴를 그 행의 next_check_at 에 돌린다 — 백오프를 건너뛰지 않고 n 번째 시도까지 간다 */
-  const runTimes = async (runner: OrderReconcileRunner, rule: OrderReconcileRule, id: string, n: number, tx: DbTx) => {
+  const runTimes = async (runner: OrderReconcileRunner, rule: RunnableReconcileRule, id: string, n: number, tx: DbTx) => {
     let at = NOW;
     for (let i = 0; i < n; i++) {
       await runner.runRule(rule, at, tx);

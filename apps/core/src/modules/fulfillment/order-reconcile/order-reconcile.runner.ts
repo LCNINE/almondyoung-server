@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { OrderReconcileRepository } from './order-reconcile.repository';
-import { ORDER_RECONCILE_RULES, OrderReconcileRule } from './order-reconcile.rule';
+import { ORDER_RECONCILE_RULES, RunnableReconcileRule } from './order-reconcile.rule';
 import {
   RECONCILE_CANDIDATE_LIMIT,
   ReconcilePrior,
@@ -37,7 +37,7 @@ export class OrderReconcileRunner {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly repository: OrderReconcileRepository,
-    @Inject(ORDER_RECONCILE_RULES) private readonly rules: OrderReconcileRule[],
+    @Inject(ORDER_RECONCILE_RULES) private readonly rules: RunnableReconcileRule[],
   ) {}
 
   async runAll(now: Date, tx?: DbTx): Promise<RuleRunSummary[]> {
@@ -65,7 +65,7 @@ export class OrderReconcileRunner {
     return out;
   }
 
-  async runRule(rule: OrderReconcileRule, now: Date, tx?: DbTx): Promise<RuleRunSummary> {
+  async runRule(rule: RunnableReconcileRule, now: Date, tx?: DbTx): Promise<RuleRunSummary> {
     const summary: RuleRunSummary = {
       rule: rule.name,
       departed: await this.repository.deleteDeparted(rule, now, tx),
@@ -96,7 +96,7 @@ export class OrderReconcileRunner {
   }
 
   private async reconcileOne(
-    rule: OrderReconcileRule,
+    rule: RunnableReconcileRule,
     salesOrderId: string,
     prior: ReconcilePrior | null,
     now: Date,
