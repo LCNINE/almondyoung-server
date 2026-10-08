@@ -200,7 +200,8 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
         .select()
         .from(wmsTables.orderReconcileState)
         .where(eq(wmsTables.orderReconcileState.salesOrderId, o.salesOrderId));
-      expect(rows).toEqual([]);
+      // 기록이 없던 후보라 not_needed 로 남겨 10분 물러난다 — 시도로 세지 않는다
+      expect(rows).toEqual([expect.objectContaining({ lastResult: 'not_needed', attempts: 0 })]);
     });
   });
 });

@@ -399,7 +399,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const summary = await runner.runRule(rule, NOW, tx);
 
       expect(summary).toMatchObject({ wouldAct: 0, notNeeded: 0, gated: 1 });
-      expect((await statesOf(tx, rule.name)).get(id)).toBeUndefined();
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({ lastResult: 'not_needed', mode: 'observe' });
     });
   });
 
@@ -425,6 +425,56 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         attempts: 1,
         lastResult: 'error',
         lastError: 'judge boom',
+      });
+    });
+  });
+
+  it('게이트: 기록이 없는 후보는 not_needed 로 남겨 10분 물러난다 — 투영이 멈춰도 같은 후보가 매분 자리를 차지하지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => 'acted');
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('reserve', 'created'), [rule]);
+
+      const summary = await runner.runRule(rule, NOW, tx);
+
+      expect(summary).toMatchObject({ gated: 1, notNeeded: 0 });
+      expect(rule.fingerprint).not.toHaveBeenCalled();
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        fingerprint: '',
+        attempts: 0,
+        lastResult: 'not_needed',
+        nextCheckAt: new Date('2099-06-01T00:10:00.000Z'),
+      });
+    });
+  });
+
+  it('게이트: 유예가 지난 acted 행은 not_needed 로 덮되 횟수·지문은 지킨다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const repo = new OrderReconcileRepository(dbs);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => 'acted');
+      const actedAt = new Date('2099-05-31T23:44:00.000Z');
+      await repo.save(
+        rule,
+        id,
+        { fingerprint: 'fp', mode: 'act', attempts: 3, lastResult: 'acted', lastError: null, gaveUpAt: null, nextCheckAt: NOW },
+        actedAt,
+        tx,
+      );
+      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', 'pending'), [rule]);
+
+      await runner.runRule(rule, NOW, tx);
+
+      expect(rule.fingerprint).not.toHaveBeenCalled();
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        fingerprint: 'fp',
+        attempts: 3,
+        lastResult: 'not_needed',
+        nextCheckAt: new Date('2099-06-01T00:10:00.000Z'),
       });
     });
   });

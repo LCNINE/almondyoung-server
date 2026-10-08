@@ -32,6 +32,7 @@ export class OrderReconcileRepository {
           lastResult: s.lastResult,
           lastError: s.lastError,
           gaveUpAt: s.gaveUpAt,
+          updatedAt: s.updatedAt,
         })
         .from(p)
         .leftJoin(s, and(eq(s.rule, rule.name), eq(s.salesOrderId, p.salesOrderId)))
@@ -121,9 +122,17 @@ function toPrior(r: {
   lastResult: string | null;
   lastError: string | null;
   gaveUpAt: Date | null;
+  updatedAt: Date | null;
 }): ReconcilePrior | null {
   // 모르는 모드·결과 값(손으로 고친 행 등)은 이전 상태가 없는 것으로 본다 — 처음부터 다시 센다
-  if (r.fingerprint === null || r.mode === null || r.lastResult === null || r.attempts === null) return null;
+  if (
+    r.fingerprint === null ||
+    r.mode === null ||
+    r.lastResult === null ||
+    r.attempts === null ||
+    r.updatedAt === null
+  )
+    return null;
   if (!isReconcileMode(r.mode) || !isReconcileResult(r.lastResult)) return null;
   return {
     fingerprint: r.fingerprint,
@@ -132,5 +141,6 @@ function toPrior(r: {
     lastResult: r.lastResult,
     lastError: r.lastError,
     gaveUpAt: r.gaveUpAt,
+    updatedAt: r.updatedAt,
   };
 }

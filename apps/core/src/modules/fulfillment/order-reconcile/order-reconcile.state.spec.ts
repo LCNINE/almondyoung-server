@@ -17,6 +17,7 @@ const prior = (over: Partial<ReconcilePrior> = {}): ReconcilePrior => ({
   lastResult: 'acted',
   lastError: null,
   gaveUpAt: null,
+  updatedAt: new Date('2026-10-08T00:00:00.000Z'),
   ...over,
 });
 

@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { OrderProgressReader } from '../order-progress/order-progress.reader';
-import { stillInSituation } from './order-reconcile.gate';
+import { shouldRecordGateOut, stillInSituation } from './order-reconcile.gate';
 import { OrderReconcileRepository } from './order-reconcile.repository';
 import { ORDER_RECONCILE_RULES, RunnableReconcileRule } from './order-reconcile.rule';
 import {
@@ -124,10 +124,23 @@ export class OrderReconcileRunner {
         (trx) =>
           trx.transaction(async (sp) => {
             // 투영은 최대 1분 늦다 — 지금 판정이 칸을 벗어났으면 규칙을 부르지 않는다(D12).
-            // 기록도 쓰지 않는다: 막 act 한 행을 not_needed 로 덮으면 떠남 유예가 풀려, 깨운 backlog 가 pending 인 순간을
-            // 투영이 잡을 때 행이 지워지고 «깨움→되돌아옴» 반복이 포기에 닿지 못한다. 투영은 1분 안에 따라잡는다
+            // 기록은 shouldRecordGateOut 이 정한다: 막 acted·error 한 행은 덮지 않고(떠남 유예 보호), 나머지는 not_needed 로
+            // 10분 물러나게 한다. 지문은 구하지 않았으니 이전 지문을 그대로 쓴다 — 횟수·포기가 리셋되지 않게
             const [judged] = await this.progress.judge([salesOrderId], now, sp);
-            if (!stillInSituation(rule.situation, judged)) return 'gated';
+            if (!stillInSituation(rule.situation, judged)) {
+              if (shouldRecordGateOut(prior, now)) {
+                const fingerprint = prior?.fingerprint ?? '';
+                const eff = effectivePrior(prior, fingerprint, rule.mode);
+                await this.repository.save(
+                  rule,
+                  salesOrderId,
+                  nextRecord(eff, { fingerprint, mode: rule.mode, step: 'not_needed' }, now),
+                  now,
+                  sp,
+                );
+              }
+              return 'gated';
+            }
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
             seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);

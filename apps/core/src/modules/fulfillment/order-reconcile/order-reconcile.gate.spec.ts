@@ -1,6 +1,6 @@
 // apps/core/src/modules/fulfillment/order-reconcile/order-reconcile.gate.spec.ts
 import { JudgedRow } from '../order-progress/order-progress.reader';
-import { stillInSituation } from './order-reconcile.gate';
+import { shouldRecordGateOut, stillInSituation } from './order-reconcile.gate';
 import { OrderReconcileSituation } from './order-reconcile.rule';
 
 type Judged = Pick<JudgedRow, 'stage' | 'state' | 'outcome'>;
@@ -44,6 +44,30 @@ describe('stillInSituation — 실행 직전 재판정 게이트(스펙 D12)', (
 
   it('세부 상태가 null 이면 막는다', () => {
     expect(stillInSituation(awaiting, judged({ state: null }))).toBe(false);
+  });
+});
+
+describe('shouldRecordGateOut — 게이트에 걸린 후보를 기록할지', () => {
+  const NOW = new Date('2099-06-01T00:00:00.000Z');
+  const minAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
+
+  it('기록이 없으면 not_needed 로 남겨 10분 물러난다 — 안 쓰면 투영이 멈췄을 때 매분 맨 앞 50칸을 차지한다', () => {
+    expect(shouldRecordGateOut(null, NOW)).toBe(true);
+  });
+
+  it('직전 결과가 not_needed·would_act 면 덮어도 잃을 것이 없다', () => {
+    expect(shouldRecordGateOut({ lastResult: 'not_needed', updatedAt: minAgo(1) }, NOW)).toBe(true);
+    expect(shouldRecordGateOut({ lastResult: 'would_act', updatedAt: minAgo(1) }, NOW)).toBe(true);
+  });
+
+  it('막 acted·error 한 행(유예 안)은 덮지 않는다 — 덮으면 떠남 유예가 풀려 횟수가 리셋된다', () => {
+    expect(shouldRecordGateOut({ lastResult: 'acted', updatedAt: minAgo(1) }, NOW)).toBe(false);
+    expect(shouldRecordGateOut({ lastResult: 'error', updatedAt: minAgo(9) }, NOW)).toBe(false);
+  });
+
+  it('유예가 지난 acted 행은 deleteDeparted 도 지우므로 덮어도 된다 — 경계(정확히 10분)는 지난 것으로 본다', () => {
+    expect(shouldRecordGateOut({ lastResult: 'acted', updatedAt: minAgo(10) }, NOW)).toBe(true);
+    expect(shouldRecordGateOut({ lastResult: 'error', updatedAt: minAgo(30) }, NOW)).toBe(true);
   });
 });
 
