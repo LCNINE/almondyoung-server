@@ -15,6 +15,9 @@ export type OrderReconcileSituation = {
  */
 export type ReconcileSituationRef = { readonly stage: OrderProgressStage; readonly states: readonly string[] };
 
+/** act 의 결과. 'noop' = 할 일이 없었다(사람이 먼저 처리했거나 CAS 에서 짐) — not_needed 로 기록되고 횟수를 올리지 않는다(D13) */
+export type ReconcileActResult = 'acted' | 'noop';
+
 interface ReconcileRuleBody {
   /** 상태 기록의 키. 바꾸면 기록이 끊긴다 */
   readonly name: string;
@@ -25,7 +28,7 @@ interface ReconcileRuleBody {
   fingerprint(salesOrderId: string, tx: DbTx): Promise<string>;
   /** 원천 재확인. false = 지금은 할 일 없음(실패 아님) */
   check(salesOrderId: string, tx: DbTx): Promise<boolean>;
-  act(salesOrderId: string, tx: DbTx): Promise<void>;
+  act(salesOrderId: string, tx: DbTx): Promise<ReconcileActResult>;
 }
 
 /**

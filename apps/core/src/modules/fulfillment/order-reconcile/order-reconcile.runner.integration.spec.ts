@@ -5,7 +5,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
 import * as f from '../order-progress/__support__/order-progress.fixtures';
 import { OrderReconcileRepository } from './order-reconcile.repository';
-import { RunnableReconcileRule } from './order-reconcile.rule';
+import { ReconcileActResult, RunnableReconcileRule } from './order-reconcile.rule';
 import { OrderReconcileRunner } from './order-reconcile.runner';
 import { ReconcileMode } from './order-reconcile.state';
 
@@ -29,7 +29,7 @@ async function seedProgress(tx: DbTx, args: { stage: string | null; state: strin
   return o.salesOrderId;
 }
 
-function fakeRule(state: string, mode: ReconcileMode, act: (id: string) => Promise<void>) {
+function fakeRule(state: string, mode: ReconcileMode, act: (id: string) => Promise<ReconcileActResult>) {
   const rule: RunnableReconcileRule = {
     name: `it-runner-${state}`,
     row: 99,
@@ -62,7 +62,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const state = `it_${randomUUID().slice(0, 8)}`;
       const shipped = await seedProgress(tx, { stage: null, state, outcome: 'external_shipped' });
       await f.seedBacklog(tx, shipped, 'awaiting_matching');
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
 
       const summary = await runner.runRule(rule, NOW, tx);
@@ -81,6 +81,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const good = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async (id) => {
         if (id === bad) throw new Error('boom');
+        return 'acted';
       });
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
 
@@ -98,7 +99,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const dbs = makeDbService(db);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'observe', async () => undefined);
+      const rule = fakeRule(state, 'observe', async () => 'acted');
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
 
       const summary = await runner.runRule(rule, NOW, tx);
@@ -114,7 +115,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const dbs = makeDbService(db);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       (rule.check as jest.Mock).mockResolvedValue(false);
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
 
@@ -161,7 +162,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const dbs = makeDbService(db);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       let calls = 0;
       (rule.check as jest.Mock).mockImplementation(async () => {
         calls++;
@@ -182,7 +183,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const dbs = makeDbService(db);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       (rule.fingerprint as jest.Mock).mockRejectedValueOnce(new Error('fp boom'));
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
 
@@ -244,7 +245,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const repo = new OrderReconcileRepository(dbs);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       (rule.check as jest.Mock).mockResolvedValue(false);
       const stale = { name: `it-stale-${state}`, row: 98, situation: { stage: 'fo' as const, states: [state] } };
       await repo.save(
@@ -276,7 +277,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const dbs = makeDbService(db);
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
-      const rule = fakeRule(state, 'act', async () => undefined);
+      const rule = fakeRule(state, 'act', async () => 'acted');
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
       await runner.runRule(rule, NOW, tx);
       await tx
@@ -290,5 +291,49 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       expect((await statesOf(tx, rule.name)).size).toBe(0);
     });
   });
-});
 
+  it('act 가 noop 이면(사람이 먼저 처리) not_needed 로 남기고 횟수를 올리지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => 'noop');
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), [rule]);
+
+      const summary = await runner.runRule(rule, NOW, tx);
+
+      expect(rule.act).toHaveBeenCalledTimes(1);
+      expect(summary).toMatchObject({ acted: 0, notNeeded: 1 });
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({ lastResult: 'not_needed', attempts: 0 });
+    });
+  });
+
+  it('포기한 주문에서 act 가 noop 이면 포기 표시와 횟수를 지키고 10분 뒤 다시 본다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const repo = new OrderReconcileRepository(dbs);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedProgress(tx, { stage: 'fo', state });
+      const rule = fakeRule(state, 'act', async () => 'noop');
+      const gaveUpAt = new Date('2099-05-31T00:00:00.000Z');
+      await repo.save(
+        rule,
+        id,
+        { fingerprint: 'fp', mode: 'act', attempts: 5, lastResult: 'acted', lastError: null, gaveUpAt, nextCheckAt: NOW },
+        gaveUpAt,
+        tx,
+      );
+      const runner = new OrderReconcileRunner(dbs, repo, [rule]);
+
+      await runner.runRule(rule, NOW, tx);
+
+      expect(rule.act).toHaveBeenCalledTimes(1);
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        lastResult: 'not_needed',
+        attempts: 5,
+        gaveUpAt,
+        nextCheckAt: new Date('2099-06-01T00:10:00.000Z'),
+      });
+    });
+  });
+});

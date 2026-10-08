@@ -66,7 +66,9 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
 
       expect(await rule.check(o.salesOrderId, tx)).toBe(true);
-      await rule.act(o.salesOrderId, tx);
+      expect(await rule.act(o.salesOrderId, tx)).toBe('acted');
+      // 이미 pending 이라 CAS 가 진다 — 할 일이 없었음을 알린다
+      expect(await rule.act(o.salesOrderId, tx)).toBe('noop');
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('pending');
     });
   });

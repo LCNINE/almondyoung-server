@@ -111,8 +111,9 @@ export class OrderReconcileRunner {
             const fingerprint = await rule.fingerprint(salesOrderId, sp);
             seen = fingerprint;
             const eff = effectivePrior(prior, fingerprint, rule.mode);
-            const step = chooseStep(eff, rule.mode, await rule.check(salesOrderId, sp));
-            if (step === 'act') await rule.act(salesOrderId, sp);
+            let step = chooseStep(eff, rule.mode, await rule.check(salesOrderId, sp));
+            // 할 일이 없었으면 시도가 아니다 — acted 로 세면 사람이 먼저 처리한 주문이 포기로 간다(D13)
+            if (step === 'act' && (await rule.act(salesOrderId, sp)) === 'noop') step = 'not_needed';
             if (step === 'would_act' && (prior?.lastResult !== 'would_act' || prior.fingerprint !== fingerprint)) {
               // 관찰 기록은 처음 볼 때만 로그 — 매분 같은 줄이 쌓이지 않게
               this.logger.log(`order-reconcile ${rule.name} would act on sales order ${salesOrderId}`);

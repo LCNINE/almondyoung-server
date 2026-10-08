@@ -5,7 +5,7 @@ import { isFulfillableMatching } from '../../../product-matching/fulfillable-mat
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
-import { OrderReconcileRule, OrderReconcileSituation } from '../order-reconcile.rule';
+import { OrderReconcileRule, OrderReconcileSituation, ReconcileActResult } from '../order-reconcile.rule';
 import { ReconcileMode } from '../order-reconcile.state';
 
 /**
@@ -58,8 +58,9 @@ export class WakeAwaitingMatchingRule implements OrderReconcileRule {
     return true;
   }
 
-  async act(salesOrderId: string, tx: DbTx): Promise<void> {
-    await this.backlog.requeueAwaitingMatching(salesOrderId, tx);
+  /** CAS 가 진 경우(그새 다른 경로가 깨움)는 noop — 시도로 세지 않는다 */
+  async act(salesOrderId: string, tx: DbTx): Promise<ReconcileActResult> {
+    return (await this.backlog.requeueAwaitingMatching(salesOrderId, tx)) > 0 ? 'acted' : 'noop';
   }
 
   private async waitingVariantIds(salesOrderId: string, tx: DbTx): Promise<string[]> {
