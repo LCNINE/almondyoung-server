@@ -8,6 +8,7 @@ import { ORDER_RECONCILE_RULE_CLASSES } from './order-reconcile.registry';
 import { OrderReconcileRepository } from './order-reconcile.repository';
 import { ORDER_RECONCILE_RULES, ReconcileRule } from './order-reconcile.rule';
 import { OrderReconcileRunner } from './order-reconcile.runner';
+import { ShipmentReconcileRepository } from './shipment-reconcile.repository';
 
 /**
  * 주문 리컨실러(스펙 docs/superpowers/specs/2026-10-08-order-reconciler-design.md). 정체 보드 투영을 읽어
@@ -17,6 +18,7 @@ import { OrderReconcileRunner } from './order-reconcile.runner';
   imports: [FulfillmentOrderCreationBacklogModule, ProductMatchingModule, OrderProgressModule],
   providers: [
     OrderReconcileRepository,
+    ShipmentReconcileRepository,
     OrderReconcileRunner,
     OrderReconcileJob,
     ...ORDER_RECONCILE_RULE_CLASSES,
