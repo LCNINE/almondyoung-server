@@ -1,4 +1,4 @@
-import { latestBatch, reconstruct, type BackupFile, type BackupPrice } from './reconstruct';
+import { latestBatch, reconstruct, replacementMismatches, type BackupFile, type BackupPrice } from './reconstruct';
 
 const price = (list: string, variant: string, amount: number, createdAt: string, deletedAt: string | null = null): BackupPrice => ({
   id: `${list}_${variant}_${createdAt}`,
@@ -90,5 +90,43 @@ describe('reconstruct', () => {
 
   it('throws when a target list has no prices in the backup', () => {
     expect(() => reconstruct(backup, [{ ...target, generalListId: 'missing' }])).toThrow(/missing/);
+  });
+});
+
+describe('replacementMismatches', () => {
+  const backup: BackupFile = {
+    exportedAt: '2026-10-09T02:50:00.000Z',
+    lists: [],
+    rules: [],
+    prices: [
+      price('g', 'v1', 900, '2026-10-07T11:45:00.000Z'),
+      price('g', 'v2', 800, '2026-10-07T11:45:00.000Z'),
+      price('m1', 'v1', 700, '2026-10-07T11:45:00.000Z'),
+    ],
+  };
+  const [entry] = reconstruct(backup, [
+    { name: '복구 ①', generalListId: 'g', membershipListIds: ['m1'], status: 'draft', startsAt: '2026-10-08T15:00:00.000Z', endsAt: '2026-10-16T14:59:00.000Z' },
+  ]);
+  const matching = { status: 'draft', generalPrices: { v1: 900, v2: 800 }, membershipPrices: { v1: 700 } };
+
+  it('returns no reasons when the replacement matches the plan', () => {
+    expect(replacementMismatches(entry, matching)).toEqual([]);
+  });
+
+  it('reports a count mismatch', () => {
+    expect(replacementMismatches(entry, { ...matching, generalPrices: { v1: 900 } })).toEqual(
+      expect.arrayContaining([expect.stringMatching(/일반 개수 1 ≠ 2/)]),
+    );
+  });
+
+  it('reports a sum mismatch and the differing variant', () => {
+    expect(replacementMismatches(entry, { ...matching, generalPrices: { v1: 900, v2: 850 } })).toEqual([
+      '일반 합계 1750 ≠ 1700',
+      '일반 품목별 금액 불일치 1건',
+    ]);
+  });
+
+  it('reports a status mismatch', () => {
+    expect(replacementMismatches(entry, { ...matching, status: 'active' })).toEqual(['상태 active ≠ draft']);
   });
 });

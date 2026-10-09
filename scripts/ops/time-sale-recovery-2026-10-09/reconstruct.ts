@@ -47,12 +47,13 @@ export type RecoveryPlanEntry = {
   summary: { generalCount: number; generalSum: number; membershipCount: number; membershipSum: number };
 };
 
-const minute = (iso: string) => iso.slice(0, 16);
+/** ISO 시각 → 분 단위 정수. 문자열 비교 대신 시각으로 파싱해, 형식(공백·오프셋)이 달라도 순서가 틀리지 않게 한다. */
+const minute = (iso: string) => Math.floor(Date.parse(iso) / 60000);
 
 /** 한 리스트의 가격들 → variant → 금액. 가장 늦은 저장 묶음(같은 분)의 값을 쓰고, 묶음끼리 다르면 던진다. */
 export function latestBatch(prices: BackupPrice[]): Map<string, number> {
   if (prices.length === 0) return new Map();
-  const last = prices.map((p) => minute(p.created_at)).sort().at(-1)!;
+  const last = Math.max(...prices.map((p) => minute(p.created_at)));
 
   // 최신 묶음이 써진 분 이전(또는 같은 분)에 지워진 행은 정상 교체로 밀려난 옛 행이다 — 대조에서 뺀다.
   const superseded = (p: BackupPrice) => p.deleted_at !== null && minute(p.deleted_at) <= last;
@@ -69,7 +70,7 @@ export function latestBatch(prices: BackupPrice[]): Map<string, number> {
   }
 
   const map = new Map<string, number>();
-  for (const p of [...prices].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+  for (const p of [...prices].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))) {
     if (p.variant_id && minute(p.created_at) === last) map.set(p.variant_id, Number(p.amount));
   }
   return map;
@@ -85,6 +86,42 @@ const toInputs = (map: Map<string, number>): PriceInput[] =>
   [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([variant_id, amount]) => ({ variant_id, amount }));
 
 const sum = (inputs: PriceInput[]) => inputs.reduce((total, p) => total + p.amount, 0);
+
+/** 라이브 `GET /admin/time-sales` 의 한 세일(관리자 DTO 의 필요한 부분). */
+export type ReplacementSale = {
+  status: string;
+  generalPrices: Record<string, number>;
+  membershipPrices: Record<string, number>;
+};
+
+/**
+ * 옛 리스트를 지우기 전에, 대체 세일이 계획과 맞게 살아 있는지 본다. 빈 배열이면 맞다.
+ * 제목만으로는 같은 이름의 엉뚱한 세일을 집을 수 있으므로 상태·개수·합계·품목별 금액을 모두 대조한다.
+ */
+export function replacementMismatches(entry: RecoveryPlanEntry, sale: ReplacementSale): string[] {
+  const reasons: string[] = [];
+  if (sale.status !== entry.body.status) reasons.push(`상태 ${sale.status} ≠ ${entry.body.status}`);
+
+  const side = (
+    label: string,
+    expected: PriceInput[],
+    actual: Record<string, number>,
+    count: number,
+    total: number,
+  ) => {
+    const actualCount = Object.keys(actual).length;
+    const actualSum = Object.values(actual).reduce((s, n) => s + n, 0);
+    if (actualCount !== count) reasons.push(`${label} 개수 ${actualCount} ≠ ${count}`);
+    if (actualSum !== total) reasons.push(`${label} 합계 ${actualSum} ≠ ${total}`);
+    const want = new Map(expected.map((p) => [p.variant_id, p.amount]));
+    const differing = new Set([...want.keys(), ...Object.keys(actual)]);
+    const mismatched = [...differing].filter((v) => want.get(v) !== actual[v]).length;
+    if (mismatched > 0) reasons.push(`${label} 품목별 금액 불일치 ${mismatched}건`);
+  };
+  side('일반', entry.body.general_prices, sale.generalPrices, entry.summary.generalCount, entry.summary.generalSum);
+  side('멤버십', entry.body.membership_prices, sale.membershipPrices, entry.summary.membershipCount, entry.summary.membershipSum);
+  return reasons;
+}
 
 export function reconstruct(backup: BackupFile, targets: RecoveryTarget[]): RecoveryPlanEntry[] {
   return targets.map((target) => {
