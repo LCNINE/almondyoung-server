@@ -1,14 +1,16 @@
 import { SQL, sql } from 'drizzle-orm';
 
+/** 대표 단위를 고르는 순서: 분류 안 됨 > 취소 > 가장 뒤처진 단계. 주문으로 접을 때와 상자로 접을 때 같은 순서를 쓴다 */
+const unitStagePriority = (stage: SQL) => sql`CASE ${stage}
+  WHEN 'unclassified' THEN 0 WHEN 'cancel' THEN 1 WHEN 'reserve' THEN 2 WHEN 'plan' THEN 3
+  WHEN 'waybill' THEN 4 WHEN 'pick' THEN 5 WHEN 'dispatch' THEN 6 WHEN 'track' THEN 7 ELSE 99
+END`;
+
 /**
- * 주문의 «지금 단계» 판정(스펙 §4). 정체 보드의 투영과 리컨실러가 함께 읽는 유일한 판정이다.
- * 집합 SQL 한 벌로 계산한다 — 행별 루프면 첫 백필(수만 건)이 크론 주기를 넘긴다.
- *
- * scope 는 판매주문 id 한 열을 돌려주는 SELECT. nowIso 는 추정 시각이 없을 때 쓰는 «지금»(ISO 문자열).
- * 결과 열: sales_order_id, sales_channel, ordered_at, stage, state, outcome, estimated_entered_at
+ * 판정의 공통 CTE(so … decided). 주문으로 접기(judgedRowsSql)와 상자별 결과(judgedShipmentsSql)가 같이 읽는다 —
+ * 판정 정의는 이 한 벌이다(리컨실러 스펙 §11.5). units 는 상자 하나 × 주문 하나(직배는 shipment_id NULL).
  */
-export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
-  const now = sql`${nowIso}::timestamptz`;
+function judgeCtes(scope: SQL, now: SQL): SQL {
   return sql`
     WITH so AS (
       SELECT s.id, s.status::text AS status, s.sales_channel::text AS sales_channel,
@@ -81,7 +83,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
         LEFT JOIN wb ON wb.shipment_id = b.shipment_id
     ),
     units AS (
-      SELECT k.sales_order_id,
+      SELECT k.sales_order_id, k.shipment_id,
              CASE k.kind
                WHEN 'cancel_replan' THEN 'cancel' WHEN 'consolidation' THEN 'pick' WHEN 'recovery_unknown' THEN 'unclassified'
                WHEN 'reserve' THEN 'reserve' WHEN 'plan' THEN 'plan' WHEN 'picking' THEN 'pick'
@@ -106,7 +108,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              END AS est
         FROM box_kind k
       UNION ALL
-      SELECT fo.sales_order_id,
+      SELECT fo.sales_order_id, NULL::uuid AS shipment_id,
              CASE fo.ds WHEN 'pending' THEN 'dispatch' WHEN 'forwarded' THEN 'track' ELSE 'done' END,
              'drop_ship_' || fo.ds,
              CASE fo.ds WHEN 'pending' THEN fo.created_at ELSE fo.updated_at END
@@ -117,12 +119,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
     rep AS (
       SELECT DISTINCT ON (u.sales_order_id) u.sales_order_id, u.stage, u.state, u.est
         FROM units u
-       ORDER BY u.sales_order_id,
-                CASE u.stage
-                  WHEN 'unclassified' THEN 0 WHEN 'cancel' THEN 1 WHEN 'reserve' THEN 2 WHEN 'plan' THEN 3
-                  WHEN 'waybill' THEN 4 WHEN 'pick' THEN 5 WHEN 'dispatch' THEN 6 WHEN 'track' THEN 7 ELSE 99
-                END,
-                u.est ASC NULLS LAST
+       ORDER BY u.sales_order_id, ${unitStagePriority(sql`u.stage`)}, u.est ASC NULLS LAST
     ),
     open_box AS (
       SELECT DISTINCT ON (sales_order_id) sales_order_id, recovery_code
@@ -198,6 +195,20 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
         LEFT JOIN has_fo hf ON hf.sales_order_id = so.id
         LEFT JOIN creq cr ON cr.sales_order_id = so.id
     )
+  `;
+}
+
+/**
+ * 주문의 «지금 단계» 판정(스펙 §4). 정체 보드의 투영과 리컨실러가 함께 읽는 유일한 판정이다.
+ * 집합 SQL 한 벌로 계산한다 — 행별 루프면 첫 백필(수만 건)이 크론 주기를 넘긴다.
+ *
+ * scope 는 판매주문 id 한 열을 돌려주는 SELECT. nowIso 는 추정 시각이 없을 때 쓰는 «지금»(ISO 문자열).
+ * 결과 열: sales_order_id, sales_channel, ordered_at, stage, state, outcome, estimated_entered_at
+ */
+export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
+  const now = sql`${nowIso}::timestamptz`;
+  return sql`
+    ${judgeCtes(scope, now)}
     SELECT d.id AS sales_order_id,
            d.sales_channel,
            d.order_date AS ordered_at,
@@ -234,6 +245,74 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
            ) AS estimated_entered_at
       FROM decided d
+  `;
+}
+
+/**
+ * 상자별 판정(리컨실러 스펙 §11.5). 같은 CTE 의 units 를 상자로 접는다 — 판정 정의는 한 벌이다.
+ * 상자 하나가 주문마다 한 행씩 나오므로(합포장) 주문으로 접을 때와 같은 우선순위로 대표 행을 고르고,
+ * 그 상자에 라인이 있는 주문들과 그 주문 판정(decided.rule)을 배열로 싣는다 — 리컨실러가 D16 제외를 판단한다.
+ * 직배 단위는 상자가 없어 나오지 않는다.
+ */
+export function judgedShipmentsSql(scope: SQL, nowIso: string): SQL {
+  const now = sql`${nowIso}::timestamptz`;
+  return sql`
+    ${judgeCtes(scope, now)},
+    su AS (
+      SELECT u.shipment_id, u.sales_order_id, u.stage, u.state, u.est, d.rule AS order_rule
+        FROM units u
+        JOIN decided d ON d.id = u.sales_order_id
+       WHERE u.shipment_id IS NOT NULL
+    ),
+    agg AS (
+      SELECT su.shipment_id,
+             array_agg(DISTINCT su.sales_order_id::text ORDER BY su.sales_order_id::text) AS sales_order_ids,
+             array_agg(DISTINCT su.order_rule ORDER BY su.order_rule) AS order_rules
+        FROM su
+       GROUP BY su.shipment_id
+    )
+    SELECT DISTINCT ON (su.shipment_id)
+           su.shipment_id,
+           su.stage,
+           left(su.state, 64) AS state,
+           to_char(su.est AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS estimated_entered_at,
+           agg.sales_order_ids,
+           agg.order_rules
+      FROM su
+      JOIN agg ON agg.shipment_id = su.shipment_id
+     ORDER BY su.shipment_id, ${unitStagePriority(sql`su.stage`)}, su.est ASC NULLS LAST
+  `;
+}
+
+/**
+ * 상자 후보를 찾을 범위: 진행 중 주문 + 그 주문과 상자를 나눈 주문. 나눈 주문을 넣는 이유 — 셀메이트로 출고돼 투영에서
+ * 종료된 주문이 합포장 상자에 같이 있으면, 그 주문을 판정해야 D16 제외가 걸린다(빠지면 제외가 조용히 사라진다).
+ */
+export function openShipmentScopeSql(): SQL {
+  return sql`
+    SELECT p.sales_order_id FROM order_progress p WHERE p.outcome IS NULL
+    UNION
+    SELECT f2.sales_order_id
+      FROM order_progress p
+      JOIN fulfillment_orders f1 ON f1.sales_order_id = p.sales_order_id
+      JOIN fulfillment_order_items i1 ON i1.fulfillment_order_id = f1.id
+      JOIN shipment_lines l1 ON l1.fulfillment_order_item_id = i1.id
+      JOIN shipments s ON s.id = l1.shipment_id AND s.status NOT IN ('canceled', 'superseded')
+      JOIN shipment_lines l2 ON l2.shipment_id = s.id
+      JOIN fulfillment_order_items i2 ON i2.id = l2.fulfillment_order_item_id
+      JOIN fulfillment_orders f2 ON f2.id = i2.fulfillment_order_id
+     WHERE p.outcome IS NULL AND f2.sales_order_id IS NOT NULL
+  `;
+}
+
+/** 상자 하나의 지금 판정 범위: 그 상자에 라인이 있는 판매주문 전부(실행 직전 게이트, §11.4-3) */
+export function shipmentScopeSql(shipmentId: string): SQL {
+  return sql`
+    SELECT DISTINCT f.sales_order_id
+      FROM shipment_lines l
+      JOIN fulfillment_order_items i ON i.id = l.fulfillment_order_item_id
+      JOIN fulfillment_orders f ON f.id = i.fulfillment_order_id
+     WHERE l.shipment_id = ${shipmentId}::uuid AND f.sales_order_id IS NOT NULL
   `;
 }
 

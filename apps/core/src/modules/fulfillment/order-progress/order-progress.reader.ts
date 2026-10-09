@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql, SQL } from 'dr
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
-import { judgedRowsSql } from './order-progress.judge-sql';
+import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
 import { OrderProgressSummary, assembleSummary } from './order-progress.summary';
 import {
   ORDER_PROGRESS_STAGES,
@@ -20,6 +20,25 @@ export type JudgedRow = {
   state: string | null;
   outcome: OrderProgressOutcome | null;
   estimatedEnteredAt: string;
+};
+
+/** 상자별 판정 한 행(리컨실러 스펙 §11.5). stage·state 는 판정 SQL 의 단위 값 그대로다(done 등 진행 단계 밖 값 포함) */
+export type JudgedShipmentRow = {
+  shipmentId: string;
+  stage: string;
+  state: string | null;
+  estimatedEnteredAt: string | null;
+  salesOrderIds: string[];
+  orderRules: string[];
+};
+
+type RawJudgedShipment = {
+  shipment_id: string;
+  stage: string;
+  state: string | null;
+  estimated_entered_at: string | null;
+  sales_order_ids: string[];
+  order_rules: string[];
 };
 
 type RawJudged = {
@@ -79,6 +98,22 @@ export class OrderProgressReader {
         outcome: r.outcome,
         estimatedEnteredAt: r.estimated_entered_at,
       }));
+    }, tx);
+  }
+
+  /** 진행 중 주문(과 그 주문과 상자를 나눈 주문)의 열린 상자를 상자별로 판정한다 — 리컨실러 상자 후보의 원천(§11.4-1) */
+  async judgeOpenShipments(now: Date, tx?: DbTx): Promise<JudgedShipmentRow[]> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(openShipmentScopeSql(), now.toISOString()));
+      return toShipmentRows(result);
+    }, tx);
+  }
+
+  /** 상자 하나의 지금 판정. 취소·대체된 상자나 없는 상자는 undefined — 실행 직전 게이트가 쓴다(§11.4-3) */
+  async judgeShipment(shipmentId: string, now: Date, tx?: DbTx): Promise<JudgedShipmentRow | undefined> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(shipmentScopeSql(shipmentId), now.toISOString()));
+      return toShipmentRows(result).find((r) => r.shipmentId === shipmentId);
     }, tx);
   }
 
@@ -193,4 +228,16 @@ export class OrderProgressReader {
       };
     }, tx);
   }
+}
+
+function toShipmentRows(result: unknown): JudgedShipmentRow[] {
+  // execute() 원시 결과 타이핑 — judge() 와 같은 문서화된 캐스트. text[] 는 postgres.js 가 배열로 읽는다
+  return (result as RawJudgedShipment[]).map((r) => ({
+    shipmentId: r.shipment_id,
+    stage: r.stage,
+    state: r.state,
+    estimatedEnteredAt: r.estimated_entered_at,
+    salesOrderIds: r.sales_order_ids,
+    orderRules: r.order_rules,
+  }));
 }
