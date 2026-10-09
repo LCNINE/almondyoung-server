@@ -144,7 +144,7 @@ export default function MarketingTimeSaleTemplate() {
                         >
                           공개
                         </Button>
-                      ) : (
+                      ) : status === 'ended' ? null : (
                         <Button
                           variant="ghost"
                           size="sm"

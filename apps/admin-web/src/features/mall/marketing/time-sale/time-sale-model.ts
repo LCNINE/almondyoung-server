@@ -5,6 +5,8 @@
  * 워크플로가 한다.
  */
 
+import { isCustomError } from '@/lib/api/customError';
+
 export type TimeSaleStatus = 'draft' | 'scheduled' | 'active' | 'ended';
 
 export type TimeSalePeriod = {
@@ -286,4 +288,13 @@ export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
       };
     }),
   );
+}
+
+/**
+ * 저장 실패에서 운영자에게 보여줄 서버 사유. axios 인터셉터가 4xx 를 `CustomError(message=서버 메시지)` 로
+ * 바꿔 던지므로 `error.message` 가 그 사유다. 5xx·네트워크 오류의 문구는 사유가 아니라 null.
+ */
+export function readServerReason(error: unknown): string | null {
+  if (isCustomError(error) && error.statusCode < 500 && error.message) return error.message;
+  return null;
 }

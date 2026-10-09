@@ -6,6 +6,7 @@ import { medusaTimeSalesApi } from '@/lib/api/domains/medusa/time-sales';
 import { medusaCatalogApi } from '@/lib/api/domains/medusa/catalog';
 import {
   buildTimeSaleWriteBody,
+  readServerReason,
   resolveTimeSaleStatus,
   toTimeSaleRows,
   validateRows,
@@ -39,14 +40,14 @@ export function useTimeSaleList() {
 
 /**
  * 아직 끝나지 않은 세일에 걸린 품목 → 그 세일 이름. 상품 선택 화면이 «이미 세일 중» 을 미리 보여주는
- * 편의 표시다 — 최종 차단은 서버가 한다.
+ * 편의 표시다 — 최종 차단은 서버가 한다. 서버는 공개(active) 세일끼리만 겹침을 막으므로 비공개는 뺀다.
  */
 export function useTimeSaleVariantMap(excludeId?: string) {
   const { data } = useAllTimeSales();
   const map = new Map<string, string>();
   const now = new Date();
   for (const sale of data ?? []) {
-    if (sale.id === excludeId) continue;
+    if (sale.id === excludeId || sale.status === 'draft') continue;
     if (resolveTimeSaleStatus({ startsAt: sale.startsAt, endsAt: sale.endsAt }, now, sale.status) === 'ended') continue;
     for (const variantId of Object.keys(sale.generalPrices)) map.set(variantId, sale.title);
   }
@@ -109,14 +110,9 @@ const toBody = (input: SaveInput) => {
   return buildTimeSaleWriteBody(input);
 };
 
-/** 서버가 400 으로 돌려준 사유(겹침·검증)를 그대로 보여준다 — 「실패했습니다」 만으론 운영자가 고칠 수 없다. */
-const serverMessage = (error: unknown): string | null => {
-  const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-  return typeof message === 'string' && message ? message : null;
-};
-
+/** 서버가 4xx 로 돌려준 사유(겹침·검증·잠금 시간초과)를 그대로 보여준다 — 「실패했습니다」 만으론 운영자가 고칠 수 없다. */
 const rethrowReadable = (error: unknown): never => {
-  const message = serverMessage(error);
+  const message = readServerReason(error);
   throw message ? new TimeSaleValidationError(message) : error;
 };
 

@@ -282,7 +282,7 @@ export default function TimeSaleFormTemplate({ timeSaleId }: { timeSaleId?: stri
             selectedIds={selectedIds}
             onToggle={toggleProduct}
             onToggleMany={toggleMany}
-            ignoreSaleTitle={detail?.title}
+            excludeId={timeSaleId}
           />
         </Section>
 

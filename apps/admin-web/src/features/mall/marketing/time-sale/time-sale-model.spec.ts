@@ -1,8 +1,10 @@
+import { CustomError } from '@/lib/api/customError';
 import {
   applyPercentDiscount,
   applySavedSalePrices,
   summarizeSaleRows,
   buildTimeSaleWriteBody,
+  readServerReason,
   resolveTimeSaleStatus,
   saleVariantIds,
   validateRows,
@@ -268,5 +270,29 @@ describe('applySavedSalePrices', () => {
     );
 
     expect(restored.membershipSalePrice).toBeNull();
+  });
+});
+
+describe('readServerReason', () => {
+  // 인터셉터가 4xx 를 이 모양으로 던진다 (lib/api/client.ts).
+  it('4xx CustomError 의 서버 메시지를 돌려준다', () => {
+    const error = new CustomError({
+      message: '겹치는 타임세일이 있습니다',
+      statusCode: 400,
+      response: { type: 'invalid_data', message: '겹치는 타임세일이 있습니다' },
+    });
+    expect(readServerReason(error)).toBe('겹치는 타임세일이 있습니다');
+  });
+
+  it('잠금 시간초과 409 도 사유로 보인다', () => {
+    expect(readServerReason(new CustomError({ message: '잠시 후 다시 시도하세요', statusCode: 409 }))).toBe(
+      '잠시 후 다시 시도하세요'
+    );
+  });
+
+  it('5xx 와 일반 에러는 null', () => {
+    expect(readServerReason(new CustomError({ message: 'boom', statusCode: 500 }))).toBeNull();
+    expect(readServerReason(new Error('Network Error'))).toBeNull();
+    expect(readServerReason(undefined)).toBeNull();
   });
 });
