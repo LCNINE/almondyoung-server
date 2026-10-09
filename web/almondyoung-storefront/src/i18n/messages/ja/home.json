@@ -69,6 +69,8 @@
     "titleFirst": "タイム",
     "titleSecond": "セール",
     "allTab": "すべて",
+    "allTitle": "タイムセール全商品",
+    "productCount": "{count}件",
     "emptyTitle": "開催中のタイムセールはありません",
     "pageDescription": "この価格は期間限定です。",
     "noSaleTitle": "開催中のタイムセールはありません",

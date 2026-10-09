@@ -65,9 +65,9 @@ function Section({
 }
 
 /** 등록과 수정이 같은 화면이다 — 입력·검증·미리보기가 전부 같아 갈라두면 한쪽만 고쳐진다. */
-export default function TimeSaleFormTemplate({ generalId }: { generalId?: string }) {
+export default function TimeSaleFormTemplate({ timeSaleId }: { timeSaleId?: string }) {
   const router = useRouter();
-  const isEdit = Boolean(generalId);
+  const isEdit = Boolean(timeSaleId);
 
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState('');
@@ -78,7 +78,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
   const [rows, setRows] = useState<TimeSaleRow[]>([]);
   const [restored, setRestored] = useState(false);
 
-  const { data: detail, isLoading: loadingDetail } = useTimeSaleDetail(generalId ?? null);
+  const { data: detail, isLoading: loadingDetail } = useTimeSaleDetail(timeSaleId ?? null);
   const { data: loadedRows, isFetching } = useTimeSaleProductRows(selectedIds);
   const createTimeSale = useCreateTimeSale();
   const updateTimeSale = useUpdateTimeSale();
@@ -176,15 +176,15 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
     try {
       if (isEdit && detail) {
         await updateTimeSale.mutateAsync({
-          generalId: detail.generalId,
-          membershipId: detail.membershipId,
+          id: detail.id,
           title: title.trim(),
           period,
+          status: detail.status,
           rows: mergedRows,
         });
         toast.success('타임세일이 수정되었습니다.');
       } else {
-        await createTimeSale.mutateAsync({ title: title.trim(), period, rows: mergedRows });
+        await createTimeSale.mutateAsync({ title: title.trim(), period, status: 'active', rows: mergedRows });
         toast.success('타임세일이 등록되었습니다.');
       }
       router.push(TIME_SALE_LIST_PATH);
@@ -282,7 +282,7 @@ export default function TimeSaleFormTemplate({ generalId }: { generalId?: string
             selectedIds={selectedIds}
             onToggle={toggleProduct}
             onToggleMany={toggleMany}
-            ignoreSaleTitle={detail?.title}
+            excludeId={timeSaleId}
           />
         </Section>
 

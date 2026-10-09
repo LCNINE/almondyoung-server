@@ -18,10 +18,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useDeleteTimeSale, useTimeSaleList } from '@/lib/services/time-sale';
+import { useDeleteTimeSale, useSetTimeSaleStatus, useTimeSaleList } from '@/lib/services/time-sale';
 import { TIME_SALE_STATUS_LABEL, resolveTimeSaleStatus } from '../time-sale-model';
 
 const STATUS_CLASS = {
+  draft: 'bg-amber-100 text-amber-700',
   scheduled: 'bg-blue-100 text-blue-600',
   active: 'bg-green-100 text-green-600',
   ended: 'bg-gray-100 text-gray-500',
@@ -38,17 +39,24 @@ const formatDate = (iso: string) =>
 
 export default function MarketingTimeSaleTemplate() {
   const router = useRouter();
-  const [deleteTarget, setDeleteTarget] = useState<{ title: string; ids: string[] } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ title: string; id: string } | null>(null);
+  const [publishTarget, setPublishTarget] = useState<{
+    id: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+  } | null>(null);
 
   const { data: sales, isLoading } = useTimeSaleList();
   const deleteTimeSale = useDeleteTimeSale();
+  const setStatus = useSetTimeSaleStatus();
 
   const now = new Date();
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteTimeSale.mutateAsync(deleteTarget.ids);
+      await deleteTimeSale.mutateAsync(deleteTarget.id);
       toast.success('타임세일이 삭제되었습니다. 가격이 원래대로 돌아갑니다.');
     } catch {
       toast.error('삭제에 실패했습니다.');
@@ -94,12 +102,11 @@ export default function MarketingTimeSaleTemplate() {
             </thead>
             <tbody>
               {sales?.map((sale) => {
-                const status = resolveTimeSaleStatus(sale.period, now);
-                const ids = sale.priceListIds;
-                const editPath = `/mall/marketing/time-sale/${ids[0]}/edit`;
+                const status = resolveTimeSaleStatus(sale.period, now, sale.status);
+                const editPath = `/mall/marketing/time-sale/${sale.id}/edit`;
                 return (
                   <tr
-                    key={sale.title}
+                    key={sale.id}
                     className="cursor-pointer border-t hover:bg-muted/50"
                     onClick={() => router.push(editPath)}
                   >
@@ -116,12 +123,46 @@ export default function MarketingTimeSaleTemplate() {
                       {sale.variantCount}개
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {sale.membershipId ? '있음' : '없음'}
+                      {sale.hasMembership ? '있음' : '없음'}
                     </td>
                     <td
                       className="px-3 py-2 text-right"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      {sale.status === 'draft' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setPublishTarget({
+                              id: sale.id,
+                              title: sale.title,
+                              startsAt: sale.period.startsAt,
+                              endsAt: sale.period.endsAt,
+                            })
+                          }
+                        >
+                          공개
+                        </Button>
+                      ) : status === 'ended' ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={setStatus.isPending}
+                          onClick={() =>
+                            setStatus.mutate(
+                              { id: sale.id, status: 'draft' },
+                              {
+                                onSuccess: () => toast.success('비공개로 바꿨습니다. 세일가가 내려갑니다.'),
+                                onError: (error) =>
+                                  toast.error(error instanceof Error ? error.message : '전환에 실패했습니다.'),
+                              },
+                            )
+                          }
+                        >
+                          비공개
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={editPath} aria-label="수정">
                           <Pencil className="h-4 w-4" />
@@ -131,7 +172,7 @@ export default function MarketingTimeSaleTemplate() {
                         variant="ghost"
                         size="sm"
                         aria-label="삭제"
-                        onClick={() => setDeleteTarget({ title: sale.title, ids })}
+                        onClick={() => setDeleteTarget({ title: sale.title, id: sale.id })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -155,6 +196,36 @@ export default function MarketingTimeSaleTemplate() {
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
             <AlertDialogAction onClick={() => void confirmDelete()}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!publishTarget} onOpenChange={(open) => !open && setPublishTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{publishTarget?.title} 공개</AlertDialogTitle>
+            <AlertDialogDescription>
+              {publishTarget && `${formatDate(publishTarget.startsAt)} → ${formatDate(publishTarget.endsAt)}`} 동안
+              세일가가 고객에게 적용됩니다. 기간을 바꾸려면 먼저 수정하세요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!publishTarget) return;
+                setStatus.mutate(
+                  { id: publishTarget.id, status: 'active' },
+                  {
+                    onSuccess: () => toast.success('공개했습니다.'),
+                    onError: (error) => toast.error(error instanceof Error ? error.message : '공개에 실패했습니다.'),
+                    onSettled: () => setPublishTarget(null),
+                  },
+                );
+              }}
+            >
+              공개
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
