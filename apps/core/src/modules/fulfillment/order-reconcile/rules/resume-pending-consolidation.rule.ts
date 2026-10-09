@@ -48,7 +48,8 @@ export class ResumePendingConsolidationRule implements ShipmentReconcileRule {
     // 재개는 원본 전부를 한꺼번에 바꾼다. 틀의 게이트는 후보 상자 하나만 보므로, 형제 원본의 주문이 셀메이트 출고·채널 취소
     // 요청·반품 중이면 여기서 멈춘다 — 같은 판정(judgeShipment)과 같은 순수 함수(D16)를 원본마다 부른다.
     // 취소된 주문(cancel_open·cancelled)도 멈춘다. D16 은 30번을 위해 취소를 통과시키지만, 재개는 그 주문의 물건을 새 상자로
-    // 출고 흐름에 올린다 — recovery_required 상자의 취소는 도메인이 거절하므로 «주문 취소 + 합포장 대기»는 실제로 생긴다
+    // 출고 흐름에 올린다. 지금은 생기지 않는 상태다 — 주문 취소는 상자 취소를 먼저 한 트랜잭션에서 하고, recovery_required 상자는
+    // 그 취소를 거절해 주문 취소째 롤백된다. 상자 취소를 거치지 않고 주문을 cancelled 로 쓰는 길이 생길 때를 위한 방어선이다
     for (const source of readiness.sources) {
       const judged = await this.progress.judgeShipment(source.shipmentId, tx);
       if (!shipmentInSituation(this.situation, judged)) return false;
