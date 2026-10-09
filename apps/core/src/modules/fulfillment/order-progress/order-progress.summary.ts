@@ -30,3 +30,35 @@ export function assembleSummary(rows: SummaryRow[], evaluatedAt: string | null):
   for (const acc of byStage.values()) acc.states.sort((a, b) => b.open - a.open);
   return { evaluatedAt, stages: Array.from(byStage.values()) };
 }
+
+/** 정체 보드 목록 행의 «자동 멈춤» 배지 하나(리컨실러 스펙 §6·D18) */
+export type GaveUpBadge = { rule: string; row: number; since: string; lastError: string | null };
+export type GaveUpMark = {
+  salesOrderId: string | null;
+  rule: string;
+  row: number;
+  since: Date | null;
+  lastError: string | null;
+};
+
+/**
+ * 포기 표시를 주문별 배지로 묶는다. 주문 규칙은 주문당 행이 하나지만 상자 규칙은 한 주문의 여러 상자에서 포기할 수 있다 —
+ * 같은 규칙은 가장 이른 포기 하나만 남긴다(배지가 «#25 #25» 로 겹치지 않게). 행 번호 순.
+ */
+export function groupGaveUpMarks(marks: GaveUpMark[]): Map<string, GaveUpBadge[]> {
+  const byOrder = new Map<string, Map<string, GaveUpBadge>>();
+  for (const m of marks) {
+    if (!m.salesOrderId || !m.since) continue;
+    const rules = byOrder.get(m.salesOrderId) ?? new Map<string, GaveUpBadge>();
+    const since = m.since.toISOString();
+    const prev = rules.get(m.rule);
+    if (!prev || since < prev.since) rules.set(m.rule, { rule: m.rule, row: m.row, since, lastError: m.lastError });
+    byOrder.set(m.salesOrderId, rules);
+  }
+  return new Map(
+    [...byOrder].map(([id, rules]) => [
+      id,
+      [...rules.values()].sort((a, b) => a.row - b.row || a.rule.localeCompare(b.rule)),
+    ]),
+  );
+}

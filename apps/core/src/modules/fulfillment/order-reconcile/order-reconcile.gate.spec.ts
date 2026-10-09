@@ -1,7 +1,7 @@
 // apps/core/src/modules/fulfillment/order-reconcile/order-reconcile.gate.spec.ts
 import { JudgedRow } from '../order-progress/order-progress.reader';
 import { shouldRecordGateOut, stillInSituation } from './order-reconcile.gate';
-import { OrderReconcileSituation } from './order-reconcile.rule';
+import { OrderReconcileSituation, ShipmentReconcileSituation } from './order-reconcile.rule';
 
 type Judged = Pick<JudgedRow, 'stage' | 'state' | 'outcome'>;
 const awaiting: OrderReconcileSituation = { stage: 'fo', states: ['awaiting_matching'] };
@@ -79,5 +79,16 @@ describe('OrderReconcileSituation 타입 — npm run type-check 가 검사한다
     const crossed: OrderReconcileSituation = { stage: 'fo', states: ['awaiting_plan'] };
     const ok: OrderReconcileSituation = { stage: 'plan', states: ['awaiting_plan'] };
     expect([typo, crossed, ok]).toHaveLength(3);
+  });
+});
+
+describe('ShipmentReconcileSituation 타입 — npm run type-check 가 검사한다', () => {
+  it('주문 단위 단계·직배 상태는 상자 칸이 아니다', () => {
+    // @ts-expect-error fo 는 주문 단위 판정이라 상자에 없다
+    const orderOnly: ShipmentReconcileSituation = { stage: 'fo', states: ['awaiting_matching'] };
+    // @ts-expect-error 직배 단위는 상자가 없다
+    const dropShip: ShipmentReconcileSituation = { stage: 'dispatch', states: ['drop_ship_pending'] };
+    const ok: ShipmentReconcileSituation = { stage: 'pick', states: ['CONSOLIDATION_PENDING'] };
+    expect([orderOnly, dropShip, ok]).toHaveLength(3);
   });
 });

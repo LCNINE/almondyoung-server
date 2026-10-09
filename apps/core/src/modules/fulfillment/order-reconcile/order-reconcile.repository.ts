@@ -46,7 +46,7 @@ export class OrderReconcileRepository {
         )
         .orderBy(asc(p.stageEnteredAt), asc(p.salesOrderId))
         .limit(limit);
-      return rows.map((r) => ({ salesOrderId: r.salesOrderId, prior: toPrior(r) }));
+      return rows.map((r) => ({ salesOrderId: r.salesOrderId, prior: toReconcilePrior(r) }));
     }, tx);
   }
 
@@ -115,7 +115,7 @@ export class OrderReconcileRepository {
   }
 }
 
-function toPrior(r: {
+export function toReconcilePrior(r: {
   fingerprint: string | null;
   mode: string | null;
   attempts: number | null;

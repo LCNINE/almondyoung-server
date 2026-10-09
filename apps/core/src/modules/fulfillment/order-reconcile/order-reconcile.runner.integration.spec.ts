@@ -5,10 +5,12 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
 import * as f from '../order-progress/__support__/order-progress.fixtures';
 import { OrderProgressOutcome, OrderProgressStage } from '../order-progress/order-progress.thresholds';
+import { JudgedShipmentRow } from '../order-progress/order-progress.reader';
 import { OrderReconcileRepository } from './order-reconcile.repository';
 import { ReconcileActResult, RunnableReconcileRule } from './order-reconcile.rule';
 import { OrderReconcileRunner } from './order-reconcile.runner';
 import { ReconcileMode } from './order-reconcile.state';
+import { ShipmentReconcileRepository } from './shipment-reconcile.repository';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -35,6 +37,7 @@ function fakeRule(state: string, mode: ReconcileMode, act: (id: string) => Promi
     name: `it-runner-${state}`,
     row: 99,
     mode,
+    subject: 'order',
     situation: { stage: 'fo', states: [state] },
     fingerprint: jest.fn(async () => 'fp'),
     check: jest.fn(async () => true),
@@ -56,8 +59,58 @@ function judgeAs(stage: OrderProgressStage | null, state: string | null, outcome
         estimatedEnteredAt: '2000-01-01T00:00:00.000Z',
       })),
     ),
+    judgeOpenShipments: jest.fn(async (): Promise<JudgedShipmentRow[]> => []),
+    judgeShipment: jest.fn(async (): Promise<JudgedShipmentRow | undefined> => undefined),
   };
 }
+
+async function seedShipmentId(tx: DbTx): Promise<string> {
+  const w = await f.seedWorld(tx);
+  const o = await f.seedOrder(tx);
+  const fo = await f.seedFo(tx, w, o);
+  return (await f.seedBox(tx, w, [fo.foItemId], { status: 'recovery_required', recoveryCode: 'CONSOLIDATION_PENDING' }))
+    .shipmentId;
+}
+
+const boxRow = (shipmentId: string, state: string, over: Partial<JudgedShipmentRow> = {}): JudgedShipmentRow => ({
+  shipmentId,
+  stage: 'pick',
+  state,
+  estimatedEnteredAt: '2000-01-01T00:00:00.000Z',
+  salesOrderIds: [],
+  orderRules: ['unit'],
+  ...over,
+});
+
+/** 상자 판정을 흉내 낸다 — 바퀴의 상자 판정은 open, 실행 직전 판정은 now(기본은 open 과 같음) */
+function boxesAs(open: JudgedShipmentRow[], now: JudgedShipmentRow[] = open) {
+  return {
+    judge: jest.fn(async () => []),
+    judgeOpenShipments: jest.fn(async () => open),
+    judgeShipment: jest.fn(async (id: string) => now.find((r) => r.shipmentId === id)),
+  };
+}
+
+function fakeBoxRule(state: string, mode: ReconcileMode, act: (id: string) => Promise<ReconcileActResult>) {
+  const rule: RunnableReconcileRule = {
+    name: `it-box-${state}`,
+    row: 98,
+    mode,
+    subject: 'shipment',
+    situation: { stage: 'pick', states: [state] },
+    fingerprint: jest.fn(async () => 'fp'),
+    check: jest.fn(async () => true),
+    act: jest.fn(async (id: string) => act(id)),
+  };
+  return rule;
+}
+
+const boxStatesOf = async (tx: DbTx, rule: string) =>
+  new Map(
+    (await tx.select().from(wmsTables.shipmentReconcileState))
+      .filter((r) => r.rule === rule)
+      .map((r) => [r.shipmentId, r]),
+  );
 
 describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
   jest.setTimeout(60_000);
@@ -80,7 +133,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const shipped = await seedProgress(tx, { stage: null, state, outcome: 'external_shipped' });
       await f.seedBacklog(tx, shipped, 'awaiting_matching');
       const rule = fakeRule(state, 'act', async () => 'acted');
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -100,7 +159,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         if (id === bad) throw new Error('boom');
         return 'acted';
       });
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -117,13 +182,23 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'observe', async () => 'acted');
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
       expect(rule.act).not.toHaveBeenCalled();
       expect(summary.wouldAct).toBe(1);
-      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({ lastResult: 'would_act', mode: 'observe', attempts: 0 });
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        lastResult: 'would_act',
+        mode: 'observe',
+        attempts: 0,
+      });
     });
   });
 
@@ -134,7 +209,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async () => 'acted');
       (rule.check as jest.Mock).mockResolvedValue(false);
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -145,7 +226,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
   });
 
   /** 매 바퀴를 그 행의 next_check_at 에 돌린다 — 백오프를 건너뛰지 않고 n 번째 시도까지 간다 */
-  const runTimes = async (runner: OrderReconcileRunner, rule: RunnableReconcileRule, id: string, n: number, tx: DbTx) => {
+  const runTimes = async (
+    runner: OrderReconcileRunner,
+    rule: RunnableReconcileRule,
+    id: string,
+    n: number,
+    tx: DbTx,
+  ) => {
     let at = NOW;
     for (let i = 0; i < n; i++) {
       await runner.runRule(rule, at, tx);
@@ -164,7 +251,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const rule = fakeRule(state, 'act', async () => {
         throw new Error('act boom');
       });
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const row = await runTimes(runner, rule, id, 6, tx);
 
@@ -185,7 +278,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         calls++;
         throw new Error(`check boom ${calls}`);
       });
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const row = await runTimes(runner, rule, id, 6, tx);
 
@@ -202,7 +301,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async () => 'acted');
       (rule.fingerprint as jest.Mock).mockRejectedValueOnce(new Error('fp boom'));
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       await runner.runRule(rule, NOW, tx);
       const first = (await statesOf(tx, rule.name)).get(id);
@@ -243,7 +348,9 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         new Date('2099-05-31T00:00:00.000Z'),
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runRule(rule, NOW, tx);
 
@@ -280,7 +387,9 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         NOW,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runAll(NOW, tx);
 
@@ -295,7 +404,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async () => 'acted');
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
       await runner.runRule(rule, NOW, tx);
       await tx
         .update(wmsTables.orderProgress)
@@ -315,7 +430,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async () => 'noop');
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', state),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -336,11 +457,21 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       await repo.save(
         rule,
         id,
-        { fingerprint: 'fp', mode: 'act', attempts: 5, lastResult: 'acted', lastError: null, gaveUpAt, nextCheckAt: NOW },
+        {
+          fingerprint: 'fp',
+          mode: 'act',
+          attempts: 5,
+          lastResult: 'acted',
+          lastError: null,
+          gaveUpAt,
+          nextCheckAt: NOW,
+        },
         gaveUpAt,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runRule(rule, NOW, tx);
 
@@ -365,12 +496,26 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       await repo.save(
         rule,
         id,
-        { fingerprint: 'fp', mode: 'act', attempts: 2, lastResult: 'acted', lastError: null, gaveUpAt: null, nextCheckAt: NOW },
+        {
+          fingerprint: 'fp',
+          mode: 'act',
+          attempts: 2,
+          lastResult: 'acted',
+          lastError: null,
+          gaveUpAt: null,
+          nextCheckAt: NOW,
+        },
         actedAt,
         tx,
       );
       // 깨운 backlog 가 아직 pending — 투영만 늦게 옛 칸을 보여 준다
-      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', 'pending'), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        repo,
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', 'pending'),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -379,7 +524,11 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       expect(rule.check).not.toHaveBeenCalled();
       expect(rule.act).not.toHaveBeenCalled();
       // 덮으면 떠남 유예가 풀려 다음 바퀴에 행이 지워지고 «깨움→되돌아옴» 횟수가 리셋된다
-      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({ lastResult: 'acted', attempts: 2, updatedAt: actedAt });
+      expect((await statesOf(tx, rule.name)).get(id)).toMatchObject({
+        lastResult: 'acted',
+        attempts: 2,
+        updatedAt: actedAt,
+      });
     });
   });
 
@@ -392,6 +541,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const runner = new OrderReconcileRunner(
         dbs,
         new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
         judgeAs(null, null, 'external_shipped'),
         [rule],
       );
@@ -413,8 +563,16 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         judge: jest.fn(async () => {
           throw new Error('judge boom');
         }),
+        judgeOpenShipments: jest.fn(async (): Promise<JudgedShipmentRow[]> => []),
+        judgeShipment: jest.fn(async (): Promise<JudgedShipmentRow | undefined> => undefined),
       };
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), failing, [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        failing,
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -435,7 +593,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const state = `it_${randomUUID().slice(0, 8)}`;
       const id = await seedProgress(tx, { stage: 'fo', state });
       const rule = fakeRule(state, 'act', async () => 'acted');
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), judgeAs('reserve', 'created'), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('reserve', 'created'),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -461,11 +625,25 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       await repo.save(
         rule,
         id,
-        { fingerprint: 'fp', mode: 'act', attempts: 3, lastResult: 'acted', lastError: null, gaveUpAt: null, nextCheckAt: NOW },
+        {
+          fingerprint: 'fp',
+          mode: 'act',
+          attempts: 3,
+          lastResult: 'acted',
+          lastError: null,
+          gaveUpAt: null,
+          nextCheckAt: NOW,
+        },
         actedAt,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, judgeAs('fo', 'pending'), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        repo,
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', 'pending'),
+        [rule],
+      );
 
       await runner.runRule(rule, NOW, tx);
 
@@ -476,6 +654,143 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         lastResult: 'not_needed',
         nextCheckAt: new Date('2099-06-01T00:10:00.000Z'),
       });
+    });
+  });
+
+  it('상자 규칙: 칸 안이고 D16 제외가 아닌 상자만 오래된 순으로 실행하고, 상자 상태 테이블에 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const newer = await seedShipmentId(tx);
+      const older = await seedShipmentId(tx);
+      const excluded = await seedShipmentId(tx);
+      const rule = fakeBoxRule(state, 'act', async () => 'acted');
+      const progress = boxesAs([
+        boxRow(newer, state, { estimatedEnteredAt: '2000-01-02T00:00:00.000Z' }),
+        boxRow(older, state, { estimatedEnteredAt: '2000-01-01T00:00:00.000Z' }),
+        boxRow(excluded, state, { orderRules: ['unit', 'external_shipped'] }),
+      ]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        progress,
+        [rule],
+      );
+
+      const summary = await runner.runRule(rule, NOW, tx);
+
+      expect((rule.act as jest.Mock<Promise<ReconcileActResult>, [string]>).mock.calls.map((c) => c[0])).toEqual([
+        older,
+        newer,
+      ]);
+      expect(summary.acted).toBe(2);
+      const rows = await boxStatesOf(tx, rule.name);
+      expect([...rows.keys()].sort()).toEqual([newer, older].sort());
+      expect(rows.get(older)).toMatchObject({ lastResult: 'acted', attempts: 1, trackingRow: 98 });
+      expect((await statesOf(tx, rule.name)).size).toBe(0); // 주문 테이블엔 쓰지 않는다
+    });
+  });
+
+  it('상자 게이트: 지금 상자 판정이 칸 밖이면(대체됨·D16) 규칙을 부르지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const gone = await seedShipmentId(tx);
+      const nowExcluded = await seedShipmentId(tx);
+      const rule = fakeBoxRule(state, 'act', async () => 'acted');
+      const progress = boxesAs(
+        [boxRow(gone, state), boxRow(nowExcluded, state)],
+        [boxRow(nowExcluded, state, { orderRules: ['cancel_request'] })], // gone 은 지금 판정에 없다(대체됨)
+      );
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        progress,
+        [rule],
+      );
+
+      const summary = await runner.runRule(rule, NOW, tx);
+
+      expect(rule.fingerprint).not.toHaveBeenCalled();
+      expect(rule.act).not.toHaveBeenCalled();
+      expect(summary.gated).toBe(2);
+      expect([...(await boxStatesOf(tx, rule.name)).values()].map((r) => r.lastResult)).toEqual([
+        'not_needed',
+        'not_needed',
+      ]);
+    });
+  });
+
+  it('상자 규칙: 칸을 떠난 상자의 행은 지우고, 막 acted 한 행은 유예 동안 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const settled = await seedShipmentId(tx);
+      const justActed = await seedShipmentId(tx);
+      const rule = fakeBoxRule(state, 'act', async () => 'acted');
+      // settled 는 not_needed, justActed 는 acted 로 남긴다
+      (rule.check as jest.Mock).mockImplementation(async (id: string) => id !== settled);
+      const seen = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        boxesAs([boxRow(settled, state), boxRow(justActed, state)]),
+        [rule],
+      );
+      await seen.runRule(rule, new Date('2099-05-31T23:58:00.000Z'), tx);
+
+      // 둘 다 칸을 떠났다 — 2분 뒤: settled 는 지우고, justActed 는 떠남 유예(10분) 안이라 남긴다
+      const empty = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        boxesAs([]),
+        [rule],
+      );
+      const summary = await empty.runRule(rule, NOW, tx);
+
+      expect(summary.departed).toBe(1);
+      expect([...(await boxStatesOf(tx, rule.name)).keys()]).toEqual([justActed]);
+    });
+  });
+
+  it('runAll: 상자 규칙이 둘이어도 상자 판정은 한 바퀴에 한 번이고, 등록 안 된 규칙의 상자 행도 지운다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbs = makeDbService(db);
+      const state = `it_${randomUUID().slice(0, 8)}`;
+      const id = await seedShipmentId(tx);
+      const one = fakeBoxRule(`${state}a`, 'observe', async () => 'acted');
+      const two = fakeBoxRule(`${state}b`, 'observe', async () => 'acted');
+      const orphan = fakeBoxRule(`${state}x`, 'observe', async () => 'acted');
+      const shipmentRepo = new ShipmentReconcileRepository(dbs);
+      await shipmentRepo.save(
+        orphan,
+        id,
+        {
+          fingerprint: 'fp',
+          mode: 'observe',
+          attempts: 0,
+          lastResult: 'would_act',
+          lastError: null,
+          gaveUpAt: null,
+          nextCheckAt: NOW,
+        },
+        NOW,
+        tx,
+      );
+      const progress = boxesAs([boxRow(id, `${state}a`)]);
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), shipmentRepo, progress, [
+        one,
+        two,
+      ]);
+
+      await runner.runAll(NOW, tx);
+
+      expect(progress.judgeOpenShipments).toHaveBeenCalledTimes(1);
+      expect((await boxStatesOf(tx, orphan.name)).size).toBe(0);
+      expect((await boxStatesOf(tx, one.name)).get(id)).toMatchObject({ lastResult: 'would_act' });
     });
   });
 });

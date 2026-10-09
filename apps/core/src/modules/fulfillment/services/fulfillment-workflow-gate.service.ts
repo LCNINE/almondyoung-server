@@ -94,6 +94,11 @@ export class FulfillmentWorkflowGate implements OnModuleInit {
     return occurredAt.getTime() >= this.cutoverAt.getTime();
   }
 
+  /** 물리 출고 변경을 지금 받는가(던지지 않는다). 리컨실러 규칙의 check 가 정비 모드를 «일시적 막힘»으로 거를 때 쓴다 */
+  allowsOperationalMutations(): boolean {
+    return this.mode !== 'maintenance';
+  }
+
   shouldRunFoCreation(): boolean {
     return this.mode !== 'maintenance';
   }

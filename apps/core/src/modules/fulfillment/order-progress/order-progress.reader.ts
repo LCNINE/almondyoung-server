@@ -3,8 +3,8 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql, SQL } from 'dr
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
-import { judgedRowsSql } from './order-progress.judge-sql';
-import { OrderProgressSummary, assembleSummary } from './order-progress.summary';
+import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
+import { GaveUpBadge, OrderProgressSummary, assembleSummary, groupGaveUpMarks } from './order-progress.summary';
 import {
   ORDER_PROGRESS_STAGES,
   OrderProgressOutcome,
@@ -20,6 +20,25 @@ export type JudgedRow = {
   state: string | null;
   outcome: OrderProgressOutcome | null;
   estimatedEnteredAt: string;
+};
+
+/** 상자별 판정 한 행(리컨실러 스펙 §11.5). stage·state 는 판정 SQL 의 단위 값 그대로다(done 등 진행 단계 밖 값 포함) */
+export type JudgedShipmentRow = {
+  shipmentId: string;
+  stage: string;
+  state: string | null;
+  estimatedEnteredAt: string | null;
+  salesOrderIds: string[];
+  orderRules: string[];
+};
+
+type RawJudgedShipment = {
+  shipment_id: string;
+  stage: string;
+  state: string | null;
+  estimated_entered_at: string | null;
+  sales_order_ids: string[];
+  order_rules: string[];
 };
 
 type RawJudged = {
@@ -51,7 +70,7 @@ export type OrderProgressItem = {
   stageEnteredAt: string;
   stuck: boolean;
   /** 리컨실러가 포기한 규칙들(스펙 2026-10-08 §6). 없으면 빈 배열 */
-  gaveUp: { rule: string; row: number; since: string; lastError: string | null }[];
+  gaveUp: GaveUpBadge[];
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -82,6 +101,22 @@ export class OrderProgressReader {
     }, tx);
   }
 
+  /** 진행 중 주문(과 그 주문과 상자를 나눈 주문)의 열린 상자를 상자별로 판정한다 — 리컨실러 상자 후보의 원천(§11.4-1) */
+  async judgeOpenShipments(tx?: DbTx): Promise<JudgedShipmentRow[]> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(openShipmentScopeSql()));
+      return toShipmentRows(result);
+    }, tx);
+  }
+
+  /** 상자 하나의 지금 판정. 취소·대체된 상자나 없는 상자는 undefined — 실행 직전 게이트가 쓴다(§11.4-3) */
+  async judgeShipment(shipmentId: string, tx?: DbTx): Promise<JudgedShipmentRow | undefined> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(shipmentScopeSql(shipmentId)));
+      return toShipmentRows(result).find((r) => r.shipmentId === shipmentId);
+    }, tx);
+  }
+
   async summary(now: Date, tx?: DbTx): Promise<OrderProgressSummary> {
     const t = wmsTables.orderProgress;
     // 단계별 갇힘 기준선을 CASE 하나로 — 기준은 thresholds 한 곳에서만 온다
@@ -96,9 +131,17 @@ export class OrderProgressReader {
           state: sql<string>`coalesce(${t.state}, '')`,
           open: sql<number>`count(*)::int`,
           stuck: sql<number>`(count(*) FILTER (WHERE ${t.stageEnteredAt} < ${cutoff}))::int`,
+          // 상자 규칙의 포기는 그 상자에 라인이 있는 주문마다 센다(D18). 바깥 행은 테이블 이름으로 가리킨다 —
+          // ${t.salesOrderId} 는 테이블 없이 "sales_order_id" 로 찍혀 서브쿼리 안의 같은 이름 칸에 묶인다(늘 참이 됐었다)
           gaveUp: sql<number>`(count(*) FILTER (WHERE EXISTS (
             SELECT 1 FROM ${wmsTables.orderReconcileState} r
-             WHERE r.sales_order_id = ${t.salesOrderId} AND r.gave_up_at IS NOT NULL
+             WHERE r.sales_order_id = order_progress.sales_order_id AND r.gave_up_at IS NOT NULL
+          ) OR EXISTS (
+            SELECT 1 FROM ${wmsTables.shipmentReconcileState} sr
+              JOIN ${wmsTables.shipmentLines} sl ON sl.shipment_id = sr.shipment_id
+              JOIN ${wmsTables.fulfillmentOrderItems} foi ON foi.id = sl.fulfillment_order_item_id
+              JOIN ${wmsTables.fulfillmentOrders} fo ON fo.id = foi.fulfillment_order_id
+             WHERE fo.sales_order_id = order_progress.sales_order_id AND sr.gave_up_at IS NOT NULL
           )))::int`,
           oldest: isoOf(sql`min(${t.stageEnteredAt})`),
         })
@@ -164,15 +207,29 @@ export class OrderProgressReader {
                 lastError: r.lastError,
               })
               .from(r)
-              .where(and(inArray(r.salesOrderId, ids), isNotNull(r.gaveUpAt)))
-              .orderBy(asc(r.trackingRow));
-      const gaveUpBy = new Map<string, OrderProgressItem['gaveUp']>();
-      for (const m of marks) {
-        if (!m.since) continue;
-        const list = gaveUpBy.get(m.salesOrderId) ?? [];
-        list.push({ rule: m.rule, row: m.row, since: m.since.toISOString(), lastError: m.lastError });
-        gaveUpBy.set(m.salesOrderId, list);
-      }
+              .where(and(inArray(r.salesOrderId, ids), isNotNull(r.gaveUpAt)));
+      const sr = wmsTables.shipmentReconcileState;
+      const sl = wmsTables.shipmentLines;
+      const foi = wmsTables.fulfillmentOrderItems;
+      const fo = wmsTables.fulfillmentOrders;
+      // 상자 규칙의 포기는 그 상자에 라인이 있는 주문마다 뜬다(D18)
+      const boxMarks =
+        ids.length === 0
+          ? []
+          : await trx
+              .select({
+                salesOrderId: fo.salesOrderId,
+                rule: sr.rule,
+                row: sr.trackingRow,
+                since: sr.gaveUpAt,
+                lastError: sr.lastError,
+              })
+              .from(sr)
+              .innerJoin(sl, eq(sl.shipmentId, sr.shipmentId))
+              .innerJoin(foi, eq(foi.id, sl.fulfillmentOrderItemId))
+              .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+              .where(and(inArray(fo.salesOrderId, ids), isNotNull(sr.gaveUpAt)));
+      const gaveUpBy = groupGaveUpMarks([...marks, ...boxMarks]);
       return {
         items: page.map((row) => ({
           salesOrderId: row.salesOrderId,
@@ -193,4 +250,16 @@ export class OrderProgressReader {
       };
     }, tx);
   }
+}
+
+function toShipmentRows(result: unknown): JudgedShipmentRow[] {
+  // execute() 원시 결과 타이핑 — judge() 와 같은 문서화된 캐스트. text[] 는 postgres.js 가 배열로 읽는다
+  return (result as RawJudgedShipment[]).map((r) => ({
+    shipmentId: r.shipment_id,
+    stage: r.stage,
+    state: r.state,
+    estimatedEnteredAt: r.estimated_entered_at,
+    salesOrderIds: r.sales_order_ids,
+    orderRules: r.order_rules,
+  }));
 }

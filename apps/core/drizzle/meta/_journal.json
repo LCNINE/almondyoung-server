@@ -785,6 +785,13 @@
       "when": 1791404607991,
       "tag": "20261007202327_add-order-reconcile-state",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791570862865,
+      "tag": "20261009183422_add-shipment-reconcile-state",
+      "breakpoints": true
     }
   ]
 }

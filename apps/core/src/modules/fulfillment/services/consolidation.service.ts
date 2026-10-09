@@ -90,6 +90,22 @@ export type ConsolidationResponse = {
   }>;
 };
 
+/** 대기 중 합포장을 지금 재개하면 무엇이 막는지(resumeReadiness). 리컨실러 25번이 check·지문에 쓴다 */
+export type ConsolidationResumeReadiness = {
+  operationId: string;
+  sources: Array<{
+    shipmentId: string;
+    status: string;
+    recoveryCode: string | null;
+    manifestVersion: number;
+    reservationVersion: number;
+  }>;
+  blockers: Array<{ shipmentId: string; codes: string[] }>;
+};
+
+/** 재개 호출 하나의 결과 — completed 만 «이번 호출로 끝냈다»이다 */
+export type ConsolidationResumeOutcome = 'completed' | 'blocked' | 'already_completed';
+
 type ConsolidationCommandResult = {
   response: ConsolidationResponse;
   resourceType: string;
@@ -335,6 +351,55 @@ export class ConsolidationService {
 
   /** Task 12-14 call this after invoice void, batch exclusion and unpick have committed. */
   async resumePending(operationId: string, tx?: DbTx): Promise<ConsolidationResponse> {
+    return (await this.resume(operationId, tx)).response;
+  }
+
+  /**
+   * 재개가 «이번 호출로» 끝났는지 알려 준다 — 리컨실러 25번이 할 일이 없었던 호출(막힘이 남음·이미 끝남)을 시도로 세지 않게(스펙 D13).
+   */
+  async tryResumePending(operationId: string, tx?: DbTx): Promise<ConsolidationResumeOutcome> {
+    return (await this.resume(operationId, tx)).outcome;
+  }
+
+  /** 이 상자를 원본으로 둔 대기 중 합포장 작업(가장 이른 것). 없으면 null */
+  async findPendingOperationIdForSource(shipmentId: string, tx?: DbTx): Promise<string | null> {
+    return this.dbService.run((trx) => this.pendingOperationIdForSource(shipmentId, trx), tx);
+  }
+
+  /**
+   * 대기 중 합포장을 지금 재개하면 무엇이 막는지. resumePending 이 잠근 뒤 쓰는 판정(collectBlockers)과 같은 함수를 잠그지 않고 부른다 —
+   * 리컨실러 규칙의 check 가 도메인과 엇갈리지 않게(스펙 §4.4-2). 작업이 없거나 대기 중이 아니면 null.
+   */
+  async resumeReadiness(operationId: string, tx?: DbTx): Promise<ConsolidationResumeReadiness | null> {
+    return this.dbService.run(async (trx) => {
+      const [operation] = await trx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operationId))
+        .limit(1);
+      if (!operation || operation.type !== 'consolidate' || operation.status !== 'pending') return null;
+      const pending = this.pendingIntent(operation.afterManifestSnapshot);
+      const aggregates = await Promise.all(
+        uniqueSorted(pending.sources.map((source) => source.shipmentId)).map((id) => this.loadAggregate(id, trx)),
+      );
+      return {
+        operationId,
+        sources: aggregates.map((aggregate) => ({
+          shipmentId: aggregate.shipment.id,
+          status: aggregate.shipment.status,
+          recoveryCode: aggregate.shipment.recoveryCode,
+          manifestVersion: aggregate.shipment.manifestVersion,
+          reservationVersion: aggregate.shipment.reservationVersion,
+        })),
+        blockers: await this.collectBlockers(aggregates, trx),
+      };
+    }, tx);
+  }
+
+  private async resume(
+    operationId: string,
+    tx?: DbTx,
+  ): Promise<{ outcome: ConsolidationResumeOutcome; response: ConsolidationResponse }> {
     this.workflowGate.assertV2MutationAllowed('shipment.consolidate.resume');
     return this.dbService.run(async (trx) => {
       const [optimisticOperation] = await trx
@@ -346,7 +411,7 @@ export class ConsolidationService {
         throw new NotFoundException(`Consolidation operation ${operationId} not found`);
       }
       if (optimisticOperation.status === 'completed') {
-        return this.completedResponse(operationId, trx);
+        return { outcome: 'already_completed', response: await this.completedResponse(operationId, trx) };
       }
 
       const pending = this.pendingIntent(optimisticOperation.afterManifestSnapshot);
@@ -362,7 +427,8 @@ export class ConsolidationService {
           .from(wmsTables.shipmentOperations)
           .where(eq(wmsTables.shipmentOperations.id, operationId))
           .limit(1);
-        if (latest?.status === 'completed') return this.completedResponse(operationId, trx);
+        if (latest?.status === 'completed')
+          return { outcome: 'already_completed', response: await this.completedResponse(operationId, trx) };
         throw error;
       }
       const [operation] = await trx
@@ -375,7 +441,7 @@ export class ConsolidationService {
         throw new NotFoundException(`Consolidation operation ${operationId} not found`);
       }
       if (operation.status === 'completed') {
-        return this.completedResponse(operationId, trx);
+        return { outcome: 'already_completed', response: await this.completedResponse(operationId, trx) };
       }
       const lockedPending = this.pendingIntent(operation.afterManifestSnapshot);
       if (JSON.stringify(lockedPending) !== JSON.stringify(pending)) {
@@ -397,11 +463,14 @@ export class ConsolidationService {
       const blockerRows = await this.collectBlockers(aggregates, trx);
       if (blockerRows.length > 0) {
         return {
-          operationId,
-          operationStatus: 'pending',
-          sourceShipmentIds: pending.sources.map((source) => source.shipmentId),
-          targetShipmentId: null,
-          blockers: blockerRows,
+          outcome: 'blocked',
+          response: {
+            operationId,
+            operationStatus: 'pending',
+            sourceShipmentIds: pending.sources.map((source) => source.shipmentId),
+            targetShipmentId: null,
+            blockers: blockerRows,
+          },
         };
       }
 
@@ -417,7 +486,7 @@ export class ConsolidationService {
           updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentCommandRequests.operationId, operationId));
-      return response;
+      return { outcome: 'completed', response };
     }, tx);
   }
 
@@ -863,28 +932,12 @@ export class ConsolidationService {
         );
       }
       if (aggregate.shipment.status === 'recovery_required') {
-        const [pending] = await tx
-          .select({ operationId: wmsTables.shipmentOperations.id })
-          .from(wmsTables.shipmentOperationMembers)
-          .innerJoin(
-            wmsTables.shipmentOperations,
-            eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
-          )
-          .where(
-            and(
-              eq(wmsTables.shipmentOperationMembers.shipmentId, aggregate.shipment.id),
-              eq(wmsTables.shipmentOperationMembers.role, 'source'),
-              eq(wmsTables.shipmentOperations.type, 'consolidate'),
-              eq(wmsTables.shipmentOperations.status, 'pending'),
-            ),
-          )
-          .orderBy(asc(wmsTables.shipmentOperations.createdAt))
-          .limit(1);
-        if (aggregate.shipment.recoveryCode === CONSOLIDATION_RECOVERY_CODE && pending) {
+        const pendingId = await this.pendingOperationIdForSource(aggregate.shipment.id, tx);
+        if (aggregate.shipment.recoveryCode === CONSOLIDATION_RECOVERY_CODE && pendingId) {
           throw new ConflictException({
             code: 'CONSOLIDATION_ALREADY_PENDING',
             message: `Shipment ${aggregate.shipment.id} already belongs to a pending consolidation`,
-            operationId: pending.operationId,
+            operationId: pendingId,
           });
         }
         throw this.conflict(
@@ -893,6 +946,27 @@ export class ConsolidationService {
         );
       }
     }
+  }
+
+  private async pendingOperationIdForSource(shipmentId: string, tx: DbTx): Promise<string | null> {
+    const [pending] = await tx
+      .select({ operationId: wmsTables.shipmentOperations.id })
+      .from(wmsTables.shipmentOperationMembers)
+      .innerJoin(
+        wmsTables.shipmentOperations,
+        eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
+      )
+      .where(
+        and(
+          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+          eq(wmsTables.shipmentOperations.type, 'consolidate'),
+          eq(wmsTables.shipmentOperations.status, 'pending'),
+        ),
+      )
+      .orderBy(asc(wmsTables.shipmentOperations.createdAt))
+      .limit(1);
+    return pending?.operationId ?? null;
   }
 
   private async assertCompatibleSources(aggregates: ShipmentAggregate[], tx: DbTx): Promise<void> {

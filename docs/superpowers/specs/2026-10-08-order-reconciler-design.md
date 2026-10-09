@@ -337,6 +337,9 @@ SELECT s.rule, s.sales_order_id, s.last_result, s.fingerprint, s.updated_at,
 | D19 | 끝난 주문을 보는 규칙(29번) | **`situation` 이 단계 대신 종료 결과(`delivered`)를 지정할 수 있다. 틀은 최근 N일 안에 끝난 주문만 훑는다.** N 은 29번에서 정한다 | 29번 때 결정: 그 행이 틀을 다시 연다 |
 | D20 | 첫 상자 행 | **25번(`CONSOLIDATION_PENDING` 재개)** | 30번: 재고 예약을 푸는 규칙이 첫 상자 사례가 된다(D2 와 같은 이유). 주문 하나짜리 상자는 이미 주문 단위(`cancel_open`)로 보인다 / 18번: B 분류라 자동 계획이 맞는지부터 정책 판단이 필요하다 |
 
+D17 의 구현(2026-10-10): 저장소 클래스 둘(`OrderReconcileRepository`·`ShipmentReconcileRepository`)과 러너의 대상 종류별 포트.
+상자 테이블엔 `(rule, next_check_at)` 인덱스를 두지 않는다 — 상자 후보는 판정에서 고른 id 로 PK 를 찾는다.
+
 ### 11.3 규칙 interface
 
 ```ts
@@ -366,6 +369,8 @@ interface ReconcileRule<K extends ReconcileSubject> {
 
 1. **후보**: 주문 규칙은 지금처럼 `order_progress` 에서(종료 결과 칸이면 D19 의 기간 안 종료 행에서). 상자 규칙은 바퀴마다 상자별
    판정을 한 번 돌려(진행 중 주문 범위, 같은 바퀴의 상자 규칙끼리 공유) `(stage, state)` 가 칸에 맞고 D16 제외에 걸리지 않는 상자를 고른다.
+   범위는 진행 중 주문과 **그 주문과 상자를 함께 쓰는 주문**이다 — 투영에서 종료된(셀메이트 출고) 주문이 합포장 상자에 같이 있어도
+   그 주문을 판정해야 D16 제외가 걸린다(`openShipmentScopeSql`, 2026-10-10)
    합포장 상자는 상자 하나로 한 번만 나온다. 정렬은 단계 진입 추정 시각 오래된 순, 규칙당 주기마다 최대 50건(§4.3-1 과 같다)
 2. **떠남**: 상자 규칙의 행 중 상자가 더 이상 칸에 없거나 D16 제외에 걸린 것을 지운다. 10분 유예(`DEPARTURE_GRACE_MIN`)는 같다
 3. **재판정 게이트(D12)**: savepoint 안에서 `fingerprint` 전에 대상을 실시간 판정한다. 주문은 `judge([id])`, 상자는 그 상자에 라인이 있는
@@ -398,3 +403,50 @@ interface ReconcileRule<K extends ReconcileSubject> {
 
 - 판정 SQL 을 CI 에서 돌리는 것 — core 통합 스펙(`describeIfDb`)을 CI 에서 돌리는 job 이 없다. #1033
 - 16번(backlog `failed` 상한)의 재시도 장치 중복 — backlog 자체 백오프와 리컨실러 백오프 중 하나만 상한을 가진다. 그 행에서 정한다
+
+### 11.8 25번 규칙 `resume-pending-consolidation` (2026-10-10)
+
+합포장(`consolidate`)은 원본 상자에 살아 있는 송장·작업 항목·집은 몫·발송 시도가 있으면 원본을 `recovery_required` +
+`CONSOLIDATION_PENDING` 으로 두고 작업을 `pending` 으로 남긴다. 재개(`resumePending`)를 부르는 곳은 «작업 항목이 배치에서 빠짐»
+(`excludeShipment`·박스 반환) 하나뿐이라, 송장 취소로 풀린 경우는 영영 멈춘다.
+
+| 항목 | 내용 |
+| --- | --- |
+| `row` / `subject` / `mode` | 25 / `shipment` / `observe` (첫 배포) |
+| `situation` | `pick` / `CONSOLIDATION_PENDING` (상자별 판정) |
+| `fingerprint` | 대기 중 작업 id + 원본마다 상태·recovery_code·버전 + 막힘 코드(정렬). 작업이 없으면 `none` |
+| `check` | ① 정비 모드면 false ② 이 상자를 원본으로 둔 대기 중 작업 ③ `resumeReadiness` 의 막힘 0(`resumePending` 이 쓰는 `collectBlockers` 그대로) ④ **원본 상자 전부**가 지금 상자 판정으로 칸 안이고 그 주문 중 취소된 것(`cancel_open`·`cancelled`)이 없다 |
+| `act` | `tryResumePending` — `completed` 만 `acted`, 나머지는 `noop` |
+
+④가 있는 이유: 재개는 원본 전부를 바꾸는데 틀의 게이트(D12·D16)는 후보 상자 하나만 본다. 형제 원본의 주문이 셀메이트로
+출고됐으면 그 원본까지 합포장해 유령 예약을 만든다(§1.3 과 같은 꼴). 규칙이 판정을 다시 구현하지 않고 같은 `judgeShipment` 와
+같은 순수 함수 `shipmentInSituation` 을 원본마다 부른다. 취소된 주문도 막는다 — D16 은 30번을 위해 취소를 통과시키지만,
+재개는 그 주문의 물건을 새 상자로 출고 흐름에 올린다.
+
+다만 «주문 취소 + 합포장 대기»는 지금 코드로는 생기지 않는다(2026-10-10 확인). 판매주문 취소(`cancelV2Outstanding`)는 열린 상자마다
+상자 취소(`cancelOutstanding`)를 먼저 부르고 그 뒤에 판매주문을 `cancelled` 로 쓰며, 둘은 한 트랜잭션이다. `recovery_required` 상자는
+상자 취소를 거절하므로(`SHIPMENT_RECOVERY_IN_PROGRESS`) 주문 취소가 통째로 롤백된다. 채널 취소 경로(부분 취소 요청·채널 변경 반영)는
+그 거절을 savepoint 로 되돌리고 «반영 대기 변경»에 남긴다. 그래서 이 가드는 상자 취소를 거치지 않고 판매주문을 `cancelled` 로 쓰는
+길이 생길 때를 위한 방어선이고, 운영자의 수동 재개 경로(`resumePending`)도 같은 이유로 취소된 주문을 만나지 않는다. 그런 길이 생기면
+그때 `resumePending` 에 도메인 가드를 둔다.
+
+실행 전환 전에 볼 것: 채널 취소가 거절돼 «반영 대기 변경»에 남은 주문의 상자도 합포장 대기일 수 있다. 실행 모드의 25번이 합포장을
+끝내면 그 상자는 다시 출고 흐름에 오른다(반대로 `draft` 로 풀려 운영자의 취소 재시도가 성공할 수도 있다). 25번만의 문제가 아니라
+«거절된 채널 취소» 전반(#1016 35번 계열)의 문제다.
+
+같은 작업의 원본이 둘 다 후보로 오면 먼저 온 쪽이 재개해 끝내고, 다른 쪽은 대체(`superseded`)돼 게이트에서 걸러진다.
+관찰 기간의 `would_act` 는 원본 수만큼 나온다 — 작업 단위로 세려면 아래 SQL 의 `operation_id` 로 묶는다.
+
+```sql
+SELECT s.shipment_id, s.last_result, s.fingerprint, s.updated_at,
+       sh.status, sh.recovery_code, op.id AS operation_id
+  FROM shipment_reconcile_state s
+  JOIN shipments sh ON sh.id = s.shipment_id
+  LEFT JOIN shipment_operation_members m ON m.shipment_id = s.shipment_id AND m.role = 'source'
+  LEFT JOIN shipment_operations op ON op.id = m.operation_id AND op.type = 'consolidate' AND op.status = 'pending'
+ WHERE s.rule = 'resume-pending-consolidation' AND s.last_result = 'would_act'
+ ORDER BY s.updated_at DESC;
+```
+
+같은 PR 에서 정체 보드 요약의 «자동 멈춤 N» 결함을 고쳤다: 포기 수 EXISTS 가 바깥 칸을 테이블 없이 찍어(`"sales_order_id"`)
+서브쿼리의 같은 이름 칸에 묶였고(늘 참), 포기 행이 하나라도 있으면 그 칸의 주문 전부가 세였다. 목록의 배지는 영향이 없었다.
