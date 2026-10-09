@@ -102,6 +102,13 @@ medusaIntegrationTestRunner({
         return String(error.message ?? error);
       };
 
+      const generalAt = (amount: number) => variantIds.map((id) => ({ variant_id: id, amount }));
+
+      const livePrices = async (priceListId: string) => {
+        const pricing = getContainer().resolve(Modules.PRICING);
+        return pricing.listPrices({ price_list_id: [priceListId] });
+      };
+
       const livePriceCount = async (priceListId: string) => {
         const pricing = getContainer().resolve(Modules.PRICING);
         const prices = await pricing.listPrices({ price_list_id: [priceListId] });
@@ -129,8 +136,11 @@ medusaIntegrationTestRunner({
       it('replaces prices without accumulating', async () => {
         const container = getContainer();
         const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
+        // 금액을 매번 바꾼다 — 같으면 가격을 건드리지 않아 교체 경로를 타지 않는다.
         for (let i = 0; i < 3; i++) {
-          await updateTimeSaleWorkflow(container).run({ input: { id: result.id, ...input({ title: `수정 ${i}` }) } });
+          await updateTimeSaleWorkflow(container).run({
+            input: { id: result.id, ...input({ title: `수정 ${i}`, general_prices: generalAt(890 - i) }) },
+          });
         }
         const sale = await linkedLists(result.id);
         expect(sale.title).toBe('수정 2');
@@ -217,8 +227,12 @@ medusaIntegrationTestRunner({
         const container = getContainer();
         const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
         const outcomes = await Promise.allSettled([
-          updateTimeSaleWorkflow(container).run({ input: { id: result.id, ...input({ title: '동시 A' }) } }),
-          updateTimeSaleWorkflow(container).run({ input: { id: result.id, ...input({ title: '동시 B' }) } }),
+          updateTimeSaleWorkflow(container).run({
+            input: { id: result.id, ...input({ title: '동시 A', general_prices: generalAt(890) }) },
+          }),
+          updateTimeSaleWorkflow(container).run({
+            input: { id: result.id, ...input({ title: '동시 B', general_prices: generalAt(880) }) },
+          }),
         ]);
         expect(outcomes.map((o) => o.status)).toEqual(['fulfilled', 'fulfilled']);
         const sale = await linkedLists(result.id);
@@ -226,11 +240,11 @@ medusaIntegrationTestRunner({
         expect(counts.sort((a, b) => a - b)).toEqual([10, 741]);
       });
 
-      it('rolls back row, list metadata and removed prices when an update fails late', async () => {
+      it('rolls back row and list metadata and keeps old prices when price creation fails', async () => {
         const container = getContainer();
         const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
         // 실패 지점: createPriceListPricesWorkflow 의 validateVariantPriceLinksStep — 세일 행 갱신·리스트 메타
-        // 갱신·옛 가격 삭제가 모두 끝난 «뒤». (membership_prices 를 비워야 prepare 의 고아 검증을 통과한다.)
+        // 갱신이 끝난 «뒤», 옛 가격 삭제 «앞». (membership_prices 를 비워야 prepare 의 고아 검증을 통과한다.)
         expect(
           await rejectionMessage(
             updateTimeSaleWorkflow(container).run({
@@ -251,6 +265,87 @@ medusaIntegrationTestRunner({
         for (const list of sale.price_lists) expect(list.title).toBe('가을 세일');
         const counts = await Promise.all(sale.price_lists.map((p: { id: string }) => livePriceCount(p.id)));
         expect(counts.sort((a, b) => a - b)).toEqual([10, 741]);
+      });
+
+      it('restores removed prices when a step after the removal fails', async () => {
+        const container = getContainer();
+        const { result } = await createTimeSaleWorkflow(container).run({ input: input({ membership_prices: [] }) });
+        const [general] = (await linkedLists(result.id)).price_lists;
+        const before = (await livePrices(general.id)).map((p: { id: string }) => p.id).sort();
+
+        // 새 멤버십 리스트 생성(createPriceListsWorkflow)은 옛 가격 삭제 «뒤» 다. 거기서 실패시킨다.
+        const pricing = container.resolve(Modules.PRICING);
+        const spy = jest.spyOn(pricing, 'createPriceLists').mockRejectedValueOnce(new Error('멤버십 리스트 생성 실패'));
+        try {
+          expect(
+            await rejectionMessage(
+              updateTimeSaleWorkflow(container).run({
+                input: { id: result.id, ...input({ title: 'X', general_prices: generalAt(850) }) },
+              }),
+            ),
+          ).toMatch(/멤버십 리스트 생성 실패/);
+        } finally {
+          spy.mockRestore();
+        }
+
+        const sale = await linkedLists(result.id);
+        expect(sale.title).toBe('가을 세일');
+        expect(sale.price_lists.map((p: { id: string }) => p.id)).toEqual([general.id]);
+        const after = await livePrices(general.id);
+        expect(after.map((p: { id: string }) => p.id).sort()).toEqual(before);
+        expect(new Set(after.map((p: { amount: unknown }) => Number(p.amount)))).toEqual(new Set([900]));
+      });
+
+      it('creates new prices before removing old ones', async () => {
+        const container = getContainer();
+        const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
+        const pricing = container.resolve(Modules.PRICING);
+        const add = jest.spyOn(pricing, 'addPriceListPrices');
+        const remove = jest.spyOn(pricing, 'softDeletePrices');
+        try {
+          await updateTimeSaleWorkflow(container).run({
+            input: { id: result.id, ...input({ general_prices: generalAt(850) }) },
+          });
+          expect(add).toHaveBeenCalledTimes(1);
+          expect(remove).toHaveBeenCalledTimes(1);
+          // 반대 순서면 진행 중인 세일이 몇 초간 가격 0행이 된다.
+          expect(add.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]);
+        } finally {
+          add.mockRestore();
+          remove.mockRestore();
+        }
+      });
+
+      it('status-only update keeps the same live price rows', async () => {
+        const container = getContainer();
+        const { result } = await createTimeSaleWorkflow(container).run({ input: input({ status: 'draft' }) });
+        const ids = async () => {
+          const sale = await linkedLists(result.id);
+          const all = await Promise.all(sale.price_lists.map((p: { id: string }) => livePrices(p.id)));
+          return all
+            .flat()
+            .map((p: { id: string }) => p.id)
+            .sort();
+        };
+        const before = await ids();
+        expect(before).toHaveLength(751);
+
+        // 어드민의 공개 버튼처럼 가격을 통째로 다시 보낸다 — 순서도 뒤집어서.
+        await updateTimeSaleWorkflow(container).run({
+          input: {
+            id: result.id,
+            ...input({
+              status: 'active',
+              general_prices: [...input().general_prices].reverse(),
+              membership_prices: [...input().membership_prices].reverse(),
+            }),
+          },
+        });
+
+        const sale = await linkedLists(result.id);
+        expect(sale.status).toBe('active');
+        expect(sale.price_lists.map((p: { status: string }) => p.status)).toEqual(['active', 'active']);
+        expect(await ids()).toEqual(before);
       });
 
       it('rejects updating a sale without a general list as invalid data', async () => {
@@ -279,7 +374,12 @@ medusaIntegrationTestRunner({
             projectConfig: { http: { jwtSecret: string } };
           };
           const token = jwt.sign(
-            { actor_id: user.id, actor_type: 'user', auth_identity_id: 'test-admin', app_metadata: { user_id: user.id } },
+            {
+              actor_id: user.id,
+              actor_type: 'user',
+              auth_identity_id: 'test-admin',
+              app_metadata: { user_id: user.id },
+            },
             config.projectConfig.http.jwtSecret,
           );
           adminHeaders = { headers: { authorization: `Bearer ${token}` } };

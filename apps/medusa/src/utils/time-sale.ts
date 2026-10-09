@@ -29,6 +29,10 @@ const TIME_SALE_LIST_COLUMNS = `
   ) as is_membership_only
 `;
 
+// «기간이 있다» 조건이 타임세일을 가른다. price_list 에는 metadata 컬럼이 없어 마커를 심을 자리가 없는데,
+// 상시 운영되는 `Membership Prices`·`Tiered Prices - Min N` 리스트는 starts_at·ends_at 이 둘 다 null 이라
+// `starts_at or ends_at is not null` 하나로 타임세일 처리(경계 크론·캐시 비우기)에서 빠진다. 이 조건을
+// 지우면 상시 리스트가 타임세일로 잡힌다. 이름 접두사 규칙보다 깨질 구석이 적다.
 const TIME_SALE_BASE_WHERE = `
   pl.deleted_at is null
   and pl.status = 'active'

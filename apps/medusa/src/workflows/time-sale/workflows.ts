@@ -79,8 +79,13 @@ export const createTimeSaleWorkflow = createWorkflow('create-time-sale', (input:
 
 /**
  * 세일 수정. 지울 가격 id 는 `prepareTimeSaleStep` 이 DB 에서 직접 읽는다(브라우저 응답을 믿지 않는다).
- * 가격은 «옛 것 지우기 → 새로 만들기» 순서로 한 워크플로에서 하고, 실패하면 둘 다 되감긴다
- * (지운 가격은 restorePrices, 만든 가격은 removePrices).
+ * 품목→금액이 그대로인 리스트는 가격을 건드리지 않는다(`planTimeSaleUpdate`).
+ *
+ * 가격은 «새로 만들기 → 옛 것 지우기» 순서다. 반대로 하면 진행 중인 세일이 몇 초간 가격 0행이 되어,
+ * 손님은 정가·멤버십가로 사는데 캐시된 화면은 세일가를 보여준다. 이 순서면 잠깐 같은 품목이 두 행이
+ * 되지만 Medusa 는 같은 룰 수끼리 낮은 금액을 고르므로 공백보다 낫다. 지울 id 는 prepare 가 미리 읽은
+ * 옛 행뿐이라 새 행이 지워질 일은 없다. 실패하면 둘 다 되감긴다(만든 가격은 removePrices, 지운 가격은
+ * restorePrices).
  */
 export const updateTimeSaleWorkflow = createWorkflow(
   'update-time-sale',
@@ -105,11 +110,11 @@ export const updateTimeSaleWorkflow = createWorkflow(
     updatePriceListsWorkflow.runAsStep({
       input: { price_lists_data: transform({ plan }, ({ plan }) => plan.listUpdates) },
     });
-    removePriceListPricesWorkflow.runAsStep({
-      input: { ids: transform({ plan }, ({ plan }) => plan.priceIdsToDelete) },
-    });
     createPriceListPricesWorkflow.runAsStep({
       input: { data: transform({ plan }, ({ plan }) => plan.pricesToCreate) },
+    });
+    removePriceListPricesWorkflow.runAsStep({
+      input: { ids: transform({ plan }, ({ plan }) => plan.priceIdsToDelete) },
     });
 
     const created = createPriceListsWorkflow.runAsStep({

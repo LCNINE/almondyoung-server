@@ -138,7 +138,9 @@ export function buildPriceListData(params: {
   };
 }
 
-export type LinkedList = { id: string; isMembership: boolean; priceIds: string[] };
+/** 리스트에 살아있는 가격 한 행. variant 링크가 끊긴 가격은 `variant_id` 가 null 이다. */
+export type LinkedPrice = { id: string; variant_id: string | null; amount: number };
+export type LinkedList = { id: string; isMembership: boolean; prices: LinkedPrice[] };
 
 export type TimeSaleUpdatePlan = {
   listUpdates: Array<{ id: string; title: string; starts_at: string; ends_at: string; status: TimeSaleStatus }>;
@@ -149,10 +151,29 @@ export type TimeSaleUpdatePlan = {
 };
 
 /**
- * 수정 한 번이 바꿀 것을 미리 계산한다. 가격은 **전부 지우고 새로 넣는다** — 개별 diff 는 빠진 상품의
- * 행을 놓쳐, 세일에서 뺐다고 생각한 상품이 계속 세일가로 팔린다.
+ * 리스트의 현재 가격이 입력과 «품목→금액» 으로 정확히 같은가. 같은 품목이 두 행이거나(누적 사고의 흔적),
+ * variant 링크가 끊긴 행이 있으면 다르다고 본다 — 교체가 그 행들을 치운다.
+ */
+function samePrices(existing: LinkedPrice[], incoming: TimeSalePriceInput[]): boolean {
+  if (existing.length !== incoming.length) return false;
+  const wanted = new Map(incoming.map((p) => [p.variant_id, p.amount]));
+  const seen = new Set<string>();
+  for (const price of existing) {
+    if (price.variant_id === null || seen.has(price.variant_id)) return false;
+    if (wanted.get(price.variant_id) !== price.amount) return false;
+    seen.add(price.variant_id);
+  }
+  return true;
+}
+
+/**
+ * 수정 한 번이 바꿀 것을 미리 계산한다. 가격이 바뀐 리스트는 **전부 지우고 새로 넣는다** — 개별 diff 는
+ * 빠진 상품의 행을 놓쳐, 세일에서 뺐다고 생각한 상품이 계속 세일가로 팔린다.
  *
- * 지울 가격 id 는 서버가 DB 에서 직접 얻은 것이어야 한다(호출자가 `getExistingPriceListsPriceIdsStep` 로
+ * 품목→금액이 그대로인 리스트는 가격을 건드리지 않는다(메타만 갱신). 공개·비공개 전환은 가격을 통째로
+ * 다시 보내는데, 복구 세일 ①(741+741)을 전부 지우고 다시 만들면 어드민 프록시의 30초를 넘긴다.
+ *
+ * 지울 가격 id 는 서버가 DB 에서 직접 얻은 것이어야 한다(호출자가 `loadLinkedLists` 의 raw SQL 로
  * 채운다). 2026-10-09 사고는 이 목록을 브라우저가 Admin API 응답에서 얻다가 빈 채로 받아, 지우지 못하고
  * 덧붙인 것이다.
  */
@@ -170,23 +191,35 @@ export function planTimeSaleUpdate(params: {
 
   const meta = { title: input.title, starts_at: input.starts_at, ends_at: input.ends_at, status: input.status };
   const plan: TimeSaleUpdatePlan = {
-    listUpdates: [{ id: general.id, ...meta }],
+    listUpdates: [],
     listsToCreate: [],
     listIdsToDelete: [],
-    pricesToCreate: [{ id: general.id, prices: withCurrency(input.general_prices) }],
-    priceIdsToDelete: [...general.priceIds],
+    pricesToCreate: [],
+    priceIdsToDelete: [],
+  };
+  const keepOrReplace = (list: LinkedList, prices: TimeSalePriceInput[]) => {
+    plan.listUpdates.push({ id: list.id, ...meta });
+    if (samePrices(list.prices, prices)) return;
+    plan.pricesToCreate.push({ id: list.id, prices: withCurrency(prices) });
+    plan.priceIdsToDelete.push(...list.prices.map((p) => p.id));
   };
 
+  keepOrReplace(general, input.general_prices);
+
   if (membership && wantsMembership) {
-    plan.listUpdates.push({ id: membership.id, ...meta });
-    plan.pricesToCreate.push({ id: membership.id, prices: withCurrency(input.membership_prices) });
-    plan.priceIdsToDelete.push(...membership.priceIds);
+    keepOrReplace(membership, input.membership_prices);
   } else if (membership && !wantsMembership) {
     // 리스트를 지우면 가격도 함께 사라진다. 옛 리스트가 남으면 구독자만 옛 가격에 산다.
     plan.listIdsToDelete.push(membership.id);
   } else if (!membership && wantsMembership) {
     plan.listsToCreate.push(
-      buildPriceListData({ ...meta, audience: 'membership', prices: input.membership_prices, regionIds, membershipGroupId }),
+      buildPriceListData({
+        ...meta,
+        audience: 'membership',
+        prices: input.membership_prices,
+        regionIds,
+        membershipGroupId,
+      }),
     );
   }
 

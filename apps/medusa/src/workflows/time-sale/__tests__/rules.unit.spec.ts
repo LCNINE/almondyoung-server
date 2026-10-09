@@ -3,6 +3,7 @@ import {
   findConflictingSales,
   planTimeSaleUpdate,
   validateTimeSaleInput,
+  type LinkedList,
   type TimeSaleWriteInput,
 } from '../rules';
 
@@ -84,9 +85,7 @@ describe('findConflictingSales', () => {
   };
 
   it('reports overlapping active sales sharing a variant', () => {
-    expect(findConflictingSales(candidate, [other])).toEqual([
-      { id: 'tsale_b', title: 'B', variantIds: ['v2'] },
-    ]);
+    expect(findConflictingSales(candidate, [other])).toEqual([{ id: 'tsale_b', title: 'B', variantIds: ['v2'] }]);
   });
 
   it('ignores sales whose period does not overlap', () => {
@@ -149,9 +148,29 @@ describe('buildPriceListData', () => {
 });
 
 describe('planTimeSaleUpdate', () => {
-  const lists = [
-    { id: 'plist_g', isMembership: false, priceIds: ['p1', 'p2'] },
-    { id: 'plist_m', isMembership: true, priceIds: ['p3'] },
+  // 현재 DB: 일반 v1=950·v2=850, 멤버십 v1=750 — base(900·800 / 700) 와 전부 다르다.
+  const lists: LinkedList[] = [
+    {
+      id: 'plist_g',
+      isMembership: false,
+      prices: [
+        { id: 'p1', variant_id: 'v1', amount: 950 },
+        { id: 'p2', variant_id: 'v2', amount: 850 },
+      ],
+    },
+    { id: 'plist_m', isMembership: true, prices: [{ id: 'p3', variant_id: 'v1', amount: 750 }] },
+  ];
+  // base 와 같은 가격을 이미 가진 리스트.
+  const unchanged: LinkedList[] = [
+    {
+      id: 'plist_g',
+      isMembership: false,
+      prices: [
+        { id: 'p1', variant_id: 'v2', amount: 800 },
+        { id: 'p2', variant_id: 'v1', amount: 900 },
+      ],
+    },
+    { id: 'plist_m', isMembership: true, prices: [{ id: 'p3', variant_id: 'v1', amount: 700 }] },
   ];
   const ctx = { regionIds: ['reg_1'], membershipGroupId: 'cusgroup_1' };
 
@@ -186,6 +205,82 @@ describe('planTimeSaleUpdate', () => {
     expect(plan.listsToCreate).toHaveLength(1);
     expect(plan.listsToCreate[0].rules).toEqual({ 'customer.groups.id': ['cusgroup_1'] });
     expect(plan.pricesToCreate.map((p) => p.id)).toEqual(['plist_g']);
+  });
+
+  it('touches no prices when every list already has the same variant→amount set (status-only change)', () => {
+    const plan = planTimeSaleUpdate({ input: { ...base, status: 'draft' }, lists: unchanged, ...ctx });
+    expect(plan.pricesToCreate).toEqual([]);
+    expect(plan.priceIdsToDelete).toEqual([]);
+    expect(plan.listUpdates).toEqual([
+      { id: 'plist_g', title: base.title, starts_at: base.starts_at, ends_at: base.ends_at, status: 'draft' },
+      { id: 'plist_m', title: base.title, starts_at: base.starts_at, ends_at: base.ends_at, status: 'draft' },
+    ]);
+  });
+
+  it('replaces the whole list when a single amount changes', () => {
+    const input = {
+      ...base,
+      general_prices: [
+        { variant_id: 'v1', amount: 900 },
+        { variant_id: 'v2', amount: 790 },
+      ],
+    };
+    const plan = planTimeSaleUpdate({ input, lists: unchanged, ...ctx });
+    expect(plan.pricesToCreate).toEqual([
+      {
+        id: 'plist_g',
+        prices: [
+          { variant_id: 'v1', amount: 900, currency_code: 'krw' },
+          { variant_id: 'v2', amount: 790, currency_code: 'krw' },
+        ],
+      },
+    ]);
+    expect(plan.priceIdsToDelete.sort()).toEqual(['p1', 'p2']);
+  });
+
+  it('replaces only the general list when membership prices are unchanged', () => {
+    const input = { ...base, general_prices: [...base.general_prices, { variant_id: 'v3', amount: 600 }] };
+    const plan = planTimeSaleUpdate({ input, lists: unchanged, ...ctx });
+    expect(plan.pricesToCreate.map((p) => p.id)).toEqual(['plist_g']);
+    expect(plan.priceIdsToDelete.sort()).toEqual(['p1', 'p2']);
+    expect(plan.listUpdates.map((u) => u.id)).toEqual(['plist_g', 'plist_m']);
+  });
+
+  it('replaces a list whose rows are duplicated or unlinked even if amounts match', () => {
+    const accumulated: LinkedList[] = [
+      {
+        id: 'plist_g',
+        isMembership: false,
+        prices: [
+          { id: 'p1', variant_id: 'v1', amount: 900 },
+          { id: 'p1b', variant_id: 'v1', amount: 900 },
+        ],
+      },
+    ];
+    const one = {
+      ...base,
+      general_prices: [
+        { variant_id: 'v1', amount: 900 },
+        { variant_id: 'v2', amount: 800 },
+      ],
+      membership_prices: [],
+    };
+    expect(planTimeSaleUpdate({ input: one, lists: accumulated, ...ctx }).priceIdsToDelete.sort()).toEqual([
+      'p1',
+      'p1b',
+    ]);
+
+    const unlinked: LinkedList[] = [
+      {
+        id: 'plist_g',
+        isMembership: false,
+        prices: [
+          { id: 'p1', variant_id: 'v1', amount: 900 },
+          { id: 'p2', variant_id: null, amount: 800 },
+        ],
+      },
+    ];
+    expect(planTimeSaleUpdate({ input: one, lists: unlinked, ...ctx }).priceIdsToDelete.sort()).toEqual(['p1', 'p2']);
   });
 
   it('throws when the general list is missing (broken invariant)', () => {

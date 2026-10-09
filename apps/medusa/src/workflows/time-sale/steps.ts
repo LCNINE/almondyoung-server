@@ -62,7 +62,12 @@ const toFootprint = (sale: TimeSaleRecord): Omit<SaleFootprint, 'variantIds'> =>
   status: sale.status,
 });
 
-/** 세일에 연결된 price list 와 각 리스트의 살아있는 가격 id. 멤버십 여부는 리스트 규칙으로 판정한다. */
+/**
+ * 세일에 연결된 price list 와 각 리스트의 살아있는 가격(id·variant·금액). 멤버십 여부는 리스트 규칙으로
+ * 판정한다. 금액은 수정 계획이 «가격이 그대로인 리스트» 를 건너뛰는 데 쓴다.
+ *
+ * variant 는 `product_variant_price_set` 로 left join 한다 — 링크가 끊긴 가격도 지울 대상에서 빠지면 안 된다.
+ */
 export async function loadLinkedLists(container: MedusaContainer, timeSaleId: string): Promise<LinkedList[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
@@ -83,17 +88,27 @@ export async function loadLinkedLists(container: MedusaContainer, timeSaleId: st
       listIds,
     ),
     knex.raw(
-      `select id, price_list_id from price where price_list_id in (${placeholders}) and deleted_at is null`,
+      `select pr.id, pr.price_list_id, pr.amount, pvps.variant_id
+         from price pr
+         left join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id and pvps.deleted_at is null
+        where pr.price_list_id in (${placeholders}) and pr.deleted_at is null`,
       listIds,
     ),
   ]);
   const membership = new Set((ruleRows as Array<{ price_list_id: string }>).map((r) => r.price_list_id));
+  // numeric 컬럼은 pg 드라이버가 문자열로 준다.
+  const prices = priceRows as Array<{
+    id: string;
+    price_list_id: string;
+    amount: string | number;
+    variant_id: string | null;
+  }>;
   return listIds.map((id) => ({
     id,
     isMembership: membership.has(id),
-    priceIds: (priceRows as Array<{ id: string; price_list_id: string }>)
+    prices: prices
       .filter((p) => p.price_list_id === id)
-      .map((p) => p.id),
+      .map((p) => ({ id: p.id, variant_id: p.variant_id ?? null, amount: Number(p.amount) })),
   }));
 }
 
