@@ -8,6 +8,9 @@ import { ReconcileActResult, ShipmentReconcileRule, ShipmentReconcileSituation }
 import { ReconcileMode } from '../order-reconcile.state';
 import { shipmentInSituation } from '../order-reconcile.subject';
 
+/** 취소된 주문의 판정(판정 SQL decided.rule). 합포장 재개가 건드리면 안 된다 */
+const CANCELLED_ORDER_RULES: readonly string[] = ['cancel_open', 'cancelled'];
+
 /**
  * #1016 25번 행: 송장 등으로 막혀 CONSOLIDATION_PENDING 으로 멈춘 합포장을, 막힘이 풀린 뒤 재개한다.
  * 재개 신호는 «작업 항목이 배치에서 빠짐»(excludeShipment·박스 반환) 하나뿐이라 송장 취소로 풀린 경우는 영영 멈춰 있었다 —
@@ -43,9 +46,13 @@ export class ResumePendingConsolidationRule implements ShipmentReconcileRule {
     const readiness = await this.consolidation.resumeReadiness(operationId, tx);
     if (!readiness || readiness.blockers.length > 0) return false;
     // 재개는 원본 전부를 한꺼번에 바꾼다. 틀의 게이트는 후보 상자 하나만 보므로, 형제 원본의 주문이 셀메이트 출고·채널 취소
-    // 요청·반품 중이면 여기서 멈춘다 — 같은 판정(judgeShipment)과 같은 순수 함수(D16)를 원본마다 부른다
+    // 요청·반품 중이면 여기서 멈춘다 — 같은 판정(judgeShipment)과 같은 순수 함수(D16)를 원본마다 부른다.
+    // 취소된 주문(cancel_open·cancelled)도 멈춘다. D16 은 30번을 위해 취소를 통과시키지만, 재개는 그 주문의 물건을 새 상자로
+    // 출고 흐름에 올린다 — recovery_required 상자의 취소는 도메인이 거절하므로 «주문 취소 + 합포장 대기»는 실제로 생긴다
     for (const source of readiness.sources) {
-      if (!shipmentInSituation(this.situation, await this.progress.judgeShipment(source.shipmentId, tx))) return false;
+      const judged = await this.progress.judgeShipment(source.shipmentId, tx);
+      if (!shipmentInSituation(this.situation, judged)) return false;
+      if (judged?.orderRules.some((rule) => CANCELLED_ORDER_RULES.includes(rule))) return false;
     }
     return true;
   }

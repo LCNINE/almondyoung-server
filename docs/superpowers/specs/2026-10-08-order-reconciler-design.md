@@ -415,12 +415,15 @@ interface ReconcileRule<K extends ReconcileSubject> {
 | `row` / `subject` / `mode` | 25 / `shipment` / `observe` (첫 배포) |
 | `situation` | `pick` / `CONSOLIDATION_PENDING` (상자별 판정) |
 | `fingerprint` | 대기 중 작업 id + 원본마다 상태·recovery_code·버전 + 막힘 코드(정렬). 작업이 없으면 `none` |
-| `check` | ① 정비 모드면 false ② 이 상자를 원본으로 둔 대기 중 작업 ③ `resumeReadiness` 의 막힘 0(`resumePending` 이 쓰는 `collectBlockers` 그대로) ④ **원본 상자 전부**가 지금 상자 판정으로 칸 안 |
+| `check` | ① 정비 모드면 false ② 이 상자를 원본으로 둔 대기 중 작업 ③ `resumeReadiness` 의 막힘 0(`resumePending` 이 쓰는 `collectBlockers` 그대로) ④ **원본 상자 전부**가 지금 상자 판정으로 칸 안이고 그 주문 중 취소된 것(`cancel_open`·`cancelled`)이 없다 |
 | `act` | `tryResumePending` — `completed` 만 `acted`, 나머지는 `noop` |
 
 ④가 있는 이유: 재개는 원본 전부를 바꾸는데 틀의 게이트(D12·D16)는 후보 상자 하나만 본다. 형제 원본의 주문이 셀메이트로
 출고됐으면 그 원본까지 합포장해 유령 예약을 만든다(§1.3 과 같은 꼴). 규칙이 판정을 다시 구현하지 않고 같은 `judgeShipment` 와
-같은 순수 함수 `shipmentInSituation` 을 원본마다 부른다.
+같은 순수 함수 `shipmentInSituation` 을 원본마다 부른다. 취소된 주문도 막는다 — D16 은 30번을 위해 취소를 통과시키지만,
+재개는 그 주문의 물건을 새 상자로 출고 흐름에 올린다. `recovery_required` 상자의 취소는 도메인이 거절하므로(`SHIPMENT_RECOVERY_IN_PROGRESS`)
+«주문 취소 + 합포장 대기»는 실제로 생긴다. 운영자의 수동 재개 경로(`resumePending`)에는 아직 이 가드가 없다 — 실행 전환 PR 전에
+도메인 가드로 옮길지 정한다.
 
 같은 작업의 원본이 둘 다 후보로 오면 먼저 온 쪽이 재개해 끝내고, 다른 쪽은 대체(`superseded`)돼 게이트에서 걸러진다.
 관찰 기간의 `would_act` 는 원본 수만큼 나온다 — 작업 단위로 세려면 아래 SQL 의 `operation_id` 로 묶는다.

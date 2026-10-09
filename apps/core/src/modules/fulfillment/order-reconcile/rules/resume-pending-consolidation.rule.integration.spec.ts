@@ -167,4 +167,25 @@ describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
       expect(await targets(tx, p.base)).toHaveLength(0);
     });
   });
+
+  it('형제 원본의 주문이 취소됐으면 실행 모드여도 합포장하지 않는다 — 취소 주문의 물건을 새 상자로 출고 흐름에 올리지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { dbs, w, consolidation, rule, runner } = wire();
+      const p = await pendingConsolidationBlockedByWaybill(tx, w, consolidation);
+      await p.voidWaybill();
+      // 채널 취소가 판매주문만 cancelled 로 바꾼 상태 — recovery_required 상자의 취소는 거절돼 상자는 CONSOLIDATION_PENDING 에 남는다
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled' })
+        .where(eq(wmsTables.salesOrders.id, p.second.salesOrderId));
+      const now = new Date('2099-06-01T00:00:00.000Z');
+      await project(tx, dbs, [p.first.salesOrderId, p.second.salesOrderId], now);
+
+      expect(await rule.check(p.first.shipment.id, tx)).toBe(false);
+      await runner.runRule(acting(rule), now, tx);
+
+      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
+      expect(await targets(tx, p.base)).toHaveLength(0);
+    });
+  });
 });
