@@ -1,5 +1,6 @@
 import { authenticate, MiddlewareRoute } from '@medusajs/framework/http';
 import { adminPaymentRoutesMiddlewares } from './payments/middlewares';
+import { adminTimeSaleRoutesMiddlewares } from './time-sales/middlewares';
 import { logHeadersMiddleware } from '../log-headers';
 
 export const adminRouteMiddlewares: MiddlewareRoute[] = [
@@ -19,4 +20,5 @@ export const adminRouteMiddlewares: MiddlewareRoute[] = [
     middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
   },
   ...adminPaymentRoutesMiddlewares,
+  ...adminTimeSaleRoutesMiddlewares,
 ];

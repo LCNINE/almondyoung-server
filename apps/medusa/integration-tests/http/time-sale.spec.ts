@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { TIME_SALE_MODULE } from '../../src/modules/time-sale';
@@ -14,7 +15,7 @@ jest.setTimeout(180 * 1000);
 medusaIntegrationTestRunner({
   inApp: true,
   env: { MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_test' },
-  testSuite: ({ getContainer }) => {
+  testSuite: ({ api, getContainer }) => {
     describe('time_sale 모듈·링크', () => {
       it('세일 행을 만들고 price list 와 링크한다', async () => {
         const container = getContainer();
@@ -267,6 +268,75 @@ medusaIntegrationTestRunner({
         // INVALID_DATA 라야 HTTP 400 이다 — 평범한 Error 면 500.
         expect(error.type).toBe('invalid_data');
       });
+
+      describe('HTTP', () => {
+        let adminHeaders: { headers: Record<string, string> };
+
+        beforeEach(async () => {
+          const container = getContainer();
+          const [user] = await container.resolve(Modules.USER).createUsers([{ email: `ts${Date.now()}@test.dev` }]);
+          const config = container.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as {
+            projectConfig: { http: { jwtSecret: string } };
+          };
+          const token = jwt.sign(
+            { actor_id: user.id, actor_type: 'user', auth_identity_id: 'test-admin', app_metadata: { user_id: user.id } },
+            config.projectConfig.http.jwtSecret,
+          );
+          adminHeaders = { headers: { authorization: `Bearer ${token}` } };
+        });
+
+        it('creates, lists, publishes and deletes through the admin routes', async () => {
+          const created = await api.post('/admin/time-sales', input({ status: 'draft' }), adminHeaders);
+          expect(created.status).toBe(201);
+          const id = created.data.timeSale.id;
+          expect(Object.keys(created.data.timeSale.generalPrices)).toHaveLength(741);
+          expect(Object.keys(created.data.timeSale.membershipPrices)).toHaveLength(10);
+
+          const listed = await api.get('/admin/time-sales', adminHeaders);
+          expect(listed.data.timeSales.map((s: { id: string }) => s.id)).toContain(id);
+
+          const published = await api.post(`/admin/time-sales/${id}`, input({ status: 'active' }), adminHeaders);
+          expect(published.data.timeSale.status).toBe('active');
+
+          const deleted = await api.delete(`/admin/time-sales/${id}`, adminHeaders);
+          expect(deleted.data).toEqual({ id, object: 'time_sale', deleted: true });
+        });
+
+        it('returns 400 for an invalid body', async () => {
+          await expect(
+            api.post('/admin/time-sales', { ...input(), general_prices: [] }, adminHeaders),
+          ).rejects.toMatchObject({ response: { status: 400 } });
+        });
+
+        it('store route lists only active, in-window sales without titles', async () => {
+          const now = Date.now();
+          const window = {
+            starts_at: new Date(now - 60_000).toISOString(),
+            ends_at: new Date(now + 3_600_000).toISOString(),
+          };
+          await api.post('/admin/time-sales', input({ ...window, status: 'active' }), adminHeaders);
+          await api.post(
+            '/admin/time-sales',
+            input({ ...window, title: '비공개', status: 'draft', membership_prices: [] }),
+            adminHeaders,
+          );
+
+          const res = await api.get('/store/time-sale', {
+            headers: { 'x-publishable-api-key': await publishableKey(getContainer()) },
+          });
+          expect(res.data.timeSales).toHaveLength(1);
+          expect(res.data.timeSales[0]).not.toHaveProperty('title');
+          expect(res.data.timeSales[0].priceListIds).toHaveLength(2);
+          expect(res.data.products).toHaveLength(1);
+          expect(res.data.products[0]).toHaveProperty('categoryIds');
+        });
+      });
     });
   },
 });
+
+async function publishableKey(container: any): Promise<string> {
+  const apiKeyModule = container.resolve(Modules.API_KEY);
+  const [key] = await apiKeyModule.createApiKeys([{ title: 'store', type: 'publishable', created_by: 'test' }]);
+  return key.token;
+}
