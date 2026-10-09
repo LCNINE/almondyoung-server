@@ -99,7 +99,6 @@ export async function TimeSaleWrapper({
         .map((section) => (
           <TimeSaleSection
             key={section.sale.title}
-            title={sections.length > 1 ? section.sale.title : undefined}
             endsAt={section.sale.endsAt!}
             products={section.products}
             tabs={deriveTimeSaleTabs(

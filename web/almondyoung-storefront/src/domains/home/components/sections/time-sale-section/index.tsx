@@ -12,8 +12,6 @@ import { HomeSection } from "../../shared/home-section"
 
 interface TimeSaleSectionProps {
   endsAt: string
-  /** 세일이 여럿일 때만 준다 — 하나뿐이면 "타임세일" 이 곧 이름이라 운영자가 지은 제목이 군더더기다. */
-  title?: string
   products: HttpTypes.StoreProduct[]
   tabs: TimeSaleTab[]
   customer: StoreCustomerWithGroups | null
@@ -33,7 +31,6 @@ const FALLBACK_TAB = {
 
 export function TimeSaleSection({
   endsAt,
-  title,
   products,
   tabs,
   customer,
@@ -51,9 +48,10 @@ export function TimeSaleSection({
     ? products.filter((product) => activeTab.productIds.includes(product.id))
     : products
 
+  // 운영자가 지은 세일 이름은 내부용이라 고객에게 내보내지 않는다 — 세일이 여럿이어도 제목은 "타임세일".
   const heading = (
     <span className="text-[#191f28]">
-      {title ?? `${t("titleFirst")}${t("titleSecond")}`}
+      {`${t("titleFirst")}${t("titleSecond")}`}
     </span>
   )
 
