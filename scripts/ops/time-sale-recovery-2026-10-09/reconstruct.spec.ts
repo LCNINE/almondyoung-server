@@ -27,6 +27,23 @@ describe('latestBatch', () => {
       latestBatch([price('g', 'v1', 900, '2026-10-07T11:45:00.000Z'), price('g', 'v1', 850, '2026-10-07T12:12:00.000Z')]),
     ).toThrow(/v1/);
   });
+
+  it('ignores rows superseded by a proper replace', () => {
+    const map = latestBatch([
+      price('g', 'v1', 900, '2026-10-03T10:56:00.000Z', '2026-10-03T10:57:00.000Z'),
+      price('g', 'v1', 950, '2026-10-03T10:57:00.000Z'),
+    ]);
+    expect([...map.entries()]).toEqual([['v1', 950]]);
+  });
+
+  it('still throws when disagreeing rows were both alive after the latest batch', () => {
+    expect(() =>
+      latestBatch([
+        price('g', 'v1', 900, '2026-10-07T11:45:00.000Z', '2026-10-08T15:32:00.000Z'),
+        price('g', 'v1', 850, '2026-10-07T12:12:00.000Z', '2026-10-08T15:32:00.000Z'),
+      ]),
+    ).toThrow(/v1/);
+  });
 });
 
 describe('reconstruct', () => {

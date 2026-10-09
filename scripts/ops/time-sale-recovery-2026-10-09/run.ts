@@ -8,7 +8,7 @@
  * 재실행 안전: 같은 이름의 세일이 이미 있으면 건너뛴다.
  */
 import { readFileSync } from 'node:fs';
-import { reconstruct, type BackupFile, type RecoveryTarget } from './reconstruct';
+import { reconstruct, type BackupFile, type RecoveryPlanEntry, type RecoveryTarget } from './reconstruct';
 
 // 10-09 KST 00:00 ~ 10-16 KST 23:59. 인기 상품과 ①의 일반용은 운영자가 종료를 당겨 끝내 원래 종료가
 // 남아 있지 않다 — 모두 이 기간으로 넣고, 운영자가 공개 전에 고친다.
@@ -59,12 +59,36 @@ async function main() {
     ? { ...NOMOND, startsAt: new Date(nomondList.starts_at).toISOString(), endsAt: new Date(nomondList.ends_at).toISOString() }
     : NOMOND;
 
-  const plan = reconstruct(backup, [...TARGETS, nomond]);
-  console.table(plan.map((e) => ({ name: e.name, status: e.body.status, ...e.summary })));
+  // 대상마다 따로 재구성한다 — 한 대상이 던져도 나머지 표는 찍는다.
+  const outcomes = [...TARGETS, nomond].map((target): { name: string; entry?: RecoveryPlanEntry; error?: string } => {
+    try {
+      return { name: target.name, entry: reconstruct(backup, [target])[0] };
+    } catch (error) {
+      return { name: target.name, error: (error as Error).message };
+    }
+  });
+  console.table(
+    outcomes.map((o) =>
+      o.entry
+        ? { name: o.name, status: o.entry.body.status, ...o.entry.summary, error: '' }
+        : { name: o.name, error: o.error },
+    ),
+  );
+  const failed = outcomes.filter((o) => o.error !== undefined);
+  const plan = outcomes.flatMap((o) => (o.entry ? [o.entry] : []));
 
   if (!apply) {
-    console.log('dry-run — 반영하려면 --apply. 위 품목 수·합계를 백업과 대조할 것.');
+    console.log(
+      failed.length > 0
+        ? `dry-run — 오류 대상 ${failed.length}개. --apply 는 오류가 하나라도 있으면 거부된다.`
+        : 'dry-run — 반영하려면 --apply. 위 품목 수·합계를 백업과 대조할 것.',
+    );
     return;
+  }
+
+  if (failed.length > 0) {
+    console.error(`--apply 거부: 오류 대상 ${failed.length}개 — ${failed.map((f) => f.name).join(', ')}`);
+    process.exit(1);
   }
 
   const base = arg('--medusa');

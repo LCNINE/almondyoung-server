@@ -4,6 +4,9 @@
  * 백업은 사고 당일 라이브 Medusa 에서 뜬 sale price list 19개·가격 16,407행이다(삭제된 행 포함).
  * 수정이 가격을 «교체» 하지 못하고 «덧붙여» 한 리스트에 같은 품목의 가격이 여러 벌 있다. 실측으로
  * 모든 벌의 금액이 같았지만, 다르면 어느 게 의도인지 알 수 없으므로 멈춘다.
+ *
+ * 예외: 정상 교체로 지워진 옛 행(삭제 분 ≤ 최신 저장 묶음의 분)은 대조에서 뺀다 — 노몬드 5000→6000 같은 수정이
+ * 그렇다. 최신 묶음 이후에도 살아 있던 행끼리는 여전히 금액이 같아야 한다.
  */
 
 export type BackupList = { id: string; title: string; starts_at: string | null; ends_at: string | null; created_at: string };
@@ -48,9 +51,15 @@ const minute = (iso: string) => iso.slice(0, 16);
 
 /** 한 리스트의 가격들 → variant → 금액. 가장 늦은 저장 묶음(같은 분)의 값을 쓰고, 묶음끼리 다르면 던진다. */
 export function latestBatch(prices: BackupPrice[]): Map<string, number> {
+  if (prices.length === 0) return new Map();
+  const last = prices.map((p) => minute(p.created_at)).sort().at(-1)!;
+
+  // 최신 묶음이 써진 분 이전(또는 같은 분)에 지워진 행은 정상 교체로 밀려난 옛 행이다 — 대조에서 뺀다.
+  const superseded = (p: BackupPrice) => p.deleted_at !== null && minute(p.deleted_at) <= last;
+
   const seen = new Map<string, number>();
   for (const p of prices) {
-    if (!p.variant_id) continue;
+    if (!p.variant_id || superseded(p)) continue;
     const amount = Number(p.amount);
     const prev = seen.get(p.variant_id);
     if (prev !== undefined && prev !== amount) {
@@ -58,9 +67,7 @@ export function latestBatch(prices: BackupPrice[]): Map<string, number> {
     }
     seen.set(p.variant_id, amount);
   }
-  if (prices.length === 0) return new Map();
 
-  const last = prices.map((p) => minute(p.created_at)).sort().at(-1)!;
   const map = new Map<string, number>();
   for (const p of [...prices].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
     if (p.variant_id && minute(p.created_at) === last) map.set(p.variant_id, Number(p.amount));
