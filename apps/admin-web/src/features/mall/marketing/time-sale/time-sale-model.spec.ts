@@ -2,9 +2,7 @@ import {
   applyPercentDiscount,
   applySavedSalePrices,
   summarizeSaleRows,
-  buildPriceListPayloads,
-  findOverlapping,
-  findVariantConflicts,
+  buildTimeSaleWriteBody,
   resolveTimeSaleStatus,
   saleVariantIds,
   validateRows,
@@ -34,56 +32,9 @@ describe('resolveTimeSaleStatus', () => {
   ])('%s 는 %s', (now, expected) => {
     expect(resolveTimeSaleStatus(period, new Date(now))).toBe(expected);
   });
-});
 
-describe('findOverlapping', () => {
-  const existing = [
-    { id: 'a', startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
-  ];
-
-  it('기간이 겹치면 잡는다', () => {
-    const hit = findOverlapping(
-      { startsAt: '2026-08-29T00:00:00Z', endsAt: '2026-09-01T00:00:00Z' },
-      existing
-    );
-    expect(hit.map((s) => s.id)).toEqual(['a']);
-  });
-
-  // 앞 세일이 끝나는 순간 다음 세일을 시작하는 건 정상 운영이다. 여기서 막으면 세일을 연달아 못 건다.
-  it('경계가 맞닿는 건 겹침이 아니다', () => {
-    expect(
-      findOverlapping({ startsAt: '2026-08-30T00:00:00Z', endsAt: '2026-09-01T00:00:00Z' }, existing)
-    ).toEqual([]);
-  });
-
-  it('자기 자신은 겹침으로 보지 않는다 (수정 시)', () => {
-    expect(
-      findOverlapping(
-        { id: 'a', startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
-        existing
-      )
-    ).toEqual([]);
-  });
-});
-
-describe('findVariantConflicts', () => {
-  const overlapping = [
-    { title: '색소 세일', variantIds: ['variant_1', 'variant_2'] },
-    { title: '니들 세일', variantIds: ['variant_9'] },
-  ];
-
-  // 카테고리마다 기간이 다른 세일을 동시에 거는 게 요구사항이라, 기간만 겹치는 건 정상이다.
-  it('기간이 겹쳐도 품목이 안 겹치면 통과다', () => {
-    expect(findVariantConflicts(['variant_5'], overlapping)).toEqual([]);
-  });
-
-  // 같은 품목이 두 세일에 걸리면 Medusa 가 한쪽 가격만 적용해, 손님이 A 목록에서 B 가격을 본다.
-  it('같은 품목을 쓰는 세일만 골라내고 겹친 품목을 알려준다', () => {
-    const hit = findVariantConflicts(['variant_2', 'variant_5'], overlapping);
-
-    expect(hit).toHaveLength(1);
-    expect(hit[0].title).toBe('색소 세일');
-    expect(hit[0].conflictingVariantIds).toEqual(['variant_2']);
+  it('reports draft regardless of period', () => {
+    expect(resolveTimeSaleStatus({ startsAt: '2000-01-01T00:00:00Z', endsAt: '2100-01-01T00:00:00Z' }, new Date(), 'draft')).toBe('draft');
   });
 });
 
@@ -176,48 +127,42 @@ describe('saleVariantIds', () => {
   });
 });
 
-describe('buildPriceListPayloads', () => {
-  const params = {
-    title: '8월 마감 세일',
-    period: { startsAt: '2026-08-28T00:00:00Z', endsAt: '2026-08-30T00:00:00Z' },
-    regionIds: ['reg_kr'],
-    membershipGroupId: 'cusgroup_membership',
-  };
-
-  // 룰이 0 개면 Medusa 가 `rules_count 내림` 으로 상시 멤버십 리스트를 먼저 고른다 — 금액을
-  // 비교하기도 전에 세일이 진다.
-  it('두 리스트 모두 룰을 정확히 하나씩 갖는다', () => {
-    const { general, membership } = buildPriceListPayloads({
-      ...params,
-      rows: [row({ generalSalePrice: 8000, membershipSalePrice: 6400 })],
-    });
-
-    expect(Object.keys(general.rules)).toHaveLength(1);
-    expect(general.rules).toEqual({ region_id: ['reg_kr'] });
-    expect(Object.keys(membership!.rules)).toHaveLength(1);
-    expect(membership!.rules).toEqual({ 'customer.groups.id': ['cusgroup_membership'] });
+describe('buildTimeSaleWriteBody', () => {
+  const period = { startsAt: '2030-01-01T00:00:00.000Z', endsAt: '2030-01-08T00:00:00.000Z' };
+  const wrow = (overrides: Partial<TimeSaleRow>): TimeSaleRow => ({
+    variantId: 'v1',
+    productId: 'p1',
+    productTitle: '상품',
+    variantTitle: '옵션',
+    basePrice: 1000,
+    membershipBasePrice: 900,
+    generalSalePrice: 800,
+    membershipSalePrice: 700,
+    ...overrides,
   });
 
-  it('기간은 두 리스트에 같이 실린다', () => {
-    const { general, membership } = buildPriceListPayloads({
-      ...params,
-      rows: [row({ generalSalePrice: 8000, membershipSalePrice: 6400 })],
+  it('skips rows without a general sale price and keeps membership only where both exist', () => {
+    const body = buildTimeSaleWriteBody({
+      title: ' 가을 세일 ',
+      period,
+      status: 'draft',
+      rows: [
+        wrow({}),
+        wrow({ variantId: 'v2', generalSalePrice: null, membershipSalePrice: null }),
+        wrow({ variantId: 'v3', membershipBasePrice: null, membershipSalePrice: null }),
+      ],
     });
-
-    expect(general.starts_at).toBe(params.period.startsAt);
-    expect(membership!.ends_at).toBe(params.period.endsAt);
-  });
-
-  // 멤버십가가 없는 상품만 있으면 멤버십 리스트를 만들 이유가 없다. 구독자는 전원 대상인
-  // 일반용 리스트를 받으므로 세일에서 빠지지 않는다.
-  it('멤버십 세일가가 하나도 없으면 멤버십 리스트를 만들지 않는다', () => {
-    const { general, membership } = buildPriceListPayloads({
-      ...params,
-      rows: [row({ membershipBasePrice: null, generalSalePrice: 8000 })],
+    expect(body).toEqual({
+      title: '가을 세일',
+      starts_at: period.startsAt,
+      ends_at: period.endsAt,
+      status: 'draft',
+      general_prices: [
+        { variant_id: 'v1', amount: 800 },
+        { variant_id: 'v3', amount: 800 },
+      ],
+      membership_prices: [{ variant_id: 'v1', amount: 700 }],
     });
-
-    expect(general.prices).toHaveLength(1);
-    expect(membership).toBeNull();
   });
 });
 
