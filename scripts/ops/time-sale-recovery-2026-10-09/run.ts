@@ -59,6 +59,11 @@ const arg = (name: string) => {
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
 
+// 표의 기간은 KST 로 찍는다 — 운영자가 어드민 화면(KST)과 눈으로 대조한다. 노몬드는 백업 값으로 «active»
+// 로 만들어지므로 --apply 전에 기간을 꼭 본다.
+const kst = (iso: string) =>
+  `${new Date(Date.parse(iso) + 9 * 3600_000).toISOString().slice(0, 16).replace('T', ' ')} KST`;
+
 type Outcome = { name: string; entry?: RecoveryPlanEntry; error?: string };
 
 async function main() {
@@ -93,7 +98,14 @@ async function main() {
   console.table(
     outcomes.map((o) =>
       o.entry
-        ? { name: o.name, status: o.entry.body.status, ...o.entry.summary, error: '' }
+        ? {
+            name: o.name,
+            status: o.entry.body.status,
+            startsAt: kst(o.entry.body.starts_at),
+            endsAt: kst(o.entry.body.ends_at),
+            ...o.entry.summary,
+            error: '',
+          }
         : { name: o.name, error: o.error },
     ),
   );

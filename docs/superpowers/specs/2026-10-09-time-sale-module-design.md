@@ -93,7 +93,9 @@ TimeSale = model.define({ name: 'TimeSale', tableName: 'time_sale' }, {
   있으면 멤버십용) → 링크 생성.
 - **`updateTimeSaleWorkflow`**: 검증 스텝 → `time_sale` 갱신 → 연결된 리스트의 제목·기간·상태 갱신 →
   가격 교체. 옛 가격 id 는 **서버에서** `getExistingPriceListsPriceIdsStep` 으로 얻어
-  `batchPriceListPricesWorkflow` 한 번에 create + delete 한다. 멤버십 가격이 새로 생기면 리스트를
+  `batchPriceListPricesWorkflow` 한 번에 create + delete 한다. (구현: 옛 가격 id 는 `loadLinkedLists` 가
+  DB 에서 직접 읽고, **새 가격 만들기 → 옛 가격 지우기** 순서로 두 워크플로를 부른다 — 반대 순서는 진행 중
+  세일에 가격 공백을 만든다. 품목→금액이 그대로인 리스트는 가격을 건드리지 않는다.) 멤버십 가격이 새로 생기면 리스트를
   만들어 링크하고, 0개가 되면 리스트를 지우고 링크를 해제한다.
 - **`deleteTimeSaleWorkflow`**: 연결된 리스트 삭제 → 링크 해제 → `time_sale` 삭제.
 
@@ -190,7 +192,7 @@ TimeSale = model.define({ name: 'TimeSale', tableName: 'time_sale' }, {
 **새 `POST /admin/time-sales` 를 호출**한다 — 복구가 정상 저장과 같은 워크플로·같은 검증을 탄다.
 DB 에 직접 쓰지 않는다. 복구 세일은 전부 `status: draft`, 기간은 원래 값(10-09 00:00 ~ 10-16 23:59 KST)을
 넣어 두고 운영자가 공개 전에 고친다(인기 상품과 ①의 일반용은 운영자가 종료 시각을 당겨 끝냈으므로
-원래 종료 시각이 남아 있지 않다 — 10-16 23:59 로 통일한다). 인증은 어드민 세션 토큰을 실행 시 인자로 받는다.
+원래 종료 시각이 남아 있지 않다 — 10-16 23:59 로 통일한다). 인증은 Medusa secret API key(`sk_…`)를 환경변수 `MEDUSA_ADMIN_API_KEY` 로 받아 Basic 인증(키를 사용자명, 비밀번호 비움)으로 보낸다.
 - 기본은 `--dry-run`: 세일별 품목 수·가격 합계·멤버십 가격 수를 출력해 백업과 대조한다.
 - `--apply` 일 때만 호출한다. 이미 같은 이름의 복구 세일이 있으면 건너뛴다(재실행 안전).
 
