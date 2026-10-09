@@ -1,6 +1,7 @@
 // apps/core/src/modules/fulfillment/order-reconcile/order-reconcile.registry.ts
 import { Type } from '@nestjs/common';
 import { ReconcileRule } from './order-reconcile.rule';
+import { ResumePendingConsolidationRule } from './rules/resume-pending-consolidation.rule';
 import { WakeAwaitingMatchingRule } from './rules/wake-awaiting-matching.rule';
 
 /**
@@ -9,4 +10,5 @@ import { WakeAwaitingMatchingRule } from './rules/wake-awaiting-matching.rule';
  */
 export const ORDER_RECONCILE_RULE_CLASSES: Type<ReconcileRule>[] = [
   WakeAwaitingMatchingRule, // #1016 12번
+  ResumePendingConsolidationRule, // #1016 25번
 ];
