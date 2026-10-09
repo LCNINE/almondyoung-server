@@ -49,7 +49,13 @@ describeIfDb('상자별 판정 (PostgreSQL integration)', () => {
       const fo = await f.seedFo(tx, w, o, { status: 'created' });
       const [second] = await tx
         .insert(wmsTables.fulfillmentOrderItems)
-        .values({ fulfillmentOrderId: fo.foId, salesOrderId: o.salesOrderId, salesOrderLineId: o.lineId, skuId: w.skuId, qty: 1 })
+        .values({
+          fulfillmentOrderId: fo.foId,
+          salesOrderId: o.salesOrderId,
+          salesOrderLineId: o.lineId,
+          skuId: w.skuId,
+          qty: 1,
+        })
         .returning();
       const consolidating = await f.seedBox(tx, w, [fo.foItemId], {
         status: 'recovery_required',
