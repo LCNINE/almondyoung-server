@@ -16,8 +16,9 @@ import { ReconcileMode } from '../order-reconcile.state';
 export class WakeAwaitingMatchingRule implements OrderReconcileRule {
   readonly name = 'wake-awaiting-matching';
   readonly row = 12;
-  // 첫 배포는 관찰. 거짓 양성 0건을 확인한 뒤 PR 로 'act' 로 바꾼다(스펙 §7)
-  readonly mode: ReconcileMode = 'observe';
+  // 관찰로 배포해 거짓 양성 0건을 확인한 뒤 실행으로 바꿨다(스펙 §7). 실행 직전 judge 게이트(D12)와
+  // 도메인 가드(셀메이트 출고 주문엔 FO 를 만들지 않는다, §5.1)가 함께 막는다
+  readonly mode: ReconcileMode = 'act';
   readonly situation: OrderReconcileSituation = { stage: 'fo', states: ['awaiting_matching'] };
 
   constructor(

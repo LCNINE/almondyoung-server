@@ -150,9 +150,10 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
     });
   });
 
-  it('투영 → 러너 → 규칙 끝까지: 실행 모드면 깨우고, 관찰 모드면 그대로 둔다', async () => {
+  it('투영 → 러너 → 규칙 끝까지: 등록된 규칙(실행 모드)은 깨우고, 관찰 모드면 그대로 둔다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { dbs, w, rule } = wire();
+      expect(rule.mode).toBe('act');
       const world = await f.seedWorld(tx);
       const o = await seedAwaiting(tx);
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
@@ -160,17 +161,16 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
       const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new OrderProgressReader(dbs), [rule]);
 
-      // 첫 배포 모드(observe): 깨우지 않는다
-      const observed = await runner.runRule(rule, now, tx);
+      // 관찰 모드(첫 배포 때의 상태를 흉내): 깨우지 않는다
+      class ObservingRule extends WakeAwaitingMatchingRule {
+        readonly mode: ReconcileMode = 'observe';
+      }
+      const observing = new ObservingRule(w.backlog, gate('v2'), w.productSkuMapping);
+      const observed = await runner.runRule(observing, now, tx);
       expect(observed.wouldAct).toBeGreaterThanOrEqual(1);
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('awaiting_matching');
 
-      // 실행 모드로 바꾼 규칙(PR 로 mode 만 바뀐 상태를 흉내)
-      class ActingRule extends WakeAwaitingMatchingRule {
-        readonly mode: ReconcileMode = 'act';
-      }
-      const acting = new ActingRule(w.backlog, gate('v2'), w.productSkuMapping);
-      const acted = await runner.runRule(acting, new Date('2099-06-01T00:11:00.000Z'), tx);
+      const acted = await runner.runRule(rule, new Date('2099-06-01T00:11:00.000Z'), tx);
       expect(acted.acted).toBeGreaterThanOrEqual(1);
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('pending');
     });
@@ -178,7 +178,7 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
 
   it('게이트: 투영 뒤 판매주문이 셀메이트로 출고되면 실행 모드여도 깨우지 않는다 — check 만으로는 true 였을 상태', async () => {
     await inRollbackTx(db, async (tx) => {
-      const { dbs, w } = wire();
+      const { dbs, rule } = wire();
       const world = await f.seedWorld(tx);
       const o = await seedAwaiting(tx);
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
@@ -186,14 +186,10 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
       // 투영은 fo/awaiting_matching 인 채로, 원천만 외부 출고로 바뀐다(셀메이트 스크립트)
       await tx.update(wmsTables.salesOrders).set({ status: 'shipped' }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
-      class ActingRule extends WakeAwaitingMatchingRule {
-        readonly mode: ReconcileMode = 'act';
-      }
-      const acting = new ActingRule(w.backlog, gate('v2'), w.productSkuMapping);
-      expect(await acting.check(o.salesOrderId, tx)).toBe(true);
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new OrderProgressReader(dbs), [acting]);
+      expect(await rule.check(o.salesOrderId, tx)).toBe(true);
+      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new OrderProgressReader(dbs), [rule]);
 
-      await runner.runRule(acting, now, tx);
+      await runner.runRule(rule, now, tx);
 
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('awaiting_matching');
       const rows = await tx
