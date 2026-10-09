@@ -6,7 +6,7 @@ import { OrderProgressModule } from '../order-progress/order-progress.module';
 import { OrderReconcileJob } from './order-reconcile.job';
 import { ORDER_RECONCILE_RULE_CLASSES } from './order-reconcile.registry';
 import { OrderReconcileRepository } from './order-reconcile.repository';
-import { ORDER_RECONCILE_RULES, OrderReconcileRule } from './order-reconcile.rule';
+import { ORDER_RECONCILE_RULES, ReconcileRule } from './order-reconcile.rule';
 import { OrderReconcileRunner } from './order-reconcile.runner';
 
 /**
@@ -22,7 +22,7 @@ import { OrderReconcileRunner } from './order-reconcile.runner';
     ...ORDER_RECONCILE_RULE_CLASSES,
     {
       provide: ORDER_RECONCILE_RULES,
-      useFactory: (...rules: OrderReconcileRule[]) => rules,
+      useFactory: (...rules: ReconcileRule[]) => rules,
       inject: [...ORDER_RECONCILE_RULE_CLASSES],
     },
   ],

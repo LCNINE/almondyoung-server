@@ -35,6 +35,7 @@ function fakeRule(state: string, mode: ReconcileMode, act: (id: string) => Promi
     name: `it-runner-${state}`,
     row: 99,
     mode,
+    subject: 'order',
     situation: { stage: 'fo', states: [state] },
     fingerprint: jest.fn(async () => 'fp'),
     check: jest.fn(async () => true),

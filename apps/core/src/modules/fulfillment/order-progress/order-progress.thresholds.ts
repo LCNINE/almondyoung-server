@@ -74,6 +74,34 @@ export const ORDER_PROGRESS_STATES = {
 export type OrderProgressStateOf<S extends OrderProgressStage> = (typeof ORDER_PROGRESS_STATES)[S][number];
 export type OrderProgressState = OrderProgressStateOf<OrderProgressStage>;
 
+/**
+ * 상자 하나의 판정(리컨실러 스펙 §11.5 «상자별 결과»)에서 상자 규칙이 겨눌 수 있는 단계·세부 상태. 주문 어휘의 부분집합이다 —
+ * accept·fo·cancel_request·return_exchange 는 주문 단위 판정이라 상자에 없고, 직배(drop_ship_*)는 상자가 없다.
+ * unclassified 는 상자 상태·recovery_code 가 그대로 나오는 열린 값이라 겨눌 규칙이 생길 때 더한다.
+ */
+export const SHIPMENT_STAGES = ['reserve', 'plan', 'waybill', 'pick', 'dispatch', 'track', 'cancel'] as const;
+export type ShipmentStage = (typeof SHIPMENT_STAGES)[number];
+
+export const SHIPMENT_STATES = {
+  reserve: ['created', 'partially_reserved'],
+  plan: ['awaiting_plan'],
+  waybill: ['none', 'pending', 'allocated'],
+  pick: [
+    'queued',
+    'picking',
+    'ready_to_pack',
+    'packing',
+    'withdrawing',
+    'short_pick_recovery',
+    'awaiting_batch',
+    'CONSOLIDATION_PENDING',
+  ],
+  dispatch: ['awaiting_dispatch'],
+  track: ['shipped', 'in_transit', 'failed'],
+  cancel: ['CANCEL_REPLAN_PENDING'],
+} as const satisfies { [S in ShipmentStage]: readonly OrderProgressStateOf<S>[] };
+export type ShipmentStateOf<S extends ShipmentStage> = (typeof SHIPMENT_STATES)[S][number];
+
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
