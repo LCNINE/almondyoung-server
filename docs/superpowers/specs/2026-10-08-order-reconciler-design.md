@@ -205,7 +205,7 @@ backlog 서비스에 `requeueAwaitingMatching(salesOrderId, tx)` 를 더한다. 
 
 | 항목 | 내용 |
 | --- | --- |
-| `row` / `mode` | 12 / `observe` (첫 배포) |
+| `row` / `mode` | 12 / `observe` (첫 배포) → `act` (§7 전환 PR, 2026-10-09) |
 | `situation` | `fo` / `awaiting_matching` (투영의 `fo` 단계 세부 상태 = backlog 상태, 보드 스펙 §4.3-5) |
 | `fingerprint` | backlog `waiting_variant_ids`(정렬) + 각 variant 매칭의 상태·전략·링크(skuId:수량). `updated_at` 은 upsert 가 올리지 않아 쓰지 않는다 |
 | `check` | ① 정비 모드면 false ② backlog 가 아직 `awaiting_matching` ③ `waiting_variant_ids` 가 비어 있지 않고 **전부** `isFulfillableMatching` |
