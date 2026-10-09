@@ -114,6 +114,10 @@ TimeSale = model.define({ name: 'TimeSale', tableName: 'time_sale' }, {
 | DELETE | `/admin/time-sales/:id` | 삭제 |
 | GET | `/store/time-sale` | 진행 중 세일 합본(§7) |
 
+어드민 쓰기(POST·DELETE) 성공 뒤에는 영향받은 상품과 `time-sale` 태그의 스토어프론트 캐시를 비운다 —
+경계 크론은 «시각이 경계를 지날 때» 만 비우므로, 진행 기간 안에서 공개·수정·삭제하면 최대 1시간 옛 화면이 남는다.
+무효화 호출은 지금 `jobs/time-sale-cache-boundary.ts` 안의 것을 `utils/` 로 빼서 둘이 같이 쓴다.
+
 본문은 zod + `validateAndTransformBody` 미들웨어로 검증한다. 가격 → variant 매핑은 지금
 `utils/time-sale.ts` 가 하는 `product_variant_price_set` 조인을 그대로 쓴다(Admin API 로는 갈 수 없다).
 
@@ -133,13 +137,16 @@ TimeSale = model.define({ name: 'TimeSale', tableName: 'time_sale' }, {
 **`GET /store/time-sale` 응답**(Medusa):
 ```ts
 {
-  endsAt: string | null,          // 진행 중 세일 중 가장 먼저 끝나는 시각
-  products: { id: string, endsAt: string, categoryIds: string[] }[],
-                                  // 판매순 → 리뷰순 → 최신순. 한 상품이 두 세일에 걸리면 먼저 끝나는 쪽
-  timeSales: …                    // 옛 필드. §9 의 혼합 배포 창 동안만 유지, 후속 PR 에서 제거
+  timeSales: { id: string, startsAt: string, endsAt: string,
+               priceListIds: string[], productIds: string[] }[],   // 종료 빠른 순. title 은 없다
+  products: { id: string, categoryIds: string[] }[]                 // 진행 중 세일 상품 전체, 중복 없이
+                                                                     // 판매순 → 리뷰순 → 최신순
 }
 ```
-세일 제목은 새 필드에 없다. 진행 중 판정은 `time_sale.status = 'active'` 이고 현재 시각이 기간 안.
+`timeSales` 는 지금 응답과 같은 모양에서 **`title` 을 빼고 `id` 를 더한** 것이다. 카트 안내·카드 뱃지·
+상세의 「이 가격이 어느 세일에서 나왔나」(`priceListIds`)가 이미 세일 단위로 동작하므로 그대로 둔다.
+진행 중 판정은 `time_sale.status = 'active'` 이고 현재 시각이 기간 안. 상품별 종료 시각은 그 상품이 든
+세일 중 가장 이른 `endsAt` 으로 스토어프론트가 파생한다.
 
 - **홈**: 「타임세일」 섹션 하나. 제목 옆 카운트다운 = 응답 `endsAt`(가장 먼저 끝나는 세일 —
   실제보다 길게 보이면 CS 가 되므로 짧은 쪽). 카드 카운트다운 = 그 상품의 `endsAt`. 상위 10개.
@@ -197,8 +204,8 @@ DB 에 직접 쓰지 않는다. 복구 세일은 전부 `status: draft`, 기간�
 |---|---|---|
 | 새 어드민 + 옛 Medusa | 새 라우트 404 → 저장이 깔끔히 실패(부분 반영 없음). 목록 응답 형태가 달라 목록이 비거나 깨져 보임 | 운영자 작업 중지로 흡수 |
 | 옛 어드민 + 새 Medusa | 옛 어드민이 price list 를 직접 만들면 `time_sale` 없는 고아 리스트가 생긴다 | 운영자 작업 중지로 흡수 |
-| 새 스토어프론트 + 옛 Medusa | 새 필드가 없음 → 옛 `timeSales` 에서 파생하거나 섹션을 숨김. 예외로 번지지 않게 한다 | 스토어프론트 코드가 흡수 |
-| 옛 스토어프론트 + 새 Medusa | 옛 `timeSales` 필드가 남아 있어 그대로 동작 | Medusa 응답이 흡수 |
+| 새 스토어프론트 + 옛 Medusa | `products` 가 없음 → `timeSales[].productIds` 를 이어 붙여 순서를 만들고 탭 없이 보여준다. 예외로 번지지 않게 한다 | 스토어프론트 코드가 흡수 |
+| 옛 스토어프론트 + 새 Medusa | `timeSales` 모양이 같고 `title` 만 없다 → 옛 홈은 제목 자리에 기본 문구 「타임세일」을 쓴다(`title ?? 기본`) | Medusa 응답이 흡수 |
 
 **운영 절차**
 1. 담당자에게 배포 완료 알림까지 타임세일 등록·수정 중지를 요청한다.
@@ -207,7 +214,6 @@ DB 에 직접 쓰지 않는다. 복구 세일은 전부 `status: draft`, 기간�
 4. 노몬드 이전·옛 리스트 정리(같은 스크립트).
 5. 어드민에서 복구 세일 6개가 비공개로 보이는지, 스토어프론트 노몬드 섹션이 정상인지 확인.
 6. 담당자에게 공개를 넘긴다.
-7. 후속 PR: `/store/time-sale` 의 옛 `timeSales` 필드 제거.
 
 ## 10. 테스트
 
@@ -216,6 +222,6 @@ DB 에 직접 쓰지 않는다. 복구 세일은 전부 `status: draft`, 기간�
 - Medusa 통합(`scripts/local/run-medusa-integration.sh`): 생성 → 수정(가격 교체 후 옛 가격 0행,
   리스트당 가격 행 수 = 품목 수) → 멤버십 추가/제거 → 공개 전환 → 삭제. **중간 스텝 실패 시 보상으로
   `time_sale`·리스트·가격이 원상태**인지 확인하는 케이스 포함. 741품목 규모 한 케이스.
-- 스토어프론트: 합본 파생(가장 이른 종료, 상품별 종료, 두 세일 겹침), 옛 응답 형태 폴백.
+- 스토어프론트: 합본 파생(가장 이른 종료, 상품별 종료, 두 세일 겹침), `products` 없는 옛 응답 폴백.
 - 어드민: 순수 함수(상태 판정에 draft 추가 등).
 - 로컬 E2E 에서 어드민으로 생성·수정·공개 후 스토어프론트 확인(브라우저 로그인은 사용자).
