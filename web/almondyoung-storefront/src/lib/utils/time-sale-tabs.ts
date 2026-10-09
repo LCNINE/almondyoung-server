@@ -1,3 +1,7 @@
+import type { HttpTypes } from "@medusajs/types"
+import { FIXED_CATEGORIES } from "@/lib/constants/categories"
+import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
+
 export type TimeSaleTabSource = {
   key: string
   name: string
@@ -46,4 +50,22 @@ export function deriveTimeSaleTabs(
 
   // 카테고리가 하나뿐이면 "전체" 와 완전히 겹쳐 탭을 그릴 이유가 없다.
   return tabs.length <= 2 ? [] : tabs
+}
+
+/** 고정 루트 카테고리(`FIXED_CATEGORIES`)만 탭 후보로 삼는다. 홈 섹션과 전체 보기가 같이 쓴다. */
+export function buildTabSources(
+  categories: HttpTypes.StoreProductCategory[]
+): TimeSaleTabSource[] {
+  const rootHandles = new Set<string>(FIXED_CATEGORIES.map((category) => category.handle))
+  return categories
+    .filter((category) => rootHandles.has(category.handle))
+    .map((category) => {
+      const fixed = FIXED_CATEGORIES.find((item) => (item.handle as string) === category.handle)!
+      return {
+        key: fixed.key,
+        name: category.name,
+        handle: category.handle,
+        categoryIds: collectCategoryIds(category),
+      }
+    })
 }

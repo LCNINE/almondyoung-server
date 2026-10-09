@@ -69,6 +69,8 @@
     "titleFirst": "Time",
     "titleSecond": "Sale",
     "allTab": "All",
+    "allTitle": "All time sale items",
+    "productCount": "{count} items",
     "emptyTitle": "No time sale is running",
     "pageDescription": "These prices are only for a limited time.",
     "noSaleTitle": "No time sale is running",

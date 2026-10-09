@@ -1,6 +1,6 @@
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
-import { TimeSaleWrapper } from "@/domains/home/template/time-sale"
-import { listActiveTimeSales } from "@/lib/api/medusa/time-sale"
+import { TimeSaleAllTemplate } from "@/domains/time-sale/templates/time-sale-all-template"
+import { getTimeSaleOverview } from "@/lib/api/medusa/time-sale"
 import { NOINDEX } from "@lib/seo"
 import { getTranslations } from "next-intl/server"
 import type { Metadata } from "next"
@@ -11,23 +11,30 @@ export const metadata: Metadata = { robots: NOINDEX }
 
 export default async function TimeSalePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ tab?: string; page?: string }>
 }) {
-  const { countryCode } = await params
-  const [sales, t] = await Promise.all([
-    listActiveTimeSales(),
+  const [{ countryCode }, query] = await Promise.all([params, searchParams])
+  const [overview, t] = await Promise.all([
+    getTimeSaleOverview(),
     getTranslations("home.timeSale"),
   ])
 
   return (
     <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
-      <SiteBreadcrumb className="mb-4" items={[{ label: "타임세일" }]} />
+      <SiteBreadcrumb className="mb-4" items={[{ label: t("titleFirst") + t("titleSecond") }]} />
 
       {/* 세일이 없어도 404 로 보내지 않는다 — 이 링크는 홈·카트·상품상세에 박혀 있어서
           세일 사이에 죽은 링크가 된다. */}
-      {sales.length > 0 ? (
-        <TimeSaleWrapper countryCode={countryCode} background="white" />
+      {overview.sales.length > 0 ? (
+        <TimeSaleAllTemplate
+          overview={overview}
+          countryCode={countryCode}
+          tabKey={query.tab ?? "all"}
+          page={Number(query.page ?? "1")}
+        />
       ) : (
         <div className="py-24 text-center">
           <p className="text-lg font-semibold">{t("noSaleTitle")}</p>

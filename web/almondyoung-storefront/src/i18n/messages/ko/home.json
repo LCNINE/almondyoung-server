@@ -69,6 +69,8 @@
     "titleFirst": "타임",
     "titleSecond": "세일",
     "allTab": "전체",
+    "allTitle": "타임세일 전체",
+    "productCount": "{count}개 상품",
     "emptyTitle": "진행 중인 타임세일이 없습니다",
     "pageDescription": "정해진 시간 동안만 이 가격입니다.",
     "noSaleTitle": "진행 중인 타임세일이 없습니다",
