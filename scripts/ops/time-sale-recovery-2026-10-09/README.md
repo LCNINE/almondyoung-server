@@ -5,7 +5,9 @@
 ## 전제
 - 새 Medusa(타임세일 모듈 포함)가 라이브에 배포돼 있다. 확인: `GET /admin/time-sales` 가 `{ timeSales: [...] }` 를 준다.
 - 백업 JSON(사고 당일 11:50 KST 추출, 라이브 데이터라 저장소에 없다). 위치는 운영자가 안다.
-- Medusa secret API key(`sk_…`). Medusa 어드민 «설정 → Secret API Keys» 에서 발급하고, 끝나면 폐기한다.
+- Medusa secret API key. 라이브 SST 시크릿 `MedusaApiKey`(어드민 웹 Medusa 프록시·channel-adapter 가 같이 쓰는 키)를 쓴다.
+  `deployments/lcnine/services` 에서 `npx sst secret list --stage live` 로 확인한다(만료 시 `aws login --profile login`).
+  ⚠️ **이 키는 폐기하지 않는다** — 폐기하면 어드민과 채널 연동이 같이 멈춘다. 따로 발급한 일회용 키를 썼을 때만 끝나고 폐기한다.
 
 ## 언제 — Medusa 배포 «직후» 바로
 새 Medusa 는 타임세일을 `time_sale` 행 기준으로 보여준다. 옛 리스트(노몬드·인기 상품·복구 대상)는 아직
@@ -27,7 +29,7 @@
      | 복구 ⑤ 87품목 | 87 | 472850 | 87 | 186190 |
      | 인기 상품 타임 세일 | 148 | 353010 | 148 | 213120 |
      | 노몬드 펌제 글루 출시 타임 세일 | 3 | 22000 | 3 | 13550 |
-2. 적용: `MEDUSA_ADMIN_API_KEY=sk_… npx tsx scripts/ops/time-sale-recovery-2026-10-09/run.ts --backup <백업.json> --medusa https://medusa.almondyoung.com --apply`
+2. 적용: `MEDUSA_ADMIN_API_KEY=<MedusaApiKey 값> npx tsx scripts/ops/time-sale-recovery-2026-10-09/run.ts --backup <백업.json> --medusa https://medusa.almondyoung.com --apply`
    - 같은 이름의 세일이 이미 있으면 만들지 않는다. 재실행해도 된다.
    - 옛 리스트 삭제는 그룹(노몬드 / 인기 상품)마다 대체 세일을 새로 읽어 상태·개수·합계·품목별 금액을 대조한 뒤에만 한다. 대조가 어긋나면 그 그룹만 건너뛰고 `!!` 경고를 찍으며 종료 코드 1 로 끝난다. 경고가 나오면 어드민에서 대체 세일을 확인하고 재실행한다.
    - 옛 리스트가 이미 지워져 404 가 나오면 「이미 삭제됨」으로 기록하고 넘어간다.
@@ -50,4 +52,4 @@
      `TARGETS`/`NOMOND`)인데 남아 있으면 `!!` 경고 때문일 것이다 — 대체 세일을 확인하고 재실행한다.
      그 밖의 것이면 필요 없는 리스트는 Medusa 어드민 «가격 목록» 에서 지우고, 살려야 하는 것은 같은
      품목·가격의 타임세일로 다시 만든 뒤(어드민 타임세일 화면) 옛 리스트를 지운다. 다시 돌려 0행을 확인한다.
-6. API key 폐기.
+6. 일회용 키를 따로 발급해 썼다면 폐기한다. 공용 `MedusaApiKey` 는 폐기하지 않는다.
