@@ -52,7 +52,7 @@ describe('inSituationShipmentIds', () => {
 
 describe('D16 제외 목록', () => {
   it('목록의 값은 판정 SQL 이 주문 판정으로 실제로 내는 값이다 — 오타면 제외가 조용히 사라진다', () => {
-    const text = new PgDialect().sqlToQuery(judgedShipmentsSql(sql`SELECT NULL::uuid`, '2000-01-01T00:00:00.000Z')).sql;
+    const text = new PgDialect().sqlToQuery(judgedShipmentsSql(sql`SELECT NULL::uuid`)).sql;
     expect(SHIPMENT_EXCLUDED_ORDER_RULES.filter((r) => !text.includes(`THEN '${r}'`))).toEqual([]);
   });
 });

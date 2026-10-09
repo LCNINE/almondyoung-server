@@ -94,10 +94,13 @@ describe('ORDER_PROGRESS_STATES', () => {
 });
 
 describe('SHIPMENT_STATES', () => {
-  it.each([...SHIPMENT_STAGES])('%s 의 상자 세부 상태는 같은 단계의 주문 어휘 안에 있다 — 판정 SQL 이 낼 수 있는 값', (stage) => {
-    const orderStates: readonly string[] = ORDER_PROGRESS_STATES[stage];
-    expect(SHIPMENT_STATES[stage].filter((s) => !orderStates.includes(s))).toEqual([]);
-  });
+  it.each([...SHIPMENT_STAGES])(
+    '%s 의 상자 세부 상태는 같은 단계의 주문 어휘 안에 있다 — 판정 SQL 이 낼 수 있는 값',
+    (stage) => {
+      const orderStates: readonly string[] = ORDER_PROGRESS_STATES[stage];
+      expect(SHIPMENT_STATES[stage].filter((s) => !orderStates.includes(s))).toEqual([]);
+    },
+  );
 
   it('직배 단위는 상자가 없다 — drop_ship_* 상태가 상자 어휘에 없다', () => {
     const all = SHIPMENT_STAGES.flatMap((stage): readonly string[] => SHIPMENT_STATES[stage]);

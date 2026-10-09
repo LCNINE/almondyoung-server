@@ -10,7 +10,7 @@ END`;
  * 판정의 공통 CTE(so … decided). 주문으로 접기(judgedRowsSql)와 상자별 결과(judgedShipmentsSql)가 같이 읽는다 —
  * 판정 정의는 이 한 벌이다(리컨실러 스펙 §11.5). units 는 상자 하나 × 주문 하나(직배는 shipment_id NULL).
  */
-function judgeCtes(scope: SQL, now: SQL): SQL {
+function judgeCtes(scope: SQL): SQL {
   return sql`
     WITH so AS (
       SELECT s.id, s.status::text AS status, s.sales_channel::text AS sales_channel,
@@ -208,7 +208,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
 export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
   const now = sql`${nowIso}::timestamptz`;
   return sql`
-    ${judgeCtes(scope, now)}
+    ${judgeCtes(scope)}
     SELECT d.id AS sales_order_id,
            d.sales_channel,
            d.order_date AS ordered_at,
@@ -252,12 +252,11 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
  * 상자별 판정(리컨실러 스펙 §11.5). 같은 CTE 의 units 를 상자로 접는다 — 판정 정의는 한 벌이다.
  * 상자 하나가 주문마다 한 행씩 나오므로(합포장) 주문으로 접을 때와 같은 우선순위로 대표 행을 고르고,
  * 그 상자에 라인이 있는 주문들과 그 주문 판정(decided.rule)을 배열로 싣는다 — 리컨실러가 D16 제외를 판단한다.
- * 직배 단위는 상자가 없어 나오지 않는다.
+ * 직배 단위는 상자가 없어 나오지 않는다. 추정 시각이 없으면 NULL 이다(주문 접기처럼 «지금»으로 채우지 않는다 — 후보 정렬에서 뒤로 간다).
  */
-export function judgedShipmentsSql(scope: SQL, nowIso: string): SQL {
-  const now = sql`${nowIso}::timestamptz`;
+export function judgedShipmentsSql(scope: SQL): SQL {
   return sql`
-    ${judgeCtes(scope, now)},
+    ${judgeCtes(scope)},
     su AS (
       SELECT u.shipment_id, u.sales_order_id, u.stage, u.state, u.est, d.rule AS order_rule
         FROM units u

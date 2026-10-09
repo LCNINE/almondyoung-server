@@ -44,10 +44,8 @@ export class ResumePendingConsolidationRule implements ShipmentReconcileRule {
     if (!readiness || readiness.blockers.length > 0) return false;
     // 재개는 원본 전부를 한꺼번에 바꾼다. 틀의 게이트는 후보 상자 하나만 보므로, 형제 원본의 주문이 셀메이트 출고·채널 취소
     // 요청·반품 중이면 여기서 멈춘다 — 같은 판정(judgeShipment)과 같은 순수 함수(D16)를 원본마다 부른다
-    const now = new Date();
     for (const source of readiness.sources) {
-      if (!shipmentInSituation(this.situation, await this.progress.judgeShipment(source.shipmentId, now, tx)))
-        return false;
+      if (!shipmentInSituation(this.situation, await this.progress.judgeShipment(source.shipmentId, tx))) return false;
     }
     return true;
   }

@@ -66,7 +66,7 @@ describeIfDb('상자별 판정 (PostgreSQL integration)', () => {
       const [order] = await reader.judge([o.salesOrderId], NOW, tx);
       expect(order).toMatchObject({ stage: 'reserve', state: 'created' });
 
-      const box = await reader.judgeShipment(consolidating.shipmentId, NOW, tx);
+      const box = await reader.judgeShipment(consolidating.shipmentId, tx);
       expect(box).toMatchObject({
         shipmentId: consolidating.shipmentId,
         stage: 'pick',
@@ -97,7 +97,7 @@ describeIfDb('상자별 판정 (PostgreSQL integration)', () => {
         .where(eq(wmsTables.orderProgress.salesOrderId, shipped.salesOrderId));
       expect(closed.outcome).toBe('external_shipped');
 
-      const rows = (await reader.judgeOpenShipments(NOW, tx)).filter((r) => r.shipmentId === shared.shipmentId);
+      const rows = (await reader.judgeOpenShipments(tx)).filter((r) => r.shipmentId === shared.shipmentId);
       expect(rows).toHaveLength(1);
       expect(rows[0].salesOrderIds).toEqual([open.salesOrderId, shipped.salesOrderId].sort());
       expect(rows[0].orderRules).toEqual(['external_shipped', 'unit']);
@@ -116,11 +116,11 @@ describeIfDb('상자별 판정 (PostgreSQL integration)', () => {
       const canceled = await f.seedBox(tx, w, [inHouse.foItemId], { status: 'canceled' });
       await new OrderProgressManager(dbs).refreshScope(idsScope([o.salesOrderId, dropShipOrder.salesOrderId]), NOW, tx);
 
-      const ours = (await reader.judgeOpenShipments(NOW, tx)).filter(
+      const ours = (await reader.judgeOpenShipments(tx)).filter(
         (r) => r.salesOrderIds.includes(o.salesOrderId) || r.salesOrderIds.includes(dropShipOrder.salesOrderId),
       );
       expect(ours).toEqual([]);
-      expect(await reader.judgeShipment(canceled.shipmentId, NOW, tx)).toBeUndefined();
+      expect(await reader.judgeShipment(canceled.shipmentId, tx)).toBeUndefined();
     });
   });
 });

@@ -348,7 +348,9 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         new Date('2099-05-31T00:00:00.000Z'),
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runRule(rule, NOW, tx);
 
@@ -385,7 +387,9 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         NOW,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runAll(NOW, tx);
 
@@ -465,7 +469,9 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         gaveUpAt,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [rule]);
+      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', state), [
+        rule,
+      ]);
 
       await runner.runRule(rule, NOW, tx);
 
@@ -503,7 +509,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         tx,
       );
       // 깨운 backlog 가 아직 pending — 투영만 늦게 옛 칸을 보여 준다
-      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', 'pending'), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        repo,
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', 'pending'),
+        [rule],
+      );
 
       const summary = await runner.runRule(rule, NOW, tx);
 
@@ -625,7 +637,13 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
         actedAt,
         tx,
       );
-      const runner = new OrderReconcileRunner(dbs, repo, new ShipmentReconcileRepository(dbs), judgeAs('fo', 'pending'), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        repo,
+        new ShipmentReconcileRepository(dbs),
+        judgeAs('fo', 'pending'),
+        [rule],
+      );
 
       await runner.runRule(rule, NOW, tx);
 
@@ -662,7 +680,10 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
 
       const summary = await runner.runRule(rule, NOW, tx);
 
-      expect((rule.act as jest.Mock).mock.calls.map((c) => c[0])).toEqual([older, newer]);
+      expect((rule.act as jest.Mock<Promise<ReconcileActResult>, [string]>).mock.calls.map((c) => c[0])).toEqual([
+        older,
+        newer,
+      ]);
       expect(summary.acted).toBe(2);
       const rows = await boxStatesOf(tx, rule.name);
       expect([...rows.keys()].sort()).toEqual([newer, older].sort());

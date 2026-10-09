@@ -102,17 +102,17 @@ export class OrderProgressReader {
   }
 
   /** 진행 중 주문(과 그 주문과 상자를 나눈 주문)의 열린 상자를 상자별로 판정한다 — 리컨실러 상자 후보의 원천(§11.4-1) */
-  async judgeOpenShipments(now: Date, tx?: DbTx): Promise<JudgedShipmentRow[]> {
+  async judgeOpenShipments(tx?: DbTx): Promise<JudgedShipmentRow[]> {
     return this.dbService.run(async (trx) => {
-      const result = await trx.execute(judgedShipmentsSql(openShipmentScopeSql(), now.toISOString()));
+      const result = await trx.execute(judgedShipmentsSql(openShipmentScopeSql()));
       return toShipmentRows(result);
     }, tx);
   }
 
   /** 상자 하나의 지금 판정. 취소·대체된 상자나 없는 상자는 undefined — 실행 직전 게이트가 쓴다(§11.4-3) */
-  async judgeShipment(shipmentId: string, now: Date, tx?: DbTx): Promise<JudgedShipmentRow | undefined> {
+  async judgeShipment(shipmentId: string, tx?: DbTx): Promise<JudgedShipmentRow | undefined> {
     return this.dbService.run(async (trx) => {
-      const result = await trx.execute(judgedShipmentsSql(shipmentScopeSql(shipmentId), now.toISOString()));
+      const result = await trx.execute(judgedShipmentsSql(shipmentScopeSql(shipmentId)));
       return toShipmentRows(result).find((r) => r.shipmentId === shipmentId);
     }, tx);
   }

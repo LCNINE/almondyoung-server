@@ -160,7 +160,13 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       await seedMatching(tx, { variantId: o.variantId, skuId: world.skuId });
       const now = new Date('2099-06-01T00:00:00.000Z');
       await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new ShipmentReconcileRepository(dbs), new OrderProgressReader(dbs), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        new OrderProgressReader(dbs),
+        [rule],
+      );
 
       // 관찰 모드(첫 배포 때의 상태를 흉내): 깨우지 않는다
       class ObservingRule extends WakeAwaitingMatchingRule {
@@ -186,9 +192,18 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       const now = new Date('2099-06-01T00:00:00.000Z');
       await new OrderProgressManager(dbs).refreshScope(sql`SELECT ${o.salesOrderId}::uuid`, now, tx);
       // 투영은 fo/awaiting_matching 인 채로, 원천만 외부 출고로 바뀐다(셀메이트 스크립트)
-      await tx.update(wmsTables.salesOrders).set({ status: 'shipped' }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'shipped' })
+        .where(eq(wmsTables.salesOrders.id, o.salesOrderId));
       expect(await rule.check(o.salesOrderId, tx)).toBe(true);
-      const runner = new OrderReconcileRunner(dbs, new OrderReconcileRepository(dbs), new ShipmentReconcileRepository(dbs), new OrderProgressReader(dbs), [rule]);
+      const runner = new OrderReconcileRunner(
+        dbs,
+        new OrderReconcileRepository(dbs),
+        new ShipmentReconcileRepository(dbs),
+        new OrderProgressReader(dbs),
+        [rule],
+      );
 
       await runner.runRule(rule, now, tx);
 

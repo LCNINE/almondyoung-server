@@ -75,7 +75,7 @@ export class OrderReconcileRunner {
     }
     // 상자 규칙끼리 바퀴마다 상자별 판정을 한 번만 돌린다(§11.4-1). 실패도 공유된다 — 그 바퀴의 상자 규칙은 모두 건너뛴다
     let shipments: Promise<JudgedShipmentRow[]> | undefined;
-    const openShipments = () => (shipments ??= this.progress.judgeOpenShipments(now, tx));
+    const openShipments = () => (shipments ??= this.progress.judgeOpenShipments(tx));
     const out: RuleRunSummary[] = [];
     for (const rule of this.rules) {
       try {
@@ -94,7 +94,7 @@ export class OrderReconcileRunner {
     rule: RunnableReconcileRule,
     now: Date,
     tx?: DbTx,
-    openShipments: () => Promise<JudgedShipmentRow[]> = () => this.progress.judgeOpenShipments(now, tx),
+    openShipments: () => Promise<JudgedShipmentRow[]> = () => this.progress.judgeOpenShipments(tx),
   ): Promise<RuleRunSummary> {
     const port = await this.portFor(rule, now, tx, openShipments);
     const summary: RuleRunSummary = {
@@ -161,8 +161,7 @@ export class OrderReconcileRunner {
           id: c.shipmentId,
           prior: c.prior,
         })),
-      inSituationNow: async (id, sp) =>
-        shipmentInSituation(rule.situation, await this.progress.judgeShipment(id, now, sp)),
+      inSituationNow: async (id, sp) => shipmentInSituation(rule.situation, await this.progress.judgeShipment(id, sp)),
       save: (id, record, trx) => this.shipmentRepository.save(rule, id, record, now, trx),
     };
   }
