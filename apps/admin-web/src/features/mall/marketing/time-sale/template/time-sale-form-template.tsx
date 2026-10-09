@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -226,6 +227,7 @@ export default function TimeSaleFormTemplate({ timeSaleId }: { timeSaleId?: stri
                 saleSummary.filled === 0
               }
             >
+              {isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
               {errors.length > 0
                 ? `세일가 확인 필요 (${errors.length})`
                 : `${isEdit ? '수정' : '등록'}${saleSummary.filled > 0 ? ` (${saleSummary.filled}개 품목)` : ''}`}

@@ -66,11 +66,6 @@ export function useTimeSaleForVariant(variant: VariantLike): TimeSale | null {
   return (priceListId && byPriceListId.get(priceListId)) || null
 }
 
-/** 이 variant 의 현재 가격이 타임세일에서 나왔는지. */
-export function useIsTimeSalePrice(variant: VariantLike): boolean {
-  return useTimeSaleForVariant(variant) !== null
-}
-
 /**
  * 이 상품이 걸린 타임세일. 없으면 null.
  * 카트 라인은 `price_list_id` 를 안 실어 오므로 variant 대신 상품 id 로 가른다.

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,9 @@ export default function MarketingTimeSaleTemplate() {
   const setStatus = useSetTimeSaleStatus();
 
   const now = new Date();
+  // 상태 전환은 한 번에 하나만 보낸다(버튼 전부 잠금) — useMutation 은 마지막 mutate 의 콜백만 불러,
+  // 겹쳐 누르면 앞선 전환의 결과 토스트가 사라진다. 스피너는 처리 중인 행에만 돌린다.
+  const statusPendingId = setStatus.isPending ? setStatus.variables?.id : undefined;
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -133,6 +136,7 @@ export default function MarketingTimeSaleTemplate() {
                         <Button
                           variant="outline"
                           size="sm"
+                          disabled={setStatus.isPending}
                           onClick={() =>
                             setPublishTarget({
                               id: sale.id,
@@ -142,6 +146,7 @@ export default function MarketingTimeSaleTemplate() {
                             })
                           }
                         >
+                          {statusPendingId === sale.id && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                           공개
                         </Button>
                       ) : status === 'ended' ? null : (
@@ -160,6 +165,7 @@ export default function MarketingTimeSaleTemplate() {
                             )
                           }
                         >
+                          {statusPendingId === sale.id && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                           비공개
                         </Button>
                       )}
@@ -185,7 +191,11 @@ export default function MarketingTimeSaleTemplate() {
         </div>
       )}
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      {/* 확인 버튼을 눌러도 처리가 끝날 때까지 창을 닫지 않는다 — 닫히면 진행 중인지 알 길이 없다 */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && !deleteTimeSale.isPending && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{deleteTarget?.title} 삭제</AlertDialogTitle>
@@ -194,13 +204,25 @@ export default function MarketingTimeSaleTemplate() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void confirmDelete()}>삭제</AlertDialogAction>
+            <AlertDialogCancel disabled={deleteTimeSale.isPending}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteTimeSale.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleteTimeSale.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              삭제
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!publishTarget} onOpenChange={(open) => !open && setPublishTarget(null)}>
+      <AlertDialog
+        open={!!publishTarget}
+        onOpenChange={(open) => !open && !setStatus.isPending && setPublishTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{publishTarget?.title} 공개</AlertDialogTitle>
@@ -210,9 +232,11 @@ export default function MarketingTimeSaleTemplate() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogCancel disabled={setStatus.isPending}>취소</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              disabled={setStatus.isPending}
+              onClick={(event) => {
+                event.preventDefault();
                 if (!publishTarget) return;
                 setStatus.mutate(
                   { id: publishTarget.id, status: 'active' },
@@ -224,6 +248,7 @@ export default function MarketingTimeSaleTemplate() {
                 );
               }}
             >
+              {setStatus.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
               공개
             </AlertDialogAction>
           </AlertDialogFooter>

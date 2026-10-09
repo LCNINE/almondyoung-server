@@ -13,19 +13,6 @@ export function earliestEnd(sales: TimeSale[]): string | null {
   }, null)
 }
 
-/** 상품 → 그 상품이 든 세일 중 가장 이른 종료. 카드마다 자기 남은 시간을 그린다. */
-export function productEndsAt(sales: TimeSale[]): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const sale of sales) {
-    if (!sale.endsAt) continue
-    for (const id of sale.productIds) {
-      const current = map.get(id)
-      if (!current || sale.endsAt < current) map.set(id, sale.endsAt)
-    }
-  }
-  return map
-}
-
 /**
  * 세일 상품 전체를 보여줄 순서. 서버가 판매순 → 리뷰순 → 최신순으로 준 `products` 를 쓴다.
  * 배포가 섞여 옛 Medusa 가 `products` 없이 응답하면 세일별 목록을 이어 붙인다(카테고리 탭은 빈다).
