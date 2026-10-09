@@ -16,6 +16,7 @@ import {
   makeConsolidationService,
   makeDb,
   makeDbService,
+  pendingConsolidationBlockedByWaybill,
   wireLogistics,
   Wired,
 } from './__support__';
@@ -662,5 +663,38 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       await firstConnection.sql.end();
       await secondConnection.sql.end();
     }
+  });
+
+  it('findPendingOperationIdForSource: 대기 중 합포장의 원본이면 그 작업, 끝나면 null', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const p = await pendingConsolidationBlockedByWaybill(tx, wired, consolidation, customerId);
+      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
+      expect(await consolidation.findPendingOperationIdForSource(p.second.shipment.id, tx)).toBe(p.operationId);
+      await p.voidWaybill();
+      await consolidation.resumePending(p.operationId, tx);
+      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBeNull();
+    });
+  });
+
+  it('resumeReadiness·tryResumePending: 송장이 막는 동안은 blocked, 송장을 취소하면 completed, 다시 부르면 already_completed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const p = await pendingConsolidationBlockedByWaybill(tx, wired, consolidation, customerId);
+
+      const blocked = await consolidation.resumeReadiness(p.operationId, tx);
+      expect(blocked?.blockers).toEqual([
+        expect.objectContaining({ shipmentId: p.first.shipment.id, codes: expect.arrayContaining(['ACTIVE_INVOICE']) }),
+      ]);
+      expect(blocked?.sources.map((s) => [s.status, s.recoveryCode])).toEqual([
+        ['recovery_required', 'CONSOLIDATION_PENDING'],
+        ['recovery_required', 'CONSOLIDATION_PENDING'],
+      ]);
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('blocked');
+
+      await p.voidWaybill();
+      expect((await consolidation.resumeReadiness(p.operationId, tx))?.blockers).toEqual([]);
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('completed');
+      expect(await consolidation.resumeReadiness(p.operationId, tx)).toBeNull();
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('already_completed');
+    });
   });
 });

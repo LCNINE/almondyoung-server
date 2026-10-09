@@ -191,6 +191,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     AggregateThenSortPickingStrategy,
     PickToTotePickingStrategy,
     PickingStrategyRegistry,
+    // 리컨실러 25번(대기 중 합포장 재개)이 쓴다
+    ConsolidationService,
   ],
 })
 export class FulfillmentModule {}
