@@ -1871,6 +1871,38 @@ export const shipmentLines = pgTable(
   }),
 );
 
+/**
+ * 리컨실러 상자 규칙의 재판정 상태(스펙 2026-10-08 §11.2 D17). 행 하나 = «규칙 × 상자». 칸의 뜻은 order_reconcile_state 와 같다.
+ * (rule, next_check_at) 인덱스는 두지 않는다 — 상자 후보는 판정 결과에서 고른 id 로 PK 를 찾는다.
+ */
+export const shipmentReconcileState = pgTable(
+  'shipment_reconcile_state',
+  {
+    rule: varchar('rule', { length: 64 }).notNull(),
+    shipmentId: uuid('shipment_id')
+      .notNull()
+      .references(() => shipments.id, { onDelete: 'cascade' }),
+    trackingRow: integer('tracking_row').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    mode: varchar('mode', { length: 16 }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    lastResult: varchar('last_result', { length: 16 }).notNull(),
+    lastError: text('last_error'),
+    nextCheckAt: timestamp('next_check_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중. 찍히면 그 상자에 라인이 있는 주문마다 정체 보드에 «자동 멈춤»으로 보인다(D18)
+    gaveUpAt: timestamp('gave_up_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.rule, t.shipmentId] }),
+    // 정체 보드 요약·목록이 «포기한 상자»만 찾는다
+    idxGaveUp: index('idx_shipment_reconcile_state_gave_up')
+      .on(t.shipmentId)
+      .where(sql`${t.gaveUpAt} IS NOT NULL`),
+  }),
+);
+
 export const shipmentTracking = pgTable(
   'shipment_tracking',
   {
@@ -3521,6 +3553,7 @@ export const wmsTables = {
   salesOrderAmendments,
   orderProgress,
   orderReconcileState,
+  shipmentReconcileState,
   salesOrderCancellations,
   mergeGroups,
   stockReservations,
@@ -4713,6 +4746,7 @@ export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendment
 
 export type OrderProgressRow = InferSelectModel<typeof orderProgress>;
 export type OrderReconcileStateRow = InferSelectModel<typeof orderReconcileState>;
+export type ShipmentReconcileStateRow = InferSelectModel<typeof shipmentReconcileState>;
 
 export type SalesOrderCancellation = InferSelectModel<typeof salesOrderCancellations>;
 export type NewSalesOrderCancellation = InferInsertModel<typeof salesOrderCancellations>;
