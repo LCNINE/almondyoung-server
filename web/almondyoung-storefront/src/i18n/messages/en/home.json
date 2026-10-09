@@ -81,7 +81,8 @@
     "endsOn": "Until {date}",
     "dayUnit": "d",
     "untilEnd": "Ends in",
-    "endingSoon": "Ending soon"
+    "endingSoon": "Ending soon",
+    "badge": "Time sale"
   },
   "beautytop": {
     "title": "BeautyTop",

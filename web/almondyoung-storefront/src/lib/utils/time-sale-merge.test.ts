@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { earliestEnd, orderedProducts, paginate, productEndsAt } from "./time-sale-merge"
+import { earliestEnd, orderedProducts, paginate } from "./time-sale-merge"
 
 const sale = (id: string, endsAt: string, productIds: string[]) => ({
   id,
@@ -18,17 +18,6 @@ describe("earliestEnd", () => {
 
   it("returns null without sales", () => {
     expect(earliestEnd([])).toBeNull()
-  })
-})
-
-describe("productEndsAt", () => {
-  it("uses the earlier end when a product is in two sales", () => {
-    const map = productEndsAt([
-      sale("a", "2030-01-09T00:00:00.000Z", ["p1", "p2"]),
-      sale("b", "2030-01-05T00:00:00.000Z", ["p2"]),
-    ])
-    expect(map.get("p1")).toBe("2030-01-09T00:00:00.000Z")
-    expect(map.get("p2")).toBe("2030-01-05T00:00:00.000Z")
   })
 })
 

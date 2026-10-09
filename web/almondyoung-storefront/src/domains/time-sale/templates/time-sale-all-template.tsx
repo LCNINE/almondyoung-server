@@ -1,6 +1,5 @@
 import { getTranslations } from "next-intl/server"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { TimeSaleDeadline } from "@/components/shared/time-sale-deadline"
 import ProductCard from "@/domains/products/components/product-card"
 import { listCategories } from "@/lib/api/medusa/categories"
@@ -10,7 +9,7 @@ import { getRegion } from "@/lib/api/medusa/regions"
 import type { TimeSaleOverview } from "@/lib/api/medusa/time-sale"
 import { cn } from "@/lib/utils"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
-import { earliestEnd, orderedProducts, paginate, productEndsAt } from "@/lib/utils/time-sale-merge"
+import { earliestEnd, orderedProducts, paginate } from "@/lib/utils/time-sale-merge"
 import { ALL_TAB_KEY, buildTabSources, deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
 import { getWishlist } from "@lib/api/users/wishlist"
 import type { CustomerGroup } from "@/lib/types/dto/medusa"
@@ -38,7 +37,6 @@ export async function TimeSaleAllTemplate({
   const sales = overview.sales
   const all = orderedProducts(overview)
   const endsAt = earliestEnd(sales)
-  const endsByProduct = productEndsAt(sales)
 
   const categories = await listCategories()
   const tabs = deriveTimeSaleTabs(all, buildTabSources(categories), t("allTab"))
@@ -107,14 +105,6 @@ export async function TimeSaleAllTemplate({
               isMembershipOnly={getIsMembershipOnly(product)}
               isWishlisted={wishlistIds.has(product.id)}
               enablePhotoSwipe={false}
-              overlay={
-                <TimeSaleCountdown
-                  endsAt={endsByProduct.get(product.id) ?? endsAt ?? ""}
-                  compact
-                  clockOnly
-                  className="absolute inset-x-0 bottom-0 z-10 bg-black/55 py-1 text-center text-[13px] font-semibold text-white tabular-nums"
-                />
-              }
             />
           </li>
         ))}

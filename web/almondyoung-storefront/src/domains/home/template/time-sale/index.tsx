@@ -4,7 +4,7 @@ import { listProducts } from "@/lib/api/medusa/products"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { PRODUCT_LIST_FIELDS_WITH_CATEGORIES } from "@lib/data/product-fields"
-import { earliestEnd, orderedProducts, productEndsAt } from "@/lib/utils/time-sale-merge"
+import { earliestEnd, orderedProducts } from "@/lib/utils/time-sale-merge"
 import { buildTabSources, deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
 import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
 import { getWishlist } from "@lib/api/users/wishlist"
@@ -67,7 +67,6 @@ export async function TimeSaleWrapper({
   return (
     <TimeSaleSection
       endsAt={endsAt}
-      productEndsAt={Object.fromEntries(productEndsAt(sales))}
       products={products}
       tabs={deriveTimeSaleTabs(
         products.map((product) => ({
