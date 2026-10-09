@@ -149,6 +149,14 @@ export const prepareTimeSaleStep = createStep(
     }
 
     const lists = data.id ? await loadLinkedLists(container, data.id) : [];
+    // planTimeSaleUpdate 도 같은 상황에서 던지지만 평범한 Error 라 500 이 된다. rules.ts 는 Medusa 를
+    // import 하지 않는 공용 모듈이라, 400 으로 바꾸는 판정은 이 경계에서 먼저 한다.
+    if (data.id && !lists.some((list) => !list.isMembership)) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `일반용 price list 가 연결되지 않은 타임세일입니다 (${data.id}). 복구 스크립트로 연결을 먼저 바로잡아야 합니다.`,
+      );
+    }
     return new StepResponse<TimeSaleContext>({ regionIds, membershipGroupId, lists });
   },
 );

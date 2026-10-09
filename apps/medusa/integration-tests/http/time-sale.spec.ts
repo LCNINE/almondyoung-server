@@ -88,13 +88,17 @@ medusaIntegrationTestRunner({
 
       // 워크플로 엔진을 거친 에러는 Error 인스턴스가 아닌 평범한 객체로 온다 — `.rejects.toThrow()` 는
       // 「did not throw」로 오판한다(coupon-admin.spec.ts 참고). 메시지를 꺼내 비교한다.
-      const rejectionMessage = async (promise: Promise<unknown>): Promise<string> => {
+      const rejectionOf = async (promise: Promise<unknown>): Promise<{ message?: unknown; type?: unknown }> => {
         try {
           await promise;
         } catch (e) {
-          return String((e as { message?: unknown } | null)?.message ?? e);
+          return (e ?? {}) as { message?: unknown; type?: unknown };
         }
         throw new Error('워크플로가 실패하지 않았습니다.');
+      };
+      const rejectionMessage = async (promise: Promise<unknown>): Promise<string> => {
+        const error = await rejectionOf(promise);
+        return String(error.message ?? error);
       };
 
       const livePriceCount = async (priceListId: string) => {
@@ -198,6 +202,70 @@ medusaIntegrationTestRunner({
         expect(await pricing.listPriceLists({ id: listIds })).toHaveLength(0);
         const timeSales = container.resolve<TimeSaleModuleService>(TIME_SALE_MODULE);
         expect(await timeSales.listTimeSales({ id: result.id })).toHaveLength(0);
+        // 링크가 남으면 세일을 되살렸을 때 지운 리스트를 다시 끌고 온다.
+        const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+        const { rows } = await knex.raw(
+          `select 1 from timesale_time_sale_pricing_price_list where time_sale_id = ? and deleted_at is null`,
+          [result.id],
+        );
+        expect(rows).toHaveLength(0);
+      });
+
+      it('serializes concurrent updates of the same sale', async () => {
+        // 둘 다 같은 옛 가격 id 를 읽으면, 뒤의 것은 지울 게 없어(이미 지워짐) 새 가격만 덧붙인다 → 1,482.
+        const container = getContainer();
+        const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
+        const outcomes = await Promise.allSettled([
+          updateTimeSaleWorkflow(container).run({ input: { id: result.id, ...input({ title: '동시 A' }) } }),
+          updateTimeSaleWorkflow(container).run({ input: { id: result.id, ...input({ title: '동시 B' }) } }),
+        ]);
+        expect(outcomes.map((o) => o.status)).toEqual(['fulfilled', 'fulfilled']);
+        const sale = await linkedLists(result.id);
+        const counts = await Promise.all(sale.price_lists.map((p: { id: string }) => livePriceCount(p.id)));
+        expect(counts.sort((a, b) => a - b)).toEqual([10, 741]);
+      });
+
+      it('rolls back row, list metadata and removed prices when an update fails late', async () => {
+        const container = getContainer();
+        const { result } = await createTimeSaleWorkflow(container).run({ input: input() });
+        // 실패 지점: createPriceListPricesWorkflow 의 validateVariantPriceLinksStep — 세일 행 갱신·리스트 메타
+        // 갱신·옛 가격 삭제가 모두 끝난 «뒤». (membership_prices 를 비워야 prepare 의 고아 검증을 통과한다.)
+        expect(
+          await rejectionMessage(
+            updateTimeSaleWorkflow(container).run({
+              input: {
+                id: result.id,
+                ...input({
+                  title: 'X',
+                  general_prices: [{ variant_id: 'variant_missing', amount: 900 }],
+                  membership_prices: [],
+                }),
+              },
+            }),
+          ),
+        ).toMatch(/No price set exist for variants: variant_missing/);
+        const sale = await linkedLists(result.id);
+        expect(sale.title).toBe('가을 세일');
+        expect(sale.price_lists).toHaveLength(2);
+        for (const list of sale.price_lists) expect(list.title).toBe('가을 세일');
+        const counts = await Promise.all(sale.price_lists.map((p: { id: string }) => livePriceCount(p.id)));
+        expect(counts.sort((a, b) => a - b)).toEqual([10, 741]);
+      });
+
+      it('rejects updating a sale without a general list as invalid data', async () => {
+        const container = getContainer();
+        const timeSales = container.resolve<TimeSaleModuleService>(TIME_SALE_MODULE);
+        const orphan = await timeSales.createTimeSales({
+          title: '리스트 없음',
+          starts_at: new Date('2030-01-01T00:00:00Z'),
+          ends_at: new Date('2030-01-08T00:00:00Z'),
+        });
+        const error = await rejectionOf(
+          updateTimeSaleWorkflow(container).run({ input: { id: orphan.id, ...input({ status: 'draft' }) } }),
+        );
+        expect(error.message).toMatch(/일반용 price list/);
+        // INVALID_DATA 라야 HTTP 400 이다 — 평범한 Error 면 500.
+        expect(error.type).toBe('invalid_data');
       });
     });
   },
