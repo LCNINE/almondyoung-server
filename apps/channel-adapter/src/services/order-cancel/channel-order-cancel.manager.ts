@@ -1,17 +1,27 @@
 // apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.ts
 import { Injectable, Logger } from '@nestjs/common';
-import type { CancelChannelOrderPayload, ChannelOrderCancelRejectionCode } from '@packages/event-contracts/streams';
+import type {
+  CancelChannelOrderPayload,
+  ChannelOrderCancelRefundFailure,
+  ChannelOrderCancelRejectionCode,
+} from '@packages/event-contracts/streams';
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { getChannelFulfillmentCapabilities } from '../channel-capabilities';
 import { OrderPollerOrchestrator } from '../order-collection/order-poller.orchestrator';
 import { ChannelOrderCancelRepository } from './channel-order-cancel.repository';
 
-type Rejection = { reasonCode: ChannelOrderCancelRejectionCode; message: string; unresolvedRefundAmount?: number };
+type Rejection = {
+  reasonCode: ChannelOrderCancelRejectionCode;
+  message: string;
+  unresolvedRefundAmount?: number;
+  refundFailure?: ChannelOrderCancelRefundFailure;
+};
 
 /**
  * core 의 `CancelChannelOrder` 를 채널에 실행한다 (#1016 35번 행, ADR-0042 · 스펙 §7.3).
  *
  * 정해진 실패는 `ChannelOrderCancelRejected` 를 내고 정상 종료한다 — 재시도해도 같다.
+ * wallet 의 영구 환불 거절(Medusa 가 표지를 단 400)은 `REFUND_FAILED` 로 낸다 — core 는 요청을 닫지 않고 보류를 유지한다(#1016 36번).
  * 일시 실패(채널 5xx·네트워크·재수집 실패)는 던져 재시도·DLQ 를 탄다. 채널 호출이 멱등이라 다시 해도 안전하다:
  * 전체는 «이미 취소됨»이 성공이고, 부분은 Medusa 가 같은 requestId 의 진행 단계부터 이어 간다.
  * 성공은 사실로 내지 않는다(D11) — 즉시 재수집한 `OrderCancelled`/`OrderModified` 가 곧 사실이다.
@@ -67,6 +77,13 @@ export class ChannelOrderCancelManager {
         return { reasonCode: 'ORDER_NOT_FOUND', message: outcome.message };
       case 'not_cancelable':
         return { reasonCode: 'NOT_CANCELABLE', message: outcome.message };
+      case 'refund_refused':
+        return { reasonCode: 'REFUND_FAILED', message: outcome.message, refundFailure: outcome.refundFailure };
+      default: {
+        // 새 결과 종류를 빠뜨리면 성공(undefined)으로 읽혀 거절도 재시도도 없이 넘어간다 — 컴파일에서 막는다
+        const unhandled: never = outcome;
+        throw new Error(`처리하지 않은 Medusa 취소 결과: ${JSON.stringify(unhandled)}`);
+      }
     }
   }
 
@@ -86,14 +103,30 @@ export class ChannelOrderCancelManager {
       case 'rejected':
         return { reasonCode: 'NOT_CANCELABLE', message: outcome.message };
       case 'external_refund':
-        return { reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: outcome.message, unresolvedRefundAmount: outcome.unresolvedAmount };
+        return {
+          reasonCode: 'EXTERNAL_REFUND_UNRESOLVED',
+          message: outcome.message,
+          unresolvedRefundAmount: outcome.unresolvedAmount,
+        };
       case 'refund_pending':
         // 주문은 줄었는데 돈은 아직 — core 가 정체 보드에서 이 상태를 따로 보이게 진행 사실을 먼저 내고, 던져서 재시도한다
         await this.repository.recordStalled(
-          { requestId, salesChannel, externalOrderId, stage: 'edited', message: outcome.message },
+          {
+            requestId,
+            salesChannel,
+            externalOrderId,
+            stage: 'edited',
+            message: outcome.message,
+            ...(outcome.refundFailure ? { refundFailure: outcome.refundFailure } : {}),
+          },
           deliveryId,
         );
         throw new Error(`부분취소 환불 미완(${requestId}): ${outcome.message}`);
+      default: {
+        // 새 결과 종류를 빠뜨리면 성공(undefined)으로 읽혀 거절도 재시도도 없이 넘어간다 — 컴파일에서 막는다
+        const unhandled: never = outcome;
+        throw new Error(`처리하지 않은 Medusa 취소 결과: ${JSON.stringify(unhandled)}`);
+      }
     }
   }
 

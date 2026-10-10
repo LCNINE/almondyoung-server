@@ -35,7 +35,14 @@ export class ChannelOrderCancelRepository {
   }
 
   async recordStalled(payload: ChannelOrderCancelStalledPayload, deliveryId: string): Promise<void> {
-    await this.enqueueFact('ChannelOrderCancelStalled', `cancel-stalled:${payload.requestId}:${deliveryId}`, payload);
+    // 같은 전달의 재시도가 일시 실패 뒤 영구 거절을 만나면 사유가 바뀐다 — 키에 wallet 코드를 붙여야 그 사실이 버려지지 않는다.
+    // 사유 없는 사실의 키는 그대로 둔다(배포 전후 아웃박스 행과 겹치지 않게)
+    const suffix = payload.refundFailure ? `:${payload.refundFailure.walletCode}` : '';
+    await this.enqueueFact(
+      'ChannelOrderCancelStalled',
+      `cancel-stalled:${payload.requestId}:${deliveryId}${suffix}`,
+      payload,
+    );
   }
 
   /**
