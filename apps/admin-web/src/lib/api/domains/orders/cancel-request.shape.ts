@@ -12,8 +12,14 @@ export interface CancelRequestView {
   stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
-  rejection: { reasonCode: string; message: string; at: string } | null;
-  outcome: { refundAmount: number; shippingCharge: number; shippingRefund: number; shippingNotAdjusted: boolean } | null;
+  rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
+  outcome: {
+    refundAmount: number;
+    shippingCharge: number;
+    shippingRefund: number;
+    shippingNotAdjusted: boolean;
+    externalRefundApplied?: number;
+  } | null;
 }
 
 export type AdminCancelResponse =
@@ -34,6 +40,7 @@ const REJECTION_LABELS: Record<string, string> = {
   NOT_CANCELABLE: '채널이 거절',
   REFUND_FAILED: '환불 불가',
   OPERATOR_WITHDRAWN: '요청 접음',
+  EXTERNAL_REFUND_UNRESOLVED: '이미 환불한 금액 확인 필요',
 };
 const won = new Intl.NumberFormat('ko-KR');
 
@@ -50,16 +57,26 @@ function isScope(value: unknown): value is CancelRequestView['scope'] {
 }
 
 function rejectionOf(value: unknown): CancelRequestView['rejection'] {
-  return isRecord(value) && typeof value.reasonCode === 'string' && typeof value.message === 'string'
-    ? { reasonCode: value.reasonCode, message: value.message, at: typeof value.at === 'string' ? value.at : '' }
-    : null;
+  if (!isRecord(value) || typeof value.reasonCode !== 'string' || typeof value.message !== 'string') return null;
+  return {
+    reasonCode: value.reasonCode,
+    message: value.message,
+    at: typeof value.at === 'string' ? value.at : '',
+    ...(typeof value.unresolvedRefundAmount === 'number' ? { unresolvedRefundAmount: value.unresolvedRefundAmount } : {}),
+  };
 }
 
 function outcomeOf(value: unknown): CancelRequestView['outcome'] {
   if (!isRecord(value)) return null;
   const { refundAmount, shippingCharge, shippingRefund } = value;
   if (typeof refundAmount !== 'number' || typeof shippingCharge !== 'number' || typeof shippingRefund !== 'number') return null;
-  return { refundAmount, shippingCharge, shippingRefund, shippingNotAdjusted: value.shippingNotAdjusted === true };
+  return {
+    refundAmount,
+    shippingCharge,
+    shippingRefund,
+    shippingNotAdjusted: value.shippingNotAdjusted === true,
+    ...(typeof value.externalRefundApplied === 'number' ? { externalRefundApplied: value.externalRefundApplied } : {}),
+  };
 }
 
 export function toCancelRequestView(value: unknown): CancelRequestView | null {
@@ -123,7 +140,8 @@ export function cancelRequestLine(view: CancelRequestView): string {
           : o.shippingRefund > 0
             ? `배송비 환불 ${won.format(o.shippingRefund)}원`
             : null;
-      return [`${name} 반영`, `환불 ${won.format(o.refundAmount)}원`, shipping].filter(Boolean).join(' · ');
+      const offset = o.externalRefundApplied ? `외부 환불 ${won.format(o.externalRefundApplied)}원 상계` : null;
+      return [`${name} 반영`, `환불 ${won.format(o.refundAmount)}원`, shipping, offset].filter(Boolean).join(' · ');
     }
     case 'rejected': {
       const r = view.rejection;
@@ -162,4 +180,13 @@ export function settledCancelRequestIds(prev: ReadonlyArray<unknown>, next: Read
   return openRequestsOf(prev)
     .map((v) => v.id)
     .filter((id) => !stillOpen.has(id));
+}
+
+/**
+ * 직전 요청이 «외부 환불 미해결»로 거절됐으면 다시 요청할 때 «이미 환불한 금액»을 물어야 한다(#1016 37번).
+ * 물을 때는 품목에 연결 안 된 외부 환불 금액을, 아니면 null 을 돌려준다 — 평소엔 칸을 숨긴다.
+ */
+export function unresolvedRefundToAsk(request: CancelRequestView | null): number | null {
+  if (request?.status !== 'rejected' || request.rejection?.reasonCode !== 'EXTERNAL_REFUND_UNRESOLVED') return null;
+  return request.rejection.unresolvedRefundAmount ?? 0;
 }

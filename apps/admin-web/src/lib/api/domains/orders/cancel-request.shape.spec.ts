@@ -6,6 +6,7 @@ import {
   settledCancelRequestIds,
   isCancelRequested,
   toCancelRequestView,
+  unresolvedRefundToAsk,
 } from './cancel-request.shape';
 
 const view = (over: Record<string, unknown> = {}) => ({
@@ -25,6 +26,27 @@ describe('cancel-request shape', () => {
     expect(toCancelRequestView(view())).toEqual(view());
     expect(toCancelRequestView({ id: 'r1' })).toBeNull();
     expect(toCancelRequestView(null)).toBeNull();
+  });
+
+  it('37번 — 외부 환불 미해결 거절 뒤에만 «이미 환불한 금액»을 묻는다', () => {
+    const rejected = (reasonCode: string, extra: Record<string, unknown> = {}) =>
+      toCancelRequestView(view({ status: 'rejected', rejection: { reasonCode, message: 'm', at: 't', ...extra } }));
+    expect(unresolvedRefundToAsk(rejected('EXTERNAL_REFUND_UNRESOLVED', { unresolvedRefundAmount: 10000 }))).toBe(10000);
+    expect(unresolvedRefundToAsk(rejected('EXTERNAL_REFUND_UNRESOLVED'))).toBe(0);
+    expect(unresolvedRefundToAsk(rejected('NOT_CANCELABLE'))).toBeNull();
+    expect(unresolvedRefundToAsk(toCancelRequestView(view()))).toBeNull();
+    expect(unresolvedRefundToAsk(null)).toBeNull();
+  });
+
+  it('37번 — 반영 줄에 상계를 적고, 거절 줄은 라벨로 보인다', () => {
+    const applied = toCancelRequestView(
+      view({ status: 'applied', outcome: { refundAmount: 20000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false, externalRefundApplied: 10000 } }),
+    )!;
+    expect(cancelRequestLine(applied)).toBe('부분취소 반영 · 환불 20,000원 · 외부 환불 10,000원 상계');
+    const rejected = toCancelRequestView(
+      view({ status: 'rejected', rejection: { reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: '외부 환불 10,000원', at: 't' } }),
+    )!;
+    expect(cancelRequestLine(rejected)).toBe('부분취소 실패 · 이미 환불한 금액 확인 필요 · 외부 환불 10,000원');
   });
 
   it('변경 기록 행 — 취소 요청 행만, 메타데이터에서 같은 뷰를 만든다', () => {

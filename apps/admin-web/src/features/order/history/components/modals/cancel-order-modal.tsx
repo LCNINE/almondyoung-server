@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
-import { isCancelRequested } from '@/lib/api/domains/orders/cancel-request.shape';
+import { isCancelRequested, unresolvedRefundToAsk } from '@/lib/api/domains/orders/cancel-request.shape';
 
 const REASON_CODES = [
   { value: 'CUSTOMER_REQUEST', label: '고객 요청' },
@@ -131,6 +131,8 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   const [lineQuantities, setLineQuantities] = useState<Record<string, number>>({});
   const [reasonCode, setReasonCode] = useState('CUSTOMER_REQUEST');
   const [reasonDetail, setReasonDetail] = useState('');
+  const [alreadyRefunded, setAlreadyRefunded] = useState('');
+  const askRefund = unresolvedRefundToAsk(order?.cancelRequest ?? null);
   const [cancelResult, setCancelResult] = useState<CancelResult | null>(null);
 
   useEffect(() => {
@@ -141,6 +143,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       setLineQuantities(initial);
       setReasonCode('CUSTOMER_REQUEST');
       setReasonDetail('');
+      setAlreadyRefunded('');
       setCancelResult(null);
     }
   }, [open, order, isShipped]);
@@ -159,6 +162,18 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       }
     }
 
+    // 범위와 무관하게 묻는다 — 출고 수량이 있으면 core 가 전체취소를 부분취소로 바꾸고(convertedFromFull) 바뀐 범위로 판정한다.
+    // 진짜 전체취소에 금액이 실리면 core 가 400 으로 막고 그 문장이 토스트로 보인다.
+    let alreadyRefundedAmount: number | undefined;
+    if (askRefund !== null) {
+      const n = Number(alreadyRefunded);
+      if (alreadyRefunded.trim() === '' || !Number.isInteger(n) || n < 0) {
+        toast.error('이미 환불한 금액을 입력하세요 (없으면 0)');
+        return;
+      }
+      alreadyRefundedAmount = n;
+    }
+
     try {
       const result = await cancelMutation.mutateAsync({
         id: order.orderId,
@@ -167,6 +182,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           reasonCode: reasonCode || undefined,
           reasonDetail: reasonDetail || undefined,
           cancelledBy: 'admin',
+          ...(alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount } : {}),
         },
       });
       if (isCancelRequested(result)) {
@@ -266,6 +282,20 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {askRefund !== null && (
+                <div className="space-y-1">
+                  <Label>이미 환불한 금액</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={alreadyRefunded}
+                    onChange={(e) => setAlreadyRefunded(e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-gray-500">품목에 연결 안 된 외부 환불 {askRefund.toLocaleString()}원</p>
                 </div>
               )}
 
