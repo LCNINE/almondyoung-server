@@ -81,6 +81,12 @@ const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 /** 상계 음수 크레딧 라인의 reference — reference_id 는 requestId. 재시도가 이것으로 이미 넣었는지 본다 */
 const OFFSET_CREDIT_LINE_REFERENCE = 'partial-cancel';
 
+/**
+ * 부분취소와 채널 전체취소(#1016 36번)가 같이 쓰는 주문 잠금. core 가 접은 부분취소 명령이 Kafka 에서 아직 재시도 중일 수
+ * 있다 — 그것이 전체취소의 환불·취소 사이에 끼어들지 않게 한 키로 직렬화한다. 값은 진행 중인 부분취소 잠금과 맞물리도록 옛 값 그대로.
+ */
+export const orderCancelLockKey = (orderId: string) => `partial-cancel:${orderId}`;
+
 const editTag = (requestId: string) => `partial-cancel:${requestId}`;
 const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
 
@@ -94,7 +100,7 @@ const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
  */
 export async function partialCancelOrder(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
   const locking = container.resolve(Modules.LOCKING);
-  return locking.execute(`partial-cancel:${input.orderId}`, () => run(container, input), {
+  return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
   });
 }

@@ -6,7 +6,7 @@ import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-dat
 import { readRefundFailureCode } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
 import { toNumber } from '../partial-cancel/amount';
-import { orderPaymentIds } from '../partial-cancel/partial-cancel-order';
+import { orderCancelLockKey, orderPaymentIds } from '../partial-cancel/partial-cancel-order';
 
 /** 환불 + 취소가 넉넉히 들어가게 잡는다 — 레디스 잠금은 timeout 이 곧 만료다 */
 const ORDER_LOCK_TIMEOUT_SECONDS = 120;
@@ -15,6 +15,8 @@ const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 
 export type ChannelCancelInput = { orderId: string; actorId?: string };
 
+const refundNote = (orderId: string) => `channel-cancel:${orderId}`;
+
 /**
  * 채널 주문 전체취소 (#1016 36번 스펙 §4.6). 기본 /admin/orders/:id/cancel 은 환불 오류를 삼켜(core-flows refundPaymentsStep 의
  * .catch) 환불 없이 주문을 취소한다 — 여기선 환불을 «먼저», 오류가 올라오는 refundPaymentWorkflow 로 하고 그다음 기본 취소를 부른다.
@@ -22,13 +24,24 @@ export type ChannelCancelInput = { orderId: string; actorId?: string };
  */
 export async function channelCancelOrder(container: MedusaContainer, input: ChannelCancelInput): Promise<void> {
   const locking = container.resolve(Modules.LOCKING);
-  await locking.execute(`channel-cancel:${input.orderId}`, () => run(container, input), {
+  await locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
   });
 }
 
 async function run(container: MedusaContainer, input: ChannelCancelInput): Promise<void> {
-  await assertCancelable(container, input.orderId);
+  try {
+    await assertCancelable(container, input.orderId);
+  } catch (error) {
+    // 재시도라면 사전검사가 돈이 나간 «뒤»에 도는 셈이다 — 앞 시도가 환불하고 끊긴 사이 주문 변경·출고가 생기면 여기서 400 이 나고,
+    // channel-adapter 는 그것을 «취소 불가»로 읽어 요청을 닫는다(환불만 되고 출고). 이 경로로 돈이 나갔으면 500 으로 바꿔 재시도시킨다.
+    // 이미 취소됨은 예외 — 수렴한 끝이라 channel-adapter 가 그 문장을 성공으로 읽는다
+    const notAllowed = MedusaError.isMedusaError(error) && error.type === MedusaError.Types.NOT_ALLOWED;
+    if (notAllowed && (await refundedHere(container, input.orderId))) {
+      throw new Error(`채널 취소가 중단됐습니다 — 환불은 이미 나갔습니다, 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
+    }
+    throw error;
+  }
   try {
     await refundRemaining(container, input.orderId, input.actorId);
     // 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
@@ -71,6 +84,16 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
   }
 }
 
+/** 이 경로(채널 취소)가 낸 환불이 하나라도 있는가 — refundRemaining 의 note 로 가린다 */
+async function refundedHere(container: MedusaContainer, orderId: string): Promise<boolean> {
+  const paymentModule = container.resolve(Modules.PAYMENT);
+  for (const paymentId of await orderPaymentIds(container, orderId)) {
+    const p = await paymentModule.retrievePayment(paymentId, { relations: ['refunds'] });
+    if ((p.refunds ?? []).some((r) => r.note === refundNote(orderId))) return true;
+  }
+  return false;
+}
+
 /** 결제마다 «캡처 − 환불»을 돌려준다. 오류는 잡지 않는다 — 표지 붙은 MedusaError 는 400, 그 밖은 500 으로 나가고 취소는 시작하지 않는다 */
 async function refundRemaining(container: MedusaContainer, orderId: string, actorId?: string): Promise<void> {
   const paymentModule = container.resolve(Modules.PAYMENT);
@@ -86,7 +109,7 @@ async function refundRemaining(container: MedusaContainer, orderId: string, acto
         const amount = captured - refunded;
         if (!(amount > 0)) return;
         await refundPaymentWorkflow(container).run({
-          input: { payment_id: paymentId, amount, created_by: actorId, note: `channel-cancel:${orderId}` },
+          input: { payment_id: paymentId, amount, created_by: actorId, note: refundNote(orderId) },
         });
       },
       { timeout: PAYMENT_LOCK_TIMEOUT_SECONDS },

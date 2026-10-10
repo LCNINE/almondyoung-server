@@ -1,5 +1,5 @@
 // apps/medusa/integration-tests/http/cancel-refund-refusal.spec.ts
-import { beginOrderEditOrderWorkflow } from '@medusajs/medusa/core-flows';
+import { beginOrderEditOrderWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 
@@ -99,6 +99,11 @@ medusaIntegrationTestRunner({
       expect(o.status).toBe('canceled');
       expect(wallet.refunds).toHaveLength(1);
       expect(num(o.summary.pending_difference)).toBe(0);
+      // 스펙 §9 «크레딧 라인 합 = 환불 합» — 차액 0 만으로는 크레딧 라인이 환불만큼 붙었는지 모른다
+      const payments = o.payment_collections.flatMap((pc: any) => pc.payments ?? []);
+      const refunded = payments.flatMap((p: any) => p.refunds ?? []).reduce((s: number, r: any) => s + num(r.amount), 0);
+      expect(refunded).toBeGreaterThan(0);
+      expect(o.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0)).toBe(refunded);
     });
 
     it('채널 취소: 거절 뒤 원인이 풀리면 같은 호출이 끝난다 — 다시 보내기의 출구', async () => {
@@ -127,6 +132,21 @@ medusaIntegrationTestRunner({
       expect(res.data.type).toBe('not_allowed');
       expect(wallet.callsTo('/refund')).toBe(0);
       expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+    });
+
+    it('채널 취소: 이 경로로 돈이 이미 나간 뒤의 재시도는 사전검사 거절도 500 — 요청이 «취소 불가»로 닫히지 않게', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      // 첫 시도가 환불까지 하고 취소 전에 끊긴 상태를 흉내 낸다 — 그 사이 주문 변경이 열렸다
+      const payment = (await loadOrder(getContainer(), orderId)).payment_collections[0].payments[0];
+      const captured = (payment.captures ?? []).reduce((s: number, x: any) => s + num(x.amount), 0);
+      await refundPaymentWorkflow(getContainer()).run({
+        input: { payment_id: payment.id, amount: captured, note: `channel-cancel:${orderId}` },
+      });
+      await beginOrderEditOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(500);
+      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+      expect(wallet.refunds).toHaveLength(1);
     });
 
     it('채널 취소: 취소 안 된 출고가 있으면 환불 전에 400', async () => {
