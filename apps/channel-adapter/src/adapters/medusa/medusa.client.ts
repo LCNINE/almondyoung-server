@@ -246,7 +246,7 @@ export type MedusaCancelOutcome =
   | { kind: 'already_cancelled' }
   | { kind: 'not_found'; message: string }
   | { kind: 'not_cancelable'; message: string }
-  /** wallet 이 환불을 영구히 거절해 취소가 롤백됐다(#1016 36번) */
+  /** wallet 이 환불을 영구히 거절해 취소를 시작하지 않았다(환불 거절, #1016 36번) */
   | { kind: 'refund_refused'; message: string; refundFailure: ChannelOrderCancelRefundFailure };
 
 /** Medusa 부분취소 결과(PR-A 라우트 계약). `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
