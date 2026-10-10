@@ -1,8 +1,10 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, MedusaError, Modules, OrderStatus } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules, OrderChangeStatus, OrderStatus } from '@medusajs/framework/utils';
 import { cancelOrderWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 
 import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
+import { readRefundFailureCode } from '../../../modules/almond-payment/wallet-refund-refusal';
+import { describeError } from '../../../utils/describe-error';
 import { toNumber } from '../partial-cancel/amount';
 import { orderPaymentIds } from '../partial-cancel/partial-cancel-order';
 
@@ -27,9 +29,16 @@ export async function channelCancelOrder(container: MedusaContainer, input: Chan
 
 async function run(container: MedusaContainer, input: ChannelCancelInput): Promise<void> {
   await assertCancelable(container, input.orderId);
-  await refundRemaining(container, input.orderId, input.actorId);
-  // 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
-  await cancelOrderWorkflow(container).run({ input: { order_id: input.orderId, canceled_by: input.actorId } });
+  try {
+    await refundRemaining(container, input.orderId, input.actorId);
+    // 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
+    await cancelOrderWorkflow(container).run({ input: { order_id: input.orderId, canceled_by: input.actorId } });
+  } catch (error) {
+    // 여기부터는 돈이 이미 나갔을 수 있다. 표지 없는 400 은 channel-adapter 가 «취소 불가»로 닫아 환불만 되고 주문은 출고된다 —
+    // 표지(환불 거절, 돈은 안 나감)만 그대로 올리고, 그 밖은 500 으로 바꿔 재시도시킨다. 재시도는 남은 몫만 환불한다
+    if (readRefundFailureCode(error)) throw error;
+    throw new Error(`채널 취소가 중단됐습니다 — 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
+  }
 }
 
 async function assertCancelable(container: MedusaContainer, orderId: string): Promise<void> {
@@ -45,6 +54,17 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
   // 문장은 코어 throwIfOrderIsCancelled·cancelValidateOrder 와 같게 둔다 — channel-adapter 가 «이미 취소됨»을 이 문장으로 판정한다
   if (order.status === OrderStatus.CANCELED) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, `Order with id ${orderId} has been canceled.`);
+  }
+  // 환불 워크플로의 크레딧 라인 단계가 주문 변경을 만든다 — 진행 중인 변경이 있으면 거기서 실패하는데, 그때는 돈이 이미 나갔다
+  const activeChanges = await container.resolve(Modules.ORDER).listOrderChanges(
+    { order_id: orderId, status: [OrderChangeStatus.PENDING, OrderChangeStatus.REQUESTED] },
+    { select: ['id'] },
+  );
+  if (activeChanges.length > 0) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      `Order with id ${orderId} has an active order change — 진행 중인 주문 변경(수정·반품·교환)을 먼저 정리해야 합니다`,
+    );
   }
   if ((order.fulfillments ?? []).some((f) => f !== null && !f.canceled_at)) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, 'All fulfillments must be canceled before canceling an order');

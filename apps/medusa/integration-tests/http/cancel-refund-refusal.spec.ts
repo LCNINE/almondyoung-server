@@ -1,4 +1,5 @@
 // apps/medusa/integration-tests/http/cancel-refund-refusal.spec.ts
+import { beginOrderEditOrderWorkflow } from '@medusajs/medusa/core-flows';
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 
@@ -86,6 +87,7 @@ medusaIntegrationTestRunner({
       const res = await channelCancel(orderId);
       expect(res.status).toBe(500);
       expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+      expect(wallet.refunds).toHaveLength(0);
     });
 
     it('채널 취소: 정상이면 환불 한 번 뒤 취소하고 장부 차액은 0 — 크레딧 라인이 두 번 붙지 않는다', async () => {
@@ -115,6 +117,27 @@ medusaIntegrationTestRunner({
       expect(again.status).toBe(400);
       expect(again.data.message).toBe(`Order with id ${orderId} has been canceled.`);
       expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('채널 취소: 진행 중인 주문 변경이 있으면 환불 전에 400 — 환불의 크레딧 라인 단계가 돈이 나간 뒤 실패하지 않게', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      await beginOrderEditOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(400);
+      expect(res.data.type).toBe('not_allowed');
+      expect(wallet.callsTo('/refund')).toBe(0);
+      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+    });
+
+    it('채널 취소: 취소 안 된 출고가 있으면 환불 전에 400', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      const item = (await loadOrder(getContainer(), orderId)).items[0];
+      await api.post(`/admin/orders/${orderId}/fulfillments`, { items: [{ id: item.id, quantity: 1 }] }, c.adminHeaders);
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(400);
+      expect(res.data.type).toBe('not_allowed');
+      expect(wallet.callsTo('/refund')).toBe(0);
+      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
     });
 
     it('채널 취소: 없는 주문은 404 not_found', async () => {
