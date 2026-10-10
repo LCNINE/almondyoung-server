@@ -1,5 +1,6 @@
 import { TossApproveService } from './toss-approve.service';
 import { DeferredApprovalService } from './deferred-approval.service';
+import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
 import { readStagedApproval } from './deferred-approval';
 
 // 지연 승인(deferred approval): Medusa 체크아웃 intent 는 결제창 완료 시점에 PG 승인을 하지 않고
@@ -42,14 +43,24 @@ function makeTossContext(
     data: { paymentKey: 'pk_live_1' },
   },
 ) {
-  const intent = { id: 'intent-1', status: 'REQUIRES_ACTION', userId: 'u1', currency: 'KRW', payableAmount: 10000, metadata: intentMetadata };
+  const intent = {
+    id: 'intent-1',
+    status: 'REQUIRES_ACTION',
+    userId: 'u1',
+    currency: 'KRW',
+    payableAmount: 10000,
+    metadata: intentMetadata,
+  };
   const chargesService = {
     findActiveByIntentAndOperation: jest.fn().mockResolvedValue(charge),
     updateStatus: jest.fn().mockResolvedValue(undefined),
   };
   const stateTransitionService = { transitionIntent: jest.fn().mockResolvedValue(undefined) };
   const autoCaptureService = { attemptAutoCapture: jest.fn().mockResolvedValue(undefined) };
-  const tossApi = { confirmPayment: jest.fn().mockResolvedValue(confirmResult) };
+  const tossApi = {
+    confirmPayment: jest.fn().mockResolvedValue(confirmResult),
+    confirmBrandPayPayment: jest.fn().mockResolvedValue(confirmResult),
+  };
   const cashReceiptsService = { issue: jest.fn() };
 
   const service = new TossApproveService(
@@ -83,6 +94,104 @@ describe('deferred approval — staging', () => {
     expect(extra.providerTransactionId).toBeUndefined();
   });
 
+  it('브랜드페이 고객 키와 결제 유형을 적재하고 전용 API로 최종 승인한다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' });
+    await ctx.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
+    expect(ctx.tossApi.confirmBrandPayPayment).not.toHaveBeenCalled();
+    const extra = ctx.chargesService.updateStatus.mock.calls[0][2];
+    const staged = readStagedApproval(makeCharge({ responsePayload: extra.responsePayload }));
+    expect(staged).toEqual(
+      expect.objectContaining({ paymentType: 'BRANDPAY', customerKey: tossBrandPayCustomerKey('u1') }),
+    );
+    await ctx.service.confirmStaged(makeCharge(), staged!, 'corr-2');
+    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
+      'pk_brandpay',
+      10000,
+      ORDER_ID,
+      tossBrandPayCustomerKey('u1'),
+    );
+    expect(ctx.tossApi.confirmPayment).not.toHaveBeenCalled();
+  });
+
+  it('즉시 승인에서도 브랜드페이 전용 API를 호출한다', async () => {
+    const ctx = makeTossContext({});
+    await ctx.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
+    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
+      'pk_brandpay',
+      10000,
+      ORDER_ID,
+      tossBrandPayCustomerKey('u1'),
+    );
+    expect(ctx.tossApi.confirmPayment).not.toHaveBeenCalled();
+  });
+
+  it('custom BrandPay 승인 전에 재조회 유형을 저장하고 저장 실패 시 과금하지 않는다', async () => {
+    const charge = makeCharge({ responsePayload: { nextAction: { checkoutMode: 'CUSTOM' } } });
+    const ctx = makeTossContext({}, charge);
+    ctx.tossApi.confirmBrandPayPayment.mockImplementation(async () => {
+      expect(ctx.chargesService.updateStatus).toHaveBeenCalledWith(CHARGE_ID, 'REQUIRES_ACTION', {
+        responsePayload: { nextAction: { checkoutMode: 'CUSTOM' }, paymentType: 'BRANDPAY' },
+      });
+      return { ok: true, data: { paymentKey: 'pk_brandpay' } };
+    });
+    await ctx.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
+    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
+      'pk_brandpay',
+      10000,
+      ORDER_ID,
+      tossBrandPayCustomerKey('u1'),
+      false,
+    );
+
+    const failed = makeTossContext({}, charge);
+    failed.chargesService.updateStatus.mockRejectedValueOnce(new Error('db unavailable'));
+    await expect(
+      failed.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY'),
+    ).rejects.toThrow('db unavailable');
+    expect(failed.tossApi.confirmBrandPayPayment).not.toHaveBeenCalled();
+  });
+
+  it('직접 구성한 UI의 지연 승인은 개별 브랜드페이 키를 선택한다', async () => {
+    const charge = makeCharge({ responsePayload: { nextAction: { checkoutMode: 'CUSTOM' } } });
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, charge);
+    await ctx.service.approve('intent-1', 'pk_custom', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
+    const extra = ctx.chargesService.updateStatus.mock.calls[0][2];
+    const stagedCharge = makeCharge({ responsePayload: extra.responsePayload });
+    const staged = readStagedApproval(stagedCharge);
+    await ctx.service.confirmStaged(stagedCharge, staged!, 'corr-2');
+    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
+      'pk_custom',
+      10000,
+      ORDER_ID,
+      tossBrandPayCustomerKey('u1'),
+      false,
+    );
+    expect(ctx.chargesService.updateStatus.mock.calls.at(-1)?.[2].responsePayload).toEqual(
+      expect.objectContaining({
+        nextAction: { checkoutMode: 'CUSTOM' },
+        paymentType: 'BRANDPAY',
+      }),
+    );
+  });
+
+  it('고객 키가 빠진 브랜드페이 적재 데이터는 거부한다', () => {
+    expect(
+      readStagedApproval(
+        makeCharge({
+          responsePayload: {
+            stagedApproval: {
+              provider: 'TOSS',
+              providerToken: 'pk_brandpay',
+              orderId: ORDER_ID,
+              amount: 10000,
+              paymentType: 'BRANDPAY',
+            },
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('금액이 charge 와 다르면 적재하지 않는다', async () => {
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' });
 
@@ -95,7 +204,7 @@ describe('deferred approval — staging', () => {
 
     await ctx.service.approve('intent-1', 'pk_live_1', ORDER_ID, 10000, 'corr-1');
 
-    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID);
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, false);
   });
 });
 
@@ -113,7 +222,7 @@ describe('deferred approval — confirmStaged', () => {
 
     await ctx.service.confirmStaged(makeCharge(), staged, 'corr-1');
 
-    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID);
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, false);
     expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
       'intent-1',
       'AUTHORIZED',
@@ -162,11 +271,7 @@ describe('deferred approval — finalize', () => {
     const intent = { id: 'intent-1', status: intentStatus, metadata };
     const chargesService = { findActiveByIntentAndOperation: jest.fn().mockResolvedValue(charge) };
     const tossApproveService = { confirmStaged: jest.fn().mockResolvedValue(undefined) };
-    const service = new DeferredApprovalService(
-      makeDb(intent),
-      chargesService as never,
-      tossApproveService as never,
-    );
+    const service = new DeferredApprovalService(makeDb(intent), chargesService as never, tossApproveService as never);
     return { service, tossApproveService };
   }
 

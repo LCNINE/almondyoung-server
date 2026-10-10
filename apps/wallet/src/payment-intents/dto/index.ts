@@ -182,7 +182,10 @@ export class ConfirmPaymentIntentDto {
   @Min(0)
   pointsToApply?: number;
 
-  @ApiPropertyOptional({ description: '현금영수증 신청 정보 (무통장입금 시). 입금확인 완료 시 자동 발급.', type: CashReceiptRequestDto })
+  @ApiPropertyOptional({
+    description: '현금영수증 신청 정보 (무통장입금 시). 입금확인 완료 시 자동 발급.',
+    type: CashReceiptRequestDto,
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => CashReceiptRequestDto)
@@ -192,6 +195,11 @@ export class ConfirmPaymentIntentDto {
 // ─── Toss Approve ─────────────────────────────────────────────────────────────
 
 export class TossApproveDto {
+  @ApiPropertyOptional({ enum: ['NORMAL', 'BRANDPAY'] })
+  @IsOptional()
+  @IsEnum(['NORMAL', 'BRANDPAY'])
+  paymentType?: 'NORMAL' | 'BRANDPAY';
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

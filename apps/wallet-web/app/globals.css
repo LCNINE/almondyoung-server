@@ -49,15 +49,14 @@
 }
 
 :root {
-  /* Karrot / Seed Design 시맨틱 리매핑 (light) — storefront src/styles/globals.css 와 동일 팔레트.
-     결제 단계에서 브랜드가 끊기지 않도록 두 앱이 같은 토큰 값을 쓴다. */
+  /* Storefront src/styles/globals.css 의 버튼·테두리 브랜드 토큰. */
   --background: #ffffff;
   --foreground: #1a1c20;
   --card: #ffffff;
   --card-foreground: #1a1c20;
   --popover: #ffffff;
   --popover-foreground: #1a1c20;
-  --primary: #ff6600;
+  --primary: #ffa500;
   --primary-foreground: #ffffff;
   --secondary: #f3f4f5;
   --secondary-foreground: #1a1c20;
@@ -66,8 +65,8 @@
   --accent: #f3f4f5;
   --accent-foreground: #1a1c20;
   --destructive: #fa342c;
-  --border: #dcdee3;
-  --input: #dcdee3;
+  --border: #d9d9d9;
+  --input: #d9d9d9;
   --ring: #5e98fe;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -81,7 +80,7 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f3f4f5;
   --sidebar-accent-foreground: #1a1c20;
-  --sidebar-border: #dcdee3;
+  --sidebar-border: #d9d9d9;
   --sidebar-ring: #5e98fe;
 
   --font-sans: 'Pretendard', sans-serif;
@@ -95,7 +94,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: #ff6600;
+  --primary: #ffa500;
   --primary-foreground: #ffffff;
   --secondary: #2c2c2e;
   --secondary-foreground: #ffffff;

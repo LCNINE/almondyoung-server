@@ -8,6 +8,8 @@ import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { TossApiClient } from '../providers/toss/toss-api.client';
+import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
+import { usesTossWidget, usesCustomTossCheckout } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
 
@@ -37,6 +39,7 @@ export class TossApproveService {
     orderId: string,
     amount: number,
     correlationId: string,
+    paymentType: 'NORMAL' | 'BRANDPAY' = 'NORMAL',
   ): Promise<void> {
     this.logger.log(`approve called: intentId=${intentId} orderId=${orderId} amount=${amount}`);
 
@@ -53,14 +56,34 @@ export class TossApproveService {
     // 2. 지연 승인 모드(Medusa 체크아웃): 여기서 승인하지 않고 파라미터만 적재한다.
     //    실제 승인은 주문 생성 + 재고예약이 끝난 뒤 Medusa 가 finalize-approval 로 트리거한다.
     const intent = await this.loadIntent(intentId);
+    if (paymentType === 'BRANDPAY' && !intent.userId) {
+      throw new UnprocessableEntityException({ error: 'BRANDPAY_CUSTOMER_REQUIRED' });
+    }
+    const customerKey = paymentType === 'BRANDPAY' ? tossBrandPayCustomerKey(intent.userId!) : undefined;
     if (isDeferredApprovalIntent(intent.metadata)) {
-      await this.stageApproval(charge, paymentKey, orderId, amount);
+      await this.stageApproval(charge, paymentKey, orderId, amount, paymentType, customerKey);
       this.logger.log(`approve staged (deferred approval): intentId=${intentId} chargeId=${charge.id}`);
       return;
     }
 
+    // 외부 승인 직후 프로세스가 중단되거나 웹훅이 먼저 도착해도 올바른 키로 재조회할 수 있어야 한다.
+    if (paymentType === 'BRANDPAY') {
+      charge.responsePayload = { ...(charge.responsePayload ?? {}), paymentType };
+      await this.chargesService.updateStatus(charge.id, 'REQUIRES_ACTION', {
+        responsePayload: charge.responsePayload,
+      });
+    }
+
     // 3. Call Toss API confirm
-    const result = await this.tossApi.confirmPayment(paymentKey, amount, orderId);
+    const result = customerKey
+      ? await this.tossApi.confirmBrandPayPayment(
+          paymentKey,
+          amount,
+          orderId,
+          customerKey,
+          ...(usesCustomTossCheckout(charge.responsePayload) ? [false] : []),
+        )
+      : await this.tossApi.confirmPayment(paymentKey, amount, orderId, usesTossWidget(charge.responsePayload));
     this.logger.log(`Toss API confirm response: ok=${result.ok}`);
 
     if (!result.ok) {
@@ -72,7 +95,7 @@ export class TossApproveService {
       });
     }
 
-    await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
+    await this.finalizeApproval(charge, result.data.paymentKey, correlationId, paymentType);
   }
 
   /**
@@ -83,7 +106,14 @@ export class TossApproveService {
    * providerTransactionId 는 승인 전이므로 비워 둔다 — 미승인 paymentKey 로 취소/환불이
    * 시도되지 않게 하기 위함이다.
    */
-  private async stageApproval(charge: Charge, paymentKey: string, orderId: string, amount: number): Promise<void> {
+  private async stageApproval(
+    charge: Charge,
+    paymentKey: string,
+    orderId: string,
+    amount: number,
+    paymentType: 'NORMAL' | 'BRANDPAY',
+    customerKey?: string,
+  ): Promise<void> {
     if (charge.amount !== amount) {
       throw new UnprocessableEntityException({
         error: 'TOSS_AMOUNT_MISMATCH',
@@ -101,6 +131,8 @@ export class TossApproveService {
 
     const staged: StagedApproval = {
       provider: 'TOSS',
+      paymentType,
+      customerKey,
       providerToken: paymentKey,
       orderId,
       amount,
@@ -131,7 +163,24 @@ export class TossApproveService {
    * 주문·재고예약을 롤백하게 한다.
    */
   async confirmStaged(charge: Charge, staged: StagedApproval, correlationId: string): Promise<void> {
-    const result = await this.tossApi.confirmPayment(staged.providerToken, staged.amount, staged.orderId);
+    if (staged.paymentType === 'BRANDPAY' && !staged.customerKey) {
+      throw new UnprocessableEntityException({ error: 'BRANDPAY_CUSTOMER_REQUIRED' });
+    }
+    const result =
+      staged.paymentType === 'BRANDPAY'
+        ? await this.tossApi.confirmBrandPayPayment(
+            staged.providerToken,
+            staged.amount,
+            staged.orderId,
+            staged.customerKey!,
+            ...(usesCustomTossCheckout(charge.responsePayload) ? [false] : []),
+          )
+        : await this.tossApi.confirmPayment(
+            staged.providerToken,
+            staged.amount,
+            staged.orderId,
+            usesTossWidget(charge.responsePayload),
+          );
     this.logger.log(`staged approval confirm: intentId=${charge.intentId} ok=${result.ok}`);
 
     if (!result.ok) {
@@ -143,15 +192,28 @@ export class TossApproveService {
       });
     }
 
-    await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
+    await this.finalizeApproval(charge, result.data.paymentKey, correlationId, staged.paymentType);
   }
 
-  async finalizeApproval(charge: Charge, paymentKey: string, correlationId: string): Promise<void> {
+  async finalizeApproval(
+    charge: Charge,
+    paymentKey: string,
+    correlationId: string,
+    paymentType?: string,
+  ): Promise<void> {
     const intent = await this.loadIntent(charge.intentId);
     const now = new Date().toISOString();
 
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(charge.id, 'SUCCEEDED', { providerTransactionId: paymentKey }, tx);
+      await this.chargesService.updateStatus(
+        charge.id,
+        'SUCCEEDED',
+        {
+          providerTransactionId: paymentKey,
+          ...(paymentType ? { responsePayload: { ...(charge.responsePayload ?? {}), paymentType } } : {}),
+        },
+        tx,
+      );
 
       await this.stateTransitionService.transitionIntent(
         intent.id,

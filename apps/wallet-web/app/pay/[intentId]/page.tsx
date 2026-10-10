@@ -10,8 +10,10 @@ import {
   getAvailablePaymentMethods,
   getMyBusinessLicense,
   getBankTransferDepositAccount,
+  getTossWidgetConfig,
 } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
+import { isWalletSessionExpiredError } from '@/lib/auth-expired';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,12 +26,12 @@ export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ region?: string; toss_fail?: string }>;
+  searchParams: Promise<{ region?: string; toss_fail?: string; brandpay_error?: string }>;
 }
 
 export default async function PayPage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { region, toss_fail } = await searchParams;
+  const { region, toss_fail, brandpay_error } = await searchParams;
 
   const cookieStore = await cookies();
 
@@ -135,6 +137,31 @@ export default async function PayPage({ params, searchParams }: Props) {
   const depositAccount =
     intent.status === 'AWAITING_DEPOSIT' ? await getBankTransferDepositAccount(intentId, cookieHeader) : null;
 
+  let tossWidgetConfig = null;
+  try {
+    if (methods.some((method) => method.type === 'TOSS')) tossWidgetConfig = await getTossWidgetConfig(cookieHeader);
+  } catch (error) {
+    const retryPath = `/pay/${intentId}${region ? `?region=${encodeURIComponent(region)}` : ''}`;
+    if (isWalletSessionExpiredError(error)) {
+      redirect(`/auth/ensure?redirect_to=${encodeURIComponent(retryPath)}`);
+    }
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="space-y-4 pt-6 text-center">
+            <h1 className="text-lg font-semibold">결제 설정을 불러오지 못했어요</h1>
+            <p role="alert" className="text-sm text-muted-foreground">
+              잠시 후 다시 시도해주세요.
+            </p>
+            <Button asChild className="w-full">
+              <a href={retryPath}>다시 시도</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
   return (
     <PayForm
       intent={intent}
@@ -144,8 +171,10 @@ export default async function PayPage({ params, searchParams }: Props) {
       availableMethods={availableMethods}
       region={region ?? null}
       tossFailed={toss_fail === '1'}
+      brandpayFailed={brandpay_error === '1'}
       businessInfo={businessInfo}
       depositAccount={depositAccount}
+      tossWidgetConfig={tossWidgetConfig}
     />
   );
 }

@@ -167,10 +167,10 @@ function RadioPill({ label, checked, onSelect }: { label: string; checked: boole
     <button type="button" onClick={onSelect} className="flex items-center gap-1.5" aria-pressed={checked}>
       <span
         className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 ${
-          checked ? 'border-[#ff6600]' : 'border-gray-300'
+          checked ? 'border-primary' : 'border-border'
         }`}
       >
-        {checked && <span className="h-2 w-2 rounded-full bg-[#ff6600]" />}
+        {checked && <span className="h-2 w-2 rounded-full bg-primary" />}
       </span>
       <span className={`text-[14px] ${checked ? 'font-bold text-gray-900' : 'text-gray-500'}`}>{label}</span>
     </button>
@@ -182,10 +182,10 @@ function RadioLine({ label, checked, onSelect }: { label: string; checked: boole
     <button type="button" onClick={onSelect} className="flex w-full items-center gap-2 text-left" aria-pressed={checked}>
       <span
         className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 ${
-          checked ? 'border-[#ff6600]' : 'border-gray-300'
+          checked ? 'border-primary' : 'border-border'
         }`}
       >
-        {checked && <span className="h-2 w-2 rounded-full bg-[#ff6600]" />}
+        {checked && <span className="h-2 w-2 rounded-full bg-primary" />}
       </span>
       <span className={`text-[14px] ${checked ? 'font-bold text-gray-900' : 'text-gray-700'}`}>{label}</span>
     </button>
@@ -197,7 +197,7 @@ function SaveNextTimeCheckbox({ checked, onToggle }: { checked: boolean; onToggl
     <button type="button" onClick={() => onToggle(!checked)} className="flex items-center gap-2" aria-pressed={checked}>
       <span
         className={`flex h-[18px] w-[18px] items-center justify-center rounded-full ${
-          checked ? 'bg-[#ff6600] text-white' : 'bg-gray-200 text-white'
+          checked ? 'bg-primary text-white' : 'bg-gray-200 text-white'
         }`}
       >
         <Check className="h-3 w-3" strokeWidth={3} />

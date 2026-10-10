@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { selfOrigin } from '@/lib/auth/access-token';
 import { consumeStateCookie, writeSessionCookies } from '@/lib/auth/session-cookies';
 import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '@/lib/auth/oidc-client';
 import { createWebLogger } from '@packages/web-observability';
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           has_redirect_to: Boolean(stateRecord.redirectTo),
         },
       });
-      const dest = new URL('/login', request.nextUrl.origin);
+      const dest = new URL('/login', selfOrigin() ?? request.nextUrl.origin);
       if (stateRecord.redirectTo) dest.searchParams.set('redirect_to', stateRecord.redirectTo);
       // 빈 문자열로 명시 — login page 가 이를 "prompt 미전송" 으로 해석.
       dest.searchParams.set('prompt', '');
@@ -81,14 +82,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const dest = new URL(stateRecord.redirectTo, request.nextUrl.origin);
+  const dest = new URL(stateRecord.redirectTo, selfOrigin() ?? request.nextUrl.origin);
   const response = NextResponse.redirect(dest);
   writeSessionCookies(response.cookies, tokens);
   return response;
 }
 
 function failRedirect(request: NextRequest, code: string): NextResponse {
-  const url = new URL('/login', request.nextUrl.origin);
+  const url = new URL('/login', selfOrigin() ?? request.nextUrl.origin);
   url.searchParams.set('error', code);
   // 에러 fallback 도 prompt 없이 (사용자가 hub 를 보고 재시도하도록).
   url.searchParams.set('prompt', '');

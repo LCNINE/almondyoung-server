@@ -1,4 +1,6 @@
+import { createRequestId } from './request-id';
 import { fetchWithAuthBounce } from './fetch-with-refresh';
+import { WalletSessionExpiredError } from './auth-expired';
 
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
@@ -22,6 +24,26 @@ export interface PaymentMethod {
   type: string;
   displayName: string;
   isReusable: boolean;
+}
+
+export interface TossWidgetConfig {
+  checkoutMode?: 'CUSTOM' | 'WIDGET';
+  brandpayClientKey?: string;
+  clientKey: string;
+  variantKey: string;
+  customerKey: string;
+}
+
+export async function getTossWidgetConfig(cookieHeader?: string): Promise<TossWidgetConfig | null> {
+  const res = await fetch(`${BASE_URL}/v1/payment-methods/toss-widget-config`, {
+    headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+
+  if (res.status === 401) throw new WalletSessionExpiredError();
+  if (!res.ok) throw new Error(`결제 설정을 불러오지 못했습니다. (${res.status})`);
+  return res.json();
 }
 
 export interface AvailablePaymentMethod {
@@ -188,7 +210,7 @@ export async function confirmPaymentIntent(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
     body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt }),
@@ -205,6 +227,7 @@ export async function approveToss(
   paymentKey: string,
   orderId: string,
   amount: number,
+  paymentType: 'NORMAL' | 'BRANDPAY' = 'NORMAL',
 ): Promise<{ status: string; returnUrl: string | null; metadata?: Record<string, unknown> }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/toss-approve`, {
     method: 'POST',
@@ -215,7 +238,7 @@ export async function approveToss(
       // 첫 승인 성공 응답을 그대로 반환하게 한다. 랜덤 UUID면 매번 재실행 → NO_REQUIRES_ACTION_CHARGE 실패화면.
       'Idempotency-Key': `toss-approve:${intentId}:${paymentKey}`,
     },
-    body: JSON.stringify({ paymentKey, orderId, amount }),
+    body: JSON.stringify({ paymentKey, orderId, amount, paymentType }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -235,7 +258,7 @@ export interface CmsBankAccountPayload {
 export async function registerCmsBankAccount(dto: CmsBankAccountPayload, cookieHeader: string): Promise<BillingMethod> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(dto),
     cache: 'no-store',
   });
@@ -253,7 +276,7 @@ export async function updateCmsBankAccount(
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/${billingMethodId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(dto),
     cache: 'no-store',
   });
@@ -285,7 +308,7 @@ export async function checkCmsAccount(
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
-      'Idempotency-Key': idempotencyKey ?? crypto.randomUUID(),
+      'Idempotency-Key': idempotencyKey ?? createRequestId(),
     },
     body: JSON.stringify(dto),
     cache: 'no-store',
@@ -314,7 +337,7 @@ export async function approveNicepay(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     body: JSON.stringify({ tid, orderId, amount, authToken, clientId, signature }),
   });
@@ -335,7 +358,7 @@ export async function issueNicepayBillingKey(
   if (encMode) payload['encMode'] = encMode;
   const res = await fetch(`${BASE_URL}/v1/billing-methods/nicepay`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': createRequestId() },
     body: JSON.stringify(payload),
     cache: 'no-store',
   });
@@ -356,7 +379,7 @@ export async function issueTossBillingKey(
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     body: JSON.stringify({ authKey, customerKey }),
     cache: 'no-store',
@@ -421,7 +444,7 @@ export async function cancelPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'cancel'), {
     method: 'POST',
     headers: {
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
   });
@@ -440,7 +463,7 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'abandon'), {
     method: 'POST',
     headers: {
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
   });
@@ -453,6 +476,8 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
 // ─── Business license (사업자 정보 — 세금계산서/지출증빙 prefill용) ──────────────
 
 export interface BusinessLicenseInfo {
+  username?: string | null;
+  email?: string | null;
   businessNumber: string | null;
   representativeName: string | null;
   phoneNumber: string | null;
@@ -486,6 +511,8 @@ export async function getMyBusinessLicense(accessToken: string | undefined): Pro
   const profileObj = (profile?.profile ?? null) as { phoneNumber?: string | null } | null;
 
   return {
+    username: typeof profile?.username === 'string' ? profile.username : null,
+    email: typeof profile?.email === 'string' ? profile.email : null,
     businessNumber: (license?.businessNumber as string | null) ?? null,
     representativeName: (license?.representativeName as string | null) ?? null,
     phoneNumber: toKrLocalPhone(profileObj?.phoneNumber ?? (profile?.phoneNumber as string | null)),

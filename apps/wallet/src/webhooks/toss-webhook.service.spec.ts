@@ -26,6 +26,8 @@ interface BuildOpts {
   reQueryError?: { statusCode: number; code: string };
   /** VA 발급 시 charge 에 저장돼 있던 secret (있으면 secret 대조 대상). */
   storedSecret?: string;
+  widgetCheckout?: boolean;
+  customBrandPay?: boolean;
 }
 
 function buildService(chargeStatus: string, opts: BuildOpts = {}) {
@@ -35,6 +37,8 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
     reQueryPaymentKey = 'pk_toss',
     reQueryError,
     storedSecret,
+    widgetCheckout,
+    customBrandPay,
   } = opts;
 
   const updateStatus = jest.fn().mockResolvedValue(undefined);
@@ -49,7 +53,11 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
       operation: 'AUTHORIZE',
       status: chargeStatus,
       amount: CHARGE_AMOUNT,
-      responsePayload: storedSecret ? { secret: storedSecret } : null,
+      responsePayload: {
+        ...(storedSecret ? { secret: storedSecret } : {}),
+        ...(widgetCheckout ? { nextAction: { checkoutMode: 'WIDGET' } } : {}),
+        ...(customBrandPay ? { nextAction: { checkoutMode: 'CUSTOM' }, paymentType: 'BRANDPAY' } : {}),
+      },
     }),
   };
   const getPaymentByOrderId = jest.fn().mockResolvedValue(
@@ -139,7 +147,8 @@ describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조
     await service.handle(wh);
 
     // 위조 웹훅은 전용 키로 기록되어야 하고, `orderId:DONE` 키를 절대 선점하면 안 된다.
-    const keys = insertOrIgnore.mock.calls.map((c) => c[0].providerEventId);
+    const calls = insertOrIgnore.mock.calls as unknown as Array<[{ providerEventId: string }]>;
+    const keys = calls.map(([event]) => event.providerEventId);
     expect(keys).toContain(`${ORDER_ID}:SECRET_MISMATCH`);
     expect(keys).not.toContain(`${ORDER_ID}:DONE`);
   });
@@ -155,6 +164,22 @@ describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조
 });
 
 describe('TossWebhookService — 기존 동작 회귀', () => {
+  it('즉시 승인 전에 저장한 custom BrandPay 유형으로 전용 키를 재조회한다', async () => {
+    const { service, getPaymentByOrderId, finalizeApproval } = buildService('REQUIRES_ACTION', {
+      customBrandPay: true,
+    });
+    await service.handle(depositWebhook());
+    expect(getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, false, true);
+    expect(finalizeApproval).toHaveBeenCalled();
+  });
+  it('위젯 결제는 위젯 키로 재조회한다', async () => {
+    const { service, getPaymentByOrderId } = buildService('REQUIRES_ACTION', { widgetCheckout: true });
+
+    await service.handle(depositWebhook());
+
+    expect(getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, true);
+  });
+
   it('취소된 charge 에 실제 입금이 들어오면 FAILED 로 흔적을 남긴다', async () => {
     const { service, updateStatus, finalizeApproval } = buildService('CANCELED');
 

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { selfOrigin } from '@/lib/auth/access-token';
 import { exchangeHandoffForTokens } from '@/lib/auth/oidc-client';
 import { writeSessionCookies } from '@/lib/auth/session-cookies';
 
@@ -16,7 +17,7 @@ import { writeSessionCookies } from '@/lib/auth/session-cookies';
  * 토큰이 없거나 교환에 실패하면 기존 /auth/ensure (refresh → silent SSO) 폴백으로 떨어진다.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const origin = request.nextUrl.origin;
+  const origin = selfOrigin() ?? request.nextUrl.origin;
   const redirectTo = sanitizeInternalRedirect(request.nextUrl.searchParams.get('redirect_to'));
   const handoffToken = request.nextUrl.searchParams.get('h');
 

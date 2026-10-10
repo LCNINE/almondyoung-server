@@ -1,40 +1,23 @@
-"use client"
+'use client';
 
-import { cn } from "@/lib/utils"
+import { cn } from '@/lib/utils';
 
 interface SectionCardProps {
-  title: string
-  subtitle?: string | null
+  title: string;
+  subtitle?: string | null;
   action?: {
-    label: string
-    onClick: () => void
-  }
-  headerRight?: React.ReactNode
-  className?: string
-  children?: React.ReactNode
+    label: string;
+    onClick: () => void;
+  };
+  headerRight?: React.ReactNode;
+  className?: string;
+  children?: React.ReactNode;
 }
 
-export function SectionCard({
-  title,
-  subtitle,
-  action,
-  headerRight,
-  className,
-  children,
-}: SectionCardProps) {
+export function SectionCard({ title, subtitle, action, headerRight, className, children }: SectionCardProps) {
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-md border border-gray-200 bg-white lg:rounded-[10px]",
-        className
-      )}
-    >
-      <div
-        className={cn(
-          "flex items-center justify-between gap-3 bg-gray-50 px-4 py-3 lg:px-6 lg:py-4",
-          children && "border-b border-gray-200"
-        )}
-      >
+    <div className={cn('bg-white', className)}>
+      <div className="flex items-center justify-between gap-3 pb-4">
         <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-bold text-gray-900 lg:text-lg">
           <span className="shrink-0">{title}</span>
           {subtitle && (
@@ -51,13 +34,13 @@ export function SectionCard({
           <button
             type="button"
             onClick={action.onClick}
-            className="shrink-0 rounded border border-[#ff6600] px-3 py-1.5 text-[14px] font-medium text-[#ff6600] transition-colors hover:bg-gray-50"
+            className="shrink-0 rounded border border-primary px-3 py-1.5 text-[14px] font-medium text-primary transition-colors hover:bg-gray-50"
           >
             {action.label}
           </button>
         )}
       </div>
-      {children && <div className="px-4 py-4 lg:px-6 lg:py-5">{children}</div>}
+      {children}
     </div>
-  )
+  );
 }
