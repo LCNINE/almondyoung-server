@@ -345,6 +345,7 @@ export interface CancelSalesOrderDto {
   reasonCode?: string;
   reasonDetail?: string;
   cancelledBy?: string;
+  alreadyRefundedAmount?: number;
 }
 
 export interface CancelSalesOrderResponseDto {
