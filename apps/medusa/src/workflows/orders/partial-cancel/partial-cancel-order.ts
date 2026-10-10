@@ -124,9 +124,10 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   // 계획 검증보다 «먼저» 본다: 확정 뒤 기록 전에 끊긴 요청은 이미 수량을 줄여 놨다. 줄을 통째로 뺐다면 계획 검증이
   // «주문에 없는 줄»로 업무 거절(400)을 내고, 호출자가 취소를 닫아 주문은 수정된 채 환불 0 으로 남는다.
   await ensureNoDanglingEdit(container, order.id, input.requestId);
-  // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1)
-  await assertExternalRefundsResolved(container, order, input.alreadyRefunded);
   const plan = planPartialCancel(order.lines, input.items);
+  // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1).
+  // 계획 검증 «뒤»에 둬서 잘못된 수량은 금액을 묻기 전에 제 사유로 거절된다. 주문을 바꾸는 단계보다는 여전히 앞이다.
+  await assertExternalRefundsResolved(container, order, input.alreadyRefunded);
 
   const profiles = await productShippingProfiles(
     container,
@@ -193,7 +194,11 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   // 이번 수정이 만든 «돌려줄 차액»만 센다. 수정 전부터 남아 있던 차액(예: 환불이 밀린 다른 부분취소)을 같이 돌려주지 않게.
   const owed = roundWon(order.pendingDifference - edited.pendingDifference);
   if (!Number.isFinite(owed)) throw new Error(`돌려줄 차액을 읽지 못했습니다: ${order.pendingDifference} → ${edited.pendingDifference}`);
-  const applied = appliedExternalRefund(input.alreadyRefunded, owed);
+  // 상계는 Medusa 가 받아 주는 만큼으로도 묶는다: validateOrderCreditLinesStep 은 음수 라인이 |수정 뒤 차액| 을 넘으면
+  // 거절한다. owed 는 반올림한 값이라(29,285.71 → 29,286) 그대로 쓰면 재시도마다 거절돼 refund_pending 에 갇힌다 —
+  // 차액을 내림한 만큼만 상계하고, 1원 미만 반올림 몫은 환불이 떠안는다.
+  const room = edited.pendingDifference < 0 ? Math.floor(-edited.pendingDifference) : 0;
+  const applied = Math.min(appliedExternalRefund(input.alreadyRefunded, owed), room);
   const record: PartialCancelRecord = {
     requestHash,
     stage: 'edited',
@@ -234,15 +239,37 @@ async function assertExternalRefundsResolved(container: MedusaContainer, order: 
  */
 async function offsetExternalRefund(container: MedusaContainer, orderId: string, requestId: string, applied: number) {
   if (applied <= 0) return;
+  const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const orderModule = container.resolve(Modules.ORDER);
   const order = await orderModule.retrieveOrder(orderId, { select: ['id'], relations: ['credit_lines'] });
-  const exists = (order.credit_lines ?? []).some(
-    (l) => l.reference === OFFSET_CREDIT_LINE_REFERENCE && l.reference_id === requestId,
-  );
+  const lines = order.credit_lines ?? [];
+  const exists = lines.some((l) => l.reference === OFFSET_CREDIT_LINE_REFERENCE && l.reference_id === requestId);
   if (exists) return;
-  await createOrderCreditLinesWorkflow(container).run({
-    input: { id: orderId, credit_lines: [{ amount: -applied, reference: OFFSET_CREDIT_LINE_REFERENCE, reference_id: requestId }] },
-  });
+  // 알려진 절단(스펙 §8): Medusa 는 크레딧 라인 합이 0 이하면 0 으로 자른다 — 상계가 지금 합보다 크면 넘는 몫은
+  // 차액을 움직이지 못해 차액이 음수로 남는다. 동작은 바꾸지 않고 보이게만 한다.
+  const creditSum = lines.reduce((s, l) => s + toNumber(l.amount), 0);
+  if (applied > creditSum) {
+    logger.warn(
+      `부분취소 상계가 크레딧 라인 합보다 큽니다 — Medusa 는 합이 0 이하인 크레딧을 0 으로 잘라 차액이 음수로 남습니다: ` +
+        `orderId=${orderId} requestId=${requestId} applied=${applied} creditSum=${creditSum}`,
+    );
+  }
+  try {
+    await createOrderCreditLinesWorkflow(container).run({
+      input: { id: orderId, credit_lines: [{ amount: -applied, reference: OFFSET_CREDIT_LINE_REFERENCE, reference_id: requestId }] },
+    });
+  } catch (error) {
+    // 스펙 §8-4: 상계가 막히면 재시도마다 같은 자리에서 멈춘다 — 무엇을 넣으려다 어떤 차액에 막혔는지 남긴다
+    const pending = await loadOrder(container, orderId).then(
+      (o) => String(o.pendingDifference),
+      () => 'unknown',
+    );
+    logger.error(
+      `부분취소 상계 크레딧 라인을 넣지 못했습니다: orderId=${orderId} requestId=${requestId} applied=${applied} ` +
+        `pendingDifference=${pending} — ${describeError(error)}`,
+    );
+    throw error;
+  }
 }
 
 /**

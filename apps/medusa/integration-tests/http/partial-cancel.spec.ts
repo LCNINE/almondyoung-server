@@ -531,6 +531,29 @@ medusaIntegrationTestRunner({
         expect(err).toMatchObject({ reason: 'external_refund_unresolved', unresolvedAmount: 10000 });
       });
 
+      it('차액이 소수면 내림한 만큼만 상계해 Medusa 가 받아 주고, 1원 미만 반올림 몫은 환불이 떠안는다', async () => {
+        // A 30,000 + B×2 60,000(cond, 남아도 60,000 ≥ 50,000 → 무료) + C 10,000 + D 5,000 = 105,000,
+        // 할인 6,000 across → A 몫 6,000 × 30,000 / 105,000 = 1,714.2857…
+        // A 줄을 빼면 차액 −(30,000 − 1,714.2857) = −28,285.714… → owed = round = 28,286 (|차액| 보다 크다)
+        // 상계 = min(30,000, 28,286, floor(28,285.714) = 28,285) = 28,285, 환불 = 28,286 − 28,285 = 1
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, {
+          lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 2 }, { variant: 'C', quantity: 1 }, { variant: 'D', quantity: 1 }],
+          promoCode: 'PC6000',
+        });
+        await project(orderId, intentId, 30000, 'wr-37-frac');
+        const o = await loadOrder(getContainer(), orderId);
+        const a = o.items.find((i: any) => num(i.unit_price) === 30000 && num(i.quantity) === 1);
+
+        const res = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-37-frac', items: [{ itemId: a.id, quantity: 1 }], alreadyRefunded: 30000,
+        });
+        expect(res).toMatchObject({ refundAmount: 1, externalRefundApplied: 28285, shippingDelta: 0 });
+        expect(wallet.refunds.map((r) => r.amount)).toEqual([1]);
+        const after = await loadOrder(getContainer(), orderId);
+        expect(ourLines(after, 'req-37-frac').map((l: any) => num(l.amount))).toEqual([-28285]);
+        expect(Math.abs(balance(after))).toBeLessThan(1);
+      });
+
       it('미해결보다 큰 금액·외부 환불 없는데 금액은 거절한다', async () => {
         const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
         const o = await loadOrder(getContainer(), orderId);
