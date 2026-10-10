@@ -31,6 +31,8 @@ export class FakeWallet {
   failNextRefund = false;
   /** 실제 wallet 처럼 PG 거절을 200 + FAILED 환불 행으로 돌려준다(RefundsService.create 가 예외를 삼킨다). */
   failNextRefundAs200Failed = false;
+  /** wallet 의 영구 거절(400 REFUND_NOT_AUTOMATABLE 등)을 흉내낸다(#1016 36번) */
+  rejectNextRefundWith: { status: number; error: string } | null = null;
   private seq = 0;
 
   async start() {
@@ -56,6 +58,7 @@ export class FakeWallet {
     this.calls = [];
     this.failNextRefund = false;
     this.failNextRefundAs200Failed = false;
+    this.rejectNextRefundWith = null;
   }
   /** 결제창 완료 = 즉시 승인 + 캡처(지연 승인 표식이 없을 때의 wallet 동작). */
   simulateCheckout(intentId: string) {
@@ -90,6 +93,11 @@ export class FakeWallet {
     if (action === '/refund') {
       const replay = key ? this.refunds.find((r) => r.idempotencyKey === key) : undefined;
       if (replay) return { status: 200, payload: { intentId: intent.id, refunds: [{ id: replay.id, amount: replay.amount, status: 'SUCCEEDED' }] } };
+      if (this.rejectNextRefundWith) {
+        const { status, error } = this.rejectNextRefundWith;
+        this.rejectNextRefundWith = null;
+        return { status, payload: { error, message: 'injected' } };
+      }
       if (this.failNextRefund) {
         this.failNextRefund = false;
         return { status: 502, payload: { error: 'PG_UNAVAILABLE', message: 'injected' } };

@@ -6,7 +6,7 @@ import { parseInput } from './parse-input';
 
 /**
  * 채널 주문 부분취소 (#1016 35번, ADR-0042). channel-adapter 가 core 의 CancelChannelOrder 명령을 받아 부른다.
- * 응답 계약은 channel-adapter 가 읽는다 — 400 code=partial_cancel_rejected = 정해진 거절, 502 refund_pending = 수정은 됐고 환불이 남음(재시도).
+ * 응답 계약은 channel-adapter 가 읽는다 — 400 code=partial_cancel_rejected = 정해진 거절, 502 refund_pending = 수정은 됐고 환불이 남음(재시도). 원인이 wallet 영구 거절이면 본문에 `refundFailure` 가 붙는다(#1016 36번).
  * 400 에 `reason: external_refund_*` 가 붙으면 «이미 환불한 금액»을 묻는 거절(#1016 37번).
  * Medusa 자신의 NOT_ALLOWED(예: 다른 주문 수정이 열려 있음 — 일시적)도 400 type=not_allowed 로 나가므로, 최종 거절은
  * type 이 아니라 code 로 가린다.
@@ -41,7 +41,13 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
       return;
     }
     if (error instanceof PartialCancelRefundPending) {
-      res.status(502).json({ type: 'refund_pending', stage: 'edited', requestId: error.requestId, message: error.message });
+      res.status(502).json({
+        type: 'refund_pending',
+        stage: 'edited',
+        requestId: error.requestId,
+        message: error.message,
+        ...(error.refundFailure ? { refundFailure: error.refundFailure } : {}),
+      });
       return;
     }
     throw error;
