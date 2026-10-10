@@ -167,17 +167,22 @@ Medusa 관리자 환불(`api/admin/payments/[id]/refund/route.ts`)도 같은 `re
    - 이미 취소됨 → 코어 `throwIfOrderIsCancelled` 와 **같은 문장** `MedusaError(INVALID_DATA, 'Order with id <id> has been canceled.')` —
      channel-adapter 가 이 문장(`ALREADY_CANCELLED_MESSAGE`)으로 «이미 취소됨 = 성공»을 판정한다
    - 취소 안 된 이행이 있음 → 코어 `cancelValidateOrder` 와 같은 `MedusaError(NOT_ALLOWED, 'All fulfillments must be canceled before canceling an order')`
+   - **진행 중인 주문 변경(PENDING·REQUESTED — 수정·반품·교환·남은 부분취소 편집)이 있음** → `MedusaError(NOT_ALLOWED, …)`. 환불 워크플로가
+     환불 «뒤에» 크레딧 라인을 붙이며 주문 변경을 만드는데, 열린 변경이 있으면 그 단계가 `INVALID_DATA`(«already has an existing active
+     order change»)로 실패한다 — 돈은 나갔고 주문은 안 취소된 채 400 이 되어 channel-adapter 가 종결 거절로 읽는다(Task 12b 리뷰, 2026-10-11)
 3. **환불** — 결제마다 결제 잠금(`paymentRefundLockKey`, 부분취소·환불 투영과 같은 키) 안에서 «캡처 − 환불»을 다시 읽고,
    0 보다 크면 `refundPaymentWorkflow({ payment_id, amount, created_by, note: 'channel-cancel:<orderId>' })`. 취소된 결제는 건너뛴다.
-   **오류는 잡지 않는다** — §4.3 의 표지 붙은 MedusaError 는 400, 그 밖은 500 으로 나간다. 취소는 시작하지 않는다.
+   **표지 붙은 MedusaError 는 그대로 400** 으로 나간다(취소는 시작하지 않는다).
+3a. **검증 뒤의 그 밖의 오류는 전부 500(재시도)으로 바꾼다** — 환불 뒤에 실패할 수 있는 단계(크레딧 라인·취소)가 400 을 내면 channel-adapter 가
+   종결 거절로 닫아 «환불됐는데 출고되는» 주문이 생긴다. 재시도는 남은 몫만 환불하고 취소를 이어 가므로 안전하다.
 4. **취소** — 기본 `cancelOrderWorkflow({ order_id, canceled_by })`. 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다.
 5. 응답 200 `{ orderId, status: 'canceled' }`.
 
 **장부(2026-10-11 실측):** 3 의 `refundPaymentWorkflow` 가 환불액만큼 크레딧 라인을 붙이고, 4 의 취소는 «환불한 결제가 없음»이라
 빈 필터로 캡처를 고르는데 **빈 필터는 아무것도 고르지 않아** 크레딧 라인 0 을 붙인다. 결과 `pending_difference` 0 — 이중 기록 없음.
 
-**재시도:** 3 이 끝나고 4 가 실패하면(돈은 나갔고 주문은 안 취소됨) 다시 부를 때 3 의 환불할 몫이 0 이라 4 만 다시 한다. 2 가 환불 전에
-거를 수 있는 것을 다 거르므로 이 창은 좁다. 결제분 여럿 중 일부만 환불되고 실패한 경우도 다시 부르면 남은 몫만 환불한다.
+**재시도:** 3 이 끝나고 4 가 실패하면(돈은 나갔고 주문은 안 취소됨) 3a 로 500 이 되고, 다시 부를 때 3 의 환불할 몫이 0 이라 4 만 다시 한다.
+2 가 환불 전에 거를 수 있는 것을 거르고, 그래도 남는 실패는 3a 가 종결이 아닌 재시도로 만든다. 결제분 여럿 중 일부만 환불되고 실패한 경우도 다시 부르면 남은 몫만 환불한다.
 
 ## 5. 계약 · channel-adapter
 
