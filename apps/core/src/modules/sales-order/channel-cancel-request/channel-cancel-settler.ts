@@ -79,6 +79,7 @@ export class ChannelCancelSettler {
             shippingCharge: record.shippingCharge,
             shippingRefund: record.shippingRefund,
             shippingNotAdjusted: record.shippingNotAdjusted,
+            ...(record.externalRefundApplied ? { externalRefundApplied: record.externalRefundApplied } : {}),
           },
         },
         tx,

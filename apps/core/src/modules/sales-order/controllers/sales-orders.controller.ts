@@ -78,6 +78,7 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+      alreadyRefundedAmount: dto.alreadyRefundedAmount,
       fulfillmentCommandContext: {
         idempotencyKey: idempotencyKey.trim(),
         actorId,
