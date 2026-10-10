@@ -90,19 +90,20 @@ core 의 `wallet-refund.client.ts` 도 같은 코드를 «이미 환불됨»으�
 
 ### 4.2 wallet 오류를 구조로
 
-`walletFetch` 가 `WalletHttpError extends Error { status, code?, walletMessage }` 를 던진다. `message` 는 지금과 같은
+`walletFetch` 가 `WalletHttpError extends Error { status, walletCode?, walletMessage }` 를 던진다. 속성 이름을 `code` 로
+두지 않는다 — Medusa `formatException` 이 `err.code` 를 Postgres 오류 코드로 읽고, 에러 핸들러가 `code` 를 응답에 싣는다. `message` 는 지금과 같은
 `"CODE: message"` 라 기존 `msg.includes('INTENT_NOT_CANCELABLE')` 분기(`authorizePayment`·`cancelPayment`·`updatePayment`)는
 그대로 돈다.
 
 ### 4.3 `refundPayment`
 
-wallet 호출이 `WalletHttpError` 로 실패하고 `classifyWalletRefundRefusal(err.code)` 가 갈래를 주면:
+wallet 호출이 `WalletHttpError` 로 실패하고 `classifyWalletRefundRefusal(err.walletCode)` 가 갈래를 주면:
 
 ```ts
 throw new MedusaError(
   MedusaError.Types.NOT_ALLOWED,
-  `<갈래별 한국어 문장> (wallet ${err.code}: ${err.walletMessage})`,
-  `wallet_refund_${kind}:${err.code}`, // 예: wallet_refund_ledger_mismatch:REFUND_AMOUNT_EXCEEDS_TOTAL
+  `<갈래별 한국어 문장> (wallet ${err.walletCode}: ${err.walletMessage})`,
+  `wallet_refund_${kind}:${err.walletCode}`, // 예: wallet_refund_ledger_mismatch:REFUND_AMOUNT_EXCEEDS_TOTAL
 );
 ```
 
@@ -175,8 +176,8 @@ Medusa 도 같은 정규식을 쓰지만(§4.4) 공유 패키지로 묶지 않�
 502 `refund_pending` 본문의 `refundFailure` 를 `readRefundFailure` 로 읽어 outcome 에 싣고, `recordStalled` 사실에 실은 뒤 **지금처럼 던져 재시도한다.**
 
 **정체 사실의 멱등 키를 바꾼다.** 지금 `cancel-stalled:${requestId}:${deliveryId}` 는 첫 시도가 일시 실패로 멈추고 재시도가
-영구 거절을 만나면 같은 키라 사유 실린 두 번째 사실을 버린다. 키 끝에 `:${refundFailure?.walletCode ?? 'none'}` 를 붙인다 —
-사유가 바뀔 때만 새 사실이 나간다.
+영구 거절을 만나면 같은 키라 사유 실린 두 번째 사실을 버린다. `refundFailure` 가 있을 때만 키 끝에 `:${walletCode}` 를
+붙인다 — 사유가 바뀔 때만 새 사실이 나가고, 사유 없는 사실의 키는 지금 그대로라 배포 전후 아웃박스 행과 겹치지 않는다.
 
 ## 6. core
 
