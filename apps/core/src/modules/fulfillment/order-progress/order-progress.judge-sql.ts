@@ -156,9 +156,14 @@ function judgeCtes(scope: SQL): SQL {
     ),
     has_fo AS (SELECT DISTINCT sales_order_id FROM fo),
     -- 열린 채널 취소 요청(#1016 35번) — 출고 보류 중이라 다른 단계는 멈춰 있다. 한 주문에 하나(부분 유니크).
+    -- 환불 거절(36번)을 수정됨보다 먼저 본다 — 부분취소의 거절은 늘 수정 뒤라, 운영자에게 필요한 건 거절 사유다
     creq AS (
       SELECT a.sales_order_id, a.created_at,
-             CASE WHEN a.metadata->'request'->>'stage' = 'edited' THEN 'cancel_edited' ELSE 'cancel_requested' END AS state
+             CASE a.metadata->'request'->'refundFailure'->>'kind'
+               WHEN 'refused' THEN 'cancel_refund_refused'
+               WHEN 'ledger_mismatch' THEN 'cancel_refund_mismatch'
+               ELSE CASE WHEN a.metadata->'request'->>'stage' = 'edited' THEN 'cancel_edited' ELSE 'cancel_requested' END
+             END AS state
         FROM sales_order_amendments a
         JOIN so ON so.id = a.sales_order_id
        WHERE a.status = 'requested'

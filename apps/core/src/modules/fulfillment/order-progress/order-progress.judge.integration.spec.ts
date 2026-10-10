@@ -297,6 +297,30 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(closed.stage).not.toBe('cancel_request');
   });
 
+  it('환불 거절(#1016 36번) → cancel_refund_refused / cancel_refund_mismatch — 수정됨보다 먼저 본다', async () => {
+    const stateOf = (request: Record<string, unknown>) =>
+      one(async (tx) => {
+        const o = await f.seedOrder(tx);
+        await tx.insert(wmsTables.salesOrderAmendments).values({
+          salesOrderId: o.salesOrderId,
+          amendmentKind: 'commercial',
+          reasonCode: 'CHANNEL_CANCEL_REQUEST',
+          deltas: [],
+          metadata: { request: { kind: 'cancel', ...request } },
+          origin: 'operator',
+          status: 'requested',
+        });
+        return o.salesOrderId;
+      });
+    expect(await stateOf({ refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' } })).toMatchObject({
+      stage: 'cancel_request',
+      state: 'cancel_refund_refused',
+    });
+    expect(
+      await stateOf({ stage: 'edited', refundFailure: { kind: 'ledger_mismatch', walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' } }),
+    ).toMatchObject({ stage: 'cancel_request', state: 'cancel_refund_mismatch' });
+  });
+
   it('살아 있는 주문의 상자가 CANCEL_REPLAN_PENDING → cancel/<코드>, 진입 = 마지막 취소 시각', async () => {
     const at = new Date('2026-09-20T00:00:00.000Z');
     const r = await one(async (tx, w) => {

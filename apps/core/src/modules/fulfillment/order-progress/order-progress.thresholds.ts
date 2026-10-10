@@ -51,7 +51,7 @@ export const ORDER_PROGRESS_STATES = {
   ],
   dispatch: ['awaiting_dispatch', 'drop_ship_pending'],
   track: ['shipped', 'in_transit', 'failed', 'drop_ship_forwarded'],
-  cancel_request: ['cancel_requested', 'cancel_edited'],
+  cancel_request: ['cancel_requested', 'cancel_edited', 'cancel_refund_refused', 'cancel_refund_mismatch'],
   // 취소된 주문의 열린 상자·예약. 열린 상자의 recovery_code 가 그대로 나올 수도 있다
   cancel: ['CANCEL_REPLAN_PENDING', 'open_shipment', 'open_reservation'],
   // 열린(완료·거절·취소 아닌) 반품·교환
