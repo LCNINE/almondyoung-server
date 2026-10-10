@@ -1,7 +1,7 @@
 // apps/medusa/integration-tests/http/partial-cancel.spec.ts
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules } from '@medusajs/framework/utils';
-import { refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
+import { createOrderCreditLinesWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 import {
   partialCancelOrder, PartialCancelRefundPending,
 } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
@@ -394,6 +394,28 @@ medusaIntegrationTestRunner({
       expect(second.refundAmount).toBe(3000);
       expect(wallet.refunds.map((r) => r.amount)).toEqual([3000]);
       expect(balance(await loadOrder(getContainer(), orderId))).toBe(0);
+    });
+
+    it('특성(#1016 37번): 수정 직후 공식 워크플로는 음수 크레딧 라인을 거절 없이 저장하지만 pending_difference 는 줄지 않는다', async () => {
+      // A×3 90,000(cond 무료). 환불을 실패시켜 «수정 확정 · 환불 전»에 멈춘다 → 차액 −30,000
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      wallet.failNextRefund = true;
+      await expect(
+        partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-char', items: [{ itemId: o.items[0].id, quantity: 1 }] }),
+      ).rejects.toThrow(PartialCancelRefundPending);
+      expect(balance(await loadOrder(getContainer(), orderId))).toBe(-30000);
+
+      // 실측: 워크플로는 던지지 않고 라인을 저장하며 credit_line_total 은 −10,000 이 되지만,
+      // pending_difference 는 −30,000 그대로다(요약의 current_order_total 이 라인을 반영하지 않는다).
+      await createOrderCreditLinesWorkflow(getContainer()).run({
+        input: { id: orderId, credit_lines: [{ amount: -10000, reference: 'partial-cancel', reference_id: 'req-37-char' }] },
+      });
+      const after = await loadOrder(getContainer(), orderId);
+      expect(after.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0)).toBe(-10000);
+      expect(after.credit_lines.filter((l: any) => l.reference_id === 'req-37-char')).toHaveLength(1);
+      expect(num(after.summary.credit_line_total)).toBe(-10000);
+      expect(balance(after)).toBe(-30000);
     });
   },
 });
