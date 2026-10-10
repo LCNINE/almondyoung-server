@@ -1570,6 +1570,15 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       });
     });
 
+    it('미해결 금액이 소수로 오면 원 단위로 반올림한다 — 계약은 0 이상 정수다', async () => {
+      global.fetch = respond(400, {
+        type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 9999.6, message: '외부 환불',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'external_refund', message: '외부 환불', unresolvedAmount: 10000,
+      });
+    });
+
     it('code=partial_cancel_rejected 만 정해진 거절이다', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'partial_cancel_rejected', message: '수량이 남은 수량보다 많습니다' });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'rejected', message: '수량이 남은 수량보다 많습니다' });

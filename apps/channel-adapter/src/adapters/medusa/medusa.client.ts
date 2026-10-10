@@ -2582,8 +2582,9 @@ export class MedusaClient {
   }
 
   /**
-   * 부분취소(PR-A 라우트). 정해진 거절은 `code === 'partial_cancel_rejected'` 뿐이다(`reason` 이 `external_refund_*` 면 금액을 묻는 거절이다, #1016 37번) — Medusa 자신의 not_allowed(다른 주문 수정이
+   * 부분취소(PR-A 라우트). 정해진 거절은 `code === 'partial_cancel_rejected'` 뿐이다 — Medusa 자신의 not_allowed(다른 주문 수정이
    * 열려 있음 등)도 같은 400 type 이라 type 으로 가르면 일시 실패를 종결로 닫는다. 그 밖의 400·404(롤링 중 옛 Medusa)·5xx 는 던진다.
+   * 그 거절의 `reason` 이 `external_refund_*` 면 «이미 환불한 금액»을 묻는 거절이다(#1016 37번).
    */
   async partialCancelOrder(
     orderId: string,
@@ -2610,7 +2611,11 @@ export class MedusaClient {
         return {
           kind: 'external_refund',
           message,
-          unresolvedAmount: typeof body.unresolvedAmount === 'number' ? body.unresolvedAmount : 0,
+          // Medusa 의 미해결 금액은 BigNumber 합이라 소수가 섞일 수 있다 — 계약(.int().nonnegative())에 맞춰 원 단위로 편다
+          unresolvedAmount:
+            typeof body.unresolvedAmount === 'number' && Number.isFinite(body.unresolvedAmount)
+              ? Math.max(0, Math.round(body.unresolvedAmount))
+              : 0,
         };
       }
       return { kind: 'rejected', message };
