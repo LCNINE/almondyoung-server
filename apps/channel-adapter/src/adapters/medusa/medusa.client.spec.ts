@@ -1482,16 +1482,21 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
   });
 
   describe('cancelOrder', () => {
-    it('코어 취소 라우트를 Basic 인증으로 POST 한다', async () => {
-      global.fetch = respond(200, { order: { id: 'order_1' } });
+    it('채널 취소 라우트를 Basic 인증으로 POST 한다 — 기본 /cancel 은 환불 오류를 삼켜 환불 없이 취소한다(#1016 36번)', async () => {
+      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled' });
       await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'cancelled' });
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://medusa.local/admin/orders/order_1/cancel',
+        'http://medusa.local/admin/orders/order_1/channel-cancel',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({ Authorization: `Basic ${Buffer.from('sk_test:').toString('base64')}` }),
         }),
       );
+    });
+
+    it('본문 없는 404(옛 Medusa 에 채널 취소 라우트가 없음)는 «주문 없음»이 아니다 — 던져 재시도한다', async () => {
+      global.fetch = respond(404, undefined);
+      await expect(makeClient().cancelOrder('order_1')).rejects.toBeInstanceOf(MedusaHttpError);
     });
 
     it('«이미 취소됨» 400 만 성공 쪽이다', async () => {

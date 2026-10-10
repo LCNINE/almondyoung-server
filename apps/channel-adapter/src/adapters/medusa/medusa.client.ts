@@ -1936,12 +1936,12 @@ export class MedusaClient {
   }
 
   /**
-   * 전체취소. 400 은 문구로 가른다 — «이미 취소됨»만 성공 쪽이고(멱등: 같은 명령의 재전달), 나머지 400 을 성공으로 삼키지 않는다.
-   * 코어 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»으로만 선다.
-   * wallet 이 환불을 거절하면 Medusa 는 그 오류를 500 «An unknown error occurred.» 로 가린다 — 장애와 구분할 수 없어 던진다(일시 실패).
+   * 전체취소 — 우리 채널 취소 라우트(#1016 36번 스펙 §4.6). 기본 /cancel 은 환불 오류를 삼켜 환불 없이 주문을 취소하므로 쓰지 않는다.
+   * 400 은 문구로 가른다 — 표지(`wallet_refund_*`)면 환불 거절, «이미 취소됨»은 성공 쪽(멱등: 같은 명령의 재전달), 나머지는 거절.
+   * 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»과 «남은 몫만 환불»로 선다. 5xx·본문 없는 404 는 던진다(일시 실패).
    */
   async cancelOrder(orderId: string): Promise<MedusaCancelOutcome> {
-    const path = `/admin/orders/${encodeURIComponent(orderId)}/cancel`;
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/channel-cancel`;
     const { status, body } = await this.postAdmin(path);
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
     if (status >= 200 && status < 300) {
