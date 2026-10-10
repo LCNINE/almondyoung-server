@@ -1,4 +1,5 @@
 import { AlmondPaymentProviderService } from '../service';
+import { WalletHttpError } from '../wallet-refund-refusal';
 
 const makeLogger = () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() });
 const makeService = (logger = makeLogger()) =>
@@ -119,5 +120,48 @@ describe('almond-payment refundPayment', () => {
       expect(line).toContain('1000');
       expect(line).not.toContain('wr2');
     });
+  });
+
+  describe('wallet 의 영구 거절 (#1016 36번)', () => {
+    const refund = (svc: AlmondPaymentProviderService) =>
+      svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000, context: { idempotency_key: 'ref_r1' } } as any);
+
+    it.each([
+      ['REFUND_NOT_AUTOMATABLE', 'refused'],
+      ['REFUND_AMOUNT_EXCEEDS_TOTAL', 'ledger_mismatch'],
+    ])('%s 는 NOT_ALLOWED + 표지 code 로 던진다', async (walletCode, kind) => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(new WalletHttpError(400, walletCode, 'wallet said no'));
+      await expect(refund(svc)).rejects.toMatchObject({ type: 'not_allowed', code: `wallet_refund_${kind}:${walletCode}` });
+    });
+
+    it('분류 없는 wallet 오류와 네트워크 오류는 그대로 던진다 — 재시도 대상', async () => {
+      const svc = makeService();
+      const transient = new WalletHttpError(502, 'PG_UNAVAILABLE', 'down');
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValueOnce(transient).mockRejectedValueOnce(new TypeError('fetch failed'));
+      await expect(refund(svc)).rejects.toBe(transient);
+      await expect(refund(svc)).rejects.toBeInstanceOf(TypeError);
+    });
+  });
+
+  it('walletFetch 는 wallet 오류 본문을 WalletHttpError 로 던진다', async () => {
+    const svc = makeService();
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'REFUND_NOT_AUTOMATABLE', message: 'manual' }),
+    }) as any;
+    try {
+      await expect((svc as any).walletFetch('/v1/payment-intents/i1/refund', { method: 'POST' })).rejects.toMatchObject({
+        name: 'WalletHttpError',
+        status: 400,
+        walletCode: 'REFUND_NOT_AUTOMATABLE',
+        walletMessage: 'manual',
+        message: 'REFUND_NOT_AUTOMATABLE: manual',
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
