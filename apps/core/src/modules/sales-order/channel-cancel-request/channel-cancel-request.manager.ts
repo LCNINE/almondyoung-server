@@ -8,6 +8,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CancelChannelOrderPayload,
+  ChannelOrderCancelRefundFailure,
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -164,9 +165,20 @@ export class ChannelCancelRequestManager {
 
   /** 종결 사실(스펙 §5.5). [다시 보내기]마다 같은 사실이 다시 올 수 있다 — requested 가 아니면 무시한다. */
   async reject(
-    fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number },
+    fact: {
+      requestId: string;
+      reasonCode: string;
+      message: string;
+      unresolvedRefundAmount?: number;
+      refundFailure?: ChannelOrderCancelRefundFailure;
+    },
     tx?: DbTx,
   ): Promise<void> {
+    // REFUND_FAILED 는 «취소 의사는 유효한데 자동으로 끝낼 수 없다»다. 닫으면 보류가 풀려 고객이 취소한 주문이
+    // 출고로 돌아가고 보드에서도 사라진다 — 열어 둔 채 사유만 적는다(#1016 36번 스펙 §1.2·§6.1)
+    if (fact.reasonCode === 'REFUND_FAILED' && fact.refundFailure) {
+      return this.markRefundFailed(fact.requestId, fact.message, fact.refundFailure, tx);
+    }
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
       if (!row || row.status !== 'requested') {
@@ -184,14 +196,44 @@ export class ChannelCancelRequestManager {
     }, tx);
   }
 
-  /** 진행 사실 — 요청을 연 채 «수정됨 · 환불 미완»만 적는다(스펙 §7.2). */
-  async markStalled(fact: { requestId: string }, tx?: DbTx): Promise<void> {
+  private async markRefundFailed(
+    requestId: string,
+    message: string,
+    refundFailure: ChannelOrderCancelRefundFailure,
+    tx?: DbTx,
+  ): Promise<void> {
+    await this.db.run(async (trx) => {
+      const row = await this.reader.findById(requestId, trx, { lock: true });
+      if (!row || row.status !== 'requested') {
+        this.logger.log(`[CancelRequest] refund failure ignored: ${requestId} is ${row?.status ?? 'unknown'}`);
+        return;
+      }
+      const meta = readCancelRequestMetadata(row.metadata);
+      if (meta.request.refundFailure?.walletCode === refundFailure.walletCode) return;
+      await this.write(row.id, 'requested', withRefundFailure(meta, message, refundFailure), trx);
+    }, tx);
+  }
+
+  /** 진행 사실 — 요청을 연 채 «수정됨 · 환불 미완»과, 분류된 거절이면 그 사유를 적는다(스펙 §7.2, 36번 §6.1). */
+  async markStalled(
+    fact: { requestId: string; message?: string; refundFailure?: ChannelOrderCancelRefundFailure },
+    tx?: DbTx,
+  ): Promise<void> {
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
       if (!row || row.status !== 'requested') return;
       const meta = readCancelRequestMetadata(row.metadata);
-      if (meta.request.stage === 'edited') return;
-      await this.write(row.id, 'requested', { ...meta, request: { ...meta.request, stage: 'edited' } }, trx);
+      const failure = fact.refundFailure;
+      // 사유 없는 사실(일시 실패)은 저장된 사유를 지우지 않는다 — 한 번의 일시 실패가 영구 거절이 풀렸다는 증거는 아니다
+      const sameFailure = !failure || meta.request.refundFailure?.walletCode === failure.walletCode;
+      if (meta.request.stage === 'edited' && sameFailure) return;
+      const staged: CancelRequestMetadata = { ...meta, request: { ...meta.request, stage: 'edited' } };
+      await this.write(
+        row.id,
+        'requested',
+        failure ? withRefundFailure(staged, fact.message ?? '', failure) : staged,
+        trx,
+      );
     }, tx);
   }
 
@@ -203,9 +245,12 @@ export class ChannelCancelRequestManager {
       if (!row) throw new ConflictError(`열린 취소 요청이 없습니다: ${salesOrderId}`);
       const meta = readCancelRequestMetadata(row.metadata);
       await this.enqueue(meta.request.command, `cancel-request:${row.id}:resend:${Date.now()}`, trx);
+      // 거절 사유는 이번 시도의 결과로 다시 받는다 — 남겨 두면 새 시도 중에도 보드가 «환불 불가»로 보인다.
+      // undefined 키는 jsonb 직렬화에서 빠진다
+      const next: CancelRequestMetadata = { ...meta, request: { ...meta.request, refundFailure: undefined } };
       // updated_at 을 밀어 정체 보드가 다시 판정하게 한다 — 단계 진입 시각(stage_entered_at)은 그대로라 체류 시간이 이어진다.
-      await this.write(row.id, 'requested', meta, trx);
-      return toCancelRequestView({ ...row, metadata: meta });
+      await this.write(row.id, 'requested', next, trx);
+      return toCancelRequestView({ ...row, metadata: next });
     }, tx);
   }
 
@@ -307,4 +352,16 @@ function requesterLabel(requester: CancelRequester): string {
     case 'wallet-refund-approval':
       return `wallet-refund-approval:${requester.intentId}`;
   }
+}
+
+/** 열린 요청에 환불 거절 사유를 붙인다 — 상태는 그대로(보류 유지) */
+function withRefundFailure(
+  meta: CancelRequestMetadata,
+  message: string,
+  refundFailure: ChannelOrderCancelRefundFailure,
+): CancelRequestMetadata {
+  return {
+    ...meta,
+    request: { ...meta.request, refundFailure: { ...refundFailure, message, at: new Date().toISOString() } },
+  };
 }
