@@ -15,6 +15,7 @@ import {
   formatDwell,
   gaveUpBadge,
   stateLabel,
+  withdrawConfirmLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { cn } from '@/lib/utils/ui';
 
@@ -197,7 +198,7 @@ export function StageOrders(props: {
                       >
                         다시 보내기
                       </button>
-                      {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. */}
+                      {/* 수정됨·환불 미완은 채널 주문이 이미 줄었다 — 접으면 취소분이 출고된다(서버도 거절). 보드는 appliedAt 을 몰라 이 상태 전체를 숨긴다. 환불 거절 상태(cancel_refund_*)에는 보인다 — 전체취소의 환불 거절은 접기가 유일한 출구다. 부분취소(수정됨)였다면 서버가 409 로 거절하고 그 문장이 토스트로 뜬다. */}
                       {r.state !== 'cancel_edited' && (
                         <button
                           type="button"
@@ -228,7 +229,7 @@ export function StageOrders(props: {
                           }}
                         >
                           {confirmWithdraw === r.salesOrderId
-                            ? '접기 확인'
+                            ? withdrawConfirmLabel(r.state)
                             : '요청 접기'}
                         </button>
                       )}

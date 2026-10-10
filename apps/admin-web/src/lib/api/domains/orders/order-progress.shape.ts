@@ -160,6 +160,8 @@ export function cellCount(
 const STATE_LABELS: Record<string, string> = {
   cancel_requested: '취소 요청 미반영',
   cancel_edited: '수정됨 · 환불 미완',
+  cancel_refund_refused: '취소 · 환불 불가',
+  cancel_refund_mismatch: '취소 · 장부 불일치',
   no_backlog: '출고 대기열 미적재',
   pending: '대기',
   processing: '처리 중',
@@ -206,6 +208,16 @@ export function stateLabel(state: string | null): string {
   if (rx)
     return `${rx[1] === 'return' ? '반품' : '교환'} ${REQUEST_STATUS[rx[2]] ?? rx[2]}`;
   return STATE_LABELS[state] ?? state;
+}
+
+/**
+ * [요청 접기]를 두 번째 누를 때의 문구(#1016 36번). 전체취소의 장부 불일치는 접기가 보드의 유일한 출구인데,
+ * 돈은 이미 고객에게 돌아갔을 수 있고 접으면 그 주문이 출고된다 — 그 대가를 누르기 전에 보이게 한다.
+ */
+export function withdrawConfirmLabel(state: string | null): string {
+  return state === 'cancel_refund_mismatch'
+    ? '접기 확인 — 이미 환불됐을 수 있음, 접으면 출고됨'
+    : '접기 확인';
 }
 
 /** 카드의 빨간 줄 문구. 0 인 항목은 쓰지 않는다(작은 글씨 최소화). */

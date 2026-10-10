@@ -2,6 +2,7 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
+  refundFailureLabel,
   hasFreshOpenCancelRequest,
   settledCancelRequestIds,
   isCancelRequested,
@@ -16,6 +17,7 @@ const view = (over: Record<string, unknown> = {}) => ({
   stage: null,
   convertedFromFull: false,
   requestedAt: '2026-10-07T00:00:00.000Z',
+  refundFailure: null,
   rejection: null,
   outcome: null,
   ...over,
@@ -122,5 +124,43 @@ describe('cancel-request shape', () => {
     expect(settledCancelRequestIds([], open)).toEqual([]);
     // 요청이 응답에서 사라져도(null) 끝난 것이다
     expect(settledCancelRequestIds(open.slice(0, 1), [{ cancelRequest: null }])).toEqual(['r1']);
+  });
+
+  describe('36번 환불 거절', () => {
+    const refused = { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE', message: 'wallet 이 자동 환불 불가', at: 't' };
+    const mismatch = { kind: 'ledger_mismatch', walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL', message: 'wallet 에 장부에 없는 환불', at: 't' };
+
+    it('뷰 읽기 — 갈래를 모르면 null', () => {
+      expect(toCancelRequestView(view({ refundFailure: refused }))?.refundFailure).toEqual(refused);
+      expect(toCancelRequestView(view({ refundFailure: { ...refused, kind: 'other' } }))?.refundFailure).toBeNull();
+      expect(toCancelRequestView(view({ refundFailure: undefined }))?.refundFailure).toBeNull();
+    });
+
+    it('변경 기록 행에서도 읽는다', () => {
+      const row = {
+        id: 'r1',
+        reasonCode: 'CHANNEL_CANCEL_REQUEST',
+        status: 'requested',
+        occurredAt: '2026-10-10T00:00:00.000Z',
+        metadata: { request: { scope: 'full', refundFailure: mismatch } },
+      };
+      expect(cancelRequestFromAmendment(row as never)?.refundFailure).toEqual(mismatch);
+    });
+
+    it('갈래별 문구 — 장부 불일치는 다시 환불하지 말라고 한다', () => {
+      expect(refundFailureLabel(refused as never)).toBe('환불 불가 · 다른 수단으로 환불 필요 · wallet 이 자동 환불 불가');
+      expect(refundFailureLabel(mismatch as never)).toBe(
+        '장부 불일치 · 다시 환불하지 마세요 · wallet 환불 내역 대조 · wallet 에 장부에 없는 환불',
+      );
+    });
+
+    it('요청 중 표시 — 사유가 수정됨보다 먼저', () => {
+      const req = toCancelRequestView(view({ stage: 'edited', refundFailure: mismatch }));
+      expect(cancelActionOf({ channel: 'medusa', orderStatus: 'confirmed', cancelRequest: req })).toEqual({
+        kind: 'requested',
+        label: refundFailureLabel(mismatch as never),
+      });
+      expect(cancelRequestLine(req!)).toBe(`부분취소 요청 · ${refundFailureLabel(mismatch as never)}`);
+    });
   });
 });

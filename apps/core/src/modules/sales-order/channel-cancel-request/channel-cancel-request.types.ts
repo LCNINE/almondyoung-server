@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
+import { REFUND_FAILURE_KINDS, type CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 
 /** 요청 행의 reason_code — 이 값으로 변경 기록 안의 취소 요청을 가린다. */
@@ -27,6 +27,16 @@ const CancelRequestLineSchema = z.object({
   quantity: z.number().int().positive(),
 });
 
+/** 열린 요청에 붙는 wallet 환불 거절 사유(#1016 36번) — 요청은 닫지 않는다(보류 유지). 다시 보내기가 지운다 */
+const RefundFailureRecordSchema = z.object({
+  kind: z.enum(REFUND_FAILURE_KINDS),
+  walletCode: z.string(),
+  message: z.string(),
+  at: z.string(),
+});
+
+export type CancelRequestRefundFailure = z.infer<typeof RefundFailureRecordSchema>;
+
 const CancelRequestMetadataSchema = z.object({
   // channel-amendment-actions 의 channelKeyOf 와 같은 자리 — 채널 키는 행 메타데이터 최상위에 둔다.
   salesChannel: z.string().min(1),
@@ -41,6 +51,8 @@ const CancelRequestMetadataSchema = z.object({
     stage: z.literal('edited').optional(),
     /** 부분취소의 물리 취소를 반영한 시각 — 환불보다 먼저 올 수 있다 */
     appliedAt: z.string().optional(),
+    /** wallet 이 환불을 영구히 거절했다 — 보드가 «환불 불가 / 장부 불일치»로 갈라 보인다 */
+    refundFailure: RefundFailureRecordSchema.optional(),
     /** 처음 낸 명령 그대로. [다시 보내기]가 같은 값을 다시 낸다 */
     command: z.custom<CancelChannelOrderPayload>((value) => typeof value === 'object' && value !== null),
   }),
@@ -77,6 +89,7 @@ export interface CancelRequestView {
   stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
+  refundFailure: CancelRequestRefundFailure | null;
   rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
   outcome: {
     refundAmount: number;
@@ -107,6 +120,7 @@ export function toCancelRequestView(
     stage: meta.request.stage ?? null,
     convertedFromFull: meta.request.convertedFromFull ?? false,
     requestedAt: row.createdAt.toISOString(),
+    refundFailure: meta.request.refundFailure ?? null,
     rejection: meta.rejection ?? null,
     outcome: meta.outcome ?? null,
   };

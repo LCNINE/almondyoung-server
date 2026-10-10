@@ -9,6 +9,7 @@ import {
   stateLabel,
   toProgressPage,
   toProgressSummary,
+  withdrawConfirmLabel,
 } from './order-progress.shape';
 
 describe('order-progress shape', () => {
@@ -44,6 +45,8 @@ describe('order-progress shape', () => {
   it('취소 요청 단계의 세부 상태 이름', () => {
     expect(stateLabel('cancel_requested')).toBe('취소 요청 미반영');
     expect(stateLabel('cancel_edited')).toBe('수정됨 · 환불 미완');
+    expect(stateLabel('cancel_refund_refused')).toBe('취소 · 환불 불가');
+    expect(stateLabel('cancel_refund_mismatch')).toBe('취소 · 장부 불일치');
   });
 
   it('요약은 envelope 여부와 무관하게 읽고, 깨진 몸통은 빈 요약', () => {
@@ -170,5 +173,19 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
       ],
     });
     expect(s.stages[0].gaveUp ?? 0).toBe(0);
+  });
+});
+
+describe('요청 접기 두 번째 누름 문구 (#1016 36번)', () => {
+  it('장부 불일치는 이미 환불됐을 수 있다고 경고한다 — 접으면 출고된다', () => {
+    expect(withdrawConfirmLabel('cancel_refund_mismatch')).toBe(
+      '접기 확인 — 이미 환불됐을 수 있음, 접으면 출고됨'
+    );
+  });
+
+  it('그 밖의 상태는 평소 문구', () => {
+    expect(withdrawConfirmLabel('cancel_refund_refused')).toBe('접기 확인');
+    expect(withdrawConfirmLabel('cancel_requested')).toBe('접기 확인');
+    expect(withdrawConfirmLabel(null)).toBe('접기 확인');
   });
 });

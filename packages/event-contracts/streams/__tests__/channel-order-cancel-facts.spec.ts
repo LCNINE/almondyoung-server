@@ -6,9 +6,22 @@ describe('채널 주문 취소 결과 사실 (#1016 35번 행)', () => {
   describe('ChannelOrderCancelRejected', () => {
     const schema = ORDER_STREAM.events.ChannelOrderCancelRejected.schema!;
 
-    it.each(CHANNEL_ORDER_CANCEL_REJECTION_CODES)('%s 를 받는다', (reasonCode) => {
+    it.each(CHANNEL_ORDER_CANCEL_REJECTION_CODES.filter((code) => code !== 'REFUND_FAILED'))('%s 를 받는다', (reasonCode) => {
       const payload = { ...key, reasonCode, message: '사유' };
       expect(schema.parse(payload)).toEqual(payload);
+    });
+
+    it('REFUND_FAILED 는 갈래·wallet 코드(refundFailure)를 반드시 싣는다(#1016 36번)', () => {
+      const payload = {
+        ...key,
+        reasonCode: 'REFUND_FAILED',
+        message: '장부 불일치',
+        refundFailure: { kind: 'ledger_mismatch', walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' },
+      };
+      expect(schema.parse(payload)).toEqual(payload);
+      expect(() => schema.parse({ ...payload, refundFailure: undefined })).toThrow();
+      expect(() => schema.parse({ ...payload, refundFailure: { kind: 'other', walletCode: 'X' } })).toThrow();
+      expect(() => schema.parse({ ...payload, refundFailure: { kind: 'refused', walletCode: '' } })).toThrow();
     });
 
     it('core 내부 값 OPERATOR_WITHDRAWN 은 사실이 아니다', () => {
@@ -33,6 +46,17 @@ describe('채널 주문 취소 결과 사실 (#1016 35번 행)', () => {
       const payload = { ...key, stage: 'edited', message: '환불 미완' };
       expect(schema.parse(payload)).toEqual(payload);
       expect(() => schema.parse({ ...payload, stage: 'refunded' })).toThrow();
+    });
+
+    it('분류된 환불 거절로 멈췄으면 refundFailure 를 싣는다(#1016 36번) — 없어도 된다', () => {
+      const payload = {
+        ...key,
+        stage: 'edited',
+        message: '환불 미완',
+        refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' },
+      };
+      expect(schema.parse(payload)).toEqual(payload);
+      expect(schema.parse({ ...key, stage: 'edited', message: '환불 미완' })).toEqual({ ...key, stage: 'edited', message: '환불 미완' });
     });
   });
 

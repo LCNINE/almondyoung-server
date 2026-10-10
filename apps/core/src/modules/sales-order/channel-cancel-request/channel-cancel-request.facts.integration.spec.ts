@@ -7,6 +7,8 @@ import { seedChannelOrder, wireCancelRequest } from './__support__/cancel-reques
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const OPERATOR = { kind: 'operator' as const, actorId: '7d0a3c6e-0000-4000-8000-000000000001' };
+const LEDGER = { kind: 'ledger_mismatch' as const, walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' };
+const REFUSED = { kind: 'refused' as const, walletCode: 'REFUND_NOT_AUTOMATABLE' };
 
 async function rowOf(tx: DbTx, id: string) {
   const [row] = await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.id, id));
@@ -117,6 +119,75 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
         .where(eq(wmsTables.salesOrderAmendments.id, id));
       const view = await w.manager.withdraw(seed.salesOrderId, OPERATOR.actorId, tx);
       expect(view.status).toBe('rejected');
+    });
+  });
+
+  it('36번 환불 거절 — 닫지 않고(보류 유지) 갈래·사유를 요청에 적는다, 같은 사유가 다시 와도 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '장부 불일치', refundFailure: LEDGER }, tx);
+      const first = await rowOf(tx, id);
+      expect(first.status).toBe('requested');
+      expect(first.metadata).toMatchObject({ request: { refundFailure: { ...LEDGER, message: '장부 불일치' } } });
+      expect(first.metadata).not.toHaveProperty('rejection');
+      // 보류 = 열린 요청. 송장 발급·배치 시작·발송 사전검사가 이것을 본다
+      expect((await w.reader.findOpen(seed.salesOrderId, tx))?.id).toBe(id);
+
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '장부 불일치', refundFailure: LEDGER }, tx);
+      expect((await rowOf(tx, id)).metadata).toEqual(first.metadata);
+
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '환불 불가', refundFailure: REFUSED }, tx);
+      expect((await rowOf(tx, id)).metadata).toMatchObject({ request: { refundFailure: { ...REFUSED, message: '환불 불가' } } });
+    });
+  });
+
+  it('36번 — 갈래 없는 REFUND_FAILED 는 닫지 않는다(fail closed — 보류 유지, 기록도 안 한다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      const before = await rowOf(tx, id);
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '환불 거절' }, tx);
+      const after = await rowOf(tx, id);
+      expect(after.status).toBe('requested');
+      expect(after.metadata).not.toHaveProperty('rejection');
+      expect(after).toEqual(before);
+      expect((await w.reader.findOpen(seed.salesOrderId, tx))?.id).toBe(id);
+    });
+  });
+
+  it('36번 정체 — 분류된 거절이면 edited 와 사유를 함께, 사유 없는 정체 사실은 저장된 사유를 지우지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, id } = await open(tx);
+      await w.manager.markStalled({ requestId: id, message: 'PG down' }, tx);
+      await w.manager.markStalled({ requestId: id, message: '장부 불일치', refundFailure: LEDGER }, tx);
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('requested');
+      expect(row.metadata).toMatchObject({ request: { stage: 'edited', refundFailure: { ...LEDGER, message: '장부 불일치' } } });
+
+      await w.manager.markStalled({ requestId: id, message: 'PG down' }, tx);
+      expect((await rowOf(tx, id)).metadata).toEqual(row.metadata);
+    });
+  });
+
+  it('36번 다시 보내기 — 사유를 지우고, 같은 거절이 다시 오면 다시 붙는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '환불 불가', refundFailure: REFUSED }, tx);
+      const view = await w.manager.resend(seed.salesOrderId, tx);
+      expect(view.refundFailure).toBeNull();
+      expect((await rowOf(tx, id)).metadata).not.toMatchObject({ request: { refundFailure: expect.anything() } });
+
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '환불 불가', refundFailure: REFUSED }, tx);
+      expect((await rowOf(tx, id)).metadata).toMatchObject({ request: { refundFailure: REFUSED } });
+    });
+  });
+
+  it('36번 — 이미 닫힌 요청엔 환불 거절도 아무것도 안 한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      await w.manager.withdraw(seed.salesOrderId, OPERATOR.actorId, tx);
+      const closed = await rowOf(tx, id);
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: 'x', refundFailure: LEDGER }, tx);
+      expect(await rowOf(tx, id)).toEqual(closed);
     });
   });
 });

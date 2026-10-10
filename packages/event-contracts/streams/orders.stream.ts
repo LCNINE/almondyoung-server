@@ -598,14 +598,33 @@ const SalesOrderClaimProgressedSchema = z.object({
  * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
  * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
  * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
- * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
- *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
+ * - `REFUND_FAILED`: wallet 이 환불을 영구히 거절해 채널이 취소를 시작하지 않았다(환불 먼저, 거절이면 취소하지 않는다 — 스펙 §4.6, #1016 36번). `refundFailure` 가 반드시 실린다.
+ *   **종결 사실의 예외** — core 는 요청을 닫지 않고 열어 둔 채 보류를 유지한다(닫으면 고객이 취소한 주문이 출고로 돌아간다).
  * - `EXTERNAL_REFUND_UNRESOLVED`: 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) — 금액을 넣어 다시 요청한다
  */
 export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED', 'EXTERNAL_REFUND_UNRESOLVED'] as const;
 export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
 
-/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
+/**
+ * wallet 환불 거절의 갈래(#1016 36번 스펙 §4.1). Medusa almond-payment 가 분류한다.
+ * - `refused`: 돈은 있는데 자동으로 못 돌려준다 — 다른 수단으로 환불해야 한다
+ * - `ledger_mismatch`: wallet 이 Medusa 생각보다 돌려줄 돈이 적다 — 이미 환불됐을 수 있어 다시 환불하면 안 된다
+ */
+export const REFUND_FAILURE_KINDS = ['refused', 'ledger_mismatch'] as const;
+export type RefundFailureKind = (typeof REFUND_FAILURE_KINDS)[number];
+
+export interface ChannelOrderCancelRefundFailure {
+  kind: RefundFailureKind;
+  /** wallet 의 error 코드 그대로 — 화면·대사용 */
+  walletCode: string;
+}
+
+const RefundFailureSchema = z.object({
+  kind: z.enum(REFUND_FAILURE_KINDS),
+  walletCode: z.string().min(1),
+});
+
+/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다 — 단 REFUND_FAILED 는 닫지 않는다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
 export interface ChannelOrderCancelRejectedPayload {
   /** `CancelChannelOrderPayload.requestId` 그대로 */
   requestId: string;
@@ -616,16 +635,26 @@ export interface ChannelOrderCancelRejectedPayload {
   message: string;
   /** EXTERNAL_REFUND_UNRESOLVED 일 때 — 품목에 연결 안 된 외부 환불(원) */
   unresolvedRefundAmount?: number;
+  /** REFUND_FAILED 일 때 반드시 — 갈래와 wallet 코드 */
+  refundFailure?: ChannelOrderCancelRefundFailure;
 }
 
-const ChannelOrderCancelRejectedSchema = z.object({
-  requestId: z.string().min(1),
-  salesChannel: z.string().min(1),
-  externalOrderId: z.string().min(1),
-  reasonCode: z.enum(CHANNEL_ORDER_CANCEL_REJECTION_CODES),
-  message: z.string(),
-  unresolvedRefundAmount: z.number().int().nonnegative().optional(),
-});
+const ChannelOrderCancelRejectedSchema = z
+  .object({
+    requestId: z.string().min(1),
+    salesChannel: z.string().min(1),
+    externalOrderId: z.string().min(1),
+    reasonCode: z.enum(CHANNEL_ORDER_CANCEL_REJECTION_CODES),
+    message: z.string(),
+    unresolvedRefundAmount: z.number().int().nonnegative().optional(),
+    refundFailure: RefundFailureSchema.optional(),
+  })
+  .superRefine((payload, context) => {
+    // core 는 REFUND_FAILED 를 갈래로 보드 상태를 정한다 — 갈래 없는 REFUND_FAILED 는 «환불 불가»로도 «장부 불일치»로도 못 보인다
+    if (payload.reasonCode === 'REFUND_FAILED' && payload.refundFailure === undefined) {
+      context.addIssue({ code: 'custom', path: ['refundFailure'], message: 'REFUND_FAILED 는 refundFailure 를 싣는다' });
+    }
+  });
 
 /**
  * 진행 사실 — 종결이 아니다. 부분취소가 주문 수정까지 확정하고 환불에서 멈췄다(주문은 줄었는데 돈은 아직).
@@ -637,6 +666,8 @@ export interface ChannelOrderCancelStalledPayload {
   externalOrderId: string;
   stage: 'edited';
   message: string;
+  /** 분류된 환불 거절로 멈췄을 때만(#1016 36번) — 일시 실패면 없다 */
+  refundFailure?: ChannelOrderCancelRefundFailure;
 }
 
 const ChannelOrderCancelStalledSchema = z.object({
@@ -645,6 +676,7 @@ const ChannelOrderCancelStalledSchema = z.object({
   externalOrderId: z.string().min(1),
   stage: z.literal('edited'),
   message: z.string(),
+  refundFailure: RefundFailureSchema.optional(),
 });
 
 // ===== Stream Config (타입 안전 버전) =====

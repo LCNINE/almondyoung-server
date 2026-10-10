@@ -91,6 +91,12 @@ describe('ORDER_PROGRESS_STATES', () => {
   it('12번 규칙의 칸(fo/awaiting_matching)이 어휘에 있다', () => {
     expect(ORDER_PROGRESS_STATES.fo).toContain('awaiting_matching');
   });
+
+  it('36번 환불 거절 칸이 취소 요청 어휘에 있다', () => {
+    expect(ORDER_PROGRESS_STATES.cancel_request).toEqual(
+      expect.arrayContaining(['cancel_refund_refused', 'cancel_refund_mismatch']),
+    );
+  });
 });
 
 describe('SHIPMENT_STATES', () => {
