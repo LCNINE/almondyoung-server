@@ -6,6 +6,8 @@ import {
   partialCancelOrder, PartialCancelRefundPending,
 } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
 import { PartialCancelRejected } from '../../src/workflows/orders/partial-cancel/plan-partial-cancel';
+import { PartialCancelExternalRefundRejected } from '../../src/workflows/orders/partial-cancel/external-refund';
+import { handleRefundProjection } from '../../src/api/hooks/payment-events/route';
 import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
 import {
   FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, createOrderFixedPromo, createShippingFixedPromo, loadOrder, Commerce,
@@ -16,6 +18,7 @@ process.env.WALLET_BASE_URL = WALLET_BASE_URL;
 process.env.WALLET_API_KEY = 'test-wallet-key';
 const wallet = new FakeWallet();
 const num = (v: any) => Number(v?.numeric_ ?? v?.value ?? v);
+const silent = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
 /**
  * 채널 주문 부분취소 오케스트레이터(#1016 35번 PR-A, 스펙 §6.2). 금액은 픽스처 상품으로 손으로 계산한 값이다:
@@ -441,6 +444,171 @@ medusaIntegrationTestRunner({
       expect(balance(after)).toBe(-20000);
       expect(after.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0)).toBe(0);
       expect(after.credit_lines.filter((l: any) => l.reference_id === 'req-37-char2')).toHaveLength(1);
+    });
+
+    const project = (orderId: string, intentId: string, amount: number, id: string) =>
+      handleRefundProjection(getContainer(), intentId, amount, `msg-${id}`, orderId, silent, { refundId: id, reasonCode: 'ADMIN_REFUND' });
+    const ourLines = (o: any, requestId: string) => o.credit_lines.filter((l: any) => l.reference === 'partial-cancel' && l.reference_id === requestId);
+    const creditSum = (o: any) => o.credit_lines.reduce((s: number, l: any) => s + num(l.amount), 0);
+
+    describe('외부 환불 뒤 부분취소 (#1016 37번)', () => {
+      it('금액 없이 오면 주문을 건드리지 않고 거절한다 — 사유와 미해결 금액', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 10000, 'wr-37-a');
+        const o = await loadOrder(getContainer(), orderId);
+
+        const err = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-a', items: [{ itemId: o.items[0].id, quantity: 1 }] }).catch((e) => e);
+        expect(err).toBeInstanceOf(PartialCancelExternalRefundRejected);
+        expect(err).toMatchObject({ reason: 'external_refund_unresolved', unresolvedAmount: 10000 });
+        expect((await loadOrder(getContainer(), orderId)).version).toBe(o.version);
+        expect(wallet.callsTo('/refund')).toBe(0);
+      });
+
+      it('이미 환불한 금액만큼 음수 크레딧 라인으로 상계하고 나머지만 환불한다 — 장부 0', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 10000, 'wr-37-b');
+        const o = await loadOrder(getContainer(), orderId);
+
+        const res = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-37-b', items: [{ itemId: o.items[0].id, quantity: 1 }], alreadyRefunded: 10000,
+        });
+        expect(res).toMatchObject({ refundAmount: 20000, externalRefundApplied: 10000 });
+        expect(wallet.refunds.map((r) => r.amount)).toEqual([20000]);
+        const after = await loadOrder(getContainer(), orderId);
+        expect(balance(after)).toBe(0);
+        expect(creditSum(after)).toBe(0);
+        expect(ourLines(after, 'req-37-b').map((l: any) => num(l.amount))).toEqual([-10000]);
+        expect(after.metadata.partialCancels['req-37-b']).toMatchObject({ stage: 'refunded', externalRefundApplied: 10000 });
+      });
+
+      it('환불이 실패한 뒤 다시 부르면 음수 라인을 두 번 넣지 않는다', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 10000, 'wr-37-c');
+        const o = await loadOrder(getContainer(), orderId);
+        const input = { orderId, requestId: 'req-37-c', items: [{ itemId: o.items[0].id, quantity: 1 }], alreadyRefunded: 10000 };
+        wallet.failNextRefund = true;
+        await expect(partialCancelOrder(getContainer(), input)).rejects.toThrow(PartialCancelRefundPending);
+        expect(ourLines(await loadOrder(getContainer(), orderId), 'req-37-c')).toHaveLength(1);
+
+        const res = await partialCancelOrder(getContainer(), input);
+        expect(res.refundAmount).toBe(20000);
+        const after = await loadOrder(getContainer(), orderId);
+        expect(ourLines(after, 'req-37-c')).toHaveLength(1);
+        expect(wallet.refunds.map((r) => r.amount)).toEqual([20000]);
+        expect(balance(after)).toBe(0);
+      });
+
+      it('0 원이면 전액 환불하고 외부 환불은 미해결로 남아 다음 부분취소가 다시 묻는다', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 10000, 'wr-37-d');
+        const o = await loadOrder(getContainer(), orderId);
+
+        const first = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-37-d1', items: [{ itemId: o.items[0].id, quantity: 1 }], alreadyRefunded: 0,
+        });
+        expect(first).toMatchObject({ refundAmount: 30000, externalRefundApplied: 0 });
+        expect('externalRefundApplied' in (await loadOrder(getContainer(), orderId)).metadata.partialCancels['req-37-d1']).toBe(true);
+
+        const err = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-d2', items: [{ itemId: o.items[0].id, quantity: 1 }] }).catch((e) => e);
+        expect(err).toMatchObject({ reason: 'external_refund_unresolved', unresolvedAmount: 10000 });
+      });
+
+      it('품목 차액보다 큰 금액은 차액까지만 상계하고 남은 몫은 미해결로 둔다', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 40000, 'wr-37-e');
+        const o = await loadOrder(getContainer(), orderId);
+
+        const res = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-37-e1', items: [{ itemId: o.items[0].id, quantity: 1 }], alreadyRefunded: 40000,
+        });
+        expect(res).toMatchObject({ refundAmount: 0, externalRefundApplied: 30000 });
+        expect(wallet.callsTo('/refund')).toBe(0);
+        const after = await loadOrder(getContainer(), orderId);
+        expect(balance(after)).toBe(0);
+        expect(creditSum(after)).toBe(10000);
+
+        const err = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-e2', items: [{ itemId: o.items[0].id, quantity: 1 }] }).catch((e) => e);
+        expect(err).toMatchObject({ reason: 'external_refund_unresolved', unresolvedAmount: 10000 });
+      });
+
+      it('미해결보다 큰 금액·외부 환불 없는데 금액은 거절한다', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        const o = await loadOrder(getContainer(), orderId);
+        const item = [{ itemId: o.items[0].id, quantity: 1 }];
+        await expect(partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-f1', items: item, alreadyRefunded: 5000 }))
+          .rejects.toMatchObject({ reason: 'external_refund_absent' });
+        await project(orderId, intentId, 10000, 'wr-37-f');
+        const versionAfterProjection = (await loadOrder(getContainer(), orderId)).version; // 투영이 크레딧 라인을 더해 버전이 올랐다
+        await expect(partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-f2', items: item, alreadyRefunded: 10001 }))
+          .rejects.toMatchObject({ reason: 'external_refund_exceeds', unresolvedAmount: 10000 });
+        expect((await loadOrder(getContainer(), orderId)).version).toBe(versionAfterProjection);
+      });
+
+      it('배송비 환불이 섞여도 상계는 품목 몫만 — 양수 라인은 배송비 몫만 붙고 장부 0', async () => {
+        // A×2 60,000(cond 무료) + C 10,000(flat 3,000). C 를 빼면 flat 그룹이 빈다: 10,000 + 3,000
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }] });
+        await project(orderId, intentId, 5000, 'wr-37-g');
+        const o = await loadOrder(getContainer(), orderId);
+
+        const res = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-37-g', items: [{ itemId: itemOf(o, 10000).id, quantity: 1 }], alreadyRefunded: 5000,
+        });
+        expect(res).toMatchObject({ refundAmount: 8000, shippingDelta: -3000, externalRefundApplied: 5000 });
+        expect(wallet.refunds.map((r) => r.amount)).toEqual([8000]);
+        const after = await loadOrder(getContainer(), orderId);
+        expect(balance(after)).toBe(0);
+        // +5,000(외부) −5,000(상계) +3,000(배송비 환불)
+        expect(creditSum(after)).toBe(3000);
+      });
+
+      it('확정 뒤 기록 전에 끊긴 요청은 외부 환불이 있어도 업무 거절이 아니라 «진행 기록이 없습니다»로 멈춘다', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        const o = await loadOrder(getContainer(), orderId);
+        const input = { orderId, requestId: 'req-37-h', items: [{ itemId: o.items[0].id, quantity: 1 }] };
+        await partialCancelOrder(getContainer(), input);
+        await project(orderId, intentId, 10000, 'wr-37-h');
+        const orderModule = getContainer().resolve(Modules.ORDER);
+        await orderModule.updateOrders([{ id: orderId, metadata: { partialCancels: { 'req-37-h': null } } }]);
+
+        const err = await partialCancelOrder(getContainer(), input).catch((e) => e);
+        expect(err).not.toBeInstanceOf(PartialCancelRejected);
+        expect(err.message).toMatch(/진행 기록이 없습니다/);
+      });
+
+      it('외부 환불이 없는 주문은 지금과 같다 — 결과에 상계 0, 기록에 상계 키 없음', async () => {
+        const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        const o = await loadOrder(getContainer(), orderId);
+        const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'req-37-i', items: [{ itemId: o.items[0].id, quantity: 1 }] });
+        expect(res).toMatchObject({ refundAmount: 30000, externalRefundApplied: 0 });
+        expect('externalRefundApplied' in (await loadOrder(getContainer(), orderId)).metadata.partialCancels['req-37-i']).toBe(false);
+      });
+
+      it('라우트: 400 에 사유·미해결 금액, already_refunded 로 200 + 상계액', async () => {
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 3 }] });
+        await project(orderId, intentId, 10000, 'wr-37-r');
+        const o = await loadOrder(getContainer(), orderId);
+        const item = o.items[0].id;
+
+        const rejected = await api
+          .post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-37-1', items: [{ item_id: item, quantity: 1 }] }, c.adminHeaders)
+          .catch((e: any) => e.response);
+        expect(rejected.status).toBe(400);
+        expect(rejected.data).toMatchObject({ type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000 });
+
+        const bad = await api
+          .post(`/admin/orders/${orderId}/partial-cancel`, { requestId: 'r-37-2', items: [{ item_id: item, quantity: 1 }], already_refunded: -1 }, c.adminHeaders)
+          .catch((e: any) => e.response);
+        expect(bad.status).toBe(400);
+        expect(bad.data.type).toBe('invalid_data');
+
+        const ok = await api.post(
+          `/admin/orders/${orderId}/partial-cancel`,
+          { requestId: 'r-37-3', items: [{ item_id: item, quantity: 1 }], already_refunded: 10000 },
+          c.adminHeaders,
+        );
+        expect(ok.status).toBe(200);
+        expect(ok.data).toMatchObject({ refundAmount: 20000, externalRefundApplied: 10000 });
+      });
     });
   },
 });

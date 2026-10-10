@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import { ChangeActionType, ContainerRegistrationKeys, Modules, OrderChangeStatus } from '@medusajs/framework/utils';
 import {
@@ -6,6 +5,7 @@ import {
   cancelBeginOrderEditWorkflow,
   confirmOrderEditRequestWorkflow,
   createOrderChangeActionsWorkflow,
+  createOrderCreditLinesWorkflow,
   createOrderEditShippingMethodWorkflow,
   orderEditUpdateItemQuantityWorkflow,
   refundPaymentWorkflow,
@@ -16,13 +16,21 @@ import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-dat
 import { describeError } from '../../../utils/describe-error';
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 import { toNumber } from './amount';
+import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
 import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
 import { planShipping, type ShippingMethodView } from './plan-shipping';
 
 export const PARTIAL_CANCEL_CHARGE_NAME = '부분취소 배송비';
 
-export type PartialCancelInput = { orderId: string; requestId: string; items: CancelRequestItem[]; actorId?: string };
+export type PartialCancelInput = {
+  orderId: string;
+  requestId: string;
+  items: CancelRequestItem[];
+  /** 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 품목에 연결 안 된 외부 환불이 있을 때 필요하다(#1016 37번) */
+  alreadyRefunded?: number;
+  actorId?: string;
+};
 export type PartialCancelRecord = {
   requestHash: string;
   stage: 'edited' | 'refunded';
@@ -38,6 +46,8 @@ export type PartialCancelRecord = {
   at: string;
   /** 주문 수정 확정 뒤의 주문 버전 — 여러 기록의 groupFees 를 겹칠 때 순서를 정한다. */
   orderVersion: number;
+  /** 외부 환불에서 상계한 금액(음수 크레딧 라인). 운영자가 금액을 줬을 때만 있다 — 다음 판정의 U 에서 빠진다 */
+  externalRefundApplied?: number;
   refundedAt?: string;
 };
 export type PartialCancelResult = {
@@ -45,6 +55,7 @@ export type PartialCancelResult = {
   refundAmount: number;
   shippingDelta: number;
   shippingNotAdjusted: boolean;
+  externalRefundApplied: number;
   stage: 'refunded';
 };
 
@@ -63,6 +74,9 @@ export class PartialCancelRefundPending extends Error {
 const ORDER_LOCK_TIMEOUT_SECONDS = 120;
 /** 환불 투영(payment-events)과 같은 값. 이 잠금 안에서는 refundPaymentWorkflow 한 번만 돈다. */
 const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
+
+/** 상계 음수 크레딧 라인의 reference — reference_id 는 requestId. 재시도가 이것으로 이미 넣었는지 본다 */
+const OFFSET_CREDIT_LINE_REFERENCE = 'partial-cancel';
 
 const editTag = (requestId: string) => `partial-cancel:${requestId}`;
 const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
@@ -83,7 +97,7 @@ export async function partialCancelOrder(container: MedusaContainer, input: Part
 }
 
 async function run(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
-  const requestHash = hashItems(input.items);
+  const requestHash = hashRequest(input.items, input.alreadyRefunded);
   const order = await loadOrder(container, input.orderId);
   const existing = readRecords(order.metadata)[input.requestId];
   if (existing && existing.requestHash !== requestHash) {
@@ -94,6 +108,8 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
   const record = existing ?? (await edit(container, input, order, requestHash));
 
   try {
+    // 상계 라인을 환불보다 «먼저» 넣는다 — 그래야 환불 뒤 차액이 0 이고, refundPaymentWorkflow 가 배송비 몫만 양수 라인으로 붙인다
+    await offsetExternalRefund(container, input.orderId, input.requestId, record.externalRefundApplied ?? 0);
     await refund(container, input.orderId, input.requestId, record.refundAmount, input.actorId);
   } catch (error) {
     throw new PartialCancelRefundPending(input.requestId, `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`);
@@ -108,6 +124,8 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   // 계획 검증보다 «먼저» 본다: 확정 뒤 기록 전에 끊긴 요청은 이미 수량을 줄여 놨다. 줄을 통째로 뺐다면 계획 검증이
   // «주문에 없는 줄»로 업무 거절(400)을 내고, 호출자가 취소를 닫아 주문은 수정된 채 환불 0 으로 남는다.
   await ensureNoDanglingEdit(container, order.id, input.requestId);
+  // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1)
+  await assertExternalRefundsResolved(container, order, input.alreadyRefunded);
   const plan = planPartialCancel(order.lines, input.items);
 
   const profiles = await productShippingProfiles(
@@ -175,11 +193,12 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   // 이번 수정이 만든 «돌려줄 차액»만 센다. 수정 전부터 남아 있던 차액(예: 환불이 밀린 다른 부분취소)을 같이 돌려주지 않게.
   const owed = roundWon(order.pendingDifference - edited.pendingDifference);
   if (!Number.isFinite(owed)) throw new Error(`돌려줄 차액을 읽지 못했습니다: ${order.pendingDifference} → ${edited.pendingDifference}`);
+  const applied = appliedExternalRefund(input.alreadyRefunded, owed);
   const record: PartialCancelRecord = {
     requestHash,
     stage: 'edited',
     items: normalizeItems(input.items),
-    refundAmount: Math.max(0, owed) + (shipping.adjustable ? shipping.refund : 0),
+    refundAmount: Math.max(0, owed) - applied + (shipping.adjustable ? shipping.refund : 0),
     shippingCharge: shipping.adjustable ? shipping.charge : 0,
     shippingRefund: shipping.adjustable ? shipping.refund : 0,
     shippingNotAdjusted: !shipping.adjustable,
@@ -187,9 +206,43 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     groupFees: shipping.adjustable ? Object.fromEntries(shipping.groups.map((g) => [g.shippingProfileId, g.recordedFee])) : {},
     at: new Date().toISOString(),
     orderVersion: edited.version,
+    ...(input.alreadyRefunded !== undefined ? { externalRefundApplied: applied } : {}),
   };
   await writeRecord(container, order.id, input.requestId, record);
   return record;
+}
+
+/**
+ * 품목에 연결 안 된 외부 환불(U)이 있는데 운영자가 «이미 환불한 금액»을 주지 않았으면 거절한다(#1016 37번, 스펙 §4.2).
+ * 장부만 읽는다 — 투영이 외부 환불을 `wallet:` 메모로 남긴다.
+ */
+async function assertExternalRefundsResolved(container: MedusaContainer, order: OrderView, alreadyRefunded: number | undefined) {
+  const paymentIds = await orderPaymentIds(container, order.id);
+  const payments = paymentIds.length
+    ? await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] })
+    : [];
+  const unresolved = unresolvedExternalRefund(
+    payments.flatMap((p) => p.refunds ?? []),
+    Object.values(readRecords(order.metadata)),
+  );
+  checkAlreadyRefunded(unresolved, alreadyRefunded);
+}
+
+/**
+ * 상계한 몫을 음수 크레딧 라인으로 적는다 — 외부 환불이 남긴 «+X 금액 조정»을 «품목 값»으로 다시 분류한다.
+ * 같은 requestId 의 라인이 이미 있으면 건너뛴다(환불 실패 뒤 재시도, Review Focus 2).
+ */
+async function offsetExternalRefund(container: MedusaContainer, orderId: string, requestId: string, applied: number) {
+  if (applied <= 0) return;
+  const orderModule = container.resolve(Modules.ORDER);
+  const order = await orderModule.retrieveOrder(orderId, { select: ['id'], relations: ['credit_lines'] });
+  const exists = (order.credit_lines ?? []).some(
+    (l) => l.reference === OFFSET_CREDIT_LINE_REFERENCE && l.reference_id === requestId,
+  );
+  if (exists) return;
+  await createOrderCreditLinesWorkflow(container).run({
+    input: { id: orderId, credit_lines: [{ amount: -applied, reference: OFFSET_CREDIT_LINE_REFERENCE, reference_id: requestId }] },
+  });
 }
 
 /**
@@ -421,13 +474,12 @@ async function writeRecord(container: MedusaContainer, orderId: string, requestI
 const normalizeItems = (items: CancelRequestItem[]): CancelRequestItem[] =>
   [...items].map((i) => ({ itemId: i.itemId, quantity: i.quantity })).sort((a, b) => a.itemId.localeCompare(b.itemId));
 
-const hashItems = (items: CancelRequestItem[]) => createHash('sha256').update(JSON.stringify(normalizeItems(items))).digest('hex');
-
 const toResult = (requestId: string, r: PartialCancelRecord): PartialCancelResult => ({
   requestId,
   refundAmount: r.refundAmount,
   shippingDelta: r.shippingCharge - r.shippingRefund,
   shippingNotAdjusted: r.shippingNotAdjusted,
+  externalRefundApplied: r.externalRefundApplied ?? 0,
   stage: 'refunded',
 });
 
