@@ -72,5 +72,13 @@ describe('CHANNEL_ORDERS_COMMAND_STREAM', () => {
     ])('%s 는 거절한다', (_label, patch) => {
       expect(() => schema.parse({ ...partial, ...patch })).toThrow();
     });
+
+    it('이미 환불한 금액(#1016 37번)은 부분취소에만 — 0 이상 정수', () => {
+      expect(schema.parse({ ...partial, alreadyRefundedAmount: 0 })).toMatchObject({ alreadyRefundedAmount: 0 });
+      expect(schema.parse({ ...partial, alreadyRefundedAmount: 10000 })).toMatchObject({ alreadyRefundedAmount: 10000 });
+      expect(() => schema.parse({ ...full, alreadyRefundedAmount: 10000 })).toThrow();
+      expect(() => schema.parse({ ...partial, alreadyRefundedAmount: -1 })).toThrow();
+      expect(() => schema.parse({ ...partial, alreadyRefundedAmount: 1.5 })).toThrow();
+    });
   });
 });

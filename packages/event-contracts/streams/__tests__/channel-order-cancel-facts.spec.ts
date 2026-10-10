@@ -18,6 +18,12 @@ describe('채널 주문 취소 결과 사실 (#1016 35번 행)', () => {
     it('requestId 가 없으면 core 가 요청을 찾지 못하므로 거절한다', () => {
       expect(() => schema.parse({ ...key, requestId: '', reasonCode: 'NOT_CANCELABLE', message: 'x' })).toThrow();
     });
+
+    it('EXTERNAL_REFUND_UNRESOLVED 는 미해결 외부 환불 금액을 싣는다(#1016 37번)', () => {
+      const payload = { ...key, reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: '외부 환불 10,000원', unresolvedRefundAmount: 10000 };
+      expect(schema.parse(payload)).toEqual(payload);
+      expect(() => schema.parse({ ...payload, unresolvedRefundAmount: -1 })).toThrow();
+    });
   });
 
   describe('ChannelOrderCancelStalled', () => {
@@ -27,6 +33,23 @@ describe('채널 주문 취소 결과 사실 (#1016 35번 행)', () => {
       const payload = { ...key, stage: 'edited', message: '환불 미완' };
       expect(schema.parse(payload)).toEqual(payload);
       expect(() => schema.parse({ ...payload, stage: 'refunded' })).toThrow();
+    });
+  });
+
+  describe('OrderModified cancelRequests 의 상계액 (#1016 37번)', () => {
+    const schema = ORDER_STREAM.events.OrderModified.schema!;
+    it('externalRefundApplied 는 선택 칸이다', () => {
+      const base = { requestId: 'req-1', stage: 'refunded', refundAmount: 20000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false };
+      const payload = (cancelRequests: unknown[]) => ({
+        orderId: 'o1', salesChannel: 'medusa', externalOrderId: 'order_1', modifiedAt: '2026-10-10T00:00:00.000Z',
+        snapshot: {
+          lines: [],
+          shippingAddress: { recipientName: 'a', phone: '', postalCode: '', roadAddress: '', detailAddress: '' },
+          cancelRequests,
+        },
+      });
+      expect(schema.parse(payload([base])).snapshot.cancelRequests).toEqual([base]);
+      expect(schema.parse(payload([{ ...base, externalRefundApplied: 10000 }])).snapshot.cancelRequests?.[0]).toMatchObject({ externalRefundApplied: 10000 });
     });
   });
 });

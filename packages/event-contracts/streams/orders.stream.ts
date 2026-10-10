@@ -133,6 +133,8 @@ export interface OrderModifiedCancelRequest {
   shippingRefund: number;
   /** 스냅샷이 없거나 그룹이 어긋나 배송비를 건드리지 않았다 */
   shippingNotAdjusted: boolean;
+  /** 이번 부분취소가 외부 환불에서 상계한 금액(#1016 37번). 0 이면 생략한다 — 수집 해시가 그대로이게 */
+  externalRefundApplied?: number;
 }
 
 export interface OrderModifiedPayload {
@@ -326,6 +328,7 @@ const OrderModifiedCancelRequestSchema = z.object({
   shippingCharge: z.number().nonnegative(),
   shippingRefund: z.number().nonnegative(),
   shippingNotAdjusted: z.boolean(),
+  externalRefundApplied: z.number().nonnegative().optional(),
 });
 
 const OrderModifiedSchema = z.object({
@@ -597,8 +600,9 @@ const SalesOrderClaimProgressedSchema = z.object({
  * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
  * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
  *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
+ * - `EXTERNAL_REFUND_UNRESOLVED`: 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) — 금액을 넣어 다시 요청한다
  */
-export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED'] as const;
+export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED', 'EXTERNAL_REFUND_UNRESOLVED'] as const;
 export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
 
 /** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
@@ -610,6 +614,8 @@ export interface ChannelOrderCancelRejectedPayload {
   reasonCode: ChannelOrderCancelRejectionCode;
   /** 운영자에게 보일 사유. 채널이 준 문구를 그대로 담는다 */
   message: string;
+  /** EXTERNAL_REFUND_UNRESOLVED 일 때 — 품목에 연결 안 된 외부 환불(원) */
+  unresolvedRefundAmount?: number;
 }
 
 const ChannelOrderCancelRejectedSchema = z.object({
@@ -618,6 +624,7 @@ const ChannelOrderCancelRejectedSchema = z.object({
   externalOrderId: z.string().min(1),
   reasonCode: z.enum(CHANNEL_ORDER_CANCEL_REJECTION_CODES),
   message: z.string(),
+  unresolvedRefundAmount: z.number().int().nonnegative().optional(),
 });
 
 /**
