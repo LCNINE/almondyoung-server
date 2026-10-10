@@ -156,6 +156,31 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.cancelRequests.markStalled).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1' }));
   });
 
+  it('36번 환불 거절 갈래(refundFailure)·정체 문구는 요청 서비스까지 그대로 닿는다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const key = { requestId: 'req-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
+    const refundFailure = { kind: 'ledger_mismatch' as const, walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' };
+    await consumer.handleChannelOrderCancelRejected(
+      { ...key, reasonCode: 'REFUND_FAILED', message: '장부 불일치', refundFailure },
+      { messageId: 'm1' } as any,
+    );
+    await consumer.handleChannelOrderCancelStalled(
+      { ...key, stage: 'edited', message: '환불 불가', refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' } },
+      { messageId: 'm2' } as any,
+    );
+    expect(mocks.cancelRequests.reject).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'req-1', reasonCode: 'REFUND_FAILED', message: '장부 불일치', refundFailure }),
+    );
+    expect(mocks.cancelRequests.markStalled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'req-1',
+        message: '환불 불가',
+        refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' },
+      }),
+    );
+  });
+
   it('새 SO + status=confirmed → createFromEvent 호출, grant 호출, orderEvents insert', async () => {
     const mocks = makeMocks();
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue(undefined as any);

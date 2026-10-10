@@ -141,6 +141,19 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
     });
   });
 
+  it('36번 — 갈래 없는 REFUND_FAILED 는 닫지 않는다(fail closed — 보류 유지, 기록도 안 한다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await open(tx);
+      const before = await rowOf(tx, id);
+      await w.manager.reject({ requestId: id, reasonCode: 'REFUND_FAILED', message: '환불 거절' }, tx);
+      const after = await rowOf(tx, id);
+      expect(after.status).toBe('requested');
+      expect(after.metadata).not.toHaveProperty('rejection');
+      expect(after).toEqual(before);
+      expect((await w.reader.findOpen(seed.salesOrderId, tx))?.id).toBe(id);
+    });
+  });
+
   it('36번 정체 — 분류된 거절이면 edited 와 사유를 함께, 사유 없는 정체 사실은 저장된 사유를 지우지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, id } = await open(tx);

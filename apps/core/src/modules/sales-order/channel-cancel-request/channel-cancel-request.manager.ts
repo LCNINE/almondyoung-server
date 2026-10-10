@@ -9,6 +9,8 @@ import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CancelChannelOrderPayload,
   ChannelOrderCancelRefundFailure,
+  ChannelOrderCancelRejectedPayload,
+  ChannelOrderCancelStalledPayload,
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -24,6 +26,17 @@ import {
   readCancelRequestMetadata,
   toCancelRequestView,
 } from './channel-cancel-request.types';
+
+/**
+ * 계약 payload 에서 파생한다 — 소비자 → 서비스 → 매니저가 같은 객체를 넘기는 것에 기대지 않고 `refundFailure` 를
+ * 선언된 타입으로 실어 나르기 위해서다. 중간에서 객체를 다시 짜면 REFUND_FAILED 가 갈래를 잃고 닫힐 수 있다(36번 스펙 §1.2).
+ */
+export type CancelRejectedFact = Pick<
+  ChannelOrderCancelRejectedPayload,
+  'requestId' | 'reasonCode' | 'message' | 'unresolvedRefundAmount' | 'refundFailure'
+>;
+export type CancelStalledFact = Pick<ChannelOrderCancelStalledPayload, 'requestId' | 'refundFailure'> &
+  Partial<Pick<ChannelOrderCancelStalledPayload, 'message'>>;
 
 export interface CancelRequestInput {
   salesOrderId: string;
@@ -164,20 +177,15 @@ export class ChannelCancelRequestManager {
   }
 
   /** 종결 사실(스펙 §5.5). [다시 보내기]마다 같은 사실이 다시 올 수 있다 — requested 가 아니면 무시한다. */
-  async reject(
-    fact: {
-      requestId: string;
-      reasonCode: string;
-      message: string;
-      unresolvedRefundAmount?: number;
-      refundFailure?: ChannelOrderCancelRefundFailure;
-    },
-    tx?: DbTx,
-  ): Promise<void> {
+  async reject(fact: CancelRejectedFact, tx?: DbTx): Promise<void> {
     // REFUND_FAILED 는 «취소 의사는 유효한데 자동으로 끝낼 수 없다»다. 닫으면 보류가 풀려 고객이 취소한 주문이
     // 출고로 돌아가고 보드에서도 사라진다 — 열어 둔 채 사유만 적는다(#1016 36번 스펙 §1.2·§6.1)
-    if (fact.reasonCode === 'REFUND_FAILED' && fact.refundFailure) {
-      return this.markRefundFailed(fact.requestId, fact.message, fact.refundFailure, tx);
+    if (fact.reasonCode === 'REFUND_FAILED') {
+      if (fact.refundFailure) return this.markRefundFailed(fact.requestId, fact.message, fact.refundFailure, tx);
+      // 갈래가 빠졌다고 닫는 길로 보내면 위의 사고가 그대로 난다 — 쓰지 않고 연 채 둔다(fail closed).
+      // 보류는 남고, 정체 보드의 5분 규칙이 이 요청을 운영자에게 올린다
+      this.logger.warn(`[CancelRequest] REFUND_FAILED without refundFailure kept open: ${fact.requestId}`);
+      return;
     }
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
@@ -215,10 +223,7 @@ export class ChannelCancelRequestManager {
   }
 
   /** 진행 사실 — 요청을 연 채 «수정됨 · 환불 미완»과, 분류된 거절이면 그 사유를 적는다(스펙 §7.2, 36번 §6.1). */
-  async markStalled(
-    fact: { requestId: string; message?: string; refundFailure?: ChannelOrderCancelRefundFailure },
-    tx?: DbTx,
-  ): Promise<void> {
+  async markStalled(fact: CancelStalledFact, tx?: DbTx): Promise<void> {
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
       if (!row || row.status !== 'requested') return;

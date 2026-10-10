@@ -598,7 +598,7 @@ const SalesOrderClaimProgressedSchema = z.object({
  * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
  * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
  * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
- * - `REFUND_FAILED`: wallet 이 환불을 영구히 거절해 채널의 취소가 롤백됐다(#1016 36번). `refundFailure` 가 반드시 실린다.
+ * - `REFUND_FAILED`: wallet 이 환불을 영구히 거절해 채널이 취소를 시작하지 않았다(환불 먼저, 거절이면 취소하지 않는다 — 스펙 §4.6, #1016 36번). `refundFailure` 가 반드시 실린다.
  *   **종결 사실의 예외** — core 는 요청을 닫지 않고 열어 둔 채 보류를 유지한다(닫으면 고객이 취소한 주문이 출고로 돌아간다).
  * - `EXTERNAL_REFUND_UNRESOLVED`: 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) — 금액을 넣어 다시 요청한다
  */
@@ -624,7 +624,7 @@ const RefundFailureSchema = z.object({
   walletCode: z.string().min(1),
 });
 
-/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
+/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다 — 단 REFUND_FAILED 는 닫지 않는다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
 export interface ChannelOrderCancelRejectedPayload {
   /** `CancelChannelOrderPayload.requestId` 그대로 */
   requestId: string;

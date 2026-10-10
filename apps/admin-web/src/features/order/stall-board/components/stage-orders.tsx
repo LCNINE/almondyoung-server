@@ -15,6 +15,7 @@ import {
   formatDwell,
   gaveUpBadge,
   stateLabel,
+  withdrawConfirmLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { cn } from '@/lib/utils/ui';
 
@@ -228,7 +229,7 @@ export function StageOrders(props: {
                           }}
                         >
                           {confirmWithdraw === r.salesOrderId
-                            ? '접기 확인'
+                            ? withdrawConfirmLabel(r.state)
                             : '요청 접기'}
                         </button>
                       )}
