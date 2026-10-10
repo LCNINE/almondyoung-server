@@ -6,7 +6,7 @@ import { getChannelFulfillmentCapabilities } from '../channel-capabilities';
 import { OrderPollerOrchestrator } from '../order-collection/order-poller.orchestrator';
 import { ChannelOrderCancelRepository } from './channel-order-cancel.repository';
 
-type Rejection = { reasonCode: ChannelOrderCancelRejectionCode; message: string };
+type Rejection = { reasonCode: ChannelOrderCancelRejectionCode; message: string; unresolvedRefundAmount?: number };
 
 /**
  * core 의 `CancelChannelOrder` 를 채널에 실행한다 (#1016 35번 행, ADR-0042 · 스펙 §7.3).
@@ -78,12 +78,15 @@ export class ChannelOrderCancelManager {
     const outcome = await this.medusaClient.partialCancelOrder(externalOrderId, {
       requestId,
       items: command.lines.map((line) => ({ itemId: line.channelOrderItemId, quantity: line.quantity })),
+      ...(command.alreadyRefundedAmount !== undefined ? { alreadyRefunded: command.alreadyRefundedAmount } : {}),
     });
     switch (outcome.kind) {
       case 'cancelled':
         return undefined;
       case 'rejected':
         return { reasonCode: 'NOT_CANCELABLE', message: outcome.message };
+      case 'external_refund':
+        return { reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: outcome.message, unresolvedRefundAmount: outcome.unresolvedAmount };
       case 'refund_pending':
         // 주문은 줄었는데 돈은 아직 — core 가 정체 보드에서 이 상태를 따로 보이게 진행 사실을 먼저 내고, 던져서 재시도한다
         await this.repository.recordStalled(
