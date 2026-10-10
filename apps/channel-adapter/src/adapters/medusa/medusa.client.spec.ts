@@ -1551,6 +1551,34 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       expect(JSON.parse(init.body)).toEqual({ requestId: 'req-1', items: [{ item_id: 'ordli_1', quantity: 2 }] });
     });
 
+    it('이미 환불한 금액은 already_refunded 로 싣고, 없으면 키가 없다', async () => {
+      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 20000, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
+      await makeClient().partialCancelOrder('order_1', { ...input, alreadyRefunded: 10000 });
+      expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual({
+        requestId: 'req-1',
+        items: [{ item_id: 'ordli_1', quantity: 2 }],
+        already_refunded: 10000,
+      });
+    });
+
+    it('external_refund_* 사유의 거절은 금액과 함께 따로 돌려준다', async () => {
+      global.fetch = respond(400, {
+        type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000, message: '외부 환불 10,000원',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'external_refund', message: '외부 환불 10,000원', unresolvedAmount: 10000,
+      });
+    });
+
+    it('미해결 금액이 소수로 오면 원 단위로 반올림한다 — 계약은 0 이상 정수다', async () => {
+      global.fetch = respond(400, {
+        type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 9999.6, message: '외부 환불',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'external_refund', message: '외부 환불', unresolvedAmount: 10000,
+      });
+    });
+
     it('code=partial_cancel_rejected 만 정해진 거절이다', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'partial_cancel_rejected', message: '수량이 남은 수량보다 많습니다' });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'rejected', message: '수량이 남은 수량보다 많습니다' });

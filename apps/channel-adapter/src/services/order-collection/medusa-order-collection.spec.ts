@@ -840,6 +840,17 @@ describe('Medusa order collection (source + translator)', () => {
       expect(item.changes.cancelRequests).toEqual(expected);
     });
 
+    it('상계액이 있으면 싣고, 0 이면 키가 없다(#1016 37번)', async () => {
+      const provider = makeProvider({
+        listOrders: jest.fn().mockResolvedValue([
+          order({ partialCancels: { 'req-a': { ...record, externalRefundApplied: 10000 }, 'req-b': { ...record, externalRefundApplied: 0 } } }),
+        ]),
+      });
+      const [item] = (await provider.fetchOrders(null)).orders;
+      expect(item.changes.cancelRequests?.[0]).toMatchObject({ requestId: 'req-a', externalRefundApplied: 10000 });
+      expect('externalRefundApplied' in (item.changes.cancelRequests?.[1] ?? {})).toBe(false);
+    });
+
     it('기록이 없으면 changes 에 키 자체가 없다 — 모든 Medusa 주문의 해시가 바이트 단위로 그대로다', async () => {
       const provider = makeProvider({ listOrders: jest.fn().mockResolvedValue([order(undefined)]) });
       const [item] = (await provider.fetchOrders(null)).orders;

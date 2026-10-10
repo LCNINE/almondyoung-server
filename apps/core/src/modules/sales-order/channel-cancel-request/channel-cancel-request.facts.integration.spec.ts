@@ -27,6 +27,19 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
     return { w, seed, id: view.id };
   }
 
+  it('37번 거절 — 미해결 외부 환불 금액을 함께 적는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, id } = await open(tx);
+      await w.manager.reject(
+        { requestId: id, reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: '외부 환불 10,000원', unresolvedRefundAmount: 10000 },
+        tx,
+      );
+      expect((await rowOf(tx, id)).metadata).toMatchObject({
+        rejection: { reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', unresolvedRefundAmount: 10000 },
+      });
+    });
+  });
+
   it('거절 — rejected + 사유, 같은 사실이 다시 와도 그대로(시각도 그대로)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, id } = await open(tx);

@@ -64,6 +64,20 @@ describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('37번 — refunded 기록의 상계액을 결과에 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, requestId } = await partialRequest(tx);
+      const [record] = progress(requestId, 'refunded');
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, { quantities: [1, 1], cancelRequests: [{ ...record, externalRefundApplied: 10000 }] }),
+        'm-1',
+        tx,
+      );
+      expect((await requestOf(tx, requestId)).metadata).toMatchObject({ outcome: { refundAmount: 1000, externalRefundApplied: 10000 } });
+    });
+  });
+
   it('edited 다음 refunded(델타 0) — 물리 취소는 한 번, 요청은 두 번째에 닫힌다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, requestId } = await partialRequest(tx);

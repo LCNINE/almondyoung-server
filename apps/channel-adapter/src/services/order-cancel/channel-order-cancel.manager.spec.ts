@@ -121,6 +121,28 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
   });
 
   describe('부분취소', () => {
+    it('명령의 이미 환불한 금액을 Medusa 로 넘긴다', async () => {
+      const { manager, medusa } = setup();
+      medusa.partialCancelOrder.mockResolvedValue({ kind: 'cancelled', refundAmount: 0, shippingDelta: 0, shippingNotAdjusted: false });
+      await manager.execute({ ...partial, alreadyRefundedAmount: 10000 }, 'd1');
+      expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', {
+        requestId: 'req-1',
+        items: [{ itemId: 'ordli_1', quantity: 2 }],
+        alreadyRefunded: 10000,
+      });
+    });
+
+    it('외부 환불 거절은 EXTERNAL_REFUND_UNRESOLVED + 금액', async () => {
+      const { manager, repository, medusa, poller } = setup();
+      medusa.partialCancelOrder.mockResolvedValue({ kind: 'external_refund', message: '외부 환불 10,000원', unresolvedAmount: 10000 });
+      await manager.execute(partial, 'd1');
+      expect(repository.recordRejected).toHaveBeenCalledWith(
+        { ...key, reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: '외부 환불 10,000원', unresolvedRefundAmount: 10000 },
+        'd1',
+      );
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
+
     it('requestId 와 Medusa 줄 id·취소할 수량을 넘기고, 성공이면 재수집한다', async () => {
       const { manager, medusa, poller } = setup();
       medusa.partialCancelOrder.mockResolvedValue({

@@ -33,6 +33,8 @@ export interface CancelRequestInput {
   sourceKey: string;
   reasonCode?: string;
   reasonDetail?: string;
+  /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
+  alreadyRefundedAmount?: number;
 }
 
 /** 보류가 거는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
@@ -87,6 +89,14 @@ export class ChannelCancelRequestManager {
           ? 'full'
           : 'partial';
 
+      // 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
+      if (input.alreadyRefundedAmount !== undefined) {
+        if (so.salesChannel !== 'medusa') {
+          throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
+        }
+        if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
+      }
+
       const channelItems = await this.channelItemIds(so.id, trx);
       const lines: CancelRequestLine[] = plan.lines.map((line) => ({
         type: 'cancel_line',
@@ -114,6 +124,7 @@ export class ChannelCancelRequestManager {
         externalOrderId: so.channelOrderId,
         scope,
         ...(scope === 'partial' ? { lines: channelLines } : {}),
+        ...(input.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: input.alreadyRefundedAmount } : {}),
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
         requestedAt: requestedAt.toISOString(),
@@ -152,7 +163,10 @@ export class ChannelCancelRequestManager {
   }
 
   /** 종결 사실(스펙 §5.5). [다시 보내기]마다 같은 사실이 다시 올 수 있다 — requested 가 아니면 무시한다. */
-  async reject(fact: { requestId: string; reasonCode: string; message: string }, tx?: DbTx): Promise<void> {
+  async reject(
+    fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number },
+    tx?: DbTx,
+  ): Promise<void> {
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
       if (!row || row.status !== 'requested') {
@@ -160,12 +174,13 @@ export class ChannelCancelRequestManager {
         return;
       }
       const meta = readCancelRequestMetadata(row.metadata);
-      await this.write(
-        row.id,
-        'rejected',
-        { ...meta, rejection: { reasonCode: fact.reasonCode, message: fact.message, at: new Date().toISOString() } },
-        trx,
-      );
+      const rejection = {
+        reasonCode: fact.reasonCode,
+        message: fact.message,
+        at: new Date().toISOString(),
+        ...(fact.unresolvedRefundAmount !== undefined ? { unresolvedRefundAmount: fact.unresolvedRefundAmount } : {}),
+      };
+      await this.write(row.id, 'rejected', { ...meta, rejection }, trx);
     }, tx);
   }
 

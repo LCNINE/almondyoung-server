@@ -38,6 +38,11 @@ export interface CancelChannelOrderPayload {
   scope: 'full' | 'partial';
   /** partial 일 때만. `quantity` 는 «취소할» 수량이다(남길 수량이 아니다) */
   lines?: Array<{ channelOrderItemId: string; quantity: number }>;
+  /**
+   * partial 일 때만. 이번 취소 품목에 이미 다른 경로(wallet 관리자 환불 등)로 돌려준 금액(원) — 채널이 그만큼 상계하고
+   * 나머지만 환불한다(#1016 37번, ADR-0043). 없으면 채널이 «품목에 연결 안 된 외부 환불»을 보고 거절할 수 있다.
+   */
+  alreadyRefundedAmount?: number;
   reasonCode?: string;
   requestedBy: 'operator' | 'customer' | 'wallet-refund-approval';
   /** ISO 8601 */
@@ -61,6 +66,7 @@ const CancelChannelOrderSchema = z
     lines: z
       .array(z.object({ channelOrderItemId: z.string().min(1), quantity: z.number().int().positive() }))
       .optional(),
+    alreadyRefundedAmount: z.number().int().nonnegative().optional(),
     reasonCode: z.string().min(1).optional(),
     requestedBy: z.enum(['operator', 'customer', 'wallet-refund-approval']),
     requestedAt: z.string().datetime(),
@@ -74,6 +80,13 @@ const CancelChannelOrderSchema = z
         code: 'custom',
         path: ['lines'],
         message: '전체취소는 줄을 싣지 않는다 — 실으면 어느 쪽이 정본인지 갈린다',
+      });
+    }
+    if (payload.scope === 'full' && payload.alreadyRefundedAmount !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['alreadyRefundedAmount'],
+        message: '전체취소는 상계하지 않는다 — 캡처 − 환불을 돌려준다',
       });
     }
     const ids = (payload.lines ?? []).map((line) => line.channelOrderItemId);

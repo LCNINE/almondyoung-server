@@ -198,6 +198,50 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('37번 — 이미 환불한 금액은 부분 명령에 실린다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await w.manager.request(
+        {
+          salesOrderId: seed.salesOrderId,
+          lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+          requester: OPERATOR,
+          sourceKey: 'k1',
+          alreadyRefundedAmount: 10000,
+        },
+        tx,
+      );
+      const [command] = await commandsOf(tx, seed.externalOrderId);
+      expect(command.payload.payload).toMatchObject({ scope: 'partial', alreadyRefundedAmount: 10000 });
+    });
+  });
+
+  it('37번 — 금액이 없으면 명령에 키 자체가 없다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await w.manager.request(
+        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      const [command] = await commandsOf(tx, seed.externalOrderId);
+      expect('alreadyRefundedAmount' in command.payload.payload).toBe(false);
+    });
+  });
+
+  it('37번 — 전체로 가는 요청에 금액을 실으면 400, 행·명령 없음', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await expect(
+        w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1', alreadyRefundedAmount: 0 }, tx),
+      ).rejects.toBeInstanceOf(BadRequestError);
+      expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(0);
+      expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(0);
+    });
+  });
+
   it('부분 요청이 남는 수량을 0 으로 만들면 전체로 보낸다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
