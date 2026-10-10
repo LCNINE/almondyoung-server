@@ -163,7 +163,10 @@ export class ChannelCancelRequestManager {
   }
 
   /** 종결 사실(스펙 §5.5). [다시 보내기]마다 같은 사실이 다시 올 수 있다 — requested 가 아니면 무시한다. */
-  async reject(fact: { requestId: string; reasonCode: string; message: string }, tx?: DbTx): Promise<void> {
+  async reject(
+    fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number },
+    tx?: DbTx,
+  ): Promise<void> {
     await this.db.run(async (trx) => {
       const row = await this.reader.findById(fact.requestId, trx, { lock: true });
       if (!row || row.status !== 'requested') {
@@ -171,12 +174,13 @@ export class ChannelCancelRequestManager {
         return;
       }
       const meta = readCancelRequestMetadata(row.metadata);
-      await this.write(
-        row.id,
-        'rejected',
-        { ...meta, rejection: { reasonCode: fact.reasonCode, message: fact.message, at: new Date().toISOString() } },
-        trx,
-      );
+      const rejection = {
+        reasonCode: fact.reasonCode,
+        message: fact.message,
+        at: new Date().toISOString(),
+        ...(fact.unresolvedRefundAmount !== undefined ? { unresolvedRefundAmount: fact.unresolvedRefundAmount } : {}),
+      };
+      await this.write(row.id, 'rejected', { ...meta, rejection }, trx);
     }, tx);
   }
 

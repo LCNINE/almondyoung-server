@@ -33,7 +33,7 @@ export class ChannelCancelRequestService {
     });
   }
 
-  reject(fact: { requestId: string; reasonCode: string; message: string }): Promise<void> {
+  reject(fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number }): Promise<void> {
     return this.manager.reject(fact);
   }
 

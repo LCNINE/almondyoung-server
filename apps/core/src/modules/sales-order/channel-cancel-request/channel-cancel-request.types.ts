@@ -44,13 +44,16 @@ const CancelRequestMetadataSchema = z.object({
     /** 처음 낸 명령 그대로. [다시 보내기]가 같은 값을 다시 낸다 */
     command: z.custom<CancelChannelOrderPayload>((value) => typeof value === 'object' && value !== null),
   }),
-  rejection: z.object({ reasonCode: z.string(), message: z.string(), at: z.string() }).optional(),
+  rejection: z
+    .object({ reasonCode: z.string(), message: z.string(), at: z.string(), unresolvedRefundAmount: z.number().optional() })
+    .optional(),
   outcome: z
     .object({
       refundAmount: z.number(),
       shippingCharge: z.number(),
       shippingRefund: z.number(),
       shippingNotAdjusted: z.boolean(),
+      externalRefundApplied: z.number().optional(),
     })
     .optional(),
   supersededReason: z.string().optional(),
@@ -74,12 +77,13 @@ export interface CancelRequestView {
   stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
-  rejection: { reasonCode: string; message: string; at: string } | null;
+  rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
   outcome: {
     refundAmount: number;
     shippingCharge: number;
     shippingRefund: number;
     shippingNotAdjusted: boolean;
+    externalRefundApplied?: number;
   } | null;
 }
 
