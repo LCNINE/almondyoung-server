@@ -33,6 +33,8 @@ export interface CancelRequestInput {
   sourceKey: string;
   reasonCode?: string;
   reasonDetail?: string;
+  /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
+  alreadyRefundedAmount?: number;
 }
 
 /** 보류가 거는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
@@ -87,6 +89,14 @@ export class ChannelCancelRequestManager {
           ? 'full'
           : 'partial';
 
+      // 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
+      if (input.alreadyRefundedAmount !== undefined) {
+        if (so.salesChannel !== 'medusa') {
+          throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
+        }
+        if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
+      }
+
       const channelItems = await this.channelItemIds(so.id, trx);
       const lines: CancelRequestLine[] = plan.lines.map((line) => ({
         type: 'cancel_line',
@@ -114,6 +124,7 @@ export class ChannelCancelRequestManager {
         externalOrderId: so.channelOrderId,
         scope,
         ...(scope === 'partial' ? { lines: channelLines } : {}),
+        ...(input.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: input.alreadyRefundedAmount } : {}),
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
         requestedAt: requestedAt.toISOString(),
