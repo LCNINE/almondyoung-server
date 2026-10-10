@@ -162,8 +162,10 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       }
     }
 
+    // 범위와 무관하게 묻는다 — 출고 수량이 있으면 core 가 전체취소를 부분취소로 바꾸고(convertedFromFull) 바뀐 범위로 판정한다.
+    // 진짜 전체취소에 금액이 실리면 core 가 400 으로 막고 그 문장이 토스트로 보인다.
     let alreadyRefundedAmount: number | undefined;
-    if (askRefund !== null && scope === 'partial') {
+    if (askRefund !== null) {
       const n = Number(alreadyRefunded);
       if (alreadyRefunded.trim() === '' || !Number.isInteger(n) || n < 0) {
         toast.error('이미 환불한 금액을 입력하세요 (없으면 0)');
@@ -283,7 +285,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                 </div>
               )}
 
-              {scope === 'partial' && askRefund !== null && (
+              {askRefund !== null && (
                 <div className="space-y-1">
                   <Label>이미 환불한 금액</Label>
                   <Input
