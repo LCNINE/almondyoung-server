@@ -792,7 +792,7 @@ git push -u origin feat/1016-36-refund-refusal-receive
 gh pr create --base develop --title "feat: #1016 36번 — 환불 거절 사유 받기 (1/3 계약·core·admin-web)" --body "$(cat <<'EOF'
 ## 무엇
 채널 주문 취소가 wallet 영구 환불 거절로 막히면 요청을 닫지 않고(출고 보류 유지) «환불 불가 / 장부 불일치» 사유를 적고 보인다.
-이 PR 만으로는 휴면 — 아무도 `REFUND_FAILED` 를 내지 않는다. 2/3(channel-adapter) → 3/3(Medusa) 순으로 머지.
+이 PR 만으로는 휴면 — 아무도 `REFUND_FAILED` 를 내지 않는다. 다음 머지 순서: 3/3(Medusa) → 그 배포 뒤 2/3(channel-adapter) (스펙 E9).
 
 - 스펙 `docs/superpowers/specs/2026-10-10-channel-cancel-refund-refusal-design.md`
 - 계획 `docs/superpowers/plans/2026-10-10-channel-cancel-refund-refusal.md`
