@@ -413,7 +413,7 @@ function readSnapshot(data: Record<string, unknown> | null | undefined): Shippin
 }
 
 /** 주문 ↔ 결제 컬렉션은 링크다(주문 버전과 무관). 결제 자체는 payment 모듈에서 읽는다. */
-async function orderPaymentIds(container: MedusaContainer, orderId: string): Promise<string[]> {
+export async function orderPaymentIds(container: MedusaContainer, orderId: string): Promise<string[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({ entity: 'order', fields: ['id', 'payment_collections.id'], filters: { id: orderId } });
   // query.graph 의 링크 필드는 타입이 넓다 — 경계에서 id 배열로만 좁힌다.

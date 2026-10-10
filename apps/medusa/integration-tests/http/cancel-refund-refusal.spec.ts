@@ -32,6 +32,7 @@ medusaIntegrationTestRunner({
       expect(res.status).toBe(200);
       expect((await loadOrder(getContainer(), orderId)).status).toBe('canceled');
       expect(wallet.refunds).toHaveLength(0);
+      expect(wallet.callsTo('/refund')).toBe(1);
     });
 
     it('부분취소 라우트: 영구 거절이면 502 refund_pending 에 refundFailure, 일시 실패면 없다', async () => {
@@ -56,7 +57,70 @@ medusaIntegrationTestRunner({
       wallet.failNextRefund = true;
       const transient = await post('r-refusal-1');
       expect(transient.status).toBe(502);
+      expect(transient.data.type).toBe('refund_pending');
       expect(transient.data.refundFailure).toBeUndefined();
+    });
+
+    const num = (v: any) => Number(v?.numeric_ ?? v?.value ?? v);
+    const channelCancel = (orderId: string) =>
+      api.post(`/admin/orders/${orderId}/channel-cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
+
+    it.each([
+      [400, 'REFUND_NOT_AUTOMATABLE', 'refused'],
+      [400, 'REFUND_AMOUNT_EXCEEDS_TOTAL', 'ledger_mismatch'],
+      [404, 'REFUNDABLE_CHARGE_NOT_FOUND', 'ledger_mismatch'],
+    ])('채널 취소: wallet %s %s → 400 not_allowed + code wallet_refund_%s, 주문은 취소되지 않는다', async (status, walletCode, kind) => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      wallet.rejectNextRefundWith = { status, error: walletCode };
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ type: 'not_allowed', code: `wallet_refund_${kind}:${walletCode}` }));
+      expect(res.data.message).toContain(walletCode);
+      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+      expect(wallet.refunds).toHaveLength(0);
+    });
+
+    it('채널 취소: wallet 502 는 500 이고 주문은 취소되지 않는다 — 기본 /cancel 과 반대', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      wallet.failNextRefund = true;
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(500);
+      expect((await loadOrder(getContainer(), orderId)).status).not.toBe('canceled');
+    });
+
+    it('채널 취소: 정상이면 환불 한 번 뒤 취소하고 장부 차액은 0 — 크레딧 라인이 두 번 붙지 않는다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      const res = await channelCancel(orderId);
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual({ orderId, status: 'canceled' });
+      const o = await loadOrder(getContainer(), orderId);
+      expect(o.status).toBe('canceled');
+      expect(wallet.refunds).toHaveLength(1);
+      expect(num(o.summary.pending_difference)).toBe(0);
+    });
+
+    it('채널 취소: 거절 뒤 원인이 풀리면 같은 호출이 끝난다 — 다시 보내기의 출구', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE' };
+      expect((await channelCancel(orderId)).status).toBe(400);
+      expect((await channelCancel(orderId)).status).toBe(200);
+      expect((await loadOrder(getContainer(), orderId)).status).toBe('canceled');
+      expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('채널 취소: 이미 취소된 주문은 코어와 같은 문장의 400 — channel-adapter 가 «이미 취소됨 = 성공»으로 읽는다, 다시 환불하지 않는다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }] });
+      expect((await channelCancel(orderId)).status).toBe(200);
+      const again = await channelCancel(orderId);
+      expect(again.status).toBe(400);
+      expect(again.data.message).toBe(`Order with id ${orderId} has been canceled.`);
+      expect(wallet.refunds).toHaveLength(1);
+    });
+
+    it('채널 취소: 없는 주문은 404 not_found', async () => {
+      const res = await channelCancel('order_missing_1016_36');
+      expect(res.status).toBe(404);
+      expect(res.data.type).toBe('not_found');
     });
   },
 });
