@@ -84,4 +84,20 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     ]);
     expect(new Set(keys).size).toBe(4);
   });
+
+  it('정체 사실에 환불 거절 갈래가 있으면 멱등 키에 wallet 코드를 붙인다 — 같은 전달에서 일시 실패 뒤 영구 거절을 버리지 않게(#1016 36번)', async () => {
+    const { repository, enqueue } = makeRepository();
+    const plain = { ...key, stage: 'edited' as const, message: 'PG down' };
+    const refused = {
+      ...plain,
+      message: '환불 불가',
+      refundFailure: { kind: 'refused' as const, walletCode: 'REFUND_NOT_AUTOMATABLE' },
+    };
+    await repository.recordStalled(plain, 'd1');
+    await repository.recordStalled(refused, 'd1');
+    expect(enqueue.mock.calls.map(([event]) => event.idempotencyKey)).toEqual([
+      'cancel-stalled:req-1:d1',
+      'cancel-stalled:req-1:d1:REFUND_NOT_AUTOMATABLE',
+    ]);
+  });
 });

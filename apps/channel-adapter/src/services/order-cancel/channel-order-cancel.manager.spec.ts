@@ -102,13 +102,25 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
-    it('Medusa 500 은 던진다 — wallet «환불 불가»도 여기로 온다(REFUND_FAILED 미판별). 거절 사실을 내지 않는다', async () => {
+    it('Medusa 500 은 던진다 — 일시 실패라 거절 사실을 내지 않는다', async () => {
       const { manager, repository, medusa } = setup();
       medusa.cancelOrder.mockRejectedValue(
         new Error('Medusa cancelOrder failed (status=500): An unknown error occurred.'),
       );
       await expect(manager.execute(full, 'd1')).rejects.toThrow('status=500');
       expect(repository.recordRejected).not.toHaveBeenCalled();
+    });
+
+    it('wallet 환불 거절은 REFUND_FAILED + 갈래로 거절한다 — 재수집하지 않는다(#1016 36번)', async () => {
+      const { manager, repository, medusa, poller } = setup();
+      const refundFailure = { kind: 'ledger_mismatch' as const, walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' };
+      medusa.cancelOrder.mockResolvedValue({ kind: 'refund_refused', message: '장부 불일치', refundFailure });
+      await manager.execute(full, 'd1');
+      expect(repository.recordRejected).toHaveBeenCalledWith(
+        { ...key, reasonCode: 'REFUND_FAILED', message: '장부 불일치', refundFailure },
+        'd1',
+      );
+      expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
     it('취소는 됐는데 재수집이 실패하면 던진다 — 재시도의 취소는 «이미 취소됨»이라 멱등이다', async () => {
@@ -123,7 +135,12 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
   describe('부분취소', () => {
     it('명령의 이미 환불한 금액을 Medusa 로 넘긴다', async () => {
       const { manager, medusa } = setup();
-      medusa.partialCancelOrder.mockResolvedValue({ kind: 'cancelled', refundAmount: 0, shippingDelta: 0, shippingNotAdjusted: false });
+      medusa.partialCancelOrder.mockResolvedValue({
+        kind: 'cancelled',
+        refundAmount: 0,
+        shippingDelta: 0,
+        shippingNotAdjusted: false,
+      });
       await manager.execute({ ...partial, alreadyRefundedAmount: 10000 }, 'd1');
       expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', {
         requestId: 'req-1',
@@ -134,10 +151,19 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
 
     it('외부 환불 거절은 EXTERNAL_REFUND_UNRESOLVED + 금액', async () => {
       const { manager, repository, medusa, poller } = setup();
-      medusa.partialCancelOrder.mockResolvedValue({ kind: 'external_refund', message: '외부 환불 10,000원', unresolvedAmount: 10000 });
+      medusa.partialCancelOrder.mockResolvedValue({
+        kind: 'external_refund',
+        message: '외부 환불 10,000원',
+        unresolvedAmount: 10000,
+      });
       await manager.execute(partial, 'd1');
       expect(repository.recordRejected).toHaveBeenCalledWith(
-        { ...key, reasonCode: 'EXTERNAL_REFUND_UNRESOLVED', message: '외부 환불 10,000원', unresolvedRefundAmount: 10000 },
+        {
+          ...key,
+          reasonCode: 'EXTERNAL_REFUND_UNRESOLVED',
+          message: '외부 환불 10,000원',
+          unresolvedRefundAmount: 10000,
+        },
         'd1',
       );
       expect(poller.syncOrder).not.toHaveBeenCalled();
@@ -178,6 +204,18 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B)', () => {
       expect(repository.recordStalled).toHaveBeenCalledWith({ ...key, stage: 'edited', message: 'PG down' }, 'd1');
       expect(repository.recordRejected).not.toHaveBeenCalled();
       expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
+
+    it('환불 미완의 원인이 분류된 거절이면 정체 사실에 갈래를 싣고, 그래도 던진다(#1016 36번)', async () => {
+      const { manager, repository, medusa } = setup();
+      const refundFailure = { kind: 'refused' as const, walletCode: 'REFUND_NOT_AUTOMATABLE' };
+      medusa.partialCancelOrder.mockResolvedValue({ kind: 'refund_pending', message: '환불 불가', refundFailure });
+      await expect(manager.execute(partial, 'd1')).rejects.toThrow(/req-1/);
+      expect(repository.recordStalled).toHaveBeenCalledWith(
+        { ...key, stage: 'edited', message: '환불 불가', refundFailure },
+        'd1',
+      );
+      expect(repository.recordRejected).not.toHaveBeenCalled();
     });
 
     it('줄 없는 부분취소가 스키마를 뚫고 오면 던진다 — 빈 요청을 Medusa 에 보내지 않는다', async () => {

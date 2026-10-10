@@ -13,6 +13,8 @@ import {
 } from '@packages/domain-types';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
+import type { ChannelOrderCancelRefundFailure } from '@packages/event-contracts/streams';
+import { parseRefundFailureCode, readRefundFailure } from './refund-failure';
 import {
   recordAutoIssueOutcome,
   recordAutoIssueFailure,
@@ -243,7 +245,9 @@ export type MedusaCancelOutcome =
   | { kind: 'cancelled' }
   | { kind: 'already_cancelled' }
   | { kind: 'not_found'; message: string }
-  | { kind: 'not_cancelable'; message: string };
+  | { kind: 'not_cancelable'; message: string }
+  /** wallet 이 환불을 영구히 거절해 취소를 시작하지 않았다(환불 거절, #1016 36번) */
+  | { kind: 'refund_refused'; message: string; refundFailure: ChannelOrderCancelRefundFailure };
 
 /** Medusa 부분취소 결과(PR-A 라우트 계약). `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
 export type MedusaPartialCancelOutcome =
@@ -251,7 +255,7 @@ export type MedusaPartialCancelOutcome =
   | { kind: 'rejected'; message: string }
   /** 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) */
   | { kind: 'external_refund'; message: string; unresolvedAmount: number }
-  | { kind: 'refund_pending'; message: string };
+  | { kind: 'refund_pending'; message: string; refundFailure?: ChannelOrderCancelRefundFailure };
 
 /** Medusa 가 정해진 결과가 아닌 상태로 답했다. status 를 실어 `isTransientMedusaError` 가 읽는다. */
 export class MedusaHttpError extends Error {
@@ -1932,12 +1936,12 @@ export class MedusaClient {
   }
 
   /**
-   * 전체취소. 400 은 문구로 가른다 — «이미 취소됨»만 성공 쪽이고(멱등: 같은 명령의 재전달), 나머지 400 을 성공으로 삼키지 않는다.
-   * 코어 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»으로만 선다.
-   * wallet 이 환불을 거절하면 Medusa 는 그 오류를 500 «An unknown error occurred.» 로 가린다 — 장애와 구분할 수 없어 던진다(일시 실패).
+   * 전체취소 — 우리 채널 취소 라우트(#1016 36번 스펙 §4.6). 기본 /cancel 은 환불 오류를 삼켜 환불 없이 주문을 취소하므로 쓰지 않는다.
+   * 400 은 문구로 가른다 — 표지(`wallet_refund_*`)면 환불 거절, «이미 취소됨»은 성공 쪽(멱등: 같은 명령의 재전달), 나머지는 거절.
+   * 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»과 «남은 몫만 환불»로 선다. 5xx·본문 없는 404 는 던진다(일시 실패).
    */
   async cancelOrder(orderId: string): Promise<MedusaCancelOutcome> {
-    const path = `/admin/orders/${encodeURIComponent(orderId)}/cancel`;
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/channel-cancel`;
     const { status, body } = await this.postAdmin(path);
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
     if (status >= 200 && status < 300) {
@@ -1947,6 +1951,9 @@ export class MedusaClient {
     // 본문 없는 404 는 게이트웨이·오라우팅이다 — 주문 없음으로 읽지 않고 던진다(롤링 중 옛 Medusa 포함)
     if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
     if (status === 400) {
+      // 표지를 먼저 본다 — 같은 not_allowed 400 이라 아래 not_cancelable 로 떨어지면 «채널이 거절»로 보이고 사유 갈래를 잃는다
+      const refundFailure = parseRefundFailureCode(body.code);
+      if (refundFailure) return { kind: 'refund_refused', message, refundFailure };
       if (ALREADY_CANCELLED_MESSAGE.test(message)) return { kind: 'already_cancelled' };
       return { kind: 'not_cancelable', message };
     }
@@ -2621,7 +2628,10 @@ export class MedusaClient {
       return { kind: 'rejected', message };
     }
     // 본문으로 가린다 — ALB 가 Medusa 다운 때 내는 502 에는 이 본문이 없다
-    if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
+    if (status === 502 && body.type === 'refund_pending') {
+      const refundFailure = readRefundFailure(body.refundFailure);
+      return refundFailure ? { kind: 'refund_pending', message, refundFailure } : { kind: 'refund_pending', message };
+    }
     this.logger.error(`Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`, message);
     throw new MedusaHttpError(status, `Medusa partialCancelOrder failed (status=${status}, type=${String(body.type)}): ${message}`);
   }

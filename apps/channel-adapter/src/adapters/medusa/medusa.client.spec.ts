@@ -1482,16 +1482,21 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
   });
 
   describe('cancelOrder', () => {
-    it('코어 취소 라우트를 Basic 인증으로 POST 한다', async () => {
-      global.fetch = respond(200, { order: { id: 'order_1' } });
+    it('채널 취소 라우트를 Basic 인증으로 POST 한다 — 기본 /cancel 은 환불 오류를 삼켜 환불 없이 취소한다(#1016 36번)', async () => {
+      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled' });
       await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'cancelled' });
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://medusa.local/admin/orders/order_1/cancel',
+        'http://medusa.local/admin/orders/order_1/channel-cancel',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({ Authorization: `Basic ${Buffer.from('sk_test:').toString('base64')}` }),
         }),
       );
+    });
+
+    it('본문 없는 404(옛 Medusa 에 채널 취소 라우트가 없음)는 «주문 없음»이 아니다 — 던져 재시도한다', async () => {
+      global.fetch = respond(404, undefined);
+      await expect(makeClient().cancelOrder('order_1')).rejects.toBeInstanceOf(MedusaHttpError);
     });
 
     it('«이미 취소됨» 400 만 성공 쪽이다', async () => {
@@ -1532,6 +1537,21 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })) as any;
       const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
       expect(isTransientMedusaError(err)).toBe(true);
+    });
+
+    it('wallet 환불 거절 표지가 붙은 400 은 refund_refused — 이미 취소됨·not_cancelable 보다 먼저 본다(#1016 36번)', async () => {
+      const message = 'wallet 에 Medusa 장부에 없는 환불이 있습니다 (wallet REFUND_AMOUNT_EXCEEDS_TOTAL: 3000)';
+      global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_ledger_mismatch:REFUND_AMOUNT_EXCEEDS_TOTAL', message });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({
+        kind: 'refund_refused',
+        message,
+        refundFailure: { kind: 'ledger_mismatch', walletCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL' },
+      });
+    });
+
+    it('갈래를 모르는 표지는 일반 거절로 닫는다 — 재시도 루프를 만들지 않는다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_other:X', message: 'm' });
+      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message: 'm' });
     });
   });
 
@@ -1602,6 +1622,21 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
     it('502 refund_pending 은 환불 미완 결과다', async () => {
       global.fetch = respond(502, { type: 'refund_pending', stage: 'edited', requestId: 'req-1', message: '환불이 끝나지 않았습니다' });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'refund_pending', message: '환불이 끝나지 않았습니다' });
+    });
+
+    it('502 refund_pending 에 환불 거절 갈래가 실려 오면 함께 돌려준다(#1016 36번)', async () => {
+      global.fetch = respond(502, {
+        type: 'refund_pending',
+        stage: 'edited',
+        requestId: 'req-1',
+        message: '환불 불가',
+        refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' },
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'refund_pending',
+        message: '환불 불가',
+        refundFailure: { kind: 'refused', walletCode: 'REFUND_NOT_AUTOMATABLE' },
+      });
     });
 
     it('본문 없는 502(ALB)는 환불 미완이 아니다 — 던진다', async () => {
