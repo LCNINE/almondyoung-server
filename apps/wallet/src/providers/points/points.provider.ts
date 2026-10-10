@@ -133,7 +133,8 @@ export class PointsPaymentProvider implements PaymentProvider {
     const result = await this.dbService.db.transaction((tx) =>
       this.pointsLedgerService.refund(tx, {
         intentId: params.intentId,
-        legId: params.chargeId,
+        // 원장은 사용(REDEEM)을 승인 결제분 id 로 쌓았다 — 확정분 환불이면 그 id 로 읽어야 한다(ledgerLegChargeId)
+        legId: params.authorizeChargeId ?? params.chargeId,
         attemptId: params.refundId,
         amount: params.amount,
         currency: params.currency,

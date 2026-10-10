@@ -36,6 +36,11 @@ export interface RefundReceiveAccount {
 export interface RefundParams {
   refundId: string;
   chargeId: string;
+  /**
+   * provider 원장이 이 결제분을 아는 id. 확정(CAPTURE)분이면 그 승인(AUTHORIZE)분 id 다 —
+   * 확정 때 provider 에 승인분 id 를 넘기기 때문이다(`ledgerLegChargeId`). 포인트 provider 만 읽는다.
+   */
+  authorizeChargeId?: string;
   intentId: string;
   userId: string;
   amount: number;
