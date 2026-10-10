@@ -160,6 +160,8 @@ export function cellCount(
 const STATE_LABELS: Record<string, string> = {
   cancel_requested: '취소 요청 미반영',
   cancel_edited: '수정됨 · 환불 미완',
+  cancel_refund_refused: '취소 · 환불 불가',
+  cancel_refund_mismatch: '취소 · 장부 불일치',
   no_backlog: '출고 대기열 미적재',
   pending: '대기',
   processing: '처리 중',

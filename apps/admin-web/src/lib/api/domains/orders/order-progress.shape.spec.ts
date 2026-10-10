@@ -44,6 +44,8 @@ describe('order-progress shape', () => {
   it('취소 요청 단계의 세부 상태 이름', () => {
     expect(stateLabel('cancel_requested')).toBe('취소 요청 미반영');
     expect(stateLabel('cancel_edited')).toBe('수정됨 · 환불 미완');
+    expect(stateLabel('cancel_refund_refused')).toBe('취소 · 환불 불가');
+    expect(stateLabel('cancel_refund_mismatch')).toBe('취소 · 장부 불일치');
   });
 
   it('요약은 envelope 여부와 무관하게 읽고, 깨진 몸통은 빈 요약', () => {

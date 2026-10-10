@@ -5,6 +5,14 @@
 
 import type { AmendmentRecord } from './sales-order-amendments.shape';
 
+/** 열린 요청에 붙은 wallet 환불 거절 사유(#1016 36번). 요청은 열린 채 출고 보류가 유지된다 */
+export interface CancelRequestRefundFailure {
+  kind: 'refused' | 'ledger_mismatch';
+  walletCode: string;
+  message: string;
+  at: string;
+}
+
 export interface CancelRequestView {
   id: string;
   status: 'requested' | 'applied' | 'rejected' | 'superseded';
@@ -12,6 +20,7 @@ export interface CancelRequestView {
   stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
+  refundFailure: CancelRequestRefundFailure | null;
   rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
   outcome: {
     refundAmount: number;
@@ -42,6 +51,15 @@ const REJECTION_LABELS: Record<string, string> = {
   OPERATOR_WITHDRAWN: '요청 접음',
   EXTERNAL_REFUND_UNRESOLVED: '이미 환불한 금액 확인 필요',
 };
+const REFUND_FAILURE_LABELS: Record<CancelRequestRefundFailure['kind'], string> = {
+  refused: '환불 불가 · 다른 수단으로 환불 필요',
+  // 이미 돈이 나갔을 수 있다 — «환불 불가»로 읽고 수동으로 또 환불하면 이중 환불이다
+  ledger_mismatch: '장부 불일치 · 다시 환불하지 마세요 · wallet 환불 내역 대조',
+};
+
+export function refundFailureLabel(failure: CancelRequestRefundFailure): string {
+  return `${REFUND_FAILURE_LABELS[failure.kind]} · ${failure.message}`;
+}
 const won = new Intl.NumberFormat('ko-KR');
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,6 +81,18 @@ function rejectionOf(value: unknown): CancelRequestView['rejection'] {
     message: value.message,
     at: typeof value.at === 'string' ? value.at : '',
     ...(typeof value.unresolvedRefundAmount === 'number' ? { unresolvedRefundAmount: value.unresolvedRefundAmount } : {}),
+  };
+}
+
+function refundFailureOf(value: unknown): CancelRequestRefundFailure | null {
+  if (!isRecord(value) || typeof value.walletCode !== 'string') return null;
+  const { kind } = value;
+  if (kind !== 'refused' && kind !== 'ledger_mismatch') return null;
+  return {
+    kind,
+    walletCode: value.walletCode,
+    message: typeof value.message === 'string' ? value.message : '',
+    at: typeof value.at === 'string' ? value.at : '',
   };
 }
 
@@ -90,6 +120,7 @@ export function toCancelRequestView(value: unknown): CancelRequestView | null {
     stage: value.stage === 'edited' ? 'edited' : null,
     convertedFromFull: value.convertedFromFull === true,
     requestedAt: typeof value.requestedAt === 'string' ? value.requestedAt : '',
+    refundFailure: refundFailureOf(value.refundFailure),
     rejection: rejectionOf(value.rejection),
     outcome: outcomeOf(value.outcome),
   };
@@ -107,6 +138,7 @@ export function cancelRequestFromAmendment(row: AmendmentRecord): CancelRequestV
     stage: request.stage,
     convertedFromFull: request.convertedFromFull,
     requestedAt: row.occurredAt,
+    refundFailure: request.refundFailure,
     rejection: row.metadata.rejection,
     outcome: row.metadata.outcome,
   });
@@ -117,7 +149,12 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   if (center) return { kind: 'seller_center', label: `${center} 판매자센터에서 취소` };
   const request = row.cancelRequest;
   if (request?.status === 'requested') {
-    return { kind: 'requested', label: request.stage === 'edited' ? '수정됨 · 환불 미완' : '취소 요청됨' };
+    const label = request.refundFailure
+      ? refundFailureLabel(request.refundFailure)
+      : request.stage === 'edited'
+        ? '수정됨 · 환불 미완'
+        : '취소 요청됨';
+    return { kind: 'requested', label };
   }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };
@@ -128,8 +165,14 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
 export function cancelRequestLine(view: CancelRequestView): string {
   const name = view.scope === 'full' ? '전체취소' : view.convertedFromFull ? '부분취소(출고분 제외)' : '부분취소';
   switch (view.status) {
-    case 'requested':
-      return `${name} 요청 · ${view.stage === 'edited' ? '수정됨 · 환불 미완' : '처리 중'}`;
+    case 'requested': {
+      const state = view.refundFailure
+        ? refundFailureLabel(view.refundFailure)
+        : view.stage === 'edited'
+          ? '수정됨 · 환불 미완'
+          : '처리 중';
+      return `${name} 요청 · ${state}`;
+    }
     case 'applied': {
       const o = view.outcome;
       if (!o) return `${name} 반영`;
