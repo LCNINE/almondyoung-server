@@ -133,6 +133,7 @@ export class StoreSalesOrdersService {
       reasonCode?: string;
       reasonDetail?: string;
       lines?: Array<{ salesOrderLineId: string; quantity: number }>;
+      alreadyRefundedAmount?: number;
       fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] };
     },
   ): Promise<AdminCancelResult> {
@@ -150,8 +151,12 @@ export class StoreSalesOrdersService {
         sourceKey: ctx.idempotencyKey,
         reasonCode: dto.reasonCode,
         reasonDetail: dto.reasonDetail,
+        ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),
       });
       return { requestId: view.id, status: view.status, scope: view.scope, convertedFromFull: view.convertedFromFull };
+    }
+    if (dto.alreadyRefundedAmount !== undefined) {
+      throw new BadRequestException('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
     }
     if (
       dto.fulfillmentCommandContext &&

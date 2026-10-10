@@ -228,6 +228,9 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
             shippingCharge: r.shippingCharge as number,
             shippingRefund: r.shippingRefund as number,
             shippingNotAdjusted: r.shippingNotAdjusted === true,
+            ...(typeof r.externalRefundApplied === 'number' && r.externalRefundApplied > 0
+              ? { externalRefundApplied: r.externalRefundApplied }
+              : {}),
           },
         ];
       })
