@@ -414,7 +414,7 @@ Medusa JS SDK 의 `FetchError` 는 본문의 `type`·`code` 를 버린다 — �
 12. **`edited` 에 멈춘 부분취소 뒤에 전체취소가 옴**: 전체취소가 캡처 잔액을 다 환불하므로 그 부분취소의 재시도는 «캡처 잔액 부족»으로
     영원히 실패한다. 돈은 맞는데 끝 상태가 없다 — PR-B/C 가 정체 보드에서 이 경우를 닫아야 한다. PR-C: 전체취소 수집이 열린 부분 요청을 `superseded`(`CHANNEL_FULL_CANCEL`)로 닫는다
 13. **품목과 무관한 wallet 일부 환불 뒤 같은 품목의 부분취소**: 외부 환불은 크레딧 라인으로 투영될 뿐 품목에 묶이지 않아, 같은
-    품목을 Medusa 에서 부분취소하면 다시 환불한다
+    품목을 Medusa 에서 부분취소하면 다시 환불한다 → 안전망: `2026-10-10-external-refund-partial-cancel-design.md`, 모델: ADR-0043
 14. **배포 겹침 창**: `reasonCode` 없는 옛 wallet 의 사실이 아직 `walletRefundIds` 에 안 실린 Medusa 환불의 것이면 한 번 더
     기록될 수 있다(좁은 창)
 
