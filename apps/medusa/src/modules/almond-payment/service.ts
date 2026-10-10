@@ -30,6 +30,7 @@ import {
   withWalletRefundIds,
   type WalletRefundRow,
 } from './refund-data';
+import { WalletHttpError, classifyWalletRefundRefusal, walletRefundRefusalError } from './wallet-refund-refusal';
 
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
@@ -72,11 +73,10 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      const message = body?.message ?? `Wallet API error ${res.status}: ${path}`;
-      // 에러 코드를 메시지 앞에 붙인다 — 호출부가 코드로 분기할 수 있어야 한다
-      // (예: NO_STAGED_APPROVAL, INTENT_NOT_CANCELABLE). 코드 없이 메시지 문구에만
-      // 의존하면 wallet 쪽 문구가 바뀔 때 조용히 분기가 죽는다.
-      throw new Error(body?.error ? `${body.error}: ${message}` : message);
+      const walletCode = typeof body?.error === 'string' ? body.error : undefined;
+      const message = typeof body?.message === 'string' ? body.message : `Wallet API error ${res.status}: ${path}`;
+      // WalletHttpError.message 는 «코드: 문장» — 호출부의 includes 분기(NO_STAGED_APPROVAL, INTENT_NOT_CANCELABLE)가 산다
+      throw new WalletHttpError(res.status, walletCode, message);
     }
     return res.json();
   }
@@ -272,11 +272,22 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
     // Medusa 결제 모듈이 refund 행 id 를 idempotency_key 로 준다 — 같은 환불의 재시도가 wallet 에서 한 번으로 접힌다.
     const idempotencyKey = (input as { context?: { idempotency_key?: string } }).context?.idempotency_key;
-    const res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
-      method: 'POST',
-      ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
-      body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
-    });
+    let res: { refunds?: WalletRefundRow[] };
+    try {
+      res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
+        method: 'POST',
+        ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
+        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
+      });
+    } catch (error) {
+      // 영구 거절만 NOT_ALLOWED(400)로 바꾼다 — 일시 실패까지 바꾸면 channel-adapter 가 재시도 없이 닫는다(#1016 36번 스펙 §4.1)
+      const walletCode = error instanceof WalletHttpError ? error.walletCode : undefined;
+      const kind = classifyWalletRefundRefusal(walletCode);
+      if (kind && walletCode && error instanceof WalletHttpError) {
+        throw walletRefundRefusalError(kind, walletCode, error.walletMessage);
+      }
+      throw error;
+    }
     // wallet 은 PG 가 거절한 환불도 200 + FAILED 행으로 준다. 여기서 던져야 Medusa 가 환불 행을 지우고 장부에 안 남긴다.
     const verdict = judgeWalletRefund(res?.refunds ?? [], refundAmount);
     if (!verdict.ok) {

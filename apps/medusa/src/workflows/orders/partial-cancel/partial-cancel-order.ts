@@ -13,6 +13,7 @@ import {
 } from '@medusajs/medusa/core-flows';
 
 import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
+import { readRefundFailureCode, type WalletRefundRefusalKind } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 import { toNumber } from './amount';
@@ -64,6 +65,8 @@ export class PartialCancelRefundPending extends Error {
   constructor(
     readonly requestId: string,
     message: string,
+    /** 원인이 wallet 의 영구 거절이면 그 갈래(#1016 36번) — 재시도 동작은 같고 표시만 다르다 */
+    readonly refundFailure?: { kind: WalletRefundRefusalKind; walletCode: string },
   ) {
     super(message);
     this.name = 'PartialCancelRefundPending';
@@ -78,6 +81,12 @@ const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 /** 상계 음수 크레딧 라인의 reference — reference_id 는 requestId. 재시도가 이것으로 이미 넣었는지 본다 */
 const OFFSET_CREDIT_LINE_REFERENCE = 'partial-cancel';
 
+/**
+ * 부분취소와 채널 전체취소(#1016 36번)가 같이 쓰는 주문 잠금. core 가 접은 부분취소 명령이 Kafka 에서 아직 재시도 중일 수
+ * 있다 — 그것이 전체취소의 환불·취소 사이에 끼어들지 않게 한 키로 직렬화한다. 값은 진행 중인 부분취소 잠금과 맞물리도록 옛 값 그대로.
+ */
+export const orderCancelLockKey = (orderId: string) => `partial-cancel:${orderId}`;
+
 const editTag = (requestId: string) => `partial-cancel:${requestId}`;
 const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
 
@@ -91,7 +100,7 @@ const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
  */
 export async function partialCancelOrder(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
   const locking = container.resolve(Modules.LOCKING);
-  return locking.execute(`partial-cancel:${input.orderId}`, () => run(container, input), {
+  return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
   });
 }
@@ -112,7 +121,11 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
     await offsetExternalRefund(container, input.orderId, input.requestId, record.externalRefundApplied ?? 0);
     await refund(container, input.orderId, input.requestId, record.refundAmount, input.actorId);
   } catch (error) {
-    throw new PartialCancelRefundPending(input.requestId, `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`);
+    throw new PartialCancelRefundPending(
+      input.requestId,
+      `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`,
+      readRefundFailureCode(error) ?? undefined,
+    );
   }
   const done: PartialCancelRecord = { ...record, stage: 'refunded', refundedAt: new Date().toISOString() };
   await writeRecord(container, input.orderId, input.requestId, done);
@@ -406,7 +419,7 @@ function readSnapshot(data: Record<string, unknown> | null | undefined): Shippin
 }
 
 /** 주문 ↔ 결제 컬렉션은 링크다(주문 버전과 무관). 결제 자체는 payment 모듈에서 읽는다. */
-async function orderPaymentIds(container: MedusaContainer, orderId: string): Promise<string[]> {
+export async function orderPaymentIds(container: MedusaContainer, orderId: string): Promise<string[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({ entity: 'order', fields: ['id', 'payment_collections.id'], filters: { id: orderId } });
   // query.graph 의 링크 필드는 타입이 넓다 — 경계에서 id 배열로만 좁힌다.
