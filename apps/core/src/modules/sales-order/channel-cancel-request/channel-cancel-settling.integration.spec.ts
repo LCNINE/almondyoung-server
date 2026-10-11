@@ -140,6 +140,32 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
+  it('진행 기록 없는 부분 정산 둘이 같은 줄 + 주소 변경 — 합친 «늘어남» 하나를 먹는다(반영 대기 변경 없음, D10)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      // 줄 0(수량 2)에서 1개씩 두 번 — 줄 1 이 남아 둘 다 부분이다. core 유효 수량은 (0,1)
+      const ids: string[] = [];
+      for (const sourceKey of ['k1', 'k2']) {
+        const view = await w.manager.request(
+          { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], requester: OPERATOR, sourceKey },
+          tx,
+        );
+        ids.push(view.id);
+      }
+      expect((await rowOf(tx, ids[1])).metadata).toMatchObject({ request: { scope: 'partial' } });
+      // Medusa 는 둘 다 아직 안 줄였다 — 스냅샷 (2,1) 이라 diff 는 줄 0 에 0→2 하나를 낸다(요청 하나하나의 크기 1 과 다르다)
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { address: NEXT_ADDRESS }), 'm-1', tx);
+      for (const id of ids) expect((await rowOf(tx, id)).status).toBe('settling');
+      const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
+        (a) => a.origin === 'channel',
+      );
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('applied');
+      expect((channelRows[0].deltas as Array<{ type: string }>).map((d) => d.type)).toEqual(['shipping_address_change']);
+    });
+  });
+
   it('정산 실패 — 영구면 refused, 일시면 in_progress, 둘 다 마지막 실패를 적는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, id } = await confirmFull(tx);

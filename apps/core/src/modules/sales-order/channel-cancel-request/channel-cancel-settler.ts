@@ -6,9 +6,10 @@ import { SalesOrdersService } from '../services/sales-orders.service';
 import { errorDetail, isDomainRefusal } from '../channel-order-change/channel-change-blockers';
 import type { ChannelDelta } from '../channel-order-change/channel-order-change.types';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
-import { takeRequestedDecreases, takeRequestedIncreases } from './channel-cancel-match';
+import { combineRequestLines, takeRequestedDecreases, takeRequestedIncreases } from './channel-cancel-match';
 import {
   CHANNEL_CANCEL_REQUEST_REASON,
+  CancelRequestLine,
   CancelRequestMetadata,
   Settlement,
   readCancelRequestLines,
@@ -43,7 +44,8 @@ export class ChannelCancelSettler {
     occurredAt: string,
     tx: DbTx,
   ): Promise<ChannelDelta[]> {
-    let rest = await this.settleLegacyModified(salesOrderId, deltas, progress, occurredAt, tx);
+    const rest = await this.settleLegacyModified(salesOrderId, deltas, progress, occurredAt, tx);
+    const unreflected: CancelRequestLine[] = [];
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
       if (meta.request.scope !== 'partial') continue;
@@ -52,13 +54,14 @@ export class ChannelCancelSettler {
         await this.write(row.id, 'applied', { ...settled(meta), outcome: outcomeOf(record) }, tx);
         continue;
       }
-      if (!record) {
-        const taken = takeRequestedIncreases(readCancelRequestLines(row.deltas), rest);
-        if (taken.matched) rest = taken.rest;
-      }
+      if (!record) unreflected.push(...readCancelRequestLines(row.deltas));
       // edited — 채널은 줄였고 환불이 남았다. 정산 중 그대로(실패 사실이 사유를 싣는다)
     }
-    return rest;
+    if (unreflected.length === 0) return rest;
+    // 채널이 아직 안 줄인 요청이 같은 줄에 여럿이면 diff 는 그 합을 «늘어남» 하나로 낸다(줄당 델타 하나) — 요청마다 따로 대조하면
+    // 어느 것도 크기가 맞지 않아 이미 취소한 수량이 반영 대기 변경으로 새어 나간다. 판매 줄별로 합쳐 한 번에 먹는다(전부 맞을 때만).
+    const taken = takeRequestedIncreases(combineRequestLines(unreflected), rest);
+    return taken.matched ? taken.rest : rest;
   }
 
   /** 옛 requested 행(PR 5 전) — 수집 때 물리 적용하고 진행 기록으로 닫는다(#1016 35번). */

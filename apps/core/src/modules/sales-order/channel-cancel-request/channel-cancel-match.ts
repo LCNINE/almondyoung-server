@@ -40,3 +40,13 @@ export function takeRequestedDecreases(lines: CancelRequestLine[], deltas: Chann
 export function takeRequestedIncreases(lines: CancelRequestLine[], deltas: ChannelDelta[]) {
   return takeRequested(lines, deltas, (d) => d.correctedQuantity - d.quantityBefore);
 }
+
+/** 요청 줄을 판매 줄별로 합친다(처음 나온 순서, 수량은 더한다). 채널 줄 번호는 같은 판매 줄이면 같다. */
+export function combineRequestLines(lines: CancelRequestLine[]): CancelRequestLine[] {
+  const byLine = new Map<string, CancelRequestLine>();
+  for (const line of lines) {
+    const seen = byLine.get(line.salesOrderLineId);
+    byLine.set(line.salesOrderLineId, seen ? { ...seen, quantity: seen.quantity + line.quantity } : { ...line });
+  }
+  return [...byLine.values()];
+}
