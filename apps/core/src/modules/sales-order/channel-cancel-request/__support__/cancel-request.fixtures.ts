@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CORE_ORDER_STREAM,
@@ -25,6 +25,7 @@ import { ChannelOrderChangeReader } from '../../channel-order-change/channel-ord
 import { ChannelCancelSettler } from '../channel-cancel-settler';
 import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
+import { CHANNEL_CANCEL_REQUEST_REASON } from '../channel-cancel-request.types';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -116,6 +117,110 @@ export async function markLineShipped(tx: DbTx, salesOrderLineId: string, shippe
     .update(wmsTables.fulfillmentOrderItems)
     .set({ shippedQty })
     .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
+}
+
+/**
+ * 줄 «전체»가 출고된 모양 — 출고 수량을 다 찍고, 그 줄의 활성 박스 라인을 출고된 박스로 옮기고 예약을 푼다.
+ * markLineShipped 는 수량만 찍는 지름길이라 판정(planCancellation)까지만 맞다. 요청이 물리 취소까지 하면(PR 5)
+ * 같은 주문의 출고 불변식 검사(ACTIVE_LINE_QUANTITY)를 지나야 하므로, 다른 줄을 실제로 취소하는 시나리오(31번)는 이것을 쓴다.
+ */
+export async function shipLineOut(tx: DbTx, salesOrderLineId: string): Promise<void> {
+  const items = await tx
+    .select({ id: wmsTables.fulfillmentOrderItems.id, qty: wmsTables.fulfillmentOrderItems.qty })
+    .from(wmsTables.fulfillmentOrderItems)
+    .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
+  for (const item of items) {
+    const lines = await tx
+      .select({ id: wmsTables.shipmentLines.id, warehouseId: wmsTables.shipments.warehouseId })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+      .where(
+        and(
+          eq(wmsTables.shipmentLines.fulfillmentOrderItemId, item.id),
+          inArray(wmsTables.shipments.status, ['draft', 'planned']),
+        ),
+      );
+    if (lines.length > 0) {
+      const [shipped] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: lines[0].warehouseId, status: 'shipped', shippedAt: new Date() })
+        .returning();
+      const lineIds = lines.map((line) => line.id);
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: shipped.id })
+        .where(inArray(wmsTables.shipmentLines.id, lineIds));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(
+          and(
+            inArray(wmsTables.stockReservations.shipmentLineId, lineIds),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+    }
+    await tx
+      .update(wmsTables.fulfillmentOrderItems)
+      .set({ shippedQty: item.qty })
+      .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+  }
+}
+
+/**
+ * PR 5 전에 만들어진 «requested» 요청 행 — 라이브에 남은 옛 행의 모양(물리 미적용·출고 보류). manager.request 는 이제 이 행을 만들지 않는다.
+ * 옛 규칙([다시 보내기]·[요청 접기]·옛 사실·수집 때 적용)이 끝까지 도는지 보는 스펙이 쓴다.
+ */
+export async function seedLegacyRequest(
+  tx: DbTx,
+  seed: SeededOrder,
+  opts: { lines?: Array<{ salesOrderLineId: string; quantity: number }>; stage?: 'edited'; appliedAt?: string } = {},
+): Promise<string> {
+  const id = randomUUID();
+  const scope: 'full' | 'partial' = opts.lines ? 'partial' : 'full';
+  const lines =
+    opts.lines ?? seed.lineIds.map((salesOrderLineId, i) => ({ salesOrderLineId, quantity: seed.lines[i].qty }));
+  const itemOf = (lineId: string) => seed.lines[seed.lineIds.indexOf(lineId)].item;
+  const requestedAt = new Date().toISOString();
+  await tx.insert(wmsTables.salesOrderAmendments).values({
+    id,
+    salesOrderId: seed.salesOrderId,
+    amendmentKind: 'commercial',
+    reasonCode: CHANNEL_CANCEL_REQUEST_REASON,
+    deltas: lines.map((l) => ({
+      type: 'cancel_line',
+      salesOrderLineId: l.salesOrderLineId,
+      channelOrderItemId: itemOf(l.salesOrderLineId),
+      quantity: l.quantity,
+    })),
+    metadata: {
+      salesChannel: 'medusa',
+      externalOrderId: seed.externalOrderId,
+      request: {
+        kind: 'cancel',
+        scope,
+        requestedBy: 'admin:7d0a3c6e-0000-4000-8000-000000000001',
+        sourceKey: `legacy-${id}`,
+        ...(opts.stage ? { stage: opts.stage } : {}),
+        ...(opts.appliedAt ? { appliedAt: opts.appliedAt } : {}),
+        command: {
+          requestId: id,
+          salesChannel: 'medusa',
+          externalOrderId: seed.externalOrderId,
+          scope,
+          ...(scope === 'partial'
+            ? { lines: lines.map((l) => ({ channelOrderItemId: itemOf(l.salesOrderLineId), quantity: l.quantity })) }
+            : {}),
+          requestedBy: 'operator',
+          requestedAt,
+        },
+      },
+    },
+    origin: 'operator',
+    status: 'requested',
+    occurredAt: new Date(requestedAt),
+  });
+  return id;
 }
 
 /**

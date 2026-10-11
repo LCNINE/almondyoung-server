@@ -1,6 +1,7 @@
 // apps/core/src/modules/fulfillment/order-reconcile/order-reconcile.module.ts
 import { Module } from '@nestjs/common';
 import { ProductMatchingModule } from '../../product-matching/product-matching.module';
+import { SalesOrderModule } from '../../sales-order/sales-order.module';
 import { FulfillmentOrderCreationBacklogModule } from '../backlog/fulfillment-order-creation-backlog.module';
 import { FulfillmentModule } from '../fulfillment.module';
 import { OrderProgressModule } from '../order-progress/order-progress.module';
@@ -16,7 +17,7 @@ import { ShipmentReconcileRepository } from './shipment-reconcile.repository';
  * 깨우는 신호를 놓친 주문을 다시 판정한다. DbModule 은 전역.
  */
 @Module({
-  imports: [FulfillmentOrderCreationBacklogModule, ProductMatchingModule, OrderProgressModule, FulfillmentModule],
+  imports: [FulfillmentOrderCreationBacklogModule, ProductMatchingModule, OrderProgressModule, FulfillmentModule, SalesOrderModule],
   providers: [
     OrderReconcileRepository,
     ShipmentReconcileRepository,

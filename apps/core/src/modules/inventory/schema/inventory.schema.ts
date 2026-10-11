@@ -1469,7 +1469,7 @@ export const salesOrderAmendments = pgTable(
     // requested·rejected: 채널 주문 취소 요청(#1016 35번, ADR-0042). requested 인 행이 곧 «출고 보류»다.
     // 'requested' 는 채널 취소 요청 전용으로 예약됐다 — 보류·정체 보드·유니크 인덱스가 reason_code 없이 이 값만으로 키를 잡는다.
     status: varchar('status', { length: 16 })
-      .$type<'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'rejected'>()
+      .$type<'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'settling' | 'rejected'>()
       .notNull()
       .default('pending'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
@@ -1507,13 +1507,14 @@ export const salesOrderAmendments = pgTable(
     originCheck: check('sales_order_amendments_origin_check', sql`${t.origin} IN ('channel', 'operator')`),
     statusCheck: check(
       'sales_order_amendments_status_check',
-      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected')`,
+      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'settling', 'rejected')`,
     ),
     // 한 주문에 열린 취소 요청은 하나(스펙 §5.1) — 늦게 온 요청은 열린 요청을 돌려받는다. 요청 트랜잭션이 판매주문을
     // 먼저 잠가 직렬화하므로 이 인덱스는 코드 밖 경로(손 SQL 등)에 대한 마지막 방어선이다.
     uqOpenCancelRequest: uniqueIndex('uq_sales_order_amendments_open_cancel_request')
       .on(t.salesOrderId)
       .where(sql`${t.status} = 'requested'`),
+    // settling(#1016 36번 재설계)은 한 주문에 여럿일 수 있다 — 이 인덱스는 옛 requested 행용으로 남는다(스펙 §7.3).
   }),
 );
 

@@ -114,6 +114,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
     SalesOrderAmendmentsService,
     SalesOrderQueryService, // Fulfillment BC (FO 생성 시 SO/라인 조회)
+    ChannelCancelRequestService, // Fulfillment BC (리컨실러 36번 — 정산 재발행)
   ],
 })
 export class SalesOrderModule {}

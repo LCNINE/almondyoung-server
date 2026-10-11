@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
-import { isCancelRequested, unresolvedRefundToAsk } from '@/lib/api/domains/orders/cancel-request.shape';
+import { cancelRequestToast, isCancelRequested, unresolvedRefundToAsk } from '@/lib/api/domains/orders/cancel-request.shape';
 
 const REASON_CODES = [
   { value: 'CUSTOMER_REQUEST', label: '고객 요청' },
@@ -186,10 +186,8 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
         },
       });
       if (isCancelRequested(result)) {
-        // 채널 주문 — 채널이 취소·환불하고 수집으로 반영된다(#1016 35번). 결과는 주문 행의 배지가 보여 준다.
-        toast.success(
-          result.convertedFromFull ? '출고된 상품을 뺀 나머지의 취소를 요청했습니다.' : '취소를 요청했습니다.'
-        );
+        // 채널 주문 — core 가 그 자리에서 취소를 확정했고 환불은 채널이 정산한다(#1016 36번 재설계). 정산 상태는 주문 행이 보여 준다.
+        toast.success(cancelRequestToast(result));
         onOpenChange(false);
         return;
       }

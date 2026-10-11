@@ -24,6 +24,7 @@ import {
 } from '../dto/store-order-actions.dto';
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
+import { channelRefundStatus, manualTransferOf, needsManualTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
@@ -70,7 +71,15 @@ const ACTIVE_EXCHANGE_STATUSES = [
   'inspected',
   'refund_pending',
 ] as const;
-const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>(['none', 'pending', 'manual_pending', 'succeeded', 'failed']);
+const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>([
+  'none',
+  'pending',
+  'manual_pending',
+  'succeeded',
+  'failed',
+  'delayed',
+  'transfer_pending',
+]);
 
 @Injectable()
 export class StoreSalesOrdersService {
@@ -557,6 +566,8 @@ export class StoreSalesOrdersService {
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
     const hasShippedEvidence = hasShippedEvidenceFrom(phaseInput);
     const isChannelOrder = so.salesChannel !== 'medusa';
+    // 채널 주문의 정산 상태가 환불 배지를 정한다(#1016 36번 재설계 판정 5) — 정산이 할 말이 없으면 null 이고 아래 도출을 쓴다
+    const settlementRefund = so.salesChannel === 'medusa' ? await this.channelSettlementRefundStatus(so) : null;
 
     const availableActions: StoreOrderAction[] = [];
     let cancelUnavailableReason: StoreCancelUnavailableReason | undefined;
@@ -664,6 +675,11 @@ export class StoreSalesOrdersService {
       }
     }
 
+    if (settlementRefund) {
+      refundStatus = settlementRefund;
+      refundSummary = buildRefundSummary({ status: settlementRefund, amount: null, manualRequired: false, lastUpdatedAt: null });
+    }
+
     if (so.status === 'timeout') {
       // 아무 액션 없음
     } else if (so.status === 'cancelled') {
@@ -746,6 +762,15 @@ export class StoreSalesOrdersService {
     };
   }
 
+  private async channelSettlementRefundStatus(so: SalesOrderRow): Promise<StoreRefundStatus | null> {
+    const facts = await this.cancelRequests.settlementFactsFor(so.id);
+    if (facts.length === 0) return null;
+    const transfer = needsManualTransferCheck(facts)
+      ? manualTransferOf(so.walletIntentId ? await this.walletRefundClient.listRefundsByIntent(so.walletIntentId) : null)
+      : null;
+    return channelRefundStatus(facts, transfer);
+  }
+
   private async processCancelRequest(
     so: SalesOrderRow,
     customerId: string,
@@ -754,7 +779,7 @@ export class StoreSalesOrdersService {
   ): Promise<StoreOrderActionsResponseDto> {
     if (fulfillmentCommandContext) {
       const replay = await this.cancelRequests.findBySourceKey(so.id, fulfillmentCommandContext.idempotencyKey);
-      if (replay) return this.buildActionsView(so);
+      if (replay) return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
     }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
@@ -784,7 +809,8 @@ export class StoreSalesOrdersService {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
     });
-    return this.buildActionsView(so);
+    // 확정 트랜잭션이 판매주문을 취소했다 — 요청 전에 읽은 so 로 만들면 «취소 요청됨»으로 한 번 더 말한다(PR 4 넘길 것 1)
+    return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
   }
 
   /**
@@ -1408,6 +1434,9 @@ function buildRefundSummary(data: {
     manual_pending: '환불 처리에 추가 확인이 필요합니다. 빠른 시일 내에 처리해 드리겠습니다.',
     succeeded: null,
     failed: '환불 처리 중 오류가 발생했습니다. 고객센터로 문의해 주세요.',
+    // 문구 정본은 스토어프론트 i18n — 한국어 한 문장이 세 언어 안내를 덮지 않게(PR 4 넘길 것 4)
+    delayed: null,
+    transfer_pending: null,
   };
 
   return {

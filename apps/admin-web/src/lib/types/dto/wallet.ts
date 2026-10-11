@@ -97,6 +97,8 @@ export interface RefundDto {
   reasonMessage: string | null;
   createdAt: string;
   manualConfirmable: boolean;
+  /** wallet PR 1 — 'MANUAL' 은 PG 없이 송금 대기 */
+  execution?: 'AUTO' | 'MANUAL';
 }
 
 // ─── Payment Method ─────────────────────────────────────────────────────────

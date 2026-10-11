@@ -3,11 +3,22 @@
 // 채널 주문 취소 요청(#1016 35번) 응답 정형·문구 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 여기서 한다.
 // 서버 원형: apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.types.ts (CancelRequestView)
 
+import { formatDwell } from '../../../utils/format-dwell';
 import type { AmendmentRecord } from './sales-order-amendments.shape';
+
+export type SettlementPhase = 'in_progress' | 'delayed' | 'refused';
+export interface SettlementView {
+  requestId: string;
+  phase: SettlementPhase;
+  mode: 'auto' | 'manual';
+  confirmedAt: string;
+  deadlineAt: string;
+  lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
+}
 
 export interface CancelRequestView {
   id: string;
-  status: 'requested' | 'applied' | 'rejected' | 'superseded';
+  status: 'requested' | 'settling' | 'applied' | 'rejected' | 'superseded';
   scope: 'full' | 'partial';
   stage: 'edited' | null;
   convertedFromFull: boolean;
@@ -20,6 +31,9 @@ export interface CancelRequestView {
     shippingNotAdjusted: boolean;
     externalRefundApplied?: number;
   } | null;
+  /** 확정 뒤 정산 중일 때만(core 가 settling 에만 싣는다). 옛 응답은 null */
+  settlement: SettlementView | null;
+  refundMode: 'auto' | 'manual' | null;
 }
 
 export type AdminCancelResponse =
@@ -29,6 +43,7 @@ export type AdminCancelResponse =
 export type CancelAction =
   | { kind: 'cancel'; label: '취소' | '강제취소' }
   | { kind: 'requested'; label: string }
+  | { kind: 'settling'; label: string; alert: boolean }
   | { kind: 'rejected'; reason: string }
   | { kind: 'seller_center'; label: string };
 
@@ -49,11 +64,80 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isStatus(value: unknown): value is CancelRequestView['status'] {
-  return value === 'requested' || value === 'applied' || value === 'rejected' || value === 'superseded';
+  return value === 'requested' || value === 'settling' || value === 'applied' || value === 'rejected' || value === 'superseded';
 }
 
 function isScope(value: unknown): value is CancelRequestView['scope'] {
   return value === 'full' || value === 'partial';
+}
+
+export const SETTLEMENT_LABELS: Record<SettlementPhase, string> = {
+  in_progress: '환불 처리 중',
+  delayed: '환불 지연',
+  refused: '환불 거절',
+};
+export const MANUAL_REFUND_CONFIRM_TEXT =
+  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 상세의 환불 내역에서 [완료 처리]를 눌러 주세요.';
+const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const KST_OFFSET_MS = 9 * 3_600_000;
+
+function isPhase(value: unknown): value is SettlementPhase {
+  return value === 'in_progress' || value === 'delayed' || value === 'refused';
+}
+
+function failureOf(value: unknown): SettlementView['lastFailure'] {
+  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.message !== 'string') return null;
+  return {
+    code: value.code,
+    message: value.message,
+    retryable: value.retryable === true,
+    at: typeof value.at === 'string' ? value.at : '',
+  };
+}
+
+export function toSettlementView(value: unknown): SettlementView | null {
+  if (!isRecord(value) || typeof value.requestId !== 'string' || !isPhase(value.phase)) return null;
+  if (value.mode !== 'auto' && value.mode !== 'manual') return null;
+  if (typeof value.confirmedAt !== 'string' || typeof value.deadlineAt !== 'string') return null;
+  return {
+    requestId: value.requestId,
+    phase: value.phase,
+    mode: value.mode,
+    confirmedAt: value.confirmedAt,
+    deadlineAt: value.deadlineAt,
+    lastFailure: failureOf(value.lastFailure),
+  };
+}
+
+/** 운영자가 읽는 사유. wallet·PG 영구 거절과 그 밖(주문 없음 등 «개발 확인»)을 failureCode 접두사로 가른다(PR 3 넘길 것 4) */
+export function settlementReason(s: SettlementView): string | null {
+  const f = s.lastFailure;
+  // 환불 처리 중에 지난 실패를 곁에 두면 모순으로 읽힌다 — 다시 시도한 뒤의 진행 중엔 사유를 숨긴다
+  if (!f || s.phase === 'in_progress') return null;
+  if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
+  return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
+}
+
+/** 서버(core restartSettlement)와 같은 규칙 — 정산 중(30분 안)엔 조치 없음(D8), 이미 계좌 송금이면 다시 시도만 */
+export function settlementActionsOf(s: SettlementView | null): { retry: boolean; manualRefund: boolean } {
+  if (!s || s.phase === 'in_progress') return { retry: false, manualRefund: false };
+  return { retry: true, manualRefund: s.mode !== 'manual' };
+}
+
+export function settlementTiming(s: SettlementView, now: number): string {
+  const deadline = new Date(Date.parse(s.deadlineAt) + KST_OFFSET_MS);
+  const day = `${deadline.getUTCMonth() + 1}/${deadline.getUTCDate()}(${WEEKDAYS[deadline.getUTCDay()]})`;
+  return `확정 후 ${formatDwell(now - Date.parse(s.confirmedAt))} · 기한 ${day}`;
+}
+
+export function cancelRequestToast(r: Extract<AdminCancelResponse, { requestId: string }>): string {
+  if (r.status === 'settling') {
+    return r.convertedFromFull
+      ? '출고된 상품을 뺀 나머지를 취소했습니다. 환불은 채널이 처리합니다.'
+      : '취소했습니다. 환불은 채널이 처리합니다.';
+  }
+  return r.convertedFromFull ? '출고된 상품을 뺀 나머지의 취소를 요청했습니다.' : '취소를 요청했습니다.';
 }
 
 function rejectionOf(value: unknown): CancelRequestView['rejection'] {
@@ -92,6 +176,8 @@ export function toCancelRequestView(value: unknown): CancelRequestView | null {
     requestedAt: typeof value.requestedAt === 'string' ? value.requestedAt : '',
     rejection: rejectionOf(value.rejection),
     outcome: outcomeOf(value.outcome),
+    settlement: toSettlementView(value.settlement),
+    refundMode: value.refundMode === 'auto' || value.refundMode === 'manual' ? value.refundMode : null,
   };
 }
 
@@ -119,6 +205,10 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   if (request?.status === 'requested') {
     return { kind: 'requested', label: request.stage === 'edited' ? '수정됨 · 환불 미완' : '취소 요청됨' };
   }
+  if (request?.status === 'settling') {
+    const phase = request.settlement?.phase ?? 'in_progress';
+    return { kind: 'settling', label: SETTLEMENT_LABELS[phase], alert: phase !== 'in_progress' };
+  }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };
   }
@@ -130,6 +220,8 @@ export function cancelRequestLine(view: CancelRequestView): string {
   switch (view.status) {
     case 'requested':
       return `${name} 요청 · ${view.stage === 'edited' ? '수정됨 · 환불 미완' : '처리 중'}`;
+    case 'settling':
+      return view.settlement ? `${name} 확정 · ${SETTLEMENT_LABELS[view.settlement.phase]}` : `${name} 확정 · 정산 중`;
     case 'applied': {
       const o = view.outcome;
       if (!o) return `${name} 반영`;

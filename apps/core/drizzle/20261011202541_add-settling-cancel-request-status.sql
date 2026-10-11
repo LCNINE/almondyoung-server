@@ -1,0 +1,2 @@
+ALTER TABLE "sales_order_amendments" DROP CONSTRAINT "sales_order_amendments_status_check";--> statement-breakpoint
+ALTER TABLE "sales_order_amendments" ADD CONSTRAINT "sales_order_amendments_status_check" CHECK ("sales_order_amendments"."status" IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'settling', 'rejected'));

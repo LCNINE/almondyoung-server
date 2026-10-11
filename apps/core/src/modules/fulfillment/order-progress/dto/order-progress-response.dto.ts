@@ -30,6 +30,23 @@ export class OrderProgressGaveUpDto {
   @ApiProperty({ nullable: true, type: String }) lastError!: string | null;
 }
 
+export class OrderProgressSettlementFailureDto {
+  @ApiProperty() code!: string;
+  @ApiProperty({ description: '채널이 준 문장 그대로(wallet 거절은 토스 한국어 메시지)' }) message!: string;
+  @ApiProperty() retryable!: boolean;
+  @ApiProperty() at!: string;
+}
+
+export class OrderProgressSettlementDto {
+  @ApiProperty() requestId!: string;
+  @ApiProperty({ enum: ['in_progress', 'delayed', 'refused'] }) phase!: string;
+  @ApiProperty({ enum: ['auto', 'manual'] }) mode!: string;
+  @ApiProperty({ description: '확정 시각' }) confirmedAt!: string;
+  @ApiProperty({ description: '3영업일 기한(주말 제외)' }) deadlineAt!: string;
+  @ApiProperty({ nullable: true, type: OrderProgressSettlementFailureDto })
+  lastFailure!: OrderProgressSettlementFailureDto | null;
+}
+
 export class OrderProgressItemDto {
   @ApiProperty() salesOrderId!: string;
   @ApiProperty({ description: 'display_order_no ?? channel_order_id' }) orderNo!: string;
@@ -41,6 +58,13 @@ export class OrderProgressItemDto {
   @ApiProperty() stageEnteredAt!: string;
   @ApiProperty() stuck!: boolean;
   @ApiProperty({ type: [OrderProgressGaveUpDto] }) gaveUp!: OrderProgressGaveUpDto[];
+  @ApiProperty({
+    nullable: true,
+    type: OrderProgressSettlementDto,
+    description: '취소 요청 단계의 정산 중 요청(가장 나쁜 것). 그 밖은 null',
+  })
+  settlement!: OrderProgressSettlementDto | null;
+  @ApiProperty({ nullable: true, type: String }) walletIntentId!: string | null;
 }
 
 export class OrderProgressPageDto {

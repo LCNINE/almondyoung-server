@@ -17,7 +17,11 @@ import {
   SHIPMENT_STAGES,
   SHIPMENT_STATES,
   STUCK_AFTER_MS,
+  SETTLE_DELAYED_AFTER_MS,
+  addBusinessDaysKst,
   isStuck,
+  settlementDeadline,
+  stuckAfterMs,
   stuckCutoff,
 } from './order-progress.thresholds';
 
@@ -60,6 +64,37 @@ describe('order-progress thresholds', () => {
   it('stuckCutoff 는 now − 기준', () => {
     const now = new Date('2026-10-06T12:00:00.000Z');
     expect(stuckCutoff('fo', now).toISOString()).toBe('2026-10-05T12:00:00.000Z');
+  });
+});
+
+describe('세부 상태별 갇힘(#1016 36번 재설계 D6)', () => {
+  const now = new Date('2026-10-06T12:00:00.000Z');
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  it('정산 중은 며칠이 지나도 갇히지 않는다 — 30분 넘으면 판정이 settle_delayed 로 바꾼다', () => {
+    expect(stuckAfterMs('cancel_request', 'settle_in_progress')).toBeNull();
+    expect(isStuck('cancel_request', ago(3 * DAY), now, 'settle_in_progress')).toBe(false);
+  });
+
+  it('환불 지연·거절은 들어온 순간 갇힘', () => {
+    expect(isStuck('cancel_request', ago(1), now, 'settle_delayed')).toBe(true);
+    expect(isStuck('cancel_request', ago(1), now, 'settle_refused')).toBe(true);
+  });
+
+  it('옛 요청 상태는 단계 기준(5분) 그대로', () => {
+    expect(isStuck('cancel_request', ago(5 * 60_000 - 1), now, 'cancel_requested')).toBe(false);
+    expect(isStuck('cancel_request', ago(5 * 60_000 + 1), now, 'cancel_requested')).toBe(true);
+  });
+
+  it('세부 상태가 없거나 덮어쓰기가 없으면 단계 기준', () => {
+    expect(stuckAfterMs('fo', null)).toBe(DAY);
+    expect(stuckAfterMs('fo', 'awaiting_matching')).toBe(DAY);
+  });
+
+  it('36번 규칙의 칸이 어휘에 있다', () => {
+    expect(ORDER_PROGRESS_STATES.cancel_request).toEqual(
+      expect.arrayContaining(['settle_in_progress', 'settle_delayed', 'settle_refused']),
+    );
   });
 });
 
@@ -109,5 +144,30 @@ describe('SHIPMENT_STATES', () => {
 
   it('25번 규칙의 칸(pick/CONSOLIDATION_PENDING)이 상자 어휘에 있다', () => {
     expect(SHIPMENT_STATES.pick).toContain('CONSOLIDATION_PENDING');
+  });
+});
+
+describe('정산 기한(스펙 §7.4 — 3영업일, 주말만 뺀다)', () => {
+  it('환불 지연 기준은 30분', () => {
+    expect(SETTLE_DELAYED_AFTER_MS).toBe(30 * 60_000);
+  });
+
+  it('월요일 10:00 KST 확정 → 목요일 10:00 KST', () => {
+    // 2026-10-12 는 월요일. 10:00 KST = 01:00Z
+    expect(settlementDeadline(new Date('2026-10-12T01:00:00.000Z')).toISOString()).toBe('2026-10-15T01:00:00.000Z');
+  });
+
+  it('금요일 확정 → 다음 주 수요일(토·일은 세지 않는다)', () => {
+    expect(settlementDeadline(new Date('2026-10-09T01:00:00.000Z')).toISOString()).toBe('2026-10-14T01:00:00.000Z');
+  });
+
+  it('토요일 확정 → 수요일(월·화·수)', () => {
+    expect(settlementDeadline(new Date('2026-10-10T01:00:00.000Z')).toISOString()).toBe('2026-10-14T01:00:00.000Z');
+  });
+
+  it('요일은 한국 시간으로 센다 — 런타임 TZ·UTC 요일이 아니다', () => {
+    // 2026-10-10T20:00Z = 일요일 05:00 KST. 하루 뒤 2026-10-11T20:00Z = 월요일 05:00 KST(영업일) → 1영업일 소진.
+    // UTC 요일로 세면 2026-10-11T20:00Z 는 «일요일»이라 건너뛰고 2026-10-12T20:00Z 가 나온다.
+    expect(addBusinessDaysKst(new Date('2026-10-10T20:00:00.000Z'), 1).toISOString()).toBe('2026-10-11T20:00:00.000Z');
   });
 });

@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, SQL } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import {
+  CHANNEL_CANCEL_REQUEST_REASON,
+  PHASE_RANK,
+  SettlementView,
+  toSettlementView,
+} from '../../sales-order/channel-cancel-request/channel-cancel-request.types';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
 import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
 import { GaveUpBadge, OrderProgressSummary, assembleSummary, groupGaveUpMarks } from './order-progress.summary';
@@ -9,6 +15,7 @@ import {
   ORDER_PROGRESS_STAGES,
   OrderProgressOutcome,
   OrderProgressStage,
+  STUCK_AFTER_MS_BY_STATE,
   isStuck,
   stuckCutoff,
 } from './order-progress.thresholds';
@@ -71,6 +78,9 @@ export type OrderProgressItem = {
   stuck: boolean;
   /** 리컨실러가 포기한 규칙들(스펙 2026-10-08 §6). 없으면 빈 배열 */
   gaveUp: GaveUpBadge[];
+  /** 취소 요청 단계의 정산 중 요청(가장 나쁜 것, #1016 36번 재설계). 그 밖은 null */
+  settlement: SettlementView | null;
+  walletIntentId: string | null;
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -119,11 +129,7 @@ export class OrderProgressReader {
 
   async summary(now: Date, tx?: DbTx): Promise<OrderProgressSummary> {
     const t = wmsTables.orderProgress;
-    // 단계별 갇힘 기준선을 CASE 하나로 — 기준은 thresholds 한 곳에서만 온다
-    const cutoff = sql`CASE ${t.stage} ${sql.join(
-      ORDER_PROGRESS_STAGES.map((s) => sql`WHEN ${s} THEN ${stuckCutoff(s, now).toISOString()}::timestamptz`),
-      sql` `,
-    )} ELSE ${now.toISOString()}::timestamptz END`;
+    const cutoff = stuckCutoffSql(now);
     return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
@@ -159,9 +165,9 @@ export class OrderProgressReader {
     const conds: SQL[] = [isNull(t.outcome), eq(t.stage, query.stage)];
     if (query.state) conds.push(eq(t.state, query.state));
     if (query.channel) conds.push(sql`${t.salesChannel}::text = ${query.channel}`);
-    if (query.stuck === true) conds.push(lt(t.stageEnteredAt, stuckCutoff(query.stage, now)));
-    if (query.stuck === false)
-      conds.push(sql`${t.stageEnteredAt} >= ${stuckCutoff(query.stage, now).toISOString()}::timestamptz`);
+    const cutoff = stuckCutoffSql(now);
+    if (query.stuck === true) conds.push(sql`${t.stageEnteredAt} < ${cutoff}`);
+    if (query.stuck === false) conds.push(sql`coalesce(${t.stageEnteredAt} < ${cutoff}, false) = false`);
     if (query.cursor) {
       const c = decodeCursor(query.cursor);
       conds.push(
@@ -181,6 +187,7 @@ export class OrderProgressReader {
           displayOrderNo: so.displayOrderNo,
           channelOrderId: so.channelOrderId,
           customerName: so.customerName,
+          walletIntentId: so.walletIntentId,
         })
         .from(t)
         .innerJoin(so, eq(so.id, t.salesOrderId))
@@ -230,6 +237,10 @@ export class OrderProgressReader {
               .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
               .where(and(inArray(fo.salesOrderId, ids), isNotNull(sr.gaveUpAt)));
       const gaveUpBy = groupGaveUpMarks([...marks, ...boxMarks]);
+      const settlements =
+        query.stage === 'cancel_request' && ids.length > 0
+          ? await settlementsOf(trx, ids, now)
+          : new Map<string, SettlementView>();
       return {
         items: page.map((row) => ({
           salesOrderId: row.salesOrderId,
@@ -240,8 +251,10 @@ export class OrderProgressReader {
           orderedAt: row.orderedAt.toISOString(),
           state: row.state ?? null,
           stageEnteredAt: row.stageEnteredAt.toISOString(),
-          stuck: isStuck(query.stage, row.stageEnteredAt, now),
+          stuck: isStuck(query.stage, row.stageEnteredAt, now, row.state ?? null),
           gaveUp: gaveUpBy.get(row.salesOrderId) ?? [],
+          settlement: settlements.get(row.salesOrderId) ?? null,
+          walletIntentId: row.walletIntentId ?? null,
         })),
         nextCursor:
           rows.length > query.limit && last
@@ -250,6 +263,50 @@ export class OrderProgressReader {
       };
     }, tx);
   }
+}
+
+/**
+ * 행마다의 갇힘 기준선 — 세부 상태 덮어쓰기가 단계 기준보다 앞선다(D6). NULL = 갇히지 않음.
+ * 요약과 목록이 같은 식을 쓴다(기준은 thresholds 한 곳에서만 온다).
+ */
+function stuckCutoffSql(now: Date): SQL {
+  const t = wmsTables.orderProgress;
+  const byState = Object.entries(STUCK_AFTER_MS_BY_STATE).map(([state, ms]) =>
+    ms === null || ms === undefined
+      ? sql`WHEN ${t.state} = ${state} THEN NULL::timestamptz`
+      : sql`WHEN ${t.state} = ${state} THEN ${new Date(now.getTime() - ms).toISOString()}::timestamptz`,
+  );
+  const byStage = ORDER_PROGRESS_STAGES.map(
+    (s) => sql`WHEN ${t.stage} = ${s} THEN ${stuckCutoff(s, now).toISOString()}::timestamptz`,
+  );
+  return sql`(CASE ${sql.join([...byState, ...byStage], sql` `)} ELSE ${now.toISOString()}::timestamptz END)`;
+}
+
+/** 취소 요청 단계 목록의 행마다 정산 정보 — 한 주문에 여럿이면 가장 나쁜 것, 같으면 먼저 확정된 것 */
+async function settlementsOf(trx: DbTx, salesOrderIds: string[], now: Date): Promise<Map<string, SettlementView>> {
+  const a = wmsTables.salesOrderAmendments;
+  const rows = await trx
+    .select({ id: a.id, salesOrderId: a.salesOrderId, status: a.status, createdAt: a.createdAt, metadata: a.metadata })
+    .from(a)
+    .where(
+      and(
+        inArray(a.salesOrderId, salesOrderIds),
+        eq(a.reasonCode, CHANNEL_CANCEL_REQUEST_REASON),
+        eq(a.status, 'settling'),
+      ),
+    );
+  const out = new Map<string, SettlementView>();
+  for (const row of rows) {
+    const view = toSettlementView(row, now);
+    if (!view) continue;
+    const prev = out.get(row.salesOrderId);
+    const worse =
+      !prev ||
+      PHASE_RANK[view.phase] < PHASE_RANK[prev.phase] ||
+      (PHASE_RANK[view.phase] === PHASE_RANK[prev.phase] && view.confirmedAt < prev.confirmedAt);
+    if (worse) out.set(row.salesOrderId, view);
+  }
+  return out;
 }
 
 function toShipmentRows(result: unknown): JudgedShipmentRow[] {

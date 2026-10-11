@@ -34,6 +34,11 @@ describe('shipmentInSituation', () => {
   it('취소된 주문(cancel_open·cancelled)은 제외하지 않는다 — 30번이 다룬다', () => {
     expect(shipmentInSituation(SIT, row({ orderRules: ['cancel_open', 'cancelled', 'unit'] }))).toBe(true);
   });
+
+  it('정산 중인 채널 취소(cancel_settle)는 상자 규칙을 막지 않는다 — 보류가 아니다', () => {
+    const row = { stage: 'pick', state: 'CONSOLIDATION_PENDING', orderRules: ['cancel_settle'] };
+    expect(shipmentInSituation({ stage: 'pick', states: ['CONSOLIDATION_PENDING'] }, row)).toBe(true);
+  });
 });
 
 describe('inSituationShipmentIds', () => {

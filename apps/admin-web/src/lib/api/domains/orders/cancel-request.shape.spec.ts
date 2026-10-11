@@ -2,6 +2,13 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
+  cancelRequestToast,
+  MANUAL_REFUND_CONFIRM_TEXT,
+  settlementActionsOf,
+  settlementReason,
+  settlementTiming,
+  toSettlementView,
+  type SettlementView,
   hasFreshOpenCancelRequest,
   settledCancelRequestIds,
   isCancelRequested,
@@ -18,6 +25,8 @@ const view = (over: Record<string, unknown> = {}) => ({
   requestedAt: '2026-10-07T00:00:00.000Z',
   rejection: null,
   outcome: null,
+  settlement: null,
+  refundMode: null,
   ...over,
 });
 
@@ -122,5 +131,76 @@ describe('cancel-request shape', () => {
     expect(settledCancelRequestIds([], open)).toEqual([]);
     // 요청이 응답에서 사라져도(null) 끝난 것이다
     expect(settledCancelRequestIds(open.slice(0, 1), [{ cancelRequest: null }])).toEqual(['r1']);
+  });
+});
+
+describe('정산(#1016 36번 재설계)', () => {
+  const settlement = (over: Partial<SettlementView> = {}): SettlementView => ({
+    requestId: 'r1',
+    phase: 'refused',
+    mode: 'auto',
+    confirmedAt: '2026-10-12T01:00:00.000Z',
+    deadlineAt: '2026-10-15T01:00:00.000Z',
+    lastFailure: { code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE', message: '자동 환불할 수 없는 결제수단입니다', retryable: false, at: '2026-10-12T01:00:05.000Z' },
+    ...over,
+  });
+
+  it('응답의 settling·정산 칸을 읽는다 — 옛 core 응답(칸 없음)은 null', () => {
+    const v = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', requestedAt: 'x', settlement: settlement(), refundMode: 'auto' });
+    expect(v).toMatchObject({ status: 'settling', refundMode: 'auto', settlement: { phase: 'refused' } });
+    expect(toCancelRequestView({ id: 'r1', status: 'requested', scope: 'full' })).toMatchObject({ settlement: null, refundMode: null });
+  });
+
+  it('모양이 틀린 정산 칸은 null', () => {
+    expect(toSettlementView({ requestId: 'r1', phase: 'weird' })).toBeNull();
+    expect(toSettlementView(null)).toBeNull();
+  });
+
+  it.each([
+    ['in_progress', '환불 처리 중', false],
+    ['delayed', '환불 지연', true],
+    ['refused', '환불 거절', true],
+  ] as const)('취소 칸 — %s → %s', (phase, label, alert) => {
+    const request = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: settlement({ phase }) });
+    expect(cancelActionOf({ channel: 'medusa', orderStatus: 'cancelled', cancelRequest: request })).toEqual({ kind: 'settling', label, alert });
+  });
+
+  it('사유 — wallet·PG 거절은 «환불 거절», 그 밖은 «정산 실패 · 개발 확인»(PR 3 넘길 것 4)', () => {
+    expect(settlementReason(settlement())).toBe('환불 거절 · 자동 환불할 수 없는 결제수단입니다');
+    expect(settlementReason(settlement({ lastFailure: { code: 'not_found', message: 'Order not found', retryable: false, at: 'x' } }))).toBe(
+      '정산 실패 · 개발 확인 · Order not found',
+    );
+    expect(settlementReason(settlement({ lastFailure: { code: 'http_502', message: '', retryable: true, at: 'x' } }))).toBe('정산 실패 · 개발 확인 · http_502');
+    expect(settlementReason(settlement({ lastFailure: null }))).toBeNull();
+    expect(settlementReason(settlement({ phase: 'in_progress' }))).toBeNull();
+  });
+
+  it('조치 — 정산 중엔 없음, 지연·거절엔 둘, 이미 계좌 송금이면 다시 시도만', () => {
+    expect(settlementActionsOf(settlement({ phase: 'in_progress' }))).toEqual({ retry: false, manualRefund: false });
+    expect(settlementActionsOf(settlement({ phase: 'delayed' }))).toEqual({ retry: true, manualRefund: true });
+    expect(settlementActionsOf(settlement({ mode: 'manual' }))).toEqual({ retry: true, manualRefund: false });
+    expect(settlementActionsOf(null)).toEqual({ retry: false, manualRefund: false });
+  });
+
+  it('경과·기한 — 기한은 한국 날짜', () => {
+    // 확정 01:00Z, 지금 02:30Z → 1시간 30분. 기한 2026-10-15T01:00Z = 10/15(목) KST
+    expect(settlementTiming(settlement(), Date.parse('2026-10-12T02:30:00.000Z'))).toBe('확정 후 1시간 30분 · 기한 10/15(목)');
+  });
+
+  it('줄 문구 — 확정 + 정산 상태', () => {
+    const v = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: settlement({ phase: 'delayed' }) })!;
+    expect(cancelRequestLine(v)).toBe('전체취소 확정 · 환불 지연');
+  });
+
+  it('취소 응답 토스트 — 확정이면 «취소했습니다», 옛 응답(requested)은 그대로', () => {
+    expect(cancelRequestToast({ requestId: 'r1', status: 'settling', scope: 'full', convertedFromFull: false })).toBe('취소했습니다. 환불은 채널이 처리합니다.');
+    expect(cancelRequestToast({ requestId: 'r1', status: 'settling', scope: 'partial', convertedFromFull: true })).toBe(
+      '출고된 상품을 뺀 나머지를 취소했습니다. 환불은 채널이 처리합니다.',
+    );
+    expect(cancelRequestToast({ requestId: 'r1', status: 'requested', scope: 'full', convertedFromFull: false })).toBe('취소를 요청했습니다.');
+  });
+
+  it('계좌 송금 확인 문구는 실제 화면 이름을 쓴다(D7)', () => {
+    expect(MANUAL_REFUND_CONFIRM_TEXT).toBe('고객에게 계좌를 받아 직접 송금한 뒤, 결제 상세의 환불 내역에서 [완료 처리]를 눌러 주세요.');
   });
 });

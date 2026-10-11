@@ -1,11 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { markLineShipped, modifiedPayload, seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
+import {
+  markLineShipped,
+  modifiedPayload,
+  seedChannelOrder,
+  seedLegacyRequest,
+  wireCancelRequest,
+} from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-const OPERATOR = { kind: 'operator' as const, actorId: '7d0a3c6e-0000-4000-8000-000000000001' };
 const NEXT_ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '부산', detailAddress: '202' };
 
 const progress = (requestId: string, stage: 'edited' | 'refunded') => [
@@ -26,7 +31,7 @@ async function cancellationsOf(tx: DbTx, salesOrderId: string) {
     .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
 }
 
-describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
+describeIfDb('옛 requested 행 — 채널 취소 확정 (DB integration, rollback-only)', () => {
   jest.setTimeout(180_000);
   const { sql, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
@@ -36,11 +41,10 @@ describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
   async function partialRequest(tx: DbTx) {
     const w = wireCancelRequest(tx);
     const seed = await seedChannelOrder(tx, w, { withFo: true });
-    const view = await w.manager.request(
-      { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }], requester: OPERATOR, sourceKey: 'k1' },
-      tx,
-    );
-    return { w, seed, requestId: view.id };
+    const requestId = await seedLegacyRequest(tx, seed, {
+      lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+    });
+    return { w, seed, requestId };
   }
 
   it('refunded — 요청을 applied 로 닫고 결과를 채운다. 그 감소로 채널 행을 만들지 않는다', async () => {
@@ -148,17 +152,16 @@ describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
-      const view = await w.manager.request(
-        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }], requester: OPERATOR, sourceKey: 'k-all' },
-        tx,
-      );
+      const requestId = await seedLegacyRequest(tx, seed, {
+        lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }],
+      });
       await w.changes.handle(
         seed.salesOrderId,
-        modifiedPayload(seed, { quantities: [0, 0], cancelRequests: progress(view.id, 'refunded') }),
+        modifiedPayload(seed, { quantities: [0, 0], cancelRequests: progress(requestId, 'refunded') }),
         'm-1',
         tx,
       );
-      expect((await requestOf(tx, view.id)).status).toBe('applied');
+      expect((await requestOf(tx, requestId)).status).toBe('applied');
       const channelRows = (await amendmentsOf(tx, seed.salesOrderId)).filter((a) => a.origin === 'channel');
       expect(channelRows).toHaveLength(1);
       expect(channelRows[0].status).toBe('pending');
@@ -191,10 +194,10 @@ describeIfDb('채널 취소 확정 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const full = await seedChannelOrder(tx, w, { withFo: true });
-      const fullView = await w.manager.request({ salesOrderId: full.salesOrderId, requester: OPERATOR, sourceKey: 'kf' }, tx);
+      const fullId = await seedLegacyRequest(tx, full);
       await w.salesOrders.cancel(full.salesOrderId, { cancelledBy: 'medusa', metadata: { sourceEventId: 'oc-1' } }, tx);
       await w.settler.settleCancelled(full.salesOrderId, tx);
-      expect((await requestOf(tx, fullView.id)).status).toBe('applied');
+      expect((await requestOf(tx, fullId)).status).toBe('applied');
 
       const { seed, requestId } = await partialRequest(tx);
       await w.salesOrders.cancel(seed.salesOrderId, { cancelledBy: 'medusa', metadata: { sourceEventId: 'oc-2' } }, tx);

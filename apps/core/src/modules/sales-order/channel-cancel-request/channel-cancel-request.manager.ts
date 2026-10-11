@@ -8,9 +8,11 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CancelChannelOrderPayload,
+  ChannelOrderSettlementFailedPayload,
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { channelCancelRoute, sellerCenterMessage } from './channel-cancel-route';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
@@ -20,7 +22,9 @@ import {
   CancelRequestMetadata,
   CancelRequestView,
   CancelRequester,
+  isReissuable,
   readCancelRequestMetadata,
+  settlementPhase,
   toCancelRequestView,
 } from './channel-cancel-request.types';
 
@@ -37,13 +41,16 @@ export interface CancelRequestInput {
   alreadyRefundedAmount?: number;
 }
 
+export type SettlementFailedFact = Pick<ChannelOrderSettlementFailedPayload, 'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'>;
+
 /** 보류가 거는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
 const OPEN_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
 
 /**
- * 채널 주문 취소 요청 (#1016 35번, ADR-0042 원칙 2). core 는 문지기다 — 판정하고, 요청을 기록해 출고를 보류한 뒤
- * `CancelChannelOrder` 를 낸다. 확정은 수집(`ChannelCancelSettler`), 거절은 `ChannelOrderCancelRejected` 로 받는다.
- * 환불은 채널이 한다 — 여기는 wallet 을 부르지 않는다.
+ * 채널 주문 취소 요청 (#1016 35번, ADR-0044). core 는 요청 순간 «물리 취소»를 확정한다 — 출고를 막을 수 있으면 박스·출고지시·예약을 그 자리에서
+ * 취소하고, 요청 행을 정산 중(settling)으로 남긴 뒤 `CancelChannelOrder` 를 낸다. 돈의 정산은 채널이 하고(사실·수집으로 돌아온다),
+ * 막히면 리컨실러·운영자가 다시 부른다. 여기는 wallet 을 부르지 않는다.
+ * 옛 requested 행(PR 5 전)은 옛 규칙(보류·다시 보내기·접기·수집 때 적용)으로 끝까지 돈다 — findOpen 이 그 행만 본다.
  */
 @Injectable()
 export class ChannelCancelRequestManager {
@@ -80,6 +87,8 @@ export class ChannelCancelRequestManager {
       if (so.status === 'timeout') throw new BadRequestError('타임아웃된 주문은 취소할 수 없습니다.');
 
       // 관문(송장 발급·배치 시작·발송)도 같은 박스 행을 잠근 뒤 보류를 묻는다 — 둘이 직렬화된다(스펙 §5.3).
+      // 확정(cancel)이 출고 불변식의 FOI → 박스 순서로 잠그므로 FOI 를 박스보다 먼저 잡는다 — 배치 시작(FOI → 박스)과 순서가 뒤집히면 교착(40P01).
+      await this.lockFulfillmentOrderItems(so.id, trx);
       await this.lockOpenShipments(so.id, trx);
       const plan = await this.salesOrders.planCancellation(so.id, input.lines, trx);
       const convertedFromFull = !input.lines && plan.hasShippedQuantity && input.requester.kind === 'operator';
@@ -118,6 +127,27 @@ export class ChannelCancelRequestManager {
 
       const id = randomUUID();
       const requestedAt = new Date();
+      const at = requestedAt.toISOString();
+
+      // 확정(스펙 §7.3, ADR-0044) — 계획이 받은 범위를 지금 적용한다. 거절이면 던져 요청 전체가 롤백된다(행·명령 없음).
+      // 같은 취소가 수집으로 다시 와도(`OrderCancelled`) cancel() 은 이미 전체 취소된 주문에 아무것도 하지 않는다.
+      await this.salesOrders.cancel(
+        so.id,
+        {
+          ...(scope === 'partial'
+            ? {
+                lines: plan.lines.map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity })),
+              }
+            : {}),
+          cancelledBy: cancelledByOf(input.requester),
+          reasonCode: input.reasonCode ?? CHANNEL_CANCEL_REQUEST_REASON,
+          ...(input.reasonDetail ? { reasonDetail: input.reasonDetail } : {}),
+          occurredAt: at,
+          metadata: { sourceEventId: `cancel-request:${id}` },
+        },
+        trx,
+      );
+
       const command: CancelChannelOrderPayload = {
         requestId: id,
         salesChannel: so.salesChannel,
@@ -125,9 +155,10 @@ export class ChannelCancelRequestManager {
         scope,
         ...(scope === 'partial' ? { lines: channelLines } : {}),
         ...(input.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: input.alreadyRefundedAmount } : {}),
+        refundMode: 'auto',
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
-        requestedAt: requestedAt.toISOString(),
+        requestedAt: at,
       };
       const metadata: CancelRequestMetadata = {
         salesChannel: so.salesChannel,
@@ -138,8 +169,10 @@ export class ChannelCancelRequestManager {
           requestedBy: requesterLabel(input.requester),
           sourceKey: input.sourceKey,
           ...(convertedFromFull ? { convertedFromFull: true } : {}),
+          appliedAt: at,
           command,
         },
+        settlement: { state: 'in_progress', mode: 'auto', since: at },
       };
       const [row] = await trx
         .insert(wmsTables.salesOrderAmendments)
@@ -152,13 +185,15 @@ export class ChannelCancelRequestManager {
           deltas: lines,
           metadata,
           origin: 'operator',
-          status: 'requested',
+          status: 'settling',
           occurredAt: requestedAt,
+          // 확정 시각의 정본(D13) — 판정 SQL·뷰가 이 칸으로 30분·3영업일을 잰다
+          createdAt: requestedAt,
         })
         .returning();
       await this.enqueue(command, `cancel-request:${id}`, trx);
-      this.logger.log(`[CancelRequest] ${id} ${scope} so=${so.id} by=${metadata.request.requestedBy}`);
-      return toCancelRequestView(row);
+      this.logger.log(`[CancelRequest] ${id} ${scope} confirmed so=${so.id} by=${metadata.request.requestedBy}`);
+      return toCancelRequestView(row, requestedAt);
     }, tx);
   }
 
@@ -192,6 +227,128 @@ export class ChannelCancelRequestManager {
       const meta = readCancelRequestMetadata(row.metadata);
       if (meta.request.stage === 'edited') return;
       await this.write(row.id, 'requested', { ...meta, request: { ...meta.request, stage: 'edited' } }, trx);
+    }, tx);
+  }
+
+  /**
+   * 정산 실패 사실(#1016 36번 재설계 §7.3). 정산 중(settling) 행만 읽는다 — 옛 requested 행은 옛 사실만(보류가 풀리면 안 된다, D12).
+   * 같은 requestId 의 사실은 순서 없이 여러 번 온다(Kafka 재시도·리컨실러 재발행): 지난 시도(since 이전)·더 이른 사실은 버린다(D2).
+   */
+  async recordSettlementFailure(fact: SettlementFailedFact, tx?: DbTx): Promise<void> {
+    await this.db.run(async (trx) => {
+      const row = await this.reader.findById(fact.requestId, trx, { lock: true });
+      if (!row || row.status !== 'settling') {
+        this.logger.log(`[CancelRequest] settlement failure ignored: ${fact.requestId} is ${row?.status ?? 'unknown'}`);
+        return;
+      }
+      const meta = readCancelRequestMetadata(row.metadata);
+      const settlement = meta.settlement;
+      if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
+      const at = Date.parse(fact.at);
+      if (at < Date.parse(settlement.since)) return;
+      if (settlement.lastFailure && at <= Date.parse(settlement.lastFailure.at)) return;
+      const next: CancelRequestMetadata = {
+        ...meta,
+        settlement: {
+          ...settlement,
+          state: fact.retryable ? 'in_progress' : 'refused',
+          lastFailure: { code: fact.failureCode, message: fact.message, retryable: fact.retryable, at: fact.at },
+        },
+      };
+      await this.write(row.id, 'settling', next, trx);
+      this.logger.warn(`[CancelRequest] ${row.id} settlement failed ${fact.failureCode} retryable=${fact.retryable}`);
+    }, tx);
+  }
+
+  /** [다시 시도] — 환불 지연·거절인 정산을 같은 requestId·같은 방식으로 다시 낸다(스펙 §7.3) */
+  async retrySettlement(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
+    return this.restartSettlement(salesOrderId, requestId, 'retry', tx);
+  }
+
+  /** [계좌 송금으로 환불] — 같은 requestId 를 refundMode manual 로 다시 낸다. wallet 이 PG 없이 송금 대기 행을 만든다(스펙 §6.3) */
+  async switchToManualRefund(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
+    return this.restartSettlement(salesOrderId, requestId, 'manual', tx);
+  }
+
+  private async restartSettlement(
+    salesOrderId: string,
+    requestId: string,
+    kind: 'retry' | 'manual',
+    tx?: DbTx,
+  ): Promise<CancelRequestView> {
+    return this.db.run(async (trx) => {
+      await this.lockSalesOrder(salesOrderId, trx);
+      const row = await this.reader.findById(requestId, trx, { lock: true });
+      if (!row || row.salesOrderId !== salesOrderId) throw new NotFoundError(`취소 요청을 찾을 수 없습니다: ${requestId}`);
+      if (row.status !== 'settling') throw new ConflictError('정산 중인 취소 요청이 아닙니다.');
+      const meta = readCancelRequestMetadata(row.metadata);
+      const settlement = meta.settlement;
+      if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
+      const now = new Date();
+      // 막 보낸 명령이 아직 돌고 있다 — 겹치면 같은 주문에 정산이 둘 돈다(D8)
+      if (settlementPhase(settlement, row.createdAt, now) === 'in_progress') {
+        throw new ConflictError(
+          `정산이 진행 중입니다. 확정 뒤 ${SETTLE_DELAYED_AFTER_MS / 60_000}분이 지나도 끝나지 않으면 다시 시도할 수 있습니다.`,
+        );
+      }
+      // 같은 requestId 의 명령은 Medusa 에서 멱등이다 — 이 유예는 더블클릭·겹침 소음을 막는다. 거절(refused)은 늘 조치할 수 있다.
+      if (settlement.state === 'in_progress' && now.getTime() - Date.parse(settlement.since) < SETTLEMENT_REISSUE_GRACE_MS) {
+        throw new ConflictError(`방금 정산을 다시 시작했습니다. ${SETTLEMENT_REISSUE_GRACE_MS / 1000}초 뒤에 다시 시도할 수 있습니다.`);
+      }
+      if (kind === 'manual' && settlement.mode === 'manual') throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
+      const mode = kind === 'manual' ? 'manual' : settlement.mode;
+      const next: CancelRequestMetadata = {
+        ...meta,
+        settlement: { ...settlement, state: 'in_progress', mode, since: now.toISOString() },
+      };
+      await this.enqueue({ ...meta.request.command, refundMode: mode }, `cancel-request:${row.id}:${kind}:${now.getTime()}`, trx);
+      await this.write(row.id, 'settling', next, trx);
+      this.logger.log(`[CancelRequest] ${row.id} settlement restarted (${kind}, ${mode})`);
+      return toCancelRequestView({ ...row, metadata: next }, now);
+    }, tx);
+  }
+
+  /** 리컨실러 36번의 지문 — 다시 낼 수 있는 정산(거절 아님)의 id·방식·시작 시각. 운영자 조치가 since 를 바꾸면 리셋된다(판정 4) */
+  async settlementFingerprint(salesOrderId: string, tx?: DbTx): Promise<string> {
+    return this.db.run(async (trx) => {
+      const rows = await this.reader.findSettling(salesOrderId, trx);
+      return rows
+        .flatMap((row) => {
+          const s = readCancelRequestMetadata(row.metadata).settlement;
+          return s && s.state === 'in_progress' ? [`${row.id}:${s.mode}:${s.since}`] : [];
+        })
+        .join(',');
+    }, tx);
+  }
+
+  async hasSettlementToReissue(salesOrderId: string, now: Date, tx?: DbTx): Promise<boolean> {
+    return this.db.run(async (trx) => {
+      const rows = await this.reader.findSettling(salesOrderId, trx);
+      return rows.some((row) => {
+        const s = readCancelRequestMetadata(row.metadata).settlement;
+        return s !== undefined && isReissuable(s, now);
+      });
+    }, tx);
+  }
+
+  /** 같은 requestId·같은 방식으로 명령을 다시 낸다(멱등 — 스펙 §6.1·§10). since 는 그대로 — 시도 횟수는 리컨실러 상태가 센다(스펙 §7.3) */
+  async reissueSettlements(salesOrderId: string, now: Date, tx?: DbTx): Promise<number> {
+    return this.db.run(async (trx) => {
+      let count = 0;
+      for (const row of await this.reader.findSettling(salesOrderId, trx, { lock: true })) {
+        const meta = readCancelRequestMetadata(row.metadata);
+        const settlement = meta.settlement;
+        if (!settlement || !isReissuable(settlement, now)) continue;
+        await this.enqueue(
+          { ...meta.request.command, refundMode: settlement.mode },
+          `cancel-request:${row.id}:reconcile:${now.getTime()}`,
+          trx,
+        );
+        // updated_at 을 밀어 투영이 다시 판정하게 한다
+        await this.write(row.id, 'settling', meta, trx);
+        count++;
+      }
+      return count;
     }, tx);
   }
 
@@ -235,7 +392,7 @@ export class ChannelCancelRequestManager {
 
   private async write(
     id: string,
-    status: 'requested' | 'rejected',
+    status: 'requested' | 'rejected' | 'settling',
     metadata: CancelRequestMetadata,
     trx: DbTx,
   ): Promise<void> {
@@ -261,6 +418,20 @@ export class ChannelCancelRequestManager {
       .for('update');
     if (!so) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
     return so;
+  }
+
+  /** 이 주문의 FOI 행 — 정본 잠금 순서(FOI → 박스 → 라인 → 예약)의 첫 칸, id 순 */
+  private async lockFulfillmentOrderItems(salesOrderId: string, trx: DbTx): Promise<void> {
+    await trx
+      .select({ id: wmsTables.fulfillmentOrderItems.id })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.fulfillmentOrderItems.id))
+      .for('update', { of: wmsTables.fulfillmentOrderItems });
   }
 
   private async lockOpenShipments(salesOrderId: string, trx: DbTx): Promise<void> {
@@ -306,5 +477,17 @@ function requesterLabel(requester: CancelRequester): string {
       return `customer:${requester.customerId}`;
     case 'wallet-refund-approval':
       return `wallet-refund-approval:${requester.intentId}`;
+  }
+}
+
+/** 취소 기록의 cancelled_by — 누가 취소를 확정했나 */
+function cancelledByOf(requester: CancelRequester): string {
+  switch (requester.kind) {
+    case 'operator':
+      return 'admin';
+    case 'customer':
+      return 'customer';
+    case 'wallet-refund-approval':
+      return 'wallet';
   }
 }
