@@ -51,7 +51,7 @@ export const ORDER_PROGRESS_STATES = {
   ],
   dispatch: ['awaiting_dispatch', 'drop_ship_pending'],
   track: ['shipped', 'in_transit', 'failed', 'drop_ship_forwarded'],
-  cancel_request: ['cancel_requested', 'cancel_edited'],
+  cancel_request: ['cancel_requested', 'cancel_edited', 'settle_in_progress', 'settle_delayed', 'settle_refused'],
   // 취소된 주문의 열린 상자·예약. 열린 상자의 recovery_code 가 그대로 나올 수도 있다
   cancel: ['CANCEL_REPLAN_PENDING', 'open_shipment', 'open_reservation'],
   // 열린(완료·거절·취소 아닌) 반품·교환
@@ -149,10 +149,31 @@ export const STUCK_AFTER_MS: Record<OrderProgressStage, number> = {
   unclassified: 0,
 };
 
+/**
+ * 세부 상태가 단계 기준을 덮는 칸. null = 갇힘으로 보지 않는다.
+ * 정산 중은 «환불 지연»(확정 + SETTLE_DELAYED_AFTER_MS)이 될 때까지 운영자 일이 아니고, 지연·거절은 그 자체가 «기준을 넘었다»는 뜻이다(스펙 §5.2·§8.1).
+ */
+export const STUCK_AFTER_MS_BY_STATE: Partial<Record<OrderProgressState, number | null>> = {
+  settle_in_progress: null,
+  settle_delayed: 0,
+  settle_refused: 0,
+};
+
+function hasStateOverride(state: string): state is keyof typeof STUCK_AFTER_MS_BY_STATE {
+  return Object.hasOwn(STUCK_AFTER_MS_BY_STATE, state);
+}
+
+export function stuckAfterMs(stage: OrderProgressStage, state: string | null): number | null {
+  if (state !== null && hasStateOverride(state)) return STUCK_AFTER_MS_BY_STATE[state] ?? null;
+  return STUCK_AFTER_MS[stage];
+}
+
 export function stuckCutoff(stage: OrderProgressStage, now: Date): Date {
   return new Date(now.getTime() - STUCK_AFTER_MS[stage]);
 }
 
-export function isStuck(stage: OrderProgressStage, enteredAt: Date, now: Date): boolean {
-  return enteredAt.getTime() < stuckCutoff(stage, now).getTime();
+export function isStuck(stage: OrderProgressStage, enteredAt: Date, now: Date, state: string | null = null): boolean {
+  const ms = stuckAfterMs(stage, state);
+  if (ms === null) return false;
+  return enteredAt.getTime() < now.getTime() - ms;
 }

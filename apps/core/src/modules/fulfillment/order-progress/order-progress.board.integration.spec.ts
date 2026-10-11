@@ -218,4 +218,71 @@ describeIfDb('정체 보드 요약·목록 (PostgreSQL integration)', () => {
       }),
     ).rejects.toBeInstanceOf(Rollback);
   });
+
+  it('취소 요청 단계 — 정산 중은 갇히지 않고 거절은 바로 갇힘, 행에 정산 정보(가장 나쁜 요청)가 실린다', async () => {
+    await expect(
+      db.transaction(async (rawTx) => {
+        const tx = rawTx as unknown as DbTx;
+        const dbs = makeDbService(db);
+        const manager = new OrderProgressManager(dbs);
+        const reader = new OrderProgressReader(dbs);
+        const now = new Date('2099-01-01T00:00:00.000Z');
+        const minutesAgo = (n: number) => new Date(now.getTime() - n * 60_000);
+        const inProgress = await f.seedOrder(tx, { status: 'cancelled' });
+        await f.seedSettling(tx, inProgress.salesOrderId, { createdAt: minutesAgo(10) });
+        const refused = await f.seedOrder(tx);
+        await f.seedSettling(tx, refused.salesOrderId, { createdAt: minutesAgo(9) });
+        const refusedId = await f.seedSettling(tx, refused.salesOrderId, {
+          createdAt: minutesAgo(8),
+          state: 'refused',
+        });
+        const ids = [inProgress.salesOrderId, refused.salesOrderId];
+        await manager.refreshScope(
+          sql`SELECT unnest(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}])`,
+          now,
+          tx,
+        );
+
+        const page = await reader.listOrders({ stage: 'cancel_request', sort: 'dwell', limit: 200 }, now, tx);
+        const ours = page.items.filter((i) => ids.includes(i.salesOrderId));
+        const byId = new Map(ours.map((i) => [i.salesOrderId, i]));
+        expect(byId.get(inProgress.salesOrderId)).toMatchObject({
+          state: 'settle_in_progress',
+          stuck: false,
+          settlement: { phase: 'in_progress' },
+        });
+        expect(byId.get(refused.salesOrderId)).toMatchObject({
+          state: 'settle_refused',
+          stuck: true,
+          settlement: { requestId: refusedId, phase: 'refused', lastFailure: { message: '거절' } },
+        });
+
+        const stuckOnly = await reader.listOrders(
+          { stage: 'cancel_request', stuck: true, sort: 'dwell', limit: 200 },
+          now,
+          tx,
+        );
+        expect(stuckOnly.items.map((i) => i.salesOrderId).filter((id) => ids.includes(id))).toEqual([
+          refused.salesOrderId,
+        ]);
+        const notStuck = await reader.listOrders(
+          { stage: 'cancel_request', stuck: false, sort: 'dwell', limit: 200 },
+          now,
+          tx,
+        );
+        expect(notStuck.items.map((i) => i.salesOrderId).filter((id) => ids.includes(id))).toEqual([
+          inProgress.salesOrderId,
+        ]);
+
+        const summary = await reader.summary(now, tx);
+        const states = summary.stages.find((s) => s.stage === 'cancel_request')!.states;
+        expect(states.find((s) => s.state === 'settle_in_progress')?.stuck ?? 0).toBe(0);
+        expect(states.find((s) => s.state === 'settle_refused')?.stuck).toBeGreaterThanOrEqual(1);
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+  });
 });

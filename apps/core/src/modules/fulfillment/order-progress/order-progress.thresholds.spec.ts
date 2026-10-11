@@ -21,6 +21,7 @@ import {
   addBusinessDaysKst,
   isStuck,
   settlementDeadline,
+  stuckAfterMs,
   stuckCutoff,
 } from './order-progress.thresholds';
 
@@ -63,6 +64,37 @@ describe('order-progress thresholds', () => {
   it('stuckCutoff 는 now − 기준', () => {
     const now = new Date('2026-10-06T12:00:00.000Z');
     expect(stuckCutoff('fo', now).toISOString()).toBe('2026-10-05T12:00:00.000Z');
+  });
+});
+
+describe('세부 상태별 갇힘(#1016 36번 재설계 D6)', () => {
+  const now = new Date('2026-10-06T12:00:00.000Z');
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  it('정산 중은 며칠이 지나도 갇히지 않는다 — 30분 넘으면 판정이 settle_delayed 로 바꾼다', () => {
+    expect(stuckAfterMs('cancel_request', 'settle_in_progress')).toBeNull();
+    expect(isStuck('cancel_request', ago(3 * DAY), now, 'settle_in_progress')).toBe(false);
+  });
+
+  it('환불 지연·거절은 들어온 순간 갇힘', () => {
+    expect(isStuck('cancel_request', ago(1), now, 'settle_delayed')).toBe(true);
+    expect(isStuck('cancel_request', ago(1), now, 'settle_refused')).toBe(true);
+  });
+
+  it('옛 요청 상태는 단계 기준(5분) 그대로', () => {
+    expect(isStuck('cancel_request', ago(5 * 60_000 - 1), now, 'cancel_requested')).toBe(false);
+    expect(isStuck('cancel_request', ago(5 * 60_000 + 1), now, 'cancel_requested')).toBe(true);
+  });
+
+  it('세부 상태가 없거나 덮어쓰기가 없으면 단계 기준', () => {
+    expect(stuckAfterMs('fo', null)).toBe(DAY);
+    expect(stuckAfterMs('fo', 'awaiting_matching')).toBe(DAY);
+  });
+
+  it('36번 규칙의 칸이 어휘에 있다', () => {
+    expect(ORDER_PROGRESS_STATES.cancel_request).toEqual(
+      expect.arrayContaining(['settle_in_progress', 'settle_delayed', 'settle_refused']),
+    );
   });
 });
 
