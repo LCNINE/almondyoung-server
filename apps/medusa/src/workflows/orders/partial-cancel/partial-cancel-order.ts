@@ -8,14 +8,17 @@ import {
   createOrderCreditLinesWorkflow,
   createOrderEditShippingMethodWorkflow,
   orderEditUpdateItemQuantityWorkflow,
-  refundPaymentWorkflow,
   requestOrderEditRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
 
 import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
+import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
+import { issuePaymentRefund } from '../settlement/issue-payment-refund';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
+import type { RefundMode } from '../settlement/refund-mode';
+import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 import { toNumber } from './amount';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
@@ -30,6 +33,8 @@ export type PartialCancelInput = {
   items: CancelRequestItem[];
   /** 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 품목에 연결 안 된 외부 환불이 있을 때 필요하다(#1016 37번) */
   alreadyRefunded?: number;
+  /** 없으면 auto(#1016 36번 재설계). 요청 해시에 넣지 않는다 — 자동 거절 뒤 같은 요청을 수동으로 다시 보낸다 */
+  refundMode?: RefundMode;
   actorId?: string;
 };
 export type PartialCancelRecord = {
@@ -50,6 +55,8 @@ export type PartialCancelRecord = {
   /** 외부 환불에서 상계한 금액(음수 크레딧 라인). 운영자가 금액을 줬을 때만 있다 — 다음 판정의 U 에서 빠진다 */
   externalRefundApplied?: number;
   refundedAt?: string;
+  /** 환불을 끝낸 방식 — refunded 때 쓴다. 옛 기록엔 없다(auto) */
+  refundMode?: RefundMode;
 };
 export type PartialCancelResult = {
   requestId: string;
@@ -57,6 +64,8 @@ export type PartialCancelResult = {
   shippingDelta: number;
   shippingNotAdjusted: boolean;
   externalRefundApplied: number;
+  /** 채널 전체취소 200 과 같은 칸(#1016 36번 재설계) */
+  refund: { mode: RefundMode; amount: number };
   stage: 'refunded';
 };
 
@@ -68,6 +77,22 @@ export class PartialCancelRefundPending extends Error {
   ) {
     super(message);
     this.name = 'PartialCancelRefundPending';
+  }
+}
+
+/**
+ * 주문 수정은 확정됐는데 wallet 이 환불을 영구 거절했다(retryable: false, #1016 36번 재설계 §6.1). 의무는 장부의 음수 차액에 남는다.
+ * 원인이 풀리거나 수동(refundMode manual)으로 같은 requestId 를 다시 부르면 환불부터 이어 간다.
+ * PartialCancelRejected 를 상속하지 않는다 — 그건 «정해진 거절»(partial_cancel_rejected)이고 이건 수정이 끝난 뒤의 돈 문제다.
+ */
+export class PartialCancelRefundRefused extends Error {
+  constructor(
+    readonly requestId: string,
+    readonly refusalCode: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PartialCancelRefundRefused';
   }
 }
 
@@ -99,23 +124,34 @@ export async function partialCancelOrder(container: MedusaContainer, input: Part
 
 async function run(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
   const requestHash = hashRequest(input.items, input.alreadyRefunded);
-  const order = await loadOrder(container, input.orderId);
+  let order = await loadOrder(container, input.orderId);
   const existing = readRecords(order.metadata)[input.requestId];
   if (existing && existing.requestHash !== requestHash) {
     throw new PartialCancelRejected(`같은 requestId 로 다른 요청이 왔습니다: ${input.requestId}`);
   }
   if (existing?.stage === 'refunded') return toResult(input.requestId, existing);
+  const mode = input.refundMode ?? 'auto';
 
+  if (!existing) {
+    // ① 새 요청은 수정 «전»에 장부를 맞춘다 — 37번 판정(assertExternalRefundsResolved)이 투영 안 된 외부 환불까지 보게.
+    // 맞추기가 넣은 환불은 차액을 움직이므로, 수정 전후 차액(owed)에 섞이지 않게 주문을 다시 읽는다. 실패하면 아무것도 안 바꾼 채 500
+    await reconcileOrderWalletRefunds(container, input.orderId);
+    order = await loadOrder(container, input.orderId);
+  }
   const record = existing ?? (await edit(container, input, order, requestHash));
 
   try {
+    // 수정은 확정됐다 — 여기부터의 실패는 refund_pending(재시도) 또는 영구 거절 표지(400, stage edited)다
+    if (existing) await reconcileOrderWalletRefunds(container, input.orderId);
     // 상계 라인을 환불보다 «먼저» 넣는다 — 그래야 환불 뒤 차액이 0 이고, refundPaymentWorkflow 가 배송비 몫만 양수 라인으로 붙인다
     await offsetExternalRefund(container, input.orderId, input.requestId, record.externalRefundApplied ?? 0);
-    await refund(container, input.orderId, input.requestId, record.refundAmount, input.actorId);
+    await refund(container, input.orderId, input.requestId, record.refundAmount, mode, input.actorId);
   } catch (error) {
+    const refusal = readWalletRefundRefusal(error);
+    if (refusal) throw new PartialCancelRefundRefused(input.requestId, refusal.code, refusal.message);
     throw new PartialCancelRefundPending(input.requestId, `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`);
   }
-  const done: PartialCancelRecord = { ...record, stage: 'refunded', refundedAt: new Date().toISOString() };
+  const done: PartialCancelRecord = { ...record, stage: 'refunded', refundedAt: new Date().toISOString(), refundMode: mode };
   await writeRecord(container, input.orderId, input.requestId, done);
   return toResult(input.requestId, done);
 }
@@ -277,8 +313,16 @@ async function offsetExternalRefund(container: MedusaContainer, orderId: string,
  * 결제마다 «캡처 − 환불» 남은 만큼 차례로 환불한다. 결제 단위 잠금(환불 투영과 같은 키) 안에서 결제를 다시 읽어 여유를
  * 계산한다 — 같은 금액의 외부 환불 표식이 살아 있는 동안 우리 환불이 끼어들면 wallet 호출을 건너뛸 수 있다.
  * 이미 이 요청 메모로 기록된 환불은 빼고 나머지만 낸다(환불 뒤 기록 전에 끊겼다 다시 불려도 두 번 내지 않게).
+ * 시도·수동 표식은 issuePaymentRefund 가 쓴다.
  */
-async function refund(container: MedusaContainer, orderId: string, requestId: string, amount: number, actorId?: string) {
+async function refund(
+  container: MedusaContainer,
+  orderId: string,
+  requestId: string,
+  amount: number,
+  mode: RefundMode,
+  actorId?: string,
+) {
   if (amount <= 0) return;
   const note = refundNote(requestId);
   const paymentModule = container.resolve(Modules.PAYMENT);
@@ -301,7 +345,7 @@ async function refund(container: MedusaContainer, orderId: string, requestId: st
         const refunded = (p.refunds ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
         const take = Math.min(captured - refunded, left);
         if (!(take > 0)) return;
-        await refundPaymentWorkflow(container).run({ input: { payment_id: paymentId, amount: take, created_by: actorId, note } });
+        await issuePaymentRefund(container, { paymentId, amount: take, note, mode, actorId });
         left -= take;
       },
       { timeout: PAYMENT_LOCK_TIMEOUT_SECONDS },
@@ -490,6 +534,7 @@ const toResult = (requestId: string, r: PartialCancelRecord): PartialCancelResul
   shippingDelta: r.shippingCharge - r.shippingRefund,
   shippingNotAdjusted: r.shippingNotAdjusted,
   externalRefundApplied: r.externalRefundApplied ?? 0,
+  refund: { mode: r.refundMode ?? 'auto', amount: r.refundAmount },
   stage: 'refunded',
 });
 
