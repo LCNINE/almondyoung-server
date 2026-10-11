@@ -1,3 +1,5 @@
+import { MedusaError } from '@medusajs/framework/utils';
+import { WalletHttpError } from '../wallet-refund-refusal';
 import { AlmondPaymentProviderService } from '../service';
 
 const makeLogger = () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() });
@@ -119,5 +121,84 @@ describe('almond-payment refundPayment', () => {
       expect(line).toContain('1000');
       expect(line).not.toContain('wr2');
     });
+  });
+  describe('wallet 오류 번역 (#1016 36번 재설계 §6.4)', () => {
+    const refund = (svc: AlmondPaymentProviderService) =>
+      svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000, context: { idempotency_key: 'ref_r1' } } as any);
+
+    it('4xx retryable:false 는 NOT_ALLOWED + 표지, 문장은 wallet 원문', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(new WalletHttpError(400, 'REFUND_NOT_AUTOMATABLE', '자동 환불 불가', false));
+      await expect(refund(svc)).rejects.toMatchObject({
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+        message: '자동 환불 불가',
+      });
+    });
+
+    it('retryable 이 true·없음이거나 네트워크 오류면 원래 오류를 그대로 던진다(일시)', async () => {
+      const svc = makeService();
+      const exceeds = new WalletHttpError(400, 'REFUND_AMOUNT_EXCEEDS_TOTAL', 'm', true);
+      const bare = new WalletHttpError(400, 'Bad Request', 'm');
+      const net = new TypeError('fetch failed');
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValueOnce(exceeds).mockRejectedValueOnce(bare).mockRejectedValueOnce(net);
+      await expect(refund(svc)).rejects.toBe(exceeds);
+      await expect(refund(svc)).rejects.toBe(bare);
+      await expect(refund(svc)).rejects.toBe(net);
+    });
+
+    it('200 의 FAILED 행이 retryable:false 면 그 failureCode·토스 문장으로 표지', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        refunds: [
+          {
+            id: 'wr1',
+            amount: 3000,
+            status: 'FAILED',
+            reasonCode: 'MEDUSA_REFUND',
+            reasonMessage: '취소 할 수 없는 금액 입니다.',
+            failureCode: 'NOT_CANCELABLE_AMOUNT',
+            retryable: false,
+          },
+        ],
+      });
+      await expect(refund(svc)).rejects.toMatchObject({
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:NOT_CANCELABLE_AMOUNT',
+        message: '취소 할 수 없는 금액 입니다.',
+      });
+    });
+
+    it('200 의 FAILED 행이 분류 전(retryable null)이면 일반 오류 — 일시', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        refunds: [{ id: 'wr1', amount: 3000, status: 'FAILED', reasonCode: 'MEDUSA_REFUND', reasonMessage: 'x', failureCode: null, retryable: null }],
+      });
+      const err = await refund(svc).catch((e: unknown) => e);
+      expect(MedusaError.isMedusaError(err)).toBe(false);
+      expect((err as Error).message).toMatch(/FAILED/);
+    });
+  });
+
+  it('walletFetch 는 wallet 오류 본문을 WalletHttpError 로 던진다 — retryable 포함', async () => {
+    const svc = makeService();
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'REFUND_NOT_AUTOMATABLE', message: 'manual', retryable: false }),
+    }) as any;
+    try {
+      await expect((svc as any).walletFetch('/v1/payment-intents/i1/refund', { method: 'POST' })).rejects.toMatchObject({
+        name: 'WalletHttpError',
+        status: 400,
+        walletCode: 'REFUND_NOT_AUTOMATABLE',
+        walletMessage: 'manual',
+        retryable: false,
+        message: 'REFUND_NOT_AUTOMATABLE: manual',
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

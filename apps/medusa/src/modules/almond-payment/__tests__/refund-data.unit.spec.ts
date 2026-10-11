@@ -1,5 +1,5 @@
 import {
-  readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund,
+  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund,
 } from '../refund-data';
 
 describe('refund-data', () => {
@@ -21,5 +21,40 @@ describe('refund-data', () => {
   });
   it('모양이 틀린 표식은 없는 것으로 본다', () => {
     expect(readExternalRefund({ externalRefund: { walletRefundId: 1 } })).toBeNull();
+  });
+});
+
+describe('judgeWalletRefund — FAILED 행의 분류 (#1016 36번 재설계 §6.4)', () => {
+  const failed = (retryable: boolean | null, extra: Record<string, unknown> = {}) => ({
+    id: 'wr1',
+    amount: 3000,
+    status: 'FAILED',
+    reasonCode: 'MEDUSA_REFUND',
+    reasonMessage: '취소 할 수 없는 금액 입니다.',
+    failureCode: 'NOT_CANCELABLE_AMOUNT',
+    retryable,
+    ...extra,
+  });
+
+  it('retryable false 인 FAILED 행이 있으면 그 코드·문장을 refusal 로 싣는다', () => {
+    const v = judgeWalletRefund([failed(false)], 3000);
+    expect(v.ok).toBe(false);
+    expect(v.ok === false && v.refusal).toEqual({ code: 'NOT_CANCELABLE_AMOUNT', message: '취소 할 수 없는 금액 입니다.' });
+  });
+
+  it.each([null, true, undefined])('retryable 이 %p 면 refusal 이 없다(일시)', (retryable) => {
+    const v = judgeWalletRefund([failed(retryable as boolean | null)], 3000);
+    expect(v.ok === false && v.refusal).toBeUndefined();
+  });
+
+  it('여러 결제분 중 앞은 나가고 뒤가 영구 거절이면 refusal 과 moved 를 둘 다 싣는다', () => {
+    const v = judgeWalletRefund([{ id: 'wr0', amount: 1000, status: 'SUCCEEDED' }, failed(false, { id: 'wr1', amount: 2000 })], 3000);
+    expect(v.ok === false && v.moved).toEqual([{ id: 'wr0', amount: 1000, status: 'SUCCEEDED' }]);
+    expect(v.ok === false && v.refusal?.code).toBe('NOT_CANCELABLE_AMOUNT');
+  });
+
+  it('failureCode·reasonMessage 가 비면 대체 문구로 채운다', () => {
+    const v = judgeWalletRefund([failed(false, { failureCode: null, reasonMessage: null })], 3000);
+    expect(v.ok === false && v.refusal).toEqual({ code: 'REFUND_FAILED', message: 'wallet 이 환불을 거절했습니다' });
   });
 });

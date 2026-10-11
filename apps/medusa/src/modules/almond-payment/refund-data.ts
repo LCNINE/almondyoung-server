@@ -39,6 +39,9 @@ export type WalletRefundRow = {
   amount?: number;
   reasonCode?: string | null;
   reasonMessage?: string | null;
+  /** FAILED 행의 분류(#1048). 분류 전 옛 행은 null — 일시로 읽는다 */
+  failureCode?: string | null;
+  retryable?: boolean | null;
 };
 export type WalletRefundVerdict =
   | { ok: true; ids: string[] }
@@ -47,6 +50,8 @@ export type WalletRefundVerdict =
       reason: string;
       /** 실패 판정이어도 wallet 에서 실제로 나간(또는 나가는 중인) 환불 — 장부에 안 남으니 로그가 유일한 흔적이다. */
       moved: Array<{ id: string; amount: number; status: string }>;
+      /** FAILED 행 중 wallet 이 영구(retryable: false)라고 한 것 — 있으면 표지 붙은 거절로 던진다 */
+      refusal?: { code: string; message: string };
     };
 
 /**
@@ -63,10 +68,14 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
     .map((r) => ({ id: typeof r.id === 'string' ? r.id : '?', amount: Number(r.amount ?? NaN), status: r.status as string }));
   const failed = rows.find((r) => r.status === 'FAILED');
   if (failed) {
+    const permanent = rows.find((r) => r.status === 'FAILED' && r.retryable === false);
     return {
       ok: false,
       reason: `wallet 환불 ${failed.id ?? '?'} 가 FAILED 입니다(reasonCode=${failed.reasonCode ?? '-'}, reasonMessage=${failed.reasonMessage ?? '-'})`,
       moved,
+      ...(permanent
+        ? { refusal: { code: permanent.failureCode ?? 'REFUND_FAILED', message: permanent.reasonMessage ?? 'wallet 이 환불을 거절했습니다' } }
+        : {}),
     };
   }
   const unknown = rows.find((r) => r.status !== 'SUCCEEDED' && r.status !== 'PENDING');
