@@ -708,7 +708,7 @@
         "succeeded": "返金が完了しました。",
         "failed": "返金処理中に問題が発生しました。カスタマーサポートへお問い合わせください。",
         "delayed": "3営業日以内に処理いたします。",
-        "transfer_pending": "ご登録の口座へ送金する予定です。"
+        "transfer_pending": "口座へ送金する予定です。"
       },
       "statusLabels": {
         "none": "",
