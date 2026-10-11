@@ -119,7 +119,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
         .from(wmsTables.salesOrderCancellations)
         .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
       expect(cancellations).toHaveLength(1);
-      expect(cancellations[0].cancellationScope).not.toBe('full');
+      expect(cancellations[0].cancellationScope).toBe('partial');
       expect((await w.salesOrders.getOne(seed.salesOrderId, tx))?.status).not.toBe('cancelled');
       expect((await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).get(seed.lineIds[0])).toBe(1);
     });
@@ -423,7 +423,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       expect(view).toMatchObject({ status: 'settling', scope: 'partial', convertedFromFull: true });
       const cancellations = await cancellationsOf(tx, seed.salesOrderId);
       expect(cancellations).toHaveLength(1);
-      expect(cancellations[0].cancellationScope).not.toBe('full');
+      expect(cancellations[0].cancellationScope).toBe('partial');
       expect((await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).get(seed.lineIds[1])).toBe(1);
       const [command] = await commandsOf(tx, seed.externalOrderId);
       expect(command.payload.payload).toMatchObject({

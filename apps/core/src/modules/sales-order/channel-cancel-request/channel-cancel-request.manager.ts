@@ -81,6 +81,8 @@ export class ChannelCancelRequestManager {
       if (so.status === 'timeout') throw new BadRequestError('타임아웃된 주문은 취소할 수 없습니다.');
 
       // 관문(송장 발급·배치 시작·발송)도 같은 박스 행을 잠근 뒤 보류를 묻는다 — 둘이 직렬화된다(스펙 §5.3).
+      // 확정(cancel)이 출고 불변식의 FOI → 박스 순서로 잠그므로 FOI 를 박스보다 먼저 잡는다 — 배치 시작(FOI → 박스)과 순서가 뒤집히면 교착(40P01).
+      await this.lockFulfillmentOrderItems(so.id, trx);
       await this.lockOpenShipments(so.id, trx);
       const plan = await this.salesOrders.planCancellation(so.id, input.lines, trx);
       const convertedFromFull = !input.lines && plan.hasShippedQuantity && input.requester.kind === 'operator';
@@ -288,6 +290,20 @@ export class ChannelCancelRequestManager {
       .for('update');
     if (!so) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
     return so;
+  }
+
+  /** 이 주문의 FOI 행 — 정본 잠금 순서(FOI → 박스 → 라인 → 예약)의 첫 칸, id 순 */
+  private async lockFulfillmentOrderItems(salesOrderId: string, trx: DbTx): Promise<void> {
+    await trx
+      .select({ id: wmsTables.fulfillmentOrderItems.id })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.fulfillmentOrderItems.id))
+      .for('update', { of: wmsTables.fulfillmentOrderItems });
   }
 
   private async lockOpenShipments(salesOrderId: string, trx: DbTx): Promise<void> {

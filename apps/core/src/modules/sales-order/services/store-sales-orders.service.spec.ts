@@ -172,7 +172,11 @@ function makeContext(
         refundMode: 'auto',
       });
     }),
-    findBySourceKey: jest.fn().mockResolvedValue(options.replayView ?? null),
+    // 같은 키의 행이 보인다 = 그 키의 확정 트랜잭션이 커밋됐다 — 그 뒤에 다시 읽는 판매주문은 soAfterRequest 다.
+    findBySourceKey: jest.fn().mockImplementation(() => {
+      if (options.replayView) currentSo = options.soAfterRequest ?? currentSo;
+      return Promise.resolve(options.replayView ?? null);
+    }),
     latestFor: jest.fn().mockResolvedValue(options.openRequestView ?? null),
   };
 
@@ -320,6 +324,21 @@ describe('StoreSalesOrdersService', () => {
       ).resolves.toMatchObject({
         orderStatus: 'cancelled',
       });
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('같은 키 재요청도 확정 «뒤»의 판매주문으로 답한다 — 처음 읽은 주문이 아니라 다시 읽은 «취소됨»', async () => {
+      const { service, cancelRequestsMock } = makeContext({
+        replayView: { id: 'req-1', status: 'settling' },
+        soAfterRequest: makeSo({ status: 'cancelled' }),
+      });
+      const r = await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] },
+      );
+      expect(r.orderStatus).toBe('cancelled');
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
