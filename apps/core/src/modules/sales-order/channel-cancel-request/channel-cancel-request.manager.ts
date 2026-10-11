@@ -12,7 +12,7 @@ import {
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
+import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { channelCancelRoute, sellerCenterMessage } from './channel-cancel-route';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
@@ -289,6 +289,10 @@ export class ChannelCancelRequestManager {
         throw new ConflictError(
           `정산이 진행 중입니다. 확정 뒤 ${SETTLE_DELAYED_AFTER_MS / 60_000}분이 지나도 끝나지 않으면 다시 시도할 수 있습니다.`,
         );
+      }
+      // 같은 requestId 의 명령은 Medusa 에서 멱등이다 — 이 유예는 더블클릭·겹침 소음을 막는다. 거절(refused)은 늘 조치할 수 있다.
+      if (settlement.state === 'in_progress' && now.getTime() - Date.parse(settlement.since) < SETTLEMENT_REISSUE_GRACE_MS) {
+        throw new ConflictError(`방금 정산을 다시 시작했습니다. ${SETTLEMENT_REISSUE_GRACE_MS / 1000}초 뒤에 다시 시도할 수 있습니다.`);
       }
       if (kind === 'manual' && settlement.mode === 'manual') throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
       const mode = kind === 'manual' ? 'manual' : settlement.mode;

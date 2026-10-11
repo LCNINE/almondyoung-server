@@ -17,11 +17,14 @@ async function commandsOf(tx: DbTx, externalOrderId: string) {
     drizzleSql`SELECT payload FROM event.outbox_events WHERE event_type = 'CancelChannelOrder' AND aggregate_id = ${`medusa:${externalOrderId}`} ORDER BY created_at`,
   );
 }
-/** 확정 시각을 과거로 민다 — «환불 지연»(30분 초과)을 만든다 */
+/** 확정 시각을 과거로 민다 — «환불 지연»(30분 초과)을 만든다. 첫 정산의 since 는 확정 시각과 같으니 함께 민다 */
 async function ageRequest(tx: DbTx, id: string, minutes: number) {
+  const past = new Date(Date.now() - minutes * 60_000);
+  const row = await rowOf(tx, id);
+  const meta = row.metadata as { settlement: { since: string } };
   await tx
     .update(wmsTables.salesOrderAmendments)
-    .set({ createdAt: new Date(Date.now() - minutes * 60_000) })
+    .set({ createdAt: past, metadata: { ...meta, settlement: { ...meta.settlement, since: past.toISOString() } } })
     .where(eq(wmsTables.salesOrderAmendments.id, id));
 }
 
@@ -67,13 +70,45 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
     });
   });
 
-  it('지연(30분 초과·일시 실패만) → 다시 시도할 수 있다', async () => {
+  it('지연(확정 뒤 30분 초과) → 다시 시도할 수 있고, since 가 새로 찍히고 명령이 하나 더 나간다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
       await ageRequest(tx, view.id, 31);
+      const before = (await rowOf(tx, view.id)).metadata as { settlement: { since: string } };
       await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, tx)).resolves.toMatchObject({ status: 'settling' });
+      const after = (await rowOf(tx, view.id)).metadata as { settlement: { since: string } };
+      expect(Date.parse(after.settlement.since)).toBeGreaterThan(Date.parse(before.settlement.since));
+      expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(2);
+    });
+  });
+
+  it('지연 요청을 다시 시도한 직후의 두 번째 조치는 409 — 더블클릭·겹침(재발행 유예)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      await ageRequest(tx, view.id, 31);
+      await w.manager.retrySettlement(seed.salesOrderId, view.id, tx);
+      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
+      await expect(w.manager.switchToManualRefund(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
+      expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(2);
+    });
+  });
+
+  it('지연 요청을 다시 시도한 뒤 거절 사실이 오면 곧바로 다시 조치할 수 있다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      await ageRequest(tx, view.id, 31);
+      await w.manager.retrySettlement(seed.salesOrderId, view.id, tx);
+      await w.manager.recordSettlementFailure(
+        { requestId: view.id, retryable: false, failureCode: 'wallet_refund_refused:X', message: '거절', at: new Date(Date.now() + 1000).toISOString() },
+        tx,
+      );
+      await expect(w.manager.switchToManualRefund(seed.salesOrderId, view.id, tx)).resolves.toMatchObject({ refundMode: 'manual' });
     });
   });
 
