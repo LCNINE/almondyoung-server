@@ -16,7 +16,9 @@ const dbWithCharge = (row: Record<string, unknown> | undefined) =>
   }) as never;
 
 const refusing = (code: string, message = '거절') =>
-  ({ cancelPayment: jest.fn().mockResolvedValue({ ok: false, error: { code, message }, statusCode: 400 }) }) as unknown as TossApiClient;
+  ({
+    cancelPayment: jest.fn().mockResolvedValue({ ok: false, error: { code, message }, statusCode: 400 }),
+  }) as unknown as TossApiClient;
 
 const refundParams = (): RefundParams => ({
   refundId: 'rf-1',
@@ -31,10 +33,17 @@ const refundParams = (): RefundParams => ({
 
 describe.each<[string, (db: never, api: TossApiClient) => PaymentProvider, string]>([
   ['TossPaymentProvider', (db, api) => new TossPaymentProvider(db, api), 'TOSS_PAYMENT_KEY_NOT_FOUND'],
-  ['TossBillingProvider', (db, api) => new TossBillingProvider(db, api, null as never), 'TOSS_BILLING_PAYMENT_KEY_NOT_FOUND'],
+  [
+    'TossBillingProvider',
+    (db, api) => new TossBillingProvider(db, api, null as never),
+    'TOSS_BILLING_PAYMENT_KEY_NOT_FOUND',
+  ],
 ])('%s.refund — 실패 분류', (_name, make, missingKeyCode) => {
   it('토스 영구 오류는 retryable=false, 코드·메시지는 그대로', async () => {
-    const provider = make(dbWithCharge({ providerTransactionId: 'pk_1' }), refusing('ALREADY_CANCELED_PAYMENT', '이미 취소된 결제 입니다.'));
+    const provider = make(
+      dbWithCharge({ providerTransactionId: 'pk_1' }),
+      refusing('ALREADY_CANCELED_PAYMENT', '이미 취소된 결제 입니다.'),
+    );
     expect(await provider.refund(refundParams())).toEqual({
       status: 'FAILED',
       errorCode: 'ALREADY_CANCELED_PAYMENT',
@@ -53,6 +62,10 @@ describe.each<[string, (db: never, api: TossApiClient) => PaymentProvider, strin
   it('결제 키가 없으면 토스를 못 부른다 — retryable=false', async () => {
     const api = refusing('UNUSED');
     const provider = make(dbWithCharge({ providerTransactionId: null }), api);
-    expect(await provider.refund(refundParams())).toEqual({ status: 'FAILED', errorCode: missingKeyCode, retryable: false });
+    expect(await provider.refund(refundParams())).toEqual({
+      status: 'FAILED',
+      errorCode: missingKeyCode,
+      retryable: false,
+    });
   });
 });

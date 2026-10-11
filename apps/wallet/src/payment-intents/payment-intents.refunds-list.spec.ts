@@ -29,7 +29,9 @@ describe('GET /v1/payment-intents/:id/refunds', () => {
   it('intent 의 환불을 서비스 순서대로 목록 칸으로 낸다', async () => {
     const intents = { findByIdOrThrow: jest.fn().mockResolvedValue({ id: 'in-1' }) };
     const refunds = {
-      listByIntent: jest.fn().mockResolvedValue([refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')]),
+      listByIntent: jest
+        .fn()
+        .mockResolvedValue([refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')]),
     };
     const controller = new PaymentIntentsController(intents as never, refunds as never);
 

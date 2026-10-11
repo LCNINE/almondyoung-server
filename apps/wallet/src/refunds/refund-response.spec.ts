@@ -40,7 +40,12 @@ describe('toRefundResponse', () => {
 
   it('분류된 FAILED 행은 failureCode 와 retryable 을 싣는다', () => {
     const res = toRefundResponse(
-      row({ status: 'FAILED', reasonMessage: '이미 취소된 결제 입니다.', failureCode: 'ALREADY_CANCELED_PAYMENT', failureRetryable: false }),
+      row({
+        status: 'FAILED',
+        reasonMessage: '이미 취소된 결제 입니다.',
+        failureCode: 'ALREADY_CANCELED_PAYMENT',
+        failureRetryable: false,
+      }),
     );
     expect(res).toMatchObject({ status: 'FAILED', failureCode: 'ALREADY_CANCELED_PAYMENT', retryable: false });
   });

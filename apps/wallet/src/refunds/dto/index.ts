@@ -142,7 +142,11 @@ export class RefundResponseDto {
   })
   execution: RefundExecution;
 
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'FAILED 일 때 실패 코드(토스 오류 코드 등). 그 밖엔 null' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'FAILED 일 때 실패 코드(토스 오류 코드 등). 그 밖엔 null',
+  })
   failureCode: string | null;
 
   @ApiPropertyOptional({

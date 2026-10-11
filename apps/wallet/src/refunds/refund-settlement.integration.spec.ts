@@ -44,7 +44,13 @@ if (process.env.REQUIRE_WALLET_DB === '1' && !DATABASE_URL) {
   throw new Error('REQUIRE_WALLET_DB=1 인데 DATABASE_URL 이 없습니다');
 }
 
-type Seeded = { intentId: string; userId: string; tossChargeId?: string; pointsChargeId?: string; cmsChargeId?: string };
+type Seeded = {
+  intentId: string;
+  userId: string;
+  tossChargeId?: string;
+  pointsChargeId?: string;
+  cmsChargeId?: string;
+};
 
 describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목록 (실 Postgres)', () => {
   jest.setTimeout(60_000);
@@ -102,7 +108,12 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     if (userIds.length > 0) {
       const holds = await db.select({ id: pointHolds.id }).from(pointHolds).where(inArray(pointHolds.userId, userIds));
       if (holds.length > 0) {
-        await db.delete(pointHoldDetails).where(inArray(pointHoldDetails.holdId, holds.map((h) => h.id)));
+        await db.delete(pointHoldDetails).where(
+          inArray(
+            pointHoldDetails.holdId,
+            holds.map((h) => h.id),
+          ),
+        );
         await db.delete(pointHolds).where(inArray(pointHolds.userId, userIds));
       }
       await db.delete(pointEventDetails).where(inArray(pointEventDetails.userId, userIds));
@@ -118,7 +129,13 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     return id;
   }
 
-  async function capturedCharge(intentId: string, paymentMethodId: string, amount: number, createdAt: Date, requestPayload: Record<string, unknown> | null = null) {
+  async function capturedCharge(
+    intentId: string,
+    paymentMethodId: string,
+    amount: number,
+    createdAt: Date,
+    requestPayload: Record<string, unknown> | null = null,
+  ) {
     const id = randomUUID();
     await db.insert(charges).values({
       id,
@@ -160,16 +177,52 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
       await pointsAdmin.earn(userId, 10_000, 'ITEST');
       const pmId = await method(userId, 'POINTS');
       const authorizeId = randomUUID();
-      const base = { intentId, paymentMethodId: pmId, userId, amount: legs.points, currency: 'KRW', correlationId: 'itest' };
-      expect((await pointsProvider.authorize({ ...base, chargeId: authorizeId, idempotencyKey: `wallet:authorize:${authorizeId}` })).status).toBe('SUCCEEDED');
-      expect((await pointsProvider.capture({ ...base, chargeId: authorizeId, idempotencyKey: `wallet:capture:${authorizeId}` })).status).toBe('SUCCEEDED');
-      seeded.pointsChargeId = await capturedCharge(intentId, pmId, legs.points, new Date(t0), { intentId, authorizeChargeId: authorizeId });
+      const base = {
+        intentId,
+        paymentMethodId: pmId,
+        userId,
+        amount: legs.points,
+        currency: 'KRW',
+        correlationId: 'itest',
+      };
+      expect(
+        (
+          await pointsProvider.authorize({
+            ...base,
+            chargeId: authorizeId,
+            idempotencyKey: `wallet:authorize:${authorizeId}`,
+          })
+        ).status,
+      ).toBe('SUCCEEDED');
+      expect(
+        (
+          await pointsProvider.capture({
+            ...base,
+            chargeId: authorizeId,
+            idempotencyKey: `wallet:capture:${authorizeId}`,
+          })
+        ).status,
+      ).toBe('SUCCEEDED');
+      seeded.pointsChargeId = await capturedCharge(intentId, pmId, legs.points, new Date(t0), {
+        intentId,
+        authorizeChargeId: authorizeId,
+      });
     }
     if (legs.toss) {
-      seeded.tossChargeId = await capturedCharge(intentId, await method(userId, 'TOSS'), legs.toss, new Date(t0 + 1_000));
+      seeded.tossChargeId = await capturedCharge(
+        intentId,
+        await method(userId, 'TOSS'),
+        legs.toss,
+        new Date(t0 + 1_000),
+      );
     }
     if (legs.cms) {
-      seeded.cmsChargeId = await capturedCharge(intentId, await method(userId, 'CMS_BATCH'), legs.cms, new Date(t0 + 2_000));
+      seeded.cmsChargeId = await capturedCharge(
+        intentId,
+        await method(userId, 'CMS_BATCH'),
+        legs.cms,
+        new Date(t0 + 2_000),
+      );
     }
     return seeded;
   }
@@ -256,7 +309,10 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     const confirmed = await service.confirmManual(manual.id);
 
     expect(confirmed).toMatchObject({ status: 'SUCCEEDED', execution: 'MANUAL' });
-    const [tossCharge] = await db.select().from(charges).where(eq(charges.id, s.tossChargeId as string));
+    const [tossCharge] = await db
+      .select()
+      .from(charges)
+      .where(eq(charges.id, s.tossChargeId as string));
     expect(tossCharge.status).toBe('REFUNDED');
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'gateway.refund.succeeded' }),
