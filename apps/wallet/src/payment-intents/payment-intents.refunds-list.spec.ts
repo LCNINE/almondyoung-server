@@ -1,5 +1,15 @@
+import { NotFoundException } from '@nestjs/common';
 import type { Refund } from '../types';
-import { toRefundListItem } from '../refunds/refund-response';
+
+// Mock the wallet module to prevent full module loading
+jest.mock('../wallet.module', () => ({
+  AuthenticatedRequest: jest.fn(),
+}));
+
+// Mock decorators
+jest.mock('../wallet-auth.decorator', () => ({
+  WalletJwtAuth: () => () => {},
+}));
 
 const refund = (id: string, status: Refund['status'], execution: Refund['execution']): Refund => ({
   id,
@@ -20,27 +30,32 @@ const refund = (id: string, status: Refund['status'], execution: Refund['executi
 
 describe('GET /v1/payment-intents/:id/refunds', () => {
   it('intent 의 환불을 서비스 순서대로 목록 칸으로 낸다', async () => {
-    const refunds = [refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')];
-    const result = refunds.map(toRefundListItem);
+    // eslint-disable-next-line global-require
+    const { PaymentIntentsController } = require('./payment-intents.controller');
+    const intents = { findByIdOrThrow: jest.fn().mockResolvedValue({ id: 'in-1' }) };
+    const refunds = {
+      listByIntent: jest.fn().mockResolvedValue([refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')]),
+    };
+    const controller = new PaymentIntentsController(intents as never, refunds as never);
 
+    const result = await controller.listRefunds('in-1');
+
+    expect(refunds.listByIntent).toHaveBeenCalledWith('in-1');
     expect(result.map((r) => [r.id, r.status, r.execution])).toEqual([
       ['rf-1', 'FAILED', 'AUTO'],
       ['rf-2', 'PENDING', 'MANUAL'],
     ]);
   });
 
-  it('환불 목록은 일곱 칸만 낸다', () => {
-    const r = refund('rf-1', 'PENDING', 'MANUAL');
-    const result = toRefundListItem(r);
+  it('없는 intent 는 404 그대로, 목록을 읽지 않는다', async () => {
+    // eslint-disable-next-line global-require
+    const { PaymentIntentsController } = require('./payment-intents.controller');
+    const notFound = new NotFoundException({ error: 'INTENT_NOT_FOUND', message: 'Payment intent not found: x' });
+    const intents = { findByIdOrThrow: jest.fn().mockRejectedValue(notFound) };
+    const refunds = { listByIntent: jest.fn() };
+    const controller = new PaymentIntentsController(intents as never, refunds as never);
 
-    expect(Object.keys(result).sort()).toEqual([
-      'amount',
-      'chargeId',
-      'createdAt',
-      'execution',
-      'id',
-      'reasonCode',
-      'status',
-    ]);
+    await expect(controller.listRefunds('x')).rejects.toBe(notFound);
+    expect(refunds.listByIntent).not.toHaveBeenCalled();
   });
 });
