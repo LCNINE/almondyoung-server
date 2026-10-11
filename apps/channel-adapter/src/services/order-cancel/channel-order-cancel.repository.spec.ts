@@ -8,7 +8,7 @@ function makeRepository(rows: unknown[] = []) {
   const select = jest.fn(() => ({ from: jest.fn(() => ({ where })) }));
   const transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn('tx'));
   const repository = new ChannelOrderCancelRepository({ db: { select, transaction } } as never, { enqueue } as never);
-  return { repository, enqueue, where };
+  return { repository, enqueue, where, transaction };
 }
 
 // and(eq(), eq()) 의 SQL 객체를 재귀로 걸어 컬럼 이름을 모은다 — 청크 중첩 깊이에 기대지 않는다
@@ -35,53 +35,85 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     expect(columns).toEqual(expect.arrayContaining(['sales_channel', 'channel_order_id']));
   });
 
-  it('거절 사실은 같은 전달에서 한 번만, 채널 단위 파티션으로 적재한다', async () => {
+  const fact = {
+    ...key,
+    scope: 'full' as const,
+    retryable: false,
+    failureCode: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+    message: '자동 환불할 수 없는 결제수단입니다',
+    at: '2026-10-12T00:00:00.000Z',
+  };
+
+  it('정산 실패 사실을 채널 단위 파티션으로, 전달·코드 단위 멱등 키로 적재한다', async () => {
     const { repository, enqueue } = makeRepository();
-    const payload = { ...key, reasonCode: 'NOT_CANCELABLE' as const, message: '출고됨' };
-    await repository.recordRejected(payload, 'd1');
+    await repository.recordSettlementFailure(fact, 'd1');
+    expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith(
       {
-        eventType: 'ChannelOrderCancelRejected',
+        eventType: 'ChannelOrderSettlementFailed',
         aggregateId: 'medusa:order_1',
         partitionKey: 'medusa',
         metadata: { partitionKey: 'medusa' },
-        idempotencyKey: 'cancel-rejected:req-1:d1',
-        payload,
+        idempotencyKey: 'settlement-failed:req-1:d1:wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+        payload: fact,
       },
       'tx',
     );
   });
 
-  it('정체 사실도 같은 전달에서 한 번만 적재한다', async () => {
-    const { repository, enqueue } = makeRepository();
-    const payload = { ...key, stage: 'edited' as const, message: '환불 미완' };
-    await repository.recordStalled(payload, 'd1');
-    expect(enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'ChannelOrderCancelStalled',
-        idempotencyKey: 'cancel-stalled:req-1:d1',
-        partitionKey: 'medusa',
-        payload,
-      }),
-      'tx',
-    );
+  it('옛 사실이 있으면 «같은 트랜잭션»에 옛 키로 함께 적재한다 — 옛 core(PR 5 전)가 읽는다', async () => {
+    const { repository, enqueue, transaction } = makeRepository();
+    const rejected = { ...key, reasonCode: 'NOT_CANCELABLE' as const, message: '출고됨' };
+    await repository.recordSettlementFailure(fact, 'd1', { eventType: 'ChannelOrderCancelRejected', payload: rejected });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls.map(([event, tx]) => [event.eventType, event.idempotencyKey, tx])).toEqual([
+      ['ChannelOrderSettlementFailed', 'settlement-failed:req-1:d1:wallet_refund_refused:REFUND_NOT_AUTOMATABLE', 'tx'],
+      ['ChannelOrderCancelRejected', 'cancel-rejected:req-1:d1', 'tx'],
+    ]);
+    expect(enqueue.mock.calls[1][0]).toMatchObject({ aggregateId: 'medusa:order_1', partitionKey: 'medusa', payload: rejected });
   });
 
-  it('같은 requestId 도 전달(messageId)이 다르면 멱등 키가 달라 다시 보내기가 사실을 다시 낸다', async () => {
+  it('옛 정체 사실은 옛 키로 적재한다', async () => {
     const { repository, enqueue } = makeRepository();
-    const rejected = { ...key, reasonCode: 'NOT_CANCELABLE' as const, message: '출고됨' };
     const stalled = { ...key, stage: 'edited' as const, message: '환불 미완' };
-    await repository.recordRejected(rejected, 'd1');
-    await repository.recordRejected(rejected, 'd2');
-    await repository.recordStalled(stalled, 'd1');
-    await repository.recordStalled(stalled, 'd2');
-    const keys = enqueue.mock.calls.map(([event]) => event.idempotencyKey);
-    expect(keys).toEqual([
-      'cancel-rejected:req-1:d1',
-      'cancel-rejected:req-1:d2',
-      'cancel-stalled:req-1:d1',
-      'cancel-stalled:req-1:d2',
+    await repository.recordSettlementFailure({ ...fact, scope: 'partial', retryable: true, failureCode: 'refund_pending' }, 'd1', {
+      eventType: 'ChannelOrderCancelStalled',
+      payload: stalled,
+    });
+    expect(enqueue.mock.calls[1][0]).toMatchObject({
+      eventType: 'ChannelOrderCancelStalled',
+      idempotencyKey: 'cancel-stalled:req-1:d1',
+      payload: stalled,
+    });
+  });
+
+  it('같은 전달이라도 failureCode 가 다르면 키가 다르다 — 재시도 중 일시 → 영구로 바뀐 결과를 먹지 않는다', async () => {
+    const { repository, enqueue } = makeRepository();
+    await repository.recordSettlementFailure({ ...fact, retryable: true, failureCode: 'http_500' }, 'd1');
+    await repository.recordSettlementFailure(fact, 'd1');
+    await repository.recordSettlementFailure(fact, 'd2');
+    expect(enqueue.mock.calls.map(([event]) => event.idempotencyKey)).toEqual([
+      'settlement-failed:req-1:d1:http_500',
+      'settlement-failed:req-1:d1:wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+      'settlement-failed:req-1:d2:wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
     ]);
-    expect(new Set(keys).size).toBe(4);
+  });
+
+  it('긴 failureCode 는 키에서 120자로 자른다 — 키 칸은 varchar(255)라 넘치면 적재가 매번 실패한다. 사실의 코드는 그대로다', async () => {
+    const { repository, enqueue } = makeRepository();
+    const longCode = `wallet_refund_refused:${'X'.repeat(400)}`;
+    const requestId = '0192f0aa-0000-7000-8000-000000000001';
+    const deliveryId = '0192f0aa-0000-7000-8000-000000000002';
+    await repository.recordSettlementFailure({ ...fact, requestId, failureCode: longCode }, deliveryId);
+    const [event] = enqueue.mock.calls[0];
+    expect(event.idempotencyKey.length).toBeLessThanOrEqual(255);
+    expect(event.idempotencyKey).toBe(`settlement-failed:${requestId}:${deliveryId}:${longCode.slice(0, 120)}`);
+    expect(event.payload.failureCode).toBe(longCode);
+  });
+
+  it('적재가 실패하면 던진다 — 명령을 ack 하지 않고 재배달을 탄다', async () => {
+    const { repository, enqueue } = makeRepository();
+    enqueue.mockRejectedValueOnce(new Error('outbox down'));
+    await expect(repository.recordSettlementFailure(fact, 'd1')).rejects.toThrow('outbox down');
   });
 });

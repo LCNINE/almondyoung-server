@@ -15,6 +15,13 @@ import { z } from 'zod';
 
 // ===== Command Payloads =====
 
+/**
+ * 채널 정산의 환불 방식(#1016 36번 재설계 스펙 §6.1·§6.3). `manual` 은 외부 결제 몫을 PG 대신 wallet «송금 대기»로 남긴다
+ * (운영자가 고객 계좌로 보내고 [송금 완료]). 포인트 몫은 둘 다 자동으로 되돌린다.
+ */
+export const CHANNEL_CANCEL_REFUND_MODES = ['auto', 'manual'] as const;
+export type ChannelCancelRefundMode = (typeof CHANNEL_CANCEL_REFUND_MODES)[number];
+
 /** 그 채널 주문의 지금 상태를 다시 가져와 수집 경로(`OrderModified`)로 흘려 달라는 요청. */
 export interface ResyncChannelOrderPayload {
   /** 'medusa' | 'naver' … — 문자열로 두고, 지원 여부는 소비자가 판정한다 */
@@ -27,6 +34,7 @@ export interface ResyncChannelOrderPayload {
 /**
  * 채널에 주문 취소·부분취소를 요청한다 (#1016 35번 행, ADR-0042). core 는 요청을 기록·보류한 뒤 이 명령을 내고,
  * 확정은 재수집된 `OrderCancelled`/`OrderModified` 로, 거절은 `ChannelOrderCancelRejected` 로 돌려받는다.
+ * 정산이 끝나지 못하면 `ChannelOrderSettlementFailed`(#1016 36번 재설계)도 함께 온다.
  * 환불은 채널이 한다 — core 도 channel-adapter 도 wallet 을 부르지 않는다.
  */
 export interface CancelChannelOrderPayload {
@@ -43,6 +51,8 @@ export interface CancelChannelOrderPayload {
    * 나머지만 환불한다(#1016 37번, ADR-0043). 없으면 채널이 «품목에 연결 안 된 외부 환불»을 보고 거절할 수 있다.
    */
   alreadyRefundedAmount?: number;
+  /** 없으면 `auto` — 옛 core(PR 5 전)는 이 칸을 모른다. 같은 requestId 의 재발행은 같은 값을 싣는다 */
+  refundMode?: ChannelCancelRefundMode;
   reasonCode?: string;
   requestedBy: 'operator' | 'customer' | 'wallet-refund-approval';
   /** ISO 8601 */
@@ -67,6 +77,7 @@ const CancelChannelOrderSchema = z
       .array(z.object({ channelOrderItemId: z.string().min(1), quantity: z.number().int().positive() }))
       .optional(),
     alreadyRefundedAmount: z.number().int().nonnegative().optional(),
+    refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES).optional(),
     reasonCode: z.string().min(1).optional(),
     requestedBy: z.enum(['operator', 'customer', 'wallet-refund-approval']),
     requestedAt: z.string().datetime(),
