@@ -4,7 +4,12 @@ import { BadRequestError, ConflictError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
-import { markLineShipped, seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
+import {
+  markLineShipped,
+  seedChannelOrder,
+  seedLegacyRequest,
+  wireCancelRequest,
+} from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -344,7 +349,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: false });
-      await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      await seedLegacyRequest(tx, seed);
       await expect(
         tx.transaction((sp) =>
           sp.insert(wmsTables.salesOrderAmendments).values({

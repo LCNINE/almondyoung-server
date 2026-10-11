@@ -2,7 +2,8 @@ import { eq, sql as drizzleSql } from 'drizzle-orm';
 import { ConflictError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
+import { readCancelRequestMetadata } from './channel-cancel-request.types';
+import { seedChannelOrder, seedLegacyRequest, wireCancelRequest } from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -13,7 +14,7 @@ async function rowOf(tx: DbTx, id: string) {
   return row;
 }
 
-describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollback-only)', () => {
+describeIfDb('옛 requested 행 — 거절·정체 사실과 운영자 조치 (DB integration, rollback-only)', () => {
   jest.setTimeout(180_000);
   const { sql, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
@@ -23,8 +24,8 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
   async function open(tx: DbTx) {
     const w = wireCancelRequest(tx);
     const seed = await seedChannelOrder(tx, w, { withFo: true });
-    const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
-    return { w, seed, id: view.id };
+    const id = await seedLegacyRequest(tx, seed);
+    return { w, seed, id };
   }
 
   it('37번 거절 — 미해결 외부 환불 금액을 함께 적는다', async () => {
@@ -73,16 +74,18 @@ describeIfDb('거절·정체 사실과 운영자 조치 (DB integration, rollbac
     });
   });
 
-  it('다시 보내기 — 같은 requestId·같은 본문의 명령을 하나 더 낸다', async () => {
+  it('다시 보내기 — 같은 requestId·처음 낸 본문(행에 적힌 명령)의 명령을 하나 더 낸다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await open(tx);
       await w.manager.resend(seed.salesOrderId, tx);
       const commands = await tx.execute<{ idempotency_key: string; payload: { payload: Record<string, unknown> } }>(
         drizzleSql`SELECT idempotency_key, payload FROM event.outbox_events WHERE aggregate_id = ${`medusa:${seed.externalOrderId}`} ORDER BY created_at, id`,
       );
-      expect(commands).toHaveLength(2);
-      expect(commands[1].payload.payload).toEqual(commands[0].payload.payload);
-      expect(commands[1].payload.payload).toMatchObject({ requestId: id });
+      // 옛 행의 첫 명령은 PR 5 전에 이미 나갔다 — 픽스처는 행만 만든다. 비교 기준은 행에 적힌 처음 명령이다.
+      const { metadata } = await rowOf(tx, id);
+      expect(commands).toHaveLength(1);
+      expect(commands[0].payload.payload).toEqual(readCancelRequestMetadata(metadata).request.command);
+      expect(commands[0].payload.payload).toMatchObject({ requestId: id });
     });
   });
 
