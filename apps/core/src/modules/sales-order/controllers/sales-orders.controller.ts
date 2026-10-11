@@ -98,20 +98,36 @@ export class SalesOrdersController {
   }
 
   @Post(':id/cancel-request/resend')
-  @ApiOperation({ summary: '채널 취소 요청 다시 보내기 — 같은 requestId (정체 보드 «취소 요청 미반영»)' })
+  @ApiOperation({ summary: '채널 취소 요청 다시 보내기 — 같은 requestId (정체 보드 «취소 요청 미반영»; 옛 requested 행만)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   resendCancelRequest(@Param('id') id: string) {
     return this.cancelRequests.resend(id);
   }
 
   @Post(':id/cancel-request/withdraw')
-  @ApiOperation({ summary: '채널 취소 요청 접기 — 보류를 푼다(OPERATOR_WITHDRAWN)' })
+  @ApiOperation({ summary: '채널 취소 요청 접기 — 보류를 푼다(OPERATOR_WITHDRAWN; 옛 requested 행만)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   withdrawCancelRequest(
     @Param('id') id: string,
     @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
   ) {
     return this.cancelRequests.withdraw(id, user?.userId ?? user?.id ?? user?.sub ?? null);
+  }
+
+  @Post(':id/cancel-request/:requestId/retry')
+  @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  retryCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.cancelRequests.retrySettlement(id, requestId);
+  }
+
+  @Post(':id/cancel-request/:requestId/manual-refund')
+  @ApiOperation({ summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  manualRefundCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.cancelRequests.switchToManualRefund(id, requestId);
   }
 
   @Post(':id/business-links')

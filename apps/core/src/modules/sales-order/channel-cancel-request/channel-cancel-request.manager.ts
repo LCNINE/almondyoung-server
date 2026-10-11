@@ -12,6 +12,7 @@ import {
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { channelCancelRoute, sellerCenterMessage } from './channel-cancel-route';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
@@ -22,6 +23,7 @@ import {
   CancelRequestView,
   CancelRequester,
   readCancelRequestMetadata,
+  settlementPhase,
   toCancelRequestView,
 } from './channel-cancel-request.types';
 
@@ -254,6 +256,50 @@ export class ChannelCancelRequestManager {
       };
       await this.write(row.id, 'settling', next, trx);
       this.logger.warn(`[CancelRequest] ${row.id} settlement failed ${fact.failureCode} retryable=${fact.retryable}`);
+    }, tx);
+  }
+
+  /** [다시 시도] — 환불 지연·거절인 정산을 같은 requestId·같은 방식으로 다시 낸다(스펙 §7.3) */
+  async retrySettlement(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
+    return this.restartSettlement(salesOrderId, requestId, 'retry', tx);
+  }
+
+  /** [계좌 송금으로 환불] — 같은 requestId 를 refundMode manual 로 다시 낸다. wallet 이 PG 없이 송금 대기 행을 만든다(스펙 §6.3) */
+  async switchToManualRefund(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
+    return this.restartSettlement(salesOrderId, requestId, 'manual', tx);
+  }
+
+  private async restartSettlement(
+    salesOrderId: string,
+    requestId: string,
+    kind: 'retry' | 'manual',
+    tx?: DbTx,
+  ): Promise<CancelRequestView> {
+    return this.db.run(async (trx) => {
+      await this.lockSalesOrder(salesOrderId, trx);
+      const row = await this.reader.findById(requestId, trx, { lock: true });
+      if (!row || row.salesOrderId !== salesOrderId) throw new NotFoundError(`취소 요청을 찾을 수 없습니다: ${requestId}`);
+      if (row.status !== 'settling') throw new ConflictError('정산 중인 취소 요청이 아닙니다.');
+      const meta = readCancelRequestMetadata(row.metadata);
+      const settlement = meta.settlement;
+      if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
+      const now = new Date();
+      // 막 보낸 명령이 아직 돌고 있다 — 겹치면 같은 주문에 정산이 둘 돈다(D8)
+      if (settlementPhase(settlement, row.createdAt, now) === 'in_progress') {
+        throw new ConflictError(
+          `정산이 진행 중입니다. 확정 뒤 ${SETTLE_DELAYED_AFTER_MS / 60_000}분이 지나도 끝나지 않으면 다시 시도할 수 있습니다.`,
+        );
+      }
+      if (kind === 'manual' && settlement.mode === 'manual') throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
+      const mode = kind === 'manual' ? 'manual' : settlement.mode;
+      const next: CancelRequestMetadata = {
+        ...meta,
+        settlement: { ...settlement, state: 'in_progress', mode, since: now.toISOString() },
+      };
+      await this.enqueue({ ...meta.request.command, refundMode: mode }, `cancel-request:${row.id}:${kind}:${now.getTime()}`, trx);
+      await this.write(row.id, 'settling', next, trx);
+      this.logger.log(`[CancelRequest] ${row.id} settlement restarted (${kind}, ${mode})`);
+      return toCancelRequestView({ ...row, metadata: next }, now);
     }, tx);
   }
 

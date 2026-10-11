@@ -33,6 +33,14 @@ export class ChannelCancelRequestService {
     });
   }
 
+  retrySettlement(salesOrderId: string, requestId: string): Promise<CancelRequestView> {
+    return this.manager.retrySettlement(salesOrderId, requestId);
+  }
+
+  switchToManualRefund(salesOrderId: string, requestId: string): Promise<CancelRequestView> {
+    return this.manager.switchToManualRefund(salesOrderId, requestId);
+  }
+
   reject(fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number }): Promise<void> {
     return this.manager.reject(fact);
   }
