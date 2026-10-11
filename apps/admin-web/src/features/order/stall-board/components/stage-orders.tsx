@@ -188,8 +188,11 @@ export function StageOrders(props: {
                   </td>
                   {isCancelRequest && (
                     <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {r.settlement ? (
-                        <SettlementActions salesOrderId={r.salesOrderId} settlement={r.settlement} />
+                      {/* 정산 중 행은 상태로 가른다 — 다시 보내기·요청 접기는 settle_* 행에서 409 이므로 어떤 경우에도 그리지 않는다 */}
+                      {r.state?.startsWith('settle_') ? (
+                        r.settlement ? (
+                          <SettlementActions salesOrderId={r.salesOrderId} settlement={r.settlement} />
+                        ) : null
                       ) : (
                         <>
                               <button

@@ -15,6 +15,10 @@ describe('channelRefundStatus — 정산 → 고객 환불 배지(스펙 §8.2)'
   it('정산 중 하나라도 지연·거절이면 delayed(수동이 섞여도)', () => {
     expect(channelRefundStatus([settling('in_progress', 'manual'), settling('refused')], null)).toBe('delayed');
   });
+  it('정산 중이 지연이어도 수동이면 transfer_pending / 거절이면 delayed', () => {
+    expect(channelRefundStatus([settling('delayed', 'manual')], null)).toBe('transfer_pending');
+    expect(channelRefundStatus([settling('refused', 'manual')], null)).toBe('delayed');
+  });
   it('수동으로 정산 중 → transfer_pending', () => {
     expect(channelRefundStatus([settling('in_progress', 'manual')], null)).toBe('transfer_pending');
   });
@@ -22,6 +26,7 @@ describe('channelRefundStatus — 정산 → 고객 환불 배지(스펙 §8.2)'
     expect(channelRefundStatus([applied('manual')], 'pending')).toBe('transfer_pending');
     expect(channelRefundStatus([applied('manual')], 'done')).toBeNull();
     expect(channelRefundStatus([applied('manual')], 'unknown')).toBe('transfer_pending');
+    expect(channelRefundStatus([applied('auto'), applied('manual')], 'pending')).toBe('transfer_pending');
   });
   it('자동으로 끝남 → 기존 도출(수집된 환불)', () => {
     expect(channelRefundStatus([applied('auto')], null)).toBeNull();
@@ -31,10 +36,11 @@ describe('channelRefundStatus — 정산 → 고객 환불 배지(스펙 §8.2)'
   });
 });
 
-describe('needsManualTransferCheck — wallet 은 «가장 최근 정산이 수동으로 끝난» 주문만 부른다', () => {
-  it('최근 정산이 수동으로 끝났고 정산 중인 것이 없을 때만', () => {
+describe('needsManualTransferCheck — wallet 은 «수동으로 끝난 정산이 하나라도 있고 정산 중이 없는» 주문만 부른다', () => {
+  it('수동으로 끝난 정산이 하나라도 있고 정산 중인 것이 없을 때만', () => {
     expect(needsManualTransferCheck([applied('manual'), applied('auto')])).toBe(true);
-    expect(needsManualTransferCheck([applied('auto'), applied('manual')])).toBe(false);
+    expect(needsManualTransferCheck([applied('auto'), applied('manual')])).toBe(true);
+    expect(needsManualTransferCheck([applied('auto')])).toBe(false);
     expect(needsManualTransferCheck([settling('in_progress'), applied('manual')])).toBe(false);
     expect(needsManualTransferCheck([])).toBe(false);
   });

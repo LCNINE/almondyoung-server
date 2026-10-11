@@ -168,10 +168,8 @@ describe('WalletRefundClient.listRefundsByIntent — 수동 송금 여부(#1016 
     expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
   });
 
-  it('모양이 다른 원소는 건너뛴다', async () => {
+  it('모양이 다른 원소가 하나라도 있으면 null(모름) — 조용히 버리지 않는다', async () => {
     global.fetch = mockFetch(200, [{ id: 'r1', status: 'PENDING' }, { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 }]);
-    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toEqual([
-      { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 },
-    ]);
+    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
   });
 });

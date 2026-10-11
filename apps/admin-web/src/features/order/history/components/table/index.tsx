@@ -7,6 +7,7 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
+  SETTLEMENT_LABELS,
   settlementReason,
   settlementTiming,
 } from '@/lib/api/domains/orders/cancel-request.shape';
@@ -851,7 +852,21 @@ export default function OrderTable() {
                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
                   취소됨
                 </span>
-                {r.isFirstOfOrder && r.cancelRequest?.status === 'settling' && <SettlementCell r={r} />}
+                {r.isFirstOfOrder && r.cancelRequest?.status === 'settling' && r.cancelRequest.settlement && (
+                  <>
+                    <span
+                      className={cn(
+                        'inline-flex items-center h-7 px-2 rounded border text-xs whitespace-nowrap',
+                        r.cancelRequest.settlement.phase !== 'in_progress'
+                          ? 'border-red-200 bg-red-50 text-red-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      )}
+                    >
+                      {SETTLEMENT_LABELS[r.cancelRequest.settlement.phase]}
+                    </span>
+                    <SettlementCell r={r} />
+                  </>
+                )}
                 {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 결제 상세에 있다(D7) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
                 {r.isFirstOfOrder &&
                   r.cancelRequest?.refundMode === 'manual' &&

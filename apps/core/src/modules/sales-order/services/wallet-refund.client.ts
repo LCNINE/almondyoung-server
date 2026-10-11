@@ -43,8 +43,8 @@ function isRefundStatus(v: string): v is WalletRefundStatus {
   return REFUND_STATUSES.has(v);
 }
 
-function toListItem(value: unknown): WalletRefundListItem[] {
-  if (typeof value !== 'object' || value === null) return [];
+function toListItem(value: unknown): WalletRefundListItem | null {
+  if (typeof value !== 'object' || value === null) return null;
   const r: Record<string, unknown> = Object.fromEntries(Object.entries(value));
   if (
     typeof r.id !== 'string' ||
@@ -53,9 +53,9 @@ function toListItem(value: unknown): WalletRefundListItem[] {
     (r.execution !== 'AUTO' && r.execution !== 'MANUAL') ||
     typeof r.amount !== 'number'
   ) {
-    return [];
+    return null;
   }
-  return [{ id: r.id, status: r.status, execution: r.execution, amount: r.amount }];
+  return { id: r.id, status: r.status, execution: r.execution, amount: r.amount };
 }
 
 /**
@@ -88,7 +88,10 @@ export class WalletRefundClient {
         return null;
       }
       const body: unknown = await response.json();
-      return Array.isArray(body) ? body.flatMap(toListItem) : null;
+      if (!Array.isArray(body)) return null;
+      // 읽지 못한 원소가 하나라도 있으면 «모름» — 조용히 버리면 PENDING 수동 송금이 사라져 «완료»로 읽힌다
+      const items = body.map(toListItem);
+      return items.every((i): i is WalletRefundListItem => i !== null) ? items : null;
     } catch (err) {
       this.logger.warn(
         `[WalletRefundClient] list refunds ${intentId} failed: ${err instanceof Error ? err.message : String(err)}`,

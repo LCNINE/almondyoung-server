@@ -113,7 +113,8 @@ export function toSettlementView(value: unknown): SettlementView | null {
 /** 운영자가 읽는 사유. wallet·PG 영구 거절과 그 밖(주문 없음 등 «개발 확인»)을 failureCode 접두사로 가른다(PR 3 넘길 것 4) */
 export function settlementReason(s: SettlementView): string | null {
   const f = s.lastFailure;
-  if (!f) return null;
+  // 환불 처리 중에 지난 실패를 곁에 두면 모순으로 읽힌다 — 다시 시도한 뒤의 진행 중엔 사유를 숨긴다
+  if (!f || s.phase === 'in_progress') return null;
   if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
   return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
 }

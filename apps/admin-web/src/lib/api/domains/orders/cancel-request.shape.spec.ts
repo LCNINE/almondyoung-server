@@ -172,6 +172,7 @@ describe('정산(#1016 36번 재설계)', () => {
     );
     expect(settlementReason(settlement({ lastFailure: { code: 'http_502', message: '', retryable: true, at: 'x' } }))).toBe('정산 실패 · 개발 확인 · http_502');
     expect(settlementReason(settlement({ lastFailure: null }))).toBeNull();
+    expect(settlementReason(settlement({ phase: 'in_progress' }))).toBeNull();
   });
 
   it('조치 — 정산 중엔 없음, 지연·거절엔 둘, 이미 계좌 송금이면 다시 시도만', () => {

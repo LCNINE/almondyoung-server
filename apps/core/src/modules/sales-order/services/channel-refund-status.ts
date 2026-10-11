@@ -10,11 +10,13 @@ export type ChannelSettlementFact =
 /** 수동 정산이 끝난 뒤 wallet 의 송금 대기 행. unknown = wallet 이 답하지 않았다 */
 export type ManualTransfer = 'pending' | 'done' | 'unknown';
 
-/** 수동 정산은 Medusa 에 Refund 행이 생겨 «수집된 환불»로 보이지만, 실제 송금은 운영자가 [완료 처리]를 눌러야 끝난다(스펙 §8.2) */
+/**
+ * 수동 정산은 Medusa 에 Refund 행이 생겨 «수집된 환불»로 보이지만, 실제 송금은 운영자가 [완료 처리]를 눌러야 끝난다(스펙 §8.2).
+ * 정산 중인 것이 없고 수동으로 끝난 정산이 «하나라도» 있으면 wallet 에 묻는다 — 자동으로 끝난 요청이 더 최근이어도 앞선 수동 송금은 남아 있을 수 있다.
+ */
 export function needsManualTransferCheck(facts: ChannelSettlementFact[]): boolean {
   if (facts.some((f) => f.status === 'settling')) return false;
-  const latest = facts[0];
-  return latest !== undefined && latest.status === 'applied' && latest.mode === 'manual';
+  return facts.some((f) => f.status === 'applied' && f.mode === 'manual');
 }
 
 export function manualTransferOf(refunds: WalletRefundListItem[] | null): ManualTransfer {
@@ -31,8 +33,10 @@ export function channelRefundStatus(
   manualTransfer: ManualTransfer | null,
 ): StoreRefundStatus | null {
   const open = facts.filter((f): f is Extract<ChannelSettlementFact, { status: 'settling' }> => f.status === 'settling');
-  if (open.some((f) => f.phase !== 'in_progress')) return 'delayed';
+  // 거절 > 수동 > 지연(나이) 순 — 운영자는 30분이 지나야 수동으로 돌릴 수 있어, 나이 기준 지연이 먼저면 «계좌 송금 예정»이 가려진다
+  if (open.some((f) => f.phase === 'refused')) return 'delayed';
   if (open.some((f) => f.mode === 'manual')) return 'transfer_pending';
+  if (open.some((f) => f.phase === 'delayed')) return 'delayed';
   if (open.length > 0) return 'pending';
   if (needsManualTransferCheck(facts) && manualTransfer !== 'done') return 'transfer_pending';
   return null;
