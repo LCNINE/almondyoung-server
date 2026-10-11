@@ -706,14 +706,18 @@
         "pending": "Your refund will be completed within 3-5 business days.",
         "manual_pending": "Refund will be processed after operator review. Please contact customer support for inquiries.",
         "succeeded": "Your refund has been completed.",
-        "failed": "There was an issue processing your refund. Please contact customer support."
+        "failed": "There was an issue processing your refund. Please contact customer support.",
+        "delayed": "We'll process it within 3 business days.",
+        "transfer_pending": "We'll send your refund to your bank account."
       },
       "statusLabels": {
         "none": "",
         "pending": "Processing refund",
         "manual_pending": "Awaiting review",
         "succeeded": "Refunded",
-        "failed": "Refund issue"
+        "failed": "Refund issue",
+        "delayed": "Refund delayed",
+        "transfer_pending": "Refund in progress"
       }
     },
     "cashReceipt": {
