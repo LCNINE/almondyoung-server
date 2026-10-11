@@ -127,6 +127,13 @@
       "when": 1789964508029,
       "tag": "20260921042148_lower-invoice-retry-interval-to-48h",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791685288019,
+      "tag": "20261011022128_add-refund-execution-and-failure",
+      "breakpoints": true
     }
   ]
 }

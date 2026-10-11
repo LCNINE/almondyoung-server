@@ -222,11 +222,12 @@ export class CmsBatchProvider implements PaymentProvider {
   }
 
   async refund(_params: RefundParams): Promise<RefundResult> {
-    // CMS는 환불 개념이 없음. 별도 입금으로 처리해야 함.
+    // CMS는 환불 개념이 없음. 별도 입금으로 처리해야 함 — 다시 불러도 같다(영구).
     return {
       status: 'FAILED',
       errorCode: 'CMS_REFUND_NOT_SUPPORTED',
       errorMessage: 'CMS batch provider does not support refunds. Use a separate deposit process.',
+      retryable: false,
     };
   }
 

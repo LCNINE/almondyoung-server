@@ -69,6 +69,11 @@ export interface RefundResult {
   providerRefundId?: string;
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * FAILED 일 때만 의미: 같은 환불을 나중에 다시 시도하면 될 수 있는가. 없으면 true(일시)로 본다 —
+   * 모르는 실패를 영구로 두면 아무도 다시 안 부른다. 영구/일시 분류의 정본은 wallet 이다(스펙 S6).
+   */
+  retryable?: boolean;
   raw?: Record<string, unknown>;
 }
 

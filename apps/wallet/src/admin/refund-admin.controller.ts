@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
@@ -36,11 +37,12 @@ export class RefundAdminController {
 
   @Post(':id/confirm')
   @HttpCode(200)
-  @ApiOperation({ summary: '무통장 환불 수동 완료 처리 (PENDING → SUCCEEDED)' })
+  @ApiOperation({ summary: '환불 수동 완료 처리 — 무통장·수동 실행(MANUAL) 송금 대기 (PENDING → SUCCEEDED)' })
   async confirmManual(@Param('id') id: string) {
     try {
       return await this.refundsService.confirmManual(id);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|pending|status/)) throw new BadRequestException(e.message);
