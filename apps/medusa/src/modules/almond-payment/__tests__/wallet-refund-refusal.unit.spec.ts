@@ -24,6 +24,12 @@ describe('wallet 환불 오류 번역 (#1016 36번 재설계 §6.4)', () => {
     expect(err?.message).toBe('자동 환불할 수 없는 결제수단입니다');
   });
 
+  it('시간 초과(AbortSignal.timeout)는 거절이 아니다 — 일시로 남긴다. DOMException 의 숫자 code 도 표지로 읽지 않는다', () => {
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    expect(refusalFromWalletHttpError(timeout)).toBeNull();
+    expect(readWalletRefundRefusal(timeout)).toBeNull();
+  });
+
   it('404 도 본문이 영구라고 하면 영구 — REFUNDABLE_CHARGE_NOT_FOUND', () => {
     expect(refusalFromWalletHttpError(new WalletHttpError(404, 'REFUNDABLE_CHARGE_NOT_FOUND', 'm', false))?.code).toBe(
       'wallet_refund_refused:REFUNDABLE_CHARGE_NOT_FOUND',

@@ -34,6 +34,14 @@ import {
 } from './refund-data';
 import { WalletHttpError, refusalFromWalletHttpError, walletRefundRefusedError } from './wallet-refund-refusal';
 
+/**
+ * wallet 환불 요청의 클라이언트 시간 한도. 정산은 이 호출을 결제 잠금(30초, paymentRefundLockKey) 안에서 부르고, 레디스 잠금은
+ * timeout 이 곧 만료다 — 걸린 호출이 잠금보다 오래 가면 잠금이 먼저 풀려 다른 정산이 환불 없이 취소하거나 끼어든다.
+ * 잠금보다 넉넉히 짧게 끊는다. 끊김은 WalletHttpError 가 아니므로 거절이 아니라 일시 오류로 올라간다(시도 표식 + 다음 맞추기가 처리).
+ * 환불만 건다 — 같은 walletFetch 를 쓰는 승인 확정·캡처는 잠금 밖이고 PG 시간이 다르다.
+ */
+const WALLET_REFUND_TIMEOUT_MS = 20_000;
+
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
 
@@ -284,6 +292,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     try {
       res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
         method: 'POST',
+        signal: AbortSignal.timeout(WALLET_REFUND_TIMEOUT_MS),
         ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
         body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND', ...(isManual ? { execution: 'MANUAL' } : {}) }),
       });

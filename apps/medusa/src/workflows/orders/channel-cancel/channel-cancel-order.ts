@@ -62,7 +62,8 @@ async function run(container: MedusaContainer, input: ChannelCancelInput): Promi
     // ③ 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
     await cancelOrderWorkflow(container).run({ input: { order_id: input.orderId, canceled_by: input.actorId } });
   } catch (error) {
-    // 영구 거절 표지만 그대로 올린다(400 — 그 결제의 돈은 안 나갔다). 그 밖은 500 으로 바꿔 재시도시킨다 — 표지 없는 400 은
+    // 영구 거절 표지만 그대로 올린다(400 — 주문은 안 취소됐다). 결제분이 여럿이면 앞 몫은 이미 나갔을 수 있는데, 그 돈은 다음 정산
+    // (재시도·수동)의 장부 맞추기가 장부에 넣고 남은 몫만 낸다. 그 밖은 500 으로 바꿔 재시도시킨다 — 표지 없는 400 은
     // channel-adapter 가 «취소 불가»로 닫는다. 재시도는 맞추기 뒤 남은 몫만 환불한다
     if (readWalletRefundRefusal(error)) throw error;
     throw new Error(`채널 취소가 중단됐습니다 — 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
@@ -102,14 +103,15 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
 
 /**
  * 이 경로로 돈이 이미 나갔나 — 장부의 이 메모 환불, 또는 장부에 아직 없지만 맞추기가 이 메모로 넣을 wallet 환불(응답 유실·다중 결제분의
- * 앞부분). 읽기만 한다(투영·표식 쓰기 없음, 잠금 없음). 시도 표식만으로는 판정하지 않는다 — 영구 거절도 표식을 남기므로
+ * 앞부분, 아직 진행 중인 자동 PENDING 포함). 읽기만 한다(투영·표식 쓰기 없음, 잠금 없음). 시도 표식만으로는 판정하지 않는다 — 영구 거절도 표식을 남기므로
  * 표식만 보면 정당한 사전검사 400 이 영원히 500 으로 돈다.
  */
 async function moneyMovedHere(container: MedusaContainer, orderId: string): Promise<boolean> {
   if ((await refundedHere(container, orderId)) > 0) return true;
   for (const paymentId of await orderPaymentIds(container, orderId)) {
-    const { bookings } = await planPaymentWalletRefundBookings(container, paymentId);
-    if (bookings.some((b) => b.note === refundNote(orderId))) return true;
+    // 진행 중(자동 PENDING)인 것도 — PG 결과가 아직이라 돈이 나갔을 수 있다. 400 으로 닫지 않고 500 으로 기다린다(D8)
+    const { bookings, inFlight } = await planPaymentWalletRefundBookings(container, paymentId);
+    if ([...bookings, ...inFlight].some((b) => b.note === refundNote(orderId))) return true;
   }
   return false;
 }

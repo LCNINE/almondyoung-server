@@ -70,7 +70,7 @@ export type WalletRefundVerdict =
   | {
       ok: false;
       reason: string;
-      /** 실패 판정이어도 wallet 에서 실제로 나간(또는 나가는 중인) 환불 — 장부에 안 남으니 로그가 유일한 흔적이다. */
+      /** 실패 판정이어도 wallet 에서 실제로 나간(또는 나가는 중인) 환불 — 이번엔 장부에 안 남는다. 다음 정산의 장부 맞추기(wallet 환불 목록)가 넣는다. */
       moved: Array<{ id: string; amount: number; status: string }>;
       /** FAILED 행 중 wallet 이 영구(retryable: false)라고 한 것 — 있으면 표지 붙은 거절로 던진다 */
       refusal?: { code: string; message: string };
@@ -96,7 +96,8 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
       reason: `wallet 환불 ${failed.id ?? '?'} 가 FAILED 입니다(reasonCode=${failed.reasonCode ?? '-'}, reasonMessage=${failed.reasonMessage ?? '-'})`,
       moved,
       ...(permanent
-        ? { refusal: { code: permanent.failureCode ?? 'REFUND_FAILED', message: permanent.reasonMessage ?? 'wallet 이 환불을 거절했습니다' } }
+        ? // 빈 문자열 코드는 «wallet_refund_refused:» 라는 읽을 수 없는 표지가 된다 — ?? 가 아니라 || 로 대체한다
+          { refusal: { code: permanent.failureCode || 'REFUND_FAILED', message: permanent.reasonMessage ?? 'wallet 이 환불을 거절했습니다' } }
         : {}),
     };
   }

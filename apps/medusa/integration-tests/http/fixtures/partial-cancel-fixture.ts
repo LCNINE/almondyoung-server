@@ -21,7 +21,7 @@ export const WALLET_PORT = 39131;
 export const WALLET_BASE_URL = `http://127.0.0.1:${WALLET_PORT}`;
 
 type Intent = { id: string; amount: number; status: string; captured: number; refunded: number };
-/** 돈이 움직인(또는 송금 대기인) 환불. FAILED 는 남기지 않는다 — 실제 wallet 에서도 남은 금액을 안 줄인다 */
+/** 돈이 움직인(또는 송금 대기·PG 진행 중인) 환불. FAILED 는 남기지 않는다 — 실제 wallet 에서도 남은 금액을 안 줄인다 */
 export type FakeRefund = {
   id: string;
   intentId: string;
@@ -47,6 +47,11 @@ export class FakeWallet {
   rejectNextRefundWith: { status: number; error: string; message?: string; retryable?: boolean } | null = null;
   /** 환불은 해 놓고 응답을 잃는다(504, 본문 없음) — Medusa 는 실패로 보고 자기 환불 행을 지운다 */
   loseNextRefundResponse = false;
+  /**
+   * 자동 환불 행을 PENDING 으로 커밋한 채 응답을 잃는다(504) — 실제 wallet 이 PG 를 부르기 «전»에 행을 커밋하고, PG 호출 중 연결이
+   * 끊기거나 wallet 이 죽은 상태(D8). PG 결과는 테스트가 `refunds[i].status` 를 바꿔 낸다
+   */
+  loseNextRefundResponseInFlight = false;
   private seq = 0;
 
   async start() {
@@ -74,6 +79,7 @@ export class FakeWallet {
     this.failNextRefundAs200Failed = false;
     this.rejectNextRefundWith = null;
     this.loseNextRefundResponse = false;
+    this.loseNextRefundResponseInFlight = false;
   }
   /** 결제창 완료 = 즉시 승인 + 캡처(지연 승인 표식이 없을 때의 wallet 동작). */
   simulateCheckout(intentId: string) {
@@ -183,16 +189,18 @@ export class FakeWallet {
       intent.refunded += amount;
       // 실제 wallet 의 수동 실행은 외부 결제 몫을 PG 없이 송금 대기로 남긴다(포인트 몫 분할은 흉내내지 않는다)
       const manual = body.execution === 'MANUAL';
+      const inFlight = !manual && this.loseNextRefundResponseInFlight;
       const refund = this.pushRefund({
         intentId: intent.id,
         amount,
-        status: manual ? 'PENDING' : 'SUCCEEDED',
+        status: manual || inFlight ? 'PENDING' : 'SUCCEEDED',
         execution: manual ? 'MANUAL' : 'AUTO',
         reasonCode: body.reasonCode,
         idempotencyKey: key,
       });
-      if (this.loseNextRefundResponse) {
+      if (this.loseNextRefundResponse || inFlight) {
         this.loseNextRefundResponse = false;
+        this.loseNextRefundResponseInFlight = false;
         return { status: 504, payload: null };
       }
       return { status: 200, payload: { intentId: intent.id, refunds: [{ id: refund.id, amount, status: refund.status }] } };

@@ -8,7 +8,8 @@ import { parseRefundMode } from '../../../../../workflows/orders/settlement/refu
  * 본문 `{ refundMode?: 'auto' | 'manual' }`(없으면 auto).
  * 응답: 200 `{ orderId, status: 'canceled', refund: { mode, amount } }` · 404 not_found ·
  * 400 «Order with id … has been canceled.»(이미 취소됨 — 성공으로 읽는다) ·
- * 400 not_allowed + code `wallet_refund_refused:<code>`(영구 거절, 주문은 안 취소됨) ·
+ * 400 not_allowed + code `wallet_refund_refused:<code>`(영구 거절, 주문은 안 취소됨. 결제분이 여럿이면 앞 몫은 나갔을 수 있다 —
+ * 다음 정산의 장부 맞추기가 그 몫을 장부에 넣고 남은 몫만 낸다) ·
  * 그 밖 400 은 환불 전 사전 검사(진행 중인 주문 변경·안 취소된 출고)와 본문 오류(invalid_data) ·
  * 500 일시 실패 — 환불 뒤 단계의 실패도 여기로, 다시 부르면 남은 몫만 환불한다.
  * 오류는 잡지 않는다 — Medusa 에러 핸들러가 MedusaError 의 type 으로 상태를, code 를 그대로 본문에 싣는다.

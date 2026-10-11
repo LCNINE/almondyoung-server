@@ -147,6 +147,23 @@ describe('almond-payment refundPayment', () => {
       await expect(refund(svc)).rejects.toBe(net);
     });
 
+    it('환불 요청은 결제 잠금 만료 전에 끊는다 — 시간 초과는 거절이 아니라 일시 오류로 그대로 던진다', async () => {
+      const svc = makeService();
+      const originalFetch = global.fetch;
+      const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      global.fetch = jest.fn().mockRejectedValue(timeout) as any;
+      try {
+        const err = await refund(svc).catch((e: unknown) => e);
+        expect(err).toBe(timeout);
+        expect(MedusaError.isMedusaError(err)).toBe(false);
+        const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('http://wallet.test/v1/payment-intents/i1/refund');
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
     it('200 의 FAILED 행이 retryable:false 면 그 failureCode·토스 문장으로 표지', async () => {
       const svc = makeService();
       jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({

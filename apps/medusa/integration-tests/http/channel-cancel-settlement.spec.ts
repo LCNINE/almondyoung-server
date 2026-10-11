@@ -148,6 +148,17 @@ medusaIntegrationTestRunner({
         expect(wallet.refunds).toHaveLength(1);
       });
 
+      it('PG 결과가 안 난 자동 PENDING 뒤의 재시도도 사전검사 거절이면 500 — 돈이 나갔을 수 있다(D8)', async () => {
+        const { orderId } = await place();
+        wallet.loseNextRefundResponseInFlight = true;
+        expect((await channelCancel(orderId)).status).toBe(500);
+        await beginOrderEditOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+        const res = await channelCancel(orderId);
+        expect(res.status).toBe(500);
+        expect((await order(orderId)).status).not.toBe('canceled');
+        expect(wallet.refundCalls()).toHaveLength(1);
+      });
+
       it('영구 거절 뒤(시도 표식만 남고 돈은 안 나감) 주문 변경이 열리면 재시도는 그대로 400 — 표식만으로 500 루프에 빠지지 않는다', async () => {
         const { orderId } = await place();
         wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE', retryable: false };
@@ -224,6 +235,63 @@ medusaIntegrationTestRunner({
         expect(after.refunds).toEqual([{ amount: captured, note: `channel-cancel:${orderId}` }]);
         expect(readRefundAttempt(after.data)).toBeNull();
         expect((await order(orderId)).status).toBe('canceled');
+      });
+    });
+
+    describe('진행 중인 자동 환불 (D8 — 멈춘 자동 PENDING 을 «환불 완료»로 넣지 않는다)', () => {
+      it('PG 결과가 안 난 자동 PENDING 은 장부에 넣지 않고 500 으로 기다린다 — 끝나면(SUCCEEDED) 이 메모로 넣고 취소한다', async () => {
+        const { orderId } = await place();
+        const { captured } = await ledger(orderId);
+        wallet.loseNextRefundResponseInFlight = true;
+        expect((await channelCancel(orderId)).status).toBe(500);
+        expect(wallet.refunds).toEqual([
+          expect.objectContaining({ amount: captured, status: 'PENDING', execution: 'AUTO', reasonCode: 'MEDUSA_REFUND' }),
+        ]);
+
+        // 재시도: 맞추기가 진행 중인 행을 보고 멈춘다 — 넣으면 «캡처 − 환불» = 0 이라 PG 가 실패해도 «환불 완료»로 취소된다
+        expect((await channelCancel(orderId)).status).toBe(500);
+        const mid = await ledger(orderId);
+        expect(mid.refunds).toEqual([]);
+        expect(readRefundAttempt(mid.data)).toEqual({ note: `channel-cancel:${orderId}`, amount: captured });
+        expect((await order(orderId)).status).not.toBe('canceled');
+        expect(wallet.refundCalls()).toHaveLength(1);
+
+        // wallet 이 PG 결과로 행을 끝낸다
+        wallet.refunds[0].status = 'SUCCEEDED';
+        const res = await channelCancel(orderId);
+        expect(res.status).toBe(200);
+        expect(res.data.refund).toEqual({ mode: 'auto', amount: captured });
+        const after = await ledger(orderId);
+        expect(after.refunds).toEqual([{ amount: captured, note: `channel-cancel:${orderId}` }]);
+        expect(readRefundAttempt(after.data)).toBeNull();
+        expect((await order(orderId)).status).toBe('canceled');
+        expect(wallet.refundCalls()).toHaveLength(1);
+      });
+    });
+
+    describe('남은 표식 정규화 — 앞 시도가 죽으며 남긴 표식이 이번 환불을 바꾸지 않는다', () => {
+      const leaveMarker = async (orderId: string, data: Record<string, unknown>) => {
+        const { paymentId } = await ledger(orderId);
+        await getContainer().resolve(Modules.PAYMENT).updatePayment({ id: paymentId, data } as any);
+      };
+
+      it('같은 금액의 수동 표식이 남아 있어도 자동 시도는 MANUAL 로 새지 않는다', async () => {
+        const { orderId } = await place();
+        const { captured } = await ledger(orderId);
+        await leaveMarker(orderId, { manualRefund: { requestId: `channel-cancel:${orderId}`, amount: captured } });
+        expect((await channelCancel(orderId)).status).toBe(200);
+        expect(wallet.refundCalls().map((x) => x.body.execution)).toEqual([undefined]);
+        expect(wallet.refunds).toEqual([expect.objectContaining({ amount: captured, status: 'SUCCEEDED', execution: 'AUTO' })]);
+        expect(readManualRefund((await ledger(orderId)).data)).toBeNull();
+      });
+
+      it('같은 금액의 외부 환불 표식이 남아 있어도 wallet 을 부른다 — 나가지 않은 환불이 장부에 들어가지 않는다', async () => {
+        const { orderId } = await place();
+        const { captured } = await ledger(orderId);
+        await leaveMarker(orderId, { externalRefund: { walletRefundId: 'wr_stale', amount: captured } });
+        expect((await channelCancel(orderId)).status).toBe(200);
+        expect(wallet.refundCalls()).toHaveLength(1);
+        expect(wallet.refunds).toEqual([expect.objectContaining({ amount: captured, status: 'SUCCEEDED' })]);
       });
     });
 

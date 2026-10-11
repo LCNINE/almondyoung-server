@@ -53,6 +53,11 @@ describe('judgeWalletRefund — FAILED 행의 분류 (#1016 36번 재설계 §6.
     expect(v.ok === false && v.refusal?.code).toBe('NOT_CANCELABLE_AMOUNT');
   });
 
+  it('failureCode 가 빈 문자열이어도 대체 코드로 — 읽을 수 없는 표지(wallet_refund_refused:)를 만들지 않는다', () => {
+    const v = judgeWalletRefund([failed(false, { failureCode: '' })], 3000);
+    expect(v.ok === false && v.refusal && v.refusal.code).toBe('REFUND_FAILED');
+  });
+
   it('failureCode·reasonMessage 가 비면 대체 문구로 채운다', () => {
     const v = judgeWalletRefund([failed(false, { failureCode: null, reasonMessage: null })], 3000);
     expect(v.ok === false && v.refusal).toEqual({ code: 'REFUND_FAILED', message: 'wallet 이 환불을 거절했습니다' });
