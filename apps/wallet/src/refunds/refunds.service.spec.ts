@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, NotFoundException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { splitRefundOverRemaining } from './refund-plan';
 import type { Refund } from '../types';
@@ -64,7 +64,7 @@ function makeContext(options: {
   existingSucceededRefunds?: ReturnType<typeof makeInsertedRefund>[];
   priorRefundedAmount?: number;       // SUCCEEDED+PENDING total in the insert-phase transaction
   succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
-  providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string };
+  providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string; retryable?: boolean };
   pendingRefund?: ReturnType<typeof makeInsertedRefund>;  // for confirmManual tests
   intentMetadata?: Record<string, unknown>;  // payment_intents.metadata for assertRefundable/getIntentUserId
 } = {}) {
@@ -189,6 +189,91 @@ function makeContext(options: {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+  describe('실패 분류 (#1016 36번 PR 1)', () => {
+    async function refusalOf(p: Promise<unknown>): Promise<unknown> {
+      try {
+        await p;
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpException);
+        return (e as HttpException).getResponse();
+      }
+      throw new Error('expected rejection');
+    }
+
+    it('provider 영구 실패(retryable=false) → FAILED 행에 failureCode·failureRetryable=false, 토스 메시지는 reasonMessage', async () => {
+      const { service, updateCalls } = makeContext({
+        providerResult: {
+          status: 'FAILED',
+          errorCode: 'ALREADY_CANCELED_PAYMENT',
+          errorMessage: '이미 취소된 결제 입니다.',
+          retryable: false,
+        },
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({
+          reasonMessage: '이미 취소된 결제 입니다.',
+          failureCode: 'ALREADY_CANCELED_PAYMENT',
+          failureRetryable: false,
+        }),
+      });
+    });
+
+    it('provider 가 retryable 을 안 주면 일시(true), 코드가 없으면 REFUND_FAILED', async () => {
+      const { service, updateCalls } = makeContext({ providerResult: { status: 'FAILED' } });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({ failureCode: 'REFUND_FAILED', failureRetryable: true }),
+      });
+    });
+
+    it('provider 가 던지면 PROVIDER_EXCEPTION · 일시(true)', async () => {
+      const { service, providerRegistry, updateCalls } = makeContext();
+      providerRegistry.getProviderOrThrow.mockReturnValue({ refund: jest.fn().mockRejectedValue(new Error('socket hang up')) });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({ failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true }),
+      });
+    });
+
+    it('금액 초과 거절 본문은 옛 error·message 에 retryable=true 만 더한다', async () => {
+      const { service } = makeContext({ priorRefundedAmount: 8000 });
+
+      expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
+        error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+        message: 'Refund amount (5000) exceeds available refundable amount (2000)',
+        retryable: true,
+      });
+    });
+
+    it('멤버십 결제 거절은 retryable=false', async () => {
+      const { service } = makeContext({ intentMetadata: { type: 'MEMBERSHIP_FEE' } });
+
+      expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
+        error: 'MEMBERSHIP_REFUND_NOT_ALLOWED',
+        message: '멤버십 결제는 환불할 수 없습니다.',
+        retryable: false,
+      });
+    });
+
+    it('charge 없음(404)도 retryable=false 를 싣는다', async () => {
+      const { service, chargesService } = makeContext();
+      chargesService.findById.mockResolvedValue(null);
+
+      expect(await refusalOf(service.create({ chargeId: 'missing', amount: 5000 }))).toEqual({
+        error: 'CHARGE_NOT_FOUND',
+        message: 'Charge not found: missing',
+        retryable: false,
+      });
+    });
+  });
+
 
   describe('provider 원장 키 (#1016 36번 PR 0)', () => {
     it('확정 결제분 환불은 provider 에 승인 결제분 id 를 authorizeChargeId 로 넘긴다', async () => {
@@ -787,6 +872,16 @@ describe('RefundsService', () => {
 
       expect(response.error).toBe('REFUND_NOT_AUTOMATABLE');
       expect(createSpy).not.toHaveBeenCalled();
+    });
+
+    it('REFUND_NOT_AUTOMATABLE 은 retryable=false, REFUND_AMOUNT_EXCEEDS_TOTAL 은 retryable=true', async () => {
+      const cms = makeMultiChargeContext({ charges: [{ id: 'M1', amount: 10000, type: 'CMS_BATCH' }] });
+      expect((await catchResponse(cms.service.createByIntent(INTENT_ID, { amount: 10000 }))).retryable).toBe(false);
+
+      const over = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+      const response = await catchResponse(over.service.createByIntent(INTENT_ID, { amount: 10001 }));
+      expect(response.error).toBe('REFUND_AMOUNT_EXCEEDS_TOTAL');
+      expect(response.retryable).toBe(true);
     });
 
     it('몫이 0 인 leg 는 부르지 않는다', async () => {
