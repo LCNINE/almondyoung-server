@@ -103,4 +103,30 @@ describe('BankTransferPaymentProvider', () => {
     expect(cancelPayment).not.toHaveBeenCalled();
     expect(result.status).toBe('SUCCEEDED');
   });
+
+  it('환불을 토스가 영구 거절하면(계좌·예금주 불일치) retryable=false', async () => {
+    const cancelPayment = jest.fn().mockResolvedValue({
+      ok: false,
+      error: { code: 'INVALID_REFUND_ACCOUNT_INFO', message: '환불 계좌번호와 예금주명이 일치하지 않습니다.' },
+      statusCode: 400,
+    });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    const result = await provider.refund({
+      refundId: 'rf-1',
+      chargeId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      intentId: 'i1',
+      userId: 'u1',
+      amount: 10000,
+      currency: 'KRW',
+      idempotencyKey: 'k1',
+      correlationId: 'c1',
+      refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '홍길동' },
+    });
+
+    expect(result).toMatchObject({ status: 'FAILED', errorCode: 'INVALID_REFUND_ACCOUNT_INFO', retryable: false });
+  });
 });

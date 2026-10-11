@@ -14,6 +14,7 @@ import {
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
 import { and } from 'drizzle-orm';
+import { isTossRefundRetryable } from './toss-refund-errors';
 
 @Injectable()
 export class TossPaymentProvider implements PaymentProvider {
@@ -108,7 +109,7 @@ export class TossPaymentProvider implements PaymentProvider {
   async refund(params: RefundParams): Promise<RefundResult> {
     const paymentKey = await this.getPaymentKey(params.chargeId);
     if (!paymentKey) {
-      return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
+      return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND', retryable: false };
     }
 
     const result = await this.tossApi.cancelPayment(
@@ -120,7 +121,12 @@ export class TossPaymentProvider implements PaymentProvider {
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: paymentKey };
     }
-    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
+    return {
+      status: 'FAILED',
+      errorCode: result.error.code,
+      errorMessage: result.error.message,
+      retryable: isTossRefundRetryable(result.error.code),
+    };
   }
 
   private async getPaymentKey(chargeId: string): Promise<string | undefined> {
