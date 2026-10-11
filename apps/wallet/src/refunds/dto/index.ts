@@ -1,7 +1,7 @@
 import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RefundStatus } from '../../schema';
+import { RefundExecution, RefundStatus, refundExecutionEnum } from '../../schema';
 
 export class RefundReceiveAccountDto {
   @ApiProperty({ description: '토스 2자리 은행코드 (예: 국민 06)' })
@@ -135,4 +135,20 @@ export class RefundResponseDto {
 
   @ApiProperty({ description: '수동 완료 처리 가능 여부 (무통장 환불만 true)' })
   manualConfirmable: boolean;
+
+  @ApiProperty({
+    enum: refundExecutionEnum.enumValues,
+    description: 'AUTO: wallet 이 provider 로 집행. MANUAL: 외부 결제 몫을 PG 없이 송금 대기로 둔 행',
+  })
+  execution: RefundExecution;
+
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'FAILED 일 때 실패 코드(토스 오류 코드 등). 그 밖엔 null' })
+  failureCode: string | null;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    nullable: true,
+    description: 'FAILED 일 때만: 같은 환불을 다시 시도하면 될 수 있는가. null 은 분류 전 옛 행 — 일시로 읽는다',
+  })
+  retryable: boolean | null;
 }

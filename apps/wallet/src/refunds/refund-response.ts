@@ -1,0 +1,21 @@
+import type { Refund } from '../types';
+import { RefundResponseDto } from './dto';
+
+/** 환불 행 → API 응답. manualConfirmable 은 결제수단을 아는 호출자(관리자 상세)만 true 로 정한다. */
+export function toRefundResponse(refund: Refund, manualConfirmable = false): RefundResponseDto {
+  return {
+    id: refund.id,
+    chargeId: refund.chargeId,
+    intentId: refund.intentId,
+    status: refund.status,
+    amount: refund.amount,
+    currency: refund.currency,
+    reasonCode: refund.reasonCode,
+    reasonMessage: refund.reasonMessage,
+    createdAt: refund.createdAt,
+    manualConfirmable,
+    execution: refund.execution,
+    failureCode: refund.failureCode,
+    retryable: refund.failureRetryable,
+  };
+}

@@ -597,6 +597,9 @@ describe('RefundsService', () => {
           reasonCode: null,
           reasonMessage: null,
           providerRefundId: null,
+          execution: 'AUTO',
+          failureCode: null,
+          failureRetryable: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         };

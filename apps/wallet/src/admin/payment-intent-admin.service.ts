@@ -215,6 +215,9 @@ export class PaymentIntentAdminService {
         reasonCode: refunds.reasonCode,
         reasonMessage: refunds.reasonMessage,
         createdAt: refunds.createdAt,
+        execution: refunds.execution,
+        failureCode: refunds.failureCode,
+        failureRetryable: refunds.failureRetryable,
         paymentMethodType: paymentMethods.type,
       })
       .from(refunds)
@@ -234,6 +237,9 @@ export class PaymentIntentAdminService {
       reasonMessage: r.reasonMessage ?? null,
       createdAt: r.createdAt,
       manualConfirmable: r.status === 'PENDING' && r.paymentMethodType === 'BANK_TRANSFER',
+      execution: r.execution,
+      failureCode: r.failureCode ?? null,
+      retryable: r.failureRetryable ?? null,
     }));
     const refundSummary = this.summarizeRefundRows(refundRows);
 
@@ -372,6 +378,9 @@ export class PaymentIntentAdminService {
       reasonMessage: r.reasonMessage ?? null,
       createdAt: r.createdAt,
       manualConfirmable: false, // 목록 조회는 charge join 없이 조회 — 상세에서만 정확한 값 제공
+      execution: r.execution,
+      failureCode: r.failureCode ?? null,
+      retryable: r.failureRetryable ?? null,
     }));
 
     return { data, total, page, limit };
