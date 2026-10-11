@@ -7,6 +7,7 @@ import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { refundRefusal } from './refund-refusal';
+import { isManuallyConfirmable } from './manual-confirmable';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { DEFAULT_PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor } from '../providers/provider-descriptors';
@@ -512,8 +513,11 @@ export class RefundsService {
     const charge = await this.chargesService.findById(refund.chargeId);
     if (!charge) throw new Error(`Charge not found: ${refund.chargeId}`);
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
-    if (method?.type !== 'BANK_TRANSFER') {
-      throw new Error('수동 완료 처리는 무통장 환불(BANK_TRANSFER)만 가능합니다.');
+    if (!isManuallyConfirmable({ status: refund.status, execution: refund.execution, methodType: method?.type ?? null })) {
+      throw new BadRequestException({
+        error: 'REFUND_NOT_MANUALLY_CONFIRMABLE',
+        message: '수동 완료 처리는 무통장 환불(BANK_TRANSFER)이나 수동 실행(MANUAL) 환불만 가능합니다.',
+      });
     }
 
     const userId = await this.getIntentUserId(refund.intentId);

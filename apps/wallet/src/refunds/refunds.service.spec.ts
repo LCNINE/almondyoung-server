@@ -548,6 +548,38 @@ describe('RefundsService', () => {
       ).rejects.toThrow('BANK_TRANSFER');
     });
 
+    it('confirmManual: 카드 결제분이라도 MANUAL 행이면 받는다 (#1016 36번 PR 1)', async () => {
+      const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
+        method: makeMethod('TOSS'),
+        pendingRefund: makeInsertedRefund({ execution: 'MANUAL' }),
+      });
+      chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
+      paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
+
+      await service.confirmManual(REFUND_ID);
+
+      expect(stateTransitionService.transitionRefund).toHaveBeenCalledWith(
+        REFUND_ID,
+        'SUCCEEDED',
+        expect.objectContaining({ reasonCode: 'MANUAL_CONFIRM' }),
+        'PENDING',
+        expect.anything(),
+      );
+    });
+
+    it('confirmManual: 카드 AUTO PENDING 은 400 REFUND_NOT_MANUALLY_CONFIRMABLE', async () => {
+      const { service, chargesService, paymentMethodsService } = makeContext({
+        method: makeMethod('TOSS'),
+        pendingRefund: makeInsertedRefund({ execution: 'AUTO' }),
+      });
+      chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
+      paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
+
+      const error = await service.confirmManual(REFUND_ID).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ error: 'REFUND_NOT_MANUALLY_CONFIRMABLE' });
+    });
+
     it('confirmManual: BANK_TRANSFER는 SUCCEEDED + REFUND_SUCCEEDED outbox 발행', async () => {
       const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
         method: makeMethod('BANK_TRANSFER'),

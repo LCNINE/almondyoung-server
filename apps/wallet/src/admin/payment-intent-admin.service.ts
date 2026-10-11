@@ -26,6 +26,7 @@ import {
 import { AdminRefundListQueryDto } from './dto/admin-refund.dto';
 import { StateTransitionResponseDto } from './dto/state-transition.dto';
 import { RefundResponseDto } from '../refunds/dto';
+import { isManuallyConfirmable } from '../refunds/manual-confirmable';
 import {
   PaymentIntentItemResponseDto,
   ItemDiscountResponseDto,
@@ -236,7 +237,11 @@ export class PaymentIntentAdminService {
       reasonCode: r.reasonCode ?? null,
       reasonMessage: r.reasonMessage ?? null,
       createdAt: r.createdAt,
-      manualConfirmable: r.status === 'PENDING' && r.paymentMethodType === 'BANK_TRANSFER',
+      manualConfirmable: isManuallyConfirmable({
+        status: r.status,
+        execution: r.execution,
+        methodType: r.paymentMethodType ?? null,
+      }),
       execution: r.execution,
       failureCode: r.failureCode ?? null,
       retryable: r.failureRetryable ?? null,

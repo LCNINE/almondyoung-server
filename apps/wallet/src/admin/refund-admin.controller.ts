@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
@@ -41,6 +42,7 @@ export class RefundAdminController {
     try {
       return await this.refundsService.confirmManual(id);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|pending|status/)) throw new BadRequestException(e.message);
