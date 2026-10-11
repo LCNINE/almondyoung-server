@@ -1,5 +1,5 @@
 import type { Refund } from '../types';
-import { toRefundResponse } from './refund-response';
+import { toRefundListItem, toRefundResponse } from './refund-response';
 
 const row = (overrides: Partial<Refund> = {}): Refund => ({
   id: 'rf-1',
@@ -53,5 +53,19 @@ describe('toRefundResponse', () => {
 
   it('manualConfirmable 은 호출자가 정한다', () => {
     expect(toRefundResponse(row({ status: 'PENDING', execution: 'MANUAL' }), true).manualConfirmable).toBe(true);
+  });
+});
+
+describe('toRefundListItem', () => {
+  it('스펙 §6.5 의 일곱 칸만 낸다', () => {
+    expect(toRefundListItem(row({ status: 'PENDING', execution: 'MANUAL' }))).toEqual({
+      id: 'rf-1',
+      chargeId: 'ch-1',
+      status: 'PENDING',
+      amount: 5000,
+      reasonCode: 'MEDUSA_REFUND',
+      execution: 'MANUAL',
+      createdAt: new Date('2026-10-11T00:00:00Z'),
+    });
   });
 });

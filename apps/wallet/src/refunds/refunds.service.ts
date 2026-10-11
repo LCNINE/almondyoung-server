@@ -370,6 +370,15 @@ export class RefundsService {
     );
   }
 
+  /** intent 의 환불 전부(상태 무관), 만든 순서. 거르는 건 호출자 몫이다(스펙 §6.2·§8.2). */
+  async listByIntent(intentId: string): Promise<Refund[]> {
+    return this.dbService.db
+      .select()
+      .from(refunds)
+      .where(eq(refunds.intentId, intentId))
+      .orderBy(asc(refunds.createdAt), asc(refunds.id));
+  }
+
   async findByIdOrThrow(id: string): Promise<Refund> {
     const rows = await this.dbService.db.select().from(refunds).where(eq(refunds.id, id)).limit(1);
 

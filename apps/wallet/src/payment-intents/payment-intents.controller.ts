@@ -22,7 +22,8 @@ import {
   RefundByIntentResponseDto,
   TossApproveDto,
 } from './dto';
-import { toRefundResponse } from '../refunds/refund-response';
+import { RefundListItemDto } from '../refunds/dto';
+import { toRefundResponse, toRefundListItem } from '../refunds/refund-response';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 
@@ -164,6 +165,17 @@ export class PaymentIntentsController {
     await this.service.findByIdOrThrow(id);
     const refunds = await this.refundsService.createByIntent(id, dto);
     return { intentId: id, refunds: refunds.map((r) => toRefundResponse(r)) };
+  }
+
+  @Get(':id/refunds')
+  @ApiOperation({
+    summary: 'List refunds of a payment intent (API-key, server-to-server)',
+    description: '상태 무관 전부, 만든 순서. 채널 취소 정산 직전 Medusa 가 장부를 맞춀 때 읽는다.',
+  })
+  async listRefunds(@Param('id') id: string): Promise<RefundListItemDto[]> {
+    await this.service.findByIdOrThrow(id);
+    const refunds = await this.refundsService.listByIntent(id);
+    return refunds.map(toRefundListItem);
   }
 
   @Get(':id/refundability')
