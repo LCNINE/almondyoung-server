@@ -27,7 +27,7 @@ import {
   CancelReasonForm,
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
-import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
+import type { StoreOrderActionsResponse, RefundSummary } from "@/lib/api/orders/store-orders"
 import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
 import { CashReceiptInfo } from "./cash-receipt-info"
 import {
@@ -35,6 +35,8 @@ import {
   getOrderActionsByMedusaId,
 } from "@/lib/api/orders/store-orders"
 import { cancelOutcomeOf, waitForCancelOutcome } from "@/lib/orders/cancel-outcome"
+import { refundTone, resolveRefundStatus } from "@/lib/orders/refund-status"
+import { REFUND_TONE_TEXT_CLASS } from "@/components/orders/refund-status-style"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
@@ -173,7 +175,8 @@ export const OrderDetailsDesktop = ({
   )
 
   const refundSummary: RefundSummary | undefined = coreActions?.refundSummary
-  const refundStatus: StoreRefundStatus = refundSummary?.status ?? coreActions?.refundStatus ?? "none"
+  const refundStatus = resolveRefundStatus(coreActions)
+  const refundStatusTone = refundTone(refundStatus)
   const refundStatusBadgeLabel = tRefundInfo(`statusLabels.${refundStatus}`)
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
@@ -363,15 +366,7 @@ export const OrderDetailsDesktop = ({
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500">{tRefundInfo("statusLabel")}:</span>
                     <span
-                      className={`text-xs font-medium ${
-                        refundStatus === "succeeded"
-                          ? "text-green-600"
-                          : refundStatus === "pending"
-                            ? "text-amber-600"
-                            : refundStatus === "manual_pending"
-                              ? "text-amber-600"
-                              : "text-red-500"
-                      }`}
+                      className={`text-xs font-medium ${refundStatusTone ? REFUND_TONE_TEXT_CLASS[refundStatusTone] : ""}`}
                     >
                       {refundStatusBadgeLabel}
                     </span>
