@@ -160,6 +160,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
     -- 채널 취소 요청(#1016 35번·36번 재설계). requested = 옛 행(출고 보류 중), settling = 확정됨·정산 중.
     -- 한 주문에 여럿일 수 있다(정산 중 요청 둘) — 보류 중인 옛 행이 먼저, 그다음 나쁜 순(거절 > 지연 > 정산 중), 같으면 오래된 것.
     -- «지연»은 저장하지 않는다 — 확정 시각(created_at) + SETTLE_DELAYED_AFTER_MS 로 여기서 정한다(D1).
+    -- 정산 중은 주문 접기(보드)에서만 앞선다 — 상자 판정은 판매주문의 종료 사실(셀메이트 출고·취소·반품)을 그대로 지킨다(decided.base_rule).
     creq AS (
       SELECT DISTINCT ON (a.sales_order_id) a.sales_order_id, a.created_at, x.state
         FROM sales_order_amendments a
@@ -169,7 +170,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                    WHEN a.status = 'requested' AND a.metadata->'request'->>'stage' = 'edited' THEN 'cancel_edited'
                    WHEN a.status = 'requested' THEN 'cancel_requested'
                    WHEN a.metadata->'settlement'->>'state' = 'refused' THEN 'settle_refused'
-                   WHEN a.created_at < ${now} - make_interval(mins => ${SETTLE_DELAYED_AFTER_MS / 60_000}) THEN 'settle_delayed'
+                   WHEN a.created_at < ${now} - make_interval(secs => ${SETTLE_DELAYED_AFTER_MS / 1000}) THEN 'settle_delayed'
                    ELSE 'settle_in_progress'
                  END AS state
         ) x
@@ -179,7 +180,8 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                              WHEN 'settle_refused' THEN 1 WHEN 'settle_delayed' THEN 2 ELSE 3 END,
                 a.created_at
     ),
-    decided AS (
+    -- base_rule: 정산 중을 모르는 판정. 보류 중인 옛 요청(cancel_request)은 보류라 어디서나 맨 앞이다.
+    decided_base AS (
       SELECT so.id, so.sales_channel, so.order_date, so.created_at AS so_created_at, so.updated_at AS so_updated_at,
              bl.status AS bl_status, bl.created_at AS bl_created_at,
              rep.stage AS rep_stage, rep.state AS rep_state, rep.est AS rep_est,
@@ -189,8 +191,6 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
              cr.state AS creq_state, cr.created_at AS creq_at,
              CASE
                WHEN cr.state IN ('cancel_requested', 'cancel_edited') THEN 'cancel_request'
-               -- 확정된 취소의 정산 — 보류가 아니다. 상자 규칙 제외(D16)에 넣지 않는다(order-reconcile.subject.ts, D5)
-               WHEN cr.sales_order_id IS NOT NULL THEN 'cancel_settle'
                WHEN so.status IN ('shipped', 'delivered') THEN 'external_shipped'
                WHEN so.status IN ('cancelled', 'timeout')
                  AND (ob.sales_order_id IS NOT NULL OR orr.sales_order_id IS NOT NULL) THEN 'cancel_open'
@@ -202,7 +202,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN rep.stage IS NULL THEN 'unclassified'
                WHEN rep.stage = 'done' THEN 'delivered'
                ELSE 'unit'
-             END AS rule
+             END AS base_rule
         FROM so
         LEFT JOIN bl ON bl.sales_order_id = so.id
         LEFT JOIN rep ON rep.sales_order_id = so.id
@@ -212,6 +212,13 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
         LEFT JOIN rx ON rx.sales_order_id = so.id
         LEFT JOIN has_fo hf ON hf.sales_order_id = so.id
         LEFT JOIN creq cr ON cr.sales_order_id = so.id
+    ),
+    -- rule: 주문 접기의 판정. 확정된 취소의 정산(cancel_settle)이 판매주문의 종료·진행보다 앞선다 — 정산이 끝나야 운영자 일이 끝난다.
+    -- cancel_settle 은 보류가 아니다 — 상자 규칙 제외(D16)에 넣지 않는다(order-reconcile.subject.ts, D5)
+    decided AS (
+      SELECT b.*,
+             CASE WHEN b.base_rule <> 'cancel_request' AND b.creq_state IS NOT NULL THEN 'cancel_settle' ELSE b.base_rule END AS rule
+        FROM decided_base b
     )
   `;
 }
@@ -276,7 +283,12 @@ export function judgedShipmentsSql(scope: SQL): SQL {
   return sql`
     ${judgeCtes(scope, sql`now()`)},
     su AS (
-      SELECT u.shipment_id, u.sales_order_id, u.stage, u.state, u.est, d.rule AS order_rule
+      -- 정산 중(cancel_settle)이어도 종료 사실은 상자 판정에 그대로 싣는다 — D16 제외(external_shipped·return_exchange)와
+      -- 25번의 취소 주문 거름(cancel_open·cancelled)이 정산이 열려 있는 며칠 동안 사라지지 않게
+      SELECT u.shipment_id, u.sales_order_id, u.stage, u.state, u.est,
+             CASE WHEN d.rule = 'cancel_settle'
+                    AND d.base_rule IN ('external_shipped', 'cancel_open', 'cancelled', 'return_exchange') THEN d.base_rule
+                  ELSE d.rule END AS order_rule
         FROM units u
         JOIN decided d ON d.id = u.sales_order_id
        WHERE u.shipment_id IS NOT NULL
