@@ -80,5 +80,22 @@ describe('CHANNEL_ORDERS_COMMAND_STREAM', () => {
       expect(() => schema.parse({ ...partial, alreadyRefundedAmount: -1 })).toThrow();
       expect(() => schema.parse({ ...partial, alreadyRefundedAmount: 1.5 })).toThrow();
     });
+
+    describe('refundMode (#1016 36번 재설계 §7.1)', () => {
+      it('없어도 통과한다 — 옛 core 가 낸 명령이다(받는 쪽이 auto 로 읽는다)', () => {
+        expect(schema.parse(full)).not.toHaveProperty('refundMode');
+        expect(schema.parse(partial)).not.toHaveProperty('refundMode');
+      });
+
+      it.each(['auto', 'manual'])('%s 를 전체·부분 모두 받는다', (refundMode) => {
+        expect(schema.parse({ ...full, refundMode })).toMatchObject({ refundMode });
+        expect(schema.parse({ ...partial, refundMode })).toMatchObject({ refundMode });
+      });
+
+      it('그 밖의 값은 거절한다', () => {
+        expect(() => schema.parse({ ...full, refundMode: 'MANUAL' })).toThrow();
+        expect(() => schema.parse({ ...full, refundMode: '' })).toThrow();
+      });
+    });
   });
 });

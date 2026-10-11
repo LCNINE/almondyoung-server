@@ -598,14 +598,17 @@ const SalesOrderClaimProgressedSchema = z.object({
  * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
  * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
  * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
- * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
- *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
+ * - `REFUND_FAILED`: 생산하지 않는다 — 정산 실패는 `ChannelOrderSettlementFailed` 가 맡는다(#1016 36번 재설계 §7.1). 옛 core 는 이 값을 받으면
+ *   요청을 닫고 보류를 푼다. 계약에서 지우는 것은 정리 PR(§9.2 의 6)
  * - `EXTERNAL_REFUND_UNRESOLVED`: 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) — 금액을 넣어 다시 요청한다
  */
 export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED', 'EXTERNAL_REFUND_UNRESOLVED'] as const;
 export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
 
-/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
+/**
+ * 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실).
+ * PR 6 전까지 옛 core 를 위해 `ChannelOrderSettlementFailed` 와 함께 나간다 — 새 core 는 `settling` 행에선 이것을 읽지 않는다.
+ */
 export interface ChannelOrderCancelRejectedPayload {
   /** `CancelChannelOrderPayload.requestId` 그대로 */
   requestId: string;
@@ -630,6 +633,7 @@ const ChannelOrderCancelRejectedSchema = z.object({
 /**
  * 진행 사실 — 종결이 아니다. 부분취소가 주문 수정까지 확정하고 환불에서 멈췄다(주문은 줄었는데 돈은 아직).
  * channel-adapter 는 이것을 낸 뒤 재시도하고, core 는 요청을 `requested` 로 둔 채 단계만 적는다(같은 값이라 여러 번 와도 멱등).
+ * PR 6 전까지 옛 core 를 위해 `ChannelOrderSettlementFailed` 와 함께 나간다 — 새 core 는 `settling` 행에선 이것을 읽지 않는다.
  */
 export interface ChannelOrderCancelStalledPayload {
   requestId: string;
@@ -645,6 +649,43 @@ const ChannelOrderCancelStalledSchema = z.object({
   externalOrderId: z.string().min(1),
   stage: z.literal('edited'),
   message: z.string(),
+});
+
+/**
+ * 정산 실패 사실 (#1016 36번 재설계 스펙 §7.1·§7.2). 채널이 취소 명령의 «돈 정리»를 끝내지 못했다. 종결 사실이 아니다 —
+ * 성공은 사실로 내지 않는다(재수집된 `OrderCancelled`/`OrderModified` 가 곧 사실).
+ * - `retryable: false`: 같은 명령을 다시 보내도 같다(wallet·PG 영구 거절, 주문 없음 같은 이상). 운영자가 [다시 시도]·[계좌 송금으로 환불]을 고른다
+ * - `retryable: true`: 일시(Medusa 5xx·네트워크·라우트 없음). core 가 같은 requestId·refundMode 로 다시 낸다
+ * 판매주문 id 는 싣지 않는다 — channel-adapter 는 core 판매주문 id 를 모른다(#656). core 는 requestId 로 요청 행을 찾는다.
+ * PR 6 전까지 channel-adapter 는 같은 결과에 옛 사실(`ChannelOrderCancelRejected`·`Stalled`)을 함께 낸다 — 옛 core 가 이 타입을 버리기 때문이다.
+ */
+export interface ChannelOrderSettlementFailedPayload {
+  /** `CancelChannelOrderPayload.requestId` 그대로 */
+  requestId: string;
+  salesChannel: string;
+  externalOrderId: string;
+  scope: 'full' | 'partial';
+  retryable: boolean;
+  /**
+   * 열린 문자열 — 값을 더할 때 소비자 선배포가 필요 없게. Medusa 응답의 code/type(wallet 영구 거절은 `wallet_refund_refused:<wallet 코드>`),
+   * 37번 사유 `external_refund_*`, `http_<status>`, `network`, `refund_pending`, adapter 사전검사 `channel_not_supported`·`order_not_collected`
+   */
+  failureCode: string;
+  /** 운영자에게 보일 사유. 채널이 준 문장 그대로(wallet 거절은 토스 한국어 메시지) */
+  message: string;
+  /** ISO 8601 — channel-adapter 가 결과를 받은 시각. 같은 요청의 사실이 순서 없이 와도 core 가 최신을 고르게 */
+  at: string;
+}
+
+const ChannelOrderSettlementFailedSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  scope: z.enum(['full', 'partial']),
+  retryable: z.boolean(),
+  failureCode: z.string().min(1),
+  message: z.string(),
+  at: z.string().datetime(),
 });
 
 // ===== Stream Config (타입 안전 버전) =====
@@ -677,6 +718,10 @@ export const ORDER_STREAM = stream({
     ChannelOrderCancelStalled: event<'ChannelOrderCancelStalled', ChannelOrderCancelStalledPayload>(
       'ChannelOrderCancelStalled',
       ChannelOrderCancelStalledSchema,
+    ),
+    ChannelOrderSettlementFailed: event<'ChannelOrderSettlementFailed', ChannelOrderSettlementFailedPayload>(
+      'ChannelOrderSettlementFailed',
+      ChannelOrderSettlementFailedSchema,
     ),
   },
 });
