@@ -785,6 +785,41 @@ describe('Medusa order collection (source + translator)', () => {
     });
   });
 
+  it('취소된 주문은 modification 에만 orderCancelled 를 싣는다 — 해시 입력(changes)은 그대로 (#1016 36번 PR 6 판정 3)', async () => {
+    const base = {
+      currency_code: 'KRW',
+      total: 12000,
+      created_at: '2026-05-26T01:00:00.000Z',
+      updated_at: '2026-05-26T01:20:00.000Z',
+      items: [],
+    };
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        { ...base, id: 'order_c', status: 'canceled', payment_status: 'refunded', canceled_at: '2026-05-26T01:15:00.000Z' },
+        { ...base, id: 'order_l', status: 'pending', payment_status: 'captured' },
+      ]),
+    } as any);
+
+    const { orders } = await provider.fetchOrders(null);
+    const byId = new Map(orders.map((o) => [o.externalOrderId, o]));
+    const cancelled = byId.get('order_c');
+    const live = byId.get('order_l');
+    if (!cancelled || !live) throw new Error('unreachable');
+
+    expect(cancelled.modification.orderCancelled).toBe(true);
+    expect('orderCancelled' in cancelled.changes).toBe(false);
+    expect('orderCancelled' in live.modification).toBe(false);
+    // 계약 스키마가 칸을 안다 — 모르면 zod 가 조용히 지운다
+    const parsed = ORDER_STREAM.events.OrderModified.schema!.parse({
+      orderId: 'wms-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_c',
+      modifiedAt: cancelled.modifiedAt,
+      snapshot: cancelled.modification,
+    });
+    expect(parsed.snapshot.orderCancelled).toBe(true);
+  });
+
   describe('부분취소 진행 기록 (#1016 35번 PR-C)', () => {
     const order = (metadata: Record<string, unknown> | undefined) => ({
       id: 'order_pc_1',

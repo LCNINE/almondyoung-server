@@ -148,6 +148,12 @@ export interface OrderModifiedPayload {
     shippingAddress: ShippingAddress;
     /** 없으면 진행 중인 부분취소가 없다. 키를 생략한다 — 빈 배열을 싣지 않는다. */
     cancelRequests?: OrderModifiedCancelRequest[];
+    /**
+     * 채널이 주문을 취소했다(Medusa `status = canceled`). 아니면 키를 두지 않는다.
+     * 취소 «사실»은 lifecycle `OrderCancelled` 가 주문당 한 번 낸다 — 이 칸은 core 가 그 한 번을 놓친 정산 중 요청을
+     * 재수집 스냅샷으로 닫는 근거다(#1016 36번 재설계 PR 6 판정 3).
+     */
+    orderCancelled?: true;
   };
 }
 
@@ -341,6 +347,7 @@ const OrderModifiedSchema = z.object({
     lines: z.array(OrderModifiedSnapshotLineSchema),
     shippingAddress: ShippingAddressSchema,
     cancelRequests: z.array(OrderModifiedCancelRequestSchema).optional(),
+    orderCancelled: z.literal(true).optional(),
   }),
 });
 

@@ -131,6 +131,8 @@ export class ChannelOrderTranslator {
         })),
         shippingAddress: snapshot.shippingAddress,
         ...(snapshot.cancelRequests?.length ? { cancelRequests: snapshot.cancelRequests } : {}),
+        // 해시 입력(changes)엔 없다 — 취소는 lifecycle 이 알리고, 이 칸은 core 의 정산 중 요청을 닫는 근거일 뿐이다(PR 6 판정 3)
+        ...(snapshot.orderCancelled ? { orderCancelled: true as const } : {}),
       },
     };
 

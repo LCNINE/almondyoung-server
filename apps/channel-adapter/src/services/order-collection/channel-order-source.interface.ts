@@ -119,6 +119,11 @@ export interface ChannelOrderSnapshot {
    * `stableStringify` 결과를 바꿔 배포 직후 모든 Medusa 주문이 `OrderModified` 를 낸다.
    */
   cancelRequests?: OrderModifiedCancelRequest[];
+  /**
+   * 채널이 주문을 취소했다 — 재수집 스냅샷이 core 의 정산 중 요청을 닫는 근거(#1016 36번 PR 6). 아니면 키를 두지 않는다.
+   * **`changes`(해시 입력)에는 넣지 않는다** — 넣으면 배포 직후 취소된 Medusa 주문이 전부 `OrderModified` 를 다시 낸다.
+   */
+  orderCancelled?: true;
   createdAt: string;
   lifecycle: LifecycleObservation[];
   /** 격리 시 운영자가 볼 채널 원본. */
