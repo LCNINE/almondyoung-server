@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { SETTLE_DELAYED_AFTER_MS, settlementDeadline } from '../../fulfillment/order-progress/order-progress.thresholds';
 
 /** 요청 행의 reason_code — 이 값으로 변경 기록 안의 취소 요청을 가린다. */
 export const CHANNEL_CANCEL_REQUEST_REASON = 'CHANNEL_CANCEL_REQUEST';
 
-export type CancelRequestStatus = 'requested' | 'applied' | 'rejected' | 'superseded';
+export type CancelRequestStatus = 'requested' | 'settling' | 'applied' | 'rejected' | 'superseded';
 
 export type CancelRequester =
   | { kind: 'operator'; actorId: string }
@@ -25,6 +26,22 @@ const CancelRequestLineSchema = z.object({
   salesOrderLineId: z.string().min(1),
   channelOrderItemId: z.string().min(1).nullable(),
   quantity: z.number().int().positive(),
+});
+
+const SettlementFailureSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  retryable: z.boolean(),
+  at: z.string(),
+});
+
+const SettlementSchema = z.object({
+  /** delayed 는 저장하지 않는다 — 확정 시각 + 30분으로 계산한다(settlementPhase) */
+  state: z.enum(['in_progress', 'refused']),
+  mode: z.enum(['auto', 'manual']),
+  /** 이 방식으로 정산을 (다시) 시작한 시각. 이보다 이른 실패 사실은 지난 시도의 것이라 버린다 */
+  since: z.string(),
+  lastFailure: SettlementFailureSchema.optional(),
 });
 
 const CancelRequestMetadataSchema = z.object({
@@ -57,9 +74,32 @@ const CancelRequestMetadataSchema = z.object({
     })
     .optional(),
   supersededReason: z.string().optional(),
+  settlement: SettlementSchema.optional(),
 });
 
 export type CancelRequestMetadata = z.infer<typeof CancelRequestMetadataSchema>;
+export type SettlementMode = z.infer<typeof SettlementSchema>['mode'];
+export type SettlementFailure = z.infer<typeof SettlementFailureSchema>;
+export type Settlement = z.infer<typeof SettlementSchema>;
+export type SettlementPhase = 'in_progress' | 'delayed' | 'refused';
+
+/** 작을수록 나쁘다 — 한 주문의 정산 중 요청 여럿 중 대표를 고를 때(보드·actions API) */
+export const PHASE_RANK: Record<SettlementPhase, number> = { refused: 0, delayed: 1, in_progress: 2 };
+
+/** 확정 시각은 요청 행의 created_at — 판정 SQL 도 같은 칸을 본다(D13) */
+export function settlementPhase(settlement: Pick<Settlement, 'state'>, confirmedAt: Date, now: Date): SettlementPhase {
+  if (settlement.state === 'refused') return 'refused';
+  return now.getTime() - confirmedAt.getTime() > SETTLE_DELAYED_AFTER_MS ? 'delayed' : 'in_progress';
+}
+
+export interface SettlementView {
+  requestId: string;
+  phase: SettlementPhase;
+  mode: SettlementMode;
+  confirmedAt: string;
+  deadlineAt: string;
+  lastFailure: SettlementFailure | null;
+}
 
 /** jsonb 는 쓰는 쪽(이 폴더의 manager·settler)만 채운다 — 모양이 어긋나면 버그라 던진다. */
 export function readCancelRequestMetadata(metadata: unknown): CancelRequestMetadata {
@@ -85,18 +125,40 @@ export interface CancelRequestView {
     shippingNotAdjusted: boolean;
     externalRefundApplied?: number;
   } | null;
+  /** 정산 중(settling)일 때만. 옛 requested 행·끝난 행은 null */
+  settlement: SettlementView | null;
+  /** 새 흐름(PR 5 뒤) 요청의 환불 방식. 옛 행은 null */
+  refundMode: SettlementMode | null;
 }
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
 
-const VIEW_STATUSES: ReadonlySet<string> = new Set(['requested', 'applied', 'rejected', 'superseded']);
+const VIEW_STATUSES: ReadonlySet<string> = new Set(['requested', 'settling', 'applied', 'rejected', 'superseded']);
 
 function isViewStatus(value: string): value is CancelRequestStatus {
   return VIEW_STATUSES.has(value);
 }
 
+export function toSettlementView(
+  row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'>,
+  now: Date,
+): SettlementView | null {
+  if (row.status !== 'settling') return null;
+  const settlement = readCancelRequestMetadata(row.metadata).settlement;
+  if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
+  return {
+    requestId: row.id,
+    phase: settlementPhase(settlement, row.createdAt, now),
+    mode: settlement.mode,
+    confirmedAt: row.createdAt.toISOString(),
+    deadlineAt: settlementDeadline(row.createdAt).toISOString(),
+    lastFailure: settlement.lastFailure ?? null,
+  };
+}
+
 export function toCancelRequestView(
   row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'>,
+  now: Date = new Date(),
 ): CancelRequestView {
   if (!isViewStatus(row.status)) throw new Error(`Cancel request ${row.id} has status ${row.status}`);
   const meta = readCancelRequestMetadata(row.metadata);
@@ -109,5 +171,7 @@ export function toCancelRequestView(
     requestedAt: row.createdAt.toISOString(),
     rejection: meta.rejection ?? null,
     outcome: meta.outcome ?? null,
+    settlement: toSettlementView(row, now),
+    refundMode: meta.settlement?.mode ?? null,
   };
 }

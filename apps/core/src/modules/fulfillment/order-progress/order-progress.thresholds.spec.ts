@@ -17,7 +17,10 @@ import {
   SHIPMENT_STAGES,
   SHIPMENT_STATES,
   STUCK_AFTER_MS,
+  SETTLE_DELAYED_AFTER_MS,
+  addBusinessDaysKst,
   isStuck,
+  settlementDeadline,
   stuckCutoff,
 } from './order-progress.thresholds';
 
@@ -109,5 +112,30 @@ describe('SHIPMENT_STATES', () => {
 
   it('25번 규칙의 칸(pick/CONSOLIDATION_PENDING)이 상자 어휘에 있다', () => {
     expect(SHIPMENT_STATES.pick).toContain('CONSOLIDATION_PENDING');
+  });
+});
+
+describe('정산 기한(스펙 §7.4 — 3영업일, 주말만 뺀다)', () => {
+  it('환불 지연 기준은 30분', () => {
+    expect(SETTLE_DELAYED_AFTER_MS).toBe(30 * 60_000);
+  });
+
+  it('월요일 10:00 KST 확정 → 목요일 10:00 KST', () => {
+    // 2026-10-12 는 월요일. 10:00 KST = 01:00Z
+    expect(settlementDeadline(new Date('2026-10-12T01:00:00.000Z')).toISOString()).toBe('2026-10-15T01:00:00.000Z');
+  });
+
+  it('금요일 확정 → 다음 주 수요일(토·일은 세지 않는다)', () => {
+    expect(settlementDeadline(new Date('2026-10-09T01:00:00.000Z')).toISOString()).toBe('2026-10-14T01:00:00.000Z');
+  });
+
+  it('토요일 확정 → 수요일(월·화·수)', () => {
+    expect(settlementDeadline(new Date('2026-10-10T01:00:00.000Z')).toISOString()).toBe('2026-10-14T01:00:00.000Z');
+  });
+
+  it('요일은 한국 시간으로 센다 — 런타임 TZ·UTC 요일이 아니다', () => {
+    // 2026-10-10T20:00Z = 일요일 05:00 KST. 하루 뒤 2026-10-11T20:00Z = 월요일 05:00 KST(영업일) → 1영업일 소진.
+    // UTC 요일로 세면 2026-10-11T20:00Z 는 «일요일»이라 건너뛰고 2026-10-12T20:00Z 가 나온다.
+    expect(addBusinessDaysKst(new Date('2026-10-10T20:00:00.000Z'), 1).toISOString()).toBe('2026-10-11T20:00:00.000Z');
   });
 });

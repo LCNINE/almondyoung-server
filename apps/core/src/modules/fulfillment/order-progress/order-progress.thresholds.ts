@@ -106,6 +106,32 @@ const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+/** 정산 중인 채널 취소 요청이 «환불 지연»이 되는 시간 — 확정 시각(요청 행 created_at)부터(#1016 36번 재설계 §5.1).
+ *  판정 SQL·actions API·admin-web 뷰가 같은 값을 읽는다 — 스토어프론트 «지연»과 보드 «환불 지연»이 같은 순간에 바뀌게 */
+export const SETTLE_DELAYED_AFTER_MS = 30 * MINUTE;
+/** 전자상거래법 18조 2항 «3영업일 이내 환급». v1 은 주말만 뺀다(공휴일은 범위 밖, 스펙 §13) */
+export const SETTLE_DEADLINE_BUSINESS_DAYS = 3;
+/** 막 (다시) 시작한 정산은 이만큼 건드리지 않는다 — 채널이 아직 처리 중일 수 있다(리컨실러 36번) */
+export const SETTLEMENT_REISSUE_GRACE_MS = MINUTE;
+
+const KST_OFFSET_MS = 9 * HOUR; // 한국은 일광절약시간이 없다
+
+/** from + n 영업일(같은 시각). 요일은 한국 시간으로 센다 — 런타임 TZ(jest·라이브는 UTC)를 읽지 않는다 */
+export function addBusinessDaysKst(from: Date, days: number): Date {
+  let at = from.getTime();
+  let left = days;
+  while (left > 0) {
+    at += DAY;
+    const weekday = new Date(at + KST_OFFSET_MS).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) left--;
+  }
+  return new Date(at);
+}
+
+export function settlementDeadline(confirmedAt: Date): Date {
+  return addBusinessDaysKst(confirmedAt, SETTLE_DEADLINE_BUSINESS_DAYS);
+}
+
 /** 달력 시간. 주말·공휴일을 빼지 않는다(스펙 D6). */
 export const STUCK_AFTER_MS: Record<OrderProgressStage, number> = {
   accept: HOUR,
