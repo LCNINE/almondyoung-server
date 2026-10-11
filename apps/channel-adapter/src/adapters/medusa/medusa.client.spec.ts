@@ -3,8 +3,7 @@ jest.mock('./medusa-sdk.config', () => ({
   createMedusaSdk: jest.fn(),
 }));
 
-import { MedusaClient, MedusaHttpError } from './medusa.client';
-import { isTransientMedusaError } from './transient-error';
+import { MedusaClient } from './medusa.client';
 
 function makeShippingProjectionClient(initialMetadata: Record<string, unknown>) {
   let postedMetadata: Record<string, unknown> | undefined;
@@ -1461,7 +1460,7 @@ describe('MedusaClient 회원 생애주기 (#786)', () => {
   });
 });
 
-describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
+describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () => {
   function makeClient() {
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
     (client as any).apiUrl = 'http://medusa.local';
@@ -1481,92 +1480,140 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
     global.fetch = originalFetch;
   });
 
-  describe('cancelOrder', () => {
-    it('코어 취소 라우트를 Basic 인증으로 POST 한다', async () => {
-      global.fetch = respond(200, { order: { id: 'order_1' } });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'cancelled' });
+  const lastBody = () => JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+
+  describe('cancelOrder — 채널 취소 라우트(#1016 36번 재설계 §6.1)', () => {
+    const auto = { refundMode: 'auto' as const };
+
+    it('채널 취소 라우트에 Basic 인증과 refundMode 를 POST 한다 — 기본 /cancel 은 환불 오류를 삼켜 환불 없이 취소한다', async () => {
+      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled', refund: { mode: 'auto', amount: 30000 } });
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({ kind: 'cancelled' });
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://medusa.local/admin/orders/order_1/cancel',
+        'http://medusa.local/admin/orders/order_1/channel-cancel',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({ Authorization: `Basic ${Buffer.from('sk_test:').toString('base64')}` }),
         }),
       );
+      expect(lastBody()).toEqual({ refundMode: 'auto' });
     });
 
-    it('«이미 취소됨» 400 만 성공 쪽이다', async () => {
+    it('manual 도 그대로 싣는다', async () => {
+      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled', refund: { mode: 'manual', amount: 30000 } });
+      await makeClient().cancelOrder('order_1', { refundMode: 'manual' });
+      expect(lastBody()).toEqual({ refundMode: 'manual' });
+    });
+
+    it('«이미 취소됨» 400 은 성공 쪽이다', async () => {
       global.fetch = respond(400, { type: 'invalid_data', message: 'Order with id order_1 has been canceled.' });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'already_cancelled' });
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({ kind: 'already_cancelled' });
     });
 
-    it('그 밖의 400 은 취소 불가다 — 옛 코드처럼 성공으로 삼키지 않는다', async () => {
-      const message = 'All fulfillments must be canceled before canceling an order';
-      global.fetch = respond(400, { type: 'not_allowed', message });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message });
+    it('400 표지 wallet_refund_refused:* 는 환불 거절 — 코드는 표지 그대로, 문장은 wallet 이 준 그대로', async () => {
+      global.fetch = respond(400, {
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+        message: '자동 환불할 수 없는 결제수단입니다',
+      });
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'refund_refused',
+        failureCode: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+        message: '자동 환불할 수 없는 결제수단입니다',
+      });
     });
 
-    it('404 는 주문 없음이다', async () => {
+    it.each([
+      [{ type: 'not_allowed', message: 'Order order_1 already has an existing active order change' }, 'not_allowed'],
+      [{ type: 'not_allowed', message: 'All fulfillments must be canceled before canceling an order' }, 'not_allowed'],
+      [{ type: 'invalid_data', message: "refundMode 는 'auto' 또는 'manual' 이어야 합니다" }, 'invalid_data'],
+      [{ type: 'not_allowed', code: 'something_else', message: 'x' }, 'something_else'],
+      [{ type: 'invalid_data', message: 'Return with id ret_1 has been canceled.' }, 'invalid_data'],
+    ])('그 밖의 400(%o)은 취소 불가 — failureCode 는 code ?? type', async (body, failureCode) => {
+      global.fetch = respond(400, body);
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'not_cancelable',
+        failureCode,
+        message: body.message,
+      });
+    });
+
+    it('본문 없는 400 은 취소 불가 http_400', async () => {
+      global.fetch = respond(400, undefined);
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'not_cancelable',
+        failureCode: 'http_400',
+        message: 'status 400',
+      });
+    });
+
+    it('404 type=not_found 는 주문 없음', async () => {
       global.fetch = respond(404, { type: 'not_found', message: 'Order id not found: order_1' });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_found', message: 'Order id not found: order_1' });
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'not_found',
+        message: 'Order id not found: order_1',
+      });
     });
 
-    it('본문 없는 404 는 던진다 — 게이트웨이·오라우팅을 주문 없음으로 읽지 않는다', async () => {
-      global.fetch = respond(404, undefined);
-      await expect(makeClient().cancelOrder('order_1')).rejects.toBeInstanceOf(MedusaHttpError);
+    it.each([
+      [404, undefined, 'http_404'],
+      [500, { type: 'unknown_error', message: 'An unknown error occurred.' }, 'http_500'],
+      [502, undefined, 'http_502'],
+      [401, { message: 'Unauthorized' }, 'http_401'],
+      [409, { type: 'conflict', message: 'locked' }, 'http_409'],
+      [422, { type: 'duplicate_error', message: 'dup' }, 'http_422'],
+    ])('%i(본문 %o)은 일시 실패 %s — 본문 없는 404 는 라우트 없는 옛 Medusa 다', async (status, body, failureCode) => {
+      global.fetch = respond(status, body);
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'transient',
+        failureCode,
+        message: (body as { message?: string } | undefined)?.message ?? `status ${status}`,
+      });
     });
 
-    it('다른 대상의 «has been canceled» 400 은 취소 불가다', async () => {
-      const message = 'Return with id ret_1 has been canceled.';
-      global.fetch = respond(400, { type: 'invalid_data', message });
-      await expect(makeClient().cancelOrder('order_1')).resolves.toEqual({ kind: 'not_cancelable', message });
-    });
-
-    it('5xx 는 status 를 실어 던진다 — wallet «환불 불가»도 Medusa 가 500 으로 가리므로 여기다(일시 실패)', async () => {
-      global.fetch = respond(500, { type: 'unknown_error', message: 'An unknown error occurred.' });
-      const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(MedusaHttpError);
-      expect(isTransientMedusaError(err)).toBe(true);
-    });
-
-    it('연결 실패는 cause 를 단 채 던진다', async () => {
+    it('연결 실패는 던지지 않고 일시 실패 network 다', async () => {
       global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })) as any;
-      const err = await makeClient().cancelOrder('order_1').catch((e: unknown) => e);
-      expect(isTransientMedusaError(err)).toBe(true);
+      await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
+        kind: 'transient',
+        failureCode: 'network',
+        message: expect.stringContaining('fetch failed'),
+      });
     });
   });
 
   describe('partialCancelOrder', () => {
-    const input = { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }] };
+    const input = { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }], refundMode: 'auto' as const };
 
-    it('부분취소 라우트에 item_id·취소할 수량을 보낸다', async () => {
-      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 27500, shippingDelta: -3000, shippingNotAdjusted: false, stage: 'refunded' });
+    it('부분취소 라우트에 item_id·취소할 수량·refundMode 를 보낸다', async () => {
+      global.fetch = respond(200, {
+        requestId: 'req-1', refundAmount: 27500, shippingDelta: -3000, shippingNotAdjusted: false, stage: 'refunded', refund: { mode: 'auto', amount: 27500 },
+      });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
         kind: 'cancelled',
         refundAmount: 27500,
         shippingDelta: -3000,
         shippingNotAdjusted: false,
       });
-      const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-      expect(url).toBe('http://medusa.local/admin/orders/order_1/partial-cancel');
-      expect(JSON.parse(init.body)).toEqual({ requestId: 'req-1', items: [{ item_id: 'ordli_1', quantity: 2 }] });
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe('http://medusa.local/admin/orders/order_1/partial-cancel');
+      expect(lastBody()).toEqual({ requestId: 'req-1', items: [{ item_id: 'ordli_1', quantity: 2 }], refundMode: 'auto' });
     });
 
-    it('이미 환불한 금액은 already_refunded 로 싣고, 없으면 키가 없다', async () => {
+    it('이미 환불한 금액은 already_refunded 로 싣고, manual 도 그대로 싣는다', async () => {
       global.fetch = respond(200, { requestId: 'req-1', refundAmount: 20000, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
-      await makeClient().partialCancelOrder('order_1', { ...input, alreadyRefunded: 10000 });
-      expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual({
+      await makeClient().partialCancelOrder('order_1', { ...input, alreadyRefunded: 10000, refundMode: 'manual' });
+      expect(lastBody()).toEqual({
         requestId: 'req-1',
         items: [{ item_id: 'ordli_1', quantity: 2 }],
         already_refunded: 10000,
+        refundMode: 'manual',
       });
     });
 
-    it('external_refund_* 사유의 거절은 금액과 함께 따로 돌려준다', async () => {
+    it('external_refund_* 사유의 거절은 사유·금액과 함께 따로 돌려준다', async () => {
       global.fetch = respond(400, {
         type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000, message: '외부 환불 10,000원',
       });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
-        kind: 'external_refund', message: '외부 환불 10,000원', unresolvedAmount: 10000,
+        kind: 'external_refund', reason: 'external_refund_unresolved', message: '외부 환불 10,000원', unresolvedAmount: 10000,
       });
     });
 
@@ -1574,29 +1621,31 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       global.fetch = respond(400, {
         type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 9999.6, message: '외부 환불',
       });
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
-        kind: 'external_refund', message: '외부 환불', unresolvedAmount: 10000,
-      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({ kind: 'external_refund', unresolvedAmount: 10000 });
     });
 
-    it('code=partial_cancel_rejected 만 정해진 거절이다', async () => {
+    it('code=partial_cancel_rejected 는 정해진 거절이다', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'partial_cancel_rejected', message: '수량이 남은 수량보다 많습니다' });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'rejected', message: '수량이 남은 수량보다 많습니다' });
     });
 
-    it('Medusa 자신의 not_allowed(다른 주문 수정이 열려 있음)는 던진다 — 일시적이다', async () => {
-      global.fetch = respond(400, { type: 'not_allowed', message: 'Order order_1 already has an existing active order change' });
-      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toBeInstanceOf(MedusaHttpError);
+    it('400 표지 + stage edited 는 «수정은 확정됐고 환불만 거절»', async () => {
+      global.fetch = respond(400, {
+        type: 'not_allowed', code: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT', stage: 'edited', requestId: 'req-1', message: '이미 취소된 결제입니다',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'refund_refused',
+        failureCode: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT',
+        message: '이미 취소된 결제입니다',
+        edited: true,
+      });
     });
 
-    it('invalid_data 는 던진다 — 우리 본문 버그다', async () => {
-      global.fetch = respond(400, { type: 'invalid_data', message: 'items 가 비어 있습니다' });
-      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toThrow(/invalid_data/);
-    });
-
-    it('404 는 던진다 — 롤링 중 옛 Medusa 에 라우트가 없다', async () => {
-      global.fetch = respond(404, undefined);
-      await expect(makeClient().partialCancelOrder('order_1', input)).rejects.toBeInstanceOf(MedusaHttpError);
+    it('표지는 있는데 stage 가 없으면 edited 가 아니다 — 수정됐다고 지어내지 않는다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_refused:X', message: '거절' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: '거절', edited: false,
+      });
     });
 
     it('502 refund_pending 은 환불 미완 결과다', async () => {
@@ -1604,11 +1653,32 @@ describe('MedusaClient 취소 (#1016 35번 PR-B)', () => {
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'refund_pending', message: '환불이 끝나지 않았습니다' });
     });
 
-    it('본문 없는 502(ALB)는 환불 미완이 아니다 — 던진다', async () => {
-      global.fetch = respond(502, undefined);
-      const err = await makeClient().partialCancelOrder('order_1', input).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(MedusaHttpError);
-      expect(isTransientMedusaError(err)).toBe(true);
+    it.each([
+      [{ type: 'not_allowed', message: 'Order order_1 already has an existing active order change' }, 400, 'not_allowed'],
+      [{ type: 'invalid_data', message: 'items 가 비어 있습니다' }, 400, 'invalid_data'],
+      [{ type: 'not_found', message: 'Order id not found: order_1' }, 404, 'not_found'],
+    ])('Medusa 자신의 거절(%o)은 취소 불가 — failureCode 는 code ?? type', async (body, status, failureCode) => {
+      global.fetch = respond(status, body);
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'not_cancelable', failureCode, message: body.message });
+    });
+
+    it.each([
+      [404, undefined, 'http_404'],
+      [502, undefined, 'http_502'],
+      [500, { type: 'unknown_error', message: 'An unknown error occurred.' }, 'http_500'],
+      [401, { message: 'Unauthorized' }, 'http_401'],
+    ])('%i(본문 %o)은 일시 실패 %s — 본문 없는 502 는 ALB, 404 는 라우트 없는 옛 Medusa', async (status, body, failureCode) => {
+      global.fetch = respond(status, body);
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'transient',
+        failureCode,
+        message: (body as { message?: string } | undefined)?.message ?? `status ${status}`,
+      });
+    });
+
+    it('연결 실패는 일시 실패 network 다', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed')) as any;
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({ kind: 'transient', failureCode: 'network' });
     });
   });
 });

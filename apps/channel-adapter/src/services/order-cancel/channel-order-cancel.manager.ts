@@ -58,7 +58,7 @@ export class ChannelOrderCancelManager {
   }
 
   private async cancelFull(command: CancelChannelOrderPayload): Promise<Rejection | undefined> {
-    const outcome = await this.medusaClient.cancelOrder(command.externalOrderId);
+    const outcome = await this.medusaClient.cancelOrder(command.externalOrderId, { refundMode: command.refundMode ?? 'auto' });
     switch (outcome.kind) {
       case 'cancelled':
       case 'already_cancelled':
@@ -79,6 +79,7 @@ export class ChannelOrderCancelManager {
       requestId,
       items: command.lines.map((line) => ({ itemId: line.channelOrderItemId, quantity: line.quantity })),
       ...(command.alreadyRefundedAmount !== undefined ? { alreadyRefunded: command.alreadyRefundedAmount } : {}),
+      refundMode: command.refundMode ?? 'auto',
     });
     switch (outcome.kind) {
       case 'cancelled':

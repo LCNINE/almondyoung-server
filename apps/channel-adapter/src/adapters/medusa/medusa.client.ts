@@ -12,6 +12,7 @@ import {
   toMedusaProductSellableInventorySku,
 } from '@packages/domain-types';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
+import type { ChannelCancelRefundMode } from '@packages/event-contracts/streams';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
 import {
   recordAutoIssueOutcome,
@@ -238,37 +239,60 @@ const ORDER_FIELDS = [
   'transactions.created_at',
 ].join(',');
 
-/** Medusa 전체취소 결과. 정해진 결과만 값이고, 일시 실패(5xx·네트워크)는 던진다(#1016 35번 PR-B). */
+/**
+ * 정해진 결과로 읽지 못한 응답 — 일시 실패(#1016 36번 재설계 §7.2). 5xx·본문 없는 404(라우트 없는 옛 Medusa)·본문 없는 502(ALB)·
+ * 예상 밖 상태(401·409·422…)·연결 실패. `failureCode` 는 `http_<status>` 또는 `network`.
+ */
+type MedusaSettlementTransient = { kind: 'transient'; failureCode: string; message: string };
+
+/** wallet·PG 의 영구 환불 거절 — `failureCode` 는 Medusa 표지 그대로(`wallet_refund_refused:<wallet 코드>`), 문장은 wallet 이 준 그대로(PR 2 D5) */
+type MedusaRefundRefused = { kind: 'refund_refused'; failureCode: string; message: string };
+
+/** Medusa 전체취소(`channel-cancel`) 결과. 던지지 않는다 — 모든 응답이 값이다. */
 export type MedusaCancelOutcome =
   | { kind: 'cancelled' }
   | { kind: 'already_cancelled' }
+  | MedusaRefundRefused
   | { kind: 'not_found'; message: string }
-  | { kind: 'not_cancelable'; message: string };
+  /** 환불 전 사전검사(진행 중인 주문 변경·안 취소된 출고)와 본문 오류. `failureCode` 는 Medusa code ?? type */
+  | { kind: 'not_cancelable'; failureCode: string; message: string }
+  | MedusaSettlementTransient;
 
-/** Medusa 부분취소 결과(PR-A 라우트 계약). `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
+/** Medusa 부분취소 결과. 던지지 않는다. `refund_pending` = 주문 수정은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다. */
 export type MedusaPartialCancelOutcome =
   | { kind: 'cancelled'; refundAmount: number | null; shippingDelta: number | null; shippingNotAdjusted: boolean }
   | { kind: 'rejected'; message: string }
-  /** 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번) */
-  | { kind: 'external_refund'; message: string; unresolvedAmount: number }
-  | { kind: 'refund_pending'; message: string };
-
-/** Medusa 가 정해진 결과가 아닌 상태로 답했다. status 를 실어 `isTransientMedusaError` 가 읽는다. */
-export class MedusaHttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'MedusaHttpError';
-  }
-}
+  /** 품목에 연결 안 된 외부 환불이 있어 «이미 환불한 금액»이 필요하다(#1016 37번). `reason` 은 Medusa 의 `external_refund_*` 그대로 */
+  | { kind: 'external_refund'; reason: string; message: string; unresolvedAmount: number }
+  /** `edited` = 응답이 `stage: 'edited'` 를 실었다(수정은 확정됐고 환불만 거절). 없으면 수정됐다고 지어내지 않는다 */
+  | (MedusaRefundRefused & { edited: boolean })
+  | { kind: 'refund_pending'; message: string }
+  /** Medusa 자신의 400(다른 주문 수정이 열려 있음·본문 오류)·404 not_found. `failureCode` 는 code ?? type */
+  | { kind: 'not_cancelable'; failureCode: string; message: string }
+  | MedusaSettlementTransient;
 
 /**
- * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4).
- * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 거절(NOT_CANCELABLE)로 닫힌다.
+ * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4). 채널 취소 라우트도 같은 문장을 낸다.
+ * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 취소 불가로 닫힌다.
  */
 const ALREADY_CANCELLED_MESSAGE = /^Order with id .+ has been canceled\.$/;
+
+/**
+ * wallet 영구 거절의 표지 — Medusa `src/modules/almond-payment/wallet-refund-refusal.ts` 의 `WALLET_REFUND_REFUSED_PREFIX`.
+ * 앱 경계라 import 하지 않고 같은 문자열을 둔다. 영구·일시 분류의 정본은 wallet 이고 여기선 표지만 읽는다(스펙 S6).
+ */
+const WALLET_REFUND_REFUSED_PREFIX = 'wallet_refund_refused:';
+
+/** 응답 본문의 Medusa 오류 식별자 — 우리 code 가 있으면 그것, 없으면 Medusa type, 그것도 없으면 상태 */
+function medusaErrorCode(status: number, body: Record<string, unknown>): string {
+  if (typeof body.code === 'string' && body.code.length > 0) return body.code;
+  if (typeof body.type === 'string' && body.type.length > 0) return body.type;
+  return `http_${status}`;
+}
+
+function isWalletRefundRefusal(body: Record<string, unknown>): body is Record<string, unknown> & { code: string } {
+  return typeof body.code === 'string' && body.code.startsWith(WALLET_REFUND_REFUSED_PREFIX);
+}
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1932,26 +1956,34 @@ export class MedusaClient {
   }
 
   /**
-   * 전체취소. 400 은 문구로 가른다 — «이미 취소됨»만 성공 쪽이고(멱등: 같은 명령의 재전달), 나머지 400 을 성공으로 삼키지 않는다.
-   * 코어 라우트는 requestId 를 받지 않으므로 멱등은 «이미 취소됨»으로만 선다.
-   * wallet 이 환불을 거절하면 Medusa 는 그 오류를 500 «An unknown error occurred.» 로 가린다 — 장애와 구분할 수 없어 던진다(일시 실패).
+   * 전체취소 — 우리 채널 취소 라우트(#1016 36번 재설계 §6.1, Medusa PR 2). 기본 /cancel 은 환불 오류를 삼켜 환불 없이 주문을 취소하므로
+   * 쓰지 않는다(스펙 §2.2). 라우트는 «환불 → 취소» 순서라 영구 거절이면 주문은 취소되지 않는다.
+   * 멱등은 «이미 취소됨»과 «남은 몫만 환불»(장부 맞추기)로 선다 — 같은 명령을 다시 불러도 환불은 한 번이다.
+   * 던지지 않는다: 모든 응답·연결 실패가 결과 종류다. 분류는 라우트 머리 주석의 응답 계약을 따른다.
    */
-  async cancelOrder(orderId: string): Promise<MedusaCancelOutcome> {
-    const path = `/admin/orders/${encodeURIComponent(orderId)}/cancel`;
-    const { status, body } = await this.postAdmin(path);
+  async cancelOrder(orderId: string, input: { refundMode: ChannelCancelRefundMode }): Promise<MedusaCancelOutcome> {
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/channel-cancel`;
+    let response: { status: number; body: Record<string, unknown> };
+    try {
+      response = await this.postAdmin(path, { refundMode: input.refundMode });
+    } catch (error) {
+      return { kind: 'transient', failureCode: 'network', message: error instanceof Error ? error.message : String(error) };
+    }
+    const { status, body } = response;
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
     if (status >= 200 && status < 300) {
-      this.logger.log(`Cancelled Medusa order: ${orderId}`);
+      this.logger.log(`Cancelled Medusa order: ${orderId} (refundMode=${input.refundMode})`);
       return { kind: 'cancelled' };
     }
-    // 본문 없는 404 는 게이트웨이·오라우팅이다 — 주문 없음으로 읽지 않고 던진다(롤링 중 옛 Medusa 포함)
-    if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
     if (status === 400) {
+      if (isWalletRefundRefusal(body)) return { kind: 'refund_refused', failureCode: body.code, message };
       if (ALREADY_CANCELLED_MESSAGE.test(message)) return { kind: 'already_cancelled' };
-      return { kind: 'not_cancelable', message };
+      return { kind: 'not_cancelable', failureCode: medusaErrorCode(status, body), message };
     }
+    // 본문 없는 404 는 게이트웨이·오라우팅·라우트 없는 옛 Medusa 다 — 주문 없음으로 읽지 않는다
+    if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
     this.logger.error(`Failed to cancel Medusa order: ${orderId} (status=${status})`, message);
-    throw new MedusaHttpError(status, `Medusa cancelOrder failed (status=${status}): ${message}`);
+    return { kind: 'transient', failureCode: `http_${status}`, message };
   }
 
   /**
@@ -2582,20 +2614,33 @@ export class MedusaClient {
   }
 
   /**
-   * 부분취소(PR-A 라우트). 정해진 거절은 `code === 'partial_cancel_rejected'` 뿐이다 — Medusa 자신의 not_allowed(다른 주문 수정이
-   * 열려 있음 등)도 같은 400 type 이라 type 으로 가르면 일시 실패를 종결로 닫는다. 그 밖의 400·404(롤링 중 옛 Medusa)·5xx 는 던진다.
+   * 부분취소(PR-A 라우트 + 36번 재설계 PR 2). 정해진 거절은 `code === 'partial_cancel_rejected'`, 영구 환불 거절은 표지 `wallet_refund_refused:*` 다 —
+   * Medusa 자신의 not_allowed(다른 주문 수정이 열려 있음 등)도 같은 400 type 이라 type 이 아니라 code 로 가른다.
    * 그 거절의 `reason` 이 `external_refund_*` 면 «이미 환불한 금액»을 묻는 거절이다(#1016 37번).
+   * 던지지 않는다: 본문 없는 404·502, 5xx, 예상 밖 상태, 연결 실패는 일시 실패 값이다.
    */
   async partialCancelOrder(
     orderId: string,
-    input: { requestId: string; items: Array<{ itemId: string; quantity: number }>; alreadyRefunded?: number },
+    input: {
+      requestId: string;
+      items: Array<{ itemId: string; quantity: number }>;
+      alreadyRefunded?: number;
+      refundMode: ChannelCancelRefundMode;
+    },
   ): Promise<MedusaPartialCancelOutcome> {
     const path = `/admin/orders/${encodeURIComponent(orderId)}/partial-cancel`;
-    const { status, body } = await this.postAdmin(path, {
-      requestId: input.requestId,
-      items: input.items.map((item) => ({ item_id: item.itemId, quantity: item.quantity })),
-      ...(input.alreadyRefunded !== undefined ? { already_refunded: input.alreadyRefunded } : {}),
-    });
+    let response: { status: number; body: Record<string, unknown> };
+    try {
+      response = await this.postAdmin(path, {
+        requestId: input.requestId,
+        items: input.items.map((item) => ({ item_id: item.itemId, quantity: item.quantity })),
+        ...(input.alreadyRefunded !== undefined ? { already_refunded: input.alreadyRefunded } : {}),
+        refundMode: input.refundMode,
+      });
+    } catch (error) {
+      return { kind: 'transient', failureCode: 'network', message: error instanceof Error ? error.message : String(error) };
+    }
+    const { status, body } = response;
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
     if (status >= 200 && status < 300) {
       return {
@@ -2606,10 +2651,10 @@ export class MedusaClient {
       };
     }
     if (status === 400 && body.code === 'partial_cancel_rejected') {
-      // 같은 code 에 사유를 더한 거절이다 — 옛 클라이언트는 이걸 그냥 거절(NOT_CANCELABLE)로 닫고 문장만 보인다
       if (typeof body.reason === 'string' && body.reason.startsWith('external_refund_')) {
         return {
           kind: 'external_refund',
+          reason: body.reason,
           message,
           // Medusa 의 미해결 금액은 BigNumber 합이라 소수가 섞일 수 있다 — 계약(.int().nonnegative())에 맞춰 원 단위로 편다
           unresolvedAmount:
@@ -2620,10 +2665,16 @@ export class MedusaClient {
       }
       return { kind: 'rejected', message };
     }
+    if (status === 400 && isWalletRefundRefusal(body)) {
+      return { kind: 'refund_refused', failureCode: body.code, message, edited: body.stage === 'edited' };
+    }
     // 본문으로 가린다 — ALB 가 Medusa 다운 때 내는 502 에는 이 본문이 없다
     if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
+    if (status === 400 || (status === 404 && body.type === 'not_found')) {
+      return { kind: 'not_cancelable', failureCode: medusaErrorCode(status, body), message };
+    }
     this.logger.error(`Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`, message);
-    throw new MedusaHttpError(status, `Medusa partialCancelOrder failed (status=${status}, type=${String(body.type)}): ${message}`);
+    return { kind: 'transient', failureCode: `http_${status}`, message };
   }
 
   /**
