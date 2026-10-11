@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -14,7 +15,7 @@ import {
 import { RefundResponseDto, RefundReceiveAccountDto } from '../../refunds/dto';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PaymentIntentStatus } from '../../schema';
+import { PaymentIntentStatus, RefundExecution, refundExecutionEnum } from '../../schema';
 
 // ─── Create Intent ────────────────────────────────────────────────────────────
 
@@ -276,6 +277,16 @@ export class RefundByIntentDto {
   @ValidateNested()
   @Type(() => RefundReceiveAccountDto)
   refundReceiveAccount?: RefundReceiveAccountDto;
+
+  @ApiPropertyOptional({
+    enum: refundExecutionEnum.enumValues,
+    description:
+      'MANUAL: 외부 결제 몫은 PG 를 부르지 않고 송금 대기(PENDING)로 남긴다 — 운영자가 고객 계좌로 송금한 뒤 [송금 완료]. ' +
+      '포인트 몫은 그대로 자동으로 되돌린다. 기본 AUTO',
+  })
+  @IsOptional()
+  @IsIn([...refundExecutionEnum.enumValues])
+  execution?: RefundExecution;
 }
 
 export class RefundByIntentResponseDto {

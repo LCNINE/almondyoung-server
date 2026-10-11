@@ -38,7 +38,9 @@ function makeMethod(type: string = 'TOSS') {
   return { id: PM_ID, type, providerData: {} };
 }
 
-function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: string | null }> = {}) {
+function makeInsertedRefund(
+  overrides: Partial<{ amount: number; reasonCode: string | null; execution: 'AUTO' | 'MANUAL' }> = {},
+) {
   return {
     id: REFUND_ID,
     chargeId: CHARGE_ID,
@@ -49,6 +51,9 @@ function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: str
     reasonCode: overrides.reasonCode ?? null,
     reasonMessage: null,
     providerRefundId: null,
+    execution: overrides.execution ?? 'AUTO',
+    failureCode: null,
+    failureRetryable: null,
     createdAt: new Date(),
   };
 }
@@ -80,6 +85,7 @@ function makeContext(options: {
 
   // Track update calls
   const updateCalls: Array<{ set: Record<string, unknown> }> = [];
+  const insertCalls: Array<Record<string, unknown>> = [];
 
   // tx used inside transactions
   // txIndex distinguishes the insert transaction (1st) from the SUCCEEDED/confirmManual transaction (2nd+).
@@ -97,9 +103,16 @@ function makeContext(options: {
         }),
       })),
       insert: jest.fn().mockImplementation(() => ({
-        values: (vals: any) => ({
-          returning: jest.fn().mockResolvedValue([makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode })]),
-        }),
+        values: (vals: any) => {
+          insertCalls.push(vals);
+          return {
+            returning: jest
+              .fn()
+              .mockResolvedValue([
+                makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode, execution: vals.execution }),
+              ]),
+          };
+        },
       })),
       update: jest.fn().mockImplementation(() => ({
         set: (setValues: Record<string, unknown>) => ({
@@ -183,12 +196,58 @@ function makeContext(options: {
     stateTransitionService as any,
   );
 
-  return { service, db, chargesService, paymentMethodsService, provider, providerRegistry, stateTransitionService, updateCalls };
+  return { service, db, chargesService, paymentMethodsService, provider, providerRegistry, stateTransitionService, updateCalls, insertCalls };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+  describe('수동 실행 create() (#1016 36번 PR 1)', () => {
+    it('MANUAL 은 provider 를 부르지 않고 PENDING·MANUAL 행을 돌려준다', async () => {
+      const { service, provider, insertCalls, stateTransitionService } = makeContext({ method: makeMethod('TOSS') });
+
+      const refund = await service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' });
+
+      expect(provider.refund).not.toHaveBeenCalled();
+      expect(insertCalls).toEqual([expect.objectContaining({ status: 'PENDING', execution: 'MANUAL', amount: 5000 })]);
+      expect(refund).toMatchObject({ status: 'PENDING', execution: 'MANUAL' });
+      expect(stateTransitionService.transitionRefund).not.toHaveBeenCalled();
+    });
+
+    it('MANUAL 은 무통장에 환불 계좌가 같이 와도 토스를 부르지 않는다 — 사람이 송금한다', async () => {
+      const { service, provider } = makeContext({ method: makeMethod('BANK_TRANSFER') });
+
+      await service.create(
+        {
+          chargeId: CHARGE_ID,
+          amount: 5000,
+          refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '홍길동' },
+        },
+        { execution: 'MANUAL' },
+      );
+
+      expect(provider.refund).not.toHaveBeenCalled();
+    });
+
+    it('MANUAL 도 검증은 같다 — 남은 금액을 넘으면 400', async () => {
+      const { service, provider } = makeContext({ priorRefundedAmount: 8000 });
+
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(provider.refund).not.toHaveBeenCalled();
+    });
+
+    it('기본은 AUTO — 행에 execution AUTO, provider 를 부른다', async () => {
+      const { service, provider, insertCalls } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(insertCalls).toEqual([expect.objectContaining({ execution: 'AUTO' })]);
+      expect(provider.refund).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('실패 분류 (#1016 36번 PR 1)', () => {
     async function refusalOf(p: Promise<unknown>): Promise<unknown> {
       try {
@@ -668,8 +727,10 @@ describe('RefundsService', () => {
         .mockResolvedValue(new Map(Object.entries(opts.refunded ?? {})));
 
       const calls: Array<{ chargeId: string; amount: number }> = [];
-      const createSpy = jest.spyOn(ctx.service, 'create').mockImplementation(async (dto) => {
+      const executions: Record<string, string> = {};
+      const createSpy = jest.spyOn(ctx.service, 'create').mockImplementation(async (dto, options) => {
         calls.push({ chargeId: dto.chargeId, amount: dto.amount });
+        executions[dto.chargeId] = options?.execution ?? 'AUTO';
         const outcome = opts.outcomes?.[dto.chargeId] ?? 'SUCCEEDED';
         if (outcome === 'THROW') throw new Error(`boom:${dto.chargeId}`);
         const row: Refund = {
@@ -682,7 +743,7 @@ describe('RefundsService', () => {
           reasonCode: null,
           reasonMessage: null,
           providerRefundId: null,
-          execution: 'AUTO',
+          execution: options?.execution ?? 'AUTO',
           failureCode: null,
           failureRetryable: null,
           createdAt: new Date(),
@@ -691,7 +752,7 @@ describe('RefundsService', () => {
         return row;
       });
       const errorLog = jest.spyOn((ctx.service as any).logger, 'error').mockImplementation(() => undefined);
-      return { ...ctx, calls, createSpy, errorLog, refundedTotals };
+      return { ...ctx, calls, executions, createSpy, errorLog, refundedTotals };
     }
 
     function manualReconcileLog(errorLog: jest.SpyInstance): string | undefined {
@@ -911,6 +972,40 @@ describe('RefundsService', () => {
         { chargeId: 'C', amount: 1 },
         { chargeId: 'D', amount: 1 },
       ]);
+    });
+
+    it('MANUAL: 카드 몫은 MANUAL, 포인트 몫은 AUTO — 순서·분할은 AUTO 와 같다', async () => {
+      const { service, calls, executions } = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000, execution: 'MANUAL' });
+
+      expect(calls).toEqual([
+        { chargeId: 'C1', amount: 7000 },
+        { chargeId: 'P1', amount: 3000 },
+      ]);
+      expect(executions).toEqual({ C1: 'MANUAL', P1: 'AUTO' });
+    });
+
+    it('MANUAL 은 자동 환불 못 하는 수단(효성 CMS)도 받는다 — REFUND_NOT_AUTOMATABLE 로 막지 않는다', async () => {
+      const { service, calls, executions } = makeMultiChargeContext({
+        charges: [
+          { id: 'P1', amount: 3000, type: 'POINTS' },
+          { id: 'M1', amount: 7000, type: 'CMS_BATCH' },
+        ],
+      });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000, execution: 'MANUAL' });
+
+      expect(calls.map((c) => c.chargeId)).toEqual(['M1', 'P1']);
+      expect(executions).toEqual({ M1: 'MANUAL', P1: 'AUTO' });
+    });
+
+    it('execution 없으면 전부 AUTO(지금과 같다)', async () => {
+      const { service, executions } = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000 });
+
+      expect(executions).toEqual({ C1: 'AUTO', P1: 'AUTO' });
     });
   });
 

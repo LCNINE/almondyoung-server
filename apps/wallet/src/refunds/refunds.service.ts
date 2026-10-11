@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
+import { WalletSchema, charges as chargesTable, refunds, paymentIntents, RefundExecution } from '../schema';
 import { Charge, DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
@@ -49,7 +49,12 @@ export class RefundsService {
     }
   }
 
-  async create(dto: CreateRefundDto): Promise<Refund> {
+  /**
+   * 결제분 하나를 환불한다. execution = MANUAL 이면 provider 를 부르지 않고 «송금 대기»(PENDING) 행만 남긴다 —
+   * 운영자가 고객 계좌로 송금한 뒤 confirmManual 로 닫는다. PENDING 은 남은 금액에서 이미 빠지므로 같은 돈이 두 번 나가지 않는다.
+   */
+  async create(dto: CreateRefundDto, options: { execution?: RefundExecution } = {}): Promise<Refund> {
+    const execution: RefundExecution = options.execution ?? 'AUTO';
     // 1. Early validation (no lock needed)
     const charge = await this.chargesService.findById(dto.chargeId);
     if (!charge) {
@@ -96,12 +101,18 @@ export class RefundsService {
           reasonCode: dto.reasonCode ?? null,
           reasonMessage: dto.reasonMessage ?? null,
           providerRefundId: null,
+          execution,
         })
         .returning();
       const row = inserted[0];
       if (!row) throw new Error('REFUND_INSERT_FAILED');
       return row;
     });
+
+    if (execution === 'MANUAL') {
+      this.logger.log(`Manual refund awaiting transfer: refundId=${refund.id} charge=${charge.id} amount=${dto.amount}`);
+      return refund;
+    }
 
     const correlationId = `refund:${refund.id}:${Date.now()}`;
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
@@ -236,6 +247,7 @@ export class RefundsService {
       reasonMessage?: string;
       allowMembershipRefund?: boolean;
       refundReceiveAccount?: CreateRefundDto['refundReceiveAccount'];
+      execution?: RefundExecution;
     },
   ): Promise<Refund[]> {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
@@ -251,20 +263,23 @@ export class RefundsService {
 
     // 계획을 먼저 세우고 검증이 끝난 뒤에만 돈을 움직인다. 집행 도중의 실패는 앞 leg 를 되돌릴 수 없다
     // (포인트 환불엔 역연산이 없고, PG 환불은 재청구가 안 된다).
-    const plan = await this.planIntentRefund(intentId, refundableCharges, dto.amount);
+    const plan = await this.planIntentRefund(intentId, refundableCharges, dto.amount, dto.execution ?? 'AUTO');
 
     const results: Refund[] = [];
     for (const leg of plan) {
       let refund: Refund;
       try {
-        refund = await this.create({
-          chargeId: leg.chargeId,
-          amount: leg.amount,
-          reasonCode: dto.reasonCode,
-          reasonMessage: dto.reasonMessage,
-          allowMembershipRefund: dto.allowMembershipRefund,
-          refundReceiveAccount: dto.refundReceiveAccount,
-        });
+        refund = await this.create(
+          {
+            chargeId: leg.chargeId,
+            amount: leg.amount,
+            reasonCode: dto.reasonCode,
+            reasonMessage: dto.reasonMessage,
+            allowMembershipRefund: dto.allowMembershipRefund,
+            refundReceiveAccount: dto.refundReceiveAccount,
+          },
+          { execution: leg.execution },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logPartialIntentRefund(
@@ -296,12 +311,16 @@ export class RefundsService {
    *
    * 포인트가 마지막인 이유: 포인트 환불은 되돌릴 수단이 없는데(REDEEM_CANCEL 의 역연산 없음) 원장 안에서
    * 끝나 실패할 일이 거의 없다. 실패 가능성이 큰 외부 PG 를 먼저 해서, 그게 실패하면 아무 돈도 안 나간 채로 멈춘다.
+   *
+   * execution = MANUAL 이면 외부 결제 leg 는 PG 를 부르지 않으므로 «자동 환불 가능» 검사를 건너뛴다(효성 CMS 도 받는다).
+   * 포인트 leg 는 MANUAL 이어도 원장으로 자동 환불한다(스펙 §6.3).
    */
   private async planIntentRefund(
     intentId: string,
     refundableCharges: Charge[],
     amount: number,
-  ): Promise<Array<{ chargeId: string; amount: number; methodType: string }>> {
+    execution: RefundExecution,
+  ): Promise<Array<{ chargeId: string; amount: number; methodType: string; execution: RefundExecution }>> {
     const refunded = await this.getActiveRefundedTotalsByCharge(refundableCharges.map((c) => c.id));
     const open = refundableCharges
       .map((charge) => ({ charge, remaining: charge.amount - (refunded.get(charge.id) ?? 0) }))
@@ -314,7 +333,7 @@ export class RefundsService {
 
     // 분할 순서 = charge 생성 순서(기존과 같다) — 마지막 leg 가 반올림 나머지를 흡수한다.
     const shares = splitRefundOverRemaining(open, amount);
-    const planned: Array<{ chargeId: string; amount: number; methodType: string }> = [];
+    const planned: Array<{ chargeId: string; amount: number; methodType: string; execution: RefundExecution }> = [];
     for (let i = 0; i < open.length; i++) {
       if (shares[i] <= 0) continue;
       const charge = open[i].charge;
@@ -322,12 +341,13 @@ export class RefundsService {
       if (!method) {
         throw new NotFoundException(refundRefusal('PAYMENT_METHOD_NOT_FOUND', `Payment method not found: ${charge.paymentMethodId}`));
       }
+      const legExecution: RefundExecution = execution === 'MANUAL' && method.type !== 'POINTS' ? 'MANUAL' : 'AUTO';
       // 효성 CMS 처럼 PG 환불 API 가 없는 수단은 provider 가 반드시 FAILED 를 낸다. 복합결제에서 그 leg 가
-      // 뒤에 있으면 앞 leg 만 나가고 멈춘다 — 아무것도 움직이기 전에 거절한다(수동 송금 경로는 호출자 몫).
-      if (!supportsAutoRefund(method.type)) {
+      // 뒤에 있으면 앞 leg 만 나가고 멈춘다 — 아무것도 움직이기 전에 거절한다. 수동 집행 leg 는 PG 를 안 부르므로 검사하지 않는다.
+      if (legExecution === 'AUTO' && !supportsAutoRefund(method.type)) {
         throw new BadRequestException(refundRefusal('REFUND_NOT_AUTOMATABLE', `Payment method ${method.type} cannot be refunded automatically (charge ${charge.id}); refund must be handled manually`));
       }
-      planned.push({ chargeId: charge.id, amount: shares[i], methodType: method.type });
+      planned.push({ chargeId: charge.id, amount: shares[i], methodType: method.type, execution: legExecution });
     }
 
     return [
