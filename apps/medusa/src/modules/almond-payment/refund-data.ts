@@ -32,6 +32,28 @@ export function withoutExternalRefund(data: Record<string, unknown>): Record<str
   return { ...data, externalRefund: null };
 }
 
+/**
+ * 수동 환불 표식(#1016 36번 재설계 §6.3). 정산 라우트가 결제 잠금 안에서 붙이고 refundPaymentWorkflow 를 돌린다 — 금액이 같으면
+ * refundPayment 가 wallet 에 `execution: 'MANUAL'` 로 요청하고(외부 결제 몫은 PG 없이 송금 대기) 표식을 null 로 지운다.
+ * requestId 는 그 환불의 메모(`channel-cancel:<orderId>` / `partial-cancel:<requestId>`) — 누가 붙였는지 추적용이다.
+ */
+export type ManualRefundMarker = { requestId: string; amount: number };
+
+export function readManualRefund(data: Record<string, unknown> | null | undefined): ManualRefundMarker | null {
+  const v = data?.manualRefund as Partial<ManualRefundMarker> | null | undefined;
+  if (!v || typeof v !== 'object' || typeof v.requestId !== 'string' || typeof v.amount !== 'number') return null;
+  return { requestId: v.requestId, amount: v.amount };
+}
+
+export function withManualRefund(data: Record<string, unknown>, marker: ManualRefundMarker): Record<string, unknown> {
+  return { ...data, manualRefund: marker };
+}
+
+export function withoutManualRefund(data: Record<string, unknown>): Record<string, unknown> {
+  // externalRefund 와 같은 이유로 null — 병합 갱신이라 키를 빼면 남는다
+  return { ...data, manualRefund: null };
+}
+
 /** wallet `POST /v1/payment-intents/:id/refund` 응답의 환불 행(RefundResponseDto)에서 판정에 쓰는 필드. */
 export type WalletRefundRow = {
   id?: string;
@@ -39,14 +61,19 @@ export type WalletRefundRow = {
   amount?: number;
   reasonCode?: string | null;
   reasonMessage?: string | null;
+  /** FAILED 행의 분류(#1048). 분류 전 옛 행은 null — 일시로 읽는다 */
+  failureCode?: string | null;
+  retryable?: boolean | null;
 };
 export type WalletRefundVerdict =
   | { ok: true; ids: string[] }
   | {
       ok: false;
       reason: string;
-      /** 실패 판정이어도 wallet 에서 실제로 나간(또는 나가는 중인) 환불 — 장부에 안 남으니 로그가 유일한 흔적이다. */
+      /** 실패 판정이어도 wallet 에서 실제로 나간(또는 나가는 중인) 환불 — 이번엔 장부에 안 남는다. 다음 정산의 장부 맞추기(wallet 환불 목록)가 넣는다. */
       moved: Array<{ id: string; amount: number; status: string }>;
+      /** FAILED 행 중 wallet 이 영구(retryable: false)라고 한 것 — 있으면 표지 붙은 거절로 던진다 */
+      refusal?: { code: string; message: string };
     };
 
 /**
@@ -63,10 +90,15 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
     .map((r) => ({ id: typeof r.id === 'string' ? r.id : '?', amount: Number(r.amount ?? NaN), status: r.status as string }));
   const failed = rows.find((r) => r.status === 'FAILED');
   if (failed) {
+    const permanent = rows.find((r) => r.status === 'FAILED' && r.retryable === false);
     return {
       ok: false,
       reason: `wallet 환불 ${failed.id ?? '?'} 가 FAILED 입니다(reasonCode=${failed.reasonCode ?? '-'}, reasonMessage=${failed.reasonMessage ?? '-'})`,
       moved,
+      ...(permanent
+        ? // 빈 문자열 코드는 «wallet_refund_refused:» 라는 읽을 수 없는 표지가 된다 — ?? 가 아니라 || 로 대체한다
+          { refusal: { code: permanent.failureCode || 'REFUND_FAILED', message: permanent.reasonMessage ?? 'wallet 이 환불을 거절했습니다' } }
+        : {}),
     };
   }
   const unknown = rows.find((r) => r.status !== 'SUCCEEDED' && r.status !== 'PENDING');
@@ -88,3 +120,21 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
  * 이 잠금 안의 일(환불 워크플로 한 번)이 timeout 을 넘기면 잠금이 먼저 풀려 다른 태스크가 들어온다 — timeout 보다 넉넉히 짧게 둘 것.
  */
 export const paymentRefundLockKey = (paymentId: string): string => `almond-payment-refund:${paymentId}`;
+
+/**
+ * 환불 시도 표식(#1016 36번 재설계 §6.2 보강). 정산이 refundPaymentWorkflow 직전에 쓰고, 성공하면 지운다(null).
+ * 실패로 남았다면 그 시도가 wallet 에서 돈을 움직였는지 Medusa 는 모른다(응답 유실 — Medusa 는 자기 환불 행을 지운다).
+ * 다음 장부 맞추기가 장부에 없는 MEDUSA_REFUND 를 이 메모로 넣어, 부분취소가 «같은 요청의 환불»로 세게 한다 —
+ * `wallet:` 메모로 들어가면 부분취소는 같은 몫을 또 환불한다. 맞추기가 표식을 소비한다(null).
+ */
+export type RefundAttempt = { note: string; amount: number };
+
+export function readRefundAttempt(data: Record<string, unknown> | null | undefined): RefundAttempt | null {
+  const v = data?.refundAttempt as Partial<RefundAttempt> | null | undefined;
+  if (!v || typeof v !== 'object' || typeof v.note !== 'string' || typeof v.amount !== 'number') return null;
+  return { note: v.note, amount: v.amount };
+}
+
+export function withRefundAttempt(data: Record<string, unknown>, attempt: RefundAttempt): Record<string, unknown> {
+  return { ...data, refundAttempt: attempt };
+}
