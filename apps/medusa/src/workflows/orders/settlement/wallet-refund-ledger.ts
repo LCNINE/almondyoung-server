@@ -1,16 +1,21 @@
-import type { IPaymentModuleService, MedusaContainer } from '@medusajs/framework/types';
+import type { MedusaContainer } from '@medusajs/framework/types';
 import { Modules } from '@medusajs/framework/utils';
 import { refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 
-import { withExternalRefund } from '../../../modules/almond-payment/refund-data';
-import type { WalletRefundBooking } from './plan-wallet-refund-bookings';
+import {
+  paymentRefundLockKey,
+  readRefundAttempt,
+  readWalletRefundIds,
+  withExternalRefund,
+} from '../../../modules/almond-payment/refund-data';
+import { fetchWalletRefunds } from '../../../modules/almond-payment/wallet-refund-list';
+import { EXTERNAL_REFUND_NOTE_PREFIX } from '../partial-cancel/external-refund';
+import { orderPaymentIds } from './order-payments';
+import { writePaymentData } from './payment-data';
+import { planWalletRefundBookings, type WalletRefundBooking } from './plan-wallet-refund-bookings';
 
-/**
- * 런타임은 payment.data 를 갱신하지만 UpdatePaymentDTO 타입에 `data` 가 없다(기존 웹훅은 scope 가 any 라 가려졌다).
- * 타입 정의만 좁은 것이므로 이 한 자리에서만 좁힌다.
- */
-const writePaymentData = (paymentModule: IPaymentModuleService, id: string, data: Record<string, unknown>) =>
-  paymentModule.updatePayment({ id, data } as Parameters<IPaymentModuleService['updatePayment']>[0]);
+/** 환불 투영(payment-events)·부분취소와 같은 값. 맞추기는 보통 0~1건이라 그 안에 든다 */
+const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 
 /**
  * Medusa 밖에서 끝난(또는 응답을 잃은) wallet 환불 하나를 장부에 넣는다 — wallet 을 다시 부르지 않는다(ADR-0042 원칙 3).
@@ -32,5 +37,42 @@ export async function projectWalletRefund(container: MedusaContainer, paymentId:
     // Medusa 는 JSON 칸을 병합 갱신하므로 null 로 지운다. 재배달·다음 맞추기가 표식을 다시 쓴다.
     await writePaymentData(paymentModule, paymentId, { externalRefund: null });
     throw err;
+  }
+}
+
+/**
+ * 결제 하나의 장부 맞추기(#1016 36번 재설계 §6.2). 결제 잠금 안에서 부른다.
+ * wallet 환불 목록에서 장부에 없는 SUCCEEDED·PENDING 을 투영으로 넣는다 — 그래야 뒤의 «캡처 − 환불»이 이미 나간 돈을 또 내지 않는다.
+ * 남은 시도 표식은 여기서 소비한다: 그 시도가 움직인 돈은 방금 그 메모로 들어갔거나, 없었다.
+ */
+export async function reconcileWalletRefunds(container: MedusaContainer, paymentId: string): Promise<void> {
+  const paymentModule = container.resolve(Modules.PAYMENT);
+  const payment = await paymentModule.retrievePayment(paymentId, { select: ['id', 'data', 'canceled_at'], relations: ['refunds'] });
+  const data = payment.data ?? {};
+  const intentId = typeof data.intentId === 'string' ? data.intentId : null;
+  // wallet 결제가 아니거나 캡처 전에 취소된 결제 — 맞출 환불이 없다
+  if (!intentId || payment.canceled_at) return;
+  const attempt = readRefundAttempt(data);
+  const bookings = planWalletRefundBookings({
+    walletRefunds: await fetchWalletRefunds(intentId),
+    bookedWalletRefundIds: [
+      ...readWalletRefundIds(data),
+      ...(payment.refunds ?? []).flatMap((r) =>
+        r.note?.startsWith(EXTERNAL_REFUND_NOTE_PREFIX) ? [r.note.slice(EXTERNAL_REFUND_NOTE_PREFIX.length)] : [],
+      ),
+    ],
+    attempt,
+  });
+  for (const booking of bookings) await projectWalletRefund(container, paymentId, booking);
+  if (attempt) await writePaymentData(paymentModule, paymentId, { refundAttempt: null });
+}
+
+/** 주문의 결제마다 결제 잠금을 잡고 맞춘다. 부르는 쪽은 주문 잠금(orderCancelLockKey)을 쥐고 있다 */
+export async function reconcileOrderWalletRefunds(container: MedusaContainer, orderId: string): Promise<void> {
+  const locking = container.resolve(Modules.LOCKING);
+  for (const paymentId of await orderPaymentIds(container, orderId)) {
+    await locking.execute(paymentRefundLockKey(paymentId), () => reconcileWalletRefunds(container, paymentId), {
+      timeout: PAYMENT_LOCK_TIMEOUT_SECONDS,
+    });
   }
 }

@@ -21,16 +21,32 @@ export const WALLET_PORT = 39131;
 export const WALLET_BASE_URL = `http://127.0.0.1:${WALLET_PORT}`;
 
 type Intent = { id: string; amount: number; status: string; captured: number; refunded: number };
+/** 돈이 움직인(또는 송금 대기인) 환불. FAILED 는 남기지 않는다 — 실제 wallet 에서도 남은 금액을 안 줄인다 */
+export type FakeRefund = {
+  id: string;
+  intentId: string;
+  amount: number;
+  status: 'SUCCEEDED' | 'PENDING';
+  execution: 'AUTO' | 'MANUAL';
+  reasonCode?: string;
+  idempotencyKey?: string;
+  createdAt: string;
+};
+type Failed200 = { failureCode: string | null; retryable: boolean | null; message: string };
 
-/** 실제 wallet 의 환불 규칙(환불가능액 초과 거절, Idempotency-Key 재생)을 흉내내는 최소 스텁. */
+/** 실제 wallet 의 환불 규칙(환불가능액 초과 거절, Idempotency-Key 재생, #1048 의 목록·분류·수동 실행)을 흉내내는 최소 스텁. */
 export class FakeWallet {
   server?: Server;
   intents = new Map<string, Intent>();
-  refunds: Array<{ id: string; intentId: string; amount: number; idempotencyKey?: string; reasonCode?: string }> = [];
-  calls: Array<{ path: string; method: string }> = [];
+  refunds: FakeRefund[] = [];
+  calls: Array<{ path: string; method: string; body?: any }> = [];
   failNextRefund = false;
-  /** 실제 wallet 처럼 PG 거절을 200 + FAILED 환불 행으로 돌려준다(RefundsService.create 가 예외를 삼킨다). */
-  failNextRefundAs200Failed = false;
+  /** 실제 wallet 처럼 PG 거절을 200 + FAILED 환불 행으로 돌려준다(RefundsService.create 가 예외를 삼킨다). 객체면 그 분류(#1048)를 싣는다 */
+  failNextRefundAs200Failed: boolean | Failed200 = false;
+  /** wallet 의 4xx 거절 — 본문 `{ error, message, retryable }`(#1048). retryable 을 안 주면 칸이 없다(ValidationPipe 처럼) */
+  rejectNextRefundWith: { status: number; error: string; message?: string; retryable?: boolean } | null = null;
+  /** 환불은 해 놓고 응답을 잃는다(504, 본문 없음) — Medusa 는 실패로 보고 자기 환불 행을 지운다 */
+  loseNextRefundResponse = false;
   private seq = 0;
 
   async start() {
@@ -42,7 +58,7 @@ export class FakeWallet {
         const key = (req.headers['idempotency-key'] as string | undefined) ?? undefined;
         const { status, payload } = this.route(req.method ?? 'GET', new URL(req.url ?? '/', WALLET_BASE_URL).pathname, parsed, key);
         res.writeHead(status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(payload));
+        res.end(payload === null ? undefined : JSON.stringify(payload));
       });
     });
     await new Promise<void>((r) => this.server!.listen(WALLET_PORT, '127.0.0.1', r));
@@ -56,6 +72,8 @@ export class FakeWallet {
     this.calls = [];
     this.failNextRefund = false;
     this.failNextRefundAs200Failed = false;
+    this.rejectNextRefundWith = null;
+    this.loseNextRefundResponse = false;
   }
   /** 결제창 완료 = 즉시 승인 + 캡처(지연 승인 표식이 없을 때의 wallet 동작). */
   simulateCheckout(intentId: string) {
@@ -63,11 +81,26 @@ export class FakeWallet {
     i.status = 'CAPTURED';
     i.captured = i.amount;
   }
+  /** Medusa 를 거치지 않은 wallet 환불(관리자 환불 등) — 웹훅이 빠져 장부에 없는 상황을 흉내낸다 */
+  addExternalRefund(intentId: string, amount: number, reasonCode = 'ADMIN_REFUND'): FakeRefund {
+    this.intents.get(intentId)!.refunded += amount;
+    return this.pushRefund({ intentId, amount, status: 'SUCCEEDED', execution: 'AUTO', reasonCode });
+  }
   callsTo(suffix: string) {
     return this.calls.filter((c) => c.path.endsWith(suffix)).length;
   }
+  /** 환불 요청(POST …/refund)만 — 목록 조회(GET …/refunds)는 세지 않는다 */
+  refundCalls() {
+    return this.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/refund'));
+  }
+  private pushRefund(r: Omit<FakeRefund, 'id' | 'createdAt'>): FakeRefund {
+    const seq = ++this.seq;
+    const refund: FakeRefund = { ...r, id: `ref_${seq}`, createdAt: new Date(Date.UTC(2026, 9, 11) + seq * 1000).toISOString() };
+    this.refunds.push(refund);
+    return refund;
+  }
   private route(method: string, path: string, body: any, key?: string): { status: number; payload: any } {
-    this.calls.push({ path, method });
+    this.calls.push({ path, method, body });
     if (method === 'POST' && path === '/v1/payment-intents') {
       const id = `int_${++this.seq}`;
       this.intents.set(id, { id, amount: body.amount ?? 0, status: 'CREATED', captured: 0, refunded: 0 });
@@ -80,6 +113,22 @@ export class FakeWallet {
     if (method === 'GET' && !action) {
       return { status: 200, payload: { id: intent.id, status: intent.status, payableAmount: intent.amount, currency: 'KRW' } };
     }
+    if (method === 'GET' && action === '/refunds') {
+      return {
+        status: 200,
+        payload: this.refunds
+          .filter((r) => r.intentId === intent.id)
+          .map((r) => ({
+            id: r.id,
+            chargeId: `ch_${intent.id}`,
+            status: r.status,
+            amount: r.amount,
+            reasonCode: r.reasonCode ?? null,
+            execution: r.execution,
+            createdAt: r.createdAt,
+          })),
+      };
+    }
     if (action === '/finalize-approval') {
       intent.status = 'CAPTURED';
       intent.captured = intent.amount;
@@ -89,7 +138,12 @@ export class FakeWallet {
     if (action === '/cancel') return { status: 200, payload: { status: 'CANCELED' } };
     if (action === '/refund') {
       const replay = key ? this.refunds.find((r) => r.idempotencyKey === key) : undefined;
-      if (replay) return { status: 200, payload: { intentId: intent.id, refunds: [{ id: replay.id, amount: replay.amount, status: 'SUCCEEDED' }] } };
+      if (replay) return { status: 200, payload: { intentId: intent.id, refunds: [{ id: replay.id, amount: replay.amount, status: replay.status }] } };
+      if (this.rejectNextRefundWith) {
+        const { status, error, message, retryable } = this.rejectNextRefundWith;
+        this.rejectNextRefundWith = null;
+        return { status, payload: { error, message: message ?? 'injected', ...(retryable !== undefined ? { retryable } : {}) } };
+      }
       if (this.failNextRefund) {
         this.failNextRefund = false;
         return { status: 502, payload: { error: 'PG_UNAVAILABLE', message: 'injected' } };
@@ -100,23 +154,48 @@ export class FakeWallet {
         return { status: 400, payload: { error: 'VALIDATION_ERROR', message: `amount must be a positive integer: ${JSON.stringify(amount)}` } };
       }
       if (this.failNextRefundAs200Failed) {
+        const f: Failed200 =
+          this.failNextRefundAs200Failed === true
+            ? { failureCode: null, retryable: null, message: 'injected PG decline' }
+            : this.failNextRefundAs200Failed;
         this.failNextRefundAs200Failed = false;
-        const failedId = `ref_${++this.seq}`;
         return {
           status: 200,
           payload: {
             intentId: intent.id,
-            refunds: [{ id: failedId, amount, status: 'FAILED', reasonCode: body.reasonCode ?? null, reasonMessage: 'injected PG decline' }],
+            refunds: [
+              {
+                id: `ref_${++this.seq}`,
+                amount,
+                status: 'FAILED',
+                reasonCode: body.reasonCode ?? null,
+                reasonMessage: f.message,
+                failureCode: f.failureCode,
+                retryable: f.retryable,
+              },
+            ],
           },
         };
       }
       if (amount > intent.captured - intent.refunded) {
-        return { status: 400, payload: { error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: `${amount}` } };
+        return { status: 400, payload: { error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: `${amount}`, retryable: true } };
       }
       intent.refunded += amount;
-      const refund = { id: `ref_${++this.seq}`, intentId: intent.id, amount, idempotencyKey: key, reasonCode: body.reasonCode };
-      this.refunds.push(refund);
-      return { status: 200, payload: { intentId: intent.id, refunds: [{ id: refund.id, amount, status: 'SUCCEEDED' }] } };
+      // 실제 wallet 의 수동 실행은 외부 결제 몫을 PG 없이 송금 대기로 남긴다(포인트 몫 분할은 흉내내지 않는다)
+      const manual = body.execution === 'MANUAL';
+      const refund = this.pushRefund({
+        intentId: intent.id,
+        amount,
+        status: manual ? 'PENDING' : 'SUCCEEDED',
+        execution: manual ? 'MANUAL' : 'AUTO',
+        reasonCode: body.reasonCode,
+        idempotencyKey: key,
+      });
+      if (this.loseNextRefundResponse) {
+        this.loseNextRefundResponse = false;
+        return { status: 504, payload: null };
+      }
+      return { status: 200, payload: { intentId: intent.id, refunds: [{ id: refund.id, amount, status: refund.status }] } };
     }
     return { status: 404, payload: { error: 'NOT_FOUND', message: path } };
   }
