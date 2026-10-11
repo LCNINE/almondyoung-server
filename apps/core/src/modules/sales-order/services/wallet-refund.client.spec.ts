@@ -136,3 +136,42 @@ describe('WalletRefundClient — already_refunded 파싱', () => {
     expect(result.kind).toBe('in_flight');
   });
 });
+
+describe('WalletRefundClient.listRefundsByIntent — 수동 송금 여부(#1016 36번 재설계 §8.2)', () => {
+  const OLD_ENV = process.env;
+  beforeEach(() => {
+    process.env = { ...OLD_ENV, WALLET_BASE_URL: 'http://wallet', WALLET_API_KEY: 'test-key' };
+  });
+  afterEach(() => {
+    process.env = OLD_ENV;
+    jest.restoreAllMocks();
+  });
+
+  it('목록을 읽는다 — API 키, 시간 제한 신호를 건다', async () => {
+    global.fetch = mockFetch(200, [
+      { id: 'r1', chargeId: 'c1', status: 'PENDING', amount: 1000, reasonCode: null, execution: 'MANUAL', createdAt: '2026-10-12T00:00:00.000Z' },
+    ]);
+    const list = await new WalletRefundClient().listRefundsByIntent('intent-1');
+    expect(list).toEqual([{ id: 'r1', status: 'PENDING', execution: 'MANUAL', amount: 1000 }]);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('http://wallet/v1/payment-intents/intent-1/refunds');
+    expect(init.headers.Authorization).toBe('Bearer test-key');
+    expect(init.signal).toBeDefined();
+  });
+
+  it('실패 응답·네트워크 오류·설정 없음 → null(부르는 쪽이 «모름»으로 읽는다)', async () => {
+    global.fetch = mockFetch(500, { error: 'X' });
+    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
+    global.fetch = jest.fn().mockRejectedValue(new Error('timeout'));
+    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
+    process.env = { ...OLD_ENV, WALLET_BASE_URL: '', WALLET_API_KEY: '' };
+    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
+  });
+
+  it('모양이 다른 원소는 건너뛴다', async () => {
+    global.fetch = mockFetch(200, [{ id: 'r1', status: 'PENDING' }, { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 }]);
+    expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toEqual([
+      { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 },
+    ]);
+  });
+});

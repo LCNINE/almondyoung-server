@@ -4,7 +4,13 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { CancelRequestInput, ChannelCancelRequestManager, SettlementFailedFact } from './channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
-import { CancelRequestView, toCancelRequestView } from './channel-cancel-request.types';
+import type { ChannelSettlementFact } from '../services/channel-refund-status';
+import {
+  CancelRequestView,
+  readCancelRequestMetadata,
+  toCancelRequestView,
+  toSettlementView,
+} from './channel-cancel-request.types';
 
 @Injectable()
 export class ChannelCancelRequestService {
@@ -30,6 +36,22 @@ export class ChannelCancelRequestService {
     return this.db.run(async (tx) => {
       const row = await this.reader.latestFor(salesOrderId, tx);
       return row ? toCancelRequestView(row) : null;
+    });
+  }
+
+  /** 고객 환불 배지용 — 정산 칸이 있는 요청만, 최근 순 */
+  settlementFactsFor(salesOrderId: string, now: Date = new Date()): Promise<ChannelSettlementFact[]> {
+    return this.db.run(async (tx) => {
+      const rows = await this.reader.settlementRowsFor(salesOrderId, tx);
+      return rows.flatMap((row): ChannelSettlementFact[] => {
+        const settlement = readCancelRequestMetadata(row.metadata).settlement;
+        if (!settlement) return [];
+        if (row.status === 'settling') {
+          const view = toSettlementView(row, now);
+          return view ? [{ status: 'settling', mode: view.mode, phase: view.phase }] : [];
+        }
+        return [{ status: 'applied', mode: settlement.mode }];
+      });
     });
   }
 

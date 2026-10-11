@@ -27,6 +27,37 @@ export type WalletRefundOutcome =
   | { kind: 'no_intent_id' }
   | { kind: 'wallet_unavailable'; errorMessage: string };
 
+/** `GET /v1/payment-intents/:id/refunds`(PR 1) 의 원소 중 core 가 읽는 칸 */
+export interface WalletRefundListItem {
+  id: string;
+  status: WalletRefundStatus;
+  execution: 'AUTO' | 'MANUAL';
+  amount: number;
+}
+
+/** 고객 주문 목록이 wallet 을 기다리며 멈추지 않게 — 넘으면 «모름»(수동 송금은 «아직»으로 보인다) */
+const LIST_TIMEOUT_MS = 2_000;
+const REFUND_STATUSES: ReadonlySet<string> = new Set(['SUCCEEDED', 'PENDING', 'FAILED']);
+
+function isRefundStatus(v: string): v is WalletRefundStatus {
+  return REFUND_STATUSES.has(v);
+}
+
+function toListItem(value: unknown): WalletRefundListItem[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const r: Record<string, unknown> = Object.fromEntries(Object.entries(value));
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.status !== 'string' ||
+    !isRefundStatus(r.status) ||
+    (r.execution !== 'AUTO' && r.execution !== 'MANUAL') ||
+    typeof r.amount !== 'number'
+  ) {
+    return [];
+  }
+  return [{ id: r.id, status: r.status, execution: r.execution, amount: r.amount }];
+}
+
 /**
  * Core → Wallet 환불 HTTP 클라이언트.
  *
@@ -42,6 +73,28 @@ export class WalletRefundClient {
   constructor() {
     this.baseUrl = process.env.WALLET_BASE_URL;
     this.apiKey = process.env.WALLET_API_KEY;
+  }
+
+  /** 결제의 환불 목록. 실패·시간 초과·설정 없음은 null — 부르는 쪽이 «모름»으로 읽는다 */
+  async listRefundsByIntent(intentId: string): Promise<WalletRefundListItem[] | null> {
+    if (!this.baseUrl || !this.apiKey) return null;
+    try {
+      const response = await fetch(`${this.baseUrl}/v1/payment-intents/${encodeURIComponent(intentId)}/refunds`, {
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        this.logger.warn(`[WalletRefundClient] list refunds ${intentId} → ${response.status}`);
+        return null;
+      }
+      const body: unknown = await response.json();
+      return Array.isArray(body) ? body.flatMap(toListItem) : null;
+    } catch (err) {
+      this.logger.warn(
+        `[WalletRefundClient] list refunds ${intentId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   async refundByIntent(

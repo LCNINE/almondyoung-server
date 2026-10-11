@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
@@ -65,5 +65,14 @@ export class ChannelCancelRequestReader {
       .orderBy(desc(t.createdAt), desc(t.id))
       .limit(1);
     return row ?? null;
+  }
+
+  /** 새 흐름 요청 행(정산 중·끝남) — 최근 순. 정산 칸이 없는 옛 행은 부르는 쪽이 거른다 */
+  async settlementRowsFor(salesOrderId: string, tx: DbTx | DbService<typeof wmsSchema>['db']): Promise<AmendmentRow[]> {
+    return tx
+      .select()
+      .from(t)
+      .where(and(eq(t.salesOrderId, salesOrderId), isCancelRequest, inArray(t.status, ['settling', 'applied'])))
+      .orderBy(desc(t.createdAt), desc(t.id));
   }
 }

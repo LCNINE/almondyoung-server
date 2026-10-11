@@ -52,6 +52,10 @@ function makeContext(
     exercisedDigital?: boolean;
     /** 취소 요청(확정 트랜잭션)이 끝난 뒤 판매주문 — 요청 뒤 다시 읽으면 이 값이 나온다 */
     soAfterRequest?: ReturnType<typeof makeSo>;
+    /** 채널 취소 정산 사실(최근 순) */
+    settlementFacts?: Array<Record<string, unknown>>;
+    /** wallet 환불 목록. null = 실패·시간 초과 */
+    walletRefunds?: Array<Record<string, unknown>> | null;
   } = {},
 ) {
   const so = options.so ?? makeSo();
@@ -154,9 +158,13 @@ function makeContext(
 
   const walletClientMock: Partial<WalletRefundClient> = {
     refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
+    listRefundsByIntent: jest
+      .fn()
+      .mockResolvedValue(options.walletRefunds === undefined ? [] : options.walletRefunds),
   };
 
   const cancelRequestsMock = {
+    settlementFactsFor: jest.fn().mockResolvedValue(options.settlementFacts ?? []),
     request: jest.fn().mockImplementation(() => {
       currentSo = options.soAfterRequest ?? currentSo;
       return Promise.resolve({
@@ -393,7 +401,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
-        { latestFor: jest.fn().mockResolvedValue(null) } as any,
+        { latestFor: jest.fn().mockResolvedValue(null), settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
       );
       return { service, dbMock };
     }
@@ -419,6 +427,65 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('getActionsByChannelOrder', () => {
+    describe('채널 취소 정산(#1016 36번 재설계 §8.2)', () => {
+      const cancelled = () => makeSo({ status: 'cancelled' });
+
+      it('정산 중 → refundStatus·refundSummary.status 모두 pending', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('pending');
+        expect(r.refundSummary?.status).toBe('pending');
+      });
+
+      it('지연 → delayed, 안내 문장은 null(스토어프론트 i18n 이 정본 — PR 4 넘길 것 4)', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'refused' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('delayed');
+        expect(r.refundSummary).toMatchObject({ status: 'delayed', expectedProcessingMessage: null });
+      });
+
+      it('수동으로 끝남 + wallet 송금 대기 → transfer_pending', async () => {
+        const { service, walletClientMock } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'manual' }],
+          walletRefunds: [{ id: 'r1', status: 'PENDING', execution: 'MANUAL', amount: 50000 }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('transfer_pending');
+        expect(r.refundSummary).toMatchObject({ status: 'transfer_pending', expectedProcessingMessage: null });
+        expect(walletClientMock.listRefundsByIntent).toHaveBeenCalledWith(WALLET_INTENT_ID);
+      });
+
+      it('wallet 실패·시간 초과 → transfer_pending(«완료»라고 하지 않는다)', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'manual' }], walletRefunds: null });
+        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('transfer_pending');
+      });
+
+      it('수동 송금 끝 → 기존 도출(수집된 환불이면 succeeded)', async () => {
+        const { service } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'manual' }],
+          walletRefunds: [{ id: 'r1', status: 'SUCCEEDED', execution: 'MANUAL', amount: 50000 }],
+          refundLinks: [{ relationName: 'order_lifecycle_refund_collected', metadata: { amount: 50000 }, createdAt: new Date() }],
+        });
+        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('succeeded');
+      });
+
+      it('자동 정산 주문은 wallet 을 부르지 않는다 — 목록 배치가 wallet 에 기대지 않게', async () => {
+        const { service, walletClientMock } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'auto' }] });
+        await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(walletClientMock.listRefundsByIntent).not.toHaveBeenCalled();
+      });
+
+      it('운영자 부분취소 정산(판매주문은 살아 있음)에도 같은 값을 둘 다 싣는다(PR 4 넘길 것 3)', async () => {
+        const { service } = makeContext({ settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.orderStatus).toBe('confirmed');
+        expect(r.refundStatus).toBe('pending');
+        expect(r.refundSummary?.status).toBe('pending');
+      });
+    });
+
     it('열린 취소 요청 — 취소 버튼 없이 cancel_requested, cancelRequestStatus=requested', async () => {
       const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'requested' } });
       const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
