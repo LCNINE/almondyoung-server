@@ -38,6 +38,8 @@ describeIfDb('요청 vs 관문 — 같은 박스 행 잠금으로 직렬화 (DB 
         .where(eq(wmsTables.salesOrderLines.id, o.lineId));
       const fo = await f.seedFo(tx, w, o);
       const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
+      // planned 박스는 줄마다 확정 예약을 가진다 — 요청이 물리 취소까지 하면(PR 5) 출고 불변식 검사를 지나야 한다.
+      await f.seedConfirmedReservation(tx, w, { foId: fo.foId, foItemId: fo.foItemId, shipmentLineId: box.lineIds[0] });
       return { ...o, ...fo, ...box, world: w };
     });
     try {
@@ -77,6 +79,9 @@ describeIfDb('요청 vs 관문 — 같은 박스 행 잠금으로 직렬화 (DB 
       }
     } finally {
       // 커밋된 시드라 FK 순서대로 직접 지운다(주문 줄은 먼저).
+      await main.db
+        .delete(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.fulfillmentOrderItemId, seeded.foItemId));
       await main.db.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.shipmentId, seeded.shipmentId));
       await main.db.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, seeded.shipmentId));
       await main.db

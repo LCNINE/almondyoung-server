@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
@@ -34,6 +34,16 @@ export class ChannelCancelRequestReader {
       .where(and(eq(t.salesOrderId, salesOrderId), isCancelRequest, eq(t.status, 'requested')));
     const [row] = opts.lock ? await base.limit(1).for('update') : await base.limit(1);
     return row ?? null;
+  }
+
+  /** 정산 중인 요청(새 흐름, #1016 36번 재설계). 한 주문에 여럿일 수 있다 — 오래된 순 */
+  async findSettling(salesOrderId: string, tx: DbTx, opts: { lock?: boolean } = {}): Promise<AmendmentRow[]> {
+    const base = tx
+      .select()
+      .from(t)
+      .where(and(eq(t.salesOrderId, salesOrderId), isCancelRequest, eq(t.status, 'settling')))
+      .orderBy(asc(t.createdAt), asc(t.id));
+    return opts.lock ? base.for('update') : base;
   }
 
   /** 사실의 requestId 는 밖에서 온 값이다 — uuid 가 아니면 조회하지 않는다(uuid 캐스트 오류로 DLQ 에 가지 않게). */

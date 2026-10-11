@@ -50,9 +50,12 @@ function makeContext(
     refundLinks?: Array<{ relationName: string; metadata: Record<string, unknown>; createdAt: Date }>;
     /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
     exercisedDigital?: boolean;
+    /** 취소 요청(확정 트랜잭션)이 끝난 뒤 판매주문 — 요청 뒤 다시 읽으면 이 값이 나온다 */
+    soAfterRequest?: ReturnType<typeof makeSo>;
   } = {},
 ) {
   const so = options.so ?? makeSo();
+  let currentSo = so;
   const fos = (options.fos ?? []).map((fo) => ({
     directShipStatus: null,
     fulfillmentMode: null,
@@ -78,12 +81,11 @@ function makeContext(
   let transactionTail = Promise.resolve();
 
   // Each where() call gets a fresh mock object so we can distinguish:
-  //   call 0: findSoOrThrow — limit().then() → [so]
-  //   call 1+: FO / returnRequests / exchangeRequests / businessLinks
+  //   sales_orders: findSoOrThrow — limit().then() → [currentSo] (요청 뒤 다시 읽으면 soAfterRequest)
+  //   그 밖: FO / returnRequests / exchangeRequests / businessLinks
   //     - then() directly (no limit) → fos      (fulfillment order list)
   //     - limit().then()             → []        (return/exchange/businessLinks single-row lookups)
   //     - orderBy().limit().then()   → []        (businessLinks ordered lookup)
-  let whereCallIndex = 0;
   const dbMock = {
     db: {
       execute: jest
@@ -92,13 +94,19 @@ function makeContext(
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
-            const idx = whereCallIndex++;
-            const isOwnership =
-              getTableName(table as Parameters<typeof getTableName>[0]) === 'digital_asset_ownerships';
+            const tableName = getTableName(table as Parameters<typeof getTableName>[0]);
             return {
               limit: jest.fn().mockReturnValue({
                 then: jest.fn((fn: (r: unknown[]) => unknown) =>
-                  fn(isOwnership ? (options.exercisedDigital ? [{ id: 'own-1' }] : []) : idx === 0 ? [so] : []),
+                  fn(
+                    tableName === 'digital_asset_ownerships'
+                      ? options.exercisedDigital
+                        ? [{ id: 'own-1' }]
+                        : []
+                      : tableName === 'sales_orders'
+                        ? [currentSo]
+                        : [],
+                  ),
                 ),
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
@@ -149,15 +157,20 @@ function makeContext(
   };
 
   const cancelRequestsMock = {
-    request: jest.fn().mockResolvedValue({
-      id: 'req-1',
-      status: 'requested',
-      scope: 'full',
-      stage: null,
-      convertedFromFull: false,
-      requestedAt: '2026-10-07T00:00:00.000Z',
-      rejection: null,
-      outcome: null,
+    request: jest.fn().mockImplementation(() => {
+      currentSo = options.soAfterRequest ?? currentSo;
+      return Promise.resolve({
+        id: 'req-1',
+        status: 'settling',
+        scope: 'full',
+        stage: null,
+        convertedFromFull: false,
+        requestedAt: '2026-10-07T00:00:00.000Z',
+        rejection: null,
+        outcome: null,
+        settlement: null,
+        refundMode: 'auto',
+      });
     }),
     findBySourceKey: jest.fn().mockResolvedValue(options.replayView ?? null),
     latestFor: jest.fn().mockResolvedValue(options.openRequestView ?? null),
@@ -264,7 +277,7 @@ describe('StoreSalesOrdersService', () => {
       expect(r.orderStatus).toBe('confirmed');
     });
 
-    it('고객 취소는 요청을 기록하고 core 취소·Wallet 을 부르지 않는다 (ADR-0042 원칙 1)', async () => {
+    it('고객 취소는 요청 하나로 끝난다 — 이 서비스는 core 취소·Wallet 을 직접 부르지 않는다(확정은 요청 안에서)', async () => {
       const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeContext();
       const context = { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
       await service.cancelRequestByChannelOrder(
@@ -282,6 +295,18 @@ describe('StoreSalesOrdersService', () => {
       });
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('응답은 확정 «뒤»의 판매주문으로 만든다 — 바로 «취소됨»(PR 4 넘길 것 1)', async () => {
+      const { service } = makeContext({ soAfterRequest: makeSo({ status: 'cancelled' }) });
+      const r = await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] },
+      );
+      expect(r.orderStatus).toBe('cancelled');
+      expect(r.cancelRequestStatus).toBeUndefined();
     });
 
     it('같은 키 재요청은 가드보다 먼저 지금 뷰를 돌려준다 — 이미 취소된 뒤여도 400 이 아니다', async () => {

@@ -41,9 +41,10 @@ export interface CancelRequestInput {
 const OPEN_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
 
 /**
- * 채널 주문 취소 요청 (#1016 35번, ADR-0042 원칙 2). core 는 문지기다 — 판정하고, 요청을 기록해 출고를 보류한 뒤
- * `CancelChannelOrder` 를 낸다. 확정은 수집(`ChannelCancelSettler`), 거절은 `ChannelOrderCancelRejected` 로 받는다.
- * 환불은 채널이 한다 — 여기는 wallet 을 부르지 않는다.
+ * 채널 주문 취소 요청 (#1016 35번, ADR-0044). core 는 요청 순간 «물리 취소»를 확정한다 — 출고를 막을 수 있으면 박스·출고지시·예약을 그 자리에서
+ * 취소하고, 요청 행을 정산 중(settling)으로 남긴 뒤 `CancelChannelOrder` 를 낸다. 돈의 정산은 채널이 하고(사실·수집으로 돌아온다),
+ * 막히면 리컨실러·운영자가 다시 부른다. 여기는 wallet 을 부르지 않는다.
+ * 옛 requested 행(PR 5 전)은 옛 규칙(보류·다시 보내기·접기·수집 때 적용)으로 끝까지 돈다 — findOpen 이 그 행만 본다.
  */
 @Injectable()
 export class ChannelCancelRequestManager {
@@ -118,6 +119,27 @@ export class ChannelCancelRequestManager {
 
       const id = randomUUID();
       const requestedAt = new Date();
+      const at = requestedAt.toISOString();
+
+      // 확정(스펙 §7.3, ADR-0044) — 계획이 받은 범위를 지금 적용한다. 거절이면 던져 요청 전체가 롤백된다(행·명령 없음).
+      // 같은 취소가 수집으로 다시 와도(`OrderCancelled`) cancel() 은 이미 전체 취소된 주문에 아무것도 하지 않는다.
+      await this.salesOrders.cancel(
+        so.id,
+        {
+          ...(scope === 'partial'
+            ? {
+                lines: plan.lines.map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity })),
+              }
+            : {}),
+          cancelledBy: cancelledByOf(input.requester),
+          reasonCode: input.reasonCode ?? CHANNEL_CANCEL_REQUEST_REASON,
+          ...(input.reasonDetail ? { reasonDetail: input.reasonDetail } : {}),
+          occurredAt: at,
+          metadata: { sourceEventId: `cancel-request:${id}` },
+        },
+        trx,
+      );
+
       const command: CancelChannelOrderPayload = {
         requestId: id,
         salesChannel: so.salesChannel,
@@ -125,9 +147,10 @@ export class ChannelCancelRequestManager {
         scope,
         ...(scope === 'partial' ? { lines: channelLines } : {}),
         ...(input.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: input.alreadyRefundedAmount } : {}),
+        refundMode: 'auto',
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
-        requestedAt: requestedAt.toISOString(),
+        requestedAt: at,
       };
       const metadata: CancelRequestMetadata = {
         salesChannel: so.salesChannel,
@@ -138,8 +161,10 @@ export class ChannelCancelRequestManager {
           requestedBy: requesterLabel(input.requester),
           sourceKey: input.sourceKey,
           ...(convertedFromFull ? { convertedFromFull: true } : {}),
+          appliedAt: at,
           command,
         },
+        settlement: { state: 'in_progress', mode: 'auto', since: at },
       };
       const [row] = await trx
         .insert(wmsTables.salesOrderAmendments)
@@ -152,13 +177,15 @@ export class ChannelCancelRequestManager {
           deltas: lines,
           metadata,
           origin: 'operator',
-          status: 'requested',
+          status: 'settling',
           occurredAt: requestedAt,
+          // 확정 시각의 정본(D13) — 판정 SQL·뷰가 이 칸으로 30분·3영업일을 잰다
+          createdAt: requestedAt,
         })
         .returning();
       await this.enqueue(command, `cancel-request:${id}`, trx);
-      this.logger.log(`[CancelRequest] ${id} ${scope} so=${so.id} by=${metadata.request.requestedBy}`);
-      return toCancelRequestView(row);
+      this.logger.log(`[CancelRequest] ${id} ${scope} confirmed so=${so.id} by=${metadata.request.requestedBy}`);
+      return toCancelRequestView(row, requestedAt);
     }, tx);
   }
 
@@ -306,5 +333,17 @@ function requesterLabel(requester: CancelRequester): string {
       return `customer:${requester.customerId}`;
     case 'wallet-refund-approval':
       return `wallet-refund-approval:${requester.intentId}`;
+  }
+}
+
+/** 취소 기록의 cancelled_by — 누가 취소를 확정했나 */
+function cancelledByOf(requester: CancelRequester): string {
+  switch (requester.kind) {
+    case 'operator':
+      return 'admin';
+    case 'customer':
+      return 'customer';
+    case 'wallet-refund-approval':
+      return 'wallet';
   }
 }

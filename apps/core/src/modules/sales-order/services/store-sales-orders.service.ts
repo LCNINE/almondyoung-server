@@ -754,7 +754,7 @@ export class StoreSalesOrdersService {
   ): Promise<StoreOrderActionsResponseDto> {
     if (fulfillmentCommandContext) {
       const replay = await this.cancelRequests.findBySourceKey(so.id, fulfillmentCommandContext.idempotencyKey);
-      if (replay) return this.buildActionsView(so);
+      if (replay) return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
     }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
@@ -784,7 +784,8 @@ export class StoreSalesOrdersService {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
     });
-    return this.buildActionsView(so);
+    // 확정 트랜잭션이 판매주문을 취소했다 — 요청 전에 읽은 so 로 만들면 «취소 요청됨»으로 한 번 더 말한다(PR 4 넘길 것 1)
+    return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
   }
 
   /**
