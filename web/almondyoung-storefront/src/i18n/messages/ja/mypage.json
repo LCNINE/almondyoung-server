@@ -706,14 +706,18 @@
         "pending": "営業日3〜5日以内に返金が完了します。",
         "manual_pending": "担当者確認後に返金が処理されます。お問い合わせはカスタマーサポートへご連絡ください。",
         "succeeded": "返金が完了しました。",
-        "failed": "返金処理中に問題が発生しました。カスタマーサポートへお問い合わせください。"
+        "failed": "返金処理中に問題が発生しました。カスタマーサポートへお問い合わせください。",
+        "delayed": "3営業日以内に処理いたします。",
+        "transfer_pending": "ご登録の口座へ送金する予定です。"
       },
       "statusLabels": {
         "none": "",
         "pending": "返金処理中",
         "manual_pending": "確認待ち",
         "succeeded": "返金完了",
-        "failed": "返金確認が必要"
+        "failed": "返金確認が必要",
+        "delayed": "返金が遅れています",
+        "transfer_pending": "返金手続き中"
       }
     },
     "cashReceipt": {

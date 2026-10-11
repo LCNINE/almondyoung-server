@@ -7,6 +7,9 @@ describe("cancelOutcomeOf", () => {
     [{ orderStatus: "confirmed", cancelRequestStatus: "rejected" as const }, "rejected"],
     [{ orderStatus: "confirmed", cancelRequestStatus: "requested" as const }, "pending"],
     [{ orderStatus: "confirmed" }, "pending"],
+    // PR 5 의 core 가 새 값을 실어도 거절로 읽지 않고, 취소된 주문은 취소로 읽는다(#1016 36번 PR 4 판정 2)
+    [{ orderStatus: "confirmed", cancelRequestStatus: "settling" }, "pending"],
+    [{ orderStatus: "cancelled", cancelRequestStatus: "settling" }, "cancelled"],
   ])("%o → %s", (actions, outcome) => expect(cancelOutcomeOf(actions)).toBe(outcome))
 })
 
