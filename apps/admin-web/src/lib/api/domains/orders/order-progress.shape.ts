@@ -3,6 +3,13 @@
 // 정체 보드 응답 정형·표기 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 전부 여기서 한다.
 // 서버 원형: apps/core/src/modules/fulfillment/order-progress/order-progress.controller.ts
 
+import { formatDwell } from '../../../utils/format-dwell';
+import { toSettlementView } from './cancel-request.shape';
+import type { SettlementView } from './cancel-request.shape';
+
+// cancel-request.shape 와 순환하지 않게 formatDwell 은 utils 로 뺐다. 기존 호출부를 위해 다시 내보낸다.
+export { formatDwell };
+
 export type BoardStageKey =
   | 'collect'
   | 'accept'
@@ -65,6 +72,9 @@ export interface ProgressItem {
   stageEnteredAt: string;
   stuck: boolean;
   gaveUp?: GaveUpMark[];
+  /** 정산 중 요청의 정산 정보(#1016 36번 재설계). 옛 core 응답엔 없다 → null */
+  settlement: SettlementView | null;
+  walletIntentId: string | null;
 }
 export interface ProgressPage {
   items: ProgressItem[];
@@ -95,24 +105,19 @@ export function toProgressPage(body: unknown): ProgressPage {
   if (!isRecord(v) || !Array.isArray(v.items))
     return { items: [], nextCursor: null };
   return {
-    items: v.items as ProgressItem[],
+    items: v.items.map((item) => {
+      const row = item as ProgressItem & { settlement?: unknown; walletIntentId?: unknown };
+      return {
+        ...row,
+        settlement: toSettlementView(row.settlement),
+        walletIntentId: typeof row.walletIntentId === 'string' ? row.walletIntentId : null,
+      };
+    }),
     nextCursor: typeof v.nextCursor === 'string' ? v.nextCursor : null,
   };
 }
 
 const MIN = 60_000;
-const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
-
-export function formatDwell(ms: number): string {
-  if (ms >= DAY) return `${Math.floor(ms / DAY)}일`;
-  if (ms >= HOUR) {
-    const h = Math.floor(ms / HOUR);
-    const m = Math.floor((ms % HOUR) / MIN);
-    return m ? `${h}시간 ${m}분` : `${h}시간`;
-  }
-  return `${Math.floor(ms / MIN)}분`;
-}
 
 /** 판정이 멈췄는지(스펙 §8.1). null(판정 전)도 stale — «갇힘 0»을 초록불로 보이지 않게. */
 export function freshness(
@@ -160,6 +165,9 @@ export function cellCount(
 const STATE_LABELS: Record<string, string> = {
   cancel_requested: '취소 요청 미반영',
   cancel_edited: '수정됨 · 환불 미완',
+  settle_in_progress: '환불 처리 중',
+  settle_delayed: '환불 지연',
+  settle_refused: '환불 거절',
   no_backlog: '출고 대기열 미적재',
   pending: '대기',
   processing: '처리 중',
