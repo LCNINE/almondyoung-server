@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsSchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { CancelRequestInput, ChannelCancelRequestManager, SettlementFailedFact } from './channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import { CancelRequestView, toCancelRequestView } from './channel-cancel-request.types';
@@ -59,5 +59,17 @@ export class ChannelCancelRequestService {
 
   withdraw(salesOrderId: string, operatorId: string | null): Promise<CancelRequestView> {
     return this.manager.withdraw(salesOrderId, operatorId);
+  }
+
+  settlementFingerprint(salesOrderId: string, tx: DbTx): Promise<string> {
+    return this.manager.settlementFingerprint(salesOrderId, tx);
+  }
+
+  hasSettlementToReissue(salesOrderId: string, now: Date, tx: DbTx): Promise<boolean> {
+    return this.manager.hasSettlementToReissue(salesOrderId, now, tx);
+  }
+
+  reissueSettlements(salesOrderId: string, now: Date, tx: DbTx): Promise<number> {
+    return this.manager.reissueSettlements(salesOrderId, now, tx);
   }
 }

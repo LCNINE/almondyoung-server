@@ -1,6 +1,7 @@
 import {
   CancelRequestStatus,
   PHASE_RANK,
+  isReissuable,
   readCancelRequestLines,
   readCancelRequestMetadata,
   settlementPhase,
@@ -138,5 +139,16 @@ describe('정산 상태(#1016 36번 재설계 §5.1)', () => {
   it('나쁜 순서: 거절 < 지연 < 정산 중', () => {
     expect(PHASE_RANK.refused).toBeLessThan(PHASE_RANK.delayed);
     expect(PHASE_RANK.delayed).toBeLessThan(PHASE_RANK.in_progress);
+  });
+});
+
+describe('isReissuable — 리컨실러가 다시 낼 정산', () => {
+  const since = '2026-10-12T01:00:00.000Z';
+  it('정산 중이고 시작한 지 1분이 지났으면 다시 낸다', () => {
+    expect(isReissuable({ state: 'in_progress', mode: 'auto', since }, new Date('2026-10-12T01:01:00.000Z'))).toBe(true);
+    expect(isReissuable({ state: 'in_progress', mode: 'auto', since }, new Date('2026-10-12T01:00:59.999Z'))).toBe(false);
+  });
+  it('거절은 다시 내지 않는다 — 운영자가 고른다', () => {
+    expect(isReissuable({ state: 'refused', mode: 'auto', since }, new Date('2026-10-13T00:00:00.000Z'))).toBe(false);
   });
 });

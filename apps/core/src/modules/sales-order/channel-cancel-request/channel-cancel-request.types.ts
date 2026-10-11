@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
-import { SETTLE_DELAYED_AFTER_MS, settlementDeadline } from '../../fulfillment/order-progress/order-progress.thresholds';
+import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS, settlementDeadline } from '../../fulfillment/order-progress/order-progress.thresholds';
 
 /** 요청 행의 reason_code — 이 값으로 변경 기록 안의 취소 요청을 가린다. */
 export const CHANNEL_CANCEL_REQUEST_REASON = 'CHANNEL_CANCEL_REQUEST';
@@ -90,6 +90,11 @@ export const PHASE_RANK: Record<SettlementPhase, number> = { refused: 0, delayed
 export function settlementPhase(settlement: Pick<Settlement, 'state'>, confirmedAt: Date, now: Date): SettlementPhase {
   if (settlement.state === 'refused') return 'refused';
   return now.getTime() - confirmedAt.getTime() > SETTLE_DELAYED_AFTER_MS ? 'delayed' : 'in_progress';
+}
+
+/** 리컨실러 36번이 다시 낼 정산 — 정산 중이고, 막 (다시) 시작한 지 SETTLEMENT_REISSUE_GRACE_MS 가 지났다. 거절은 운영자가 고른다 */
+export function isReissuable(settlement: Settlement, now: Date): boolean {
+  return settlement.state === 'in_progress' && now.getTime() - Date.parse(settlement.since) >= SETTLEMENT_REISSUE_GRACE_MS;
 }
 
 export interface SettlementView {

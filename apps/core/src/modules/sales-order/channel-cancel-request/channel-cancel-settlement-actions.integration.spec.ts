@@ -153,4 +153,28 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
       expect(so?.cancelRequest).toMatchObject({ id, status: 'settling', settlement: { phase: 'refused', lastFailure: { message: '거절' } } });
     });
   });
+
+  it('리컨실러 재발행 — 1분 안엔 안 내고, 지나면 같은 requestId·방식으로 하나 더. 거절은 안 낸다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
+      const since = Date.parse(((await rowOf(tx, view.id)).metadata as { settlement: { since: string } }).settlement.since);
+      expect(await w.manager.hasSettlementToReissue(seed.salesOrderId, new Date(since + 30_000), tx)).toBe(false);
+      const later = new Date(since + 61_000);
+      expect(await w.manager.hasSettlementToReissue(seed.salesOrderId, later, tx)).toBe(true);
+      expect(await w.manager.reissueSettlements(seed.salesOrderId, later, tx)).toBe(1);
+      const commands = await commandsOf(tx, seed.externalOrderId);
+      expect(commands).toHaveLength(2);
+      expect(commands[1].payload.payload).toMatchObject({ requestId: view.id, refundMode: 'auto' });
+
+      const fp = await w.manager.settlementFingerprint(seed.salesOrderId, tx);
+      await w.manager.recordSettlementFailure(
+        { requestId: view.id, retryable: false, failureCode: 'wallet_refund_refused:X', message: '거절', at: new Date(since + 62_000).toISOString() },
+        tx,
+      );
+      expect(await w.manager.hasSettlementToReissue(seed.salesOrderId, new Date(since + 3_600_000), tx)).toBe(false);
+      expect(await w.manager.settlementFingerprint(seed.salesOrderId, tx)).not.toBe(fp);
+    });
+  });
 });

@@ -22,6 +22,7 @@ import {
   CancelRequestMetadata,
   CancelRequestView,
   CancelRequester,
+  isReissuable,
   readCancelRequestMetadata,
   settlementPhase,
   toCancelRequestView,
@@ -304,6 +305,50 @@ export class ChannelCancelRequestManager {
       await this.write(row.id, 'settling', next, trx);
       this.logger.log(`[CancelRequest] ${row.id} settlement restarted (${kind}, ${mode})`);
       return toCancelRequestView({ ...row, metadata: next }, now);
+    }, tx);
+  }
+
+  /** 리컨실러 36번의 지문 — 다시 낼 수 있는 정산(거절 아님)의 id·방식·시작 시각. 운영자 조치가 since 를 바꾸면 리셋된다(판정 4) */
+  async settlementFingerprint(salesOrderId: string, tx?: DbTx): Promise<string> {
+    return this.db.run(async (trx) => {
+      const rows = await this.reader.findSettling(salesOrderId, trx);
+      return rows
+        .flatMap((row) => {
+          const s = readCancelRequestMetadata(row.metadata).settlement;
+          return s && s.state === 'in_progress' ? [`${row.id}:${s.mode}:${s.since}`] : [];
+        })
+        .join(',');
+    }, tx);
+  }
+
+  async hasSettlementToReissue(salesOrderId: string, now: Date, tx?: DbTx): Promise<boolean> {
+    return this.db.run(async (trx) => {
+      const rows = await this.reader.findSettling(salesOrderId, trx);
+      return rows.some((row) => {
+        const s = readCancelRequestMetadata(row.metadata).settlement;
+        return s !== undefined && isReissuable(s, now);
+      });
+    }, tx);
+  }
+
+  /** 같은 requestId·같은 방식으로 명령을 다시 낸다(멱등 — 스펙 §6.1·§10). since 는 그대로 — 시도 횟수는 리컨실러 상태가 센다(스펙 §7.3) */
+  async reissueSettlements(salesOrderId: string, now: Date, tx?: DbTx): Promise<number> {
+    return this.db.run(async (trx) => {
+      let count = 0;
+      for (const row of await this.reader.findSettling(salesOrderId, trx, { lock: true })) {
+        const meta = readCancelRequestMetadata(row.metadata);
+        const settlement = meta.settlement;
+        if (!settlement || !isReissuable(settlement, now)) continue;
+        await this.enqueue(
+          { ...meta.request.command, refundMode: settlement.mode },
+          `cancel-request:${row.id}:reconcile:${now.getTime()}`,
+          trx,
+        );
+        // updated_at 을 밀어 투영이 다시 판정하게 한다
+        await this.write(row.id, 'settling', meta, trx);
+        count++;
+      }
+      return count;
     }, tx);
   }
 
