@@ -133,7 +133,9 @@ export class RefundResponseDto {
   @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({ description: '수동 완료 처리 가능 여부 (무통장 환불만 true)' })
+  @ApiProperty({
+    description: '수동 완료 처리 가능 여부 (무통장 PENDING 또는 수동 실행(MANUAL) PENDING 행 — 관리자 상세에서만 계산)',
+  })
   manualConfirmable: boolean;
 
   @ApiProperty({

@@ -229,6 +229,16 @@ describe('RefundsService', () => {
       expect(provider.refund).not.toHaveBeenCalled();
     });
 
+    it('MANUAL 은 포인트 결제분에 거절 — 원장 환불(REDEEM_CANCEL) 없이 완료 처리되면 고객이 포인트를 못 받는다', async () => {
+      const { service, provider, insertCalls } = makeContext({ method: makeMethod('POINTS') });
+
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' })).rejects.toThrow(
+        '포인트 결제분은 수동 실행할 수 없다',
+      );
+      expect(provider.refund).not.toHaveBeenCalled();
+      expect(insertCalls).toEqual([]);
+    });
+
     it('MANUAL 도 검증은 같다 — 남은 금액을 넘으면 400', async () => {
       const { service, provider } = makeContext({ priorRefundedAmount: 8000 });
 

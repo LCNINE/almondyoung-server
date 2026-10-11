@@ -87,6 +87,11 @@ export class RefundsService {
         refundRefusal('PAYMENT_METHOD_NOT_FOUND', `Payment method not found: ${charge.paymentMethodId}`),
       );
     }
+    // 내부 불변식 — 포인트 leg 는 항상 AUTO(원장 REDEEM_CANCEL). MANUAL 로 만들면 confirmManual 이
+    // 원장 환불 없이 SUCCEEDED 로 닫아 고객이 포인트를 돌려받지 못한다. 클라이언트 거절이 아니라 500.
+    if (execution === 'MANUAL' && method.type === 'POINTS') {
+      throw new Error(`포인트 결제분은 수동 실행할 수 없다 — 포인트는 원장으로 자동 환불한다 (charge ${charge.id})`);
+    }
     const userId = await this.getIntentUserId(charge.intentId);
     if (!userId) {
       throw new NotFoundException(refundRefusal('INTENT_NOT_FOUND', `Intent not found for charge: ${charge.id}`));
