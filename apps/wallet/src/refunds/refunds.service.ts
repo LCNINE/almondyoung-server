@@ -12,6 +12,7 @@ import { DEFAULT_PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor } from 
 import { GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
 import { CreateRefundDto } from './dto';
 import { splitRefundOverRemaining } from './refund-plan';
+import { ledgerLegChargeId } from '../charges/ledger-leg';
 
 /**
  * 이 결제수단을 wallet 이 자동으로 환불할 수 있는가 — provider 기술자에 'refund' capability 가 있는가.
@@ -125,6 +126,7 @@ export class RefundsService {
       providerResult = await provider.refund({
         refundId: refund.id,
         chargeId: charge.id,
+        authorizeChargeId: ledgerLegChargeId(charge),
         intentId: charge.intentId,
         userId,
         amount: dto.amount,

@@ -11,8 +11,27 @@ const PM_ID = 'pm-001';
 const REFUND_ID = 'refund-001';
 const USER_ID = 'user-001';
 
-function makeCharge(overrides: Partial<{ id: string; status: string; amount: number; paymentMethodId: string }> = {}) {
-  return { id: CHARGE_ID, intentId: INTENT_ID, paymentMethodId: PM_ID, status: 'SUCCEEDED', amount: 10000, currency: 'KRW', ...overrides };
+function makeCharge(
+  overrides: Partial<{
+    id: string;
+    status: string;
+    amount: number;
+    paymentMethodId: string;
+    operation: 'AUTHORIZE' | 'CAPTURE';
+    requestPayload: Record<string, unknown> | null;
+  }> = {},
+) {
+  return {
+    id: CHARGE_ID,
+    intentId: INTENT_ID,
+    paymentMethodId: PM_ID,
+    status: 'SUCCEEDED',
+    amount: 10000,
+    currency: 'KRW',
+    operation: 'CAPTURE' as 'AUTHORIZE' | 'CAPTURE',
+    requestPayload: null as Record<string, unknown> | null,
+    ...overrides,
+  };
 }
 
 function makeMethod(type: string = 'TOSS') {
@@ -170,6 +189,34 @@ function makeContext(options: {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+
+  describe('provider 원장 키 (#1016 36번 PR 0)', () => {
+    it('확정 결제분 환불은 provider 에 승인 결제분 id 를 authorizeChargeId 로 넘긴다', async () => {
+      const { service, provider } = makeContext({
+        charge: makeCharge({ operation: 'CAPTURE', requestPayload: { intentId: INTENT_ID, authorizeChargeId: 'auth-001' } }),
+        method: makeMethod('POINTS'),
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(provider.refund).toHaveBeenCalledWith(
+        expect.objectContaining({ chargeId: CHARGE_ID, authorizeChargeId: 'auth-001' }),
+      );
+    });
+
+    it('승인 결제분 환불은 자기 id 를 넘긴다', async () => {
+      const { service, provider } = makeContext({
+        charge: makeCharge({ operation: 'AUTHORIZE', requestPayload: null }),
+        method: makeMethod('POINTS'),
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(provider.refund).toHaveBeenCalledWith(
+        expect.objectContaining({ chargeId: CHARGE_ID, authorizeChargeId: CHARGE_ID }),
+      );
+    });
+  });
 
   describe('멤버십 결제 환불 차단', () => {
     it('create: MEMBERSHIP_FEE intent 는 환불 거절 (MEMBERSHIP_REFUND_NOT_ALLOWED)', async () => {
