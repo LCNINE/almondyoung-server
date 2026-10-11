@@ -32,6 +32,28 @@ export function withoutExternalRefund(data: Record<string, unknown>): Record<str
   return { ...data, externalRefund: null };
 }
 
+/**
+ * 수동 환불 표식(#1016 36번 재설계 §6.3). 정산 라우트가 결제 잠금 안에서 붙이고 refundPaymentWorkflow 를 돌린다 — 금액이 같으면
+ * refundPayment 가 wallet 에 `execution: 'MANUAL'` 로 요청하고(외부 결제 몫은 PG 없이 송금 대기) 표식을 null 로 지운다.
+ * requestId 는 그 환불의 메모(`channel-cancel:<orderId>` / `partial-cancel:<requestId>`) — 누가 붙였는지 추적용이다.
+ */
+export type ManualRefundMarker = { requestId: string; amount: number };
+
+export function readManualRefund(data: Record<string, unknown> | null | undefined): ManualRefundMarker | null {
+  const v = data?.manualRefund as Partial<ManualRefundMarker> | null | undefined;
+  if (!v || typeof v !== 'object' || typeof v.requestId !== 'string' || typeof v.amount !== 'number') return null;
+  return { requestId: v.requestId, amount: v.amount };
+}
+
+export function withManualRefund(data: Record<string, unknown>, marker: ManualRefundMarker): Record<string, unknown> {
+  return { ...data, manualRefund: marker };
+}
+
+export function withoutManualRefund(data: Record<string, unknown>): Record<string, unknown> {
+  // externalRefund 와 같은 이유로 null — 병합 갱신이라 키를 빼면 남는다
+  return { ...data, manualRefund: null };
+}
+
 /** wallet `POST /v1/payment-intents/:id/refund` 응답의 환불 행(RefundResponseDto)에서 판정에 쓰는 필드. */
 export type WalletRefundRow = {
   id?: string;

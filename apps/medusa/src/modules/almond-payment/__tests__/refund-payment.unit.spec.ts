@@ -201,4 +201,43 @@ describe('almond-payment refundPayment', () => {
       global.fetch = originalFetch;
     }
   });
+
+  describe('수동 환불 표식 (#1016 36번 재설계 §6.3)', () => {
+    it('금액이 같으면 execution MANUAL 로 요청하고 표식을 null 로 지운다', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr1', 3000, 'PENDING')] });
+      const out = await svc.refundPayment({
+        data: { intentId: 'i1', manualRefund: { requestId: 'channel-cancel:o1', amount: 3000 } },
+        amount: 3000,
+        context: { idempotency_key: 'ref_m9' },
+      } as any);
+      expect(spy).toHaveBeenCalledWith(
+        '/v1/payment-intents/i1/refund',
+        expect.objectContaining({ body: JSON.stringify({ amount: 3000, reasonCode: 'MEDUSA_REFUND', execution: 'MANUAL' }) }),
+      );
+      expect(out.data).toEqual({ intentId: 'i1', manualRefund: null, walletRefundIds: ['wr1'] });
+    });
+
+    it('금액이 다르면 표식을 무시하고 자동으로 요청한다 — 다른 환불이 끼어든 것, 표식은 붙인 쪽이 지운다', async () => {
+      const svc = makeService();
+      const marker = { requestId: 'channel-cancel:o1', amount: 5000 };
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr2', 1000)] });
+      const out = await svc.refundPayment({ data: { intentId: 'i1', manualRefund: marker }, amount: 1000 } as any);
+      expect(spy).toHaveBeenCalledWith(
+        '/v1/payment-intents/i1/refund',
+        expect.objectContaining({ body: JSON.stringify({ amount: 1000, reasonCode: 'MEDUSA_REFUND' }) }),
+      );
+      expect(out.data).toEqual({ intentId: 'i1', manualRefund: marker, walletRefundIds: ['wr2'] });
+    });
+
+    it('외부 환불 표식이 먼저다 — 둘 다 있으면 wallet 을 부르지 않는다(투영 중)', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch');
+      await svc.refundPayment({
+        data: { intentId: 'i1', externalRefund: { walletRefundId: 'wr7', amount: 3000 }, manualRefund: { requestId: 'x', amount: 3000 } },
+        amount: 3000,
+      } as any);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
 });

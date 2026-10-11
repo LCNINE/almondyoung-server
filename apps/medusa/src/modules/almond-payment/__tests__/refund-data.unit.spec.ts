@@ -1,5 +1,5 @@
 import {
-  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund,
+  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund, readManualRefund, withManualRefund, withoutManualRefund,
 } from '../refund-data';
 
 describe('refund-data', () => {
@@ -56,5 +56,18 @@ describe('judgeWalletRefund — FAILED 행의 분류 (#1016 36번 재설계 §6.
   it('failureCode·reasonMessage 가 비면 대체 문구로 채운다', () => {
     const v = judgeWalletRefund([failed(false, { failureCode: null, reasonMessage: null })], 3000);
     expect(v.ok === false && v.refusal).toEqual({ code: 'REFUND_FAILED', message: 'wallet 이 환불을 거절했습니다' });
+  });
+});
+
+describe('수동 환불 표식 (#1016 36번 재설계 §6.3)', () => {
+  it('쓰고 읽고, 지울 땐 키를 빼지 않고 null 로 쓴다 — Medusa 는 JSON 칸을 병합 갱신한다', () => {
+    const data = withManualRefund({ intentId: 'i1' }, { requestId: 'channel-cancel:o1', amount: 5000 });
+    expect(readManualRefund(data)).toEqual({ requestId: 'channel-cancel:o1', amount: 5000 });
+    expect(withoutManualRefund(data)).toEqual({ intentId: 'i1', manualRefund: null });
+    expect(readManualRefund(withoutManualRefund(data))).toBeNull();
+  });
+
+  it.each([undefined, null, 'x', {}, { requestId: 'r' }, { amount: 1 }, { requestId: 1, amount: 1 }])('모양이 다르면 없는 것으로 본다(%p)', (v) => {
+    expect(readManualRefund({ manualRefund: v })).toBeNull();
   });
 });
