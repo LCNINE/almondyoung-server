@@ -135,6 +135,32 @@ medusaIntegrationTestRunner({
         expect(wallet.refunds).toHaveLength(1);
       });
 
+      it('응답을 잃은 환불 뒤의 재시도도 사전검사 거절이면 500 — 장부엔 없어도 wallet 에선 나갔다', async () => {
+        const { orderId } = await place();
+        wallet.loseNextRefundResponse = true;
+        expect((await channelCancel(orderId)).status).toBe(500);
+        expect((await ledger(orderId)).refunds).toEqual([]); // Medusa 는 자기 환불 행을 지웠다 — 흔적은 wallet 과 시도 표식뿐
+        await beginOrderEditOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+        const res = await channelCancel(orderId);
+        expect(res.status).toBe(500);
+        expect((await order(orderId)).status).not.toBe('canceled');
+        expect(wallet.refundCalls()).toHaveLength(1);
+        expect(wallet.refunds).toHaveLength(1);
+      });
+
+      it('영구 거절 뒤(시도 표식만 남고 돈은 안 나감) 주문 변경이 열리면 재시도는 그대로 400 — 표식만으로 500 루프에 빠지지 않는다', async () => {
+        const { orderId } = await place();
+        wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE', retryable: false };
+        expect((await channelCancel(orderId)).status).toBe(400);
+        expect(readRefundAttempt((await ledger(orderId)).data)).not.toBeNull();
+        await beginOrderEditOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+        const res = await channelCancel(orderId);
+        expect(res.status).toBe(400);
+        expect(res.data.type).toBe('not_allowed');
+        expect(wallet.refundCalls()).toHaveLength(1);
+        expect(wallet.refunds).toHaveLength(0);
+      });
+
       it('취소 안 된 출고가 있으면 환불 전에 400', async () => {
         const { orderId } = await place();
         const item = (await order(orderId)).items[0];

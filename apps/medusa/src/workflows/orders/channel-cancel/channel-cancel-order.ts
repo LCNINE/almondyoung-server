@@ -9,7 +9,7 @@ import { toNumber } from '../partial-cancel/amount';
 import { issuePaymentRefund } from '../settlement/issue-payment-refund';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
-import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
+import { planPaymentWalletRefundBookings, reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 
 /** 맞추기 + 환불 + 취소가 넉넉히 들어가게 잡는다 — 레디스 잠금은 timeout 이 곧 만료다 */
 const ORDER_LOCK_TIMEOUT_SECONDS = 120;
@@ -42,7 +42,15 @@ async function run(container: MedusaContainer, input: ChannelCancelInput): Promi
     // channel-adapter 는 그것을 «취소 불가»로 읽는다(환불만 되고 출고). 이 경로로 돈이 나갔으면 500 으로 바꿔 재시도시킨다.
     // 이미 취소됨(INVALID_DATA)은 예외 — 수렴한 끝이라 channel-adapter 가 그 문장을 성공으로 읽는다
     const notAllowed = MedusaError.isMedusaError(error) && error.type === MedusaError.Types.NOT_ALLOWED;
-    if (notAllowed && (await refundedHere(container, input.orderId)) > 0) {
+    if (!notAllowed) throw error;
+    let moved: boolean;
+    try {
+      moved = await moneyMovedHere(container, input.orderId);
+    } catch (checkError) {
+      // 판정을 못 하면 400 으로 닫지 않는다 — 돈이 나갔을 수 있다. 일시 실패(500)로 재시도시킨다
+      throw new Error(`채널 취소가 중단됐습니다 — 환불 여부를 확인하지 못했습니다, 다시 시도합니다(${input.orderId}): ${describeError(checkError)}`);
+    }
+    if (moved) {
       throw new Error(`채널 취소가 중단됐습니다 — 환불은 이미 나갔습니다, 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
     }
     throw error;
@@ -90,6 +98,20 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
   if ((order.fulfillments ?? []).some((f) => f !== null && !f.canceled_at)) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, 'All fulfillments must be canceled before canceling an order');
   }
+}
+
+/**
+ * 이 경로로 돈이 이미 나갔나 — 장부의 이 메모 환불, 또는 장부에 아직 없지만 맞추기가 이 메모로 넣을 wallet 환불(응답 유실·다중 결제분의
+ * 앞부분). 읽기만 한다(투영·표식 쓰기 없음, 잠금 없음). 시도 표식만으로는 판정하지 않는다 — 영구 거절도 표식을 남기므로
+ * 표식만 보면 정당한 사전검사 400 이 영원히 500 으로 돈다.
+ */
+async function moneyMovedHere(container: MedusaContainer, orderId: string): Promise<boolean> {
+  if ((await refundedHere(container, orderId)) > 0) return true;
+  for (const paymentId of await orderPaymentIds(container, orderId)) {
+    const { bookings } = await planPaymentWalletRefundBookings(container, paymentId);
+    if (bookings.some((b) => b.note === refundNote(orderId))) return true;
+  }
+  return false;
 }
 
 /** 이 경로(채널 취소)가 장부에 남긴 환불 합 — 메모로 가린다. 응답 유실분도 장부 맞추기가 같은 메모로 넣는다 */

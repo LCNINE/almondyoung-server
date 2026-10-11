@@ -7,6 +7,7 @@ import {
   readRefundAttempt,
   readWalletRefundIds,
   withExternalRefund,
+  type RefundAttempt,
 } from '../../../modules/almond-payment/refund-data';
 import { fetchWalletRefunds } from '../../../modules/almond-payment/wallet-refund-list';
 import { EXTERNAL_REFUND_NOTE_PREFIX } from '../partial-cancel/external-refund';
@@ -41,17 +42,21 @@ export async function projectWalletRefund(container: MedusaContainer, paymentId:
 }
 
 /**
- * 결제 하나의 장부 맞추기(#1016 36번 재설계 §6.2). 결제 잠금 안에서 부른다.
- * wallet 환불 목록에서 장부에 없는 SUCCEEDED·PENDING 을 투영으로 넣는다 — 그래야 뒤의 «캡처 − 환불»이 이미 나간 돈을 또 내지 않는다.
- * 남은 시도 표식은 여기서 소비한다: 그 시도가 움직인 돈은 방금 그 메모로 들어갔거나, 없었다.
+ * 결제 하나에서 장부에 없는 wallet 환불을 어떤 메모로 넣을지 «읽기만» 한다(#1016 36번 재설계 §6.2) — 투영도 표식 쓰기도 없다.
+ * 장부 맞추기와 채널 취소의 «돈이 이미 나갔나» 판정이 같은 판정을 쓴다. 응답을 잃은 환불은 Medusa 가 자기 환불 행을 지워
+ * 장부에 없고, 흔적은 wallet 목록과 시도 표식뿐이라 장부 합만으로는 못 본다.
+ * wallet 결제가 아니거나 캡처 전에 취소된 결제면 맞출 것이 없다 — 시도 표식도 건드리지 않게 attempt 를 null 로 돌려준다.
  */
-export async function reconcileWalletRefunds(container: MedusaContainer, paymentId: string): Promise<void> {
-  const paymentModule = container.resolve(Modules.PAYMENT);
-  const payment = await paymentModule.retrievePayment(paymentId, { select: ['id', 'data', 'canceled_at'], relations: ['refunds'] });
+export async function planPaymentWalletRefundBookings(
+  container: MedusaContainer,
+  paymentId: string,
+): Promise<{ bookings: WalletRefundBooking[]; attempt: RefundAttempt | null }> {
+  const payment = await container
+    .resolve(Modules.PAYMENT)
+    .retrievePayment(paymentId, { select: ['id', 'data', 'canceled_at'], relations: ['refunds'] });
   const data = payment.data ?? {};
   const intentId = typeof data.intentId === 'string' ? data.intentId : null;
-  // wallet 결제가 아니거나 캡처 전에 취소된 결제 — 맞출 환불이 없다
-  if (!intentId || payment.canceled_at) return;
+  if (!intentId || payment.canceled_at) return { bookings: [], attempt: null };
   const attempt = readRefundAttempt(data);
   const bookings = planWalletRefundBookings({
     walletRefunds: await fetchWalletRefunds(intentId),
@@ -63,8 +68,18 @@ export async function reconcileWalletRefunds(container: MedusaContainer, payment
     ],
     attempt,
   });
+  return { bookings, attempt };
+}
+
+/**
+ * 결제 하나의 장부 맞추기(#1016 36번 재설계 §6.2). 결제 잠금 안에서 부른다.
+ * wallet 환불 목록에서 장부에 없는 SUCCEEDED·PENDING 을 투영으로 넣는다 — 그래야 뒤의 «캡처 − 환불»이 이미 나간 돈을 또 내지 않는다.
+ * 남은 시도 표식은 여기서 소비한다: 그 시도가 움직인 돈은 방금 그 메모로 들어갔거나, 없었다.
+ */
+export async function reconcileWalletRefunds(container: MedusaContainer, paymentId: string): Promise<void> {
+  const { bookings, attempt } = await planPaymentWalletRefundBookings(container, paymentId);
   for (const booking of bookings) await projectWalletRefund(container, paymentId, booking);
-  if (attempt) await writePaymentData(paymentModule, paymentId, { refundAttempt: null });
+  if (attempt) await writePaymentData(container.resolve(Modules.PAYMENT), paymentId, { refundAttempt: null });
 }
 
 /** 주문의 결제마다 결제 잠금을 잡고 맞춘다. 부르는 쪽은 주문 잠금(orderCancelLockKey)을 쥐고 있다 */
