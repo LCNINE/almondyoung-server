@@ -122,4 +122,17 @@ describeIfDb('옛 requested 행 — 거절·정체 사실과 운영자 조치 (D
       expect(view.status).toBe('rejected');
     });
   });
+
+  it('정산 실패 사실은 옛 requested 행을 바꾸지 않는다(D12 — 보류가 풀리면 안 된다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, id } = await open(tx);
+      await w.manager.recordSettlementFailure(
+        { requestId: id, retryable: false, failureCode: 'wallet_refund_refused:X', message: 'x', at: new Date().toISOString() },
+        tx,
+      );
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('requested');
+      expect(row.metadata).not.toHaveProperty('settlement');
+    });
+  });
 });

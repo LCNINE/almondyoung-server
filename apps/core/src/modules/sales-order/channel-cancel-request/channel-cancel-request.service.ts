@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
-import { CancelRequestInput, ChannelCancelRequestManager } from './channel-cancel-request.manager';
+import { CancelRequestInput, ChannelCancelRequestManager, SettlementFailedFact } from './channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import { CancelRequestView, toCancelRequestView } from './channel-cancel-request.types';
 
@@ -39,6 +39,10 @@ export class ChannelCancelRequestService {
 
   markStalled(fact: { requestId: string }): Promise<void> {
     return this.manager.markStalled(fact);
+  }
+
+  recordSettlementFailure(fact: SettlementFailedFact): Promise<void> {
+    return this.manager.recordSettlementFailure(fact);
   }
 
   resend(salesOrderId: string): Promise<CancelRequestView> {

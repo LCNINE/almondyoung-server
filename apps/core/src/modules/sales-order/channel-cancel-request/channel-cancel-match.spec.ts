@@ -1,4 +1,4 @@
-import { takeRequestedDecreases } from './channel-cancel-match';
+import { takeRequestedDecreases, takeRequestedIncreases } from './channel-cancel-match';
 import type { ChannelDelta } from '../channel-order-change/channel-order-change.types';
 
 const line = (salesOrderLineId: string, quantity: number) => ({
@@ -39,5 +39,26 @@ describe('takeRequestedDecreases (스펙 §5.4)', () => {
 
   it('요청 줄 하나라도 못 찾으면 안 맞음(일부만 맞음도 안 맞음)', () => {
     expect(takeRequestedDecreases([line('l1', 1), line('l2', 1)], [decrease('l1', 2, 1)])).toEqual({ matched: false });
+  });
+});
+
+describe('takeRequestedIncreases — 채널이 아직 안 줄인 정산 중 부분취소(D10)', () => {
+  const line = (salesOrderLineId: string, quantity: number) =>
+    ({ type: 'cancel_line', salesOrderLineId, channelOrderItemId: `ci-${salesOrderLineId}`, quantity }) as const;
+  const qc = (salesOrderLineId: string, quantityBefore: number, correctedQuantity: number) =>
+    ({ type: 'quantity_correction', salesOrderLineId, channelOrderItemId: `ci-${salesOrderLineId}`, quantityBefore, correctedQuantity }) as const;
+
+  it('요청 줄과 같은 크기의 늘어남을 먹고 나머지를 돌려준다', () => {
+    const address = { type: 'shipping_address_change', before: {}, after: {} } as never;
+    const r = takeRequestedIncreases([line('a', 1)], [qc('a', 1, 2), address]);
+    expect(r).toEqual({ matched: true, rest: [address] });
+  });
+
+  it('크기가 다르면 아무것도 먹지 않는다', () => {
+    expect(takeRequestedIncreases([line('a', 1)], [qc('a', 1, 3)])).toEqual({ matched: false });
+  });
+
+  it('줄어듦은 늘어남이 아니다', () => {
+    expect(takeRequestedIncreases([line('a', 1)], [qc('a', 2, 1)])).toEqual({ matched: false });
   });
 });

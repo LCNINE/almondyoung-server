@@ -8,6 +8,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CancelChannelOrderPayload,
+  ChannelOrderSettlementFailedPayload,
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -36,6 +37,8 @@ export interface CancelRequestInput {
   /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
   alreadyRefundedAmount?: number;
 }
+
+export type SettlementFailedFact = Pick<ChannelOrderSettlementFailedPayload, 'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'>;
 
 /** 보류가 거는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
 const OPEN_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
@@ -224,6 +227,36 @@ export class ChannelCancelRequestManager {
     }, tx);
   }
 
+  /**
+   * 정산 실패 사실(#1016 36번 재설계 §7.3). 정산 중(settling) 행만 읽는다 — 옛 requested 행은 옛 사실만(보류가 풀리면 안 된다, D12).
+   * 같은 requestId 의 사실은 순서 없이 여러 번 온다(Kafka 재시도·리컨실러 재발행): 지난 시도(since 이전)·더 이른 사실은 버린다(D2).
+   */
+  async recordSettlementFailure(fact: SettlementFailedFact, tx?: DbTx): Promise<void> {
+    await this.db.run(async (trx) => {
+      const row = await this.reader.findById(fact.requestId, trx, { lock: true });
+      if (!row || row.status !== 'settling') {
+        this.logger.log(`[CancelRequest] settlement failure ignored: ${fact.requestId} is ${row?.status ?? 'unknown'}`);
+        return;
+      }
+      const meta = readCancelRequestMetadata(row.metadata);
+      const settlement = meta.settlement;
+      if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
+      const at = Date.parse(fact.at);
+      if (at < Date.parse(settlement.since)) return;
+      if (settlement.lastFailure && at <= Date.parse(settlement.lastFailure.at)) return;
+      const next: CancelRequestMetadata = {
+        ...meta,
+        settlement: {
+          ...settlement,
+          state: fact.retryable ? 'in_progress' : 'refused',
+          lastFailure: { code: fact.failureCode, message: fact.message, retryable: fact.retryable, at: fact.at },
+        },
+      };
+      await this.write(row.id, 'settling', next, trx);
+      this.logger.warn(`[CancelRequest] ${row.id} settlement failed ${fact.failureCode} retryable=${fact.retryable}`);
+    }, tx);
+  }
+
   /** [다시 보내기] — 처음 낸 명령 그대로(같은 requestId). 채널 쪽이 멱등이다(전체: 이미 취소됨 = 성공, 부분: 단계 기록). */
   async resend(salesOrderId: string, tx?: DbTx): Promise<CancelRequestView> {
     return this.db.run(async (trx) => {
@@ -264,7 +297,7 @@ export class ChannelCancelRequestManager {
 
   private async write(
     id: string,
-    status: 'requested' | 'rejected',
+    status: 'requested' | 'rejected' | 'settling',
     metadata: CancelRequestMetadata,
     trx: DbTx,
   ): Promise<void> {
