@@ -3,7 +3,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { cancelActionOf, cancelRequestFromAmendment, cancelRequestLine } from '@/lib/api/domains/orders/cancel-request.shape';
+import {
+  cancelActionOf,
+  cancelRequestFromAmendment,
+  cancelRequestLine,
+  settlementReason,
+  settlementTiming,
+} from '@/lib/api/domains/orders/cancel-request.shape';
+import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
+import { cn } from '@/lib/utils/ui';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
@@ -117,6 +125,21 @@ const REFUND_STATUS_CONFIG: Record<
   },
   none: { label: '환불 없음', className: 'bg-gray-100 text-gray-500' },
 };
+
+/** 정산 중 채널 취소 — 경과·기한, 사유, 조치(#1016 36번 재설계 §8.1) */
+function SettlementCell({ r }: { r: OrderLineRow }) {
+  const s = r.cancelRequest?.settlement;
+  if (!s) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{settlementTiming(s, Date.now())}</span>
+      {settlementReason(s) && (
+        <span className="text-[11px] text-red-600 whitespace-normal leading-tight">{settlementReason(s)}</span>
+      )}
+      <SettlementActions salesOrderId={r.orderId} settlement={s} />
+    </div>
+  );
+}
 
 function RefundStatusBadge({ status }: { status: string }) {
   const cfg = REFUND_STATUS_CONFIG[status] ?? {
@@ -828,6 +851,13 @@ export default function OrderTable() {
                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
                   취소됨
                 </span>
+                {r.isFirstOfOrder && r.cancelRequest?.status === 'settling' && <SettlementCell r={r} />}
+                {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 결제 상세에 있다(D7) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
+                {r.isFirstOfOrder &&
+                  r.cancelRequest?.refundMode === 'manual' &&
+                  !['failed', 'manual_pending', 'succeeded', 'pending'].includes(r.refundStatus ?? '') && (
+                    <ViewPaymentButton walletIntentId={r.walletIntentId} />
+                  )}
                 {r.isFirstOfOrder && r.refundStatus && (
                   <RefundStatusBadge status={r.refundStatus} />
                 )}
@@ -877,6 +907,23 @@ export default function OrderTable() {
                       <span className="inline-flex items-center h-7 px-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-700 whitespace-nowrap">
                         {action.label}
                       </span>
+                    );
+                  }
+                  if (action.kind === 'settling') {
+                    return (
+                      <>
+                        <span
+                          className={cn(
+                            'inline-flex items-center h-7 px-2 rounded border text-xs whitespace-nowrap',
+                            action.alert
+                              ? 'border-red-200 bg-red-50 text-red-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                          )}
+                        >
+                          {action.label}
+                        </span>
+                        <SettlementCell r={r} />
+                      </>
                     );
                   }
                   const open = (e: MouseEvent) => {

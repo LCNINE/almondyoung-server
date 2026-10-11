@@ -1125,3 +1125,29 @@ export const useWithdrawCancelRequest = () => {
     },
   });
 };
+
+/** 채널 취소 정산 [다시 시도] (#1016 36번 재설계) */
+export const useRetryCancelSettlement = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { salesOrderId: string; requestId: string }) =>
+      orders.salesOrders.retryCancelSettlement(v.salesOrderId, v.requestId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
+  });
+};
+
+/** 채널 취소 정산 [계좌 송금으로 환불] */
+export const useManualRefundCancelSettlement = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { salesOrderId: string; requestId: string }) =>
+      orders.salesOrders.manualRefundCancelSettlement(v.salesOrderId, v.requestId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
+  });
+};

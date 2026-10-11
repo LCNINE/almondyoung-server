@@ -4,6 +4,7 @@ import type { RefundDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { StatusBadgeCell, AmountCell } from '@/components/table/table-cells/wallet';
 import Link from 'next/link';
+import { refundExecutionLabel } from '@/lib/api/domains/wallet/refund-execution';
 
 const columnHelper = createColumnHelper<RefundDto>();
 
@@ -34,6 +35,10 @@ export const useRefundTableColumns = () => {
       columnHelper.accessor('status', {
         header: '상태',
         cell: ({ getValue }) => <StatusBadgeCell value={getValue()} type="refund" />,
+      }),
+      columnHelper.accessor('execution', {
+        header: '방식',
+        cell: ({ getValue }) => <span className="text-sm">{refundExecutionLabel(getValue())}</span>,
       }),
       columnHelper.accessor('reasonCode', {
         header: '사유 코드',

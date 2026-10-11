@@ -144,6 +144,22 @@ export const salesOrders = {
     return response.data;
   },
 
+  // 채널 취소 정산 조치(#1016 36번 재설계) — 정산 중 요청(settling)만
+  retryCancelSettlement: async (id: string, requestId: string): Promise<CancelRequestView> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/${encodeURIComponent(requestId)}/retry`,
+      {}
+    );
+    return response.data;
+  },
+  manualRefundCancelSettlement: async (id: string, requestId: string): Promise<CancelRequestView> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/${encodeURIComponent(requestId)}/manual-refund`,
+      {}
+    );
+    return response.data;
+  },
+
   // 취소 주문 환불 재시도
   adminRetryRefund: async (id: string): Promise<{ refundStatus: string }> => {
     const response = await client.post(
