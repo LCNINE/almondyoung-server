@@ -1,15 +1,12 @@
 import { NotFoundException } from '@nestjs/common';
 import type { Refund } from '../types';
 
-// Mock the wallet module to prevent full module loading
+// Mock wallet.module to prevent EventsModule.forApp requiring KAFKA_BROKERS in test environment
 jest.mock('../wallet.module', () => ({
   AuthenticatedRequest: jest.fn(),
 }));
 
-// Mock decorators
-jest.mock('../wallet-auth.decorator', () => ({
-  WalletJwtAuth: () => () => {},
-}));
+import { PaymentIntentsController } from './payment-intents.controller';
 
 const refund = (id: string, status: Refund['status'], execution: Refund['execution']): Refund => ({
   id,
@@ -30,8 +27,6 @@ const refund = (id: string, status: Refund['status'], execution: Refund['executi
 
 describe('GET /v1/payment-intents/:id/refunds', () => {
   it('intent 의 환불을 서비스 순서대로 목록 칸으로 낸다', async () => {
-    // eslint-disable-next-line global-require
-    const { PaymentIntentsController } = require('./payment-intents.controller');
     const intents = { findByIdOrThrow: jest.fn().mockResolvedValue({ id: 'in-1' }) };
     const refunds = {
       listByIntent: jest.fn().mockResolvedValue([refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')]),
@@ -48,8 +43,6 @@ describe('GET /v1/payment-intents/:id/refunds', () => {
   });
 
   it('없는 intent 는 404 그대로, 목록을 읽지 않는다', async () => {
-    // eslint-disable-next-line global-require
-    const { PaymentIntentsController } = require('./payment-intents.controller');
     const notFound = new NotFoundException({ error: 'INTENT_NOT_FOUND', message: 'Payment intent not found: x' });
     const intents = { findByIdOrThrow: jest.fn().mockRejectedValue(notFound) };
     const refunds = { listByIntent: jest.fn() };

@@ -170,7 +170,7 @@ export class PaymentIntentsController {
   @Get(':id/refunds')
   @ApiOperation({
     summary: 'List refunds of a payment intent (API-key, server-to-server)',
-    description: '상태 무관 전부, 만든 순서. 채널 취소 정산 직전 Medusa 가 장부를 맞을 때 읽는다.',
+    description: '상태 무관 전부, 만든 순서. 채널 취소 정산 직전 Medusa 가 장부를 맞출 때 읽는다.',
   })
   async listRefunds(@Param('id') id: string): Promise<RefundListItemDto[]> {
     await this.service.findByIdOrThrow(id);
