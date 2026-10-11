@@ -1,9 +1,10 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
-import { capturePaymentWorkflow, refundPaymentWorkflow } from '@medusajs/core-flows';
+import { capturePaymentWorkflow } from '@medusajs/core-flows';
 import { classifyWalletRefund, isUnbookedMedusaRefund } from './classify-wallet-refund';
 import { describeError } from '../../../utils/describe-error';
-import { paymentRefundLockKey, readWalletRefundIds, withExternalRefund } from '../../../modules/almond-payment/refund-data';
+import { paymentRefundLockKey, readWalletRefundIds } from '../../../modules/almond-payment/refund-data';
+import { projectWalletRefund } from '../../../workflows/orders/settlement/wallet-refund-ledger';
 import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 // Process-level idempotency store (in-memory, resets on restart).
@@ -337,20 +338,7 @@ export async function handleRefundProjection(
       const decision = classifyWalletRefund(fact);
       if (decision !== 'record_external' || !walletRefundId) return;
 
-      await paymentModule.updatePayment({
-        id: payment.id,
-        data: withExternalRefund(fresh.data ?? {}, { walletRefundId, amount: refundAmount }),
-      });
-      try {
-        await refundPaymentWorkflow(scope).run({
-          input: { payment_id: payment.id, amount: refundAmount, note: `wallet:${walletRefundId}` },
-        });
-      } catch (err) {
-        // 영구 실패(캡처 없음·캡처 초과 등)면 표식이 남아 같은 금액의 다음 Medusa 환불이 wallet 을 건너뛴다.
-        // Medusa 는 JSON 컬럼을 병합 갱신하므로 null 로 지운다. 재배달이 표식을 다시 쓴다.
-        await paymentModule.updatePayment({ id: payment.id, data: { externalRefund: null } });
-        throw err;
-      }
+      await projectWalletRefund(scope, payment.id, { walletRefundId, amount: refundAmount, note: `wallet:${walletRefundId}` });
       logger.info(`[payment-events] handleRefundProjection: recorded external refund payment_id=${payment.id} walletRefundId=${walletRefundId}`);
     },
     { timeout: 30 },

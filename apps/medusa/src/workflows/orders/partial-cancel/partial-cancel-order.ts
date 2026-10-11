@@ -15,6 +15,7 @@ import {
 import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
 import { describeError } from '../../../utils/describe-error';
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
+import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import { toNumber } from './amount';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
@@ -91,7 +92,7 @@ const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
  */
 export async function partialCancelOrder(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
   const locking = container.resolve(Modules.LOCKING);
-  return locking.execute(`partial-cancel:${input.orderId}`, () => run(container, input), {
+  return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
   });
 }
@@ -403,24 +404,6 @@ function readSnapshot(data: Record<string, unknown> | null | undefined): Shippin
   const v = data?.[POLICY_SNAPSHOT_KEY] as Partial<ShippingPolicySnapshot> | null | undefined;
   if (!v || typeof v !== 'object' || !v.policy || typeof v.shippingProfileId !== 'string') return null;
   return v as ShippingPolicySnapshot;
-}
-
-/** 주문 ↔ 결제 컬렉션은 링크다(주문 버전과 무관). 결제 자체는 payment 모듈에서 읽는다. */
-async function orderPaymentIds(container: MedusaContainer, orderId: string): Promise<string[]> {
-  const query = container.resolve(ContainerRegistrationKeys.QUERY);
-  const { data } = await query.graph({ entity: 'order', fields: ['id', 'payment_collections.id'], filters: { id: orderId } });
-  // query.graph 의 링크 필드는 타입이 넓다 — 경계에서 id 배열로만 좁힌다.
-  const collectionIds = ((data[0] as { payment_collections?: Array<{ id: string } | null> } | undefined)?.payment_collections ?? [])
-    .flatMap((pc) => (pc?.id ? [pc.id] : []));
-  if (collectionIds.length === 0) return [];
-  const collections = await container.resolve(Modules.PAYMENT).listPaymentCollections(
-    { id: collectionIds },
-    { select: ['id'], relations: ['payments'] },
-  );
-  return collections
-    .flatMap((pc) => pc.payments ?? [])
-    .sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime() || a.id.localeCompare(b.id))
-    .map((p) => p.id);
 }
 
 async function productShippingProfiles(container: MedusaContainer, productIds: string[]): Promise<Map<string, string>> {

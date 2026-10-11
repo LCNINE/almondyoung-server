@@ -119,3 +119,21 @@ export function judgeWalletRefund(rows: WalletRefundRow[], requested: number): W
  * 이 잠금 안의 일(환불 워크플로 한 번)이 timeout 을 넘기면 잠금이 먼저 풀려 다른 태스크가 들어온다 — timeout 보다 넉넉히 짧게 둘 것.
  */
 export const paymentRefundLockKey = (paymentId: string): string => `almond-payment-refund:${paymentId}`;
+
+/**
+ * 환불 시도 표식(#1016 36번 재설계 §6.2 보강). 정산이 refundPaymentWorkflow 직전에 쓰고, 성공하면 지운다(null).
+ * 실패로 남았다면 그 시도가 wallet 에서 돈을 움직였는지 Medusa 는 모른다(응답 유실 — Medusa 는 자기 환불 행을 지운다).
+ * 다음 장부 맞추기가 장부에 없는 MEDUSA_REFUND 를 이 메모로 넣어, 부분취소가 «같은 요청의 환불»로 세게 한다 —
+ * `wallet:` 메모로 들어가면 부분취소는 같은 몫을 또 환불한다. 맞추기가 표식을 소비한다(null).
+ */
+export type RefundAttempt = { note: string; amount: number };
+
+export function readRefundAttempt(data: Record<string, unknown> | null | undefined): RefundAttempt | null {
+  const v = data?.refundAttempt as Partial<RefundAttempt> | null | undefined;
+  if (!v || typeof v !== 'object' || typeof v.note !== 'string' || typeof v.amount !== 'number') return null;
+  return { note: v.note, amount: v.amount };
+}
+
+export function withRefundAttempt(data: Record<string, unknown>, attempt: RefundAttempt): Record<string, unknown> {
+  return { ...data, refundAttempt: attempt };
+}

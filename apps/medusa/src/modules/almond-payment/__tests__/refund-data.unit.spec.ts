@@ -1,5 +1,5 @@
 import {
-  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund, readManualRefund, withManualRefund, withoutManualRefund,
+  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund, readManualRefund, withManualRefund, withoutManualRefund, readRefundAttempt, withRefundAttempt,
 } from '../refund-data';
 
 describe('refund-data', () => {
@@ -69,5 +69,16 @@ describe('수동 환불 표식 (#1016 36번 재설계 §6.3)', () => {
 
   it.each([undefined, null, 'x', {}, { requestId: 'r' }, { amount: 1 }, { requestId: 1, amount: 1 }])('모양이 다르면 없는 것으로 본다(%p)', (v) => {
     expect(readManualRefund({ manualRefund: v })).toBeNull();
+  });
+});
+
+describe('환불 시도 표식 (#1016 36번 재설계 §6.2 보강)', () => {
+  it('쓰고 읽는다', () => {
+    const data = withRefundAttempt({ intentId: 'i1' }, { note: 'partial-cancel:r1', amount: 30000 });
+    expect(readRefundAttempt(data)).toEqual({ note: 'partial-cancel:r1', amount: 30000 });
+  });
+
+  it.each([undefined, null, {}, { note: 'x' }, { amount: 1 }, { note: 1, amount: 1 }])('모양이 다르면 없는 것으로(%p) — 지운 표식은 null 로 남는다', (v) => {
+    expect(readRefundAttempt({ refundAttempt: v })).toBeNull();
   });
 });
