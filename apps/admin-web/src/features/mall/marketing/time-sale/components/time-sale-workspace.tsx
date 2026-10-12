@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import sanitizeHtml from 'sanitize-html';
@@ -14,7 +14,6 @@ import {
   type SaleSurface,
   type SalePlatform,
   type SalePreviewState,
-  type SaleCss,
   type SaleComponent,
 } from '@packages/domain-types/time-sale';
 import {
@@ -76,7 +75,7 @@ const RESET_STYLE_TEXT =
 const sections = {
   management: '타임세일',
   main: '메인 매대 스타일',
-  more: '더보기 매대 스타일',
+  more: '더보기 화면 스타일',
   variables: '사용자 정의 변수',
   environment: '환경설정',
 };
@@ -296,12 +295,6 @@ const optionChoices: Partial<
 // 상품 메시지 텍스트 최대 개수. 서버 검증(domain-types)의 상한과 같은 값이다.
 const MAX_PRODUCT_TEXTS = 7;
 
-const stateTabLabels: Record<SalePreviewState, string> = {
-  scheduled: '예정',
-  active: '할인',
-  ended: '마감',
-};
-
 // 컴포넌트 종류별로 편집 화면에 보여줄 옵션 키를
 // 거른다(타이머·진행바·상품 목록이 각자 쓰는 옵션만).
 const optionAppliesTo = (type: SaleComponent['type'], key: string) => {
@@ -445,43 +438,28 @@ function LayerMessagesEditor({
   );
 }
 
-function StateCssEditor({
-  component,
-  onChange,
-  state,
-  onSelectState,
-}: {
-  component: SaleComponent;
-  onChange: (state: SalePreviewState, css: SaleCss) => void;
-  state: SalePreviewState;
-  onSelectState: (state: SalePreviewState) => void;
-}) {
-  const tab = state;
+function MoreScreenHelp() {
+  const ref = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      const el = ref.current;
+
+      if (el?.open && e.target instanceof Node && !el.contains(e.target))
+        el.open = false;
+    };
+
+    document.addEventListener('pointerdown', close);
+
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
 
   return (
-    <details className="ts-state-css">
-      <summary>상태별 컴포넌트 CSS</summary>
-      <div className="ts-inline">
-        {(Object.keys(stateTabLabels) as SalePreviewState[]).map((v) => (
-          <button
-            key={v}
-            type="button"
-            aria-pressed={tab === v}
-            onClick={() => onSelectState(v)}
-          >
-            {stateTabLabels[v]}
-          </button>
-        ))}
-      </div>
-      <p className="ts-style-hint">
-        {stateTabLabels[tab]} 상태에만 적용됩니다. 기본 스타일 위에 덮어쓰며,
-        프리뷰도 선택한 상태로 바뀝니다.
-      </p>
-      <CssEditor
-        key={`${component.id}-${tab}`}
-        value={component.stateCss?.[tab] ?? {}}
-        onChange={(css) => onChange(tab, css)}
-      />
+    <details ref={ref} className="ts-title-help">
+      <summary aria-label="더보기 화면 스타일 안내">
+        <CircleHelp size={18} />
+      </summary>
+      <p>메인 매대의 더보기 버튼을 누르면 열리는 전체 목록 화면입니다.</p>
     </details>
   );
 }
@@ -666,8 +644,19 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   const [settings, setSettings] = useState<TimeSaleSettings | null>(null),
     [revision, setRevision] = useState(''),
-    [dirty, setDirty] = useState(false),
+    [saved, setSaved] = useState(''),
     [saving, setSaving] = useState(false);
+
+  // 마지막으로 불러오거나 저장한 설정과 지금 편집본이 다를 때만 변경으로 본다(되돌리면 풀린다).
+  const dirty = useMemo(
+    () => settings !== null && JSON.stringify(settings) !== saved,
+    [settings, saved]
+  );
+
+  const loadSettings = (next: TimeSaleSettings) => {
+    setSettings(structuredClone(next));
+    setSaved(JSON.stringify(next));
+  };
 
   const [section, setSection] = useState<keyof typeof sections>('management'),
     [platform, setPlatform] = useState<SalePlatform>('mobile'),
@@ -705,6 +694,13 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     [variablePreview, setVariablePreview] = useState(''),
     [editingVariable, setEditingVariable] = useState<string | null>(null);
 
+  const resetVariableForm = () => {
+    setEditingVariable(null);
+    setVariableName('');
+    setVariableDescription('');
+    setVariablePreview('');
+  };
+
   // 서버 설정을 편집본으로 복사한다. 편집 중(dirty)이거나 이미 같은 revision 이면 덮어쓰지 않는다.
   useEffect(() => {
     if (!query.data) return;
@@ -714,7 +710,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     )
       return;
 
-    setSettings(structuredClone(query.data.settings));
+    loadSettings(query.data.settings);
     setRevision(query.data.revision);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.data, dirty]);
@@ -723,10 +719,9 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const discardDraft = () => {
     // 센티넬 정리는 dirty 효과(backGuard.sync)가 한 길로 맡는다. 라우트 이동이면 그 전에 release 된다.
     if (query.data) {
-      setSettings(structuredClone(query.data.settings));
+      loadSettings(query.data.settings);
       setRevision(query.data.revision);
     }
-    setDirty(false);
   };
 
   // dirty 면 확인창을 거쳐 편집본을 버리고 이동하고, 아니면 바로 이동한다.
@@ -864,13 +859,12 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
-  // 설정 편집본을 복제해 고친 뒤 dirty 로 표시한다(원본 불변).
+  // 설정 편집본을 복제해 고친다(원본 불변).
   const update = (run: (s: TimeSaleSettings) => void) => {
     if (!settings) return;
     const next = structuredClone(settings);
     run(next);
     setSettings(next);
-    setDirty(true);
   };
 
   // 저장: 클라이언트에서 먼저 검증하고, 서버에는 불러올 때의
@@ -892,8 +886,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
       const result = await medusaTimeSaleSettingsApi.save(toSave, revision);
 
       setRevision(result.revision);
-      setSettings(result.settings);
-      setDirty(false);
+      loadSettings(result.settings);
       // 오래된 캐시가 방금 저장한 편집본을 덮지 않게 캐시도 같이 맞춘다.
       queryClient.setQueryData(['time-sale-settings'], {
         settings: result.settings,
@@ -1491,16 +1484,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
               )}
             </div>
           </details>
-          <StateCssEditor
-            state={state}
-            onSelectState={setState}
-            component={component}
-            onChange={(state, css) =>
-              changeComponent((item) => {
-                item.stateCss = { ...item.stateCss, [state]: css };
-              })
-            }
-          />
           <CssEditor
             showFont={false}
             value={component.css}
@@ -1536,16 +1519,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
               })
             }
           />
-          <StateCssEditor
-            state={state}
-            onSelectState={setState}
-            component={component}
-            onChange={(state, css) =>
-              changeComponent((item) => {
-                item.stateCss = { ...item.stateCss, [state]: css };
-              })
-            }
-          />
         </div>
       ) : component?.type === 'text' ? (
         <div className="ts-text-editor">
@@ -1563,28 +1536,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                   }
                 />
               </Field>
-              <div className="ts-inline">
-                {(['scheduled', 'active', 'ended'] as const).map((state) => (
-                  <label key={state}>
-                    <input
-                      type="checkbox"
-                      checked={component.states.includes(state)}
-                      onChange={(event) =>
-                        changeComponent((item) => {
-                          item.states = event.target.checked
-                            ? [...item.states, state]
-                            : item.states.filter((value) => value !== state);
-                        })
-                      }
-                    />
-                    {
-                      { scheduled: '예정', active: '진행', ended: '종료' }[
-                        state
-                      ]
-                    }
-                  </label>
-                ))}
-              </div>
             </div>
           </details>
           <CssEditor
@@ -1594,16 +1545,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
             onChange={(css) =>
               changeComponent((item) => {
                 item.css = css;
-              })
-            }
-          />
-          <StateCssEditor
-            state={state}
-            onSelectState={setState}
-            component={component}
-            onChange={(state, css) =>
-              changeComponent((item) => {
-                item.stateCss = { ...item.stateCss, [state]: css };
               })
             }
           />
@@ -1647,30 +1588,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 />
               </Field>
             )}
-            <div className="ts-inline">
-              {(['scheduled', 'active', 'ended'] as const).map((v) => (
-                <label key={v}>
-                  <input
-                    type="checkbox"
-                    checked={component.states.includes(v)}
-                    onChange={(e) =>
-                      changeComponent((c) => {
-                        c.states = e.target.checked
-                          ? [...c.states, v]
-                          : c.states.filter((x) => x !== v);
-                      })
-                    }
-                  />
-                  {
-                    {
-                      scheduled: '예정',
-                      active: '진행',
-                      ended: '종료',
-                    }[v]
-                  }
-                </label>
-              ))}
-            </div>
             {(Object.keys(optionLabels) as (keyof SaleComponent['options'])[])
               .filter((k) => optionAppliesTo(component.type, k))
               .map(optionField)}
@@ -1770,16 +1687,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 }
               />
             )}
-            <StateCssEditor
-              state={state}
-              onSelectState={setState}
-              component={component}
-              onChange={(st, css) =>
-                changeComponent((c) => {
-                  c.stateCss = { ...c.stateCss, [st]: css };
-                })
-              }
-            />
             <CssEditor
               key={component.id}
               value={component.css}
@@ -1846,7 +1753,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
             <>
               <span>{dirty ? '저장되지 않은 변경 사항' : '저장됨'}</span>
               <button
-                disabled={saving || !settings || query.isError}
+                disabled={!dirty || saving || !settings || query.isError}
                 onClick={() => void save(saveMessage(section, selected))}
               >
                 {saving ? '저장 중…' : '저장'}
@@ -1900,7 +1807,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 label={
                   {
                     main: '메인 매대 노출',
-                    more: '더보기 매대 노출',
+                    more: '더보기 화면 노출',
                   }[key]
                 }
               >
@@ -2037,12 +1944,16 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                         onClick={() =>
                           ask({
                             text: `${v.name} 변수를 삭제하시겠습니까?`,
-                            run: () =>
+                            run: () => {
+                              if (editingVariable === v.name)
+                                resetVariableForm();
+
                               update((s) => {
                                 s.variables = s.variables.filter(
                                   (x) => x.name !== v.name
                                 );
-                              }),
+                              });
+                            },
                           })
                         }
                       >
@@ -2108,23 +2019,13 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                     : '신규 사용자 정의 변수를 추가 하였습니다.'
                 );
 
-                setEditingVariable(null);
-                setVariableName('');
-                setVariableDescription('');
-                setVariablePreview('');
+                resetVariableForm();
               }}
             >
               {' '}
               {editingVariable ? '수정' : '추가'}
             </button>
-            <button
-              onClick={() => {
-                setEditingVariable(null);
-                setVariableName('');
-              }}
-            >
-              취소
-            </button>
+            <button onClick={resetVariableForm}>취소</button>
           </div>
         ) : (
           layout && (
@@ -2133,6 +2034,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 <h2>
                   <span>{platform === 'mobile' ? '모바일' : 'PC'}</span>{' '}
                   {sections[section]}
+                  {section === 'more' && <MoreScreenHelp />}
                 </h2>
                 <select
                   aria-label="프리뷰 상태"

@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState, useTransition, type MouseEvent } from "react"
+import { useTranslations } from "next-intl"
 import { PromotionTracker } from "@/components/analytics/promotion-tracker"
 import sanitizeHtml from "sanitize-html"
 import type {
@@ -15,6 +17,8 @@ import {
 import type { HttpTypes } from "@medusajs/types"
 import { ProductQuickActions } from "@/domains/products/components/product-quick-actions"
 import { Quantity } from "@/domains/products/components/product-card/quantity"
+import { loadTimeSaleMore } from "@/domains/time-sale/actions/load-time-sale-more"
+import type { TimeSaleAllProps } from "@/domains/time-sale/templates/time-sale-all-template"
 
 // 진행 중 세일 전부를 섹션 하나로 그린다(세일 이름은 고객에게 내보내지 않는다).
 export function ConfiguredTimeSale({
@@ -67,6 +71,11 @@ export function ConfiguredTimeSale({
         productCount={productCount}
         sanitizeHtml={sanitizeHtml}
         moreHref={`/${countryCode}/time-sale`}
+        renderMorePopup={
+          surface === "main"
+            ? () => <TimeSaleMorePopup countryCode={countryCode} />
+            : undefined
+        }
         pager={pager}
         renderProductStatus={(product) => {
           const stock = stockProducts?.[product.id]
@@ -92,5 +101,48 @@ export function ConfiguredTimeSale({
         }
       />
     </PromotionTracker>
+  )
+}
+
+// 더보기 팝업. 더보기 페이지와 같은 한 페이지를 받아 그리고, 안의 탭·페이지 링크는
+// 페이지를 떠나지 않고 팝업 안에서 다시 받는다.
+function TimeSaleMorePopup({ countryCode }: { countryCode: string }) {
+  const t = useTranslations("home.timeSale")
+  const [query, setQuery] = useState({ tab: "all", page: 1 })
+  const [data, setData] = useState<TimeSaleAllProps | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    startTransition(async () => {
+      setData(await loadTimeSaleMore(countryCode, query.tab, query.page))
+    })
+  }, [countryCode, query])
+
+  const stayInPopup = (event: MouseEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Element)) return
+
+    const href = event.target.closest("a")?.getAttribute("href")
+    if (!href) return
+
+    const url = new URL(href, window.location.origin)
+    if (!url.pathname.endsWith("/time-sale")) return
+
+    event.preventDefault()
+    event.currentTarget.closest('[role="dialog"]')?.scrollTo({ top: 0 })
+    setQuery({
+      tab: url.searchParams.get("tab") ?? "all",
+      page: Number(url.searchParams.get("page") ?? "1"),
+    })
+  }
+
+  if (!data) return <p className="py-24 text-center">{t("loading")}</p>
+
+  return (
+    <div
+      onClickCapture={stayInPopup}
+      className={pending ? "opacity-60" : undefined}
+    >
+      <ConfiguredTimeSale {...data} surface="more" />
+    </div>
   )
 }

@@ -577,6 +577,12 @@ export function TimeSaleDisplayTable({
     latest.current = { rows, onRowsChange };
   });
 
+  // 피커는 진열 목록 맨 아래에 붙는다. 상품이 많으면 열어도 화면 밖이라 그 자리로 내려 준다.
+  const pickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (adding) pickerRef.current?.scrollIntoView({ block: 'start' });
+  }, [adding]);
+
   const onVariant = useCallback(
     (variantId: string, patch: Partial<TimeSaleRow>) => {
       const { rows, onRowsChange } = latest.current;
@@ -899,7 +905,7 @@ export function TimeSaleDisplayTable({
           진열한 상품이 없습니다. [상품 추가]로 담으세요.
         </p>
       )}
-      {adding && picker}
+      {adding && <div ref={pickerRef}>{picker}</div>}
     </div>
   );
 }

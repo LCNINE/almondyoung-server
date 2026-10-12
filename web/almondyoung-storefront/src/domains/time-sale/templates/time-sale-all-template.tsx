@@ -19,13 +19,18 @@ import {
 } from "@/lib/utils/time-sale-tabs"
 import { getWishlist } from "@lib/api/users/wishlist"
 
+export type TimeSaleAllProps = Omit<
+  React.ComponentProps<typeof ConfiguredTimeSale>,
+  "surface"
+>
+
 /**
- * 진행 중 세일 상품 전체. 홈 섹션은 상위 10개만 보이므로 «더보기» 가 여기로 온다.
+ * 진행 중 세일 상품 전체 한 페이지. 더보기 페이지와 메인 매대의 더보기 팝업이 같이 쓴다.
  *
  * 상품 수백 개를 한 번에 받지 않는다 — id 목록(서버가 정렬·카테고리까지 준다)을 탭으로 거른 뒤
  * 한 페이지만 `/store/products` 로 받는다. 그래야 멤버십가 은닉·가격 계산이 다른 목록과 같다.
  */
-export async function TimeSaleAllTemplate({
+export async function loadTimeSaleAll({
   overview,
   countryCode,
   tabKey,
@@ -35,7 +40,7 @@ export async function TimeSaleAllTemplate({
   countryCode: string
   tabKey: string
   page: number
-}) {
+}): Promise<TimeSaleAllProps | null> {
   const { settings, sales } = overview
   const endsAt = earliestEnd(sales)
   if (!settings.environment.more || !endsAt) return null
@@ -87,41 +92,45 @@ export async function TimeSaleAllTemplate({
     (c) => c.type === "grid" || c.type === "carousel"
   )
 
-  return (
-    <ConfiguredTimeSale
-      settings={settings}
-      surface="more"
-      startsAt={sales.reduce(
-        (min, sale) =>
-          sale.startsAt && sale.startsAt < min ? sale.startsAt : min,
-        endsAt
-      )}
-      endsAt={endsAt}
-      countryCode={countryCode}
-      tabs={tabs}
-      activeTabKey={activeTab?.key}
-      productCount={filtered.length}
-      pager={
-        totalPages > 1
-          ? buildPager(
-              current,
-              totalPages,
-              (p) => href(activeTab?.key ?? ALL_TAB_KEY, p),
-              listLayout?.options.pageWindow
-            )
-          : undefined
-      }
-      stockProducts={Object.fromEntries(
-        products.map((product) => [product.id, product])
-      )}
-      products={buildSaleProducts({
-        sales,
-        ids,
-        products,
-        countryCode,
-        isMember,
-        wishlistIds: wishlist.map((item) => item.productId),
-      })}
-    />
-  )
+  return {
+    settings,
+    startsAt: sales.reduce(
+      (min, sale) =>
+        sale.startsAt && sale.startsAt < min ? sale.startsAt : min,
+      endsAt
+    ),
+    endsAt,
+    countryCode,
+    tabs,
+    activeTabKey: activeTab?.key,
+    productCount: filtered.length,
+    pager:
+      totalPages > 1
+        ? buildPager(
+            current,
+            totalPages,
+            (p) => href(activeTab?.key ?? ALL_TAB_KEY, p),
+            listLayout?.options.pageWindow
+          )
+        : undefined,
+    stockProducts: Object.fromEntries(
+      products.map((product) => [product.id, product])
+    ),
+    products: buildSaleProducts({
+      sales,
+      ids,
+      products,
+      countryCode,
+      isMember,
+      wishlistIds: wishlist.map((item) => item.productId),
+    }),
+  }
+}
+
+export async function TimeSaleAllTemplate(
+  props: Parameters<typeof loadTimeSaleAll>[0]
+) {
+  const data = await loadTimeSaleAll(props)
+
+  return data ? <ConfiguredTimeSale {...data} surface="more" /> : null
 }

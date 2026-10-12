@@ -82,7 +82,8 @@
     "dayUnit": "일",
     "untilEnd": "종료까지",
     "endingSoon": "마감 임박",
-    "badge": "타임세일"
+    "badge": "타임세일",
+    "loading": "불러오는 중…"
   },
   "beautytop": {
     "title": "뷰티탑",

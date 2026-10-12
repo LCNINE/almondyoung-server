@@ -72,6 +72,10 @@ export type SaleRendererProps = {
   // 가격 아래 재고 상태(일부 품절·N개 남음 등). 스토어프론트가 상품 카드와 같은 컴포넌트를 넣는다.
   renderProductStatus?: (product: SaleProduct) => ReactNode;
 
+  // 더보기 팝업 안을 호스트가 채운다(스토어프론트는 더보기 페이지와 같은 데이터를 받아 그린다).
+  // 없으면 지금 받은 상품으로 더보기 레이아웃을 그린다(어드민 미리보기).
+  renderMorePopup?: () => ReactNode;
+
   // 있으면 그리드는 받은 상품을 한 페이지로 그대로 그리고 링크형 페이지 번호를 둔다.
   // 더보기 서버 페이지네이션용.
   pager?: SalePagerItem[];
@@ -597,7 +601,7 @@ export function SaleRenderer(props: SaleRendererProps) {
                   {tabs.map((tab) => {
                     const selected = tab.key === activeTab?.key;
                     const style = {
-                      ...tabStyle,
+                      ...(c.options.tabCss?.border ? pillTabStyle : tabStyle),
                       ...c.options.tabCss,
                       ...(selected ? c.options.activeTabCss : {}),
                     } as CSSProperties;
@@ -760,7 +764,7 @@ export function SaleRenderer(props: SaleRendererProps) {
             <button autoFocus type="button" aria-label="닫기" onClick={() => setPopup(false)} style={popupCloseStyle}>
               ×
             </button>
-            {drawLayout(moreLayout, 'more')}
+            {props.renderMorePopup ? props.renderMorePopup() : drawLayout(moreLayout, 'more')}
           </div>
         </div>
       )}
@@ -805,7 +809,18 @@ const popupDialogStyle = (width: number, height: number): CSSProperties => ({
   borderRadius: 4,
 });
 
-const popupCloseStyle: CSSProperties = { float: 'right', width: 40, height: 40 };
+const popupCloseStyle: CSSProperties = {
+  float: 'right',
+  position: 'relative',
+  zIndex: 1,
+  width: 48,
+  height: 48,
+  border: 0,
+  background: 'transparent',
+  fontSize: 32,
+  lineHeight: 1,
+  cursor: 'pointer',
+};
 
 const timerStyle: CSSProperties = {
   display: 'grid',
@@ -1038,18 +1053,19 @@ const tabListStyle: CSSProperties = {
   scrollbarWidth: 'none',
 };
 
-const tabStyle: CSSProperties = {
+const pillTabStyle: CSSProperties = {
   flex: '0 0 auto',
   padding: '6px 8px',
   border: 0,
-  borderBottom: '2px solid transparent',
-  background: 'transparent',
+  backgroundColor: 'transparent',
   font: 'inherit',
   color: 'inherit',
   textDecoration: 'none',
   whiteSpace: 'nowrap',
   cursor: 'pointer',
 };
+
+const tabStyle: CSSProperties = { ...pillTabStyle, borderBottom: '2px solid transparent' };
 
 const soldOutOverlayStyle = (c: SaleComponent): CSSProperties => ({
   position: 'absolute',

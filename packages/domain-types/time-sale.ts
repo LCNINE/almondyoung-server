@@ -293,7 +293,7 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
               fontWeight: 500,
             };
             c.options.tabCss = {
-              padding: mobile ? '8px 12px' : '7px 8px',
+              padding: mobile ? '8px 12px' : '4px 8px 9px',
               color: 'rgba(0,0,0,.6)',
               lineHeight: '20px',
             };
@@ -452,21 +452,21 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     throw new Error('설정 형식이 올바르지 않습니다.');
 
   const e = s.environment;
-  if (
-    !['round', 'ceil', 'floor'].includes(e.rounding) ||
-    !Number.isInteger(e.imageSize) ||
-    e.imageSize < 1 ||
-    e.imageSize > 1500 ||
-    !['page', 'popup'].includes(e.moreMode) ||
-    e.popupWidth < 10 ||
-    e.popupWidth > 100 ||
-    e.popupHeight < 10 ||
-    e.popupHeight > 100 ||
-    e.veilOpacity < 0 ||
-    e.veilOpacity > 1 ||
-    !Number.isFinite(e.veilOpacity)
-  )
-    throw new Error('환경설정 값이 올바르지 않습니다.');
+  const within = (value: number, min: number, max: number) => Number.isFinite(value) && value >= min && value <= max;
+  const invalid = (
+    [
+      [['round', 'ceil', 'floor'].includes(e.rounding), '할인 금액 반올림 방식을 다시 고르세요.'],
+      [
+        Number.isInteger(e.imageSize) && within(e.imageSize, 1, 1500),
+        '상품 이미지 크기는 1~1500 사이 정수여야 합니다.',
+      ],
+      [['page', 'popup'].includes(e.moreMode), '더보기 방식을 다시 고르세요.'],
+      [within(e.popupWidth, 10, 100), '팝업 폭은 10~100% 사이여야 합니다.'],
+      [within(e.popupHeight, 10, 100), '팝업 최대 높이는 10~100% 사이여야 합니다.'],
+      [within(e.veilOpacity, 0, 1), '배경 불투명도는 0~1 사이여야 합니다.'],
+    ] as const
+  ).find(([ok]) => !ok);
+  if (invalid) throw new Error(`환경설정 값이 올바르지 않습니다. ${invalid[1]}`);
 
   for (const key of ['main', 'more'] as const)
     if (typeof e[key] !== 'boolean') throw new Error('노출 설정은 참/거짓이어야 합니다.');

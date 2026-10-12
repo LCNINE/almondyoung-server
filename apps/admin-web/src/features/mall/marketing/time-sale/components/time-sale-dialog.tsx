@@ -68,7 +68,7 @@ export function TimeSaleHelpDialog({
         </p>
         <ol className="ts-help-steps">
           <li>타임세일 목록에서 세일을 공개합니다.</li>
-          <li>메인·더보기 매대 스타일을 고르고 저장합니다.</li>
+          <li>메인 매대·더보기 화면 스타일을 고르고 저장합니다.</li>
           <li>각 스타일의 PC·모바일 모습을 미리보기로 확인합니다.</li>
         </ol>
         {[
@@ -78,7 +78,7 @@ export function TimeSaleHelpDialog({
             '홈의 타임세일 섹션입니다. 상위 10개 상품과 카테고리 탭을 보여줍니다.',
           ],
           [
-            '더보기 매대',
+            '더보기 화면',
             '/kr/time-sale',
             '진행 중인 세일 상품 전체를 카테고리 탭과 페이지로 보여줍니다.',
           ],

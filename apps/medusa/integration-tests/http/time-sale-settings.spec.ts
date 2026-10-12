@@ -96,7 +96,9 @@ medusaIntegrationTestRunner({
         const res = await call(() => api.post('/admin/time-sale-settings', { settings, revision: '' }, adminHeaders));
 
         expect(res.status).toBe(400);
-        expect(res.data.message).toBe('환경설정 값이 올바르지 않습니다.');
+        expect(res.data.message).toBe(
+          '환경설정 값이 올바르지 않습니다. 상품 이미지 크기는 1~1500 사이 정수여야 합니다.',
+        );
       });
 
       it('settings 가 없으면 400', async () => {

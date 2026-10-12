@@ -82,7 +82,8 @@
     "dayUnit": "d",
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon",
-    "badge": "Time sale"
+    "badge": "Time sale",
+    "loading": "Loading…"
   },
   "beautytop": {
     "title": "BeautyTop",

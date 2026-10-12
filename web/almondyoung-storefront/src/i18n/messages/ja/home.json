@@ -82,7 +82,8 @@
     "dayUnit": "日",
     "untilEnd": "終了まで",
     "endingSoon": "まもなく終了",
-    "badge": "タイムセール"
+    "badge": "タイムセール",
+    "loading": "読み込み中…"
   },
   "beautytop": {
     "title": "ビューティートップ",

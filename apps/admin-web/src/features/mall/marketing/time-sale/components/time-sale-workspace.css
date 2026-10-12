@@ -134,9 +134,13 @@
 
 .ts-css-editor > details,
 .ts-text-editor > details,
-.ts-component-editor > details {
+.ts-component-editor > details,
+.ts-properties > details {
   border: 1px solid #ddd;
   border-top: 0;
+}
+.ts-properties > details:not(details + details) {
+  border-top: 1px solid #ddd;
 }
 
 .ts-css-editor > details:first-child,
@@ -147,7 +151,8 @@
 
 .ts-css-editor > details > summary,
 .ts-text-editor > details > summary,
-.ts-component-editor > details > summary {
+.ts-component-editor > details > summary,
+.ts-properties > details > summary {
   padding: 16px;
   background: #f7f7f7;
   font-size: 15px;
@@ -157,8 +162,51 @@
 
 .ts-css-editor > details > summary::-webkit-details-marker,
 .ts-text-editor > details > summary::-webkit-details-marker,
-.ts-component-editor > details > summary::-webkit-details-marker {
+.ts-component-editor > details > summary::-webkit-details-marker,
+.ts-properties > details > summary::-webkit-details-marker {
   display: none;
+}
+.ts-properties > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  outline: none;
+}
+.ts-properties > details > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #888;
+  border-bottom: 1.5px solid #888;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.ts-properties > details[open] > summary {
+  font-weight: 600;
+  border-bottom: 1px solid #ddd;
+}
+.ts-properties > details[open] > summary::before {
+  transform: rotate(45deg);
+}
+.ts-properties > details > .ts-css-editor > details {
+  border-right: 0;
+  border-left: 0;
+}
+.ts-properties > details > .ts-css-editor > details:first-child {
+  border-top: 0;
+}
+.ts-properties > details > .ts-css-editor > details:last-child {
+  border-bottom: 0;
+}
+.ts-properties > details > .ts-css-editor > details > summary {
+  padding: 12px 16px 12px 22px;
+  background: white;
+  font-size: 14px;
+}
+.ts-properties > details > .ts-css-editor > details > summary::before {
+  content: '└';
+  margin-right: 8px;
+  color: #999;
 }
 
 .ts-css-body {
@@ -385,17 +433,6 @@
   width: 100%;
 }
 
-.ts-state-css > .ts-inline,
-.ts-state-css > .ts-style-hint {
-  margin: 12px;
-}
-
-.ts-state-css button[aria-pressed='true'] {
-  color: white;
-  background: #1976d2;
-  border-color: #1976d2;
-}
-
 .ts-css-editor > details > textarea {
   width: calc(100% - 24px);
   min-height: 120px;
@@ -617,7 +654,7 @@
   cursor: pointer;
 }
 
-/* SweetOffer 관리 화면의 공통 크기·색상. 어드민의 전역 UI에는 적용하지 않는다. */
+/* SweetOffer ê´ë¦¬ íë©´ì ê³µíµ í¬ê¸°Â·ìì. ì´ëë¯¼ì ì ì­ UIìë ì ì©íì§ ìëë¤. */
 .ts-workspace {
   min-height: 100svh;
   border: 0;
@@ -1033,12 +1070,12 @@
   justify-content: space-between;
 }
 .ts-product-notices summary::after {
-  content: '⌄';
+  content: 'â';
   color: #777;
   font-size: 18px;
 }
 .ts-product-notices details[open] summary::after {
-  content: '⌃';
+  content: 'â';
 }
 .ts-product-notices ul {
   padding: 8px 56px 16px;
@@ -1359,7 +1396,7 @@
   white-space: nowrap;
 }
 
-/* 매대 편집: 선택 패널과 실제 폭 프리뷰를 각각 스크롤한다. */
+/* ë§¤ë í¸ì§: ì í í¨ëê³¼ ì¤ì  í­ íë¦¬ë·°ë¥¼ ê°ê° ì¤í¬ë¡¤íë¤. */
 .ts-toolbar h2 {
   margin-right: auto;
   font-size: 18px;
@@ -1367,6 +1404,43 @@
 }
 .ts-toolbar h2 span {
   color: #269bcc;
+}
+.ts-title-help {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.ts-title-help summary {
+  display: flex;
+  color: #999;
+  cursor: pointer;
+  list-style: none;
+}
+.ts-title-help summary::-webkit-details-marker {
+  display: none;
+}
+.ts-title-help[open] summary {
+  color: #269bcc;
+}
+.ts-title-help p {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: 360px;
+  margin: 0;
+  padding: 12px 14px;
+  word-break: keep-all;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px #0002;
+  color: #555;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
 }
 .ts-editor {
   grid-template-columns: 400px minmax(0, 1fr);
@@ -1547,23 +1621,38 @@
 }
 .ts-preview [data-sale-component] {
   position: relative;
+  isolation: isolate;
   cursor: pointer;
 }
+.ts-preview [data-sale-component]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+.ts-preview [data-sale-component]:hover::after,
 .ts-preview
-  [data-sale-component]:has(> .ts-preview-select[aria-pressed='true']) {
-  outline: 2px solid #269bcc;
-  outline-offset: -2px;
+  [data-sale-component]:has(> .ts-preview-select[aria-pressed='true'])::after {
+  border-color: #269bcc;
 }
 .ts-preview .ts-preview-select {
   position: absolute;
   top: 0;
   right: 0;
-  z-index: 2;
+  z-index: 4;
+  white-space: nowrap;
   padding: 2px 5px;
   background: #087ac1;
   color: white;
   font-size: 11px;
   opacity: 0;
+  pointer-events: none;
+}
+.ts-preview [data-sale-component] > .ts-preview-select {
+  top: auto;
+  bottom: 100%;
 }
 .ts-preview [data-sale-component]:hover > .ts-preview-select,
 .ts-preview .ts-preview-select:focus-visible,
