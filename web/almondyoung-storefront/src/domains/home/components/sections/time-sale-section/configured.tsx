@@ -93,7 +93,12 @@ export function ConfiguredTimeSale({
               productHandle={product.quickActions.handle}
               productTitle={product.name}
               productImage={product.image ?? undefined}
-              productPrice={product.price ?? 0}
+              // 멤버십 전용 특가는 판매가 자리에 정가를 두고 실제 결제가(회원 특가)는 membershipPrice 에 있다.
+              productPrice={
+                (product.membershipSale ? product.membershipPrice : null) ??
+                product.price ??
+                0
+              }
               productCurrency={product.quickActions.currency}
               variantId={product.quickActions.variantId}
               isSingleOption={product.quickActions.isSingleOption}

@@ -1,6 +1,8 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
 import { MedusaError, Modules } from '@medusajs/framework/utils';
 
+import { updateStoreMetadata } from '../../utils/store-metadata';
+
 import {
   DEFAULT_AREA_TEMPLATE_CODE,
   STORE_AREA_TEMPLATES_KEY,
@@ -31,8 +33,11 @@ async function loadStore(container: MedusaContainer) {
 }
 
 export async function listAreaTemplates(container: MedusaContainer): Promise<ShippingAreaTemplate[]> {
-  const store = await loadStore(container);
-  const raw = (store.metadata as Record<string, unknown> | null)?.[STORE_AREA_TEMPLATES_KEY];
+  return parseAreaTemplates((await loadStore(container)).metadata);
+}
+
+function parseAreaTemplates(metadata: Record<string, unknown> | null | undefined): ShippingAreaTemplate[] {
+  const raw = metadata?.[STORE_AREA_TEMPLATES_KEY];
   if (!Array.isArray(raw) || raw.length === 0) return [DEFAULT_AREA_TEMPLATE];
 
   return raw
@@ -54,11 +59,14 @@ export async function findAreaTemplate(
   return templates.find((template) => template.code === code) ?? null;
 }
 
-async function saveAreaTemplates(container: MedusaContainer, templates: ShippingAreaTemplate[]): Promise<void> {
-  const storeModuleService = container.resolve(Modules.STORE);
-  const store = await loadStore(container);
-  await storeModuleService.updateStores(store.id, {
-    metadata: { ...(store.metadata ?? {}), [STORE_AREA_TEMPLATES_KEY]: templates },
+// 읽기·고치기·쓰기를 Store.metadata 공용 잠금 안에서 한다(다른 writer 와 겹쳐도 서로 지우지 않게).
+function changeAreaTemplates(
+  container: MedusaContainer,
+  change: (templates: ShippingAreaTemplate[]) => ShippingAreaTemplate[],
+): Promise<ShippingAreaTemplate[]> {
+  return updateStoreMetadata(container, (store) => {
+    const next = change(parseAreaTemplates(store.metadata));
+    return { set: { [STORE_AREA_TEMPLATES_KEY]: next }, value: next };
   });
 }
 
@@ -66,22 +74,17 @@ export async function upsertAreaTemplate(
   container: MedusaContainer,
   template: ShippingAreaTemplate,
 ): Promise<ShippingAreaTemplate[]> {
-  const templates = await listAreaTemplates(container);
-  const index = templates.findIndex((candidate) => candidate.code === template.code);
-  if (index >= 0) templates[index] = template;
-  else templates.push(template);
-
-  await saveAreaTemplates(container, templates);
-  return templates;
+  return changeAreaTemplates(container, (templates) => {
+    const index = templates.findIndex((candidate) => candidate.code === template.code);
+    if (index >= 0) templates[index] = template;
+    else templates.push(template);
+    return templates;
+  });
 }
 
 export async function deleteAreaTemplate(container: MedusaContainer, code: string): Promise<void> {
   if (code === DEFAULT_AREA_TEMPLATE_CODE) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, '기본 템플릿은 삭제할 수 없습니다.');
   }
-  const templates = await listAreaTemplates(container);
-  await saveAreaTemplates(
-    container,
-    templates.filter((template) => template.code !== code),
-  );
+  await changeAreaTemplates(container, (templates) => templates.filter((template) => template.code !== code));
 }

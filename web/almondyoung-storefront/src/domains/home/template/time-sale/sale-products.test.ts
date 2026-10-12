@@ -180,6 +180,49 @@ describe("buildSaleProducts", () => {
     )
   })
 
+  // 옵션마다 다른 세일에 걸릴 수 있다(겹침 검사가 옵션 단위). 카드 가격을 만든 세일의 기간을 써야 타이머가 맞는다.
+  it("대표 옵션 가격을 만든 세일의 기간을 쓴다", () => {
+    const early = {
+      id: "ts_early",
+      startsAt: "2030-01-01T00:00:00.000Z",
+      endsAt: "2030-01-02T00:00:00.000Z",
+      priceListIds: ["pl_early"],
+      productIds: ["prod_1"],
+      variantIds: ["v_other"],
+    } satisfies TimeSale
+    const late = {
+      id: "ts_late",
+      startsAt: "2030-01-01T00:00:00.000Z",
+      endsAt: "2030-01-09T00:00:00.000Z",
+      priceListIds: ["pl_late"],
+      productIds: ["prod_1"],
+      variantIds: ["v_cheap"],
+    } satisfies TimeSale
+    const product = {
+      id: "prod_1",
+      title: "상품",
+      handle: "prod-1",
+      variants: [
+        {
+          id: "v_cheap",
+          calculated_price: {
+            calculated_amount: 5000,
+            original_amount: 7000,
+            calculated_price: { price_list_id: "pl_late" },
+          },
+        },
+      ],
+    } as unknown as HttpTypes.StoreProduct
+
+    const [card] = buildSaleProducts({
+      sales: [early, late],
+      ids: ["prod_1"],
+      products: [product],
+      countryCode: "kr",
+    })
+    expect(card.endsAt).toBe("2030-01-09T00:00:00.000Z")
+  })
+
   it("상품이 세일 여럿에 걸리면 먼저 끝나는 세일 기간을 쓴다", () => {
     const sale = (id: string, endsAt: string, productIds: string[]) =>
       ({

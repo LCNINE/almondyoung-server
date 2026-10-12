@@ -2,6 +2,7 @@ import type { MedusaContainer } from '@medusajs/framework/types';
 import { MedusaError, Modules } from '@medusajs/framework/utils';
 import { validateTimeSaleSettings, type TimeSaleSettings } from '../../../../packages/domain-types/time-sale';
 import { revalidateStorefront } from './storefront-revalidate';
+import { updateStoreMetadata } from './store-metadata';
 
 // 진열·스타일 설정은 Store.metadata 에 JSON 으로 저장하고, 낙관적 락용 revision 을 같이 둔다.
 // 가격·기간·상태의 정본은 time_sale 모듈이다. 여기엔 화면에 어떻게 보일지만 있다.
@@ -39,28 +40,16 @@ export async function saveTimeSaleSettings(container: MedusaContainer, settings:
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'revision 은 문자열이어야 합니다.');
   }
 
-  const result = await container.resolve(Modules.LOCKING).execute(
-    'time-sale-settings',
-    async () => {
-      const service = container.resolve(Modules.STORE);
-      const [store] = await service.listStores();
-      if (!store) throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Store를 찾을 수 없습니다.');
+  const result = await updateStoreMetadata(container, (store) => {
+    if (String(store.metadata?.[REVISION_KEY] ?? '') !== revision)
+      throw new MedusaError(
+        MedusaError.Types.CONFLICT,
+        '다른 관리자가 설정을 변경했습니다. 새로고침 후 다시 저장하세요.',
+      );
 
-      if (String(store.metadata?.[REVISION_KEY] ?? '') !== revision)
-        throw new MedusaError(
-          MedusaError.Types.CONFLICT,
-          '다른 관리자가 설정을 변경했습니다. 새로고침 후 다시 저장하세요.',
-        );
-
-      const next = new Date().toISOString();
-      await service.updateStores(store.id, {
-        metadata: { ...store.metadata, [KEY]: settings, [REVISION_KEY]: next },
-      });
-
-      return { settings, revision: next };
-    },
-    { timeout: 10 },
-  );
+    const next = new Date().toISOString();
+    return { set: { [KEY]: settings, [REVISION_KEY]: next }, value: { settings, revision: next } };
+  });
 
   // 진열·스타일만 바뀌므로 상품 캐시는 두고 time-sale 태그만 비운다.
   await revalidateStorefront(container, { productHandles: [], logLabel: '진열 설정 저장' });

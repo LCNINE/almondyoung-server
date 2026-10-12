@@ -1,6 +1,16 @@
 'use client';
 
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import {
   USER_VARIABLE_NAME_SOURCE,
   pageWindowItems,
@@ -376,8 +386,35 @@ function expand(text: string, values: Record<string, string>) {
 export function SaleRenderer(props: SaleRendererProps) {
   const [mobile, setMobile] = useState(true),
     [now, setNow] = useState(0),
-    [popup, setPopup] = useState(false),
+    [popup, setPopupOpen] = useState(false),
     [tabKey, setTabKey] = useState<string | null>(null);
+
+  // 팝업은 연 버튼을 기억했다가 닫을 때 포커스를 돌려준다. 안에선 Tab 이 뒤쪽 페이지로 새지 않게 가둔다.
+  const popupTrigger = useRef<HTMLElement | null>(null);
+
+  const closePopup = () => {
+    setPopupOpen(false);
+    popupTrigger.current?.focus();
+  };
+
+  const trapFocus = (e: KeyboardEvent<HTMLDivElement>) => {
+    const focusable = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   useEffect(() => {
     const media = matchMedia('(max-width: 767px)');
@@ -581,7 +618,10 @@ export function SaleRenderer(props: SaleRendererProps) {
                 settings.environment.moreMode === 'popup' ? (
                   <button
                     type="button"
-                    onClick={() => setPopup(true)}
+                    onClick={(e) => {
+                      popupTrigger.current = e.currentTarget;
+                      setPopupOpen(true);
+                    }}
                     style={{ ...buttonStyle, ...c.options.buttonCss } as CSSProperties}
                   >
                     {expand(c.content, vars)}
@@ -755,22 +795,19 @@ export function SaleRenderer(props: SaleRendererProps) {
       {hasFlip && <style>{flipCss}</style>}
       {drawLayout(layout, surface)}
       {popup && (
-        <div
-          role="presentation"
-          onClick={() => setPopup(false)}
-          style={popupVeilStyle(settings.environment.veilOpacity)}
-        >
+        <div role="presentation" onClick={closePopup} style={popupVeilStyle(settings.environment.veilOpacity)}>
           <div
             role="dialog"
             aria-modal="true"
             aria-label="타임세일 더보기"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') setPopup(false);
+              if (e.key === 'Escape') closePopup();
+              if (e.key === 'Tab') trapFocus(e);
             }}
             style={popupDialogStyle(settings.environment.popupWidth, settings.environment.popupHeight)}
           >
-            <button autoFocus type="button" aria-label="닫기" onClick={() => setPopup(false)} style={popupCloseStyle}>
+            <button autoFocus type="button" aria-label="닫기" onClick={closePopup} style={popupCloseStyle}>
               ×
             </button>
             {props.renderMorePopup ? props.renderMorePopup() : drawLayout(moreLayout, 'more')}
@@ -1434,19 +1471,27 @@ function Products({
 
   const scroll = useRef<HTMLDivElement>(null);
 
+  // 랜덤 진열은 마운트 뒤 한 번 정한 씨앗으로만 섞는다. 렌더마다 섞으면 카운트다운(매초)마다 순서가 바뀌고,
+  // 서버 렌더에서 섞으면 하이드레이션이 어긋난다. 그래서 첫 그림은 원래 순서다.
+  const [shuffleSeed, setShuffleSeed] = useState<number | null>(null);
+  useEffect(() => {
+    if (c.options.productOrder === 'random') setShuffleSeed(Math.floor(Math.random() * 2 ** 31));
+  }, [c.options.productOrder]);
+
   const orderedProducts = useMemo(() => {
     const items = products.slice();
 
     if (c.options.productOrder === 'reverse') items.reverse();
-    if (c.options.productOrder === 'random') {
+    if (c.options.productOrder === 'random' && shuffleSeed !== null) {
+      const next = seededRandom(shuffleSeed);
       for (let i = items.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(next() * (i + 1));
         [items[i], items[j]] = [items[j], items[i]];
       }
     }
 
     return c.type === 'carousel' && c.options.slots ? items.slice(0, c.options.slots) : items;
-  }, [products, c.options.productOrder, c.options.slots, c.type]);
+  }, [products, c.options.productOrder, c.options.slots, c.type, shuffleSeed]);
 
   const stepSize = c.options.slideGroup ?? 1;
   const carouselRows = c.options.carouselRows && orderedProducts.length > c.options.rows ? c.options.rows : 1;
@@ -1857,4 +1902,15 @@ function Products({
       )}
     </div>
   );
+}
+
+// 같은 씨앗이면 같은 수열(mulberry32). 랜덤 진열 순서를 렌더 사이에 고정하는 데 쓴다.
+function seededRandom(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
 }

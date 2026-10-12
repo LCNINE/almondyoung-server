@@ -125,6 +125,7 @@ type LineLike = {
  * 카트·체크아웃 라인의 타임세일. 라인엔 가격표 출처(`price_list_id`)가 없어 옵션 id 와 금액으로 가른다.
  *
  * - 세일에 가격이 걸린 옵션만 세일이다 — 같은 상품의 세일 밖 옵션을 정가로 담았는데 배지가 붙으면 안 된다.
+ * - 정가(`compare_at_unit_price`)보다 싸게 담긴 라인만 세일이다 — 세일가를 정가 이상으로 저장했으면 정가가 나간다.
  * - 멤버십 전용 특가 옵션은 상시 멤버십가보다 싸게 담긴 라인만 세일이다. 비회원은 정가로 담기고, 상시 멤버십가가
  *   더 싸면 Medusa 가 그쪽을 고르므로 둘 다 기간 특가가 아니다.
  */
@@ -142,14 +143,16 @@ export function lineTimeSale(
       : s.productIds.includes(productId)
   )
   if (!sale) return null
+
+  const unit = line.unit_price ?? 0
+  if (!(unit < (line.compare_at_unit_price ?? 0))) return null
   if (!sale.membershipOnlyVariantIds?.includes(variantId))
     return { sale, membershipOnly: false }
 
-  const unit = line.unit_price ?? 0
+  // 일반 세일엔 이 비교를 걸지 않는다 — 비회원 라인은 상시 멤버십가보다 비싼 게 정상이라 진짜 세일을 놓친다.
   const regularMembership = Number(line.variant?.metadata?.membershipPrice)
-  const discounted = unit < (line.compare_at_unit_price ?? 0)
   const beatsRegular = !(regularMembership > 0) || unit < regularMembership
-  return discounted && beatsRegular ? { sale, membershipOnly: true } : null
+  return beatsRegular ? { sale, membershipOnly: true } : null
 }
 
 export function useTimeSaleForLine(line: LineLike | null | undefined) {

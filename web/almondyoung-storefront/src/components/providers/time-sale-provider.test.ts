@@ -39,6 +39,12 @@ describe("lineTimeSale", () => {
     })
   })
 
+  // 세일가가 정가 이상으로 저장됐으면(경고 후 적용) Medusa 가 정가를 고른다.
+  it("일반 세일 옵션도 정가보다 싸게 담겼을 때만 세일이다", () => {
+    expect(lineTimeSale([sale], line("v_general", 10000, null))).toBeNull()
+    expect(lineTimeSale([sale], line("v_general", 10000, 10000))).toBeNull()
+  })
+
   it("멤버십 전용 옵션을 비회원이 정가로 담으면 세일이 아니다", () => {
     expect(
       lineTimeSale([sale], line("v_member", 18000, null, 11900))
@@ -59,7 +65,7 @@ describe("lineTimeSale", () => {
   it("옛 응답(variantIds 없음)은 상품 단위로 가른다", () => {
     const old = { ...sale, variantIds: undefined }
     expect(
-      lineTimeSale([old], line("v_other", 10000, null))?.membershipOnly
+      lineTimeSale([old], line("v_other", 9000, 10000))?.membershipOnly
     ).toBe(false)
   })
 })

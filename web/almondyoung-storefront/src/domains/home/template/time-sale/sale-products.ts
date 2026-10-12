@@ -63,7 +63,6 @@ export function buildSaleProducts({
     const originalPrice: unknown = cheapestPrice?.original_price_number
     const currency: unknown = cheapestPrice?.currency_code
     const membershipPrice = cheapestVariant?.metadata?.membershipPrice
-    const period = periods.get(id)
     // 멤버십 전용 특가: 판매가 자리엔 일반가를 그대로 두고, 특가는 회원에게만 멤버십가 자리에 보인다.
     // 카드가 그리는 대표 옵션 기준이다. 회원이면 그 세일 가격표가 실제로 적용됐을 때만(상시 멤버십가가 더 싸면
     // Medusa 가 그쪽을 고른다). 비회원은 세일가가 계산되지 않으므로 「회원 공개」로 숨긴다.
@@ -77,6 +76,17 @@ export function buildSaleProducts({
       !!membershipOnlySale &&
       (!isMember ||
         membershipOnlySale.priceListIds.includes(appliedPriceList ?? ""))
+    // 카드 기간은 대표 옵션 가격을 만든 세일 것이다. 옵션마다 다른 세일에 걸릴 수 있어 상품 단위로 고르면
+    // 가격과 타이머가 다른 세일을 가리킨다. 출처를 모르면(옛 응답) 상품이 걸린 세일 중 먼저 끝나는 것을 쓴다.
+    const pricedSale =
+      sales.find((sale) =>
+        sale.priceListIds.includes(appliedPriceList ?? "")
+      ) ??
+      membershipOnlySale ??
+      sales.find((sale) => sale.variantIds?.includes(variantId))
+    const period = pricedSale
+      ? { startsAt: pricedSale.startsAt, endsAt: pricedSale.endsAt }
+      : periods.get(id)
     const finite = (value: unknown) =>
       typeof value === "number" && Number.isFinite(value) ? value : null
 
