@@ -33,6 +33,44 @@ export function orderByProductOrder(ids: string[], order: string[]): string[] {
   return [...ranked, ...ids.filter((id) => !rankedSet.has(id))];
 }
 
+export type TimeSaleListState = {
+  id: string;
+  isMembership: boolean;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  variantIds: string[];
+};
+
+/**
+ * 세일 행과 연결된 가격표가 어긋났는지. 수정 워크플로는 사가라 처리 도중 프로세스가 죽으면 보상이 돌지
+ * 않고 반쯤 바뀐 채 남는다(«새 가격 만들기 → 옛 가격 지우기» 사이면 같은 품목이 두 줄). 그걸 찾아낸다.
+ * 가격표 기간·상태와 중복 줄은 다시 저장하면 고쳐지고, 일반 가격표가 없으면 복구 스크립트가 필요하다.
+ */
+export function findTimeSaleIssues(
+  sale: { starts_at: string; ends_at: string; status: TimeSaleStatus },
+  lists: TimeSaleListState[],
+): string[] {
+  const issues: string[] = [];
+  const general = lists.filter((list) => !list.isMembership);
+  const membership = lists.filter((list) => list.isMembership);
+
+  if (general.length === 0) issues.push('일반 가격표가 연결되지 않았습니다. 복구 스크립트가 필요합니다.');
+  if (general.length > 1 || membership.length > 1) issues.push('같은 종류의 가격표가 둘 이상 연결돼 있습니다.');
+
+  const duplicated = lists.reduce((count, list) => count + duplicates(list.variantIds.map((variant_id) => ({ variant_id, amount: 0 }))).length, 0);
+  if (duplicated > 0) issues.push(
+      `같은 품목에 세일가가 두 줄 있습니다(${duplicated}개 품목). 상품진열에서 가격을 확인하고 다시 적용하세요.`,
+    );
+
+  const sameTime = (a: string, b: string) => Date.parse(a) === Date.parse(b);
+  if (lists.some((list) => !sameTime(list.starts_at, sale.starts_at) || !sameTime(list.ends_at, sale.ends_at) || list.status !== sale.status)) {
+    issues.push('가격표 기간·상태가 세일과 다릅니다. 다시 저장하면 맞춰집니다.');
+  }
+
+  return issues;
+}
+
 export const GENERAL_LIST_DESCRIPTION = '타임세일 (전체)';
 export const MEMBERSHIP_LIST_DESCRIPTION = '타임세일 (멤버십 구독자)';
 const CURRENCY = 'krw' as const;

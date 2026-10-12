@@ -20,6 +20,11 @@ export interface AdminTimeSale {
   generalPrices: Record<string, number>;
   /** variant id → 멤버십용 세일가. */
   membershipPrices: Record<string, number>;
+  /** 같은 품목에 줄이 둘일 때 덮인 옛 금액(저장 도중 중단의 흔적). 옛 서버는 싣지 않는다. */
+  previousGeneralPrices?: Record<string, number>;
+  previousMembershipPrices?: Record<string, number>;
+  /** 세일 행과 가격표가 어긋난 점. 옛 서버는 싣지 않으므로 선택이다. */
+  issues?: string[];
 }
 
 const BASE = `${MEDUSA_BASE_URL}/admin/time-sales`;

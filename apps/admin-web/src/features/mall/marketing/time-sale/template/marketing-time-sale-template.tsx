@@ -259,7 +259,14 @@ export default function MarketingTimeSaleTemplate() {
                         </>
                       )}
                     </td>
-                    <td className="ts-name">{sale.title}</td>
+                    <td className="ts-name">
+                      {sale.title}
+                      {sale.issues?.map((issue) => (
+                        <p key={issue} className="ts-display-error">
+                          ⚠ {issue}
+                        </p>
+                      ))}
+                    </td>
                     <td title={sale.id}>{shortSaleNumber(sale.id)}</td>
                     <td>
                       {formatDate(sale.period.startsAt)}

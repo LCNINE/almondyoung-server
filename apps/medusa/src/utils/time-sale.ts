@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import type { TimeSaleRecord } from '../modules/time-sale/service';
-import { orderByProductOrder } from '../workflows/time-sale/rules';
+import { findTimeSaleIssues, orderByProductOrder } from '../workflows/time-sale/rules';
 
 // ── 경계 크론용 (price list 기준) ──────────────────────────────────────────────
 // 가격 엔진은 price list 의 starts_at/ends_at/status 를 읽는다. 워크플로가 time_sale 값을 리스트에 맞춰
@@ -167,15 +167,36 @@ export type AdminTimeSaleDto = {
   generalPrices: Record<string, number>;
   /** variant id → 멤버십용 세일가. */
   membershipPrices: Record<string, number>;
+  /**
+   * 같은 품목에 줄이 둘 이상일 때 덮인 옛 금액(variant id → 금액). 저장 도중 중단되면 새 줄과 옛 줄이
+   * 같이 남는데, 위 가격은 최신 줄(저장하려던 값)이고 이건 운영자 확인용이다.
+   */
+  previousGeneralPrices: Record<string, number>;
+  previousMembershipPrices: Record<string, number>;
+  /** 세일 행과 가격표가 어긋난 점(저장 도중 중단 등). 비어 있으면 정상. */
+  issues: string[];
 };
 
-type SaleWithLists = TimeSaleRecord & { price_lists: Array<{ id: string }> };
+type SaleWithLists = TimeSaleRecord & {
+  price_lists: Array<{ id: string; starts_at: Date | string | null; ends_at: Date | string | null; status: string }>;
+};
 
 async function loadSales(container: MedusaContainer, filters: Record<string, unknown> = {}): Promise<SaleWithLists[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'time_sale',
-    fields: ['id', 'title', 'status', 'starts_at', 'ends_at', 'product_order', 'price_lists.id'],
+    fields: [
+      'id',
+      'title',
+      'status',
+      'starts_at',
+      'ends_at',
+      'product_order',
+      'price_lists.id',
+      'price_lists.starts_at',
+      'price_lists.ends_at',
+      'price_lists.status',
+    ],
     filters,
   });
   return data as unknown as SaleWithLists[];
@@ -193,7 +214,8 @@ async function loadPriceRows(container: MedusaContainer, listIds: string[]) {
          from price pr
          join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id
          join product_variant pv on pv.id = pvps.variant_id and pv.deleted_at is null
-        where pr.price_list_id in (${placeholders}) and pr.deleted_at is null`,
+        where pr.price_list_id in (${placeholders}) and pr.deleted_at is null
+        order by pr.created_at, pr.id`,
       listIds,
     ),
     knex.raw(
@@ -227,13 +249,26 @@ export async function listAdminTimeSales(
   return sales
     .map((sale) => {
       const listIds = new Set(sale.price_lists.map((p) => p.id));
+      const variantsByList = new Map<string, string[]>();
       const generalPrices: Record<string, number> = {};
       const membershipPrices: Record<string, number> = {};
+      const previousGeneralPrices: Record<string, number> = {};
+      const previousMembershipPrices: Record<string, number> = {};
       const productIds = new Set<string>();
       for (const row of prices) {
         if (!listIds.has(row.price_list_id)) continue;
-        const target = membershipListIds.has(row.price_list_id) ? membershipPrices : generalPrices;
-        target[row.variant_id] = Number(row.amount);
+        const listVariants = variantsByList.get(row.price_list_id);
+        if (listVariants) listVariants.push(row.variant_id);
+        else variantsByList.set(row.price_list_id, [row.variant_id]);
+        // 생성 시각 순으로 읽으므로 나중 줄(저장하려던 값)이 덮어쓴다. 다른 금액에 덮인 옛 값은 따로 둔다.
+        const membership = membershipListIds.has(row.price_list_id);
+        const target = membership ? membershipPrices : generalPrices;
+        const amount = Number(row.amount);
+        const before = target[row.variant_id];
+        if (before !== undefined && before !== amount) {
+          (membership ? previousMembershipPrices : previousGeneralPrices)[row.variant_id] = before;
+        }
+        target[row.variant_id] = amount;
         productIds.add(row.product_id);
       }
       return {
@@ -245,6 +280,19 @@ export async function listAdminTimeSales(
         productIds: orderByProductOrder([...productIds], sale.product_order ?? []),
         generalPrices,
         membershipPrices,
+        previousGeneralPrices,
+        previousMembershipPrices,
+        issues: findTimeSaleIssues(
+          { starts_at: iso(sale.starts_at), ends_at: iso(sale.ends_at), status: sale.status },
+          sale.price_lists.map((list) => ({
+            id: list.id,
+            isMembership: membershipListIds.has(list.id),
+            starts_at: list.starts_at ? iso(list.starts_at) : '',
+            ends_at: list.ends_at ? iso(list.ends_at) : '',
+            status: list.status,
+            variantIds: variantsByList.get(list.id) ?? [],
+          })),
+        ),
       };
     })
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));

@@ -116,6 +116,8 @@ export function useTimeSaleProductMeta(productIds: string[]) {
   });
 }
 
+const NO_PRICES: Record<string, number> = {};
+
 export function useTimeSaleDetail(id: string | null) {
   const { data, isLoading } = useAllTimeSales();
   const sale = id ? data?.find((item) => item.id === id) : undefined;
@@ -131,6 +133,9 @@ export function useTimeSaleDetail(id: string | null) {
         general: new Map(Object.entries(sale.generalPrices)),
         membership: new Map(Object.entries(sale.membershipPrices)),
       },
+      // 쿼리 데이터를 그대로 넘긴다 — 참조가 유지돼야 상품진열 줄이 입력마다 다시 그려지지 않는다.
+      previousGeneralPrices: sale.previousGeneralPrices ?? NO_PRICES,
+      previousMembershipPrices: sale.previousMembershipPrices ?? NO_PRICES,
     },
   };
 }

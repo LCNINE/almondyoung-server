@@ -41,7 +41,20 @@ async function forwardToMedusa(request: NextRequest, path: string[]) {
   return forwardRequest(request, MEDUSA_API_URL, path, {
     extraHeaders: medusaExtraHeaders(),
     forwardAuthCookie: false,
+    ...(isTimeSaleWrite(request, path)
+      ? { timeoutMs: TIME_SALE_WRITE_TIMEOUT_MS }
+      : {}),
   });
+}
+
+// 타임세일 저장은 품목 수천 개의 가격표를 통째로 다시 써서 30초를 넘길 수 있다. 프록시가 먼저 끊으면
+// 화면은 실패인데 서버는 끝까지 저장한다(운영자가 다시 눌러 겹친다). 서버 저장 잠금 ttl(120초)에 맞춘다.
+const TIME_SALE_WRITE_TIMEOUT_MS = 120_000;
+
+function isTimeSaleWrite(request: NextRequest, path: string[]) {
+  return (
+    request.method !== 'GET' && path[0] === 'admin' && path[1] === 'time-sales'
+  );
 }
 
 export async function GET(request: NextRequest, { params }: Params) {

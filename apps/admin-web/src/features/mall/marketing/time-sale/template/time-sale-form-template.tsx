@@ -269,7 +269,12 @@ export default function TimeSaleFormTemplate({
       '신규 타임 세일'
     );
 
-  const submit = async () => {
+  // 세일가가 판매가 이상인 품목(경고). 저장은 되지만 오타일 수 있어 적용 전에 확인받는다.
+  const warnings = allErrors.filter((error) => error.warning);
+  const [warnAsk, setWarnAsk] = useState(false);
+  const [warnOpen, setWarnOpen] = useState<string[]>([]);
+
+  const submit = async (confirmed = false) => {
     if (!title.trim() || !startsAt || !endsAt) {
       saleToast('세일 이름과 기간을 입력하세요.', true);
       return;
@@ -283,6 +288,10 @@ export default function TimeSaleFormTemplate({
     }
     if (!part && saleSummary.filled === 0) {
       saleToast('세일가를 입력한 품목이 하나도 없습니다.', true);
+      return;
+    }
+    if (!confirmed && showProducts && warnings.length > 0) {
+      setWarnAsk(true);
       return;
     }
 
@@ -393,6 +402,8 @@ export default function TimeSaleFormTemplate({
             meta={productMeta}
             status={statusNode}
             errorByVariant={errorByVariant}
+            previousGeneral={detail?.previousGeneralPrices}
+            previousMembership={detail?.previousMembershipPrices}
             adding={adding}
             onToggleAdding={() => setAdding((value) => !value)}
             onRefresh={() => {
@@ -489,9 +500,9 @@ export default function TimeSaleFormTemplate({
             </div>
 
             <p className="text-muted-foreground text-xs">
-              멤버십가가 이미 많이 깎여 있으면 같은 할인율로는 구독자에게 값이
-              안 변합니다 — 둘 중 싼 값이 적용되기 때문입니다. 그럴 땐 멤버십
-              할인율을 낮춰 잡으세요.
+              구독자에게는 일반 기간판매가와 멤버십 기간판매가 중 싼 값이
+              적용됩니다. 멤버십 기간판매가가 일반 기간판매가보다 비싸면 구독자
+              혜택이 없으니 멤버십 할인율을 충분히 잡으세요.
             </p>
 
             <TimeSalePriceEditor
@@ -542,6 +553,104 @@ export default function TimeSaleFormTemplate({
     </button>
   );
 
+  // 경고를 상품 단위로 묶는다 — 옵션마다 한 줄씩이면 옵션 많은 상품 하나로 목록이 넘친다.
+  const rowById = new Map(mergedRows.map((row) => [row.variantId, row]));
+  const warnedProducts = [
+    ...warnings
+      .reduce((map, warning) => {
+        const row = rowById.get(warning.variantId);
+        if (!row) return map;
+        const item = map.get(row.productId) ?? {
+          id: row.productId,
+          title: row.productTitle,
+          variants: new Map<string, { name: string; messages: string[] }>(),
+          general: false,
+          membership: false,
+        };
+        const variant = item.variants.get(row.variantId) ?? {
+          name: row.variantTitle,
+          messages: [],
+        };
+        variant.messages.push(warning.message);
+        item.variants.set(row.variantId, variant);
+        if (warning.message.startsWith('멤버십')) item.membership = true;
+        else item.general = true;
+        return map.set(row.productId, item);
+      }, new Map<string, { id: string; title: string; variants: Map<string, { name: string; messages: string[] }>; general: boolean; membership: boolean }>())
+      .values(),
+  ];
+  const warnDialog = (
+    <AlertDialog open={warnAsk} onOpenChange={setWarnAsk}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            세일가가 판매가 이상인 상품이 {warnedProducts.length}개 있습니다
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="break-keep">
+              <p>이 품목은 세일 표시만 붙고 값이 내려가지 않습니다.</p>
+              <p>잘못 입력한 값이 아닌지 확인하세요.</p>
+              <ul className="mt-2 max-h-60 divide-y overflow-auto">
+                {warnedProducts.slice(0, 10).map((item) => (
+                  <li key={item.id} className="py-1">
+                    <div className="ts-display-clip text-foreground">
+                      {item.title}
+                    </div>
+                    <button
+                      type="button"
+                      className="ts-display-options"
+                      onClick={() =>
+                        setWarnOpen((prev) =>
+                          prev.includes(item.id)
+                            ? prev.filter((id) => id !== item.id)
+                            : [...prev, item.id]
+                        )
+                      }
+                    >
+                      옵션 {item.variants.size}개{' '}
+                      {warnOpen.includes(item.id) ? '▲' : '▼'}
+                    </button>{' '}
+                    <span className="text-xs text-red-600">
+                      {[
+                        item.general && '세일가가 판매가 이상',
+                        item.membership && '멤버십 세일가가 멤버십가 이상',
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </span>
+                    {warnOpen.includes(item.id) && (
+                      <ul className="mt-1 pl-3 text-xs">
+                        {[...item.variants.entries()].map(([id, variant]) => (
+                          <li key={id}>
+                            └ {variant.name}: {variant.messages.join(' ')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {warnedProducts.length > 10 && (
+                <p>외 {warnedProducts.length - 10}개 상품</p>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>돌아가서 고치기</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setWarnAsk(false);
+              void submit(true);
+            }}
+          >
+            그래도 적용
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   const leaveDialog = (
     <AlertDialog open={leaveAsk} onOpenChange={setLeaveAsk}>
       <AlertDialogContent>
@@ -580,6 +689,7 @@ export default function TimeSaleFormTemplate({
           {body}
         </TimeSaleDialog>
         {leaveDialog}
+        {warnDialog}
       </>
     );
   }
@@ -602,6 +712,7 @@ export default function TimeSaleFormTemplate({
           </button>
         </footer>
         {leaveDialog}
+        {warnDialog}
       </div>
     </TimeSaleWorkspace>
   );

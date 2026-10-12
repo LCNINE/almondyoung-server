@@ -2,6 +2,7 @@ import {
   buildPriceListData,
   findConflictingSales,
   orderByProductOrder,
+  findTimeSaleIssues,
   planTimeSaleUpdate,
   validateTimeSaleInput,
   type LinkedList,
@@ -19,6 +20,36 @@ const base: TimeSaleWriteInput = {
   ],
   membership_prices: [{ variant_id: 'v1', amount: 700 }],
 };
+
+describe('findTimeSaleIssues', () => {
+  const sale = { starts_at: '2030-01-01T00:00:00.000Z', ends_at: '2030-01-08T00:00:00.000Z', status: 'active' as const };
+  const list = (over: Partial<Parameters<typeof findTimeSaleIssues>[1][number]> = {}) => ({
+    id: 'pl_1',
+    isMembership: false,
+    starts_at: sale.starts_at,
+    ends_at: sale.ends_at,
+    status: 'active',
+    variantIds: ['v1', 'v2'],
+    ...over,
+  });
+
+  it('reports nothing for a consistent sale', () => {
+    expect(findTimeSaleIssues(sale, [list(), list({ id: 'pl_2', isMembership: true })])).toEqual([]);
+  });
+
+  it('finds a missing general list', () => {
+    expect(findTimeSaleIssues(sale, [list({ isMembership: true })])[0]).toContain('일반 가격표');
+  });
+
+  it('finds the same variant priced twice (create-then-delete interrupted)', () => {
+    expect(findTimeSaleIssues(sale, [list({ variantIds: ['v1', 'v1', 'v2'] })])[0]).toContain('1개 품목');
+  });
+
+  it('finds a list whose period or status drifted from the sale', () => {
+    expect(findTimeSaleIssues(sale, [list({ status: 'draft' })])[0]).toContain('기간·상태');
+    expect(findTimeSaleIssues(sale, [list({ ends_at: '2030-01-09T00:00:00.000Z' })])[0]).toContain('기간·상태');
+  });
+});
 
 describe('orderByProductOrder', () => {
   it('puts ordered products first and keeps the rest in their original order', () => {

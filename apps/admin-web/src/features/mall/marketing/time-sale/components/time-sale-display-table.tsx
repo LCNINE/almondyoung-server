@@ -79,11 +79,14 @@ function PriceInput({
   onChange,
   hint,
   placeholder,
+  alert = false,
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
   hint?: string;
   placeholder?: string;
+  /** 저장 도중 중단돼 이전 값이 남은 품목. 안내를 빨갛게 보인다. */
+  alert?: boolean;
 }) {
   return (
     <div className="ts-display-price">
@@ -97,7 +100,9 @@ function PriceInput({
           )
         }
       />
-      {hint && <small>{hint}</small>}
+      {hint && (
+        <small className={alert ? 'ts-display-hint-alert' : ''}>{hint}</small>
+      )}
     </div>
   );
 }
@@ -267,6 +272,8 @@ type RowProps = {
   hit: boolean;
   expanded: boolean;
   error: string | undefined;
+  previousGeneral: Record<string, number> | undefined;
+  previousMembership: Record<string, number> | undefined;
   onToggleCheck: (productId: string) => void;
   onToggleOpen: (productId: string) => void;
   onVariant: (variantId: string, patch: Partial<TimeSaleRow>) => void;
@@ -292,11 +299,21 @@ const ProductRow = memo(
     hit,
     expanded,
     error,
+    previousGeneral,
+    previousMembership,
     onToggleCheck,
     onToggleOpen,
     onVariant,
     onProduct,
   }: RowProps) {
+    const prevG = (id: string) => previousGeneral?.[id];
+    const prevM = (id: string) => previousMembership?.[id];
+    const prevText = (value: number | undefined) =>
+      value === undefined ? '' : `이전 값 ${won(value)}`;
+    const hasPrevious = variants.some(
+      (row) =>
+        prevG(row.variantId) !== undefined || prevM(row.variantId) !== undefined
+    );
     const first = variants[0];
     const single = variants.length === 1;
     const published = info?.status === 'published';
@@ -332,9 +349,18 @@ const ProductRow = memo(
           <td>{index + 1}</td>
           <td>{status}</td>
           <td>{productId.slice(-8)}</td>
-          <td>{info?.variants?.[0]?.sku || '-'}</td>
+          <td className="ts-display-code">
+            <div
+              className="ts-display-clip"
+              title={info?.variants?.[0]?.sku ?? undefined}
+            >
+              {info?.variants?.[0]?.sku || '-'}
+            </div>
+          </td>
           <td className="ts-name ts-display-name">
-            <div>{first?.productTitle ?? '불러오는 중…'}</div>
+            <div className="ts-display-clip" title={first?.productTitle}>
+              {first?.productTitle ?? '불러오는 중…'}
+            </div>
             {!single && variants.length > 0 && (
               <button
                 type="button"
@@ -394,6 +420,8 @@ const ProductRow = memo(
             {single && first ? (
               <PriceInput
                 value={first.generalSalePrice}
+                hint={prevText(prevG(first.variantId)) || undefined}
+                alert={prevG(first.variantId) !== undefined}
                 onChange={(value) =>
                   onVariant(first.variantId, { generalSalePrice: value })
                 }
@@ -403,7 +431,12 @@ const ProductRow = memo(
               <PriceInput
                 value={commonValue(salePrices, variants.length)}
                 placeholder={range(salePrices)}
-                hint={`옵션 ${salePrices.length}/${variants.length}개 세일`}
+                hint={
+                  hasPrevious
+                    ? '이전 값 있음'
+                    : `옵션 ${salePrices.length}/${variants.length}개 세일`
+                }
+                alert={hasPrevious}
                 onChange={(value) =>
                   onProduct(productId, 'generalSalePrice', value)
                 }
@@ -417,7 +450,12 @@ const ProductRow = memo(
               ) : (
                 <PriceInput
                   value={first.membershipSalePrice}
-                  hint={`기존 멤버십가 ${won(first.membershipBasePrice)}`}
+                  hint={
+                    prevM(first.variantId) !== undefined
+                      ? prevText(prevM(first.variantId))
+                      : `기존 멤버십가 ${won(first.membershipBasePrice)}`
+                  }
+                  alert={prevM(first.variantId) !== undefined}
                   onChange={(value) =>
                     onVariant(first.variantId, { membershipSalePrice: value })
                   }
@@ -451,6 +489,8 @@ const ProductRow = memo(
                 <td>
                   <PriceInput
                     value={row.generalSalePrice}
+                    hint={prevText(prevG(row.variantId)) || undefined}
+                    alert={prevG(row.variantId) !== undefined}
                     onChange={(value) =>
                       onVariant(row.variantId, { generalSalePrice: value })
                     }
@@ -462,7 +502,12 @@ const ProductRow = memo(
                   ) : (
                     <PriceInput
                       value={row.membershipSalePrice}
-                      hint={`기존 멤버십가 ${won(row.membershipBasePrice)}`}
+                      hint={
+                        prevM(row.variantId) !== undefined
+                          ? prevText(prevM(row.variantId))
+                          : `기존 멤버십가 ${won(row.membershipBasePrice)}`
+                      }
+                      alert={prevM(row.variantId) !== undefined}
                       onChange={(value) =>
                         onVariant(row.variantId, { membershipSalePrice: value })
                       }
@@ -497,6 +542,8 @@ export function TimeSaleDisplayTable({
   meta,
   status,
   errorByVariant,
+  previousGeneral,
+  previousMembership,
   adding,
   picker,
   onToggleAdding,
@@ -510,6 +557,8 @@ export function TimeSaleDisplayTable({
   meta: Map<string, MedusaProductMeta> | undefined;
   status: ReactNode;
   errorByVariant: Map<string, string>;
+  previousGeneral?: Record<string, number>;
+  previousMembership?: Record<string, number>;
   adding: boolean;
   picker: ReactNode;
   onToggleAdding: () => void;
@@ -766,9 +815,9 @@ export function TimeSaleDisplayTable({
       </div>
 
       <p className="ts-display-note">
-        멤버십가가 이미 많이 깎여 있으면 같은 할인율로는 구독자에게 값이 안
-        변합니다 — 둘 중 싼 값이 적용되기 때문입니다. 그럴 땐 멤버십 할인율을
-        낮춰 잡으세요.
+        구독자에게는 일반 기간판매가와 멤버십 기간판매가 중 싼 값이 적용됩니다.
+        멤버십 기간판매가가 일반 기간판매가보다 비싸면 구독자 혜택이 없으니
+        멤버십 할인율을 충분히 잡으세요.
       </p>
       <div className="ts-table-scroll">
         <table className="ts-table ts-display-table">
@@ -834,6 +883,8 @@ export function TimeSaleDisplayTable({
                 error={(rowsByProduct.get(productId) ?? EMPTY_ROWS)
                   .map((row) => errorByVariant.get(row.variantId))
                   .find(Boolean)}
+                previousGeneral={previousGeneral}
+                previousMembership={previousMembership}
                 onToggleCheck={onToggleCheck}
                 onToggleOpen={onToggleOpen}
                 onVariant={onVariant}
